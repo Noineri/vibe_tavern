@@ -39,7 +39,7 @@ export type {
 } from "./api/types.js";
 
 // ─── Bootstrap & Settings ───────────────────────────────────────────────
-export { bootstrapApp, fetchUiSettings, updateUiSettings } from "./api/settings-api.js";
+export { bootstrapApp, updateUiSettings } from "./api/settings-api.js";
 
 // ─── Chat ───────────────────────────────────────────────────────────────
 export {
@@ -134,7 +134,6 @@ export {
 export {
   listAllScripts,
   listScripts,
-  getScript,
   createScript,
   updateScript,
   deleteScript,
@@ -162,7 +161,6 @@ export {
   listProviderModelSettings,
   getProviderModelSettings,
   upsertProviderModelSettings,
-  deleteProviderModelSettings,
 } from "./api/provider-api.js";
 
 // ─── Presets ────────────────────────────────────────────────────────────
@@ -185,8 +183,6 @@ export {
   reorderCharacterAssets,
   deleteCharacterAsset,
   describeCharacterAssets,
-  describeCharacterAvatar,
-  describePersonaAvatar,
 } from "./api/gallery-api.js";
 
 // ─── AI Assistant ───────────────────────────────────────────────────────

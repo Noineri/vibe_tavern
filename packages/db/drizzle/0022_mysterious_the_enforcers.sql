@@ -1,1 +1,0 @@
-ALTER TABLE `prompt_traces` ADD `compaction_summary` text;

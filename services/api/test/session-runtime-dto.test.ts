@@ -241,6 +241,17 @@ describe("toClientProviderProfile", () => {
     expect(client.customSamplers).toBe(true);
     expect(client.pinContextBudget).toBe(true);
   });
+
+  it("round-trips bindPerModel so the frontend toggle persists (regression)", () => {
+    // Previously the mapper omitted bindPerModel, so the field never reached
+    // the frontend and the "Bind per model" toggle reset to off on every
+    // modal open. The shared ClientProviderProfileRecord interface now
+    // requires it, and the mapper serializes it.
+    const on = { ...fullProfile, bindPerModel: true } as StoredProviderProfileRecord;
+    const off = { ...fullProfile, bindPerModel: false } as StoredProviderProfileRecord;
+    expect(toClientProviderProfile(on).bindPerModel).toBe(true);
+    expect(toClientProviderProfile(off).bindPerModel).toBe(false);
+  });
 });
 
 // ─── resolveStoredApiKey ─────────────────────────────────────────────────

@@ -8,35 +8,43 @@
 
 ### Store Architecture
 
-The frontend uses **Zustand as single source of truth**. No React Query, no SWR, no Apollo. The backend sends monolithic snapshots; the frontend normalizes them into Zustand stores via `ingestSnapshot()`.
+The frontend uses **Zustand as single source of truth**. No React Query, no SWR, no Apollo. The backend sends snapshots; the frontend normalizes them into Zustand stores via `ingestSnapshot()`.
 
-> **Note:** `ingestSnapshot()` uses Immer's structural sharing — it only replaces object references for fields that actually changed. Components subscribe to focused slices via selectors and only re-render when their specific data changes.
->
-> **Partial-response caveat (TD-004):** Absence is **not** preserved today. The pipeline is `backend → normalizeSnapshot() → ingestSnapshot()`, and `normalizeSnapshot()` (`api/normalize.ts`) coerces absent arrays → `[]` and absent scalars → `null`/`{}` *before* the snapshot reaches the store. That makes `ingestSnapshot()`'s `Array.isArray(...)` / `?? null` guards effectively dead (always truthy) and overwrites **11 of 12 fields** with emptiness when a field is absent — including `messages`, `character`, `persona`, `chats`, etc. The `else if` messages-wipe branch is unreachable in practice (absence never survives `normalize`). This is LATENT: every backend path returns a full `SessionSnapshot` today, so the wipe never fires — but it becomes active data-loss the moment endpoint-scoped responses (Phase 3.4 / AD-016) omit a field. `clearMessages()` is defined but has 0 callers. See TD-004 for the full data-flow analysis and the end-to-end fix.
+`ingestSnapshot()` uses Immer's structural sharing — it only replaces object references for fields that actually changed. Components subscribe to focused slices via selectors and only re-render when their specific data changes.
+
+**Absence preservation (Phase 3.4.1, shipped):** the pipeline is `backend → normalizeSnapshot() → ingestSnapshot()`. `AppSnapshot`'s fields are all optional, and `normalizeSnapshot()` (`api/normalize.ts`) passes absent fields through untouched (no absent→`[]`/`{}` coercion). `ingestSnapshot()` then uses presence guards (`"x" in snapshot` / `Array.isArray`) so an absent field leaves the store untouched rather than wiping it. This is what makes endpoint-scoped responses (AD-016) safe on the frontend: a `PATCH /characters/:id` that returns only `{ character, contextPreview }` updates just those two fields and leaves the active chat's messages intact. `switchChatAction` / `createChatAction` call `clearMessages()` explicitly before ingesting, because non-message mutations can legitimately omit `messages`. (Backend `SessionSnapshot` stays all-required — it always returns full; the two types are decoupled by an `unwrapRpc<AppSnapshot>` cast.)
+
+The stores split into three layers: **canonical backend-confirmed state**, **UI/runtime state**, and **per-feature caches**.
 
 | Store | File | Responsibility |
 |-------|------|----------------|
-| `useSnapshotStore` | `stores/snapshot-store.ts` | **Canonical backend-confirmed state.** Chats by ID, messages by ID, message order, active chat/character/persona/branch, summaries, prompt traces. This is the "database" of the frontend. |
-| `useChatStore` | `stores/chat-store.ts` | UI/runtime state: active chat ID, selected character, draft text, editing state, selected trace ID, per-chat generation state (`messageActionId`). |
-| `useBootstrapStore` | `stores/api-actions/bootstrap-actions.ts` | Reference data: prompt presets, personas, first-run/loading state. |
+| `useSnapshotStore` | `stores/snapshot-store.ts` | **Canonical backend-confirmed state.** Chats by ID, messages by ID, message order, active chat/character/persona/branch, summaries, the latest prompt trace. This is the "database" of the frontend. |
+| `useChatStore` | `stores/chat-store.ts` | Per-chat generation state, active chat ID, draft text + draft attachments, editing state, selected trace ID, action spinners (`messageActionId`). See [Streaming Architecture](#streaming-architecture). |
+| `useGenerationQueueStore` | `stores/generation-queue-store.ts` | Per-chat sequential regeneration queue — the ordered list of enqueued "generate more" jobs and their per-job status. See [Generation Queue](#generation-queue). |
+| `useTraceHistoryStore` | `stores/trace-history-store.ts` | Branch-scoped prompt-trace history cache, lazy-loaded via `GET /api/chats/:chatId/traces` and keyed by `${chatId}::${branchId}`. Replaces the `promptTraceHistory` field that used to ship in every snapshot. |
+| `useGalleryStore` | `stores/gallery-store.ts` | Per-character media-gallery cache (UI/cache, not canonical — the server owns the gallery). See [Media Gallery](#media-gallery). |
 | `useProviderDataStore` | `stores/provider-data-store.ts` | Provider profiles, favorite models per profile. |
 | `useCharacterStore` | `stores/character-store.ts` | Build-mode UI state, rename/confirm-destroy dialogs. |
-| `useNavigationStore` | `stores/navigation-store.ts` | Theme, mode, sidebar/rail state. |
+| `useNavigationStore` | `stores/navigation-store.ts` | Theme, mode (chat/build/play), sidebar/rail state. |
 | `useProviderStore` | `stores/provider-store.ts` | Connection test UI state. |
 | `useModalStore` | `stores/modal-store.ts` | Modal open/close state. |
 
-**Key pattern:** `useSnapshotStore.ingestSnapshot(snapshot)` is the single entry point for backend data. API actions call the backend, receive a snapshot (or partial response), and write it through this method. No individual `setState` calls for server data.
+Bootstrap reference data (prompt presets, personas, first-run/loading state) lives in the action module `stores/api-actions/bootstrap-actions.ts`, not a dedicated store.
 
-`ingestSnapshot`'s `Array.isArray(...)` / `?? null` guards *appear* to preserve absent fields, but `normalizeSnapshot()` (upstream of every call site) has already coerced absence into `[]`/`null`/`{}`, so 11 of 12 fields are overwritten with emptiness, not preserved. `messages` is no exception — the `else if` wipe branch is unreachable because `normalize` already converted absent `messages` to `[]`. Latent today (backend always returns full); must be fixed end-to-end (optional types + absence-preserving `normalize` + explicit `clearMessages()` on chat switch) before Phase 3.4 — see TD-004.
+**Key pattern:** `useSnapshotStore.ingestSnapshot(snapshot)` is the single entry point for backend data. API actions (`stores/api-actions/*.ts`) call the backend, receive a snapshot or partial response, and write it through this method. No individual `setState` calls for server data.
 
 ### Selectors
 
-Components subscribe to **focused slices**, never the entire snapshot:
+Components subscribe to **focused slices**, never the entire snapshot.
 
-- `stores/snapshot-store.ts` — canonical selectors: `useChatList()`, `useOrderedMessages()`, `useActiveCharacter()`, `useActivePersona()`, `useDisplayMessage()`, `useMessage()`, `useBranches()`.
-- `stores/chat-selectors.ts` — **deprecated** selectors, being migrated to `snapshot-store.ts`. Currently contains `useDisplayMessage(id)`, `useMessageOrder()`, `useMacroContext()`, `useActiveTrace(traceId)` with `@deprecated` JSDoc tags pointing to the canonical versions in snapshot-store.
+Canonical selectors live in `stores/snapshot-store.ts`: `useChatList()`, `useOrderedMessages()`, `useMessage(id)`, `useActiveCharacter()`, `useActivePersona()`, `useBranches()`, `useAllCharacters()`, `usePromptTrace()`.
 
-**`useDisplayMessage(messageId)`** is the most important selector. It computes the full display-ready message object from raw store data — including resolved macro content, variant data, and streaming state. `MessageBlock` uses this to re-render only when its specific message changes.
+Streaming-target selectors live in `stores/chat-selectors.ts`:
+- **`useIsStreamingTarget(messageId)`** — `true` if `streamingMessageId === messageId` for the active chat's generation. This is how a `MessageBlock` decides whether to render live streaming text instead of its stored content (regeneration path).
+- **`useStreamingRevealedFor(messageId)`** — the throttled-reveal view of the streaming text for that message (see [Streaming Architecture](#streaming-architecture)).
+- `useMessageAuthor()`, `useActiveTrace(traceId)`.
+
+`chat-selectors.ts` also carries a few **`@deprecated`** wrappers (`useDisplayMessage`, `useMessageOrder`, `useChatMeta`, `useMacroContext`) that delegate to the snapshot store; new code reads the snapshot-store selectors directly.
 
 ### Selector rules
 
@@ -180,46 +188,73 @@ Quoted dialogue highlighting deliberately works on the HAST tree instead of raw 
 | `DesktopMessageActions` | Hover-reveal action bar: copy, edit, branch, regenerate, delete, variant arrows |
 | `MobileMessageActions` | Three-dot menu with action items: copy, edit, branch, resend, regenerate, variant counter |
 | `MobileVariantCarousel` | 3-panel drag carousel (see above) |
-| `VariantControls` | Arrow buttons for variant switching (used both inline and in portal overlay) |
+| `VariantControls` | Arrow buttons for variant switching (used both inline and in the portal overlay) |
+| `VariantJumpList` | Dropdown jump-list for hopping between many variants at once |
+| `PendingUserMessage` / `PendingAssistantMessage` | The optimistic/streaming footer cells rendered via Virtuoso's `Footer` (`StreamingContent`) |
 
 ---
 
 ## Streaming Architecture
 
-### Generation Flow
+The streaming layer separates three concerns that used to be conflated: **which message is being streamed to** (`streamingMessageId`), **what action is pending on a message** (`messageActionId` — edit/delete/regenerate spinners), and **how fast to reveal streamed text** (`StreamingReveal`).
 
-```
-User sends message
-  → pendingUserMessageContent set in activeGen
-  → StreamingContent renders in Virtuoso Footer (pending user message + streaming reply)
-  → SSE stream yields text-delta / reasoning-delta chunks
-  → activeGen.streamingText / streamingReasoningText update on each chunk
-  → MessageBlock for last assistant message renders streaming text inline
-  → Stream finishes → backend returns snapshot → ingestSnapshot()
-  → Ghost message filter prevents duplicate user message
-  → StreamingContent disappears (no more activeGen)
-```
+### Generation state is per-chat
 
-### Regeneration Streaming
-
-**Problem:** Previously, `isBusy` was global (`isSending`), causing ALL assistant messages to show loading during regeneration.
-
-**Solution:** `MessageBlock` checks `messageActionId === messageId` — only the specific message being regenerated shows streaming state. When active, the block replaces its content with live streaming text + reasoning, instead of appending a separate `StreamingContent` block.
-
-### Active Generation State
-
-`useActiveGeneration()` returns the current generation state:
+`useChatStore` holds `generations: Record<chatId, ChatGenerationState>`, not a single global generation. This lets background generations in one chat keep streaming while the user works in another. `getOrCreateGen(chatId)` is the accessor; `useActiveGeneration()` returns the active chat's generation state (or null).
 
 ```ts
-{
-  streamingText: string;
+interface ChatGenerationState {
+  isSending: boolean;
+  streamingMessageId: string | null;   // which message the stream targets (see below)
+  streamingText: string;                // full accumulated text so far
+  streamingRevealedText: string;        // throttled view fed to the UI
   streamingReasoningText: string;
+  generationStatus: ChatGenerationStatus;
   pendingUserMessageContent: string | null;
-  messageActionId: string | null;  // which message is being regenerated
+  pendingUserMessageAttachments: Attachment[];
+  abortController: AbortController | null;
 }
 ```
 
-This is stored in `useChatStore` and updated by the SSE stream handler.
+`ChatGenerationStatus` is a small state machine: `idle → preparing → streaming → (waiting_full) → idle`, with `aborting → cancelled` and `→ failed` as terminal branches. It drives the UI status badge in the input area.
+
+### `streamingMessageId` vs `messageActionId`
+
+These are deliberately separate so a future sequential queue can hold long-lived streaming state without it rendering as a transient action spinner:
+
+| Field | Meaning | Read by |
+|-------|---------|---------|
+| `streamingMessageId` | The **existing** message the stream targets (regenerate path), or `null` for a fresh send that streams into the pending-assistant singleton | `useIsStreamingTarget(id)` → `MessageBlock` swaps in live streaming text |
+| `messageActionId` | Which message has an **action spinner** pending (edit/delete/regenerate in flight) | action-row loading states |
+
+### StreamingReveal — adaptive text reveal
+
+Raw SSE `text-delta` chunks can arrive faster than the DOM can paint. `StreamingReveal` (`lib/streaming-reveal.ts`) is created per generation and throttles how much of `streamingText` is actually shown (`streamingRevealedText`):
+
+- It schedules reveals on a ~16ms tick and tracks the backlog (target length − shown length).
+- **Small backlog (<80 chars):** reveal immediately, char-by-char.
+- **Medium (400–1200):** reveal in larger steps to catch up.
+- **Large (>1200):** snap forward aggressively so the UI never lags far behind a fast stream.
+
+When generation ends, `flush()` drains the remainder before the final snapshot is ingested, so the persisted message is never truncated to the revealed-so-far slice. `useStreamingRevealedFor(messageId)` is the selector a `MessageBlock` uses to read its revealed slice.
+
+### Generation flow
+
+```
+User sends message
+  → startGeneration() sets pendingUserMessageContent + isSending
+  → StreamingContent renders in Virtuoso Footer (pending user message + streaming reply)
+  → SSE stream yields text-delta / reasoning-delta chunks
+  → StreamingReveal.pushDelta() → streamingRevealedText updates on each tick
+  → MessageBlock for the streaming-target message renders the revealed text inline
+  → Stream finishes → flush() → backend returns snapshot → ingestSnapshot()
+  → Ghost message filter prevents duplicate user message
+  → StreamingContent disappears (generation becomes idle)
+```
+
+### Regeneration
+
+For regenerate, `startGeneration` is called with a `streamingMessageId` pointing at the existing assistant message. Only that one `MessageBlock` (the one where `useIsStreamingTarget(id)` is true) swaps its stored content for the live streaming text; every other message renders normally. Previously this was driven by overloading `messageActionId === messageId`, which made every assistant message show as loading during a regen — the split above is the fix.
 
 ---
 
@@ -261,6 +296,56 @@ LorebookEditor
 ```
 
 `ScriptEditor.tsx` exports a **hook** (`useScriptPanel`), not a component. The hook manages its own state and returns JSX fragments that `LorebookEditor` wires into its layout.
+
+---
+
+## Generation Queue
+
+A per-chat **sequential regeneration queue** lets the user enqueue several "generate more" jobs without waiting. The queue lives in `useGenerationQueueStore` (the ordered job list + per-job status); the runner is `use-generation-queue.ts`, registered once in the app shell.
+
+**Invariants:**
+- Exactly one in-flight generation per chat. The pump pops the next pending job only after the current one resolves.
+- The queue STATE is separate from the streaming seam: it asks "what is the queue's progress?", while `useChatStore.streamingMessageId` (above) answers "which message is streaming right now?". The runner writes streaming-target identity through `startGeneration`, the same path a manual regenerate uses.
+- `enqueueGenerateMore` / `cancelQueueJob` / `clearQueuePending` are plain module-level functions any component can import; `QueueManager.tsx` (rendered in `PlayMode`/the chat footer) renders the queue's progress.
+
+---
+
+## Media Gallery
+
+Each character can have a media gallery (images) used as vision/attachment context and surfaced in the Build editor. The gallery is server-owned; `useGalleryStore` is purely a UI/cache layer.
+
+**Non-negotiable invariants:**
+- Optimistic create/delete/reorder roll back on error + toast.
+- `describe` (vision caption) is **not** optimistic — it tracks a per-image `describing` set and reloads when it resolves, because vision describe is slow and can fail per-image.
+- `load` is idempotent (no-op if already loaded); `reload` forces.
+
+The gallery-only toggles (`includeGalleryInPrompt`, `includeAvatarInPrompt`, `avatarDescription`) are character/persona fields and flow through the snapshot store via `updateCharacter`/`updatePersona` — **not** through `useGalleryStore`.
+
+`GalleryViewer`, `GalleryAccordion`, `GalleryGrid`, and `GalleryLightbox` (Build editor) all share the zoom/pan interaction via the `useImageZoomPan` hook (`hooks/use-image-zoom-pan.ts`), extracted from a duplicated implementation across `GalleryViewer` and `AvatarPanel`.
+
+---
+
+## Prompt Trace History
+
+Prompt traces used to ship in every `SessionSnapshot` (`promptTraceHistory`). They are now **lazy-loaded and branch-scoped**: `useTraceHistoryStore` caches traces keyed by `${chatId}::${branchId}`, fetched on demand via `GET /api/chats/:chatId/traces`.
+
+Keying by branch is what fixes two trace defects: switching branches changes the key, so the fetcher pulls the new branch's traces rather than showing the previous branch's stale set (no explicit invalidation hook needed for fork/activate/delete — they all change `activeBranchId`, which changes the key). The single **latest** trace still lives on the snapshot store (`promptTrace`) so the post-generation badge lights up immediately without a refetch.
+
+Build Mode's prev/next trace navigation indexes the cached branch-scoped list.
+
+---
+
+## Play Mode
+
+`PlayMode.tsx` is the chat-focused layout (as opposed to Build Mode's editor layout). It composes `MessageList` + `QueueManager` + `InputArea`. The active mode (chat/build/play) lives in `useNavigationStore`.
+
+A deliberate remount detail: `MessageList` is keyed by `${chatId}|${branchId}` so Virtuoso's `initialTopMostItemIndex` re-runs and pins to the bottom natively on chat/branch switch, rather than fighting Virtuoso's measurement cache with a manual rAF pin.
+
+---
+
+## Dev Tooling: ThemeTuner
+
+`ThemeTuner` (`components/dev/ThemeTuner.tsx`) is a live, WYSIWYG theme-color workbench reachable only via the `#theme-tuner` URL hash (wired in `main.tsx`). It does **not** load the real app, so it needs no backend — it renders real markup-driven components plus faithful chrome replicas on the same Tailwind tokens, so what you see is exactly what a tuned theme produces. Intended for iterating on theme palettes, not for end users.
 
 ---
 

@@ -52,7 +52,8 @@ Both entry points delegate to `server-runtime.ts:startServerRuntime()`, which us
 | `api/routes/persona.ts` | Persona CRUD, duplicate, lorebook toggle | ~10 |
 | `api/routes/character.ts` | Character CRUD, archive, duplicate, export | ~9 |
 | `api/routes/script.ts` | Script CRUD, test, import, AI assistant SSE | ~9 |
-| `api/routes/settings.ts` | UI settings CRUD, mobile access: status, regenerate/revoke token | ~7 |
+| `api/routes/settings.ts` | UI settings CRUD | ~6 |
+| `api/routes/mobile-access.ts` | Mobile access: status, regenerate/revoke token | ~3 |
 | `api/routes/preset.ts` | Prompt preset CRUD | ~5 |
 | `api/routes/import.ts` | JSON import, ST directory scan + bulk import | ~3 |
 | `api/routes/debug.ts` | Debug log, bootstrap, defaults | ~3 |
@@ -139,7 +140,7 @@ POST /api/chats/:chatId/messages/stream
   │           └─ Filter by AssemblyMode
   │
   ├─ streamProviderExecutor()   (infrastructure/ai/stream-provider-executor)
-  │   ├─ mapProfileToSdkModel()         → resolveProtocol(type).resolveModel() — Vercel AI SDK model
+  │   ├─ resolveModel()               → resolveProtocol(type).resolveModel() — Vercel AI SDK model
   │   ├─ prepareSdkMessages()           → split system/conversation, inject prefill
   │   ├─ buildSamplerConfig()           → infrastructure/ai/sampler-mapper
   │   └─ streamText()                   → Vercel AI SDK → SSE
@@ -151,9 +152,9 @@ POST /api/chats/:chatId/messages/stream
       └─ getSnapshot()                  → full state for frontend
 ```
 
-> **Known issue:** `getSnapshot()` currently returns a monolithic `SessionSnapshot` on every call — it computes all fields including `contextPreview` (via `assemblePrompt`) and `promptTraceHistory` regardless of what triggered the call. When any prompt trace exists, `contextPreview` is set to `null` (the trace "shadows" the preview). This will be replaced with per-endpoint response builders (see Phase 3.4 in `CODE_REVIEW_REFACTOR_PLAN.md`).
+> **Known issue:** `getSnapshot()` currently returns a monolithic `SessionSnapshot` on every call — it computes all fields including `contextPreview` (via `assemblePrompt`) and `promptTraceHistory` regardless of what triggered the call. When any prompt trace exists, `contextPreview` is set to `null` (the trace "shadows" the preview). The plan to replace this with per-endpoint response builders (ADR AD-016) is still open on the backend side: the frontend prerequisite shipped in Phase 3.4.1 (absence-aware snapshot pipeline, `reports/tech-debt.md` TD-004), but every mutating backend endpoint still returns a full snapshot.
 >
-> **Exception:** `renameChat` already returns a minimal `{ chatId, title }` object instead of a full snapshot — an early example of endpoint-scoped responses.
+> **Partial exception:** a handful of mutating endpoints already return scoped response types instead of a full snapshot — e.g. `renameChat` returns `ChatListResponse` (`{ chats }`, just the refreshed chat list). These are the early examples of the endpoint-scoped pattern AD-016 proposes to adopt broadly.
 
 **Pipeline order (summary):**
 
@@ -287,12 +288,9 @@ The single source of truth for per-protocol behaviour. Each canonical `ProviderT
 
 The 7 protocols: `openai_compat`, `anthropic`, `google`, `ollama`, `llamacpp`, `koboldcpp`, `unsloth`. Native (non-SDK) protocols (`ollama`, `koboldcpp`) have dedicated adapters (`ollama-adapter.ts`, `koboldcpp-adapter.ts`) for their text-completion API shapes.
 
-### Compat shims — `infrastructure/ai/`
+### Model resolution — `infrastructure/ai/provider-executor-utils.ts`
 
-These are thin delegators kept for call-site compatibility (tracked as tech-debt TD-006 — callers should eventually import `resolveProtocol()` directly):
-
-- `provider-profile-mapper.ts` → `mapProfileToSdkModel()` calls `resolveProtocol(type).resolveModel()`. `isUnsupportedProvider()` checks capabilities.
-- `provider-capabilities.ts` → `PROVIDER_CAPABILITIES` re-exports `PROTOCOL_CAPABILITIES`; `getProviderCapabilities(type)` delegates to the registry.
+`resolveModel(profile, model)` is the single call site that turns a stored provider profile into a Vercel AI SDK `LanguageModel`. It delegates straight to the canonical registry: `resolveProtocol(normalizeProviderType(profile.providerPreset)).resolveModel(profile, model)`. Capability checks read `resolveProtocol(type).capabilities` directly (or the derived `PROTOCOL_CAPABILITIES` map in the registry). There are no legacy shim layers here — the indirection that used to sit between callers and the registry (the old `mapProfileToSdkModel` / `PROVIDER_CAPABILITIES` wrappers) was deleted once every caller migrated to `resolveProtocol()`.
 
 ### Gateway & orchestrator — `domain/providers/`
 
@@ -325,10 +323,12 @@ Logit bias is model-aware and fail-closed because token IDs are tokenizer/model-
 
 ### Streaming
 
-`stream-provider-executor.ts` uses AI SDK's `streamText()` — returns async iterable of chunks:
+`stream-provider-executor.ts` uses AI SDK v6's `streamText()`. The raw chunk stream (`result.fullStream`) is passed through `createMappedStream()` (`infrastructure/ai/`), which normalizes provider chunk shapes and applies secret redaction, then exposes the orchestrator-facing stream of chunks:
 - `text-delta` — assistant text content
 - `reasoning-delta` — thinking/reasoning content (DeepSeek R1, Claude extended thinking)
 - `error` — provider-side stream errors (logged and thrown)
+
+The non-streaming path (`nonstreaming-provider-executor.ts`) uses `generateText()` and awaits the full reply instead.
 
 ### OpenAI Reasoning Fetch
 

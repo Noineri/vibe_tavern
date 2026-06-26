@@ -1,1 +1,0 @@
-ALTER TABLE `prompt_presets` ADD `authors_note_position` text DEFAULT 'in_chat' NOT NULL;

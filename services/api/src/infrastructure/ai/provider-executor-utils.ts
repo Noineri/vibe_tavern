@@ -7,12 +7,10 @@
  */
 
 import type { LanguageModel, ModelMessage } from "ai";
-import { mapProfileToSdkModel } from "./provider-profile-mapper.js";
-import { getProviderCapabilities } from "./provider-capabilities.js";
-import type { ProviderType } from "@vibe-tavern/domain";
+import { normalizeProviderType, type ProviderType, log } from "@vibe-tavern/domain";
+import { resolveProtocol } from "../../domain/providers/protocol-registry.js";
 import type { VisionGateConfig } from "./vision-gate.js";
 import { resolveMultimodalContent } from "./vision-gate.js";
-import { log } from "@vibe-tavern/domain";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -44,14 +42,13 @@ export interface PreparedMessages {
 
 /**
  * Resolve a Vercel AI SDK language model from a stored provider profile.
- * Delegates to the canonical provider-profile-mapper.
+ * Delegates to the canonical protocol registry.
  */
 export function resolveModel(
   profile: { providerPreset: string; endpoint: string; apiKey: string | null },
   model: string,
 ): LanguageModel {
-  const mapping = mapProfileToSdkModel(profile, model);
-  return mapping.model;
+  return resolveProtocol(normalizeProviderType(profile.providerPreset)).resolveModel(profile, model);
 }
 
 // ---------------------------------------------------------------------------
@@ -113,7 +110,7 @@ export async function prepareSdkMessages(
     assetLoader?: (assetId: string) => Promise<Buffer | null>;
   },
 ): Promise<PreparedMessages> {
-  const capabilities = getProviderCapabilities(options.providerType);
+  const capabilities = resolveProtocol(options.providerType).capabilities;
   let conversationMessages: SdkMessage[];
 
   if (options.providerType === "google") {
