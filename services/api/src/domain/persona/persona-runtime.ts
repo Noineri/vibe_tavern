@@ -6,6 +6,7 @@ import {
 	type ChatId,
 	type PersonaId,
 } from "@vibe-tavern/domain";
+import type { PersonaRecord } from "@vibe-tavern/api-contracts";
 import {
 	conflict,
 	internal,
@@ -17,32 +18,14 @@ import type { IChatOrder } from "../../runtime/session/session-runtime-chat-orde
 import type { SessionSnapshot, ConfigPatchResponse } from "../../api/contract/session-types.js";
 
 /**
- * Canonical persona shape — the single source of truth for the backend.
+ * Canonical persona shape — the single source of truth.
  * Returned by `PersonaRuntime.list/create/duplicate`, used as
  * `SessionSnapshot.persona`, and returned by `StaticPromptResolver.getPersona`.
- * The contract re-exports this type (see `runtime-api.ts`); the frontend
- * mirrors it in `apps/web/src/api/types.ts` (`PersonaRecord` / `AppPersona`).
- * Every field exists on the persona DB row (`persona-store.ts` `Persona`).
+ * The type lives in `@vibe-tavern/api-contracts` (shared with the frontend) so
+ * drift becomes a compile error; re-exported here so existing backend
+ * importers keep resolving without changing their import paths.
  */
-export type PersonaRecord = {
-	id: string;
-	name: string;
-	description: string;
-	pronouns: string | null;
-	avatarAssetId: string | null;
-	avatarFullAssetId: string | null;
-	avatarCropJson: string | null;
-	avatarExt: string | null;
-	avatarFullExt: string | null;
-	defaultForNewChats: boolean;
-	// ─── Media injection (A7) ────────────────────────────────────────────
-	/** Vision-generated appearance description of the avatar. Null = undescribed. */
-	avatarDescription: string | null;
-	/** Whether the avatar appearance is injected into the prompt. */
-	includeAvatarInPrompt: boolean;
-	/** ISO timestamp of the last row update; avatar cache-bust key (symmetric with `CharacterRecord.updatedAt`). */
-	updatedAt: string;
-};
+export type { PersonaRecord };
 
 export interface PersonaRuntimeDeps {
 	stores: StoreContainer;

@@ -24,6 +24,7 @@
     "@radix-ui/react-select": "^2.2.6",
     "@radix-ui/react-tooltip": "^1.2.8",
     "@vibe-tavern/api": "0.3.7",
+    "@vibe-tavern/api-contracts": "0.3.7",
     "@vibe-tavern/db": "0.3.7",
     "@vibe-tavern/domain": "0.3.7",
     "codemirror": "^6.0.2",
