@@ -10,6 +10,7 @@
 import type { AssemblePromptResponse } from "@vibe-tavern/domain";
 import type { ProviderType } from "@vibe-tavern/domain";
 import type { StoredProviderProfileRecord } from "@vibe-tavern/domain";
+import type { ProviderErrorCategory } from "@vibe-tavern/api-contracts";
 import type { ToolSet } from "ai";
 
 // ---------------------------------------------------------------------------
@@ -174,17 +175,13 @@ export type ProviderExecutor = (input: ProviderExecutionInput) => Promise<Provid
 // Provider error categories
 // ---------------------------------------------------------------------------
 
-export type ProviderErrorCategory =
-  | "network"
-  | "authentication"
-  | "rate_limit"
-  | "invalid_request"
-  | "server_error"
-  | "timeout"
-  | "aborted"
-  | "empty_response"
-  | "parse_error"
-  | "unknown";
+/**
+ * Re-exported from {@link @vibe-tavern/api-contracts} so backend call sites that
+ * already import it from this module keep compiling. The canonical definition
+ * lives in the shared wire-types module because the category now crosses the
+ * RPC boundary (SSE `error` event + JSON error body).
+ */
+export type { ProviderErrorCategory };
 
 /** Normalized error thrown by the execution boundary. */
 export class ProviderExecutionError extends Error {
