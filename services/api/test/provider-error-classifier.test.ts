@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
-import { classifyProviderError } from "../src/infrastructure/ai/provider-error-classifier.js";
+import { classifyProviderError, extractProviderErrorStatusCode } from "../src/infrastructure/ai/provider-error-classifier.js";
+import { ProviderExecutionError } from "../src/infrastructure/ai/provider-execution-types.js";
 import { DomainError } from "../src/shared/errors.js";
 
 /**
@@ -215,5 +216,48 @@ describe("classifyProviderError", () => {
   it("APICallError with 5xx wins over a parse-error-shaped message", () => {
     // Status code is the primary signal; message heuristic must not override it.
     expect(classifyProviderError({ statusCode: 502, message: "Unexpected token in JSON" })).toBe("server_error");
+  });
+
+  // ── ProviderExecutionError short-circuit ──────────────────────────────
+
+  it("respects a ProviderExecutionError's pre-classified category instead of re-deriving", () => {
+    // The execution boundary classifies once into ProviderExecutionError. The
+    // classifier must return that stored category verbatim — NOT re-derive
+    // from the statusCode, which could disagree (e.g. a 504 that was actually
+    // an abort, or a boundary that chose 'aborted' for a request the SDK
+    // surfaced as a timeout).
+    const pre = new ProviderExecutionError("boom", "aborted", "openai", { statusCode: 504 });
+    expect(classifyProviderError(pre)).toBe("aborted");
+  });
+
+  it("does not treat a plain object with a statusCode as a ProviderExecutionError", () => {
+    // Duck-typed APICallError (statusCode but not an instance) must still go
+    // through the status-code mapping, not the class short-circuit.
+    expect(classifyProviderError({ statusCode: 401 })).toBe("authentication");
+  });
+});
+
+describe("extractProviderErrorStatusCode", () => {
+  it("reads statusCode from a duck-typed APICallError", () => {
+    expect(extractProviderErrorStatusCode({ statusCode: 429 })).toBe(429);
+  });
+
+  it("returns undefined when no statusCode is present", () => {
+    expect(extractProviderErrorStatusCode(new Error("no status"))).toBeUndefined();
+    expect(extractProviderErrorStatusCode({ message: "fetch failed" })).toBeUndefined();
+  });
+
+  it("unwraps RetryError to the last attempt's statusCode", () => {
+    const retry = {
+      errors: [{ statusCode: 403 }],
+      lastError: { statusCode: 403 },
+      reason: "maxRetriesExceeded",
+    };
+    expect(extractProviderErrorStatusCode(retry)).toBe(403);
+  });
+
+  it("returns undefined for a RetryError whose inner error has no statusCode", () => {
+    const retry = { errors: [new Error("network")], lastError: new Error("network"), reason: "error" };
+    expect(extractProviderErrorStatusCode(retry)).toBeUndefined();
   });
 });

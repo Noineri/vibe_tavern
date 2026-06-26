@@ -16,6 +16,7 @@
  * Fall-throughs are deliberately conservative — `unknown` rather than a guess.
  */
 
+import { ProviderExecutionError } from "./provider-execution-types.js";
 import type { ProviderErrorCategory } from "./provider-execution-types.js";
 import { isDomainError } from "../../shared/errors.js";
 
@@ -144,6 +145,14 @@ function classifyByStatus(statusCode: number): ProviderErrorCategory | null {
  * than guessing — callers should treat `unknown` as "show the raw message".
  */
 export function classifyProviderError(error: unknown): ProviderErrorCategory {
+  // 0. ProviderExecutionError — already classified at the execution boundary;
+  //    respect it instead of re-deriving. This matters because the class also
+  //    carries a `statusCode`, which asApiCallError would duck-type and could
+  //    map to a *different* category than the one the boundary chose (e.g. an
+  //    aborted request that happens to surface a 504). Short-circuiting keeps
+  //    the two paths consistent.
+  if (error instanceof ProviderExecutionError) return error.category;
+
   // 1. VT DomainError — already typed on our side.
   if (isDomainError(error)) {
     switch (error.kind) {
@@ -188,4 +197,20 @@ export function classifyProviderError(error: unknown): ProviderErrorCategory {
   if (isParseError(error) || isParseError(apiLike?.cause)) return "parse_error";
 
   return "unknown";
+}
+
+/**
+ * Extract the HTTP status code carried by an AI SDK / provider error, if any.
+ * Unwraps RetryError first (mirroring {@link classifyProviderError}) so the
+ * status of the real underlying APICallError is returned, not the wrapper's.
+ * Companion to `classifyProviderError`; kept here so all duck-typing of SDK
+ * error shapes lives in one module.
+ */
+export function extractProviderErrorStatusCode(error: unknown): number | undefined {
+  const retry = asRetryError(error);
+  if (retry) {
+    const inner = retry.lastError ?? retry.errors[retry.errors.length - 1];
+    return extractProviderErrorStatusCode(inner);
+  }
+  return asApiCallError(error)?.statusCode;
 }
