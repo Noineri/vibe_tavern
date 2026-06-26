@@ -12,7 +12,7 @@
 | **TypeScript ^6** | Language | Strict mode throughout. Branded IDs (`Brand<"ChatId">`) prevent accidental ID swaps at compile time. All API contracts are Zod schemas that produce TS types. |
 | **Vite 8** | Frontend build, HMR | Fastest dev server available. Native TS/ESM support. Plugin system for React, Tailwind. Bun-level startup speed. |
 
-**Why not Node.js:** Bun provides native SQLite, faster `crypto`, `Bun.file()` as a cleaner fs API, and single-binary compilation. The project still uses `node:vm` (script sandbox), `node:fs/promises` (directory ops with no Bun equivalent), and `node:crypto` (where needed for compatibility) — but these are isolated cases.
+**Why not Node.js:** Bun provides native SQLite, faster `crypto`, `Bun.file()` as a cleaner fs API, and single-binary compilation. The project still uses `node:vm` (script sandbox), `node:fs/promises` (directory ops with no Bun equivalent), `node:crypto` (where needed for compatibility), `node:os` / `node:path` (platform paths) — but these are isolated cases.
 
 ---
 
@@ -33,19 +33,19 @@ HTTP framework. Replaces Express/Koa/Fastify.
 
 **Why not Fastify:** Heavier plugin system, less elegant Bun integration, overkill for the routing needs.
 
-### Vercel AI SDK (`ai` ^4.3)
+### Vercel AI SDK (`ai` ^6)
 
 Unified streaming interface across LLM providers.
 
 **Why AI SDK:**
-- **Provider-agnostic** — `@ai-sdk/openai`, `@ai-sdk/anthropic`, `@ai-sdk/google` all share the same `streamText()` / `generateText()` API. Adding a new provider = adding a package.
+- **Provider-agnostic** — `@ai-sdk/openai-compatible`, `@ai-sdk/anthropic`, `@ai-sdk/google` all share the same `streamText()` / `generateText()` API. Adding a new provider = adding a package. OpenAI-compatible aggregators (OpenRouter, NanoGPT, Featherless, local llama.cpp / Ollama) all go through `createOpenAICompatible()` from `@ai-sdk/openai-compatible` — **never** `createOpenAI()` from `@ai-sdk/openai`. The latter defaults to the Responses API (`input` + `max_output_tokens`), which aggregators serve unreliably; `createOpenAICompatible()` uses the classic Chat Completions format that aggregators implement correctly.
 - **Streaming built-in** — `streamText()` returns an async iterable of `{type: "text-delta" | "reasoning-delta" | "finish"}` chunks. No SSE parsing needed.
 - **Reasoning support** — native `reasoning` field on responses (DeepSeek R1 thinking, Claude extended thinking).
 - **Tool calling** — structured tool definitions with Zod schemas.
 
 **Why not raw fetch:** Every provider has different SSE formats, error handling, and streaming quirks. AI SDK normalizes all of this.
 
-### Drizzle ORM ^0.36
+### Drizzle ORM ^0.38
 
 SQL-first ORM over SQLite.
 
@@ -190,9 +190,13 @@ QR code generation for the web Mobile Access flow. Renders `http(s)://IP:PORT/#t
 
 ### @dnd-kit/core + @dnd-kit/sortable + @dnd-kit/utilities
 
-Drag-and-drop primitives. Used for lore entry reordering in the lorebook editor — sortable list with drag handles.
+Drag-and-drop primitives. Two surfaces:
+- **Lorebook editor** (`LoreEntryList.tsx`) — single-container sortable list with drag handles for reordering lore entries.
+- **Prompt injection table** (`InjectionTable.tsx`) — cross-container drag and drop (multiple `SortableContext`s) for reordering prompt injections.
 
-**Why dnd-kit (not react-beautiful-dnd):** Active maintenance, better touch support, `SortableContext` for list reordering with minimal boilerplate.
+Both use `<DragOverlay>` to render the dragged item in a portal, which avoids the first-frame layout jump that plain `useSortable` produces and lets dnd-kit autoscroll the container during a drag.
+
+**Why dnd-kit (not react-beautiful-dnd):** Active maintenance, better touch support, `SortableContext` for list reordering with minimal boilerplate, and `<DragOverlay>` for portal-style drag previews (react-beautiful-dnd is unmaintained and has no overlay equivalent).
 
 ---
 
@@ -203,17 +207,17 @@ Bun workspace with 5 packages + 2 apps:
 ```
 vibe-tavern/
 ├── packages/domain/          # Zero deps. Types, IDs, constants.
-├── packages/api-contracts/   # Zod schemas. Depends on domain only.
+├── packages/api-contracts/   # Zod schemas + shared wire-DTO interfaces. Depends on domain only.
 ├── packages/db/              # Drizzle stores. Depends on domain.
 ├── packages/prompt-pipeline/ # Pure assembly function. Depends on domain.
 ├── packages/import-export/   # Card/chat parsers. Depends on domain.
 ├── services/api/             # Backend. Depends on all packages.
-└── apps/web/                 # Frontend SPA. Depends on api (HTTP).
+└── apps/web/                 # Frontend SPA. Imports shared types from api-contracts; talks to api over HTTP.
 ```
 
 **Dependency rule:** Arrows point downward only. No cycles. `domain` is the leaf — zero imports from other packages.
 
-**Why monorepo (not polyrepo):** Shared types between front and back. Single `bun install`. Atomic changes across packages (e.g., adding a DB column touches domain → db → api-contracts → api → web in one PR).
+**Why monorepo (not polyrepo):** Shared types between front and back. Single `bun install`. Atomic changes across packages (e.g., adding a DB column touches domain → db → api-contracts → api → web in one PR). The shared `api-contracts` package is what makes type drift between the two sides a compile error instead of a silent runtime bug — the wire-format DTO interfaces live there once and are imported by both the backend mappers and the frontend `api/types.ts`.
 
 **Why workspace packages (not a single `src/`):** Enforces dependency boundaries. `prompt-pipeline` cannot accidentally import from `db`. The compiler catches violations.
 
@@ -223,20 +227,17 @@ vibe-tavern/
 
 | Target | Method | Output |
 |--------|--------|--------|
-| **Dev** | `bun run dev` — Vite dev server + Bun API server concurrently | Source tree |
-| **Production bundle** | `bun scripts/build.ts prod` — builds all packages + frontend | `out/services/api/`, `out/apps/web/` |
+| **Dev (frontend)** | `bun run dev:web` — Vite dev server with HMR | Vite-served SPA |
+| **Dev (backend)** | `bun run dev:api` — Bun API server with watch | `services/api/src/` |
+| **Dev (full stack)** | `bun run dev` — builds the API stack then starts the production-style server | `out/services/api/` + `data/` |
+| **Production bundle** | `bun run build` — builds the API stack + Vite frontend | `out/services/api/`, `out/apps/web/` |
 | **Docker** | `docker-compose up` — Bun runtime + built frontend in single container | Uses production bundle |
 | **Standalone .exe** | `bun run build:standalone` — single binary with embedded frontend + assets | `out/standalone/vibe-tavern.exe` |
+| **Windows installer** | `bun run build:installer` — Inno Setup wrapper around the standalone exe | `out/installer/vibe-tavern-setup.exe` |
+| **Linux** | `bun run build:linux-dist` — cross-compile + self-updater tarball | `out/linux-dist/` |
 | **Android** | `bun run build:android-arm64` — cross-compile for ARM64 | `out/android-arm64/` |
-| **Windows installer** | `bun run build:installer` — Inno Setup wrapper | `installer/output/vibe-tavern-setup.exe` |
 
 **Why standalone .exe:** The target audience (RP community) includes non-technical users. Download one file, double-click, it opens in browser. No Node.js, no `npm install`, no terminal.
 
 ---
 
-## Dev Tools
-
-| Tool | Role |
-|------|------|
-| **contextro** | MCP-based code intelligence: BM25 + vector search, symbol graph, PageRank, AST operations |
-| **pi** | Coding agent harness with extensions, skills, and subagents |
