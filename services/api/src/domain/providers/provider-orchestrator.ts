@@ -1,7 +1,7 @@
 import type { StoredProviderProfileRecord } from "@vibe-tavern/domain";
 import type { ProviderProfileService } from "./provider-profile-service.js";
 import { listProviderModels } from "./provider-gateway.js";
-import { normalizeProviderType } from "../../infrastructure/ai/provider-profile-mapper.js";
+import { normalizeProviderType } from "@vibe-tavern/domain";
 import { logSendDebug } from "../../shared/send-debug-log.js";
 
 /** Provider types whose model-list API requires authentication. */
