@@ -19,10 +19,6 @@ import {
 	resolveProtocol,
 	PROTOCOL_CAPABILITIES,
 } from "../src/domain/providers/protocol-registry.js";
-import {
-	PROVIDER_CAPABILITIES,
-	getProviderCapabilities,
-} from "../src/infrastructure/ai/provider-capabilities.js";
 
 const ALL_TYPES = Object.values(PROVIDER_TYPE) as ProviderType[];
 
@@ -68,7 +64,6 @@ describe("protocol registry", () => {
 				expect(PROTOCOL_CAPABILITIES[type]).toBeDefined();
 			}
 		});
-
 		it("matches each adapter's capabilities (single source of truth)", () => {
 			for (const type of ALL_TYPES) {
 				expect(PROTOCOL_CAPABILITIES[type]).toStrictEqual(
@@ -100,22 +95,6 @@ describe("protocol registry", () => {
 			for (const type of ALL_TYPES) {
 				expect(PROTOCOL_CAPABILITIES[type].samplers).toBeDefined();
 				expect(typeof PROTOCOL_CAPABILITIES[type].samplers).toBe("object");
-			}
-		});
-	});
-
-	describe("compatibility shim (ai/provider-capabilities)", () => {
-		it("PROVIDER_CAPABILITIES is the same reference as PROTOCOL_CAPABILITIES (no drift)", () => {
-			// The shim must not duplicate data. If this breaks, someone copied
-			// the map instead of re-exporting it — reintroducing a sync site.
-			expect(PROVIDER_CAPABILITIES).toBe(PROTOCOL_CAPABILITIES);
-		});
-
-		it("getProviderCapabilities mirrors resolveProtocol().capabilities", () => {
-			for (const type of ALL_TYPES) {
-				expect(getProviderCapabilities(type)).toStrictEqual(
-					resolveProtocol(type).capabilities,
-				);
 			}
 		});
 	});

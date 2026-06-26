@@ -1,5 +1,5 @@
 import { describe, it, expect, mock, beforeEach } from "bun:test";
-import { getProviderCapabilities, PROVIDER_CAPABILITIES } from "../src/infrastructure/ai/provider-capabilities.js";
+import { resolveProtocol, PROTOCOL_CAPABILITIES } from "../src/domain/providers/protocol-registry.js";
 import type { ProviderType } from "@vibe-tavern/domain";
 import type { ProviderExecutionInput } from "../src/infrastructure/ai/provider-execution-types.js";
 
@@ -95,24 +95,24 @@ describe.skip("provider-capabilities: prefill flags", () => {
   const prefillFalse: ProviderType[] = ["anthropic", "google", "koboldcpp"];
 
   it("has exactly 6 provider types defined", () => {
-    expect(Object.keys(PROVIDER_CAPABILITIES).length).toBe(6);
+    expect(Object.keys(PROTOCOL_CAPABILITIES).length).toBe(6);
   });
 
   it("has no null prefill values", () => {
-    for (const [type, caps] of Object.entries(PROVIDER_CAPABILITIES)) {
+    for (const [type, caps] of Object.entries(PROTOCOL_CAPABILITIES)) {
       expect(caps.prefill).not.toBeNull(`${type} still has null prefill`);
     }
   });
 
   for (const type of prefillTrue) {
     it(`${type}.prefill is true`, () => {
-      expect(getProviderCapabilities(type as ProviderType).prefill).toBe(true);
+      expect(resolveProtocol(type as ProviderType).capabilities.prefill).toBe(true);
     });
   }
 
   for (const type of prefillFalse) {
     it(`${type}.prefill is false`, () => {
-      expect(getProviderCapabilities(type as ProviderType).prefill).toBe(false);
+      expect(resolveProtocol(type as ProviderType).capabilities.prefill).toBe(false);
     });
   }
 });
