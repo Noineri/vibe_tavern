@@ -1,1 +1,0 @@
-ALTER TABLE `prompt_traces` ADD `activated_lore_detail_json` text;

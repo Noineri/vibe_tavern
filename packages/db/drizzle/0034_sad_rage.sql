@@ -1,1 +1,0 @@
-ALTER TABLE `character_assets` ADD `include_in_prompt` integer DEFAULT false NOT NULL;

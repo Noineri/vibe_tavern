@@ -1,1 +1,0 @@
-ALTER TABLE `character_assets` ADD `avatar_crop_json` text;
