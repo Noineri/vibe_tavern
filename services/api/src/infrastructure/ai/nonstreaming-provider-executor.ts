@@ -7,12 +7,15 @@
  */
 
 import { generateText } from "ai";
+import { ProviderExecutionError } from "./provider-execution-types.js";
 import type { GenerationResult } from "./provider-execution-types.js";
 import type { ProviderExecutionInput } from "./provider-execution-types.js";
 import { resolveModel, toSdkMessages, prepareSdkMessages } from "./provider-executor-utils.js";
 import { buildSamplerConfig } from "./sampler-mapper.js";
-import { normalizeProviderType, type ProviderType } from "@vibe-tavern/domain";
-import { cancelled, providerError } from "../../shared/errors.js";
+import { normalizeProviderType } from "@vibe-tavern/domain";
+import { classifyProviderError, extractProviderErrorStatusCode } from "./provider-error-classifier.js";
+import { extractProviderErrorMessage } from "./provider-error-message.js";
+import { cancelled } from "../../shared/errors.js";
 import { logSendDebug } from "../../shared/send-debug-log.js";
 
 export async function nonstreamingProviderExecute(
@@ -133,6 +136,14 @@ export async function nonstreamingProviderExecute(
     };
   } catch (error) {
     if (input.signal?.aborted) throw cancelled();
-    throw providerError(error instanceof Error ? error.message : String(error));
+    // Normalize at the execution boundary: classify once into ProviderExecutionError
+    // so the category, providerType, and statusCode travel as structured data
+    // (the SSE/HTTP emit sites and the global error handler read them).
+    throw new ProviderExecutionError(
+      extractProviderErrorMessage(error),
+      classifyProviderError(error),
+      normalizeProviderType(input.profile.providerPreset),
+      { statusCode: extractProviderErrorStatusCode(error), cause: error },
+    );
   }
 }
