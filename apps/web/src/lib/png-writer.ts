@@ -14,7 +14,7 @@
  *   decode chunks → remove old chara/ccv3/vtmd → insert new → re-encode
  */
 
-import { packMonolith, type VtfCharacterContent } from "@vibe-tavern/db";
+import { packMonolith, type VtfCharacterContent } from "@vibe-tavern/db/codecs";
 
 const PNG_SIG = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]);
 
