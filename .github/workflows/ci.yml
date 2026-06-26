@@ -70,7 +70,7 @@ jobs:
           name: ci-linux-tarball
           path: out/Vibe-Tavern-v${{ env.VERSION }}-linux.tar.gz
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 1
 
   build-android:
     needs: [typecheck]
@@ -121,7 +121,7 @@ jobs:
           name: ci-android-apk
           path: out/Vibe-Tavern-v${{ env.VERSION }}-android.apk
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 1
 
   build-windows:
     needs: [typecheck]
@@ -154,13 +154,13 @@ jobs:
           name: ci-windows-installer
           path: out/Vibe-Tavern-v${{ env.VERSION }}-windows-setup.exe
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 1
       - uses: actions/upload-artifact@v4
         with:
           name: ci-windows-zip
           path: out/Vibe-Tavern-v${{ env.VERSION }}-windows.zip
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 1
 
   build-docker:
     needs: [typecheck]
