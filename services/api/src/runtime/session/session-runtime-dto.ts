@@ -3,9 +3,6 @@ import type { LoreEntry, Message, MessageVariant, Attachment } from "@vibe-taver
 import { parseStoredAttachments } from "@vibe-tavern/domain";
 import type { PromptTrace as DbPromptTrace, Message as DbMessage, MessageVariant as DbMessageVariant } from "@vibe-tavern/db";
 
-// Re-export the canonical attachment parser so DTO callers share one backfill path.
-export { parseStoredAttachments };
-
 // Re-export canonical domain type — single source of truth
 export type { StoredProviderProfileRecord } from "@vibe-tavern/domain";
 
