@@ -133,11 +133,6 @@ function InlineNumField({
 
 /* ── ProviderSamplerPanel ───────────────────────────────────────────── */
 
-const selectCls =
-  'w-full h-[38px] bg-s2 border border-border rounded-[6px] font-ui text-[calc(var(--ui-fs)-1px)] text-t1 outline-none transition-[border-color] duration-150 focus:border-accent pl-[13px] sel-arrow';
-const textInputCls =
-  'h-[38px] w-full rounded-md border border-border bg-s2 px-3 font-ui text-[calc(var(--ui-fs)-1px)] text-t1 outline-none transition-colors focus:border-accent';
-
 /** Default sampler values when custom samplers are toggled ON. */
 const CUSTOM_SAMPLER_DEFAULTS = {
   topP: 0.95,
