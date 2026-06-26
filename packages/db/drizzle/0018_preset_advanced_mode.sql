@@ -1,1 +1,0 @@
-ALTER TABLE `prompt_presets` ADD COLUMN `advanced_mode` integer NOT NULL DEFAULT 0;

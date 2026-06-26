@@ -44,6 +44,76 @@ export async function resolveMigrationsFolder(): Promise<string> {
 }
 
 /**
+ * Rebase an existing DB onto a squashed migration baseline.
+ *
+ * When the migration history is squashed to a single baseline (see the squash
+ * that collapsed the 43-migration history into one `0000_baseline`), upgrading
+ * users still carry the OLD migration hashes in `__drizzle_migrations`. The
+ * squashed baseline has a different hash, so drizzle's `migrate()` would see it
+ * as pending and try to run its `CREATE TABLE` statements — which fail loudly on
+ * the already-present tables.
+ *
+ * migrate() decides what to apply purely by timestamp (`created_at` of the last
+ * stamped migration vs the journal entry's `when`), so stamping the baseline as
+ * applied here makes migrate() skip it. The safety gate: we ONLY stamp when every
+ * table the baseline creates ALREADY exists in the DB (a subset check, so extra
+ * columns like the deprecated `characters.is_system` zombie don't trip it). If the
+ * tables are not all present, we leave the migration unstamped and let migrate()
+ * run it for real — a fresh DB needs the schema, and a partial/ancient DB that's
+ * missing tables should surface a loud boot error rather than be silently skipped.
+ */
+async function rebaseToBaseline(sqlite: Database, migrationsFolder: string): Promise<void> {
+  // Only relevant once the migration meta table exists (an upgrading user).
+  // Fresh DBs (no meta) are handled by baselineLegacyDb returning false + migrate().
+  const hasMeta = sqlite
+    .prepare("SELECT count(*) as cnt FROM sqlite_master WHERE type='table' AND name='__drizzle_migrations'")
+    .get() as { cnt: number } | null;
+  if (!hasMeta || hasMeta.cnt === 0) return;
+
+  const journalPath = resolve(migrationsFolder, 'meta', '_journal.json');
+  if (!await Bun.file(journalPath).exists()) return;
+  const journal = JSON.parse(await Bun.file(journalPath).text());
+
+  const stamped = new Set<string>(
+    (sqlite.prepare('SELECT hash FROM __drizzle_migrations').all() as { hash: string }[])
+      .map((r) => r.hash),
+  );
+
+  const existingTables = new Set(
+    (sqlite.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE '__drizzle%'")
+      .all() as { name: string }[])
+      .map((r) => r.name.toLowerCase()),
+  );
+
+  const insert = sqlite.prepare(
+    'INSERT OR IGNORE INTO __drizzle_migrations (hash, created_at) VALUES (?, ?)',
+  );
+
+  let stampedCount = 0;
+  for (const entry of journal.entries) {
+    const sqlPath = resolve(migrationsFolder, `${entry.tag}.sql`);
+    const sqlContent = await Bun.file(sqlPath).text();
+    const hash = new Bun.CryptoHasher('sha256').update(sqlContent).digest('hex');
+    if (stamped.has(hash)) continue; // already applied
+
+    const createdTables = [...sqlContent.matchAll(/CREATE\s+(?:TABLE|VIRTUAL TABLE)\s+(?:IF NOT EXISTS\s+)?[`"']?(\w+)/gmi)]
+      .map((m) => m[1])
+      .filter((t) => !t.startsWith('__drizzle') && !t.startsWith('__new'));
+
+    if (createdTables.length > 0 && createdTables.every((t) => existingTables.has(t.toLowerCase()))) {
+      insert.run(hash, entry.when);
+      stamped.add(hash);
+      stampedCount++;
+      console.log(`[db] Rebase: migration ${entry.tag} schema already present — stamped as applied (SQL skipped).`);
+    }
+    // else: tables missing — leave unstamped so migrate() runs it (fresh/partial DB).
+  }
+  if (stampedCount > 0) {
+    console.log(`[db] Rebased onto squashed baseline — ${stampedCount} migration(s) pre-stamped.`);
+  }
+}
+
+/**
  * Detect a database created by the legacy ensureSchema() approach
  * (before drizzle migrations existed) and stamp only the migrations
  * whose tables already exist in the DB.
@@ -373,6 +443,7 @@ export async function createDb(dbPath: string, migrationsFolderOverride?: string
   sqlite.exec('PRAGMA foreign_keys = OFF');
   try {
     await baselineLegacyDb(sqlite, migrationsFolder);
+    await rebaseToBaseline(sqlite, migrationsFolder);
 
     // Try normal migration first
     try {

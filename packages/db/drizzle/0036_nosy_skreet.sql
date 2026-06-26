@@ -1,1 +1,0 @@
-ALTER TABLE `characters` ADD `avatar_source_asset_id` text;
