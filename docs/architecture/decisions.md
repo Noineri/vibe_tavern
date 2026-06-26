@@ -285,7 +285,7 @@
 
 ## AD-016: Endpoint-Scoped Responses over Monolithic Snapshots
 
-**Status:** Proposed (planned, Phase 3.4 of `CODE_REVIEW_REFACTOR_PLAN.md`). Not yet implemented — current code returns monolithic `SessionSnapshot` from every mutating endpoint.
+**Status:** Proposed. The frontend prerequisite landed in Phase 3.4.1 (2026-06-13): `AppSnapshot` fields are now optional, `normalizeSnapshot()` preserves absence, and `ingestSnapshot()` uses presence guards (see `reports/tech-debt.md` TD-004, RESOLVED). The backend half — actually returning partial responses from mutating endpoints — is still pending; every mutating endpoint still returns a full `SessionSnapshot`. The original driving plan (`CODE_REVIEW_REFACTOR_PLAN.md`) has been archived in the planning repo.
 
 **Context:** The current architecture returns a full `SessionSnapshot` from every chat mutation. `getSnapshot(chatId)` recomputes *all* fields — chats list, all characters, messages, branches, summaries, prompt traces, context preview, character, persona — regardless of which field changed. Renaming a chat re-runs `assemblePrompt()` for the context preview and re-reads every character in the database.
 
@@ -391,7 +391,7 @@ Adding a native provider (e.g. Vertex AI) meant touching all four sites and keep
 | **Strategy/enum per axis** | Separate registry per concern (capabilities, model, ops, samplers) | Four registries to keep in sync — same problem, relocated |
 | **One `ProtocolAdapter` per type** | A single object per `ProviderType` carrying capabilities + model resolution + limitations + probe/test/list | One edit site; the adapter is the protocol's complete description |
 
-**Decision:** One `ProtocolAdapter` object per `ProviderType`, registered in an exhaustive `Record<ProviderType, ProtocolAdapter>` in `domain/providers/protocol-registry.ts`. `resolveProtocol(type)` is the single lookup. The gateway becomes a thin delegator; the legacy `mapProfileToSdkModel` / `PROVIDER_CAPABILITIES` become compat shims that delegate inward (tracked as TD-006).
+**Decision:** One `ProtocolAdapter` object per `ProviderType`, registered in an exhaustive `Record<ProviderType, ProtocolAdapter>` in `domain/providers/protocol-registry.ts`. `resolveProtocol(type)` is the single lookup. The gateway is a thin delegator. The legacy `mapProfileToSdkModel` / `PROVIDER_CAPABILITIES` compat shims that initially bridged callers during the registry rollout have since been deleted (T3, 2026-06); all callers now go through `resolveProtocol()` directly.
 
 **Rationale:**
 - **One-site edits** — adding a native protocol is one object entry + one `protocols` record line, not a four-site lock-step edit
@@ -442,7 +442,7 @@ Dependencies flow strictly downward: `api/` → `runtime/` → `domain/` → `in
 
 **Trade-off:** Import paths are longer and a one-time migration churn touched every backend file. A handful of compat shims (TD-006) carry old names so call sites migrate incrementally. The navigation payoff outweighs the path verbosity: the folder name now predicts the file's role.
 
-**Implementation:** See [Backend Architecture](./backend.md) for the per-slice contents and the migration map in `CODE_REVIEW_REFACTOR_PLAN.md` §5.2.
+**Implementation:** See [Backend Architecture](./backend.md) for the per-slice contents. (The original folder-move migration map lived in `CODE_REVIEW_REFACTOR_PLAN.md` §5.2, now archived in the planning repo.)
 
 **Related:** AD-006 (Monorepo with Strict Package Boundaries) — same strict-dependency principle, applied at the folder level within `services/api`. AD-019 (Protocol Registry) — the registry/generation split between `domain/providers/` and `infrastructure/ai/` is a direct instance of this layout.
 
@@ -506,3 +506,35 @@ Dependencies flow strictly downward: `api/` → `runtime/` → `domain/` → `in
 **Implementation:** See [Adding a new language — Layout & text length](../guides/adding-a-language.md#layout--text-length). The concrete do/don't examples live there.
 
 **Related:** AD-021 (Locale Registry) — the architecture half of i18n; this is the layout half. Together they are the full "add a language" story.
+
+---
+
+## AD-023: Shared Wire-DTO Contracts in `api-contracts`
+
+**Status:** Implemented (commit `686ccd06`, 2026-06).
+
+**Context:** The wire-format DTOs that cross the HTTP boundary — what the backend serializes and what the frontend deserializes — were re-declared on each side. `services/api/src/runtime/session/session-runtime-dto.ts`, `domain/persona/persona-runtime.ts`, and `api/contract/session-types.ts` defined the backend shapes; `apps/web/src/api/types.ts` re-stated them independently. Two declarations for one wire format is a silent-drift trap: a field added on one side (or, as actually happened, a field present in the domain model, DB column, Zod schema, and backend logic but omitted from the wire interface and its mapper) never reaches the other side, and nothing compiles to warn you. The `bindPerModel` round-trip bug — the "Bind per model" toggle silently resetting to off on every modal open — was exactly this failure mode.
+
+**Options considered:**
+
+| Approach | Description | Problem |
+|----------|-------------|--------|
+| **Status quo (re-declare on each side)** | Backend and frontend each define their own interface for the same wire shape | Silent drift; a field present in the DB/logic but absent from the wire interface ships undetected (the `bindPerModel` bug) |
+| **Generate from Zod** | Derive wire types from the Zod request/response schemas | The wire DTOs are security projections (e.g. `apiKey` → `hasStoredApiKey`), not 1:1 with any single Zod schema; generation would need a projection layer |
+| **Shared interfaces in `api-contracts`** | One interface per wire shape, imported by both sides; backend re-exports from its existing modules so importer paths don't change | Drift becomes a compile error; no codegen; re-export keeps the blast radius to zero |
+
+**Decision:** The wire-DTO interfaces live once in `packages/api-contracts/src/wire-types.ts`. The backend modules that previously defined them (`session-runtime-dto.ts`, `persona-runtime.ts`, `session-types.ts`) now `import type` + `export type` re-export from `api-contracts`, so existing backend importers need no path change. The frontend `apps/web/src/api/types.ts` does the same, keeping two local aliases (`ProviderProfileRecord = ClientProviderProfileRecord`, `CachedModelsRecord = CachedProviderModelsRecord`) to avoid churn at the many call sites that use the short names.
+
+The **mapper functions stay backend-side.** They depend on `@vibe-tavern/db` (and `bun:sqlite` transitively); moving them into `api-contracts` would drag the database driver into the frontend's dependency graph and regress the browser-safety split (AD for the codecs split). The interface is shared; the code that builds it is not.
+
+**Rationale:**
+- **Drift is a compile error, not a runtime bug.** Adding a field to the shared interface forces both the backend mapper and the frontend consumer to acknowledge it in the same PR.
+- **No code generation.** The interfaces are hand-written because they are security projections (what the client is allowed to see), not mechanical projections of a DB row or a Zod schema.
+- **Zero blast radius on the backend.** Re-exporting from the existing module paths means the move touched three definition sites + the mapper, not every importer.
+- **Extends AD-006 and AD-009.** AD-006 (monorepo boundaries) already makes `api-contracts` the shared contract package; AD-009 (Hono RPC client) gives type-safe routing. This ADR closes the gap for response *body* shapes that the Hono client doesn't infer (streaming endpoints, security-projected records).
+
+**Trade-off:** `api-contracts` now depends on `@vibe-tavern/domain` (for branded IDs like `CharacterId` in `ChatListItem`). This is fine — `domain` is the zero-dep leaf, so the dependency edge points strictly downward and stays browser-safe. The frontend also gains a direct dep on `api-contracts` (it previously reached the package only transitively); this is the intended sharing surface.
+
+**Scope:** Six interfaces moved: `ClientProviderProfileRecord`, `CachedProviderModelsRecord`, `FavoriteProviderModelRecord`, `ProviderModelSettingsRecord`, `PersonaRecord`, `ChatListItem`. The mapper functions (`toClientProviderProfile`, `mapMessageDto`, etc.) are intentionally NOT in `api-contracts`.
+
+**Related:** AD-006 (Monorepo with Strict Package Boundaries) — the package this lives in. AD-009 (Hono RPC Client) — type-safe routing for the paths this doesn't cover. The `bindPerModel` bug this prevents is pinned by a regression test in `services/api/test/session-runtime-dto.test.ts`.
