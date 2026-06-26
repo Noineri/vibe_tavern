@@ -348,35 +348,54 @@ async function healPartialMigrations(sqlite: Database, migrationsFolder: string)
   }
 }
 
-export async function createDb(dbPath: string): Promise<AppDb> {
+export async function createDb(dbPath: string, migrationsFolderOverride?: string): Promise<AppDb> {
   await mkdir(resolve(dbPath, '..'), { recursive: true });
   const sqlite = new Database(dbPath);
   sqlite.exec('PRAGMA journal_mode = WAL');
   sqlite.exec('PRAGMA foreign_keys = ON');
 
   const db = drizzle(sqlite, { schema });
-  const migrationsFolder = await resolveMigrationsFolder();
+  const migrationsFolder = migrationsFolderOverride ?? await resolveMigrationsFolder();
 
   console.log(`[db] Migrations folder: ${migrationsFolder}`);
 
-  await baselineLegacyDb(sqlite, migrationsFolder);
-
-  // Try normal migration first
+  // ─── drizzle-orm #5782 defense ────────────────────────────────────────────
+  // drizzle-kit emits `PRAGMA foreign_keys=OFF;` at the top of every table-
+  // rebuild migration (CREATE __new_x → INSERT…SELECT → DROP x → RENAME) to
+  // disarm ON DELETE CASCADE during the rebuild. drizzle-orm's migrator then
+  // wraps each migration in BEGIN…COMMIT, and SQLite IGNORES PRAGMA foreign_keys
+  // inside a transaction. Result: the protective pragma is neutralized, FK stays
+  // ON, `DROP TABLE parent` becomes an implicit `DELETE FROM parent` which
+  // CASCADES — silently wiping every child table. This is exactly how
+  // lore_entries was emptied when 0037 rebuilt lorebooks (Olesya's loss).
+  // Workaround (upstream-recommended): flip FK OFF on the raw handle BEFORE
+  // migrate() opens its BEGIN, then restore ON for normal app queries.
+  sqlite.exec('PRAGMA foreign_keys = OFF');
   try {
-    migrate(db, { migrationsFolder });
-  } catch (migrateErr: any) {
-    // migrate() can fail when a previous ensureAlterColumns() pre-flight
-    // already added columns but didn't stamp the migration, leaving partial state.
-    // Heal by splitting unstamped migrations into individual statements
-    // and tolerating "already exists" / "duplicate column" errors.
-    console.warn(`[db] migrate() failed (${migrateErr?.message ?? migrateErr}), healing partial state...`);
-    await healPartialMigrations(sqlite, migrationsFolder);
-    migrate(db, { migrationsFolder });
-  }
+    await baselineLegacyDb(sqlite, migrationsFolder);
 
-  // Post-migration integrity checks
-  await repairMissingTables(sqlite, migrationsFolder);
-  await ensureAlterColumns(sqlite, migrationsFolder);
+    // Try normal migration first
+    try {
+      migrate(db, { migrationsFolder });
+    } catch (migrateErr: any) {
+      // migrate() can fail when a previous ensureAlterColumns() pre-flight
+      // already added columns but didn't stamp the migration, leaving partial state.
+      // Heal by splitting unstamped migrations into individual statements
+      // and tolerating "already exists" / "duplicate column" errors.
+      console.warn(`[db] migrate() failed (${migrateErr?.message ?? migrateErr}), healing partial state...`);
+      await healPartialMigrations(sqlite, migrationsFolder);
+      migrate(db, { migrationsFolder });
+    }
+
+    // Post-migration integrity checks
+    await repairMissingTables(sqlite, migrationsFolder);
+    await ensureAlterColumns(sqlite, migrationsFolder);
+  } finally {
+    // Restore FK enforcement for normal app queries (the OFF above was scoped
+    // to the migration phase only). See the #5782 note above for why this is
+    // the correct place to flip it back on.
+    sqlite.exec('PRAGMA foreign_keys = ON');
+  }
 
   return db;
 }
