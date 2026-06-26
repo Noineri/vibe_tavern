@@ -15,8 +15,10 @@ apps/web/src/
 ├── themes/
 │   ├── registry.ts                ← THEMES array — the single source of truth
 │   ├── coffee.css                  :root                 (default — no class)
-│   ├── light.css                  :root.light
-│   └── mystic-night.css           :root.mystic-night
+│   ├── milk-coffee.css            :root.milk-coffee
+│   ├── mystic-night.css           :root.mystic-night
+│   ├── light-lava.css             :root.light-lava      (animated gradient)
+│   └── dark-lava.css              :root.dark-lava       (animated gradient)
 └── (consumers — no edits needed when adding a theme)
     ├── lib/local-storage.ts       readSavedTheme() validates via normalizeTheme()
     ├── hooks/use-vibe-tavern-app.ts applyThemeClass() — exclusive class switch
@@ -32,7 +34,7 @@ Everything below `registry.ts` in that tree adapts automatically. **Do not touch
 
 ### 1. Create the theme CSS file
 
-Add `apps/web/src/themes/<name>.css`. The selector is `:root.<name>`. Mirror the token set of `coffee.css` / `light.css` — every `--*` custom property the UI uses must be defined (copy the full block from an existing theme and adjust values). The relevant groups: backgrounds (`--bg`, `--surface`, `--s2`, `--s3`; optionally `--page-bg` for a page gradient — see [§ Page-background gradients and transparency](#page-background-gradients-and-transparency)), borders (`--border`, `--border2`), text (`--t1`–`--t4`, `--msg-t1/2`), accent (`--accent`, `--accent-t`, `--accent-dim`, `--accent-hover`), danger/success/info/warning, shadows, markdown colors, syntax-highlight colors.
+Add `apps/web/src/themes/<name>.css`. The selector is `:root.<name>`. Mirror the token set of `coffee.css` / `milk-coffee.css` — every `--*` custom property the UI uses must be defined (copy the full block from an existing theme and adjust values). The relevant groups: backgrounds (`--bg`, `--surface`, `--s2`, `--s3`; optionally `--page-bg` for a page gradient — see [§ Page-background gradients and transparency](#page-background-gradients-and-transparency)), borders (`--border`, `--border2`), text (`--t1`–`--t4`, `--msg-t1/2`), accent (`--accent`, `--accent-t`, `--accent-dim`, `--accent-hover`), danger/success/info/warning, shadows, markdown colors, syntax-highlight colors.
 
 ```css
 :root.my-theme {
@@ -56,9 +58,11 @@ Append a `ThemeDef` to the `THEMES` array in `apps/web/src/themes/registry.ts`:
 
 ```ts
 export const THEMES: readonly ThemeDef[] = [
-  { id: "light",    className: "light",    icon: "sun" },
-  { id: "coffee",   className: "",         icon: "coffee" },
-  { id: "mystic-night", className: "mystic-night", icon: "sparkles" },
+  { id: "milk-coffee",  className: "milk-coffee",  icon: "coffee" },        // light
+  { id: "coffee",       className: "",             icon: "coffeeFilled" },  // dark (default)
+  { id: "mystic-night", className: "mystic-night", icon: "sparklesFilled" },// dark
+  { id: "light-lava",   className: "light-lava",   icon: "flame" },         // light (animated)
+  { id: "dark-lava",    className: "dark-lava",    icon: "flameFilled" },   // dark  (animated)
   { id: "my-theme", className: "my-theme", icon: "star" },  // ← new
 ];
 ```
@@ -152,7 +156,9 @@ What does **not** work: a gradient inside any color-consumed token. `bg-accent`,
 
 ### Animated gradients (lava-lamp / aurora)
 
-`--page-bg` accepts any `background-image`, including **layered** radial gradients. Animate `background-position` with `background-size > 100%` and the blobs drift. Because `--page-bg` is consumed by a global `background` shorthand on `<body>`, set `background-size` and `animation` on `<body>` scoped under your theme selector so the cascade wins over the global rule:
+`--page-bg` accepts any `background-image`, including **layered** radial gradients. Animate `background-position` with `background-size > 100%` and the blobs drift. Because `--page-bg` is consumed by a global `background` shorthand on `<body>`, set `background-size` and `animation` on `<body>` scoped under your theme selector so the cascade wins over the global rule.
+
+> **This is not hypothetical.** `light-lava` and `dark-lava` are two shipped themes built on exactly this technique — read `apps/web/src/themes/light-lava.css` / `dark-lava.css` for a working reference (layered radial blobs, `*-drift` keyframes at 20s, `background-size: 180% 180%`, `prefers-reduced-motion` guard).
 
 ```css
 :root.lava-lamp {
