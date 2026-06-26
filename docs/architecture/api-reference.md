@@ -64,7 +64,7 @@ Update character fields.
 
 Delete a character and all associated data.
 
-**Response:** 200 OK (empty JSON or void).
+**Response:** `204` (empty body).
 
 ### `GET /api/characters/:characterId/export`
 
@@ -90,6 +90,43 @@ Duplicate a character with a new ID.
 
 **Response:** `SessionSnapshot`
 
+### Character versions
+
+Folder-snapshot branching for a character (VTF Phase 3). Each version is a snapshot of the character's folder; activating a version swaps the live character data.
+
+| Endpoint | Body | Response |
+|----------|------|----------|
+| `GET /api/characters/:characterId/versions` | — | `CharacterVersion[]` |
+| `POST /api/characters/:characterId/versions` | `{ title: string }` (`createVersionSchema`) | `CharacterVersion` (201) |
+| `POST /api/characters/:characterId/versions/:versionId/activate` | — | `CharacterVersion`. `404` if version not found, `400` if it doesn't belong to the character |
+| `PATCH /api/characters/:characterId/versions/:versionId` | `{ title: string }` (`renameVersionSchema`) | `CharacterVersion`. `404` if not found |
+| `DELETE /api/characters/:characterId/versions/:versionId` | — | `204`. `409` if deleting the active version, `400` otherwise |
+
+### Character avatar
+
+| Endpoint | Body | Response |
+|----------|------|----------|
+| `POST /api/characters/:characterId/avatar` | Multipart: `crop` (required File, the thumbnail) + optional `full` (File, uncropped original). Back-compat: a `file` field is accepted as the crop | `{ ... }` avatar metadata. `413` if too large, `415` if unsupported type |
+| `GET /api/characters/:characterId/avatar` | — | Thumbnail image binary. `404` if none |
+| `GET /api/characters/:characterId/avatar/full` | — | Uncropped original image binary (falls back to the thumbnail if no separate full is stored). `404` if none |
+| `POST /api/characters/:characterId/avatar/describe` | — | `{ description }` — runs the vision `describe` pipeline to caption the avatar. Returns `{ description: "" }` if the client aborts (AbortController) |
+| `POST /api/characters/:characterId/avatar/from-gallery` | Multipart: `sourceAssetId` (field) + `crop` (File) + `cropJson` (field, crop geometry %). Salvages the current avatar into the gallery before overwriting | `{ ... }` avatar metadata |
+
+### Character media gallery (assets)
+
+Per-character image gallery — the server-owned counterpart to `useGalleryStore`. Gallery images can be described (vision caption) and promoted into the general asset store for chat attachment.
+
+| Endpoint | Body | Response |
+|----------|------|----------|
+| `GET /api/characters/:characterId/assets` | — | `CharacterAsset[]` (the gallery list) |
+| `GET /api/characters/:characterId/assets/:assetRowId` | — | Image binary. `404` if not found |
+| `POST /api/characters/:characterId/assets` | Multipart: `file` (File) | `CharacterAsset` (201). `413`/`415` on size/type error |
+| `POST /api/characters/:characterId/assets/describe` | `{ assetRowIds?: string[] }` (omit/empty = describe all undescribed) | `{ updated, failed }` — vision-caption batch. Returns `{ updated: [], failed: [] }` if the client aborts mid-batch (partial results already persisted) |
+| `PATCH /api/characters/:characterId/assets/:assetRowId` | `{ caption?, description?\|null, includeInPrompt? }` | `CharacterAsset`. `404` if not found |
+| `PUT /api/characters/:characterId/assets/reorder` | `{ orderedIds: string[] }` | `204`. `400` if `orderedIds` is not a string array |
+| `DELETE /api/characters/:characterId/assets/:assetRowId` | — | `204`. `404` if not found |
+| `POST /api/characters/:characterId/assets/:assetRowId/promote-to-attachment` | — | `{ ... }` (201) — copies the gallery image into the general asset store so it can be attached to a chat draft without a client re-upload |
+
 ---
 
 ## Chats
@@ -114,30 +151,13 @@ Get full chat state (messages, branches, variants, summaries).
 
 **Response:** `SessionSnapshot`
 
-### `PATCH /api/chats/:chatId/settings`
-
-Update chat-level overrides (scenario, systemPrompt).
-
-**Body:** `updateChatSettingsSchema`
-
-```json
-{
-  "title": "My Chat",
-  "subtitle": "",
-  "scenario": "{{user}} arrives at the castle.",
-  "systemPrompt": "You are a medieval guard."
-}
-```
-
-**Response:** 200 OK (void — no snapshot returned).
-
 ### `PATCH /api/chats/:chatId/title`
 
 Rename chat.
 
-**Body:** `{ "title": "New Title" }`
+**Body:** `{ "title": "New Title" }` (`renameChatSchema`)
 
-**Response:** `{ chatId: string, title: string }` — minimal response (not a full snapshot).
+**Response:** `ChatListResponse` = `{ chats: SessionSnapshot["chats"] }` — only the sidebar label moved, so only the refreshed chats list is returned (not a full snapshot).
 
 ### `PATCH /api/chats/:chatId/greeting-index`
 
@@ -167,9 +187,27 @@ Fork a chat from a specific message into a new branch.
 
 **Response:** `SessionSnapshot`
 
+### `POST /api/chats/:chatId/clear`
+
+Clear all messages from a chat (keeps the chat itself).
+
+**Response:** `SessionSnapshot`
+
+### `GET /api/chats/:chatId/export.jsonl`
+
 Export chat as JSONL (one JSON object per line, SillyTavern-compatible format).
 
-**Response:** `text/plain` with JSONL body.
+**Query:** `branchId` (optional) to export a specific branch.
+
+**Response:** `application/x-ndjson; charset=utf-8` with the JSONL body.
+
+### `GET /api/chats/:chatId/traces`
+
+Lazy-load the branch-scoped prompt-trace history for Build Mode's prev/next navigation. This is the endpoint behind `useTraceHistoryStore`; it replaced the `promptTraceHistory` field that used to ship in every snapshot.
+
+**Query:** `messageId` (optional, filter to one message), `branchId` (optional).
+
+**Response:** `PromptTrace[]`.
 
 ---
 
@@ -281,6 +319,20 @@ Force-re-describe a single image/video attachment with the active profile's visi
 **Response:** `{ description: string }` — the new description, also persisted to the message's attachments JSON. Reasoning (`<think>…`) is stripped before persistence.
 
 > Exposed for the lightbox "regenerate" button. The auto-describe cache (skip-if-described) is non-destructive; this endpoint is the only way to re-describe or add a description out-of-band. See [Vision and Attachment Pipeline](./backend.md#vision-and-attachment-pipeline).
+
+### `PATCH /api/chats/:chatId/messages/:messageId/attachments/:attachmentId/description`
+
+Edit a single attachment's description in place (e.g. the user hand-edits the caption in the lightbox).
+
+**Body:** `{ "description": string }`
+
+**Response:** the updated attachment. Persisted to the message's attachments JSON.
+
+### `DELETE /api/chats/:chatId/messages/:messageId/attachments/:attachmentId`
+
+Remove an attachment from a message.
+
+**Response:** `204`.
 
 ---
 
@@ -434,7 +486,13 @@ Export a prompt trace as JSON (shows all layers, token counts, and the final mes
 
 ### `GET /api/lorebooks`
 
-List all lorebooks (all scopes).
+List lorebooks in a scope.
+
+**Query:** `scopeType` (default `character`) + `ownerId` (the character/persona/chat ID).
+
+### `GET /api/lorebooks/all`
+
+List **all** lorebooks across every scope (used by the global lorebook manager).
 
 ### `POST /api/lorebooks`
 
@@ -476,6 +534,16 @@ Test which entries would activate against sample text.
 List all entries in a lorebook.
 
 ### `POST /api/lorebooks/:lorebookId/entries`
+
+Create a lore entry.
+
+### `PATCH /api/lorebooks/:lorebookId/entries/reorder`
+
+Reorder multiple entries at once (positional `sortOrder`, preserving file order on import).
+
+**Body:** `{ updates: Array<{ entryId, order }> }` (`reorderLoreEntriesSchema`)
+
+**Response:** the reordered entries.
 
 Create a lore entry.
 
@@ -600,15 +668,22 @@ Update a persona.
 
 Delete a persona.
 
-### `GET /api/personas/:personaId/personal-lorebook`
+### `POST /api/personas/:personaId/set-default`
 
-Get the persona's personal lorebook.
+Mark a persona as the default for new chats (`defaultForNewChats`). Mutually exclusive — unsets the previous default.
 
-### `PUT /api/personas/:personaId/personal-lorebook`
+**Response:** `204`.
 
-Set the persona's personal lorebook.
+### Persona avatar
 
-**Body:** `{ "enabled": true }`
+Mirrors the [character avatar](#character-avatar) surface:
+
+| Endpoint | Body | Response |
+|----------|------|----------|
+| `POST /api/personas/:personaId/avatar` | Multipart: `crop` (File) + optional `full` (File); `file` accepted as crop for back-compat | avatar metadata |
+| `GET /api/personas/:personaId/avatar` | — | Thumbnail image binary. `404` if none |
+| `GET /api/personas/:personaId/avatar/full` | — | Uncropped original (falls back to thumbnail). `404` if none |
+| `POST /api/personas/:personaId/avatar/describe` | — | `{ description }` — vision-caption the persona avatar |
 
 ### `POST /api/personas/:personaId/duplicate`
 
@@ -752,6 +827,25 @@ Remove a model from favorites.
 
 **Body:** `{ "modelId": "gpt-4o" }`
 
+### Per-model settings overlay (binding)
+
+`bindPerModel` lets a provider store a per-model settings overlay — a partial sampler config that applies only when that specific model is selected (e.g. a lower temperature for a reasoning model). The overlay is keyed by `modelId`.
+
+| Endpoint | Body | Response |
+|----------|------|----------|
+| `GET /api/providers/:providerId/model-settings` | — | `ProviderModelSettingsRecord[]` |
+| `GET /api/providers/:providerId/model-settings/:modelId` | — | `ProviderModelSettingsRecord \| null` |
+| `PUT /api/providers/:providerId/model-settings/:modelId` | `modelSettingsOverlaySchema` (partial sampler fields) | `ProviderModelSettingsRecord` (upsert) |
+| `DELETE /api/providers/:providerId/model-settings/:modelId` | — | `{ ok: true }` |
+
+### `POST /api/tokenize`
+
+Count tokens for a text against a specific model's tokenizer (used by the UI token bar and context-budget preview).
+
+**Body:** `{ text: string, model: string }` (`tokenizeSchema`)
+
+**Response:** `{ tokens: number }`
+
 ---
 
 ## Prompt Presets
@@ -796,6 +890,10 @@ Delete a preset.
 ### `GET /api/scripts`
 
 List all scripts (with scope information).
+
+### `GET /api/scripts/all`
+
+List **all** scripts across every scope (used by the global script manager).
 
 ### `GET /api/scripts/:scriptId`
 
@@ -864,11 +962,21 @@ Import a script from JS code or JSON.
 }
 ```
 
-### `POST /api/scripts/ai-assistant`
+---
 
-AI-powered script writing assistant (SSE stream).
+## AI Assistant
 
-**Request:** SSE connection. Client sends script description, server streams generated code.
+The AI Assistant subsystem (the lightbulb "assist" actions in the Build editor) is mounted as the `ai-assistant` [FeatureModule](./backend.md#feature-modules--lifecycle). These replaced the old `POST /api/scripts/ai-assistant` route.
+
+### `POST /api/ai-assistant`
+
+Run an AI Assistant mode and stream the result. The mode (`script`, `lore_entry`, `lore_keys`, `chat_impersonate`, `md_import`) selects what to generate; see [AI Assistant](./backend.md#ai-assistant) for the mode table and prompt fallback chain.
+
+**Response:** `text/event-stream`. Events are mode-dependent: text modes stream `text-delta` chunks; JSON modes (`lore_keys`, `md_import`) buffer, strip reasoning, parse against the mode schema, then emit the parsed result.
+
+### `POST /api/ai-assistant/tokens`
+
+Count tokens for an AI Assistant request before running it (context-budget preview for the modal).
 
 ---
 
@@ -929,6 +1037,18 @@ Bulk import from a SillyTavern directory.
 
 ## Settings
 
+### `GET /api/settings/ui`
+
+Get the UI settings record (theme, layout prefs, editor toggles).
+
+### `PATCH /api/settings/ui`
+
+Update UI settings (partial patch).
+
+**Body:** partial UI settings object.
+
+### Mobile access
+
 ### `GET /api/settings/mobile-access`
 
 Get mobile access status, available IP addresses, port, TLS status, and current token if one exists.
@@ -959,8 +1079,10 @@ Get the bootstrap snapshot — all reference data needed on app startup (chats, 
 
 **Response:** Full bootstrap object.
 
-### `GET /api/defaults/script-ai-prompt`
+### `GET /api/defaults/ai-assistant-prompt`
 
-Get the default system prompt for the script AI assistant.
+Get the default system prompt for an AI Assistant mode (used by the Settings prompt editor to show the editable default).
 
-**Response:** Plain text prompt.
+**Query:** `mode` (default `script`) — any of the [AI Assistant modes](./backend.md#ai-assistant).
+
+**Response:** `{ prompt: string }`.
