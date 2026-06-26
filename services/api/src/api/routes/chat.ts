@@ -7,6 +7,7 @@ import { logSendDebug } from "../../shared/send-debug-log.js";
 import * as schemas from "@vibe-tavern/api-contracts";
 import { readOptionalJson } from "./helpers.js";
 import { extractProviderErrorMessage } from "../../infrastructure/ai/provider-error-message.js";
+import { classifyProviderError } from "../../infrastructure/ai/provider-error-classifier.js";
 
 type ChatStreamEvent = { event: string; data: string };
 type RouteAbortBridge = ReturnType<typeof createRouteAbortBridge>;
@@ -59,9 +60,10 @@ async function writeChatSseEvents(
     }
 
     const message = extractProviderErrorMessage(err);
-    logSendDebug("api.route.sse.error", { message });
+    const category = classifyProviderError(err);
+    logSendDebug("api.route.sse.error", { message, category });
     try {
-      await stream.writeSSE({ event: "error", data: JSON.stringify({ message }) });
+      await stream.writeSSE({ event: "error", data: JSON.stringify({ message, category }) });
     } catch {
       abortBridge.abort("sse-error-write-failed");
     }

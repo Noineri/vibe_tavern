@@ -12,6 +12,7 @@ import { logSendDebug } from "../../shared/send-debug-log.js";
 import { extractThinkingTags } from "../../infrastructure/ai/extract-thinking-tags.js";
 import { ensurePrefillInResponse } from "../../infrastructure/ai/ensure-prefill-in-response.js";
 import { extractProviderErrorMessage } from "../../infrastructure/ai/provider-error-message.js";
+import { classifyProviderError } from "../../infrastructure/ai/provider-error-classifier.js";
 
 /**
  * Coordinates the prepare → execute → append cycle for all AI generation paths:
@@ -535,9 +536,10 @@ export class LiveChatOrchestrator {
       }
 
       const message = extractProviderErrorMessage(err);
-      logSendDebug(`${debugLabel}.provider-error`, { chatId: input.chatId, message });
+      const category = classifyProviderError(err);
+      logSendDebug(`${debugLabel}.provider-error`, { chatId: input.chatId, message, category });
       this.chatRuntime.discardPendingPromptTrace(brandId<ChatId>(input.chatId));
-      yield { event: "error", data: JSON.stringify({ message }) };
+      yield { event: "error", data: JSON.stringify({ message, category }) };
       return;
     }
 
