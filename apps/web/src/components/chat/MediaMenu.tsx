@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useOutsideClick } from "../../hooks/use-outside-click.js";
 import { Icons } from "../shared/icons.js";
 import { CustomTooltip } from "../shared/Tooltip.js";
 import { useT } from "../../i18n/context.js";
@@ -79,14 +80,7 @@ function DesktopMediaMenu({ characterId }: { characterId: string }) {
   }, [open, characterId, load]);
 
   // Outside-click closes the popover (but not when clicking inside a viewer).
-  useEffect(() => {
-    if (!open) return;
-    const handler = (e: MouseEvent) => {
-      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [open]);
+  useOutsideClick(rootRef, () => setOpen(false), { enabled: open });
 
   const sendImage = useCallback(async (row: CharacterAsset) => {
     if (draftCount >= 5) {

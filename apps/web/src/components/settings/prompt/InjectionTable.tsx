@@ -37,9 +37,6 @@ import {
   DndContext,
   DragOverlay,
   MouseSensor,
-  TouchSensor,
-  useSensor,
-  useSensors,
   useDroppable,
   type DragEndEvent,
   type DragStartEvent,
@@ -59,6 +56,7 @@ import { CustomTooltip } from "../../shared/Tooltip.js";
 import { TokenCounter } from "../../shared/TokenCounter.js";
 import { AutoTextarea } from "../../shared/auto-textarea.js";
 import { useIsMobile } from "../../../hooks/use-mobile.js";
+import { useDndSensors } from "../../../hooks/use-dnd-sensors.js";
 import { SegmentedControl } from "../../shared/SegmentedControl.js";
 
 // NOTE (CANVAS_SINGLE_SOURCE_PLAN Wave 4): injection rows are content-only
@@ -157,10 +155,7 @@ export function PromptOrderCanvas({ injections, onChange, draft, onUpdateField, 
   const [activeDragKey, setActiveDragKey] = useState<string | null>(null);
   const [accordionOpen, setAccordionOpen] = useState(false);
   
-  const sensors = useSensors(
-    useSensor(MouseSensor, { activationConstraint: { distance: 2 } }),
-    useSensor(TouchSensor, { activationConstraint: { distance: 1 } }),
-  );
+  const sensors = useDndSensors();
 
   // Content-only write: `name`/`content`/`role` live on the injection.
   // Positional state (`enabled`/`zone`/`depth`/`order`) is written via the

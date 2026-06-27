@@ -6,10 +6,7 @@ import { Icons } from '../../shared/icons.js';
 import { cn } from '../../../lib/cn.js';
 import { SegmentedControl } from '../../shared/SegmentedControl.js';
 import { DropdownSelect } from '../../shared/DropdownSelect.js';
-
-const labelCls = 'block text-[calc(var(--ui-fs)-3px)] font-medium tracking-[0.06em] uppercase text-t3';
-const inputCls = 'w-full h-11 sm:h-[38px] bg-s2 border border-border rounded-[6px] font-ui text-[calc(var(--ui-fs)-1px)] text-t1 outline-none transition-[border-color] duration-150 focus:border-accent px-[13px]';
-const selectCls = 'w-full h-[38px] bg-s2 border border-border rounded-[6px] font-ui text-[calc(var(--ui-fs)-1px)] text-t1 outline-none transition-[border-color] duration-150 focus:border-accent pl-[13px] sel-arrow';
+import { labelCls, inputCls, pwCls } from './form-field-classes.js';
 
 interface ProviderEditHeaderProps {
   form: FormState;
@@ -24,11 +21,13 @@ interface ProviderEditHeaderProps {
   onCancel?: () => void;
   isNew: boolean;
   isArmServer: boolean;
+  dirty: boolean;
+  saving: boolean;
 }
 
 export function ProviderEditHeader({
   form, editingId, providerProfiles, updateForm, applyPreset,
-  testOk, testing, onTest, onSave, onCancel, isNew, isArmServer,
+  testOk, testing, onTest, onSave, onCancel, isNew, isArmServer, dirty, saving,
 }: ProviderEditHeaderProps) {
   const { t } = useT();
   const presetGroup = getPresetGroup(form.providerPreset);
@@ -117,7 +116,7 @@ export function ProviderEditHeader({
       ) : (
         <div className="mb-4">
           <label className={labelCls + " mb-[7px]"}>{t("api_key_label")}</label>
-          <input type="password" value={form.apiKey} onChange={(e) => updateForm('apiKey', e.target.value)} placeholder={form.hasStoredApiKey ? t("api_key_stored") : t("api_key_placeholder")} className={cn(inputCls, 'font-mono tracking-[0.05em]')} />
+          <input type="password" value={form.apiKey} onChange={(e) => updateForm('apiKey', e.target.value)} placeholder={form.hasStoredApiKey ? t("api_key_stored") : t("api_key_placeholder")} className={cn(inputCls, pwCls)} />
         </div>
       )}
 
@@ -142,8 +141,8 @@ export function ProviderEditHeader({
             {t("cancel")}
           </button>
         )}
-        <button type="button" onClick={onSave} className="min-h-11 rounded-md bg-accent px-5 py-2 font-ui text-[13px] font-medium text-on-accent shadow-lg shadow-accent/20 transition-all hover:bg-accent-t sm:min-h-0">
-          {t("save_settings_btn")}
+        <button type="button" onClick={onSave} disabled={!dirty || saving} className="min-h-11 rounded-md bg-accent px-5 py-2 font-ui text-[13px] font-medium text-on-accent shadow-lg shadow-accent/20 transition-all hover:bg-accent-t disabled:cursor-default disabled:opacity-40 sm:min-h-0">
+          {saving ? t("saving") : t("save_settings_btn")}
         </button>
       </div>
     </div>

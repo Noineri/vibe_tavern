@@ -1,21 +1,14 @@
 import React from 'react';
 import { useT } from '../../../i18n/context.js';
 import type { ProviderProfileRecord } from '../../../app-client.js';
-import { PROVIDER_PRESETS, getPresetGroup, PRESET_GROUPS } from '../../../provider-presets.js';
+import { PROVIDER_PRESETS, getPresetGroup, getVisibleProviderPresets, getVisiblePresetGroups } from '../../../provider-presets.js';
 import type { FormState } from '../../modals/ProviderModal.js';
 import { Icons } from '../../shared/icons.js';
 import { cn } from '../../../lib/cn.js';
 import { Toggle } from '../../shared/Toggle.js';
 import { SegmentedControl } from '../../shared/SegmentedControl.js';
 import { DropdownSelect } from '../../shared/DropdownSelect.js';
-
-const labelCls =
-  'block text-[calc(var(--ui-fs)-3px)] font-medium tracking-[0.06em] uppercase text-t3';
-const inputCls =
-  'w-full h-11 sm:h-[38px] bg-s2 border border-border rounded-[6px] font-ui text-[calc(var(--ui-fs)-1px)] text-t1 outline-none transition-[border-color] duration-150 focus:border-accent px-[13px]';
-const selectCls =
-  'w-full h-[38px] bg-s2 border border-border rounded-[6px] font-ui text-[calc(var(--ui-fs)-1px)] text-t1 outline-none transition-[border-color] duration-150 focus:border-accent pl-[13px] sel-arrow';
-const pwCls = 'font-mono tracking-[0.05em]';
+import { labelCls, inputCls, pwCls } from './form-field-classes.js';
 
 interface ProviderFormProps {
   form: FormState;
@@ -33,6 +26,8 @@ interface ProviderFormProps {
   hideConnectionFields?: boolean;
   /** Hide model-dependent test chat button (wizard provider edit mode) */
   hideTestChat?: boolean;
+  /** When true (ARM/Termux build), Local presets (localhost-bound) are hidden from the selector. Mirrors ProviderEditHeader. */
+  isArmServer: boolean;
 }
 
 export function ProviderForm({
@@ -49,12 +44,16 @@ export function ProviderForm({
   onTestChat,
   hideConnectionFields,
   hideTestChat,
+  isArmServer,
 }: ProviderFormProps) {
   const { t } = useT();
+  const visiblePresets = getVisibleProviderPresets(isArmServer);
+  const visiblePresetGroups = getVisiblePresetGroups(isArmServer);
   const presetGroup = getPresetGroup(form.providerPreset);
-  const filteredPresets = presetGroup
-    ? PROVIDER_PRESETS.filter((f) => f.group === presetGroup)
-    : PROVIDER_PRESETS;
+  const visiblePresetGroup = presetGroup && visiblePresetGroups.some((g) => g.id === presetGroup) ? presetGroup : null;
+  const filteredPresets = visiblePresetGroup
+    ? visiblePresets.filter((f) => f.group === visiblePresetGroup)
+    : visiblePresets;
   const presetEndpoint = form.providerPreset
     ? PROVIDER_PRESETS.find((f) => f.id === form.providerPreset)?.baseUrl ?? ''
     : '';
@@ -90,16 +89,16 @@ export function ProviderForm({
         <div className="mb-3">
           <label className={labelCls + " mb-[6px]"}>{t("provider_preset_label")}</label>
           <SegmentedControl
-            value={presetGroup ?? ''}
+            value={visiblePresetGroup ?? ''}
             options={[
-              ...PRESET_GROUPS.map((g) => ({ value: g.id, label: g.label })),
+              ...visiblePresetGroups.map((g) => ({ value: g.id, label: g.label })),
               { value: '', label: t("custom") },
             ]}
             onChange={(g) => {
               if (!g) {
                 updateForm('providerPreset', '');
               } else {
-                const first = PROVIDER_PRESETS.find((f) => f.group === g);
+                const first = visiblePresets.find((f) => f.group === g);
                 if (first) applyPreset(first.id);
               }
             }}
@@ -114,9 +113,9 @@ export function ProviderForm({
           <label className={labelCls + " mb-[6px]"}>{t("api_format_label")}</label>
           <DropdownSelect
             value={form.providerPreset || ''}
-            options={presetGroup ? filteredPresets.map((f) => ({ id: f.id, label: f.label })) : []}
+            options={visiblePresetGroup ? filteredPresets.map((f) => ({ id: f.id, label: f.label })) : []}
             placeholder={t("custom")}
-            disabled={!presetGroup}
+            disabled={!visiblePresetGroup}
             onChange={(val) => {
               if (val) applyPreset(val);
             }}

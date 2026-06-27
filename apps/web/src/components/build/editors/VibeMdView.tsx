@@ -37,7 +37,7 @@
  * body round-trips. See `vibe-md-sync.ts` for the Threat-2 guarantee.
  */
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import type { UseFormReturn } from "react-hook-form";
 import type { BuildCharacterDraft } from "@vibe-tavern/api-contracts";
 import { EditorState } from "@codemirror/state";
@@ -52,6 +52,7 @@ import { applyBodyToDraft, draftToBody } from "./vibe-md-sync.js";
 import { cn } from "../../../lib/cn.js";
 import { useT } from "../../../i18n/context.js";
 import { useIsMobile } from "../../../hooks/use-mobile.js";
+import { usePersistedBoolean } from "../../../hooks/use-persisted-boolean.js";
 import { Icons } from "../../shared/icons.js";
 import { SegmentedControl } from "../../shared/SegmentedControl.js";
 import { NumberInput } from "../../shared/NumberInput.js";
@@ -296,22 +297,7 @@ interface AccordionProps {
 }
 
 function Accordion({ title, storageKey, defaultOpen, children }: AccordionProps) {
-  const [isOpen, setIsOpen] = useState(() => {
-    try {
-      const stored = localStorage.getItem(storageKey);
-      return stored === null ? !!defaultOpen : stored === "true";
-    } catch {
-      return !!defaultOpen;
-    }
-  });
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(storageKey, isOpen ? "true" : "false");
-    } catch {
-      /* ignore quota / private mode */
-    }
-  }, [storageKey, isOpen]);
+  const [isOpen, setIsOpen] = usePersistedBoolean(storageKey, !!defaultOpen);
 
   return (
     <div className="mb-4 overflow-hidden rounded-lg border border-border bg-s2">

@@ -1,6 +1,8 @@
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useState, useRef, useMemo } from "react";
+import { useKeyDown } from "../../../hooks/use-key-down.js";
 import { Ic } from "../../shared/icons.js";
+import { AddButton } from "../../shared/add-button.js";
 import { useIsMobile } from "../../../hooks/use-mobile.js";
 import { MobileExpandTextarea } from "../../shared/MobileExpandTextarea.js";
 import { AutoTextarea } from "../../shared/auto-textarea.js";
@@ -67,6 +69,8 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [importOpen, setImportOpen] = useState(false);
   const [importCode, setImportCode] = useState("");
+  useKeyDown("Escape", () => setConfirmDeleteId(null), { enabled: !!confirmDeleteId });
+  useKeyDown("Escape", () => { setImportOpen(false); setImportCode(""); }, { enabled: importOpen });
   const [apiRefOpen, setApiRefOpen] = useState(false);
   const [aiHelperOpen, setAiHelperOpen] = useState(false);
 
@@ -269,12 +273,12 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
         <div className="py-10 text-center">
           <div className="mb-2 text-[13px] text-t3">{t("script_no_scripts")}</div>
           <div className="flex justify-center gap-2">
-            <button type="button" className="flex h-8 cursor-pointer items-center gap-1.5 rounded-md border border-dashed border-border2 bg-transparent px-3 font-ui text-[12px] text-t3 transition-all hover:border-accent hover:text-accent" onClick={handleAdd}>
+            <AddButton onClick={handleAdd}>
               <Ic.plus /> {t("new_script")}
-            </button>
-            <button type="button" className="flex h-8 cursor-pointer items-center gap-1.5 rounded-md border border-dashed border-border2 bg-transparent px-3 font-ui text-[12px] text-t3 transition-all hover:border-accent hover:text-accent" onClick={() => setImportOpen(true)}>
+            </AddButton>
+            <AddButton onClick={() => setImportOpen(true)}>
               <Ic.import /> {t("script_import")}
-            </button>
+            </AddButton>
           </div>
         </div>
       ) : (
@@ -292,8 +296,8 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
             </div>
           ))}
           <div className="mt-2 flex flex-wrap gap-2">
-            <button type="button" className="flex h-8 cursor-pointer items-center gap-1.5 rounded-md border border-dashed border-border2 bg-transparent px-3 font-ui text-[12px] text-t3 transition-all hover:border-accent hover:text-accent" onClick={handleAdd}><Ic.plus /> {t("new_script")}</button>
-            <button type="button" className="flex h-8 cursor-pointer items-center gap-1.5 rounded-md border border-dashed border-border2 bg-transparent px-3 font-ui text-[12px] text-t3 transition-all hover:border-accent hover:text-accent" onClick={() => setImportOpen(true)}><Ic.import /> {t("script_import")}</button>
+            <AddButton onClick={handleAdd}><Ic.plus /> {t("new_script")}</AddButton>
+            <AddButton onClick={() => setImportOpen(true)}><Ic.import /> {t("script_import")}</AddButton>
           </div>
         </>
       )}

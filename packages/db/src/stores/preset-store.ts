@@ -11,7 +11,9 @@ import { normalizePresetCanvas } from '@vibe-tavern/domain';
 
 export interface CreatePresetData {
   name: string;
-  bindProviderPresetId?: string | null;
+  /** Designated-default flag. Only one preset should have this true (enforced
+   *  by the seeding path; regular creates pass false/omit). */
+  isDefault?: boolean;
   systemPrompt?: string;
   postHistoryInstructions?: string;
   assistantPrefix?: string;
@@ -40,7 +42,7 @@ export type UpdatePresetData = Partial<CreatePresetData>;
 export interface PromptPreset {
   id: string;
   name: string;
-  bindProviderPresetId: string | null;
+  isDefault: boolean;
   systemPrompt: string;
   postHistoryInstructions: string;
   assistantPrefix: string;
@@ -114,7 +116,7 @@ export class PresetStore {
       .values({
         id,
         name: data.name,
-        bindProviderPresetId: data.bindProviderPresetId ?? null,
+        isDefault: data.isDefault ? 1 : 0,
         systemPrompt: data.systemPrompt ?? '',
         postHistoryInstructions: data.postHistoryInstructions ?? '',
         assistantPrefix: data.assistantPrefix ?? '',
@@ -157,7 +159,7 @@ export class PresetStore {
     const values: Partial<typeof promptPresets.$inferInsert> = { updatedAt: now };
 
     if (data.name !== undefined) values.name = data.name;
-    if (data.bindProviderPresetId !== undefined) values.bindProviderPresetId = data.bindProviderPresetId;
+    if (data.isDefault !== undefined) values.isDefault = data.isDefault ? 1 : 0;
     if (data.systemPrompt !== undefined) values.systemPrompt = data.systemPrompt;
     if (data.postHistoryInstructions !== undefined) values.postHistoryInstructions = data.postHistoryInstructions;
     if (data.assistantPrefix !== undefined) values.assistantPrefix = data.assistantPrefix;
@@ -223,7 +225,7 @@ export class PresetStore {
       .values({
         id: newId,
         name: `${original.name} (copy)`,
-        bindProviderPresetId: original.bindProviderPresetId,
+        isDefault: 0,
         systemPrompt: original.systemPrompt,
         postHistoryInstructions: original.postHistoryInstructions,
         assistantPrefix: original.assistantPrefix,
@@ -267,8 +269,12 @@ export class PresetStore {
       .get();
 
     if (countRow && countRow.count > 0) {
-      const first = await this.db.select().from(promptPresets).get();
-      return this.mapRow(first!);
+      // Prefer the row flagged is_default; fall back to the first by rowid for
+      // legacy rows that somehow lack the flag (preserves the old select().get()
+      // rowid-first behavior as a defensive default).
+      const rows = await this.db.select().from(promptPresets).all();
+      const target = rows.find((r) => r.isDefault) ?? rows[0];
+      return this.mapRow(target!);
     }
 
     return this.create({
@@ -289,7 +295,7 @@ export class PresetStore {
       customInjections: [],
       promptOrder: [],
       advancedMode: false,
-      bindProviderPresetId: null,
+      isDefault: true,
     });
   }
 
@@ -328,7 +334,7 @@ export class PresetStore {
     return {
       id: row.id,
       name: row.name,
-      bindProviderPresetId: row.bindProviderPresetId,
+      isDefault: Boolean(row.isDefault),
       systemPrompt: row.systemPrompt,
       postHistoryInstructions: row.postHistoryInstructions,
       assistantPrefix: row.assistantPrefix,
