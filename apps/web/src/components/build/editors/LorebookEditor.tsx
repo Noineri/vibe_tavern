@@ -19,6 +19,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useKeyDown } from "../../../hooks/use-key-down.js";
 
 import { Ic } from "../../shared/icons.js";
+import { AddButton } from "../../shared/add-button.js";
 import { cn } from "../../../lib/cn.js";
 import { useT } from "../../../i18n/context.js";
 import {
@@ -720,18 +721,12 @@ export function LorebookEditor({
             {t("lore_no_entries")}
           </div>
           <div className="mx-auto flex justify-center gap-2">
-            <button type="button"
-              className="flex h-8 cursor-pointer items-center gap-1.5 rounded-md border border-dashed border-border2 bg-transparent px-3 font-ui text-[12px] text-t3 transition-all hover:border-accent hover:text-accent"
-              onClick={handleAddLorebook}
-            >
+            <AddButton onClick={handleAddLorebook}>
               <Ic.plus /> {t("new_lorebook")}
-            </button>
-            <button type="button"
-              className="flex h-8 cursor-pointer items-center gap-1.5 rounded-md border border-dashed border-border2 bg-transparent px-3 font-ui text-[12px] text-t3 transition-all hover:border-accent hover:text-accent"
-              onClick={() => setImportOpen(true)}
-            >
+            </AddButton>
+            <AddButton onClick={() => setImportOpen(true)}>
               <Ic.import /> {t("import_lorebook_title")}
-            </button>
+            </AddButton>
           </div>
         </div>
       )}
@@ -792,18 +787,12 @@ export function LorebookEditor({
       {/* Кнопки внизу списка */}
       {lorebooks.length > 0 && (
         <div className="mt-2 flex gap-2">
-          <button type="button"
-            className="flex h-8 cursor-pointer items-center gap-1.5 rounded-md border border-dashed border-border2 bg-transparent px-3 font-ui text-[12px] text-t3 transition-all hover:border-accent hover:text-accent"
-            onClick={handleAddLorebook}
-          >
+          <AddButton onClick={handleAddLorebook}>
             <Ic.plus /> {t("new_lorebook")}
-          </button>
-          <button type="button"
-            className="flex h-8 cursor-pointer items-center gap-1.5 rounded-md border border-dashed border-border2 bg-transparent px-3 font-ui text-[12px] text-t3 transition-all hover:border-accent hover:text-accent"
-            onClick={() => setImportOpen(true)}
-          >
+          </AddButton>
+          <AddButton onClick={() => setImportOpen(true)}>
             <Ic.import /> {t("import_lorebook_title")}
-          </button>
+          </AddButton>
         </div>
       )}
     </div>
