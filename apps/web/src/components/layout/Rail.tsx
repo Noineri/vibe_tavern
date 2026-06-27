@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
+import { useOutsideClick } from "../../hooks/use-outside-click.js";
 import { createPortal } from "react-dom";
 import type { ChatBranchId, ChatId } from "@vibe-tavern/domain";
 import { Ic } from "../shared/icons.js";
@@ -107,17 +108,10 @@ export function Rail({ hidden }: { hidden?: boolean }) {
   }, [forceOpen]);
 
   // Close menu on outside click
-  useEffect(() => {
-    if (charMenuId === null && chatMenuId === null) return;
-    const handler = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        setCharMenuId(null);
-        setChatMenuId(null);
-      }
-    };
-    document.addEventListener("pointerdown", handler);
-    return () => document.removeEventListener("pointerdown", handler);
-  }, [charMenuId, chatMenuId]);
+  useOutsideClick(menuRef, () => { setCharMenuId(null); setChatMenuId(null); }, {
+    enabled: charMenuId !== null || chatMenuId !== null,
+    event: "pointerdown",
+  });
 
   // Filter: only non-archived characters
   const visibleChars = allCharacters.filter(() => true);
