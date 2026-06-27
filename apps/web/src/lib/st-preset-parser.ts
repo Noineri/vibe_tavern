@@ -354,8 +354,8 @@ function getOrderMeta(eIdentifier: string, orderMap: Map<string, StOrderInfo> | 
 // ─── Export: VT PromptPresetDto → SillyTavern preset JSON ─────────────────────
 // The inverse of `parseStPreset`. Emits the ST projection (prompts[] +
 // prompt_order) that ST can import and VT can re-import, PLUS a `_vibe_tavern`
-// extension key carrying the full VT DTO (minus the dead `bindModel` and
-// VT-internal id/timestamps). ST ignores unknown top-level keys, so the
+// extension key carrying the full VT DTO (minus VT-internal id/timestamps).
+// ST ignores unknown top-level keys, so the
 // extension makes VT→VT round-trip lossless without breaking ST interop.
 //
 // `parseStPreset` detects `_vibe_tavern` and surfaces it (see ParsedStPreset),
@@ -364,7 +364,7 @@ function getOrderMeta(eIdentifier: string, orderMap: Map<string, StOrderInfo> | 
 /** The VT-only fields embedded under `_vibe_tavern` for lossless VT→VT export. */
 export type VibeTavernPresetExtension = Omit<
   PromptPresetDto,
-  "id" | "bindModel" | "createdAt" | "updatedAt"
+  "id" | "createdAt" | "updatedAt"
 >;
 
 /** Sentinel `character_id` for the exported prompt_order set. Non-`100000` so
@@ -535,9 +535,9 @@ export function serializeStPreset(dto: PromptPresetDto): string {
     order: index,
   }));
 
-  // ── _vibe_tavern: full DTO (minus dead bindModel + VT-internal fields) ────
-  const { id: _id, bindModel: _bindModel, createdAt: _ca, updatedAt: _ua, ...extension } = dto;
-  void _id; void _bindModel; void _ca; void _ua;
+  // ── _vibe_tavern: full DTO (minus VT-internal id/timestamps) ────────────
+  const { id: _id, createdAt: _ca, updatedAt: _ua, ...extension } = dto;
+  void _id; void _ca; void _ua;
 
   const out: StPresetJsonOut = {
     name: dto.name,

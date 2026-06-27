@@ -96,7 +96,7 @@ CREATE TABLE provider_profiles (
 CREATE TABLE prompt_presets (
   id text PRIMARY KEY NOT NULL,
   name text NOT NULL,
-  bind_provider_preset_id text,
+  is_default integer NOT NULL DEFAULT 0,
   system_prompt text DEFAULT '' NOT NULL,
   post_history_instructions text DEFAULT '' NOT NULL,
   assistant_prefix text DEFAULT '' NOT NULL,
@@ -106,7 +106,6 @@ CREATE TABLE prompt_presets (
   tools_prompt text DEFAULT '' NOT NULL,
   created_at text NOT NULL,
   updated_at text NOT NULL,
-  FOREIGN KEY (bind_provider_preset_id) REFERENCES provider_profiles(id) ON DELETE set null
 );
 CREATE TABLE chats (
   id text PRIMARY KEY NOT NULL,
