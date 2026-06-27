@@ -15,6 +15,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useKeyDown } from "../../../hooks/use-key-down.js";
 import { useOutsideClick } from "../../../hooks/use-outside-click.js";
+import { FieldLabel } from "../fields/field-label.js";
 import { toast } from "sonner";
 
 import { useBootstrapStore } from "../../../stores/api-actions/bootstrap-actions.js";
@@ -178,9 +179,9 @@ export function LoreEntryEditor({
 
         {/* ── Ключевые слова ── */}
         <div>
-          <label className="mb-1.5 block text-[12px] font-medium uppercase leading-tight tracking-[0.05em] text-t3">
+          <FieldLabel>
             {t("lore_entry_keys")}
-          </label>
+          </FieldLabel>
           <div className="flex items-start gap-2">
             <div
               className="flex flex-1 flex-wrap items-center gap-1.5 rounded-md border border-border bg-s2 px-2.5 py-1.5"
@@ -255,9 +256,9 @@ export function LoreEntryEditor({
 
         {/* ── Контент + тест активации ── */}
         <div>
-          <label className="mb-1.5 block text-[12px] font-medium uppercase leading-tight tracking-[0.05em] text-t3">
+          <FieldLabel>
             {t("lore_entry_content")}
-          </label>
+          </FieldLabel>
           <MobileExpandTextarea
             value={entry.content}
             onChange={(v) => updateAct("content", v)}
@@ -342,9 +343,9 @@ export function LoreEntryEditor({
             {/* ── Логика + Роль ── */}
             <div className="flex flex-wrap gap-4 mb-6">
               <div>
-                <label className="mb-1.5 block text-[12px] font-medium uppercase leading-tight tracking-[0.05em] text-t3">
+                <FieldLabel>
                   {t("lore_logic_label")}
-                </label>
+                </FieldLabel>
                 <SegmentedControl
                   value={entry.logic}
                   options={[
@@ -358,9 +359,9 @@ export function LoreEntryEditor({
                 />
               </div>
               <div>
-                <label className="mb-1.5 block text-[12px] font-medium uppercase leading-tight tracking-[0.05em] text-t3">
+                <FieldLabel>
                   {t("lore_role_label")}
-                </label>
+                </FieldLabel>
                   <SegmentedControl
                     value={entry.role}
                     options={[
@@ -376,9 +377,9 @@ export function LoreEntryEditor({
 
             {/* ── Вторичные ключевые слова ── */}
             <div className="mb-6">
-              <label className="mb-1.5 block text-[12px] font-medium uppercase leading-tight tracking-[0.05em] text-t3">
+              <FieldLabel>
                 {t("lore_entry_secondary_keys")}
-              </label>
+              </FieldLabel>
               <div
                 className="flex flex-wrap items-center gap-1.5 rounded-md border border-border bg-s2 px-2.5 py-1.5"
                 style={{ minHeight: 38 }}
@@ -451,9 +452,9 @@ export function LoreEntryEditor({
                 <div className="max-w-[170px]">
                   <CustomTooltip content={t("lore_depth_hint")} side="top" align="start">
                     <div>
-                      <label className="mb-1.5 block cursor-help text-[12px] font-medium uppercase leading-tight tracking-[0.05em] text-t3">
+                      <FieldLabel help>
                         {t("lore_depth_label")}
-                      </label>
+                      </FieldLabel>
                       <NumberInput
                         min={0}
                         value={entry.depth}
@@ -467,9 +468,9 @@ export function LoreEntryEditor({
 
             {/* ── Источники сопоставления ── */}
             <div className="mb-6">
-              <label className="mb-1.5 block text-[12px] font-medium uppercase leading-tight tracking-[0.05em] text-t3">
+              <FieldLabel>
                 {t("lore_matchsources_section")}
-              </label>
+              </FieldLabel>
               <ToggleChips
                 selected={entry.matchSources}
                 options={(
@@ -504,9 +505,9 @@ export function LoreEntryEditor({
             >
               <CustomTooltip content={t("lore_priority_hint")} side="top" align="start">
                 <div>
-                  <label className="mb-1.5 block cursor-help text-[12px] font-medium uppercase leading-tight tracking-[0.05em] text-t3">
+                  <FieldLabel help>
                     {t("lore_priority_label")}
-                  </label>
+                  </FieldLabel>
                   <NumberInput
                     min={0}
                     value={entry.priority}
@@ -516,9 +517,9 @@ export function LoreEntryEditor({
               </CustomTooltip>
               <div>
                 <CustomTooltip content={t("probability_hint")}>
-                  <label className="mb-1.5 block text-[12px] font-medium uppercase leading-tight tracking-[0.05em] text-t3">
+                  <FieldLabel>
                     {t("lore_probability")}
-                  </label>
+                  </FieldLabel>
                 </CustomTooltip>
                 <NumberInput
                   min={0}
@@ -529,9 +530,9 @@ export function LoreEntryEditor({
               </div>
               <div>
                 <CustomTooltip content={t("scan_depth_override_hint")}>
-                  <label className="mb-1.5 block text-[12px] font-medium uppercase leading-tight tracking-[0.05em] text-t3">
+                  <FieldLabel>
                     {t("lore_scan_depth_override")}
-                  </label>
+                  </FieldLabel>
                 </CustomTooltip>
                 <NumberInput
                   min={-1}
@@ -551,9 +552,9 @@ export function LoreEntryEditor({
               >
                 <div className="min-w-[140px] flex-1 max-w-[200px]">
                   <CustomTooltip content={t("group_hint")}>
-                    <label className="mb-1.5 block text-[12px] font-medium uppercase leading-tight tracking-[0.05em] text-t3">
+                    <FieldLabel>
                       {t("lore_group_name")}
-                    </label>
+                    </FieldLabel>
                   </CustomTooltip>
                   <input
                     className="h-8 w-full rounded-md border border-border bg-s2 px-2.5 text-[13px] text-t1 outline-none focus:border-accent"
@@ -564,9 +565,9 @@ export function LoreEntryEditor({
                 </div>
                 <div className="min-w-[100px]">
                   <CustomTooltip content={t("group_weight_hint")}>
-                    <label className="mb-1.5 block text-[12px] font-medium uppercase leading-tight tracking-[0.05em] text-t3">
+                    <FieldLabel>
                       {t("lore_group_weight")}
-                    </label>
+                    </FieldLabel>
                   </CustomTooltip>
                   <NumberInput
                     min={0}
@@ -608,9 +609,9 @@ export function LoreEntryEditor({
 
             {/* ── Фильтр по персонажам — id-bound picker с ghost-binding ── */}
             <div ref={charFilterRef} className="mb-6 pb-6 border-b border-border/50">
-              <label className="mb-1.5 block text-[12px] font-medium uppercase leading-tight tracking-[0.05em] text-t3">
+              <FieldLabel>
                 {t("lore_charfilter_section")}
-              </label>
+              </FieldLabel>
               <div
                 className="flex flex-wrap items-center gap-1.5 rounded-md border border-border bg-s2 px-2.5 py-1.5"
                 style={{ minHeight: 38 }}
@@ -756,9 +757,9 @@ export function LoreEntryEditor({
               >
                 <CustomTooltip content={t("sticky_win_hint")}>
                   <div>
-                    <label className="mb-1.5 block text-[12px] font-medium uppercase leading-tight tracking-[0.05em] text-t3">
+                    <FieldLabel>
                       {t("lore_sticky_window")}
-                    </label>
+                    </FieldLabel>
                     <NumberInput
                       min={0}
                       value={entry.stickyWindow}
@@ -768,9 +769,9 @@ export function LoreEntryEditor({
                 </CustomTooltip>
                 <CustomTooltip content={t("cooldown_hint")}>
                   <div>
-                    <label className="mb-1.5 block text-[12px] font-medium uppercase leading-tight tracking-[0.05em] text-t3">
+                    <FieldLabel>
                       {t("lore_cooldown_window")}
-                    </label>
+                    </FieldLabel>
                     <NumberInput
                       min={0}
                       value={entry.cooldownWindow}
@@ -780,9 +781,9 @@ export function LoreEntryEditor({
                 </CustomTooltip>
                 <CustomTooltip content={t("delay_hint")}>
                   <div>
-                    <label className="mb-1.5 block text-[12px] font-medium uppercase leading-tight tracking-[0.05em] text-t3">
+                    <FieldLabel>
                       {t("lore_delay_window")}
-                    </label>
+                    </FieldLabel>
                     <NumberInput
                       min={0}
                       value={entry.delayWindow}
@@ -827,9 +828,9 @@ export function LoreEntryEditor({
               {entry.delayUntilRecursion && (
                 <div className="mt-3 max-w-[160px]">
                   <CustomTooltip content={t("recursion_level_hint")}>
-                    <label className="mb-1.5 block text-[12px] font-medium uppercase leading-tight tracking-[0.05em] text-t3">
+                    <FieldLabel>
                       {t("lore_recursion_label")}
-                    </label>
+                    </FieldLabel>
                   </CustomTooltip>
                   <NumberInput
                     min={0}
