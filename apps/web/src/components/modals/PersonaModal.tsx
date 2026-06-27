@@ -295,6 +295,7 @@ export function PersonaModal(input: PersonaModalProps) {
   }
 
   const editName = form.watch("name");
+  const isDirty = form.formState.isDirty;
   const editDescription = form.watch("description");
   const editPronouns = form.watch("pronouns");
   const editPronounsCustom = form.watch("pronounsCustom");
@@ -430,7 +431,7 @@ export function PersonaModal(input: PersonaModalProps) {
             <div className="flex gap-2">
               <button type="button"
                 className="min-h-[40px] cursor-pointer rounded-md bg-accent px-4 font-ui text-sm font-medium text-on-accent transition-all hover:brightness-110"
-                disabled={input.isSaving || !(editName || "").trim()}
+                disabled={input.isSaving || !isDirty || !(editName || "").trim()}
                 onClick={commitEdit}
               >
                 {input.isSaving ? t("saving") : t("save_btn")}

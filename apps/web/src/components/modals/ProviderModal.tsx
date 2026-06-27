@@ -198,6 +198,7 @@ export function ProviderModal({
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [profileSearch, setProfileSearch] = useState("");
   const [dirty, setDirty] = useState(false);
+  const [headerSaving, setHeaderSaving] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const visionDropdownRef = useRef<HTMLDivElement>(null);
   const isMobile = useIsMobile();
@@ -410,9 +411,14 @@ export function ProviderModal({
     const draft = { ...computeSavePatch(form), id: form.id };
     const parsed = saveProviderDraftSchema.safeParse(draft);
     if (!parsed.success) return;
-    const saved = await onSaveProfile(form);
-    if (saved) setForm(profileToForm(saved));
-    setHeaderMode("view"); setIsNew(false); setDirty(false);
+    setHeaderSaving(true);
+    try {
+      const saved = await onSaveProfile(form);
+      if (saved) setForm(profileToForm(saved));
+      setHeaderMode("view"); setIsNew(false); setDirty(false);
+    } finally {
+      setHeaderSaving(false);
+    }
   };
 
   // ── Cancel editing (back to view) ──
@@ -658,6 +664,8 @@ export function ProviderModal({
                   onCancel={!isNew ? handleCancelEdit : undefined}
                   isNew={isNew}
                   isArmServer={isArmServer}
+                  dirty={dirty}
+                  saving={headerSaving}
                 />
               )}
 
