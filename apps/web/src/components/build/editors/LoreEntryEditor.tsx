@@ -14,6 +14,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useKeyDown } from "../../../hooks/use-key-down.js";
+import { useOutsideClick } from "../../../hooks/use-outside-click.js";
 import { toast } from "sonner";
 
 import { useBootstrapStore } from "../../../stores/api-actions/bootstrap-actions.js";
@@ -95,17 +96,7 @@ export function LoreEntryEditor({
   // LinkBindingPopover.tsx — the dashed "+" popover this picker mirrors).
   useKeyDown("Escape", () => setCharFilterPicker(null), { target: document });
 
-  useEffect(() => {
-    const onMouseDown = (e: MouseEvent) => {
-      if (charFilterRef.current && !charFilterRef.current.contains(e.target as Node)) {
-        setCharFilterPicker(null);
-      }
-    };
-    document.addEventListener("mousedown", onMouseDown);
-    return () => {
-      document.removeEventListener("mousedown", onMouseDown);
-    };
-  }, []);
+  useOutsideClick(charFilterRef, () => setCharFilterPicker(null));
 
   const [aiHelperOpen, setAiHelperOpen] = useState(false);
   const activeCharacter = useActiveCharacter();

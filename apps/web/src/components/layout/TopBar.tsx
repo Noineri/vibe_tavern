@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useOutsideClick } from "../../hooks/use-outside-click.js";
 import { Icons } from "../shared/icons.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
 import { MemBadge } from "../settings/popovers/MemBadge.js";
@@ -53,14 +54,7 @@ export function TopBar({ railHidden, onShowRail }: { railHidden?: boolean; onSho
   const presetDropRef = useRef<HTMLDivElement>(null);
   const canSwitchPresets = promptPresets.length > 0;
 
-  useEffect(() => {
-    if (!presetDropOpen) return;
-    const handler = (e: MouseEvent) => {
-      if (presetDropRef.current && !presetDropRef.current.contains(e.target as Node)) setPresetDropOpen(false);
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [presetDropOpen]);
+  useOutsideClick(presetDropRef, () => setPresetDropOpen(false), { enabled: presetDropOpen });
 
   // --- Store actions ---
   const setMode = useNavigationStore((s) => s.setMode);
