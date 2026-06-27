@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
+import { useKeyDown } from "../../../hooks/use-key-down.js";
 import { Icons } from "../../shared/icons.js";
 import { useT } from "../../../i18n/context.js";
 import { CustomTooltip } from "../../shared/Tooltip.js";
@@ -124,11 +125,7 @@ function DesktopGalleryPanel({
     setPos(clampFramePos(getAttachedPosition()));
   }, [clampFramePos, setZoomInstant]);
 
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => { if (event.key === "Escape") onClose(); };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [onClose]);
+  useKeyDown("Escape", onClose);
 
   useEffect(() => {
     return () => { if (zoomRafRef.current !== null) window.cancelAnimationFrame(zoomRafRef.current); };
@@ -251,11 +248,7 @@ function MobileLightbox({
   const { t } = useT();
   const { scale, translate, isPinching, touchHandlers, handleTap } = useImageZoomPan();
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  useKeyDown("Escape", onClose);
 
   return (
     <div
