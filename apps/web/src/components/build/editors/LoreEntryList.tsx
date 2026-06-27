@@ -19,13 +19,10 @@
  */
 
 import { useState, useMemo, useCallback, useEffect, type CSSProperties, type HTMLAttributes } from "react";
+import { useDndSensors } from "../../../hooks/use-dnd-sensors.js";
 import {
 	DndContext,
 	DragOverlay,
-	MouseSensor,
-	TouchSensor,
-	useSensor,
-	useSensors,
 	closestCenter,
 	type DragStartEvent,
 	type DragEndEvent,
@@ -296,17 +293,7 @@ export function LoreEntryList({
 	const [activeDragId, setActiveDragId] = useState<string | null>(null);
 	const [optimisticEntries, setOptimisticEntries] = useState<LoreEntryRecord[] | null>(null);
 
-	const sensors = useSensors(
-		useSensor(MouseSensor, {
-			// Keep a small distance so clicks still open the editor, but the drag
-			// activates quickly enough not to feel laggy.
-			activationConstraint: { distance: 2 },
-		}),
-		useSensor(TouchSensor, {
-			// Mobile uses a dedicated 44px handle with touch-action:none.
-			activationConstraint: { distance: 1 },
-		}),
-	);
+	const sensors = useDndSensors();
 
 	const displayEntries = optimisticEntries ?? entries;
 
