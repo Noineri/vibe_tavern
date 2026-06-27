@@ -145,7 +145,6 @@ function makeDto(over: Partial<PromptPresetDto> = {}): PromptPresetDto {
   return {
     id: "preset-1",
     name: "My Preset",
-    bindModel: "dead-model-id",
     system: "You are a helpful assistant.",
     jailbreak: "Continue the story.",
     prefill: "{",
@@ -258,11 +257,10 @@ test("serializeStPreset — simple mode (empty promptOrder) synthesizes a comple
   }
 });
 
-test("serializeStPreset — _vibe_tavern carries the full DTO minus bindModel/id/timestamps", () => {
+test("serializeStPreset — _vibe_tavern carries the full DTO minus id/timestamps", () => {
   const dto = makeDto();
   const out = JSON.parse(serializeStPreset(dto)) as { _vibe_tavern: Record<string, unknown> };
   const ext = out._vibe_tavern;
-  expect(ext.bindModel).toBeUndefined();
   expect(ext.id).toBeUndefined();
   expect(ext.createdAt).toBeUndefined();
   expect(ext.updatedAt).toBeUndefined();

@@ -24,7 +24,6 @@ export class PromptPresetService {
 
   async createPromptPreset(input: {
     name: string;
-    bindModel?: string;
     system?: string;
     jailbreak?: string;
     prefill?: string;
@@ -46,7 +45,6 @@ export class PromptPresetService {
 
   async updatePromptPreset(presetId: string, patch: {
     name?: string;
-    bindModel?: string;
     system?: string;
     jailbreak?: string;
     prefill?: string;

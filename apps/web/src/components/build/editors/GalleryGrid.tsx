@@ -1,4 +1,6 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useKeyDown } from "../../../hooks/use-key-down.js";
+import { useOutsideClick } from "../../../hooks/use-outside-click.js";
 import { createPortal } from "react-dom";
 import { cn } from "../../../lib/cn.js";
 import { Icons } from "../../shared/icons.js";
@@ -81,19 +83,15 @@ function OverflowMenu({
     });
   }, [anchorRect.top]);
 
+  useKeyDown("Escape", onClose, { target: document });
+
+  useOutsideClick(menuRef, onClose);
+
   useEffect(() => {
-    const onMouseDown = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) onClose();
-    };
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
     const onScrollOrResize = () => onClose();
-    document.addEventListener("mousedown", onMouseDown);
-    document.addEventListener("keydown", onKey);
     window.addEventListener("scroll", onScrollOrResize, true);
     window.addEventListener("resize", onScrollOrResize);
     return () => {
-      document.removeEventListener("mousedown", onMouseDown);
-      document.removeEventListener("keydown", onKey);
       window.removeEventListener("scroll", onScrollOrResize, true);
       window.removeEventListener("resize", onScrollOrResize);
     };

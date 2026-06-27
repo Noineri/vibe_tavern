@@ -599,7 +599,7 @@ import { scanSillyTavernDirectory as scanST, importSillyTavernDirectory as impor
 		await this.ensureDefaultPresetOnce();
 		const presets = await this.stores.presets.listAll();
 		const globalPreset =
-			presets.find((preset) => !preset.bindProviderPresetId) ?? presets[0];
+			presets.find((preset) => preset.isDefault) ?? presets[0];
 		if (!globalPreset) {
 			throw internal("No prompt preset is available for new chats.");
 		}
@@ -614,6 +614,7 @@ import { scanSillyTavernDirectory as scanST, importSillyTavernDirectory as impor
 			await this.stores.presets.create({
 				name: "Default",
 				systemPrompt: "Write {{char}}'s next reply in a fictional chat between {{char}} and {{user}}.",
+				isDefault: true,
 			});
 		}
 	}
@@ -624,7 +625,6 @@ import { scanSillyTavernDirectory as scanST, importSillyTavernDirectory as impor
 		return {
 			id: preset.id,
 			name: preset.name,
-			bindModel: preset.bindProviderPresetId ?? "",
 			system: preset.systemPrompt,
 			jailbreak: preset.postHistoryInstructions,
 			prefill: preset.assistantPrefix,

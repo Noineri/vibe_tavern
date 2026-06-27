@@ -477,7 +477,6 @@ export interface ToolProfile {
 export interface PromptPreset {
   id: PromptPresetId;
   name: string;
-  bindModel: string;
   system: string;
   jailbreak: string;
   summary: string;

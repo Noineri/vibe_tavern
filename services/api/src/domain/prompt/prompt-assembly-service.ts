@@ -169,7 +169,7 @@ export class PromptAssemblyService {
     const effectivePersonaId = chat.personaId ?? allPersonas.find(p => p.defaultForNewChats)?.id ?? allPersonas[0]?.id ?? "";
     const persona = await this.resolver.getPersona(effectivePersonaId);
     const promptPresetId = input.presetId ?? chat.promptPresetId
-      ?? (await this.stores.presets.listAll()).find(p => !p.bindProviderPresetId)?.id;
+      ?? (await this.stores.presets.listAll()).find(p => p.isDefault)?.id;
     const promptPreset = promptPresetId ? await this.resolver.getPromptPreset(promptPresetId) : null;
 
     logSendDebug("prompt.assemble.context", {

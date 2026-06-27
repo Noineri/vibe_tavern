@@ -356,7 +356,10 @@ export const messageVariants = sqliteTable('message_variants', {
 export const promptPresets = sqliteTable('prompt_presets', {
   id: text('id').primaryKey(),
   name: text('name').notNull(),
-  bindProviderPresetId: text('bind_provider_preset_id').references(() => providerProfiles.id, { onDelete: 'set null' }),
+  // Designated-default marker — exactly one row has is_default = 1 (enforced in
+  // app logic: seeded by ensureDefault(), backfilled by migration 0001).
+  // Replaces the dead `bind_provider_preset_id` model-binding column.
+  isDefault: integer('is_default').notNull().default(0),
   systemPrompt: text('system_prompt').notNull().default(''),
   postHistoryInstructions: text('post_history_instructions').notNull().default(''),
   assistantPrefix: text('assistant_prefix').notNull().default(''),

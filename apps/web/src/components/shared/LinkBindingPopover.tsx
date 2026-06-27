@@ -6,6 +6,7 @@
  * with available targets.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useOutsideClick } from "../../hooks/use-outside-click.js";
 
 import { cn } from "../../lib/cn.js";
 import { CustomTooltip } from "./Tooltip.js";
@@ -107,16 +108,7 @@ export function LinkBindingPopover({
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    if (!open) return;
-    const handler = (e: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [open]);
+  useOutsideClick(containerRef, () => setOpen(false), { enabled: open });
 
   const charMap = new Map(characters.map((c) => [c.id, c]));
   const personaMap = new Map(personas.map((p) => [p.id, p]));

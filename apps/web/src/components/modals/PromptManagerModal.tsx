@@ -19,7 +19,6 @@ type SaveState = "idle" | "saving" | "saved" | "error";
 
 type DraftData = {
   name: string;
-  bindModel: string;
   system: string;
   jailbreak: string;
   prefill: string;
@@ -61,7 +60,7 @@ interface PromptManagerModalProps {
 }
 
 const emptyDraft: DraftData = {
-  name: "", bindModel: "", system: "", jailbreak: "",
+  name: "", system: "", jailbreak: "",
   prefill: "", authorsNote: "", authorsNoteDepth: 4, authorsNotePosition: "in_chat", authorsNoteRole: "system", summary: "", tools: "", nsfw: "", enhanceDefinitions: "", scriptAiSystemPrompt: "",
   aiAssistantPrompts: {},
   customInjections: [],
@@ -139,7 +138,6 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
     if (activePreset) {
       setDraft({
         name: activePreset.name,
-        bindModel: activePreset.bindModel,
         system: activePreset.system,
         jailbreak: activePreset.jailbreak,
         prefill: activePreset.prefill ?? "",
@@ -237,7 +235,6 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
   const handleAdd = (name: string) => {
     void input.onCreate({
       name,
-      bindModel: "",
       system: "",
       jailbreak: "",
       prefill: "",
@@ -298,7 +295,6 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
         // path uses.
         setDraft({
           name: ext.name,
-          bindModel: "",
           system: ext.system,
           jailbreak: ext.jailbreak,
           prefill: ext.prefill,

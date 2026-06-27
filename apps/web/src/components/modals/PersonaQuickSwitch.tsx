@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from "react";
+import { useOutsideClick } from "../../hooks/use-outside-click.js";
 import { Icons } from "../shared/icons.js";
 import { cn } from "../../lib/cn.js";
 import { useT } from "../../i18n/context.js";
@@ -39,17 +40,7 @@ export function PersonaQuickSwitch({ personas, activePersonaId, onSelect }: Prop
 
   const activePersona = personas.find((p) => p.id === activePersonaId) || personas[0];
 
-  useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
-      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
-        setIsOpen(false);
-      }
-    }
-    if (isOpen) {
-      document.addEventListener("mousedown", handleClickOutside);
-    }
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [isOpen]);
+  useOutsideClick(containerRef, () => setIsOpen(false), { enabled: isOpen });
 
   if (!activePersona) {
     return (

@@ -1,4 +1,5 @@
 import React, { useCallback, useRef, useState } from "react";
+import { useKeyDown } from "../../hooks/use-key-down.js";
 import { getGatewayBaseUrl } from "../../gateway-client.js";
 import { cn } from "../../lib/cn.js";
 import { Icons } from "../shared/icons.js";
@@ -190,6 +191,8 @@ function Lightbox({ attachments, messageId, initialIndex, onClose }: { attachmen
       toast.error(t("attachment_delete_failed"));
     }
   }, [messageId, att?.id, attachments, index, onClose, t]);
+
+  useKeyDown("Escape", onClose, { enabled: !!att && !editing });
 
   if (!att) return null;
 

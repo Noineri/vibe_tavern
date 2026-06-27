@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from "react";
+import { useKeyDown } from "../../../hooks/use-key-down.js";
 import { Icons } from "../../shared/icons.js";
 import { AutoTextarea } from "../../shared/auto-textarea.js";
 import { useT } from "../../../i18n/context.js";
@@ -70,15 +71,11 @@ export function GalleryLightbox({ characterId, assets, index, onIndexChange, onC
   const cancelRegenerate = useCallback(() => { cancelDescribe(characterId); }, [cancelDescribe, characterId]);
 
   // Keyboard: Escape close, arrows navigate.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-      else if (e.key === "ArrowRight" && hasNav) goNext();
-      else if (e.key === "ArrowLeft" && hasNav) goPrev();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose, goNext, goPrev, hasNav]);
+  useKeyDown(["Escape", "ArrowRight", "ArrowLeft"], (e) => {
+    if (e.key === "Escape") onClose();
+    else if (e.key === "ArrowRight" && hasNav) goNext();
+    else if (e.key === "ArrowLeft" && hasNav) goPrev();
+  });
 
   return (
     <div
