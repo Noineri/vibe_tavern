@@ -199,7 +199,7 @@ export function Sidebar() {
                       {isMarked && (
                         <div className="absolute -left-[7px] top-1/2 -translate-y-1/2 h-5 w-[3px] rounded-r-full bg-accent transition-all" />
                       )}
-                      <span className={cn('flex h-full w-full items-center justify-center overflow-hidden rounded-full font-ui text-sm', isMarked ? 'bg-accent text-on-accent ring-1 ring-accent/50 ring-offset-2 ring-offset-surface' : 'bg-s3 text-t2')}>
+                      <span className={cn('flex h-full w-full items-center justify-center overflow-hidden rounded-full font-ui text-sm', tabAvatarSrc(tab) ? 'bg-s3' : isMarked ? 'bg-accent text-on-accent ring-1 ring-accent/50 ring-offset-2 ring-offset-surface' : 'bg-s3 text-t2')}>
                         {tabAvatarSrc(tab) ? <img src={tabAvatarSrc(tab)!} alt={tab.name} className="h-full w-full object-cover" /> : initials(tab.name)}
                       </span>
                     </div>
@@ -293,7 +293,7 @@ export function Sidebar() {
                 className={cn('flex h-10 w-10 shrink-0 cursor-pointer items-center justify-center rounded-full transition-all duration-150', charSwitcherOpen ? '' : 'hover:bg-s2')}
                 onClick={() => setCharSwitcherOpen(v => !v)}
               >
-                <span className={cn("flex h-full w-full items-center justify-center overflow-hidden rounded-full bg-accent font-ui text-sm text-on-accent", charSwitcherOpen && "ring-1 ring-accent/50 ring-offset-2 ring-offset-surface")}>
+                <span className={cn("flex h-full w-full items-center justify-center overflow-hidden rounded-full font-ui text-sm", activeCharAvatarSrc ? "bg-s3" : "bg-accent text-on-accent", charSwitcherOpen && "ring-1 ring-accent/50 ring-offset-2 ring-offset-surface")}>
                   {activeCharAvatarSrc
                     ? <img src={activeCharAvatarSrc!} alt="" className="h-full w-full object-cover" />
                     : initials(snapshot?.character?.name ?? '?')}
