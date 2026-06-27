@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useKeyDown } from '../../../hooks/use-key-down.js';
 import { Icons } from '../../shared/icons.js';
 import { useT } from '../../../i18n/context.js';
 import { CustomTooltip } from '../../shared/Tooltip.js';
@@ -104,13 +105,7 @@ function DesktopAvatarPanel({ src, onClose }: AvatarPanelProps) {
     setPos(clampFramePos(getAttachedPosition()));
   }, [clampFramePos, setZoomInstant]);
 
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [onClose]);
+  useKeyDown("Escape", onClose);
 
   useEffect(() => {
     return () => {
@@ -230,11 +225,7 @@ function MobileLightbox({ src, onClose }: AvatarPanelProps) {
   const containerRef = useRef<HTMLDivElement>(null);
 
   // Escape key
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  useKeyDown("Escape", onClose);
 
   return (
     <div

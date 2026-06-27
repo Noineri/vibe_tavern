@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { useKeyDown } from "../../hooks/use-key-down.js";
 import { Icons } from "../shared/icons.js";
 import { Modal } from "../shared/Modal.js";
 import { useT } from "../../i18n/context.js";
@@ -160,11 +161,7 @@ function MediaLightbox({
   const { t } = useT();
   const src = serveCharacterAssetUrl(characterId, asset.id as string);
   // Escape closes the lightbox (not the whole modal).
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  useKeyDown("Escape", onClose);
 
   return (
     <div className="fixed inset-0 z-[700] flex flex-col bg-black/95">
