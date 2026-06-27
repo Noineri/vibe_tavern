@@ -379,7 +379,14 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
       <SetupWizard onVisibilityChange={setWizardVisible} />
       <Toaster
         position={isMobile ? "top-center" : "bottom-right"}
-        toastOptions={{ style: { background: "var(--s2)", color: "var(--t1)", border: "1px solid var(--border)" } }}
+        toastOptions={{
+          // glass-blur is a no-op in opaque themes (--glass-blur: 0) and frosts
+          // the lava blobs behind the toast in glass themes. --glass-bg is the
+          // translucent tint tuned to survive the blur (vs --s2, which reads
+          // muddy when blurred).
+          className: "glass-blur",
+          style: { background: "var(--glass-bg)", color: "var(--t1)", border: "1px solid var(--border)" },
+        }}
       />
     </div>
   );
