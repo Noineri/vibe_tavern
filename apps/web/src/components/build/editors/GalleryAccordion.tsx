@@ -9,6 +9,7 @@ import { serveCharacterAssetUrl } from "../../../api/gallery-api.js";
 import { setAvatarFromGallery } from "../../../api/character-api.js";
 import { fetchBootstrapAction } from "../../../stores/api-actions/bootstrap-actions.js";
 import { useTokenCount } from "../../../hooks/use-token-count.js";
+import { usePersistedBoolean } from "../../../hooks/use-persisted-boolean.js";
 import { useT } from "../../../i18n/context.js";
 import { toast } from "sonner";
 import type { CharacterAsset } from "@vibe-tavern/domain";
@@ -26,13 +27,7 @@ interface GalleryAccordionProps {
 export function GalleryAccordion({ characterId }: GalleryAccordionProps) {
   const { t } = useT();
   const storageKey = `gallery:open:${characterId}`;
-  const [isOpen, setIsOpen] = useState(() => {
-    try {
-      return localStorage.getItem(storageKey) === "true";
-    } catch {
-      return false;
-    }
-  });
+  const [isOpen, setIsOpen] = usePersistedBoolean(storageKey, false);
 
   const load = useGalleryStore((s) => s.load);
   const reload = useGalleryStore((s) => s.reload);
@@ -64,10 +59,9 @@ export function GalleryAccordion({ characterId }: GalleryAccordionProps) {
   // load() is idempotent — it only fetches the first time; reload() forces a
   // fresh fetch on open so the user always sees the latest when interacting.
   useEffect(() => {
-    localStorage.setItem(storageKey, isOpen ? "true" : "false");
     if (isOpen) void reload(characterId);
     else void load(characterId);
-  }, [isOpen, characterId, load, reload, storageKey]);
+  }, [isOpen, characterId, load, reload]);
 
   // Token estimate — only rows that will actually be injected into the prompt.
   // Per-image includeInPrompt is the sole gate now (no character-level master
