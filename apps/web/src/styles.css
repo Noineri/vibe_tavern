@@ -248,6 +248,7 @@ select option{padding:2px 6px}
 @keyframes slideOutLeft{from{transform:translateX(0)}to{transform:translateX(-100%)}
 @keyframes slideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}}
 @keyframes flyoutIn{from{opacity:0;transform:translateX(-8px)}to{opacity:1;transform:translateX(0)}}
+@keyframes flyoutCardIn{from{opacity:0;transform:translateX(-6px)}to{opacity:1;transform:translateX(0)}}
 @keyframes fadeIn{from{opacity:0}to{opacity:1}}
 @keyframes spinSlow{to{transform:rotate(360deg)}}
 .animate-spin-slow{animation:spinSlow 2s linear infinite}
