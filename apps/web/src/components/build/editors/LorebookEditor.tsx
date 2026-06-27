@@ -16,6 +16,7 @@
  */
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useKeyDown } from "../../../hooks/use-key-down.js";
 
 import { Ic } from "../../shared/icons.js";
 import { cn } from "../../../lib/cn.js";
@@ -238,6 +239,7 @@ export function LorebookEditor({
   const [confirmDeleteLorebook, setConfirmDeleteLorebook] = useState<
     string | null
   >(null);
+  useKeyDown("Escape", () => setConfirmDeleteLorebook(null), { enabled: !!confirmDeleteLorebook });
 
   // ── Модалка импорта ──
   const [importOpen, setImportOpen] = useState(false);
