@@ -13,6 +13,7 @@
  *   - onDeleted (коллбэк после успешного удаления)
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useKeyDown } from "../../../hooks/use-key-down.js";
 import { toast } from "sonner";
 
 import { useBootstrapStore } from "../../../stores/api-actions/bootstrap-actions.js";
@@ -92,20 +93,17 @@ export function LoreEntryEditor({
 
   // Close the character-filter picker on click-outside / Escape (same pattern as
   // LinkBindingPopover.tsx — the dashed "+" popover this picker mirrors).
+  useKeyDown("Escape", () => setCharFilterPicker(null), { target: document });
+
   useEffect(() => {
     const onMouseDown = (e: MouseEvent) => {
       if (charFilterRef.current && !charFilterRef.current.contains(e.target as Node)) {
         setCharFilterPicker(null);
       }
     };
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setCharFilterPicker(null);
-    };
     document.addEventListener("mousedown", onMouseDown);
-    document.addEventListener("keydown", onKeyDown);
     return () => {
       document.removeEventListener("mousedown", onMouseDown);
-      document.removeEventListener("keydown", onKeyDown);
     };
   }, []);
 
