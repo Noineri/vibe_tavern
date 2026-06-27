@@ -451,7 +451,16 @@ export function PersonaModal(input: PersonaModalProps) {
               className={cn(
                 "flex shrink-0 items-center justify-center overflow-hidden rounded-full text-base shadow-inner ring-1 ring-white/5",
                 isMobile ? "h-[68px] w-[68px]" : "h-[88px] w-[88px] text-lg",
-                isActive ? "bg-accent text-on-accent" : "bg-s3 text-t2",
+                // Colored bg is a fallback for the initials only. An avatar
+                // <img> sits on top and PNG transparency would otherwise let
+                // the active-state accent bleed through — so always use the
+                // neutral --s3 behind an image. Active state is already shown
+                // by the card's border-accent + bg-accent-dim.
+                avatar
+                  ? "bg-s3"
+                  : isActive
+                    ? "bg-accent text-on-accent"
+                    : "bg-s3 text-t2",
               )}
             >
               {avatar
