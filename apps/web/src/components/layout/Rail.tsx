@@ -225,7 +225,7 @@ export function Rail({ hidden }: { hidden?: boolean }) {
         />
         {/* Sheet */}
         <div
-          className="fixed inset-x-0 bottom-0 z-[501] rounded-t-2xl border-t border-border2 bg-surface pb-[env(safe-area-inset-bottom,0px)] shadow-[0_-4px_24px_rgba(0,0,0,0.5)] backdrop-blur-md"
+          className="glass-blur fixed inset-x-0 bottom-0 z-[501] rounded-t-2xl border-t border-border2 bg-glass-bg pb-[env(safe-area-inset-bottom,0px)] shadow-[0_-4px_24px_rgba(0,0,0,0.5)]"
           ref={menuRef}
           style={{ animation: "slideUp 0.2s ease-out" }}
           onTouchStart={onSheetTouchStart}
@@ -392,7 +392,7 @@ export function Rail({ hidden }: { hidden?: boolean }) {
 
           {/* Panel */}
           <div
-            className="fixed left-0 top-0 bottom-0 z-[300] flex w-[260px] flex-col border-r border-border bg-surface shadow-theme-xl backdrop-blur-md"
+            className="glass-blur fixed left-0 top-0 bottom-0 z-[300] flex w-[260px] flex-col border-r border-border bg-glass-bg shadow-theme-xl"
             style={{ animation: closing ? "slideOutLeft 0.2s ease-in forwards" : "slideInLeft 0.2s ease-out" }}
             onTouchStart={onPanelTouchStart}
             onTouchMove={onPanelTouchMove}

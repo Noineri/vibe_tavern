@@ -51,7 +51,7 @@ export function MobileExpandTextarea({
       </div>
 
       {open && (
-        <div className="fixed inset-0 z-[600] flex flex-col bg-surface">
+        <div className="glass-blur fixed inset-0 z-[600] flex flex-col bg-glass-bg">
           <div className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2.5">
             <div
               className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-[5px] text-t3 hover:bg-s2 hover:text-t1"

@@ -72,7 +72,7 @@ export function ActionSheet({ open, title, items, onClose }: ActionSheetProps) {
       {/* Sheet */}
       <div
         ref={sheetRef}
-        className="fixed inset-x-0 bottom-0 z-[501] rounded-t-2xl border-t border-border2 bg-surface pb-[env(safe-area-inset-bottom,0px)] shadow-[0_-4px_24px_rgba(0,0,0,0.5)] backdrop-blur-md"
+        className="glass-blur fixed inset-x-0 bottom-0 z-[501] rounded-t-2xl border-t border-border2 bg-glass-bg pb-[env(safe-area-inset-bottom,0px)] shadow-[0_-4px_24px_rgba(0,0,0,0.5)]"
         style={{ animation: "slideUp 0.2s ease-out" }}
         onTouchStart={onTouchStart}
         onTouchMove={onTouchMove}

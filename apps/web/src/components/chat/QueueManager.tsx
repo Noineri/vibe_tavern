@@ -65,7 +65,7 @@ export function QueueManager(): ReactNode {
         type="button"
         onClick={() => setExpanded((v) => !v)}
         className={cn(
-          "flex items-center gap-1.5 rounded-full bg-s2 px-2.5 py-1 font-ui text-[calc(var(--ui-fs)-3px)] font-medium text-t2 transition-colors hover:bg-s3 hover:text-t1",
+          "glass-blur flex items-center gap-1.5 rounded-full bg-glass-bg px-2.5 py-1 font-ui text-[calc(var(--ui-fs)-3px)] font-medium text-t2 transition-colors hover:bg-s3 hover:text-t1",
           isActive && "text-accent-t",
         )}
         aria-expanded={expanded}
@@ -188,7 +188,7 @@ function ManagerHeader({ jobs, onClose }: { jobs: QueueJob[]; onClose: () => voi
 
 function DesktopPopover({ jobs, onClose }: { jobs: QueueJob[]; onClose: () => void }): ReactNode {
   return (
-    <div className="absolute bottom-full left-0 mt-1 w-80 overflow-hidden rounded-lg border border-border bg-surface shadow-[0_-4px_16px_rgba(0,0,0,0.4)]">
+    <div className="glass-blur absolute bottom-full left-0 mt-1 w-80 overflow-hidden rounded-lg border border-border bg-glass-bg shadow-[0_-4px_16px_rgba(0,0,0,0.4)]">
       <ManagerHeader jobs={jobs} onClose={onClose} />
       <div className="max-h-64 overflow-y-auto">
         {jobs.map((job, i) => (
@@ -210,7 +210,7 @@ function MobileSheet({ jobs, onClose }: { jobs: QueueJob[]; onClose: () => void 
         onClick={onClose}
       />
       <div
-        className="fixed inset-x-0 bottom-0 z-[501] rounded-t-2xl border-t border-border2 bg-surface pb-[env(safe-area-inset-bottom,0px)] shadow-[0_-4px_24px_rgba(0,0,0,0.5)] backdrop-blur-md"
+        className="glass-blur fixed inset-x-0 bottom-0 z-[501] rounded-t-2xl border-t border-border2 bg-glass-bg pb-[env(safe-area-inset-bottom,0px)] shadow-[0_-4px_24px_rgba(0,0,0,0.5)]"
         style={{ animation: "slideUp 0.2s ease-out" }}
       >
         <div className="flex justify-center pt-2 pb-1">
