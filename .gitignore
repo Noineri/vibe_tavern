@@ -63,6 +63,7 @@ vibe_tavern_plan/
 
 # Test temp directories
 services/api/tmp-test-*/
+scripts/seed-test-data.ts
 
 # Source runtime assets under services/api/assets/ are intentionally tracked.
 
