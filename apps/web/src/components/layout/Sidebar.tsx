@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { ChatId } from "@vibe-tavern/domain";
 import { initials } from "./app-shell-helpers.js";
@@ -110,7 +110,14 @@ export function Sidebar() {
   // before the toggle onClick can reopen it).
   const charSwitcherTriggerRef = useRef<HTMLDivElement | null>(null);
   const [flyoutCharId, setFlyoutCharId] = useState<string | null>(null);
+  const [chatQuery, setChatQuery] = useState("");
   const flyoutRef = useRef<HTMLDivElement | null>(null);
+  const flyoutListRef = useRef<HTMLDivElement | null>(null);
+  const flyoutAvatarRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+  const [flyoutAvatarPos, setFlyoutAvatarPos] = useState<{ top: number; bottom: number } | null>(null);
+  const [flyoutTop, setFlyoutTop] = useState<number | null>(null);
+  const [flyoutMaxH, setFlyoutMaxH] = useState<number | null>(null);
+  const [flyoutFlipped, setFlyoutFlipped] = useState(false);
 
   const flyoutChats = useMemo(
     () => flyoutCharId ? allChats.filter(c => c.characterId === flyoutCharId) : [],
@@ -133,6 +140,29 @@ export function Sidebar() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
+  useEffect(() => { if (!flyoutCharId) setChatQuery(""); }, [flyoutCharId]);
+
+  useLayoutEffect(() => {
+    if (!flyoutCharId || flyoutAvatarPos == null) { setFlyoutTop(null); setFlyoutMaxH(null); setFlyoutFlipped(false); return; }
+    const panel = flyoutRef.current;
+    const list = flyoutListRef.current;
+    if (!panel || !list) return;
+    const vh = window.innerHeight;
+    const spaceBelow = vh - flyoutAvatarPos.top - 12;
+    const spaceAbove = flyoutAvatarPos.bottom - 12;
+    const naturalH = list.scrollHeight + (panel.clientHeight - list.clientHeight);
+    if (naturalH <= spaceBelow || spaceBelow >= spaceAbove) {
+      setFlyoutFlipped(false);
+      setFlyoutTop(flyoutAvatarPos.top);
+      setFlyoutMaxH(Math.max(spaceBelow, 0));
+    } else {
+      setFlyoutFlipped(true);
+      const h = Math.min(naturalH, spaceAbove);
+      setFlyoutTop(flyoutAvatarPos.bottom - h);
+      setFlyoutMaxH(Math.max(spaceAbove, 0));
+    }
+  }, [flyoutCharId, flyoutAvatarPos]);
+
   function calcPopoverPos(triggerEl: HTMLElement): { top: number; right: number } {
     const rect = triggerEl.getBoundingClientRect();
     return {
@@ -153,6 +183,19 @@ export function Sidebar() {
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return "";
     return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  }
+
+  function formatRelativeTime(value: string | null | undefined): string {
+    if (!value) return "";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "";
+    const diffSec = (Date.now() - date.getTime()) / 1000;
+    const rtf = new Intl.RelativeTimeFormat(undefined, { numeric: "auto", style: "short" });
+    if (diffSec < 45) return rtf.format(0, "second");
+    if (diffSec < 3600) return rtf.format(-Math.round(diffSec / 60), "minute");
+    if (diffSec < 86400) return rtf.format(-Math.round(diffSec / 3600), "hour");
+    if (diffSec < 604800) return rtf.format(-Math.round(diffSec / 86400), "day");
+    return formatShortDate(value);
   }
 
   return (
@@ -207,12 +250,15 @@ export function Sidebar() {
                 return (
                   <CustomTooltip key={tab.id} content={tab.name} side="right">
                     <div
+                      ref={(el) => { if (el) flyoutAvatarRefs.current.set(tab.id, el); else flyoutAvatarRefs.current.delete(tab.id); }}
                       className={cn(
                         'relative flex h-10 w-10 shrink-0 cursor-pointer items-center justify-center rounded-full transition-all duration-150',
                         isMarked ? '' : 'hover:bg-s2',
                       )}
                       onClick={() => {
                         // Flyout toggle only — selectedCharacterId is synced after a real chat switch.
+                        const r = flyoutAvatarRefs.current.get(tab.id)?.getBoundingClientRect();
+                        setFlyoutAvatarPos(r ? { top: r.top, bottom: r.bottom } : null);
                         setFlyoutCharId(prev => prev === tab.id ? null : tab.id);
                       }}
                     >
@@ -220,7 +266,13 @@ export function Sidebar() {
                       {isMarked && (
                         <div className="absolute -left-[7px] top-1/2 -translate-y-1/2 h-5 w-[3px] rounded-r-full bg-accent transition-all" />
                       )}
-                      <span className={cn('flex h-full w-full items-center justify-center overflow-hidden rounded-full font-ui text-sm', tabAvatarSrc(tab) ? 'bg-s3' : isMarked ? 'bg-accent text-on-accent ring-1 ring-accent/50 ring-offset-2 ring-offset-surface' : 'bg-s3 text-t2')}>
+                      <span className={cn(
+                        'flex h-full w-full items-center justify-center overflow-hidden rounded-full font-ui text-sm',
+                        tabAvatarSrc(tab) ? 'bg-s3' : isMarked ? 'bg-accent text-on-accent' : 'bg-s3 text-t2',
+                        flyoutCharId === tab.id
+                          ? 'ring-2 ring-accent ring-offset-2 ring-offset-surface'
+                          : (!tabAvatarSrc(tab) && isMarked) ? 'ring-1 ring-accent/50 ring-offset-2 ring-offset-surface' : '',
+                      )}>
                         {tabAvatarSrc(tab) ? <img src={tabAvatarSrc(tab)!} alt={tab.name} className="h-full w-full object-cover" /> : initials(tab.name)}
                       </span>
                     </div>
@@ -244,66 +296,112 @@ export function Sidebar() {
           </div>
         )}
 
-        {/* ═══ FLYOUT: Чаты персонажа при свёрнутом сайдбаре ═══ */}
+        {/* ═══ FLYOUT: Chat selection — collapsed sidebar ═══ */}
         {flyoutCharId && sidebarCollapsed && createPortal(
-          <>
-            {/* Панель */}
-            <div
-              ref={flyoutRef}
-              className="fixed left-[54px] top-0 z-[301] flex h-screen w-[220px] flex-col border-r border-border bg-surface shadow-[4px_0_24px_rgba(0,0,0,0.4)] backdrop-blur-md"
-              style={{ animation: "flyoutIn 0.15s ease-out" }}
-            >
-              {/* Заголовок с именем персонажа */}
-              <div className="flex h-[52px] shrink-0 items-center gap-2.5 border-b border-border px-3">
-                <span className={cn('flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full font-ui text-sm bg-s3 text-t2')}>
-                  {(() => { const tab = characterTabs.find(t => t.id === flyoutCharId); const src = tab ? tabAvatarSrc(tab) : null; return src ? <img src={src} alt="" className="h-full w-full object-cover" /> : initials(tab?.name ?? '?'); })()}
-                </span>
-                <span className="min-w-0 flex-1 truncate text-[calc(var(--ui-fs)+0px)] font-medium text-t1">
-                  {characterTabs.find(t => t.id === flyoutCharId)?.name}
-                </span>
-                <CustomTooltip content={t("sidebar_new_chat_active_char")}>
-                  <button type="button" className="iBtn size-6" onClick={() => { void character.handleCreateChat(flyoutCharId); }}><Icons.Plus /></button>
-                </CustomTooltip>
-                <CustomTooltip content={t("close")}>
-                  <button type="button" className="iBtn size-6" aria-label={t("close")} onClick={() => setFlyoutCharId(null)}><Icons.Close /></button>
-                </CustomTooltip>
-              </div>
+          (() => {
+            const tab = characterTabs.find(tc => tc.id === flyoutCharId);
+            const q = chatQuery.trim().toLowerCase();
+            const filtered = q ? flyoutChats.filter(c => c.title.toLowerCase().includes(q)) : flyoutChats;
+            return (
+              <div
+                ref={flyoutRef}
+                className={cn(
+                  "glass-blur fixed left-[54px] z-[301] flex w-[300px] max-w-[calc(100vw-70px)] gap-2 overflow-hidden rounded-r-xl border border-border bg-glass-bg shadow-[16px_8px_24px_-8px_rgba(0,0,0,0.4)]",
+                  flyoutFlipped ? "flex-col-reverse" : "flex-col",
+                )}
+                style={{ top: flyoutTop ?? 12, maxHeight: flyoutMaxH ?? undefined, animation: "flyoutIn 0.18s ease-out" }}
+              >
+                {/* ── Header ── */}
+                <div className={cn("relative shrink-0 border-border", flyoutFlipped ? "border-t" : "border-b")}>
+                  <div
+                    className="pointer-events-none absolute inset-0"
+                    style={{ background: "linear-gradient(to bottom, color-mix(in srgb, var(--accent-dim) 50%, transparent), transparent)" }}
+                  />
+                  <div className="relative flex items-center gap-1 px-2 py-2">
+                    <div className="min-w-0 flex-1 truncate px-1 font-ui text-[calc(var(--ui-fs)+0px)] font-medium leading-tight tracking-[-0.01em] text-t1">{tab?.name}</div>
+                    <CustomTooltip content={t("new_chat")}>
+                      <button type="button" className="iBtn size-7 shrink-0" aria-label={t("new_chat")} onClick={() => { void character.handleCreateChat(flyoutCharId); }}><Icons.Plus /></button>
+                    </CustomTooltip>
+                    <CustomTooltip content={t("close")}>
+                      <button type="button" className="iBtn size-7 shrink-0" aria-label={t("close")} onClick={() => setFlyoutCharId(null)}><Icons.Close /></button>
+                    </CustomTooltip>
+                  </div>
+                </div>
 
-              {/* Список чатов */}
-              <div className="flex-1 overflow-y-auto py-1">
-                <div className="px-3 pb-1 pt-1 text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.08em] text-t3">{t("sidebar_chats")}</div>
-                {flyoutChats.length === 0 ? (
-                  <div className="px-3 py-4 text-center text-xs text-t3">{t("sidebar_send_a_message")}</div>
-                ) : (
-                  flyoutChats.map((chatItem) => {
-                    const isActive = chatItem.id === activeChatId;
-                    return (
-                      <div key={chatItem.id}>
+                {/* ── Search ── */}
+                <div className="shrink-0 px-3">
+                  <div className="flex items-center gap-2 rounded-lg border border-border bg-s2 px-2 py-1 transition-colors focus-within:border-accent/60">
+                    <Icons.Search className="h-3.5 w-3.5 shrink-0 text-t3" />
+                    <input
+                      type="text"
+                      value={chatQuery}
+                      onChange={(e) => setChatQuery(e.target.value)}
+                      placeholder={t("chat_search_placeholder")}
+                      className="min-w-0 flex-1 bg-transparent font-ui text-[calc(var(--ui-fs)-1px)] text-t1 outline-none placeholder:text-t4"
+                    />
+                    {chatQuery && (
+                      <button type="button" className="flex h-4 w-4 shrink-0 items-center justify-center rounded text-t3 transition-colors hover:bg-s3 hover:text-t1" aria-label={t("chat_search_clear")} onClick={() => setChatQuery("")}>
+                        <Icons.Close className="h-3 w-3" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* ── Chat list ── */}
+                <div ref={flyoutListRef} className="flex min-h-0 flex-1 flex-col overflow-y-auto px-2 py-1">
+                  {q && (
+                    <div className="px-2 pb-0.5 pt-1 text-[calc(var(--ui-fs)-3px)] font-medium text-t4">
+                      {filtered.length} / {flyoutChats.length} {t("sidebar_chats").toLowerCase()}
+                    </div>
+                  )}
+
+                  {flyoutChats.length === 0 ? (
+                    <div className="empty-state" style={{ minHeight: 160, padding: "32px 16px" }}>
+                      <div className="empty-icon" style={{ width: 40, height: 40 }}><Icons.Chat /></div>
+                      <div className="empty-title">{t("sidebar_send_a_message")}</div>
+                      <button type="button" className="empty-cta" onClick={() => { void character.handleCreateChat(flyoutCharId); }}>{t("new_chat")}</button>
+                    </div>
+                  ) : filtered.length === 0 ? (
+                    <div className="flex flex-col items-center gap-2 px-4 py-8 text-center">
+                      <Icons.Search className="h-5 w-5 text-t4" />
+                      <div className="text-[calc(var(--ui-fs)-2px)] leading-relaxed text-t2">{t("chat_search_no_results").replace("{query}", chatQuery)}</div>
+                      <button type="button" className="text-[calc(var(--ui-fs)-2px)] text-accent-t transition-colors hover:underline" onClick={() => setChatQuery("")}>{t("chat_search_clear")}</button>
+                    </div>
+                  ) : (
+                    filtered.map((chatItem, index) => {
+                      const isActive = chatItem.id === activeChatId;
+                      return (
                         <div
+                          key={chatItem.id}
+                          role="button"
+                          tabIndex={0}
+                          style={{ animation: "flyoutCardIn 0.22s ease-out backwards", animationDelay: `${Math.min(index, 12) * 26}ms` }}
                           className={cn(
-                            'mx-1 flex cursor-pointer items-center gap-2 rounded px-2.5 py-1.5 transition-colors hover:bg-s2',
-                            isActive && 'bg-accent-dim',
+                            "relative mx-1 mb-0.5 cursor-pointer rounded-lg px-2.5 py-1.5 outline-none transition-colors duration-150",
+                            isActive ? "bg-accent-dim" : "hover:bg-s2 focus-visible:bg-s2",
                           )}
-                          onClick={() => {
-                            void chat.handleSwitchChat(chatItem.id);
-                          }}
+                          onClick={() => { void chat.handleSwitchChat(chatItem.id); }}
+                          onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); void chat.handleSwitchChat(chatItem.id); } }}
                         >
-                          <Icons.Chat className="h-4 w-4 shrink-0 text-t3" />
-                          <div className="min-w-0 flex-1">
-                            <OverflowTooltip
+                          {isActive && <div className="absolute left-0 top-2.5 bottom-2.5 w-[3px] rounded-full bg-accent" />}
+                          <OverflowTooltip
                             text={chatItem.title}
-                            className={cn('text-[calc(var(--ui-fs)-1px)]', isActive ? 'text-accent-t font-medium' : 'text-t1')}
+                            className={cn("text-[calc(var(--ui-fs)-1px)]", isActive ? "font-medium text-accent-t" : "text-t1")}
                           />
-                            <div className="truncate text-[calc(var(--ui-fs)-3px)] text-t3">{chatItem.messageCount} {t("msgs_short")}</div>
+                          <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-[calc(var(--ui-fs)-3px)] text-t3">
+                            <span className="shrink-0 whitespace-nowrap tabular-nums">{formatRelativeTime(chatItem.updatedAt)}</span>
+                            <span className="shrink-0 text-t4">·</span>
+                            <span className="shrink-0 whitespace-nowrap tabular-nums">{chatItem.messageCount} {t("msgs_short")}</span>
                           </div>
                         </div>
-                      </div>
-                    );
-                  })
-                )}
+                      );
+                    })
+                  )}
+                </div>
+
               </div>
-            </div>
-          </>,
+            );
+          })(),
           document.body,
         )}
 
