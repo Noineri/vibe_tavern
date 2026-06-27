@@ -2,7 +2,6 @@ import { z } from "zod";
 
 const promptPresetCoreSchema = z.object({
   name: z.string(),
-  bindModel: z.string().optional(),
   system: z.string().optional(),
   jailbreak: z.string().optional(),
   prefill: z.string().optional(),

@@ -71,7 +71,6 @@ export interface PromptTraceRecordDto extends AssemblePromptResponse {
 export interface PromptPresetDto {
   id: string;
   name: string;
-  bindModel: string;
   system: string;
   jailbreak: string;
   prefill: string;
