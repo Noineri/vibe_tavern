@@ -97,7 +97,18 @@ export function Sidebar() {
   const branchPopRef = useRef<HTMLDivElement | null>(null);
   const [importModal, setImportModal] = useState<"character" | "chat" | null>(null);
   const [charSwitcherOpen, setCharSwitcherOpen] = useState(false);
+  // Viewport coords for the portaled dropdown — portaling to document.body is
+  // required because the sidebar root is itself a glass surface (backdrop-blur),
+  // which makes it a CSS backdrop root. A dropdown rendered inside it can only
+  // blur the sidebar's own pixels, not the lava behind the sidebar → no frost.
+  // Portal escapes that root so glass-blur blurs the real page. Same pattern as
+  // charMenuPos / chatMenuPos / the chat flyout below.
+  const [charSwitcherPos, setCharSwitcherPos] = useState<{ top: number; left: number; width: number } | null>(null);
   const charSwitcherRef = useRef<HTMLDivElement | null>(null);
+  // Trigger element ref — paired with charSwitcherRef so clicks on the trigger
+  // don't get caught by the outside-click handler (which would close the menu
+  // before the toggle onClick can reopen it).
+  const charSwitcherTriggerRef = useRef<HTMLDivElement | null>(null);
   const [flyoutCharId, setFlyoutCharId] = useState<string | null>(null);
   const flyoutRef = useRef<HTMLDivElement | null>(null);
 
@@ -112,7 +123,10 @@ export function Sidebar() {
       if (charMenuRef.current && !charMenuRef.current.contains(target)) setCharMenuId(null);
       if (chatMenuRef.current && !chatMenuRef.current.contains(target)) setChatMenuId(null);
       if (branchPopRef.current && !branchPopRef.current.contains(target)) setBranchPopId(null);
-      if (charSwitcherRef.current && !charSwitcherRef.current.contains(target)) setCharSwitcherOpen(false);
+      // Switcher: ignore clicks on the trigger itself (toggled by its onClick).
+      const triggerEl = charSwitcherTriggerRef.current;
+      if (triggerEl && triggerEl.contains(target)) return;
+      if (charSwitcherRef.current && !charSwitcherRef.current.contains(target)) { setCharSwitcherOpen(false); setCharSwitcherPos(null); }
       if (flyoutRef.current && !flyoutRef.current.contains(target)) setFlyoutCharId(null);
     }
     document.addEventListener("mousedown", handleClickOutside);
@@ -125,6 +139,13 @@ export function Sidebar() {
       top: rect.bottom + 4,
       right: window.innerWidth - rect.right,
     };
+  }
+
+  /** Position the character-switcher dropdown below its trigger, matching the
+   *  trigger's width. Portaled to body (see charSwitcherPos comment). */
+  function calcSwitcherPos(triggerEl: HTMLElement): { top: number; left: number; width: number } {
+    const rect = triggerEl.getBoundingClientRect();
+    return { top: rect.bottom + 4, left: rect.left, width: rect.width };
   }
 
   function formatShortDate(value: string | null | undefined): string {
@@ -290,8 +311,17 @@ export function Sidebar() {
           <div className="flex min-h-0 flex-1 flex-col items-center gap-1 overflow-y-auto px-0 py-2">
             <CustomTooltip content={snapshot?.character?.name ?? t('switch_character')} side="right">
               <div
+                ref={charSwitcherTriggerRef}
                 className={cn('flex h-10 w-10 shrink-0 cursor-pointer items-center justify-center rounded-full transition-all duration-150', charSwitcherOpen ? '' : 'hover:bg-s2')}
-                onClick={() => setCharSwitcherOpen(v => !v)}
+                onClick={() => {
+                  // Measure from the stable ref, not e.currentTarget — the trigger
+                  // is wrapped by Radix Tooltip.Trigger asChild, which clones the
+                  // node and makes the synthetic event's currentTarget unreliable
+                  // by the time the inline handler runs (caused a null-ref crash).
+                  const el = charSwitcherTriggerRef.current;
+                  setCharSwitcherOpen(v => !v);
+                  setCharSwitcherPos(prev => prev || !el ? prev : calcSwitcherPos(el));
+                }}
               >
                 <span className={cn("flex h-full w-full items-center justify-center overflow-hidden rounded-full font-ui text-sm", activeCharAvatarSrc ? "bg-s3" : "bg-accent text-on-accent", charSwitcherOpen && "ring-1 ring-accent/50 ring-offset-2 ring-offset-surface")}>
                   {activeCharAvatarSrc
@@ -300,8 +330,12 @@ export function Sidebar() {
                 </span>
               </div>
             </CustomTooltip>
-            {charSwitcherOpen && (
-              <div className="max-h-[280px] overflow-y-auto rounded-lg border border-border bg-surface p-1 shadow-theme-md z-[200]" ref={charSwitcherRef} style={{ width: 52 }}>
+            {charSwitcherOpen && charSwitcherPos && createPortal(
+              <div
+                className="glass-blur fixed max-h-[280px] overflow-y-auto rounded-lg border border-border bg-glass-bg p-1 shadow-theme-md z-[400]"
+                ref={charSwitcherRef}
+                style={{ top: charSwitcherPos.top, left: charSwitcherPos.left, width: charSwitcherPos.width }}
+              >
                 <div className="grid grid-cols-1 gap-1">
                 {characterTabs.map(tab => (
                   <CustomTooltip key={tab.id} content={tab.name} side="right">
@@ -310,7 +344,7 @@ export function Sidebar() {
                       onClick={() => {
                         if (tab.chatId) { void chat.handleSwitchChat(tab.chatId); }
                         else { void character.handleCreateChat(tab.id); }
-                        setCharSwitcherOpen(false);
+                        setCharSwitcherOpen(false); setCharSwitcherPos(null);
                       }}
                     >
                       {tabAvatarSrc(tab)
@@ -320,7 +354,8 @@ export function Sidebar() {
                   </CustomTooltip>
                 ))}
                 </div>
-              </div>
+              </div>,
+              document.body,
             )}
 
             <div className="my-1 h-px w-8 shrink-0 bg-border" />
@@ -772,11 +807,18 @@ export function Sidebar() {
           <>
             {/* Character switcher */}
             <div className="shrink-0 border-b border-border" style={{ padding: '10px 12px' }}>
-              <div className="relative" ref={charSwitcherRef}>
+              <div className="relative">
                 <div
+                  ref={charSwitcherTriggerRef}
                   className="flex cursor-pointer items-center gap-2.5 rounded-lg transition-colors hover:bg-s2"
                   style={{ padding: '6px 8px' }}
-                  onClick={() => setCharSwitcherOpen(v => !v)}
+                  onClick={() => {
+                    // Measure from the stable ref, not e.currentTarget (see the
+                    // collapsed-branch trigger for the rationale).
+                    const el = charSwitcherTriggerRef.current;
+                    setCharSwitcherOpen(v => !v);
+                    setCharSwitcherPos(prev => prev || !el ? prev : calcSwitcherPos(el));
+                  }}
                 >
                   <div className={cn('flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full', activeCharAvatarSrc ? '' : 'bg-accent text-on-accent')}>
                     {activeCharAvatarSrc ? (
@@ -791,8 +833,12 @@ export function Sidebar() {
                   </div>
                   <Icons.Caret direction={charSwitcherOpen ? "u" : "d"} />
                 </div>
-                {charSwitcherOpen && characterTabs.length > 1 && (
-                  <div className="absolute left-0 right-0 top-full z-[200] mt-1 max-h-[240px] overflow-y-auto rounded-lg border border-border bg-surface py-1 shadow-theme-md">
+                {charSwitcherOpen && characterTabs.length > 1 && charSwitcherPos && createPortal(
+                  <div
+                    className="glass-blur fixed max-h-[240px] overflow-y-auto rounded-lg border border-border bg-glass-bg py-1 shadow-theme-md z-[400]"
+                    ref={charSwitcherRef}
+                    style={{ top: charSwitcherPos.top, left: charSwitcherPos.left, width: charSwitcherPos.width }}
+                  >
                     {characterTabs.map(tab => (
                       <div
                         key={tab.id}
@@ -804,7 +850,7 @@ export function Sidebar() {
                         onClick={() => {
                           if (tab.chatId) { void chat.handleSwitchChat(tab.chatId); }
                           else { void character.handleCreateChat(tab.id); }
-                          setCharSwitcherOpen(false);
+                          setCharSwitcherOpen(false); setCharSwitcherPos(null);
                         }}
                       >
                         <div className={cn('flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded-full', tabAvatarSrc(tab) ? '' : tab.id === snapshot?.character?.id ? 'bg-accent text-on-accent' : 'bg-s3 text-t2')}>
@@ -815,7 +861,8 @@ export function Sidebar() {
                         <span className={cn('truncate text-[calc(var(--ui-fs)-1px)]', tab.id === snapshot?.character?.id ? 'text-accent-t font-medium' : 'text-t2')}>{tab.name}</span>
                       </div>
                     ))}
-                  </div>
+                  </div>,
+                  document.body,
                 )}
               </div>
             </div>

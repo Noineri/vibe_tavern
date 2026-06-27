@@ -721,7 +721,7 @@ export function PersonaModal(input: PersonaModalProps) {
   // ── Mobile: fullscreen sheet ──
   if (isMobile) {
     return (
-      <div className="fixed inset-0 z-[500] flex flex-col bg-surface">
+      <div className="glass-blur fixed inset-0 z-[500] flex flex-col bg-glass-bg">
         {content}
       </div>
     );
