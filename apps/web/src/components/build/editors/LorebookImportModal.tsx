@@ -9,6 +9,7 @@
  * Вызывает onImportComplete при успешном импорте.
  */
 import { useState } from "react";
+import { useKeyDown } from "../../../hooks/use-key-down.js";
 
 import { Ic } from "../../shared/icons.js";
 import { cn } from "../../../lib/cn.js";
@@ -189,6 +190,8 @@ export function LorebookImportModal({
       setImporting(false);
     }
   };
+
+  useKeyDown("Escape", close, { enabled: open });
 
   if (!open) return null;
 

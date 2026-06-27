@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useState, useRef, useMemo } from "react";
+import { useKeyDown } from "../../../hooks/use-key-down.js";
 import { Ic } from "../../shared/icons.js";
 import { useIsMobile } from "../../../hooks/use-mobile.js";
 import { MobileExpandTextarea } from "../../shared/MobileExpandTextarea.js";
@@ -67,6 +68,8 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [importOpen, setImportOpen] = useState(false);
   const [importCode, setImportCode] = useState("");
+  useKeyDown("Escape", () => setConfirmDeleteId(null), { enabled: !!confirmDeleteId });
+  useKeyDown("Escape", () => { setImportOpen(false); setImportCode(""); }, { enabled: importOpen });
   const [apiRefOpen, setApiRefOpen] = useState(false);
   const [aiHelperOpen, setAiHelperOpen] = useState(false);
 

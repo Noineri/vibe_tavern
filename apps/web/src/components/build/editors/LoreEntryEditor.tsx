@@ -84,6 +84,7 @@ export function LoreEntryEditor({
   const [testingActivation, setTestingActivation] = useState(false);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [confirmDeleteEntry, setConfirmDeleteEntry] = useState(false);
+  useKeyDown("Escape", () => setConfirmDeleteEntry(false), { enabled: confirmDeleteEntry });
   const [deletingEntry, setDeletingEntry] = useState(false);
 
   // characterFilter picker: null = closed; "add" = adding a new entry;
