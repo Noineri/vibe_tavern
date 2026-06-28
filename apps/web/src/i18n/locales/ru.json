@@ -860,6 +860,7 @@
   "script_template_hp": "Трекер HP",
   "script_template_random": "Случайное событие",
   "script_template_advanced_lore": "Продвинутый лорбук",
+  "script_template_dice": "Бросок кубика",
   "script_import": "Импорт Скрипта",
   "script_no_scripts": "Нет скриптов в этой области",
   "script_ai_helper": "ИИ Помощник",
