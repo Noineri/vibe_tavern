@@ -1,4 +1,4 @@
-import type { PromptLayerPosition } from "@vibe-tavern/domain";
+import type { PromptLayerPosition, PronounForms } from "@vibe-tavern/domain";
 
 export type { PromptLayerPosition };
 
@@ -112,6 +112,8 @@ export interface PromptAssemblyContext {
     name: string;
     description: string;
     pronouns?: string | null;
+    /** Structured pronoun declensions (custom case only); presets resolve via PRESET_PRONOUN_FORMS. */
+    pronounForms?: PronounForms | null;
     // ─── Media injection (A7) ────────────────────────────────────────
     /** Vision-generated appearance description of the persona's avatar.
      *  Injected as a text layer only when `includeAvatarInPrompt` is set. */

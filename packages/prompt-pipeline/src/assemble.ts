@@ -146,6 +146,8 @@ function buildAssemblyVariableContext(context: PromptAssemblyContext): PromptVar
     persona: {
       name: context.persona?.name ?? "User",
       description: context.persona?.description ?? "",
+      pronouns: context.persona?.pronouns ?? null,
+      pronounForms: context.persona?.pronounForms ?? null,
     },
     prompt: {
       system: context.preset?.text ?? "",

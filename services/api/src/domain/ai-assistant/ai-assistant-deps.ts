@@ -54,6 +54,7 @@ export function createAiAssistantDeps(stores: StoreContainer) {
 				name: persona.name,
 				description: persona.description,
 				pronouns: persona.pronouns ?? undefined,
+				pronounForms: persona.pronounForms ?? null,
 			};
 		},
 		getLoreEntryById: async (id: string) => {
