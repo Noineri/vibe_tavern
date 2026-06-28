@@ -17,6 +17,7 @@ import { AvatarCropModal } from "../../shared/AvatarCropModal.js";
 import type { AvatarCropResult } from "../../shared/AvatarCropModal.js";
 import { useIsMobile } from "../../../hooks/use-mobile.js";
 import { MobileExpandTextarea } from "../../shared/MobileExpandTextarea.js";
+import { BoundResourcesField } from "../../shared/BoundResourcesField.js";
 import { SegmentedControl } from "../../shared/SegmentedControl.js";
 import { NumberInput } from "../../shared/NumberInput.js";
 import { inputPad, inputCls, monoCls, lblCls } from "../fields/field-styles.js";
@@ -419,6 +420,7 @@ export function CharacterForm({
               <input type="text" className={inputCls + mInput} style={inputPad} disabled={isSaving} {...register("name")} />
             </div>
             <TagsField form={form} isSaving={isSaving} />
+            <BoundResourcesField entityKind="character" entityId={characterId} isMobile={isMobile} />
           </div>
         </div>
       ) : (
@@ -453,6 +455,7 @@ export function CharacterForm({
             <input type="text" className={inputCls + mInput} style={inputPad} disabled={isSaving} {...register("name")} />
           </div>
           <TagsField form={form} isSaving={isSaving} />
+          <BoundResourcesField entityKind="character" entityId={characterId} isMobile={isMobile} />
         </div>
       </div>
       )}

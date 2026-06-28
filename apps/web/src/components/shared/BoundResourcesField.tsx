@@ -1,20 +1,20 @@
 /**
- * BoundResourcesField — reverse-direction binding UI for the persona editor.
+ * BoundResourcesField — reverse-direction binding UI for the persona and
+ * character editors.
  *
- * Shows the lorebooks M:N-linked to the persona as avatar pills, with add/remove
+ * Shows the lorebooks M:N-linked to the entity as avatar pills, with add/remove
  * via the shared `LinkBindingPopover`. This is the mirror of the lorebook-side
  * binding in `LorebookEditor`: instead of "which characters/personas is this
- * lorebook linked to" it shows "which lorebooks are linked to this persona".
+ * lorebook linked to" it shows "which lorebooks are linked to this entity".
  *
  * Lorebook-only by design. Scripts use a different binding model (FK ownership,
  * not M:N) and are tracked separately — see
  * `vibe_tavern_plan/reports/script-link-binding-gap.md`. When that gap is closed,
- * a script pill group will be added here. Character support rides along once the
- * character reverse-read endpoint exists (mirrors `listPersonaLorebooks`).
+ * a script pill group will be added here.
  *
  * Toggle write semantics: `setLorebookLinks` replaces the ENTIRE link set for a
- * lorebook, so toggling one persona's link is a read-modify-write round-trip —
- * fetch the lorebook's current links, add/remove this persona, put them back.
+ * lorebook, so toggling one entity's link is a read-modify-write round-trip —
+ * fetch the lorebook's current links, add/remove this entity, put them back.
  * This matches the existing pattern in `LorebookEditor.handleSetLinks`. It is
  * safe for local-first single-user use; concurrent multi-user edits are not a
  * target.
@@ -25,6 +25,7 @@ import { useT } from "../../i18n/context.js";
 import {
   getLorebookLinks,
   listAllLorebooks,
+  listCharacterLorebooks,
   listPersonaLorebooks,
   setLorebookLinks,
 } from "../../app-client.js";
@@ -32,7 +33,10 @@ import type { LorebookRecord } from "../../api/types.js";
 import { CustomTooltip } from "./Tooltip.js";
 
 interface BoundResourcesFieldProps {
-  personaId: string;
+  /** Which editor hosts the field — selects the reverse-read + link target. */
+  entityKind: "persona" | "character";
+  /** The persisted entity id (personaId / characterId). */
+  entityId: string;
   isMobile: boolean;
 }
 
@@ -45,27 +49,28 @@ function lorebookToTarget(lb: LorebookRecord): LinkTarget {
   return { id: lb.id, name: lb.name, avatarAssetId: null };
 }
 
-export function BoundResourcesField({ personaId, isMobile }: BoundResourcesFieldProps) {
+export function BoundResourcesField({ entityKind, entityId, isMobile }: BoundResourcesFieldProps) {
   const { t } = useT();
   const [allLorebooks, setAllLorebooks] = useState<LorebookRecord[]>([]);
   const [boundIds, setBoundIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
 
-  // Load available lorebooks + the set linked to this persona.
+  // Load available lorebooks + the set linked to this entity.
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
-      const [all, bound] = await Promise.all([
-        listAllLorebooks(),
-        listPersonaLorebooks(personaId),
-      ]);
+      const allPromise = listAllLorebooks();
+      const boundPromise = entityKind === "persona"
+        ? listPersonaLorebooks(entityId)
+        : listCharacterLorebooks(entityId);
+      const [all, bound] = await Promise.all([allPromise, boundPromise]);
       setAllLorebooks(all);
       setBoundIds(new Set(bound.map((lb) => lb.id)));
     } finally {
       setLoading(false);
     }
-  }, [personaId]);
+  }, [entityKind, entityId]);
 
   useEffect(() => {
     void refresh();
@@ -95,10 +100,10 @@ export function BoundResourcesField({ personaId, isMobile }: BoundResourcesField
           setBusyId(lbId);
           const current = await getLorebookLinks(lbId);
           const isAdding = nextIds.has(lbId);
-          const personaLink = { targetType: "persona" as const, targetId: personaId };
+          const entityLink = { targetType: entityKind, targetId: entityId };
           const updated = isAdding
-            ? [...current, personaLink]
-            : current.filter((l) => !(l.targetType === "persona" && l.targetId === personaId));
+            ? [...current, entityLink]
+            : current.filter((l) => !(l.targetType === entityKind && l.targetId === entityId));
           await setLorebookLinks(lbId, updated);
         }
       } catch {
@@ -107,7 +112,7 @@ export function BoundResourcesField({ personaId, isMobile }: BoundResourcesField
         setBusyId(null);
       }
     },
-    [boundIds, personaId, refresh],
+    [boundIds, entityKind, entityId, refresh],
   );
 
   if (loading) {
@@ -122,7 +127,7 @@ export function BoundResourcesField({ personaId, isMobile }: BoundResourcesField
   return (
     <div className="mb-3">
       <div className="mb-1.5 flex items-center gap-1.5">
-        <span className="font-ui text-[11px] font-medium uppercase tracking-wider text-t3">
+        <span className="font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">
           {t("bound_lorebooks_label")}
         </span>
         <CustomTooltip content={t("bound_lorebooks_hint")}>

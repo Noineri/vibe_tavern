@@ -485,4 +485,10 @@ export class CharacterAdapter implements CharacterRuntimeApi, CharacterAssetRunt
 		}
 		return resolveVisionDescribePrompt(aiAssistantPrompts);
 	}
+
+	// ─── Bound resources (character-editor binding field) ────────────────
+	// Reverse-direction read: lorebooks M:N-linked to this character via
+	// lorebook_links (links-only, excludes FK-owned). Mirrors the persona adapter.
+	listCharacterLorebooks = (characterId: string) =>
+		this.stores.lorebooks.listLorebooksLinkedToTarget("character", characterId);
 }
