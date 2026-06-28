@@ -22,6 +22,12 @@ export async function updateScript(scriptId: string, body: { name?: string; desc
   return unwrapRpc<ScriptRecord>(response);
 }
 
+/** Reassign a script's scope atomically (PR-6 binding). `ownerId` is null/omitted for 'global'. */
+export async function setScriptScope(scriptId: string, scopeType: "global" | "character" | "persona" | "chat", ownerId?: string | null): Promise<ScriptRecord> {
+  const response = await client.api.scripts[":scriptId"].scope.$patch({ param: { scriptId }, json: { scopeType, ownerId: ownerId ?? null } });
+  return unwrapRpc<ScriptRecord>(response);
+}
+
 export async function deleteScript(scriptId: string): Promise<void> {
   const response = await client.api.scripts[":scriptId"].$delete({ param: { scriptId } });
   if (!response.ok) throw await unwrapError(response);

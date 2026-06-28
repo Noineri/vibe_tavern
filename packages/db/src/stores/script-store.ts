@@ -184,6 +184,29 @@ export class ScriptStore {
     return this.mapRow(row);
   }
 
+  /** Atomically reassign a script's scope: clears ALL FK columns, then sets
+   *  only the one matching `scopeType`. `ownerId` is null for 'global'.
+   *  This is the safe write path for the persona/character binding UI — unlike
+   *  a raw `update({ scopeType, personaId })`, it cannot leave a stale FK behind. */
+  async setScope(id: string, scopeType: 'global' | 'character' | 'persona' | 'chat', ownerId: string | null): Promise<Script> {
+    const now = this.clock.now();
+    const values: Partial<typeof scripts.$inferInsert> = {
+      updatedAt: now,
+      scopeType,
+      characterId: scopeType === 'character' ? ownerId : null,
+      personaId: scopeType === 'persona' ? ownerId : null,
+      chatId: scopeType === 'chat' ? ownerId : null,
+    };
+    const [row] = await this.db.update(scripts).set(values).where(eq(scripts.id, id)).returning();
+    if (!row) throw new Error(`Script '${id}' not found after scope update`);
+    if (this.content) {
+      const fileData = this.toFilePayload(row);
+      const hash = await this.content.writeEntity(STORAGE_FOLDERS.scripts, id, fileData);
+      await this.db.update(scripts).set({ contentHash: hash, hasFileOnDisk: 1 }).where(eq(scripts.id, id)).run();
+    }
+    return this.mapRow(row);
+  }
+
   async delete(id: string): Promise<void> {
     // Delete file from disk
     if (this.content) {

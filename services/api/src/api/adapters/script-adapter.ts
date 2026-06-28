@@ -18,6 +18,9 @@ export class ScriptAdapter implements ScriptRuntimeApi {
 	updateScript = (scriptId: string, body: { name?: string; description?: string; code?: string; enabled?: boolean; sortOrder?: number }) =>
 		this.stores.scripts.update(scriptId, body);
 
+	setScriptScope = (scriptId: string, scopeType: 'global' | 'character' | 'persona' | 'chat', ownerId: string | null) =>
+		this.stores.scripts.setScope(scriptId, scopeType, ownerId);
+
 	deleteScript = async (scriptId: string) => {
 		await this.stores.scripts.delete(scriptId);
 	};
