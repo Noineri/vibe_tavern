@@ -304,4 +304,11 @@ export class PersonaAdapter implements PersonaRuntimeApi {
 		}
 		created.count++;
 	}
+
+	// Bound resources (PR-12) — reverse reads for the persona-editor binding field.
+	listPersonaLorebooks = (personaId: string) =>
+		this.stores.lorebooks.listLorebooksLinkedToTarget("persona", personaId);
+
+	listPersonaScripts = (personaId: string) =>
+		this.stores.scripts.listByScope("persona", personaId);
 }

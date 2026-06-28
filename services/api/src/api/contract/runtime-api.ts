@@ -234,6 +234,12 @@ export interface PersonaRuntimeApi {
 	// Import/restore: accepts a VT bulk payload (array of VT v1 payloads), creates
 	// personas + writes avatars. Returns a per-persona result summary.
 	importPersonas: (payload: unknown) => Promise<{ created: number; skipped: number; errors: string[] }>;
+
+	// Bound resources (PR-12) — reverse-direction reads for the
+	// persona-editor binding field. Lorebooks are M:N-linked via lorebook_links
+	// (links-only, excludes FK-owned); scripts are FK-owned via scripts.personaId.
+	listPersonaLorebooks: (personaId: string) => Promise<Lorebook[]>;
+	listPersonaScripts: (personaId: string) => Promise<Script[]>;
 }
 
 // ─── Lorebook ────────────────────────────────────────────────────────

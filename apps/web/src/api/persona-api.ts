@@ -1,5 +1,5 @@
 import type { ChatId, PronounForms } from "@vibe-tavern/domain";
-import type { AppSnapshot, PersonaRecord } from "./types.js";
+import type { AppSnapshot, PersonaRecord, LorebookRecord, ScriptRecord } from "./types.js";
 import { client, getGatewayBaseUrl, getMobileToken } from "./client.js";
 import { unwrapRpc, unwrapError } from "./unwrap.js";
 import { normalizeSnapshot } from "./normalize.js";
@@ -132,6 +132,21 @@ export async function importPersonas(file: File): Promise<{ created: number; ski
   });
   if (!response.ok) throw new Error(`Persona import failed (${response.status})`);
   return response.json();
+}
+
+// ─── Bound resources (PR-12) ────────────────────────────────────────────
+// Reverse-direction reads for the persona-editor binding field.
+// Lorebooks are M:N-linked via lorebook_links (links-only); scripts are
+// FK-owned via scripts.personaId.
+
+export async function listPersonaLorebooks(personaId: string): Promise<LorebookRecord[]> {
+  const response = await client.api.personas[":personaId"].lorebooks.$get({ param: { personaId } });
+  return unwrapRpc<LorebookRecord[]>(response);
+}
+
+export async function listPersonaScripts(personaId: string): Promise<ScriptRecord[]> {
+  const response = await client.api.personas[":personaId"].scripts.$get({ param: { personaId } });
+  return unwrapRpc<ScriptRecord[]>(response);
 }
 
 function triggerDownload(text: string, filename: string): void {
