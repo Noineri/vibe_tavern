@@ -413,6 +413,8 @@
   "pronoun_field_reflexive": "Себя / -ся",
   "persona_desc_placeholder": "Описание",
   "persona_edit": "Редактировать",
+  "persona_export": "Экспорт",
+  "persona_export_failed": "Не удалось экспортировать персону.",
   "create_new_persona": "Создать новую персону",
   "close": "Закрыть",
   "delete_failed": "Ошибка удаления.",
