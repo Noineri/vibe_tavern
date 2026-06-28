@@ -6,7 +6,7 @@ import {
   updatePersona,
   type AppSnapshot,
 } from "../../app-client.js";
-import type { ChatId } from "@vibe-tavern/domain";
+import type { ChatId, PronounForms } from "@vibe-tavern/domain";
 import { useSnapshotStore } from "../snapshot-store.js";
 import { fetchPersonasAction } from "./bootstrap-actions.js";
 import type { PersonaRecord } from "../../app-client.js";
@@ -26,6 +26,7 @@ export async function updatePersonaAction(input: {
     name: string;
     description: string;
     pronouns?: string | null;
+    pronounForms?: PronounForms | null;
     avatarAssetId?: string | null;
     avatarFullAssetId?: string | null;
     avatarCropJson?: string | null;

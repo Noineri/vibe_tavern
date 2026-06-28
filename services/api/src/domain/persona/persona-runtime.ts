@@ -5,6 +5,7 @@ import {
 	type ChatBranchId,
 	type ChatId,
 	type PersonaId,
+	type PronounForms,
 } from "@vibe-tavern/domain";
 import type { PersonaRecord } from "@vibe-tavern/api-contracts";
 import {
@@ -69,6 +70,7 @@ export class PersonaRuntime {
 		name: string;
 		description: string;
 		pronouns?: string | null;
+		pronounForms?: PronounForms | null;
 		defaultForNewChats?: boolean;
 	}): Promise<PersonaRecord> {
 		const trimmedName = (input.name ?? "").trim();
@@ -80,6 +82,7 @@ export class PersonaRuntime {
 			name: trimmedName,
 			description: trimmedDescription,
 			pronouns: input.pronouns?.trim() || null,
+			pronounForms: input.pronounForms ?? null,
 			defaultForNewChats: input.defaultForNewChats === true,
 		});
 		return {
@@ -131,6 +134,7 @@ export class PersonaRuntime {
 			name?: string;
 			description?: string;
 			pronouns?: string | null;
+			pronounForms?: PronounForms | null;
 			avatarAssetId?: string | null;
 			avatarFullAssetId?: string | null;
 			avatarCropJson?: string | null;
@@ -151,6 +155,7 @@ export class PersonaRuntime {
 
 		const nextDescription = input.description ?? currentPersona.description;
 		const nextPronouns = input.pronouns !== undefined ? input.pronouns : currentPersona.pronouns;
+		const nextPronounForms = input.pronounForms !== undefined ? input.pronounForms : currentPersona.pronounForms;
 		const nextAvatarAssetId = input.avatarAssetId !== undefined ? input.avatarAssetId : currentPersona.avatarAssetId;
 		const nextAvatarFullAssetId = input.avatarFullAssetId !== undefined ? input.avatarFullAssetId : currentPersona.avatarFullAssetId;
 		const nextAvatarCropJson = input.avatarCropJson !== undefined ? input.avatarCropJson : currentPersona.avatarCropJson;
@@ -159,6 +164,7 @@ export class PersonaRuntime {
 			name: nextName,
 			description: nextDescription,
 			pronouns: nextPronouns,
+			pronounForms: nextPronounForms,
 			avatarAssetId: nextAvatarAssetId,
 			avatarFullAssetId: nextAvatarFullAssetId,
 			avatarCropJson: nextAvatarCropJson,

@@ -1,4 +1,4 @@
-import type { ChatId } from "@vibe-tavern/domain";
+import type { ChatId, PronounForms } from "@vibe-tavern/domain";
 import type { AppSnapshot, PersonaRecord } from "./types.js";
 import { client, getGatewayBaseUrl, getMobileToken } from "./client.js";
 import { unwrapRpc, unwrapError } from "./unwrap.js";
@@ -13,6 +13,7 @@ export async function createPersona(input: {
   name: string;
   description: string;
   pronouns?: string | null;
+  pronounForms?: PronounForms | null;
   defaultForNewChats?: boolean;
 }): Promise<PersonaRecord> {
   const response = await client.api.personas.$post({ json: input });
@@ -26,6 +27,7 @@ export async function updatePersona(
     name: string;
     description: string;
     pronouns?: string | null;
+    pronounForms?: PronounForms | null;
     avatarAssetId?: string | null;
     avatarFullAssetId?: string | null;
     avatarCropJson?: string | null;

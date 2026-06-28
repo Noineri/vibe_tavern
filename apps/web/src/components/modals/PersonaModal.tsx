@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { useForm } from "react-hook-form";
+import type { PronounForms } from "@vibe-tavern/domain";
 import { Icons } from "../shared/icons.js";
 import { DestructiveConfirmModal } from "../shared/destructive-confirm-modal.js";
 import { AvatarCropModal } from "../shared/AvatarCropModal.js";
@@ -25,6 +26,7 @@ interface PersonaListItem {
   name: string;
   description: string;
   pronouns: string | null;
+  pronounForms: PronounForms | null;
   avatarAssetId: string | null;
   avatarExt: string | null;
   avatarCropJson: string | null;
@@ -36,9 +38,9 @@ interface PersonaModalProps {
   personas: PersonaListItem[];
   activePersonaId: string | null;
   isSaving: boolean;
-  onSaveEdit: (personaId: string, draft: { name: string; description: string; pronouns?: string | null; avatarAssetId?: string | null; avatarFullAssetId?: string | null }) => void;
+  onSaveEdit: (personaId: string, draft: { name: string; description: string; pronouns?: string | null; pronounForms?: PronounForms | null; avatarAssetId?: string | null; avatarFullAssetId?: string | null }) => void;
   onSetActive: (personaId: string) => void;
-  onCreatePersona: (input: { name: string; description: string; pronouns?: string | null }) => Promise<{ id: string } | null>;
+  onCreatePersona: (input: { name: string; description: string; pronouns?: string | null; pronounForms?: PronounForms | null }) => Promise<{ id: string } | null>;
   onDuplicatePersona: (personaId: string) => Promise<void>;
   onDeletePersona: (personaId: string) => Promise<{ ok: boolean; error?: string }>;
   onSetDefaultPersona: (personaId: string) => Promise<void>;
@@ -48,7 +50,11 @@ type PersonaFormData = {
   name: string;
   description: string;
   pronouns: string | null;
-  pronounsCustom: string;
+  pfSubjective: string;
+  pfObjective: string;
+  pfPossessive: string;
+  pfPossessivePronoun: string;
+  pfReflexive: string;
   avatarAssetId: string | null;
   avatarFullAssetId: string | null;
   avatarCropJson: string | null;
@@ -95,7 +101,11 @@ export function PersonaModal(input: PersonaModalProps) {
       name: "",
       description: "",
       pronouns: null,
-      pronounsCustom: "",
+      pfSubjective: "",
+      pfObjective: "",
+      pfPossessive: "",
+      pfPossessivePronoun: "",
+      pfReflexive: "",
       avatarAssetId: null,
       avatarFullAssetId: null,
       avatarCropJson: null,
@@ -207,11 +217,22 @@ export function PersonaModal(input: PersonaModalProps) {
   function startEdit(persona: PersonaListItem): void {
     setEditingId(persona.id);
     setSelectedId(persona.id);
+    const PRESET_KEYS = ["he/him", "she/her", "they/them", "it/its"];
+    const isPreset = PRESET_KEYS.includes(persona.pronouns ?? "");
+    // 'custom' discriminator OR a legacy free-text string (non-preset, non-empty)
+    // both select the custom branch. Legacy free-text is seeded into the
+    // subjective field so nothing is silently dropped.
+    const isCustom = !isPreset && !!persona.pronouns && persona.pronouns !== "";
+    const forms = persona.pronounForms;
     form.reset({
       name: persona.name,
       description: persona.description,
-      pronouns: PRONOUN_OPTIONS.some(o => o.v === persona.pronouns) ? (persona.pronouns ?? "") : "custom",
-      pronounsCustom: PRONOUN_OPTIONS.some(o => o.v === persona.pronouns) ? "" : (persona.pronouns ?? ""),
+      pronouns: isPreset ? (persona.pronouns ?? "") : isCustom ? "custom" : "",
+      pfSubjective: forms?.subjective ?? (isCustom && !forms ? (persona.pronouns ?? "") : ""),
+      pfObjective: forms?.objective ?? "",
+      pfPossessive: forms?.possessive ?? "",
+      pfPossessivePronoun: forms?.possessivePronoun ?? "",
+      pfReflexive: forms?.reflexive ?? "",
       avatarAssetId: persona.avatarAssetId,
       avatarFullAssetId: null,
       avatarCropJson: null,
@@ -233,15 +254,34 @@ export function PersonaModal(input: PersonaModalProps) {
     const name = form.getValues("name");
     const description = form.getValues("description");
     const pronouns = form.getValues("pronouns");
-    const pronounsCustom = form.getValues("pronounsCustom");
     const avatarAssetId = form.getValues("avatarAssetId");
     const avatarFullAssetId = form.getValues("avatarFullAssetId");
     const avatarCropJson = form.getValues("avatarCropJson");
     if (!name.trim()) return;
-    const resolved = pronouns === "custom"
-      ? (pronounsCustom.trim() || null)
-      : (pronouns || null);
-    input.onSaveEdit(editingId, { name: name.trim(), description, pronouns: resolved, avatarAssetId, avatarFullAssetId });
+    // Custom: build structured forms from the 5 fields. If every field is blank,
+    // treat as 'no pronouns' (pronouns=null, pronounForms=null) rather than an
+    // empty custom block. Preset: leave pronounForms null, write the preset key.
+    let resolvedPronouns: string | null;
+    let resolvedForms: PronounForms | null = null;
+    if (pronouns === "custom") {
+      const forms: PronounForms = {
+        subjective: form.getValues("pfSubjective").trim(),
+        objective: form.getValues("pfObjective").trim(),
+        possessive: form.getValues("pfPossessive").trim(),
+        possessivePronoun: form.getValues("pfPossessivePronoun").trim(),
+        reflexive: form.getValues("pfReflexive").trim(),
+      };
+      const hasAny = forms.subjective || forms.objective || forms.possessive || forms.possessivePronoun || forms.reflexive;
+      if (hasAny) {
+        resolvedForms = forms;
+        resolvedPronouns = "custom";
+      } else {
+        resolvedPronouns = null;
+      }
+    } else {
+      resolvedPronouns = pronouns || null;
+    }
+    input.onSaveEdit(editingId, { name: name.trim(), description, pronouns: resolvedPronouns, pronounForms: resolvedForms, avatarAssetId, avatarFullAssetId });
     if (createdDraftPersonaId === editingId) setCreatedDraftPersonaId(null);
     setEditingId(null);
   }
@@ -298,7 +338,11 @@ export function PersonaModal(input: PersonaModalProps) {
   const isDirty = form.formState.isDirty;
   const editDescription = form.watch("description");
   const editPronouns = form.watch("pronouns");
-  const editPronounsCustom = form.watch("pronounsCustom");
+  const editPfSubjective = form.watch("pfSubjective");
+  const editPfObjective = form.watch("pfObjective");
+  const editPfPossessive = form.watch("pfPossessive");
+  const editPfPossessivePronoun = form.watch("pfPossessivePronoun");
+  const editPfReflexive = form.watch("pfReflexive");
   const editAvatarAssetId = form.watch("avatarAssetId");
   const editAvatarPreview = form.watch("avatarPreview");
 
@@ -314,6 +358,16 @@ export function PersonaModal(input: PersonaModalProps) {
     { v: "they/them", l: "they/them" },
     { v: "it/its", l: "it/its" },
     { v: "custom", l: t("pronouns_custom") },
+  ];
+
+  // Five-field declension descriptors for the custom-pronoun form (PR-7).
+  // Placeholder uses the he/him example for each slot.
+  const PRONOUN_FORM_FIELDS: { key: "pfSubjective" | "pfObjective" | "pfPossessive" | "pfPossessivePronoun" | "pfReflexive"; label: string; placeholder: string; value: string }[] = [
+    { key: "pfSubjective", label: t("pronoun_field_subjective"), placeholder: "he", value: editPfSubjective },
+    { key: "pfObjective", label: t("pronoun_field_objective"), placeholder: "him", value: editPfObjective },
+    { key: "pfPossessive", label: t("pronoun_field_possessive"), placeholder: "his", value: editPfPossessive },
+    { key: "pfPossessivePronoun", label: t("pronoun_field_possessive_pronoun"), placeholder: "his", value: editPfPossessivePronoun },
+    { key: "pfReflexive", label: t("pronoun_field_reflexive"), placeholder: "himself", value: editPfReflexive },
   ];
 
   // ── Card rendering ──
@@ -405,12 +459,19 @@ export function PersonaModal(input: PersonaModalProps) {
                   ))}
                 </div>
                 {editPronouns === "custom" && (
-                  <input
-                    className="mt-1 w-full rounded border border-border bg-s2 py-2 px-2.5 font-ui text-sm text-t1 outline-none focus:border-accent"
-                    value={editPronounsCustom}
-                    onChange={(e) => form.setValue("pronounsCustom", e.target.value, { shouldDirty: true })}
-                    placeholder={t("pronouns_custom_placeholder")}
-                  />
+                  <div className={cn("mt-2 grid gap-1.5", isMobile ? "grid-cols-1" : "grid-cols-2")}>
+                    {PRONOUN_FORM_FIELDS.map((f) => (
+                      <label key={f.key} className="block">
+                        <span className="mb-0.5 block font-ui text-[calc(var(--ui-fs)-3px)] text-t3">{f.label}</span>
+                        <input
+                          className="w-full rounded border border-border bg-s2 py-1.5 px-2 font-ui text-[calc(var(--ui-fs)-1px)] text-t1 outline-none focus:border-accent"
+                          value={f.value}
+                          onChange={(e) => form.setValue(f.key, e.target.value, { shouldDirty: true })}
+                          placeholder={f.placeholder}
+                        />
+                      </label>
+                    ))}
+                  </div>
                 )}
               </div>
             </div>
@@ -477,9 +538,19 @@ export function PersonaModal(input: PersonaModalProps) {
                   <span className="rounded-sm bg-accent/15 px-1.5 py-0.5 font-ui text-[10px] font-medium tracking-wide text-accent-t uppercase">{t("default_persona_badge")}</span>
                 )}
               </div>
-              {persona.pronouns && (
-                <div className="font-ui text-[13px] text-t3">{persona.pronouns}</div>
-              )}
+              {(() => {
+                // For the 'custom' discriminator, show a compact subjective/objective
+                // label derived from the structured forms (e.g. "ze/zir") instead of
+                // the literal word "custom".
+                if (persona.pronouns === "custom" && persona.pronounForms) {
+                  const f = persona.pronounForms;
+                  return <div className="font-ui text-[13px] text-t3">{f.subjective}/{f.objective}</div>;
+                }
+                if (persona.pronouns && persona.pronouns !== "custom") {
+                  return <div className="font-ui text-[13px] text-t3">{persona.pronouns}</div>;
+                }
+                return null;
+              })()}
               <div className={cn("font-ui text-[13px] leading-snug text-t3", isMobile ? "line-clamp-2" : "line-clamp-3")}>{persona.description}</div>
               <PersonaTokenBadge text={persona.description} />
             </div>
@@ -616,7 +687,11 @@ export function PersonaModal(input: PersonaModalProps) {
                 name: t("new_persona_default"),
                 description: "",
                 pronouns: "",
-                pronounsCustom: "",
+                pfSubjective: "",
+                pfObjective: "",
+                pfPossessive: "",
+                pfPossessivePronoun: "",
+                pfReflexive: "",
                 avatarAssetId: null,
                 avatarFullAssetId: null,
                 avatarCropJson: null,

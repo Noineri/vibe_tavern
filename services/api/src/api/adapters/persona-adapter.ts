@@ -1,5 +1,5 @@
 import type { PersonaRuntimeApi } from "../contract/runtime-api.js";
-import { brandId, type PersonaId, type ChatId } from "@vibe-tavern/domain";
+import { brandId, type PersonaId, type ChatId, type PronounForms } from "@vibe-tavern/domain";
 import type { StoreContainer } from "@vibe-tavern/db";
 import type { SessionRuntime } from "../../runtime/session/session-runtime.js";
 import type { AssetService } from "../../domain/asset/asset-service.js";
@@ -24,6 +24,7 @@ export class PersonaAdapter implements PersonaRuntimeApi {
 		name: string;
 		description: string;
 		pronouns?: string | null;
+		pronounForms?: PronounForms | null;
 		defaultForNewChats?: boolean;
 	}) => this.sessionRuntime.persona.create(body);
 
@@ -34,6 +35,7 @@ export class PersonaAdapter implements PersonaRuntimeApi {
 			name?: string;
 			description?: string;
 			pronouns?: string | null;
+			pronounForms?: PronounForms | null;
 			avatarAssetId?: string | null;
 			avatarFullAssetId?: string | null;
 			avatarCropJson?: string | null;
