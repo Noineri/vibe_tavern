@@ -178,15 +178,21 @@ Download the latest `.exe` from [Releases](https://github.com/Noineri/vibe_taver
 
 Download the zip archive from [Releases](https://github.com/Noineri/vibe_tavern/releases), extract, run `Start Vibe Tavern.bat`.
 
-### Linux / macOS
+### Linux
+
+Download the zip archive from [Releases](https://github.com/Noineri/vibe_tavern/releases), extract, run `Vibe_Tavern.sh`
+
+Or clone entire repo and launch manually:
 
 ```bash
 git clone https://github.com/Noineri/vibe_tavern.git
 cd vibe_tavern
-bash ./Vibe_Tavern.sh
+bun run dev
 ```
 
-The script checks Bun installation, pulls updates, backs up your data, and starts the server.
+### macOS
+
+We don't have macOS release builds yet. But you can use git clone method from Linux instruction above.
 
 ### Docker
 
