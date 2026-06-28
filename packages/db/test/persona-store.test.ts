@@ -31,7 +31,7 @@ describe("PersonaStore folder storage (B2)", () => {
 		const persona = await store.create({ name: "Alex", description: "traveler", pronouns: "they/them" });
 
 		const raw = JSON.parse(await readFile(join(dataRoot, PERSONAS, persona.id, "persona.json"), "utf8"));
-		expect(raw).toEqual({ name: "Alex", description: "traveler", pronouns: "they/them" });
+		expect(raw).toEqual({ name: "Alex", description: "traveler", pronouns: "they/them", pronounForms: null });
 
 		// NO new flat {id}.json created
 		const dirFiles = await readdir(join(dataRoot, PERSONAS));
@@ -51,7 +51,27 @@ describe("PersonaStore folder storage (B2)", () => {
 		await store.update(persona.id, { name: "Alex 2", description: "updated" });
 
 		const raw = JSON.parse(await readFile(join(dataRoot, PERSONAS, persona.id, "persona.json"), "utf8"));
-		expect(raw).toEqual({ name: "Alex 2", description: "updated", pronouns: null });
+		expect(raw).toEqual({ name: "Alex 2", description: "updated", pronouns: null, pronounForms: null });
+	});
+
+	test("pronounForms round-trips via create/update (custom case)", async () => {
+		const { dataRoot, store } = await setup();
+		const forms = { subjective: "ze", objective: "zir", possessive: "zir", possessivePronoun: "zirs", reflexive: "zirself" };
+		const created = await store.create({ name: "Neopronoun", pronouns: "custom", pronounForms: forms });
+
+		// create persists to DB row (parsed back by getById) and to the canonical file.
+		const fetched = await store.getById(created.id);
+		expect(fetched?.pronounForms).toEqual(forms);
+		expect(fetched?.pronouns).toBe("custom");
+		const fileRaw = JSON.parse(await readFile(join(dataRoot, PERSONAS, created.id, "persona.json"), "utf8"));
+		expect(fileRaw.pronounForms).toEqual(forms);
+
+		// update clears pronounForms when set to null (preset switch back).
+		const updated = await store.update(created.id, { pronouns: "she/her", pronounForms: null });
+		expect(updated.pronounForms).toBeNull();
+		expect(updated.pronouns).toBe("she/her");
+		const fileAfter = JSON.parse(await readFile(join(dataRoot, PERSONAS, created.id, "persona.json"), "utf8"));
+		expect(fileAfter.pronounForms).toBeNull();
 	});
 
 	test("delete removes the DB row and the {id}/ folder", async () => {
