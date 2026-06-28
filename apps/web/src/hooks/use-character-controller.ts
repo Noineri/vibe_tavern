@@ -1,5 +1,5 @@
 import { useState, type ChangeEvent, type DragEvent } from "react";
-import type { ChatId } from "@vibe-tavern/domain";
+import type { ChatId, PronounForms } from "@vibe-tavern/domain";
 import type { VtfCharacterContent } from "@vibe-tavern/db/codecs";
 import { toast } from "sonner";
 import { getT } from "../i18n/locale-helpers.js";
@@ -53,7 +53,7 @@ export type ChatRemovalMode = "delete" | "clear";
 export interface CharacterControllerActions {
   handleSaveCharacter: (draftInput: BuildCharacterDraft) => Promise<void>;
   handleAvatarUpload: (file: File, originalFile?: File | null) => Promise<void>;
-  handleSavePersona: (personaId: string, draftInput: { name: string; description: string; pronouns?: string | null; avatarAssetId?: string | null; avatarFullAssetId?: string | null; avatarCropJson?: string | null }) => Promise<void>;
+  handleSavePersona: (personaId: string, draftInput: { name: string; description: string; pronouns?: string | null; pronounForms?: PronounForms | null; avatarAssetId?: string | null; avatarFullAssetId?: string | null; avatarCropJson?: string | null }) => Promise<void>;
   handleSetChatPersona: (personaId: string) => Promise<void>;
   handleCreatePersona: (input: { name: string; description: string; pronouns?: string | null }) => Promise<{ id: string } | null>;
   handleDeletePersona: (personaId: string) => Promise<{ ok: boolean; error?: string }>;
@@ -209,7 +209,7 @@ export function useCharacterController(): CharacterControllerActions {
     }
   }
 
-  async function handleSavePersona(personaId: string, draftInput: { name: string; description: string; pronouns?: string | null; avatarAssetId?: string | null; avatarFullAssetId?: string | null; avatarCropJson?: string | null }): Promise<void> {
+  async function handleSavePersona(personaId: string, draftInput: { name: string; description: string; pronouns?: string | null; pronounForms?: PronounForms | null; avatarAssetId?: string | null; avatarFullAssetId?: string | null; avatarCropJson?: string | null }): Promise<void> {
     const activeChatId = getActiveChatId();
     if (!activeChatId) return;
 
@@ -222,6 +222,7 @@ export function useCharacterController(): CharacterControllerActions {
           name: draftInput.name,
           description: draftInput.description,
           pronouns: draftInput.pronouns,
+          pronounForms: draftInput.pronounForms,
           avatarAssetId: draftInput.avatarAssetId,
           avatarFullAssetId: draftInput.avatarFullAssetId,
           avatarCropJson: draftInput.avatarCropJson,
@@ -248,12 +249,13 @@ export function useCharacterController(): CharacterControllerActions {
     }
   }
 
-  async function handleCreatePersona(input: { name: string; description: string; pronouns?: string | null }): Promise<{ id: string } | null> {
+  async function handleCreatePersona(input: { name: string; description: string; pronouns?: string | null; pronounForms?: PronounForms | null }): Promise<{ id: string } | null> {
     try {
       const created = await createPersonaAction({
         name: input.name.trim(),
         description: input.description.trim(),
         pronouns: input.pronouns,
+        pronounForms: input.pronounForms,
       });
       return { id: created.id };
     } catch (error) {

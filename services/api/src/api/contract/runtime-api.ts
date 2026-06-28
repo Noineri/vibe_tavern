@@ -17,7 +17,7 @@ import type {
 	SummaryResponse,
 	CharacterVersionResponse,
 } from "./session-types.js";
-import type { PromptTraceRecordDto, PromptPresetDto } from "@vibe-tavern/domain";
+import type { PromptTraceRecordDto, PromptPresetDto, PronounForms } from "@vibe-tavern/domain";
 import type {
 	ChatSummary,
 	FavoriteModel,
@@ -215,7 +215,7 @@ export interface CharacterAssetRuntimeApi {
 
 export interface PersonaRuntimeApi {
 	listPersonas: () => Promise<PersonaRecord[]>;
-	createPersona: (body: { name: string; description: string; pronouns?: string | null; defaultForNewChats?: boolean }) => Promise<PersonaRecord>;
+	createPersona: (body: { name: string; description: string; pronouns?: string | null; pronounForms?: PronounForms | null; defaultForNewChats?: boolean }) => Promise<PersonaRecord>;
 	updatePersona: (personaId: string, body: Record<string, unknown>) => Promise<ConfigPatchResponse | { id: string }>;
 	deletePersona: (personaId: string) => Promise<void>;
 	duplicatePersona: (personaId: string) => Promise<PersonaRecord>;
