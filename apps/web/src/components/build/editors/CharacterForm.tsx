@@ -26,6 +26,10 @@ import { DepthPromptField } from "../fields/DepthPromptField.js";
 import { TagsField } from "../fields/TagsField.js";
 import { VibeMdView } from "./VibeMdView.js";
 import { useCharacterStore } from "../../../stores/character-store.js";
+import { useActiveCharacter, useSnapshotStore } from "../../../stores/snapshot-store.js";
+import { saveCharacterAction } from "../../../stores/api-actions/character-actions.js";
+import { describeCharacterAvatar } from "../../../api/gallery-api.js";
+import { AvatarDescriptionField, type AvatarDescriptionPatch } from "./AvatarDescriptionField.js";
 
 export interface CharacterFormProps {
   form: UseFormReturn<BuildCharacterDraft>;
@@ -93,6 +97,24 @@ export function CharacterForm({
   const mdViewMode = useCharacterStore((s) => s.mdViewMode);
   const setMdViewMode = useCharacterStore((s) => s.setMdViewMode);
 
+  // Avatar-in-prompt fields live OUT-OF-BAND on the snapshot character (they
+  // are intentionally excluded from BuildCharacterDraft — see character-schema.ts
+  // + vibe_tavern_plan/reports/avatar-description-ui-gap.md). Read from the
+  // active character, commit via direct PATCH (NOT the form's setValue/submit).
+  const activeCharacter = useActiveCharacter();
+  const includeAvatarInPrompt = activeCharacter?.includeAvatarInPrompt ?? false;
+  const avatarDescription = activeCharacter?.avatarDescription ?? null;
+  const handleAvatarPatch = (patch: AvatarDescriptionPatch) => {
+    void saveCharacterAction({ characterId, patch });
+  };
+  // Vision describe: endpoint persists avatarDescription out-of-band and
+  // returns { description }; mirror it into the store via the sanctioned
+  // ingestSnapshot (character key present → replaces). No redundant PATCH.
+  const handleAvatarDescribe = async (signal: AbortSignal): Promise<void> => {
+    const { description } = await describeCharacterAvatar(characterId, signal);
+    const cur = useSnapshotStore.getState().character;
+    if (cur) useSnapshotStore.getState().ingestSnapshot({ character: { ...cur, avatarDescription: description } });
+  };
 
 
   const name = watch("name");
@@ -469,6 +491,22 @@ export function CharacterForm({
         disabled={isSaving}
         onAfterActivate={onReset}
       />
+
+      {/* Avatar-in-prompt — describe via vision + toggle + description.
+          Reads from the snapshot character (out-of-band from BuildCharacterDraft
+          — see avatar-description-ui-gap.md). Mounted once, shared across
+          Form/MD modes and both avatar orientations, like VersionSwitcher. */}
+      <div className="mb-5">
+        <AvatarDescriptionField
+          kind="character"
+          includeAvatarInPrompt={includeAvatarInPrompt}
+          avatarDescription={avatarDescription}
+          hasAvatar={hasAvatar}
+          onPatch={handleAvatarPatch}
+          onDescribe={handleAvatarDescribe}
+          disabled={isSaving}
+        />
+      </div>
 
       {/* Gallery Accordion */}
       <GalleryAccordion characterId={characterId} />

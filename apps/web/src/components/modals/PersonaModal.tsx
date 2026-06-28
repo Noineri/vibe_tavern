@@ -22,6 +22,10 @@ import { useModalStore } from "../../stores/modal-store.js";
 import { parseStPersonas, type StPersonaEntry } from "../../lib/st-persona-parser.js";
 import { toast } from "sonner";
 import { fetchBootstrapAction, fetchPersonasAction } from "../../stores/api-actions/bootstrap-actions.js";
+import { updatePersonaAction } from "../../stores/api-actions/persona-actions.js";
+import { useSnapshotStore } from "../../stores/snapshot-store.js";
+import { describePersonaAvatar } from "../../api/gallery-api.js";
+import { AvatarDescriptionField, type AvatarDescriptionPatch } from "../build/editors/AvatarDescriptionField.js";
 
 interface PersonaListItem {
   id: string;
@@ -33,6 +37,11 @@ interface PersonaListItem {
   avatarExt: string | null;
   avatarCropJson: string | null;
   defaultForNewChats: boolean;
+  // Avatar-appearance prompt injection (MEDIA_GALLERY). Fed straight from
+  // the bootstrap PersonaRecord; the field reads/writes them out-of-band
+  // via updatePersonaAction (NOT through this modal's onSaveEdit form).
+  includeAvatarInPrompt: boolean;
+  avatarDescription: string | null;
   updatedAt: string;
 }
 
@@ -442,6 +451,28 @@ export function PersonaModal(input: PersonaModalProps) {
     ?? (editingId ? resolveEntityAvatarUrl({ kind: "personas", id: editingId, avatarExt: editingPersona?.avatarExt ?? null, avatarAssetId: editAvatarAssetId, updatedAt: editingPersona?.updatedAt ?? null }) : null);
   const editAvatarCropJson = form.watch("avatarCropJson");
 
+  // Avatar-in-prompt fields live OUT-OF-BAND on the persona (excluded from
+  // this modal's react-hook-form, same design as the character side — see
+  // vibe_tavern_plan/reports/avatar-description-ui-gap.md). Commit via the
+  // persona PATCH action; refresh the bootstrap list (the source of truth for
+  // PersonaListItem) so the field re-renders with the persisted value.
+  const handlePersonaAvatarPatch = (patch: AvatarDescriptionPatch) => {
+    if (!editingId) return;
+    void updatePersonaAction({ personaId: editingId, patch }).then(() => { void fetchPersonasAction(); });
+  };
+  const handlePersonaAvatarDescribe = async (signal: AbortSignal): Promise<void> => {
+    if (!editingId) return;
+    const { description } = await describePersonaAvatar(editingId, signal);
+    // Backend persisted avatarDescription out-of-band. Mirror into the active
+    // snapshot persona IF this persona is the active one (safe, sanctioned
+    // ingest); always refresh the bootstrap list (source of truth for the list).
+    const cur = useSnapshotStore.getState().persona;
+    if (cur && cur.id === editingId) {
+      useSnapshotStore.getState().ingestSnapshot({ persona: { ...cur, avatarDescription: description } });
+    }
+    void fetchPersonasAction();
+  };
+
   const PRONOUN_OPTIONS: { v: string; l: string }[] = [
     { v: "", l: t("pronouns_none") },
     { v: "he/him", l: "he/him" },
@@ -585,6 +616,21 @@ export function PersonaModal(input: PersonaModalProps) {
                 tracked separately — see script-link-binding-gap.md. */}
             {editingId && (
               <BoundResourcesField entityKind="persona" entityId={editingId} isMobile={isMobile} />
+            )}
+            {/* Avatar-in-prompt — describe via vision + toggle + description.
+                Out-of-band from this modal's form (see handlePersonaAvatarPatch). */}
+            {editingId && editingPersona && (
+              <div className="mb-3">
+                <AvatarDescriptionField
+                  kind="persona"
+                  includeAvatarInPrompt={editingPersona.includeAvatarInPrompt}
+                  avatarDescription={editingPersona.avatarDescription}
+                  hasAvatar={!!(editingPersona.avatarAssetId || editDisplayAvatar)}
+                  onPatch={handlePersonaAvatarPatch}
+                  onDescribe={handlePersonaAvatarDescribe}
+                  disabled={input.isSaving}
+                />
+              </div>
             )}
             {/* Save / Cancel */}
             <div className="flex gap-2">

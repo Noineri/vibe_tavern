@@ -23,13 +23,18 @@ export async function updatePersonaAction(input: {
   personaId: string;
   patch: {
     chatId?: ChatId;
-    name: string;
-    description: string;
+    name?: string;
+    description?: string;
     pronouns?: string | null;
     pronounForms?: PronounForms | null;
     avatarAssetId?: string | null;
     avatarFullAssetId?: string | null;
     avatarCropJson?: string | null;
+    // Avatar-appearance prompt injection (MEDIA_GALLERY). Same out-of-band
+    // PATCH path as the character side (see character-schema.ts comment);
+    // mirror the client signature exactly.
+    includeAvatarInPrompt?: boolean;
+    avatarDescription?: string | null;
   };
 }): Promise<AppSnapshot> {
   const snapshot = await updatePersona(input.personaId, input.patch);
