@@ -241,6 +241,12 @@ export class AssetService {
     return this.loadFolderImageBuffer(STORAGE_FOLDERS.personas, personaId, "avatar", ext);
   }
 
+  /** Persona variant — folder-resident FULL (uncropped) avatar as a Buffer.
+   *  Used by persona export. Mirrors loadCharacterAvatarFullBuffer. */
+  async loadPersonaAvatarFullBuffer(personaId: string, ext: string): Promise<Buffer | null> {
+    return this.loadFolderImageBuffer(STORAGE_FOLDERS.personas, personaId, "avatar-full", ext);
+  }
+
   // ─── Full avatars (leafBase = "avatar-full") ───────────────────────
   // The uncropped original, stored alongside the thumbnail avatar.{ext}.
   // Used by the large display slots (top-bar preview, editor). When a character
