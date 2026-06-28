@@ -4,6 +4,7 @@ import type { PronounForms } from "@vibe-tavern/domain";
 import { Icons } from "../shared/icons.js";
 import { DestructiveConfirmModal } from "../shared/destructive-confirm-modal.js";
 import { ActionSheet, type ActionSheetItem } from "../shared/ActionSheet.js";
+import { BoundResourcesField } from "../shared/BoundResourcesField.js";
 import { AvatarCropModal } from "../shared/AvatarCropModal.js";
 import type { AvatarCropResult } from "../shared/AvatarCropModal.js";
 import { cn } from "../../lib/cn.js";
@@ -521,6 +522,12 @@ export function PersonaModal(input: PersonaModalProps) {
                 <PersonaTokenBadge text={editDescription} />
               </div>
             </div>
+            {/* Bound lorebooks — reverse-direction binding (PR-12). Shown only
+                in the edit form (requires a persisted personaId). Scripts are
+                tracked separately — see script-link-binding-gap.md. */}
+            {editingId && (
+              <BoundResourcesField personaId={editingId} isMobile={isMobile} />
+            )}
             {/* Save / Cancel */}
             <div className="flex gap-2">
               <button type="button"
