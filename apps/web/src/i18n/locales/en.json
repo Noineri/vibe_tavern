@@ -413,6 +413,8 @@
   "pronoun_field_reflexive": "Reflexive",
   "persona_desc_placeholder": "Description",
   "persona_edit": "Edit",
+  "persona_export": "Export",
+  "persona_export_failed": "Failed to export persona.",
   "create_new_persona": "Create new persona",
   "close": "Close",
   "delete_failed": "Delete failed.",

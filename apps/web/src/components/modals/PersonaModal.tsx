@@ -3,6 +3,7 @@ import { useForm } from "react-hook-form";
 import type { PronounForms } from "@vibe-tavern/domain";
 import { Icons } from "../shared/icons.js";
 import { DestructiveConfirmModal } from "../shared/destructive-confirm-modal.js";
+import { ActionSheet, type ActionSheetItem } from "../shared/ActionSheet.js";
 import { AvatarCropModal } from "../shared/AvatarCropModal.js";
 import type { AvatarCropResult } from "../shared/AvatarCropModal.js";
 import { cn } from "../../lib/cn.js";
@@ -13,7 +14,7 @@ import { Checkbox } from "../shared/Checkbox.js";
 import { Modal } from "../shared/Modal.js";
 import { resolveEntityAvatarUrl } from "../../lib/avatar.js";
 
-import { createPersona, uploadPersonaAvatar } from "../../app-client.js";
+import { createPersona, uploadPersonaAvatar, exportPersona } from "../../app-client.js";
 import { useTokenCount } from "../../hooks/use-token-count.js";
 import { useT } from "../../i18n/context.js";
 import { useModalStore } from "../../stores/modal-store.js";
@@ -80,6 +81,7 @@ export function PersonaModal(input: PersonaModalProps) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [createdDraftPersonaId, setCreatedDraftPersonaId] = useState<string | null>(null);
   const [avatarUploading, setAvatarUploading] = useState(false);
+  const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
   const avatarInputRef = useRef<HTMLInputElement>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<{ id: string; error: string } | null>(null);
   const isMobile = useIsMobile();
@@ -601,32 +603,70 @@ export function PersonaModal(input: PersonaModalProps) {
               <div className={cn("font-ui text-[13px] leading-snug text-t3", isMobile ? "line-clamp-2" : "line-clamp-3")}>{persona.description}</div>
               <PersonaTokenBadge text={persona.description} />
             </div>
-            {/* Actions: Edit + Copy + Delete (PR-10 — three-dots menu removed) */}
+            {/* Actions — PR-10 revised:
+                Desktop: all 4 buttons (Edit/Export/Copy/Delete) inline, visible on card hover.
+                Mobile: Edit stays as a direct inline button (primary action); Export/Copy/Delete collapse into a three-dots menu (row too narrow for 4 inline buttons). */}
             <div className="relative flex shrink-0 items-start gap-0.5 self-start">
               <CustomTooltip content={t("persona_edit")}>
                 <div
-                  className={cn("flex cursor-pointer items-center justify-center rounded-md text-t3 transition-colors hover:bg-s2 hover:text-t1 active:bg-s3", isMobile ? "min-h-[44px] min-w-[44px]" : "h-7 w-7")}
+                  className={cn(
+                    "flex cursor-pointer items-center justify-center rounded-md text-t3 transition-all hover:bg-s2 hover:text-t1 active:bg-s3",
+                    isMobile ? "min-h-[44px] min-w-[44px]" : "h-7 w-7",
+                    // Desktop: hidden until the card is hovered. Mobile: always visible.
+                    !isMobile && "opacity-0 group-hover:opacity-100",
+                  )}
                   onClick={(e) => { e.stopPropagation(); startEdit(persona); }}
                 >
                   <Icons.Edit />
                 </div>
               </CustomTooltip>
-              <CustomTooltip content={t("duplicate")}>
-                <div
-                  className={cn("flex cursor-pointer items-center justify-center rounded-md text-t3 transition-colors hover:bg-s2 hover:text-t1 active:bg-s3", isMobile ? "min-h-[44px] min-w-[44px]" : "h-7 w-7")}
-                  onClick={(e) => { e.stopPropagation(); void input.onDuplicatePersona(persona.id); }}
-                >
-                  <Icons.Copy />
-                </div>
-              </CustomTooltip>
-              <CustomTooltip content={t("delete")}>
-                <div
-                  className={cn("flex cursor-pointer items-center justify-center rounded-md transition-colors active:bg-s3", isMobile ? "min-h-[44px] min-w-[44px]" : "h-7 w-7", isLastPersona ? "text-t4" : "text-t3 hover:bg-s2 hover:text-danger")}
-                  onClick={(e) => { e.stopPropagation(); handleDelete(persona.id); }}
-                >
-                  <Icons.del />
-                </div>
-              </CustomTooltip>
+
+              {!isMobile ? (
+                /* Desktop: direct inline icon buttons */
+                <>
+                  <CustomTooltip content={t("persona_export")}>
+                    <div
+                      className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-md text-t3 opacity-0 transition-all hover:bg-s2 hover:text-t1 active:bg-s3 group-hover:opacity-100"
+                      onClick={async (e) => {
+                        e.stopPropagation();
+                        try { await exportPersona(persona.id, "st"); }
+                        catch (err) { toast.error(err instanceof Error ? err.message : t("persona_export_failed")); }
+                      }}
+                    >
+                      <Icons.download />
+                    </div>
+                  </CustomTooltip>
+                  <CustomTooltip content={t("duplicate")}>
+                    <div
+                      className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-md text-t3 opacity-0 transition-all hover:bg-s2 hover:text-t1 active:bg-s3 group-hover:opacity-100"
+                      onClick={(e) => { e.stopPropagation(); void input.onDuplicatePersona(persona.id); }}
+                    >
+                      <Icons.Copy />
+                    </div>
+                  </CustomTooltip>
+                  <CustomTooltip content={t("delete")}>
+                    <div
+                      className={cn(
+                        "flex h-7 w-7 cursor-pointer items-center justify-center rounded-md transition-all active:bg-s3 opacity-0 group-hover:opacity-100",
+                        isLastPersona ? "text-t4" : "text-t3 hover:bg-s2 hover:text-danger",
+                      )}
+                      onClick={(e) => { e.stopPropagation(); handleDelete(persona.id); }}
+                    >
+                      <Icons.del />
+                    </div>
+                  </CustomTooltip>
+                </>
+              ) : (
+                /* Mobile: Edit stays inline; Export/Copy/Delete in a bottom ActionSheet (reuses the same component the character rail uses). */
+                <>
+                  <div
+                    className="flex min-h-[44px] min-w-[44px] cursor-pointer items-center justify-center rounded-md text-t3 transition-colors hover:bg-s2 hover:text-t1 active:bg-s3"
+                    onClick={(e) => { e.stopPropagation(); setMenuOpenId(menuOpenId === persona.id ? null : persona.id); }}
+                  >
+                    <Icons.ellipsis />
+                  </div>
+                </>
+              )}
             </div>
           </>
         )}
@@ -645,6 +685,40 @@ export function PersonaModal(input: PersonaModalProps) {
           onCancel={handleAvatarCropCancel}
         />
       )}
+      {/* Mobile ActionSheet — persona actions (Export/Copy/Delete). Mirrors the
+          character rail's three-dots bottom sheet (Rail.tsx). Desktop uses
+          inline icon buttons instead, so this is mobile-only. */}
+      {isMobile && menuOpenId && (() => {
+        const active = input.personas.find((p) => p.id === menuOpenId);
+        const items: ActionSheetItem[] = [
+          { icon: <Icons.download />, label: t("persona_export"), action: async () => {
+            const id = menuOpenId;
+            setMenuOpenId(null);
+            try { await exportPersona(id, "st"); }
+            catch (err) { toast.error(err instanceof Error ? err.message : t("persona_export_failed")); }
+          }},
+          { icon: <Icons.Copy />, label: t("duplicate"), action: () => {
+            const id = menuOpenId;
+            setMenuOpenId(null);
+            void input.onDuplicatePersona(id);
+          }},
+        ];
+        if (!isLastPersona) {
+          items.push({ icon: <Icons.del />, label: t("delete"), danger: true, action: () => {
+            const id = menuOpenId;
+            setMenuOpenId(null);
+            handleDelete(id);
+          }});
+        }
+        return (
+          <ActionSheet
+            open={true}
+            title={active?.name ?? ""}
+            items={items}
+            onClose={() => setMenuOpenId(null)}
+          />
+        );
+      })()}
       {/* Delete confirm */}
       {deleteConfirm && (
         <DestructiveConfirmModal
