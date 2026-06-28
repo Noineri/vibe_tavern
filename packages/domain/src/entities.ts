@@ -117,11 +117,25 @@ export interface CharacterVersion {
   createdAt: Timestamp;
 }
 
+/** Structured pronoun declensions. Populated only for the custom pronoun case;
+ * preset pronouns resolve via a lookup table at prompt time (see pronoun-forms.ts in the pipeline package). */
+export interface PronounForms {
+  subjective: string;
+  objective: string;
+  /** Possessive determiner (his/her/their/its) — {{poss}}. */
+  possessive: string;
+  /** Possessive pronoun (his/hers/theirs/its) — {{poss_p}}. */
+  possessivePronoun: string;
+  reflexive: string;
+}
+
 export interface Persona {
   id: PersonaId;
   name: string;
   description: string;
   pronouns: string | null;
+  /** Structured pronoun declensions (custom case only); null for presets and unset. */
+  pronounForms: PronounForms | null;
   avatarAssetId: string | null;
   avatarFullAssetId: string | null;
   avatarCropJson: string | null;
