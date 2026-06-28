@@ -696,6 +696,30 @@ export class LorebookStore {
     ).run();
   }
 
+  /**
+   * Reverse query — list lorebooks M:N-linked to a given target (character or
+   * persona), regardless of the lorebook's own home scope. This is the
+   * persona/character-editor view of "which lorebooks activate for me". Returns
+   * links-only (FK-owned lorebooks are NOT included here; those surface via
+   * `listLorebooksByScope` which unions FK + links).
+   */
+  async listLorebooksLinkedToTarget(targetType: 'character' | 'persona', targetId: string): Promise<Lorebook[]> {
+    const linkedRows = await this.db
+      .select({ lorebookId: lorebookLinks.lorebookId })
+      .from(lorebookLinks)
+      .where(and(eq(lorebookLinks.targetType, targetType), eq(lorebookLinks.targetId, targetId)))
+      .all();
+    const linkedIds = [...new Set(linkedRows.map((row) => row.lorebookId))];
+    if (linkedIds.length === 0) return [];
+    const rows = await this.db
+      .select()
+      .from(lorebooks)
+      .where(inArray(lorebooks.id, linkedIds))
+      .orderBy(asc(lorebooks.sortOrder), asc(lorebooks.name))
+      .all();
+    return rows.map((r) => this.mapLorebookRow(r));
+  }
+
   // ─── Duplicate & export ────────────────────────────────────────────────────
 
   /**
