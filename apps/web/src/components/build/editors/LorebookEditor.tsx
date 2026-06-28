@@ -48,6 +48,7 @@ import type { Scope } from "./LorebookAccordion.js";
 import type { LinkTarget } from "../../shared/LinkBindingPopover.js";
 import { LoreEntryEditor } from "./LoreEntryEditor.js";
 import { LorebookImportModal } from "./LorebookImportModal.js";
+import { buildLorebookCreateBody } from "./lorebook-create-body.js";
 import { useAllCharacters } from "../../../stores/snapshot-store.js";
 import { useBootstrapStore } from "../../../stores/api-actions/bootstrap-actions.js";
 
@@ -123,7 +124,7 @@ export function LorebookEditor({
   const stickyInitialTab = useRef<Tab | null>(readStickyWorldLoreTab());
   const [view, setView] = useState<View>(() => stickyInitialTab.current ? "list" : "pick");
   const [tab, setTab] = useState<Tab>(() => stickyInitialTab.current ?? "lorebooks");
-  const [scope, setScope] = useState<Scope>("character");
+  const [scope, setScope] = useState<Scope>("all");
 
   // Анимация переходов
   const [phase, setPhase] = useState<"idle" | "fading" | "done">("idle");
@@ -380,6 +381,9 @@ export function LorebookEditor({
     setExpandedLorebooks((prev) => new Set([...prev, newLb.id]));
     setEditingLorebookId(newLb.id);
     setEditLbName(newLb.name);
+    // Mirror onStartEdit: seed the scope picker so the inline edit form that
+    // opens immediately reflects the just-created scope (not a stale leftover).
+    setEditLbScope(newLb.scopeType as Scope);
   };
 
   const handleUpdateLb = async (
@@ -557,22 +561,15 @@ export function LorebookEditor({
   // ═══ Помощники ═══
 
   const handleAddLorebook = () => {
-    // "all" is a read-only overview scope — creating a lorebook requires a
-    // concrete scopeType. No-op here; the header CTA is hidden in that mode.
-    if (scope === "all") return;
-    const body: {
-      name: string;
-      scopeType: string;
-      characterId?: string;
-      personaId?: string;
-      chatId?: string;
-    } = {
-      name: t("new_lorebook"),
-      scopeType: scope,
-    };
-    if (scope === "character") body.characterId = characterId;
-    if (scope === "persona" && personaId) body.personaId = personaId;
-    if (scope === "chat" && chatId) body.chatId = chatId;
+    // `scope` is the list filter (may be "all"); buildLorebookCreateBody
+    // coerces "all" → "character" so creation works from every filter,
+    // including the overview. The new lorebook opens in the inline edit
+    // form where its scope can be changed.
+    const body = buildLorebookCreateBody(
+      scope,
+      { characterId, personaId, chatId },
+      t("new_lorebook"),
+    );
     handleCreateLb(body);
   };
 
@@ -850,7 +847,7 @@ export function LorebookEditor({
           </button>
         </CustomTooltip>
         <div className="mx-1 h-8 w-px bg-border" />
-        {tab === "lorebooks" && scope !== "all" && (
+        {tab === "lorebooks" && (
           <>
             <CustomTooltip content={t("new_lorebook")}>
               <div
@@ -870,7 +867,7 @@ export function LorebookEditor({
             </CustomTooltip>
           </>
         )}
-        {tab === "scripts" && scope !== "all" && (
+        {tab === "scripts" && (
           <>
             <CustomTooltip content={t("new_script")}>
               <div
