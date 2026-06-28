@@ -1,0 +1,1 @@
+ALTER TABLE `personas` ADD `pronoun_forms_json` text;
