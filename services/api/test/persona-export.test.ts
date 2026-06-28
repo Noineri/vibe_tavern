@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import type { PersonaRecord } from "@vibe-tavern/api-contracts";
 import type { StoreContainer } from "@vibe-tavern/db";
 import type { AssetService } from "../src/domain/asset/asset-service.js";
-import { serializePersona } from "../src/domain/persona/persona-export.js";
+import { serializePersona, buildStPersonaSlice, buildVtPersonaPayload, mergeStSlices } from "../src/domain/persona/persona-export.js";
 
 /** Minimal persona builder for fixtures. */
 function persona(over: Partial<PersonaRecord> & { id: string }): PersonaRecord {
@@ -113,5 +113,69 @@ describe("serializePersona", () => {
     const out = await serializePersona(stores, assetService, "p5");
     expect(out?.persona.pronounForms).toEqual(forms);
     expect(out?.persona.pronouns).toBe("custom");
+  });
+});
+
+// ─── Format builders ───────────────────────────────────────────────────────────
+// Build from a neutral payload without touching the store / asset service.
+function payload(over: Partial<Parameters<typeof buildVtPersonaPayload>[0]["persona"]> = {}): Parameters<typeof buildVtPersonaPayload>[0] {
+  const p = persona({ id: "p1", ...over });
+  return { persona: p, avatarThumb: null, avatarFull: null };
+}
+
+describe("buildStPersonaSlice", () => {
+  test("expands a preset to the full 5-form ST pronoun shape", () => {
+    const slice = buildStPersonaSlice(payload({ name: "Alex", pronouns: "they/them", description: "hi" }), "key.png");
+    expect(slice.personas).toEqual({ "key.png": "Alex" });
+    expect(slice.persona_descriptions["key.png"]?.pronoun).toEqual({
+      subjective: "they", objective: "them", posDet: "their", posPro: "theirs", reflexive: "themselves",
+    });
+    // Neutral ST injection knobs emitted with defaults.
+    expect(slice.persona_descriptions["key.png"]).toMatchObject({ position: 0, depth: 2, role: 0, lorebook: "", title: "", description: "hi" });
+  });
+
+  test("custom pronounForms flow through with the posDet/posPro key remap", () => {
+    const forms = { subjective: "ze", objective: "zir", possessive: "zir", possessivePronoun: "zirs", reflexive: "zirself" };
+    const slice = buildStPersonaSlice(payload({ pronouns: "custom", pronounForms: forms }), "k.png");
+    expect(slice.persona_descriptions["k.png"]?.pronoun).toEqual({
+      subjective: "ze", objective: "zir", posDet: "zir", posPro: "zirs", reflexive: "zirself",
+    });
+  });
+
+  test("omits the pronoun field entirely when no forms resolve (unset / unrecognized)", () => {
+    const slice = buildStPersonaSlice(payload({ pronouns: null, pronounForms: null }), "k.png");
+    expect(slice.persona_descriptions["k.png"]?.pronoun).toBeUndefined();
+  });
+});
+
+describe("buildVtPersonaPayload", () => {
+  test("base64-encodes avatars and carries pronounForms losslessly", () => {
+    const forms = { subjective: "ze", objective: "zir", possessive: "zir", possessivePronoun: "zirs", reflexive: "zirself" };
+    const p = payload({ pronouns: "custom", pronounForms: forms, avatarDescription: "desc", includeAvatarInPrompt: true });
+    p.avatarThumb = { ext: "png", bytes: Buffer.from("thumb") };
+    const out = buildVtPersonaPayload(p);
+    expect(out.version).toBe(1);
+    expect(out.pronounForms).toEqual(forms);
+    expect(out.avatarDescription).toBe("desc");
+    expect(out.avatarThumb).toEqual({ ext: "png", bytesBase64: Buffer.from("thumb").toString("base64") });
+    expect(out.avatarFull).toBeNull();
+  });
+});
+
+describe("mergeStSlices", () => {
+  test("merges dict entries and records the default persona key", () => {
+    const a = buildStPersonaSlice(payload({ name: "A", pronouns: "she/her" }), "a.png");
+    const b = buildStPersonaSlice(payload({ name: "B", pronouns: "he/him", defaultForNewChats: true }), "b.png");
+    const merged = mergeStSlices([
+      { slice: a, isDefault: false },
+      { slice: b, isDefault: true },
+    ]);
+    expect(Object.keys(merged.personas).sort()).toEqual(["a.png", "b.png"]);
+    expect(merged.default_persona).toBe("b.png");
+  });
+
+  test("empty default_persona when none is flagged default", () => {
+    const merged = mergeStSlices([{ slice: buildStPersonaSlice(payload({ name: "A" }), "a.png"), isDefault: false }]);
+    expect(merged.default_persona).toBe("");
   });
 });

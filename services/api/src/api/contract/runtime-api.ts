@@ -226,6 +226,14 @@ export interface PersonaRuntimeApi {
 
 	// Vision describe (A6) — uses the active provider profile's visionModel.
 	describePersonaAvatar: (personaId: string) => Promise<{ description: string }>;
+
+	// Export (PR-5). Single returns a format-shaped JSON body; bulk returns a
+	// download-ready JSON (ST backup shape or VT-native array of payloads).
+	exportPersona: (personaId: string, format: "st" | "vt") => Promise<{ body: Record<string, unknown>; filename: string; contentType: string }>;
+	exportAllPersonas: (format: "st" | "vt") => Promise<{ body: unknown; filename: string; contentType: string }>;
+	// Import/restore: accepts a VT bulk payload (array of VT v1 payloads), creates
+	// personas + writes avatars. Returns a per-persona result summary.
+	importPersonas: (payload: unknown) => Promise<{ created: number; skipped: number; errors: string[] }>;
 }
 
 // ─── Lorebook ────────────────────────────────────────────────────────
