@@ -706,6 +706,7 @@
   "lore_recursive_scanning_hint": "After an entry activates, its content is also scanned for other entries' keys.",
   "lore_link_targets": "Linked to",
   "lore_link_empty": "No targets available",
+  "lore_click_to_unlink": "click to unlink",
   "lore_duplicate": "Duplicate",
   "lore_export_st": "Export (ST)",
   "lore_entry_title": "Title",
