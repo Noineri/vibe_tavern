@@ -179,6 +179,12 @@ export interface CharacterRuntimeApi {
 	activateCharacterVersion: (characterId: string, versionId: string) => Promise<CharacterVersionResponse>;
 	renameCharacterVersion: (characterId: string, versionId: string, title: string) => Promise<CharacterVersionResponse>;
 	deleteCharacterVersion: (characterId: string, versionId: string) => Promise<void>;
+
+	// ─── Bound resources (character-editor binding field) ───────────────────
+	// Reverse-direction read: lorebooks M:N-linked to this character via
+	// lorebook_links. Mirrors listPersonaLorebooks; both back the
+	// BoundResourcesField lorebook pill group.
+	listCharacterLorebooks: (characterId: string) => Promise<Lorebook[]>;
 }
 
 // ─── Character media gallery ───────────────────────────────────────

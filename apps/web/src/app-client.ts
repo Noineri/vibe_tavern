@@ -97,6 +97,7 @@ export {
   activateCharacterVersion,
   renameCharacterVersion,
   deleteCharacterVersion,
+  listCharacterLorebooks,
 } from "./api/character-api.js";
 
 // ─── Persona ────────────────────────────────────────────────────────────

@@ -56,6 +56,11 @@ export function createCharacterRoutes(runtime: CharacterRuntimeApi & CharacterAs
     .get("/api/characters/:characterId/versions", async (c) => {
       return c.json(await runtime.listCharacterVersions(c.req.param("characterId")));
     })
+    // Bound resources — reverse read backing the character-editor lorebook
+    // binding field. Lorebooks = M:N links (mirrors /api/personas/:id/lorebooks).
+    .get("/api/characters/:characterId/lorebooks", async (c) => {
+      return c.json(await runtime.listCharacterLorebooks(c.req.param("characterId")));
+    })
     .post("/api/characters/:characterId/versions", zValidator("json", schemas.createVersionSchema), async (c) => {
       const body = c.req.valid("json");
       return c.json(await runtime.createCharacterVersion(c.req.param("characterId"), body.title), 201);
