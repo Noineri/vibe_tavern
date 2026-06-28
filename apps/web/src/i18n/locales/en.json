@@ -860,6 +860,7 @@
   "script_template_hp": "HP Tracker",
   "script_template_random": "Random Event",
   "script_template_advanced_lore": "Advanced Lorebook",
+  "script_template_dice": "Dice",
   "script_import": "Import Script",
   "script_no_scripts": "No scripts in this scope",
   "script_ai_helper": "AI Helper",
