@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { useForm } from "react-hook-form";
 import type { PronounForms } from "@vibe-tavern/domain";
 import { Icons } from "../shared/icons.js";
@@ -101,22 +101,59 @@ export function PersonaModal(input: PersonaModalProps) {
     return () => clearTimeout(t);
   }, [isOpen]);
 
-  // PR-11: auto-scroll to a newly created persona. One-shot scrollIntoView
-  // (NOT the MessageList rAF bottom-pinning pattern — this is a static list).
-  // Fires when createdDraftPersonaId transitions to a value and that card's
-  // ref has mounted. Cleared once scrolled so re-renders don't re-trigger.
+  // PR-11: auto-scroll to a newly created persona.
+  //
+  // WHY NOT scrollIntoView / rAF: the new card mounts collapsed, then
+  // transitions to the expanded edit form (setEditingId fires in the same
+  // click). The edit form's AutoTextarea auto-resizes via useLayoutEffect, so
+  // the card's height is NOT final when the ref callback (or its rAF) runs.
+  // A one-shot scrollIntoView caches its target pixel against the stale
+  // (short) height and under-scrolls — the user sees the new card cut off
+  // near the footer when starting from scrollTop 0.
+  //
+  // FIX: ResizeObserver on the new card. Since the new persona is always the
+  // LAST list item (backend listAll has no ORDER BY → rowid/insertion order),
+  // "reveal it" == "pin the scroll container to its bottom". The observer
+  // re-pins on every height change (collapsed→expanded, avatar load, typing),
+  // so the destination is always computed against the CURRENT card height.
+  // Disconnects when the draft id changes or the card unmounts.
+  //
+  // NOT the MessageList rAF bottom-pinning pattern — that is a different
+  // concern (live message append during streaming); this is a static list.
+  const scrollBodyRef = useRef<HTMLDivElement>(null);
   const cardRefs = useRef<Map<string, HTMLDivElement>>(new Map());
-  const [scrolledToCreated, setScrolledToCreated] = useState<string | null>(null);
-  useEffect(() => {
-    if (createdDraftPersonaId && createdDraftPersonaId !== scrolledToCreated) {
-      const el = cardRefs.current.get(createdDraftPersonaId);
-      if (el) {
-        el.scrollIntoView({ behavior: "smooth", block: "nearest" });
-        setScrolledToCreated(createdDraftPersonaId);
+  const createdCardObserver = useRef<ResizeObserver | null>(null);
+  const handleCardRef = useCallback((personaId: string, el: HTMLDivElement | null) => {
+    if (el) {
+      cardRefs.current.set(personaId, el);
+      if (personaId === createdDraftPersonaId) {
+        // Start observing this card's size; each change pins the list to its
+        // bottom, which always reveals the last item (the new persona).
+        createdCardObserver.current?.disconnect();
+        const body = scrollBodyRef.current;
+        const ro = new ResizeObserver(() => {
+          if (!body) return;
+          body.scrollTo({ top: body.scrollHeight, behavior: "smooth" });
+        });
+        ro.observe(el);
+        createdCardObserver.current = ro;
+      }
+    } else {
+      cardRefs.current.delete(personaId);
+      if (personaId === createdDraftPersonaId) {
+        createdCardObserver.current?.disconnect();
+        createdCardObserver.current = null;
       }
     }
-    if (!createdDraftPersonaId) setScrolledToCreated(null);
-  }, [createdDraftPersonaId, scrolledToCreated, input.personas]);
+  }, [createdDraftPersonaId]);
+  // Disconnect the observer when the created-draft id changes (new creation,
+  // discard, or save) or the modal unmounts.
+  useEffect(() => {
+    return () => {
+      createdCardObserver.current?.disconnect();
+      createdCardObserver.current = null;
+    };
+  }, [createdDraftPersonaId]);
   const [stImportSelected, setStImportSelected] = useState<Set<string>>(new Set());
   const [stImporting, setStImporting] = useState(false);
   const [stImportProgress, setStImportProgress] = useState<{ current: number; total: number } | null>(null);
@@ -433,10 +470,7 @@ export function PersonaModal(input: PersonaModalProps) {
     return (
       <div
         key={persona.id}
-        ref={(el) => {
-          if (el) cardRefs.current.set(persona.id, el);
-          else cardRefs.current.delete(persona.id);
-        }}
+        ref={(el) => handleCardRef(persona.id, el)}
         className={cn(
           "group flex cursor-pointer items-start gap-4 rounded-xl border p-4 transition-all duration-200",
           isMobile ? "active:bg-s2" : "hover:bg-s2",
@@ -790,7 +824,7 @@ export function PersonaModal(input: PersonaModalProps) {
         </div>
       </div>
       {/* Body */}
-      <div className={cn("flex-1 overflow-y-auto", isMobile ? "px-4 py-2" : "p-5")}>
+      <div ref={scrollBodyRef} className={cn("flex-1 overflow-y-auto", isMobile ? "px-4 py-2" : "p-5")}>
         {input.personas.length === 0 && (
           <div className="flex flex-col items-center justify-center py-12 text-center">
             <div className="mb-3 text-t4"><Icons.User /></div>
