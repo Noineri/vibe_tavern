@@ -1,4 +1,4 @@
-export { createPersonaSchema, updatePersonaSchema, setPersonaSchema } from "./persona-schema.js";
+export { createPersonaSchema, updatePersonaSchema, setPersonaSchema, personaExportQuerySchema, personaExportBulkQuerySchema, personaExportAvatarSchema, personaExportVtSchema } from "./persona-schema.js";
 export { createCharacterSchema, updateCharacterSchema, buildCharacterDraftSchema, createVersionSchema, renameVersionSchema } from "./character-schema.js";
 export type { BuildCharacterDraft } from "./character-schema.js";
 export {
