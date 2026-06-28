@@ -73,6 +73,14 @@ export function createPersonaRoutes(runtime: PersonaRuntimeApi) {
     .post("/api/personas/:personaId/avatar/describe", async (c) => {
       return c.json(await runtime.describePersonaAvatar(c.req.param("personaId")));
     })
+    // Bound resources (PR-12) — reverse-direction reads backing the
+    // persona-editor binding field. Lorebooks = M:N links; scripts = FK-owned.
+    .get("/api/personas/:personaId/lorebooks", async (c) => {
+      return c.json(await runtime.listPersonaLorebooks(c.req.param("personaId")));
+    })
+    .get("/api/personas/:personaId/scripts", async (c) => {
+      return c.json(await runtime.listPersonaScripts(c.req.param("personaId")));
+    })
     // Single export (after the avatar/describe param routes — no clash with bulk
     // since bulk is registered first above).
     .get("/api/personas/:personaId/export", async (c) => {
