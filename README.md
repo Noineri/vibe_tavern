@@ -10,6 +10,8 @@
 [![License](https://img.shields.io/github/license/Noineri/vibe_tavern)](LICENSE)
 [![Downloads](https://img.shields.io/github/downloads/Noineri/vibe_tavern/total)](https://github.com/Noineri/vibe_tavern/releases)
 
+![Vibe Tavern Demo](./assets/main.png)
+
 [Русский](./README.ru.md) · **English**
 
 ---
@@ -17,6 +19,41 @@
 **Windows** (single `.exe`) • **Linux** • **Docker** • **Android** (Termux APK)
 
 </div>
+
+---
+
+<a id="screenshots"></a>
+
+<details>
+<summary><h2>Screenshots</h2></summary>
+
+<p align="center">
+  <img src="assets/build.png" width="90%" alt="Build mode" />
+</p>
+
+<p align="center">
+  <img src="assets/lorebooks.png" width="45%" alt="Lorebooks list" />
+  &nbsp;&nbsp;
+  <img src="assets/lorebooks2.png" width="45%" alt="Lorebook edit" />
+</p>
+
+<p align="center">
+  <img src="assets/provider.png" width="45%" alt="Provider settings" />
+  &nbsp;&nbsp;
+  <img src="assets/persona.png" width="45%" alt="Persona manager" />
+</p>
+
+<p align="center">
+  <img src="assets/memory.png" width="45%" alt="Memory manager" />
+  &nbsp;&nbsp;
+  <img src="assets/prompt_trace.png" width="45%" alt="Prompt trace" />
+</p>
+
+<p align="center">
+  <img src="assets/scripts.png" width="90%" alt="Scripts" />
+</p>
+
+</details>
 
 ---
 
