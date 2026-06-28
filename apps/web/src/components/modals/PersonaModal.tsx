@@ -550,7 +550,7 @@ export function PersonaModal(input: PersonaModalProps) {
                 in the edit form (requires a persisted personaId). Scripts are
                 tracked separately — see script-link-binding-gap.md. */}
             {editingId && (
-              <BoundResourcesField personaId={editingId} isMobile={isMobile} />
+              <BoundResourcesField entityKind="persona" entityId={editingId} isMobile={isMobile} />
             )}
             {/* Save / Cancel */}
             <div className="flex gap-2">

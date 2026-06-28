@@ -1,5 +1,5 @@
 import type { ChatId } from "@vibe-tavern/domain";
-import type { AppSnapshot, AppCharacterVersion, ImportJsonResponse } from "./types.js";
+import type { AppSnapshot, AppCharacterVersion, ImportJsonResponse, LorebookRecord } from "./types.js";
 import { client, getGatewayBaseUrl, getMobileToken } from "./client.js";
 import { unwrapRpc, unwrapError } from "./unwrap.js";
 import { normalizeSnapshot } from "./normalize.js";
@@ -182,4 +182,12 @@ export async function setAvatarFromGallery(
     throw new Error(`Set avatar from gallery failed (${response.status}): ${errorBody}`);
   }
   return response.json();
+}
+
+// ─── Bound resources (character-editor binding field) ──────────────────
+// Reverse-direction read: lorebooks M:N-linked to this character via
+// lorebook_links (links-only). Mirrors listPersonaLorebooks.
+export async function listCharacterLorebooks(characterId: string): Promise<LorebookRecord[]> {
+  const response = await client.api.characters[":characterId"].lorebooks.$get({ param: { characterId } });
+  return unwrapRpc<LorebookRecord[]>(response);
 }
