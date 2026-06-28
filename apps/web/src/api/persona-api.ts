@@ -76,3 +76,70 @@ export async function uploadPersonaAvatar(personaId: string, crop: File, full?: 
   }
   return response.json();
 }
+
+// ─── Export / Import (PR-5) ─────────────────────────────────────────────────
+// Mirrors ST's backup/restore UX: one self-contained JSON per download, one
+// file pick to restore. `format=st` is interop with SillyTavern (lossy: drops
+// VT-only fields); `format=vt` is lossless round-trip.
+
+function todayStamp(): string {
+  const d = new Date();
+  return `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}`;
+}
+
+/** Fetch a single persona export and trigger a browser download. */
+export async function exportPersona(personaId: string, format: "st" | "vt"): Promise<void> {
+  const baseUrl = getGatewayBaseUrl();
+  const token = getMobileToken();
+  const response = await fetch(`${baseUrl}/api/personas/${personaId}/export?format=${format}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+  });
+  if (!response.ok) throw new Error(`Persona export failed (${response.status})`);
+  triggerDownload(await response.text(), `persona_${todayStamp()}.json`);
+}
+
+/** Fetch a bulk export (all personas) and trigger a browser download. */
+export async function exportAllPersonas(format: "st" | "vt"): Promise<void> {
+  const baseUrl = getGatewayBaseUrl();
+  const token = getMobileToken();
+  const response = await fetch(`${baseUrl}/api/personas/export?format=${format}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+  });
+  if (!response.ok) throw new Error(`Bulk export failed (${response.status})`);
+  triggerDownload(await response.text(), `personas_${todayStamp()}.json`);
+}
+
+/** Restore a previously-exported VT/ST file. Returns the per-persona result summary. */
+export async function importPersonas(file: File): Promise<{ created: number; skipped: number; errors: string[] }> {
+  const baseUrl = getGatewayBaseUrl();
+  const token = getMobileToken();
+  const text = await file.text();
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return { created: 0, skipped: 0, errors: ["File is not valid JSON"] };
+  }
+  const response = await fetch(`${baseUrl}/api/personas/import`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify(parsed),
+  });
+  if (!response.ok) throw new Error(`Persona import failed (${response.status})`);
+  return response.json();
+}
+
+function triggerDownload(text: string, filename: string): void {
+  const blob = new Blob([text], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}

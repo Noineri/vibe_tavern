@@ -68,3 +68,41 @@ export const personaExportVtSchema = z.object({
   avatarThumb: personaExportAvatarSchema.nullable(),
   avatarFull: personaExportAvatarSchema.nullable(),
 });
+
+/** The ST-extension pronoun declension shape (verified against a real ST backup file).
+ *  Same 5 forms as PronounForms, but ST uses camelCase posDet / posPro keys. */
+export const stPronounSchema = z.object({
+  subjective: z.string(),
+  objective: z.string(),
+  posDet: z.string(),
+  posPro: z.string(),
+  reflexive: z.string(),
+});
+
+/** SillyTavern backup/restore persona shape (top-level, not settings.json power_user).
+ *  Verified 2026-06-27 against an actual `personas_<date>.json` export:
+ *  - `personas` maps avatar-key → name (string).
+ *  - `persona_descriptions` maps key → descriptor; position/depth/role/lorebook/title
+ *    are ST injection knobs we emit with neutral defaults (the import side ignores them).
+ *  - `pronoun` is the Wolfsblvt extension field; absent on older backups.
+ *  - `default_persona` is the key of the default persona (or empty). */
+export const stPersonaBackupSchema = z.object({
+  personas: z.record(z.string(), z.string()),
+  persona_descriptions: z.record(
+    z.string(),
+    z.object({
+      description: z.string().optional().default(""),
+      position: z.number().optional().default(0),
+      depth: z.number().optional().default(2),
+      role: z.number().optional().default(0),
+      lorebook: z.string().optional().default(""),
+      title: z.string().optional().default(""),
+      pronoun: stPronounSchema.optional().nullable(),
+    }).passthrough(),
+  ),
+  default_persona: z.string().optional().default(""),
+}).passthrough();
+
+/** Bulk VT export: an array of VT payloads (symmetric with the ST backup in being
+ *  a single self-contained JSON file). */
+export const personaExportVtBulkSchema = z.array(personaExportVtSchema);
