@@ -121,6 +121,7 @@ export function PersonaModal(input: PersonaModalProps) {
   const [stImporting, setStImporting] = useState(false);
   const [stImportProgress, setStImportProgress] = useState<{ current: number; total: number } | null>(null);
   const stFolderRef = useRef<HTMLInputElement>(null);
+  const stFileRef = useRef<HTMLInputElement>(null);
   const stAvatarFiles = useRef<Map<string, File>>(new Map());
 
   // ── Avatar crop modal state ──
@@ -185,6 +186,29 @@ export function PersonaModal(input: PersonaModalProps) {
         return;
       }
       stAvatarFiles.current = avatarMap;
+      setStImportPreview(entries);
+      setStImportSelected(new Set(entries.map(e => e.key)));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : t("st_parse_failed"));
+    }
+  }
+
+  // Single .json file import — accepts either ST backup/export shape
+  // (top-level personas, what exportPersona('st') emits) or a raw ST
+  // settings.json (power_user.*). No avatars (they live as separate PNGs in
+  // ST's folder layout, not embedded in the JSON) — personas import bare.
+  async function handleStFilePick(files?: FileList | null): Promise<void> {
+    if (!files || files.length === 0) return;
+    const file = files[0];
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text);
+      const entries = parseStPersonas(parsed);
+      if (entries.length === 0) {
+        toast.error(t("st_no_personas_found"));
+        return;
+      }
+      stAvatarFiles.current = new Map();
       setStImportPreview(entries);
       setStImportSelected(new Set(entries.map(e => e.key)));
     } catch (err) {
@@ -814,7 +838,7 @@ export function PersonaModal(input: PersonaModalProps) {
             <button type="button"
               className={cn("flex items-center justify-center gap-2 rounded-lg bg-s2 transition-all cursor-pointer font-ui font-medium", isMobile ? "min-h-[44px] px-4 text-[14px]" : "h-[44px] px-4 text-sm")}
               style={{ color: "var(--t2)" }}
-              onClick={() => stFolderRef.current?.click()}
+              onClick={() => stFileRef.current?.click()}
             >
               <Icons.Import /> {t("st_import_personas_btn")}
             </button>
@@ -823,11 +847,20 @@ export function PersonaModal(input: PersonaModalProps) {
           <button type="button"
             className={cn("flex items-center justify-center gap-2 rounded-lg bg-s2 transition-all cursor-pointer font-ui font-medium", isMobile ? "min-h-[44px] px-4 text-[14px]" : "h-[44px] px-4 text-sm")}
             style={{ color: "var(--t2)" }}
-            onClick={() => stFolderRef.current?.click()}
+            onClick={() => stFileRef.current?.click()}
           >
             <Icons.Import /> {t("st_import_personas_btn")}
           </button>
         )}
+        <CustomTooltip content={t("st_folder_import_hint")}>
+          <button type="button"
+            className={cn("flex items-center justify-center gap-2 rounded-lg bg-s2 transition-all cursor-pointer font-ui font-medium", isMobile ? "min-h-[44px] px-3 text-[14px]" : "h-[44px] px-3 text-sm")}
+            style={{ color: "var(--t2)" }}
+            onClick={() => stFolderRef.current?.click()}
+          >
+            <Icons.Import /> {t("st_folder_import_btn")}
+          </button>
+        </CustomTooltip>
       </div>
       {/* ST persona import preview */}
       {stImportPreview && (
@@ -907,6 +940,15 @@ export function PersonaModal(input: PersonaModalProps) {
         webkitdirectory=""
         directory=""
         onChange={(e) => void handleStFolderPick(e.target.files)}
+      />
+      {/* Hidden single-file input — accepts a .json backup/export (VT-exported
+          ST shape or raw ST settings.json). No avatars. */}
+      <input
+        ref={stFileRef}
+        className="hidden"
+        type="file"
+        accept="application/json,.json"
+        onChange={(e) => void handleStFilePick(e.target.files)}
       />
     </>
   );
