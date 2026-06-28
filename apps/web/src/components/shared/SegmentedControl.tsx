@@ -1,4 +1,4 @@
-import { type ReactNode } from 'react';
+import { Fragment, type ReactNode } from 'react';
 import { cn } from "../../lib/cn.js";
 import { CustomTooltip } from "./Tooltip.js";
 
@@ -7,6 +7,14 @@ interface SegmentedOption {
   label: ReactNode;
   /** Optional tooltip shown on hover/focus over this segment. */
   tooltip?: ReactNode;
+  /** Optional trailing action node rendered after the segment (e.g. inline
+   *  rename/delete icons on a version pill). When present, the segment and its
+   *  trailing node are wrapped in a `group/seg` hover scope so the caller can
+   *  reveal the trailing content on hover via `group-hover/seg:opacity-100`.
+   *  Opt-in — no effect on existing call sites. The trailing node sits outside
+   *  the radio <button> (nested buttons are invalid HTML), so click events on
+   *  it do not toggle the segment. */
+  trailing?: ReactNode;
 }
 
 interface SegmentedControlProps {
@@ -58,7 +66,7 @@ export function SegmentedControl({
       {options.map((opt) => {
         const active = opt.value === value;
         const button = (
-          <button key={opt.value}
+          <button
             type="button"
             role="radio"
             aria-checked={active}
@@ -78,13 +86,23 @@ export function SegmentedControl({
             <span className="min-w-0 truncate sm:overflow-visible sm:whitespace-normal sm:text-clip">{opt.label}</span>
           </button>
         );
-        return opt.tooltip ? (
-          <CustomTooltip key={opt.value} content={opt.tooltip} align="start">
+        const segment = opt.tooltip ? (
+          <CustomTooltip content={opt.tooltip} align="start">
             {button}
           </CustomTooltip>
-        ) : (
-          button
-        );
+        ) : button;
+        // Wrap in a hover scope when trailing actions are present so the caller
+        // can reveal them via group-hover/seg. Otherwise render bare (preserves
+        // the existing look of all current call sites).
+        if (opt.trailing) {
+          return (
+            <div key={opt.value} className="group/seg flex items-center">
+              {segment}
+              {opt.trailing}
+            </div>
+          );
+        }
+        return <Fragment key={opt.value}>{segment}</Fragment>;
       })}
     </div>
   );

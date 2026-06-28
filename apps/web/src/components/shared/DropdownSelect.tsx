@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import * as Select from "@radix-ui/react-select";
 import { cn } from "../../lib/cn.js";
 import { Ic } from "./icons.js";
@@ -10,6 +10,10 @@ interface DropdownOption {
   id: string;
   label: string;
   detail?: string;
+  /** Optional trailing action node rendered at the item's right edge inside
+   *  the dropdown (e.g. per-version rename/delete icons). Pointer events on it
+   *  are stopped so tapping the action does NOT also select the option. */
+  trailing?: ReactNode;
 }
 
 interface DropdownSelectProps {
@@ -170,6 +174,18 @@ export function DropdownSelect({
                     )}
                   </span>
                 </Select.ItemText>
+                {o.trailing && (
+                  // Stop pointer events so clicking a trailing action (rename /
+                  // delete) does NOT fire Radix Select's item selection.
+                  <span
+                    className="ml-auto flex shrink-0 items-center gap-0.5"
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onPointerUp={(e) => e.stopPropagation()}
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    {o.trailing}
+                  </span>
+                )}
               </Select.Item>
             ))}
             {filtered.length === 0 && (
