@@ -3,7 +3,7 @@ name: CI
 on:
   push:
     branches: [master, dev]
-    path-ignore:
+    paths-ignore:
       - '**/*.md'
       - '**/*.sh'
       - '**/*.bat'
@@ -11,7 +11,7 @@ on:
       - 'docs/**'
   pull_request:
     branches: [master, dev]
-    path-ignore:
+    paths-ignore:
       - '**/*.md'
       - '**/*.sh'
       - '**/*.bat'
