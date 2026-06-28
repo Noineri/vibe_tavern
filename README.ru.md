@@ -50,7 +50,9 @@
 </p>
 
 <p align="center">
-  <img src="assets/scripts.png" width="90%" alt="Scripts" />
+  <img src="assets/scripts.png" width="45%" alt="Scripts" />
+  &nbsp;&nbsp;
+  <img src="assets/media_gallery.png" width="45%" alt="Media gallery" />
 </p>
 
 </details>
