@@ -1,3 +1,5 @@
+import type { PronounForms } from "@vibe-tavern/domain";
+
 export interface NamesContext {
   userName: string;
   charName: string;
@@ -37,6 +39,8 @@ export interface PersonaPromptContext {
   name: string;
   description: string;
   pronouns: string | null;
+  /** Structured pronoun declensions (custom case only); null for presets and unset. Presets resolve via PRESET_PRONOUN_FORMS. */
+  pronounForms: PronounForms | null;
   avatarAssetId: string | null;
 }
 
@@ -198,6 +202,7 @@ export function buildPromptVariableContext(input: BuildPromptVariableContextInpu
       name: input.persona?.name ?? userName,
       description: input.persona?.description ?? "",
       pronouns: input.persona?.pronouns ?? null,
+      pronounForms: input.persona?.pronounForms ?? null,
       avatarAssetId: input.persona?.avatarAssetId ?? null,
     },
     prompt: {

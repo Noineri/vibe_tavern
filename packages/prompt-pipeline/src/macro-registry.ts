@@ -22,6 +22,8 @@
  */
 
 import type { PromptVariableContext } from "./prompt-variable-context.js";
+import type { PronounForms } from "@vibe-tavern/domain";
+import { resolvePronounForms } from "./pronoun-forms.js";
 
 // ─── Types ─────────────────────────────────────────────────────────────
 
@@ -498,6 +500,18 @@ export function createFullMacroEngine(): MacroEngine {
     name: "persona",
     resolve: (_args, context) => context.persona.description ?? "",
   });
+
+  // ─── Pronoun declensions (VT-native) ────────────────────────────────────
+  // Custom forms come from persona.pronounForms; presets resolve via PRESET_PRONOUN_FORMS.
+  // When neither is set (no persona / unrecognized string), they expand to empty.
+  const pronounField = (field: keyof PronounForms) => (_args: string[], context: PromptVariableContext): string =>
+    resolvePronounForms(context.persona)?.[field] ?? "";
+
+  engine.register({ name: "sub",    resolve: pronounField("subjective") });
+  engine.register({ name: "obj",    resolve: pronounField("objective") });
+  engine.register({ name: "poss",   resolve: pronounField("possessive") });
+  engine.register({ name: "poss_p", resolve: pronounField("possessivePronoun") });
+  engine.register({ name: "ref",    resolve: pronounField("reflexive") });
 
   engine.register({
     name: "group",
