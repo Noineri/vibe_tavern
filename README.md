@@ -180,7 +180,7 @@ Download the zip archive from [Releases](https://github.com/Noineri/vibe_tavern/
 
 ### Linux
 
-Download the zip archive from [Releases](https://github.com/Noineri/vibe_tavern/releases), extract, run `Vibe_Tavern.sh`
+Download the tar.gz archive from [Releases](https://github.com/Noineri/vibe_tavern/releases), extract, run `Vibe_Tavern.sh`
 
 Or clone entire repo and launch manually:
 
