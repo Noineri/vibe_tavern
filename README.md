@@ -1,8 +1,10 @@
 <div align="center">
 
-# 🍻 Vibe Tavern
+<img src="apps/web/public/logo-256.png" width="160" alt="Vibe Tavern" />
 
-**Modern self-hosted platform for AI-roleplaying**
+# Vibe Tavern
+
+**A modern, local-first AI roleplay platform**
 
 [![Version](https://img.shields.io/github/v/release/Noineri/vibe_tavern)](https://github.com/Noineri/vibe_tavern/releases)
 [![License](https://img.shields.io/github/license/Noineri/vibe_tavern)](LICENSE)
@@ -12,75 +14,116 @@
 
 ---
 
-Simple installation and startup on any platform: **Windows** • **Linux** • **Docker-container**
-
-Single `.exe` for Windows. Experimental **Android** version for Termux.
+**Windows** (single `.exe`) • **Linux** • **Docker** • **Android** (Termux APK)
 
 </div>
 
 ---
 
-## What is Vibe Tavern?
+## Why Vibe Tavern?
 
-Vibe Tavern — self-hosted AI-roleplaying web app developed with [Bun](https://bun.sh) + [React](https://react.dev). You can create characters, manage lore, build prompts and chat through any OpenAI-compatible API. Simple UI which doesn't force you to understand a clutter of settings.
+Vibe Tavern is a modern, local-first AI roleplay platform — built from scratch on a real database rather than flat JSON files, a typed monorepo rather than a monolithic script, and a UI designed to stay out of your way.
 
-> **Status:** 🛠️ Beta-2. Basic roleplaying functionality tested and stable. [What is not yet ready →](#what-is-not-yet-ready)
+You bring your own API keys. Your data stays on your machine. The interface stays out of your way.
+
+> **Status:** Beta-2. Core RP functionality is stable and tested. Some advanced features are still in progress — see [Roadmap](#roadmap).
 
 > [!NOTE]
-> Vibe Tavern in active development, so bugs, incomplete features and breaking changes are to be expected. Don't forget to make backups of your data directory before any updates.
+> Active development — expect new features, occasional breaking changes, and the odd bug. Back up your `data/` directory before updating.
 
 ---
 
-## Key features
+## Highlights
 
-### 💬 Chat
+The short version, for skimmers:
 
-- **Nothing superfluous** - just you and the character. Switch chats, personalities, prompts presets and AI models from quick access without distracting yourself from communication.
-- **Streaming and reasoning** — the reasoning blocks are collapsed by default so as not to interfere with the main chat flow. However, you can open them up and see that the reasoning look stylish.
-- **Swipes of response options** — desktop animation of slides + a mobile carousel of three panels. Built-in token counting and model label for a specific swipe.
-- **Tokens counting directly in UI** — keep track of the context budget without opening the settings, right in the chat input! A color display is implemented, as well as a pop-up window showing what takes up and how much.
-- **Stylish colorscheme** - optimized for long reading (at least the dark theme. Who even uses the light theme?).
+- **Character versions** — branch a character into parallel editable variants and switch between them instantly.
+- **12-gate lorebook engine** — keyword activation with trace, recursion, sticky windows, and priority eviction.
+- **Visual prompt canvas** — drag-and-drop ordering of every prompt layer, including depth injections.
+- **Built-in context compaction** — auto-summarization with visual token feedback, no extension needed.
+- **Prompt Tracer** — inspect every assembled layer with per-layer token counts and activation sources.
+- **Single `.exe` + QR mobile access** — fully local, your keys, your data, your machine.
 
-### 🧠 Context compaction
+The long version follows.
 
-- **Visual feedback on tokens** — "Without compaction: 12,753t → Saved 11,814t (93%)".
-- **Auto-compact** — background compaction based on the "set up and forget" principle every N messages.
-- **Range compaction** — each one covers a certain range of messages, which can be enabled/disabled individually.
-- **Managing the number of messages in a context** - model can only look at the last N messages, and use the rest of the context for something else.
+---
 
-### ✍️ Script editor
+## Features
 
-- A full-featured JS script editor with syntax highlighting, search, and line numbering.
-- Too hard to write scripts yourself? Use a template! The template doesn't fit? MAKE the built-in AI assistant rewrite it!
+### Chat
 
-### 🔍 Prompt Tracer
+- **Clean, focused interface** — switch characters, personas, prompt presets, and models from quick-access controls without leaving the conversation.
+- **Streaming with reasoning** — thinking blocks collapse by default, expand on click. You see the model's chain of thought when you want it, not when you don't.
+- **Variant carousel** — swipe through response alternatives with a native 3-panel carousel on mobile, smooth slide animations on desktop. Each variant shows its token count and which model generated it.
+- **Live token budget** — context usage displayed directly in the composer. Color-coded bar + a breakdown popup showing exactly what's eating your tokens (system prompt, lorebook, history, etc.).
+- **Generation queue** — stack multiple generations and let them run. Each variant records which model and preset produced it.
 
-- You can see how the prompt was builded — layer by layer.
-- The number of tokens per layer, the injection depth, and the activation source.
+### Character editor
 
-### 📦 SillyTavern compatible
+- **Dual-mode editing** — switch between a structured form and a full Markdown editor (CodeMirror 6) on the same character, at any time. Changes sync bidirectionally.
+- **Structural pinning** — the Markdown editor enforces four canonical sections (`# PERSONALITY`, `# SCENARIO`, `# EXAMPLES`, `# GREETINGS`). You can't accidentally delete them. An LLM co-author can't break the structure.
+- **Character versions** — branch your character into parallel editable variants (v1 "Base", v2 "Aggressive", v3 "Romantic"). Switch between them instantly. Each version is a full snapshot.
+- **SillyTavern V2/V3 card import** — PNG cards with embedded JSON, bulk import from an ST directory, lossless round-trip export.
+- **Markdown import via AI** — paste a messy draft (notes, prose, a chat log) and the AI assistant maps it into the structured fields. Reparse with a different model or lower temperature if it misreads something.
 
-- Characters cards import (V2/V3 PNG).
-- Import of lorebooks, chat histories, and preset prompts.
-- Bulk import — select ST directory and import all at once.
-- Full ST macro support (`{{user}}`, `{{char}}`, `{{if}}`, `{{setvar}}`, `{{roll}}` etc.).
+### Lorebooks
 
-### 📱 Access from smartphone
+- **12-gate activation engine** — keyword matching with AND/OR/NOT logic, secondary keys, cooldowns, sticky windows, delay, probability gates, priority-based eviction, and recursive scanning (lore activating lore).
+- **Activation trace** — see exactly which entries fired and why, right in the Prompt Tracer. No more guessing.
+- **Scoped binding** — lorebooks attach to characters, personas, or run globally. Many-to-many via junction table — one lorebook, multiple characters.
+- **ST-compatible import/export** — full parity with SillyTavern's lorebook format.
 
-- Open **Mobile Access** in the web UI and scan the QR code → chat from your phone on the same LAN or through Tailscale/VPN.
-- The QR/copy URL includes the current access token in `#token=...`; the browser stores it locally and sends it with API requests.
-- Remote API access is fail-closed: LAN/Tailscale clients need the current token, while local `127.0.0.1` access stays passwordless.
-- Optional TLS.
-- Android ARM64 build for Termux.
+### Prompt pipeline
 
-### 🛠️ For advanced users
+- **Prompt Tracer** — inspect every layer of the assembled prompt: system, jailbreak, character description, lorebook injections, summaries, author's note, custom depth injections. Token count per layer, injection depth, activation source.
+- **Prompt presets** — full control over system prompt, jailbreak, prefill, author's note (with configurable depth), summary prompt, and tools prompt. Import/export ST-compatible presets.
+- **Advanced prompt ordering** (Canvas) — drag-and-drop visual editor for injection positions. Three zones: before chat, in-chat (at specific depth), after chat. Visual position is the source of truth.
+- **Full ST macro engine** — `{{user}}`, `{{char}}`, `{{if}}`, `{{setvar}}`, `{{roll}}`, nested blocks. AST-based recursive descent parser, not regex.
 
-- **Lorebooks engine** — keywords activation, AND/OR/NOT logic, cooldown, groups weights, recursion, scanning depth, WI anchors.
-- **Scripts** — `node:vm` sandbox with Janitor AI compatible API.
-- **Macro engine** — AST-based recursive descent parser, nested blocks `{{if}}`, variables, dice rolls.
-- **5 providers types** — OpenAI-compat (for example OpenRouter, DeepSeek, Groq, xAI, Mistral, Xiaomi MiMo, ZAI etc.), Anthropic, Google, Ollama, llama.cpp.
-- **Model-aware samplers** — stop sequences, custom sampler controls, and fail-closed logit bias that only enables for known provider/model tokenizer pairs.
-- **Prompts presets** — full control over system prompt, jailbreak, author's note, and custom depth injections.
+### Scripts
+
+- **Sandboxed JS execution** — `node:vm` with a Janitor AI-compatible API. Write character-specific logic, dice rolls, state tracking.
+- **AI assistant** — describe what you want in plain text, the AI writes the script. Built-in templates for common patterns.
+- **Deterministic rolls** — `{{roll}}` results cached in `context.state`. Regenerating a message doesn't re-roll the dice.
+
+### Context management
+
+- **Chat summaries** — manual or AI-generated, with per-summary controls (include in context, exclude summarized messages, enable/disable individually).
+- **Auto-compaction** — "set and forget" background summarization every N messages.
+- **Visual feedback** — "Without compaction: 12,753t → Saved 11,814t (93%)".
+- **Message history limit** — model sees only the last N messages; the rest of the budget goes to system layers, lore, and summaries.
+
+### Provider ecosystem
+
+- **5 provider protocols** — OpenAI-compatible (OpenRouter, DeepSeek, Groq, xAI, Mistral, etc.), Anthropic, Google, Ollama, llama.cpp.
+- **Protocol registry** — adding a provider is one object + one line. No switch ladders.
+- **Per-model sampler overlays** — save different temperature/top-p/stop-sequences per model on the same provider profile.
+- **Favorite models** — pin your go-to models for quick switching from the chat header.
+- **Model-aware logit bias** — fail-closed: only enables for known provider/model tokenizer pairs. No silent failures.
+- **Test connection** — verify your API key and see available models before saving.
+
+### Personas
+
+- **Multiple user identities** — switch personas per chat. Each persona has its own name, description, pronouns, and avatar.
+- **Avatar appearance in prompt** — optionally generate a vision description of the character/persona avatar and inject it into the prompt as its own layer.
+- **Quick-switch** — change persona from the chat header without opening settings.
+- **Per-persona lorebooks** — attach world information that only activates when a specific persona is in use.
+
+### Mobile & remote access
+
+- **QR code access** — open Mobile Access in the UI, scan the QR → chat from your phone on the same LAN or via Tailscale/VPN.
+- **Token-based auth** — remote API access is fail-closed. LAN/Tailscale clients need a token; local `127.0.0.1` stays passwordless.
+- **Responsive UI** — not a desktop UI crammed into a phone. The mobile layout is purpose-built: bottom sheets, touch carousels, swipe gestures.
+- **Android APK** — native Termux build. Install script handles setup.
+
+### Media gallery
+
+- **Image attachments** — send images in chat with AI vision description (auto-describe on send, re-describe from lightbox).
+- **Lightbox** — full-screen image viewer with zoom, pan, and description editing.
+
+### i18n
+
+- **English + Russian** — fully translated, registry-driven. Adding a new language is one JSON file + one line in the registry.
 
 ---
 
@@ -88,16 +131,13 @@ Vibe Tavern — self-hosted AI-roleplaying web app developed with [Bun](https://
 
 ### Windows
 
-#### Option 1:
+**Option 1 — Single executable:**
 
-Download and run latest `.exe` from [Releases](https://github.com/Noineri/vibe_tavern/releases), Vibe Tavern will open in your browser.
+Download the latest `.exe` from [Releases](https://github.com/Noineri/vibe_tavern/releases). Run it. Vibe Tavern opens in your browser.
 
-> [!NOTE]
-> Windows executable is still experimental. It works but requires more testing. If something broke, try `.bat` file option:
+**Option 2 — Script:**
 
-#### Option 2:
-
-Download zip archive from [Releases](https://github.com/Noineri/vibe_tavern/releases), extract it and run `Start Vibe Tavern.bat`
+Download the zip archive from [Releases](https://github.com/Noineri/vibe_tavern/releases), extract, run `Start Vibe Tavern.bat`.
 
 ### Linux / macOS
 
@@ -107,7 +147,7 @@ cd vibe_tavern
 bash ./Vibe_Tavern.sh
 ```
 
-`Vibe_Tavern.sh` will check bun installation, updates, create data backup a launch Vibe Tavern
+The script checks Bun installation, pulls updates, backs up your data, and starts the server.
 
 ### Docker
 
@@ -117,85 +157,87 @@ docker compose up -d
 
 ### Android (Termux)
 
-APK build for Termux — automates most installation precess, but require some special access granted. Look at [Android installation guide](docs/android-setup.md).
+APK build for Termux — automates most of the installation process. See [Android setup guide](docs/android-setup.md).
+
+---
+
+## Architecture
+
+Vibe Tavern is a single-process monolith: React 19 SPA + Hono API + SQLite (WAL mode), all served from one Bun process. No microservices, no separate database server, no deployment complexity.
+
+```
+vibe_tavern/
+├── apps/web/                 # React 19 SPA (Vite)
+├── services/api/             # Hono backend (Bun.serve)
+├── packages/domain/          # Zero-dep foundation: types, branded IDs, constants
+├── packages/api-contracts/   # Zod schemas shared between frontend and backend
+├── packages/db/              # Drizzle ORM (SQLite WAL) + entity stores
+├── packages/prompt-pipeline/ # Pure prompt assembly + macro engine (no I/O)
+├── packages/import-export/   # SillyTavern V2/V3 card/chat/lorebook parsers
+└── data/                     # Runtime data (DB, characters, assets) — gitignored
+```
+
+Strict dependency graph, no circular imports, TypeScript strict mode throughout. The prompt pipeline is a pure function — no I/O, fully testable. Wire-DTO contracts live in one package so frontend/backend type drift is a compile error, not a runtime bug.
+
+For the full architecture documentation, see [`docs/architecture/`](docs/architecture/).
 
 ---
 
 ## SillyTavern comparison
 
-|                       | SillyTavern           | Vibe Tavern                                     |
-| --------------------- | --------------------- | ----------------------------------------------- |
-| **Frontend**          | jQuery + vanilla JS   | React 19                                        |
-| **Backend**           | Express               | Hono (14KB gzipped)                             |
-| **DB**                | JSON-files            | SQLite                                          |
-| **Editor**            | Generic `<textarea>`  | Auto-resize textareas, CodeMirror 6 for scripts |
-| **Compaction**        | Third-party extension | Built-in (with visual feedback)                 |
-| **Prompt Tracer**     | Third-party extension | Built-in                                        |
-| **Smartphones**       | Manual connection     | QR-code, one click access                       |
-| **Cards importing**   | ✅ V2/V3              | ✅ V2/V3 + bulk import                          |
-| **Macro**             | ✅ Full               | ✅ Full ST-compatible                           |
-| **Standalone binary** | ❌                    | ✅ `bun build --compile`                        |
-| **Plugins**           | 300+                  | ❌ (planned)                                    |
-| **Group chats**       | ✅                    | ❌ (planned)                                    |
-| **Image generation**  | ✅ A1111/ComfyUI      | ❌ (planned)                                    |
-| **TTS**               | ✅                    | ❌ (planned)                                    |
-| **Community**         | 159K weekly users     | Just begins                                     |
+|                         | SillyTavern              | Vibe Tavern                                              |
+| ----------------------- | ------------------------ | -------------------------------------------------------- |
+| **Stack**               | jQuery + Express + JSON  | React 19 + Hono + SQLite                                 |
+| **Character editor**    | `<textarea>`             | Dual-mode: structured form + CodeMirror 6 Markdown       |
+| **Character versions**  | ❌                       | ✅ Parallel editable branches                            |
+| **Lorebook engine**     | ✅ Basic activation      | ✅ 12-gate engine with trace, recursion, priority eviction |
+| **Prompt tracer**       | Extension                | Built-in, per-layer token breakdown                      |
+| **Context compaction**  | Extension                | Built-in with visual feedback                            |
+| **Prompt ordering**     | Manual depth numbers     | Visual drag-and-drop canvas                              |
+| **Mobile access**       | Manual setup             | QR code, one-click, token auth                           |
+| **Cards import**        | ✅ V2/V3                 | ✅ V2/V3 + bulk directory import                         |
+| **Macros**              | ✅ Full                  | ✅ Full ST-compatible (AST parser)                       |
+| **Standalone binary**   | ❌                       | ✅ Single `.exe`                                         |
+| **Generation queue**    | ❌                       | ✅ Stack turns, model/preset per variant                 |
+| **Plugins**             | 300+                     | ❌ (planned)                                             |
+| **Group chats**         | ✅                       | ❌ (planned — [design ready](docs/architecture/decisions.md)) |
+| **Image generation**    | ✅ A1111/ComfyUI         | ❌ (planned)                                             |
+| **TTS**                 | ✅                       | ❌ (planned)                                             |
+| **Community**           | 159K weekly users        | Just begins                                              |
 
 ---
 
-## What is not yet ready
+## Roadmap
 
-Vibe Tavern in Beta-2 stage. That's what's missing so far:
+Vibe Tavern is in active development. Here's what's coming:
 
-- **Plugins** — extensions system not implemented yet.
-- **Group chats** — only your character + your persona.
-- **Image generation** — no A1111/ComfyUI integration.
-- **TTS / STT** — no voice support.
-- **Vector/RAG** — no embedding-based search (but the usual activation of lorebooks works).
-- **Lack of edge-cases tests** — main flows have been tested, but unusual combinations can break something.
+### Near-term
+- **Group chat** — multi-character orchestration with isolated prompts, hidden layers, and server-controlled turn order. [Design complete](docs/architecture/decisions.md).
+- **Novel Mode** — prose writing with TipTap editor, flat-text completion, per-paragraph interactions, ghost text streaming. [Design complete](docs/architecture/decisions.md).
 
-If you encounter a bug, [create issue](https://github.com/Noineri/vibe_tavern/issues). This will help a lot.
+### Medium-term
+- **Agentic Mode** — multi-agent swarm generation: N parallel creative drafts → structured critic (6-axis rubric) → strategy-routed writer. Turns the generation process into a visible, auditable artifact. [Design complete](docs/architecture/decisions.md).
+- **Plugin system** — extensibility for community-built features.
 
----
-
-## Stack
-
-| Layer        | Technology                                                                       |
-| ------------ | -------------------------------------------------------------------------------- |
-| Runtime      | [Bun](https://bun.sh) — fast all-in-one JavaScript, TypeScript & JSX toolkit     |
-| Backend      | [Hono](https://hono.dev/) — type-safe RPC, 14KB                                  |
-| Frontend     | [React 19](https://react.dev) + [Tailwind CSS 4](https://tailwindcss.com)        |
-| DB           | SQLite via [Drizzle ORM](https://orm.drizzle.team)                               |
-| AI streaming | [Vercel AI SDK](https://ai-sdk.dev/) — unified interface for different providers |
-| Language     | TypeScript                                                                       |
-
-**Monorepo structure:**
-
-```
-vibe_tavern/
-├── packages/domain/          # Types, ID, constants (without dependencies)
-├── packages/api-contracts/   # Zod-schemas, common to frontend and backend
-├── packages/db/              # Drizzle storages
-├── packages/prompt-pipeline/ # Pure build function, macro engine
-├── packages/import-export/   # Cards and chat parsers
-├── services/api/             # Backend (Hono + AI-requests)
-└── apps/web/                 # Frontend SPA (React 19)
-```
+### Long-term
+- Image generation integration (A1111 / ComfyUI)
+- TTS / STT
+- Vector/RAG search
 
 ---
 
 ## Contributing
 
-We welcome any contributions — code, translations, documentation, bug reports, or ideas.
+Contributions welcome — code, translations, documentation, bug reports, themes, or ideas.
 
-Find instructions for local launch and guidelines in [CONTRIBUTING.md](./CONTRIBUTING.md).
+**Good first contributions:**
 
-**Where You can start:**
+- 🌍 **Translations** — add a new language ([guide](docs/guides/adding-a-language.md))
+- 🎨 **Themes** — create a CSS theme ([guide](docs/guides/adding-a-theme.md))
+- 🐛 **Bug reports** — [open an issue](https://github.com/Noineri/vibe_tavern/issues)
+- 📖 **Documentation** — improve guides, fix typos, add examples
 
-- 🌍 Translations
-- 🐛 Bug-reports
-- 📖 Improved documentation and user guides
-- 🎨 CSS-themes
+For local setup, coding standards, and contribution guidelines, see [`CONTRIBUTING.md`](./CONTRIBUTING.md). For deeper architecture docs, see [`docs/`](docs/).
 
 ---
 
@@ -211,6 +253,6 @@ Find instructions for local launch and guidelines in [CONTRIBUTING.md](./CONTRIB
 **[Report a bug](https://github.com/Noineri/vibe_tavern/issues)** ·
 **[Discuss](https://github.com/Noineri/vibe_tavern/discussions)**
 
-Built by AI agents on pure vibes 🍻
+Built by AI agents on pure vibes ✨
 
 </div>
