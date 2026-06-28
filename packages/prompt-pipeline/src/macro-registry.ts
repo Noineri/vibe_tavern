@@ -513,6 +513,18 @@ export function createFullMacroEngine(): MacroEngine {
   engine.register({ name: "poss_p", resolve: pronounField("possessivePronoun") });
   engine.register({ name: "ref",    resolve: pronounField("reflexive") });
 
+  // ─── Pronoun declensions (ST-extension compat) ────────────────────────────
+  // Mirror of Wolfsblvt's "SillyTavern-Pronouns" extension macros so prompts/
+  // cards authored against it resolve identically in VT. Same PronounForms
+  // data, different macro surface. Shorthand aliases ({{she}}, {{him}}, ...) are
+  // intentionally omitted: they're off by default in the extension and ambiguous
+  // (e.g. {{his}} = possessive pronoun, not determiner). See pronoun-forms.ts.
+  engine.register({ name: "pronoun.subjective", resolve: pronounField("subjective") });
+  engine.register({ name: "pronoun.objective", resolve: pronounField("objective") });
+  engine.register({ name: "pronoun.pos_det",   resolve: pronounField("possessive") });
+  engine.register({ name: "pronoun.pos_pro",   resolve: pronounField("possessivePronoun") });
+  engine.register({ name: "pronoun.reflexive", resolve: pronounField("reflexive") });
+
   engine.register({
     name: "group",
     resolve: (_args, context) => context.names.groupName ?? "",
