@@ -430,27 +430,40 @@ export function Sidebar() {
             </CustomTooltip>
             {charSwitcherOpen && charSwitcherPos && createPortal(
               <div
-                className="glass-blur fixed max-h-[280px] overflow-y-auto rounded-lg border border-border bg-glass-bg p-1 shadow-theme-md z-[400]"
+                className="glass-blur fixed left-[54px] z-[301] flex w-[300px] max-w-[calc(100vw-70px)] flex-col overflow-hidden rounded-r-xl border border-border bg-glass-bg shadow-[16px_8px_24px_-8px_rgba(0,0,0,0.4)]"
                 ref={charSwitcherRef}
-                style={{ top: charSwitcherPos.top, left: charSwitcherPos.left, width: charSwitcherPos.width }}
+                style={{ top: charSwitcherPos.top, maxHeight: `calc(100vh - ${charSwitcherPos.top}px - 12px)`, animation: "flyoutIn 0.18s ease-out" }}
               >
-                <div className="grid grid-cols-1 gap-1">
-                {characterTabs.map(tab => (
-                  <CustomTooltip key={tab.id} content={tab.name} side="right">
-                    <div
-                      className={cn('flex h-10 w-10 shrink-0 mx-auto cursor-pointer items-center justify-center overflow-hidden rounded-full transition-all hover:bg-s2', tab.id === snapshot?.character?.id && 'ring-1 ring-accent/50 ring-offset-2 ring-offset-surface')}
-                      onClick={() => {
-                        if (tab.chatId) { void chat.handleSwitchChat(tab.chatId); }
-                        else { void character.handleCreateChat(tab.id); }
-                        setCharSwitcherOpen(false); setCharSwitcherPos(null);
-                      }}
-                    >
-                      {tabAvatarSrc(tab)
-                        ? <img className="h-full w-full object-cover" src={tabAvatarSrc(tab)!} alt={tab.name} />
-                        : <span className="flex h-full w-full items-center justify-center rounded-full bg-s3 font-ui text-xs text-t2">{initials(tab.name)}</span>}
-                    </div>
-                  </CustomTooltip>
-                ))}
+                <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-2 py-1">
+                  {characterTabs.map((tab, index) => {
+                    const isActive = tab.id === snapshot?.character?.id;
+                    return (
+                      <div
+                        key={tab.id}
+                        role="button"
+                        tabIndex={0}
+                        style={{ animation: "flyoutCardIn 0.22s ease-out backwards", animationDelay: `${Math.min(index, 12) * 26}ms` }}
+                        className={cn(
+                          "relative mx-1 mb-0.5 flex cursor-pointer items-center gap-2.5 rounded-lg px-2 py-1.5 outline-none transition-colors duration-150",
+                          isActive ? "bg-accent-dim" : "hover:bg-s2 focus-visible:bg-s2",
+                        )}
+                        onClick={() => {
+                          if (tab.chatId) { void chat.handleSwitchChat(tab.chatId); }
+                          else { void character.handleCreateChat(tab.id); }
+                          setCharSwitcherOpen(false); setCharSwitcherPos(null);
+                        }}
+                        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); if (tab.chatId) { void chat.handleSwitchChat(tab.chatId); } else { void character.handleCreateChat(tab.id); } setCharSwitcherOpen(false); setCharSwitcherPos(null); } }}
+                      >
+                        {isActive && <div className="absolute left-0 top-2 bottom-2 w-[3px] rounded-full bg-accent" />}
+                        <div className={cn("flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-full", tabAvatarSrc(tab) ? "" : isActive ? "bg-accent text-on-accent" : "bg-s3 text-t2")}>
+                          {tabAvatarSrc(tab)
+                            ? <img className="h-full w-full object-cover" src={tabAvatarSrc(tab)!} alt={tab.name} />
+                            : <span className="font-ui text-[calc(var(--ui-fs)-4px)]">{initials(tab.name)}</span>}
+                        </div>
+                        <span className={cn("truncate text-[calc(var(--ui-fs)-1px)]", isActive ? "font-medium text-accent-t" : "text-t2")}>{tab.name}</span>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>,
               document.body,
