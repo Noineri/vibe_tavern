@@ -3,8 +3,20 @@ name: CI
 on:
   push:
     branches: [master, dev]
+    path-ignore:
+      - '**/*.md'
+      - '**/*.sh'
+      - '**/*.bat'
+      - 'assets/**'
+      - 'docs/**'
   pull_request:
     branches: [master, dev]
+    path-ignore:
+      - '**/*.md'
+      - '**/*.sh'
+      - '**/*.bat'
+      - 'assets/**'
+      - 'docs/**'
 
 permissions:
   contents: read
