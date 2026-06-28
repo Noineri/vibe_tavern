@@ -80,6 +80,9 @@ export const personas = sqliteTable('personas', {
   name: text('name').notNull(),
   description: text('description').notNull().default(''),
   pronouns: text('pronouns'),
+  // Structured pronoun declensions (custom case only). JSON of PronounForms.
+  // Null for presets — the five forms are derived at resolve time from `pronouns` (preset key).
+  pronounFormsJson: text('pronoun_forms_json'),
   avatarAssetId: text('avatar_asset_id'),
   avatarFullAssetId: text('avatar_full_asset_id'),
   avatarCropJson: text('avatar_crop_json'),
