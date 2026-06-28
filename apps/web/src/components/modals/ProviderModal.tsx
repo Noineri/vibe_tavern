@@ -713,6 +713,8 @@ export function ProviderModal({
                     </div>
                   )}
 
+                  <ProviderCapabilityPanel capabilities={capabilities} />
+
                   {showVisionFallback && (
                     <div className="mt-4 border-t border-border2 pt-2">
                       <ProviderModelSelector form={form} models={models.filter(m => m.capabilities?.vision)} filteredModels={visionFilteredModels}
@@ -745,7 +747,6 @@ export function ProviderModal({
                     onSelectBindingModel={handleSelectBindingModel}
                   />
 
-                  <ProviderCapabilityPanel capabilities={capabilities} />
                   <ProviderSamplerPanel form={form} updateForm={lazyAutoSaveField} capabilities={capabilities} />
                 </>
               )}

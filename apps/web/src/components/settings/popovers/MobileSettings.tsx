@@ -85,13 +85,8 @@ export function MobileSettings({ open, onClose, settings, setSetting, onOpenMobi
 			</div>
 
 
-				{/* Appearance */}
-				<div className="px-5 pt-5 pb-2">
-					<div className="font-ui text-[calc(var(--ui-fs)-4px)] font-semibold uppercase tracking-[0.08em] text-t3">{t("tweaks_theme")}</div>
-				</div>
-
-				{/* Theme — segment control mirrors desktop TweaksPanel (driven by the registry) */}
-				<div className="px-5 py-2.5">
+				{/* Appearance — theme (segment control mirrors desktop TweaksPanel, driven by the registry) */}
+				<div className="px-5 pt-5 pb-2.5">
 					<div className="flex min-h-[48px] items-center justify-between gap-3">
 						<span className="font-body text-[length:var(--ui-fs)] text-t1">{t("tweaks_theme")}</span>
 						<SegmentedControl
@@ -154,11 +149,7 @@ export function MobileSettings({ open, onClose, settings, setSetting, onOpenMobi
 				</div>
 
 				{/* Language */}
-				<div className="px-5 pt-5 pb-2">
-					<div className="font-ui text-[calc(var(--ui-fs)-4px)] font-semibold uppercase tracking-[0.08em] text-t3">{t("tweaks_language")}</div>
-				</div>
-
-				<div className="px-5 py-2.5">
+				<div className="px-5 pt-5 pb-2.5">
 					<div className="flex items-center gap-3 mb-2.5">
 						<div className="flex h-9 w-9 items-center justify-center rounded-lg bg-s2 text-t2">
 							<Icons.Help />
