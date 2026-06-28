@@ -4,6 +4,7 @@ import type { AppDb } from '../db-connection.js';
 import { resolveStoreRuntime, type StoreClock, type StoreIdGenerator } from '../persistence.js';
 import type { ContentStore } from '../content-store.js';
 import { STORAGE_FOLDERS, IMAGE_EXTENSIONS } from '../file-store.js';
+import type { PronounForms } from '@vibe-tavern/domain';
 
 // ─── Input types ──────────────────────────────────────────────────────────────
 
@@ -11,6 +12,7 @@ export interface CreatePersonaData {
   name: string;
   description?: string;
   pronouns?: string | null;
+  pronounForms?: PronounForms | null;
   avatarAssetId?: string | null;
   avatarFullAssetId?: string | null;
   avatarCropJson?: string | null;
@@ -33,6 +35,8 @@ export interface Persona {
   name: string;
   description: string;
   pronouns: string | null;
+  /** Structured pronoun declensions (custom case only); null for presets and unset. */
+  pronounForms: PronounForms | null;
   avatarAssetId: string | null;
   avatarFullAssetId: string | null;
   avatarCropJson: string | null;
@@ -164,6 +168,7 @@ export class PersonaStore {
         name: data.name,
         description: data.description ?? '',
         pronouns: data.pronouns ?? null,
+        pronounFormsJson: data.pronounForms ? JSON.stringify(data.pronounForms) : null,
         avatarAssetId: data.avatarAssetId ?? null,
         avatarFullAssetId: data.avatarFullAssetId ?? null,
         avatarCropJson: data.avatarCropJson ?? null,
@@ -198,6 +203,7 @@ export class PersonaStore {
     if (data.name !== undefined) values.name = data.name;
     if (data.description !== undefined) values.description = data.description;
     if (data.pronouns !== undefined) values.pronouns = data.pronouns;
+    if (data.pronounForms !== undefined) values.pronounFormsJson = data.pronounForms ? JSON.stringify(data.pronounForms) : null;
     if (data.avatarAssetId !== undefined) values.avatarAssetId = data.avatarAssetId;
     if (data.avatarFullAssetId !== undefined) values.avatarFullAssetId = data.avatarFullAssetId;
     if (data.avatarCropJson !== undefined) values.avatarCropJson = data.avatarCropJson;
@@ -335,6 +341,7 @@ export class PersonaStore {
       name: row.name,
       description: row.description,
       pronouns: row.pronouns,
+      pronounForms: parsePronounForms(row.pronounFormsJson),
     };
   }
 
@@ -346,6 +353,7 @@ export class PersonaStore {
       name: row.name,
       description: row.description,
       pronouns: row.pronouns,
+      pronounForms: parsePronounForms(row.pronounFormsJson),
       avatarAssetId: row.avatarAssetId,
       avatarFullAssetId: row.avatarFullAssetId,
       avatarCropJson: row.avatarCropJson ?? null,
@@ -357,5 +365,27 @@ export class PersonaStore {
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
     };
+  }
+}
+
+/** Parse `pronoun_forms_json` into a validated PronounForms, or null when absent/malformed.
+ *  The column is always written via JSON.stringify of a valid PronounForms, so a malformed value
+ *  indicates corruption — fall back to null (treated identically to "unset"). */
+function parsePronounForms(text: string | null): PronounForms | null {
+  if (!text) return null;
+  try {
+    const parsed = JSON.parse(text) as Partial<PronounForms>;
+    if (
+      typeof parsed.subjective === 'string' &&
+      typeof parsed.objective === 'string' &&
+      typeof parsed.possessive === 'string' &&
+      typeof parsed.possessivePronoun === 'string' &&
+      typeof parsed.reflexive === 'string'
+    ) {
+      return parsed as PronounForms;
+    }
+    return null;
+  } catch {
+    return null;
   }
 }
