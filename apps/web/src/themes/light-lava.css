@@ -63,6 +63,9 @@
   --bar-bg:    var(--glass-bg);
   /* See dark-lava.css: full backdrop-filter string for the sticky bar. */
   --bar-filter: blur(var(--glass-blur)) saturate(180%) brightness(110%);
+  /* See dark-lava.css: element bg transparent so only the feathered ::before
+     pseudo carries the translucent fill. */
+  .glass-bar { background-color: transparent; }
 
   /* ─── Danger / Success / Info / Warning ─── */
   --danger:      oklch(0.52 0.16 18);    

@@ -74,6 +74,13 @@
      compositing, no bleed through the opaque page bg). */
   --bar-filter: blur(var(--glass-blur)) saturate(180%) brightness(110%);
 
+  /* On glass themes the sticky action bar's fill must come ONLY from the
+     feathered ::before pseudo (see styles.css `.glass-bar`), so the element's
+     own background is transparent — otherwise the element's translucent fill
+     would paint a hard rectangle behind the feathered pseudo. This unlayered
+     rule wins over the base `.glass-bar { background-color: var(--bg) }`. */
+  .glass-bar { background-color: transparent; }
+
   /* ─── Danger / Success / Info / Warning ─── */
   --danger:      oklch(0.435 0.4 18);
   --danger-dim:  oklch(0.60 0.18 18 / 15%);    

@@ -250,22 +250,20 @@ export function CharacterForm({
             opaque themes → `backdrop-filter: none`, which establishes NO
             compositing layer (so an opaque bg can't bleed scrolling content
             through; unlike a bare `backdrop-filter: blur(0) saturate()`, which
-            still composites and bleeds). */}
+            still composites and bleeds).
+          On glass themes the bar's fill + blur live on a `.glass-bar::before`
+          pseudo-element (see styles.css) masked to FADE OUT at the bottom edge
+          over ~20px, so the frost dissolves into the scrolling content instead
+          of cutting off as a hard rectangle — the bar reads as part of the
+          header, not a floating panel. The pseudo is var-driven and inert on
+          opaque themes (no --bar-bg → transparent fill, no --bar-filter → no
+          blur), where the element's own solid --bg is used directly. */}
       <div
         className={cn(
-          "sticky z-30 py-2 bg-[var(--bar-bg,var(--bg))]",
+          "glass-bar sticky z-30 py-2",
           isMobile ? "-mx-4 px-4" : "-mx-10 px-10",
         )}
-        style={{
-          top: isMobile ? -16 : -32,
-          // backdrop-filter is gated by --bar-filter: `none` on opaque themes
-          // (undefined → no compositing layer, so an opaque page bg can't bleed
-          // the scrolling content through), and the full blur+saturate+brightness
-          // string on glass themes (where --bar-bg is translucent). Mirrors the
-          // .glass-blur utility's filter values.
-          backdropFilter: "var(--bar-filter, none)",
-          WebkitBackdropFilter: "var(--bar-filter, none)",
-        }}
+        style={{ top: isMobile ? -16 : -32 }}
       >
       {/* Header row. `mb-3` is MOBILE-ONLY: on mobile the toolbar is a separate
           row below this one, so the margin is the gap between Сохранить and the

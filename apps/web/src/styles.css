@@ -275,6 +275,54 @@ select option{padding:2px 6px}
   backdrop-filter: blur(var(--glass-blur, 0px)) saturate(180%) brightness(110%);
 }
 
+/* ── Feathered sticky action bar (CharacterForm) ──
+   Unlike floating .glass-blur panels (whose hard rect is expected), the sticky
+   action bar should read as part of the header, not a floating frosted
+   rectangle. So its fill + backdrop-filter live on a ::before pseudo-element
+   that is MASKED to fade out on ALL FOUR edges, dissolving the frost into the
+   surroundings over ~20px (≈1.4× the 14px glass blur — short enough to stay
+   crisp where it matters, long enough to dissolve without reading as a
+   rendering artifact). The pseudo extends 20px BEYOND the bar on every side
+   (inset: -20px) so each fade sits in the extension zone, not under the bar's
+   own content (which stays fully opaque). The two mask layers (horizontal +
+   vertical gradients) are intersected so only their overlap — the bar's
+   central rectangle minus the 20px fringe — is fully opaque.
+   Content paints on the element itself, above the pseudo — unaffected by the
+   mask.
+   Vars make this a NO-OP on opaque themes: --bar-bg undefined → fill is invalid
+   → transparent; --bar-filter undefined → backdrop-filter falls back to none →
+   no compositing. There the element's own solid --bg shows (set below). Glass
+   themes additionally set `.glass-bar { background-color: transparent }` (in
+   their theme files) so ONLY the feathered pseudo carries the fill.
+   isolation: isolate contains the z-index:-1 pseudo so it stays behind the
+   bar's content but above the scroll container's bg (otherwise it would slip
+   behind the page). transform: translateZ(0) forces the compositor to resolve
+   the mask + backdrop-filter together (works around WebKit's historical
+   mask+backdrop-filter bugs). */
+.glass-bar {
+  position: sticky; /* ensure a positioning context for the absolute ::before */
+  isolation: isolate;
+  background-color: var(--bg);
+}
+.glass-bar::before {
+  content: "";
+  position: absolute;
+  inset: -20px;
+  z-index: -1;
+  background-color: var(--bar-bg);
+  -webkit-backdrop-filter: var(--bar-filter, none);
+  backdrop-filter: var(--bar-filter, none);
+  -webkit-mask-image:
+    linear-gradient(to right, transparent, #000 20px, #000 calc(100% - 20px), transparent),
+    linear-gradient(to bottom, transparent, #000 20px, #000 calc(100% - 20px), transparent);
+  mask-image:
+    linear-gradient(to right, transparent, #000 20px, #000 calc(100% - 20px), transparent),
+    linear-gradient(to bottom, transparent, #000 20px, #000 calc(100% - 20px), transparent);
+  -webkit-mask-composite: source-in;
+  mask-composite: intersect;
+  transform: translateZ(0);
+}
+
 /* Scrollable containers — hide scrollbar on mobile */
 .scrollbar-hide {
   -ms-overflow-style: none;
