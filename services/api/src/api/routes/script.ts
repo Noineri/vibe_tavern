@@ -26,6 +26,11 @@ export function createScriptRoutes(runtime: ScriptRuntimeApi) {
       const body = c.req.valid("json");
       return c.json(await runtime.updateScript(c.req.param("scriptId"), body));
     })
+    // Scope reassignment (PR-6 binding): atomically clears stale FKs.
+    .patch("/api/scripts/:scriptId/scope", zValidator("json", schemas.setScriptScopeSchema), async (c) => {
+      const { scopeType, ownerId } = c.req.valid("json");
+      return c.json(await runtime.setScriptScope(c.req.param("scriptId"), scopeType, ownerId ?? null));
+    })
     .delete("/api/scripts/:scriptId", async (c) => {
       await runtime.deleteScript(c.req.param("scriptId"));
       return c.json({ ok: true });

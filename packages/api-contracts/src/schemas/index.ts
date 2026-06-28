@@ -60,6 +60,7 @@ export {
 export {
   createScriptSchema,
   updateScriptSchema,
+  setScriptScopeSchema,
   testScriptSchema,
   importScriptSchema,
 } from "./script-schema.js";

@@ -20,6 +20,13 @@ export const updateScriptSchema = z.object({
   sortOrder: z.number().optional(),
 });
 
+/** Reassign a script's scope atomically (PR-6 binding). Clears stale FKs.
+ *  `ownerId` is omitted/null for 'global'. */
+export const setScriptScopeSchema = z.object({
+  scopeType: z.enum(['global', 'character', 'persona', 'chat']),
+  ownerId: z.string().nullable().optional(),
+});
+
 export const testScriptSchema = z.object({
   /** Simulated chat messages for test execution */
   messages: z.array(z.object({
