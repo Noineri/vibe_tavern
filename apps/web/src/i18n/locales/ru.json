@@ -706,6 +706,7 @@
   "lore_recursive_scanning_hint": "После активации записи её содержание тоже проверяется на ключи других записей.",
   "lore_link_targets": "Привязан к",
   "lore_link_empty": "Нет доступных целей",
+  "lore_click_to_unlink": "нажмите, чтобы отвязать",
   "lore_duplicate": "Дублировать",
   "lore_export_st": "Экспорт (ST)",
   "lore_entry_title": "Заголовок",
