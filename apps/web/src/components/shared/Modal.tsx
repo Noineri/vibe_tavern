@@ -55,10 +55,19 @@ export function Modal({
           onPointerDownOutside={(e) => e.preventDefault()}
           onInteractOutside={(e) => e.preventDefault()}
         >
+          {/* For hideOverlay callers (the confirm-style modals stacked on top of
+              other modals), render the backdrop blur INSIDE Dialog.Content's
+              z-[501] stacking context instead of as a separate z-[500] overlay.
+              A separate z-500 overlay would be hidden behind a parent modal's
+              z-501 content; this in-content layer paints above the parent AND
+              (being the first positioned child) stays behind the panel below. */}
+          {hideOverlay && (
+            <div aria-hidden className="absolute inset-0 bg-black/55 backdrop-blur-[2px]" />
+          )}
           <Dialog.Title className="sr-only">{title}</Dialog.Title>
           <Dialog.Description className="sr-only">{description}</Dialog.Description>
           <div className={cn(
-            "pointer-events-auto",
+            "relative pointer-events-auto",
             compact && "max-w-sm",
             // On mobile fullscreen (non-compact), stretch the wrapper to fill
             // Dialog.Content so children using `h-full` resolve against the

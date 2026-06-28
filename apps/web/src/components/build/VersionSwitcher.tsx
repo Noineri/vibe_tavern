@@ -7,6 +7,7 @@ import { SegmentedControl } from "../shared/SegmentedControl.js";
 import { DropdownSelect } from "../shared/DropdownSelect.js";
 import { ActionSheet } from "../shared/ActionSheet.js";
 import { DestructiveConfirmModal } from "../shared/destructive-confirm-modal.js";
+import { PromptModal } from "../shared/PromptModal.js";
 import { toast } from "sonner";
 import {
   activateCharacterVersionAction,
@@ -56,9 +57,11 @@ export function VersionSwitcher({ characterId, isDirty, disabled, onAfterActivat
   const [pendingSwitchId, setPendingSwitchId] = useState<string | null>(null);
   // Pending delete (always confirmed, dirty or not).
   const [pendingDelete, setPendingDelete] = useState<AppCharacterVersion | null>(null);
-  // Inline rename.
-  const [renamingId, setRenamingId] = useState<string | null>(null);
-  const [renameValue, setRenameValue] = useState("");
+  // Pending rename — opens a PromptModal (same pattern as new-version creation;
+  // replaces the old inline <input> that couldn't live inside a segmented pill).
+  const [pendingRename, setPendingRename] = useState<AppCharacterVersion | null>(null);
+  // New-version creation modal (replaces the old window.prompt confirm).
+  const [newVersionOpen, setNewVersionOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -137,18 +140,14 @@ export function VersionSwitcher({ characterId, isDirty, disabled, onAfterActivat
   }
 
   function startRename(v: AppCharacterVersion): void {
-    setRenamingId(v.id);
-    setRenameValue(v.title);
+    setPendingRename(v);
   }
 
-  async function commitRename(): Promise<void> {
-    const id = renamingId;
-    const title = renameValue.trim();
-    setRenamingId(null);
-    if (!id || !title || title === versions.find((v) => v.id === id)?.title) return;
+  async function doRename(v: AppCharacterVersion, title: string): Promise<void> {
+    if (title === v.title) return;
     setBusy(true);
     try {
-      await renameCharacterVersionAction(characterId, id, title);
+      await renameCharacterVersionAction(characterId, v.id, title);
       await refresh();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : t("version_rename"));
@@ -158,24 +157,8 @@ export function VersionSwitcher({ characterId, isDirty, disabled, onAfterActivat
   }
 
   function promptNewVersion(): void {
-    const title = window.prompt(t("version_new_prompt"), t("version_new_title") || NEW_VERSION_DEFAULT);
-    if (title?.trim()) void handleBranch(title.trim());
+    setNewVersionOpen(true);
   }
-
-  const renameAffordances = !isMobile && !useDropdown ? (
-    <DeleteRenameAffordances
-      versions={versions}
-      active={active}
-      renamingId={renamingId}
-      renameValue={renameValue}
-      onStartRename={startRename}
-      onRenameValueChange={setRenameValue}
-      onCommitRename={commitRename}
-      onCancelRename={() => setRenamingId(null)}
-      onRequestDelete={(v) => setPendingDelete(v)}
-      disabled={!!disabled || busy}
-    />
-  ) : null;
 
   const deleteConfirm = pendingDelete ? (
     <DestructiveConfirmModal
@@ -184,6 +167,17 @@ export function VersionSwitcher({ characterId, isDirty, disabled, onAfterActivat
       confirmLabel={t("delete")}
       onConfirm={() => { const v = pendingDelete; setPendingDelete(null); void doDelete(v); }}
       onCancel={() => setPendingDelete(null)}
+    />
+  ) : null;
+
+  const renameModal = pendingRename ? (
+    <PromptModal
+      title={t("version_rename")}
+      label={t("version_new_prompt")}
+      defaultValue={pendingRename.title}
+      confirmLabel={t("version_rename")}
+      onConfirm={(title) => { const v = pendingRename; setPendingRename(null); void doRename(v, title); }}
+      onCancel={() => setPendingRename(null)}
     />
   ) : null;
 
@@ -197,11 +191,22 @@ export function VersionSwitcher({ characterId, isDirty, disabled, onAfterActivat
     />
   ) : null;
 
+  const newVersionModal = newVersionOpen ? (
+    <PromptModal
+      title={t("version_branch")}
+      label={t("version_new_prompt")}
+      defaultValue={t("version_new_title") || NEW_VERSION_DEFAULT}
+      confirmLabel={t("version_branch")}
+      onConfirm={(title) => { setNewVersionOpen(false); void handleBranch(title); }}
+      onCancel={() => setNewVersionOpen(false)}
+    />
+  ) : null;
+
   // ── Mobile: button → ActionSheet ─────────────────────────────────────────
   if (isMobile) {
     return (
       <>
-        <div className="flex items-center gap-2">
+        <div className="mb-5 flex items-center gap-2">
           <button type="button"
             className="flex min-h-[36px] flex-1 cursor-pointer items-center gap-2 rounded-md border border-border bg-s2 px-3 text-[13px] text-t1 transition-colors hover:border-accent disabled:opacity-40"
             onClick={() => setSheetOpen(true)}
@@ -222,6 +227,12 @@ export function VersionSwitcher({ characterId, isDirty, disabled, onAfterActivat
                 : <span className="w-[11px]" />,
               label: labelFor(v),
               action: () => requestActivate(v.id),
+              // Always-visible rename/delete on non-active rows (mobile has no
+              // hover). The active version is the current surface; act on others.
+              trailing: v.isActive ? undefined : [
+                { icon: Ic.edit(), label: t("version_rename"), action: () => startRename(v) },
+                { icon: Ic.del(), label: t("version_delete"), danger: true, action: () => setPendingDelete(v) },
+              ],
             })),
             {
               icon: Ic.plus(),
@@ -232,6 +243,8 @@ export function VersionSwitcher({ characterId, isDirty, disabled, onAfterActivat
         />
         {switchConfirm}
         {deleteConfirm}
+        {renameModal}
+        {newVersionModal}
       </>
     );
   }
@@ -240,10 +253,22 @@ export function VersionSwitcher({ characterId, isDirty, disabled, onAfterActivat
   if (useDropdown) {
     return (
       <Wrap disabled={!!disabled || busy || loading}>
-        <div className="flex items-center gap-2">
+        <div className="mb-5 flex items-center gap-2">
           <DropdownSelect
             value={active?.id ?? ""}
-            options={versions.map((v) => ({ id: v.id, label: labelFor(v) }))}
+            options={versions.map((v) => ({
+              id: v.id,
+              label: labelFor(v),
+              // Rename/delete on non-active options (active can't be deleted and
+              // is the switcher's own label). Pointer events are stopped in
+              // DropdownSelect so tapping an icon doesn't select the option.
+              trailing: v.isActive ? undefined : (
+                <>
+                  <DropdownItemAction icon={Ic.edit()} label={t("version_rename")} onClick={() => startRename(v)} disabled={!!disabled || busy} />
+                  <DropdownItemAction icon={Ic.del()} label={t("version_delete")} danger onClick={() => setPendingDelete(v)} disabled={!!disabled || busy} />
+                </>
+              ),
+            }))}
             onChange={(id) => requestActivate(id)}
             disabled={!!disabled || busy}
             searchable={false}
@@ -253,15 +278,30 @@ export function VersionSwitcher({ characterId, isDirty, disabled, onAfterActivat
         </div>
         {deleteConfirm}
         {switchConfirm}
+        {renameModal}
+        {newVersionModal}
       </Wrap>
     );
   }
 
-  // ── Desktop ≤5: SegmentedControl (wrap) + hover edit/delete ──────────────
-  const segments = versions.map((v) => ({ value: v.id, label: labelFor(v) }));
+  // ── Desktop ≤5: SegmentedControl (wrap) + per-pill rename/delete on hover ──
+  const segments = versions.map((v) => ({
+    value: v.id,
+    label: labelFor(v),
+    // The active version cannot be deleted (server refuses) and is not
+    // renamed from the pill (its title is the switcher's own label); only
+    // non-active pills get trailing actions. Revealed on hover via group/seg.
+    trailing: v.isActive ? null : (
+      <VersionPillActions
+        disabled={!!disabled || busy}
+        onRename={() => startRename(v)}
+        onDelete={() => setPendingDelete(v)}
+      />
+    ),
+  }));
   return (
     <Wrap disabled={!!disabled || busy || loading}>
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="mb-5 flex flex-wrap items-center gap-2">
         <SegmentedControl
           value={active?.id ?? ""}
           options={segments}
@@ -272,9 +312,10 @@ export function VersionSwitcher({ characterId, isDirty, disabled, onAfterActivat
         />
         <NewVersionButton onClick={promptNewVersion} busy={busy} disabled={!!disabled} />
       </div>
-      {renameAffordances}
       {deleteConfirm}
       {switchConfirm}
+      {renameModal}
+      {newVersionModal}
     </Wrap>
   );
 }
@@ -284,70 +325,74 @@ function NewVersionButton({ onClick, busy, disabled }: { onClick: () => void; bu
   const { t } = useT();
   return (
     <button type="button"
-      className="flex h-8 cursor-pointer items-center gap-1 rounded-full border border-dashed border-border bg-transparent px-3 font-ui text-[12px] text-t2 transition-all hover:border-accent hover:text-accent-t disabled:opacity-40"
+      className="flex h-8 shrink-0 cursor-pointer items-center gap-1 rounded-full border border-dashed border-border bg-transparent px-3 font-ui text-[12px] text-t2 transition-all hover:border-accent hover:text-accent-t disabled:opacity-40"
       disabled={busy || disabled}
       onClick={onClick}
       title={t("version_branch")}
     >
       {Ic.plus()}
-      <span>{t("version_branch")}</span>
+      <span className="whitespace-nowrap">{t("version_branch")}</span>
     </button>
   );
 }
 
-/** Rename (inline input) + delete (icon) rows for non-active versions, shown below the switcher. */
-function DeleteRenameAffordances(props: {
-  versions: AppCharacterVersion[];
-  active: AppCharacterVersion | null;
-  renamingId: string | null;
-  renameValue: string;
-  onStartRename: (v: AppCharacterVersion) => void;
-  onRenameValueChange: (value: string) => void;
-  onCommitRename: () => void;
-  onCancelRename: () => void;
-  onRequestDelete: (v: AppCharacterVersion) => void;
+/** Inline rename/delete icons for a single non-active version pill.
+ *  Revealed on hover via the parent `group/seg` scope (see SegmentedControl's
+ *  trailing slot). Clicks stopPropagation as a guard so they never reach the
+ *  pill's select handler, even though the icons sit outside the radio <button>. */
+function VersionPillActions(props: {
   disabled: boolean;
+  onRename: () => void;
+  onDelete: () => void;
 }): ReactNode {
   const { t } = useT();
-  const editable = props.versions.filter((v) => v.id !== props.active?.id);
-  if (editable.length === 0) return null;
   return (
-    <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1.5 pl-0.5">
-      {editable.map((v) => (
-        <div key={v.id} className="group/version flex items-center gap-1.5">
-          {props.renamingId === v.id ? (
-            <input
-              autoFocus
-              value={props.renameValue}
-              onChange={(e) => props.onRenameValueChange(e.target.value)}
-              className="h-6 w-32 rounded border border-accent bg-s2 px-1.5 font-ui text-[12px] text-t1 outline-none"
-              onKeyDown={(e) => { if (e.key === "Enter") props.onCommitRename(); if (e.key === "Escape") props.onCancelRename(); }}
-              onBlur={() => props.onCommitRename()}
-            />
-          ) : (
-            <span className="font-ui text-[11px] text-t3">{v.title}</span>
-          )}
-          <button type="button"
-            className="flex h-5 w-5 cursor-pointer items-center justify-center rounded text-t3 opacity-0 transition-opacity hover:bg-s3 hover:text-t1 group-hover/version:opacity-100 disabled:opacity-0"
-            onClick={() => props.onStartRename(v)}
-            disabled={props.disabled}
-            title={t("version_rename")}
-            aria-label={t("version_rename")}
-          >
-            {Ic.edit()}
-          </button>
-          <button type="button"
-            className="flex h-5 w-5 cursor-pointer items-center justify-center rounded text-t3 opacity-0 transition-opacity hover:bg-s3 hover:text-danger-text group-hover/version:opacity-100 disabled:opacity-0"
-            onClick={() => props.onRequestDelete(v)}
-            disabled={props.disabled}
-            title={t("version_delete")}
-            aria-label={t("version_delete")}
-          >
-            {Ic.del()}
-          </button>
-        </div>
-      ))}
+    <div className="flex items-center gap-0.5 pr-0.5">
+      <button type="button"
+        className="flex h-5 w-5 cursor-pointer items-center justify-center rounded text-t3 opacity-0 transition-opacity hover:bg-s3 hover:text-t1 group-hover/seg:opacity-100 disabled:opacity-0"
+        onClick={(e) => { e.stopPropagation(); props.onRename(); }}
+        disabled={props.disabled}
+        title={t("version_rename")}
+        aria-label={t("version_rename")}
+      >
+        {Ic.edit()}
+      </button>
+      <button type="button"
+        className="flex h-5 w-5 cursor-pointer items-center justify-center rounded text-t3 opacity-0 transition-opacity hover:bg-s3 hover:text-danger-text group-hover/seg:opacity-100 disabled:opacity-0"
+        onClick={(e) => { e.stopPropagation(); props.onDelete(); }}
+        disabled={props.disabled}
+        title={t("version_delete")}
+        aria-label={t("version_delete")}
+      >
+        {Ic.del()}
+      </button>
     </div>
+  );
+}
+
+/** Compact inline icon button for a dropdown item's trailing slot
+ *  (rename/delete inside DropdownSelect). Smaller than the pill variant —
+ *  dropdown rows are dense. Always visible (muted, brightens on its own hover). */
+function DropdownItemAction(props: {
+  icon: ReactNode;
+  label: string;
+  danger?: boolean;
+  disabled?: boolean;
+  onClick: () => void;
+}): ReactNode {
+  return (
+    <button type="button"
+      className={cn(
+        "flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded text-t3 transition-colors hover:bg-s3 disabled:opacity-0",
+        props.danger ? "hover:text-danger-text" : "hover:text-t1",
+      )}
+      disabled={props.disabled}
+      title={props.label}
+      aria-label={props.label}
+      onClick={(e) => { e.stopPropagation(); props.onClick(); }}
+    >
+      {props.icon}
+    </button>
   );
 }
 

@@ -26,6 +26,10 @@ import { DepthPromptField } from "../fields/DepthPromptField.js";
 import { TagsField } from "../fields/TagsField.js";
 import { VibeMdView } from "./VibeMdView.js";
 import { useCharacterStore } from "../../../stores/character-store.js";
+import { useActiveCharacter, useSnapshotStore } from "../../../stores/snapshot-store.js";
+import { saveCharacterAction } from "../../../stores/api-actions/character-actions.js";
+import { describeCharacterAvatar } from "../../../api/gallery-api.js";
+import { AvatarDescriptionField, type AvatarDescriptionPatch } from "./AvatarDescriptionField.js";
 
 export interface CharacterFormProps {
   form: UseFormReturn<BuildCharacterDraft>;
@@ -93,6 +97,24 @@ export function CharacterForm({
   const mdViewMode = useCharacterStore((s) => s.mdViewMode);
   const setMdViewMode = useCharacterStore((s) => s.setMdViewMode);
 
+  // Avatar-in-prompt fields live OUT-OF-BAND on the snapshot character (they
+  // are intentionally excluded from BuildCharacterDraft — see character-schema.ts
+  // + vibe_tavern_plan/reports/avatar-description-ui-gap.md). Read from the
+  // active character, commit via direct PATCH (NOT the form's setValue/submit).
+  const activeCharacter = useActiveCharacter();
+  const includeAvatarInPrompt = activeCharacter?.includeAvatarInPrompt ?? false;
+  const avatarDescription = activeCharacter?.avatarDescription ?? null;
+  const handleAvatarPatch = (patch: AvatarDescriptionPatch) => {
+    void saveCharacterAction({ characterId, patch });
+  };
+  // Vision describe: endpoint persists avatarDescription out-of-band and
+  // returns { description }; mirror it into the store via the sanctioned
+  // ingestSnapshot (character key present → replaces). No redundant PATCH.
+  const handleAvatarDescribe = async (signal: AbortSignal): Promise<void> => {
+    const { description } = await describeCharacterAvatar(characterId, signal);
+    const cur = useSnapshotStore.getState().character;
+    if (cur) useSnapshotStore.getState().ingestSnapshot({ character: { ...cur, avatarDescription: description } });
+  };
 
 
   const name = watch("name");
@@ -204,21 +226,50 @@ export function CharacterForm({
   return (
     <div>
       {/* Action bar — sticky flush under the Build tabs header (the build
-          "topbar"). The scroll container carries `padding: 32px 40px`; a plain
-          `sticky top-0` pins to the INNER edge of that padding, leaving a 32px
-          gap that persists on scroll. `top: -32px` overcomes it: the bar sticks
-          at the scrollport's true top (= directly under the tabs header),
-          flush, no gap, no wasted colored strip. Side `-40px` margins + `px-10`
-          bleed the page-bg fill out to the container's full width so the bar
-          reads as attached to the header above, not a floating inset box.
-          Background is var(--page-bg) — identical to the transparent scroll
-          container's visible background, so it is seamless (not a boxed panel). */}
+          "topbar"). The scroll container's top padding determines the sticky
+          offset, and the container MUST carry that padding itself (not an outer
+          wrapper) so the negative top lands INSIDE the overflow clip rectangle.
+          Desktop scroll container: `padding: 32px 40px` → `top: -32`. Mobile:
+          `p-4` (16px) → `top: -16`. A plain `sticky top-0` would pin to the
+          INNER edge of the padding, leaving a gap that persists on scroll; the
+          negative offset overcomes it so the bar sticks at the scrollport's
+          true top, flush under the header. Side negative margins + matching
+          padding bleed the bar's fill out to the container's full width so it
+          reads as attached, not a floating inset box.
+          The bar uses `background-color` (Tailwind `bg-[...]`), which accepts
+          ONLY solid colors — not gradients. --page-bg is a gradient on the
+          themes that define it (mystic-night, dark/light-lava), so it CANNOT be
+          used here (it was previously, and silently rendered transparent on
+          those themes). The solid fallback is --bg — always opaque on every
+          theme, and the documented solid approximation over a gradient page
+          (mystic-night sets --input-bg: var(--bg) for the same reason).
+          Background + backdrop-filter are widened on the glass themes
+          (dark/light-lava) ONLY, via two vars they define:
+          - --bar-bg: translucent glass fill (overrides the solid --bg fallback).
+          - --bar-filter: full blur+saturate+brightness string. Undefined on
+            opaque themes → `backdrop-filter: none`, which establishes NO
+            compositing layer (so an opaque bg can't bleed scrolling content
+            through; unlike a bare `backdrop-filter: blur(0) saturate()`, which
+            still composites and bleeds).
+          On glass themes the bar's fill + blur live on a `.glass-bar::before`
+          pseudo-element (see styles.css) masked to FADE OUT at the bottom edge
+          over ~20px, so the frost dissolves into the scrolling content instead
+          of cutting off as a hard rectangle — the bar reads as part of the
+          header, not a floating panel. The pseudo is var-driven and inert on
+          opaque themes (no --bar-bg → transparent fill, no --bar-filter → no
+          blur), where the element's own solid --bg is used directly. */}
       <div
-        className="sticky z-30 bg-[var(--page-bg,var(--bg))] py-2"
-        style={{ top: -32, marginLeft: -40, marginRight: -40, paddingLeft: 40, paddingRight: 40 }}
+        className={cn(
+          "glass-bar sticky z-30 py-2",
+          isMobile ? "-mx-4 px-4" : "-mx-10 px-10",
+        )}
+        style={{ top: isMobile ? -16 : -32 }}
       >
-      {/* Header row */}
-      <div className="flex items-center justify-between gap-2">
+      {/* Header row. `mb-3` is MOBILE-ONLY: on mobile the toolbar is a separate
+          row below this one, so the margin is the gap between Сохранить and the
+          toolbar (GAP A). On desktop the toolbar is inline in this same row, so a
+          bottom margin would just dangle an empty tail under the bar. */}
+      <div className={cn("flex items-center justify-between gap-2", isMobile && "mb-3")}>
         <div className="font-body text-[22px] font-medium text-t1 min-w-0 truncate">
           {name || t("unnamed")}
         </div>
@@ -324,11 +375,13 @@ export function CharacterForm({
         </div>
         )}
       </div>
-      {/* Mobile action bar */}
+      {/* Mobile toolbar row. No bottom margin on the row: the gap above (to
+          Сохранить) is the header row's `mb-3`; a bottom margin here would
+          dangle a tail between the bar and the form content below. */}
       {isMobile && (
-        <div className="mb-3 flex items-center gap-2 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <div className="flex items-center gap-2 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           <button type="button"
-            className="flex min-h-[44px] cursor-pointer items-center justify-center rounded-md border border-border bg-s2 px-3 font-ui text-[12px] font-medium text-t2 active:bg-s3"
+            className="flex min-h-9 cursor-pointer items-center justify-center rounded-md border border-border bg-s2 px-3 font-ui text-[12px] font-medium text-t2 active:bg-s3"
             style={{ whiteSpace: "nowrap" }}
             onClick={() => setMdViewMode(mdViewMode === "form" ? "md" : "form")}
             disabled={isSaving}
@@ -337,21 +390,21 @@ export function CharacterForm({
             {mdViewMode === "form" ? "✎ MD" : "📋 Form"}
           </button>
           <button type="button"
-            className="flex min-h-[44px] min-w-[44px] cursor-pointer items-center justify-center rounded-md border border-border bg-s2 text-t2 active:bg-s3 [&_svg]:h-5 [&_svg]:w-5"
+            className="flex min-h-9 min-w-9 cursor-pointer items-center justify-center rounded-md border border-border bg-s2 text-t2 active:bg-s3 [&_svg]:h-5 [&_svg]:w-5"
             onClick={() => setImportModalOpen(true)}
             disabled={isSaving}
           >
             {Ic.import()}
           </button>
           <button type="button"
-            className="flex min-h-[44px] min-w-[44px] cursor-pointer items-center justify-center rounded-md border border-border bg-s2 text-t2 active:bg-s3"
+            className="flex min-h-9 min-w-9 cursor-pointer items-center justify-center rounded-md border border-border bg-s2 text-t2 active:bg-s3"
             onClick={() => setMdImportOpen(true)}
             disabled={isSaving}
           >
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><path d="M4 2h6l4 4v8a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z"/><path d="M9 2v4h4"/><path d="M6 10h4"/></svg>
           </button>
           <button type="button"
-            className="flex min-h-[44px] min-w-[44px] cursor-pointer items-center justify-center rounded-md border border-border bg-s2 text-t2 active:bg-s3 [&_svg]:h-5 [&_svg]:w-5"
+            className="flex min-h-9 min-w-9 cursor-pointer items-center justify-center rounded-md border border-border bg-s2 text-t2 active:bg-s3 [&_svg]:h-5 [&_svg]:w-5"
             onClick={onExportJson}
             disabled={isSaving}
           >
@@ -359,7 +412,7 @@ export function CharacterForm({
           </button>
           {hasAvatar && (
             <button type="button"
-              className="flex min-h-[44px] min-w-[44px] cursor-pointer items-center justify-center rounded-md border border-border bg-s2 text-t2 active:bg-s3 [&_svg]:h-5 [&_svg]:w-5"
+              className="flex min-h-9 min-w-9 cursor-pointer items-center justify-center rounded-md border border-border bg-s2 text-t2 active:bg-s3 [&_svg]:h-5 [&_svg]:w-5"
               onClick={onExportPng}
               disabled={isSaving}
             >
@@ -367,14 +420,14 @@ export function CharacterForm({
             </button>
           )}
           <button type="button"
-            className="flex min-h-[44px] min-w-[44px] cursor-pointer items-center justify-center rounded-md border border-border bg-s2 text-t2 active:bg-s3 [&_svg]:h-5 [&_svg]:w-5"
+            className="flex min-h-9 min-w-9 cursor-pointer items-center justify-center rounded-md border border-border bg-s2 text-t2 active:bg-s3 [&_svg]:h-5 [&_svg]:w-5"
             onClick={onDuplicate}
             disabled={isSaving}
           >
             {Ic.copy()}
           </button>
           <button type="button"
-            className="flex min-h-[44px] min-w-[44px] cursor-pointer items-center justify-center rounded-md border border-border bg-s2 text-danger active:bg-danger/10 [&_svg]:h-5 [&_svg]:w-5"
+            className="flex min-h-9 min-w-9 cursor-pointer items-center justify-center rounded-md border border-border bg-s2 text-danger active:bg-danger/10 [&_svg]:h-5 [&_svg]:w-5"
             onClick={onDelete}
             disabled={isSaving}
           >
@@ -470,6 +523,22 @@ export function CharacterForm({
         onAfterActivate={onReset}
       />
 
+      {/* Avatar-in-prompt — describe via vision + toggle + description.
+          Reads from the snapshot character (out-of-band from BuildCharacterDraft
+          — see avatar-description-ui-gap.md). Mounted once, shared across
+          Form/MD modes and both avatar orientations, like VersionSwitcher. */}
+      <div className="mb-5">
+        <AvatarDescriptionField
+          kind="character"
+          includeAvatarInPrompt={includeAvatarInPrompt}
+          avatarDescription={avatarDescription}
+          hasAvatar={hasAvatar}
+          onPatch={handleAvatarPatch}
+          onDescribe={handleAvatarDescribe}
+          disabled={isSaving}
+        />
+      </div>
+
       {/* Gallery Accordion */}
       <GalleryAccordion characterId={characterId} />
 
@@ -505,7 +574,7 @@ export function CharacterForm({
               className={cn(
                 "inline-flex items-center gap-1 rounded border border-border bg-s2 px-2.5 py-[2px] font-ui text-xs text-t2 cursor-pointer transition-all",
                 idx === altGreetIdx && "border-accent bg-accent-dim text-accent-t",
-                isMobile && "min-h-[44px] px-3 py-1",
+                isMobile && "min-h-9 px-3 py-1",
               )}
               onClick={() => setAltGreetIdx(idx)}
             >
@@ -644,7 +713,7 @@ export function CharacterForm({
 
       {/* Footer */}
       <div className={cn("mt-2 flex flex-wrap items-center gap-2", isMobile && "pb-8")}>
-        <button type="button" className={cn("cursor-pointer rounded-md bg-transparent px-3 font-ui text-[calc(var(--ui-fs)-2px)] text-t3 transition-all hover:text-t1", isMobile && "min-h-[44px]")} disabled={isSaving || !isDirty} onClick={onReset}>{t("reset")}</button>
+        <button type="button" className={cn("cursor-pointer rounded-md bg-transparent px-3 font-ui text-[calc(var(--ui-fs)-2px)] text-t3 transition-all hover:text-t1", isMobile && "min-h-9")} disabled={isSaving || !isDirty} onClick={onReset}>{t("reset")}</button>
         <span className="font-ui text-[calc(var(--ui-fs)-3px)] text-t3">{isDirty ? t("unsaved_changes") : t("saved_state")}</span>
       </div>
 

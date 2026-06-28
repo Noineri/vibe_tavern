@@ -62,6 +62,24 @@
      стать "грязным". */
   --glass-bg:   oklch(0.25 0.02 290 / 45%);
   --glass-blur: 14px;
+  /* Sticky full-width bars (e.g. the CharacterForm action bar) must blend with
+     the page, not read as a panel. On opaque themes such bars use --page-bg /
+     --bg directly (see the self-falling var in CharacterForm.tsx); here we
+     override --bar-bg to the translucent glass fill so the lava blobs blur
+     through the sticky strip. */
+  --bar-bg:    var(--glass-bg);
+  /* The matching backdrop-filter string (see CharacterForm.tsx): blur reuses
+     --glass-blur, plus the same saturate/brightness as .glass-blur. Opaque
+     themes leave --bar-filter undefined so the bar falls back to `none` (no
+     compositing, no bleed through the opaque page bg). */
+  --bar-filter: blur(var(--glass-blur)) saturate(180%) brightness(110%);
+
+  /* On glass themes the sticky action bar's fill must come ONLY from the
+     feathered ::before pseudo (see styles.css `.glass-bar`), so the element's
+     own background is transparent — otherwise the element's translucent fill
+     would paint a hard rectangle behind the feathered pseudo. This unlayered
+     rule wins over the base `.glass-bar { background-color: var(--bg) }`. */
+  .glass-bar { background-color: transparent; }
 
   /* ─── Danger / Success / Info / Warning ─── */
   --danger:      oklch(0.435 0.4 18);

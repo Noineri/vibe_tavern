@@ -20,6 +20,7 @@ import { useBuildPanels } from "../../hooks/use-build-panels.js";
 
 import { useBootstrapStore } from "../../stores/api-actions/bootstrap-actions.js";
 import { useChatMeta } from "../../stores/chat-selectors.js";
+import { useSnapshotStore } from "../../stores/snapshot-store.js";
 import { useChatStore, useTraceHistory, type TraceHistoryStatus } from "../../stores/index.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
 
@@ -199,7 +200,17 @@ function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptPayl
   }
 
   function resetDraft(): void {
-    form.reset(characterDefaults(character));
+    // Read the FRESH character from the snapshot store, not the render-scope
+    // `character` closure. During a version switch, doActivate() awaits the
+    // activate action (which ingests the post-switch snapshot synchronously)
+    // and THEN calls this via onAfterActivate — but the `character` closure
+    // still holds the PRE-switch version, so resetting from it would paint
+    // the switched-away version's content onto the now-active one (the
+    // "edits jumped to the other version" bug). The store is the source of
+    // truth and is already updated by the time this runs. The closure is kept
+    // only as a fallback if the store has nothing yet.
+    const fresh = useSnapshotStore.getState().character;
+    form.reset(characterDefaults(fresh ?? character));
     setAvatarPreview(null);
   }
 
@@ -528,8 +539,23 @@ function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptPayl
   // ── Mobile: fullscreen editor (navigation via Rail) ──
   if (isMobile) {
     return (
-      <div className={cn("flex min-h-0 flex-1 flex-col", !isFullBleed && "p-4")}>
-        <div className={cn("flex-1 min-h-0", !isFullBleed && "overflow-y-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden")}>
+      <div className="flex min-h-0 flex-1 flex-col">
+        {/* The scroll container carries the padding itself (mirroring desktop's
+            `padding: 32px 40px`), NOT an outer wrapper. This is required so the
+            CharacterForm sticky action bar can pin flush under the Build tabs
+            header via a negative `top`: the negative offset pulls the bar up
+            into the scroll container's OWN padding region, which is inside the
+            overflow clip rectangle — so it is NOT clipped. If the padding lived
+            on this outer wrapper instead, the bar's negative top would escape
+            the scroll container and the top half (incl. Сохранить) would be
+            clipped, while a zero top would leave a gap between the bar and the
+            header above. See CharacterForm.tsx sticky-bar doc comment. */}
+        <div
+          className={cn(
+            "flex-1 min-h-0 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
+            isFullBleed ? "overflow-hidden" : "overflow-y-auto p-4",
+          )}
+        >
           {renderPanelContent()}
         </div>
       </div>

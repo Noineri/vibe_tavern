@@ -22,7 +22,7 @@ export async function createPersona(input: {
 
 export async function updatePersona(
   personaId: string,
-  input: {
+  input: Partial<{
     chatId?: ChatId;
     name: string;
     description: string;
@@ -34,7 +34,7 @@ export async function updatePersona(
     // Avatar-appearance prompt injection (MEDIA_GALLERY).
     includeAvatarInPrompt?: boolean;
     avatarDescription?: string | null;
-  },
+  }>,
 ): Promise<AppSnapshot> {
   const response = await client.api.personas[":personaId"].$patch({ param: { personaId }, json: input });
   const data = await unwrapRpc<AppSnapshot>(response);
