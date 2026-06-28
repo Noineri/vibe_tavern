@@ -7,6 +7,7 @@
  */
 
 import type { PromptAssemblyContext } from "@vibe-tavern/prompt-pipeline";
+import type { PronounForms } from "@vibe-tavern/domain";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -23,6 +24,7 @@ export interface ContextPersona {
   name: string;
   description: string;
   pronouns?: string;
+  pronounForms?: PronounForms | null;
 }
 
 export interface ContextLoreEntry {
@@ -89,6 +91,7 @@ export function toPipelinePersonas(
     name: p.name,
     description: p.description,
     pronouns: p.pronouns,
+    pronounForms: p.pronounForms ?? null,
   }));
 }
 

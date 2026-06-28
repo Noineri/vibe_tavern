@@ -25,7 +25,7 @@
  * row types stay backend-side and import these types back.
  */
 
-import type { CharacterId, ChatId, ModelSettingsOverlay } from "@vibe-tavern/domain";
+import type { CharacterId, ChatId, ModelSettingsOverlay, PronounForms } from "@vibe-tavern/domain";
 
 // ─── Provider ──────────────────────────────────────────────────────────
 
@@ -153,6 +153,8 @@ export interface PersonaRecord {
 	name: string;
 	description: string;
 	pronouns: string | null;
+	/** Structured pronoun declensions (custom case only); null for presets and unset. */
+	pronounForms: PronounForms | null;
 	avatarAssetId: string | null;
 	avatarFullAssetId: string | null;
 	avatarCropJson: string | null;

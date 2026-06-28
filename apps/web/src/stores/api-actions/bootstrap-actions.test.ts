@@ -88,6 +88,7 @@ function snapshot(id: string, personaName = "Persona"): AppSnapshot {
       avatarFullExt: null,
       description: "",
       pronouns: null,
+      pronounForms: null,
       avatarAssetId: null,
       avatarFullAssetId: null,
       avatarCropJson: null,
