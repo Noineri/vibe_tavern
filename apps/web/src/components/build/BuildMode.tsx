@@ -539,8 +539,23 @@ function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptPayl
   // ── Mobile: fullscreen editor (navigation via Rail) ──
   if (isMobile) {
     return (
-      <div className={cn("flex min-h-0 flex-1 flex-col", !isFullBleed && "p-4")}>
-        <div className={cn("flex-1 min-h-0", !isFullBleed && "overflow-y-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden")}>
+      <div className="flex min-h-0 flex-1 flex-col">
+        {/* The scroll container carries the padding itself (mirroring desktop's
+            `padding: 32px 40px`), NOT an outer wrapper. This is required so the
+            CharacterForm sticky action bar can pin flush under the Build tabs
+            header via a negative `top`: the negative offset pulls the bar up
+            into the scroll container's OWN padding region, which is inside the
+            overflow clip rectangle — so it is NOT clipped. If the padding lived
+            on this outer wrapper instead, the bar's negative top would escape
+            the scroll container and the top half (incl. Сохранить) would be
+            clipped, while a zero top would leave a gap between the bar and the
+            header above. See CharacterForm.tsx sticky-bar doc comment. */}
+        <div
+          className={cn(
+            "flex-1 min-h-0 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
+            isFullBleed ? "overflow-hidden" : "overflow-y-auto p-4",
+          )}
+        >
           {renderPanelContent()}
         </div>
       </div>
