@@ -1,9 +1,21 @@
 import { z } from "zod";
 
+/** Structured pronoun declensions (PR-2/PR-7). Populated only for the custom
+ *  pronoun case; presets resolve at prompt time via a lookup table, so this
+ *  stays null for he/him, she/her, they/them, it/its. */
+export const pronounFormsSchema = z.object({
+  subjective: z.string(),
+  objective: z.string(),
+  possessive: z.string(),
+  possessivePronoun: z.string(),
+  reflexive: z.string(),
+});
+
 export const createPersonaSchema = z.object({
   name: z.string().min(1),
   description: z.string().optional().default(""),
   pronouns: z.string().nullable().optional(),
+  pronounForms: pronounFormsSchema.nullable().optional(),
   defaultForNewChats: z.boolean().optional(),
 });
 
@@ -12,6 +24,7 @@ export const updatePersonaSchema = z.object({
   name: z.string().optional(),
   description: z.string().optional(),
   pronouns: z.string().nullable().optional(),
+  pronounForms: pronounFormsSchema.nullable().optional(),
   avatarAssetId: z.string().nullable().optional(),
   avatarFullAssetId: z.string().nullable().optional(),
   avatarCropJson: z.string().nullable().optional(),
@@ -53,15 +66,7 @@ export const personaExportVtSchema = z.object({
   name: z.string(),
   description: z.string(),
   pronouns: z.string().nullable(),
-  pronounForms: z
-    .object({
-      subjective: z.string(),
-      objective: z.string(),
-      possessive: z.string(),
-      possessivePronoun: z.string(),
-      reflexive: z.string(),
-    })
-    .nullable(),
+  pronounForms: pronounFormsSchema.nullable(),
   avatarDescription: z.string().nullable(),
   includeAvatarInPrompt: z.boolean(),
   defaultForNewChats: z.boolean(),
