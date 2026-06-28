@@ -108,6 +108,9 @@ export {
   deletePersona,
   duplicatePersona,
   setDefaultPersona,
+  exportPersona,
+  exportAllPersonas,
+  importPersonas,
 } from "./api/persona-api.js";
 
 // ─── Lorebook ───────────────────────────────────────────────────────────
