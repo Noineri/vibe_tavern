@@ -143,18 +143,18 @@ export function LinkBindingPopover({
   const addLabel = tooltipLabel || t("lore_link_targets");
 
   const pill = (target: LinkTarget, type: LinkBindingTargetType) => (
-    <div
-      key={`${type}:${target.id}`}
-      className={cn(
-        "flex cursor-pointer items-center gap-1 rounded-full border border-border bg-s2 pl-0.5 pr-2 text-t2 transition-colors hover:border-danger hover:text-danger select-none",
-        pillCls,
-      )}
-      onClick={() => toggle(type, target.id)}
-      title={`${target.name} — click to unlink`}
-    >
-      <AvatarDot target={target} size={pillAvatarSize} />
-      <span className="max-w-[80px] truncate">{target.name}</span>
-    </div>
+    <CustomTooltip key={`${type}:${target.id}`} content={`${target.name} — ${t("lore_click_to_unlink")}`}>
+      <div
+        className={cn(
+          "flex cursor-pointer items-center gap-1 rounded-full border border-border bg-s2 pl-0.5 pr-2 text-t2 transition-colors hover:border-danger hover:text-danger select-none",
+          pillCls,
+        )}
+        onClick={() => toggle(type, target.id)}
+      >
+        <AvatarDot target={target} size={pillAvatarSize} />
+        <span className="max-w-[80px] truncate">{target.name}</span>
+      </div>
+    </CustomTooltip>
   );
 
   const chip = (target: LinkTarget, type: LinkBindingTargetType, active: boolean) => (
