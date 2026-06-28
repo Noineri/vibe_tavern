@@ -79,7 +79,6 @@ export function PersonaModal(input: PersonaModalProps) {
   const [selectedId, setSelectedId] = useState<string | null>(input.activePersonaId);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [createdDraftPersonaId, setCreatedDraftPersonaId] = useState<string | null>(null);
-  const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
   const [avatarUploading, setAvatarUploading] = useState(false);
   const avatarInputRef = useRef<HTMLInputElement>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<{ id: string; error: string } | null>(null);
@@ -87,6 +86,17 @@ export function PersonaModal(input: PersonaModalProps) {
 
   // ── ST persona import state ──
   const [stImportPreview, setStImportPreview] = useState<StPersonaEntry[] | null>(null);
+  // PR-9: defer enabling the import tooltip until after the modal opening
+  // animation/settling. Radix Dialog.Content auto-focuses on open, and the
+  // global TooltipProvider has a short delayDuration — together they caused
+  // the tooltip to flash on modal mount. We enable the tooltip only after a
+  // short delay, so it opens on genuine hover/focus but never on mount.
+  const [importTooltipReady, setImportTooltipReady] = useState(false);
+  useEffect(() => {
+    if (!isOpen) { setImportTooltipReady(false); return; }
+    const t = setTimeout(() => setImportTooltipReady(true), 400);
+    return () => clearTimeout(t);
+  }, [isOpen]);
   const [stImportSelected, setStImportSelected] = useState<Set<string>>(new Set());
   const [stImporting, setStImporting] = useState(false);
   const [stImportProgress, setStImportProgress] = useState<{ current: number; total: number } | null>(null);
@@ -508,35 +518,51 @@ export function PersonaModal(input: PersonaModalProps) {
         ) : (
           /* ── DISPLAY ── */
           <>
-            {/* Avatar */}
-            <div
-              className={cn(
-                "flex shrink-0 items-center justify-center overflow-hidden rounded-full text-base shadow-inner ring-1 ring-white/5",
-                isMobile ? "h-[68px] w-[68px]" : "h-[88px] w-[88px] text-lg",
-                // Colored bg is a fallback for the initials only. An avatar
-                // <img> sits on top and PNG transparency would otherwise let
-                // the active-state accent bleed through — so always use the
-                // neutral --s3 behind an image. Active state is already shown
-                // by the card's border-accent + bg-accent-dim.
-                avatar
-                  ? "bg-s3"
-                  : isActive
-                    ? "bg-accent text-on-accent"
-                    : "bg-s3 text-t2",
+            {/* Avatar + default-persona star (PR-8) */}
+            <div className="flex shrink-0 flex-col items-center gap-1">
+              <div className="relative">
+                <div
+                  className={cn(
+                    "flex items-center justify-center overflow-hidden rounded-full text-base shadow-inner ring-1 ring-white/5",
+                    isMobile ? "h-[68px] w-[68px]" : "h-[88px] w-[88px] text-lg",
+                    avatar
+                      ? "bg-s3"
+                      : isActive
+                        ? "bg-accent text-on-accent"
+                        : "bg-s3 text-t2",
+                  )}
+                >
+                  {avatar
+                    ? <img src={avatar} alt="" className="h-full w-full object-cover" />
+                    : persona.name.slice(0, 1).toUpperCase()
+                  }
+                </div>
+                <CustomTooltip content={persona.defaultForNewChats ? t("default_persona_is") : t("set_default_persona")}>
+                  <button
+                    type="button"
+                    aria-label={t("set_default_persona")}
+                    className={cn(
+                      "absolute -right-1 -bottom-1 z-10 flex items-center justify-center rounded-full border border-border bg-surface transition-all hover:scale-110",
+                      isMobile ? "h-6 w-6" : "h-6 w-6",
+                      persona.defaultForNewChats ? "text-accent" : "text-t4 hover:text-accent",
+                    )}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (!persona.defaultForNewChats) void input.onSetDefaultPersona(persona.id);
+                    }}
+                  >
+                    <Icons.Star />
+                  </button>
+                </CustomTooltip>
+              </div>
+              {isMobile && persona.defaultForNewChats && (
+                <span className="font-ui text-[10px] text-t3">{t("persona_default_label")}</span>
               )}
-            >
-              {avatar
-                ? <img src={avatar} alt="" className="h-full w-full object-cover" />
-                : persona.name.slice(0, 1).toUpperCase()
-              }
             </div>
             {/* Info */}
             <div className="min-w-0 flex-1 overflow-hidden py-0.5">
               <div className="flex items-center gap-2">
                 <div className="font-ui text-[15px] font-semibold tracking-tight text-t1">{persona.name}</div>
-                {persona.defaultForNewChats && (
-                  <span className="rounded-sm bg-accent/15 px-1.5 py-0.5 font-ui text-[10px] font-medium tracking-wide text-accent-t uppercase">{t("default_persona_badge")}</span>
-                )}
               </div>
               {(() => {
                 // For the 'custom' discriminator, show a compact subjective/objective
@@ -554,7 +580,7 @@ export function PersonaModal(input: PersonaModalProps) {
               <div className={cn("font-ui text-[13px] leading-snug text-t3", isMobile ? "line-clamp-2" : "line-clamp-3")}>{persona.description}</div>
               <PersonaTokenBadge text={persona.description} />
             </div>
-            {/* Actions */}
+            {/* Actions: Edit + Copy + Delete (PR-10 — three-dots menu removed) */}
             <div className="relative flex shrink-0 items-start gap-0.5 self-start">
               <CustomTooltip content={t("persona_edit")}>
                 <div
@@ -564,43 +590,22 @@ export function PersonaModal(input: PersonaModalProps) {
                   <Icons.Edit />
                 </div>
               </CustomTooltip>
-              <div
-                className={cn("flex cursor-pointer items-center justify-center rounded-md text-t3 transition-colors hover:bg-s2 hover:text-t1 active:bg-s3", isMobile ? "min-h-[44px] min-w-[44px]" : "h-7 w-7")}
-                onClick={(e) => { e.stopPropagation(); setMenuOpenId(menuOpenId === persona.id ? null : persona.id); }}
-              >
-                <Icons.ellipsis />
-              </div>
-              {menuOpenId === persona.id && (
-                <>
-                  <div className="fixed inset-0 z-10" onClick={(e) => { e.stopPropagation(); setMenuOpenId(null); }} />
-                  <div className="glass-blur absolute right-0 top-full z-20 mt-1 min-w-[160px] overflow-hidden rounded-lg border border-border bg-glass-bg py-1 shadow-lg" onClick={(e) => e.stopPropagation()}>
-                    {!persona.defaultForNewChats && (
-                      <>
-                        <div
-                          className="flex min-h-[44px] cursor-pointer items-center gap-2.5 px-4 py-1.5 font-ui text-[14px] text-t2 transition-colors hover:bg-s2 active:bg-s3"
-                          onClick={(e) => { e.stopPropagation(); input.onSetDefaultPersona(persona.id); setMenuOpenId(null); }}
-                        >
-                          <Icons.Star /> {t("set_default_persona")}
-                        </div>
-                        <div className="mx-3 my-1 border-t border-border" />
-                      </>
-                    )}
-                    <div
-                      className="flex min-h-[44px] cursor-pointer items-center gap-2 px-4 font-ui text-[14px] text-t2 transition-colors hover:bg-s2 active:bg-s3"
-                      onClick={(e) => { e.stopPropagation(); input.onDuplicatePersona(persona.id); setMenuOpenId(null); }}
-                    >
-                      <Icons.Copy /> {t("duplicate")}
-                    </div>
-                    <div className="mx-3 my-1 border-t border-border" />
-                    <div
-                      className={cn("flex min-h-[44px] cursor-pointer items-center gap-2 px-4 font-ui text-[14px] transition-colors", isLastPersona ? "text-t4" : "text-danger hover:bg-danger-dim active:bg-danger/20")}
-                      onClick={(e) => { e.stopPropagation(); if (!isLastPersona) { handleDelete(persona.id); setMenuOpenId(null); } }}
-                    >
-                      <Icons.del /> {t("delete")}
-                    </div>
-                  </div>
-                </>
-              )}
+              <CustomTooltip content={t("duplicate")}>
+                <div
+                  className={cn("flex cursor-pointer items-center justify-center rounded-md text-t3 transition-colors hover:bg-s2 hover:text-t1 active:bg-s3", isMobile ? "min-h-[44px] min-w-[44px]" : "h-7 w-7")}
+                  onClick={(e) => { e.stopPropagation(); void input.onDuplicatePersona(persona.id); }}
+                >
+                  <Icons.Copy />
+                </div>
+              </CustomTooltip>
+              <CustomTooltip content={t("delete")}>
+                <div
+                  className={cn("flex cursor-pointer items-center justify-center rounded-md transition-colors active:bg-s3", isMobile ? "min-h-[44px] min-w-[44px]" : "h-7 w-7", isLastPersona ? "text-t4" : "text-t3 hover:bg-s2 hover:text-danger")}
+                  onClick={(e) => { e.stopPropagation(); handleDelete(persona.id); }}
+                >
+                  <Icons.del />
+                </div>
+              </CustomTooltip>
             </div>
           </>
         )}
@@ -702,7 +707,17 @@ export function PersonaModal(input: PersonaModalProps) {
         >
           <Icons.Plus /> {t("create_new_persona")}
         </div>
-        <CustomTooltip content={t("st_persona_import_hint")}>
+        {importTooltipReady ? (
+          <CustomTooltip content={t("st_persona_import_hint")}>
+            <button type="button"
+              className={cn("flex items-center justify-center gap-2 rounded-lg bg-s2 transition-all cursor-pointer font-ui font-medium", isMobile ? "min-h-[44px] px-4 text-[14px]" : "h-[44px] px-4 text-sm")}
+              style={{ color: "var(--t2)" }}
+              onClick={() => stFolderRef.current?.click()}
+            >
+              <Icons.Import /> {t("st_import_personas_btn")}
+            </button>
+          </CustomTooltip>
+        ) : (
           <button type="button"
             className={cn("flex items-center justify-center gap-2 rounded-lg bg-s2 transition-all cursor-pointer font-ui font-medium", isMobile ? "min-h-[44px] px-4 text-[14px]" : "h-[44px] px-4 text-sm")}
             style={{ color: "var(--t2)" }}
@@ -710,7 +725,7 @@ export function PersonaModal(input: PersonaModalProps) {
           >
             <Icons.Import /> {t("st_import_personas_btn")}
           </button>
-        </CustomTooltip>
+        )}
       </div>
       {/* ST persona import preview */}
       {stImportPreview && (
