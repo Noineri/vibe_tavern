@@ -8,6 +8,20 @@ export function createPersonaRoutes(runtime: PersonaRuntimeApi) {
     .get("/api/personas", async (c) => {
       return c.json(await runtime.listPersonas());
     })
+    // Bulk export MUST be registered before any /:personaId route so the static
+    // path is not swallowed by the param. Returns one JSON (ST backup or VT array).
+    .get("/api/personas/export", async (c) => {
+      const format = (c.req.query("format") === "vt" ? "vt" : "st") as "st" | "vt";
+      const { body, filename, contentType } = await runtime.exportAllPersonas(format);
+      c.header("Content-Disposition", `attachment; filename="${filename}"`);
+      c.header("Content-Type", contentType);
+      return c.json(body);
+    })
+    // Import/restore (POST, no param clash but kept with the export group).
+    .post("/api/personas/import", async (c) => {
+      const body = await c.req.json();
+      return c.json(await runtime.importPersonas(body), 201);
+    })
     .post("/api/personas", zValidator("json", schemas.createPersonaSchema), async (c) => {
       const body = c.req.valid("json");
       return c.json(await runtime.createPersona(body), 201);
@@ -58,6 +72,15 @@ export function createPersonaRoutes(runtime: PersonaRuntimeApi) {
     })
     .post("/api/personas/:personaId/avatar/describe", async (c) => {
       return c.json(await runtime.describePersonaAvatar(c.req.param("personaId")));
+    })
+    // Single export (after the avatar/describe param routes — no clash with bulk
+    // since bulk is registered first above).
+    .get("/api/personas/:personaId/export", async (c) => {
+      const format = (c.req.query("format") === "vt" ? "vt" : "st") as "st" | "vt";
+      const { body, filename, contentType } = await runtime.exportPersona(c.req.param("personaId"), format);
+      c.header("Content-Disposition", `attachment; filename="${filename}"`);
+      c.header("Content-Type", contentType);
+      return c.json(body);
     })
   ;
 }
