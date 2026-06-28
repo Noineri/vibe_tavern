@@ -111,6 +111,8 @@ export {
   exportPersona,
   exportAllPersonas,
   importPersonas,
+  listPersonaLorebooks,
+  listPersonaScripts,
 } from "./api/persona-api.js";
 
 // ─── Lorebook ───────────────────────────────────────────────────────────
