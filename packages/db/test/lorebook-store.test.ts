@@ -57,6 +57,63 @@ describe("LorebookStore.listLorebooksByScope", () => {
   });
 });
 
+describe("LorebookStore.listLorebooksLinkedToTarget", () => {
+  test("returns only M:N-linked lorebooks for the target (links-only, excludes FK-owned)", async () => {
+    const store = await mkStore();
+
+    // A global lorebook linked to persona_active via lorebook_links.
+    const linkedGlobal = await store.createLorebook({
+      name: "Linked global lorebook",
+      scopeType: "global",
+    });
+    // An unrelated global lorebook with no links — must not appear.
+    const unrelated = await store.createLorebook({
+      name: "Unrelated global lorebook",
+      scopeType: "global",
+    });
+    // A lorebook linked to a different persona — must not appear.
+    const linkedOther = await store.createLorebook({
+      name: "Linked to other persona",
+      scopeType: "global",
+    });
+    await store.setLinks(linkedGlobal.id, [
+      { targetType: "persona", targetId: "persona_active" },
+    ]);
+    await store.setLinks(linkedOther.id, [
+      { targetType: "persona", targetId: "persona_other" },
+    ]);
+
+    const result = await store.listLorebooksLinkedToTarget("persona", "persona_active");
+    const ids = result.map((lb) => lb.id);
+    expect(ids).toContain(linkedGlobal.id);
+    expect(ids).not.toContain(unrelated.id);
+    expect(ids).not.toContain(linkedOther.id);
+  });
+
+  test("returns empty array for a target with no links", async () => {
+    const store = await mkStore();
+    const result = await store.listLorebooksLinkedToTarget("character", "character_orphan");
+    expect(result).toEqual([]);
+  });
+
+  test("distinguishes character links from persona links for the same lorebook", async () => {
+    const store = await mkStore();
+    const lb = await store.createLorebook({ name: "Dual-linked", scopeType: "global" });
+    await store.setLinks(lb.id, [
+      { targetType: "character", targetId: "char_x" },
+      { targetType: "persona", targetId: "persona_y" },
+    ]);
+
+    const forChar = await store.listLorebooksLinkedToTarget("character", "char_x");
+    expect(forChar.map((l) => l.id)).toContain(lb.id);
+    const forPersona = await store.listLorebooksLinkedToTarget("persona", "persona_y");
+    expect(forPersona.map((l) => l.id)).toContain(lb.id);
+    // Cross-type leakage check: persona target must not pick up the character link.
+    const forPersonaWrongChar = await store.listLorebooksLinkedToTarget("persona", "char_x");
+    expect(forPersonaWrongChar.map((l) => l.id)).not.toContain(lb.id);
+  });
+});
+
 describe("LorebookStore.updateLorebook", () => {
   test("persists name and description changes", async () => {
     const store = await mkStore();
