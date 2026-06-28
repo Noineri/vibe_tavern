@@ -79,6 +79,41 @@ function PersonaTokenBadge({ text }: { text: string }) {
   return <span className="font-ui text-[11px] tabular-nums text-t3">{count.toLocaleString()} {t("tokens_label")}</span>;
 }
 
+// Empty baseline for the persona edit form. Kept at module scope so the
+// reference is stable across renders (matters for the `values` prop on
+// useForm — a new object literal each render would re-reset the form).
+const EMPTY_PERSONA_FORM: PersonaFormData = {
+  name: "",
+  description: "",
+  pronouns: null,
+  pfSubjective: "",
+  pfObjective: "",
+  pfPossessive: "",
+  pfPossessivePronoun: "",
+  pfReflexive: "",
+  avatarAssetId: null,
+  avatarFullAssetId: null,
+  avatarCropJson: null,
+  avatarPreview: null,
+};
+
+/** F10 — dirty-state check for the controlled persona form.
+ *  react-hook-form's `formState.isDirty` is unreliable here because the form
+ *  is fully controlled (value={watch} + onChange=setValue, no `register`):
+ *  per RHF docs, isDirty compares current values against a baseline and
+ *  setValue on unregistered fields doesn't update it predictably. Instead we
+ *  snapshot the values the form was reset to (startEdit / create-new) into
+ *  `baselineRef` and compare the live values against it. Pure function so it
+ *  can be unit-tested without a DOM. */
+export function computePersonaIsDirty(
+  current: PersonaFormData | null | undefined,
+  baseline: PersonaFormData | null,
+): boolean {
+  if (!baseline) return false;
+  if (!current) return false;
+  return JSON.stringify(current) !== JSON.stringify(baseline);
+}
+
 export function PersonaModal(input: PersonaModalProps) {
   const { t } = useT();
   const isOpen = useModalStore((s) => s.isPersonaModalOpen);
@@ -173,21 +208,20 @@ export function PersonaModal(input: PersonaModalProps) {
   // ── Avatar crop modal state ──
   const [pendingAvatar, setPendingAvatar] = useState<{ file: File; url: string } | null>(null);
 
+  // F10 — the form is fully controlled (value={watch} + onChange=setValue, no
+  // `register`), so react-hook-form's `formState.isDirty` can't reliably
+  // track edits: per RHF docs, isDirty compares current values against a
+  // baseline, and setValue on unregistered fields doesn't update it
+  // predictably (verified against RHF docs via context7). Rather than rely
+  // on the `values`-prop / `register` quirks for a controlled form that also
+  // does async avatar edits, compute isDirty directly: keep a snapshot of
+  // the values the form was reset to (startEdit / create-new), and compare
+  // the live values against it. `form.watch()` with no args subscribes to
+  // every field so this recomputes on any edit. */}
+  const baselineRef = useRef<PersonaFormData | null>(null);
+
   const form = useForm<PersonaFormData>({
-    defaultValues: {
-      name: "",
-      description: "",
-      pronouns: null,
-      pfSubjective: "",
-      pfObjective: "",
-      pfPossessive: "",
-      pfPossessivePronoun: "",
-      pfReflexive: "",
-      avatarAssetId: null,
-      avatarFullAssetId: null,
-      avatarCropJson: null,
-      avatarPreview: null,
-    },
+    defaultValues: EMPTY_PERSONA_FORM,
   });
 
   if (!isOpen) return null;
@@ -324,7 +358,7 @@ export function PersonaModal(input: PersonaModalProps) {
     // subjective field so nothing is silently dropped.
     const isCustom = !isPreset && !!persona.pronouns && persona.pronouns !== "";
     const forms = persona.pronounForms;
-    form.reset({
+    const next = {
       name: persona.name,
       description: persona.description,
       pronouns: isPreset ? (persona.pronouns ?? "") : isCustom ? "custom" : "",
@@ -337,7 +371,9 @@ export function PersonaModal(input: PersonaModalProps) {
       avatarFullAssetId: null,
       avatarCropJson: null,
       avatarPreview: null,
-    });
+    };
+    form.reset(next);
+    baselineRef.current = next;
   }
 
   function discardCreatedDraft(): void {
@@ -435,7 +471,6 @@ export function PersonaModal(input: PersonaModalProps) {
   }
 
   const editName = form.watch("name");
-  const isDirty = form.formState.isDirty;
   const editDescription = form.watch("description");
   const editPronouns = form.watch("pronouns");
   const editPfSubjective = form.watch("pfSubjective");
@@ -450,6 +485,14 @@ export function PersonaModal(input: PersonaModalProps) {
   const editDisplayAvatar = editAvatarPreview
     ?? (editingId ? resolveEntityAvatarUrl({ kind: "personas", id: editingId, avatarExt: editingPersona?.avatarExt ?? null, avatarAssetId: editAvatarAssetId, updatedAt: editingPersona?.updatedAt ?? null }) : null);
   const editAvatarCropJson = form.watch("avatarCropJson");
+
+  // F10 — isDirty computed against the snapshot captured at startEdit /
+  // create-new (see baselineRef above). `form.watch()` with no args subscribes
+  // to every field, so this recomputes on any edit regardless of which field
+  // changed — no reliance on RHF's register/dirtyFields internals, which
+  // don't reliably track this fully-controlled (no-register) form.
+  const allFormValues = form.watch();
+  const isDirty = computePersonaIsDirty(allFormValues, baselineRef.current);
 
   // Avatar-in-prompt fields live OUT-OF-BAND on the persona (excluded from
   // this modal's react-hook-form, same design as the character side — see
@@ -635,7 +678,7 @@ export function PersonaModal(input: PersonaModalProps) {
             {/* Save / Cancel */}
             <div className="flex gap-2">
               <button type="button"
-                className="min-h-[40px] cursor-pointer rounded-md bg-accent px-4 font-ui text-sm font-medium text-on-accent transition-all hover:brightness-110"
+                className="min-h-[40px] cursor-pointer rounded-md bg-accent px-4 font-ui text-sm font-medium text-on-accent transition-all hover:brightness-110 disabled:cursor-default disabled:opacity-45 disabled:hover:brightness-100"
                 disabled={input.isSaving || !isDirty || !(editName || "").trim()}
                 onClick={commitEdit}
               >
@@ -883,9 +926,9 @@ export function PersonaModal(input: PersonaModalProps) {
         </div>
       </div>
       {/* Footer: Create + ST Import */}
-      <div className={cn("flex shrink-0 items-center gap-2.5 border-t border-border", isMobile ? "px-4 py-3" : "px-5 py-3.5")}>
+      <div className={cn("flex shrink-0 items-center gap-2.5 border-t border-border", isMobile ? "flex-wrap px-4 py-3" : "px-5 py-3.5")}>
         <div
-          className={cn("flex flex-1 items-center justify-center gap-2 rounded-lg bg-s2 transition-all cursor-pointer font-ui font-medium", isMobile ? "min-h-[44px] text-[14px]" : "py-2.5 text-sm")}
+          className={cn("flex items-center justify-center gap-2 rounded-lg bg-s2 transition-all cursor-pointer font-ui font-medium", isMobile ? "min-h-[44px] w-full basis-full text-[14px]" : "flex-1 py-2.5 text-sm")}
           style={{ color: "var(--t2)" }}
           onClick={async () => {
             discardCreatedDraft();
@@ -894,7 +937,7 @@ export function PersonaModal(input: PersonaModalProps) {
               setCreatedDraftPersonaId(created.id);
               setSelectedId(created.id);
               setEditingId(created.id);
-              form.reset({
+              const next = {
                 name: t("new_persona_default"),
                 description: "",
                 pronouns: "",
@@ -907,7 +950,9 @@ export function PersonaModal(input: PersonaModalProps) {
                 avatarFullAssetId: null,
                 avatarCropJson: null,
                 avatarPreview: null,
-              });
+              };
+              form.reset(next);
+              baselineRef.current = next;
             }
           }}
         >
@@ -916,7 +961,7 @@ export function PersonaModal(input: PersonaModalProps) {
         {importTooltipReady ? (
           <CustomTooltip content={t("st_persona_import_hint")}>
             <button type="button"
-              className={cn("flex items-center justify-center gap-2 rounded-lg bg-s2 transition-all cursor-pointer font-ui font-medium", isMobile ? "min-h-[44px] px-4 text-[14px]" : "h-[44px] px-4 text-sm")}
+              className={cn("flex items-center justify-center gap-2 rounded-lg bg-s2 transition-all cursor-pointer font-ui font-medium", isMobile ? "min-h-[44px] flex-1 px-2 text-[14px]" : "h-[44px] px-4 text-sm")}
               style={{ color: "var(--t2)" }}
               onClick={() => stFileRef.current?.click()}
             >
@@ -925,7 +970,7 @@ export function PersonaModal(input: PersonaModalProps) {
           </CustomTooltip>
         ) : (
           <button type="button"
-            className={cn("flex items-center justify-center gap-2 rounded-lg bg-s2 transition-all cursor-pointer font-ui font-medium", isMobile ? "min-h-[44px] px-4 text-[14px]" : "h-[44px] px-4 text-sm")}
+            className={cn("flex items-center justify-center gap-2 rounded-lg bg-s2 transition-all cursor-pointer font-ui font-medium", isMobile ? "min-h-[44px] flex-1 px-2 text-[14px]" : "h-[44px] px-4 text-sm")}
             style={{ color: "var(--t2)" }}
             onClick={() => stFileRef.current?.click()}
           >
@@ -934,7 +979,7 @@ export function PersonaModal(input: PersonaModalProps) {
         )}
         <CustomTooltip content={t("st_folder_import_hint")}>
           <button type="button"
-            className={cn("flex items-center justify-center gap-2 rounded-lg bg-s2 transition-all cursor-pointer font-ui font-medium", isMobile ? "min-h-[44px] px-3 text-[14px]" : "h-[44px] px-3 text-sm")}
+            className={cn("flex items-center justify-center gap-2 rounded-lg bg-s2 transition-all cursor-pointer font-ui font-medium", isMobile ? "min-h-[44px] flex-1 px-2 text-[14px]" : "h-[44px] px-3 text-sm")}
             style={{ color: "var(--t2)" }}
             onClick={() => stFolderRef.current?.click()}
           >

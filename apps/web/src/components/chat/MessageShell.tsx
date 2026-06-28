@@ -1,9 +1,10 @@
-import { type ReactNode, useState, useRef, useEffect } from "react";
+import { type ReactNode, useState } from "react";
 import { createPortal } from "react-dom";
 import { cn } from "../../lib/cn.js";
 import { resolveModelLabel } from "../../lib/model-resolve.js";
 import { initials } from "../layout/app-shell-helpers.js";
 import { Icons } from "../shared/icons.js";
+import { ActionSheet, type ActionSheetItem } from "../shared/ActionSheet.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
 import { useT } from "../../i18n/context.js";
 import {
@@ -162,7 +163,6 @@ export function MessageShell(props: MessageShellProps) {
   const { t } = useT();
   const isMobile = useIsMobile();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const mobileMenuRef = useRef<HTMLDivElement>(null);
 
   // Build slot context
   const slotCtx: MessageSlotContext = {
@@ -258,53 +258,57 @@ export function MessageShell(props: MessageShellProps) {
             {/* Greeting variant controls */}
             {greetingControls}
 
-            {/* Mobile: three-dot action menu */}
+            {/* Mobile: three-dot action menu.
+                F11 — position mirrors the AI row by screen edge. The AI row
+                is not reversed, so `ml-auto` (margin-left:auto) absorbs the
+                free space to the LEFT of the dots, pinning them to the right
+                edge. The user row uses `flex-row-reverse` (avatar on the
+                right); there `ml-auto` would keep the dots near the avatar, so
+                `mr-auto` (margin-right:auto) is used instead — it absorbs the
+                free space to the RIGHT of the dots, pushing them to the LEFT
+                edge (the near-thumb side). Auto margins are physical, so this
+                hits the intended screen edge regardless of flex direction. */}
             {isMobile && !isEditing && !isGenerating && (
-              <div className="relative ml-auto" ref={mobileMenuRef}>
+              <div className={cn("relative", isUser ? "mr-auto" : "ml-auto")}>
                 <div
                   className="flex min-h-[44px] min-w-[44px] cursor-pointer items-center justify-center rounded text-t3 transition-colors active:bg-s2"
                   onClick={() => setMobileMenuOpen(v => !v)}
                 >
                   <Icons.Ellipsis />
                 </div>
-                {mobileMenuOpen && createPortal(
-                  <div
-                    style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(0,0,0,0.2)' }}
-                    onClick={() => setMobileMenuOpen(false)}
-                  >
-                    <div
-                      style={{
-                        position: 'absolute',
-                        top: ((mobileMenuRef.current?.getBoundingClientRect()?.bottom ?? 0) + 4) + 'px',
-                        right: (window.innerWidth - (mobileMenuRef.current?.getBoundingClientRect()?.right ?? 0)) + 'px',
-                        minWidth: 160,
-                        background: 'var(--glass-bg)',
-                        borderRadius: 8,
-                        border: '1px solid var(--border)',
-                        boxShadow: '0 4px 16px rgba(0,0,0,0.5)',
-                        overflow: 'hidden',
-                      } as React.CSSProperties}
-                      className="glass-blur"
-                      onClick={e => e.stopPropagation()}
-                    >
-                      <div className="flex items-center gap-2.5 min-h-[44px] px-4 text-[calc(var(--ui-fs)-1px)] text-t1 active:bg-s2 cursor-pointer" onClick={() => { setMobileMenuOpen(false); actions.onCopy(); }}>
-                        {copied ? <Icons.Check /> : <Icons.Copy />}<span className={copied ? 'text-success-text' : ''}>{copied ? t("copied") : copyLabel}</span>
-                      </div>
-                      <div className="flex items-center gap-2.5 min-h-[44px] px-4 text-[calc(var(--ui-fs)-1px)] text-t1 active:bg-s2 cursor-pointer" onClick={() => { setMobileMenuOpen(false); actions.onEdit(); }}>
-                        <Icons.Edit />{editLabel}
-                      </div>
-                      <div style={{ borderTop: '1px solid var(--border)' }}>
-                        <div className="flex items-center gap-2.5 min-h-[44px] px-4 text-[calc(var(--ui-fs)-1px)] text-danger active:bg-danger/20 cursor-pointer" onClick={() => { setMobileMenuOpen(false); actions.onDelete(); }}>
-                          <Icons.Trash />{deleteLabel}
-                        </div>
-                      </div>
-                    </div>
-                  </div>,
-                  document.body
-                )}
               </div>
             )}
           </div>
+
+          {/* F12 — Mobile message actions: shared bottom sheet instead of a
+              bespoke getBoundingClientRect popover. Items mirror the old
+              inline rows (Copy/Edit/Delete); the copy row swaps its icon +
+              label to the "copied" state via the `copied` prop. */}
+          {isMobile && (
+            <ActionSheet
+              open={mobileMenuOpen}
+              onClose={() => setMobileMenuOpen(false)}
+              title={t("message_actions_title")}
+              items={[
+                {
+                  icon: copied ? <Icons.Check /> : <Icons.Copy />,
+                  label: copied ? t("copied") : copyLabel,
+                  action: actions.onCopy,
+                },
+                {
+                  icon: <Icons.Edit />,
+                  label: editLabel,
+                  action: actions.onEdit,
+                },
+                {
+                  icon: <Icons.Trash />,
+                  label: deleteLabel,
+                  danger: true,
+                  action: actions.onDelete,
+                },
+              ] satisfies ActionSheetItem[]}
+            />
+          )}
 
           {/* ── Slot: after_reasoning ── */}
           {hasAfterReasoning && slotsAfterReasoning.map((s) => (

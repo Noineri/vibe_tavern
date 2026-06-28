@@ -20,7 +20,7 @@ function SaveBar({ dirty, saveState, onSave, onReset, label, className }: SaveBa
       {dirty && <span>{t('unsaved_changes')}</span>}
       <button type="button"
         className={cn(
-          'h-[37px] bg-accent text-on-accent rounded-md text-[calc(var(--ui-fs)-2px)] font-medium font-ui cursor-pointer transition-filter hover:brightness-110 px-[21px]',
+          'h-[37px] bg-accent text-on-accent rounded-md text-[calc(var(--ui-fs)-2px)] font-medium font-ui cursor-pointer transition-filter hover:brightness-110 px-[21px] disabled:cursor-default disabled:opacity-45 disabled:hover:brightness-100',
           isSaved && '!bg-success-dim !text-success-text',
           isSaving && 'opacity-70 !cursor-default',
         )}
@@ -50,7 +50,7 @@ export function SaveButton({ dirty, saveState, onClick, label }: SaveButtonProps
   return (
     <button type="button"
       className={cn(
-        'h-[37px] bg-accent text-on-accent rounded-md text-[calc(var(--ui-fs)-2px)] font-medium font-ui cursor-pointer transition-filter hover:brightness-110 px-[21px]',
+        'h-[37px] bg-accent text-on-accent rounded-md text-[calc(var(--ui-fs)-2px)] font-medium font-ui cursor-pointer transition-filter hover:brightness-110 px-[21px] disabled:cursor-default disabled:opacity-45 disabled:hover:brightness-100',
         isSaved && '!bg-success-dim !text-success-text',
         isSaving && 'opacity-70 !cursor-default',
       )}

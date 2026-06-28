@@ -489,7 +489,7 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
               className={cn("flex cursor-pointer items-center gap-1 font-ui text-t3 transition-all hover:text-t1", isMobile ? "text-[12px]" : "text-[calc(var(--ui-fs)-2px)]")}
               onClick={handleDuplicate}
             >
-              <Icons.Copy /> {t("duplicate_preset_btn")}
+              <Icons.Copy /> {!isMobile && t("duplicate_preset_btn")}
             </span>
             )}
             {activePreset && (
@@ -497,7 +497,7 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
               className={cn("flex cursor-pointer items-center gap-1 font-ui text-t3 transition-all hover:text-t1", isMobile ? "text-[12px]" : "text-[calc(var(--ui-fs)-2px)]")}
               onClick={handleExportPreset}
             >
-              <Icons.Download /> {t("export_preset_btn")}
+              <Icons.Download /> {!isMobile && t("export_preset_btn")}
             </span>
             )}
             {activePreset && input.presets.length > 1 && (
@@ -505,7 +505,7 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
                 className={cn("flex cursor-pointer items-center gap-1 font-ui text-t3 transition-all hover:text-t1", isMobile ? "text-[12px]" : "text-[calc(var(--ui-fs)-2px)]")}
                 onClick={() => setConfirmDeleteOpen(true)}
               >
-                <Icons.Trash /> {t("delete_preset")}
+                <Icons.Trash /> {!isMobile && t("delete_preset")}
               </span>
             )}
             <div className="ml-auto flex min-w-0 items-center gap-2.5">
