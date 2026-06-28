@@ -7,6 +7,7 @@ import { SegmentedControl } from "../shared/SegmentedControl.js";
 import { DropdownSelect } from "../shared/DropdownSelect.js";
 import { ActionSheet } from "../shared/ActionSheet.js";
 import { DestructiveConfirmModal } from "../shared/destructive-confirm-modal.js";
+import { PromptModal } from "../shared/PromptModal.js";
 import { toast } from "sonner";
 import {
   activateCharacterVersionAction,
@@ -59,6 +60,8 @@ export function VersionSwitcher({ characterId, isDirty, disabled, onAfterActivat
   // Inline rename.
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
+  // New-version creation modal (replaces the old window.prompt confirm).
+  const [newVersionOpen, setNewVersionOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -158,8 +161,7 @@ export function VersionSwitcher({ characterId, isDirty, disabled, onAfterActivat
   }
 
   function promptNewVersion(): void {
-    const title = window.prompt(t("version_new_prompt"), t("version_new_title") || NEW_VERSION_DEFAULT);
-    if (title?.trim()) void handleBranch(title.trim());
+    setNewVersionOpen(true);
   }
 
   const renameAffordances = !isMobile && !useDropdown ? (
@@ -197,11 +199,22 @@ export function VersionSwitcher({ characterId, isDirty, disabled, onAfterActivat
     />
   ) : null;
 
+  const newVersionModal = newVersionOpen ? (
+    <PromptModal
+      title={t("version_branch")}
+      label={t("version_new_prompt")}
+      defaultValue={t("version_new_title") || NEW_VERSION_DEFAULT}
+      confirmLabel={t("version_branch")}
+      onConfirm={(title) => { setNewVersionOpen(false); void handleBranch(title); }}
+      onCancel={() => setNewVersionOpen(false)}
+    />
+  ) : null;
+
   // ── Mobile: button → ActionSheet ─────────────────────────────────────────
   if (isMobile) {
     return (
       <>
-        <div className="flex items-center gap-2">
+        <div className="mb-5 flex items-center gap-2">
           <button type="button"
             className="flex min-h-[36px] flex-1 cursor-pointer items-center gap-2 rounded-md border border-border bg-s2 px-3 text-[13px] text-t1 transition-colors hover:border-accent disabled:opacity-40"
             onClick={() => setSheetOpen(true)}
@@ -232,6 +245,7 @@ export function VersionSwitcher({ characterId, isDirty, disabled, onAfterActivat
         />
         {switchConfirm}
         {deleteConfirm}
+        {newVersionModal}
       </>
     );
   }
@@ -240,7 +254,7 @@ export function VersionSwitcher({ characterId, isDirty, disabled, onAfterActivat
   if (useDropdown) {
     return (
       <Wrap disabled={!!disabled || busy || loading}>
-        <div className="flex items-center gap-2">
+        <div className="mb-5 flex items-center gap-2">
           <DropdownSelect
             value={active?.id ?? ""}
             options={versions.map((v) => ({ id: v.id, label: labelFor(v) }))}
@@ -253,6 +267,7 @@ export function VersionSwitcher({ characterId, isDirty, disabled, onAfterActivat
         </div>
         {deleteConfirm}
         {switchConfirm}
+        {newVersionModal}
       </Wrap>
     );
   }
@@ -261,7 +276,7 @@ export function VersionSwitcher({ characterId, isDirty, disabled, onAfterActivat
   const segments = versions.map((v) => ({ value: v.id, label: labelFor(v) }));
   return (
     <Wrap disabled={!!disabled || busy || loading}>
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="mb-5 flex flex-wrap items-center gap-2">
         <SegmentedControl
           value={active?.id ?? ""}
           options={segments}
@@ -275,6 +290,7 @@ export function VersionSwitcher({ characterId, isDirty, disabled, onAfterActivat
       {renameAffordances}
       {deleteConfirm}
       {switchConfirm}
+      {newVersionModal}
     </Wrap>
   );
 }
