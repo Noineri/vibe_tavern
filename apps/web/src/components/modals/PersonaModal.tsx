@@ -97,6 +97,23 @@ export function PersonaModal(input: PersonaModalProps) {
     const t = setTimeout(() => setImportTooltipReady(true), 400);
     return () => clearTimeout(t);
   }, [isOpen]);
+
+  // PR-11: auto-scroll to a newly created persona. One-shot scrollIntoView
+  // (NOT the MessageList rAF bottom-pinning pattern — this is a static list).
+  // Fires when createdDraftPersonaId transitions to a value and that card's
+  // ref has mounted. Cleared once scrolled so re-renders don't re-trigger.
+  const cardRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+  const [scrolledToCreated, setScrolledToCreated] = useState<string | null>(null);
+  useEffect(() => {
+    if (createdDraftPersonaId && createdDraftPersonaId !== scrolledToCreated) {
+      const el = cardRefs.current.get(createdDraftPersonaId);
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        setScrolledToCreated(createdDraftPersonaId);
+      }
+    }
+    if (!createdDraftPersonaId) setScrolledToCreated(null);
+  }, [createdDraftPersonaId, scrolledToCreated, input.personas]);
   const [stImportSelected, setStImportSelected] = useState<Set<string>>(new Set());
   const [stImporting, setStImporting] = useState(false);
   const [stImportProgress, setStImportProgress] = useState<{ current: number; total: number } | null>(null);
@@ -389,6 +406,10 @@ export function PersonaModal(input: PersonaModalProps) {
     return (
       <div
         key={persona.id}
+        ref={(el) => {
+          if (el) cardRefs.current.set(persona.id, el);
+          else cardRefs.current.delete(persona.id);
+        }}
         className={cn(
           "group flex cursor-pointer items-start gap-4 rounded-xl border p-4 transition-all duration-200",
           isMobile ? "active:bg-s2" : "hover:bg-s2",
