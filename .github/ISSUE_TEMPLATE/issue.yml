@@ -13,8 +13,8 @@ body:
           description: "Vibe Tavern version, browser and installation method"
           value: |
               - **Version:** 1.0.0
-               - **Browser:** Firefox
-               - **Installation method:** windows zip archive
+              - **Browser:** Firefox
+              - **Installation method:** windows zip archive
       validations:
           required: true
 
@@ -23,9 +23,9 @@ body:
           label: "Step 2. Steps to reproduce, expected and actual result"
           value: |
               1. Go to page X
-               2. Press button Y
+              2. Press button Y
 
-               Expected 1, got 2
+              Expected 1, got 2
       validations:
           required: true
 
