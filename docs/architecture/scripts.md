@@ -50,7 +50,7 @@ Chat-scoped scripts stay 1:1 via the `chatId` FK — `script_links` supports `ch
 
 ### Per-chat state (`chats.script_state_json`)
 
-`Record<scriptId, Record<string, unknown>>` serialised as JSON. Each script gets its **own bucket** keyed by id; buckets are isolated — script A cannot read script B's writes via `context.state` (they communicate only through the shared mutable channels: `character.personality`/`scenario` and `injectMessage`). Updated after every turn by `prompt-resolver.ts`. This is what makes the HP-tracker, dice-roller cache, and turn-counters survive across turns and server restarts.
+`Record<scriptId, Record<string, unknown>>` serialised as JSON. Each script gets its **own bucket** keyed by id; buckets are isolated — script A cannot read script B's writes via `context.state`. Cross-script communication happens through `context.shared` (turn-scoped, not persisted) and the shared mutable channels `character.personality`/`scenario` and `injectMessage`. Updated after every turn by `prompt-resolver.ts`. This is what makes the HP-tracker, dice-roller cache, and turn-counters survive across turns and server restarts.
 
 ---
 
@@ -97,15 +97,20 @@ The script's only handle on the world. Built per-script from the input. All chan
 - `set(key, value)`
 - `increment(key, amount = 1)` — adds to an existing number (or 0 if absent), returns the new total
 
-**Utility context** — pure helpers.
-- `random()` — `Math.random()`
-- `randomInt(min, max)` — inclusive integer
-- `pick(arr)` — uniform random element
-- `weightedPick(items)` — each item has a `weight` field; weighted random selection
+**`context.persona`** — the active persona (`{ name, description }`), `Object.freeze`'d and read-only. Absent (undefined) when no persona is resolved for the chat, so persona-branching scripts can detect the no-persona case. Mirrors the protection on `context.lore`. Exposed so a script can react differently to different `{{user}}` identities.
+
+**`context.shared`** — a turn-scoped key/value bag shared across all scripts in the same turn, NOT persisted across turns (distinct from `context.state`). Same shape as `state`: `get(key, defaultValue?)`, `set(key, value)`, `increment(key, amount = 1)`. Intended for cross-script communication: script A writes `context.shared.set('mood', 'angry')`, script B (running later in the same turn) reads it via `context.shared.get('mood')`. Because the channel is order-dependent, it ships with the drag-reorder UI (`sortOrder` editor in the build panel) so run order is user-controllable. Not a recursion mechanism — no auto-activation happens here, just plain turn-scoped memory.
+
+**Utility context** — pure helpers, all seeded by a deterministic PRNG (see [Engine Invariants](#engine-invariants) §7).
+- `random()` — seeded float in `[0, 1)`, reproducing the same sequence when the turn (message count) is the same
+- `randomInt(min, max)` — inclusive integer, seeded
+- `pick(arr)` — uniform random element, seeded
+- `weightedPick(items)` — each item has a `weight` field; weighted random selection, seeded
+- Bare `Math.random()` is also available in the sandbox globals for scripts that explicitly want nondeterminism.
 
 ### Sandbox globals (allowlist)
 
-The VM context exposes only: `Math`, `JSON`, `Date`, `parseInt`, `parseFloat`, `isNaN`, `isFinite`, `Array`, `Object`, `String`, `Number`, `Boolean`, `RegExp`, `Map`, `Set`, `Error`, and a silenced `console` (`log`/`warn`/`error` are no-ops so debug calls don't pollute server logs). **`process`, `require`, `globalThis`, `fetch`, and the filesystem are NOT exposed** — scripts cannot exfiltrate data or touch the host. See [Engine Invariants](#engine-invariants).
+The VM context exposes only: `Math`, `JSON`, `Date`, `parseInt`, `parseFloat`, `isNaN`, `isFinite`, `Array`, `Object`, `String`, `Number`, `Boolean`, `RegExp`, `Map`, `Set`, `Error`, and a **captured** `console` (`log`/`warn`/`error` push `{ level, args }` entries into a per-script buffer, surfaced in the test panel's Console channel and in the trace's Script Runs accordion). **`process`, `require`, `globalThis`, `fetch`, and the filesystem are NOT exposed** — scripts cannot exfiltrate data or touch the host. See [Engine Invariants](#engine-invariants).
 
 ---
 
@@ -131,9 +136,9 @@ Consequence for users: a script that decrements HP then throws does not get its 
 
 The HP-tracker template does `const hp = context.state.get('hp', 100)`. Before the 2026-06-29 fix, the sandbox's `get` took one parameter and the default was silently ignored — `hp` came back `undefined`, `undefined - dmg = NaN`, and the tracker produced `[HP] NaN/100` on first run. Now `get` accepts `(key, defaultValue?)` and returns the default when the key is undefined. Pinned by the REGRESSION test in `script-templates.test.ts — hp.js`.
 
-### 4. Per-script state is isolated
+### 4. Per-script state is isolated (but `context.shared` is shared)
 
-Each script gets its own bucket from `scriptState[script.id]`. Script A's `state.set('x', 1)` is **not** visible to script B's `context.state.get('x')` — they communicate only via the shared mutable channels (`character.*`, `injectMessage`). Cross-script coupling through `state` would be a silent contract change. Pinned in `executeScripts — execution order > state written by an earlier script is NOT visible to a later script`.
+Each script gets its own bucket from `scriptState[script.id]`. Script A's `state.set('x', 1)` is **not** visible to script B's `context.state.get('x')`. The only cross-script channels are `context.shared` (turn-scoped, not persisted), and the shared mutable channels (`character.*`, `injectMessage`). Cross-script coupling through `state` would be a silent contract change. Pinned in `executeScripts — execution order > state written by an earlier script is NOT visible to a later script` and `executeScripts — context.shared > shared does NOT leak into per-script state buckets`.
 
 ### 5. Errors do not abort siblings
 
@@ -142,6 +147,10 @@ A throwing/syntax-erroring/timing-out script is captured to `errors[]` and the l
 ### 6. The 5s VM timeout is the only runaway-code defence
 
 `runInNewContext(..., { timeout: 5000 })` kills infinite loops. There is no instruction-count limit; the wall-clock timeout is the sole backstop. Pinned in `executeScripts — error handling > an infinite loop is killed by the 5s VM timeout`.
+
+### 7. RNG is seeded per turn (deterministic regeneration)
+
+`context.random()`, `randomInt()`, `pick()`, and `weightedPick()` draw from a mulberry32 PRNG seeded from the message count (turn index). Regenerating the same turn reproduces the same sequence, so dice rolls and random picks do not flake on regen. A different turn (different message count) re-sows. Bare `Math.random()` is still available for scripts that explicitly want nondeterminism. Pinned in `executeScripts — context utilities > seeded RNG reproduces the same sequence` and `a different turn re-sows the RNG`.
 
 ---
 
@@ -161,7 +170,7 @@ Character mutations are **non-persistent** — the DB row is not touched, only t
 
 ### Trace data
 
-`prompt-assembly-service.ts` builds a `scriptInjections` trace entry when the script step had **any** observable effect (errors, personality/scenario mutation, or injected messages). The trace row carries the mutated personality/scenario, the injected messages, and any error string — so the prompt trace explains what scripts did this turn.
+`prompt-assembly-service.ts` builds **one `scriptInjections` trace row per script that ran** (not a single synthetic pipeline row), each carrying the script's own `scriptId`/`scriptName`, run status (`ran`/`errored`), personality/scenario mutations, injected messages, console capture, and error + source line. A run gets a trace row when it produced any observable effect (mutation / injection / console) or errored — no-op runs are omitted. The UI renders these as the **Script Runs** accordion above the regular prompt trace (`TracePayloadView`). Older traces persisted before this change carry a single `'__pipeline'` synthetic row; the UI degrades gracefully (renders it as a generic pipeline entry).
 
 ---
 
@@ -206,11 +215,12 @@ Editor tabs (`listByScope`) also union FK ∪ junction for character/persona sco
 
 `apps/web/src/components/build/editors/ScriptEditor.tsx` (`useScriptPanel` hook). Follows the project's progressive-disclosure pattern.
 
-- **List view** — scope-filtered script list with ON/OFF badges.
+- **List view** — scope-filtered script list with ON/OFF badges and **drag-reorder** (`@dnd-kit/core + sortable + DragOverlay`, mirroring `LoreEntryList`). Desktop drags the whole card; mobile uses a ≡ handle. Reorder persists `sortOrder` per affected script via `updateScript`.
 - **Editor panel** — name, description, enabled toggle, delete; the `LinkBindingPopover` for forward binding (script → characters/personas); a `CodeEditor` for the body; a templates row; a test panel.
-- **API Reference** — an in-panel collapsible that documents `context.chat.*`, `context.character.*`, `context.state.*`, `context.lore.*`. This is the canonical user-facing API doc; keep it in sync with `script-sandbox.ts` when adding context fields.
+- **API Reference** — an in-panel collapsible that documents `context.chat.*`, `context.character.*`, `context.state.*`, `context.lore.*`, `context.persona.*`, `context.shared.*`, and the seeded `context.random*` utilities. This is the canonical user-facing API doc; keep it in sync with `script-sandbox.ts` when adding context fields.
 - **AI Assistant** — `AiAssistantModal` in `script` mode can generate/replace script code.
-- **Test panel** — runs the script against a simulated `lastMessage` and renders five independent output channels: errors, personality output, scenario output, injected messages (with role badges), and the resulting script state (JSON). Independent rendering matters: a script that injects a dice roll but touches no personality field still shows its output, rather than the old "no result" placeholder.
+- **Test panel** — runs the script against simulated inputs and renders seven output channels: errors, personality output, scenario output, injected messages (with role badges), **console** (captured `log`/`warn`/`error` entries, color-coded), script state (JSON), and **shared state** (the final turn-scoped bucket). The input is a multi-line textarea (one message per line, so `messageCount` is realistic); a collapsible "Advanced" section exposes character name/personality/scenario and persona name/description fields for testing template branches. Independent rendering matters: a script that injects a dice roll or only writes to console but touches no personality field still shows its output, rather than the old "no result" placeholder.
+- **Trace Script Runs accordion** — `TracePayloadView` renders a **Script Runs** accordion **above** the regular prompt-trace payload, showing per-script results (ran/errored status, mutations, injected messages, console, error + line) for the last turn. This is where runtime errors surface — a script that throws on every turn no longer produces a silent regression.
 
 ### Templates (`script-templates/*.js`)
 
@@ -224,7 +234,7 @@ Eight shipped templates, each a standalone `.js` file loaded as a raw string via
 | `lorebook` | Keyword→backstory, with a trust-gated secret at > 15 messages |
 | `advanced_lore` | Mini lore-engine: priorities, `notWith`/`requiresAny`/`requiresAll` filters, recursive trigger activation |
 | `hp` | Persistent HP with damage/heal; `state.get('hp', 100)` is the canonical use of the default-arg fix |
-| `dice` | `/roll dN[+M][ adv|dis]` parser; output via `injectMessage`; per-message cached for stable regen |
+| `dice` | `/roll dN[+M][ adv|dis]` parser; output via `injectMessage`; per-message cached for stable regen (the cache predates the seeded RNG — the seeded `context.random*` now provides determinism at the engine level, making the per-template cache unnecessary for new scripts) |
 | `random` | 5%-chance ambient event each turn |
 
 Every template is covered by `services/api/test/script-templates.test.ts`, which loads the bodies via `Bun.file()` and runs them through the real sandbox. This is the regression net for the engine invariants (the HP and dice tests are explicitly tagged REGRESSION).
