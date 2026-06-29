@@ -6,17 +6,18 @@
 
 **Современная локальная платформа для AI-ролплея**
 
-[![Version](https://img.shields.io/github/v/release/Noineri/vibe_tavern)](https://github.com/Noineri/vibe_tavern/releases)
-[![License](https://img.shields.io/github/license/Noineri/vibe_tavern)](LICENSE)
-[![Downloads](https://img.shields.io/github/downloads/Noineri/vibe_tavern/total)](https://github.com/Noineri/vibe_tavern/releases)
+**Windows** (один `.exe`) • **Linux** • **Docker** • **Android** (Termux APK)
 
-![Vibe Tavern Demo](./assets/main.png)
+![Release](https://www.shieldcn.dev/github/release/Noineri/vibe_tavern.svg?size=sm&theme=zinc)
+![GitHub Downloads](https://shieldcn.dev/github/downloads/Noineri/vibe_tavern.svg?variant=secondary)
+![Watchers](https://www.shieldcn.dev/github/watchers/Noineri/vibe_tavern.svg?variant=secondary&size=sm&theme=zinc)
+![GitHub Stars](https://www.shieldcn.dev/github/stars/Noineri/vibe_tavern.svg?variant=secondary&size=sm&theme=zinc)
 
 **Русский** · [English](./README.md)
 
 ---
 
-**Windows** (один `.exe`) • **Linux** • **Docker** • **Android** (Termux APK)
+![Vibe Tavern Demo](./assets/main.png)
 
 </div>
 
