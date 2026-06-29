@@ -5,7 +5,7 @@ title: "[BUG] "
 body:
     - type: markdown
       attributes:
-          value: "**Welcome to a bug report form!**\n- This form is only for bug reports\n- If you want to suggest enchancement or make a feature request please select a \"Feature request\" issue type
+          value: "**Welcome to a bug report form!**\n- This form is only for bug reports\n- If you want to suggest enhancement or make a feature request please select a \"Feature request\" issue type"
 
     - type: textarea
       attributes:
