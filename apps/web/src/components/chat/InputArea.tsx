@@ -11,6 +11,8 @@ import { useCharacterController } from "../../hooks/use-character-controller.js"
 import { CustomTooltip } from "../shared/Tooltip.js";
 import { AiQuickPill, type AiQuickSettings } from "../shared/AiQuickPill.js";
 import { AutoTextarea } from "../shared/auto-textarea.js";
+import { BottomSheet } from "../shared/BottomSheet.js";
+import { usePresetController } from "../../hooks/use-preset-controller.js";
 import { useProviderProfiles } from "../../hooks/use-provider-profiles.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
 
@@ -29,7 +31,7 @@ export function InputArea() {
   const tokenPopRef = useRef<HTMLDivElement>(null);
   const modelDropRef = useRef<HTMLDivElement>(null);
   const [mobilePersonaOpen, setMobilePersonaOpen] = useState(false);
-  const mobilePersonaRef = useRef<HTMLDivElement>(null);
+  const [presetDropOpen, setPresetDropOpen] = useState(false);
 
   // --- Sub-hooks ---
   const chat = useChatController();
@@ -49,6 +51,9 @@ export function InputArea() {
   const canUseLiveApi = connection.status === "connected" && Boolean(connection.model);
 
   const activePersonaId = chatMeta?.persona?.id ?? null;
+  const promptPresets = bootstrapData?.promptPresets ?? [];
+  const activePromptPresetId = chatMeta?.activeChat.promptPresetId ?? null;
+  const preset = usePresetController();
   const contextSize = provider.activeProviderProfile?.contextBudget ?? 0;
   const maxTokens = provider.activeProviderProfile?.maxTokens ?? 0;
   const favoriteModels = provider.activeProviderProfile ? (provider.favoriteModelsByProfile[provider.activeProviderProfile.id] ?? []) : [];
@@ -179,11 +184,8 @@ export function InputArea() {
   const isMobile = useIsMobile();
 
   useEffect(() => {
-    if (!mobilePersonaOpen && !tokenPopOpen && !modelDropOpen) return;
+    if (!tokenPopOpen && !modelDropOpen) return;
     function handleClick(e: MouseEvent) {
-      if (mobilePersonaRef.current && !mobilePersonaRef.current.contains(e.target as Node)) {
-        setMobilePersonaOpen(false);
-      }
       if (tokenPopRef.current && !tokenPopRef.current.contains(e.target as Node)) {
         setTokenPopOpen(false);
       }
@@ -193,7 +195,7 @@ export function InputArea() {
     }
     document.addEventListener("mousedown", handleClick);
     return () => document.removeEventListener("mousedown", handleClick);
-  }, [mobilePersonaOpen, tokenPopOpen, modelDropOpen]);
+  }, [tokenPopOpen, modelDropOpen]);
 
   const sendButtonText = canSend || !draft.trim() ? t("send") : sendLabel || t("send_unavailable");
 
@@ -221,34 +223,15 @@ export function InputArea() {
         <div className="flex flex-col gap-1.5 rounded-xl bg-s2 p-1.5">
           {/* Toolbar row: persona + starred models */}
           <div className="flex items-center gap-2">
-            <div className="relative" ref={mobilePersonaRef}>
-              <button type="button" onClick={() => setMobilePersonaOpen(o => !o)} className="flex h-9 items-center gap-1.5 rounded-md bg-s3 px-2 font-ui text-[calc(var(--ui-fs)-3px)] text-t3 active:bg-s2">
-                {activePersonaId ? (
-                  <PersonaAvatar src={(() => { const p = personas.find(p => p.id === activePersonaId); return p ? resolveEntityAvatarUrl({ kind: "personas", id: p.id, avatarExt: p.avatarExt, avatarAssetId: p.avatarAssetId, updatedAt: p.updatedAt }) : null; })()}  size={20} />
-                ) : (
-                  <Icons.User />
-                )}
-                <span className="max-w-[120px] min-w-0 truncate">{activePersonaId ? (personas.find(p => p.id === activePersonaId)?.name ?? t("no_persona")) : t("no_persona")}</span>
-                <Icons.Caret direction="d" />
-              </button>
-              {mobilePersonaOpen && (
-                <div className="glass-blur absolute bottom-[calc(100%+4px)] left-0 z-[220] w-[240px] rounded-lg border border-border2 bg-glass-bg py-2 shadow-theme-md">
-                  <div className="px-4 pb-2 text-[calc(var(--ui-fs)-3px)] uppercase tracking-[0.08em] text-t3 font-medium border-b border-border mb-1">{t("persona_selection")}</div>
-                  <div className="max-h-[264px] overflow-y-auto">
-                    {personas.map(p => (
-                      <button type="button" key={p.id} className="flex w-full min-h-[44px] cursor-pointer items-center gap-2 px-4 text-[calc(var(--ui-fs)-1px)] text-t1 active:bg-s2" onClick={() => { void character.handleSetChatPersona(p.id); setMobilePersonaOpen(false); }}>
-                        <div className="w-4 shrink-0 flex justify-center text-accent-t">{activePersonaId === p.id && <Icons.Check/>}</div>
-                        <PersonaAvatar src={resolveEntityAvatarUrl({ kind: "personas", id: p.id, avatarExt: p.avatarExt, avatarAssetId: p.avatarAssetId, updatedAt: p.updatedAt })}  size={22} />
-                        <div className="min-w-0 truncate">{p.name}</div>
-                      </button>
-                    ))}
-                  </div>
-                  <div className="pt-1 px-2 mt-1 border-t border-border">
-                    <button type="button" className="flex w-full min-h-[44px] cursor-pointer items-center gap-1.5 rounded-md px-2 font-ui text-[calc(var(--ui-fs)-2px)] text-t3 active:bg-s2" onClick={() => { setMobilePersonaOpen(false); useModalStore.getState().setIsPersonaModalOpen(true); }}><Icons.Edit/> {t("manage_personas")}</button>
-                  </div>
-                </div>
+            <button type="button" onClick={() => setMobilePersonaOpen(true)} className="flex h-9 items-center gap-1.5 rounded-md bg-s3 px-2 font-ui text-[calc(var(--ui-fs)-3px)] text-t3 active:bg-s2">
+              {activePersonaId ? (
+                <PersonaAvatar src={(() => { const p = personas.find(p => p.id === activePersonaId); return p ? resolveEntityAvatarUrl({ kind: "personas", id: p.id, avatarExt: p.avatarExt, avatarAssetId: p.avatarAssetId, updatedAt: p.updatedAt }) : null; })()}  size={20} />
+              ) : (
+                <Icons.User />
               )}
-            </div>
+              <span className="max-w-[120px] min-w-0 truncate">{activePersonaId ? (personas.find(p => p.id === activePersonaId)?.name ?? t("no_persona")) : t("no_persona")}</span>
+              <Icons.Caret direction="d" />
+            </button>
             {activeChatId && (
               <ChatImpersonateAiPill
                 activeChatId={activeChatId}
@@ -268,31 +251,13 @@ export function InputArea() {
               <Icons.paperclip />
             </button>
 
-            <div className="relative" ref={modelDropRef}>
-              <button type="button" onClick={() => setModelDropOpen(o => !o)} className="flex h-9 w-9 items-center justify-center rounded-md bg-s3 text-warning-text active:bg-s2">
-                <Icons.StarFilled />
-              </button>
-              {modelDropOpen && (
-                <div className="glass-blur absolute bottom-[calc(100%+4px)] right-0 z-[220] w-[240px] rounded-lg border border-border2 bg-glass-bg py-2 shadow-[0_12px_28px_rgba(0,0,0,0.45)]">
-                  <div className="px-4 pb-2 text-[calc(var(--ui-fs)-3px)] uppercase tracking-[0.08em] text-t3 font-medium border-b border-border mb-1">{t("starred_models")}</div>
-                  {favoriteModels.length > 0 ? (
-                    <div className="max-h-[264px] overflow-y-auto">
-                      {favoriteModels.map(model => (
-                        <div key={model.modelId} className="flex min-h-[44px] cursor-pointer items-center gap-2 px-4 text-[calc(var(--ui-fs)-1px)] text-t1 active:bg-s2" onClick={() => {
-                          if (provider.activeProviderProfile) void provider.handleSelectFavoriteProviderModel(provider.activeProviderProfile.id, model.modelId);
-                          setModelDropOpen(false);
-                        }}>
-                          <div className="w-4 shrink-0 flex justify-center text-accent-t">{activeModelId === model.modelId && <Icons.Check/>}</div>
-                          <div className="min-w-0 truncate">{model.label || model.modelId}</div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="px-4 py-3 text-[calc(var(--ui-fs)-2px)] text-t3">{t("no_starred_models")}</div>
-                  )}
-                </div>
-              )}
-            </div>
+            <button type="button" onClick={() => setPresetDropOpen(true)} className="flex h-9 w-9 items-center justify-center rounded-md bg-s3 text-accent-t active:bg-s2 disabled:opacity-45" disabled={promptPresets.length === 0}>
+              <Icons.FileText />
+            </button>
+
+            <button type="button" onClick={() => setModelDropOpen(true)} className="flex h-9 w-9 items-center justify-center rounded-md bg-s3 text-warning-text active:bg-s2">
+              <Icons.StarFilled />
+            </button>
           </div>
           {draftAttachments.length > 0 && <AttachmentPreview />}
           {/* Input row */}
@@ -320,6 +285,59 @@ export function InputArea() {
             </div>
           </div>
         </div>
+        <BottomSheet open={mobilePersonaOpen} onClose={() => setMobilePersonaOpen(false)} title={t("persona_selection")}>
+          <div className="max-h-[50vh] overflow-y-auto">
+            {personas.map(p => (
+              <button type="button" key={p.id} className="flex w-full min-h-[52px] cursor-pointer items-center gap-3 px-5 text-[calc(var(--ui-fs)+1px)] text-t2 active:bg-s3" onClick={() => { void character.handleSetChatPersona(p.id); setMobilePersonaOpen(false); }}>
+                <div className="w-5 shrink-0 flex justify-center text-accent-t">{activePersonaId === p.id && <Icons.Check />}</div>
+                <PersonaAvatar src={resolveEntityAvatarUrl({ kind: "personas", id: p.id, avatarExt: p.avatarExt, avatarAssetId: p.avatarAssetId, updatedAt: p.updatedAt })} size={26} />
+                <div className="min-w-0 truncate">{p.name}</div>
+              </button>
+            ))}
+          </div>
+          <div className="mt-1 border-t border-border px-3 pt-1">
+            <button type="button" className="flex w-full min-h-[52px] cursor-pointer items-center gap-4 rounded-md px-2 text-[calc(var(--ui-fs)+1px)] text-t2 active:bg-s3" onClick={() => { setMobilePersonaOpen(false); useModalStore.getState().setIsPersonaModalOpen(true); }}>
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-s2"><Icons.Edit /></span>
+              <span className="font-ui">{t("manage_personas")}</span>
+            </button>
+          </div>
+          <div className="mx-4 mt-2 h-px bg-border" />
+          <button type="button" className="flex w-full min-h-[52px] cursor-pointer items-center justify-center rounded-b-2xl text-[calc(var(--ui-fs)+1px)] font-medium text-t3 transition-colors active:bg-s3" onClick={() => setMobilePersonaOpen(false)}>
+            {t("cancel")}
+          </button>
+        </BottomSheet>
+        <BottomSheet open={modelDropOpen} onClose={() => setModelDropOpen(false)} title={t("starred_models")}>
+          {favoriteModels.length > 0 ? (
+            <div className="max-h-[50vh] overflow-y-auto">
+              {favoriteModels.map(model => (
+                <button type="button" key={model.modelId} className="flex w-full min-h-[52px] cursor-pointer items-center gap-3 px-5 text-[calc(var(--ui-fs)+1px)] text-t2 active:bg-s3" onClick={() => { if (provider.activeProviderProfile) void provider.handleSelectFavoriteProviderModel(provider.activeProviderProfile.id, model.modelId); setModelDropOpen(false); }}>
+                  <div className="w-5 shrink-0 flex justify-center text-accent-t">{activeModelId === model.modelId && <Icons.Check />}</div>
+                  <div className="min-w-0 truncate">{model.label || model.modelId}</div>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="px-5 py-4 text-[calc(var(--ui-fs)-1px)] text-t3">{t("no_starred_models")}</div>
+          )}
+          <div className="mx-4 mt-2 h-px bg-border" />
+          <button type="button" className="flex w-full min-h-[52px] cursor-pointer items-center justify-center rounded-b-2xl text-[calc(var(--ui-fs)+1px)] font-medium text-t3 transition-colors active:bg-s3" onClick={() => setModelDropOpen(false)}>
+            {t("cancel")}
+          </button>
+        </BottomSheet>
+        <BottomSheet open={presetDropOpen} onClose={() => setPresetDropOpen(false)} title={t("topbar_prompt_preset")}>
+          <div className="max-h-[50vh] overflow-y-auto">
+            {promptPresets.map(p => (
+              <button type="button" key={p.id} className="flex w-full min-h-[52px] cursor-pointer items-center gap-3 px-5 text-[calc(var(--ui-fs)+1px)] text-t2 active:bg-s3" onClick={() => { void preset.handleSetActivePromptPresetId(p.id); setPresetDropOpen(false); }}>
+                <div className="w-5 shrink-0 flex justify-center text-accent-t">{p.id === activePromptPresetId && <Icons.Check />}</div>
+                <div className="min-w-0 truncate">{p.name}</div>
+              </button>
+            ))}
+          </div>
+          <div className="mx-4 mt-2 h-px bg-border" />
+          <button type="button" className="flex w-full min-h-[52px] cursor-pointer items-center justify-center rounded-b-2xl text-[calc(var(--ui-fs)+1px)] font-medium text-t3 transition-colors active:bg-s3" onClick={() => setPresetDropOpen(false)}>
+            {t("cancel")}
+          </button>
+        </BottomSheet>
       </div>
     );
   }
