@@ -1,0 +1,36 @@
+name: Bug
+description: Report a bug
+labels: ["bug"]
+type: "Bug"
+title: "[BUG] "
+body:
+    - type: markdown
+      attributes:
+          value: "**Welcome to a bug report form!**\n- This form is only for bug reports\n- If you want to suggest enchancement or make a feature request please select a \"Feature request\" issue type
+
+    - type: textarea
+      attributes:
+          label: "Step 1. Environment"
+          description: "Vibe Tavern version, browser and installation method"
+          value: "- **Version:** 1.0.0\n - **Browser:** Firefox\n - **Installation method:** windows zip archive\n"
+      validations:
+          required: true
+
+    - type: textarea
+      attributes:
+          label: "Step 2. Steps to reproduce, expected and actual result"
+          value: "1. Go to page X\n 2. Press button Y\n\n Expected 1, got 2"
+      validations:
+          required: true
+
+    - type: textarea
+      attributes:
+          label: "Step 3. Any useful logs"
+          value: "App console logs, logs from devtools etc"
+
+    - type: checkboxes
+      attributes:
+          label: Reminder
+          options:
+              - label: I agree that it's usually impossible to help me without information above.
+                required: true
