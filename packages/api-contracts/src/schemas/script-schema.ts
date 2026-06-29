@@ -39,6 +39,10 @@ export const testScriptSchema = z.object({
   characterPersonality: z.string().optional().default(""),
   /** Character scenario for test context */
   characterScenario: z.string().optional().default(""),
+  /** Persona name — when provided, exposed as `context.persona.name` (P3) */
+  personaName: z.string().optional(),
+  /** Persona description — exposed as `context.persona.description` (P3) */
+  personaDescription: z.string().optional(),
   /** Last message text (shorthand for messages[messages.length-1]) */
   lastMessage: z.string().optional().default(""),
 });
