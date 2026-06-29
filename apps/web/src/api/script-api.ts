@@ -33,9 +33,9 @@ export async function deleteScript(scriptId: string): Promise<void> {
   if (!response.ok) throw await unwrapError(response);
 }
 
-export async function testScript(scriptId: string, body: { messages?: Array<{ role: string; content: string }>; characterName?: string; characterPersonality?: string; characterScenario?: string; lastMessage?: string }): Promise<{ personality: string; scenario: string; state: Record<string, unknown>; errors: string[] }> {
+export async function testScript(scriptId: string, body: { messages?: Array<{ role: string; content: string }>; characterName?: string; characterPersonality?: string; characterScenario?: string; lastMessage?: string }): Promise<{ personality: string; scenario: string; state: Record<string, unknown>; injectedMessages: Array<{ content: string; role: 'system' | 'user' | 'assistant' }>; errors: Array<{ scriptId: string; scriptName: string; error: string; line?: number }> | string[] }> {
   const response = await client.api.scripts[":scriptId"].test.$post({ param: { scriptId }, json: body });
-  return unwrapRpc<{ personality: string; scenario: string; state: Record<string, unknown>; errors: string[] }>(response);
+  return unwrapRpc<{ personality: string; scenario: string; state: Record<string, unknown>; injectedMessages: Array<{ content: string; role: 'system' | 'user' | 'assistant' }>; errors: Array<{ scriptId: string; scriptName: string; error: string; line?: number }> | string[] }>(response);
 }
 
 export async function importScript(body: { format: "js"; code: string; name?: string; scopeType?: string; characterId?: string; personaId?: string; chatId?: string } | { format: "json"; jsonText: string; name?: string; scopeType?: string; characterId?: string; personaId?: string; chatId?: string }): Promise<ScriptRecord> {

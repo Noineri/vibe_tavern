@@ -8,7 +8,7 @@ import { MobileExpandTextarea } from "../../shared/MobileExpandTextarea.js";
 import { AutoTextarea } from "../../shared/auto-textarea.js";
 import { CodeEditor } from "../../shared/CodeEditor.js";
 import { CustomTooltip } from "../../shared/Tooltip.js";
-import { SCRIPT_TEMPLATES } from "./scriptTemplates.js";
+import { SCRIPT_TEMPLATES } from "./script-templates/index.js";
 import { cn } from "../../../lib/cn.js";
 import { useT } from "../../../i18n/context.js";
 import { AiAssistantModal } from "../../shared/AiAssistantModal.js";
@@ -71,7 +71,7 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
     if (id && onOpenEditor) onOpenEditor();
   };
   const [testInput, setTestInput] = useState("");
-  const [testResult, setTestResult] = useState<{ personality: string; scenario: string; state: Record<string, unknown>; errors: Array<{ scriptId: string; scriptName: string; error: string; line?: number } | string> } | null>(null);
+  const [testResult, setTestResult] = useState<{ personality: string; scenario: string; state: Record<string, unknown>; injectedMessages: Array<{ content: string; role: 'system' | 'user' | 'assistant' }>; errors: Array<{ scriptId: string; scriptName: string; error: string; line?: number } | string> } | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [importOpen, setImportOpen] = useState(false);
   const [importCode, setImportCode] = useState("");
@@ -468,17 +468,32 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
                 <pre className="mt-1 whitespace-pre-wrap font-mono text-[11px] text-danger-text">{testResult.errors.map(e => typeof e === 'string' ? e : `${e.scriptName ?? 'Script'}: ${e.error}${e.line ? ` (line ${e.line})` : ''}`).join("\n")}</pre>
               </div>
             )}
-            {testResult.errors.length === 0 && (
-              <>
-                <div className="rounded-md border border-border bg-bg" style={{ padding: 10 }}>
-                  <div className="text-[11px] font-semibold uppercase tracking-[0.06em] text-t3">{t("script_test_personality")}</div>
-                  <pre className="mt-1 whitespace-pre-wrap font-mono text-[12px] text-t2">{testResult.personality || <span className="italic text-t3">({t("script_test_no_result")})</span>}</pre>
+            <div className="rounded-md border border-border bg-bg" style={{ padding: 10 }}>
+              <div className="text-[11px] font-semibold uppercase tracking-[0.06em] text-t3">{t("script_test_personality")}</div>
+              <pre className="mt-1 whitespace-pre-wrap font-mono text-[12px] text-t2">{testResult.personality || <span className="italic text-t3">({t("script_test_no_result")})</span>}</pre>
+            </div>
+            <div className="rounded-md border border-border bg-bg" style={{ padding: 10 }}>
+              <div className="text-[11px] font-semibold uppercase tracking-[0.06em] text-t3">{t("script_test_scenario")}</div>
+              <pre className="mt-1 whitespace-pre-wrap font-mono text-[12px] text-t2">{testResult.scenario || <span className="italic text-t3">({t("script_test_no_result")})</span>}</pre>
+            </div>
+            {testResult.injectedMessages.length > 0 && (
+              <div className="rounded-md border border-border bg-bg" style={{ padding: 10 }}>
+                <div className="text-[11px] font-semibold uppercase tracking-[0.06em] text-t3">{t("script_test_injected")}</div>
+                <div className="mt-1 space-y-1.5">
+                  {testResult.injectedMessages.map((msg, i) => (
+                    <div key={i} className="flex items-start gap-2">
+                      <span className="shrink-0 rounded bg-s3 px-1.5 py-0.5 font-mono text-[10px] uppercase text-t3">{msg.role}</span>
+                      <pre className="flex-1 whitespace-pre-wrap font-mono text-[12px] text-t2">{msg.content}</pre>
+                    </div>
+                  ))}
                 </div>
-                <div className="rounded-md border border-border bg-bg" style={{ padding: 10 }}>
-                  <div className="text-[11px] font-semibold uppercase tracking-[0.06em] text-t3">{t("script_test_scenario")}</div>
-                  <pre className="mt-1 whitespace-pre-wrap font-mono text-[12px] text-t2">{testResult.scenario || <span className="italic text-t3">({t("script_test_no_result")})</span>}</pre>
-                </div>
-              </>
+              </div>
+            )}
+            {Object.keys(testResult.state).length > 0 && (
+              <div className="rounded-md border border-border bg-bg" style={{ padding: 10 }}>
+                <div className="text-[11px] font-semibold uppercase tracking-[0.06em] text-t3">{t("script_test_state")}</div>
+                <pre className="mt-1 whitespace-pre-wrap font-mono text-[12px] text-t2">{JSON.stringify(testResult.state, null, 2)}</pre>
+              </div>
             )}
           </div>
         )}

@@ -225,8 +225,13 @@ function buildLoreContext(entries: ScriptExecutionInput["activeLoreEntries"]) {
 
 function buildStateContext(stateBucket: Record<string, unknown>) {
   return {
-    get(key: string): unknown {
-      return stateBucket[key];
+    // Map.get-style: returns `defaultValue` when the key is absent (undefined).
+    // Without this, `state.get('hp', 100)` returns undefined on first read and
+    // the HP-tracker template computes NaN. Mirrors the in-app API reference
+    // (`context.state.get(key, default)`) and JS Map semantics.
+    get(key: string, defaultValue?: unknown): unknown {
+      const v = stateBucket[key];
+      return v === undefined ? defaultValue : v;
     },
     set(key: string, value: unknown): void {
       stateBucket[key] = value;

@@ -14,6 +14,10 @@ export interface ScriptTestResult {
 	personality: string;
 	scenario: string;
 	state: Record<string, unknown>;
+	/** Messages a script pushed via `context.chat.injectMessage(...)`.
+	 *  Surfaced so the test panel can show inject-only scripts (e.g. the
+	 *  dice-roller template), which produce no personality/scenario output. */
+	injectedMessages: Array<{ content: string; role: 'system' | 'user' | 'assistant' }>;
 	errors: Array<{ scriptId: string; scriptName: string; error: string; line?: number }>;
 }
 
@@ -56,6 +60,7 @@ export async function testScript(
 		personality: result.character.personality,
 		scenario: result.character.scenario,
 		state: result.updatedScriptState[script.id] ?? {},
+		injectedMessages: result.injectedMessages,
 		errors: result.errors,
 	};
 }

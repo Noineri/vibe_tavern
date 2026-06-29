@@ -858,6 +858,8 @@
   "script_test_run": "Запустить тест",
   "script_test_personality": "Вывод Personality",
   "script_test_scenario": "Вывод Scenario",
+  "script_test_injected": "Внедряемые сообщения",
+  "script_test_state": "Состояние скрипта",
   "script_test_no_result": "Запустите тест для отображения результатов",
   "script_templates": "Шаблоны",
   "script_template_relationship": "Развитие отношений",

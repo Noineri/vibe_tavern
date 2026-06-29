@@ -858,6 +858,8 @@
   "script_test_run": "Run Test",
   "script_test_personality": "Personality Output",
   "script_test_scenario": "Scenario Output",
+  "script_test_injected": "Injected Messages",
+  "script_test_state": "Script State",
   "script_test_no_result": "Run a test to see results",
   "script_templates": "Templates",
   "script_template_relationship": "Relationship Progression",
