@@ -289,11 +289,12 @@ export class ScriptStore {
     for (const r of fkRows) ids.add(r.id);
 
     // Junction-linked sources (character ∪ persona). The resolver consults
-    // BOTH FK and junction here — unlike LorebookStore.listAllActiveForChat,
-    // which is junction-only for char/persona. Scripts cannot rely on every
-    // FK-owned row being junction-linked (the migration is incremental), so
-    // both sources are unioned with Set-based dedup. This is the deliberate
-    // consistency fix noted in reports/script-link-binding-gap.md.
+    // BOTH FK and junction here. Scripts cannot rely on every FK-owned row
+    // being junction-linked (the migration is incremental), so both sources
+    // are unioned with Set-based dedup. LorebookStore.listAllActiveForChat
+    // uses the same FK ∪ junction shape (fixed 2026-06-29 — see
+    // packages/db/test/lorebook-fk-activation.test.ts); the two resolvers are
+    // now consistent. Background in reports/script-link-binding-gap.md.
     const charLinkRows = await this.db
       .select({ scriptId: scriptLinks.scriptId })
       .from(scriptLinks)

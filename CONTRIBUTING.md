@@ -70,6 +70,7 @@ Before changing architecture, read the relevant doc — each one explains *why* 
 | API routes & contracts | [`docs/architecture/api-reference.md`](./docs/architecture/api-reference.md) |
 | Prompt assembly | [`docs/architecture/prompt-pipeline.md`](./docs/architecture/prompt-pipeline.md) |
 | Lorebooks & activation | [`docs/architecture/lorebooks.md`](./docs/architecture/lorebooks.md) |
+| Scripts (sandbox, lifecycle, templates) | [`docs/architecture/scripts.md`](./docs/architecture/scripts.md) |
 
 ### How-to guides
 

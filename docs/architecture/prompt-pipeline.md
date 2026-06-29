@@ -218,6 +218,8 @@ Lore entries use SillyTavern position strings that map to pipeline positions:
 | `outlet` | `hidden_system` | — |
 
 > For the full lorebook system — activation engine, budget & priority semantics, ST parity audit, and trace integration — see [Lorebooks](lorebooks.md).
+>
+> For the script system — `node:vm` sandbox, the `context` API, engine invariants, and the template registry — see [Scripts](scripts.md).
 
 ### Media / appearance layers (A7)
 
