@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useState, useRef, useMemo } from "react";
 import { useKeyDown } from "../../../hooks/use-key-down.js";
+import { useDndSensors } from "../../../hooks/use-dnd-sensors.js";
 import { Ic } from "../../shared/icons.js";
 import { AddButton } from "../../shared/add-button.js";
 import { useIsMobile } from "../../../hooks/use-mobile.js";
@@ -35,6 +36,19 @@ import { LoreEntryList } from "./LoreEntryList.js";
 // ── Types ──────────────────────────────────────────────────────────────
 
 import type { Scope } from "./LorebookAccordion.js";
+import {
+	DndContext,
+	DragOverlay,
+	closestCenter,
+	type DragStartEvent,
+	type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+	SortableContext,
+	useSortable,
+	verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 
 interface ScriptPanelProps {
   characterId: string;
@@ -59,6 +73,49 @@ function cleanAiCode(raw: string): string {
   // Remove closing fence
   code = code.replace(/\n?```\s*$/,'');
   return code.trim();
+}
+
+/** Sortable wrapper for a script card in the list view. Mirrors LoreEntryList's
+ *  SortableEntryCard: desktop drags the whole card (MouseSensor distance: 2
+ *  keeps click-vs-drag distinct), mobile uses a ≡ handle as the activator. */
+function SortableScriptCard({ script, isActive, isMobile, onClick }: {
+	script: ScriptRecord;
+	isActive: boolean;
+	isMobile: boolean;
+	onClick: () => void;
+}) {
+	const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({ id: script.id });
+	return (
+		<div
+			ref={setNodeRef}
+			style={{ transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.4 : 1 }}
+			className={cn("mb-3 cursor-pointer rounded-xl border transition-all", isActive ? "border-accent bg-accent-dim" : "border-border bg-surface hover:bg-s2")}
+			onClick={onClick}
+			{...(isMobile ? {} : attributes)}
+			{...(isMobile ? {} : listeners)}
+		>
+			<div className="flex items-center gap-2 px-4 pt-3 pb-3">
+				{isMobile && (
+					<button
+						type="button"
+						ref={setActivatorNodeRef}
+						{...attributes}
+						{...listeners}
+						className="flex h-8 w-6 shrink-0 cursor-grab items-center justify-center text-t3 active:cursor-grabbing"
+						onClick={e => e.stopPropagation()}
+					>
+						<span className="text-xl leading-none">≡</span>
+					</button>
+				)}
+				<div className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent-dim text-accent-t"><Ic.terminal /></div>
+				<span className="flex-1 truncate text-[14px] font-semibold text-t1">{script.name}</span>
+				<div className={cn("shrink-0 rounded-full px-2 py-0.5 font-ui text-[10px] font-medium uppercase", script.enabled ? "bg-success-dim text-success-text" : "bg-s3 text-t3")}>
+					{script.enabled ? "ON" : "OFF"}
+				</div>
+			</div>
+			{script.description && <div className="font-ui text-[calc(var(--ui-fs)-2px)] leading-relaxed text-t2 px-4 pb-3 pt-0">{script.description}</div>}
+		</div>
+	);
 }
 
 export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEditor, onBackToList }: ScriptPanelProps) {
@@ -177,6 +234,56 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
       onBackToList?.();
     } finally { setDeletingScript(false); }
   };
+
+  // ── Drag-reorder (P5b) ────────────────────────────────
+  const sensors = useDndSensors();
+  const [activeDragId, setActiveDragId] = useState<string | null>(null);
+  const [optimisticScripts, setOptimisticScripts] = useState<ScriptRecord[] | null>(null);
+
+  // Sort by sortOrder for display; optimistic override takes precedence during
+  // the async round-trip so the dropped card doesn't snap back.
+  const displayScripts = useMemo(
+    () => [...(optimisticScripts ?? scripts)].sort((a, b) => a.sortOrder - b.sortOrder),
+    [scripts, optimisticScripts],
+  );
+
+  useEffect(() => {
+    if (!optimisticScripts) return;
+    const sig = (arr: ScriptRecord[]) => arr.map(s => `${s.id}:${s.sortOrder}`).join(",");
+    if (sig(scripts) === sig(optimisticScripts)) setOptimisticScripts(null);
+  }, [scripts, optimisticScripts]);
+
+  const activeDragScript = activeDragId ? displayScripts.find(s => s.id === activeDragId) ?? null : null;
+
+  const handleDragStart = useCallback((event: DragStartEvent) => {
+    setActiveDragId(String(event.active.id));
+  }, []);
+
+  const handleDragEnd = useCallback((event: DragEndEvent) => {
+    const { active, over } = event;
+    setActiveDragId(null);
+    if (!over || active.id === over.id) return;
+    const oldIndex = displayScripts.findIndex(s => s.id === active.id);
+    const newIndex = displayScripts.findIndex(s => s.id === over.id);
+    if (oldIndex === -1 || newIndex === -1) return;
+    // Reassign sortOrder = index; collect only changed scripts to persist.
+    const reordered = [...displayScripts];
+    const [moved] = reordered.splice(oldIndex, 1);
+    reordered.splice(newIndex, 0, moved);
+    const updates: Array<{ id: string; sortOrder: number }> = [];
+    const optimistic = reordered.map((s, i) => {
+      if (s.sortOrder !== i) updates.push({ id: s.id, sortOrder: i });
+      return { ...s, sortOrder: i };
+    });
+    setOptimisticScripts(optimistic);
+    void Promise.all(updates.map(u => handleUpdateScript(u.id, { sortOrder: u.sortOrder })))
+      .then(() => refreshScripts())
+      .catch((error) => {
+        // eslint-disable-next-line no-console
+        console.error("Failed to reorder scripts", error);
+        setOptimisticScripts(null);
+      });
+  }, [displayScripts]);
 
   const handleTestScript = async () => {
     if (!activeScriptId || !testInput.trim()) return;
@@ -339,24 +446,42 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
           </div>
         </div>
       ) : (
-        <>
-          {scripts.map(s => (
-            <div key={s.id} className={cn("mb-3 cursor-pointer rounded-xl border transition-all", s.id === activeScriptId ? "border-accent bg-accent-dim" : "border-border bg-surface hover:bg-s2")} onClick={() => setActiveScriptId(s.id)}>
-              <div className="flex items-center gap-2 px-4 pt-3 pb-3">
-                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent-dim text-accent-t"><Ic.terminal /></div>
-                <span className="flex-1 truncate text-[14px] font-semibold text-t1">{s.name}</span>
-                <div className={cn("shrink-0 rounded-full px-2 py-0.5 font-ui text-[10px] font-medium uppercase", s.enabled ? "bg-success-dim text-success-text" : "bg-s3 text-t3")}>
-                  {s.enabled ? "ON" : "OFF"}
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragStart={handleDragStart}
+          onDragEnd={handleDragEnd}
+          onDragCancel={() => setActiveDragId(null)}
+        >
+          <SortableContext items={displayScripts.map(s => s.id)} strategy={verticalListSortingStrategy}>
+            {displayScripts.map(s => (
+              <SortableScriptCard
+                key={s.id}
+                script={s}
+                isActive={s.id === activeScriptId}
+                isMobile={isMobile}
+                onClick={() => setActiveScriptId(s.id)}
+              />
+            ))}
+            <div className="mt-2 flex flex-wrap gap-2">
+              <AddButton onClick={handleAdd}><Ic.plus /> {t("new_script")}</AddButton>
+              <AddButton onClick={() => setImportOpen(true)}><Ic.import /> {t("script_import")}</AddButton>
+            </div>
+          </SortableContext>
+          <DragOverlay dropAnimation={null}>
+            {activeDragScript ? (
+              <div className={cn("rounded-xl border", activeDragScript.id === activeScriptId ? "border-accent bg-accent-dim" : "border-border bg-surface")}>
+                <div className="flex items-center gap-2 px-4 pt-3 pb-3">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent-dim text-accent-t"><Ic.terminal /></div>
+                  <span className="flex-1 truncate text-[14px] font-semibold text-t1">{activeDragScript.name}</span>
+                  <div className={cn("shrink-0 rounded-full px-2 py-0.5 font-ui text-[10px] font-medium uppercase", activeDragScript.enabled ? "bg-success-dim text-success-text" : "bg-s3 text-t3")}>
+                    {activeDragScript.enabled ? "ON" : "OFF"}
+                  </div>
                 </div>
               </div>
-              {s.description && <div className="font-ui text-[calc(var(--ui-fs)-2px)] leading-relaxed text-t2 px-4 pb-3 pt-0">{s.description}</div>}
-            </div>
-          ))}
-          <div className="mt-2 flex flex-wrap gap-2">
-            <AddButton onClick={handleAdd}><Ic.plus /> {t("new_script")}</AddButton>
-            <AddButton onClick={() => setImportOpen(true)}><Ic.import /> {t("script_import")}</AddButton>
-          </div>
-        </>
+            ) : null}
+          </DragOverlay>
+        </DndContext>
       )}
     </div>
   );
