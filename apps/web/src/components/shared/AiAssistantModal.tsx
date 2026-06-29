@@ -711,14 +711,16 @@ export function AiAssistantModal({
                   {/* Paste area */}
                   <div style={{ marginBottom: 16 }}>
                     <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("import_md_paste_label")}</label>
-                    <AutoTextarea
-                      className="w-full min-h-[120px] rounded-[6px] border border-border bg-s2 px-[13px] py-[9px] font-mono text-[calc(var(--ui-fs)-1px)] text-t1 outline-none transition-[border-color] duration-150 focus:border-accent resize-none"
-                      style={{}}
-                      maxHeight={300}
-                      placeholder={t("import_md_paste_placeholder")}
-                      value={mdContent}
-                      onChange={(e) => setMdContent(e.target.value)}
-                    />
+                    <MobileExpandTextarea value={mdContent} onChange={setMdContent} label={t("import_md_paste_label")}>
+                      <AutoTextarea
+                        className="w-full min-h-[120px] rounded-[6px] border border-border bg-s2 px-[13px] py-[9px] font-mono text-[calc(var(--ui-fs)-1px)] text-t1 outline-none transition-[border-color] duration-150 focus:border-accent resize-none"
+                        style={{}}
+                        maxHeight={300}
+                        placeholder={t("import_md_paste_placeholder")}
+                        value={mdContent}
+                        onChange={(e) => setMdContent(e.target.value)}
+                      />
+                    </MobileExpandTextarea>
                   </div>
 
                   {/* Reasoning / raw JSON output */}

@@ -11,6 +11,7 @@ import { cn } from "../../lib/cn.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
 import { CustomTooltip } from "../shared/Tooltip.js";
 import { AutoTextarea } from "../shared/auto-textarea.js";
+import { MobileExpandTextarea } from "../shared/MobileExpandTextarea.js";
 import { Checkbox } from "../shared/Checkbox.js";
 import { Modal } from "../shared/Modal.js";
 import { resolveEntityAvatarUrl } from "../../lib/avatar.js";
@@ -643,13 +644,19 @@ export function PersonaModal(input: PersonaModalProps) {
             </div>
             {/* Description */}
             <div className="relative mb-3">
-              <AutoTextarea
-                className="w-full min-h-[60px] rounded border border-border bg-s2 py-2 px-2.5 font-ui text-xs text-t1 outline-none resize-none focus:border-accent"
-                style={{ minHeight: 60 }}
+              <MobileExpandTextarea
                 value={editDescription}
-                onChange={(e) => form.setValue("description", e.target.value, { shouldDirty: true })}
-                placeholder={t("persona_desc_placeholder")}
-              />
+                onChange={(v) => form.setValue("description", v, { shouldDirty: true })}
+                label={t("persona_desc_placeholder")}
+              >
+                <AutoTextarea
+                  className="w-full min-h-[60px] rounded border border-border bg-s2 py-2 px-2.5 font-ui text-xs text-t1 outline-none resize-none focus:border-accent"
+                  style={{ minHeight: 60 }}
+                  value={editDescription}
+                  onChange={(e) => form.setValue("description", e.target.value, { shouldDirty: true })}
+                  placeholder={t("persona_desc_placeholder")}
+                />
+              </MobileExpandTextarea>
               <div className="absolute bottom-2 right-2">
                 <PersonaTokenBadge text={editDescription} />
               </div>

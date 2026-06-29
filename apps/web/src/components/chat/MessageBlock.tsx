@@ -15,6 +15,7 @@ import { enqueueGenerateMore } from "../../hooks/use-generation-queue.js";
 import type { MessageBlockProps } from "../play/play-mode-types.js";
 import { Icons } from "../shared/icons.js";
 import { AutoTextarea } from "../shared/auto-textarea.js";
+import { MobileExpandTextarea } from "../shared/MobileExpandTextarea.js";
 import { useT } from "../../i18n/context.js";
 import "./MessageReasoning.js";
 import { useChatController } from "../../hooks/use-chat-controller.js";
@@ -311,14 +312,20 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
   // ── Message content rendering ──
   const messageContent = isEditing ? (
     <>
-      <AutoTextarea
-        className="w-full resize-none overflow-hidden rounded-md border border-accent bg-s2 px-3.5 py-3 font-body text-[length:var(--mfs)] leading-[1.65] text-msg-t1 outline-none"
-        style={{ minHeight: 140 }}
+      <MobileExpandTextarea
         value={editingDraft}
-        onChange={e => useChatStore.getState().setEditingDraft(e.target.value)}
-        onKeyDown={e => { if (e.key === 'Escape') chat.handleCancelEdit(); }}
-        autoFocus
-      />
+        onChange={(v) => useChatStore.getState().setEditingDraft(v)}
+        label={t("edit")}
+      >
+        <AutoTextarea
+          className="w-full resize-none overflow-hidden rounded-md border border-accent bg-s2 px-3.5 py-3 font-body text-[length:var(--mfs)] leading-[1.65] text-msg-t1 outline-none"
+          style={{ minHeight: 140 }}
+          value={editingDraft}
+          onChange={e => useChatStore.getState().setEditingDraft(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Escape') chat.handleCancelEdit(); }}
+          autoFocus
+        />
+      </MobileExpandTextarea>
       <div className="mt-1.5 flex gap-1.5">
         <button type="button"
           className="cursor-pointer rounded-[5px] bg-accent px-3 py-[5px] font-ui text-xs font-medium text-on-accent transition-all duration-100 hover:brightness-110"

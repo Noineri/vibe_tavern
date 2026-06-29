@@ -19,6 +19,7 @@ import { Icons, Ic } from "../shared/icons.js";
 import { Modal } from "../shared/Modal.js";
 import { AvatarCropModal } from "../shared/AvatarCropModal.js";
 import type { AvatarCropResult } from "../shared/AvatarCropModal.js";
+import { MobileExpandTextarea } from "../shared/MobileExpandTextarea.js";
 import { updatePersona, createPersona, uploadPersonaAvatar } from "../../app-client.js";
 import { toast } from "sonner";
 import { extractPngMetadata, parseCharacterMetadata } from "../../lib/png-reader.js";
@@ -545,13 +546,15 @@ function PersonaStep({
       </label>
       <label className="flex flex-col gap-1">
         <span className="font-ui text-[0.8rem] font-semibold text-t2">{t("persona_desc_placeholder")}</span>
-        <textarea
-          className={cn("w-full min-h-[80px] resize-y rounded-lg border border-border2 bg-s2 px-3 py-2.5 font-ui text-t1 outline-none transition-colors focus:border-accent", isMobile ? "text-base" : "text-[0.9rem]")}
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
-          placeholder={t("persona_desc_placeholder")}
-          rows={3}
-        />
+        <MobileExpandTextarea value={description} onChange={setDescription} label={t("persona_desc_placeholder")}>
+          <textarea
+            className={cn("w-full min-h-[80px] resize-y rounded-lg border border-border2 bg-s2 px-3 py-2.5 font-ui text-t1 outline-none transition-colors focus:border-accent", isMobile ? "text-base" : "text-[0.9rem]")}
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder={t("persona_desc_placeholder")}
+            rows={3}
+          />
+        </MobileExpandTextarea>
       </label>
 
       {/* Pronouns */}
@@ -772,23 +775,27 @@ function CharacterStep({
       </label>
       <label className="flex flex-col gap-1">
         <span className="font-ui text-[0.8rem] font-semibold text-t2">{t("ws_desc_label")}</span>
-        <textarea
-          className={cn("w-full min-h-[60px] resize-y rounded-lg border border-border2 bg-s2 px-3 py-2.5 font-ui text-t1 outline-none transition-colors focus:border-accent", isMobile ? "text-base" : "text-[0.9rem]")}
-          value={desc}
-          onChange={(e) => setDesc(e.target.value)}
-          placeholder={t("ws_desc_label")}
-          rows={3}
-        />
+        <MobileExpandTextarea value={desc} onChange={setDesc} label={t("ws_desc_label")}>
+          <textarea
+            className={cn("w-full min-h-[60px] resize-y rounded-lg border border-border2 bg-s2 px-3 py-2.5 font-ui text-t1 outline-none transition-colors focus:border-accent", isMobile ? "text-base" : "text-[0.9rem]")}
+            value={desc}
+            onChange={(e) => setDesc(e.target.value)}
+            placeholder={t("ws_desc_label")}
+            rows={3}
+          />
+        </MobileExpandTextarea>
       </label>
       <label className="flex flex-col gap-1">
         <span className="font-ui text-[0.8rem] font-semibold text-t2">{t("ws_first_msg_label")}</span>
-        <textarea
-          className={cn("w-full min-h-[60px] resize-y rounded-lg border border-border2 bg-s2 px-3 py-2.5 font-ui text-t1 outline-none transition-colors focus:border-accent", isMobile ? "text-base" : "text-[0.9rem]")}
-          value={firstMsg}
-          onChange={(e) => setFirstMsg(e.target.value)}
-          placeholder={t("ws_first_msg_label")}
-          rows={3}
-        />
+        <MobileExpandTextarea value={firstMsg} onChange={setFirstMsg} label={t("ws_first_msg_label")}>
+          <textarea
+            className={cn("w-full min-h-[60px] resize-y rounded-lg border border-border2 bg-s2 px-3 py-2.5 font-ui text-t1 outline-none transition-colors focus:border-accent", isMobile ? "text-base" : "text-[0.9rem]")}
+            value={firstMsg}
+            onChange={(e) => setFirstMsg(e.target.value)}
+            placeholder={t("ws_first_msg_label")}
+            rows={3}
+          />
+        </MobileExpandTextarea>
       </label>
 
       {/* Import card */}

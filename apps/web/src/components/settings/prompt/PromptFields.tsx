@@ -218,19 +218,29 @@ export function PromptFields({ draft, onUpdateField, prefillSupported, hideChatP
                     <label className="mb-0 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.06em] text-t3">{t(labelKey)}</label>
                     <TokenCounter text={value} />
                   </div>
-                  <AutoTextarea
-                    className={cn(textareaCls, "px-[13px] py-[9px]")}
-                    style={{ minHeight: 80 }}
+                  <MobileExpandTextarea
                     value={value}
-                    placeholder={t("ai_assistant_mode_default_placeholder")}
-                    disabled={disabled}
-                    onChange={(e) => {
-                      const v = e.target.value;
+                    onChange={(v) => {
                       const updated = { ...(draft?.aiAssistantPrompts ?? {}), [key]: v };
                       if (!v.trim()) delete updated[key];
                       onUpdateField("aiAssistantPrompts", updated);
                     }}
-                  />
+                    label={t(labelKey)}
+                  >
+                    <AutoTextarea
+                      className={cn(textareaCls, "px-[13px] py-[9px]")}
+                      style={{ minHeight: 80 }}
+                      value={value}
+                      placeholder={t("ai_assistant_mode_default_placeholder")}
+                      disabled={disabled}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        const updated = { ...(draft?.aiAssistantPrompts ?? {}), [key]: v };
+                        if (!v.trim()) delete updated[key];
+                        onUpdateField("aiAssistantPrompts", updated);
+                      }}
+                    />
+                  </MobileExpandTextarea>
                 </div>
               );
             })}

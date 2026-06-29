@@ -4,6 +4,7 @@ import { getGatewayBaseUrl } from "../../gateway-client.js";
 import { cn } from "../../lib/cn.js";
 import { Icons } from "../shared/icons.js";
 import { AutoTextarea } from "../shared/auto-textarea.js";
+import { MobileExpandTextarea } from "../shared/MobileExpandTextarea.js";
 import { DestructiveConfirmModal } from "../shared/destructive-confirm-modal.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
 import { useT } from "../../i18n/context.js";
@@ -296,16 +297,22 @@ function Lightbox({ attachments, messageId, initialIndex, onClose }: { attachmen
         {/* Edit mode */}
         {editing && (
           <div className="flex w-full flex-col gap-2">
-            <AutoTextarea
+            <MobileExpandTextarea
               value={editText}
-              onChange={(e) => setEditText(e.target.value)}
-              className="w-full rounded-lg bg-white/10 px-3 py-2 text-sm leading-relaxed text-white outline-none ring-1 ring-white/20 focus:ring-accent"
-              style={{}}
-              maxHeight={400}
-              placeholder={t("describe_attachment_placeholder")}
-              autoFocus
-              onClick={(e) => e.stopPropagation()}
-            />
+              onChange={setEditText}
+              label={t("describe_attachment_placeholder")}
+            >
+              <AutoTextarea
+                value={editText}
+                onChange={(e) => setEditText(e.target.value)}
+                className="w-full rounded-lg bg-white/10 px-3 py-2 text-sm leading-relaxed text-white outline-none ring-1 ring-white/20 focus:ring-accent"
+                style={{}}
+                maxHeight={400}
+                placeholder={t("describe_attachment_placeholder")}
+                autoFocus
+                onClick={(e) => e.stopPropagation()}
+              />
+            </MobileExpandTextarea>
             <div className="flex justify-end gap-2">
               <button
                 className="cursor-pointer rounded-md bg-white/10 px-3 py-1.5 text-sm text-white/70 transition-colors hover:bg-white/20"

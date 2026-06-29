@@ -598,10 +598,15 @@ export function CharacterForm({
         </div>
         {alternateGreetings.length > 0 && (
           <div>
-            <AutoTextarea className={inputCls + mInput} style={{ ...inputPad, minHeight: 120 }} disabled={isSaving} value={alternateGreetings[altGreetIdx] || ""} onChange={(e) => {
-              const next = [...alternateGreetings]; next[altGreetIdx] = e.target.value;
+            <MobileExpandTextarea value={alternateGreetings[altGreetIdx] || ""} onChange={(v) => {
+              const next = [...alternateGreetings]; next[altGreetIdx] = v;
               setValue("alternateGreetings", next, { shouldDirty: true });
-            }} placeholder={t("alternate_greeting_placeholder")} />
+            }} label={t("alternate_greeting_placeholder")}>
+              <AutoTextarea className={inputCls + mInput} style={{ ...inputPad, minHeight: 120 }} disabled={isSaving} value={alternateGreetings[altGreetIdx] || ""} onChange={(e) => {
+                const next = [...alternateGreetings]; next[altGreetIdx] = e.target.value;
+                setValue("alternateGreetings", next, { shouldDirty: true });
+              }} placeholder={t("alternate_greeting_placeholder")} />
+            </MobileExpandTextarea>
             <TokenBadge text={alternateGreetings[altGreetIdx] || ""} />
           </div>
         )}
