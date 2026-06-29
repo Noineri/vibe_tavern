@@ -8,7 +8,7 @@
 
 A **script** is a snippet of user-authored JavaScript that runs **once per generated turn**, after lore activation and before prompt assembly. It can mutate the character's `personality` / `scenario` fields, inject extra messages into the prompt, and keep persistent per-chat state. Scripts are the bespoke, code-first counterpart to lorebooks: where a lorebook is a declarative table of keyword→text rules evaluated by an engine, a script is arbitrary code evaluated in a sandbox.
 
-VT scripts are **NOT a SillyTavern parity surface**. SillyTavern's script ecosystem (`extension scripts`, the `TavernAI` event API, `getVariables`/`triggerSlash` lifecycle hooks) is not implemented here. VT scripts are a simpler, bespoke model: one synchronous run per turn, a frozen `context` object, no event subscription, no ST-style lifecycle hooks. Where the API surface borrows names (`last_message`, `message_count`, `inject_message`), those are Janitor-AI snake_case aliases of the camelCase primaries, not ST-event handlers. See [SillyTavern Parity](#sillytavern-parity).
+VT scripts are modeled on **Janitor AI's** scripting API, not SillyTavern's. The lineage is visible in the conventions: snake_case aliases (`last_message`, `message_count`, `inject_message`) mirroring JAI's surface, the `{ code, script }` JSON import shape that `parseScriptImport` accepts, per-character binding, and the `context.chat` / `context.character` shape. SillyTavern has no comparable freeform per-turn JS feature (its closest surfaces — Quick Reply scripts and the slash-command system — are a different model), so there is no ST parity to speak of here. See [Lineage: Janitor AI, not SillyTavern](#lineage-janitor-ai-not-sillytavern).
 
 Scripts sit **between lore activation and prompt assembly** in the layer pipeline:
 
@@ -231,18 +231,15 @@ Every template is covered by `services/api/test/script-templates.test.ts`, which
 
 ---
 
-## SillyTavern Parity
+## Lineage: Janitor AI, not SillyTavern
 
-**There is none, by design.** VT scripts are a bespoke model, not an ST compatibility surface. Specifically NOT implemented:
+VT scripts trace to **Janitor AI's** scripting model, not SillyTavern. The code is explicit about this: the snake_case aliases in `script-sandbox.ts` are labelled "Janitor aliases" (see the comment above `last_message`), and `parseScriptImport` accepts the `{ code, script }` JSON shape used by JAI exports. The `context` shape (`chat` / `character` / `lore` / `state`) and per-character scoping follow the same convention.
 
-- ST's `event_types` / `TavernEvents` lifecycle (emit/slash/impersonate/generation-stopped hooks) — VT has one synchronous run per turn.
-- ST's `getVariables` / `replaceVariables` / global/per-chat variable maps — VT has the simpler per-script `context.state` bucket.
-- ST's `executeSlashCommandsWithOptions` — VT scripts cannot invoke slash commands.
-- ST's iframe / `postMessage` extension API — VT scripts run server-side in `node:vm`.
+The parity is **loose, not exact**: VT does not replicate JAI's full API surface, and a script written for JAI may need light porting (mainly around which `context.*` fields exist and how state is namespaced per script). It is a borrowed convention, not a compatibility shim.
 
-The snake_case aliases (`last_message`, `message_count`, `inject_message`) exist so scripts written for **Janitor AI's** (simpler) API work without rewrite — they are name aliases of the camelCase primaries, not ST-event handlers. Where a user expects ST-script compatibility, the honest answer is "VT scripts are a different, smaller model; port the logic, do not expect the script to run unmodified."
+**SillyTavern is a different parentage.** ST has no freeform per-turn-JS feature equivalent to VT/JAI scripts. Its extension surfaces — Quick Reply scripts (button-triggered), the slash-command system, the iframe `postMessage` API, the `event_types` lifecycle hooks — are a different model: event-driven, browser-iframe-sandboxed, not server-side-per-generation-turn. None of those are implemented in VT, and none were ever a target. VT's **lorebook** system is the ST parity surface (see `lorebooks.md`); VT's **script** system is not, and is not planned to become one.
 
-For the lorebook analogue (which IS an ST parity surface), see `lorebooks.md`.
+Where a user expects to run an ST extension script unmodified in VT: it will not work, and there is no plan to make it work — the two systems solve different problems.
 
 ---
 
