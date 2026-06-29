@@ -11,14 +11,21 @@ body:
       attributes:
           label: "Step 1. Environment"
           description: "Vibe Tavern version, browser and installation method"
-          value: "- **Version:** 1.0.0\n - **Browser:** Firefox\n - **Installation method:** windows zip archive\n"
+          value: |
+              - **Version:** 1.0.0
+               - **Browser:** Firefox
+               - **Installation method:** windows zip archive
       validations:
           required: true
 
     - type: textarea
       attributes:
           label: "Step 2. Steps to reproduce, expected and actual result"
-          value: "1. Go to page X\n 2. Press button Y\n\n Expected 1, got 2"
+          value: |
+              1. Go to page X
+               2. Press button Y
+
+               Expected 1, got 2
       validations:
           required: true
 
