@@ -484,28 +484,55 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
         }
         footer={
           <div className={cn("flex shrink-0 items-center gap-2.5 border-t border-border", isMobile ? "flex-wrap px-3 py-2.5" : "py-3.5 px-5")}>
-            {activePreset && (
+            {activePreset && isMobile && (
+            <button type="button"
+              className="flex h-9 w-9 items-center justify-center rounded-md bg-s3 text-t3 active:bg-s2"
+              onClick={handleDuplicate}
+              aria-label={t("duplicate_preset_btn")}
+            >
+              <Icons.Copy />
+            </button>
+            )}
+            {activePreset && !isMobile && (
             <span
-              className={cn("flex cursor-pointer items-center gap-1 font-ui text-t3 transition-all hover:text-t1", isMobile ? "text-[12px]" : "text-[calc(var(--ui-fs)-2px)]")}
+              className="flex cursor-pointer items-center gap-1 font-ui text-[calc(var(--ui-fs)-2px)] text-t3 transition-all hover:text-t1"
               onClick={handleDuplicate}
             >
-              <Icons.Copy /> {!isMobile && t("duplicate_preset_btn")}
+              <Icons.Copy /> {t("duplicate_preset_btn")}
             </span>
             )}
-            {activePreset && (
+            {activePreset && isMobile && (
+            <button type="button"
+              className="flex h-9 w-9 items-center justify-center rounded-md bg-s3 text-t3 active:bg-s2"
+              onClick={handleExportPreset}
+              aria-label={t("export_preset_btn")}
+            >
+              <Icons.Download />
+            </button>
+            )}
+            {activePreset && !isMobile && (
             <span
-              className={cn("flex cursor-pointer items-center gap-1 font-ui text-t3 transition-all hover:text-t1", isMobile ? "text-[12px]" : "text-[calc(var(--ui-fs)-2px)]")}
+              className="flex cursor-pointer items-center gap-1 font-ui text-[calc(var(--ui-fs)-2px)] text-t3 transition-all hover:text-t1"
               onClick={handleExportPreset}
             >
-              <Icons.Download /> {!isMobile && t("export_preset_btn")}
+              <Icons.Download /> {t("export_preset_btn")}
             </span>
             )}
-            {activePreset && input.presets.length > 1 && (
+            {activePreset && input.presets.length > 1 && isMobile && (
+            <button type="button"
+              className="flex h-9 w-9 items-center justify-center rounded-md bg-s3 text-t3 active:bg-s2"
+              onClick={() => setConfirmDeleteOpen(true)}
+              aria-label={t("delete_preset")}
+            >
+              <Icons.Trash />
+            </button>
+            )}
+            {activePreset && input.presets.length > 1 && !isMobile && (
               <span
-                className={cn("flex cursor-pointer items-center gap-1 font-ui text-t3 transition-all hover:text-t1", isMobile ? "text-[12px]" : "text-[calc(var(--ui-fs)-2px)]")}
+                className="flex cursor-pointer items-center gap-1 font-ui text-[calc(var(--ui-fs)-2px)] text-t3 transition-all hover:text-t1"
                 onClick={() => setConfirmDeleteOpen(true)}
               >
-                <Icons.Trash /> {!isMobile && t("delete_preset")}
+                <Icons.Trash /> {t("delete_preset")}
               </span>
             )}
             <div className="ml-auto flex min-w-0 items-center gap-2.5">
