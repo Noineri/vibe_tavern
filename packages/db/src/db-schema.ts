@@ -285,6 +285,32 @@ export const scripts = sqliteTable('scripts', {
   scopeTypeIdx: index('idx_scripts_scope').on(table.scopeType),
 }));
 
+// ─── scriptLinks ──────────────────────────────────────────────────────────────
+//
+// Many-to-many junction table mirroring `lorebookLinks`: a script can be
+// linked to multiple characters and personas so the same utility script
+// activates across scopes without duplication. Chat-scoped scripts stay 1:1
+// via the `chatId` FK on `scripts` — linking a script to another chat is
+// semantically meaningless (different conversation), identical to lorebooks.
+//
+// The legacy FK columns (`characterId`, `personaId`) on `scripts` are
+// retained as the "primary owner" / home scope used by the scope-based UI
+// tabs and by import/duplicate flows. The resolver unions FK ∪ junction
+// (consulting BOTH) so an FK-owned script activates even if it was never
+// junction-linked — deliberately more consistent than the lorebook resolver,
+// which is junction-only for char/persona and relies on every FK-owned row
+// having been junction-linked at baseline-migration time.
+export const scriptLinks = sqliteTable('script_links', {
+  scriptId: text('script_id').notNull().references(() => scripts.id, { onDelete: 'cascade' }),
+  targetType: text('target_type').notNull(),  // 'character' | 'persona'
+  targetId: text('target_id').notNull(),
+}, (table) => ({
+  // Composite PK: one link per (script, target) pair
+  pk: primaryKey({ columns: [table.scriptId, table.targetType, table.targetId] }),
+  targetIdx: index('idx_script_links_target').on(table.targetType, table.targetId),
+  scriptIdx: index('idx_script_links_script').on(table.scriptId),
+}));
+
 // ─── chatBranches ──────────────────────────────────────────────────────────────
 
 export const chatBranches = sqliteTable('chat_branches', {

@@ -62,3 +62,16 @@ export const importScriptSchema = z.discriminatedUnion("format", [
     chatId: z.string().optional(),
   }),
 ]);
+
+// ─── Link management ─────────────────────────────────────────────────────────
+// Mirrors lorebookLinkSchema / setLorebookLinksSchema: a script can be M:N
+// bound to characters and personas on top of its home-scope FK.
+
+export const scriptLinkSchema = z.object({
+  targetType: z.enum(["character", "persona"]),
+  targetId: z.string().min(1),
+});
+
+export const setScriptLinksSchema = z.object({
+  links: z.array(scriptLinkSchema),
+});

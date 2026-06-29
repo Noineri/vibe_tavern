@@ -12,6 +12,9 @@ import { SCRIPT_TEMPLATES } from "./scriptTemplates.js";
 import { cn } from "../../../lib/cn.js";
 import { useT } from "../../../i18n/context.js";
 import { AiAssistantModal } from "../../shared/AiAssistantModal.js";
+import { LinkBindingPopover, type LinkTarget } from "../../shared/LinkBindingPopover.js";
+import { useAllCharacters } from "../../../stores/snapshot-store.js";
+import { useBootstrapStore } from "../../../stores/api-actions/bootstrap-actions.js";
 import {
   listAllScripts,
   listScripts,
@@ -20,7 +23,10 @@ import {
   deleteScript,
   testScript,
   importScript,
+  getScriptLinks,
+  setScriptLinks,
   type ScriptRecord,
+  type ScriptLinkRecord,
 } from "../../../app-client.js";
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -93,6 +99,36 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
   useEffect(() => { void refreshScripts(); }, [refreshScripts]);
 
   const activeScript = scripts.find(s => s.id === activeScriptId) ?? null;
+
+  // ── Link binding (forward direction: bind THIS script to characters/personas).
+  // Mirrors LorebookEditor's per-lorebook link state, but a single active script
+  // (not a list), so a flat array is enough.
+  const [scriptLinks, setScriptLinksState] = useState<ScriptLinkRecord[]>([]);
+  const allCharacters = useAllCharacters();
+  const personas = useBootstrapStore((s) => s.personas) ?? [];
+  const linkCharacters: LinkTarget[] = allCharacters.map((c) => ({
+    id: c.id, name: c.name, avatarAssetId: c.avatarAssetId, kind: "characters",
+    avatarExt: c.avatarExt, avatarFullExt: c.avatarFullExt, avatarFullAssetId: c.avatarFullAssetId, updatedAt: c.updatedAt,
+  }));
+  const linkPersonas: LinkTarget[] = personas.map((p) => ({
+    id: p.id, name: p.name, avatarAssetId: p.avatarAssetId, kind: "personas",
+    avatarExt: p.avatarExt, avatarFullExt: p.avatarFullExt, updatedAt: p.updatedAt,
+  }));
+
+  useEffect(() => {
+    if (!activeScriptId) { setScriptLinksState([]); return; }
+    let cancelled = false;
+    getScriptLinks(activeScriptId)
+      .then((links) => { if (!cancelled) setScriptLinksState(links); })
+      .catch(() => { if (!cancelled) setScriptLinksState([]); });
+    return () => { cancelled = true; };
+  }, [activeScriptId]);
+
+  const handleSetScriptLinks = async (next: Array<{ targetType: "character" | "persona"; targetId: string }>) => {
+    if (!activeScriptId) return;
+    const updated = await setScriptLinks(activeScriptId, next);
+    setScriptLinksState(updated);
+  };
 
   // ── Mutations (replaced with async handlers) ─────────────
   const [creatingScript, setCreatingScript] = useState(false);
@@ -327,6 +363,28 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
         <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("script_desc_label")}</label>
         <input className="w-full rounded-md border border-border bg-s2 px-2.5 py-1.5 font-ui text-t1 outline-none focus:border-accent" value={activeScript.description ?? ""} onChange={e => updateField("description", e.target.value)} placeholder={t("script_desc_placeholder")} />
       </div>
+
+      {/* Link binding (forward): bind this script to additional characters/personas */}
+      {scope !== "chat" && (
+        <div style={{ marginBottom: 16 }}>
+          <div className="mb-1.5 flex items-center gap-1.5">
+            <span className="font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("script_links_label")}</span>
+            <CustomTooltip content={t("script_links_hint")}>
+              <span className="cursor-help text-t4 text-[11px]">ⓘ</span>
+            </CustomTooltip>
+          </div>
+          <LinkBindingPopover
+            links={scriptLinks}
+            characters={linkCharacters}
+            personas={linkPersonas}
+            onSetLinks={(next) => { void handleSetScriptLinks(next as Array<{ targetType: "character" | "persona"; targetId: string }>); }}
+            t={t}
+            isMobile={isMobile}
+            tooltipLabel={t("script_links_add")}
+            emptyLabel={t("script_links_empty")}
+          />
+        </div>
+      )}
 
       {/* Toolbar */}
       <div className="mb-2 flex flex-wrap gap-2">

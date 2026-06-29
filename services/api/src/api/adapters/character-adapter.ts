@@ -491,4 +491,7 @@ export class CharacterAdapter implements CharacterRuntimeApi, CharacterAssetRunt
 	// lorebook_links (links-only, excludes FK-owned). Mirrors the persona adapter.
 	listCharacterLorebooks = (characterId: string) =>
 		this.stores.lorebooks.listLorebooksLinkedToTarget("character", characterId);
+
+	listCharacterScripts = (characterId: string) =>
+		this.stores.scripts.listScriptsLinkedToTarget("character", characterId);
 }

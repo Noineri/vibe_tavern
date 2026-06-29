@@ -74,7 +74,8 @@ export function createPersonaRoutes(runtime: PersonaRuntimeApi) {
       return c.json(await runtime.describePersonaAvatar(c.req.param("personaId")));
     })
     // Bound resources (PR-12) — reverse-direction reads backing the
-    // persona-editor binding field. Lorebooks = M:N links; scripts = FK-owned.
+    // persona-editor binding field. Both are M:N-linked via their junction
+    // tables (links-only, excludes FK-owned home scope).
     .get("/api/personas/:personaId/lorebooks", async (c) => {
       return c.json(await runtime.listPersonaLorebooks(c.req.param("personaId")));
     })

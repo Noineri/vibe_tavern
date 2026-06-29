@@ -1,5 +1,5 @@
 import type { ChatId } from "@vibe-tavern/domain";
-import type { AppSnapshot, AppCharacterVersion, ImportJsonResponse, LorebookRecord } from "./types.js";
+import type { AppSnapshot, AppCharacterVersion, ImportJsonResponse, LorebookRecord, ScriptRecord } from "./types.js";
 import { client, getGatewayBaseUrl, getMobileToken } from "./client.js";
 import { unwrapRpc, unwrapError } from "./unwrap.js";
 import { normalizeSnapshot } from "./normalize.js";
@@ -185,9 +185,15 @@ export async function setAvatarFromGallery(
 }
 
 // ─── Bound resources (character-editor binding field) ──────────────────
-// Reverse-direction read: lorebooks M:N-linked to this character via
-// lorebook_links (links-only). Mirrors listPersonaLorebooks.
+// Reverse-direction reads: resources M:N-linked to this character via their
+// junction tables (links-only, excludes FK-owned home scope). Mirrors
+// listPersonaLorebooks / listPersonaScripts.
 export async function listCharacterLorebooks(characterId: string): Promise<LorebookRecord[]> {
   const response = await client.api.characters[":characterId"].lorebooks.$get({ param: { characterId } });
   return unwrapRpc<LorebookRecord[]>(response);
+}
+
+export async function listCharacterScripts(characterId: string): Promise<ScriptRecord[]> {
+  const response = await client.api.characters[":characterId"].scripts.$get({ param: { characterId } });
+  return unwrapRpc<ScriptRecord[]>(response);
 }

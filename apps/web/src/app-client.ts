@@ -33,6 +33,7 @@ export type {
   LorebookRecord,
   LorebookLinkRecord,
   ScriptRecord,
+  ScriptLinkRecord,
   AiAssistantChunk,
   AiAssistantMode,
   AiAssistantRequestBody,
@@ -98,6 +99,7 @@ export {
   renameCharacterVersion,
   deleteCharacterVersion,
   listCharacterLorebooks,
+  listCharacterScripts,
 } from "./api/character-api.js";
 
 // ─── Persona ────────────────────────────────────────────────────────────
@@ -145,6 +147,8 @@ export {
   deleteScript,
   testScript,
   importScript,
+  getScriptLinks,
+  setScriptLinks,
 } from "./api/script-api.js";
 
 // ─── Provider ───────────────────────────────────────────────────────────

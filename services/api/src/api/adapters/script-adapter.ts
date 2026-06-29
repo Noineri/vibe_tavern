@@ -39,4 +39,10 @@ export class ScriptAdapter implements ScriptRuntimeApi {
 			chatId: body.chatId,
 		});
 	};
+
+	getScriptLinks = (scriptId: string) =>
+		this.stores.scripts.getLinks(scriptId);
+
+	setScriptLinks = (scriptId: string, links: Array<{ targetType: string; targetId: string }>) =>
+		this.stores.scripts.setLinks(scriptId, links);
 }

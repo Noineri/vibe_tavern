@@ -57,4 +57,5 @@ export type {
   CreateScriptData,
   UpdateScriptData,
   Script as ScriptRow,
+  ScriptLink,
 } from './script-store.js';

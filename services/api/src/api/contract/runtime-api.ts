@@ -23,6 +23,7 @@ import type {
 	FavoriteModel,
 	ProviderModelSettings,
 	LorebookLink,
+	ScriptLink,
 	UiSettings,
 } from "@vibe-tavern/db";
 import type { ModelSettingsOverlay } from "@vibe-tavern/domain";
@@ -185,6 +186,7 @@ export interface CharacterRuntimeApi {
 	// lorebook_links. Mirrors listPersonaLorebooks; both back the
 	// BoundResourcesField lorebook pill group.
 	listCharacterLorebooks: (characterId: string) => Promise<Lorebook[]>;
+	listCharacterScripts: (characterId: string) => Promise<Script[]>;
 }
 
 // ─── Character media gallery ───────────────────────────────────────
@@ -242,8 +244,9 @@ export interface PersonaRuntimeApi {
 	importPersonas: (payload: unknown) => Promise<{ created: number; skipped: number; errors: string[] }>;
 
 	// Bound resources (PR-12) — reverse-direction reads for the
-	// persona-editor binding field. Lorebooks are M:N-linked via lorebook_links
-	// (links-only, excludes FK-owned); scripts are FK-owned via scripts.personaId.
+	// persona-editor binding field. Both are M:N-linked via their junction
+	// tables (links-only, excludes FK-owned home scope); both back the
+	// BoundResourcesField pill groups.
 	listPersonaLorebooks: (personaId: string) => Promise<Lorebook[]>;
 	listPersonaScripts: (personaId: string) => Promise<Script[]>;
 }
@@ -283,6 +286,8 @@ export interface ScriptRuntimeApi {
 	deleteScript: (scriptId: string) => Promise<void>;
 	testScript: (scriptId: string, body: { messages?: Array<{ role: string; content: string }>; characterName?: string; characterPersonality?: string; characterScenario?: string; lastMessage?: string }) => Promise<ScriptTestResult>;
 	importScript: (body: { format: "js" | "json"; code?: string; jsonText?: string; name?: string; scopeType?: string; characterId?: string; personaId?: string; chatId?: string }) => Promise<Script>;
+	getScriptLinks: (scriptId: string) => Promise<ScriptLink[]>;
+	setScriptLinks: (scriptId: string, links: Array<{ targetType: string; targetId: string }>) => Promise<ScriptLink[]>;
 }
 
 // ─── Provider ────────────────────────────────────────────────────────

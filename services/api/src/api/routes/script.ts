@@ -47,5 +47,13 @@ export function createScriptRoutes(runtime: ScriptRuntimeApi) {
         : { format, jsonText: body.jsonText, scopeType: body.scopeType, characterId: body.characterId, personaId: body.personaId, chatId: body.chatId };
       return c.json(await runtime.importScript(payload), 201);
     })
+    // ── Links ───────────────────────────────────────────────────────────
+    .get("/api/scripts/:scriptId/links", async (c) => {
+      return c.json(await runtime.getScriptLinks(c.req.param("scriptId")));
+    })
+    .put("/api/scripts/:scriptId/links", zValidator("json", schemas.setScriptLinksSchema), async (c) => {
+      const body = c.req.valid("json");
+      return c.json(await runtime.setScriptLinks(c.req.param("scriptId"), body.links));
+    })
   ;
 }

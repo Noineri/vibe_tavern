@@ -310,5 +310,5 @@ export class PersonaAdapter implements PersonaRuntimeApi {
 		this.stores.lorebooks.listLorebooksLinkedToTarget("persona", personaId);
 
 	listPersonaScripts = (personaId: string) =>
-		this.stores.scripts.listByScope("persona", personaId);
+		this.stores.scripts.listScriptsLinkedToTarget("persona", personaId);
 }

@@ -12,7 +12,7 @@ import { cn } from "../../lib/cn.js";
 import { CustomTooltip } from "./Tooltip.js";
 import { resolveEntityAvatarUrl, avatarUrl } from "../../lib/avatar.js";
 
-export type LinkBindingTargetType = "character" | "persona" | "lorebook";
+export type LinkBindingTargetType = "character" | "persona" | "lorebook" | "script";
 
 export interface LinkTarget {
   id: string;
@@ -40,6 +40,7 @@ interface LinkBindingPopoverProps {
   characters: LinkTarget[];
   personas: LinkTarget[];
   lorebooks?: LinkTarget[];
+  scripts?: LinkTarget[];
   onSetLinks: (links: LinkBindingRecord[]) => void;
   t: (key: string) => string;
   isMobile: boolean;
@@ -48,6 +49,7 @@ interface LinkBindingPopoverProps {
   characterSectionLabel?: string;
   personaSectionLabel?: string;
   lorebookSectionLabel?: string;
+  scriptSectionLabel?: string;
 }
 
 function resolveTargetAvatarUrl(target: LinkTarget): string | null {
@@ -96,6 +98,7 @@ export function LinkBindingPopover({
   characters,
   personas,
   lorebooks = [],
+  scripts = [],
   onSetLinks,
   t,
   isMobile,
@@ -104,6 +107,7 @@ export function LinkBindingPopover({
   characterSectionLabel,
   personaSectionLabel,
   lorebookSectionLabel,
+  scriptSectionLabel,
 }: LinkBindingPopoverProps) {
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -113,10 +117,12 @@ export function LinkBindingPopover({
   const charMap = new Map(characters.map((c) => [c.id, c]));
   const personaMap = new Map(personas.map((p) => [p.id, p]));
   const lorebookMap = new Map(lorebooks.map((l) => [l.id, l]));
+  const scriptMap = new Map(scripts.map((s) => [s.id, s]));
 
   const charLinks = links.filter((l) => l.targetType === "character");
   const personaLinks = links.filter((l) => l.targetType === "persona");
   const lorebookLinks = links.filter((l) => l.targetType === "lorebook");
+  const scriptLinks = links.filter((l) => l.targetType === "script");
 
   const toggle = useCallback(
     (targetType: LinkBindingTargetType, targetId: string) => {
@@ -197,6 +203,10 @@ export function LinkBindingPopover({
           const lb = lorebookMap.get(l.targetId);
           return lb ? pill(lb, "lorebook") : null;
         })}
+        {scriptLinks.map((l) => {
+          const sc = scriptMap.get(l.targetId);
+          return sc ? pill(sc, "script") : null;
+        })}
         <CustomTooltip content={addLabel}>
           <button
             type="button"
@@ -257,7 +267,18 @@ export function LinkBindingPopover({
             </div>
           )}
 
-          {characters.length === 0 && personas.length === 0 && lorebooks.length === 0 && (
+          {scripts.length > 0 && (
+            <div className="px-3 py-2.5">
+              <div className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-t3">
+                {scriptSectionLabel || t("scope_script")}
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {scripts.map((sc) => chip(sc, "script", scriptLinks.some((l) => l.targetId === sc.id)))}
+              </div>
+            </div>
+          )}
+
+          {characters.length === 0 && personas.length === 0 && lorebooks.length === 0 && scripts.length === 0 && (
             <div className="px-3 py-4 text-center text-[12px] text-t3">
               {emptyLabel || t("lore_link_empty")}
             </div>

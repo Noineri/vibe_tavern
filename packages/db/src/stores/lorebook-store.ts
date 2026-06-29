@@ -570,7 +570,18 @@ export class LorebookStore {
       .all();
     for (const r of globalRows) lorebookIds.add(r.id);
 
-    // 2. Character-linked lorebooks (via junction table)
+    // 2. Character-scoped lorebooks: FK-owned (home scope) AND junction-linked.
+    //    The resolver consults BOTH — the previous junction-only query silently
+    //    dropped FK-owned lorebooks because `createLorebook` does NOT mirror the
+    //    FK into `lorebook_links`, so a persona/character-FK lorebook created
+    //    the normal way was visible in editor tabs but never activated in chat.
+    //    Mirrors `ScriptStore.listAllEnabledForChat` (FK ∪ junction, Set dedup).
+    const charFkRows = await this.db
+      .select({ id: lorebooks.id })
+      .from(lorebooks)
+      .where(and(eq(lorebooks.scopeType, 'character'), eq(lorebooks.characterId, characterId), eq(lorebooks.enabled, 1)))
+      .all();
+    for (const r of charFkRows) lorebookIds.add(r.id);
     const charLinks = await this.db
       .select({ lorebookId: lorebookLinks.lorebookId })
       .from(lorebookLinks)
@@ -582,8 +593,14 @@ export class LorebookStore {
       .all();
     for (const r of charLinks) lorebookIds.add(r.lorebookId);
 
-    // 3. Persona-linked lorebooks (via junction table)
+    // 3. Persona-scoped lorebooks: FK-owned AND junction-linked (same reason).
     if (personaId) {
+      const personaFkRows = await this.db
+        .select({ id: lorebooks.id })
+        .from(lorebooks)
+        .where(and(eq(lorebooks.scopeType, 'persona'), eq(lorebooks.personaId, personaId), eq(lorebooks.enabled, 1)))
+        .all();
+      for (const r of personaFkRows) lorebookIds.add(r.id);
       const personaLinks = await this.db
         .select({ lorebookId: lorebookLinks.lorebookId })
         .from(lorebookLinks)

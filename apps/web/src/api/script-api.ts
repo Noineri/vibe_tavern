@@ -1,4 +1,4 @@
-import type { ScriptRecord } from "./types.js";
+import type { ScriptRecord, ScriptLinkRecord } from "./types.js";
 import { client } from "./client.js";
 import { unwrapRpc, unwrapError } from "./unwrap.js";
 
@@ -41,4 +41,14 @@ export async function testScript(scriptId: string, body: { messages?: Array<{ ro
 export async function importScript(body: { format: "js"; code: string; name?: string; scopeType?: string; characterId?: string; personaId?: string; chatId?: string } | { format: "json"; jsonText: string; name?: string; scopeType?: string; characterId?: string; personaId?: string; chatId?: string }): Promise<ScriptRecord> {
   const response = await client.api.scripts.import.$post({ json: body });
   return unwrapRpc<ScriptRecord>(response);
+}
+
+export async function getScriptLinks(scriptId: string): Promise<ScriptLinkRecord[]> {
+  const response = await client.api.scripts[":scriptId"].links.$get({ param: { scriptId } });
+  return unwrapRpc<ScriptLinkRecord[]>(response);
+}
+
+export async function setScriptLinks(scriptId: string, links: Array<{ targetType: "character" | "persona"; targetId: string }>): Promise<ScriptLinkRecord[]> {
+  const response = await client.api.scripts[":scriptId"].links.$put({ param: { scriptId }, json: { links } });
+  return unwrapRpc<ScriptLinkRecord[]>(response);
 }

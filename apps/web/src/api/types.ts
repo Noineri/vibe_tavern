@@ -307,6 +307,12 @@ export interface ScriptRecord {
   sortOrder: number;
 }
 
+export interface ScriptLinkRecord {
+  scriptId: string;
+  targetType: "character" | "persona";
+  targetId: string;
+}
+
 // ─── Import ────────────────────────────────────────────────────────────
 
 export interface ImportJsonResponse {

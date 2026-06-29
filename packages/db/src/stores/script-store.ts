@@ -1,5 +1,5 @@
-import { eq, and, or, asc } from 'drizzle-orm';
-import { scripts } from '../db-schema.js';
+import { eq, and, or, asc, inArray } from 'drizzle-orm';
+import { scripts, scriptLinks } from '../db-schema.js';
 import type { AppDb } from '../db-connection.js';
 import { resolveStoreRuntime, type StoreClock, type StoreIdGenerator } from '../persistence.js';
 import type { ContentStore } from '../content-store.js';
@@ -43,6 +43,17 @@ export interface Script {
   updatedAt: string;
 }
 
+/**
+ * Junction row: a script M:N-linked to a character or persona. Mirrors
+ * `LorebookLink`. The script's home scope (FK on `scripts`) is tracked
+ * separately; a link is an ADDITIONAL binding, not a replacement.
+ */
+export interface ScriptLink {
+  scriptId: string;
+  targetType: 'character' | 'persona';
+  targetId: string;
+}
+
 // ─── Store ────────────────────────────────────────────────────────────────────
 
 export class ScriptStore {
@@ -84,6 +95,7 @@ export class ScriptStore {
         .select()
         .from(scripts)
         .where(eq(scripts.scopeType, 'global'))
+        .orderBy(asc(scripts.sortOrder), asc(scripts.name))
         .all();
       return rows.map((r) => this.mapRow(r));
     }
@@ -91,10 +103,36 @@ export class ScriptStore {
     const fkCol = scopeType === 'character' ? scripts.characterId
       : scopeType === 'persona' ? scripts.personaId
       : scripts.chatId;
+    const directCondition = and(eq(scripts.scopeType, scopeType), eq(fkCol, ownerId));
+
+    // Character/persona tabs show both directly scoped scripts and scripts
+    // linked via the junction table (mirrors LorebookStore.listLorebooksByScope).
+    // Chat scope remains direct-only — script_links supports character/persona
+    // targets only, same as lorebook_links.
+    if (scopeType === 'character' || scopeType === 'persona') {
+      const linkedRows = await this.db
+        .select({ scriptId: scriptLinks.scriptId })
+        .from(scriptLinks)
+        .where(and(eq(scriptLinks.targetType, scopeType), eq(scriptLinks.targetId, ownerId)))
+        .all();
+      const linkedIds = [...new Set(linkedRows.map((row) => row.scriptId))];
+      const whereCondition = linkedIds.length > 0
+        ? or(directCondition, inArray(scripts.id, linkedIds))
+        : directCondition;
+      const rows = await this.db
+        .select()
+        .from(scripts)
+        .where(whereCondition)
+        .orderBy(asc(scripts.scopeType), asc(scripts.sortOrder), asc(scripts.name))
+        .all();
+      return rows.map((r) => this.mapRow(r));
+    }
+
     const rows = await this.db
       .select()
       .from(scripts)
-      .where(and(eq(scripts.scopeType, scopeType), eq(fkCol, ownerId)))
+      .where(directCondition)
+      .orderBy(asc(scripts.sortOrder), asc(scripts.name))
       .all();
     return rows.map((r) => this.mapRow(r));
   }
@@ -230,31 +268,146 @@ export class ScriptStore {
     personaId: string | null,
     chatId: string,
   ): Promise<Script[]> {
-    const conditions = [
+    const ids = new Set<string>();
+
+    // FK-scoped sources: global, character-FK, persona-FK, chat-FK.
+    const fkConditions = [
       eq(scripts.scopeType, 'global'),
       and(eq(scripts.scopeType, 'character'), eq(scripts.characterId, characterId)),
       and(eq(scripts.scopeType, 'chat'), eq(scripts.chatId, chatId)),
     ];
     if (personaId) {
-      conditions.push(
+      fkConditions.push(
         and(eq(scripts.scopeType, 'persona'), eq(scripts.personaId, personaId)),
       );
     }
+    const fkRows = await this.db
+      .select({ id: scripts.id })
+      .from(scripts)
+      .where(and(or(...fkConditions), eq(scripts.enabled, 1)))
+      .all();
+    for (const r of fkRows) ids.add(r.id);
+
+    // Junction-linked sources (character ∪ persona). The resolver consults
+    // BOTH FK and junction here — unlike LorebookStore.listAllActiveForChat,
+    // which is junction-only for char/persona. Scripts cannot rely on every
+    // FK-owned row being junction-linked (the migration is incremental), so
+    // both sources are unioned with Set-based dedup. This is the deliberate
+    // consistency fix noted in reports/script-link-binding-gap.md.
+    const charLinkRows = await this.db
+      .select({ scriptId: scriptLinks.scriptId })
+      .from(scriptLinks)
+      .innerJoin(scripts, and(eq(scriptLinks.scriptId, scripts.id), eq(scripts.enabled, 1)))
+      .where(and(eq(scriptLinks.targetType, 'character'), eq(scriptLinks.targetId, characterId)))
+      .all();
+    for (const r of charLinkRows) ids.add(r.scriptId);
+
+    if (personaId) {
+      const personaLinkRows = await this.db
+        .select({ scriptId: scriptLinks.scriptId })
+        .from(scriptLinks)
+        .innerJoin(scripts, and(eq(scriptLinks.scriptId, scripts.id), eq(scripts.enabled, 1)))
+        .where(and(eq(scriptLinks.targetType, 'persona'), eq(scriptLinks.targetId, personaId)))
+        .all();
+      for (const r of personaLinkRows) ids.add(r.scriptId);
+    }
+
+    if (ids.size === 0) return [];
 
     const rows = await this.db
       .select()
       .from(scripts)
-      .where(
-        and(
-          or(...conditions),
-          eq(scripts.enabled, 1),
-        ),
-      )
+      .where(inArray(scripts.id, [...ids]))
       .all();
 
     return rows
       .map((r) => this.mapRow(r))
       .sort((a, b) => a.sortOrder - b.sortOrder);
+  }
+
+  // ─── Link management (mirrors LorebookStore link methods) ─────────────────
+
+  /**
+   * Get all junction links for a script (NOT its home-scope FK). These are the
+   * ADDITIONAL character/persona bindings beyond the script's own scope.
+   */
+  async getLinks(scriptId: string): Promise<ScriptLink[]> {
+    const rows = await this.db
+      .select()
+      .from(scriptLinks)
+      .where(eq(scriptLinks.scriptId, scriptId))
+      .all();
+    return rows.map((r) => ({
+      scriptId: r.scriptId,
+      targetType: r.targetType as 'character' | 'persona',
+      targetId: r.targetId,
+    }));
+  }
+
+  /**
+   * Replace all links for a script. Deletes existing and inserts new ones in a
+   * transaction.
+   */
+  async setLinks(scriptId: string, links: Array<{ targetType: string; targetId: string }>): Promise<ScriptLink[]> {
+    await this.db.transaction(async (tx) => {
+      await tx.delete(scriptLinks).where(eq(scriptLinks.scriptId, scriptId)).run();
+      for (const link of links) {
+        await tx.insert(scriptLinks).values({
+          scriptId,
+          targetType: link.targetType,
+          targetId: link.targetId,
+        }).run();
+      }
+    });
+    return this.getLinks(scriptId);
+  }
+
+  /**
+   * Add a single link (idempotent — ignores duplicates).
+   */
+  async addLink(scriptId: string, targetType: string, targetId: string): Promise<void> {
+    await this.db.insert(scriptLinks).values({
+      scriptId,
+      targetType,
+      targetId,
+    }).onConflictDoNothing().run();
+  }
+
+  /**
+   * Remove a single link.
+   */
+  async removeLink(scriptId: string, targetType: string, targetId: string): Promise<void> {
+    await this.db.delete(scriptLinks).where(
+      and(
+        eq(scriptLinks.scriptId, scriptId),
+        eq(scriptLinks.targetType, targetType),
+        eq(scriptLinks.targetId, targetId),
+      ),
+    ).run();
+  }
+
+  /**
+   * Reverse query — list scripts M:N-linked to a given target (character or
+   * persona), regardless of the script's own home scope. This is the
+   * persona/character-editor view of "which scripts activate for me". Returns
+   * links-only; FK-owned scripts surface via `listByScope` which unions FK +
+   * links. Mirrors `LorebookStore.listLorebooksLinkedToTarget`.
+   */
+  async listScriptsLinkedToTarget(targetType: 'character' | 'persona', targetId: string): Promise<Script[]> {
+    const linkedRows = await this.db
+      .select({ scriptId: scriptLinks.scriptId })
+      .from(scriptLinks)
+      .where(and(eq(scriptLinks.targetType, targetType), eq(scriptLinks.targetId, targetId)))
+      .all();
+    const linkedIds = [...new Set(linkedRows.map((row) => row.scriptId))];
+    if (linkedIds.length === 0) return [];
+    const rows = await this.db
+      .select()
+      .from(scripts)
+      .where(inArray(scripts.id, linkedIds))
+      .orderBy(asc(scripts.sortOrder), asc(scripts.name))
+      .all();
+    return rows.map((r) => this.mapRow(r));
   }
 
   // ─── File payload ──────────────────────────────────────────────────────────
