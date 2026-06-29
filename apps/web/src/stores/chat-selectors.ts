@@ -70,6 +70,8 @@ export function useMacroContext(): MacroContext | null {
         characterName: s.character.name,
         personaName: s.persona?.name ?? null,
         personaDescription: s.persona?.description ?? null,
+        personaPronouns: s.persona?.pronouns ?? null,
+        personaPronounForms: s.persona?.pronounForms ?? null,
       };
     }),
   );

@@ -40,8 +40,10 @@
         "@radix-ui/react-select": "^2.2.6",
         "@radix-ui/react-tooltip": "^1.2.8",
         "@vibe-tavern/api": "0.3.7",
+        "@vibe-tavern/api-contracts": "0.3.7",
         "@vibe-tavern/db": "0.3.7",
         "@vibe-tavern/domain": "0.3.7",
+        "@vibe-tavern/prompt-pipeline": "0.3.7",
         "codemirror": "^6.0.2",
         "framer-motion": "^12.40.0",
         "hono": "^4.12",
@@ -78,6 +80,7 @@
       "name": "@vibe-tavern/api-contracts",
       "version": "0.3.7",
       "dependencies": {
+        "@vibe-tavern/domain": "0.3.7",
         "zod": "^3.24.4",
       },
       "devDependencies": {

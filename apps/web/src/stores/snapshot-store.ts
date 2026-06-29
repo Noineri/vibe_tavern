@@ -9,7 +9,7 @@ import type {
   AppCharacterEntry,
   ChatListItem,
 } from "../app-client.js";
-import type { ChatBranch, PromptTraceRecordDto, AssemblePromptResponse } from "@vibe-tavern/domain";
+import type { ChatBranch, PromptTraceRecordDto, AssemblePromptResponse, PronounForms } from "@vibe-tavern/domain";
 
 // ── Macro context (derived from character + persona) ──────────────────
 
@@ -17,6 +17,10 @@ export interface MacroContext {
   characterName: string;
   personaName: string | null;
   personaDescription: string | null;
+  /** Slash-string preset key (e.g. "she/her") — resolves via PRESET_PRONOUN_FORMS. */
+  personaPronouns: string | null;
+  /** Structured custom forms — takes precedence over the preset key when set. */
+  personaPronounForms: PronounForms | null;
 }
 
 // ── Store shape ────────────────────────────────────────────────────────
@@ -371,7 +375,7 @@ export function useMessage(id: string) {
   return useSnapshotStore((s) => s.messagesById[id] ?? null);
 }
 
-/** Subscribe to macro context (character name, persona name/description). */
+/** Subscribe to macro context (character name, persona name/description, pronoun forms). */
 export function useMacroContext(): MacroContext | null {
   return useSnapshotStore(
     useShallow((s) => {
@@ -380,6 +384,8 @@ export function useMacroContext(): MacroContext | null {
         characterName: s.character.name,
         personaName: s.persona?.name ?? null,
         personaDescription: s.persona?.description ?? null,
+        personaPronouns: s.persona?.pronouns ?? null,
+        personaPronounForms: s.persona?.pronounForms ?? null,
       };
     }),
   );
