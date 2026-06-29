@@ -113,7 +113,6 @@ The stack is cutting-edge. Before writing a compatibility shim, polyfill, or "ju
 - **Branded IDs:** `CharacterId`, `ChatId`, etc. Cast only at DB/API boundaries via `brandId<T>(raw)` — never elsewhere.
 - **Enums:** `as const` objects + derived types. **No TypeScript `enum`.**
 - **Tailwind CSS 4:** config via `@theme {}` in `apps/web/src/styles.css`, no JS config file.
-- **Markdown:** single unwrapped lines (one sentence/point per line) — soft-wrap is the editor's job. Applies to docs and `.md` files; code blocks and tables keep their own formatting.
 
 ### Type safety (hard rules)
 
