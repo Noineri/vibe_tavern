@@ -95,6 +95,7 @@ export function Rail({ hidden }: { hidden?: boolean }) {
   // Context menus
   const [charMenuId, setCharMenuId] = useState<string | null>(null);
   const [chatMenuId, setChatMenuId] = useState<ChatId | null>(null);
+  const [branchMenuId, setBranchMenuId] = useState<{ chatId: ChatId; branchId: ChatBranchId; label: string } | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
 
   // Chat rename
@@ -108,8 +109,8 @@ export function Rail({ hidden }: { hidden?: boolean }) {
   }, [forceOpen]);
 
   // Close menu on outside click
-  useOutsideClick(menuRef, () => { setCharMenuId(null); setChatMenuId(null); }, {
-    enabled: charMenuId !== null || chatMenuId !== null,
+  useOutsideClick(menuRef, () => { setCharMenuId(null); setChatMenuId(null); setBranchMenuId(null); }, {
+    enabled: charMenuId !== null || chatMenuId !== null || branchMenuId !== null,
     event: "pointerdown",
   });
 
@@ -137,6 +138,7 @@ export function Rail({ hidden }: { hidden?: boolean }) {
   const closeMenu = () => {
     setCharMenuId(null);
     setChatMenuId(null);
+    setBranchMenuId(null);
   };
 
   const commitRename = () => {
@@ -145,6 +147,20 @@ export function Rail({ hidden }: { hidden?: boolean }) {
       void character.handleRenameChat(renamingChatId, nextTitle);
     }
     setRenamingChatId(null);
+  };
+
+  // Branch rename — mirrors chat-rename's inline-input pattern, but targets
+  // renameBranchAction(chatId, branchId, label). renamingBranchId holds the
+  // exact {chatId, branchId} being edited so the inline input knows which row
+  // to replace.
+  const [renamingBranch, setRenamingBranch] = useState<{ chatId: ChatId; branchId: ChatBranchId } | null>(null);
+  const [branchRenameDraft, setBranchRenameDraft] = useState("");
+  const commitBranchRename = () => {
+    const nextLabel = branchRenameDraft.trim();
+    if (nextLabel && renamingBranch) {
+      void renameBranchAction(renamingBranch.chatId, renamingBranch.branchId, nextLabel);
+    }
+    setRenamingBranch(null);
   };
 
   /* ── Swipe on expanded panel to close ── */
@@ -510,22 +526,40 @@ export function Rail({ hidden }: { hidden?: boolean }) {
                                 </button>
                                 {branchesOpen === ch.id && (
                                   <div className="mt-1 ml-2 flex flex-col gap-0.5 border-l border-border/30 pl-2">
-                                    {activeChatBranches.map((b) => (
+                                    {activeChatBranches.map((b) => {
+                                      const isRenamingThisBranch = renamingBranch?.branchId === b.id && renamingBranch?.chatId === ch.id;
+                                      return (
                                       <div
                                         key={b.id}
                                         className={cn(
                                           "flex cursor-pointer items-center gap-1.5 rounded-md px-2 min-h-[44px] text-[calc(var(--ui-fs)-2px)] transition-colors active:bg-s3",
                                           b.id === activeBranchId ? "text-accent-t font-medium bg-accent-dim/50" : "text-t3"
                                         )}
-                                        onClick={(e) => { e.stopPropagation(); void activateBranchAction(ch.id as ChatId, b.id as ChatBranchId); }}
+                                        onClick={(e) => { if (!isRenamingThisBranch) { e.stopPropagation(); void activateBranchAction(ch.id as ChatId, b.id as ChatBranchId); } }}
                                       >
                                         <span className={cn("inline-block h-2 w-2 rounded-full shrink-0", b.id === activeBranchId ? "bg-accent" : "bg-border2")} />
-                                        <span className="truncate">{b.label || t("sidebar_unnamed_branch")}</span>
-                                        <button type="button" className="ml-auto shrink-0 cursor-pointer rounded p-1 text-t3 transition-all active:bg-s3 active:text-t1" onClick={(e) => { e.stopPropagation(); const newLabel = prompt(t("rename_branch_prompt"), b.label); if (newLabel !== null && newLabel !== b.label) void renameBranchAction(ch.id as ChatId, b.id as ChatBranchId, newLabel); }}>
-                                          <Ic.edit />
+                                        {isRenamingThisBranch ? (
+                                          <input
+                                            className="mb-px w-full rounded border border-accent bg-bg px-1 py-0.5 font-ui text-[calc(var(--ui-fs)-2px)] text-t1 outline-none"
+                                            value={branchRenameDraft}
+                                            autoFocus
+                                            onChange={(e) => setBranchRenameDraft(e.target.value)}
+                                            onClick={(e) => e.stopPropagation()}
+                                            onBlur={commitBranchRename}
+                                            onKeyDown={(e) => {
+                                              if (e.key === "Enter") { e.preventDefault(); commitBranchRename(); }
+                                              else if (e.key === "Escape") { e.preventDefault(); setRenamingBranch(null); }
+                                            }}
+                                          />
+                                        ) : (
+                                          <span className="truncate">{b.label || t("sidebar_unnamed_branch")}</span>
+                                        )}
+                                        <button type="button" className={cn("ml-auto shrink-0 cursor-pointer items-center justify-center rounded p-1 text-t3 transition-all active:bg-s3 active:text-t1", branchMenuId?.branchId === b.id && "text-t1 bg-s3")} onClick={(e) => { e.stopPropagation(); setCharMenuId(null); setChatMenuId(null); setBranchMenuId({ chatId: ch.id as ChatId, branchId: b.id as ChatBranchId, label: b.label }); }}>
+                                          <Ic.ellipsis />
                                         </button>
                                       </div>
-                                    ))}
+                                      );
+                                    })}
                                   </div>
                                 )}
                                 </>
@@ -598,6 +632,16 @@ export function Rail({ hidden }: { hidden?: boolean }) {
               confirmLabel: clearsOnRemove ? t("sidebar_clear_chat") : t("delete"),
               onConfirm: () => character.handleRemoveChat(chatMenuId),
             });
+          }},
+        ]
+      )}
+
+      {branchMenuId && bottomSheet(
+        branchMenuId.label || t("sidebar_unnamed_branch"),
+        [
+          { icon: <Ic.edit />, label: t("sidebar_rename"), action: () => {
+            setRenamingBranch({ chatId: branchMenuId.chatId, branchId: branchMenuId.branchId });
+            setBranchRenameDraft(branchMenuId.label);
           }},
         ]
       )}
