@@ -266,6 +266,7 @@ export function TracePayloadView({ trace, searchQuery, formatTokens, compact = f
 
 	return (
 		<div className="flex flex-col gap-2">
+			<ScriptRunsAccordion runs={trace.scriptInjections} q={q} matches={matches} />
 			{visiblePreamble.map((layer) => (
 				<LayerCard
 					key={layer.id}
@@ -367,6 +368,116 @@ export function TracePayloadView({ trace, searchQuery, formatTokens, compact = f
 			{visiblePreamble.length === 0 && !grouping.hasHistory && (
 				<div className="rounded-md border border-dashed border-border2 bg-s2 px-3 py-6 text-center font-ui text-[13px] text-t3">
 					{t("trace_no_active")}
+				</div>
+			)}
+		</div>
+	);
+}
+
+/** Script Runs accordion (P4b) — rendered ABOVE the prompt trace payload so
+ *  per-script results (ran/errored, mutations, injected messages, console,
+ *  errors) are immediately visible without digging into the trace layers.
+ *  Collapsed by default; auto-expands when searching. Gracefully handles
+ *  pre-P4 traces (the old single synthetic '__pipeline' row — rendered as a
+ *  generic pipeline entry without per-script detail). */
+function ScriptRunsAccordion({
+	runs,
+	q,
+	matches,
+}: {
+	runs: AssemblePromptResponse["scriptInjections"];
+	q: string;
+	matches: (...vals: Array<unknown>) => boolean;
+}) {
+	const { t } = useT();
+	const [open, setOpen] = useState(false);
+	const [openScripts, setOpenScripts] = useState<Set<string>>(new Set());
+
+	if (runs.length === 0) return null;
+
+	const errorCount = runs.filter((r) => r.status === "errored" || !!r.error).length;
+	const effectiveOpen = open || q.length > 0;
+
+	const toggleScript = (id: string) =>
+		setOpenScripts((prev) => {
+			const next = new Set(prev);
+			if (next.has(id)) next.delete(id);
+			else next.add(id);
+			return next;
+		});
+
+	return (
+		<div className="overflow-hidden rounded-md border border-border bg-s2 font-ui">
+			<button
+				type="button"
+				className="flex w-full cursor-pointer items-center gap-2 px-3.5 py-3 text-left active:bg-s3"
+				onClick={() => setOpen(!open)}
+				aria-expanded={effectiveOpen}
+			>
+				<span className={cn("text-[11px] text-t4 transition-transform", effectiveOpen && "rotate-90")}>▶</span>
+				<span className="min-w-0 flex-1 font-semibold text-t2">{t("trace_script_runs")}</span>
+				<span className="shrink-0 text-[11px] text-t3 tabular-nums">
+					{runs.length}{errorCount > 0 ? ` · ${errorCount} ${t("trace_script_errors_label")}` : ""}
+				</span>
+			</button>
+			{effectiveOpen && (
+				<div className="flex flex-col gap-1.5 border-t border-border bg-input-bg p-2.5">
+					{runs.map((run) => {
+						const scriptMatchesQ = q.length === 0 || matches(run.scriptName, run.error, run.personalityMutation, run.scenarioMutation);
+						if (!scriptMatchesQ) return null;
+						const isExpanded = openScripts.has(run.scriptId) || q.length > 0;
+						const errored = run.status === "errored" || !!run.error;
+						return (
+							<div key={run.scriptId} className="overflow-hidden rounded-md bg-s2/40">
+								<button
+									type="button"
+									className="flex w-full cursor-pointer items-center gap-2 px-1 py-1 text-left font-ui text-[11px] text-t3 active:bg-s3"
+									onClick={() => toggleScript(run.scriptId)}
+									aria-expanded={isExpanded}
+								>
+									<span className={cn("shrink-0 text-[10px] text-t4 transition-transform", isExpanded && "rotate-90")}>▶</span>
+									<span className="min-w-0 truncate font-medium text-t2">{run.scriptName}</span>
+									<span className={cn("shrink-0 rounded px-1.5 py-0.5 font-mono text-[10px] uppercase", errored ? "bg-danger-dim text-danger-text" : "bg-success-dim text-success-text")}>{errored ? t("trace_script_errored") : t("trace_script_ran")}</span>
+								</button>
+								{isExpanded && (
+									<div className="flex flex-col gap-1.5 border-t border-border p-2">
+										{errored && run.error && (
+											<pre className="whitespace-pre-wrap font-mono text-[11px] text-danger-text">{run.error}{run.line ? ` (line ${run.line})` : ""}</pre>
+										)}
+										{(run.personalityMutation || run.scenarioMutation) && (
+											<div className="rounded bg-bg px-2 py-1">
+												<div className="mb-0.5 text-[10px] uppercase tracking-wide text-t4">{t("trace_script_mutations")}</div>
+												{run.personalityMutation && <pre className="whitespace-pre-wrap font-mono text-[11px] text-t2">{run.personalityMutation}</pre>}
+												{run.scenarioMutation && <pre className="mt-0.5 whitespace-pre-wrap font-mono text-[11px] text-t2">{run.scenarioMutation}</pre>}
+											</div>
+										)}
+										{run.injectedMessages && run.injectedMessages.length > 0 && (
+											<div className="rounded bg-bg px-2 py-1">
+												<div className="mb-0.5 text-[10px] uppercase tracking-wide text-t4">{t("script_test_injected")}</div>
+												{run.injectedMessages.map((msg, i) => (
+													<div key={i} className="flex items-start gap-1.5">
+														<span className="shrink-0 rounded bg-s3 px-1 py-0.5 font-mono text-[10px] uppercase text-t3">{msg.role}</span>
+														<pre className="flex-1 whitespace-pre-wrap font-mono text-[11px] text-t2">{msg.content}</pre>
+													</div>
+												))}
+											</div>
+										)}
+										{run.console && run.console.length > 0 && (
+											<div className="rounded bg-bg px-2 py-1">
+												<div className="mb-0.5 text-[10px] uppercase tracking-wide text-t4">{t("script_test_console")}</div>
+												{run.console.map((entry, i) => (
+													<div key={i} className="flex items-start gap-1.5">
+														<span className={cn("shrink-0 rounded px-1 py-0.5 font-mono text-[10px] uppercase", entry.level === "error" ? "bg-danger-dim text-danger-text" : entry.level === "warn" ? "bg-s3 text-t2" : "bg-s3 text-t3")}>{entry.level}</span>
+														<pre className="flex-1 whitespace-pre-wrap font-mono text-[11px] text-t2">{entry.args}</pre>
+													</div>
+												))}
+											</div>
+										)}
+									</div>
+								)}
+							</div>
+						);
+					})}
 				</div>
 			)}
 		</div>
