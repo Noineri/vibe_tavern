@@ -8,6 +8,9 @@ export interface ScriptTestInput {
 	characterPersonality?: string;
 	characterScenario?: string;
 	lastMessage?: string;
+	/** Optional persona to expose as `context.persona`. Lets a user test
+	 *  persona-branching scripts without wiring up a real chat. */
+	persona?: { name: string; description: string };
 }
 
 export interface ScriptTestResult {
@@ -18,6 +21,12 @@ export interface ScriptTestResult {
 	 *  Surfaced so the test panel can show inject-only scripts (e.g. the
 	 *  dice-roller template), which produce no personality/scenario output. */
 	injectedMessages: Array<{ content: string; role: 'system' | 'user' | 'assistant' }>;
+	/** Console output captured from the script (P1) — log/warn/error entries the
+	 *  script emitted, for the test panel's debug console. */
+	console: Array<{ level: 'log' | 'warn' | 'error'; args: string }>;
+	/** Final shared bucket after the script ran (P5). Turn-scoped; surfaced so
+	 *  the test panel can confirm cross-script handoff values. */
+	shared: Record<string, unknown>;
 	errors: Array<{ scriptId: string; scriptName: string; error: string; line?: number }>;
 }
 
@@ -54,13 +63,18 @@ export async function testScript(
 		},
 		activeLoreEntries: [],
 		scriptState: {},
+		persona: input.persona,
 	});
+
+	const run = result.scriptRuns[0];
 
 	return {
 		personality: result.character.personality,
 		scenario: result.character.scenario,
 		state: result.updatedScriptState[script.id] ?? {},
 		injectedMessages: result.injectedMessages,
+		console: run?.console ?? [],
+		shared: result.shared,
 		errors: result.errors,
 	};
 }

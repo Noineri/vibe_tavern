@@ -313,7 +313,7 @@ function makeFilterService(
     getPromptPreset: async () => null,
     listActiveLoreEntries: async () => [],
     listRetrievedMemories: async () => [],
-    executeScripts: async () => ({ personality: "Bold.", scenario: null, injectedMessages: [], errors: [] }),
+    executeScripts: async () => ({ personality: "Bold.", scenario: null, injectedMessages: [], errors: [], scriptRuns: [] }),
     getToolInstructions: () => null,
   };
 

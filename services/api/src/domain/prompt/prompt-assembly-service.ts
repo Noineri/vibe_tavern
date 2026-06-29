@@ -103,11 +103,23 @@ export interface PromptAssemblyResolver {
     messages: Array<{ role: string; content: string }>;
     activeLoreEntries: LoreEntry[];
     mode: string;
+    persona?: { name: string; description: string };
   }): Promise<{
     personality: string;
     scenario: string;
     injectedMessages: Array<{ content: string; role: 'system' | 'user' | 'assistant' }>;
     errors: Array<{ scriptId: string; scriptName: string; error: string }>;
+    scriptRuns: Array<{
+      scriptId: string;
+      scriptName: string;
+      status: 'ran' | 'errored';
+      personalityMutation: string;
+      scenarioMutation: string;
+      injectedMessages: Array<{ content: string; role: 'system' | 'user' | 'assistant' }>;
+      console: Array<{ level: 'log' | 'warn' | 'error'; args: string }>;
+      error?: string;
+      line?: number;
+    }>;
   }>;
   getToolInstructions(): string | null;
 }
@@ -235,6 +247,7 @@ export class PromptAssemblyService {
       messages: recentMessages.map(m => ({ role: m.role, content: m.content })),
       activeLoreEntries,
       mode: input.mode ?? 'chat',
+      persona: persona ? { name: persona.name, description: persona.description } : undefined,
     });
 
     // Apply script mutations to character fields in-place
@@ -335,20 +348,30 @@ export class PromptAssemblyService {
       },
     });
 
-    // Build script injection trace data
-    const scriptInjections = scriptResult.errors.length > 0 ||
-      scriptResult.personality !== (character.personality ?? '') ||
-      scriptResult.scenario !== (character.scenario ?? '') ||
-      scriptResult.injectedMessages.length > 0
-      ? [{
-          scriptId: '__pipeline',
-          scriptName: 'Script Pipeline',
-          personalityMutation: scriptResult.personality !== (character.personality ?? '') ? scriptResult.personality : '',
-          scenarioMutation: scriptResult.scenario !== (character.scenario ?? '') ? scriptResult.scenario : '',
-          injectedMessages: scriptResult.injectedMessages,
-          error: scriptResult.errors.length > 0 ? scriptResult.errors.map(e => `${e.scriptName}: ${e.error}`).join('; ') : undefined,
-        }]
-      : [];
+    // Build script injection trace data — one row per script that ran (P4),
+    // instead of the old single synthetic '__pipeline' row that flattened all
+    // scripts into one concatenated error string. A run gets a trace row when
+    // it produced any observable effect (mutation / injection / console) or
+    // errored — no-op runs are omitted to keep the trace signal-high.
+    const scriptInjections = scriptResult.scriptRuns
+      .filter(run =>
+        run.status === 'errored'
+        || run.personalityMutation !== ''
+        || run.scenarioMutation !== ''
+        || run.injectedMessages.length > 0
+        || run.console.length > 0,
+      )
+      .map(run => ({
+        scriptId: run.scriptId,
+        scriptName: run.scriptName,
+        status: run.status,
+        personalityMutation: run.personalityMutation,
+        scenarioMutation: run.scenarioMutation,
+        injectedMessages: run.injectedMessages,
+        console: run.console,
+        error: run.error,
+        line: run.line,
+      }));
 
     // Per-entry activation reasons for the prompt trace (parallel to
     // activatedLoreEntries; same ids in activation order). Built from the

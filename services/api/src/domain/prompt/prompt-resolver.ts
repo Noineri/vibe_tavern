@@ -223,17 +223,46 @@ export class StaticPromptResolver implements PromptAssemblyResolver {
 		messages: Array<{ role: string; content: string }>;
 		activeLoreEntries: LoreEntry[];
 		mode: string;
+		/** Effective persona for the turn. Passed through to the sandbox as
+		 *  `context.persona` (read-only). Optional — absent when no persona is
+		 *  resolved, in which case scripts see `context.persona` as undefined. */
+		persona?: { name: string; description: string };
 	}): Promise<{
 		personality: string;
 		scenario: string;
 		injectedMessages: Array<{ content: string; role: 'system' | 'user' | 'assistant' }>;
 		errors: Array<{ scriptId: string; scriptName: string; error: string }>;
+		/** Per-script breakdown of the turn (P4). Order matches execution order.
+		 *  Empty when no scripts ran. Carries each script's status, mutations,
+		 *  injected messages, console, and error so the trace can render them. */
+		scriptRuns: Array<{
+			scriptId: string;
+			scriptName: string;
+			status: 'ran' | 'errored';
+			personalityMutation: string;
+			scenarioMutation: string;
+			injectedMessages: Array<{ content: string; role: 'system' | 'user' | 'assistant' }>;
+			console: Array<{ level: 'log' | 'warn' | 'error'; args: string }>;
+			error?: string;
+			line?: number;
+		}>;
 	}> {
 		const defaultResult = {
 			personality: input.characterRecord.personality ?? '',
 			scenario: input.characterRecord.scenario ?? '',
 			injectedMessages: [] as Array<{ content: string; role: 'system' | 'user' | 'assistant' }>,
 			errors: [] as Array<{ scriptId: string; scriptName: string; error: string }>,
+			scriptRuns: [] as Array<{
+				scriptId: string;
+				scriptName: string;
+				status: 'ran' | 'errored';
+				personalityMutation: string;
+				scenarioMutation: string;
+				injectedMessages: Array<{ content: string; role: 'system' | 'user' | 'assistant' }>;
+				console: Array<{ level: 'log' | 'warn' | 'error'; args: string }>;
+				error?: string;
+				line?: number;
+			}>,
 		};
 
 		const chat = await this.stores.chats.getById(input.chatId);
@@ -276,6 +305,7 @@ export class StaticPromptResolver implements PromptAssemblyResolver {
 				keys: e.keys,
 			})),
 			scriptState,
+			persona: input.persona,
 		});
 
 		// 4. Persist updated script state
@@ -291,6 +321,17 @@ export class StaticPromptResolver implements PromptAssemblyResolver {
 				scriptId: e.scriptId,
 				scriptName: e.scriptName,
 				error: e.error,
+			})),
+			scriptRuns: result.scriptRuns.map(r => ({
+				scriptId: r.scriptId,
+				scriptName: r.scriptName,
+				status: r.status,
+				personalityMutation: r.personalityMutation,
+				scenarioMutation: r.scenarioMutation,
+				injectedMessages: r.injectedMessages,
+				console: r.console,
+				error: r.error,
+				line: r.line,
 			})),
 		};
 	}

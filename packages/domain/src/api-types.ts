@@ -36,6 +36,16 @@ export interface AssemblePromptResponse {
     scriptName: string;
     personalityMutation: string;
     scenarioMutation: string;
+    /** Per-script injected messages (P4). Absent on traces persisted before
+     *  the per-script-row change — those carry only the aggregate. */
+    injectedMessages?: Array<{ content: string; role: 'system' | 'user' | 'assistant' }>;
+    /** Per-script console capture (P1). Absent on old traces. */
+    console?: Array<{ level: 'log' | 'warn' | 'error'; args: string }>;
+    /** Per-script run status (P4). Absent on old traces (which used a single
+     *  synthetic '__pipeline' row that always represented the whole pipeline). */
+    status?: 'ran' | 'errored';
+    /** Source line of the error, when `status === 'errored'`. */
+    line?: number;
     error?: string;
   }>;
   retrievedMemories: Array<Record<string, unknown>>;

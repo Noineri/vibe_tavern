@@ -24,6 +24,8 @@ function run(
     scenario?: string;
     state?: Record<string, Record<string, unknown>>;
     activeLoreEntries?: ScriptExecutionInput["activeLoreEntries"];
+    persona?: { name: string; description: string };
+    shared?: Record<string, unknown>;
   } = {},
 ) {
   const scripts = Array.isArray(code)
@@ -35,6 +37,8 @@ function run(
     character: { name: "Test", personality: opts.personality ?? "", scenario: opts.scenario ?? "" },
     activeLoreEntries: opts.activeLoreEntries ?? [],
     scriptState: opts.state ?? {},
+    persona: opts.persona,
+    shared: opts.shared,
   });
 }
 
@@ -229,6 +233,24 @@ describe("executeScripts — context utilities", () => {
     const r = run(`context.character.personality += context.weightedPick([{w:"win",weight:1},{w:"lose",weight:0}]).w;`);
     expect(r.character.personality).toBe("win");
   });
+
+  test("seeded RNG reproduces the same sequence for the same turn (message count)", () => {
+    // P7: regeneration must reproduce outcomes. Same message count → same
+    // first roll. Pin the determinism contract explicitly.
+    const code = `context.state.set('roll', context.random());`;
+    const a = run(code, { messages: [{ message: "m1", role: "user" }] });
+    const b = run(code, { messages: [{ message: "m1", role: "user" }] });
+    expect(a.updatedScriptState.s0.roll).toBe(b.updatedScriptState.s0.roll);
+  });
+
+  test("a different turn (different message count) re-sows the RNG", () => {
+    // Different seed source → different first roll (with overwhelming
+    // probability; pinned as a contract that the seed actually changes).
+    const code = `context.state.set('roll', context.random());`;
+    const one = run(code, { messages: [{ message: "m1", role: "user" }] });
+    const two = run(code, { messages: [{ message: "m1", role: "user" }, { message: "m2", role: "user" }] });
+    expect(one.updatedScriptState.s0.roll).not.toBe(two.updatedScriptState.s0.roll);
+  });
 });
 
 describe("executeScripts — error handling", () => {
@@ -327,6 +349,125 @@ describe("executeScripts — execution order", () => {
   });
 });
 
+describe("executeScripts — context.persona", () => {
+  test("persona exposes name and description (read-only)", () => {
+    const r = run(
+      `context.character.personality += context.persona.name + ":" + context.persona.description;`,
+      { persona: { name: "Alice", description: "A knight." } },
+    );
+    expect(r.character.personality).toBe("Alice:A knight.");
+  });
+
+  test("persona is absent from context when not provided", () => {
+    // No persona passed → `context.persona` is undefined. Pin so a future
+    // change that always defines it (e.g. an empty default) is intentional.
+    const r = run(`context.character.personality += typeof context.persona;`);
+    expect(r.character.personality).toBe("undefined");
+  });
+
+  test("persona is frozen — mutation is a no-op (silent fail in sloppy mode)", () => {
+    const r = run(
+      `context.persona.name = "hacked"; context.character.personality += context.persona.name;`,
+      { persona: { name: "Alice", description: "" } },
+    );
+    expect(r.character.personality).toBe("Alice");
+  });
+});
+
+describe("executeScripts — context.shared", () => {
+  test("a script writes, a later script reads (cross-script, same turn)", () => {
+    // P5: the turn-scoped shared bucket lets script #1 hand data to script #2
+    // in the same turn — something context.state cannot do (isolated by id).
+    const r = run([
+      { code: `context.shared.set("mood", "angry");`, id: "writer", sortOrder: 0 },
+      { code: `context.character.personality += context.shared.get("mood", "calm");`, id: "reader", sortOrder: 1 },
+    ]);
+    expect(r.character.personality).toBe("angry");
+  });
+
+  test("shared.get(key, default) returns the default when key is absent", () => {
+    const r = run(`context.character.personality += context.shared.get("missing", "fallback");`);
+    expect(r.character.personality).toBe("fallback");
+  });
+
+  test("shared.increment accumulates across scripts in the same turn", () => {
+    const r = run([
+      { code: `context.shared.increment("ticks");`, id: "a", sortOrder: 0 },
+      { code: `context.shared.increment("ticks");`, id: "b", sortOrder: 1 },
+      { code: `context.character.personality += context.shared.get("ticks");`, id: "c", sortOrder: 2 },
+    ]);
+    expect(r.character.personality).toBe("2");
+  });
+
+  test("shared is exposed in the result (final state of the bucket)", () => {
+    const r = run(`context.shared.set("k", "v");`);
+    expect(r.shared).toEqual({ k: "v" });
+  });
+
+  test("shared does NOT leak into per-script state buckets", () => {
+    // Critical invariant: shared and state are separate channels. A write to
+    // shared must not appear in updatedScriptState, and a per-script state
+    // write must not appear in shared.
+    const r = run([
+      { code: `context.shared.set("s", 1); context.state.set("p", 2);`, id: "x", sortOrder: 0 },
+    ]);
+    expect(r.shared).toEqual({ s: 1 });
+    expect(r.updatedScriptState.x).toEqual({ p: 2 });
+  });
+});
+
+describe("executeScripts — scriptRuns per-script breakdown (P4)", () => {
+  test("one run entry per executed script, in execution order", () => {
+    const r = run([
+      { code: `context.character.personality += "A";`, id: "s1", sortOrder: 0 },
+      { code: `context.character.personality += "B";`, id: "s2", sortOrder: 1 },
+    ]);
+    expect(r.scriptRuns.map((s) => s.scriptId)).toEqual(["s1", "s2"]);
+  });
+
+  test("a successful run records status 'ran' and its personality mutation", () => {
+    const r = run(`context.character.personality += " appended";`, { personality: "base" });
+    expect(r.scriptRuns[0].status).toBe("ran");
+    expect(r.scriptRuns[0].personalityMutation).toBe("base appended");
+    expect(r.scriptRuns[0].error).toBeUndefined();
+  });
+
+  test("a run that did not mutate personality records an empty mutation", () => {
+    const r = run(`context.state.set("x", 1);`, { personality: "base" });
+    expect(r.scriptRuns[0].personalityMutation).toBe("");
+    expect(r.scriptRuns[0].scenarioMutation).toBe("");
+  });
+
+  test("an errored run records status 'errored' with the message", () => {
+    const r = run(`throw new Error("boom");`);
+    expect(r.scriptRuns[0].status).toBe("errored");
+    expect(r.scriptRuns[0].error).toBe("boom");
+  });
+
+  test("per-run injectedMessages are scoped to the script that produced them", () => {
+    const r = run([
+      { code: `context.chat.injectMessage("from-a");`, id: "a", sortOrder: 0 },
+      { code: `context.chat.injectMessage("from-b");`, id: "b", sortOrder: 1 },
+    ]);
+    expect(r.scriptRuns[0].injectedMessages).toEqual([{ content: "from-a", role: "system" }]);
+    expect(r.scriptRuns[1].injectedMessages).toEqual([{ content: "from-b", role: "system" }]);
+    // Aggregate is still the union (back-comat).
+    expect(r.injectedMessages).toEqual([
+      { content: "from-a", role: "system" },
+      { content: "from-b", role: "system" },
+    ]);
+  });
+
+  test("per-run console is scoped to the script that produced it", () => {
+    const r = run([
+      { code: `console.log("first");`, id: "a", sortOrder: 0 },
+      { code: `console.log("second");`, id: "b", sortOrder: 1 },
+    ]);
+    expect(r.scriptRuns[0].console).toEqual([{ level: "log", args: "first" }]);
+    expect(r.scriptRuns[1].console).toEqual([{ level: "log", args: "second" }]);
+  });
+});
+
 describe("executeScripts — sandbox isolation", () => {
   test("globals are limited to an allowlist (no process, no require)", () => {
     // The sandbox must not leak Node primitives. `process` and `require` are
@@ -335,12 +476,18 @@ describe("executeScripts — sandbox isolation", () => {
     expect(r.character.personality).toBe("undefined,undefined");
   });
 
-  test("console methods are present but silenced (no-ops)", () => {
-    // Scripts may call console.log for debugging; the sandbox stubs them so
-    // they don't pollute server logs. They must not throw.
-    const r = run(`console.log("a"); console.warn("b"); console.error("c"); context.character.personality += "ok";`);
+  test("console methods are present and captured (not silenced)", () => {
+    // P1: the sandbox captures console.log/warn/error into the per-script run
+    // result so the test panel and trace can show intermediate values. They
+    // still must not throw.
+    const r = run(`console.log("a", 1); console.warn("b"); console.error("c"); context.character.personality += "ok";`);
     expect(r.errors).toHaveLength(0);
     expect(r.character.personality).toBe("ok");
+    expect(r.scriptRuns[0].console).toEqual([
+      { level: "log", args: "a 1" },
+      { level: "warn", args: "b" },
+      { level: "error", args: "c" },
+    ]);
   });
 
   test("standard JS globals (Math, JSON, Date, Array, Object, RegExp) are available", () => {

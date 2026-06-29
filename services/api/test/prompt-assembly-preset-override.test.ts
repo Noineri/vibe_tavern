@@ -84,6 +84,7 @@ function makeResolver(): { resolver: PromptAssemblyResolver; calls: string[] } {
       scenario: input.characterRecord.scenario ?? "",
       injectedMessages: [],
       errors: [],
+      scriptRuns: [],
     }),
   };
   return { resolver, calls };
