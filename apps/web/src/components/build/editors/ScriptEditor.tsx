@@ -699,11 +699,15 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
                 <>
                   <div className="rounded-md border border-border bg-bg" style={{ padding: 10 }}>
                     <div className="text-[11px] font-semibold uppercase tracking-[0.06em] text-t3">{t("script_test_personality")}</div>
-                    <pre className="mt-1 whitespace-pre-wrap font-mono text-[12px] text-t2">{testResult.personality || <span className="italic text-t3">({t("script_test_no_change")})</span>}</pre>
+                    {testResult.personality
+                      ? <AutoTextarea className="mt-1 w-full resize-none rounded-md border-0 bg-s2 px-2 py-1 font-mono text-[12px] leading-[1.5] text-t2 outline-none" style={{}} value={testResult.personality} onChange={() => {}} readOnly maxHeight={320} />
+                      : <p className="mt-1 font-mono text-[12px] italic text-t3">({t("script_test_no_change")})</p>}
                   </div>
                   <div className="rounded-md border border-border bg-bg" style={{ padding: 10 }}>
                     <div className="text-[11px] font-semibold uppercase tracking-[0.06em] text-t3">{t("script_test_scenario")}</div>
-                    <pre className="mt-1 whitespace-pre-wrap font-mono text-[12px] text-t2">{testResult.scenario || <span className="italic text-t3">({t("script_test_no_change")})</span>}</pre>
+                    {testResult.scenario
+                      ? <AutoTextarea className="mt-1 w-full resize-none rounded-md border-0 bg-s2 px-2 py-1 font-mono text-[12px] leading-[1.5] text-t2 outline-none" style={{}} value={testResult.scenario} onChange={() => {}} readOnly maxHeight={320} />
+                      : <p className="mt-1 font-mono text-[12px] italic text-t3">({t("script_test_no_change")})</p>}
                   </div>
                 </>
               )}
