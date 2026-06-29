@@ -159,15 +159,28 @@ export function PersonaModal(input: PersonaModalProps) {
   // FIX: ResizeObserver on the new card. Since the new persona is always the
   // LAST list item (backend listAll has no ORDER BY → rowid/insertion order),
   // "reveal it" == "pin the scroll container to its bottom". The observer
-  // re-pins on every height change (collapsed→expanded, avatar load, typing),
-  // so the destination is always computed against the CURRENT card height.
-  // Disconnects when the draft id changes or the card unmounts.
+  // re-pins on every height change DURING THE REVEAL PHASE (collapsed→expanded,
+  // initial textarea auto-resize, avatar load) so the destination is always
+  // computed against the CURRENT card height.
+  //
+  // DIRTY-GATE (PR-11 rev 2): the observer must STOP re-pinning once the user
+  // is actively editing — otherwise every keystroke that grows the textarea
+  // yanks the scroll back to the bottom. The reveal phase completes before the
+  // user types (baseline is captured at create time against the empty form, so
+  // isDirty is false through expand + auto-resize), so gating on !isDirty lets
+  // all the reveal-phase resizes pin the bottom while making typing-induced
+  // resizes a no-op. Reads isDirty through a ref to avoid re-creating the
+  // observer (which would detach/reattach the ref callback) on every edit.
   //
   // NOT the MessageList rAF bottom-pinning pattern — that is a different
   // concern (live message append during streaming); this is a static list.
   const scrollBodyRef = useRef<HTMLDivElement>(null);
   const cardRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const createdCardObserver = useRef<ResizeObserver | null>(null);
+  // Mirror of `isDirty` (computed below) read inside the ResizeObserver
+  // callback. Assigned during render so it's always current when the observer
+  // fires; the ref is stable so handleCardRef's deps don't churn.
+  const isDirtyRef = useRef(false);
   const handleCardRef = useCallback((personaId: string, el: HTMLDivElement | null) => {
     if (el) {
       cardRefs.current.set(personaId, el);
@@ -178,6 +191,9 @@ export function PersonaModal(input: PersonaModalProps) {
         const body = scrollBodyRef.current;
         const ro = new ResizeObserver(() => {
           if (!body) return;
+          // DIRTY-GATE: stop re-pinning once the user is actively editing so
+          // typing doesn't yank the scroll. See the PR-11 rev 2 note above.
+          if (isDirtyRef.current) return;
           body.scrollTo({ top: body.scrollHeight, behavior: "smooth" });
         });
         ro.observe(el);
@@ -494,6 +510,8 @@ export function PersonaModal(input: PersonaModalProps) {
   // don't reliably track this fully-controlled (no-register) form.
   const allFormValues = form.watch();
   const isDirty = computePersonaIsDirty(allFormValues, baselineRef.current);
+  // Mirror for the PR-11 reveal-scroll dirty-gate (see createdCardObserver).
+  isDirtyRef.current = isDirty;
 
   // Avatar-in-prompt fields live OUT-OF-BAND on the persona (excluded from
   // this modal's react-hook-form, same design as the character side — see
