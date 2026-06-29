@@ -636,6 +636,7 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
           />
           <button type="button" className={cn("h-9 shrink-0 cursor-pointer rounded-md border-0 bg-accent px-4 font-ui text-xs font-medium text-on-accent transition-all", isMobile && "min-h-[44px]")} onClick={runTest}>{t("script_test_run")}</button>
         </div>
+        <p className="mt-1.5 font-ui text-[11px] leading-relaxed text-t3">{t("script_test_input_hint")}</p>
         {/* Advanced test inputs (P2/P3): character fields + persona */}
         <div className="mt-2">
           <button type="button" className="flex cursor-pointer items-center gap-1 font-ui text-[11px] text-t3 transition-all hover:text-t1" onClick={() => setTestAdvanced(v => !v)}>
@@ -644,7 +645,6 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
           </button>
           {testAdvanced && (
             <div className="mt-2 space-y-2 rounded-md border border-border bg-bg" style={{ padding: 10 }}>
-              <div className="text-[10px] text-t4">{t("script_test_messages_hint")}</div>
               <div>
                 <label className="mb-1 block font-ui text-[11px] text-t3">{t("script_test_character_name")}</label>
                 <input className="h-8 w-full rounded-md border border-border bg-s2 px-2 font-ui text-[12px] text-t1 outline-none focus:border-accent" value={testCharName} onChange={e => setTestCharName(e.target.value)} />
@@ -673,22 +673,40 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
             </div>
           )}
         </div>
-        {testResult && (
-          <div className="mt-3 space-y-2">
-            {testResult.errors.length > 0 && (
-              <div className="rounded-md border border-danger bg-danger-dim" style={{ padding: 10 }}>
-                <div className="text-[11px] font-semibold uppercase text-danger-text">{t("script_test_error")}</div>
-                <pre className="mt-1 whitespace-pre-wrap font-mono text-[11px] text-danger-text">{testResult.errors.map(e => typeof e === 'string' ? e : `${e.scriptName ?? 'Script'}: ${e.error}${e.line ? ` (line ${e.line})` : ''}`).join("\n")}</pre>
-              </div>
-            )}
-            <div className="rounded-md border border-border bg-bg" style={{ padding: 10 }}>
-              <div className="text-[11px] font-semibold uppercase tracking-[0.06em] text-t3">{t("script_test_personality")}</div>
-              <pre className="mt-1 whitespace-pre-wrap font-mono text-[12px] text-t2">{testResult.personality || <span className="italic text-t3">({t("script_test_no_result")})</span>}</pre>
-            </div>
-            <div className="rounded-md border border-border bg-bg" style={{ padding: 10 }}>
-              <div className="text-[11px] font-semibold uppercase tracking-[0.06em] text-t3">{t("script_test_scenario")}</div>
-              <pre className="mt-1 whitespace-pre-wrap font-mono text-[12px] text-t2">{testResult.scenario || <span className="italic text-t3">({t("script_test_no_result")})</span>}</pre>
-            </div>
+        {testResult && (() => {
+          const hasAnyOutput = testResult.errors.length > 0
+            || !!testResult.personality
+            || !!testResult.scenario
+            || testResult.injectedMessages.length > 0
+            || testResult.console.length > 0
+            || Object.keys(testResult.state).length > 0
+            || Object.keys(testResult.shared).length > 0;
+          return (
+            <div className="mt-3 space-y-2">
+              {testResult.errors.length > 0 && (
+                <div className="rounded-md border border-danger bg-danger-dim" style={{ padding: 10 }}>
+                  <div className="text-[11px] font-semibold uppercase text-danger-text">{t("script_test_error")}</div>
+                  <pre className="mt-1 whitespace-pre-wrap font-mono text-[11px] text-danger-text">{testResult.errors.map(e => typeof e === 'string' ? e : `${e.scriptName ?? 'Script'}: ${e.error}${e.line ? ` (line ${e.line})` : ''}`).join("\n")}</pre>
+                </div>
+              )}
+              {!hasAnyOutput && (
+                <div className="rounded-md border border-warning bg-warning-dim" style={{ padding: 10 }}>
+                  <div className="text-[11px] font-semibold uppercase text-warning-text">{t("script_test_no_effect")}</div>
+                  <div className="mt-1 font-ui text-[11px] leading-relaxed text-t2">{t("script_test_no_effect_hint")}</div>
+                </div>
+              )}
+              {hasAnyOutput && (
+                <>
+                  <div className="rounded-md border border-border bg-bg" style={{ padding: 10 }}>
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.06em] text-t3">{t("script_test_personality")}</div>
+                    <pre className="mt-1 whitespace-pre-wrap font-mono text-[12px] text-t2">{testResult.personality || <span className="italic text-t3">({t("script_test_no_change")})</span>}</pre>
+                  </div>
+                  <div className="rounded-md border border-border bg-bg" style={{ padding: 10 }}>
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.06em] text-t3">{t("script_test_scenario")}</div>
+                    <pre className="mt-1 whitespace-pre-wrap font-mono text-[12px] text-t2">{testResult.scenario || <span className="italic text-t3">({t("script_test_no_change")})</span>}</pre>
+                  </div>
+                </>
+              )}
             {testResult.injectedMessages.length > 0 && (
               <div className="rounded-md border border-border bg-bg" style={{ padding: 10 }}>
                 <div className="text-[11px] font-semibold uppercase tracking-[0.06em] text-t3">{t("script_test_injected")}</div>
@@ -728,7 +746,8 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
               </div>
             )}
           </div>
-        )}
+        );
+        })()}
         {testingScript && <div className="mt-3 text-center font-ui text-[12px] text-t3">{t("script_running")}</div>}
       </div>
     </div>
