@@ -678,12 +678,13 @@ import { scanSillyTavernDirectory as scanST, importSillyTavernDirectory as impor
 		};
 	}
 
-	private async getAllCharacterEntries(): Promise<Array<{ id: string; name: string; subtitle: string; avatarAssetId: string | null; avatarFullAssetId: string | null; avatarCropJson: string | null; avatarExt: string | null; updatedAt: string }>> {
+	private async getAllCharacterEntries(): Promise<Array<{ id: string; name: string; subtitle: string; tags: string[]; avatarAssetId: string | null; avatarFullAssetId: string | null; avatarCropJson: string | null; avatarExt: string | null; updatedAt: string }>> {
 		const characters = await this.stores.characters.listAll();
 		return characters.map((c) => ({
 			id: c.id,
 			name: c.name,
 			subtitle: c.tags.length > 0 ? c.tags[0] : '',
+			tags: c.tags,
 			avatarAssetId: c.avatarAssetId,
 			avatarFullAssetId: c.avatarFullAssetId,
 			avatarCropJson: c.avatarCropJson,

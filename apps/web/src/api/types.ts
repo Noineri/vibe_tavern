@@ -114,6 +114,7 @@ export interface AppCharacterEntry {
   id: string;
   name: string;
   subtitle: string;
+  tags: string[];
   avatarAssetId: string | null;
   avatarFullAssetId: string | null;
   avatarCropJson: string | null;
