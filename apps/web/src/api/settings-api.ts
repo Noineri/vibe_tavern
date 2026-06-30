@@ -1,4 +1,4 @@
-import type { UiSettingsRecord, AppSnapshot } from "./types.js";
+import type { UiSettingsRecord, AppSnapshot, AppCharacterEntry } from "./types.js";
 import type { ChatId, PromptPresetDto } from "@vibe-tavern/domain";
 import { client } from "./client.js";
 import { unwrapRpc } from "./unwrap.js";
@@ -10,7 +10,7 @@ export async function bootstrapApp(): Promise<{
   initialChatId: ChatId | null;
   snapshot: AppSnapshot | null;
   isFirstRun: boolean;
-  allCharacters: Array<{ id: string; name: string; subtitle: string; avatarAssetId: string | null; avatarFullAssetId: string | null; avatarCropJson: string | null; avatarExt: string | null; avatarFullExt: string | null; updatedAt: string }>;
+  allCharacters: AppCharacterEntry[];
   promptPresets: PromptPresetDto[];
   uiSettings: UiSettingsRecord;
   isArmServer: boolean;
@@ -24,7 +24,7 @@ export async function bootstrapApp(): Promise<{
     initialChatId: ChatId | null;
     snapshot: AppSnapshot | null;
     isFirstRun?: boolean;
-    allCharacters?: Array<{ id: string; name: string; subtitle: string; avatarAssetId: string | null; avatarFullAssetId?: string | null; avatarCropJson?: string | null; avatarExt?: string | null; avatarFullExt?: string | null; updatedAt?: string }>;
+    allCharacters?: Array<{ id: string; name: string; subtitle: string; tags?: string[]; avatarAssetId: string | null; avatarFullAssetId?: string | null; avatarCropJson?: string | null; avatarExt?: string | null; avatarFullExt?: string | null; updatedAt?: string }>;
     promptPresets?: PromptPresetDto[];
     uiSettings?: UiSettingsRecord;
     isArmServer?: boolean;
@@ -34,7 +34,7 @@ export async function bootstrapApp(): Promise<{
     initialChatId: data.initialChatId,
     snapshot: data.snapshot ? normalizeSnapshot(data.snapshot) : null,
     isFirstRun: data.isFirstRun ?? false,
-    allCharacters: (data.allCharacters ?? []).map(c => ({ ...c, avatarFullAssetId: c.avatarFullAssetId ?? null, avatarCropJson: c.avatarCropJson ?? null, avatarExt: c.avatarExt ?? null, avatarFullExt: c.avatarFullExt ?? null, updatedAt: c.updatedAt ?? "" })),
+    allCharacters: (data.allCharacters ?? []).map(c => ({ ...c, tags: c.tags ?? [], avatarFullAssetId: c.avatarFullAssetId ?? null, avatarCropJson: c.avatarCropJson ?? null, avatarExt: c.avatarExt ?? null, avatarFullExt: c.avatarFullExt ?? null, updatedAt: c.updatedAt ?? "" })),
     promptPresets: data.promptPresets ?? [],
     uiSettings: data.uiSettings ?? {
       id: "default",

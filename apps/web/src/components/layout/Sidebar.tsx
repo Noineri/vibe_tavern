@@ -14,6 +14,9 @@ import { useBootstrapStore } from "../../stores/api-actions/bootstrap-actions.js
 import { useChatMeta } from "../../stores/chat-selectors.js";
 import { useNavigationStore, useChatStore, useCharacterStore, useModalStore } from "../../stores/index.js";
 import { buildCharacterTabs } from "../../lib/character-tabs.js";
+import { filterAndSortList } from "../../lib/list-filter.js";
+import { ListSortToggle } from "../shared/ListSortToggle.js";
+import { ListSearchPanel } from "../shared/ListSearchPanel.js";
 import { CustomTooltip } from "../shared/Tooltip.js";
 import { OverflowTooltip } from "../shared/OverflowTooltip.js";
 import { useBuildPanels } from "../../hooks/use-build-panels.js";
@@ -78,6 +81,63 @@ export function Sidebar() {
     () => buildCharacterTabs(allCharacters, allChats),
     [allCharacters, allChats],
   );
+
+  // --- Character list: sort + search state ---
+  const characterSortMode = useNavigationStore((s) => s.characterSortMode);
+  const setCharacterSortMode = useNavigationStore((s) => s.setCharacterSortMode);
+  const [charQuery, setCharQuery] = useState("");
+  const [charSelectedTags, setCharSelectedTags] = useState<string[]>([]);
+  const [charSearchOpen, setCharSearchOpen] = useState(false);
+
+  // Pool every tag across all characters for the search combobox.
+  const charTagPool = useMemo(
+    () => Array.from(new Set(allCharacters.flatMap((c) => c.tags ?? []))).sort((a, b) => a.localeCompare(b)),
+    [allCharacters],
+  );
+
+  // Enrich each character tab with a recentKey (max lastMessageAt across its
+  // chats; "" for characters with no chat → sorts last under "recent") and its
+  // tags, then apply the shared filter + sort.
+  const visibleCharacterTabs = useMemo(() => {
+    const lastByChar = new Map<string, string>();
+    for (const ch of allChats) {
+      const prev = lastByChar.get(ch.characterId) ?? "";
+      if (ch.lastMessageAt > prev) lastByChar.set(ch.characterId, ch.lastMessageAt);
+    }
+    const tagsById = new Map(allCharacters.map((c) => [c.id, c.tags ?? []] as const));
+    const enriched = characterTabs.map((tab) => ({
+      ...tab,
+      recentKey: lastByChar.get(tab.id) ?? "",
+      tags: tagsById.get(tab.id) ?? [],
+    }));
+    return filterAndSortList({
+      items: enriched,
+      getName: (i) => i.name,
+      sortMode: characterSortMode,
+      query: charQuery,
+      selectedTags: charSelectedTags,
+    });
+  }, [characterTabs, allCharacters, allChats, characterSortMode, charQuery, charSelectedTags]);
+
+  // --- Chat list: sort + search state ---
+  const chatSortMode = useNavigationStore((s) => s.chatSortMode);
+  const setChatSortMode = useNavigationStore((s) => s.setChatSortMode);
+  const [chatListQuery, setChatListQuery] = useState("");
+  const [chatSearchOpen, setChatSearchOpen] = useState(false);
+
+  // Chats have no tags — name-only search. recentKey is the chat's own
+  // lastMessageAt (already on ChatListItem). Filtered within the current
+  // character scope (the `chats` memo already narrows to currentCharacterId).
+  const visibleChats = useMemo(() => {
+    const enriched = chats.map((c) => ({ ...c, recentKey: c.lastMessageAt }));
+    return filterAndSortList({
+      items: enriched,
+      getName: (i) => i.title,
+      sortMode: chatSortMode,
+      query: chatListQuery,
+      selectedTags: [],
+    });
+  }, [chats, chatSortMode, chatListQuery]);
 
   // --- Store actions ---
   const setSidebarCollapsed = useNavigationStore((s) => s.setSidebarCollapsed);
@@ -504,25 +564,46 @@ export function Sidebar() {
           <>
           <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
             <section className="min-h-0 max-h-[50%] overflow-y-auto border-b border-border py-1.5">
-              <div className="flex items-center pr-2.5">
-                <div className="flex-1 px-[13px] pt-1 pb-[5px] text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.08em] text-t3">{t("sidebar_characters")}</div>
-                <CustomTooltip content={t("sidebar_import_character")}>
-                  <button type="button" className="iBtn size-5" onClick={() => setImportModal("character")}>
-                    <Icons.Import />
-                  </button>
-                </CustomTooltip>
-                <CustomTooltip content={t("sidebar_create_character")}>
-                  <button type="button" className="iBtn size-5" onClick={() => useModalStore.getState().setCreateCharacterModalOpen(true)}>
-                    <Icons.Plus />
-                  </button>
-                </CustomTooltip>
+              <div className="sticky top-[-6px] z-10 bg-surface pt-1.5">
+                <div className="flex items-center pr-2.5">
+                  <div className="flex-1 px-[13px] pt-1 pb-[5px] text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.08em] text-t3">{t("sidebar_characters")}</div>
+                  <ListSortToggle mode={characterSortMode} onChange={setCharacterSortMode} />
+                  <CustomTooltip content={t("search_name_placeholder")}>
+                    <button type="button" className={cn("iBtn size-5", charSearchOpen && "text-accent-t")} aria-pressed={charSearchOpen} onClick={() => setCharSearchOpen((v) => !v)}>
+                      <Icons.Search />
+                    </button>
+                  </CustomTooltip>
+                  <CustomTooltip content={t("sidebar_import_character")}>
+                    <button type="button" className="iBtn size-5" onClick={() => setImportModal("character")}>
+                      <Icons.Import />
+                    </button>
+                  </CustomTooltip>
+                  <CustomTooltip content={t("sidebar_create_character")}>
+                    <button type="button" className="iBtn size-5" onClick={() => useModalStore.getState().setCreateCharacterModalOpen(true)}>
+                      <Icons.Plus />
+                    </button>
+                  </CustomTooltip>
+                </div>
+                {charSearchOpen && (
+                  <ListSearchPanel
+                    query={charQuery}
+                    onQueryChange={setCharQuery}
+                    selectedTags={charSelectedTags}
+                    onSelectedTagsChange={setCharSelectedTags}
+                    availableTags={charTagPool}
+                  />
+                )}
               </div>
               {characterTabs.length === 0 ? (
                 <div className="px-[14px] py-5 text-center text-xs leading-relaxed text-t3">
                   {t("sidebar_no_characters")}
                 </div>
+              ) : visibleCharacterTabs.length === 0 ? (
+                <div className="px-[14px] py-5 text-center text-xs leading-relaxed text-t3">
+                  {t("search_no_results")}
+                </div>
               ) : (
-                characterTabs.map((tab) => {
+                visibleCharacterTabs.map((tab) => {
                   const isActive = isCharacterTabActive(tab);
                   const menuOpen = charMenuId === tab.id;
                   return (
@@ -622,13 +703,20 @@ export function Sidebar() {
             </section>
 
             <section className="min-h-0 max-h-[50%] overflow-y-auto border-b-0 py-1.5">
-              <div className="flex items-center pr-2.5">
-                <div className="flex-1 px-[13px] pt-1 pb-[5px] text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.08em] text-t3">{t("sidebar_chats")}</div>
-                <CustomTooltip content={t("sidebar_import_chat")}>
-                  <button type="button" className="iBtn size-5" onClick={() => setImportModal("chat")}>
-                    <Icons.Import />
-                  </button>
-                </CustomTooltip>
+              <div className="sticky top-[-6px] z-10 bg-surface pt-1.5">
+                <div className="flex items-center pr-2.5">
+                  <div className="flex-1 px-[13px] pt-1 pb-[5px] text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.08em] text-t3">{t("sidebar_chats")}</div>
+                  <ListSortToggle mode={chatSortMode} onChange={setChatSortMode} />
+                  <CustomTooltip content={t("search_name_placeholder")}>
+                    <button type="button" className={cn("iBtn size-5", chatSearchOpen && "text-accent-t")} aria-pressed={chatSearchOpen} onClick={() => setChatSearchOpen((v) => !v)}>
+                      <Icons.Search />
+                    </button>
+                  </CustomTooltip>
+                  <CustomTooltip content={t("sidebar_import_chat")}>
+                    <button type="button" className="iBtn size-5" onClick={() => setImportModal("chat")}>
+                      <Icons.Import />
+                    </button>
+                  </CustomTooltip>
                 <CustomTooltip content={t("sidebar_new_chat_active_char")}>
                   <button type="button" className="iBtn size-5" onClick={() => {
                     const charId = currentCharacterId;
@@ -638,12 +726,25 @@ export function Sidebar() {
                   </button>
                 </CustomTooltip>
               </div>
+              {chatSearchOpen && (
+                <ListSearchPanel
+                  query={chatListQuery}
+                  onQueryChange={setChatListQuery}
+                  selectedTags={[]}
+                  onSelectedTagsChange={() => {}}
+                />
+              )}
+              </div>
               {chats.length === 0 ? (
                 <div className="px-[14px] py-5 text-center text-xs leading-relaxed text-t3">
                   {t("sidebar_send_a_message")}
                 </div>
+              ) : visibleChats.length === 0 ? (
+                <div className="px-[14px] py-5 text-center text-xs leading-relaxed text-t3">
+                  {t("search_no_results")}
+                </div>
               ) : (
-                chats.map((chatItem) => {
+                visibleChats.map((chatItem) => {
                   const isActive = chatItem.id === activeChatId;
                   const chatRemovalMode = character.getChatRemovalMode(chatItem.id);
                   const clearsOnRemove = chatRemovalMode === "clear";
