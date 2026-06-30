@@ -118,7 +118,7 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
     const releaseUrl = updateCheck.releaseUrl;
     toast.custom(
       (id) => (
-        <div className="glass-blur flex items-center gap-3 rounded-lg border border-border bg-glass-bg px-3.5 py-2.5 shadow-md">
+        <div className="flex items-center gap-3 px-3.5 py-2.5">
           <span className="font-ui text-[calc(var(--ui-fs)-2px)] text-t1">{message}</span>
           <button
             type="button"
@@ -132,7 +132,7 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
           </button>
         </div>
       ),
-      { duration: 5000 },
+      { duration: 5000, style: { borderRadius: "var(--r)" } },
     );
   }, [updateCheck.hasUpdate, updateCheck.latestVersion, updateCheck.releaseUrl, t]);
 
