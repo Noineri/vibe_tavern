@@ -656,6 +656,15 @@ import { scanSillyTavernDirectory as scanST, importSillyTavernDirectory as impor
 			characterName = charRecord.name;
 			subtitle = charRecord.subtitle ?? "";
 		} catch {}
+		const messageCount = chatState.messages.length;
+		// Recency signal for the sidebar's "recent" sort: the newest message in the
+		// active branch (chat.updatedAt reflects metadata edits, not generation).
+		// getMessages() returns position-ascending, but reduce on createdAt is
+		// order-robust and empty-safe (→ "" → falls back to chat.updatedAt).
+		const lastMessageAt = chatState.messages.reduce<string>(
+			(max, m) => (m.createdAt > max ? m.createdAt : max),
+			"",
+		) || chat.updatedAt;
 		return {
 			id: chat.id as ChatId,
 			title: chat.title,
@@ -663,7 +672,8 @@ import { scanSillyTavernDirectory as scanST, importSillyTavernDirectory as impor
 			characterName,
 			subtitle,
 			activeBranchLabel: chatState.branch.label,
-			messageCount: chatState.messages.length,
+			messageCount,
+			lastMessageAt,
 			updatedAt: chat.updatedAt,
 		};
 	}

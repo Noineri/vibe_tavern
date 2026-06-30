@@ -180,5 +180,7 @@ export interface ChatListItem {
 	subtitle: string;
 	activeBranchLabel: string;
 	messageCount: number;
+	/** ISO timestamp of the most recent message in the active branch; falls back to `updatedAt` when the branch is empty. Drives the "recent" sort for chats and characters. */
+	lastMessageAt: string;
 	updatedAt: string;
 }
