@@ -10,9 +10,18 @@
  * The panel is controlled: the parent owns `query` and `selectedTags` so the
  * same state drives filterAndSortList. The tag input draft (`tagInput`) and the
  * dropdown open state are the only local concerns.
+ *
+ * The tag suggestion dropdown is portaled to document.body. The sidebar is
+ * itself a glass surface (backdrop-blur), which makes it a CSS backdrop root —
+ * a dropdown rendered inside it can only blur the sidebar's own pixels, not the
+ * page behind the sidebar, so it reads as a flat opaque box. Portal escapes
+ * that root so glass-blur blurs the real page. Same pattern Sidebar uses for
+ * its own character/chat action menus. Position is recomputed from the input's
+ * getBoundingClientRect whenever the dropdown opens.
  */
 
-import { useRef, useState, useMemo, type RefObject } from "react";
+import { useLayoutEffect, useRef, useState, useMemo, type RefObject } from "react";
+import { createPortal } from "react-dom";
 import { cn } from "../../lib/cn.js";
 import { useOutsideClick } from "../../hooks/use-outside-click.js";
 import { useT } from "../../i18n/context.js";
@@ -40,6 +49,7 @@ export function ListSearchPanel({
   const { t } = useT();
   const [tagInput, setTagInput] = useState("");
   const [tagFocused, setTagFocused] = useState(false);
+  const [dropdownPos, setDropdownPos] = useState<{ top: number; left: number; width: number } | null>(null);
   const tagWrapRef = useRef<HTMLDivElement | null>(null);
   const tagInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -53,6 +63,34 @@ export function ListSearchPanel({
       .filter((tag) => (q ? tag.toLowerCase().includes(q) : true))
       .slice(0, MAX_SUGGESTIONS);
   }, [showTags, availableTags, tagInput, selectedTags]);
+
+  const dropdownOpen = tagFocused && suggestions.length > 0;
+
+  // Recompute portal position from the input rect each time the dropdown opens.
+  // useLayoutEffect (not useEffect) so the portal is positioned before paint,
+  // avoiding a one-frame flash at the wrong location.
+  useLayoutEffect(() => {
+    if (!dropdownOpen) {
+      setDropdownPos(null);
+      return;
+    }
+    const measure = () => {
+      const el = tagInputRef.current;
+      if (!el) return;
+      const wrap = el.closest(".tag-combobox-wrap") as HTMLElement | null;
+      const base = wrap ?? el;
+      const r = base.getBoundingClientRect();
+      setDropdownPos({ top: r.bottom + 2, left: r.left, width: r.width });
+    };
+    measure();
+    // Re-measure on scroll/resize (the sidebar scrolls, shifting the anchor).
+    window.addEventListener("scroll", measure, true);
+    window.addEventListener("resize", measure);
+    return () => {
+      window.removeEventListener("scroll", measure, true);
+      window.removeEventListener("resize", measure);
+    };
+  }, [dropdownOpen]);
 
   // Close the dropdown on outside click. Keep it enabled only while focused so
   // it does not interfere with the rest of the sidebar.
@@ -84,8 +122,6 @@ export function ListSearchPanel({
     }
   }
 
-  const dropdownOpen = tagFocused && suggestions.length > 0;
-
   return (
     <div className={cn("flex flex-col gap-1.5 px-2.5 pb-1.5 pt-0.5", className)}>
       {/* Name search */}
@@ -101,7 +137,7 @@ export function ListSearchPanel({
 
       {/* Tag search (characters only) */}
       {showTags && (
-        <div ref={tagWrapRef} className="relative">
+        <div ref={tagWrapRef} className="tag-combobox-wrap relative">
           <div
             className={cn(
               "flex min-h-[30px] flex-wrap items-center gap-1 rounded border bg-s2 px-1.5 py-1 transition-colors",
@@ -134,8 +170,11 @@ export function ListSearchPanel({
             />
           </div>
 
-          {dropdownOpen && (
-            <div className="glass-blur absolute left-0 right-0 top-full z-[200] mt-0.5 max-h-[180px] overflow-y-auto rounded-md border border-border2 bg-glass-bg py-1 shadow-[0_8px_24px_rgba(0,0,0,0.4)]">
+          {dropdownOpen && dropdownPos && createPortal(
+            <div
+              className="glass-blur fixed z-[400] max-h-[180px] overflow-y-auto rounded-md border border-border2 bg-glass-bg py-1 shadow-[0_8px_24px_rgba(0,0,0,0.4)]"
+              style={{ top: dropdownPos.top, left: dropdownPos.left, width: dropdownPos.width }}
+            >
               {suggestions.map((tag) => (
                 <button
                   key={tag}
@@ -152,7 +191,8 @@ export function ListSearchPanel({
                   {tag}
                 </button>
               ))}
-            </div>
+            </div>,
+            document.body,
           )}
         </div>
       )}

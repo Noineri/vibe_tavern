@@ -184,6 +184,7 @@ import { scanSillyTavernDirectory as scanST, importSillyTavernDirectory as impor
 				id: c.id,
 				name: c.name,
 				subtitle: c.tags.length > 0 ? c.tags[0] : '',
+				tags: c.tags,
 				avatarAssetId: c.avatarAssetId,
 				avatarFullAssetId: c.avatarFullAssetId,
 				avatarCropJson: c.avatarCropJson,
