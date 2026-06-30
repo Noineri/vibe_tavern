@@ -137,21 +137,23 @@ export function TopBar({ railHidden, onShowRail }: { railHidden?: boolean; onSho
             </CustomTooltip>
             {presetDropOpen && (
               <div className="glass-blur absolute left-0 top-full z-50 mt-1 min-w-[180px] overflow-hidden rounded-lg border border-border bg-glass-bg shadow-[0_12px_36px_rgba(0,0,0,.45)]">
-                {promptPresets.map((p) => (
-                  <div
-                    key={p.id}
-                    className={cn(
-                      "cursor-pointer truncate px-3 py-1.5 font-ui text-[calc(var(--ui-fs)-2px)] transition-colors hover:bg-s2",
-                      p.id === activePromptPresetId ? "bg-accent-dim text-accent-t" : "text-t2"
-                    )}
-                    onClick={() => {
-                      void preset.handleSetActivePromptPresetId(p.id);
-                      setPresetDropOpen(false);
-                    }}
-                  >
-                    {p.name}
-                  </div>
-                ))}
+                <div className="max-h-[calc(6*((var(--ui-fs)-2px)*1.5+0.75rem))] overflow-y-auto">
+                  {promptPresets.map((p) => (
+                    <div
+                      key={p.id}
+                      className={cn(
+                        "cursor-pointer truncate px-3 py-1.5 font-ui text-[calc(var(--ui-fs)-2px)] transition-colors hover:bg-s2",
+                        p.id === activePromptPresetId ? "bg-accent-dim text-accent-t" : "text-t2"
+                      )}
+                      onClick={() => {
+                        void preset.handleSetActivePromptPresetId(p.id);
+                        setPresetDropOpen(false);
+                      }}
+                    >
+                      {p.name}
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
           </div>
