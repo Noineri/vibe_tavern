@@ -114,21 +114,6 @@ export async function deleteCharacterVersion(characterId: string, versionId: str
   if (!response.ok) throw await unwrapError(response);
 }
 
-export async function updateCharacterAvatar(
-  characterId: string,
-  chatId: string,
-  avatarAssetId: string,
-  avatarFullAssetId?: string,
-  avatarCropJson?: string | null,
-): Promise<AppSnapshot> {
-  const payload: Record<string, unknown> = { chatId, avatarAssetId };
-  if (avatarFullAssetId !== undefined) payload.avatarFullAssetId = avatarFullAssetId;
-  if (avatarCropJson !== undefined) payload.avatarCropJson = avatarCropJson;
-  const response = await client.api.characters[":characterId"].$patch({ param: { characterId }, json: payload });
-  const data = await unwrapRpc<AppSnapshot>(response);
-  return normalizeSnapshot(data);
-}
-
 /**
  * Upload an avatar to the character's entity folder (POST /api/characters/:id/avatar).
  * `crop` is the thumbnail written to {id}/avatar.{ext} (small slots);

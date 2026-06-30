@@ -86,7 +86,6 @@ export {
 export {
   createCharacter,
   updateCharacter,
-  updateCharacterAvatar,
   uploadCharacterAvatar,
   duplicateCharacter,
   archiveCharacter,
