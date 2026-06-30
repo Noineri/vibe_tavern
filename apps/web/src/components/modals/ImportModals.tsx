@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import type { ChatId } from "@vibe-tavern/domain";
 import { extractPngMetadata, parseCharacterMetadata } from "../../lib/png-reader.js";
-import { importJson, uploadAsset, updateCharacterAvatar, createPersona, updatePersona, createPromptPreset, createLorebook, importLorebookEntries } from "../../app-client.js";
+import { importJson, uploadCharacterAvatar, uploadPersonaAvatar, createPersona, createPromptPreset, createLorebook, importLorebookEntries } from "../../app-client.js";
 import { cn } from "../../lib/cn.js";
 import { Icons } from "../shared/icons.js";
 import { Modal } from "../shared/Modal.js";
@@ -195,16 +195,14 @@ interface ImportError {
           try {
             const created = await createPersona({ name: pe.name, description: pe.description, defaultForNewChats: pe.isDefault ? true : undefined });
             importedPersonas++;
-            // Upload avatar if found in User Avatars/
+            // Upload avatar (folder route, POST /api/personas/:id/avatar) if
+            // found in User Avatars/. name/description are already set by
+            // createPersona, so no follow-up PATCH is needed.
             const avatarFileName = pe.avatarRelativePath.split("/").pop()!;
             const avatarFile = scanResult.personaAvatars.get(avatarFileName);
             if (avatarFile && created.id) {
               try {
-                const asset = await uploadAsset(avatarFile);
-                await updatePersona(created.id, {
-                  name: pe.name, description: pe.description,
-                  avatarAssetId: asset.assetId,
-                });
+                await uploadPersonaAvatar(created.id, avatarFile);
               } catch {
                 // Avatar upload failure is non-critical
               }
@@ -242,16 +240,16 @@ interface ImportError {
         const result = await importJson({ fileName: entry.file.name, jsonText, skipExisting: true });
         importedChars++;
 
-        // Upload PNG as avatar
-        if (isPng && result.activeChatId) {
-          try {
-            const characterId = result.snapshot?.character?.id;
-            if (characterId) {
-              const asset = await uploadAsset(entry.file);
-              await updateCharacterAvatar(characterId, result.activeChatId, asset.assetId);
+        // Upload PNG as a folder-resident avatar (POST /api/characters/:id/avatar
+        // → {id}/avatar.{ext}). Replaces the legacy uploadAsset + PATCH.
+        if (isPng) {
+          const characterId = result.snapshot?.character?.id;
+          if (characterId) {
+            try {
+              await uploadCharacterAvatar(characterId, entry.file);
+            } catch {
+              // Avatar upload failure is non-critical
             }
-          } catch {
-            // Avatar upload failure is non-critical
           }
         }
 
