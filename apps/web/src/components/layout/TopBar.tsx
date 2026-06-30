@@ -13,8 +13,16 @@ import { useBootstrapStore } from "../../stores/api-actions/bootstrap-actions.js
 import { resolveEntityAvatarUrl } from "../../lib/avatar.js";
 import { CustomTooltip } from "../shared/Tooltip.js";
 import { MediaMenu } from "../chat/MediaMenu.js";
+import { UpdateBadge } from "./UpdateBadge.js";
 
-export function TopBar({ railHidden, onShowRail }: { railHidden?: boolean; onShowRail?: () => void }) {
+interface TopBarProps {
+  railHidden?: boolean;
+  onShowRail?: () => void;
+  /** Latest version info from `useUpdateCheck`. Omitted when no update exists. */
+  update?: { latestVersion: string; releaseUrl: string } | null;
+}
+
+export function TopBar({ railHidden, onShowRail, update }: TopBarProps) {
   const { t } = useT();
   const isMobile = useIsMobile();
 
@@ -79,6 +87,7 @@ export function TopBar({ railHidden, onShowRail }: { railHidden?: boolean; onSho
           <div className="overflow-hidden text-ellipsis whitespace-nowrap text-[length:var(--ui-fs)] font-medium leading-[1.2] text-t1">{characterName}</div>
         </div>
         {characterId && <MediaMenu characterId={characterId} characterName={characterName} />}
+        {update && <UpdateBadge latestVersion={update.latestVersion} releaseUrl={update.releaseUrl} />}
         <div className="cursor-pointer rounded-full bg-accent-dim px-3 py-1 text-[calc(var(--ui-fs)-3px)] font-medium tracking-[0.02em] text-accent-t transition-colors duration-150 hover:bg-accent-hover"
           onClick={() => setMode(mode === 'play' ? 'build' : 'play')}>
           {mode === 'play' ? t("topbar_build_mode") : t("topbar_play_mode")}
@@ -159,6 +168,8 @@ export function TopBar({ railHidden, onShowRail }: { railHidden?: boolean; onSho
           </div>
 
           <div className="flex-1 min-w-2"/>
+
+          {update && <UpdateBadge latestVersion={update.latestVersion} releaseUrl={update.releaseUrl} />}
 
           <div className="cursor-pointer rounded-full bg-accent-dim px-3 py-1 text-[calc(var(--ui-fs)-3px)] font-medium tracking-[0.02em] text-accent-t transition-colors duration-150 hover:bg-accent-hover"
             tabIndex={0}
