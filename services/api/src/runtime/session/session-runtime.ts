@@ -10,6 +10,7 @@ import {
 	SYSTEM_RESOURCE_ID,
 } from "@vibe-tavern/domain";
 import { ChatApplicationService } from "../../domain/chat/chat-application-service.js";
+import { getChatModeStrategy, type ChatModeStrategy } from "../../domain/chat/chat-mode-strategy.js";
 import {
 	internal,
 	notFound,
@@ -573,9 +574,30 @@ import { scanSillyTavernDirectory as scanST, importSillyTavernDirectory as impor
 	// ─── Private: prompt wiring ─────────────────────────────────────────
 
 	/**
-	 * Wiring method: delegates to {@link PromptAssemblyService.assembleForChat}.
-	 * Resolves the active provider profile (currently unused beyond triggering the read)
-	 * and passes context to the prompt service.
+	 * Resolve the {@link ChatModeStrategy} for a chat from its `mode` column.
+	 * Centralized so both prompt assembly and the live-chat orchestrator resolve
+	 * per-chat — the extensibility seam: adding a mode never touches the callers,
+	 * only the strategy registry.
+	 *
+	 * Loads the chat row to read `mode`; the loaded chat is NOT reused for
+	 * assembly (RP's `assembleForChat` loads it again for the preset cascade).
+	 * That double PK lookup is intentional: pre-loading the chat into the
+	 * assembly input would force a rewrite of `assembleForChat`, which the plan
+	 * forbids until a second mode actually duplicates the loader (rule of three).
+	 */
+	async resolveChatModeStrategy(chatId: ChatId): Promise<ChatModeStrategy> {
+		const chat = await this.stores.chats.getById(chatId);
+		if (!chat) {
+			throw new Error(`Chat '${chatId}' was not found.`);
+		}
+		return getChatModeStrategy(chat.mode);
+	}
+
+	/**
+	 * Wiring method: resolves the chat's mode strategy and delegates to
+	 * `strategy.assemble(...)`. RP delegates to the existing `assembleForChat`
+	 * unchanged; co-author builds its editor prompt (CA-5). The mode is read
+	 * per-call from `chat.mode`, so the hardcoded RP-only path is gone.
 	 */
 	private async assemblePrompt(
 		chatId: ChatId,
@@ -583,7 +605,9 @@ import { scanSillyTavernDirectory as scanST, importSillyTavernDirectory as impor
 		options?: { excludeMessageIds?: MessageId[]; model?: string; recentMessageLimit?: number; mode?: "chat" | "continue" | "regenerate" | "summary" | "tool_call"; contextBudget?: number | null; responseReserve?: number; presetId?: PromptPresetId },
 	) {
 		void await this.getActiveProviderProfile();
-		return this.promptService.assembleForChat({
+		const strategy = await this.resolveChatModeStrategy(chatId);
+		return strategy.assemble({
+			promptService: this.promptService,
 			chatId,
 			branchId,
 			model: options?.model ?? SYSTEM_RESOURCE_ID.unresolvedModel,

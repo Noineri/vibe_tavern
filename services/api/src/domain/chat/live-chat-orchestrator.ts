@@ -27,7 +27,10 @@ export class LiveChatOrchestrator {
     private readonly chatApp: import("./chat-application-service.js").ChatApplicationService,
     private readonly providers: ProviderOrchestrator,
     private readonly events: EventBus,
-    private readonly strategy: ChatModeStrategy,
+    /** Per-chat strategy resolver. The active strategy is derived from
+     * `chat.mode` for each turn, not fixed at construction — so adding a mode
+     * is a new strategy class + registry entry, never a branch here. */
+    private readonly resolveStrategy: (chatId: string) => Promise<ChatModeStrategy>,
   ) {}
 
   // ─── Non-streaming methods ────────────────────────────────────────────
@@ -420,7 +423,8 @@ export class LiveChatOrchestrator {
     profile: StoredProviderProfileRecord;
     model: string;
   }): Promise<{ profile: StoredProviderProfileRecord; model: string }> {
-    return this.strategy.resolveProvider(input);
+    const strategy = await this.resolveStrategy(input.chatId);
+    return strategy.resolveProvider(input);
   }
 
   private notifyUserMessageCreated(chatId: string, message?: { id: MessageId; content: string }): void {
@@ -435,8 +439,11 @@ export class LiveChatOrchestrator {
 
   private notifyAssistantAppended(chatId: string, messageId: string): void {
     this.events.emit("message.appended", { chatId, messageId, role: "assistant" });
-    // Delegate mode-specific post-append work (no-op for RP, future hooks for Novel/Group)
-    void this.strategy.onMessageAppended({ chatId, messageId, events: this.events });
+    // Delegate mode-specific post-append work (no-op for RP/coauthor; future
+    // hooks for novel/group). Resolved per-chat from `chat.mode`.
+    void this.resolveStrategy(chatId).then((s) =>
+      s.onMessageAppended({ chatId, messageId, events: this.events }),
+    );
   }
 
   private async startStream(

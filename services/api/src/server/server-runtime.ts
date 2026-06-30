@@ -6,7 +6,6 @@ import { countTokens, warmupTokenizers } from "../infrastructure/ai/tokenizer-se
 import { AssetService } from "../domain/asset/asset-service.js";
 import { createChatSummaryFeature } from "../domain/chat/chat-summary-feature.js";
 import { ChatSummaryService } from "../domain/chat/chat-summary-service.js";
-import { getChatModeStrategy } from "../domain/chat/chat-mode-strategy.js";
 import { LiveChatOrchestrator } from "../domain/chat/live-chat-orchestrator.js";
 import { FeatureRegistry } from "../shared/feature-registry.js";
 import { MobileAccessService } from "../domain/mobile-access/mobile-access-service.js";
@@ -175,7 +174,7 @@ export async function startServerRuntime(config: ServerRuntimeConfig): Promise<v
 			sessionRuntime.chatApp,
 			providerOrchestrator,
 			events,
-			getChatModeStrategy("rp"),
+			(chatId: string) => sessionRuntime.resolveChatModeStrategy(chatId as never),
 		);
 
 		// Feature registry — features subscribe to events and mount routes
