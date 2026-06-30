@@ -1,6 +1,12 @@
 import type { ChatId, MessageId } from "@vibe-tavern/domain";
 import type { StoredProviderProfileRecord } from "@vibe-tavern/domain";
 import type { EventBus } from "@vibe-tavern/domain";
+import type { ChatMode } from "@vibe-tavern/domain";
+import type {
+  AssemblePromptForChatInput,
+  AssemblePromptForChatResult,
+  PromptAssemblyService,
+} from "../prompt/prompt-assembly-service.js";
 
 // ────────────────────────────────────────────────────────────────────────────
 // ChatModeStrategy — defines how a chat mode prepares and processes turns.
@@ -15,9 +21,28 @@ import type { EventBus } from "@vibe-tavern/domain";
 
 /**
  * The set of supported chat modes.
- * Stored in chat metadata, defaults to "rp" for all existing chats.
+ * Stored in `chats.mode`, defaults to "rp" for all existing chats.
+ *
+ * The canonical type lives in `@vibe-tavern/domain` (CHAT_MODE) so the db
+ * layer, the api strategy registry, and wire types all share one source of
+ * truth; it is re-exported here for call-site convenience.
  */
-export type ChatMode = "rp" | "novel" | "group" | "coauthor";
+export type { ChatMode };
+
+/**
+ * Input to {@link ChatModeStrategy.assemble}. Extends the RP assembly input
+ * with the {@link PromptAssemblyService} so strategies can delegate to the
+ * existing RP loader (`RpModeStrategy`) or reuse its stores/resolver for their
+ * own assembly (`CoauthorModeStrategy`). Carrying the service on the input
+ * keeps strategies stateless and `getChatModeStrategy` free of constructor
+ * deps; the caller (SessionRuntime.assemblePrompt) already holds the service.
+ */
+export interface ChatModeAssembleInput extends AssemblePromptForChatInput {
+  promptService: PromptAssemblyService;
+}
+
+/** Re-exported so callers don't reach into the prompt service module. */
+export type ChatModeAssembleResult = AssemblePromptForChatResult;
 
 /**
  * Strategy interface for chat mode behavior.
@@ -37,6 +62,17 @@ export interface ChatModeStrategy {
     profile: StoredProviderProfileRecord;
     model: string;
   }): Promise<{ profile: StoredProviderProfileRecord; model: string }>;
+
+  /**
+   * Assemble the prompt for a turn. This is the load-bearing mode seam: each
+   * mode builds its own prompt here. RP delegates to the existing
+   * `assembleForChat` unchanged (RP behavior literally does not move);
+   * co-author builds an editor prompt over the serialized card. Returning the
+   * standard assembled-prompt shape means streaming / abort / reasoning /
+   * `drainStream` all work for every mode with no mode-specific branches in
+   * the executor.
+   */
+  assemble(input: ChatModeAssembleInput): Promise<ChatModeAssembleResult>;
 
   /**
    * Called after an assistant message is appended to the chat.
@@ -71,6 +107,13 @@ export class RpModeStrategy implements ChatModeStrategy {
     return input;
   }
 
+  async assemble(input: ChatModeAssembleInput): Promise<ChatModeAssembleResult> {
+    // RP assembles through the existing pipeline, unchanged. The promptService
+    // is pulled off the input and the rest is exactly AssemblePromptForChatInput.
+    const { promptService, ...chatInput } = input;
+    return promptService.assembleForChat(chatInput);
+  }
+
   async onMessageAppended(_input: {
     chatId: string;
     messageId: string;
@@ -82,11 +125,47 @@ export class RpModeStrategy implements ChatModeStrategy {
 }
 
 // ────────────────────────────────────────────────────────────────────────────
+// Co-Author Mode Strategy (stub)
+// ────────────────────────────────────────────────────────────────────────────
+// Registered now so per-chat resolution (CA-3) is wired end-to-end before the
+// real editor assembly lands in CA-5. assemble throws NOT_IMPLEMENTED until
+// then; resolveProvider / onMessageAppended mirror RP (co-author reuses the
+// universal chat pipeline, only the assembled prompt differs).
+
+export class CoauthorModeStrategy implements ChatModeStrategy {
+  readonly mode: ChatMode = "coauthor";
+
+  async resolveProvider(input: {
+    chatId: string;
+    profile: StoredProviderProfileRecord;
+    model: string;
+  }): Promise<{ profile: StoredProviderProfileRecord; model: string }> {
+    return input;
+  }
+
+  async assemble(_input: ChatModeAssembleInput): Promise<ChatModeAssembleResult> {
+    // CA-5 will build the editor prompt here (serializeProfileMd of the current
+    // card + greeting + chat history, editor system prompt). Until then this
+    // throws so a co-author chat can be created/resolved but cannot reply.
+    throw new Error("NOT_IMPLEMENTED: CoauthorModeStrategy.assemble (see CA-5)");
+  }
+
+  async onMessageAppended(_input: {
+    chatId: string;
+    messageId: string;
+    events: EventBus;
+  }): Promise<void> {
+    // Co-author has no post-append background work.
+  }
+}
+
+// ────────────────────────────────────────────────────────────────────────────
 // Strategy factory
 // ────────────────────────────────────────────────────────────────────────────
 
 const strategies = new Map<ChatMode, () => ChatModeStrategy>([
   ["rp", () => new RpModeStrategy()],
+  ["coauthor", () => new CoauthorModeStrategy()],
 ]);
 
 /**
