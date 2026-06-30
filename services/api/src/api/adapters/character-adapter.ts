@@ -436,6 +436,7 @@ export class CharacterAdapter implements CharacterRuntimeApi, CharacterAssetRunt
 		}
 		const buffer = await this.assetService.loadCharacterAvatarBuffer(characterId, character.avatarExt);
 		const mimeType = this.assetService.mimeForExt(character.avatarExt);
+		console.log(`[DESCRIBE] adapter.avatar.load characterId=${characterId} avatarExt=${character.avatarExt} mimeType=${mimeType} bufferNull=${buffer === null} bufferLen=${buffer?.length ?? -1}`);
 		if (!buffer || !mimeType) throw validation("Character has no avatar.");
 
 		const profile = await this.resolveActiveProfileOrThrow();
@@ -443,6 +444,7 @@ export class CharacterAdapter implements CharacterRuntimeApi, CharacterAssetRunt
 			throw validation("No vision model configured in the active provider profile. Set one in Provider settings.");
 		}
 		const prompt = await this.resolveVisionDescribePromptFromPreset();
+		console.log(`[DESCRIBE] adapter.avatar.send visionModel=${profile.visionModel} providerPreset=${profile.providerPreset} endpoint=${profile.endpoint} promptLen=${prompt.length}`);
 
 		const descriptions = await describeAttachments(
 			[{ id: "avatar", assetId: "avatar", type: "image", name: `${character.name} avatar`, mimeType, sizeBytes: 0 }],
@@ -453,6 +455,7 @@ export class CharacterAdapter implements CharacterRuntimeApi, CharacterAssetRunt
 			signal,
 		);
 		const text = descriptions.get("avatar")?.trim() ?? "";
+		console.log(`[DESCRIBE] adapter.avatar.result characterId=${characterId} descLen=${text.length} head=${JSON.stringify(text.slice(0, 80))}`);
 		await this.stores.characters.setMediaFields(brandId<CharacterId>(characterId), { avatarDescription: text });
 		return { description: text };
 	};

@@ -250,6 +250,7 @@ export async function describeAttachments(
   for (const att of attachments) {
     if (att.type !== "image" && att.type !== "video") continue;
     const loaded = await assetLoader(att.assetId);
+    console.log(`[DESCRIBE] vision-gate.load attId=${att.id} assetId=${att.assetId} mimeType=${att.mimeType} loadedNull=${loaded === null} loadedLen=${loaded?.length ?? -1}`);
     if (!loaded) throw new Error(`Asset not found: ${att.name}`);
 
     // Compress before sending — providers reject large uncompressed images as
@@ -277,6 +278,7 @@ export async function describeAttachments(
       maxOutputTokens: 1500,
       abortSignal: signal,
     });
+    console.log(`[DESCRIBE] vision-gate.sent attId=${att.id} model=${visionModel} sentBufferLen=${buffer.length} sentMime=${mimeType} responseLen=${response.text?.length ?? -1} responseHead=${JSON.stringify((response.text ?? "").slice(0, 80))}`);
 
     // Strip reasoning (<think>…, markers) so chain-of-thought never leaks into
     // the persisted description. Vision models frequently emit reasoning when

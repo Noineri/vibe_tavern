@@ -131,7 +131,10 @@ export function createCharacterRoutes(runtime: CharacterRuntimeApi & CharacterAs
     })
     .post("/api/characters/:characterId/avatar/describe", async (c) => {
       try {
-        return c.json(await runtime.describeCharacterAvatar(c.req.param("characterId"), c.req.raw.signal));
+        console.log(`[DESCRIBE] route.avatar.enter characterId=${c.req.param("characterId")} aborted=${!!c.req.raw.signal?.aborted}`);
+        const result = await runtime.describeCharacterAvatar(c.req.param("characterId"), c.req.raw.signal);
+        console.log(`[DESCRIBE] route.avatar.done characterId=${c.req.param("characterId")} descLen=${result.description?.length ?? -1}`);
+        return c.json(result);
       } catch (err) {
         // Client cancelled via AbortController — return an empty result instead
         // of surfacing the AbortError as a 500. The frontend tracks cancellation
