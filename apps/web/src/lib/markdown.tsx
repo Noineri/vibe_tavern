@@ -85,7 +85,10 @@ function hasQuotedTextClass(node: HastElement): boolean {
 }
 
 function canFlattenChild(child: HastNode): boolean {
-  return isText(child) || (isElement(child) && INLINE_TAGS.has(child.tagName) && child.tagName !== "code");
+  if (isText(child)) return true;
+  if (!isElement(child)) return false;
+  if (!INLINE_TAGS.has(child.tagName) || child.tagName === "code") return false;
+  return child.children.every(canFlattenChild);
 }
 
 function canWrapInlineQuotes(element: HastElement): boolean {
@@ -235,6 +238,109 @@ function processNode(node: HastNode): void {
 
 const rehypeQuotedText = () => (tree: HastNode) => processNode(tree);
 
+// ─── Rehype plugin: System Banner ───
+
+const BRACKET_RE = /\[([^\]\n]+)\]/g;
+
+function hasSystemBannerClass(node: HastElement): boolean {
+  const className = node.properties?.className;
+  if (typeof className === "string") return className.split(/\s+/).includes("system-banner");
+  if (Array.isArray(className)) return className.includes("system-banner");
+  return false;
+}
+
+function canWrapSystemBanner(element: HastElement): boolean {
+  if (element.tagName === "code" || element.tagName === "pre" || hasSystemBannerClass(element)) return false;
+  return element.children.some(canFlattenChild);
+}
+
+function findBracketRanges(text: string): TextRange[] {
+  const ranges: TextRange[] = [];
+  BRACKET_RE.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = BRACKET_RE.exec(text)) !== null) {
+    ranges.push({ start: match.index, end: match.index + match[0].length });
+  }
+  return ranges;
+}
+
+function wrapBracketRun(children: HastNode[]): HastNode[] {
+  const text = children.map(collectText).join("");
+  if (text.length === 0) return children;
+
+  const ranges = findBracketRanges(text);
+  if (ranges.length === 0) return children;
+
+  const result: HastNode[] = [];
+  let cursor = 0;
+
+  for (const range of ranges) {
+    result.push(...sliceChildren(children, cursor, range.start));
+
+    const innerChildren = sliceChildren(children, range.start + 1, range.end - 1);
+    if (innerChildren.length > 0) {
+      result.push({
+        type: "element",
+        tagName: "span",
+        properties: { className: ["system-banner"] },
+        children: innerChildren,
+      });
+    }
+
+    cursor = range.end;
+  }
+
+  result.push(...sliceChildren(children, cursor, text.length));
+  return result;
+}
+
+function wrapBannersInElement(element: HastElement): HastNode[] {
+  const children = element.children;
+  if (children.length === 0 || !canWrapSystemBanner(element)) return children;
+
+  const result: HastNode[] = [];
+  let run: HastNode[] = [];
+  let changed = false;
+
+  const flushRun = () => {
+    if (run.length === 0) return;
+    const wrapped = wrapBracketRun(run);
+    if (wrapped !== run) changed = true;
+    result.push(...wrapped);
+    run = [];
+  };
+
+  for (const child of children) {
+    if (canFlattenChild(child)) {
+      run.push(child);
+    } else {
+      flushRun();
+      result.push(child);
+    }
+  }
+
+  flushRun();
+  return changed ? result : children;
+}
+
+function processBannerNode(node: HastNode): void {
+  if (isRoot(node)) {
+    for (const child of node.children) processBannerNode(child);
+    return;
+  }
+
+  if (!isElement(node)) return;
+
+  if (node.tagName === "code" || node.tagName === "pre" || hasSystemBannerClass(node)) return;
+
+  const newChildren = wrapBannersInElement(node);
+  if (newChildren !== node.children) node.children = newChildren;
+
+  for (const child of node.children) processBannerNode(child);
+}
+
+const rehypeSystemBanner = () => (tree: HastNode) => processBannerNode(tree);
+
 // ─── Component overrides ───
 
 const components: Record<string, React.ComponentType<{ children?: React.ReactNode; className?: string; node?: unknown } & Record<string, unknown>>> = {
@@ -290,9 +396,9 @@ const components: Record<string, React.ComponentType<{ children?: React.ReactNod
   code({ className, children, ...props }) {
     if (!className) {
       return (
-        <code className="md-code-inline" {...props}>
+        <span className="md-code-inline" {...props}>
           {children}
-        </code>
+        </span>
       );
     }
     return (
@@ -332,7 +438,7 @@ export const Markdown: React.FC<MarkdownProps> = ({ text, className }) => {
     <div className={className || "md-content"}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
-        rehypePlugins={[rehypeQuotedText]}
+        rehypePlugins={[rehypeQuotedText, rehypeSystemBanner]}
         components={components}
       >
         {text}

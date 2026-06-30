@@ -145,6 +145,7 @@ html,body{height:100%;background:var(--page-bg, var(--bg));color:var(--t1);overf
 .md-content strong{color:var(--md-bold)}
 .md-content strong em,.md-content em strong{color:var(--md-bold-italic);font-size:var(--md-fs-bold-italic)}
 .scene-meta{font-size:.85em;color:var(--t3);font-family:var(--font-ui);margin-top:.4em;white-space:pre-line}
+.system-banner{display:inline-block;padding:2px 8px;margin:2px 0;border-radius:6px;background:var(--accent-dim);border:1px solid color-mix(in srgb, var(--accent) 35%, transparent);color:var(--t1);font-family:var(--font-ui);font-size:.85em;line-height:1.4}
 .scene-note{text-align:center;font-family:var(--font-body);font-style:italic;font-size:12.5px;color:var(--t3);padding:4px 24px 26px;max-width:var(--mw);margin:0 auto}
 
 /* ── Markdown formatting ── */
@@ -154,9 +155,10 @@ html,body{height:100%;background:var(--page-bg, var(--bg));color:var(--t1);overf
 .md-list li::marker{color:var(--t3)}
 .md-blockquote{border-left:3px solid var(--accent);margin:.4em 0;padding:.2em .8em;color:var(--t2)}
 .md-pre{background:var(--s2);border:1px solid var(--border);border-radius:var(--r);padding:.8em 1em;overflow-x:auto;font-size:calc(var(--mfs) - 2px);line-height:1.55}
-.md-code-inline{background:var(--s2);padding:.1em .35em;border-radius:3px;font-size:.9em}
+.md-code-inline{background:var(--s2);padding:.1em .35em;border-radius:3px;font-size:.9em;font-family:var(--font-mono)}
 
 /* ── Markdown paragraph spacing ── */
+.md-content p{white-space:pre-wrap}
 .md-content p+p{margin-top:.88em}
 
 /* ── Avatar fallback ── */
