@@ -223,6 +223,17 @@ html,body{height:100%;background:var(--page-bg, var(--bg));color:var(--t1);overf
 .crop-zoom-slider::-webkit-slider-thumb:hover{transform:scale(1.15)}
 .crop-zoom-slider::-moz-range-thumb{width:14px;height:14px;border-radius:50%;background:var(--accent);border:2px solid var(--surface);box-shadow:0 1px 4px rgba(0,0,0,.25);cursor:pointer}
 
+/* ── Avatar crop: keep preview sharp when zoomed ──
+   react-easy-crop shrinks the <img> to fit (max-width/height:100%) then zooms
+   via transform: scale(). Its own stylesheet sets will-change: transform,
+   which promotes the image to a compositor layer whose backing texture is
+   allocated at the shrunken LAYOUT size (e.g. 192×320 for a 768×1280 source).
+   scale() then upsamples that low-res texture → visible blur. Dropping the
+   promotion lets the browser sample from the full-resolution decoded image,
+   so zoom stays sharp. No effect on the library's crop math: it measures the
+   layout-box size (offsetWidth/Height), not the backing-store size. */
+.reactEasyCrop_Image{will-change:auto!important}
+
 /* ── Number input: hide spinners (global) ── */
 input[type="number"]{-moz-appearance:textfield;-webkit-appearance:none;appearance:textfield}
 input[type="number"]::-webkit-inner-spin-button,input[type="number"]::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
