@@ -1,5 +1,7 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useOutsideClick } from "../../hooks/use-outside-click.js";
+import { ListSortToggle } from "../shared/ListSortToggle.js";
+import { filterAndSortList } from "../../lib/list-filter.js";
 import { createPortal } from "react-dom";
 import type { ChatBranchId, ChatId } from "@vibe-tavern/domain";
 import { Ic } from "../shared/icons.js";
@@ -67,6 +69,43 @@ function RailRow({ icon, label, active, onClick }: { icon: React.ReactNode; labe
   );
 }
 
+/**
+ * useSheetDrag — swipe-down-to-dismiss for a bottom sheet.
+ *
+ * Returns a ref (attach to the sheet element) and three touch handlers
+ * (onTouchStart/Move/End). While the user drags downward, the sheet follows
+ * the finger via an inline transform; releasing past 80px calls `onDismiss`.
+ * Extracted so the tag-filter sheet reuses the same gesture as the existing
+ * context-menu sheets without coupling to their shared menuRef.
+ */
+function useSheetDrag(onDismiss: () => void) {
+  const sheetRef = useRef<HTMLDivElement | null>(null);
+  const dragRef = useRef({ active: false, startY: 0, currentY: 0 });
+  const onTouchStart = useCallback((e: React.TouchEvent) => {
+    dragRef.current = { active: true, startY: e.touches[0].clientY, currentY: e.touches[0].clientY };
+  }, []);
+  const onTouchMove = useCallback((e: React.TouchEvent) => {
+    if (!dragRef.current.active) return;
+    dragRef.current.currentY = e.touches[0].clientY;
+    const delta = dragRef.current.currentY - dragRef.current.startY;
+    if (delta > 0 && sheetRef.current) {
+      sheetRef.current.style.transform = `translateY(${delta}px)`;
+      sheetRef.current.style.transition = 'none';
+    }
+  }, []);
+  const onTouchEnd = useCallback(() => {
+    if (!dragRef.current.active) return;
+    dragRef.current.active = false;
+    const delta = dragRef.current.currentY - dragRef.current.startY;
+    if (sheetRef.current) {
+      sheetRef.current.style.transform = '';
+      sheetRef.current.style.transition = '';
+    }
+    if (delta > 80) onDismiss();
+  }, [onDismiss]);
+  return { sheetRef, onTouchStart, onTouchMove, onTouchEnd };
+}
+
 export function Rail({ hidden }: { hidden?: boolean }) {
   const { t } = useT();
   const mode = useNavigationStore((s) => s.mode);
@@ -98,6 +137,18 @@ export function Rail({ hidden }: { hidden?: boolean }) {
   const [branchMenuId, setBranchMenuId] = useState<{ chatId: ChatId; branchId: ChatBranchId; label: string } | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
 
+  // Character list: search + sort + tag-filter (mirrors the desktop Sidebar).
+  // Sort mode lives in the navigation store; query + tags are local UI state.
+  // Tags are filtered via a bottom sheet rather than a dropdown — the Rail
+  // panel is a backdrop-blur root, so a portaled combobox (Sidebar's approach)
+  // would be awkward on mobile; a bottom sheet is the native-mobile pattern.
+  const characterSortMode = useNavigationStore((s) => s.characterSortMode);
+  const setCharacterSortMode = useNavigationStore((s) => s.setCharacterSortMode);
+  const [charQuery, setCharQuery] = useState("");
+  const [charSelectedTags, setCharSelectedTags] = useState<string[]>([]);
+  const [tagsSheetOpen, setTagsSheetOpen] = useState(false);
+  const tagsSheet = useSheetDrag(() => setTagsSheetOpen(false));
+
   // Chat rename
   const [renamingChatId, setRenamingChatId] = useState<ChatId | null>(null);
   const [renameDraft, setRenameDraft] = useState("");
@@ -114,8 +165,35 @@ export function Rail({ hidden }: { hidden?: boolean }) {
     event: "pointerdown",
   });
 
-  // Filter: only non-archived characters
-  const visibleChars = allCharacters.filter(() => true);
+  // Tag pool: every tag across all characters (for the filter bottom sheet).
+  const charTagPool = useMemo(
+    () => Array.from(new Set(allCharacters.flatMap((c) => c.tags ?? []))).sort((a, b) => a.localeCompare(b)),
+    [allCharacters],
+  );
+
+  // Enrich each character with a recentKey (max lastMessageAt across its
+  // chats; "" for characters with no chat → sorts last under "recent") and its
+  // tags, then apply the shared filter + sort — identical logic to the desktop
+  // Sidebar so both surfaces stay in sync.
+  const visibleChars = useMemo(() => {
+    const lastByChar = new Map<string, string>();
+    for (const ch of chats) {
+      const prev = lastByChar.get(ch.characterId) ?? "";
+      if (ch.lastMessageAt > prev) lastByChar.set(ch.characterId, ch.lastMessageAt);
+    }
+    const enriched = allCharacters.map((c) => ({
+      ...c,
+      recentKey: lastByChar.get(c.id) ?? "",
+      tags: c.tags ?? [],
+    }));
+    return filterAndSortList({
+      items: enriched,
+      getName: (i) => i.name,
+      sortMode: characterSortMode,
+      query: charQuery,
+      selectedTags: charSelectedTags,
+    });
+  }, [allCharacters, chats, characterSortMode, charQuery, charSelectedTags]);
 
   // Chats for the selected/active character
   const activeCharId = selectedCharacterId ?? chatMeta?.character?.id ?? null;
@@ -323,8 +401,10 @@ export function Rail({ hidden }: { hidden?: boolean }) {
                 </div>
               </div>
               <div className="h-px w-8 shrink-0 bg-border" />
-              {/* Character avatars (max 5, +N more) */}
-              {visibleChars.slice(0, 5).map((c) => (
+              {/* Character avatars (max 5, +N more) — always all characters,
+                  not the filtered list, so the collapsed rail stays stable
+                  regardless of any active search in the expanded panel. */}
+              {allCharacters.slice(0, 5).map((c) => (
                 <div
                   key={c.id}
                   className={cn(
@@ -341,13 +421,13 @@ export function Rail({ hidden }: { hidden?: boolean }) {
                   )}
                 </div>
               ))}
-              {visibleChars.length > 5 && (
+              {allCharacters.length > 5 && (
                 <div
                   className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-full bg-s3 font-ui text-[11px] font-medium text-t2 transition-[background-color,border-radius,transform] duration-150 ease-out active:rounded-xl active:bg-s2 active:scale-[0.96]"
                   onClick={() => setExpanded(true)}
-                  title={t("more_characters") ?? `${visibleChars.length - 5} more`}
+                  title={t("more_characters") ?? `${allCharacters.length - 5} more`}
                 >
-                  +{visibleChars.length - 5}
+                  +{allCharacters.length - 5}
                 </div>
               )}
               <div className="my-0.5 h-px w-8 shrink-0 bg-border" />
@@ -440,6 +520,42 @@ export function Rail({ hidden }: { hidden?: boolean }) {
                     </div>
                   </div>
                   <div className="my-1 h-px bg-border" />
+
+                  {/* Search + sort + tag-filter row. No section header on mobile
+                      — just the controls, compact. Tags open a bottom sheet. */}
+                  <div className="flex items-center gap-1.5 px-1">
+                    <input
+                      type="text"
+                      value={charQuery}
+                      onChange={(e) => setCharQuery(e.target.value)}
+                      placeholder={t("search_name_placeholder")}
+                      className="min-w-0 flex-1 rounded border border-border bg-s2 px-2 py-[5px] font-ui text-[calc(var(--ui-fs)-2px)] text-t1 outline-none transition-colors placeholder:text-t3/60 focus:border-accent"
+                    />
+                    <ListSortToggle mode={characterSortMode} onChange={setCharacterSortMode} className="shrink-0" />
+                    <div className="relative shrink-0">
+                      <button
+                        type="button"
+                        className={cn(
+                          "flex h-[30px] w-8 items-center justify-center rounded border bg-s2 transition-colors active:bg-s3",
+                          tagsSheetOpen || charSelectedTags.length > 0 ? "border-accent text-accent-t" : "border-border text-t3",
+                        )}
+                        onClick={() => setTagsSheetOpen(true)}
+                        aria-label={t("filter_by_tags")}
+                      >
+                        <Ic.filter />
+                      </button>
+                      {charSelectedTags.length > 0 && (
+                        <span className="absolute -right-1.5 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-accent px-1 font-ui text-[9px] font-bold text-on-accent">
+                          {charSelectedTags.length}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  {visibleChars.length === 0 && (
+                    <div className="px-3 py-6 text-center font-ui text-[calc(var(--ui-fs)-2px)] text-t3">
+                      {t("search_no_results")}
+                    </div>
+                  )}
 
                   {visibleChars.map((c) => (
                     <React.Fragment key={c.id}>
@@ -597,13 +713,13 @@ export function Rail({ hidden }: { hidden?: boolean }) {
 
       {/* ═══ BOTTOM SHEETS (контекстные меню) ═══ */}
       {charMenuId && bottomSheet(
-        visibleChars.find(c => c.id === charMenuId)?.name ?? "",
+        allCharacters.find(c => c.id === charMenuId)?.name ?? "",
         [
           { icon: <Ic.download />, label: t("sidebar_export"), action: () => character.handleExportCharacter(charMenuId) },
           { icon: <Ic.copy />, label: t("duplicate"), action: () => character.handleDuplicateCharacter(charMenuId) },
           { icon: <Ic.import />, label: t("sidebar_import_chat"), action: () => setChatImportOpen(true) },
           { icon: <Ic.del />, label: t("delete"), danger: true, action: () => {
-            const ch = visibleChars.find(c => c.id === charMenuId);
+            const ch = allCharacters.find(c => c.id === charMenuId);
             setConfirmDestroy({
               title: t("sidebar_delete_character"),
               body: <>{t("sidebar_are_you_sure")} <b>{ch?.name}</b></>,
@@ -644,6 +760,61 @@ export function Rail({ hidden }: { hidden?: boolean }) {
             setBranchRenameDraft(branchMenuId.label);
           }},
         ]
+      )}
+
+      {/* ═══ TAG-FILTER BOTTOM SHEET ═══ */}
+      {/* Multi-select tag picker — the mobile-native alternative to the desktop
+          Sidebar's portaled tag combobox. Stays open while toggling so the user
+          can pick several tags; backdrop tap or swipe-down dismisses. */}
+      {tagsSheetOpen && createPortal(
+        <>
+          <div
+            className="fixed inset-0 z-[500] bg-black/50 backdrop-blur-sm"
+            style={{ animation: "fadeIn 0.15s ease-out" }}
+            onClick={() => setTagsSheetOpen(false)}
+          />
+          <div
+            className="glass-blur fixed inset-x-0 bottom-0 z-[501] flex max-h-[65vh] flex-col rounded-t-2xl border-t border-border2 bg-glass-bg pb-[env(safe-area-inset-bottom,0px)] shadow-[0_-4px_24px_rgba(0,0,0,0.5)]"
+            ref={tagsSheet.sheetRef}
+            style={{ animation: "slideUp 0.2s ease-out" }}
+            onTouchStart={tagsSheet.onTouchStart}
+            onTouchMove={tagsSheet.onTouchMove}
+            onTouchEnd={tagsSheet.onTouchEnd}
+          >
+            <div className="flex justify-center pt-2 pb-1">
+              <div className="h-1 w-10 rounded-full bg-border" />
+            </div>
+            <div className="flex items-center justify-between px-5 pb-2 pt-1">
+              <span className="font-ui text-[calc(var(--ui-fs)-1px)] font-semibold text-t1">{t("filter_by_tags")}</span>
+              {charSelectedTags.length > 0 && (
+                <button type="button" className="cursor-pointer font-ui text-[calc(var(--ui-fs)-2px)] text-accent-t transition-opacity active:opacity-70" onClick={() => setCharSelectedTags([])}>
+                  {t("reset")}
+                </button>
+              )}
+            </div>
+            <div className="max-h-[45vh] overflow-y-auto px-2 pb-3">
+              {charTagPool.map((tag) => {
+                const selected = charSelectedTags.includes(tag);
+                return (
+                  <button
+                    key={tag}
+                    type="button"
+                    className={cn("flex w-full min-h-[44px] cursor-pointer items-center gap-3 rounded-lg px-3 text-left transition-colors active:bg-s3", selected ? "text-accent-t" : "text-t2")}
+                    onClick={() => {
+                      setCharSelectedTags(selected ? charSelectedTags.filter((x) => x !== tag) : [...charSelectedTags, tag]);
+                    }}
+                  >
+                    <span className={cn("flex h-5 w-5 shrink-0 items-center justify-center rounded border transition-colors", selected ? "border-accent bg-accent text-on-accent" : "border-border2")}>
+                      {selected && <Ic.check />}
+                    </span>
+                    <span className="font-ui text-[calc(var(--ui-fs)-1px)]">{tag}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </>,
+        document.body,
       )}
 
       {/* ═══ MODALS ═══ */}

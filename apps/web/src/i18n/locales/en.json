@@ -49,6 +49,7 @@
   "search_name_placeholder": "Search by name",
   "search_tags_placeholder": "Search by tags",
   "search_no_results": "Nothing found",
+  "filter_by_tags": "Filter by tags",
   "ws_title": "Welcome",
   "ws_sub": "Choose how to start",
   "ws_import": "Upload Card",

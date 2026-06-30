@@ -49,6 +49,7 @@
   "search_name_placeholder": "Поиск по имени",
   "search_tags_placeholder": "Поиск по тегам",
   "search_no_results": "Ничего не найдено",
+  "filter_by_tags": "Фильтр по тегам",
   "ws_title": "Добро пожаловать",
   "ws_sub": "Выберите, как начать",
   "ws_import": "Загрузить карточку",
