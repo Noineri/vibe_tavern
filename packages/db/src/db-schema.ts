@@ -137,6 +137,10 @@ export const chats = sqliteTable('chats', {
   personaId: text('persona_id').references(() => personas.id, { onDelete: 'set null' }),
   activeBranchId: text('active_branch_id').notNull(),
   promptPresetId: text('prompt_preset_id').references(() => promptPresets.id, { onDelete: 'set null' }),
+  // Chat mode: determines how the chat is assembled + which strategy drives it.
+  // 'rp' = roleplay (the original/default mode). New modes add a value here +
+  // a ChatModeStrategy. Default 'rp' so every pre-mode chat stays RP.
+  mode: text('mode').notNull().default('rp'),
   title: text('title').notNull(),
   summary: text('summary').notNull().default(''),
   messageHistoryLimit: integer('message_history_limit').notNull().default(0),
@@ -151,6 +155,7 @@ export const chats = sqliteTable('chats', {
 }, (table) => ({
   characterIdIdx: index('idx_chats_character_id').on(table.characterId),
   lastAccessedIdx: index('idx_chats_last_accessed').on(table.lastAccessedAt),
+  modeIdx: index('idx_chats_mode').on(table.mode),
 }));
 
 // ─── lorebooks ────────────────────────────────────────────────────────────────

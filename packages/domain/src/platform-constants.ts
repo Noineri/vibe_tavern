@@ -98,6 +98,25 @@ export const CHAT_STATUS = {
 
 export type ChatStatus = typeof CHAT_STATUS[keyof typeof CHAT_STATUS];
 
+/**
+ * Chat mode — determines how a chat's prompt is assembled and which
+ * ChatModeStrategy drives it. Modes differ through the strategy, not through
+ * mode-specific branches in shared paths. Add a value here + a strategy class
+ * + a registry entry to introduce a new mode.
+ *
+ * - `rp`      — roleplay (the original/default mode).
+ * - `coauthor`— co-author: edit a character card with an AI in a split-screen.
+ * - `novel`/`group` — reserved for future modes (no strategy yet).
+ */
+export const CHAT_MODE = {
+  rp: "rp",
+  coauthor: "coauthor",
+  novel: "novel",
+  group: "group",
+} as const;
+
+export type ChatMode = typeof CHAT_MODE[keyof typeof CHAT_MODE];
+
 export const MESSAGE_ROLE = {
   system: "system",
   user: "user",

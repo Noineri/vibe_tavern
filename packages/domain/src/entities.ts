@@ -21,6 +21,7 @@ import type {
   CardFormat,
   LoreScopeType,
   ChatStatus,
+  ChatMode,
   MessageRole,
   AuthorType,
   MessageState,
@@ -317,6 +318,7 @@ export interface Chat {
   personaId: PersonaId | null;
   title: string;
   status: ChatStatus;
+  mode: ChatMode;
   activeBranchId: ChatBranchId;
   promptPresetId: PromptPresetId;
   toolProfileId: ToolProfileId;

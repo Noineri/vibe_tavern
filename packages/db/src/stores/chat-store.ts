@@ -2,6 +2,7 @@ import { eq, and, desc, asc, lte, count, inArray } from 'drizzle-orm';
 import { chats, chatBranches, characters, messages, messageVariants, promptTraces } from '../db-schema.js';
 import type { AppDb } from '../db-connection.js';
 import { resolveStoreRuntime, type StoreClock, type StoreIdGenerator } from '../persistence.js';
+import type { ChatMode } from '@vibe-tavern/domain';
 
 // ─── Return types ─────────────────────────────────────────────────────────────
 
@@ -19,6 +20,7 @@ export interface Chat {
   messageHistoryLimit: number;
   autoSummaryConfig: Record<string, unknown>;
   status: 'active' | 'archived';
+  mode: ChatMode;
   selectedGreetingIndex: number;
   activeBranchId: string;
   promptPresetId: string | null;
@@ -669,6 +671,7 @@ export class ChatStore {
       messageHistoryLimit: row.messageHistoryLimit,
       autoSummaryConfig: safeParseJson(row.autoSummaryConfigJson),
       status: row.status as Chat['status'],
+      mode: row.mode as Chat['mode'],
       selectedGreetingIndex: row.selectedGreetingIndex,
       activeBranchId: row.activeBranchId,
       promptPresetId: row.promptPresetId,

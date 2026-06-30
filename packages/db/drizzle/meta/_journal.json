@@ -29,6 +29,13 @@
       "when": 1782744244889,
       "tag": "0003_chemical_kingpin",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1782833711599,
+      "tag": "0004_careful_lenny_balinger",
+      "breakpoints": true
     }
   ]
 }
