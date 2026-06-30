@@ -4,6 +4,7 @@ import type { BuildCharacterDraft } from "@vibe-tavern/api-contracts";
 import { Ic } from "../../shared/icons";
 
 import { cn } from "../../../lib/cn";
+import { resolveEntityAvatarUrl } from "../../../lib/avatar.js";
 import { AutoTextarea } from "../../shared/auto-textarea.js";
 import { CharacterImportModal } from "../../modals/ImportModals.js";
 import { VersionSwitcher } from "../VersionSwitcher.js";
@@ -90,6 +91,10 @@ export function CharacterForm({
   const avaInputRef = useRef<HTMLInputElement>(null);
   const [avatarOrientation, setAvatarOrientation] = useState<"portrait" | "landscape" | null>(null);
   const [pendingAvatar, setPendingAvatar] = useState<{ file: File; url: string } | null>(null);
+  // Source URL for the "adjust thumbnail" flow: re-crop the square thumbnail
+  // from the existing avatar (full endpoint) without re-uploading a file.
+  // Null when the thumbnail editor is closed.
+  const [thumbnailEditSrc, setThumbnailEditSrc] = useState<string | null>(null);
 
   // VTF-14: Form↔MD authoring-surface toggle. State lives in the Zustand store
   // (not local) so it survives Build tab switches — CharacterForm unmounts when
@@ -156,6 +161,36 @@ export function CharacterForm({
   function handleAvatarCropCancel() {
     if (pendingAvatar?.url) URL.revokeObjectURL(pendingAvatar.url);
     setPendingAvatar(null);
+  }
+
+  // "Adjust thumbnail": open the cropper on the existing avatar (full-size
+  // endpoint) so the user can re-frame the 512×512 thumbnail. The original is
+  // NOT re-uploaded — uploadCharacterAvatar(id, crop) with no `full` arg leaves
+  // avatar-full.{ext} untouched, so large display slots (editor, floating
+  // avatar panel) keep the uncropped source.
+  function handleOpenThumbnailCrop() {
+    if (!activeCharacter) return;
+    const src = resolveEntityAvatarUrl({
+      kind: "characters",
+      id: activeCharacter.id,
+      avatarExt: activeCharacter.avatarExt,
+      avatarAssetId: activeCharacter.avatarAssetId,
+      avatarFullExt: activeCharacter.avatarFullExt,
+      avatarFullAssetId: activeCharacter.avatarFullAssetId,
+      updatedAt: activeCharacter.updatedAt,
+      preferFull: true,
+    });
+    if (src) setThumbnailEditSrc(src);
+  }
+
+  function handleThumbnailCropConfirm(result: AvatarCropResult) {
+    setThumbnailEditSrc(null);
+    // crop only, no original → backend keeps the existing avatar-full.
+    // Don't set a local avatarPreview: the editor's avatar slot renders the
+    // full-size image (unchanged by a thumbnail crop), so a cropped preview
+    // would visually snap back to the full after the snapshot refresh. The
+    // new thumbnail surfaces in small slots (sidebar/topbar) via bootstrap.
+    void onAvatarUpload(result.croppedFile);
   }
 
   function handleImportFiles(files: File[]): void {
@@ -465,6 +500,12 @@ export function CharacterForm({
             <input ref={avaInputRef} type="file" className="hidden" accept="image/*" onChange={(e) => handleAvatarPick(e.target.files)} />
             <img src={displayAvatar} alt="" className="block rounded-lg" style={{ maxWidth: isMobile ? 400 : 480, maxHeight: 280, objectFit: "contain" }} />
             <div className="absolute inset-0 flex items-center justify-center bg-black/50 text-white opacity-0 transition-opacity group-hover:opacity-100"><Ic.edit /></div>
+            <CustomTooltip content={t("edit_thumbnail")}>
+              <button type="button"
+                className="absolute bottom-1.5 right-1.5 flex h-7 w-7 items-center justify-center rounded-md border border-border bg-surface/90 text-t2 shadow-sm backdrop-blur transition-colors hover:text-accent-t"
+                onClick={(e) => { e.stopPropagation(); handleOpenThumbnailCrop(); }}
+              ><Ic.crop /></button>
+            </CustomTooltip>
           </div>
           </CustomTooltip>
           <div className="w-full flex flex-col gap-3">
@@ -493,6 +534,12 @@ export function CharacterForm({
             <>
               <img src={displayAvatar} alt="" className={cn("block", isMobile ? "w-full" : "max-w-[180px]")} style={isMobile ? undefined : { maxHeight: 250, objectFit: "contain" }} />
               <div className="absolute inset-0 flex items-center justify-center bg-black/50 text-white opacity-0 transition-opacity group-hover:opacity-100"><Ic.edit /></div>
+              <CustomTooltip content={t("edit_thumbnail")}>
+                <button type="button"
+                  className="absolute bottom-1.5 right-1.5 flex h-7 w-7 items-center justify-center rounded-md border border-border bg-surface/90 text-t2 shadow-sm backdrop-blur transition-colors hover:text-accent-t"
+                  onClick={(e) => { e.stopPropagation(); handleOpenThumbnailCrop(); }}
+                ><Ic.crop /></button>
+              </CustomTooltip>
             </>
           ) : (
             <div className={cn("flex flex-col items-center justify-center gap-1.5 text-t3 transition-colors group-hover:text-accent-t", isMobile ? "min-h-[120px] w-full" : "h-20 w-28")}>
@@ -742,6 +789,14 @@ export function CharacterForm({
           imageUrl={pendingAvatar.url}
           onConfirm={handleAvatarCropConfirm}
           onCancel={handleAvatarCropCancel}
+        />
+      )}
+      {thumbnailEditSrc && (
+        <AvatarCropModal
+          imageUrl={thumbnailEditSrc}
+          fileName="character_avatar.png"
+          onConfirm={handleThumbnailCropConfirm}
+          onCancel={() => setThumbnailEditSrc(null)}
         />
       )}
     </div>
