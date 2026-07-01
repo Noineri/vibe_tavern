@@ -45,6 +45,7 @@ export class ChatApplicationService {
       personaId: input.personaId,
       title: input.title,
       promptPresetId: input.promptPresetId,
+      mode: input.mode,
     });
 
     return {

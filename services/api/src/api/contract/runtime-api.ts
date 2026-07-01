@@ -13,11 +13,13 @@ import type {
 	ChatSwitchResponse,
 	ChatCreateResponse,
 	ChatListResponse,
+	ChatListItem,
 	ConfigPatchResponse,
 	SummaryResponse,
 	CharacterVersionResponse,
 } from "./session-types.js";
 import type { PromptTraceRecordDto, PromptPresetDto, PronounForms } from "@vibe-tavern/domain";
+import type { ChatMode } from "@vibe-tavern/domain";
 import type {
 	ChatSummary,
 	FavoriteModel,
@@ -89,7 +91,11 @@ export interface BootstrapRuntimeApi {
 
 export interface ChatRuntimeApi {
 	getChatSnapshot: (chatId: string) => Promise<ChatSwitchResponse>;
-	createChatForCharacter: (characterId: string) => Promise<ChatCreateResponse>;
+	createChatForCharacter: (characterId: string, mode?: ChatMode) => Promise<ChatCreateResponse>;
+	/** Co-Author chats for a character (mode='coauthor'), for the Co-Author
+	 *  entry screen. Each is a normal chats row driven through the universal
+	 *  send/stream pipeline — no separate transport. */
+	listCoauthorChats: (characterId: string) => Promise<ChatListItem[]>;
 	cloneChat: (chatId: string) => Promise<SessionSnapshot>;
 	deleteChat: (chatId: string) => Promise<void>;
 	clearChat: (chatId: string) => Promise<ChatCreateResponse>;

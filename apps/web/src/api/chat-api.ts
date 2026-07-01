@@ -1,4 +1,4 @@
-import type { ChatId, PromptTraceRecordDto } from "@vibe-tavern/domain";
+import type { ChatId, ChatMode, PromptTraceRecordDto } from "@vibe-tavern/domain";
 import type { AppSnapshot, AppMessage, ChatListItem, ChatSummaryRecord, AutoSummaryConfig } from "./types.js";
 import { client } from "./client.js";
 import { unwrapRpc, unwrapError } from "./unwrap.js";
@@ -13,10 +13,16 @@ export async function fetchChat(chatId: ChatId): Promise<AppSnapshot> {
   return normalizeSnapshot(data);
 }
 
-export async function createChat(characterId: string): Promise<AppSnapshot> {
-  const response = await client.api.chats.$post({ json: { characterId } });
+export async function createChat(characterId: string, mode?: ChatMode): Promise<AppSnapshot> {
+  const response = await client.api.chats.$post({ json: { characterId, mode } });
   const data = await unwrapRpc<AppSnapshot>(response);
   return normalizeSnapshot(data);
+}
+
+/** List a character's co-author chats (Co-Author mode entry screen). */
+export async function listCoauthorChats(characterId: string): Promise<ChatListItem[]> {
+  const response = await client.api.characters[":characterId"]["coauthor-chats"].$get({ param: { characterId } });
+  return await unwrapRpc<ChatListItem[]>(response);
 }
 
 export async function deleteChat(chatId: ChatId): Promise<void> {

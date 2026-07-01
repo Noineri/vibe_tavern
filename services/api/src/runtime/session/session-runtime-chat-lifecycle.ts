@@ -4,6 +4,7 @@ import {
 	type CharacterId,
 	type ChatBranchId,
 	type ChatId,
+	type ChatMode,
 	type PersonaId,
 	type PromptPresetId,
 	SYSTEM_RESOURCE_ID,
@@ -76,7 +77,7 @@ export class ChatLifecycleRuntime {
 		this.deps = deps;
 	}
 
-	async createChatForCharacter(characterId: string): Promise<ChatCreateResponse> {
+	async createChatForCharacter(characterId: string, mode?: ChatMode): Promise<ChatCreateResponse> {
 		const typedCharacterId = brandId<CharacterId>(characterId);
 		const character = await this.deps.stores.characters.getById(typedCharacterId);
 		if (!character) {
@@ -88,6 +89,7 @@ export class ChatLifecycleRuntime {
 			personaId: await this.deps.persona.resolveDefaultId(),
 			title: `${character.name} chat`,
 			promptPresetId: await this.deps.resolveDefaultPromptPresetId(),
+			mode,
 		});
 
 		const createdChatId = created.id;

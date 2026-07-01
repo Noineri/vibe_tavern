@@ -30,8 +30,11 @@ export class ChatAdapter implements ChatRuntimeApi {
 		return this.sessionRuntime.chatLifecycle.switchChat(brandId<ChatId>(chatId));
 	};
 
-	createChatForCharacter = (characterId: string): Promise<ChatCreateResponse> =>
-		this.sessionRuntime.chatLifecycle.createChatForCharacter(characterId);
+	createChatForCharacter = (characterId: string, mode?: import("@vibe-tavern/domain").ChatMode): Promise<ChatCreateResponse> =>
+		this.sessionRuntime.chatLifecycle.createChatForCharacter(characterId, mode);
+
+	listCoauthorChats = (characterId: string): Promise<import("../contract/session-types.js").ChatListItem[]> =>
+		this.sessionRuntime.listCoauthorChats(characterId as import("@vibe-tavern/domain").CharacterId);
 
 	cloneChat = (chatId: string) =>
 		this.sessionRuntime.chatRuntime.cloneChat(chatId);

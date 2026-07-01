@@ -65,6 +65,8 @@ export class ChatStore {
     personaId?: string;
     title: string;
     promptPresetId: string | null;
+    /** Chat mode. Omit/undefined → DB default 'rp'. */
+    mode?: ChatMode;
   }): Promise<Chat> {
     const chatId = this.idGen.next('chat');
     const branchId = this.idGen.next('brnch');
@@ -79,6 +81,7 @@ export class ChatStore {
           personaId: data.personaId ?? null,
           activeBranchId: branchId,
           promptPresetId: data.promptPresetId,
+          mode: data.mode,
           title: data.title,
           summary: '',
           messageHistoryLimit: 0,
@@ -116,6 +119,17 @@ export class ChatStore {
       .select()
       .from(chats)
       .where(eq(chats.characterId, characterId))
+      .all();
+    return rows.map((row) => this.mapRow(row));
+  }
+
+  /** Chats for a character filtered by mode (e.g. co-author chats for the
+   *  Co-Author mode entry list). Uses idx_chats_character_id for the scan. */
+  async listByCharacterAndMode(characterId: string, mode: ChatMode): Promise<Chat[]> {
+    const rows = await this.db
+      .select()
+      .from(chats)
+      .where(and(eq(chats.characterId, characterId), eq(chats.mode, mode)))
       .all();
     return rows.map((row) => this.mapRow(row));
   }

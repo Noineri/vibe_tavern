@@ -2,6 +2,8 @@ import { z } from "zod";
 
 export const createChatSchema = z.object({
   characterId: z.string(),
+  /** Chat mode. Omit for the default 'rp'. Allowed values mirror CHAT_MODE. */
+  mode: z.enum(["rp", "coauthor", "novel", "group"]).optional(),
 });
 
 export const cloneChatSchema = z.object({});

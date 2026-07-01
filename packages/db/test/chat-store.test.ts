@@ -610,3 +610,71 @@ describe("MessageStore — variant preset_id (Q2)", () => {
     expect(rows.find((r) => r.variantIndex === queued.variantIndex)!.presetId).toBe("preset_1");
   });
 });
+
+// ─── ChatStore — mode column (CA-1 / CA-4) ───────────────────────────────────
+
+describe("ChatStore — mode column", () => {
+  let db: Awaited<ReturnType<typeof createTestDb>>;
+  let store: ChatStore;
+
+  beforeEach(async () => {
+    db = await createTestDb();
+    bootstrap(db);
+    clockTick = 0;
+    idCounters = new Map();
+    store = new ChatStore(db, { clock: testClock, idGenerator: testIdGen });
+  });
+
+  test("createChat defaults mode to 'rp' when not specified", async () => {
+    const chat = await store.createChat({
+      characterId: "char_1",
+      title: "New chat",
+      promptPresetId: "preset_1",
+    });
+    expect(chat.mode).toBe("rp");
+  });
+
+  test("createChat persists an explicit coauthor mode", async () => {
+    const chat = await store.createChat({
+      characterId: "char_1",
+      title: "Co-Author chat",
+      promptPresetId: "preset_1",
+      mode: "coauthor",
+    });
+    expect(chat.mode).toBe("coauthor");
+    // Round-trip: getById reads the persisted mode back.
+    const reloaded = await store.getById(chat.id);
+    expect(reloaded?.mode).toBe("coauthor");
+  });
+
+  test("listByCharacterAndMode filters by mode", async () => {
+    await store.createChat({ characterId: "char_1", title: "rp-a", promptPresetId: "preset_1" });
+    const co1 = await store.createChat({ characterId: "char_1", title: "co-a", promptPresetId: "preset_1", mode: "coauthor" });
+    const co2 = await store.createChat({ characterId: "char_1", title: "co-b", promptPresetId: "preset_1", mode: "coauthor" });
+
+    const coauthor = await store.listByCharacterAndMode("char_1", "coauthor");
+    const rp = await store.listByCharacterAndMode("char_1", "rp");
+
+    expect(coauthor.map((c) => c.id).sort()).toEqual([co1.id, co2.id].sort());
+    expect(coauthor.every((c) => c.mode === "coauthor")).toBe(true);
+    // The bootstrap-inserted chat_1 is also rp, so rp count ≥ 1 (chat_1) + 1.
+    expect(rp.every((c) => c.mode === "rp")).toBe(true);
+    expect(rp.length).toBeGreaterThanOrEqual(2);
+  });
+
+  test("listByCharacterAndMode is isolated per character", async () => {
+    // Second character + its co-author chat.
+    db.insert(schema.characters).values({
+      id: "char_2", name: "OtherChar", description: "",
+      alternateGreetingsJson: "[]", extensionsJson: "{}", tagsJson: "[]",
+      status: "active", createdAt: FIXED_NOW, updatedAt: FIXED_NOW,
+    }).run();
+    await store.createChat({ characterId: "char_2", title: "co-other", promptPresetId: "preset_1", mode: "coauthor" });
+
+    const forChar1 = await store.listByCharacterAndMode("char_1", "coauthor");
+    const forChar2 = await store.listByCharacterAndMode("char_2", "coauthor");
+    expect(forChar1.every((c) => c.characterId === "char_1")).toBe(true);
+    expect(forChar2.every((c) => c.characterId === "char_2")).toBe(true);
+    expect(forChar2).toHaveLength(1);
+  });
+});

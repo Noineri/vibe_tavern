@@ -7,6 +7,7 @@
 import type {
   ChatBranchId,
   ChatId,
+  ChatMode,
   CharacterId,
   MessageId,
   PersonaId,
@@ -21,6 +22,8 @@ export interface CreateChatRequest {
   personaId: PersonaId;
   title: string;
   promptPresetId: PromptPresetId;
+  /** Chat mode. Omit/undefined → DB default 'rp'. */
+  mode?: ChatMode;
 }
 
 export interface CreateChatResponse {

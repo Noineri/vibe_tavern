@@ -46,6 +46,7 @@ export { bootstrapApp, updateUiSettings } from "./api/settings-api.js";
 export {
   fetchChat,
   createChat,
+  listCoauthorChats,
   deleteChat,
   clearChat,
   renameChat,

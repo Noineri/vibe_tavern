@@ -594,6 +594,17 @@ import { scanSillyTavernDirectory as scanST, importSillyTavernDirectory as impor
 	}
 
 	/**
+	 * List a character's co-author chats for the Co-Author mode entry screen.
+	 * Reuses mapChatToListItem so items carry the same shape (lastMessageAt,
+	 * messageCount, …) the sidebar uses. Several co-author chats per character
+	 * fall out for free: each is a chats row with mode='coauthor'.
+	 */
+	async listCoauthorChats(characterId: CharacterId): Promise<ChatListItem[]> {
+		const chats = await this.stores.chats.listByCharacterAndMode(characterId, "coauthor");
+		return Promise.all(chats.map((c) => this.mapChatToListItem(c.id as ChatId)));
+	}
+
+	/**
 	 * Wiring method: resolves the chat's mode strategy and delegates to
 	 * `strategy.assemble(...)`. RP delegates to the existing `assembleForChat`
 	 * unchanged; co-author builds its editor prompt (CA-5). The mode is read
