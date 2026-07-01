@@ -14,9 +14,12 @@
  */
 import { describe, it, expect } from "bun:test";
 import type { BuildCharacterDraft } from "@vibe-tavern/api-contracts";
-import { aggregateCoauthorProposal } from "./coauthor-apply-aggregate.js";
+import { parseProfileMd } from "@vibe-tavern/db/codecs";
+import { aggregateCoauthorProposal, buildPartialApplyRequest } from "./coauthor-apply-aggregate.js";
 import type { CoauthorToolActivity } from "../stores/coauthor-turn-store.js";
 import { draftToBody } from "../components/build/editors/vibe-md-sync.js";
+import { buildLineDiff } from "../components/shared/TextDiffPreview.js";
+import { mergeSelectedBody, allHunkIds, groupHunks } from "./coauthor-hunk-merge.js";
 
 function baseDraft(over: Partial<BuildCharacterDraft> = {}): BuildCharacterDraft {
 	return {
@@ -192,5 +195,105 @@ describe("aggregateCoauthorProposal — mixed profile + greetings", () => {
 		expect(result.proposedDraft.description).toBe("Assertive.");
 		expect(result.proposedDraft.firstMessage).toBe("Welcome, morsel.");
 		expect(result.summaries).toEqual(["Rewrote personality.", "New greeting."]);
+	});
+});
+
+/**
+ * CA-12 — buildPartialApplyRequest: rebuild the Apply request from a hunk-level
+ * (partial) selection. The merged body is what `mergeSelectedBody` produces
+ * from the reviewing diff + the user's selected hunk ids. These tests pin that
+ * the rebuilt request carries the model's proposed frontmatter but the MERGED
+ * prose/greetings — and that fields the model never touched are omitted.
+ */
+describe("buildPartialApplyRequest — hunk-level (CA-12)", () => {
+	it("ALL hunks selected → rebuilt profileMd is semantically equal to the wholesale proposal (CA-11 parity)", () => {
+		const draft = baseDraft();
+		const proposed = profileMd("Fierce.", "A cave at dusk.", "{{char}}: *grins*");
+		const base = aggregateCoauthorProposal([profileActivity("t1", proposed)], draft);
+		const diff = buildLineDiff(draftToBody(draft), draftToBody(base.proposedDraft));
+		const merged = mergeSelectedBody(diff, allHunkIds(groupHunks(diff))); // all
+		const req = buildPartialApplyRequest(merged, base);
+		expect(req.profileMd).toBeDefined();
+		// Production edit_profile returns an ALREADY-canonical profileMd
+		// (serialize(parse(input))), so rebuild is byte-stable there. The test
+		// helper builds a non-canonical string (no vt: block), so compare the
+		// PARSED semantics instead — the load-bearing parity: same prose fields.
+		const rebuilt = parseProfileMd(req.profileMd!);
+		const wholesale = parseProfileMd(base.applyRequest.profileMd!);
+		expect(rebuilt.profile.description).toBe(wholesale.profile.description);
+		expect(rebuilt.profile.scenario).toBe(wholesale.profile.scenario);
+		expect(rebuilt.profile.mesExample).toBe(wholesale.profile.mesExample);
+		expect(rebuilt.profile.name).toBe(wholesale.profile.name);
+	});
+
+	it("subset: rejecting the personality hunk keeps canonical personality in the rebuilt profileMd", () => {
+		const draft = baseDraft(); // personality "Calm weaver."
+		const proposed = profileMd("Fierce and bold.", "A cave at dusk.", "{{char}}: *nods*");
+		const base = aggregateCoauthorProposal([profileActivity("t1", proposed)], draft);
+		const diff = buildLineDiff(draftToBody(draft), draftToBody(base.proposedDraft));
+		const hunks = groupHunks(diff);
+		// Reject ONLY the personality hunk (hunk id 0); accept the rest.
+		const selected = new Set(hunks.filter((h) => h.id !== 0).map((h) => h.id));
+		const merged = mergeSelectedBody(diff, selected);
+		const req = buildPartialApplyRequest(merged, base);
+		expect(req.profileMd).toBeDefined();
+		// Personality reverted to canonical ("Calm weaver."); scenario reflects the
+		// accepted proposal. The rebuilt profileMd is the arbiter the backend parses.
+		expect(req.profileMd).toContain("Calm weaver.");
+		expect(req.profileMd).not.toContain("Fierce and bold.");
+		expect(req.profileMd).toContain("A cave at dusk.");
+	});
+
+	it("preserves the model's proposed FRONTMATTER (rename) regardless of hunk selection", () => {
+		const draft = baseDraft();
+		// Model renames to "Mira" AND rewrites personality. Frontmatter (name) is
+		// NOT in the body diff, so even rejecting every body hunk keeps the rename.
+		const proposed = profileMd("Fierce.", "A cave.", "{{char}}: *nods*", "Mira");
+		const base = aggregateCoauthorProposal([profileActivity("t1", proposed)], draft);
+		const diff = buildLineDiff(draftToBody(draft), draftToBody(base.proposedDraft));
+		const merged = mergeSelectedBody(diff, new Set()); // reject ALL body hunks
+		const req = buildPartialApplyRequest(merged, base);
+		expect(req.profileMd).toContain("name: Mira"); // rename honored wholesale
+	});
+
+	it("greetings: merged selection → merged firstMessage/alternateGreetings; omits when no greeting tool fired", () => {
+		const draft = baseDraft(); // firstMessage "Hello, fly.", alts ["Alt one."]
+		const base = aggregateCoauthorProposal(
+			[editGreetingActivity("t1", 0, "Welcome, morsel.", "New primary.")],
+			draft,
+		);
+		const diff = buildLineDiff(draftToBody(draft), draftToBody(base.proposedDraft));
+		// Reject the greeting hunk → reverted to canonical greeting.
+		const mergedRevert = mergeSelectedBody(diff, new Set());
+		const reqRevert = buildPartialApplyRequest(mergedRevert, base);
+		expect(reqRevert.firstMessage).toBe("Hello, fly."); // canonical primary
+		expect(reqRevert.alternateGreetings).toEqual(["Alt one."]);
+		// Accept it → proposed primary.
+		const mergedAccept = mergeSelectedBody(diff, allHunkIds(groupHunks(diff)));
+		const reqAccept = buildPartialApplyRequest(mergedAccept, base);
+		expect(reqAccept.firstMessage).toBe("Welcome, morsel.");
+	});
+
+	it("profile-only turn omits greetings from the rebuilt request", () => {
+		const draft = baseDraft();
+		const proposed = profileMd("Fierce.", "A cave.", "{{char}}: *nods*");
+		const base = aggregateCoauthorProposal([profileActivity("t1", proposed)], draft);
+		const diff = buildLineDiff(draftToBody(draft), draftToBody(base.proposedDraft));
+		const req = buildPartialApplyRequest(mergeSelectedBody(diff), base);
+		expect(req.firstMessage).toBeUndefined();
+		expect(req.alternateGreetings).toBeUndefined();
+		expect(req.profileMd).toBeDefined();
+	});
+
+	it("greeting-only turn omits profileMd from the rebuilt request", () => {
+		const draft = baseDraft();
+		const base = aggregateCoauthorProposal(
+			[addGreetingActivity("t1", "A new dawn.")],
+			draft,
+		);
+		const diff = buildLineDiff(draftToBody(draft), draftToBody(base.proposedDraft));
+		const req = buildPartialApplyRequest(mergeSelectedBody(diff), base);
+		expect(req.profileMd).toBeUndefined();
+		expect(req.alternateGreetings).toBeDefined();
 	});
 });

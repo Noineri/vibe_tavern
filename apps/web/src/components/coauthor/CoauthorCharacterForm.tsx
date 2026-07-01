@@ -48,11 +48,13 @@ import { lockedHeadings } from "../build/editors/vibe-md-locked-headings.js";
 import { greetingsUi } from "../build/editors/vibe-md-greetings.js";
 import { vibeMdFolding } from "../build/editors/vibe-md-folding.js";
 import { applyBodyToDraft, draftToBody } from "../build/editors/vibe-md-sync.js";
-import { buildLineDiff, TextDiffPreview } from "../shared/TextDiffPreview.js";
+import { buildLineDiff } from "../shared/TextDiffPreview.js";
+import { HunkSelectionDiff } from "./HunkSelectionDiff.js";
+import { groupHunks, mergeSelectedBody, allHunkIds } from "../../lib/coauthor-hunk-merge.js";
 
 import { lblCls } from "../build/fields/field-styles.js";
 import { characterDefaults } from "../../lib/character-draft.js";
-import { aggregateCoauthorProposal } from "../../lib/coauthor-apply-aggregate.js";
+import { aggregateCoauthorProposal, buildPartialApplyRequest } from "../../lib/coauthor-apply-aggregate.js";
 import { applyCoauthorDraft } from "../../api/chat-api.js";
 import type { AppCharacter } from "../../app-client.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
@@ -147,6 +149,28 @@ function CoauthorCharacterFormInner({ character }: CoauthorCharacterFormInnerPro
   }, [editorState, activities]);
 
   const [applying, setApplying] = useState(false);
+
+  // ── CA-12: hunk-level (granular) selection over the reviewing diff. ────────
+  // The diff is body-space (canonical → proposed). It is memoized so the hunk
+  // set is stable while reviewing (the editor is locked → the draft, and thus
+  // both bodies, are frozen). `selectedHunkIds` defaults to ALL hunks
+  // (CA-11 wholesale behavior); a useEffect resets it to all whenever a NEW
+  // proposal's hunks appear. Toggling a hunk mutates only the selection, so the
+  // reset effect (keyed on `hunks`) doesn't fire mid-review.
+  const reviewing = editorState === "reviewing" && proposal?.hasProposal;
+  const diff = useMemo(() => {
+    if (!reviewing || !proposal?.hasProposal) return null;
+    return buildLineDiff(draftToBody(form.getValues()), draftToBody(proposal.proposedDraft));
+    // `reviewing` + `proposal` are the reactive inputs; `form` is stable and its
+    // values are frozen while reviewing (locked editor).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reviewing, proposal]);
+  const hunks = useMemo(() => (diff ? groupHunks(diff) : []), [diff]);
+  const [selectedHunkIds, setSelectedHunkIds] = useState<Set<number>>(new Set());
+  useEffect(() => {
+    // New proposal → start from "apply everything" (wholesale default).
+    setSelectedHunkIds(allHunkIds(hunks));
+  }, [hunks]);
 
   // ── Greetings widget handlers (draft-backed; same rationale as VibeMdView). ──
   function forceEditorFromBody(): void {
@@ -258,9 +282,16 @@ function CoauthorCharacterFormInner({ character }: CoauthorCharacterFormInnerPro
     if (!chatId || !proposal?.hasProposal) return;
     setApplying(true);
     try {
+      // CA-12: rebuild the Apply request from the user's hunk selection. When all
+      // hunks are selected this is semantically identical to the wholesale
+      // proposal (CA-11); a subset yields a partial apply (merged body → rebuilt
+      // profileMd with proposed frontmatter + merged prose, + merged greetings).
+      const request = diff
+        ? buildPartialApplyRequest(mergeSelectedBody(diff, selectedHunkIds), proposal)
+        : proposal.applyRequest;
       const { snapshot, corrections } = await applyCoauthorDraft(
         brandId<ChatId>(chatId),
-        proposal.applyRequest,
+        request,
       );
       useSnapshotStore.getState().ingestSnapshot(snapshot);
       useCoauthorTurnStore.getState().clearTurn(chatId); // → reviewing falls to idle
@@ -333,10 +364,21 @@ function CoauthorCharacterFormInner({ character }: CoauthorCharacterFormInnerPro
         />
         <p className="mt-1.5 font-ui text-[11px] text-t4">{t("coauthor.editor.hint")}</p>
 
-        {editorState === "reviewing" && proposal?.hasProposal && (
+        {editorState === "reviewing" && proposal?.hasProposal && diff && (
           <ReviewingOverlay
             summary={proposal.summaries.join(" · ") || t("coauthor.review.no_summary")}
-            diff={buildLineDiff(draftToBody(form.getValues()), draftToBody(proposal.proposedDraft))}
+            diff={diff}
+            hunks={hunks}
+            selectedHunkIds={selectedHunkIds}
+            onToggleHunk={(id) =>
+              setSelectedHunkIds((prev) => {
+                const next = new Set(prev);
+                if (next.has(id)) next.delete(id); else next.add(id);
+                return next;
+              })
+            }
+            onSelectAll={() => setSelectedHunkIds(allHunkIds(hunks))}
+            onSelectNone={() => setSelectedHunkIds(new Set())}
             applying={applying}
             onApply={() => { void handleApply(); }}
             onReject={handleReject}
@@ -347,6 +389,11 @@ function CoauthorCharacterFormInner({ character }: CoauthorCharacterFormInnerPro
               apply: t("coauthor.review.apply"),
               reject: t("coauthor.review.reject"),
               applying: t("coauthor.review.applying"),
+              selectAll: t("coauthor.review.select_all"),
+              selectNone: t("coauthor.review.select_none"),
+              applyingCount: t("coauthor.review.applying_count"),
+              hunkN: t("coauthor.review.hunk_n"),
+              skipped: t("coauthor.review.skipped"),
             }}
           />
         )}
@@ -364,6 +411,11 @@ function CoauthorCharacterFormInner({ character }: CoauthorCharacterFormInnerPro
 function ReviewingOverlay({
   summary,
   diff,
+  hunks,
+  selectedHunkIds,
+  onToggleHunk,
+  onSelectAll,
+  onSelectNone,
   applying,
   onApply,
   onReject,
@@ -371,6 +423,11 @@ function ReviewingOverlay({
 }: {
   summary: string;
   diff: ReturnType<typeof buildLineDiff>;
+  hunks: ReturnType<typeof groupHunks>;
+  selectedHunkIds: Set<number>;
+  onToggleHunk: (id: number) => void;
+  onSelectAll: () => void;
+  onSelectNone: () => void;
   applying: boolean;
   onApply: () => void;
   onReject: () => void;
@@ -381,6 +438,11 @@ function ReviewingOverlay({
     apply: string;
     reject: string;
     applying: string;
+    selectAll: string;
+    selectNone: string;
+    applyingCount: string;
+    hunkN: string;
+    skipped: string;
   };
 }) {
   return (
@@ -389,9 +451,23 @@ function ReviewingOverlay({
         <div className="mb-2 rounded-md border border-border/70 bg-s1 px-3 py-2">
           <div className="font-ui text-[12px] font-medium text-t2">{summary}</div>
         </div>
-        <TextDiffPreview
-          summary={diff}
-          labels={{ title: labels.title, tooLarge: labels.tooLarge, noChanges: labels.noChanges }}
+        <HunkSelectionDiff
+          diff={diff}
+          hunks={hunks}
+          selectedIds={selectedHunkIds}
+          onToggleHunk={onToggleHunk}
+          onSelectAll={onSelectAll}
+          onSelectNone={onSelectNone}
+          labels={{
+            title: labels.title,
+            tooLarge: labels.tooLarge,
+            noChanges: labels.noChanges,
+            selectAll: labels.selectAll,
+            selectNone: labels.selectNone,
+            applyingCount: labels.applyingCount,
+            hunkN: labels.hunkN,
+            skipped: labels.skipped,
+          }}
         />
       </div>
       <div className="flex shrink-0 items-center justify-end gap-2 border-t border-border/50 bg-surface px-4 py-2.5">

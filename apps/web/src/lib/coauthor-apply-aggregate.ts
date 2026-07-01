@@ -25,9 +25,10 @@
  * draft as inputs. Tested in isolation (the Apply REQUEST shape is the
  * load-bearing contract with the CA-7 backend).
  */
-import { parseProfileMd } from "@vibe-tavern/db/codecs";
+import { parseProfileMd, serializeProfileMd } from "@vibe-tavern/db/codecs";
 import type { BuildCharacterDraft, CoauthorApplyRequest } from "@vibe-tavern/api-contracts";
 import type { CoauthorToolActivity } from "../stores/coauthor-turn-store.js";
+import { pinBodyFields, pinGreetingsFields } from "../components/build/editors/vibe-md-sync.js";
 
 /** A finalized, proposed-producing activity (streaming/error ones are excluded). */
 interface ProposedActivity {
@@ -156,4 +157,71 @@ export function aggregateCoauthorProposal(
 	}
 
 	return { hasProposal: true, proposedDraft, applyRequest, summaries };
+}
+
+/**
+ * CA-12 — Rebuild the Apply request for a HUNK-LEVEL (partial) selection.
+ *
+ * The user toggles individual hunks in the reviewing diff (see
+ * `coauthor-hunk-merge.ts`); `mergedBody` is the hybrid body reflecting their
+ * selection (selected hunks take the proposed lines, rejected hunks keep the
+ * original). This turns that merged body back into a {@link CoauthorApplyRequest}
+ * the CA-7 backend accepts.
+ *
+ * Semantics, consistent with CA-11's body-space decision:
+ *  - **Profile prose** (PERSONALITY/SCENARIO/EXAMPLES): if the turn proposed a
+ *    profile edit, the request's `profileMd` is REBUILT — the model's proposed
+ *    FRONTMATTER (name rename, tags, creatorNotes, vt config, unknown keys) is
+ *    preserved verbatim, but the three prose H1 bodies are overridden with the
+ *    merged values from the selected hunks. Frontmatter is not in the body diff
+ *    (it can't be faithfully rebuilt on the frontend — `creator`/
+ *    `character_version` live in `extensions`), so a rename applies wholesale
+ *    regardless of hunk selection; only the prose bodies are granular. The
+ *    backend's Apply parses this rebuilt profile.md and overwrites the prose +
+ *    meta fields (unchanged sections are identical to current → no-op).
+ *  - **Greetings**: if the turn proposed greeting edits, `firstMessage` +
+ *    `alternateGreetings` come from the merged body's `# GREETINGS` section
+ *    (selected greeting hunks applied, rejected ones reverted). If no greeting
+ *    tool fired, greetings are omitted (the backend leaves them untouched).
+ *
+ * `base` is the wholesale proposal from {@link aggregateCoauthorProposal}; it
+ * tells us WHICH fields were proposed (so we don't send fields the model never
+ * touched) and carries the proposed frontmatter for the profile rebuild.
+ *
+ * Pure: no I/O, no React, no store reads.
+ */
+export function buildPartialApplyRequest(
+	mergedBody: string,
+	base: CoauthorProposal,
+): CoauthorApplyRequest {
+	const req: CoauthorApplyRequest = {};
+
+	// ── Profile: rebuild the proposed profile.md with merged prose bodies. ──────
+	if (base.applyRequest.profileMd !== undefined) {
+		const parsed = parseProfileMd(base.applyRequest.profileMd);
+		const mergedProse = pinBodyFields(mergedBody);
+		req.profileMd = serializeProfileMd({
+			profile: {
+				...parsed.profile,
+				description: mergedProse.description,
+				// The editor body codec uses empty-string for an absent optional section;
+				// the profile-md codec uses null. Translate so re-serialization omits
+				// empty sections (matching canonical emission), not `# SCENARIO` + "".
+				scenario: mergedProse.scenario.trim() ? mergedProse.scenario : null,
+				mesExample: mergedProse.mesExample.trim() ? mergedProse.mesExample : null,
+			},
+			unknownFrontmatter: parsed.unknownFrontmatter,
+			unknownVt: parsed.unknownVt,
+			unknownSections: parsed.unknownSections,
+		});
+	}
+
+	// ── Greetings: merged greetings, only if the turn proposed any. ────────────
+	if (base.applyRequest.firstMessage !== undefined) {
+		const mergedGreetings = pinGreetingsFields(mergedBody);
+		req.firstMessage = mergedGreetings.firstMessage;
+		req.alternateGreetings = mergedGreetings.alternateGreetings;
+	}
+
+	return req;
 }

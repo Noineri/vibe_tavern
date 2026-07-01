@@ -333,4 +333,127 @@ describe("CoauthorCharacterForm", () => {
 		// Turn store cleared → idle.
 		expect(useCoauthorTurnStore.getState().getActivities(TEST_CHAT)).toEqual([]);
 	});
+
+	// ── CA-12: hunk-level (granular) Apply ────────────────────────────────────
+	// The reviewing overlay renders each change hunk as a selectable block. The
+	// user toggles hunks on/off; Apply rebuilds the request from the merged body
+	// (selected hunks only). Default = all selected (CA-11 wholesale parity).
+
+	/** A proposed profile.md that changes BOTH personality and scenario (2 hunks). */
+	function twoHunkProfileActivity(): CoauthorToolActivity {
+		const proposed = [
+			"---", "name: Kira", "tags: []", "---", "",
+			"# PERSONALITY", "Bold and direct.", "",
+			"# SCENARIO", "A forest cave at dusk.", "",
+			"# EXAMPLES", "{{char}}: *tilts head*", "",
+		].join("\n");
+		return { toolCallId: "t1", toolName: "edit_profile", status: "done", target: "profile", proposed, summary: "Rewrote personality + scenario." };
+	}
+
+	it("CA-12: reviewing renders one checkbox per hunk, all selected by default", () => {
+		__isSending = false;
+		seedReviewing();
+		useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, twoHunkProfileActivity());
+
+		const { container } = render(<CoauthorCharacterForm />);
+		const boxes = container.querySelectorAll('input[type="checkbox"]');
+		// Two hunks (personality + scenario); greetings untouched → no greeting hunk.
+		expect(boxes.length).toBe(2);
+		expect([...boxes].every((b) => (b as HTMLInputElement).checked)).toBe(true); // all on (wholesale default)
+	});
+
+	it("CA-12: toggling a hunk off + Apply sends a PARTIAL request (rejected hunk reverts to canonical)", async () => {
+		__isSending = false;
+		// Canonical personality: "A reserved arachnid weaver."; scenario: "A forest cave."
+		seedReviewing();
+		useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, twoHunkProfileActivity());
+
+		const fetchMock = mock((_u: unknown, _i: unknown) =>
+			Promise.resolve({
+				ok: true,
+				status: 200,
+				json: async () => ({ character: makeCharacter({ description: "A reserved arachnid weaver.", scenario: "A forest cave at dusk." }), corrections: [] }),
+				text: async () => "",
+			}),
+		);
+		globalThis.fetch = fetchMock as never;
+
+		const { container, getByText } = render(<CoauthorCharacterForm />);
+		const boxes = container.querySelectorAll('input[type="checkbox"]');
+		expect(boxes.length).toBe(2);
+		// Deselect the FIRST hunk (personality) — keep the scenario hunk accepted.
+		fireEvent.click(boxes[0]!);
+		expect((boxes[0]! as HTMLInputElement).checked).toBe(false);
+		expect((boxes[1]! as HTMLInputElement).checked).toBe(true);
+
+		fireEvent.click(getByText("coauthor.review.apply"));
+
+		await waitFor(() => {
+			expect(fetchMock).toHaveBeenCalledTimes(1);
+		});
+		const call = fetchMock.mock.calls[0] as unknown as [unknown, RequestInit | undefined];
+		const body = String(call[1]?.body ?? "");
+		expect(body).toContain("profileMd");
+		// Rejected personality hunk → canonical personality preserved in the rebuilt profileMd.
+		expect(body).toContain("A reserved arachnid weaver.");
+		expect(body).not.toContain("Bold and direct.");
+		// Accepted scenario hunk → proposed scenario in the rebuilt profileMd.
+		expect(body).toContain("A forest cave at dusk.");
+		await waitFor(() => {
+			expect(useCoauthorTurnStore.getState().getActivities(TEST_CHAT)).toEqual([]);
+		});
+	});
+
+	it("CA-12: all hunks selected (default) Apply is wholesale parity — proposed personality ships", async () => {
+		__isSending = false;
+		seedReviewing();
+		useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, twoHunkProfileActivity());
+
+		const fetchMock = mock((_u: unknown, _i: unknown) =>
+			Promise.resolve({ ok: true, status: 200, json: async () => ({ character: makeCharacter(), corrections: [] }), text: async () => "" }),
+		);
+		globalThis.fetch = fetchMock as never;
+
+		const { getByText } = render(<CoauthorCharacterForm />);
+		fireEvent.click(getByText("coauthor.review.apply")); // no toggling → all selected
+
+		await waitFor(() => {
+			expect(fetchMock).toHaveBeenCalledTimes(1);
+		});
+		const call = fetchMock.mock.calls[0] as unknown as [unknown, RequestInit | undefined];
+		const body = String(call[1]?.body ?? "");
+		// Wholesale: both proposed changes ship.
+		expect(body).toContain("Bold and direct.");
+		expect(body).toContain("A forest cave at dusk.");
+	});
+
+	it("CA-12: 'select none' then Apply sends a canonical-body request (all changes reverted)", async () => {
+		__isSending = false;
+		seedReviewing();
+		useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, twoHunkProfileActivity());
+
+		const fetchMock = mock((_u: unknown, _i: unknown) =>
+			Promise.resolve({ ok: true, status: 200, json: async () => ({ character: makeCharacter(), corrections: [] }), text: async () => "" }),
+		);
+		globalThis.fetch = fetchMock as never;
+
+		const { container, getByText } = render(<CoauthorCharacterForm />);
+		// Click the "None" button (coauthor.review.select_none label).
+		fireEvent.click(getByText("coauthor.review.select_none"));
+		const boxes = container.querySelectorAll('input[type="checkbox"]');
+		expect([...boxes].every((b) => (b as HTMLInputElement).checked)).toBe(false);
+
+		fireEvent.click(getByText("coauthor.review.apply"));
+
+		await waitFor(() => {
+			expect(fetchMock).toHaveBeenCalledTimes(1);
+		});
+		const call = fetchMock.mock.calls[0] as unknown as [unknown, RequestInit | undefined];
+		const body = String(call[1]?.body ?? "");
+		// Everything reverted → canonical personality + scenario; none of the proposed.
+		expect(body).toContain("A reserved arachnid weaver.");
+		expect(body).toContain("A forest cave."); // canonical scenario (no "at dusk")
+		expect(body).not.toContain("Bold and direct.");
+		expect(body).not.toContain("A forest cave at dusk.");
+	});
 });
