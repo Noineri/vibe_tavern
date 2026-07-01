@@ -51,20 +51,60 @@ export function createMappedStream(
       }
 
       // ── Tool calls (informational — AI SDK handles execution) ──
+      // fullStream `tool-call` part carries the fully-parsed `input` (the parsed tool args).
       if (p.type === "tool-call") {
-        const tc = part as { type: string; toolCallId?: string; toolName?: string; args?: unknown };
+        const tc = part as { type: string; toolCallId?: string; toolName?: string; input?: unknown; args?: unknown };
         if (tc.toolCallId && tc.toolName) {
-          const args = (typeof tc.args === "object" && tc.args !== null ? tc.args : {}) as Record<string, unknown>;
+          // AI SDK v6 fullStream uses `input` for the parsed tool arguments.
+          const rawInput = (tc as { input?: unknown }).input;
+          const args = (typeof rawInput === "object" && rawInput !== null ? rawInput : {}) as Record<string, unknown>;
           yield { type: "tool-call", toolCallId: tc.toolCallId, toolName: tc.toolName, args };
           continue;
         }
       }
 
-      // ── Tool results (informational — forwarded for SSE) ──
+      // ── Progressive tool-arg streaming (so the UI can render the model writing the document) ──
+      // AI SDK emits tool-input-start (with toolName) then a series of tool-input-delta parts
+      // (inputTextDelta) as the args JSON streams in, before the final tool-call/tool-result.
+      if (p.type === "tool-input-start") {
+        const tis = part as { type: string; id?: string; toolCallId?: string; toolName?: string };
+        const id = tis.toolCallId ?? tis.id;
+        if (id && tis.toolName) {
+          yield { type: "tool-input-start", toolCallId: id, toolName: tis.toolName };
+          continue;
+        }
+      }
+      if (p.type === "tool-input-delta") {
+        const tid = part as { type: string; id?: string; toolCallId?: string; inputTextDelta?: string; delta?: string };
+        const id = tid.toolCallId ?? tid.id;
+        const delta = tid.inputTextDelta ?? tid.delta;
+        if (id && delta) {
+          yield { type: "tool-input-delta", toolCallId: id, inputTextDelta: delta };
+          continue;
+        }
+      }
+
+      // ── Tool results (forwarded for SSE, WITH the execute() output payload) ──
+      // AI SDK v6 splits failures into a separate `tool-error` part (no `isError` flag on
+      // tool-result); we normalize both into a tool-result chunk, setting isError + carrying
+      // the error on the error branch and the execute() output on the success branch.
       if (p.type === "tool-result") {
-        const tr = part as { type: string; toolCallId?: string; toolName?: string; isError?: boolean };
+        const tr = part as { type: string; toolCallId?: string; toolName?: string; output?: unknown };
         if (tr.toolCallId) {
-          yield { type: "tool-result", toolCallId: tr.toolCallId, toolName: String(tr.toolName ?? ""), isError: tr.isError };
+          yield { type: "tool-result", toolCallId: tr.toolCallId, toolName: String(tr.toolName ?? ""), output: tr.output };
+          continue;
+        }
+      }
+      if (p.type === "tool-error") {
+        const te = part as { type: string; toolCallId?: string; toolName?: string; error?: unknown };
+        if (te.toolCallId) {
+          yield {
+            type: "tool-result",
+            toolCallId: te.toolCallId,
+            toolName: String(te.toolName ?? ""),
+            output: te.error instanceof Error ? { error: te.error.message } : { error: String(te.error ?? "tool error") },
+            isError: true,
+          };
           continue;
         }
       }

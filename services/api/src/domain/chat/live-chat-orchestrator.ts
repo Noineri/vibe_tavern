@@ -74,6 +74,8 @@ export class LiveChatOrchestrator {
         prompt: prepared.prompt,
         signal: input.signal,
         prefill,
+        tools: prepared.tools,
+        maxSteps: prepared.maxSteps,
         cachedModels: input.visionAssets?.cachedModels,
         visionModel: input.visionAssets?.visionModel,
         assetLoader: input.visionAssets?.assetLoader,
@@ -145,6 +147,8 @@ export class LiveChatOrchestrator {
         prompt,
         signal: input.signal,
         prefill,
+        tools: prompt.tools,
+        maxSteps: prompt.maxSteps,
       });
       reply = ensurePrefillInResponse(result.text, prefill);
       reasoning = result.reasoning;
@@ -221,6 +225,8 @@ export class LiveChatOrchestrator {
         prompt,
         signal: input.signal,
         prefill,
+        tools: prompt.tools,
+        maxSteps: prompt.maxSteps,
       });
       reply = ensurePrefillInResponse(result.text, prefill);
       reasoning = result.reasoning;
@@ -324,7 +330,7 @@ export class LiveChatOrchestrator {
       responseReserve: provider.profile.maxTokens,
     });
     const prefill = prompt.prefill ?? undefined;
-    const { streamResult, startedAt } = await this.startStream({ ...input, ...provider }, prompt);
+    const { streamResult, startedAt } = await this.startStream({ ...input, ...provider, tools: prompt.tools, maxSteps: prompt.maxSteps }, prompt);
     if (streamResult.sentConfig) { this.chatRuntime.patchPendingTrace(brandId<ChatId>(input.chatId), { sentConfig: streamResult.sentConfig }); }
 
     yield* this.drainStream({
@@ -376,7 +382,7 @@ export class LiveChatOrchestrator {
       presetId: input.presetId,
     });
     const prefill = prompt.prefill ?? undefined;
-    const { streamResult, startedAt } = await this.startStream({ ...input, ...provider }, prompt);
+    const { streamResult, startedAt } = await this.startStream({ ...input, ...provider, tools: prompt.tools, maxSteps: prompt.maxSteps }, prompt);
     if (streamResult.sentConfig) { this.chatRuntime.patchPendingTrace(brandId<ChatId>(input.chatId), { sentConfig: streamResult.sentConfig }); }
 
     yield* this.drainStream({
@@ -447,7 +453,7 @@ export class LiveChatOrchestrator {
   }
 
   private async startStream(
-    input: { chatId: string; profile: StoredProviderProfileRecord; model: string; signal?: AbortSignal; prefill?: string; visionAssets?: { cachedModels: any[]; visionModel: string | null; assetLoader: (assetId: string) => Promise<Buffer | null>; visionDescribePrompt?: string }; onAttachmentDescriptions?: ProviderExecutionInput["onAttachmentDescriptions"] },
+    input: { chatId: string; profile: StoredProviderProfileRecord; model: string; signal?: AbortSignal; prefill?: string; tools?: import("ai").ToolSet; maxSteps?: number; visionAssets?: { cachedModels: any[]; visionModel: string | null; assetLoader: (assetId: string) => Promise<Buffer | null>; visionDescribePrompt?: string }; onAttachmentDescriptions?: ProviderExecutionInput["onAttachmentDescriptions"] },
     prompt: Parameters<typeof streamProviderExecutor>[0]["prompt"],
   ): Promise<{ streamResult: ProviderStreamResult; startedAt: number }> {
     const startedAt = Date.now();
@@ -458,6 +464,8 @@ export class LiveChatOrchestrator {
         prompt,
         signal: input.signal,
         prefill: input.prefill ?? (prompt as { prefill?: string }).prefill ?? undefined,
+        tools: input.tools,
+        maxSteps: input.maxSteps,
         cachedModels: input.visionAssets?.cachedModels,
         visionModel: input.visionAssets?.visionModel,
         assetLoader: input.visionAssets?.assetLoader,
@@ -522,10 +530,16 @@ export class LiveChatOrchestrator {
           yield { event: "reasoning-delta", data: JSON.stringify({ delta: chunk.textDelta }) };
         }
         if (chunk.type === "tool-call") {
-          yield { event: "tool-call", data: JSON.stringify({ toolCallId: chunk.toolCallId, toolName: chunk.toolName }) };
+          yield { event: "tool-call", data: JSON.stringify({ toolCallId: chunk.toolCallId, toolName: chunk.toolName, args: chunk.args }) };
+        }
+        if (chunk.type === "tool-input-start") {
+          yield { event: "tool-input-start", data: JSON.stringify({ toolCallId: chunk.toolCallId, toolName: chunk.toolName }) };
+        }
+        if (chunk.type === "tool-input-delta") {
+          yield { event: "tool-input-delta", data: JSON.stringify({ toolCallId: chunk.toolCallId, delta: chunk.inputTextDelta }) };
         }
         if (chunk.type === "tool-result") {
-          yield { event: "tool-result", data: JSON.stringify({ toolCallId: chunk.toolCallId, toolName: chunk.toolName, isError: chunk.isError ?? false }) };
+          yield { event: "tool-result", data: JSON.stringify({ toolCallId: chunk.toolCallId, toolName: chunk.toolName, output: chunk.output, isError: chunk.isError ?? false }) };
         }
       }
     } catch (err) {

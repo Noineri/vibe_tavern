@@ -66,8 +66,9 @@ describe("createMappedStream", () => {
   });
 
   it("yields tool-call chunks with args", async () => {
+    // AI SDK v6 fullStream `tool-call` part carries the parsed args as `input` (not `args`).
     const parts = [
-      { type: "tool-call", toolCallId: "tc_1", toolName: "roll_dice", args: { sides: 6 } },
+      { type: "tool-call", toolCallId: "tc_1", toolName: "roll_dice", input: { sides: 6 } },
     ];
     const { stream } = createMappedStream(fromParts(parts));
     const chunks = await collect(stream);
@@ -76,21 +77,51 @@ describe("createMappedStream", () => {
     ]);
   });
 
-  it("yields tool-result chunks", async () => {
+  it("yields tool-result chunks carrying the execute() output payload", async () => {
+    // AI SDK v6 puts the execute() return value on `output`; there is no `isError` flag
+    // (failures arrive as a separate `tool-error` part — see the next test).
     const parts = [
-      { type: "tool-result", toolCallId: "tc_1", toolName: "roll_dice", isError: false },
+      { type: "tool-result", toolCallId: "tc_1", toolName: "roll_dice", output: { roll: 4 } },
     ];
     const { stream } = createMappedStream(fromParts(parts));
     const chunks = await collect(stream);
     expect(chunks).toEqual([
-      { type: "tool-result", toolCallId: "tc_1", toolName: "roll_dice", isError: false },
+      { type: "tool-result", toolCallId: "tc_1", toolName: "roll_dice", output: { roll: 4 } },
+    ]);
+  });
+
+  it("normalizes a tool-error part into a tool-result chunk with isError + error payload", async () => {
+    const parts = [
+      { type: "tool-error", toolCallId: "tc_2", toolName: "edit_profile", error: new Error("invalid heading") },
+    ];
+    const { stream } = createMappedStream(fromParts(parts));
+    const chunks = await collect(stream);
+    expect(chunks).toEqual([
+      { type: "tool-result", toolCallId: "tc_2", toolName: "edit_profile", output: { error: "invalid heading" }, isError: true },
+    ]);
+  });
+
+  it("forwards tool-input-start and tool-input-delta (progressive tool-arg streaming)", async () => {
+    // AI SDK streams tool args as: tool-input-start (toolName) → N× tool-input-delta (inputTextDelta)
+    // → final tool-call. Co-Author forwards these so the UI can render the model writing the document.
+    const parts = [
+      { type: "tool-input-start", id: "tc_3", toolName: "edit_profile" },
+      { type: "tool-input-delta", id: "tc_3", inputTextDelta: "{\"profileMd\":\"# P" },
+      { type: "tool-input-delta", id: "tc_3", inputTextDelta: "ERSONALITY\"}" },
+    ];
+    const { stream } = createMappedStream(fromParts(parts));
+    const chunks = await collect(stream);
+    expect(chunks).toEqual([
+      { type: "tool-input-start", toolCallId: "tc_3", toolName: "edit_profile" },
+      { type: "tool-input-delta", toolCallId: "tc_3", inputTextDelta: "{\"profileMd\":\"# P" },
+      { type: "tool-input-delta", toolCallId: "tc_3", inputTextDelta: "ERSONALITY\"}" },
     ]);
   });
 
   it("skips tool-call without toolCallId or toolName", async () => {
     const parts = [
-      { type: "tool-call", toolCallId: undefined, toolName: "roll_dice", args: {} },
-      { type: "tool-call", toolCallId: "tc_1", toolName: undefined, args: {} },
+      { type: "tool-call", toolCallId: undefined, toolName: "roll_dice", input: {} },
+      { type: "tool-call", toolCallId: "tc_1", toolName: undefined, input: {} },
       { type: "text-delta", text: "ok" },
     ];
     const { stream } = createMappedStream(fromParts(parts));

@@ -105,6 +105,8 @@ export async function nonstreamingProviderExecute(
       allowSystemInMessages: true,
       abortSignal: input.signal,
       ...samplerConfig,
+      ...(input.tools ? { tools: input.tools } : {}),
+      ...(input.maxSteps ? { maxSteps: input.maxSteps } : {}),
     });
 
     logSendDebug("provider.nonstream.result", {

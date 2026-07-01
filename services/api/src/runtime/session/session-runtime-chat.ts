@@ -1,6 +1,7 @@
 import type { AssemblePromptResponse, Message, PromptTrace } from "@vibe-tavern/domain";
 import { brandId, type ChatBranchId, type ChatId, type MessageId, type PromptPresetId } from "@vibe-tavern/domain";
 import type { ChatStore, MessageStore, PromptTraceStore } from "@vibe-tavern/db";
+import type { ToolSet } from "ai";
 import type { ChatApplicationService } from "../../domain/chat/chat-application-service.js";
 import type {
   SessionSnapshot,
@@ -12,10 +13,15 @@ import type {
 } from "./session-runtime.js";
 import type { IChatOrder } from "./session-runtime-chat-order.js";
 import type { PromptTraceDraft } from "../../domain/prompt/prompt-assembly-service.js";
+import type { ChatModeAssembleResult } from "../../domain/chat/chat-mode-strategy.js";
 import { logSendDebug } from "../../shared/send-debug-log.js";
 
 export interface PreparedLiveTurn {
   prompt: AssemblePromptResponse;
+  /** AI SDK tools resolved by the chat-mode strategy (undefined for RP; co-author's editor tool set). */
+  tools?: ToolSet;
+  /** Max tool-calling rounds (only meaningful when `tools` is set). */
+  maxSteps?: number;
   snapshot: SessionSnapshot;
   userMessage?: {
     id: MessageId;
@@ -37,11 +43,7 @@ export interface ChatRuntimeDeps {
     chatId: ChatId,
     branchId?: ChatBranchId,
     options?: { excludeMessageIds?: MessageId[]; model?: string; recentMessageLimit?: number; mode?: "chat" | "continue" | "regenerate" | "summary" | "tool_call"; contextBudget?: number | null; responseReserve?: number; presetId?: PromptPresetId },
-  ) => Promise<{
-    branchId: ChatBranchId;
-    prompt: AssemblePromptResponse;
-    promptTraceDraft: PromptTraceDraft;
-  }>;
+  ) => Promise<ChatModeAssembleResult>;
   getSnapshot: (chatId: ChatId) => Promise<SessionSnapshot>;
   /** Narrowed message-path response (messages + contextPreview + latest trace; summaries optional). */
   buildMessageResponse: (chatId: ChatId, opts?: { summaries?: boolean }) => Promise<MessageResponse>;
@@ -84,6 +86,8 @@ export class ChatRuntime {
       const assembled = await assemblePrompt(chatId, undefined, { model, responseReserve });
       return {
         prompt: assembled.prompt,
+        tools: assembled.tools,
+        maxSteps: assembled.maxSteps,
         snapshot: await getSnapshot(chatId),
       };
     }
@@ -110,6 +114,8 @@ export class ChatRuntime {
 
     return {
       prompt: assembled.prompt,
+      tools: assembled.tools,
+      maxSteps: assembled.maxSteps,
       snapshot: await getSnapshot(chatId),
       userMessage: {
         id: userMessage.id,
@@ -322,7 +328,7 @@ export class ChatRuntime {
   async assemblePromptPreview(
     chatId: ChatId,
     options: { excludeMessageId?: MessageId; model: string; contextBudget?: number | null; responseReserve?: number; presetId?: PromptPresetId },
-  ): Promise<AssemblePromptResponse> {
+  ): Promise<AssemblePromptResponse & { tools?: ToolSet; maxSteps?: number }> {
     const { assemblePrompt } = this.deps;
     const assembled = await assemblePrompt(chatId, undefined, {
       excludeMessageIds: options.excludeMessageId ? [options.excludeMessageId] : [],
@@ -337,7 +343,7 @@ export class ChatRuntime {
         draft: assembled.promptTraceDraft,
       });
     }
-    return assembled.prompt;
+    return { ...assembled.prompt, tools: assembled.tools, maxSteps: assembled.maxSteps };
   }
 
   /** Removes and returns the pending prompt trace for a chat/branch. Returns null if the branch doesn't match. */

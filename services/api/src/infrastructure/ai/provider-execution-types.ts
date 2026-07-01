@@ -118,10 +118,14 @@ export type ProviderStreamChunk =
   | { type: "text-delta"; delta: string }
   | { type: "reasoning-delta"; textDelta: string }
   | { type: "tool-call"; toolCallId: string; toolName: string; args: Record<string, unknown> }
-  | { type: "tool-result"; toolCallId: string; toolName: string; isError?: boolean };
+  | { type: "tool-input-start"; toolCallId: string; toolName: string }
+  | { type: "tool-input-delta"; toolCallId: string; inputTextDelta: string }
+  | { type: "tool-result"; toolCallId: string; toolName: string; output: unknown; isError?: boolean };
 
 /** Final metadata resolved when the stream completes. */
 export interface ProviderStreamFinish {
+  // "tool-calls" covers the SDK's own "model emitted tool calls" terminal state; for Co-Author
+  // the loop continues until the model stops calling tools, so a normal turn ends in "stop".
   finishReason: "stop" | "length" | "content-filter" | "tool-calls" | "error" | "cancelled";
   usage?: {
     inputTokens?: number;

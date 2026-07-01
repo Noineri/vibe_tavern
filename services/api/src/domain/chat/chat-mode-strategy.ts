@@ -2,6 +2,7 @@ import type { ChatId, MessageId } from "@vibe-tavern/domain";
 import type { StoredProviderProfileRecord } from "@vibe-tavern/domain";
 import type { EventBus } from "@vibe-tavern/domain";
 import type { ChatMode } from "@vibe-tavern/domain";
+import type { ToolSet } from "ai";
 import type {
   AssemblePromptForChatInput,
   AssemblePromptForChatResult,
@@ -42,7 +43,16 @@ export interface ChatModeAssembleInput extends AssemblePromptForChatInput {
 }
 
 /** Re-exported so callers don't reach into the prompt service module. */
-export type ChatModeAssembleResult = AssemblePromptForChatResult;
+export type ChatModeAssembleResult = AssemblePromptForChatResult & {
+  /**
+   * AI SDK tools the strategy wants the executor to pass to streamText()/generateText().
+   * RP leaves this undefined (no tool-calling); Co-Author supplies its editor tool set.
+   * Tools propose edits — they never write to canonical storage (user-mediated Apply is the sole write path).
+   */
+  tools?: ToolSet;
+  /** Max multi-step tool-calling rounds per generation. Only meaningful when `tools` is set. */
+  maxSteps?: number;
+};
 
 /**
  * Strategy interface for chat mode behavior.
