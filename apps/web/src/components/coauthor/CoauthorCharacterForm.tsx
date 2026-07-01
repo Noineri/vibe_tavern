@@ -165,6 +165,11 @@ function CoauthorCharacterFormInner({ character }: CoauthorCharacterFormInnerPro
     // values are frozen while reviewing (locked editor).
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reviewing, proposal]);
+  // Single source of truth for the reviewing UI: hide the editor surface AND
+  // mount the overlay only when we actually have a diff to show. The editor
+  // container stays in the DOM (display:none) so its CM6 lifecycle is never
+  // torn down between states — it just leaves flow so it can't be scrolled to.
+  const showReview = reviewing && !!diff;
   const hunks = useMemo(() => (diff ? groupHunks(diff) : []), [diff]);
   const [selectedHunkIds, setSelectedHunkIds] = useState<Set<number>>(new Set());
   useEffect(() => {
@@ -352,19 +357,23 @@ function CoauthorCharacterFormInner({ character }: CoauthorCharacterFormInnerPro
         </button>
       </div>
 
-      {/* Editor surface + reviewing overlay (CA-11). The editor stays mounted
-          underneath the overlay so its lifecycle is never torn down between
-          states; the overlay covers it while reviewing. */}
-      <div className="relative min-h-0 flex-1 overflow-y-auto px-4 py-4">
-        <label className={lblCls + " mb-1.5 block"}>{t("coauthor.editor.label")}</label>
-        <div
-          ref={editorHostRef}
-          className="vibe-md-editor rounded-lg border border-border bg-s1"
-          style={{ minHeight: 360 }}
-        />
-        <p className="mt-1.5 font-ui text-[11px] text-t4">{t("coauthor.editor.hint")}</p>
+      {/* Body: editor surface OR the reviewing overlay (CA-11/CA-12). The editor
+          container stays mounted (display:none while reviewing — CM6 lifecycle
+          preserved) but is removed from flow so it cannot be scrolled to and
+          doesn't show through; the reviewing overlay takes its place and fills
+          the panel height (diff stretches, footer sits at the bottom). */}
+      <div className="relative flex min-h-0 flex-1 flex-col">
+        <div className={"min-h-0 flex-1 overflow-y-auto px-4 py-4" + (showReview ? " hidden" : "")}>
+          <label className={lblCls + " mb-1.5 block"}>{t("coauthor.editor.label")}</label>
+          <div
+            ref={editorHostRef}
+            className="vibe-md-editor rounded-lg border border-border bg-s1"
+            style={{ minHeight: 360 }}
+          />
+          <p className="mt-1.5 font-ui text-[11px] text-t4">{t("coauthor.editor.hint")}</p>
+        </div>
 
-        {editorState === "reviewing" && proposal?.hasProposal && diff && (
+        {showReview && (
           <ReviewingOverlay
             summary={proposal.summaries.join(" · ") || t("coauthor.review.no_summary")}
             diff={diff}
@@ -446,11 +455,18 @@ function ReviewingOverlay({
   };
 }) {
   return (
-    <div className="absolute inset-0 z-20 flex flex-col bg-surface">
-      <div className="min-h-0 flex-1 overflow-y-auto px-1 py-3">
-        <div className="mb-2 rounded-md border border-border/70 bg-s1 px-3 py-2">
+    <div className="flex min-h-0 flex-1 flex-col bg-surface">
+      {/* Summary — pinned top, frosted (.glass-blur) so it doesn't see-through
+          on glass themes; the editor underneath is display:none, so the blur
+          reads against the page background, not the editor. */}
+      <div className="shrink-0 px-3 pt-3">
+        <div className="glass-blur rounded-md border border-border/70 bg-glass-bg px-3 py-2">
           <div className="font-ui text-[12px] font-medium text-t2">{summary}</div>
         </div>
+      </div>
+      {/* Diff — fills the remaining space; HunkSelectionDiff stretches and its
+          <pre> scrolls internally. */}
+      <div className="flex min-h-0 flex-1 flex-col px-1 py-2">
         <HunkSelectionDiff
           diff={diff}
           hunks={hunks}

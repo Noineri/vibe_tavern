@@ -113,7 +113,7 @@ export function HunkSelectionDiff({
   }
 
   return (
-    <div className="rounded-md border border-border bg-bg" style={{ padding: 12 }}>
+    <div className="flex min-h-0 flex-1 flex-col rounded-md border border-border bg-bg" style={{ padding: 12 }}>
       {/* Header: title + count + select-all/none. */}
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
         <div className="text-[11px] font-semibold uppercase tracking-[0.06em] text-t3">{labels.title}</div>
@@ -140,7 +140,7 @@ export function HunkSelectionDiff({
         </div>
       </div>
 
-      <pre className="max-h-[280px] overflow-y-auto overflow-x-hidden rounded border border-border/60 bg-surface p-2 font-mono text-[11px] leading-[1.45]">
+      <pre className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden rounded border border-border/60 bg-surface p-2 font-mono text-[11px] leading-[1.45]">
         {segments.map((seg, si) => {
           if (seg.type === "context") {
             return (
