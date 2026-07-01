@@ -87,10 +87,12 @@
   --color-danger: var(--danger);
   --color-danger-dim: var(--danger-dim);
   --color-danger-text: var(--danger-text);
+  --color-danger-strong: var(--danger-strong);
   --color-on-danger: var(--on-danger);
   --color-success: var(--success);
   --color-success-dim: var(--success-dim);
   --color-success-text: var(--success-text);
+  --color-success-strong: var(--success-strong);
   --color-warning: var(--warning);
   --color-warning-dim: var(--warning-dim);
   --color-warning-text: var(--warning-text);

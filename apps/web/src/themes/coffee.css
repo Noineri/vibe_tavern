@@ -52,11 +52,13 @@
   --danger:      oklch(0.62 0.20 25);    /* buttons */
   --danger-dim:  oklch(0.22 0.06 25);    /* confirm bg */
   --danger-text: oklch(0.75 0.14 25);    /* error text */
+  --danger-strong: oklch(0.48 0.18 25 / 65%); /* intra-diff removed-token highlight */
 
   /* ─── Success (green) ─── */
   --success:      oklch(0.68 0.16 145);  /* buttons */
   --success-dim:  oklch(0.28 0.06 145);  /* dim bg */
   --success-text: oklch(0.78 0.14 145);  /* text */
+  --success-strong: oklch(0.52 0.16 145 / 60%); /* intra-diff added-token highlight */
 
   /* ─── Info (blue) ─── */
   --info:      oklch(0.60 0.15 250);     /* buttons */
