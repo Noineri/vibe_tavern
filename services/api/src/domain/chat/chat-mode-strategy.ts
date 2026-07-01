@@ -1,4 +1,4 @@
-import type { ChatId, CharacterId, ChatBranchId, MessageId } from "@vibe-tavern/domain";
+import type { ChatId, CharacterId, ChatBranchId, MessageId, ActiveLoreEntry } from "@vibe-tavern/domain";
 import type { StoredProviderProfileRecord } from "@vibe-tavern/domain";
 import type { EventBus } from "@vibe-tavern/domain";
 import type { ChatMode } from "@vibe-tavern/domain";
@@ -48,6 +48,14 @@ export interface ChatModeAssembleLoaders {
   getCharacter(chatId: ChatId): Promise<Character>;
   /** Canonical `profile.md` text for the character (the edit target). */
   getProfileMdText(characterId: CharacterId): Promise<string>;
+  /**
+   * Active lorebook entries for the chat (CA-13), resolved through the same
+   * activation engine + resolver the RP path uses (`listActiveLoreEntries`).
+   * Read-only reference context for the editor — never an edit target. The
+   * closure resolves the chat's active branch internally (like `getMessages`),
+   * so callers don't need a branchId. `recentText` drives keyword scan.
+   */
+  getActiveLoreEntries(chatId: ChatId, recentText: string): Promise<ActiveLoreEntry[]>;
 }
 
 /**

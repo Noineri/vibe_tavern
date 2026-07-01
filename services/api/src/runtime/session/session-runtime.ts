@@ -726,6 +726,17 @@ import { scanSillyTavernDirectory as scanST, importSillyTavernDirectory as impor
 				return char;
 			},
 			getProfileMdText: (characterId) => this.stores.characters.getProfileMdText(characterId),
+			getActiveLoreEntries: async (chatId, recentText) => {
+				// Resolve the active branch internally (mirrors getMessages) so the
+				// strategy stays branch-agnostic. Delegates to the SAME resolver the
+				// RP path uses — full activation engine (keywords/constant/sticky,
+				// cooldown, groups, recursion, token budget) with persisted state.
+				const chat = await this.stores.chats.getById(chatId);
+				if (!chat) return [];
+				const branchId = chat.activeBranchId as ChatBranchId | null;
+				if (!branchId) return [];
+				return this.resolver.listActiveLoreEntries({ chatId, branchId, recentText });
+			},
 		};
 	}
 
