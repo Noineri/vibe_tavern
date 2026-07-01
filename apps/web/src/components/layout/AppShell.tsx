@@ -35,7 +35,6 @@ import { MobileSettings } from "../settings/popovers/MobileSettings.js";
 import { MobileAccessModal } from "../modals/MobileAccessModal.js";
 import { AvatarPanel } from "../settings/popovers/AvatarPanel.js";
 import type { TweaksSettings } from "../../lib/local-storage.js";
-import { resolveShellSurface } from "./app-shell-types.js";
 
 interface AppShellProps {
   tweaksSettings: TweaksSettings;
@@ -218,13 +217,14 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
     );
     }
   } else {
-    // Surface derivation: co-author keys off the active chat's mode (a property
-    // of the chat), not the play/build navigation; RP chats fall back to the
-    // navigation mode. See resolveShellSurface in app-shell-types.
-    const surface = resolveShellSurface(activeChat?.mode, mode);
+    // Central surface mirrors the navigation mode. Co-author is a first-class
+    // navigation mode (CA-8b): NavigationStore.mode is reconciled to the active
+    // chat's mode on every transition (create/switch/bootstrap), so switching
+    // to a co-author chat flips `mode` to 'coauthor' and renders CoauthorMode
+    // here. RP chats keep mode in play/build as before.
     shellSurface =
-      surface === "coauthor" ? <CoauthorMode /> :
-      surface === "play" ? <PlayMode /> :
+      mode === "coauthor" ? <CoauthorMode /> :
+      mode === "play" ? <PlayMode /> :
       <BuildMode />;
   }
 

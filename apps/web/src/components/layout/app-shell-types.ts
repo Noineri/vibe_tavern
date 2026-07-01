@@ -1,27 +1,20 @@
-import type { ChatId, ChatMode } from "@vibe-tavern/domain";
+import type { ChatId } from "@vibe-tavern/domain";
 import type { OpenAiModelOption } from "../../openai-compatible.js";
 
 export type ConnectionStatus = "idle" | "connecting" | "connected" | "error";
-export type AppMode = "play" | "build";
-
-/** Which AppShell surface to render when an active snapshot exists. */
-export type ShellSurface = "coauthor" | AppMode;
 
 /**
- * Derive the AppShell surface from the active chat's mode + the navigation mode.
- * Co-author keys off `activeChat.mode` (a property of the chat), NOT off AppMode
- * (which is user-toggleable play/build navigation). A co-author chat renders the
- * CoauthorMode surface regardless of whether the user was last in play or build
- * view — co-author composes its own chat shell. RP chats (mode 'rp' or any
- * non-coauthor value) fall back to the play/build navigation mode.
+ * Which AppShell navigation surface is active. Co-author is a first-class
+ * navigation mode (CA-8b), not a central-panel overlay layered on build: it
+ * changes the Sidebar (the play structure, but listing co-author chats only),
+ * the TopBar (an explicit "Back to editor" button replaces the play/build
+ * toggle), and the central surface, exactly like play/build. `mode` is
+ * reconciled to the active chat's mode on every active-chat transition
+ * (create / switch / bootstrap) by `reconcileNavModeFromChat`, so it stays
+ * consistent with the persisted chat row even though NavigationStore itself is
+ * not persisted. See CA-8b in VTF_COAUTHOR_PLAN.md.
  */
-export function resolveShellSurface(
-	activeChatMode: ChatMode | undefined,
-	navMode: AppMode,
-): ShellSurface {
-	if (activeChatMode === "coauthor") return "coauthor";
-	return navMode;
-}
+export type AppMode = "play" | "build" | "coauthor";
 // ThemeMode is owned by the theme registry — re-exported here for back-compat
 // with the many files that import it from this module. The registry is the
 // single source of truth (adding a theme requires no change here).
