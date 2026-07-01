@@ -20,6 +20,7 @@ export { ContentStore } from './content-store.js';
 export {
   parseProfileMd,
   serializeProfileMd,
+  splitFrontmatter,
   DEFAULT_MES_EXAMPLE_MODE,
   DEFAULT_DEPTH,
   type VtfProfile,

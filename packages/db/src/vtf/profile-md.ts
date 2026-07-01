@@ -179,8 +179,14 @@ export function parseProfileMd(text: string): ParsedProfile {
   return { profile, unknownFrontmatter, unknownVt, unknownSections };
 }
 
-/** Split a document into the frontmatter block (between `---` fences) and the body. */
-function splitFrontmatter(text: string): { frontmatterText: string; bodyText: string } {
+/**
+ * Split a document into the frontmatter block (between `---` fences) and the
+ * body. Exposed (CA-17) so callers that need to scan the raw body — e.g. the
+ * co-author tool's content-loss guard, which must see atx headings at ANY
+ * level before {@link parseProfileMd} canonicalizes them away — can reach the
+ * post-frontmatter text without duplicating this fence grammar.
+ */
+export function splitFrontmatter(text: string): { frontmatterText: string; bodyText: string } {
   const lines = text.replace(/\r\n?/g, "\n").split("\n");
   // Leading blank lines before the opening fence are tolerated.
   let i = 0;

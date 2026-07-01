@@ -23,7 +23,7 @@
 
 import { tool } from "ai";
 import { z } from "zod";
-import { parseProfileMd, serializeProfileMd } from "@vibe-tavern/db";
+import { parseProfileMd, serializeProfileMd, splitFrontmatter } from "@vibe-tavern/db";
 import type { CoauthorTarget, CoauthorToolOutput } from "@vibe-tavern/api-contracts";
 
 // Re-export so existing internal import sites (strategy, tests) are unaffected.
@@ -38,14 +38,119 @@ export type { CoauthorTarget, CoauthorToolOutput };
 // ─── Validation helpers ────────────────────────────────────────────────────
 
 /**
+ * The canonical prose section headings the codec recognizes. These MUST be H1
+ * (single `#`); {@link parseProfileMd}'s body parser only captures H1 lines, so
+ * a heading at any other level is invisible to it (see {@link detectLostSections}).
+ */
+const KNOWN_PROSE_SECTIONS = ["PERSONALITY", "SCENARIO", "EXAMPLES"] as const;
+
+/** Maps a known prose section name to the `VtfProfile` field it feeds. */
+const SECTION_TO_PROFILE_FIELD: Readonly<Record<string, "description" | "scenario" | "mesExample">> = {
+  PERSONALITY: "description",
+  SCENARIO: "scenario",
+  EXAMPLES: "mesExample",
+};
+
+/** A known section whose content would be silently dropped by canonicalization. */
+interface LostSection {
+  /** The heading exactly as the model wrote it, e.g. `## PERSONALITY`. */
+  heading: string;
+  /** Canonical section name (PERSONALITY/SCENARIO/EXAMPLES). */
+  section: string;
+  /** The non-empty body that would be lost. */
+  body: string;
+}
+
+/**
+ * Detect "silent content loss" in a proposed profile.md (CA-17).
+ *
+ * The canonical codec ({@link parseProfileMd}) recognizes ONLY H1 body headings
+ * (`# PERSONALITY` / `# SCENARIO` / `# EXAMPLES`). When the model emits a known
+ * section at the wrong level — most commonly `## PERSONALITY` instead of
+ * `# PERSONALITY` — the heading is not recognized: its body is dropped to empty
+ * and does NOT survive in `unknownSections` (only H1 lines are section candidates;
+ * a non-H1 known heading under a leading position is dropped entirely, and under
+ * a prior H1 it is misrouted into that section's body). The result: the canonical
+ * field comes back EMPTY even though the model clearly authored content, and the
+ * loss is silent — it happens INSIDE the tool, before the frontend diff (CA-11)
+ * ever sees it, so the diff would show a deletion the model didn't intend and
+ * Apply would commit an empty section.
+ *
+ * This scan is deliberately LOOSE: it captures atx headings at ANY level
+ * (`#{1..6}`) over the raw post-frontmatter body, records the body that follows
+ * each known-by-name section heading, and flags any whose raw body is non-empty
+ * but whose canonical field (via {@link parseProfileMd}) came back empty/null.
+ * Mechanism-agnostic — catches wrong-level headings and any future parser gap
+ * that empties a section the model populated.
+ *
+ * Returns the lost sections (empty if the proposal is safe to canonicalize).
+ */
+function detectLostSections(profileMd: string): LostSection[] {
+  const { bodyText } = splitFrontmatter(profileMd);
+
+  // Loose atx-heading scan: group the body under each heading until the next.
+  // `seen` keeps the LAST occurrence per known section name (later wins, matching
+  // how a reader/model would resolve duplicates).
+  const seen = new Map<string, LostSection>();
+  let current: { level: string; name: string; body: string } | null = null;
+  const flush = () => {
+    if (!current) return;
+    const upper = current.name.toUpperCase();
+    if ((KNOWN_PROSE_SECTIONS as readonly string[]).includes(upper) && current.body.trim().length > 0) {
+      seen.set(upper, { heading: `${current.level} ${current.name}`, section: upper, body: current.body });
+    }
+    current = null;
+  };
+  for (const line of bodyText.split("\n")) {
+    const m = /^(#{1,6})[ \t]+(.+?)\s*$/.exec(line);
+    if (m) {
+      flush();
+      current = { level: m[1]!, name: m[2]!.trim(), body: "" };
+    } else if (current) {
+      current.body += (current.body ? "\n" : "") + line;
+    }
+  }
+  flush();
+  if (seen.size === 0) return [];
+
+  // Compare each populated raw known-section against its canonical field. A
+  // non-empty raw body whose canonical field is empty/null is silent loss.
+  const canonical = parseProfileMd(profileMd).profile;
+  const lost: LostSection[] = [];
+  for (const [name, info] of seen) {
+    const field = SECTION_TO_PROFILE_FIELD[name];
+    if (field && (canonical[field] ?? "").trim().length === 0) lost.push(info);
+  }
+  return lost;
+}
+
+/**
  * Round-trip a proposed profile.md through the canonical codec to normalize
  * whitespace/heading drift so the diff the user sees is against canonical
  * text, not the model's raw emission. NOTE: parseProfileMd/serializeProfileMd
  * are TOTAL (they never throw — unknown frontmatter and missing sections pass
- * through). This function therefore canonicalizes rather than gates; the only
- * hard validation is the empty-input guard in each tool's execute().
+ * through). Canonicalization is therefore gated (not by the codec, but here):
+ * (1) the empty-input guard in each tool's execute(), and (2) the lost-section
+ * guard below ({@link detectLostSections}), which refuses to canonicalize a
+ * document whose known section content would be silently dropped — returning a
+ * tool-error so the model re-emits with correct H1 headings in the same turn.
  */
 function validateProfileMd(profileMd: string): string {
+  const lost = detectLostSections(profileMd);
+  if (lost.length > 0) {
+    const detail = lost
+      .map((l) => {
+        const snippet = l.body.trim().slice(0, 80);
+        const ell = l.body.trim().length > 80 ? "\u2026" : "";
+        return `\"${l.heading}\" (${l.section}; body starts: ${JSON.stringify(snippet)}${ell})`;
+      })
+      .join("; ");
+    throw new Error(
+      `edit_profile: proposed document has a known section heading at the wrong level — ${detail}. ` +
+        `The canonical profile codec only recognizes H1 headings (# PERSONALITY / # SCENARIO / # EXAMPLES); a heading at any other level is not recognized and its body would be SILENTLY DROPPED during canonicalization (it is not preserved as an unknown section). ` +
+        `Re-emit the full document using single-hash H1 headings so all section content survives.`,
+    );
+  }
   const parsed = parseProfileMd(profileMd);
   return serializeProfileMd(parsed);
 }
