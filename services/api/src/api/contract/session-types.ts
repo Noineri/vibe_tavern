@@ -30,7 +30,7 @@ import type { Chat, ChatBranch, UiSettings } from "@vibe-tavern/db";
 import type { MessageDto } from "../../runtime/session/session-runtime-dto.js";
 import type { CharacterRecord } from "../../domain/character/character-runtime.js";
 import type { PersonaRecord } from "../../domain/persona/persona-runtime.js";
-import type { ChatListItem } from "@vibe-tavern/api-contracts";
+import type { ChatListItem, CoauthorCorrection } from "@vibe-tavern/api-contracts";
 
 // ChatListItem lives in @vibe-tavern/api-contracts (shared with the frontend)
 // so drift becomes a compile error. Re-exported here so existing backend
@@ -195,6 +195,18 @@ export interface ConfigPatchResponse {
 	character?: SessionSnapshot["character"];
 	/** memory-settings writes the chat row. */
 	activeChat?: SessionSnapshot["activeChat"];
+}
+
+/**
+ * Co-Author Apply response (CA-7). Extends {@link ConfigPatchResponse} (the
+ * character field is the updated card) with `corrections` — backend-applied
+ * data-loss guards surfaced to the user as a toast rather than silently masked
+ * (see plan R3). Currently fires only when an empty `name` was restored from
+ * the existing character; section/greeting emptiness is intentional-or-loss and
+ * is handled upstream (tool guard CA-17) or on the diff (CA-10), not here.
+ */
+export interface CoauthorApplyResponse extends ConfigPatchResponse {
+	corrections: CoauthorCorrection[];
 }
 
 /** Summary CRUD: create / update / delete ranged summary. */

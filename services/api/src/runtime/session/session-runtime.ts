@@ -1,4 +1,4 @@
-import { type PromptPreset, type StoreContainer, type UiSettings } from "@vibe-tavern/db";
+import { parseProfileMd, type PromptPreset, type StoreContainer, type UiSettings } from "@vibe-tavern/db";
 import type { PromptPresetDto, PromptTraceRecordDto } from "@vibe-tavern/domain";
 import {
 	type CharacterId,
@@ -16,6 +16,7 @@ import {
 	notFound,
 	validation,
 } from "../../shared/errors.js";
+import type { CoauthorApplyRequest, CoauthorCorrection } from "@vibe-tavern/api-contracts";
 import { PromptAssemblyService } from "../../domain/prompt/prompt-assembly-service.js";
 import { StaticPromptResolver } from "../../domain/prompt/prompt-resolver.js";
 import {
@@ -44,6 +45,7 @@ import type {
 	ChatSwitchResponse,
 	ChatCreateResponse,
 	ConfigPatchResponse,
+	CoauthorApplyResponse,
 	SummaryResponse,
 } from "../../api/contract/session-types.js";
 export type {
@@ -59,6 +61,7 @@ export type {
 	ChatSwitchResponse,
 	ChatCreateResponse,
 	ConfigPatchResponse,
+	CoauthorApplyResponse,
 	SummaryResponse,
 };
 
@@ -602,6 +605,74 @@ import { scanSillyTavernDirectory as scanST, importSillyTavernDirectory as impor
 	async listCoauthorChats(characterId: CharacterId): Promise<ChatListItem[]> {
 		const chats = await this.stores.chats.listByCharacterAndMode(characterId, "coauthor");
 		return Promise.all(chats.map((c) => this.mapChatToListItem(c.id as ChatId)));
+	}
+
+	/**
+	 * Apply a co-author turn's aggregated proposed state to the underlying
+	 * character card (CA-7). Does NOT touch chat messages — it parses the
+	 * proposed `profile.md` into the canonical character fields and persists
+	 * them via the normal character-update dual-write, then returns a
+	 * config-patch snapshot.
+	 *
+	 * R3 (data-loss guard): an empty `name` is restored from the current card
+	 * rather than throwing — the omission is surfaced to the user via a
+	 * `correction` so it is not silently masked. Section/greeting emptiness is
+	 * intentional-or-loss and is handled upstream (tool guard CA-17) or on the
+	 * diff (CA-10), not here.
+	 */
+	async applyCoauthorDraft(chatId: ChatId, body: CoauthorApplyRequest): Promise<CoauthorApplyResponse> {
+		const chat = await this.stores.chats.getById(chatId);
+		if (!chat) {
+			throw notFound("Chat", `Chat '${chatId}' was not found.`);
+		}
+		const characterId = chat.characterId as CharacterId;
+
+		const corrections: CoauthorCorrection[] = [];
+		const updateInput: Parameters<CharacterRuntime["update"]>[1] = { chatId };
+
+		if (body.profileMd !== undefined) {
+			const { profile } = parseProfileMd(body.profileMd);
+			const current = await this.stores.characters.getById(characterId);
+			// R3: empty name → omit (character.update keeps current) + notify user.
+			const proposedName = profile.name.trim();
+			if (proposedName) {
+				updateInput.name = proposedName;
+			} else {
+				corrections.push({
+					field: "name",
+					action: "restored",
+					reason: `Model returned an empty name; restored "${current?.name ?? ""}" from the card.`,
+				});
+			}
+			updateInput.tags = profile.tags;
+			updateInput.creatorNotes = profile.creatorNotes;
+			updateInput.description = profile.description;
+			updateInput.scenario = profile.scenario ?? "";
+			updateInput.mesExample = profile.mesExample;
+			updateInput.mesExampleMode = profile.mesExampleMode;
+			updateInput.mesExampleDepth = profile.mesExampleDepth;
+			// Lossless frontmatter round-trip: creator / character_version live in
+			// `extensions` (not top-level update fields). Merge over current so a
+			// model edit to either is honored; omitting would preserve current.
+			const baseExtensions = (current?.extensions ?? {}) as Record<string, unknown>;
+			updateInput.extensions = {
+				...baseExtensions,
+				...(profile.creator !== null ? { creator: profile.creator } : {}),
+				...(profile.characterVersion !== null ? { character_version: profile.characterVersion } : {}),
+			};
+		}
+
+		if (body.firstMessage !== undefined) {
+			updateInput.firstMessage = body.firstMessage;
+		}
+		if (body.alternateGreetings !== undefined) {
+			updateInput.alternateGreetings = body.alternateGreetings;
+		}
+
+		const patch = await this.character.update(characterId, updateInput, {
+			rebuildChatOrder: () => this.rebuildChatOrder(),
+		});
+		return { ...patch, corrections };
 	}
 
 	/**

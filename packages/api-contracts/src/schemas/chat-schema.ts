@@ -38,3 +38,38 @@ export const setGreetingIndexSchema = z.object({
 export const renameBranchSchema = z.object({
   label: z.string().min(1),
 });
+
+/**
+ * Co-Author Apply request (CA-7). The frontend aggregates `CoauthorToolOutput[]`
+ * from a co-author turn into this canonical proposed state; the backend never
+ * sees AI SDK tool shapes, only the canonical character fields it knows how to
+ * persist. All fields optional — partial applies are valid (e.g. greetings-only
+ * when the model only touched greetings, no `profileMd`).
+ */
+export const coauthorApplySchema = z.object({
+  /** Full canonical `profile.md` document (frontmatter + H1 sections). */
+  profileMd: z.string().optional(),
+  /** Replacement for `firstMessage` (greeting index 0). */
+  firstMessage: z.string().optional(),
+  /** Full replacement array for `alternateGreetings` (indices 1..N). */
+  alternateGreetings: z.array(z.string()).optional(),
+});
+
+export type CoauthorApplyRequest = z.infer<typeof coauthorApplySchema>;
+
+/**
+ * A backend-applied correction during Co-Author Apply (CA-7 R3). Returned to the
+ * frontend so the user is notified (not silently masked) when the model's
+ * proposal would have lost data — e.g. an empty `name` restored from the
+ * current character. Shared DTO (backend response element + frontend toast).
+ */
+export const coauthorCorrectionSchema = z.object({
+  /** Canonical character field that was corrected, e.g. "name". */
+  field: z.string(),
+  /** What the backend did, e.g. "restored". */
+  action: z.string(),
+  /** Human-readable reason for the UI toast. */
+  reason: z.string(),
+});
+
+export type CoauthorCorrection = z.infer<typeof coauthorCorrectionSchema>;

@@ -1,4 +1,5 @@
 import type { ChatId, ChatMode, PromptTraceRecordDto } from "@vibe-tavern/domain";
+import type { CoauthorApplyRequest, CoauthorCorrection } from "@vibe-tavern/api-contracts";
 import type { AppSnapshot, AppMessage, ChatListItem, ChatSummaryRecord, AutoSummaryConfig } from "./types.js";
 import { client } from "./client.js";
 import { unwrapRpc, unwrapError } from "./unwrap.js";
@@ -23,6 +24,22 @@ export async function createChat(characterId: string, mode?: ChatMode): Promise<
 export async function listCoauthorChats(characterId: string): Promise<ChatListItem[]> {
   const response = await client.api.characters[":characterId"]["coauthor-chats"].$get({ param: { characterId } });
   return await unwrapRpc<ChatListItem[]>(response);
+}
+
+/**
+ * Apply a co-author turn's aggregated proposed state to the underlying card
+ * (CA-7). Returns the merged snapshot plus any `corrections` the backend
+ * applied (e.g. an empty name restored from the card) — surfaced as a toast,
+ * not silently masked (plan R3).
+ */
+export async function applyCoauthorDraft(
+  chatId: ChatId,
+  body: CoauthorApplyRequest,
+): Promise<{ snapshot: AppSnapshot; corrections: CoauthorCorrection[] }> {
+  const response = await client.api.chats[":chatId"].coauthor.apply.$post({ param: { chatId }, json: body });
+  const data = await unwrapRpc<AppSnapshot & { corrections?: CoauthorCorrection[] }>(response);
+  const corrections = data.corrections ?? [];
+  return { snapshot: normalizeSnapshot(data), corrections };
 }
 
 export async function deleteChat(chatId: ChatId): Promise<void> {

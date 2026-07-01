@@ -15,6 +15,7 @@ import type {
 	ChatListResponse,
 	ChatListItem,
 	ConfigPatchResponse,
+	CoauthorApplyResponse,
 	SummaryResponse,
 	CharacterVersionResponse,
 } from "./session-types.js";
@@ -30,7 +31,7 @@ import type {
 } from "@vibe-tavern/db";
 import type { ModelSettingsOverlay } from "@vibe-tavern/domain";
 import type { LorebookRow, LoreEntryRow, ScriptRow } from "@vibe-tavern/db";
-import type { RegenerateOverride } from "@vibe-tavern/api-contracts";
+import type { RegenerateOverride, CoauthorApplyRequest } from "@vibe-tavern/api-contracts";
 import type { ProviderProbeResult, ProviderModelOption, TestChatResult } from "../../domain/providers/provider-gateway.js";
 import type { GenerateChatSummaryResult, SummarizeChatResult } from "../../domain/chat/chat-summary-service.js";
 import type { LorebookImportResult } from "../../domain/lorebook/lorebook-import-service.js";
@@ -96,6 +97,12 @@ export interface ChatRuntimeApi {
 	 *  entry screen. Each is a normal chats row driven through the universal
 	 *  send/stream pipeline — no separate transport. */
 	listCoauthorChats: (characterId: string) => Promise<ChatListItem[]>;
+	/** Apply a co-author turn's aggregated proposed state to the underlying
+	 *  character card (CA-7). Does NOT touch chat messages — it persists the
+	 *  model's proposed `profile.md` / greetings via the normal character-update
+	 *  dual-write, and returns a config-patch snapshot plus any data-loss
+	 *  `corrections` (e.g. an empty name restored from the existing card). */
+	applyCoauthorDraft: (chatId: string, body: CoauthorApplyRequest) => Promise<CoauthorApplyResponse>;
 	cloneChat: (chatId: string) => Promise<SessionSnapshot>;
 	deleteChat: (chatId: string) => Promise<void>;
 	clearChat: (chatId: string) => Promise<ChatCreateResponse>;

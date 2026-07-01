@@ -36,6 +36,12 @@ export class ChatAdapter implements ChatRuntimeApi {
 	listCoauthorChats = (characterId: string): Promise<import("../contract/session-types.js").ChatListItem[]> =>
 		this.sessionRuntime.listCoauthorChats(characterId as import("@vibe-tavern/domain").CharacterId);
 
+	applyCoauthorDraft = (
+		chatId: string,
+		body: import("@vibe-tavern/api-contracts").CoauthorApplyRequest,
+	): Promise<import("../contract/session-types.js").CoauthorApplyResponse> =>
+		this.sessionRuntime.applyCoauthorDraft(chatId as import("@vibe-tavern/domain").ChatId, body);
+
 	cloneChat = (chatId: string) =>
 		this.sessionRuntime.chatRuntime.cloneChat(chatId);
 

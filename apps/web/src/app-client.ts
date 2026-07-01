@@ -47,6 +47,7 @@ export {
   fetchChat,
   createChat,
   listCoauthorChats,
+  applyCoauthorDraft,
   deleteChat,
   clearChat,
   renameChat,
