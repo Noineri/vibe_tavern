@@ -139,6 +139,13 @@ export function Sidebar() {
     });
   }, [chats, chatSortMode, chatListQuery]);
 
+  // Partition the searched/sorted chat list by mode for separate sidebar sections
+  // (CA-8.5). Co-author chats render in their own labeled section below the RP
+  // chats; both still share the same search/sort pipeline. Co-author V1 has no
+  // branching/swipes, so its rows are simplified.
+  const rpVisibleChats = visibleChats.filter((c) => c.mode !== "coauthor");
+  const coauthorVisibleChats = visibleChats.filter((c) => c.mode === "coauthor");
+
   // --- Store actions ---
   const setSidebarCollapsed = useNavigationStore((s) => s.setSidebarCollapsed);
   const setRenamingChatId = useCharacterStore((s) => s.setRenamingChatId);
@@ -744,7 +751,8 @@ export function Sidebar() {
                   {t("search_no_results")}
                 </div>
               ) : (
-                visibleChats.map((chatItem) => {
+                <>
+                {rpVisibleChats.map((chatItem) => {
                   const isActive = chatItem.id === activeChatId;
                   const chatRemovalMode = character.getChatRemovalMode(chatItem.id);
                   const clearsOnRemove = chatRemovalMode === "clear";
@@ -970,7 +978,35 @@ export function Sidebar() {
                       )}
                     </div>
                   );
-                })
+                })}
+                {coauthorVisibleChats.length > 0 && (
+                  <div className="mt-1 border-t border-border/40 pt-1">
+                    <div className="px-2.5 py-1 text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.08em] text-t3">{t("sidebar_coauthor_chats")}</div>
+                    {coauthorVisibleChats.map((chatItem) => {
+                      const isActive = chatItem.id === activeChatId;
+                      return (
+                        <div
+                          key={chatItem.id}
+                          className={cn(
+                            'group relative mx-1 flex cursor-pointer items-center rounded px-2.5 py-1.5 transition-colors duration-100',
+                            isActive ? 'bg-accent-dim hover:bg-accent-dim' : 'hover:bg-s2'
+                          )}
+                          onClick={() => void chat.handleSwitchChat(chatItem.id)}
+                        >
+                          <span className="mr-1.5 shrink-0 text-[calc(var(--ui-fs)-3px)] text-accent-t"><Icons.Sparkles /></span>
+                          <div className="min-w-0 flex-1">
+                            <OverflowTooltip
+                              text={chatItem.title || t("coauthor.untitled_chat")}
+                              className={cn('text-[calc(var(--ui-fs)-1px)] text-t1', isActive && 'text-accent-t')}
+                            />
+                            <div className="text-[calc(var(--ui-fs)-3px)] text-t3">{chatItem.messageCount} {t("msgs_short")}</div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+                </>
               )}
             </section>
             </div>

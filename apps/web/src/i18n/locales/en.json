@@ -1004,6 +1004,7 @@
   "coauthor.messages_unit": "messages",
   "coauthor.list_failed": "Failed to load co-author chats.",
   "coauthor.switch_failed": "Failed to open the co-author chat.",
+  "sidebar_coauthor_chats": "Co-author chats",
   "wizard_path_a_title": "Start Setup",
   "wizard_path_a_sub": "Connect AI provider, create persona, add character",
   "wizard_path_b_title": "Migrate from SillyTavern",

@@ -1004,6 +1004,7 @@
   "coauthor.messages_unit": "сообщений",
   "coauthor.list_failed": "Не удалось загрузить чаты с соавтором.",
   "coauthor.switch_failed": "Не удалось открыть чат с соавтором.",
+  "sidebar_coauthor_chats": "Чаты с соавтором",
   "wizard_path_a_title": "Начать настройку",
   "wizard_path_a_sub": "Подключить AI-провайдера, создать персону, добавить персонажа",
   "wizard_path_b_title": "Переезд из SillyTavern",
