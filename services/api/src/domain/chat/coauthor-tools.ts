@@ -25,6 +25,22 @@ import { tool } from "ai";
 import { z } from "zod";
 import { parseProfileMd, serializeProfileMd, splitFrontmatter } from "@vibe-tavern/db";
 import type { CoauthorTarget, CoauthorToolOutput } from "@vibe-tavern/api-contracts";
+import { log } from "@vibe-tavern/domain";
+
+/** CA-17/CANARY: structured log for every co-author tool call. Without this
+ * there is NO observability on the co-author path — tool I/O, the lost-section
+ * guard verdict, and the raw model input are invisible (errors feed back to the
+ * model as tool-results via the stepCountIs loop and never reach the server
+ * logger). Set LOG_LEVEL=debug to see the full proposed body. */
+const logger = log.tag("coauthor.tool");
+
+/** One-line structural snapshot of a proposed document (never logs full body at
+ * info level — that is debug-only). Reports what the guard needs to reason about. */
+function describeProfileInput(profileMd: string): string {
+	const { frontmatterText, bodyText } = splitFrontmatter(profileMd);
+	const headings = [...bodyText.matchAll(/^(#{1,6})[ \t]+(.+?)\s*$/gm)].map((m) => `${m[1]} ${m[2]}`);
+	return `len=${profileMd.length} fm=${frontmatterText ? "yes" : "no"} bodyLen=${bodyText.trim().length} headings=[${headings.join(" | ")}]`;
+}
 
 // Re-export so existing internal import sites (strategy, tests) are unaffected.
 export type { CoauthorTarget, CoauthorToolOutput };
@@ -181,11 +197,24 @@ export function buildCoauthorTools() {
       }),
       execute: async ({ profileMd, summary }): Promise<CoauthorToolOutput> => {
         if (!profileMd.trim()) {
+          logger.warn("edit_profile REJECTED empty input summary=%s", summary);
           throw new Error("edit_profile: profileMd must not be empty");
         }
-        const canonical = validateProfileMd(profileMd);
-        return { target: "profile", proposed: canonical, summary };
-      },
+        logger.info("edit_profile IN %s summary=%s", describeProfileInput(profileMd), summary);
+        logger.debug("edit_profile RAW BODY:\n%s", splitFrontmatter(profileMd).bodyText);
+        try {
+          const canonical = validateProfileMd(profileMd);
+          logger.info("edit_profile OK canonical len=%d", canonical.length);
+          return { target: "profile", proposed: canonical, summary };
+        } catch (err) {
+          // The lost-section guard throws to force a self-correct re-emit.
+          // Log the verdict + a body snippet so a false-positive (or a model
+          // that loops on valid input) is diagnosable from the server log.
+          const msg = (err as Error).message;
+          const bodySnippet = splitFrontmatter(profileMd).bodyText.slice(0, 200);
+          logger.warn("edit_profile REJECTED guard-threw msg=%s bodySnippet=%j", msg, bodySnippet);
+          throw err;
+        }      },
     }),
 
     edit_greeting: tool({
@@ -208,8 +237,10 @@ export function buildCoauthorTools() {
       }),
       execute: async ({ index, content, summary }): Promise<CoauthorToolOutput> => {
         if (!content.trim()) {
+          logger.warn("edit_greeting REJECTED empty input index=%d", index);
           throw new Error("edit_greeting: content must not be empty");
         }
+        logger.info("edit_greeting IN index=%d len=%d summary=%s", index, content.length, summary);
         return { target: "greeting", greetingIndex: index, proposed: content, summary };
       },
     }),
@@ -228,8 +259,10 @@ export function buildCoauthorTools() {
       }),
       execute: async ({ content, summary }): Promise<CoauthorToolOutput> => {
         if (!content.trim()) {
+          logger.warn("add_alt_greeting REJECTED empty input");
           throw new Error("add_alt_greeting: content must not be empty");
         }
+        logger.info("add_alt_greeting IN len=%d summary=%s", content.length, summary);
         return { target: "greeting", isAdd: true, proposed: content, summary };
       },
     }),

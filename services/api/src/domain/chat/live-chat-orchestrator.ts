@@ -496,6 +496,14 @@ export class LiveChatOrchestrator {
     onFinal: (text: string, reasoning: string | undefined, reasoningDurationMs: number | undefined, latencyMs: number) => Promise<MessageResponse>;
   }): AsyncGenerator<{ event: string; data: string }> {
     const { streamResult, signal, startedAt, debugLabel, onAbort, onFinal, omitMessageCountInFinish, prefill } = input;
+    // ── CA-17/CANARY: loop observability. Counts every tool interaction so a
+    // tool-loop runaway (model re-calling edit_profile, or a false-positive
+    // guard refusing valid input) is diagnosable from send-debug.log. Without
+    // this the tool path is invisible: errors feed back to the model via the
+    // SDK-internal stepCountIs loop and never reach a log line.
+    let toolCallCount = 0;
+    let toolResultCount = 0;
+    let toolErrorCount = 0;
 
     let textAccumulator = "";
     let reasoningAccumulator = "";
@@ -530,6 +538,8 @@ export class LiveChatOrchestrator {
           yield { event: "reasoning-delta", data: JSON.stringify({ delta: chunk.textDelta }) };
         }
         if (chunk.type === "tool-call") {
+          toolCallCount++;
+          logSendDebug(`${debugLabel}.tool-call`, { chatId: input.chatId, n: toolCallCount, toolCallId: chunk.toolCallId, toolName: chunk.toolName, args: chunk.args });
           yield { event: "tool-call", data: JSON.stringify({ toolCallId: chunk.toolCallId, toolName: chunk.toolName, args: chunk.args }) };
         }
         if (chunk.type === "tool-input-start") {
@@ -539,8 +549,21 @@ export class LiveChatOrchestrator {
           yield { event: "tool-input-delta", data: JSON.stringify({ toolCallId: chunk.toolCallId, delta: chunk.inputTextDelta }) };
         }
         if (chunk.type === "tool-result") {
-          yield { event: "tool-result", data: JSON.stringify({ toolCallId: chunk.toolCallId, toolName: chunk.toolName, output: chunk.output, isError: chunk.isError ?? false }) };
+          toolResultCount++;
+          const isErr = chunk.isError ?? false;
+          // isError=true means the tool's execute() threw (e.g. the CA-17
+          // lost-section guard refused the proposal). The stream-helpers layer
+          // normalizes the SDK v6 `tool-error` part into this tool-result +
+          // isError shape, carrying the error message in `output`. Log it so
+          // the exact refusal reason is on disk, not just fed back to the model.
+          logSendDebug(`${debugLabel}.tool-result`, { chatId: input.chatId, n: toolResultCount, toolCallId: chunk.toolCallId, toolName: chunk.toolName, isError: isErr, output: isErr ? chunk.output : undefined });
+          yield { event: "tool-result", data: JSON.stringify({ toolCallId: chunk.toolCallId, toolName: chunk.toolName, output: chunk.output, isError: isErr }) };
+          if (isErr) toolErrorCount++;
         }
+        // NOTE: v6 has no separate 'tool-error' stream part at this layer —
+        // stream-helpers normalizes SDK `tool-error` into `tool-result` with
+        // isError:true above. The draining union (ProviderStreamChunk) reflects
+        // that, so there is nothing else to handle here.
       }
     } catch (err) {
       if (signal?.aborted) {
@@ -585,6 +608,11 @@ export class LiveChatOrchestrator {
     } catch {
       finish = { finishReason: "error" } as Awaited<typeof streamResult.finished>;
     }
+    // CA-17/CANARY: log how the tool loop terminated. finishReason + the
+    // tool-interaction counts reveal whether the model looped on a refusal
+    // (high toolCallCount, toolResult isError) or never called tools at all
+    // (toolCallCount=0 → the repeated phrase was plain text, not real calls).
+    logSendDebug(`${debugLabel}.finish`, { chatId: input.chatId, finishReason: finish.finishReason, toolCalls: toolCallCount, toolResults: toolResultCount, toolErrors: toolErrorCount, latencyMs });
     let rawText: string;
     try {
       rawText = textAccumulator || (await streamResult.text);
