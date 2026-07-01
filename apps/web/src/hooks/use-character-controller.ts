@@ -1,5 +1,5 @@
 import { useState, type ChangeEvent, type DragEvent } from "react";
-import type { ChatId, PronounForms } from "@vibe-tavern/domain";
+import type { ChatId, ChatMode, PronounForms } from "@vibe-tavern/domain";
 import type { VtfCharacterContent } from "@vibe-tavern/db/codecs";
 import { toast } from "sonner";
 import { getT } from "../i18n/locale-helpers.js";
@@ -73,7 +73,7 @@ export interface CharacterControllerActions {
   handleDeleteChat: (chatId: ChatId) => Promise<void>;
   handleClearChat: (chatId: ChatId) => Promise<void>;
   handleRenameChat: (chatId: ChatId, title: string) => Promise<void>;
-  handleCreateChat: (characterId?: string) => Promise<void>;
+  handleCreateChat: (characterId?: string, mode?: ChatMode) => Promise<void>;
   handleCreateCharacter: (input: { name: string; description?: string; firstMessage?: string; scenario?: string; personalitySummary?: string; mesExample?: string; alternateGreetings?: string[]; postHistoryInstructions?: string; creatorNotes?: string; systemPrompt?: string; depthPrompt?: string; depthPromptDepth?: number; depthPromptRole?: string; tags?: string[] }, avatarFile?: File | null, avatarOriginalFile?: File | null) => Promise<{ characterId: string; chatId: string } | null>;
   handleExportCharacter: (characterId: string) => Promise<void>;
   handleExportPng: (characterId: string) => Promise<void>;
@@ -423,11 +423,11 @@ export function useCharacterController(): CharacterControllerActions {
     }
   }
 
-  async function handleCreateChat(characterId?: string): Promise<void> {
+  async function handleCreateChat(characterId?: string, mode?: ChatMode): Promise<void> {
     const resolvedId = characterId ?? getSnapshot()?.character.id;
     if (!resolvedId) return;
     try {
-      await createChatAction(resolvedId);
+      await createChatAction(resolvedId, mode);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : getT()("chat_create_failed"));
     }

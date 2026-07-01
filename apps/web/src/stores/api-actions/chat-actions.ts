@@ -1,4 +1,4 @@
-import type { ChatBranchId, ChatId } from "@vibe-tavern/domain";
+import type { ChatBranchId, ChatId, ChatMode } from "@vibe-tavern/domain";
 import {
   activateBranch,
   createChat,
@@ -70,8 +70,8 @@ export async function setChatPersonaAction(chatId: ChatId, personaId: string): P
   void fetchBootstrapAction({ silent: true });
 }
 
-export async function createChatAction(characterId: string): Promise<void> {
-  const snapshot = await createChat(characterId);
+export async function createChatAction(characterId: string, mode?: ChatMode): Promise<void> {
+  const snapshot = await createChat(characterId, mode);
   // Creating a chat switches the active chat to the new one. Clear the
   // previous chat's messages first so a snapshot that omits `messages`
   // (Phase 3.4.2) cannot leave stale messages visible.

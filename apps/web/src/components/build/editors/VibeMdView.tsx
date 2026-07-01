@@ -37,9 +37,10 @@
  * body round-trips. See `vibe-md-sync.ts` for the Threat-2 guarantee.
  */
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { UseFormReturn } from "react-hook-form";
-import type { BuildCharacterDraft } from "@vibe-tavern/api-contracts";
+import type { BuildCharacterDraft, ChatListItem } from "@vibe-tavern/api-contracts";
+import { toast } from "sonner";
 import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 
@@ -60,6 +61,9 @@ import { CustomTooltip } from "../../shared/Tooltip.js";
 import { lblCls } from "../fields/field-styles.js";
 import { TextAreaField } from "../fields/TextAreaField.js";
 import { DepthPromptField } from "../fields/DepthPromptField.js";
+import { createChatAction, switchChatAction } from "../../../stores/api-actions/chat-actions.js";
+import { listCoauthorChats } from "../../../app-client.js";
+import { useChatStore } from "../../../stores/chat-store.js";
 
 export interface VibeMdViewProps {
   /** The react-hook-form instance (shared with the parent CharacterForm). */
@@ -74,6 +78,56 @@ export function VibeMdView({ form, characterId, isSaving }: VibeMdViewProps) {
   const { t } = useT();
   const isMobile = useIsMobile();
   const { watch, setValue } = form;
+
+  // --- Co-Author entry (CA-8.4) ---
+  // Entry points to the co-author surface. Actions are called directly (not via
+  // useCharacterController/useChatController) so this editor does not spin up a
+  // duplicate controller instance — AppShell already owns the single one.
+  const [coauthorOpen, setCoauthorOpen] = useState(false);
+  const [coauthorChats, setCoauthorChats] = useState<ChatListItem[] | null>(null);
+  const [coauthorBusy, setCoauthorBusy] = useState(false);
+
+  async function handleOpenCoauthorList() {
+    // Toggle closed if already open.
+    if (coauthorOpen) { setCoauthorOpen(false); return; }
+    setCoauthorBusy(true);
+    try {
+      const list = await listCoauthorChats(characterId);
+      setCoauthorChats(list);
+      setCoauthorOpen(true);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : t("coauthor.list_failed"));
+    } finally {
+      setCoauthorBusy(false);
+    }
+  }
+
+  async function handleNewCoauthorChat() {
+    setCoauthorBusy(true);
+    setCoauthorOpen(false);
+    try {
+      await createChatAction(characterId, "coauthor");
+      // createChatAction auto-selects the new chat; the AppShell surface flips to
+      // CoauthorMode because activeChat.mode === 'coauthor' (resolveShellSurface).
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : t("chat_create_failed"));
+    } finally {
+      setCoauthorBusy(false);
+    }
+  }
+
+  async function handleSwitchToCoauthorChat(chatId: ChatListItem["id"]) {
+    setCoauthorBusy(true);
+    setCoauthorOpen(false);
+    try {
+      await switchChatAction(chatId);
+      useChatStore.getState().setActiveChatId(chatId);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : t("coauthor.switch_failed"));
+    } finally {
+      setCoauthorBusy(false);
+    }
+  }
 
   const editorHostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -201,6 +255,65 @@ export function VibeMdView({ form, characterId, isSaving }: VibeMdViewProps) {
           style={{ minHeight: 420 }}
         />
         <p className="mt-1.5 font-ui text-[11px] text-t4">{t("vmd_editor_hint")}</p>
+      </div>
+
+      {/* Co-Author entry (CA-8.4) — open an iterative editing chat on this card.
+          "Co-Author mode" lists existing co-author chats for this character;
+          "New co-author chat" creates one. Both flip AppShell to CoauthorMode
+          because the active chat's mode becomes 'coauthor' (resolveShellSurface). */}
+      <div className="relative mb-5 flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          className="flex items-center gap-1.5 rounded-lg border border-border bg-s2 px-3 py-2 font-ui text-[0.85rem] font-medium text-t2 transition-colors hover:border-accent/50 hover:text-t1 disabled:opacity-50"
+          onClick={() => { void handleOpenCoauthorList(); }}
+          disabled={coauthorBusy}
+        >
+          <span className="text-[0.85rem]"><Icons.Sparkles /></span>
+          {t("coauthor.entry.list")}
+        </button>
+        <button
+          type="button"
+          className="flex items-center gap-1.5 rounded-lg bg-accent px-3 py-2 font-ui text-[0.85rem] font-bold text-on-accent transition-all hover:brightness-110 active:scale-[0.98] disabled:opacity-50"
+          onClick={() => { void handleNewCoauthorChat(); }}
+          disabled={coauthorBusy}
+        >
+          <span className="text-[0.85rem]"><Icons.Plus /></span>
+          {t("coauthor.entry.new")}
+        </button>
+
+        {coauthorOpen && coauthorChats && (
+          <>
+            {/* Click-away backdrop. */}
+            <button
+              type="button"
+              aria-label={t("close")}
+              className="fixed inset-0 z-40 cursor-default"
+              onClick={() => setCoauthorOpen(false)}
+            />
+            <div className="absolute left-0 top-full z-50 mt-1 min-w-[260px] max-w-[340px] rounded-lg border border-border bg-surface shadow-lg">
+              <div className="border-b border-border/50 px-3 py-2 font-ui text-[11px] uppercase tracking-wide text-t4">{t("coauthor.list_title")}</div>
+              {coauthorChats.length === 0 ? (
+                <div className="px-3 py-3 font-ui text-[0.85rem] text-t3">{t("coauthor.list_empty")}</div>
+              ) : (
+                <ul className="max-h-[280px] overflow-y-auto py-1">
+                  {coauthorChats.map((chat) => (
+                    <li key={chat.id}>
+                      <button
+                        type="button"
+                        className="flex w-full flex-col items-start gap-0.5 px-3 py-2 text-left transition-colors hover:bg-s2"
+                        onClick={() => { void handleSwitchToCoauthorChat(chat.id); }}
+                        disabled={coauthorBusy}
+                      >
+                        <span className="font-ui text-[0.85rem] font-medium text-t1">{chat.title || t("coauthor.untitled_chat")}</span>
+                        <span className="font-ui text-[11px] text-t4">{chat.messageCount} {t("coauthor.messages_unit")}</span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </>
+        )}
       </div>
 
       {/* ONE "Advanced fields" accordion — creator notes, personality summary,
