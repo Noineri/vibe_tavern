@@ -185,12 +185,14 @@ export function MessageShell(props: MessageShellProps) {
 
   // Resolve slots for each position
   const slotsAfterReasoning = resolveMessageSlots("after_reasoning", slotCtx);
+  const slotsToolActivity = resolveMessageSlots("tool_activity", slotCtx);
   const slotsBeforeContent = resolveMessageSlots("before_content", slotCtx);
   const slotsAfterContent = resolveMessageSlots("after_content", slotCtx);
   const slotsBeforeMetadata = resolveMessageSlots("before_metadata", slotCtx);
   const slotsAttachmentArea = resolveMessageSlots("attachment_area", slotCtx);
 
   const hasAfterReasoning = slotsAfterReasoning.length > 0;
+  const hasToolActivity = slotsToolActivity.length > 0;
   const hasBeforeContent = slotsBeforeContent.length > 0;
   const hasAfterContent = slotsAfterContent.length > 0;
   const hasBeforeMetadata = slotsBeforeMetadata.length > 0;
@@ -312,6 +314,11 @@ export function MessageShell(props: MessageShellProps) {
 
           {/* ── Slot: after_reasoning ── */}
           {hasAfterReasoning && slotsAfterReasoning.map((s) => (
+            <SlotRenderer key={s.id} descriptor={s} ctx={slotCtx} />
+          ))}
+
+          {/* ── Slot: tool_activity (co-author) ── */}
+          {hasToolActivity && slotsToolActivity.map((s) => (
             <SlotRenderer key={s.id} descriptor={s} ctx={slotCtx} />
           ))}
 

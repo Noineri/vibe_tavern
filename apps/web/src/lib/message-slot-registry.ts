@@ -17,6 +17,7 @@ import type { ReactNode } from "react";
  *
  * Layout order (top → bottom):
  *   after_reasoning    — after reasoning accordion, before message content
+ *   tool_activity      — co-author tool-call cards (summary + proposed preview)
  *   before_content     — right before message text
  *   after_content      — right after message text
  *   before_metadata    — before time/tokens bar
@@ -24,6 +25,7 @@ import type { ReactNode } from "react";
  */
 export type MessageSlotId =
   | "after_reasoning"
+  | "tool_activity"
   | "before_content"
   | "after_content"
   | "before_metadata"
