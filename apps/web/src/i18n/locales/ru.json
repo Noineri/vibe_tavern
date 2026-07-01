@@ -1160,5 +1160,8 @@
   "version_delete": "Удалить",
   "version_delete_title": "Удалить версию",
   "version_delete_body": "Удалить версию «{title}»? Её снимок нельзя восстановить.",
-  "version_delete_active": "Активную версию нельзя удалить."
+  "version_delete_active": "Активную версию нельзя удалить.",
+  "update_available": "Доступен Vibe Tavern {version}",
+  "update_button": "Обновить",
+  "update_tooltip": "Доступна новая версия"
 }

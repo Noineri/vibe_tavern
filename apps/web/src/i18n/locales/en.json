@@ -1160,5 +1160,8 @@
   "version_delete": "Delete",
   "version_delete_title": "Delete version",
   "version_delete_body": "Delete version \"{title}\"? Its snapshot cannot be recovered.",
-  "version_delete_active": "The active version cannot be deleted."
+  "version_delete_active": "The active version cannot be deleted.",
+  "update_available": "Vibe Tavern {version} is available",
+  "update_button": "Update",
+  "update_tooltip": "New version available"
 }

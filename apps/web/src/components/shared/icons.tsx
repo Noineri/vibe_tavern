@@ -83,6 +83,10 @@ export const Ic = {
   // still routes to `terminal` for backward compat. Use `Icons.send` for the
   // paper-plane glyph.
   send:()=><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M14.5 1.5L1 7.5l5 1.5 1.5 5z"/><path d="M6 9l8.5-7.5"/></svg>,
+  // Up arrow inside a circle — used by the UpdateBadge (TopBar) to signal that
+  // a newer GitHub release is available. Stroke-only so it inherits the
+  // accent color in every theme.
+  arrowUpCircle:()=><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="8" cy="8" r="6.5"/><line x1="8" y1="11" x2="8" y2="5"/><polyline points="5.5 7.5 8 5 10.5 7.5"/></svg>,
 };
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

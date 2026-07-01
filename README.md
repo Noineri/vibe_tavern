@@ -88,7 +88,7 @@ The long version follows.
 
 ---
 
-## Features
+## Features ⭐
 
 ### Chat
 
@@ -167,7 +167,7 @@ The long version follows.
 
 ---
 
-## Quick start
+## Quick start 🚀
 
 ### Windows
 
@@ -190,7 +190,6 @@ git clone https://github.com/Noineri/vibe_tavern.git
 cd vibe_tavern
 bun run dev
 ```
-The script checks Bun installation, pulls updates, backs up your data, and starts the server.
 
 ### macOS
 
@@ -208,7 +207,7 @@ APK build for Termux — automates most of the installation process. See [Androi
 
 ---
 
-## Architecture
+## Architecture 🏗️
 
 Vibe Tavern is a single-process monolith: React 19 SPA + Hono API + SQLite (WAL mode), all served from one Bun process. No microservices, no separate database server, no deployment complexity.
 
@@ -254,7 +253,7 @@ For the full architecture documentation, see [`docs/architecture/`](docs/archite
 
 ---
 
-## Roadmap
+## Roadmap 🛣️
 
 Vibe Tavern is in active development. Here's what's coming:
 
@@ -273,7 +272,7 @@ Vibe Tavern is in active development. Here's what's coming:
 
 ---
 
-## Contributing
+## Contributing 🤝
 
 Contributions welcome — code, translations, documentation, bug reports, themes, or ideas.
 

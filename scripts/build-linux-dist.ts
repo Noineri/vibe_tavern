@@ -129,15 +129,17 @@ async function main() {
 		);
 	});
 
-	// ── Step 6b: Copy launcher script ──────────────────────────────────
+	// ── Step 6b: Copy launcher script (version substituted) ──────────────
 
 	await step("Copying launcher script", async () => {
 		const wrapperSource = join(ROOT, "scripts", "dist-linux", "Vibe_Tavern.sh");
 		const wrapperTarget = join(DIST, "Vibe_Tavern.sh");
 		if (!(await exists(wrapperSource))) {
-			throw new Error(`Wrapper script not found: ${wrapperSource}`);
+			throw new Error(`Launcher script not found: ${wrapperSource}`);
 		}
-		await copyFile(wrapperSource, wrapperTarget);
+		let content = await Bun.file(wrapperSource).text();
+		content = content.replaceAll("__VERSION__", VERSION);
+		await Bun.write(wrapperTarget, content);
 		await chmod(wrapperTarget, 0o755);
 		console.log(`   → ${wrapperTarget}`);
 	});

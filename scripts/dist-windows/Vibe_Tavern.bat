@@ -46,7 +46,7 @@ REM Strip a leading 'v' (e.g. v1.2.3 -> 1.2.3)
 set "LATEST_VERSION=%LATEST_TAG:v=%"
 
 if /i "%LOCAL_VERSION%"=="%LATEST_VERSION%" (
-    echo Up to date.
+    echo You're using the latest version of Vibe Tavern.
     goto :run
 )
 
@@ -79,7 +79,7 @@ ping -n 3 127.0.0.1 >nul
 set "TARGET_DIR=%~2"
 set "LATEST_TAG=%~3"
 set "LATEST_VERSION=%~4"
-set "ARCHIVE_URL=https://github.com/%REPO_OWNER%/%REPO_NAME%/releases/download/%LATEST_TAG%/Vibe-Tavern-%LATEST_VERSION%-windows.zip"
+set "ARCHIVE_URL=https://github.com/%REPO_OWNER%/%REPO_NAME%/releases/download/%LATEST_TAG%/Vibe-Tavern-%LATEST_TAG%-windows.zip"
 set "TMP_ARCHIVE=%TEMP%\vibe-tavern-update.zip"
 set "NEXT_DIR=%TARGET_DIR%.next"
 set "OLD_DIR=%TARGET_DIR%.old"

@@ -1,5 +1,5 @@
 import { useRef, useState, useEffect } from "react";
-import { Toaster } from "sonner";
+import { Toaster, toast } from "sonner";
 import { useT } from "../../i18n/context.js";
 import { normalizeLocale } from "../../i18n/registry.js";
 import { Icons } from "../shared/icons.js";
@@ -16,6 +16,7 @@ import { useGenerationQueue } from "../../hooks/use-generation-queue.js";
 import { useCharacterController } from "../../hooks/use-character-controller.js";
 import { useProviderProfiles } from "../../hooks/use-provider-profiles.js";
 import { usePresetController } from "../../hooks/use-preset-controller.js";
+import { useUpdateCheck } from "../../hooks/use-update-check.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
 import { Sidebar } from "./Sidebar.js";
 import { Rail } from "./Rail.js";
@@ -89,17 +90,52 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
   const bootstrapData = useBootstrapStore((s) => s.data);
   const personas = useBootstrapStore((s) => s.personas) ?? [];
   useEffect(() => { void fetchPersonasAction(); }, []);
+
   const chat = useChatController();
   // Register the queue pump's runner (Q3) once runRegenerateJob is available.
   useGenerationQueue(chat.runRegenerateJob);
   const character = useCharacterController();
   const provider = useProviderProfiles();
   const preset = usePresetController();
+  const updateCheck = useUpdateCheck(__APP_VERSION__);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const handleImportFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files?.length) character.handleImportFiles(e.target.files);
     e.target.value = '';
   };
+
+  // "Update available" toast — once per browser session (sessionStorage gate).
+  // The TopBar badge stays visible all session; this is just the heads-up.
+  useEffect(() => {
+    if (!updateCheck.hasUpdate || !updateCheck.latestVersion || !updateCheck.releaseUrl) return;
+    const FLAG = "vibe-tavern.update-toast-shown";
+    try {
+      if (sessionStorage.getItem(FLAG)) return;
+      sessionStorage.setItem(FLAG, "1");
+    } catch {
+      return; // storage disabled — suppress rather than re-fire on every render
+    }
+    const message = t("update_available").replace("{version}", updateCheck.latestVersion);
+    const releaseUrl = updateCheck.releaseUrl;
+    toast.custom(
+      (id) => (
+        <div className="flex items-center gap-3 px-3.5 py-2.5">
+          <span className="font-ui text-[calc(var(--ui-fs)-2px)] text-t1">{message}</span>
+          <button
+            type="button"
+            className="cursor-pointer rounded-md bg-accent px-2.5 py-1 text-[calc(var(--ui-fs)-3px)] font-semibold text-on-accent transition-[filter] hover:brightness-110"
+            onClick={() => {
+              window.open(releaseUrl, "_blank", "noopener,noreferrer");
+              toast.dismiss(id);
+            }}
+          >
+            {t("update_button")}
+          </button>
+        </div>
+      ),
+      { duration: 5000, style: { borderRadius: "var(--r)" } },
+    );
+  }, [updateCheck.hasUpdate, updateCheck.latestVersion, updateCheck.releaseUrl, t]);
 
   const promptPresets = bootstrapData?.promptPresets ?? [];
   const [wizardVisible, setWizardVisible] = useState(false);
@@ -261,7 +297,13 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
     <div className="flex text-t1 font-ui" style={{ height: "100dvh", paddingBottom: "env(safe-area-inset-bottom, 0px)", overflow: "hidden" }}>
       {isMobile ? <Rail hidden={!showRail} /> : <Sidebar />}
       <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
-        <TopBar railHidden={isMobile && !showRail} onShowRail={() => useNavigationStore.getState().triggerRailOpen()} />
+        <TopBar
+          railHidden={isMobile && !showRail}
+          onShowRail={() => useNavigationStore.getState().triggerRailOpen()}
+          update={updateCheck.hasUpdate && updateCheck.latestVersion && updateCheck.releaseUrl
+            ? { latestVersion: updateCheck.latestVersion, releaseUrl: updateCheck.releaseUrl }
+            : null}
+        />
         {shellSurface}
       </main>
 
