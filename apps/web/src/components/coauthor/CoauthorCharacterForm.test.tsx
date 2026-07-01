@@ -17,12 +17,15 @@
  * mounting in happy-dom is graceful-skip (mirrors VibeMdView.test.tsx); the
  * header affordance text is the always-present primary assertion.
  */
-import { describe, it, expect, mock, afterEach } from "bun:test";
+import { describe, it, expect, mock, afterEach, beforeEach } from "bun:test";
 import { useDomEnv } from "../../../test/dom-env.js";
-import { render, fireEvent } from "@testing-library/react";
+import { render, fireEvent, waitFor } from "@testing-library/react";
 import type { AppCharacter } from "../../app-client.js";
+import type { CoauthorToolActivity } from "../../stores/coauthor-turn-store.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
+import { useCoauthorTurnStore } from "../../stores/coauthor-turn-store.js";
 import { CoauthorCharacterForm } from "./CoauthorCharacterForm.js";
+import { toast } from "sonner";
 
 // Mock useT at the module boundary — returns keys verbatim so assertions match.
 mock.module("../../i18n/context.js", () => ({
@@ -89,11 +92,24 @@ function cmEditable(container: HTMLElement): string | null {
 describe("CoauthorCharacterForm", () => {
 	useDomEnv();
 
+	/** Original fetch — restored in afterEach so the globalThis.fetch mock (Apply) never leaks cross-file. */
+	const realFetch = globalThis.fetch;
+	/** Original toast.warning — spied by mutation (no mock.module → no sonner collision). */
+	const realToastWarning = toast.warning;
+
+	beforeEach(() => {
+		globalThis.fetch = realFetch;
+		toast.warning = realToastWarning;
+	});
+
 	afterEach(() => {
 		__isSending = false;
-		// Restore the real snapshot-store to its default (no character) so the
-		// in-process store does not leak a test character into other files.
+		globalThis.fetch = realFetch;
+		toast.warning = realToastWarning;
+		// Restore the real stores to their defaults so the in-process state does
+		// not leak a test character / turn into other files.
 		useSnapshotStore.getState().clear();
+		useCoauthorTurnStore.setState({ turnsByChat: {} });
 	});
 
 	it("renders the active character's MD body (prose headings + content, no frontmatter name)", () => {
@@ -159,5 +175,162 @@ describe("CoauthorCharacterForm", () => {
 		expect(getByText("coauthor.diff.placeholder")).toBeTruthy();
 		// No editor host in the placeholder state.
 		expect(container.querySelector(".vibe-md-editor")).toBeNull();
+	});
+
+	// ── CA-11: reviewing state + Apply/Reject ──────────────────────────────────
+	// The turn store + chatId are what drive reviewing. The Apply RPC is
+	// intercepted via globalThis.fetch (NOT chat-api mock.module — that would
+	// collide with trace-history-store.test's chat-api mock; fetch is
+	// collision-free). The corrections toast is spied by mutating the imported
+	// `toast` singleton's `warning` method (no sonner mock.module → no collision
+	// with gallery-store.test's sonner mock).
+
+	const TEST_CHAT = "chat_test";
+
+	function makeProfileActivity(
+		toolCallId: string,
+		personality: string,
+		summary = "Made personality assertive.",
+	): CoauthorToolActivity {
+		const proposed = [
+			"---",
+			"name: Kira",
+			"tags: []",
+			"---",
+			"",
+			"# PERSONALITY",
+			personality,
+			"",
+			"# SCENARIO",
+			"A forest cave.",
+			"",
+			"# EXAMPLES",
+			"{{char}}: *tilts head*",
+			"",
+		].join("\n");
+		return { toolCallId, toolName: "edit_profile", status: "done", target: "profile", proposed, summary };
+	}
+
+	/** Seed the snapshot with a character + an active co-author chat (for chatId). */
+	function seedReviewing(characterOver: Partial<AppCharacter> = {}): AppCharacter {
+		const character = makeCharacter(characterOver);
+		useSnapshotStore.setState({ character, activeChat: { id: TEST_CHAT } as never });
+		return character;
+	}
+
+	it("reviewing: entered when a turn ends with a finalized proposal (!isSending + turn store)", () => {
+		__isSending = false;
+		seedReviewing();
+		useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, makeProfileActivity("t1", "Bold and direct."));
+		const { getByText } = render(<CoauthorCharacterForm />);
+		// Reviewing state label + Apply/Reject affordances.
+		expect(getByText("coauthor.review.state")).toBeTruthy();
+		expect(getByText("coauthor.review.apply")).toBeTruthy();
+		expect(getByText("coauthor.review.reject")).toBeTruthy();
+		// The diff title is shown.
+		expect(getByText("coauthor.review.title")).toBeTruthy();
+	});
+
+	it("reviewing: NOT entered for streaming/error activities (only done+proposed)", () => {
+		__isSending = false;
+		seedReviewing();
+		useCoauthorTurnStore.getState().upsertActivity(
+			TEST_CHAT,
+			{ toolCallId: "t1", toolName: "edit_profile", status: "streaming" },
+		);
+		const { getByText } = render(<CoauthorCharacterForm />);
+		expect(() => getByText("coauthor.review.state")).toThrow(); // idle, not reviewing
+		expect(getByText("saved_state")).toBeTruthy();
+	});
+
+	it("Apply: commits via the CA-7 RPC, ingests the snapshot, clears the turn, returns to idle", async () => {
+		__isSending = false;
+		seedReviewing({ description: "A reserved arachnid weaver." });
+		useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, makeProfileActivity("t1", "Bold and direct."));
+
+		const fetchMock = mock((_url: unknown, _init: unknown) =>
+			Promise.resolve({
+				ok: true,
+				status: 200,
+				json: async () => ({
+					character: makeCharacter({ description: "Bold and direct." }),
+					corrections: [],
+				}),
+				text: async () => "",
+			}),
+		);
+		globalThis.fetch = fetchMock as never;
+
+		const { getByText } = render(<CoauthorCharacterForm />);
+		expect(getByText("coauthor.review.apply")).toBeTruthy();
+
+		await waitFor(() => {
+			// Clicking Apply kicks off the async RPC; waitFor flushes it.
+		});
+		fireEvent.click(getByText("coauthor.review.apply"));
+
+		await waitFor(() => {
+			// The RPC fired against the Apply endpoint.
+			expect(fetchMock).toHaveBeenCalledTimes(1);
+			const call = fetchMock.mock.calls[0] as unknown as [unknown, RequestInit | undefined];
+			expect(String(call[0])).toContain("/coauthor/apply");
+			expect(String(call[0])).toContain(TEST_CHAT);
+			// Apply routes through the aggregated profileMd (never a raw string-swap).
+			expect(String(call[1]?.body ?? "")).toContain("profileMd");
+		});
+		await waitFor(() => {
+			// Turn store cleared → reviewing falls to idle (overlay gone).
+			expect(useCoauthorTurnStore.getState().getActivities(TEST_CHAT)).toEqual([]);
+		});
+	});
+
+	it("Apply: renders backend corrections as a toast (R3 — empty name restored)", async () => {
+		__isSending = false;
+		seedReviewing();
+		useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, makeProfileActivity("t1", "Bold."));
+
+		const warningSpy = mock(() => {});
+		toast.warning = warningSpy as never;
+
+		globalThis.fetch = mock((_u: unknown, _i: unknown) =>
+			Promise.resolve({
+				ok: true,
+				status: 200,
+				json: async () => ({
+					character: makeCharacter({ name: "Kira" }),
+					corrections: [
+						{ field: "name", action: "restored", reason: 'Model returned an empty name; restored "Kira".' },
+					],
+				}),
+				text: async () => "",
+			}),
+		) as never;
+
+		const { getByText } = render(<CoauthorCharacterForm />);
+		fireEvent.click(getByText("coauthor.review.apply"));
+
+		await waitFor(() => {
+			expect(warningSpy).toHaveBeenCalledTimes(1);
+		});
+		const firstCall = (warningSpy.mock.calls[0] ?? []) as unknown[];
+		expect(String(firstCall[0] ?? "")).toContain("name");
+		expect(String(firstCall[0] ?? "")).toContain("Kira");
+	});
+
+	it("Reject: discards the proposal without an RPC and returns to idle", () => {
+		__isSending = false;
+		seedReviewing();
+		useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, makeProfileActivity("t1", "Bold."));
+
+		const fetchMock = mock(() => Promise.resolve({ ok: true, status: 200, json: async () => ({}), text: async () => "" }));
+		globalThis.fetch = fetchMock as never;
+
+		const { getByText } = render(<CoauthorCharacterForm />);
+		fireEvent.click(getByText("coauthor.review.reject"));
+
+		// No RPC fired — Reject is local-only (discards the in-turn proposal).
+		expect(fetchMock).not.toHaveBeenCalled();
+		// Turn store cleared → idle.
+		expect(useCoauthorTurnStore.getState().getActivities(TEST_CHAT)).toEqual([]);
 	});
 });

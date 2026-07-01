@@ -1,11 +1,10 @@
 /**
- * CA-10 — Co-Author live character form (Wave 4).
+ * CA-10/CA-11 — Co-Author live character form (Wave 4).
  *
  * The right panel of the Co-Author surface: a LIVE, EDITABLE MD editor bound to
  * the snapshot character. The user authors the card here directly; the AI is a
- * co-editor whose turn-time proposals are overlaid for Apply/Reject in CA-11.
+ * co-editor whose turn-time proposals are reviewed via Apply/Reject.
  *
- * This is NOT a read-only diff panel (the original CA-10 framing, superseded).
  * Co-authoring means writing the card TOGETHER: the canonical document always
  * belongs to the user, and the editor is LOCKED during the AI's turn so the two
  * never touch the same place at the same time — eliminating concurrent-edit
@@ -14,50 +13,61 @@
  * Three editor states (V1 lifecycle):
  *   1. idle       — editable. The user edits freely and saves.
  *   2. generating — locked. Entered while a co-author turn is in flight
- *                   (`isSending` for this chat). The editor is read-only via a
- *                   CodeMirror `EditorView.editable` facet toggled through a
- *                   `Compartment`; a "AI is editing…" affordance is shown.
- *   3. reviewing  — locked + diff overlay (CA-11, NOT this unit). CA-10 derives
- *                   `editorState` but only `idle`/`generating` are exercised
- *                   here; entering `reviewing` without CA-11's Apply/Reject
- *                   would trap the user, so it is left unentered in CA-10 and
- *                   the editor returns to `idle` when generation ends.
+ *                   (`isSending`). The editor is read-only via a CodeMirror
+ *                   `EditorView.editable` facet toggled through a `Compartment`.
+ *   3. reviewing  — locked + diff overlay (CA-11). Entered when a turn ends and
+ *                   the ephemeral turn store (CA-9.2) holds finalized tool
+ *                   proposals. The aggregated proposed body is overlaid as a
+ *                   green/red diff (canonical body → proposed body via
+ *                   `buildLineDiff`); Apply commits via the CA-7 RPC, Reject
+ *                   discards. Either returns the editor to idle.
  *
- * Reuse (verified against source — see plan Wave 4 reuse surface): the editor
- * mount lifecycle + editor↔form sync are reimplemented here (the ~30-line
- * CodeMirror `EditorView` setup), but ALL extension factories + the sync codec
- * are reused as-is from `build/editors/`. `VibeMdView` itself is NOT embedded:
- * it expects a parent `CharacterForm` form instance and carries the co-author
- * ENTRY buttons (CA-8.4) — embedding it would recurse and duplicate the
- * controller/form/save machinery. This component is self-contained: it owns its
- * own `useForm<BuildCharacterDraft>` (seeded via the shared `characterDefaults`,
- * the same mapping BuildMode uses) and saves through the SAME write path
- * (`useCharacterController().handleSaveCharacter` → `saveCharacterAction`).
+ * Reuse: the editor mount lifecycle + editor↔form sync are reimplemented here,
+ * but ALL extension factories + the sync codec are reused as-is from
+ * `build/editors/`. `VibeMdView` itself is NOT embedded (it expects a parent
+ * `CharacterForm` + carries co-author ENTRY buttons → recursion). This component
+ * is self-contained: own `useForm<BuildCharacterDraft>` (seeded via the shared
+ * `characterDefaults`) and saves through the SAME write path BuildMode uses.
  *
- * Scope: MD-editor-shaped (like VibeMdView's prose surface), NOT the full
- * `CharacterForm` — no avatar/name/tags top block and no "Advanced fields"
- * accordion (those stay in build). Co-author is about the prose document.
+ * Diff is in BODY space, not profile.md: see `coauthor-apply-aggregate.ts` for
+ * why (canonical profile.md can't be rebuilt faithfully on the frontend —
+ * `creator`/`character_version` are in `extensions`, absent from the snapshot).
  */
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { buildCharacterDraftSchema, type BuildCharacterDraft } from "@vibe-tavern/api-contracts";
 import { EditorState, Compartment } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
+import { brandId } from "@vibe-tavern/domain";
+import type { ChatId } from "@vibe-tavern/domain";
+import { toast } from "sonner";
 
 import { vibeMdBundle } from "../build/editors/vibe-md-theme.js";
 import { lockedHeadings } from "../build/editors/vibe-md-locked-headings.js";
 import { greetingsUi } from "../build/editors/vibe-md-greetings.js";
 import { vibeMdFolding } from "../build/editors/vibe-md-folding.js";
 import { applyBodyToDraft, draftToBody } from "../build/editors/vibe-md-sync.js";
+import { buildLineDiff, TextDiffPreview } from "../shared/TextDiffPreview.js";
 
 import { lblCls } from "../build/fields/field-styles.js";
 import { characterDefaults } from "../../lib/character-draft.js";
+import { aggregateCoauthorProposal } from "../../lib/coauthor-apply-aggregate.js";
+import { applyCoauthorDraft } from "../../api/chat-api.js";
 import type { AppCharacter } from "../../app-client.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
 import { useIsSending } from "../../stores/chat-store.js";
+import { useCoauthorTurnStore } from "../../stores/coauthor-turn-store.js";
+import type { CoauthorToolActivity } from "../../stores/coauthor-turn-store.js";
 import { useCharacterController } from "../../hooks/use-character-controller.js";
 import { useT } from "../../i18n/context.js";
+
+/**
+ * Stable empty array for the turn-store selector fallback. Returning a fresh
+ * `[]` here would create a new reference every render → Zustand's `Object.is`
+ * check sees a change → infinite re-render loop ("Maximum update depth").
+ */
+const EMPTY_ACTIVITIES: CoauthorToolActivity[] = [];
 
 export function CoauthorCharacterForm() {
   const character = useSnapshotStore((s) => s.character);
@@ -88,41 +98,55 @@ function CoauthorCharacterFormInner({ character }: CoauthorCharacterFormInnerPro
   const isSending = useIsSending();
   const { handleSaveCharacter, isSavingCharacter } = useCharacterController();
 
+  // The active chat id drives the ephemeral turn store (CA-9.2) which holds the
+  // just-finished turn's tool proposals until Apply/Reject clears them.
+  const chatId = useSnapshotStore((s) => s.activeChat?.id ?? null);
+  const activities = useCoauthorTurnStore(
+    (s) => (chatId ? (s.turnsByChat[chatId] ?? EMPTY_ACTIVITIES) : EMPTY_ACTIVITIES),
+  );
+
   const form = useForm<BuildCharacterDraft>({
     resolver: zodResolver(buildCharacterDraftSchema),
     defaultValues: characterDefaults(character),
   });
   const { setValue, formState } = form;
 
-  // `key={character.id}` on the inner component remounts it on character switch,
-  // so the editor is created fresh with the new body — no manual reset/prevId
-  // tracking needed (the form's defaultValues re-seed on remount). This mirrors
-  // VibeMdView's `[characterId]` editor re-creation, just at the component level.
-
   const editorHostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
-  /** The last body string the editor showed (avoids redundant dispatches). */
   const editorBodyRef = useRef<string>("");
-  /** True while a form change originated from the editor (breaks the loop). */
   const editorOriginatedRef = useRef(false);
-  /**
-   * Editable facet compartment — toggled to lock the editor while the AI's turn
-   * is in flight. `EditorView.editable` (not `EditorState.readOnly`) is used
-   * deliberately: it flips the `contenteditable` attribute on the editor DOM,
-   * blocking USER input while still allowing programmatic dispatches (the
-   * form→editor sync path). Reconfigured in a dedicated effect on `isSending`.
-   */
   const editableCompartmentRef = useRef<Compartment | null>(null);
   if (editableCompartmentRef.current === null) {
     editableCompartmentRef.current = new Compartment();
   }
   const editableCompartment = editableCompartmentRef.current;
 
-  // The discriminated editor state. CA-10 exercises idle/generating; reviewing
-  // is CA-11 (overlay + Apply/Reject). Kept here as the single derivation so
-  // CA-11 can add the reviewing branch without touching the lock wiring.
-  const editorState: "idle" | "generating" | "reviewing" = isSending ? "generating" : "idle";
+  // ── Editor state (idle / generating / reviewing) ───────────────────────────
+  // reviewing is entered when a turn ends and the turn store holds finalized
+  // proposals. The editor is locked in BOTH non-idle states; reviewing adds the
+  // diff overlay + Apply/Reject (rendered below). hasProposal is a cheap guard
+  // so we don't aggregate on every render; the full aggregation is memoized.
+  const hasProposal =
+    !isSending && activities.some((a) => a.status === "done" && !!a.proposed && !!a.target);
+  const editorState: "idle" | "generating" | "reviewing" = isSending
+    ? "generating"
+    : hasProposal
+      ? "reviewing"
+      : "idle";
   const locked = editorState !== "idle";
+
+  // Aggregate the turn into a proposal (proposed body for the diff + Apply
+  // request). Recomputed only while reviewing; the form draft is stable during
+  // reviewing (the editor is locked), so reading it here is correct.
+  const proposal = useMemo(() => {
+    if (editorState !== "reviewing") return null;
+    return aggregateCoauthorProposal(activities, form.getValues());
+    // editorState + activities are the reactive inputs; `form` is a stable
+    // instance and its values are frozen while reviewing (locked editor).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editorState, activities]);
+
+  const [applying, setApplying] = useState(false);
 
   // ── Greetings widget handlers (draft-backed; same rationale as VibeMdView). ──
   function forceEditorFromBody(): void {
@@ -179,13 +203,10 @@ function CoauthorCharacterFormInner({ character }: CoauthorCharacterFormInnerPro
       viewRef.current = null;
     };
     // Mount-only: the component is remounted on character switch (key=id), and
-    // isSending is handled by the lock effect below. `isSending` IS read at
-    // mount for the initial facet value; it is intentionally excluded from deps
-    // so a generation start/end does not tear down and rebuild the editor.
+    // isSending is handled by the lock effect below.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ── Editor → form: parse the body and write the prose + greetings fields ───
   function syncEditorToForm(body: string): void {
     editorOriginatedRef.current = true;
     editorBodyRef.current = body;
@@ -197,7 +218,6 @@ function CoauthorCharacterFormInner({ character }: CoauthorCharacterFormInnerPro
     setValue("alternateGreetings", updated.alternateGreetings, { shouldDirty: true });
   }
 
-  // ── Form → editor: external changes (greetings widget, future resets) ──────
   useEffect(() => {
     const unsubscribe = form.subscribe({
       name: ["description", "scenario", "mesExample", "firstMessage", "alternateGreetings"],
@@ -222,9 +242,9 @@ function CoauthorCharacterFormInner({ character }: CoauthorCharacterFormInnerPro
     const view = viewRef.current;
     if (!view) return;
     view.dispatch({
-      effects: editableCompartment.reconfigure(EditorView.editable.of(!isSending)),
+      effects: editableCompartment.reconfigure(EditorView.editable.of(!locked)),
     });
-  }, [isSending, editableCompartment]);
+  }, [locked, editableCompartment]);
 
   async function handleSave(): Promise<void> {
     await form.handleSubmit(async (data) => {
@@ -233,24 +253,62 @@ function CoauthorCharacterFormInner({ character }: CoauthorCharacterFormInnerPro
     })();
   }
 
+  // ── CA-11: Apply / Reject the turn's aggregated proposal ───────────────────
+  async function handleApply(): Promise<void> {
+    if (!chatId || !proposal?.hasProposal) return;
+    setApplying(true);
+    try {
+      const { snapshot, corrections } = await applyCoauthorDraft(
+        brandId<ChatId>(chatId),
+        proposal.applyRequest,
+      );
+      useSnapshotStore.getState().ingestSnapshot(snapshot);
+      useCoauthorTurnStore.getState().clearTurn(chatId); // → reviewing falls to idle
+      // Re-seed the form/editor to the freshly-written canonical so the user
+      // immediately sees the applied document (the snapshot carries the new card).
+      const fresh = useSnapshotStore.getState().character;
+      if (fresh) {
+        form.reset(characterDefaults(fresh));
+        forceEditorFromBody();
+      }
+      // R3: surface backend corrections (e.g. an empty name restored) — never silent.
+      for (const c of corrections) {
+        toast.warning(`${c.field} — ${c.reason}`);
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : t("coauthor.review.apply_failed"));
+    } finally {
+      setApplying(false);
+    }
+  }
+
+  function handleReject(): void {
+    if (!chatId) return;
+    // Discard the proposal; the editor is unchanged (it was locked for the whole
+    // turn, so it still shows the pre-turn canonical). Clearing the turn store
+    // drops hasProposal → editorState returns to idle (editable).
+    useCoauthorTurnStore.getState().clearTurn(chatId);
+  }
+
   const isDirty = formState.isDirty;
   const canSave = !isSavingCharacter && (form.watch("name") || "").trim().length > 0;
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      {/* Header bar — title + lock affordance + save. Sticky so it stays usable
-          while scrolling a long document. */}
+      {/* Header bar — title + state subtitle + save. */}
       <div className="glass-bar sticky top-0 z-10 flex shrink-0 items-center justify-between gap-2 border-b border-border/50 bg-surface px-4 py-2.5">
         <div className="min-w-0">
           <div className="truncate font-body text-[15px] font-medium text-t1">
             {character.name || t("unnamed")}
           </div>
           <div className="font-ui text-[11px] text-t3">
-            {locked
-              ? t("coauthor.editor.locked")
-              : isDirty
-                ? t("unsaved_changes")
-                : t("saved_state")}
+            {editorState === "reviewing"
+              ? t("coauthor.review.state")
+              : locked
+                ? t("coauthor.editor.locked")
+                : isDirty
+                  ? t("unsaved_changes")
+                  : t("saved_state")}
           </div>
         </div>
         <button
@@ -263,10 +321,10 @@ function CoauthorCharacterFormInner({ character }: CoauthorCharacterFormInnerPro
         </button>
       </div>
 
-      {/* The editor surface — auto-grows to content (no inner scroll); the panel
-          itself scrolls. Same auto-grow mechanism as VibeMdView (minHeight only,
-          no maxHeight, CM theme sets height:auto + overflow:hidden on scroller). */}
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
+      {/* Editor surface + reviewing overlay (CA-11). The editor stays mounted
+          underneath the overlay so its lifecycle is never torn down between
+          states; the overlay covers it while reviewing. */}
+      <div className="relative min-h-0 flex-1 overflow-y-auto px-4 py-4">
         <label className={lblCls + " mb-1.5 block"}>{t("coauthor.editor.label")}</label>
         <div
           ref={editorHostRef}
@@ -274,6 +332,85 @@ function CoauthorCharacterFormInner({ character }: CoauthorCharacterFormInnerPro
           style={{ minHeight: 360 }}
         />
         <p className="mt-1.5 font-ui text-[11px] text-t4">{t("coauthor.editor.hint")}</p>
+
+        {editorState === "reviewing" && proposal?.hasProposal && (
+          <ReviewingOverlay
+            summary={proposal.summaries.join(" · ") || t("coauthor.review.no_summary")}
+            diff={buildLineDiff(draftToBody(form.getValues()), draftToBody(proposal.proposedDraft))}
+            applying={applying}
+            onApply={() => { void handleApply(); }}
+            onReject={handleReject}
+            labels={{
+              title: t("coauthor.review.title"),
+              tooLarge: t("coauthor.review.too_large"),
+              noChanges: t("coauthor.review.no_changes"),
+              apply: t("coauthor.review.apply"),
+              reject: t("coauthor.review.reject"),
+              applying: t("coauthor.review.applying"),
+            }}
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The reviewing overlay (CA-11): the turn's proposed edits shown as an inline
+ * diff over the editor, with Apply / Reject. Absolutely positioned over the
+ * editor surface so the editor instance stays mounted (no teardown between
+ * states). Apply commits via the CA-7 RPC; Reject discards.
+ */
+function ReviewingOverlay({
+  summary,
+  diff,
+  applying,
+  onApply,
+  onReject,
+  labels,
+}: {
+  summary: string;
+  diff: ReturnType<typeof buildLineDiff>;
+  applying: boolean;
+  onApply: () => void;
+  onReject: () => void;
+  labels: {
+    title: string;
+    tooLarge: string;
+    noChanges: string;
+    apply: string;
+    reject: string;
+    applying: string;
+  };
+}) {
+  return (
+    <div className="absolute inset-0 z-20 flex flex-col bg-surface">
+      <div className="min-h-0 flex-1 overflow-y-auto px-1 py-3">
+        <div className="mb-2 rounded-md border border-border/70 bg-s1 px-3 py-2">
+          <div className="font-ui text-[12px] font-medium text-t2">{summary}</div>
+        </div>
+        <TextDiffPreview
+          summary={diff}
+          labels={{ title: labels.title, tooLarge: labels.tooLarge, noChanges: labels.noChanges }}
+        />
+      </div>
+      <div className="flex shrink-0 items-center justify-end gap-2 border-t border-border/50 bg-surface px-4 py-2.5">
+        <button
+          type="button"
+          className="rounded-md border border-border bg-bg px-3.5 py-1.5 font-ui text-[0.8rem] font-semibold text-t2 transition-all hover:bg-s2 active:scale-[0.98] disabled:cursor-default disabled:opacity-40"
+          disabled={applying}
+          onClick={onReject}
+        >
+          {labels.reject}
+        </button>
+        <button
+          type="button"
+          className="rounded-md border-0 bg-accent px-4 py-1.5 font-ui text-[0.8rem] font-semibold text-on-accent transition-all hover:brightness-110 active:scale-[0.98] disabled:cursor-default disabled:opacity-40"
+          disabled={applying}
+          onClick={onApply}
+        >
+          {applying ? labels.applying : labels.apply}
+        </button>
       </div>
     </div>
   );
