@@ -6,7 +6,7 @@
  * their streaming responses correctly (e.g. nanoGPT).
  */
 
-import { generateText } from "ai";
+import { generateText, stepCountIs } from "ai";
 import { ProviderExecutionError } from "./provider-execution-types.js";
 import type { GenerationResult } from "./provider-execution-types.js";
 import type { ProviderExecutionInput } from "./provider-execution-types.js";
@@ -106,7 +106,7 @@ export async function nonstreamingProviderExecute(
       abortSignal: input.signal,
       ...samplerConfig,
       ...(input.tools ? { tools: input.tools } : {}),
-      ...(input.maxSteps ? { maxSteps: input.maxSteps } : {}),
+      ...(input.tools && input.maxSteps ? { stopWhen: stepCountIs(input.maxSteps) } : {}),
     });
 
     logSendDebug("provider.nonstream.result", {

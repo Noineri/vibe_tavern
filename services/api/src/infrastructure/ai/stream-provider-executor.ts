@@ -6,7 +6,7 @@
  * (nonstreaming-provider-executor.ts, generateText()).
  */
 
-import { streamText } from "ai";
+import { streamText, stepCountIs } from "ai";
 import { ProviderExecutionError } from "./provider-execution-types.js";
 import type { ProviderExecutor, ProviderStreamResult, SentConfigSnapshot } from "./provider-execution-types.js";
 import { resolveModel, toSdkMessages, prepareSdkMessages } from "./provider-executor-utils.js";
@@ -116,7 +116,7 @@ export const streamProviderExecutor: ProviderExecutor = async (input) => {
       abortSignal: input.signal,
       ...samplerConfig,
       ...(input.tools ? { tools: input.tools } : {}),
-      ...(input.maxSteps ? { maxSteps: input.maxSteps } : {}),
+      ...(input.tools && input.maxSteps ? { stopWhen: stepCountIs(input.maxSteps) } : {}),
     });
 
     const { stream, hasRedacted } = createMappedStream(result.fullStream);
