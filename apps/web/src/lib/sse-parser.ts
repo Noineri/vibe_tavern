@@ -9,6 +9,11 @@ export interface ParseSSEStreamOptions {
   onChunk: (delta: string) => void;
   onReasoningChunk?: (delta: string) => void;
   onReasoningDone?: (info: { durationMs: number | null; redacted: boolean }) => void;
+  /** Co-author tool calls. The backend (drainStream) emits these four wire events; they carry the AI's proposed edits. Optional so RP chat callers are unaffected. */
+  onToolCall?: (info: { toolCallId: string; toolName: string; args: unknown }) => void;
+  onToolInputStart?: (info: { toolCallId: string; toolName: string }) => void;
+  onToolInputDelta?: (info: { toolCallId: string; delta: string }) => void;
+  onToolResult?: (info: { toolCallId: string; toolName: string; output: unknown; isError: boolean }) => void;
 }
 
 export async function parseSSEStream(opts: ParseSSEStreamOptions): Promise<{
@@ -91,6 +96,34 @@ export async function parseSSEStream(opts: ParseSSEStreamOptions): Promise<{
               opts.onReasoningDone({
                 durationMs: parsed.durationMs ?? null,
                 redacted: parsed.redacted ?? false,
+              });
+            }
+          } else if (currentEvent === "tool-call") {
+            if (opts.onToolCall) {
+              opts.onToolCall({
+                toolCallId: parsed.toolCallId,
+                toolName: parsed.toolName,
+                args: parsed.args,
+              });
+            }
+          } else if (currentEvent === "tool-input-start") {
+            if (opts.onToolInputStart) {
+              opts.onToolInputStart({
+                toolCallId: parsed.toolCallId,
+                toolName: parsed.toolName,
+              });
+            }
+          } else if (currentEvent === "tool-input-delta") {
+            if (opts.onToolInputDelta && typeof parsed.delta === "string") {
+              opts.onToolInputDelta({ toolCallId: parsed.toolCallId, delta: parsed.delta });
+            }
+          } else if (currentEvent === "tool-result") {
+            if (opts.onToolResult) {
+              opts.onToolResult({
+                toolCallId: parsed.toolCallId,
+                toolName: parsed.toolName,
+                output: parsed.output,
+                isError: parsed.isError ?? false,
               });
             }
           } else {

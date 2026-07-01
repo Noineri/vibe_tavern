@@ -14,6 +14,10 @@ export interface StreamOpts {
   onChunk: (delta: string) => void;
   onReasoningChunk?: (delta: string) => void;
   onReasoningDone?: (info: { durationMs: number | null; redacted: boolean }) => void;
+  onToolCall?: (info: { toolCallId: string; toolName: string; args: unknown }) => void;
+  onToolInputStart?: (info: { toolCallId: string; toolName: string }) => void;
+  onToolInputDelta?: (info: { toolCallId: string; delta: string }) => void;
+  onToolResult?: (info: { toolCallId: string; toolName: string; output: unknown; isError: boolean }) => void;
 }
 
 /**
@@ -65,6 +69,10 @@ async function streamChatEndpoint(
     onChunk: opts.onChunk,
     onReasoningChunk: opts.onReasoningChunk,
     onReasoningDone: opts.onReasoningDone,
+    onToolCall: opts.onToolCall,
+    onToolInputStart: opts.onToolInputStart,
+    onToolInputDelta: opts.onToolInputDelta,
+    onToolResult: opts.onToolResult,
   });
 }
 

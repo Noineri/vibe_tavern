@@ -85,4 +85,106 @@ describe("parseSSEStream", () => {
 		expect(o.onStatus).toHaveBeenCalledWith("cancelled");
 		expect(result.finishReason).toBe("cancelled");
 	});
+
+	// ── Co-author tool-call events (CA-9.1) ──
+	// The backend (live-chat-orchestrator.drainStream) emits these four wire
+	// events carrying the AI's proposed edits. The parser forwards each to an
+	// optional callback; RP chat callers pass none of them, so they are inert.
+
+	it("forwards a co-author tool-call event to onToolCall", async () => {
+		const o = opts();
+		const onToolCall = mock((_: { toolCallId: string; toolName: string; args: unknown }) => {});
+		await parseSSEStream({
+			response: sseResponse([
+				"event: tool-call\n",
+				'data: {"toolCallId":"call_1","toolName":"edit_profile","args":{"target":"personality","proposed":"Bold."}}\n\n',
+			]),
+			onStatus: o.onStatus,
+			onChunk: o.onChunk,
+			onToolCall,
+		});
+		expect(onToolCall).toHaveBeenCalledTimes(1);
+		expect(onToolCall.mock.calls[0]![0]).toEqual({
+			toolCallId: "call_1",
+			toolName: "edit_profile",
+			args: { target: "personality", proposed: "Bold." },
+		});
+	});
+
+	it("forwards tool-input-delta chunks to onToolInputDelta", async () => {
+		const o = opts();
+		const onToolInputDelta = mock((_: { toolCallId: string; delta: string }) => {});
+		await parseSSEStream({
+			response: sseResponse([
+				"event: tool-input-delta\n",
+				'data: {"toolCallId":"call_1","delta":"Hel"}\n',
+				"event: tool-input-delta\n",
+				'data: {"toolCallId":"call_1","delta":"lo"}\n\n',
+			]),
+			onStatus: o.onStatus,
+			onChunk: o.onChunk,
+			onToolInputDelta,
+		});
+		expect(onToolInputDelta).toHaveBeenCalledTimes(2);
+		expect(onToolInputDelta.mock.calls[0]![0]).toEqual({ toolCallId: "call_1", delta: "Hel" });
+		expect(onToolInputDelta.mock.calls[1]![0]).toEqual({ toolCallId: "call_1", delta: "lo" });
+	});
+
+	it("forwards a tool-result event (with isError flag) to onToolResult", async () => {
+		const o = opts();
+		const onToolResult = mock(
+			(_: { toolCallId: string; toolName: string; output: unknown; isError: boolean }) => {},
+		);
+		await parseSSEStream({
+			response: sseResponse([
+				"event: tool-result\n",
+				'data: {"toolCallId":"call_1","toolName":"edit_profile","output":{"ok":true},"isError":false}\n\n',
+			]),
+			onStatus: o.onStatus,
+			onChunk: o.onChunk,
+			onToolResult,
+		});
+		expect(onToolResult).toHaveBeenCalledTimes(1);
+		expect(onToolResult.mock.calls[0]![0]).toEqual({
+			toolCallId: "call_1",
+			toolName: "edit_profile",
+			output: { ok: true },
+			isError: false,
+		});
+	});
+
+	it("defaults isError to false when the server omits it on a tool-result", async () => {
+		const o = opts();
+		const onToolResult = mock(
+			(_: { toolCallId: string; toolName: string; output: unknown; isError: boolean }) => {},
+		);
+		await parseSSEStream({
+			response: sseResponse([
+				"event: tool-result\n",
+				'data: {"toolCallId":"call_2","toolName":"edit_greeting","output":{"ok":true}}\n\n',
+			]),
+			onStatus: o.onStatus,
+			onChunk: o.onChunk,
+			onToolResult,
+		});
+		expect(onToolResult.mock.calls[0]![0].isError).toBe(false);
+	});
+
+	it("ignores tool events when no tool callbacks are wired (RP chat unaffected)", async () => {
+		// RP chat callers pass only onChunk/onReasoningChunk*. A co-author stream's
+		// tool events must not throw or pollute onChunk — regression gate.
+		const o = opts();
+		await parseSSEStream({
+			response: sseResponse([
+				"event: tool-call\n",
+				'data: {"toolCallId":"call_1","toolName":"edit_profile","args":{}}\n',
+				"event: tool-result\n",
+				'data: {"toolCallId":"call_1","toolName":"edit_profile","output":{},"isError":false}\n\n',
+			]),
+			onStatus: o.onStatus,
+			onChunk: o.onChunk,
+		});
+		expect(o.onChunk).not.toHaveBeenCalled();
+		expect(o.onStatus).toHaveBeenCalledWith("idle");
+	});
 });
