@@ -149,6 +149,21 @@ html,body{height:100%;background:var(--page-bg, var(--bg));color:var(--t1);overf
 .scene-note{text-align:center;font-family:var(--font-body);font-style:italic;font-size:12.5px;color:var(--t3);padding:4px 24px 26px;max-width:var(--mw);margin:0 auto}
 
 /* ── Markdown formatting ── */
+.md-h1{font-size:1.75em;font-weight:700;margin:1.2em 0 .5em;line-height:1.2;color:var(--t1)}
+.md-h2{font-size:1.5em;font-weight:600;margin:1.2em 0 .5em;line-height:1.25;color:var(--t1)}
+.md-h3{font-size:1.25em;font-weight:600;margin:1em 0 .4em;line-height:1.3;color:var(--t1)}
+.md-h4{font-size:1.1em;font-weight:600;margin:1em 0 .4em;line-height:1.3;color:var(--t2)}
+.md-h5{font-size:1em;font-weight:600;margin:1em 0 .4em;line-height:1.4;color:var(--t2)}
+.md-h6{font-size:.9em;font-weight:600;margin:1em 0 .4em;line-height:1.4;color:var(--t3);text-transform:uppercase;letter-spacing:.05em}
+.md-content > *:first-child{margin-top:0}
+
+.md-table-wrap{overflow-x:auto;margin:.8em 0;border-radius:var(--r, 6px);border:1px solid var(--border)}
+.md-table{width:100%;border-collapse:collapse;font-size:max(.85em, 12px);text-align:left}
+.md-th{background:var(--s2);font-weight:600;padding:8px 12px;border-bottom:1px solid var(--border);color:var(--t2)}
+.md-td{padding:8px 12px;border-bottom:1px solid var(--border);color:var(--t1)}
+.md-tr:last-child .md-td{border-bottom:none}
+.md-tr:nth-child(even){background:color-mix(in srgb, var(--s2) 40%, transparent)}
+
 .md-list{margin:.3em 0 .3em 1.25em;padding:0;list-style:disc}
 .md-list-ordered{list-style:decimal}
 .md-list li{margin-bottom:.15em}

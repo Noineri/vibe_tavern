@@ -415,6 +415,26 @@ const components: Record<string, React.ComponentType<{ children?: React.ReactNod
       </pre>
     );
   },
+
+  // Headings
+  h1: ({ children, ...props }) => <h1 className="md-h1" {...props}>{children}</h1>,
+  h2: ({ children, ...props }) => <h2 className="md-h2" {...props}>{children}</h2>,
+  h3: ({ children, ...props }) => <h3 className="md-h3" {...props}>{children}</h3>,
+  h4: ({ children, ...props }) => <h4 className="md-h4" {...props}>{children}</h4>,
+  h5: ({ children, ...props }) => <h5 className="md-h5" {...props}>{children}</h5>,
+  h6: ({ children, ...props }) => <h6 className="md-h6" {...props}>{children}</h6>,
+
+  // Tables
+  table: ({ children, ...props }) => (
+    <div className="md-table-wrap">
+      <table className="md-table" {...props}>{children}</table>
+    </div>
+  ),
+  thead: ({ children, ...props }) => <thead className="md-thead" {...props}>{children}</thead>,
+  tbody: ({ children, ...props }) => <tbody className="md-tbody" {...props}>{children}</tbody>,
+  tr: ({ children, ...props }) => <tr className="md-tr" {...props}>{children}</tr>,
+  th: ({ children, ...props }) => <th className="md-th" {...props}>{children}</th>,
+  td: ({ children, ...props }) => <td className="md-td" {...props}>{children}</td>,
 };
 
 function extractText(children: React.ReactNode): string {
