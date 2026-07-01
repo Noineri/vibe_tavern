@@ -62,16 +62,24 @@ describe("RpModeStrategy.assemble", () => {
   });
 });
 
-describe("CoauthorModeStrategy.assemble (stub)", () => {
-  test("throws NOT_IMPLEMENTED until CA-5", async () => {
-    const promptService = {} as ChatModeAssembleInput["promptService"];
+describe("CoauthorModeStrategy.assemble", () => {
+  test("delegates to the coauthor prompt builder (returns tools + maxSteps)", async () => {
     const strategy = new CoauthorModeStrategy();
     const input: ChatModeAssembleInput = {
-      promptService,
+      promptService: {} as never,
       chatId: "chat_test" as never,
       model: "test-model",
+      loaders: {
+        getMessages: async () => [],
+        getCharacter: async () => ({ id: "char_test", firstMessage: "x", alternateGreetings: [] } as never),
+        getProfileMdText: async () => "---\nname: Test\n---\n# PERSONALITY\nx\n",
+      },
     };
-    await expect(strategy.assemble(input)).rejects.toThrow(/NOT_IMPLEMENTED/);
+    const out = await strategy.assemble(input);
+    // CA-6: assemble is now real (no longer NOT_IMPLEMENTED) and emits the
+    // editor tool set + maxSteps for the executor's tool-loop.
+    expect(out.tools).toHaveProperty("edit_profile");
+    expect(out.maxSteps).toBe(5);
   });
 
   test("resolveProvider is a passthrough (mirrors RP)", async () => {

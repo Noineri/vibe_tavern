@@ -1,13 +1,15 @@
-import type { ChatId, MessageId } from "@vibe-tavern/domain";
+import type { ChatId, CharacterId, ChatBranchId, MessageId } from "@vibe-tavern/domain";
 import type { StoredProviderProfileRecord } from "@vibe-tavern/domain";
 import type { EventBus } from "@vibe-tavern/domain";
 import type { ChatMode } from "@vibe-tavern/domain";
 import type { ToolSet } from "ai";
+import type { Character, Message as DbMessage } from "@vibe-tavern/db";
 import type {
   AssemblePromptForChatInput,
   AssemblePromptForChatResult,
   PromptAssemblyService,
 } from "../prompt/prompt-assembly-service.js";
+import { assembleCoauthorPrompt } from "./coauthor-prompt.js";
 
 // ────────────────────────────────────────────────────────────────────────────
 // ChatModeStrategy — defines how a chat mode prepares and processes turns.
@@ -31,15 +33,35 @@ import type {
 export type { ChatMode };
 
 /**
+ * Raw state access for strategies that build their own prompt (co-author)
+ * instead of delegating to {@link PromptAssemblyService.assembleForChat} (RP).
+ * RP ignores this; co-author reads the character, its canonical profile.md,
+ * and the chat's own message history to assemble an editor prompt.
+ *
+ * Carried on {@link ChatModeAssembleInput} so strategies stay stateless;
+ * the caller (SessionRuntime.assemblePrompt) constructs it from its stores.
+ */
+export interface ChatModeAssembleLoaders {
+  /** Active-branch messages for the chat (position-ascending); `limit` takes the last N. */
+  getMessages(chatId: ChatId, branchId?: ChatBranchId, limit?: number): Promise<DbMessage[]>;
+  /** The character row this chat edits (serializes + greeting context). */
+  getCharacter(chatId: ChatId): Promise<Character>;
+  /** Canonical `profile.md` text for the character (the edit target). */
+  getProfileMdText(characterId: CharacterId): Promise<string>;
+}
+
+/**
  * Input to {@link ChatModeStrategy.assemble}. Extends the RP assembly input
  * with the {@link PromptAssemblyService} so strategies can delegate to the
  * existing RP loader (`RpModeStrategy`) or reuse its stores/resolver for their
  * own assembly (`CoauthorModeStrategy`). Carrying the service on the input
  * keeps strategies stateless and `getChatModeStrategy` free of constructor
  * deps; the caller (SessionRuntime.assemblePrompt) already holds the service.
+ * `loaders` gives non-RP strategies raw state access (see {@link ChatModeAssembleLoaders}).
  */
 export interface ChatModeAssembleInput extends AssemblePromptForChatInput {
   promptService: PromptAssemblyService;
+  loaders: ChatModeAssembleLoaders;
 }
 
 /** Re-exported so callers don't reach into the prompt service module. */
@@ -153,11 +175,8 @@ export class CoauthorModeStrategy implements ChatModeStrategy {
     return input;
   }
 
-  async assemble(_input: ChatModeAssembleInput): Promise<ChatModeAssembleResult> {
-    // CA-5 will build the editor prompt here (serializeProfileMd of the current
-    // card + greeting + chat history, editor system prompt). Until then this
-    // throws so a co-author chat can be created/resolved but cannot reply.
-    throw new Error("NOT_IMPLEMENTED: CoauthorModeStrategy.assemble (see CA-5)");
+  async assemble(input: ChatModeAssembleInput): Promise<ChatModeAssembleResult> {
+    return assembleCoauthorPrompt(input);
   }
 
   async onMessageAppended(_input: {

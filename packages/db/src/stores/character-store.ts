@@ -4,7 +4,7 @@ import type { AppDb } from '../db-connection.js';
 import { resolveStoreRuntime, type StoreClock, type StoreIdGenerator } from '../persistence.js';
 import type { ContentStore } from '../content-store.js';
 import { STORAGE_FOLDERS, IMAGE_EXTENSIONS, hashCanonicalJson } from '../file-store.js';
-import { serializeCharacterFolder, parseCharacterFolder, type VtfCharacterContent, type FolderFileEntry } from '../vtf/index.js';
+import { serializeCharacterFolder, parseCharacterFolder, profileFromCharacter, serializeProfileMd, type VtfCharacterContent, type FolderFileEntry } from '../vtf/index.js';
 import { parseGreetingsIndex } from '../vtf/greetings.js';
 
 // ─── Input types ──────────────────────────────────────────────────────────────
@@ -322,6 +322,19 @@ export class CharacterStore {
       tags: vtf.tags,
       extensions: vtf.extensions,
     };
+  }
+
+  /**
+   * Return the canonical `profile.md` text for a character (frontmatter + the
+   * three prose H1 sections). This is the Co-Author edit target and the
+   * round-trip source for Apply (CA-7): `serializeProfileMd(profileFromCharacter(char))`,
+   * so the AI always sees and edits the same canonical document the Form emits.
+   * Throws if the character does not exist.
+   */
+  async getProfileMdText(id: string): Promise<string> {
+    const char = await this.getById(id);
+    if (!char) throw new Error(`Character '${id}' was not found.`);
+    return serializeProfileMd({ profile: profileFromCharacter(this.toVtfContent(char)) });
   }
 
   /** Project a {@link Character} onto the VTF content subset for serialization. */

@@ -10,7 +10,7 @@ import {
 	SYSTEM_RESOURCE_ID,
 } from "@vibe-tavern/domain";
 import { ChatApplicationService } from "../../domain/chat/chat-application-service.js";
-import { getChatModeStrategy, type ChatModeStrategy } from "../../domain/chat/chat-mode-strategy.js";
+import { getChatModeStrategy, type ChatModeStrategy, type ChatModeAssembleLoaders } from "../../domain/chat/chat-mode-strategy.js";
 import {
 	internal,
 	notFound,
@@ -619,6 +619,7 @@ import { scanSillyTavernDirectory as scanST, importSillyTavernDirectory as impor
 		const strategy = await this.resolveChatModeStrategy(chatId);
 		return strategy.assemble({
 			promptService: this.promptService,
+			loaders: this.buildChatModeLoaders(),
 			chatId,
 			branchId,
 			model: options?.model ?? SYSTEM_RESOURCE_ID.unresolvedModel,
@@ -629,6 +630,32 @@ import { scanSillyTavernDirectory as scanST, importSillyTavernDirectory as impor
 			responseReserve: options?.responseReserve,
 			presetId: options?.presetId,
 		});
+	}
+
+	/**
+	 * Raw state access handed to non-RP chat-mode strategies (co-author) so they
+	 * can build their own prompt without going through the RP assembly pipeline.
+	 * Stateless closures over `this.stores`; RP ignores the handle entirely.
+	 */
+	private buildChatModeLoaders(): ChatModeAssembleLoaders {
+		return {
+			getMessages: async (chatId, branchId, limit) => {
+				const chat = await this.stores.chats.getById(chatId);
+				if (!chat) return [];
+				const branch = branchId ?? (chat.activeBranchId as ChatBranchId | null);
+				if (!branch) return [];
+				const msgs = await this.stores.messages.getMessages(branch);
+				return limit && limit > 0 ? msgs.slice(-limit) : msgs;
+			},
+			getCharacter: async (chatId) => {
+				const chat = await this.stores.chats.getById(chatId);
+				if (!chat) throw new Error(`Chat '${chatId}' was not found.`);
+				const char = await this.stores.characters.getById(chat.characterId);
+				if (!char) throw new Error(`Character '${chat.characterId}' was not found.`);
+				return char;
+			},
+			getProfileMdText: (characterId) => this.stores.characters.getProfileMdText(characterId),
+		};
 	}
 
 	private async ensureDefaultPresetId(): Promise<PromptPresetId> {

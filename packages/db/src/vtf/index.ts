@@ -33,6 +33,11 @@ import {
   DEFAULT_DEPTH,
   type VtfProfile,
 } from "./profile-md.js";
+
+// Re-export the profile.md codec so consumers of the VTF facade (e.g.
+// CharacterStore.getProfileMdText for Co-Author) can reach it without importing
+// the internal module path directly.
+export { serializeProfileMd, parseProfileMd, type VtfProfile, type ProfileMd, type ParsedProfile } from "./profile-md.js";
 import {
   writeInstructions,
   readInstructions,
@@ -195,8 +200,10 @@ export { defaultGreetingName };
 // Internals: Character ↔ VtfProfile
 // ───────────────────────────────────────────────────────────────────────────
 
-/** Build a {@link VtfProfile} from a character's content fields. */
-function profileFromCharacter(character: VtfCharacterContent): VtfProfile {
+/** Build a {@link VtfProfile} from a character's content fields.
+ * Exposed so other stores (e.g. CharacterStore.getProfileMdText for Co-Author)
+ * can serialize the canonical `profile.md` without re-deriving the mapping. */
+export function profileFromCharacter(character: VtfCharacterContent): VtfProfile {
   return {
     name: character.name,
     tags: character.tags,
