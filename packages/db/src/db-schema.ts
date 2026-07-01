@@ -152,6 +152,14 @@ export const chats = sqliteTable('chats', {
   updatedAt: text('updated_at').notNull(),
   loreActivationStateJson: text('lore_activation_state_json').notNull().default('{}'),
   scriptStateJson: text('script_state_json').notNull().default('{}'),
+  // Co-author mode only (CA-13): lorebook ids the user explicitly bound to
+  // this chat as read-only editor context (the right-panel picker). NOT the
+  // RP keyword-activation set — these expand wholesale into the editor prompt
+  // via the same resolveContext path the AI assistant uses. Stored per-chat
+  // because co-author is a chat mode (a character can have several co-author
+  // chats, each with its own lore context). Folds into coauthor_config_json
+  // when CA-16 lands; narrow column for now.
+  coauthorLorebookIdsJson: text('coauthor_lorebook_ids_json').notNull().default('[]'),
 }, (table) => ({
   characterIdIdx: index('idx_chats_character_id').on(table.characterId),
   lastAccessedIdx: index('idx_chats_last_accessed').on(table.lastAccessedAt),

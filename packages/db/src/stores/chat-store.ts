@@ -27,6 +27,9 @@ export interface Chat {
   lastAccessedAt: string;
   loreActivationState: Record<string, unknown>;
   scriptState: Record<string, Record<string, unknown>>;
+  /** Co-author only (CA-13): lorebook ids explicitly bound to this chat as
+   *  read-only editor context (right-panel picker). NOT RP activation. */
+  coauthorLorebookIds: string[];
   createdAt: string;
   updatedAt: string;
 }
@@ -260,6 +263,19 @@ export class ChatStore {
       .where(eq(chats.id, id))
       .returning();
     if (!row) throw new Error(`Chat '${id}' not found after greeting index update`);
+    return this.mapRow(row);
+  }
+
+  /** Co-author only (CA-13): replace the chat's bound lorebook ids (the
+   *  right-panel picker). Wholesale replace, mirroring setSelectedGreetingIndex. */
+  async setCoauthorLorebookIds(id: string, lorebookIds: string[]): Promise<Chat> {
+    const now = this.clock.now();
+    const [row] = await this.db
+      .update(chats)
+      .set({ coauthorLorebookIdsJson: JSON.stringify(lorebookIds), updatedAt: now })
+      .where(eq(chats.id, id))
+      .returning();
+    if (!row) throw new Error(`Chat '${id}' not found after coauthor lorebook ids update`);
     return this.mapRow(row);
   }
 
@@ -692,6 +708,7 @@ export class ChatStore {
       lastAccessedAt: row.lastAccessedAt,
       loreActivationState: safeParseJson(row.loreActivationStateJson),
       scriptState: safeParseScriptState(row.scriptStateJson),
+      coauthorLorebookIds: parseStringArray(row.coauthorLorebookIdsJson),
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
     };
@@ -716,6 +733,17 @@ function safeParseJson(text: string): Record<string, unknown> {
     return JSON.parse(text || '{}');
   } catch {
     return {};
+  }
+}
+
+/** Parse a JSON column that holds a string array, defending against malformed
+ *  rows (corruption, manual edit). Never throws — falls back to []. */
+function parseStringArray(text: string): string[] {
+  try {
+    const parsed: unknown = JSON.parse(text || '[]');
+    return Array.isArray(parsed) ? parsed.filter((v): v is string => typeof v === 'string') : [];
+  } catch {
+    return [];
   }
 }
 

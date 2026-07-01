@@ -1,0 +1,1 @@
+ALTER TABLE `chats` ADD `coauthor_lorebook_ids_json` text DEFAULT '[]' NOT NULL;

@@ -23,6 +23,7 @@ import {
   regenerateChatMessage,
   renameChat,
   setGreetingIndex,
+  setCoauthorLorebooks,
   selectMessageVariant,
   sendChatMessage,
   setChatPersona,
@@ -122,6 +123,11 @@ export async function renameChatAction(chatId: ChatId, title: string): Promise<v
 
 export async function setGreetingIndexAction(chatId: ChatId, greetingIndex: number): Promise<void> {
   const snapshot = await setGreetingIndex(chatId, greetingIndex);
+  syncSnapshot(snapshot);
+}
+
+export async function setCoauthorLorebooksAction(chatId: ChatId, lorebookIds: string[]): Promise<void> {
+  const snapshot = await setCoauthorLorebooks(chatId, lorebookIds);
   syncSnapshot(snapshot);
 }
 

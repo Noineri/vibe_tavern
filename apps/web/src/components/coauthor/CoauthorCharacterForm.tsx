@@ -63,6 +63,10 @@ import { useCoauthorTurnStore } from "../../stores/coauthor-turn-store.js";
 import type { CoauthorToolActivity } from "../../stores/coauthor-turn-store.js";
 import { useCharacterController } from "../../hooks/use-character-controller.js";
 import { useT } from "../../i18n/context.js";
+import { LinkBindingPopover, type LinkTarget } from "../shared/LinkBindingPopover.js";
+import { listAllLorebooks } from "../../api/lorebook-api.js";
+import type { LorebookRecord } from "../../api/types.js";
+import { setCoauthorLorebooksAction } from "../../stores/api-actions/chat-actions.js";
 
 /**
  * Stable empty array for the turn-store selector fallback. Returning a fresh
@@ -70,6 +74,7 @@ import { useT } from "../../i18n/context.js";
  * check sees a change → infinite re-render loop ("Maximum update depth").
  */
 const EMPTY_ACTIVITIES: CoauthorToolActivity[] = [];
+const EMPTY_LOREBOOK_IDS: string[] = [];
 
 export function CoauthorCharacterForm() {
   const character = useSnapshotStore((s) => s.character);
@@ -106,6 +111,33 @@ function CoauthorCharacterFormInner({ character }: CoauthorCharacterFormInnerPro
   const activities = useCoauthorTurnStore(
     (s) => (chatId ? (s.turnsByChat[chatId] ?? EMPTY_ACTIVITIES) : EMPTY_ACTIVITIES),
   );
+
+  // ── CA-13: lorebook context picker. The lorebooks the user explicitly
+  // bound to THIS co-author chat (right-panel picker), expanded read-only into
+  // the editor prompt on the backend. NOT RP keyword activation — the user
+  // curates which books feed the editor (same shape as the AI-assistant
+  // lorebook-writer's context). Persisted on chats.coauthorLorebookIds.
+  const coauthorLorebookIds = useSnapshotStore((s) => s.activeChat?.coauthorLorebookIds ?? EMPTY_LOREBOOK_IDS);
+  const [allLorebooks, setAllLorebooks] = useState<LorebookRecord[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    void listAllLorebooks().then((rows) => { if (!cancelled) setAllLorebooks(rows); });
+    return () => { cancelled = true; };
+  }, []);
+  // Only enabled books are pickable (disabled books hold no context).
+  const lorebookTargets: LinkTarget[] = useMemo(
+    () => allLorebooks.filter((lb) => lb.enabled).map((lb) => ({ id: lb.id, name: lb.name, avatarAssetId: null })),
+    [allLorebooks],
+  );
+  const lorebookLinks = useMemo(
+    () => coauthorLorebookIds.map((id) => ({ targetType: "lorebook" as const, targetId: id })),
+    [coauthorLorebookIds],
+  );
+  const handleSetLorebookLinks = (next: { targetType: "lorebook"; targetId: string }[]) => {
+    if (!chatId) return;
+    // Wholesale replace — the ids in the picker are the new bound set.
+    void setCoauthorLorebooksAction(brandId<ChatId>(chatId), next.map((l) => l.targetId));
+  };
 
   const form = useForm<BuildCharacterDraft>({
     resolver: zodResolver(buildCharacterDraftSchema),
@@ -355,6 +387,25 @@ function CoauthorCharacterFormInner({ character }: CoauthorCharacterFormInnerPro
         >
           {isSavingCharacter ? t("saving") : t("save")}
         </button>
+      </div>
+
+      {/* CA-13: lorebook context picker. Reuses LinkBindingPopover with ONLY
+          the lorebook section (empty characters/personas/scripts → those
+          sections don't render). The model sees these books' enabled entries as
+          read-only reference in the editor prompt. */}
+      <div className="flex shrink-0 items-center gap-2 border-b border-border/50 bg-surface px-4 py-2">
+        <span className="font-ui text-[10px] font-semibold uppercase tracking-[0.06em] text-t3">{t("coauthor.lorebooks.label")}</span>
+        <LinkBindingPopover
+          links={lorebookLinks}
+          characters={[]}
+          personas={[]}
+          lorebooks={lorebookTargets}
+          onSetLinks={(next) => handleSetLorebookLinks(next as { targetType: "lorebook"; targetId: string }[])}
+          t={t}
+          isMobile={false}
+          tooltipLabel={t("coauthor.lorebooks.add")}
+          emptyLabel={t("coauthor.lorebooks.empty")}
+        />
       </div>
 
       {/* Body: editor surface OR the reviewing overlay (CA-11/CA-12). The editor

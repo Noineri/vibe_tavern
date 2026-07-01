@@ -1,4 +1,4 @@
-import type { ChatId, CharacterId, ChatBranchId, MessageId, ActiveLoreEntry } from "@vibe-tavern/domain";
+import type { ChatId, CharacterId, ChatBranchId } from "@vibe-tavern/domain";
 import type { StoredProviderProfileRecord } from "@vibe-tavern/domain";
 import type { EventBus } from "@vibe-tavern/domain";
 import type { ChatMode } from "@vibe-tavern/domain";
@@ -49,13 +49,15 @@ export interface ChatModeAssembleLoaders {
   /** Canonical `profile.md` text for the character (the edit target). */
   getProfileMdText(characterId: CharacterId): Promise<string>;
   /**
-   * Active lorebook entries for the chat (CA-13), resolved through the same
-   * activation engine + resolver the RP path uses (`listActiveLoreEntries`).
-   * Read-only reference context for the editor — never an edit target. The
-   * closure resolves the chat's active branch internally (like `getMessages`),
-   * so callers don't need a branchId. `recentText` drives keyword scan.
+   * Co-author lorebook context (CA-13): the entries of the lorebooks the user
+   * EXPLICITLY bound to this chat via the right-panel picker, expanded read-only.
+   * NOT RP keyword activation — co-author is an editor, not a roleplay; the
+   * user curates which lorebooks feed the editor the same way the AI-assistant
+   * lorebook-writer does (resolveContext over an explicit id list). The closure
+   * resolves the chat's bound ids + expands enabled entries from enabled books.
+   * Returns {id,title,content}[] — no activation reason / windows / scan-depth.
    */
-  getActiveLoreEntries(chatId: ChatId, recentText: string): Promise<ActiveLoreEntry[]>;
+  getCoauthorLorebookEntries(chatId: ChatId): Promise<Array<{ id: string; title: string; content: string }>>;
 }
 
 /**

@@ -301,5 +301,9 @@ export function createChatRoutes(runtime: ChatRuntimeApi) {
       const body = c.req.valid("json");
       return c.json(await runtime.setGreetingIndex(c.req.param("chatId"), body.greetingIndex));
     })
+    .patch("/api/chats/:chatId/coauthor-lorebooks", zValidator("json", schemas.setCoauthorLorebookIdsSchema), async (c) => {
+      const body = c.req.valid("json");
+      return c.json(await runtime.setCoauthorLorebookIds(c.req.param("chatId"), body.lorebookIds));
+    })
   ;
 }

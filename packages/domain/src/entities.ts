@@ -324,6 +324,10 @@ export interface Chat {
   toolProfileId: ToolProfileId;
   /** @deprecated Greeting selection is now stored as the selected variant on the first assistant message. */
   selectedGreetingIndex: number;
+  /** Co-author mode only (CA-13): lorebook ids the user explicitly bound to
+   *  this chat as read-only editor context (right-panel picker). NOT RP
+   *  keyword activation. Empty for RP chats. */
+  coauthorLorebookIds: string[];
   createdAt: Timestamp;
   updatedAt: Timestamp;
 }

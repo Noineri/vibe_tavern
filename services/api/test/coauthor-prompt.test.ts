@@ -1,7 +1,6 @@
 import { describe, test, expect, mock, beforeEach } from "bun:test";
 import type { ChatModeAssembleInput, ChatModeAssembleLoaders } from "../src/domain/chat/chat-mode-strategy.js";
 import { assembleCoauthorPrompt } from "../src/domain/chat/coauthor-prompt.js";
-import type { ActiveLoreEntry } from "@vibe-tavern/domain";
 import type { Character, Message as DbMessage } from "@vibe-tavern/db";
 
 /**
@@ -16,7 +15,7 @@ function makeLoaders(overrides?: Partial<{
   character: Partial<Character>;
   profileMd: string;
   messages: DbMessage[];
-  loreEntries: ActiveLoreEntry[];
+  loreEntries: Array<{ id: string; title: string; content: string }>;
 }>): ChatModeAssembleLoaders {
   const character: Character = {
     id: "char_test",
@@ -51,7 +50,7 @@ function makeLoaders(overrides?: Partial<{
     getMessages: async () => overrides?.messages ?? [],
     getCharacter: async () => character,
     getProfileMdText: async () => overrides?.profileMd ?? "---\nname: Test\n---\n# PERSONALITY\nA test character.\n",
-    getActiveLoreEntries: async () => overrides?.loreEntries ?? [],
+    getCoauthorLorebookEntries: async () => overrides?.loreEntries ?? [],
   };
 }
 
@@ -141,19 +140,17 @@ describe("assembleCoauthorPrompt", () => {
     expect(result.promptTraceDraft.branchId).toBe("br_1");
   });
 
-  test("CA-13: active lorebook entries render as read-only context and carry into the trace", async () => {
-    const entryA: ActiveLoreEntry = {
-      id: "lore_a" as never,
+  test("CA-13: bound lorebook entries render as read-only reference in the system message", async () => {
+    const entryA = {
+      id: "lore_a",
       title: "The Shattered Crown",
       content: "An ancient crown broken into seven shards, each pulsing with cold light.",
-      activationReason: { kind: "key_match", matchedKeys: ["crown"], matchCount: 1, scanState: "normal" },
-    } as unknown as ActiveLoreEntry;
-    const entryB: ActiveLoreEntry = {
-      id: "lore_b" as never,
+    };
+    const entryB = {
+      id: "lore_b",
       title: "",
       content: "A constant world fact.",
-      activationReason: { kind: "constant" },
-    } as unknown as ActiveLoreEntry;
+    };
     const loaders = makeLoaders({ loreEntries: [entryA, entryB] });
 
     const result = await assembleCoauthorPrompt(makeInput(loaders));
@@ -167,17 +164,14 @@ describe("assembleCoauthorPrompt", () => {
     expect(system).toContain("(untitled)");
     expect(system).toContain("A constant world fact.");
 
-    // Trace carries the activated ids + per-entry detail (id/title/reason).
-    expect(result.prompt.activatedLoreEntries).toEqual(["lore_a", "lore_b"]);
-    expect(result.prompt.activatedLoreDetail).toEqual([
-      { id: "lore_a", title: "The Shattered Crown", reason: entryA.activationReason },
-      { id: "lore_b", title: "", reason: entryB.activationReason },
-    ]);
-    expect(result.promptTraceDraft.activatedLoreEntries).toEqual(["lore_a", "lore_b"]);
-    expect(result.promptTraceDraft.activatedLoreDetail.map((d) => d.id)).toEqual(["lore_a", "lore_b"]);
+    // Co-author does NOT run the activation engine — trace lore fields stay
+    // empty (no fabricated activation reasons for user-picked entries).
+    expect(result.prompt.activatedLoreEntries).toEqual([]);
+    expect(result.prompt.activatedLoreDetail).toEqual([]);
+    expect(result.promptTraceDraft.activatedLoreEntries).toEqual([]);
   });
 
-  test("CA-13: with no active lore the prompt carries no lore section (unchanged)", async () => {
+  test("CA-13: with no lorebooks bound the prompt carries no lore section (unchanged)", async () => {
     const loaders = makeLoaders({ loreEntries: [] });
     const result = await assembleCoauthorPrompt(makeInput(loaders));
     const system = (result.prompt.finalPayload as { messages: Array<{ content: string }> }).messages[0].content;

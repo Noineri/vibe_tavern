@@ -8,17 +8,19 @@
  * Prompt shape (what the model sees, via `prompt.finalPayload.messages` — the
  * only field the executor's `toSdkMessages` reads):
  *   1. system: base editor prompt + active skill + current card (profile.md + greetings)
- *      [+ active lorebook entries as read-only reference, when any are active — CA-13]
+ *      [+ the chat's BOUND lorebook entries as read-only reference, when any are bound — CA-13]
  *   2. user/assistant pairs: the chat's own last-N messages (conversation history)
  *
- * Lore is the ONE non-RP-cascade piece that IS populated (CA-13): active
- * lorebook entries are resolved through the same activation engine + resolver
- * the RP path uses and rendered as read-only reference context (never an edit
- * target — tools propose only profile/greetings). Layers / scripts / memories
- * stay empty; the trace UI simply shows fewer rows (plus lore rows when active).
+ * Lore is NOT RP keyword activation here. Co-author is an editor, not a
+ * roleplay: the user curates which lorebooks feed the editor via the
+ * right-panel picker (the same resolveContext-over-an-explicit-id-list pattern
+ * the AI-assistant lorebook-writer uses), and those books' enabled entries are
+ * rendered into the system message as read-only reference (never an edit
+ * target — tools propose only profile/greetings). The activation-engine trace
+ * fields stay empty; the trace UI simply shows fewer rows.
  */
 
-import type { ChatBranchId, ChatId, ActiveLoreEntry, ActivatedLoreDetail } from "@vibe-tavern/domain";
+import type { ChatBranchId, ChatId, LoreEntryId } from "@vibe-tavern/domain";
 import { brandId } from "@vibe-tavern/domain";
 import type { AssemblePromptResponse } from "@vibe-tavern/domain";
 import type { ChatModeAssembleInput, ChatModeAssembleResult } from "./chat-mode-strategy.js";
@@ -69,10 +71,14 @@ function renderCurrentCard(profileMd: string, character: { firstMessage: string 
   return [`# Current profile.md`, "```yaml", profileMd, "```", "", "# Current greetings", ...greetingLines].join("\n");
 }
 
-/** Render active lorebook entries as read-only reference context (CA-13).
- *  Empty string when none are active — so the section is omitted entirely and
- *  the prompt is unchanged for chats with no lore / no matches. */
-function renderLoreContext(entries: ActiveLoreEntry[]): string {
+/** Co-author lorebook entry as the editor sees it (CA-13): just the fields
+ *  the prompt needs. The loader dedupes + filters enabled books/entries. */
+type CoauthorLoreEntry = { id: string; title: string; content: string };
+
+/** Render the chat's bound lorebook entries as read-only reference context
+ *  (CA-13). Empty string when none are bound — so the section is omitted
+ *  entirely and the prompt is unchanged for chats with no lore bound. */
+function renderLoreContext(entries: CoauthorLoreEntry[]): string {
   if (entries.length === 0) return "";
   const blocks = entries.map((e) => {
     const title = e.title?.trim() ? e.title.trim() : "(untitled)";
@@ -103,14 +109,14 @@ export async function assembleCoauthorPrompt(input: ChatModeAssembleInput): Prom
       ),
   ]);
   // Card state + lorebook context + prompt assets are all independent once
-  // we have the history (skill autodetect + lore keyword scan both read it),
-  // so fan them out together. Lore is read-only reference context (CA-13),
-  // resolved through the SAME activation engine + resolver the RP path uses.
-  const recentText = history.map((h) => h.content).join("\n");
+  // we have the history (skill autodetect reads it), so fan them out together.
+  // Lore is read-only reference (CA-13): the entries of the lorebooks the user
+  // explicitly bound to this chat (right-panel picker) — NOT RP keyword
+  // activation. Co-author is an editor, not a roleplay.
   const skillId = detectSkill(latestUserMessage(history));
   const [profileMd, loreEntries, basePrompt, skillPrompt] = await Promise.all([
     loaders.getProfileMdText(character.id as unknown as import("@vibe-tavern/domain").CharacterId),
-    loaders.getActiveLoreEntries(chatId, recentText),
+    loaders.getCoauthorLorebookEntries(chatId),
     loadPromptAsset(BASE_PROMPT_FILE),
     loadPromptAsset(`coauthor/skills/${skillId}.md`),
   ]);
@@ -135,12 +141,12 @@ export async function assembleCoauthorPrompt(input: ChatModeAssembleInput): Prom
   const prompt: AssemblePromptResponse = {
     layers: [],
     tokenAccounting: {},
-    activatedLoreEntries: loreEntries.map((e) => e.id),
-    activatedLoreDetail: loreEntries.map((e) => ({
-      id: e.id,
-      title: e.title,
-      reason: e.activationReason,
-    })),
+    // Co-author does NOT run the activation engine — no activation trace.
+    // Lore context lives only in the system message (renderLoreContext above);
+    // these trace fields stay empty so the trace UI doesn't fabricate
+    // activation reasons for entries that were picked, not activated.
+    activatedLoreEntries: [],
+    activatedLoreDetail: [],
     scriptInjections: [],
     retrievedMemories: [],
     finalPayload,
@@ -157,12 +163,8 @@ export async function assembleCoauthorPrompt(input: ChatModeAssembleInput): Prom
       presetId: null,
       assembledLayers: [],
       tokenAccounting: {},
-      activatedLoreEntries: loreEntries.map((e) => e.id),
-      activatedLoreDetail: loreEntries.map((e) => ({
-        id: e.id,
-        title: e.title,
-        reason: e.activationReason,
-      })),
+      activatedLoreEntries: [] as LoreEntryId[],
+      activatedLoreDetail: [],
       scriptInjections: [],
       retrievedMemories: [],
       finalPayload,

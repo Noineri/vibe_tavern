@@ -39,6 +39,19 @@ mock.module("../../hooks/use-character-controller.js", () => ({
 	useCharacterController: () => ({ handleSaveCharacter, isSavingCharacter: false }),
 }));
 
+// CA-13: the lorebook picker (LinkBindingPopover) pulls in CustomTooltip,
+// which needs a Radix TooltipProvider context irrelevant to the form's
+// behaviours. Passthrough it, mirroring VibeMdView.test.tsx.
+mock.module("../shared/Tooltip.js", () => ({
+	CustomTooltip: ({ children }: { children: React.ReactNode }) => children,
+	TooltipProvider: ({ children }: { children: React.ReactNode }) => children,
+}));
+// The picker fetches the lorebook list on mount; stub it empty so the test
+// never hits the network.
+mock.module("../../api/lorebook-api.js", () => ({
+	listAllLorebooks: () => Promise.resolve([]),
+}));
+
 // chat-store: spread the REAL module first (preserves every other export for
 // any co-running test file), override ONLY useIsSending with a controllable
 // value. See AGENTS.md mock.module gotcha.

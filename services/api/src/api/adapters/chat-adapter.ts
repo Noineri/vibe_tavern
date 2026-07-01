@@ -58,6 +58,10 @@ export class ChatAdapter implements ChatRuntimeApi {
 		return this.sessionRuntime.setGreetingIndex(brandId<ChatId>(chatId), greetingIndex);
 	};
 
+	setCoauthorLorebookIds = async (chatId: string, lorebookIds: string[]): Promise<VariantResponse> => {
+		return this.sessionRuntime.setCoauthorLorebookIds(brandId<ChatId>(chatId), lorebookIds);
+	};
+
 	setChatPersona = (chatId: string, personaId: string) =>
 		this.sessionRuntime.persona.setChatPersona(brandId<ChatId>(chatId), personaId);
 

@@ -726,16 +726,33 @@ import { scanSillyTavernDirectory as scanST, importSillyTavernDirectory as impor
 				return char;
 			},
 			getProfileMdText: (characterId) => this.stores.characters.getProfileMdText(characterId),
-			getActiveLoreEntries: async (chatId, recentText) => {
-				// Resolve the active branch internally (mirrors getMessages) so the
-				// strategy stays branch-agnostic. Delegates to the SAME resolver the
-				// RP path uses — full activation engine (keywords/constant/sticky,
-				// cooldown, groups, recursion, token budget) with persisted state.
+			getCoauthorLorebookEntries: async (chatId) => {
+				// CA-13: expand the lorebooks the user EXPLICITLY bound to this chat
+				// (right-panel picker → chats.coauthorLorebookIds) into their enabled
+				// entries. NOT RP keyword activation — mirrors the AI-assistant
+				// lorebook-writer's resolveContext path: the user curates which books
+				// feed the editor. Disabled books / entries are filtered out.
 				const chat = await this.stores.chats.getById(chatId);
-				if (!chat) return [];
-				const branchId = chat.activeBranchId as ChatBranchId | null;
-				if (!branchId) return [];
-				return this.resolver.listActiveLoreEntries({ chatId, branchId, recentText });
+				if (!chat || chat.coauthorLorebookIds.length === 0) return [];
+				const expanded = await Promise.all(
+					chat.coauthorLorebookIds.map(async (lbId) => {
+						const lb = await this.stores.lorebooks.getLorebook(lbId);
+						if (!lb?.enabled) return [];
+						const entries = await this.stores.lorebooks.listEntries(lbId);
+						return entries
+							.filter((e) => e.enabled)
+							.map((e) => ({ id: e.id, title: e.title, content: e.content }));
+					}),
+				);
+				// Dedupe by id (a book bound twice shouldn't double-inject).
+				const seen = new Set<string>();
+				const out: Array<{ id: string; title: string; content: string }> = [];
+				for (const e of expanded.flat()) {
+					if (seen.has(e.id)) continue;
+					seen.add(e.id);
+					out.push(e);
+				}
+				return out;
 			},
 		};
 	}
@@ -851,6 +868,15 @@ import { scanSillyTavernDirectory as scanST, importSillyTavernDirectory as impor
 			}
 		}
 		await this.stores.chats.setSelectedGreetingIndex(chatId, 0);
+		return this.buildVariantResponse(chatId, { activeChat: true });
+	}
+
+	/** CA-13: replace the co-author chat's bound lorebook ids (right-panel
+	 *  picker). Wholesale replace, then return the fresh chat row so the
+	 *  frontend picker reflects the persisted state. No message/variant
+	 *  side-effects — this is a chat-row config update, like setChatPersona. */
+	async setCoauthorLorebookIds(chatId: ChatId, lorebookIds: string[]): Promise<VariantResponse> {
+		await this.stores.chats.setCoauthorLorebookIds(chatId, lorebookIds);
 		return this.buildVariantResponse(chatId, { activeChat: true });
 	}
 }

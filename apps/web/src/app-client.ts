@@ -52,6 +52,7 @@ export {
   clearChat,
   renameChat,
   setGreetingIndex,
+  setCoauthorLorebooks,
   setChatPersona,
   setChatPromptPreset,
   sendChatMessage,

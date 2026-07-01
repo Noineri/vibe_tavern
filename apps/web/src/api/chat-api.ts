@@ -64,6 +64,12 @@ export async function setGreetingIndex(chatId: ChatId, greetingIndex: number): P
   return normalizeSnapshot(data);
 }
 
+export async function setCoauthorLorebooks(chatId: ChatId, lorebookIds: string[]): Promise<AppSnapshot> {
+  const response = await client.api.chats[":chatId"]["coauthor-lorebooks"].$patch({ param: { chatId }, json: { lorebookIds } });
+  const data = await unwrapRpc<AppSnapshot>(response);
+  return normalizeSnapshot(data);
+}
+
 export async function setChatPersona(chatId: ChatId, personaId: string): Promise<AppSnapshot> {
   const response = await client.api.chats[":chatId"]["set-persona"].$post({ param: { chatId }, json: { personaId } });
   const data = await unwrapRpc<AppSnapshot>(response);

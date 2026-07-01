@@ -108,6 +108,7 @@ export interface ChatRuntimeApi {
 	clearChat: (chatId: string) => Promise<ChatCreateResponse>;
 	renameChat: (chatId: string, title: string) => Promise<ChatListResponse>;
 	setGreetingIndex: (chatId: string, greetingIndex: number) => Promise<VariantResponse>;
+	setCoauthorLorebookIds: (chatId: string, lorebookIds: string[]) => Promise<VariantResponse>;
 	setChatPersona: (chatId: string, personaId: string) => Promise<ConfigPatchResponse>;
 	setChatPromptPreset: (chatId: string, promptPresetId: string) => Promise<ConfigPatchResponse>;
 

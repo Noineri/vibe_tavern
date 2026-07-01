@@ -9,6 +9,7 @@ export {
   editMessageSchema,
   renameChatSchema,
   setGreetingIndexSchema,
+  setCoauthorLorebookIdsSchema,
   renameBranchSchema,
   coauthorApplySchema,
   coauthorCorrectionSchema,
