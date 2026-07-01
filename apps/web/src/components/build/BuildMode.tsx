@@ -23,6 +23,7 @@ import { useChatMeta } from "../../stores/chat-selectors.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
 import { useChatStore, useTraceHistory, type TraceHistoryStatus } from "../../stores/index.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
+import { characterDefaults } from "../../lib/character-draft.js";
 
 export type BuildTab = string;
 
@@ -115,27 +116,6 @@ export function BuildMode() {
     }}
     hasAvatar={!!(charData.avatarExt || charData.avatarFullAssetId || charData.avatarAssetId)}
   />;
-}
-
-function characterDefaults(character: AppCharacter): BuildCharacterDraft {
-  return {
-    name: character.name,
-    description: character.description,
-    firstMessage: character.firstMessage || "",
-    mesExample: character.mesExample || "",
-    mesExampleMode: (character.mesExampleMode as "always" | "once" | "depth") || "always",
-    mesExampleDepth: character.mesExampleDepth ?? 4,
-    scenario: character.scenario,
-    personalitySummary: character.personalitySummary || "",
-    systemPrompt: character.systemPrompt,
-    alternateGreetings: character.alternateGreetings || [],
-    postHistoryInstructions: character.postHistoryInstructions || "",
-    creatorNotes: character.creatorNotes || "",
-    depthPrompt: character.depthPrompt || "",
-    depthPromptDepth: character.depthPromptDepth ?? 4,
-    depthPromptRole: character.depthPromptRole || "system",
-    tags: character.tags || [],
-  };
 }
 
 interface BuildModeInnerProps {

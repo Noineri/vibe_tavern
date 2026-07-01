@@ -1,15 +1,15 @@
 import { InputArea } from "../chat/InputArea.js";
 import { MessageList } from "../chat/MessageList.js";
 import { QueueManager } from "../chat/QueueManager.js";
+import { CoauthorCharacterForm } from "./CoauthorCharacterForm.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
-import { useT } from "../../i18n/context.js";
 
 /**
  * Co-Author surface — the third AppShell surface (alongside PlayMode / BuildMode),
- * selected by `activeChat.mode === 'coauthor'` (see resolveShellSurface). It reuses
- * the RP chat shell (MessageList + InputArea) verbatim on the left; the right half
- * is the diff panel that shows the canonical document with a green/red overlay of
- * the turn's proposed edits (CA-10). Until CA-10 lands, the panel is a placeholder.
+ * selected by `activeChat.mode === 'coauthor'`. It reuses the RP chat shell
+ * (MessageList + InputArea) verbatim on the left; the right half is the LIVE
+ * co-author editor (CA-10): a writable MD character form the user and the AI
+ * co-author in the same document. The editor is locked during the AI's turn.
  *
  * The chat shell is NOT duplicated — CoauthorMode composes the same MessageList /
  * QueueManager / InputArea components PlayMode uses. Mode differences live in the
@@ -17,11 +17,11 @@ import { useT } from "../../i18n/context.js";
  * in a bespoke layout. Mirrors the backend design where co-author is just a chat
  * with a different mode.
  *
- * Mobile (CA-14) will collapse the right panel into a `[Chat] [Doc]` tab bar; until
- * then the panel is desktop-only (`hidden lg:flex`) and mobile renders chat-only.
+ * Mobile (CA-14) will collapse the right panel into a `[Chat] [Doc]` tab bar;
+ * until then the editor panel is desktop-only (`hidden lg:flex`) and mobile
+ * renders chat-only.
  */
 export function CoauthorMode() {
-  const { t } = useT();
   // key={activeScope} forces MessageList to remount on chat/branch switch, so
   // Virtuoso's initialTopMostItemIndex re-runs and pins to bottom natively on mount.
   // Same rationale as PlayMode.
@@ -41,13 +41,10 @@ export function CoauthorMode() {
           <InputArea />
         </div>
       </div>
-      {/* Right: diff panel (CA-10 target). Placeholder until CA-10 lands. Desktop-only for V1. */}
-      <aside className="hidden w-[420px] shrink-0 flex-col border-l border-border/50 bg-surface lg:flex">
-        <div className="flex flex-1 items-center justify-center p-6 text-center">
-          <p className="max-w-[280px] font-ui text-[0.9rem] leading-relaxed text-t2">
-            {t("coauthor.diff.placeholder")}
-          </p>
-        </div>
+      {/* Right: the live co-author MD editor (CA-10). Desktop-only for V1; mobile
+          gets a [Chat][Doc] tab bar in CA-14. */}
+      <aside className="hidden w-[460px] shrink-0 flex-col border-l border-border/50 bg-surface lg:flex">
+        <CoauthorCharacterForm />
       </aside>
     </div>
   );
