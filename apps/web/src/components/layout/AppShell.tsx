@@ -22,6 +22,7 @@ import { Rail } from "./Rail.js";
 import { TopBar } from "./TopBar.js";
 import { PlayMode } from "../play/PlayMode.js";
 import { BuildMode } from "../build/BuildMode.js";
+import { CoauthorMode } from "../coauthor/CoauthorMode.js";
 import { ContextMemoryModal } from "../modals/ContextMemoryModal.js";
 import { CreateCharacterModal } from "../modals/CreateCharacterModal.js";
 import { PersonaModal } from "../modals/PersonaModal.js";
@@ -34,6 +35,7 @@ import { MobileSettings } from "../settings/popovers/MobileSettings.js";
 import { MobileAccessModal } from "../modals/MobileAccessModal.js";
 import { AvatarPanel } from "../settings/popovers/AvatarPanel.js";
 import type { TweaksSettings } from "../../lib/local-storage.js";
+import { resolveShellSurface } from "./app-shell-types.js";
 
 interface AppShellProps {
   tweaksSettings: TweaksSettings;
@@ -146,9 +148,6 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
   const contextUsed = activePromptTrace?.tokenAccounting?.total ?? 0;
   const contextLimit = provider.activeProviderProfile?.contextBudget ?? 0;
 
-  const isPlayMode = mode === "play";
-  // canUseLiveApi derived above
-
   let shellSurface: React.ReactNode;
 
   if (!hasActiveSnapshot && !wizardVisible) {
@@ -218,10 +217,15 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
       </div>
     );
     }
-  } else if (isPlayMode) {
-    shellSurface = <PlayMode />;
   } else {
-    shellSurface = <BuildMode />;
+    // Surface derivation: co-author keys off the active chat's mode (a property
+    // of the chat), not the play/build navigation; RP chats fall back to the
+    // navigation mode. See resolveShellSurface in app-shell-types.
+    const surface = resolveShellSurface(activeChat?.mode, mode);
+    shellSurface =
+      surface === "coauthor" ? <CoauthorMode /> :
+      surface === "play" ? <PlayMode /> :
+      <BuildMode />;
   }
 
   // AvatarPanel shows the full-size original image (for zoom/pan preview).
