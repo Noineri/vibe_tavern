@@ -19,6 +19,7 @@ function snapshot(id: string, personaName = "Persona"): AppSnapshot {
         characterName: "Character",
         subtitle: "",
         activeBranchLabel: "main",
+        mode: "rp",
         messageCount: 0,
         lastMessageAt: "2026-01-01T00:00:00.000Z",
         updatedAt: "2026-01-01T00:00:00.000Z",

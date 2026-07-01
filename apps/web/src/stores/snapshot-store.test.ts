@@ -65,7 +65,7 @@ function makeMessage(id: string, content = `msg ${id}`): AppMessage {
 /** A full snapshot seeding the store with a known character + messages. */
 function fullSeed(): AppSnapshot {
   return {
-    chats: [{ id: "chat-1", title: "Chat 1", characterId: "c1", characterName: "Char c1", subtitle: "", activeBranchLabel: "main", messageCount: 2, updatedAt: "2026-01-01T00:00:00.000Z" }],
+    chats: [{ id: "chat-1", title: "Chat 1", characterId: "c1", characterName: "Char c1", subtitle: "", activeBranchLabel: "main", mode: "rp", messageCount: 2, updatedAt: "2026-01-01T00:00:00.000Z" }],
     allCharacters: [],
     activeChat: { id: "chat-1", title: "Chat 1", characterId: "c1" } as unknown as AppSnapshot["activeChat"],
     activeBranch: { id: "b1", chatId: "chat-1", label: "main" } as unknown as AppSnapshot["activeBranch"],
@@ -238,7 +238,7 @@ describe("ingestSnapshot — dedup / reference stability (Wave B2)", () => {
 
     const sameChat = {
       id: "chat-1", title: "Chat 1", characterId: "c1", characterName: "Char c1",
-      subtitle: "", activeBranchLabel: "main", messageCount: 2, updatedAt: "2026-01-01T00:00:00.000Z",
+      subtitle: "", activeBranchLabel: "main", mode: "rp", messageCount: 2, updatedAt: "2026-01-01T00:00:00.000Z",
     };
     useSnapshotStore.getState().ingestSnapshot({ chats: [sameChat] } as AppSnapshot);
     expect(useSnapshotStore.getState().chatsById["chat-1"]).toBe(chatBefore); // SAME ref

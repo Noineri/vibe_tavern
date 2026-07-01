@@ -806,6 +806,7 @@ import { scanSillyTavernDirectory as scanST, importSillyTavernDirectory as impor
 			characterName,
 			subtitle,
 			activeBranchLabel: chatState.branch.label,
+			mode: chat.mode,
 			messageCount,
 			lastMessageAt,
 			updatedAt: chat.updatedAt,

@@ -25,7 +25,7 @@
  * row types stay backend-side and import these types back.
  */
 
-import type { CharacterId, ChatId, ModelSettingsOverlay, PronounForms } from "@vibe-tavern/domain";
+import type { CharacterId, ChatId, ChatMode, ModelSettingsOverlay, PronounForms } from "@vibe-tavern/domain";
 
 // ─── Provider ──────────────────────────────────────────────────────────
 
@@ -179,6 +179,8 @@ export interface ChatListItem {
 	characterName: string;
 	subtitle: string;
 	activeBranchLabel: string;
+	/** Chat mode — drives the sidebar grouping (rp chats vs co-author chats) and the AppShell surface derivation. */
+	mode: ChatMode;
 	messageCount: number;
 	/** ISO timestamp of the most recent message in the active branch; falls back to `updatedAt` when the branch is empty. Drives the "recent" sort for chats and characters. */
 	lastMessageAt: string;
