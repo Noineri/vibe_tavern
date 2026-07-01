@@ -1,8 +1,9 @@
 import { bootstrapApp, fetchChat, listPersonas } from "../../app-client.js";
 import type { AppSnapshot, AppCharacterEntry, PersonaRecord, UiSettingsRecord } from "../../app-client.js";
-import type { ChatId, PromptPresetDto } from "@vibe-tavern/domain";
+import type { ChatId, ChatMode, PromptPresetDto } from "@vibe-tavern/domain";
 import { useChatStore } from "../chat-store.js";
 import { useSnapshotStore } from "../snapshot-store.js";
+import { useNavigationStore } from "../navigation-store.js";
 import { create } from "zustand";
 
 export interface BootstrapData {
@@ -82,8 +83,41 @@ export async function fetchBootstrapAction(options?: { silent?: boolean; skipSna
     if (boot.initialChatId && !useChatStore.getState().activeChatId) {
       useChatStore.getState().setActiveChatId(boot.initialChatId);
     }
+    // Reconcile nav mode with the now-active chat. NavigationStore.mode is not
+    // persisted, but the active chat's `mode` row survives reload — so after a
+    // reload, or any global bootstrap, mode must be resynced or a co-author chat
+    // would render the play/build surface while mode stayed stale. See CA-8b.2.
+    reconcileNavModeFromChat(useSnapshotStore.getState().activeChat);
   } finally {
     if (!options?.silent) useBootstrapStore.setState({ isLoading: false });
+  }
+}
+
+/**
+ * Reconcile NavigationStore.mode with the active chat's mode. Called after any
+ * active-chat transition (create / switch / bootstrap). NavigationStore is NOT
+ * persisted, but the active chat's `mode` row is — so on reload, or whenever the
+ * active chat changes, mode must be resynced or a co-author chat would render
+ * the wrong surface (play/build) while NavigationStore.mode stayed stale.
+ *
+ * Rules:
+ *  - activeChat.mode === 'coauthor' → mode = 'coauthor' (the co-author shell).
+ *  - otherwise (RP chat) → if currently 'coauthor', fall back to 'play' so an
+ *    RP chat opened from inside co-author exits the co-author shell; if already
+ *    play/build, leave it untouched (don't clobber a deliberate build view).
+ *
+ * Takes the active chat as an argument rather than reading the snapshot store,
+ * so each caller owns which snapshot's activeChat is authoritative (the one it
+ * just created / switched to / ingested).
+ */
+export function reconcileNavModeFromChat(
+  activeChat: { mode?: ChatMode } | undefined | null,
+): void {
+  const nav = useNavigationStore.getState();
+  if (activeChat?.mode === "coauthor") {
+    if (nav.mode !== "coauthor") nav.setMode("coauthor");
+  } else if (nav.mode === "coauthor") {
+    nav.setMode("play");
   }
 }
 
