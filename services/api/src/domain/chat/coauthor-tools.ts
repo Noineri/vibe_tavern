@@ -24,25 +24,16 @@
 import { tool } from "ai";
 import { z } from "zod";
 import { parseProfileMd, serializeProfileMd } from "@vibe-tavern/db";
+import type { CoauthorTarget, CoauthorToolOutput } from "@vibe-tavern/api-contracts";
+
+// Re-export so existing internal import sites (strategy, tests) are unaffected.
+export type { CoauthorTarget, CoauthorToolOutput };
 
 // ─── Output contract ───────────────────────────────────────────────────────
 
-/** Where a proposed edit lands. Drives which frontend surface shows the diff. */
-export type CoauthorTarget = "profile" | "greeting";
-
-/** Uniform `execute()` return shape across all co-author tools. */
-export interface CoauthorToolOutput {
-  /** Which surface this proposal targets ("profile" for the card body, "greeting" for a greeting slot). */
-  target: CoauthorTarget;
-  /** Greeting index the proposal is for. Only set by greeting tools (0 = firstMessage, 1+ = alternateGreetings). */
-  greetingIndex?: number;
-  /** Whether this proposal ADDS a new greeting slot (vs replacing an existing one). */
-  isAdd?: boolean;
-  /** The proposed content: full profile.md text for `edit_profile`, a single greeting string for greeting tools. */
-  proposed: string;
-  /** One-line "commit message" the model supplies; rendered above the Apply button. */
-  summary: string;
-}
+// `CoauthorTarget` and `CoauthorToolOutput` are now defined in
+// `@vibe-tavern/api-contracts` (the wire contract shared with the frontend —
+// CA-9.2). See the import + re-export at the top of this file.
 
 // ─── Validation helpers ────────────────────────────────────────────────────
 

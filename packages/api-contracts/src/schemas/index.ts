@@ -12,8 +12,10 @@ export {
   renameBranchSchema,
   coauthorApplySchema,
   coauthorCorrectionSchema,
+  coauthorTargetSchema,
+  coauthorToolOutputSchema,
 } from "./chat-schema.js";
-export type { CoauthorApplyRequest, CoauthorCorrection } from "./chat-schema.js";
+export type { CoauthorApplyRequest, CoauthorCorrection, CoauthorToolOutput, CoauthorTarget } from "./chat-schema.js";
 export { regenerateOverrideSchema } from "./chat-regenerate-schema.js";
 export type { RegenerateOverride } from "./chat-regenerate-schema.js";
 export {

@@ -58,6 +58,31 @@ export const coauthorApplySchema = z.object({
 export type CoauthorApplyRequest = z.infer<typeof coauthorApplySchema>;
 
 /**
+ * Where a co-author proposed edit lands. Drives which frontend surface shows
+ * the diff (the profile body vs a greeting slot).
+ */
+export const coauthorTargetSchema = z.enum(["profile", "greeting"]);
+export type CoauthorTarget = z.infer<typeof coauthorTargetSchema>;
+
+/**
+ * The `output` payload of a co-author `tool-result` SSE event (CA-6/CA-9). The
+ * backend tool `execute()` returns this shape; it crosses the wire verbatim as
+ * the `output` field of the `tool-result` event. The frontend renders it as a
+ * collapsible activity card (summary label + mini-diff) and aggregates the
+ * turn's outputs into a {@link CoauthorApplyRequest} on Apply (CA-11). The
+ * backend canonical definition lives in `services/api/.../coauthor-tools.ts`
+ * and imports this type — single source of truth for the wire shape.
+ */
+export const coauthorToolOutputSchema = z.object({
+  target: coauthorTargetSchema,
+  greetingIndex: z.number().int().min(0).optional(),
+  isAdd: z.boolean().optional(),
+  proposed: z.string(),
+  summary: z.string(),
+});
+export type CoauthorToolOutput = z.infer<typeof coauthorToolOutputSchema>;
+
+/**
  * A backend-applied correction during Co-Author Apply (CA-7 R3). Returned to the
  * frontend so the user is notified (not silently masked) when the model's
  * proposal would have lost data — e.g. an empty `name` restored from the

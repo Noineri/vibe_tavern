@@ -17,6 +17,8 @@ import { useProviderDataStore } from "../stores/provider-data-store.js";
 import { StreamingReveal } from "../lib/streaming-reveal.js";
 import { useSnapshotStore } from "../stores/snapshot-store.js";
 import { useTraceHistoryStore } from "../stores/trace-history-store.js";
+import { useCoauthorTurnStore } from "../stores/coauthor-turn-store.js";
+import { coauthorToolOutputSchema } from "@vibe-tavern/api-contracts";
 import {
   fetchChatAction,
   sendChatMessageAction,
@@ -184,6 +186,10 @@ export function useChatController(): ChatControllerActions {
       onChunk: (delta: string) => void;
       onReasoningChunk?: (delta: string) => void;
       onReasoningDone?: (info: { durationMs: number | null; redacted: boolean }) => void;
+      onToolCall?: (info: { toolCallId: string; toolName: string; args: unknown }) => void;
+      onToolInputStart?: (info: { toolCallId: string; toolName: string }) => void;
+      onToolInputDelta?: (info: { toolCallId: string; delta: string }) => void;
+      onToolResult?: (info: { toolCallId: string; toolName: string; output: unknown; isError: boolean }) => void;
     }) => Promise<{ finishReason: string; usage?: Record<string, number> }>,
     pendingUserContent?: string | null,
     pendingAttachments?: import("@vibe-tavern/domain").Attachment[],
@@ -197,6 +203,10 @@ export function useChatController(): ChatControllerActions {
     const controller = useChatStore.getState().startGeneration(chatId, pendingUserContent, pendingAttachments, streamingMessageId);
     const store = useChatStore.getState();
     store.setDraft("");
+
+    // Start the co-author turn fresh: drop the previous turn's tool activities.
+    // No-op for RP chats (they never emit tool events, so the store stays empty).
+    useCoauthorTurnStore.getState().clearTurn(chatId);
 
     // Create a new StreamingReveal for this generation
     const reveal = new StreamingReveal(chatId);
@@ -216,6 +226,39 @@ export function useChatController(): ChatControllerActions {
         },
         onReasoningDone: () => {
           // Reasoning complete — text stays until snapshot refresh
+        },
+        onToolCall: (info) => {
+          useCoauthorTurnStore.getState().upsertActivity(chatId, {
+            toolCallId: info.toolCallId,
+            toolName: info.toolName,
+            status: "streaming",
+          });
+        },
+        onToolInputStart: (info) => {
+          useCoauthorTurnStore.getState().upsertActivity(chatId, {
+            toolCallId: info.toolCallId,
+            toolName: info.toolName,
+            status: "streaming",
+          });
+        },
+        onToolResult: (info) => {
+          // Narrow the opaque `output` to the CoauthorToolOutput wire contract; a
+          // malformed payload (or an explicit tool error) marks the card as error.
+          const parsed = coauthorToolOutputSchema.safeParse(info.output);
+          useCoauthorTurnStore.getState().upsertActivity(chatId, {
+            toolCallId: info.toolCallId,
+            toolName: info.toolName,
+            status: info.isError || !parsed.success ? "error" : "done",
+            ...(parsed.success
+              ? {
+                  summary: parsed.data.summary,
+                  target: parsed.data.target,
+                  proposed: parsed.data.proposed,
+                  greetingIndex: parsed.data.greetingIndex,
+                  isAdd: parsed.data.isAdd,
+                }
+              : {}),
+          });
         },
       });
 
