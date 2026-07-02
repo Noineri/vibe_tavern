@@ -167,6 +167,26 @@ export const chats = sqliteTable('chats', {
   modeIdx: index('idx_chats_mode').on(table.mode),
 }));
 
+// ─── coauthorModules ───────────────────────────────────────────────────────────
+// User-created Co-Author modules (CS-24). Seed modules are code-defined in the
+// registry (read-only); this table holds only user-authored modules. Merged at
+// resolve time: registry concatenates seed defs + rows from here. `basePrompt`
+// is inline text (never a file path) so the editor works on one field for both
+// built-in and user modules. `openingMessage` is seeded as the chat's first
+// assistant turn on chat birth (CS-29).
+export const coauthorModules = sqliteTable('coauthor_modules', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  description: text('description').notNull().default(''),
+  basePrompt: text('base_prompt').notNull(),
+  openingMessage: text('opening_message').notNull().default(''),
+  skillIdsJson: text('skill_ids_json').notNull().default('[]'),
+  toolSetJson: text('tool_set_json').notNull().default('{}'),
+  maxSteps: integer('max_steps').notNull().default(5),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+});
+
 // ─── lorebooks ────────────────────────────────────────────────────────────────
 
 export const lorebooks = sqliteTable('lorebooks', {

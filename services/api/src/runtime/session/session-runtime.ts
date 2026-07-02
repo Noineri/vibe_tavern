@@ -762,6 +762,12 @@ import { scanSillyTavernDirectory as scanST, importSillyTavernDirectory as impor
 			getChatSummaries: async (chatId, branchId) => {
 				return this.stores.chatSummaries.listByChatBranch(chatId, branchId);
 			},
+			getCoauthorUserModules: async () => {
+				// CS-24: user-created modules (editable). Seed modules never come from
+				// here — the registry loads those from disk. The row carries
+				// createdAt/updatedAt which the registry's toUserModule drops.
+				return this.stores.coauthorModules.list();
+			},
 		};
 	}
 

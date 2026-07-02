@@ -70,6 +70,14 @@ export interface ChatModeAssembleLoaders {
     summarizedFrom: number;
     summarizedTo: number;
   }>>;
+  /**
+   * User-created Co-Author modules (CS-24), as stored rows WITHOUT `isBuiltIn`
+   * (the registry stamps that during the seed+user merge). Returned only when
+   * the chat's bound module is NOT a seed id — callers gate on
+   * `isSeedModule(chat.coauthorModuleId)` to skip the DB read for the common
+   * built-in case. Seed modules never come from here.
+   */
+  getCoauthorUserModules(): Promise<Array<Omit<import("@vibe-tavern/api-contracts").CoauthorModule, "isBuiltIn">>>;
 }
 
 /**

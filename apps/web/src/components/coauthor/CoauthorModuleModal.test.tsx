@@ -36,19 +36,23 @@ const SEED_MODULES: CoauthorModule[] = [
 		id: "default",
 		name: "Default Co-Author",
 		description: "A balanced co-author module.",
-		basePromptFile: "coauthor/modules/default.md",
+		basePrompt: "You are a co-author assistant. ...",
+		openingMessage: "I'm ready to help you build {{char}}.",
 		skillIds: ["general-writing"],
 		toolSet: { edit_profile: true, edit_personality: true, edit_scenario: true, edit_examples: true, edit_greeting: true, add_alt_greeting: true, edit_alt_greeting: true },
 		maxSteps: 5,
+		isBuiltIn: true,
 	},
 	{
 		id: "profile-editor",
 		name: "Profile Editor",
 		description: "Refines character profiles.",
-		basePromptFile: "coauthor/modules/profile-editor.md",
+		basePrompt: "You focus on profiles. ...",
+		openingMessage: "I'll focus on {{char}}'s profile.",
 		skillIds: ["profile-analysis"],
 		toolSet: { edit_profile: true, edit_personality: true },
 		maxSteps: 3,
+		isBuiltIn: true,
 	},
 ];
 const setCoauthorModuleAction = mock<(chatId: string, moduleId: string | null) => Promise<void>>(
@@ -146,7 +150,7 @@ describe("CoauthorModuleModal", () => {
 		const { getByText } = render(<CoauthorModuleModal />);
 		await waitFor(() => expect(getByText("Profile Editor")).toBeTruthy());
 		fireEvent.click(getByText("Profile Editor"));
-		expect(getByText("coauthor/modules/profile-editor.md")).toBeTruthy();
+		expect(getByText("You focus on profiles. ...")).toBeTruthy();
 		expect(getByText("profile-analysis")).toBeTruthy();
 		expect(getByText("edit_profile")).toBeTruthy();
 		expect(getByText("3")).toBeTruthy();

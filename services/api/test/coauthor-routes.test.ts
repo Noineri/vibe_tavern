@@ -13,10 +13,12 @@ describe("CS-12 Coauthor module routes", () => {
 				id: "test",
 				name: "Test Module",
 				description: "",
-				basePromptFile: "default",
+				basePrompt: "You are a test module.",
+				openingMessage: "",
 				skillIds: [],
 				toolSet: {},
 				maxSteps: 5,
+				isBuiltIn: false,
 			}],
 		});
 		const app = createChatRoutes(runtime);
@@ -27,10 +29,12 @@ describe("CS-12 Coauthor module routes", () => {
 				id: "test",
 				name: "Test Module",
 				description: "",
-				basePromptFile: "default",
+				basePrompt: "You are a test module.",
+				openingMessage: "",
 				skillIds: [],
 				toolSet: {},
 				maxSteps: 5,
+				isBuiltIn: false,
 			}]
 		});
 	});

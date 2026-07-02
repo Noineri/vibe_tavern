@@ -17,6 +17,7 @@ function makeLoaders(overrides?: Partial<{
   profileMd: string;
   messages: DbMessage[];
   loreEntries: Array<{ id: string; title: string; content: string }>;
+  userModules: Array<Omit<import("@vibe-tavern/api-contracts").CoauthorModule, "isBuiltIn">>;
 }>): ChatModeAssembleLoaders {
   const character: Character = {
     id: "char_test",
@@ -54,6 +55,7 @@ function makeLoaders(overrides?: Partial<{
     getProfileMdText: async () => overrides?.profileMd ?? "---\nname: Test\n---\n# PERSONALITY\nA test character.\n",
     getCoauthorLorebookEntries: async () => overrides?.loreEntries ?? [],
     getChatSummaries: async () => [],
+    getCoauthorUserModules: async () => overrides?.userModules ?? [],
   };
 }
 

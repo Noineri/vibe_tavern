@@ -77,5 +77,12 @@ export {
   coauthorModuleSchema,
   coauthorModuleListSchema,
   setCoauthorModuleSchema,
+  coauthorModuleCreateSchema,
+  coauthorModuleUpdateSchema,
 } from "./coauthor-module.js";
-export type { CoauthorModule, CoauthorToolSet } from "./coauthor-module.js";
+export type {
+  CoauthorModule,
+  CoauthorToolSet,
+  CoauthorModuleCreate,
+  CoauthorModuleUpdate,
+} from "./coauthor-module.js";

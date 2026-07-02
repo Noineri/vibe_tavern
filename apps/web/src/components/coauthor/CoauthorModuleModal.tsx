@@ -181,7 +181,7 @@ function ModulePreview({ module, t }: ModulePreviewProps) {
 
       <dl className="flex flex-col gap-3">
         <PreviewRow label={t("coauthor.module.base_prompt")}>
-          <code className="rounded bg-s2 px-1.5 py-0.5 font-mono text-[11px] text-t2">{module.basePromptFile}</code>
+          <p className="line-clamp-3 max-h-16 overflow-hidden font-mono text-[11px] leading-relaxed text-t2">{module.basePrompt}</p>
         </PreviewRow>
 
         <PreviewRow label={t("coauthor.module.max_steps")}>

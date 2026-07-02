@@ -57,6 +57,13 @@
       "when": 1783008549840,
       "tag": "0007_tearful_roland_deschain",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1783025025478,
+      "tag": "0008_wise_mantis",
+      "breakpoints": true
     }
   ]
 }

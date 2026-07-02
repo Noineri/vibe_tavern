@@ -28,7 +28,7 @@ import { buildCoauthorTools, COAUTHOR_MAX_STEPS } from "./coauthor-tools.js";
 import { loadPromptAsset } from "../../shared/prompt-asset-loader.js";
 import { estimateTokens, findSafeCompactionBoundary, setModelHint } from "@vibe-tavern/prompt-pipeline";
 import type { ToolCallPart, ToolResultPart } from "ai";
-import { getCoauthorModule } from "../coauthor/modules/module-registry.js";
+import { getCoauthorModule, isSeedModule } from "../coauthor/modules/module-registry.js";
 
 /** How many of the chat's most recent messages to include as conversation history. */
 const HISTORY_LIMIT = 20;
@@ -170,15 +170,22 @@ export async function assembleCoauthorPrompt(input: ChatModeAssembleInput): Prom
   // Lore is read-only reference (CA-13): the entries of the lorebooks the user
   // explicitly bound to this chat (right-panel picker) — NOT RP keyword
   // activation. Co-author is an editor, not a roleplay.
-  const module = getCoauthorModule(chat.coauthorModuleId);
+  // Resolve the active module. Seed modules (the common case) need no DB read —
+  // only user-created modules do, so gate the loader call on isSeedModule.
+  // basePrompt is now INLINE on the module (CS-24); the old loadPromptAsset
+  // call for the base prompt is gone (skill prompts still load from disk).
+  const userModules = isSeedModule(chat.coauthorModuleId)
+    ? []
+    : await loaders.getCoauthorUserModules();
+  const module = await getCoauthorModule(chat.coauthorModuleId, userModules);
   const skillId = detectSkill(latestUserMessage(history), module.skillIds);
-  const [profileMd, loreEntries, basePrompt, skillPrompt, branchSummaries] = await Promise.all([
+  const [profileMd, loreEntries, skillPrompt, branchSummaries] = await Promise.all([
     loaders.getProfileMdText(character.id as unknown as import("@vibe-tavern/domain").CharacterId),
     loaders.getCoauthorLorebookEntries(chatId),
-    loadPromptAsset(module.basePromptFile),
     loadPromptAsset(`coauthor/skills/${skillId}.md`),
     loaders.getChatSummaries(chatId, input.branchId ?? (chat.activeBranchId as ChatBranchId)),
   ]);
+  const basePrompt = module.basePrompt;
   const currentCard = renderCurrentCard(profileMd, character);
   const loreBlock = renderLoreContext(loreEntries);
 

@@ -76,6 +76,7 @@ describe("CoauthorModeStrategy.assemble", () => {
         getProfileMdText: async () => "---\nname: Test\n---\n# PERSONALITY\nx\n",
         getCoauthorLorebookEntries: async () => [],
         getChatSummaries: async () => [],
+        getCoauthorUserModules: async () => [],
       },
     };
     const out = await strategy.assemble(input);

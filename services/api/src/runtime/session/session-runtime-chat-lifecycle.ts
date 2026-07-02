@@ -253,8 +253,11 @@ export class ChatLifecycleRuntime {
 			throw validation("Only coauthor chats can have a coauthor module.");
 		}
 		if (moduleId) {
-			const { getCoauthorModules } = await import("../../domain/coauthor/modules/module-registry.js");
-			const moduleExists = getCoauthorModules().some((m) => m.id === moduleId);
+			// Validate the module id exists among seed (built-in) OR user modules.
+			// Seed ids resolve without a DB read; user ids need the store.
+			const { getCoauthorModules, isSeedModule } = await import("../../domain/coauthor/modules/module-registry.js");
+			const userModules = isSeedModule(moduleId) ? [] : await this.deps.stores.coauthorModules.list();
+			const moduleExists = (await getCoauthorModules(userModules)).some((m) => m.id === moduleId);
 			if (!moduleExists) {
 				throw notFound("CoauthorModule", `Module '${moduleId}' was not found.`);
 			}
