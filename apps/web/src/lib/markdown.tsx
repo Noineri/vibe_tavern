@@ -491,6 +491,48 @@ const components: Record<string, React.ComponentType<{ children?: React.ReactNod
   tr: ({ children, ...props }) => <tr className="md-tr" {...props}>{children}</tr>,
   th: ({ children, ...props }) => <th className="md-th" {...props}>{children}</th>,
   td: ({ children, ...props }) => <td className="md-td" {...props}>{children}</td>,
+
+  // Strikethrough (GFM ~~text~~)
+  del: ({ children, ...props }) => <del className="md-del" {...props}>{children}</del>,
+
+  // Links — open in new tab, guard against XSS via javascript: hrefs
+  a({ href, children, ...props }) {
+    const hrefStr = href as string | undefined;
+    const safe = hrefStr && /^(https?:|mailto:|\/|#)/.test(hrefStr) ? hrefStr : "#";
+    const isExternal = /^https?:/.test(safe);
+    return (
+      <a
+        className="md-link"
+        href={safe}
+        {...(isExternal ? { target: "_blank", rel: "noopener noreferrer" } : {})}
+        {...props}
+      >
+        {children}
+      </a>
+    );
+  },
+
+  // Images — constrain width so they never break layout
+  img({ src, alt, ...props }) {
+    return (
+      <img className="md-img" src={src as string | undefined} alt={(alt as string | undefined) ?? ""} {...props} />
+    );
+  },
+
+  // Task-list checkboxes (GFM - [x] / - [ ])
+  input({ type, checked, ...props }) {
+    const typeStr = type as string | undefined;
+    if (typeStr === "checkbox") {
+      return (
+        <span
+          className={`md-task-check${checked ? " md-task-check--done" : ""}`}
+          aria-hidden="true"
+          {...props}
+        />
+      );
+    }
+    return <input type={typeStr as React.HTMLInputTypeAttribute | undefined} {...props} />;
+  },
 };
 
 function extractText(children: React.ReactNode): string {

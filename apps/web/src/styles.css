@@ -180,6 +180,21 @@ html,body{height:100%;background:var(--page-bg, var(--bg));color:var(--t1);overf
 .md-copy-btn:hover{background:var(--border2);color:var(--t1)}
 .md-copy-btn--ok{opacity:1 !important;background:var(--accent-dim);color:var(--accent-t)}
 
+/* ── Strikethrough ── */
+.md-del{text-decoration:line-through;color:var(--t3)}
+
+/* ── Links ── */
+.md-link{color:var(--accent-t);text-decoration:underline;text-underline-offset:2px;text-decoration-color:color-mix(in srgb, var(--accent-t) 40%, transparent);transition:text-decoration-color .15s,color .15s}
+.md-link:hover{color:var(--accent);text-decoration-color:var(--accent)}
+
+/* ── Images ── */
+.md-img{max-width:100%;height:auto;border-radius:var(--r);margin:.4em 0;display:block}
+
+/* ── Task-list checkboxes ── */
+.md-task-check{display:inline-block;width:13px;height:13px;border:1.5px solid var(--t3);border-radius:3px;margin-right:5px;vertical-align:-.15em;flex-shrink:0;position:relative}
+.md-task-check--done{background:var(--accent);border-color:var(--accent)}
+.md-task-check--done::after{content:"";position:absolute;left:2px;top:-1px;width:7px;height:5px;border-left:1.5px solid #fff;border-bottom:1.5px solid #fff;transform:rotate(-45deg)}
+
 /* ── Markdown paragraph spacing ── */
 .md-content p{white-space:pre-wrap}
 .md-content p+p{margin-top:.88em}
