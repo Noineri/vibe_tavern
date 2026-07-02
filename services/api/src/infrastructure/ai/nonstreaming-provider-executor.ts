@@ -124,6 +124,33 @@ export async function nonstreamingProviderExecute(
       stepsCount: result.steps.length ?? undefined,
     });
 
+    const extractedToolCalls: import("./provider-execution-types.js").ExtractedToolCall[] = [];
+    const extractedToolResults: import("./provider-execution-types.js").ExtractedToolResult[] = [];
+    if (result.steps) {
+      for (const step of result.steps) {
+        if (step.toolCalls) {
+          for (const tc of step.toolCalls as any[]) {
+            extractedToolCalls.push({
+              toolCallId: tc.toolCallId,
+              toolName: tc.toolName,
+              args: (tc.args ?? tc.input) as Record<string, unknown>,
+            });
+          }
+        }
+        if (step.toolResults) {
+          for (const tr of step.toolResults as any[]) {
+            extractedToolResults.push({
+              toolCallId: tr.toolCallId,
+              toolName: tr.toolName,
+              args: (tr.args ?? tr.input) as Record<string, unknown>,
+              result: tr.result ?? tr.output,
+              isError: !!tr.isError,
+            });
+          }
+        }
+      }
+    }
+
     return {
       text: result.text,
       reasoning: result.reasoningText ?? undefined,
@@ -135,6 +162,8 @@ export async function nonstreamingProviderExecute(
           }
         : undefined,
       sentConfig,
+      toolCalls: extractedToolCalls.length > 0 ? extractedToolCalls : undefined,
+      toolResults: extractedToolResults.length > 0 ? extractedToolResults : undefined,
     };
   } catch (error) {
     if (input.signal?.aborted) throw cancelled();

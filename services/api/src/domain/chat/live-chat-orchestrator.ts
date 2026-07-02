@@ -105,6 +105,8 @@ export class LiveChatOrchestrator {
     logSendDebug("live.send.provider.done", { chatId: input.chatId, latencyMs, replyLength: reply.length });
     const snapshot = await this.chatRuntime.appendAssistantReply(brandId<ChatId>(input.chatId), reply, latencyMs, {
       reasoning,
+      toolCalls: result.toolCalls,
+      toolResults: result.toolResults,
     });
     logSendDebug("live.send.append.done", { chatId: input.chatId, messageCount: snapshot.messages.length });
     this.notifyAssistantAppended(input.chatId, snapshot.messages[snapshot.messages.length - 1]?.id ?? "");
@@ -169,6 +171,8 @@ export class LiveChatOrchestrator {
     logSendDebug("live.generateReply.done", { chatId: input.chatId, latencyMs, replyLength: reply.length });
     const snapshot = await this.chatRuntime.appendAssistantReply(brandId<ChatId>(input.chatId), reply, latencyMs, {
       reasoning,
+      toolCalls: result.toolCalls,
+      toolResults: result.toolResults,
     });
     this.notifyAssistantAppended(input.chatId, snapshot.messages[snapshot.messages.length - 1]?.id ?? "");
     return {
@@ -250,6 +254,8 @@ export class LiveChatOrchestrator {
       latencyMs,
       reasoning,
       presetId: input.presetId,
+      toolCalls: result.toolCalls,
+      toolResults: result.toolResults,
     });
     logSendDebug("live.regenerate.append.done", { chatId: input.chatId, messageId: input.messageId, messageCount: snapshot.messages.length });
 
@@ -302,10 +308,12 @@ export class LiveChatOrchestrator {
           this.notifyAssistantAppended(input.chatId, "");
         }
       },
-      onFinal: async (text, reasoning, reasoningDurationMs, latencyMs) => {
+      onFinal: async (text, reasoning, reasoningDurationMs, latencyMs, toolCalls, toolResults) => {
         const snapshot = await this.chatRuntime.appendAssistantReply(brandId<ChatId>(input.chatId), text, latencyMs, {
           reasoning,
           reasoningDurationMs,
+          toolCalls,
+          toolResults,
         });
         logSendDebug("live.send-stream.done", { chatId: input.chatId, latencyMs, replyLength: text.length });
         this.notifyAssistantAppended(input.chatId, snapshot.messages[snapshot.messages.length - 1]?.id ?? "");
@@ -349,10 +357,12 @@ export class LiveChatOrchestrator {
           this.notifyAssistantAppended(input.chatId, "");
         }
       },
-      onFinal: async (text, reasoning, reasoningDurationMs, latencyMs) => {
+      onFinal: async (text, reasoning, reasoningDurationMs, latencyMs, toolCalls, toolResults) => {
         const snapshot = await this.chatRuntime.appendAssistantReply(brandId<ChatId>(input.chatId), text, latencyMs, {
           reasoning,
           reasoningDurationMs,
+          toolCalls,
+          toolResults,
         });
         logSendDebug("live.generateReply-stream.done", { chatId: input.chatId, latencyMs, replyLength: text.length });
         this.notifyAssistantAppended(input.chatId, snapshot.messages[snapshot.messages.length - 1]?.id ?? "");
@@ -404,13 +414,15 @@ export class LiveChatOrchestrator {
           });
         }
       },
-      onFinal: async (text, reasoning, reasoningDurationMs, latencyMs) => {
+      onFinal: async (text, reasoning, reasoningDurationMs, latencyMs, toolCalls, toolResults) => {
         const snapshot = await this.chatRuntime.appendMessageVariant(brandId<ChatId>(input.chatId), brandId<MessageId>(input.messageId), {
           content: text,
           latencyMs,
           reasoning,
           reasoningDurationMs,
           presetId: input.presetId,
+          toolCalls,
+          toolResults,
         });
         logSendDebug("live.regenerate-stream.done", { chatId: input.chatId, messageId: input.messageId, latencyMs });
         return snapshot;
@@ -493,7 +505,7 @@ export class LiveChatOrchestrator {
     omitMessageCountInFinish?: boolean;
     prefill?: string;
     onAbort: (text: string, reasoning: string, reasoningDurationMs: number | undefined, latencyMs: number) => Promise<void>;
-    onFinal: (text: string, reasoning: string | undefined, reasoningDurationMs: number | undefined, latencyMs: number) => Promise<MessageResponse>;
+    onFinal: (text: string, reasoning: string | undefined, reasoningDurationMs: number | undefined, latencyMs: number, toolCalls?: import("../../infrastructure/ai/provider-execution-types.js").ExtractedToolCall[], toolResults?: import("../../infrastructure/ai/provider-execution-types.js").ExtractedToolResult[]) => Promise<MessageResponse>;
   }): AsyncGenerator<{ event: string; data: string }> {
     const { streamResult, signal, startedAt, debugLabel, onAbort, onFinal, omitMessageCountInFinish, prefill } = input;
     // ── CA-17/CANARY: loop observability. Counts every tool interaction so a
@@ -504,6 +516,9 @@ export class LiveChatOrchestrator {
     let toolCallCount = 0;
     let toolResultCount = 0;
     let toolErrorCount = 0;
+
+    const extractedToolCalls: import("../../infrastructure/ai/provider-execution-types.js").ExtractedToolCall[] = [];
+    const extractedToolResults: import("../../infrastructure/ai/provider-execution-types.js").ExtractedToolResult[] = [];
 
     let textAccumulator = "";
     let reasoningAccumulator = "";
@@ -539,6 +554,11 @@ export class LiveChatOrchestrator {
         }
         if (chunk.type === "tool-call") {
           toolCallCount++;
+          extractedToolCalls.push({
+            toolCallId: chunk.toolCallId,
+            toolName: chunk.toolName,
+            args: chunk.args as Record<string, unknown>,
+          });
           logSendDebug(`${debugLabel}.tool-call`, { chatId: input.chatId, n: toolCallCount, toolCallId: chunk.toolCallId, toolName: chunk.toolName, args: chunk.args });
           yield { event: "tool-call", data: JSON.stringify({ toolCallId: chunk.toolCallId, toolName: chunk.toolName, args: chunk.args }) };
         }
@@ -551,6 +571,14 @@ export class LiveChatOrchestrator {
         if (chunk.type === "tool-result") {
           toolResultCount++;
           const isErr = chunk.isError ?? false;
+          const matchedCall = extractedToolCalls.find(c => c.toolCallId === chunk.toolCallId);
+          extractedToolResults.push({
+            toolCallId: chunk.toolCallId,
+            toolName: chunk.toolName,
+            args: matchedCall ? matchedCall.args : {},
+            result: chunk.output,
+            isError: isErr,
+          });
           // isError=true means the tool's execute() threw (e.g. the CA-17
           // lost-section guard refused the proposal). The stream-helpers layer
           // normalizes the SDK v6 `tool-error` part into this tool-result +
@@ -634,7 +662,7 @@ export class LiveChatOrchestrator {
       reasoningDurationMs = Date.now() - reasoningStartMs;
     }
 
-    const snapshot = await onFinal(finalText, finalReasoning, reasoningDurationMs ?? undefined, latencyMs);
+    const snapshot = await onFinal(finalText, finalReasoning, reasoningDurationMs ?? undefined, latencyMs, extractedToolCalls.length > 0 ? extractedToolCalls : undefined, extractedToolResults.length > 0 ? extractedToolResults : undefined);
 
     // ── Yield reasoning-done + finish ──
     if (reasoningAccumulator || streamResult.hasRedactedReasoning) {

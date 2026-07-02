@@ -84,6 +84,24 @@ export interface GenerationResult {
   usage?: GenerationUsage;
   /** Snapshot of what was sent to the provider. */
   sentConfig?: SentConfigSnapshot;
+  /** Accumulated tool calls from all steps in this generation turn. */
+  toolCalls?: ExtractedToolCall[];
+  /** Accumulated tool results from all steps in this generation turn. */
+  toolResults?: ExtractedToolResult[];
+}
+
+export interface ExtractedToolCall {
+  toolCallId: string;
+  toolName: string;
+  args: Record<string, unknown>;
+}
+
+export interface ExtractedToolResult {
+  toolCallId: string;
+  toolName: string;
+  args: Record<string, unknown>;
+  result: unknown;
+  isError: boolean;
 }
 
 export interface GenerationUsage {
