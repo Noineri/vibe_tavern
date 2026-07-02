@@ -54,6 +54,7 @@ export interface ProviderModelOption {
 	label: string;
 	contextLength?: number;
 	capabilities?: ProviderModelCapabilities;
+	supportsTools?: boolean;
 	pricing?: ProviderModelPricing;
 	description?: string;
 }

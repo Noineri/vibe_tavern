@@ -112,24 +112,14 @@ describe("assembleCoauthorPrompt", () => {
     expect(system).toContain("ALT 1");
   });
 
-  test("autodetects personality-deepen skill from the latest user message", async () => {
-    const loaders = makeLoaders({
-      messages: [{ role: "user", content: "this personality is too flat and generic" } as never],
-    });
-    const result = await assembleCoauthorPrompt(makeInput(loaders));
-    const system = (result.prompt.finalPayload as { messages: Array<{ content: string }> }).messages[0].content;
-    // Skill overlay text from personality-deepen.md is injected under "# Active skill".
-    expect(system).toContain("# Active skill");
-    expect(system).toContain("Personality Deepen");
-  });
-
-  test("falls back to profile-overview skill when no keyword matches", async () => {
+  test("loads the general-writing skill", async () => {
     const loaders = makeLoaders({
       messages: [{ role: "user", content: "hello" } as never],
     });
     const result = await assembleCoauthorPrompt(makeInput(loaders));
     const system = (result.prompt.finalPayload as { messages: Array<{ content: string }> }).messages[0].content;
-    expect(system).toContain("Profile Overview");
+    expect(system).toContain("# Active skill");
+    expect(system).toContain("General Writing");
   });
 
   test("promptTraceDraft carries coauthor preset name and empty RP layers", async () => {
