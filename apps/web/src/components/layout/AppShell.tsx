@@ -34,6 +34,7 @@ import { ShellDestructiveConfirmModal } from "../shared/destructive-confirm-moda
 import { TweaksPanel } from "../settings/popovers/TweaksPanel.js";
 import { MobileSettings } from "../settings/popovers/MobileSettings.js";
 import { MobileAccessModal } from "../modals/MobileAccessModal.js";
+import { CoauthorModuleModal } from "../coauthor/CoauthorModuleModal.js";
 import { AvatarPanel } from "../settings/popovers/AvatarPanel.js";
 import type { TweaksSettings } from "../../lib/local-storage.js";
 
@@ -422,6 +423,7 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
       )}
 
       <ShellDestructiveConfirmModal />
+      <CoauthorModuleModal />
       <SetupWizard onVisibilityChange={setWizardVisible} />
       <Toaster
         position={isMobile ? "top-center" : "bottom-right"}

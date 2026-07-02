@@ -6,6 +6,7 @@ export interface ModalState {
   isPersonaModalOpen: boolean;
   isCreateCharacterModalOpen: boolean;
   isContextMemoryOpen: boolean;
+  isCoauthorModuleModalOpen: boolean;
   tweaksOpen: boolean;
   avatarOpen: boolean;
   mobileAccessOpen: boolean;
@@ -17,6 +18,7 @@ export interface ModalActions {
   setIsPersonaModalOpen: (open: boolean) => void;
   setCreateCharacterModalOpen: (open: boolean) => void;
   setContextMemoryOpen: (open: boolean) => void;
+  setCoauthorModuleModalOpen: (open: boolean) => void;
   setTweaksOpen: (open: boolean) => void;
   setAvatarOpen: (open: boolean) => void;
   setMobileAccessOpen: (open: boolean) => void;
@@ -30,6 +32,7 @@ export const useModalStore = create<ModalStore>()((set) => ({
   isPersonaModalOpen: false,
   isCreateCharacterModalOpen: false,
   isContextMemoryOpen: false,
+  isCoauthorModuleModalOpen: false,
   tweaksOpen: false,
   avatarOpen: false,
   mobileAccessOpen: false,
@@ -39,6 +42,7 @@ export const useModalStore = create<ModalStore>()((set) => ({
   setIsPersonaModalOpen: (open) => set({ isPersonaModalOpen: open }),
   setCreateCharacterModalOpen: (open) => set({ isCreateCharacterModalOpen: open }),
   setContextMemoryOpen: (open) => set({ isContextMemoryOpen: open }),
+  setCoauthorModuleModalOpen: (open) => set({ isCoauthorModuleModalOpen: open }),
   setTweaksOpen: (open) => set({ tweaksOpen: open }),
   setAvatarOpen: (open) => set({ avatarOpen: open }),
   setMobileAccessOpen: (open) => set({ mobileAccessOpen: open }),
