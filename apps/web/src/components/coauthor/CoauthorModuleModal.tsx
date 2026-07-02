@@ -16,7 +16,9 @@ import type { CoauthorModule, CoauthorToolSet } from "@vibe-tavern/api-contracts
  */
 const TOOL_LABELS: Array<{ key: keyof CoauthorToolSet; label: string }> = [
   { key: "edit_profile", label: "edit_profile" },
-  { key: "edit_section", label: "edit_section" },
+  { key: "edit_personality", label: "edit_personality" },
+  { key: "edit_scenario", label: "edit_scenario" },
+  { key: "edit_examples", label: "edit_examples" },
   { key: "edit_greeting", label: "edit_greeting" },
   { key: "add_alt_greeting", label: "add_alt_greeting" },
   { key: "edit_alt_greeting", label: "edit_alt_greeting" },

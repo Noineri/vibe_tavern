@@ -38,7 +38,7 @@ const SEED_MODULES: CoauthorModule[] = [
 		description: "A balanced co-author module.",
 		basePromptFile: "coauthor/modules/default.md",
 		skillIds: ["general-writing"],
-		toolSet: { edit_profile: true, edit_section: true, edit_greeting: true, add_alt_greeting: true, edit_alt_greeting: true },
+		toolSet: { edit_profile: true, edit_personality: true, edit_scenario: true, edit_examples: true, edit_greeting: true, add_alt_greeting: true, edit_alt_greeting: true },
 		maxSteps: 5,
 	},
 	{
@@ -47,7 +47,7 @@ const SEED_MODULES: CoauthorModule[] = [
 		description: "Refines character profiles.",
 		basePromptFile: "coauthor/modules/profile-editor.md",
 		skillIds: ["profile-analysis"],
-		toolSet: { edit_profile: true, edit_section: true },
+		toolSet: { edit_profile: true, edit_personality: true },
 		maxSteps: 3,
 	},
 ];

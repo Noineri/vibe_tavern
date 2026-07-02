@@ -2,7 +2,9 @@ import { z } from "zod";
 
 export const coauthorToolSetSchema = z.object({
   edit_profile: z.boolean().optional(),
-  edit_section: z.boolean().optional(),
+  edit_personality: z.boolean().optional(),
+  edit_scenario: z.boolean().optional(),
+  edit_examples: z.boolean().optional(),
   edit_greeting: z.boolean().optional(),
   add_alt_greeting: z.boolean().optional(),
   edit_alt_greeting: z.boolean().optional(),

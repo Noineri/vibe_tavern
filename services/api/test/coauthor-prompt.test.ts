@@ -195,7 +195,7 @@ describe("assembleCoauthorPrompt", () => {
           id: "msg_2", 
           role: "assistant", 
           content: "calling tool",
-          toolCalls: [{ id: "call_1", name: "edit_section", args: { section: "PERSONALITY" } }]
+          toolCalls: [{ id: "call_1", name: "edit_personality", args: { content: "Bold." } }]
         } as never,
         { id: "msg_3", role: "tool", toolCallId: "call_1", content: "Success" } as never,
       ],
@@ -210,8 +210,8 @@ describe("assembleCoauthorPrompt", () => {
     expect(messages[2].toolCalls).toEqual([{
       type: "tool-call",
       toolCallId: "call_1",
-      toolName: "edit_section",
-      input: { section: "PERSONALITY" }
+      toolName: "edit_personality",
+      input: { content: "Bold." }
     }]);
 
     expect(messages[3].role).toBe("tool");
@@ -238,7 +238,7 @@ describe("assembleCoauthorPrompt", () => {
           id: "msg_2", 
           role: "assistant", 
           content: "calling tool",
-          toolCalls: [{ id: "call_1", name: "edit_section", args: { section: "PERSONALITY" } }]
+          toolCalls: [{ id: "call_1", name: "edit_personality", args: { content: "Bold." } }]
         } as never,
         { id: "msg_3", role: "tool", toolCallId: "call_1", content: "Success" } as never,
       ],

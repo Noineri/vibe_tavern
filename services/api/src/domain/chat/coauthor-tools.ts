@@ -171,6 +171,49 @@ function validateProfileMd(profileMd: string): string {
   return serializeProfileMd(parsed);
 }
 
+/**
+ * Shared execute body for the per-section edit tools (edit_personality /
+ * edit_scenario / edit_examples): overwrite exactly one VtfProfile field on the
+ * canonical profile, re-serialize, and run the lost-section guard. The other
+ * sections are untouched (preserved from the canonical profile passed to
+ * buildCoauthorTools), so the tool payload carries ONLY the targeted section's
+ * new text — the model never has to re-emit the sections it is not changing.
+ *
+ * Returns the full proposed profile.md under `{ target: "profile", proposed }`
+ * — the same shape as edit_profile — so the apply pipeline (diff + Apply RPC)
+ * treats a section edit identically to a wholesale edit. This is why splitting
+ * the former edit_section tool into three is transparent to the frontend.
+ */
+async function applySectionEdit(
+  field: "description" | "scenario" | "mesExample",
+  toolName: string,
+  content: string,
+  summary: string,
+  profileMd: string | undefined,
+): Promise<CoauthorToolOutput> {
+  if (!profileMd) {
+    logger.warn("%s REJECTED missing profileMd context", toolName);
+    throw new Error(`${toolName}: Internal error, missing canonical profile context`);
+  }
+  if (!content.trim()) {
+    logger.warn("%s REJECTED empty input", toolName);
+    throw new Error(`${toolName}: content must not be empty`);
+  }
+  logger.info("%s IN len=%d summary=%s", toolName, content.length, summary);
+  const parsed = parseProfileMd(profileMd);
+  parsed.profile[field] = content;
+  const merged = serializeProfileMd(parsed);
+  try {
+    const canonical = validateProfileMd(merged);
+    logger.info("%s OK merged canonical len=%d", toolName, canonical.length);
+    return { target: "profile", proposed: canonical, summary };
+  } catch (err) {
+    const msg = (err as Error).message;
+    logger.warn("%s REJECTED guard-threw msg=%s", toolName, msg);
+    throw err;
+  }
+}
+
 // ─── Tool set ──────────────────────────────────────────────────────────────
 
 /**
@@ -268,41 +311,37 @@ export function buildCoauthorTools(opts: { toolSet?: Record<string, boolean>; pr
       },
     }),
 
-    edit_section: tool({
+    edit_personality: tool({
       description:
-        "Propose a rewrite of a SINGLE specific section (PERSONALITY, SCENARIO, or EXAMPLES) of the character's profile. " +
-        "Use this instead of edit_profile when you only want to change one part of the card. The other sections will be preserved verbatim.",
+        "Propose a rewrite of the PERSONALITY section only. The other sections (SCENARIO, EXAMPLES) are preserved automatically from the current profile — do not include them.",
       inputSchema: z.object({
-        section: z.enum(["PERSONALITY", "SCENARIO", "EXAMPLES"]).describe("The section to edit (must be one of the three H1 known sections)."),
-        content: z.string().describe("The full proposed text for this section (do NOT include the '# SECTION_NAME' heading)."),
+        content: z.string().describe("The full proposed PERSONALITY text (do NOT include the '# PERSONALITY' heading)."),
         summary: z.string().max(200).describe("One-line description of what this edit changes, shown above the Apply button."),
       }),
-      execute: async ({ section, content, summary }): Promise<CoauthorToolOutput> => {
-        if (!profileMd) {
-          logger.warn("edit_section REJECTED missing profileMd context");
-          throw new Error("edit_section: Internal error, missing canonical profile context");
-        }
-        if (!content.trim()) {
-          logger.warn("edit_section REJECTED empty input section=%s", section);
-          throw new Error("edit_section: content must not be empty");
-        }
-        logger.info("edit_section IN section=%s len=%d summary=%s", section, content.length, summary);
-        
-        const parsed = parseProfileMd(profileMd);
-        const field = SECTION_TO_PROFILE_FIELD[section];
-        parsed.profile[field] = content;
-        const merged = serializeProfileMd(parsed);
-        
-        try {
-          const canonical = validateProfileMd(merged);
-          logger.info("edit_section OK merged canonical len=%d", canonical.length);
-          return { target: "profile", proposed: canonical, summary };
-        } catch (err) {
-          const msg = (err as Error).message;
-          logger.warn("edit_section REJECTED guard-threw msg=%s", msg);
-          throw err;
-        }
-      },
+      execute: async ({ content, summary }): Promise<CoauthorToolOutput> =>
+        applySectionEdit("description", "edit_personality", content, summary, profileMd),
+    }),
+
+    edit_scenario: tool({
+      description:
+        "Propose a rewrite of the SCENARIO section only. The other sections (PERSONALITY, EXAMPLES) are preserved automatically from the current profile — do not include them.",
+      inputSchema: z.object({
+        content: z.string().describe("The full proposed SCENARIO text (do NOT include the '# SCENARIO' heading)."),
+        summary: z.string().max(200).describe("One-line description of what this edit changes, shown above the Apply button."),
+      }),
+      execute: async ({ content, summary }): Promise<CoauthorToolOutput> =>
+        applySectionEdit("scenario", "edit_scenario", content, summary, profileMd),
+    }),
+
+    edit_examples: tool({
+      description:
+        "Propose a rewrite of the EXAMPLES section (example dialogue) only. The other sections (PERSONALITY, SCENARIO) are preserved automatically from the current profile — do not include them.",
+      inputSchema: z.object({
+        content: z.string().describe("The full proposed EXAMPLES text (example dialogue; do NOT include the '# EXAMPLES' heading)."),
+        summary: z.string().max(200).describe("One-line description of what this edit changes, shown above the Apply button."),
+      }),
+      execute: async ({ content, summary }): Promise<CoauthorToolOutput> =>
+        applySectionEdit("mesExample", "edit_examples", content, summary, profileMd),
     }),
 
     edit_alt_greeting: tool({

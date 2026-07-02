@@ -9,7 +9,9 @@ const SEED_MODULES: CoauthorModule[] = [
     skillIds: ["general-writing"],
     toolSet: {
       edit_profile: true,
-      edit_section: true,
+      edit_personality: true,
+      edit_scenario: true,
+      edit_examples: true,
       edit_greeting: true,
       add_alt_greeting: true,
       edit_alt_greeting: true,
@@ -24,17 +26,19 @@ const SEED_MODULES: CoauthorModule[] = [
     skillIds: ["profile-analysis"],
     toolSet: {
       edit_profile: true,
-      edit_section: true,
+      edit_personality: true,
+      edit_scenario: true,
     },
     maxSteps: 3,
   },
   {
     id: "dialogue-writer",
     name: "Dialogue Writer",
-    description: "Specializes in writing character greetings and dialogue lines.",
+    description: "Specializes in writing character greetings and example dialogue.",
     basePromptFile: "coauthor/modules/dialogue-writer.md",
     skillIds: ["dialogue-generation"],
     toolSet: {
+      edit_examples: true,
       edit_greeting: true,
       add_alt_greeting: true,
       edit_alt_greeting: true,
