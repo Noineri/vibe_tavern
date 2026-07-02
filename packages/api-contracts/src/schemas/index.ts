@@ -72,3 +72,10 @@ export {
   scriptLinkSchema,
   setScriptLinksSchema,
 } from "./script-schema.js";
+
+export {
+  coauthorModuleSchema,
+  coauthorModuleListSchema,
+  setCoauthorModuleSchema,
+} from "./coauthor-module.js";
+export type { CoauthorModule, CoauthorToolSet } from "./coauthor-module.js";
