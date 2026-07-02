@@ -305,7 +305,10 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
             Exactly one bar renders — never both. The central panel switch below
             ({shellSurface}) is unchanged by this selection. */}
         {mode === "coauthor"
-          ? <CoauthorTopBar />
+          ? <CoauthorTopBar
+              railHidden={isMobile && !showRail}
+              onShowRail={() => useNavigationStore.getState().triggerRailOpen()}
+            />
           : <TopBar
               railHidden={isMobile && !showRail}
               onShowRail={() => useNavigationStore.getState().triggerRailOpen()}
