@@ -21,6 +21,7 @@ import { useIsMobile } from "../../hooks/use-mobile.js";
 import { Sidebar } from "./Sidebar.js";
 import { Rail } from "./Rail.js";
 import { TopBar } from "./TopBar.js";
+import { CoauthorTopBar } from "../coauthor/CoauthorTopBar.js";
 import { PlayMode } from "../play/PlayMode.js";
 import { BuildMode } from "../build/BuildMode.js";
 import { CoauthorMode } from "../coauthor/CoauthorMode.js";
@@ -298,13 +299,20 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
     <div className="flex text-t1 font-ui" style={{ height: "100dvh", paddingBottom: "env(safe-area-inset-bottom, 0px)", overflow: "hidden" }}>
       {isMobile ? <Rail hidden={!showRail} /> : <Sidebar />}
       <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
-        <TopBar
-          railHidden={isMobile && !showRail}
-          onShowRail={() => useNavigationStore.getState().triggerRailOpen()}
-          update={updateCheck.hasUpdate && updateCheck.latestVersion && updateCheck.releaseUrl
-            ? { latestVersion: updateCheck.latestVersion, releaseUrl: updateCheck.releaseUrl }
-            : null}
-        />
+        {/* Chrome is selected by navigation mode (Wave 3 / CS-18): co-author
+            owns a dedicated CoauthorTopBar (no preset switcher — presets move
+            to the InputArea pill in Wave 4); play/build keep the shared TopBar.
+            Exactly one bar renders — never both. The central panel switch below
+            ({shellSurface}) is unchanged by this selection. */}
+        {mode === "coauthor"
+          ? <CoauthorTopBar />
+          : <TopBar
+              railHidden={isMobile && !showRail}
+              onShowRail={() => useNavigationStore.getState().triggerRailOpen()}
+              update={updateCheck.hasUpdate && updateCheck.latestVersion && updateCheck.releaseUrl
+                ? { latestVersion: updateCheck.latestVersion, releaseUrl: updateCheck.releaseUrl }
+                : null}
+            />}
         {shellSurface}
       </main>
 
