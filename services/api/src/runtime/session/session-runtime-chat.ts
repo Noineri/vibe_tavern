@@ -152,17 +152,57 @@ export class ChatRuntime {
 
     const pending = this.consumePendingPromptTrace(chatId, chat.activeBranchId as ChatBranchId);
 
-    const assistantMessage = await messages.addMessage({
-      chatId,
-      branchId: chat.activeBranchId,
-      role: "assistant",
-      authorType: "assistant",
-      content,
-      modelId: pending?.draft.model ?? null,
-      presetId: pending?.draft.presetId ?? null,
-      reasoning: reasoningData?.reasoning,
-      reasoningDurationMs: reasoningData?.reasoningDurationMs,
-    });
+    let assistantMessage: import("@vibe-tavern/db").Message;
+
+    if (reasoningData?.toolCalls && reasoningData.toolCalls.length > 0) {
+      await messages.addMessage({
+        chatId,
+        branchId: chat.activeBranchId,
+        role: "assistant",
+        authorType: "assistant",
+        content: "",
+        modelId: pending?.draft.model ?? null,
+        presetId: pending?.draft.presetId ?? null,
+        reasoning: reasoningData.reasoning,
+        reasoningDurationMs: reasoningData.reasoningDurationMs,
+        toolCallsJson: JSON.stringify(reasoningData.toolCalls.map(tc => ({ id: tc.toolCallId, name: tc.toolName, args: tc.args }))),
+      });
+
+      if (reasoningData.toolResults) {
+        for (const tr of reasoningData.toolResults) {
+          await messages.addMessage({
+            chatId,
+            branchId: chat.activeBranchId,
+            role: "tool",
+            authorType: "tool",
+            content: typeof tr.result === "string" ? tr.result : JSON.stringify(tr.result),
+            toolCallId: tr.toolCallId,
+          });
+        }
+      }
+
+      assistantMessage = await messages.addMessage({
+        chatId,
+        branchId: chat.activeBranchId,
+        role: "assistant",
+        authorType: "assistant",
+        content,
+        modelId: pending?.draft.model ?? null,
+        presetId: pending?.draft.presetId ?? null,
+      });
+    } else {
+      assistantMessage = await messages.addMessage({
+        chatId,
+        branchId: chat.activeBranchId,
+        role: "assistant",
+        authorType: "assistant",
+        content,
+        modelId: pending?.draft.model ?? null,
+        presetId: pending?.draft.presetId ?? null,
+        reasoning: reasoningData?.reasoning,
+        reasoningDurationMs: reasoningData?.reasoningDurationMs,
+      });
+    }
 
     if (pending) {
       await traces.saveTrace({
@@ -230,6 +270,8 @@ export class ChatRuntime {
       input.reasoningDurationMs,
       pending?.draft.model ?? null,
       input.presetId ?? pending?.draft.presetId ?? null,
+      input.toolCalls && input.toolCalls.length > 0 ? JSON.stringify(input.toolCalls.map(tc => ({ id: tc.toolCallId, name: tc.toolName, args: tc.args }))) : null,
+      null,
     );
 
     if (pending) {

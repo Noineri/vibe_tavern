@@ -287,6 +287,8 @@ export class MessageStore {
     reasoningDurationMs?: number,
     modelId?: string | null,
     presetId?: string | null,
+    toolCallsJson?: string | null,
+    toolCallId?: string | null,
   ): Promise<MessageVariant> {
     // Find max variantIndex
     const lastVariant = await this.db
@@ -323,6 +325,8 @@ export class MessageStore {
           reasoningDurationMs: reasoningDurationMs ?? null,
           modelId: modelId ?? null,
           presetId: presetId ?? null,
+          toolCallsJson: toolCallsJson ?? null,
+          toolCallId: toolCallId ?? null,
           createdAt: now,
         })
         .run();

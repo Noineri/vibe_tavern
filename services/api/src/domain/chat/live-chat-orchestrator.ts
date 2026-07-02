@@ -65,6 +65,8 @@ export class LiveChatOrchestrator {
     const prefill = prepared.prompt.prefill ?? undefined;
     let reply: string;
     let reasoning: string | undefined;
+    let toolCalls: any[] | undefined;
+    let toolResults: any[] | undefined;
     try {
       // Non-streaming path: generateText() awaits the full reply, returned as JSON.
       // The streaming equivalent (SSE text/reasoning deltas) lives in sendMessageStream() / startStream().
@@ -88,6 +90,8 @@ export class LiveChatOrchestrator {
       });
       reply = ensurePrefillInResponse(result.text, prefill);
       reasoning = result.reasoning;
+      toolCalls = result.toolCalls;
+      toolResults = result.toolResults;
       if (result.sentConfig) {
         this.chatRuntime.patchPendingTrace(brandId<ChatId>(input.chatId), { sentConfig: result.sentConfig });
       }
@@ -105,8 +109,8 @@ export class LiveChatOrchestrator {
     logSendDebug("live.send.provider.done", { chatId: input.chatId, latencyMs, replyLength: reply.length });
     const snapshot = await this.chatRuntime.appendAssistantReply(brandId<ChatId>(input.chatId), reply, latencyMs, {
       reasoning,
-      toolCalls: result.toolCalls,
-      toolResults: result.toolResults,
+      toolCalls,
+      toolResults,
     });
     logSendDebug("live.send.append.done", { chatId: input.chatId, messageCount: snapshot.messages.length });
     this.notifyAssistantAppended(input.chatId, snapshot.messages[snapshot.messages.length - 1]?.id ?? "");
@@ -142,6 +146,8 @@ export class LiveChatOrchestrator {
     const startedAt = Date.now();
     let reply: string;
     let reasoning: string | undefined;
+    let toolCalls: any[] | undefined;
+    let toolResults: any[] | undefined;
     try {
       const result = await nonstreamingProviderExecute({
         profile: provider.profile,
@@ -154,6 +160,8 @@ export class LiveChatOrchestrator {
       });
       reply = ensurePrefillInResponse(result.text, prefill);
       reasoning = result.reasoning;
+      toolCalls = result.toolCalls;
+      toolResults = result.toolResults;
       if (result.sentConfig) {
         this.chatRuntime.patchPendingTrace(brandId<ChatId>(input.chatId), { sentConfig: result.sentConfig });
       }
@@ -171,8 +179,8 @@ export class LiveChatOrchestrator {
     logSendDebug("live.generateReply.done", { chatId: input.chatId, latencyMs, replyLength: reply.length });
     const snapshot = await this.chatRuntime.appendAssistantReply(brandId<ChatId>(input.chatId), reply, latencyMs, {
       reasoning,
-      toolCalls: result.toolCalls,
-      toolResults: result.toolResults,
+      toolCalls,
+      toolResults,
     });
     this.notifyAssistantAppended(input.chatId, snapshot.messages[snapshot.messages.length - 1]?.id ?? "");
     return {
@@ -222,6 +230,8 @@ export class LiveChatOrchestrator {
     logSendDebug("live.regenerate.provider.start", { chatId: input.chatId, providerId: provider.profile.id, model: provider.model });
     let reply: string;
     let reasoning: string | undefined;
+    let toolCalls: any[] | undefined;
+    let toolResults: any[] | undefined;
     try {
       const result = await nonstreamingProviderExecute({
         profile: provider.profile,
@@ -234,6 +244,8 @@ export class LiveChatOrchestrator {
       });
       reply = ensurePrefillInResponse(result.text, prefill);
       reasoning = result.reasoning;
+      toolCalls = result.toolCalls;
+      toolResults = result.toolResults;
       if (result.sentConfig) {
         this.chatRuntime.patchPendingTrace(brandId<ChatId>(input.chatId), { sentConfig: result.sentConfig });
       }
@@ -254,8 +266,8 @@ export class LiveChatOrchestrator {
       latencyMs,
       reasoning,
       presetId: input.presetId,
-      toolCalls: result.toolCalls,
-      toolResults: result.toolResults,
+      toolCalls,
+      toolResults,
     });
     logSendDebug("live.regenerate.append.done", { chatId: input.chatId, messageId: input.messageId, messageCount: snapshot.messages.length });
 
