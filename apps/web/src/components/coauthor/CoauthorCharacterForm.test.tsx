@@ -25,6 +25,7 @@ import type { CoauthorToolActivity } from "../../stores/coauthor-turn-store.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
 import { useCoauthorTurnStore } from "../../stores/coauthor-turn-store.js";
 import { CoauthorCharacterForm } from "./CoauthorCharacterForm.js";
+import { coauthorToolOutputSchema } from "@vibe-tavern/api-contracts";
 import { toast } from "sonner";
 
 // Mock useT at the module boundary — returns keys verbatim so assertions match.
@@ -468,5 +469,78 @@ describe("CoauthorCharacterForm", () => {
 		expect(body).toContain("A forest cave."); // canonical scenario (no "at dusk")
 		expect(body).not.toContain("Bold and direct.");
 		expect(body).not.toContain("A forest cave at dusk.");
+	});
+
+	// ── Bug repro: tool-result → store wire contract ───────────────────────────
+	// The existing reviewing tests seed activities DIRECTLY into the turn store
+	// (bypassing the SSE/safeParse path). This pins the wire-shape zazer: the
+	// backend tool execute() returns {target, proposed, summary}; drainStream
+	// JSON.stringifies it into the `tool-result` SSE `output`; the frontend
+	// safeParses it back. A drift here (extra wrapper, renamed field) →
+	// safeParse fails → status:"error" → no proposal → EMPTY reviewing panel —
+	// the exact "диффы не отображаются" symptom. NOTE: this is a static contract
+	// check; it cannot reproduce a runtime failure (SSE not arriving, store
+	// cleared, isSending stuck). For those, a live Playwright repro is needed.
+
+	it("wire contract: edit_profile execute() output survives JSON round-trip through coauthorToolOutputSchema", () => {
+		// Mirrors the real execute() return in coauthor-tools.ts.
+		const output = {
+			target: "profile",
+			proposed: [
+				"---", "name: Kira", "tags: []", "---", "",
+				"# PERSONALITY", "Bold and direct.", "",
+				"# SCENARIO", "A forest cave.", "",
+				"# EXAMPLES", "{{char}}: *tilts head*", "",
+			].join("\n"),
+			summary: "Made personality bold.",
+		};
+		// The SSE serialize path: JSON.stringify in drainStream, JSON.parse in sse-parser.
+		const roundTripped = JSON.parse(JSON.stringify(output));
+		const parsed = coauthorToolOutputSchema.safeParse(roundTripped);
+		expect(parsed.success).toBe(true);
+		if (parsed.success) {
+			expect(parsed.data.target).toBe("profile");
+			expect(parsed.data.proposed).toBe(output.proposed);
+			expect(parsed.data.summary).toBe(output.summary);
+		}
+	});
+
+	// ── Bug repro: character version folder-swap does not refresh the form ──────
+	// PROVEN DEFECT (static analysis): CoauthorCharacterForm is mounted with
+	// key={character.id}; a version folder-swap keeps the SAME id, so
+	// CoauthorCharacterFormInner does NOT remount. useForm takes defaultValues
+	// only on mount, and form.reset is called ONLY in handleSave/handleApply —
+	// there is no [character] sync effect. The editor CM6 (initialBody on mount)
+	// and the reviewing `diff` useMemo (deps [reviewing, proposal], no character)
+	// likewise go stale. Symptom: after switching a character version, the
+	// reviewing overlay diffs against the STALE canonical → wrong/empty panel.
+	//
+	// Repro (no LLM needed): the diff canonical comes from
+	// draftToBody(form.getValues()). Seed v1 (description OLD) + a proposal
+	// (description NEW) → 1 hunk. Then folder-swap to v2 whose description
+	// already equals the proposal (description NEW) → diff should be EMPTY
+	// (0 hunks). BUG: the form still holds v1 → the stale diff shows 1 hunk.
+
+	it.failing("version folder-swap: reviewing canonical refreshes when character changes without remount", () => {
+		__isSending = false;
+		// v1 — canonical when reviewing begins.
+		const v1 = seedReviewing({ description: "OLD personality." });
+		// proposed description = NEW; greetings/scenario/examples match canonical defaults.
+		useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, makeProfileActivity("t1", "NEW personality."));
+		const { container, rerender } = render(<CoauthorCharacterForm />);
+		// v1 (OLD) vs proposed (NEW) → exactly 1 hunk (personality changed).
+		expect(container.querySelectorAll('input[type="checkbox"]')).toHaveLength(1);
+
+		// Simulate a version folder-swap: SAME character id, NEW canonical content
+		// (description now equals the proposal). key={character.id} is unchanged →
+		// the inner form does NOT remount → it must sync via an effect (the defect).
+		useSnapshotStore.setState({
+			character: makeCharacter({ id: v1.id, description: "NEW personality." }),
+		});
+		rerender(<CoauthorCharacterForm />);
+
+		// v2 (NEW) vs proposed (NEW) → 0 hunks (no visible changes).
+		// BUG: the form/diff are stale → the old 1-hunk diff persists.
+		expect(container.querySelectorAll('input[type="checkbox"]')).toHaveLength(0);
 	});
 });
