@@ -367,6 +367,12 @@ export interface ChatAutoSummaryConfig {
   model?: string;
 }
 
+export interface ToolCall {
+  id: string;
+  name: string;
+  args: unknown;
+}
+
 export interface Message {
   id: MessageId;
   chatId: ChatId;
@@ -378,6 +384,8 @@ export interface Message {
   state: MessageState;
   createdAt: Timestamp;
   updatedAt: Timestamp;
+  toolCalls?: ToolCall[];
+  toolCallId?: string | null;
 }
 
 /**
@@ -398,6 +406,8 @@ export interface MessageVariant {
   reasoningDurationMs?: number;
   modelId?: string | null;
   presetId?: string | null;
+  toolCalls?: ToolCall[];
+  toolCallId?: string | null;
   createdAt: Timestamp;
 }
 

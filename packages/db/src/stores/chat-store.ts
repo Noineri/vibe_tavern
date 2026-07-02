@@ -373,6 +373,8 @@ export class ChatStore {
             // metadata for each swipe (was dropped, causing forked branches to lose
             // the metadata bar's model/preset segments).
             modelId: v.modelId, presetId: v.presetId,
+            toolCallsJson: v.toolCallsJson,
+            toolCallId: v.toolCallId,
             createdAt: now,
           });
         }
@@ -571,6 +573,9 @@ export class ChatStore {
               reasoning: null,
               reasoningDurationMs: null,
               modelId: null,
+              presetId: null,
+              toolCallsJson: null,
+              toolCallId: null,
               createdAt: this.clock.now(),
             }).run();
             currentVariants = [{
@@ -584,6 +589,8 @@ export class ChatStore {
               reasoningDurationMs: null,
               modelId: null,
               presetId: null,
+              toolCallsJson: null,
+              toolCallId: null,
               createdAt: this.clock.now(),
             }];
             changed = true;
@@ -611,6 +618,9 @@ export class ChatStore {
               reasoning: null,
               reasoningDurationMs: null,
               modelId: null,
+              presetId: null,
+              toolCallsJson: null,
+              toolCallId: null,
               createdAt: now,
             }))).run();
             currentVariants = [
@@ -626,6 +636,8 @@ export class ChatStore {
                 reasoningDurationMs: null,
                 modelId: null,
                 presetId: null,
+                toolCallsJson: null,
+                toolCallId: null,
                 createdAt: now,
               })),
             ];

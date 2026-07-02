@@ -349,6 +349,8 @@ export const messages = sqliteTable('messages', {
   content: text('content').notNull(),
   state: text('state').notNull(),
   attachmentsJson: text('attachments_json'),
+  toolCallsJson: text('tool_calls_json'),
+  toolCallId: text('tool_call_id'),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
 }, (table) => ({
@@ -388,6 +390,8 @@ export const messageVariants = sqliteTable('message_variants', {
   reasoningDurationMs: integer('reasoning_duration_ms'),
   modelId: text('model_id'),
   presetId: text('preset_id').references(() => promptPresets.id, { onDelete: 'set null' }),
+  toolCallsJson: text('tool_calls_json'),
+  toolCallId: text('tool_call_id'),
   createdAt: text('created_at').notNull(),
 }, (table) => ({
   uniqueVariant: uniqueIndex('idx_message_variants_unique').on(table.messageId, table.variantIndex),

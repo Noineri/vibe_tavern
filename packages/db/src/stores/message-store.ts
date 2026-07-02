@@ -22,6 +22,8 @@ export interface Message {
   createdAt: string;
   updatedAt: string;
   attachmentsJson?: string | null;
+  toolCalls?: Array<{ id: string; name: string; args: unknown }> | null;
+  toolCallId?: string | null;
 }
 
 /**
@@ -39,6 +41,8 @@ export interface MessageVariant {
   modelId: string | null;
   presetId: string | null;
   createdAt: string;
+  toolCalls?: Array<{ id: string; name: string; args: unknown }> | null;
+  toolCallId?: string | null;
 }
 
 // ─── Store ────────────────────────────────────────────────────────────────────
@@ -95,6 +99,8 @@ export class MessageStore {
     variants?: string[];
     selectedVariantIndex?: number;
     attachmentsJson?: string | null;
+    toolCallsJson?: string | null;
+    toolCallId?: string | null;
   }): Promise<Message> {
     const id = this.idGen.next('msg');
     const now = this.clock.now();
@@ -117,6 +123,8 @@ export class MessageStore {
         position: nextPosition, content: selectedContent,
         state: 'complete', createdAt: now, updatedAt: now,
         attachmentsJson: data.attachmentsJson ?? null,
+        toolCallsJson: data.toolCallsJson ?? null,
+        toolCallId: data.toolCallId ?? null,
       }).run();
       await tx.insert(messageVariants).values(variantContents.map((content, variantIndex) => ({
         id: this.idGen.next('mvar'), messageId: id, variantIndex,
@@ -125,6 +133,8 @@ export class MessageStore {
         reasoningDurationMs: variantIndex === selectedVariantIndex ? data.reasoningDurationMs ?? null : null,
         modelId: variantIndex === selectedVariantIndex ? data.modelId ?? null : null,
         presetId: variantIndex === selectedVariantIndex ? data.presetId ?? null : null,
+        toolCallsJson: variantIndex === selectedVariantIndex ? data.toolCallsJson ?? null : null,
+        toolCallId: variantIndex === selectedVariantIndex ? data.toolCallId ?? null : null,
         createdAt: now,
       }))).run();
     });
@@ -472,6 +482,8 @@ export class MessageStore {
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
       attachmentsJson: row.attachmentsJson,
+      toolCalls: row.toolCallsJson ? JSON.parse(row.toolCallsJson) : null,
+      toolCallId: row.toolCallId,
     };
   }
 
@@ -487,6 +499,8 @@ export class MessageStore {
       reasoningDurationMs: row.reasoningDurationMs,
       modelId: row.modelId,
       presetId: row.presetId,
+      toolCalls: row.toolCallsJson ? JSON.parse(row.toolCallsJson) : null,
+      toolCallId: row.toolCallId,
       createdAt: row.createdAt,
     };
   }
