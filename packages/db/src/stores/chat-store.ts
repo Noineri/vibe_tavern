@@ -30,6 +30,7 @@ export interface Chat {
   /** Co-author only (CA-13): lorebook ids explicitly bound to this chat as
    *  read-only editor context (right-panel picker). NOT RP activation. */
   coauthorLorebookIds: string[];
+  coauthorModuleId: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -276,6 +277,18 @@ export class ChatStore {
       .where(eq(chats.id, id))
       .returning();
     if (!row) throw new Error(`Chat '${id}' not found after coauthor lorebook ids update`);
+    return this.mapRow(row);
+  }
+
+  /** Co-author only: sets the active module ID for this chat. Null = autodetect/fallback. */
+  async setCoauthorModuleId(id: string, moduleId: string | null): Promise<Chat> {
+    const now = this.clock.now();
+    const [row] = await this.db
+      .update(chats)
+      .set({ coauthorModuleId: moduleId, updatedAt: now })
+      .where(eq(chats.id, id))
+      .returning();
+    if (!row) throw new Error(`Chat '${id}' not found after coauthor module update`);
     return this.mapRow(row);
   }
 
@@ -721,6 +734,7 @@ export class ChatStore {
       loreActivationState: safeParseJson(row.loreActivationStateJson),
       scriptState: safeParseScriptState(row.scriptStateJson),
       coauthorLorebookIds: parseStringArray(row.coauthorLorebookIdsJson),
+      coauthorModuleId: row.coauthorModuleId,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
     };

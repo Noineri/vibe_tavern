@@ -160,6 +160,7 @@ export const chats = sqliteTable('chats', {
   // chats, each with its own lore context). Folds into coauthor_config_json
   // when CA-16 lands; narrow column for now.
   coauthorLorebookIdsJson: text('coauthor_lorebook_ids_json').notNull().default('[]'),
+  coauthorModuleId: text('coauthor_module_id'),
 }, (table) => ({
   characterIdIdx: index('idx_chats_character_id').on(table.characterId),
   lastAccessedIdx: index('idx_chats_last_accessed').on(table.lastAccessedAt),

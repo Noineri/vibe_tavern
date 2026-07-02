@@ -328,6 +328,8 @@ export interface Chat {
    *  this chat as read-only editor context (right-panel picker). NOT RP
    *  keyword activation. Empty for RP chats. */
   coauthorLorebookIds: string[];
+  /** Co-author mode only: the active author module ID. */
+  coauthorModuleId: string | null;
   createdAt: Timestamp;
   updatedAt: Timestamp;
 }
