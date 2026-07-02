@@ -246,3 +246,71 @@ describe("coauthor-tools: add_alt_greeting", () => {
     ).rejects.toThrow(/empty/);
   });
 });
+
+describe("coauthor-tools: edit_section", () => {
+  test("replaces only the targeted section and returns the merged profile", async () => {
+    const tools = buildCoauthorTools({ profileMd: sampleProfileMd() });
+    const out = (await tools.edit_section.execute(
+      { section: "SCENARIO", content: "A new scenario text.", summary: "Update scenario." },
+      { messages: [], toolCallId: "t8", abort: () => {} } as never,
+    )) as never;
+
+    expect(out.target).toBe("profile");
+    expect(out.proposed).toContain("# SCENARIO\nA new scenario text.");
+    expect(out.proposed).toContain("# PERSONALITY\nA test character."); // unmodified
+    expect(out.summary).toBe("Update scenario.");
+  });
+
+  test("rejects empty content", async () => {
+    const tools = buildCoauthorTools({ profileMd: sampleProfileMd() });
+    await expect(
+      tools.edit_section.execute(
+        { section: "SCENARIO", content: "   ", summary: "x" },
+        { messages: [], toolCallId: "t9", abort: () => {} } as never,
+      ),
+    ).rejects.toThrow(/empty/);
+  });
+
+  test("rejects if context profileMd is missing", async () => {
+    const tools = buildCoauthorTools();
+    await expect(
+      tools.edit_section.execute(
+        { section: "SCENARIO", content: "Valid", summary: "x" },
+        { messages: [], toolCallId: "t10", abort: () => {} } as never,
+      ),
+    ).rejects.toThrow(/missing canonical profile context/);
+  });
+
+  test("runs lost-section guard on the merged result", async () => {
+    const tools = buildCoauthorTools({ profileMd: sampleProfileMd() });
+    await expect(
+      tools.edit_section.execute(
+        { section: "SCENARIO", content: "## EXAMPLES\n\nsome examples here", summary: "x" },
+        { messages: [], toolCallId: "t11", abort: () => {} } as never,
+      ),
+    ).rejects.toThrow(/EXAMPLES/);
+  });
+});
+
+describe("coauthor-tools: edit_alt_greeting", () => {
+  test("returns target greeting with given index", async () => {
+    const tools = buildCoauthorTools();
+    const out = (await tools.edit_alt_greeting.execute(
+      { index: 1, content: "Replaced alt.", summary: "Swap alt." },
+      { messages: [], toolCallId: "t12", abort: () => {} } as never,
+    )) as never;
+
+    expect(out.target).toBe("greeting");
+    expect(out.greetingIndex).toBe(1);
+    expect(out.proposed).toBe("Replaced alt.");
+  });
+});
+
+describe("coauthor-tools: toolSet filtering", () => {
+  test("filters tools by the provided toolSet config", () => {
+    const tools = buildCoauthorTools({ toolSet: { edit_profile: true, edit_section: false } });
+    expect(tools.edit_profile).toBeDefined();
+    expect((tools as any).edit_section).toBeUndefined();
+    expect((tools as any).edit_greeting).toBeUndefined();
+  });
+});

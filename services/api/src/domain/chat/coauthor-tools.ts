@@ -178,8 +178,9 @@ function validateProfileMd(profileMd: string): string {
  * validates and echoes the proposal; the strategy passes this set to the
  * executor (tools propose; the Apply RPC is the sole write path).
  */
-export function buildCoauthorTools() {
-  return {
+export function buildCoauthorTools(opts: { toolSet?: Record<string, boolean>; profileMd?: string } = {}) {
+  const { toolSet, profileMd } = opts;
+  const allTools = {
     edit_profile: tool({
       description:
         "Propose a full rewrite of the character's profile.md (YAML frontmatter + the three H1 sections: PERSONALITY, SCENARIO, EXAMPLES). " +
@@ -266,7 +267,76 @@ export function buildCoauthorTools() {
         return { target: "greeting", isAdd: true, proposed: content, summary };
       },
     }),
+
+    edit_section: tool({
+      description:
+        "Propose a rewrite of a SINGLE specific section (PERSONALITY, SCENARIO, or EXAMPLES) of the character's profile. " +
+        "Use this instead of edit_profile when you only want to change one part of the card. The other sections will be preserved verbatim.",
+      inputSchema: z.object({
+        section: z.enum(["PERSONALITY", "SCENARIO", "EXAMPLES"]).describe("The section to edit (must be one of the three H1 known sections)."),
+        content: z.string().describe("The full proposed text for this section (do NOT include the '# SECTION_NAME' heading)."),
+        summary: z.string().max(200).describe("One-line description of what this edit changes, shown above the Apply button."),
+      }),
+      execute: async ({ section, content, summary }): Promise<CoauthorToolOutput> => {
+        if (!profileMd) {
+          logger.warn("edit_section REJECTED missing profileMd context");
+          throw new Error("edit_section: Internal error, missing canonical profile context");
+        }
+        if (!content.trim()) {
+          logger.warn("edit_section REJECTED empty input section=%s", section);
+          throw new Error("edit_section: content must not be empty");
+        }
+        logger.info("edit_section IN section=%s len=%d summary=%s", section, content.length, summary);
+        
+        const parsed = parseProfileMd(profileMd);
+        const field = SECTION_TO_PROFILE_FIELD[section];
+        parsed.profile[field] = content;
+        const merged = serializeProfileMd(parsed);
+        
+        try {
+          const canonical = validateProfileMd(merged);
+          logger.info("edit_section OK merged canonical len=%d", canonical.length);
+          return { target: "profile", proposed: canonical, summary };
+        } catch (err) {
+          const msg = (err as Error).message;
+          logger.warn("edit_section REJECTED guard-threw msg=%s", msg);
+          throw err;
+        }
+      },
+    }),
+
+    edit_alt_greeting: tool({
+      description:
+        "Propose a replacement for an EXISTING alternate greeting. index 1 is the first alternate greeting, index 2 is the second, etc.",
+      inputSchema: z.object({
+        index: z
+          .number()
+          .int()
+          .min(1)
+          .describe("The alternate greeting slot to replace (1+)."),
+        content: z
+          .string()
+          .describe("The full proposed greeting text for this slot."),
+        summary: z
+          .string()
+          .max(200)
+          .describe("One-line description of what this greeting change does, shown above the Apply button."),
+      }),
+      execute: async ({ index, content, summary }): Promise<CoauthorToolOutput> => {
+        if (!content.trim()) {
+          logger.warn("edit_alt_greeting REJECTED empty input index=%d", index);
+          throw new Error("edit_alt_greeting: content must not be empty");
+        }
+        logger.info("edit_alt_greeting IN index=%d len=%d summary=%s", index, content.length, summary);
+        return { target: "greeting", greetingIndex: index, proposed: content, summary };
+      },
+    }),
   };
+
+  if (toolSet) {
+    return Object.fromEntries(Object.entries(allTools).filter(([name]) => toolSet[name] === true)) as typeof allTools;
+  }
+  return allTools;
 }
 
 /**
