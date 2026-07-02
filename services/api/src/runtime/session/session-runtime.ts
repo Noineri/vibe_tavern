@@ -718,6 +718,11 @@ import { scanSillyTavernDirectory as scanST, importSillyTavernDirectory as impor
 				const msgs = await this.stores.messages.getMessages(branch);
 				return limit && limit > 0 ? msgs.slice(-limit) : msgs;
 			},
+			getChat: async (chatId) => {
+				const chat = await this.stores.chats.getById(chatId);
+				if (!chat) throw new Error(`Chat '${chatId}' was not found.`);
+				return chat;
+			},
 			getCharacter: async (chatId) => {
 				const chat = await this.stores.chats.getById(chatId);
 				if (!chat) throw new Error(`Chat '${chatId}' was not found.`);

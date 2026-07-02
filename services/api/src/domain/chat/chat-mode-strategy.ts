@@ -3,7 +3,7 @@ import type { StoredProviderProfileRecord } from "@vibe-tavern/domain";
 import type { EventBus } from "@vibe-tavern/domain";
 import type { ChatMode } from "@vibe-tavern/domain";
 import type { ToolSet } from "ai";
-import type { Character, Message as DbMessage } from "@vibe-tavern/db";
+import type { Character, Message as DbMessage, Chat as DbChat } from "@vibe-tavern/db";
 import type {
   AssemblePromptForChatInput,
   AssemblePromptForChatResult,
@@ -44,6 +44,8 @@ export type { ChatMode };
 export interface ChatModeAssembleLoaders {
   /** Active-branch messages for the chat (position-ascending); `limit` takes the last N. */
   getMessages(chatId: ChatId, branchId?: ChatBranchId, limit?: number): Promise<DbMessage[]>;
+  /** The chat row being assembled. */
+  getChat(chatId: ChatId): Promise<DbChat>;
   /** The character row this chat edits (serializes + greeting context). */
   getCharacter(chatId: ChatId): Promise<Character>;
   /** Canonical `profile.md` text for the character (the edit target). */

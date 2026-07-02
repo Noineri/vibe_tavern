@@ -1,7 +1,7 @@
 import { describe, test, expect, mock, beforeEach } from "bun:test";
 import type { ChatModeAssembleInput, ChatModeAssembleLoaders } from "../src/domain/chat/chat-mode-strategy.js";
 import { assembleCoauthorPrompt } from "../src/domain/chat/coauthor-prompt.js";
-import type { Character, Message as DbMessage } from "@vibe-tavern/db";
+import type { Character, Message as DbMessage, Chat as DbChat } from "@vibe-tavern/db";
 
 /**
  * Co-Author assembly characterization. Pins what the model + frontend can
@@ -13,6 +13,7 @@ import type { Character, Message as DbMessage } from "@vibe-tavern/db";
 
 function makeLoaders(overrides?: Partial<{
   character: Partial<Character>;
+  chat: Partial<DbChat>;
   profileMd: string;
   messages: DbMessage[];
   loreEntries: Array<{ id: string; title: string; content: string }>;
@@ -47,6 +48,7 @@ function makeLoaders(overrides?: Partial<{
   } as unknown as Character;
 
   return {
+    getChat: async () => (overrides?.chat ?? { id: "chat_test", coauthorModuleId: null }) as any,
     getMessages: async () => overrides?.messages ?? [],
     getCharacter: async () => character,
     getProfileMdText: async () => overrides?.profileMd ?? "---\nname: Test\n---\n# PERSONALITY\nA test character.\n",

@@ -70,6 +70,7 @@ describe("CoauthorModeStrategy.assemble", () => {
       chatId: "chat_test" as never,
       model: "test-model",
       loaders: {
+        getChat: async () => ({ coauthorModuleId: null } as any),
         getMessages: async () => [],
         getCharacter: async () => ({ id: "char_test", firstMessage: "x", alternateGreetings: [] } as never),
         getProfileMdText: async () => "---\nname: Test\n---\n# PERSONALITY\nx\n",

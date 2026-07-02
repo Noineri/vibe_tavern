@@ -28,6 +28,7 @@ import { buildCoauthorTools, COAUTHOR_MAX_STEPS } from "./coauthor-tools.js";
 import { loadPromptAsset } from "../../shared/prompt-asset-loader.js";
 import { estimateTokens, findSafeCompactionBoundary, setModelHint } from "@vibe-tavern/prompt-pipeline";
 import type { ToolCallPart, ToolResultPart } from "ai";
+import { getCoauthorModule } from "../coauthor/modules/module-registry.js";
 
 /** How many of the chat's most recent messages to include as conversation history. */
 const HISTORY_LIMIT = 20;
@@ -47,12 +48,12 @@ const SKILL_KEYWORDS: Array<{ skill: string; keywords: string[] }> = [
   { skill: "personality-deepen", keywords: ["personality", "deepen", "flat", "generic", "more interesting", "deeper", "flesh out"] },
 ];
 
-function detectSkill(userText: string): string {
+function detectSkill(userText: string, allowedSkillIds: string[]): string {
   const lower = userText.toLowerCase();
   for (const { skill, keywords } of SKILL_KEYWORDS) {
-    if (keywords.some((k) => lower.includes(k))) return skill;
+    if (allowedSkillIds.includes(skill) && keywords.some((k) => lower.includes(k))) return skill;
   }
-  return FALLBACK_SKILL;
+  return allowedSkillIds[0] ?? FALLBACK_SKILL;
 }
 
 /** Extract the most recent user message text for skill autodetection (empty-safe). */
@@ -122,7 +123,8 @@ export async function assembleCoauthorPrompt(input: ChatModeAssembleInput): Prom
   // Pull the card state + conversation history up front. The skill overlay is
   // chosen from the latest user message, so history must be resolved before the
   // asset load. Co-author is a flat editor chat — no branches, no compaction.
-  const [character, history] = await Promise.all([
+  const [chat, character, history] = await Promise.all([
+    loaders.getChat(chatId),
     loaders.getCharacter(chatId),
     loaders
       .getMessages(chatId, undefined, HISTORY_LIMIT)
@@ -168,11 +170,12 @@ export async function assembleCoauthorPrompt(input: ChatModeAssembleInput): Prom
   // Lore is read-only reference (CA-13): the entries of the lorebooks the user
   // explicitly bound to this chat (right-panel picker) — NOT RP keyword
   // activation. Co-author is an editor, not a roleplay.
-  const skillId = detectSkill(latestUserMessage(history));
+  const module = getCoauthorModule(chat.coauthorModuleId);
+  const skillId = detectSkill(latestUserMessage(history), module.skillIds);
   const [profileMd, loreEntries, basePrompt, skillPrompt] = await Promise.all([
     loaders.getProfileMdText(character.id as unknown as import("@vibe-tavern/domain").CharacterId),
     loaders.getCoauthorLorebookEntries(chatId),
-    loadPromptAsset(BASE_PROMPT_FILE),
+    loadPromptAsset(module.basePromptFile),
     loadPromptAsset(`coauthor/skills/${skillId}.md`),
   ]);
   const currentCard = renderCurrentCard(profileMd, character);
@@ -275,7 +278,7 @@ export async function assembleCoauthorPrompt(input: ChatModeAssembleInput): Prom
       latencyMs: 0,
       compactionSummary,
     },
-    tools: buildCoauthorTools(),
-    maxSteps: COAUTHOR_MAX_STEPS,
+    tools: buildCoauthorTools({ toolSet: module.toolSet, profileMd }),
+    maxSteps: module.maxSteps,
   };
 }
