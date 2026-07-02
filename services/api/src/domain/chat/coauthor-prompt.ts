@@ -172,16 +172,28 @@ export async function assembleCoauthorPrompt(input: ChatModeAssembleInput): Prom
   // activation. Co-author is an editor, not a roleplay.
   const module = getCoauthorModule(chat.coauthorModuleId);
   const skillId = detectSkill(latestUserMessage(history), module.skillIds);
-  const [profileMd, loreEntries, basePrompt, skillPrompt] = await Promise.all([
+  const [profileMd, loreEntries, basePrompt, skillPrompt, branchSummaries] = await Promise.all([
     loaders.getProfileMdText(character.id as unknown as import("@vibe-tavern/domain").CharacterId),
     loaders.getCoauthorLorebookEntries(chatId),
     loadPromptAsset(module.basePromptFile),
     loadPromptAsset(`coauthor/skills/${skillId}.md`),
+    loaders.getChatSummaries(chatId, input.branchId ?? (chat.activeBranchId as ChatBranchId)),
   ]);
   const currentCard = renderCurrentCard(profileMd, character);
   const loreBlock = renderLoreContext(loreEntries);
 
+  const enabledSummaries = branchSummaries.filter((s) => s.includeInContext && s.content.trim());
+  const memoryItems = enabledSummaries.length > 0
+    ? enabledSummaries.map((s) => `[${s.source}] ${s.content.trim()}`)
+    : (chat.summary?.trim() ? [`[chat] ${chat.summary.trim()}`] : []);
+  const memoryBlock = memoryItems.length > 0
+    ? ["# Conversation Summary", ...memoryItems].join("\n")
+    : "";
+
   const sections = [basePrompt, "", "# Active skill", skillPrompt, "", currentCard];
+  if (memoryBlock) {
+    sections.push("", memoryBlock);
+  }
   if (loreBlock) {
     // Omitted entirely when no entries are active — the prompt is then
     // unchanged for chats with no lore / no matches.

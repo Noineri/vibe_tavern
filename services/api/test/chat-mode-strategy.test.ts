@@ -75,6 +75,7 @@ describe("CoauthorModeStrategy.assemble", () => {
         getCharacter: async () => ({ id: "char_test", firstMessage: "x", alternateGreetings: [] } as never),
         getProfileMdText: async () => "---\nname: Test\n---\n# PERSONALITY\nx\n",
         getCoauthorLorebookEntries: async () => [],
+        getChatSummaries: async () => [],
       },
     };
     const out = await strategy.assemble(input);

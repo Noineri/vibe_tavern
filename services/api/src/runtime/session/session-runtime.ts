@@ -759,6 +759,9 @@ import { scanSillyTavernDirectory as scanST, importSillyTavernDirectory as impor
 				}
 				return out;
 			},
+			getChatSummaries: async (chatId, branchId) => {
+				return this.stores.chatSummaries.listByChatBranch(chatId, branchId);
+			},
 		};
 	}
 

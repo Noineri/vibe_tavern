@@ -53,6 +53,7 @@ function makeLoaders(overrides?: Partial<{
     getCharacter: async () => character,
     getProfileMdText: async () => overrides?.profileMd ?? "---\nname: Test\n---\n# PERSONALITY\nA test character.\n",
     getCoauthorLorebookEntries: async () => overrides?.loreEntries ?? [],
+    getChatSummaries: async () => [],
   };
 }
 

@@ -60,6 +60,16 @@ export interface ChatModeAssembleLoaders {
    * Returns {id,title,content}[] — no activation reason / windows / scan-depth.
    */
   getCoauthorLorebookEntries(chatId: ChatId): Promise<Array<{ id: string; title: string; content: string }>>;
+  /** Gets chat summaries bound to this branch. */
+  getChatSummaries(chatId: ChatId, branchId: ChatBranchId): Promise<Array<{
+    id: string;
+    source: string;
+    content: string;
+    includeInContext: boolean;
+    excludeSummarized: boolean;
+    summarizedFrom: number;
+    summarizedTo: number;
+  }>>;
 }
 
 /**
