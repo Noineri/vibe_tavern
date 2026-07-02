@@ -85,15 +85,19 @@ describe("CoauthorTopBar", () => {
     expect(queryByText("topbar_default")).toBeNull();
   });
 
-  it("opens the provider modal when the provider pill is clicked", () => {
+  it("opens the provider modal in coauthor mode when the pill is clicked", () => {
     const { getByText } = render(<CoauthorTopBar />);
+    const { useModalStore } = require("../../stores/index.js");
+    // Mode starts at the RP default.
+    expect(useModalStore.getState().providerModalMode).toBe("default");
+    expect(useModalStore.getState().isProviderModalOpen).toBe(false);
     // The pill is the clickable element wrapping the provider name.
     const pill = getByText("OpenAI Pro").closest("[class*='cursor-pointer']") as HTMLElement;
     expect(pill).not.toBeNull();
-    // Modal store starts closed; the click must flip it open.
-    const { useModalStore } = require("../../stores/index.js");
-    expect(useModalStore.getState().isProviderModalOpen).toBe(false);
     pill.click();
+    // CS-21: the pill must open the modal AND set coauthor mode so the model
+    // list is tool-filtered (co-author turns require function-calling).
     expect(useModalStore.getState().isProviderModalOpen).toBe(true);
+    expect(useModalStore.getState().providerModalMode).toBe("coauthor");
   });
 });

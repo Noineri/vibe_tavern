@@ -54,9 +54,14 @@ export function CoauthorTopBar({ railHidden, onShowRail }: { railHidden?: boolea
   const providerModelId = provider.activeProviderProfile?.defaultModel || connection.model || null;
   const providerModelLabel = (providerModelId && connection.models.find((m) => m.id === providerModelId)?.label) || providerModelId || t("no_model_selected");
 
-  // "Back to editor" leaves the co-author conversation and drops into BuildMode
-  // for the same character (the RP editor). Mirrors TopBar's coauthor toggle,
-  // which resolves to setMode('build') when mode === 'coauthor'.
+  // Open the provider modal in coauthor mode so its model list is tool-filtered
+  // (co-author turns require function-calling). The mode auto-resets to
+  // "default" when the modal closes (ProviderModal.onClose), so the RP opener
+  // never inherits it.
+  const openProviderModal = () => {
+    useModalStore.getState().setProviderModalMode("coauthor");
+    useModalStore.getState().setIsProviderModalOpen(true);
+  };
   const goBackToEditor = () => setMode("build");
 
   // ── Mobile: compact bar ──
@@ -116,7 +121,7 @@ export function CoauthorTopBar({ railHidden, onShowRail }: { railHidden?: boolea
         <CustomTooltip content={t("provider_settings_title")}>
           <div
             className="flex min-h-8 min-w-0 max-w-[min(520px,60vw)] flex-[0_1_auto] cursor-pointer items-center gap-1.5 overflow-hidden whitespace-nowrap rounded border border-transparent bg-transparent px-2 py-[3px] font-ui text-[calc(var(--ui-fs)-4px)] leading-tight text-t2 transition-colors duration-150 hover:border-border hover:bg-s2 hover:text-t1"
-            onClick={() => useModalStore.getState().setIsProviderModalOpen(true)}
+            onClick={openProviderModal}
           >
             <div className={cn(
               "h-1.5 w-1.5 shrink-0 rounded-full transition-colors duration-300",
