@@ -11,6 +11,7 @@ declare global {
     __useModalStore: typeof import("../stores/modal-store").useModalStore;
     __useNavigationStore: typeof import("../stores/navigation-store").useNavigationStore;
     __useSnapshotStore: typeof import("../stores/snapshot-store").useSnapshotStore;
+    __useCoauthorTurnStore: typeof import("../stores/coauthor-turn-store").useCoauthorTurnStore;
     __setLorebookView: (view: "pick" | "list" | "editor") => void;
     __setLorebookTab: (tab: "lorebooks" | "scripts") => void;
     __getLorebookView: () => "pick" | "list" | "editor";
