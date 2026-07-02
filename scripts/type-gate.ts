@@ -68,7 +68,9 @@ const SCAN_ROOTS = ["packages", "services", "apps/web/src"];
 
 const EXCLUDE_SUFFIXES = [".test.ts", ".test.tsx", ".d.ts"];
 // Generated/vendored/irrelevant trees that would drown the signal.
-const EXCLUDE_DIR_PARTS = ["node_modules", "/dist/", "/out/", "/.cache/"];
+//   services/api/scripts/ — local throwaway probes (e.g. probe-nanogpt-tools);
+//   gitignored; their own headers declare them "out of the typecheck gate".
+const EXCLUDE_DIR_PARTS = ["node_modules", "/dist/", "/out/", "/.cache/", "/services/api/scripts/"];
 
 type Category = "as-any" | "angle-any" | "type-any" | "empty-catch" | "ts-directive";
 
