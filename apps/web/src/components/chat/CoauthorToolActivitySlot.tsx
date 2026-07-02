@@ -4,6 +4,7 @@ import { registerMessageSlot, type MessageSlotContext } from "../../lib/message-
 import { useCoauthorTurnStore, type CoauthorToolActivity } from "../../stores/coauthor-turn-store.js";
 import type { CoauthorTarget } from "@vibe-tavern/api-contracts";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
+import type { AppMessage } from "../../app-client.js";
 import { Icons } from "../shared/icons.js";
 import { useT } from "../../i18n/context.js";
 
@@ -52,21 +53,37 @@ function CoauthorToolActivitySlot({
     }),
   );
 
-  const persistedActivities = useSnapshotStore(useShallow((s) => {
+  // CS-6 fix: the selector MUST return references that are stable across calls
+  // (zustand v5 + React's useSyncExternalStore otherwise loop with "getSnapshot
+  // should be cached" / React #185). Returning an array of NEWLY-constructed
+  // CoauthorToolActivity objects here broke that invariant: useShallow compares
+  // array elements by reference (Object.is), so fresh objects every call →
+  // always "changed" → infinite forceStoreRerender, the moment a persisted
+  // tool message existed (e.g. after a completed edit_examples turn).
+  // Selector now returns the tool MESSAGES themselves (same refs the store
+  // holds, structurally shared via Immer → Object.is holds), and the derived
+  // CoauthorToolActivity[] is built in a useMemo below.
+  const EMPTY_MSGS: AppMessage[] = [];
+  const trailingToolMessages = useSnapshotStore(useShallow((s): AppMessage[] => {
     const order = s.messageOrder;
     const msgs = s.messagesById;
     const idx = order.indexOf(messageId);
-    if (idx === -1) return EMPTY;
-    
-    const out: CoauthorToolActivity[] = [];
-    // A persisted tool message's content is the JSON the backend wrote from the
-    // tool's execute() output (coauthorToolOutputSchema: summary/proposed/target).
-    // It may also be a plain string if the result wasn't an object — the catch
-    // wraps that as a summary so the card still renders something useful.
-    type PersistedToolResult = { summary?: string; proposed?: string; target?: CoauthorTarget };
+    if (idx === -1) return EMPTY_MSGS;
+    const out: AppMessage[] = [];
     for (let i = idx + 1; i < order.length; i++) {
       const m = msgs[order[i]];
       if (!m || m.role !== "tool") break;
+      out.push(m);
+    }
+    return out.length > 0 ? out : EMPTY_MSGS;
+  }));
+  // A persisted tool message's content is the JSON the backend wrote from the
+  // tool's execute() output (coauthorToolOutputSchema: summary/proposed/target).
+  // It may also be a plain string if the result wasn't an object — the catch
+  // wraps that as a summary so the card still renders something useful.
+  const persistedActivities = useMemo<CoauthorToolActivity[]>(() => {
+    type PersistedToolResult = { summary?: string; proposed?: string; target?: CoauthorTarget };
+    return trailingToolMessages.map((m) => {
       let output: PersistedToolResult = {};
       try {
         const parsed: unknown = JSON.parse(m.content);
@@ -74,17 +91,16 @@ function CoauthorToolActivitySlot({
       } catch {
         output = { summary: m.content };
       }
-      out.push({
+      return {
         toolCallId: m.toolCallId || m.id,
         toolName: "",
         status: "done",
         summary: output.summary,
         proposed: output.proposed,
         target: output.target,
-      });
-    }
-    return out.length > 0 ? out : EMPTY;
-  }));
+      };
+    });
+  }, [trailingToolMessages]);
 
   const activities = useMemo(() => {
     const map = new Map<string, CoauthorToolActivity>();
