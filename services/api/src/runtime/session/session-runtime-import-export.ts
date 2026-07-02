@@ -62,7 +62,7 @@ export async function exportCharacter(
 	let characterRecord: CharacterRecord | null = null;
 	try {
 		characterRecord = await deps.resolver.getCharacter(characterId);
-	} catch {}
+	} catch { /* character may be missing (deleted/unsaved); leave characterRecord null and fall back to card.name below */ }
 
 	const data: Record<string, unknown> = {
 		name: character.name,
@@ -450,7 +450,7 @@ async function resolveChatNames(
 	let characterName = "Assistant";
 	try {
 		characterName = (await deps.resolver.getCharacter(characterId)).name;
-	} catch {}
+	} catch { /* character may have been deleted; keep the default "Assistant" name */ }
 	const persona = await deps.resolver.getPersona(
 		personaId ?? (await deps.resolveDefaultPersonaId()) as string,
 	);

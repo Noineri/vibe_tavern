@@ -1,10 +1,11 @@
 import { useState, useMemo, type CSSProperties, type ReactNode, createContext, useContext } from "react";
 import { createPortal } from "react-dom";
+import type { DraggableAttributes, DraggableSyntheticListeners } from "@dnd-kit/core";
 
 const DragHandleContext = createContext<{
-  attributes: any;
-  listeners: any;
-  setActivatorNodeRef: (node: any) => void;
+  attributes: DraggableAttributes;
+  listeners: DraggableSyntheticListeners;
+  setActivatorNodeRef: (node: HTMLElement | null) => void;
 } | null>(null);
 
 function DragHandle({ disabled }: { disabled?: boolean }) {

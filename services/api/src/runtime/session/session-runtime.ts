@@ -817,7 +817,7 @@ import { scanSillyTavernDirectory as scanST, importSillyTavernDirectory as impor
 			const charRecord = await this.resolver.getCharacter(chat.characterId);
 			characterName = charRecord.name;
 			subtitle = charRecord.subtitle ?? "";
-		} catch {}
+		} catch { /* chat may reference a since-deleted character; keep default name/subtitle */ }
 		const messageCount = chatState.messages.length;
 		// Recency signal for the sidebar's "recent" sort: the newest message in the
 		// active branch (chat.updatedAt reflects metadata edits, not generation).

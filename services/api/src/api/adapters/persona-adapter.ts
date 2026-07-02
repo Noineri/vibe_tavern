@@ -167,7 +167,7 @@ export class PersonaAdapter implements PersonaRuntimeApi {
 							Object.entries(parsed).filter(([, v]) => typeof v === "string"),
 						) as Record<string, string>;
 					}
-				} catch {}
+				} catch { /* preset.aiAssistantPrompts may hold malformed JSON; skip and fall back to the default vision-describe prompt */ }
 			}
 		}
 		return resolveVisionDescribePrompt(aiAssistantPrompts);

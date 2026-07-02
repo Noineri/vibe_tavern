@@ -87,7 +87,7 @@ export class ChatAdapter implements ChatRuntimeApi {
 
 	// ─── Messages (AI) ──────────────────────────────────────────────────
 
-	sendMessage = async (chatId: string, body: { content: string; attachments?: any[] }, signal?: AbortSignal) => {
+	sendMessage = async (chatId: string, body: { content: string; attachments?: Attachment[] }, signal?: AbortSignal) => {
 		logSendDebug("api.runtime.send.start", { chatId, contentLength: body.content?.length ?? 0 });
 		const profile = await this.resolveEffectiveProfileOrThrow();
 		logSendDebug("api.runtime.send.profile", {
@@ -121,7 +121,7 @@ export class ChatAdapter implements ChatRuntimeApi {
 		return result.snapshot;
 	};
 
-	sendMessageStream = async function* (this: ChatAdapter, chatId: string, body: { content: string; attachments?: any[] }, signal?: AbortSignal) {
+	sendMessageStream = async function* (this: ChatAdapter, chatId: string, body: { content: string; attachments?: Attachment[] }, signal?: AbortSignal) {
 		const profile = await this.resolveEffectiveProfileOrThrow();
 		try {
 			yield* this.liveChatOrchestrator.sendMessageStream({
@@ -356,7 +356,7 @@ export class ChatAdapter implements ChatRuntimeApi {
 							Object.entries(parsed).filter(([, v]) => typeof v === "string"),
 						) as Record<string, string>;
 					}
-				} catch {}
+				} catch { /* preset.aiAssistantPrompts may hold malformed JSON; skip and fall back to the default vision-describe prompt */ }
 			}
 		}
 		return resolveVisionDescribePrompt(aiAssistantPrompts);

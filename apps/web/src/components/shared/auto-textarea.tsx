@@ -17,8 +17,9 @@ export interface AutoTextareaProps extends AutoTextareaPassthrough {
   style: React.CSSProperties;
   disabled?: boolean;
   placeholder?: string;
-  /** react-hook-form register() result — for uncontrolled fields */
-  register?: UseFormRegisterReturn<any>;
+  /** react-hook-form register() result — for uncontrolled fields. Field name
+   *  is irrelevant here — only `.ref`/`.onChange`/spread are consumed below. */
+  register?: UseFormRegisterReturn<string>;
   /** Controlled value — when set, component works in controlled mode */
   value?: string;
   /** Change handler for controlled mode */

@@ -104,7 +104,7 @@ export class ChatRuntime {
     } catch (err) {
       try {
         await this.deps.chatApp.deleteMessage(userMessage.id);
-      } catch {}
+      } catch { /* best-effort rollback of the just-inserted user message; the original assemble error is rethrown below */ }
       throw err;
     }
     this.pendingPromptTraceByChat.set(chatId, {

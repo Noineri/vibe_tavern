@@ -89,12 +89,15 @@ export const Ic = {
   arrowUpCircle:()=><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="8" cy="8" r="6.5"/><line x1="8" y1="11" x2="8" y2="5"/><polyline points="5.5 7.5 8 5 10.5 7.5"/></svg>,
 };
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type IconComponent = React.FC<any>;
+// Icon props actually used at call sites: `className` (any icon) and `direction`
+// (Caret only). A plain functional type (not React.FC) keeps it overlap-
+// compatible with the `Ic` values (`() => JSX.Element`, no args) for the proxy
+// cast below, while still accepting the Caret adapter that reads `direction`.
+type IconComponent = (props?: { direction?: string; className?: string }) => React.ReactElement;
 
 // Backward-compat proxy: Icons.XXX → Ic.xxx
 // Handles PascalCase→camelCase, Trash→del, Send→terminal, Caret prop adapter
-export const Icons: Record<string, IconComponent> = new Proxy(Ic as Record<string, IconComponent>, {
+export const Icons: Record<string, IconComponent> = new Proxy(Ic as unknown as Record<string, IconComponent>, {
   get(target, prop: string) {
     // Special key mappings
     if (prop === 'Trash') return target.del;

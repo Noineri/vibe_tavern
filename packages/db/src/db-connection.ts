@@ -7,6 +7,14 @@ import * as schema from './db-schema.js';
 
 export type AppDb = ReturnType<typeof drizzle<typeof schema>>;
 
+/** Type-safe `.message` extraction from a caught value. Returns "" for non-Error
+ *  so downstream `.includes()` / `.toLowerCase()` checks behave as before
+ *  (the historical code used `err?.message ?? ''`). Used by the migration
+ *  healing paths below, which catch raw sqlite/bun:sqlite rejections. */
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : "";
+}
+
 /**
  * Resolve the drizzle migrations folder.
  *
@@ -248,9 +256,9 @@ async function repairMissingTables(sqlite: Database, migrationsFolder: string): 
       for (const stmt of statements) {
         try {
           sqlite.exec(stmt);
-        } catch (stmtErr: any) {
+        } catch (stmtErr: unknown) {
           // Ignore "duplicate column" and "already exists" errors
-          if (stmtErr?.message?.includes('duplicate column') || stmtErr?.message?.includes('already exists')) {
+          if (errorMessage(stmtErr).includes('duplicate column') || errorMessage(stmtErr).includes('already exists')) {
             continue;
           }
           throw stmtErr;
@@ -326,8 +334,8 @@ async function ensureAlterColumns(sqlite: Database, migrationsFolder: string): P
         fixed++;
         // Invalidate column cache for this table
         columnCache.delete(table.toLowerCase());
-      } catch (err: any) {
-        console.error(`[db] Pre-flight: failed to add ${table}.${column}:`, err.message);
+      } catch (err: unknown) {
+        console.error(`[db] Pre-flight: failed to add ${table}.${column}:`, errorMessage(err) || err);
       }
     }
   }
@@ -393,12 +401,12 @@ async function healPartialMigrations(sqlite: Database, migrationsFolder: string)
     for (const stmt of statements) {
       try {
         sqlite.exec(stmt + ';');
-      } catch (err: any) {
-        const msg = (err?.message ?? '').toLowerCase();
+      } catch (err: unknown) {
+        const msg = errorMessage(err).toLowerCase();
         if (msg.includes('already exists') || msg.includes('duplicate column')) {
           // Tolerate — column/table already present from a previous partial run
         } else {
-          console.error(`[db] Heal: unexpected error in ${entry.tag}:`, err?.message);
+          console.error(`[db] Heal: unexpected error in ${entry.tag}:`, errorMessage(err) || err);
           allOk = false;
         }
       }
@@ -446,12 +454,12 @@ export async function createDb(dbPath: string, migrationsFolderOverride?: string
     // Try normal migration first
     try {
       migrate(db, { migrationsFolder });
-    } catch (migrateErr: any) {
+    } catch (migrateErr: unknown) {
       // migrate() can fail when a previous ensureAlterColumns() pre-flight
       // already added columns but didn't stamp the migration, leaving partial state.
       // Heal by splitting unstamped migrations into individual statements
       // and tolerating "already exists" / "duplicate column" errors.
-      console.warn(`[db] migrate() failed (${migrateErr?.message ?? migrateErr}), healing partial state...`);
+      console.warn(`[db] migrate() failed (${errorMessage(migrateErr) || String(migrateErr)}), healing partial state...`);
       await healPartialMigrations(sqlite, migrationsFolder);
       migrate(db, { migrationsFolder });
     }
