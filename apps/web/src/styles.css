@@ -170,7 +170,15 @@ html,body{height:100%;background:var(--page-bg, var(--bg));color:var(--t1);overf
 .md-list li::marker{color:var(--t3)}
 .md-blockquote{border-left:3px solid var(--accent);margin:.4em 0;padding:.2em .8em;color:var(--t2)}
 .md-pre{background:var(--s2);border:1px solid var(--border);border-radius:var(--r);padding:.8em 1em;overflow-x:auto;font-size:calc(var(--mfs) - 2px);line-height:1.55}
+.md-pre--wrap{white-space:pre-wrap;overflow-x:unset;word-break:break-word}
 .md-code-inline{background:var(--s2);padding:.1em .35em;border-radius:3px;font-size:.9em;font-family:var(--font-mono)}
+
+/* ── Code block copy button ── */
+.md-pre-wrap{position:relative}
+.md-copy-btn{position:absolute;top:8px;right:8px;display:flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:5px;background:var(--s3);color:var(--t3);opacity:0;transition:opacity .15s,background .15s,color .15s;cursor:pointer;z-index:1}
+.md-pre-wrap:hover .md-copy-btn{opacity:1}
+.md-copy-btn:hover{background:var(--border2);color:var(--t1)}
+.md-copy-btn--ok{opacity:1 !important;background:var(--accent-dim);color:var(--accent-t)}
 
 /* ── Markdown paragraph spacing ── */
 .md-content p{white-space:pre-wrap}
