@@ -90,6 +90,15 @@ export interface GenerationResult {
   toolResults?: ExtractedToolResult[];
 }
 
+/** A cached provider model entry as the executor needs it — only the slug +
+ *  vision capability are read (vision-gate capability lookup). Lifted into a
+ *  named type so the orchestrator's `visionAssets` and `ProviderExecutionInput`
+ *  share one definition instead of restating the inline shape (and leaking `any`). */
+export interface CachedModelEntry {
+  modelSlug: string;
+  capabilities?: { vision?: boolean };
+}
+
 export interface ExtractedToolCall {
   toolCallId: string;
   toolName: string;
@@ -179,7 +188,7 @@ export interface ProviderExecutionInput {
   /** Max multi-step tool-calling rounds per generation. */
   maxSteps?: number;
   /** Cached models for the active provider, used for vision capability lookup. */
-  cachedModels?: Array<{ modelSlug: string; capabilities?: { vision?: boolean } }>;
+  cachedModels?: CachedModelEntry[];
   /** Vision model slug from the provider profile, used for image description fallback. */
   visionModel?: string | null;
   /** Asset loader for reading attachment files. */

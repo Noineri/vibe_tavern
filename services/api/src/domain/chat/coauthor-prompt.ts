@@ -27,6 +27,7 @@ import type { ChatModeAssembleInput, ChatModeAssembleResult } from "./chat-mode-
 import { buildCoauthorTools, COAUTHOR_MAX_STEPS } from "./coauthor-tools.js";
 import { loadPromptAsset } from "../../shared/prompt-asset-loader.js";
 import { estimateTokens, findSafeCompactionBoundary, setModelHint } from "@vibe-tavern/prompt-pipeline";
+import type { ToolCallPart, ToolResultPart } from "ai";
 
 /** How many of the chat's most recent messages to include as conversation history. */
 const HISTORY_LIMIT = 20;
@@ -55,9 +56,20 @@ function detectSkill(userText: string): string {
 }
 
 /** Extract the most recent user message text for skill autodetection (empty-safe). */
-function latestUserMessage(history: Array<{ role: string; content: string }>): string {
+/** The assembled co-author history message shape (matches SDK message parts
+ *  one-to-one). Tool calls/results use the SDK v6 field names: a tool call
+ *  carries `input` (the parsed args), a tool result carries `output`. Earlier
+ *  these were built with `args`/`result` names and the mismatch was masked by
+ *  `as any` at the provider mapping layer — so the provider silently dropped
+ *  them. Typed here so the compiler catches any future drift. */
+type CoauthorHistoryMessage =
+  | { role: "user" | "assistant"; content: string; toolCalls?: ToolCallPart[] }
+  | { role: "tool"; content: ToolResultPart[] };
+
+function latestUserMessage(history: CoauthorHistoryMessage[]): string {
   for (let i = history.length - 1; i >= 0; i--) {
-    if (history[i].role === "user") return history[i].content;
+    const m = history[i];
+    if (m.role === "user") return m.content;
   }
   return "";
 }
@@ -88,17 +100,15 @@ function renderLoreContext(entries: CoauthorLoreEntry[]): string {
   return ["# Lorebook context (read-only reference — do NOT edit)", ...blocks].join("\n");
 }
 
-function estimateCoauthorMessageTokens(msg: any): number {
+function estimateCoauthorMessageTokens(msg: CoauthorHistoryMessage): number {
   let contentStr = "";
-  if (Array.isArray(msg.content)) {
+  if (msg.role === "tool") {
     contentStr = JSON.stringify(msg.content);
   } else {
     contentStr = msg.content || "";
+    if (msg.toolCalls) contentStr += JSON.stringify(msg.toolCalls);
   }
-  if (msg.toolCalls) {
-    contentStr += JSON.stringify(msg.toolCalls);
-  }
-  return estimateTokens(`${String(msg.role).toUpperCase()}: ${contentStr}`);
+  return estimateTokens(`${msg.role.toUpperCase()}: ${contentStr}`);
 }
 
 /**
@@ -121,28 +131,35 @@ export async function assembleCoauthorPrompt(input: ChatModeAssembleInput): Prom
         return msgs
           .filter((m) => !excludeSet.has(m.id))
           .filter((m) => m.role === "user" || m.role === "assistant" || m.role === "tool")
-          .map((m) => {
+          .map((m): CoauthorHistoryMessage => {
             if (m.role === "tool") {
+              // SDK v6 ToolResultPart.output is a discriminated union
+              // (`{type:'text',value}` | `{type:'json',value}` | ...) — a plain
+              // string is NOT valid. Wrap the persisted string result as a text
+              // output. (The prior `result: m.content` was a wrong field name
+              // AND wrong shape, masked by `as any` downstream — so this path
+              // never actually delivered tool results to the provider.)
               return {
                 role: "tool",
                 content: [{
                   type: "tool-result",
-                  toolCallId: m.toolCallId,
-                  toolName: "", // toolName is optional or not strictly needed here, but required by some older SDK versions. AI SDK v3/v6 usually uses toolCallId to correlate. 
-                  result: m.content
-                }]
+                  toolCallId: m.toolCallId ?? "",
+                  toolName: "",
+                  output: { type: "text", value: m.content },
+                }],
               };
             }
-            const base: any = { role: m.role as "user" | "assistant", content: m.content };
+            // SDK v6 ToolCallPart: `input` (the parsed args), not `args`.
+            const msg: CoauthorHistoryMessage = { role: m.role as "user" | "assistant", content: m.content };
             if (m.toolCalls && m.toolCalls.length > 0) {
-              base.toolCalls = (m.toolCalls as any[]).map(tc => ({
+              msg.toolCalls = m.toolCalls.map(tc => ({
                 type: "tool-call",
                 toolCallId: tc.id,
                 toolName: tc.name,
-                args: tc.args
+                input: tc.args,
               }));
             }
-            return base;
+            return msg;
           });
       }),
   ]);

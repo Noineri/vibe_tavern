@@ -2,6 +2,7 @@ import { useState, useMemo } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { registerMessageSlot, type MessageSlotContext } from "../../lib/message-slot-registry.js";
 import { useCoauthorTurnStore, type CoauthorToolActivity } from "../../stores/coauthor-turn-store.js";
+import type { CoauthorTarget } from "@vibe-tavern/api-contracts";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
 import { Icons } from "../shared/icons.js";
 import { useT } from "../../i18n/context.js";
@@ -58,12 +59,18 @@ function CoauthorToolActivitySlot({
     if (idx === -1) return EMPTY;
     
     const out: CoauthorToolActivity[] = [];
+    // A persisted tool message's content is the JSON the backend wrote from the
+    // tool's execute() output (coauthorToolOutputSchema: summary/proposed/target).
+    // It may also be a plain string if the result wasn't an object — the catch
+    // wraps that as a summary so the card still renders something useful.
+    type PersistedToolResult = { summary?: string; proposed?: string; target?: CoauthorTarget };
     for (let i = idx + 1; i < order.length; i++) {
       const m = msgs[order[i]];
       if (!m || m.role !== "tool") break;
-      let output: any = {};
+      let output: PersistedToolResult = {};
       try {
-        output = JSON.parse(m.content);
+        const parsed: unknown = JSON.parse(m.content);
+        output = (parsed && typeof parsed === "object") ? parsed as PersistedToolResult : { summary: m.content };
       } catch {
         output = { summary: m.content };
       }

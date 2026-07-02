@@ -187,8 +187,8 @@ describe("assembleCoauthorPrompt", () => {
       ],
     });
     const result = await assembleCoauthorPrompt(makeInput(loaders, { excludeMessageIds: ["msg_2"] }));
-    const messages = (result.prompt.finalPayload as any).messages;
-    
+    const messages = (result.prompt.finalPayload as { messages: Array<{ role: string; content: string }> }).messages;
+
     // system + user, msg_2 is excluded
     expect(messages.length).toBe(2);
     expect(messages[1]).toEqual({ role: "user", content: "hello" });
@@ -208,24 +208,27 @@ describe("assembleCoauthorPrompt", () => {
       ],
     });
     const result = await assembleCoauthorPrompt(makeInput(loaders));
-    const messages = (result.prompt.finalPayload as any).messages;
-    
+    const messages = (result.prompt.finalPayload as { messages: Array<Record<string, unknown>> }).messages;
+
     expect(messages.length).toBe(4); // system + user + assistant + tool
-    
+
     expect(messages[2].role).toBe("assistant");
+    // SDK v6 ToolCallPart uses `input` (not `args`) for the parsed arguments.
     expect(messages[2].toolCalls).toEqual([{
       type: "tool-call",
       toolCallId: "call_1",
       toolName: "edit_section",
-      args: { section: "PERSONALITY" }
+      input: { section: "PERSONALITY" }
     }]);
 
     expect(messages[3].role).toBe("tool");
+    // SDK v6 ToolResultPart.output is a discriminated union; a string result is
+    // wrapped as `{ type: "text", value }` (not a bare `result` field).
     expect(messages[3].content).toEqual([{
       type: "tool-result",
       toolCallId: "call_1",
       toolName: "",
-      result: "Success"
+      output: { type: "text", value: "Success" }
     }]);
   });
 
@@ -250,7 +253,7 @@ describe("assembleCoauthorPrompt", () => {
     // System prompt size + recent messages ~ some characters. 
     // Budget 15000 allows system + msg_1,2,3 but drops msg_0 (which is ~34000 chars)
     const result = await assembleCoauthorPrompt(makeInput(loaders, { contextBudget: 15000 }));
-    const messages = (result.prompt.finalPayload as any).messages;
+    const messages = (result.prompt.finalPayload as { messages: Array<{ role: string; content: unknown }> }).messages;
     
     // We expect system + msg_1 + msg_2 + msg_3
     expect(messages.length).toBe(4);

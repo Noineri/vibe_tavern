@@ -31,7 +31,7 @@ async function createTestRuntime(): Promise<{
 		runtime,
 		chatId: created.activeChatId,
 		stores,
-		cleanup: async () => { try { await rm(tmpDir, { recursive: true, force: true }); } catch {} },
+		cleanup: async () => { try { await rm(tmpDir, { recursive: true, force: true }); } catch { /* best-effort temp cleanup; force:true already ignores missing dirs */ } },
 	};
 }
 

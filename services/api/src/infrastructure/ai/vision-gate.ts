@@ -124,8 +124,10 @@ export async function resolveMultimodalContent(
 ): Promise<Array<TextPart | ImagePart>> {
   const parts: Array<TextPart | ImagePart> = [];
 
-  // Always include text content
-  if (message.content) {
+  // Always include text content. Vision resolution only ever runs on USER
+  // messages (see prepareSdkMessages: attachments live only on user msgs),
+  // so content is a string here — narrow the union explicitly for clarity.
+  if (message.role === "user" && message.content) {
     parts.push({ type: "text", text: message.content });
   }
 

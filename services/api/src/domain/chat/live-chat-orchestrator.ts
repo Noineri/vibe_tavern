@@ -1,10 +1,10 @@
 import { brandId, EventBus } from "@vibe-tavern/domain";
-import type { ChatId, MessageId, PromptPresetId } from "@vibe-tavern/domain";
+import type { ChatId, MessageId, PromptPresetId, Attachment } from "@vibe-tavern/domain";
 import type { ChatRuntime } from "../../runtime/session/session-runtime-chat.js";
 import type { SessionSnapshot, MessageResponse } from "../../api/contract/session-types.js";
 import type { ProviderOrchestrator } from "../providers/provider-orchestrator.js";
 import type { StoredProviderProfileRecord } from "@vibe-tavern/domain";
-import type { ProviderExecutionInput, ProviderStreamResult } from "../../infrastructure/ai/provider-execution-types.js";
+import type { ProviderExecutionInput, ProviderStreamResult, ExtractedToolCall, ExtractedToolResult, CachedModelEntry } from "../../infrastructure/ai/provider-execution-types.js";
 import type { ChatModeStrategy } from "./chat-mode-strategy.js";
 import { nonstreamingProviderExecute } from "../../infrastructure/ai/nonstreaming-provider-executor.js";
 import { streamProviderExecutor } from "../../infrastructure/ai/stream-provider-executor.js";
@@ -39,12 +39,12 @@ export class LiveChatOrchestrator {
   async sendMessage(input: {
     chatId: string;
     content: string;
-    attachments?: any[];
+    attachments?: Attachment[];
     profile: StoredProviderProfileRecord;
     model: string;
     prefill?: string;
     signal?: AbortSignal;
-    visionAssets?: { cachedModels: any[]; visionModel: string | null; assetLoader: (assetId: string) => Promise<Buffer | null>; visionDescribePrompt?: string };
+    visionAssets?: { cachedModels: CachedModelEntry[]; visionModel: string | null; assetLoader: (assetId: string) => Promise<Buffer | null>; visionDescribePrompt?: string };
   }): Promise<{
     preparedMessageCount: number;
     promptMessageCount: number;
@@ -65,8 +65,8 @@ export class LiveChatOrchestrator {
     const prefill = prepared.prompt.prefill ?? undefined;
     let reply: string;
     let reasoning: string | undefined;
-    let toolCalls: any[] | undefined;
-    let toolResults: any[] | undefined;
+    let toolCalls: ExtractedToolCall[] | undefined;
+    let toolResults: ExtractedToolResult[] | undefined;
     try {
       // Non-streaming path: generateText() awaits the full reply, returned as JSON.
       // The streaming equivalent (SSE text/reasoning deltas) lives in sendMessageStream() / startStream().
@@ -146,8 +146,8 @@ export class LiveChatOrchestrator {
     const startedAt = Date.now();
     let reply: string;
     let reasoning: string | undefined;
-    let toolCalls: any[] | undefined;
-    let toolResults: any[] | undefined;
+    let toolCalls: ExtractedToolCall[] | undefined;
+    let toolResults: ExtractedToolResult[] | undefined;
     try {
       const result = await nonstreamingProviderExecute({
         profile: provider.profile,
@@ -230,8 +230,8 @@ export class LiveChatOrchestrator {
     logSendDebug("live.regenerate.provider.start", { chatId: input.chatId, providerId: provider.profile.id, model: provider.model });
     let reply: string;
     let reasoning: string | undefined;
-    let toolCalls: any[] | undefined;
-    let toolResults: any[] | undefined;
+    let toolCalls: ExtractedToolCall[] | undefined;
+    let toolResults: ExtractedToolResult[] | undefined;
     try {
       const result = await nonstreamingProviderExecute({
         profile: provider.profile,
@@ -284,12 +284,12 @@ export class LiveChatOrchestrator {
   async *sendMessageStream(input: {
     chatId: string;
     content: string;
-    attachments?: any[];
+    attachments?: Attachment[];
     profile: StoredProviderProfileRecord;
     model: string;
     prefill?: string;
     signal?: AbortSignal;
-    visionAssets?: { cachedModels: any[]; visionModel: string | null; assetLoader: (assetId: string) => Promise<Buffer | null>; visionDescribePrompt?: string };
+    visionAssets?: { cachedModels: CachedModelEntry[]; visionModel: string | null; assetLoader: (assetId: string) => Promise<Buffer | null>; visionDescribePrompt?: string };
   }): AsyncGenerator<{ event: string; data: string }> {
     const provider = await this.resolveProvider(input);
     logSendDebug("live.send-stream.prepare.start", { chatId: input.chatId, model: provider.model });
@@ -477,7 +477,7 @@ export class LiveChatOrchestrator {
   }
 
   private async startStream(
-    input: { chatId: string; profile: StoredProviderProfileRecord; model: string; signal?: AbortSignal; prefill?: string; tools?: import("ai").ToolSet; maxSteps?: number; visionAssets?: { cachedModels: any[]; visionModel: string | null; assetLoader: (assetId: string) => Promise<Buffer | null>; visionDescribePrompt?: string }; onAttachmentDescriptions?: ProviderExecutionInput["onAttachmentDescriptions"] },
+    input: { chatId: string; profile: StoredProviderProfileRecord; model: string; signal?: AbortSignal; prefill?: string; tools?: import("ai").ToolSet; maxSteps?: number; visionAssets?: { cachedModels: CachedModelEntry[]; visionModel: string | null; assetLoader: (assetId: string) => Promise<Buffer | null>; visionDescribePrompt?: string }; onAttachmentDescriptions?: ProviderExecutionInput["onAttachmentDescriptions"] },
     prompt: Parameters<typeof streamProviderExecutor>[0]["prompt"],
   ): Promise<{ streamResult: ProviderStreamResult; startedAt: number }> {
     const startedAt = Date.now();
@@ -517,7 +517,7 @@ export class LiveChatOrchestrator {
     omitMessageCountInFinish?: boolean;
     prefill?: string;
     onAbort: (text: string, reasoning: string, reasoningDurationMs: number | undefined, latencyMs: number) => Promise<void>;
-    onFinal: (text: string, reasoning: string | undefined, reasoningDurationMs: number | undefined, latencyMs: number, toolCalls?: import("../../infrastructure/ai/provider-execution-types.js").ExtractedToolCall[], toolResults?: import("../../infrastructure/ai/provider-execution-types.js").ExtractedToolResult[]) => Promise<MessageResponse>;
+    onFinal: (text: string, reasoning: string | undefined, reasoningDurationMs: number | undefined, latencyMs: number, toolCalls?: ExtractedToolCall[], toolResults?: ExtractedToolResult[]) => Promise<MessageResponse>;
   }): AsyncGenerator<{ event: string; data: string }> {
     const { streamResult, signal, startedAt, debugLabel, onAbort, onFinal, omitMessageCountInFinish, prefill } = input;
     // ── CA-17/CANARY: loop observability. Counts every tool interaction so a
@@ -529,8 +529,8 @@ export class LiveChatOrchestrator {
     let toolResultCount = 0;
     let toolErrorCount = 0;
 
-    const extractedToolCalls: import("../../infrastructure/ai/provider-execution-types.js").ExtractedToolCall[] = [];
-    const extractedToolResults: import("../../infrastructure/ai/provider-execution-types.js").ExtractedToolResult[] = [];
+    const extractedToolCalls: ExtractedToolCall[] = [];
+    const extractedToolResults: ExtractedToolResult[] = [];
 
     let textAccumulator = "";
     let reasoningAccumulator = "";
