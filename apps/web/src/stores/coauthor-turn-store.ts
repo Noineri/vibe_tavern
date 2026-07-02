@@ -1,5 +1,12 @@
 import { create } from "zustand";
 import type { CoauthorTarget } from "@vibe-tavern/api-contracts";
+// CA-15: persistence of unapplied proposals across reloads. Imported here (not
+// subscribed) so the two resolution points — finalize (upsert) and discard
+// (clear) — are the ONLY places persistence is touched. The import forms a
+// module cycle (coauthor-draft.ts imports useCoauthorTurnStore), but both
+// sides use each other's bindings only INSIDE function bodies (never at module
+// eval), so ESM live bindings resolve them lazily after both modules load.
+import { saveDraft, clearDraft } from "../lib/coauthor-draft.js";
 
 /**
  * Co-Author turn store (CA-9.2) — ephemeral, per-chat accumulation of the
@@ -54,7 +61,7 @@ interface CoauthorTurnState {
 
 export const useCoauthorTurnStore = create<CoauthorTurnState>((set, get) => ({
   turnsByChat: {},
-  upsertActivity: (chatId, activity) =>
+  upsertActivity: (chatId, activity) => {
     set((s) => {
       const list = s.turnsByChat[chatId] ?? [];
       const idx = list.findIndex((a) => a.toolCallId === activity.toolCallId);
@@ -65,13 +72,24 @@ export const useCoauthorTurnStore = create<CoauthorTurnState>((set, get) => ({
           ? [...list, activity]
           : list.map((a, i) => (i === idx ? { ...a, ...activity } : a));
       return { turnsByChat: { ...s.turnsByChat, [chatId]: next } };
-    }),
-  clearTurn: (chatId) =>
+    });
+    // CA-15: keep the persisted draft in sync. saveDraft filters to the
+    // finalized-proposed subset and is a guarded no-op without localStorage,
+    // so this stays cheap during streaming (no finalized → removes an absent
+    // key) and only writes once a proposal actually materializes.
+    saveDraft(chatId, get().turnsByChat[chatId] ?? []);
+  },
+  clearTurn: (chatId) => {
     set((s) => {
       if (!s.turnsByChat[chatId]) return s;
       const next = { ...s.turnsByChat };
       delete next[chatId];
       return { turnsByChat: next };
-    }),
+    });
+    // CA-15: a resolved/discarded proposal (Apply / Reject) or a fresh turn
+    // start must also drop the persisted draft so it isn't rehydrated later.
+    // No-op without localStorage.
+    clearDraft(chatId);
+  },
   getActivities: (chatId) => get().turnsByChat[chatId] ?? [],
 }));
