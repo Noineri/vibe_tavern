@@ -1001,6 +1001,8 @@
   "placeholder_hint": "Зал пуст, но история готова начаться. Создайте первого персонажа или импортируйте готовую карточку.",
   "placeholder_select_character_chat": "Выберите персонажа и чат, чтобы начать общение.",
   "coauthor.diff.placeholder": "Предложенные соавтором правки появятся здесь в виде сравнения.",
+  "coauthor.tabs.chat": "Чат",
+  "coauthor.tabs.doc": "Док",
   "coauthor.entry.list": "Режим соавтора",
   "coauthor.entry.new": "Новый чат с соавтором",
   "coauthor.list_title": "Существующие чаты с соавтором",

@@ -1001,6 +1001,8 @@
   "placeholder_hint": "The hall is quiet, but the story is ready to begin. Create your first character or import an existing one.",
   "placeholder_select_character_chat": "Select a character and chat to start talking.",
   "coauthor.diff.placeholder": "Proposed edits from the co-author will appear here as a diff.",
+  "coauthor.tabs.chat": "Chat",
+  "coauthor.tabs.doc": "Doc",
   "coauthor.entry.list": "Co-Author mode",
   "coauthor.entry.new": "New co-author chat",
   "coauthor.list_title": "Existing co-author chats",
