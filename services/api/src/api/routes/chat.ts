@@ -84,6 +84,13 @@ export function createChatRoutes(runtime: ChatRuntimeApi) {
     .get("/api/characters/:characterId/coauthor-chats", async (c) => {
       return c.json(await runtime.listCoauthorChats(c.req.param("characterId")));
     })
+    .get("/api/coauthor/modules", async (c) => {
+      return c.json({ modules: await runtime.listCoauthorModules() });
+    })
+    .patch("/api/chats/:chatId/coauthor-module", zValidator("json", schemas.setCoauthorModuleSchema), async (c) => {
+      const body = c.req.valid("json");
+      return c.json(await runtime.setCoauthorModule(c.req.param("chatId"), body.moduleId));
+    })
     .post("/api/chats/:chatId/coauthor/apply", zValidator("json", schemas.coauthorApplySchema), async (c) => {
       const body = c.req.valid("json");
       return c.json(await runtime.applyCoauthorDraft(c.req.param("chatId"), body));

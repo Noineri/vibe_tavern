@@ -9,7 +9,7 @@ import {
 	type PromptPresetId,
 	SYSTEM_RESOURCE_ID,
 } from "@vibe-tavern/domain";
-import { notFound } from "../../shared/errors.js";
+import { notFound, validation } from "../../shared/errors.js";
 import type { ChatApplicationService } from "../../domain/chat/chat-application-service.js";
 import type { PromptTraceDraft } from "../../domain/prompt/prompt-assembly-service.js";
 import type { IChatOrder } from "./session-runtime-chat-order.js";
@@ -241,6 +241,25 @@ export class ChatLifecycleRuntime {
 		// the currently-selected preset in BOTH the topbar quick-switcher and
 		// the preset modal. The preset BODY is re-read from the preset store,
 		// but the ID round-trips through activeChat.
+		return this.deps.buildConfigPatchResponse(chatId, { activeChat: true });
+	}
+
+	async setCoauthorModule(chatId: ChatId, moduleId: string | null): Promise<ConfigPatchResponse> {
+		const chat = await this.deps.stores.chats.getById(chatId);
+		if (!chat) {
+			throw notFound("Chat", `Chat '${chatId}' was not found.`);
+		}
+		if (chat.mode !== "coauthor") {
+			throw validation("Only coauthor chats can have a coauthor module.");
+		}
+		if (moduleId) {
+			const { getCoauthorModules } = await import("../../domain/coauthor/modules/module-registry.js");
+			const moduleExists = getCoauthorModules().some((m) => m.id === moduleId);
+			if (!moduleExists) {
+				throw notFound("CoauthorModule", `Module '${moduleId}' was not found.`);
+			}
+		}
+		await this.deps.stores.chats.setCoauthorModuleId(chatId, moduleId);
 		return this.deps.buildConfigPatchResponse(chatId, { activeChat: true });
 	}
 

@@ -68,6 +68,14 @@ export class ChatAdapter implements ChatRuntimeApi {
 	setChatPromptPreset = (chatId: string, promptPresetId: string) =>
 		this.sessionRuntime.chatLifecycle.setChatPromptPreset(brandId<ChatId>(chatId), promptPresetId);
 
+	setCoauthorModule = (chatId: string, moduleId: string | null) =>
+		this.sessionRuntime.chatLifecycle.setCoauthorModule(brandId<ChatId>(chatId), moduleId);
+
+	listCoauthorModules = async () => {
+		const { getCoauthorModules } = await import("../../domain/coauthor/modules/module-registry.js");
+		return getCoauthorModules();
+	};
+
 	// ─── Branches ───────────────────────────────────────────────────────
 
 	branchChat = (chatId: string, messageId: string) =>

@@ -24,6 +24,8 @@ import {
   renameChat,
   setGreetingIndex,
   setCoauthorLorebooks,
+  listCoauthorModules,
+  setCoauthorModule,
   selectMessageVariant,
   sendChatMessage,
   setChatPersona,
@@ -128,6 +130,15 @@ export async function setGreetingIndexAction(chatId: ChatId, greetingIndex: numb
 
 export async function setCoauthorLorebooksAction(chatId: ChatId, lorebookIds: string[]): Promise<void> {
   const snapshot = await setCoauthorLorebooks(chatId, lorebookIds);
+  syncSnapshot(snapshot);
+}
+
+export async function listCoauthorModulesAction(): Promise<import("@vibe-tavern/api-contracts").CoauthorModule[]> {
+  return listCoauthorModules();
+}
+
+export async function setCoauthorModuleAction(chatId: ChatId, moduleId: string | null): Promise<void> {
+  const snapshot = await setCoauthorModule(chatId, moduleId);
   syncSnapshot(snapshot);
 }
 

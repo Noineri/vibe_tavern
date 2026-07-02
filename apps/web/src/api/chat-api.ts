@@ -70,6 +70,18 @@ export async function setCoauthorLorebooks(chatId: ChatId, lorebookIds: string[]
   return normalizeSnapshot(data);
 }
 
+export async function listCoauthorModules(): Promise<import("@vibe-tavern/api-contracts").CoauthorModule[]> {
+  const response = await client.api.coauthor.modules.$get();
+  const data = await unwrapRpc<{ modules: import("@vibe-tavern/api-contracts").CoauthorModule[] }>(response);
+  return data.modules;
+}
+
+export async function setCoauthorModule(chatId: ChatId, moduleId: string | null): Promise<AppSnapshot> {
+  const response = await client.api.chats[":chatId"]["coauthor-module"].$patch({ param: { chatId }, json: { moduleId } });
+  const data = await unwrapRpc<AppSnapshot>(response);
+  return normalizeSnapshot(data);
+}
+
 export async function setChatPersona(chatId: ChatId, personaId: string): Promise<AppSnapshot> {
   const response = await client.api.chats[":chatId"]["set-persona"].$post({ param: { chatId }, json: { personaId } });
   const data = await unwrapRpc<AppSnapshot>(response);

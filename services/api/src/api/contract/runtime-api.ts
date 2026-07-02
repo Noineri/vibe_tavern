@@ -111,6 +111,8 @@ export interface ChatRuntimeApi {
 	setCoauthorLorebookIds: (chatId: string, lorebookIds: string[]) => Promise<VariantResponse>;
 	setChatPersona: (chatId: string, personaId: string) => Promise<ConfigPatchResponse>;
 	setChatPromptPreset: (chatId: string, promptPresetId: string) => Promise<ConfigPatchResponse>;
+	setCoauthorModule: (chatId: string, moduleId: string | null) => Promise<ConfigPatchResponse>;
+	listCoauthorModules: () => Promise<import("@vibe-tavern/api-contracts").CoauthorModule[]>;
 
 	// Branches
 	branchChat: (chatId: string, messageId: string) => Promise<BranchResponse>;
