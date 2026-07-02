@@ -185,7 +185,8 @@ export function MessageList() {
   }, [messageOrder]);
 
   const displayMessageIds = useMemo(() => {
-    const ids = [...messageOrder];
+    const state = useSnapshotStore.getState();
+    const ids = messageOrder.filter(id => state.messagesById[id]?.role !== "tool");
 
     if (pendingUserMessageContent) {
       const lastMsg = lastPersistedMessage;

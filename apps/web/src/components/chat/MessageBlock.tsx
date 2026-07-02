@@ -56,6 +56,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
   const editingDraft = useChatStore(s => s.editingDraft);
   const isSending = useIsSending();
   const messageActionId = useChatStore(s => s.messageActionId);
+  const isCoauthorMode = useSnapshotStore(s => s.activeChat?.mode === "coauthor");
   // Narrow primitive selector — only the active chat's pending user content.
   // Replaces reading it off the whole activeGen object (which mutated every tick).
   const pendingUserMessageContent = useChatStore(s => {
@@ -198,7 +199,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
   const canBranch = !isGreeting;
   const canRegenerate = !isGreeting && isLastAssistant;
   const canResend = isLast && msg.role === "user" && !pendingUserMessageContent;
-  const canSwitchVariant = isLast;
+  const canSwitchVariant = isLast && !isCoauthorMode;
 
   // Server sets message.content = selected variant's content at load time,
   // but client-side switching only changes selectedVariantIndex.
@@ -403,7 +404,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
     <>
     {deleteConfirmOpen && (
       <DeleteMessageConfirm
-        hasSwipes={variantCount > 1}
+        hasSwipes={variantCount > 1 && !isCoauthorMode}
         onDeleteSwipe={() => void confirmDeleteVariant()}
         onDeleteMessage={() => void confirmDeleteMessage()}
         onCancel={() => setDeleteConfirmOpen(false)}
@@ -424,7 +425,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
       canRegenerate={canRegenerate}
       canResend={canResend}
       selectedVariantIndex={selectedVariantIndex}
-      variantCount={variantCount}
+      variantCount={isCoauthorMode ? 1 : variantCount}
       canSwitchVariant={canSwitchVariant}
       tokenCount={msg.tokenCount}
       modelId={msg.modelId}

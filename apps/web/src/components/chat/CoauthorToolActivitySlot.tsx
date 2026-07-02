@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { registerMessageSlot, type MessageSlotContext } from "../../lib/message-slot-registry.js";
 import { useCoauthorTurnStore, type CoauthorToolActivity } from "../../stores/coauthor-turn-store.js";
@@ -39,7 +39,7 @@ function CoauthorToolActivitySlot({
   messageId: string;
   isStreaming: boolean;
 }) {
-  const activities = useCoauthorTurnStore(useShallow((s) => s.turnsByChat[chatId] ?? EMPTY));
+  const activeActivities = useCoauthorTurnStore(useShallow((s) => s.turnsByChat[chatId] ?? EMPTY));
   const isLastAssistant = useSnapshotStore(
     useShallow((s) => {
       const order = s.messageOrder;
@@ -51,15 +51,49 @@ function CoauthorToolActivitySlot({
     }),
   );
 
+  const persistedActivities = useSnapshotStore(useShallow((s) => {
+    const order = s.messageOrder;
+    const msgs = s.messagesById;
+    const idx = order.indexOf(messageId);
+    if (idx === -1) return EMPTY;
+    
+    const out: CoauthorToolActivity[] = [];
+    for (let i = idx + 1; i < order.length; i++) {
+      const m = msgs[order[i]];
+      if (!m || m.role !== "tool") break;
+      let output: any = {};
+      try {
+        output = JSON.parse(m.content);
+      } catch {
+        output = { summary: m.content };
+      }
+      out.push({
+        toolCallId: m.toolCallId || m.id,
+        toolName: "",
+        status: "done",
+        summary: output.summary,
+        proposed: output.proposed,
+        target: output.target,
+      });
+    }
+    return out.length > 0 ? out : EMPTY;
+  }));
+
+  const activities = useMemo(() => {
+    const map = new Map<string, CoauthorToolActivity>();
+    for (const a of persistedActivities) map.set(a.toolCallId, a);
+    
+    if (isStreaming || isLastAssistant) {
+      for (const a of activeActivities) map.set(a.toolCallId, a);
+    }
+    return Array.from(map.values());
+  }, [persistedActivities, activeActivities, isStreaming, isLastAssistant]);
+
   if (activities.length === 0) return null;
-  // During the turn the cards ride on the streaming message; after the turn
-  // (snapshot refresh, streaming=false) they ride on the persisted last
-  // assistant message until the user Applies/Rejects (CA-11 clears the store).
-  if (!isStreaming && !isLastAssistant) return null;
 
   return (
     <div className="mb-2 flex flex-col gap-1.5">
-      {activities.map((a) => (
+      {activities.map((a: CoauthorToolActivity) => (
         <ToolActivityCard key={a.toolCallId} activity={a} />
       ))}
     </div>
