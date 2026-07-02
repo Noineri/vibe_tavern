@@ -16,12 +16,14 @@ import { resolveMultimodalContent } from "./vision-gate.js";
 // Types
 // ---------------------------------------------------------------------------
 
-/** A validated SDK message with known role and string content. */
+/** A validated SDK message with known role and content. */
 export interface SdkMessage {
-  role: "system" | "user" | "assistant";
-  content: string;
+  role: "system" | "user" | "assistant" | "tool";
+  content: any; // Allow array for tool results, string for others
   /** File attachments on this message, passed through for vision gate resolution. */
   attachments?: import("@vibe-tavern/domain").Attachment[];
+  /** Tool calls on assistant messages. */
+  toolCalls?: any[];
 }
 
 /** Result of preparing messages for provider execution. */
@@ -70,16 +72,28 @@ export function toSdkMessages(
   return records
     .map((record: unknown) => {
       if (!record || typeof record !== "object") return null;
-      const r = record as { role?: unknown; content?: unknown };
-      if (typeof r.role !== "string" || typeof r.content !== "string") return null;
-      if (r.role !== "system" && r.role !== "user" && r.role !== "assistant") {
-        log.tag("sdk-msgs").warn("FILTERED out role=%s, content.length=%d", r.role, (r.content as string)?.length ?? 0);
+      const r = record as { role?: unknown; content?: unknown; toolCalls?: unknown };
+      if (typeof r.role !== "string") return null;
+      if (r.role !== "system" && r.role !== "user" && r.role !== "assistant" && r.role !== "tool") {
+        log.tag("sdk-msgs").warn("FILTERED out role=%s", r.role);
         return null;
       }
+      
+      const isTool = r.role === "tool";
+      if (isTool && !Array.isArray(r.content)) return null;
+      if (!isTool && typeof r.content !== "string") return null;
+
       const attachments = Array.isArray((r as { attachments?: unknown }).attachments)
         ? (r as { attachments?: import("@vibe-tavern/domain").Attachment[] }).attachments
         : undefined;
-      return { role: r.role as SdkMessage["role"], content: r.content, ...(attachments?.length ? { attachments } : {}) };
+        
+      const msg: SdkMessage = { role: r.role as SdkMessage["role"], content: r.content };
+      if (attachments?.length) msg.attachments = attachments;
+      if (r.role === "assistant" && Array.isArray(r.toolCalls) && r.toolCalls.length > 0) {
+        msg.toolCalls = r.toolCalls;
+      }
+      
+      return msg;
     })
     .filter((m): m is SdkMessage => m !== null);
 }
@@ -149,11 +163,13 @@ export async function prepareSdkMessages(
       }
       switch (msg.role) {
         case "system":
-          return { role: "system", content: msg.content };
+          return { role: "system", content: msg.content as string };
         case "assistant":
-          return { role: "assistant", content: msg.content };
+          return { role: "assistant", content: msg.content as string, ...(msg.toolCalls?.length ? { toolCalls: msg.toolCalls as any } : {}) };
         case "user":
-          return { role: "user", content: msg.content };
+          return { role: "user", content: msg.content as string };
+        case "tool":
+          return { role: "tool", content: msg.content as any };
       }
     }),
   );

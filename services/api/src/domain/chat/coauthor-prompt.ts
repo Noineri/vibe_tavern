@@ -102,11 +102,35 @@ export async function assembleCoauthorPrompt(input: ChatModeAssembleInput): Prom
     loaders.getCharacter(chatId),
     loaders
       .getMessages(chatId, undefined, HISTORY_LIMIT)
-      .then((msgs) =>
-        msgs
-          .filter((m) => m.role === "user" || m.role === "assistant")
-          .map((m) => ({ role: m.role as "user" | "assistant", content: m.content })),
-      ),
+      .then((msgs) => {
+        const excludeSet = new Set<string>(input.excludeMessageIds || []);
+        return msgs
+          .filter((m) => !excludeSet.has(m.id))
+          .filter((m) => m.role === "user" || m.role === "assistant" || m.role === "tool")
+          .map((m) => {
+            if (m.role === "tool") {
+              return {
+                role: "tool",
+                content: [{
+                  type: "tool-result",
+                  toolCallId: m.toolCallId,
+                  toolName: "", // toolName is optional or not strictly needed here, but required by some older SDK versions. AI SDK v3/v6 usually uses toolCallId to correlate. 
+                  result: m.content
+                }]
+              };
+            }
+            const base: any = { role: m.role as "user" | "assistant", content: m.content };
+            if (m.toolCalls && m.toolCalls.length > 0) {
+              base.toolCalls = (m.toolCalls as any[]).map(tc => ({
+                type: "tool-call",
+                toolCallId: tc.id,
+                toolName: tc.name,
+                args: tc.args
+              }));
+            }
+            return base;
+          });
+      }),
   ]);
   // Card state + lorebook context + prompt assets are all independent once
   // we have the history (skill autodetect reads it), so fan them out together.

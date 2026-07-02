@@ -179,4 +179,53 @@ describe("assembleCoauthorPrompt", () => {
     expect(result.prompt.activatedLoreEntries).toEqual([]);
     expect(result.promptTraceDraft.activatedLoreEntries).toEqual([]);
   });
+  test("CS-0d: honours excludeMessageIds in prompt assembly", async () => {
+    const loaders = makeLoaders({
+      messages: [
+        { id: "msg_1", role: "user", content: "hello" } as never,
+        { id: "msg_2", role: "assistant", content: "on it" } as never,
+      ],
+    });
+    const result = await assembleCoauthorPrompt(makeInput(loaders, { excludeMessageIds: ["msg_2"] }));
+    const messages = (result.prompt.finalPayload as any).messages;
+    
+    // system + user, msg_2 is excluded
+    expect(messages.length).toBe(2);
+    expect(messages[1]).toEqual({ role: "user", content: "hello" });
+  });
+
+  test("CS-4: includes tool messages and assistant toolCalls in history assembly", async () => {
+    const loaders = makeLoaders({
+      messages: [
+        { id: "msg_1", role: "user", content: "rewrite it" } as never,
+        { 
+          id: "msg_2", 
+          role: "assistant", 
+          content: "calling tool",
+          toolCalls: [{ id: "call_1", name: "edit_section", args: { section: "PERSONALITY" } }]
+        } as never,
+        { id: "msg_3", role: "tool", toolCallId: "call_1", content: "Success" } as never,
+      ],
+    });
+    const result = await assembleCoauthorPrompt(makeInput(loaders));
+    const messages = (result.prompt.finalPayload as any).messages;
+    
+    expect(messages.length).toBe(4); // system + user + assistant + tool
+    
+    expect(messages[2].role).toBe("assistant");
+    expect(messages[2].toolCalls).toEqual([{
+      type: "tool-call",
+      toolCallId: "call_1",
+      toolName: "edit_section",
+      args: { section: "PERSONALITY" }
+    }]);
+
+    expect(messages[3].role).toBe("tool");
+    expect(messages[3].content).toEqual([{
+      type: "tool-result",
+      toolCallId: "call_1",
+      toolName: "",
+      result: "Success"
+    }]);
+  });
 });
