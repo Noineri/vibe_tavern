@@ -4,5 +4,5 @@ export { createPhaseOneMacroEngine, createFullMacroEngine } from "./macro-regist
 export { PRESET_PRONOUN_FORMS, resolvePronounForms } from "./pronoun-forms.js";
 export { buildPromptVariableContext } from "./prompt-variable-context.js";
 export { PROMPT_LAYER_ID, PROMPT_LAYER_PRIORITY, LAYER_MODES } from "./prompt-layer-constants.js";
-export { setTokenCountFn, setModelHint, estimateMessageArrayTokens } from "./compaction.js";
+export { setTokenCountFn, setModelHint, estimateMessageArrayTokens, findSafeCompactionBoundary, estimateTokens } from "./compaction.js";
 export type { AssemblyMode, AiAssistantMode, PromptAssemblyContext, PromptAssemblyResult, PromptLayer, RecentMessage } from "./types.js";

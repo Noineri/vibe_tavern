@@ -228,4 +228,38 @@ describe("assembleCoauthorPrompt", () => {
       result: "Success"
     }]);
   });
+
+  test("CS-5: applies token compaction and preserves tool-call pairs", async () => {
+    // Inject a fake token counter for this test so estimateTokens doesn't return 0
+    const { setTokenCountFn } = await import("@vibe-tavern/prompt-pipeline");
+    setTokenCountFn((text: string) => text.length);
+
+    const loaders = makeLoaders({
+      messages: [
+        { id: "msg_0", role: "user", content: "very old message ".repeat(2000) } as never,
+        { id: "msg_1", role: "user", content: "rewrite it" } as never,
+        { 
+          id: "msg_2", 
+          role: "assistant", 
+          content: "calling tool",
+          toolCalls: [{ id: "call_1", name: "edit_section", args: { section: "PERSONALITY" } }]
+        } as never,
+        { id: "msg_3", role: "tool", toolCallId: "call_1", content: "Success" } as never,
+      ],
+    });
+    // System prompt size + recent messages ~ some characters. 
+    // Budget 15000 allows system + msg_1,2,3 but drops msg_0 (which is ~34000 chars)
+    const result = await assembleCoauthorPrompt(makeInput(loaders, { contextBudget: 15000 }));
+    const messages = (result.prompt.finalPayload as any).messages;
+    
+    // We expect system + msg_1 + msg_2 + msg_3
+    expect(messages.length).toBe(4);
+    expect(messages[1].content).toBe("rewrite it");
+    expect(messages[2].role).toBe("assistant");
+    expect(messages[3].role).toBe("tool");
+
+    expect(result.prompt.tokenAccounting?.recentHistory).toBe(3);
+    expect(result.promptTraceDraft.compactionSummary).toBeDefined();
+    expect(result.promptTraceDraft.compactionSummary).toContain("Kept 3 of 4 recent messages");
+  });
 });

@@ -26,6 +26,7 @@ import type { AssemblePromptResponse } from "@vibe-tavern/domain";
 import type { ChatModeAssembleInput, ChatModeAssembleResult } from "./chat-mode-strategy.js";
 import { buildCoauthorTools, COAUTHOR_MAX_STEPS } from "./coauthor-tools.js";
 import { loadPromptAsset } from "../../shared/prompt-asset-loader.js";
+import { estimateTokens, findSafeCompactionBoundary, setModelHint } from "@vibe-tavern/prompt-pipeline";
 
 /** How many of the chat's most recent messages to include as conversation history. */
 const HISTORY_LIMIT = 20;
@@ -85,6 +86,19 @@ function renderLoreContext(entries: CoauthorLoreEntry[]): string {
     return `## ${title}\n${e.content}`;
   });
   return ["# Lorebook context (read-only reference — do NOT edit)", ...blocks].join("\n");
+}
+
+function estimateCoauthorMessageTokens(msg: any): number {
+  let contentStr = "";
+  if (Array.isArray(msg.content)) {
+    contentStr = JSON.stringify(msg.content);
+  } else {
+    contentStr = msg.content || "";
+  }
+  if (msg.toolCalls) {
+    contentStr += JSON.stringify(msg.toolCalls);
+  }
+  return estimateTokens(`${String(msg.role).toUpperCase()}: ${contentStr}`);
 }
 
 /**
@@ -155,16 +169,63 @@ export async function assembleCoauthorPrompt(input: ChatModeAssembleInput): Prom
   }
   const systemContent = sections.join("\n");
 
+  setModelHint(model);
+
+  let recentMessagesForHistory = history;
+  let compactionSummary: string | undefined;
+
+  const nonHistoryTokens = estimateTokens(systemContent);
+  let totalTokenEstimate = nonHistoryTokens + history.reduce((sum, msg) => sum + estimateCoauthorMessageTokens(msg), 0);
+
+  if (
+    typeof input.contextBudget === "number" &&
+    input.contextBudget > 0 &&
+    history.length > 3
+  ) {
+    const fullHistoryTokens = totalTokenEstimate - nonHistoryTokens;
+
+    if (totalTokenEstimate > input.contextBudget) {
+      const responseReserve = input.responseReserve ?? 0;
+      const historyBudget = Math.max(0, input.contextBudget - nonHistoryTokens - responseReserve);
+
+      let accTokens = 0;
+      let keepCount = 0;
+      for (let i = history.length - 1; i >= 0; i--) {
+        const msgTokens = estimateCoauthorMessageTokens(history[i]);
+        if (accTokens + msgTokens > historyBudget && keepCount >= 2) break;
+        accTokens += msgTokens;
+        keepCount++;
+      }
+      keepCount = Math.max(keepCount, 2);
+
+      const keepFrom = findSafeCompactionBoundary(history, keepCount);
+      if (keepFrom > 0) {
+        recentMessagesForHistory = history.slice(keepFrom);
+        const preservedTokens = recentMessagesForHistory.reduce((sum, msg) => sum + estimateCoauthorMessageTokens(msg), 0);
+        totalTokenEstimate = nonHistoryTokens + preservedTokens;
+        compactionSummary =
+          `Kept ${recentMessagesForHistory.length} of ` +
+          `${history.length} recent messages ` +
+          `(~${preservedTokens} tokens after compaction, ` +
+          `${nonHistoryTokens + fullHistoryTokens} tokens before, ` +
+          `budget: ${input.contextBudget}, reserve: ${responseReserve})`;
+      }
+    }
+  }
+
   const finalPayload = {
     messages: [
       { role: "system", content: systemContent },
-      ...history,
+      ...recentMessagesForHistory,
     ],
   };
 
   const prompt: AssemblePromptResponse = {
     layers: [],
-    tokenAccounting: {},
+    tokenAccounting: {
+      total: totalTokenEstimate,
+      recentHistory: recentMessagesForHistory.length,
+    },
     // Co-author does NOT run the activation engine — no activation trace.
     // Lore context lives only in the system message (renderLoreContext above);
     // these trace fields stay empty so the trace UI doesn't fabricate
@@ -186,13 +247,16 @@ export async function assembleCoauthorPrompt(input: ChatModeAssembleInput): Prom
       presetName: "(coauthor)",
       presetId: null,
       assembledLayers: [],
-      tokenAccounting: {},
+      tokenAccounting: {
+        total: totalTokenEstimate,
+      },
       activatedLoreEntries: [] as LoreEntryId[],
       activatedLoreDetail: [],
       scriptInjections: [],
       retrievedMemories: [],
       finalPayload,
       latencyMs: 0,
+      compactionSummary,
     },
     tools: buildCoauthorTools(),
     maxSteps: COAUTHOR_MAX_STEPS,
