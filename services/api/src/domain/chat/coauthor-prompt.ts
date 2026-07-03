@@ -272,8 +272,108 @@ export async function assembleCoauthorPrompt(input: ChatModeAssembleInput): Prom
     ],
   };
 
+  const layers: import("@vibe-tavern/domain").PromptLayerDto[] = [];
+  
+  layers.push({
+    id: `module-${module.id}`,
+    sourceType: "coauthor_module",
+    sourceId: module.id,
+    sourceName: `Module: ${module.name}`,
+    position: "in_prompt",
+    priority: 1000,
+    text: basePrompt,
+    enabled: true,
+    reason: "",
+    tokenCount: estimateTokens(basePrompt)
+  });
+
+  layers.push({
+    id: `skill-${skillId}`,
+    sourceType: "coauthor_skill",
+    sourceId: skillId,
+    sourceName: `Skill: ${skillId}`,
+    position: "in_prompt",
+    priority: 950,
+    text: skillPrompt,
+    enabled: true,
+    reason: "",
+    tokenCount: estimateTokens(skillPrompt)
+  });
+
+  layers.push({
+    id: "current_card",
+    sourceType: "coauthor_profile",
+    sourceId: character.id,
+    sourceName: "Profile & Greetings",
+    position: "in_prompt",
+    priority: 900,
+    text: currentCard,
+    enabled: true,
+    reason: "",
+    tokenCount: estimateTokens(currentCard)
+  });
+
+  if (memoryBlock) {
+    layers.push({
+      id: "summary_memory",
+      sourceType: "summary_memory",
+      sourceId: "summary",
+      sourceName: "Conversation Summary",
+      position: "in_prompt",
+      priority: 850,
+      text: memoryBlock,
+      enabled: true,
+      reason: "",
+      tokenCount: estimateTokens(memoryBlock)
+    });
+  }
+
+  if (loreBlock) {
+    layers.push({
+      id: "lore_entries",
+      sourceType: "lore_entry",
+      sourceId: "lore",
+      sourceName: "Lorebook Context",
+      position: "in_prompt",
+      priority: 800,
+      text: loreBlock,
+      enabled: true,
+      reason: "",
+      tokenCount: estimateTokens(loreBlock)
+    });
+  }
+
+  const preservedTokens = recentMessagesForHistory.reduce((sum, msg) => sum + estimateCoauthorMessageTokens(msg), 0);
+  layers.push({
+    id: "chat_history",
+    sourceType: "chat_history",
+    sourceId: "history",
+    sourceName: `Conversation History (${recentMessagesForHistory.length} msgs)`,
+    position: "in_chat",
+    priority: 100,
+    text: "",
+    enabled: true,
+    reason: "",
+    tokenCount: preservedTokens
+  });
+
+  if (compactionSummary) {
+    layers.push({
+      id: "compaction",
+      sourceType: "compaction",
+      sourceId: "compaction",
+      sourceName: "Context Compaction",
+      position: "hidden_system",
+      priority: 50,
+      text: compactionSummary,
+      enabled: true,
+      reason: "",
+      tokenCount: 0
+    });
+  }
+
   const prompt: AssemblePromptResponse = {
-    layers: [],
+    layers,
     tokenAccounting: {
       total: totalTokenEstimate,
       recentHistory: recentMessagesForHistory.length,
@@ -298,7 +398,7 @@ export async function assembleCoauthorPrompt(input: ChatModeAssembleInput): Prom
       model,
       presetName: "(coauthor)",
       presetId: null,
-      assembledLayers: [],
+      assembledLayers: layers,
       tokenAccounting: {
         total: totalTokenEstimate,
       },

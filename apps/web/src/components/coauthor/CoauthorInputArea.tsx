@@ -11,7 +11,10 @@ import { useProviderProfiles } from "../../hooks/use-provider-profiles.js";
 import { useToolCapableModels } from "./useToolCapableModels.js";
 import { listCoauthorModulesAction, setCoauthorModuleAction } from "../../stores/api-actions/chat-actions.js";
 import { useChatStore, useProviderStore, useIsSending } from "../../stores/index.js";
+import { useActiveTrace } from "../../stores/chat-selectors.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
+import { useTokenCount } from "../../hooks/use-token-count.js";
+import type { PromptLayerDto } from "@vibe-tavern/domain";
 import type { CoauthorModule } from "@vibe-tavern/api-contracts";
 
 /**
@@ -80,6 +83,41 @@ export function CoauthorInputArea() {
 	const sendLabel = renderSendLabel();
 	const sendButtonText = canSend || !draft.trim() ? t("send") : sendLabel || t("send_unavailable");
 
+	// --- Token counting ---
+	const activePromptTrace = useActiveTrace(useChatStore((s) => s.selectedTraceId));
+	const TEMPORARY_TYPES = useMemo(() => new Set(["chat_history", "compaction"]), []);
+
+	const buckets = useMemo(() => {
+		const layers: PromptLayerDto[] = activePromptTrace?.layers ?? [];
+		let moduleTokens = 0, skillTokens = 0, profileTokens = 0, lore = 0, memory = 0, history = 0;
+		for (const layer of layers) {
+			if (!layer.enabled || layer.position === "hidden_system") continue;
+			const tokens = layer.tokenCount;
+			if (TEMPORARY_TYPES.has(layer.sourceType)) {
+				history += tokens;
+			} else {
+				switch (layer.sourceType) {
+					case "coauthor_module": moduleTokens += tokens; break;
+					case "coauthor_skill": skillTokens += tokens; break;
+					case "coauthor_profile": profileTokens += tokens; break;
+					case "lore_entry": lore += tokens; break;
+					case "summary_memory": memory += tokens; break;
+					default: moduleTokens += tokens; break;
+				}
+			}
+		}
+		return { moduleTokens, skillTokens, profileTokens, lore, memory, history };
+	}, [activePromptTrace?.layers, TEMPORARY_TYPES]);
+
+	const inputTokens = useTokenCount(draft);
+	const permanent = buckets.moduleTokens + buckets.skillTokens + buckets.profileTokens + buckets.lore + buckets.memory;
+	const contextSize = provider.activeProviderProfile?.contextBudget ?? 0;
+	const maxTokens = provider.activeProviderProfile?.maxTokens ?? 0;
+	const totalUsed = permanent + buckets.history + inputTokens;
+	const availableBudget = Math.max(0, contextSize - maxTokens);
+	const usageRatio = availableBudget > 0 ? totalUsed / availableBudget : 0;
+	const tokenState = usageRatio > 0.95 ? "warn" : usageRatio > 0.75 ? "mid" : "ok";
+
 	const inputProps = {
 		placeholder: t("coauthor.input.placeholder"),
 		value: draft,
@@ -125,6 +163,13 @@ export function CoauthorInputArea() {
 			sendLabel={sendLabel}
 			sendButtonText={sendButtonText}
 			t={t}
+			buckets={buckets}
+			inputTokens={inputTokens}
+			permanent={permanent}
+			contextSize={contextSize}
+			maxTokens={maxTokens}
+			availableBudget={availableBudget}
+			tokenState={tokenState}
 		/>
 	);
 }
@@ -209,15 +254,24 @@ function DesktopInput({
 	onCancel: () => void;
 	sendLabel: string;
 	sendButtonText: string;
+	buckets: { moduleTokens: number; skillTokens: number; profileTokens: number; lore: number; memory: number; history: number };
+	inputTokens: number;
+	permanent: number;
+	contextSize: number;
+	maxTokens: number;
+	availableBudget: number;
+	tokenState: string;
 }) {
 	const moduleSwitch = useModuleSwitch();
 	const [moduleDropOpen, setModuleDropOpen] = useState(false);
 	const [modelDropOpen, setModelDropOpen] = useState(false);
+	const [tokenPopOpen, setTokenPopOpen] = useState(false);
 	const moduleDropRef = useRef<HTMLDivElement>(null);
 	const modelDropRef = useRef<HTMLDivElement>(null);
+	const tokenPopRef = useRef<HTMLDivElement>(null);
 
 	useEffect(() => {
-		if (!moduleDropOpen && !modelDropOpen) return;
+		if (!moduleDropOpen && !modelDropOpen && !tokenPopOpen) return;
 		function handleClick(e: MouseEvent) {
 			if (moduleDropRef.current && !moduleDropRef.current.contains(e.target as Node)) {
 				setModuleDropOpen(false);
@@ -225,10 +279,13 @@ function DesktopInput({
 			if (modelDropRef.current && !modelDropRef.current.contains(e.target as Node)) {
 				setModelDropOpen(false);
 			}
+			if (tokenPopRef.current && !tokenPopRef.current.contains(e.target as Node)) {
+				setTokenPopOpen(false);
+			}
 		}
 		document.addEventListener("mousedown", handleClick);
 		return () => document.removeEventListener("mousedown", handleClick);
-	}, [moduleDropOpen, modelDropOpen]);
+	}, [moduleDropOpen, modelDropOpen, tokenPopOpen]);
 
 	return (
 		<div
@@ -297,6 +354,54 @@ function DesktopInput({
 					</div>
 
 					<div className="ml-auto flex items-center gap-[9px]">
+						{/* Context Counter */}
+						<div className="relative" ref={tokenPopRef}>
+							<span
+								className={cn(
+									"cursor-pointer whitespace-nowrap text-[calc(var(--ui-fs)-3px)] tabular-nums transition-colors duration-150 hover:text-t1",
+									tokenState === "warn" ? "text-danger-text" : tokenState === "mid" ? "text-warning-text" : "text-t3",
+								)}
+								onClick={() => setTokenPopOpen((open) => !open)}
+							>
+								{permanent.toLocaleString()}<span className="text-t4">+</span>{(buckets.history + inputTokens).toLocaleString()} / {contextSize > 0 ? contextSize.toLocaleString() : "∞"}
+							</span>
+							{tokenPopOpen && (
+								<div className="glass-blur absolute bottom-[calc(100%+8px)] right-0 z-[220] w-[240px] rounded-lg border border-border2 bg-glass-bg px-3.5 py-2.5 shadow-[0_12px_28px_rgba(0,0,0,0.45)]">
+									<div className="mb-1.5 border-b border-border pb-1.5 text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.08em] text-t3">{t("context_breakdown")}</div>
+									<div className="mb-1 text-[10px] font-medium uppercase tracking-[0.06em] text-t4">{t("context_permanent")}</div>
+									<div className="mb-1 flex justify-between text-xs text-t2"><span>{t("coauthor.input.module_switch")}</span><span className="tabular-nums text-t1">{buckets.moduleTokens.toLocaleString()}</span></div>
+									<div className="mb-1 flex justify-between text-xs text-t2"><span>{t("active_skill")}</span><span className="tabular-nums text-t1">{buckets.skillTokens.toLocaleString()}</span></div>
+									<div className="mb-1 flex justify-between text-xs text-t2"><span>{t("character_profile")}</span><span className="tabular-nums text-t1">{buckets.profileTokens.toLocaleString()}</span></div>
+									<div className="mb-1 flex justify-between text-xs text-t2"><span>{t("context_lore")}</span><span className="tabular-nums text-t1">{buckets.lore.toLocaleString()}</span></div>
+									<div className="mb-1.5 flex justify-between text-xs text-t2"><span>{t("context_memory")}</span><span className="tabular-nums text-t1">{buckets.memory.toLocaleString()}</span></div>
+									
+									<div className="mb-1 text-[10px] font-medium uppercase tracking-[0.06em] text-t4">{t("context_temporary")}</div>
+									<div className="mb-1 flex justify-between text-xs text-t2"><span>{t("context_history")}</span><span className="tabular-nums text-t1">{buckets.history.toLocaleString()}</span></div>
+									<div className="mb-1.5 flex justify-between text-xs text-t2"><span>{t("context_current_input")}</span><span className="tabular-nums text-t1">{inputTokens.toLocaleString()}</span></div>
+									
+									<div className="mb-1 flex justify-between border-t border-border pt-1.5 text-xs text-t2"><span>{t("context_response_budget")}</span><span className="tabular-nums text-t1">{maxTokens === -1 ? '∞' : `-${maxTokens.toLocaleString()}`}</span></div>
+									<div className="mt-0.5 flex justify-between text-xs font-medium text-t1"><span>{t("context_total_available")}</span><span className="tabular-nums">{maxTokens === -1 ? '∞' : availableBudget.toLocaleString()}</span></div>
+									
+									{availableBudget > 0 && (
+										<div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-s3">
+											<div className="flex h-full">
+												<CustomTooltip content={`${t("context_permanent")}: ${permanent.toLocaleString()}`}>
+													<div className="bg-accent" style={{ width: `${Math.min(100, permanent / availableBudget * 100)}%` }} />
+												</CustomTooltip>
+												<CustomTooltip content={`${t("context_history")}: ${buckets.history.toLocaleString()}`}>
+													<div className="bg-t3" style={{ width: `${Math.min(100, buckets.history / availableBudget * 100)}%` }} />
+												</CustomTooltip>
+												<CustomTooltip content={`${t("context_current_input")}: ${inputTokens.toLocaleString()}`}>
+													<div className="bg-accent-t" style={{ width: `${Math.min(100, inputTokens / availableBudget * 100)}%` }} />
+												</CustomTooltip>
+											</div>
+										</div>
+									)}
+								</div>
+							)}
+						</div>
+						<div className="mx-0.5 h-3.5 w-px shrink-0 bg-border" />
+
 						{/* Tool-filtered favorites */}
 						<div className="relative flex items-center" ref={modelDropRef}>
 							<CustomTooltip content={t("starred_models")}>
