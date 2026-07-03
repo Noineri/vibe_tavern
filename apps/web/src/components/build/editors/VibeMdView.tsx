@@ -40,6 +40,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { UseFormReturn } from "react-hook-form";
 import type { BuildCharacterDraft, ChatListItem } from "@vibe-tavern/api-contracts";
+import { brandId, type ChatId } from "@vibe-tavern/domain";
 import { toast } from "sonner";
 import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
@@ -61,7 +62,8 @@ import { CustomTooltip } from "../../shared/Tooltip.js";
 import { lblCls } from "../fields/field-styles.js";
 import { TextAreaField } from "../fields/TextAreaField.js";
 import { DepthPromptField } from "../fields/DepthPromptField.js";
-import { createChatAction, switchChatAction } from "../../../stores/api-actions/chat-actions.js";
+import { createChatAction, switchChatAction, renameChatAction, deleteChatAction } from "../../../stores/api-actions/chat-actions.js";
+import { DestructiveConfirmModal } from "../../shared/destructive-confirm-modal.js";
 import { listCoauthorChats } from "../../../app-client.js";
 import { useChatStore } from "../../../stores/chat-store.js";
 
@@ -86,6 +88,36 @@ export function VibeMdView({ form, characterId, isSaving }: VibeMdViewProps) {
   const [coauthorOpen, setCoauthorOpen] = useState(false);
   const [coauthorChats, setCoauthorChats] = useState<ChatListItem[] | null>(null);
   const [coauthorBusy, setCoauthorBusy] = useState(false);
+  const [renamingChatId, setRenamingChatId] = useState<string | null>(null);
+  const [renameDraft, setRenameDraft] = useState("");
+  const [deleteConfirmChatId, setDeleteConfirmChatId] = useState<string | null>(null);
+
+  async function handleRenameChat(chatId: string) {
+    if (!renameDraft.trim()) { setRenamingChatId(null); return; }
+    try {
+      setCoauthorBusy(true);
+      await renameChatAction(brandId<ChatId>(chatId), renameDraft.trim());
+      setCoauthorChats(prev => prev?.map(c => c.id === chatId ? { ...c, title: renameDraft.trim() } : c) ?? null);
+      setRenamingChatId(null);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : t("error"));
+    } finally {
+      setCoauthorBusy(false);
+    }
+  }
+
+  async function handleDeleteChat(chatId: string) {
+    try {
+      setCoauthorBusy(true);
+      await deleteChatAction(brandId<ChatId>(chatId));
+      setCoauthorChats(prev => prev?.filter(c => c.id !== chatId) ?? null);
+      setDeleteConfirmChatId(null);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : t("error"));
+    } finally {
+      setCoauthorBusy(false);
+    }
+  }
 
   async function handleOpenCoauthorList() {
     // Toggle closed if already open.
@@ -282,16 +314,59 @@ export function VibeMdView({ form, characterId, isSaving }: VibeMdViewProps) {
               ) : (
                 <ul className="max-h-[280px] overflow-y-auto py-1">
                   {coauthorChats.map((chat) => (
-                    <li key={chat.id}>
-                      <button
-                        type="button"
-                        className="flex w-full flex-col items-start gap-0.5 px-3 py-2 text-left transition-colors hover:bg-s2"
-                        onClick={() => { void handleSwitchToCoauthorChat(chat.id); }}
-                        disabled={coauthorBusy}
-                      >
-                        <span className="font-ui text-[0.85rem] font-medium text-t1">{chat.title || t("coauthor.untitled_chat")}</span>
-                        <span className="font-ui text-[11px] text-t4">{chat.messageCount} {t("coauthor.messages_unit")}</span>
-                      </button>
+                    <li key={chat.id} className="group relative">
+                      {renamingChatId === chat.id ? (
+                        <div className="flex w-full flex-col items-start gap-1 px-3 py-2">
+                          <input
+                            // eslint-disable-next-line jsx-a11y/no-autofocus
+                            autoFocus
+                            className="w-full rounded border border-border bg-s2 px-2 py-1 font-ui text-[0.85rem] font-medium text-t1 outline-none focus:border-border2"
+                            value={renameDraft}
+                            onChange={(e) => setRenameDraft(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") void handleRenameChat(chat.id);
+                              else if (e.key === "Escape") setRenamingChatId(null);
+                            }}
+                            onBlur={() => void handleRenameChat(chat.id)}
+                            disabled={coauthorBusy}
+                          />
+                        </div>
+                      ) : (
+                        <>
+                          <button
+                            type="button"
+                            className="flex w-full flex-col items-start gap-0.5 px-3 py-2 text-left transition-colors hover:bg-s2 pr-16"
+                            onClick={() => { void handleSwitchToCoauthorChat(chat.id); }}
+                            disabled={coauthorBusy}
+                          >
+                            <span className="font-ui text-[0.85rem] font-medium text-t1">{chat.title || t("coauthor.untitled_chat")}</span>
+                            <span className="font-ui text-[11px] text-t4">{chat.messageCount} {t("coauthor.messages_unit")}</span>
+                          </button>
+                          <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+                            <button
+                              type="button"
+                              className="rounded p-1.5 text-t3 transition-colors hover:bg-s3 hover:text-t1"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setRenamingChatId(chat.id);
+                                setRenameDraft(chat.title);
+                              }}
+                            >
+                              <Icons.Edit className="h-3.5 w-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              className="rounded p-1.5 text-danger-text transition-colors hover:bg-danger-dim hover:text-danger-text"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setDeleteConfirmChatId(chat.id);
+                              }}
+                            >
+                              <Icons.Trash className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        </>
+                      )}
                     </li>
                   ))}
                 </ul>
@@ -300,6 +375,16 @@ export function VibeMdView({ form, characterId, isSaving }: VibeMdViewProps) {
           </>
         )}
       </div>
+
+      {deleteConfirmChatId && (
+        <DestructiveConfirmModal
+          title={t("sidebar_delete_chat")}
+          body={<>{t("sidebar_are_you_sure")} <b>{coauthorChats?.find(c => c.id === deleteConfirmChatId)?.title || t("coauthor.untitled_chat")}</b></>}
+          confirmLabel={t("delete")}
+          onConfirm={() => void handleDeleteChat(deleteConfirmChatId)}
+          onCancel={() => setDeleteConfirmChatId(null)}
+        />
+      )}
 
       {/* Prose MD editor — body only (no frontmatter), auto-grows to content.
           The `+` (add alt greeting) and `✕` (remove) widgets live ON the
