@@ -1,5 +1,6 @@
-import { memo } from "react";
+import { memo, useState } from "react";
 import { useChatStore, useIsSending } from "../../stores/index.js";
+import { MessageEditor } from "../chat/MessageEditor.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
 import { useDisplayMessage, useMessageAuthor, useIsStreamingTarget, useStreamingRevealedFor } from "../../stores/chat-selectors.js";
 import { MessageShell, type MessageShellAuthorInfo } from "../chat/MessageShell.js";
@@ -51,6 +52,8 @@ export const CoauthorTurnShell = memo(function CoauthorTurnShell({
   const lastMessageRole = useSnapshotStore(s => s.messagesById[lastMessageIdInTurn]?.role);
 
   const isGenerating = isSending && !pendingUserMessageContent && isLastTurn;
+  const isEditingTurn = useChatStore(s => turnMessageIds.includes(s.editingMessageId ?? ""));
+  const [copied, setCopied] = useState(false);
 
   const authorOverride: MessageShellAuthorInfo = {
     name: `${t("coauthor_author_assistant")}: ${authorInfo.character.name}`,
@@ -110,6 +113,8 @@ export const CoauthorTurnShell = memo(function CoauthorTurnShell({
         .filter(Boolean)
         .join("\n\n");
       void navigator.clipboard?.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1000);
     },
     onEdit: () => {
       const state = useSnapshotStore.getState();
@@ -154,7 +159,7 @@ export const CoauthorTurnShell = memo(function CoauthorTurnShell({
       author={authorOverride}
       isUser={false}
       isGreeting={false}
-      isEditing={false}
+      isEditing={isEditingTurn}
       isGenerating={isGenerating}
       isBusy={isBusy}
       canBranch={false}
@@ -168,7 +173,7 @@ export const CoauthorTurnShell = memo(function CoauthorTurnShell({
       coauthorModuleId={lastAssistantMsg?.coauthorModuleId ?? null}
       coauthorSkillId={lastAssistantMsg?.coauthorSkillId ?? null}
       createdAt={useSnapshotStore.getState().messagesById[turnId]?.createdAt ?? ""}
-      copied={false}
+      copied={copied}
       slotExtras={{}}
       variantControlsOverlay={null}
       variantControlsRef={{ current: null }}
@@ -200,6 +205,8 @@ const CoauthorTurnPart = memo(function CoauthorTurnPart({ messageId, chatId }: {
   const msg = useDisplayMessage(messageId);
   const isStreamingTarget = useIsStreamingTarget(messageId);
   const streamingReveal = useStreamingRevealedFor(messageId);
+  const chat = useChatController();
+  const isEditingThisPart = useChatStore(s => s.editingMessageId === messageId);
   
   if (!msg) return null;
 
@@ -212,28 +219,34 @@ const CoauthorTurnPart = memo(function CoauthorTurnPart({ messageId, chatId }: {
 
   return (
     <div className="flex flex-col gap-3">
-      {finalReasoning && (
-        <details className="group overflow-hidden rounded border border-border bg-s1">
-          <summary className="cursor-pointer px-3 py-1.5 font-ui text-[11px] font-medium text-t3 transition-colors hover:text-t2">
-            Reasoning
-          </summary>
-          <div className="border-t border-border px-3 py-2">
-            <pre className="whitespace-pre-wrap font-mono text-[11px] text-t3">{finalReasoning}</pre>
-          </div>
-        </details>
-      )}
-
-      {(msg.displayContent || isStreamingHere) && (
-        <div translate="yes" className="font-body text-[length:var(--mfs)] leading-[1.65] text-msg-t1 [&_em]:italic [&_em]:text-msg-t2">
-          {isStreamingHere ? (
-            <StreamingMarkdown text={activeStreamingRevealedText} />
-          ) : (
-            <Markdown text={msg.displayContent} />
+      {isEditingThisPart ? (
+        <MessageEditor messageId={messageId} onCancel={chat.handleCancelEdit} />
+      ) : (
+        <>
+          {finalReasoning && (
+            <details className="group overflow-hidden rounded border border-border bg-s1">
+              <summary className="cursor-pointer px-3 py-1.5 font-ui text-[11px] font-medium text-t3 transition-colors hover:text-t2">
+                Reasoning
+              </summary>
+              <div className="border-t border-border px-3 py-2">
+                <pre className="whitespace-pre-wrap font-mono text-[11px] text-t3">{finalReasoning}</pre>
+              </div>
+            </details>
           )}
-        </div>
-      )}
 
-      <CoauthorToolActivitySlot chatId={chatId} messageId={messageId} isStreaming={isStreamingHere} />
+          {(msg.displayContent || isStreamingHere) && (
+            <div translate="yes" className="font-body text-[length:var(--mfs)] leading-[1.65] text-msg-t1 [&_em]:italic [&_em]:text-msg-t2">
+              {isStreamingHere ? (
+                <StreamingMarkdown text={activeStreamingRevealedText} />
+              ) : (
+                <Markdown text={msg.displayContent} />
+              )}
+            </div>
+          )}
+
+          <CoauthorToolActivitySlot chatId={chatId} messageId={messageId} isStreaming={isStreamingHere} />
+        </>
+      )}
     </div>
   );
 });
