@@ -1,8 +1,9 @@
-import { useMemo, useCallback } from "react";
+import { useCallback } from "react";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
-import { useMessageOrder } from "../../stores/index.js";
 import { CoauthorMessageBlock } from "./CoauthorMessageBlock.js";
-import { MessageScroller, useDisplayMessageIds } from "../chat/MessageScroller.js";
+import { MessageScroller } from "../chat/MessageScroller.js";
+import { useCoauthorTurnIds } from "./useCoauthorTurnIds.js";
+import { CoauthorTurnShell } from "./CoauthorTurnShell.js";
 
 /**
  * Co-Author message surface — the structural fork point from RP.
@@ -28,38 +29,51 @@ import { MessageScroller, useDisplayMessageIds } from "../chat/MessageScroller.j
  * edit THIS file (and `CoauthorMessageBlock`) without re-entering the RP path.
  */
 export function CoauthorMessageList() {
-  const messageOrder = useMessageOrder();
-  const displayMessageIds = useDisplayMessageIds();
+  const turnIds = useCoauthorTurnIds();
 
-  const firstAssistantMsgId = useMemo(() => {
-    const state = useSnapshotStore.getState();
-    for (const id of messageOrder) {
-      if (state.messagesById[id]?.role === "assistant") return id;
+  const renderItem = useCallback((index: number, turnId: string) => {
+    const isLast = index === turnIds.length - 1;
+
+    if (turnId.startsWith("__pending-")) {
+      return (
+        <CoauthorMessageBlock
+          key={turnId}
+          messageId={turnId}
+          index={index}
+          isFirstAssistant={false}
+          isLast={isLast}
+          prevRole={null}
+        />
+      );
     }
-    return null;
-  }, [messageOrder]);
 
-  const renderItem = useCallback((index: number, messageId: string) => {
     const state = useSnapshotStore.getState();
-    const isFirstAssistant = messageId === firstAssistantMsgId;
-    const isLast = index === messageOrder.length - 1;
-    const prevRole =
-      index > 0 && messageOrder[index - 1]
-        ? (state.messagesById[messageOrder[index - 1]]?.role ?? null)
-        : null;
+    const role = state.messagesById[turnId]?.role;
+    
+    if (role === "user") {
+      return (
+        <CoauthorMessageBlock
+          key={turnId}
+          messageId={turnId}
+          index={index}
+          isFirstAssistant={false}
+          isLast={isLast}
+          prevRole={null}
+        />
+      );
+    }
+
     return (
-      <CoauthorMessageBlock
-        key={messageId}
-        messageId={messageId}
+      <CoauthorTurnShell
+        key={turnId}
+        turnId={turnId}
         index={index}
-        isFirstAssistant={isFirstAssistant}
-        isLast={isLast}
-        prevRole={prevRole}
+        isLastTurn={isLast}
       />
     );
-  }, [firstAssistantMsgId, messageOrder]);
+  }, [turnIds]);
 
   return (
-    <MessageScroller displayIds={displayMessageIds} renderItem={renderItem} />
+    <MessageScroller displayIds={turnIds} renderItem={renderItem} />
   );
 }

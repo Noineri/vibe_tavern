@@ -140,12 +140,12 @@ function ToolActivityCard({ activity }: { activity: CoauthorToolActivity }) {
   const title = activity.summary?.trim() || t("coauthor_tool_activity");
 
   return (
-    <div className="overflow-hidden rounded-md border border-border bg-surface">
+    <div className="overflow-hidden">
       <button
         type="button"
         disabled={streaming}
         onClick={() => setOpen((v) => !v)}
-        className="flex w-full cursor-pointer items-center gap-1.5 px-3 py-1.5 text-left font-ui text-[11px] font-medium tracking-[0.03em] text-t2 transition-colors duration-100 hover:bg-s2 disabled:cursor-default"
+        className="flex w-full cursor-pointer items-center gap-1.5 py-1.5 text-left font-ui text-[11px] font-medium tracking-[0.03em] text-t2 transition-colors duration-100 hover:text-t1 hover:bg-s2/50 rounded px-2 disabled:cursor-default"
       >
         <span className={statusClass}>{statusIcon}</span>
         <span className="truncate">{title}</span>
@@ -155,10 +155,10 @@ function ToolActivityCard({ activity }: { activity: CoauthorToolActivity }) {
         )}
       </button>
       {errored && (
-        <div className="border-t border-border px-3 py-1.5 font-ui text-[11px] text-danger-text">{t("coauthor_tool_error")}</div>
+        <div className="px-3 py-1.5 font-ui text-[11px] text-danger-text">{t("coauthor_tool_error")}</div>
       )}
       {!streaming && open && activity.proposed != null && (
-        <div className="max-h-48 overflow-auto border-t border-border bg-bg px-3 py-2">
+        <div className="max-h-48 overflow-auto px-3 py-2 border-l-2 border-border/50 ml-2 mt-1">
           <pre className="whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed text-msg-t2">
             {activity.proposed}
           </pre>
@@ -171,12 +171,19 @@ function ToolActivityCard({ activity }: { activity: CoauthorToolActivity }) {
 // Module-load registration (mirrors MessageReasoning.tsx). The slot is wired
 // into the bubble by `MessageShell` (tool_activity position) and triggered by a
 // side-effect import in `MessageBlock.tsx`.
+// In Co-Author mode, this slot is disabled because `CoauthorTurnShell` renders
+// tools inline natively, but we keep this registration active for any potential RP fallback.
+
 registerMessageSlot({
   id: "coauthor-tool-activity",
   slot: "tool_activity",
   order: 0,
   roles: ["assistant"],
-  visible: (ctx: MessageSlotContext) => ctx.messageRole === "assistant",
+  visible: (ctx: MessageSlotContext) => {
+    if (ctx.messageRole !== "assistant") return false;
+    const mode = useSnapshotStore.getState().activeChat?.mode;
+    return mode !== "coauthor";
+  },
   render: (ctx) => (
     <CoauthorToolActivitySlot chatId={ctx.chatId} messageId={ctx.messageId} isStreaming={ctx.isStreaming} />
   ),
