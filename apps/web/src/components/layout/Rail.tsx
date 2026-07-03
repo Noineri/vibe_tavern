@@ -1,13 +1,15 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useOutsideClick } from "../../hooks/use-outside-click.js";
 import { ListSortToggle } from "../shared/ListSortToggle.js";
-import { filterAndSortList } from "../../lib/list-filter.js";
 import { createPortal } from "react-dom";
 import type { ChatBranchId, ChatId } from "@vibe-tavern/domain";
 import { Ic } from "../shared/icons.js";
 import { cn } from "../../lib/cn.js";
 import { resolveEntityAvatarUrl } from "../../lib/avatar.js";
 import { initials } from "./app-shell-helpers.js";
+import { useSidebarChats } from "./hooks/use-sidebar-chats.js";
+import { useSidebarCharacters } from "./hooks/use-sidebar-characters.js";
+import { useRowActions } from "./hooks/use-row-actions.js";
 import { CharacterImportModal, ChatImportModal } from "../modals/ImportModals.js";
 
 /** Resolve a character list entry's avatar URL (folder avatar when migrated). */
@@ -165,39 +167,26 @@ export function Rail({ hidden }: { hidden?: boolean }) {
     event: "pointerdown",
   });
 
-  // Tag pool: every tag across all characters (for the filter bottom sheet).
-  const charTagPool = useMemo(
-    () => Array.from(new Set(allCharacters.flatMap((c) => c.tags ?? []))).sort((a, b) => a.localeCompare(b)),
-    [allCharacters],
-  );
+  // Character-list derivation (tag pool + sort/search/tag-filter) lives in
+  // the useSidebarCharacters hook, shared with the desktop Sidebar. Rail does
+  // not use the chatId-bearing characterTabs (it switches chats by explicit
+  // click, so it's immune to F-6), but consumes the same visible list + tag
+  // pool so desktop and mobile can't drift on character sort/filter.
+  const { visibleCharacterTabs: visibleChars, charTagPool } = useSidebarCharacters({
+    allCharacters,
+    allChats: chats,
+    query: charQuery,
+    selectedTags: charSelectedTags,
+  });
 
-  // Enrich each character with a recentKey (max lastMessageAt across its
-  // chats; "" for characters with no chat → sorts last under "recent") and its
-  // tags, then apply the shared filter + sort — identical logic to the desktop
-  // Sidebar so both surfaces stay in sync.
-  const visibleChars = useMemo(() => {
-    const lastByChar = new Map<string, string>();
-    for (const ch of chats) {
-      const prev = lastByChar.get(ch.characterId) ?? "";
-      if (ch.lastMessageAt > prev) lastByChar.set(ch.characterId, ch.lastMessageAt);
-    }
-    const enriched = allCharacters.map((c) => ({
-      ...c,
-      recentKey: lastByChar.get(c.id) ?? "",
-      tags: c.tags ?? [],
-    }));
-    return filterAndSortList({
-      items: enriched,
-      getName: (i) => i.name,
-      sortMode: characterSortMode,
-      query: charQuery,
-      selectedTags: charSelectedTags,
-    });
-  }, [allCharacters, chats, characterSortMode, charQuery, charSelectedTags]);
-
-  // Chats for the selected/active character
+  // Active character — its chats are derived via the shared useSidebarChats
+  // hook (character-scope + mode split), which is also where the rail's
+  // mode-awareness lands: previously the rail rendered every chat for the
+  // active character regardless of mode (the never-integrated mode work).
+  // The rail has no chat search box (SF-1 scope), so query is ""; the desktop
+  // sort mode from the nav store still applies via the hook.
   const activeCharId = selectedCharacterId ?? chatMeta?.character?.id ?? null;
-  const activeCharChats = chats.filter((ch) => ch.characterId === activeCharId);
+  const { sectionChats } = useSidebarChats({ allChats: chats, characterId: activeCharId, query: "" });
 
   const toggle = () => {
     if (expanded) {
@@ -233,6 +222,21 @@ export function Rail({ hidden }: { hidden?: boolean }) {
   // to replace.
   const [renamingBranch, setRenamingBranch] = useState<{ chatId: ChatId; branchId: ChatBranchId } | null>(null);
   const [branchRenameDraft, setBranchRenameDraft] = useState("");
+
+  // Context-menu action builders (character / chat / branch), shared with the
+  // future co-author shells. Parameterized by nav mode — chat rename is omitted
+  // under coauthor (flat-editor design); branch menu is RP-only in practice
+  // (co-author has no branches, so its fork never calls buildBranchMenuItems).
+  const rowActions = useRowActions({
+    mode: mode === "coauthor" ? "coauthor" : "rp",
+    character,
+    setConfirmDestroy,
+    setRenamingChatId,
+    setRenameDraft,
+    setRenamingBranch,
+    setBranchRenameDraft,
+    setChatImportOpen,
+  });
   const commitBranchRename = () => {
     const nextLabel = branchRenameDraft.trim();
     if (nextLabel && renamingBranch) {
@@ -432,7 +436,7 @@ export function Rail({ hidden }: { hidden?: boolean }) {
               )}
               <div className="my-0.5 h-px w-8 shrink-0 bg-border" />
               {/* Chat indicators for active character */}
-              {activeCharChats.map((ch) => {
+              {sectionChats.map((ch) => {
                 const initial = (ch.title || "?").trim().charAt(0).toUpperCase() || "?";
                 return (
                   <div key={ch.id}
@@ -587,9 +591,9 @@ export function Rail({ hidden }: { hidden?: boolean }) {
                       {c.id === selectedCharacterId && (
                         <div className={cn(
                           "ml-3 flex flex-col gap-1 border-l-2 pl-2 py-1 transition-colors",
-                          activeCharChats.some(ch => ch.id === activeChatId) ? "border-accent/50" : "border-border"
+                          sectionChats.some(ch => ch.id === activeChatId) ? "border-accent/50" : "border-border"
                         )}>
-                          {activeCharChats.map((ch) => (
+                          {sectionChats.map((ch) => (
                             <div key={ch.id}
                                  className={cn(
                                    "group relative flex min-h-[48px] cursor-pointer flex-col rounded-lg px-3 py-2 transition-[background-color,transform] duration-150 ease-out active:scale-[0.96]",
@@ -714,52 +718,21 @@ export function Rail({ hidden }: { hidden?: boolean }) {
       {/* ═══ BOTTOM SHEETS (контекстные меню) ═══ */}
       {charMenuId && bottomSheet(
         allCharacters.find(c => c.id === charMenuId)?.name ?? "",
-        [
-          { icon: <Ic.download />, label: t("sidebar_export"), action: () => character.handleExportCharacter(charMenuId) },
-          { icon: <Ic.copy />, label: t("duplicate"), action: () => character.handleDuplicateCharacter(charMenuId) },
-          { icon: <Ic.import />, label: t("sidebar_import_chat"), action: () => setChatImportOpen(true) },
-          { icon: <Ic.del />, label: t("delete"), danger: true, action: () => {
-            const ch = allCharacters.find(c => c.id === charMenuId);
-            setConfirmDestroy({
-              title: t("sidebar_delete_character"),
-              body: <>{t("sidebar_are_you_sure")} <b>{ch?.name}</b></>,
-              confirmLabel: t("delete"),
-              onConfirm: () => character.handleDeleteCharacter(charMenuId),
-            });
-          }},
-        ]
+        rowActions.buildCharMenuItems(charMenuId, allCharacters.find(c => c.id === charMenuId)?.name ?? ""),
       )}
 
       {chatMenuId && bottomSheet(
-        activeCharChats.find(c => c.id === chatMenuId)?.title ?? "",
-        [
-          { icon: <Ic.edit />, label: t("sidebar_rename"), action: () => {
-            const ch = activeCharChats.find(c => c.id === chatMenuId);
-            setRenamingChatId(chatMenuId);
-            setRenameDraft(ch?.title ?? "");
-          }},
-          { icon: <Ic.download />, label: t("sidebar_export_jsonl"), action: () => character.handleExportChatJsonl(chatMenuId) },
-          { icon: <Ic.del />, label: character.getChatRemovalMode(chatMenuId) === "clear" ? t("sidebar_clear_chat") : t("delete"), danger: true, action: () => {
-            const ch = activeCharChats.find(c => c.id === chatMenuId);
-            const clearsOnRemove = character.getChatRemovalMode(chatMenuId) === "clear";
-            setConfirmDestroy({
-              title: clearsOnRemove ? t("sidebar_clear_chat") : t("sidebar_delete_chat"),
-              body: clearsOnRemove ? <>{t("sidebar_clear_chat_confirm")} <b>{ch?.title}</b></> : <>{t("sidebar_are_you_sure")} <b>{ch?.title}</b></>,
-              confirmLabel: clearsOnRemove ? t("sidebar_clear_chat") : t("delete"),
-              onConfirm: () => character.handleRemoveChat(chatMenuId),
-            });
-          }},
-        ]
+        sectionChats.find(c => c.id === chatMenuId)?.title ?? "",
+        rowActions.buildChatMenuItems(chatMenuId, sectionChats.find(c => c.id === chatMenuId)?.title ?? ""),
       )}
 
       {branchMenuId && bottomSheet(
         branchMenuId.label || t("sidebar_unnamed_branch"),
-        [
-          { icon: <Ic.edit />, label: t("sidebar_rename"), action: () => {
-            setRenamingBranch({ chatId: branchMenuId.chatId, branchId: branchMenuId.branchId });
-            setBranchRenameDraft(branchMenuId.label);
-          }},
-        ]
+        rowActions.buildBranchMenuItems({
+          chatId: branchMenuId.chatId,
+          branchId: branchMenuId.branchId,
+          label: branchMenuId.label,
+        }),
       )}
 
       {/* ═══ TAG-FILTER BOTTOM SHEET ═══ */}

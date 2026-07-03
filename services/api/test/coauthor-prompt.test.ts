@@ -125,14 +125,25 @@ describe("assembleCoauthorPrompt", () => {
     expect(system).toContain("General Writing");
   });
 
-  test("promptTraceDraft carries coauthor preset name and empty RP layers", async () => {
+  test("promptTraceDraft carries coauthor preset name and no RP-pipeline layers", async () => {
     const loaders = makeLoaders();
     const result = await assembleCoauthorPrompt(makeInput(loaders, { branchId: "br_1" as never }));
     expect(result.promptTraceDraft.presetName).toBe("(coauthor)");
     expect(result.promptTraceDraft.presetId).toBeNull();
-    expect(result.promptTraceDraft.assembledLayers).toEqual([]);
     expect(result.promptTraceDraft.activatedLoreEntries).toEqual([]);
     expect(result.promptTraceDraft.branchId).toBe("br_1");
+    // CS-27 (context counter): the trace now carries the coauthor pipeline's
+    // own layers so the counter UI can break the context down. These are
+    // coauthor-specific sourceTypes (coauthor_profile, chat_history, ...) —
+    // the RP prompt-pipeline layers (promptPreset / character*) must NOT
+    // leak in, since co-author never runs the RP assembler. That is the
+    // "empty RP layers" invariant the original test name expressed, updated
+    // for the CS-27 reality that the trace is no longer empty.
+    const sourceTypes = result.promptTraceDraft.assembledLayers.map((l) => l.sourceType);
+    expect(sourceTypes).toContain("coauthor_profile");
+    expect(sourceTypes).toContain("chat_history");
+    const rpLayers = sourceTypes.filter((st) => st === "promptPreset" || st.startsWith("character"));
+    expect(rpLayers).toEqual([]);
   });
 
   test("CA-13: bound lorebook entries render as read-only reference in the system message", async () => {

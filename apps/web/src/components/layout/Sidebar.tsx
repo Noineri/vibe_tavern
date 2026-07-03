@@ -2,6 +2,9 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { ChatId } from "@vibe-tavern/domain";
 import { initials } from "./app-shell-helpers.js";
+import { calcPopoverPos, calcSwitcherPos, formatRelativeTime, formatShortDate } from "./sidebar-utils.js";
+import { useSidebarChats } from "./hooks/use-sidebar-chats.js";
+import { useSidebarCharacters } from "./hooks/use-sidebar-characters.js";
 import { Icons } from "../shared/icons.js";
 import { Logo } from "../shared/Logo.js";
 import { cn } from "../../lib/cn.js";
@@ -13,8 +16,6 @@ import { useCharacterController } from "../../hooks/use-character-controller.js"
 import { useBootstrapStore } from "../../stores/api-actions/bootstrap-actions.js";
 import { useChatMeta } from "../../stores/chat-selectors.js";
 import { useNavigationStore, useChatStore, useCharacterStore, useModalStore } from "../../stores/index.js";
-import { buildCharacterTabs } from "../../lib/character-tabs.js";
-import { filterAndSortList } from "../../lib/list-filter.js";
 import { ListSortToggle } from "../shared/ListSortToggle.js";
 import { ListSearchPanel } from "../shared/ListSearchPanel.js";
 import { CustomTooltip } from "../shared/Tooltip.js";
@@ -57,13 +58,6 @@ export function Sidebar() {
     return tab.id === activeChatCharacterId || tab.chatId === activeChatId;
   };
 
-  // Filter chats to show only those belonging to the current character
-  const chats = useMemo(
-    () => currentCharacterId
-      ? allChats.filter((c) => c.characterId === currentCharacterId)
-      : allChats,
-    [allChats, currentCharacterId],
-  );
   const branches = snapshot?.branches ?? [];
   const activeBranchId = snapshot?.activeBranch?.id ?? null;
   const bootstrapPersonas = useBootstrapStore((s) => s.personas);
@@ -77,11 +71,6 @@ export function Sidebar() {
     ? resolveEntityAvatarUrl({ kind: "characters", id: snapshot.character.id, avatarExt: snapshot.character.avatarExt, avatarAssetId: snapshot.character.avatarAssetId, updatedAt: snapshot.character.updatedAt })
     : null;
 
-  const characterTabs = useMemo(
-    () => buildCharacterTabs(allCharacters, allChats),
-    [allCharacters, allChats],
-  );
-
   // --- Character list: sort + search state ---
   const characterSortMode = useNavigationStore((s) => s.characterSortMode);
   const setCharacterSortMode = useNavigationStore((s) => s.setCharacterSortMode);
@@ -89,35 +78,12 @@ export function Sidebar() {
   const [charSelectedTags, setCharSelectedTags] = useState<string[]>([]);
   const [charSearchOpen, setCharSearchOpen] = useState(false);
 
-  // Pool every tag across all characters for the search combobox.
-  const charTagPool = useMemo(
-    () => Array.from(new Set(allCharacters.flatMap((c) => c.tags ?? []))).sort((a, b) => a.localeCompare(b)),
-    [allCharacters],
-  );
-
-  // Enrich each character tab with a recentKey (max lastMessageAt across its
-  // chats; "" for characters with no chat → sorts last under "recent") and its
-  // tags, then apply the shared filter + sort.
-  const visibleCharacterTabs = useMemo(() => {
-    const lastByChar = new Map<string, string>();
-    for (const ch of allChats) {
-      const prev = lastByChar.get(ch.characterId) ?? "";
-      if (ch.lastMessageAt > prev) lastByChar.set(ch.characterId, ch.lastMessageAt);
-    }
-    const tagsById = new Map(allCharacters.map((c) => [c.id, c.tags ?? []] as const));
-    const enriched = characterTabs.map((tab) => ({
-      ...tab,
-      recentKey: lastByChar.get(tab.id) ?? "",
-      tags: tagsById.get(tab.id) ?? [],
-    }));
-    return filterAndSortList({
-      items: enriched,
-      getName: (i) => i.name,
-      sortMode: characterSortMode,
-      query: charQuery,
-      selectedTags: charSelectedTags,
-    });
-  }, [characterTabs, allCharacters, allChats, characterSortMode, charQuery, charSelectedTags]);
+  const { characterTabs, charTagPool, visibleCharacterTabs } = useSidebarCharacters({
+    allCharacters,
+    allChats,
+    query: charQuery,
+    selectedTags: charSelectedTags,
+  });
 
   // --- Chat list: sort + search state ---
   const chatSortMode = useNavigationStore((s) => s.chatSortMode);
@@ -125,29 +91,11 @@ export function Sidebar() {
   const [chatListQuery, setChatListQuery] = useState("");
   const [chatSearchOpen, setChatSearchOpen] = useState(false);
 
-  // Chats have no tags — name-only search. recentKey is the chat's own
-  // lastMessageAt (already on ChatListItem). Filtered within the current
-  // character scope (the `chats` memo already narrows to currentCharacterId).
-  const visibleChats = useMemo(() => {
-    const enriched = chats.map((c) => ({ ...c, recentKey: c.lastMessageAt }));
-    return filterAndSortList({
-      items: enriched,
-      getName: (i) => i.title,
-      sortMode: chatSortMode,
-      query: chatListQuery,
-      selectedTags: [],
-    });
-  }, [chats, chatSortMode, chatListQuery]);
-
-  // The sidebar's play structure (characters list + chat list) renders for both
-  // 'play' and 'coauthor' nav modes (CA-8b.3); which chat subset shows is
-  // selected by the nav mode — play → RP chats, coauthor → co-author chats. The
-  // `chats` memo is already character-scoped, so this lists the active
-  // character's chats of the active mode only. Co-author V1 rows are simplified
-  // (no branching/swipes/rename); RP rows keep their full row chrome.
-  const rpVisibleChats = visibleChats.filter((c) => c.mode !== "coauthor");
-  const coauthorVisibleChats = visibleChats.filter((c) => c.mode === "coauthor");
-  const sectionChats = mode === "coauthor" ? coauthorVisibleChats : rpVisibleChats;
+  const { chats, rpVisibleChats, coauthorVisibleChats, sectionChats } = useSidebarChats({
+    allChats,
+    characterId: currentCharacterId ?? null,
+    query: chatListQuery,
+  });
 
   // --- Store actions ---
   const setSidebarCollapsed = useNavigationStore((s) => s.setSidebarCollapsed);
@@ -232,41 +180,6 @@ export function Sidebar() {
       setFlyoutMaxH(Math.max(spaceAbove, 0));
     }
   }, [flyoutCharId, flyoutAvatarPos]);
-
-  function calcPopoverPos(triggerEl: HTMLElement): { top: number; right: number } {
-    const rect = triggerEl.getBoundingClientRect();
-    return {
-      top: rect.bottom + 4,
-      right: window.innerWidth - rect.right,
-    };
-  }
-
-  /** Position the character-switcher dropdown below its trigger, matching the
-   *  trigger's width. Portaled to body (see charSwitcherPos comment). */
-  function calcSwitcherPos(triggerEl: HTMLElement): { top: number; left: number; width: number } {
-    const rect = triggerEl.getBoundingClientRect();
-    return { top: rect.bottom + 4, left: rect.left, width: rect.width };
-  }
-
-  function formatShortDate(value: string | null | undefined): string {
-    if (!value) return "";
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) return "";
-    return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
-  }
-
-  function formatRelativeTime(value: string | null | undefined): string {
-    if (!value) return "";
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) return "";
-    const diffSec = (Date.now() - date.getTime()) / 1000;
-    const rtf = new Intl.RelativeTimeFormat(undefined, { numeric: "auto", style: "short" });
-    if (diffSec < 45) return rtf.format(0, "second");
-    if (diffSec < 3600) return rtf.format(-Math.round(diffSec / 60), "minute");
-    if (diffSec < 86400) return rtf.format(-Math.round(diffSec / 3600), "hour");
-    if (diffSec < 604800) return rtf.format(-Math.round(diffSec / 86400), "day");
-    return formatShortDate(value);
-  }
 
   return (
     <div className={cn(
