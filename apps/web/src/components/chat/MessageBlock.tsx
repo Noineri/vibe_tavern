@@ -455,7 +455,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
   );
 });
 
-function DeleteMessageConfirm(input: {
+export function DeleteMessageConfirm(input: {
   hasSwipes: boolean;
   onDeleteSwipe: () => void;
   onDeleteMessage: () => void;

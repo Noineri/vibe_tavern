@@ -3,6 +3,7 @@ import { useChatStore, useIsSending } from "../../stores/index.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
 import { useDisplayMessage, useMessageAuthor, useIsStreamingTarget, useStreamingRevealedFor } from "../../stores/chat-selectors.js";
 import { MessageShell, type MessageShellAuthorInfo } from "../chat/MessageShell.js";
+import { DeleteMessageConfirm } from "../chat/MessageBlock.js";
 import { Markdown } from "../../lib/markdown.js";
 import { StreamingMarkdown } from "../chat/StreamingMarkdown.js";
 import { CoauthorToolActivitySlot } from "../chat/CoauthorToolActivitySlot.js";
@@ -51,6 +52,7 @@ export const CoauthorTurnShell = memo(function CoauthorTurnShell({
   const lastMessageRole = useSnapshotStore(s => s.messagesById[lastMessageIdInTurn]?.role);
   const isEditingTurn = useChatStore(s => turnMessageIds.includes(s.editingMessageId ?? ""));
   const [copied, setCopied] = useState(false);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const messageActionId = useChatStore(s => s.messageActionId);
 
   const assistantMessageIds = turnMessageIds.filter(id => {
@@ -118,12 +120,20 @@ export const CoauthorTurnShell = memo(function CoauthorTurnShell({
 
   const isBusy = isSending || messageActionId === lastMessageIdInTurn;
 
+  const confirmDeleteTurn = async () => {
+    setDeleteConfirmOpen(false);
+    const ids = [...turnMessageIds].reverse();
+    for (const id of ids) {
+      await chat.handleDeleteMessage(id);
+    }
+  };
+
   const actions = {
     onCopy: () => {
       const state = useSnapshotStore.getState();
       const text = turnMessageIds
         .map(id => state.messagesById[id])
-        .filter(m => m?.role === "assistant")
+        .filter(m => m?.role === "assistant" && (!m.toolCalls || m.toolCalls.length === 0))
         .map(m => m?.content)
         .filter(Boolean)
         .join("\n\n");
@@ -133,25 +143,31 @@ export const CoauthorTurnShell = memo(function CoauthorTurnShell({
     },
     onEdit: () => {
       const state = useSnapshotStore.getState();
-      const lastAssistantId = [...turnMessageIds].reverse().find(id => state.messagesById[id]?.role === "assistant");
+      const lastAssistantId = [...turnMessageIds].reverse().find(id => {
+        const m = state.messagesById[id];
+        return m?.role === "assistant" && (!m.toolCalls || m.toolCalls.length === 0);
+      });
       if (lastAssistantId) {
         const msg = state.messagesById[lastAssistantId];
         if (msg) chat.handleStartEdit(msg);
       }
     },
-    onDelete: () => {
-      const state = useSnapshotStore.getState();
-      const lastAssistantId = [...turnMessageIds].reverse().find(id => state.messagesById[id]?.role === "assistant");
-      if (lastAssistantId) {
-        void chat.handleDeleteMessage(lastAssistantId);
-      }
-    },
+    onDelete: () => setDeleteConfirmOpen(true),
     onBranch: () => {},
     onRegenerate: () => {},
     onResend: () => void chat.handleResend(),
   };
 
   return (
+    <>
+    {deleteConfirmOpen && (
+      <DeleteMessageConfirm
+        hasSwipes={false}
+        onDeleteSwipe={() => {}}
+        onDeleteMessage={() => void confirmDeleteTurn()}
+        onCancel={() => setDeleteConfirmOpen(false)}
+      />
+    )}
     <MessageShell
       messageId={turnId}
       chatId={authorInfo.activeChatId}
@@ -199,6 +215,7 @@ export const CoauthorTurnShell = memo(function CoauthorTurnShell({
         )}
       </div>
     </MessageShell>
+    </>
   );
 });
 
