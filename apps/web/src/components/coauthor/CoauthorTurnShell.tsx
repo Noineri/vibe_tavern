@@ -46,14 +46,29 @@ export const CoauthorTurnShell = memo(function CoauthorTurnShell({
     return ids;
   }));
 
-  if (!authorInfo || turnMessageIds.length === 0) return null;
-
-  const lastMessageIdInTurn = turnMessageIds[turnMessageIds.length - 1];
+  const lastMessageIdInTurn = turnMessageIds[turnMessageIds.length - 1] ?? turnId;
   const lastMessageRole = useSnapshotStore(s => s.messagesById[lastMessageIdInTurn]?.role);
-
-  const isGenerating = isSending && !pendingUserMessageContent && isLastTurn;
   const isEditingTurn = useChatStore(s => turnMessageIds.includes(s.editingMessageId ?? ""));
   const [copied, setCopied] = useState(false);
+  const messageActionId = useChatStore(s => s.messageActionId);
+
+  const assistantMessageIds = turnMessageIds.filter(id => {
+    const role = useSnapshotStore.getState().messagesById[id]?.role;
+    return role === "assistant";
+  });
+
+  const lastAssistantMsg = useSnapshotStore(s => {
+    const ids = [...assistantMessageIds].reverse();
+    for (const id of ids) {
+      const m = s.messagesById[id];
+      if (m) return m;
+    }
+    return null;
+  });
+
+  if (!authorInfo || turnMessageIds.length === 0) return null;
+
+  const isGenerating = isSending && !pendingUserMessageContent && isLastTurn;
 
   const authorOverride: MessageShellAuthorInfo = {
     name: `${t("coauthor_author_assistant")}: ${authorInfo.character.name}`,
@@ -100,7 +115,6 @@ export const CoauthorTurnShell = memo(function CoauthorTurnShell({
     ),
   };
 
-  const messageActionId = useChatStore(s => s.messageActionId);
   const isBusy = isSending || messageActionId === lastMessageIdInTurn;
 
   const actions = {
@@ -135,20 +149,6 @@ export const CoauthorTurnShell = memo(function CoauthorTurnShell({
     onRegenerate: () => {},
     onResend: () => void chat.handleResend(),
   };
-
-  const assistantMessageIds = turnMessageIds.filter(id => {
-    const role = useSnapshotStore.getState().messagesById[id]?.role;
-    return role === "assistant";
-  });
-
-  const lastAssistantMsg = useSnapshotStore(s => {
-    const ids = [...assistantMessageIds].reverse();
-    for (const id of ids) {
-      const m = s.messagesById[id];
-      if (m) return m;
-    }
-    return null;
-  });
 
   return (
     <MessageShell
