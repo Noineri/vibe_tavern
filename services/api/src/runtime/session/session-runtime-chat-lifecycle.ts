@@ -28,6 +28,13 @@ function buildGreetingVariants(firstMessage: string | null | undefined, alternat
 	return firstMessage?.trim() ? [firstMessage, ...alternateGreetings] : alternateGreetings;
 }
 
+/** Default chat title — mode-aware so a co-author chat reads distinctly from
+ *  an RP chat of the same character in the sidebar/rail (avoids the visual
+ *  collision that a bare `${name}` would cause next to `${name} chat`). */
+function defaultChatTitle(characterName: string, mode: ChatMode | undefined): string {
+	return mode === "coauthor" ? `Co-Author · ${characterName}` : `${characterName} chat`;
+}
+
 export interface ChatLifecycleRuntimeDeps {
 	stores: StoreContainer;
 	chatApp: ChatApplicationService;
@@ -87,7 +94,7 @@ export class ChatLifecycleRuntime {
 		const created = await this.deps.chatApp.createChat({
 			characterId: typedCharacterId,
 			personaId: await this.deps.persona.resolveDefaultId(),
-			title: `${character.name} chat`,
+			title: defaultChatTitle(character.name, mode),
 			promptPresetId: await this.deps.resolveDefaultPromptPresetId(),
 			mode,
 		});
@@ -95,22 +102,59 @@ export class ChatLifecycleRuntime {
 		const createdChatId = created.id;
 		this.deps.chatOrder.add(createdChatId);
 
-		const greetingVariants = buildGreetingVariants(character.firstMessage, character.alternateGreetings);
-		if (greetingVariants.length > 0) {
-			const chat = await this.deps.stores.chats.getById(createdChatId);
-			if (chat) {
-				await this.deps.stores.messages.addMessage({
-					chatId: createdChatId,
-					branchId: chat.activeBranchId,
-					role: "assistant",
-					authorType: "assistant",
-					content: greetingVariants[0],
-					variants: greetingVariants,
-				});
+		// Seed the opening turn, branching on mode: co-author chats open with
+		// the active module's framing message (default module on a fresh chat
+		// since coauthorModuleId is null); RP/play/build seed the card greeting.
+		const chat = await this.deps.stores.chats.getById(createdChatId);
+		if (chat) {
+			if (mode === "coauthor") {
+				await this.seedCoauthorOpening(createdChatId, chat.activeBranchId, chat.coauthorModuleId);
+			} else {
+				const greetingVariants = buildGreetingVariants(character.firstMessage, character.alternateGreetings);
+				if (greetingVariants.length > 0) {
+					await this.deps.stores.messages.addMessage({
+						chatId: createdChatId,
+						branchId: chat.activeBranchId,
+						role: "assistant",
+						authorType: "assistant",
+						content: greetingVariants[0],
+						variants: greetingVariants,
+					});
+				}
 			}
 		}
 
 		return this.deps.buildChatCreateResponse(createdChatId);
+	}
+
+	/**
+	 * Seed a co-author chat's opening turn: the active module's `openingMessage`
+	 * as a real persisted assistant message. `{{char}}`/`{{user}}` stay literal
+	 * (CS-26: the co-author surface edits a template and never resolves macros
+	 * to a name). An empty `openingMessage` seeds nothing — the chat starts blank,
+	 * which is fine for an editor surface. The module resolves seed-first; a
+	 * null/unknown id falls back to the bundled default.
+	 */
+	private async seedCoauthorOpening(
+		chatId: ChatId,
+		branchId: string,
+		moduleId: string | null,
+	): Promise<void> {
+		const { getCoauthorModule, isSeedModule } = await import("../../domain/coauthor/modules/module-registry.js");
+		const userModules = moduleId && !isSeedModule(moduleId)
+			? await this.deps.stores.coauthorModules.list()
+			: [];
+		const mod = await getCoauthorModule(moduleId, userModules);
+		const opening = mod.openingMessage.trim();
+		if (!opening) return;
+		await this.deps.stores.messages.addMessage({
+			chatId,
+			branchId,
+			role: "assistant",
+			authorType: "assistant",
+			content: opening,
+			variants: [opening],
+		});
 	}
 
 	/**
@@ -130,25 +174,38 @@ export class ChatLifecycleRuntime {
 		const created = await this.deps.chatApp.createChat({
 			characterId,
 			personaId: oldChat.personaId as PersonaId ?? await this.deps.persona.resolveDefaultId(),
-			title: oldChat.title ?? `${character.name} chat`,
+			title: oldChat.title ?? defaultChatTitle(character.name, oldChat.mode),
 			promptPresetId: (oldChat.promptPresetId ?? await this.deps.resolveDefaultPromptPresetId()) as PromptPresetId,
+			mode: oldChat.mode,
 		});
 
 		this.deps.chatOrder.add(created.id);
 
-		// Add greeting message
-		const greetingVariants = buildGreetingVariants(character.firstMessage, character.alternateGreetings);
-		if (greetingVariants.length > 0) {
-			const chat = await this.deps.stores.chats.getById(created.id);
-			if (chat) {
-				await this.deps.stores.messages.addMessage({
-					chatId: created.id,
-					branchId: chat.activeBranchId,
-					role: "assistant",
-					authorType: "assistant",
-					content: greetingVariants[0],
-					variants: greetingVariants,
-				});
+		// Preserve a non-default co-author module across clear: a fresh chat row
+		// defaults to null (= default module), so only a custom selection needs
+		// restoring before the opening-message seed reads it back.
+		if (oldChat.mode === "coauthor" && oldChat.coauthorModuleId) {
+			await this.deps.stores.chats.setCoauthorModuleId(created.id, oldChat.coauthorModuleId);
+		}
+
+		// Seed the opening turn, branching on mode (mirrors createChatForCharacter):
+		// co-author → module openingMessage; RP → card greeting.
+		const chat = await this.deps.stores.chats.getById(created.id);
+		if (chat) {
+			if (oldChat.mode === "coauthor") {
+				await this.seedCoauthorOpening(created.id, chat.activeBranchId, chat.coauthorModuleId);
+			} else {
+				const greetingVariants = buildGreetingVariants(character.firstMessage, character.alternateGreetings);
+				if (greetingVariants.length > 0) {
+					await this.deps.stores.messages.addMessage({
+						chatId: created.id,
+						branchId: chat.activeBranchId,
+						role: "assistant",
+						authorType: "assistant",
+						content: greetingVariants[0],
+						variants: greetingVariants,
+					});
+				}
 			}
 		}
 
