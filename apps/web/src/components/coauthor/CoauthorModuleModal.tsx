@@ -339,37 +339,44 @@ export function CoauthorModuleModal() {
 					)
 				}
 				footer={
-					isEditing ? (
-						<div className="flex shrink-0 justify-end gap-2 border-t border-border bg-surface px-6 py-3">
-							<button
-								type="button"
-								data-testid="module-cancel-btn"
-								className="cursor-pointer rounded-md border border-border bg-transparent px-4 py-1.5 font-ui text-[0.8rem] text-t2 transition-colors hover:text-t1"
-								onClick={() => { setDetailMode("view"); setDirty(false); }}
-							>
-								{t("coauthor.module.cancel")}
-							</button>
-							<button
-								type="button"
-								data-testid="module-save-btn"
-								className="cursor-pointer rounded-md bg-accent px-4 py-1.5 font-ui text-[0.8rem] font-semibold text-on-accent transition-all hover:brightness-110 active:scale-[0.98]"
-								onClick={() => { void handleSave(); }}
-							>
-								{t("coauthor.module.save")}
-							</button>
-						</div>
-					) : selected && !isSelectedActive ? (
-						<div className="flex shrink-0 justify-end gap-2 border-t border-border bg-surface px-6 py-3">
+					<div className="flex shrink-0 items-center justify-end gap-2 border-t border-border bg-surface px-6 py-3">
+						{isEditing ? (
+							<>
+								<button
+									type="button"
+									data-testid="module-cancel-btn"
+									className="cursor-pointer rounded-md border border-border bg-transparent px-4 py-1.5 font-ui text-[0.8rem] text-t2 transition-colors hover:text-t1"
+									onClick={() => { setDetailMode("view"); setDirty(false); }}
+								>
+									{t("coauthor.module.cancel")}
+								</button>
+								<button
+									type="button"
+									data-testid="module-save-btn"
+									className="cursor-pointer rounded-md bg-accent px-4 py-1.5 font-ui text-[0.8rem] font-semibold text-on-accent transition-all hover:brightness-110 active:scale-[0.98]"
+									onClick={() => { void handleSave(); }}
+								>
+									{t("coauthor.module.save")}
+								</button>
+							</>
+						) : (
 							<button
 								type="button"
 								data-testid="module-activate-btn"
-								className="cursor-pointer rounded-md bg-accent px-4 py-1.5 font-ui text-[0.8rem] font-semibold text-on-accent transition-all hover:brightness-110 active:scale-[0.98]"
+								disabled={!selected || isSelectedActive}
+								className={cn(
+									"flex items-center gap-1.5 rounded-md px-4 py-1.5 font-ui text-[0.8rem] font-semibold transition-all",
+									isSelectedActive
+										? "cursor-default bg-success text-on-accent"
+										: "cursor-pointer bg-accent text-on-accent hover:brightness-110 active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed disabled:bg-accent",
+								)}
 								onClick={() => { void handleActivate(); }}
 							>
-								{t("coauthor.module.activate")}
+								{isSelectedActive && <Icons.Check className="h-3.5 w-3.5" />}
+								{isSelectedActive ? t("coauthor.module.active") : t("coauthor.module.activate")}
 							</button>
-						</div>
-					) : null
+						)}
+					</div>
 				}
 			/>
 		</>
