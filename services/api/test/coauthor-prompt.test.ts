@@ -219,10 +219,15 @@ describe("assembleCoauthorPrompt", () => {
     expect(messages[3].role).toBe("tool");
     // SDK v6 ToolResultPart.output is a discriminated union; a string result is
     // wrapped as `{ type: "text", value }` (not a bare `result` field).
+    // The tool NAME is resolved from the owning assistant message's toolCalls
+    // (the DB `role:"tool"` row stores only the toolCallId). The Google
+    // provider maps toolName → function_response.name, which Gemini requires
+    // non-empty — an unresolved name surfaces as a 400
+    // `function_response.name: Name cannot be empty` on the next turn.
     expect(messages[3].content).toEqual([{
       type: "tool-result",
       toolCallId: "call_1",
-      toolName: "",
+      toolName: "edit_personality",
       output: { type: "text", value: "Success" }
     }]);
   });

@@ -301,7 +301,7 @@ export class LiveChatOrchestrator {
           await this.chatApp.updateAttachmentDescriptions(prepared.userMessage!.id, input.attachments!, descriptions);
         }
       : undefined;
-    const { streamResult, startedAt } = await this.startStream({ ...input, ...provider, onAttachmentDescriptions }, prepared.prompt);
+    const { streamResult, startedAt } = await this.startStream({ ...input, ...provider, onAttachmentDescriptions, tools: prepared.tools, maxSteps: prepared.maxSteps }, prepared.prompt);
     if (streamResult.sentConfig) { this.chatRuntime.patchPendingTrace(brandId<ChatId>(input.chatId), { sentConfig: streamResult.sentConfig }); }
 
     yield* this.drainStream({

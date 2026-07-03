@@ -130,39 +130,52 @@ export async function assembleCoauthorPrompt(input: ChatModeAssembleInput): Prom
       .getMessages(chatId, undefined, HISTORY_LIMIT)
       .then((msgs) => {
         const excludeSet = new Set<string>(input.excludeMessageIds || []);
-        return msgs
+        const historyMsgs = msgs
           .filter((m) => !excludeSet.has(m.id))
-          .filter((m) => m.role === "user" || m.role === "assistant" || m.role === "tool")
-          .map((m): CoauthorHistoryMessage => {
-            if (m.role === "tool") {
-              // SDK v6 ToolResultPart.output is a discriminated union
-              // (`{type:'text',value}` | `{type:'json',value}` | ...) — a plain
-              // string is NOT valid. Wrap the persisted string result as a text
-              // output. (The prior `result: m.content` was a wrong field name
-              // AND wrong shape, masked by `as any` downstream — so this path
-              // never actually delivered tool results to the provider.)
-              return {
-                role: "tool",
-                content: [{
-                  type: "tool-result",
-                  toolCallId: m.toolCallId ?? "",
-                  toolName: "",
-                  output: { type: "text", value: m.content },
-                }],
-              };
-            }
-            // SDK v6 ToolCallPart: `input` (the parsed args), not `args`.
-            const msg: CoauthorHistoryMessage = { role: m.role as "user" | "assistant", content: m.content };
-            if (m.toolCalls && m.toolCalls.length > 0) {
-              msg.toolCalls = m.toolCalls.map(tc => ({
-                type: "tool-call",
-                toolCallId: tc.id,
-                toolName: tc.name,
-                input: tc.args,
-              }));
-            }
-            return msg;
-          });
+          .filter((m) => m.role === "user" || m.role === "assistant" || m.role === "tool");
+        // Resolve the tool NAME for each tool-result. The DB stores only the
+        // `toolCallId` on the `role:"tool"` row; the human-readable name lives
+        // on the owning assistant message's `toolCallsJson` (`{id, name, args}`).
+        // The Google provider maps `toolName` → `function_response.name`, which
+        // Gemini REQUIRES non-empty — an unresolved name here surfaces as a 400
+        // `function_response.name: Name cannot be empty` on the next turn. The
+        // carrier assistant is always co-located with its tool result (the
+        // tool-call/result pair invariant forbids splitting them), so the map
+        // lookup always hits in a well-formed history.
+        const toolNameById = new Map<string, string>();
+        for (const m of historyMsgs) {
+          if (m.toolCalls) {
+            for (const tc of m.toolCalls) toolNameById.set(tc.id, tc.name);
+          }
+        }
+        return historyMsgs.map((m): CoauthorHistoryMessage => {
+          if (m.role === "tool") {
+            // SDK v6 ToolResultPart.output is a discriminated union
+            // (`{type:'text',value}` | `{type:'json',value}` | ...) — a plain
+            // string is NOT valid. Wrap the persisted string result as a text
+            // output.
+            return {
+              role: "tool",
+              content: [{
+                type: "tool-result",
+                toolCallId: m.toolCallId ?? "",
+                toolName: toolNameById.get(m.toolCallId ?? "") ?? "",
+                output: { type: "text", value: m.content },
+              }],
+            };
+          }
+          // SDK v6 ToolCallPart: `input` (the parsed args), not `args`.
+          const msg: CoauthorHistoryMessage = { role: m.role as "user" | "assistant", content: m.content };
+          if (m.toolCalls && m.toolCalls.length > 0) {
+            msg.toolCalls = m.toolCalls.map(tc => ({
+              type: "tool-call",
+              toolCallId: tc.id,
+              toolName: tc.name,
+              input: tc.args,
+            }));
+          }
+          return msg;
+        });
       }),
   ]);
   // Card state + lorebook context + prompt assets are all independent once
