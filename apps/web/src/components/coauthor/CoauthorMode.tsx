@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { CoauthorInputArea } from "./CoauthorInputArea.js";
-import { MessageList } from "../chat/MessageList.js";
+import { CoauthorMessageList } from "./CoauthorMessageList.js";
 import { QueueManager } from "../chat/QueueManager.js";
 import { CoauthorCharacterForm } from "./CoauthorCharacterForm.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
@@ -131,9 +131,12 @@ export function CoauthorMode() {
       )}
 
       <div className="flex min-h-0 flex-1">
-        {/* Left: the reused chat shell (MessageList + InputArea), structurally identical to PlayMode. */}
+        {/* Left: the Co-Author chat shell. Shares the same streaming/pinning
+            scroller as Play Mode (MessageScroller), but renders through the
+            Co-Author fork (CoauthorMessageList) so CS-30/26/31/32 can diverge
+            without re-entering the RP render path. See CoauthorMessageList. */}
         <div className={cn("flex min-w-0 flex-1 flex-col", isMobile && mobileTab !== "chat" && "hidden")}>
-          <MessageList key={activeScope} />
+          <CoauthorMessageList key={activeScope} />
           <div className="relative shrink-0">
             <QueueManager />
             <CoauthorInputArea />
