@@ -14,12 +14,13 @@
  *     matches that module, not the default).
  *   - clearChat on an RP chat still seeds the greeting.
  */
-import { describe, it, expect, afterAll } from "bun:test";
+import { describe, it, expect, afterAll, beforeAll } from "bun:test";
 import { mkdir, rm } from "node:fs/promises";
 import { resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { createRuntimeStore } from "../src/runtime/session/session-runtime-store.js";
 import { SessionRuntime } from "../src/runtime/session/session-runtime.js";
+import { setTokenCountFn } from "@vibe-tavern/prompt-pipeline";
 import type { ChatId } from "@vibe-tavern/domain";
 
 const DEFAULT_OPENING = "I'm ready to help you build {{char}}";
@@ -64,6 +65,7 @@ async function assistantContents(env: Env, chatId: ChatId): Promise<string[]> {
 
 describe("Co-Author chat opening (CS-29)", () => {
 	let env: Env;
+	beforeAll(() => setTokenCountFn((text: string) => text.length));
 	afterAll(async () => { if (env) await env.cleanup(); });
 
 	it("a co-author chat seeds the default module's openingMessage with {{char}} literal (not the RP greeting)", async () => {

@@ -12,12 +12,13 @@
  * message is NOT tested here — the stub strategy throws NOT_IMPLEMENTED until
  * CA-5; that's covered by chat-mode-strategy.test.ts.
  */
-import { describe, it, expect, afterAll } from "bun:test";
+import { describe, it, expect, afterAll, beforeAll } from "bun:test";
 import { mkdir, rm } from "node:fs/promises";
 import { resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { createRuntimeStore } from "../src/runtime/session/session-runtime-store.js";
 import { SessionRuntime } from "../src/runtime/session/session-runtime.js";
+import { setTokenCountFn } from "@vibe-tavern/prompt-pipeline";
 import type { ChatId } from "@vibe-tavern/domain";
 
 async function createTestRuntime(): Promise<{
@@ -53,6 +54,7 @@ async function createTestRuntime(): Promise<{
 
 describe("Co-Author chat API (CA-4)", () => {
 	let env: Awaited<ReturnType<typeof createTestRuntime>>;
+	beforeAll(() => setTokenCountFn((text: string) => text.length));
 	afterAll(async () => { if (env) await env.cleanup(); });
 
 	it("createChatForCharacter persists mode; listCoauthorChats scopes by character+mode", async () => {
