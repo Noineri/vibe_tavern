@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { InputArea } from "../chat/InputArea.js";
+import { CoauthorInputArea } from "./CoauthorInputArea.js";
 import { MessageList } from "../chat/MessageList.js";
 import { QueueManager } from "../chat/QueueManager.js";
 import { CoauthorCharacterForm } from "./CoauthorCharacterForm.js";
@@ -136,7 +136,7 @@ export function CoauthorMode() {
           <MessageList key={activeScope} />
           <div className="relative shrink-0">
             <QueueManager />
-            <InputArea />
+            <CoauthorInputArea />
           </div>
         </div>
         {/* Right: the live co-author MD editor (CA-10). Desktop keeps the split
