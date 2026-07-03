@@ -8,8 +8,7 @@
  *   - out/windows-dist/tokenizers/       (runtime tokenizer JSON files)
  *   - out/windows-dist/drizzle/          (SQLite DB migrations)
  *   - out/windows-dist/prompts/          (AI assistant prompt files)
- *   - out/windows-dist/Vibe_Tavern.bat   (launcher with self-update)
- *   - out/windows-dist/VERSION
+ *   - out/windows-dist/Vibe_Tavern.bat   (launcher — thin wrapper around the binary)
  *   - out/vibe-tavern-windows-x64.zip
  *
  * Usage:
@@ -131,7 +130,7 @@ async function main() {
 		);
 	});
 
-	// ── Step 6b: Copy launcher script (version substituted, CRLF) ──────────
+	// ── Step 6b: Copy launcher script (CRLF line endings) ──────────────────
 
 	await step("Copying launcher script", async () => {
 		const wrapperSource = join(ROOT, "scripts", "dist-windows", "Vibe_Tavern.bat");
@@ -139,8 +138,7 @@ async function main() {
 		if (!(await exists(wrapperSource))) {
 			throw new Error(`Launcher script not found: ${wrapperSource}`);
 		}
-		let content = await Bun.file(wrapperSource).text();
-		content = content.replaceAll("__VERSION__", VERSION).replace(/\r?\n/g, "\r\n");
+		const content = (await Bun.file(wrapperSource).text()).replace(/\r?\n/g, "\r\n");
 		await Bun.write(wrapperTarget, content);
 		console.log(`   → ${wrapperTarget}`);
 	});
@@ -188,14 +186,6 @@ async function main() {
 		}
 
 		console.log(`   → ${finalOutfile}`);
-	});
-
-	// ── Step 7b: Write VERSION file ────────────────────────────────────────
-
-	await step("Writing VERSION file", async () => {
-		const versionFile = join(DIST, "VERSION");
-		await Bun.write(versionFile, `${VERSION}\n`);
-		console.log(`   → ${versionFile}`);
 	});
 
 	// ── Step 8: Create zip archive (PowerShell Compress-Archive) ────────────

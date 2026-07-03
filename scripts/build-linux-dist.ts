@@ -129,7 +129,7 @@ async function main() {
 		);
 	});
 
-	// ── Step 6b: Copy launcher script (version substituted) ──────────────
+	// ── Step 6b: Copy launcher script ─────────────────────────────────────
 
 	await step("Copying launcher script", async () => {
 		const wrapperSource = join(ROOT, "scripts", "dist-linux", "Vibe_Tavern.sh");
@@ -137,9 +137,7 @@ async function main() {
 		if (!(await exists(wrapperSource))) {
 			throw new Error(`Launcher script not found: ${wrapperSource}`);
 		}
-		let content = await Bun.file(wrapperSource).text();
-		content = content.replaceAll("__VERSION__", VERSION);
-		await Bun.write(wrapperTarget, content);
+		await Bun.write(wrapperTarget, await Bun.file(wrapperSource).text());
 		await chmod(wrapperTarget, 0o755);
 		console.log(`   → ${wrapperTarget}`);
 	});
@@ -172,14 +170,6 @@ async function main() {
 
 		await chmod(outfile, 0o755).catch(() => undefined);
 		console.log(`   → ${outfile}`);
-	});
-
-	// ── Step 7b: Write VERSION file ────────────────────────────────────────
-
-	await step("Writing VERSION file", async () => {
-		const versionFile = join(DIST, "VERSION");
-		await Bun.write(versionFile, `${VERSION}\n`);
-		console.log(`   → ${versionFile}`);
 	});
 
 	// ── Step 8: Create tar.gz archive ──────────────────────────────────────
