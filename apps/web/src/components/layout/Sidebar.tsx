@@ -354,14 +354,22 @@ export function Sidebar() {
             <div className="h-px w-8 shrink-0 bg-border" />
 
             <div className="flex shrink-0 flex-col items-center gap-1 py-2">
-              <CustomTooltip content={t("sidebar_prompt_manager")} side="right">
-                <div className="flex h-9 w-9 cursor-pointer items-center justify-center rounded-full bg-s3 text-t2 transition-all duration-150 hover:rounded-xl hover:bg-s2 hover:text-t1" onClick={() => useModalStore.getState().setIsPromptManagerOpen(true)}><Icons.Terminal /></div>
-              </CustomTooltip>
-              <CustomTooltip content={personaName} side="right">
-                <div className="flex h-9 w-9 cursor-pointer items-center justify-center overflow-hidden rounded-full bg-s3 text-t2 transition-all duration-150 hover:rounded-xl hover:bg-s2 hover:text-t1" onClick={() => useModalStore.getState().setIsPersonaModalOpen(true)}>
-                  {personaAvatarSrc ? <img src={personaAvatarSrc!} alt="" className="h-full w-full object-cover" /> : initials(personaName)}
-                </div>
-              </CustomTooltip>
+              {mode === "coauthor" ? (
+                <CustomTooltip content={t("coauthor.sidebar.modules")} side="right">
+                  <div className="flex h-9 w-9 cursor-pointer items-center justify-center rounded-full bg-s3 text-t2 transition-all duration-150 hover:rounded-xl hover:bg-s2 hover:text-t1" onClick={() => useModalStore.getState().setCoauthorModuleModalOpen(true)}><Icons.Tool /></div>
+                </CustomTooltip>
+              ) : (
+                <>
+                  <CustomTooltip content={t("sidebar_prompt_manager")} side="right">
+                    <div className="flex h-9 w-9 cursor-pointer items-center justify-center rounded-full bg-s3 text-t2 transition-all duration-150 hover:rounded-xl hover:bg-s2 hover:text-t1" onClick={() => useModalStore.getState().setIsPromptManagerOpen(true)}><Icons.Terminal /></div>
+                  </CustomTooltip>
+                  <CustomTooltip content={personaName} side="right">
+                    <div className="flex h-9 w-9 cursor-pointer items-center justify-center overflow-hidden rounded-full bg-s3 text-t2 transition-all duration-150 hover:rounded-xl hover:bg-s2 hover:text-t1" onClick={() => useModalStore.getState().setIsPersonaModalOpen(true)}>
+                      {personaAvatarSrc ? <img src={personaAvatarSrc!} alt="" className="h-full w-full object-cover" /> : initials(personaName)}
+                    </div>
+                  </CustomTooltip>
+                </>
+              )}
             </div>
           </div>
         )}
@@ -1011,41 +1019,63 @@ export function Sidebar() {
             </div>
 
             <section className="shrink-0 border-t border-border px-1 py-1.5">
-              <div
-                className="group relative mx-1 flex cursor-pointer items-center gap-[9px] rounded px-2.5 py-1.5 text-[calc(var(--ui-fs)-1px)] text-t2 transition-colors duration-100 hover:bg-s2 hover:text-t1"
-                role="button"
-                tabIndex={0}
-                onClick={() => useModalStore.getState().setIsPromptManagerOpen(true)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" || event.key === " ") {
-                    event.preventDefault();
-                    useModalStore.getState().setIsPromptManagerOpen(true);
-                  }
-                }}
-              >
-                <span className="flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded-full bg-transparent font-ui text-[calc(var(--ui-fs)-3px)] not-italic text-t2">
-                  <Icons.Terminal />
-                </span>
-                <span>{t("sidebar_prompt_manager")}</span>
-              </div>
-              <div
-                className="group relative mx-1 flex cursor-pointer items-center gap-[9px] rounded px-2.5 py-1.5 text-[calc(var(--ui-fs)-1px)] text-t2 transition-colors duration-100 hover:bg-s2 hover:text-t1"
-                role="button"
-                tabIndex={0}
-                onClick={() => useModalStore.getState().setIsPersonaModalOpen(true)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" || event.key === " ") {
-                    event.preventDefault();
-                    useModalStore.getState().setIsPersonaModalOpen(true);
-                  }
-                }}
-              >
-                <span className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-s3 font-ui text-[calc(var(--ui-fs)-2px)] not-italic text-t2">{personaAvatarSrc ? <img src={personaAvatarSrc!} alt="" className="h-full w-full object-cover" /> : initials(personaName)}</span>
-                <span>{personaName}</span>
-                <span className="ml-auto shrink-0 text-[calc(var(--ui-fs)-3px)] text-t3">
-                  {t("sidebar_your_persona")}
-                </span>
-              </div>
+              {mode === "coauthor" ? (
+                <div
+                  className="group relative mx-1 flex cursor-pointer items-center gap-[9px] rounded px-2.5 py-1.5 text-[calc(var(--ui-fs)-1px)] text-t2 transition-colors duration-100 hover:bg-s2 hover:text-t1"
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => useModalStore.getState().setCoauthorModuleModalOpen(true)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      useModalStore.getState().setCoauthorModuleModalOpen(true);
+                    }
+                  }}
+                >
+                  <span className="flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded-full bg-transparent font-ui text-[calc(var(--ui-fs)-3px)] not-italic text-t2">
+                    <Icons.Tool />
+                  </span>
+                  <span>{t("coauthor.sidebar.modules")}</span>
+                </div>
+              ) : (
+                <>
+                  <div
+                    className="group relative mx-1 flex cursor-pointer items-center gap-[9px] rounded px-2.5 py-1.5 text-[calc(var(--ui-fs)-1px)] text-t2 transition-colors duration-100 hover:bg-s2 hover:text-t1"
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => useModalStore.getState().setIsPromptManagerOpen(true)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        useModalStore.getState().setIsPromptManagerOpen(true);
+                      }
+                    }}
+                  >
+                    <span className="flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded-full bg-transparent font-ui text-[calc(var(--ui-fs)-3px)] not-italic text-t2">
+                      <Icons.Terminal />
+                    </span>
+                    <span>{t("sidebar_prompt_manager")}</span>
+                  </div>
+                  <div
+                    className="group relative mx-1 flex cursor-pointer items-center gap-[9px] rounded px-2.5 py-1.5 text-[calc(var(--ui-fs)-1px)] text-t2 transition-colors duration-100 hover:bg-s2 hover:text-t1"
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => useModalStore.getState().setIsPersonaModalOpen(true)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        useModalStore.getState().setIsPersonaModalOpen(true);
+                      }
+                    }}
+                  >
+                    <span className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-s3 font-ui text-[calc(var(--ui-fs)-2px)] not-italic text-t2">{personaAvatarSrc ? <img src={personaAvatarSrc!} alt="" className="h-full w-full object-cover" /> : initials(personaName)}</span>
+                    <span>{personaName}</span>
+                    <span className="ml-auto shrink-0 text-[calc(var(--ui-fs)-3px)] text-t3">
+                      {t("sidebar_your_persona")}
+                    </span>
+                  </div>
+                </>
+              )}
             </section>
           </>
         )}
