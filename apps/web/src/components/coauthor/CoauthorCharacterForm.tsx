@@ -58,7 +58,6 @@ import { aggregateCoauthorProposal, buildPartialApplyRequest } from "../../lib/c
 import { applyCoauthorDraft } from "../../api/chat-api.js";
 import type { AppCharacter } from "../../app-client.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
-import { useModalStore } from "../../stores/modal-store.js";
 import { useIsSending } from "../../stores/chat-store.js";
 import { useCoauthorTurnStore } from "../../stores/coauthor-turn-store.js";
 import type { CoauthorToolActivity } from "../../stores/coauthor-turn-store.js";
@@ -119,12 +118,6 @@ function CoauthorCharacterFormInner({ character }: CoauthorCharacterFormInnerPro
   // curates which books feed the editor (same shape as the AI-assistant
   // lorebook-writer's context). Persisted on chats.coauthorLorebookIds.
   const coauthorLorebookIds = useSnapshotStore((s) => s.activeChat?.coauthorLorebookIds ?? EMPTY_LOREBOOK_IDS);
-  // CS-16: the active author module drives base prompt + skills + tool-set +
-  // max steps (resolved by the backend in CS-11). null = autodetect/fallback
-  // (the registry resolves null → "default"); shown read-only here, switched in
-  // CoauthorModuleModal. Persisted on chats.coauthorModuleId (CS-10).
-  const coauthorModuleId = useSnapshotStore((s) => s.activeChat?.coauthorModuleId ?? null);
-  const openModuleModal = () => useModalStore.getState().setCoauthorModuleModalOpen(true);
   const [allLorebooks, setAllLorebooks] = useState<LorebookRecord[]>([]);
   useEffect(() => {
     let cancelled = false;
@@ -413,22 +406,6 @@ function CoauthorCharacterFormInner({ character }: CoauthorCharacterFormInnerPro
           tooltipLabel={t("coauthor.lorebooks.add")}
           emptyLabel={t("coauthor.lorebooks.empty")}
         />
-      </div>
-
-      {/* CS-16: author-module picker row. The active module (read off
-          activeChat.coauthorModuleId) drives base prompt + skills + tool-set +
-          max steps on the backend (CS-11). Opening the modal switches the chat's
-          module via PATCH /api/chats/:chatId/coauthor-module (CS-12). */}
-      <div className="flex shrink-0 items-center gap-2 border-b border-border/50 bg-surface px-4 py-2">
-        <span className="font-ui text-[10px] font-semibold uppercase tracking-[0.06em] text-t3">{t("coauthor.module.label")}</span>
-        <button
-          type="button"
-          className="cursor-pointer truncate rounded-md border border-border bg-s1 px-2.5 py-1 font-mono text-[11px] text-t2 transition-colors hover:bg-s2 hover:text-t1"
-          onClick={openModuleModal}
-          title={t("coauthor.module.title")}
-        >
-          {coauthorModuleId ?? "default"}
-        </button>
       </div>
 
       {/* Body: editor surface OR the reviewing overlay (CA-11/CA-12). The editor

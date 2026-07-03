@@ -1015,7 +1015,6 @@
   "coauthor.lorebooks.label": "Lore context",
   "coauthor.lorebooks.add": "Bind lorebooks to this chat's editor context",
   "coauthor.lorebooks.empty": "No lorebooks bound — the editor won't see any lore.",
-  "coauthor.module.label": "Module",
   "coauthor.module.list_label": "Modules",
   "coauthor.module.title": "Author Module",
   "coauthor.module.subtitle": "Choose the bundled preset that drives the co-author's base prompt, skills, tools, and step budget.",

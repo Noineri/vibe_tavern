@@ -240,27 +240,12 @@ export function VibeMdView({ form, characterId, isSaving }: VibeMdViewProps) {
 
   return (
     <div>
-      {/* Prose MD editor — body only (no frontmatter), auto-grows to content.
-          The `+` (add alt greeting) and `✕` (remove) widgets live ON the
-          `# GREETINGS` heading and each `=== ALT N ===` marker inside the
-          editor (vibe-md-greetings.ts) — no separate button here. */}
-      <div className="mb-5">
-        <label className={lblCls + " mb-1.5 block"}>{t("vmd_editor_label")}</label>
-        <div
-          ref={editorHostRef}
-          // Auto-grow: NO maxHeight, NO overflow-auto (VTF-13 rework). The CM6
-          // theme sets `& { height: auto }` + `.cm-scroller { overflow: hidden }`
-          // so content drives the height and the page scroll is the only scroll.
-          className="vibe-md-editor rounded-lg border border-border bg-s1"
-          style={{ minHeight: 420 }}
-        />
-        <p className="mt-1.5 font-ui text-[11px] text-t4">{t("vmd_editor_hint")}</p>
-      </div>
-
       {/* Co-Author entry (CA-8.4) — open an iterative editing chat on this card.
           "Co-Author mode" lists existing co-author chats for this character;
           "New co-author chat" creates one. Both flip AppShell to CoauthorMode
-          because the active chat's mode becomes 'coauthor' (resolveShellSurface). */}
+          because the active chat's mode becomes 'coauthor' (resolveShellSurface).
+          Placed ABOVE the editor so the user doesn't have to scroll the whole
+          card to start a co-author session. */}
       <div className="relative mb-5 flex flex-wrap items-center gap-2">
         <button
           type="button"
@@ -314,6 +299,23 @@ export function VibeMdView({ form, characterId, isSaving }: VibeMdViewProps) {
             </div>
           </>
         )}
+      </div>
+
+      {/* Prose MD editor — body only (no frontmatter), auto-grows to content.
+          The `+` (add alt greeting) and `✕` (remove) widgets live ON the
+          `# GREETINGS` heading and each `=== ALT N ===` marker inside the
+          editor (vibe-md-greetings.ts) — no separate button here. */}
+      <div className="mb-5">
+        <label className={lblCls + " mb-1.5 block"}>{t("vmd_editor_label")}</label>
+        <div
+          ref={editorHostRef}
+          // Auto-grow: NO maxHeight, NO overflow-auto (VTF-13 rework). The CM6
+          // theme sets `& { height: auto }` + `.cm-scroller { overflow: hidden }`
+          // so content drives the height and the page scroll is the only scroll.
+          className="vibe-md-editor rounded-lg border border-border bg-s1"
+          style={{ minHeight: 420 }}
+        />
+        <p className="mt-1.5 font-ui text-[11px] text-t4">{t("vmd_editor_hint")}</p>
       </div>
 
       {/* ONE "Advanced fields" accordion — creator notes, personality summary,

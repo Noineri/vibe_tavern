@@ -5,8 +5,8 @@
  * tree). Use this when chasing a frontend crash; use plain `dev:web` otherwise.
  *
  * Run:  bun run dev:web:debug     (root script → @vibe-tavern/web dev:debug)
- * Then: open http://localhost:4173 (the API it proxies to must already be up,
- *        e.g. the user's `bun run dev` on :8788 or `bun run dev:api`).
+ * Then: open http://localhost:4173 (the API it proxies to must already be up
+ *        on the agent test port — :8787 — e.g. `RP_PLATFORM_PORT=8787 bun run dev`).
  *
  * Why a separate file (not folded into vite.config.ts): the production `dev:web`
  * intentionally has NO proxy — VT's frontend and API are served from the same
@@ -24,9 +24,9 @@ export default defineConfig({
 	server: {
 		port: 4173,
 		proxy: {
-			"/api": { target: "http://localhost:8788", changeOrigin: true },
-			"/assets": { target: "http://localhost:8788", changeOrigin: true },
-			"/socket": { target: "ws://localhost:8788", ws: true },
+			"/api": { target: "http://localhost:8787", changeOrigin: true },
+			"/assets": { target: "http://localhost:8787", changeOrigin: true },
+			"/socket": { target: "ws://localhost:8787", ws: true },
 		},
 	},
 });

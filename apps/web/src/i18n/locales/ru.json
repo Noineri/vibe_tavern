@@ -1015,7 +1015,6 @@
   "coauthor.lorebooks.label": "Контекст (лор)",
   "coauthor.lorebooks.add": "Привязать лорбуки к контексту редактора этого чата",
   "coauthor.lorebooks.empty": "Лорбуки не привязаны — редактор не увидит лор.",
-  "coauthor.module.label": "Модуль",
   "coauthor.module.list_label": "Модули",
   "coauthor.module.title": "Модуль автора",
   "coauthor.module.subtitle": "Выберите встроенный пресет, который задаёт базовый промпт, навыки, инструменты и лимит шагов соавтора.",
