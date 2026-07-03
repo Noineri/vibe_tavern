@@ -196,8 +196,8 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
     enqueueGenerateMore(msg.id, model, promptPresetId);
   };
 
-  const canBranch = !isGreeting;
-  const canRegenerate = !isGreeting && isLastAssistant;
+  const canBranch = !isGreeting && !isCoauthorMode;
+  const canRegenerate = !isGreeting && isLastAssistant && !isCoauthorMode;
   const canResend = isLast && msg.role === "user" && !pendingUserMessageContent;
   const canSwitchVariant = isLast && !isCoauthorMode;
 
