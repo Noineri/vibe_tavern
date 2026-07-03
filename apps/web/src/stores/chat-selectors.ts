@@ -17,9 +17,10 @@ import { useTraceHistoryEntry } from "./trace-history-store.js";
 export function useDisplayMessage(id: string): DisplayMessage | null {
   const message = useSnapshotStore((s) => s.messagesById[id]);
   const macroContext = useMacroContext();
+  const isCoauthorMode = useSnapshotStore((s) => s.activeChat?.mode === "coauthor");
   return useMemo((): DisplayMessage | null => {
     if (!message) return null;
-    const displayContent = macroContext
+    const displayContent = macroContext && !isCoauthorMode
       ? replaceUiMacros(message.content, macroContext)
       : message.content;
     return {
@@ -27,7 +28,7 @@ export function useDisplayMessage(id: string): DisplayMessage | null {
       displayContent,
       tokenCount: countTokens(displayContent),
     };
-  }, [message, macroContext]);
+  }, [message, macroContext, isCoauthorMode]);
 }
 
 /** @deprecated Use useSnapshotStore(s => s.messageOrder) directly */

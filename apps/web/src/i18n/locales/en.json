@@ -1213,5 +1213,7 @@
   "version_delete_active": "The active version cannot be deleted.",
   "update_available": "Vibe Tavern {version} is available",
   "update_button": "Update",
-  "update_tooltip": "New version available"
+  "update_tooltip": "New version available",
+  "coauthor_author_assistant": "Co-Author",
+  "coauthor_author_you": "You"
 }

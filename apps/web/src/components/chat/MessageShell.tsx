@@ -41,6 +41,10 @@ export interface MessageShellAuthorInfo {
   avatarCropJson: string | null;
   /** Pre-resolved avatar URL (folder avatar when migrated, else legacy flat). Null = no avatar. */
   avatarSrc: string | null;
+  /** Optional ReactNode to override the default avatar rendering */
+  avatarNode?: React.ReactNode;
+  /** Optional ReactNode to override the default text rendering of the name */
+  nameNode?: React.ReactNode;
 }
 
 export interface MessageShellActions {
@@ -233,11 +237,13 @@ export function MessageShell(props: MessageShellProps) {
               "shrink-0 overflow-hidden rounded-full bg-s3 font-body italic text-t3 [&_img]:h-full [&_img]:w-full [&_img]:object-cover ",
               "flex h-11 w-11 items-center justify-center text-[calc(var(--ui-fs)+1px)]",
             )}>
-              {author.avatarSrc
-                ? <img src={author.avatarSrc} alt={author.name} className="h-full w-full object-cover" />
-                : initials(author.name)}
+              {author.avatarNode ? author.avatarNode : (
+                author.avatarSrc
+                  ? <img src={author.avatarSrc} alt={author.name} className="h-full w-full object-cover" />
+                  : initials(author.name)
+              )}
             </div>
-            <span>{author.name}</span>
+            {author.nameNode ? author.nameNode : <span>{author.name}</span>}
 
             {/* Q4a: "Generate more" — queue entry point, visible ONLY while this
                 message is the active streaming target (the action bar is hidden

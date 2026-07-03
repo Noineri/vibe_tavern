@@ -1,7 +1,7 @@
 import { useMemo, useCallback } from "react";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
 import { useMessageOrder } from "../../stores/index.js";
-import { MessageBlock } from "../chat/MessageBlock.js";
+import { CoauthorMessageBlock } from "./CoauthorMessageBlock.js";
 import { MessageScroller, useDisplayMessageIds } from "../chat/MessageScroller.js";
 
 /**
@@ -48,7 +48,7 @@ export function CoauthorMessageList() {
         ? (state.messagesById[messageOrder[index - 1]]?.role ?? null)
         : null;
     return (
-      <MessageBlock
+      <CoauthorMessageBlock
         key={messageId}
         messageId={messageId}
         index={index}
