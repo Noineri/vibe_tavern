@@ -3,7 +3,7 @@ import { useChatStore, useIsSending } from "../../stores/index.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
 import { useDisplayMessage, useMessageAuthor, useIsStreamingTarget, useStreamingRevealedFor } from "../../stores/chat-selectors.js";
 import { MessageShell, type MessageShellAuthorInfo } from "../chat/MessageShell.js";
-import { DeleteMessageConfirm } from "../chat/MessageBlock.js";
+import { DestructiveConfirmModal } from "../shared/destructive-confirm-modal.js";
 import { Markdown } from "../../lib/markdown.js";
 import { StreamingMarkdown } from "../chat/StreamingMarkdown.js";
 import { CoauthorToolActivitySlot } from "../chat/CoauthorToolActivitySlot.js";
@@ -161,10 +161,11 @@ export const CoauthorTurnShell = memo(function CoauthorTurnShell({
   return (
     <>
     {deleteConfirmOpen && (
-      <DeleteMessageConfirm
-        hasSwipes={false}
-        onDeleteSwipe={() => {}}
-        onDeleteMessage={() => void confirmDeleteTurn()}
+      <DestructiveConfirmModal
+        title={t("delete_message_title")}
+        body={t("coauthor_delete_turn_body")}
+        confirmLabel={t("delete")}
+        onConfirm={() => void confirmDeleteTurn()}
         onCancel={() => setDeleteConfirmOpen(false)}
       />
     )}

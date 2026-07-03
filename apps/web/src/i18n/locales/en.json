@@ -967,6 +967,7 @@
   "edit_field": "Edit",
   "done_btn": "Done",
   "delete_message_body": "Choose whether to delete only the current swipe variant or remove the entire message.",
+  "coauthor_delete_turn_body": "Are you sure you want to delete this entire turn? This will remove the assistant's text response and all associated background tool actions. This cannot be undone.",
   "delete_swipe_btn": "Delete this swipe",
   "delete_message_btn": "Delete entire message",
   "rename_branch_prompt": "Branch name:",
