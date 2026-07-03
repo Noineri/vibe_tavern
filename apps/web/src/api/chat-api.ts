@@ -1,5 +1,5 @@
 import type { ChatId, ChatMode, PromptTraceRecordDto } from "@vibe-tavern/domain";
-import type { CoauthorApplyRequest, CoauthorCorrection } from "@vibe-tavern/api-contracts";
+import type { CoauthorApplyRequest, CoauthorCorrection, CoauthorModule, CoauthorModuleCreate, CoauthorModuleUpdate } from "@vibe-tavern/api-contracts";
 import type { AppSnapshot, AppMessage, ChatListItem, ChatSummaryRecord, AutoSummaryConfig } from "./types.js";
 import { client } from "./client.js";
 import { unwrapRpc, unwrapError } from "./unwrap.js";
@@ -70,10 +70,25 @@ export async function setCoauthorLorebooks(chatId: ChatId, lorebookIds: string[]
   return normalizeSnapshot(data);
 }
 
-export async function listCoauthorModules(): Promise<import("@vibe-tavern/api-contracts").CoauthorModule[]> {
+export async function listCoauthorModules(): Promise<CoauthorModule[]> {
   const response = await client.api.coauthor.modules.$get();
-  const data = await unwrapRpc<{ modules: import("@vibe-tavern/api-contracts").CoauthorModule[] }>(response);
+  const data = await unwrapRpc<{ modules: CoauthorModule[] }>(response);
   return data.modules;
+}
+
+export async function createCoauthorModule(input: CoauthorModuleCreate): Promise<CoauthorModule> {
+  const response = await client.api.coauthor.modules.$post({ json: input });
+  return unwrapRpc<CoauthorModule>(response);
+}
+
+export async function updateCoauthorModule(moduleId: string, input: CoauthorModuleUpdate): Promise<CoauthorModule> {
+  const response = await client.api.coauthor.modules[":moduleId"].$patch({ param: { moduleId }, json: input });
+  return unwrapRpc<CoauthorModule>(response);
+}
+
+export async function deleteCoauthorModule(moduleId: string): Promise<void> {
+  const response = await client.api.coauthor.modules[":moduleId"].$delete({ param: { moduleId } });
+  if (!response.ok) throw await unwrapError(response);
 }
 
 export async function setCoauthorModule(chatId: ChatId, moduleId: string | null): Promise<AppSnapshot> {

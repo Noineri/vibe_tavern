@@ -26,6 +26,9 @@ import {
   setCoauthorLorebooks,
   listCoauthorModules,
   setCoauthorModule,
+  createCoauthorModule,
+  updateCoauthorModule,
+  deleteCoauthorModule,
   selectMessageVariant,
   sendChatMessage,
   setChatPersona,
@@ -135,6 +138,23 @@ export async function setCoauthorLorebooksAction(chatId: ChatId, lorebookIds: st
 
 export async function listCoauthorModulesAction(): Promise<import("@vibe-tavern/api-contracts").CoauthorModule[]> {
   return listCoauthorModules();
+}
+
+export async function createCoauthorModuleAction(
+  input: import("@vibe-tavern/api-contracts").CoauthorModuleCreate,
+): Promise<import("@vibe-tavern/api-contracts").CoauthorModule> {
+  return createCoauthorModule(input);
+}
+
+export async function updateCoauthorModuleAction(
+  moduleId: string,
+  input: import("@vibe-tavern/api-contracts").CoauthorModuleUpdate,
+): Promise<import("@vibe-tavern/api-contracts").CoauthorModule> {
+  return updateCoauthorModule(moduleId, input);
+}
+
+export async function deleteCoauthorModuleAction(moduleId: string): Promise<void> {
+  await deleteCoauthorModule(moduleId);
 }
 
 export async function setCoauthorModuleAction(chatId: ChatId, moduleId: string | null): Promise<void> {
