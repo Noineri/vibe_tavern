@@ -376,8 +376,8 @@ function DesktopInput({
 								<div className="glass-blur absolute bottom-[calc(100%+8px)] right-0 z-[220] w-[240px] rounded-lg border border-border2 bg-glass-bg px-3.5 py-2.5 shadow-[0_12px_28px_rgba(0,0,0,0.45)]">
 									<div className="mb-1.5 border-b border-border pb-1.5 text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.08em] text-t3">{t("context_breakdown")}</div>
 									<div className="mb-1 text-[10px] font-medium uppercase tracking-[0.06em] text-t4">{t("context_permanent")}</div>
-									<div className="mb-1 flex justify-between text-xs text-t2"><span>{t("coauthor.input.module_switch")}</span><span className="tabular-nums text-t1">{buckets.moduleTokens.toLocaleString()}</span></div>
-									<div className="mb-1 flex justify-between text-xs text-t2"><span>{t("active_skill")}</span><span className="tabular-nums text-t1">{buckets.skillTokens.toLocaleString()}</span></div>
+									<div className="mb-1 flex justify-between text-xs text-t2"><span>{t("coauthor.module.title")}</span><span className="tabular-nums text-t1">{buckets.moduleTokens.toLocaleString()}</span></div>
+									<div className="mb-1 flex justify-between text-xs text-t2"><span>{t("coauthor.module.skills")}</span><span className="tabular-nums text-t1">{buckets.skillTokens.toLocaleString()}</span></div>
 									<div className="mb-1 flex justify-between text-xs text-t2"><span>{t("character_profile")}</span><span className="tabular-nums text-t1">{buckets.profileTokens.toLocaleString()}</span></div>
 									<div className="mb-1 flex justify-between text-xs text-t2"><span>{t("context_lore")}</span><span className="tabular-nums text-t1">{buckets.lore.toLocaleString()}</span></div>
 									<div className="mb-1.5 flex justify-between text-xs text-t2"><span>{t("context_memory")}</span><span className="tabular-nums text-t1">{buckets.memory.toLocaleString()}</span></div>
