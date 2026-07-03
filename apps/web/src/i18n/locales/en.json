@@ -1030,6 +1030,7 @@
   "coauthor.module.loading": "Loading modules…",
   "coauthor.module.empty": "No modules available.",
   "coauthor.module.empty_sub": "Create a module to bundle a base prompt, skills, and tools.",
+  "coauthor.module.opening_message_placeholder": "Optional. The first assistant message on a new co-author chat.",
   "coauthor.module.switch_failed": "Failed to switch module.",
   "coauthor.module.manager_subtitle": "Manage author modules. Built-in presets are read-only; create your own to customize the base prompt, skills, tools, and step budget.",
   "coauthor.module.built_in": "Built-in",

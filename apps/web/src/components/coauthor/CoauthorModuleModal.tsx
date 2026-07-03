@@ -2,7 +2,9 @@ import { useEffect, useState } from "react";
 import { MasterDetailModal, MasterDetailMobileDrillDown } from "../shared/MasterDetailModal.js";
 import { DestructiveConfirmModal } from "../shared/destructive-confirm-modal.js";
 import { EmptyState } from "../shared/empty-state.js";
+import { AutoTextarea } from "../shared/auto-textarea.js";
 import { Icons } from "../shared/icons.js";
+import { inputCls, monoCls, inputPad, lblCls } from "../build/fields/field-styles.js";
 import { useModalStore } from "../../stores/modal-store.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
 import {
@@ -319,7 +321,6 @@ export function CoauthorModuleModal() {
 					isEditing ? (
 						<ModuleEditor
 							draft={draft}
-							mode={detailMode}
 							t={t}
 							onUpdate={updateDraft}
 							onToggleSkill={toggleSkill}
@@ -593,7 +594,6 @@ function ModuleView({ module, t, onEdit, onDelete }: ModuleViewProps) {
 
 interface ModuleEditorProps {
 	draft: ModuleDraft;
-	mode: DetailMode;
 	t: (key: string) => string;
 	onUpdate: <K extends keyof ModuleDraft>(key: K, value: ModuleDraft[K]) => void;
 	onToggleSkill: (skillId: string) => void;
@@ -603,44 +603,52 @@ interface ModuleEditorProps {
 function ModuleEditor({ draft, t, onUpdate, onToggleSkill, onToggleTool }: ModuleEditorProps) {
 	return (
 		<div className="flex flex-col gap-4" data-testid="module-editor">
-			<Field label={t("coauthor.module.name_label")}>
-			<input
+			<div className="flex flex-col gap-1">
+				<label className={lblCls}>{t("coauthor.module.name_label")}</label>
+				<input
 					type="text"
 					data-testid="module-name-input"
-					className="w-full rounded border border-border bg-bg px-2 py-1.5 font-ui text-[13px] text-t1 outline-none focus:border-accent"
+					className={inputCls}
+					style={inputPad}
 					placeholder={t("coauthor.module.name_placeholder")}
 					value={draft.name}
 					onChange={(e) => onUpdate("name", e.target.value)}
 				/>
-			</Field>
+			</div>
 
-			<Field label={t("coauthor.module.description_label")}>
-				<textarea
-					rows={2}
-					className="w-full resize-y rounded border border-border bg-bg px-2 py-1.5 font-ui text-[13px] text-t1 outline-none focus:border-accent"
+			<div className="flex flex-col gap-1">
+				<label className={lblCls}>{t("coauthor.module.description_label")}</label>
+				<AutoTextarea
+					className={inputCls}
+					style={{ ...inputPad, minHeight: 40 }}
 					placeholder={t("coauthor.module.description_placeholder")}
 					value={draft.description}
-					onChange={(e) => onUpdate("description", e.target.value)}
+					onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => onUpdate("description", e.target.value)}
 				/>
-			</Field>
+			</div>
 
-			<Field label={t("coauthor.module.base_prompt")} hint={t("coauthor.module.base_prompt_hint")}>
-				<textarea
-					rows={8}
-					className="w-full resize-y rounded border border-border bg-bg px-2 py-1.5 font-mono text-[11px] leading-relaxed text-t1 outline-none focus:border-accent"
+			<div className="flex flex-col gap-1">
+				<label className={lblCls}>{t("coauthor.module.base_prompt")}</label>
+				<AutoTextarea
+					className={monoCls}
+					style={{ ...inputPad, minHeight: 120 }}
 					value={draft.basePrompt}
-					onChange={(e) => onUpdate("basePrompt", e.target.value)}
+					onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => onUpdate("basePrompt", e.target.value)}
 				/>
-			</Field>
+				<p className="font-ui text-[10px] leading-relaxed text-t3">{t("coauthor.module.base_prompt_hint")}</p>
+			</div>
 
-			<Field label={t("coauthor.module.opening_message_label")} hint={t("coauthor.module.opening_message_hint")}>
-				<textarea
-					rows={3}
-					className="w-full resize-y rounded border border-border bg-bg px-2 py-1.5 font-ui text-[12px] text-t1 outline-none focus:border-accent"
+			<div className="flex flex-col gap-1">
+				<label className={lblCls}>{t("coauthor.module.opening_message_label")}</label>
+				<AutoTextarea
+					className={inputCls}
+					style={{ ...inputPad, minHeight: 60 }}
+					placeholder={t("coauthor.module.opening_message_placeholder")}
 					value={draft.openingMessage}
-					onChange={(e) => onUpdate("openingMessage", e.target.value)}
+					onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => onUpdate("openingMessage", e.target.value)}
 				/>
-			</Field>
+				<p className="font-ui text-[10px] leading-relaxed text-t3">{t("coauthor.module.opening_message_hint")}</p>
+			</div>
 
 			<Field label={t("coauthor.module.skills")}>
 				<div className="flex flex-wrap gap-1.5">
