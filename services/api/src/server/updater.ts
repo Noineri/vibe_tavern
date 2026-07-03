@@ -336,17 +336,32 @@ async function verifyChecksum(archivePath: string, archiveName: string, sumsCont
 	}
 }
 
-/** Extract a tar.gz (Linux) or zip (Windows) archive using the system tool. */
+/**
+ * Extract the release archive using the platform's native tool.
+ *
+ * Linux/macOS: `tar -xzf` for the .tar.gz archive.
+ * Windows: PowerShell `Expand-Archive` for the .zip archive. PowerShell is
+ * universally available on Windows (ships since Windows 7), whereas `tar.exe`
+ * is only present on Windows 10 17063+ and is sometimes stripped from managed
+ * systems — using it broke Windows installs in the wild.
+ */
 async function extractArchive(archivePath: string, destDir: string): Promise<void> {
-	// Windows 10+ ships bsdtar as `tar.exe`, which handles both .zip and .tar.gz.
-	// Linux/macOS `tar` handles tar.gz natively. One code path for both platforms.
-	const proc = Bun.spawn(["tar", "-xf", archivePath, "-C", destDir], {
+	const cmd = IS_WINDOWS
+		? [
+				"powershell",
+				"-NoProfile",
+				"-Command",
+				`Expand-Archive -LiteralPath '${archivePath}' -DestinationPath '${destDir}' -Force`,
+			]
+		: ["tar", "-xzf", archivePath, "-C", destDir];
+
+	const proc = Bun.spawn(cmd, {
 		stdout: "inherit",
 		stderr: "inherit",
 	});
 	const exitCode = await proc.exited;
 	if (exitCode !== 0) {
-		throw new Error(`Extraction failed (tar exited with code ${exitCode}).`);
+		throw new Error(`Extraction failed (${cmd[0]} exited with code ${exitCode}).`);
 	}
 }
 
