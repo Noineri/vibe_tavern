@@ -130,6 +130,15 @@ export const CoauthorTurnShell = memo(function CoauthorTurnShell({
     return role === "assistant";
   });
 
+  const lastAssistantMsg = useSnapshotStore(s => {
+    const ids = [...assistantMessageIds].reverse();
+    for (const id of ids) {
+      const m = s.messagesById[id];
+      if (m) return m;
+    }
+    return null;
+  });
+
   return (
     <MessageShell
       messageId={turnId}
@@ -149,6 +158,9 @@ export const CoauthorTurnShell = memo(function CoauthorTurnShell({
       variantCount={1}
       canSwitchVariant={false}
       tokenCount={0}
+      modelId={lastAssistantMsg?.modelId ?? null}
+      coauthorModuleId={lastAssistantMsg?.coauthorModuleId ?? null}
+      coauthorSkillId={lastAssistantMsg?.coauthorSkillId ?? null}
       createdAt={useSnapshotStore.getState().messagesById[turnId]?.createdAt ?? ""}
       copied={false}
       slotExtras={{}}

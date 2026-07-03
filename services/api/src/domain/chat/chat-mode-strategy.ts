@@ -104,6 +104,9 @@ export type ChatModeAssembleResult = AssemblePromptForChatResult & {
   tools?: ToolSet;
   /** Max multi-step tool-calling rounds per generation. Only meaningful when `tools` is set. */
   maxSteps?: number;
+  /** Emitted per turn in coauthor mode for UI badging (CS-28). */
+  coauthorModuleId?: string;
+  coauthorSkillId?: string;
 };
 
 /**

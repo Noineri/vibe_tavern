@@ -241,6 +241,13 @@ function DesktopInput({
 	sendLabel,
 	sendButtonText,
 	t,
+	buckets,
+	inputTokens,
+	permanent,
+	contextSize,
+	maxTokens,
+	availableBudget,
+	tokenState,
 }: SharedInputProps & {
 	inputProps: {
 		placeholder: string;

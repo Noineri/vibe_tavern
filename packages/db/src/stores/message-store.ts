@@ -41,6 +41,8 @@ export interface MessageVariant {
   modelId: string | null;
   presetId: string | null;
   createdAt: string;
+  coauthorModuleId?: string | null;
+  coauthorSkillId?: string | null;
   toolCalls?: Array<{ id: string; name: string; args: unknown }> | null;
   toolCallId?: string | null;
 }
@@ -101,6 +103,8 @@ export class MessageStore {
     attachmentsJson?: string | null;
     toolCallsJson?: string | null;
     toolCallId?: string | null;
+    coauthorModuleId?: string | null;
+    coauthorSkillId?: string | null;
   }): Promise<Message> {
     const id = this.idGen.next('msg');
     const now = this.clock.now();
@@ -135,6 +139,8 @@ export class MessageStore {
         presetId: variantIndex === selectedVariantIndex ? data.presetId ?? null : null,
         toolCallsJson: variantIndex === selectedVariantIndex ? data.toolCallsJson ?? null : null,
         toolCallId: variantIndex === selectedVariantIndex ? data.toolCallId ?? null : null,
+        coauthorModuleId: variantIndex === selectedVariantIndex ? data.coauthorModuleId ?? null : null,
+        coauthorSkillId: variantIndex === selectedVariantIndex ? data.coauthorSkillId ?? null : null,
         createdAt: now,
       }))).run();
     });
@@ -289,6 +295,8 @@ export class MessageStore {
     presetId?: string | null,
     toolCallsJson?: string | null,
     toolCallId?: string | null,
+    coauthorModuleId?: string | null,
+    coauthorSkillId?: string | null,
   ): Promise<MessageVariant> {
     // Find max variantIndex
     const lastVariant = await this.db
@@ -327,6 +335,8 @@ export class MessageStore {
           presetId: presetId ?? null,
           toolCallsJson: toolCallsJson ?? null,
           toolCallId: toolCallId ?? null,
+          coauthorModuleId: coauthorModuleId ?? null,
+          coauthorSkillId: coauthorSkillId ?? null,
           createdAt: now,
         })
         .run();
@@ -503,6 +513,8 @@ export class MessageStore {
       reasoningDurationMs: row.reasoningDurationMs,
       modelId: row.modelId,
       presetId: row.presetId,
+      coauthorModuleId: row.coauthorModuleId,
+      coauthorSkillId: row.coauthorSkillId,
       toolCalls: row.toolCallsJson ? JSON.parse(row.toolCallsJson) : null,
       toolCallId: row.toolCallId,
       createdAt: row.createdAt,

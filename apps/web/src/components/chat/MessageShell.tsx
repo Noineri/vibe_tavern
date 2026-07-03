@@ -95,6 +95,10 @@ export interface MessageShellProps {
   modelId?: string | null;
   /** Resolved preset name for metadata display (provenance of the selected variant). */
   presetName?: string | null;
+  /** Resolved co-author module ID (if any). */
+  coauthorModuleId?: string | null;
+  /** Resolved co-author skill ID (if any). */
+  coauthorSkillId?: string | null;
   /** Message creation timestamp. */
   createdAt: string;
   /** Whether the copy button was recently clicked (shows checkmark). */
@@ -150,6 +154,8 @@ export function MessageShell(props: MessageShellProps) {
     tokenCount,
     modelId,
     presetName,
+    coauthorModuleId,
+    coauthorSkillId,
     createdAt,
     copied,
     slotExtras,
@@ -354,6 +360,8 @@ export function MessageShell(props: MessageShellProps) {
               messageTokens={tokenCount}
               modelId={modelId}
               presetName={presetName}
+              coauthorModuleId={coauthorModuleId}
+              coauthorSkillId={coauthorSkillId}
               tokensLabel={tokensLabel}
             />
           )}
@@ -442,15 +450,19 @@ function MessageMetadata(props: {
   messageTokens: number;
   modelId?: string | null;
   presetName?: string | null;
+  coauthorModuleId?: string | null;
+  coauthorSkillId?: string | null;
   tokensLabel: string;
 }) {
-  const { createdLabel, isUser, messageTokens, modelId, presetName, tokensLabel } = props;
+  const { createdLabel, isUser, messageTokens, modelId, presetName, coauthorModuleId, coauthorSkillId, tokensLabel } = props;
   return (
-    <div className="mt-1 flex items-center gap-2 font-ui text-[calc(var(--ui-fs)-4px)] text-t3/50">
+    <div className="mt-1 flex flex-wrap items-center gap-2 font-ui text-[calc(var(--ui-fs)-4px)] text-t3/50">
       {createdLabel}
       <span className="tabular-nums">{messageTokens} {tokensLabel}</span>
       {!isUser && modelId && <span>{resolveModelLabel(modelId)}</span>}
       {!isUser && presetName && <span>{presetName}</span>}
+      {!isUser && coauthorModuleId && <span>{coauthorModuleId}</span>}
+      {!isUser && coauthorSkillId && <span>{coauthorSkillId}</span>}
     </div>
   );
 }

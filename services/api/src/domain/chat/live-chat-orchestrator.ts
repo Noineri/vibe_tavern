@@ -304,6 +304,16 @@ export class LiveChatOrchestrator {
     const { streamResult, startedAt } = await this.startStream({ ...input, ...provider, onAttachmentDescriptions, tools: prepared.tools, maxSteps: prepared.maxSteps }, prepared.prompt);
     if (streamResult.sentConfig) { this.chatRuntime.patchPendingTrace(brandId<ChatId>(input.chatId), { sentConfig: streamResult.sentConfig }); }
 
+    if (prepared.coauthorModuleId) {
+      yield {
+        event: "coauthor-module",
+        data: JSON.stringify({
+          moduleId: prepared.coauthorModuleId,
+          skillId: prepared.coauthorSkillId,
+        }),
+      };
+    }
+
     yield* this.drainStream({
       chatId: input.chatId,
       streamResult,
@@ -352,6 +362,16 @@ export class LiveChatOrchestrator {
     const prefill = prompt.prefill ?? undefined;
     const { streamResult, startedAt } = await this.startStream({ ...input, ...provider, tools: prompt.tools, maxSteps: prompt.maxSteps }, prompt);
     if (streamResult.sentConfig) { this.chatRuntime.patchPendingTrace(brandId<ChatId>(input.chatId), { sentConfig: streamResult.sentConfig }); }
+
+    if (prompt.coauthorModuleId) {
+      yield {
+        event: "coauthor-module",
+        data: JSON.stringify({
+          moduleId: prompt.coauthorModuleId,
+          skillId: prompt.coauthorSkillId,
+        }),
+      };
+    }
 
     yield* this.drainStream({
       chatId: input.chatId,
@@ -406,6 +426,16 @@ export class LiveChatOrchestrator {
     const prefill = prompt.prefill ?? undefined;
     const { streamResult, startedAt } = await this.startStream({ ...input, ...provider, tools: prompt.tools, maxSteps: prompt.maxSteps }, prompt);
     if (streamResult.sentConfig) { this.chatRuntime.patchPendingTrace(brandId<ChatId>(input.chatId), { sentConfig: streamResult.sentConfig }); }
+
+    if (prompt.coauthorModuleId) {
+      yield {
+        event: "coauthor-module",
+        data: JSON.stringify({
+          moduleId: prompt.coauthorModuleId,
+          skillId: prompt.coauthorSkillId,
+        }),
+      };
+    }
 
     yield* this.drainStream({
       chatId: input.chatId,

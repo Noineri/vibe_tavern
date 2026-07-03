@@ -22,6 +22,8 @@ export interface PreparedLiveTurn {
   tools?: ToolSet;
   /** Max tool-calling rounds (only meaningful when `tools` is set). */
   maxSteps?: number;
+  coauthorModuleId?: string;
+  coauthorSkillId?: string;
   snapshot: SessionSnapshot;
   userMessage?: {
     id: MessageId;
@@ -32,6 +34,8 @@ export interface PreparedLiveTurn {
 interface PendingPromptTraceTurn {
   branchId: ChatBranchId;
   draft: PromptTraceDraft;
+  coauthorModuleId?: string | null;
+  coauthorSkillId?: string | null;
 }
 
 export interface ChatRuntimeDeps {
@@ -110,12 +114,16 @@ export class ChatRuntime {
     this.pendingPromptTraceByChat.set(chatId, {
       branchId: assembled.branchId,
       draft: assembled.promptTraceDraft,
+      coauthorModuleId: assembled.coauthorModuleId,
+      coauthorSkillId: assembled.coauthorSkillId,
     });
 
     return {
       prompt: assembled.prompt,
       tools: assembled.tools,
       maxSteps: assembled.maxSteps,
+      coauthorModuleId: assembled.coauthorModuleId,
+      coauthorSkillId: assembled.coauthorSkillId,
       snapshot: await getSnapshot(chatId),
       userMessage: {
         id: userMessage.id,
@@ -189,6 +197,8 @@ export class ChatRuntime {
         content,
         modelId: pending?.draft.model ?? null,
         presetId: pending?.draft.presetId ?? null,
+        coauthorModuleId: pending?.coauthorModuleId ?? null,
+        coauthorSkillId: pending?.coauthorSkillId ?? null,
       });
     } else {
       assistantMessage = await messages.addMessage({
@@ -199,6 +209,8 @@ export class ChatRuntime {
         content,
         modelId: pending?.draft.model ?? null,
         presetId: pending?.draft.presetId ?? null,
+        coauthorModuleId: pending?.coauthorModuleId ?? null,
+        coauthorSkillId: pending?.coauthorSkillId ?? null,
         reasoning: reasoningData?.reasoning,
         reasoningDurationMs: reasoningData?.reasoningDurationMs,
       });
@@ -272,6 +284,8 @@ export class ChatRuntime {
       input.presetId ?? pending?.draft.presetId ?? null,
       input.toolCalls && input.toolCalls.length > 0 ? JSON.stringify(input.toolCalls.map(tc => ({ id: tc.toolCallId, name: tc.toolName, args: tc.args }))) : null,
       null,
+      pending?.coauthorModuleId ?? null,
+      pending?.coauthorSkillId ?? null,
     );
 
     if (pending) {
@@ -384,7 +398,7 @@ export class ChatRuntime {
   async assemblePromptPreview(
     chatId: ChatId,
     options: { excludeMessageId?: MessageId; model: string; contextBudget?: number | null; responseReserve?: number; presetId?: PromptPresetId },
-  ): Promise<AssemblePromptResponse & { tools?: ToolSet; maxSteps?: number }> {
+  ): Promise<AssemblePromptResponse & { tools?: ToolSet; maxSteps?: number; coauthorModuleId?: string; coauthorSkillId?: string }> {
     const { assemblePrompt } = this.deps;
     const assembled = await assemblePrompt(chatId, undefined, {
       excludeMessageIds: options.excludeMessageId ? [options.excludeMessageId] : [],
@@ -399,7 +413,7 @@ export class ChatRuntime {
         draft: assembled.promptTraceDraft,
       });
     }
-    return { ...assembled.prompt, tools: assembled.tools, maxSteps: assembled.maxSteps };
+    return { ...assembled.prompt, tools: assembled.tools, maxSteps: assembled.maxSteps, coauthorModuleId: assembled.coauthorModuleId, coauthorSkillId: assembled.coauthorSkillId };
   }
 
   /** Removes and returns the pending prompt trace for a chat/branch. Returns null if the branch doesn't match. */

@@ -26,6 +26,8 @@ export interface MessageDto extends Message {
   variants: MessageVariant[];
   selectedVariantIndex: number | null;
   modelId: string | null;
+  coauthorModuleId?: string | null;
+  coauthorSkillId?: string | null;
   attachments?: Attachment[];
 }
 
@@ -66,6 +68,8 @@ export function mapMessageDto(message: Message | DbMessage, variants: MessageVar
     position: message.position,
     content: selectedVariant?.content ?? message.content,
     modelId: selectedVariant?.modelId ?? null,
+    coauthorModuleId: selectedVariant?.coauthorModuleId ?? null,
+    coauthorSkillId: selectedVariant?.coauthorSkillId ?? null,
     state: message.state as Message['state'],
     createdAt: message.createdAt,
     updatedAt: message.updatedAt,

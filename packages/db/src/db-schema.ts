@@ -413,6 +413,8 @@ export const messageVariants = sqliteTable('message_variants', {
   presetId: text('preset_id').references(() => promptPresets.id, { onDelete: 'set null' }),
   toolCallsJson: text('tool_calls_json'),
   toolCallId: text('tool_call_id'),
+  coauthorModuleId: text('coauthor_module_id'),
+  coauthorSkillId: text('coauthor_skill_id'),
   createdAt: text('created_at').notNull(),
 }, (table) => ({
   uniqueVariant: uniqueIndex('idx_message_variants_unique').on(table.messageId, table.variantIndex),

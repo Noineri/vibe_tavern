@@ -410,6 +410,8 @@ export interface MessageVariant {
   presetId?: string | null;
   toolCalls?: ToolCall[];
   toolCallId?: string | null;
+  coauthorModuleId?: string | null;
+  coauthorSkillId?: string | null;
   createdAt: Timestamp;
 }
 

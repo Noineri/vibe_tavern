@@ -412,5 +412,7 @@ export async function assembleCoauthorPrompt(input: ChatModeAssembleInput): Prom
     },
     tools: buildCoauthorTools({ toolSet: module.toolSet, profileMd }),
     maxSteps: module.maxSteps,
+    coauthorModuleId: module.id,
+    coauthorSkillId: skillId,
   };
 }
