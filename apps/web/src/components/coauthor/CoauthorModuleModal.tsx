@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import { MasterDetailModal } from "../shared/MasterDetailModal.js";
+import { MasterDetailModal, MasterDetailMobileDrillDown } from "../shared/MasterDetailModal.js";
 import { DestructiveConfirmModal } from "../shared/destructive-confirm-modal.js";
+import { EmptyState } from "../shared/empty-state.js";
 import { Icons } from "../shared/icons.js";
 import { useModalStore } from "../../stores/modal-store.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
@@ -298,17 +299,8 @@ export function CoauthorModuleModal() {
 				title={t("coauthor.module.title")}
 				subtitle={t("coauthor.module.manager_subtitle")}
 				dirty={dirty}
-				headerActions={
-					<button
-						type="button"
-						data-testid="module-new-btn"
-						className="flex h-7 cursor-pointer items-center gap-1 rounded-md bg-accent px-2.5 font-ui text-[12px] font-semibold text-on-accent transition-all hover:brightness-110 active:scale-[0.98]"
-						onClick={() => handleNew()}
-					>
-						<Icons.Plus className="h-3.5 w-3.5" />
-						{t("coauthor.module.new")}
-					</button>
-				}
+				containerClassName="max-h-[calc(100vh-60px)] max-w-[calc(100vw-32px)] h-[760px] w-[1040px] rounded-xl border border-border2 shadow-[0_24px_60px_rgba(0,0,0,.5)]"
+				masterClassName="flex w-[260px] shrink-0 flex-col border-r border-border bg-s1"
 				masterContent={({ openDetail }) => (
 					<ModuleList
 						modules={modules}
@@ -318,6 +310,7 @@ export function CoauthorModuleModal() {
 						detailMode={detailMode}
 						t={t}
 						onSelect={(id) => handleSelect(id, openDetail)}
+						onAdd={() => handleNew(openDetail)}
 						onEdit={(m) => handleEdit(m, openDetail)}
 						onDelete={(id) => setConfirmDeleteId(id)}
 					/>
@@ -393,49 +386,73 @@ interface ModuleListProps {
 	detailMode: DetailMode;
 	t: (key: string) => string;
 	onSelect: (id: string) => void;
+	onAdd: () => void;
 	onEdit: (m: CoauthorModule) => void;
 	onDelete: (id: string) => void;
 }
 
-function ModuleList({ modules, isLoading, selectedId, activeModuleId, detailMode, t, onSelect, onEdit, onDelete }: ModuleListProps) {
+/**
+ * Master list — mirrors the canonical layout of `ProviderProfileList` /
+ * `PresetList`: a full-height flex column with a section label, a scrollable
+ * row list, and a dashed "+ New" affordance docked at the bottom. Rows carry
+ * the active-module dot + selected-row highlight + mobile drill-down chevron.
+ */
+function ModuleList({ modules, isLoading, selectedId, activeModuleId, detailMode, t, onSelect, onAdd, onEdit, onDelete }: ModuleListProps) {
 	if (isLoading) {
 		return <div className="p-4 font-ui text-[13px] text-t3">{t("coauthor.module.loading")}</div>;
 	}
-	if (modules.length === 0) {
-		return <div className="p-4 font-ui text-[13px] text-t3">{t("coauthor.module.empty")}</div>;
-	}
 	return (
-		<ul className="flex flex-col py-1">
-			{modules.map((m) => {
-				const isActive = m.id === activeModuleId;
-				const isSelected = (m.id === selectedId && detailMode === "view") || (detailMode === "edit" && m.id === selectedId);
-				return (
-					<li key={m.id}>
-						<div
-							className={cn(
-								"group flex w-full cursor-pointer flex-col gap-0.5 border-l-2 px-3 py-2.5 text-left transition-colors",
-								isSelected ? "bg-s2" : "hover:bg-s2",
-								isActive ? "border-accent" : "border-transparent",
-							)}
-							onClick={() => onSelect(m.id)}
-						>
-							<span className="flex items-center gap-1.5 font-ui text-[13px] font-medium text-t1">
-								{m.name}
-								{isActive && (
-									<span className="inline-flex h-3.5 w-3.5 items-center justify-center text-accent">
-										<Icons.Check />
-									</span>
+		<div className="flex flex-col flex-1 min-h-0 pt-5 pb-2.5">
+			<div className="mb-1.5 px-4 font-ui text-[12px] font-medium uppercase tracking-[0.05em] text-t3">
+				{t("coauthor.module.list_label")}
+			</div>
+			<div className="flex-1 overflow-y-auto">
+				{modules.length === 0 ? (
+					<div className="flex h-full items-center justify-center px-2">
+						<EmptyState
+							icon={<Icons.Tool />}
+							title={t("coauthor.module.empty")}
+							sub={t("coauthor.module.empty_sub")}
+						/>
+					</div>
+				) : (
+					modules.map((m) => {
+						const isActive = m.id === activeModuleId;
+						const isSelected = (m.id === selectedId && detailMode === "view") || (detailMode === "edit" && m.id === selectedId);
+						return (
+							<div
+								key={m.id}
+								onPointerDown={() => onSelect(m.id)}
+								className={cn(
+									"group flex cursor-pointer items-center gap-3 border-l-2 min-h-[56px] pl-4 pr-2 touch-manipulation sm:transition-colors",
+									isSelected ? "border-l-accent bg-accent-dim" : "border-l-transparent hover:bg-s2",
 								)}
-								{m.isBuiltIn ? (
-									<span className="ml-auto rounded-full bg-s3 px-1.5 py-px font-mono text-[9px] uppercase tracking-wide text-t3">
-										{t("coauthor.module.built_in")}
-									</span>
-								) : (
-									<span className="ml-auto flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100" onClick={(e) => e.stopPropagation()}>
+							>
+								<span
+									className={cn(
+										"h-[6px] w-[6px] shrink-0 rounded-full sm:transition-colors",
+										isActive ? "bg-accent" : "bg-transparent",
+									)}
+								/>
+								<div className="min-w-0 flex-1 py-2">
+									<div className="flex min-w-0 items-center gap-1.5">
+										<span className={cn("truncate font-ui text-[calc(var(--ui-fs)-2px)] font-medium", isSelected ? "text-accent-t" : "text-t2")}>
+											{isActive ? "★ " : ""}{m.name}
+										</span>
+										{m.isBuiltIn && (
+											<span className="shrink-0 rounded-full bg-s3 px-1.5 py-px font-mono text-[9px] uppercase tracking-wide text-t3">
+												{t("coauthor.module.built_in")}
+											</span>
+										)}
+									</div>
+									<div className="mt-0.5 line-clamp-2 text-[11px] leading-snug text-t4">{m.description}</div>
+								</div>
+								{!m.isBuiltIn && (
+									<div className="flex shrink-0 items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
 										<button
 											type="button"
 											data-testid={`module-edit-btn-${m.id}`}
-											className="flex h-5 w-5 items-center justify-center rounded text-t3 transition-colors hover:bg-s3 hover:text-t1"
+											className="flex h-6 w-6 items-center justify-center rounded text-t3 transition-colors hover:bg-s3 hover:text-t1 md:opacity-0 md:group-hover:opacity-100"
 											title={t("coauthor.module.edit")}
 											onClick={() => onEdit(m)}
 										>
@@ -444,21 +461,31 @@ function ModuleList({ modules, isLoading, selectedId, activeModuleId, detailMode
 										<button
 											type="button"
 											data-testid={`module-delete-btn-${m.id}`}
-											className="flex h-5 w-5 items-center justify-center rounded text-t3 transition-colors hover:bg-danger-dim hover:text-danger-text"
+											className="flex h-6 w-6 items-center justify-center rounded text-t3 transition-colors hover:bg-danger-dim hover:text-danger-text md:opacity-0 md:group-hover:opacity-100"
 											title={t("coauthor.module.delete")}
 											onClick={() => onDelete(m.id)}
 										>
 											<Icons.Trash className="h-3 w-3" />
 										</button>
-									</span>
-								)}
-							</span>
-							<span className="line-clamp-2 font-ui text-[11px] text-t3">{m.description}</span>
-						</div>
-					</li>
-				);
-			})}
-		</ul>
+										</div>
+									)}
+								<MasterDetailMobileDrillDown onSelect={() => onSelect(m.id)} className="py-3" />
+							</div>
+						);
+					})
+				)}
+			</div>
+			<div className="shrink-0 border-t border-border px-3 pt-3">
+				<button
+					type="button"
+					data-testid="module-new-btn"
+					className="flex w-full items-center justify-center gap-2 rounded-md border border-dashed border-border2 py-2 font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-colors hover:border-border hover:bg-s2 hover:text-t1"
+					onClick={() => onAdd()}
+				>
+					<Icons.Plus /> {t("coauthor.module.new")}
+				</button>
+			</div>
+		</div>
 	);
 }
 

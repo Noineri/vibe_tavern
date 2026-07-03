@@ -255,7 +255,10 @@ describe("CoauthorModuleModal (CS-25 manager)", () => {
 		openModal();
 		const { getByText } = render(<CoauthorModuleModal />);
 		await waitFor(() => expect(getByText("Profile Editor")).toBeTruthy());
-		fireEvent.click(getByText("Profile Editor"));
+		// Rows select via onPointerDown (matches the canonical PresetList /
+		// ProviderProfileList pattern for touch-manipulation); pointerDown bubbles
+		// up from the name span to the row handler.
+		fireEvent.pointerDown(getByText("Profile Editor"));
 		await waitFor(() => expect(getByText("coauthor.module.activate")).toBeTruthy());
 		fireEvent.click(getByText("coauthor.module.activate"));
 		await waitFor(() => expect(setCoauthorModuleAction).toHaveBeenCalledTimes(1));
