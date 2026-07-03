@@ -119,7 +119,13 @@ export const CoauthorTurnShell = memo(function CoauthorTurnShell({
         if (msg) chat.handleStartEdit(msg);
       }
     },
-    onDelete: () => {},
+    onDelete: () => {
+      const state = useSnapshotStore.getState();
+      const lastAssistantId = [...turnMessageIds].reverse().find(id => state.messagesById[id]?.role === "assistant");
+      if (lastAssistantId) {
+        void chat.handleDeleteMessage(lastAssistantId);
+      }
+    },
     onBranch: () => {},
     onRegenerate: () => {},
     onResend: () => void chat.handleResend(),
