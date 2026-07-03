@@ -1,6 +1,5 @@
 import { memo, useState } from "react";
 import { useChatStore, useIsSending } from "../../stores/index.js";
-import { MessageEditor } from "../chat/MessageEditor.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
 import { useDisplayMessage, useMessageAuthor, useIsStreamingTarget, useStreamingRevealedFor } from "../../stores/chat-selectors.js";
 import { MessageShell, type MessageShellAuthorInfo } from "../chat/MessageShell.js";
@@ -8,6 +7,8 @@ import { Markdown } from "../../lib/markdown.js";
 import { StreamingMarkdown } from "../chat/StreamingMarkdown.js";
 import { CoauthorToolActivitySlot } from "../chat/CoauthorToolActivitySlot.js";
 import { Icons } from "../shared/icons.js";
+import { AutoTextarea } from "../shared/auto-textarea.js";
+import { MobileExpandTextarea } from "../shared/MobileExpandTextarea.js";
 import { useT } from "../../i18n/context.js";
 import { resolveEntityAvatarUrl } from "../../lib/avatar.js";
 import { useChatController } from "../../hooks/use-chat-controller.js";
@@ -202,11 +203,14 @@ export const CoauthorTurnShell = memo(function CoauthorTurnShell({
 });
 
 const CoauthorTurnPart = memo(function CoauthorTurnPart({ messageId, chatId }: { messageId: string, chatId: string }) {
+  const { t } = useT();
   const msg = useDisplayMessage(messageId);
   const isStreamingTarget = useIsStreamingTarget(messageId);
   const streamingReveal = useStreamingRevealedFor(messageId);
   const chat = useChatController();
   const isEditingThisPart = useChatStore(s => s.editingMessageId === messageId);
+  const editingDraft = useChatStore(s => s.editingDraft);
+  const isBusy = useIsSending() || useChatStore(s => s.messageActionId === messageId);
   
   if (!msg) return null;
 
@@ -220,7 +224,34 @@ const CoauthorTurnPart = memo(function CoauthorTurnPart({ messageId, chatId }: {
   return (
     <div className="flex flex-col gap-3">
       {isEditingThisPart ? (
-        <MessageEditor messageId={messageId} onCancel={chat.handleCancelEdit} />
+        <>
+          <MobileExpandTextarea
+            value={editingDraft}
+            onChange={(v) => useChatStore.getState().setEditingDraft(v)}
+            label={t("edit")}
+          >
+            <AutoTextarea
+              className="w-full resize-none overflow-hidden rounded-md border border-accent bg-s2 px-3.5 py-3 font-body text-[length:var(--mfs)] leading-[1.65] text-msg-t1 outline-none"
+              style={{ minHeight: 140 }}
+              value={editingDraft}
+              onChange={e => useChatStore.getState().setEditingDraft(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Escape') chat.handleCancelEdit(); }}
+              autoFocus
+            />
+          </MobileExpandTextarea>
+          <div className="mt-1.5 flex gap-1.5">
+            <button type="button"
+              className="cursor-pointer rounded-[5px] bg-accent px-3 py-[5px] font-ui text-xs font-medium text-on-accent transition-all duration-100 hover:brightness-110"
+              disabled={isBusy}
+              onClick={() => void chat.handleSaveMessageEdit(messageId)}
+            >{t("save_edit")}</button>
+            <button type="button"
+              className="cursor-pointer rounded-[5px] bg-s2 px-3 py-[5px] font-ui text-xs font-medium text-t2 transition-all duration-100 hover:bg-s3"
+              disabled={isBusy}
+              onClick={chat.handleCancelEdit}
+            >{t("cancel")}</button>
+          </div>
+        </>
       ) : (
         <>
           {finalReasoning && (
