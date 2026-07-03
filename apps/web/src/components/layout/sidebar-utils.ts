@@ -13,6 +13,13 @@
  * is a CSS backdrop root — see the in-component comment on charSwitcherPos).
  */
 
+import { resolveEntityAvatarUrl } from "../../lib/avatar.js";
+
+/** Resolve a character tab's avatar URL (folder avatar when migrated). Pure. */
+export function tabAvatarSrc(tab: { id: string; avatarExt: string | null; avatarAssetId: string | null; updatedAt?: string | null }): string | null {
+	return resolveEntityAvatarUrl({ kind: "characters", id: tab.id, avatarExt: tab.avatarExt, avatarAssetId: tab.avatarAssetId, updatedAt: tab.updatedAt });
+}
+
 /** Position a portaled popover below its trigger, right-aligned to it. */
 export function calcPopoverPos(triggerEl: HTMLElement): { top: number; right: number } {
 	const rect = triggerEl.getBoundingClientRect();

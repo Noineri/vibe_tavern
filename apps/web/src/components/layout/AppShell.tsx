@@ -20,6 +20,7 @@ import { useUpdateCheck } from "../../hooks/use-update-check.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
 import { Sidebar } from "./Sidebar.js";
 import { Rail } from "./Rail.js";
+import { CoauthorSidebar } from "../coauthor/CoauthorSidebar.js";
 import { TopBar } from "./TopBar.js";
 import { CoauthorTopBar } from "../coauthor/CoauthorTopBar.js";
 import { PlayMode } from "../play/PlayMode.js";
@@ -297,7 +298,9 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
   // bg-bg here — it masks --page-bg (see docs/guides/adding-a-theme.md).
   return (
     <div className="flex text-t1 font-ui" style={{ height: "100dvh", paddingBottom: "env(safe-area-inset-bottom, 0px)", overflow: "hidden" }}>
-      {isMobile ? <Rail hidden={!showRail} /> : <Sidebar />}
+      {isMobile
+        ? <Rail hidden={!showRail} />
+        : (mode === "coauthor" ? <CoauthorSidebar /> : <Sidebar />)}
       <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
         {/* Chrome is selected by navigation mode (Wave 3 / CS-18): co-author
             owns a dedicated CoauthorTopBar (no preset switcher — presets move
