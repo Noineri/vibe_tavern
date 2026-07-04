@@ -47,10 +47,15 @@ export function LocaleProvider({ children, initialLocale }: {
           setReady(true);
         }
       })
-      .catch(() => {
+      .catch((error: unknown) => {
         if (!cancelled) {
-          setStrings({});
-          syncLocaleState(locale, {});
+          // A failed locale load must NOT clear the working strings — that
+          // would flash raw keys (strings === {} → t(key) returns the key)
+          // and, worse, set ready=true so the failure is invisible. Keep the
+          // previously loaded strings so the UI falls back to the last working
+          // language instead, and log so the cause is visible in DevTools.
+          console.error(`[i18n] Failed to load locale "${locale}":`, error);
+          syncLocaleState(locale, strings);
           setReady(true);
         }
       });
