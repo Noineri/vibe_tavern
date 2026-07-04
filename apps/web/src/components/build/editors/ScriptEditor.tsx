@@ -9,6 +9,7 @@ import { MobileExpandTextarea } from "../../shared/MobileExpandTextarea.js";
 import { AutoTextarea } from "../../shared/auto-textarea.js";
 import { CodeEditor } from "../../shared/CodeEditor.js";
 import { CustomTooltip } from "../../shared/Tooltip.js";
+import { DestructiveConfirmModal } from "../../shared/destructive-confirm-modal.js";
 import { SCRIPT_TEMPLATES } from "./script-templates/index.js";
 import { cn } from "../../../lib/cn.js";
 import { useT } from "../../../i18n/context.js";
@@ -203,7 +204,6 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
   // ── Mutations (replaced with async handlers) ─────────────
   const [creatingScript, setCreatingScript] = useState(false);
   const [updatingScript, setUpdatingScript] = useState(false);
-  const [deletingScript, setDeletingScript] = useState(false);
   const [testingScript, setTestingScript] = useState(false);
   const [importingScript, setImportingScript] = useState(false);
 
@@ -225,14 +225,14 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
   };
 
   const handleDeleteScript = async (id: string) => {
-    setDeletingScript(true);
-    try {
-      await deleteScript(id);
-      await refreshScripts();
-      if (activeScriptId === confirmDeleteId) setActiveScriptIdRaw(null);
-      setConfirmDeleteId(null);
-      onBackToList?.();
-    } finally { setDeletingScript(false); }
+    // Close the confirm modal first (matches the shared-modal convention used
+    // by VersionSwitcher / GalleryGrid: close-on-confirm, fire delete in the
+    // background). No disabled flag needed — the confirm button unmounts.
+    setConfirmDeleteId(null);
+    await deleteScript(id);
+    await refreshScripts();
+    if (activeScriptId === id) setActiveScriptIdRaw(null);
+    onBackToList?.();
   };
 
   // ── Drag-reorder (P5b) ────────────────────────────────
@@ -363,19 +363,13 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
   const modals = (
     <>
       {confirmDeleteId && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60" onClick={() => setConfirmDeleteId(null)}>
-          <div className="flex w-[400px] max-w-[90vw] flex-col overflow-hidden rounded-xl border border-border bg-surface" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between border-b border-border" style={{ padding: "16px 20px" }}>
-              <span className="text-sm font-semibold text-t1">{t("delete_script_confirm")}</span>
-              <div className="flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded-[5px] text-t3 transition-all hover:bg-s2 hover:text-t1" onClick={() => setConfirmDeleteId(null)}><Ic.close /></div>
-            </div>
-            <div className="p-5 text-[13px] text-t2">{t("delete_script_msg")}</div>
-            <div className="flex justify-end gap-2 border-t border-border" style={{ padding: "12px 20px" }}>
-              <button type="button" className="h-9 cursor-pointer rounded-md border-0 bg-s3 px-4 font-ui text-xs font-medium text-t2 transition-all hover:bg-border2 hover:text-t1" onClick={() => setConfirmDeleteId(null)}>{t("cancel")}</button>
-              <button type="button" className="h-9 cursor-pointer rounded-md border-0 bg-danger px-4 font-ui text-xs font-medium text-on-danger transition-all" onClick={() => handleDeleteScript(confirmDeleteId)}>{t("delete_script_confirm")}</button>
-            </div>
-          </div>
-        </div>
+        <DestructiveConfirmModal
+          title={t("delete_script_confirm")}
+          body={t("delete_script_msg")}
+          confirmLabel={t("delete_script_confirm")}
+          onConfirm={() => void handleDeleteScript(confirmDeleteId)}
+          onCancel={() => setConfirmDeleteId(null)}
+        />
       )}
       {importOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60" onClick={() => { setImportOpen(false); setImportCode(""); }}>

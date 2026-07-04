@@ -24,6 +24,7 @@ import { Ic, Icons } from "../../shared/icons.js";
 import { cn } from "../../../lib/cn.js";
 import { resolveEntityAvatarUrl } from "../../../lib/avatar.js";
 import { CustomTooltip } from "../../shared/Tooltip.js";
+import { DestructiveConfirmModal } from "../../shared/destructive-confirm-modal.js";
 import { Checkbox } from "../../shared/Checkbox.js";
 import { SegmentedControl } from "../../shared/SegmentedControl.js";
 import { ToggleChips } from "../../shared/ToggleChips.js";
@@ -86,7 +87,6 @@ export function LoreEntryEditor({
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [confirmDeleteEntry, setConfirmDeleteEntry] = useState(false);
   useKeyDown("Escape", () => setConfirmDeleteEntry(false), { enabled: confirmDeleteEntry });
-  const [deletingEntry, setDeletingEntry] = useState(false);
 
   // characterFilter picker: null = closed; "add" = adding a new entry;
   // number = binding the ghost at that index to a real character.
@@ -140,14 +140,13 @@ export function LoreEntryEditor({
 
   // ── Удаление записи ──
   const handleDelete = async () => {
-    setDeletingEntry(true);
-    try {
-      await deleteLoreEntry(lorebookId, entryId);
-      onDeleted();
-    } finally {
-      setDeletingEntry(false);
-      setConfirmDeleteEntry(false);
-    }
+    // Close the confirm modal first (matches the shared-modal convention used
+    // by VersionSwitcher / GalleryGrid: close-on-confirm, fire delete in the
+    // background). The deletingEntry/disabled flag is no longer needed — the
+    // confirm button unmounts immediately, so there is no double-click risk.
+    setConfirmDeleteEntry(false);
+    await deleteLoreEntry(lorebookId, entryId);
+    onDeleted();
   };
 
   return (
@@ -860,51 +859,13 @@ export function LoreEntryEditor({
 
       {/* ── Модалка подтверждения удаления записи ── */}
       {confirmDeleteEntry && (
-        <div
-          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60"
-          onClick={() => setConfirmDeleteEntry(false)}
-        >
-          <div
-            className="flex w-[400px] max-w-[90vw] flex-col overflow-hidden rounded-xl border border-border bg-surface"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div
-              className="flex items-center justify-between border-b border-border"
-              style={{ padding: "16px 20px" }}
-            >
-              <span className="text-sm font-semibold text-t1">
-                {t("delete_entry_confirm")}
-              </span>
-              <div
-                className="flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded-[5px] text-t3 transition-all hover:bg-s2 hover:text-t1"
-                onClick={() => setConfirmDeleteEntry(false)}
-              >
-                <Ic.close />
-              </div>
-            </div>
-            <div className="p-5 text-[13px] text-t2">
-              {t("delete_entry_msg")}
-            </div>
-            <div
-              className="flex justify-end gap-2 border-t border-border"
-              style={{ padding: "12px 20px" }}
-            >
-              <button type="button"
-                className="h-9 cursor-pointer rounded-md border-0 bg-s3 px-4 font-ui text-xs font-medium text-t2 transition-all hover:bg-border2 hover:text-t1"
-                onClick={() => setConfirmDeleteEntry(false)}
-              >
-                {t("lore_cancel_edit")}
-              </button>
-              <button type="button"
-                className="h-9 cursor-pointer rounded-md border-0 bg-danger px-4 font-ui text-xs font-medium text-on-danger transition-all"
-                onClick={handleDelete}
-                disabled={deletingEntry}
-              >
-                {t("delete_entry_confirm")}
-              </button>
-            </div>
-          </div>
-        </div>
+        <DestructiveConfirmModal
+          title={t("delete_entry_confirm")}
+          body={t("delete_entry_msg")}
+          confirmLabel={t("delete_entry_confirm")}
+          onConfirm={() => void handleDelete()}
+          onCancel={() => setConfirmDeleteEntry(false)}
+        />
       )}
     </>
   );
