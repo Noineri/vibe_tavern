@@ -30,13 +30,22 @@ declare const VIBE_TAVERN_VERSION: string | undefined;
 const CURRENT_VERSION: string =
 	typeof VIBE_TAVERN_VERSION !== "undefined" ? VIBE_TAVERN_VERSION : "dev";
 
-const IS_COMPILED = typeof VIBE_TAVERN_VERSION !== "undefined";
+export const IS_COMPILED = typeof VIBE_TAVERN_VERSION !== "undefined";
 const IS_WINDOWS = process.platform === "win32";
 
 const REPO_OWNER = "Noineri";
 const REPO_NAME = "vibe_tavern";
-const REPO_API_URL = `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/releases/latest`;
-const REPO_HTML_URL = `https://github.com/${REPO_OWNER}/${REPO_NAME}/releases/latest`;
+const DEFAULT_API_BASE = `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}`;
+const DEFAULT_HTML_URL = `https://github.com/${REPO_OWNER}/${REPO_NAME}/releases/latest`;
+
+// TEST-ONLY OVERRIDE (do not ship with this set in production):
+// VT_UPDATE_API_BASE points the updater at a mock release API (e.g. a local
+// static server) so we can verify the full update flow against a build that
+// contains the very code under test. VT_UPDATE_HTML_URL likewise overrides
+// the "release page" URL used in error messages. Both default to GitHub.
+const API_BASE = process.env.VT_UPDATE_API_BASE ?? DEFAULT_API_BASE;
+const REPO_API_URL = `${API_BASE}/releases/latest`;
+const REPO_HTML_URL = process.env.VT_UPDATE_HTML_URL ?? DEFAULT_HTML_URL;
 
 const ARCHIVE_SUFFIX = IS_WINDOWS ? "-windows.zip" : "-linux.tar.gz";
 const SUMS_ASSET_NAME = "SHA256SUMS.txt";
@@ -58,6 +67,9 @@ interface ParsedRelease {
 	readonly archiveAsset: GithubAsset;
 	readonly sumsAsset: GithubAsset;
 }
+
+export type { ParsedRelease };
+export type { GithubAsset };
 
 export interface UpdateCheckResult {
 	readonly currentVersion: string;
@@ -226,7 +238,7 @@ export async function runUpdate(options: UpdateOptions = {}): Promise<never> {
  * Returns null if running from source (dev mode) or if the path can't be
  * resolved safely.
  */
-function resolveInstallDir(): string | null {
+export function resolveInstallDir(): string | null {
 	const execPath = process.execPath;
 	if (!execPath) return null;
 	// In a Bun-compiled binary, process.execPath is the standalone .exe / ELF.
@@ -298,17 +310,8 @@ async function promptUser(message: string): Promise<string> {
 	});
 }
 
-/** Download a URL to a local file path. Throws on non-2xx or network error. */
 async function downloadToPath(url: string, destPath: string): Promise<void> {
-	const response = await fetch(url, {
-		headers: { "User-Agent": "vibe-tavern-updater" },
-		signal: AbortSignal.timeout(300_000),
-	});
-	if (!response.ok || !response.body) {
-		throw new Error(`Download failed: HTTP ${response.status} ${response.statusText}`);
-	}
-	const buf = new Uint8Array(await response.arrayBuffer());
-	await Bun.write(destPath, buf);
+	await downloadToPathWithProgress(url, destPath);
 }
 
 /** Verify a downloaded archive against SHA256SUMS.txt contents. */
@@ -346,14 +349,13 @@ async function verifyChecksum(archivePath: string, archiveName: string, sumsCont
  * systems — using it broke Windows installs in the wild.
  */
 async function extractArchive(archivePath: string, destDir: string): Promise<void> {
-	const cmd = IS_WINDOWS
-		? [
-				"powershell",
-				"-NoProfile",
-				"-Command",
-				`Expand-Archive -LiteralPath '${archivePath}' -DestinationPath '${destDir}' -Force`,
-			]
-		: ["tar", "-xzf", archivePath, "-C", destDir];
+	// Windows 10+ ships bsdtar as System32\tar.exe — it handles .zip, .tar.gz,
+	// and other formats. It's dramatically faster than PowerShell's
+	// Expand-Archive for archives with many small files (which ours has:
+	// hundreds of web assets + tokenizer JSONs). On Linux/macOS, tar is
+	// universally available. We auto-detect compression via -x (no -z/-j flag),
+	// which works for both .zip and .tar.gz.
+	const cmd = ["tar", "-xf", archivePath, "-C", destDir];
 
 	const proc = Bun.spawn(cmd, {
 		stdout: "inherit",
@@ -361,7 +363,7 @@ async function extractArchive(archivePath: string, destDir: string): Promise<voi
 	});
 	const exitCode = await proc.exited;
 	if (exitCode !== 0) {
-		throw new Error(`Extraction failed (${cmd[0]} exited with code ${exitCode}).`);
+		throw new Error(`Extraction failed (tar exited with code ${exitCode}).`);
 	}
 }
 
@@ -375,7 +377,7 @@ async function pathExists(p: string): Promise<boolean> {
  * after the previous process exited; we ignore those failures and they'll
  * be retried on the next launch.
  */
-async function cleanupOldInstall(installDir: string): Promise<void> {
+export async function cleanupOldInstall(installDir: string): Promise<void> {
 	const oldDir = join(installDir, ".old");
 	if (!(await pathExists(oldDir))) return;
 	await rm(oldDir, { recursive: true, force: true }).catch(() => {
@@ -474,7 +476,11 @@ function isNotFound(err: unknown): boolean {
  * UNLESS the swap itself failed (which surfaces a corrupted-state error and
  * exits non-zero).
  */
-async function downloadAndSwap(release: ParsedRelease, installDir: string): Promise<string> {
+export async function downloadAndSwap(
+	release: ParsedRelease,
+	installDir: string,
+	callbacks?: UpdateProgressCallbacks,
+): Promise<string> {
 	const stagingDir = join(installDir, ".next");
 	const archivePath = join(stagingDir, `archive${ARCHIVE_SUFFIX}`);
 	const sumsPath = join(stagingDir, SUMS_ASSET_NAME);
@@ -488,21 +494,33 @@ async function downloadAndSwap(release: ParsedRelease, installDir: string): Prom
 
 	try {
 		console.log("· Downloading release archive...");
-		await downloadToPath(release.archiveAsset.browser_download_url, archivePath);
+		callbacks?.onPhase?.("downloading-archive");
+		await downloadToPathWithProgress(
+			release.archiveAsset.browser_download_url,
+			archivePath,
+			(received, total) => callbacks?.onDownloadProgress?.(release.archiveAsset.browser_download_url, received, total),
+		);
 
 		console.log("· Downloading checksums...");
-		await downloadToPath(release.sumsAsset.browser_download_url, sumsPath);
+		callbacks?.onPhase?.("downloading-sums");
+		await downloadToPathWithProgress(
+			release.sumsAsset.browser_download_url,
+			sumsPath,
+		);
 		const sumsContent = await Bun.file(sumsPath).text();
 
 		console.log("· Verifying checksum...");
+		callbacks?.onPhase?.("verifying");
 		const archiveName = basename(release.archiveAsset.browser_download_url);
 		await verifyChecksum(archivePath, archiveName, sumsContent);
 
 		console.log("· Extracting...");
+		callbacks?.onPhase?.("extracting");
 		await mkdir(extractDir, { recursive: true });
 		await extractArchive(archivePath, extractDir);
 
 		console.log("· Installing...");
+		callbacks?.onPhase?.("swapping");
 		swapStarted = true;
 		await performSwap(installDir, extractDir);
 
@@ -522,7 +540,7 @@ async function downloadAndSwap(release: ParsedRelease, installDir: string): Prom
 }
 
 /** Marks a failure that happened before the install was modified. */
-class SoftUpdateError extends Error {
+export class SoftUpdateError extends Error {
 	constructor(cause: unknown) {
 		const msg = cause instanceof Error ? cause.message : String(cause);
 		super(msg);
@@ -536,15 +554,79 @@ class SoftUpdateError extends Error {
  * UpdateCheckResult (returned by checkForUpdate) intentionally hides asset
  * URLs to keep its public shape stable.
  */
-async function fetchReleaseAssets(tag: string): Promise<ParsedRelease | null> {
+export async function fetchReleaseAssets(tag: string): Promise<ParsedRelease | null> {
 	// Hit the tag-specific endpoint for stability (the /releases/latest route
 	// could in theory return a different release if a newer one ships between
 	// the initial check and this call).
-	const url = `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/releases/tags/${encodeURIComponent(tag)}`;
+	const url = `${API_BASE}/releases/tags/${encodeURIComponent(tag)}`;
 	const response = await fetch(url, {
 		headers: { "User-Agent": "vibe-tavern-updater", Accept: "application/vnd.github+json" },
 		signal: AbortSignal.timeout(10_000),
 	});
 	if (!response.ok) return null;
 	return parseRelease(await response.json());
+}
+
+/**
+ * Progress callbacks invoked by downloadAndSwapWithProgress at each phase.
+ * `receivedBytes`/`totalBytes` are passed during download when the server
+ * reports a Content-Length header (otherwise undefined).
+ */
+export interface UpdateProgressCallbacks {
+	readonly onPhase?: (phase: UpdatePhase) => void;
+	readonly onDownloadProgress?: (url: string, receivedBytes: number | undefined, totalBytes: number | undefined) => void;
+}
+
+/** Coarse-grained phases the orchestrator surfaces to the UI. */
+export type UpdatePhase =
+	| "downloading-archive"
+	| "downloading-sums"
+	| "verifying"
+	| "extracting"
+	| "swapping";
+
+/**
+ * Download a URL to a local file path with optional progress reporting.
+ * Throws on non-2xx or network error.
+ */
+async function downloadToPathWithProgress(
+	url: string,
+	destPath: string,
+	onProgress?: (receivedBytes: number | undefined, totalBytes: number | undefined) => void,
+): Promise<void> {
+	const response = await fetch(url, {
+		headers: { "User-Agent": "vibe-tavern-updater" },
+		signal: AbortSignal.timeout(300_000),
+	});
+	if (!response.ok || !response.body) {
+		throw new Error(`Download failed: HTTP ${response.status} ${response.statusText}`);
+	}
+	const contentLengthHeader = response.headers.get("content-length");
+	const total = contentLengthHeader ? Number.parseInt(contentLengthHeader, 10) : undefined;
+
+	// Stream the response body to disk so we can report incremental progress
+	// without buffering the whole archive into memory.
+	const reader = response.body.getReader();
+	const chunks: Uint8Array[] = [];
+	let received = 0;
+	for (;;) {
+		const { done, value } = await reader.read();
+		if (done) break;
+		if (value) {
+			chunks.push(value);
+			received += value.byteLength;
+			onProgress?.(received, total);
+		}
+	}
+	// Concat into a single buffer for Bun.write (matches the original behavior
+	// of writing the full payload atomically).
+	let totalBytes = 0;
+	for (const c of chunks) totalBytes += c.byteLength;
+	const buf = new Uint8Array(totalBytes);
+	let offset = 0;
+	for (const c of chunks) {
+		buf.set(c, offset);
+		offset += c.byteLength;
+	}
+	await Bun.write(destPath, buf);
 }

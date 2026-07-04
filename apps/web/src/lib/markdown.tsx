@@ -5,6 +5,13 @@ import remarkGfm from "remark-gfm";
 interface MarkdownProps {
   text: string;
   className?: string;
+  /**
+   * `"chat"` (default) applies the chat-flavored rehype plugins (quoted-text
+   * wrapping, bracket system-banner detection) — appropriate for message
+   * bodies. `"plain"` skips them so generic Markdown (release notes, docs)
+   * renders without chat-specific transforms.
+   */
+  variant?: "chat" | "plain";
 }
 
 const SCENE_META_BLOCK_RE = /\[[^\]\n]*?:[^\]\n]*?\]/g;
@@ -431,14 +438,16 @@ function extractText(children: React.ReactNode): string {
 
 // ─── Public API ───
 
-export const Markdown: React.FC<MarkdownProps> = ({ text, className }) => {
+export const Markdown: React.FC<MarkdownProps> = ({ text, className, variant = "chat" }) => {
   if (!text) return null;
+
+  const rehypePlugins = variant === "plain" ? [] : [rehypeQuotedText, rehypeSystemBanner];
 
   return (
     <div className={className || "md-content"}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
-        rehypePlugins={[rehypeQuotedText, rehypeSystemBanner]}
+        rehypePlugins={rehypePlugins}
         components={components}
       >
         {text}

@@ -34,6 +34,7 @@ import { ShellDestructiveConfirmModal } from "../shared/destructive-confirm-moda
 import { TweaksPanel } from "../settings/popovers/TweaksPanel.js";
 import { MobileSettings } from "../settings/popovers/MobileSettings.js";
 import { MobileAccessModal } from "../modals/MobileAccessModal.js";
+import { UpdateModal } from "../modals/UpdateModal.js";
 import { AvatarPanel } from "../settings/popovers/AvatarPanel.js";
 import type { TweaksSettings } from "../../lib/local-storage.js";
 
@@ -85,6 +86,7 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
   const setIsPersonaModalOpen = useModalStore((s) => s.setIsPersonaModalOpen);
   const isCreateCharacterModalOpen = useModalStore((s) => s.isCreateCharacterModalOpen);
   const setCreateCharacterModalOpen = useModalStore((s) => s.setCreateCharacterModalOpen);
+  const setUpdateModalOpen = useModalStore((s) => s.setUpdateModalOpen);
 
   // --- Sub-hooks (self-contained) ---
   const bootstrapData = useBootstrapStore((s) => s.data);
@@ -116,7 +118,7 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
       return; // storage disabled — suppress rather than re-fire on every render
     }
     const message = t("update_available").replace("{version}", updateCheck.latestVersion);
-    const releaseUrl = updateCheck.releaseUrl;
+    const openUpdateModal = () => setUpdateModalOpen(true);
     toast.custom(
       (id) => (
         <div className="flex items-center gap-3 px-3.5 py-2.5">
@@ -124,10 +126,7 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
           <button
             type="button"
             className="cursor-pointer rounded-md bg-accent px-2.5 py-1 text-[calc(var(--ui-fs)-3px)] font-semibold text-on-accent transition-[filter] hover:brightness-110"
-            onClick={() => {
-              window.open(releaseUrl, "_blank", "noopener,noreferrer");
-              toast.dismiss(id);
-            }}
+            onClick={() => { openUpdateModal(); toast.dismiss(id); }}
           >
             {t("update_button")}
           </button>
@@ -135,7 +134,7 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
       ),
       { duration: 5000, style: { borderRadius: "var(--r)" } },
     );
-  }, [updateCheck.hasUpdate, updateCheck.latestVersion, updateCheck.releaseUrl, t]);
+  }, [updateCheck.hasUpdate, updateCheck.latestVersion, updateCheck.releaseUrl, t, setUpdateModalOpen]);
 
   const promptPresets = bootstrapData?.promptPresets ?? [];
   const [wizardVisible, setWizardVisible] = useState(false);
@@ -422,6 +421,12 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
       )}
 
       <ShellDestructiveConfirmModal />
+      <UpdateModal
+        latestVersion={updateCheck.latestVersion}
+        latestTag={updateCheck.latestTag}
+        releaseUrl={updateCheck.releaseUrl}
+        releaseNotes={updateCheck.releaseNotes}
+      />
       <SetupWizard onVisibilityChange={setWizardVisible} />
       <Toaster
         position={isMobile ? "top-center" : "bottom-right"}

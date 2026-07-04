@@ -1163,5 +1163,21 @@
   "version_delete_active": "Активную версию нельзя удалить.",
   "update_available": "Доступен Vibe Tavern {version}",
   "update_button": "Обновить",
-  "update_tooltip": "Доступна новая версия"
+  "update_tooltip": "Доступна новая версия",
+  "update_modal_release_header": "Релиз {tag}",
+  "update_modal_new_version_available": "Доступна новая версия",
+  "update_modal_no_notes": "Для этой версии не предоставлено примечаний к релизу.",
+  "update_modal_self_update_unavailable": "Внутреннее автообновление не поддерживается для этой установки. Откройте страницу релиза, чтобы скачать новую версию вручную.",
+  "update_modal_open_release_page": "Открыть страницу релиза",
+  "update_modal_update_button": "Обновить сейчас",
+  "update_modal_cancel": "Отмена",
+  "update_modal_dismiss": "Закрыть",
+  "update_modal_retry": "Повторить",
+  "update_modal_complete": "Обновлено до {version}",
+  "update_modal_restart_instructions": "Пожалуйста, перезапустите Vibe Tavern вручную, чтобы применить изменения.",
+  "update_modal_close": "Закрыть",
+  "update_modal_error_soft_title": "Обновление не удалось завершить",
+  "update_modal_error_fatal_title": "Ошибка обновления",
+  "update_modal_error_details": "Показать технические детали",
+  "update_modal_redownload": "Скачать заново с GitHub"
 }
