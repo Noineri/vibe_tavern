@@ -1169,7 +1169,7 @@
   "update_modal_no_notes": "Для этой версии не предоставлено примечаний к релизу.",
   "update_modal_self_update_unavailable": "Внутреннее автообновление не поддерживается для этой установки. Откройте страницу релиза, чтобы скачать новую версию вручную.",
   "update_modal_open_release_page": "Открыть страницу релиза",
-  "update_modal_update_button": "Обновить сейчас",
+  "update_modal_update_button": "Обновить",
   "update_modal_cancel": "Отмена",
   "update_modal_dismiss": "Закрыть",
   "update_modal_retry": "Повторить",
