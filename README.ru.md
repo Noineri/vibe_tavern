@@ -183,11 +183,11 @@ Vibe Tavern — это локальная платформа для AI-ролп�
 
 **Вариант 2 — Скрипт:**
 
-Скачай zip-архив из [Releases](https://github.com/Noineri/vibe_tavern/releases), распакуй, запусти `Start Vibe Tavern.bat`.
+Скачай zip-архив из [Releases](https://github.com/Noineri/vibe_tavern/releases), распакуй, запусти `Vibe Tavern.exe`.
 
 ### Linux
 
-Скачай tar.gz архив из [Releases](https://github.com/Noineri/vibe_tavern/releases), распакуй, запусти `Vibe_Tavern.sh`
+Скачай tar.gz архив из [Releases](https://github.com/Noineri/vibe_tavern/releases), распакуй, запусти `./vibe-tavern`
 
 Или склонируй весь репозиторий и запусти вручную:
 

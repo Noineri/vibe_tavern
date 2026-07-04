@@ -117,6 +117,14 @@ async function main() {
 			await copyFile(join(promptDir, file), join(DIST, "prompts", file));
 			console.log(`   → ${join(DIST, "prompts", file)}`);
 		}
+		// Co-Author prompt assets nest under coauthor/{modules,skills}/ — the
+		// flat readdir above skips subdirectories, so copy the whole folder.
+		const coauthorSource = join(promptDir, "coauthor");
+		const coauthorTarget = join(DIST, "prompts", "coauthor");
+		if (await exists(coauthorSource)) {
+			await cp(coauthorSource, coauthorTarget, { recursive: true });
+			console.log(`   → ${coauthorTarget}`);
+		}
 	});
 
 	// ── Step 6: Copy DB migrations ─────────────────────────────────────────
@@ -127,21 +135,6 @@ async function main() {
 			join(DIST, "drizzle"),
 			"DB migrations",
 		);
-	});
-
-	// ── Step 6b: Copy launcher script (version substituted) ──────────────
-
-	await step("Copying launcher script", async () => {
-		const wrapperSource = join(ROOT, "scripts", "dist-linux", "Vibe_Tavern.sh");
-		const wrapperTarget = join(DIST, "Vibe_Tavern.sh");
-		if (!(await exists(wrapperSource))) {
-			throw new Error(`Launcher script not found: ${wrapperSource}`);
-		}
-		let content = await Bun.file(wrapperSource).text();
-		content = content.replaceAll("__VERSION__", VERSION);
-		await Bun.write(wrapperTarget, content);
-		await chmod(wrapperTarget, 0o755);
-		console.log(`   → ${wrapperTarget}`);
 	});
 
 	// ── Step 7: Compile standalone binary ──────────────────────────────────
@@ -172,14 +165,6 @@ async function main() {
 
 		await chmod(outfile, 0o755).catch(() => undefined);
 		console.log(`   → ${outfile}`);
-	});
-
-	// ── Step 7b: Write VERSION file ────────────────────────────────────────
-
-	await step("Writing VERSION file", async () => {
-		const versionFile = join(DIST, "VERSION");
-		await Bun.write(versionFile, `${VERSION}\n`);
-		console.log(`   → ${versionFile}`);
 	});
 
 	// ── Step 8: Create tar.gz archive ──────────────────────────────────────

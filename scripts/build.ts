@@ -49,6 +49,14 @@ async function copyApiRuntimeAssets() {
     await copyFile(join(promptDir, file), target);
     promptTargets.push(target);
   }
+  // Co-Author prompt assets nest under coauthor/{modules,skills}/ — the
+  // flat readdir above skips subdirectories, so copy the whole folder.
+  const coauthorSource = join(promptDir, "coauthor");
+  const coauthorTarget = join(apiOut, "coauthor");
+  if (await exists(coauthorSource)) {
+    await cp(coauthorSource, coauthorTarget, { recursive: true });
+    promptTargets.push(coauthorTarget);
+  }
   for (const tokenizerTarget of tokenizerTargets) {
     await cp(tokenizerSource, tokenizerTarget, { recursive: true });
   }

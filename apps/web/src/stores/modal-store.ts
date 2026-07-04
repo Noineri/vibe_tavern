@@ -16,6 +16,7 @@ export interface ModalState {
   tweaksOpen: boolean;
   avatarOpen: boolean;
   mobileAccessOpen: boolean;
+  isUpdateModalOpen: boolean;
 }
 
 export interface ModalActions {
@@ -29,6 +30,7 @@ export interface ModalActions {
   setTweaksOpen: (open: boolean) => void;
   setAvatarOpen: (open: boolean) => void;
   setMobileAccessOpen: (open: boolean) => void;
+  setUpdateModalOpen: (open: boolean) => void;
 }
 
 export type ModalStore = ModalState & ModalActions;
@@ -44,6 +46,7 @@ export const useModalStore = create<ModalStore>()((set) => ({
   tweaksOpen: false,
   avatarOpen: false,
   mobileAccessOpen: false,
+  isUpdateModalOpen: false,
 
   setIsProviderModalOpen: (open) => set({ isProviderModalOpen: open }),
   setProviderModalMode: (mode) => set({ providerModalMode: mode }),
@@ -55,6 +58,7 @@ export const useModalStore = create<ModalStore>()((set) => ({
   setTweaksOpen: (open) => set({ tweaksOpen: open }),
   setAvatarOpen: (open) => set({ avatarOpen: open }),
   setMobileAccessOpen: (open) => set({ mobileAccessOpen: open }),
+  setUpdateModalOpen: (open) => set({ isUpdateModalOpen: open }),
 }));
 
 if (typeof window !== "undefined") window.__useModalStore = useModalStore;

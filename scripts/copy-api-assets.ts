@@ -32,6 +32,13 @@ await mkdir(API_OUT, { recursive: true });
 for (const file of promptFiles) {
   await copyFile(join(API_ASSETS, file), join(API_OUT, file));
 }
+// Co-Author prompt assets nest under coauthor/{modules,skills}/ — the
+// flat readdir above skips subdirectories, so copy the whole folder.
+const coauthorSource = join(API_ASSETS, "coauthor");
+const coauthorTarget = join(API_OUT, "coauthor");
+if (await exists(coauthorSource)) {
+  await cp(coauthorSource, coauthorTarget, { recursive: true });
+}
 await cp(tokenizerSource, join(API_OUT, "tokenizers"), { recursive: true });
 await cp(DB_MIGRATIONS, join(API_OUT, "drizzle"), { recursive: true });
 

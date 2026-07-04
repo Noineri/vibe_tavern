@@ -186,3 +186,66 @@ export interface ChatListItem {
 	lastMessageAt: string;
 	updatedAt: string;
 }
+
+// ─── Runtime / self-update ─────────────────────────────────────────────
+//
+// Phase enum is duplicated (by name) between the backend orchestrator and
+// this wire-type file. That is intentional: the backend keeps its runtime
+// values narrow and private to its own module, while this file owns the
+// shapes the SPA deserialises. The backend maps its internal phase into
+// RuntimeUpdateStatus.phase before serialising; if the two drift, the
+// frontend's exhaustive switch will fail to typecheck.
+
+export type RuntimeInstallKind = "standalone" | "inno-setup" | "docker" | "dev";
+
+export interface RuntimeInfo {
+	currentVersion: string;
+	canSelfUpdate: boolean;
+	installKind: RuntimeInstallKind;
+}
+
+export type RuntimeUpdatePhase =
+	| "idle"
+	| "checking"
+	| "downloading-archive"
+	| "downloading-sums"
+	| "verifying"
+	| "extracting"
+	| "swapping"
+	| "spawning-restart"
+	| "exiting"
+	| "done"
+	| "error";
+
+export type RuntimeUpdateFailureKind = "soft" | "fatal";
+
+export interface RuntimeUpdateFailure {
+	kind: RuntimeUpdateFailureKind;
+	message: string;
+	phase: RuntimeUpdatePhase;
+	stack: string | null;
+	raw: string | null;
+}
+
+export interface RuntimeDownloadProgress {
+	receivedBytes: number;
+	totalBytes: number | null;
+}
+
+export interface RuntimeUpdateStatus {
+	phase: RuntimeUpdatePhase;
+	startedAt: number | null;
+	currentVersion: string;
+	targetVersion: string | null;
+	downloadProgress: RuntimeDownloadProgress | null;
+	error: RuntimeUpdateFailure | null;
+}
+
+export interface RuntimeVersionInfo {
+	version: string;
+}
+
+export interface RuntimeTriggerResult {
+	accepted: boolean;
+	reason?: string;
+}

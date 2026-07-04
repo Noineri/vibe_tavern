@@ -177,11 +177,11 @@ Download the latest `.exe` from [Releases](https://github.com/Noineri/vibe_taver
 
 **Option 2 — Script:**
 
-Download the zip archive from [Releases](https://github.com/Noineri/vibe_tavern/releases), extract, run `Start Vibe Tavern.bat`.
+Download the zip archive from [Releases](https://github.com/Noineri/vibe_tavern/releases), extract, run `Vibe Tavern.exe`.
 
 ### Linux
 
-Download the tar.gz archive from [Releases](https://github.com/Noineri/vibe_tavern/releases), extract, run `Vibe_Tavern.sh`
+Download the tar.gz archive from [Releases](https://github.com/Noineri/vibe_tavern/releases), extract, run `./vibe-tavern`
 
 Or clone entire repo and launch manually:
 

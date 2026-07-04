@@ -27,15 +27,19 @@
  */
 
 const GITHUB_RELEASES_URL = "https://api.github.com/repos/Noineri/vibe_tavern/releases/latest";
-const CACHE_KEY = "vibe-tavern.update-check.v2";
+const CACHE_KEY = "vibe-tavern.update-check.v3";
 const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
 const FETCH_TIMEOUT_MS = 8000;
 
 export interface UpdateInfo {
 	/** Normalized latest version without leading `v` (e.g. `"1.2.3"`). */
 	latestVersion: string;
+	/** Original tag name (e.g. `"v1.2.3"`). Used as the modal header. */
+	latestTag: string;
 	/** GitHub release page URL (the `html_url` field from the API response). */
 	releaseUrl: string;
+	/** Markdown body of the release, rendered in the modal. Empty string if absent. */
+	releaseNotes: string;
 }
 
 /**
@@ -52,12 +56,15 @@ interface CachedEntry {
 
 interface RawRelease {
 	latestVersion: string;
+	latestTag: string;
 	releaseUrl: string;
+	releaseNotes: string;
 }
 
 interface GitHubReleaseResponse {
 	tag_name?: unknown;
 	html_url?: unknown;
+	body?: unknown;
 }
 
 /**
@@ -106,7 +113,9 @@ function readCache(): CachedEntry | null {
 		if (
 			typeof release !== "object" ||
 			typeof release.latestVersion !== "string" ||
-			typeof release.releaseUrl !== "string"
+			typeof release.latestTag !== "string" ||
+			typeof release.releaseUrl !== "string" ||
+			typeof release.releaseNotes !== "string"
 		) {
 			return null;
 		}
@@ -136,7 +145,12 @@ async function fetchReleaseFromGitHub(): Promise<RawRelease | null> {
 		if (!resp.ok) return null;
 		const body = (await resp.json()) as GitHubReleaseResponse;
 		if (typeof body.tag_name !== "string" || typeof body.html_url !== "string") return null;
-		return { latestVersion: body.tag_name.replace(/^v/, ""), releaseUrl: body.html_url };
+		return {
+			latestVersion: body.tag_name.replace(/^v/, ""),
+			latestTag: body.tag_name,
+			releaseUrl: body.html_url,
+			releaseNotes: typeof body.body === "string" ? body.body : "",
+		};
 	} catch {
 		return null;
 	} finally {
@@ -172,6 +186,11 @@ export async function fetchLatestRelease(currentVersion: string): Promise<Update
 function pickUpdate(release: RawRelease | null, currentVersion: string): UpdateInfo | null {
 	if (!release) return null;
 	return compareSemver(release.latestVersion, currentVersion) > 0
-		? { latestVersion: release.latestVersion, releaseUrl: release.releaseUrl }
+		? {
+			latestVersion: release.latestVersion,
+			latestTag: release.latestTag,
+			releaseUrl: release.releaseUrl,
+			releaseNotes: release.releaseNotes,
+		}
 		: null;
 }

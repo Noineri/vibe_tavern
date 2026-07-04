@@ -6,11 +6,21 @@ export interface UpdateCheckState {
 	hasUpdate: boolean;
 	/** Latest version string (without leading `v`). Null until confirmed. */
 	latestVersion: string | null;
+	/** Original tag name (with leading `v`). Used as the modal header. */
+	latestTag: string | null;
 	/** GitHub release page URL. Null until confirmed. */
 	releaseUrl: string | null;
+	/** Markdown release notes body. Empty string when GitHub returned no body. */
+	releaseNotes: string | null;
 }
 
-const IDLE: UpdateCheckState = { hasUpdate: false, latestVersion: null, releaseUrl: null };
+const IDLE: UpdateCheckState = {
+	hasUpdate: false,
+	latestVersion: null,
+	latestTag: null,
+	releaseUrl: null,
+	releaseNotes: null,
+};
 
 /**
  * Polls GitHub for a newer release of the running build. Fires once on mount;
@@ -33,7 +43,9 @@ export function useUpdateCheck(currentVersion: string): UpdateCheckState {
 			setState({
 				hasUpdate: true,
 				latestVersion: info.latestVersion,
+				latestTag: info.latestTag,
 				releaseUrl: info.releaseUrl,
+				releaseNotes: info.releaseNotes,
 			});
 		})();
 		return () => {
