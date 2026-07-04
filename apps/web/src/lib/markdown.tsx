@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -348,6 +348,66 @@ function processBannerNode(node: HastNode): void {
 
 const rehypeSystemBanner = () => (tree: HastNode) => processBannerNode(tree);
 
+// ─── CodeBlock: fenced code with copy button ───
+//
+// Wraps <pre> + <code> produced by react-markdown. Responsibilities:
+//  1. Shows a "Copy" button that writes the block's text to the clipboard.
+//  2. For `text`, `plain`, or unlabeled blocks applies white-space:pre-wrap
+//     so long lines wrap instead of scrolling horizontally.
+//     Real language blocks keep overflow-x:auto (preserves code indentation).
+
+const WRAP_LANGS = new Set(["text", "plain", "txt", ""]);
+
+function CodeBlock({ children }: { children?: React.ReactNode }) {
+  const [copied, setCopied] = useState(false);
+
+  // Extract language from the child <code> className ("language-python" → "python").
+  let lang = "";
+  React.Children.forEach(children, (child) => {
+    if (React.isValidElement(child) && child.type === "code") {
+      const cls = (child.props as Record<string, unknown>).className as string | undefined;
+      lang = cls?.replace(/^language-/, "") ?? "";
+    }
+  });
+
+  const isWrap = WRAP_LANGS.has(lang);
+
+  function handleCopy() {
+    const text = extractText(children);
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1800);
+    }).catch(() => {/* silent — clipboard unavailable */});
+  }
+
+  return (
+    <div className="md-pre-wrap">
+      <button
+        type="button"
+        className={`md-copy-btn${copied ? " md-copy-btn--ok" : ""}`}
+        onClick={handleCopy}
+        aria-label="Copy code"
+      >
+        {copied ? (
+          // Checkmark
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="2.5 8 6.5 12 13.5 4" />
+          </svg>
+        ) : (
+          // Copy icon
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round">
+            <rect x="5" y="1" width="9" height="11" rx="1.5" />
+            <path d="M2 5H1.5A1.5 1.5 0 0 0 0 6.5v8A1.5 1.5 0 0 0 1.5 16h7A1.5 1.5 0 0 0 10 14.5V14" />
+          </svg>
+        )}
+      </button>
+      <pre className={`md-pre${isWrap ? " md-pre--wrap" : ""}`}>
+        {children}
+      </pre>
+    </div>
+  );
+}
+
 // ─── Component overrides ───
 
 const components: Record<string, React.ComponentType<{ children?: React.ReactNode; className?: string; node?: unknown } & Record<string, unknown>>> = {
@@ -415,12 +475,70 @@ const components: Record<string, React.ComponentType<{ children?: React.ReactNod
     );
   },
 
-  pre({ children, ...props }) {
+  pre({ children }) {
+    return <CodeBlock>{children}</CodeBlock>;
+  },
+
+  // Headings
+  h1: ({ children, ...props }) => <h1 className="md-h1" {...props}>{children}</h1>,
+  h2: ({ children, ...props }) => <h2 className="md-h2" {...props}>{children}</h2>,
+  h3: ({ children, ...props }) => <h3 className="md-h3" {...props}>{children}</h3>,
+  h4: ({ children, ...props }) => <h4 className="md-h4" {...props}>{children}</h4>,
+  h5: ({ children, ...props }) => <h5 className="md-h5" {...props}>{children}</h5>,
+  h6: ({ children, ...props }) => <h6 className="md-h6" {...props}>{children}</h6>,
+
+  // Tables
+  table: ({ children, ...props }) => (
+    <div className="md-table-wrap">
+      <table className="md-table" {...props}>{children}</table>
+    </div>
+  ),
+  thead: ({ children, ...props }) => <thead className="md-thead" {...props}>{children}</thead>,
+  tbody: ({ children, ...props }) => <tbody className="md-tbody" {...props}>{children}</tbody>,
+  tr: ({ children, ...props }) => <tr className="md-tr" {...props}>{children}</tr>,
+  th: ({ children, ...props }) => <th className="md-th" {...props}>{children}</th>,
+  td: ({ children, ...props }) => <td className="md-td" {...props}>{children}</td>,
+
+  // Strikethrough (GFM ~~text~~)
+  del: ({ children, ...props }) => <del className="md-del" {...props}>{children}</del>,
+
+  // Links — open in new tab, guard against XSS via javascript: hrefs
+  a({ href, children, ...props }) {
+    const hrefStr = href as string | undefined;
+    const safe = hrefStr && /^(https?:|mailto:|\/|#)/.test(hrefStr) ? hrefStr : "#";
+    const isExternal = /^https?:/.test(safe);
     return (
-      <pre className="md-pre" {...props}>
+      <a
+        className="md-link"
+        href={safe}
+        {...(isExternal ? { target: "_blank", rel: "noopener noreferrer" } : {})}
+        {...props}
+      >
         {children}
-      </pre>
+      </a>
     );
+  },
+
+  // Images — constrain width so they never break layout
+  img({ src, alt, ...props }) {
+    return (
+      <img className="md-img" src={src as string | undefined} alt={(alt as string | undefined) ?? ""} {...props} />
+    );
+  },
+
+  // Task-list checkboxes (GFM - [x] / - [ ])
+  input({ type, checked, ...props }) {
+    const typeStr = type as string | undefined;
+    if (typeStr === "checkbox") {
+      return (
+        <span
+          className={`md-task-check${checked ? " md-task-check--done" : ""}`}
+          aria-hidden="true"
+          {...props}
+        />
+      );
+    }
+    return <input type={typeStr as React.HTMLInputTypeAttribute | undefined} {...props} />;
   },
 };
 

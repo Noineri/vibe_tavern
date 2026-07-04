@@ -478,13 +478,13 @@ function decodeCardText(text: string): Record<string, unknown> | null {
 		for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
 		const decoded = JSON.parse(new TextDecoder().decode(bytes));
 		if (decoded && typeof decoded === "object") return decoded;
-	} catch {}
+	} catch { /* not base64-encoded JSON — try raw JSON below */ }
 
 	// Try raw JSON
 	try {
 		const parsed = JSON.parse(text);
 		if (parsed && typeof parsed === "object") return parsed;
-	} catch {}
+	} catch { /* not valid JSON either — caller falls back to null */ }
 
 	return null;
 }

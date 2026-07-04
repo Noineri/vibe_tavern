@@ -36,6 +36,41 @@
       "when": 1782833711599,
       "tag": "0004_careful_lenny_balinger",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1782940653464,
+      "tag": "0005_new_ozymandias",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1782996772795,
+      "tag": "0006_cultured_gwen_stacy",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1783008549840,
+      "tag": "0007_tearful_roland_deschain",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1783025025478,
+      "tag": "0008_wise_mantis",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1783098198969,
+      "tag": "0009_wild_iron_lad",
+      "breakpoints": true
     }
   ]
 }

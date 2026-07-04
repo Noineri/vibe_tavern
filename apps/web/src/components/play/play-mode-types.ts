@@ -9,4 +9,6 @@ export interface MessageBlockProps {
   isLast: boolean;
   /** Role of the preceding persisted message, or null if none — drives the role-breakout separator. Hoisted from MessageList (was read via useMessageOrder() inside every block). */
   prevRole: string | null;
+  /** Optional override for author info (used by CoauthorMessageBlock to override the derived author) */
+  authorOverride?: import("../chat/MessageShell.js").MessageShellAuthorInfo;
 }

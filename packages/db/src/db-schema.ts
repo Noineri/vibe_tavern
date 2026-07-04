@@ -152,11 +152,40 @@ export const chats = sqliteTable('chats', {
   updatedAt: text('updated_at').notNull(),
   loreActivationStateJson: text('lore_activation_state_json').notNull().default('{}'),
   scriptStateJson: text('script_state_json').notNull().default('{}'),
+  // Co-author mode only (CA-13): lorebook ids the user explicitly bound to
+  // this chat as read-only editor context (the right-panel picker). NOT the
+  // RP keyword-activation set — these expand wholesale into the editor prompt
+  // via the same resolveContext path the AI assistant uses. Stored per-chat
+  // because co-author is a chat mode (a character can have several co-author
+  // chats, each with its own lore context). Folds into coauthor_config_json
+  // when CA-16 lands; narrow column for now.
+  coauthorLorebookIdsJson: text('coauthor_lorebook_ids_json').notNull().default('[]'),
+  coauthorModuleId: text('coauthor_module_id'),
 }, (table) => ({
   characterIdIdx: index('idx_chats_character_id').on(table.characterId),
   lastAccessedIdx: index('idx_chats_last_accessed').on(table.lastAccessedAt),
   modeIdx: index('idx_chats_mode').on(table.mode),
 }));
+
+// ─── coauthorModules ───────────────────────────────────────────────────────────
+// User-created Co-Author modules (CS-24). Seed modules are code-defined in the
+// registry (read-only); this table holds only user-authored modules. Merged at
+// resolve time: registry concatenates seed defs + rows from here. `basePrompt`
+// is inline text (never a file path) so the editor works on one field for both
+// built-in and user modules. `openingMessage` is seeded as the chat's first
+// assistant turn on chat birth (CS-29).
+export const coauthorModules = sqliteTable('coauthor_modules', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  description: text('description').notNull().default(''),
+  basePrompt: text('base_prompt').notNull(),
+  openingMessage: text('opening_message').notNull().default(''),
+  skillIdsJson: text('skill_ids_json').notNull().default('[]'),
+  toolSetJson: text('tool_set_json').notNull().default('{}'),
+  maxSteps: integer('max_steps').notNull().default(5),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+});
 
 // ─── lorebooks ────────────────────────────────────────────────────────────────
 
@@ -341,6 +370,8 @@ export const messages = sqliteTable('messages', {
   content: text('content').notNull(),
   state: text('state').notNull(),
   attachmentsJson: text('attachments_json'),
+  toolCallsJson: text('tool_calls_json'),
+  toolCallId: text('tool_call_id'),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
 }, (table) => ({
@@ -380,6 +411,10 @@ export const messageVariants = sqliteTable('message_variants', {
   reasoningDurationMs: integer('reasoning_duration_ms'),
   modelId: text('model_id'),
   presetId: text('preset_id').references(() => promptPresets.id, { onDelete: 'set null' }),
+  toolCallsJson: text('tool_calls_json'),
+  toolCallId: text('tool_call_id'),
+  coauthorModuleId: text('coauthor_module_id'),
+  coauthorSkillId: text('coauthor_skill_id'),
   createdAt: text('created_at').notNull(),
 }, (table) => ({
   uniqueVariant: uniqueIndex('idx_message_variants_unique').on(table.messageId, table.variantIndex),

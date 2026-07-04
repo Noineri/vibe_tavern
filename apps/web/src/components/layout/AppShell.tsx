@@ -20,7 +20,10 @@ import { useUpdateCheck } from "../../hooks/use-update-check.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
 import { Sidebar } from "./Sidebar.js";
 import { Rail } from "./Rail.js";
+import { CoauthorRail } from "../coauthor/CoauthorRail.js";
+import { CoauthorSidebar } from "../coauthor/CoauthorSidebar.js";
 import { TopBar } from "./TopBar.js";
+import { CoauthorTopBar } from "../coauthor/CoauthorTopBar.js";
 import { PlayMode } from "../play/PlayMode.js";
 import { BuildMode } from "../build/BuildMode.js";
 import { CoauthorMode } from "../coauthor/CoauthorMode.js";
@@ -35,6 +38,7 @@ import { TweaksPanel } from "../settings/popovers/TweaksPanel.js";
 import { MobileSettings } from "../settings/popovers/MobileSettings.js";
 import { MobileAccessModal } from "../modals/MobileAccessModal.js";
 import { UpdateModal } from "../modals/UpdateModal.js";
+import { CoauthorModuleModal } from "../coauthor/CoauthorModuleModal.js";
 import { AvatarPanel } from "../settings/popovers/AvatarPanel.js";
 import type { TweaksSettings } from "../../lib/local-storage.js";
 
@@ -294,15 +298,27 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
   // bg-bg here — it masks --page-bg (see docs/guides/adding-a-theme.md).
   return (
     <div className="flex text-t1 font-ui" style={{ height: "100dvh", paddingBottom: "env(safe-area-inset-bottom, 0px)", overflow: "hidden" }}>
-      {isMobile ? <Rail hidden={!showRail} /> : <Sidebar />}
+      {isMobile
+        ? (mode === "coauthor" ? <CoauthorRail hidden={!showRail} /> : <Rail hidden={!showRail} />)
+        : (mode === "coauthor" ? <CoauthorSidebar /> : <Sidebar />)}
       <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
-        <TopBar
-          railHidden={isMobile && !showRail}
-          onShowRail={() => useNavigationStore.getState().triggerRailOpen()}
-          update={updateCheck.hasUpdate && updateCheck.latestVersion && updateCheck.releaseUrl
-            ? { latestVersion: updateCheck.latestVersion, releaseUrl: updateCheck.releaseUrl }
-            : null}
-        />
+        {/* Chrome is selected by navigation mode (Wave 3 / CS-18): co-author
+            owns a dedicated CoauthorTopBar (no preset switcher — presets move
+            to the InputArea pill in Wave 4); play/build keep the shared TopBar.
+            Exactly one bar renders — never both. The central panel switch below
+            ({shellSurface}) is unchanged by this selection. */}
+        {mode === "coauthor"
+          ? <CoauthorTopBar
+              railHidden={isMobile && !showRail}
+              onShowRail={() => useNavigationStore.getState().triggerRailOpen()}
+            />
+          : <TopBar
+              railHidden={isMobile && !showRail}
+              onShowRail={() => useNavigationStore.getState().triggerRailOpen()}
+              update={updateCheck.hasUpdate && updateCheck.latestVersion && updateCheck.releaseUrl
+                ? { latestVersion: updateCheck.latestVersion, releaseUrl: updateCheck.releaseUrl }
+                : null}
+            />}
         {shellSurface}
       </main>
 
@@ -427,6 +443,7 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
         releaseUrl={updateCheck.releaseUrl}
         releaseNotes={updateCheck.releaseNotes}
       />
+      <CoauthorModuleModal />
       <SetupWizard onVisibilityChange={setWizardVisible} />
       <Toaster
         position={isMobile ? "top-center" : "bottom-right"}

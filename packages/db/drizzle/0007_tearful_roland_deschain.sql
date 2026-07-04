@@ -1,0 +1,1 @@
+ALTER TABLE `chats` ADD `coauthor_module_id` text;

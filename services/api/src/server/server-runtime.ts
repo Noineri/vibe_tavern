@@ -77,7 +77,7 @@ export async function startServerRuntime(config: ServerRuntimeConfig): Promise<v
 				alegreyaFont = await fontFile.arrayBuffer();
 				break;
 			}
-		} catch {}
+		} catch { /* font file unreadable/missing — try next candidate, fall back to the default font */ }
 	}
 
 	// Mutable handler reference — swapped to the real Hono app once init
@@ -293,7 +293,7 @@ function findProcessOnPort(port: number): string | null {
 				}
 			}
 		}
-	} catch {}
+	} catch { /* port detection is best-effort; returning null just means "do not pre-kill" */ }
 	return null;
 }
 
@@ -314,7 +314,7 @@ async function killProcessAndWaitForPort(
 				testServer.stop(true);
 				console.log(`${options.tag} Port ${options.port} freed.`);
 				return;
-			} catch {}
+			} catch { /* port still bound — keep polling until it frees or we time out */ }
 		}
 	} catch {
 		console.error(`${options.tag} Failed to kill PID ${pid}. Exiting.`);

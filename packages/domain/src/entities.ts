@@ -324,6 +324,12 @@ export interface Chat {
   toolProfileId: ToolProfileId;
   /** @deprecated Greeting selection is now stored as the selected variant on the first assistant message. */
   selectedGreetingIndex: number;
+  /** Co-author mode only (CA-13): lorebook ids the user explicitly bound to
+   *  this chat as read-only editor context (right-panel picker). NOT RP
+   *  keyword activation. Empty for RP chats. */
+  coauthorLorebookIds: string[];
+  /** Co-author mode only: the active author module ID. */
+  coauthorModuleId: string | null;
   createdAt: Timestamp;
   updatedAt: Timestamp;
 }
@@ -363,6 +369,12 @@ export interface ChatAutoSummaryConfig {
   model?: string;
 }
 
+export interface ToolCall {
+  id: string;
+  name: string;
+  args: unknown;
+}
+
 export interface Message {
   id: MessageId;
   chatId: ChatId;
@@ -374,6 +386,8 @@ export interface Message {
   state: MessageState;
   createdAt: Timestamp;
   updatedAt: Timestamp;
+  toolCalls?: ToolCall[];
+  toolCallId?: string | null;
 }
 
 /**
@@ -394,6 +408,10 @@ export interface MessageVariant {
   reasoningDurationMs?: number;
   modelId?: string | null;
   presetId?: string | null;
+  toolCalls?: ToolCall[];
+  toolCallId?: string | null;
+  coauthorModuleId?: string | null;
+  coauthorSkillId?: string | null;
   createdAt: Timestamp;
 }
 

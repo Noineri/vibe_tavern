@@ -77,6 +77,24 @@ import * as importExportModule from "./session-runtime-import-export.js";
 // lorebookModule removed — CRUD is wired directly through stores in RuntimeApiAdapter
 import { scanSillyTavernDirectory as scanST, importSillyTavernDirectory as importST } from "../../shared/st-directory-scanner.js";
 
+/**
+ * Pick the chat the app boots into. Prefers the most-recent NON-coauthor chat
+ * so a reload never drops the user into the co-author surface (F-7) — the
+ * co-author surface is entered by opening a co-author chat, not by a reload.
+ * Falls back to the overall most-recent chat only when no RP chat exists.
+ *
+ * `orderedIds` is recency-desc (chatOrder.items); `isCoauthor` maps an id to
+ * whether it belongs to a co-author chat. Pure — extracted so the F-7 default
+ * is unit-testable without spinning a full SessionRuntime.
+ */
+export function pickBootstrapChatId<T extends string>(
+	orderedIds: readonly T[],
+	isCoauthor: (id: T) => boolean,
+): T | null {
+	if (orderedIds.length === 0) return null;
+	return orderedIds.find((id) => !isCoauthor(id)) ?? orderedIds[0] ?? null;
+}
+
 
 	/**
 	 * Top-level coordinator for all session state.
@@ -172,13 +190,17 @@ import { scanSillyTavernDirectory as scanST, importSillyTavernDirectory as impor
 	// ─── Bootstrap & Snapshot ───────────────────────────────────────────
 
 	async getBootstrapState(): Promise<BootstrapState> {
-		const initialChatId = this.chatOrder.items[0] ?? null;
 		const [userChars, allChats, promptPresets, uiSettings] = await Promise.all([
 			this.stores.characters.listAll(),
 			this.stores.chats.listAll(),
 			this.stores.presets.listAll(),
 			this.stores.uiSettings.get(),
 		]);
+		// Boot into the most-recent NON-coauthor chat so a reload never drops the
+		// user into the co-author surface (F-7). Falls back to the overall
+		// most-recent chat only when no RP chat exists at all.
+		const coauthorIds = new Set(allChats.filter((c) => c.mode === 'coauthor').map((c) => c.id));
+		const initialChatId = pickBootstrapChatId(this.chatOrder.items, (id) => coauthorIds.has(id));
 		const isArmServer = process.arch.startsWith('arm') && process.platform !== 'darwin';
 		return {
 			initialChatId,
@@ -718,6 +740,11 @@ import { scanSillyTavernDirectory as scanST, importSillyTavernDirectory as impor
 				const msgs = await this.stores.messages.getMessages(branch);
 				return limit && limit > 0 ? msgs.slice(-limit) : msgs;
 			},
+			getChat: async (chatId) => {
+				const chat = await this.stores.chats.getById(chatId);
+				if (!chat) throw new Error(`Chat '${chatId}' was not found.`);
+				return chat;
+			},
 			getCharacter: async (chatId) => {
 				const chat = await this.stores.chats.getById(chatId);
 				if (!chat) throw new Error(`Chat '${chatId}' was not found.`);
@@ -726,6 +753,43 @@ import { scanSillyTavernDirectory as scanST, importSillyTavernDirectory as impor
 				return char;
 			},
 			getProfileMdText: (characterId) => this.stores.characters.getProfileMdText(characterId),
+			getCoauthorLorebookEntries: async (chatId) => {
+				// CA-13: expand the lorebooks the user EXPLICITLY bound to this chat
+				// (right-panel picker → chats.coauthorLorebookIds) into their enabled
+				// entries. NOT RP keyword activation — mirrors the AI-assistant
+				// lorebook-writer's resolveContext path: the user curates which books
+				// feed the editor. Disabled books / entries are filtered out.
+				const chat = await this.stores.chats.getById(chatId);
+				if (!chat || chat.coauthorLorebookIds.length === 0) return [];
+				const expanded = await Promise.all(
+					chat.coauthorLorebookIds.map(async (lbId) => {
+						const lb = await this.stores.lorebooks.getLorebook(lbId);
+						if (!lb?.enabled) return [];
+						const entries = await this.stores.lorebooks.listEntries(lbId);
+						return entries
+							.filter((e) => e.enabled)
+							.map((e) => ({ id: e.id, title: e.title, content: e.content }));
+					}),
+				);
+				// Dedupe by id (a book bound twice shouldn't double-inject).
+				const seen = new Set<string>();
+				const out: Array<{ id: string; title: string; content: string }> = [];
+				for (const e of expanded.flat()) {
+					if (seen.has(e.id)) continue;
+					seen.add(e.id);
+					out.push(e);
+				}
+				return out;
+			},
+			getChatSummaries: async (chatId, branchId) => {
+				return this.stores.chatSummaries.listByChatBranch(chatId, branchId);
+			},
+			getCoauthorUserModules: async () => {
+				// CS-24: user-created modules (editable). Seed modules never come from
+				// here — the registry loads those from disk. The row carries
+				// createdAt/updatedAt which the registry's toUserModule drops.
+				return this.stores.coauthorModules.list();
+			},
 		};
 	}
 
@@ -789,7 +853,7 @@ import { scanSillyTavernDirectory as scanST, importSillyTavernDirectory as impor
 			const charRecord = await this.resolver.getCharacter(chat.characterId);
 			characterName = charRecord.name;
 			subtitle = charRecord.subtitle ?? "";
-		} catch {}
+		} catch { /* chat may reference a since-deleted character; keep default name/subtitle */ }
 		const messageCount = chatState.messages.length;
 		// Recency signal for the sidebar's "recent" sort: the newest message in the
 		// active branch (chat.updatedAt reflects metadata edits, not generation).
@@ -840,6 +904,15 @@ import { scanSillyTavernDirectory as scanST, importSillyTavernDirectory as impor
 			}
 		}
 		await this.stores.chats.setSelectedGreetingIndex(chatId, 0);
+		return this.buildVariantResponse(chatId, { activeChat: true });
+	}
+
+	/** CA-13: replace the co-author chat's bound lorebook ids (right-panel
+	 *  picker). Wholesale replace, then return the fresh chat row so the
+	 *  frontend picker reflects the persisted state. No message/variant
+	 *  side-effects — this is a chat-row config update, like setChatPersona. */
+	async setCoauthorLorebookIds(chatId: ChatId, lorebookIds: string[]): Promise<VariantResponse> {
+		await this.stores.chats.setCoauthorLorebookIds(chatId, lorebookIds);
 		return this.buildVariantResponse(chatId, { activeChat: true });
 	}
 }

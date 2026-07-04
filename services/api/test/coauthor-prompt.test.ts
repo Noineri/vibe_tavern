@@ -1,7 +1,7 @@
 import { describe, test, expect, mock, beforeEach } from "bun:test";
 import type { ChatModeAssembleInput, ChatModeAssembleLoaders } from "../src/domain/chat/chat-mode-strategy.js";
 import { assembleCoauthorPrompt } from "../src/domain/chat/coauthor-prompt.js";
-import type { Character, Message as DbMessage } from "@vibe-tavern/db";
+import type { Character, Message as DbMessage, Chat as DbChat } from "@vibe-tavern/db";
 
 /**
  * Co-Author assembly characterization. Pins what the model + frontend can
@@ -13,8 +13,11 @@ import type { Character, Message as DbMessage } from "@vibe-tavern/db";
 
 function makeLoaders(overrides?: Partial<{
   character: Partial<Character>;
+  chat: Partial<DbChat>;
   profileMd: string;
   messages: DbMessage[];
+  loreEntries: Array<{ id: string; title: string; content: string }>;
+  userModules: Array<Omit<import("@vibe-tavern/api-contracts").CoauthorModule, "isBuiltIn">>;
 }>): ChatModeAssembleLoaders {
   const character: Character = {
     id: "char_test",
@@ -46,9 +49,13 @@ function makeLoaders(overrides?: Partial<{
   } as unknown as Character;
 
   return {
+    getChat: async () => (overrides?.chat ?? { id: "chat_test", coauthorModuleId: null }) as any,
     getMessages: async () => overrides?.messages ?? [],
     getCharacter: async () => character,
     getProfileMdText: async () => overrides?.profileMd ?? "---\nname: Test\n---\n# PERSONALITY\nA test character.\n",
+    getCoauthorLorebookEntries: async () => overrides?.loreEntries ?? [],
+    getChatSummaries: async () => [],
+    getCoauthorUserModules: async () => overrides?.userModules ?? [],
   };
 }
 
@@ -108,33 +115,165 @@ describe("assembleCoauthorPrompt", () => {
     expect(system).toContain("ALT 1");
   });
 
-  test("autodetects personality-deepen skill from the latest user message", async () => {
-    const loaders = makeLoaders({
-      messages: [{ role: "user", content: "this personality is too flat and generic" } as never],
-    });
-    const result = await assembleCoauthorPrompt(makeInput(loaders));
-    const system = (result.prompt.finalPayload as { messages: Array<{ content: string }> }).messages[0].content;
-    // Skill overlay text from personality-deepen.md is injected under "# Active skill".
-    expect(system).toContain("# Active skill");
-    expect(system).toContain("Personality Deepen");
-  });
-
-  test("falls back to profile-overview skill when no keyword matches", async () => {
+  test("loads the general-writing skill", async () => {
     const loaders = makeLoaders({
       messages: [{ role: "user", content: "hello" } as never],
     });
     const result = await assembleCoauthorPrompt(makeInput(loaders));
     const system = (result.prompt.finalPayload as { messages: Array<{ content: string }> }).messages[0].content;
-    expect(system).toContain("Profile Overview");
+    expect(system).toContain("# Active skill");
+    expect(system).toContain("General Writing");
   });
 
-  test("promptTraceDraft carries coauthor preset name and empty RP layers", async () => {
+  test("promptTraceDraft carries coauthor preset name and no RP-pipeline layers", async () => {
     const loaders = makeLoaders();
     const result = await assembleCoauthorPrompt(makeInput(loaders, { branchId: "br_1" as never }));
     expect(result.promptTraceDraft.presetName).toBe("(coauthor)");
     expect(result.promptTraceDraft.presetId).toBeNull();
-    expect(result.promptTraceDraft.assembledLayers).toEqual([]);
     expect(result.promptTraceDraft.activatedLoreEntries).toEqual([]);
     expect(result.promptTraceDraft.branchId).toBe("br_1");
+    // CS-27 (context counter): the trace now carries the coauthor pipeline's
+    // own layers so the counter UI can break the context down. These are
+    // coauthor-specific sourceTypes (coauthor_profile, chat_history, ...) —
+    // the RP prompt-pipeline layers (promptPreset / character*) must NOT
+    // leak in, since co-author never runs the RP assembler. That is the
+    // "empty RP layers" invariant the original test name expressed, updated
+    // for the CS-27 reality that the trace is no longer empty.
+    const sourceTypes = result.promptTraceDraft.assembledLayers.map((l) => l.sourceType);
+    expect(sourceTypes).toContain("coauthor_profile");
+    expect(sourceTypes).toContain("chat_history");
+    const rpLayers = sourceTypes.filter((st) => st === "promptPreset" || st.startsWith("character"));
+    expect(rpLayers).toEqual([]);
+  });
+
+  test("CA-13: bound lorebook entries render as read-only reference in the system message", async () => {
+    const entryA = {
+      id: "lore_a",
+      title: "The Shattered Crown",
+      content: "An ancient crown broken into seven shards, each pulsing with cold light.",
+    };
+    const entryB = {
+      id: "lore_b",
+      title: "",
+      content: "A constant world fact.",
+    };
+    const loaders = makeLoaders({ loreEntries: [entryA, entryB] });
+
+    const result = await assembleCoauthorPrompt(makeInput(loaders));
+    const system = (result.prompt.finalPayload as { messages: Array<{ content: string }> }).messages[0].content;
+
+    // Lore renders as a read-only reference section after the current card.
+    expect(system).toContain("# Lorebook context (read-only reference");
+    expect(system).toContain("The Shattered Crown");
+    expect(system).toContain("cold light");
+    // An untitled entry falls back to a placeholder header, content still present.
+    expect(system).toContain("(untitled)");
+    expect(system).toContain("A constant world fact.");
+
+    // Co-author does NOT run the activation engine — trace lore fields stay
+    // empty (no fabricated activation reasons for user-picked entries).
+    expect(result.prompt.activatedLoreEntries).toEqual([]);
+    expect(result.prompt.activatedLoreDetail).toEqual([]);
+    expect(result.promptTraceDraft.activatedLoreEntries).toEqual([]);
+  });
+
+  test("CA-13: with no lorebooks bound the prompt carries no lore section (unchanged)", async () => {
+    const loaders = makeLoaders({ loreEntries: [] });
+    const result = await assembleCoauthorPrompt(makeInput(loaders));
+    const system = (result.prompt.finalPayload as { messages: Array<{ content: string }> }).messages[0].content;
+    expect(system).not.toContain("Lorebook context");
+    expect(result.prompt.activatedLoreEntries).toEqual([]);
+    expect(result.promptTraceDraft.activatedLoreEntries).toEqual([]);
+  });
+  test("CS-0d: honours excludeMessageIds in prompt assembly", async () => {
+    const loaders = makeLoaders({
+      messages: [
+        { id: "msg_1", role: "user", content: "hello" } as never,
+        { id: "msg_2", role: "assistant", content: "on it" } as never,
+      ],
+    });
+    const result = await assembleCoauthorPrompt(makeInput(loaders, { excludeMessageIds: ["msg_2"] }));
+    const messages = (result.prompt.finalPayload as { messages: Array<{ role: string; content: string }> }).messages;
+
+    // system + user, msg_2 is excluded
+    expect(messages.length).toBe(2);
+    expect(messages[1]).toEqual({ role: "user", content: "hello" });
+  });
+
+  test("CS-4: includes tool messages and assistant toolCalls in history assembly", async () => {
+    const loaders = makeLoaders({
+      messages: [
+        { id: "msg_1", role: "user", content: "rewrite it" } as never,
+        { 
+          id: "msg_2", 
+          role: "assistant", 
+          content: "calling tool",
+          toolCalls: [{ id: "call_1", name: "edit_personality", args: { content: "Bold." } }]
+        } as never,
+        { id: "msg_3", role: "tool", toolCallId: "call_1", content: "Success" } as never,
+      ],
+    });
+    const result = await assembleCoauthorPrompt(makeInput(loaders));
+    const messages = (result.prompt.finalPayload as { messages: Array<Record<string, unknown>> }).messages;
+
+    expect(messages.length).toBe(4); // system + user + assistant + tool
+
+    expect(messages[2].role).toBe("assistant");
+    // SDK v6 ToolCallPart uses `input` (not `args`) for the parsed arguments.
+    expect(messages[2].toolCalls).toEqual([{
+      type: "tool-call",
+      toolCallId: "call_1",
+      toolName: "edit_personality",
+      input: { content: "Bold." }
+    }]);
+
+    expect(messages[3].role).toBe("tool");
+    // SDK v6 ToolResultPart.output is a discriminated union; a string result is
+    // wrapped as `{ type: "text", value }` (not a bare `result` field).
+    // The tool NAME is resolved from the owning assistant message's toolCalls
+    // (the DB `role:"tool"` row stores only the toolCallId). The Google
+    // provider maps toolName → function_response.name, which Gemini requires
+    // non-empty — an unresolved name surfaces as a 400
+    // `function_response.name: Name cannot be empty` on the next turn.
+    expect(messages[3].content).toEqual([{
+      type: "tool-result",
+      toolCallId: "call_1",
+      toolName: "edit_personality",
+      output: { type: "text", value: "Success" }
+    }]);
+  });
+
+  test("CS-5: applies token compaction and preserves tool-call pairs", async () => {
+    // Inject a fake token counter for this test so estimateTokens doesn't return 0
+    const { setTokenCountFn } = await import("@vibe-tavern/prompt-pipeline");
+    setTokenCountFn((text: string) => text.length);
+
+    const loaders = makeLoaders({
+      messages: [
+        { id: "msg_0", role: "user", content: "very old message ".repeat(2000) } as never,
+        { id: "msg_1", role: "user", content: "rewrite it" } as never,
+        { 
+          id: "msg_2", 
+          role: "assistant", 
+          content: "calling tool",
+          toolCalls: [{ id: "call_1", name: "edit_personality", args: { content: "Bold." } }]
+        } as never,
+        { id: "msg_3", role: "tool", toolCallId: "call_1", content: "Success" } as never,
+      ],
+    });
+    // System prompt size + recent messages ~ some characters. 
+    // Budget 15000 allows system + msg_1,2,3 but drops msg_0 (which is ~34000 chars)
+    const result = await assembleCoauthorPrompt(makeInput(loaders, { contextBudget: 15000 }));
+    const messages = (result.prompt.finalPayload as { messages: Array<{ role: string; content: unknown }> }).messages;
+    
+    // We expect system + msg_1 + msg_2 + msg_3
+    expect(messages.length).toBe(4);
+    expect(messages[1].content).toBe("rewrite it");
+    expect(messages[2].role).toBe("assistant");
+    expect(messages[3].role).toBe("tool");
+
+    expect(result.prompt.tokenAccounting?.recentHistory).toBe(3);
+    expect(result.promptTraceDraft.compactionSummary).toBeDefined();
+    expect(result.promptTraceDraft.compactionSummary).toContain("Kept 3 of 4 recent messages");
   });
 });

@@ -22,6 +22,8 @@ export interface PreparedLiveTurn {
   tools?: ToolSet;
   /** Max tool-calling rounds (only meaningful when `tools` is set). */
   maxSteps?: number;
+  coauthorModuleId?: string;
+  coauthorSkillId?: string;
   snapshot: SessionSnapshot;
   userMessage?: {
     id: MessageId;
@@ -32,6 +34,8 @@ export interface PreparedLiveTurn {
 interface PendingPromptTraceTurn {
   branchId: ChatBranchId;
   draft: PromptTraceDraft;
+  coauthorModuleId?: string | null;
+  coauthorSkillId?: string | null;
 }
 
 export interface ChatRuntimeDeps {
@@ -104,18 +108,22 @@ export class ChatRuntime {
     } catch (err) {
       try {
         await this.deps.chatApp.deleteMessage(userMessage.id);
-      } catch {}
+      } catch { /* best-effort rollback of the just-inserted user message; the original assemble error is rethrown below */ }
       throw err;
     }
     this.pendingPromptTraceByChat.set(chatId, {
       branchId: assembled.branchId,
       draft: assembled.promptTraceDraft,
+      coauthorModuleId: assembled.coauthorModuleId,
+      coauthorSkillId: assembled.coauthorSkillId,
     });
 
     return {
       prompt: assembled.prompt,
       tools: assembled.tools,
       maxSteps: assembled.maxSteps,
+      coauthorModuleId: assembled.coauthorModuleId,
+      coauthorSkillId: assembled.coauthorSkillId,
       snapshot: await getSnapshot(chatId),
       userMessage: {
         id: userMessage.id,
@@ -140,24 +148,73 @@ export class ChatRuntime {
     chatId: ChatId,
     content: string,
     latencyMs: number,
-    reasoningData?: { reasoning?: string; reasoningDurationMs?: number },
+    reasoningData?: {
+      reasoning?: string;
+      reasoningDurationMs?: number;
+      toolCalls?: import("../../infrastructure/ai/provider-execution-types.js").ExtractedToolCall[];
+      toolResults?: import("../../infrastructure/ai/provider-execution-types.js").ExtractedToolResult[];
+    },
   ): Promise<MessageResponse> {
     const { chats, messages, traces, buildMessageResponse } = this.deps;
     const chat = (await chats.getById(chatId))!;
 
     const pending = this.consumePendingPromptTrace(chatId, chat.activeBranchId as ChatBranchId);
 
-    const assistantMessage = await messages.addMessage({
-      chatId,
-      branchId: chat.activeBranchId,
-      role: "assistant",
-      authorType: "assistant",
-      content,
-      modelId: pending?.draft.model ?? null,
-      presetId: pending?.draft.presetId ?? null,
-      reasoning: reasoningData?.reasoning,
-      reasoningDurationMs: reasoningData?.reasoningDurationMs,
-    });
+    let assistantMessage: import("@vibe-tavern/db").Message;
+
+    if (reasoningData?.toolCalls && reasoningData.toolCalls.length > 0) {
+      await messages.addMessage({
+        chatId,
+        branchId: chat.activeBranchId,
+        role: "assistant",
+        authorType: "assistant",
+        content: "",
+        modelId: pending?.draft.model ?? null,
+        presetId: pending?.draft.presetId ?? null,
+        reasoning: reasoningData.reasoning,
+        reasoningDurationMs: reasoningData.reasoningDurationMs,
+        toolCallsJson: JSON.stringify(reasoningData.toolCalls.map(tc => ({ id: tc.toolCallId, name: tc.toolName, args: tc.args }))),
+      });
+
+      if (reasoningData.toolResults) {
+        for (const tr of reasoningData.toolResults) {
+          await messages.addMessage({
+            chatId,
+            branchId: chat.activeBranchId,
+            role: "tool",
+            authorType: "tool",
+            content: typeof tr.result === "string" ? tr.result : JSON.stringify(tr.result),
+            toolCallId: tr.toolCallId,
+          });
+        }
+      }
+
+      assistantMessage = await messages.addMessage({
+        chatId,
+        branchId: chat.activeBranchId,
+        role: "assistant",
+        authorType: "assistant",
+        content,
+        modelId: pending?.draft.model ?? null,
+        presetId: pending?.draft.presetId ?? null,
+        coauthorModuleId: pending?.coauthorModuleId ?? null,
+        coauthorSkillId: pending?.coauthorSkillId ?? null,
+      });
+    } else {
+      assistantMessage = await messages.addMessage({
+        chatId,
+        branchId: chat.activeBranchId,
+        role: "assistant",
+        authorType: "assistant",
+        content,
+        modelId: pending?.draft.model ?? null,
+        presetId: pending?.draft.presetId ?? null,
+        coauthorModuleId: pending?.coauthorModuleId ?? null,
+        coauthorSkillId: pending?.coauthorSkillId ?? null,
+        reasoning: reasoningData?.reasoning,
+        reasoningDurationMs: reasoningData?.reasoningDurationMs,
+      });
+    }
 
     if (pending) {
       await traces.saveTrace({
@@ -197,7 +254,16 @@ export class ChatRuntime {
   async appendMessageVariant(
     chatId: ChatId,
     messageId: MessageId,
-    input: { content: string; finishReason?: string | null; latencyMs: number; reasoning?: string; reasoningDurationMs?: number; presetId?: PromptPresetId | null },
+    input: {
+      content: string;
+      finishReason?: string | null;
+      latencyMs: number;
+      reasoning?: string;
+      reasoningDurationMs?: number;
+      presetId?: PromptPresetId | null;
+      toolCalls?: import("../../infrastructure/ai/provider-execution-types.js").ExtractedToolCall[];
+      toolResults?: import("../../infrastructure/ai/provider-execution-types.js").ExtractedToolResult[];
+    },
   ): Promise<MessageResponse> {
     const { chats, messages, traces, buildMessageResponse } = this.deps;
     const trimmed = input.content.trim();
@@ -216,6 +282,10 @@ export class ChatRuntime {
       input.reasoningDurationMs,
       pending?.draft.model ?? null,
       input.presetId ?? pending?.draft.presetId ?? null,
+      input.toolCalls && input.toolCalls.length > 0 ? JSON.stringify(input.toolCalls.map(tc => ({ id: tc.toolCallId, name: tc.toolName, args: tc.args }))) : null,
+      null,
+      pending?.coauthorModuleId ?? null,
+      pending?.coauthorSkillId ?? null,
     );
 
     if (pending) {
@@ -328,7 +398,7 @@ export class ChatRuntime {
   async assemblePromptPreview(
     chatId: ChatId,
     options: { excludeMessageId?: MessageId; model: string; contextBudget?: number | null; responseReserve?: number; presetId?: PromptPresetId },
-  ): Promise<AssemblePromptResponse & { tools?: ToolSet; maxSteps?: number }> {
+  ): Promise<AssemblePromptResponse & { tools?: ToolSet; maxSteps?: number; coauthorModuleId?: string; coauthorSkillId?: string }> {
     const { assemblePrompt } = this.deps;
     const assembled = await assemblePrompt(chatId, undefined, {
       excludeMessageIds: options.excludeMessageId ? [options.excludeMessageId] : [],
@@ -343,7 +413,7 @@ export class ChatRuntime {
         draft: assembled.promptTraceDraft,
       });
     }
-    return { ...assembled.prompt, tools: assembled.tools, maxSteps: assembled.maxSteps };
+    return { ...assembled.prompt, tools: assembled.tools, maxSteps: assembled.maxSteps, coauthorModuleId: assembled.coauthorModuleId, coauthorSkillId: assembled.coauthorSkillId };
   }
 
   /** Removes and returns the pending prompt trace for a chat/branch. Returns null if the branch doesn't match. */

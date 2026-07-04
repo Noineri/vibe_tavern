@@ -1,7 +1,7 @@
 import { createDb, type AppDb } from './db-connection.js';
 import { ContentStore } from './content-store.js';
 import { createFileStore } from './file-store.js';
-import { CharacterStore, PersonaStore, ProviderStore, ChatStore, ChatSummaryStore, PresetStore, UiSettingsStore, LorebookStore, ScriptStore, CharacterAssetStore, MessageStore, PromptTraceStore, VersionStore } from './stores/index.js';
+import { CharacterStore, PersonaStore, ProviderStore, ChatStore, ChatSummaryStore, PresetStore, UiSettingsStore, LorebookStore, ScriptStore, CharacterAssetStore, MessageStore, PromptTraceStore, VersionStore, CoauthorModuleStore } from './stores/index.js';
 
 export interface StoreContainer {
   db: AppDb;
@@ -19,6 +19,7 @@ export interface StoreContainer {
   lorebooks: LorebookStore;
   scripts: ScriptStore;
   characterAssets: CharacterAssetStore;
+  coauthorModules: CoauthorModuleStore;
 }
 
 export async function createStoreContainer(dbPath: string, dataDir?: string): Promise<StoreContainer> {
@@ -45,6 +46,7 @@ export async function createStoreContainer(dbPath: string, dataDir?: string): Pr
     lorebooks: new LorebookStore(db, { content }),
     scripts: new ScriptStore(db, { content }),
     characterAssets: new CharacterAssetStore(db),
+    coauthorModules: new CoauthorModuleStore(db),
   };
 }
 

@@ -1,10 +1,10 @@
 import { brandId, EventBus } from "@vibe-tavern/domain";
-import type { ChatId, MessageId, PromptPresetId } from "@vibe-tavern/domain";
+import type { ChatId, MessageId, PromptPresetId, Attachment } from "@vibe-tavern/domain";
 import type { ChatRuntime } from "../../runtime/session/session-runtime-chat.js";
 import type { SessionSnapshot, MessageResponse } from "../../api/contract/session-types.js";
 import type { ProviderOrchestrator } from "../providers/provider-orchestrator.js";
 import type { StoredProviderProfileRecord } from "@vibe-tavern/domain";
-import type { ProviderExecutionInput, ProviderStreamResult } from "../../infrastructure/ai/provider-execution-types.js";
+import type { ProviderExecutionInput, ProviderStreamResult, ExtractedToolCall, ExtractedToolResult, CachedModelEntry } from "../../infrastructure/ai/provider-execution-types.js";
 import type { ChatModeStrategy } from "./chat-mode-strategy.js";
 import { nonstreamingProviderExecute } from "../../infrastructure/ai/nonstreaming-provider-executor.js";
 import { streamProviderExecutor } from "../../infrastructure/ai/stream-provider-executor.js";
@@ -39,12 +39,12 @@ export class LiveChatOrchestrator {
   async sendMessage(input: {
     chatId: string;
     content: string;
-    attachments?: any[];
+    attachments?: Attachment[];
     profile: StoredProviderProfileRecord;
     model: string;
     prefill?: string;
     signal?: AbortSignal;
-    visionAssets?: { cachedModels: any[]; visionModel: string | null; assetLoader: (assetId: string) => Promise<Buffer | null>; visionDescribePrompt?: string };
+    visionAssets?: { cachedModels: CachedModelEntry[]; visionModel: string | null; assetLoader: (assetId: string) => Promise<Buffer | null>; visionDescribePrompt?: string };
   }): Promise<{
     preparedMessageCount: number;
     promptMessageCount: number;
@@ -65,6 +65,8 @@ export class LiveChatOrchestrator {
     const prefill = prepared.prompt.prefill ?? undefined;
     let reply: string;
     let reasoning: string | undefined;
+    let toolCalls: ExtractedToolCall[] | undefined;
+    let toolResults: ExtractedToolResult[] | undefined;
     try {
       // Non-streaming path: generateText() awaits the full reply, returned as JSON.
       // The streaming equivalent (SSE text/reasoning deltas) lives in sendMessageStream() / startStream().
@@ -88,6 +90,8 @@ export class LiveChatOrchestrator {
       });
       reply = ensurePrefillInResponse(result.text, prefill);
       reasoning = result.reasoning;
+      toolCalls = result.toolCalls;
+      toolResults = result.toolResults;
       if (result.sentConfig) {
         this.chatRuntime.patchPendingTrace(brandId<ChatId>(input.chatId), { sentConfig: result.sentConfig });
       }
@@ -105,6 +109,8 @@ export class LiveChatOrchestrator {
     logSendDebug("live.send.provider.done", { chatId: input.chatId, latencyMs, replyLength: reply.length });
     const snapshot = await this.chatRuntime.appendAssistantReply(brandId<ChatId>(input.chatId), reply, latencyMs, {
       reasoning,
+      toolCalls,
+      toolResults,
     });
     logSendDebug("live.send.append.done", { chatId: input.chatId, messageCount: snapshot.messages.length });
     this.notifyAssistantAppended(input.chatId, snapshot.messages[snapshot.messages.length - 1]?.id ?? "");
@@ -140,6 +146,8 @@ export class LiveChatOrchestrator {
     const startedAt = Date.now();
     let reply: string;
     let reasoning: string | undefined;
+    let toolCalls: ExtractedToolCall[] | undefined;
+    let toolResults: ExtractedToolResult[] | undefined;
     try {
       const result = await nonstreamingProviderExecute({
         profile: provider.profile,
@@ -152,6 +160,8 @@ export class LiveChatOrchestrator {
       });
       reply = ensurePrefillInResponse(result.text, prefill);
       reasoning = result.reasoning;
+      toolCalls = result.toolCalls;
+      toolResults = result.toolResults;
       if (result.sentConfig) {
         this.chatRuntime.patchPendingTrace(brandId<ChatId>(input.chatId), { sentConfig: result.sentConfig });
       }
@@ -169,6 +179,8 @@ export class LiveChatOrchestrator {
     logSendDebug("live.generateReply.done", { chatId: input.chatId, latencyMs, replyLength: reply.length });
     const snapshot = await this.chatRuntime.appendAssistantReply(brandId<ChatId>(input.chatId), reply, latencyMs, {
       reasoning,
+      toolCalls,
+      toolResults,
     });
     this.notifyAssistantAppended(input.chatId, snapshot.messages[snapshot.messages.length - 1]?.id ?? "");
     return {
@@ -218,6 +230,8 @@ export class LiveChatOrchestrator {
     logSendDebug("live.regenerate.provider.start", { chatId: input.chatId, providerId: provider.profile.id, model: provider.model });
     let reply: string;
     let reasoning: string | undefined;
+    let toolCalls: ExtractedToolCall[] | undefined;
+    let toolResults: ExtractedToolResult[] | undefined;
     try {
       const result = await nonstreamingProviderExecute({
         profile: provider.profile,
@@ -230,6 +244,8 @@ export class LiveChatOrchestrator {
       });
       reply = ensurePrefillInResponse(result.text, prefill);
       reasoning = result.reasoning;
+      toolCalls = result.toolCalls;
+      toolResults = result.toolResults;
       if (result.sentConfig) {
         this.chatRuntime.patchPendingTrace(brandId<ChatId>(input.chatId), { sentConfig: result.sentConfig });
       }
@@ -250,6 +266,8 @@ export class LiveChatOrchestrator {
       latencyMs,
       reasoning,
       presetId: input.presetId,
+      toolCalls,
+      toolResults,
     });
     logSendDebug("live.regenerate.append.done", { chatId: input.chatId, messageId: input.messageId, messageCount: snapshot.messages.length });
 
@@ -266,12 +284,12 @@ export class LiveChatOrchestrator {
   async *sendMessageStream(input: {
     chatId: string;
     content: string;
-    attachments?: any[];
+    attachments?: Attachment[];
     profile: StoredProviderProfileRecord;
     model: string;
     prefill?: string;
     signal?: AbortSignal;
-    visionAssets?: { cachedModels: any[]; visionModel: string | null; assetLoader: (assetId: string) => Promise<Buffer | null>; visionDescribePrompt?: string };
+    visionAssets?: { cachedModels: CachedModelEntry[]; visionModel: string | null; assetLoader: (assetId: string) => Promise<Buffer | null>; visionDescribePrompt?: string };
   }): AsyncGenerator<{ event: string; data: string }> {
     const provider = await this.resolveProvider(input);
     logSendDebug("live.send-stream.prepare.start", { chatId: input.chatId, model: provider.model });
@@ -283,8 +301,18 @@ export class LiveChatOrchestrator {
           await this.chatApp.updateAttachmentDescriptions(prepared.userMessage!.id, input.attachments!, descriptions);
         }
       : undefined;
-    const { streamResult, startedAt } = await this.startStream({ ...input, ...provider, onAttachmentDescriptions }, prepared.prompt);
+    const { streamResult, startedAt } = await this.startStream({ ...input, ...provider, onAttachmentDescriptions, tools: prepared.tools, maxSteps: prepared.maxSteps }, prepared.prompt);
     if (streamResult.sentConfig) { this.chatRuntime.patchPendingTrace(brandId<ChatId>(input.chatId), { sentConfig: streamResult.sentConfig }); }
+
+    if (prepared.coauthorModuleId) {
+      yield {
+        event: "coauthor-module",
+        data: JSON.stringify({
+          moduleId: prepared.coauthorModuleId,
+          skillId: prepared.coauthorSkillId,
+        }),
+      };
+    }
 
     yield* this.drainStream({
       chatId: input.chatId,
@@ -302,10 +330,12 @@ export class LiveChatOrchestrator {
           this.notifyAssistantAppended(input.chatId, "");
         }
       },
-      onFinal: async (text, reasoning, reasoningDurationMs, latencyMs) => {
+      onFinal: async (text, reasoning, reasoningDurationMs, latencyMs, toolCalls, toolResults) => {
         const snapshot = await this.chatRuntime.appendAssistantReply(brandId<ChatId>(input.chatId), text, latencyMs, {
           reasoning,
           reasoningDurationMs,
+          toolCalls,
+          toolResults,
         });
         logSendDebug("live.send-stream.done", { chatId: input.chatId, latencyMs, replyLength: text.length });
         this.notifyAssistantAppended(input.chatId, snapshot.messages[snapshot.messages.length - 1]?.id ?? "");
@@ -333,6 +363,16 @@ export class LiveChatOrchestrator {
     const { streamResult, startedAt } = await this.startStream({ ...input, ...provider, tools: prompt.tools, maxSteps: prompt.maxSteps }, prompt);
     if (streamResult.sentConfig) { this.chatRuntime.patchPendingTrace(brandId<ChatId>(input.chatId), { sentConfig: streamResult.sentConfig }); }
 
+    if (prompt.coauthorModuleId) {
+      yield {
+        event: "coauthor-module",
+        data: JSON.stringify({
+          moduleId: prompt.coauthorModuleId,
+          skillId: prompt.coauthorSkillId,
+        }),
+      };
+    }
+
     yield* this.drainStream({
       chatId: input.chatId,
       streamResult,
@@ -349,10 +389,12 @@ export class LiveChatOrchestrator {
           this.notifyAssistantAppended(input.chatId, "");
         }
       },
-      onFinal: async (text, reasoning, reasoningDurationMs, latencyMs) => {
+      onFinal: async (text, reasoning, reasoningDurationMs, latencyMs, toolCalls, toolResults) => {
         const snapshot = await this.chatRuntime.appendAssistantReply(brandId<ChatId>(input.chatId), text, latencyMs, {
           reasoning,
           reasoningDurationMs,
+          toolCalls,
+          toolResults,
         });
         logSendDebug("live.generateReply-stream.done", { chatId: input.chatId, latencyMs, replyLength: text.length });
         this.notifyAssistantAppended(input.chatId, snapshot.messages[snapshot.messages.length - 1]?.id ?? "");
@@ -385,6 +427,16 @@ export class LiveChatOrchestrator {
     const { streamResult, startedAt } = await this.startStream({ ...input, ...provider, tools: prompt.tools, maxSteps: prompt.maxSteps }, prompt);
     if (streamResult.sentConfig) { this.chatRuntime.patchPendingTrace(brandId<ChatId>(input.chatId), { sentConfig: streamResult.sentConfig }); }
 
+    if (prompt.coauthorModuleId) {
+      yield {
+        event: "coauthor-module",
+        data: JSON.stringify({
+          moduleId: prompt.coauthorModuleId,
+          skillId: prompt.coauthorSkillId,
+        }),
+      };
+    }
+
     yield* this.drainStream({
       chatId: input.chatId,
       streamResult,
@@ -404,13 +456,15 @@ export class LiveChatOrchestrator {
           });
         }
       },
-      onFinal: async (text, reasoning, reasoningDurationMs, latencyMs) => {
+      onFinal: async (text, reasoning, reasoningDurationMs, latencyMs, toolCalls, toolResults) => {
         const snapshot = await this.chatRuntime.appendMessageVariant(brandId<ChatId>(input.chatId), brandId<MessageId>(input.messageId), {
           content: text,
           latencyMs,
           reasoning,
           reasoningDurationMs,
           presetId: input.presetId,
+          toolCalls,
+          toolResults,
         });
         logSendDebug("live.regenerate-stream.done", { chatId: input.chatId, messageId: input.messageId, latencyMs });
         return snapshot;
@@ -453,7 +507,7 @@ export class LiveChatOrchestrator {
   }
 
   private async startStream(
-    input: { chatId: string; profile: StoredProviderProfileRecord; model: string; signal?: AbortSignal; prefill?: string; tools?: import("ai").ToolSet; maxSteps?: number; visionAssets?: { cachedModels: any[]; visionModel: string | null; assetLoader: (assetId: string) => Promise<Buffer | null>; visionDescribePrompt?: string }; onAttachmentDescriptions?: ProviderExecutionInput["onAttachmentDescriptions"] },
+    input: { chatId: string; profile: StoredProviderProfileRecord; model: string; signal?: AbortSignal; prefill?: string; tools?: import("ai").ToolSet; maxSteps?: number; visionAssets?: { cachedModels: CachedModelEntry[]; visionModel: string | null; assetLoader: (assetId: string) => Promise<Buffer | null>; visionDescribePrompt?: string }; onAttachmentDescriptions?: ProviderExecutionInput["onAttachmentDescriptions"] },
     prompt: Parameters<typeof streamProviderExecutor>[0]["prompt"],
   ): Promise<{ streamResult: ProviderStreamResult; startedAt: number }> {
     const startedAt = Date.now();
@@ -493,7 +547,7 @@ export class LiveChatOrchestrator {
     omitMessageCountInFinish?: boolean;
     prefill?: string;
     onAbort: (text: string, reasoning: string, reasoningDurationMs: number | undefined, latencyMs: number) => Promise<void>;
-    onFinal: (text: string, reasoning: string | undefined, reasoningDurationMs: number | undefined, latencyMs: number) => Promise<MessageResponse>;
+    onFinal: (text: string, reasoning: string | undefined, reasoningDurationMs: number | undefined, latencyMs: number, toolCalls?: ExtractedToolCall[], toolResults?: ExtractedToolResult[]) => Promise<MessageResponse>;
   }): AsyncGenerator<{ event: string; data: string }> {
     const { streamResult, signal, startedAt, debugLabel, onAbort, onFinal, omitMessageCountInFinish, prefill } = input;
     // ── CA-17/CANARY: loop observability. Counts every tool interaction so a
@@ -504,6 +558,9 @@ export class LiveChatOrchestrator {
     let toolCallCount = 0;
     let toolResultCount = 0;
     let toolErrorCount = 0;
+
+    const extractedToolCalls: ExtractedToolCall[] = [];
+    const extractedToolResults: ExtractedToolResult[] = [];
 
     let textAccumulator = "";
     let reasoningAccumulator = "";
@@ -539,6 +596,11 @@ export class LiveChatOrchestrator {
         }
         if (chunk.type === "tool-call") {
           toolCallCount++;
+          extractedToolCalls.push({
+            toolCallId: chunk.toolCallId,
+            toolName: chunk.toolName,
+            args: chunk.args as Record<string, unknown>,
+          });
           logSendDebug(`${debugLabel}.tool-call`, { chatId: input.chatId, n: toolCallCount, toolCallId: chunk.toolCallId, toolName: chunk.toolName, args: chunk.args });
           yield { event: "tool-call", data: JSON.stringify({ toolCallId: chunk.toolCallId, toolName: chunk.toolName, args: chunk.args }) };
         }
@@ -551,6 +613,14 @@ export class LiveChatOrchestrator {
         if (chunk.type === "tool-result") {
           toolResultCount++;
           const isErr = chunk.isError ?? false;
+          const matchedCall = extractedToolCalls.find(c => c.toolCallId === chunk.toolCallId);
+          extractedToolResults.push({
+            toolCallId: chunk.toolCallId,
+            toolName: chunk.toolName,
+            args: matchedCall ? matchedCall.args : {},
+            result: chunk.output,
+            isError: isErr,
+          });
           // isError=true means the tool's execute() threw (e.g. the CA-17
           // lost-section guard refused the proposal). The stream-helpers layer
           // normalizes the SDK v6 `tool-error` part into this tool-result +
@@ -634,7 +704,7 @@ export class LiveChatOrchestrator {
       reasoningDurationMs = Date.now() - reasoningStartMs;
     }
 
-    const snapshot = await onFinal(finalText, finalReasoning, reasoningDurationMs ?? undefined, latencyMs);
+    const snapshot = await onFinal(finalText, finalReasoning, reasoningDurationMs ?? undefined, latencyMs, extractedToolCalls.length > 0 ? extractedToolCalls : undefined, extractedToolResults.length > 0 ? extractedToolResults : undefined);
 
     // ── Yield reasoning-done + finish ──
     if (reasoningAccumulator || streamResult.hasRedactedReasoning) {

@@ -14,6 +14,7 @@ export interface ParseSSEStreamOptions {
   onToolInputStart?: (info: { toolCallId: string; toolName: string }) => void;
   onToolInputDelta?: (info: { toolCallId: string; delta: string }) => void;
   onToolResult?: (info: { toolCallId: string; toolName: string; output: unknown; isError: boolean }) => void;
+  onCoauthorModule?: (info: { moduleId: string; skillId?: string }) => void;
 }
 
 export async function parseSSEStream(opts: ParseSSEStreamOptions): Promise<{
@@ -124,6 +125,13 @@ export async function parseSSEStream(opts: ParseSSEStreamOptions): Promise<{
                 toolName: parsed.toolName,
                 output: parsed.output,
                 isError: parsed.isError ?? false,
+              });
+            }
+          } else if (currentEvent === "coauthor-module") {
+            if (opts.onCoauthorModule) {
+              opts.onCoauthorModule({
+                moduleId: parsed.moduleId,
+                skillId: parsed.skillId,
               });
             }
           } else {

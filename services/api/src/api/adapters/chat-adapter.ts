@@ -12,7 +12,7 @@ import type { ProviderProfileService } from "../../domain/providers/provider-pro
 import type { AssetService } from "../../domain/asset/asset-service.js";
 import { resolveCachedModels } from "../../domain/providers/model-cache-service.js";
 import { resolveVisionDescribePrompt } from "../../infrastructure/ai/vision-gate.js";
-import type { RegenerateOverride } from "@vibe-tavern/api-contracts";
+import type { RegenerateOverride, CoauthorModuleCreate, CoauthorModuleUpdate, CoauthorModule } from "@vibe-tavern/api-contracts";
 
 export class ChatAdapter implements ChatRuntimeApi {
 	constructor(
@@ -58,11 +58,39 @@ export class ChatAdapter implements ChatRuntimeApi {
 		return this.sessionRuntime.setGreetingIndex(brandId<ChatId>(chatId), greetingIndex);
 	};
 
+	setCoauthorLorebookIds = async (chatId: string, lorebookIds: string[]): Promise<VariantResponse> => {
+		return this.sessionRuntime.setCoauthorLorebookIds(brandId<ChatId>(chatId), lorebookIds);
+	};
+
 	setChatPersona = (chatId: string, personaId: string) =>
 		this.sessionRuntime.persona.setChatPersona(brandId<ChatId>(chatId), personaId);
 
 	setChatPromptPreset = (chatId: string, promptPresetId: string) =>
 		this.sessionRuntime.chatLifecycle.setChatPromptPreset(brandId<ChatId>(chatId), promptPresetId);
+
+	setCoauthorModule = (chatId: string, moduleId: string | null) =>
+		this.sessionRuntime.chatLifecycle.setCoauthorModule(brandId<ChatId>(chatId), moduleId);
+
+	listCoauthorModules = async () => {
+		const { getCoauthorModules } = await import("../../domain/coauthor/modules/module-registry.js");
+		const userModules = await this.stores.coauthorModules.list();
+		return getCoauthorModules(userModules);
+	};
+
+	createCoauthorModule = async (input: CoauthorModuleCreate): Promise<CoauthorModule> => {
+		return toCoauthorModule(await this.stores.coauthorModules.create(input));
+	};
+
+	updateCoauthorModule = async (id: string, input: CoauthorModuleUpdate): Promise<CoauthorModule> => {
+		return toCoauthorModule(await this.stores.coauthorModules.update(id, input));
+	};
+
+	deleteCoauthorModule = async (id: string) => {
+		// Deletion of the active module on any chat falls back to default at
+		// resolve time (getCoauthorModule's tail branch), so no chat rewiring is
+		// needed here — null/unknown ids resolve to the default seed module.
+		return this.stores.coauthorModules.delete(id);
+	};
 
 	// ─── Branches ───────────────────────────────────────────────────────
 
@@ -83,7 +111,7 @@ export class ChatAdapter implements ChatRuntimeApi {
 
 	// ─── Messages (AI) ──────────────────────────────────────────────────
 
-	sendMessage = async (chatId: string, body: { content: string; attachments?: any[] }, signal?: AbortSignal) => {
+	sendMessage = async (chatId: string, body: { content: string; attachments?: Attachment[] }, signal?: AbortSignal) => {
 		logSendDebug("api.runtime.send.start", { chatId, contentLength: body.content?.length ?? 0 });
 		const profile = await this.resolveEffectiveProfileOrThrow();
 		logSendDebug("api.runtime.send.profile", {
@@ -117,7 +145,7 @@ export class ChatAdapter implements ChatRuntimeApi {
 		return result.snapshot;
 	};
 
-	sendMessageStream = async function* (this: ChatAdapter, chatId: string, body: { content: string; attachments?: any[] }, signal?: AbortSignal) {
+	sendMessageStream = async function* (this: ChatAdapter, chatId: string, body: { content: string; attachments?: Attachment[] }, signal?: AbortSignal) {
 		const profile = await this.resolveEffectiveProfileOrThrow();
 		try {
 			yield* this.liveChatOrchestrator.sendMessageStream({
@@ -352,7 +380,7 @@ export class ChatAdapter implements ChatRuntimeApi {
 							Object.entries(parsed).filter(([, v]) => typeof v === "string"),
 						) as Record<string, string>;
 					}
-				} catch {}
+				} catch { /* preset.aiAssistantPrompts may hold malformed JSON; skip and fall back to the default vision-describe prompt */ }
 			}
 		}
 		return resolveVisionDescribePrompt(aiAssistantPrompts);
@@ -408,4 +436,31 @@ export class ChatAdapter implements ChatRuntimeApi {
 			: profile;
 		return { ...base, defaultModel: modelOverride };
 	}
+}
+
+/** Map a stored user-module row to the API `CoauthorModule` shape: drop the
+ *  DB-only timestamps, stamp `isBuiltIn: false` (user modules are editable). */
+function toCoauthorModule(row: {
+	id: string;
+	name: string;
+	description: string;
+	basePrompt: string;
+	openingMessage: string;
+	skillIds: string[];
+	toolSet: CoauthorModule["toolSet"];
+	maxSteps: number;
+	createdAt: string;
+	updatedAt: string;
+}): CoauthorModule {
+	return {
+		id: row.id,
+		name: row.name,
+		description: row.description,
+		basePrompt: row.basePrompt,
+		openingMessage: row.openingMessage,
+		skillIds: row.skillIds,
+		toolSet: row.toolSet,
+		maxSteps: row.maxSteps,
+		isBuiltIn: false,
+	};
 }

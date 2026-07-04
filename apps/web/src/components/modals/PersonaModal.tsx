@@ -1086,7 +1086,6 @@ export function PersonaModal(input: PersonaModalProps) {
         ref={stFolderRef}
         className="hidden"
         type="file"
-        /** @ts-expect-error webkitdirectory is not in React types */
         webkitdirectory=""
         directory=""
         onChange={(e) => void handleStFolderPick(e.target.files)}

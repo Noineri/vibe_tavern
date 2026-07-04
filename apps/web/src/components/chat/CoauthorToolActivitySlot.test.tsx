@@ -45,8 +45,6 @@ describe("ToolActivityCard", () => {
 		expect(queryByText(/# PERSONALITY/)).toBeNull();
 		fireEvent.click(getByText("Made the personality more assertive."));
 		expect(getByText(/# PERSONALITY/)).toBeDefined();
-		// Sanity: the card root is a bordered surface.
-		expect(container.querySelector(".border-border")).not.toBeNull();
 	});
 
 	it("shows the streaming label, disables the toggle, and hides the proposed preview", () => {

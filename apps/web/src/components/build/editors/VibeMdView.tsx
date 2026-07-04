@@ -40,6 +40,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { UseFormReturn } from "react-hook-form";
 import type { BuildCharacterDraft, ChatListItem } from "@vibe-tavern/api-contracts";
+import { brandId, type ChatId } from "@vibe-tavern/domain";
 import { toast } from "sonner";
 import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
@@ -61,7 +62,8 @@ import { CustomTooltip } from "../../shared/Tooltip.js";
 import { lblCls } from "../fields/field-styles.js";
 import { TextAreaField } from "../fields/TextAreaField.js";
 import { DepthPromptField } from "../fields/DepthPromptField.js";
-import { createChatAction, switchChatAction } from "../../../stores/api-actions/chat-actions.js";
+import { createChatAction, switchChatAction, renameChatAction, deleteChatAction } from "../../../stores/api-actions/chat-actions.js";
+import { DestructiveConfirmModal } from "../../shared/destructive-confirm-modal.js";
 import { listCoauthorChats } from "../../../app-client.js";
 import { useChatStore } from "../../../stores/chat-store.js";
 
@@ -86,6 +88,36 @@ export function VibeMdView({ form, characterId, isSaving }: VibeMdViewProps) {
   const [coauthorOpen, setCoauthorOpen] = useState(false);
   const [coauthorChats, setCoauthorChats] = useState<ChatListItem[] | null>(null);
   const [coauthorBusy, setCoauthorBusy] = useState(false);
+  const [renamingChatId, setRenamingChatId] = useState<string | null>(null);
+  const [renameDraft, setRenameDraft] = useState("");
+  const [deleteConfirmChatId, setDeleteConfirmChatId] = useState<string | null>(null);
+
+  async function handleRenameChat(chatId: string) {
+    if (!renameDraft.trim()) { setRenamingChatId(null); return; }
+    try {
+      setCoauthorBusy(true);
+      await renameChatAction(brandId<ChatId>(chatId), renameDraft.trim());
+      setCoauthorChats(prev => prev?.map(c => c.id === chatId ? { ...c, title: renameDraft.trim() } : c) ?? null);
+      setRenamingChatId(null);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : t("error"));
+    } finally {
+      setCoauthorBusy(false);
+    }
+  }
+
+  async function handleDeleteChat(chatId: string) {
+    try {
+      setCoauthorBusy(true);
+      await deleteChatAction(brandId<ChatId>(chatId));
+      setCoauthorChats(prev => prev?.filter(c => c.id !== chatId) ?? null);
+      setDeleteConfirmChatId(null);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : t("error"));
+    } finally {
+      setCoauthorBusy(false);
+    }
+  }
 
   async function handleOpenCoauthorList() {
     // Toggle closed if already open.
@@ -240,27 +272,12 @@ export function VibeMdView({ form, characterId, isSaving }: VibeMdViewProps) {
 
   return (
     <div>
-      {/* Prose MD editor — body only (no frontmatter), auto-grows to content.
-          The `+` (add alt greeting) and `✕` (remove) widgets live ON the
-          `# GREETINGS` heading and each `=== ALT N ===` marker inside the
-          editor (vibe-md-greetings.ts) — no separate button here. */}
-      <div className="mb-5">
-        <label className={lblCls + " mb-1.5 block"}>{t("vmd_editor_label")}</label>
-        <div
-          ref={editorHostRef}
-          // Auto-grow: NO maxHeight, NO overflow-auto (VTF-13 rework). The CM6
-          // theme sets `& { height: auto }` + `.cm-scroller { overflow: hidden }`
-          // so content drives the height and the page scroll is the only scroll.
-          className="vibe-md-editor rounded-lg border border-border bg-s1"
-          style={{ minHeight: 420 }}
-        />
-        <p className="mt-1.5 font-ui text-[11px] text-t4">{t("vmd_editor_hint")}</p>
-      </div>
-
       {/* Co-Author entry (CA-8.4) — open an iterative editing chat on this card.
           "Co-Author mode" lists existing co-author chats for this character;
           "New co-author chat" creates one. Both flip AppShell to CoauthorMode
-          because the active chat's mode becomes 'coauthor' (resolveShellSurface). */}
+          because the active chat's mode becomes 'coauthor' (resolveShellSurface).
+          Placed ABOVE the editor so the user doesn't have to scroll the whole
+          card to start a co-author session. */}
       <div className="relative mb-5 flex flex-wrap items-center gap-2">
         <button
           type="button"
@@ -290,23 +307,66 @@ export function VibeMdView({ form, characterId, isSaving }: VibeMdViewProps) {
               className="fixed inset-0 z-40 cursor-default"
               onClick={() => setCoauthorOpen(false)}
             />
-            <div className="absolute left-0 top-full z-50 mt-1 min-w-[260px] max-w-[340px] rounded-lg border border-border bg-surface shadow-lg">
+            <div className="glass-blur absolute left-0 top-full z-50 mt-1 min-w-[260px] max-w-[340px] rounded-lg border border-border bg-glass-bg shadow-lg">
               <div className="border-b border-border/50 px-3 py-2 font-ui text-[11px] uppercase tracking-wide text-t4">{t("coauthor.list_title")}</div>
               {coauthorChats.length === 0 ? (
                 <div className="px-3 py-3 font-ui text-[0.85rem] text-t3">{t("coauthor.list_empty")}</div>
               ) : (
                 <ul className="max-h-[280px] overflow-y-auto py-1">
                   {coauthorChats.map((chat) => (
-                    <li key={chat.id}>
-                      <button
-                        type="button"
-                        className="flex w-full flex-col items-start gap-0.5 px-3 py-2 text-left transition-colors hover:bg-s2"
-                        onClick={() => { void handleSwitchToCoauthorChat(chat.id); }}
-                        disabled={coauthorBusy}
-                      >
-                        <span className="font-ui text-[0.85rem] font-medium text-t1">{chat.title || t("coauthor.untitled_chat")}</span>
-                        <span className="font-ui text-[11px] text-t4">{chat.messageCount} {t("coauthor.messages_unit")}</span>
-                      </button>
+                    <li key={chat.id} className="group relative">
+                      {renamingChatId === chat.id ? (
+                        <div className="flex w-full flex-col items-start gap-1 px-3 py-2">
+                          <input
+                            // eslint-disable-next-line jsx-a11y/no-autofocus
+                            autoFocus
+                            className="w-full rounded border border-border bg-s2 px-2 py-1 font-ui text-[0.85rem] font-medium text-t1 outline-none focus:border-border2"
+                            value={renameDraft}
+                            onChange={(e) => setRenameDraft(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") void handleRenameChat(chat.id);
+                              else if (e.key === "Escape") setRenamingChatId(null);
+                            }}
+                            onBlur={() => void handleRenameChat(chat.id)}
+                            disabled={coauthorBusy}
+                          />
+                        </div>
+                      ) : (
+                        <>
+                          <button
+                            type="button"
+                            className="flex w-full flex-col items-start gap-0.5 px-3 py-2 text-left transition-colors hover:bg-s2 pr-16"
+                            onClick={() => { void handleSwitchToCoauthorChat(chat.id); }}
+                            disabled={coauthorBusy}
+                          >
+                            <span className="font-ui text-[0.85rem] font-medium text-t1">{chat.title || t("coauthor.untitled_chat")}</span>
+                            <span className="font-ui text-[11px] text-t4">{chat.messageCount} {t("coauthor.messages_unit")}</span>
+                          </button>
+                          <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+                            <button
+                              type="button"
+                              className="rounded p-1.5 text-t3 transition-colors hover:bg-s3 hover:text-t1"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setRenamingChatId(chat.id);
+                                setRenameDraft(chat.title);
+                              }}
+                            >
+                              <Icons.Edit className="h-3.5 w-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              className="rounded p-1.5 text-danger-text transition-colors hover:bg-danger-dim hover:text-danger-text"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setDeleteConfirmChatId(chat.id);
+                              }}
+                            >
+                              <Icons.Trash className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        </>
+                      )}
                     </li>
                   ))}
                 </ul>
@@ -314,6 +374,33 @@ export function VibeMdView({ form, characterId, isSaving }: VibeMdViewProps) {
             </div>
           </>
         )}
+      </div>
+
+      {deleteConfirmChatId && (
+        <DestructiveConfirmModal
+          title={t("sidebar_delete_chat")}
+          body={<>{t("sidebar_are_you_sure")} <b>{coauthorChats?.find(c => c.id === deleteConfirmChatId)?.title || t("coauthor.untitled_chat")}</b></>}
+          confirmLabel={t("delete")}
+          onConfirm={() => void handleDeleteChat(deleteConfirmChatId)}
+          onCancel={() => setDeleteConfirmChatId(null)}
+        />
+      )}
+
+      {/* Prose MD editor — body only (no frontmatter), auto-grows to content.
+          The `+` (add alt greeting) and `✕` (remove) widgets live ON the
+          `# GREETINGS` heading and each `=== ALT N ===` marker inside the
+          editor (vibe-md-greetings.ts) — no separate button here. */}
+      <div className="mb-5">
+        <label className={lblCls + " mb-1.5 block"}>{t("vmd_editor_label")}</label>
+        <div
+          ref={editorHostRef}
+          // Auto-grow: NO maxHeight, NO overflow-auto (VTF-13 rework). The CM6
+          // theme sets `& { height: auto }` + `.cm-scroller { overflow: hidden }`
+          // so content drives the height and the page scroll is the only scroll.
+          className="vibe-md-editor rounded-lg border border-border bg-s1"
+          style={{ minHeight: 420 }}
+        />
+        <p className="mt-1.5 font-ui text-[11px] text-t4">{t("vmd_editor_hint")}</p>
       </div>
 
       {/* ONE "Advanced fields" accordion — creator notes, personality summary,

@@ -25,15 +25,17 @@
     "build:windows-dist": "bun scripts/build-windows-dist.ts",
     "build:installer": "bun scripts/build-installer.ts",
     "dev": "bun run build && bun services/api/src/server/prod-server.ts",
-    "typecheck": "bun run --filter '*' typecheck",
+    "typecheck": "bun scripts/type-gate.ts && bun run --filter '*' typecheck",
     "test": "bun run --filter '*' test",
     "test:parallel": "bun test --parallel",
     "i18n:check": "bun scripts/i18n-check.ts",
     "check": "bun run typecheck && bun run test && bun run i18n:check",
     "dev:api": "bun run --filter @vibe-tavern/api dev",
     "dev:web": "bun run --filter @vibe-tavern/web dev",
+    "dev:web:debug": "bun run --filter @vibe-tavern/web dev:debug",
     "db:generate": "bun run --filter @vibe-tavern/db db:generate",
-    "db:push": "bun run --filter @vibe-tavern/db db:push"
+    "db:push": "bun run --filter @vibe-tavern/db db:push",
+    "bump-version": "bun scripts/bump-version.ts"
   },
   "devDependencies": {
     "@types/bun": "latest",

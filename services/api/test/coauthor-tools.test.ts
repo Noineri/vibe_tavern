@@ -246,3 +246,99 @@ describe("coauthor-tools: add_alt_greeting", () => {
     ).rejects.toThrow(/empty/);
   });
 });
+
+describe("coauthor-tools: per-section edits (edit_personality / edit_scenario / edit_examples)", () => {
+  test("edit_personality replaces only PERSONALITY and preserves the other sections", async () => {
+    const tools = buildCoauthorTools({ profileMd: sampleProfileMd() });
+    const out = (await tools.edit_personality.execute(
+      { content: "A sharper personality.", summary: "Harden personality." },
+      { messages: [], toolCallId: "t8", abort: () => {} } as never,
+    )) as never;
+
+    expect(out.target).toBe("profile");
+    expect(out.proposed).toContain("# PERSONALITY\nA sharper personality.");
+    expect(out.proposed).toContain("# SCENARIO\nA scene."); // unmodified
+  });
+
+  test("edit_scenario replaces only SCENARIO and preserves PERSONALITY", async () => {
+    const tools = buildCoauthorTools({ profileMd: sampleProfileMd() });
+    const out = (await tools.edit_scenario.execute(
+      { content: "A new scenario text.", summary: "Update scenario." },
+      { messages: [], toolCallId: "t9", abort: () => {} } as never,
+    )) as never;
+
+    expect(out.target).toBe("profile");
+    expect(out.proposed).toContain("# SCENARIO\nA new scenario text.");
+    expect(out.proposed).toContain("# PERSONALITY\nA test character."); // unmodified
+  });
+
+  test("edit_examples replaces only EXAMPLES and preserves PERSONALITY", async () => {
+    const tools = buildCoauthorTools({ profileMd: sampleProfileMd() });
+    const out = (await tools.edit_examples.execute(
+      { content: "{{char}}: Hello there.", summary: "Add example dialogue." },
+      { messages: [], toolCallId: "t10", abort: () => {} } as never,
+    )) as never;
+
+    expect(out.target).toBe("profile");
+    expect(out.proposed).toContain("# EXAMPLES\n{{char}}: Hello there.");
+    expect(out.proposed).toContain("# PERSONALITY\nA test character."); // unmodified
+  });
+
+  test("each per-section tool rejects empty content", async () => {
+    const tools = buildCoauthorTools({ profileMd: sampleProfileMd() });
+    for (const t of ["edit_personality", "edit_scenario", "edit_examples"] as const) {
+      await expect(
+        tools[t].execute(
+          { content: "   ", summary: "x" },
+          { messages: [], toolCallId: "t11", abort: () => {} } as never,
+        ),
+      ).rejects.toThrow(/empty/);
+    }
+  });
+
+  test("rejects if context profileMd is missing", async () => {
+    const tools = buildCoauthorTools();
+    await expect(
+      tools.edit_scenario.execute(
+        { content: "Valid", summary: "x" },
+        { messages: [], toolCallId: "t12", abort: () => {} } as never,
+      ),
+    ).rejects.toThrow(/missing canonical profile context/);
+  });
+
+  test("runs the lost-section guard on the merged result", async () => {
+    // A section payload that itself contains a wrong-level known heading is
+    // caught by the same CA-17 guard edit_profile uses (the merged document is
+    // validated wholesale).
+    const tools = buildCoauthorTools({ profileMd: sampleProfileMd() });
+    await expect(
+      tools.edit_scenario.execute(
+        { content: "## EXAMPLES\n\nsome examples here", summary: "x" },
+        { messages: [], toolCallId: "t13", abort: () => {} } as never,
+      ),
+    ).rejects.toThrow(/EXAMPLES/);
+  });
+});
+
+describe("coauthor-tools: edit_alt_greeting", () => {
+  test("returns target greeting with given index", async () => {
+    const tools = buildCoauthorTools();
+    const out = (await tools.edit_alt_greeting.execute(
+      { index: 1, content: "Replaced alt.", summary: "Swap alt." },
+      { messages: [], toolCallId: "t12", abort: () => {} } as never,
+    )) as never;
+
+    expect(out.target).toBe("greeting");
+    expect(out.greetingIndex).toBe(1);
+    expect(out.proposed).toBe("Replaced alt.");
+  });
+});
+
+describe("coauthor-tools: toolSet filtering", () => {
+  test("filters tools by the provided toolSet config", () => {
+    const tools = buildCoauthorTools({ toolSet: { edit_profile: true, edit_scenario: false } }) as unknown as Record<string, unknown>;
+    expect(tools.edit_profile).toBeDefined();
+    expect(tools.edit_scenario).toBeUndefined();
+    expect(tools.edit_greeting).toBeUndefined();
+  });
+});

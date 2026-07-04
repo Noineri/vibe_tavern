@@ -52,6 +52,9 @@ desktop.ini
 .omo/
 .serena/
 
+# Local throwaway diagnostics (kept on disk for reference, not shipped/checked)
+services/api/scripts/
+
 # Drizzle generated output (dev-only)
 drizzle-generated/
 

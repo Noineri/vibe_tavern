@@ -59,3 +59,10 @@ export type {
   Script as ScriptRow,
   ScriptLink,
 } from './script-store.js';
+
+export { CoauthorModuleStore } from './coauthor-module-store.js';
+export type {
+  CoauthorModuleRow,
+  CreateCoauthorModuleData,
+  UpdateCoauthorModuleData,
+} from './coauthor-module-store.js';

@@ -151,13 +151,51 @@ html,body{height:100%;background:var(--page-bg, var(--bg));color:var(--t1);overf
 .scene-note{text-align:center;font-family:var(--font-body);font-style:italic;font-size:12.5px;color:var(--t3);padding:4px 24px 26px;max-width:var(--mw);margin:0 auto}
 
 /* ── Markdown formatting ── */
+.md-h1{font-size:1.75em;font-weight:700;margin:1.2em 0 .5em;line-height:1.2;color:var(--t1)}
+.md-h2{font-size:1.5em;font-weight:600;margin:1.2em 0 .5em;line-height:1.25;color:var(--t1)}
+.md-h3{font-size:1.25em;font-weight:600;margin:1em 0 .4em;line-height:1.3;color:var(--t1)}
+.md-h4{font-size:1.1em;font-weight:600;margin:1em 0 .4em;line-height:1.3;color:var(--t2)}
+.md-h5{font-size:1em;font-weight:600;margin:1em 0 .4em;line-height:1.4;color:var(--t2)}
+.md-h6{font-size:.9em;font-weight:600;margin:1em 0 .4em;line-height:1.4;color:var(--t3);text-transform:uppercase;letter-spacing:.05em}
+.md-content > *:first-child{margin-top:0}
+
+.md-table-wrap{overflow-x:auto;margin:.8em 0;border-radius:var(--r, 6px);border:1px solid var(--border)}
+.md-table{width:100%;border-collapse:collapse;font-size:max(.85em, 12px);text-align:left}
+.md-th{background:var(--s2);font-weight:600;padding:8px 12px;border-bottom:1px solid var(--border);color:var(--t2)}
+.md-td{padding:8px 12px;border-bottom:1px solid var(--border);color:var(--t1)}
+.md-tr:last-child .md-td{border-bottom:none}
+.md-tr:nth-child(even){background:color-mix(in srgb, var(--s2) 40%, transparent)}
+
 .md-list{margin:.3em 0 .3em 1.25em;padding:0;list-style:disc}
 .md-list-ordered{list-style:decimal}
 .md-list li{margin-bottom:.15em}
 .md-list li::marker{color:var(--t3)}
 .md-blockquote{border-left:3px solid var(--accent);margin:.4em 0;padding:.2em .8em;color:var(--t2)}
 .md-pre{background:var(--s2);border:1px solid var(--border);border-radius:var(--r);padding:.8em 1em;overflow-x:auto;font-size:calc(var(--mfs) - 2px);line-height:1.55}
+.md-pre--wrap{white-space:pre-wrap;overflow-x:unset;word-break:break-word}
 .md-code-inline{background:var(--s2);padding:.1em .35em;border-radius:3px;font-size:.9em;font-family:var(--font-mono)}
+
+/* ── Code block copy button ── */
+.md-pre-wrap{position:relative}
+.md-copy-btn{position:absolute;top:8px;right:8px;display:flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:5px;background:var(--s3);color:var(--t3);opacity:0;transition:opacity .15s,background .15s,color .15s;cursor:pointer;z-index:1}
+.md-pre-wrap:hover .md-copy-btn{opacity:1}
+.md-copy-btn:hover{background:var(--border2);color:var(--t1)}
+.md-copy-btn--ok{opacity:1 !important;background:var(--accent-dim);color:var(--accent-t)}
+
+/* ── Strikethrough ── */
+.md-del{text-decoration:line-through;color:var(--t3)}
+
+/* ── Links ── */
+.md-link{color:var(--accent-t);text-decoration:underline;text-underline-offset:2px;text-decoration-color:color-mix(in srgb, var(--accent-t) 40%, transparent);transition:text-decoration-color .15s,color .15s}
+.md-link:hover{color:var(--accent);text-decoration-color:var(--accent)}
+
+/* ── Images ── */
+.md-img{max-width:100%;height:auto;border-radius:var(--r);margin:.4em 0;display:block}
+
+/* ── Task-list checkboxes ── */
+.md-task-check{display:inline-block;width:13px;height:13px;border:1.5px solid var(--t3);border-radius:3px;margin-right:5px;vertical-align:-.15em;flex-shrink:0;position:relative}
+.md-task-check--done{background:var(--accent);border-color:var(--accent)}
+.md-task-check--done::after{content:"";position:absolute;left:2px;top:-1px;width:7px;height:5px;border-left:1.5px solid #fff;border-bottom:1.5px solid #fff;transform:rotate(-45deg)}
 
 /* ── Markdown paragraph spacing ── */
 .md-content p{white-space:pre-wrap}
@@ -270,6 +308,10 @@ select option{padding:2px 6px}
 @keyframes fadeOut{from{opacity:1}to{opacity:0}}
 @keyframes swipeInRight{from{transform:translateX(-30px);opacity:0}to{transform:translateX(0);opacity:1}}
 @keyframes swipeInLeft{from{transform:translateX(30px);opacity:0}to{transform:translateX(0);opacity:1}}
+/* CA-14: one-shot attention pulse on the mobile [Doc] tab when a proposal
+   lands — tints the tab + flashes its underline, twice (~2.2s). Purely visual. */
+@keyframes coauthorTabPulse{0%{background:color-mix(in oklab,var(--accent) 20%,transparent);box-shadow:inset 0 -2px 0 0 var(--accent)}55%{background:transparent;box-shadow:inset 0 -2px 0 0 transparent}100%{background:color-mix(in oklab,var(--accent) 16%,transparent);box-shadow:inset 0 -2px 0 0 var(--accent)}}
+.coauthor-tab-pulse{animation:coauthorTabPulse 1.1s ease-out 2}
 
 /* ── Responsive ── */
 @media(max-width:768px){

@@ -171,6 +171,49 @@ function validateProfileMd(profileMd: string): string {
   return serializeProfileMd(parsed);
 }
 
+/**
+ * Shared execute body for the per-section edit tools (edit_personality /
+ * edit_scenario / edit_examples): overwrite exactly one VtfProfile field on the
+ * canonical profile, re-serialize, and run the lost-section guard. The other
+ * sections are untouched (preserved from the canonical profile passed to
+ * buildCoauthorTools), so the tool payload carries ONLY the targeted section's
+ * new text — the model never has to re-emit the sections it is not changing.
+ *
+ * Returns the full proposed profile.md under `{ target: "profile", proposed }`
+ * — the same shape as edit_profile — so the apply pipeline (diff + Apply RPC)
+ * treats a section edit identically to a wholesale edit. This is why splitting
+ * the former edit_section tool into three is transparent to the frontend.
+ */
+async function applySectionEdit(
+  field: "description" | "scenario" | "mesExample",
+  toolName: string,
+  content: string,
+  summary: string,
+  profileMd: string | undefined,
+): Promise<CoauthorToolOutput> {
+  if (!profileMd) {
+    logger.warn("%s REJECTED missing profileMd context", toolName);
+    throw new Error(`${toolName}: Internal error, missing canonical profile context`);
+  }
+  if (!content.trim()) {
+    logger.warn("%s REJECTED empty input", toolName);
+    throw new Error(`${toolName}: content must not be empty`);
+  }
+  logger.info("%s IN len=%d summary=%s", toolName, content.length, summary);
+  const parsed = parseProfileMd(profileMd);
+  parsed.profile[field] = content;
+  const merged = serializeProfileMd(parsed);
+  try {
+    const canonical = validateProfileMd(merged);
+    logger.info("%s OK merged canonical len=%d", toolName, canonical.length);
+    return { target: "profile", proposed: canonical, summary };
+  } catch (err) {
+    const msg = (err as Error).message;
+    logger.warn("%s REJECTED guard-threw msg=%s", toolName, msg);
+    throw err;
+  }
+}
+
 // ─── Tool set ──────────────────────────────────────────────────────────────
 
 /**
@@ -178,8 +221,9 @@ function validateProfileMd(profileMd: string): string {
  * validates and echoes the proposal; the strategy passes this set to the
  * executor (tools propose; the Apply RPC is the sole write path).
  */
-export function buildCoauthorTools() {
-  return {
+export function buildCoauthorTools(opts: { toolSet?: Record<string, boolean>; profileMd?: string } = {}) {
+  const { toolSet, profileMd } = opts;
+  const allTools = {
     edit_profile: tool({
       description:
         "Propose a full rewrite of the character's profile.md (YAML frontmatter + the three H1 sections: PERSONALITY, SCENARIO, EXAMPLES). " +
@@ -266,7 +310,72 @@ export function buildCoauthorTools() {
         return { target: "greeting", isAdd: true, proposed: content, summary };
       },
     }),
+
+    edit_personality: tool({
+      description:
+        "Propose a rewrite of the PERSONALITY section only. The other sections (SCENARIO, EXAMPLES) are preserved automatically from the current profile — do not include them.",
+      inputSchema: z.object({
+        content: z.string().describe("The full proposed PERSONALITY text (do NOT include the '# PERSONALITY' heading)."),
+        summary: z.string().max(200).describe("One-line description of what this edit changes, shown above the Apply button."),
+      }),
+      execute: async ({ content, summary }): Promise<CoauthorToolOutput> =>
+        applySectionEdit("description", "edit_personality", content, summary, profileMd),
+    }),
+
+    edit_scenario: tool({
+      description:
+        "Propose a rewrite of the SCENARIO section only. The other sections (PERSONALITY, EXAMPLES) are preserved automatically from the current profile — do not include them.",
+      inputSchema: z.object({
+        content: z.string().describe("The full proposed SCENARIO text (do NOT include the '# SCENARIO' heading)."),
+        summary: z.string().max(200).describe("One-line description of what this edit changes, shown above the Apply button."),
+      }),
+      execute: async ({ content, summary }): Promise<CoauthorToolOutput> =>
+        applySectionEdit("scenario", "edit_scenario", content, summary, profileMd),
+    }),
+
+    edit_examples: tool({
+      description:
+        "Propose a rewrite of the EXAMPLES section (example dialogue) only. The other sections (PERSONALITY, SCENARIO) are preserved automatically from the current profile — do not include them.",
+      inputSchema: z.object({
+        content: z.string().describe("The full proposed EXAMPLES text (example dialogue; do NOT include the '# EXAMPLES' heading)."),
+        summary: z.string().max(200).describe("One-line description of what this edit changes, shown above the Apply button."),
+      }),
+      execute: async ({ content, summary }): Promise<CoauthorToolOutput> =>
+        applySectionEdit("mesExample", "edit_examples", content, summary, profileMd),
+    }),
+
+    edit_alt_greeting: tool({
+      description:
+        "Propose a replacement for an EXISTING alternate greeting. index 1 is the first alternate greeting, index 2 is the second, etc.",
+      inputSchema: z.object({
+        index: z
+          .number()
+          .int()
+          .min(1)
+          .describe("The alternate greeting slot to replace (1+)."),
+        content: z
+          .string()
+          .describe("The full proposed greeting text for this slot."),
+        summary: z
+          .string()
+          .max(200)
+          .describe("One-line description of what this greeting change does, shown above the Apply button."),
+      }),
+      execute: async ({ index, content, summary }): Promise<CoauthorToolOutput> => {
+        if (!content.trim()) {
+          logger.warn("edit_alt_greeting REJECTED empty input index=%d", index);
+          throw new Error("edit_alt_greeting: content must not be empty");
+        }
+        logger.info("edit_alt_greeting IN index=%d len=%d summary=%s", index, content.length, summary);
+        return { target: "greeting", greetingIndex: index, proposed: content, summary };
+      },
+    }),
   };
+
+  if (toolSet) {
+    return Object.fromEntries(Object.entries(allTools).filter(([name]) => toolSet[name] === true)) as typeof allTools;
+  }
+  return allTools;
 }
 
 /**

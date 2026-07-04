@@ -37,6 +37,8 @@ export interface AppMessage extends Message {
   variants: MessageVariant[];
   selectedVariantIndex: number | null;
   modelId: string | null;
+  coauthorModuleId?: string | null;
+  coauthorSkillId?: string | null;
   attachments?: { id: string; assetId: string; type: string; name?: string; mimeType?: string; sizeBytes?: number; description?: string | null }[];
 }
 
@@ -224,6 +226,7 @@ export interface ProviderModelOption {
   label: string;
   contextLength?: number;
   capabilities?: { vision?: boolean; reasoning?: boolean; tools?: boolean; webSearch?: boolean; premium?: boolean };
+  supportsTools: boolean;
   pricing?: { input?: number; output?: number };
   description?: string;
 }

@@ -108,8 +108,14 @@ export interface ChatRuntimeApi {
 	clearChat: (chatId: string) => Promise<ChatCreateResponse>;
 	renameChat: (chatId: string, title: string) => Promise<ChatListResponse>;
 	setGreetingIndex: (chatId: string, greetingIndex: number) => Promise<VariantResponse>;
+	setCoauthorLorebookIds: (chatId: string, lorebookIds: string[]) => Promise<VariantResponse>;
 	setChatPersona: (chatId: string, personaId: string) => Promise<ConfigPatchResponse>;
 	setChatPromptPreset: (chatId: string, promptPresetId: string) => Promise<ConfigPatchResponse>;
+	setCoauthorModule: (chatId: string, moduleId: string | null) => Promise<ConfigPatchResponse>;
+	listCoauthorModules: () => Promise<import("@vibe-tavern/api-contracts").CoauthorModule[]>;
+	createCoauthorModule: (input: import("@vibe-tavern/api-contracts").CoauthorModuleCreate) => Promise<import("@vibe-tavern/api-contracts").CoauthorModule>;
+	updateCoauthorModule: (id: string, input: import("@vibe-tavern/api-contracts").CoauthorModuleUpdate) => Promise<import("@vibe-tavern/api-contracts").CoauthorModule>;
+	deleteCoauthorModule: (id: string) => Promise<void>;
 
 	// Branches
 	branchChat: (chatId: string, messageId: string) => Promise<BranchResponse>;

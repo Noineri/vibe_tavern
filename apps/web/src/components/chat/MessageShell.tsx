@@ -41,6 +41,10 @@ export interface MessageShellAuthorInfo {
   avatarCropJson: string | null;
   /** Pre-resolved avatar URL (folder avatar when migrated, else legacy flat). Null = no avatar. */
   avatarSrc: string | null;
+  /** Optional ReactNode to override the default avatar rendering */
+  avatarNode?: React.ReactNode;
+  /** Optional ReactNode to override the default text rendering of the name */
+  nameNode?: React.ReactNode;
 }
 
 export interface MessageShellActions {
@@ -91,6 +95,10 @@ export interface MessageShellProps {
   modelId?: string | null;
   /** Resolved preset name for metadata display (provenance of the selected variant). */
   presetName?: string | null;
+  /** Resolved co-author module ID (if any). */
+  coauthorModuleId?: string | null;
+  /** Resolved co-author skill ID (if any). */
+  coauthorSkillId?: string | null;
   /** Message creation timestamp. */
   createdAt: string;
   /** Whether the copy button was recently clicked (shows checkmark). */
@@ -146,6 +154,8 @@ export function MessageShell(props: MessageShellProps) {
     tokenCount,
     modelId,
     presetName,
+    coauthorModuleId,
+    coauthorSkillId,
     createdAt,
     copied,
     slotExtras,
@@ -233,11 +243,13 @@ export function MessageShell(props: MessageShellProps) {
               "shrink-0 overflow-hidden rounded-full bg-s3 font-body italic text-t3 [&_img]:h-full [&_img]:w-full [&_img]:object-cover ",
               "flex h-11 w-11 items-center justify-center text-[calc(var(--ui-fs)+1px)]",
             )}>
-              {author.avatarSrc
-                ? <img src={author.avatarSrc} alt={author.name} className="h-full w-full object-cover" />
-                : initials(author.name)}
+              {author.avatarNode ? author.avatarNode : (
+                author.avatarSrc
+                  ? <img src={author.avatarSrc} alt={author.name} className="h-full w-full object-cover" />
+                  : initials(author.name)
+              )}
             </div>
-            <span>{author.name}</span>
+            {author.nameNode ? author.nameNode : <span>{author.name}</span>}
 
             {/* Q4a: "Generate more" — queue entry point, visible ONLY while this
                 message is the active streaming target (the action bar is hidden
@@ -348,6 +360,8 @@ export function MessageShell(props: MessageShellProps) {
               messageTokens={tokenCount}
               modelId={modelId}
               presetName={presetName}
+              coauthorModuleId={coauthorModuleId}
+              coauthorSkillId={coauthorSkillId}
               tokensLabel={tokensLabel}
             />
           )}
@@ -436,15 +450,19 @@ function MessageMetadata(props: {
   messageTokens: number;
   modelId?: string | null;
   presetName?: string | null;
+  coauthorModuleId?: string | null;
+  coauthorSkillId?: string | null;
   tokensLabel: string;
 }) {
-  const { createdLabel, isUser, messageTokens, modelId, presetName, tokensLabel } = props;
+  const { createdLabel, isUser, messageTokens, modelId, presetName, coauthorModuleId, coauthorSkillId, tokensLabel } = props;
   return (
-    <div className="mt-1 flex items-center gap-2 font-ui text-[calc(var(--ui-fs)-4px)] text-t3/50">
+    <div className="mt-1 flex flex-wrap items-center gap-2 font-ui text-[calc(var(--ui-fs)-4px)] text-t3/50">
       {createdLabel}
       <span className="tabular-nums">{messageTokens} {tokensLabel}</span>
       {!isUser && modelId && <span>{resolveModelLabel(modelId)}</span>}
       {!isUser && presetName && <span>{presetName}</span>}
+      {!isUser && coauthorModuleId && <span>{coauthorModuleId}</span>}
+      {!isUser && coauthorSkillId && <span>{coauthorSkillId}</span>}
     </div>
   );
 }

@@ -9,6 +9,7 @@ export {
   editMessageSchema,
   renameChatSchema,
   setGreetingIndexSchema,
+  setCoauthorLorebookIdsSchema,
   renameBranchSchema,
   coauthorApplySchema,
   coauthorCorrectionSchema,
@@ -71,3 +72,17 @@ export {
   scriptLinkSchema,
   setScriptLinksSchema,
 } from "./script-schema.js";
+
+export {
+  coauthorModuleSchema,
+  coauthorModuleListSchema,
+  setCoauthorModuleSchema,
+  coauthorModuleCreateSchema,
+  coauthorModuleUpdateSchema,
+} from "./coauthor-module.js";
+export type {
+  CoauthorModule,
+  CoauthorToolSet,
+  CoauthorModuleCreate,
+  CoauthorModuleUpdate,
+} from "./coauthor-module.js";

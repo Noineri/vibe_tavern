@@ -124,6 +124,35 @@ export async function nonstreamingProviderExecute(
       stepsCount: result.steps.length ?? undefined,
     });
 
+    const extractedToolCalls: import("./provider-execution-types.js").ExtractedToolCall[] = [];
+    const extractedToolResults: import("./provider-execution-types.js").ExtractedToolResult[] = [];
+    if (result.steps) {
+      // AI SDK v6 (ai@6.0.209): TypedToolCall carries `input` (the parsed tool
+      // arguments) and TypedToolResult carries `input` + `output`. There is NO
+      // `args`/`result`/`isError` field on these — failures are a separate
+      // `tool-error` part, so a result in `step.toolResults` is never an error.
+      // (The streaming path sets isError via the tool-error→tool-result
+      // normalization in stream-helpers.ts; the non-stream path never sees one.)
+      for (const step of result.steps) {
+        for (const tc of step.toolCalls ?? []) {
+          extractedToolCalls.push({
+            toolCallId: tc.toolCallId,
+            toolName: tc.toolName,
+            args: (tc.input ?? {}) as Record<string, unknown>,
+          });
+        }
+        for (const tr of step.toolResults ?? []) {
+          extractedToolResults.push({
+            toolCallId: tr.toolCallId,
+            toolName: tr.toolName,
+            args: (tr.input ?? {}) as Record<string, unknown>,
+            result: tr.output,
+            isError: false,
+          });
+        }
+      }
+    }
+
     return {
       text: result.text,
       reasoning: result.reasoningText ?? undefined,
@@ -135,6 +164,8 @@ export async function nonstreamingProviderExecute(
           }
         : undefined,
       sentConfig,
+      toolCalls: extractedToolCalls.length > 0 ? extractedToolCalls : undefined,
+      toolResults: extractedToolResults.length > 0 ? extractedToolResults : undefined,
     };
   } catch (error) {
     if (input.signal?.aborted) throw cancelled();

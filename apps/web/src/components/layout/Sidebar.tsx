@@ -2,28 +2,28 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { ChatId } from "@vibe-tavern/domain";
 import { initials } from "./app-shell-helpers.js";
+import { calcPopoverPos, calcSwitcherPos, formatRelativeTime, formatShortDate, tabAvatarSrc } from "./sidebar-utils.js";
+import { useSidebarChats } from "./hooks/use-sidebar-chats.js";
+import { useSidebarCharacters } from "./hooks/use-sidebar-characters.js";
+import { SidebarHeader } from "./sections/SidebarHeader.js";
+import { SidebarImportModals } from "./sections/SidebarImportModals.js";
+import { CollapsedCharacterStrip } from "./sections/CollapsedCharacterStrip.js";
+import { CharacterListSection } from "./sections/CharacterListSection.js";
+import { SidebarFlyout } from "./sections/SidebarFlyout.js";
 import { Icons } from "../shared/icons.js";
-import { Logo } from "../shared/Logo.js";
 import { cn } from "../../lib/cn.js";
 import { resolveEntityAvatarUrl } from "../../lib/avatar.js";
-import { CharacterImportModal, ChatImportModal } from "../modals/ImportModals.js";
 import { useT } from "../../i18n/context.js";
 import { useChatController } from "../../hooks/use-chat-controller.js";
 import { useCharacterController } from "../../hooks/use-character-controller.js";
 import { useBootstrapStore } from "../../stores/api-actions/bootstrap-actions.js";
 import { useChatMeta } from "../../stores/chat-selectors.js";
 import { useNavigationStore, useChatStore, useCharacterStore, useModalStore } from "../../stores/index.js";
-import { buildCharacterTabs } from "../../lib/character-tabs.js";
-import { filterAndSortList } from "../../lib/list-filter.js";
 import { ListSortToggle } from "../shared/ListSortToggle.js";
 import { ListSearchPanel } from "../shared/ListSearchPanel.js";
 import { CustomTooltip } from "../shared/Tooltip.js";
 import { OverflowTooltip } from "../shared/OverflowTooltip.js";
 import { useBuildPanels } from "../../hooks/use-build-panels.js";
-
-/** Resolve a character tab's avatar URL (folder avatar when migrated). */
-const tabAvatarSrc = (tab: { id: string; avatarExt: string | null; avatarAssetId: string | null; updatedAt?: string | null }) =>
-  resolveEntityAvatarUrl({ kind: "characters", id: tab.id, avatarExt: tab.avatarExt, avatarAssetId: tab.avatarAssetId, updatedAt: tab.updatedAt });
 
 export function Sidebar() {
   const { t } = useT();
@@ -57,13 +57,6 @@ export function Sidebar() {
     return tab.id === activeChatCharacterId || tab.chatId === activeChatId;
   };
 
-  // Filter chats to show only those belonging to the current character
-  const chats = useMemo(
-    () => currentCharacterId
-      ? allChats.filter((c) => c.characterId === currentCharacterId)
-      : allChats,
-    [allChats, currentCharacterId],
-  );
   const branches = snapshot?.branches ?? [];
   const activeBranchId = snapshot?.activeBranch?.id ?? null;
   const bootstrapPersonas = useBootstrapStore((s) => s.personas);
@@ -77,11 +70,6 @@ export function Sidebar() {
     ? resolveEntityAvatarUrl({ kind: "characters", id: snapshot.character.id, avatarExt: snapshot.character.avatarExt, avatarAssetId: snapshot.character.avatarAssetId, updatedAt: snapshot.character.updatedAt })
     : null;
 
-  const characterTabs = useMemo(
-    () => buildCharacterTabs(allCharacters, allChats),
-    [allCharacters, allChats],
-  );
-
   // --- Character list: sort + search state ---
   const characterSortMode = useNavigationStore((s) => s.characterSortMode);
   const setCharacterSortMode = useNavigationStore((s) => s.setCharacterSortMode);
@@ -89,35 +77,12 @@ export function Sidebar() {
   const [charSelectedTags, setCharSelectedTags] = useState<string[]>([]);
   const [charSearchOpen, setCharSearchOpen] = useState(false);
 
-  // Pool every tag across all characters for the search combobox.
-  const charTagPool = useMemo(
-    () => Array.from(new Set(allCharacters.flatMap((c) => c.tags ?? []))).sort((a, b) => a.localeCompare(b)),
-    [allCharacters],
-  );
-
-  // Enrich each character tab with a recentKey (max lastMessageAt across its
-  // chats; "" for characters with no chat → sorts last under "recent") and its
-  // tags, then apply the shared filter + sort.
-  const visibleCharacterTabs = useMemo(() => {
-    const lastByChar = new Map<string, string>();
-    for (const ch of allChats) {
-      const prev = lastByChar.get(ch.characterId) ?? "";
-      if (ch.lastMessageAt > prev) lastByChar.set(ch.characterId, ch.lastMessageAt);
-    }
-    const tagsById = new Map(allCharacters.map((c) => [c.id, c.tags ?? []] as const));
-    const enriched = characterTabs.map((tab) => ({
-      ...tab,
-      recentKey: lastByChar.get(tab.id) ?? "",
-      tags: tagsById.get(tab.id) ?? [],
-    }));
-    return filterAndSortList({
-      items: enriched,
-      getName: (i) => i.name,
-      sortMode: characterSortMode,
-      query: charQuery,
-      selectedTags: charSelectedTags,
-    });
-  }, [characterTabs, allCharacters, allChats, characterSortMode, charQuery, charSelectedTags]);
+  const { characterTabs, charTagPool, visibleCharacterTabs } = useSidebarCharacters({
+    allCharacters,
+    allChats,
+    query: charQuery,
+    selectedTags: charSelectedTags,
+  });
 
   // --- Chat list: sort + search state ---
   const chatSortMode = useNavigationStore((s) => s.chatSortMode);
@@ -125,29 +90,11 @@ export function Sidebar() {
   const [chatListQuery, setChatListQuery] = useState("");
   const [chatSearchOpen, setChatSearchOpen] = useState(false);
 
-  // Chats have no tags — name-only search. recentKey is the chat's own
-  // lastMessageAt (already on ChatListItem). Filtered within the current
-  // character scope (the `chats` memo already narrows to currentCharacterId).
-  const visibleChats = useMemo(() => {
-    const enriched = chats.map((c) => ({ ...c, recentKey: c.lastMessageAt }));
-    return filterAndSortList({
-      items: enriched,
-      getName: (i) => i.title,
-      sortMode: chatSortMode,
-      query: chatListQuery,
-      selectedTags: [],
-    });
-  }, [chats, chatSortMode, chatListQuery]);
-
-  // The sidebar's play structure (characters list + chat list) renders for both
-  // 'play' and 'coauthor' nav modes (CA-8b.3); which chat subset shows is
-  // selected by the nav mode — play → RP chats, coauthor → co-author chats. The
-  // `chats` memo is already character-scoped, so this lists the active
-  // character's chats of the active mode only. Co-author V1 rows are simplified
-  // (no branching/swipes/rename); RP rows keep their full row chrome.
-  const rpVisibleChats = visibleChats.filter((c) => c.mode !== "coauthor");
-  const coauthorVisibleChats = visibleChats.filter((c) => c.mode === "coauthor");
-  const sectionChats = mode === "coauthor" ? coauthorVisibleChats : rpVisibleChats;
+  const { chats, rpVisibleChats, sectionChats } = useSidebarChats({
+    allChats,
+    characterId: currentCharacterId ?? null,
+    query: chatListQuery,
+  });
 
   // --- Store actions ---
   const setSidebarCollapsed = useNavigationStore((s) => s.setSidebarCollapsed);
@@ -190,8 +137,8 @@ export function Sidebar() {
   const [flyoutFlipped, setFlyoutFlipped] = useState(false);
 
   const flyoutChats = useMemo(
-    () => flyoutCharId ? allChats.filter(c => c.characterId === flyoutCharId && (mode === "coauthor" ? c.mode === "coauthor" : c.mode !== "coauthor")) : [],
-    [allChats, flyoutCharId, mode],
+    () => flyoutCharId ? allChats.filter(c => c.characterId === flyoutCharId && c.mode !== "coauthor") : [],
+    [allChats, flyoutCharId],
   );
 
   useEffect(() => {
@@ -233,123 +180,24 @@ export function Sidebar() {
     }
   }, [flyoutCharId, flyoutAvatarPos]);
 
-  function calcPopoverPos(triggerEl: HTMLElement): { top: number; right: number } {
-    const rect = triggerEl.getBoundingClientRect();
-    return {
-      top: rect.bottom + 4,
-      right: window.innerWidth - rect.right,
-    };
-  }
-
-  /** Position the character-switcher dropdown below its trigger, matching the
-   *  trigger's width. Portaled to body (see charSwitcherPos comment). */
-  function calcSwitcherPos(triggerEl: HTMLElement): { top: number; left: number; width: number } {
-    const rect = triggerEl.getBoundingClientRect();
-    return { top: rect.bottom + 4, left: rect.left, width: rect.width };
-  }
-
-  function formatShortDate(value: string | null | undefined): string {
-    if (!value) return "";
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) return "";
-    return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
-  }
-
-  function formatRelativeTime(value: string | null | undefined): string {
-    if (!value) return "";
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) return "";
-    const diffSec = (Date.now() - date.getTime()) / 1000;
-    const rtf = new Intl.RelativeTimeFormat(undefined, { numeric: "auto", style: "short" });
-    if (diffSec < 45) return rtf.format(0, "second");
-    if (diffSec < 3600) return rtf.format(-Math.round(diffSec / 60), "minute");
-    if (diffSec < 86400) return rtf.format(-Math.round(diffSec / 3600), "hour");
-    if (diffSec < 604800) return rtf.format(-Math.round(diffSec / 86400), "day");
-    return formatShortDate(value);
-  }
-
   return (
     <div className={cn(
         sidebarCollapsed ? 'w-[54px] min-w-[54px]' : 'w-[var(--sw)] min-w-[var(--sw)]',
         'shrink-0 overflow-hidden border-r border-border bg-surface flex flex-col backdrop-blur-md transition-all duration-[180ms] ease-out'
       )}>
-        {/* DYNAMIC: justifyContent and padding depend on sidebarCollapsed state */}
-        <div
-          className={`flex h-[60px] shrink-0 items-center border-b border-border ${sidebarCollapsed ? "justify-center px-1.5" : "gap-2.5 px-3"}`}
-        >
-          {sidebarCollapsed ? (
-            // Collapsed: the logo doubles as the brand mark and the expand
-            // trigger (click to expand). Standard collapsed-sidebar pattern.
-            <CustomTooltip content={t("sidebar_expand")} side="right">
-              <button type="button"
-                className="flex items-center rounded-md p-1 cursor-pointer text-t3 transition-[background,color] duration-100 hover:bg-s2 hover:text-t1"
-                aria-label={t("sidebar_expand")}
-                onClick={() => setSidebarCollapsed(false)}
-              >
-                <Logo className="h-[34px] w-[34px] shrink-0" />
-              </button>
-            </CustomTooltip>
-          ) : (
-            <>
-              {/* Brand zone: fills everything left of the collapse button and
-                  centers its content within that zone — so the logo+text sit
-                  at the visual midpoint between the left edge and the button,
-                  not the geometric midpoint of the whole sidebar. */}
-              <div className="flex min-w-0 flex-1 items-center justify-center gap-2.5">
-                <Logo className="h-[34px] w-[34px] shrink-0" />
-                <span className="min-w-0 overflow-hidden whitespace-nowrap font-body text-[length:calc(var(--ui-fs)+1px)] font-medium tracking-[-0.01em] text-t1">{t("app_name")}</span>
-              </div>
-              <CustomTooltip content={t("sidebar_collapse")} side="right">
-                <button type="button"
-                  className="iBtn shrink-0"
-                  aria-label={t("sidebar_collapse")}
-                  onClick={() => setSidebarCollapsed(true)}
-                >
-                  <Icons.Caret direction="l" />
-                </button>
-              </CustomTooltip>
-            </>
-          )}
-        </div>
+        <SidebarHeader sidebarCollapsed={sidebarCollapsed} setSidebarCollapsed={setSidebarCollapsed} t={t} />
 
-        {sidebarCollapsed && (mode === 'play' || mode === 'coauthor') && (
+        {sidebarCollapsed && mode === 'play' && (
           <div className="flex min-h-0 flex-1 flex-col items-center">
-            <div className="flex min-h-0 flex-1 flex-col items-center gap-2 overflow-y-auto py-2 px-[7px]">
-              {characterTabs.map((tab) => {
-                const isMarked = tab.id === activeChatCharacterId || tab.chatId === activeChatId;
-                return (
-                  <CustomTooltip key={tab.id} content={tab.name} side="right">
-                    <div
-                      ref={(el) => { if (el) flyoutAvatarRefs.current.set(tab.id, el); else flyoutAvatarRefs.current.delete(tab.id); }}
-                      className={cn(
-                        'relative flex h-10 w-10 shrink-0 cursor-pointer items-center justify-center rounded-full transition-all duration-150',
-                        isMarked ? '' : 'hover:bg-s2',
-                      )}
-                      onClick={() => {
-                        // Flyout toggle only — selectedCharacterId is synced after a real chat switch.
-                        const r = flyoutAvatarRefs.current.get(tab.id)?.getBoundingClientRect();
-                        setFlyoutAvatarPos(r ? { top: r.top, bottom: r.bottom } : null);
-                        setFlyoutCharId(prev => prev === tab.id ? null : tab.id);
-                      }}
-                    >
-                      {/* Pill-индикатор для активного персонажа */}
-                      {isMarked && (
-                        <div className="absolute -left-[7px] top-1/2 -translate-y-1/2 h-5 w-[3px] rounded-r-full bg-accent transition-all" />
-                      )}
-                      <span className={cn(
-                        'flex h-full w-full items-center justify-center overflow-hidden rounded-full font-ui text-sm',
-                        tabAvatarSrc(tab) ? 'bg-s3' : isMarked ? 'bg-accent text-on-accent' : 'bg-s3 text-t2',
-                        flyoutCharId === tab.id
-                          ? 'ring-2 ring-accent ring-offset-2 ring-offset-surface'
-                          : (!tabAvatarSrc(tab) && isMarked) ? 'ring-1 ring-accent/50 ring-offset-2 ring-offset-surface' : '',
-                      )}>
-                        {tabAvatarSrc(tab) ? <img src={tabAvatarSrc(tab)!} alt={tab.name} className="h-full w-full object-cover" /> : initials(tab.name)}
-                      </span>
-                    </div>
-                  </CustomTooltip>
-                );
-              })}
-            </div>
+            <CollapsedCharacterStrip
+              characterTabs={characterTabs}
+              activeChatCharacterId={activeChatCharacterId}
+              activeChatId={activeChatId}
+              flyoutCharId={flyoutCharId}
+              flyoutAvatarRefs={flyoutAvatarRefs}
+              setFlyoutAvatarPos={setFlyoutAvatarPos}
+              setFlyoutCharId={setFlyoutCharId}
+            />
 
             <div className="h-px w-8 shrink-0 bg-border" />
 
@@ -366,115 +214,25 @@ export function Sidebar() {
           </div>
         )}
 
-        {/* ═══ FLYOUT: Chat selection — collapsed sidebar ═══ */}
-        {flyoutCharId && sidebarCollapsed && createPortal(
-          (() => {
-            const tab = characterTabs.find(tc => tc.id === flyoutCharId);
-            const q = chatQuery.trim().toLowerCase();
-            const filtered = q ? flyoutChats.filter(c => c.title.toLowerCase().includes(q)) : flyoutChats;
-            return (
-              <div
-                ref={flyoutRef}
-                className={cn(
-                  "glass-blur fixed left-[54px] z-[301] flex w-[300px] max-w-[calc(100vw-70px)] gap-2 overflow-hidden rounded-r-xl border border-border bg-glass-bg shadow-[16px_8px_24px_-8px_rgba(0,0,0,0.4)]",
-                  flyoutFlipped ? "flex-col-reverse" : "flex-col",
-                )}
-                style={{ top: flyoutTop ?? 12, maxHeight: flyoutMaxH ?? undefined, animation: "flyoutIn 0.18s ease-out" }}
-              >
-                {/* ── Header ── */}
-                <div className={cn("relative shrink-0 border-border", flyoutFlipped ? "border-t" : "border-b")}>
-                  <div
-                    className="pointer-events-none absolute inset-0"
-                    style={{ background: "linear-gradient(to bottom, color-mix(in srgb, var(--accent-dim) 50%, transparent), transparent)" }}
-                  />
-                  <div className="relative flex items-center gap-1 px-2 py-2">
-                    <div className="min-w-0 flex-1 truncate px-1 font-ui text-[calc(var(--ui-fs)+0px)] font-medium leading-tight tracking-[-0.01em] text-t1">{tab?.name}</div>
-                    <CustomTooltip content={t("new_chat")}>
-                      <button type="button" className="iBtn size-7 shrink-0" aria-label={t("new_chat")} onClick={() => { void character.handleCreateChat(flyoutCharId); }}><Icons.Plus /></button>
-                    </CustomTooltip>
-                    <CustomTooltip content={t("close")}>
-                      <button type="button" className="iBtn size-7 shrink-0" aria-label={t("close")} onClick={() => setFlyoutCharId(null)}><Icons.Close /></button>
-                    </CustomTooltip>
-                  </div>
-                </div>
-
-                {/* ── Search ── */}
-                <div className="shrink-0 px-3">
-                  <div className="flex items-center gap-2 rounded-lg border border-border bg-s2 px-2 py-1 transition-colors focus-within:border-accent/60">
-                    <Icons.Search className="h-3.5 w-3.5 shrink-0 text-t3" />
-                    <input
-                      type="text"
-                      value={chatQuery}
-                      onChange={(e) => setChatQuery(e.target.value)}
-                      placeholder={t("chat_search_placeholder")}
-                      className="min-w-0 flex-1 bg-transparent font-ui text-[calc(var(--ui-fs)-1px)] text-t1 outline-none placeholder:text-t4"
-                    />
-                    {chatQuery && (
-                      <button type="button" className="flex h-4 w-4 shrink-0 items-center justify-center rounded text-t3 transition-colors hover:bg-s3 hover:text-t1" aria-label={t("chat_search_clear")} onClick={() => setChatQuery("")}>
-                        <Icons.Close className="h-3 w-3" />
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                {/* ── Chat list ── */}
-                <div ref={flyoutListRef} className="flex min-h-0 flex-1 flex-col overflow-y-auto px-2 py-1">
-                  {q && (
-                    <div className="px-2 pb-0.5 pt-1 text-[calc(var(--ui-fs)-3px)] font-medium text-t4">
-                      {filtered.length} / {flyoutChats.length} {t("sidebar_chats").toLowerCase()}
-                    </div>
-                  )}
-
-                  {flyoutChats.length === 0 ? (
-                    <div className="empty-state" style={{ minHeight: 160, padding: "32px 16px" }}>
-                      <div className="empty-icon" style={{ width: 40, height: 40 }}><Icons.Chat /></div>
-                      <div className="empty-title">{t("sidebar_send_a_message")}</div>
-                      <button type="button" className="empty-cta" onClick={() => { void character.handleCreateChat(flyoutCharId); }}>{t("new_chat")}</button>
-                    </div>
-                  ) : filtered.length === 0 ? (
-                    <div className="flex flex-col items-center gap-2 px-4 py-8 text-center">
-                      <Icons.Search className="h-5 w-5 text-t4" />
-                      <div className="text-[calc(var(--ui-fs)-2px)] leading-relaxed text-t2">{t("chat_search_no_results").replace("{query}", chatQuery)}</div>
-                      <button type="button" className="text-[calc(var(--ui-fs)-2px)] text-accent-t transition-colors hover:underline" onClick={() => setChatQuery("")}>{t("chat_search_clear")}</button>
-                    </div>
-                  ) : (
-                    filtered.map((chatItem, index) => {
-                      const isActive = chatItem.id === activeChatId;
-                      return (
-                        <div
-                          key={chatItem.id}
-                          role="button"
-                          tabIndex={0}
-                          style={{ animation: "flyoutCardIn 0.22s ease-out backwards", animationDelay: `${Math.min(index, 12) * 26}ms` }}
-                          className={cn(
-                            "relative mx-1 mb-0.5 cursor-pointer rounded-lg px-2.5 py-1.5 outline-none transition-colors duration-150",
-                            isActive ? "bg-accent-dim" : "hover:bg-s2 focus-visible:bg-s2",
-                          )}
-                          onClick={() => { void chat.handleSwitchChat(chatItem.id); }}
-                          onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); void chat.handleSwitchChat(chatItem.id); } }}
-                        >
-                          {isActive && <div className="absolute left-0 top-2.5 bottom-2.5 w-[3px] rounded-full bg-accent" />}
-                          <OverflowTooltip
-                            text={chatItem.title}
-                            className={cn("text-[calc(var(--ui-fs)-1px)]", isActive ? "font-medium text-accent-t" : "text-t1")}
-                          />
-                          <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-[calc(var(--ui-fs)-3px)] text-t3">
-                            <span className="shrink-0 whitespace-nowrap tabular-nums">{formatRelativeTime(chatItem.updatedAt)}</span>
-                            <span className="shrink-0 text-t4">·</span>
-                            <span className="shrink-0 whitespace-nowrap tabular-nums">{chatItem.messageCount} {t("msgs_short")}</span>
-                          </div>
-                        </div>
-                      );
-                    })
-                  )}
-                </div>
-
-              </div>
-            );
-          })(),
-          document.body,
-        )}
-
+        <SidebarFlyout
+          flyoutCharId={flyoutCharId}
+          sidebarCollapsed={sidebarCollapsed}
+          characterTabs={characterTabs}
+          flyoutChats={flyoutChats}
+          chatQuery={chatQuery}
+          setChatQuery={setChatQuery}
+          activeChatId={activeChatId}
+          chat={chat}
+          character={character}
+          setFlyoutCharId={setFlyoutCharId}
+          flyoutRef={flyoutRef}
+          flyoutListRef={flyoutListRef}
+          flyoutTop={flyoutTop}
+          flyoutMaxH={flyoutMaxH}
+          flyoutFlipped={flyoutFlipped}
+          emptyTitleKey="sidebar_send_a_message"
+          t={t}
+        />
         {sidebarCollapsed && mode === 'build' && (
           <div className="flex min-h-0 flex-1 flex-col items-center gap-1 overflow-y-auto px-0 py-2">
             <CustomTooltip content={snapshot?.character?.name ?? t('switch_character')} side="right">
@@ -570,152 +328,42 @@ export function Sidebar() {
           </div>
         )}
 
-        {!sidebarCollapsed && (mode === 'play' || mode === 'coauthor') && (
+        {!sidebarCollapsed && mode === 'play' && (
           <>
           <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-            <section className="min-h-0 max-h-[50%] overflow-y-auto border-b border-border pb-1.5">
-              <div className="sticky top-0 z-10 glass-blur bg-surface">
-                <div className="flex items-center pr-2.5">
-                  <div className="flex-1 px-[13px] pt-1 pb-[5px] text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.08em] text-t3">{t("sidebar_characters")}</div>
-                  <ListSortToggle mode={characterSortMode} onChange={setCharacterSortMode} />
-                  <CustomTooltip content={t("search_name_placeholder")}>
-                    <button type="button" className={cn("iBtn size-5", charSearchOpen && "text-accent-t")} aria-pressed={charSearchOpen} onClick={() => setCharSearchOpen((v) => !v)}>
-                      <Icons.Search />
-                    </button>
-                  </CustomTooltip>
-                  <CustomTooltip content={t("sidebar_import_character")}>
-                    <button type="button" className="iBtn size-5" onClick={() => setImportModal("character")}>
-                      <Icons.Import />
-                    </button>
-                  </CustomTooltip>
-                  <CustomTooltip content={t("sidebar_create_character")}>
-                    <button type="button" className="iBtn size-5" onClick={() => useModalStore.getState().setCreateCharacterModalOpen(true)}>
-                      <Icons.Plus />
-                    </button>
-                  </CustomTooltip>
-                </div>
-                {charSearchOpen && (
-                  <ListSearchPanel
-                    query={charQuery}
-                    onQueryChange={setCharQuery}
-                    selectedTags={charSelectedTags}
-                    onSelectedTagsChange={setCharSelectedTags}
-                    availableTags={charTagPool}
-                  />
-                )}
-              </div>
-              {characterTabs.length === 0 ? (
-                <div className="px-[14px] py-5 text-center text-xs leading-relaxed text-t3">
-                  {t("sidebar_no_characters")}
-                </div>
-              ) : visibleCharacterTabs.length === 0 ? (
-                <div className="px-[14px] py-5 text-center text-xs leading-relaxed text-t3">
-                  {t("search_no_results")}
-                </div>
-              ) : (
-                visibleCharacterTabs.map((tab) => {
-                  const isActive = isCharacterTabActive(tab);
-                  const menuOpen = charMenuId === tab.id;
-                  return (
-                    <div
-                      key={tab.id}
-                      className={cn(
-                        'group relative mx-1 flex cursor-pointer items-center gap-[9px] rounded px-2.5 py-1.5 text-[calc(var(--ui-fs)-1px)] transition-colors duration-100',
-                        isActive ? 'bg-accent-dim text-accent-t hover:bg-accent-dim hover:text-accent-t' : 'text-t2 hover:bg-s2 hover:text-t1'
-                      )}
-                      style={{ zIndex: menuOpen ? 100 : 1 }}
-                      onClick={() => {
-                        useChatStore.getState().setSelectedCharacterId(tab.id);
-                        if (tab.chatId) {
-                          void chat.handleSwitchChat(tab.chatId);
-                        }
-                      }}
-                    >
-                      <span className={cn(
-                        'flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full font-ui text-[calc(var(--ui-fs)-2px)] not-italic avatar-fallback initials crop-framing',
-                        isActive ? 'bg-accent text-on-accent' : 'bg-s3 text-t2'
-                      )}>{tabAvatarSrc(tab) ? <img src={tabAvatarSrc(tab)!} alt={tab.name} className="h-full w-full object-cover" /> : initials(tab.name)}</span>
-                      <span className="flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
-                        {tab.name}
-                      </span>
-
-                      {!menuOpen && (
-                        <div className="absolute right-1 top-1/2 flex -translate-y-1/2 gap-0.5 rounded pl-1.5 opacity-0 transition-opacity duration-150 group-hover:opacity-100">
-                          <CustomTooltip content={t("sidebar_character_actions")}>
-                            <button type="button"
-                              className="flex h-[22px] w-[22px] scale-90 items-center justify-center rounded text-t3 transition-colors duration-100 hover:text-t1"
-                              aria-label={t("sidebar_character_actions")}
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                setCharMenuId(tab.id);
-                                setCharMenuPos(calcPopoverPos(event.currentTarget));
-                                setChatMenuId(null);
-                                setBranchPopId(null);
-                              }}
-                            >
-                              <Icons.Ellipsis />
-                            </button>
-                          </CustomTooltip>
-                        </div>
-                      )}
-
-                      {menuOpen && charMenuPos && createPortal(
-                        <div
-                          className="glass-blur absolute z-[200] w-[190px] rounded-md border border-border2 bg-glass-bg py-1 shadow-[0_8px_24px_rgba(0,0,0,0.4)]"
-                          ref={charMenuRef}
-                          onClick={(event) => event.stopPropagation()}
-                          style={{ top: charMenuPos.top, right: charMenuPos.right }}
-                        >
-                          <div
-                            className="flex cursor-pointer items-center gap-2 px-3 py-[7px] text-[calc(var(--ui-fs)-2px)] text-t2 transition-colors duration-100 hover:bg-s2 hover:text-t1 [&_svg]:h-3.5 [&_svg]:w-3.5 [&_svg]:shrink-0"
-                            role="menuitem"
-                            onClick={() => {
-                              setCharMenuId(null); setCharMenuPos(null);
-                              character.handleExportCharacter(tab.id);
-                            }}
-                          >
-                            <Icons.Download /> {t("sidebar_export")}
-                          </div>
-
-                          <div
-                            className="flex cursor-pointer items-center gap-2 px-3 py-[7px] text-[calc(var(--ui-fs)-2px)] text-t2 transition-colors duration-100 hover:bg-s2 hover:text-t1 [&_svg]:h-3.5 [&_svg]:w-3.5 [&_svg]:shrink-0"
-                            role="menuitem"
-                            onClick={() => {
-                              setCharMenuId(null); setCharMenuPos(null);
-                              character.handleDuplicateCharacter(tab.id);
-                            }}
-                          >
-                            <Icons.Copy /> {t("duplicate")}
-                          </div>
-
-                          <div
-                            className="flex cursor-pointer items-center gap-2 px-3 py-[7px] text-[calc(var(--ui-fs)-2px)] text-danger-text transition-colors duration-100 hover:bg-danger-dim hover:text-danger-text [&_svg]:h-3.5 [&_svg]:w-3.5 [&_svg]:shrink-0"
-                            role="menuitem"
-                            onClick={() => {
-                              setCharMenuId(null); setCharMenuPos(null);
-                              setConfirmDestroy({
-                                title: t("sidebar_delete_character"),
-                                body: <>{t("sidebar_are_you_sure")} <b>{tab.name}</b></>,
-                                confirmLabel: t("delete"),
-                                onConfirm: () => character.handleDeleteCharacter(tab.id),
-                              });
-                            }}
-                          >
-                            <Icons.Trash /> {t("delete")}
-                          </div>
-                        </div>,
-                        document.body
-                      )}
-                    </div>
-                  );
-                })
-              )}
-            </section>
+            <CharacterListSection
+              t={t}
+              characterSortMode={characterSortMode}
+              setCharacterSortMode={setCharacterSortMode}
+              charSearchOpen={charSearchOpen}
+              setCharSearchOpen={setCharSearchOpen}
+              charQuery={charQuery}
+              setCharQuery={setCharQuery}
+              charSelectedTags={charSelectedTags}
+              setCharSelectedTags={setCharSelectedTags}
+              charTagPool={charTagPool}
+              characterTabs={characterTabs}
+              visibleCharacterTabs={visibleCharacterTabs}
+              isCharacterTabActive={isCharacterTabActive}
+              onSelectCharacter={(tab) => {
+                useChatStore.getState().setSelectedCharacterId(tab.id);
+                if (tab.chatId) { void chat.handleSwitchChat(tab.chatId); }
+              }}
+              onImportCharacter={() => setImportModal("character")}
+              character={character}
+              setConfirmDestroy={setConfirmDestroy}
+              charMenuId={charMenuId}
+              setCharMenuId={setCharMenuId}
+              charMenuPos={charMenuPos}
+              setCharMenuPos={setCharMenuPos}
+              charMenuRef={charMenuRef}
+              onCloseOtherMenus={() => { setChatMenuId(null); setBranchPopId(null); }}
+            />
 
             <section className="min-h-0 max-h-[50%] overflow-y-auto border-b-0 pb-1.5">
               <div className="sticky top-0 z-10 glass-blur bg-surface">
                 <div className="flex items-center pr-2.5">
-                  <div className="flex-1 px-[13px] pt-1 pb-[5px] text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.08em] text-t3">{mode === "coauthor" ? t("sidebar_coauthor_chats") : t("sidebar_chats")}</div>
+                  <div className="flex-1 px-[13px] pt-1 pb-[5px] text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.08em] text-t3">{t("sidebar_chats")}</div>
                   <ListSortToggle mode={chatSortMode} onChange={setChatSortMode} />
                   <CustomTooltip content={t("search_name_placeholder")}>
                     <button type="button" className={cn("iBtn size-5", chatSearchOpen && "text-accent-t")} aria-pressed={chatSearchOpen} onClick={() => setChatSearchOpen((v) => !v)}>
@@ -730,7 +378,7 @@ export function Sidebar() {
                 <CustomTooltip content={t("sidebar_new_chat_active_char")}>
                   <button type="button" className="iBtn size-5" onClick={() => {
                     const charId = currentCharacterId;
-                    void character.handleCreateChat(charId ?? undefined, mode === "coauthor" ? "coauthor" : undefined);
+                    void character.handleCreateChat(charId ?? undefined);
                   }}>
                     <Icons.Plus />
                   </button>
@@ -747,35 +395,12 @@ export function Sidebar() {
               </div>
               {chats.length === 0 ? (
                 <div className="px-[14px] py-5 text-center text-xs leading-relaxed text-t3">
-                  {mode === "coauthor" ? t("coauthor.list_empty") : t("sidebar_send_a_message")}
+                  {t("sidebar_send_a_message")}
                 </div>
               ) : sectionChats.length === 0 ? (
                 <div className="px-[14px] py-5 text-center text-xs leading-relaxed text-t3">
-                  {mode === "coauthor" ? t("coauthor.list_empty") : t("search_no_results")}
+                  {t("search_no_results")}
                 </div>
-              ) : mode === "coauthor" ? (
-                coauthorVisibleChats.map((chatItem) => {
-                  const isActive = chatItem.id === activeChatId;
-                  return (
-                    <div
-                      key={chatItem.id}
-                      className={cn(
-                        'group relative mx-1 flex cursor-pointer items-center rounded px-2.5 py-1.5 transition-colors duration-100',
-                        isActive ? 'bg-accent-dim hover:bg-accent-dim' : 'hover:bg-s2'
-                      )}
-                      onClick={() => void chat.handleSwitchChat(chatItem.id)}
-                    >
-                      <span className="mr-1.5 shrink-0 text-[calc(var(--ui-fs)-3px)] text-accent-t"><Icons.Sparkles /></span>
-                      <div className="min-w-0 flex-1">
-                        <OverflowTooltip
-                          text={chatItem.title || t("coauthor.untitled_chat")}
-                          className={cn('text-[calc(var(--ui-fs)-1px)] text-t1', isActive && 'text-accent-t')}
-                        />
-                        <div className="text-[calc(var(--ui-fs)-3px)] text-t3">{chatItem.messageCount} {t("msgs_short")}</div>
-                      </div>
-                    </div>
-                  );
-                })
               ) : (
                 <>
                 {rpVisibleChats.map((chatItem) => {
@@ -1160,21 +785,7 @@ export function Sidebar() {
             </section>
           </>
         )}
-        {importModal === "character" && (
-          <CharacterImportModal
-            isImporting={character.isImporting}
-            onClose={() => setImportModal(null)}
-            onImportFiles={(files) => void character.handleImportFiles(files)}
-          />
-        )}
-        {importModal === "chat" && (
-          <ChatImportModal
-            activeChatId={activeChatId}
-            isImporting={character.isImporting}
-            onClose={() => setImportModal(null)}
-            onImportFiles={(files) => void character.handleImportFiles(files)}
-          />
-        )}
+        <SidebarImportModals importModal={importModal} setImportModal={setImportModal} character={character} activeChatId={activeChatId} />
       </div>
   );
 }

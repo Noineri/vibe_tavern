@@ -56,6 +56,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
   const editingDraft = useChatStore(s => s.editingDraft);
   const isSending = useIsSending();
   const messageActionId = useChatStore(s => s.messageActionId);
+  const isCoauthorMode = useSnapshotStore(s => s.activeChat?.mode === "coauthor");
   // Narrow primitive selector — only the active chat's pending user content.
   // Replaces reading it off the whole activeGen object (which mutated every tick).
   const pendingUserMessageContent = useChatStore(s => {
@@ -74,9 +75,9 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
     if (!msg?.variants || !macroContext) return msg?.variants ?? [];
     return msg.variants.map(v => ({
       ...v,
-      content: replaceUiMacros(v.content, macroContext),
+      content: isCoauthorMode ? v.content : replaceUiMacros(v.content, macroContext),
     }));
-  }, [msg?.variants, macroContext]);
+  }, [msg?.variants, macroContext, isCoauthorMode]);
 
   const selectedVariantDbIndex = msg?.selectedVariantIndex ?? null;
   const selectedVariantIndex = useMemo(() => {
@@ -160,9 +161,9 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
   // ── Derived values (non-hook, safe to be after return) ──
 
   // Author info
-  const author: MessageShellAuthorInfo = isUser
+  const author: MessageShellAuthorInfo = input.authorOverride ?? (isUser
     ? { name: authorInfo.persona?.name ?? "", avatarAssetId: authorInfo.persona?.avatarAssetId ?? null, avatarCropJson: authorInfo.persona?.avatarCropJson ?? null, avatarSrc: authorInfo.persona ? resolveEntityAvatarUrl({ kind: "personas", id: authorInfo.persona.id, avatarExt: authorInfo.persona.avatarExt, avatarAssetId: authorInfo.persona.avatarAssetId, updatedAt: authorInfo.persona.updatedAt }) : null }
-    : { name: authorInfo.character.name, avatarAssetId: authorInfo.character.avatarAssetId, avatarCropJson: authorInfo.character.avatarCropJson, avatarSrc: resolveEntityAvatarUrl({ kind: "characters", id: authorInfo.character.id, avatarExt: authorInfo.character.avatarExt, avatarAssetId: authorInfo.character.avatarAssetId, updatedAt: authorInfo.character.updatedAt }) };
+    : { name: authorInfo.character.name, avatarAssetId: authorInfo.character.avatarAssetId, avatarCropJson: authorInfo.character.avatarCropJson, avatarSrc: resolveEntityAvatarUrl({ kind: "characters", id: authorInfo.character.id, avatarExt: authorInfo.character.avatarExt, avatarAssetId: authorInfo.character.avatarAssetId, updatedAt: authorInfo.character.updatedAt }) });
 
   // UI State
   const isEditing = editingMessageId === input.messageId;
@@ -195,10 +196,10 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
     enqueueGenerateMore(msg.id, model, promptPresetId);
   };
 
-  const canBranch = !isGreeting;
-  const canRegenerate = !isGreeting && isLastAssistant;
+  const canBranch = !isGreeting && !isCoauthorMode;
+  const canRegenerate = !isGreeting && isLastAssistant && !isCoauthorMode;
   const canResend = isLast && msg.role === "user" && !pendingUserMessageContent;
-  const canSwitchVariant = isLast;
+  const canSwitchVariant = isLast && !isCoauthorMode;
 
   // Server sets message.content = selected variant's content at load time,
   // but client-side switching only changes selectedVariantIndex.
@@ -403,7 +404,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
     <>
     {deleteConfirmOpen && (
       <DeleteMessageConfirm
-        hasSwipes={variantCount > 1}
+        hasSwipes={variantCount > 1 && !isCoauthorMode}
         onDeleteSwipe={() => void confirmDeleteVariant()}
         onDeleteMessage={() => void confirmDeleteMessage()}
         onCancel={() => setDeleteConfirmOpen(false)}
@@ -424,7 +425,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
       canRegenerate={canRegenerate}
       canResend={canResend}
       selectedVariantIndex={selectedVariantIndex}
-      variantCount={variantCount}
+      variantCount={isCoauthorMode ? 1 : variantCount}
       canSwitchVariant={canSwitchVariant}
       tokenCount={msg.tokenCount}
       modelId={msg.modelId}
@@ -454,7 +455,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
   );
 });
 
-function DeleteMessageConfirm(input: {
+export function DeleteMessageConfirm(input: {
   hasSwipes: boolean;
   onDeleteSwipe: () => void;
   onDeleteMessage: () => void;
@@ -851,12 +852,13 @@ function PendingUserMessage() {
   const activeGen = useActiveGeneration();
   const isMobile = useIsMobile();
   const macroContext = useMacroContext();
+  const isCoauthorMode = useSnapshotStore(s => s.activeChat?.mode === "coauthor");
   const variantControlsRef = useRef<HTMLSpanElement>(null);
   if (!chatMeta || !activeGen) return null;
 
   const content = activeGen.pendingUserMessageContent ?? "";
   const pendingAttachments = activeGen.pendingUserMessageAttachments ?? [];
-  const displayContent = macroContext ? replaceUiMacros(content, macroContext) : content;
+  const displayContent = macroContext && !isCoauthorMode ? replaceUiMacros(content, macroContext) : content;
   const author = { name: chatMeta.persona?.name ?? "", avatarAssetId: chatMeta.persona?.avatarAssetId ?? null, avatarCropJson: chatMeta.persona?.avatarCropJson ?? null, avatarSrc: chatMeta.persona ? resolveEntityAvatarUrl({ kind: "personas", id: chatMeta.persona.id, avatarExt: chatMeta.persona.avatarExt, avatarAssetId: chatMeta.persona.avatarAssetId, updatedAt: chatMeta.persona.updatedAt }) : null };
 
   return (

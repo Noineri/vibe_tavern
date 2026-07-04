@@ -29,8 +29,7 @@ export function logSendDebug(
 			dirEnsured = true;
 		}
 		void appendFile(logPath, `${new Date().toISOString()} ${event} ${JSON.stringify(data, redactSecrets)}\n`);
-	} catch {
-	}
+	} catch { /* fire-and-forget debug logging must never throw into the request hot path */ }
 }
 
 function redactSecrets(key: string, value: unknown): unknown {

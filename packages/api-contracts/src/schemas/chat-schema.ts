@@ -35,6 +35,12 @@ export const setGreetingIndexSchema = z.object({
   greetingIndex: z.number().int().min(0),
 });
 
+/** CA-13: replace the co-author chat's bound lorebook ids (right-panel picker).
+ *  Wholesale replace — empty array clears the context. Strings (lorebook ids). */
+export const setCoauthorLorebookIdsSchema = z.object({
+  lorebookIds: z.array(z.string()),
+});
+
 export const renameBranchSchema = z.object({
   label: z.string().min(1),
 });

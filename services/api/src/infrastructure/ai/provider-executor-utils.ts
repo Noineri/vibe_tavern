@@ -6,7 +6,7 @@
  * stream-provider-executor.ts and nonstreaming-provider-executor.ts.
  */
 
-import type { LanguageModel, ModelMessage } from "ai";
+import type { LanguageModel, ModelMessage, ToolCallPart, ToolContent, AssistantContent } from "ai";
 import { normalizeProviderType, type ProviderType, log } from "@vibe-tavern/domain";
 import { resolveProtocol } from "../../domain/providers/protocol-registry.js";
 import type { VisionGateConfig } from "./vision-gate.js";
@@ -16,13 +16,16 @@ import { resolveMultimodalContent } from "./vision-gate.js";
 // Types
 // ---------------------------------------------------------------------------
 
-/** A validated SDK message with known role and string content. */
-export interface SdkMessage {
-  role: "system" | "user" | "assistant";
-  content: string;
-  /** File attachments on this message, passed through for vision gate resolution. */
-  attachments?: import("@vibe-tavern/domain").Attachment[];
-}
+/** A validated SDK message with a known role. Content shape is role-bound:
+ *  string for system/user/assistant; an array of tool-result parts for tool.
+ *  `toolCalls` rides only on assistant messages and is folded into `content`
+ *  as `ToolCallPart[]` when mapped to an SDK `AssistantModelMessage` (the SDK
+ *  has no top-level `toolCalls` field — calls live inside `content`). */
+export type SdkMessage =
+  | { role: "system"; content: string; attachments?: import("@vibe-tavern/domain").Attachment[] }
+  | { role: "user"; content: string; attachments?: import("@vibe-tavern/domain").Attachment[] }
+  | { role: "assistant"; content: string; attachments?: import("@vibe-tavern/domain").Attachment[]; toolCalls?: ToolCallPart[] }
+  | { role: "tool"; content: unknown[]; attachments?: import("@vibe-tavern/domain").Attachment[] };
 
 /** Result of preparing messages for provider execution. */
 export interface PreparedMessages {
@@ -70,16 +73,43 @@ export function toSdkMessages(
   return records
     .map((record: unknown) => {
       if (!record || typeof record !== "object") return null;
-      const r = record as { role?: unknown; content?: unknown };
-      if (typeof r.role !== "string" || typeof r.content !== "string") return null;
-      if (r.role !== "system" && r.role !== "user" && r.role !== "assistant") {
-        log.tag("sdk-msgs").warn("FILTERED out role=%s, content.length=%d", r.role, (r.content as string)?.length ?? 0);
+      const r = record as { role?: unknown; content?: unknown; toolCalls?: unknown };
+      if (typeof r.role !== "string") return null;
+      if (r.role !== "system" && r.role !== "user" && r.role !== "assistant" && r.role !== "tool") {
+        log.tag("sdk-msgs").warn("FILTERED out role=%s", r.role);
         return null;
       }
+      
+      const isTool = r.role === "tool";
+      if (isTool && !Array.isArray(r.content)) return null;
+      if (!isTool && typeof r.content !== "string") return null;
+
       const attachments = Array.isArray((r as { attachments?: unknown }).attachments)
         ? (r as { attachments?: import("@vibe-tavern/domain").Attachment[] }).attachments
         : undefined;
-      return { role: r.role as SdkMessage["role"], content: r.content, ...(attachments?.length ? { attachments } : {}) };
+
+      // Build per-role so the discriminated `SdkMessage` union narrows without
+      // casts. `role` is already narrowed to the four valid literals above, so
+      // branching on it lets TS pick the right union arm. Tool content is an
+      // array (validated) but its element shape is not checked at this layer —
+      // the SDK receives it as `ToolContent`; element shape is the prompt
+      // assembler's contract (see coauthor-prompt.ts).
+      if (r.role === "tool") {
+        const msg: SdkMessage = { role: "tool", content: r.content as unknown[] };
+        if (attachments?.length) msg.attachments = attachments;
+        return msg;
+      }
+      if (r.role === "assistant") {
+        const msg: SdkMessage = { role: "assistant", content: r.content as string };
+        if (attachments?.length) msg.attachments = attachments;
+        if (Array.isArray(r.toolCalls) && r.toolCalls.length > 0) {
+          msg.toolCalls = r.toolCalls as ToolCallPart[];
+        }
+        return msg;
+      }
+      const msg: SdkMessage = { role: r.role, content: r.content as string };
+      if (attachments?.length) msg.attachments = attachments;
+      return msg;
     })
     .filter((m): m is SdkMessage => m !== null);
 }
@@ -150,10 +180,26 @@ export async function prepareSdkMessages(
       switch (msg.role) {
         case "system":
           return { role: "system", content: msg.content };
-        case "assistant":
+        case "assistant": {
+          // AssistantModelMessage has NO top-level `toolCalls` field — tool calls
+          // live INSIDE `content` as `ToolCallPart[]` (AssistantContent). The
+          // prior code attached them as a stray top-level field, which the SDK
+          // silently ignored — so co-author turns lost their cross-turn tool-call
+          // context in the assembled history. RP is unaffected (no tool calls).
+          if (msg.toolCalls?.length) {
+            const parts: AssistantContent = [...msg.toolCalls];
+            if (msg.content) parts.push({ type: "text", text: msg.content });
+            return { role: "assistant", content: parts };
+          }
           return { role: "assistant", content: msg.content };
+        }
         case "user":
           return { role: "user", content: msg.content };
+        case "tool":
+          // `msg.content` is an array whose element shape is the prompt
+          // assembler's contract (ToolResultPart-shaped); validated there, not
+          // re-checked at this provider boundary. Narrow once to ToolContent.
+          return { role: "tool", content: msg.content as ToolContent };
       }
     }),
   );

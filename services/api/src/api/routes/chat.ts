@@ -84,6 +84,23 @@ export function createChatRoutes(runtime: ChatRuntimeApi) {
     .get("/api/characters/:characterId/coauthor-chats", async (c) => {
       return c.json(await runtime.listCoauthorChats(c.req.param("characterId")));
     })
+    .get("/api/coauthor/modules", async (c) => {
+      return c.json({ modules: await runtime.listCoauthorModules() });
+    })
+    .post("/api/coauthor/modules", zValidator("json", schemas.coauthorModuleCreateSchema), async (c) => {
+      return c.json(await runtime.createCoauthorModule(c.req.valid("json")));
+    })
+    .patch("/api/coauthor/modules/:moduleId", zValidator("json", schemas.coauthorModuleUpdateSchema), async (c) => {
+      return c.json(await runtime.updateCoauthorModule(c.req.param("moduleId"), c.req.valid("json")));
+    })
+    .delete("/api/coauthor/modules/:moduleId", async (c) => {
+      await runtime.deleteCoauthorModule(c.req.param("moduleId"));
+      return c.json({ ok: true });
+    })
+    .patch("/api/chats/:chatId/coauthor-module", zValidator("json", schemas.setCoauthorModuleSchema), async (c) => {
+      const body = c.req.valid("json");
+      return c.json(await runtime.setCoauthorModule(c.req.param("chatId"), body.moduleId));
+    })
     .post("/api/chats/:chatId/coauthor/apply", zValidator("json", schemas.coauthorApplySchema), async (c) => {
       const body = c.req.valid("json");
       return c.json(await runtime.applyCoauthorDraft(c.req.param("chatId"), body));
@@ -300,6 +317,10 @@ export function createChatRoutes(runtime: ChatRuntimeApi) {
     .patch("/api/chats/:chatId/greeting-index", zValidator("json", schemas.setGreetingIndexSchema), async (c) => {
       const body = c.req.valid("json");
       return c.json(await runtime.setGreetingIndex(c.req.param("chatId"), body.greetingIndex));
+    })
+    .patch("/api/chats/:chatId/coauthor-lorebooks", zValidator("json", schemas.setCoauthorLorebookIdsSchema), async (c) => {
+      const body = c.req.valid("json");
+      return c.json(await runtime.setCoauthorLorebookIds(c.req.param("chatId"), body.lorebookIds));
     })
   ;
 }

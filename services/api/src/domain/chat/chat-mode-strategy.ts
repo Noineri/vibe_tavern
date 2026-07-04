@@ -1,9 +1,9 @@
-import type { ChatId, CharacterId, ChatBranchId, MessageId } from "@vibe-tavern/domain";
+import type { ChatId, CharacterId, ChatBranchId } from "@vibe-tavern/domain";
 import type { StoredProviderProfileRecord } from "@vibe-tavern/domain";
 import type { EventBus } from "@vibe-tavern/domain";
 import type { ChatMode } from "@vibe-tavern/domain";
 import type { ToolSet } from "ai";
-import type { Character, Message as DbMessage } from "@vibe-tavern/db";
+import type { Character, Message as DbMessage, Chat as DbChat } from "@vibe-tavern/db";
 import type {
   AssemblePromptForChatInput,
   AssemblePromptForChatResult,
@@ -44,10 +44,40 @@ export type { ChatMode };
 export interface ChatModeAssembleLoaders {
   /** Active-branch messages for the chat (position-ascending); `limit` takes the last N. */
   getMessages(chatId: ChatId, branchId?: ChatBranchId, limit?: number): Promise<DbMessage[]>;
+  /** The chat row being assembled. */
+  getChat(chatId: ChatId): Promise<DbChat>;
   /** The character row this chat edits (serializes + greeting context). */
   getCharacter(chatId: ChatId): Promise<Character>;
   /** Canonical `profile.md` text for the character (the edit target). */
   getProfileMdText(characterId: CharacterId): Promise<string>;
+  /**
+   * Co-author lorebook context (CA-13): the entries of the lorebooks the user
+   * EXPLICITLY bound to this chat via the right-panel picker, expanded read-only.
+   * NOT RP keyword activation — co-author is an editor, not a roleplay; the
+   * user curates which lorebooks feed the editor the same way the AI-assistant
+   * lorebook-writer does (resolveContext over an explicit id list). The closure
+   * resolves the chat's bound ids + expands enabled entries from enabled books.
+   * Returns {id,title,content}[] — no activation reason / windows / scan-depth.
+   */
+  getCoauthorLorebookEntries(chatId: ChatId): Promise<Array<{ id: string; title: string; content: string }>>;
+  /** Gets chat summaries bound to this branch. */
+  getChatSummaries(chatId: ChatId, branchId: ChatBranchId): Promise<Array<{
+    id: string;
+    source: string;
+    content: string;
+    includeInContext: boolean;
+    excludeSummarized: boolean;
+    summarizedFrom: number;
+    summarizedTo: number;
+  }>>;
+  /**
+   * User-created Co-Author modules (CS-24), as stored rows WITHOUT `isBuiltIn`
+   * (the registry stamps that during the seed+user merge). Returned only when
+   * the chat's bound module is NOT a seed id — callers gate on
+   * `isSeedModule(chat.coauthorModuleId)` to skip the DB read for the common
+   * built-in case. Seed modules never come from here.
+   */
+  getCoauthorUserModules(): Promise<Array<Omit<import("@vibe-tavern/api-contracts").CoauthorModule, "isBuiltIn">>>;
 }
 
 /**
@@ -74,6 +104,9 @@ export type ChatModeAssembleResult = AssemblePromptForChatResult & {
   tools?: ToolSet;
   /** Max multi-step tool-calling rounds per generation. Only meaningful when `tools` is set. */
   maxSteps?: number;
+  /** Emitted per turn in coauthor mode for UI badging (CS-28). */
+  coauthorModuleId?: string;
+  coauthorSkillId?: string;
 };
 
 /**

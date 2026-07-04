@@ -416,7 +416,6 @@ interface ImportError {
             ref={folderRef}
             className="hidden"
             type="file"
-            /** @ts-expect-error webkitdirectory is not in React types */
             webkitdirectory=""
             directory=""
             onChange={(e) => {
