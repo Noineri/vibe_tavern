@@ -1247,7 +1247,7 @@
   "update_modal_phase_error": "Error",
   "update_modal_runtime_error_server_exited": "The server process exited unexpectedly during the update.",
   "update_modal_runtime_error_unknown": "Update failed for an unknown reason (no error detail surfaced).",
-  "update_modal_runtime_error_rejected": "Update rejected by the server."
+  "update_modal_runtime_error_rejected": "Update rejected by the server.",
   "coauthor_author_assistant": "Co-Author",
   "coauthor_author_you": "You"
 }

@@ -1247,7 +1247,7 @@
   "update_modal_phase_error": "Ошибка",
   "update_modal_runtime_error_server_exited": "Процесс сервера неожиданно завершился во время обновления.",
   "update_modal_runtime_error_unknown": "Обновление не удалось по неизвестной причине (детали ошибки не получены).",
-  "update_modal_runtime_error_rejected": "Сервер отклонил обновление."
+  "update_modal_runtime_error_rejected": "Сервер отклонил обновление.",
   "coauthor_author_assistant": "Соавтор",
   "coauthor_author_you": "Вы"
 }
