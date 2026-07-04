@@ -2,7 +2,8 @@ import { Icons } from "../shared/icons.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
 import { cn } from "../../lib/cn.js";
 import { useT } from "../../i18n/context.js";
-import { useNavigationStore, useProviderStore, useModalStore } from "../../stores/index.js";
+import { useProviderStore, useModalStore } from "../../stores/index.js";
+import { switchModeAction } from "../../stores/api-actions/chat-actions.js";
 import { useChatMeta } from "../../stores/chat-selectors.js";
 import { useProviderProfiles } from "../../hooks/use-provider-profiles.js";
 import { resolveEntityAvatarUrl } from "../../lib/avatar.js";
@@ -36,7 +37,6 @@ export function CoauthorTopBar({ railHidden, onShowRail }: { railHidden?: boolea
   const { t } = useT();
   const isMobile = useIsMobile();
 
-  const setMode = useNavigationStore((s) => s.setMode);
   const tweaksOpen = useModalStore((s) => s.tweaksOpen);
   const chatMeta = useChatMeta();
   const provider = useProviderProfiles();
@@ -62,7 +62,7 @@ export function CoauthorTopBar({ railHidden, onShowRail }: { railHidden?: boolea
     useModalStore.getState().setProviderModalMode("coauthor");
     useModalStore.getState().setIsProviderModalOpen(true);
   };
-  const goBackToEditor = () => setMode("build");
+  const goBackToEditor = () => { void switchModeAction("build"); };
 
   // ── Mobile: compact bar ──
   if (isMobile) {
