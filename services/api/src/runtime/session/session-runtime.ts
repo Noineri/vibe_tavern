@@ -77,6 +77,24 @@ import * as importExportModule from "./session-runtime-import-export.js";
 // lorebookModule removed — CRUD is wired directly through stores in RuntimeApiAdapter
 import { scanSillyTavernDirectory as scanST, importSillyTavernDirectory as importST } from "../../shared/st-directory-scanner.js";
 
+/**
+ * Pick the chat the app boots into. Prefers the most-recent NON-coauthor chat
+ * so a reload never drops the user into the co-author surface (F-7) — the
+ * co-author surface is entered by opening a co-author chat, not by a reload.
+ * Falls back to the overall most-recent chat only when no RP chat exists.
+ *
+ * `orderedIds` is recency-desc (chatOrder.items); `isCoauthor` maps an id to
+ * whether it belongs to a co-author chat. Pure — extracted so the F-7 default
+ * is unit-testable without spinning a full SessionRuntime.
+ */
+export function pickBootstrapChatId<T extends string>(
+	orderedIds: readonly T[],
+	isCoauthor: (id: T) => boolean,
+): T | null {
+	if (orderedIds.length === 0) return null;
+	return orderedIds.find((id) => !isCoauthor(id)) ?? orderedIds[0] ?? null;
+}
+
 
 	/**
 	 * Top-level coordinator for all session state.
@@ -172,13 +190,17 @@ import { scanSillyTavernDirectory as scanST, importSillyTavernDirectory as impor
 	// ─── Bootstrap & Snapshot ───────────────────────────────────────────
 
 	async getBootstrapState(): Promise<BootstrapState> {
-		const initialChatId = this.chatOrder.items[0] ?? null;
 		const [userChars, allChats, promptPresets, uiSettings] = await Promise.all([
 			this.stores.characters.listAll(),
 			this.stores.chats.listAll(),
 			this.stores.presets.listAll(),
 			this.stores.uiSettings.get(),
 		]);
+		// Boot into the most-recent NON-coauthor chat so a reload never drops the
+		// user into the co-author surface (F-7). Falls back to the overall
+		// most-recent chat only when no RP chat exists at all.
+		const coauthorIds = new Set(allChats.filter((c) => c.mode === 'coauthor').map((c) => c.id));
+		const initialChatId = pickBootstrapChatId(this.chatOrder.items, (id) => coauthorIds.has(id));
 		const isArmServer = process.arch.startsWith('arm') && process.platform !== 'darwin';
 		return {
 			initialChatId,
