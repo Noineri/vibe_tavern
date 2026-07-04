@@ -33,7 +33,8 @@
     "dev:api": "bun run --filter @vibe-tavern/api dev",
     "dev:web": "bun run --filter @vibe-tavern/web dev",
     "db:generate": "bun run --filter @vibe-tavern/db db:generate",
-    "db:push": "bun run --filter @vibe-tavern/db db:push"
+    "db:push": "bun run --filter @vibe-tavern/db db:push",
+    "bump-version": "bun scripts/bump-version.ts"
   },
   "devDependencies": {
     "@types/bun": "latest",
