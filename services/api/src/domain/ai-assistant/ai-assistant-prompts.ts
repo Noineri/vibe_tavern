@@ -1,67 +1,40 @@
 /**
  * Default prompt loading for AI assistant modes.
  *
- * Reads `.md` files from the assets directory, cached after first read.
- * Follows the same path resolution strategy as the script-ai prompt loader
- * (dev mode, build output, standalone artifact).
+ * Reads `.md` files from the assets directory via the shared prompt-asset
+ * loader (`shared/prompt-asset-loader.ts`), which owns the candidate-path
+ * ladder (env override → standalone artifact → API source assets → cwd source
+ * → build output) and the per-filename cache. This module keeps the mode-keyed
+ * public surface (`getDefaultPromptForMode`, `resolveSystemPrompt`, etc.) that
+ * callers depend on; resolution + caching are delegated so there is a single
+ * source of truth for where prompt `.md` files are loaded from.
  */
 
-import { join, resolve } from "node:path";
 import type { AiAssistantMode } from "@vibe-tavern/prompt-pipeline";
+import {
+	clearPromptAssetCache,
+	loadPromptAsset,
+	resolvePromptAssetPath,
+} from "../../shared/prompt-asset-loader.js";
 import { getModeConfig } from "./ai-assistant-modes.js";
-
-// ─── Cache ───────────────────────────────────────────────────────────────────
-
-const _promptCache = new Map<string, string>();
 
 // ─── Path resolution ─────────────────────────────────────────────────────────
 
 export async function resolvePromptPathForMode(mode: AiAssistantMode): Promise<string> {
   const config = getModeConfig(mode);
-  return resolvePromptPath(config.defaultPromptFile);
-}
-
-async function resolvePromptPath(filename: string): Promise<string> {
-  const candidates = [
-    // Environment override
-    process.env.RP_PLATFORM_AI_ASSISTANT_PROMPTS_DIR
-      ? join(process.env.RP_PLATFORM_AI_ASSISTANT_PROMPTS_DIR, filename)
-      : null,
-    // Standalone artifact: prompt next to executable, in prompts/ subdir.
-    join(resolve(process.execPath, ".."), "prompts", filename),
-    // API source assets.
-    resolve(import.meta.dir, "..", "..", "assets", filename),
-    join(process.cwd(), "services", "api", "assets", filename),
-    // Build output.
-    resolve(import.meta.dir, "..", filename),
-    resolve(import.meta.dir, "..", "..", "..", "..", "out", "services", "api", filename),
-    join(process.cwd(), "out", "services", "api", filename),
-  ].filter(Boolean) as string[];
-
-  for (const path of candidates) {
-    if (await Bun.file(path).exists()) return path;
-  }
-
-  // Return last candidate as fallback (will fail with a clear error on read).
-  return candidates[candidates.length - 1];
+  return resolvePromptAssetPath(config.defaultPromptFile);
 }
 
 // ─── Public API ──────────────────────────────────────────────────────────────
 
 /**
  * Load the default system prompt for a given assistant mode.
- * Results are cached after first successful read.
+ * Cached per filename by the shared loader (equivalent to the former mode-keyed
+ * cache, since each mode maps to exactly one `defaultPromptFile`).
  */
 export async function getDefaultPromptForMode(mode: AiAssistantMode): Promise<string> {
-  const cached = _promptCache.get(mode);
-  if (cached) return cached;
-
   const config = getModeConfig(mode);
-  const mdPath = await resolvePromptPath(config.defaultPromptFile);
-  const content = await Bun.file(mdPath).text();
-
-  _promptCache.set(mode, content);
-  return content;
+  return loadPromptAsset(config.defaultPromptFile);
 }
 
 /**
@@ -100,7 +73,10 @@ export async function resolveSystemPrompt(
   return { prompt: defaultPrompt, source: "default_md" };
 }
 
-/** Clear the prompt cache (useful for testing). */
+/**
+ * Clear the prompt cache (useful for testing). Delegates to the shared loader's
+ * cache so both the assistant and Co-Author paths are invalidated together.
+ */
 export function clearPromptCache(): void {
-  _promptCache.clear();
+  clearPromptAssetCache();
 }
