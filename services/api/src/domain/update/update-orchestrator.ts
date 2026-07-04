@@ -11,6 +11,8 @@
  * cleanly via process.exit(0). The user restarts Vibe Tavern manually.
  */
 
+import { existsSync } from "node:fs";
+import { dirname, join } from "node:path";
 import {
 	checkForUpdate,
 	cleanupOldInstall,
@@ -211,17 +213,42 @@ export function getUpdateOrchestrator(): UpdateOrchestrator {
  * Install-kind classification surfaced to the UI so the modal can fall back
  * to "Open release page" when self-update is not supported (Inno Setup,
  * Docker, dev builds).
+ *
+ * Docker MUST be checked before IS_COMPILED: the Docker image runs
+ * `bun prod-server.js` (not a compiled binary), so IS_COMPILED is false —
+ * checking IS_COMPILED first would mislabel Docker as "dev". The Dockerfile
+ * sets VIBE_TAVERN_DOCKER=1 in the release stage.
  */
 export type InstallKind = "standalone" | "inno-setup" | "docker" | "dev";
 
-export function detectInstallKind(): InstallKind {
-	if (!IS_COMPILED) return "dev";
-	if (process.env.VIBE_TAVERN_DOCKER === "1") return "docker";
-	// Inno Setup default install path on Windows: C:\Program Files\Vibe Tavern\...
-	if (process.platform === "win32" && /Program Files[\\/]/i.test(process.execPath)) {
+const INNO_MARKER_FILENAME = ".vibe-tavern-install";
+
+/** Pure classifier — exported for unit testing (detection inputs are otherwise
+ *  pinned at module load: IS_COMPILED, process.platform, process.execPath). */
+export function classifyInstallKind(input: {
+	dockerEnv: string | undefined;
+	isCompiled: boolean;
+	platform: string;
+	execPath: string;
+	hasInnoMarker: boolean;
+}): InstallKind {
+	if (input.dockerEnv === "1") return "docker";
+	if (!input.isCompiled) return "dev";
+	if (input.hasInnoMarker) return "inno-setup";
+	if (input.platform === "win32" && /Program Files[\\/]/i.test(input.execPath)) {
 		return "inno-setup";
 	}
 	return "standalone";
+}
+
+export function detectInstallKind(): InstallKind {
+	return classifyInstallKind({
+		dockerEnv: process.env.VIBE_TAVERN_DOCKER,
+		isCompiled: IS_COMPILED,
+		platform: process.platform,
+		execPath: process.execPath,
+		hasInnoMarker: existsSync(join(dirname(process.execPath), INNO_MARKER_FILENAME)),
+	});
 }
 
 export function canSelfUpdate(): boolean {

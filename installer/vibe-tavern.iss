@@ -82,3 +82,12 @@ function InitializeSetup(): Boolean;
 begin
   Result := True;
 end;
+
+// Write a marker file next to the executable so the running app can detect
+// it was installed by Inno Setup (vs. a zip extracted under Program Files).
+// detectInstallKind() in update-orchestrator.ts reads this file.
+procedure CurStepChanged(CurStep: TSetupStep);
+begin
+  if CurStep = ssPostInstall then
+    SaveStringToFile(ExpandConstant('{app}\.vibe-tavern-install'), 'inno-setup', False);
+end;
