@@ -24,7 +24,6 @@ export interface Chat {
   selectedGreetingIndex: number;
   activeBranchId: string;
   promptPresetId: string | null;
-  lastAccessedAt: string;
   loreActivationState: Record<string, unknown>;
   scriptState: Record<string, Record<string, unknown>>;
   /** Co-author only (CA-13): lorebook ids explicitly bound to this chat as
@@ -91,7 +90,6 @@ export class ChatStore {
           messageHistoryLimit: 0,
           autoSummaryConfigJson: '{"enabled":false,"everyN":20,"useChatModel":true}',
           status: 'active',
-          lastAccessedAt: now,
           createdAt: now,
           updatedAt: now,
         })
@@ -150,15 +148,6 @@ export class ChatStore {
   async listAll(): Promise<Chat[]> {
     const rows = await this.db.select().from(chats).orderBy(desc(chats.updatedAt)).all();
     return rows.map((row) => this.mapRow(row));
-  }
-
-  async touchLastAccessed(id: string): Promise<void> {
-    const now = this.clock.now();
-    await this.db
-      .update(chats)
-      .set({ lastAccessedAt: now })
-      .where(eq(chats.id, id))
-      .run();
   }
 
   async updateTitle(id: string, title: string): Promise<Chat> {
@@ -738,7 +727,6 @@ export class ChatStore {
       selectedGreetingIndex: row.selectedGreetingIndex,
       activeBranchId: row.activeBranchId,
       promptPresetId: row.promptPresetId,
-      lastAccessedAt: row.lastAccessedAt,
       loreActivationState: safeParseJson(row.loreActivationStateJson),
       scriptState: safeParseScriptState(row.scriptStateJson),
       coauthorLorebookIds: parseStringArray(row.coauthorLorebookIdsJson),

@@ -97,7 +97,6 @@ describe("ChatStore.forkBranch — trace inheritance (Defect C)", () => {
 			id: "chat_1", characterId: "char_1", personaId: null,
 			activeBranchId: "brnch_1", promptPresetId: "preset_1",
 			title: "Test chat", summary: "", messageHistoryLimit: 0,
-			lastAccessedAt: FIXED_NOW,
 			status: "active", createdAt: FIXED_NOW, updatedAt: FIXED_NOW,
 		}).run();
 		db.insert(schema.chatBranches).values({

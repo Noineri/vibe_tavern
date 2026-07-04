@@ -71,6 +71,13 @@
       "when": 1783098198969,
       "tag": "0009_wild_iron_lad",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1783201498757,
+      "tag": "0010_dear_starjammers",
+      "breakpoints": true
     }
   ]
 }

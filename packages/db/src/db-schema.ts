@@ -145,7 +145,6 @@ export const chats = sqliteTable('chats', {
   summary: text('summary').notNull().default(''),
   messageHistoryLimit: integer('message_history_limit').notNull().default(0),
   autoSummaryConfigJson: text('auto_summary_config_json').notNull().default('{"enabled":false,"everyN":20,"useChatModel":true,"excludeSummarized":true}'),
-  lastAccessedAt: text('last_accessed_at').notNull().default(''),
   status: text('status').notNull().default('active'),
   selectedGreetingIndex: integer('selected_greeting_index').notNull().default(0),
   createdAt: text('created_at').notNull(),
@@ -163,7 +162,6 @@ export const chats = sqliteTable('chats', {
   coauthorModuleId: text('coauthor_module_id'),
 }, (table) => ({
   characterIdIdx: index('idx_chats_character_id').on(table.characterId),
-  lastAccessedIdx: index('idx_chats_last_accessed').on(table.lastAccessedAt),
   modeIdx: index('idx_chats_mode').on(table.mode),
 }));
 
