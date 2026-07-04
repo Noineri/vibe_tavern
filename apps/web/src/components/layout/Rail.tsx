@@ -153,7 +153,7 @@ export function Rail({ hidden }: { hidden?: boolean }) {
   // is RP-only in practice (co-author has no branches, so this Rail's
   // co-author fork never calls buildBranchMenuItems).
   const rowActions = useRowActions({
-    mode: mode === "coauthor" ? "coauthor" : "rp",
+    mode: "rp",
     character,
     setConfirmDestroy,
     setRenamingChatId,

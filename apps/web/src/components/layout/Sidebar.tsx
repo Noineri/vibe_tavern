@@ -90,7 +90,7 @@ export function Sidebar() {
   const [chatListQuery, setChatListQuery] = useState("");
   const [chatSearchOpen, setChatSearchOpen] = useState(false);
 
-  const { chats, rpVisibleChats, coauthorVisibleChats, sectionChats } = useSidebarChats({
+  const { chats, rpVisibleChats, sectionChats } = useSidebarChats({
     allChats,
     characterId: currentCharacterId ?? null,
     query: chatListQuery,
@@ -137,8 +137,8 @@ export function Sidebar() {
   const [flyoutFlipped, setFlyoutFlipped] = useState(false);
 
   const flyoutChats = useMemo(
-    () => flyoutCharId ? allChats.filter(c => c.characterId === flyoutCharId && (mode === "coauthor" ? c.mode === "coauthor" : c.mode !== "coauthor")) : [],
-    [allChats, flyoutCharId, mode],
+    () => flyoutCharId ? allChats.filter(c => c.characterId === flyoutCharId && c.mode !== "coauthor") : [],
+    [allChats, flyoutCharId],
   );
 
   useEffect(() => {
@@ -187,7 +187,7 @@ export function Sidebar() {
       )}>
         <SidebarHeader sidebarCollapsed={sidebarCollapsed} setSidebarCollapsed={setSidebarCollapsed} t={t} />
 
-        {sidebarCollapsed && (mode === 'play' || mode === 'coauthor') && (
+        {sidebarCollapsed && mode === 'play' && (
           <div className="flex min-h-0 flex-1 flex-col items-center">
             <CollapsedCharacterStrip
               characterTabs={characterTabs}
@@ -202,22 +202,14 @@ export function Sidebar() {
             <div className="h-px w-8 shrink-0 bg-border" />
 
             <div className="flex shrink-0 flex-col items-center gap-1 py-2">
-              {mode === "coauthor" ? (
-                <CustomTooltip content={t("coauthor.sidebar.modules")} side="right">
-                  <div className="flex h-9 w-9 cursor-pointer items-center justify-center rounded-full bg-s3 text-t2 transition-all duration-150 hover:rounded-xl hover:bg-s2 hover:text-t1" onClick={() => useModalStore.getState().setCoauthorModuleModalOpen(true)}><Icons.Tool /></div>
-                </CustomTooltip>
-              ) : (
-                <>
-                  <CustomTooltip content={t("sidebar_prompt_manager")} side="right">
-                    <div className="flex h-9 w-9 cursor-pointer items-center justify-center rounded-full bg-s3 text-t2 transition-all duration-150 hover:rounded-xl hover:bg-s2 hover:text-t1" onClick={() => useModalStore.getState().setIsPromptManagerOpen(true)}><Icons.Terminal /></div>
-                  </CustomTooltip>
-                  <CustomTooltip content={personaName} side="right">
-                    <div className="flex h-9 w-9 cursor-pointer items-center justify-center overflow-hidden rounded-full bg-s3 text-t2 transition-all duration-150 hover:rounded-xl hover:bg-s2 hover:text-t1" onClick={() => useModalStore.getState().setIsPersonaModalOpen(true)}>
-                      {personaAvatarSrc ? <img src={personaAvatarSrc!} alt="" className="h-full w-full object-cover" /> : initials(personaName)}
-                    </div>
-                  </CustomTooltip>
-                </>
-              )}
+              <CustomTooltip content={t("sidebar_prompt_manager")} side="right">
+                <div className="flex h-9 w-9 cursor-pointer items-center justify-center rounded-full bg-s3 text-t2 transition-all duration-150 hover:rounded-xl hover:bg-s2 hover:text-t1" onClick={() => useModalStore.getState().setIsPromptManagerOpen(true)}><Icons.Terminal /></div>
+              </CustomTooltip>
+              <CustomTooltip content={personaName} side="right">
+                <div className="flex h-9 w-9 cursor-pointer items-center justify-center overflow-hidden rounded-full bg-s3 text-t2 transition-all duration-150 hover:rounded-xl hover:bg-s2 hover:text-t1" onClick={() => useModalStore.getState().setIsPersonaModalOpen(true)}>
+                  {personaAvatarSrc ? <img src={personaAvatarSrc!} alt="" className="h-full w-full object-cover" /> : initials(personaName)}
+                </div>
+              </CustomTooltip>
             </div>
           </div>
         )}
@@ -336,7 +328,7 @@ export function Sidebar() {
           </div>
         )}
 
-        {!sidebarCollapsed && (mode === 'play' || mode === 'coauthor') && (
+        {!sidebarCollapsed && mode === 'play' && (
           <>
           <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
             <CharacterListSection
@@ -371,7 +363,7 @@ export function Sidebar() {
             <section className="min-h-0 max-h-[50%] overflow-y-auto border-b-0 pb-1.5">
               <div className="sticky top-0 z-10 glass-blur bg-surface">
                 <div className="flex items-center pr-2.5">
-                  <div className="flex-1 px-[13px] pt-1 pb-[5px] text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.08em] text-t3">{mode === "coauthor" ? t("sidebar_coauthor_chats") : t("sidebar_chats")}</div>
+                  <div className="flex-1 px-[13px] pt-1 pb-[5px] text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.08em] text-t3">{t("sidebar_chats")}</div>
                   <ListSortToggle mode={chatSortMode} onChange={setChatSortMode} />
                   <CustomTooltip content={t("search_name_placeholder")}>
                     <button type="button" className={cn("iBtn size-5", chatSearchOpen && "text-accent-t")} aria-pressed={chatSearchOpen} onClick={() => setChatSearchOpen((v) => !v)}>
@@ -386,7 +378,7 @@ export function Sidebar() {
                 <CustomTooltip content={t("sidebar_new_chat_active_char")}>
                   <button type="button" className="iBtn size-5" onClick={() => {
                     const charId = currentCharacterId;
-                    void character.handleCreateChat(charId ?? undefined, mode === "coauthor" ? "coauthor" : undefined);
+                    void character.handleCreateChat(charId ?? undefined);
                   }}>
                     <Icons.Plus />
                   </button>
@@ -403,35 +395,12 @@ export function Sidebar() {
               </div>
               {chats.length === 0 ? (
                 <div className="px-[14px] py-5 text-center text-xs leading-relaxed text-t3">
-                  {mode === "coauthor" ? t("coauthor.list_empty") : t("sidebar_send_a_message")}
+                  {t("sidebar_send_a_message")}
                 </div>
               ) : sectionChats.length === 0 ? (
                 <div className="px-[14px] py-5 text-center text-xs leading-relaxed text-t3">
-                  {mode === "coauthor" ? t("coauthor.list_empty") : t("search_no_results")}
+                  {t("search_no_results")}
                 </div>
-              ) : mode === "coauthor" ? (
-                coauthorVisibleChats.map((chatItem) => {
-                  const isActive = chatItem.id === activeChatId;
-                  return (
-                    <div
-                      key={chatItem.id}
-                      className={cn(
-                        'group relative mx-1 flex cursor-pointer items-center rounded px-2.5 py-1.5 transition-colors duration-100',
-                        isActive ? 'bg-accent-dim hover:bg-accent-dim' : 'hover:bg-s2'
-                      )}
-                      onClick={() => void chat.handleSwitchChat(chatItem.id)}
-                    >
-                      <span className="mr-1.5 shrink-0 text-[calc(var(--ui-fs)-3px)] text-accent-t"><Icons.Sparkles /></span>
-                      <div className="min-w-0 flex-1">
-                        <OverflowTooltip
-                          text={chatItem.title || t("coauthor.untitled_chat")}
-                          className={cn('text-[calc(var(--ui-fs)-1px)] text-t1', isActive && 'text-accent-t')}
-                        />
-                        <div className="text-[calc(var(--ui-fs)-3px)] text-t3">{chatItem.messageCount} {t("msgs_short")}</div>
-                      </div>
-                    </div>
-                  );
-                })
               ) : (
                 <>
                 {rpVisibleChats.map((chatItem) => {
@@ -667,63 +636,41 @@ export function Sidebar() {
             </div>
 
             <section className="shrink-0 border-t border-border px-1 py-1.5">
-              {mode === "coauthor" ? (
-                <div
-                  className="group relative mx-1 flex cursor-pointer items-center gap-[9px] rounded px-2.5 py-1.5 text-[calc(var(--ui-fs)-1px)] text-t2 transition-colors duration-100 hover:bg-s2 hover:text-t1"
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => useModalStore.getState().setCoauthorModuleModalOpen(true)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter" || event.key === " ") {
-                      event.preventDefault();
-                      useModalStore.getState().setCoauthorModuleModalOpen(true);
-                    }
-                  }}
-                >
-                  <span className="flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded-full bg-transparent font-ui text-[calc(var(--ui-fs)-3px)] not-italic text-t2">
-                    <Icons.Tool />
-                  </span>
-                  <span>{t("coauthor.sidebar.modules")}</span>
-                </div>
-              ) : (
-                <>
-                  <div
-                    className="group relative mx-1 flex cursor-pointer items-center gap-[9px] rounded px-2.5 py-1.5 text-[calc(var(--ui-fs)-1px)] text-t2 transition-colors duration-100 hover:bg-s2 hover:text-t1"
-                    role="button"
-                    tabIndex={0}
-                    onClick={() => useModalStore.getState().setIsPromptManagerOpen(true)}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter" || event.key === " ") {
-                        event.preventDefault();
-                        useModalStore.getState().setIsPromptManagerOpen(true);
-                      }
-                    }}
-                  >
-                    <span className="flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded-full bg-transparent font-ui text-[calc(var(--ui-fs)-3px)] not-italic text-t2">
-                      <Icons.Terminal />
-                    </span>
-                    <span>{t("sidebar_prompt_manager")}</span>
-                  </div>
-                  <div
-                    className="group relative mx-1 flex cursor-pointer items-center gap-[9px] rounded px-2.5 py-1.5 text-[calc(var(--ui-fs)-1px)] text-t2 transition-colors duration-100 hover:bg-s2 hover:text-t1"
-                    role="button"
-                    tabIndex={0}
-                    onClick={() => useModalStore.getState().setIsPersonaModalOpen(true)}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter" || event.key === " ") {
-                        event.preventDefault();
-                        useModalStore.getState().setIsPersonaModalOpen(true);
-                      }
-                    }}
-                  >
-                    <span className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-s3 font-ui text-[calc(var(--ui-fs)-2px)] not-italic text-t2">{personaAvatarSrc ? <img src={personaAvatarSrc!} alt="" className="h-full w-full object-cover" /> : initials(personaName)}</span>
-                    <span>{personaName}</span>
-                    <span className="ml-auto shrink-0 text-[calc(var(--ui-fs)-3px)] text-t3">
-                      {t("sidebar_your_persona")}
-                    </span>
-                  </div>
-                </>
-              )}
+              <div
+                className="group relative mx-1 flex cursor-pointer items-center gap-[9px] rounded px-2.5 py-1.5 text-[calc(var(--ui-fs)-1px)] text-t2 transition-colors duration-100 hover:bg-s2 hover:text-t1"
+                role="button"
+                tabIndex={0}
+                onClick={() => useModalStore.getState().setIsPromptManagerOpen(true)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    useModalStore.getState().setIsPromptManagerOpen(true);
+                  }
+                }}
+              >
+                <span className="flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded-full bg-transparent font-ui text-[calc(var(--ui-fs)-3px)] not-italic text-t2">
+                  <Icons.Terminal />
+                </span>
+                <span>{t("sidebar_prompt_manager")}</span>
+              </div>
+              <div
+                className="group relative mx-1 flex cursor-pointer items-center gap-[9px] rounded px-2.5 py-1.5 text-[calc(var(--ui-fs)-1px)] text-t2 transition-colors duration-100 hover:bg-s2 hover:text-t1"
+                role="button"
+                tabIndex={0}
+                onClick={() => useModalStore.getState().setIsPersonaModalOpen(true)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    useModalStore.getState().setIsPersonaModalOpen(true);
+                  }
+                }}
+              >
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-s3 font-ui text-[calc(var(--ui-fs)-2px)] not-italic text-t2">{personaAvatarSrc ? <img src={personaAvatarSrc!} alt="" className="h-full w-full object-cover" /> : initials(personaName)}</span>
+                <span>{personaName}</span>
+                <span className="ml-auto shrink-0 text-[calc(var(--ui-fs)-3px)] text-t3">
+                  {t("sidebar_your_persona")}
+                </span>
+              </div>
             </section>
           </>
         )}
