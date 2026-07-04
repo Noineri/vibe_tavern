@@ -117,6 +117,14 @@ async function main() {
 			await copyFile(join(promptDir, file), join(DIST, "prompts", file));
 			console.log(`   → ${join(DIST, "prompts", file)}`);
 		}
+		// Co-Author prompt assets nest under coauthor/{modules,skills}/ — the
+		// flat readdir above skips subdirectories, so copy the whole folder.
+		const coauthorSource = join(promptDir, "coauthor");
+		const coauthorTarget = join(DIST, "prompts", "coauthor");
+		if (await exists(coauthorSource)) {
+			await cp(coauthorSource, coauthorTarget, { recursive: true });
+			console.log(`   → ${coauthorTarget}`);
+		}
 	});
 
 	// ── Step 6: Copy DB migrations ─────────────────────────────────────────

@@ -118,6 +118,14 @@ async function main() {
 			await copyFile(join(promptDir, file), join(STANDALONE_OUT, "prompts", file));
 			console.log(`   → ${join(STANDALONE_OUT, "prompts", file)}`);
 		}
+		// Co-Author prompt assets nest under coauthor/{modules,skills}/ — the
+		// flat readdir above skips subdirectories, so copy the whole folder.
+		const coauthorSource = join(promptDir, "coauthor");
+		const coauthorTarget = join(STANDALONE_OUT, "prompts", "coauthor");
+		if (await exists(coauthorSource)) {
+			await cp(coauthorSource, coauthorTarget, { recursive: true });
+			console.log(`   → ${coauthorTarget}`);
+		}
 	});
 
 	// ── Step 3d: Copy DB migrations to out/standalone/drizzle/ ────────────
