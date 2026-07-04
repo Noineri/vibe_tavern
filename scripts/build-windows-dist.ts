@@ -8,7 +8,6 @@
  *   - out/windows-dist/tokenizers/       (runtime tokenizer JSON files)
  *   - out/windows-dist/drizzle/          (SQLite DB migrations)
  *   - out/windows-dist/prompts/          (AI assistant prompt files)
- *   - out/windows-dist/Vibe_Tavern.bat   (launcher — thin wrapper around the binary)
  *   - out/vibe-tavern-windows-x64.zip
  *
  * Usage:
@@ -130,19 +129,6 @@ async function main() {
 		);
 	});
 
-	// ── Step 6b: Copy launcher script (CRLF line endings) ──────────────────
-
-	await step("Copying launcher script", async () => {
-		const wrapperSource = join(ROOT, "scripts", "dist-windows", "Vibe_Tavern.bat");
-		const wrapperTarget = join(DIST, "Vibe_Tavern.bat");
-		if (!(await exists(wrapperSource))) {
-			throw new Error(`Launcher script not found: ${wrapperSource}`);
-		}
-		const content = (await Bun.file(wrapperSource).text()).replace(/\r?\n/g, "\r\n");
-		await Bun.write(wrapperTarget, content);
-		console.log(`   → ${wrapperTarget}`);
-	});
-
 	// ── Step 7: Compile standalone binary ──────────────────────────────────
 
 	await step("Compiling standalone binary", async () => {
@@ -206,7 +192,7 @@ async function main() {
 	console.log(`   Archive: ${ARCHIVE}`);
 	console.log("\n   To run:");
 	console.log("     Extract vibe-tavern-windows-x64.zip");
-	console.log("     Double-click Vibe_Tavern.bat");
+	console.log("     Double-click vibe-tavern.exe");
 	console.log("\n   The server starts on http://127.0.0.1:8787");
 }
 

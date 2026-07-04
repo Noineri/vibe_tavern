@@ -129,19 +129,6 @@ async function main() {
 		);
 	});
 
-	// ── Step 6b: Copy launcher script ─────────────────────────────────────
-
-	await step("Copying launcher script", async () => {
-		const wrapperSource = join(ROOT, "scripts", "dist-linux", "Vibe_Tavern.sh");
-		const wrapperTarget = join(DIST, "Vibe_Tavern.sh");
-		if (!(await exists(wrapperSource))) {
-			throw new Error(`Launcher script not found: ${wrapperSource}`);
-		}
-		await Bun.write(wrapperTarget, await Bun.file(wrapperSource).text());
-		await chmod(wrapperTarget, 0o755);
-		console.log(`   → ${wrapperTarget}`);
-	});
-
 	// ── Step 7: Compile standalone binary ──────────────────────────────────
 
 	await step("Compiling standalone binary", async () => {
