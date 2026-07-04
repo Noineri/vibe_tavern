@@ -7,7 +7,8 @@ import { DestructiveConfirmModal } from "../shared/destructive-confirm-modal.js"
 import { Markdown } from "../../lib/markdown.js";
 import { StreamingMarkdown } from "../chat/StreamingMarkdown.js";
 import { CoauthorToolActivitySlot } from "../chat/CoauthorToolActivitySlot.js";
-import { Icons } from "../shared/icons.js";
+import { MessageReasoning } from "../chat/MessageReasoning.js";
+import { Logo } from "../shared/Logo.js";
 import { AutoTextarea } from "../shared/auto-textarea.js";
 import { MobileExpandTextarea } from "../shared/MobileExpandTextarea.js";
 import { useT } from "../../i18n/context.js";
@@ -73,41 +74,37 @@ export const CoauthorTurnShell = memo(function CoauthorTurnShell({
 
   const isGenerating = isSending && !pendingUserMessageContent && isLastTurn;
 
+  const characterAvatarUrl = resolveEntityAvatarUrl({
+    kind: "characters",
+    id: authorInfo.character.id,
+    avatarExt: authorInfo.character.avatarExt,
+    avatarAssetId: authorInfo.character.avatarAssetId,
+    updatedAt: authorInfo.character.updatedAt,
+  });
+
   const authorOverride: MessageShellAuthorInfo = {
     name: `${t("coauthor_author_assistant")}: ${authorInfo.character.name}`,
     avatarAssetId: authorInfo.character.avatarAssetId,
     avatarCropJson: authorInfo.character.avatarCropJson,
-    avatarSrc: resolveEntityAvatarUrl({
-      kind: "characters",
-      id: authorInfo.character.id,
-      avatarExt: authorInfo.character.avatarExt,
-      avatarAssetId: authorInfo.character.avatarAssetId,
-      updatedAt: authorInfo.character.updatedAt,
-    }),
+    avatarSrc: characterAvatarUrl,
     avatarNode: (
-      <div className="flex h-full w-full items-center justify-center bg-s3">
-        <Icons.Sparkles className="h-5 w-5 text-t3" />
+      <div className="flex h-full w-full items-center justify-center">
+        <Logo className="h-[28px] w-[28px]" />
       </div>
     ),
     nameNode: (
       <span className="flex items-center gap-1.5">
         <span className="text-t3">{t("coauthor_author_assistant")}:</span>
         <span className="flex items-center gap-1.5 font-medium text-accent-t">
-          <div className="h-5 w-5 overflow-hidden rounded-full bg-s3">
-            {authorInfo.character.avatarAssetId ? (
+          <div className="h-8 w-8 overflow-hidden rounded-full bg-s3">
+            {characterAvatarUrl ? (
               <img
-                src={resolveEntityAvatarUrl({
-                  kind: "characters",
-                  id: authorInfo.character.id,
-                  avatarExt: authorInfo.character.avatarExt,
-                  avatarAssetId: authorInfo.character.avatarAssetId,
-                  updatedAt: authorInfo.character.updatedAt,
-                })!}
+                src={characterAvatarUrl}
                 alt={authorInfo.character.name}
                 className="h-full w-full object-cover"
               />
             ) : (
-              <div className="flex h-full w-full items-center justify-center bg-s3 text-[10px] font-medium text-t3">
+              <div className="flex h-full w-full items-center justify-center bg-s3 text-[12px] font-medium text-t3">
                 {authorInfo.character.name.charAt(0).toUpperCase()}
               </div>
             )}
@@ -228,14 +225,17 @@ const CoauthorTurnPart = memo(function CoauthorTurnPart({ messageId, chatId }: {
   const chat = useChatController();
   const isEditingThisPart = useChatStore(s => s.editingMessageId === messageId);
   const editingDraft = useChatStore(s => s.editingDraft);
-  const isBusy = useIsSending() || useChatStore(s => s.messageActionId === messageId);
-  
+  const isSending = useIsSending();
+  const isMessageAction = useChatStore(s => s.messageActionId === messageId);
+  const isBusy = isSending || isMessageAction;
+
   if (!msg) return null;
 
   const isStreamingHere = isStreamingTarget && (!!streamingReveal.streamingText || !!streamingReveal.reasoningText);
   const activeStreamingRevealedText = isStreamingHere ? streamingReveal.revealedText : "";
   const activeStreamingReasoning = isStreamingHere ? streamingReveal.reasoningText : null;
-  const reasoningText = msg.variants?.[msg.selectedVariantIndex ?? 0]?.reasoning || null;
+  const selectedVariant = msg.variants?.[msg.selectedVariantIndex ?? 0];
+  const reasoningText = selectedVariant?.reasoning || null;
 
   const finalReasoning = isStreamingHere ? (activeStreamingReasoning || reasoningText) : reasoningText;
 
@@ -273,14 +273,7 @@ const CoauthorTurnPart = memo(function CoauthorTurnPart({ messageId, chatId }: {
       ) : (
         <>
           {finalReasoning && (
-            <details className="group overflow-hidden rounded border border-border bg-s1">
-              <summary className="cursor-pointer px-3 py-1.5 font-ui text-[11px] font-medium text-t3 transition-colors hover:text-t2">
-                Reasoning
-              </summary>
-              <div className="border-t border-border px-3 py-2">
-                <pre className="whitespace-pre-wrap font-mono text-[11px] text-t3">{finalReasoning}</pre>
-              </div>
-            </details>
+            <MessageReasoning reasoning={finalReasoning} reasoningDurationMs={selectedVariant?.reasoningDurationMs ?? null} variant="minimal" />
           )}
 
           {(msg.displayContent || isStreamingHere) && (

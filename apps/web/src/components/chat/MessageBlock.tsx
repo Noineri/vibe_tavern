@@ -910,6 +910,7 @@ function PendingAssistantMessage() {
   const chatMeta = useChatMeta();
   const activeGen = useActiveGeneration();
   const isMobile = useIsMobile();
+  const isCoauthorMode = useSnapshotStore(s => s.activeChat?.mode === "coauthor");
   const variantControlsRef = useRef<HTMLSpanElement>(null);
   if (!chatMeta || !activeGen) return null;
 
@@ -921,6 +922,7 @@ function PendingAssistantMessage() {
   const reasoningForSlot = streamingReasoning ? {
     reasoning: streamingReasoning,
     reasoningDurationMs: null,
+    variant: isCoauthorMode ? "minimal" : "rich",
   } : null;
 
   return (

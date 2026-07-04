@@ -17,6 +17,18 @@ export const CoauthorMessageBlock = memo(function CoauthorMessageBlock(props: Me
   const msg = useDisplayMessage(props.messageId);
   const authorInfo = useMessageAuthor();
 
+  // Pending synthetic ids ("__pending-user" / "__pending-assistant") have no
+  // snapshot message, so useDisplayMessage returns null. Delegate to
+  // MessageBlock's built-in PendingUserMessage / PendingAssistantMessage
+  // renderers, which show the generating dots + streaming text from activeGen.
+  // Without this, the null-msg short-circuit below renders a zero-height element
+  // (react-virtuoso "Zero-sized element" spam) and neither dots nor streaming
+  // text appear during generation. Branch sits AFTER all hooks above → no
+  // rules-of-hooks violation.
+  if (props.messageId === "__pending-user" || props.messageId === "__pending-assistant") {
+    return <MessageBlock {...props} />;
+  }
+
   if (!msg || !authorInfo) return null;
 
   const isUser = msg.role === "user";
