@@ -206,6 +206,28 @@ describe("CharacterStore folder storage (B1)", () => {
 		expect(originalAvatar).toEqual(Buffer.from([1, 2, 3]));
 	});
 
+	test("duplicate copies avatarFullExt column AND the folder avatar-full file (uncropped avatar)", async () => {
+		const { dataRoot, content, store } = await setup();
+		const original = await store.create({ name: "Aria", avatarExt: "png", avatarFullExt: "webp" });
+		// seed folder-resident avatars for the original (migrated steady state:
+		// both ext columns set, assetId refs already nulled by prior migration)
+		await content.writeBinary(CHARS, original.id, "avatar.png", new Uint8Array([1, 2, 3]));
+		await content.writeBinary(CHARS, original.id, "avatar-full.webp", new Uint8Array([4, 5, 6]));
+
+		const copy = await store.duplicate(original.id);
+		// thumbnail survives (already covered above, re-asserted for the paired case)
+		expect(copy.avatarExt).toBe("png");
+		// full uncropped avatar: column must survive duplicate
+		expect(copy.avatarFullExt).toBe("webp");
+		// copy has its OWN avatar-full file (separate bytes, not a shared reference)
+		const copyFull = await readFile(join(dataRoot, CHARS, copy.id, "avatar-full.webp"));
+		expect(copyFull).toEqual(Buffer.from([4, 5, 6]));
+		// mutate the copy's full avatar; original is untouched (separate file)
+		await content.writeBinary(CHARS, copy.id, "avatar-full.webp", new Uint8Array([9, 9]));
+		const originalFull = await readFile(join(dataRoot, CHARS, original.id, "avatar-full.webp"));
+		expect(originalFull).toEqual(Buffer.from([4, 5, 6]));
+	});
+
 	// ── B4: lazy avatar migration in getById ───────────────────────────────
 
 	test("getById lazy-migrates a legacy flat avatar into {id}/avatar.{ext} and clears avatarAssetId", async () => {

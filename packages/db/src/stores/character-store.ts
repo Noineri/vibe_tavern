@@ -551,6 +551,7 @@ export class CharacterStore {
         avatarFullAssetId: original.avatarFullAssetId,
         avatarCropJson: original.avatarCropJson,
         avatarExt: original.avatarExt,
+        avatarFullExt: original.avatarFullExt,
         avatarSourceAssetId: original.avatarSourceAssetId,
         status: 'active',
         createdAt: now,
@@ -577,6 +578,17 @@ export class CharacterStore {
         const buf = await this.content.readBinary(STORAGE_FOLDERS.characters, original.id, `avatar.${original.avatarExt}`);
         if (buf) {
           await this.content.writeBinary(STORAGE_FOLDERS.characters, newId, `avatar.${original.avatarExt}`, new Uint8Array(buf));
+        }
+      }
+      // Copy the folder-resident full uncropped avatar (if any), mirroring the
+      // thumbnail block above. Without this, duplicating a migrated character
+      // (avatarFullExt set, avatarFullAssetId already nulled by migration)
+      // would silently lose the full avatar — the read-time lazy-migration
+      // guard (!avatarFullExt && avatarFullAssetId) cannot self-heal it.
+      if (original.avatarFullExt) {
+        const fullBuf = await this.content.readBinary(STORAGE_FOLDERS.characters, original.id, `avatar-full.${original.avatarFullExt}`);
+        if (fullBuf) {
+          await this.content.writeBinary(STORAGE_FOLDERS.characters, newId, `avatar-full.${original.avatarFullExt}`, new Uint8Array(fullBuf));
         }
       }
     }

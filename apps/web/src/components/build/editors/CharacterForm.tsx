@@ -16,6 +16,7 @@ import { useT } from "../../../i18n/context.js";
 import { CustomTooltip } from "../../shared/Tooltip.js";
 import { AvatarCropModal } from "../../shared/AvatarCropModal.js";
 import type { AvatarCropResult } from "../../shared/AvatarCropModal.js";
+import { promoteSourceAsFull } from "./thumbnail-crop.js";
 import { useIsMobile } from "../../../hooks/use-mobile.js";
 import { MobileExpandTextarea } from "../../shared/MobileExpandTextarea.js";
 import { BoundResourcesField } from "../../shared/BoundResourcesField.js";
@@ -183,14 +184,27 @@ export function CharacterForm({
     if (src) setThumbnailEditSrc(src);
   }
 
-  function handleThumbnailCropConfirm(result: AvatarCropResult) {
+  async function handleThumbnailCropConfirm(result: AvatarCropResult) {
+    // Capture the cropper source before closing it. For a SINGLE-IMAGE
+    // character (avatarExt set, no avatarFullExt), this source is the only
+    // copy of the uncropped original — `/avatar/full` falls back to serving
+    // `avatar.{ext}`. Writing the crop without preserving it would make the
+    // editor + floating-avatar slots (both preferFull) snap to the crop.
+    // promoteSourceAsFull returns the source as a File iff no separate full
+    // exists, so passing it as the `full` arg promotes the original to
+    // avatar-full.{ext} in the same upload. When a separate full already
+    // exists it returns undefined and the upload stays crop-only.
+    const sourceUrl = thumbnailEditSrc;
     setThumbnailEditSrc(null);
-    // crop only, no original → backend keeps the existing avatar-full.
+    const fullFile = await promoteSourceAsFull({
+      sourceUrl,
+      hasSeparateFull: !!activeCharacter?.avatarFullExt,
+    });
     // Don't set a local avatarPreview: the editor's avatar slot renders the
     // full-size image (unchanged by a thumbnail crop), so a cropped preview
     // would visually snap back to the full after the snapshot refresh. The
     // new thumbnail surfaces in small slots (sidebar/topbar) via bootstrap.
-    void onAvatarUpload(result.croppedFile);
+    void onAvatarUpload(result.croppedFile, fullFile);
   }
 
   function handleImportFiles(files: File[]): void {
