@@ -103,6 +103,8 @@ export function CoauthorSidebar() {
 
   const charMenuRef = useRef<HTMLDivElement | null>(null);
   const [importModal, setImportModal] = useState<"character" | "chat" | null>(null);
+  const [renamingChatId, setRenamingChatId] = useState<string | null>(null);
+  const [renameDraft, setRenameDraft] = useState("");
   const [flyoutCharId, setFlyoutCharId] = useState<string | null>(null);
   const [chatQuery, setChatQuery] = useState("");
   const flyoutRef = useRef<HTMLDivElement | null>(null);
@@ -276,23 +278,89 @@ export function CoauthorSidebar() {
               ) : (
                 coauthorVisibleChats.map((chatItem) => {
                   const isActive = chatItem.id === activeChatId;
+                  const isRenaming = renamingChatId === chatItem.id;
+                  const chatTitle = chatItem.title || t("coauthor.untitled_chat");
                   return (
                     <div
                       key={chatItem.id}
                       className={cn(
                         'group relative mx-1 flex cursor-pointer items-center rounded px-2.5 py-1.5 transition-colors duration-100',
-                        isActive ? 'bg-accent-dim hover:bg-accent-dim' : 'hover:bg-s2'
+                        isActive ? 'bg-accent-dim hover:bg-accent-dim' : 'hover:bg-s2',
+                        isRenaming && 'pr-2',
                       )}
-                      onClick={() => void chat.handleSwitchChat(chatItem.id)}
+                      onClick={isRenaming ? undefined : () => void chat.handleSwitchChat(chatItem.id)}
                     >
                       <span className="mr-1.5 shrink-0 text-[calc(var(--ui-fs)-3px)] text-accent-t"><Icons.Sparkles /></span>
                       <div className="min-w-0 flex-1">
-                        <OverflowTooltip
-                          text={chatItem.title || t("coauthor.untitled_chat")}
-                          className={cn('text-[calc(var(--ui-fs)-1px)] text-t1', isActive && 'text-accent-t')}
-                        />
-                        <div className="text-[calc(var(--ui-fs)-3px)] text-t3">{chatItem.messageCount} {t("msgs_short")}</div>
+                        {isRenaming ? (
+                          <input
+                            className="w-full rounded border border-border bg-bg px-1 py-0.5 text-[calc(var(--ui-fs)-1px)] text-t1 outline-none focus:border-accent"
+                            value={renameDraft}
+                            autoFocus
+                            onChange={(e) => setRenameDraft(e.target.value)}
+                            onClick={(e) => e.stopPropagation()}
+                            onBlur={() => {
+                              const next = renameDraft.trim();
+                              if (next) void character.handleRenameChat(chatItem.id, next);
+                              setRenamingChatId(null);
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                e.preventDefault();
+                                const next = renameDraft.trim();
+                                if (next) void character.handleRenameChat(chatItem.id, next);
+                                setRenamingChatId(null);
+                              } else if (e.key === "Escape") {
+                                e.preventDefault();
+                                setRenamingChatId(null);
+                              }
+                            }}
+                          />
+                        ) : (
+                          <>
+                            <OverflowTooltip
+                              text={chatTitle}
+                              className={cn('text-[calc(var(--ui-fs)-1px)] text-t1', isActive && 'text-accent-t')}
+                            />
+                            <div className="text-[calc(var(--ui-fs)-3px)] text-t3">{chatItem.messageCount} {t("msgs_short")}</div>
+                          </>
+                        )}
                       </div>
+                      {!isRenaming && (
+                        <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+                          <CustomTooltip content={t("sidebar_rename")}>
+                            <button
+                              type="button"
+                              className="iBtn size-5"
+                              aria-label={t("sidebar_rename")}
+                              onClick={(e) => { e.stopPropagation(); setRenamingChatId(chatItem.id); setRenameDraft(chatItem.title); }}
+                            >
+                              <Icons.Edit />
+                            </button>
+                          </CustomTooltip>
+                          <CustomTooltip content={t("delete")}>
+                            <button
+                              type="button"
+                              className="iBtn size-5 hover:text-danger-text"
+                              aria-label={t("delete")}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                const clearsOnRemove = character.getChatRemovalMode(chatItem.id) === "clear";
+                                setConfirmDestroy({
+                                  title: clearsOnRemove ? t("sidebar_clear_chat") : t("sidebar_delete_chat"),
+                                  body: clearsOnRemove
+                                    ? <>{t("sidebar_clear_chat_confirm")} <b>{chatTitle}</b></>
+                                    : <>{t("sidebar_are_you_sure")} <b>{chatTitle}</b></>,
+                                  confirmLabel: clearsOnRemove ? t("sidebar_clear_chat") : t("delete"),
+                                  onConfirm: () => void character.handleRemoveChat(chatItem.id),
+                                });
+                              }}
+                            >
+                              <Icons.Trash />
+                            </button>
+                          </CustomTooltip>
+                        </div>
+                      )}
                     </div>
                   );
                 })

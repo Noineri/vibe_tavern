@@ -1,16 +1,18 @@
 /**
- * Context-menu action builders — shared by the mobile `Rail` (today) and the
- * co-author shells after the fork (`CoauthorSidebar` / `CoauthorRail`, SF-4/5).
+ * Context-menu action builders — shared by the mobile `Rail`, the co-author
+ * shells (`CoauthorSidebar` / `CoauthorRail`), and any future consumer.
  *
  * Each builder returns a ready-to-render `RowActionItem[]` for one context
- * menu (character / chat / branch), parameterized by nav `mode`:
- *  - `buildChatMenuItems` omits the rename action under `coauthor` (the flat-
- *    editor design from `VTF_COAUTHOR_PLAN.md` — co-author chats have no rename
- *    affordance on rows); RP keeps rename.
- *  - `buildBranchMenuItems` exists but is RP-only in practice — co-author has
- *    no branches/swipes, so the co-author fork simply never calls it.
+ * menu (character / chat / branch). Rename and delete are offered for every
+ * chat regardless of nav mode — these are basic chat-management operations.
+ * The only mode-gated items are the SillyTavern-style JSONL chat-portability
+ * actions: chat export (in the chat menu) and chat import (in the character
+ * menu) are RP-only — the co-author surface intentionally does not surface
+ * JSONL chat import/export. `buildBranchMenuItems` is RP-only in practice
+ * because co-author has no branches/swipes, so the co-author shells simply
+ * never call it.
  *
- * The desktop `Sidebar` does NOT consume this hook: it renders its menus as
+ * The desktop RP `Sidebar` does NOT consume this hook: it renders its menus as
  * inline JSX (`<div role="menuitem">` sequences), not item arrays, and
  * converting it would be a render rewrite that violates the "RP regression-zero
  * by construction" constraint. The Sidebar stays RP-only after the fork, so it
@@ -48,7 +50,7 @@ export interface RowActionsCharacter {
 }
 
 export interface UseRowActionsArgs {
-	/** Nav mode — drives which actions are offered (rename omitted under coauthor). */
+	/** Nav mode — gates only JSONL chat portability (export/import). Rename and delete are universal. */
 	readonly mode: "rp" | "coauthor";
 	readonly character: RowActionsCharacter;
 	readonly setConfirmDestroy: (dialog: ConfirmDestroyDialog | null) => void;
@@ -84,11 +86,16 @@ export function useRowActions({
 }: UseRowActionsArgs): UseRowActionsResult {
 	const { t } = useT();
 
-	const buildCharMenuItems = (charId: string, charName: string): RowActionItem[] => [
-		{ icon: <Ic.download />, label: t("sidebar_export"), action: () => character.handleExportCharacter(charId) },
-		{ icon: <Ic.copy />, label: t("duplicate"), action: () => character.handleDuplicateCharacter(charId) },
-		{ icon: <Ic.import />, label: t("sidebar_import_chat"), action: () => setChatImportOpen(true) },
-		{
+	const buildCharMenuItems = (charId: string, charName: string): RowActionItem[] => {
+		const items: RowActionItem[] = [
+			{ icon: <Ic.download />, label: t("sidebar_export"), action: () => character.handleExportCharacter(charId) },
+			{ icon: <Ic.copy />, label: t("duplicate"), action: () => character.handleDuplicateCharacter(charId) },
+		];
+		// JSONL chat import is RP-only — the co-author surface does not surface JSONL chat portability.
+		if (mode === "rp") {
+			items.push({ icon: <Ic.import />, label: t("sidebar_import_chat"), action: () => setChatImportOpen(true) });
+		}
+		items.push({
 			icon: <Ic.del />,
 			label: t("delete"),
 			danger: true,
@@ -100,23 +107,25 @@ export function useRowActions({
 					onConfirm: () => character.handleDeleteCharacter(charId),
 				});
 			},
-		},
-	];
+		});
+		return items;
+	};
 
 	const buildChatMenuItems = (chatId: ChatId, chatTitle: string): RowActionItem[] => {
-		const items: RowActionItem[] = [];
-		// Rename is RP-only — co-author chats have no rename affordance (flat editor).
-		if (mode === "rp") {
-			items.push({
+		const items: RowActionItem[] = [
+			{
 				icon: <Ic.edit />,
 				label: t("sidebar_rename"),
 				action: () => {
 					setRenamingChatId(chatId);
 					setRenameDraft(chatTitle);
 				},
-			});
+			},
+		];
+		// JSONL chat export is RP-only — the co-author surface does not surface JSONL chat portability.
+		if (mode === "rp") {
+			items.push({ icon: <Ic.download />, label: t("sidebar_export_jsonl"), action: () => character.handleExportChatJsonl(chatId) });
 		}
-		items.push({ icon: <Ic.download />, label: t("sidebar_export_jsonl"), action: () => character.handleExportChatJsonl(chatId) });
 		const clearsOnRemove = character.getChatRemovalMode(chatId) === "clear";
 		items.push({
 			icon: <Ic.del />,

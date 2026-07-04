@@ -1,15 +1,16 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useOutsideClick } from "../../hooks/use-outside-click.js";
 import { ListSortToggle } from "../shared/ListSortToggle.js";
 import { createPortal } from "react-dom";
-import type { ChatBranchId, ChatId } from "@vibe-tavern/domain";
+import type { ChatId } from "@vibe-tavern/domain";
 import { Ic } from "../shared/icons.js";
+import { Icons } from "../shared/icons.js";
 import { cn } from "../../lib/cn.js";
 import { resolveEntityAvatarUrl } from "../../lib/avatar.js";
-import { initials } from "./app-shell-helpers.js";
-import { useSidebarChats } from "./hooks/use-sidebar-chats.js";
-import { useSidebarCharacters } from "./hooks/use-sidebar-characters.js";
-import { useRowActions } from "./hooks/use-row-actions.js";
+import { initials } from "../layout/app-shell-helpers.js";
+import { useSidebarChats } from "../layout/hooks/use-sidebar-chats.js";
+import { useSidebarCharacters } from "../layout/hooks/use-sidebar-characters.js";
+import { useRowActions } from "../layout/hooks/use-row-actions.js";
 import { CharacterImportModal, ChatImportModal } from "../modals/ImportModals.js";
 
 /** Resolve a character list entry's avatar URL (folder avatar when migrated). */
@@ -17,13 +18,11 @@ const charAvatarSrc = (c: { id: string; avatarExt: string | null; avatarAssetId:
   resolveEntityAvatarUrl({ kind: "characters", id: c.id, avatarExt: c.avatarExt, avatarAssetId: c.avatarAssetId, updatedAt: c.updatedAt });
 import { useT } from "../../i18n/context.js";
 import { useBootstrapStore } from "../../stores/api-actions/bootstrap-actions.js";
-import { activateBranchAction, renameBranchAction } from "../../stores/api-actions/chat-actions.js";
 import { useChatMeta } from "../../stores/chat-selectors.js";
 import { useNavigationStore, useChatStore, useModalStore } from "../../stores/index.js";
 import { useCharacterStore } from "../../stores/character-store.js";
 import { useCharacterController } from "../../hooks/use-character-controller.js";
 import { useChatController } from "../../hooks/use-chat-controller.js";
-import { useBuildPanels } from "../../hooks/use-build-panels.js";
 import type { ChatListItem } from "../../app-client.js";
 
 /* ── Mini icon button (collapsed rail item) ── */
@@ -56,22 +55,7 @@ function NavRow({ icon, label, onClick }: { icon: React.ReactNode; label: string
   );
 }
 
-function RailRow({ icon, label, active, onClick }: { icon: React.ReactNode; label: string; active?: boolean; onClick: () => void }) {
-  return (
-    <div
-      className={cn(
-        "flex min-h-[44px] cursor-pointer items-center rounded-md transition-colors duration-100 active:bg-s3 gap-2.5 px-3 w-full",
-        active ? "bg-accent-dim text-accent-t" : "text-t3",
-      )}
-      onClick={onClick}
-    >
-      <div className="flex h-5 w-5 shrink-0 items-center justify-center">{icon}</div>
-      <span className="truncate font-ui text-[calc(var(--ui-fs)-1px)]">{label}</span>
-    </div>
-  );
-}
-
-/**
+/* ── Mini icon button (collapsed rail item) ── *//**
  * useSheetDrag — swipe-down-to-dismiss for a bottom sheet.
  *
  * Returns a ref (attach to the sheet element) and three touch handlers
@@ -108,20 +92,13 @@ function useSheetDrag(onDismiss: () => void) {
   return { sheetRef, onTouchStart, onTouchMove, onTouchEnd };
 }
 
-export function Rail({ hidden }: { hidden?: boolean }) {
+export function CoauthorRail({ hidden }: { hidden?: boolean }) {
   const { t } = useT();
-  const mode = useNavigationStore((s) => s.mode);
   const activeChatId = useChatStore((s) => s.activeChatId);
   const selectedCharacterId = useChatStore((s) => s.selectedCharacterId);
   const allCharacters = useBootstrapStore((s) => s.data)?.allCharacters ?? [];
   const chatMeta = useChatMeta();
   const chats: ChatListItem[] = chatMeta?.chats ?? [];
-  const branches = chatMeta?.branches ?? [];
-  const activeBranchId = chatMeta?.activeBranch?.id ?? null;
-
-  // Ветки доступны только для активного чата (подгружаются через snapshot)
-  const activeChatBranches = activeChatId ? branches : [];
-  const buildPanels = useBuildPanels();
 
   const character = useCharacterController();
   const chat = useChatController();
@@ -131,12 +108,10 @@ export function Rail({ hidden }: { hidden?: boolean }) {
   const [importOpen, setImportOpen] = useState(false);
   const [chatImportOpen, setChatImportOpen] = useState(false);
   const [closing, setClosing] = useState(false);
-  const [branchesOpen, setBranchesOpen] = useState<string | null>(null);
 
   // Context menus
   const [charMenuId, setCharMenuId] = useState<string | null>(null);
   const [chatMenuId, setChatMenuId] = useState<ChatId | null>(null);
-  const [branchMenuId, setBranchMenuId] = useState<{ chatId: ChatId; branchId: ChatBranchId; label: string } | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
 
   // Character list: search + sort + tag-filter (mirrors the desktop Sidebar).
@@ -162,8 +137,8 @@ export function Rail({ hidden }: { hidden?: boolean }) {
   }, [forceOpen]);
 
   // Close menu on outside click
-  useOutsideClick(menuRef, () => { setCharMenuId(null); setChatMenuId(null); setBranchMenuId(null); }, {
-    enabled: charMenuId !== null || chatMenuId !== null || branchMenuId !== null,
+  useOutsideClick(menuRef, () => { setCharMenuId(null); setChatMenuId(null); }, {
+    enabled: charMenuId !== null || chatMenuId !== null,
     event: "pointerdown",
   });
 
@@ -205,7 +180,6 @@ export function Rail({ hidden }: { hidden?: boolean }) {
   const closeMenu = () => {
     setCharMenuId(null);
     setChatMenuId(null);
-    setBranchMenuId(null);
   };
 
   const commitRename = () => {
@@ -216,34 +190,19 @@ export function Rail({ hidden }: { hidden?: boolean }) {
     setRenamingChatId(null);
   };
 
-  // Branch rename — mirrors chat-rename's inline-input pattern, but targets
-  // renameBranchAction(chatId, branchId, label). renamingBranchId holds the
-  // exact {chatId, branchId} being edited so the inline input knows which row
-  // to replace.
-  const [renamingBranch, setRenamingBranch] = useState<{ chatId: ChatId; branchId: ChatBranchId } | null>(null);
-  const [branchRenameDraft, setBranchRenameDraft] = useState("");
-
-  // Context-menu action builders (character / chat / branch). The hook is
-  // mode-agnostic — rename and delete are offered for every chat. Branch menu
-  // is RP-only in practice (co-author has no branches, so this Rail's
-  // co-author fork never calls buildBranchMenuItems).
+  // Context-menu action builders (character / chat). The hook is
+  // mode-agnostic — rename and delete are offered for every chat. Co-author
+  // has no branches, so buildBranchMenuItems is never called here.
   const rowActions = useRowActions({
-    mode: mode === "coauthor" ? "coauthor" : "rp",
+    mode: "coauthor",
     character,
     setConfirmDestroy,
     setRenamingChatId,
     setRenameDraft,
-    setRenamingBranch,
-    setBranchRenameDraft,
+    setRenamingBranch: () => {},
+    setBranchRenameDraft: () => {},
     setChatImportOpen,
   });
-  const commitBranchRename = () => {
-    const nextLabel = branchRenameDraft.trim();
-    if (nextLabel && renamingBranch) {
-      void renameBranchAction(renamingBranch.chatId, renamingBranch.branchId, nextLabel);
-    }
-    setRenamingBranch(null);
-  };
 
   /* ── Swipe on expanded panel to close ── */
   const panelDragRef = useRef({ active: false, startX: 0, currentX: 0 });
@@ -385,12 +344,7 @@ export function Rail({ hidden }: { hidden?: boolean }) {
 
         {/* Middle icons */}
         <div className="flex min-h-0 flex-1 flex-col items-center gap-1.5 overflow-y-scroll overflow-x-hidden py-2">
-          {mode === "build" ? (
-            buildPanels.map((panel) => (
-              <Ico key={panel.id} icon={panel.icon} onClick={() => { useCharacterStore.getState().setBuildTab(panel.id); useNavigationStore.getState().setMode('build'); }} title={t(panel.labelKey)} />
-            ))
-          ) : (
-            <>
+          <>
               {/* Create + Import */}
               <div className="flex w-full flex-col gap-1 px-2">
                 <div className="flex h-10 w-full cursor-pointer items-center justify-center rounded-lg text-t3 transition-colors active:bg-s3"
@@ -454,20 +408,18 @@ export function Rail({ hidden }: { hidden?: boolean }) {
               <div
                 key="new-chat-collapsed"
                 className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-full border border-dashed border-border2 text-t3 transition-all active:bg-s3"
-                onClick={() => { void character.handleCreateChat(selectedCharacterId ?? undefined); }}
+                onClick={() => { void character.handleCreateChat(selectedCharacterId ?? undefined, "coauthor"); }}
                 title={t("new_chat")}
               >
                 <Ic.plus />
               </div>
               <div className="my-0.5 h-px w-8 shrink-0 bg-border" />
             </>
-          )}
         </div>
 
         {/* Bottom quick actions */}
         <div className="flex shrink-0 flex-col items-center gap-1 border-t border-border py-2">
-          <Ico icon={<Ic.terminal />} onClick={() => useModalStore.getState().setIsPromptManagerOpen(true)} title={t("prompt_manager")} />
-          <Ico icon={<Ic.stack />} onClick={() => useModalStore.getState().setContextMemoryOpen(true)} title={t("scenario_memory")} />
+          <Ico icon={<Ic.tool />} onClick={() => useModalStore.getState().setCoauthorModuleModalOpen(true)} title={t("coauthor.sidebar.modules")} />
           <Ico icon={<Ic.plug />} onClick={() => useModalStore.getState().setIsProviderModalOpen(true)} title={t("provider_settings_tooltip")} />
           <Ico icon={<Ic.sliders />} onClick={() => useModalStore.getState().setTweaksOpen(true)} title={t("interface_settings_tooltip")} />
         </div>
@@ -499,18 +451,12 @@ export function Rail({ hidden }: { hidden?: boolean }) {
                 <Ic.menu />
               </div>
               <span className="ml-2 font-ui text-[calc(var(--ui-fs)+1px)] font-semibold text-t1 tracking-tight truncate">
-                {mode === "build" ? t("editor") : t("characters")}
+                {t("characters")}
               </span>
             </div>
 
             {/* Scrollable content */}
             <div className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-scroll px-2 py-2">
-              {mode === "build" ? (
-                buildPanels.map((panel) => (
-                  <RailRow key={panel.id} icon={panel.icon} label={t(panel.labelKey)}
-                       onClick={() => { useCharacterStore.getState().setBuildTab(panel.id); close(); }} />
-                ))
-              ) : (
                 <>
                   {/* Create + Import grid */}
                   <div className="grid grid-cols-2 gap-1.5 px-1">
@@ -634,66 +580,12 @@ export function Rail({ hidden }: { hidden?: boolean }) {
                               >
                                 <Ic.ellipsis />
                               </button>
-
-                              {/* Branches — только для активного чата (данные в snapshot) */}
-                              {ch.id === activeChatId && activeChatBranches.length > 0 && (
-                                <>
-                                <button type="button"
-                                  className="mt-1 flex min-h-[44px] items-center gap-1.5 rounded-md px-1 text-[calc(var(--ui-fs)-3px)] text-t4 active:bg-s3 active:text-t2 transition-colors"
-                                  onClick={(e) => { e.stopPropagation(); setBranchesOpen(branchesOpen === ch.id ? null : ch.id); }}
-                                >
-                                  <Ic.branch /> {activeChatBranches.length} {t("branches")}
-                                </button>
-                                {branchesOpen === ch.id && (
-                                  <div className="mt-1 ml-2 flex flex-col gap-0.5 border-l border-border/30 pl-2">
-                                    {activeChatBranches.map((b) => {
-                                      const isRenamingThisBranch = renamingBranch?.branchId === b.id && renamingBranch?.chatId === ch.id;
-                                      return (
-                                      <div
-                                        key={b.id}
-                                        className={cn(
-                                          "flex cursor-pointer items-center gap-1.5 rounded-md px-2 min-h-[44px] text-[calc(var(--ui-fs)-2px)] transition-colors active:bg-s3",
-                                          b.id === activeBranchId ? "text-accent-t font-medium bg-accent-dim/50" : "text-t3"
-                                        )}
-                                        onClick={(e) => { if (!isRenamingThisBranch) { e.stopPropagation(); void activateBranchAction(ch.id as ChatId, b.id as ChatBranchId); } }}
-                                      >
-                                        <span className={cn("inline-block h-2 w-2 rounded-full shrink-0", b.id === activeBranchId ? "bg-accent" : "bg-border2")} />
-                                        {isRenamingThisBranch ? (
-                                          <input
-                                            className="mb-px w-full rounded border border-accent bg-bg px-1 py-0.5 font-ui text-[calc(var(--ui-fs)-2px)] text-t1 outline-none"
-                                            value={branchRenameDraft}
-                                            autoFocus
-                                            onChange={(e) => setBranchRenameDraft(e.target.value)}
-                                            onClick={(e) => e.stopPropagation()}
-                                            onBlur={commitBranchRename}
-                                            onKeyDown={(e) => {
-                                              if (e.key === "Enter") { e.preventDefault(); commitBranchRename(); }
-                                              else if (e.key === "Escape") { e.preventDefault(); setRenamingBranch(null); }
-                                            }}
-                                          />
-                                        ) : (
-                                          <span className="truncate">{b.label || t("sidebar_unnamed_branch")}</span>
-                                        )}
-                                        <button type="button" className={cn("ml-auto shrink-0 cursor-pointer items-center justify-center rounded p-1 text-t3 transition-all active:bg-s3 active:text-t1", branchMenuId?.branchId === b.id && "text-t1 bg-s3")} onClick={(e) => { e.stopPropagation(); setCharMenuId(null); setChatMenuId(null); setBranchMenuId({ chatId: ch.id as ChatId, branchId: b.id as ChatBranchId, label: b.label }); }}>
-                                          <Ic.ellipsis />
-                                        </button>
-                                      </div>
-                                      );
-                                    })}
-                                  </div>
-                                )}
-                                </>
-                              )}
-                              {/* Для неактивных чатов — показываем метку ветки */}
-                              {ch.id !== activeChatId && ch.activeBranchLabel && (
-                                <span className="mt-0.5 truncate text-[calc(var(--ui-fs)-4px)] text-t4">↳ {ch.activeBranchLabel}</span>
-                              )}
                             </div>
                           ))}
                           {/* + New chat */}
                           <div key={`new-chat-${c.id}`}
                                className="flex min-h-[44px] cursor-pointer items-center gap-1.5 rounded-lg border-t border-border/50 px-2 pt-2 text-[calc(var(--ui-fs)-2px)] text-t3 transition-colors active:bg-s3 active:text-t1"
-                               onClick={() => { void character.handleCreateChat(c.id); }}>
+                               onClick={() => { void character.handleCreateChat(c.id, "coauthor"); }}>
                             <Ic.plus /> {t("new_chat")}
                           </div>
                         </div>
@@ -701,13 +593,11 @@ export function Rail({ hidden }: { hidden?: boolean }) {
                     </React.Fragment>
                   ))}
                 </>
-              )}
             </div>
 
             {/* Bottom quick actions */}
             <div className="flex shrink-0 flex-col gap-0.5 border-t border-border bg-s2/30 px-2 py-3">
-              <NavRow icon={<Ic.terminal />} label={t("prompt_manager")} onClick={() => { useModalStore.getState().setIsPromptManagerOpen(true); close(); }} />
-              <NavRow icon={<Ic.stack />} label={t("scenario_memory")} onClick={() => { useModalStore.getState().setContextMemoryOpen(true); close(); }} />
+              <NavRow icon={<Ic.tool />} label={t("coauthor.sidebar.modules")} onClick={() => { useModalStore.getState().setCoauthorModuleModalOpen(true); close(); }} />
               <NavRow icon={<Ic.plug />} label={t("provider_settings_tooltip")} onClick={() => { useModalStore.getState().setIsProviderModalOpen(true); close(); }} />
               <NavRow icon={<Ic.sliders />} label={t("interface_settings_tooltip")} onClick={() => { useModalStore.getState().setTweaksOpen(true); close(); }} />
             </div>
@@ -724,15 +614,6 @@ export function Rail({ hidden }: { hidden?: boolean }) {
       {chatMenuId && bottomSheet(
         sectionChats.find(c => c.id === chatMenuId)?.title ?? "",
         rowActions.buildChatMenuItems(chatMenuId, sectionChats.find(c => c.id === chatMenuId)?.title ?? ""),
-      )}
-
-      {branchMenuId && bottomSheet(
-        branchMenuId.label || t("sidebar_unnamed_branch"),
-        rowActions.buildBranchMenuItems({
-          chatId: branchMenuId.chatId,
-          branchId: branchMenuId.branchId,
-          label: branchMenuId.label,
-        }),
       )}
 
       {/* ═══ TAG-FILTER BOTTOM SHEET ═══ */}

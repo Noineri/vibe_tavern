@@ -307,7 +307,7 @@ export function VibeMdView({ form, characterId, isSaving }: VibeMdViewProps) {
               className="fixed inset-0 z-40 cursor-default"
               onClick={() => setCoauthorOpen(false)}
             />
-            <div className="absolute left-0 top-full z-50 mt-1 min-w-[260px] max-w-[340px] rounded-lg border border-border bg-surface shadow-lg">
+            <div className="glass-blur absolute left-0 top-full z-50 mt-1 min-w-[260px] max-w-[340px] rounded-lg border border-border bg-glass-bg shadow-lg">
               <div className="border-b border-border/50 px-3 py-2 font-ui text-[11px] uppercase tracking-wide text-t4">{t("coauthor.list_title")}</div>
               {coauthorChats.length === 0 ? (
                 <div className="px-3 py-3 font-ui text-[0.85rem] text-t3">{t("coauthor.list_empty")}</div>
