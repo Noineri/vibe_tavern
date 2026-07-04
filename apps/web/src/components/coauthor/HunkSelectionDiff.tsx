@@ -22,8 +22,9 @@
  */
 import { useMemo } from "react";
 import { cn } from "../../lib/cn.js";
-import type { TextDiffSummary } from "../shared/TextDiffPreview.js";
+import type { TextDiffLine, TextDiffSummary } from "../shared/TextDiffPreview.js";
 import { groupHunks, type DiffHunk } from "../../lib/coauthor-hunk-merge.js";
+import { annotateHunkLines, type LineSegment } from "../../lib/intra-line-diff.js";
 
 interface HunkSelectionDiffLabels {
   /** Header title for the diff area. */
@@ -81,6 +82,29 @@ function segmentDiff(diff: TextDiffSummary, hunks: DiffHunk[]): Segment[] {
   return segments;
 }
 
+/**
+ * Render one hunk line's body. When intra-line segments are available
+ * (paired remove↔add lines), stamp the changed substrings with a stronger
+ * highlight over the line's dim background. Unpaired/too-large lines fall back
+ * to plain whole-line text (no highlight — GitHub's treatment of fully new or
+ * removed lines).
+ */
+function renderHunkLine(line: TextDiffLine, segs: LineSegment[] | null) {
+  if (!segs || segs.length === 0) return line.text || " ";
+  return segs.map((s, si) => (
+    <span
+      key={si}
+      className={cn(
+        "rounded-[2px]",
+        !s.common && line.kind === "add" && "bg-success-strong",
+        !s.common && line.kind === "remove" && "bg-danger-strong",
+      )}
+    >
+      {s.text}
+    </span>
+  ));
+}
+
 export function HunkSelectionDiff({
   diff,
   hunks,
@@ -91,6 +115,11 @@ export function HunkSelectionDiff({
   labels,
 }: HunkSelectionDiffProps) {
   const segments = useMemo(() => segmentDiff(diff, hunks), [diff, hunks]);
+  // Intra-line annotations per hunk, parallel to `segments` (empty for context).
+  const annotations = useMemo(
+    () => segments.map((s) => (s.type === "hunk" ? annotateHunkLines(s.lines) : [])),
+    [segments],
+  );
   const total = hunks.length;
   const selectedCount = hunks.filter((h) => selectedIds.has(h.id)).length;
   const allSelected = total > 0 && selectedCount === total;
@@ -188,8 +217,10 @@ export function HunkSelectionDiff({
                   </span>
                 </div>
               </div>
-              {/* Hunk lines (colored when selected; muted via the wrapper opacity when not). */}
-              {seg.lines.map((line, li) => (
+              {/* Hunk lines. GitHub-style: the line wears the dim background;
+                  within paired lines the exact changed tokens get a stronger
+                  "strong" highlight (dark green / dark red). */}
+              {annotations[si]!.map(({ line, segments: segs }, li) => (
                 <div
                   key={li}
                   className={cn(
@@ -201,7 +232,7 @@ export function HunkSelectionDiff({
                   <span className="select-none pr-2 text-t3/50">
                     {line.kind === "add" ? "+" : line.kind === "remove" ? "-" : " "}
                   </span>
-                  {line.text || " "}
+                  {renderHunkLine(line, segs)}
                 </div>
               ))}
             </div>

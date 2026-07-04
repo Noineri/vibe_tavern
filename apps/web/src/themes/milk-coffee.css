@@ -53,11 +53,13 @@
   --danger:      oklch(0.52 0.16 18);    /* #A84B3A */
   --danger-dim:  oklch(0.92 0.03 18);    /* faint red bg */
   --danger-text: oklch(0.42 0.14 18);    /* dark red text */
+  --danger-strong: oklch(0.80 0.13 18);  /* intra-diff removed-token highlight */
 
   /* ─── Success ─── */
   --success:      oklch(0.50 0.10 155);  /* #2E7C4C */
   --success-dim:  oklch(0.92 0.03 155);  /* faint green bg */
   --success-text: oklch(0.40 0.09 155);  /* dark green text */
+  --success-strong: oklch(0.82 0.11 155); /* intra-diff added-token highlight */
 
   /* ─── Info ─── */
   --info:      oklch(0.52 0.15 250);     /* #207FDE */

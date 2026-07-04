@@ -71,10 +71,12 @@
   --danger:      oklch(0.52 0.16 18);    
   --danger-dim:  oklch(0.92 0.03 18 / 50%);    
   --danger-text: oklch(0.42 0.14 18);    
+  --danger-strong: oklch(0.80 0.13 18);  /* intra-diff removed-token highlight */
 
   --success:      oklch(0.50 0.10 155);  
   --success-dim:  oklch(0.92 0.03 155 / 50%);  
   --success-text: oklch(0.40 0.09 155);  
+  --success-strong: oklch(0.82 0.11 155); /* intra-diff added-token highlight */
 
   --info:      oklch(0.52 0.15 250);     
   --info-dim:  oklch(0.92 0.03 250 / 50%);     
