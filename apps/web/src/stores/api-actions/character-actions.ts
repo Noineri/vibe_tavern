@@ -39,7 +39,7 @@ export async function saveCharacterAction(input: {
 
 export async function createCharacterAction(
   input: Parameters<typeof createCharacter>[0]
-): Promise<{ snapshot: AppSnapshot | null; activeChatId: string }> {
+): Promise<{ snapshot?: AppSnapshot; activeChatId: string }> {
   const result = await createCharacter(input);
   if (result.snapshot) {
     useSnapshotStore.getState().ingestSnapshot(result.snapshot);

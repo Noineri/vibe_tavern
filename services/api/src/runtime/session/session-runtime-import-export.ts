@@ -39,7 +39,12 @@ export interface ImportExportModuleDeps {
 
 export interface ImportResult {
 	activeChatId: ChatId;
-	snapshot: import("./session-runtime.js").SessionSnapshot;
+	// Optional under the lean mass-import path (skip O(N²) getSnapshot).
+	// Full single-card import always returns a snapshot.
+	snapshot?: import("./session-runtime.js").SessionSnapshot;
+	// Set on the lean path so the frontend can resolve the avatar upload
+	// without the snapshot. Absent on the full path (use snapshot.character.id).
+	characterId?: CharacterId;
 	imported: {
 		kind: "character" | "lorebook" | "chat";
 		name: string;
@@ -236,6 +241,7 @@ export async function importJson(
 		jsonText: string;
 		chatId?: string;
 		skipExisting?: boolean;
+		lean?: boolean;
 	},
 ): Promise<ImportResult> {
 	const trimmed = input.jsonText.trim();
@@ -244,7 +250,7 @@ export async function importJson(
 	}
 
 	if (input.fileName.toLowerCase().endsWith(".jsonl")) {
-		return importSillyTavernChat(deps, input.fileName, trimmed, input.chatId);
+		return importSillyTavernChat(deps, input.fileName, trimmed, input.chatId, input.lean);
 	}
 
 	const parsed = JSON.parse(trimmed) as Record<string, unknown>;
@@ -293,7 +299,8 @@ export async function importJson(
 
 			return {
 				activeChatId: chatId as ChatId,
-				snapshot: await deps.getSnapshot(chatId as ChatId),
+				snapshot: input.lean ? undefined : await deps.getSnapshot(chatId as ChatId),
+				characterId: imported.character.id as CharacterId,
 				imported: {
 					kind: "character",
 					name: imported.character.name,
@@ -363,7 +370,8 @@ export async function importJson(
 
 		return {
 			activeChatId: createdId,
-			snapshot: await deps.getSnapshot(createdId),
+			snapshot: input.lean ? undefined : await deps.getSnapshot(createdId),
+			characterId: characterId as CharacterId,
 			imported: {
 				kind: "character",
 				name: imported.character.name,
@@ -383,6 +391,7 @@ async function importSillyTavernChat(
 	fileName: string,
 	jsonlContent: string,
 	sourceChatId?: string,
+	lean?: boolean,
 ): Promise<ImportResult> {
 	if (!sourceChatId) {
 		throw validation("Select a character/chat before importing a SillyTavern JSONL chat.");
@@ -430,7 +439,8 @@ async function importSillyTavernChat(
 
 	return {
 		activeChatId: createdId,
-		snapshot: await deps.getSnapshot(createdId),
+		snapshot: lean ? undefined : await deps.getSnapshot(createdId),
+		characterId: sourceChat.characterId as CharacterId,
 		imported: {
 			kind: "chat",
 			name: title,

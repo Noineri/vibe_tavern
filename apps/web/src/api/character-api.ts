@@ -53,13 +53,13 @@ export async function createCharacter(input: {
 }): Promise<ImportJsonResponse> {
   const response = await client.api.characters.$post({ json: input });
   const data = await unwrapRpc<ImportJsonResponse>(response);
-  return { ...data, snapshot: normalizeSnapshot(data.snapshot) };
+  return data.snapshot ? { ...data, snapshot: normalizeSnapshot(data.snapshot) } : data;
 }
 
 export async function duplicateCharacter(characterId: string): Promise<ImportJsonResponse> {
   const response = await client.api.characters[":characterId"].duplicate.$post({ param: { characterId } });
   const data = await unwrapRpc<ImportJsonResponse>(response);
-  return { ...data, snapshot: normalizeSnapshot(data.snapshot) };
+  return data.snapshot ? { ...data, snapshot: normalizeSnapshot(data.snapshot) } : data;
 }
 
 export async function archiveCharacter(characterId: string): Promise<{ characterId: string; status: "archived" }> {

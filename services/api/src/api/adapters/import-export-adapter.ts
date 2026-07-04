@@ -4,7 +4,7 @@ import type { SessionRuntime } from "../../runtime/session/session-runtime.js";
 export class ImportExportAdapter implements ImportExportRuntimeApi {
 	constructor(private readonly sessionRuntime: SessionRuntime) {}
 
-	importJson = (body: { fileName: string; jsonText: string; chatId?: string; skipExisting?: boolean }) =>
+	importJson = (body: { fileName: string; jsonText: string; chatId?: string; skipExisting?: boolean; lean?: boolean }) =>
 		this.sessionRuntime.importJson(body);
 
 	scanSillyTavernDirectory = (dirPath: string) =>

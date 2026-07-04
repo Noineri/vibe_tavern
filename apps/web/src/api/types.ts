@@ -5,7 +5,7 @@
  * receives and normalizes. DB/domain types live in @vibe-tavern/domain
  * and @vibe-tavern/db.
  */
-import type { Chat, ChatBranch, ChatId, Message, MessageVariant } from "@vibe-tavern/domain";
+import type { Chat, ChatBranch, ChatId, CharacterId, Message, MessageVariant } from "@vibe-tavern/domain";
 import type { AssemblePromptResponse, PromptPresetDto, PromptTraceRecordDto } from "@vibe-tavern/domain";
 
 // Wire-format output types shared with the backend (single source of truth in
@@ -321,7 +321,12 @@ export interface ScriptLinkRecord {
 
 export interface ImportJsonResponse {
   activeChatId: ChatId;
-  snapshot: AppSnapshot;
+  // Absent on the lean mass-import path (server skips the O(N²) getSnapshot).
+  // Single-card import always returns a snapshot.
+  snapshot?: AppSnapshot;
+  // Set on the lean path so the caller can resolve avatar uploads without
+  // the snapshot. Absent on the full path (read snapshot.character.id).
+  characterId?: CharacterId;
   imported: {
     kind: "character" | "lorebook" | "chat";
     name: string;

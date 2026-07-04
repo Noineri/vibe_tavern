@@ -345,7 +345,7 @@ export interface PresetRuntimeApi {
 // ─── Import/Export ───────────────────────────────────────────────────
 
 export interface ImportExportRuntimeApi {
-	importJson: (body: { fileName: string; jsonText: string; chatId?: string }) => Promise<ImportResult>;
+	importJson: (body: { fileName: string; jsonText: string; chatId?: string; skipExisting?: boolean; lean?: boolean }) => Promise<ImportResult>;
 	scanSillyTavernDirectory: (dirPath: string) => Promise<StDirectoryScanResult>;
 	importSillyTavernDirectory: (dirPath: string) => Promise<StDirectoryImportResult>;
 }

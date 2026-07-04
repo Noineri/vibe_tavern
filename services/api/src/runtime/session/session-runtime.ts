@@ -584,7 +584,7 @@ export function pickBootstrapChatId<T extends string>(
 		return await importExportModule.mirrorPromptTrace(this.importExportDeps, traceId);
 	}
 
-	async importJson(input: { fileName: string; jsonText: string; chatId?: string }): Promise<ImportResult> {
+	async importJson(input: { fileName: string; jsonText: string; chatId?: string; skipExisting?: boolean; lean?: boolean }): Promise<ImportResult> {
 		return importExportModule.importJson(this.importExportDeps, input);
 	}
 

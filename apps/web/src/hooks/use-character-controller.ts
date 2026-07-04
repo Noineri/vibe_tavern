@@ -296,7 +296,7 @@ export function useCharacterController(): CharacterControllerActions {
     try {
       const imported = await importFile(firstFile, { chatId: getActiveChatId() ?? undefined });
 
-      writeSnapshot(imported.activeChatId, imported.snapshot);
+      if (imported.snapshot) writeSnapshot(imported.activeChatId, imported.snapshot);
 
       if (imported.imported.kind === "character") {
         useNavigationStore.getState().setMode("play");

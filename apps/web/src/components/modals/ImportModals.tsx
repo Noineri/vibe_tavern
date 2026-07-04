@@ -237,13 +237,13 @@ interface ImportError {
           jsonText = await entry.file.text();
         }
 
-        const result = await importJson({ fileName: entry.file.name, jsonText, skipExisting: true });
+        const result = await importJson({ fileName: entry.file.name, jsonText, skipExisting: true, lean: true });
         importedChars++;
 
         // Upload PNG as a folder-resident avatar (POST /api/characters/:id/avatar
         // → {id}/avatar.{ext}). Replaces the legacy uploadAsset + PATCH.
         if (isPng) {
-          const characterId = result.snapshot?.character?.id;
+          const characterId = result.characterId ?? result.snapshot?.character?.id;
           if (characterId) {
             try {
               await uploadCharacterAvatar(characterId, entry.file);
@@ -284,7 +284,7 @@ interface ImportError {
         if (!chatId) continue; // No matching character — skip silently
 
         const jsonText = await entry.file.text();
-        await importJson({ fileName: entry.file.name, jsonText, chatId });
+        await importJson({ fileName: entry.file.name, jsonText, chatId, lean: true });
         importedChats++;
       } catch (err) {
         failedItems.push({

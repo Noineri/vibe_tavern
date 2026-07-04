@@ -78,7 +78,12 @@ export interface BootstrapState {
 
 export interface ImportResult {
 	activeChatId: ChatId;
-	snapshot: SessionSnapshot;
+	// Optional under the lean mass-import path (skip O(N²) getSnapshot).
+	// Full single-card import always returns a snapshot.
+	snapshot?: SessionSnapshot;
+	// Set on the lean path so the frontend can resolve the avatar upload
+	// without the snapshot. Absent on the full path (use snapshot.character.id).
+	characterId?: CharacterId;
 	imported: {
 		kind: "character" | "lorebook" | "chat";
 		name: string;
