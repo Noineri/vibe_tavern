@@ -1179,5 +1179,20 @@
   "update_modal_error_soft_title": "Update could not complete",
   "update_modal_error_fatal_title": "Update failed",
   "update_modal_error_details": "Show technical details",
-  "update_modal_redownload": "Re-download from GitHub"
+  "update_modal_redownload": "Re-download from GitHub",
+  "update_modal_description": "Vibe Tavern self-update",
+  "update_modal_phase_idle": "Idle",
+  "update_modal_phase_checking": "Checking for update",
+  "update_modal_phase_downloading_archive": "Downloading release archive",
+  "update_modal_phase_downloading_sums": "Downloading checksums",
+  "update_modal_phase_verifying": "Verifying checksum",
+  "update_modal_phase_extracting": "Extracting archive",
+  "update_modal_phase_swapping": "Installing",
+  "update_modal_phase_spawning_restart": "Preparing to restart",
+  "update_modal_phase_exiting": "Stopping server",
+  "update_modal_phase_done": "Done",
+  "update_modal_phase_error": "Error",
+  "update_modal_runtime_error_server_exited": "The server process exited unexpectedly during the update.",
+  "update_modal_runtime_error_unknown": "Update failed for an unknown reason (no error detail surfaced).",
+  "update_modal_runtime_error_rejected": "Update rejected by the server."
 }

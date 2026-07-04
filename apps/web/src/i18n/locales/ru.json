@@ -1179,5 +1179,20 @@
   "update_modal_error_soft_title": "Обновление не удалось завершить",
   "update_modal_error_fatal_title": "Ошибка обновления",
   "update_modal_error_details": "Показать технические детали",
-  "update_modal_redownload": "Скачать заново с GitHub"
+  "update_modal_redownload": "Скачать заново с GitHub",
+  "update_modal_description": "Обновление Vibe Tavern",
+  "update_modal_phase_idle": "Ожидание",
+  "update_modal_phase_checking": "Проверка обновлений",
+  "update_modal_phase_downloading_archive": "Загрузка архива релиза",
+  "update_modal_phase_downloading_sums": "Загрузка контрольных сумм",
+  "update_modal_phase_verifying": "Проверка контрольной суммы",
+  "update_modal_phase_extracting": "Распаковка архива",
+  "update_modal_phase_swapping": "Установка",
+  "update_modal_phase_spawning_restart": "Подготовка к перезапуску",
+  "update_modal_phase_exiting": "Остановка сервера",
+  "update_modal_phase_done": "Готово",
+  "update_modal_phase_error": "Ошибка",
+  "update_modal_runtime_error_server_exited": "Процесс сервера неожиданно завершился во время обновления.",
+  "update_modal_runtime_error_unknown": "Обновление не удалось по неизвестной причине (детали ошибки не получены).",
+  "update_modal_runtime_error_rejected": "Сервер отклонил обновление."
 }

@@ -14,18 +14,18 @@ interface UpdateModalProps {
 	releaseNotes: string | null;
 }
 
-const PHASE_LABELS: Record<string, string> = {
-	idle: "Idle",
-	checking: "Checking for update",
-	"downloading-archive": "Downloading release archive",
-	"downloading-sums": "Downloading checksums",
-	verifying: "Verifying checksum",
-	extracting: "Extracting archive",
-	swapping: "Installing",
-	"spawning-restart": "Preparing to restart",
-	exiting: "Stopping server",
-	done: "Done",
-	error: "Error",
+const PHASE_I18N_KEYS: Record<string, string> = {
+	idle: "update_modal_phase_idle",
+	checking: "update_modal_phase_checking",
+	"downloading-archive": "update_modal_phase_downloading_archive",
+	"downloading-sums": "update_modal_phase_downloading_sums",
+	verifying: "update_modal_phase_verifying",
+	extracting: "update_modal_phase_extracting",
+	swapping: "update_modal_phase_swapping",
+	"spawning-restart": "update_modal_phase_spawning_restart",
+	exiting: "update_modal_phase_exiting",
+	done: "update_modal_phase_done",
+	error: "update_modal_phase_error",
 };
 
 function formatBytes(n: number): string {
@@ -87,7 +87,7 @@ export function UpdateModal({ latestVersion, latestTag, releaseUrl, releaseNotes
 	};
 
 	return (
-		<Modal open={open} onClose={onClose} compact title={headerLabel} description="Vibe Tavern self-update">
+		<Modal open={open} onClose={onClose} compact title={headerLabel} description={t("update_modal_description")}>
 			<div className="flex max-h-[80vh] w-[min(560px,92vw)] flex-col rounded-lg border border-border2 bg-surface shadow-xl">
 				{/* Header */}
 				<div className="flex items-center justify-between border-b border-border2 px-5 py-3.5">
@@ -121,9 +121,12 @@ export function UpdateModal({ latestVersion, latestTag, releaseUrl, releaseNotes
 						</>
 					)}
 
-					{flow.state.kind === "running" && (
-						<RunningView phaseLabel={PHASE_LABELS[flow.state.phase] ?? flow.state.phase} progress={flow.state.progress} />
-					)}
+				{flow.state.kind === "running" && (
+					<RunningView
+						phaseLabel={PHASE_I18N_KEYS[flow.state.phase] ? t(PHASE_I18N_KEYS[flow.state.phase]) : flow.state.phase}
+						progress={flow.state.progress}
+					/>
+				)}
 
 					{flow.state.kind === "complete" && (
 						<div className="flex flex-col items-center gap-3 py-4 text-center">

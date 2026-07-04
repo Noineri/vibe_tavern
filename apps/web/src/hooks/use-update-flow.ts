@@ -6,6 +6,7 @@ import {
 	type RuntimeUpdatePhase,
 	type RuntimeUpdateStatus,
 } from "../api/runtime-api.js";
+import { useT } from "../i18n/context.js";
 
 export type UpdateModalState =
 	| { kind: "idle" }
@@ -32,6 +33,7 @@ const STATUS_POLL_INTERVAL_MS = 500;
  * restarts Vibe Tavern manually.
  */
 export function useUpdateFlow(expectedVersion: string | null) {
+	const { t } = useT();
 	const [state, setState] = useState<UpdateModalState>(INITIAL);
 	const stopFlagRef = useRef(false);
 	const lastPhaseRef = useRef<RuntimeUpdatePhase | null>(null);
@@ -65,14 +67,14 @@ export function useUpdateFlow(expectedVersion: string | null) {
 					if (last === "swapping" || last === "done") {
 						setState({ kind: "complete", newVersion: resolvedTarget() ?? "" });
 					} else {
-						setState({
-							kind: "error",
-							failureKind: "fatal",
-							message: "The server process exited unexpectedly during the update.",
-							phase: last ?? "idle",
-							stack: null,
-							raw: null,
-						});
+					setState({
+						kind: "error",
+						failureKind: "fatal",
+						message: t("update_modal_runtime_error_server_exited"),
+						phase: last ?? "idle",
+						stack: null,
+						raw: null,
+					});
 					}
 					return;
 				}
@@ -87,14 +89,14 @@ export function useUpdateFlow(expectedVersion: string | null) {
 				if (status.phase === "error") {
 					const err = status.error;
 					if (!err) {
-						setState({
-							kind: "error",
-							failureKind: "fatal",
-							message: "Update failed for an unknown reason (no error detail surfaced).",
-							phase: status.phase,
-							stack: null,
-							raw: null,
-						});
+					setState({
+						kind: "error",
+						failureKind: "fatal",
+						message: t("update_modal_runtime_error_unknown"),
+						phase: status.phase,
+						stack: null,
+						raw: null,
+					});
 						return;
 					}
 					setState({
@@ -118,7 +120,7 @@ export function useUpdateFlow(expectedVersion: string | null) {
 			};
 			void poll();
 		},
-		[expectedVersion],
+		[expectedVersion, t],
 	);
 
 	const start = useCallback(async () => {
@@ -131,7 +133,7 @@ export function useUpdateFlow(expectedVersion: string | null) {
 			setState({
 				kind: "error",
 				failureKind: "soft",
-				message: result.reason ?? "Update rejected by the server.",
+				message: result.reason ?? t("update_modal_runtime_error_rejected"),
 				phase: "idle",
 				stack: null,
 				raw: null,
@@ -139,7 +141,7 @@ export function useUpdateFlow(expectedVersion: string | null) {
 			return;
 		}
 		watchStatus(expectedVersion);
-	}, [watchStatus, expectedVersion]);
+	}, [watchStatus, expectedVersion, t]);
 
 	const retry = useCallback(async () => {
 		await reset();
