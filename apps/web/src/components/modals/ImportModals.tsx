@@ -3,18 +3,21 @@ import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import type { ChatId } from "@vibe-tavern/domain";
 import { extractPngMetadata, parseCharacterMetadata } from "../../lib/png-reader.js";
-import { importJson, importJsonBatch, uploadCharacterAvatar, uploadPersonaAvatar, createPersona, createPromptPreset, createLorebook, importLorebookEntries } from "../../app-client.js";
 import { cn } from "../../lib/cn.js";
-import { runPool, yieldToEventLoop } from "../../lib/concurrency.js";
 import { Icons } from "../shared/icons.js";
 import { Modal } from "../shared/Modal.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
 import { useT } from "../../i18n/context.js";
 import { getT } from "../../i18n/locale-helpers.js";
-import { parseStPersonas, parseStPreset, stBlockToCanvasEntry, synthesizeCanvasEntry } from "@vibe-tavern/import-export";
-import type { CustomInjection, PromptOrderEntry } from "@vibe-tavern/domain";
 import { fetchBootstrapAction, fetchPersonasAction } from "../../stores/api-actions/bootstrap-actions.js";
 import { loadPromptPresetsAction } from "../../stores/api-actions/preset-actions.js";
+import { inputCls } from "../build/fields/field-styles.js";
+import {
+  openNativeDialog,
+  scanStDirectory,
+  importStDirectory,
+} from "../../api/import-api.js";
+import type { StScanResult, StImportResult, StScanError } from "../../api/import-api.js";
 
 interface ImportModalCommonProps {
   isImporting: boolean;
@@ -39,121 +42,89 @@ interface ChatPreview {
   messages: Array<{ role: string; name: string; text: string }>;
 }
 
-// ─── ST Folder import sub-component ────────────────────────────────────────
+// ─── ST Folder import sub-component ─────────────────────────────────────
+//
+// Backend-driven flow (ST_NATIVE_DIALOG_IMPORT_PLAN). The previous flow scanned
+// the folder in the browser via <input webkitdirectory>, parsed every card on
+// the main thread, and POSTed each one individually — a PNG-decode + HTTP
+// roundtrip storm that froze the UI. Now: native OS folder picker obtains a
+// path; the backend reads + parses + imports every surface (characters,
+// chats, lorebooks, presets, personas) directly from disk. The frontend just
+// drives three buttons. Mobile is excluded — native desktop picker is the
+// whole point, and ST import is meaningless without a SillyTavern install
+// on the same machine.
 
 interface StFolderImportProps {
   onImported?: () => void;
 }
 
-interface StFileEntry {
-  file: File;
-  relativePath: string;
-  kind: "character" | "chat" | "lorebook" | "preset" | "persona";
-}
-
 export function StFolderImport({ onImported }: StFolderImportProps) {
   const { t } = useT();
-  const [scanning, setScanning] = useState(false);
-  const [importing, setImporting] = useState(false);
-  const [importProgress, setImportProgress] = useState<{ current: number; total: number } | null>(null);
-  const [scanResult, setScanResult] = useState<{
-    characters: StFileEntry[];
-    chats: StFileEntry[];
-    lorebooks: StFileEntry[];
-    presets: StFileEntry[];
-    personaFile: File | null;
-    personaCount: number;
-    personaAvatars: Map<string, File>;
-  } | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [importErrors, setImportErrors] = useState<ImportError[]>([]);
-  const folderRef = useRef<HTMLInputElement | null>(null);
+  const isMobile = useIsMobile();
+  // Mobile guard — ST folder import requires a desktop SillyTavern install +
+  // the native OS folder picker (desktop-only endpoint). Hide the whole panel
+  // rather than rendering a broken control. The entry buttons in the parent
+  // modals are also gated on !isMobile so mobile users never reach this state.
+  if (isMobile) return null;
 
-  async function handleFolderPick(files?: FileList | null) {
-    if (!files || files.length === 0) return;
+  const [path, setPath] = useState("");
+  const [dialogLoading, setDialogLoading] = useState(false);
+  const [scanning, setScanning] = useState(false);
+  const [scanResult, setScanResult] = useState<StScanResult | null>(null);
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState<StImportResult | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [importErrors, setImportErrors] = useState<StScanError[]>([]);
+
+  async function onBrowse() {
+    setError(null);
+    setDialogLoading(true);
+    try {
+      const result = await openNativeDialog();
+      if ("path" in result) {
+        setPath(result.path);
+        // A new folder invalidates any prior scan/import.
+        setScanResult(null);
+        setImportResult(null);
+        setImportErrors([]);
+      } else if ("cancelled" in result) {
+        // User dismissed the dialog — leave everything as-is.
+      } else if ("available" in result) {
+        // Linux stub (or future unsupported platform): tell the user to type
+        // the path manually. The text input below stays editable.
+        setError(t("st_dialog_unavailable"));
+      } else {
+        // { error: string } — broken PowerShell/osascript, etc.
+        setError(result.error);
+      }
+    } catch (err) {
+      // AbortError from the 5-min client timeout, or a network failure.
+      setError(err instanceof Error ? err.message : t("st_scan_failed"));
+    } finally {
+      setDialogLoading(false);
+    }
+  }
+
+  async function onScan() {
+    const trimmed = path.trim();
+    if (!trimmed || scanning) return;
     setError(null);
     setScanResult(null);
+    setImportResult(null);
+    setImportErrors([]);
     setScanning(true);
-
     try {
-      const characters: StFileEntry[] = [];
-      const chats: StFileEntry[] = [];
-      const lorebooks: StFileEntry[] = [];
-      const presets: StFileEntry[] = [];
-      let personaCount = 0;
-      const personas: StFileEntry[] = [];
-      const personaAvatars = new Map<string, File>();
-
-      for (const file of Array.from(files)) {
-        const rp = (file as File & { webkitRelativePath?: string }).webkitRelativePath;
-        if (!rp) continue;
-        const parts = rp.split("/");
-
-        // Match: .../characters/filename.png or .../characters/filename.json
-        if (parts.includes("characters")) {
-          const ext = file.name.toLowerCase();
-          if (ext.endsWith(".json")) {
-            characters.push({ file, relativePath: rp, kind: "character" });
-          } else if (ext.endsWith(".png")) {
-            // Only include PNGs that have character metadata (chara/ccv3 chunk)
-            try {
-              const meta = await extractPngMetadata(file);
-              const hasChara = meta.some(m => m.keyword === "chara" || m.keyword === "ccv3");
-              if (hasChara) {
-                characters.push({ file, relativePath: rp, kind: "character" });
-              }
-            } catch {
-              // Not a valid PNG or can't read — skip
-            }
-          }
-        }
-        // Match: .../chats/CharacterName/file.jsonl
-        else if (parts.includes("chats")) {
-          if (file.name.toLowerCase().endsWith(".jsonl")) {
-            chats.push({ file, relativePath: rp, kind: "chat" });
-          }
-        }
-        // Match: .../worlds/filename.json
-        else if (parts.includes("worlds")) {
-          if (file.name.toLowerCase().endsWith(".json")) {
-            lorebooks.push({ file, relativePath: rp, kind: "lorebook" });
-          }
-        }
-        // Match: .../OpenAI Settings/filename.json (prompt presets)
-        if (parts.includes("OpenAI Settings")) {
-          if (file.name.toLowerCase().endsWith(".json")) {
-            presets.push({ file, relativePath: rp, kind: "preset" });
-          }
-        }
-        // Match: .../User Avatars/filename.png (persona avatars)
-        if (parts.includes("User Avatars")) {
-          if (file.name.toLowerCase().endsWith(".png")) {
-            personaAvatars.set(file.name, file);
-          }
-        }
-        // Match: .../settings.json (personas)
-        if (rp.endsWith("/settings.json")) {
-          try {
-            const text = await file.text();
-            const parsed = JSON.parse(text);
-            const entries = parseStPersonas(parsed);
-            if (entries.length > 0) {
-              // Store the file + count; actual import parses again
-              personas.push({ file, relativePath: rp, kind: "persona" });
-              personaCount = entries.length;
-            }
-          } catch {
-            // Not a valid settings.json — skip
-          }
-        }
-      }
-
-      const personaFile = personas.length > 0 ? personas[0].file : null;
-
-      if (characters.length + chats.length + lorebooks.length + presets.length + personaCount === 0) {
+      const result = await scanStDirectory(trimmed);
+      const totalImportable =
+        result.characters.length +
+        result.chats.length +
+        result.lorebooks.length +
+        result.presets.length +
+        (result.persona?.count ?? 0);
+      if (totalImportable === 0 && result.errors.length === 0) {
         setError(t("st_no_files"));
       } else {
-        setScanResult({ characters, chats, lorebooks, presets, personaFile, personaCount, personaAvatars });
+        setScanResult(result);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : t("st_scan_failed"));
@@ -162,316 +133,50 @@ export function StFolderImport({ onImported }: StFolderImportProps) {
     }
   }
 
-interface ImportError {
-    fileName: string;
-    reason: string;
-  }
-
-  async function handleImport() {
-    if (!scanResult) return;
+  async function onImport() {
+    const trimmed = path.trim();
+    if (!trimmed || importing) return;
     setError(null);
-    setImporting(true);
     setImportErrors([]);
+    setImporting(true);
+    try {
+      const result = await importStDirectory(trimmed);
+      setImportResult(result);
+      setImportErrors(result.errors);
 
-    const total = scanResult.personaCount + scanResult.characters.length + scanResult.chats.length + scanResult.lorebooks.length + scanResult.presets.length;
-    let current = 0;
-    let importedChars = 0;
-    let importedChats = 0;
-    let importedPresets = 0;
-    let importedPersonas = 0;
-    let importedLorebooks = 0;
-    const failedItems: ImportError[] = [];
-
-    // ── Diagnostic timing (MASS_IMPORT) ───────────────────────────────
-    // Shows up in browser DevTools console with `[import]` prefix. Lets us
-    // pinpoint which phase + which batch + which card is the freeze. Remove
-    // once the bottleneck is confirmed fixed.
-    const T0 = performance.now();
-    const ti = () => `[import +${((performance.now() - T0) / 1000).toFixed(2)}s]`;
-    console.log(`${ti()} START — total=${total} (chars=${scanResult.characters.length} chats=${scanResult.chats.length} lore=${scanResult.lorebooks.length} presets=${scanResult.presets.length} personas=${scanResult.personaCount})`);
-
-    // Phase 0: Import personas
-    if (scanResult.personaFile) {
-      setImportProgress({ current: 0, total });
-      try {
-        const text = await scanResult.personaFile.text();
-        const parsed = JSON.parse(text);
-        const personaEntries = parseStPersonas(parsed);
-        for (const pe of personaEntries) {
-          current++;
-          setImportProgress({ current, total });
-          try {
-            const created = await createPersona({ name: pe.name, description: pe.description, defaultForNewChats: pe.isDefault ? true : undefined });
-            importedPersonas++;
-            // Upload avatar (folder route, POST /api/personas/:id/avatar) if
-            // found in User Avatars/. name/description are already set by
-            // createPersona, so no follow-up PATCH is needed.
-            const avatarFileName = pe.avatarRelativePath.split("/").pop()!;
-            const avatarFile = scanResult.personaAvatars.get(avatarFileName);
-            if (avatarFile && created.id) {
-              try {
-                await uploadPersonaAvatar(created.id, avatarFile);
-              } catch {
-                // Avatar upload failure is non-critical
-              }
-            }
-          } catch (err) {
-            console.error(`[ST import] Failed to create persona "${pe.name}":`, err);
-            failedItems.push({ fileName: `persona: ${pe.name}`, reason: err instanceof Error ? err.message : String(err) });
-          }
-        }
-      } catch (err) {
-        failedItems.push({ fileName: "settings.json", reason: err instanceof Error ? err.message : String(err) });
+      const msg = t("st_import_results")
+        .replace("{characters}", String(result.characters))
+        .replace("{chats}", String(result.chats))
+        .replace("{lorebooks}", String(result.lorebooks))
+        .replace("{presets}", String(result.presets))
+        .replace("{personas}", String(result.personas));
+      toast.success(msg);
+      if (result.errors.length > 0) {
+        toast.warning(t("st_import_errors").replace("{count}", String(result.errors.length)));
       }
+
+      // Refresh stores so the newly imported surfaces appear without a reload.
+      // Sequential to avoid racing bootstrapStore.
+      await fetchBootstrapAction({ silent: true });
+      await fetchPersonasAction();
+      await loadPromptPresetsAction();
+
+      onImported?.();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t("st_scan_failed"));
+    } finally {
+      setImporting(false);
     }
-
-    // Phase 1: Import characters (batched + concurrent).
-    // Previously this was a sequential for-loop: each card paid an HTTP roundtrip
-    // PLUS a PNG-avatar upload, all on the main thread, all awaited one at a
-    // time. That blocked rendering and froze the progress bar for seconds at a
-    // time (see the user's mass-import video). Now: parse cards (cheap, sync),
-    // chunk into batches of 50, send each batch via importJsonBatch with a
-    // concurrency pool (~6 in flight), and upload avatars in parallel after.
-    // Progress repaints between batches via yieldToEventLoop.
-    const nameToChatId = new Map<string, ChatId>();
-    const BATCH_SIZE = 50;
-    const BATCH_CONCURRENCY = 6;
-    const AVATAR_CONCURRENCY = 6;
-
-    // Parse all cards first. extractPngMetadata is async-IO but cheap
-    // (~0.5ms/file per bench #1); doing it once here lets us build pure-string
-    // batches and avoids re-reading files inside the pool. JSON.parse on the
-    // extracted text gives us the name for chat matching without a second parse.
-    type ParsedCard = { fileName: string; jsonText: string; charName: string; isPng: boolean; file: File };
-    const parsedCards: ParsedCard[] = [];
-    const parseStart = performance.now();
-    let pngCount = 0;
-    for (const entry of scanResult.characters) {
-      const lowerName = entry.file.name.toLowerCase();
-      const isPng = lowerName.endsWith(".png") || entry.file.type === "image/png";
-      if (isPng) pngCount++;
-      try {
-        let jsonText: string;
-        if (isPng) {
-          const metadata = await extractPngMetadata(entry.file);
-          const parsed = parseCharacterMetadata(metadata);
-          jsonText = JSON.stringify(parsed);
-        } else {
-          jsonText = await entry.file.text();
-        }
-        const parsedObj = JSON.parse(jsonText) as Record<string, unknown>;
-        const data = typeof parsedObj.data === "object" && parsedObj.data !== null ? parsedObj.data as Record<string, unknown> : parsedObj;
-        const charName = (data.name as string)?.toLowerCase() ?? "";
-        parsedCards.push({ fileName: entry.file.name, jsonText, charName, isPng, file: entry.file });
-      } catch (err) {
-        failedItems.push({
-          fileName: entry.file.name,
-          reason: err instanceof Error ? err.message : String(err),
-        });
-      }
-    }
-    console.log(`${ti()} parse done — ${parsedCards.length} cards (${pngCount} PNG) in ${((performance.now() - parseStart) / 1000).toFixed(2)}s`);
-
-    // Chunk parsed cards into batches.
-    const batches: ParsedCard[][] = [];
-    for (let i = 0; i < parsedCards.length; i += BATCH_SIZE) {
-      batches.push(parsedCards.slice(i, i + BATCH_SIZE));
-    }
-
-    // Each batch → one importJsonBatch POST. Run with limited concurrency so
-    // we don't fire ~26 requests simultaneously and saturate the connection.
-    // We also collect (characterId, file) pairs for the avatar upload pass.
-    const avatarJobs: { characterId: string; file: File }[] = [];
-    const batchPhaseStart = performance.now();
-    let batchIdx = 0;
-    console.log(`${ti()} batches START — ${batches.length} batches × ${BATCH_SIZE}, concurrency ${BATCH_CONCURRENCY}`);
-    await runPool(
-      batches,
-      BATCH_CONCURRENCY,
-      async (batch) => {
-        const myIdx = ++batchIdx;
-        const bStart = performance.now();
-        const r = await importJsonBatch({
-          items: batch.map((c) => ({ fileName: c.fileName, jsonText: c.jsonText, skipExisting: true })),
-          lean: true,
-        });
-        const bMs = performance.now() - bStart;
-        const okCount = r.results.filter((x) => !x.error).length;
-        const names = batch.map((c) => c.charName).filter(Boolean).slice(0, 3).join(",");
-        console.log(`${ti()} batch ${myIdx}/${batches.length} done — ${batch.length} cards, ${okCount} ok, ${bMs.toFixed(0)}ms [${names}${batch.length > 3 ? "…" : ""}]`);
-        for (const item of r.results) {
-          if (item.error) {
-            failedItems.push({ fileName: item.fileName, reason: item.error });
-            continue;
-          }
-          importedChars++;
-          // Re-find the parsed card for name + avatar.
-          const card = batch.find((c) => c.fileName === item.fileName);
-          if (card) {
-            if (item.activeChatId) {
-              nameToChatId.set(card.charName, item.activeChatId);
-              const slug = card.charName.replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
-              nameToChatId.set(slug, item.activeChatId);
-            }
-            if (card.isPng && item.characterId) {
-              avatarJobs.push({ characterId: item.characterId, file: card.file });
-            }
-          }
-        }
-      },
-    );
-    console.log(`${ti()} batches DONE — ${batches.length} batches, ${importedChars} chars in ${((performance.now() - batchPhaseStart) / 1000).toFixed(2)}s, ${avatarJobs.length} avatars queued`);
-    // Yield once after all batches so the progress bar repaints before avatars.
-    current += parsedCards.length;
-    setImportProgress({ current, total });
-    await yieldToEventLoop();
-
-    // Upload avatars in parallel (non-critical; best-effort). Decoupled from
-    // the card inserts because each upload is an MB-scale PNG that blocks the
-    // connection longer than the insert did, and a failed upload must not fail
-    // the import. Limited concurrency to avoid saturating the connection.
-    const avatarStart = performance.now();
-    console.log(`${ti()} avatars START — ${avatarJobs.length} uploads, concurrency ${AVATAR_CONCURRENCY}`);
-    let avatarOk = 0;
-    await runPool(
-      avatarJobs,
-      AVATAR_CONCURRENCY,
-      async (job) => {
-        try {
-          await uploadCharacterAvatar(job.characterId, job.file);
-          avatarOk++;
-        } catch {
-          // Avatar upload failure is non-critical
-        }
-      },
-    );
-    console.log(`${ti()} avatars DONE — ${avatarOk}/${avatarJobs.length} ok in ${((performance.now() - avatarStart) / 1000).toFixed(2)}s`);
-
-    // Phase 2: Import chats (skip if no matching character)
-    const chatsStart = performance.now();
-    if (scanResult.chats.length) console.log(`${ti()} Phase 2 chats START — ${scanResult.chats.length} chats`);
-    for (const entry of scanResult.chats) {
-      current++;
-      setImportProgress({ current, total });
-      try {
-        const parts = entry.relativePath.split("/");
-        const chatIdx = parts.indexOf("chats");
-        const characterFolder = chatIdx >= 0 && chatIdx + 1 < parts.length ? parts[chatIdx + 1] : "";
-        const chatId = nameToChatId.get(characterFolder.toLowerCase());
-
-        if (!chatId) continue; // No matching character — skip silently
-
-        const jsonText = await entry.file.text();
-        await importJson({ fileName: entry.file.name, jsonText, chatId, lean: true });
-        importedChats++;
-      } catch (err) {
-        failedItems.push({
-          fileName: entry.relativePath,
-          reason: err instanceof Error ? err.message : String(err),
-        });
-      }
-    }
-    if (scanResult.chats.length) console.log(`${ti()} Phase 2 chats DONE — ${importedChats}/${scanResult.chats.length} in ${((performance.now() - chatsStart) / 1000).toFixed(2)}s`);
-
-    // Phase 2.5: Import lorebooks
-    const loreStart = performance.now();
-    if (scanResult.lorebooks.length) console.log(`${ti()} Phase 2.5 lorebooks START — ${scanResult.lorebooks.length} lorebooks`);
-    for (const entry of scanResult.lorebooks) {
-      current++;
-      setImportProgress({ current, total });
-      try {
-        const text = await entry.file.text();
-        const data = JSON.parse(text);
-        const lorebookName = entry.file.name.replace(/\.json$/i, "");
-        // mode:"new" auto-creates a lorebook; no need to call createLorebook separately
-        await importLorebookEntries("new", { format: "st", data, mode: "new", scopeType: "global", fallbackName: lorebookName });
-        importedLorebooks++;
-      } catch (err) {
-        failedItems.push({ fileName: entry.file.name, reason: err instanceof Error ? err.message : String(err) });
-      }
-    }
-    if (scanResult.lorebooks.length) console.log(`${ti()} Phase 2.5 lorebooks DONE — ${importedLorebooks}/${scanResult.lorebooks.length} in ${((performance.now() - loreStart) / 1000).toFixed(2)}s`);
-
-    // Phase 3: Import presets
-    const presetsStart = performance.now();
-    if (scanResult.presets.length) console.log(`${ti()} Phase 3 presets START — ${scanResult.presets.length} presets`);
-    for (const entry of scanResult.presets) {
-      current++;
-      setImportProgress({ current, total });
-      try {
-        const text = await entry.file.text();
-        const stPreset = parseStPreset(text);
-        if (!stPreset) continue;
-
-        const presetName = entry.file.name.replace(/\.json$/i, "");
-        const { blocks, promptOrder } = stPreset;
-        const mainBlock = blocks.find(b => b.identifier === "main");
-        const jailbreakBlock = blocks.find(b => b.identifier === "jailbreak");
-
-        // Built-in identifiers whose content goes into preset fields (not custom injections)
-        const excluded = new Set(["main", "jailbreak", "nsfw", "enhanceDefinitions", "worldInfoBefore", "worldInfoAfter"]);
-        const customBlocks = blocks.filter(b => !excluded.has(b.identifier) && b.content.trim());
-
-        // Content-only custom injections: {identifier, name, content, role}
-        const customInjections: CustomInjection[] = customBlocks.map(b => ({
-          identifier: b.identifier,
-          name: b.name || b.identifier,
-          content: b.content,
-          role: b.role,
-        }));
-
-        // COMPLETE canvas: preserve ALL fields from ST prompt_order (fixes the
-        // old strip-to-{identifier,enabled} bug) + synthesize entries for custom
-        // blocks absent from ST prompt_order.
-        const canvas: PromptOrderEntry[] = promptOrder.map(stBlockToCanvasEntry);
-        const canvasIds = new Set(canvas.map(e => e.identifier));
-        for (const b of customBlocks) {
-          if (!canvasIds.has(b.identifier)) {
-            canvas.push(synthesizeCanvasEntry(b));
-            canvasIds.add(b.identifier);
-          }
-        }
-
-        await createPromptPreset({
-          name: presetName,
-          system: mainBlock?.content || "",
-          jailbreak: jailbreakBlock?.content || "",
-          prefill: "",
-          customInjections: customInjections.length > 0 ? customInjections : undefined,
-          promptOrder: canvas.length > 0 ? canvas : undefined,
-        });
-        importedPresets++;
-      } catch (err) {
-        failedItems.push({ fileName: entry.file.name, reason: err instanceof Error ? err.message : String(err) });
-      }
-    }
-    if (scanResult.presets.length) console.log(`${ti()} Phase 3 presets DONE — ${importedPresets}/${scanResult.presets.length} in ${((performance.now() - presetsStart) / 1000).toFixed(2)}s`);
-
-    setImporting(false);
-    setImportProgress(null);
-    setImportErrors(failedItems);
-
-    // Refresh stores (sequential to avoid race on bootstrapStore)
-    const refreshStart = performance.now();
-    console.log(`${ti()} store refresh START`);
-    await fetchBootstrapAction({ silent: true });
-    await fetchPersonasAction();
-    await loadPromptPresetsAction();
-    console.log(`${ti()} store refresh DONE in ${((performance.now() - refreshStart) / 1000).toFixed(2)}s`);
-    console.log(`${ti()} FINISH — total ${((performance.now() - T0) / 1000).toFixed(2)}s | chars=${importedChars} chats=${importedChats} lore=${importedLorebooks} presets=${importedPresets} personas=${importedPersonas} failed=${failedItems.length}`);
-
-    const msg = t("st_import_results")
-      .replace("{characters}", String(importedChars))
-      .replace("{chats}", String(importedChats))
-      .replace("{lorebooks}", String(importedLorebooks))
-      .replace("{presets}", String(importedPresets))
-      .replace("{personas}", String(importedPersonas));
-    toast.success(msg);
-    if (failedItems.length > 0) {
-      toast.warning(t("st_import_errors").replace("{count}", String(failedItems.length)));
-    }
-    onImported?.();
   }
+
+  const pathEmpty = path.trim().length === 0;
+  const scanCounts = scanResult
+    ? scanResult.characters.length +
+      scanResult.chats.length +
+      scanResult.lorebooks.length +
+      scanResult.presets.length +
+      (scanResult.persona?.count ?? 0)
+    : 0;
 
   return (
     <div className="rounded-lg border border-border2 bg-s2 p-4">
@@ -491,37 +196,47 @@ interface ImportError {
         </div>
       </details>
 
-      {!scanResult && !scanning && (
-        <>
-          <div className="mb-2 font-ui text-[calc(var(--ui-fs)-2px)] text-t3">{t("st_select_folder")}</div>
-          <button type="button"
-            className="flex h-[38px] cursor-pointer items-center gap-2 rounded-md border border-border bg-surface px-4 font-ui text-[calc(var(--ui-fs)-1px)] text-t1 transition-all hover:border-accent hover:text-accent-t"
-            onClick={() => folderRef.current?.click()}
-          >
-            <Icons.Import />
-            {t("st_browse")}
-          </button>
-          <input
-            ref={folderRef}
-            className="hidden"
-            type="file"
-            webkitdirectory=""
-            directory=""
-            onChange={(e) => {
-              handleFolderPick(e.target.files);
-              e.target.value = "";
-            }}
-          />
-        </>
+      {/* Path row: editable text input + native-picker Browse button. */}
+      <div className="mb-2 flex gap-2">
+        <input
+          type="text"
+          className={inputCls + " h-[38px] px-3 font-ui text-[calc(var(--ui-fs)-2px)]"}
+          placeholder={t("st_path_placeholder")}
+          value={path}
+          onChange={(e) => setPath(e.target.value)}
+          disabled={dialogLoading || scanning || importing}
+        />
+        <button type="button"
+          className="flex h-[38px] shrink-0 cursor-pointer items-center gap-2 rounded-md border border-border bg-surface px-4 font-ui text-[calc(var(--ui-fs)-2px)] text-t1 transition-all hover:border-accent hover:text-accent-t disabled:cursor-default disabled:opacity-45"
+          onClick={onBrowse}
+          disabled={dialogLoading || scanning || importing}
+        >
+          <Icons.Import />
+          {t("st_browse_btn")}
+        </button>
+      </div>
+
+      {dialogLoading && <BusyLine label={t("st_dialog_loading")} />}
+
+      {/* Scan button: appears once a path is entered. */}
+      {!dialogLoading && (
+        <button type="button"
+          className="mt-1 h-[34px] cursor-pointer rounded-md border border-border2 bg-surface px-5 font-ui text-[calc(var(--ui-fs)-2px)] text-t1 transition-all hover:border-accent hover:text-accent-t disabled:cursor-default disabled:opacity-45"
+          onClick={onScan}
+          disabled={pathEmpty || scanning || importing}
+        >
+          {t("st_scan_btn")}
+        </button>
       )}
 
-      {scanning && <BusyLine label={t("st_scanning")} />}
+      {scanning && <div className="mt-2"><BusyLine label={t("st_scanning")} /></div>}
 
-      {scanResult && !importing && (
-        <div>
+      {/* Scan results: counts + scan errors. */}
+      {scanResult && !scanning && !importing && (
+        <div className="mt-3">
           <div className="mb-2.5 font-ui text-xs text-t2">
             {t("st_scan_results")
-              .replace("{personas}", String(scanResult.personaCount))
+              .replace("{personas}", String(scanResult.persona?.count ?? 0))
               .replace("{characters}", String(scanResult.characters.length))
               .replace("{chats}", String(scanResult.chats.length))
               .replace("{presets}", String(scanResult.presets.length))
@@ -529,60 +244,76 @@ interface ImportError {
           </div>
           <button type="button"
             className="h-[34px] cursor-pointer rounded-md bg-accent px-5 font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-on-accent transition-all hover:brightness-110 disabled:cursor-default disabled:opacity-45"
-            disabled={scanResult.characters.length + scanResult.chats.length + scanResult.presets.length + scanResult.personaCount === 0}
-            onClick={handleImport}
+            disabled={scanCounts === 0}
+            onClick={onImport}
           >
             {t("st_folder_import")}
           </button>
+          {scanResult.errors.length > 0 && (
+            <details className="mt-2.5">
+              <summary className="cursor-pointer font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-warning">
+                {t("st_import_errors").replace("{count}", String(scanResult.errors.length))}
+              </summary>
+              <div className="mt-1.5 max-h-48 overflow-y-auto rounded border border-border2 bg-surface p-2">
+                {scanResult.errors.map((e, i) => (
+                  <div key={i} className="border-b border-border2 py-1 last:border-0">
+                    <div className="font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-t1">{e.file}</div>
+                    <div className="font-ui text-[calc(var(--ui-fs)-3px)] text-t3">{e.message}</div>
+                  </div>
+                ))}
+              </div>
+            </details>
+          )}
         </div>
       )}
 
-      {importing && importProgress && (
-        <div>
-          <div className="flex items-center gap-2 font-ui text-t2">
-            <span className="inline-flex items-center gap-[3px]">
-              <span className="h-1 w-1 rounded-full bg-accent animate-genp" />
-              <span className="h-1 w-1 rounded-full bg-accent animate-genp [animation-delay:0.18s]" />
-              <span className="h-1 w-1 rounded-full bg-accent animate-genp [animation-delay:0.36s]" />
-            </span>
-            {t("st_importing").replace("{current}", String(importProgress.current)).replace("{total}", String(importProgress.total))}
+      {/* Import in progress. */}
+      {importing && (
+        <div className="mt-3">
+          <BusyLine label={t("st_importing_backend")} />
+        </div>
+      )}
+
+      {/* Import result summary + per-item errors. */}
+      {importResult && !importing && (
+        <div className="mt-3">
+          <div className="font-ui text-xs text-t2">
+            {t("st_import_results")
+              .replace("{characters}", String(importResult.characters))
+              .replace("{chats}", String(importResult.chats))
+              .replace("{lorebooks}", String(importResult.lorebooks))
+              .replace("{presets}", String(importResult.presets))
+              .replace("{personas}", String(importResult.personas))}
           </div>
-          <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-s3">
-            <div
-              className="h-full rounded-full bg-accent transition-all"
-              style={{ width: `${(importProgress.current / importProgress.total) * 100}%` }}
-            />
-          </div>
+          {importErrors.length > 0 && (
+            <details className="mt-2.5">
+              <summary className="cursor-pointer font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-warning">
+                {t("st_import_errors").replace("{count}", String(importErrors.length))}
+              </summary>
+              <div className="mt-1.5 max-h-48 overflow-y-auto rounded border border-border2 bg-surface p-2">
+                {importErrors.map((e, i) => (
+                  <div key={i} className="border-b border-border2 py-1 last:border-0">
+                    <div className="font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-t1">{e.file}</div>
+                    <div className="font-ui text-[calc(var(--ui-fs)-3px)] text-t3">{e.message}</div>
+                  </div>
+                ))}
+              </div>
+            </details>
+          )}
         </div>
       )}
 
       {error && (
         <div className="mt-2 font-ui text-[calc(var(--ui-fs)-2px)] text-error">{error}</div>
       )}
-
-      {importErrors.length > 0 && !importing && (
-        <details className="mt-3">
-          <summary className="cursor-pointer font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-warning">
-            {t("st_import_errors").replace("{count}", String(importErrors.length))}
-          </summary>
-          <div className="mt-1.5 max-h-48 overflow-y-auto rounded border border-border2 bg-surface p-2">
-            {importErrors.map((e, i) => (
-              <div key={i} className="border-b border-border2 py-1 last:border-0">
-                <div className="font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-t1">{e.fileName}</div>
-                <div className="font-ui text-[calc(var(--ui-fs)-3px)] text-t3">{e.reason}</div>
-              </div>
-            ))}
-          </div>
-        </details>
-      )}
     </div>
   );
 }
-
 // ─── CharacterImportModal ──────────────────────────────────────────────────
 
 export function CharacterImportModal(input: ImportModalCommonProps) {
   const { t } = useT();
+  const isMobile = useIsMobile();
   const [drag, setDrag] = useState(false);
   const [parsing, setParsing] = useState(false);
   const [preview, setPreview] = useState<CharacterPreview | null>(null);
@@ -634,15 +365,17 @@ export function CharacterImportModal(input: ImportModalCommonProps) {
               subtitle={t("st_jsonl_png_supported")}
               onFile={processFile}
             />
-            <div className="mt-3 flex items-center gap-3">
-              <div className="flex-1 border-t border-border2" />
-              <button type="button"
-                className="cursor-pointer font-ui text-[calc(var(--ui-fs)-2px)] text-accent-t transition-colors hover:text-accent"
-                onClick={() => setStMode(true)}
-              >
-                {t("or_import_from_st")}
-              </button>
-            </div>
+            {!isMobile && (
+              <div className="mt-3 flex items-center gap-3">
+                <div className="flex-1 border-t border-border2" />
+                <button type="button"
+                  className="cursor-pointer font-ui text-[calc(var(--ui-fs)-2px)] text-accent-t transition-colors hover:text-accent"
+                  onClick={() => setStMode(true)}
+                >
+                  {t("or_import_from_st")}
+                </button>
+              </div>
+            )}
           </>
         )}
         {stMode && !parsing && (
@@ -678,6 +411,7 @@ export function CharacterImportModal(input: ImportModalCommonProps) {
 
 export function ChatImportModal(input: ImportModalCommonProps & { activeChatId: ChatId | null }) {
   const { t } = useT();
+  const isMobile = useIsMobile();
   const [drag, setDrag] = useState(false);
   const [parsing, setParsing] = useState(false);
   const [preview, setPreview] = useState<ChatPreview | null>(null);
@@ -719,15 +453,17 @@ export function ChatImportModal(input: ImportModalCommonProps & { activeChatId: 
               subtitle={t("st_jsonl_supported")}
               onFile={processFile}
             />
-            <div className="mt-3 flex items-center gap-3">
-              <div className="flex-1 border-t border-border2" />
-              <button type="button"
-                className="cursor-pointer font-ui text-[calc(var(--ui-fs)-2px)] text-accent-t transition-colors hover:text-accent"
-                onClick={() => setStMode(true)}
-              >
-                {t("or_import_from_st_chat")}
-              </button>
-            </div>
+            {!isMobile && (
+              <div className="mt-3 flex items-center gap-3">
+                <div className="flex-1 border-t border-border2" />
+                <button type="button"
+                  className="cursor-pointer font-ui text-[calc(var(--ui-fs)-2px)] text-accent-t transition-colors hover:text-accent"
+                  onClick={() => setStMode(true)}
+                >
+                  {t("or_import_from_st_chat")}
+                </button>
+              </div>
+            )}
           </>
         )}
         {stMode && !parsing && (
