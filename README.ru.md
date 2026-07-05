@@ -177,25 +177,17 @@ Vibe Tavern — это локальная платформа для AI-ролп�
 
 ### Windows
 
-**Вариант 1 — Один исполняемый файл:**
+**Вариант 1 — Установщик:**
 
-Скачай последний `.exe` из [Releases](https://github.com/Noineri/vibe_tavern/releases). Запусти. Vibe Tavern откроется в браузере.
+Скачай последний `.exe` из [Releases](https://github.com/Noineri/vibe_tavern/releases). Запусти и установи Vibe Tavern.
 
-**Вариант 2 — Скрипт:**
+**Вариант 2 — Portable версия:**
 
 Скачай zip-архив из [Releases](https://github.com/Noineri/vibe_tavern/releases), распакуй, запусти `Vibe Tavern.exe`.
 
 ### Linux
 
 Скачай tar.gz архив из [Releases](https://github.com/Noineri/vibe_tavern/releases), распакуй, запусти `./vibe-tavern`
-
-Или склонируй весь репозиторий и запусти вручную:
-
-```bash
-git clone https://github.com/Noineri/vibe_tavern.git
-cd vibe_tavern
-bun run dev
-```
 
 ### macOS 
 
@@ -210,6 +202,20 @@ docker compose up -d
 ### Android (Termux)
 
 APK-сборка под Termux — автоматизирует большую часть установки. См. [Гайд по установке на Android](docs/android-setup-ru.md).
+
+### Версия для разработчиков
+
+Если есть желание потестировать Vibe Tavern до релиза, можно склонировать данный репозиторий и запустить проект через Bun.
+
+> [!NOTE]
+> Сборки из ветки dev могут содержать критичные баги и даже вызвать потерю данных. Запускайте их на свой страх и риск.
+
+```bash
+git clone https://github.com/Noineri/vibe_tavern
+bun install --frozen-lockfile
+bun scripts/install-platform-optionals.ts
+bun run dev
+```
 
 ---
 
