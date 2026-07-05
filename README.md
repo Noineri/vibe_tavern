@@ -171,25 +171,17 @@ The long version follows.
 
 ### Windows
 
-**Option 1 — Single executable:**
+**Option 1 — Installer:**
 
-Download the latest `.exe` from [Releases](https://github.com/Noineri/vibe_tavern/releases). Run it. Vibe Tavern opens in your browser.
+Download the latest `.exe` from [Releases](https://github.com/Noineri/vibe_tavern/releases). Run it and install Vibe Tavern.
 
-**Option 2 — Script:**
+**Option 2 — Portable version:**
 
 Download the zip archive from [Releases](https://github.com/Noineri/vibe_tavern/releases), extract, run `Vibe Tavern.exe`.
 
 ### Linux
 
 Download the tar.gz archive from [Releases](https://github.com/Noineri/vibe_tavern/releases), extract, run `./vibe-tavern`
-
-Or clone entire repo and launch manually:
-
-```bash
-git clone https://github.com/Noineri/vibe_tavern.git
-cd vibe_tavern
-bun run dev
-```
 
 ### macOS
 
@@ -204,6 +196,20 @@ docker compose up -d
 ### Android (Termux)
 
 APK build for Termux — automates most of the installation process. See [Android setup guide](docs/android-setup.md).
+
+### Developer version (any platform)
+
+If you want to test Vibe Tavern in current development state, you can clone this repo and run project with Bun.
+
+> [!NOTE]
+> Dev branch can have many critical bugs and even cause data loss. Do this at your own risk.
+
+```bash
+git clone https://github.com/Noineri/vibe_tavern
+bun install --frozen-lockfile
+bun scripts/install-platform-optionals.ts
+bun run dev
+```
 
 ---
 
