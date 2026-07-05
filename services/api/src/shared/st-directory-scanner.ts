@@ -278,7 +278,17 @@ export async function importSillyTavernDirectory(
 			const slug = imported.character.name.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
 			nameToCharacterId.set(slug, characterId as CharacterId);
 
-			await deps.seedImportedOpening(chat.id as ChatId, imported.normalized.firstMessage, imported.normalized.alternateGreetings);
+			// withTrace:false — MASS_IMPORT Wave 3. assemblePrompt (and the
+			// lore-activation-engine) is only needed to seed a trace nobody reads
+			// at import time; it can blow up to tens of seconds per card on a
+			// pathological global-lorebook regex. The trace rebuilds on the first
+			// real turn. Mirrors the browser path's importJson → seedImportedOpening.
+			await deps.seedImportedOpening(
+				chat.id as ChatId,
+				imported.normalized.firstMessage,
+				imported.normalized.alternateGreetings,
+				{ withTrace: false },
+			);
 			deps.chatOrder.add(chat.id as ChatId);
 			result.lastActiveChatId = chat.id as ChatId;
 			result.characters++;
