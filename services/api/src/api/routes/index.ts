@@ -13,6 +13,7 @@ import { createAssetRoutes } from "./asset.js";
 import { createSettingsRoutes } from "./settings.js";
 import { createMobileAccessRoutes } from "./mobile-access.js";
 import { createRuntimeRoutes } from "./runtime.js";
+import { createFsRoutes } from "./fs.js";
 
 export type { RuntimeApi } from "../contract/runtime-api.js";
 
@@ -31,6 +32,7 @@ export function createApiRouter(runtime: RuntimeApi) {
     .route("/", createSettingsRoutes(runtime.settings))
     .route("/", createMobileAccessRoutes(runtime.mobileAccess))
     .route("/", createRuntimeRoutes())
+    .route("/", createFsRoutes())
   ;
 }
 
