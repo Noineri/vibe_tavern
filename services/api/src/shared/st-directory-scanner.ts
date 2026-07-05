@@ -3,22 +3,29 @@
  * characters, chats, and lorebooks into the RP Platform database.
  *
  * Expected ST folder structure (data/default-user/):
- *   characters/   ← .png, .json (character cards)
- *   chats/        ← {characterName}/*.jsonl
- *   worlds/       ← .json (lorebooks)
+ *   characters/      ← .png, .json (character cards)
+ *   chats/           ← {characterName}/*.jsonl
+ *   worlds/          ← .json (lorebooks)
  *   OpenAI Settings/ ← .json (prompt presets, optional)
+ *   settings.json    ← persona descriptions (optional)
+ *   User Avatars/    ← persona avatar PNGs (optional)
  */
 
 import { readdir, mkdir } from "node:fs/promises";
 import { join, extname, basename, resolve } from "node:path";
 import {
 	importCharacterCardV3Json,
-	importStLorebookJson,
+	parseStPreset,
+	parseStPersonas,
 	parseSillyTavernChat,
+	stBlockToCanvasEntry,
+	synthesizeCanvasEntry,
 } from "@vibe-tavern/import-export";
 import type { ImportExportModuleDeps, ImportResult } from "../runtime/session/session-runtime-import-export.js";
+import { createPromptPreset } from "../runtime/session/session-runtime-presets.js";
+import { importLorebook } from "../domain/lorebook/lorebook-import-service.js";
 import { STORAGE_FOLDERS } from "@vibe-tavern/db";
-import type { CharacterId, ChatId } from "@vibe-tavern/domain";
+import type { CharacterId, ChatId, CustomInjection, PromptOrderEntry } from "@vibe-tavern/domain";
 import { brandId } from "@vibe-tavern/domain";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -27,6 +34,8 @@ export interface StDirectoryScanResult {
 	characters: StScannedCharacter[];
 	chats: StScannedChat[];
 	lorebooks: StScannedLorebook[];
+	presets: StScannedPreset[];
+	persona: StScannedPersona | null;
 	errors: StScanError[];
 }
 
@@ -54,6 +63,18 @@ export interface StScannedLorebook {
 	warnings: string[];
 }
 
+export interface StScannedPreset {
+	fileName: string;
+	name: string;
+	imported: boolean;
+}
+
+export interface StScannedPersona {
+	/** Number of persona entries detected in settings.json. */
+	count: number;
+	imported: boolean;
+}
+
 export interface StScanError {
 	file: string;
 	stage: "read" | "parse" | "import";
@@ -79,6 +100,8 @@ export async function scanSillyTavernDirectory(dirPath: string): Promise<StDirec
 		characters: [],
 		chats: [],
 		lorebooks: [],
+		presets: [],
+		persona: null,
 		errors: [],
 	};
 
@@ -165,6 +188,56 @@ export async function scanSillyTavernDirectory(dirPath: string): Promise<StDirec
 		}
 	}
 
+	// ── Scan OpenAI Settings/ (prompt presets) ──
+	const presetsDir = join(resolved, "OpenAI Settings");
+	const presetFiles = await safeReaddir(presetsDir);
+	for (const fileName of presetFiles) {
+		if (!fileName.toLowerCase().endsWith(".json")) continue;
+
+		const filePath = join(presetsDir, fileName);
+		try {
+			const content = await Bun.file(filePath).text();
+			const parsed: unknown = JSON.parse(content);
+			// An ST preset must carry a prompts[] array (the field parseStPreset
+			// requires). Non-preset JSON in this folder is skipped silently.
+			const hasPrompts =
+				parsed && typeof parsed === "object" &&
+				Array.isArray((parsed as Record<string, unknown>).prompts);
+			if (!hasPrompts) continue;
+			const name =
+				(typeof (parsed as Record<string, unknown>).name === "string"
+					&& (parsed as Record<string, unknown>).name) ||
+				basename(fileName, ".json");
+			result.presets.push({ fileName, name: name as string, imported: false });
+		} catch (err) {
+			result.errors.push({
+				file: filePath,
+				stage: "parse",
+				message: err instanceof Error ? err.message : String(err),
+			});
+		}
+	}
+
+	// ── Scan settings.json (personas) ──
+	const settingsPath = join(resolved, "settings.json");
+	const settingsStat = await Bun.file(settingsPath).stat().catch(() => null);
+	if (settingsStat?.isFile()) {
+		try {
+			const content = await Bun.file(settingsPath).text();
+			const parsed: unknown = JSON.parse(content);
+			const personaCount = parseStPersonas(parsed).length;
+			if (personaCount > 0) {
+				result.persona = { count: personaCount, imported: false };
+			}
+		} catch (err) {
+			result.errors.push({
+				file: settingsPath,
+				stage: "parse",
+				message: err instanceof Error ? err.message : String(err),
+			});
+		}
+	}
+
 	return result;
 }
 
@@ -174,6 +247,8 @@ export interface StDirectoryImportResult {
 	characters: number;
 	chats: number;
 	lorebooks: number;
+	presets: number;
+	personas: number;
 	errors: StScanError[];
 	/** ID of the last imported character's chat — can be used to navigate UI. */
 	lastActiveChatId: ChatId | null;
@@ -192,6 +267,8 @@ export async function importSillyTavernDirectory(
 		characters: 0,
 		chats: 0,
 		lorebooks: 0,
+		presets: 0,
+		personas: 0,
 		errors: [],
 		lastActiveChatId: null,
 	};
@@ -383,15 +460,146 @@ export async function importSillyTavernDirectory(
 		const filePath = join(worldsDir, fileName);
 		try {
 			const content = await Bun.file(filePath).text();
-			const parsed = JSON.parse(content);
-			const imported = importStLorebookJson(parsed);
-
-			// TODO: Store lorebook + entries when lorebook DB tables are implemented
-			// For now, just count as parsed successfully
+			const parsed: unknown = JSON.parse(content);
+			const fallbackName = basename(fileName, ".json");
+			// STN-1D: REAL lorebook write (was a TODO no-op that just counted).
+			// Mass-imported worlds are global scope. importLorebook parses +
+			// creates the lorebook + bulk-inserts entries in one call.
+			await importLorebook(deps.stores, null, {
+				format: "st",
+				data: parsed,
+				mode: "new",
+				scopeType: "global",
+				fallbackName,
+			});
 			result.lorebooks++;
 		} catch (err) {
 			result.errors.push({
 				file: filePath,
+				stage: "import",
+				message: err instanceof Error ? err.message : String(err),
+			});
+		}
+	}
+
+	// ── Import presets (OpenAI Settings/) ──
+	// Field mapping mirrors browser Phase 3 (ImportModals.tsx): main→system,
+	// jailbreak→jailbreak, non-builtin blocks→customInjections, prompt_order→
+	// canvas with synthesized entries for custom blocks absent from ST order.
+	const presetsDir = join(resolved, "OpenAI Settings");
+	const presetFiles = await safeReaddir(presetsDir);
+	for (const fileName of presetFiles) {
+		if (!fileName.toLowerCase().endsWith(".json")) continue;
+
+		const filePath = join(presetsDir, fileName);
+		try {
+			const text = await Bun.file(filePath).text();
+			const stPreset = parseStPreset(text);
+			const presetName = fileName.replace(/\.json$/i, "");
+
+			const { blocks, promptOrder } = stPreset;
+			const mainBlock = blocks.find((b) => b.identifier === "main");
+			const jailbreakBlock = blocks.find((b) => b.identifier === "jailbreak");
+
+			// Built-in identifiers whose content goes into named preset fields
+			// (not custom injections). Matches the browser exclusion set exactly.
+			const excluded = new Set([
+				"main", "jailbreak", "nsfw", "enhanceDefinitions",
+				"worldInfoBefore", "worldInfoAfter",
+			]);
+			const customBlocks = blocks.filter((b) => !excluded.has(b.identifier) && b.content.trim());
+			const customInjections: CustomInjection[] = customBlocks.map((b) => ({
+				identifier: b.identifier,
+				name: b.name || b.identifier,
+				content: b.content,
+				role: b.role,
+			}));
+
+			// COMPLETE canvas: preserve all ST prompt_order entries + synthesize
+			// entries for custom blocks absent from ST prompt_order.
+			const canvas: PromptOrderEntry[] = promptOrder.map(stBlockToCanvasEntry);
+			const canvasIds = new Set(canvas.map((e) => e.identifier));
+			for (const b of customBlocks) {
+				if (!canvasIds.has(b.identifier)) {
+					canvas.push(synthesizeCanvasEntry(b));
+					canvasIds.add(b.identifier);
+				}
+			}
+
+			await createPromptPreset(
+				{ presets: deps.stores.presets, chats: deps.stores.chats },
+				{
+					name: presetName,
+					system: mainBlock?.content || "",
+					jailbreak: jailbreakBlock?.content || "",
+					prefill: "",
+					customInjections: customInjections.length > 0 ? customInjections : undefined,
+					promptOrder: canvas.length > 0 ? canvas : undefined,
+				},
+			);
+			result.presets++;
+		} catch (err) {
+			result.errors.push({
+				file: filePath,
+				stage: "import",
+				message: err instanceof Error ? err.message : String(err),
+			});
+		}
+	}
+
+	// ── Import personas (settings.json + User Avatars/) ──
+	// Mirrors browser Phase 0: parseStPersonas → create each, best-effort avatar.
+	const settingsPath = join(resolved, "settings.json");
+	const settingsStat = await Bun.file(settingsPath).stat().catch(() => null);
+	if (settingsStat?.isFile()) {
+		try {
+			const content = await Bun.file(settingsPath).text();
+			const parsed: unknown = JSON.parse(content);
+			const personaEntries = parseStPersonas(parsed);
+			for (const pe of personaEntries) {
+				try {
+					const created = await deps.stores.personas.create({
+						name: pe.name,
+						description: pe.description,
+						pronouns: null,
+						pronounForms: null,
+						defaultForNewChats: pe.isDefault,
+					});
+					result.personas++;
+
+					// Best-effort avatar upload from User Avatars/<key>. ST avatars are
+					// PNG by convention. Mirrors the scanner's existing direct-write
+					// pattern for character original.png (fileStore + Bun.write),
+					// avoiding a dependency on the asset service (which lives in the
+					// HTTP adapter layer, unreachable from here).
+					if (pe.avatarRelativePath) {
+						const avatarFile = join(resolved, pe.avatarRelativePath);
+						const avatarStat = await Bun.file(avatarFile).stat().catch(() => null);
+						if (avatarStat?.isFile()) {
+							try {
+								const avatarBuffer = await Bun.file(avatarFile).arrayBuffer();
+								const avatarDest = deps.stores.content.fileStore.resolvePath(
+									STORAGE_FOLDERS.personas, `${created.id}/avatar.png`,
+								);
+								await mkdir(resolve(avatarDest, ".."), { recursive: true });
+								await Bun.write(avatarDest, Buffer.from(avatarBuffer));
+								await deps.stores.personas.setFolderAvatar(created.id, "png");
+							} catch {
+								// Avatar failure is non-critical — persona is already created.
+							}
+						}
+					}
+				} catch (err) {
+					result.errors.push({
+						file: `persona: ${pe.name}`,
+						stage: "import",
+						message: err instanceof Error ? err.message : String(err),
+					});
+				}
+			}
+		} catch (err) {
+			result.errors.push({
+				file: settingsPath,
 				stage: "import",
 				message: err instanceof Error ? err.message : String(err),
 			});

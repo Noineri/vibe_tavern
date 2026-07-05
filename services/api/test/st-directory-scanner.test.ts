@@ -1,0 +1,217 @@
+/**
+ * Characterization tests for the SillyTavern directory scanner's THREE gaps
+ * (ST_NATIVE_DIALOG_IMPORT_PLAN Wave 1, STN-1D).
+ *
+ * Before STN-1D the scanner imported only characters + chats for real. The
+ * lorebook section was a LIE: it hit a `// TODO: Store lorebook …` no-op and
+ * just incremented a counter. Presets and personas were not scanned at all.
+ * These tests pin all three gaps CLOSED by building a real ST folder and
+ * proving the artifacts land in the DB after importSillyTavernDirectory:
+ *
+ *   1. lorebooks (worlds/*.json)  → stores.lorebooks gains a row + entries.
+ *   2. presets (OpenAI Settings/) → stores.presets gains a row.
+ *   3. personas (settings.json)   → stores.personas gains a row.
+ *
+ * Also pins:
+ *   - scanSillyTavernDirectory reports the right preview counts for ALL surfaces.
+ *   - importSillyTavernDirectory is driven through the REAL SessionRuntime
+ *     (importExportDeps), which is the path the Wave 3 withTrace wiring fix
+ *     guards — so this test also exercises that fix end-to-end.
+ *
+ * Uses a real SessionRuntime + temp SQLite (same pattern as
+ * seed-imported-opening-trace.test.ts). Per AGENTS.md §1 this characterization
+ * test was written alongside the gap-closing change.
+ */
+import { describe, it, expect, beforeAll, afterAll, mock } from "bun:test";
+import { mkdir, rm, writeFile } from "node:fs/promises";
+import { resolve, join } from "node:path";
+import { tmpdir } from "node:os";
+import { createRuntimeStore } from "../src/runtime/session/session-runtime-store.js";
+import { SessionRuntime } from "../src/runtime/session/session-runtime.js";
+import { setTokenCountFn } from "@vibe-tavern/prompt-pipeline";
+
+/**
+ * Build a complete-but-minimal ST data dir. Returns its root path.
+ * Fixture names use distinctive strings so assertions can find them by name
+ * after a full-directory import (the scanner imports EVERYTHING per call, so
+ * each gap must be identifiable in the resulting DB rows).
+ */
+async function buildStDir(root: string) {
+	// characters/ — one minimal V2 card (the scanner needs a real card to seed)
+	await mkdir(join(root, "characters"), { recursive: true });
+	await writeFile(
+		join(root, "characters", "TestChar.json"),
+		JSON.stringify({ spec: "chara_card_v2", spec_version: "2.0", data: { name: "Test Char", description: "probe", first_mes: "Hello." } }),
+	);
+
+	// worlds/ — one ST lorebook with one entry (the gap-1 regression target)
+	await mkdir(join(root, "worlds"), { recursive: true });
+	await writeFile(
+		join(root, "worlds", "TestWorld.json"),
+		JSON.stringify({
+			name: "Test World",
+			entries: {
+				"0": {
+				 uid: 0, key: ["greeting"], keysecondary: [],
+				 content: "Greetings lore entry.", comment: "test",
+				 constant: false, vectorized: false, selective: true,
+				 selectiveLogic: 0, addMemo: false, order: 100, position: 0,
+				 disable: false, excludeRecursion: false, preventRecursion: false,
+				 delayUntilRecursion: false, probability: 100, useProbability: true,
+				 depth: 4, group: "", groupOverride: false, groupWeight: 100,
+				 scanDepth: null, caseSensitive: null, matchWholeWords: null,
+				 useGroupScoring: null, automationId: "", role: null, sticky: null,
+				 cooldown: null, delay: null, displayIndex: 0,
+				},
+			},
+		}),
+	);
+
+	// OpenAI Settings/ — one ST preset (the gap-2 regression target).
+	// The scanner derives the preset name from the FILENAME (mirrors the browser
+	// flow), so the stored name will be "TestPreset" — not the JSON's `name`.
+	await mkdir(join(root, "OpenAI Settings"), { recursive: true });
+	await writeFile(
+		join(root, "OpenAI Settings", "TestPreset.json"),
+		JSON.stringify({
+			name: "Test Preset",
+			prompts: [
+				{ identifier: "main", name: "Main Prompt", role: "system", content: "You are a test.", injection_position: 0, injection_depth: 0, injection_order: 0, enabled: true },
+				{ identifier: "jailbreak", name: "Jailbreak", role: "system", content: "Continue.", injection_position: 0, injection_depth: 0, injection_order: 1, enabled: true },
+				{ identifier: "customInject", name: "My Injection", role: "system", content: "Custom block.", injection_position: 1, injection_depth: 4, injection_order: 100, enabled: true },
+			],
+			prompt_order: [{ character_id: 100001, order: [
+				{ identifier: "main", enabled: true, order: 0 },
+				{ identifier: "jailbreak", enabled: true, order: 1 },
+				{ identifier: "customInject", enabled: true, order: 2 },
+			]}],
+		}),
+	);
+
+	// settings.json — one persona (the gap-3 regression target).
+	// parseStPersonas reads personas[key] as the name, so the stored persona
+	// name will be "Test User" (the VALUE in the personas map).
+	await writeFile(
+		join(root, "settings.json"),
+		JSON.stringify({
+			power_user: {
+				personas: { "default.png": "Test User" },
+				persona_descriptions: { "default.png": { description: "A test persona." } },
+				default_persona: "default.png",
+			},
+		}),
+	);
+
+	return root;
+}
+
+async function createRuntime() {
+	const tmpDir = resolve(tmpdir(), "vt-scanner-" + crypto.randomUUID().slice(0, 8));
+	await mkdir(resolve(tmpDir, "data"), { recursive: true });
+	const stores = await createRuntimeStore(resolve(tmpDir, "data"));
+	await Promise.all([
+		stores.personas.ensureDefault(),
+		stores.presets.ensureDefault(),
+		stores.uiSettings.ensureDefaults(),
+	]);
+	const runtime = new SessionRuntime(stores, { getActiveProviderProfile: async () => null });
+	return {
+		runtime,
+		stores,
+		tmpDir,
+		cleanup: async () => { try { await rm(tmpDir, { recursive: true, force: true }); } catch {} },
+	};
+}
+
+type Env = Awaited<ReturnType<typeof createRuntime>>;
+
+describe("ST directory scanner — three gaps (STN-1D)", () => {
+	let env: Env;
+	let stDir: string;
+	beforeAll(() => setTokenCountFn((text: string) => text.length));
+	afterAll(async () => { if (env) await env.cleanup(); });
+
+	it("scan reports lorebook + preset + persona counts (all-surface preview)", async () => {
+		env = await createRuntime();
+		stDir = await buildStDir(join(env.tmpDir, "st-source"));
+
+		const scan = await env.runtime.scanSillyTavernDirectory(stDir);
+
+		expect(scan.characters.length).toBe(1);
+		expect(scan.lorebooks.length).toBe(1);
+		expect(scan.lorebooks[0].name).toBe("Test World");
+		// gap-2 preview: presets are now scanned
+		expect(scan.presets.length).toBe(1);
+		// gap-3 preview: persona is now scanned
+		expect(scan.persona).not.toBeNull();
+		expect(scan.persona!.count).toBe(1);
+	});
+
+	it("import WRITES all three surfaces — lorebook (gap-1), preset (gap-2), persona (gap-3)", async () => {
+		// Spy on assemblePrompt via the lifecycle deps (same technique as
+		// seed-imported-opening-trace.test.ts). The scanner runs through the REAL
+		// runtime → importExportDeps → chatLifecycle.seedImportedOpening, so this
+		// also pins the withTrace-wiring fix: if the importExportDeps wrapper ever
+		// drops the { withTrace: false } option again, assemblePrompt fires and
+		// this assertion fails — the 68s/card freeze stays dead.
+		const lifecycle = env.runtime.chatLifecycle as unknown as {
+			deps: { assemblePrompt: (chatId: unknown, branchId: string) => Promise<unknown> };
+		};
+		const realAssemble = lifecycle.deps.assemblePrompt;
+		let assembleCalls = 0;
+		lifecycle.deps.assemblePrompt = mock(async (chatId: unknown, branchId: string) => {
+			assembleCalls++;
+			return realAssemble(chatId as never, branchId);
+		});
+
+		const loreBefore = (await env.stores.lorebooks.listAllLorebooks()).length;
+		const presetBefore = (await env.stores.presets.listAll()).length;
+		const personaBefore = (await env.stores.personas.listAll()).length;
+
+		// ONE import call drives the whole directory through the real runtime.
+		const result = await env.runtime.importSillyTavernDirectory(stDir);
+
+		// Top-line counters must reflect REAL writes, not the old no-op count.
+		expect(result.characters).toBe(1);
+		expect(result.lorebooks).toBe(1);
+		expect(result.presets).toBe(1);
+		expect(result.personas).toBe(1);
+		expect(result.errors).toEqual([]);
+
+		// withTrace wiring gate: the seeded character greeting must NOT trigger
+		// assemblePrompt (the lore-activation engine). If this is > 0, the
+		// importExportDeps wrapper is dropping { withTrace: false } again and the
+		// mass-import path will freeze on pathological global lorebooks.
+		expect(assembleCalls).toBe(0);
+
+		// ── gap-1: lorebook row + entries actually landed ──
+		const loreAfter = await env.stores.lorebooks.listAllLorebooks();
+		expect(loreAfter.length).toBe(loreBefore + 1);
+		const importedLore = loreAfter.find((lb) => lb.name === "Test World");
+		expect(importedLore).toBeTruthy();
+		const loreEntries = await env.stores.lorebooks.listEntries(importedLore!.id);
+		// The old no-op would have left ZERO entries even if it had created the
+		// row — this entry-count assertion is the load-bearing regression gate.
+		expect(loreEntries.length).toBe(1);
+		expect(loreEntries[0].content).toContain("Greetings lore entry.");
+
+		// ── gap-2: preset row + field mapping (browser Phase 3 parity) ──
+		const presetAfter = await env.stores.presets.listAll();
+		expect(presetAfter.length).toBe(presetBefore + 1);
+		// Scanner derives the name from the FILENAME, not the JSON `name` field.
+		const importedPreset = presetAfter.find((p) => p.name === "TestPreset");
+		expect(importedPreset).toBeTruthy();
+		// main → systemPrompt, jailbreak → postHistoryInstructions,
+		// customInject → customInjections (the browser Phase 3 mapping).
+		expect(importedPreset!.systemPrompt).toContain("You are a test.");
+		expect(importedPreset!.postHistoryInstructions).toContain("Continue.");
+		expect(importedPreset!.customInjections.some((c) => c.identifier === "customInject" && c.content === "Custom block.")).toBe(true);
+
+		// ── gap-3: persona row landed ──
+		const personaAfter = await env.stores.personas.listAll();
+		expect(personaAfter.length).toBe(personaBefore + 1);
+		const importedPersona = personaAfter.find((p) => p.name === "Test User");
+		expect(importedPersona).toBeTruthy();
+		expect(importedPersona!.description).toBe("A test persona.");
+	});
+});

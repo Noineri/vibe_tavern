@@ -561,8 +561,8 @@ export function pickBootstrapChatId<T extends string>(
 			resolveDefaultPersonaId: () => this.persona.resolveDefaultId(),
 			resolveDefaultPromptPresetId: () => this.ensureDefaultPresetId(),
 			getSnapshot: (chatId) => this.getSnapshot(chatId),
-			seedImportedOpening: (chatId, firstMessage, alternateGreetings) =>
-				this.chatLifecycle.seedImportedOpening(chatId, firstMessage, alternateGreetings),
+			seedImportedOpening: (chatId, firstMessage, alternateGreetings, opts) =>
+				this.chatLifecycle.seedImportedOpening(chatId, firstMessage, alternateGreetings, opts),
 		};
 	}
 
