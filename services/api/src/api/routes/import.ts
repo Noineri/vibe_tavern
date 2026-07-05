@@ -9,6 +9,10 @@ export function createImportRoutes(runtime: ImportExportRuntimeApi) {
       const body = c.req.valid("json");
       return c.json(await runtime.importJson(body));
     })
+    .post("/api/import/batch", zValidator("json", schemas.importJsonBatchSchema), async (c) => {
+      const body = c.req.valid("json");
+      return c.json(await runtime.importJsonBatch(body));
+    })
     .post("/api/import/st-scan", async (c) => {
       const body = await c.req.json<{ path?: string }>();
       if (!body.path?.trim()) return c.json({ error: "path is required" }, 400);

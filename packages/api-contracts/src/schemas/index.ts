@@ -61,6 +61,7 @@ export {
 export {
   debugSendLogSchema,
   importJsonSchema,
+  importJsonBatchSchema,
 } from "./debug-schema.js";
 
 export {

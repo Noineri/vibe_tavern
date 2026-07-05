@@ -386,6 +386,59 @@ export async function importJson(
 	throw validation("Lorebook import is not supported in phase 1.");
 }
 
+export interface BatchImportItem {
+	fileName: string;
+	jsonText: string;
+	chatId?: string;
+	skipExisting?: boolean;
+}
+
+export interface BatchImportResult {
+	results: Array<{
+		fileName: string;
+		characterId?: CharacterId;
+		activeChatId?: ChatId;
+		error?: string;
+	}>;
+}
+
+/**
+ * Mass-import batch: process N character cards in one request. Loops the
+ * existing {@link importJson} per item with per-item try/catch — a failed item
+ * is collected into `results[].error` rather than aborting the batch (one bad
+ * card must not roll back the others). Defaults to `lean: true` because the
+ * only mass-import caller reads nothing but the ids.
+ *
+ * No cross-store transaction wraps the loop: each store owns its connection
+ * and existing per-method transactions are intentional (see persistence.ts).
+ * The server is already ~8ms/card after Wave 1 (bench #4), so sequential
+ * per-item processing here is not a bottleneck — the win is eliminating N
+ * HTTP roundtrips and letting the frontend parallelize.
+ */
+export async function importJsonBatch(
+	deps: ImportExportModuleDeps,
+	input: { items: BatchImportItem[]; lean?: boolean },
+): Promise<BatchImportResult> {
+	const lean = input.lean ?? true;
+	const results: BatchImportResult["results"] = [];
+	for (const item of input.items) {
+		try {
+			const r = await importJson(deps, { ...item, lean });
+			results.push({
+				fileName: item.fileName,
+				characterId: r.characterId,
+				activeChatId: r.activeChatId,
+			});
+		} catch (err) {
+			results.push({
+				fileName: item.fileName,
+				error: err instanceof Error ? err.message : String(err),
+			});
+		}
+	}
+	return { results };
+}
+
 async function importSillyTavernChat(
 	deps: ImportExportModuleDeps,
 	fileName: string,

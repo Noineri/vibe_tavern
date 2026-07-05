@@ -5,6 +5,7 @@ import type { ClientProviderProfileRecord } from "../../runtime/session/session-
 import type {
 	BootstrapState,
 	ImportResult,
+	BatchImportResult,
 	MessageResponse,
 	SessionSnapshot,
 	VariantResponse,
@@ -346,6 +347,7 @@ export interface PresetRuntimeApi {
 
 export interface ImportExportRuntimeApi {
 	importJson: (body: { fileName: string; jsonText: string; chatId?: string; skipExisting?: boolean; lean?: boolean }) => Promise<ImportResult>;
+	importJsonBatch: (body: { items: Array<{ fileName: string; jsonText: string; chatId?: string; skipExisting?: boolean }>; lean?: boolean }) => Promise<BatchImportResult>;
 	scanSillyTavernDirectory: (dirPath: string) => Promise<StDirectoryScanResult>;
 	importSillyTavernDirectory: (dirPath: string) => Promise<StDirectoryImportResult>;
 }

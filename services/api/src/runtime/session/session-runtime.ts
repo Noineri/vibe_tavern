@@ -37,6 +37,7 @@ import type {
 	SessionSnapshot,
 	BootstrapState,
 	ImportResult,
+	BatchImportResult,
 	MessageResponse,
 	VariantResponse,
 	BranchResponse,
@@ -53,6 +54,7 @@ export type {
 	SessionSnapshot,
 	BootstrapState,
 	ImportResult,
+	BatchImportResult,
 	MessageResponse,
 	VariantResponse,
 	BranchResponse,
@@ -586,6 +588,10 @@ export function pickBootstrapChatId<T extends string>(
 
 	async importJson(input: { fileName: string; jsonText: string; chatId?: string; skipExisting?: boolean; lean?: boolean }): Promise<ImportResult> {
 		return importExportModule.importJson(this.importExportDeps, input);
+	}
+
+	async importJsonBatch(input: { items: Array<{ fileName: string; jsonText: string; chatId?: string; skipExisting?: boolean }>; lean?: boolean }): Promise<BatchImportResult> {
+		return importExportModule.importJsonBatch(this.importExportDeps, input);
 	}
 
 	scanSillyTavernDirectory(dirPath: string) {

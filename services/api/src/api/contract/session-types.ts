@@ -94,6 +94,18 @@ export interface ImportResult {
 	};
 }
 
+// Result of a mass-import batch (POST /api/import/batch). One entry per input
+// item; a failed item carries `error` instead of ids. See importJsonBatch in
+// session-runtime-import-export.ts.
+export interface BatchImportResult {
+	results: Array<{
+		fileName: string;
+		characterId?: CharacterId;
+		activeChatId?: ChatId;
+		error?: string;
+	}>;
+}
+
 // ─── Per-endpoint response builders (Wave B1) ────────────────────────
 //
 // Narrowed response shapes — one per mutation family. Each is a strict

@@ -206,4 +206,5 @@ export {
 export { streamAiAssistant, countAiAssistantTokens } from "./api/ai-assistant-api.js";
 
 // ─── Import ─────────────────────────────────────────────────────────────
-export { importJson } from "./api/import-api.js";
+export { importJson, importJsonBatch } from "./api/import-api.js";
+export type { BatchImportItemResult } from "./api/import-api.js";

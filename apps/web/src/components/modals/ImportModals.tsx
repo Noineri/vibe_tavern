@@ -3,8 +3,9 @@ import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import type { ChatId } from "@vibe-tavern/domain";
 import { extractPngMetadata, parseCharacterMetadata } from "../../lib/png-reader.js";
-import { importJson, uploadCharacterAvatar, uploadPersonaAvatar, createPersona, createPromptPreset, createLorebook, importLorebookEntries } from "../../app-client.js";
+import { importJson, importJsonBatch, uploadCharacterAvatar, uploadPersonaAvatar, createPersona, createPromptPreset, createLorebook, importLorebookEntries } from "../../app-client.js";
 import { cn } from "../../lib/cn.js";
+import { runPool, yieldToEventLoop } from "../../lib/concurrency.js";
 import { Icons } from "../shared/icons.js";
 import { Modal } from "../shared/Modal.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
@@ -217,18 +218,30 @@ interface ImportError {
       }
     }
 
-    // Phase 1: Import characters
-    // Build a map: character name → chatId for chat matching
+    // Phase 1: Import characters (batched + concurrent).
+    // Previously this was a sequential for-loop: each card paid an HTTP roundtrip
+    // PLUS a PNG-avatar upload, all on the main thread, all awaited one at a
+    // time. That blocked rendering and froze the progress bar for seconds at a
+    // time (see the user's mass-import video). Now: parse cards (cheap, sync),
+    // chunk into batches of 50, send each batch via importJsonBatch with a
+    // concurrency pool (~6 in flight), and upload avatars in parallel after.
+    // Progress repaints between batches via yieldToEventLoop.
     const nameToChatId = new Map<string, ChatId>();
+    const BATCH_SIZE = 50;
+    const BATCH_CONCURRENCY = 6;
+    const AVATAR_CONCURRENCY = 6;
 
+    // Parse all cards first. extractPngMetadata is async-IO but cheap
+    // (~0.5ms/file per bench #1); doing it once here lets us build pure-string
+    // batches and avoids re-reading files inside the pool. JSON.parse on the
+    // extracted text gives us the name for chat matching without a second parse.
+    type ParsedCard = { fileName: string; jsonText: string; charName: string; isPng: boolean; file: File };
+    const parsedCards: ParsedCard[] = [];
     for (const entry of scanResult.characters) {
-      current++;
-      setImportProgress({ current, total });
+      const lowerName = entry.file.name.toLowerCase();
+      const isPng = lowerName.endsWith(".png") || entry.file.type === "image/png";
       try {
         let jsonText: string;
-        const lowerName = entry.file.name.toLowerCase();
-        const isPng = lowerName.endsWith(".png") || entry.file.type === "image/png";
-
         if (isPng) {
           const metadata = await extractPngMetadata(entry.file);
           const parsed = parseCharacterMetadata(metadata);
@@ -236,33 +249,10 @@ interface ImportError {
         } else {
           jsonText = await entry.file.text();
         }
-
-        const result = await importJson({ fileName: entry.file.name, jsonText, skipExisting: true, lean: true });
-        importedChars++;
-
-        // Upload PNG as a folder-resident avatar (POST /api/characters/:id/avatar
-        // → {id}/avatar.{ext}). Replaces the legacy uploadAsset + PATCH.
-        if (isPng) {
-          const characterId = result.characterId ?? result.snapshot?.character?.id;
-          if (characterId) {
-            try {
-              await uploadCharacterAvatar(characterId, entry.file);
-            } catch {
-              // Avatar upload failure is non-critical
-            }
-          }
-        }
-
-        // Map character name → chatId for chat matching
-        const parsed = JSON.parse(jsonText);
-        const data = typeof parsed.data === 'object' && parsed.data !== null ? parsed.data as Record<string, unknown> : parsed;
+        const parsedObj = JSON.parse(jsonText) as Record<string, unknown>;
+        const data = typeof parsedObj.data === "object" && parsedObj.data !== null ? parsedObj.data as Record<string, unknown> : parsedObj;
         const charName = (data.name as string)?.toLowerCase() ?? "";
-        if (result.activeChatId) {
-          nameToChatId.set(charName, result.activeChatId);
-          // Also map by slug
-          const slug = charName.replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
-          nameToChatId.set(slug, result.activeChatId);
-        }
+        parsedCards.push({ fileName: entry.file.name, jsonText, charName, isPng, file: entry.file });
       } catch (err) {
         failedItems.push({
           fileName: entry.file.name,
@@ -270,6 +260,66 @@ interface ImportError {
         });
       }
     }
+
+    // Chunk parsed cards into batches.
+    const batches: ParsedCard[][] = [];
+    for (let i = 0; i < parsedCards.length; i += BATCH_SIZE) {
+      batches.push(parsedCards.slice(i, i + BATCH_SIZE));
+    }
+
+    // Each batch → one importJsonBatch POST. Run with limited concurrency so
+    // we don't fire ~26 requests simultaneously and saturate the connection.
+    // We also collect (characterId, file) pairs for the avatar upload pass.
+    const avatarJobs: { characterId: string; file: File }[] = [];
+    await runPool(
+      batches,
+      BATCH_CONCURRENCY,
+      async (batch) => {
+        const r = await importJsonBatch({
+          items: batch.map((c) => ({ fileName: c.fileName, jsonText: c.jsonText, skipExisting: true })),
+          lean: true,
+        });
+        for (const item of r.results) {
+          if (item.error) {
+            failedItems.push({ fileName: item.fileName, reason: item.error });
+            continue;
+          }
+          importedChars++;
+          // Re-find the parsed card for name + avatar.
+          const card = batch.find((c) => c.fileName === item.fileName);
+          if (card) {
+            if (item.activeChatId) {
+              nameToChatId.set(card.charName, item.activeChatId);
+              const slug = card.charName.replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
+              nameToChatId.set(slug, item.activeChatId);
+            }
+            if (card.isPng && item.characterId) {
+              avatarJobs.push({ characterId: item.characterId, file: card.file });
+            }
+          }
+        }
+      },
+    );
+    // Yield once after all batches so the progress bar repaints before avatars.
+    current += parsedCards.length;
+    setImportProgress({ current, total });
+    await yieldToEventLoop();
+
+    // Upload avatars in parallel (non-critical; best-effort). Decoupled from
+    // the card inserts because each upload is an MB-scale PNG that blocks the
+    // connection longer than the insert did, and a failed upload must not fail
+    // the import. Limited concurrency to avoid saturating the connection.
+    await runPool(
+      avatarJobs,
+      AVATAR_CONCURRENCY,
+      async (job) => {
+        try {
+          await uploadCharacterAvatar(job.characterId, job.file);
+        } catch {
+          // Avatar upload failure is non-critical
+        }
+      },
+    );
 
     // Phase 2: Import chats (skip if no matching character)
     for (const entry of scanResult.chats) {

@@ -7,6 +7,9 @@ export class ImportExportAdapter implements ImportExportRuntimeApi {
 	importJson = (body: { fileName: string; jsonText: string; chatId?: string; skipExisting?: boolean; lean?: boolean }) =>
 		this.sessionRuntime.importJson(body);
 
+	importJsonBatch = (body: { items: Array<{ fileName: string; jsonText: string; chatId?: string; skipExisting?: boolean }>; lean?: boolean }) =>
+		this.sessionRuntime.importJsonBatch(body);
+
 	scanSillyTavernDirectory = (dirPath: string) =>
 		this.sessionRuntime.scanSillyTavernDirectory(dirPath);
 
