@@ -13,7 +13,15 @@
 
 // ─── Public types ────────────────────────────────────────────────────────────
 
+import { tag } from "@vibe-tavern/domain";
 import type { LoreActivationReason } from "@vibe-tavern/domain";
+
+// Lorebook activation is high-frequency (runs on every message send) and the
+// per-entry trace is only useful when debugging activation logic. Routed
+// through the tagged logger so LOG_LEVEL=info (the default) hides all of it;
+// set LOG_LEVEL=debug to bring it back. Replaces raw console.debug calls that
+// bypassed the level gate and spammed the console on every turn.
+const logger = tag("lore");
 
 export interface LoreActivationState {
   [entryId: string]: {
@@ -214,7 +222,7 @@ export function resolveActivatedEntries(input: ActivationInput): ActivationResul
   while (normalScanRetry) {
     normalScanRetry = false;
 
-    console.debug("[lore] Pass: Normal scan — %d entries, skew=%d", allEntries.length, depthSkew);
+    logger.debug("Pass: Normal scan — %d entries, skew=%d", allEntries.length, depthSkew);
     let normalActivated = 0;
     for (const entry of allEntries) {
       if (activatedIds.has(entry.id) || failedProbabilityIds.has(entry.id)) continue;
@@ -228,7 +236,7 @@ export function resolveActivatedEntries(input: ActivationInput): ActivationResul
     });
     if (result.status === "activated") {
       normalActivated++;
-      console.debug("[lore]   activated: %s | title=%s | priority=%d", entry.id, entry.title, entry.priority);
+      logger.debug("  activated: %s | title=%s | priority=%d", entry.id, entry.title, entry.priority);
       activatedIds.add(entry.id);
       activated.push(toActivatedEntry(entry, result.matchedKeys, result.matchCount, result.reason));
       if (!entry.preventRecursion) {
@@ -239,28 +247,28 @@ export function resolveActivatedEntries(input: ActivationInput): ActivationResul
     }
     }
 
-	console.debug("[lore] Pass done: %d activated, %d total", normalActivated, activated.length);
+	logger.debug("Pass done: %d activated, %d total", normalActivated, activated.length);
 
     // Min activations retry
     if (minActivations > 0 && activated.length < minActivations && depthSkew < depthMax) {
       depthSkew++;
-      console.debug("[lore] Min activations not met (%d/%d), advancing depth to +%d", activated.length, minActivations, depthSkew);
+      logger.debug("Min activations not met (%d/%d), advancing depth to +%d", activated.length, minActivations, depthSkew);
       normalScanRetry = true;
     }
   }
 
   // ── Pass 2+: Recursive scans ─────────────────────────────────────────────
   if (!anyRecursiveScanning || recurseBuffer.trim().length === 0) {
-    console.debug("[lore] Recursive scanning skipped (enabled=%s, buffer=%d)", anyRecursiveScanning, recurseBuffer.trim().length);
+    logger.debug("Recursive scanning skipped (enabled=%s, buffer=%d)", anyRecursiveScanning, recurseBuffer.trim().length);
   } else {
-    console.debug("[lore] Recursive scanning START — maxSteps=%d, delayLevels=%o", maxSteps, recursionDelayLevels);
+    logger.debug("Recursive scanning START — maxSteps=%d, delayLevels=%o", maxSteps, recursionDelayLevels);
     let loopCount = 0;
     let delayLevelIdx = 0;
     let currentRecursionLevel = recursionDelayLevels[0] ?? 1;
 
     while (loopCount < maxSteps) {
       loopCount++;
-      console.debug("[lore]   Recursion pass #%d — level=%d, buffer=%d chars", loopCount, currentRecursionLevel, recurseBuffer.length);
+      logger.debug("  Recursion pass #%d — level=%d, buffer=%d chars", loopCount, currentRecursionLevel, recurseBuffer.length);
       let newActivations = 0;
       let newRecurseText = "";
 
@@ -277,7 +285,7 @@ export function resolveActivatedEntries(input: ActivationInput): ActivationResul
           updatedState, activatedIds, failedProbabilityIds,
         });
         if (result.status === "activated") {
-          console.debug("[lore]   [recursion] activated: %s | title=%s | priority=%d", entry.id, entry.title, entry.priority);
+          logger.debug("  [recursion] activated: %s | title=%s | priority=%d", entry.id, entry.title, entry.priority);
           activatedIds.add(entry.id);
           activated.push(toActivatedEntry(entry, result.matchedKeys, result.matchCount, result.reason));
           newActivations++;
@@ -289,7 +297,7 @@ export function resolveActivatedEntries(input: ActivationInput): ActivationResul
         }
       }
 
-      console.debug("[lore]   Recursion pass #%d done: %d activated", loopCount, newActivations);
+      logger.debug("  Recursion pass #%d done: %d activated", loopCount, newActivations);
 
       // Add new content to recurse buffer for next pass
       if (newRecurseText) {
@@ -328,7 +336,7 @@ export function resolveActivatedEntries(input: ActivationInput): ActivationResul
   // Token budget per lorebook
   const budgeted = applyTokenBudget(activated, input.lorebooks, input.estimateTokenCount, input.maxContextTokens);
 
-  console.debug("[lore] DONE: %d entries activated, %d after budget, %d after groups", activated.length, budgeted.length, budgeted.length);
+  logger.debug("DONE: %d entries activated, %d after budget, %d after groups", activated.length, budgeted.length, budgeted.length);
 
   return { activatedEntries: budgeted, updatedState };
 }
@@ -360,7 +368,7 @@ function tryActivateEntry(ctx: {
   failedProbabilityIds: Set<string>;
 }): ActivationOutcome {
   const { entry, macroMap, characterId, characterName, currentTurn, scanText, scanState, currentRecursionLevel, updatedState, activatedIds } = ctx;
-  const reason = (msg: string): ActivationOutcome => { console.debug("[lore]   skip %s: %s | title=%s", entry.id, msg, entry.title); return { status: "skipped" }; };
+  const reason = (msg: string): ActivationOutcome => { logger.debug("  skip %s: %s | title=%s", entry.id, msg, entry.title); return { status: "skipped" }; };
 
   if (!entry.enabled) return reason("disabled");
   if (activatedIds.has(entry.id)) return { status: "skipped" };
@@ -413,7 +421,7 @@ function tryActivateEntry(ctx: {
       const turnsSince = currentTurn - state.lastMatchedAtTurn;
       if (turnsSince < entry.cooldownWindow) return reason("cooldown");
     }
-    console.debug("[lore]   actv %s: constant | title=%s", entry.id, entry.title);
+    logger.debug("  actv %s: constant | title=%s", entry.id, entry.title);
     updatedState[entry.id] = { ...state, activatedAtTurn: currentTurn, lastMatchedAtTurn: currentTurn };
     return { status: "activated", matchCount: 0, matchedKeys: [], reason: { kind: "constant" } };
   }
@@ -423,7 +431,7 @@ function tryActivateEntry(ctx: {
   if (entry.stickyWindow > 0 && state?.activatedAtTurn != null) {
     const turnsSinceActivation = currentTurn - state.activatedAtTurn;
     if (turnsSinceActivation < entry.stickyWindow) {
-      console.debug("[lore]   actv %s: sticky | title=%s", entry.id, entry.title);
+      logger.debug("  actv %s: sticky | title=%s", entry.id, entry.title);
       updatedState[entry.id] = { ...state, lastMatchedAtTurn: currentTurn };
       return {
         status: "activated",
@@ -462,13 +470,13 @@ function tryActivateEntry(ctx: {
       if (!checkLogic(entry.logic, secondaryMatches.length, entry.secondaryKeys.length)) return reason("secondary keys fail");
     }
   } else {
-    console.debug("[lore]   actv %s: @@activate decorator | title=%s", entry.id, entry.title);
+    logger.debug("  actv %s: @@activate decorator | title=%s", entry.id, entry.title);
   }
 
   // 10. Probability check
   if (entry.probability < 100) {
     if (Math.random() * 100 >= entry.probability) {
-      console.debug("[lore]   fail %s: probability %d%% | title=%s", entry.id, entry.probability, entry.title);
+      logger.debug("  fail %s: probability %d%% | title=%s", entry.id, entry.probability, entry.title);
       return { status: "failed_probability" };
     }
   }
@@ -480,7 +488,7 @@ function tryActivateEntry(ctx: {
   }
 
   // 12. Activate
-  console.debug("[lore]   actv %s: key match | title=%s", entry.id, entry.title);
+  logger.debug("  actv %s: key match | title=%s", entry.id, entry.title);
   updatedState[entry.id] = { activatedAtTurn: currentTurn, lastMatchedAtTurn: currentTurn };
   return {
     status: "activated",
@@ -618,7 +626,7 @@ function applyInclusionGroups(
   allEntries: FlatEntry[],
 ): void {
   const entryMap = new Map(allEntries.map(e => [e.id, e]));
-  console.debug("[lore] Group filter — %d activated entries with groups", activated.filter(e => entryMap.get(e.id)?.groupName).length);
+  logger.debug("Group filter — %d activated entries with groups", activated.filter(e => entryMap.get(e.id)?.groupName).length);
 
   // Group activated entries by group name
   const groups = new Map<string, ActivationResult["activatedEntries"]>();
@@ -641,7 +649,7 @@ function applyInclusionGroups(
     // prioritizeInclusion (ST: groupOverride) → auto-wins
     const prioWinner = groupEntries.find(e => entryMap.get(e.id)?.prioritizeInclusion);
     if (prioWinner) {
-      console.debug("[lore]   group '%s': prio winner=%s, removing %d others", groupName, entryMap.get(prioWinner.id)?.title, groupEntries.length - 1);
+      logger.debug("  group '%s': prio winner=%s, removing %d others", groupName, entryMap.get(prioWinner.id)?.title, groupEntries.length - 1);
       for (const e of groupEntries) {
         if (e.id !== prioWinner.id) removeIds.add(e.id);
       }
@@ -655,7 +663,7 @@ function applyInclusionGroups(
     const anyGroupScoring = groupEntries.some(e => entryMap.get(e.id)?.useGroupScoring);
     if (anyGroupScoring) {
       const maxScore = Math.max(...groupEntries.map(e => e.matchCount));
-      console.debug("[lore]   group '%s': score-based, maxScore=%d", groupName, maxScore);
+      logger.debug("  group '%s': score-based, maxScore=%d", groupName, maxScore);
       let foundWinner = false;
       for (const e of groupEntries) {
         if (!foundWinner && e.matchCount >= maxScore) {

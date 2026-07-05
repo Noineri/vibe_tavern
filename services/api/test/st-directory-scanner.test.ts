@@ -29,6 +29,7 @@ import { tmpdir } from "node:os";
 import { createRuntimeStore } from "../src/runtime/session/session-runtime-store.js";
 import { SessionRuntime } from "../src/runtime/session/session-runtime.js";
 import { setTokenCountFn } from "@vibe-tavern/prompt-pipeline";
+import { STORAGE_FOLDERS } from "@vibe-tavern/db";
 
 /**
  * Build a complete-but-minimal ST data dir. Returns its root path.
@@ -213,5 +214,115 @@ describe("ST directory scanner — three gaps (STN-1D)", () => {
 		const importedPersona = personaAfter.find((p) => p.name === "Test User");
 		expect(importedPersona).toBeTruthy();
 		expect(importedPersona!.description).toBe("A test persona.");
+	});
+});
+
+// ── PNG card import: avatar-full wiring + bounded parallelism ──────────────────
+//
+// The avatar fix that closed STN-1D originally wrote a dead `original.png`
+// nobody reads + skipped avatar-full entirely. The follow-up redirected the
+// second write to `avatar-full.png` (paired with setFolderAvatarFull) so ST-
+// imported cards wire into the existing crop-confirm flow, and added bounded
+// concurrency (CHAR_CONCURRENCY=8) + buffer reuse so the 1000+ card case
+// doesn't serial-read every PNG twice. These tests pin both behaviors.
+
+/** Minimal PNG chunk: len + type + data + crc(crc left zero — walker skips). */
+function pngChunk(type: string, data: Uint8Array): Uint8Array {
+	const out = new Uint8Array(4 + 4 + data.length + 4);
+	new DataView(out.buffer).setUint32(0, data.length);
+	out.set(new TextEncoder().encode(type), 4);
+	out.set(data, 8);
+	return out;
+}
+
+/** Synthesize a minimal valid PNG carrying a base64 `chara` tEXt chunk. */
+function makeCharaPng(cardName: string): Uint8Array {
+	const sig = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+	const ihdr = pngChunk("IHDR", new Uint8Array([0, 0, 0, 1, 0, 0, 0, 1, 8, 2, 0, 0, 0]));
+	const charaText = new TextEncoder().encode(
+		"chara\0" + btoa(JSON.stringify({ spec: "chara_card_v2", spec_version: "2.0", data: { name: cardName, description: "probe", first_mes: "Hi." } })),
+	);
+	const text = pngChunk("tEXt", charaText);
+	const iend = pngChunk("IEND", new Uint8Array(0));
+	const total = sig.length + ihdr.length + text.length + iend.length;
+	const out = new Uint8Array(total);
+	let o = 0;
+	for (const part of [sig, ihdr, text, iend]) { out.set(part, o); o += part.length; }
+	return out;
+}
+
+/** Build a minimal ST dir containing PNG cards with the given names. */
+async function buildStDirWithPngCards(root: string, names: string[]): Promise<void> {
+	await mkdir(join(root, "characters"), { recursive: true });
+	for (const name of names) {
+		await writeFile(join(root, "characters", `${name}.png`), makeCharaPng(name));
+	}
+	await mkdir(join(root, "chats"), { recursive: true });
+}
+
+describe("ST directory scanner — PNG card avatar-full wiring + parallelism", () => {
+	let env: Env;
+	beforeAll(() => setTokenCountFn((text: string) => text.length));
+	afterAll(async () => { if (env) await env.cleanup(); });
+
+	it("PNG card writes avatar.png + avatar-full.png and sets avatarExt + avatarFullExt", async () => {
+		env = await createRuntime();
+		const stDir = join(env.tmpDir, "st-png-single");
+		await buildStDirWithPngCards(stDir, ["PngChar"]);
+
+		const result = await env.runtime.importSillyTavernDirectory(stDir);
+
+		expect(result.errors).toEqual([]);
+		expect(result.characters).toBe(1);
+
+		const chars = await env.stores.characters.listAll();
+		const imported = chars.find((c) => c.name === "PngChar");
+		expect(imported).toBeTruthy();
+
+		// avatarExt + avatarFullExt both set — wires the card into the crop-confirm
+		// flow so the user can re-crop the original art later.
+		expect(imported!.avatarExt).toBe("png");
+		expect(imported!.avatarFullExt).toBe("png");
+
+		// Both files actually land in storage.
+		const avatarBytes = await env.stores.content.readBinary(STORAGE_FOLDERS.characters, imported!.id, "avatar.png");
+		const avatarFullBytes = await env.stores.content.readBinary(STORAGE_FOLDERS.characters, imported!.id, "avatar-full.png");
+		expect(avatarBytes).not.toBeNull();
+		expect(avatarFullBytes).not.toBeNull();
+		// ST cards are uncropped, so the two files are byte-identical.
+		expect(avatarBytes!.length).toBe(avatarFullBytes!.length);
+
+		// REGRESSION GUARD: the dead `original.png` artifact (the pre-fix bug)
+		// must NOT be written — nothing reads it.
+		const originalBytes = await env.stores.content.readBinary(STORAGE_FOLDERS.characters, imported!.id, "original.png");
+		expect(originalBytes).toBeNull();
+	});
+
+	it("multiple PNG cards import under bounded concurrency without loss", async () => {
+		// Reuse the same env from the single-card test (its runtime is clean for
+		// a fresh dir). Build a second dir with 3 distinct cards.
+		const stDir = join(env.tmpDir, "st-png-multi");
+		const names = ["AlphaCard", "BetaCard", "GammaCard"];
+		await buildStDirWithPngCards(stDir, names);
+
+		const charsBefore = (await env.stores.characters.listAll()).length;
+		const result = await env.runtime.importSillyTavernDirectory(stDir);
+
+		expect(result.errors).toEqual([]);
+		expect(result.characters).toBe(3);
+
+		const charsAfter = await env.stores.characters.listAll();
+		expect(charsAfter.length).toBe(charsBefore + 3);
+
+		// Every card got both avatar slots — parallel import must not skip the
+		// avatar-full write under concurrency.
+		for (const name of names) {
+			const c = charsAfter.find((x) => x.name === name);
+			expect(c, `character ${name} should exist`).toBeTruthy();
+			expect(c!.avatarExt).toBe("png");
+			expect(c!.avatarFullExt).toBe("png");
+			const full = await env.stores.content.readBinary(STORAGE_FOLDERS.characters, c!.id, "avatar-full.png");
+			expect(full, `avatar-full.png for ${name}`).not.toBeNull();
+		}
 	});
 });

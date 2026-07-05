@@ -526,6 +526,91 @@ describe("MessageStore — variant (swipe) semantics", () => {
     expect(activeVariant!.content).toBe("Original answer");
     expect(activeVariant!.variantIndex).toBe(0);
   });
+
+  // ── addMessagesBatch (chat-import fast path) ──
+  // Pins the contract of the bulk-insert method that replaced the per-message
+  // addMessage + addVariant + selectVariant loop in st-directory-scanner.
+  // Properties that MUST hold (a regression in any silently breaks ST import):
+  //   - positions are sequential within a branch
+  //   - variantIndex is 0-based per message
+  //   - isSelected resolves to the flagged variant, else index 0
+  //   - messages.content mirrors the selected variant (read-consistency)
+  //   - per-variant reasoning is preserved
+  //   - empty batch is a no-op
+  test("addMessagesBatch inserts multi-variant messages with sequential positions and correct selection", async () => {
+    await messageStore.addMessagesBatch([
+      {
+        chatId: "chat_1", branchId: "brnch_1",
+        role: "user", authorType: "user",
+        variants: [{ content: "Hi", isSelected: true }],
+      },
+      {
+        chatId: "chat_1", branchId: "brnch_1",
+        role: "assistant", authorType: "assistant",
+        variants: [
+          { content: "Reply A" },
+          { content: "Reply B", isSelected: true, reasoning: "thought-B" },
+          { content: "Reply C" },
+        ],
+      },
+      {
+        chatId: "chat_1", branchId: "brnch_1",
+        role: "assistant", authorType: "assistant",
+        // No isSelected on any variant → defaults to index 0
+        variants: [
+          { content: "Default pick", reasoning: "zero-th" },
+          { content: "Other" },
+        ],
+      },
+    ]);
+
+    const rows = await db.select().from(schema.messages)
+      .where(eq(schema.messages.branchId, "brnch_1"))
+      .orderBy(schema.messages.position).all();
+    expect(rows.length).toBe(3);
+    expect(rows.map((r) => r.position)).toEqual([0, 1, 2]);
+
+    // messages.content mirrors the SELECTED variant (not necessarily index 0)
+    expect(rows[0]!.content).toBe("Hi");
+    expect(rows[1]!.content).toBe("Reply B"); // 2nd variant selected
+    expect(rows[2]!.content).toBe("Default pick"); // defaulted to index 0
+
+    // Message 2: three variants, index 1 selected, per-variant reasoning kept
+    const v2 = await messageStore.getVariants(rows[1]!.id);
+    expect(v2.length).toBe(3);
+    expect(v2.map((v) => v.variantIndex)).toEqual([0, 1, 2]);
+    expect(v2.map((v) => v.isSelected)).toEqual([false, true, false]);
+    const selected2 = v2.find((v) => v.isSelected);
+    expect(selected2!.content).toBe("Reply B");
+    expect(selected2!.reasoning).toBe("thought-B");
+  });
+
+  test("addMessagesBatch continues position from existing messages (no clobber)", async () => {
+    // Seed one message the old way, then batch-append — positions must continue.
+    await messageStore.addMessage({
+      chatId: "chat_1", branchId: "brnch_1",
+      role: "user", authorType: "user", content: "seed",
+    });
+    await messageStore.addMessagesBatch([
+      {
+        chatId: "chat_1", branchId: "brnch_1",
+        role: "assistant", authorType: "assistant",
+        variants: [{ content: "batched-1" }, { content: "batched-2", isSelected: true }],
+      },
+    ]);
+    const rows = await db.select().from(schema.messages)
+      .where(eq(schema.messages.branchId, "brnch_1"))
+      .orderBy(schema.messages.position).all();
+    expect(rows.map((r) => r.position)).toEqual([0, 1]);
+    expect(rows[1]!.content).toBe("batched-2");
+  });
+
+  test("addMessagesBatch with empty array is a no-op", async () => {
+    await messageStore.addMessagesBatch([]);
+    const rows = await db.select().from(schema.messages)
+      .where(eq(schema.messages.branchId, "brnch_1")).all();
+    expect(rows.length).toBe(0);
+  });
 });
 
 describe("MessageStore — variant preset_id (Q2)", () => {

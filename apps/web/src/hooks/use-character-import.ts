@@ -54,10 +54,18 @@ export function useCharacterImport() {
       // skipSnapshotSync on the bootstrap refresh stays — the import's snapshot
       // is authoritative for the active chat (see importCharacterAction's
       // race rationale); the sidebar picks up the avatar via allCharacters.
+      //
+      // The PNG card is passed as BOTH crop and full: ST cards are uncropped
+      // by definition (ST does not crop on import), so the same bytes serve
+      // both the display avatar ({id}/avatar.png) and the uncropped source
+      // ({id}/avatar-full.png, paired with avatarFullExt). This wires the
+      // imported card into the existing crop-confirm flow: the user can later
+      // re-crop the original art from avatar-full.png without needing the
+      // original PNG file. Mirrors the backend scanner's avatar write.
       const characterId = result?.snapshot?.character?.id;
       if (characterId && isPng) {
         try {
-          const { avatarExt, avatarFullExt } = await uploadCharacterAvatar(characterId, file);
+          const { avatarExt, avatarFullExt } = await uploadCharacterAvatar(characterId, file, file);
           if (result.snapshot?.character) {
             result.snapshot = {
               ...result.snapshot,

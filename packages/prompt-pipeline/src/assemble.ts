@@ -9,7 +9,7 @@ import type { AssemblyMode } from "./types.js";
 import { estimateTokens, findSafeCompactionBoundary } from "./compaction.js";
 import { createFullMacroEngine } from "./macro-registry.js";
 import { buildPromptVariableContext, type PromptVariableContext } from "./prompt-variable-context.js";
-import { inferSlot, DEFAULT_PROMPT_ORDER } from "@vibe-tavern/domain";
+import { inferSlot, DEFAULT_PROMPT_ORDER, tag } from "@vibe-tavern/domain";
 import { createResolver, type PositionResolver } from "./resolvers/position-resolver.js";
 import {
   DEFAULT_PROMPT_LAYER_PRIORITY,
@@ -26,6 +26,13 @@ import {
   createRetrievalMemoryLayerId,
   createSummaryMemoryLayerId,
 } from "./prompt-layer-constants.js";
+
+// Prompt assembly runs on every message send, and the layer dump (one line per
+// layer, often 30+) is only useful when debugging prompt composition. Routed
+// through the tagged logger so LOG_LEVEL=info (the default) hides it; set
+// LOG_LEVEL=debug to bring it back. Replaces raw console.log calls that
+// bypassed the level gate and spammed the console on every turn.
+const logger = tag("assemble");
 
 function joinNonEmpty(parts: Array<string | null | undefined>, separator = "\n"): string {
   return parts.map((part) => part?.trim() ?? "").filter(Boolean).join(separator);
@@ -977,14 +984,14 @@ function finalizeAssembly(
   const orderedLayers = sortLayers(modeFilteredLayers).filter((layer) => layer.text.length > 0);
   const totalTokenEstimate = orderedLayers.reduce((sum, layer) => sum + layer.tokenCount, 0);
 
-  console.log(`[assemble] ${orderedLayers.length} layers, ${totalTokenEstimate} tokens estimated`);
+  logger.debug(`${orderedLayers.length} layers, ${totalTokenEstimate} tokens estimated`);
   for (const layer of orderedLayers) {
-    console.log(`  [layer] ${layer.id} | ${layer.sourceType} | pos=${layer.position} | pri=${layer.priority} | tokens=${layer.tokenCount} | len=${layer.text.length} | text=${layer.text.slice(0, 80).replace(/\n/g, '↵')}...`);
+    logger.debug(`  [layer] ${layer.id} | ${layer.sourceType} | pos=${layer.position} | pri=${layer.priority} | tokens=${layer.tokenCount} | len=${layer.text.length} | text=${layer.text.slice(0, 80).replace(/\n/g, '↵')}...`);
   }
   if (droppedLayers.length > 0) {
-    console.log(`[assemble] ${droppedLayers.length} dropped layers:`);
+    logger.debug(`${droppedLayers.length} dropped layers:`);
     for (const d of droppedLayers) {
-      console.log(`  [dropped] ${d.id} | reason=${d.reason}`);
+      logger.debug(`  [dropped] ${d.id} | reason=${d.reason}`);
     }
   }
 

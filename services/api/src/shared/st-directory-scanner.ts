@@ -114,7 +114,7 @@ export async function scanSillyTavernDirectory(dirPath: string): Promise<StDirec
 
 		const filePath = join(charsDir, fileName);
 		try {
-			const raw = await readCharacterFile(filePath);
+			const raw = (await readCharacterFile(filePath)).raw;
 			if (!raw) continue;
 
 			const preview = previewCharacterCard(raw, fileName);
@@ -273,19 +273,39 @@ export async function importSillyTavernDirectory(
 		lastActiveChatId: null,
 	};
 
+	// Resolve once — both are called per-character and per-chat; caching avoids
+	// O(N) listAll() queries (ensureDefaultPresetId calls listAll every time).
+	const defaultPersonaId = await deps.resolveDefaultPersonaId();
+	const defaultPresetId = await deps.resolveDefaultPromptPresetId();
+
+	const T0 = performance.now();
+	const ti = () => `[st-import +${((performance.now() - T0) / 1000).toFixed(2)}s]`;
+	console.log(`${ti()} START — dir=${resolved}`);
+
 	// ── Import characters ──
+	const charsPhaseStart = performance.now();
 	const charsDir = join(resolved, "characters");
 	const charsFiles = await safeReaddir(charsDir);
 	const nameToCharacterId = new Map<string, CharacterId>();
 
-	for (const fileName of charsFiles) {
-		const ext = extname(fileName).toLowerCase();
-		if (ext !== ".png" && ext !== ".json") continue;
+	// Body extracted so the loop can run with bounded concurrency: PNG
+	// reads (Bun.file) and NTFS writes (writeBinary × 2) parallelize across
+	// cards, which is the main win at 1000+ card scale (AV-scan per file write
+	// dominates on Windows). DB ops serialize through SQLite's single writer
+	// lock regardless, so raising concurrency past ~8 gives diminishing returns.
+	// Returns a discriminated outcome so the collect pass stays deterministic
+	// (file order preserved for lastActiveChatId / name map).
+	type CharImportOutcome =
+		| { kind: "ok"; nameLower: string; slug: string; characterId: string; chatId: ChatId }
+		| { kind: "skipped" }
+		| { kind: "error"; file: string; message: string };
 
+	const importOneCharacter = async (fileName: string, ext: string): Promise<CharImportOutcome> => {
 		const filePath = join(charsDir, fileName);
 		try {
-			const raw = await readCharacterFile(filePath);
-			if (!raw) continue;
+			// pngBuffer is reused below for the avatar write — no second read.
+			const { raw, pngBuffer } = await readCharacterFile(filePath);
+			if (!raw) return { kind: "skipped" };
 
 			const imported = importCharacterCardV3Json(raw);
 
@@ -333,27 +353,51 @@ export async function importSillyTavernDirectory(
 				characterId = created.id;
 			}
 
-			// Save original PNG bytes for lossless round-trip
-			if (ext === ".png") {
-				const pngBuffer = await Bun.file(filePath).arrayBuffer();
-				const pngPath = deps.stores.content.fileStore.resolvePath(STORAGE_FOLDERS.characters, `${characterId}/original.png`);
-				const dir = resolve(pngPath, "..");
-				await mkdir(dir, { recursive: true });
-				await Bun.write(pngPath, Buffer.from(pngBuffer));
+			// Save the avatar. ST card PNGs are uncropped by definition (ST does
+			// not crop on import), so the same bytes serve both slots:
+			//   1. {id}/avatar.png      — display avatar (gallery slots, chat
+			//                            bubbles, sidebar). Paired with
+			//                            setFolderAvatar() so avatarExt is set;
+			//                            without it the character renders with
+			//                            no portrait (the STN-1D bug).
+			//   2. {id}/avatar-full.png — the uncropped source. Paired with
+			//                            setFolderAvatarFull() so avatarFullExt
+			//                            is set, wiring the ST-imported card into
+			//                            the existing crop-confirm flow: the user
+			//                            can later re-crop the original art from
+			//                            {id}/avatar-full.png without needing the
+			//                            original PNG file. Mirrors the browser
+			//                            uploadCharacterAvatar(crop, full) shape.
+			// Browser ST-import calls uploadCharacterAvatar(file, file) — both
+			// slots — so it preserves the uncropped source too. AssetService
+			// lives in the HTTP adapter layer (unreachable from shared/), so we
+			// go through content + store directly.
+			if (ext === ".png" && pngBuffer) {
+				try {
+					await deps.stores.content.writeBinary(
+						STORAGE_FOLDERS.characters, characterId, "avatar.png", pngBuffer,
+					);
+					await deps.stores.content.writeBinary(
+						STORAGE_FOLDERS.characters, characterId, "avatar-full.png", pngBuffer,
+					);
+					await deps.stores.characters.setFolderAvatar(characterId, "png");
+					await deps.stores.characters.setFolderAvatarFull(characterId, "png");
+				} catch {
+					// Avatar write failure is non-critical — the character is already
+					// in the DB; it just renders without a portrait.
+				}
 			}
 
 			// Create a chat for the character and seed first message
 			const chat = await deps.chatApp.createChat({
 				characterId: characterId as CharacterId,
-				personaId: await deps.resolveDefaultPersonaId(),
+				personaId: defaultPersonaId,
 				title: imported.character.name,
-				promptPresetId: await deps.resolveDefaultPromptPresetId(),
+				promptPresetId: defaultPresetId,
 			});
 
-			nameToCharacterId.set(imported.character.name.toLowerCase(), characterId as CharacterId);
-			// Also map by slug for matching chats
-			const slug = imported.character.name.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
-			nameToCharacterId.set(slug, characterId as CharacterId);
+			const nameLower = imported.character.name.toLowerCase();
+			const slug = nameLower.replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
 
 			// withTrace:false — MASS_IMPORT Wave 3. assemblePrompt (and the
 			// lore-activation-engine) is only needed to seed a trace nobody reads
@@ -367,18 +411,56 @@ export async function importSillyTavernDirectory(
 				{ withTrace: false },
 			);
 			deps.chatOrder.add(chat.id as ChatId);
-			result.lastActiveChatId = chat.id as ChatId;
-			result.characters++;
+
+			return { kind: "ok", nameLower, slug, characterId, chatId: chat.id as ChatId };
 		} catch (err) {
-			result.errors.push({
+			return {
+				kind: "error",
 				file: filePath,
-				stage: "import",
 				message: err instanceof Error ? err.message : String(err),
-			});
+			};
+		}
+	};
+
+	// Filter to character files, preserving readdir order for determinism.
+	const charTargets = charsFiles
+		.map(fileName => ({ fileName, ext: extname(fileName).toLowerCase() }))
+		.filter(f => f.ext === ".png" || f.ext === ".json");
+
+	const outcomes: CharImportOutcome[] = new Array(charTargets.length);
+	let cursor = 0;
+	const CHAR_CONCURRENCY = 8;
+	const worker = async () => {
+		while (cursor < charTargets.length) {
+			const idx = cursor++;
+			const { fileName, ext } = charTargets[idx]!;
+			outcomes[idx] = await importOneCharacter(fileName, ext);
+		}
+	};
+	await Promise.all(
+		Array.from({ length: Math.min(CHAR_CONCURRENCY, charTargets.length) }, worker),
+	);
+
+	// Collect in original file order so lastActiveChatId is the last card by
+	// readdir order that successfully imported (matches pre-parallel behavior).
+	for (const o of outcomes) {
+		if (o.kind === "ok") {
+			result.characters++;
+			nameToCharacterId.set(o.nameLower, o.characterId as CharacterId);
+			nameToCharacterId.set(o.slug, o.characterId as CharacterId);
+			result.lastActiveChatId = o.chatId;
+		} else if (o.kind === "error") {
+			result.errors.push({ file: o.file, stage: "import", message: o.message });
 		}
 	}
+	console.log(`${ti()} characters: ${((performance.now() - charsPhaseStart) / 1000).toFixed(2)}s (${result.characters} imported)`);
 
 	// ── Import chats ──
+	const chatsPhaseStart = performance.now();
+	let chatCreateMs = 0;
+	let chatMsgMs = 0;
+	let chatMsgCount = 0;
+	let chatVarCount = 0;
 	const chatsDir = join(resolved, "chats");
 	const chatSubdirs = await safeReaddir(chatsDir);
 
@@ -387,15 +469,12 @@ export async function importSillyTavernDirectory(
 		const subStat = await Bun.file(subPath).stat().catch(() => null);
 		if (!subStat?.isDirectory()) continue;
 
-		// Match folder name to a character (case-insensitive)
+		// Match folder name to a character (case-insensitive).
+		// nameToCharacterId is populated only from successfully-imported characters,
+		// so a missing key means the character failed — skip. No need to re-fetch
+		// from DB; the characterId is sufficient for createChat.
 		const characterId = nameToCharacterId.get(sub.toLowerCase());
-		if (!characterId) {
-			// Skip chats for characters we couldn't import
-			continue;
-		}
-
-		const character = await deps.stores.characters.getById(characterId);
-		if (!character) continue;
+		if (!characterId) continue;
 
 		const jsonlFiles = await safeReaddir(subPath);
 		for (const fileName of jsonlFiles) {
@@ -403,6 +482,7 @@ export async function importSillyTavernDirectory(
 
 			const filePath = join(subPath, fileName);
 			try {
+				const tChat0 = performance.now();
 				const content = await Bun.file(filePath).text();
 				const parsed = parseSillyTavernChat(content);
 				const importedMessages = parsed.messages.filter((m) => m.content.trim());
@@ -411,31 +491,31 @@ export async function importSillyTavernDirectory(
 				const title = fileName.replace(/\.jsonl$/i, "") || sub;
 				const chat = await deps.chatApp.createChat({
 					characterId,
-					personaId: await deps.resolveDefaultPersonaId(),
+					personaId: defaultPersonaId,
 					title,
-					promptPresetId: await deps.resolveDefaultPromptPresetId(),
+					promptPresetId: defaultPresetId,
 				});
+				chatCreateMs += performance.now() - tChat0;
 
-				for (const imported of importedMessages) {
-					const variants = imported.variants.length > 0
-						? imported.variants
-						: [{ content: imported.content, isSelected: true }];
-					const message = await deps.stores.messages.addMessage({
-						chatId: chat.id as ChatId,
-						branchId: chat.activeBranchId,
-						role: imported.role,
-						authorType: imported.role === "user" ? "user" : imported.role === "system" ? "system" : "assistant",
-						content: variants[0]?.content ?? imported.content,
-					});
-					for (const variant of variants.slice(1)) {
-						await deps.stores.messages.addVariant(message.id, variant.content, undefined, variant.reasoning);
-					}
-					const selectedVariant = imported.variants.find((v) => v.isSelected) ?? imported.variants[0];
-					const selectedIndex = variants.findIndex((v) => v.content === selectedVariant?.content);
-					if (selectedIndex > 0) {
-						await deps.stores.messages.selectVariant(message.id, selectedIndex);
-					}
-				}
+				// Bulk-insert all messages + variants in ONE transaction (one fsync per
+				// chat) instead of O(N) per-message transactions. addMessagesBatch
+				// preserves per-variant reasoning + isSelected, so this is a pure
+				// performance refactor — no behavior change vs the old addMessage +
+				// addVariant + selectVariant per-message loop.
+				const batchItems = importedMessages.map((imported) => ({
+					chatId: chat.id as ChatId,
+					branchId: chat.activeBranchId,
+					role: imported.role,
+					authorType: imported.role === "user" ? "user" : imported.role === "system" ? "system" : "assistant",
+					variants: imported.variants.length > 0
+						? imported.variants.map((v) => ({ content: v.content, reasoning: v.reasoning, isSelected: v.isSelected }))
+						: [{ content: imported.content, isSelected: true }],
+				}));
+				const tMsg0 = performance.now();
+				await deps.stores.messages.addMessagesBatch(batchItems);
+				chatMsgMs += performance.now() - tMsg0;
+				chatMsgCount += batchItems.length;
+				chatVarCount += batchItems.reduce((sum, it) => sum + it.variants.length - 1, 0);
 
 				deps.chatOrder.add(chat.id as ChatId);
 				result.lastActiveChatId = chat.id as ChatId;
@@ -449,8 +529,13 @@ export async function importSillyTavernDirectory(
 			}
 		}
 	}
+	console.log(`${ti()} chats: ${((performance.now() - chatsPhaseStart) / 1000).toFixed(2)}s`
++ ` (${result.chats} chats, ${chatMsgCount} msgs, ${chatVarCount} variants)`
++ ` | createChat=${(chatCreateMs / 1000).toFixed(2)}s messages=${(chatMsgMs / 1000).toFixed(2)}s`
++ ` avg/msg=${chatMsgCount > 0 ? (chatMsgMs / chatMsgCount).toFixed(1) : 0}ms`);
 
 	// ── Import lorebooks (worlds/) ──
+	const lorePhaseStart = performance.now();
 	const worldsDir = join(resolved, "worlds");
 	const worldsFiles = await safeReaddir(worldsDir);
 
@@ -481,8 +566,10 @@ export async function importSillyTavernDirectory(
 			});
 		}
 	}
+	console.log(`${ti()} lorebooks: ${((performance.now() - lorePhaseStart) / 1000).toFixed(2)}s (${result.lorebooks} imported)`);
 
 	// ── Import presets (OpenAI Settings/) ──
+	const presetsPhaseStart = performance.now();
 	// Field mapping mirrors browser Phase 3 (ImportModals.tsx): main→system,
 	// jailbreak→jailbreak, non-builtin blocks→customInjections, prompt_order→
 	// canvas with synthesized entries for custom blocks absent from ST order.
@@ -546,8 +633,10 @@ export async function importSillyTavernDirectory(
 			});
 		}
 	}
+	console.log(`${ti()} presets: ${((performance.now() - presetsPhaseStart) / 1000).toFixed(2)}s (${result.presets} imported)`);
 
 	// ── Import personas (settings.json + User Avatars/) ──
+	const personasPhaseStart = performance.now();
 	// Mirrors browser Phase 0: parseStPersonas → create each, best-effort avatar.
 	const settingsPath = join(resolved, "settings.json");
 	const settingsStat = await Bun.file(settingsPath).stat().catch(() => null);
@@ -568,22 +657,26 @@ export async function importSillyTavernDirectory(
 					result.personas++;
 
 					// Best-effort avatar upload from User Avatars/<key>. ST avatars are
-					// PNG by convention. Mirrors the scanner's existing direct-write
-					// pattern for character original.png (fileStore + Bun.write),
-					// avoiding a dependency on the asset service (which lives in the
-					// HTTP adapter layer, unreachable from here).
+					// PNG by convention and uncropped, so the same bytes are written to
+					// both avatar.png (display) and avatar-full.png (uncropped source
+					// for the crop-confirm flow), mirroring the character-avatar write
+					// above and the browser uploadPersonaAvatar(crop, full) shape.
+					// AssetService lives in the HTTP adapter layer (unreachable from
+					// shared/), so we go through content + store directly.
 					if (pe.avatarRelativePath) {
 						const avatarFile = join(resolved, pe.avatarRelativePath);
 						const avatarStat = await Bun.file(avatarFile).stat().catch(() => null);
 						if (avatarStat?.isFile()) {
 							try {
-								const avatarBuffer = await Bun.file(avatarFile).arrayBuffer();
-								const avatarDest = deps.stores.content.fileStore.resolvePath(
-									STORAGE_FOLDERS.personas, `${created.id}/avatar.png`,
+								const avatarBuffer = new Uint8Array(await Bun.file(avatarFile).arrayBuffer());
+								await deps.stores.content.writeBinary(
+									STORAGE_FOLDERS.personas, created.id, "avatar.png", avatarBuffer,
 								);
-								await mkdir(resolve(avatarDest, ".."), { recursive: true });
-								await Bun.write(avatarDest, Buffer.from(avatarBuffer));
+								await deps.stores.content.writeBinary(
+									STORAGE_FOLDERS.personas, created.id, "avatar-full.png", avatarBuffer,
+								);
 								await deps.stores.personas.setFolderAvatar(created.id, "png");
+								await deps.stores.personas.setFolderAvatarFull(created.id, "png");
 							} catch {
 								// Avatar failure is non-critical — persona is already created.
 							}
@@ -605,6 +698,14 @@ export async function importSillyTavernDirectory(
 			});
 		}
 	}
+	console.log(`${ti()} personas: ${((performance.now() - personasPhaseStart) / 1000).toFixed(2)}s (${result.personas} imported)`);
+
+	console.log(
+		`${ti()} DONE — total ${((performance.now() - T0) / 1000).toFixed(2)}s |`
+		+ ` chars=${result.characters} chats=${result.chats} lore=${result.lorebooks}`
+		+ ` presets=${result.presets} personas=${result.personas}`
+		+ ` errors=${result.errors.length}`,
+	);
 
 	return result;
 }
@@ -624,33 +725,39 @@ async function safeReaddir(dirPath: string): Promise<string[]> {
  * PNG: extract chara/ccv3 chunk + decode base64.
  * JSON: parse directly.
  */
-async function readCharacterFile(filePath: string): Promise<Record<string, unknown> | null> {
+async function readCharacterFile(filePath: string): Promise<{ raw: Record<string, unknown> | null; pngBuffer?: Uint8Array }> {
 	const ext = extname(filePath).toLowerCase();
 
 	if (ext === ".json") {
 		const content = await Bun.file(filePath).text();
 		const parsed = JSON.parse(content);
 		if (parsed && typeof parsed === "object") {
-			return parsed as Record<string, unknown>;
+			return { raw: parsed as Record<string, unknown> };
 		}
-		return null;
+		return { raw: null };
 	}
 
 	if (ext === ".png") {
-		return readPngCharacterCard(filePath);
+		// Read the PNG bytes ONCE and parse from the in-memory buffer. The
+		// caller (import loop) reuses the same bytes for the avatar write,
+		// avoiding a second Bun.file().arrayBuffer() per card (matters at
+		// 1000+ card scale). PNG decode for tEXt chunks is cheap relative to
+		// the fs read + AV scan, so doing it inline is essentially free.
+		const pngBuffer = new Uint8Array(await Bun.file(filePath).arrayBuffer());
+		return { raw: parsePngCharacterCard(pngBuffer), pngBuffer };
 	}
 
-	return null;
+	return { raw: null };
 }
 
 /**
  * Extract character JSON from PNG tEXt/iTXt chunks.
  * Mirrors the frontend png-reader.ts logic but runs server-side with Bun.
+ * Takes the already-read PNG bytes so callers can reuse the buffer (e.g.
+ * the import loop writes avatar.png/avatar-full.png from the same bytes).
  */
-async function readPngCharacterCard(filePath: string): Promise<Record<string, unknown> | null> {
-	const buffer = await Bun.file(filePath).arrayBuffer();
-	const view = new DataView(buffer);
-	const uint8 = new Uint8Array(buffer);
+function parsePngCharacterCard(uint8: Uint8Array): Record<string, unknown> | null {
+	const view = new DataView(uint8.buffer, uint8.byteOffset, uint8.byteLength);
 
 	// Check PNG signature
 	if (view.getUint32(0) !== 0x89504E47 || view.getUint32(4) !== 0x0D0A1A0A) {
@@ -658,13 +765,13 @@ async function readPngCharacterCard(filePath: string): Promise<Record<string, un
 	}
 
 	let offset = 8;
-	while (offset < buffer.byteLength) {
+	while (offset < uint8.byteLength) {
 		const length = view.getUint32(offset);
 		const type = String.fromCharCode(...uint8.slice(offset + 4, offset + 8));
 		const dataStart = offset + 8;
 		const dataEnd = dataStart + length;
 
-		if (dataEnd > buffer.byteLength) break;
+		if (dataEnd > uint8.byteLength) break;
 
 		if (type === "tEXt") {
 			const chunkData = uint8.slice(dataStart, dataEnd);

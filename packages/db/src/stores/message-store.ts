@@ -150,6 +150,119 @@ export class MessageStore {
     return this.mapRowMessage(row!);
   }
 
+  /**
+   * Bulk-insert many messages (each with its own variants) in a SINGLE
+   * transaction. Purpose: chat import — collapses O(N) per-message transactions
+   * (each its own fsync) into O(1) per batch. For a 600-message chat this turns
+   * ~1800 statements across ~1800 implicit transactions into ~1800 statements
+   * across ONE transaction (one fsync).
+   *
+   * Position is assigned sequentially per branchId, starting from the current
+   * max+1 (queried ONCE per branch, not per message). messages.content is set
+   * to the selected variant's content for read consistency, exactly as the
+   * single-message addMessage + selectVariant path does.
+   *
+   * The selected variant per message = the one with isSelected=true, else
+   * index 0. Per-variant reasoning is preserved (used by ST import, which
+   * extracts <thinking> tags into variant.reasoning).
+   *
+   * Insert statements are chunked INSIDE the transaction to respect the SQLite
+   * host-parameter limit (32766 on modern builds, 999 on old ones). Chunking
+   * only splits individual INSERT statements — the transaction boundary (and
+   * thus the single fsync) is unaffected.
+   *
+   * Not surfaced: streaming state (all 'complete'), attachments/toolCalls/coauthor
+   * (import has none). Extend the item shape if a future importer needs them —
+   * do not regress to per-message addMessage calls.
+   */
+  async addMessagesBatch(items: {
+    chatId: string;
+    branchId: string;
+    role: string;
+    authorType: string;
+    variants: { content: string; reasoning?: string; isSelected?: boolean }[];
+  }[]): Promise<void> {
+    if (items.length === 0) return;
+    const now = this.clock.now();
+
+    // Group by branch so position stays sequential within each branch.
+    const byBranch = new Map<string, typeof items>();
+    for (const item of items) {
+      const arr = byBranch.get(item.branchId);
+      if (arr) arr.push(item);
+      else byBranch.set(item.branchId, [item]);
+    }
+
+    const messageRows: (typeof messages.$inferInsert)[] = [];
+    const variantRows: (typeof messageVariants.$inferInsert)[] = [];
+
+    for (const [branchId, branchItems] of byBranch) {
+      const lastMsg = await this.db.select({ position: messages.position }).from(messages)
+        .where(eq(messages.branchId, branchId))
+        .orderBy(desc(messages.position)).limit(1).get();
+      let position = (lastMsg?.position ?? -1) + 1;
+
+      for (const item of branchItems) {
+        const msgId = this.idGen.next('msg');
+        const variants = item.variants.length > 0
+          ? item.variants
+          : [{ content: '', isSelected: true }];
+        let selectedIndex = variants.findIndex((v) => v.isSelected);
+        if (selectedIndex < 0) selectedIndex = 0;
+        const selectedContent = variants[selectedIndex]!.content;
+
+        messageRows.push({
+          id: msgId,
+          chatId: item.chatId,
+          branchId,
+          role: item.role,
+          authorType: item.authorType,
+          position: position++,
+          content: selectedContent,
+          state: 'complete',
+          attachmentsJson: null,
+          toolCallsJson: null,
+          toolCallId: null,
+          createdAt: now,
+          updatedAt: now,
+        });
+
+        for (let vi = 0; vi < variants.length; vi++) {
+          const v = variants[vi]!;
+          variantRows.push({
+            id: this.idGen.next('mvar'),
+            messageId: msgId,
+            variantIndex: vi,
+            content: v.content,
+            isSelected: vi === selectedIndex ? 1 : 0,
+            finishReason: null,
+            reasoning: v.reasoning ?? null,
+            reasoningDurationMs: null,
+            modelId: null,
+            presetId: null,
+            toolCallsJson: null,
+            toolCallId: null,
+            coauthorModuleId: null,
+            coauthorSkillId: null,
+            createdAt: now,
+          });
+        }
+      }
+    }
+
+    await this.db.transaction(async (tx) => {
+      // Chunk to respect SQLite's host-parameter limit. messages has 12 cols
+      // (chunk at 80 → 960 params, safe even for the legacy 999 limit),
+      // messageVariants has 16 cols (chunk at 60 → 960 params).
+      for (let i = 0; i < messageRows.length; i += 80) {
+        await tx.insert(messages).values(messageRows.slice(i, i + 80)).run();
+      }
+      for (let i = 0; i < variantRows.length; i += 60) {
+        await tx.insert(messageVariants).values(variantRows.slice(i, i + 60)).run();
+      }
+    });
+  }
+
   async addStreamingMessage(data: {
     chatId: string;
     branchId: string;

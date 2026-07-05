@@ -31,8 +31,8 @@ useDomEnv();
 
 // ─── Mock fns (captured real modules are spread in to avoid cross-file leak) ─
 
-const uploadCharacterAvatar = mock((_id: string, _file: File) =>
-  Promise.resolve({ avatarExt: ".png", avatarFullExt: null }));
+const uploadCharacterAvatar = mock((_id: string, _file: File, _full?: File) =>
+  Promise.resolve({ avatarExt: ".png", avatarFullExt: ".png" }));
 // Legacy fns that must NEVER be called by the migrated hook.
 const uploadAsset = mock((_f: File) => Promise.resolve({ assetId: "asset-legacy" }));
 const updateCharacterAvatar = mock((_cid: string, _chatId: unknown, _aid: string) =>
@@ -115,10 +115,13 @@ test("PNG import uploads via the folder route and skips legacy asset+PATCH", asy
     imported = await result.current.importFile(file);
   });
 
-  // Folder route fired with the created character id + the PNG as the crop.
+  // Folder route fired with the created character id + the PNG as BOTH crop
+  // and full (ST cards are uncropped, so the same bytes feed avatar.png and
+  // avatar-full.png — wires the imported card into the crop-confirm flow).
   expect(uploadCharacterAvatar).toHaveBeenCalledTimes(1);
   expect(uploadCharacterAvatar.mock.calls[0][0]).toBe("char-imported");
   expect(uploadCharacterAvatar.mock.calls[0][1]).toBe(file);
+  expect(uploadCharacterAvatar.mock.calls[0][2]).toBe(file);
 
   // Legacy path must NOT have been touched.
   expect(uploadAsset).not.toHaveBeenCalled();
