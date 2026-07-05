@@ -10,7 +10,7 @@ import { useModalStore } from "../../stores/modal-store.js";
 import { PresetList, PromptFields } from "../settings/prompt/index.js";
 import { PromptOrderCanvas, type CharacterCanvasDraft } from "../settings/prompt/InjectionTable.js";
 import { PresetImportModal, type PresetImportResult } from "./PresetImportModal.js";
-import { serializeStPreset, type VibeTavernPresetExtension } from "../../lib/st-preset-parser.js";
+import { serializeStPreset, type VibeTavernPresetExtension } from "@vibe-tavern/import-export";
 import { CustomTooltip } from "../shared/Tooltip.js";
 import { MasterDetailModal } from "../shared/MasterDetailModal.js";
 import { ConfirmCloseModal } from "../shared/confirm-close-modal.js";

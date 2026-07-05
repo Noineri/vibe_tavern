@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { parseStPersonas } from "./st-persona-parser.js";
+import { parseStPersonas } from "../src/personas/st-persona.js";
 
 /**
  * Characterization tests for parseStPersonas. Covers both SillyTavern import

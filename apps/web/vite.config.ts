@@ -29,6 +29,7 @@ export default defineConfig({
 			{ find: "@vibe-tavern/domain", replacement: fileURLToPath(new URL("../../packages/domain/src/index.ts", import.meta.url)) },
 			{ find: "@vibe-tavern/prompt-pipeline", replacement: fileURLToPath(new URL("../../packages/prompt-pipeline/src/index.ts", import.meta.url)) },
 			{ find: "@vibe-tavern/api-contracts", replacement: fileURLToPath(new URL("../../packages/api-contracts/src/index.ts", import.meta.url)) },
+			{ find: "@vibe-tavern/import-export", replacement: fileURLToPath(new URL("../../packages/import-export/src/index.ts", import.meta.url)) },
 		],
 	},
 	build: {

@@ -28,6 +28,9 @@
       "@vibe-tavern/domain": [
         "../../packages/domain/src/index.ts"
       ],
+      "@vibe-tavern/import-export": [
+        "../../packages/import-export/src/index.ts"
+      ],
       "@vibe-tavern/prompt-pipeline": [
         "../../packages/prompt-pipeline/src/index.ts"
       ]
@@ -50,6 +53,9 @@
     },
     {
       "path": "../../packages/db"
+    },
+    {
+      "path": "../../packages/import-export"
     },
     {
       "path": "../../services/api"

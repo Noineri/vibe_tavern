@@ -6,7 +6,7 @@ import {
   serializeStPreset,
   type StPresetBlock,
   type StPromptOrderBlock,
-} from "./st-preset-parser.js";
+} from "../src/presets/st-preset.js";
 import { slotToStFields, type PromptOrderEntry, type PromptPresetDto } from "@vibe-tavern/domain";
 
 // ── stBlockToCanvasEntry ───────────────────────────────────────────────────

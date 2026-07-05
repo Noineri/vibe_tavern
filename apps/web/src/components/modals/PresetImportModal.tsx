@@ -4,7 +4,7 @@ import { cn } from "../../lib/cn.js";
 import { Modal } from "../shared/Modal.js";
 import { Icons } from "../shared/icons.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
-import { parseStPreset, stBlockToCanvasEntry, synthesizeCanvasEntry, type ParsedStPreset, type StPresetBlock, type VibeTavernPresetExtension } from "../../lib/st-preset-parser.js";
+import { parseStPreset, stBlockToCanvasEntry, synthesizeCanvasEntry, type ParsedStPreset, type StPresetBlock, type VibeTavernPresetExtension } from "@vibe-tavern/import-export";
 import { inferSlot } from "@vibe-tavern/domain";
 import type { CustomInjection, PromptOrderEntry, PromptSlot } from "@vibe-tavern/domain";
 

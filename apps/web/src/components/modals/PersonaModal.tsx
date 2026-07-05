@@ -20,7 +20,7 @@ import { createPersona, uploadPersonaAvatar, exportPersona } from "../../app-cli
 import { useTokenCount } from "../../hooks/use-token-count.js";
 import { useT } from "../../i18n/context.js";
 import { useModalStore } from "../../stores/modal-store.js";
-import { parseStPersonas, type StPersonaEntry } from "../../lib/st-persona-parser.js";
+import { parseStPersonas, type StPersonaEntry } from "@vibe-tavern/import-export";
 import { toast } from "sonner";
 import { fetchBootstrapAction, fetchPersonasAction } from "../../stores/api-actions/bootstrap-actions.js";
 import { updatePersonaAction } from "../../stores/api-actions/persona-actions.js";
