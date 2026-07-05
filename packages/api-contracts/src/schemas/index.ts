@@ -62,6 +62,7 @@ export {
   debugSendLogSchema,
   importJsonSchema,
   importJsonBatchSchema,
+  stDirectoryPathSchema,
 } from "./debug-schema.js";
 
 export {

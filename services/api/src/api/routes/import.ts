@@ -13,21 +13,19 @@ export function createImportRoutes(runtime: ImportExportRuntimeApi) {
       const body = c.req.valid("json");
       return c.json(await runtime.importJsonBatch(body));
     })
-    .post("/api/import/st-scan", async (c) => {
-      const body = await c.req.json<{ path?: string }>();
-      if (!body.path?.trim()) return c.json({ error: "path is required" }, 400);
+    .post("/api/import/st-scan", zValidator("json", schemas.stDirectoryPathSchema), async (c) => {
+      const { path } = c.req.valid("json");
       try {
-        const result = await runtime.scanSillyTavernDirectory(body.path);
+        const result = await runtime.scanSillyTavernDirectory(path);
         return c.json(result);
       } catch (err) {
         return c.json({ error: err instanceof Error ? err.message : String(err) }, 400);
       }
     })
-    .post("/api/import/st-directory", async (c) => {
-      const body = await c.req.json<{ path?: string }>();
-      if (!body.path?.trim()) return c.json({ error: "path is required" }, 400);
+    .post("/api/import/st-directory", zValidator("json", schemas.stDirectoryPathSchema), async (c) => {
+      const { path } = c.req.valid("json");
       try {
-        const result = await runtime.importSillyTavernDirectory(body.path);
+        const result = await runtime.importSillyTavernDirectory(path);
         return c.json(result);
       } catch (err) {
         return c.json({ error: err instanceof Error ? err.message : String(err) }, 400);

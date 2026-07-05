@@ -24,3 +24,11 @@ export const importJsonBatchSchema = z.object({
   items: z.array(importJsonSchema.omit({ lean: true })).max(200),
   lean: z.boolean().optional(),
 });
+
+// SillyTavern folder import: POST /api/import/st-scan and st-directory take a
+// single filesystem path obtained via POST /api/fs/native-dialog (the native
+// OS folder picker). `.trim()` preserves the old manual guard's rejection of
+// whitespace-only paths, and feeds the downstream scanner a clean path.
+export const stDirectoryPathSchema = z.object({
+  path: z.string().trim().min(1),
+});
