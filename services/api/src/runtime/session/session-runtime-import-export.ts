@@ -34,7 +34,12 @@ export interface ImportExportModuleDeps {
 	resolveDefaultPersonaId(): Promise<PersonaId>;
 	resolveDefaultPromptPresetId(): Promise<PromptPresetId>;
 	getSnapshot(chatId: ChatId): Promise<import("./session-runtime.js").SessionSnapshot>;
-	seedImportedOpening(chatId: ChatId, firstMessage: string, alternateGreetings?: string[]): Promise<void>;
+	seedImportedOpening(
+		chatId: ChatId,
+		firstMessage: string,
+		alternateGreetings?: string[],
+		opts?: { withTrace?: boolean },
+	): Promise<void>;
 }
 
 export interface ImportResult {
@@ -366,7 +371,20 @@ export async function importJson(
 
 		const createdId = chat.id as ChatId;
 		deps.chatOrder.add(createdId);
-		await deps.seedImportedOpening(createdId, imported.normalized.firstMessage, imported.normalized.alternateGreetings);
+		await deps.seedImportedOpening(
+			createdId,
+			imported.normalized.firstMessage,
+			imported.normalized.alternateGreetings,
+			// Mass-import doesn't need a trace — the user hasn't opened the chat
+			// yet. assemblePrompt (called inside seedImportedOpening to build the
+			// trace) runs the full lore-activation engine on the greeting text,
+			// which is O(entries × message × keys) and can blow up to tens of
+			// seconds on a single card when a global lorebook has a pathological
+			// regex key (observed: 68s on one card). Skipping it collapses the
+			// whole import from ~38s to seconds. The trace rebuilds on the first
+			// real turn, same as a freshly-created chat.
+			{ withTrace: false },
+		);
 
 		return {
 			activeChatId: createdId,
@@ -421,21 +439,33 @@ export async function importJsonBatch(
 ): Promise<BatchImportResult> {
 	const lean = input.lean ?? true;
 	const results: BatchImportResult["results"] = [];
+	const batchStart = (typeof Bun !== "undefined" ? Bun.nanoseconds() : Date.now() * 1e6);
+	const slowCards: string[] = [];
 	for (const item of input.items) {
+		const cardStart = (typeof Bun !== "undefined" ? Bun.nanoseconds() : Date.now() * 1e6);
 		try {
 			const r = await importJson(deps, { ...item, lean });
+			const cardMs = ((typeof Bun !== "undefined" ? Bun.nanoseconds() : Date.now() * 1e6) - cardStart) / 1e6;
+			if (cardMs > 50) slowCards.push(`${item.fileName}=${cardMs.toFixed(0)}ms`);
 			results.push({
 				fileName: item.fileName,
 				characterId: r.characterId,
 				activeChatId: r.activeChatId,
 			});
 		} catch (err) {
+			const cardMs = ((typeof Bun !== "undefined" ? Bun.nanoseconds() : Date.now() * 1e6) - cardStart) / 1e6;
+			slowCards.push(`${item.fileName}=ERR${cardMs.toFixed(0)}ms`);
 			results.push({
 				fileName: item.fileName,
 				error: err instanceof Error ? err.message : String(err),
 			});
 		}
 	}
+	const batchMs = ((typeof Bun !== "undefined" ? Bun.nanoseconds() : Date.now() * 1e6) - batchStart) / 1e6;
+	console.log(
+		`[import-batch] ${input.items.length} cards in ${batchMs.toFixed(0)}ms (avg ${(batchMs / input.items.length).toFixed(1)}ms/card)` +
+			(slowCards.length ? ` | slow: ${slowCards.join(", ")}` : ""),
+	);
 	return { results };
 }
 

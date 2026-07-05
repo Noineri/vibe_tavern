@@ -183,6 +183,14 @@ interface ImportError {
     let importedLorebooks = 0;
     const failedItems: ImportError[] = [];
 
+    // ── Diagnostic timing (MASS_IMPORT) ───────────────────────────────
+    // Shows up in browser DevTools console with `[import]` prefix. Lets us
+    // pinpoint which phase + which batch + which card is the freeze. Remove
+    // once the bottleneck is confirmed fixed.
+    const T0 = performance.now();
+    const ti = () => `[import +${((performance.now() - T0) / 1000).toFixed(2)}s]`;
+    console.log(`${ti()} START — total=${total} (chars=${scanResult.characters.length} chats=${scanResult.chats.length} lore=${scanResult.lorebooks.length} presets=${scanResult.presets.length} personas=${scanResult.personaCount})`);
+
     // Phase 0: Import personas
     if (scanResult.personaFile) {
       setImportProgress({ current: 0, total });
@@ -237,9 +245,12 @@ interface ImportError {
     // extracted text gives us the name for chat matching without a second parse.
     type ParsedCard = { fileName: string; jsonText: string; charName: string; isPng: boolean; file: File };
     const parsedCards: ParsedCard[] = [];
+    const parseStart = performance.now();
+    let pngCount = 0;
     for (const entry of scanResult.characters) {
       const lowerName = entry.file.name.toLowerCase();
       const isPng = lowerName.endsWith(".png") || entry.file.type === "image/png";
+      if (isPng) pngCount++;
       try {
         let jsonText: string;
         if (isPng) {
@@ -260,6 +271,7 @@ interface ImportError {
         });
       }
     }
+    console.log(`${ti()} parse done — ${parsedCards.length} cards (${pngCount} PNG) in ${((performance.now() - parseStart) / 1000).toFixed(2)}s`);
 
     // Chunk parsed cards into batches.
     const batches: ParsedCard[][] = [];
@@ -271,14 +283,23 @@ interface ImportError {
     // we don't fire ~26 requests simultaneously and saturate the connection.
     // We also collect (characterId, file) pairs for the avatar upload pass.
     const avatarJobs: { characterId: string; file: File }[] = [];
+    const batchPhaseStart = performance.now();
+    let batchIdx = 0;
+    console.log(`${ti()} batches START — ${batches.length} batches × ${BATCH_SIZE}, concurrency ${BATCH_CONCURRENCY}`);
     await runPool(
       batches,
       BATCH_CONCURRENCY,
       async (batch) => {
+        const myIdx = ++batchIdx;
+        const bStart = performance.now();
         const r = await importJsonBatch({
           items: batch.map((c) => ({ fileName: c.fileName, jsonText: c.jsonText, skipExisting: true })),
           lean: true,
         });
+        const bMs = performance.now() - bStart;
+        const okCount = r.results.filter((x) => !x.error).length;
+        const names = batch.map((c) => c.charName).filter(Boolean).slice(0, 3).join(",");
+        console.log(`${ti()} batch ${myIdx}/${batches.length} done — ${batch.length} cards, ${okCount} ok, ${bMs.toFixed(0)}ms [${names}${batch.length > 3 ? "…" : ""}]`);
         for (const item of r.results) {
           if (item.error) {
             failedItems.push({ fileName: item.fileName, reason: item.error });
@@ -300,6 +321,7 @@ interface ImportError {
         }
       },
     );
+    console.log(`${ti()} batches DONE — ${batches.length} batches, ${importedChars} chars in ${((performance.now() - batchPhaseStart) / 1000).toFixed(2)}s, ${avatarJobs.length} avatars queued`);
     // Yield once after all batches so the progress bar repaints before avatars.
     current += parsedCards.length;
     setImportProgress({ current, total });
@@ -309,19 +331,26 @@ interface ImportError {
     // the card inserts because each upload is an MB-scale PNG that blocks the
     // connection longer than the insert did, and a failed upload must not fail
     // the import. Limited concurrency to avoid saturating the connection.
+    const avatarStart = performance.now();
+    console.log(`${ti()} avatars START — ${avatarJobs.length} uploads, concurrency ${AVATAR_CONCURRENCY}`);
+    let avatarOk = 0;
     await runPool(
       avatarJobs,
       AVATAR_CONCURRENCY,
       async (job) => {
         try {
           await uploadCharacterAvatar(job.characterId, job.file);
+          avatarOk++;
         } catch {
           // Avatar upload failure is non-critical
         }
       },
     );
+    console.log(`${ti()} avatars DONE — ${avatarOk}/${avatarJobs.length} ok in ${((performance.now() - avatarStart) / 1000).toFixed(2)}s`);
 
     // Phase 2: Import chats (skip if no matching character)
+    const chatsStart = performance.now();
+    if (scanResult.chats.length) console.log(`${ti()} Phase 2 chats START — ${scanResult.chats.length} chats`);
     for (const entry of scanResult.chats) {
       current++;
       setImportProgress({ current, total });
@@ -343,8 +372,11 @@ interface ImportError {
         });
       }
     }
+    if (scanResult.chats.length) console.log(`${ti()} Phase 2 chats DONE — ${importedChats}/${scanResult.chats.length} in ${((performance.now() - chatsStart) / 1000).toFixed(2)}s`);
 
     // Phase 2.5: Import lorebooks
+    const loreStart = performance.now();
+    if (scanResult.lorebooks.length) console.log(`${ti()} Phase 2.5 lorebooks START — ${scanResult.lorebooks.length} lorebooks`);
     for (const entry of scanResult.lorebooks) {
       current++;
       setImportProgress({ current, total });
@@ -359,8 +391,11 @@ interface ImportError {
         failedItems.push({ fileName: entry.file.name, reason: err instanceof Error ? err.message : String(err) });
       }
     }
+    if (scanResult.lorebooks.length) console.log(`${ti()} Phase 2.5 lorebooks DONE — ${importedLorebooks}/${scanResult.lorebooks.length} in ${((performance.now() - loreStart) / 1000).toFixed(2)}s`);
 
     // Phase 3: Import presets
+    const presetsStart = performance.now();
+    if (scanResult.presets.length) console.log(`${ti()} Phase 3 presets START — ${scanResult.presets.length} presets`);
     for (const entry of scanResult.presets) {
       current++;
       setImportProgress({ current, total });
@@ -411,15 +446,20 @@ interface ImportError {
         failedItems.push({ fileName: entry.file.name, reason: err instanceof Error ? err.message : String(err) });
       }
     }
+    if (scanResult.presets.length) console.log(`${ti()} Phase 3 presets DONE — ${importedPresets}/${scanResult.presets.length} in ${((performance.now() - presetsStart) / 1000).toFixed(2)}s`);
 
     setImporting(false);
     setImportProgress(null);
     setImportErrors(failedItems);
 
     // Refresh stores (sequential to avoid race on bootstrapStore)
+    const refreshStart = performance.now();
+    console.log(`${ti()} store refresh START`);
     await fetchBootstrapAction({ silent: true });
     await fetchPersonasAction();
     await loadPromptPresetsAction();
+    console.log(`${ti()} store refresh DONE in ${((performance.now() - refreshStart) / 1000).toFixed(2)}s`);
+    console.log(`${ti()} FINISH — total ${((performance.now() - T0) / 1000).toFixed(2)}s | chars=${importedChars} chats=${importedChats} lore=${importedLorebooks} presets=${importedPresets} personas=${importedPersonas} failed=${failedItems.length}`);
 
     const msg = t("st_import_results")
       .replace("{characters}", String(importedChars))

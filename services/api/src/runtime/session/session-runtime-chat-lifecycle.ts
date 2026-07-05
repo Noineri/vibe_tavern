@@ -328,14 +328,25 @@ export class ChatLifecycleRuntime {
 	 * The card's first_mes and alternate_greetings are copied into message
 	 * variants so chat edits/swipes do not mutate the character card.
 	 */
-	async seedImportedOpening(chatId: ChatId, firstMessage: string, alternateGreetings: string[] = []): Promise<void> {
+	async seedImportedOpening(
+		chatId: ChatId,
+		firstMessage: string,
+		alternateGreetings: string[] = [],
+		opts?: { withTrace?: boolean },
+	): Promise<void> {
 		const greetingVariants = buildGreetingVariants(firstMessage, alternateGreetings);
 		if (greetingVariants.length === 0) {
 			return;
 		}
 
 		const chat = (await this.deps.stores.chats.getById(chatId))!;
-		const assembled = await this.deps.assemblePrompt(chatId, chat.activeBranchId as ChatBranchId);
+		// Prompt assembly is O(N) in (lorebook entries × message text × keys) and is
+		// only needed to seed the trace. Mass-import doesn't need a trace (the
+		// user hasn't opened the chat yet; the trace is rebuilt on first real
+		// turn), so callers can pass withTrace:false to skip the whole pipeline.
+		// This is the difference between a 68s and a 0.1s import for one card
+		// when a heavy global lorebook is active.
+		const withTrace = opts?.withTrace ?? true;
 		const message = await this.deps.stores.messages.addMessage({
 			chatId,
 			branchId: chat.activeBranchId,
@@ -344,9 +355,12 @@ export class ChatLifecycleRuntime {
 			content: greetingVariants[0],
 			variants: greetingVariants,
 		});
-		await this.deps.stores.traces.saveTrace({
-			...assembled.promptTraceDraft,
-			messageId: message.id,
-		});
+		if (withTrace) {
+			const assembled = await this.deps.assemblePrompt(chatId, chat.activeBranchId as ChatBranchId);
+			await this.deps.stores.traces.saveTrace({
+				...assembled.promptTraceDraft,
+				messageId: message.id,
+			});
+		}
 	}
 }
