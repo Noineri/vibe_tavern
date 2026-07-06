@@ -1,8 +1,8 @@
 import { useState, useMemo, type ReactNode } from "react";
-import { createPortal } from "react-dom";
 import { cn } from "../../lib/cn.js";
 import { resolveModelLabel } from "../../lib/model-resolve.js";
 import { Icons } from "../shared/icons.js";
+import { BottomSheet } from "../shared/BottomSheet.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
 import { useT } from "../../i18n/context.js";
 import { useChatStore } from "../../stores/chat-store.js";
@@ -83,9 +83,8 @@ export function QueueManager(): ReactNode {
         />
       )}
 
-      {expanded && isMobile && createPortal(
-        <MobileSheet jobs={jobs} onClose={() => setExpanded(false)} />,
-        document.body,
+      {expanded && isMobile && (
+        <MobileSheet jobs={jobs} onClose={() => setExpanded(false)} />
       )}
     </div>
   );
@@ -203,26 +202,13 @@ function DesktopPopover({ jobs, onClose }: { jobs: QueueJob[]; onClose: () => vo
 
 function MobileSheet({ jobs, onClose }: { jobs: QueueJob[]; onClose: () => void }): ReactNode {
   return (
-    <>
-      <div
-        className="fixed inset-0 z-[500] bg-black/50 backdrop-blur-sm"
-        style={{ animation: "fadeIn 0.15s ease-out" }}
-        onClick={onClose}
-      />
-      <div
-        className="glass-blur fixed inset-x-0 bottom-0 z-[501] rounded-t-2xl border-t border-border2 bg-glass-bg pb-[env(safe-area-inset-bottom,0px)] shadow-[0_-4px_24px_rgba(0,0,0,0.5)]"
-        style={{ animation: "slideUp 0.2s ease-out" }}
-      >
-        <div className="flex justify-center pt-2 pb-1">
-          <div className="h-1 w-10 rounded-full bg-border" />
-        </div>
-        <ManagerHeader jobs={jobs} onClose={onClose} />
-        <div className="max-h-[50vh] overflow-y-auto pb-2">
-          {jobs.map((job, i) => (
-            <JobRow key={job.id} job={job} index={i} onClose={onClose} />
-          ))}
-        </div>
+    <BottomSheet open={true} onClose={onClose}>
+      <ManagerHeader jobs={jobs} onClose={onClose} />
+      <div className="max-h-[50vh] overflow-y-auto pb-2">
+        {jobs.map((job, i) => (
+          <JobRow key={job.id} job={job} index={i} onClose={onClose} />
+        ))}
       </div>
-    </>
+    </BottomSheet>
   );
 }
