@@ -168,7 +168,7 @@ export function AvatarDescriptionField({
 				}}
 				placeholder={placeholder}
 				disabled={controlsDisabled}
-				maxHeight={240}
+				maxRows={12}
 			/>
 
 			{!hasAvatar && (

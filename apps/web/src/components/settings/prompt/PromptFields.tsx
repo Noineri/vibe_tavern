@@ -92,11 +92,11 @@ export function PromptFields({ draft, onUpdateField, prefillSupported, hideChatP
     { key: "vision_describe", labelKey: "ai_assistant_mode_vision_describe" },
   ] as const;
 
-  const ta = useCallback((key: TextDraftKey, placeholder: string, minH = 100, labelKey?: string) => (
+  const ta = useCallback((key: TextDraftKey, placeholder: string, minRows = 5, labelKey?: string) => (
     <MobileExpandTextarea value={String(draft?.[key] ?? "")} onChange={(v) => onUpdateField(key, v)} label={labelKey ? t(labelKey) : undefined}>
     <AutoTextarea
       className={cn(textareaCls, "px-[13px] py-[9px]")}
-      style={{ minHeight: minH }}
+      minRows={minRows}
       value={String(draft?.[key] ?? "")}
       placeholder={placeholder}
       disabled={disabled}
@@ -112,11 +112,11 @@ export function PromptFields({ draft, onUpdateField, prefillSupported, hideChatP
           <SectionHeader title={t("prompt_section_chat")} />
 
           <FieldSection label={t("system_prompt")} labelClassName={labelAccentCls} token={draft?.system ?? ""}>
-            {ta("system", t("system_prompt_placeholder"), 240)}
+            {ta("system", t("system_prompt_placeholder"), 12)}
           </FieldSection>
 
           <FieldSection label={t("post_history_instructions")} token={draft?.jailbreak ?? ""}>
-            {ta("jailbreak", t("jailbreak_placeholder"), 100)}
+            {ta("jailbreak", t("jailbreak_placeholder"))}
           </FieldSection>
 
           <PrefillField
@@ -180,7 +180,7 @@ export function PromptFields({ draft, onUpdateField, prefillSupported, hideChatP
                 </div>
               </div>
             </div>
-            {ta("authorsNote", t("authors_note_placeholder"), 100)}
+            {ta("authorsNote", t("authors_note_placeholder"))}
             <TokenCounter text={draft?.authorsNote ?? ""} />
           </div>
 
@@ -202,7 +202,7 @@ export function PromptFields({ draft, onUpdateField, prefillSupported, hideChatP
             <div className="font-ui text-[calc(var(--ui-fs)-4px)] text-t4">{t("prompt_section_service_desc")}</div>
 
             <ServiceField label={t("summary")} description={t("summary_desc")} token={draft?.summary ?? ""}>
-              {ta("summary", t("summary_placeholder"), 100)}
+              {ta("summary", t("summary_placeholder"))}
             </ServiceField>
 
             <SectionHeader title={t("ai_assistant_section")} />
@@ -229,7 +229,8 @@ export function PromptFields({ draft, onUpdateField, prefillSupported, hideChatP
                   >
                     <AutoTextarea
                       className={cn(textareaCls, "px-[13px] py-[9px]")}
-                      style={{ minHeight: 80 }}
+                      style={{}}
+                      minRows={4}
                       value={value}
                       placeholder={t("ai_assistant_mode_default_placeholder")}
                       disabled={disabled}

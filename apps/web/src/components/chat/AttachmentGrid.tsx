@@ -307,7 +307,7 @@ function Lightbox({ attachments, messageId, initialIndex, onClose }: { attachmen
                 onChange={(e) => setEditText(e.target.value)}
                 className="w-full rounded-lg bg-white/10 px-3 py-2 text-sm leading-relaxed text-white outline-none ring-1 ring-white/20 focus:ring-accent"
                 style={{}}
-                maxHeight={400}
+                maxRows={20}
                 placeholder={t("describe_attachment_placeholder")}
                 autoFocus
                 onClick={(e) => e.stopPropagation()}

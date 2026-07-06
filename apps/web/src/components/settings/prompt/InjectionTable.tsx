@@ -717,12 +717,13 @@ function EditablePromptCard({ identifier, enabled = true, onToggle, label, role,
             </CustomTooltip>
           )}
           <AutoTextarea
-            className="min-h-[110px] w-full resize-none overflow-hidden rounded-md border border-border bg-s2 px-2.5 py-2 font-mono text-[12px] leading-[1.6] text-t1 outline-none focus:border-accent disabled:opacity-60"
+            className="w-full resize-none overflow-hidden rounded-md border border-border bg-s2 px-2.5 py-2 font-mono text-[12px] leading-[1.6] text-t1 outline-none focus:border-accent disabled:opacity-60"
             style={{}}
+            minRows={6}
             value={value}
             placeholder={placeholder}
             disabled={disabled}
-            maxHeight={420}
+            maxRows={20}
             onChange={(e) => onChange(e.target.value)}
           />
         </div>
@@ -800,12 +801,13 @@ function EditableAuthorNoteCard({ identifier, enabled = true, onToggle, draft, o
             )}
           </div>
           <AutoTextarea
-            className="min-h-[100px] w-full resize-none overflow-hidden rounded-md border border-border bg-s2 px-2.5 py-2 font-mono text-[12px] leading-[1.6] text-t1 outline-none focus:border-accent disabled:opacity-60"
+            className="w-full resize-none overflow-hidden rounded-md border border-border bg-s2 px-2.5 py-2 font-mono text-[12px] leading-[1.6] text-t1 outline-none focus:border-accent disabled:opacity-60"
             style={{}}
+            minRows={5}
             value={draft?.authorsNote ?? ""}
             placeholder={t("authors_note_placeholder")}
             disabled={disabled}
-            maxHeight={420}
+            maxRows={20}
             onChange={(e) => onUpdateField?.("authorsNote", e.target.value)}
           />
         </div>
@@ -890,11 +892,12 @@ function CharacterFieldCard({ identifier, enabled = true, onToggle, label, role,
             )}
           </div>
           <AutoTextarea
-            className="min-h-[80px] w-full resize-none overflow-hidden rounded-md border border-border bg-s2 px-2.5 py-2 font-mono text-[12px] leading-[1.6] text-t1 outline-none focus:border-accent"
+            className="w-full resize-none overflow-hidden rounded-md border border-border bg-s2 px-2.5 py-2 font-mono text-[12px] leading-[1.6] text-t1 outline-none focus:border-accent"
             style={{}}
+            minRows={4}
             value={value}
             placeholder=""
-            maxHeight={420}
+            maxRows={20}
             onChange={(e) => onChange(e.target.value)}
           />
         </div>
@@ -1037,11 +1040,12 @@ function InjectionRowView({ injection, index, isMobile, enabled, slot, onUpdate,
           </div>
 
           <AutoTextarea
-            className="min-h-[90px] w-full resize-none overflow-hidden rounded-md border border-border bg-s2 px-2.5 py-2 font-mono text-[12px] leading-[1.6] text-t1 outline-none focus:border-accent"
+            className="w-full resize-none overflow-hidden rounded-md border border-border bg-s2 px-2.5 py-2 font-mono text-[12px] leading-[1.6] text-t1 outline-none focus:border-accent"
             style={{}}
+            minRows={5}
             value={injection.content}
             placeholder={t("preset_injection_content")}
-            maxHeight={420}
+            maxRows={20}
             onChange={(e) => onUpdate(index, { content: e.target.value })}
           />
         </div>

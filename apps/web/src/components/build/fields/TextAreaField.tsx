@@ -44,8 +44,9 @@ export interface TextAreaFieldProps {
   label: string;
   /** Title used by the mobile fullscreen editor (may differ from `label`). */
   mobileExpandLabel: string;
-  /** Minimum textarea height in px. */
-  minHeight: number;
+  /** Minimum textarea height in rows. Scales with the user-adjustable font
+   *  size — see AutoTextarea docs for why rows, not px. */
+  minRows: number;
   /** Use the monospace variant (prompt-instruction fields). */
   mono?: boolean;
   /** Optional placeholder text. */
@@ -60,7 +61,7 @@ export function TextAreaField({
   field,
   label,
   mobileExpandLabel,
-  minHeight,
+  minRows,
   mono,
   placeholder,
   isSaving,
@@ -76,10 +77,11 @@ export function TextAreaField({
       <MobileExpandTextarea value={value || ""} onChange={(v) => setValue(field, v)} label={mobileExpandLabel}>
         <AutoTextarea
           className={cls}
-          style={{ ...inputPad, minHeight }}
+          style={{ ...inputPad }}
           disabled={isSaving}
           placeholder={placeholder}
           register={register(field)}
+          minRows={minRows}
         />
       </MobileExpandTextarea>
       <TokenBadge text={value || ""} />

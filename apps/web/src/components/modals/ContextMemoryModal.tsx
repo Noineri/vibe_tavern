@@ -556,7 +556,7 @@ export function ContextMemoryModal({
           <AutoTextarea
             className={cn(inputCls, "min-h-[86px] w-full resize-y leading-relaxed")}
             style={{}}
-            maxHeight={400}
+            maxRows={20}
             value={draftText}
             onChange={(e) => { setDraftText(e.target.value); setDirty(true); }}
             placeholder={t("summary_placeholder_short")}

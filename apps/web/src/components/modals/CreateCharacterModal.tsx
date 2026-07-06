@@ -249,9 +249,10 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
             <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("char_desc_label")}</label>
             <MobileExpandTextarea label={t("char_desc_label")} value={description || ''} onChange={v => setValue('description', v, { shouldDirty: true })}>
               <AutoTextarea
-                className="w-full min-h-[100px] rounded-md border border-border bg-s2 px-2.5 py-1.5 font-body text-t1 outline-none focus:border-accent"
+                className="w-full rounded-md border border-border bg-s2 px-2.5 py-1.5 font-body text-t1 outline-none focus:border-accent"
                 style={{}}
-                maxHeight={400}
+                maxRows={20}
+                minRows={5}
                 register={register('description')}
               />
             </MobileExpandTextarea>
@@ -262,9 +263,10 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
             <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("ws_first_msg_label")}</label>
             <MobileExpandTextarea label={t("ws_first_msg_label")} value={firstMessage || ''} onChange={v => setValue('firstMessage', v, { shouldDirty: true })}>
               <AutoTextarea
-                className="w-full min-h-[120px] rounded-md border border-border bg-s2 px-2.5 py-1.5 font-body text-t1 outline-none focus:border-accent"
+                className="w-full rounded-md border border-border bg-s2 px-2.5 py-1.5 font-body text-t1 outline-none focus:border-accent"
                 style={{}}
-                maxHeight={400}
+                maxRows={20}
+                minRows={6}
                 placeholder={t("first_message_placeholder")}
                 register={register('firstMessage')}
               />
@@ -314,9 +316,10 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
                 }}
               >
                 <AutoTextarea
-                  className="w-full min-h-[120px] rounded-md border border-border bg-s2 px-2.5 py-1.5 font-body text-t1 outline-none focus:border-accent"
+                  className="w-full rounded-md border border-border bg-s2 px-2.5 py-1.5 font-body text-t1 outline-none focus:border-accent"
                   style={{}}
-                  maxHeight={400}
+                  maxRows={20}
+                  minRows={6}
                   value={alternateGreetings[altGreetIdx] || ''}
                   onChange={e => {
                     const next = [...alternateGreetings];
@@ -334,9 +337,10 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
             <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("dialog_examples")}</label>
             <MobileExpandTextarea label={t("dialog_examples")} value={mesExample || ''} onChange={v => setValue('mesExample', v, { shouldDirty: true })}>
               <AutoTextarea
-                className="w-full min-h-[120px] rounded-md border border-border bg-s2 px-2.5 py-1.5 font-ui text-t1 outline-none focus:border-accent font-mono text-xs"
+                className="w-full rounded-md border border-border bg-s2 px-2.5 py-1.5 font-ui text-t1 outline-none focus:border-accent font-mono text-xs"
                 style={{}}
-                maxHeight={400}
+                maxRows={20}
+                minRows={6}
                 register={register('mesExample')}
                 placeholder={t("dialog_examples_placeholder")}
               />
@@ -348,9 +352,10 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
             <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("scenario")}</label>
             <MobileExpandTextarea label={t("scenario")} value={defaultScenario || ''} onChange={v => setValue('defaultScenario', v, { shouldDirty: true })}>
               <AutoTextarea
-                className="w-full min-h-[100px] rounded-md border border-border bg-s2 px-2.5 py-1.5 font-body text-t1 outline-none focus:border-accent"
+                className="w-full rounded-md border border-border bg-s2 px-2.5 py-1.5 font-body text-t1 outline-none focus:border-accent"
                 style={{}}
-                maxHeight={400}
+                maxRows={20}
+                minRows={5}
                 register={register('defaultScenario')}
               />
             </MobileExpandTextarea>
@@ -361,9 +366,10 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
             <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("char_personality_label")}</label>
             <MobileExpandTextarea label={t("char_personality_label")} value={personalitySummary || ''} onChange={v => setValue('personalitySummary', v, { shouldDirty: true })}>
               <AutoTextarea
-                className="w-full min-h-[60px] rounded-md border border-border bg-s2 px-2.5 py-1.5 font-body text-t1 outline-none focus:border-accent"
+                className="w-full rounded-md border border-border bg-s2 px-2.5 py-1.5 font-body text-t1 outline-none focus:border-accent"
                 style={{}}
-                maxHeight={400}
+                maxRows={20}
+                minRows={3}
                 register={register('personalitySummary')}
               />
             </MobileExpandTextarea>
@@ -377,9 +383,10 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
             <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("post_history_instructions")}</label>
             <MobileExpandTextarea label={t("post_history_instructions")} value={postHistoryInstructions || ''} onChange={v => setValue('postHistoryInstructions', v, { shouldDirty: true })}>
               <AutoTextarea
-                className="w-full min-h-[60px] rounded-md border border-border bg-s2 px-2.5 py-1.5 font-ui text-t1 outline-none focus:border-accent font-mono text-xs"
+                className="w-full rounded-md border border-border bg-s2 px-2.5 py-1.5 font-ui text-t1 outline-none focus:border-accent font-mono text-xs"
                 style={{}}
-                maxHeight={400}
+                maxRows={20}
+                minRows={3}
                 register={register('postHistoryInstructions')}
                 placeholder={t("post_history_placeholder")}
               />
@@ -391,9 +398,10 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
             <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("creator_notes")}</label>
             <MobileExpandTextarea label={t("creator_notes")} value={creatorNotes || ''} onChange={v => setValue('creatorNotes', v, { shouldDirty: true })}>
               <AutoTextarea
-                className="w-full min-h-[60px] rounded-md border border-border bg-s2 px-2.5 py-1.5 font-body text-t1 outline-none focus:border-accent"
+                className="w-full rounded-md border border-border bg-s2 px-2.5 py-1.5 font-body text-t1 outline-none focus:border-accent"
                 style={{}}
-                maxHeight={400}
+                maxRows={20}
+                minRows={3}
                 register={register('creatorNotes')}
                 placeholder={t("creator_notes_placeholder")}
               />
@@ -433,9 +441,10 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
             </div>
             <MobileExpandTextarea label={t("depth_prompt")} value={depthPrompt || ''} onChange={v => setValue('depthPrompt', v, { shouldDirty: true })}>
               <AutoTextarea
-                className="w-full min-h-[60px] rounded-md border border-border bg-s2 px-2.5 py-1.5 font-ui text-t1 outline-none focus:border-accent font-mono text-xs"
+                className="w-full rounded-md border border-border bg-s2 px-2.5 py-1.5 font-ui text-t1 outline-none focus:border-accent font-mono text-xs"
                 style={{}}
-                maxHeight={400}
+                maxRows={20}
+                minRows={3}
                 register={register('depthPrompt')}
                 placeholder={t("depth_prompt_placeholder")}
               />
@@ -449,7 +458,8 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
               <AutoTextarea
                 className="w-full min-h-[80px] rounded-md border border-border bg-s2 px-2.5 py-1.5 font-ui text-t1 outline-none focus:border-accent font-mono text-xs"
                 style={{}}
-                maxHeight={400}
+                maxRows={20}
+                minRows={4}
                 register={register('systemPrompt')}
                 placeholder={t("system_prompt_override_placeholder")}
               />

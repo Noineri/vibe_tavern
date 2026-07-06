@@ -1,17 +1,21 @@
-import { useCallback, useState } from "react";
+import { useCallback } from "react";
 import type { UseFormRegisterReturn } from "react-hook-form";
-import TextareaAutosize from "react-textarea-autosize";
+import TextareaAutosize, { type TextareaAutosizeProps } from "react-textarea-autosize";
 
 /** Native HTML textarea attributes that AutoTextarea doesn't consume itself. */
 export type AutoTextareaPassthrough = Omit<
   React.TextareaHTMLAttributes<HTMLTextAreaElement>,
   | "className" | "style" | "disabled" | "placeholder"
   | "value" | "onChange" | "ref" | "children"
+  | "rows" // lib owns row-count via minRows/maxRows
 >;
 
 export interface AutoTextareaProps extends AutoTextareaPassthrough {
   className: string;
-  style: React.CSSProperties;
+  /** Inline styles. NOTE: `minHeight` / `maxHeight` / `height` are NOT supported
+   *  here — the underlying library owns element height and throws at runtime if
+   *  they appear in `style`. Use `minRows` / `maxRows` for size control. */
+  style?: React.CSSProperties;
   disabled?: boolean;
   placeholder?: string;
   /** react-hook-form register() result — for uncontrolled fields. Field name
@@ -21,8 +25,13 @@ export interface AutoTextareaProps extends AutoTextareaPassthrough {
   value?: string;
   /** Change handler for controlled mode */
   onChange?: (e: React.ChangeEvent<HTMLTextAreaElement>) => void;
-  /** Max height in pixels — textarea stops growing and scrolls internally. Default: Infinity (no cap). */
-  maxHeight?: number;
+  /** Min visible rows (lib-native API). Scales with font-size, unlike a pixel
+   *  minHeight — which is correct here because the app's font-size is a
+   *  user-adjustable CSS variable. */
+  minRows?: number;
+  /** Max rows before the textarea stops growing and scrolls internally. Scales
+   *  with font-size for the same reason as `minRows`. */
+  maxRows?: number;
 }
 
 /**
@@ -32,14 +41,18 @@ export interface AutoTextareaProps extends AutoTextareaPassthrough {
  * - **Uncontrolled**: pass `register={register("field")}` — delegates to react-hook-form
  * - **Controlled**: pass `value` + `onChange` — for manually managed state
  *
- * The underlying library measures content height via a hidden mirror textarea
- * (so no visible shrink-to-auto flicker) and exposes `onHeightChange(height,
- * { rowHeight })`. We keep the call-site contract pixel-based (`maxHeight` in
- * px, `style.minHeight` in px) — the same API the previous hand-rolled
- * `resizeTextarea` exposed — and translate px → rows here using the measured
- * `rowHeight`. `react-textarea-autosize` does NOT accept `style.minHeight`/
- * `style.maxHeight` (it throws), so those keys are stripped from `style` and
- * routed through `minRows`/`maxRows` instead.
+ * Size control is **row-based** (`minRows` / `maxRows`), not pixel-based. This
+ * is deliberate: the app drives its font-size through user-adjustable CSS
+ * variables (`--ui-fs` / `--mfs` via TweaksPanel), so a pixel cap would fight
+ * the user — a larger font would show *fewer* visible lines and force inner
+ * scrolling. Rows scale with the font: the same `maxRows` shows the same amount
+ * of content regardless of font size; the box simply grows. This matches how
+ * every adjustable-font UI (terminals, editors, chat inputs) bounds its input.
+ *
+ * The library measures content height via a hidden mirror textarea (so no
+ * visible shrink-to-auto flicker) and does NOT accept `style.minHeight` /
+ * `style.maxHeight` — it throws at runtime. Those keys are the caller's
+ * responsibility to keep out of `style`; use the row props instead.
  */
 export function AutoTextarea({
   className,
@@ -49,36 +62,10 @@ export function AutoTextarea({
   register,
   value,
   onChange,
-  maxHeight,
+  minRows,
+  maxRows,
   ...rest
 }: AutoTextareaProps) {
-  // Pull minHeight/maxHeight OUT of style — the library throws at runtime if
-  // either key is present in `style`. They're routed through row-based props.
-  // `height` is also stripped: the lib owns it (sets it via `!important` on
-  // every measure), so a caller-supplied height would be dead anyway.
-  const { minHeight: styleMinHeight, maxHeight: _styleMaxHeight, height: _styleHeight, ...cleanStyle } = style;
-  void _styleMaxHeight; // maxHeight arrives as a dedicated prop; style.maxHeight is not supported.
-  void _styleHeight; // the lib owns height; caller value is ignored.
-
-  const minHeightPx =
-    typeof styleMinHeight === "number"
-      ? styleMinHeight
-      : typeof styleMinHeight === "string"
-        ? parseFloat(styleMinHeight)
-        : undefined;
-
-  // Measure the content row height via the library's own callback, then derive
-  // maxRows/minRows from our pixel API. The first measurement happens in the
-  // lib's useLayoutEffect on mount (before paint), so the cap applies within
-  // the initial frame — no visible uncapped-grow flash.
-  const [rowHeight, setRowHeight] = useState<number | undefined>(undefined);
-  const handleHeightChange = useCallback((_height: number, meta: { rowHeight: number }) => {
-    if (meta.rowHeight > 0) setRowHeight(meta.rowHeight);
-  }, []);
-
-  const maxRows = maxHeight && rowHeight ? Math.max(1, Math.floor(maxHeight / rowHeight)) : undefined;
-  const minRows = minHeightPx && rowHeight ? Math.max(1, Math.floor(minHeightPx / rowHeight)) : undefined;
-
   // Merge onChange: react-hook-form's register.onChange + the controlled onChange.
   const handleChange = useCallback(
     (e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -98,18 +85,21 @@ export function AutoTextarea({
     [registerRef],
   );
 
+  // `style` carries full React.CSSProperties (height: string|number), but the
+  // lib's Style narrows height to number and forbids minHeight/maxHeight. Cast
+  // at the seam — callers must keep those keys out of style (the lib's runtime
+  // guard makes a mistake loud, not silent).
   return (
     <TextareaAutosize
       {...rest}
       {...(register ? { name: register.name, onBlur: register.onBlur } : {})}
       ref={setRef}
       className={className}
-      style={cleanStyle}
+      style={style as TextareaAutosizeProps["style"]}
       disabled={disabled}
       placeholder={placeholder}
       value={value}
       onChange={handleChange}
-      onHeightChange={handleHeightChange}
       maxRows={maxRows}
       minRows={minRows}
     />

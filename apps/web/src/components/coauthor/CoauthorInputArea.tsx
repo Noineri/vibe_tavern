@@ -304,10 +304,9 @@ function DesktopInput({
 			<div className="relative rounded-lg border border-border bg-input-bg transition-colors duration-150 focus-within:border-border2">
 				<AutoTextarea
 					className="min-h-[55px] w-full resize-none border-0 bg-transparent px-4 pt-[13px] pb-2 font-body text-[15.5px] leading-tight text-t1 outline-none placeholder:text-t4"
-					style={{}}
-					maxHeight={250}
+					maxRows={12}
+					minRows={3}
 					{...inputProps}
-					rows={1}
 				/>
 
 				<div className="relative flex items-center gap-2 pt-1.5 pb-[9px] pl-3 pr-3">

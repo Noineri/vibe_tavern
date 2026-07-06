@@ -321,7 +321,8 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
       >
         <AutoTextarea
           className="w-full resize-none overflow-hidden rounded-md border border-accent bg-s2 px-3.5 py-3 font-body text-[length:var(--mfs)] leading-[1.65] text-msg-t1 outline-none"
-          style={{ minHeight: 140 }}
+          style={{}}
+          minRows={7}
           value={editingDraft}
           onChange={e => useChatStore.getState().setEditingDraft(e.target.value)}
           onKeyDown={e => { if (e.key === 'Escape') chat.handleCancelEdit(); }}

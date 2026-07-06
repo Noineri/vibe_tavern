@@ -413,7 +413,7 @@ export function VibeMdView({ form, characterId, isSaving }: VibeMdViewProps) {
           field="creatorNotes"
           label={t("creator_notes")}
           mobileExpandLabel={t("creator_notes_label")}
-          minHeight={60}
+          minRows={3}
           placeholder={t("creator_notes_placeholder")}
           isSaving={isSaving}
         />
@@ -422,7 +422,7 @@ export function VibeMdView({ form, characterId, isSaving }: VibeMdViewProps) {
           field="personalitySummary"
           label={t("char_personality_label")}
           mobileExpandLabel={t("char_personality_summary_label")}
-          minHeight={60}
+          minRows={3}
           isSaving={isSaving}
         />
         {/* Example-injection mode (how # EXAMPLES in the editor injects). */}
@@ -464,7 +464,7 @@ export function VibeMdView({ form, characterId, isSaving }: VibeMdViewProps) {
           field="postHistoryInstructions"
           label={t("post_history_instructions")}
           mobileExpandLabel={t("post_history_label")}
-          minHeight={60}
+          minRows={3}
           mono
           placeholder={t("post_history_placeholder")}
           isSaving={isSaving}
@@ -475,7 +475,7 @@ export function VibeMdView({ form, characterId, isSaving }: VibeMdViewProps) {
           field="systemPrompt"
           label={t("system_prompt_override")}
           mobileExpandLabel={t("system_prompt_label")}
-          minHeight={80}
+          minRows={4}
           mono
           placeholder={t("system_prompt_override_placeholder")}
           isSaving={isSaving}

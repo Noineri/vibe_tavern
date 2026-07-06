@@ -381,7 +381,7 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
             <div className="flex-1 overflow-y-auto" style={{ padding: 20 }}>
               <div className="mb-3 text-[13px] text-t2">{t("script_import_paste")}</div>
               <MobileExpandTextarea value={importCode} onChange={setImportCode} label={t("script_import_import")}>
-                <AutoTextarea className="w-full min-h-[200px] rounded-md border border-border bg-bg px-3 py-2 font-mono text-[12px] leading-[1.6] text-t1 outline-none focus:border-accent" style={{}} maxHeight={500} placeholder={t("script_import_placeholder")} value={importCode} onChange={e => setImportCode(e.target.value)} />
+                <AutoTextarea className="w-full rounded-md border border-border bg-bg px-3 py-2 font-mono text-[12px] leading-[1.6] text-t1 outline-none focus:border-accent" style={{}} maxRows={25} minRows={10} placeholder={t("script_import_placeholder")} value={importCode} onChange={e => setImportCode(e.target.value)} />
               </MobileExpandTextarea>
               {importCode.trim() && (
                 <div className="mt-2 text-[11px] text-accent-t">
@@ -694,13 +694,13 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
                   <div className="rounded-md border border-border bg-bg" style={{ padding: 10 }}>
                     <div className="text-[11px] font-semibold uppercase tracking-[0.06em] text-t3">{t("script_test_personality")}</div>
                     {testResult.personality
-                      ? <AutoTextarea className="mt-1 w-full resize-none rounded-md border-0 bg-s2 px-2 py-1 font-mono text-[12px] leading-[1.5] text-t2 outline-none" style={{}} value={testResult.personality} onChange={() => {}} readOnly maxHeight={320} />
+                      ? <AutoTextarea className="mt-1 w-full resize-none rounded-md border-0 bg-s2 px-2 py-1 font-mono text-[12px] leading-[1.5] text-t2 outline-none" style={{}} value={testResult.personality} onChange={() => {}} readOnly maxRows={16} />
                       : <p className="mt-1 font-mono text-[12px] italic text-t3">({t("script_test_no_change")})</p>}
                   </div>
                   <div className="rounded-md border border-border bg-bg" style={{ padding: 10 }}>
                     <div className="text-[11px] font-semibold uppercase tracking-[0.06em] text-t3">{t("script_test_scenario")}</div>
                     {testResult.scenario
-                      ? <AutoTextarea className="mt-1 w-full resize-none rounded-md border-0 bg-s2 px-2 py-1 font-mono text-[12px] leading-[1.5] text-t2 outline-none" style={{}} value={testResult.scenario} onChange={() => {}} readOnly maxHeight={320} />
+                      ? <AutoTextarea className="mt-1 w-full resize-none rounded-md border-0 bg-s2 px-2 py-1 font-mono text-[12px] leading-[1.5] text-t2 outline-none" style={{}} value={testResult.scenario} onChange={() => {}} readOnly maxRows={16} />
                       : <p className="mt-1 font-mono text-[12px] italic text-t3">({t("script_test_no_change")})</p>}
                   </div>
                 </>

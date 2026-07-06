@@ -73,10 +73,11 @@ export function DepthPromptField({ form, isSaving }: DepthPromptFieldProps) {
       <MobileExpandTextarea value={depthPrompt || ""} onChange={(v) => setValue("depthPrompt", v)} label={t("depth_prompt_label")}>
         <AutoTextarea
           className={monoCls + mInput}
-          style={{ ...inputPad, minHeight: 60 }}
+          style={{ ...inputPad }}
           disabled={isSaving}
           placeholder={t("depth_prompt_placeholder")}
           register={register("depthPrompt")}
+          minRows={3}
         />
       </MobileExpandTextarea>
       <TokenBadge text={depthPrompt || ""} />

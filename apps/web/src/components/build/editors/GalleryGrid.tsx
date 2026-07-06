@@ -374,7 +374,7 @@ function GalleryTile({
                 onChange={(e) => setCaptionDraft(e.target.value)}
                 onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void saveCaption(); } }}
                 className="w-full rounded bg-s2 px-2 py-1.5 text-sm text-t1 outline-none ring-1 ring-border focus:ring-accent"
-                style={{}} maxHeight={140}
+                style={{}} maxRows={7}
                 placeholder={t("caption_placeholder")} autoFocus
               />
               <div className="mt-1.5 flex justify-end gap-1.5">

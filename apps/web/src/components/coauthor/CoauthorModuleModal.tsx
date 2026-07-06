@@ -620,7 +620,8 @@ function ModuleEditor({ draft, t, onUpdate, onToggleSkill, onToggleTool }: Modul
 				<label className={lblCls}>{t("coauthor.module.description_label")}</label>
 				<AutoTextarea
 					className={inputCls}
-					style={{ ...inputPad, minHeight: 40 }}
+					style={{ ...inputPad }}
+					minRows={2}
 					placeholder={t("coauthor.module.description_placeholder")}
 					value={draft.description}
 					onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => onUpdate("description", e.target.value)}
@@ -631,7 +632,8 @@ function ModuleEditor({ draft, t, onUpdate, onToggleSkill, onToggleTool }: Modul
 				<label className={lblCls}>{t("coauthor.module.base_prompt")}</label>
 				<AutoTextarea
 					className={monoCls}
-					style={{ ...inputPad, minHeight: 120 }}
+					style={{ ...inputPad }}
+					minRows={6}
 					value={draft.basePrompt}
 					onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => onUpdate("basePrompt", e.target.value)}
 				/>
@@ -642,7 +644,8 @@ function ModuleEditor({ draft, t, onUpdate, onToggleSkill, onToggleTool }: Modul
 				<label className={lblCls}>{t("coauthor.module.opening_message_label")}</label>
 				<AutoTextarea
 					className={inputCls}
-					style={{ ...inputPad, minHeight: 60 }}
+					style={{ ...inputPad }}
+					minRows={3}
 					placeholder={t("coauthor.module.opening_message_placeholder")}
 					value={draft.openingMessage}
 					onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => onUpdate("openingMessage", e.target.value)}

@@ -668,8 +668,9 @@ export function PersonaModal(input: PersonaModalProps) {
                 label={t("persona_desc_placeholder")}
               >
                 <AutoTextarea
-                  className="w-full min-h-[60px] rounded border border-border bg-s2 py-2 px-2.5 font-ui text-xs text-t1 outline-none resize-none focus:border-accent"
-                  style={{ minHeight: 60 }}
+                  className="w-full rounded border border-border bg-s2 py-2 px-2.5 font-ui text-xs text-t1 outline-none resize-none focus:border-accent"
+                  style={{}}
+                  minRows={3}
                   value={editDescription}
                   onChange={(e) => form.setValue("description", e.target.value, { shouldDirty: true })}
                   placeholder={t("persona_desc_placeholder")}

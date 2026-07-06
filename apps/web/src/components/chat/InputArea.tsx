@@ -361,9 +361,9 @@ export function InputArea() {
           <input type="file" ref={fileInputRef} className="hidden" accept="image/png,image/jpeg,image/webp,image/gif" onChange={onFileInputChange} />
           
           <AutoTextarea
-            className="min-h-[55px] w-full resize-none border-0 bg-transparent px-4 pt-[13px] pb-2 font-body text-[15.5px] leading-tight text-t1 outline-none placeholder:text-t4"
-            style={{}}
-            maxHeight={250}
+            className="w-full resize-none border-0 bg-transparent px-4 pt-[13px] pb-2 font-body text-[15.5px] leading-tight text-t1 outline-none placeholder:text-t4"
+            maxRows={12}
+            minRows={3}
             placeholder={t("placeholder")}
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
@@ -374,7 +374,6 @@ export function InputArea() {
                 if (canSend) void chat.handleSend();
               }
             }}
-            rows={1}
           />
           
           {draftAttachments.length > 0 && <AttachmentPreview />}

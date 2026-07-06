@@ -266,7 +266,7 @@ export function LoreEntryEditor({
             <AutoTextarea
               className="w-full min-h-[180px] rounded-md border border-border bg-s2 px-2.5 py-1.5 text-[13px] text-t1 outline-none focus:border-accent leading-[1.6]"
               style={{}}
-              maxHeight={500}
+              maxRows={25}
               value={entry.content}
               onChange={(e) => updateAct("content", e.target.value)}
               placeholder={t("lore_entry_content_placeholder")}
