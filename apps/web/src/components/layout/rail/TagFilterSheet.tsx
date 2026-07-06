@@ -3,16 +3,22 @@
  * and `CoauthorRail` (E5d, post-SF-5 dedup). Byte-identical 53-line block in
  * both rails before extraction.
  *
- * Self-contained like `ActionSheet`: owns its swipe-to-dismiss via
- * `useSheetDrag(onClose)` and portals itself to `document.body`. Stays open
- * while toggling tags (backdrop tap or swipe-down dismisses) so the user can
- * pick several tags — the mobile-native counterpart to the desktop Sidebar's
- * portaled tag combobox.
+ * Built on the shared `BottomSheet` primitive (vaul Drawer underneath), so the
+ * chrome — scrim, slide-up, drag handle, swipe-to-dismiss, focus trap, ESC,
+ * focus restoration — is inherited. This file owns only the tag-list content:
+ * a header row (filter label + conditional reset button) and a scrollable list
+ * of toggleable tag rows. Stays open while toggling tags (backdrop tap or
+ * swipe-down dismisses) so the user can pick several — the mobile-native
+ * counterpart to the desktop Sidebar's portaled tag combobox.
+ *
+ * The header is rendered as the first child (not via `BottomSheet`'s `title`
+ * prop) because it is a flex row pairing the label with the reset button;
+ * `BottomSheet` then emits its visually-hidden `Drawer.Title` fallback so the
+ * dialog still has an accessible name (Radix Dialog requires one).
  */
-import { createPortal } from "react-dom";
 import { cn } from "../../../lib/cn.js";
 import { Ic } from "../../shared/icons.js";
-import { useSheetDrag } from "../hooks/use-swipe-sheet.js";
+import { BottomSheet } from "../../shared/BottomSheet.js";
 
 export function TagFilterSheet({
   selectedTags,
@@ -31,26 +37,9 @@ export function TagFilterSheet({
   onReset: () => void;
   onClose: () => void;
 }) {
-  const { sheetRef, onTouchStart, onTouchMove, onTouchEnd } = useSheetDrag(onClose);
-
-  return createPortal(
-    <>
-      <div
-        className="fixed inset-0 z-[500] bg-black/50 backdrop-blur-sm"
-        style={{ animation: "fadeIn 0.15s ease-out" }}
-        onClick={onClose}
-      />
-      <div
-        className="glass-blur fixed inset-x-0 bottom-0 z-[501] flex max-h-[65vh] flex-col rounded-t-2xl border-t border-border2 bg-glass-bg pb-[env(safe-area-inset-bottom,0px)] shadow-[0_-4px_24px_rgba(0,0,0,0.5)]"
-        ref={sheetRef}
-        style={{ animation: "slideUp 0.2s ease-out" }}
-        onTouchStart={onTouchStart}
-        onTouchMove={onTouchMove}
-        onTouchEnd={onTouchEnd}
-      >
-        <div className="flex justify-center pt-2 pb-1">
-          <div className="h-1 w-10 rounded-full bg-border" />
-        </div>
+  return (
+    <BottomSheet open={true} onClose={onClose}>
+      <div className="flex max-h-[65vh] flex-col">
         <div className="flex items-center justify-between px-5 pb-2 pt-1">
           <span className="font-ui text-[calc(var(--ui-fs)-1px)] font-semibold text-t1">{filterLabel}</span>
           {selectedTags.length > 0 && (
@@ -78,7 +67,6 @@ export function TagFilterSheet({
           })}
         </div>
       </div>
-    </>,
-    document.body,
+    </BottomSheet>
   );
 }

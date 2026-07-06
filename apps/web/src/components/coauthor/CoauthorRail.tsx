@@ -7,7 +7,7 @@ import { cn } from "../../lib/cn.js";
 import { resolveEntityAvatarUrl } from "../../lib/avatar.js";
 import { initials } from "../layout/app-shell-helpers.js";
 import { Ico, NavRow } from "../layout/rail/rail-primitives.js";
-import { ActionSheet } from "../layout/rail/ActionSheet.js";
+import { ActionSheet } from "../shared/ActionSheet.js";
 import { TagFilterSheet } from "../layout/rail/TagFilterSheet.js";
 import { RailCollapsedStrip } from "../layout/rail/RailCollapsedStrip.js";
 import { usePanelSwipe, useRailEdgeSwipe } from "../layout/hooks/use-swipe-sheet.js";
@@ -365,19 +365,19 @@ export function CoauthorRail({ hidden }: { hidden?: boolean }) {
       {/* ═══ BOTTOM SHEETS (контекстные меню) ═══ */}
       {charMenuId && (
         <ActionSheet
+          open={true}
           title={allCharacters.find(c => c.id === charMenuId)?.name ?? ""}
           items={rowActions.buildCharMenuItems(charMenuId, allCharacters.find(c => c.id === charMenuId)?.name ?? "")}
           onClose={() => setCharMenuId(null)}
-          cancelLabel={t("cancel") ?? "Отмена"}
         />
       )}
 
       {chatMenuId && (
         <ActionSheet
+          open={true}
           title={sectionChats.find(c => c.id === chatMenuId)?.title ?? ""}
           items={rowActions.buildChatMenuItems(chatMenuId, sectionChats.find(c => c.id === chatMenuId)?.title ?? "")}
           onClose={() => setChatMenuId(null)}
-          cancelLabel={t("cancel") ?? "Отмена"}
         />
       )}
 
