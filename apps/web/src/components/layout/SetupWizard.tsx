@@ -141,7 +141,6 @@ function ProviderStep({
   const [modelSearch, setModelSearch] = useState("");
   const [modelListOpen, setModelListOpen] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
-  const dropdownRef = useRef<HTMLDivElement>(null);
 
   // If profile already exists → collapsed view by default
   const [collapsed, setCollapsed] = useState(alreadyHasProfile);
@@ -304,7 +303,6 @@ function ProviderStep({
             onFetchModels={handleTest}
             setModelSearch={setModelSearch}
             setModelListOpen={setModelListOpen}
-            dropdownRef={dropdownRef}
             onToggleFavoriteModel={async () => {}}
             requiresAuthForModels={true}
           />
@@ -384,7 +382,6 @@ function ProviderStep({
           onFetchModels={handleTest}
           setModelSearch={setModelSearch}
           setModelListOpen={setModelListOpen}
-          dropdownRef={dropdownRef}
           onToggleFavoriteModel={async () => {}}
           requiresAuthForModels={true}
         />

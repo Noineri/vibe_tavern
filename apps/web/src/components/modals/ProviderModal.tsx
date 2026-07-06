@@ -205,8 +205,6 @@ export function ProviderModal({
   const [profileSearch, setProfileSearch] = useState("");
   const [dirty, setDirty] = useState(false);
   const [headerSaving, setHeaderSaving] = useState(false);
-  const dropdownRef = useRef<HTMLDivElement>(null);
-  const visionDropdownRef = useRef<HTMLDivElement>(null);
   const isMobile = useIsMobile();
 
   // ── Header mode: edit vs view ──
@@ -253,23 +251,6 @@ export function ProviderModal({
   useEffect(() => {
     latestFormRef.current = form;
   }, [form]);
-
-  useEffect(() => {
-    if (!isOpen) return;
-    const h = (e: MouseEvent) => {
-      const target = e.target as Node;
-      const isOutMain = !dropdownRef.current?.contains(target);
-      const isOutVision = !visionDropdownRef.current?.contains(target);
-      
-      const portal = document.getElementById('modal-portal');
-      const inPortal = portal?.contains(target);
-      if (inPortal) return;
-
-      if (isOutMain) setModelListOpen(false);
-      if (isOutVision) setVisionModelListOpen(false);
-    };
-    document.addEventListener("mousedown", h); return () => document.removeEventListener("mousedown", h);
-  }, [isOpen]);
 
   useEffect(() => () => {
     if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
@@ -698,7 +679,7 @@ export function ProviderModal({
                     fetching={fetching} fetchError={fetchError} modelSearch={modelSearch} modelListOpen={modelListOpen}
                     favoriteModels={favoriteModelsByProfile[form.id] ?? []}
                     updateForm={autoSaveField} onFetchModels={handleFetchModels} setModelSearch={setModelSearch}
-                    setModelListOpen={setModelListOpen} dropdownRef={dropdownRef}
+                    setModelListOpen={setModelListOpen}
                     onToggleFavoriteModel={(model) => onToggleFavoriteModel(form.id, model)}
                     requiresAuthForModels={selectedPreset?.requiresAuthForModels ?? false}
                     isLocalProvider={isLocalProvider}
@@ -735,7 +716,7 @@ export function ProviderModal({
                         fetching={fetching} fetchError={fetchError} modelSearch={visionModelSearch} modelListOpen={visionModelListOpen}
                         favoriteModels={favoriteModelsByProfile[form.id] ?? []}
                         updateForm={autoSaveField} onFetchModels={handleFetchModels} setModelSearch={setVisionModelSearch}
-                        setModelListOpen={setVisionModelListOpen} dropdownRef={visionDropdownRef}
+                        setModelListOpen={setVisionModelListOpen}
                         onToggleFavoriteModel={(model) => onToggleFavoriteModel(form.id, model)}
                         requiresAuthForModels={selectedPreset?.requiresAuthForModels ?? false}
                         isLocalProvider={false} // Local settings only shown for primary model

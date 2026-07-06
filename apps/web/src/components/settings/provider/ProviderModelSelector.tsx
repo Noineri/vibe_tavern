@@ -1,11 +1,13 @@
 import React from 'react';
-import { createPortal } from 'react-dom';
+import * as Popover from '@radix-ui/react-popover';
+import { Command } from 'cmdk';
 import { useT } from '../../../i18n/context.js';
 import { useIsMobile } from '../../../hooks/use-mobile.js';
 import type { FormState } from '../../modals/ProviderModal.js';
 import { Icons } from '../../shared/icons.js';
 import { cn } from '../../../lib/cn.js';
 import { CustomTooltip } from '../../shared/Tooltip.js';
+import { getModalPortal } from '../../shared/modal-helpers.js';
 
 const labelCls =
   'block text-[calc(var(--ui-fs)-3px)] font-medium tracking-[0.06em] uppercase text-t3';
@@ -37,7 +39,6 @@ interface ProviderModelSelectorProps {
   onFetchModels: () => void;
   setModelSearch: (v: string) => void;
   setModelListOpen: React.Dispatch<React.SetStateAction<boolean>>;
-  dropdownRef: React.RefObject<HTMLDivElement | null>;
   onToggleFavoriteModel: (model: ModelOption) => void;
   requiresAuthForModels?: boolean;
   isLocalProvider?: boolean;
@@ -51,6 +52,14 @@ interface ProviderModelSelectorProps {
   syncContextBudget?: boolean;
 }
 
+// Built on cmdk (Command) + Radix Popover — same combobox primitive as
+// DropdownSelect. The previous implementation hand-rolled the dropdown
+// (createPortal + getBoundingClientRect + manual outside-click in the parent +
+// scroll-close), and its <div onClick> items had NO keyboard navigation: no
+// ArrowUp/Down, no Enter, no type-ahead. cmdk gives all of it; the rich item
+// content (favorite star, capability badges, pricing, context length) renders
+// unchanged inside Command.Item — cmdk accepts arbitrary children. The favorite
+// star keeps stopPropagation so clicking it does not trigger item onSelect.
 export function ProviderModelSelector({
   form,
   models,
@@ -64,7 +73,6 @@ export function ProviderModelSelector({
   onFetchModels,
   setModelSearch,
   setModelListOpen,
-  dropdownRef,
   onToggleFavoriteModel,
   requiresAuthForModels,
   isLocalProvider = false,
@@ -98,30 +106,6 @@ export function ProviderModelSelector({
     offline: { label: t("local_connection_offline"), className: "border-danger/30 bg-danger/10 text-danger", dotClassName: "bg-danger" },
   };
   const localStatus = statusMeta[localConnectionStatus];
-  const portalRef = React.useRef<HTMLDivElement | null>(null);
-
-  React.useEffect(() => {
-    if (!modelListOpen) return;
-
-    const closeOnViewportMove = (event: Event) => {
-      const target = event.target;
-      if (!(target instanceof Node)) return;
-      if (portalRef.current && !portalRef.current.contains(target)) {
-        setModelListOpen(false);
-      }
-    };
-
-    document.addEventListener("scroll", closeOnViewportMove, true);
-    document.addEventListener("wheel", closeOnViewportMove, true);
-    document.addEventListener("touchmove", closeOnViewportMove, true);
-    window.addEventListener("resize", closeOnViewportMove);
-    return () => {
-      document.removeEventListener("scroll", closeOnViewportMove, true);
-      document.removeEventListener("wheel", closeOnViewportMove, true);
-      document.removeEventListener("touchmove", closeOnViewportMove, true);
-      window.removeEventListener("resize", closeOnViewportMove);
-    };
-  }, [modelListOpen, setModelListOpen]);
 
   const sortedModels = [...filteredModels].sort((a, b) => {
     const aFav = favoriteIds.has(a.id);
@@ -129,6 +113,23 @@ export function ProviderModelSelector({
     if (aFav !== bFav) return aFav ? -1 : 1;
     return a.label.localeCompare(b.label);
   });
+
+  function handleSelectModel(m: ModelOption) {
+    updateForm(modelKey, m.id);
+    if (syncContextBudget && modelKey === 'model' && !form.pinContextBudget) {
+      if (m.contextLength != null && m.contextLength > 0) {
+        updateForm('contextBudget', m.contextLength);
+      } else {
+        updateForm('contextBudget', 16000);
+      }
+    }
+    setModelListOpen(false);
+    setModelSearch('');
+  }
+
+  // When inside a Modal, portal into the Modal's anchor element so the content
+  // stays within Dialog's focus trap. When outside a Modal, portal to body.
+  const portalContainer = getModalPortal() ?? undefined;
 
   return (
     <div className="my-4">
@@ -156,157 +157,140 @@ export function ProviderModelSelector({
         </div>
       )}
       <div className="flex items-end gap-3">
-        <div className="flex-1" ref={dropdownRef}>
+        <div className="flex-1">
           <label className={labelCls + " mb-[6px]"}>{t("selected_model_label")}</label>
           {models.length > 0 ? (
             <div className="relative">
-              <button type="button"
-                onClick={() => setModelListOpen((v) => !v)}
-                className="flex w-full items-center justify-between rounded-md border border-border bg-s2 px-3 py-[6px] font-ui text-[13px] text-t1 transition-colors hover:border-accent"
-              >
-                <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-left">
-                  {selectedModel?.label || currentVal || placeholderOverride || t("select_model")}
-                  {showContextLength && formatContext(selectedModel?.contextLength) && (
-                    <span className="ml-2 text-[11px] font-medium text-t2">{formatContext(selectedModel?.contextLength)}</span>
-                  )}
-                </span>
-                <span className="text-t3">
-                  <Icons.Caret direction="d" />
-                </span>
-              </button>
-              {modelListOpen && (() => {
-                const rect = dropdownRef.current?.getBoundingClientRect();
-                const portal = document.getElementById('modal-portal');
-                const content = (
-                  <div
-                    ref={portalRef}
-                    className="fixed z-[600] overflow-hidden rounded-md border border-border bg-surface shadow-[0_8px_30px_rgba(0,0,0,0.6)]"
-                    style={{
-                      top: rect ? rect.bottom + 4 : 0,
-                      left: rect ? rect.left : 0,
-                      width: rect ? rect.width : 300,
-                    }}
+              <Popover.Root open={modelListOpen} onOpenChange={setModelListOpen}>
+                <Popover.Trigger asChild>
+                  <button type="button"
+                    className="flex w-full items-center justify-between rounded-md border border-border bg-s2 px-3 py-[6px] font-ui text-[13px] text-t1 transition-colors hover:border-accent"
                   >
-                  <div
-                    className="border-b border-border2 bg-s2 p-2"
+                    <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-left">
+                      {selectedModel?.label || currentVal || placeholderOverride || t("select_model")}
+                      {showContextLength && formatContext(selectedModel?.contextLength) && (
+                        <span className="ml-2 text-[11px] font-medium text-t2">{formatContext(selectedModel?.contextLength)}</span>
+                      )}
+                    </span>
+                    <span className="text-t3">
+                      <Icons.Caret direction="d" />
+                    </span>
+                  </button>
+                </Popover.Trigger>
+                <Popover.Portal container={portalContainer}>
+                  <Popover.Content
+                    sideOffset={4}
+                    align="start"
+                    onCloseAutoFocus={(e) => e.preventDefault()}
+                    className="glass-blur z-[600] overflow-hidden rounded-md border border-border bg-surface shadow-[0_8px_30px_rgba(0,0,0,0.6)]"
+                    style={{ width: "var(--radix-popover-trigger-width)", maxHeight: 260 }}
                   >
-                    <input
-                      type="text"
-                      placeholder={t("search_models")}
-                      value={modelSearch}
-                      onChange={(e) => setModelSearch(e.target.value)}
-                      autoFocus
-                      className="w-full rounded border border-border bg-surface px-2 py-[5px] font-ui text-[12px] text-t1 outline-none focus:border-accent"
-                    />
-                  </div>
-                  <div
-                    className="max-h-[200px] overflow-y-auto bg-surface p-1"
-                  >
-                    {sortedModels.map((m) => {
-                      const isFavorite = favoriteIds.has(m.id);
-                      return (
-                        <div
-                          key={m.id}
-                          onClick={() => {
-                            updateForm(modelKey, m.id);
-                            if (syncContextBudget && modelKey === 'model' && !form.pinContextBudget) {
-                              if (m.contextLength != null && m.contextLength > 0) {
-                                updateForm('contextBudget', m.contextLength);
-                              } else {
-                                updateForm('contextBudget', 16000);
-                              }
-                            }
-                            setModelListOpen(false);
-                            setModelSearch('');
-                          }}
-                          className={cn(
-                            'flex cursor-pointer items-center gap-2 rounded px-2.5 py-1.5 font-ui text-[12px] transition-colors',
-                            m.id === currentVal
-                              ? 'bg-accent-dim font-medium text-accent-t'
-                              : 'text-t2 hover:bg-s2 hover:text-t1'
-                          )}
-                        >
-                          <CustomTooltip content={isFavorite ? t("remove_from_favorites") : t("add_to_favorites")}>
-                          <button type="button"
-                            className={cn('flex h-5 w-5 shrink-0 items-center justify-center rounded text-t4 transition-colors hover:bg-s3 hover:text-warning-text', isFavorite && 'text-warning-text')}
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              onToggleFavoriteModel(m);
-                            }}
-                          >
-                            {isFavorite ? <Icons.StarFilled /> : <Icons.Star />}
-                          </button>
-                          </CustomTooltip>
-                          <div className="min-w-0 flex-1">
-                            <div className="flex min-w-0 items-center gap-2">
-                              <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-t1">
-                                {m.label || m.id}
-                              </span>
-                              {m.capabilities?.vision && (
-                                <CustomTooltip content={t('cap_vision')}>
-                                <span className="shrink-0 text-t3">
-                                  <Icons.Eye />
-                                </span>
-                                </CustomTooltip>
+                    <Command shouldFilter={false} loop className="flex flex-col outline-none">
+                      <div className="border-b border-border2 bg-s2 p-2">
+                        <Command.Input
+                          placeholder={t("search_models")}
+                          value={modelSearch}
+                          onValueChange={setModelSearch}
+                          className="w-full rounded border border-border bg-surface px-2 py-[5px] font-ui text-[12px] text-t1 outline-none focus:border-accent"
+                        />
+                      </div>
+                      <Command.List className="max-h-[200px] overflow-y-auto bg-surface p-1">
+                        {sortedModels.map((m) => {
+                          const isFavorite = favoriteIds.has(m.id);
+                          return (
+                            <Command.Item
+                              key={m.id}
+                              value={m.id}
+                              onSelect={() => handleSelectModel(m)}
+                              className={cn(
+                                'flex cursor-pointer items-center gap-2 rounded px-2.5 py-1.5 font-ui text-[12px] outline-none transition-colors',
+                                // cmdk sets data-selected="true"|"false" on every item — pin the value
+                                // (=true) so the active highlight is visible; bare data-[selected] matches both.
+                                m.id === currentVal
+                                  ? 'bg-accent-dim font-medium text-accent-t'
+                                  : 'text-t2 hover:bg-s2 hover:text-t1 data-[selected=true]:bg-s2 data-[selected=true]:text-t1'
                               )}
-                              {m.capabilities?.premium && (
-                                <CustomTooltip content={t('cap_premium')}>
-                                <span className="shrink-0 text-t3">
-                                  <Icons.Crown />
-                                </span>
-                                </CustomTooltip>
-                              )}
-                              {m.capabilities?.reasoning && (
-                                <CustomTooltip content={t('cap_reasoning')}>
-                                <span className="shrink-0 text-t3">
-                                  <Icons.Brain />
-                                </span>
-                                </CustomTooltip>
-                              )}
-                              {m.capabilities?.tools && (
-                                <CustomTooltip content={t('cap_tools')}>
-                                <span className="shrink-0 text-t3">
-                                  <Icons.Wrench />
-                                </span>
-                                </CustomTooltip>
-                              )}
-                              {showContextLength && formatContext(m.contextLength) && (
-                                <span className="shrink-0 rounded bg-s2 px-1.5 py-0.5 text-[10px] font-medium text-t2">
-                                  {formatContext(m.contextLength)}
-                                </span>
-                              )}
-                            </div>
-                            {((m.label && m.label !== m.id) || formatPrice(m.pricing)) && (
-                              <div className="mt-0.5 flex min-w-0 items-center gap-2 text-[10px] text-t4">
-                                {m.label && m.label !== m.id && (
-                                  <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">
-                                    {m.id}
+                            >
+                              <CustomTooltip content={isFavorite ? t("remove_from_favorites") : t("add_to_favorites")}>
+                              <button type="button"
+                                className={cn('flex h-5 w-5 shrink-0 items-center justify-center rounded text-t4 transition-colors hover:bg-s3 hover:text-warning-text', isFavorite && 'text-warning-text')}
+                                onPointerDown={(e) => e.stopPropagation()}
+                                onPointerUp={(e) => e.stopPropagation()}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  onToggleFavoriteModel(m);
+                                }}
+                              >
+                                {isFavorite ? <Icons.StarFilled /> : <Icons.Star />}
+                              </button>
+                              </CustomTooltip>
+                              <div className="min-w-0 flex-1">
+                                <div className="flex min-w-0 items-center gap-2">
+                                  <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-t1">
+                                    {m.label || m.id}
                                   </span>
-                                )}
-                                {formatPrice(m.pricing) && (
-                                  <span className="shrink-0 rounded bg-surface px-1.5 py-0.5 font-medium text-t4">
-                                    {formatPrice(m.pricing)}
-                                  </span>
+                                  {m.capabilities?.vision && (
+                                    <CustomTooltip content={t('cap_vision')}>
+                                    <span className="shrink-0 text-t3">
+                                      <Icons.Eye />
+                                    </span>
+                                    </CustomTooltip>
+                                  )}
+                                  {m.capabilities?.premium && (
+                                    <CustomTooltip content={t('cap_premium')}>
+                                    <span className="shrink-0 text-t3">
+                                      <Icons.Crown />
+                                    </span>
+                                    </CustomTooltip>
+                                  )}
+                                  {m.capabilities?.reasoning && (
+                                    <CustomTooltip content={t('cap_reasoning')}>
+                                    <span className="shrink-0 text-t3">
+                                      <Icons.Brain />
+                                    </span>
+                                    </CustomTooltip>
+                                  )}
+                                  {m.capabilities?.tools && (
+                                    <CustomTooltip content={t('cap_tools')}>
+                                    <span className="shrink-0 text-t3">
+                                      <Icons.Wrench />
+                                    </span>
+                                    </CustomTooltip>
+                                  )}
+                                  {showContextLength && formatContext(m.contextLength) && (
+                                    <span className="shrink-0 rounded bg-s2 px-1.5 py-0.5 text-[10px] font-medium text-t2">
+                                      {formatContext(m.contextLength)}
+                                    </span>
+                                  )}
+                                </div>
+                                {((m.label && m.label !== m.id) || formatPrice(m.pricing)) && (
+                                  <div className="mt-0.5 flex min-w-0 items-center gap-2 text-[10px] text-t4">
+                                    {m.label && m.label !== m.id && (
+                                      <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">
+                                        {m.id}
+                                      </span>
+                                    )}
+                                    {formatPrice(m.pricing) && (
+                                      <span className="shrink-0 rounded bg-surface px-1.5 py-0.5 font-medium text-t4">
+                                        {formatPrice(m.pricing)}
+                                      </span>
+                                    )}
+                                  </div>
                                 )}
                               </div>
-                            )}
+                            </Command.Item>
+                          );
+                        })}
+                        {sortedModels.length === 0 && (
+                          <div className="px-2.5 py-1.5 text-center font-ui text-[11px] text-t4">
+                            {t("no_models_found")}
                           </div>
-                        </div>
-                      );
-                    })}
-                    {sortedModels.length === 0 && (
-                      <div
-                        className="px-2.5 py-1.5 text-center font-ui text-[11px] text-t4"
-                      >
-                        {t("no_models_found")}
-                      </div>
-                    )}
-                  </div>
-                  </div>
-                );
-                if (portal && rect) return createPortal(content, portal);
-                return content;
-              })()}
+                        )}
+                      </Command.List>
+                    </Command>
+                  </Popover.Content>
+                </Popover.Portal>
+              </Popover.Root>
               {!models.find((m) => m.id === currentVal) && currentVal && (
                 <div className="mt-2 font-ui text-[12px] font-medium text-accent">
                   {t("custom_model").replace("{name}", currentVal)}
