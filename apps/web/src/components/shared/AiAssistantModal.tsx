@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useProviderDataStore } from "../../stores/provider-data-store.js";
 import { fetchProviderModelsAction } from "../../stores/api-actions/provider-actions.js";
 import { useBootstrapStore } from "../../stores/api-actions/bootstrap-actions.js";
@@ -17,6 +17,7 @@ import { cn } from "../../lib/cn.js";
 import { useT } from "../../i18n/context.js";
 import { MessageReasoning } from "../chat/MessageReasoning.js";
 import { Modal } from "./Modal.js";
+import { BottomSheet } from "./BottomSheet.js";
 import type { AiQuickSettings } from "./AiQuickPill.js";
 import {
   listAllLorebooks,
@@ -175,37 +176,6 @@ export function AiAssistantModal({
   const [appendMode, setAppendMode] = useState(false);
   const [keyTarget, setKeyTarget] = useState<"primary" | "secondary" | "both">("both");
   const [recentMessageCount, setRecentMessageCount] = useState(20);
-
-  // BottomSheet drag state
-  const sheetDragRef = useRef({ active: false, startY: 0, currentY: 0 });
-  const sheetRef = useRef<HTMLDivElement>(null);
-
-  const onSheetTouchStart = useCallback((e: React.TouchEvent) => {
-    sheetDragRef.current.active = true;
-    sheetDragRef.current.startY = e.touches[0].clientY;
-    sheetDragRef.current.currentY = e.touches[0].clientY;
-  }, []);
-
-  const onSheetTouchMove = useCallback((e: React.TouchEvent) => {
-    if (!sheetDragRef.current.active) return;
-    const currentY = e.touches[0].clientY;
-    sheetDragRef.current.currentY = currentY;
-    const delta = currentY - sheetDragRef.current.startY;
-    if (delta > 0 && sheetRef.current) {
-      sheetRef.current.style.transform = `translateY(${delta}px)`;
-    }
-  }, []);
-
-  const onSheetTouchEnd = useCallback(() => {
-    if (!sheetDragRef.current.active) return;
-    sheetDragRef.current.active = false;
-    const delta = sheetDragRef.current.currentY - sheetDragRef.current.startY;
-    if (sheetRef.current) {
-      sheetRef.current.style.transform = '';
-      sheetRef.current.style.transition = '';
-    }
-    if (delta > 80) onClose();
-  }, [onClose]);
 
   // Full specific
   const [prompt, setPrompt] = useState("");
@@ -965,22 +935,11 @@ export function AiAssistantModal({
 
   if (isMobile && !isFull) {
     return (
-      <div className="fixed inset-0 z-[500] bg-black/55 backdrop-blur-[2px]" onClick={onClose}>
-        <div
-          ref={sheetRef}
-          className="fixed inset-x-0 bottom-0 z-[501] flex max-h-[85vh] flex-col overflow-hidden rounded-t-2xl border-t border-border2 bg-surface pb-[env(safe-area-inset-bottom,0px)] shadow-[0_-4px_24px_rgba(0,0,0,0.5)]"
-          style={{ animation: "0.2s ease-out 0s 1 normal none running slideUp", transition: "transform 0s" }}
-          onClick={(e) => e.stopPropagation()}
-          onTouchStart={onSheetTouchStart}
-          onTouchMove={onSheetTouchMove}
-          onTouchEnd={onSheetTouchEnd}
-        >
-          <div className="flex justify-center pt-2 pb-1 shrink-0">
-            <div className="h-1 w-10 rounded-full bg-border" />
-          </div>
+      <BottomSheet open={isOpen} onClose={onClose} title={title}>
+        <div className="flex max-h-[85vh] flex-col overflow-hidden">
           {contentBody}
         </div>
-      </div>
+      </BottomSheet>
     );
   }
 
