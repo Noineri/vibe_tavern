@@ -1,3 +1,4 @@
+import { createParser } from "eventsource-parser";
 import type { ImportJsonResponse } from "./types.js";
 import type { ChatId } from "@vibe-tavern/domain";
 import { client } from "./client.js";
@@ -167,13 +168,13 @@ export type ImportProgressEvent =
 
 /**
  * Import a SillyTavern directory via the streaming SSE route, invoking
- * `onEvent` for each phase/progress/done/error event as it arrives. Resolves
- * with the final StImportResult (from the `done` event), or rejects with the
- * server's error message (from the `error` event, or a non-2xx / network
- * failure). Uses raw fetch + a hand-rolled SSE frame parser (the Hono client
- * has no streaming helper), with the mobile bearer token added manually like
- * openNativeDialog. No client timeout — a huge import legitimately runs for
- * minutes and the stream itself signals completion.
+ * `onEvent` for each phase/progress event as it arrives. Resolves with the
+ * final StImportResult (from the `done` event), or rejects with the server's
+ * error message (from the `error` event, or a non-2xx / network failure). SSE
+ * frame parsing is delegated to `eventsource-parser` (shared with the chat
+ * stream parser in `lib/sse-parser.ts`); the mobile bearer token is added
+ * manually like openNativeDialog. No client timeout — a huge import
+ * legitimately runs for minutes and the stream itself signals completion.
  */
 export async function importStDirectoryStream(
   path: string,
@@ -196,46 +197,36 @@ export async function importStDirectoryStream(
 
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
-  let buffer = "";
   let result: StImportResult | null = null;
   let serverError: string | null = null;
 
-  // Minimal SSE parser: frames are separated by a blank line ("\n\n"). Within
-  // a frame, `event:` sets the type and `data:` carries the JSON payload
-  // (possibly across multiple `data:` lines, which we join with "\n").
-  const handleFrame = (frame: string) => {
-    let eventType = "";
-    const dataLines: string[] = [];
-    for (const line of frame.split("\n")) {
-      if (line.startsWith("event:")) eventType = line.slice(6).trim();
-      else if (line.startsWith("data:")) dataLines.push(line.slice(5).trimStart());
-    }
-    if (!eventType || dataLines.length === 0) return;
-    const data = dataLines.join("\n");
-    try {
-      // Includes terminal done/error which are handled below, not via onEvent.
-      type WireEvent = ImportProgressEvent | { type: "done"; result: StImportResult } | { type: "error"; message: string };
-      const parsed = JSON.parse(data) as WireEvent;
-      if (parsed.type === "done") result = parsed.result;
-      else if (parsed.type === "error") serverError = parsed.message;
-      else onEvent(parsed);
-    } catch {
-      // Malformed frame — ignore; the terminal done/error still resolves.
-    }
-  };
+  // eventsource-parser handles partial chunks, the \n\n frame boundary, and
+  // multi-line `data:` joining. The dispatch table here is import-specific
+  // (terminal done/error resolve/reject; phase/progress forward to onEvent);
+  // the frame-parsing layer is shared with the chat SSE parser.
+  type WireEvent =
+    | ImportProgressEvent
+    | { type: "done"; result: StImportResult }
+    | { type: "error"; message: string };
+  const parser = createParser({
+    onEvent(ev) {
+      if (!ev.event || !ev.data) return;
+      try {
+        const parsed = JSON.parse(ev.data) as WireEvent;
+        if (parsed.type === "done") result = parsed.result;
+        else if (parsed.type === "error") serverError = parsed.message;
+        else onEvent(parsed);
+      } catch {
+        // Malformed frame — ignore; the terminal done/error still resolves.
+      }
+    },
+  });
 
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    let sep: number;
-    while ((sep = buffer.indexOf("\n\n")) >= 0) {
-      handleFrame(buffer.slice(0, sep));
-      buffer = buffer.slice(sep + 2);
-    }
+    parser.feed(decoder.decode(value, { stream: true }));
   }
-  // Flush any trailing frame without a terminating blank line.
-  if (buffer.trim()) handleFrame(buffer);
 
   if (serverError) throw new Error(serverError);
   if (!result) throw new Error("Import stream ended without a result");

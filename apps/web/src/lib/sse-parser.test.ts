@@ -32,7 +32,11 @@ describe("parseSSEStream", () => {
 	it("forwards text-delta chunks to onChunk", async () => {
 		const o = opts();
 		await parseSSEStream({
-			response: sseResponse(["data: {\"delta\":\"Hel\"}\n", "data: {\"delta\":\"lo\"}\n", "data: {\"finishReason\":\"stop\"}\n\n"]),
+			response: sseResponse([
+				'data: {"delta":"Hel"}\n\n',
+				'data: {"delta":"lo"}\n\n',
+				'data: {"finishReason":"stop"}\n\n',
+			]),
 			onStatus: o.onStatus,
 			onChunk: o.onChunk,
 		});
@@ -76,9 +80,14 @@ describe("parseSSEStream", () => {
 	});
 
 	it("surfaces an abort event as 'cancelled' status (no throw)", async () => {
+		// The backend (live-chat-orchestrator) emits `event: abort` WITH a data
+		// payload ({ partialLength }) — a data-less abort frame does not occur in
+		// practice and is not dispatched by eventsource-parser (per the SSE spec,
+		// an event block with no data field is not dispatched). The fixture here
+		// mirrors the real wire shape.
 		const o = opts();
 		const result = await parseSSEStream({
-			response: sseResponse(["event: abort\n\n"]),
+			response: sseResponse(["event: abort\n", 'data: {"partialLength":5}\n\n']),
 			onStatus: o.onStatus,
 			onChunk: o.onChunk,
 		});
@@ -117,7 +126,7 @@ describe("parseSSEStream", () => {
 		await parseSSEStream({
 			response: sseResponse([
 				"event: tool-input-delta\n",
-				'data: {"toolCallId":"call_1","delta":"Hel"}\n',
+				'data: {"toolCallId":"call_1","delta":"Hel"}\n\n',
 				"event: tool-input-delta\n",
 				'data: {"toolCallId":"call_1","delta":"lo"}\n\n',
 			]),
@@ -177,7 +186,7 @@ describe("parseSSEStream", () => {
 		await parseSSEStream({
 			response: sseResponse([
 				"event: tool-call\n",
-				'data: {"toolCallId":"call_1","toolName":"edit_profile","args":{}}\n',
+				'data: {"toolCallId":"call_1","toolName":"edit_profile","args":{}}\n\n',
 				"event: tool-result\n",
 				'data: {"toolCallId":"call_1","toolName":"edit_profile","output":{},"isError":false}\n\n',
 			]),
