@@ -1,10 +1,11 @@
 import { memo, useState, useMemo, useRef, useEffect, useLayoutEffect } from "react";
-import { createPortal } from "react-dom";
 import { motion, AnimatePresence, useAnimationControls, type PanInfo } from "framer-motion";
 import { cn } from "../../lib/cn.js";
 import { resolveModelLabel } from "../../lib/model-resolve.js";
 import { resolveEntityAvatarUrl } from "../../lib/avatar.js";
 import { Markdown } from "../../lib/markdown.js";
+import { getModalPortal } from "../shared/modal-helpers.js";
+import * as Select from "@radix-ui/react-select";
 import { useDisplayMessage, useChatMeta, useMacroContext, useMessageAuthor, useIsStreamingTarget, useStreamingRevealedFor } from "../../stores/chat-selectors.js";
 import { useChatStore, useActiveGeneration, useIsSending } from "../../stores/index.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
@@ -666,8 +667,6 @@ type VariantControlsProps = {
 
 function VariantControls(props: VariantControlsProps) {
   const { controlsRef, hidden = false, isBusy, selectedVariantIndex, variantCount, provenance, mobile = false, overlay = false, onSelectVariant } = props;
-  const [jumpOpen, setJumpOpen] = useState(false);
-  const [jumpAnchor, setJumpAnchor] = useState<DOMRect | null>(null);
   const showJump = variantCount > 6 && provenance && provenance.length > 0 && !overlay;
 
   const canGoPrevious = !isBusy && selectedVariantIndex > 0;
@@ -685,14 +684,13 @@ function VariantControls(props: VariantControlsProps) {
           onClick={selectPrevious}
         ><Icons.Caret direction="l" /></button>
         {showJump ? (
-          <button
-            type="button"
-            className="flex min-h-10 min-w-12 items-center justify-center gap-0.5 rounded-lg px-2 font-ui text-[13px] tabular-nums text-t2 active:bg-s2"
-            onClick={() => setJumpOpen((v) => !v)}
-          >
-            {selectedVariantIndex + 1}/{variantCount}
-            <Icons.Caret direction={jumpOpen ? "u" : "d"} />
-          </button>
+          <VariantJump
+            mobile
+            provenance={provenance!}
+            selectedVariantIndex={selectedVariantIndex}
+            variantCount={variantCount}
+            onSelect={(index) => onSelectVariant(index, index > selectedVariantIndex ? 1 : -1)}
+          />
         ) : (
           <span className="min-w-12 text-center font-ui text-[13px] tabular-nums text-t2">{selectedVariantIndex + 1}/{variantCount}</span>
         )}
@@ -702,16 +700,6 @@ function VariantControls(props: VariantControlsProps) {
           disabled={!canGoNext}
           onClick={selectNext}
         ><Icons.Caret direction="r" /></button>
-        {jumpOpen && showJump && createPortal(
-          <VariantJumpList
-            mobile
-            provenance={provenance!}
-            selectedVariantIndex={selectedVariantIndex}
-            onSelect={(index) => { onSelectVariant(index, index > selectedVariantIndex ? 1 : -1); setJumpOpen(false); }}
-            onClose={() => setJumpOpen(false)}
-          />,
-          document.body,
-        )}
       </div>
     );
   }
@@ -731,26 +719,12 @@ function VariantControls(props: VariantControlsProps) {
         onClick={selectPrevious}
       ><Icons.Caret direction="l" /></button>
       {showJump ? (
-        <span className="relative flex min-w-6 items-center justify-center">
-          <button
-            type="button"
-            className="flex items-center gap-0.5 rounded-[3px] px-1 tabular-nums transition-colors duration-100 hover:bg-s2 hover:text-t1"
-            onClick={(e) => { setJumpAnchor(e.currentTarget.getBoundingClientRect()); setJumpOpen((v) => !v); }}
-          >
-            {selectedVariantIndex + 1}/{variantCount}
-            <Icons.Caret direction={jumpOpen ? "u" : "d"} />
-          </button>
-          {jumpOpen && showJump && createPortal(
-            <VariantJumpList
-              anchorRect={jumpAnchor}
-              provenance={provenance!}
-              selectedVariantIndex={selectedVariantIndex}
-              onSelect={(index) => { onSelectVariant(index, index > selectedVariantIndex ? 1 : -1); setJumpOpen(false); }}
-              onClose={() => setJumpOpen(false)}
-            />,
-            document.body,
-          )}
-        </span>
+        <VariantJump
+          provenance={provenance!}
+          selectedVariantIndex={selectedVariantIndex}
+          variantCount={variantCount}
+          onSelect={(index) => onSelectVariant(index, index > selectedVariantIndex ? 1 : -1)}
+        />
       ) : (
         <span className="min-w-6 text-center tabular-nums">{selectedVariantIndex + 1}/{variantCount}</span>
       )}
@@ -765,78 +739,80 @@ function VariantControls(props: VariantControlsProps) {
 
 /**
  * Q5: jump-to-variant dropdown for messages with >6 variants. Each row shows
- * provenance (model + preset); clicking jumps via the existing selectVariant
- * path. Desktop renders as an upward absolute popover (parent is the relative
- * counter wrapper); mobile renders as a portal bottom sheet reusing the
- * QueueManager / Rail z-[500]/z-[501] pattern.
+ * provenance (model + preset); selecting one jumps via the existing
+ * selectVariant path. Built on Radix Select — one implementation for both
+ * desktop (compact trigger, upward popper) and mobile (larger touch target):
+ * Select's popper rendering is correct for a value-picker on both viewports,
+ * so the former hand-rolled dual-mode (desktop absolute popover vs mobile
+ * bottom sheet) collapses into a single primitive. The trigger label
+ * ("N/total") stays custom — Select.Value is not used because the trigger
+ * shows a counter, not the selected item's text.
  */
-function VariantJumpList(props: {
+function VariantJump({ mobile, provenance, selectedVariantIndex, variantCount, onSelect }: {
   mobile?: boolean;
-  anchorRect?: DOMRect | null;
   provenance: { modelLabel: string; presetName: string | null }[];
   selectedVariantIndex: number;
+  variantCount: number;
   onSelect: (index: number) => void;
-  onClose: () => void;
 }) {
-  const { mobile = false, anchorRect, provenance, selectedVariantIndex, onSelect, onClose } = props;
-
-  const rows = (
-    <div className={cn("overflow-y-auto", mobile ? "max-h-[50vh] pb-2" : "max-h-64")}>
-      {provenance.map((p, i) => (
+  return (
+    <Select.Root
+      value={String(selectedVariantIndex)}
+      onValueChange={(v) => onSelect(Number(v))}
+    >
+      <Select.Trigger asChild aria-label={`Variant ${selectedVariantIndex + 1} of ${variantCount}`}>
         <button
           type="button"
-          key={i}
           className={cn(
-            "flex w-full items-center gap-2 px-3 text-left transition-colors",
-            mobile ? "min-h-[52px] text-[calc(var(--ui-fs)+1px)] active:bg-s3" : "py-2 text-[calc(var(--ui-fs)-2px)] hover:bg-s2",
-            i === selectedVariantIndex ? "text-accent-t" : "text-t2",
+            "flex items-center gap-0.5 tabular-nums font-ui text-t2",
+            mobile
+              ? "min-h-10 min-w-12 items-center justify-center rounded-lg px-2 text-[13px] active:bg-s2"
+              : "rounded-[3px] px-1 text-[calc(var(--ui-fs)-3px)] transition-colors duration-100 hover:bg-s2 hover:text-t1",
           )}
-          onClick={() => onSelect(i)}
         >
-          <span className="w-6 shrink-0 text-t3">#{i + 1}</span>
-          <span className="shrink-0 font-medium text-t1">{p.modelLabel || "—"}</span>
-          {p.presetName && <span className="truncate text-t3">· {p.presetName}</span>}
-          {i === selectedVariantIndex && <span className="ml-auto shrink-0 text-accent-t">✓</span>}
+          {selectedVariantIndex + 1}/{variantCount}
+          <Select.Icon className="text-t3">
+            <Icons.Caret direction="d" />
+          </Select.Icon>
         </button>
-      ))}
-    </div>
-  );
-
-  if (mobile) {
-    return (
-      <>
-        <div
-          className="fixed inset-0 z-[500] bg-black/50 backdrop-blur-sm"
-          style={{ animation: "fadeIn 0.15s ease-out" }}
-          onClick={onClose}
-        />
-        <div
-          className="fixed inset-x-0 bottom-0 z-[501] rounded-t-2xl border-t border-border2 bg-surface pb-[env(safe-area-inset-bottom,0px)] shadow-[0_-4px_24px_rgba(0,0,0,0.5)] backdrop-blur-md"
-          style={{ animation: "slideUp 0.2s ease-out" }}
+      </Select.Trigger>
+      <Select.Portal container={getModalPortal() ?? undefined}>
+        <Select.Content
+          position="popper"
+          side="top"
+          sideOffset={4}
+          className={cn(
+            "glass-blur z-50 w-64 overflow-hidden rounded-lg border border-border bg-glass-bg shadow-[0_4px_16px_rgba(0,0,0,0.4)]",
+            mobile && "w-[min(90vw,20rem)]",
+          )}
         >
-          <div className="flex justify-center pt-2 pb-1">
-            <div className="h-1 w-10 rounded-full bg-border" />
-          </div>
-          {rows}
-        </div>
-      </>
-    );
-  }
-
-  return (
-    <>
-      {/* close-on-outside-click overlay */}
-      <div className="fixed inset-0 z-40" onClick={onClose} />
-      <div
-        className="fixed z-50 w-64 overflow-hidden rounded-lg border border-border bg-surface shadow-[0_4px_16px_rgba(0,0,0,0.4)]"
-        style={anchorRect ? {
-          left: Math.max(8, Math.min(window.innerWidth - 264, anchorRect.left + anchorRect.width / 2 - 128)),
-          bottom: window.innerHeight - anchorRect.top + 4,
-        } : undefined}
-      >
-        {rows}
-      </div>
-    </>
+          <Select.Viewport className={cn("overflow-y-auto p-1", mobile ? "max-h-[50vh] pb-2" : "max-h-64")}>
+            {provenance.map((p, i) => (
+              <Select.Item
+                key={i}
+                value={String(i)}
+                className={cn(
+                  "flex w-full cursor-pointer items-center gap-2 rounded px-2 text-left outline-none transition-colors",
+                  mobile
+                    ? "min-h-[52px] text-[calc(var(--ui-fs)+1px)] data-[highlighted]:bg-s3"
+                    : "py-2 text-[calc(var(--ui-fs)-2px)] data-[highlighted]:bg-s2",
+                  "data-[state=checked]:text-accent-t",
+                )}
+              >
+                <Select.ItemText asChild>
+                  <span className="flex w-full items-center gap-2">
+                    <span className="w-6 shrink-0 text-t3">#{i + 1}</span>
+                    <span className="shrink-0 font-medium text-t1">{p.modelLabel || "—"}</span>
+                    {p.presetName && <span className="truncate text-t3">· {p.presetName}</span>}
+                  </span>
+                </Select.ItemText>
+                <Select.ItemIndicator className="ml-auto shrink-0 text-accent-t">✓</Select.ItemIndicator>
+              </Select.Item>
+            ))}
+          </Select.Viewport>
+        </Select.Content>
+      </Select.Portal>
+    </Select.Root>
   );
 }
 

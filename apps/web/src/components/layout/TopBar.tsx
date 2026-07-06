@@ -1,9 +1,9 @@
-import { useEffect, useRef, useState } from "react";
-import { useOutsideClick } from "../../hooks/use-outside-click.js";
 import { Icons } from "../shared/icons.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
 import { MemBadge } from "../settings/popovers/MemBadge.js";
 import { cn } from "../../lib/cn.js";
+import { getModalPortal } from "../shared/modal-helpers.js";
+import * as Select from "@radix-ui/react-select";
 import { useT } from "../../i18n/context.js";
 import { useProviderProfiles } from "../../hooks/use-provider-profiles.js";
 import { usePresetController } from "../../hooks/use-preset-controller.js";
@@ -57,12 +57,7 @@ export function TopBar({ railHidden, onShowRail, update }: TopBarProps) {
   const activePresetName = promptPresets.find((p) => p.id === activePromptPresetId)?.name ?? t("topbar_default");
   const tweaksOpen = useModalStore((s) => s.tweaksOpen);
 
-  // --- Local state ---
-  const [presetDropOpen, setPresetDropOpen] = useState(false);
-  const presetDropRef = useRef<HTMLDivElement>(null);
   const canSwitchPresets = promptPresets.length > 0;
-
-  useOutsideClick(presetDropRef, () => setPresetDropOpen(false), { enabled: presetDropOpen });
 
   // --- Store actions ---
   const setMode = useNavigationStore((s) => s.setMode);
@@ -131,43 +126,47 @@ export function TopBar({ railHidden, onShowRail, update }: TopBarProps) {
 
           <span className="text-border2">|</span>
 
-          <div ref={presetDropRef} className="relative">
+          <Select.Root
+            value={activePromptPresetId ?? undefined}
+            onValueChange={(id) => { void preset.handleSetActivePromptPresetId(id); }}
+          >
             <CustomTooltip content={t("topbar_prompt_preset")}>
-              <div
-                className={cn(
-                  "flex items-center gap-1 rounded px-1.5 py-[3px] font-ui text-[calc(var(--ui-fs)-4px)] font-medium uppercase leading-tight text-accent-t transition-colors",
-                  canSwitchPresets ? "cursor-pointer hover:bg-accent-dim" : "cursor-default"
-                )}
-                onClick={() => canSwitchPresets && setPresetDropOpen((v) => !v)}
-              >
-                <span className="max-w-[120px] overflow-hidden text-ellipsis whitespace-nowrap">{activePresetName}</span>
-                {canSwitchPresets && (
-                  <span className={cn("text-t3 transition-transform", presetDropOpen && "rotate-90")}><Icons.Caret direction="r" /></span>
-                )}
-              </div>
-            </CustomTooltip>
-            {presetDropOpen && (
-              <div className="glass-blur absolute left-0 top-full z-50 mt-1 min-w-[180px] overflow-hidden rounded-lg border border-border bg-glass-bg shadow-[0_12px_36px_rgba(0,0,0,.45)]">
-                <div className="max-h-[calc(6*((var(--ui-fs)-2px)*1.5+0.75rem))] overflow-y-auto">
-                  {promptPresets.map((p) => (
-                    <div
-                      key={p.id}
-                      className={cn(
-                        "cursor-pointer truncate px-3 py-1.5 font-ui text-[calc(var(--ui-fs)-2px)] transition-colors hover:bg-s2",
-                        p.id === activePromptPresetId ? "bg-accent-dim text-accent-t" : "text-t2"
-                      )}
-                      onClick={() => {
-                        void preset.handleSetActivePromptPresetId(p.id);
-                        setPresetDropOpen(false);
-                      }}
-                    >
-                      {p.name}
-                    </div>
-                  ))}
+              <Select.Trigger asChild disabled={!canSwitchPresets}>
+                <div
+                  className={cn(
+                    "flex items-center gap-1 rounded px-1.5 py-[3px] font-ui text-[calc(var(--ui-fs)-4px)] font-medium uppercase leading-tight text-accent-t transition-colors",
+                    canSwitchPresets ? "cursor-pointer hover:bg-accent-dim" : "cursor-default"
+                  )}
+                >
+                  <span className="max-w-[120px] overflow-hidden text-ellipsis whitespace-nowrap">{activePresetName}</span>
+                  {canSwitchPresets && (
+                    <span className="text-t3 transition-transform data-[state=open]:rotate-90"><Icons.Caret direction="r" /></span>
+                  )}
                 </div>
-              </div>
-            )}
-          </div>
+              </Select.Trigger>
+            </CustomTooltip>
+            <Select.Portal container={getModalPortal() ?? undefined}>
+              <Select.Content
+                position="popper"
+                sideOffset={4}
+                className="glass-blur z-50 max-h-[calc(6*((var(--ui-fs)-2px)*1.5+0.75rem))] min-w-[180px] overflow-hidden rounded-lg border border-border bg-glass-bg shadow-[0_12px_36px_rgba(0,0,0,.45)]"
+              >
+                <Select.Viewport className="overflow-y-auto">
+                  {promptPresets.map((p) => (
+                    <Select.Item
+                      key={p.id}
+                      value={p.id}
+                      className={cn(
+                        "cursor-pointer truncate px-3 py-1.5 font-ui text-[calc(var(--ui-fs)-2px)] text-t2 transition-colors outline-none data-[highlighted]:bg-s2 data-[state=checked]:bg-accent-dim data-[state=checked]:text-accent-t",
+                      )}
+                    >
+                      <Select.ItemText>{p.name}</Select.ItemText>
+                    </Select.Item>
+                  ))}
+                </Select.Viewport>
+              </Select.Content>
+            </Select.Portal>
+          </Select.Root>
 
           <div className="flex-1 min-w-2"/>
 

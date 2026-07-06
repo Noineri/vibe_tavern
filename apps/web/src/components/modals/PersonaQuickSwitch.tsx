@@ -1,10 +1,10 @@
-import { useState, useRef, useEffect } from "react";
-import { useOutsideClick } from "../../hooks/use-outside-click.js";
 import { Icons } from "../shared/icons.js";
 import { cn } from "../../lib/cn.js";
 import { useT } from "../../i18n/context.js";
 import { resolveEntityAvatarUrl } from "../../lib/avatar.js";
 import { useModalStore } from "../../stores/modal-store.js";
+import { getModalPortal } from "../shared/modal-helpers.js";
+import * as Select from "@radix-ui/react-select";
 
 function PersonaAvatar({ src, size }: { src: string | null; size: number }) {
   if (!src) {
@@ -35,12 +35,8 @@ interface Props {
 
 export function PersonaQuickSwitch({ personas, activePersonaId, onSelect }: Props) {
   const { t } = useT();
-  const [isOpen, setIsOpen] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
 
   const activePersona = personas.find((p) => p.id === activePersonaId) || personas[0];
-
-  useOutsideClick(containerRef, () => setIsOpen(false), { enabled: isOpen });
 
   if (!activePersona) {
     return (
@@ -51,41 +47,59 @@ export function PersonaQuickSwitch({ personas, activePersonaId, onSelect }: Prop
   }
 
   return (
-    <div className="relative" ref={containerRef}>
-      <button type="button"
-        className="flex shrink-0 cursor-pointer items-center gap-1 whitespace-nowrap rounded-full bg-accent-dim px-[9px] py-[3px] text-xs font-medium text-accent-t"
-        onClick={() => setIsOpen(!isOpen)}
-      >
-        <PersonaAvatar src={resolveEntityAvatarUrl({ kind: "personas", id: activePersona.id, avatarExt: activePersona.avatarExt, avatarAssetId: activePersona.avatarAssetId, updatedAt: activePersona.updatedAt })} size={18} />
-        <span>{activePersona.name.split(' ')[0]}</span>
-        <Icons.Caret direction={isOpen ? "u" : "d"} />
-      </button>
-      {isOpen && (
-        <div className="glass-blur absolute bottom-[calc(100%+8px)] z-[220] left-0 w-[220px] rounded-lg border border-border2 bg-glass-bg py-2 shadow-[0_12px_28px_rgba(0,0,0,0.45)]">
+    <Select.Root
+      value={activePersonaId ?? undefined}
+      onValueChange={(id) => onSelect(id)}
+    >
+      <Select.Trigger asChild>
+        <button type="button"
+          className="flex shrink-0 cursor-pointer items-center gap-1 whitespace-nowrap rounded-full bg-accent-dim px-[9px] py-[3px] text-xs font-medium text-accent-t"
+        >
+          <PersonaAvatar src={resolveEntityAvatarUrl({ kind: "personas", id: activePersona.id, avatarExt: activePersona.avatarExt, avatarAssetId: activePersona.avatarAssetId, updatedAt: activePersona.updatedAt })} size={18} />
+          <span>{activePersona.name.split(' ')[0]}</span>
+          <Select.Icon className="text-t3">
+            <Icons.Caret direction="d" />
+          </Select.Icon>
+        </button>
+      </Select.Trigger>
+      <Select.Portal container={getModalPortal() ?? undefined}>
+        <Select.Content
+          position="popper"
+          side="top"
+          sideOffset={8}
+          align="start"
+          className="glass-blur z-[220] w-[220px] overflow-hidden rounded-lg border border-border2 bg-glass-bg py-2 shadow-[0_12px_28px_rgba(0,0,0,0.45)]"
+        >
           <div className="mb-1 border-b border-border px-4 pt-1 pb-2 text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.08em] text-t3">{t("persona_selection")}</div>
-          <div className="max-h-[204px] overflow-y-auto">
+          <Select.Viewport className="max-h-[204px] overflow-y-auto">
             {personas.map(p => (
-            <button type="button"
-              key={p.id}
-              className={cn("flex w-full cursor-pointer items-center gap-2 text-left text-[13px] text-t1 hover:bg-s2 px-4 py-1.5", p.id === activePersonaId && "bg-accent-dim")}
-              onClick={() => { onSelect(p.id); setIsOpen(false); }}
-            >
-              <div className="w-4 shrink-0 flex justify-center text-accent-t">{p.id === activePersonaId && <Icons.Check />}</div>
-              <PersonaAvatar src={resolveEntityAvatarUrl({ kind: "personas", id: p.id, avatarExt: p.avatarExt, avatarAssetId: p.avatarAssetId, updatedAt: p.updatedAt })} size={22} />
-              <div className="overflow-hidden text-ellipsis whitespace-nowrap">{p.name}</div>
-            </button>
-          ))}
-          </div>
+              <Select.Item
+                key={p.id}
+                value={p.id}
+                className={cn(
+                  "flex w-full cursor-pointer items-center gap-2 rounded-none text-left text-[13px] text-t1 outline-none transition-colors data-[highlighted]:bg-s2 px-4 py-1.5 data-[state=checked]:bg-accent-dim",
+                )}
+              >
+                <span className="w-4 shrink-0 flex justify-center text-accent-t">
+                  <Select.ItemIndicator><Icons.Check /></Select.ItemIndicator>
+                </span>
+                <PersonaAvatar src={resolveEntityAvatarUrl({ kind: "personas", id: p.id, avatarExt: p.avatarExt, avatarAssetId: p.avatarAssetId, updatedAt: p.updatedAt })} size={22} />
+                <Select.ItemText asChild>
+                  <span className="overflow-hidden text-ellipsis whitespace-nowrap">{p.name}</span>
+                </Select.ItemText>
+              </Select.Item>
+            ))}
+          </Select.Viewport>
           <div className="mt-1 border-t border-border px-4 pt-2 pb-0">
             <button type="button"
               className="flex cursor-pointer items-center gap-1 rounded p-1.5 font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-colors duration-100 hover:bg-s2 hover:text-t2"
-              onClick={() => { setIsOpen(false); useModalStore.getState().setIsPersonaModalOpen(true); }}
+              onClick={() => { useModalStore.getState().setIsPersonaModalOpen(true); }}
             >
               <Icons.Edit /> {t("manage_personas")}
             </button>
           </div>
-        </div>
-      )}
-    </div>
+        </Select.Content>
+      </Select.Portal>
+    </Select.Root>
   );
 }
