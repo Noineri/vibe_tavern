@@ -1,5 +1,6 @@
-import { useCallback, useRef, type ReactNode } from "react";
-import { createPortal } from "react-dom";
+import { type ReactNode } from "react";
+import { Drawer } from "vaul";
+import { getModalPortal } from "./modal-helpers.js";
 
 interface BottomSheetProps {
   open: boolean;
@@ -21,69 +22,57 @@ interface BottomSheetProps {
  * with bespoke content (selection lists with checkmarks, custom headers) use
  * `BottomSheet` directly and render their own rows + footer as `children`.
  *
- * Swipe-to-dismiss: drag the sheet down past ~80px to close. The touch logic
- * is identical to the former inline `ActionSheet` implementation (and Rail's
- * `bottomSheet` helper, from which ActionSheet was originally extracted).
+ * Built on **vaul** (`Drawer.Root`/`Overlay`/`Content`/`Handle`/`Title`), which
+ * is itself Radix Dialog underneath. That brings the a11y layer the hand-rolled
+ * version lacked: `role="dialog"` + `aria-modal`, a focus trap, ESC-to-close,
+ * and focus restoration to the trigger — all free. Swipe-to-dismiss is vaul's
+ * own drag physics (`close_threshold` fraction of sheet height, default ~0.5),
+ * replacing the former inline 80px-absolute threshold; see
+ * `reports/bottomsheet-vaul-migration.md` for the migration rationale.
+ *
+ * The `container={getModalPortal() ?? document.body}` wiring on `Drawer.Portal`
+ * portals the sheet into the nearest Radix Dialog's `#modal-portal` when the
+ * sheet is rendered inside a modal (so it stays within that dialog's focus
+ * trap); otherwise it portals to `document.body`. The explicit fallback is
+ * load-bearing under happy-dom: Radix Portal's default container resolution
+ * does not fire there (no layout), so the portal must be given a concrete node.
  */
 export function BottomSheet({ open, onClose, title, children }: BottomSheetProps) {
-  const sheetRef = useRef<HTMLDivElement>(null);
-  const dragRef = useRef({ active: false, startY: 0, currentY: 0 });
-
-  const onTouchStart = useCallback((e: React.TouchEvent) => {
-    dragRef.current = { active: true, startY: e.touches[0].clientY, currentY: e.touches[0].clientY };
-  }, []);
-  const onTouchMove = useCallback((e: React.TouchEvent) => {
-    if (!dragRef.current.active) return;
-    dragRef.current.currentY = e.touches[0].clientY;
-    const delta = dragRef.current.currentY - dragRef.current.startY;
-    if (delta > 0 && sheetRef.current) {
-      sheetRef.current.style.transition = "none";
-      sheetRef.current.style.transform = `translateY(${delta}px)`;
-    }
-  }, []);
-  const onTouchEnd = useCallback(() => {
-    if (!dragRef.current.active) return;
-    dragRef.current.active = false;
-    const delta = dragRef.current.currentY - dragRef.current.startY;
-    if (sheetRef.current) {
-      sheetRef.current.style.transition = "";
-      sheetRef.current.style.transform = "";
-    }
-    if (delta > 80) onClose();
-  }, [onClose]);
-
-  if (!open) return null;
-
-  return createPortal(
-    <>
-      {/* Scrim */}
-      <div
-        className="fixed inset-0 z-[500] bg-black/50 backdrop-blur-sm"
-        style={{ animation: "fadeIn 0.15s ease-out" }}
-        onClick={onClose}
-      />
-      {/* Sheet */}
-      <div
-        ref={sheetRef}
-        className="glass-blur fixed inset-x-0 bottom-0 z-[501] rounded-t-2xl border-t border-border2 bg-glass-bg pb-[env(safe-area-inset-bottom,0px)] shadow-[0_-4px_24px_rgba(0,0,0,0.5)]"
-        style={{ animation: "slideUp 0.2s ease-out" }}
-        onTouchStart={onTouchStart}
-        onTouchMove={onTouchMove}
-        onTouchEnd={onTouchEnd}
-      >
-        {/* Drag handle */}
-        <div className="flex justify-center pt-2 pb-1">
-          <div className="h-1 w-10 rounded-full bg-border" />
-        </div>
-        {/* Title */}
-        {title != null && (
-          <div className="px-5 pb-2 pt-1">
-            <span className="font-ui text-[calc(var(--ui-fs)-1px)] font-semibold text-t1">{title}</span>
-          </div>
-        )}
-        {children}
-      </div>
-    </>,
-    document.body,
+  return (
+    <Drawer.Root
+      open={open}
+      onOpenChange={(isOpen) => { if (!isOpen) onClose(); }}
+      onClose={onClose}
+      dismissible
+      modal
+      direction="bottom"
+    >
+      <Drawer.Portal container={getModalPortal() ?? document.body}>
+        {/* Scrim — `.inset-0` is the chrome selector BottomSheet.test.tsx
+         *  resolves; keep it verbatim across any restyling. */}
+        <Drawer.Overlay className="fixed inset-0 z-[500] bg-black/50 backdrop-blur-sm" />
+        {/* Sheet body — `.glass-blur` + safe-area + shadow are the chrome
+         *  selectors BottomSheet.test.tsx resolves; carried verbatim from the
+         *  pre-vaul implementation. */}
+        <Drawer.Content className="glass-blur fixed inset-x-0 bottom-0 z-[501] flex flex-col rounded-t-2xl border-t border-border2 bg-glass-bg pb-[env(safe-area-inset-bottom,0px)] shadow-[0_-4px_24px_rgba(0,0,0,0.5)]">
+          {/* Drag handle — vaul owns the drag gesture via Drawer.Handle; the
+           *  className reproduces the former grabber bar (h-1 w-10 rounded-full
+           *  bg-border) with margin substituting for the old padding wrapper. */}
+          <Drawer.Handle className="mx-auto mb-1 mt-2 block h-1 w-10 shrink-0 rounded-full bg-border" />
+          {/* Title — Radix Dialog requires an accessible name. When the caller
+           *  passes a title it is rendered visibly AND serves as the name; when
+           *  omitted, a visually-hidden fallback satisfies the requirement so
+           *  the dialog validates without surfacing a stray label. */}
+          {title != null ? (
+            <Drawer.Title className="px-5 pb-2 pt-1 font-ui text-[calc(var(--ui-fs)-1px)] font-semibold text-t1">
+              {title}
+            </Drawer.Title>
+          ) : (
+            <Drawer.Title className="sr-only">Sheet</Drawer.Title>
+          )}
+          {children}
+        </Drawer.Content>
+      </Drawer.Portal>
+    </Drawer.Root>
   );
 }
