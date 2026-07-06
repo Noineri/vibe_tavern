@@ -19,6 +19,7 @@ import { useCharacterStore } from "../stores/character-store.js";
 import { useSnapshotStore } from "../stores/snapshot-store.js";
 import { exportCharaCardPng } from "../lib/png-writer.js";
 import { resolveEntityAvatarUrl } from "../lib/avatar.js";
+import { resolveChatRemovalMode } from "../lib/chat-removal-mode.js";
 import {
   saveCharacterAction,
   createCharacterAction,
@@ -364,12 +365,7 @@ export function useCharacterController(): CharacterControllerActions {
 
   function getChatRemovalMode(chatId: ChatId): ChatRemovalMode {
     const snapshot = getSnapshot();
-    const targetChat = snapshot?.chats.find((c) => c.id === chatId);
-    const characterId = targetChat?.characterId ?? snapshot?.character.id;
-    if (!snapshot || !characterId) return "delete";
-
-    const characterChatCount = snapshot.chats.filter((c) => c.characterId === characterId).length;
-    return characterChatCount <= 1 ? "clear" : "delete";
+    return resolveChatRemovalMode(snapshot?.chats, chatId, snapshot?.character.id);
   }
 
   async function handleRemoveChat(chatId: ChatId): Promise<void> {
