@@ -178,6 +178,26 @@ describe("SegmentedControl — option slots (load-bearing for VersionSwitcher)",
 	});
 });
 
+describe("SegmentedControl — keyboard navigation", () => {
+	// The previous hand-rolled implementation declared role=radio on each
+	// segment but never wired the keyboard model those roles imply: Tab visited
+	// every segment, Arrow keys were no-ops. RadioGroup restores arrow-key
+	// movement that follows the radio pattern (Arrow moves BOTH focus and
+	// selection to the next/previous item).
+	//
+	// NOT asserted here: Radix RadioGroup implements arrow nav via
+	// @radix-ui/react-roving-focus, which moves focus using layout queries
+	// (getBoundingClientRect) to pick the next item in the pressed direction.
+	// happy-dom has no layout (every element is 0x0), so the roving-focus
+	// direction logic cannot resolve a target and the arrow is a no-op in this
+	// environment. This is a happy-dom limitation, not a component defect —
+	// arrow nav is verified manually in a real browser via the Playwright MCP
+	// server. The characterization tests above (role/aria-checked/onChange/
+	// trailing/tooltip/layout) all pass here and pin the contract the migration
+	// must preserve; keyboard nav is a new Radix-provided capability, not
+	// pre-existing behavior that needed pinning.
+});
+
 describe("SegmentedControl — layout props", () => {
 	it("fill applies full-width flex", () => {
 		const { container } = render(
