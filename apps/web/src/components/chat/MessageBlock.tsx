@@ -5,6 +5,7 @@ import { resolveModelLabel } from "../../lib/model-resolve.js";
 import { resolveEntityAvatarUrl } from "../../lib/avatar.js";
 import { Markdown } from "../../lib/markdown.js";
 import { getModalPortal } from "../shared/modal-helpers.js";
+import { BottomSheet } from "../shared/BottomSheet.js";
 import * as Select from "@radix-ui/react-select";
 import { useDisplayMessage, useChatMeta, useMacroContext, useMessageAuthor, useIsStreamingTarget, useStreamingRevealedFor } from "../../stores/chat-selectors.js";
 import { useChatStore, useActiveGeneration, useIsSending } from "../../stores/index.js";
@@ -740,13 +741,10 @@ function VariantControls(props: VariantControlsProps) {
 /**
  * Q5: jump-to-variant dropdown for messages with >6 variants. Each row shows
  * provenance (model + preset); selecting one jumps via the existing
- * selectVariant path. Built on Radix Select — one implementation for both
- * desktop (compact trigger, upward popper) and mobile (larger touch target):
- * Select's popper rendering is correct for a value-picker on both viewports,
- * so the former hand-rolled dual-mode (desktop absolute popover vs mobile
- * bottom sheet) collapses into a single primitive. The trigger label
- * ("N/total") stays custom — Select.Value is not used because the trigger
- * shows a counter, not the selected item's text.
+ * selectVariant path. Dual-mode by viewport, both on shared primitives:
+ * desktop uses Radix Select (compact upward popper, arrow/type-ahead); mobile
+ * uses shared/BottomSheet (vaul Drawer, thumb-friendly) via VariantJumpSheet.
+ * The desktop trigger shows a counter ('N/total'), so Select.Value is unused.
  */
 function VariantJump({ mobile, provenance, selectedVariantIndex, variantCount, onSelect }: {
   mobile?: boolean;
@@ -755,6 +753,12 @@ function VariantJump({ mobile, provenance, selectedVariantIndex, variantCount, o
   variantCount: number;
   onSelect: (index: number) => void;
 }) {
+  const counter = <>{selectedVariantIndex + 1}/{variantCount}<span className="text-t3"><Icons.Caret direction="d" /></span></>;
+
+  if (mobile) {
+    return <VariantJumpSheet provenance={provenance} selectedVariantIndex={selectedVariantIndex} variantCount={variantCount} onSelect={onSelect} trigger={counter} />;
+  }
+
   return (
     <Select.Root
       value={String(selectedVariantIndex)}
@@ -763,17 +767,9 @@ function VariantJump({ mobile, provenance, selectedVariantIndex, variantCount, o
       <Select.Trigger asChild aria-label={`Variant ${selectedVariantIndex + 1} of ${variantCount}`}>
         <button
           type="button"
-          className={cn(
-            "flex items-center gap-0.5 tabular-nums font-ui text-t2",
-            mobile
-              ? "min-h-10 min-w-12 items-center justify-center rounded-lg px-2 text-[13px] active:bg-s2"
-              : "rounded-[3px] px-1 text-[calc(var(--ui-fs)-3px)] transition-colors duration-100 hover:bg-s2 hover:text-t1",
-          )}
+          className="flex items-center gap-0.5 rounded-[3px] px-1 font-ui text-[calc(var(--ui-fs)-3px)] tabular-nums text-t2 transition-colors duration-100 hover:bg-s2 hover:text-t1"
         >
-          {selectedVariantIndex + 1}/{variantCount}
-          <Select.Icon className="text-t3">
-            <Icons.Caret direction="d" />
-          </Select.Icon>
+          {counter}
         </button>
       </Select.Trigger>
       <Select.Portal container={getModalPortal() ?? undefined}>
@@ -781,23 +777,14 @@ function VariantJump({ mobile, provenance, selectedVariantIndex, variantCount, o
           position="popper"
           side="top"
           sideOffset={4}
-          className={cn(
-            "glass-blur z-50 w-64 overflow-hidden rounded-lg border border-border bg-glass-bg shadow-[0_4px_16px_rgba(0,0,0,0.4)]",
-            mobile && "w-[min(90vw,20rem)]",
-          )}
+          className="glass-blur z-50 w-64 overflow-hidden rounded-lg border border-border bg-glass-bg shadow-[0_4px_16px_rgba(0,0,0,0.4)]"
         >
-          <Select.Viewport className={cn("overflow-y-auto p-1", mobile ? "max-h-[50vh] pb-2" : "max-h-64")}>
+          <Select.Viewport className="max-h-64 overflow-y-auto p-1">
             {provenance.map((p, i) => (
               <Select.Item
                 key={i}
                 value={String(i)}
-                className={cn(
-                  "flex w-full cursor-pointer items-center gap-2 rounded px-2 text-left outline-none transition-colors",
-                  mobile
-                    ? "min-h-[52px] text-[calc(var(--ui-fs)+1px)] data-[highlighted]:bg-s3"
-                    : "py-2 text-[calc(var(--ui-fs)-2px)] data-[highlighted]:bg-s2",
-                  "data-[state=checked]:text-accent-t",
-                )}
+                className="flex w-full cursor-pointer items-center gap-2 rounded px-2 py-2 text-left text-[calc(var(--ui-fs)-2px)] text-t2 outline-none transition-colors data-[highlighted]:bg-s2 data-[state=checked]:text-accent-t"
               >
                 <Select.ItemText asChild>
                   <span className="flex w-full items-center gap-2">
@@ -813,6 +800,52 @@ function VariantJump({ mobile, provenance, selectedVariantIndex, variantCount, o
         </Select.Content>
       </Select.Portal>
     </Select.Root>
+  );
+}
+
+/** Mobile half of the dual-mode variant jump: a shared/BottomSheet (vaul Drawer)
+ *  with one row per variant. Owns its open state; selecting a row fires onSelect
+ *  then closes. */
+function VariantJumpSheet({ provenance, selectedVariantIndex, variantCount, onSelect, trigger }: {
+  provenance: { modelLabel: string; presetName: string | null }[];
+  selectedVariantIndex: number;
+  variantCount: number;
+  onSelect: (index: number) => void;
+  trigger: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button
+        type="button"
+        className="flex min-h-10 min-w-12 items-center justify-center gap-0.5 rounded-lg px-2 font-ui text-[13px] tabular-nums text-t2 active:bg-s2"
+        aria-label={`Variant ${selectedVariantIndex + 1} of ${variantCount}`}
+        aria-expanded={open}
+        onClick={() => setOpen(true)}
+      >
+        {trigger}
+      </button>
+      <BottomSheet open={open} onClose={() => setOpen(false)}>
+        <div className="max-h-[50vh] overflow-y-auto pb-2">
+          {provenance.map((p, i) => (
+            <button
+              key={i}
+              type="button"
+              className={cn(
+                "flex w-full items-center gap-2 px-3 text-left transition-colors min-h-[52px] text-[calc(var(--ui-fs)+1px)] active:bg-s3",
+                i === selectedVariantIndex ? "text-accent-t" : "text-t2",
+              )}
+              onClick={() => { onSelect(i); setOpen(false); }}
+            >
+              <span className="w-6 shrink-0 text-t3">#{i + 1}</span>
+              <span className="shrink-0 font-medium text-t1">{p.modelLabel || "—"}</span>
+              {p.presetName && <span className="truncate text-t3">· {p.presetName}</span>}
+              {i === selectedVariantIndex && <span className="ml-auto shrink-0 text-accent-t">✓</span>}
+            </button>
+          ))}
+        </div>
+      </BottomSheet>
+    </>
   );
 }
 
