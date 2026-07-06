@@ -1,9 +1,6 @@
-import { useCallback, useLayoutEffect, useRef } from "react";
+import { useCallback, useState } from "react";
 import type { UseFormRegisterReturn } from "react-hook-form";
-
-// resizeTextarea lives in textarea-helpers.ts — import from there directly.
-// Do NOT re-export here to keep this file Fast Refresh compatible.
-import { resizeTextarea } from "./textarea-helpers.js";
+import TextareaAutosize from "react-textarea-autosize";
 
 /** Native HTML textarea attributes that AutoTextarea doesn't consume itself. */
 export type AutoTextareaPassthrough = Omit<
@@ -29,14 +26,20 @@ export interface AutoTextareaProps extends AutoTextareaPassthrough {
 }
 
 /**
- * Auto-resizing textarea.
+ * Auto-resizing textarea backed by `react-textarea-autosize`.
  *
  * Supports two modes:
  * - **Uncontrolled**: pass `register={register("field")}` — delegates to react-hook-form
  * - **Controlled**: pass `value` + `onChange` — for manually managed state
  *
- * Resizes on every render and every keystroke — grows when text is added,
- * shrinks immediately when text is deleted.
+ * The underlying library measures content height via a hidden mirror textarea
+ * (so no visible shrink-to-auto flicker) and exposes `onHeightChange(height,
+ * { rowHeight })`. We keep the call-site contract pixel-based (`maxHeight` in
+ * px, `style.minHeight` in px) — the same API the previous hand-rolled
+ * `resizeTextarea` exposed — and translate px → rows here using the measured
+ * `rowHeight`. `react-textarea-autosize` does NOT accept `style.minHeight`/
+ * `style.maxHeight` (it throws), so those keys are stripped from `style` and
+ * routed through `minRows`/`maxRows` instead.
  */
 export function AutoTextarea({
   className,
@@ -49,67 +52,66 @@ export function AutoTextarea({
   maxHeight,
   ...rest
 }: AutoTextareaProps) {
-  const elRef = useRef<HTMLTextAreaElement | null>(null);
+  // Pull minHeight/maxHeight OUT of style — the library throws at runtime if
+  // either key is present in `style`. They're routed through row-based props.
+  // `height` is also stripped: the lib owns it (sets it via `!important` on
+  // every measure), so a caller-supplied height would be dead anyway.
+  const { minHeight: styleMinHeight, maxHeight: _styleMaxHeight, height: _styleHeight, ...cleanStyle } = style;
+  void _styleMaxHeight; // maxHeight arrives as a dedicated prop; style.maxHeight is not supported.
+  void _styleHeight; // the lib owns height; caller value is ignored.
 
-  // Resize on every render — handles external value changes (tab switches, resets, imports)
-  useLayoutEffect(() => {
-    const el = elRef.current;
-    if (!el) return;
-    resizeTextarea(el, maxHeight);
-  });
+  const minHeightPx =
+    typeof styleMinHeight === "number"
+      ? styleMinHeight
+      : typeof styleMinHeight === "string"
+        ? parseFloat(styleMinHeight)
+        : undefined;
 
-  const handleRegisterChange = useCallback(
+  // Measure the content row height via the library's own callback, then derive
+  // maxRows/minRows from our pixel API. The first measurement happens in the
+  // lib's useLayoutEffect on mount (before paint), so the cap applies within
+  // the initial frame — no visible uncapped-grow flash.
+  const [rowHeight, setRowHeight] = useState<number | undefined>(undefined);
+  const handleHeightChange = useCallback((_height: number, meta: { rowHeight: number }) => {
+    if (meta.rowHeight > 0) setRowHeight(meta.rowHeight);
+  }, []);
+
+  const maxRows = maxHeight && rowHeight ? Math.max(1, Math.floor(maxHeight / rowHeight)) : undefined;
+  const minRows = minHeightPx && rowHeight ? Math.max(1, Math.floor(minHeightPx / rowHeight)) : undefined;
+
+  // Merge onChange: react-hook-form's register.onChange + the controlled onChange.
+  const handleChange = useCallback(
     (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-      resizeTextarea(e.currentTarget, maxHeight);
       register?.onChange?.(e);
-    },
-    [register, maxHeight],
-  );
-
-  const handleControlledChange = useCallback(
-    (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-      resizeTextarea(e.currentTarget, maxHeight);
       onChange?.(e);
     },
-    [onChange, maxHeight],
+    [register, onChange],
   );
 
-  // Merge refs: both the internal elRef and the register ref (if any)
+  // Merge refs: react-hook-form's register.ref needs the underlying element.
+  // TextareaAutosize is a forwardRef component — we forward directly.
+  const registerRef = register?.ref;
   const setRef = useCallback(
     (el: HTMLTextAreaElement | null) => {
-      elRef.current = el;
-      if (register) register.ref(el);
+      if (registerRef) registerRef(el);
     },
-    [register],
+    [registerRef],
   );
 
-  if (register) {
-    // Uncontrolled mode (react-hook-form)
-    return (
-      <textarea
-        {...register}
-        {...rest}
-        ref={setRef}
-        onChange={handleRegisterChange}
-        className={className}
-        style={style}
-        disabled={disabled}
-        placeholder={placeholder}
-      />
-    );
-  }
-
-  // Controlled mode (value + onChange)
   return (
-    <textarea
-      ref={setRef}
+    <TextareaAutosize
       {...rest}
+      {...(register ? { name: register.name, onBlur: register.onBlur } : {})}
+      ref={setRef}
       className={className}
-      style={style}
+      style={cleanStyle}
       disabled={disabled}
       placeholder={placeholder}
       value={value}
-      onChange={handleControlledChange}
+      onChange={handleChange}
+      onHeightChange={handleHeightChange}
+      maxRows={maxRows}
+      minRows={minRows}
     />
   );
 }
