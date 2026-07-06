@@ -17,24 +17,25 @@ import type { LoreEntryRecord } from "../../../app-client.js";
 
 // ── Position config ──────────────────────────────────────────────────────
 
-export interface PositionSection {
-	value: string;
-	label: string;
-	labelRu: string;
-}
-
-export const POSITION_SECTIONS: PositionSection[] = [
-	{ value: "before_char", label: "Before Character", labelRu: "Перед персонажем" },
-	{ value: "after_char", label: "After Character", labelRu: "После персонажа" },
-	{ value: "top_an", label: "Before Author's Note", labelRu: "Перед заметкой автора" },
-	{ value: "bottom_an", label: "After Author's Note", labelRu: "После заметки автора" },
-	{ value: "before_examples", label: "Before Examples", labelRu: "Перед примерами" },
-	{ value: "after_examples", label: "After Examples", labelRu: "После примеров" },
-	{ value: "at_depth", label: "In Chat (at depth)", labelRu: "В чате (на глубине)" },
-	{ value: "outlet", label: "Outlet", labelRu: "Outlet" },
+/**
+ * The canonical lorebook entry positions, in the order the drag list groups
+ * them visually. Each value is also the suffix of an i18n key `pos_<value>`
+ * (and `pos_<value>_hint`) defined in locales/{en,ru}.json — do NOT hardcode
+ * display labels here; always render via `t("pos_" + value)` so there is a
+ * single source of truth for translations.
+ */
+export const POSITION_SECTIONS: readonly string[] = [
+	"before_char",
+	"after_char",
+	"top_an",
+	"bottom_an",
+	"before_examples",
+	"after_examples",
+	"at_depth",
+	"outlet",
 ];
 
-export const FALLBACK_SECTION: PositionSection = POSITION_SECTIONS[1]; // after_char
+export const FALLBACK_SECTION: string = POSITION_SECTIONS[1]; // after_char
 
 export function normalizeUiPosition(position: string | undefined): string {
 	switch (position) {
@@ -49,13 +50,13 @@ export function normalizeUiPosition(position: string | undefined): string {
 		case "hidden_system":
 			return "outlet";
 		default:
-			return position ?? FALLBACK_SECTION.value;
+			return position ?? FALLBACK_SECTION;
 	}
 }
 
-export function getSection(position: string | undefined): PositionSection {
+export function getSection(position: string | undefined): string {
 	const normalized = normalizeUiPosition(position);
-	return POSITION_SECTIONS.find((s) => s.value === normalized) ?? FALLBACK_SECTION;
+	return POSITION_SECTIONS.includes(normalized) ? normalized : FALLBACK_SECTION;
 }
 
 // ── Pure helpers ─────────────────────────────────────────────────────────
@@ -70,7 +71,7 @@ export function moveItem<T>(items: T[], from: number, to: number): T[] {
 }
 
 export function entryOrderSignature(items: LoreEntryRecord[]): string {
-	return items.map((entry) => `${entry.id}:${getSection(entry.position).value}`).join("|");
+	return items.map((entry) => `${entry.id}:${getSection(entry.position)}`).join("|");
 }
 
 // ── The reorder contract ─────────────────────────────────────────────────
@@ -108,8 +109,8 @@ export function buildReorderUpdates(
 
 	const activeEntry = flatEntries[activeIdx];
 	const overEntry = flatEntries[overIdx];
-	const activeNewPosition = getSection(overEntry.position).value;
-	const positionChanged = getSection(activeEntry.position).value !== activeNewPosition;
+	const activeNewPosition = getSection(overEntry.position);
+	const positionChanged = getSection(activeEntry.position) !== activeNewPosition;
 
 	const reordered = moveItem(flatEntries, activeIdx, overIdx);
 	return reordered.map((entry, i) => ({
@@ -121,5 +122,5 @@ export function buildReorderUpdates(
 
 /** Flatten grouped entries into the single flat order the list renders. */
 export function flattenBySection(grouped: Map<string, LoreEntryRecord[]>): LoreEntryRecord[] {
-	return POSITION_SECTIONS.flatMap((sec) => grouped.get(sec.value) ?? []);
+	return POSITION_SECTIONS.flatMap((sec) => grouped.get(sec) ?? []);
 }

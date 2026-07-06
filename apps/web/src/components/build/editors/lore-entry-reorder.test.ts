@@ -169,15 +169,15 @@ describe("buildReorderUpdates — dense global sortOrder invariant", () => {
 
 describe("position helpers (characterization)", () => {
 	it("legacy positions are normalized into UI sections", () => {
-		expect(getSection("before_prompt").value).toBe("before_char");
-		expect(getSection("in_prompt").value).toBe("after_char");
-		expect(getSection("in_chat").value).toBe("at_depth");
-		expect(getSection("hidden_system").value).toBe("outlet");
+		expect(getSection("before_prompt")).toBe("before_char");
+		expect(getSection("in_prompt")).toBe("after_char");
+		expect(getSection("in_chat")).toBe("at_depth");
+		expect(getSection("hidden_system")).toBe("outlet");
 	});
 
 	it("unknown/missing position falls back to after_char", () => {
-		expect(getSection(undefined).value).toBe("after_char");
-		expect(getSection("nonsense").value).toBe("after_char");
+		expect(getSection(undefined)).toBe("after_char");
+		expect(getSection("nonsense")).toBe("after_char");
 	});
 
 	it("entryOrderSignature is section-aware (ignores raw legacy position)", () => {
@@ -188,7 +188,7 @@ describe("position helpers (characterization)", () => {
 	});
 
 	it("POSITION_SECTIONS covers the 8 UI sections", () => {
-		expect(POSITION_SECTIONS.map((s) => s.value)).toEqual([
+		expect([...POSITION_SECTIONS]).toEqual([
 			"before_char",
 			"after_char",
 			"top_an",

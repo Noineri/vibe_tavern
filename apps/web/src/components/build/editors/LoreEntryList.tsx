@@ -273,7 +273,6 @@ interface LoreEntryListProps {
 	entries: LoreEntryRecord[];
 	activeEntryId: string | null;
 	isMobile: boolean;
-	isRu: boolean;
 	t: (key: string) => string;
 	onEntryClick: (entryId: string) => void;
 	onReorder: (updates: Array<{ id: string; sortOrder: number; position?: string }>) => void | Promise<unknown>;
@@ -284,7 +283,6 @@ export function LoreEntryList({
 	entries,
 	activeEntryId,
 	isMobile,
-	isRu,
 	t,
 	onEntryClick,
 	onReorder,
@@ -309,10 +307,10 @@ export function LoreEntryList({
 	const grouped = useMemo(() => {
 		const map = new Map<string, LoreEntryRecord[]>();
 		for (const sec of POSITION_SECTIONS) {
-			map.set(sec.value, []);
+			map.set(sec, []);
 		}
 		for (const entry of displayEntries) {
-			const key = getSection(entry.position).value;
+			const key = getSection(entry.position);
 			if (!map.has(key)) map.set(key, []);
 			map.get(key)!.push(entry);
 		}
@@ -321,7 +319,7 @@ export function LoreEntryList({
 
 	// The single flat order the SortableContext and the commit logic operate on.
 	const renderedEntries = useMemo(
-		() => POSITION_SECTIONS.flatMap((sec) => grouped.get(sec.value) ?? []),
+		() => POSITION_SECTIONS.flatMap((sec) => grouped.get(sec) ?? []),
 		[grouped],
 	);
 
@@ -374,16 +372,16 @@ export function LoreEntryList({
 		>
 			<SortableContext items={renderedEntries.map((e) => e.id)} strategy={verticalListSortingStrategy}>
 				{POSITION_SECTIONS.map((sec) => {
-					const sectionEntries = grouped.get(sec.value) ?? [];
+					const sectionEntries = grouped.get(sec) ?? [];
 					if (sectionEntries.length === 0) return null;
 
 					return (
-						<div key={sec.value} className="mb-2">
+						<div key={sec} className="mb-2">
 							{/* Section divider */}
 							<div className="mb-1.5 flex items-center gap-2 px-1">
 								<div className="h-px flex-1 bg-border" />
 								<span className="shrink-0 font-ui text-[11px] uppercase tracking-wider text-t3/60">
-									{isRu ? sec.labelRu : sec.label}
+									{t("pos_" + sec)}
 								</span>
 								<div className="h-px flex-1 bg-border" />
 							</div>

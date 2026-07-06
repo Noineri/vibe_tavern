@@ -91,7 +91,6 @@ interface LorebookAccordionProps {
   onExport: () => void;
   characters: LinkTarget[];
   personas: LinkTarget[];
-  isRu: boolean;
 }
 
 // ── Component ──────────────────────────────────────────────────────────
@@ -126,7 +125,6 @@ export function LorebookAccordion({
   onExport,
   characters,
   personas,
-  isRu,
 }: LorebookAccordionProps) {
   // ── Entries: loaded up front (for the counter and token estimate in the header),
   //    and remain available when expanded.
@@ -553,7 +551,6 @@ export function LorebookAccordion({
             entries={entries}
             activeEntryId={activeEntryId}
             isMobile={isMobile}
-            isRu={isRu}
             t={t}
             onEntryClick={onEntryClick}
             onReorder={handleReorderEntries}

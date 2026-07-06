@@ -117,9 +117,8 @@ export function LorebookEditor({
   chatId,
   personaId,
 }: LorebookEditorProps) {
-  const { t, locale } = useT();
+  const { t } = useT();
   const isMobile = useIsMobile();
-  const isRu = locale === "ru";
 
   // ── Navigation ──
   const stickyInitialTab = useRef<Tab | null>(readStickyWorldLoreTab());
@@ -787,7 +786,6 @@ export function LorebookEditor({
           onSetLinks={(links) => handleSetLinks(lb.id, links)}
           onDuplicate={() => handleDuplicateLb(lb.id)}
           onExport={() => handleExportLb(lb.id)}
-          isRu={isRu}
         />
       ))}
 
