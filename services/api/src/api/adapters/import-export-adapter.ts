@@ -15,4 +15,7 @@ export class ImportExportAdapter implements ImportExportRuntimeApi {
 
 	importSillyTavernDirectory = (dirPath: string) =>
 		this.sessionRuntime.importSillyTavernDirectory(dirPath);
+
+	importSillyTavernDirectoryStream = (dirPath: string) =>
+		this.sessionRuntime.importSillyTavernDirectoryStream(dirPath);
 }

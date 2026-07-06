@@ -78,6 +78,7 @@ import { ChatLifecycleRuntime } from "./session-runtime-chat-lifecycle.js";
 import * as importExportModule from "./session-runtime-import-export.js";
 // lorebookModule removed — CRUD is wired directly through stores in RuntimeApiAdapter
 import { scanSillyTavernDirectory as scanST, importSillyTavernDirectory as importST } from "../../shared/st-directory-scanner.js";
+import type { ImportStreamEvent } from "../../shared/st-directory-scanner.js";
 
 /**
  * Pick the chat the app boots into. Prefers the most-recent NON-coauthor chat
@@ -600,6 +601,47 @@ export function pickBootstrapChatId<T extends string>(
 
 	importSillyTavernDirectory(dirPath: string) {
 		return importST(this.importExportDeps, dirPath);
+	}
+
+	/** Streaming import — bridges the scanner's onProgress callback into an
+	 *  async generator the SSE route can consume. Events are buffered into a
+	 *  queue (unbounded; each is ~50 bytes, max ~10k over a 1300-card import —
+	 *  negligible) so the scanner is never blocked waiting for the wire. The
+	 *  scanner is the bottleneck (DB + file I/O), so the queue drains roughly
+	 *  as fast as it fills and the bar advances in real time. */
+	async *importSillyTavernDirectoryStream(dirPath: string): AsyncGenerator<ImportStreamEvent> {
+		const queue: ImportStreamEvent[] = [];
+		let resolveDrain: (() => void) | null = null;
+		let settled = false;
+		const wake = () => {
+			resolveDrain?.();
+			resolveDrain = null;
+		};
+
+		// Detached: the scanner reports progress via onProgress (pushed to the
+		// queue), then pushes a terminal done/error event and marks settled.
+		void importST(this.importExportDeps, dirPath, {
+			onProgress: (event) => {
+				queue.push(event);
+				wake();
+			},
+		}).then(
+			(result) => { queue.push({ type: "done", result }); wake(); },
+			(err) => {
+				queue.push({ type: "error", message: err instanceof Error ? err.message : String(err) });
+				wake();
+			},
+		).finally(() => { settled = true; wake(); });
+
+		while (true) {
+			while (queue.length > 0) {
+				const event = queue.shift()!;
+				yield event;
+				if (event.type === "done" || event.type === "error") return;
+			}
+			if (settled) return;
+			await new Promise<void>((r) => { resolveDrain = r; });
+		}
 	}
 
 	// ─── Private: prompt wiring ─────────────────────────────────────────

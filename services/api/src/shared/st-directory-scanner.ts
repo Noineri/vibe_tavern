@@ -254,6 +254,32 @@ export interface StDirectoryImportResult {
 	lastActiveChatId: ChatId | null;
 }
 
+// ─── Import progress events (consumed by the SSE stream route) ───────────────
+// Each of the five import surfaces reports two events: `phase` when it starts,
+// `progress` after each item within it. The blocking import path ignores these
+// (onProgress omitted); the streaming route awaits each emission so the event
+// is flushed to the wire before the scanner proceeds — giving the browser a
+// live counter instead of a frozen spinner for the whole duration.
+export type ImportPhase = "characters" | "chats" | "lorebooks" | "presets" | "personas";
+export type ImportProgressEvent =
+	| { type: "phase"; phase: ImportPhase }
+	| { type: "progress"; phase: ImportPhase; current: number };
+
+export interface ImportSillyTavernOptions {
+	/** Optional progress reporter — called at each phase start and after each
+	 *  imported item. Awaited so an SSE route can flush each event to the wire
+	 *  before the scanner continues. No-op when omitted (blocking import path). */
+	onProgress?: (event: ImportProgressEvent) => Promise<void> | void;
+}
+
+/** Full event stream emitted by `importSillyTavernDirectoryStream` — either an
+ *  in-flight progress event or a terminal `done`/`error`. The streaming route
+ *  serializes each as one SSE message keyed by `type`. */
+export type ImportStreamEvent =
+	| ImportProgressEvent
+	| { type: "done"; result: StDirectoryImportResult }
+	| { type: "error"; message: string };
+
 /**
  * Import everything from a SillyTavern directory into the RP Platform database.
  * Characters are imported first, then chats are matched by folder name → character name.
@@ -261,7 +287,9 @@ export interface StDirectoryImportResult {
 export async function importSillyTavernDirectory(
 	deps: ImportExportModuleDeps,
 	dirPath: string,
+	opts?: ImportSillyTavernOptions,
 ): Promise<StDirectoryImportResult> {
+	const onProgress = opts?.onProgress;
 	const resolved = resolve(dirPath);
 	const result: StDirectoryImportResult = {
 		characters: 0,
@@ -283,6 +311,7 @@ export async function importSillyTavernDirectory(
 	console.log(`${ti()} START — dir=${resolved}`);
 
 	// ── Import characters ──
+	await onProgress?.({ type: "phase", phase: "characters" });
 	const charsPhaseStart = performance.now();
 	const charsDir = join(resolved, "characters");
 	const charsFiles = await safeReaddir(charsDir);
@@ -429,12 +458,15 @@ export async function importSillyTavernDirectory(
 
 	const outcomes: CharImportOutcome[] = new Array(charTargets.length);
 	let cursor = 0;
+	let charsDone = 0;
 	const CHAR_CONCURRENCY = 8;
 	const worker = async () => {
 		while (cursor < charTargets.length) {
 			const idx = cursor++;
 			const { fileName, ext } = charTargets[idx]!;
 			outcomes[idx] = await importOneCharacter(fileName, ext);
+			// Report per-card so the bar advances as parallel workers finish.
+			await onProgress?.({ type: "progress", phase: "characters", current: ++charsDone });
 		}
 	};
 	await Promise.all(
@@ -456,6 +488,7 @@ export async function importSillyTavernDirectory(
 	console.log(`${ti()} characters: ${((performance.now() - charsPhaseStart) / 1000).toFixed(2)}s (${result.characters} imported)`);
 
 	// ── Import chats ──
+	await onProgress?.({ type: "phase", phase: "chats" });
 	const chatsPhaseStart = performance.now();
 	let chatCreateMs = 0;
 	let chatMsgMs = 0;
@@ -520,6 +553,7 @@ export async function importSillyTavernDirectory(
 				deps.chatOrder.add(chat.id as ChatId);
 				result.lastActiveChatId = chat.id as ChatId;
 				result.chats++;
+				await onProgress?.({ type: "progress", phase: "chats", current: result.chats });
 			} catch (err) {
 				result.errors.push({
 					file: filePath,
@@ -535,6 +569,7 @@ export async function importSillyTavernDirectory(
 + ` avg/msg=${chatMsgCount > 0 ? (chatMsgMs / chatMsgCount).toFixed(1) : 0}ms`);
 
 	// ── Import lorebooks (worlds/) ──
+	await onProgress?.({ type: "phase", phase: "lorebooks" });
 	const lorePhaseStart = performance.now();
 	const worldsDir = join(resolved, "worlds");
 	const worldsFiles = await safeReaddir(worldsDir);
@@ -558,6 +593,7 @@ export async function importSillyTavernDirectory(
 				fallbackName,
 			});
 			result.lorebooks++;
+			await onProgress?.({ type: "progress", phase: "lorebooks", current: result.lorebooks });
 		} catch (err) {
 			result.errors.push({
 				file: filePath,
@@ -569,6 +605,7 @@ export async function importSillyTavernDirectory(
 	console.log(`${ti()} lorebooks: ${((performance.now() - lorePhaseStart) / 1000).toFixed(2)}s (${result.lorebooks} imported)`);
 
 	// ── Import presets (OpenAI Settings/) ──
+	await onProgress?.({ type: "phase", phase: "presets" });
 	const presetsPhaseStart = performance.now();
 	// Field mapping mirrors browser Phase 3 (ImportModals.tsx): main→system,
 	// jailbreak→jailbreak, non-builtin blocks→customInjections, prompt_order→
@@ -625,6 +662,7 @@ export async function importSillyTavernDirectory(
 				},
 			);
 			result.presets++;
+			await onProgress?.({ type: "progress", phase: "presets", current: result.presets });
 		} catch (err) {
 			result.errors.push({
 				file: filePath,
@@ -636,6 +674,7 @@ export async function importSillyTavernDirectory(
 	console.log(`${ti()} presets: ${((performance.now() - presetsPhaseStart) / 1000).toFixed(2)}s (${result.presets} imported)`);
 
 	// ── Import personas (settings.json + User Avatars/) ──
+	await onProgress?.({ type: "phase", phase: "personas" });
 	const personasPhaseStart = performance.now();
 	// Mirrors browser Phase 0: parseStPersonas → create each, best-effort avatar.
 	const settingsPath = join(resolved, "settings.json");
@@ -655,6 +694,7 @@ export async function importSillyTavernDirectory(
 						defaultForNewChats: pe.isDefault,
 					});
 					result.personas++;
+					await onProgress?.({ type: "progress", phase: "personas", current: result.personas });
 
 					// Best-effort avatar upload from User Avatars/<key>. ST avatars are
 					// PNG by convention and uncropped, so the same bytes are written to

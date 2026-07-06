@@ -15,9 +15,9 @@ import { inputCls } from "../build/fields/field-styles.js";
 import {
   openNativeDialog,
   scanStDirectory,
-  importStDirectory,
+  importStDirectoryStream,
 } from "../../api/import-api.js";
-import type { StScanResult, StImportResult, StScanError } from "../../api/import-api.js";
+import type { StScanResult, StImportResult, StScanError, ImportPhase } from "../../api/import-api.js";
 
 interface ImportModalCommonProps {
   isImporting: boolean;
@@ -75,6 +75,11 @@ export function StFolderImport({ onImported }: StFolderImportProps) {
   const [importResult, setImportResult] = useState<StImportResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [importErrors, setImportErrors] = useState<StScanError[]>([]);
+  // Live import progress, fed from the SSE stream (importStDirectoryStream).
+  // `activePhase` is the surface currently being processed; `counts[phase]` is
+  // the running item count. Per-phase totals come from `scanResult`, which is
+  // always present when importing (the Import button renders only after scan).
+  const [progress, setProgress] = useState<{ activePhase: ImportPhase | null; counts: Partial<Record<ImportPhase, number>> }>({ activePhase: null, counts: {} });
 
   async function onBrowse() {
     setError(null);
@@ -138,9 +143,19 @@ export function StFolderImport({ onImported }: StFolderImportProps) {
     if (!trimmed || importing) return;
     setError(null);
     setImportErrors([]);
+    setProgress({ activePhase: null, counts: {} });
     setImporting(true);
     try {
-      const result = await importStDirectory(trimmed);
+      const result = await importStDirectoryStream(trimmed, (event) => {
+        if (event.type === "phase") {
+          setProgress((p) => ({ activePhase: event.phase, counts: p.counts }));
+        } else {
+          setProgress((p) => ({
+            activePhase: event.phase,
+            counts: { ...p.counts, [event.phase]: event.current },
+          }));
+        }
+      });
       setImportResult(result);
       setImportErrors(result.errors);
 
@@ -267,8 +282,11 @@ export function StFolderImport({ onImported }: StFolderImportProps) {
         </div>
       )}
 
-      {/* Import in progress. */}
-      {importing && (
+      {/* Import in progress — live per-phase progress fed from the SSE stream. */}
+      {importing && scanResult && (
+        <StImportProgress scanResult={scanResult} progress={progress} />
+      )}
+      {importing && !scanResult && (
         <div className="mt-3">
           <BusyLine label={t("st_importing_backend")} />
         </div>
@@ -546,6 +564,61 @@ function Dropzone(props: {
 
 function BusyLine(props: { label: string }) {
   return <div className="flex items-center gap-2 font-ui text-t2"><span className="inline-flex items-center gap-[3px]"><span className="h-1 w-1 rounded-full bg-accent animate-genp"/><span className="h-1 w-1 rounded-full bg-accent animate-genp [animation-delay:0.18s]"/><span className="h-1 w-1 rounded-full bg-accent animate-genp [animation-delay:0.36s]"/></span>{props.label}</div>;
+}
+
+// Fixed import order (matches the scanner's phase sequence).
+const IMPORT_PHASES: ImportPhase[] = ["characters", "chats", "lorebooks", "presets", "personas"];
+
+/** Per-phase progress breakdown for a streaming ST directory import. Reuses
+ *  the old bar visual (animated accent dots + width:% fill) but drives it from
+ *  SSE events instead of a frontend loop. Per-phase totals come from the prior
+ *  scanResult; the current surface is highlighted, completed surfaces are
+ *  ticked, pending ones are dimmed. */
+function StImportProgress(props: {
+  scanResult: StScanResult;
+  progress: { activePhase: ImportPhase | null; counts: Partial<Record<ImportPhase, number>> };
+}) {
+  const { t } = useT();
+  const totals: Record<ImportPhase, number> = {
+    characters: props.scanResult.characters.length,
+    chats: props.scanResult.chats.length,
+    lorebooks: props.scanResult.lorebooks.length,
+    presets: props.scanResult.presets.length,
+    personas: props.scanResult.persona?.count ?? 0,
+  };
+  const activeIdx = props.progress.activePhase ? IMPORT_PHASES.indexOf(props.progress.activePhase) : -1;
+
+  return (
+    <div className="mt-3 space-y-2">
+      <BusyLine label={t("st_importing_backend")} />
+      <div className="space-y-1.5">
+        {IMPORT_PHASES.map((phase, idx) => {
+          const total = totals[phase];
+          const current = props.progress.counts[phase] ?? 0;
+          const status = idx < activeIdx ? "done" : idx === activeIdx ? "active" : "pending";
+          // A surface with zero items (e.g. no lorebooks in the folder) shows as
+          // full when passed, empty before — so the bar never looks stuck at 0%.
+          const pct = total > 0 ? Math.min(100, (current / total) * 100) : status === "done" ? 100 : 0;
+          return (
+            <div key={phase} className="flex items-center gap-2 font-ui text-[calc(var(--ui-fs)-2px)]">
+              <span className="w-3 text-center text-t3">
+                {status === "done" ? "✓" : status === "active" ? "●" : "○"}
+              </span>
+              <span className={cn("w-16 shrink-0", status === "pending" ? "text-t3" : "text-t2")}>
+                {t(`st_phase_${phase}`)}
+              </span>
+              <span className="w-14 shrink-0 tabular-nums text-t3">
+                {status === "pending" ? "—" : `${current} / ${total}`}
+              </span>
+              <div className="h-1 flex-1 overflow-hidden rounded-full bg-s3">
+                <div className="h-full rounded-full bg-accent transition-all duration-150" style={{ width: `${pct}%` }} />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
 }
 
 function ModalFooter(props: { onClose: () => void; onConfirm: () => void; confirmLabel: string; disabled: boolean; busy: boolean }) {

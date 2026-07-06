@@ -37,7 +37,7 @@ import type { ProviderProbeResult, ProviderModelOption, TestChatResult } from ".
 import type { GenerateChatSummaryResult, SummarizeChatResult } from "../../domain/chat/chat-summary-service.js";
 import type { LorebookImportResult } from "../../domain/lorebook/lorebook-import-service.js";
 import type { ScriptTestResult } from "../../domain/scripts-engine/script-test-service.js";
-import type { StDirectoryScanResult, StDirectoryImportResult } from "../../shared/st-directory-scanner.js";
+import type { StDirectoryScanResult, StDirectoryImportResult, ImportStreamEvent } from "../../shared/st-directory-scanner.js";
 import type { MobileAccessInfo } from "../../domain/mobile-access/mobile-access-service.js";
 
 // ─── Shared type aliases ────────────────────────────────────────────
@@ -350,6 +350,9 @@ export interface ImportExportRuntimeApi {
 	importJsonBatch: (body: { items: Array<{ fileName: string; jsonText: string; chatId?: string; skipExisting?: boolean }>; lean?: boolean }) => Promise<BatchImportResult>;
 	scanSillyTavernDirectory: (dirPath: string) => Promise<StDirectoryScanResult>;
 	importSillyTavernDirectory: (dirPath: string) => Promise<StDirectoryImportResult>;
+	/** Streaming variant: yields ImportStreamEvent items (phase/progress/done/
+	 *  error) so the route can emit them as SSE for a live progress bar. */
+	importSillyTavernDirectoryStream: (dirPath: string) => AsyncGenerator<ImportStreamEvent>;
 }
 
 // ─── Asset ───────────────────────────────────────────────────────────

@@ -326,3 +326,86 @@ describe("ST directory scanner — PNG card avatar-full wiring + parallelism", (
 		}
 	});
 });
+
+/** A larger ST dir with multiple items per surface, for progress-event tests. */
+async function buildStDirMulti(root: string) {
+	await mkdir(join(root, "characters"), { recursive: true });
+	for (let i = 0; i < 3; i++) {
+		await writeFile(
+			join(root, "characters", `Char${i}.json`),
+			JSON.stringify({ spec: "chara_card_v2", spec_version: "2.0", data: { name: `Char ${i}`, description: "d", first_mes: "hi" } }),
+		);
+	}
+	await mkdir(join(root, "worlds"), { recursive: true });
+	for (let i = 0; i < 2; i++) {
+		await writeFile(
+			join(root, "worlds", `World${i}.json`), JSON.stringify({ name: `World ${i}`, entries: {} }));
+	}
+	await mkdir(join(root, "OpenAI Settings"), { recursive: true });
+	await writeFile(
+			join(root, "OpenAI Settings", "Preset0.json"),
+			JSON.stringify({ chat_start: "", prompts: [{ identifier: "main", name: "main", content: "sys", role: "system" }], prompt_order: { dummy: { order: [{ identifier: "main" }] } } }),
+		);
+	return root;
+}
+
+describe("ST directory scanner — streaming progress events", () => {
+	let env: Env;
+	let stDir: string;
+	beforeAll(() => setTokenCountFn((text: string) => text.length));
+	afterAll(async () => { if (env) await env.cleanup(); });
+
+	it("importSillyTavernDirectoryStream emits phase+progress then done, in order", async () => {
+		env = await createRuntime();
+		stDir = await buildStDirMulti(join(env.tmpDir, "st-source"));
+
+		const events = [];
+		for await (const ev of env.runtime.importSillyTavernDirectoryStream(stDir)) {
+			events.push(ev);
+		}
+
+		// Terminal event is `done` with the full result, and counts match the fixture.
+		const done = events.find((e) => e.type === "done");
+		expect(done, "must emit a terminal done event").toBeTruthy();
+		if (done!.type !== "done") throw new Error("unreachable");
+		expect(done!.result.characters).toBe(3);
+		expect(done!.result.lorebooks).toBe(2);
+		expect(done!.result.presets).toBe(1);
+		expect(done!.result.errors).toEqual([]);
+
+		// Every phase has exactly one `phase` start event, and it precedes that
+		// phase's `progress` events. Phases fire in fixed import order.
+		const phaseStarts = events.filter((e) => e.type === "phase").map((e) => e.phase);
+		expect(phaseStarts).toEqual(["characters", "chats", "lorebooks", "presets", "personas"]);
+
+		// Granular counts: one progress per imported item, current strictly
+		// increasing, never exceeding the done count for that surface.
+		const progressFor = (phase: string) =>
+			events.filter((e) => e.type === "progress" && e.phase === phase).map((e) => e.current);
+
+		const charProg = progressFor("characters");
+		expect(charProg).toEqual([1, 2, 3]);
+		const loreProg = progressFor("lorebooks");
+		expect(loreProg).toEqual([1, 2]);
+		const presetProg = progressFor("presets");
+		expect(presetProg).toEqual([1]);
+
+		// The `done` event is the LAST event — nothing emitted after the terminal.
+		expect(events[events.length - 1]!.type).toBe("done");
+		expect(events.some((e) => e.type === "error")).toBe(false);
+	});
+
+	it("onProgress omitted (blocking path) still imports correctly", async () => {
+		// The default arg-less importSillyTavernDirectory must behave unchanged:
+		// no callback, no events, same result. Guards the opts?-optional wiring.
+		const env2 = await createRuntime();
+		try {
+			const dir = await buildStDirMulti(join(env2.tmpDir, "st-source"));
+			const result = await env2.runtime.importSillyTavernDirectory(dir);
+			expect(result.characters).toBe(3);
+			expect(result.lorebooks).toBe(2);
+		} finally {
+			await env2.cleanup();
+		}
+	});
+});
