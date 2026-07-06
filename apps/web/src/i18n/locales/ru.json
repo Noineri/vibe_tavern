@@ -199,7 +199,6 @@
   "st_browse": "Выбрать папку",
   "st_select_folder": "Выберите папку данных SillyTavern",
   "st_scanning": "Сканирование...",
-  "st_importing": "Импорт {current} из {total}...",
   "st_scan_results": "Найдено: {personas} персон, {characters} персонажей, {chats} чатов, {presets} пресетов, {lorebooks} лорбуков",
   "st_import_results": "Импортировано: {personas} персон, {characters} персонажей, {chats} чатов, {presets} пресетов, {lorebooks} лорбуков",
   "st_import_errors": "{count} элементов не удалось импортировать",
