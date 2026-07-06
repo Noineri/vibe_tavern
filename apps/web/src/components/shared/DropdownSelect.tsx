@@ -153,7 +153,7 @@ export function DropdownSelect({
                     "flex cursor-pointer items-center rounded px-2.5 py-1.5 font-ui text-[12px] outline-none transition-colors",
                     !value
                       ? "bg-accent-dim font-medium text-accent-t"
-                      : "text-t2 hover:bg-s2 hover:text-t1 data-[selected]:bg-s2 data-[selected]:text-t1",
+                      : "text-t2 hover:bg-s2 hover:text-t1 data-[selected=true]:bg-s2 data-[selected=true]:text-t1",
                   )}
                 >
                   {defaultOption}
@@ -166,9 +166,12 @@ export function DropdownSelect({
                   onSelect={() => handleSelect(o.id)}
                   className={cn(
                     "flex cursor-pointer items-center rounded px-2.5 py-1.5 font-ui text-[12px] outline-none transition-colors",
+                    // cmdk sets data-selected="true"|"false" on every item, so the
+                    // selector must pin the value (=true) — bare data-[selected]
+                    // (presence) matches both and hides the active highlight.
                     o.id === value
                       ? "bg-accent-dim font-medium text-accent-t"
-                      : "text-t2 hover:bg-s2 hover:text-t1 data-[selected]:bg-s2 data-[selected]:text-t1",
+                      : "text-t2 hover:bg-s2 hover:text-t1 data-[selected=true]:bg-s2 data-[selected=true]:text-t1",
                   )}
                 >
                   <span className="flex min-w-0 items-center gap-2">
