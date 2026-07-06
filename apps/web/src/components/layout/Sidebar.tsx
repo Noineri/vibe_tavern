@@ -1,8 +1,9 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import type { ChatId } from "@vibe-tavern/domain";
 import { initials } from "./app-shell-helpers.js";
-import { calcPopoverPos, calcSwitcherPos, formatRelativeTime, formatShortDate, tabAvatarSrc } from "./sidebar-utils.js";
+import { calcSwitcherPos, formatRelativeTime, formatShortDate, tabAvatarSrc } from "./sidebar-utils.js";
 import { useSidebarChats } from "./hooks/use-sidebar-chats.js";
 import { useSidebarCharacters } from "./hooks/use-sidebar-characters.js";
 import { SidebarHeader } from "./sections/SidebarHeader.js";
@@ -106,11 +107,7 @@ export function Sidebar() {
   const [charMenuId, setCharMenuId] = useState<string | null>(null);
   const [chatMenuId, setChatMenuId] = useState<ChatId | null>(null);
   const [branchPopId, setBranchPopId] = useState<ChatId | null>(null);
-  const [charMenuPos, setCharMenuPos] = useState<{ top: number; right: number } | null>(null);
-  const [chatMenuPos, setChatMenuPos] = useState<{ top: number; right: number } | null>(null);
 
-  const charMenuRef = useRef<HTMLDivElement | null>(null);
-  const chatMenuRef = useRef<HTMLDivElement | null>(null);
   const branchPopRef = useRef<HTMLDivElement | null>(null);
   const [importModal, setImportModal] = useState<"character" | "chat" | null>(null);
   const [charSwitcherOpen, setCharSwitcherOpen] = useState(false);
@@ -144,8 +141,6 @@ export function Sidebar() {
   useEffect(() => {
     function handleClickOutside(event: MouseEvent): void {
       const target = event.target as Node;
-      if (charMenuRef.current && !charMenuRef.current.contains(target)) setCharMenuId(null);
-      if (chatMenuRef.current && !chatMenuRef.current.contains(target)) setChatMenuId(null);
       if (branchPopRef.current && !branchPopRef.current.contains(target)) setBranchPopId(null);
       // Switcher: ignore clicks on the trigger itself (toggled by its onClick).
       const triggerEl = charSwitcherTriggerRef.current;
@@ -354,9 +349,6 @@ export function Sidebar() {
               setConfirmDestroy={setConfirmDestroy}
               charMenuId={charMenuId}
               setCharMenuId={setCharMenuId}
-              charMenuPos={charMenuPos}
-              setCharMenuPos={setCharMenuPos}
-              charMenuRef={charMenuRef}
               onCloseOtherMenus={() => { setChatMenuId(null); setBranchPopId(null); }}
             />
 
@@ -479,77 +471,68 @@ export function Sidebar() {
                         </div>
                       </div>
 
-                      {!chatMenuOpen && renamingChatId !== chatItem.id && (
-                        <div className="absolute right-1 top-2 flex gap-0.5 opacity-0 transition-opacity duration-150 group-hover:opacity-100">
-                          <CustomTooltip content={t("sidebar_chat_actions")}>
-                            <button type="button"
-                              className={cn(
-                                'flex h-[22px] w-[22px] scale-90 items-center justify-center rounded text-t3 transition-colors duration-100 hover:text-t1',
-                                isActive && 'hover:text-accent-t'
-                              )}
-                              aria-label={t("sidebar_chat_actions")}
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                setChatMenuId(chatItem.id);
-                                setChatMenuPos(calcPopoverPos(event.currentTarget));
-                                setBranchPopId(null);
-                              }}
-                            >
-                              <Icons.Ellipsis />
-                            </button>
-                          </CustomTooltip>
-                        </div>
-                      )}
-
-                      {chatMenuOpen && chatMenuPos && createPortal(
-                        <div
-                          className="glass-blur absolute z-[200] w-[190px] rounded-md border border-border2 bg-glass-bg py-1 shadow-[0_8px_24px_rgba(0,0,0,0.4)]"
-                          ref={chatMenuRef}
-                          onClick={(event) => event.stopPropagation()}
-                          style={{ top: chatMenuPos.top, right: chatMenuPos.right }}
+                      {renamingChatId !== chatItem.id && (
+                        <DropdownMenu.Root
+                          modal={false}
+                          open={chatMenuOpen}
+                          onOpenChange={(open) => {
+                            if (open) { setChatMenuId(chatItem.id); setBranchPopId(null); }
+                            else setChatMenuId(null);
+                          }}
                         >
-                          <div
-                            className="flex cursor-pointer items-center gap-2 px-3 py-[7px] text-[calc(var(--ui-fs)-2px)] text-t2 transition-colors duration-100 hover:bg-s2 hover:text-t1 [&_svg]:h-3.5 [&_svg]:w-3.5 [&_svg]:shrink-0"
-                            role="menuitem"
-                            onClick={() => {
-                              setChatMenuId(null); setChatMenuPos(null);
-                              setRenamingChatId(chatItem.id);
-                              setRenameDraft(chatItem.title);
-                            }}
-                          >
-                            <Icons.Edit /> {t("sidebar_rename")}
+                          <div className="absolute right-1 top-2 flex gap-0.5 opacity-0 transition-opacity duration-150 group-hover:opacity-100">
+                            <CustomTooltip content={t("sidebar_chat_actions")}>
+                              <DropdownMenu.Trigger asChild>
+                                <button type="button"
+                                  className={cn(
+                                    'flex h-[22px] w-[22px] scale-90 items-center justify-center rounded text-t3 transition-colors duration-100 hover:text-t1 data-[state=open]:text-t1',
+                                    isActive && 'hover:text-accent-t'
+                                  )}
+                                  aria-label={t("sidebar_chat_actions")}
+                                  onClick={(event) => event.stopPropagation()}
+                                >
+                                  <Icons.Ellipsis />
+                                </button>
+                              </DropdownMenu.Trigger>
+                            </CustomTooltip>
                           </div>
+                          <DropdownMenu.Portal>
+                            <DropdownMenu.Content
+                              side="bottom"
+                              align="end"
+                              sideOffset={4}
+                              className="glass-blur z-[200] w-[190px] rounded-md border border-border2 bg-glass-bg py-1 shadow-[0_8px_24px_rgba(0,0,0,0.4)]"
+                            >
+                              <DropdownMenu.Item
+                                className="flex cursor-pointer items-center gap-2 px-3 py-[7px] text-[calc(var(--ui-fs)-2px)] text-t2 outline-none transition-colors duration-100 hover:bg-s2 hover:text-t1 data-[highlighted]:bg-s2 data-[highlighted]:text-t1 [&_svg]:h-3.5 [&_svg]:w-3.5 [&_svg]:shrink-0"
+                                onSelect={() => { setRenamingChatId(chatItem.id); setRenameDraft(chatItem.title); }}
+                              >
+                                <Icons.Edit /> {t("sidebar_rename")}
+                              </DropdownMenu.Item>
 
-                          <div
-                            className="flex cursor-pointer items-center gap-2 px-3 py-[7px] text-[calc(var(--ui-fs)-2px)] text-t2 transition-colors duration-100 hover:bg-s2 hover:text-t1 [&_svg]:h-3.5 [&_svg]:w-3.5 [&_svg]:shrink-0"
-                            role="menuitem"
-                            onClick={() => {
-                              setChatMenuId(null); setChatMenuPos(null);
-                              character.handleExportChatJsonl(chatItem.id);
-                            }}
-                          >
-                            <Icons.Download /> {t("sidebar_export_jsonl")}
-                          </div>
-                          <div className="my-1 h-px bg-border" />
-                          <div
-                            className="flex cursor-pointer items-center gap-2 px-3 py-[7px] text-[calc(var(--ui-fs)-2px)] text-danger-text transition-colors duration-100 hover:bg-danger-dim hover:text-danger-text [&_svg]:h-3.5 [&_svg]:w-3.5 [&_svg]:shrink-0"
-                            role="menuitem"
-                            onClick={() => {
-                              setChatMenuId(null); setChatMenuPos(null);
-                              setConfirmDestroy({
-                                title: clearsOnRemove ? t("sidebar_clear_chat") : t("sidebar_delete_chat"),
-                                body: clearsOnRemove
-                                  ? <>{t("sidebar_clear_chat_confirm")} <b>{chatItem.title}</b></>
-                                  : <>{t("sidebar_are_you_sure")} <b>{chatItem.title}</b></>,
-                                confirmLabel: clearsOnRemove ? t("sidebar_clear_chat") : t("delete"),
-                                onConfirm: () => character.handleRemoveChat(chatItem.id),
-                              });
-                            }}
-                          >
-                            <Icons.Trash /> {clearsOnRemove ? t("sidebar_clear_chat") : t("delete")}
-                          </div>
-                        </div>,
-                        document.body
+                              <DropdownMenu.Item
+                                className="flex cursor-pointer items-center gap-2 px-3 py-[7px] text-[calc(var(--ui-fs)-2px)] text-t2 outline-none transition-colors duration-100 hover:bg-s2 hover:text-t1 data-[highlighted]:bg-s2 data-[highlighted]:text-t1 [&_svg]:h-3.5 [&_svg]:w-3.5 [&_svg]:shrink-0"
+                                onSelect={() => character.handleExportChatJsonl(chatItem.id)}
+                              >
+                                <Icons.Download /> {t("sidebar_export_jsonl")}
+                              </DropdownMenu.Item>
+                              <DropdownMenu.Separator className="my-1 h-px bg-border" />
+                              <DropdownMenu.Item
+                                className="flex cursor-pointer items-center gap-2 px-3 py-[7px] text-[calc(var(--ui-fs)-2px)] text-danger-text outline-none transition-colors duration-100 hover:bg-danger-dim hover:text-danger-text data-[highlighted]:bg-danger-dim data-[highlighted]:text-danger-text [&_svg]:h-3.5 [&_svg]:w-3.5 [&_svg]:shrink-0"
+                                onSelect={() => setConfirmDestroy({
+                                  title: clearsOnRemove ? t("sidebar_clear_chat") : t("sidebar_delete_chat"),
+                                  body: clearsOnRemove
+                                    ? <>{t("sidebar_clear_chat_confirm")} <b>{chatItem.title}</b></>
+                                    : <>{t("sidebar_are_you_sure")} <b>{chatItem.title}</b></>,
+                                  confirmLabel: clearsOnRemove ? t("sidebar_clear_chat") : t("delete"),
+                                  onConfirm: () => character.handleRemoveChat(chatItem.id),
+                                })}
+                              >
+                                <Icons.Trash /> {clearsOnRemove ? t("sidebar_clear_chat") : t("delete")}
+                              </DropdownMenu.Item>
+                            </DropdownMenu.Content>
+                          </DropdownMenu.Portal>
+                        </DropdownMenu.Root>
                       )}
 
                       {branchPopOpen && isActive && (

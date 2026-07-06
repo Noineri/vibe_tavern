@@ -99,9 +99,7 @@ export function CoauthorSidebar() {
 
   // --- Local UI state ---
   const [charMenuId, setCharMenuId] = useState<string | null>(null);
-  const [charMenuPos, setCharMenuPos] = useState<{ top: number; right: number } | null>(null);
 
-  const charMenuRef = useRef<HTMLDivElement | null>(null);
   const [importModal, setImportModal] = useState<"character" | "chat" | null>(null);
   const [renamingChatId, setRenamingChatId] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState("");
@@ -123,7 +121,6 @@ export function CoauthorSidebar() {
   useEffect(() => {
     function handleClickOutside(event: MouseEvent): void {
       const target = event.target as Node;
-      if (charMenuRef.current && !charMenuRef.current.contains(target)) setCharMenuId(null);
       if (flyoutRef.current && !flyoutRef.current.contains(target)) setFlyoutCharId(null);
     }
     document.addEventListener("mousedown", handleClickOutside);
@@ -229,9 +226,6 @@ export function CoauthorSidebar() {
               setConfirmDestroy={setConfirmDestroy}
               charMenuId={charMenuId}
               setCharMenuId={setCharMenuId}
-              charMenuPos={charMenuPos}
-              setCharMenuPos={setCharMenuPos}
-              charMenuRef={charMenuRef}
             />
 
             <section className="min-h-0 max-h-[50%] overflow-y-auto border-b-0 pb-1.5">

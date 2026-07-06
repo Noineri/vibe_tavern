@@ -20,15 +20,6 @@ export function tabAvatarSrc(tab: { id: string; avatarExt: string | null; avatar
 	return resolveEntityAvatarUrl({ kind: "characters", id: tab.id, avatarExt: tab.avatarExt, avatarAssetId: tab.avatarAssetId, updatedAt: tab.updatedAt });
 }
 
-/** Position a portaled popover below its trigger, right-aligned to it. */
-export function calcPopoverPos(triggerEl: HTMLElement): { top: number; right: number } {
-	const rect = triggerEl.getBoundingClientRect();
-	return {
-		top: rect.bottom + 4,
-		right: window.innerWidth - rect.right,
-	};
-}
-
 /**
  * Position a portaled dropdown below its trigger, matching the trigger's width.
  * Portaled to body (see charSwitcherPos comment in Sidebar.tsx — the sidebar

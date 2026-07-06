@@ -13,10 +13,9 @@
  * identically. A future `useCharacterSectionState` hook could consolidate it;
  * for now the JSX extraction is the priority (it removes ~115 lines × 2).
  */
-import { type RefObject } from "react";
-import { createPortal } from "react-dom";
+import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { initials } from "../app-shell-helpers.js";
-import { calcPopoverPos, tabAvatarSrc } from "../sidebar-utils.js";
+import { tabAvatarSrc } from "../sidebar-utils.js";
 import { Icons } from "../../shared/icons.js";
 import { cn } from "../../../lib/cn.js";
 import { ListSortToggle } from "../../shared/ListSortToggle.js";
@@ -49,9 +48,6 @@ export function CharacterListSection({
   setConfirmDestroy,
   charMenuId,
   setCharMenuId,
-  charMenuPos,
-  setCharMenuPos,
-  charMenuRef,
   onCloseOtherMenus,
 }: {
   t: TFn;
@@ -73,9 +69,6 @@ export function CharacterListSection({
   setConfirmDestroy: (dialog: ConfirmDestroyDialog | null) => void;
   charMenuId: string | null;
   setCharMenuId: (v: string | null) => void;
-  charMenuPos: { top: number; right: number } | null;
-  setCharMenuPos: (v: { top: number; right: number } | null) => void;
-  charMenuRef: RefObject<HTMLDivElement | null>;
   onCloseOtherMenus?: () => void;
 }) {
   return (
@@ -140,72 +133,60 @@ export function CharacterListSection({
                 {tab.name}
               </span>
 
-              {!menuOpen && (
+              <DropdownMenu.Root
+                modal={false}
+                open={menuOpen}
+                onOpenChange={(open) => {
+                  if (open) { setCharMenuId(tab.id); onCloseOtherMenus?.(); }
+                  else setCharMenuId(null);
+                }}
+              >
                 <div className="absolute right-1 top-1/2 flex -translate-y-1/2 gap-0.5 rounded pl-1.5 opacity-0 transition-opacity duration-150 group-hover:opacity-100">
                   <CustomTooltip content={t("sidebar_character_actions")}>
-                    <button type="button"
-                      className="flex h-[22px] w-[22px] scale-90 items-center justify-center rounded text-t3 transition-colors duration-100 hover:text-t1"
-                      aria-label={t("sidebar_character_actions")}
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        setCharMenuId(tab.id);
-                        setCharMenuPos(calcPopoverPos(event.currentTarget));
-                        onCloseOtherMenus?.();
-                      }}
-                    >
-                      <Icons.Ellipsis />
-                    </button>
+                    <DropdownMenu.Trigger asChild>
+                      <button type="button"
+                        className="flex h-[22px] w-[22px] scale-90 items-center justify-center rounded text-t3 transition-colors duration-100 hover:text-t1 data-[state=open]:text-t1"
+                        aria-label={t("sidebar_character_actions")}
+                        onClick={(event) => event.stopPropagation()}
+                      >
+                        <Icons.Ellipsis />
+                      </button>
+                    </DropdownMenu.Trigger>
                   </CustomTooltip>
                 </div>
-              )}
-
-              {menuOpen && charMenuPos && createPortal(
-                <div
-                  className="glass-blur absolute z-[200] w-[190px] rounded-md border border-border2 bg-glass-bg py-1 shadow-[0_8px_24px_rgba(0,0,0,0.4)]"
-                  ref={charMenuRef}
-                  onClick={(event) => event.stopPropagation()}
-                  style={{ top: charMenuPos.top, right: charMenuPos.right }}
-                >
-                  <div
-                    className="flex cursor-pointer items-center gap-2 px-3 py-[7px] text-[calc(var(--ui-fs)-2px)] text-t2 transition-colors duration-100 hover:bg-s2 hover:text-t1 [&_svg]:h-3.5 [&_svg]:w-3.5 [&_svg]:shrink-0"
-                    role="menuitem"
-                    onClick={() => {
-                      setCharMenuId(null); setCharMenuPos(null);
-                      character.handleExportCharacter(tab.id);
-                    }}
+                <DropdownMenu.Portal>
+                  <DropdownMenu.Content
+                    side="bottom"
+                    align="end"
+                    sideOffset={4}
+                    className="glass-blur z-[200] w-[190px] rounded-md border border-border2 bg-glass-bg py-1 shadow-[0_8px_24px_rgba(0,0,0,0.4)]"
                   >
-                    <Icons.Download /> {t("sidebar_export")}
-                  </div>
-
-                  <div
-                    className="flex cursor-pointer items-center gap-2 px-3 py-[7px] text-[calc(var(--ui-fs)-2px)] text-t2 transition-colors duration-100 hover:bg-s2 hover:text-t1 [&_svg]:h-3.5 [&_svg]:w-3.5 [&_svg]:shrink-0"
-                    role="menuitem"
-                    onClick={() => {
-                      setCharMenuId(null); setCharMenuPos(null);
-                      character.handleDuplicateCharacter(tab.id);
-                    }}
-                  >
-                    <Icons.Copy /> {t("duplicate")}
-                  </div>
-
-                  <div
-                    className="flex cursor-pointer items-center gap-2 px-3 py-[7px] text-[calc(var(--ui-fs)-2px)] text-danger-text transition-colors duration-100 hover:bg-danger-dim hover:text-danger-text [&_svg]:h-3.5 [&_svg]:w-3.5 [&_svg]:shrink-0"
-                    role="menuitem"
-                    onClick={() => {
-                      setCharMenuId(null); setCharMenuPos(null);
-                      setConfirmDestroy({
+                    <DropdownMenu.Item
+                      className="flex cursor-pointer items-center gap-2 px-3 py-[7px] text-[calc(var(--ui-fs)-2px)] text-t2 outline-none transition-colors duration-100 hover:bg-s2 hover:text-t1 data-[highlighted]:bg-s2 data-[highlighted]:text-t1 [&_svg]:h-3.5 [&_svg]:w-3.5 [&_svg]:shrink-0"
+                      onSelect={() => character.handleExportCharacter(tab.id)}
+                    >
+                      <Icons.Download /> {t("sidebar_export")}
+                    </DropdownMenu.Item>
+                    <DropdownMenu.Item
+                      className="flex cursor-pointer items-center gap-2 px-3 py-[7px] text-[calc(var(--ui-fs)-2px)] text-t2 outline-none transition-colors duration-100 hover:bg-s2 hover:text-t1 data-[highlighted]:bg-s2 data-[highlighted]:text-t1 [&_svg]:h-3.5 [&_svg]:w-3.5 [&_svg]:shrink-0"
+                      onSelect={() => character.handleDuplicateCharacter(tab.id)}
+                    >
+                      <Icons.Copy /> {t("duplicate")}
+                    </DropdownMenu.Item>
+                    <DropdownMenu.Item
+                      className="flex cursor-pointer items-center gap-2 px-3 py-[7px] text-[calc(var(--ui-fs)-2px)] text-danger-text outline-none transition-colors duration-100 hover:bg-danger-dim hover:text-danger-text data-[highlighted]:bg-danger-dim data-[highlighted]:text-danger-text [&_svg]:h-3.5 [&_svg]:w-3.5 [&_svg]:shrink-0"
+                      onSelect={() => setConfirmDestroy({
                         title: t("sidebar_delete_character"),
                         body: <>{t("sidebar_are_you_sure")} <b>{tab.name}</b></>,
                         confirmLabel: t("delete"),
                         onConfirm: () => character.handleDeleteCharacter(tab.id),
-                      });
-                    }}
-                  >
-                    <Icons.Trash /> {t("delete")}
-                  </div>
-                </div>,
-                document.body
-              )}
+                      })}
+                    >
+                      <Icons.Trash /> {t("delete")}
+                    </DropdownMenu.Item>
+                  </DropdownMenu.Content>
+                </DropdownMenu.Portal>
+              </DropdownMenu.Root>
             </div>
           );
         })
