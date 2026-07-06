@@ -9,6 +9,7 @@
  */
 import { useState, useEffect, useMemo } from "react";
 import type { ReactNode } from "react";
+import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 
 import { Ic, Icons } from "../../shared/icons.js";
 import { AddButton } from "../../shared/add-button.js";
@@ -306,82 +307,60 @@ export function LorebookAccordion({
             {/* ── Mobile context menu (⋮) ── */}
             {isMobile ? (
               <div className="relative ml-1">
-                <div
-                  className="flex h-11 w-11 shrink-0 cursor-pointer items-center justify-center rounded text-t2 text-xl leading-none transition-all hover:bg-s2 select-none"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onToggleActionMenu();
-                  }}
+                <DropdownMenu.Root
+                  modal={false}
+                  open={actionMenuOpen}
+                  onOpenChange={(open) => { if (open !== actionMenuOpen) onToggleActionMenu(); }}
                 >
-                  ⋮
-                </div>
-                {actionMenuOpen && (
-                  <>
-                    {/* Backdrop to close */}
-                    <div
-                      className="fixed inset-0 z-[99]"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onToggleActionMenu();
-                      }}
-                    />
-                    <div
-                      className="glass-blur absolute right-0 top-full z-[100] mt-1 min-w-[160px] overflow-hidden rounded-lg border border-border bg-glass-bg py-1 shadow-theme-lg"
+                  <DropdownMenu.Trigger asChild>
+                    <button
+                      type="button"
+                      className="flex h-11 w-11 shrink-0 cursor-pointer items-center justify-center rounded text-t2 text-xl leading-none transition-all hover:bg-s2 select-none"
                       onClick={(e) => e.stopPropagation()}
                     >
-                      <div
-                        className="flex cursor-pointer items-center gap-2 px-4 py-3 font-ui text-[14px] text-t1 transition-colors hover:bg-s2 active:bg-s3"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onAddEntry();
-                          onToggleActionMenu();
-                        }}
+                      ⋮
+                    </button>
+                  </DropdownMenu.Trigger>
+                  <DropdownMenu.Portal>
+                    <DropdownMenu.Content
+                      side="bottom"
+                      align="end"
+                      sideOffset={4}
+                      className="glass-blur z-[100] min-w-[160px] overflow-hidden rounded-lg border border-border bg-glass-bg py-1 shadow-theme-lg"
+                    >
+                      <DropdownMenu.Item
+                        className="flex cursor-pointer items-center gap-2 px-4 py-3 font-ui text-[14px] text-t1 outline-none transition-colors hover:bg-s2 active:bg-s3 data-[highlighted]:bg-s2"
+                        onSelect={() => onAddEntry()}
                       >
                         <Ic.plus /> {t("lore_add_entry")}
-                      </div>
-                      <div
-                        className="flex cursor-pointer items-center gap-2 px-4 py-3 font-ui text-[14px] text-t1 transition-colors hover:bg-s2 active:bg-s3"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onDuplicate();
-                          onToggleActionMenu();
-                        }}
+                      </DropdownMenu.Item>
+                      <DropdownMenu.Item
+                        className="flex cursor-pointer items-center gap-2 px-4 py-3 font-ui text-[14px] text-t1 outline-none transition-colors hover:bg-s2 active:bg-s3 data-[highlighted]:bg-s2"
+                        onSelect={() => onDuplicate()}
                       >
                         <span>⧉</span> {t("lore_duplicate")}
-                      </div>
-                      <div
-                        className="flex cursor-pointer items-center gap-2 px-4 py-3 font-ui text-[14px] text-t1 transition-colors hover:bg-s2 active:bg-s3"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onExport();
-                          onToggleActionMenu();
-                        }}
+                      </DropdownMenu.Item>
+                      <DropdownMenu.Item
+                        className="flex cursor-pointer items-center gap-2 px-4 py-3 font-ui text-[14px] text-t1 outline-none transition-colors hover:bg-s2 active:bg-s3 data-[highlighted]:bg-s2"
+                        onSelect={() => onExport()}
                       >
                         <Ic.download /> {t("lore_export_st")}
-                      </div>
-                      <div
-                        className="flex cursor-pointer items-center gap-2 px-4 py-3 font-ui text-[14px] text-t1 transition-colors hover:bg-s2 active:bg-s3"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onStartEdit();
-                          onToggleActionMenu();
-                        }}
+                      </DropdownMenu.Item>
+                      <DropdownMenu.Item
+                        className="flex cursor-pointer items-center gap-2 px-4 py-3 font-ui text-[14px] text-t1 outline-none transition-colors hover:bg-s2 active:bg-s3 data-[highlighted]:bg-s2"
+                        onSelect={() => onStartEdit()}
                       >
                         <Ic.edit /> {t("edit")}
-                      </div>
-                      <div
-                        className="flex cursor-pointer items-center gap-2 px-4 py-3 font-ui text-[14px] text-danger transition-colors hover:bg-s2 active:bg-s3"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onDelete();
-                          onToggleActionMenu();
-                        }}
+                      </DropdownMenu.Item>
+                      <DropdownMenu.Item
+                        className="flex cursor-pointer items-center gap-2 px-4 py-3 font-ui text-[14px] text-danger outline-none transition-colors hover:bg-s2 active:bg-s3 data-[highlighted]:bg-s2"
+                        onSelect={() => onDelete()}
                       >
                         <Ic.del /> {t("delete_lorebook_confirm")}
-                      </div>
-                    </div>
-                  </>
-                )}
+                      </DropdownMenu.Item>
+                    </DropdownMenu.Content>
+                  </DropdownMenu.Portal>
+                </DropdownMenu.Root>
               </div>
             ) : (
               /* ── Desktop: a row of small buttons ── */
