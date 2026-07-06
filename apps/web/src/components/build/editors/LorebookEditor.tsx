@@ -16,6 +16,7 @@
  */
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useDebouncedCallback } from "use-debounce";
 import { useKeyDown } from "../../../hooks/use-key-down.js";
 
 import { Ic } from "../../shared/icons.js";
@@ -510,26 +511,8 @@ export function LorebookEditor({
   const [savingState, setSavingState] = useState<
     "idle" | "saving" | "saved" | "error"
   >("idle");
-  const saveTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const dirtyFieldsRef = useRef<Record<string, unknown>>({});
   const [dirtyCount, setDirtyCount] = useState(0);
-
-  const updateAct = useCallback((field: string, value: unknown) => {
-    const entryId = activeEntryIdRef.current;
-    const lbId = activeLorebookIdRef.current;
-    if (!entryId || !lbId) return;
-
-    setEntries((prev) =>
-      prev.map((e) => (e.id === entryId ? { ...e, [field]: value } : e))
-    );
-
-    dirtyFieldsRef.current[field] = value;
-    setDirtyCount((c) => c + 1);
-    setSavingState("idle");
-
-    clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(() => flushSave(), 1000);
-  }, []);
 
   const flushSave = useCallback(async () => {
     const entryId = activeEntryIdRef.current;
@@ -556,7 +539,34 @@ export function LorebookEditor({
     }
   }, []);
 
-  useEffect(() => () => clearTimeout(saveTimer.current), []);
+  // Debounced save trigger: 1s after the last edit. `useDebouncedCallback`
+  // owns the timer + unmount cleanup internally and exposes `.flush()` — used
+  // below to fire any pending save on unmount/leave instead of dropping it.
+  // (Replaces the manual saveTimer useRef + clearTimeout/setTimeout pair.)
+  const debouncedSave = useDebouncedCallback(flushSave, 1000);
+
+  const updateAct = useCallback((field: string, value: unknown) => {
+    const entryId = activeEntryIdRef.current;
+    const lbId = activeLorebookIdRef.current;
+    if (!entryId || !lbId) return;
+
+    setEntries((prev) =>
+      prev.map((e) => (e.id === entryId ? { ...e, [field]: value } : e))
+    );
+
+    dirtyFieldsRef.current[field] = value;
+    setDirtyCount((c) => c + 1);
+    setSavingState("idle");
+
+    debouncedSave();
+  }, [debouncedSave]);
+
+  // Fire any pending save on unmount (was: clearTimeout → silent drop).
+  useEffect(() => {
+    return () => {
+      void debouncedSave.flush();
+    };
+  }, [debouncedSave]);
 
   // ═══ Помощники ═══
 

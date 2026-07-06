@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
-import { useCallback, useEffect, useState, useRef, useMemo } from "react";
+import { useCallback, useEffect, useState, useMemo } from "react";
+import { useDebouncedCallback } from "use-debounce";
 import { useKeyDown } from "../../../hooks/use-key-down.js";
 import { useDndSensors } from "../../../hooks/use-dnd-sensors.js";
 import { Ic } from "../../shared/icons.js";
@@ -343,15 +344,20 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
     }
   };
 
-  const codeSaveTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  // Debounced save for the code field only (600ms) — the other fields save
+  // immediately. `useDebouncedCallback` owns the timer + unmount cleanup and
+  // exposes `.flush()` so a pending code save fires on unmount instead of
+  // being dropped. (Replaces the codeSaveTimer useRef + clearTimeout pair.)
+  const debouncedSaveCode = useDebouncedCallback(
+    (id: string, code: string) => void handleUpdateScript(id, { code }),
+    600,
+  );
+  useEffect(() => () => debouncedSaveCode.flush(), [debouncedSaveCode]);
 
   const updateField = (field: string, value: unknown) => {
     if (!activeScriptId) return;
     if (field === "code") {
-      clearTimeout(codeSaveTimer.current);
-      codeSaveTimer.current = setTimeout(() => {
-        void handleUpdateScript(activeScriptId, { code: value as string });
-      }, 600);
+      debouncedSaveCode(activeScriptId, value as string);
     } else {
       void handleUpdateScript(activeScriptId, { [field]: value } as Parameters<typeof updateScript>[1]);
     }
