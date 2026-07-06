@@ -53,7 +53,7 @@ export function CollapsedCharacterStrip({
                 setFlyoutCharId(prev => prev === tab.id ? null : tab.id);
               }}
             >
-              {/* Pill-индикатор для активного персонажа */}
+              {/* Active-character pill indicator */}
               {isMarked && (
                 <div className="absolute -left-[7px] top-1/2 -translate-y-1/2 h-5 w-[3px] rounded-r-full bg-accent transition-all" />
               )}

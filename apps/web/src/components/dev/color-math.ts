@@ -184,7 +184,7 @@ export function parseColor(raw: string): OkColor | null {
 
 // ─── Descriptive naming (OKLCH → Russian color word) ───────────────────
 // No dataset: derives a human label purely from L/C/H so every color gets a
-// stable, editable suggestion ("глубокий индиго", "приглушённый янтарный").
+// stable, editable suggestion (e.g. the Russian strings "глубокий индиго", "приглушённый янтарный").
 // Used to prefill the comment field on new blobs and to power a "regenerate"
 // button on existing ones — never overwrites text the user authored.
 

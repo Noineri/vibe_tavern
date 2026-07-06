@@ -10,7 +10,7 @@ import type { ChatId } from "@vibe-tavern/domain";
  * End-to-end characterization for the message-meta PRESET bug.
  *
  * The prompt preset used to generate a reply was recorded in the per-message
- * meta (the footer: время · токены · модель · пресет) ONLY when the reply came
+ * meta (the footer: time · tokens · model · preset) ONLY when the reply came
  * through the generation queue (override.promptPresetId → addVariant). The
  * ordinary send / continue paths went through appendAssistantReply → addMessage,
  * which wrote modelId to the selected variant but never presetId — so those

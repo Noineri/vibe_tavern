@@ -1,5 +1,5 @@
 /**
- * Extracts <thinking>/мыслит/<thought> tags from model response text.
+ * Extracts <thinking>/<thought> tags from model response text.
  *
  * Some providers (e.g. GLM-5.1 via NanoGPT, DeepSeek) return reasoning
  * wrapped in thinking tags directly in the content field, rather than via

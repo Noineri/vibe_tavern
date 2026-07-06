@@ -1,7 +1,7 @@
 /**
  * SetupWizard — first-run wizard with two paths:
- *   Path A: "Начать настройку" (provider → persona → character)
- *   Path B: "Переезд из SillyTavern" (ST bulk import → provider)
+ *   Path A: "Start setup" (provider → persona → character)
+ *   Path B: "Migrate from SillyTavern" (ST bulk import → provider)
  */
 import { useState, useCallback, useEffect, useRef } from "react";
 import { useT } from "../../i18n/context.js";

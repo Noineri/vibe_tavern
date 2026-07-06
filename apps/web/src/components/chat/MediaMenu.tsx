@@ -24,7 +24,7 @@ interface MediaMenuProps {
  * `characterSubtitle` slot (desktop) and the Build-jumping gallery icon. Opens
  * the character's gallery for in-chat browsing + sending — no mode switch.
  *
- * Desktop: a "🖼 Медиа ▸" button whose popover holds a 3-column thumbnail grid
+ * Desktop: a "🖼 Media ▸" button whose popover holds a 3-column thumbnail grid
  * (~116px tiles, 2 visible rows then scroll); click a tile → floating
  * `GalleryViewer` (zoom/pan); a corner send-to-chat button (revealed on hover)
  * → server promote + `addDraftAttachment`. Mirrors the GalleryGrid tile pattern

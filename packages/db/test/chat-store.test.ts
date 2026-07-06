@@ -630,7 +630,7 @@ describe("MessageStore — variant preset_id (Q2)", () => {
     // wrote modelId to the selected variant but NOT presetId (only addVariant
     // did). So ordinary sends / continues recorded the model in per-message
     // meta but never the prompt preset, and the footer
-    // (время · токены · модель · пресет) showed no preset for non-queue replies
+    // (time · tokens · model · preset) showed no preset for non-queue replies
     // — only the queue (addVariant) path recorded it. addMessage must now
     // record presetId on the selected variant just like it records modelId.
     const msg = await messageStore.addMessage({

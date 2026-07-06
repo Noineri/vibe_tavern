@@ -1,18 +1,18 @@
 /**
- * LorebookEditor — корневой компонент управления лорбуками и скриптами.
+ * LorebookEditor — root component managing lorebooks and scripts.
  *
- * Отвечает за:
- *   - Навигацию между view: pick → list → editor
- *   - Выбор scope (global / character / persona / chat)
- *   - Переключение вкладок lorebooks / scripts
- *   - CRUD лорбуков (создание, обновление мета, удаление)
- *   - CRUD записей (создание, автосохранение, удаление)
+ * Responsible for:
+ *   - Navigation between views: pick → list → editor
+ *   - Scope selection (global / character / persona / chat)
+ *   - Switching between lorebooks / scripts tabs
+ *   - Lorebook CRUD (create, meta update, delete)
+ *   - Entry CRUD (create, autosave, delete)
  *
- * Визуальные подкомпоненты вынесены в отдельные файлы:
- *   - LorebookAccordion — раскрытый аккордеон одного лорбука
- *   - LoreEntryEditor — форма редактирования записи
- *   - LorebookImportModal — 3-шаговый мастер импорта
- *   - ScriptEditor (useScriptPanel) — редактор скриптов
+ * Visual sub-components are extracted into separate files:
+ *   - LorebookAccordion — expanded accordion for a single lorebook
+ *   - LoreEntryEditor — entry editing form
+ *   - LorebookImportModal — 3-step import wizard
+ *   - ScriptEditor (useScriptPanel) — script editor
  */
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -78,7 +78,7 @@ interface LorebookEditorProps {
   personaId: string | null;
 }
 
-// ── Inline keyframes (инжектится один раз) ────────────────────────────
+// ── Inline keyframes (injected once) ────────────────────────────
 
 const STYLE_ID = "lb-anim-style";
 function ensureAnimStyle() {
@@ -94,7 +94,7 @@ function ensureAnimStyle() {
   document.head.appendChild(s);
 }
 
-// ── Хук определения мобильного устройства ──
+// ── Mobile detection hook ──
 
 function useIsMobile() {
   const [mobile, setMobile] = useState(
@@ -109,7 +109,7 @@ function useIsMobile() {
 }
 
 // ════════════════════════════════════════════════════════════════════════
-// Главный компонент
+// Main component
 // ════════════════════════════════════════════════════════════════════════
 
 export function LorebookEditor({
@@ -121,13 +121,13 @@ export function LorebookEditor({
   const isMobile = useIsMobile();
   const isRu = locale === "ru";
 
-  // ── Навигация ──
+  // ── Navigation ──
   const stickyInitialTab = useRef<Tab | null>(readStickyWorldLoreTab());
   const [view, setView] = useState<View>(() => stickyInitialTab.current ? "list" : "pick");
   const [tab, setTab] = useState<Tab>(() => stickyInitialTab.current ?? "lorebooks");
   const [scope, setScope] = useState<Scope>("all");
 
-  // Анимация переходов
+  // Transition animations
   const [phase, setPhase] = useState<"idle" | "fading" | "done">("idle");
   const [fadingTab, setFadingTab] = useState<Tab | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -136,7 +136,7 @@ export function LorebookEditor({
     return () => clearTimeout(timer.current);
   }, []);
 
-  // ── Раскрытые аккордеоны ──
+  // ── Expanded accordions ──
   const [expandedLorebooks, setExpandedLorebooks] = useState<Set<string>>(
     new Set()
   );
@@ -160,7 +160,7 @@ export function LorebookEditor({
     };
   }, [view]);
 
-  // ── Переход pick → list ──
+  // ── pick → list transition ──
   const handlePick = (target: Tab) => {
     setTab(target);
     writeStickyWorldLoreTab(target);
@@ -196,7 +196,7 @@ export function LorebookEditor({
     setFadingTab(null);
   };
 
-  // ── Редактирование мета лорбука (inline в аккордеоне) ──
+  // ── Lorebook meta editing (inline in the accordion) ──
   const [editingLorebookId, setEditingLorebookId] = useState<string | null>(
     null
   );
@@ -204,12 +204,12 @@ export function LorebookEditor({
   const [editLbScope, setEditLbScope] = useState<Scope>("character");
   const [createdDraftLorebookId, setCreatedDraftLorebookId] = useState<string | null>(null);
 
-  // ── Контекстное меню на мобиле ──
+  // ── Mobile context menu ──
   const [actionMenuLorebookId, setActionMenuLorebookId] = useState<
     string | null
   >(null);
 
-  // ── Хук скриптов ──
+  // ── Scripts hook ──
   const scriptPanel = useScriptPanel({
     characterId,
     chatId,
@@ -219,13 +219,13 @@ export function LorebookEditor({
     onBackToList: () => setView("list"),
   });
 
-  // ── Активная запись ──
+  // ── Active entry ──
   const [activeEntryId, _setActiveEntryId] = useState<string | null>(null);
   const [activeLorebookIdForEntry, _setActiveLorebookId] = useState<
     string | null
   >(null);
 
-  // Refs для актуальных значений (защита от stale closure в updateAct)
+  // Refs for current values (stale-closure guard in updateAct)
   const activeEntryIdRef = useRef<string | null>(null);
   const activeLorebookIdRef = useRef<string | null>(null);
 
@@ -238,13 +238,13 @@ export function LorebookEditor({
     activeLorebookIdRef.current = id;
   };
 
-  // ── Подтверждение удаления лорбука ──
+  // ── Lorebook delete confirmation ──
   const [confirmDeleteLorebook, setConfirmDeleteLorebook] = useState<
     string | null
   >(null);
   useKeyDown("Escape", () => setConfirmDeleteLorebook(null), { enabled: !!confirmDeleteLorebook });
 
-  // ── Модалка импорта ──
+  // ── Import modal ──
   const [importOpen, setImportOpen] = useState(false);
 
   // ── Scope → ownerId ──
@@ -258,7 +258,7 @@ export function LorebookEditor({
     [characterId, personaId, chatId]
   );
 
-  // ═══ Загрузка лорбуков ═══
+  // ═══ Lorebook loading ═══
   const [lorebooks, setLorebooks] = useState<LorebookRecord[]>([]);
   const [loadingLorebooks, setLoadingLorebooks] = useState(false);
 
@@ -329,7 +329,7 @@ export function LorebookEditor({
     return () => { cancelled = true; };
   }, [lorebooks]);
 
-  // ═══ Загрузка записей (для активного лорбука) ═══
+  // ═══ Entry loading (for the active lorebook) ═══
   const [entries, setEntries] = useState<LoreEntryRecord[]>([]);
   const activeEntry = entries.find((e) => e.id === activeEntryId) ?? null;
   // Distinct non-empty group names in the current lorebook — used by the
@@ -348,7 +348,7 @@ export function LorebookEditor({
     if (activeLorebookIdForEntry) void refreshEntries();
   }, [activeLorebookIdForEntry, refreshEntries]);
 
-  // ═══ Мутации лорбуков ═══
+  // ═══ Lorebook mutations ═══
 
   async function discardCreatedLorebookDraft(): Promise<void> {
     const draftId = createdDraftLorebookId;
@@ -456,7 +456,7 @@ export function LorebookEditor({
     URL.revokeObjectURL(url);
   };
 
-  // ═══ Мутации записей ═══
+  // ═══ Entry mutations ═══
 
   const handleAddEntry = (lorebookId: string) => {
     const newEntry: Partial<LoreEntryRecord> = {
@@ -506,7 +506,7 @@ export function LorebookEditor({
     setView("editor");
   };
 
-  // ═══ Автосохранение записи (debounce) ═══
+  // ═══ Entry autosave (debounced) ═══
 
   const [savingState, setSavingState] = useState<
     "idle" | "saving" | "saved" | "error"
@@ -568,7 +568,7 @@ export function LorebookEditor({
     };
   }, [debouncedSave]);
 
-  // ═══ Помощники ═══
+  // ═══ Helpers ═══
 
   const handleAddLorebook = () => {
     // `scope` is the list filter (may be "all"); buildLorebookCreateBody
@@ -592,12 +592,12 @@ export function LorebookEditor({
   };
 
   // ══════════════════════════════════════════════════════════════════════
-  // UI-фрагменты
+  // UI fragments
   // ══════════════════════════════════════════════════════════════════════
 
-  // ── Scope column (десктоп: вертикальный с иконками) ──
-  // Label для "all" зависит от активной вкладки — «Все лорбуки» / «Все скрипты».
-  // Остальные scope-имена (Глобальный/Персонаж/...) инвариантны к вкладке.
+  // ── Scope column (desktop: vertical with icons) ──
+  // The "all" label depends on the active tab — "All lorebooks" / "All scripts".
+  // Other scope names (Global/Character/...) are invariant across tabs.
   const allLabel = tab === "lorebooks" ? t("scope_all") : t("scope_all_scripts");
   const scopeItems: { id: Scope; icon: ReactNode; label: string }[] = [
     { id: "all", icon: <Ic.stack />, label: allLabel },
@@ -628,7 +628,7 @@ export function LorebookEditor({
     </div>
   ) : null;
 
-  // ── Scope bar (мобильный: горизонтальные чипсы) ──
+  // ── Scope bar (mobile: horizontal chips) ──
   const scopeBarMobile = isMobile ? (
     <div
       className="flex shrink-0 gap-1 overflow-x-auto border-b border-border scrollbar-hide"
@@ -654,7 +654,7 @@ export function LorebookEditor({
     </div>
   ) : null;
 
-  // ── View: Pick (выбор Lorebooks / Scripts) ──
+  // ── View: Pick (choose Lorebooks / Scripts) ──
   const pickView = (
     <div
       className="flex h-full flex-col items-center justify-center"
@@ -711,7 +711,7 @@ export function LorebookEditor({
     </div>
   );
 
-  // ── Список лорбуков ──
+  // ── Lorebook list ──
   const lorebookListContent = (
     <div
       className={cn(
@@ -721,7 +721,7 @@ export function LorebookEditor({
       )}
       style={{ padding: isMobile ? "12px" : "20px 24px" }}
     >
-      {/* Пустое состояние */}
+      {/* Empty state */}
       {lorebooks.length === 0 && (
         <div className="py-10 text-center">
           <div className="mb-2 text-[13px] text-t3">
@@ -738,7 +738,7 @@ export function LorebookEditor({
         </div>
       )}
 
-      {/* Список аккордеонов */}
+      {/* Accordion list */}
       {lorebooks.map((lb) => (
         <LorebookAccordion
           key={lb.id}
@@ -791,7 +791,7 @@ export function LorebookEditor({
         />
       ))}
 
-      {/* Кнопки внизу списка */}
+      {/* Bottom list buttons */}
       {lorebooks.length > 0 && (
         <div className="mt-2 flex gap-2">
           <AddButton onClick={handleAddLorebook}>
@@ -805,7 +805,7 @@ export function LorebookEditor({
     </div>
   );
 
-  // ── Header bar (список) ──
+  // ── Header bar (list) ──
   const headerBar = (
     <div
       className="w-full flex shrink-0 items-center gap-2 border-b border-border bg-surface"
@@ -825,9 +825,9 @@ export function LorebookEditor({
           ? t("lorebooks_card_title")
           : t("scripts_card_title")}
       </span>
-      {/* Breadcrumb: активный scope из мини-сайдбара. Десктоп только — на
-          мобильном подписи scope и так видны в нижней чип-ленте. Работает для
-          обеих вкладок (Лорбуки и Скрипты), т.к. scope общий. */}
+      {/* Breadcrumb: active scope from the mini-sidebar. Desktop only — on
+          mobile the scope labels are already visible in the bottom chip bar.
+          Works for both tabs (Lorebooks and Scripts) since scope is shared. */}
       {!isMobile && (() => {
         const activeScope = scopeItems.find((s) => s.id === scope);
         if (!activeScope) return null;
@@ -921,7 +921,7 @@ export function LorebookEditor({
       <span className="flex-1 truncate font-ui text-[14px] font-semibold text-t1">
         {tab === "lorebooks" ? activeEntry?.title || "" : ""}
       </span>
-      {/* Индикатор автосохранения */}
+      {/* Autosave indicator */}
       <button type="button"
         className={cn(
           "h-8 cursor-pointer rounded-md px-3 font-ui text-xs font-medium transition-all select-none",
@@ -952,7 +952,7 @@ export function LorebookEditor({
     </div>
   );
 
-  // ── Модалка подтверждения удаления лорбука ──
+  // ── Lorebook delete confirmation modal ──
   const confirmDeleteLorebookModal = confirmDeleteLorebook && (
     <div
       className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60"
@@ -1018,7 +1018,7 @@ export function LorebookEditor({
 
   return (
     <div className="relative flex h-full w-full flex-col overflow-hidden min-h-0">
-      {/* Модалки */}
+      {/* Modals */}
       {scriptPanel.modals}
       <LorebookImportModal
         open={importOpen}
@@ -1033,10 +1033,10 @@ export function LorebookEditor({
       />
       {confirmDeleteLorebookModal}
 
-      {/* ── Мобильная раскладка ── */}
+      {/* ── Mobile layout ── */}
       {isMobile ? (
         <>
-          {/* Список */}
+          {/* List */}
           {view === "list" && (
             <div
               className={cn(
@@ -1052,7 +1052,7 @@ export function LorebookEditor({
             </div>
           )}
 
-          {/* Редактор */}
+          {/* Editor */}
           {view === "editor" && (
             <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
               {editorHeader}
@@ -1088,7 +1088,7 @@ export function LorebookEditor({
           )}
         </>
       ) : (
-        /* ── Десктопная раскладка ── */
+        /* ── Desktop layout ── */
         <>
           {view === "list" && (
             <div

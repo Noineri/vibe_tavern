@@ -478,7 +478,7 @@ describe("CoauthorCharacterForm", () => {
 	// JSON.stringifies it into the `tool-result` SSE `output`; the frontend
 	// safeParses it back. A drift here (extra wrapper, renamed field) →
 	// safeParse fails → status:"error" → no proposal → EMPTY reviewing panel —
-	// the exact "диффы не отображаются" symptom. NOTE: this is a static contract
+	// the exact "diffs not showing" symptom. NOTE: this is a static contract
 	// check; it cannot reproduce a runtime failure (SSE not arriving, store
 	// cleared, isSending stuck). For those, a live Playwright repro is needed.
 

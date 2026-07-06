@@ -16,7 +16,7 @@ import { unlink } from "node:fs/promises";
  *   - win32   → PowerShell `System.Windows.Forms.FolderBrowserDialog` (real).
  *   - darwin  → `osascript` `choose folder` (real).
  *   - other   → `{ available: false }` stub. The XDG-portal implementation for
- *               Linux is out of scope for this cycle (contributor Ваня, separate
+ *               Linux is out of scope for this cycle (a separate contributor change —
  *               change — cannot be tested from a Windows machine; a blind
  *               implementation would violate the stale-assumption rule).
  *

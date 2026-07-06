@@ -1,12 +1,12 @@
 /**
- * LorebookImportModal — 3-шаговый мастер импорта записей лорбука.
+ * LorebookImportModal — 3-step lorebook entry import wizard.
  *
- * Шаг 1: Загрузка/вставка JSON файла
- * Шаг 2: Обзор обнаруженных записей, выбор целевого лорбука
- * Шаг 3: Выбор режима (новый/объединить/заменить) и запуск
+ * Step 1: Upload/paste a JSON file
+ * Step 2: Review detected entries, choose the target lorebook
+ * Step 3: Choose a mode (new/merge/replace) and run
  *
- * Управляет всей своей state самостоятельно.
- * Вызывает onImportComplete при успешном импорте.
+ * Manages all of its own state.
+ * Calls onImportComplete on successful import.
  */
 import { useState } from "react";
 import { useKeyDown } from "../../../hooks/use-key-down.js";
@@ -46,29 +46,29 @@ export function LorebookImportModal({
   onImportComplete,
   t,
 }: LorebookImportModalProps) {
-  // ── Шаг визарда ──
+  // ── Wizard step ──
   const [step, setStep] = useState<1 | 2 | 3>(1);
 
-  // ── Данные файла ──
-  // `importData` хранит распарсенный JSON как есть (объект для ST, массив для Janitor).
+  // ── File data ──
+  // `importData` stores the parsed JSON as-is (object for ST, array for Janitor).
   const [importData, setImportData] = useState<unknown>(null);
   const [fileName, setFileName] = useState("");
   const [entryCount, setEntryCount] = useState(0);
-  // "st" (SillyTavern: { entries: ... }) или "janitor" (bare array of entries).
+  // "st" (SillyTavern: { entries: ... }) or "janitor" (bare array of entries).
   const [detectedFormat, setDetectedFormat] = useState<"st" | "janitor">("st");
   const [parseError, setParseError] = useState<string | null>(null);
 
-  // ── Настройки импорта ──
+  // ── Import settings ──
   const [mode, setMode] = useState<"new" | "merge" | "replace">("new");
   const [targetLorebookId, setTargetLorebookId] = useState<string | null>(
     null
   );
 
-  // ── Состояние выполнения ──
+  // ── Execution state ──
   const [importing, setImporting] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
 
-  // ── Сброс при закрытии ──
+  // ── Reset on close ──
   const close = () => {
     setStep(1);
     setImportData(null);
@@ -83,10 +83,10 @@ export function LorebookImportModal({
     onClose();
   };
 
-  // ── Парсинг файла ──
-  // Формат определяется по форме JSON: голый массив → Janitor AI;
-  // объект с `entries` → SillyTavern. Бэкенд повторно проверяет форму,
-  // так что это лишь для подсчёта записей и подписи в UI.
+  // ── File parsing ──
+  // Format is determined by the JSON shape: a bare array → Janitor AI;
+  // an object with `entries` → SillyTavern. The backend re-validates the shape,
+  // so this is only for counting entries and the UI caption.
   const parseFileContent = (text: string, name: string) => {
     try {
       const parsed = JSON.parse(text);
@@ -152,7 +152,7 @@ export function LorebookImportModal({
     if (file) handleImportFile(file);
   };
 
-  // ── Запуск импорта ──
+  // ── Run import ──
   const runImport = async () => {
     if (!importData) return;
     const lorebookId = mode === "new" ? "new" : targetLorebookId;
@@ -205,7 +205,7 @@ export function LorebookImportModal({
         style={{ maxHeight: "80vh" }}
         onClick={(e) => e.stopPropagation()}
       >
-        {/* ── Заголовок ── */}
+        {/* ── Header ── */}
         <div
           className="flex items-center justify-between border-b border-border"
           style={{ padding: "16px 20px" }}
@@ -221,9 +221,9 @@ export function LorebookImportModal({
           </div>
         </div>
 
-        {/* ── Содержимое ── */}
+        {/* ── Content ── */}
         <div className="flex-1 overflow-y-auto" style={{ padding: 20 }}>
-          {/* Прогресс-бар шагов */}
+          {/* Step progress bar */}
           <div className="mb-5 flex gap-2">
             {[1, 2, 3].map((s) => (
               <div
@@ -236,7 +236,7 @@ export function LorebookImportModal({
             ))}
           </div>
 
-          {/* ── Шаг 1: Загрузка файла ── */}
+          {/* ── Step 1: File upload ── */}
           {step === 1 && (
             <>
               <div className="mb-3 text-sm font-medium text-t1">
@@ -282,7 +282,7 @@ export function LorebookImportModal({
             </>
           )}
 
-          {/* ── Шаг 2: Обзор + выбор целевого лорбука ── */}
+          {/* ── Step 2: Review + pick target lorebook ── */}
           {step === 2 && (
             <>
               <div className="mb-3 text-sm font-medium text-t1">
@@ -363,7 +363,7 @@ export function LorebookImportModal({
             </>
           )}
 
-          {/* ── Шаг 3: Режим импорта + запуск ── */}
+          {/* ── Step 3: Import mode + run ── */}
           {step === 3 && (
             <>
               <div className="mb-3 text-sm font-medium text-t1">

@@ -327,7 +327,7 @@ export function CoauthorRail({ hidden }: { hidden?: boolean }) {
                                 {ch.subtitle}
                               </span>
 
-                              {/* Chat three-dot menu — увеличенный touch target */}
+                              {/* Chat three-dot menu — enlarged touch target */}
                               <button type="button"
                                 className={cn(
                                   "absolute right-1 inset-y-0 my-auto flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-t3 transition-colors hover:text-t1 active:bg-s3",
@@ -362,7 +362,7 @@ export function CoauthorRail({ hidden }: { hidden?: boolean }) {
         </>
       )}
 
-      {/* ═══ BOTTOM SHEETS (контекстные меню) ═══ */}
+      {/* ═══ BOTTOM SHEETS (context menus) ═══ */}
       {charMenuId && (
         <ActionSheet
           open={true}

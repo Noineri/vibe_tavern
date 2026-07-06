@@ -1,11 +1,11 @@
 /**
- * LorebookAccordion — раскрывающийся аккордеон одного лорбука в списке.
+ * LorebookAccordion — expandable accordion for a single lorebook in the list.
  *
- * Показывает заголовок (имя, тогл enabled, действия) и
- * раскрывающийся список записей с настройками (token budget, scan depth).
+ * Shows a header (name, enabled toggle, actions) and
+ * an expandable list of entries with settings (token budget, scan depth).
  *
- * В режиме редактирования — inline-форма для имени + scope.
- * На мобильных — контекстное меню (⋮) вместо набора кнопок.
+ * In edit mode — an inline form for the name + scope.
+ * On mobile — a context menu (⋮) instead of a button row.
  */
 import { useState, useEffect, useMemo } from "react";
 import type { ReactNode } from "react";
@@ -128,8 +128,8 @@ export function LorebookAccordion({
   personas,
   isRu,
 }: LorebookAccordionProps) {
-  // ── Entries: загружаются сразу (для счётчика и токенов в шапке),
-  //    и остаются доступными при раскрытии.
+  // ── Entries: loaded up front (for the counter and token estimate in the header),
+  //    and remain available when expanded.
   const [entries, setEntries] = useState<LoreEntryRecord[]>([]);
 
   useEffect(() => {
@@ -142,7 +142,7 @@ export function LorebookAccordion({
     };
   }, [lorebook.id]);
 
-  // Суммарная оценка токенов всех записей (по content).
+  // Total estimated tokens across all entries (by content).
   const totalTokens = useMemo(
     () =>
       entries.length === 0
@@ -176,7 +176,7 @@ export function LorebookAccordion({
 
   return (
     <div className="mb-3 rounded-xl border border-border bg-surface">
-      {/* ── Заголовок аккордеона ── */}
+      {/* ── Accordion header ── */}
       <div
         className="flex items-center gap-1.5"
         style={{
@@ -184,7 +184,7 @@ export function LorebookAccordion({
           borderRadius: expanded ? "12px 12px 0 0" : 12,
         }}
       >
-        {/* Кнопка раскрытия ▶/▼ */}
+        {/* Expand button ▶/▼ */}
         <div
           className="flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded text-t3 transition-all hover:bg-s2"
           onClick={onToggle}
@@ -196,7 +196,7 @@ export function LorebookAccordion({
           )}
         </div>
 
-        {/* ── Режим редактирования: inline-форма имени + scope ── */}
+        {/* ── Edit mode: inline name + scope form ── */}
         {editing ? (
           <div
             className={cn(
@@ -204,7 +204,7 @@ export function LorebookAccordion({
               isMobile && "flex-wrap"
             )}
           >
-            {/* Имя лорбука — на мобиле занимает всю строку */}
+            {/* Lorebook name — takes the full row on mobile */}
             <input
               className={cn(
                 "flex-1 rounded border border-accent bg-bg px-2 py-0.5 text-[13px] font-medium text-t1 outline-none",
@@ -229,7 +229,7 @@ export function LorebookAccordion({
               fill={isMobile}
               className={cn(isMobile && "[&_button]:py-0.5")}
             />
-            {/* Save (✓) и Cancel (✕) — на мобиле 44px touch target, новая строка */}
+            {/* Save (✓) and Cancel (✕) — 44px touch target on mobile, new row */}
             <div className={cn("flex items-center gap-1", isMobile && "w-full justify-end")}>
               <div
                 className={cn(
@@ -252,7 +252,7 @@ export function LorebookAccordion({
             </div>
           </div>
         ) : (
-          /* ── Обычный режим: имя + тогл + счётчик + действия ── */
+          /* ── Normal mode: name + toggle + counter + actions ── */
           <>
             {(() => {
               const binding = lorebookBindingIcon(lorebook);
@@ -270,7 +270,7 @@ export function LorebookAccordion({
               {lorebook.name}
             </span>
 
-            {/* Тогл enabled/disabled */}
+            {/* Enabled/disabled toggle */}
             <div
               className="relative ml-1 mr-1 h-[22px] w-[40px] shrink-0 cursor-pointer rounded-full transition-[background-color] duration-200 ease-out"
               style={{
@@ -292,7 +292,7 @@ export function LorebookAccordion({
               />
             </div>
 
-            {/* Счётчик записей + оценка токенов */}
+            {/* Entry counter + token estimate */}
             <span
               className="shrink-0 rounded-full bg-s3 px-2 py-0.5 font-ui text-[11px] text-t3 tabular-nums"
               title={`${entries.length} · ${totalTokens.toLocaleString()} ${t("tokens_label")}`}
@@ -305,7 +305,7 @@ export function LorebookAccordion({
               )}
             </span>
 
-            {/* ── Мобильное контекстное меню (⋮) ── */}
+            {/* ── Mobile context menu (⋮) ── */}
             {isMobile ? (
               <div className="relative ml-1">
                 <div
@@ -319,7 +319,7 @@ export function LorebookAccordion({
                 </div>
                 {actionMenuOpen && (
                   <>
-                    {/* Backdrop для закрытия */}
+                    {/* Backdrop to close */}
                     <div
                       className="fixed inset-0 z-[99]"
                       onClick={(e) => {
@@ -386,7 +386,7 @@ export function LorebookAccordion({
                 )}
               </div>
             ) : (
-              /* ── Десктоп: набор мелких кнопок ── */
+              /* ── Desktop: a row of small buttons ── */
               <div className="flex shrink-0 items-center gap-0.5 ml-1">
                 <CustomTooltip content={t("lore_add_entry")}>
                   <div
@@ -449,13 +449,13 @@ export function LorebookAccordion({
         )}
       </div>
 
-      {/* ── Раскрытое содержимое: настройки + список записей ── */}
+      {/* ── Expanded content: settings + entry list ── */}
       {expanded && !editing && (
         <div
           className="flex flex-col gap-3 border-t border-border"
           style={{ padding: "10px 12px" }}
         >
-          {/* Настройки лорбука: token budget, scan depth, recursive scanning, links */}
+          {/* Lorebook settings: token budget, scan depth, recursive scanning, links */}
           <div
             className={cn(
               "flex items-end gap-6 rounded-lg border border-border bg-s2/50 px-3 py-2.5",

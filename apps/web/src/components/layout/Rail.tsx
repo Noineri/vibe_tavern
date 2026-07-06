@@ -57,7 +57,7 @@ export function Rail({ hidden }: { hidden?: boolean }) {
   const branches = chatMeta?.branches ?? [];
   const activeBranchId = chatMeta?.activeBranch?.id ?? null;
 
-  // Ветки доступны только для активного чата (подгружаются через snapshot)
+  // Branches are only available for the active chat (loaded via snapshot)
   const activeChatBranches = activeChatId ? branches : [];
   const buildPanels = useBuildPanels();
 
@@ -380,7 +380,7 @@ export function Rail({ hidden }: { hidden?: boolean }) {
                                 {ch.subtitle}
                               </span>
 
-                              {/* Chat three-dot menu — увеличенный touch target */}
+                              {/* Chat three-dot menu — enlarged touch target */}
                               <button type="button"
                                 className={cn(
                                   "absolute right-1 inset-y-0 my-auto flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-t3 transition-colors hover:text-t1 active:bg-s3",
@@ -391,7 +391,7 @@ export function Rail({ hidden }: { hidden?: boolean }) {
                                 <Ic.ellipsis />
                               </button>
 
-                              {/* Branches — только для активного чата (данные в snapshot) */}
+                              {/* Branches — active chat only (data lives in the snapshot) */}
                               {ch.id === activeChatId && activeChatBranches.length > 0 && (
                                 <>
                                 <button type="button"
@@ -440,7 +440,7 @@ export function Rail({ hidden }: { hidden?: boolean }) {
                                 )}
                                 </>
                               )}
-                              {/* Для неактивных чатов — показываем метку ветки */}
+                              {/* For inactive chats — show the branch label */}
                               {ch.id !== activeChatId && ch.activeBranchLabel && (
                                 <span className="mt-0.5 truncate text-[calc(var(--ui-fs)-4px)] text-t4">↳ {ch.activeBranchLabel}</span>
                               )}
@@ -471,7 +471,7 @@ export function Rail({ hidden }: { hidden?: boolean }) {
         </>
       )}
 
-      {/* ═══ BOTTOM SHEETS (контекстные меню) ═══ */}
+      {/* ═══ BOTTOM SHEETS (context menus) ═══ */}
       {charMenuId && (
         <ActionSheet
           open={true}

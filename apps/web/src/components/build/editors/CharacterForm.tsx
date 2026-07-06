@@ -42,7 +42,7 @@ export interface CharacterFormProps {
   avatarUrl?: string;
   onSave: () => void;
   onReset: () => void;
-  /** Вызывается после успешного импорта карточки (данные уже в форме, форма dirty) */
+  /** Called after a successful card import (data already in the form, form is dirty) */
   onAfterImport?: () => void;
   onAvatarUpload: (file: File, originalFile?: File | null) => Promise<void> | void;
   onExportJson: () => void;
@@ -228,7 +228,7 @@ export function CharacterForm({
         if (Object.keys(merged).length === 0) throw new Error(t("import_error_no_data"));
         form.reset({ ...form.getValues(), ...merged } as BuildCharacterDraft);
         setImportModalOpen(false);
-        // Автосохранение + создание чата после импорта
+        // Autosave + create a chat after import
         onAfterImport?.();
       } catch (err) {
         setImportError(err instanceof Error ? err.message : t("import_failed"));

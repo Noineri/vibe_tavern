@@ -48,7 +48,7 @@ describe("diffIntraLine", () => {
   });
 
   test("handles Cyrillic prose per-word (Unicode-aware tokenizer)", () => {
-    // "Быстрый" → "Медленный"; rest shared.
+    // changed word; rest shared.
     const d = diffIntraLine("Он был смелым героем", "Он был добрым героем")!;
     expect(changedText(d.oldSegments)).toBe("смелым");
     expect(changedText(d.newSegments)).toBe("добрым");

@@ -156,8 +156,8 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
   const [scripts, setScripts] = useState<ScriptRecord[]>([]);
 
   const refreshScripts = useCallback(async () => {
-    // "all" — обзорный режим (только чтение), отдаёт все скрипты без фильтра
-    // по скоупу. Иначе — по скоупу + владельцу.
+    // "all" — overview mode (read-only), returns all scripts with no scope filter.
+    // Otherwise — filtered by scope + owner.
     setScripts(scope === "all" ? await listAllScripts() : await listScripts(scope, scopeId));
   }, [scope, scopeId]);
 
@@ -317,8 +317,8 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
   };
 
   // ── Scope-aware body helper ──────────────────────────────
-  // "all" — обзорный режим без конкретного владельца; создание/импорт скриптов
-  // в нём запрещены (CTA скрыты в LorebookEditor), fallback чисто оборонительный.
+  // "all" — overview mode with no specific owner; creating/importing scripts
+  // is disabled there (CTAs are hidden in LorebookEditor), the fallback is purely defensive.
   const scopeBody = () => {
     const effectiveScope: Exclude<Scope, "all"> = scope === "all" ? "character" : scope;
     const base: Record<string, string | undefined> = { scopeType: effectiveScope };

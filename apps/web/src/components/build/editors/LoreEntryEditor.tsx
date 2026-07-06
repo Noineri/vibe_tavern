@@ -1,16 +1,16 @@
 /**
- * LoreEntryEditor — форма редактирования одной записи лорбука.
+ * LoreEntryEditor — editing form for a single lorebook entry.
  *
- * Управляет собственной UI-state:
- *   - keyInput / secKeyInput — ввод ключевых слов
- *   - testText — текст для теста активации
- *   - advancedOpen — раскрытие расширенных настроек
- *   - confirmDeleteEntry — модалка подтверждения удаления
+ * Manages its own UI state:
+ *   - keyInput / secKeyInput — keyword input
+ *   - testText — text for activation testing
+ *   - advancedOpen — advanced settings disclosure
+ *   - confirmDeleteEntry — delete confirmation modal
  *
- * Получает от родителя:
- *   - entry (данные записи)
- *   - updateAct (коллбэк для изменения полей → автосохранение)
- *   - onDeleted (коллбэк после успешного удаления)
+ * Receives from the parent:
+ *   - entry (entry data)
+ *   - updateAct (callback for changing fields → autosave)
+ *   - onDeleted (callback after successful deletion)
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useKeyDown } from "../../../hooks/use-key-down.js";
@@ -71,7 +71,7 @@ export function LoreEntryEditor({
   t,
   existingGroups,
 }: LoreEntryEditorProps) {
-  // ── Локальная UI-state ──
+  // ── Local UI state ──
   const [keyInput, setKeyInput] = useState("");
   const [secKeyInput, setSecKeyInput] = useState("");
   const [testText, setTestText] = useState("");
@@ -104,7 +104,7 @@ export function LoreEntryEditor({
   const activeCharacter = useActiveCharacter();
   const activePersona = useActivePersona();
 
-  // ── Обработчики ключевых слов ──
+  // ── Keyword handlers ──
   const handleKeyAdd = (
     e: React.KeyboardEvent,
     type: "keys" | "secondaryKeys"
@@ -123,7 +123,7 @@ export function LoreEntryEditor({
     updateAct(type, arr.filter((k) => k !== keyToRemove));
   };
 
-  // ── Тест активации ──
+  // ── Activation test ──
   const runTest = async () => {
     if (!testText.trim()) return;
     setTestingActivation(true);
@@ -138,7 +138,7 @@ export function LoreEntryEditor({
     }
   };
 
-  // ── Удаление записи ──
+  // ── Delete entry ──
   const handleDelete = async () => {
     // Close the confirm modal first (matches the shared-modal convention used
     // by VersionSwitcher / GalleryGrid: close-on-confirm, fire delete in the
@@ -152,7 +152,7 @@ export function LoreEntryEditor({
   return (
     <>
       <div className="mx-auto max-w-[860px] flex flex-col gap-6">
-        {/* ── Заголовок: название + тогл enabled + удаление ── */}
+        {/* ── Header: name + enabled toggle + delete ── */}
         <div className="flex items-center gap-3">
           <input
             className="flex-1 rounded-md border border-border bg-s2 px-2.5 py-1.5 text-[15px] font-semibold text-t1 outline-none focus:border-accent"
@@ -176,7 +176,7 @@ export function LoreEntryEditor({
           </CustomTooltip>
         </div>
 
-        {/* ── Ключевые слова ── */}
+        {/* ── Keywords ── */}
         <div>
           <FieldLabel>
             {t("lore_entry_keys")}
@@ -211,7 +211,7 @@ export function LoreEntryEditor({
           </div>
         </div>
 
-        {/* ── Флаги активации (всегда видны, не в расширенном режиме) ── */}
+        {/* ── Activation flags (always visible, not in advanced mode) ── */}
         <div className="flex flex-wrap gap-x-5 gap-y-2.5">
           <CustomTooltip content={t("constant_hint")} align="start">
             <Checkbox
@@ -253,7 +253,7 @@ export function LoreEntryEditor({
           </button>
         </div>
 
-        {/* ── Контент + тест активации ── */}
+        {/* ── Content + activation test ── */}
         <div>
           <FieldLabel>
             {t("lore_entry_content")}
@@ -275,7 +275,7 @@ export function LoreEntryEditor({
           <TokenCounter text={entry.content} />
         </div>
 
-        {/* ── Тест активации (сразу под контентом) ── */}
+        {/* ── Activation test (right under the content) ── */}
         <div className={cn("flex gap-2", isMobile && "flex-col")}>
           <input
             className={cn(
@@ -318,7 +318,7 @@ export function LoreEntryEditor({
           </div>
         )}
 
-        {/* ── Тогл расширенных настроек ── */}
+        {/* ── Advanced settings toggle ── */}
         <button type="button"
           className="flex items-center gap-1.5 text-[13px] font-medium text-accent-t transition-all hover:text-accent"
           onClick={() => setAdvancedOpen((v) => !v)}
@@ -329,7 +329,7 @@ export function LoreEntryEditor({
             : t("lore_advanced_settings")}
         </button>
 
-        {/* ── Расширенные настройки ── */}
+        {/* ── Advanced settings ── */}
         {advancedOpen && (
           <div
             className="flex flex-col gap-0"
@@ -339,7 +339,7 @@ export function LoreEntryEditor({
                 : undefined,
             }}
           >
-            {/* ── Логика + Роль ── */}
+            {/* ── Logic + Role ── */}
             <div className="flex flex-wrap gap-4 mb-6">
               <div>
                 <FieldLabel>
@@ -374,7 +374,7 @@ export function LoreEntryEditor({
                 </div>
             </div>
 
-            {/* ── Вторичные ключевые слова ── */}
+            {/* ── Secondary keywords ── */}
             <div className="mb-6">
               <FieldLabel>
                 {t("lore_entry_secondary_keys")}
@@ -401,7 +401,7 @@ export function LoreEntryEditor({
               </div>
             </div>
 
-            {/* ── Позиция ── */}
+            {/* ── Position ── */}
             <div className="mb-6 pb-6 border-b border-border/50">
               <CustomTooltip content={t("lore_position_hint")} side="right" align="start">
                 <div className="mb-3 inline-flex cursor-help items-center gap-1 text-[13px] font-medium text-t1">
@@ -465,7 +465,7 @@ export function LoreEntryEditor({
               )}
             </div>
 
-            {/* ── Источники сопоставления ── */}
+            {/* ── Match sources ── */}
             <div className="mb-6">
               <FieldLabel>
                 {t("lore_matchsources_section")}
@@ -490,7 +490,7 @@ export function LoreEntryEditor({
               />
             </div>
 
-            {/* ── Приоритет + Вероятность + Глубина скана ── */}
+            {/* ── Priority + Probability + Scan depth ── */}
             <div
               className={cn(
                 "grid gap-4 mb-6 pb-6 border-b border-border/50",
@@ -541,7 +541,7 @@ export function LoreEntryEditor({
               </div>
             </div>
 
-            {/* ── Группа включения ── */}
+            {/* ── Inclusion group ── */}
             <div className="mb-6 pb-6 border-b border-border/50">
               <div
                 className={cn(
@@ -606,7 +606,7 @@ export function LoreEntryEditor({
               )}
             </div>
 
-            {/* ── Фильтр по персонажам — id-bound picker с ghost-binding ── */}
+            {/* ── Character filter — id-bound picker with ghost-binding ── */}
             <div ref={charFilterRef} className="mb-6 pb-6 border-b border-border/50">
               <FieldLabel>
                 {t("lore_charfilter_section")}
@@ -738,7 +738,7 @@ export function LoreEntryEditor({
               </div>
             </div>
 
-            {/* ── Временные эффекты ── */}
+            {/* ── Temporary effects ── */}
             <div className="mb-6 pb-6 border-b border-border/50">
               <div className="mb-3 text-[13px] font-medium text-t1">
                 {t("lore_timed_section")}
@@ -793,7 +793,7 @@ export function LoreEntryEditor({
               </div>
             </div>
 
-            {/* ── Рекурсия ── */}
+            {/* ── Recursion ── */}
             <div>
               <CustomTooltip content={t("lore_recursion_section_hint")} side="right" align="start">
                 <div className="mb-3 inline-flex cursor-help items-center gap-1 text-[12px] font-semibold uppercase tracking-[0.07em] text-t3">
@@ -857,7 +857,7 @@ export function LoreEntryEditor({
         }}
       />
 
-      {/* ── Модалка подтверждения удаления записи ── */}
+      {/* ── Entry delete confirmation modal ── */}
       {confirmDeleteEntry && (
         <DestructiveConfirmModal
           title={t("delete_entry_confirm")}

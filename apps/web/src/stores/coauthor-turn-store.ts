@@ -96,7 +96,7 @@ export const useCoauthorTurnStore = create<CoauthorTurnState>((set, get) => ({
 
 // Debug helper — mirrors the window.__ exposure pattern in chat-store /
 // snapshot-store. Lets a live Playwright session (or the dev console) read the
-// ephemeral turn store to diagnose "диффы не отображаются": if the accordion
+// ephemeral turn store to diagnose "diffs not showing": if the accordion
 // in the chat bubble AND the reviewing overlay are BOTH empty, the activity
 // never reached this store (SSE/tool-result not parsed, or cleared), which
 // localizes the bug above the render layer.

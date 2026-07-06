@@ -684,7 +684,7 @@ function Slider({
 
 /** Editable CSS comment for a token or blob. Placeholder shows the
  *  describeColor() suggestion so an empty field still hints at a label; the
- *  «⟳ авто» button fills the field with that suggestion (overwrites whatever's
+ *  "⟳ auto" button fills the field with that suggestion (overwrites whatever's
  *  there — meant as a starting point, not live re-derivation, so user edits
  *  survive color tweaks). */
 function CommentField({

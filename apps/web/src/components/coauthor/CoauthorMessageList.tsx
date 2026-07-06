@@ -14,8 +14,8 @@ import { CoauthorTurnShell } from "./CoauthorTurnShell.js";
  * per-item renderer, both of which diverge from RP across the upcoming CS tasks:
  *
  *  - CS-30 (author identity): swap `MessageBlock` for `CoauthorMessageBlock`,
- *    which renders "Вы / You" + a neutral glyph for the user and
- *    "Соавтор: <char name>" + the character avatar for the AI.
+ *    which renders "You" + a neutral glyph for the user and
+ *    "Coauthor: <char name>" + the character avatar for the AI.
  *  - CS-26 (raw macros): keep `{{char}}` / `{{user}}` literal in co-author
  *    (they are editing instructions, not in-fiction prose) — handled in the
  *    co-author renderer, not here.
