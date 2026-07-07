@@ -1,8 +1,10 @@
 import { useState, useMemo, type ReactNode } from "react";
+import * as Popover from "@radix-ui/react-popover";
 import { cn } from "../../lib/cn.js";
 import { resolveModelLabel } from "../../lib/model-resolve.js";
 import { Icons } from "../shared/icons.js";
 import { BottomSheet } from "../shared/BottomSheet.js";
+import { getModalPortal } from "../shared/modal-helpers.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
 import { useT } from "../../i18n/context.js";
 import { useChatStore } from "../../stores/chat-store.js";
@@ -61,27 +63,28 @@ export function QueueManager(): ReactNode {
 
   return (
     <div className="absolute bottom-full left-1.5 z-20 mb-1 flex items-center gap-1.5">
-      <button
-        type="button"
-        onClick={() => setExpanded((v) => !v)}
-        className={cn(
-          "glass-blur flex items-center gap-1.5 rounded-full bg-glass-bg px-2.5 py-1 font-ui text-[calc(var(--ui-fs)-3px)] font-medium text-t2 transition-colors hover:bg-s3 hover:text-t1",
-          isActive && "text-accent-t",
+      <Popover.Root open={expanded} onOpenChange={setExpanded}>
+        <Popover.Trigger asChild>
+          <button
+            type="button"
+            className={cn(
+              "glass-blur flex items-center gap-1.5 rounded-full bg-glass-bg px-2.5 py-1 font-ui text-[calc(var(--ui-fs)-3px)] font-medium text-t2 transition-colors hover:bg-s3 hover:text-t1",
+              isActive && "text-accent-t",
+            )}
+            aria-expanded={expanded}
+            aria-label={t("queue_title")}
+          >
+            <Icons.regen className={cn(isActive && "animate-spin-slow")} />
+            <span className={cn(isActive && "animate-pulse")}>{pillLabel}</span>
+            <Icons.Caret direction={expanded ? "d" : "u"} />
+          </button>
+        </Popover.Trigger>
+        {!isMobile && (
+          <Popover.Portal container={getModalPortal() ?? undefined}>
+            <DesktopPopoverContent jobs={jobs} onClose={() => setExpanded(false)} />
+          </Popover.Portal>
         )}
-        aria-expanded={expanded}
-        aria-label={t("queue_title")}
-      >
-        <Icons.regen className={cn(isActive && "animate-spin-slow")} />
-        <span className={cn(isActive && "animate-pulse")}>{pillLabel}</span>
-        <Icons.Caret direction={expanded ? "d" : "u"} />
-      </button>
-
-      {expanded && !isMobile && (
-        <DesktopPopover
-          jobs={jobs}
-          onClose={() => setExpanded(false)}
-        />
-      )}
+      </Popover.Root>
 
       {expanded && isMobile && (
         <MobileSheet jobs={jobs} onClose={() => setExpanded(false)} />
@@ -183,18 +186,23 @@ function ManagerHeader({ jobs, onClose }: { jobs: QueueJob[]; onClose: () => voi
   );
 }
 
-// ── Desktop: upward popover ──────────────────────────────────────────────
+// ── Desktop: upward popover (Radix Popover) ─────────────────────────────
 
-function DesktopPopover({ jobs, onClose }: { jobs: QueueJob[]; onClose: () => void }): ReactNode {
+function DesktopPopoverContent({ jobs, onClose }: { jobs: QueueJob[]; onClose: () => void }): ReactNode {
   return (
-    <div className="glass-blur absolute bottom-full left-0 mt-1 w-80 overflow-hidden rounded-lg border border-border bg-glass-bg shadow-[0_-4px_16px_rgba(0,0,0,0.4)]">
+    <Popover.Content
+      side="top"
+      align="start"
+      sideOffset={4}
+      className="glass-blur z-[220] w-80 overflow-hidden rounded-lg border border-border bg-glass-bg shadow-[0_-4px_16px_rgba(0,0,0,0.4)] outline-none data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95"
+    >
       <ManagerHeader jobs={jobs} onClose={onClose} />
       <div className="max-h-64 overflow-y-auto">
         {jobs.map((job, i) => (
           <JobRow key={job.id} job={job} index={i} onClose={onClose} />
         ))}
       </div>
-    </div>
+    </Popover.Content>
   );
 }
 
