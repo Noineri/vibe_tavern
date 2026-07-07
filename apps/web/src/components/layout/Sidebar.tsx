@@ -1,9 +1,9 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { createPortal } from "react-dom";
+import * as Popover from "@radix-ui/react-popover";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import type { ChatId } from "@vibe-tavern/domain";
 import { initials } from "./app-shell-helpers.js";
-import { calcSwitcherPos, formatRelativeTime, formatShortDate, tabAvatarSrc } from "./sidebar-utils.js";
+import { formatRelativeTime, formatShortDate, tabAvatarSrc } from "./sidebar-utils.js";
 import { useSidebarChats } from "./hooks/use-sidebar-chats.js";
 import { useSidebarCharacters } from "./hooks/use-sidebar-characters.js";
 import { SidebarHeader } from "./sections/SidebarHeader.js";
@@ -12,6 +12,7 @@ import { CollapsedCharacterStrip } from "./sections/CollapsedCharacterStrip.js";
 import { CharacterListSection } from "./sections/CharacterListSection.js";
 import { SidebarFlyout } from "./sections/SidebarFlyout.js";
 import { Icons } from "../shared/icons.js";
+import { getModalPortal } from "../shared/modal-helpers.js";
 import { cn } from "../../lib/cn.js";
 import { resolveEntityAvatarUrl } from "../../lib/avatar.js";
 import { useT } from "../../i18n/context.js";
@@ -111,18 +112,6 @@ export function Sidebar() {
   const branchPopRef = useRef<HTMLDivElement | null>(null);
   const [importModal, setImportModal] = useState<"character" | "chat" | null>(null);
   const [charSwitcherOpen, setCharSwitcherOpen] = useState(false);
-  // Viewport coords for the portaled dropdown — portaling to document.body is
-  // required because the sidebar root is itself a glass surface (backdrop-blur),
-  // which makes it a CSS backdrop root. A dropdown rendered inside it can only
-  // blur the sidebar's own pixels, not the lava behind the sidebar → no frost.
-  // Portal escapes that root so glass-blur blurs the real page. Same pattern as
-  // charMenuPos / chatMenuPos / the chat flyout below.
-  const [charSwitcherPos, setCharSwitcherPos] = useState<{ top: number; left: number; width: number } | null>(null);
-  const charSwitcherRef = useRef<HTMLDivElement | null>(null);
-  // Trigger element ref — paired with charSwitcherRef so clicks on the trigger
-  // don't get caught by the outside-click handler (which would close the menu
-  // before the toggle onClick can reopen it).
-  const charSwitcherTriggerRef = useRef<HTMLDivElement | null>(null);
   const [flyoutCharId, setFlyoutCharId] = useState<string | null>(null);
   const [chatQuery, setChatQuery] = useState("");
   const flyoutRef = useRef<HTMLDivElement | null>(null);
@@ -142,10 +131,6 @@ export function Sidebar() {
     function handleClickOutside(event: MouseEvent): void {
       const target = event.target as Node;
       if (branchPopRef.current && !branchPopRef.current.contains(target)) setBranchPopId(null);
-      // Switcher: ignore clicks on the trigger itself (toggled by its onClick).
-      const triggerEl = charSwitcherTriggerRef.current;
-      if (triggerEl && triggerEl.contains(target)) return;
-      if (charSwitcherRef.current && !charSwitcherRef.current.contains(target)) { setCharSwitcherOpen(false); setCharSwitcherPos(null); }
       if (flyoutRef.current && !flyoutRef.current.contains(target)) setFlyoutCharId(null);
     }
     document.addEventListener("mousedown", handleClickOutside);
@@ -230,67 +215,62 @@ export function Sidebar() {
         />
         {sidebarCollapsed && mode === 'build' && (
           <div className="flex min-h-0 flex-1 flex-col items-center gap-1 overflow-y-auto px-0 py-2">
-            <CustomTooltip content={snapshot?.character?.name ?? t('switch_character')} side="right">
-              <div
-                ref={charSwitcherTriggerRef}
-                className={cn('flex h-10 w-10 shrink-0 cursor-pointer items-center justify-center rounded-full transition-all duration-150', charSwitcherOpen ? '' : 'hover:bg-s2')}
-                onClick={() => {
-                  // Measure from the stable ref, not e.currentTarget — the trigger
-                  // is wrapped by Radix Tooltip.Trigger asChild, which clones the
-                  // node and makes the synthetic event's currentTarget unreliable
-                  // by the time the inline handler runs (caused a null-ref crash).
-                  const el = charSwitcherTriggerRef.current;
-                  setCharSwitcherOpen(v => !v);
-                  setCharSwitcherPos(prev => prev || !el ? prev : calcSwitcherPos(el));
-                }}
-              >
-                <span className={cn("flex h-full w-full items-center justify-center overflow-hidden rounded-full font-ui text-sm", activeCharAvatarSrc ? "bg-s3" : "bg-accent text-on-accent", charSwitcherOpen && "ring-1 ring-accent/50 ring-offset-2 ring-offset-surface")}>
-                  {activeCharAvatarSrc
-                    ? <img src={activeCharAvatarSrc!} alt="" className="h-full w-full object-cover" />
-                    : initials(snapshot?.character?.name ?? '?')}
-                </span>
-              </div>
-            </CustomTooltip>
-            {charSwitcherOpen && charSwitcherPos && createPortal(
-              <div
-                className="glass-blur fixed left-[54px] z-[301] flex w-[300px] max-w-[calc(100vw-70px)] flex-col overflow-hidden rounded-r-xl border border-border bg-glass-bg shadow-[16px_8px_24px_-8px_rgba(0,0,0,0.4)]"
-                ref={charSwitcherRef}
-                style={{ top: charSwitcherPos.top, maxHeight: `calc(100vh - ${charSwitcherPos.top}px - 12px)`, animation: "flyoutIn 0.18s ease-out" }}
-              >
-                <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-2 py-1">
-                  {characterTabs.map((tab, index) => {
-                    const isActive = tab.id === snapshot?.character?.id;
-                    return (
-                      <div
-                        key={tab.id}
-                        role="button"
-                        tabIndex={0}
-                        style={{ animation: "flyoutCardIn 0.22s ease-out backwards", animationDelay: `${Math.min(index, 12) * 26}ms` }}
-                        className={cn(
-                          "relative mx-1 mb-0.5 flex cursor-pointer items-center gap-2.5 rounded-lg px-2 py-1.5 outline-none transition-colors duration-150",
-                          isActive ? "bg-accent-dim" : "hover:bg-s2 focus-visible:bg-s2",
-                        )}
-                        onClick={() => {
-                          if (tab.chatId) { void chat.handleSwitchChat(tab.chatId); }
-                          else { void character.handleCreateChat(tab.id); }
-                          setCharSwitcherOpen(false); setCharSwitcherPos(null);
-                        }}
-                        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); if (tab.chatId) { void chat.handleSwitchChat(tab.chatId); } else { void character.handleCreateChat(tab.id); } setCharSwitcherOpen(false); setCharSwitcherPos(null); } }}
-                      >
-                        {isActive && <div className="absolute left-0 top-2 bottom-2 w-[3px] rounded-full bg-accent" />}
-                        <div className={cn("flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-full", tabAvatarSrc(tab) ? "" : isActive ? "bg-accent text-on-accent" : "bg-s3 text-t2")}>
-                          {tabAvatarSrc(tab)
-                            ? <img className="h-full w-full object-cover" src={tabAvatarSrc(tab)!} alt={tab.name} />
-                            : <span className="font-ui text-[calc(var(--ui-fs)-4px)]">{initials(tab.name)}</span>}
+            <Popover.Root open={charSwitcherOpen} onOpenChange={setCharSwitcherOpen}>
+              <CustomTooltip content={snapshot?.character?.name ?? t('switch_character')} side="right">
+                <Popover.Trigger asChild>
+                  <div
+                    className={cn('flex h-10 w-10 shrink-0 cursor-pointer items-center justify-center rounded-full transition-all duration-150', charSwitcherOpen ? '' : 'hover:bg-s2')}
+                  >
+                    <span className={cn("flex h-full w-full items-center justify-center overflow-hidden rounded-full font-ui text-sm", activeCharAvatarSrc ? "bg-s3" : "bg-accent text-on-accent", charSwitcherOpen && "ring-1 ring-accent/50 ring-offset-2 ring-offset-surface")}>
+                      {activeCharAvatarSrc
+                        ? <img src={activeCharAvatarSrc!} alt="" className="h-full w-full object-cover" />
+                        : initials(snapshot?.character?.name ?? '?')}
+                    </span>
+                  </div>
+                </Popover.Trigger>
+              </CustomTooltip>
+              <Popover.Portal container={getModalPortal() ?? undefined}>
+                <Popover.Content
+                  side="right"
+                  align="start"
+                  sideOffset={6}
+                  className="glass-blur z-[301] flex w-[300px] max-w-[calc(100vw-70px)] flex-col overflow-hidden rounded-r-xl border border-border bg-glass-bg shadow-[16px_8px_24px_-8px_rgba(0,0,0,0.4)] outline-none"
+                  style={{ animation: "flyoutIn 0.18s ease-out" }}
+                >
+                  <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-2 py-1" style={{ maxHeight: "var(--radix-popper-available-height)" }}>
+                    {characterTabs.map((tab, index) => {
+                      const isActive = tab.id === snapshot?.character?.id;
+                      return (
+                        <div
+                          key={tab.id}
+                          role="button"
+                          tabIndex={0}
+                          style={{ animation: "flyoutCardIn 0.22s ease-out backwards", animationDelay: `${Math.min(index, 12) * 26}ms` }}
+                          className={cn(
+                            "relative mx-1 mb-0.5 flex cursor-pointer items-center gap-2.5 rounded-lg px-2 py-1.5 outline-none transition-colors duration-150",
+                            isActive ? "bg-accent-dim" : "hover:bg-s2 focus-visible:bg-s2",
+                          )}
+                          onClick={() => {
+                            if (tab.chatId) { void chat.handleSwitchChat(tab.chatId); }
+                            else { void character.handleCreateChat(tab.id); }
+                            setCharSwitcherOpen(false);
+                          }}
+                          onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); if (tab.chatId) { void chat.handleSwitchChat(tab.chatId); } else { void character.handleCreateChat(tab.id); } setCharSwitcherOpen(false); } }}
+                        >
+                          {isActive && <div className="absolute left-0 top-2 bottom-2 w-[3px] rounded-full bg-accent" />}
+                          <div className={cn("flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-full", tabAvatarSrc(tab) ? "" : isActive ? "bg-accent text-on-accent" : "bg-s3 text-t2")}>
+                            {tabAvatarSrc(tab)
+                              ? <img className="h-full w-full object-cover" src={tabAvatarSrc(tab)!} alt={tab.name} />
+                              : <span className="font-ui text-[calc(var(--ui-fs)-4px)]">{initials(tab.name)}</span>}
+                          </div>
+                          <span className={cn("truncate text-[calc(var(--ui-fs)-1px)]", isActive ? "font-medium text-accent-t" : "text-t2")}>{tab.name}</span>
                         </div>
-                        <span className={cn("truncate text-[calc(var(--ui-fs)-1px)]", isActive ? "font-medium text-accent-t" : "text-t2")}>{tab.name}</span>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>,
-              document.body,
-            )}
+                      );
+                    })}
+                  </div>
+                </Popover.Content>
+              </Popover.Portal>
+            </Popover.Root>
 
             <div className="my-1 h-px w-8 shrink-0 bg-border" />
 
@@ -662,64 +642,60 @@ export function Sidebar() {
           <>
             {/* Character switcher */}
             <div className="shrink-0 border-b border-border" style={{ padding: '10px 12px' }}>
-              <div className="relative">
-                <div
-                  ref={charSwitcherTriggerRef}
-                  className="flex cursor-pointer items-center gap-2.5 rounded-lg transition-colors hover:bg-s2"
-                  style={{ padding: '6px 8px' }}
-                  onClick={() => {
-                    // Measure from the stable ref, not e.currentTarget (see the
-                    // collapsed-branch trigger for the rationale).
-                    const el = charSwitcherTriggerRef.current;
-                    setCharSwitcherOpen(v => !v);
-                    setCharSwitcherPos(prev => prev || !el ? prev : calcSwitcherPos(el));
-                  }}
-                >
-                  <div className={cn('flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full', activeCharAvatarSrc ? '' : 'bg-accent text-on-accent')}>
-                    {activeCharAvatarSrc ? (
-                      <img className="h-full w-full object-cover" src={activeCharAvatarSrc!} alt="" />
-                    ) : (
-                      <span className="font-ui text-sm">{initials(snapshot?.character?.name ?? '?')}</span>
-                    )}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-[calc(var(--ui-fs)-1px)] font-medium text-t1">{snapshot?.character?.name ?? t('unnamed')}</div>
-                    <div className="truncate text-[calc(var(--ui-fs)-3px)] text-t3">{t('sidebar_editing_character')}</div>
-                  </div>
-                  <Icons.Caret direction={charSwitcherOpen ? "u" : "d"} />
-                </div>
-                {charSwitcherOpen && characterTabs.length > 1 && charSwitcherPos && createPortal(
+              <Popover.Root open={charSwitcherOpen} onOpenChange={setCharSwitcherOpen}>
+                <Popover.Trigger asChild>
                   <div
-                    className="glass-blur fixed max-h-[240px] overflow-y-auto rounded-lg border border-border bg-glass-bg py-1 shadow-theme-md z-[400]"
-                    ref={charSwitcherRef}
-                    style={{ top: charSwitcherPos.top, left: charSwitcherPos.left, width: charSwitcherPos.width }}
+                    className="flex cursor-pointer items-center gap-2.5 rounded-lg transition-colors hover:bg-s2"
+                    style={{ padding: '6px 8px' }}
                   >
-                    {characterTabs.map(tab => (
-                      <div
-                        key={tab.id}
-                        className={cn(
-                          'flex cursor-pointer items-center gap-2.5 transition-colors',
-                          tab.id === snapshot?.character?.id ? 'bg-accent-dim hover:bg-accent-dim' : 'hover:bg-s2'
-                        )}
-                        style={{ padding: '6px 12px' }}
-                        onClick={() => {
-                          if (tab.chatId) { void chat.handleSwitchChat(tab.chatId); }
-                          else { void character.handleCreateChat(tab.id); }
-                          setCharSwitcherOpen(false); setCharSwitcherPos(null);
-                        }}
-                      >
-                        <div className={cn('flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded-full', tabAvatarSrc(tab) ? '' : tab.id === snapshot?.character?.id ? 'bg-accent text-on-accent' : 'bg-s3 text-t2')}>
-                          {tabAvatarSrc(tab)
-                            ? <img className="h-full w-full object-cover" src={tabAvatarSrc(tab)!} alt={tab.name} />
-                            : <span className="font-ui text-[calc(var(--ui-fs)-4px)]">{initials(tab.name)}</span>}
+                    <div className={cn('flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full', activeCharAvatarSrc ? '' : 'bg-accent text-on-accent')}>
+                      {activeCharAvatarSrc ? (
+                        <img className="h-full w-full object-cover" src={activeCharAvatarSrc!} alt="" />
+                      ) : (
+                        <span className="font-ui text-sm">{initials(snapshot?.character?.name ?? '?')}</span>
+                      )}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-[calc(var(--ui-fs)-1px)] font-medium text-t1">{snapshot?.character?.name ?? t('unnamed')}</div>
+                      <div className="truncate text-[calc(var(--ui-fs)-3px)] text-t3">{t('sidebar_editing_character')}</div>
+                    </div>
+                    <Icons.Caret direction={charSwitcherOpen ? "u" : "d"} />
+                  </div>
+                </Popover.Trigger>
+                {characterTabs.length > 1 && (
+                  <Popover.Portal container={getModalPortal() ?? undefined}>
+                    <Popover.Content
+                      side="bottom"
+                      align="start"
+                      sideOffset={4}
+                      className="glass-blur z-[400] max-h-[240px] overflow-y-auto rounded-lg border border-border bg-glass-bg py-1 shadow-theme-md outline-none data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95"
+                    >
+                      {characterTabs.map(tab => (
+                        <div
+                          key={tab.id}
+                          className={cn(
+                            'flex cursor-pointer items-center gap-2.5 transition-colors',
+                            tab.id === snapshot?.character?.id ? 'bg-accent-dim hover:bg-accent-dim' : 'hover:bg-s2'
+                          )}
+                          style={{ padding: '6px 12px' }}
+                          onClick={() => {
+                            if (tab.chatId) { void chat.handleSwitchChat(tab.chatId); }
+                            else { void character.handleCreateChat(tab.id); }
+                            setCharSwitcherOpen(false);
+                          }}
+                        >
+                          <div className={cn('flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded-full', tabAvatarSrc(tab) ? '' : tab.id === snapshot?.character?.id ? 'bg-accent text-on-accent' : 'bg-s3 text-t2')}>
+                            {tabAvatarSrc(tab)
+                              ? <img className="h-full w-full object-cover" src={tabAvatarSrc(tab)!} alt={tab.name} />
+                              : <span className="font-ui text-[calc(var(--ui-fs)-4px)]">{initials(tab.name)}</span>}
+                          </div>
+                          <span className={cn('truncate text-[calc(var(--ui-fs)-1px)]', tab.id === snapshot?.character?.id ? 'text-accent-t font-medium' : 'text-t2')}>{tab.name}</span>
                         </div>
-                        <span className={cn('truncate text-[calc(var(--ui-fs)-1px)]', tab.id === snapshot?.character?.id ? 'text-accent-t font-medium' : 'text-t2')}>{tab.name}</span>
-                      </div>
-                    ))}
-                  </div>,
-                  document.body,
+                      ))}
+                    </Popover.Content>
+                  </Popover.Portal>
                 )}
-              </div>
+              </Popover.Root>
             </div>
 
             {/* Build sections navigation */}

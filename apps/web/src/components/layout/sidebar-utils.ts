@@ -20,17 +20,6 @@ export function tabAvatarSrc(tab: { id: string; avatarExt: string | null; avatar
 	return resolveEntityAvatarUrl({ kind: "characters", id: tab.id, avatarExt: tab.avatarExt, avatarAssetId: tab.avatarAssetId, updatedAt: tab.updatedAt });
 }
 
-/**
- * Position a portaled dropdown below its trigger, matching the trigger's width.
- * Portaled to body (see charSwitcherPos comment in Sidebar.tsx — the sidebar
- * root is a glass/backdrop-blur root, so an in-tree dropdown can't frost the
- * lava behind it).
- */
-export function calcSwitcherPos(triggerEl: HTMLElement): { top: number; left: number; width: number } {
-	const rect = triggerEl.getBoundingClientRect();
-	return { top: rect.bottom + 4, left: rect.left, width: rect.width };
-}
-
 /** Short absolute date (e.g. "Jul 3"). Empty for null/invalid input. */
 export function formatShortDate(value: string | null | undefined): string {
 	if (!value) return "";
