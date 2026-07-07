@@ -207,8 +207,8 @@ export function LinkBindingPopover({
         })}
       </div>
       <Popover.Root open={open} onOpenChange={setOpen}>
-        <Popover.Trigger asChild>
-          <CustomTooltip content={addLabel}>
+        <CustomTooltip content={addLabel}>
+          <Popover.Trigger asChild>
             <button
               type="button"
               className={cn(
@@ -226,8 +226,8 @@ export function LinkBindingPopover({
                 +
               </span>
             </button>
-          </CustomTooltip>
-        </Popover.Trigger>
+          </Popover.Trigger>
+        </CustomTooltip>
         <Popover.Portal container={getModalPortal() ?? undefined}>
           <Popover.Content
             side="bottom"
