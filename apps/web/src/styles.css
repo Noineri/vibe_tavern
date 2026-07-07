@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "tw-animate-css";
 @import "./themes/coffee.css";
 @import "./themes/milk-coffee.css";
 @import "./themes/mystic-night.css";
