@@ -11,19 +11,20 @@
  * same state drives filterAndSortList. The tag input draft (`tagInput`) and the
  * dropdown open state are the only local concerns.
  *
- * The tag suggestion dropdown is portaled to document.body. The sidebar is
- * itself a glass surface (backdrop-blur), which makes it a CSS backdrop root —
- * a dropdown rendered inside it can only blur the sidebar's own pixels, not the
- * page behind the sidebar, so it reads as a flat opaque box. Portal escapes
- * that root so glass-blur blurs the real page. Same pattern Sidebar uses for
- * its own character/chat action menus. Position is recomputed from the input's
- * getBoundingClientRect whenever the dropdown opens.
+ * The tag suggestion dropdown is a Radix Popover anchored to the input wrapper
+ * (Popover.Anchor) with a controlled open state derived from `tagFocused` +
+ * non-empty suggestions. `onOpenAutoFocus` is prevented so the input keeps
+ * focus while the dropdown is open (combobox behavior). The Popover is portaled
+ * via getModalPortal so glass-blur escapes the sidebar's backdrop root (same
+ * requirement as Sidebar's own menus). Radix handles positioning + collision +
+ * outside-click, replacing the former manual getBoundingClientRect + scroll/
+ * resize listeners + useOutsideClick.
  */
 
-import { useLayoutEffect, useRef, useState, useMemo, type RefObject } from "react";
-import { createPortal } from "react-dom";
+import { useRef, useState, useMemo } from "react";
+import * as Popover from "@radix-ui/react-popover";
 import { cn } from "../../lib/cn.js";
-import { useOutsideClick } from "../../hooks/use-outside-click.js";
+import { getModalPortal } from "./modal-helpers.js";
 import { useT } from "../../i18n/context.js";
 
 interface ListSearchPanelProps {
@@ -49,8 +50,6 @@ export function ListSearchPanel({
   const { t } = useT();
   const [tagInput, setTagInput] = useState("");
   const [tagFocused, setTagFocused] = useState(false);
-  const [dropdownPos, setDropdownPos] = useState<{ top: number; left: number; width: number } | null>(null);
-  const tagWrapRef = useRef<HTMLDivElement | null>(null);
   const tagInputRef = useRef<HTMLInputElement | null>(null);
 
   const showTags = availableTags !== undefined;
@@ -65,39 +64,6 @@ export function ListSearchPanel({
   }, [showTags, availableTags, tagInput, selectedTags]);
 
   const dropdownOpen = tagFocused && suggestions.length > 0;
-
-  // Recompute portal position from the input rect each time the dropdown opens.
-  // useLayoutEffect (not useEffect) so the portal is positioned before paint,
-  // avoiding a one-frame flash at the wrong location.
-  useLayoutEffect(() => {
-    if (!dropdownOpen) {
-      setDropdownPos(null);
-      return;
-    }
-    const measure = () => {
-      const el = tagInputRef.current;
-      if (!el) return;
-      const wrap = el.closest(".tag-combobox-wrap") as HTMLElement | null;
-      const base = wrap ?? el;
-      const r = base.getBoundingClientRect();
-      setDropdownPos({ top: r.bottom + 2, left: r.left, width: r.width });
-    };
-    measure();
-    // Re-measure on scroll/resize (the sidebar scrolls, shifting the anchor).
-    window.addEventListener("scroll", measure, true);
-    window.addEventListener("resize", measure);
-    return () => {
-      window.removeEventListener("scroll", measure, true);
-      window.removeEventListener("resize", measure);
-    };
-  }, [dropdownOpen]);
-
-  // Close the dropdown on outside click. Keep it enabled only while focused so
-  // it does not interfere with the rest of the sidebar.
-  useOutsideClick(tagWrapRef as RefObject<HTMLDivElement | null>, () => setTagFocused(false), {
-    enabled: tagFocused,
-    event: "pointerdown",
-  });
 
   function addTag(tag: string) {
     const clean = tag.trim();
@@ -137,43 +103,49 @@ export function ListSearchPanel({
 
       {/* Tag search (characters only) */}
       {showTags && (
-        <div ref={tagWrapRef} className="tag-combobox-wrap relative">
-          <div
-            className={cn(
-              "flex min-h-[30px] flex-wrap items-center gap-1 rounded border bg-s2 px-1.5 py-1 transition-colors",
-              tagFocused ? "border-accent" : "border-border",
-            )}
-            onClick={() => tagInputRef.current?.focus()}
-          >
-            {selectedTags.map((tag) => (
-              <span
-                key={tag}
-                className="inline-flex cursor-pointer items-center gap-1 rounded-full border border-accent/30 bg-accent/10 px-2 py-0.5 font-ui text-[calc(var(--ui-fs)-3px)] text-accent-t transition-colors hover:border-danger/50 hover:bg-danger/10 hover:text-danger"
-                onClick={() => removeTag(tag)}
+        <Popover.Root open={dropdownOpen} onOpenChange={(o) => { if (!o) setTagFocused(false); }}>
+          <Popover.Anchor asChild>
+            <div className="tag-combobox-wrap relative">
+              <div
+                className={cn(
+                  "flex min-h-[30px] flex-wrap items-center gap-1 rounded border bg-s2 px-1.5 py-1 transition-colors",
+                  tagFocused ? "border-accent" : "border-border",
+                )}
+                onClick={() => tagInputRef.current?.focus()}
               >
-                {tag}
-                <svg width="9" height="9" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.8">
-                  <line x1="2.5" y1="2.5" x2="9.5" y2="9.5" />
-                  <line x1="9.5" y1="2.5" x2="2.5" y2="9.5" />
-                </svg>
-              </span>
-            ))}
-            <input
-              ref={tagInputRef}
-              type="text"
-              value={tagInput}
-              onChange={(e) => setTagInput(e.target.value)}
-              onKeyDown={handleTagKeyDown}
-              onFocus={() => setTagFocused(true)}
-              placeholder={selectedTags.length === 0 ? t("search_tags_placeholder") : ""}
-              className="min-w-[70px] flex-1 bg-transparent font-ui text-[calc(var(--ui-fs)-2px)] text-t1 outline-none placeholder:text-t3/60"
-            />
-          </div>
-
-          {dropdownOpen && dropdownPos && createPortal(
-            <div
-              className="glass-blur fixed z-[400] max-h-[180px] overflow-y-auto rounded-md border border-border2 bg-glass-bg py-1 shadow-[0_8px_24px_rgba(0,0,0,0.4)]"
-              style={{ top: dropdownPos.top, left: dropdownPos.left, width: dropdownPos.width }}
+                {selectedTags.map((tag) => (
+                  <span
+                    key={tag}
+                    className="inline-flex cursor-pointer items-center gap-1 rounded-full border border-accent/30 bg-accent/10 px-2 py-0.5 font-ui text-[calc(var(--ui-fs)-3px)] text-accent-t transition-colors hover:border-danger/50 hover:bg-danger/10 hover:text-danger"
+                    onClick={() => removeTag(tag)}
+                  >
+                    {tag}
+                    <svg width="9" height="9" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.8">
+                      <line x1="2.5" y1="2.5" x2="9.5" y2="9.5" />
+                      <line x1="9.5" y1="2.5" x2="2.5" y2="9.5" />
+                    </svg>
+                  </span>
+                ))}
+                <input
+                  ref={tagInputRef}
+                  type="text"
+                  value={tagInput}
+                  onChange={(e) => setTagInput(e.target.value)}
+                  onKeyDown={handleTagKeyDown}
+                  onFocus={() => setTagFocused(true)}
+                  placeholder={selectedTags.length === 0 ? t("search_tags_placeholder") : ""}
+                  className="min-w-[70px] flex-1 bg-transparent font-ui text-[calc(var(--ui-fs)-2px)] text-t1 outline-none placeholder:text-t3/60"
+                />
+              </div>
+            </div>
+          </Popover.Anchor>
+          <Popover.Portal container={getModalPortal() ?? undefined}>
+            <Popover.Content
+              side="bottom"
+              align="start"
+              sideOffset={2}
+              onOpenAutoFocus={(e) => e.preventDefault()}
+              className="glass-blur z-[400] max-h-[180px] overflow-y-auto rounded-md border border-border2 bg-glass-bg py-1 shadow-[0_8px_24px_rgba(0,0,0,0.4)] outline-none data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95"
             >
               {suggestions.map((tag) => (
                 <button
@@ -191,10 +163,9 @@ export function ListSearchPanel({
                   {tag}
                 </button>
               ))}
-            </div>,
-            document.body,
-          )}
-        </div>
+            </Popover.Content>
+          </Popover.Portal>
+        </Popover.Root>
       )}
     </div>
   );

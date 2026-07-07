@@ -5,11 +5,12 @@
  * Clicking a pill unlinks it; clicking the dashed "+" opens a small popover
  * with available targets.
  */
-import { useCallback, useEffect, useRef, useState } from "react";
-import { useOutsideClick } from "../../hooks/use-outside-click.js";
+import { useCallback, useState } from "react";
+import * as Popover from "@radix-ui/react-popover";
 
 import { cn } from "../../lib/cn.js";
 import { CustomTooltip } from "./Tooltip.js";
+import { getModalPortal } from "./modal-helpers.js";
 import { resolveEntityAvatarUrl, avatarUrl } from "../../lib/avatar.js";
 
 export type LinkBindingTargetType = "character" | "persona" | "lorebook" | "script";
@@ -110,9 +111,6 @@ export function LinkBindingPopover({
   scriptSectionLabel,
 }: LinkBindingPopoverProps) {
   const [open, setOpen] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  useOutsideClick(containerRef, () => setOpen(false), { enabled: open });
 
   const charMap = new Map(characters.map((c) => [c.id, c]));
   const personaMap = new Map(personas.map((p) => [p.id, p]));
@@ -189,7 +187,7 @@ export function LinkBindingPopover({
   );
 
   return (
-    <div ref={containerRef} className="relative w-fit">
+    <div className="relative w-fit">
       <div className="inline-flex items-center gap-1 flex-wrap">
         {charLinks.map((l) => {
           const c = charMap.get(l.targetId);
@@ -207,33 +205,36 @@ export function LinkBindingPopover({
           const sc = scriptMap.get(l.targetId);
           return sc ? pill(sc, "script") : null;
         })}
-        <CustomTooltip content={addLabel}>
-          <button
-            type="button"
-            className={cn(
-              "group flex shrink-0 grow-0 justify-center text-t3 transition-colors hover:text-accent-t",
-              isMobile ? "h-11 w-7 items-center" : "h-[22px] w-[22px] items-start",
-            )}
-            onClick={() => setOpen((v) => !v)}
-            aria-label={addLabel}
-          >
-            <span
-              className={cn(
-                "flex shrink-0 items-center justify-center rounded-full border border-dashed border-border2 leading-none transition-colors group-hover:border-accent group-hover:text-accent-t",
-                isMobile ? "h-7 w-7 text-[12px]" : "h-[22px] w-[22px] text-[12px]",
-              )}
-            >
-              +
-            </span>
-          </button>
-        </CustomTooltip>
       </div>
-
-      {open && (
-        <div
-          className="glass-blur absolute left-0 z-[200] mt-2 min-w-[240px] max-w-[340px] rounded-lg border border-border bg-glass-bg shadow-theme-lg"
-          onClick={(e) => e.stopPropagation()}
-        >
+      <Popover.Root open={open} onOpenChange={setOpen}>
+        <Popover.Trigger asChild>
+          <CustomTooltip content={addLabel}>
+            <button
+              type="button"
+              className={cn(
+                "group flex shrink-0 grow-0 justify-center text-t3 transition-colors hover:text-accent-t",
+                isMobile ? "h-11 w-7 items-center" : "h-[22px] w-[22px] items-start",
+              )}
+              aria-label={addLabel}
+            >
+              <span
+                className={cn(
+                  "flex shrink-0 items-center justify-center rounded-full border border-dashed border-border2 leading-none transition-colors group-hover:border-accent group-hover:text-accent-t",
+                  isMobile ? "h-7 w-7 text-[12px]" : "h-[22px] w-[22px] text-[12px]",
+                )}
+              >
+                +
+              </span>
+            </button>
+          </CustomTooltip>
+        </Popover.Trigger>
+        <Popover.Portal container={getModalPortal() ?? undefined}>
+          <Popover.Content
+            side="bottom"
+            align="start"
+            sideOffset={8}
+            className="glass-blur z-[220] min-w-[240px] max-w-[340px] rounded-lg border border-border bg-glass-bg shadow-theme-lg outline-none data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95"
+          >
           {characters.length > 0 && (
             <div className="border-b border-border px-3 py-2.5">
               <div className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-t3">
@@ -283,8 +284,9 @@ export function LinkBindingPopover({
               {emptyLabel || t("lore_link_empty")}
             </div>
           )}
-        </div>
-      )}
+          </Popover.Content>
+        </Popover.Portal>
+      </Popover.Root>
     </div>
   );
 }
