@@ -12,6 +12,7 @@ declare global {
     __useNavigationStore: typeof import("../stores/navigation-store").useNavigationStore;
     __useSnapshotStore: typeof import("../stores/snapshot-store").useSnapshotStore;
     __useCoauthorTurnStore: typeof import("../stores/coauthor-turn-store").useCoauthorTurnStore;
+    __useSessionStore: typeof import("../stores/session-store").useSessionStore;
     __setLorebookView: (view: "pick" | "list" | "editor") => void;
     __setLorebookTab: (tab: "lorebooks" | "scripts") => void;
     __getLorebookView: () => "pick" | "list" | "editor";
