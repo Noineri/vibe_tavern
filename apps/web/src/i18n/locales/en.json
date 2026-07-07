@@ -231,7 +231,7 @@
   "st_scan_btn": "Scan folder",
   "st_dialog_unavailable": "Native folder picker unavailable — enter the path manually.",
   "st_dialog_loading": "Opening folder picker…",
-  "st_importing_backend": "Importing on server…",
+  "st_importing_backend": "Importing…",
   "st_phase_characters": "Characters",
   "st_phase_chats": "Chats",
   "st_phase_lorebooks": "Lorebooks",

@@ -230,7 +230,7 @@
   "st_scan_btn": "Сканировать папку",
   "st_dialog_unavailable": "Системный диалог выбора папки недоступен — введите путь вручную.",
   "st_dialog_loading": "Открытие диалога выбора папки…",
-  "st_importing_backend": "Импортирование на сервере…",
+  "st_importing_backend": "Импортирование…",
   "st_phase_characters": "Персонажи",
   "st_phase_chats": "Чаты",
   "st_phase_lorebooks": "Лорбуки",
