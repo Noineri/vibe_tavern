@@ -25,7 +25,7 @@ import { useChatController } from "../../hooks/use-chat-controller.js";
 import { replaceUiMacros } from "../../lib/macros.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
 import { MessageShell, type MessageShellAuthorInfo } from "./MessageShell.js";
-import { Modal } from "../shared/Modal.js";
+import { DestructiveConfirmModal } from "../shared/destructive-confirm-modal.js";
 import { StreamingMarkdown } from "./StreamingMarkdown.js";
 import { AttachmentGrid } from "./AttachmentGrid.js";
 
@@ -403,14 +403,19 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
     await chat.handleDeleteVariant(msg.id, selectedVariantBackendIndex);
   };
 
+  const hasSwipes = variantCount > 1 && !isCoauthorMode;
+
   return (
     <>
     {deleteConfirmOpen && (
-      <DeleteMessageConfirm
-        hasSwipes={variantCount > 1 && !isCoauthorMode}
-        onDeleteSwipe={() => void confirmDeleteVariant()}
-        onDeleteMessage={() => void confirmDeleteMessage()}
+      <DestructiveConfirmModal
+        title={t("delete_message_title")}
+        body={t("delete_message_body")}
+        confirmLabel={t(hasSwipes ? "delete_message_btn" : "delete")}
+        onConfirm={() => void confirmDeleteMessage()}
         onCancel={() => setDeleteConfirmOpen(false)}
+        secondaryLabel={hasSwipes ? t("delete_swipe_btn") : undefined}
+        onSecondary={hasSwipes ? () => void confirmDeleteVariant() : undefined}
       />
     )}
     <MessageShell
@@ -458,45 +463,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
   );
 });
 
-export function DeleteMessageConfirm(input: {
-  hasSwipes: boolean;
-  onDeleteSwipe: () => void;
-  onDeleteMessage: () => void;
-  onCancel: () => void;
-}) {
-  const { t } = useT();
-  const btnBase = "h-[37px] cursor-pointer rounded-md px-4 font-ui text-[calc(var(--ui-fs)-2px)] transition-all";
 
-  return (
-    <Modal
-      open={true}
-      onClose={input.onCancel}
-      compact
-      title={t("delete_message_title")}
-      description={t("delete_message_body")}
-    >
-      <div className="w-[640px] max-w-[calc(100vw-32px)] overflow-hidden rounded-xl border border-border bg-surface shadow-theme-lg">
-        <div className="border-b border-border px-5 py-4">
-          <div className="font-ui text-sm font-semibold text-t1">{t("delete_message_title")}</div>
-          <div className="mt-1 font-ui text-xs leading-relaxed text-t3">{t("delete_message_body")}</div>
-        </div>
-        <div className="flex flex-nowrap justify-end gap-2 px-5 py-3">
-          <button type="button" className={`${btnBase} shrink-0 whitespace-nowrap bg-transparent text-t3 hover:text-t1`} onClick={input.onCancel}>
-            {t("cancel_btn")}
-          </button>
-          {input.hasSwipes && (
-            <button type="button" className={`${btnBase} shrink-0 whitespace-nowrap bg-s2 text-t1 hover:bg-s3`} onClick={input.onDeleteSwipe}>
-              {t("delete_swipe_btn")}
-            </button>
-          )}
-          <button type="button" className={`${btnBase} shrink-0 whitespace-nowrap bg-danger font-medium text-on-danger hover:brightness-110`} onClick={input.onDeleteMessage}>
-            {input.hasSwipes ? t("delete_message_btn") : t("delete")}
-          </button>
-        </div>
-      </div>
-    </Modal>
-  );
-}
 
 // ────────────────────────────────────────────────────────────────────────────
 // Mobile Variant Carousel
