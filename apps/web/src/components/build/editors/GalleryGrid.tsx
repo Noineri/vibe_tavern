@@ -1,13 +1,13 @@
-import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { useKeyDown } from "../../../hooks/use-key-down.js";
-import { useOutsideClick } from "../../../hooks/use-outside-click.js";
-import { createPortal } from "react-dom";
+import { useCallback, useLayoutEffect, useRef, useState } from "react";
+import * as Popover from "@radix-ui/react-popover";
 import { cn } from "../../../lib/cn.js";
 import { Icons } from "../../shared/icons.js";
 import { Checkbox } from "../../shared/Checkbox.js";
 import { Toggle } from "../../shared/Toggle.js";
 import { AutoTextarea } from "../../shared/auto-textarea.js";
 import { CustomTooltip } from "../../shared/Tooltip.js";
+import { BottomSheet } from "../../shared/BottomSheet.js";
+import { getModalPortal } from "../../shared/modal-helpers.js";
 import { useIsMobile } from "../../../hooks/use-mobile.js";
 import { serveCharacterAssetUrl } from "../../../api/gallery-api.js";
 import type { CharacterAsset } from "@vibe-tavern/domain";
@@ -26,14 +26,6 @@ interface GalleryGridProps {
   onSetAsAvatar: (asset: CharacterAsset) => void;
 }
 
-/** Justified-grid tile height (image area only; the one-line footer is extra).
- *  Desktop 350 (rich gallery view under the accordion), mobile ~220 so two
- *  portraits still fit a phone screen side by side. */
-function useTileHeight(): number {
-  const isMobile = useIsMobile();
-  return isMobile ? 220 : 350;
-}
-
 /** Max image-area aspect-derived width as a fraction of the grid container, so
  *  a single ultra-wide panorama can't eat a whole row (cap, then crop). */
 const MAX_TILE_WIDTH_RATIO = 0.92;
@@ -46,76 +38,11 @@ const MAX_TILE_WIDTH_RATIO = 0.92;
  *  width/height metadata), but every subsequent open in the session is stable. */
 const aspectCache = new Map<string, number>();
 
-/**
- * Per-image ⋯ overflow menu. Portaled to document.body so it escapes the tile's
- * `overflow-hidden`. Positioned `fixed` from the trigger button's rect. Closes
- * on outside-click, Escape, scroll, and resize.
- */
-function OverflowMenu({
-  anchorRect,
-  onClose,
-  children,
-}: {
-  anchorRect: DOMRect;
-  onClose: () => void;
-  children: React.ReactNode;
-}) {
-  const menuRef = useRef<HTMLDivElement>(null);
-  const [pos, setPos] = useState<{ top: number; left: number }>(() => {
-    const menuWidth = 224;
-    const estHeight = 220;
-    const top = anchorRect.bottom + 6 + estHeight > window.innerHeight
-      ? Math.max(8, anchorRect.top - 6 - estHeight)
-      : anchorRect.bottom + 6;
-    const left = Math.max(8, Math.min(anchorRect.right - menuWidth, window.innerWidth - menuWidth - 8));
-    return { top, left };
-  });
-
-  useLayoutEffect(() => {
-    const el = menuRef.current;
-    if (!el) return;
-    const h = el.offsetHeight;
-    setPos((p) => {
-      if (p.top + h > window.innerHeight - 8 && anchorRect.top - 6 - h > 8) {
-        return { top: anchorRect.top - 6 - h, left: p.left };
-      }
-      return p;
-    });
-  }, [anchorRect.top]);
-
-  useKeyDown("Escape", onClose, { target: document });
-
-  useOutsideClick(menuRef, onClose);
-
-  useEffect(() => {
-    const onScrollOrResize = () => onClose();
-    window.addEventListener("scroll", onScrollOrResize, true);
-    window.addEventListener("resize", onScrollOrResize);
-    return () => {
-      window.removeEventListener("scroll", onScrollOrResize, true);
-      window.removeEventListener("resize", onScrollOrResize);
-    };
-  }, [onClose]);
-
-  return createPortal(
-    <div
-      ref={menuRef}
-      role="menu"
-      className="glass-blur fixed z-[700] w-56 overflow-hidden rounded-lg border border-border bg-glass-bg py-1 shadow-[0_12px_36px_rgba(0,0,0,.45)]"
-      style={{ top: pos.top, left: pos.left }}
-      onClick={(e) => e.stopPropagation()}
-      onPointerDown={(e) => e.stopPropagation()}
-    >
-      {children}
-    </div>,
-    document.body,
-  );
-}
-
 function GalleryTile({
   characterId,
   asset,
   isSelected,
+  isMobile,
   onToggle,
   onOpenLightbox,
   onOpenPanel,
@@ -125,6 +52,7 @@ function GalleryTile({
   characterId: string;
   asset: CharacterAsset;
   isSelected: boolean;
+  isMobile: boolean;
   onToggle: () => void;
   onOpenLightbox: () => void;
   onOpenPanel: () => void;
@@ -146,8 +74,6 @@ function GalleryTile({
   const setIncludeInPrompt = useGalleryStore((s) => s.setIncludeInPrompt);
 
   const [menuOpen, setMenuOpen] = useState(false);
-  const [menuRect, setMenuRect] = useState<DOMRect | null>(null);
-  const menuBtnRef = useRef<HTMLButtonElement>(null);
   // Pending single-image delete — the overflow menu's Delete action opens a
   // DestructiveConfirmModal (matching the bulk-delete path) instead of
   // removing immediately. Gallery rows are easy to hit by accident and the
@@ -186,11 +112,7 @@ function GalleryTile({
   // stored but won't inject until a description exists (backend AND-gate).
   const includeWarns = asset.includeInPrompt && !hasDescription;
 
-  const openMenu = () => {
-    const rect = menuBtnRef.current?.getBoundingClientRect();
-    if (rect) setMenuRect(rect);
-    setMenuOpen(true);
-  };
+  const closeMenu = () => { setMenuOpen(false); setEditingCaption(false); };
 
   const startEditCaption = () => {
     setCaptionDraft(asset.caption || "");
@@ -266,7 +188,7 @@ function GalleryTile({
         <div
           className={cn(
             "absolute left-1.5 top-1.5 z-20 p-0.5 transition-opacity",
-            isSelected ? "opacity-100" : "opacity-0 group-hover:opacity-100",
+            isSelected || isMobile ? "opacity-100" : "opacity-0 group-hover:opacity-100",
           )}
           onClick={(e) => e.stopPropagation()}
           onPointerDown={(e) => e.stopPropagation()}
@@ -279,24 +201,219 @@ function GalleryTile({
           type="button"
           onClick={(e) => { e.stopPropagation(); onOpenPanel(); }}
           onPointerDown={(e) => e.stopPropagation()}
-          className="absolute bottom-1.5 left-1.5 z-20 flex h-8 w-8 items-center justify-center rounded-md bg-black/55 text-white opacity-0 backdrop-blur-sm transition-all hover:bg-accent hover:text-on-accent group-hover:opacity-100"
+          className={cn(
+            "absolute bottom-1.5 left-1.5 z-20 flex h-8 w-8 items-center justify-center rounded-md bg-black/55 text-white backdrop-blur-sm transition-all hover:bg-accent hover:text-on-accent",
+            isMobile ? "opacity-100" : "opacity-0 group-hover:opacity-100",
+          )}
           title={t("gallery_expand")}
         >
           <Icons.expand className="h-4 w-4" />
         </button>
 
-        {/* ⋯ overflow trigger (bottom-right). */}
-        <button
-          ref={menuBtnRef}
-          type="button"
-          onClick={(e) => { e.stopPropagation(); menuOpen ? setMenuOpen(false) : openMenu(); }}
-          onPointerDown={(e) => e.stopPropagation()}
-          className="absolute bottom-1.5 right-1.5 z-20 flex h-8 w-8 items-center justify-center rounded-md bg-black/55 text-white opacity-0 backdrop-blur-sm transition-all hover:bg-accent hover:text-on-accent group-hover:opacity-100"
-          title={t("gallery_more_actions")}
-          aria-haspopup="menu"
-        >
-          <Icons.ellipsis className="h-4 w-4" />
-        </button>
+        {/* ⋯ overflow menu — desktop: Radix Popover; mobile: BottomSheet.
+            The content is hybrid (include-toggle + inline caption editor +
+            action items), which rules out DropdownMenu (listbox semantics +
+            focus management fight the textarea). Popover holds arbitrary
+            content; mobile rule: every popover surfaces as a bottom sheet. */}
+        {isMobile ? (
+          <>
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); setMenuOpen(true); }}
+              onPointerDown={(e) => e.stopPropagation()}
+              className="absolute bottom-1.5 right-1.5 z-20 flex h-8 w-8 items-center justify-center rounded-md bg-black/55 text-white backdrop-blur-sm transition-all hover:bg-accent hover:text-on-accent"
+              title={t("gallery_more_actions")}
+            >
+              <Icons.ellipsis className="h-4 w-4" />
+            </button>
+            <BottomSheet open={menuOpen} onClose={closeMenu} title={t("gallery_more_actions")}>
+              {/* Include-in-prompt toggle — label left, Toggle pinned right.
+                  Mobile has no hover, so the warning surfaces inline (amber)
+                  instead of a tooltip. */}
+              <div className={cn(
+                "flex items-center justify-between gap-3 px-5 py-3",
+                includeWarns && "bg-amber-500/10",
+              )}>
+                <div className="flex flex-col gap-0.5">
+                  <span className="flex items-center gap-2 font-ui text-t2">
+                    {includeWarns
+                      ? <Icons.alert className="h-4 w-4 text-amber-500" />
+                      : <Icons.eye className="h-4 w-4" />}
+                    {t("gallery_include_in_prompt")}
+                  </span>
+                  {includeWarns && (
+                    <span className="text-xs text-amber-500">{t("gallery_include_no_desc_warning")}</span>
+                  )}
+                </div>
+                <Toggle
+                  checked={asset.includeInPrompt}
+                  onChange={(v) => { void setIncludeInPrompt(characterId, id, v); }}
+                />
+              </div>
+              <div className="mx-4 h-px bg-border" />
+              {/* Describe / Cancel describe. */}
+              {isDescribing ? (
+                <button type="button"
+                  className="flex w-full items-center gap-4 px-5 min-h-[52px] text-[calc(var(--ui-fs)+1px)] text-left text-danger-text transition-colors active:bg-s3"
+                  onClick={() => { setMenuOpen(false); cancelDescribe(characterId); }}
+                >
+                  <Icons.close className="h-5 w-5" />{t("gallery_describe_cancel")}
+                </button>
+              ) : (
+                <button type="button"
+                  className="flex w-full items-center gap-4 px-5 min-h-[52px] text-[calc(var(--ui-fs)+1px)] text-left text-t2 transition-colors active:bg-s3"
+                  onClick={() => { setMenuOpen(false); void describe(characterId, [id]); }}
+                >
+                  <Icons.eye className="h-5 w-5" />{hasDescription ? t("gallery_regenerate") : t("gallery_describe")}
+                </button>
+              )}
+              {/* Caption edit — inline-expandable; full-width textarea with
+                  larger tap targets + keyboard-friendly Save/Cancel. */}
+              {!editingCaption ? (
+                <button type="button"
+                  className="flex w-full items-center gap-4 px-5 min-h-[52px] text-[calc(var(--ui-fs)+1px)] text-left text-t2 transition-colors active:bg-s3"
+                  onClick={() => { startEditCaption(); }}
+                >
+                  <Icons.edit className="h-5 w-5" />{asset.caption ? t("edit_caption") : t("add_caption")}
+                </button>
+              ) : (
+                <div className="px-5 py-3">
+                  <AutoTextarea
+                    value={captionDraft}
+                    onChange={(e) => setCaptionDraft(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void saveCaption(); } }}
+                    className="w-full rounded bg-s2 px-3 py-2 text-[calc(var(--ui-fs)-1px)] text-t1 outline-none ring-1 ring-border focus:ring-accent"
+                    style={{}} maxRows={5}
+                    placeholder={t("caption_placeholder")} autoFocus
+                  />
+                  <div className="mt-2 flex justify-end gap-2">
+                    <button type="button" className="cursor-pointer rounded bg-s2 px-3 py-1.5 text-sm text-t2 hover:bg-s3" onClick={() => { setEditingCaption(false); }}>{t("cancel")}</button>
+                    <button type="button" className="cursor-pointer rounded bg-accent px-3 py-1.5 text-sm text-on-accent hover:bg-accent/80" onClick={() => { void saveCaption(); }}>{t("save")}</button>
+                  </div>
+                </div>
+              )}
+              <div className="mx-4 h-px bg-border" />
+              {/* D8: set as avatar. */}
+              <button type="button"
+                className="flex w-full items-center gap-4 px-5 min-h-[52px] text-[calc(var(--ui-fs)+1px)] text-left text-t2 transition-colors active:bg-s3"
+                onClick={() => { setMenuOpen(false); onSetAsAvatar(); }}
+              >
+                <Icons.user className="h-5 w-5" />{t("gallery_set_avatar")}
+              </button>
+              <div className="mx-4 h-px bg-border" />
+              <button type="button"
+                className="flex w-full items-center gap-4 px-5 min-h-[52px] text-[calc(var(--ui-fs)+1px)] text-left text-danger-text transition-colors active:bg-s3"
+                onClick={() => { setMenuOpen(false); setPendingDelete(true); }}
+              >
+                <Icons.del className="h-5 w-5" />{t("delete")}
+              </button>
+              <div className="mx-4 mt-2 h-px bg-border" />
+              <button type="button"
+                className="flex w-full items-center justify-center min-h-[52px] text-[calc(var(--ui-fs)+1px)] font-medium text-t3 transition-colors active:bg-s3 rounded-b-2xl"
+                onClick={closeMenu}
+              >
+                {t("cancel")}
+              </button>
+            </BottomSheet>
+          </>
+        ) : (
+          <Popover.Root open={menuOpen} onOpenChange={(o) => { setMenuOpen(o); if (!o) setEditingCaption(false); }}>
+            <Popover.Trigger asChild>
+              <button
+                type="button"
+                onClick={(e) => e.stopPropagation()}
+                onPointerDown={(e) => e.stopPropagation()}
+                className="absolute bottom-1.5 right-1.5 z-20 flex h-8 w-8 items-center justify-center rounded-md bg-black/55 text-white opacity-0 backdrop-blur-sm transition-all hover:bg-accent hover:text-on-accent group-hover:opacity-100 data-[state=open]:opacity-100"
+                title={t("gallery_more_actions")}
+                aria-haspopup="menu"
+              >
+                <Icons.ellipsis className="h-4 w-4" />
+              </button>
+            </Popover.Trigger>
+            <Popover.Portal container={getModalPortal() ?? document.body}>
+              <Popover.Content
+                side="bottom"
+                align="end"
+                sideOffset={6}
+                collisionPadding={8}
+                className="glass-blur z-[700] w-56 overflow-hidden rounded-lg border border-border bg-glass-bg py-1 shadow-[0_12px_36px_rgba(0,0,0,.45)]"
+              >
+                <CustomTooltip content={includeWarns ? t("gallery_include_no_desc_warning") : t("gallery_include_in_prompt_hint")}>
+                  <label
+                    className={cn(
+                      "flex cursor-pointer items-center justify-between gap-3 px-3 py-2 text-sm text-t2 hover:bg-s2",
+                      includeWarns && "bg-amber-500/10",
+                    )}
+                    onPointerDown={(e) => e.stopPropagation()}
+                  >
+                    <span className="flex items-center gap-2">
+                      {includeWarns
+                        ? <Icons.alert className="h-3.5 w-3.5 text-amber-500" />
+                        : <Icons.eye className="h-3.5 w-3.5" />}
+                      {t("gallery_include_in_prompt")}
+                    </span>
+                    <Toggle
+                      checked={asset.includeInPrompt}
+                      onChange={(v) => { void setIncludeInPrompt(characterId, id, v); }}
+                    />
+                  </label>
+                </CustomTooltip>
+                {isDescribing ? (
+                  <button type="button"
+                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-danger transition-colors hover:bg-danger/10"
+                    onClick={(e) => { e.stopPropagation(); setMenuOpen(false); cancelDescribe(characterId); }}
+                  >
+                    <Icons.close className="h-3.5 w-3.5" />{t("gallery_describe_cancel")}
+                  </button>
+                ) : (
+                  <button type="button"
+                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-t2 transition-colors hover:bg-s2"
+                    onClick={(e) => { e.stopPropagation(); setMenuOpen(false); void describe(characterId, [id]); }}
+                  >
+                    <Icons.eye className="h-3.5 w-3.5" />{hasDescription ? t("gallery_regenerate") : t("gallery_describe")}
+                  </button>
+                )}
+                {!editingCaption ? (
+                  <button type="button"
+                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-t2 transition-colors hover:bg-s2"
+                    onClick={(e) => { e.stopPropagation(); startEditCaption(); }}
+                  >
+                    <Icons.edit className="h-3.5 w-3.5" />{asset.caption ? t("edit_caption") : t("add_caption")}
+                  </button>
+                ) : (
+                  <div className="px-2 py-2" onPointerDown={(e) => e.stopPropagation()}>
+                    <AutoTextarea
+                      value={captionDraft}
+                      onChange={(e) => setCaptionDraft(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void saveCaption(); } }}
+                      className="w-full rounded bg-s2 px-2 py-1.5 text-sm text-t1 outline-none ring-1 ring-border focus:ring-accent"
+                      style={{}} maxRows={7}
+                      placeholder={t("caption_placeholder")} autoFocus
+                    />
+                    <div className="mt-1.5 flex justify-end gap-1.5">
+                      <button type="button" className="cursor-pointer rounded bg-s2 px-2.5 py-1 text-xs text-t2 hover:bg-s3" onClick={(e) => { e.stopPropagation(); setEditingCaption(false); }}>{t("cancel")}</button>
+                      <button type="button" className="cursor-pointer rounded bg-accent px-2.5 py-1 text-xs text-on-accent hover:bg-accent/80" onClick={(e) => { e.stopPropagation(); void saveCaption(); }}>{t("save")}</button>
+                    </div>
+                  </div>
+                )}
+                <div className="my-1 border-t border-border/60" />
+                <button type="button"
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-t2 transition-colors hover:bg-s2"
+                  onClick={(e) => { e.stopPropagation(); setMenuOpen(false); onSetAsAvatar(); }}
+                >
+                  <Icons.user className="h-3.5 w-3.5" />{t("gallery_set_avatar")}
+                </button>
+                <div className="my-1 border-t border-border/60" />
+                <button type="button"
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-danger transition-colors hover:bg-danger/10"
+                  onClick={(e) => { e.stopPropagation(); setMenuOpen(false); setPendingDelete(true); }}
+                >
+                  <Icons.del className="h-3.5 w-3.5" />{t("delete")}
+                </button>
+              </Popover.Content>
+            </Popover.Portal>
+          </Popover.Root>
+        )}
       </div>
 
       {/* One-line footer: caption (bold) or a slice of the AI description
@@ -314,101 +431,6 @@ function GalleryTile({
         {footerText || t("gallery_footer_empty")}
       </div>
 
-      {menuOpen && menuRect && (
-        <OverflowMenu anchorRect={menuRect} onClose={() => { setMenuOpen(false); setEditingCaption(false); }}>
-          {/* Per-image prompt inclusion — sole gate now (no master switch).
-              Always enabled; warns (amber) when on without a description. */}
-          <CustomTooltip content={includeWarns ? t("gallery_include_no_desc_warning") : t("gallery_include_in_prompt_hint")}>
-            <label
-              className={cn(
-                "flex cursor-pointer items-center justify-between gap-3 px-3 py-2 text-sm text-t2 hover:bg-s2",
-                includeWarns && "bg-amber-500/10",
-              )}
-              onPointerDown={(e) => e.stopPropagation()}
-            >
-              <span className="flex items-center gap-2">
-                {includeWarns
-                  ? <Icons.alert className="h-3.5 w-3.5 text-amber-500" />
-                  : <Icons.eye className="h-3.5 w-3.5" />}
-                {t("gallery_include_in_prompt")}
-              </span>
-              <Toggle
-                checked={asset.includeInPrompt}
-                onChange={(v) => { void setIncludeInPrompt(characterId, id, v); }}
-              />
-            </label>
-          </CustomTooltip>
-
-          {/* Describe / Cancel describe — single-image quick action. */}
-          {isDescribing ? (
-            <button
-              type="button"
-              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-danger transition-colors hover:bg-danger/10"
-              onClick={(e) => { e.stopPropagation(); setMenuOpen(false); cancelDescribe(characterId); }}
-            >
-              <Icons.close className="h-3.5 w-3.5" />{t("gallery_describe_cancel")}
-            </button>
-          ) : (
-            <button
-              type="button"
-              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-t2 transition-colors hover:bg-s2"
-              onClick={(e) => { e.stopPropagation(); setMenuOpen(false); void describe(characterId, [id]); }}
-            >
-              <Icons.eye className="h-3.5 w-3.5" />{hasDescription ? t("gallery_regenerate") : t("gallery_describe")}
-            </button>
-          )}
-
-          {/* Caption edit — inline-expandable. */}
-          {!editingCaption ? (
-            <button
-              type="button"
-              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-t2 transition-colors hover:bg-s2"
-              onClick={(e) => { e.stopPropagation(); startEditCaption(); }}
-            >
-              <Icons.edit className="h-3.5 w-3.5" />{asset.caption ? t("edit_caption") : t("add_caption")}
-            </button>
-          ) : (
-            <div className="px-2 py-2" onPointerDown={(e) => e.stopPropagation()}>
-              <AutoTextarea
-                value={captionDraft}
-                onChange={(e) => setCaptionDraft(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void saveCaption(); } }}
-                className="w-full rounded bg-s2 px-2 py-1.5 text-sm text-t1 outline-none ring-1 ring-border focus:ring-accent"
-                style={{}} maxRows={7}
-                placeholder={t("caption_placeholder")} autoFocus
-              />
-              <div className="mt-1.5 flex justify-end gap-1.5">
-                <button type="button" className="cursor-pointer rounded bg-s2 px-2.5 py-1 text-xs text-t2 hover:bg-s3" onClick={(e) => { e.stopPropagation(); setEditingCaption(false); }}>{t("cancel")}</button>
-                <button type="button" className="cursor-pointer rounded bg-accent px-2.5 py-1 text-xs text-on-accent hover:bg-accent/80" onClick={(e) => { e.stopPropagation(); void saveCaption(); }}>{t("save")}</button>
-              </div>
-            </div>
-          )}
-
-          <div className="my-1 border-t border-border/60" />
-
-          {/* D8: set this gallery image as the avatar. Opens the crop modal
-              (seeded with this full image); the server salvages the current
-              avatar into the gallery first. */}
-          <button
-            type="button"
-            className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-t2 transition-colors hover:bg-s2"
-            onClick={(e) => { e.stopPropagation(); setMenuOpen(false); onSetAsAvatar(); }}
-          >
-            <Icons.user className="h-3.5 w-3.5" />{t("gallery_set_avatar")}
-          </button>
-
-          <div className="my-1 border-t border-border/60" />
-
-          <button
-            type="button"
-            className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-danger transition-colors hover:bg-danger/10"
-            onClick={(e) => { e.stopPropagation(); setMenuOpen(false); setPendingDelete(true); }}
-          >
-            <Icons.del className="h-3.5 w-3.5" />{t("delete")}
-          </button>
-        </OverflowMenu>
-      )}
-
       {pendingDelete && (
         <DestructiveConfirmModal
           title={t("gallery_confirm_delete_single_title")}
@@ -423,7 +445,10 @@ function GalleryTile({
 }
 
 export function GalleryGrid({ characterId, assets, selectedIds, onToggleSelection, onSetAsAvatar }: GalleryGridProps) {
-  const tileHeight = useTileHeight();
+  const isMobile = useIsMobile();
+  // Desktop 350 (rich gallery view under the accordion), mobile ~220 so two
+  // portraits still fit a phone screen side by side.
+  const tileHeight = isMobile ? 220 : 350;
   // Multiple floating panels may be open at once (original design intent):
   // each entry in the set renders its own independent GalleryViewer.
   const [openPanels, setOpenPanels] = useState<Set<number>>(new Set());
@@ -474,6 +499,7 @@ export function GalleryGrid({ characterId, assets, selectedIds, onToggleSelectio
             characterId={characterId}
             asset={asset}
             isSelected={selectedIds.has(asset.id as string)}
+            isMobile={isMobile}
             onToggle={() => onToggleSelection(asset.id as string)}
             onOpenLightbox={() => setLightboxIndex(idx)}
             onOpenPanel={() => togglePanel(idx)}

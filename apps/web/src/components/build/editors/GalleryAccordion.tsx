@@ -196,7 +196,7 @@ export function GalleryAccordion({ characterId }: GalleryAccordionProps) {
               ))}
             </div>
           ) : assets.length === 0 ? (
-            <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border py-12 text-t3">
+            <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border px-4 py-12 text-t3">
               <Icons.import className="h-6 w-6 opacity-60" />
               <p className="mt-2 text-sm">{t("gallery_empty")}</p>
             </div>
