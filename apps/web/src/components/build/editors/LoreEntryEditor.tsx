@@ -14,7 +14,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useKeyDown } from "../../../hooks/use-key-down.js";
-import { useOutsideClick } from "../../../hooks/use-outside-click.js";
+import * as Popover from "@radix-ui/react-popover";
 import { FieldLabel } from "../fields/field-label.js";
 import { toast } from "sonner";
 
@@ -24,6 +24,8 @@ import { Ic, Icons } from "../../shared/icons.js";
 import { cn } from "../../../lib/cn.js";
 import { resolveEntityAvatarUrl } from "../../../lib/avatar.js";
 import { CustomTooltip } from "../../shared/Tooltip.js";
+import { getModalPortal } from "../../shared/modal-helpers.js";
+import { popoverMaxHeight } from "../../shared/popover-constants.js";
 import { DestructiveConfirmModal } from "../../shared/destructive-confirm-modal.js";
 import { Checkbox } from "../../shared/Checkbox.js";
 import { SegmentedControl } from "../../shared/SegmentedControl.js";
@@ -92,13 +94,9 @@ export function LoreEntryEditor({
   // number = binding the ghost at that index to a real character.
   const allCharacters = useAllCharacters();
   const [charFilterPicker, setCharFilterPicker] = useState<"add" | number | null>(null);
-  const charFilterRef = useRef<HTMLDivElement>(null);
-
-  // Close the character-filter picker on click-outside / Escape (same pattern as
-  // LinkBindingPopover.tsx — the dashed "+" popover this picker mirrors).
-  useKeyDown("Escape", () => setCharFilterPicker(null), { target: document });
-
-  useOutsideClick(charFilterRef, () => setCharFilterPicker(null));
+  // The picker closes on outside-click + Escape via Radix Popover natively
+  // (formerly useKeyDown + useOutsideClick; both removed when the picker
+  // migrated to Popover). The confirm-delete Escape handler below is separate.
 
   const [aiHelperOpen, setAiHelperOpen] = useState(false);
   const activeCharacter = useActiveCharacter();
@@ -607,14 +605,16 @@ export function LoreEntryEditor({
             </div>
 
             {/* ── Character filter — id-bound picker with ghost-binding ── */}
-            <div ref={charFilterRef} className="mb-6 pb-6 border-b border-border/50">
+            <div className="mb-6 pb-6 border-b border-border/50">
               <FieldLabel>
                 {t("lore_charfilter_section")}
               </FieldLabel>
-              <div
-                className="flex flex-wrap items-center gap-1.5 rounded-md border border-border bg-s2 px-2.5 py-1.5"
-                style={{ minHeight: 38 }}
-              >
+              <Popover.Root open={charFilterPicker !== null} onOpenChange={(o) => { if (!o) setCharFilterPicker(null); }}>
+                <Popover.Anchor asChild>
+                  <div
+                    className="flex flex-wrap items-center gap-1.5 rounded-md border border-border bg-s2 px-2.5 py-1.5"
+                    style={{ minHeight: 38 }}
+                  >
                 {entry.characterFilter.map((f, idx) => {
                   const isGhost = f.id === null;
                   const ch = f.id ? allCharacters.find((c) => c.id === f.id) : undefined;
@@ -676,11 +676,18 @@ export function LoreEntryEditor({
                 >
                   + {t("lore_char_filter_placeholder")}
                 </button>
-              </div>
-              {charFilterPicker !== null && (
-                <div className="relative mt-1">
-                  <div className="glass-blur absolute left-0 top-0 z-[200] max-h-[220px] w-full overflow-y-auto rounded-lg border border-border2 bg-glass-bg py-1 shadow-[0_12px_28px_rgba(0,0,0,0.45)]">
-                    {allCharacters.filter((c) => !entry.characterFilter.some((f) => f.id === c.id)).length === 0 ? (
+                  </div>
+                </Popover.Anchor>
+                <Popover.Portal container={getModalPortal() ?? undefined}>
+                  <Popover.Content
+                    side="bottom"
+                    align="start"
+                    sideOffset={4}
+                    className="glass-blur z-[220] w-full overflow-y-auto rounded-lg border border-border2 bg-glass-bg py-1 shadow-[0_12px_28px_rgba(0,0,0,0.45)] outline-none data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95"
+                    style={{ maxHeight: popoverMaxHeight("singleLine") }}
+                  >
+                    {charFilterPicker !== null && (
+                    allCharacters.filter((c) => !entry.characterFilter.some((f) => f.id === c.id)).length === 0 ? (
                       <div className="px-3 py-2 text-[12px] text-t3">{t("lore_char_filter_empty")}</div>
                     ) : (
                       allCharacters
@@ -725,10 +732,11 @@ export function LoreEntryEditor({
                             </button>
                           );
                         })
+                    )
                     )}
-                  </div>
-                </div>
-              )}
+                  </Popover.Content>
+                </Popover.Portal>
+              </Popover.Root>
               <div className="mt-2">
                 <Checkbox
                   checked={entry.characterFilterExclude}
