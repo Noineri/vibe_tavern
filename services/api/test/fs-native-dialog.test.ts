@@ -1,30 +1,33 @@
 /**
  * Characterization tests for the native folder-dialog route
- * (ST_NATIVE_DIALOG_IMPORT_PLAN Wave 1, STN-1C).
+ * (ST_NATIVE_DIALOG_IMPORT_PLAN Wave 1, STN-1C; Linux support added later).
  *
- * Two layers:
+ * Three layers:
  *
  *  1. `mapDialogResult` — the PURE mapping from a finished subprocess's
  *     {stdout, exitCode} (or a "timeout" marker) onto the `NativeDialogResult`
  *     response union. All four branches pinned: success, cancel-via-empty,
  *     cancel-via-nonzero-exit, timeout.
  *
- *  2. `createFsRoutes` — the Hono route itself, invoked in-process via
- *     `app.request()`. The stub path (any platform that is not win32/darwin)
- *     is exercised by forcing `process.platform` to "linux"/"freebsd", so NO
- *     real OS dialog is ever spawned by this test suite. The actual Windows
- *     (PowerShell FolderBrowserDialog) and macOS (osascript) dialog invocations
- *     are blocking UI calls that require a human to click — they are verified
- *     manually per the plan's STN-1C self-check, not here.
+ *  2. Linux helpers — `hasLinuxDisplay` (env-var check) and `linuxCmd` (argv
+ *     construction for zenity/kdialog) are pure and tested directly.
  *
- * Written before any further refactor of fs.ts (AGENTS.md §1) so the pinned
- * behavior is the current contract: stdout is trimmed before the empty-check,
- * and non-zero exit is treated as cancellation even when stdout is non-empty
- * (defensive — osascript prints nothing useful on Cancel, but a half-written
- * stdout on non-zero exit is not a real selection).
+ *  3. `createFsRoutes` — the Hono route itself, invoked in-process via
+ *     `app.request()`. The Linux no-display path and the unknown-platform path
+ *     are exercised by forcing `process.platform` / env vars, so NO real OS
+ *     dialog is ever spawned by this test suite. The actual Windows
+ *     (PowerShell FolderBrowserDialog), macOS (osascript), and Linux
+ *     (zenity/kdialog) dialog invocations are blocking UI calls that require a
+ *     human to click — they are verified manually, not here.
  */
 import { test, expect, describe, afterEach } from "bun:test";
-import { mapDialogResult, createFsRoutes } from "../src/api/routes/fs.js";
+import {
+	mapDialogResult,
+	createFsRoutes,
+	hasLinuxDisplay,
+	linuxCmd,
+	_resetLinuxDialogCacheForTests,
+} from "../src/api/routes/fs.js";
 
 describe("mapDialogResult", () => {
 	test("success: non-empty stdout + zero exit → { path }", () => {
@@ -35,6 +38,11 @@ describe("mapDialogResult", () => {
 	test("success: macOS posix path is trimmed of trailing newline", () => {
 		const result = mapDialogResult({ stdout: "/Users/test/cards\n", exitCode: 0 });
 		expect(result).toEqual({ path: "/Users/test/cards" });
+	});
+
+	test("success: linux path from zenity/kdialog is trimmed", () => {
+		const result = mapDialogResult({ stdout: "/home/test/SillyTavern/data\n", exitCode: 0 });
+		expect(result).toEqual({ path: "/home/test/SillyTavern/data" });
 	});
 
 	test("cancel via empty stdout (Windows): user dismissed → { cancelled: true }", () => {
@@ -49,7 +57,7 @@ describe("mapDialogResult", () => {
 		expect(result).toEqual({ cancelled: true });
 	});
 
-	test("cancel via non-zero exit (macOS osascript Cancel exits 1) → { cancelled: true }", () => {
+	test("cancel via non-zero exit (macOS osascript / linux zenity Cancel exits 1) → { cancelled: true }", () => {
 		const result = mapDialogResult({ stdout: "", exitCode: 1 });
 		expect(result).toEqual({ cancelled: true });
 	});
@@ -75,27 +83,95 @@ describe("mapDialogResult", () => {
 	});
 });
 
-describe("createFsRoutes — stub path integration", () => {
-	const originalPlatform = process.platform;
+describe("hasLinuxDisplay", () => {
+	const origDisplay = process.env.DISPLAY;
+	const origWayland = process.env.WAYLAND_DISPLAY;
 
 	afterEach(() => {
-		// Restore the real platform so the override never leaks out of this file
-		// (mock.module is process-global — see AGENTS.md gotcha; property override
-		// is scoped but must be restored explicitly).
+		if (origDisplay !== undefined) process.env.DISPLAY = origDisplay;
+		else delete process.env.DISPLAY;
+		if (origWayland !== undefined) process.env.WAYLAND_DISPLAY = origWayland;
+		else delete process.env.WAYLAND_DISPLAY;
+	});
+
+	test("returns true when DISPLAY is set (X11)", () => {
+		process.env.DISPLAY = ":0";
+		delete process.env.WAYLAND_DISPLAY;
+		expect(hasLinuxDisplay()).toBe(true);
+	});
+
+	test("returns true when WAYLAND_DISPLAY is set (Wayland)", () => {
+		delete process.env.DISPLAY;
+		process.env.WAYLAND_DISPLAY = "wayland-0";
+		expect(hasLinuxDisplay()).toBe(true);
+	});
+
+	test("returns false when neither DISPLAY nor WAYLAND_DISPLAY is set (headless)", () => {
+		delete process.env.DISPLAY;
+		delete process.env.WAYLAND_DISPLAY;
+		expect(hasLinuxDisplay()).toBe(false);
+	});
+});
+
+describe("linuxCmd", () => {
+	test("zenity: --file-selection --directory + --title=<prompt>", () => {
+		expect(linuxCmd("zenity", "Select folder")).toEqual([
+			"zenity", "--file-selection", "--directory", "--title=Select folder",
+		]);
+	});
+
+	test("kdialog: --getexistingdirectory <HOME> <caption>", () => {
+		const origHome = process.env.HOME;
+		process.env.HOME = "/home/test";
+		try {
+			expect(linuxCmd("kdialog", "Select folder")).toEqual([
+				"kdialog", "--getexistingdirectory", "/home/test", "Select folder",
+			]);
+		} finally {
+			if (origHome !== undefined) process.env.HOME = origHome;
+			else delete process.env.HOME;
+		}
+	});
+
+	test("kdialog: falls back to / when HOME is unset", () => {
+		const origHome = process.env.HOME;
+		delete process.env.HOME;
+		try {
+			expect(linuxCmd("kdialog", "Pick dir")).toEqual([
+				"kdialog", "--getexistingdirectory", "/", "Pick dir",
+			]);
+		} finally {
+			if (origHome !== undefined) process.env.HOME = origHome;
+			else delete process.env.HOME;
+		}
+	});
+});
+
+describe("createFsRoutes — Linux + unknown-platform integration", () => {
+	const originalPlatform = process.platform;
+	const origDisplay = process.env.DISPLAY;
+	const origWayland = process.env.WAYLAND_DISPLAY;
+
+	afterEach(() => {
 		Object.defineProperty(process, "platform", {
 			value: originalPlatform,
 			configurable: true,
 		});
+		if (origDisplay !== undefined) process.env.DISPLAY = origDisplay;
+		else delete process.env.DISPLAY;
+		if (origWayland !== undefined) process.env.WAYLAND_DISPLAY = origWayland;
+		else delete process.env.WAYLAND_DISPLAY;
+		_resetLinuxDialogCacheForTests();
 	});
 
-	test("Linux stub: returns { available: false } WITHOUT spawning any subprocess", async () => {
-		// Force the stub branch so no real OS dialog is touched by this test.
-		// On a Windows or macOS runner this would otherwise open a real picker
-		// that blocks until a human clicks — untestable in CI.
+	test("Linux without a graphical session → { available: false } (no subprocess spawned)", async () => {
 		Object.defineProperty(process, "platform", {
 			value: "linux",
 			configurable: true,
 		});
+		delete process.env.DISPLAY;
+		delete process.env.WAYLAND_DISPLAY;
+		_resetLinuxDialogCacheForTests();
 
 		const app = createFsRoutes();
 		const res = await app.request("/api/fs/native-dialog", { method: "POST" });
@@ -103,11 +179,12 @@ describe("createFsRoutes — stub path integration", () => {
 		expect(await res.json()).toEqual({ available: false });
 	});
 
-	test("any non-win32/non-darwin platform hits the same stub (freebsd)", async () => {
+	test("unknown platform (freebsd) → { available: false }", async () => {
 		Object.defineProperty(process, "platform", {
 			value: "freebsd",
 			configurable: true,
 		});
+
 		const app = createFsRoutes();
 		const res = await app.request("/api/fs/native-dialog", { method: "POST" });
 		const body = await res.json();

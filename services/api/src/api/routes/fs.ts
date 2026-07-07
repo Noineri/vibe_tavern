@@ -12,13 +12,17 @@ import { unlink } from "node:fs/promises";
  * browser-side `webkitdirectory` picker — the backend then reads the folder
  * directly via `scanSillyTavernDirectory` / `importSillyTavernDirectory`.
  *
- * Platform coverage (decided with the user, 2026-07-05):
+ * Platform coverage:
  *   - win32   → PowerShell `System.Windows.Forms.FolderBrowserDialog` (real).
  *   - darwin  → `osascript` `choose folder` (real).
- *   - other   → `{ available: false }` stub. The XDG-portal implementation for
- *               Linux is out of scope for this cycle (a separate contributor change —
- *               change — cannot be tested from a Windows machine; a blind
- *               implementation would violate the stale-assumption rule).
+ *   - linux   → `zenity --file-selection --directory` (GTK desktops: GNOME, XFCE,
+ *               Hyprland-with-GTK) or `kdialog --getexistingdirectory` (KDE).
+ *               Detected at first call and cached for the process lifetime.
+ *               Falls back to `{ available: false }` if neither binary is on PATH
+ *               or no graphical session is available (headless server / SSH
+ *               without X or Wayland forwarding) — the frontend then shows a
+ *               manual path-entry fallback.
+ *   - other   → `{ available: false }` (no native dialog available).
  *
  * No request body — the dialog IS the input. POST not GET because it triggers
  * the side effect of opening a modal OS dialog (and GET would be cached).
@@ -145,12 +149,78 @@ function windowsCmd(outFile: string): string[] {
 	];
 }
 
-async function openNativeFolderDialog(platform: string = process.platform): Promise<NativeDialogResult> {
-	if (platform !== "win32" && platform !== "darwin") {
-		// Linux stub — out of scope this cycle (see file doc comment).
-		return { available: false };
-	}
+// ── Linux (zenity / kdialog) ───────────────────────────────────────────────
+//
+// Unlike the XDG Desktop Portal (org.freedesktop.portal.FileChooser), which
+// requires async D-Bus signal handling impractical from a Bun shell-out,
+// zenity and kdialog are synchronous CLI tools that print the selected path
+// to stdout and exit 0 on OK / 1 on Cancel — fitting the existing
+// mapDialogResult contract exactly.
+//
+//   - zenity  ships with GNOME/XFCE and most GTK-based desktops. Works under
+//             X11 and Wayland (GTK auto-detects the backend).
+//   - kdialog ships with KDE. Works under X11 and Wayland (Qt auto-detects).
+//
+// Together they cover GNOME, KDE, XFCE, Cinnamon, MATE, Hyprland, Sway, and
+// other XDG-compliant desktops. A headless server (no DISPLAY / WAYLAND_DISPLAY)
+// gets { available: false } so the frontend falls back to manual path entry.
 
+/** Cache of the detected dialog tool, or null if none was found. Undefined = not yet checked. */
+let cachedLinuxTool: "zenity" | "kdialog" | null | undefined;
+
+/**
+ * Detect the best available native folder-dialog CLI on Linux. Returns the
+ * first of `zenity`, `kdialog` found on PATH, or null if neither is installed.
+ * Cached after first detection — a missing tool won't appear mid-session, and
+ * re-running `command -v` on every request would add a sync spawn to a hot path.
+ */
+export function detectLinuxDialogTool(): "zenity" | "kdialog" | null {
+	if (cachedLinuxTool !== undefined) return cachedLinuxTool;
+	try {
+		// `command -v` prints the path of the first found binary; we only care
+		// which name matched. Sync spawn is fine — instant and cached after.
+		const proc = Bun.spawnSync(["sh", "-c", "command -v zenity kdialog 2>/dev/null"]);
+		const found = proc.stdout.toString().trim();
+		if (found.includes("zenity")) cachedLinuxTool = "zenity";
+		else if (found.includes("kdialog")) cachedLinuxTool = "kdialog";
+		else cachedLinuxTool = null;
+	} catch {
+		cachedLinuxTool = null;
+	}
+	return cachedLinuxTool;
+}
+
+/**
+ * Check whether a graphical session is available. On a headless Linux server
+ * (no DISPLAY and no WAYLAND_DISPLAY), native dialogs cannot run — the caller
+ * returns { available: false } so the frontend falls back to manual path entry.
+ */
+export function hasLinuxDisplay(): boolean {
+	return Boolean(process.env.DISPLAY || process.env.WAYLAND_DISPLAY);
+}
+
+/**
+ * Build the Linux command for a native folder-picker invocation.
+ *
+ * Both zenity and kdialog print the selected path to stdout (trailing newline
+ * trimmed by mapDialogResult) and exit 0 on OK / non-zero on Cancel, so the
+ * existing mapDialogResult(run) path handles them with no special-casing.
+ */
+export function linuxCmd(tool: "zenity" | "kdialog", prompt: string): string[] {
+	if (tool === "zenity") {
+		return ["zenity", "--file-selection", "--directory", `--title=${prompt}`];
+	}
+	// kdialog: <startDir> <caption>. HOME (or /) is a reasonable start point.
+	const startDir = process.env.HOME ?? "/";
+	return ["kdialog", "--getexistingdirectory", startDir, prompt];
+}
+
+/** Reset the cached tool detection. Tests only — production never needs this. */
+export function _resetLinuxDialogCacheForTests(): void {
+	cachedLinuxTool = undefined;
+}
+
+async function openNativeFolderDialog(platform: string = process.platform): Promise<NativeDialogResult> {
 	if (platform === "win32") {
 		// Run via `cmd /c start /WAIT` + temp file (see windowsCmd doc comment).
 		// The temp file carries the selected path because `start` detaches the
@@ -182,13 +252,32 @@ async function openNativeFolderDialog(platform: string = process.platform): Prom
 		}
 	}
 
-	// macOS: direct osascript; stdout carries the POSIX path.
-	try {
-		const run = await runDialogWithTimeout(MACOS_CMD("Select folder"), NATIVE_DIALOG_TIMEOUT_MS);
-		return mapDialogResult(run);
-	} catch (e) {
-		return { error: e instanceof Error ? e.message : String(e) };
+	if (platform === "darwin") {
+		// macOS: direct osascript; stdout carries the POSIX path.
+		try {
+			const run = await runDialogWithTimeout(MACOS_CMD("Select folder"), NATIVE_DIALOG_TIMEOUT_MS);
+			return mapDialogResult(run);
+		} catch (e) {
+			return { error: e instanceof Error ? e.message : String(e) };
+		}
 	}
+
+	if (platform === "linux") {
+		// Headless server (no DISPLAY / WAYLAND_DISPLAY) → no native dialog possible.
+		if (!hasLinuxDisplay()) return { available: false };
+		const tool = detectLinuxDialogTool();
+		// No zenity/kdialog installed → frontend falls back to manual path entry.
+		if (!tool) return { available: false };
+		try {
+			const run = await runDialogWithTimeout(linuxCmd(tool, "Select folder"), NATIVE_DIALOG_TIMEOUT_MS);
+			return mapDialogResult(run);
+		} catch (e) {
+			return { error: e instanceof Error ? e.message : String(e) };
+		}
+	}
+
+	// Unknown platform (freebsd, etc.) — no native dialog available.
+	return { available: false };
 }
 
 /**
@@ -198,7 +287,8 @@ async function openNativeFolderDialog(platform: string = process.platform): Prom
  *
  * On Windows the result arrives via `fileContent` (the temp file written by
  * the PowerShell script — `start` detaches the child so stdout is empty); on
- * macOS it arrives via `run.stdout` (osascript writes the POSIX path).
+ * macOS and Linux it arrives via `run.stdout` (osascript / zenity / kdialog
+ * all print the selected path to stdout).
  *
  * @param fileContent Windows only: contents of the temp result file. Empty
  *   means the user cancelled (the script writes only on OK).
