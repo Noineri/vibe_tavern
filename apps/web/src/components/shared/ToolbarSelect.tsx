@@ -161,7 +161,19 @@ export function ToolbarSelect({
 					side={side}
 					sideOffset={sideOffset}
 					align={align}
-					className="glass-blur z-[220] overflow-hidden rounded-lg border border-border2 bg-glass-bg py-2 shadow-[0_12px_28px_rgba(0,0,0,0.45)] data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95"
+					// NOTE: no data-[state=closed]:animate-out classes here (open-in anim kept).
+			// Radix Select hardcodes <DismissableLayer disableOutsidePointerEvents>,
+			// which save/restores body.style.pointerEvents while the layer is mounted.
+			// An exit animation keeps the Select.Content (and that layer) mounted
+			// ~150ms after setOpen(false) — long enough to straddle a Dialog mount/
+			// unmount launched from this Select's footer (e.g. persona "manage
+			// personas"). The save/restore then snaps a stale body{pointer-events:none}
+			// and restores it when the Dialog unmounts, freezing the UI. With no exit
+			// animation the Select unmounts in the same commit that mounts the Dialog,
+			// so its layer cleanup (body restore) runs before the Dialog's effects —
+			// the lifecycle the save/restore contract assumes. See commit msg for the
+			// Playwright trace that pinned this.
+				className="glass-blur z-[220] overflow-hidden rounded-lg border border-border2 bg-glass-bg py-2 shadow-[0_12px_28px_rgba(0,0,0,0.45)] data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95"
 					style={{ width: contentWidth }}
 				>
 					<div className="mb-1 border-b border-border px-4 pb-2 pt-1 font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.08em] text-t3">

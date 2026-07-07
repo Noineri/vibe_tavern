@@ -36,12 +36,12 @@ interface Props {
  * Desktop persona quick-switch, built on the shared `ToolbarSelect`.
  *
  * Uses `ToolbarSelect`'s **controlled open** mode (`open`/`onOpenChange`)
- * because the footer ("manage personas") opens `PersonaModal`: the Select
- * must be dismissed BEFORE the modal mounts, or the orphaned Select content
- * leaks `pointer-events: none` onto `<body>` and freezes the UI after the
- * modal closes (the freeze bug fixed in 108bd2b1). The mobile persona picker
- * (`MobileInputArea`) avoids this by calling `setMobilePersonaOpen(false)`
- * first; the controlled-open path here is the desktop mirror.
+ * so the footer ("manage personas") can dismiss the Select before opening
+ * `PersonaModal`. The actual body-freeze guard lives in `ToolbarSelect`
+ * itself (no exit animation on Select.Content): Radix Select hardcodes a
+ * <RemoveScroll> body-lock, and an exit animation keeps it mounted ~150ms
+ * after close — long enough to overlap a Dialog mount and trip a
+ * react-remove-scroll stale-snapshot that re-locks <body> on Dialog close.
  */
 export function PersonaQuickSwitch({ personas, activePersonaId, onSelect }: Props) {
   const { t } = useT();
