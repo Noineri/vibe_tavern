@@ -46,6 +46,18 @@ interface ToolbarSelectProps {
 	 *  result down — the desktop shell renders `<ToolbarSelect>` (default) and
 	 *  the mobile shell renders `<ToolbarSelect mobile>`. Mirrors VariantJump. */
 	mobile?: boolean;
+	/** Optional controlled open state. When provided, the caller owns the
+	 *  open/close lifecycle (and the internal state is bypassed). Needed for the
+	 *  persona switch, whose footer opens a modal: the caller must `setOpen(false)`
+	 *  BEFORE launching the modal, or the orphaned Select content leaks
+	 *  `pointer-events: none` onto <body> and freezes the UI (the freeze bug
+	 *  fixed in 108bd2b1). When omitted, the primitive manages its own open
+	 *  state internally (the existing chat-bar selects use this). */
+	open?: boolean;
+	/** Companion to `open` — called when Radix/BottomSheet requests a close
+	 *  (outside click, Escape, item select) or open (trigger click). Ignored
+	 *  when `open` is omitted. */
+	onOpenChange?: (open: boolean) => void;
 	/** A single `<button type="button">` element. WITHOUT an `onClick` — the
 	 *  primitive attaches the open handler on both halves (Select.Trigger on
 	 *  desktop, the BottomSheet opener on mobile). Its `className` and any
@@ -84,6 +96,8 @@ interface ToolbarSelectProps {
 
 export function ToolbarSelect({
 	mobile = false,
+	open: openProp,
+	onOpenChange,
 	trigger,
 	triggerTooltip,
 	itemTestId,
@@ -98,9 +112,25 @@ export function ToolbarSelect({
 	sideOffset = 8,
 	contentWidth = 220,
 }: ToolbarSelectProps) {
+	// Controlled-or-uncontrolled open state. When the caller passes `open`,
+	// they own the lifecycle (needed for the persona footer → modal path — see
+	// the prop doc). Otherwise the primitive manages its own state, and the
+	// existing chat-bar selects keep their exact behavior. Resolved `open` /
+	// `setOpen` are passed to BOTH halves so desktop (Select.Root) and mobile
+	// (BottomSheet) stay in sync.
+	const [internalOpen, setInternalOpen] = useState(false);
+	const isControlled = openProp !== undefined;
+	const open = isControlled ? openProp : internalOpen;
+	const setOpen = (next: boolean) => {
+		if (!isControlled) setInternalOpen(next);
+		onOpenChange?.(next);
+	};
+
 	if (mobile) {
 		return (
 			<ToolbarSelectMobile
+				open={open}
+				setOpen={setOpen}
 				trigger={trigger}
 				itemTestId={itemTestId}
 				title={title}
@@ -119,7 +149,7 @@ export function ToolbarSelect({
 	const selectTrigger = <Select.Trigger asChild>{trigger}</Select.Trigger>;
 
 	return (
-		<Select.Root value={value ?? undefined} onValueChange={onSelect}>
+		<Select.Root open={open} onOpenChange={setOpen} value={value ?? undefined} onValueChange={onSelect}>
 			{triggerTooltip ? (
 				<CustomTooltip content={triggerTooltip}>{selectTrigger}</CustomTooltip>
 			) : (
@@ -173,6 +203,8 @@ export function ToolbarSelect({
 }
 
 function ToolbarSelectMobile({
+	open,
+	setOpen,
 	trigger,
 	itemTestId,
 	title,
@@ -181,9 +213,11 @@ function ToolbarSelectMobile({
 	onSelect,
 	emptyText,
 	footer,
-}: Pick<ToolbarSelectProps, "trigger" | "itemTestId" | "title" | "items" | "value" | "onSelect" | "emptyText" | "footer">) {
+}: Pick<ToolbarSelectProps, "trigger" | "itemTestId" | "title" | "items" | "value" | "onSelect" | "emptyText" | "footer"> & {
+	open: boolean;
+	setOpen: (open: boolean) => void;
+}) {
 	const { t } = useT();
-	const [open, setOpen] = useState(false);
 
 	if (!isValidElement(trigger)) return null;
 
