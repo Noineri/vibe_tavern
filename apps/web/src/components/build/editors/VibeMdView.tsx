@@ -44,6 +44,7 @@ import { brandId, type ChatId } from "@vibe-tavern/domain";
 import { toast } from "sonner";
 import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
+import * as Popover from "@radix-ui/react-popover";
 
 import { vibeMdBundle } from "./vibe-md-theme.js";
 import { lockedHeadings } from "./vibe-md-locked-headings.js";
@@ -64,6 +65,7 @@ import { TextAreaField } from "../fields/TextAreaField.js";
 import { DepthPromptField } from "../fields/DepthPromptField.js";
 import { createChatAction, switchChatAction, renameChatAction, deleteChatAction } from "../../../stores/api-actions/chat-actions.js";
 import { DestructiveConfirmModal } from "../../shared/destructive-confirm-modal.js";
+import { getModalPortal } from "../../shared/modal-helpers.js";
 import { listCoauthorChats } from "../../../app-client.js";
 import { useChatStore } from "../../../stores/chat-store.js";
 
@@ -119,9 +121,14 @@ export function VibeMdView({ form, characterId, isSaving }: VibeMdViewProps) {
     }
   }
 
-  async function handleOpenCoauthorList() {
-    // Toggle closed if already open.
-    if (coauthorOpen) { setCoauthorOpen(false); return; }
+  async function handleCoauthorOpenChange(next: boolean) {
+    // Controlled-by-Popover replacement for the former handleOpenCoauthorList
+    // toggle: Radix fires onOpenChange with the intended state, so we only act
+    // on the opening edge (fetch) and let the closing edge set state. Removing
+    // the former hand-rolled `fixed inset-0 z-40` click-away backdrop is what
+    // stops the dropdown from freezing page scroll: Popover's own outside-click
+    // detection needs no fullscreen overlay (overlay-audit fix step 8).
+    if (!next) { setCoauthorOpen(false); return; }
     setCoauthorBusy(true);
     try {
       const list = await listCoauthorChats(characterId);
@@ -277,17 +284,103 @@ export function VibeMdView({ form, characterId, isSaving }: VibeMdViewProps) {
           "New co-author chat" creates one. Both flip AppShell to CoauthorMode
           because the active chat's mode becomes 'coauthor' (resolveShellSurface).
           Placed ABOVE the editor so the user doesn't have to scroll the whole
-          card to start a co-author session. */}
+          card to start a co-author session. The list dropdown is a Radix
+          Popover (flyout-panel pattern, overlay-audit step 8): native
+          outside-click without a fullscreen backdrop, so opening it no longer
+          freezes page scroll. */}
       <div className="relative mb-5 flex flex-wrap items-center gap-2">
-        <button
-          type="button"
-          className="flex items-center gap-1.5 rounded-lg border border-border bg-s2 px-3 py-2 font-ui text-[0.85rem] font-medium text-t2 transition-colors hover:border-accent/50 hover:text-t1 disabled:opacity-50"
-          onClick={() => { void handleOpenCoauthorList(); }}
-          disabled={coauthorBusy}
-        >
-          <span className="text-[0.85rem]"><Icons.Sparkles /></span>
-          {t("coauthor.entry.list")}
-        </button>
+        <Popover.Root open={coauthorOpen} onOpenChange={(o) => { void handleCoauthorOpenChange(o); }}>
+          <Popover.Trigger asChild>
+            <button
+              type="button"
+              className="flex items-center gap-1.5 rounded-lg border border-border bg-s2 px-3 py-2 font-ui text-[0.85rem] font-medium text-t2 transition-colors hover:border-accent/50 hover:text-t1 disabled:opacity-50"
+              disabled={coauthorBusy}
+            >
+              <span className="text-[0.85rem]"><Icons.Sparkles /></span>
+              {t("coauthor.entry.list")}
+            </button>
+          </Popover.Trigger>
+          {coauthorChats && (
+            <Popover.Portal container={getModalPortal() ?? undefined}>
+              <Popover.Content
+                side="bottom"
+                align="start"
+                sideOffset={4}
+                className="glass-blur z-50 min-w-[260px] max-w-[340px] rounded-lg border border-border bg-glass-bg shadow-lg outline-none"
+              >
+                <div className="border-b border-border/50 px-3 py-2 font-ui text-[11px] uppercase tracking-wide text-t4">{t("coauthor.list_title")}</div>
+                {coauthorChats.length === 0 ? (
+                  <div className="px-3 py-3 font-ui text-[0.85rem] text-t3">{t("coauthor.list_empty")}</div>
+                ) : (
+                  <ul className="max-h-[280px] overflow-y-auto py-1">
+                    {coauthorChats.map((chat) => (
+                      <li key={chat.id} className="group relative">
+                        {renamingChatId === chat.id ? (
+                          <div className="flex w-full flex-col items-start gap-1 px-3 py-2">
+                            <input
+                              // eslint-disable-next-line jsx-a11y/no-autofocus
+                              autoFocus
+                              className="w-full rounded border border-border bg-s2 px-2 py-1 font-ui text-[0.85rem] font-medium text-t1 outline-none focus:border-border2"
+                              value={renameDraft}
+                              onChange={(e) => setRenameDraft(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") { e.preventDefault(); void handleRenameChat(chat.id); }
+                                else if (e.key === "Escape") {
+                                  // Stop Radix Popover from also closing on Escape —
+                                  // the inline rename cancels but the list stays open.
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  setRenamingChatId(null);
+                                }
+                              }}
+                              onBlur={() => void handleRenameChat(chat.id)}
+                              disabled={coauthorBusy}
+                            />
+                          </div>
+                        ) : (
+                          <>
+                            <button
+                              type="button"
+                              className="flex w-full flex-col items-start gap-0.5 px-3 py-2 text-left transition-colors hover:bg-s2 pr-16"
+                              onClick={() => { void handleSwitchToCoauthorChat(chat.id); }}
+                              disabled={coauthorBusy}
+                            >
+                              <span className="font-ui text-[0.85rem] font-medium text-t1">{chat.title || t("coauthor.untitled_chat")}</span>
+                              <span className="font-ui text-[11px] text-t4">{chat.messageCount} {t("coauthor.messages_unit")}</span>
+                            </button>
+                            <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+                              <button
+                                type="button"
+                                className="rounded p-1.5 text-t3 transition-colors hover:bg-s3 hover:text-t1"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setRenamingChatId(chat.id);
+                                  setRenameDraft(chat.title);
+                                }}
+                              >
+                                <Icons.Edit className="h-3.5 w-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                className="rounded p-1.5 text-danger-text transition-colors hover:bg-danger-dim hover:text-danger-text"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setDeleteConfirmChatId(chat.id);
+                                }}
+                              >
+                                <Icons.Trash className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
+                          </>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </Popover.Content>
+            </Popover.Portal>
+          )}
+        </Popover.Root>
         <button
           type="button"
           className="flex items-center gap-1.5 rounded-lg bg-accent px-3 py-2 font-ui text-[0.85rem] font-bold text-on-accent transition-all hover:brightness-110 active:scale-[0.98] disabled:opacity-50"
@@ -297,83 +390,6 @@ export function VibeMdView({ form, characterId, isSaving }: VibeMdViewProps) {
           <span className="text-[0.85rem]"><Icons.Plus /></span>
           {t("coauthor.entry.new")}
         </button>
-
-        {coauthorOpen && coauthorChats && (
-          <>
-            {/* Click-away backdrop. */}
-            <button
-              type="button"
-              aria-label={t("close")}
-              className="fixed inset-0 z-40 cursor-default"
-              onClick={() => setCoauthorOpen(false)}
-            />
-            <div className="glass-blur absolute left-0 top-full z-50 mt-1 min-w-[260px] max-w-[340px] rounded-lg border border-border bg-glass-bg shadow-lg">
-              <div className="border-b border-border/50 px-3 py-2 font-ui text-[11px] uppercase tracking-wide text-t4">{t("coauthor.list_title")}</div>
-              {coauthorChats.length === 0 ? (
-                <div className="px-3 py-3 font-ui text-[0.85rem] text-t3">{t("coauthor.list_empty")}</div>
-              ) : (
-                <ul className="max-h-[280px] overflow-y-auto py-1">
-                  {coauthorChats.map((chat) => (
-                    <li key={chat.id} className="group relative">
-                      {renamingChatId === chat.id ? (
-                        <div className="flex w-full flex-col items-start gap-1 px-3 py-2">
-                          <input
-                            // eslint-disable-next-line jsx-a11y/no-autofocus
-                            autoFocus
-                            className="w-full rounded border border-border bg-s2 px-2 py-1 font-ui text-[0.85rem] font-medium text-t1 outline-none focus:border-border2"
-                            value={renameDraft}
-                            onChange={(e) => setRenameDraft(e.target.value)}
-                            onKeyDown={(e) => {
-                              if (e.key === "Enter") void handleRenameChat(chat.id);
-                              else if (e.key === "Escape") setRenamingChatId(null);
-                            }}
-                            onBlur={() => void handleRenameChat(chat.id)}
-                            disabled={coauthorBusy}
-                          />
-                        </div>
-                      ) : (
-                        <>
-                          <button
-                            type="button"
-                            className="flex w-full flex-col items-start gap-0.5 px-3 py-2 text-left transition-colors hover:bg-s2 pr-16"
-                            onClick={() => { void handleSwitchToCoauthorChat(chat.id); }}
-                            disabled={coauthorBusy}
-                          >
-                            <span className="font-ui text-[0.85rem] font-medium text-t1">{chat.title || t("coauthor.untitled_chat")}</span>
-                            <span className="font-ui text-[11px] text-t4">{chat.messageCount} {t("coauthor.messages_unit")}</span>
-                          </button>
-                          <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
-                            <button
-                              type="button"
-                              className="rounded p-1.5 text-t3 transition-colors hover:bg-s3 hover:text-t1"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setRenamingChatId(chat.id);
-                                setRenameDraft(chat.title);
-                              }}
-                            >
-                              <Icons.Edit className="h-3.5 w-3.5" />
-                            </button>
-                            <button
-                              type="button"
-                              className="rounded p-1.5 text-danger-text transition-colors hover:bg-danger-dim hover:text-danger-text"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setDeleteConfirmChatId(chat.id);
-                              }}
-                            >
-                              <Icons.Trash className="h-3.5 w-3.5" />
-                            </button>
-                          </div>
-                        </>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          </>
-        )}
       </div>
 
       {deleteConfirmChatId && (

@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Icons } from "../shared/icons.js";
 import { cn } from "../../lib/cn.js";
 import { useT } from "../../i18n/context.js";
@@ -38,6 +39,15 @@ export function PersonaQuickSwitch({ personas, activePersonaId, onSelect }: Prop
 
   const activePersona = personas.find((p) => p.id === activePersonaId) || personas[0];
 
+  // Controlled open state so the "manage personas" footer can dismiss the
+  // Select BEFORE opening the modal. Leaving the Select open while a Dialog
+  // mounts on top freezes the UI: Radix Select keeps its FocusScope / Portal
+  // content alive (it has no idea the user navigated away), so after the
+  // modal closes the orphaned Select content still traps input. The mobile
+  // path avoids this by calling setMobilePersonaOpen(false) first; this mirrors
+  // it. (Pre-existing bug from the step-3 Select migration, surfaced now.)
+  const [open, setOpen] = useState(false);
+
   if (!activePersona) {
     return (
       <div className="flex shrink-0 cursor-default items-center gap-1 whitespace-nowrap rounded-full bg-accent-dim px-[9px] py-[3px] text-xs font-medium text-accent-t">
@@ -48,6 +58,8 @@ export function PersonaQuickSwitch({ personas, activePersonaId, onSelect }: Prop
 
   return (
     <Select.Root
+      open={open}
+      onOpenChange={setOpen}
       value={activePersonaId ?? undefined}
       onValueChange={(id) => onSelect(id)}
     >
@@ -93,7 +105,10 @@ export function PersonaQuickSwitch({ personas, activePersonaId, onSelect }: Prop
           <div className="mt-1 border-t border-border px-4 pt-2 pb-0">
             <button type="button"
               className="flex cursor-pointer items-center gap-1 rounded p-1.5 font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-colors duration-100 hover:bg-s2 hover:text-t2"
-              onClick={() => { useModalStore.getState().setIsPersonaModalOpen(true); }}
+              onClick={() => {
+                setOpen(false);
+                useModalStore.getState().setIsPersonaModalOpen(true);
+              }}
             >
               <Icons.Edit /> {t("manage_personas")}
             </button>
