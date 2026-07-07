@@ -18,21 +18,30 @@ function resolveToken(source: MobileAccessTokenSource): string | undefined {
 }
 
 /**
- * Returns true for loopback addresses AND RFC 1918 private subnets.
+ * Trust ONLY loopback by default. Same-LAN clients (192.168.x.x, 10.x.x.x,
+ * 172.16–31.x.x) must present a valid token — otherwise the mobile-access
+ * "Disable" button does nothing because every device on the home WiFi is
+ * treated as local. A sibling on the same WiFi is the exact threat this
+ * feature exists for.
  *
- * Why private subnets? When the app runs inside Docker, the host's browser
- * connects through Docker's bridge NAT (typically 172.17.x.x or 172.18.x.x).
- * The request is functionally local — same machine — but the TCP remote IP is
- * no longer 127.0.0.1. Treating private IPs as trusted preserves the "local
- * access is passwordless" UX while still requiring a token for truly remote
- * connections (public IPs).
+ * Escape hatch: set `RP_PLATFORM_TRUST_PRIVATE=1` to restore the old
+ * "all RFC 1918 = trusted" behavior. This is needed when the app runs inside
+ * Docker and the host browser connects through the Docker bridge NAT
+ * (typically 172.17.x.x or 172.18.x.x) — the request is functionally local
+ * but no longer loopback. Prefer binding the container to 127.0.0.1 when
+ * possible; only enable this when you actually need LAN passwordless access.
  */
+const TRUST_PRIVATE_IPS = process.env.RP_PLATFORM_TRUST_PRIVATE === "1";
+
 function isTrustedClient(remoteIp: unknown): boolean {
 	if (typeof remoteIp !== "string") return false;
-	// Loopback
+	// Loopback — always trusted (real local access from the same machine).
 	if (remoteIp === "127.0.0.1" || remoteIp === "::1" || remoteIp === "::ffff:127.0.0.1") return true;
 
-	// Parse IPv4 (strip IPv6-mapped prefix if present)
+	if (!TRUST_PRIVATE_IPS) return false;
+
+	// RFC 1918 private subnets — opt-in via RP_PLATFORM_TRUST_PRIVATE=1.
+	// Parse IPv4 (strip IPv6-mapped prefix if present).
 	const v4 = remoteIp.replace(/^::ffff:/, "");
 	const parts = v4.split(".");
 	if (parts.length !== 4) return false;
