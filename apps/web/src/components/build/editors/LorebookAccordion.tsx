@@ -9,7 +9,7 @@
  */
 import { useState, useEffect, useMemo } from "react";
 import type { ReactNode } from "react";
-import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
+import { ActionSheet } from "../../shared/ActionSheet.js";
 
 import { Ic, Icons } from "../../shared/icons.js";
 import { AddButton } from "../../shared/add-button.js";
@@ -304,64 +304,37 @@ export function LorebookAccordion({
               )}
             </span>
 
-            {/* ── Mobile context menu (⋮) ── */}
+            {/* ── Mobile context menu (⋮) → ActionSheet (bottom sheet) ──
+                Mobile rule: every popover surfaces as a bottom sheet, no
+                exceptions. The ⋮ trigger opens an ActionSheet (vaul Drawer
+                via shared/BottomSheet) listing add/duplicate/export/edit/
+                delete. The desktop branch below renders the same actions as a
+                row of inline icon buttons (not a menu). */}
             {isMobile ? (
-              <div className="relative ml-1">
-                <DropdownMenu.Root
-                  modal={false}
-                  open={actionMenuOpen}
-                  onOpenChange={(open) => { if (open !== actionMenuOpen) onToggleActionMenu(); }}
+              <>
+                <button
+                  type="button"
+                  className="flex h-11 w-11 shrink-0 cursor-pointer items-center justify-center rounded text-t2 text-xl leading-none transition-all hover:bg-s2 select-none"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onToggleActionMenu();
+                  }}
                 >
-                  <DropdownMenu.Trigger asChild>
-                    <button
-                      type="button"
-                      className="flex h-11 w-11 shrink-0 cursor-pointer items-center justify-center rounded text-t2 text-xl leading-none transition-all hover:bg-s2 select-none"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      ⋮
-                    </button>
-                  </DropdownMenu.Trigger>
-                  <DropdownMenu.Portal>
-                    <DropdownMenu.Content
-                      side="bottom"
-                      align="end"
-                      sideOffset={4}
-                      className="glass-blur z-[100] min-w-[160px] overflow-hidden rounded-lg border border-border bg-glass-bg py-1 shadow-theme-lg"
-                    >
-                      <DropdownMenu.Item
-                        className="flex cursor-pointer items-center gap-2 px-4 py-3 font-ui text-[14px] text-t1 outline-none transition-colors hover:bg-s2 active:bg-s3 data-[highlighted]:bg-s2"
-                        onSelect={() => onAddEntry()}
-                      >
-                        <Ic.plus /> {t("lore_add_entry")}
-                      </DropdownMenu.Item>
-                      <DropdownMenu.Item
-                        className="flex cursor-pointer items-center gap-2 px-4 py-3 font-ui text-[14px] text-t1 outline-none transition-colors hover:bg-s2 active:bg-s3 data-[highlighted]:bg-s2"
-                        onSelect={() => onDuplicate()}
-                      >
-                        <span>⧉</span> {t("lore_duplicate")}
-                      </DropdownMenu.Item>
-                      <DropdownMenu.Item
-                        className="flex cursor-pointer items-center gap-2 px-4 py-3 font-ui text-[14px] text-t1 outline-none transition-colors hover:bg-s2 active:bg-s3 data-[highlighted]:bg-s2"
-                        onSelect={() => onExport()}
-                      >
-                        <Ic.download /> {t("lore_export_st")}
-                      </DropdownMenu.Item>
-                      <DropdownMenu.Item
-                        className="flex cursor-pointer items-center gap-2 px-4 py-3 font-ui text-[14px] text-t1 outline-none transition-colors hover:bg-s2 active:bg-s3 data-[highlighted]:bg-s2"
-                        onSelect={() => onStartEdit()}
-                      >
-                        <Ic.edit /> {t("edit")}
-                      </DropdownMenu.Item>
-                      <DropdownMenu.Item
-                        className="flex cursor-pointer items-center gap-2 px-4 py-3 font-ui text-[14px] text-danger outline-none transition-colors hover:bg-s2 active:bg-s3 data-[highlighted]:bg-s2"
-                        onSelect={() => onDelete()}
-                      >
-                        <Ic.del /> {t("delete_lorebook_confirm")}
-                      </DropdownMenu.Item>
-                    </DropdownMenu.Content>
-                  </DropdownMenu.Portal>
-                </DropdownMenu.Root>
-              </div>
+                  ⋮
+                </button>
+                <ActionSheet
+                  open={actionMenuOpen}
+                  onClose={onToggleActionMenu}
+                  title={lorebook.name}
+                  items={[
+                    { icon: <Ic.plus />, label: t("lore_add_entry"), action: onAddEntry },
+                    { icon: <span>⧉</span>, label: t("lore_duplicate"), action: onDuplicate },
+                    { icon: <Ic.download />, label: t("lore_export_st"), action: onExport },
+                    { icon: <Ic.edit />, label: t("edit"), action: onStartEdit },
+                    { icon: <Ic.del />, label: t("delete_lorebook_confirm"), danger: true, action: onDelete },
+                  ]}
+                />
+              </>
             ) : (
               /* ── Desktop: a row of small buttons ── */
               <div className="flex shrink-0 items-center gap-0.5 ml-1">
