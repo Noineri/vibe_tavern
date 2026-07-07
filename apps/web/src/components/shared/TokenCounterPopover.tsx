@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { useT } from "../../i18n/context.js";
 import { cn } from "../../lib/cn.js";
 import { CustomTooltip } from "./Tooltip.js";
-import { getModalPortal } from "./modal-helpers.js";
+
 
 /**
  * Context-counter / token-breakdown flyout for the chat input toolbar.
@@ -88,7 +88,7 @@ export function TokenCounterPopover({
 					{permanent.toLocaleString()}<span className="text-t4">+</span>{(history + inputTokens).toLocaleString()} / {contextSize > 0 ? contextSize.toLocaleString() : "∞"}
 				</span>
 			</Popover.Trigger>
-			<Popover.Portal container={getModalPortal() ?? undefined}>
+			<Popover.Portal>
 				<Popover.Content
 					side="top"
 					sideOffset={8}

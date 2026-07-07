@@ -12,7 +12,7 @@ import { CollapsedCharacterStrip } from "./sections/CollapsedCharacterStrip.js";
 import { CharacterListSection } from "./sections/CharacterListSection.js";
 import { SidebarFlyout } from "./sections/SidebarFlyout.js";
 import { Icons } from "../shared/icons.js";
-import { getModalPortal } from "../shared/modal-helpers.js";
+
 import { cn } from "../../lib/cn.js";
 import { resolveEntityAvatarUrl } from "../../lib/avatar.js";
 import { useT } from "../../i18n/context.js";
@@ -229,7 +229,7 @@ export function Sidebar() {
                   </div>
                 </Popover.Trigger>
               </CustomTooltip>
-              <Popover.Portal container={getModalPortal() ?? undefined}>
+              <Popover.Portal>
                 <Popover.Content
                   side="right"
                   align="start"
@@ -663,7 +663,7 @@ export function Sidebar() {
                   </div>
                 </Popover.Trigger>
                 {characterTabs.length > 1 && (
-                  <Popover.Portal container={getModalPortal() ?? undefined}>
+                  <Popover.Portal>
                     <Popover.Content
                       side="bottom"
                       align="start"

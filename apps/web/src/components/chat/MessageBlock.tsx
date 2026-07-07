@@ -4,7 +4,7 @@ import { cn } from "../../lib/cn.js";
 import { resolveModelLabel } from "../../lib/model-resolve.js";
 import { resolveEntityAvatarUrl } from "../../lib/avatar.js";
 import { Markdown } from "../../lib/markdown.js";
-import { getModalPortal } from "../shared/modal-helpers.js";
+
 import { BottomSheet } from "../shared/BottomSheet.js";
 import * as Select from "@radix-ui/react-select";
 import { useDisplayMessage, useChatMeta, useMacroContext, useMessageAuthor, useIsStreamingTarget, useStreamingRevealedFor } from "../../stores/chat-selectors.js";
@@ -739,7 +739,7 @@ function VariantJump({ mobile, provenance, selectedVariantIndex, variantCount, o
           {counter}
         </button>
       </Select.Trigger>
-      <Select.Portal container={getModalPortal() ?? undefined}>
+      <Select.Portal>
         <Select.Content
           position="popper"
           side="top"

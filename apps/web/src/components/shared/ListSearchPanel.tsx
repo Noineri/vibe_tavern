@@ -15,7 +15,7 @@
  * (Popover.Anchor) with a controlled open state derived from `tagFocused` +
  * non-empty suggestions. `onOpenAutoFocus` is prevented so the input keeps
  * focus while the dropdown is open (combobox behavior). The Popover is portaled
- * via getModalPortal so glass-blur escapes the sidebar's backdrop root (same
+ * to document.body so glass-blur escapes the sidebar's backdrop root (same
  * requirement as Sidebar's own menus). Radix handles positioning + collision +
  * outside-click, replacing the former manual getBoundingClientRect + scroll/
  * resize listeners + useOutsideClick.
@@ -24,7 +24,7 @@
 import { useRef, useState, useMemo } from "react";
 import * as Popover from "@radix-ui/react-popover";
 import { cn } from "../../lib/cn.js";
-import { getModalPortal } from "./modal-helpers.js";
+
 import { useT } from "../../i18n/context.js";
 
 interface ListSearchPanelProps {
@@ -139,7 +139,7 @@ export function ListSearchPanel({
               </div>
             </div>
           </Popover.Anchor>
-          <Popover.Portal container={getModalPortal() ?? undefined}>
+          <Popover.Portal>
             <Popover.Content
               side="bottom"
               align="start"
