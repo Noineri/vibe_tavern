@@ -3,6 +3,7 @@ import { cn } from "../../lib/cn.js";
 import { Icons } from "../shared/icons.js";
 import { AutoTextarea } from "../shared/auto-textarea.js";
 import { CustomTooltip } from "../shared/Tooltip.js";
+import { ToolbarSelect } from "../shared/ToolbarSelect.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
 import { CoauthorMobileInputArea } from "./CoauthorMobileInputArea.js";
 import { useCoauthorInputArea, useModuleSwitch } from "./use-coauthor-input-area.js";
@@ -18,8 +19,9 @@ import { useCoauthorInputArea, useModuleSwitch } from "./use-coauthor-input-area
  * - the send/cancel handler, reused verbatim from `useChatController`
  *   (`handleSend` / `handleCancelGeneration`) — co-author sends through the same
  *   chat pipeline, just with a different backend strategy
- * - a **quick module switch** (compact inline dropdown of module names, no
- *   modal — the full manager lives in the Sidebar launcher, CS-23)
+ * - a **quick module switch** (ToolbarSelect: compact inline Select on desktop,
+ *   BottomSheet on mobile — no modal; the full manager lives in the Sidebar
+ *   launcher, CS-23)
  * - a favorites pill **filtered by tool capability** (`useToolCapableModels`),
  *   because co-author turns require function-calling; a non-tool model would
  *   silently break the tool loop, so it must not be selectable here
@@ -49,29 +51,19 @@ function DesktopInput({ data }: { data: ReturnType<typeof useCoauthorInputArea> 
 	} = data;
 
 	const moduleSwitch = useModuleSwitch();
-	const [moduleDropOpen, setModuleDropOpen] = useState(false);
-	const [modelDropOpen, setModelDropOpen] = useState(false);
 	const [tokenPopOpen, setTokenPopOpen] = useState(false);
-	const moduleDropRef = useRef<HTMLDivElement>(null);
-	const modelDropRef = useRef<HTMLDivElement>(null);
 	const tokenPopRef = useRef<HTMLDivElement>(null);
 
 	useEffect(() => {
-		if (!moduleDropOpen && !modelDropOpen && !tokenPopOpen) return;
+		if (!tokenPopOpen) return;
 		function handleClick(e: MouseEvent) {
-			if (moduleDropRef.current && !moduleDropRef.current.contains(e.target as Node)) {
-				setModuleDropOpen(false);
-			}
-			if (modelDropRef.current && !modelDropRef.current.contains(e.target as Node)) {
-				setModelDropOpen(false);
-			}
 			if (tokenPopRef.current && !tokenPopRef.current.contains(e.target as Node)) {
 				setTokenPopOpen(false);
 			}
 		}
 		document.addEventListener("mousedown", handleClick);
 		return () => document.removeEventListener("mousedown", handleClick);
-	}, [moduleDropOpen, modelDropOpen, tokenPopOpen]);
+	}, [tokenPopOpen]);
 
 	return (
 		<div
@@ -97,54 +89,28 @@ function DesktopInput({ data }: { data: ReturnType<typeof useCoauthorInputArea> 
 				/>
 
 				<div className="relative flex items-center gap-2 pt-1.5 pb-[9px] pl-3 pr-3">
-					{/* Quick module switch */}
-					<div className="relative" ref={moduleDropRef}>
-						<CustomTooltip content={t("coauthor.input.module_switch")}>
+					{/* Quick module switch — desktop Select / mobile BottomSheet (ToolbarSelect). */}
+					<ToolbarSelect
+						title={t("coauthor.input.module_switch")}
+						triggerTooltip={t("coauthor.input.module_switch")}
+						contentWidth={220}
+						align="start"
+						items={moduleSwitch.modules.map((m) => ({ value: m.id, label: m.name }))}
+						value={moduleSwitch.activeModuleId}
+						onSelect={(v) => void moduleSwitch.handleSelect(v)}
+						itemTestId={(v) => `coauthor-module-option-${v}`}
+						trigger={
 							<button
 								type="button"
 								data-testid="coauthor-module-switch"
-								className={cn(
-									"flex h-8 max-w-[180px] items-center gap-1.5 rounded-[5px] bg-s2 px-2.5 font-ui text-[12.5px] text-t1 transition-colors hover:bg-s3",
-									moduleDropOpen && "bg-s3",
-								)}
-								onClick={() => setModuleDropOpen((open) => !open)}
+								className="flex h-8 max-w-[180px] items-center gap-1.5 rounded-[5px] bg-s2 px-2.5 font-ui text-[12.5px] text-t1 transition-colors hover:bg-s3"
 							>
-								<Icons.sparkles className="h-3.5 w-3.5 shrink-0 text-accent-t" />
+								<Icons.Sparkles className="h-3.5 w-3.5 shrink-0 text-accent-t" />
 								<span className="min-w-0 truncate">{moduleSwitch.activeLabel}</span>
-								<Icons.caret direction="d" className="h-3 w-3 shrink-0 text-t3" />
+								<Icons.Caret direction="d" className="h-3 w-3 shrink-0 text-t3" />
 							</button>
-						</CustomTooltip>
-						{moduleDropOpen && (
-							<div className="glass-blur absolute bottom-[calc(100%+8px)] left-0 z-[220] w-[220px] rounded-lg border border-border2 bg-glass-bg py-2 shadow-[0_12px_28px_rgba(0,0,0,0.45)]">
-								<div className="mb-1 border-b border-border px-4 pb-2 pt-1 font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.08em] text-t3">
-									{t("coauthor.input.module_switch")}
-								</div>
-								{moduleSwitch.loading && moduleSwitch.modules.length === 0 ? (
-									<div className="px-4 py-2 font-ui text-[12px] text-t3">{t("loading")}</div>
-								) : (
-									<div className="max-h-[200px] overflow-y-auto">
-										{moduleSwitch.modules.map((m) => (
-											<button
-												type="button"
-												key={m.id}
-												data-testid={`coauthor-module-option-${m.id}`}
-												className="flex w-full cursor-pointer items-center gap-2 px-4 py-1.5 text-left font-ui text-[13px] text-t1 hover:bg-s2"
-												onClick={() => {
-													void moduleSwitch.handleSelect(m.id);
-													setModuleDropOpen(false);
-												}}
-											>
-												<div className="flex w-4 shrink-0 justify-center text-accent-t">
-													{m.id === moduleSwitch.activeModuleId && <Icons.check />}
-												</div>
-												<div className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">{m.name}</div>
-											</button>
-										))}
-									</div>
-								)}
-							</div>
-						)}
-					</div>
+						}
+					/>
 
 					<div className="ml-auto flex items-center gap-[9px]">
 						{/* Context Counter */}
@@ -195,53 +161,26 @@ function DesktopInput({ data }: { data: ReturnType<typeof useCoauthorInputArea> 
 						</div>
 						<div className="mx-0.5 h-3.5 w-px shrink-0 bg-border" />
 
-						{/* Tool-filtered favorites */}
-						<div className="relative flex items-center" ref={modelDropRef}>
-							<CustomTooltip content={t("starred_models")}>
+						{/* Tool-filtered favorites — desktop Select / mobile BottomSheet (ToolbarSelect). */}
+						<ToolbarSelect
+							title={t("starred_models")}
+							triggerTooltip={t("starred_models")}
+							contentWidth={260}
+							emptyText={t("coauthor.input.no_tool_favorites")}
+							items={toolFilteredFavorites.map((m) => ({ value: m.modelId, label: m.label || m.modelId }))}
+							value={activeModelId}
+							onSelect={handleSelectModel}
+							itemTestId={(v) => `coauthor-fav-model-${v}`}
+							trigger={
 								<button
 									type="button"
 									data-testid="coauthor-favorites-pill"
-									className={cn(
-										"flex h-8 items-center justify-center rounded-[5px] bg-s2 px-2.5 text-warning-text transition-colors hover:bg-s3 hover:brightness-110",
-										modelDropOpen && "bg-s3 brightness-110",
-									)}
-									onClick={() => setModelDropOpen((open) => !open)}
+									className="flex h-8 items-center justify-center rounded-[5px] bg-s2 px-2.5 text-warning-text transition-colors hover:bg-s3 hover:brightness-110"
 								>
-									<Icons.starFilled />
+									<Icons.StarFilled />
 								</button>
-							</CustomTooltip>
-							{modelDropOpen && (
-								<div className="glass-blur absolute bottom-[calc(100%+8px)] right-0 z-[220] w-[260px] rounded-lg border border-border2 bg-glass-bg py-2 shadow-[0_12px_28px_rgba(0,0,0,0.45)]">
-									<div className="mb-1 border-b border-border px-4 pb-2 pt-1 font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.08em] text-t3">
-										{t("starred_models")}
-									</div>
-									{toolFilteredFavorites.length > 0 ? (
-										<div className="max-h-[180px] overflow-y-auto">
-											{toolFilteredFavorites.map((model) => (
-												<div
-													key={model.modelId}
-													data-testid={`coauthor-fav-model-${model.modelId}`}
-													className="flex cursor-pointer items-center gap-2 px-4 py-1.5 font-ui text-[13px] text-t1 hover:bg-s2"
-													onClick={() => {
-														handleSelectModel(model.modelId);
-														setModelDropOpen(false);
-													}}
-												>
-													<div className="flex w-4 shrink-0 justify-center text-accent-t">
-														{activeModelId === model.modelId && <Icons.check />}
-													</div>
-													<div className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
-														{model.label || model.modelId}
-													</div>
-												</div>
-											))}
-										</div>
-									) : (
-										<div className="px-4 py-2 font-ui text-[12px] text-t3">{t("coauthor.input.no_tool_favorites")}</div>
-									)}
-								</div>
-							)}
-						</div>
+							}
+						/>
 
 						{isSending ? (
 							<button

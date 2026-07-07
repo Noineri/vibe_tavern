@@ -2,17 +2,14 @@
 // switch + favorites pill, then the textarea + send row). Extracted from
 // CoauthorInputArea.tsx so the viewport fork is a presentational split
 // mirroring the RP MobileInputArea (b4e0aa5f): this file owns only
-// mobile-specific UI state (the two BottomSheet open-flags and the auto-grow
-// textarea ref); all shared data comes from useCoauthorInputArea().
-//
-// The two pickers (module switch / tool-filtered favorites) are BottomSheets
-// per the project rule that every mobile popover surfaces as a bottom sheet.
+// mobile-specific UI state (the auto-grow textarea ref); the module / favorites
+// pickers are the mobile half of `ToolbarSelect` (shared/BottomSheet, vaul).
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import type { ChangeEvent, KeyboardEvent } from "react";
 import { cn } from "../../lib/cn.js";
 import { Icons } from "../shared/icons.js";
-import { BottomSheet } from "../shared/BottomSheet.js";
+import { ToolbarSelect } from "../shared/ToolbarSelect.js";
 import { useModuleSwitch, type CoauthorInputAreaData } from "./use-coauthor-input-area.js";
 
 export function CoauthorMobileInputArea({ data }: { data: CoauthorInputAreaData }) {
@@ -23,8 +20,6 @@ export function CoauthorMobileInputArea({ data }: { data: CoauthorInputAreaData 
 	} = data;
 
 	const moduleSwitch = useModuleSwitch();
-	const [moduleDropOpen, setModuleDropOpen] = useState(false);
-	const [modelDropOpen, setModelDropOpen] = useState(false);
 
 	// Auto-expand textarea within 40vh, shrink back when the draft clears.
 	const mobileTextareaRef = useRef<HTMLTextAreaElement>(null);
@@ -57,27 +52,46 @@ export function CoauthorMobileInputArea({ data }: { data: CoauthorInputAreaData 
 			)}
 		>
 			<div className="flex flex-col gap-1.5 rounded-xl bg-s2 p-1.5">
-				{/* Toolbar row: module switch + favorites */}
+				{/* Toolbar row: module switch + favorites (ToolbarSelect mobile → BottomSheet) */}
 				<div className="flex items-center gap-2">
-					<button
-						type="button"
-						data-testid="coauthor-module-switch"
-						className="flex h-9 min-w-0 items-center gap-1.5 rounded-md bg-s3 px-2 font-ui text-[calc(var(--ui-fs)-3px)] text-t3 active:bg-s2"
-						onClick={() => setModuleDropOpen(true)}
-					>
-						<Icons.sparkles className="h-3.5 w-3.5 shrink-0 text-accent-t" />
-						<span className="max-w-[130px] min-w-0 truncate">{moduleSwitch.activeLabel}</span>
-						<Icons.caret direction="d" className="h-3 w-3 shrink-0" />
-					</button>
+					<ToolbarSelect
+						mobile
+						title={t("coauthor.input.module_switch")}
+						items={moduleSwitch.modules.map((m) => ({ value: m.id, label: m.name }))}
+						value={moduleSwitch.activeModuleId}
+						onSelect={(v) => void moduleSwitch.handleSelect(v)}
+						itemTestId={(v) => `coauthor-module-option-${v}`}
+						trigger={
+							<button
+								type="button"
+								data-testid="coauthor-module-switch"
+								className="flex h-9 min-w-0 items-center gap-1.5 rounded-md bg-s3 px-2 font-ui text-[calc(var(--ui-fs)-3px)] text-t3 active:bg-s2"
+							>
+								<Icons.Sparkles className="h-3.5 w-3.5 shrink-0 text-accent-t" />
+								<span className="max-w-[130px] min-w-0 truncate">{moduleSwitch.activeLabel}</span>
+								<Icons.Caret direction="d" className="h-3 w-3 shrink-0" />
+							</button>
+						}
+					/>
 
-					<button
-						type="button"
-						data-testid="coauthor-favorites-pill"
-						className="ml-auto flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-s3 text-warning-text active:bg-s2"
-						onClick={() => setModelDropOpen(true)}
-					>
-						<Icons.starFilled />
-					</button>
+					<ToolbarSelect
+						mobile
+						title={t("starred_models")}
+						emptyText={t("coauthor.input.no_tool_favorites")}
+						items={toolFilteredFavorites.map((m) => ({ value: m.modelId, label: m.label || m.modelId }))}
+						value={activeModelId}
+						onSelect={handleSelectModel}
+						itemTestId={(v) => `coauthor-fav-model-${v}`}
+						trigger={
+							<button
+								type="button"
+								data-testid="coauthor-favorites-pill"
+								className="ml-auto flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-s3 text-warning-text active:bg-s2"
+							>
+								<Icons.StarFilled />
+							</button>
+						}
+					/>
 				</div>
 
 				{/* Input row */}
@@ -109,76 +123,12 @@ export function CoauthorMobileInputArea({ data }: { data: CoauthorInputAreaData 
 								disabled={!canSend}
 								onClick={() => void chat.handleSend()}
 							>
-								<Icons.caret direction="r" />
+								<Icons.Caret direction="r" />
 							</button>
 						)}
 					</div>
 				</div>
 			</div>
-
-			<BottomSheet open={moduleDropOpen} onClose={() => setModuleDropOpen(false)} title={t("coauthor.input.module_switch")}>
-				<div className="max-h-[50vh] overflow-y-auto">
-					{moduleSwitch.modules.map((m) => (
-						<button
-							type="button"
-							key={m.id}
-							data-testid={`coauthor-module-option-${m.id}`}
-							className="flex w-full min-h-[52px] cursor-pointer items-center gap-3 px-5 text-[calc(var(--ui-fs)+1px)] text-t2 active:bg-s3"
-							onClick={() => {
-								void moduleSwitch.handleSelect(m.id);
-								setModuleDropOpen(false);
-							}}
-						>
-							<div className="w-5 shrink-0 flex justify-center text-accent-t">
-								{m.id === moduleSwitch.activeModuleId && <Icons.check />}
-							</div>
-							<div className="min-w-0 truncate">{m.name}</div>
-						</button>
-					))}
-				</div>
-				<div className="mx-4 mt-2 h-px bg-border" />
-				<button
-					type="button"
-					className="flex w-full min-h-[52px] cursor-pointer items-center justify-center rounded-b-2xl text-[calc(var(--ui-fs)+1px)] font-medium text-t3 transition-colors active:bg-s3"
-					onClick={() => setModuleDropOpen(false)}
-				>
-					{t("cancel")}
-				</button>
-			</BottomSheet>
-
-			<BottomSheet open={modelDropOpen} onClose={() => setModelDropOpen(false)} title={t("starred_models")}>
-				{toolFilteredFavorites.length > 0 ? (
-					<div className="max-h-[50vh] overflow-y-auto">
-						{toolFilteredFavorites.map((model) => (
-							<button
-								type="button"
-								key={model.modelId}
-								data-testid={`coauthor-fav-model-${model.modelId}`}
-								className="flex w-full min-h-[52px] cursor-pointer items-center gap-3 px-5 text-[calc(var(--ui-fs)+1px)] text-t2 active:bg-s3"
-								onClick={() => {
-									handleSelectModel(model.modelId);
-									setModelDropOpen(false);
-								}}
-							>
-								<div className="w-5 shrink-0 flex justify-center text-accent-t">
-									{activeModelId === model.modelId && <Icons.check />}
-								</div>
-								<div className="min-w-0 truncate">{model.label || model.modelId}</div>
-							</button>
-						))}
-					</div>
-				) : (
-					<div className="px-5 py-4 text-[calc(var(--ui-fs)-1px)] text-t3">{t("coauthor.input.no_tool_favorites")}</div>
-				)}
-				<div className="mx-4 mt-2 h-px bg-border" />
-				<button
-					type="button"
-					className="flex w-full min-h-[52px] cursor-pointer items-center justify-center rounded-b-2xl text-[calc(var(--ui-fs)+1px)] font-medium text-t3 transition-colors active:bg-s3"
-					onClick={() => setModelDropOpen(false)}
-				>
-					{t("cancel")}
-				</button>
-			</BottomSheet>
 		</div>
 	);
 }

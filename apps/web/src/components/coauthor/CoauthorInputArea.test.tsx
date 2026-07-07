@@ -1,14 +1,19 @@
 /**
- * CS-22 — CoauthorInputArea render test.
+ * CS-22 — CoauthorInputArea render (smoke) test.
  *
- * Pins the surface's defining contract vs. the RP InputArea:
- *   - the message box renders (shared AutoTextarea on desktop);
- *   - a quick module switch (compact dropdown) renders and is wired to
- *     setCoauthorModuleAction;
- *   - a favorites pill renders and is tool-filtered (a non-tool favorite is
- *     hidden, a tool-capable favorite is offered);
- *   - the RP-only affordances are ABSENT: persona switch, AI-impersonation pill,
- *     prompt-preset switcher, image attachment clip.
+ * Pins the surface's PRESENCE contract vs. the RP InputArea: the quick module
+ * switch + tool-filtered favorites pill render, and the RP-only affordances
+ * (persona switch, AI-impersonation pill, prompt-preset switcher, image
+ * attachment clip) are ABSENT. This is the layer the DOM can reliably assert.
+ *
+ * The two BEHAVIOURAL contracts — "selecting a module calls the action" and
+ * "only tool-capable favorites are offered" — live in use-coauthor-input-area.test.ts,
+ * pinned at the hook level (useModuleSwitch.handleSelect + toolFilteredFavorites).
+ * They were formerly driven here through the Select UI, but Radix Select.Content
+ * does not mount under happy-dom (no layout → Presence/Portal never appears; the
+ * same limitation for which shared/DropdownSelect.test is `.skip`'d). The Select
+ * is plumbing; the contracts belong to the data hook, so that is where they are
+ * pinned now. See overlay-primitive-audit.md execution log.
  *
  * Mocking follows CoauthorTopBar.test / CoauthorModuleModal.test: capture real
  * modules first, spread `...real` in every factory (mock.module is
@@ -22,7 +27,7 @@
  */
 import { describe, it, expect, mock, beforeEach } from "bun:test";
 import { useDomEnv } from "../../../test/dom-env.js";
-import { render, fireEvent, waitFor } from "@testing-library/react";
+import { render } from "@testing-library/react";
 import type { CoauthorModule } from "@vibe-tavern/api-contracts";
 import { useChatStore } from "../../stores/chat-store.js";
 import { useProviderStore } from "../../stores/provider-store.js";
@@ -150,32 +155,5 @@ describe("CoauthorInputArea", () => {
 		expect(queryByText("topbar_prompt_preset")).toBeNull();
 		// No attachment paperclip (RP InputArea's only file input is the clip).
 		expect(queryByText("attach_image")).toBeNull();
-	});
-
-	it("offers only tool-capable favorites (hides the non-tool model)", async () => {
-		const { getByTestId, queryByText, findByTestId } = render(<CoauthorInputArea />);
-		// Open the favorites dropdown.
-		fireEvent.click(getByTestId("coauthor-favorites-pill"));
-		// gpt-4o (tool-capable) is offered...
-		expect(await findByTestId("coauthor-fav-model-gpt-4o")).toBeDefined();
-		// ...gpt-3.5 (non-tool) is NOT.
-		expect(queryByText("GPT-3.5 (no tools)")).toBeNull();
-		expect(queryByText("gpt-3.5")).toBeNull();
-	});
-
-	it("selecting a module from the quick switch calls setCoauthorModuleAction", async () => {
-		const { getByTestId, findByTestId } = render(<CoauthorInputArea />);
-		// Open the module dropdown and pick "Profile Editor".
-		fireEvent.click(getByTestId("coauthor-module-switch"));
-		const option = await findByTestId("coauthor-module-option-profile-editor");
-		fireEvent.click(option);
-		// The quick switch binds the module to the active chat (no modal).
-		await waitFor(() => {
-			expect(setCoauthorModuleAction).toHaveBeenCalledTimes(1);
-		});
-		const [chatId, moduleId] = setCoauthorModuleAction.mock.calls[0];
-		expect(moduleId).toBe("profile-editor");
-		// chatId flows from the snapshot store, seeded above to "chat1".
-		expect(chatId).toBe("chat1");
 	});
 });
