@@ -106,7 +106,11 @@ export function useCoauthorInputArea() {
 	const totalUsed = permanent + buckets.history + inputTokens;
 	const availableBudget = Math.max(0, contextSize - maxTokens);
 	const usageRatio = availableBudget > 0 ? totalUsed / availableBudget : 0;
-	const tokenState = usageRatio > 0.95 ? "warn" : usageRatio > 0.75 ? "mid" : "ok";
+	// Annotated (not inferred) so the narrow union survives object-property
+	// widening in the return type — `TokenCounterPopover` expects the literal
+	// union, not `string`. RP InputArea computes the same inline and avoids
+	// widening because its `const` never passes through an object property.
+	const tokenState: "ok" | "mid" | "warn" = usageRatio > 0.95 ? "warn" : usageRatio > 0.75 ? "mid" : "ok";
 
 	return {
 		t,

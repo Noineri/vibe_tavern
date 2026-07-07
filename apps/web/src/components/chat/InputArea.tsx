@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { PersonaQuickSwitch } from "../modals/PersonaQuickSwitch.js";
+import { TokenCounterPopover } from "../shared/TokenCounterPopover.js";
 import { Icons } from "../shared/icons.js";
 import { cn } from "../../lib/cn.js";
 import { CustomTooltip } from "../shared/Tooltip.js";
@@ -29,9 +30,7 @@ function DesktopInputArea({ data }: { data: ReturnType<typeof useInputArea> }) {
     buckets, inputTokens,
   } = data;
 
-  const [tokenPopOpen, setTokenPopOpen] = useState(false);
   const [modelDropOpen, setModelDropOpen] = useState(false);
-  const tokenPopRef = useRef<HTMLDivElement>(null);
   const modelDropRef = useRef<HTMLDivElement>(null);
 
   // --- Drag-and-drop image attach (desktop only) ---
@@ -72,18 +71,15 @@ function DesktopInputArea({ data }: { data: ReturnType<typeof useInputArea> }) {
   const tokenState = usageRatio > 0.95 ? "warn" : usageRatio > 0.75 ? "mid" : "ok";
 
   useEffect(() => {
-    if (!tokenPopOpen && !modelDropOpen) return;
+    if (!modelDropOpen) return;
     function handleClick(e: MouseEvent) {
-      if (tokenPopRef.current && !tokenPopRef.current.contains(e.target as Node)) {
-        setTokenPopOpen(false);
-      }
       if (modelDropRef.current && !modelDropRef.current.contains(e.target as Node)) {
         setModelDropOpen(false);
       }
     }
     document.addEventListener("mousedown", handleClick);
     return () => document.removeEventListener("mousedown", handleClick);
-  }, [tokenPopOpen, modelDropOpen]);
+  }, [modelDropOpen]);
 
   return (
     <div
@@ -148,51 +144,23 @@ function DesktopInputArea({ data }: { data: ReturnType<typeof useInputArea> }) {
               </button>
             </CustomTooltip>
 
-            <div className="relative" ref={tokenPopRef}>
-              <span
-                className={cn(
-                  "cursor-pointer whitespace-nowrap text-[calc(var(--ui-fs)-3px)] tabular-nums transition-colors duration-150 hover:text-t1",
-                  tokenState === "warn" ? "text-danger-text" : tokenState === "mid" ? "text-warning-text" : "text-t3",
-                )}
-                onClick={() => setTokenPopOpen((open) => !open)}
-              >
-                {permanent.toLocaleString()}<span className="text-t4">+</span>{(buckets.history + inputTokens).toLocaleString()} / {contextSize > 0 ? contextSize.toLocaleString() : "∞"}
-              </span>
-              {tokenPopOpen && (
-                <div
-                  className="glass-blur absolute bottom-[calc(100%+8px)] left-1/2 z-[220] w-[240px] -translate-x-1/2 rounded-lg border border-border2 bg-glass-bg px-3.5 py-2.5 shadow-[0_12px_28px_rgba(0,0,0,0.45)]"
-                >
-                  <div className="mb-1.5 border-b border-border pb-1.5 text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.08em] text-t3">{t("context_breakdown")}</div>
-                  <div className="mb-1 text-[10px] font-medium uppercase tracking-[0.06em] text-t4">{t("context_permanent")}</div>
-                  <div className="mb-1 flex justify-between text-xs text-t2"><span>{t("context_system")}</span><span className="tabular-nums text-t1">{buckets.system.toLocaleString()}</span></div>
-                  <div className="mb-1 flex justify-between text-xs text-t2"><span>{t("context_character")}</span><span className="tabular-nums text-t1">{buckets.character.toLocaleString()}</span></div>
-                  <div className="mb-1 flex justify-between text-xs text-t2"><span>{t("context_persona")}</span><span className="tabular-nums text-t1">{buckets.persona.toLocaleString()}</span></div>
-                  <div className="mb-1 flex justify-between text-xs text-t2"><span>{t("context_lore")}</span><span className="tabular-nums text-t1">{buckets.lore.toLocaleString()}</span></div>
-                  <div className="mb-1 flex justify-between text-xs text-t2"><span>{t("context_memory")}</span><span className="tabular-nums text-t1">{buckets.memory.toLocaleString()}</span></div>
-                  <div className="mb-1.5 flex justify-between text-xs text-t2"><span>{t("context_tools")}</span><span className="tabular-nums text-t1">{buckets.tools.toLocaleString()}</span></div>
-                  <div className="mb-1 text-[10px] font-medium uppercase tracking-[0.06em] text-t4">{t("context_temporary")}</div>
-                  <div className="mb-1 flex justify-between text-xs text-t2"><span>{t("context_history")}</span><span className="tabular-nums text-t1">{buckets.history.toLocaleString()}</span></div>
-                  <div className="mb-1.5 flex justify-between text-xs text-t2"><span>{t("context_current_input")}</span><span className="tabular-nums text-t1">{inputTokens.toLocaleString()}</span></div>
-                  <div className="mb-1 flex justify-between border-t border-border pt-1.5 text-xs text-t2"><span>{t("context_response_budget")}</span><span className="tabular-nums text-t1">{maxTokens === -1 ? '∞' : `-${maxTokens.toLocaleString()}`}</span></div>
-                  <div className="mt-0.5 flex justify-between text-xs font-medium text-t1"><span>{t("context_total_available")}</span><span className="tabular-nums">{maxTokens === -1 ? '∞' : availableBudget.toLocaleString()}</span></div>
-                  {availableBudget > 0 && (
-                    <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-s3">
-                      <div className="flex h-full">
-                        <CustomTooltip content={`${t("context_permanent")}: ${permanent.toLocaleString()}`}>
-                        <div className="bg-accent" style={{ width: `${Math.min(100, permanent / availableBudget * 100)}%` }} />
-                        </CustomTooltip>
-                        <CustomTooltip content={`${t("context_history")}: ${buckets.history.toLocaleString()}`}>
-                        <div className="bg-t3" style={{ width: `${Math.min(100, buckets.history / availableBudget * 100)}%` }} />
-                        </CustomTooltip>
-                        <CustomTooltip content={`${t("context_current_input")}: ${inputTokens.toLocaleString()}`}>
-                        <div className="bg-accent-t" style={{ width: `${Math.min(100, inputTokens / availableBudget * 100)}%` }} />
-                        </CustomTooltip>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
+            <TokenCounterPopover
+              permanent={permanent}
+              history={buckets.history}
+              inputTokens={inputTokens}
+              contextSize={contextSize}
+              maxTokens={maxTokens}
+              availableBudget={availableBudget}
+              tokenState={tokenState}
+              permanentItems={[
+                { label: t("context_system"), value: buckets.system },
+                { label: t("context_character"), value: buckets.character },
+                { label: t("context_persona"), value: buckets.persona },
+                { label: t("context_lore"), value: buckets.lore },
+                { label: t("context_memory"), value: buckets.memory },
+                { label: t("context_tools"), value: buckets.tools },
+              ]}
+            />
 
             <div className="absolute right-3 bottom-[9px] flex items-center gap-[9px]">
                 <div className="relative flex items-center" ref={modelDropRef}>
