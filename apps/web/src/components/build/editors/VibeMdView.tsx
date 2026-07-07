@@ -57,6 +57,7 @@ import { useT } from "../../../i18n/context.js";
 import { useIsMobile } from "../../../hooks/use-mobile.js";
 import { usePersistedBoolean } from "../../../hooks/use-persisted-boolean.js";
 import { Icons } from "../../shared/icons.js";
+import { popoverMaxHeight } from "../../shared/popover-constants.js";
 import { SegmentedControl } from "../../shared/SegmentedControl.js";
 import { NumberInput } from "../../shared/NumberInput.js";
 import { CustomTooltip } from "../../shared/Tooltip.js";
@@ -312,7 +313,7 @@ export function VibeMdView({ form, characterId, isSaving }: VibeMdViewProps) {
                 {coauthorChats.length === 0 ? (
                   <div className="px-3 py-3 font-ui text-[0.85rem] text-t3">{t("coauthor.list_empty")}</div>
                 ) : (
-                  <ul className="max-h-[280px] overflow-y-auto py-1">
+                  <ul className="overflow-y-auto py-1" style={{ maxHeight: popoverMaxHeight("twoLine") }}>
                     {coauthorChats.map((chat) => (
                       <li key={chat.id} className="group relative">
                         {renamingChatId === chat.id ? (

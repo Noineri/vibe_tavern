@@ -28,6 +28,7 @@ import { Icons } from "./icons.js";
 import { CustomTooltip } from "./Tooltip.js";
 import { BottomSheet } from "./BottomSheet.js";
 import { getModalPortal } from "./modal-helpers.js";
+import { popoverMaxHeight } from "./popover-constants.js";
 import { useT } from "../../i18n/context.js";
 
 export interface ToolbarSelectItem {
@@ -169,7 +170,7 @@ export function ToolbarSelect({
 					</div>
 					<Select.Viewport className="overflow-y-auto">
 						{items.length > 0 ? (
-							<div className="max-h-[200px] overflow-y-auto">
+							<div className="overflow-y-auto" style={{ maxHeight: popoverMaxHeight("singleLine") }}>
 								{items.map((item) => (
 									<Select.Item
 										key={item.value}
