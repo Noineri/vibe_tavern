@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { PersonaQuickSwitch } from "../modals/PersonaQuickSwitch.js";
 import { TokenCounterPopover } from "../shared/TokenCounterPopover.js";
+import { ToolbarSelect } from "../shared/ToolbarSelect.js";
 import { Icons } from "../shared/icons.js";
-import { cn } from "../../lib/cn.js";
 import { CustomTooltip } from "../shared/Tooltip.js";
 import { AutoTextarea } from "../shared/auto-textarea.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
@@ -30,11 +30,8 @@ function DesktopInputArea({ data }: { data: ReturnType<typeof useInputArea> }) {
     buckets, inputTokens,
   } = data;
 
-  const [modelDropOpen, setModelDropOpen] = useState(false);
-  const modelDropRef = useRef<HTMLDivElement>(null);
-
-  // --- Drag-and-drop image attach (desktop only) ---
   const [isDragOver, setIsDragOver] = useState(false);
+  // --- Drag-and-drop image attach (desktop only) ---
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
     if (e.dataTransfer.types.includes("Files")) {
@@ -69,17 +66,6 @@ function DesktopInputArea({ data }: { data: ReturnType<typeof useInputArea> }) {
   const availableBudget = Math.max(0, contextSize - maxTokens);
   const usageRatio = availableBudget > 0 ? totalUsed / availableBudget : 0;
   const tokenState = usageRatio > 0.95 ? "warn" : usageRatio > 0.75 ? "mid" : "ok";
-
-  useEffect(() => {
-    if (!modelDropOpen) return;
-    function handleClick(e: MouseEvent) {
-      if (modelDropRef.current && !modelDropRef.current.contains(e.target as Node)) {
-        setModelDropOpen(false);
-      }
-    }
-    document.addEventListener("mousedown", handleClick);
-    return () => document.removeEventListener("mousedown", handleClick);
-  }, [modelDropOpen]);
 
   return (
     <div
@@ -163,43 +149,24 @@ function DesktopInputArea({ data }: { data: ReturnType<typeof useInputArea> }) {
             />
 
             <div className="absolute right-3 bottom-[9px] flex items-center gap-[9px]">
-                <div className="relative flex items-center" ref={modelDropRef}>
-                  <CustomTooltip content={t("starred_models")}>
+                <ToolbarSelect
+                  title={t("starred_models")}
+                  triggerTooltip={t("starred_models")}
+                  contentWidth={260}
+                  emptyText={t("no_starred_models")}
+                  items={favoriteModels.map((m) => ({ value: m.modelId, label: m.label || m.modelId }))}
+                  value={activeModelId}
+                  onSelect={(modelId) => {
+                    if (provider.activeProviderProfile) void provider.handleSelectFavoriteProviderModel(provider.activeProviderProfile.id, modelId);
+                  }}
+                  trigger={
                     <button type="button"
-                      className={cn(
-                        "flex h-8 items-center justify-center rounded-[5px] bg-s2 px-2.5 text-warning-text transition-colors hover:bg-s3 hover:brightness-110",
-                        modelDropOpen ? "brightness-110" : "",
-                      )}
-                      onClick={() => setModelDropOpen((open) => !open)}
+                      className="flex h-8 items-center justify-center rounded-[5px] bg-s2 px-2.5 text-warning-text transition-colors hover:bg-s3 hover:brightness-110 data-[state=open]:brightness-110"
                     >
                       <Icons.StarFilled />
                     </button>
-                  </CustomTooltip>
-                  {modelDropOpen && (
-                    <div className="glass-blur absolute bottom-[calc(100%+8px)] right-0 z-[220] w-[260px] rounded-lg border border-border2 bg-glass-bg py-2 shadow-[0_12px_28px_rgba(0,0,0,0.45)]">
-                      <div className="mb-1 border-b border-border px-4 pb-2 pt-1 font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.08em] text-t3">{t("starred_models")}</div>
-                      {favoriteModels.length > 0 ? (
-                        <div className="max-h-[180px] overflow-y-auto">
-                          {favoriteModels.map((model) => (
-                            <div
-                              key={model.modelId}
-                              className="flex cursor-pointer items-center gap-2 px-4 py-1.5 font-ui text-[13px] text-t1 hover:bg-s2"
-                              onClick={() => {
-                                if (provider.activeProviderProfile) void provider.handleSelectFavoriteProviderModel(provider.activeProviderProfile.id, model.modelId);
-                                setModelDropOpen(false);
-                              }}
-                            >
-                              <div className="flex w-4 shrink-0 justify-center text-accent-t">{activeModelId === model.modelId && <Icons.Check />}</div>
-                              <div className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">{model.label || model.modelId}</div>
-                            </div>
-                          ))}
-                        </div>
-                      ) : (
-                        <div className="px-4 py-2 font-ui text-[12px] text-t3">{t("no_starred_models")}</div>
-                      )}
-                    </div>
-                  )}
-                </div>
+                  }
+                />
               {isSending ? (
                 <button type="button"
                   className="flex h-7 cursor-pointer items-center gap-[5px] whitespace-nowrap rounded-[5px] border border-danger bg-surface px-3.5 font-ui text-[12.5px] font-medium text-danger-text transition-colors duration-150 hover:bg-danger-dim disabled:cursor-default disabled:opacity-60"
