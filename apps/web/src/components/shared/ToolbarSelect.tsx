@@ -27,7 +27,6 @@ import * as Select from "@radix-ui/react-select";
 import { Icons } from "./icons.js";
 import { CustomTooltip } from "./Tooltip.js";
 import { BottomSheet } from "./BottomSheet.js";
-import { getModalPortal } from "./modal-helpers.js";
 import { popoverMaxHeight } from "./popover-constants.js";
 import { useT } from "../../i18n/context.js";
 
@@ -156,13 +155,13 @@ export function ToolbarSelect({
 			) : (
 				selectTrigger
 			)}
-			<Select.Portal container={getModalPortal() ?? undefined}>
+			<Select.Portal>
 				<Select.Content
 					position="popper"
 					side={side}
 					sideOffset={sideOffset}
 					align={align}
-					className="glass-blur z-[220] overflow-hidden rounded-lg border border-border2 bg-glass-bg py-2 shadow-[0_12px_28px_rgba(0,0,0,0.45)]"
+					className="glass-blur z-[220] overflow-hidden rounded-lg border border-border2 bg-glass-bg py-2 shadow-[0_12px_28px_rgba(0,0,0,0.45)] data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95"
 					style={{ width: contentWidth }}
 				>
 					<div className="mb-1 border-b border-border px-4 pb-2 pt-1 font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.08em] text-t3">

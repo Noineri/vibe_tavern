@@ -2,7 +2,6 @@ import { Icons } from "../shared/icons.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
 import { MemBadge } from "../settings/popovers/MemBadge.js";
 import { cn } from "../../lib/cn.js";
-import { getModalPortal } from "../shared/modal-helpers.js";
 import * as Select from "@radix-ui/react-select";
 import { useT } from "../../i18n/context.js";
 import { useProviderProfiles } from "../../hooks/use-provider-profiles.js";
@@ -145,7 +144,7 @@ export function TopBar({ railHidden, onShowRail, update }: TopBarProps) {
                 </div>
               </Select.Trigger>
             </CustomTooltip>
-            <Select.Portal container={getModalPortal() ?? undefined}>
+            <Select.Portal>
               <Select.Content
                 position="popper"
                 sideOffset={4}
