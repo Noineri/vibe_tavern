@@ -1,187 +1,75 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { toast } from "sonner";
+import { useEffect, useRef, useState } from "react";
 import { PersonaQuickSwitch } from "../modals/PersonaQuickSwitch.js";
 import { Icons } from "../shared/icons.js";
 import { cn } from "../../lib/cn.js";
-import { resolveEntityAvatarUrl } from "../../lib/avatar.js";
-import { useTokenCount } from "../../hooks/use-token-count.js";
-import { useT } from "../../i18n/context.js";
-import { useChatController } from "../../hooks/use-chat-controller.js";
-import { useCharacterController } from "../../hooks/use-character-controller.js";
 import { CustomTooltip } from "../shared/Tooltip.js";
-import { AiQuickPill, type AiQuickSettings } from "../shared/AiQuickPill.js";
 import { AutoTextarea } from "../shared/auto-textarea.js";
-import { BottomSheet } from "../shared/BottomSheet.js";
-import { usePresetController } from "../../hooks/use-preset-controller.js";
-import { useProviderProfiles } from "../../hooks/use-provider-profiles.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
 
-import { useChatStore, useProviderStore, useIsSending } from "../../stores/index.js";
-import { useActiveTrace, useChatMeta } from "../../stores/chat-selectors.js";
-import { useBootstrapStore } from "../../stores/api-actions/bootstrap-actions.js";
-import { useModalStore } from "../../stores/modal-store.js";
-import type { PromptLayerDto } from "@vibe-tavern/domain";
-import { streamAiAssistant, updateUiSettings, uploadAsset, type AiAssistantRequestBody } from "../../app-client.js";
 import { AttachmentPreview } from "./AttachmentPreview.js";
+import { ChatImpersonateAiPill } from "./ChatImpersonateAiPill.js";
+import { MobileInputArea } from "./MobileInputArea.js";
+import { useInputArea } from "./use-input-area.js";
 
 export function InputArea() {
-  const { t } = useT();
+  const data = useInputArea();
+  const isMobile = useIsMobile();
+
+  if (isMobile) return <MobileInputArea data={data} />;
+  return <DesktopInputArea data={data} />;
+}
+
+function DesktopInputArea({ data }: { data: ReturnType<typeof useInputArea> }) {
+  const {
+    t, chat, character, provider,
+    draft, setDraft, isSending, activeChatId, chatMeta,
+    personas, activePersonaId,
+    contextSize, maxTokens, favoriteModels, activeModelId,
+    fileInputRef, draftAttachments, onFileInputChange, handlePaste, canSend,
+    buckets, inputTokens,
+  } = data;
+
   const [tokenPopOpen, setTokenPopOpen] = useState(false);
   const [modelDropOpen, setModelDropOpen] = useState(false);
   const tokenPopRef = useRef<HTMLDivElement>(null);
   const modelDropRef = useRef<HTMLDivElement>(null);
-  const [mobilePersonaOpen, setMobilePersonaOpen] = useState(false);
-  const [presetDropOpen, setPresetDropOpen] = useState(false);
 
-  // --- Sub-hooks ---
-  const chat = useChatController();
-  const character = useCharacterController();
-  const provider = useProviderProfiles();
-  const bootstrapData = useBootstrapStore((s) => s.data);
-
-  // --- Store subscriptions ---
-  const draft = useChatStore((s) => s.draft);
-  const isSending = useIsSending();
-  const activeChatId = useChatStore((s) => s.activeChatId);
-  const chatMeta = useChatMeta();
-  const connection = useProviderStore((s) => s.connection);
-
-  const personas = useBootstrapStore((s) => s.personas) ?? [];
-  const activePromptTrace = useActiveTrace(useChatStore((s) => s.selectedTraceId));
-  const canUseLiveApi = connection.status === "connected" && Boolean(connection.model);
-
-  const activePersonaId = chatMeta?.persona?.id ?? null;
-  const promptPresets = bootstrapData?.promptPresets ?? [];
-  const activePromptPresetId = chatMeta?.activeChat.promptPresetId ?? null;
-  const preset = usePresetController();
-  const contextSize = provider.activeProviderProfile?.contextBudget ?? 0;
-  const maxTokens = provider.activeProviderProfile?.maxTokens ?? 0;
-  const favoriteModels = provider.activeProviderProfile ? (provider.favoriteModelsByProfile[provider.activeProviderProfile.id] ?? []) : [];
-  const activeModelId = provider.activeProviderProfile?.defaultModel ?? connection.model ?? null;
-  const setDraft = useChatStore((s) => s.setDraft);
-
-  // --- Attachments ---
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  // --- Drag-and-drop image attach (desktop only) ---
   const [isDragOver, setIsDragOver] = useState(false);
-  const addDraftAttachment = useChatStore((s) => s.addDraftAttachment);
-  const draftAttachments = useChatStore((s) => s.draftAttachments);
-  const canSend = Boolean(draft.trim() || draftAttachments.length > 0) && !isSending && canUseLiveApi;
-
-  const handleFileSelected = async (file: File) => {
-    const validTypes = ["image/png", "image/jpeg", "image/webp", "image/gif"];
-    if (!validTypes.includes(file.type)) {
-      toast.error(t("unsupported_image_format"));
-      return;
-    }
-    if (file.size > 20 * 1024 * 1024) {
-      toast.error(t("file_too_large"));
-      return;
-    }
-    if (draftAttachments.length >= 5) {
-      toast.error(t("max_attachments"));
-      return;
-    }
-
-    try {
-      const { assetId } = await uploadAsset(file);
-      addDraftAttachment({
-        id: crypto.randomUUID(),
-        assetId,
-        type: "image",
-        name: file.name,
-        mimeType: file.type,
-        sizeBytes: file.size,
-      });
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Upload failed");
-    }
-  };
-
-  const onFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) void handleFileSelected(file);
-    if (fileInputRef.current) fileInputRef.current.value = "";
-  };
-
-  const handlePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
-    const items = e.clipboardData.items;
-    for (let i = 0; i < items.length; i++) {
-      if (items[i].type.startsWith("image/")) {
-        const file = items[i].getAsFile();
-        if (file) {
-          e.preventDefault();
-          void handleFileSelected(file);
-          break;
-        }
-      }
-    }
-  };
-
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
     if (e.dataTransfer.types.includes("Files")) {
       setIsDragOver(true);
     }
   };
-  
   const handleDragLeave = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragOver(false);
   };
-  
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragOver(false);
     const file = e.dataTransfer.files?.[0];
     if (file && file.type.startsWith("image/")) {
-      void handleFileSelected(file);
+      void data.handleFileSelected(file);
     }
   };
 
   // Render helpers
   function renderSendLabel(): string {
     if (isSending) return t("sending");
-    if (canUseLiveApi && draft.trim()) return t("send_message");
-    if (!canUseLiveApi) return t("send_unavailable");
+    if (data.canUseLiveApi && draft.trim()) return t("send_message");
+    if (!data.canUseLiveApi) return t("send_unavailable");
     return t("type_a_message");
   }
   const sendLabel = renderSendLabel();
+  const sendButtonText = canSend || !draft.trim() ? t("send") : sendLabel || t("send_unavailable");
 
-  // --- Token counting from backend prompt trace layers ---
-  const TEMPORARY_TYPES = new Set(["chat_history", "compaction"]);
-
-  const buckets = useMemo(() => {
-    const layers: PromptLayerDto[] = activePromptTrace?.layers ?? [];
-    let system = 0, character = 0, persona = 0, lore = 0, memory = 0, tools = 0, history = 0;
-    for (const layer of layers) {
-      if (!layer.enabled || layer.position === "hidden_system") continue;
-      const tokens = layer.tokenCount;
-      if (TEMPORARY_TYPES.has(layer.sourceType)) {
-        history += tokens;
-      } else {
-        switch (layer.sourceType) {
-          case "prompt_preset":          system += tokens; break;
-          case "character_system_prompt": system += tokens; break;
-          case "character":             character += tokens; break;
-          case "persona":               persona += tokens; break;
-          case "lore_entry":            lore += tokens; break;
-          case "summary_memory":        memory += tokens; break;
-          case "retrieval_memory":      memory += tokens; break;
-          case "tool_profile":          tools += tokens; break;
-          default:                      system += tokens; break;
-        }
-      }
-    }
-    return { system, character, persona, lore, memory, tools, history };
-  }, [activePromptTrace?.layers]);
-
-  const inputTokens = useTokenCount(draft);
   const permanent = buckets.system + buckets.character + buckets.persona + buckets.lore + buckets.memory + buckets.tools;
   const totalUsed = permanent + buckets.history + inputTokens;
   const availableBudget = Math.max(0, contextSize - maxTokens);
   const usageRatio = availableBudget > 0 ? totalUsed / availableBudget : 0;
   const tokenState = usageRatio > 0.95 ? "warn" : usageRatio > 0.75 ? "mid" : "ok";
-  const isMobile = useIsMobile();
 
   useEffect(() => {
     if (!tokenPopOpen && !modelDropOpen) return;
@@ -197,152 +85,6 @@ export function InputArea() {
     return () => document.removeEventListener("mousedown", handleClick);
   }, [tokenPopOpen, modelDropOpen]);
 
-  const sendButtonText = canSend || !draft.trim() ? t("send") : sendLabel || t("send_unavailable");
-
-  // ── Auto-expand textarea (mobile) ──
-  const mobileTextareaRef = useRef<HTMLTextAreaElement>(null);
-  const adjustTextareaHeight = () => {
-    const ta = mobileTextareaRef.current;
-    if (ta) {
-      ta.style.height = 'auto';
-      ta.style.height = `${Math.min(ta.scrollHeight, window.innerHeight * 0.4)}px`;
-    }
-  };
-  // Shrink textarea back when draft is cleared (after send)
-  useEffect(() => {
-    if (isMobile && !draft) adjustTextareaHeight();
-  }, [draft, isMobile]);
-
-  // ── Mobile: compact two-row input ──
-  if (isMobile) {
-    return (
-      <div className={cn(
-        "relative z-10 shrink-0 border-t border-border bg-surface px-1.5 pb-[calc(env(safe-area-inset-bottom,0px)+8px)] pt-2",
-        activeChatId ? '' : 'pointer-events-none opacity-45'
-      )}>
-        <div className="flex flex-col gap-1.5 rounded-xl bg-s2 p-1.5">
-          {/* Toolbar row: persona + starred models */}
-          <div className="flex items-center gap-2">
-            <button type="button" onClick={() => setMobilePersonaOpen(true)} className="flex h-9 items-center gap-1.5 rounded-md bg-s3 px-2 font-ui text-[calc(var(--ui-fs)-3px)] text-t3 active:bg-s2">
-              {activePersonaId ? (
-                <PersonaAvatar src={(() => { const p = personas.find(p => p.id === activePersonaId); return p ? resolveEntityAvatarUrl({ kind: "personas", id: p.id, avatarExt: p.avatarExt, avatarAssetId: p.avatarAssetId, updatedAt: p.updatedAt }) : null; })()}  size={20} />
-              ) : (
-                <Icons.User />
-              )}
-              <span className="max-w-[120px] min-w-0 truncate">{activePersonaId ? (personas.find(p => p.id === activePersonaId)?.name ?? t("no_persona")) : t("no_persona")}</span>
-              <Icons.Caret direction="d" />
-            </button>
-            {activeChatId && (
-              <ChatImpersonateAiPill
-                activeChatId={activeChatId}
-                characterId={chatMeta?.character.id ?? null}
-                personaId={activePersonaId}
-                setDraft={setDraft}
-                size="lg"
-              />
-            )}
-            
-            <button
-              type="button"
-              className="ml-auto flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-s3 text-t3 transition-colors active:bg-s2 disabled:opacity-45"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={draftAttachments.length >= 5}
-            >
-              <Icons.paperclip />
-            </button>
-
-            <button type="button" onClick={() => setPresetDropOpen(true)} className="flex h-9 w-9 items-center justify-center rounded-md bg-s3 text-accent-t active:bg-s2 disabled:opacity-45" disabled={promptPresets.length === 0}>
-              <Icons.FileText />
-            </button>
-
-            <button type="button" onClick={() => setModelDropOpen(true)} className="flex h-9 w-9 items-center justify-center rounded-md bg-s3 text-warning-text active:bg-s2">
-              <Icons.StarFilled />
-            </button>
-          </div>
-          {draftAttachments.length > 0 && <AttachmentPreview />}
-          {/* Input row */}
-          <div className="flex items-end gap-2">
-            <input type="file" ref={fileInputRef} className="hidden" accept="image/png,image/jpeg,image/webp,image/gif" onChange={onFileInputChange} />
-            <textarea
-              ref={mobileTextareaRef}
-              className="max-h-[40vh] min-h-[44px] flex-1 resize-none border-0 bg-transparent py-2 pr-1 font-body text-[15px] leading-[1.4] text-t1 outline-none placeholder:text-t4 overflow-y-auto"
-              placeholder={t("placeholder")}
-              value={draft}
-              onChange={(event) => { setDraft(event.target.value); adjustTextareaHeight(); }}
-              onPaste={handlePaste}
-              rows={1}
-            />
-            <div className="flex shrink-0 items-center">
-              {isSending ? (
-                <button type="button" className="flex h-9 w-9 items-center justify-center rounded-lg border border-danger text-danger-text active:bg-danger/10" onClick={chat.handleCancelGeneration}>
-                  <span className="text-[11px] font-bold">✕</span>
-                </button>
-              ) : (
-                <button type="button" className="flex h-9 w-9 items-center justify-center rounded-lg bg-accent text-on-accent disabled:opacity-45 active:scale-95" disabled={!canSend} onClick={() => void chat.handleSend()}>
-                  <Icons.Caret direction="r" />
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-        <BottomSheet open={mobilePersonaOpen} onClose={() => setMobilePersonaOpen(false)} title={t("persona_selection")}>
-          <div className="max-h-[50vh] overflow-y-auto">
-            {personas.map(p => (
-              <button type="button" key={p.id} className="flex w-full min-h-[52px] cursor-pointer items-center gap-3 px-5 text-[calc(var(--ui-fs)+1px)] text-t2 active:bg-s3" onClick={() => { void character.handleSetChatPersona(p.id); setMobilePersonaOpen(false); }}>
-                <div className="w-5 shrink-0 flex justify-center text-accent-t">{activePersonaId === p.id && <Icons.Check />}</div>
-                <PersonaAvatar src={resolveEntityAvatarUrl({ kind: "personas", id: p.id, avatarExt: p.avatarExt, avatarAssetId: p.avatarAssetId, updatedAt: p.updatedAt })} size={26} />
-                <div className="min-w-0 truncate">{p.name}</div>
-              </button>
-            ))}
-          </div>
-          <div className="mt-1 border-t border-border px-3 pt-1">
-            <button type="button" className="flex w-full min-h-[52px] cursor-pointer items-center gap-4 rounded-md px-2 text-[calc(var(--ui-fs)+1px)] text-t2 active:bg-s3" onClick={() => { setMobilePersonaOpen(false); useModalStore.getState().setIsPersonaModalOpen(true); }}>
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-s2"><Icons.Edit /></span>
-              <span className="font-ui">{t("manage_personas")}</span>
-            </button>
-          </div>
-          <div className="mx-4 mt-2 h-px bg-border" />
-          <button type="button" className="flex w-full min-h-[52px] cursor-pointer items-center justify-center rounded-b-2xl text-[calc(var(--ui-fs)+1px)] font-medium text-t3 transition-colors active:bg-s3" onClick={() => setMobilePersonaOpen(false)}>
-            {t("cancel")}
-          </button>
-        </BottomSheet>
-        <BottomSheet open={modelDropOpen} onClose={() => setModelDropOpen(false)} title={t("starred_models")}>
-          {favoriteModels.length > 0 ? (
-            <div className="max-h-[50vh] overflow-y-auto">
-              {favoriteModels.map(model => (
-                <button type="button" key={model.modelId} className="flex w-full min-h-[52px] cursor-pointer items-center gap-3 px-5 text-[calc(var(--ui-fs)+1px)] text-t2 active:bg-s3" onClick={() => { if (provider.activeProviderProfile) void provider.handleSelectFavoriteProviderModel(provider.activeProviderProfile.id, model.modelId); setModelDropOpen(false); }}>
-                  <div className="w-5 shrink-0 flex justify-center text-accent-t">{activeModelId === model.modelId && <Icons.Check />}</div>
-                  <div className="min-w-0 truncate">{model.label || model.modelId}</div>
-                </button>
-              ))}
-            </div>
-          ) : (
-            <div className="px-5 py-4 text-[calc(var(--ui-fs)-1px)] text-t3">{t("no_starred_models")}</div>
-          )}
-          <div className="mx-4 mt-2 h-px bg-border" />
-          <button type="button" className="flex w-full min-h-[52px] cursor-pointer items-center justify-center rounded-b-2xl text-[calc(var(--ui-fs)+1px)] font-medium text-t3 transition-colors active:bg-s3" onClick={() => setModelDropOpen(false)}>
-            {t("cancel")}
-          </button>
-        </BottomSheet>
-        <BottomSheet open={presetDropOpen} onClose={() => setPresetDropOpen(false)} title={t("topbar_prompt_preset")}>
-          <div className="max-h-[50vh] overflow-y-auto">
-            {promptPresets.map(p => (
-              <button type="button" key={p.id} className="flex w-full min-h-[52px] cursor-pointer items-center gap-3 px-5 text-[calc(var(--ui-fs)+1px)] text-t2 active:bg-s3" onClick={() => { void preset.handleSetActivePromptPresetId(p.id); setPresetDropOpen(false); }}>
-                <div className="w-5 shrink-0 flex justify-center text-accent-t">{p.id === activePromptPresetId && <Icons.Check />}</div>
-                <div className="min-w-0 truncate">{p.name}</div>
-              </button>
-            ))}
-          </div>
-          <div className="mx-4 mt-2 h-px bg-border" />
-          <button type="button" className="flex w-full min-h-[52px] cursor-pointer items-center justify-center rounded-b-2xl text-[calc(var(--ui-fs)+1px)] font-medium text-t3 transition-colors active:bg-s3" onClick={() => setPresetDropOpen(false)}>
-            {t("cancel")}
-          </button>
-        </BottomSheet>
-      </div>
-    );
-  }
-
-  // ── Desktop ──
   return (
     <div
         className="relative z-10 shrink-0 border-t border-border bg-surface px-4 pt-2.5 pb-3.5 transition-opacity duration-200"
@@ -359,7 +101,7 @@ export function InputArea() {
             </div>
           )}
           <input type="file" ref={fileInputRef} className="hidden" accept="image/png,image/jpeg,image/webp,image/gif" onChange={onFileInputChange} />
-          
+
           <AutoTextarea
             className="w-full resize-none border-0 bg-transparent px-4 pt-[13px] pb-2 font-body text-[15.5px] leading-tight text-t1 outline-none placeholder:text-t4"
             maxRows={12}
@@ -375,7 +117,7 @@ export function InputArea() {
               }
             }}
           />
-          
+
           {draftAttachments.length > 0 && <AttachmentPreview />}
 
           <div className="relative flex items-center gap-[7px] pt-1.5 pb-[9px] pl-3 pr-[135px]">
@@ -394,7 +136,7 @@ export function InputArea() {
               />
             )}
             <div className="mx-0.5 h-3.5 w-px shrink-0 bg-border" />
-            
+
             <CustomTooltip content={t("attach_image")}>
               <button
                 type="button"
@@ -513,118 +255,5 @@ export function InputArea() {
           </div>
         </div>
       </div>
-    );
-}
-
-function ChatImpersonateAiPill({
-  activeChatId,
-  characterId,
-  personaId,
-  setDraft,
-  size,
-}: {
-  activeChatId: string;
-  characterId: string | null;
-  personaId: string | null;
-  setDraft: (value: string) => void;
-  size?: "sm" | "md" | "lg";
-}) {
-  const { t } = useT();
-  const bootstrapUiSettings = useBootstrapStore((s) => s.data?.uiSettings ?? null);
-  const [settings, setSettings] = useState<AiQuickSettings>({
-    providerId: "",
-    modelName: "",
-    recentMessageCount: 20,
-  });
-  const [loading, setLoading] = useState(false);
-  const abortRef = useRef<AbortController | null>(null);
-
-  useEffect(() => {
-    if (settings.providerId || !bootstrapUiSettings) return;
-    setSettings((s) => ({
-      ...s,
-      providerId: bootstrapUiSettings.aiAssistantProviderId ?? "",
-      modelName: bootstrapUiSettings.aiAssistantModelName ?? "",
-    }));
-  }, [settings.providerId, bootstrapUiSettings]);
-
-  const handleGenerate = async () => {
-    const providerId = settings.providerId || bootstrapUiSettings?.aiAssistantProviderId || "";
-    const modelName = settings.modelName || bootstrapUiSettings?.aiAssistantModelName || "";
-    if (!activeChatId) return;
-    if (!providerId) {
-      toast.error(t("select_provider_first"));
-      return;
-    }
-    setLoading(true);
-    abortRef.current = new AbortController();
-    try {
-      const request: AiAssistantRequestBody = {
-        mode: "chat_impersonate",
-        instruction: "Write the next message as the current persona.",
-        providerProfileId: providerId,
-        model: modelName || undefined,
-        enabledLayers: [
-          ...(characterId ? ["character_base"] : []),
-          ...(personaId ? ["persona"] : []),
-        ],
-        characterIds: characterId ? [characterId] : [],
-        personaIds: personaId ? [personaId] : [],
-        chatId: activeChatId,
-        recentMessageCount: settings.recentMessageCount ?? 20,
-      };
-      let text = "";
-      for await (const chunk of streamAiAssistant(request, { signal: abortRef.current.signal })) {
-        if (chunk.type === "text" && chunk.text) {
-          text += chunk.text;
-          setDraft(text.trimStart());
-        }
-        if (chunk.type === "error" && chunk.error) throw new Error(chunk.error);
-        if (chunk.type === "done") break;
-      }
-      if (text.trim()) setDraft(text.trim());
-    } catch (err) {
-      if (err instanceof DOMException && err.name === "AbortError") return;
-      toast.error(err instanceof Error ? err.message : "AI impersonation failed");
-    } finally {
-      setLoading(false);
-      abortRef.current = null;
-    }
-  };
-
-  const handleSettingsChange = (s: AiQuickSettings) => {
-    setSettings(s);
-    void updateUiSettings({
-      aiAssistantProviderId: s.providerId || null,
-      aiAssistantModelName: s.modelName || null,
-    }).catch(() => {});
-  };
-
-  return (
-    <AiQuickPill
-      onGenerate={() => void handleGenerate()}
-      onCancel={() => { abortRef.current?.abort(); }}
-      onSettingsChange={handleSettingsChange}
-      settings={settings}
-      loading={loading}
-      disabled={!activeChatId}
-      showMessageCount
-      starTooltip={t("ai_pill_impersonate")}
-      gearTooltip={t("ai_pill_impersonate_settings")}
-      size={size}
-    />
-  );
-}
-
-function PersonaAvatar({ src, size }: { src: string | null; size: number }) {
-  if (!src) {
-    return (
-      <div className="shrink-0 rounded-full bg-s3 flex items-center justify-center text-[calc(var(--ui-fs)-3px)] text-t2 font-ui" style={{ width: size, height: size }}>
-        <Icons.User />
-      </div>
-    );
-  }
-  return (
-    <img src={src} alt="" className="shrink-0 rounded-full object-cover" style={{ width: size, height: size }} />
   );
 }
