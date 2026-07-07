@@ -9,15 +9,23 @@ interface DestructiveConfirmModalProps {
   confirmLabel?: string;
   onConfirm: () => void;
   onCancel: () => void;
+  /** Optional secondary destructive action (lesser scope than the primary).
+   * Rendered as an outline-danger button between Cancel and the primary confirm.
+   * Both fields must be provided together; omit both for a single-action confirm. */
+  secondaryLabel?: string;
+  onSecondary?: () => void;
 }
 
-/** Generic destructive confirm — accepts explicit props for local use. */
+/** Generic destructive confirm — accepts explicit props for local use.
+ *  Single-action by default; pass secondaryLabel + onSecondary for a dual-action
+ *  variant (e.g. "delete this variant" vs "delete the whole message"). */
 export function DestructiveConfirmModal(input: DestructiveConfirmModalProps) {
   const { t } = useT();
+  const hasSecondary = Boolean(input.secondaryLabel) && Boolean(input.onSecondary);
   return (
     <Modal open={true} onClose={input.onCancel} overlayClassName="z-[700]" hideOverlay>
       <div
-        className="w-[380px] rounded-lg border border-border bg-surface p-7 text-center shadow-xl"
+        className={`${hasSecondary ? "w-[440px]" : "w-[380px]"} rounded-lg border border-border bg-surface p-7 text-center shadow-xl`}
       >
         <div className="mb-2 text-base font-medium text-t1">
           {input.title}
@@ -25,13 +33,21 @@ export function DestructiveConfirmModal(input: DestructiveConfirmModalProps) {
         <div className="mb-6 text-[13px] leading-[1.55] text-t3">
           {input.body}
         </div>
-        <div className="flex justify-center gap-2.5">
+        <div className="flex flex-wrap justify-center gap-2.5">
           <button type="button"
             className="h-8 cursor-pointer rounded-md border border-border bg-transparent px-3.5 font-ui text-[12.5px] text-t3 transition-colors duration-150 hover:text-t1"
             onClick={input.onCancel}
           >
             {t("cancel")}
           </button>
+          {hasSecondary && (
+            <button type="button"
+              className="h-8 cursor-pointer rounded-md border border-danger bg-transparent px-3.5 font-ui text-[12.5px] font-medium text-danger transition-colors duration-150 hover:bg-danger/10"
+              onClick={input.onSecondary}
+            >
+              {input.secondaryLabel}
+            </button>
+          )}
           <button type="button"
             className="h-8 cursor-pointer rounded-md border-0 bg-danger px-[18px] font-ui text-[12.5px] font-medium text-on-danger transition-[filter] duration-100 hover:brightness-110"
             onClick={input.onConfirm}
