@@ -3,6 +3,7 @@ import { useT } from "./i18n/context.js";
 import { AppShell } from "./components/layout/AppShell.js";
 import { TooltipProvider } from "./components/shared/Tooltip.js";
 import { Logo } from "./components/shared/Logo.js";
+import { useSessionStore } from "./stores/session-store.js";
 // CA-15: rehydrate any persisted co-author proposals before the app renders,
 // so an in-review diff survives a page reload. No-op without localStorage
 // (runs at module load, once, before App() mounts any co-author surface).
@@ -12,6 +13,31 @@ rehydrateCoauthorDrafts();
 export function App() {
   const { t } = useT();
   const { isLoading, loadError, retryLoad, tweaksSettings, setTweaksSettings } = useRpPlatformApp();
+  const sessionRevoked = useSessionStore((s) => s.revoked);
+  const resetSession = useSessionStore((s) => s.reset);
+
+  if (sessionRevoked) {
+    return (
+      <div className="flex h-screen overflow-hidden bg-bg text-t1 font-ui">
+        <main className="flex min-w-0 flex-1 flex-col items-center justify-center overflow-hidden">
+          <div style={{ display: "grid", gap: 12, maxWidth: 420, padding: 24, textAlign: "center" }}>
+            <Logo className="h-[80px] w-[80px] mx-auto" />
+            <div className="build-section-title">{t("session_revoked")}</div>
+            <div className="build-section-sub">{t("session_revoked_description")}</div>
+            <button
+              className="api-save-btn"
+              onClick={() => {
+                resetSession();
+                void retryLoad();
+              }}
+            >
+              {t("retry")}
+            </button>
+          </div>
+        </main>
+      </div>
+    );
+  }
 
   if (isLoading) {
     return (

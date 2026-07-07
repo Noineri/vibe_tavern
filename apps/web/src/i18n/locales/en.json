@@ -656,6 +656,8 @@
   "cannot_delete_main_branch": "Cannot delete: active branch is the main timeline.",
   "branch_delete_failed": "Branch delete failed.",
   "could_not_load_app_state": "Could not load application state.",
+  "session_revoked": "Session revoked",
+  "session_revoked_description": "Mobile access was disabled or the token was regenerated from another device.",
   "provider_save_connect_failed": "Could not save and connect provider profile.",
   "provider_load_profile_failed": "Could not load saved profile.",
   "provider_name_url_required": "Provider name and base URL are required to save a profile.",

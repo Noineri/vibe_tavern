@@ -7,7 +7,41 @@ import { LocaleProvider } from "./i18n/context.js";
 import { isLocale, detectBrowserLocale, type Locale } from "./i18n/registry.js";
 import { ThemeTuner } from "./components/dev/ThemeTuner.js";
 import { VibeMdThemePreview } from "./components/build/editors/VibeMdThemePreview.js";
+import { clearMobileToken, extractTokenFromHash, saveMobileToken } from "./lib/mobile-token.js";
+import { useSessionStore } from "./stores/session-store.js";
 import "./styles.css";
+
+// Extract the mobile token from the URL hash BEFORE React mounts. Child
+// components (AppShell → providers/personas fetches) fire useEffects before
+// the parent App's useEffect, so saving the token inside useRpPlatformApp's
+// load() is too late — those early calls go out without a token and 401,
+// which the wrapper below turns into a false "session revoked".
+if (typeof window !== "undefined") {
+  const hashToken = extractTokenFromHash();
+  if (hashToken) saveMobileToken(hashToken);
+}
+
+// Wrap global fetch so a 401 on /api/* from a non-trusted client surfaces a
+// "session revoked" screen instead of a silent mid-session failure. Cleared
+// token + flagged state survive a reload so the mobile lands on the
+// access-required screen rather than retrying with a dead token.
+const originalFetch = globalThis.fetch;
+globalThis.fetch = new Proxy(originalFetch, {
+  async apply(target, thisArg, args) {
+    const response = await Reflect.apply(target, thisArg, args) as Response;
+    if (response.status === 401) {
+      const [input] = args as [RequestInfo | URL, RequestInit?];
+      const url = typeof input === "string" ? input
+        : input instanceof URL ? input.href
+        : input.url;
+      if (url.includes("/api/")) {
+        clearMobileToken();
+        useSessionStore.getState().markRevoked();
+      }
+    }
+    return response;
+  },
+});
 
 function detectLocale(): Locale {
   // 1. Explicit user choice (saved in TweaksPanel) takes priority
