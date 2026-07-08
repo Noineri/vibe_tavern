@@ -1,5 +1,10 @@
 const STORAGE_KEY = "vibe_mobile_token";
 
+// Bun's test env has no DOM, so localStorage is undefined there. Without this
+// guard, avatar.test.ts crashes (resolveEntityAvatarUrl now appends ?token=
+// via appendTokenQuery) — matches the typeof window check in gateway-client.
+const hasLocalStorage = typeof localStorage !== "undefined";
+
 /** Extract token from URL hash (#token=...) if present.
  *  Returns the token if found (and removes hash from URL), or null. */
 export function extractTokenFromHash(): string | null {
@@ -20,16 +25,18 @@ export function extractTokenFromHash(): string | null {
 
 /** Persist token to localStorage */
 export function saveMobileToken(token: string): void {
+  if (!hasLocalStorage) return;
   localStorage.setItem(STORAGE_KEY, token);
 }
 
 /** Read persisted token from localStorage */
 export function getMobileToken(): string | null {
-  return localStorage.getItem(STORAGE_KEY);
+  return hasLocalStorage ? localStorage.getItem(STORAGE_KEY) : null;
 }
 
 /** Remove persisted token */
 export function clearMobileToken(): void {
+  if (!hasLocalStorage) return;
   localStorage.removeItem(STORAGE_KEY);
 }
 

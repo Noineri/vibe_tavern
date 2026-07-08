@@ -600,18 +600,28 @@ function StImportProgress(props: {
           // full when passed, empty before — so the bar never looks stuck at 0%.
           const pct = total > 0 ? Math.min(100, (current / total) * 100) : status === "done" ? 100 : 0;
           return (
-            <div key={phase} className="flex items-center gap-2 font-ui text-[calc(var(--ui-fs)-2px)]">
-              <span className="w-3 text-center text-t3">
-                {status === "done" ? "✓" : status === "active" ? "●" : "○"}
-              </span>
-              <span className={cn("w-16 shrink-0", status === "pending" ? "text-t3" : "text-t2")}>
-                {t(`st_phase_${phase}`)}
-              </span>
-              <span className="w-14 shrink-0 tabular-nums text-t3">
-                {status === "pending" ? "—" : `${current} / ${total}`}
-              </span>
-              <div className="h-1 flex-1 overflow-hidden rounded-full bg-s3">
-                <div className="h-full rounded-full bg-accent transition-all duration-150" style={{ width: `${pct}%` }} />
+            <div key={phase} className="space-y-0 font-ui text-[calc(var(--ui-fs)-2px)]">
+              <div className="flex items-center gap-2">
+                <span className="w-3 shrink-0" />
+                <span className="w-20 shrink-0" aria-hidden="true" />
+                <span className="shrink-0 text-[calc(var(--ui-fs)-4px)] tabular-nums text-t3">
+                  {status === "pending" ? "—" : current}
+                </span>
+                <div className="flex-1" />
+                <span className="shrink-0 text-[calc(var(--ui-fs)-4px)] tabular-nums text-t3">
+                  {status === "pending" ? "—" : total}
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="w-3 shrink-0 text-center text-t3">
+                  {status === "done" ? "✓" : status === "active" ? "●" : "○"}
+                </span>
+                <span className={cn("w-20 shrink-0", status === "pending" ? "text-t3" : "text-t2")}>
+                  {t(`st_phase_${phase}`)}
+                </span>
+                <div className="h-1 flex-1 overflow-hidden rounded-full bg-s3">
+                  <div className="h-full rounded-full bg-accent transition-all duration-150" style={{ width: `${pct}%` }} />
+                </div>
               </div>
             </div>
           );

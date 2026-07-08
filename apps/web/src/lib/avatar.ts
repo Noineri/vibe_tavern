@@ -1,4 +1,5 @@
 import { getGatewayBaseUrl } from "../gateway-client.js";
+import { appendTokenQuery } from "./mobile-token.js";
 
 /** Legacy flat-asset URL (data/assets/{assetId}.{ext} served via /api/assets). */
 export function avatarUrl(assetId: string): string {
@@ -71,8 +72,8 @@ export function resolveEntityAvatarUrl(args: {
 			v = `?v=${Date.now()}`;
 		}
 		return preferFull
-			? `${getGatewayBaseUrl()}/api/${kind}/${id}/avatar/full${v}`
-			: `${getGatewayBaseUrl()}/api/${kind}/${id}/avatar${v}`;
+			? appendTokenQuery(`${getGatewayBaseUrl()}/api/${kind}/${id}/avatar/full${v}`)
+			: appendTokenQuery(`${getGatewayBaseUrl()}/api/${kind}/${id}/avatar${v}`);
 	}
 	// Legacy flat assets (pre-folder). preferFull picks the uncropped original.
 	// No version needed: each upload mints a fresh assetId, so the URL already
