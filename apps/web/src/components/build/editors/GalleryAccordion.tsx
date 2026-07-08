@@ -298,7 +298,7 @@ export function GalleryAccordion({ characterId }: GalleryAccordionProps) {
       {confirmDeleteOpen && (
         <DestructiveConfirmModal
           title={t("gallery_confirm_delete_title")}
-          body={t("gallery_confirm_delete_msg").replace("{n}", String(selectedIds.size))}
+          body={t("gallery_confirm_delete_msg", { n: selectedIds.size })}
           confirmLabel={t("delete")}
           onConfirm={() => { void confirmDeleteSelected(); }}
           onCancel={() => setConfirmDeleteOpen(false)}

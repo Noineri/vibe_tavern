@@ -838,7 +838,7 @@ function CharacterStep({
               </div>
             </div>
           </div>
-          <div className="mt-3 font-ui text-xs text-t3">{t("ready_to_import").replace("{name}", cardPreview.file.name)}</div>
+          <div className="mt-3 font-ui text-xs text-t3">{t("ready_to_import", { name: cardPreview.file.name })}</div>
         </div>
       )}
 

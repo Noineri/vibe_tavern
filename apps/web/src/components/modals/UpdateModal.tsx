@@ -75,7 +75,7 @@ export function UpdateModal({ latestVersion, latestTag, releaseUrl, releaseNotes
 	if (!open) return null;
 
 	const tag = latestTag ?? (latestVersion ? `v${latestVersion}` : "");
-	const headerLabel = tag ? t("update_modal_release_header").replace("{tag}", tag) : t("update_modal_new_version_available");
+	const headerLabel = tag ? t("update_modal_release_header", { tag }) : t("update_modal_new_version_available");
 
 	const canSelfUpdate = runtimeInfo?.canSelfUpdate ?? false;
 	const showConfirm = flow.state.kind === "idle";
@@ -134,7 +134,7 @@ export function UpdateModal({ latestVersion, latestTag, releaseUrl, releaseNotes
 								<Icons.check />
 							</span>
 							<p className="text-[calc(var(--ui-fs)+0px)] font-medium text-t1">
-								{t("update_modal_complete").replace("{version}", flow.state.newVersion)}
+								{t("update_modal_complete", { version: flow.state.newVersion })}
 							</p>
 							<p className="max-w-[420px] text-[calc(var(--ui-fs)-2px)] text-t3">
 								{t("update_modal_restart_instructions")}

@@ -278,7 +278,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
         disabled={!canSwitchVariant || selectedVariantIndex <= 0}
         onClick={() => { handleSelectVariant(Math.max(0, selectedVariantIndex - 1), -1); }}
       >◀</button>
-      {t("greeting_counter").replace("{n}", String(selectedVariantIndex + 1)).replace("{total}", String(variantCount))}
+      {t("greeting_counter", { n: selectedVariantIndex + 1, total: variantCount })}
       <button type="button"
         className={cn("cursor-pointer text-t3 transition-colors duration-100", isMobile ? "active:text-accent" : "hover:text-accent")}
         disabled={!canSwitchVariant || selectedVariantIndex >= variantCount - 1}

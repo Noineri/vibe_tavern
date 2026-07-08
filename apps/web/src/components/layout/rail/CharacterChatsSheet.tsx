@@ -169,7 +169,7 @@ export function CharacterChatsSheet({
 					) : filtered.length === 0 ? (
 						<div className="flex flex-col items-center gap-2 px-4 py-8 text-center">
 							<Icons.Search className="h-5 w-5 text-t4" />
-							<div className="text-[calc(var(--ui-fs)-2px)] leading-relaxed text-t2">{t("chat_search_no_results").replace("{query}", chatQuery)}</div>
+							<div className="text-[calc(var(--ui-fs)-2px)] leading-relaxed text-t2">{t("chat_search_no_results", { query: chatQuery })}</div>
 							<button type="button" className="text-[calc(var(--ui-fs)-2px)] text-accent-t transition-colors hover:underline" onClick={() => setChatQuery("")}>{t("chat_search_clear")}</button>
 						</div>
 					) : (

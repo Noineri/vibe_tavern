@@ -121,7 +121,7 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
     } catch {
       return; // storage disabled — suppress rather than re-fire on every render
     }
-    const message = t("update_available").replace("{version}", updateCheck.latestVersion);
+    const message = t("update_available", { version: updateCheck.latestVersion });
     const openUpdateModal = () => setUpdateModalOpen(true);
     toast.custom(
       (id) => (

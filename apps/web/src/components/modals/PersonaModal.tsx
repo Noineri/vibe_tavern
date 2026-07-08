@@ -359,9 +359,9 @@ export function PersonaModal(input: PersonaModalProps) {
 
     await fetchBootstrapAction({ silent: true });
     await fetchPersonasAction();
-    toast.success(t("st_persona_import_result").replace("{count}", String(imported)));
+    toast.success(t("st_persona_import_result", { count: imported }));
     if (errors.length > 0) {
-      toast.warning(t("st_import_errors").replace("{count}", String(errors.length)));
+      toast.warning(t("st_import_errors", { count: errors.length }));
     }
   }
 
@@ -905,7 +905,7 @@ export function PersonaModal(input: PersonaModalProps) {
           title={t("delete_persona_title")}
           body={
             <>
-              {t("delete_persona_body").replace("{name}", input.personas.find((p) => p.id === deleteConfirm.id)?.name ?? "Untitled")}
+              {t("delete_persona_body", { name: input.personas.find((p) => p.id === deleteConfirm.id)?.name ?? "Untitled" })}
               {deleteConfirm.error && <div className="mt-2 text-danger">{deleteConfirm.error}</div>}
             </>
           }
@@ -1016,7 +1016,7 @@ export function PersonaModal(input: PersonaModalProps) {
       {/* ST persona import preview */}
       {stImportPreview && (
         <div className={cn("shrink-0 rounded-lg border border-border2 bg-s2 mx-5 mb-2 p-4")}>
-          <div className="font-ui text-sm font-medium text-t1 mb-2">{t("st_persona_preview_title").replace("{count}", String(stImportSelected.size))}</div>
+          <div className="font-ui text-sm font-medium text-t1 mb-2">{t("st_persona_preview_title", { count: stImportSelected.size })}</div>
           <div className="max-h-[200px] overflow-y-auto space-y-1.5">
             {stImportPreview.map((entry, idx) => (
               <div key={entry.key} className="flex items-start gap-2 rounded-md bg-surface px-3 py-2">
@@ -1076,7 +1076,7 @@ export function PersonaModal(input: PersonaModalProps) {
                 />
               </div>
               <div className="mt-1 font-ui text-[11px] text-t3">
-                {t("st_persona_importing").replace("{current}", String(stImportProgress.current)).replace("{total}", String(stImportProgress.total))}
+                {t("st_persona_importing", { current: stImportProgress.current, total: stImportProgress.total })}
               </div>
             </div>
           )}

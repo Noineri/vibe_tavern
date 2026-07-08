@@ -331,7 +331,7 @@
   "binding_dropdown_label": "Редактировать настройки для",
   "binding_dropdown_placeholder": "Выберите избранную модель…",
   "binding_no_favorites_hint": "Сначала добавьте модель в избранное, чтобы привязать к ней настройки.",
-  "editing_model_badge": "Редактирование: {{model}}",
+  "editing_model_badge": "Редактирование: {model}",
   "sampler_copy": "Копировать пресет сэмплеров",
   "sampler_paste": "Вставить пресет сэмплеров",
   "sampler_copy_done": "Пресет сэмплеров скопирован в буфер обмена",

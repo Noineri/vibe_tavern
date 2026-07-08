@@ -306,7 +306,7 @@
   "binding_dropdown_label": "Edit settings for",
   "binding_dropdown_placeholder": "Select a favorite model…",
   "binding_no_favorites_hint": "Favorite a model first to bind settings to it.",
-  "editing_model_badge": "Editing: {{model}}",
+  "editing_model_badge": "Editing: {model}",
   "sampler_copy": "Copy sampler preset",
   "sampler_paste": "Paste sampler preset",
   "sampler_copy_done": "Sampler preset copied to clipboard",

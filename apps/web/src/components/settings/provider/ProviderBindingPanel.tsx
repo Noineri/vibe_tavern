@@ -88,7 +88,7 @@ export function ProviderBindingPanel({
                 <div className="mt-2">
                   <span className="inline-flex items-center gap-1.5 rounded bg-accent/10 px-2.5 py-1 font-mono text-[11px] text-accent">
                     <span className="[&_svg]:h-[11px] [&_svg]:w-[11px]"><Icons.Edit /></span>
-                    {t("editing_model_badge").replace("{{model}}", form.editingModelId)}
+                    {t("editing_model_badge", { model: form.editingModelId })}
                   </span>
                 </div>
               )}

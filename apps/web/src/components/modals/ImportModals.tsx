@@ -167,7 +167,7 @@ export function StFolderImport({ onImported }: StFolderImportProps) {
         .replace("{personas}", String(result.personas));
       toast.success(msg);
       if (result.errors.length > 0) {
-        toast.warning(t("st_import_errors").replace("{count}", String(result.errors.length)));
+        toast.warning(t("st_import_errors", { count: result.errors.length }));
       }
 
       // Refresh stores so the newly imported surfaces appear without a reload.
@@ -267,7 +267,7 @@ export function StFolderImport({ onImported }: StFolderImportProps) {
           {scanResult.errors.length > 0 && (
             <details className="mt-2.5">
               <summary className="cursor-pointer font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-warning">
-                {t("st_import_errors").replace("{count}", String(scanResult.errors.length))}
+                {t("st_import_errors", { count: scanResult.errors.length })}
               </summary>
               <div className="mt-1.5 max-h-48 overflow-y-auto rounded border border-border2 bg-surface p-2">
                 {scanResult.errors.map((e, i) => (
@@ -306,7 +306,7 @@ export function StFolderImport({ onImported }: StFolderImportProps) {
           {importErrors.length > 0 && (
             <details className="mt-2.5">
               <summary className="cursor-pointer font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-warning">
-                {t("st_import_errors").replace("{count}", String(importErrors.length))}
+                {t("st_import_errors", { count: importErrors.length })}
               </summary>
               <div className="mt-1.5 max-h-48 overflow-y-auto rounded border border-border2 bg-surface p-2">
                 {importErrors.map((e, i) => (
@@ -416,7 +416,7 @@ export function CharacterImportModal(input: ImportModalCommonProps) {
                 </div>
               </div>
             </div>
-            <div className="mt-3 font-ui text-xs text-t3">{t("ready_to_import").replace("{name}", preview.file.name)}</div>
+            <div className="mt-3 font-ui text-xs text-t3">{t("ready_to_import", { name: preview.file.name })}</div>
           </div>
         )}
       </div>
@@ -505,7 +505,7 @@ export function ChatImportModal(input: ImportModalCommonProps & { activeChatId: 
                 </div>
               ))}
             </div>
-            <div className="mt-2 font-ui text-xs text-t3">{t("showing_parsed_messages").replace("{n}", String(preview.messages.length))}</div>
+            <div className="mt-2 font-ui text-xs text-t3">{t("showing_parsed_messages", { n: preview.messages.length })}</div>
           </div>
         )}
       </div>

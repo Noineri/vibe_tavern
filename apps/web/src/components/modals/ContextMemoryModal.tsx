@@ -506,11 +506,11 @@ export function ContextMemoryModal({
         <div className="rounded-lg border border-border bg-input-bg p-4">
           <DualRangeSlider min={1} max={maxMessage} from={rangeFrom} to={rangeTo} disabled={generating} onChange={handleRangeChange} />
           <div className="flex items-center justify-between font-ui text-[11px] text-t4">
-            <span>{t("summary_msg_label").replace("{n}", String(rangeFrom))}</span>
+            <span>{t("summary_msg_label", { n: rangeFrom })}</span>
             <span className="rounded-full bg-accent-dim px-2 py-1 text-accent-t">
-              {t("summary_messages_count").replace("{count}", String(Math.max(0, rangeTo - rangeFrom + 1)))}
+              {t("summary_messages_count", { count: Math.max(0, rangeTo - rangeFrom + 1) })}
             </span>
-            <span>{t("summary_msg_label").replace("{n}", String(rangeTo))}</span>
+            <span>{t("summary_msg_label", { n: rangeTo })}</span>
           </div>
         </div>
       </section>
@@ -577,8 +577,8 @@ export function ContextMemoryModal({
           <div className="h-full bg-accent transition-all" style={{ width: `${tokenEstimate.total > 0 ? Math.min(100, Math.round((tokenEstimate.summaryTokens / tokenEstimate.total) * 100)) : 0}%` }} />
         </div>
         <div className="mt-2 flex items-center justify-between font-ui text-[11px] text-t4">
-          <span>{t("summary_without_line").replace("{tokens}", String(tokenEstimate.selectedRawTokens))}</span>
-          <span className="text-success-text">{t("summary_saved_line").replace("{tokens}", String(tokenEstimate.saved)).replace("{pct}", String(tokenEstimate.pct))}</span>
+          <span>{t("summary_without_line", { tokens: tokenEstimate.selectedRawTokens })}</span>
+          <span className="text-success-text">{t("summary_saved_line", { tokens: tokenEstimate.saved, pct: tokenEstimate.pct })}</span>
         </div>
       </section>
 
@@ -635,7 +635,7 @@ export function ContextMemoryModal({
             disabled={!activeChatId || !effectiveProviderId || !effectiveModel}
             onClick={() => void handleGenerate()}
           >
-            {t("summary_generate_range").replace("{from}", String(rangeFrom)).replace("{to}", String(rangeTo))}
+            {t("summary_generate_range", { from: rangeFrom, to: rangeTo })}
           </button>
         )}
       </section>

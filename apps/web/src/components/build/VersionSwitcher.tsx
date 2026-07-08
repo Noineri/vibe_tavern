@@ -163,7 +163,7 @@ export function VersionSwitcher({ characterId, isDirty, disabled, onAfterActivat
   const deleteConfirm = pendingDelete ? (
     <DestructiveConfirmModal
       title={t("version_delete_title")}
-      body={t("version_delete_body").replace("{title}", pendingDelete.title)}
+      body={t("version_delete_body", { title: pendingDelete.title })}
       confirmLabel={t("delete")}
       onConfirm={() => { const v = pendingDelete; setPendingDelete(null); void doDelete(v); }}
       onCancel={() => setPendingDelete(null)}

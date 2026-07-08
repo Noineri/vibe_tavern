@@ -157,7 +157,7 @@ export function MobileAccessModal({ open, onClose, onDisabled }: MobileAccessMod
 
         {/* Firewall warning */}
         <p className="mb-3 text-[calc(var(--ui-fs)-2px)] text-t3">
-          {t("mobile_access_firewall_warn").replace("{port}", String(info.port))}
+          {t("mobile_access_firewall_warn", { port: info.port })}
         </p>
 
         {/* Actions */}

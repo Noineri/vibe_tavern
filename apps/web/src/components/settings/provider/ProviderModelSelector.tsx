@@ -145,7 +145,7 @@ export function ProviderModelSelector({
             <span className="shrink-0 font-medium">{localStatus.label}</span>
             {localEndpoint && (
               <span className="min-w-0 truncate text-t3">
-                {t("local_connection_endpoint").replace("{url}", localEndpoint)}
+                {t("local_connection_endpoint", { url: localEndpoint })}
               </span>
             )}
           </span>
@@ -293,7 +293,7 @@ export function ProviderModelSelector({
               </Popover.Root>
               {!models.find((m) => m.id === currentVal) && currentVal && (
                 <div className="mt-2 font-ui text-[12px] font-medium text-accent">
-                  {t("custom_model").replace("{name}", currentVal)}
+                  {t("custom_model", { name: currentVal })}
                 </div>
               )}
             </div>

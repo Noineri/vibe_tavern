@@ -389,7 +389,7 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
           title={t("delete_preset_title")}
           body={
             <>
-              {t("delete_preset_body").replace("{name}", activePreset?.name || t("unnamed"))}
+              {t("delete_preset_body", { name: activePreset?.name || t("unnamed") })}
             </>
           }
           confirmLabel={t("delete_preset")}

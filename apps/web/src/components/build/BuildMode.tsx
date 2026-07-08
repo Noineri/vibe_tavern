@@ -109,7 +109,7 @@ export function BuildMode() {
     onDelete={() => {
       setConfirmDestroy({
         title: t("char_delete"),
-        body: <>{t("char_delete_confirm").replace("{name}", charData.name)}</>,
+        body: <>{t("char_delete_confirm", { name: charData.name })}</>,
         confirmLabel: t("delete"),
         onConfirm: () => { void character.handleDeleteCharacter(charData.id); },
       });
@@ -344,7 +344,7 @@ function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptPayl
                   const itemTotal = item.tokenAccounting?.total ?? item.layers.reduce((sum, layer) => sum + layer.tokenCount, 0);
                   return {
                     id: item.id,
-                    label: t("trace_turn").replace("{n}", String(promptTraceHistory.length - index)),
+                    label: t("trace_turn", { n: promptTraceHistory.length - index }),
                     detail: formatTokenCount(itemTotal),
                   };
                 })}
@@ -368,7 +368,7 @@ function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptPayl
                 {imageAttachmentsCount > 0 && (
                   <div className="flex items-center gap-2 rounded-md border border-info/30 bg-info/10 px-3 py-2.5 font-ui text-[12px] text-info">
                     <span className="text-[14px]">🖼️</span>
-                    {t("trace_sent_with_attachments").replace("{n}", String(imageAttachmentsCount))}
+                    {t("trace_sent_with_attachments", { n: imageAttachmentsCount })}
                   </div>
                 )}
                 <button type="button" className="h-9 rounded-md bg-s2 px-4 font-ui text-[12px] font-medium text-t2 active:bg-s3" onClick={downloadPayload}>
@@ -396,7 +396,7 @@ function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptPayl
             <div
               className="rounded-full bg-s2 px-2.5 py-1 font-ui text-[13px] text-t2"
             >
-              {t("trace_total_tokens").replace("{n}", formatTokenCount(totalTokens))}
+              {t("trace_total_tokens", { n: formatTokenCount(totalTokens) })}
             </div>
           )}
         </div>
@@ -416,7 +416,7 @@ function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptPayl
                   ← {t("trace_prev")}
                 </button>
                 <span className="text-xs text-t2">
-                  {t("trace_turn").replace("{n}", String(promptTraceHistory.length - currentTraceIndex))}
+                  {t("trace_turn", { n: promptTraceHistory.length - currentTraceIndex })}
                 </span>
                 <button type="button"
                   className="cursor-pointer rounded-md border border-border bg-s2 px-2.5 py-1 text-xs text-t2 transition-colors hover:bg-border2 hover:text-t1 disabled:cursor-default disabled:opacity-30 disabled:hover:bg-s2 disabled:hover:text-t2"
@@ -432,13 +432,13 @@ function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptPayl
               {/* Trace metadata */}
               <div className="text-t3">
                 {formatTraceTimestamp(trace.createdAt)} · {trace.model} · {trace.latencyMs}ms
-                {" · "}{t("trace_recorded_count").replace("{n}", String(promptTraceCount))}
+                {" · "}{t("trace_recorded_count", { n: promptTraceCount })}
                 {imageAttachmentsCount > 0 && (
                   <>
                     {" · "}
                     <span className="inline-flex items-center gap-1 rounded bg-info/10 px-1.5 py-0.5 text-xs text-info">
                       <span className="text-[12px]">🖼️</span>
-                      {t("trace_sent_with_attachments").replace("{n}", String(imageAttachmentsCount))}
+                      {t("trace_sent_with_attachments", { n: imageAttachmentsCount })}
                     </span>
                   </>
                 )}
@@ -447,7 +447,7 @@ function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptPayl
           ) : (
             <span className="text-t3">
               {t("trace_no_active")}{" "}
-              {promptTraceCount > 0 && t("trace_recorded_count").replace("{n}", String(promptTraceCount))}
+              {promptTraceCount > 0 && t("trace_recorded_count", { n: promptTraceCount })}
             </span>
           )}
           {trace?.compactionSummary && (
@@ -468,7 +468,7 @@ function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptPayl
           )}
           {visionDescriptions.length > 0 && (
             <div className="mt-1.5 rounded-[6px] border border-info/30 bg-info/10 px-2.5 py-1.5 font-body text-xs text-info">
-              <strong>{t("trace_sent_with_attachments").replace("{n}", String(visionDescriptions.length))}</strong>
+              <strong>{t("trace_sent_with_attachments", { n: visionDescriptions.length })}</strong>
               <div className="mt-1 space-y-1 whitespace-pre-wrap text-info-text">
                 {visionDescriptions.map((item) => (
                   <div key={item.attachmentId}>

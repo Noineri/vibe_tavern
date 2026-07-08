@@ -43,7 +43,7 @@ function LoreReasonBadge({ reason }: { reason: LoreActivationReason }) {
       cls = "bg-s3 text-t3";
       break;
     case "sticky":
-      label = t("lore_reason_sticky").replace("{since}", String(reason.turnsSinceActivation)).replace("{window}", String(reason.window));
+      label = t("lore_reason_sticky", { since: reason.turnsSinceActivation, window: reason.window });
       cls = "bg-warning-dim text-warning-text";
       break;
     case "delay_fulfilled":
@@ -57,8 +57,8 @@ function LoreReasonBadge({ reason }: { reason: LoreActivationReason }) {
     case "key_match": {
       const keys = reason.matchedKeys.join(", ");
       label = reason.scanState === "recursion"
-        ? t("lore_reason_key_match_recursion").replace("{keys}", keys)
-        : t("lore_reason_key_match").replace("{keys}", keys);
+        ? t("lore_reason_key_match_recursion", { keys })
+        : t("lore_reason_key_match", { keys });
       cls = "bg-success-dim text-success-text";
       break;
     }
@@ -314,7 +314,7 @@ export function TracePayloadView({ trace, searchQuery, formatTokens, compact = f
 												{item.sourceType === "lore_entry" && loreReasonByLayerId.has(item.layerId) && (
 													<LoreReasonBadge reason={loreReasonByLayerId.get(item.layerId)!} />
 												)}
-												{item.depth != null && <span className="shrink-0 rounded bg-s3 px-1 text-t4">{t("trace_inject_depth").replace("{n}", String(item.depth))}</span>}
+												{item.depth != null && <span className="shrink-0 rounded bg-s3 px-1 text-t4">{t("trace_inject_depth", { n: item.depth })}</span>}
 												<span className="h-px flex-1 bg-border2" />
 												<span className="shrink-0 tabular-nums">{formatTokens(item.tokenCount)}</span>
 												<span className={cn("shrink-0 text-[10px] text-t4 transition-transform", injectOpen && "rotate-90")}>▶</span>
@@ -342,8 +342,8 @@ export function TracePayloadView({ trace, searchQuery, formatTokens, compact = f
 											<span className={cn("text-[11px] text-t4 transition-transform", expanded && "rotate-90")}>▶</span>
 											<span className="min-w-0 flex-1 text-[12px] text-t2">
 												{item.count > 1
-													? t("trace_message_group_range").replace("{start}", String(item.start)).replace("{end}", String(item.end))
-													: t("trace_message_group_one").replace("{n}", String(item.start))}
+													? t("trace_message_group_range", { start: item.start, end: item.end })
+													: t("trace_message_group_one", { n: item.start })}
 											</span>
 											<span className="min-w-0 flex-1 truncate text-[11px] text-t4">{preview.slice(0, 60)}</span>
 										</button>

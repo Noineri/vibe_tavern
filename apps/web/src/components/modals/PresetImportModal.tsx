@@ -305,7 +305,7 @@ export function PresetImportModal({ onClose, onImport }: PresetImportModalProps)
               disabled={blockInfos.length === 0}
               onClick={handleImport}
             >
-              {t("preset_import_btn").replace("{n}", String(blockInfos.length))}
+              {t("preset_import_btn", { n: blockInfos.length })}
             </button>
           )}
         </div>
