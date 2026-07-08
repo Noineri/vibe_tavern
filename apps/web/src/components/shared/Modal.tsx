@@ -41,7 +41,7 @@ export function Modal({
         {!hideOverlay && (
         <Dialog.Overlay
           className={cn(
-            "fixed inset-0 z-[500] bg-black/55 backdrop-blur-[2px]",
+            "fixed inset-0 z-[500] bg-black/55 backdrop-blur-[2px] data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=closed]:animate-out data-[state=closed]:fade-out-0",
             overlayClassName,
           )}
         />
