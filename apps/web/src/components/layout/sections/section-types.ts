@@ -10,8 +10,8 @@
 /**
  * The translation function shape returned by `useT().t`. Accepts an optional
  * interpolation/`count` options object (mirrors `TFunc` in
- * `i18n/locale-helpers.ts`) so call sites can pass `t("k", { n: 5 })` or
- * `t("k", { count: 5 })`. Single-arg `t("k")` calls are unchanged.
+ * `i18n/locale-helpers.ts`) so call sites can pass an opts object with `n` or
+ * `count`. Single-arg calls are unchanged.
  */
 export type TFn = (key: string, opts?: Record<string, unknown>) => string;
 
