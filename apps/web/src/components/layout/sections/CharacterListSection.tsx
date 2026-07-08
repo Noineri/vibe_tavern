@@ -73,7 +73,7 @@ export function CharacterListSection({
 }) {
   return (
     <section className="min-h-0 max-h-[50%] overflow-y-auto border-b border-border pb-1.5">
-      <div className="sticky top-0 z-10 glass-blur bg-surface">
+      <div className="sticky top-0 z-[110] glass-blur bg-surface">
         <div className="flex items-center pr-2.5">
           <div className="flex-1 px-[13px] pt-1 pb-[5px] text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.08em] text-t3">{t("sidebar_characters")}</div>
           <ListSortToggle mode={characterSortMode} onChange={setCharacterSortMode} />
