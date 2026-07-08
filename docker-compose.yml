@@ -2,11 +2,12 @@ services:
   vibe_tavern:
     container_name: vibe_tavern
     image: ghcr.io/noineri/vibe_tavern:latest
-    # For mobile access from another device, uncomment and set your host IP:
+    # Optional override for the QR-code IP/hostname. Auto-detected under host
+    # networking; only needed for: multiple NICs, a custom domain/Tailscale name,
+    # or the bridge-network fallback (Docker Desktop Mac/Windows).
     # environment:
-      # VIBE_TAVERN_EXTERNAL_HOST: 192.168.1.66
-    ports:
-      - "8787:8787"
+      # VIBE_TAVERN_EXTERNAL_HOST: vibe.lan.myhouse.net
+    network_mode: host # Workaraund to make a token system actually work in docker.
     volumes:
       - data:/app/data
     restart: unless-stopped
