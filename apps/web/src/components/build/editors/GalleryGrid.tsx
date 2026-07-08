@@ -336,7 +336,7 @@ function GalleryTile({
                 align="end"
                 sideOffset={6}
                 collisionPadding={8}
-                className="glass-blur z-[700] w-56 overflow-hidden rounded-lg border border-border bg-glass-bg py-1 shadow-[0_12px_36px_rgba(0,0,0,.45)]"
+                className="glass-blur z-[700] w-56 overflow-hidden rounded-lg border border-border bg-glass-bg py-1 shadow-[0_12px_36px_rgba(0,0,0,.45)] data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95"
               >
                 <CustomTooltip content={includeWarns ? t("gallery_include_no_desc_warning") : t("gallery_include_in_prompt_hint")}>
                   <label

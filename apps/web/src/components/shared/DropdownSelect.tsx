@@ -117,7 +117,7 @@ export function DropdownSelect({
           align="start"
           onOpenAutoFocus={handleOpenAutoFocus}
           onCloseAutoFocus={(e) => e.preventDefault()}
-          className="glass-blur z-[400] overflow-hidden rounded-md border border-border bg-glass-bg shadow-[0_8px_30px_rgba(0,0,0,0.6)]"
+          className="glass-blur z-[400] overflow-hidden rounded-md border border-border bg-glass-bg shadow-[0_8px_30px_rgba(0,0,0,0.6)] data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95"
           style={{
             width: "var(--radix-popover-trigger-width)",
             maxHeight: 260,

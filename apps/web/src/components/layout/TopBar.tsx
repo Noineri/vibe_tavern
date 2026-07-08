@@ -148,7 +148,7 @@ export function TopBar({ railHidden, onShowRail, update }: TopBarProps) {
               <Select.Content
                 position="popper"
                 sideOffset={4}
-                className="glass-blur z-50 max-h-[calc(6*((var(--ui-fs)-2px)*1.5+0.75rem))] min-w-[180px] overflow-hidden rounded-lg border border-border bg-glass-bg shadow-[0_12px_36px_rgba(0,0,0,.45)]"
+                className="glass-blur z-50 max-h-[calc(6*((var(--ui-fs)-2px)*1.5+0.75rem))] min-w-[180px] overflow-hidden rounded-lg border border-border bg-glass-bg shadow-[0_12px_36px_rgba(0,0,0,.45)] data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95"
               >
                 <Select.Viewport className="overflow-y-auto">
                   {promptPresets.map((p) => (

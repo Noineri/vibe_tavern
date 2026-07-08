@@ -307,7 +307,7 @@ export function VibeMdView({ form, characterId, isSaving }: VibeMdViewProps) {
                 side="bottom"
                 align="start"
                 sideOffset={4}
-                className="glass-blur z-50 min-w-[260px] max-w-[340px] rounded-lg border border-border bg-glass-bg shadow-lg outline-none"
+                className="glass-blur z-50 min-w-[260px] max-w-[340px] rounded-lg border border-border bg-glass-bg shadow-lg outline-none data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95"
               >
                 <div className="border-b border-border/50 px-3 py-2 font-ui text-[11px] uppercase tracking-wide text-t4">{t("coauthor.list_title")}</div>
                 {coauthorChats.length === 0 ? (
