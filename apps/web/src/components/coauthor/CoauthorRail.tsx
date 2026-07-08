@@ -10,6 +10,7 @@ import { Ico, NavRow } from "../layout/rail/rail-primitives.js";
 import { ActionSheet } from "../shared/ActionSheet.js";
 import { TagFilterSheet } from "../layout/rail/TagFilterSheet.js";
 import { RailCollapsedStrip } from "../layout/rail/RailCollapsedStrip.js";
+import { CharacterChatsSheet } from "../layout/rail/CharacterChatsSheet.js";
 import { Drawer } from "@base-ui/react/drawer";
 import { getModalPortal } from "../shared/modal-helpers.js";
 import { useSidebarChats } from "../layout/hooks/use-sidebar-chats.js";
@@ -46,6 +47,9 @@ export function CoauthorRail({ hidden }: { hidden?: boolean }) {
   const [expanded, setExpanded] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [chatImportOpen, setChatImportOpen] = useState(false);
+  // The character whose chats are shown in the CharacterChatsSheet (tablet bottom
+  // sheet launched from a collapsed-strip avatar tap). null = closed.
+  const [sheetCharId, setSheetCharId] = useState<string | null>(null);
 
   // Context menus
   const [charMenuId, setCharMenuId] = useState<string | null>(null);
@@ -93,6 +97,11 @@ export function CoauthorRail({ hidden }: { hidden?: boolean }) {
   // sort mode from the nav store still applies via the hook.
   const activeCharId = selectedCharacterId ?? chatMeta?.character?.id ?? null;
   const { sectionChats } = useSidebarChats({ allChats: chats, characterId: activeCharId, query: "" });
+
+  // Chats for the CharacterChatsSheet. Falls back to activeCharId so the hook
+  // stays stable when the sheet is closed (sheetCharId === null).
+  const { sectionChats: sheetChats } = useSidebarChats({ allChats: chats, characterId: sheetCharId ?? activeCharId, query: "" });
+  const sheetChar = sheetCharId ? allCharacters.find((c) => c.id === sheetCharId) ?? null : null;
 
   // Drawer open/close driven by Base UI Drawer.Root — exit animation + unmount
   // are the drawer's own (onOpenChangeComplete). Swipe-left-to-close is the
@@ -145,15 +154,10 @@ export function CoauthorRail({ hidden }: { hidden?: boolean }) {
             characters={allCharacters}
             selectedCharacterId={selectedCharacterId}
             avatarSrc={charAvatarSrc}
-            chats={sectionChats}
-            activeChatId={activeChatId}
             createManualLabel={t("create_manual")}
             importCharShortLabel={t("import_char_short")}
             moreCharactersLabel={t("more_characters") ?? `${allCharacters.length - 5} more`}
-            newChatLabel={t("new_chat")}
-            onSelectCharacter={(id) => { useChatStore.getState().setSelectedCharacterId(id); }}
-            onSwitchChat={(id) => { void chat.handleSwitchChat(id); }}
-            onCreateChat={() => { void character.handleCreateChat(selectedCharacterId ?? undefined, "coauthor"); }}
+            onCharacterClick={(id) => setSheetCharId(id)}
             onCreateCharacter={() => { useModalStore.getState().setCreateCharacterModalOpen(true); }}
             onImport={() => { setImportOpen(true); }}
             onMoreCharacters={() => setExpanded(true)}
@@ -373,6 +377,31 @@ export function CoauthorRail({ hidden }: { hidden?: boolean }) {
           onToggle={(tag) => setCharSelectedTags(charSelectedTags.includes(tag) ? charSelectedTags.filter((x) => x !== tag) : [...charSelectedTags, tag])}
           onReset={() => setCharSelectedTags([])}
           onClose={() => setTagsSheetOpen(false)}
+        />
+      )}
+
+      {/* ═══ CHARACTER CHATS SHEET (tablet) ═══ */}
+      {/* Launched from a collapsed-strip avatar tap — lists the character's chats
+          in a bottom sheet. Co-author has no branches, so withBranches=false and
+          the empty state covers a character with zero chats. */}
+      {sheetCharId && sheetChar && (
+        <CharacterChatsSheet
+          characterId={sheetCharId}
+          characterName={sheetChar.name}
+          characterAvatarSrc={charAvatarSrc(sheetChar)}
+          chats={sheetChats}
+          activeChatId={activeChatId}
+          branches={[]}
+          activeBranchId={null}
+          withBranches={false}
+          emptyTitleKey="coauthor.list_empty"
+          mode="coauthor"
+          character={character}
+          setConfirmDestroy={setConfirmDestroy}
+          setChatImportOpen={setChatImportOpen}
+          onClose={() => setSheetCharId(null)}
+          onSwitchChat={(id) => { void chat.handleSwitchChat(id); }}
+          onCreateChat={() => { void character.handleCreateChat(sheetCharId ?? undefined, "coauthor"); }}
         />
       )}
 

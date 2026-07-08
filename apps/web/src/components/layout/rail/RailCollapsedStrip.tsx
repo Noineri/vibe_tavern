@@ -1,8 +1,15 @@
 /**
- * RailCollapsedStrip — the shared middle of the collapsed mobile rail: the
- * Create/Import buttons, the character avatar column (max 5 + N-more), the
- * chat indicators for the active character, and the +new-chat button.
- * Shared by the RP `Rail` (play mode only) and `CoauthorRail` (E5e).
+ * RailCollapsedStrip — the shared middle of the collapsed mobile/tablet rail:
+ * the Create/Import buttons, the character avatar column (max 5 + N-more), and
+ * the surrounding dividers. Shared by the RP `Rail` (play mode only) and
+ * `CoauthorRail` (E5e).
+ *
+ * Chat selection no longer lives here — the collapsed strip is a pure
+ * character switcher / launcher. Tapping an avatar opens a `CharacterChatsSheet`
+ * (tablet bottom sheet listing that character's chats + branches); the rail's
+ * chat circles were removed when that sheet landed. The expanded 260px panel
+ * still carries the full character/chat/branch tree for search + sort +
+ * tag-filter; this collapsed strip is the quick-launch surface.
  *
  * What stays inline in each rail:
  *  - the build-mode middle icons (`buildPanels.map`) — RP-only, no coauthor
@@ -10,12 +17,7 @@
  *  - the bottom quick-actions row — the launchers differ (RP: prompt-manager
  *    + scenario-memory + provider + tweaks; coauthor: modules + provider +
  *    tweaks);
- *  - the outer wrapper, hamburger, and edge-swipe handlers.
- *
- * The single real divergence — the mode passed to `handleCreateChat` when
- * starting a new chat from the collapsed rail — is parameterized via
- * `onCreateChat`: RP omits the mode arg (defaults to an RP chat), coauthor
- * forwards `"coauthor"`.
+ *  - the outer wrapper, hamburger, and the `Drawer.SwipeArea` edge-swipe.
  *
  * Generic over the chat-id brand (`TChatId`) so callers can pass branded
  * `ChatId` lists and receive branded ids in `onSwitchChat` without a cast —
@@ -35,24 +37,14 @@ export interface RailCollapsedCharacter {
   updatedAt?: string | null;
 }
 
-export interface RailCollapsedChat<TId extends string = string> {
-  id: TId;
-  title: string;
-}
-
-export function RailCollapsedStrip<TChatId extends string>({
+export function RailCollapsedStrip({
   characters,
   selectedCharacterId,
   avatarSrc,
-  chats,
-  activeChatId,
   createManualLabel,
   importCharShortLabel,
   moreCharactersLabel,
-  newChatLabel,
-  onSelectCharacter,
-  onSwitchChat,
-  onCreateChat,
+  onCharacterClick,
   onCreateCharacter,
   onImport,
   onMoreCharacters,
@@ -60,15 +52,11 @@ export function RailCollapsedStrip<TChatId extends string>({
   characters: ReadonlyArray<RailCollapsedCharacter>;
   selectedCharacterId: string | null;
   avatarSrc: (c: RailCollapsedCharacter) => string | null;
-  chats: ReadonlyArray<RailCollapsedChat<TChatId>>;
-  activeChatId: TChatId | null;
   createManualLabel: string;
   importCharShortLabel: string;
   moreCharactersLabel: string;
-  newChatLabel: string;
-  onSelectCharacter: (id: string) => void;
-  onSwitchChat: (id: TChatId) => void;
-  onCreateChat: () => void;
+  /** Tap an avatar — opens the CharacterChatsSheet on that character. */
+  onCharacterClick: (id: string) => void;
   onCreateCharacter: () => void;
   onImport: () => void;
   onMoreCharacters: () => void;
@@ -91,7 +79,10 @@ export function RailCollapsedStrip<TChatId extends string>({
       <div className="h-px w-8 shrink-0 bg-border" />
       {/* Character avatars (max 5, +N more) — always all characters,
           not the filtered list, so the collapsed rail stays stable
-          regardless of any active search in the expanded panel. */}
+          regardless of any active search in the expanded panel. Tapping an
+          avatar opens the CharacterChatsSheet (chat list + branches), not a
+          bare character select — selectedCharacterId is synced after the
+          real chat switch inside the sheet. */}
       {characters.slice(0, 5).map((c) => (
         <div
           key={c.id}
@@ -99,7 +90,7 @@ export function RailCollapsedStrip<TChatId extends string>({
             "flex h-10 w-10 cursor-pointer items-center justify-center overflow-hidden rounded-full transition-[background-color,border-radius,transform] duration-150 ease-out active:rounded-xl active:bg-s2 active:scale-[0.96]",
             selectedCharacterId === c.id && "rounded-xl bg-accent-dim ring-2 ring-accent",
           )}
-          onClick={() => onSelectCharacter(c.id)}
+          onClick={() => onCharacterClick(c.id)}
           title={c.name}
         >
           {avatarSrc(c) ? (
@@ -118,31 +109,6 @@ export function RailCollapsedStrip<TChatId extends string>({
           +{characters.length - 5}
         </div>
       )}
-      <div className="my-0.5 h-px w-8 shrink-0 bg-border" />
-      {/* Chat indicators for active character */}
-      {chats.map((ch) => {
-        const initial = (ch.title || "?").trim().charAt(0).toUpperCase() || "?";
-        return (
-          <div key={ch.id}
-               className={cn(
-                 "flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-full font-ui text-xs font-medium transition-all duration-150 active:rounded-xl active:bg-s2",
-                 ch.id === activeChatId ? "rounded-xl bg-accent text-on-accent" : "bg-s3 text-t2",
-               )}
-               onClick={() => onSwitchChat(ch.id)}
-               title={ch.title}>
-            {initial}
-          </div>
-        );
-      })}
-      {/* + New chat in collapsed rail */}
-      <div
-        key="new-chat-collapsed"
-        className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-full border border-dashed border-border2 text-t3 transition-all active:bg-s3"
-        onClick={onCreateChat}
-        title={newChatLabel}
-      >
-        <Ic.plus />
-      </div>
       <div className="my-0.5 h-px w-8 shrink-0 bg-border" />
     </>
   );

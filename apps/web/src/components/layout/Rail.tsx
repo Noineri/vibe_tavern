@@ -9,6 +9,7 @@ import { Ico, NavRow } from "./rail/rail-primitives.js";
 import { ActionSheet } from "../shared/ActionSheet.js";
 import { TagFilterSheet } from "./rail/TagFilterSheet.js";
 import { RailCollapsedStrip } from "./rail/RailCollapsedStrip.js";
+import { CharacterChatsSheet } from "./rail/CharacterChatsSheet.js";
 import { Drawer } from "@base-ui/react/drawer";
 import { getModalPortal } from "../shared/modal-helpers.js";
 import { useSidebarChats } from "./hooks/use-sidebar-chats.js";
@@ -70,6 +71,9 @@ export function Rail({ hidden }: { hidden?: boolean }) {
   const [importOpen, setImportOpen] = useState(false);
   const [chatImportOpen, setChatImportOpen] = useState(false);
   const [branchesOpen, setBranchesOpen] = useState<string | null>(null);
+  // The character whose chats are shown in the CharacterChatsSheet (tablet
+  // bottom sheet launched from a collapsed-strip avatar tap). null = closed.
+  const [sheetCharId, setSheetCharId] = useState<string | null>(null);
 
   // Context menus
   const [charMenuId, setCharMenuId] = useState<string | null>(null);
@@ -118,6 +122,12 @@ export function Rail({ hidden }: { hidden?: boolean }) {
   // sort mode from the nav store still applies via the hook.
   const activeCharId = selectedCharacterId ?? chatMeta?.character?.id ?? null;
   const { sectionChats } = useSidebarChats({ allChats: chats, characterId: activeCharId, query: "" });
+
+  // Chats for the CharacterChatsSheet. Falls back to activeCharId so the hook
+  // stays stable when the sheet is closed (sheetCharId === null); when the
+  // sheet is open on a different character, this returns that character's chats.
+  const { sectionChats: sheetChats } = useSidebarChats({ allChats: chats, characterId: sheetCharId ?? activeCharId, query: "" });
+  const sheetChar = sheetCharId ? allCharacters.find((c) => c.id === sheetCharId) ?? null : null;
 
   // Drawer open/close is driven by Base UI Drawer.Root — exit animation +
   // unmount are the drawer's own (onOpenChangeComplete), so there is no more
@@ -192,15 +202,10 @@ export function Rail({ hidden }: { hidden?: boolean }) {
               characters={allCharacters}
               selectedCharacterId={selectedCharacterId}
               avatarSrc={charAvatarSrc}
-              chats={sectionChats}
-              activeChatId={activeChatId}
               createManualLabel={t("create_manual")}
               importCharShortLabel={t("import_char_short")}
               moreCharactersLabel={t("more_characters") ?? `${allCharacters.length - 5} more`}
-              newChatLabel={t("new_chat")}
-              onSelectCharacter={(id) => { useChatStore.getState().setSelectedCharacterId(id); }}
-              onSwitchChat={(id) => { void chat.handleSwitchChat(id); }}
-              onCreateChat={() => { void character.handleCreateChat(selectedCharacterId ?? undefined); }}
+              onCharacterClick={(id) => setSheetCharId(id)}
               onCreateCharacter={() => { useModalStore.getState().setCreateCharacterModalOpen(true); }}
               onImport={() => { setImportOpen(true); }}
               onMoreCharacters={() => setExpanded(true)}
@@ -497,6 +502,32 @@ export function Rail({ hidden }: { hidden?: boolean }) {
           onToggle={(tag) => setCharSelectedTags(charSelectedTags.includes(tag) ? charSelectedTags.filter((x) => x !== tag) : [...charSelectedTags, tag])}
           onReset={() => setCharSelectedTags([])}
           onClose={() => setTagsSheetOpen(false)}
+        />
+      )}
+
+      {/* ═══ CHARACTER CHATS SHEET (tablet) ═══ */}
+      {/* Launched from a collapsed-strip avatar tap — lists the character's chats
+          (+ branches for the active chat) in a bottom sheet. Quick-access picker
+          for the tablet rail; the expanded 260px panel still carries the full
+          tree for search/sort/tag-filter. */}
+      {sheetCharId && sheetChar && (
+        <CharacterChatsSheet
+          characterId={sheetCharId}
+          characterName={sheetChar.name}
+          characterAvatarSrc={charAvatarSrc(sheetChar)}
+          chats={sheetChats}
+          activeChatId={activeChatId}
+          branches={activeChatBranches}
+          activeBranchId={activeBranchId}
+          withBranches={true}
+          emptyTitleKey="sidebar_send_a_message"
+          mode="rp"
+          character={character}
+          setConfirmDestroy={setConfirmDestroy}
+          setChatImportOpen={setChatImportOpen}
+          onClose={() => setSheetCharId(null)}
+          onSwitchChat={(id) => { void chat.handleSwitchChat(id); }}
+          onCreateChat={() => { void character.handleCreateChat(sheetCharId ?? undefined); }}
         />
       )}
 
