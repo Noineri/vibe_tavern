@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { useOutsideClick } from "../../hooks/use-outside-click.js";
+import { useCallback, useEffect, useState } from "react";
+import * as Popover from "@radix-ui/react-popover";
 import { Icons } from "../shared/icons.js";
+import { getModalPortal } from "../shared/modal-helpers.js";
 import { CustomTooltip } from "../shared/Tooltip.js";
 import { useT } from "../../i18n/context.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
@@ -72,15 +73,11 @@ function DesktopMediaMenu({ characterId }: { characterId: string }) {
   // Floating viewers: one GalleryViewer per open tile (mirrors the gallery
   // grid's open-panels pattern). Tracked by row id.
   const [openViewers, setOpenViewers] = useState<CharacterAsset[]>([]);
-  const rootRef = useRef<HTMLDivElement>(null);
 
   // Load the gallery list on first open (idempotent — safe to call every open).
   useEffect(() => {
     if (open) void load(characterId);
   }, [open, characterId, load]);
-
-  // Outside-click closes the popover (but not when clicking inside a viewer).
-  useOutsideClick(rootRef, () => setOpen(false), { enabled: open });
 
   const sendImage = useCallback(async (row: CharacterAsset) => {
     if (draftCount >= 5) {
@@ -112,22 +109,27 @@ function DesktopMediaMenu({ characterId }: { characterId: string }) {
 
   return (
     <>
-      <div ref={rootRef} className="relative mt-px max-w-[160px]">
-        <button
-          type="button"
-          className="flex items-center gap-1 rounded px-1 py-px text-[calc(var(--ui-fs)-3px)] text-t3 transition-colors hover:text-t1"
-          onClick={() => setOpen((v) => !v)}
-          aria-label={t("media_button")}
-        >
-          <Icons.images />
-          <span className="overflow-hidden text-ellipsis whitespace-nowrap">{t("media_button")}</span>
-          <span className={"text-t4 transition-transform " + (open ? "rotate-90" : "")}>
-            <Icons.Caret direction="r" />
-          </span>
-        </button>
-
-        {open && (
-          <div className="glass-blur absolute left-0 top-full z-50 mt-1 rounded-lg border border-border bg-glass-bg p-2 shadow-[0_12px_36px_rgba(0,0,0,.45)]">
+      <Popover.Root open={open} onOpenChange={setOpen}>
+        <Popover.Trigger asChild>
+          <button
+            type="button"
+            className="mt-px flex max-w-[160px] items-center gap-1 rounded px-1 py-px text-[calc(var(--ui-fs)-3px)] text-t3 transition-colors hover:text-t1"
+            aria-label={t("media_button")}
+          >
+            <Icons.images />
+            <span className="overflow-hidden text-ellipsis whitespace-nowrap">{t("media_button")}</span>
+            <span className="text-t4 transition-transform data-[state=open]:rotate-90">
+              <Icons.Caret direction="r" />
+            </span>
+          </button>
+        </Popover.Trigger>
+        <Popover.Portal container={getModalPortal() ?? document.body}>
+          <Popover.Content
+            side="bottom"
+            align="start"
+            sideOffset={4}
+            className="glass-blur z-50 rounded-lg border border-border bg-glass-bg p-2 shadow-[0_12px_36px_rgba(0,0,0,.45)] data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95"
+          >
             {loading && list.length === 0 ? (
               <div className="flex h-20 w-[360px] items-center justify-center text-xs text-t3">…</div>
             ) : list.length === 0 ? (
@@ -175,9 +177,9 @@ function DesktopMediaMenu({ characterId }: { characterId: string }) {
                 })}
               </div>
             )}
-          </div>
-        )}
-      </div>
+          </Popover.Content>
+        </Popover.Portal>
+      </Popover.Root>
 
       {/* Floating viewers — multiple may be open at once. */}
       {openViewers.map((asset) => (
