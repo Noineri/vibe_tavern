@@ -34,7 +34,10 @@ vi.mock("../../i18n/context.js", () => ({
 
 // useCharacterController is not consumed by any other test file → safe to mock
 // fully. Stub the save write-path so the test never hits the network.
-const handleSaveCharacter = vi.fn(() => Promise.resolve());
+// vi.hoisted: vi.mock is hoisted above this line, so a plain outer const would
+// be uninitialized when the factory runs. Hoisting the binding alongside the
+// mock keeps every test-body call site (`handleSaveCharacter`) identical.
+const { handleSaveCharacter } = vi.hoisted(() => ({ handleSaveCharacter: vi.fn(() => Promise.resolve()) }));
 vi.mock("../../hooks/use-character-controller.js", () => ({
 	useCharacterController: () => ({ handleSaveCharacter, isSavingCharacter: false }),
 }));
@@ -54,13 +57,21 @@ vi.mock("../../api/lorebook-api.js", () => ({
 
 // chat-store: spread the REAL module first (preserves every other export for
 // any co-running test file), override ONLY useIsSending with a controllable
-// value. See AGENTS.md mock.module gotcha.
+// value. See AGENTS.md mock.module gotcha. Under vitest `vi.mock` is hoisted
+// above `await import`, so `realChatStore` would resolve to the MOCKED module
+// (useless); `importOriginal` bypasses the mock to read the real exports.
+// `__isSending` is a plain `let` declared above the (lexically lower) mock so
+// its closure binding is initialized by the time the lazily-invoked factory
+// runs; tests mutate it directly and the `useIsSending` closure reads the
+// live value on every render.
 let __isSending = false;
-const realChatStore = await import("../../stores/chat-store.js");
-vi.mock("../../stores/chat-store.js", () => ({
-	...realChatStore,
-	useIsSending: () => __isSending,
-}));
+vi.mock("../../stores/chat-store.js", async (importOriginal) => {
+	const realChatStore = await importOriginal() as typeof import("../../stores/chat-store.js");
+	return {
+		...realChatStore,
+		useIsSending: () => __isSending,
+	};
+});
 
 function makeCharacter(over: Partial<AppCharacter> = {}): AppCharacter {
 	return {
@@ -519,7 +530,7 @@ describe("CoauthorCharacterForm", () => {
 	// already equals the proposal (description NEW) → diff should be EMPTY
 	// (0 hunks). BUG: the form still holds v1 → the stale diff shows 1 hunk.
 
-	it.failing("version folder-swap: reviewing canonical refreshes when character changes without remount", () => {
+	it.fails("version folder-swap: reviewing canonical refreshes when character changes without remount", () => {
 		__isSending = false;
 		// v1 — canonical when reviewing begins.
 		const v1 = seedReviewing({ description: "OLD personality." });

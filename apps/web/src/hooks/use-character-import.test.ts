@@ -29,39 +29,59 @@ import { renderHook, act } from "@testing-library/react";
 
 // ─── Mock fns (captured real modules are spread in to avoid cross-file leak) ─
 
-const uploadCharacterAvatar = vi.fn((_id: string, _file: File, _full?: File) =>
-  Promise.resolve({ avatarExt: ".png", avatarFullExt: ".png" }));
-// Legacy fns that must NEVER be called by the migrated hook.
-const uploadAsset = vi.fn((_f: File) => Promise.resolve({ assetId: "asset-legacy" }));
-const updateCharacterAvatar = vi.fn((_cid: string, _chatId: unknown, _aid: string) =>
-  Promise.resolve({} as never));
-const fetchBootstrapAction = vi.fn((_opts?: { silent?: boolean; skipSnapshotSync?: boolean }) =>
-  Promise.resolve());
-const importCharacterAction = vi.fn((_input: { fileName: string; jsonText: string }) =>
-  Promise.resolve({
-    activeChatId: "chat-1",
-    snapshot: { character: { id: "char-imported", name: "Test", avatarExt: null } },
-    imported: { kind: "character", name: "Test", fileName: "card.png", warningCount: 0, warnings: [] },
-  } as never));
-
-const realAppClient = await import("../app-client.js");
-const realCharacterActions = await import("../stores/api-actions/character-actions.js");
-const realBootstrapActions = await import("../stores/api-actions/bootstrap-actions.js");
-
-await vi.mock("../app-client.js", () => ({
-  ...realAppClient,
+// vi.hoisted: vi.mock (below) is hoisted above these consts, so the factory
+// would close over uninitialized bindings. Hoisting the fns alongside the mock
+// keeps the vi.mock factory and all test-body assertions unchanged.
+const {
   uploadCharacterAvatar,
   uploadAsset,
   updateCharacterAvatar,
-}));
-await vi.mock("../stores/api-actions/character-actions.js", () => ({
-  ...realCharacterActions,
-  importCharacterAction,
-}));
-await vi.mock("../stores/api-actions/bootstrap-actions.js", () => ({
-  ...realBootstrapActions,
   fetchBootstrapAction,
+  importCharacterAction,
+} = vi.hoisted(() => ({
+  uploadCharacterAvatar: vi.fn((_id: string, _file: File, _full?: File) =>
+    Promise.resolve({ avatarExt: ".png", avatarFullExt: ".png" })),
+  // Legacy fns that must NEVER be called by the migrated hook.
+  uploadAsset: vi.fn((_f: File) => Promise.resolve({ assetId: "asset-legacy" })),
+  updateCharacterAvatar: vi.fn((_cid: string, _chatId: unknown, _aid: string) =>
+    Promise.resolve({} as never)),
+  fetchBootstrapAction: vi.fn((_opts?: { silent?: boolean; skipSnapshotSync?: boolean }) =>
+    Promise.resolve()),
+  importCharacterAction: vi.fn((_input: { fileName: string; jsonText: string }) =>
+    Promise.resolve({
+      activeChatId: "chat-1",
+      snapshot: { character: { id: "char-imported", name: "Test", avatarExt: null } },
+      imported: { kind: "character", name: "Test", fileName: "card.png", warningCount: 0, warnings: [] },
+    } as never)),
 }));
+
+// vitest: vi.mock is hoisted above top-level `await import`, so capturing real
+// modules up top would resolve to the MOCKED module. Each factory reads the
+// real module via `importOriginal` instead. (The `await` on vi.mock was a
+// bun:test-ism; vitest hoists vi.mock regardless and returns synchronously.)
+vi.mock("../app-client.js", async (importOriginal) => {
+  const realAppClient = await importOriginal() as typeof import("../app-client.js");
+  return {
+    ...realAppClient,
+    uploadCharacterAvatar,
+    uploadAsset,
+    updateCharacterAvatar,
+  };
+});
+vi.mock("../stores/api-actions/character-actions.js", async (importOriginal) => {
+  const realCharacterActions = await importOriginal() as typeof import("../stores/api-actions/character-actions.js");
+  return {
+    ...realCharacterActions,
+    importCharacterAction,
+  };
+});
+vi.mock("../stores/api-actions/bootstrap-actions.js", async (importOriginal) => {
+  const realBootstrapActions = await importOriginal() as typeof import("../stores/api-actions/bootstrap-actions.js");
+  return {
+    ...realBootstrapActions,
+    fetchBootstrapAction,
+  };
+});
 
 const { useCharacterImport } = await import("./use-character-import.js");
 

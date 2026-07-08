@@ -29,7 +29,7 @@ import { describe, it, expect, vi } from "vitest";
 import { render, fireEvent } from "@testing-library/react";
 
 vi.mock("../../i18n/context.js", async (importOriginal) => {
-	const real = await importOriginal();
+	const real = await importOriginal() as typeof import("../../i18n/context.js");
 	return {
 		...real,
 		useT: () => ({ t: (key: string) => key, locale: "en", setLocale: () => {}, ready: true }),

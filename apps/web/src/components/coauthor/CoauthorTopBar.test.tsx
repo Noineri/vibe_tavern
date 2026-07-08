@@ -15,39 +15,47 @@
  */
 import { describe, it, expect, vi } from "vitest";
 import { render } from "@testing-library/react";
+import { useModalStore } from "../../stores/index.js";
 
-// Capture real modules BEFORE registering mocks (AGENTS.md mock.module gotcha).
-const realI18n = await import("../../i18n/context.js");
-const realChatSelectors = await import("../../stores/chat-selectors.js");
-const realProviderProfiles = await import("../../hooks/use-provider-profiles.js");
-const realTooltip = await import("../shared/Tooltip.js");
+// vitest: vi.mock is hoisted above top-level `await import`, so capturing real
+// modules up top would resolve to the MOCKED module. Each factory below reads
+// the real module via `importOriginal` instead.
 
-vi.mock("../../i18n/context.js", () => ({
-  ...realI18n,
-  useT: () => ({ t: (key: string) => key, locale: "en", setLocale: () => {}, ready: true }),
-}));
+vi.mock("../../i18n/context.js", async (importOriginal) => {
+  const realI18n = await importOriginal() as typeof import("../../i18n/context.js");
+  return {
+    ...realI18n,
+    useT: () => ({ t: (key: string) => key, locale: "en", setLocale: () => {}, ready: true }),
+  };
+});
 
-vi.mock("../../stores/chat-selectors.js", () => ({
-  ...realChatSelectors,
-  useChatMeta: () => ({
-    character: {
-      id: "c1",
-      name: "Kira Vex",
-      avatarExt: null,
-      avatarAssetId: null,
-      avatarFullAssetId: null,
-      updatedAt: "",
-    },
-  }),
-}));
+vi.mock("../../stores/chat-selectors.js", async (importOriginal) => {
+  const realChatSelectors = await importOriginal() as typeof import("../../stores/chat-selectors.js");
+  return {
+    ...realChatSelectors,
+    useChatMeta: () => ({
+      character: {
+        id: "c1",
+        name: "Kira Vex",
+        avatarExt: null,
+        avatarAssetId: null,
+        avatarFullAssetId: null,
+        updatedAt: "",
+      },
+    }),
+  };
+});
 
-vi.mock("../../hooks/use-provider-profiles.js", () => ({
-  ...realProviderProfiles,
-  useProviderProfiles: () => ({
-    activeProviderProfile: { id: "p1", name: "OpenAI Pro", defaultModel: "gpt-4o" },
-    providerProfiles: [],
-  }),
-}));
+vi.mock("../../hooks/use-provider-profiles.js", async (importOriginal) => {
+  const realProviderProfiles = await importOriginal() as typeof import("../../hooks/use-provider-profiles.js");
+  return {
+    ...realProviderProfiles,
+    useProviderProfiles: () => ({
+      activeProviderProfile: { id: "p1", name: "OpenAI Pro", defaultModel: "gpt-4o" },
+      providerProfiles: [],
+    }),
+  };
+});
 
 // CustomTooltip (Radix) needs a TooltipProvider ancestor; the app mounts one
 // globally in app.tsx but the isolated render here does not. Passthrough keeps
@@ -55,10 +63,13 @@ vi.mock("../../hooks/use-provider-profiles.js", () => ({
 // as VibeMdView.test / CoauthorCharacterForm.test. `use-mobile` is deliberately
 // NOT mocked — happy-dom's desktop viewport already yields useIsMobile()=false,
 // and mocking it collides with VibeMdView.test process-globally.
-vi.mock("../shared/Tooltip.js", () => ({
-  ...realTooltip,
-  CustomTooltip: ({ children }: { children: React.ReactNode }) => children,
-}));
+vi.mock("../shared/Tooltip.js", async (importOriginal) => {
+  const realTooltip = await importOriginal() as typeof import("../shared/Tooltip.js");
+  return {
+    ...realTooltip,
+    CustomTooltip: ({ children }: { children: React.ReactNode }) => children,
+  };
+});
 
 const { CoauthorTopBar } = await import("./CoauthorTopBar.js");
 
@@ -85,7 +96,6 @@ describe("CoauthorTopBar", () => {
 
   it("opens the provider modal in coauthor mode when the pill is clicked", () => {
     const { getByText } = render(<CoauthorTopBar />);
-    const { useModalStore } = require("../../stores/index.js");
     // Mode starts at the RP default.
     expect(useModalStore.getState().providerModalMode).toBe("default");
     expect(useModalStore.getState().isProviderModalOpen).toBe(false);

@@ -7,6 +7,19 @@ import {
 } from "./useToolCapableModels.js";
 import { useProviderDataStore } from "../../stores/provider-data-store.js";
 import type { ProviderProfileRecord } from "../../api/types.js";
+import { fetchProviderProfileModels } from "../../api/provider-api.js";
+
+// vi.mock is hoisted to module top regardless of lexical position, so the
+// per-test vi.mock that used to live inside the "live fetch" case below is
+// impossible under vitest (it would warn "not at top level" and apply
+// globally anyway with an uninitialized spy). Mock the module once at the top
+// with a vi.fn, and drive the live-fetch case via vi.mocked(...).mockReturnValue.
+// The pure-predicate and cached tests never call fetchProviderProfileModels, so
+// the global mock is inert for them.
+vi.mock("../../api/provider-api.js", async (importOriginal) => {
+  const real = await importOriginal() as typeof import("../../api/provider-api.js");
+  return { ...real, fetchProviderProfileModels: vi.fn() };
+});
 
 
 /**
@@ -168,11 +181,9 @@ describe("useToolCapableModels (hook)", () => {
 
   test("falls back to a live fetch and filters when the cache is empty", async () => {
     // Empty cache → the hook must call fetchProviderProfileModels and filter.
-    // Mock the module AFTER capturing the real export so only the function under
-    // test is replaced and every other export stays genuine (AGENTS.md
-    // mock.module gotcha — a mock factory persists process-globally otherwise).
-    const real = await import("../../api/provider-api.js");
-    const fetchSpy = vi.fn(() =>
+    // The module is mocked once at file top (vi.mock is hoisted, so a per-test
+    // vi.mock is impossible); program the fn for this case and assert on it.
+    vi.mocked(fetchProviderProfileModels).mockReturnValue(
       Promise.resolve({
         models: [
           { id: "live-tool", label: "Live Tool", supportsTools: true },
@@ -180,7 +191,6 @@ describe("useToolCapableModels (hook)", () => {
         ],
       }),
     );
-    vi.mock("../../api/provider-api.js", () => ({ ...real, fetchProviderProfileModels: fetchSpy }));
 
     useProviderDataStore.setState({
       profiles: [makeProfile({ id: "prof-2", cachedModels: { models: [], cachedAt: "" } })],
@@ -192,10 +202,8 @@ describe("useToolCapableModels (hook)", () => {
     await waitFor(() => {
       expect(result.current.models.map((m: ToolCapableModel) => m.id)).toEqual(["live-tool"]);
     });
-    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(fetchProviderProfileModels).toHaveBeenCalledTimes(1);
     expect(result.current.loading).toBe(false);
     expect(result.current.error).toBeNull();
-
-    vi.restoreAllMocks();
   });
 });

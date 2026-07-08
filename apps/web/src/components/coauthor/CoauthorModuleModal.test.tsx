@@ -31,11 +31,13 @@ import type { CoauthorModule } from "@vibe-tavern/api-contracts";
 // Use `...real` spread (AGENTS.md mock.module gotcha): the mock persists
 // process-globally, so every OTHER export of context.js must survive for
 // subsequent test files that import LocaleProvider etc.
-const i18nReal = await import("../../i18n/context.js");
-vi.mock("../../i18n/context.js", () => ({
-	...i18nReal,
-	useT: () => ({ t: (key: string) => key, locale: "en", setLocale: () => {}, ready: true }),
-}));
+vi.mock("../../i18n/context.js", async (importOriginal) => {
+	const i18nReal = await importOriginal() as typeof import("../../i18n/context.js");
+	return {
+		...i18nReal,
+		useT: () => ({ t: (key: string) => key, locale: "en", setLocale: () => {}, ready: true }),
+	};
+});
 
 const SEED_MODULES: CoauthorModule[] = [
 	{
@@ -76,13 +78,25 @@ const USER_MODULE: CoauthorModule = {
 
 const ALL_MODULES = [...SEED_MODULES, USER_MODULE];
 
-const listCoauthorModulesAction = vi.fn(() => Promise.resolve(ALL_MODULES));
-const setCoauthorModuleAction = vi.fn<(chatId: string, moduleId: string | null) => Promise<void>>(
-	async () => {},
-);
-const createCoauthorModuleAction = vi.fn(async () => ({}) as CoauthorModule);
-const updateCoauthorModuleAction = vi.fn(async (_id: string, _input: unknown) => ({}) as CoauthorModule);
-const deleteCoauthorModuleAction = vi.fn(async (_id: string) => {});
+// vi.hoisted: vi.mock (below) is hoisted above these consts, so its factory
+// would close over uninitialized bindings. Hoisting the fns alongside the
+// mock keeps the vi.mock factory and all test-body call sites unchanged.
+// `listCoauthorModulesAction`'s impl closes over ALL_MODULES lazily (invoked
+// at test runtime, by which point ALL_MODULES is initialized); ALL_MODULES is
+// declared above so TypeScript sees it before this destructure.
+const {
+	listCoauthorModulesAction,
+	setCoauthorModuleAction,
+	createCoauthorModuleAction,
+	updateCoauthorModuleAction,
+	deleteCoauthorModuleAction,
+} = vi.hoisted(() => ({
+	listCoauthorModulesAction: vi.fn(() => Promise.resolve(ALL_MODULES)),
+	setCoauthorModuleAction: vi.fn<(chatId: string, moduleId: string | null) => Promise<void>>(async () => {}),
+	createCoauthorModuleAction: vi.fn(async () => ({}) as CoauthorModule),
+	updateCoauthorModuleAction: vi.fn(async (_id: string, _input: unknown) => ({}) as CoauthorModule),
+	deleteCoauthorModuleAction: vi.fn(async (_id: string) => {}),
+}));
 
 vi.mock("../../stores/api-actions/chat-actions.js", () => ({
 	listCoauthorModulesAction,
@@ -96,10 +110,11 @@ vi.mock("../../stores/api-actions/chat-actions.js", () => ({
 // flat. Supports both node and render-prop children.
 // `...real` spread preserves MasterDetailMobileDrillDown + other exports for
 // subsequent test files (mock.module is process-global — AGENTS.md gotcha).
-const mdmReal = await import("../shared/MasterDetailModal.js");
-vi.mock("../shared/MasterDetailModal.js", () => ({
-	...mdmReal,
-	MasterDetailModal: ({ isOpen, onClose, masterContent, detailContent, footer, headerActions }: {
+vi.mock("../shared/MasterDetailModal.js", async (importOriginal) => {
+	const mdmReal = await importOriginal() as typeof import("../shared/MasterDetailModal.js");
+	return {
+		...mdmReal,
+		MasterDetailModal: ({ isOpen, onClose, masterContent, detailContent, footer, headerActions }: {
 		isOpen: boolean;
 		onClose: () => void;
 		masterContent: unknown;
@@ -119,14 +134,17 @@ vi.mock("../shared/MasterDetailModal.js", () => ({
 			</div>
 		);
 	},
+	MasterDetailMobileDrillDown: () => null,
 	useMasterDetail: () => ({ isMobile: false, isDetailOpen: true, openDetail: () => {}, closeDetail: () => {} }),
-}));
+	};
+});
 
 // DestructiveConfirmModal passthrough (also uses `...real` spread).
-const dcmReal = await import("../shared/destructive-confirm-modal.js");
-vi.mock("../shared/destructive-confirm-modal.js", () => ({
-	...dcmReal,
-	DestructiveConfirmModal: ({ title, confirmLabel, onConfirm, onCancel }: {
+vi.mock("../shared/destructive-confirm-modal.js", async (importOriginal) => {
+	const dcmReal = await importOriginal() as typeof import("../shared/destructive-confirm-modal.js");
+	return {
+		...dcmReal,
+		DestructiveConfirmModal: ({ title, confirmLabel, onConfirm, onCancel }: {
 		title: string; body: React.ReactNode; confirmLabel: string;
 		onConfirm: () => void; onCancel: () => void;
 	}) => (
@@ -136,7 +154,8 @@ vi.mock("../shared/destructive-confirm-modal.js", () => ({
 			<button type="button" data-testid="confirm-ok" onClick={onConfirm}>{confirmLabel}</button>
 		</div>
 	),
-}));
+	};
+});
 
 const { CoauthorModuleModal } = await import("./CoauthorModuleModal.js");
 

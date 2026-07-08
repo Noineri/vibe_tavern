@@ -15,20 +15,32 @@ import type { CharacterAsset } from "@vibe-tavern/domain";
 // Each function is a bun:test mock we can reprogram per-test. `mockModule`
 // swaps the real module before the store imports it.
 
-const listCharacterAssets = vi.fn((_cid: string) => Promise.resolve<CharacterAsset[]>([]));
-const uploadCharacterAsset = vi.fn((_cid: string, _f: File) => Promise.resolve<CharacterAsset>(undefined as never));
-const updateCharacterAsset = vi.fn(
-  (_cid: string, _rowId: string, _patch: { caption?: string; description?: string | null }) =>
-    Promise.resolve<CharacterAsset>(undefined as never),
-);
-const reorderCharacterAssets = vi.fn((_cid: string, _ids: string[]) => Promise.resolve());
-const deleteCharacterAsset = vi.fn((_cid: string, _rowId: string) => Promise.resolve());
-const describeCharacterAssets = vi.fn(
-  (_cid: string, _ids?: string[], _signal?: AbortSignal) =>
-    Promise.resolve({ updated: [] as string[], failed: [] as string[] }),
-);
+// vi.hoisted: vi.mock (below) is hoisted above these consts, so its factory
+// would close over uninitialized bindings. Hoisting the fns alongside the mock
+// keeps every beforeEach mockReset/mockImplementation call site unchanged.
+const {
+  listCharacterAssets,
+  uploadCharacterAsset,
+  updateCharacterAsset,
+  reorderCharacterAssets,
+  deleteCharacterAsset,
+  describeCharacterAssets,
+} = vi.hoisted(() => ({
+  listCharacterAssets: vi.fn((_cid: string) => Promise.resolve<CharacterAsset[]>([])),
+  uploadCharacterAsset: vi.fn((_cid: string, _f: File) => Promise.resolve<CharacterAsset>(undefined as never)),
+  updateCharacterAsset: vi.fn(
+    (_cid: string, _rowId: string, _patch: { caption?: string; description?: string | null }) =>
+      Promise.resolve<CharacterAsset>(undefined as never),
+  ),
+  reorderCharacterAssets: vi.fn((_cid: string, _ids: string[]) => Promise.resolve()),
+  deleteCharacterAsset: vi.fn((_cid: string, _rowId: string) => Promise.resolve()),
+  describeCharacterAssets: vi.fn(
+    (_cid: string, _ids?: string[], _signal?: AbortSignal) =>
+      Promise.resolve({ updated: [] as string[], failed: [] as string[] }),
+  ),
+}));
 
-await vi.mock("../api/gallery-api.js", () => ({
+vi.mock("../api/gallery-api.js", () => ({
   serveCharacterAssetUrl: () => "",
   listCharacterAssets,
   uploadCharacterAsset,
@@ -41,8 +53,8 @@ await vi.mock("../api/gallery-api.js", () => ({
 }));
 
 // ─── Mocked sonner toast ────────────────────────────────────────────────
-const toastError = vi.fn((_msg: string) => {});
-await vi.mock("sonner", () => ({ toast: { error: toastError, success: vi.fn(() => {}) } }));
+const { toastError } = vi.hoisted(() => ({ toastError: vi.fn((_msg: string) => {}) }));
+vi.mock("sonner", () => ({ toast: { error: toastError, success: vi.fn(() => {}) } }));
 
 const { useGalleryStore } = await import("./gallery-store.js");
 

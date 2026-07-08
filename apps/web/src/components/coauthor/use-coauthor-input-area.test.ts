@@ -36,33 +36,37 @@ vi.mock("../../stores/api-actions/chat-actions.js", () => ({
 }));
 
 // useT must return a stable t(); the hook builds labels off it.
-const realI18n = await import("../../i18n/context.js");
-vi.mock("../../i18n/context.js", () => ({
-	...realI18n,
-	useT: () => ({ t: (key: string) => key, locale: "en", setLocale: () => {}, ready: true }),
-}));
+vi.mock("../../i18n/context.js", async (importOriginal) => {
+	const realI18n = await importOriginal() as typeof import("../../i18n/context.js");
+	return {
+		...realI18n,
+		useT: () => ({ t: (key: string) => key, locale: "en", setLocale: () => {}, ready: true }),
+	};
+});
 
 const { useModuleSwitch, useCoauthorInputArea } = await import("./use-coauthor-input-area.js");
-const realProviderProfiles = await import("../../hooks/use-provider-profiles.js");
 
 // The favorites/tool-filter path goes through two hooks the data hook composes.
 // Stub them to deterministic inputs so the test pins the COMPOSITION (favorite
 // ∩ tool-capable), not the hooks' own internals (covered in
 // useToolCapableModels.test.ts).
-vi.mock("../../hooks/use-provider-profiles.js", () => ({
-	...realProviderProfiles,
-	useProviderProfiles: () => ({
-		activeProviderProfile: { id: "p1", name: "OpenAI Pro", defaultModel: "gpt-4o", contextBudget: 128000, maxTokens: 4096 },
-		providerProfiles: [],
-		favoriteModelsByProfile: {
-			p1: [
-				{ modelId: "gpt-4o", label: "GPT-4o", contextLength: 128000 },
-				{ modelId: "gpt-3.5", label: "GPT-3.5 (no tools)", contextLength: 16000 },
-			],
-		},
-		handleSelectFavoriteProviderModel: vi.fn(async (_profileId: string, _modelId: string) => {}),
-	}),
-}));
+vi.mock("../../hooks/use-provider-profiles.js", async (importOriginal) => {
+	const realProviderProfiles = await importOriginal() as typeof import("../../hooks/use-provider-profiles.js");
+	return {
+		...realProviderProfiles,
+		useProviderProfiles: () => ({
+			activeProviderProfile: { id: "p1", name: "OpenAI Pro", defaultModel: "gpt-4o", contextBudget: 128000, maxTokens: 4096 },
+			providerProfiles: [],
+			favoriteModelsByProfile: {
+				p1: [
+					{ modelId: "gpt-4o", label: "GPT-4o", contextLength: 128000 },
+					{ modelId: "gpt-3.5", label: "GPT-3.5 (no tools)", contextLength: 16000 },
+				],
+			},
+			handleSelectFavoriteProviderModel: vi.fn(async (_profileId: string, _modelId: string) => {}),
+		}),
+	};
+});
 
 // useToolCapableModels is NOT mocked — mocking it leaks process-globally and
 // clobbers useToolCapableModels.test.ts (AGENTS.md mock.module gotcha). Instead
@@ -71,14 +75,11 @@ vi.mock("../../hooks/use-provider-profiles.js", () => ({
 // its cache path. This pins the COMPOSITION (favorites ∩ tool-capable) the
 // coauthor box actually ships.
 
-// Avoid unused-import lint on the now-mocked originals (referenced for spread).
-void realProviderProfiles;
-
 
 describe("useModuleSwitch", () => {
 	beforeEach(() => {
-		(listCoauthorModulesAction as ReturnType<typeof mock>).mockReturnValue(Promise.resolve(MODULES));
-		(setCoauthorModuleAction as ReturnType<typeof mock>).mockClear();
+		(listCoauthorModulesAction as ReturnType<typeof vi.fn>).mockReturnValue(Promise.resolve(MODULES));
+		(setCoauthorModuleAction as ReturnType<typeof vi.fn>).mockClear();
 	});
 
 	it("handleSelect fires setCoauthorModuleAction with the active chat id + module id", async () => {
@@ -93,7 +94,7 @@ describe("useModuleSwitch", () => {
 		await result.current.handleSelect("profile-editor");
 
 		await waitFor(() => expect(setCoauthorModuleAction).toHaveBeenCalledTimes(1));
-		const [chatId, moduleId] = (setCoauthorModuleAction as ReturnType<typeof mock>).mock.calls[0];
+		const [chatId, moduleId] = (setCoauthorModuleAction as ReturnType<typeof vi.fn>).mock.calls[0];
 		expect(moduleId).toBe("profile-editor");
 		expect(chatId).toBe("chat1");
 	});
