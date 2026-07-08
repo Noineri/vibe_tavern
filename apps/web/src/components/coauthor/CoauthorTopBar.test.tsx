@@ -13,8 +13,7 @@
  * process-globally (AGENTS.md `mock.module` gotcha). Each mock spreads the real
  * module first so other consumers in the process keep getting genuine exports.
  */
-import { describe, it, expect, mock } from "bun:test";
-import { useDomEnv } from "../../../test/dom-env.js";
+import { describe, it, expect, vi } from "vitest";
 import { render } from "@testing-library/react";
 
 // Capture real modules BEFORE registering mocks (AGENTS.md mock.module gotcha).
@@ -23,12 +22,12 @@ const realChatSelectors = await import("../../stores/chat-selectors.js");
 const realProviderProfiles = await import("../../hooks/use-provider-profiles.js");
 const realTooltip = await import("../shared/Tooltip.js");
 
-mock.module("../../i18n/context.js", () => ({
+vi.mock("../../i18n/context.js", () => ({
   ...realI18n,
   useT: () => ({ t: (key: string) => key, locale: "en", setLocale: () => {}, ready: true }),
 }));
 
-mock.module("../../stores/chat-selectors.js", () => ({
+vi.mock("../../stores/chat-selectors.js", () => ({
   ...realChatSelectors,
   useChatMeta: () => ({
     character: {
@@ -42,7 +41,7 @@ mock.module("../../stores/chat-selectors.js", () => ({
   }),
 }));
 
-mock.module("../../hooks/use-provider-profiles.js", () => ({
+vi.mock("../../hooks/use-provider-profiles.js", () => ({
   ...realProviderProfiles,
   useProviderProfiles: () => ({
     activeProviderProfile: { id: "p1", name: "OpenAI Pro", defaultModel: "gpt-4o" },
@@ -56,7 +55,7 @@ mock.module("../../hooks/use-provider-profiles.js", () => ({
 // as VibeMdView.test / CoauthorCharacterForm.test. `use-mobile` is deliberately
 // NOT mocked — happy-dom's desktop viewport already yields useIsMobile()=false,
 // and mocking it collides with VibeMdView.test process-globally.
-mock.module("../shared/Tooltip.js", () => ({
+vi.mock("../shared/Tooltip.js", () => ({
   ...realTooltip,
   CustomTooltip: ({ children }: { children: React.ReactNode }) => children,
 }));
@@ -64,7 +63,6 @@ mock.module("../shared/Tooltip.js", () => ({
 const { CoauthorTopBar } = await import("./CoauthorTopBar.js");
 
 describe("CoauthorTopBar", () => {
-  useDomEnv();
 
   it("renders the character name, memory badge, and provider pill", () => {
     const { getByText } = render(<CoauthorTopBar />);

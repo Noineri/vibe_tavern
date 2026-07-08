@@ -11,15 +11,14 @@
  *   - an `error` activity shows the error label;
  *   - an empty summary falls back to the section label.
  */
-import { describe, it, expect, mock } from "bun:test";
-import { useDomEnv } from "../../../test/dom-env.js";
+import { describe, it, expect, vi } from "vitest";
 import { render, fireEvent } from "@testing-library/react";
 import { ToolActivityCard } from "./CoauthorToolActivitySlot.js";
 import type { CoauthorToolActivity } from "../../stores/coauthor-turn-store.js";
 
 // Mock useT at the module boundary — the card imports i18n for labels.
 // Returns the key verbatim so assertions can match on stable key strings.
-mock.module("../../i18n/context.js", () => ({
+vi.mock("../../i18n/context.js", () => ({
 	useT: () => ({ t: (key: string) => key, locale: "en", setLocale: () => {}, ready: true }),
 }));
 
@@ -36,7 +35,6 @@ function activity(over: Partial<CoauthorToolActivity> = {}): CoauthorToolActivit
 }
 
 describe("ToolActivityCard", () => {
-	useDomEnv();
 
 	it("renders the summary for a done activity and expands to the proposed preview on click", () => {
 		const { getByText, queryByText, container } = render(<ToolActivityCard activity={activity()} />);

@@ -21,8 +21,7 @@
  * behavior is verified via Playwright instead. What IS tested: every button →
  * handler → RPC wiring, validation gating, and mode transitions.
  */
-import { describe, it, expect, mock, beforeEach, afterEach } from "bun:test";
-import { useDomEnv } from "../../../test/dom-env.js";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { render, fireEvent, waitFor } from "@testing-library/react";
 import { useModalStore } from "../../stores/modal-store.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
@@ -33,7 +32,7 @@ import type { CoauthorModule } from "@vibe-tavern/api-contracts";
 // process-globally, so every OTHER export of context.js must survive for
 // subsequent test files that import LocaleProvider etc.
 const i18nReal = await import("../../i18n/context.js");
-mock.module("../../i18n/context.js", () => ({
+vi.mock("../../i18n/context.js", () => ({
 	...i18nReal,
 	useT: () => ({ t: (key: string) => key, locale: "en", setLocale: () => {}, ready: true }),
 }));
@@ -77,15 +76,15 @@ const USER_MODULE: CoauthorModule = {
 
 const ALL_MODULES = [...SEED_MODULES, USER_MODULE];
 
-const listCoauthorModulesAction = mock(() => Promise.resolve(ALL_MODULES));
-const setCoauthorModuleAction = mock<(chatId: string, moduleId: string | null) => Promise<void>>(
+const listCoauthorModulesAction = vi.fn(() => Promise.resolve(ALL_MODULES));
+const setCoauthorModuleAction = vi.fn<(chatId: string, moduleId: string | null) => Promise<void>>(
 	async () => {},
 );
-const createCoauthorModuleAction = mock(async () => ({}) as CoauthorModule);
-const updateCoauthorModuleAction = mock(async (_id: string, _input: unknown) => ({}) as CoauthorModule);
-const deleteCoauthorModuleAction = mock(async (_id: string) => {});
+const createCoauthorModuleAction = vi.fn(async () => ({}) as CoauthorModule);
+const updateCoauthorModuleAction = vi.fn(async (_id: string, _input: unknown) => ({}) as CoauthorModule);
+const deleteCoauthorModuleAction = vi.fn(async (_id: string) => {});
 
-mock.module("../../stores/api-actions/chat-actions.js", () => ({
+vi.mock("../../stores/api-actions/chat-actions.js", () => ({
 	listCoauthorModulesAction,
 	setCoauthorModuleAction,
 	createCoauthorModuleAction,
@@ -98,7 +97,7 @@ mock.module("../../stores/api-actions/chat-actions.js", () => ({
 // `...real` spread preserves MasterDetailMobileDrillDown + other exports for
 // subsequent test files (mock.module is process-global — AGENTS.md gotcha).
 const mdmReal = await import("../shared/MasterDetailModal.js");
-mock.module("../shared/MasterDetailModal.js", () => ({
+vi.mock("../shared/MasterDetailModal.js", () => ({
 	...mdmReal,
 	MasterDetailModal: ({ isOpen, onClose, masterContent, detailContent, footer, headerActions }: {
 		isOpen: boolean;
@@ -125,7 +124,7 @@ mock.module("../shared/MasterDetailModal.js", () => ({
 
 // DestructiveConfirmModal passthrough (also uses `...real` spread).
 const dcmReal = await import("../shared/destructive-confirm-modal.js");
-mock.module("../shared/destructive-confirm-modal.js", () => ({
+vi.mock("../shared/destructive-confirm-modal.js", () => ({
 	...dcmReal,
 	DestructiveConfirmModal: ({ title, confirmLabel, onConfirm, onCancel }: {
 		title: string; body: React.ReactNode; confirmLabel: string;
@@ -141,7 +140,6 @@ mock.module("../shared/destructive-confirm-modal.js", () => ({
 
 const { CoauthorModuleModal } = await import("./CoauthorModuleModal.js");
 
-useDomEnv();
 
 beforeEach(() => {
 	listCoauthorModulesAction.mockReturnValue(Promise.resolve(ALL_MODULES));

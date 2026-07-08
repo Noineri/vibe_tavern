@@ -10,8 +10,7 @@
  *
  * See PROMPT_TRACE_PAYLOAD_FIX_PLAN.md, Wave C.
  */
-import { describe, it, expect, mock } from "bun:test";
-import { useDomEnv } from "../../../test/dom-env.js";
+import { describe, it, expect, vi } from "vitest";
 import { render, fireEvent } from "@testing-library/react";
 import {
 	groupPayloadForTrace,
@@ -23,7 +22,7 @@ import type { PromptLayerDto } from "@vibe-tavern/domain";
 const NOOP = () => {};
 
 // Mock useT at the module boundary (same relative path the component uses).
-mock.module("../../i18n/context.js", () => ({
+vi.mock("../../i18n/context.js", () => ({
 	useT: () => ({ t: (key: string) => key, locale: "en", setLocale: NOOP, ready: true }),
 }));
 
@@ -105,7 +104,6 @@ describe("groupPayloadForTrace", () => {
 // ─── DOM render: TracePayloadView ─────────────────────────────────────
 
 describe("TracePayloadView (DOM)", () => {
-	useDomEnv();
 
 	function traceFixture() {
 		return {

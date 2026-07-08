@@ -11,7 +11,7 @@
  * end-to-end wiring (form.watch() feeding `current`, baselineRef set on reset)
  * is exercised by the render path; the logic contract is what's guarded here.
  */
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vitest";
 import { computePersonaIsDirty } from "./PersonaModal.js";
 
 const baseline = {

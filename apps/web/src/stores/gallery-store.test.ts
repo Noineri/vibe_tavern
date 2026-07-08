@@ -7,7 +7,7 @@
  *  - mutations apply optimistically,
  *  - a server failure rolls the list back AND toasts.
  */
-import { mock, test, expect, beforeEach } from "bun:test";
+import { test, expect, beforeEach, vi } from "vitest";
 import type { CharacterAsset } from "@vibe-tavern/domain";
 
 // ─── Mocked gallery-api ──────────────────────────────────────────────────
@@ -15,20 +15,20 @@ import type { CharacterAsset } from "@vibe-tavern/domain";
 // Each function is a bun:test mock we can reprogram per-test. `mockModule`
 // swaps the real module before the store imports it.
 
-const listCharacterAssets = mock((_cid: string) => Promise.resolve<CharacterAsset[]>([]));
-const uploadCharacterAsset = mock((_cid: string, _f: File) => Promise.resolve<CharacterAsset>(undefined as never));
-const updateCharacterAsset = mock(
+const listCharacterAssets = vi.fn((_cid: string) => Promise.resolve<CharacterAsset[]>([]));
+const uploadCharacterAsset = vi.fn((_cid: string, _f: File) => Promise.resolve<CharacterAsset>(undefined as never));
+const updateCharacterAsset = vi.fn(
   (_cid: string, _rowId: string, _patch: { caption?: string; description?: string | null }) =>
     Promise.resolve<CharacterAsset>(undefined as never),
 );
-const reorderCharacterAssets = mock((_cid: string, _ids: string[]) => Promise.resolve());
-const deleteCharacterAsset = mock((_cid: string, _rowId: string) => Promise.resolve());
-const describeCharacterAssets = mock(
+const reorderCharacterAssets = vi.fn((_cid: string, _ids: string[]) => Promise.resolve());
+const deleteCharacterAsset = vi.fn((_cid: string, _rowId: string) => Promise.resolve());
+const describeCharacterAssets = vi.fn(
   (_cid: string, _ids?: string[], _signal?: AbortSignal) =>
     Promise.resolve({ updated: [] as string[], failed: [] as string[] }),
 );
 
-await mock.module("../api/gallery-api.js", () => ({
+await vi.mock("../api/gallery-api.js", () => ({
   serveCharacterAssetUrl: () => "",
   listCharacterAssets,
   uploadCharacterAsset,
@@ -36,13 +36,13 @@ await mock.module("../api/gallery-api.js", () => ({
   reorderCharacterAssets,
   deleteCharacterAsset,
   describeCharacterAssets,
-  describeCharacterAvatar: mock(() => Promise.resolve({ description: "" })),
-  describePersonaAvatar: mock(() => Promise.resolve({ description: "" })),
+  describeCharacterAvatar: vi.fn(() => Promise.resolve({ description: "" })),
+  describePersonaAvatar: vi.fn(() => Promise.resolve({ description: "" })),
 }));
 
 // ─── Mocked sonner toast ────────────────────────────────────────────────
-const toastError = mock((_msg: string) => {});
-await mock.module("sonner", () => ({ toast: { error: toastError, success: mock(() => {}) } }));
+const toastError = vi.fn((_msg: string) => {});
+await vi.mock("sonner", () => ({ toast: { error: toastError, success: vi.fn(() => {}) } }));
 
 const { useGalleryStore } = await import("./gallery-store.js");
 

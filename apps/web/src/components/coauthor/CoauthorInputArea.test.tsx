@@ -25,8 +25,7 @@
  * (collides with VibeMdView.test process-globally; happy-dom's desktop viewport
  * already yields useIsMobile()=false, exercising the desktop branch).
  */
-import { describe, it, expect, mock, beforeEach } from "bun:test";
-import { useDomEnv } from "../../../test/dom-env.js";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render, act } from "@testing-library/react";
 import type { CoauthorModule } from "@vibe-tavern/api-contracts";
 import { useChatStore } from "../../stores/chat-store.js";
@@ -40,14 +39,14 @@ const realProviderProfiles = await import("../../hooks/use-provider-profiles.js"
 const realTooltip = await import("../shared/Tooltip.js");
 const realChatController = await import("../../hooks/use-chat-controller.js");
 
-mock.module("../../i18n/context.js", () => ({
+vi.mock("../../i18n/context.js", () => ({
 	...realI18n,
 	useT: () => ({ t: (key: string) => key, locale: "en", setLocale: () => {}, ready: true }),
 }));
 
 // Provider profiles: one active profile with two favorites — one tool-capable,
 // one not. The tool-only filtering is what the test pins.
-mock.module("../../hooks/use-provider-profiles.js", () => ({
+vi.mock("../../hooks/use-provider-profiles.js", () => ({
 	...realProviderProfiles,
 	useProviderProfiles: () => ({
 		activeProviderProfile: { id: "p1", name: "OpenAI Pro", defaultModel: "gpt-4o" },
@@ -58,7 +57,7 @@ mock.module("../../hooks/use-provider-profiles.js", () => ({
 				{ modelId: "gpt-3.5", label: "GPT-3.5 (no tools)", contextLength: 16000 },
 			],
 		},
-		handleSelectFavoriteProviderModel: mock(async (_profileId: string, _modelId: string) => {}),
+		handleSelectFavoriteProviderModel: vi.fn(async (_profileId: string, _modelId: string) => {}),
 	}),
 }));
 
@@ -70,18 +69,18 @@ mock.module("../../hooks/use-provider-profiles.js", () => ({
 
 // Send/cancel: the co-author box reuses the chat pipeline, but we don't want a
 // real send here — stub the two methods the component calls.
-mock.module("../../hooks/use-chat-controller.js", () => ({
+vi.mock("../../hooks/use-chat-controller.js", () => ({
 	...realChatController,
 	useChatController: () => ({
-		handleSend: mock(async () => {}),
-		handleCancelGeneration: mock(() => {}),
+		handleSend: vi.fn(async () => {}),
+		handleCancelGeneration: vi.fn(() => {}),
 	}),
 }));
 
 // CustomTooltip (Radix) needs a TooltipProvider ancestor the isolated render
 // lacks; passthrough keeps the box's children under test. Same pattern as
 // CoauthorTopBar.test.
-mock.module("../shared/Tooltip.js", () => ({
+vi.mock("../shared/Tooltip.js", () => ({
 	...realTooltip,
 	CustomTooltip: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
@@ -92,9 +91,9 @@ const MODULES: CoauthorModule[] = [
 	{ id: "default", name: "Default Co-Author", description: "", basePrompt: "p", openingMessage: "", skillIds: [], toolSet: {}, maxSteps: 5, isBuiltIn: true },
 	{ id: "profile-editor", name: "Profile Editor", description: "", basePrompt: "p", openingMessage: "", skillIds: [], toolSet: {}, maxSteps: 3, isBuiltIn: true },
 ];
-const listCoauthorModulesAction = mock(() => Promise.resolve(MODULES));
-const setCoauthorModuleAction = mock(async (_chatId: string, _moduleId: string | null) => {});
-mock.module("../../stores/api-actions/chat-actions.js", () => ({
+const listCoauthorModulesAction = vi.fn(() => Promise.resolve(MODULES));
+const setCoauthorModuleAction = vi.fn(async (_chatId: string, _moduleId: string | null) => {});
+vi.mock("../../stores/api-actions/chat-actions.js", () => ({
 	listCoauthorModulesAction,
 	setCoauthorModuleAction,
 }));
@@ -136,7 +135,6 @@ function seedStores() {
 }
 
 describe("CoauthorInputArea", () => {
-	useDomEnv();
 
 	beforeEach(() => {
 		listCoauthorModulesAction.mockReturnValue(Promise.resolve(MODULES));

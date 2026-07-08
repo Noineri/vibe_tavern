@@ -1,6 +1,5 @@
-import { describe, test, expect, mock } from "bun:test";
+import { describe, test, expect, vi } from "vitest";
 import { renderHook, waitFor } from "@testing-library/react";
-import { useDomEnv } from "../../../test/dom-env.js";
 import {
   filterToolCapableModels,
   useToolCapableModels,
@@ -9,7 +8,6 @@ import {
 import { useProviderDataStore } from "../../stores/provider-data-store.js";
 import type { ProviderProfileRecord } from "../../api/types.js";
 
-useDomEnv();
 
 /**
  * Inline factory for a complete ClientProviderProfileRecord. The wire type has
@@ -174,7 +172,7 @@ describe("useToolCapableModels (hook)", () => {
     // test is replaced and every other export stays genuine (AGENTS.md
     // mock.module gotcha — a mock factory persists process-globally otherwise).
     const real = await import("../../api/provider-api.js");
-    const fetchSpy = mock(() =>
+    const fetchSpy = vi.fn(() =>
       Promise.resolve({
         models: [
           { id: "live-tool", label: "Live Tool", supportsTools: true },
@@ -182,7 +180,7 @@ describe("useToolCapableModels (hook)", () => {
         ],
       }),
     );
-    mock.module("../../api/provider-api.js", () => ({ ...real, fetchProviderProfileModels: fetchSpy }));
+    vi.mock("../../api/provider-api.js", () => ({ ...real, fetchProviderProfileModels: fetchSpy }));
 
     useProviderDataStore.setState({
       profiles: [makeProfile({ id: "prof-2", cachedModels: { models: [], cachedAt: "" } })],
@@ -198,6 +196,6 @@ describe("useToolCapableModels (hook)", () => {
     expect(result.current.loading).toBe(false);
     expect(result.current.error).toBeNull();
 
-    mock.restore();
+    vi.restoreAllMocks();
   });
 });

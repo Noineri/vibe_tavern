@@ -25,19 +25,18 @@
  * gotcha) so the process-global mock does not leak undefined exports into other
  * test files that import LocaleProvider etc.
  */
-import { describe, it, expect, mock } from "bun:test";
-import { useDomEnv } from "../../../test/dom-env.js";
+import { describe, it, expect, vi } from "vitest";
 import { render, fireEvent } from "@testing-library/react";
 
-const i18nReal = await import("../../i18n/context.js");
-mock.module("../../i18n/context.js", () => ({
-	...i18nReal,
-	useT: () => ({ t: (key: string) => key, locale: "en", setLocale: () => {}, ready: true }),
-}));
+vi.mock("../../i18n/context.js", async (importOriginal) => {
+	const real = await importOriginal();
+	return {
+		...real,
+		useT: () => ({ t: (key: string) => key, locale: "en", setLocale: () => {}, ready: true }),
+	};
+});
 
 import { ActionSheet, type ActionSheetItem } from "./ActionSheet.js";
-
-useDomEnv();
 
 function item(overrides: Partial<ActionSheetItem> & { label: string }): ActionSheetItem {
 	return {

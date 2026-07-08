@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vitest";
 import { EditorState, Transaction, type Text } from "@codemirror/state";
 import { lockedHeadings, changeTouchesHeading, LOCKED_HEADING_RE } from "./vibe-md-locked-headings.js";
 

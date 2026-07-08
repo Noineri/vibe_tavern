@@ -13,7 +13,7 @@
  *    switching branches within the same chat (clamp shrinks large→small but
  *    cannot extend small→large, so the range freezes near a stale value).
  */
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vitest";
 import { computeRangeAfterChange } from "./ContextMemoryModal.js";
 
 describe("computeRangeAfterChange — scope change resets range", () => {

@@ -13,12 +13,10 @@
  *
  * Sole consumer today: LoreEntryEditor character-filter picker.
  */
-import { describe, it, expect, vi } from "bun:test";
-import { useDomEnv } from "../../../test/dom-env.js";
+import { describe, it, expect, vi } from "vitest";
 import { render, fireEvent, getAllByRole } from "@testing-library/react";
 import { ToggleChips } from "./ToggleChips.js";
 
-useDomEnv();
 
 const opts = [
 	{ value: "a", label: "Apple" },

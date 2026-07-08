@@ -13,8 +13,7 @@
  * clearTurn) drive persistence end-to-end — the wiring that makes a reload
  * rehydrate the in-review diff.
  */
-import { describe, it, expect, beforeEach } from "bun:test";
-import { useDomEnv } from "../../test/dom-env.js";
+import { describe, it, expect, beforeEach } from "vitest";
 import {
 	finalizeForPersistence,
 	serializeDraft,
@@ -112,7 +111,6 @@ describe("coauthor-draft — pure serialization", () => {
 });
 
 describe("coauthor-draft — localStorage I/O", () => {
-	useDomEnv();
 
 	beforeEach(() => {
 		localStorage.clear();
@@ -165,7 +163,6 @@ describe("coauthor-draft — localStorage I/O", () => {
 });
 
 describe("coauthor-draft — store integration (the reload contract)", () => {
-	useDomEnv();
 
 	beforeEach(() => {
 		localStorage.clear();

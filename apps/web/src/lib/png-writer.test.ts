@@ -14,7 +14,7 @@
  * documented by the `v1CharData` typedef in
  * SillyTavern/public/scripts/char-data.js.
  */
-import { test, expect } from "bun:test";
+import { test, expect } from "vitest";
 import {
   embedCharaMetadata,
   // exportCharaCardPng,  // canvas-dependent; covered indirectly via embed

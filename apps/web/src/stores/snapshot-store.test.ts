@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test } from "bun:test";
+import { beforeEach, describe, expect, test } from "vitest";
 import type { ChatId, ChatBranchId } from "@vibe-tavern/domain";
 import { useSnapshotStore } from "./snapshot-store.js";
 import type { AppCharacter, AppMessage, AppSnapshot } from "../app-client.js";

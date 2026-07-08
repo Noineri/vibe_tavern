@@ -1,6 +1,5 @@
-import { describe, test, expect, beforeAll, afterAll, afterEach, beforeEach, mock } from "bun:test";
+import { describe, test, expect, beforeAll, afterAll, afterEach, beforeEach, vi } from "vitest";
 import { render, cleanup, act } from "@testing-library/react";
-import { GlobalRegistrator } from "@happy-dom/global-registrator";
 
 /**
  * Variant-carousel gating invariant for the mobile message actions row.
@@ -54,11 +53,11 @@ const STABLE_CONTROLLER = {
   handleRenameBranch: NOOP_ASYNC,
 };
 
-mock.module("../../hooks/use-chat-controller.js", () => ({
+vi.mock("../../hooks/use-chat-controller.js", () => ({
   useChatController: () => STABLE_CONTROLLER,
 }));
 
-mock.module("../../i18n/context.js", () => ({
+vi.mock("../../i18n/context.js", () => ({
   useT: () => ({ t: (key: string) => key, locale: "en", setLocale: NOOP, ready: true }),
 }));
 
@@ -67,7 +66,6 @@ mock.module("../../i18n/context.js", () => ({
 // ---------------------------------------------------------------------------
 
 beforeAll(() => {
-  GlobalRegistrator.register();
   if (typeof window !== "undefined") {
     // Mobile viewport: the (max-width: 768px) query must match.
     window.matchMedia = (q: string) => ({
@@ -88,7 +86,6 @@ beforeAll(() => {
 });
 
 afterAll(() => {
-  GlobalRegistrator.unregister();
 });
 
 afterEach(() => {

@@ -12,9 +12,8 @@
  * cause for which DropdownSelect.test is `.skip`'d; see overlay-primitive-audit
  * execution log). The hook path is environment-agnostic.
  */
-import { describe, it, expect, mock, beforeEach } from "bun:test";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import { renderHook, waitFor } from "@testing-library/react";
-import { useDomEnv } from "../../../test/dom-env.js";
 import type { CoauthorModule } from "@vibe-tavern/api-contracts";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
 import { useProviderDataStore } from "../../stores/provider-data-store.js";
@@ -31,14 +30,14 @@ const MODULES: CoauthorModule[] = [
 	{ id: "profile-editor", name: "Profile Editor", description: "", basePrompt: "p", openingMessage: "", skillIds: [], toolSet: {}, maxSteps: 3, isBuiltIn: true },
 ];
 
-mock.module("../../stores/api-actions/chat-actions.js", () => ({
-	listCoauthorModulesAction: mock(() => Promise.resolve(MODULES)),
-	setCoauthorModuleAction: mock(async (_chatId: string, _moduleId: string | null) => {}),
+vi.mock("../../stores/api-actions/chat-actions.js", () => ({
+	listCoauthorModulesAction: vi.fn(() => Promise.resolve(MODULES)),
+	setCoauthorModuleAction: vi.fn(async (_chatId: string, _moduleId: string | null) => {}),
 }));
 
 // useT must return a stable t(); the hook builds labels off it.
 const realI18n = await import("../../i18n/context.js");
-mock.module("../../i18n/context.js", () => ({
+vi.mock("../../i18n/context.js", () => ({
 	...realI18n,
 	useT: () => ({ t: (key: string) => key, locale: "en", setLocale: () => {}, ready: true }),
 }));
@@ -50,7 +49,7 @@ const realProviderProfiles = await import("../../hooks/use-provider-profiles.js"
 // Stub them to deterministic inputs so the test pins the COMPOSITION (favorite
 // ∩ tool-capable), not the hooks' own internals (covered in
 // useToolCapableModels.test.ts).
-mock.module("../../hooks/use-provider-profiles.js", () => ({
+vi.mock("../../hooks/use-provider-profiles.js", () => ({
 	...realProviderProfiles,
 	useProviderProfiles: () => ({
 		activeProviderProfile: { id: "p1", name: "OpenAI Pro", defaultModel: "gpt-4o", contextBudget: 128000, maxTokens: 4096 },
@@ -61,7 +60,7 @@ mock.module("../../hooks/use-provider-profiles.js", () => ({
 				{ modelId: "gpt-3.5", label: "GPT-3.5 (no tools)", contextLength: 16000 },
 			],
 		},
-		handleSelectFavoriteProviderModel: mock(async (_profileId: string, _modelId: string) => {}),
+		handleSelectFavoriteProviderModel: vi.fn(async (_profileId: string, _modelId: string) => {}),
 	}),
 }));
 
@@ -75,7 +74,6 @@ mock.module("../../hooks/use-provider-profiles.js", () => ({
 // Avoid unused-import lint on the now-mocked originals (referenced for spread).
 void realProviderProfiles;
 
-useDomEnv();
 
 describe("useModuleSwitch", () => {
 	beforeEach(() => {

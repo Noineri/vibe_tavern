@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vitest";
 import type { ChatListItem } from "../api/types.js";
 import type { ChatId, CharacterId } from "@vibe-tavern/domain";
 import { resolveChatRemovalMode } from "./chat-removal-mode.js";

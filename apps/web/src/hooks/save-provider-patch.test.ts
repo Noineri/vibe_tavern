@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vitest";
 import { buildFavoriteModelSwitchPatch, computeOverlayPatch, computeSavePatch } from "./save-provider-patch.js";
 import type { FormState } from "../components/modals/ProviderModal.js";
 

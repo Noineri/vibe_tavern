@@ -17,8 +17,7 @@
  * mounting in happy-dom is graceful-skip (mirrors VibeMdView.test.tsx); the
  * header affordance text is the always-present primary assertion.
  */
-import { describe, it, expect, mock, afterEach, beforeEach } from "bun:test";
-import { useDomEnv } from "../../../test/dom-env.js";
+import { describe, it, expect, afterEach, beforeEach, vi } from "vitest";
 import { render, fireEvent, waitFor } from "@testing-library/react";
 import type { AppCharacter } from "../../app-client.js";
 import type { CoauthorToolActivity } from "../../stores/coauthor-turn-store.js";
@@ -29,27 +28,27 @@ import { coauthorToolOutputSchema } from "@vibe-tavern/api-contracts";
 import { toast } from "sonner";
 
 // Mock useT at the module boundary — returns keys verbatim so assertions match.
-mock.module("../../i18n/context.js", () => ({
+vi.mock("../../i18n/context.js", () => ({
 	useT: () => ({ t: (key: string) => key, locale: "en", setLocale: () => {}, ready: true }),
 }));
 
 // useCharacterController is not consumed by any other test file → safe to mock
 // fully. Stub the save write-path so the test never hits the network.
-const handleSaveCharacter = mock(() => Promise.resolve());
-mock.module("../../hooks/use-character-controller.js", () => ({
+const handleSaveCharacter = vi.fn(() => Promise.resolve());
+vi.mock("../../hooks/use-character-controller.js", () => ({
 	useCharacterController: () => ({ handleSaveCharacter, isSavingCharacter: false }),
 }));
 
 // CA-13: the lorebook picker (LinkBindingPopover) pulls in CustomTooltip,
 // which needs a Radix TooltipProvider context irrelevant to the form's
 // behaviours. Passthrough it, mirroring VibeMdView.test.tsx.
-mock.module("../shared/Tooltip.js", () => ({
+vi.mock("../shared/Tooltip.js", () => ({
 	CustomTooltip: ({ children }: { children: React.ReactNode }) => children,
 	TooltipProvider: ({ children }: { children: React.ReactNode }) => children,
 }));
 // The picker fetches the lorebook list on mount; stub it empty so the test
 // never hits the network.
-mock.module("../../api/lorebook-api.js", () => ({
+vi.mock("../../api/lorebook-api.js", () => ({
 	listAllLorebooks: () => Promise.resolve([]),
 }));
 
@@ -58,7 +57,7 @@ mock.module("../../api/lorebook-api.js", () => ({
 // value. See AGENTS.md mock.module gotcha.
 let __isSending = false;
 const realChatStore = await import("../../stores/chat-store.js");
-mock.module("../../stores/chat-store.js", () => ({
+vi.mock("../../stores/chat-store.js", () => ({
 	...realChatStore,
 	useIsSending: () => __isSending,
 }));
@@ -104,7 +103,6 @@ function cmEditable(container: HTMLElement): string | null {
 }
 
 describe("CoauthorCharacterForm", () => {
-	useDomEnv();
 
 	/** Original fetch — restored in afterEach so the globalThis.fetch mock (Apply) never leaks cross-file. */
 	const realFetch = globalThis.fetch;
@@ -262,7 +260,7 @@ describe("CoauthorCharacterForm", () => {
 		seedReviewing({ description: "A reserved arachnid weaver." });
 		useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, makeProfileActivity("t1", "Bold and direct."));
 
-		const fetchMock = mock((_url: unknown, _init: unknown) =>
+		const fetchMock = vi.fn((_url: unknown, _init: unknown) =>
 			Promise.resolve({
 				ok: true,
 				status: 200,
@@ -303,10 +301,10 @@ describe("CoauthorCharacterForm", () => {
 		seedReviewing();
 		useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, makeProfileActivity("t1", "Bold."));
 
-		const warningSpy = mock(() => {});
+		const warningSpy = vi.fn(() => {});
 		toast.warning = warningSpy as never;
 
-		globalThis.fetch = mock((_u: unknown, _i: unknown) =>
+		globalThis.fetch = vi.fn((_u: unknown, _i: unknown) =>
 			Promise.resolve({
 				ok: true,
 				status: 200,
@@ -336,7 +334,7 @@ describe("CoauthorCharacterForm", () => {
 		seedReviewing();
 		useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, makeProfileActivity("t1", "Bold."));
 
-		const fetchMock = mock(() => Promise.resolve({ ok: true, status: 200, json: async () => ({}), text: async () => "" }));
+		const fetchMock = vi.fn(() => Promise.resolve({ ok: true, status: 200, json: async () => ({}), text: async () => "" }));
 		globalThis.fetch = fetchMock as never;
 
 		const { getByText } = render(<CoauthorCharacterForm />);
@@ -382,7 +380,7 @@ describe("CoauthorCharacterForm", () => {
 		seedReviewing();
 		useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, twoHunkProfileActivity());
 
-		const fetchMock = mock((_u: unknown, _i: unknown) =>
+		const fetchMock = vi.fn((_u: unknown, _i: unknown) =>
 			Promise.resolve({
 				ok: true,
 				status: 200,
@@ -423,7 +421,7 @@ describe("CoauthorCharacterForm", () => {
 		seedReviewing();
 		useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, twoHunkProfileActivity());
 
-		const fetchMock = mock((_u: unknown, _i: unknown) =>
+		const fetchMock = vi.fn((_u: unknown, _i: unknown) =>
 			Promise.resolve({ ok: true, status: 200, json: async () => ({ character: makeCharacter(), corrections: [] }), text: async () => "" }),
 		);
 		globalThis.fetch = fetchMock as never;
@@ -446,7 +444,7 @@ describe("CoauthorCharacterForm", () => {
 		seedReviewing();
 		useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, twoHunkProfileActivity());
 
-		const fetchMock = mock((_u: unknown, _i: unknown) =>
+		const fetchMock = vi.fn((_u: unknown, _i: unknown) =>
 			Promise.resolve({ ok: true, status: 200, json: async () => ({ character: makeCharacter(), corrections: [] }), text: async () => "" }),
 		);
 		globalThis.fetch = fetchMock as never;

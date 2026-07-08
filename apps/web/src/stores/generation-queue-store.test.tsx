@@ -1,7 +1,6 @@
-import { describe, test, expect, beforeAll, afterAll, beforeEach } from "bun:test";
+import { describe, test, expect, beforeAll, afterAll, beforeEach } from "vitest";
 import { Profiler, type ProfilerOnRenderCallback } from "react";
 import { render, cleanup, act } from "@testing-library/react";
-import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import {
   useGenerationQueueStore,
   useQueueCount,
@@ -23,8 +22,6 @@ import {
  * self-check Q3 re-render guard.
  */
 
-beforeAll(() => GlobalRegistrator.register());
-afterAll(() => GlobalRegistrator.unregister());
 
 function resetStore() {
   useGenerationQueueStore.setState({ jobsByChat: {} });

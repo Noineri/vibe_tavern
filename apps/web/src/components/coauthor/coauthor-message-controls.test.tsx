@@ -1,6 +1,5 @@
-import { describe, test, expect, beforeAll, afterAll, afterEach, beforeEach, mock } from "bun:test";
+import { describe, test, expect, beforeAll, afterAll, afterEach, beforeEach, vi } from "vitest";
 import { render, cleanup, act } from "@testing-library/react";
-import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { MessageBlock } from "../chat/MessageBlock.js";
 import { CoauthorMessageBlock } from "./CoauthorMessageBlock.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
@@ -32,20 +31,18 @@ const STABLE_CONTROLLER = {
   handleRenameBranch: NOOP_ASYNC,
 };
 
-mock.module("../../hooks/use-chat-controller.js", () => ({
+vi.mock("../../hooks/use-chat-controller.js", () => ({
   useChatController: () => STABLE_CONTROLLER,
 }));
 
-mock.module("../../i18n/context.js", () => ({
+vi.mock("../../i18n/context.js", () => ({
   useT: () => ({ t: (key: string) => key, locale: "en", setLocale: NOOP, ready: true }),
 }));
 
 beforeAll(() => {
-  GlobalRegistrator.register();
 });
 
 afterAll(() => {
-  GlobalRegistrator.unregister();
 });
 
 afterEach(() => {

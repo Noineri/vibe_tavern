@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vitest";
 import { normalizeSnapshot } from "./normalize.js";
 import type { AppCharacter, AppMessage, AppSnapshot } from "./types.js";
 

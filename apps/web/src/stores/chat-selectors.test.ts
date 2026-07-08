@@ -10,7 +10,7 @@
  * The branch-scoping is now structural (cache key), not a client-side filter.
  * These tests pin the selection predicate against both stores.
  */
-import { beforeEach, describe, expect, mock, test } from "bun:test";
+import { beforeEach, describe, expect, test } from "vitest";
 import type { ChatBranchId, ChatId, PromptTraceRecordDto, AssemblePromptResponse } from "@vibe-tavern/domain";
 import { useSnapshotStore } from "./snapshot-store.js";
 import { useTraceHistoryStore, type TraceHistoryEntry } from "./trace-history-store.js";
@@ -152,5 +152,3 @@ describe("useActiveTrace — branch-scoped selection (lazy cache)", () => {
 	});
 });
 
-// Keep mock import referenced so bun:test types resolve in colocated tests.
-void mock;

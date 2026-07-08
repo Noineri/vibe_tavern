@@ -1,4 +1,5 @@
-import { describe, expect, test } from "bun:test";
+// @vitest-environment node
+import { describe, expect, test } from "vitest";
 import { resolveEntityAvatarUrl } from "./avatar.js";
 
 /**
@@ -19,7 +20,7 @@ import { resolveEntityAvatarUrl } from "./avatar.js";
  *  - Legacy + !preferFull → avatarAssetId
  *  - No avatar at all → null
  *
- * In Bun's test env there is no window, so getGatewayBaseUrl() returns the
+ * In the node test env there is no window, so getGatewayBaseUrl() returns the
  * SSR fallback "http://127.0.0.1:8787" — assertions use that base.
  */
 const BASE = "http://127.0.0.1:8787";
@@ -222,7 +223,7 @@ describe("resolveEntityAvatarUrl", () => {
         preferFull: true,
       })!;
       expect(url).toMatch(/\/avatar\/full\?v=\d+$/);
-      expect(url).not.toEndWith("/avatar/full");
+      expect(url).not.toMatch(/\/avatar\/full$/);
     });
 
     test("invalid updatedAt string falls back like missing", () => {

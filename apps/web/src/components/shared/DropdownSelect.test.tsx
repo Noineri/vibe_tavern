@@ -19,12 +19,10 @@
  * row, input keeps focus in searchable mode). To exercise them against a real
  * DOM, run the file under a jsdom/playwright runner with non-zero layout.
  */
-import { describe, it, expect } from "bun:test";
-import { useDomEnv } from "../../../test/dom-env.js";
+import { describe, it, expect } from "vitest";
 import { render, fireEvent, waitFor } from "@testing-library/react";
 import { DropdownSelect } from "./DropdownSelect.js";
 
-useDomEnv();
 
 const threeOptions = [
 	{ id: "a", label: "Apple" },

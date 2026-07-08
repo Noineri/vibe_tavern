@@ -10,7 +10,7 @@
  * override pattern so the rest of chat-api stays genuine (see AGENTS gotcha on
  * mock.module being process-global).
  */
-import { describe, test, expect, beforeEach, mock } from "bun:test";
+import { describe, test, expect, beforeEach, vi } from "vitest";
 import type { PromptTraceRecordDto } from "@vibe-tavern/domain";
 import { useTraceHistoryStore } from "./trace-history-store.js";
 
@@ -19,7 +19,7 @@ import { useTraceHistoryStore } from "./trace-history-store.js";
 const real = await import("../api/chat-api.js");
 type FetchImpl = (chatId: string, opts?: { messageId?: string; branchId?: string }) => Promise<PromptTraceRecordDto[]>;
 let mockFetch: FetchImpl | null = null;
-mock.module("../api/chat-api.js", () => ({
+vi.mock("../api/chat-api.js", () => ({
   ...real,
   fetchTraceHistory: ((chatId: string, opts?: { messageId?: string; branchId?: string }) =>
     mockFetch ? mockFetch(chatId, opts) : real.fetchTraceHistory(chatId as never, opts)) as FetchImpl,

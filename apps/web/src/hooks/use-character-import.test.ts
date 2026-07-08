@@ -23,23 +23,21 @@
  * and the `mock.module` cross-file-leak gotcha (reals are captured and spread
  * first, only the specific fns are overridden).
  */
-import { mock, test, expect, beforeEach } from "bun:test";
+import { test, expect, beforeEach, vi } from "vitest";
 import { renderHook, act } from "@testing-library/react";
-import { useDomEnv } from "../../test/dom-env.js";
 
-useDomEnv();
 
 // ─── Mock fns (captured real modules are spread in to avoid cross-file leak) ─
 
-const uploadCharacterAvatar = mock((_id: string, _file: File, _full?: File) =>
+const uploadCharacterAvatar = vi.fn((_id: string, _file: File, _full?: File) =>
   Promise.resolve({ avatarExt: ".png", avatarFullExt: ".png" }));
 // Legacy fns that must NEVER be called by the migrated hook.
-const uploadAsset = mock((_f: File) => Promise.resolve({ assetId: "asset-legacy" }));
-const updateCharacterAvatar = mock((_cid: string, _chatId: unknown, _aid: string) =>
+const uploadAsset = vi.fn((_f: File) => Promise.resolve({ assetId: "asset-legacy" }));
+const updateCharacterAvatar = vi.fn((_cid: string, _chatId: unknown, _aid: string) =>
   Promise.resolve({} as never));
-const fetchBootstrapAction = mock((_opts?: { silent?: boolean; skipSnapshotSync?: boolean }) =>
+const fetchBootstrapAction = vi.fn((_opts?: { silent?: boolean; skipSnapshotSync?: boolean }) =>
   Promise.resolve());
-const importCharacterAction = mock((_input: { fileName: string; jsonText: string }) =>
+const importCharacterAction = vi.fn((_input: { fileName: string; jsonText: string }) =>
   Promise.resolve({
     activeChatId: "chat-1",
     snapshot: { character: { id: "char-imported", name: "Test", avatarExt: null } },
@@ -50,17 +48,17 @@ const realAppClient = await import("../app-client.js");
 const realCharacterActions = await import("../stores/api-actions/character-actions.js");
 const realBootstrapActions = await import("../stores/api-actions/bootstrap-actions.js");
 
-await mock.module("../app-client.js", () => ({
+await vi.mock("../app-client.js", () => ({
   ...realAppClient,
   uploadCharacterAvatar,
   uploadAsset,
   updateCharacterAvatar,
 }));
-await mock.module("../stores/api-actions/character-actions.js", () => ({
+await vi.mock("../stores/api-actions/character-actions.js", () => ({
   ...realCharacterActions,
   importCharacterAction,
 }));
-await mock.module("../stores/api-actions/bootstrap-actions.js", () => ({
+await vi.mock("../stores/api-actions/bootstrap-actions.js", () => ({
   ...realBootstrapActions,
   fetchBootstrapAction,
 }));

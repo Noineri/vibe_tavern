@@ -1,7 +1,6 @@
-import { describe, test, expect, beforeEach, beforeAll, afterAll, afterEach, mock } from "bun:test";
+import { describe, test, expect, beforeEach, beforeAll, vi } from "vitest";
 import { Profiler, type ProfilerOnRenderCallback, type ReactNode } from "react";
-import { render, act, cleanup } from "@testing-library/react";
-import { GlobalRegistrator } from "@happy-dom/global-registrator";
+import { render, act } from "@testing-library/react";
 
 /**
  * Render-isolation invariant for MessageBlock.
@@ -44,32 +43,36 @@ import { GlobalRegistrator } from "@happy-dom/global-registrator";
 // relevant to the isolation graph under test.
 // ---------------------------------------------------------------------------
 
-const NOOP = () => {};
-const NOOP_ASYNC = async () => {};
+const { STABLE_CONTROLLER, NOOP } = vi.hoisted(() => {
+  const NOOP = () => {};
+  const NOOP_ASYNC = async () => {};
+  return {
+    NOOP,
+    STABLE_CONTROLLER: {
+      handleSend: NOOP_ASYNC,
+      handleCancelGeneration: NOOP,
+      handleSwitchChat: NOOP_ASYNC,
+      handleStartEdit: NOOP,
+      handleCancelEdit: NOOP,
+      handleSaveMessageEdit: NOOP_ASYNC,
+      handleDeleteMessage: NOOP_ASYNC,
+      handleDeleteVariant: NOOP_ASYNC,
+      handleRegenerateMessage: NOOP_ASYNC,
+      handleSelectMessageVariant: NOOP_ASYNC,
+      handleResend: NOOP_ASYNC,
+      handleFork: NOOP_ASYNC,
+      handleActivateBranch: NOOP_ASYNC,
+      handleDeleteActiveBranch: NOOP_ASYNC,
+      handleRenameBranch: NOOP_ASYNC,
+    },
+  };
+});
 
-const STABLE_CONTROLLER = {
-  handleSend: NOOP_ASYNC,
-  handleCancelGeneration: NOOP,
-  handleSwitchChat: NOOP_ASYNC,
-  handleStartEdit: NOOP,
-  handleCancelEdit: NOOP,
-  handleSaveMessageEdit: NOOP_ASYNC,
-  handleDeleteMessage: NOOP_ASYNC,
-  handleDeleteVariant: NOOP_ASYNC,
-  handleRegenerateMessage: NOOP_ASYNC,
-  handleSelectMessageVariant: NOOP_ASYNC,
-  handleResend: NOOP_ASYNC,
-  handleFork: NOOP_ASYNC,
-  handleActivateBranch: NOOP_ASYNC,
-  handleDeleteActiveBranch: NOOP_ASYNC,
-  handleRenameBranch: NOOP_ASYNC,
-};
-
-mock.module("../../hooks/use-chat-controller.js", () => ({
+vi.mock("../../hooks/use-chat-controller.js", () => ({
   useChatController: () => STABLE_CONTROLLER,
 }));
 
-mock.module("../../i18n/context.js", () => ({
+vi.mock("../../i18n/context.js", () => ({
   useT: () => ({ t: (key: string) => key, locale: "en", setLocale: NOOP, ready: true }),
 }));
 
@@ -86,8 +89,9 @@ mock.module("../../i18n/context.js", () => ({
 // ---------------------------------------------------------------------------
 
 beforeAll(() => {
-  // Register the DOM FIRST so the shims below see a defined `window`.
-  GlobalRegistrator.register();
+  // vitest's happy-dom environment provides `window` per file (no
+  // GlobalRegistrator needed); these shims stay as belt-and-suspenders for any
+  // API happy-dom hasn't implemented.
   if (typeof window !== "undefined") {
     if (!window.matchMedia) {
       window.matchMedia = (q: string) => ({
@@ -107,15 +111,7 @@ beforeAll(() => {
   }
 });
 
-afterEach(() => {
-  // Unmount anything this file rendered so commits/cleanup don't leak across cases.
-  cleanup();
-});
 
-afterAll(() => {
-  // Remove the global DOM so subsequent DOM-averse test files see no window.
-  GlobalRegistrator.unregister();
-});
 
 // ---------------------------------------------------------------------------
 // Dynamic import AFTER mocks are registered.

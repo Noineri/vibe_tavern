@@ -11,6 +11,7 @@
     "test": "bun test"
   },
   "dependencies": {
+    "@base-ui/react": "^1.6.0",
     "@codemirror/lang-javascript": "^6.2.5",
     "@codemirror/lang-markdown": "^6.5.0",
     "@codemirror/language": "^6.12.3",
@@ -68,7 +69,10 @@
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.1",
+    "happy-dom": "^20.10.6",
+    "jsdom": "^29.1.1",
     "tailwindcss": "^4",
-    "vite": "^8.0.9"
+    "vite": "^8.0.9",
+    "vitest": "^4.1.10"
   }
 }

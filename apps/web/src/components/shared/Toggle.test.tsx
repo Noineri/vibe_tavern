@@ -20,12 +20,10 @@
  * resolved at runtime via a small helper so the behavioral assertions below
  * stay valid across both implementations.
  */
-import { describe, it, expect, vi } from "bun:test";
-import { useDomEnv } from "../../../test/dom-env.js";
+import { describe, it, expect, vi } from "vitest";
 import { render, fireEvent } from "@testing-library/react";
 import { Toggle } from "./Toggle.js";
 
-useDomEnv();
 
 /** Resolves the interactive control — `input[type=checkbox]` today,
  *  `button[role=switch]` after the Radix migration. */

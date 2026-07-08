@@ -12,7 +12,7 @@
  * dependent greeting calls, no-proposal fallthrough, and the exclusion of
  * streaming/error placeholders.
  */
-import { describe, it, expect } from "bun:test";
+import { describe, it, expect } from "vitest";
 import type { BuildCharacterDraft } from "@vibe-tavern/api-contracts";
 import { parseProfileMd } from "@vibe-tavern/db/codecs";
 import { aggregateCoauthorProposal, buildPartialApplyRequest } from "./coauthor-apply-aggregate.js";

@@ -15,8 +15,7 @@
  * The CodeMirror surface mounts inside the DOM (happy-dom); assertions that read
  * `.cm-content` degrade gracefully if CM fails to mount in the test env.
  */
-import { describe, it, expect, mock } from "bun:test";
-import { useDomEnv } from "../../../../test/dom-env.js";
+import { describe, it, expect, vi } from "vitest";
 import { render, fireEvent } from "@testing-library/react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -24,16 +23,16 @@ import { buildCharacterDraftSchema, type BuildCharacterDraft } from "@vibe-taver
 import { VibeMdView } from "./VibeMdView.js";
 
 // Mock useT at the module boundary — the editor imports i18n for labels.
-mock.module("../../../i18n/context.js", () => ({
+vi.mock("../../../i18n/context.js", () => ({
 	useT: () => ({ t: (key: string) => key, locale: "en", setLocale: () => {}, ready: true }),
 }));
 // Mock useIsMobile so the desktop path renders deterministically.
-mock.module("../../../hooks/use-mobile.js", () => ({
+vi.mock("../../../hooks/use-mobile.js", () => ({
 	useIsMobile: () => false,
 }));
 // Mock CustomTooltip to a passthrough — the real one needs a TooltipProvider
 // context (Radix) that is irrelevant to the editor's field interactions.
-mock.module("../../shared/Tooltip.js", () => ({
+vi.mock("../../shared/Tooltip.js", () => ({
 	CustomTooltip: ({ children }: { children: React.ReactNode }) => children,
 	TooltipProvider: ({ children }: { children: React.ReactNode }) => children,
 }));
@@ -70,7 +69,6 @@ function Harness({ draft }: { draft: BuildCharacterDraft }) {
 }
 
 describe("VibeMdView (rework)", () => {
-	useDomEnv();
 
 	it("renders the editor surface and exactly ONE accordion (Advanced fields)", () => {
 		const { container, getByText } = render(<Harness draft={makeDraft()} />);
