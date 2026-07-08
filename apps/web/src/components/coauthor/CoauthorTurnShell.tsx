@@ -3,6 +3,7 @@ import { useChatStore, useIsSending } from "../../stores/index.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
 import { useDisplayMessage, useMessageAuthor, useIsStreamingTarget, useStreamingRevealedFor } from "../../stores/chat-selectors.js";
 import { MessageShell, type MessageShellAuthorInfo } from "../chat/MessageShell.js";
+import type { MessageMetaContext } from "../../lib/message-meta-registry.js";
 import { DestructiveConfirmModal } from "../shared/destructive-confirm-modal.js";
 import { Markdown } from "../../lib/markdown.js";
 import { StreamingMarkdown } from "../chat/StreamingMarkdown.js";
@@ -13,6 +14,8 @@ import { AutoTextarea } from "../shared/auto-textarea.js";
 import { MobileExpandTextarea } from "../shared/MobileExpandTextarea.js";
 import { useT } from "../../i18n/context.js";
 import { resolveEntityAvatarUrl } from "../../lib/avatar.js";
+import { useBootstrapStore } from "../../stores/api-actions/bootstrap-actions.js";
+import { countTokens } from "../../utils/tokenizer.js";
 import { useChatController } from "../../hooks/use-chat-controller.js";
 import { useShallow } from "zustand/react/shallow";
 
@@ -55,6 +58,7 @@ export const CoauthorTurnShell = memo(function CoauthorTurnShell({
   const [copied, setCopied] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const messageActionId = useChatStore(s => s.messageActionId);
+  const promptPresets = useBootstrapStore((s) => s.data?.promptPresets ?? null);
 
   const assistantMessageIds = turnMessageIds.filter(id => {
     const role = useSnapshotStore.getState().messagesById[id]?.role;
@@ -116,6 +120,36 @@ export const CoauthorTurnShell = memo(function CoauthorTurnShell({
   };
 
   const isBusy = isSending || messageActionId === lastMessageIdInTurn;
+
+  // ── Coauthor turn metadata context ──
+  // Built from the turn's final assistant message + its selected variant.
+  // Provenance (model / preset / module / skill) is variant-scoped; tokenCount
+  // is the sum across all assistant parts of the turn; createdAt is the turn
+  // opening timestamp. Rendered once on the shell (= visually the last piece),
+  // not per CoauthorTurnPart.
+  const lastAssistantVariant =
+    lastAssistantMsg?.variants?.[lastAssistantMsg.selectedVariantIndex ?? 0] ?? null;
+  const coauthorPresetName =
+    lastAssistantVariant?.presetId && promptPresets
+      ? promptPresets.find((p) => p.id === lastAssistantVariant.presetId)?.name ?? null
+      : null;
+  const snapshotState = useSnapshotStore.getState();
+  const turnTokenCount = assistantMessageIds.reduce(
+    (sum, id) => sum + countTokens(snapshotState.messagesById[id]?.content ?? ""),
+    0,
+  );
+  const coauthorMetaCtx: MessageMetaContext = {
+    chatId: authorInfo.activeChatId,
+    messageId: turnId,
+    messageRole: "assistant",
+    variant: lastAssistantVariant,
+    variantIndex: lastAssistantMsg?.selectedVariantIndex ?? 0,
+    isStreaming: isGenerating,
+    isCoauthorTurn: true,
+    presetName: coauthorPresetName,
+    tokenCount: turnTokenCount,
+    createdAt: snapshotState.messagesById[turnId]?.createdAt ?? "",
+  };
 
   const confirmDeleteTurn = async () => {
     setDeleteConfirmOpen(false);
@@ -183,11 +217,7 @@ export const CoauthorTurnShell = memo(function CoauthorTurnShell({
       selectedVariantIndex={0}
       variantCount={1}
       canSwitchVariant={false}
-      tokenCount={0}
-      modelId={lastAssistantMsg?.modelId ?? null}
-      coauthorModuleId={lastAssistantMsg?.coauthorModuleId ?? null}
-      coauthorSkillId={lastAssistantMsg?.coauthorSkillId ?? null}
-      createdAt={useSnapshotStore.getState().messagesById[turnId]?.createdAt ?? ""}
+      metaCtx={coauthorMetaCtx}
       copied={copied}
       slotExtras={{}}
       variantControlsOverlay={null}

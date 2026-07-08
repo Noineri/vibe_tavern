@@ -7,6 +7,7 @@ import { resolveEntityAvatarUrl } from "../../../lib/avatar.js";
 import { replaceUiMacros } from "../../../lib/macros.js";
 import { Markdown } from "../../../lib/markdown.js";
 import { MessageShell } from "../MessageShell.js";
+import type { MessageMetaContext } from "../../../lib/message-meta-registry.js";
 import { AttachmentGrid } from "../AttachmentGrid.js";
 
 /**
@@ -53,9 +54,18 @@ export function PendingUserMessage() {
       selectedVariantIndex={0}
       variantCount={1}
       canSwitchVariant={false}
-      tokenCount={0}
-      modelId=""
-      createdAt={Date.now().toString()}
+      metaCtx={{
+        chatId: chatMeta.activeChat?.id ?? "",
+        messageId: "__pending-user",
+        messageRole: "user",
+        variant: null,
+        variantIndex: 0,
+        isStreaming: true,
+        isCoauthorTurn: false,
+        presetName: null,
+        tokenCount: 0,
+        createdAt: Date.now().toString(),
+      } satisfies MessageMetaContext}
       copied={false}
       slotExtras={{}}
       variantControlsOverlay={null}

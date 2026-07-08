@@ -2,6 +2,7 @@ import { memo, useState, useMemo, useRef, useEffect, useLayoutEffect } from "rea
 import { motion, AnimatePresence, useAnimationControls, type PanInfo } from "framer-motion";
 import { cn } from "../../lib/cn.js";
 import { resolveModelLabel } from "../../lib/model-resolve.js";
+import type { MessageMetaContext } from "../../lib/message-meta-registry.js";
 import { resolveEntityAvatarUrl } from "../../lib/avatar.js";
 import { Markdown } from "../../lib/markdown.js";
 
@@ -409,6 +410,20 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
 
   const hasSwipes = variantCount > 1 && !isCoauthorMode;
 
+  // ── Message metadata context (variant-scoped provenance) ──
+  const metaCtx: MessageMetaContext = {
+    chatId: authorInfo.activeChatId,
+    messageId: msg.id,
+    messageRole: msg.role,
+    variant: selectedVariant ?? null,
+    variantIndex: selectedVariantIndex,
+    isStreaming: isGenerating,
+    isCoauthorTurn: false,
+    presetName,
+    tokenCount: msg.tokenCount,
+    createdAt: msg.createdAt,
+  };
+
   return (
     <>
     {deleteConfirmOpen && (
@@ -439,10 +454,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
       selectedVariantIndex={selectedVariantIndex}
       variantCount={isCoauthorMode ? 1 : variantCount}
       canSwitchVariant={canSwitchVariant}
-      tokenCount={msg.tokenCount}
-      modelId={msg.modelId}
-      presetName={presetName}
-      createdAt={msg.createdAt}
+      metaCtx={metaCtx}
       copied={copied}
       slotExtras={{ reasoning: reasoningForSlot }}
       variantControlsOverlay={variantControlsOverlay}

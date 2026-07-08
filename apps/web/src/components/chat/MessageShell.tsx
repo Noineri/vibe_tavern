@@ -1,17 +1,24 @@
 import { type ReactNode, useState } from "react";
 import { createPortal } from "react-dom";
 import { cn } from "../../lib/cn.js";
-import { resolveModelLabel } from "../../lib/model-resolve.js";
 import { initials } from "../layout/app-shell-helpers.js";
 import { Icons } from "../shared/icons.js";
 import { ActionSheet, type ActionSheetItem } from "../shared/ActionSheet.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
 import { useT } from "../../i18n/context.js";
 import {
+  resolveMessageMeta,
+  type MessageMetaContext,
+} from "../../lib/message-meta-registry.js";
+import {
   resolveMessageSlots,
   type MessageSlotId,
   type MessageSlotContext,
 } from "../../lib/message-slot-registry.js";
+
+// Side-effect import: registers the core provenance badges (model, preset,
+// coauthor module+skill) with the message-meta registry at module load.
+import "./message-meta/badges.js";
 
 // ────────────────────────────────────────────────────────────────────────────
 // MessageShell
@@ -89,18 +96,8 @@ export interface MessageShellProps {
   variantCount: number;
   /** Whether variant switching is allowed. */
   canSwitchVariant: boolean;
-  /** Message token count for metadata. */
-  tokenCount: number;
-  /** Model ID for metadata display. */
-  modelId?: string | null;
-  /** Resolved preset name for metadata display (provenance of the selected variant). */
-  presetName?: string | null;
-  /** Resolved co-author module ID (if any). */
-  coauthorModuleId?: string | null;
-  /** Resolved co-author skill ID (if any). */
-  coauthorSkillId?: string | null;
-  /** Message creation timestamp. */
-  createdAt: string;
+  /** Message metadata context — variant-scoped provenance + token count + timestamp. */
+  metaCtx: MessageMetaContext;
   /** Whether the copy button was recently clicked (shows checkmark). */
   copied: boolean;
   /** Slot context extras (feature-specific data). */
@@ -151,12 +148,7 @@ export function MessageShell(props: MessageShellProps) {
     selectedVariantIndex,
     variantCount,
     canSwitchVariant,
-    tokenCount,
-    modelId,
-    presetName,
-    coauthorModuleId,
-    coauthorSkillId,
-    createdAt,
+    metaCtx,
     copied,
     slotExtras,
     variantControlsOverlay,
@@ -190,8 +182,6 @@ export function MessageShell(props: MessageShellProps) {
   const regenLabel = t("regen");
   const deleteLabel = t("delete");
   const resendLabel = t("resend");
-  const createdLabel = formatMessageTime(createdAt);
-  const tokensLabel = t("tokens_label");
 
   // Resolve slots for each position
   const slotsAfterReasoning = resolveMessageSlots("after_reasoning", slotCtx);
@@ -353,17 +343,8 @@ export function MessageShell(props: MessageShellProps) {
           ))}
 
           {/* ── Metadata ── */}
-          {!isEditing && !isGenerating && createdLabel && (
-            <MessageMetadata
-              createdLabel={createdLabel}
-              isUser={isUser}
-              messageTokens={tokenCount}
-              modelId={modelId}
-              presetName={presetName}
-              coauthorModuleId={coauthorModuleId}
-              coauthorSkillId={coauthorSkillId}
-              tokensLabel={tokensLabel}
-            />
+          {!isEditing && !isGenerating && (
+            <MessageMetadata metaCtx={metaCtx} />
           )}
 
           {/* ── Desktop Actions ── */}
@@ -443,28 +424,33 @@ function SlotRenderer({ descriptor, ctx }: {
 // ────────────────────────────────────────────────────────────────────────────
 // Message Metadata
 // ────────────────────────────────────────────────────────────────────────────
+// The metadata bar is registry-driven: badges (model, preset, coauthor
+// module+skill, and anything future features register) are resolved via
+// resolveMessageMeta(ctx). The leading timestamp + token-count span are always
+// present and rendered here (not feature-pluggable). When no badges are
+// visible, zero badge DOM is produced.
 
-function MessageMetadata(props: {
-  createdLabel: string;
-  isUser: boolean;
-  messageTokens: number;
-  modelId?: string | null;
-  presetName?: string | null;
-  coauthorModuleId?: string | null;
-  coauthorSkillId?: string | null;
-  tokensLabel: string;
-}) {
-  const { createdLabel, isUser, messageTokens, modelId, presetName, coauthorModuleId, coauthorSkillId, tokensLabel } = props;
+function MessageMetadata({ metaCtx }: { metaCtx: MessageMetaContext }) {
+  const { t } = useT();
+  const createdLabel = formatMessageTime(metaCtx.createdAt);
+  const badges = resolveMessageMeta(metaCtx);
+  if (!createdLabel) return null;
   return (
     <div className="mt-1 flex flex-wrap items-center gap-2 font-ui text-[calc(var(--ui-fs)-4px)] text-t3/50">
       {createdLabel}
-      <span className="tabular-nums">{messageTokens} {tokensLabel}</span>
-      {!isUser && modelId && <span>{resolveModelLabel(modelId)}</span>}
-      {!isUser && presetName && <span>{presetName}</span>}
-      {!isUser && coauthorModuleId && <span>{coauthorModuleId}</span>}
-      {!isUser && coauthorSkillId && <span>{coauthorSkillId}</span>}
+      <span className="tabular-nums">{metaCtx.tokenCount} {t("tokens_label")}</span>
+      {badges.map((b) => (
+        <MetaBadgeRenderer key={b.id} descriptor={b} ctx={metaCtx} />
+      ))}
     </div>
   );
+}
+
+function MetaBadgeRenderer({ descriptor, ctx }: {
+  descriptor: { render: (ctx: MessageMetaContext) => ReactNode };
+  ctx: MessageMetaContext;
+}) {
+  return <>{descriptor.render(ctx)}</>;
 }
 
 // ────────────────────────────────────────────────────────────────────────────

@@ -6,6 +6,7 @@ import { useSnapshotStore } from "../../../stores/snapshot-store.js";
 import { useIsMobile } from "../../../hooks/use-mobile.js";
 import { resolveEntityAvatarUrl } from "../../../lib/avatar.js";
 import { MessageShell } from "../MessageShell.js";
+import type { MessageMetaContext } from "../../../lib/message-meta-registry.js";
 import { StreamingMarkdown } from "../StreamingMarkdown.js";
 import { GenerationDots } from "../variants/generation-dots.js";
 
@@ -59,9 +60,18 @@ export function PendingAssistantMessage() {
       selectedVariantIndex={0}
       variantCount={1}
       canSwitchVariant={false}
-      tokenCount={0}
-      modelId=""
-      createdAt={Date.now().toString()}
+      metaCtx={{
+        chatId: chatMeta.activeChat?.id ?? "",
+        messageId: "__pending-assistant",
+        messageRole: "assistant",
+        variant: null,
+        variantIndex: 0,
+        isStreaming: true,
+        isCoauthorTurn: isCoauthorMode,
+        presetName: null,
+        tokenCount: 0,
+        createdAt: Date.now().toString(),
+      } satisfies MessageMetaContext}
       copied={false}
       slotExtras={{ reasoning: reasoningForSlot }}
       variantControlsOverlay={null}
