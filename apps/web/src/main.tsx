@@ -4,6 +4,7 @@ import ReactDOM from "react-dom/client";
 import { App } from "./app.js";
 import "./lib/register-core-panels.jsx";
 import { LocaleProvider } from "./i18n/context.js";
+import { initI18n } from "./i18n/i18n.js";
 import { isLocale, detectBrowserLocale, type Locale } from "./i18n/registry.js";
 import { ThemeTuner } from "./components/dev/ThemeTuner.js";
 import { VibeMdThemePreview } from "./components/build/editors/VibeMdThemePreview.js";
@@ -59,6 +60,14 @@ function detectLocale(): Locale {
 }
 
 const initialLocale = detectLocale();
+
+// Initialize i18next synchronously BEFORE React mounts. With `initAsync: false`
+// and bundled resources, `i18next.t` is usable the instant this returns, so
+// non-React `getT()` callers (store actions, api-actions, utils) have correct
+// translations from the very first tick — including effects that fire before
+// the LocaleProvider mount effect. The LocaleProvider effect re-calls this
+// idempotently to cover the test/SSR path where this module isn't the entry.
+initI18n(initialLocale);
 
 /**
  * Top-level router. The app has no real router (single-page), but dev surfaces
