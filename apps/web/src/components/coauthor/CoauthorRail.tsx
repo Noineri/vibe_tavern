@@ -156,11 +156,9 @@ export function CoauthorRail({ hidden }: { hidden?: boolean }) {
             avatarSrc={charAvatarSrc}
             createManualLabel={t("create_manual")}
             importCharShortLabel={t("import_char_short")}
-            moreCharactersLabel={t("more_characters") ?? `${allCharacters.length - 5} more`}
             onCharacterClick={(id) => setSheetCharId(id)}
             onCreateCharacter={() => { useModalStore.getState().setCreateCharacterModalOpen(true); }}
             onImport={() => { setImportOpen(true); }}
-            onMoreCharacters={() => setExpanded(true)}
           />
         </div>
 

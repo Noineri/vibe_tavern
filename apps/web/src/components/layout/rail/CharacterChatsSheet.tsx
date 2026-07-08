@@ -207,7 +207,7 @@ export function CharacterChatsSheet({
 								{/* Chat three-dot menu — enlarged touch target */}
 								<button type="button"
 									className={cn(
-										"absolute right-1 inset-y-0 my-auto flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-t3 transition-colors hover:text-t1 active:bg-s3",
+										"absolute right-1 top-2 flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-t3 transition-colors hover:text-t1 active:bg-s3",
 										chatMenuId === ch.id && "text-t1 bg-s3",
 									)}
 									onClick={(e) => { e.stopPropagation(); setChatMenuId(ch.id); setBranchMenuId(null); }}

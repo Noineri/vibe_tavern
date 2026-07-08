@@ -1,7 +1,8 @@
 /**
  * RailCollapsedStrip — the shared middle of the collapsed mobile/tablet rail:
- * the Create/Import buttons, the character avatar column (max 5 + N-more), and
- * the surrounding dividers. Shared by the RP `Rail` (play mode only) and
+ * the Create/Import buttons and the character avatar column — every
+ * character, not a capped subset (the parent is overflow-y-scroll, so a long
+ * roster scrolls). Shared by the RP `Rail` (play mode only) and
  * `CoauthorRail` (E5e).
  *
  * Chat selection no longer lives here — the collapsed strip is a pure
@@ -43,23 +44,19 @@ export function RailCollapsedStrip({
   avatarSrc,
   createManualLabel,
   importCharShortLabel,
-  moreCharactersLabel,
   onCharacterClick,
   onCreateCharacter,
   onImport,
-  onMoreCharacters,
 }: {
   characters: ReadonlyArray<RailCollapsedCharacter>;
   selectedCharacterId: string | null;
   avatarSrc: (c: RailCollapsedCharacter) => string | null;
   createManualLabel: string;
   importCharShortLabel: string;
-  moreCharactersLabel: string;
   /** Tap an avatar — opens the CharacterChatsSheet on that character. */
   onCharacterClick: (id: string) => void;
   onCreateCharacter: () => void;
   onImport: () => void;
-  onMoreCharacters: () => void;
 }): ReactNode {
   return (
     <>
@@ -77,13 +74,14 @@ export function RailCollapsedStrip({
         </div>
       </div>
       <div className="h-px w-8 shrink-0 bg-border" />
-      {/* Character avatars (max 5, +N more) — always all characters,
-          not the filtered list, so the collapsed rail stays stable
-          regardless of any active search in the expanded panel. Tapping an
-          avatar opens the CharacterChatsSheet (chat list + branches), not a
-          bare character select — selectedCharacterId is synced after the
-          real chat switch inside the sheet. */}
-      {characters.slice(0, 5).map((c) => (
+      {/* Character avatars — always ALL characters (not the filtered
+          list), so the collapsed rail stays stable regardless of any active
+          search in the expanded panel. The strip's parent is
+          overflow-y-scroll, so a long roster scrolls. Tapping an avatar opens
+          the CharacterChatsSheet (chat list + branches), not a bare character
+          select — selectedCharacterId is synced after the real chat switch
+          inside the sheet. */}
+      {characters.map((c) => (
         <div
           key={c.id}
           className={cn(
@@ -100,16 +98,6 @@ export function RailCollapsedStrip({
           )}
         </div>
       ))}
-      {characters.length > 5 && (
-        <div
-          className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-full bg-s3 font-ui text-[11px] font-medium text-t2 transition-[background-color,border-radius,transform] duration-150 ease-out active:rounded-xl active:bg-s2 active:scale-[0.96]"
-          onClick={onMoreCharacters}
-          title={moreCharactersLabel}
-        >
-          +{characters.length - 5}
-        </div>
-      )}
-      <div className="my-0.5 h-px w-8 shrink-0 bg-border" />
     </>
   );
 }
