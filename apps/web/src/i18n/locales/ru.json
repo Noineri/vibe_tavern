@@ -1045,6 +1045,7 @@
   "coauthor.module.opening_message_placeholder": "Необязательно. Первое сообщение ассистента в новом чате с соавтором.",
   "coauthor.module.switch_failed": "Не удалось сменить модуль.",
   "coauthor.module.manager_subtitle": "Управление модулями соавтора. Встроенные пресеты только для чтения; создайте свой, чтобы настроить базовый промпт, навыки, инструменты и лимит шагов.",
+  "coauthor.module.manage": "Управление модулями",
   "coauthor.module.built_in": "Встроенный",
   "coauthor.module.user": "Пользовательский",
   "coauthor.module.new": "Новый модуль",

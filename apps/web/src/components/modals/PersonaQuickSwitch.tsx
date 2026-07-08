@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Icons } from "../shared/icons.js";
-import { ToolbarSelect } from "../shared/ToolbarSelect.js";
+import { QuickSwitchPopover } from "../shared/QuickSwitchPopover.js";
 import { useT } from "../../i18n/context.js";
 import { resolveEntityAvatarUrl } from "../../lib/avatar.js";
 import { useModalStore } from "../../stores/modal-store.js";
@@ -33,15 +33,15 @@ interface Props {
 }
 
 /**
- * Desktop persona quick-switch, built on the shared `ToolbarSelect`.
+ * Desktop persona quick-switch, built on the shared `QuickSwitchPopover`.
  *
- * Uses `ToolbarSelect`'s **controlled open** mode (`open`/`onOpenChange`)
- * so the footer ("manage personas") can dismiss the Select before opening
- * `PersonaModal`. The actual body-freeze guard lives in `ToolbarSelect`
- * itself (no exit animation on Select.Content): Radix Select hardcodes a
- * <RemoveScroll> body-lock, and an exit animation keeps it mounted ~150ms
- * after close — long enough to overlap a Dialog mount and trip a
- * react-remove-scroll stale-snapshot that re-locks <body> on Dialog close.
+ * `QuickSwitchPopover` is Popover-based (not Radix Select), so it holds no
+ * <body> pointer-events lock — the footer ("manage personas") can dismiss
+ * the popover and open `PersonaModal` in the same handler without the UI
+ * freeze that Select's hardcoded `DismissableLayer` + Presence exit-animation
+ * caused here. Exit animation is retained (Popover is safe to animate out).
+ * Controlled open is used purely so the footer can close the popover before
+ * launching the modal — no longer a leak workaround.
  */
 export function PersonaQuickSwitch({ personas, activePersonaId, onSelect }: Props) {
   const { t } = useT();
@@ -59,7 +59,7 @@ export function PersonaQuickSwitch({ personas, activePersonaId, onSelect }: Prop
   }
 
   return (
-    <ToolbarSelect
+    <QuickSwitchPopover
       open={open}
       onOpenChange={setOpen}
       title={t("persona_selection")}

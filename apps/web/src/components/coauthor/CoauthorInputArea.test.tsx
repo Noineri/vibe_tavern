@@ -27,7 +27,7 @@
  */
 import { describe, it, expect, mock, beforeEach } from "bun:test";
 import { useDomEnv } from "../../../test/dom-env.js";
-import { render } from "@testing-library/react";
+import { render, act } from "@testing-library/react";
 import type { CoauthorModule } from "@vibe-tavern/api-contracts";
 import { useChatStore } from "../../stores/chat-store.js";
 import { useProviderStore } from "../../stores/provider-store.js";
@@ -144,7 +144,7 @@ describe("CoauthorInputArea", () => {
 		seedStores();
 	});
 
-	it("renders the quick module switch + favorites pill, not the RP affordances", () => {
+	it("renders the quick module switch + favorites pill, not the RP affordances", async () => {
 		const { getByTestId, queryByText } = render(<CoauthorInputArea />);
 		// Module switch + favorites pill present.
 		expect(getByTestId("coauthor-module-switch")).toBeDefined();
@@ -155,5 +155,9 @@ describe("CoauthorInputArea", () => {
 		expect(queryByText("topbar_prompt_preset")).toBeNull();
 		// No attachment paperclip (RP InputArea's only file input is the clip).
 		expect(queryByText("attach_image")).toBeNull();
+		// useModuleSwitch fires an async module-list load on mount; drain its
+		// trailing setModules/setLoading so they don't warn about a state update
+		// outside act(). One macrotask flushes the whole .then/.finally chain.
+		await act(async () => { await new Promise((r) => setTimeout(r)); });
 	});
 });

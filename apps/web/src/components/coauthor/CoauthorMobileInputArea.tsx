@@ -3,13 +3,16 @@
 // CoauthorInputArea.tsx so the viewport fork is a presentational split
 // mirroring the RP MobileInputArea (b4e0aa5f): this file owns only
 // mobile-specific UI state (the auto-grow textarea ref); the module / favorites
-// pickers are the mobile half of `ToolbarSelect` (shared/BottomSheet, vaul).
+// pickers are the mobile half of `QuickSwitchPopover` (module switch, with a
+// "Manage Modules" footer) and `ToolbarSelect` (favorites) — both BottomSheet, vaul.
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ChangeEvent, KeyboardEvent } from "react";
 import { cn } from "../../lib/cn.js";
 import { Icons } from "../shared/icons.js";
 import { ToolbarSelect } from "../shared/ToolbarSelect.js";
+import { QuickSwitchPopover } from "../shared/QuickSwitchPopover.js";
+import { useModalStore } from "../../stores/modal-store.js";
 import { useModuleSwitch, type CoauthorInputAreaData } from "./use-coauthor-input-area.js";
 
 export function CoauthorMobileInputArea({ data }: { data: CoauthorInputAreaData }) {
@@ -20,6 +23,7 @@ export function CoauthorMobileInputArea({ data }: { data: CoauthorInputAreaData 
 	} = data;
 
 	const moduleSwitch = useModuleSwitch();
+	const [moduleSwitchOpen, setModuleSwitchOpen] = useState(false);
 
 	// Auto-expand textarea within 40vh, shrink back when the draft clears.
 	const mobileTextareaRef = useRef<HTMLTextAreaElement>(null);
@@ -54,13 +58,28 @@ export function CoauthorMobileInputArea({ data }: { data: CoauthorInputAreaData 
 			<div className="flex flex-col gap-1.5 rounded-xl bg-s2 p-1.5">
 				{/* Toolbar row: module switch + favorites (ToolbarSelect mobile → BottomSheet) */}
 				<div className="flex items-center gap-2">
-					<ToolbarSelect
+					<QuickSwitchPopover
 						mobile
+						open={moduleSwitchOpen}
+						onOpenChange={setModuleSwitchOpen}
 						title={t("coauthor.input.module_switch")}
 						items={moduleSwitch.modules.map((m) => ({ value: m.id, label: m.name }))}
 						value={moduleSwitch.activeModuleId}
 						onSelect={(v) => void moduleSwitch.handleSelect(v)}
 						itemTestId={(v) => `coauthor-module-option-${v}`}
+						footer={
+							<button
+								type="button"
+								data-testid="coauthor-manage-modules"
+								className="flex w-full min-h-[52px] items-center gap-3 px-5 font-ui text-[calc(var(--ui-fs)-1px)] text-t3 active:bg-s3"
+								onClick={() => {
+									setModuleSwitchOpen(false);
+									useModalStore.getState().setCoauthorModuleModalOpen(true);
+								}}
+							>
+								<Icons.Edit className="h-4 w-4" /> {t("coauthor.module.manage")}
+							</button>
+						}
 						trigger={
 							<button
 								type="button"

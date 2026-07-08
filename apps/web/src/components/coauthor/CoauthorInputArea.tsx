@@ -1,10 +1,13 @@
+import { useState } from "react";
 import { cn } from "../../lib/cn.js";
 import { Icons } from "../shared/icons.js";
 import { AutoTextarea } from "../shared/auto-textarea.js";
 import { CustomTooltip } from "../shared/Tooltip.js";
 import { TokenCounterPopover } from "../shared/TokenCounterPopover.js";
 import { ToolbarSelect } from "../shared/ToolbarSelect.js";
+import { QuickSwitchPopover } from "../shared/QuickSwitchPopover.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
+import { useModalStore } from "../../stores/modal-store.js";
 import { CoauthorMobileInputArea } from "./CoauthorMobileInputArea.js";
 import { useCoauthorInputArea, useModuleSwitch } from "./use-coauthor-input-area.js";
 
@@ -19,9 +22,11 @@ import { useCoauthorInputArea, useModuleSwitch } from "./use-coauthor-input-area
  * - the send/cancel handler, reused verbatim from `useChatController`
  *   (`handleSend` / `handleCancelGeneration`) — co-author sends through the same
  *   chat pipeline, just with a different backend strategy
- * - a **quick module switch** (ToolbarSelect: compact inline Select on desktop,
- *   BottomSheet on mobile — no modal; the full manager lives in the Sidebar
- *   launcher, CS-23)
+ * - a **quick module switch** (QuickSwitchPopover: compact inline Popover on
+ *   desktop, BottomSheet on mobile — with a "Manage Modules" footer that opens
+ *   the full CoauthorModuleModal; the Sidebar launcher opens it too, CS-23).
+ *   Popover (not Select) so the footer can launch a modal without the body-lock
+ *   leak Select's hardcoded DismissableLayer causes — see QuickSwitchPopover
  * - a favorites pill **filtered by tool capability** (`useToolCapableModels`),
  *   because co-author turns require function-calling; a non-tool model would
  *   silently break the tool loop, so it must not be selectable here
@@ -52,6 +57,7 @@ function DesktopInput({ data }: { data: ReturnType<typeof useCoauthorInputArea> 
 	} = data;
 
 	const moduleSwitch = useModuleSwitch();
+	const [moduleSwitchOpen, setModuleSwitchOpen] = useState(false);
 
 	return (
 		<div
@@ -78,7 +84,9 @@ function DesktopInput({ data }: { data: ReturnType<typeof useCoauthorInputArea> 
 
 				<div className="relative flex items-center gap-2 pt-1.5 pb-[9px] pl-3 pr-3">
 					{/* Quick module switch — desktop Select / mobile BottomSheet (ToolbarSelect). */}
-					<ToolbarSelect
+					<QuickSwitchPopover
+						open={moduleSwitchOpen}
+						onOpenChange={setModuleSwitchOpen}
 						title={t("coauthor.input.module_switch")}
 						triggerTooltip={t("coauthor.input.module_switch")}
 						contentWidth={220}
@@ -87,6 +95,19 @@ function DesktopInput({ data }: { data: ReturnType<typeof useCoauthorInputArea> 
 						value={moduleSwitch.activeModuleId}
 						onSelect={(v) => void moduleSwitch.handleSelect(v)}
 						itemTestId={(v) => `coauthor-module-option-${v}`}
+						footer={
+							<button
+								type="button"
+								data-testid="coauthor-manage-modules"
+								className="flex w-full cursor-pointer items-center gap-1.5 rounded p-1.5 font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-colors duration-100 hover:bg-s2 hover:text-t2"
+								onClick={() => {
+									setModuleSwitchOpen(false);
+									useModalStore.getState().setCoauthorModuleModalOpen(true);
+								}}
+							>
+								<Icons.Edit className="h-3.5 w-3.5" /> {t("coauthor.module.manage")}
+							</button>
+						}
 						trigger={
 							<button
 								type="button"

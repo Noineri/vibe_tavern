@@ -46,18 +46,6 @@ interface ToolbarSelectProps {
 	 *  result down — the desktop shell renders `<ToolbarSelect>` (default) and
 	 *  the mobile shell renders `<ToolbarSelect mobile>`. Mirrors VariantJump. */
 	mobile?: boolean;
-	/** Optional controlled open state. When provided, the caller owns the
-	 *  open/close lifecycle (and the internal state is bypassed). Needed for the
-	 *  persona switch, whose footer opens a modal: the caller must `setOpen(false)`
-	 *  BEFORE launching the modal, or the orphaned Select content leaks
-	 *  `pointer-events: none` onto <body> and freezes the UI (the freeze bug
-	 *  fixed in 108bd2b1). When omitted, the primitive manages its own open
-	 *  state internally (the existing chat-bar selects use this). */
-	open?: boolean;
-	/** Companion to `open` — called when Radix/BottomSheet requests a close
-	 *  (outside click, Escape, item select) or open (trigger click). Ignored
-	 *  when `open` is omitted. */
-	onOpenChange?: (open: boolean) => void;
 	/** A single `<button type="button">` element. WITHOUT an `onClick` — the
 	 *  primitive attaches the open handler on both halves (Select.Trigger on
 	 *  desktop, the BottomSheet opener on mobile). Its `className` and any
@@ -96,8 +84,6 @@ interface ToolbarSelectProps {
 
 export function ToolbarSelect({
 	mobile = false,
-	open: openProp,
-	onOpenChange,
 	trigger,
 	triggerTooltip,
 	itemTestId,
@@ -112,19 +98,11 @@ export function ToolbarSelect({
 	sideOffset = 8,
 	contentWidth = 220,
 }: ToolbarSelectProps) {
-	// Controlled-or-uncontrolled open state. When the caller passes `open`,
-	// they own the lifecycle (needed for the persona footer → modal path — see
-	// the prop doc). Otherwise the primitive manages its own state, and the
-	// existing chat-bar selects keep their exact behavior. Resolved `open` /
-	// `setOpen` are passed to BOTH halves so desktop (Select.Root) and mobile
-	// (BottomSheet) stay in sync.
-	const [internalOpen, setInternalOpen] = useState(false);
-	const isControlled = openProp !== undefined;
-	const open = isControlled ? openProp : internalOpen;
-	const setOpen = (next: boolean) => {
-		if (!isControlled) setInternalOpen(next);
-		onOpenChange?.(next);
-	};
+	// Internal-only open state. `open` / `setOpen` are passed to BOTH halves so
+	// desktop (Select.Root) and mobile (BottomSheet) stay in sync. (The former
+	// controlled-open mode existed only for the persona footer → modal path,
+	// which has moved to QuickSwitchPopover.)
+	const [open, setOpen] = useState(false);
 
 	if (mobile) {
 		return (
@@ -161,19 +139,15 @@ export function ToolbarSelect({
 					side={side}
 					sideOffset={sideOffset}
 					align={align}
-					// NOTE: no data-[state=closed]:animate-out classes here (open-in anim kept).
-			// Radix Select hardcodes <DismissableLayer disableOutsidePointerEvents>,
-			// which save/restores body.style.pointerEvents while the layer is mounted.
-			// An exit animation keeps the Select.Content (and that layer) mounted
-			// ~150ms after setOpen(false) — long enough to straddle a Dialog mount/
-			// unmount launched from this Select's footer (e.g. persona "manage
-			// personas"). The save/restore then snaps a stale body{pointer-events:none}
-			// and restores it when the Dialog unmounts, freezing the UI. With no exit
-			// animation the Select unmounts in the same commit that mounts the Dialog,
-			// so its layer cleanup (body restore) runs before the Dialog's effects —
-			// the lifecycle the save/restore contract assumes. See commit msg for the
-			// Playwright trace that pinned this.
-				className="glass-blur z-[220] overflow-hidden rounded-lg border border-border2 bg-glass-bg py-2 shadow-[0_12px_28px_rgba(0,0,0,0.45)] data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95"
+					className="glass-blur z-[220] overflow-hidden rounded-lg border border-border2 bg-glass-bg py-2 shadow-[0_12px_28px_rgba(0,0,0,0.45)] data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95"
+				// Exit animation re-enabled. The footer→modal path that forced this
+				// Select to drop its exit anim (Select's hardcoded
+				// <DismissableLayer disableOutsidePointerEvents> + Presence exit could
+				// leak body{pointer-events:none} when a Dialog mounted mid-exit) has
+				// moved to QuickSwitchPopover (Popover-based, no body lock). The
+				// remaining ToolbarSelect consumers (favorites/starred-model pills)
+				// are pure value-pickers that never launch a Dialog, so the leak can't
+				// trigger. See commit f50044dd for the trace that pinned the old bug.
 					style={{ width: contentWidth }}
 				>
 					<div className="mb-1 border-b border-border px-4 pb-2 pt-1 font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.08em] text-t3">
