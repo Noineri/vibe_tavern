@@ -10,7 +10,8 @@ import { Ico, NavRow } from "../layout/rail/rail-primitives.js";
 import { ActionSheet } from "../shared/ActionSheet.js";
 import { TagFilterSheet } from "../layout/rail/TagFilterSheet.js";
 import { RailCollapsedStrip } from "../layout/rail/RailCollapsedStrip.js";
-import { usePanelSwipe, useRailEdgeSwipe } from "../layout/hooks/use-swipe-sheet.js";
+import { Drawer } from "@base-ui/react/drawer";
+import { getModalPortal } from "../shared/modal-helpers.js";
 import { useSidebarChats } from "../layout/hooks/use-sidebar-chats.js";
 import { useSidebarCharacters } from "../layout/hooks/use-sidebar-characters.js";
 import { useRowActions } from "../layout/hooks/use-row-actions.js";
@@ -45,7 +46,6 @@ export function CoauthorRail({ hidden }: { hidden?: boolean }) {
   const [expanded, setExpanded] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [chatImportOpen, setChatImportOpen] = useState(false);
-  const [closing, setClosing] = useState(false);
 
   // Context menus
   const [charMenuId, setCharMenuId] = useState<string | null>(null);
@@ -94,19 +94,11 @@ export function CoauthorRail({ hidden }: { hidden?: boolean }) {
   const activeCharId = selectedCharacterId ?? chatMeta?.character?.id ?? null;
   const { sectionChats } = useSidebarChats({ allChats: chats, characterId: activeCharId, query: "" });
 
-  const toggle = () => {
-    if (expanded) {
-      setClosing(true);
-      setTimeout(() => { setExpanded(false); setClosing(false); }, 200);
-    } else {
-      setExpanded(true);
-    }
-  };
-  const close = () => {
-    if (!expanded) return;
-    setClosing(true);
-    setTimeout(() => { setExpanded(false); setClosing(false); }, 200);
-  };
+  // Drawer open/close driven by Base UI Drawer.Root — exit animation + unmount
+  // are the drawer's own (onOpenChangeComplete). Swipe-left-to-close is the
+  // drawer's native swipeDirection="left"; edge-swipe-to-open is Drawer.SwipeArea.
+  const toggle = () => setExpanded((v) => !v);
+  const close = () => setExpanded(false);
 
   const commitRename = () => {
     const nextTitle = renameDraft.trim();
@@ -130,21 +122,15 @@ export function CoauthorRail({ hidden }: { hidden?: boolean }) {
     setChatImportOpen,
   });
 
-  /* ── Swipe on expanded panel to close ── */
-  const { onTouchStart: onPanelTouchStart, onTouchMove: onPanelTouchMove, onTouchEnd: onPanelTouchEnd } = usePanelSwipe(close);
-
-  const { onTouchStart, onTouchMove, onTouchEnd } = useRailEdgeSwipe(expanded, setExpanded);
-
   return (
     <>
+      <Drawer.Root open={expanded} onOpenChange={(isOpen) => { if (!isOpen) setExpanded(false); else setExpanded(true); }} modal swipeDirection="left">
       {/* ═══ COLLAPSED RAIL ═══ */}
       {!hidden && (
-      <div
-        className="relative z-[200] flex w-[56px] min-w-[56px] shrink-0 flex-col items-center border-r border-border bg-surface backdrop-blur-md"
-        onTouchStart={onTouchStart}
-        onTouchMove={onTouchMove}
-        onTouchEnd={onTouchEnd}
-      >
+        <>
+        <div
+          className="relative z-[200] flex w-[56px] min-w-[56px] shrink-0 flex-col items-center border-r border-border bg-surface backdrop-blur-md"
+        >
         {/* Hamburger */}
         <div className="flex h-[48px] w-full shrink-0 items-center justify-center border-b border-border">
           <div className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-[6px] text-t3 transition-colors duration-100 active:bg-s3"
@@ -181,35 +167,27 @@ export function CoauthorRail({ hidden }: { hidden?: boolean }) {
           <Ico icon={<Ic.sliders />} onClick={() => useModalStore.getState().setTweaksOpen(true)} title={t("interface_settings_tooltip")} />
         </div>
       </div>
+          {/* Edge-swipe to open — invisible strip pinned to the screen's left
+              edge. Narrow (w-4) so it does not cover the rail's centered icons;
+              swipe-right here opens the drawer. */}
+          <Drawer.SwipeArea className="fixed inset-y-0 left-0 z-[201] w-4" />
+        </>
       )}
 
       {/* ═══ EXPANDED OVERLAY PANEL ═══ */}
-      {expanded && (
-        <>
-          {/* Backdrop */}
-          <div
-            className="fixed inset-0 z-[299] bg-black/40 backdrop-blur-sm"
-            style={{ animation: closing ? "fadeOut 0.2s ease-in forwards" : "fadeIn 0.2s ease-out" }}
-            onClick={close}
-          />
-
-          {/* Panel */}
-          <div
-            className="glass-blur fixed left-0 top-0 bottom-0 z-[300] flex w-[260px] flex-col border-r border-border bg-glass-bg shadow-theme-xl"
-            style={{ animation: closing ? "slideOutLeft 0.2s ease-in forwards" : "slideInLeft 0.2s ease-out" }}
-            onTouchStart={onPanelTouchStart}
-            onTouchMove={onPanelTouchMove}
-            onTouchEnd={onPanelTouchEnd}
-          >
+      <Drawer.Portal container={getModalPortal() ?? document.body}>
+        <Drawer.Backdrop className="rail-backdrop fixed inset-0 z-[299] bg-black/40 backdrop-blur-sm" />
+        <Drawer.Viewport className="fixed inset-0 z-[300]">
+          <Drawer.Popup className="rail-popup glass-blur fixed left-0 top-0 bottom-0 flex w-[260px] flex-col border-r border-border bg-glass-bg shadow-theme-xl">
             {/* Header */}
             <div className="flex h-[48px] shrink-0 items-center border-b border-border px-3">
               <div className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-[6px] text-t3 transition-colors active:bg-s3"
                    onClick={toggle}>
                 <Ic.menu />
               </div>
-              <span className="ml-2 font-ui text-[calc(var(--ui-fs)+1px)] font-semibold text-t1 tracking-tight truncate">
+              <Drawer.Title className="ml-2 font-ui text-[calc(var(--ui-fs)+1px)] font-semibold text-t1 tracking-tight truncate">
                 {t("characters")}
-              </span>
+              </Drawer.Title>
             </div>
 
             {/* Scrollable content */}
@@ -358,9 +336,10 @@ export function CoauthorRail({ hidden }: { hidden?: boolean }) {
               <NavRow icon={<Ic.plug />} label={t("provider_settings_tooltip")} onClick={() => { useModalStore.getState().setIsProviderModalOpen(true); close(); }} />
               <NavRow icon={<Ic.sliders />} label={t("interface_settings_tooltip")} onClick={() => { useModalStore.getState().setTweaksOpen(true); close(); }} />
             </div>
-          </div>
-        </>
-      )}
+          </Drawer.Popup>
+        </Drawer.Viewport>
+      </Drawer.Portal>
+      </Drawer.Root>
 
       {/* ═══ BOTTOM SHEETS (context menus) ═══ */}
       {charMenuId && (
