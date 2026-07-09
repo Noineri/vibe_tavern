@@ -19,14 +19,16 @@
  * a follow-up (the "fork first, extract later" sequencing endorsed by the
  * owner). Do not drift these against `Sidebar.tsx` until that extraction.
  */
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useSidebarChats } from "../layout/hooks/use-sidebar-chats.js";
 import { useSidebarCharacters } from "../layout/hooks/use-sidebar-characters.js";
+import { useFlyoutPosition } from "../layout/hooks/use-flyout-position.js";
 import { SidebarHeader } from "../layout/sections/SidebarHeader.js";
 import { SidebarImportModals } from "../layout/sections/SidebarImportModals.js";
 import { CollapsedCharacterStrip } from "../layout/sections/CollapsedCharacterStrip.js";
 import { CharacterListSection } from "../layout/sections/CharacterListSection.js";
 import { SidebarFlyout } from "../layout/sections/SidebarFlyout.js";
+import { SidebarFooter, type FooterLauncherItem } from "../layout/sections/SidebarFooter.js";
 import { Icons } from "../shared/icons.js";
 import { cn } from "../../lib/cn.js";
 import { useT } from "../../i18n/context.js";
@@ -109,9 +111,7 @@ export function CoauthorSidebar() {
   const flyoutListRef = useRef<HTMLDivElement | null>(null);
   const flyoutAvatarRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const [flyoutAvatarPos, setFlyoutAvatarPos] = useState<{ top: number; bottom: number } | null>(null);
-  const [flyoutTop, setFlyoutTop] = useState<number | null>(null);
-  const [flyoutMaxH, setFlyoutMaxH] = useState<number | null>(null);
-  const [flyoutFlipped, setFlyoutFlipped] = useState(false);
+  const flyout = useFlyoutPosition(flyoutCharId, flyoutAvatarPos, flyoutRef, flyoutListRef);
 
   const flyoutChats = useMemo(
     () => flyoutCharId ? allChats.filter(c => c.characterId === flyoutCharId && c.mode === "coauthor") : [],
@@ -129,26 +129,9 @@ export function CoauthorSidebar() {
 
   useEffect(() => { if (!flyoutCharId) setChatQuery(""); }, [flyoutCharId]);
 
-  useLayoutEffect(() => {
-    if (!flyoutCharId || flyoutAvatarPos == null) { setFlyoutTop(null); setFlyoutMaxH(null); setFlyoutFlipped(false); return; }
-    const panel = flyoutRef.current;
-    const list = flyoutListRef.current;
-    if (!panel || !list) return;
-    const vh = window.innerHeight;
-    const spaceBelow = vh - flyoutAvatarPos.top - 12;
-    const spaceAbove = flyoutAvatarPos.bottom - 12;
-    const naturalH = list.scrollHeight + (panel.clientHeight - list.clientHeight);
-    if (naturalH <= spaceBelow || spaceBelow >= spaceAbove) {
-      setFlyoutFlipped(false);
-      setFlyoutTop(flyoutAvatarPos.top);
-      setFlyoutMaxH(Math.max(spaceBelow, 0));
-    } else {
-      setFlyoutFlipped(true);
-      const h = Math.min(naturalH, spaceAbove);
-      setFlyoutTop(flyoutAvatarPos.bottom - h);
-      setFlyoutMaxH(Math.max(spaceAbove, 0));
-    }
-  }, [flyoutCharId, flyoutAvatarPos]);
+  const coauthorFooterItems: FooterLauncherItem[] = [
+    { key: "modules", label: t("coauthor.sidebar.modules"), onClick: () => useModalStore.getState().setCoauthorModuleModalOpen(true), icon: <Icons.Tool /> },
+  ];
 
   return (
     <div className={cn(
@@ -172,9 +155,7 @@ export function CoauthorSidebar() {
             <div className="h-px w-8 shrink-0 bg-border" />
 
             <div className="flex shrink-0 flex-col items-center gap-1 py-2">
-              <CustomTooltip content={t("coauthor.sidebar.modules")} side="right">
-                <div className="flex h-9 w-9 cursor-pointer items-center justify-center rounded-full bg-s3 text-t2 transition-all duration-150 hover:rounded-xl hover:bg-s2 hover:text-t1" onClick={() => useModalStore.getState().setCoauthorModuleModalOpen(true)}><Icons.Tool /></div>
-              </CustomTooltip>
+              <SidebarFooter collapsed items={coauthorFooterItems} />
             </div>
           </div>
         )}
@@ -192,9 +173,9 @@ export function CoauthorSidebar() {
           setFlyoutCharId={setFlyoutCharId}
           flyoutRef={flyoutRef}
           flyoutListRef={flyoutListRef}
-          flyoutTop={flyoutTop}
-          flyoutMaxH={flyoutMaxH}
-          flyoutFlipped={flyoutFlipped}
+          flyoutTop={flyout.top}
+          flyoutMaxH={flyout.maxH}
+          flyoutFlipped={flyout.flipped}
           createChatMode="coauthor"
           emptyTitleKey="coauthor.list_empty"
           t={t}
@@ -362,25 +343,7 @@ export function CoauthorSidebar() {
             </section>
             </div>
 
-            <section className="shrink-0 border-t border-border px-1 py-1.5">
-              <div
-                className="group relative mx-1 flex cursor-pointer items-center gap-[9px] rounded px-2.5 py-1.5 text-[calc(var(--ui-fs)-1px)] text-t2 transition-colors duration-100 hover:bg-s2 hover:text-t1"
-                role="button"
-                tabIndex={0}
-                onClick={() => useModalStore.getState().setCoauthorModuleModalOpen(true)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" || event.key === " ") {
-                    event.preventDefault();
-                    useModalStore.getState().setCoauthorModuleModalOpen(true);
-                  }
-                }}
-              >
-                <span className="flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded-full bg-transparent font-ui text-[calc(var(--ui-fs)-3px)] not-italic text-t2">
-                  <Icons.Tool />
-                </span>
-                <span>{t("coauthor.sidebar.modules")}</span>
-              </div>
-            </section>
+            <SidebarFooter items={coauthorFooterItems} />
           </>
         )}
         <SidebarImportModals importModal={importModal} setImportModal={setImportModal} character={character} activeChatId={activeChatId} />

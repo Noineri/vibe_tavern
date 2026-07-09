@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import * as Popover from "@radix-ui/react-popover";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import type { ChatId } from "@vibe-tavern/domain";
@@ -6,11 +6,13 @@ import { initials } from "./app-shell-helpers.js";
 import { formatRelativeTime, formatShortDate, tabAvatarSrc } from "./sidebar-utils.js";
 import { useSidebarChats } from "./hooks/use-sidebar-chats.js";
 import { useSidebarCharacters } from "./hooks/use-sidebar-characters.js";
+import { useFlyoutPosition } from "./hooks/use-flyout-position.js";
 import { SidebarHeader } from "./sections/SidebarHeader.js";
 import { SidebarImportModals } from "./sections/SidebarImportModals.js";
 import { CollapsedCharacterStrip } from "./sections/CollapsedCharacterStrip.js";
 import { CharacterListSection } from "./sections/CharacterListSection.js";
 import { SidebarFlyout } from "./sections/SidebarFlyout.js";
+import { SidebarFooter, type FooterLauncherItem } from "./sections/SidebarFooter.js";
 import { Icons } from "../shared/icons.js";
 
 import { cn } from "../../lib/cn.js";
@@ -118,9 +120,7 @@ export function Sidebar() {
   const flyoutListRef = useRef<HTMLDivElement | null>(null);
   const flyoutAvatarRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const [flyoutAvatarPos, setFlyoutAvatarPos] = useState<{ top: number; bottom: number } | null>(null);
-  const [flyoutTop, setFlyoutTop] = useState<number | null>(null);
-  const [flyoutMaxH, setFlyoutMaxH] = useState<number | null>(null);
-  const [flyoutFlipped, setFlyoutFlipped] = useState(false);
+  const flyout = useFlyoutPosition(flyoutCharId, flyoutAvatarPos, flyoutRef, flyoutListRef);
 
   const flyoutChats = useMemo(
     () => flyoutCharId ? allChats.filter(c => c.characterId === flyoutCharId && c.mode !== "coauthor") : [],
@@ -139,26 +139,10 @@ export function Sidebar() {
 
   useEffect(() => { if (!flyoutCharId) setChatQuery(""); }, [flyoutCharId]);
 
-  useLayoutEffect(() => {
-    if (!flyoutCharId || flyoutAvatarPos == null) { setFlyoutTop(null); setFlyoutMaxH(null); setFlyoutFlipped(false); return; }
-    const panel = flyoutRef.current;
-    const list = flyoutListRef.current;
-    if (!panel || !list) return;
-    const vh = window.innerHeight;
-    const spaceBelow = vh - flyoutAvatarPos.top - 12;
-    const spaceAbove = flyoutAvatarPos.bottom - 12;
-    const naturalH = list.scrollHeight + (panel.clientHeight - list.clientHeight);
-    if (naturalH <= spaceBelow || spaceBelow >= spaceAbove) {
-      setFlyoutFlipped(false);
-      setFlyoutTop(flyoutAvatarPos.top);
-      setFlyoutMaxH(Math.max(spaceBelow, 0));
-    } else {
-      setFlyoutFlipped(true);
-      const h = Math.min(naturalH, spaceAbove);
-      setFlyoutTop(flyoutAvatarPos.bottom - h);
-      setFlyoutMaxH(Math.max(spaceAbove, 0));
-    }
-  }, [flyoutCharId, flyoutAvatarPos]);
+  const rpFooterItems: FooterLauncherItem[] = [
+    { key: "prompt-manager", label: t("sidebar_prompt_manager"), onClick: () => useModalStore.getState().setIsPromptManagerOpen(true), icon: <Icons.Terminal /> },
+    { key: "persona", label: personaName, onClick: () => useModalStore.getState().setIsPersonaModalOpen(true), avatar: { src: personaAvatarSrc, fallback: initials(personaName) }, expandedSuffix: t("sidebar_your_persona") },
+  ];
 
   return (
     <div className={cn(
@@ -182,14 +166,7 @@ export function Sidebar() {
             <div className="h-px w-8 shrink-0 bg-border" />
 
             <div className="flex shrink-0 flex-col items-center gap-1 py-2">
-              <CustomTooltip content={t("sidebar_prompt_manager")} side="right">
-                <div className="flex h-9 w-9 cursor-pointer items-center justify-center rounded-full bg-s3 text-t2 transition-all duration-150 hover:rounded-xl hover:bg-s2 hover:text-t1" onClick={() => useModalStore.getState().setIsPromptManagerOpen(true)}><Icons.Terminal /></div>
-              </CustomTooltip>
-              <CustomTooltip content={personaName} side="right">
-                <div className="flex h-9 w-9 cursor-pointer items-center justify-center overflow-hidden rounded-full bg-s3 text-t2 transition-all duration-150 hover:rounded-xl hover:bg-s2 hover:text-t1" onClick={() => useModalStore.getState().setIsPersonaModalOpen(true)}>
-                  {personaAvatarSrc ? <img src={personaAvatarSrc!} alt="" className="h-full w-full object-cover" /> : initials(personaName)}
-                </div>
-              </CustomTooltip>
+              <SidebarFooter collapsed items={rpFooterItems} />
             </div>
           </div>
         )}
@@ -207,9 +184,9 @@ export function Sidebar() {
           setFlyoutCharId={setFlyoutCharId}
           flyoutRef={flyoutRef}
           flyoutListRef={flyoutListRef}
-          flyoutTop={flyoutTop}
-          flyoutMaxH={flyoutMaxH}
-          flyoutFlipped={flyoutFlipped}
+          flyoutTop={flyout.top}
+          flyoutMaxH={flyout.maxH}
+          flyoutFlipped={flyout.flipped}
           emptyTitleKey="sidebar_send_a_message"
           t={t}
         />
@@ -291,14 +268,7 @@ export function Sidebar() {
             ))}
 
             <div className="mt-auto flex shrink-0 flex-col items-center gap-1">
-              <CustomTooltip content={t("sidebar_prompt_manager")} side="right">
-                <div className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-full bg-s3 text-t2 transition-all duration-150 hover:rounded-xl hover:bg-s2 hover:text-t1" onClick={() => useModalStore.getState().setIsPromptManagerOpen(true)}><Icons.Terminal /></div>
-              </CustomTooltip>
-              <CustomTooltip content={personaName} side="right">
-                <div className="flex h-8 w-8 cursor-pointer items-center justify-center overflow-hidden rounded-full bg-s3 text-t2 transition-all duration-150 hover:rounded-xl hover:bg-s2 hover:text-t1" onClick={() => useModalStore.getState().setIsPersonaModalOpen(true)}>
-                  {personaAvatarSrc ? <img src={personaAvatarSrc!} alt="" className="h-full w-full object-cover" /> : initials(personaName)}
-                </div>
-              </CustomTooltip>
+              <SidebarFooter collapsed items={rpFooterItems} />
             </div>
           </div>
         )}
@@ -598,43 +568,7 @@ export function Sidebar() {
             </section>
             </div>
 
-            <section className="shrink-0 border-t border-border px-1 py-1.5">
-              <div
-                className="group relative mx-1 flex cursor-pointer items-center gap-[9px] rounded px-2.5 py-1.5 text-[calc(var(--ui-fs)-1px)] text-t2 transition-colors duration-100 hover:bg-s2 hover:text-t1"
-                role="button"
-                tabIndex={0}
-                onClick={() => useModalStore.getState().setIsPromptManagerOpen(true)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" || event.key === " ") {
-                    event.preventDefault();
-                    useModalStore.getState().setIsPromptManagerOpen(true);
-                  }
-                }}
-              >
-                <span className="flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded-full bg-transparent font-ui text-[calc(var(--ui-fs)-3px)] not-italic text-t2">
-                  <Icons.Terminal />
-                </span>
-                <span>{t("sidebar_prompt_manager")}</span>
-              </div>
-              <div
-                className="group relative mx-1 flex cursor-pointer items-center gap-[9px] rounded px-2.5 py-1.5 text-[calc(var(--ui-fs)-1px)] text-t2 transition-colors duration-100 hover:bg-s2 hover:text-t1"
-                role="button"
-                tabIndex={0}
-                onClick={() => useModalStore.getState().setIsPersonaModalOpen(true)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" || event.key === " ") {
-                    event.preventDefault();
-                    useModalStore.getState().setIsPersonaModalOpen(true);
-                  }
-                }}
-              >
-                <span className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-s3 font-ui text-[calc(var(--ui-fs)-2px)] not-italic text-t2">{personaAvatarSrc ? <img src={personaAvatarSrc!} alt="" className="h-full w-full object-cover" /> : initials(personaName)}</span>
-                <span>{personaName}</span>
-                <span className="ml-auto shrink-0 text-[calc(var(--ui-fs)-3px)] text-t3">
-                  {t("sidebar_your_persona")}
-                </span>
-              </div>
-            </section>
+            <SidebarFooter items={rpFooterItems} />
           </>
         )}
 
@@ -718,30 +652,7 @@ export function Sidebar() {
               ))}
             </div>
 
-            {/* Footer */}
-            <section className="shrink-0 border-t border-border px-1 py-1.5">
-              <div
-                className="group relative mx-1 flex cursor-pointer items-center gap-[9px] rounded px-2.5 py-1.5 text-[calc(var(--ui-fs)-1px)] text-t2 transition-colors duration-100 hover:bg-s2 hover:text-t1"
-                role="button" tabIndex={0}
-                onClick={() => useModalStore.getState().setIsPromptManagerOpen(true)}
-              >
-                <span className="flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded-full bg-transparent font-ui text-[calc(var(--ui-fs)-3px)] not-italic text-t2">
-                  <Icons.Terminal />
-                </span>
-                <span>{t('sidebar_prompt_manager')}</span>
-              </div>
-              <div
-                className="group relative mx-1 flex cursor-pointer items-center gap-[9px] rounded px-2.5 py-1.5 text-[calc(var(--ui-fs)-1px)] text-t2 transition-colors duration-100 hover:bg-s2 hover:text-t1"
-                role="button" tabIndex={0}
-                onClick={() => useModalStore.getState().setIsPersonaModalOpen(true)}
-              >
-                <span className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-s3 font-ui text-[calc(var(--ui-fs)-2px)] not-italic text-t2">
-                  {personaAvatarSrc ? <img src={personaAvatarSrc!} alt="" className="h-full w-full object-cover" /> : initials(personaName)}
-                </span>
-                <span>{personaName}</span>
-                <span className="ml-auto shrink-0 text-[calc(var(--ui-fs)-3px)] text-t3">{t('sidebar_your_persona')}</span>
-              </div>
-            </section>
+            <SidebarFooter items={rpFooterItems} />
           </>
         )}
         <SidebarImportModals importModal={importModal} setImportModal={setImportModal} character={character} activeChatId={activeChatId} />
