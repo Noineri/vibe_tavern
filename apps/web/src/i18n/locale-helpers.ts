@@ -21,6 +21,17 @@ import { DEFAULT_LOCALE, type Locale } from "./registry.js";
 export type TFunc = (key: string, opts?: Record<string, unknown>) => string;
 
 /**
+ * Loose-key translation signature — the explicit escape hatch for keys that
+ * are computed at runtime (prefix-concat `t("pos_" + x)`, template literals
+ * `` t(`st_phase_${phase}`) ``, registry-driven selectors `t(panel.labelKey)`).
+ *
+ * These cannot be made `keyof Resources["en"]` without a finite-union source
+ * type per call site. `TDynamic` is the deliberately-named, greppable unchecked
+ * path: `tDynamic(computedKey)`. Use it instead of widening `TFunc`.
+ */
+export type TDynamic = (key: string, opts?: Record<string, unknown>) => string;
+
+/**
  * Returns a `t` bound to the shared i18next instance. Reads the current
  * language at call time (not capture time), so it always reflects the latest
  * `setLocale` / `i18next.changeLanguage`.
@@ -28,6 +39,15 @@ export type TFunc = (key: string, opts?: Record<string, unknown>) => string;
 export function getT(): TFunc {
 	// `as string` narrows i18next v26's `string | TFunctionDetailedResult` union:
 	// `returnDetails` is never set, so the runtime value is always a string.
+	return (key: string, opts?: Record<string, unknown>) => i18next.t(key, opts) as string;
+}
+
+/**
+ * Dynamic-key escape hatch (see {@link TDynamic}). Same binding as `getT()`,
+ * but typed to accept a runtime-computed key string. Used by non-React code
+ * that resolves a key dynamically (React code uses `useT().tDynamic`).
+ */
+export function getTDynamic(): TDynamic {
 	return (key: string, opts?: Record<string, unknown>) => i18next.t(key, opts) as string;
 }
 

@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from "react";
 import { DEFAULT_LOCALE, type Locale, normalizeLocale } from "./registry.js";
 import { i18next, initI18n } from "./i18n.js";
+import { type TDynamic } from "./locale-helpers.js";
 
 // `Locale` originates in registry.ts (the single source of truth) and should be
 // imported from there directly at call sites — do NOT re-export it (or any
@@ -18,6 +19,8 @@ export type TFunc = (key: string, opts?: Record<string, unknown>) => string;
 interface LocaleContextValue {
   locale: Locale;
   t: TFunc;
+  /** Dynamic-key escape hatch (see {@link TDynamic} in locale-helpers). */
+  tDynamic: TDynamic;
   setLocale: (locale: Locale) => void;
   ready: boolean;
 }
@@ -25,6 +28,7 @@ interface LocaleContextValue {
 const LocaleContext = createContext<LocaleContextValue>({
   locale: DEFAULT_LOCALE,
   t: (key) => key,
+  tDynamic: (key) => key,
   setLocale: () => {},
   ready: false,
 });
@@ -78,8 +82,15 @@ export function LocaleProvider({ children, initialLocale }: {
   // the cast becomes provably unnecessary.)
   const t = useCallback<TFunc>((key, opts) => i18next.t(key, opts) as string, [locale]);
 
+  // `tDynamic` is the loose-key sibling of `t` — same i18next binding, typed to
+  // accept a runtime-computed key string. It stays loose when `t` is tightened
+  // to `keyof Resources["en"]` (Wave 3 of I18N_TYPES_KEYSAFETY_PLAN), so
+  // computed-key sites (`tDynamic("pos_" + x)`, `tDynamic(panel.labelKey)`) keep
+  // compiling. Keyed on `locale` for the same re-render reason as `t`.
+  const tDynamic = useCallback<TDynamic>((key, opts) => i18next.t(key, opts) as string, [locale]);
+
   return (
-    <LocaleContext.Provider value={{ locale, t, setLocale, ready: true }}>
+    <LocaleContext.Provider value={{ locale, t, tDynamic, setLocale, ready: true }}>
       {children}
     </LocaleContext.Provider>
   );

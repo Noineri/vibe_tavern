@@ -15,5 +15,13 @@
  */
 export type TFn = (key: string, opts?: Record<string, unknown>) => string;
 
+/**
+ * Dynamic-key sibling of {@link TFn} — accepts a runtime-computed key string
+ * (registry selectors like `panel.labelKey`, prefix-concat). Mirrors `TDynamic`
+ * in `i18n/locale-helpers.ts`. Stays loose when `TFn` is tightened to
+ * `keyof Resources["en"]`, so layout sections with computed keys keep compiling.
+ */
+export type TFnDynamic = (key: string, opts?: Record<string, unknown>) => string;
+
 /** The import-modal discriminator state held by both sidebars. */
 export type ImportModalKind = "character" | "chat" | null;
