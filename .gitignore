@@ -49,6 +49,7 @@ desktop.ini
 *.tmp
 *.temp
 .pi/
+.pi-subagents/
 .omo/
 .serena/
 
