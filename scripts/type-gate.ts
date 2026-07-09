@@ -21,8 +21,8 @@
  *     - existing debt is visible and shrinks one fix at a time (remove a
  *       violation, run `--update-baseline`, the line drops from the checklist),
  *     - no eslint/biome dependency — this is a ~200-line Bun script using the
- *       already-installed `typescript` compiler API, matching the i18n-check
- *       gate pattern and the project's "no linter" stance.
+ *       already-installed `typescript` compiler API, matching the project's
+ *       "no linter" stance.
  *
  * Usage:
  *   bun scripts/type-gate.ts                # enforce (exit 1 on new violations)

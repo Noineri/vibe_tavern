@@ -28,7 +28,7 @@
     "typecheck": "bun scripts/type-gate.ts && bun run --filter '*' typecheck",
     "test": "bun run --filter '*' test",
     "test:parallel": "bun test --parallel",
-    "i18n:check": "bun scripts/i18n-check.ts",
+    "i18n:check": "cd apps/web && bunx i18next-cli extract --ci && bunx i18next-cli status",
     "check": "bun run typecheck && bun run test && bun run i18n:check",
     "dev:api": "bun run --filter @vibe-tavern/api dev",
     "dev:web": "bun run --filter @vibe-tavern/web dev",
