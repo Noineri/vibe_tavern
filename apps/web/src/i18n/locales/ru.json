@@ -628,6 +628,8 @@
   "char_export_json": "Экспорт JSON",
   "char_export_png": "Экспорт PNG",
   "char_duplicate": "Дублировать",
+  "character_duplicated": "Персонаж дублирован.",
+  "failed_to_duplicate": "Не удалось дублировать.",
   "char_delete": "Удалить",
   "char_delete_confirm": "Удалить {name}? Все чаты с этим персонажем будут безвозвратно удалены.",
   "failed_to_export_chat": "Не удалось экспортировать чат.",

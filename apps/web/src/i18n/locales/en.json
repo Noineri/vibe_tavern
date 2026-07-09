@@ -628,6 +628,8 @@
   "char_export_json": "Export JSON",
   "char_export_png": "Export PNG",
   "char_duplicate": "Duplicate",
+  "character_duplicated": "Character duplicated.",
+  "failed_to_duplicate": "Failed to duplicate.",
   "char_delete": "Delete",
   "char_delete_confirm": "Delete {name}? All chats with this character will be permanently deleted.",
   "failed_to_export_chat": "Failed to export chat.",
