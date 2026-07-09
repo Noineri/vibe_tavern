@@ -19,7 +19,7 @@ import type { CoauthorToolActivity } from "../../stores/coauthor-turn-store.js";
 // Mock useT at the module boundary — the card imports i18n for labels.
 // Returns the key verbatim so assertions can match on stable key strings.
 vi.mock("../../i18n/context.js", () => ({
-	useT: () => ({ t: (key: string) => key, locale: "en", setLocale: () => {}, ready: true }),
+	useT: () => ({ t: (key: string) => key, tDynamic: (key: string) => key, locale: "en", setLocale: () => {}, ready: true }),
 }));
 
 function activity(over: Partial<CoauthorToolActivity> = {}): CoauthorToolActivity {

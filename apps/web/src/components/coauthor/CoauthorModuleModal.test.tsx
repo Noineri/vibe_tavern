@@ -35,7 +35,7 @@ vi.mock("../../i18n/context.js", async (importOriginal) => {
 	const i18nReal = await importOriginal() as typeof import("../../i18n/context.js");
 	return {
 		...i18nReal,
-		useT: () => ({ t: (key: string) => key, locale: "en", setLocale: () => {}, ready: true }),
+		useT: () => ({ t: (key: string) => key, tDynamic: (key: string) => key, locale: "en", setLocale: () => {}, ready: true }),
 	};
 });
 

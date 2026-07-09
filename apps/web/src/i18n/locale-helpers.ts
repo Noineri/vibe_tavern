@@ -15,10 +15,16 @@
  */
 
 import { i18next } from "./i18n.js";
+import type Resources from "./resources.js";
 import { DEFAULT_LOCALE, type Locale } from "./registry.js";
 
-/** Translation function signature (mirrors the `useT()` `t`). */
-export type TFunc = (key: string, opts?: Record<string, unknown>) => string;
+/**
+ * Strict-key translation function (mirrors the `useT()` `t`). The key is
+ * `keyof Resources["en"]` — a missing/typo'd key is a compile error. For
+ * runtime-computed keys (prefix-concat, registry selectors) use {@link TDynamic}.
+ * Accepts an optional interpolation/`count` options object.
+ */
+export type TFunc = (key: keyof Resources["en"], opts?: Record<string, unknown>) => string;
 
 /**
  * Loose-key translation signature — the explicit escape hatch for keys that

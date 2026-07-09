@@ -23,7 +23,7 @@ const NOOP = () => {};
 
 // Mock useT at the module boundary (same relative path the component uses).
 vi.mock("../../i18n/context.js", () => ({
-	useT: () => ({ t: (key: string) => key, locale: "en", setLocale: NOOP, ready: true }),
+	useT: () => ({ t: (key: string) => key, tDynamic: (key: string) => key, locale: "en", setLocale: NOOP, ready: true }),
 }));
 
 const formatTokens = (n: number) => `${n} tok`;

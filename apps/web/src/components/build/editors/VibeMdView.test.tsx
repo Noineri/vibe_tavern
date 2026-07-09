@@ -24,7 +24,7 @@ import { VibeMdView } from "./VibeMdView.js";
 
 // Mock useT at the module boundary — the editor imports i18n for labels.
 vi.mock("../../../i18n/context.js", () => ({
-	useT: () => ({ t: (key: string) => key, locale: "en", setLocale: () => {}, ready: true }),
+	useT: () => ({ t: (key: string) => key, tDynamic: (key: string) => key, locale: "en", setLocale: () => {}, ready: true }),
 }));
 // Mock useIsMobile so the desktop path renders deterministically.
 vi.mock("../../../hooks/use-mobile.js", () => ({

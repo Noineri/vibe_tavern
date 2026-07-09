@@ -29,7 +29,7 @@ import { toast } from "sonner";
 
 // Mock useT at the module boundary — returns keys verbatim so assertions match.
 vi.mock("../../i18n/context.js", () => ({
-	useT: () => ({ t: (key: string) => key, locale: "en", setLocale: () => {}, ready: true }),
+	useT: () => ({ t: (key: string) => key, tDynamic: (key: string) => key, locale: "en", setLocale: () => {}, ready: true }),
 }));
 
 // useCharacterController is not consumed by any other test file → safe to mock

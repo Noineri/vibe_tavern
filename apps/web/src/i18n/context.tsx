@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from "react";
 import { DEFAULT_LOCALE, type Locale, normalizeLocale } from "./registry.js";
 import { i18next, initI18n } from "./i18n.js";
+import type Resources from "./resources.js";
 import { type TDynamic } from "./locale-helpers.js";
 
 // `Locale` originates in registry.ts (the single source of truth) and should be
@@ -9,12 +10,12 @@ import { type TDynamic } from "./locale-helpers.js";
 // re-exporting breaks Fast Refresh boundary isolation.
 
 /**
- * Translation function signature. Accepts an optional interpolation/`count`
- * options object so call sites can pass `t("turn_label", { n: 3 })` or
- * `t("msg_count", { count: 5 })` (plural). Single-arg `t("key")` calls are
- * unchanged from the pre-migration surface.
+ * Strict-key translation function (same shape as `TFunc` in locale-helpers):
+ * `key` is `keyof Resources["en"]`, so a missing/typo'd key is a compile error.
+ * Accepts an optional interpolation/`count` options object. For computed keys
+ * use the `tDynamic` sibling on `useT()`.
  */
-export type TFunc = (key: string, opts?: Record<string, unknown>) => string;
+export type TFunc = (key: keyof Resources["en"], opts?: Record<string, unknown>) => string;
 
 interface LocaleContextValue {
   locale: Locale;

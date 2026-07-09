@@ -58,7 +58,7 @@ vi.mock("../../hooks/use-chat-controller.js", () => ({
 }));
 
 vi.mock("../../i18n/context.js", () => ({
-  useT: () => ({ t: (key: string) => key, locale: "en", setLocale: NOOP, ready: true }),
+  useT: () => ({ t: (key: string) => key, tDynamic: (key: string) => key, locale: "en", setLocale: NOOP, ready: true }),
 }));
 
 // ---------------------------------------------------------------------------

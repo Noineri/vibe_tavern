@@ -7,13 +7,16 @@
  * from character-store directly, so they can't drift from the real signatures.
  */
 
+import type Resources from "../../../i18n/resources.js";
+
 /**
- * The translation function shape returned by `useT().t`. Accepts an optional
- * interpolation/`count` options object (mirrors `TFunc` in
- * `i18n/locale-helpers.ts`) so call sites can pass an opts object with `n` or
+ * The translation function shape returned by `useT().t`. `key` is
+ * `keyof Resources["en"]` (strict — a missing/typo'd key is a compile error);
+ * for computed keys use {@link TFnDynamic}. Accepts an optional interpolation/
+ * `count` options object so call sites can pass an opts object with `n` or
  * `count`. Single-arg calls are unchanged.
  */
-export type TFn = (key: string, opts?: Record<string, unknown>) => string;
+export type TFn = (key: keyof Resources["en"], opts?: Record<string, unknown>) => string;
 
 /**
  * Dynamic-key sibling of {@link TFn} — accepts a runtime-computed key string
