@@ -20,9 +20,17 @@
  *     - any NEW violation aborts the build (the actual goal — stop the bleed),
  *     - existing debt is visible and shrinks one fix at a time (remove a
  *       violation, run `--update-baseline`, the line drops from the checklist),
- *     - no eslint/biome dependency — this is a ~200-line Bun script using the
- *       already-installed `typescript` compiler API, matching the i18n-check
- *       gate pattern and the project's "no linter" stance.
+ *     - no eslint/biome dependency — this is a ~250-line Bun script using the
+ *       TypeScript compiler API (via `typescript/unstable/async`), matching the
+ *       i18n-check gate pattern and the project's "no linter" stance.
+ *
+ * Parsing uses the TypeScript 7 programmatic API (`typescript/unstable/async`).
+ * TS 7 restructured the package: the main entry now exports only `version`, and
+ * the compiler/AST API moved to `typescript/unstable/*` subpaths. This script
+ * creates an `API` instance (which spawns the native `tsgo` worker), opens all
+ * scanned files in one `updateSnapshot` call (auto-resolving their workspace
+ * projects via tsconfig discovery), then walks each parsed `SourceFile` AST for
+ * violations. Total wall time for ~450 files is ~500ms.
  *
  * Usage:
  *   bun scripts/type-gate.ts                # enforce (exit 1 on new violations)
@@ -53,7 +61,14 @@
  * to the repo root. When a file is refactored and line numbers shift, run
  * `--update-baseline` (the diff will show only the legit shift — review it).
  */
-import * as ts from "typescript";
+import { API } from "typescript/unstable/async";
+import {
+  SyntaxKind,
+  isAsExpression,
+  isTypeAssertion,
+  isCatchClause,
+} from "typescript/unstable/ast";
+import type { Node, SourceFile, Block } from "typescript/unstable/ast";
 import * as fs from "node:fs";
 import * as path from "node:path";
 
@@ -88,67 +103,79 @@ interface Violation {
 
 const rel = (abs: string): string => path.relative(ROOT, abs).split(path.sep).join("/");
 
-function snippetOf(sf: ts.SourceFile, node: ts.Node, max = 60): string {
+function snippetOf(sf: SourceFile, node: Node, max = 60): string {
   const text = sf.text.slice(node.getStart(sf), node.getEnd()).replace(/\s+/g, " ").trim();
   return text.length > max ? text.slice(0, max - 1) + "…" : text;
 }
 
-function locOf(sf: ts.SourceFile, node: ts.Node): { line: number; col: number } {
+function locOf(sf: SourceFile, node: Node): { line: number; col: number } {
   const { line, character } = sf.getLineAndCharacterOfPosition(node.getStart(sf));
   return { line: line + 1, col: character + 1 };
 }
 
 /** True if `typeNode`'s subtree contains an AnyKeyword (covers `any`, `any[]`,
  *  `Foo<any>`, `Promise<any>`, etc.). */
-function typeContainsAny(typeNode: ts.Node): boolean {
+function typeContainsAny(typeNode: Node): boolean {
   let found = false;
-  const visit = (n: ts.Node) => {
+  const visit = (n: Node) => {
     if (found) return;
-    if (n.kind === ts.SyntaxKind.AnyKeyword) { found = true; return; }
-    ts.forEachChild(n, visit);
+    if (n.kind === SyntaxKind.AnyKeyword) { found = true; return; }
+    n.forEachChild(visit);
   };
   visit(typeNode);
   return found;
 }
 
+/** Record every AnyKeyword under `typeNode` as already-reported. */
+function markAnyNodes(typeNode: Node, set: Set<Node>): void {
+  const visit = (n: Node) => {
+    if (n.kind === SyntaxKind.AnyKeyword) set.add(n);
+    n.forEachChild(visit);
+  };
+  visit(typeNode);
+}
+
 // ─── Scanning ──────────────────────────────────────────────────────────────
 
-function scanFile(absPath: string): Violation[] {
-  const text = fs.readFileSync(absPath, "utf8");
-  const scriptKind = absPath.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS;
-  const sf = ts.createSourceFile(absPath, text, ts.ScriptTarget.Latest, true, scriptKind);
-  const out: Violation[] = [];
+/**
+ * Walk the parsed `SourceFile` AST for violations. Pure synchronous function —
+ * all parsing (IPC with the tsgo worker) is done by the caller; this only
+ * traverses the in-memory AST tree.
+ */
+function scanAst(sf: SourceFile, absPath: string): Violation[] {
+  const text = sf.text;
   const file = rel(absPath);
+  const out: Violation[] = [];
 
-  const add = (node: ts.Node, category: Category) => {
+  const add = (node: Node, category: Category) => {
     const { line, col } = locOf(sf, node);
     out.push({ file, line, col, category, snippet: snippetOf(sf, node) });
   };
 
   // Track AnyKeyword nodes already attributed to an `as`/`<>` cast, so they
   // aren't double-reported as type-any.
-  const consumedAny = new Set<ts.Node>();
+  const consumedAny = new Set<Node>();
 
-  const visit = (node: ts.Node) => {
+  const visit = (node: Node) => {
     // `x as any` / `x as any[]` / `x as Foo<any>`
-    if (ts.isAsExpression(node) && typeContainsAny(node.type)) {
+    if (isAsExpression(node) && typeContainsAny(node.type)) {
       add(node, "as-any");
       markAnyNodes(node.type, consumedAny);
     }
     // `<any>x` type assertion
-    if (ts.isTypeAssertionExpression(node) && typeContainsAny(node.type)) {
+    if (isTypeAssertion(node) && typeContainsAny(node.type)) {
       add(node, "angle-any");
       markAnyNodes(node.type, consumedAny);
     }
     // AnyKeyword elsewhere in type position (`: any`, `Record<string, any>`, …)
-    if (node.kind === ts.SyntaxKind.AnyKeyword && !consumedAny.has(node)) {
+    if (node.kind === SyntaxKind.AnyKeyword && !consumedAny.has(node)) {
       add(node, "type-any");
     }
     // Empty catch block without an inline justification comment.
-    if (ts.isCatchClause(node) && node.block.statements.length === 0) {
+    if (isCatchClause(node) && node.block.statements.length === 0) {
       if (!blockHasComment(sf, node.block)) add(node, "empty-catch");
     }
-    ts.forEachChild(node, visit);
+    node.forEachChild(visit);
   };
   visit(sf);
 
@@ -158,27 +185,20 @@ function scanFile(absPath: string): Violation[] {
   return out;
 }
 
-/** Record every AnyKeyword under `typeNode` as already-reported. */
-function markAnyNodes(typeNode: ts.Node, set: Set<ts.Node>): void {
-  const visit = (n: ts.Node) => {
-    if (n.kind === ts.SyntaxKind.AnyKeyword) set.add(n);
-    ts.forEachChild(n, visit);
-  };
-  visit(typeNode);
-}
-
 /** A catch block is "justified" if it contains a `//` or `/*` comment between
  *  its braces — that's where the required rationale lives. Pure `{}` or
  *  `{ (void)e; }` has no comment and is flagged. */
-function blockHasComment(sf: ts.SourceFile, block: ts.Block): boolean {
-  // Slice from just after `{` to the `}`.
-  const open = block.getChildAt(0, sf).getEnd(); // the `{` token end
-  const close = block.getEnd();                   // includes the closing `}`
+function blockHasComment(sf: SourceFile, block: Block): boolean {
+  // TS 7's Node interface no longer exposes `getChildAt`; compute the open-brace
+  // end arithmetically. A Block always starts with `{` (one character), so
+  // start+1 is the position of the first byte inside the block.
+  const open = block.getStart(sf) + 1; // just past the `{`
+  const close = block.getEnd();         // includes the closing `}`
   const inner = sf.text.slice(open, close);
   return inner.includes("//") || inner.includes("/*");
 }
 
-function scanTsDirectives(file: string, text: string, sf: ts.SourceFile): Violation[] {
+function scanTsDirectives(file: string, text: string, sf: SourceFile): Violation[] {
   const out: Violation[] = [];
   const re = /@(ts-ignore|ts-expect-error)/g;
   let m: RegExpExecArray | null;
@@ -196,17 +216,49 @@ function isExcluded(absPath: string): boolean {
   return EXCLUDE_DIR_PARTS.some((p) => norm.includes(p));
 }
 
-function collectAll(): Violation[] {
-  const all: Violation[] = [];
+/** Collect all .ts/.tsx file paths to scan (synchronous glob). */
+function collectFiles(): string[] {
+  const files: string[] = [];
   for (const root of SCAN_ROOTS) {
     const cwd = path.resolve(ROOT, root);
     if (!fs.existsSync(cwd)) continue;
     for (const p of new Bun.Glob("**/*.{ts,tsx}").scanSync({ cwd, absolute: true })) {
       if (isExcluded(p)) continue;
-      all.push(...scanFile(p));
+      files.push(p);
     }
   }
-  return all;
+  return files;
+}
+
+/**
+ * Parse every collected file via the TS 7 `unstable/async` API and scan each
+ * parsed AST for violations. Creates a single `tsgo` worker, opens all files in
+ * one `updateSnapshot` (auto-resolving workspace projects), then fetches each
+ * parsed `SourceFile` sequentially.
+ */
+async function collectAllViolations(): Promise<Violation[]> {
+  const files = collectFiles();
+  const api = new API();
+  try {
+    const snap = await api.updateSnapshot({ openFiles: files });
+    const all: Violation[] = [];
+    for (const absPath of files) {
+      const proj = await snap.getDefaultProjectForFile(absPath);
+      if (!proj) {
+        console.error(`type-gate: warning — ${rel(absPath)} not in any tsconfig project; skipping AST scan.`);
+        continue;
+      }
+      const sf = await proj.program.getSourceFile(absPath);
+      if (!sf) {
+        console.error(`type-gate: warning — could not parse ${rel(absPath)}; skipping.`);
+        continue;
+      }
+      all.push(...scanAst(sf, absPath));
+    }
+    return all;
+  } finally {
+    api.close();
+  }
 }
 
 // ─── Baseline ──────────────────────────────────────────────────────────────
@@ -233,7 +285,7 @@ function writeBaseline(keys: string[]): void {
 
 // ─── Main ──────────────────────────────────────────────────────────────────
 
-function main(): void {
+async function main(): Promise<void> {
   const argv = process.argv.slice(2);
   const update = argv.includes("--update-baseline");
   const quiet = argv.includes("--quiet");
@@ -244,7 +296,7 @@ function main(): void {
     process.exit(2);
   }
 
-  const violations = collectAll();
+  const violations = await collectAllViolations();
   const currentKeys = new Set(violations.map(toKey));
 
   if (update) {
@@ -312,4 +364,7 @@ function countByCategory(vs: Violation[]): Record<string, number> {
   return m;
 }
 
-main();
+main().catch((err) => {
+  console.error("type-gate: unexpected error:", err);
+  process.exit(1);
+});
