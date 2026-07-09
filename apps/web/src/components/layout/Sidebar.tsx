@@ -13,6 +13,7 @@ import { CollapsedCharacterStrip } from "./sections/CollapsedCharacterStrip.js";
 import { CharacterListSection } from "./sections/CharacterListSection.js";
 import { SidebarFlyout } from "./sections/SidebarFlyout.js";
 import { SidebarFooter, type FooterLauncherItem } from "./sections/SidebarFooter.js";
+import { SidebarBranchRename } from "./sections/SidebarBranchRename.js";
 import { Icons } from "../shared/icons.js";
 
 import { cn } from "../../lib/cn.js";
@@ -657,48 +658,5 @@ export function Sidebar() {
         )}
         <SidebarImportModals importModal={importModal} setImportModal={setImportModal} character={character} activeChatId={activeChatId} />
       </div>
-  );
-}
-
-function SidebarBranchRename({ branchId, initialLabel, onRename }: { branchId: string; initialLabel: string; onRename: (label: string) => void }) {
-  const [editing, setEditing] = useState(false);
-  const [value, setValue] = useState(initialLabel);
-  const inputRef = useRef<HTMLInputElement>(null);
-  const { t } = useT();
-
-  useEffect(() => {
-    if (editing) inputRef.current?.focus();
-  }, [editing]);
-
-  if (editing) {
-    return (
-      <input
-        ref={inputRef}
-        className="w-full min-w-0 rounded border border-accent bg-s2 px-1 py-0.5 text-[calc(var(--ui-fs)-3px)] text-t1 outline-none"
-        value={value}
-        onChange={(e) => setValue(e.target.value)}
-        onBlur={() => {
-          const trimmed = value.trim();
-          if (trimmed && trimmed !== initialLabel) onRename(trimmed);
-          else setValue(initialLabel);
-          setEditing(false);
-        }}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") { (e.target as HTMLInputElement).blur(); }
-          if (e.key === "Escape") { setValue(initialLabel); setEditing(false); }
-        }}
-        onClick={(e) => e.stopPropagation()}
-      />
-    );
-  }
-
-  return (
-    <button
-      type="button"
-      className="shrink-0 cursor-pointer rounded p-0.5 text-t3 opacity-0 transition-all hover:bg-s3 hover:text-t1 group-hover/branch:opacity-100"
-      onClick={(e) => { e.stopPropagation(); setValue(initialLabel); setEditing(true); }}
-    >
-      <Icons.Edit />
-    </button>
   );
 }
