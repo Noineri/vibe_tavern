@@ -317,7 +317,7 @@ export function PresetImportModal({ onClose, onImport }: PresetImportModalProps)
 // ── Read-only block preview row ─────────────────────────────────────────────
 
 function BlockPreview({ info }: { info: BlockInfo }) {
-  const { t } = useT();
+  const { t, tDynamic } = useT();
   const { block, target, slot } = info;
   const [expanded, setExpanded] = useState(false);
   const isMobile = useIsMobile();
@@ -336,7 +336,7 @@ function BlockPreview({ info }: { info: BlockInfo }) {
         <div className={cn("h-2 w-2 shrink-0 rounded-full", block.enabled ? "bg-accent" : "bg-t4")} />
         <div className="min-w-0 flex-1 truncate font-ui text-[calc(var(--ui-fs)-1px)] font-medium text-t1">{block.name}</div>
         <span className={cn("shrink-0 rounded px-2 py-0.5 font-ui text-[calc(var(--ui-fs)-2px)]", badge.cls)}>
-          {t(badge.key)}
+          {tDynamic(badge.key)}
         </span>
       </div>
 

@@ -49,7 +49,7 @@ function GitHubFallbackButton({ releaseUrl }: { releaseUrl: string }) {
 }
 
 export function UpdateModal({ latestVersion, latestTag, releaseUrl, releaseNotes }: UpdateModalProps) {
-	const { t } = useT();
+	const { t, tDynamic } = useT();
 	const open = useModalStore((s) => s.isUpdateModalOpen);
 	const setOpen = useModalStore((s) => s.setUpdateModalOpen);
 	const [runtimeInfo, setRuntimeInfo] = useState<RuntimeInfo | null>(null);
@@ -123,7 +123,7 @@ export function UpdateModal({ latestVersion, latestTag, releaseUrl, releaseNotes
 
 				{flow.state.kind === "running" && (
 					<RunningView
-						phaseLabel={PHASE_I18N_KEYS[flow.state.phase] ? t(PHASE_I18N_KEYS[flow.state.phase]) : flow.state.phase}
+						phaseLabel={PHASE_I18N_KEYS[flow.state.phase] ? tDynamic(PHASE_I18N_KEYS[flow.state.phase]) : flow.state.phase}
 						progress={flow.state.progress}
 					/>
 				)}

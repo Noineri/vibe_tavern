@@ -80,7 +80,7 @@ function FieldSection({ label, labelClassName, token, children }: {
 }
 
 export function PromptFields({ draft, onUpdateField, prefillSupported, hideChatPrompts = false }: PromptFieldsProps) {
-  const { t } = useT();
+  const { t, tDynamic } = useT();
   const disabled = !draft;
   const [serviceOpen, setServiceOpen] = useState(false);
 
@@ -93,7 +93,7 @@ export function PromptFields({ draft, onUpdateField, prefillSupported, hideChatP
   ] as const;
 
   const ta = useCallback((key: TextDraftKey, placeholder: string, minRows = 5, labelKey?: string) => (
-    <MobileExpandTextarea value={String(draft?.[key] ?? "")} onChange={(v) => onUpdateField(key, v)} label={labelKey ? t(labelKey) : undefined}>
+    <MobileExpandTextarea value={String(draft?.[key] ?? "")} onChange={(v) => onUpdateField(key, v)} label={labelKey ? tDynamic(labelKey) : undefined}>
     <AutoTextarea
       className={cn(textareaCls, "px-[13px] py-[9px]")}
       minRows={minRows}
@@ -215,7 +215,7 @@ export function PromptFields({ draft, onUpdateField, prefillSupported, hideChatP
               return (
                 <div key={key}>
                   <div className="mb-[7px] flex items-center justify-between">
-                    <label className="mb-0 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.06em] text-t3">{t(labelKey)}</label>
+                    <label className="mb-0 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.06em] text-t3">{tDynamic(labelKey)}</label>
                     <TokenCounter text={value} />
                   </div>
                   <MobileExpandTextarea
@@ -225,7 +225,7 @@ export function PromptFields({ draft, onUpdateField, prefillSupported, hideChatP
                       if (!v.trim()) delete updated[key];
                       onUpdateField("aiAssistantPrompts", updated);
                     }}
-                    label={t(labelKey)}
+                    label={tDynamic(labelKey)}
                   >
                     <AutoTextarea
                       className={cn(textareaCls, "px-[13px] py-[9px]")}

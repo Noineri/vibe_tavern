@@ -578,7 +578,7 @@ function StImportProgress(props: {
   scanResult: StScanResult;
   progress: { activePhase: ImportPhase | null; counts: Partial<Record<ImportPhase, number>> };
 }) {
-  const { t } = useT();
+  const { t, tDynamic } = useT();
   const totals: Record<ImportPhase, number> = {
     characters: props.scanResult.characters.length,
     chats: props.scanResult.chats.length,
@@ -617,7 +617,7 @@ function StImportProgress(props: {
                   {status === "done" ? "✓" : status === "active" ? "●" : "○"}
                 </span>
                 <span className={cn("w-20 shrink-0", status === "pending" ? "text-t3" : "text-t2")}>
-                  {t(`st_phase_${phase}`)}
+                  {tDynamic(`st_phase_${phase}`)}
                 </span>
                 <div className="h-1 flex-1 overflow-hidden rounded-full bg-s3">
                   <div className="h-full rounded-full bg-accent transition-all duration-150" style={{ width: `${pct}%` }} />
