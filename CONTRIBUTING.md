@@ -143,7 +143,7 @@ There is no eslint/prettier/biome — **TypeScript strict is the only automated 
 bun run typecheck   # typecheck every workspace — THE valid typecheck
 bun run test        # bun:test across all workspaces
 bun run check       # typecheck + test + i18n:check (the full local gate)
-bun run i18n:check  # locale key parity / duplicate / missing-key audit
+bun run i18n:check  # i18next-cli gate: missing/phantom keys (extract --ci) + incomplete translations (status)
 ```
 
 > **Typecheck gotcha:** always run `bun run typecheck` from the repo root. Running bare `tsc` / `bunx tsc` from `apps/web/` against the default `tsconfig.json` produces ~80 false errors (`Property X does not exist on ClientRequest`) because that config's `rootDir` + path aliases collapse Hono's `AppType` inference. CI runs `build`, not `typecheck`; the local `check` is the gate that matters.

@@ -2,7 +2,7 @@
 
 > Companion to [Frontend Architecture](../architecture/frontend.md) and [AD-021](../architecture/decisions.md#ad-021-locale-registry-over-scattered-type-literals-for-i18n) / [AD-022](../architecture/decisions.md#ad-022-flexible-layouts-over-fixed-widths-for-translated-text).
 
-Localization is **registry-driven**, exactly like theming. There is one source of truth — `apps/web/src/i18n/registry.ts` — and every consumer (the `Locale` type, storage validation, browser-language detection, and both language pickers in desktop Tweaks *and* mobile settings) derives from it. Adding a language is two mechanical steps: a JSON file of translated strings plus one array entry. `LocaleProvider` loads the JSON dynamically, so it needs no change.
+Localization is **registry-driven**, exactly like theming. There is one source of truth — `apps/web/src/i18n/registry.ts` — and every consumer (the `Locale` type, storage validation, browser-language detection, and both language pickers in desktop Tweaks *and* mobile settings) derives from it. Adding a language is three mechanical steps: a JSON file of translated strings, one array entry in the runtime registry, and one array entry in the `i18next-cli` config (so the validation gate covers the new locale). `LocaleProvider` loads the JSON dynamically, so it needs no change.
 
 The two things that are *not* automatic — layout breakage from longer strings, and the pre-React placeholder exception — are documented below; read those sections before you translate.
 
@@ -31,7 +31,7 @@ Everything below `registry.ts` in that tree adapts automatically. **Do not touch
 
 ---
 
-## The 2 steps
+## The 3 steps
 
 ### 1. Create the translation JSON
 
@@ -74,25 +74,43 @@ That's it. The language now appears in both pickers, persists across reloads, an
 >
 > **The default** is controlled by `DEFAULT_LOCALE` in the same file (currently `"en"`), not by array position. Most additions should leave the default alone.
 
+### 3. Add it to the validation gate's locale list
+
+Append the same `id` to the `locales` array in `apps/web/i18next.config.ts`:
+
+```ts
+export default defineConfig({
+  locales: ["en", "ru", "de"],  // ← add the new id here
+  // ...
+});
+```
+
+This is the config the `i18next-cli` gate consumes (`bun run i18n:check`). If the id is missing here, the gate will not extract into or check the new locale file, so a key forgotten in `de.json` would ship silently. The runtime registry (step 2) and this array must list the same ids — the registry drives the running app, this array drives the CI gate.
+
 ---
 
 ## Validation: `bun run i18n:check`
 
-The two steps above are mechanical, but copying a JSON file by hand is exactly where drift creeps in — a key forgotten in the new locale, a key defined twice in one file (JSON.parse is last-wins, so the earlier copy silently dies), or a feature merged later that adds a key to `en.json` but not to yours. The locale validator in `scripts/i18n-check.ts` exists to catch all of that before a user sees a raw `tweaks_title` string where a label should be. It runs as part of `bun run check`; invoke it directly with `bun run i18n:check`.
+The steps above are mechanical, but copying a JSON file by hand is exactly where drift creeps in — a key forgotten in the new locale, a value left empty, or a feature merged later that adds a key to `en.json` but not to yours. The i18next-cli gate exists to catch all of that before a user sees a raw `tweaks_title` string where a label should be. It runs as part of `bun run check`; invoke it directly with `bun run i18n:check`.
 
-The check parses `apps/web/src` with the TypeScript AST (no type checker, so it's fast and independent of tsconfig) and audits every `t("…")` call against every locale file. It runs five checks — three hard errors (exit 1) and two advisory warnings (exit 0):
+`i18n:check` runs two commands in sequence (configured in `apps/web/i18next.config.ts`):
 
-| Check | Level | What it catches |
-|-------|-------|-----------------|
-| `[parity]` | **HARD** | a key present in one locale file but missing in another. `en.json` is the source of truth; every other file must have exactly the same key set. |
-| `[duplicate]` | **HARD** | a key defined twice in one file. JSON.parse keeps the last value, so an early duplicate is silently dead copy — this once shipped a double ✓ on `provider_active`. |
-| `[missing-key]` | **HARD** | a `t("key")` call in code with no matching entry in a locale file. The raw key string leaks into the UI. |
-| `[unused]` | WARN | a key defined but never referenced by any `t()` call. Prefix-aware (a key only reached via `t(\`pos_${x}\`)` or `t("trigger_" + x)` is not flagged), plus a loose scan that counts a key referenced as any string literal (catches registry patterns like `labelKey: "build_scripts"`). |
-| `[hardcoded]` | WARN | a raw user-facing string that bypasses i18n — JSX text (`<button>Cancel</button>`), user-facing attributes (`placeholder="…"`, `title=`, `aria-label=`, `alt=`, `label=`), and `toast.*()`/`alert()`/`confirm()` calls with a string-literal first argument. Heuristics skip symbols, URLs, HTML entities, code references, and an enum/role word allowlist. |
+```sh
+cd apps/web && bunx i18next-cli extract --ci && bunx i18next-cli status
+```
 
-When adding a language, your loop is: create the JSON, register it, run `bun run i18n:check`, and fix every `[parity]`, `[duplicate]`, and `[missing-key]` error until the script prints `✓ clean`. The two advisory levels (`[unused]`, `[hardcoded]`) never set exit 1 — they surface candidates for a translator pass but don't block. `[unused]` warnings against your new file almost always mean a key you forgot to delete that was already removed from `en.json`; `[hardcoded]` warnings are pre-existing and not your concern unless you introduced them.
+| Command | Level | What it catches |
+|---------|-------|-----------------|
+| `extract --ci` | **HARD** (exit 1 if files would change) | a `t("key")` call in code with no matching entry in the JSON (the key would be added → exit 1), or any phantom key that would be added. After running, re-run `extract` (without `--ci`) to write the missing keys into the locale files, then translate them. |
+| `status` | **HARD** (exit 1 on incomplete) | a key present but with an empty value in any non-primary locale. Also reports per-locale progress. **Plural-aware**: it understands that English needs only `_one`/`_other` while Russian needs `_one`/`_few`/`_many`/`_other`, so it does not flag the suffix divergence as a parity error. |
 
-> **The `[dynamic]` warning** appears when a `t()` call uses a value the validator can't resolve statically — `t(panel.labelKey)`, `t(\`prefix${x}\`)`, `t("trigger_" + x)`. These are "verify by hand" notices, not defects; their target keys were sanity-checked at write time. If you add a new dynamically-keyed call site, expect a `[dynamic]` line and confirm the target keys exist.
+`en.json` is the source of truth (the primary locale). `extract` adds new keys to every locale in the `locales` array with a derived placeholder value; you then fill in real translations and `status` confirms nothing is empty.
+
+When adding a language, your loop is: create the JSON, register it (steps 1–3), run `bun run i18n:check`, and fix until both commands pass — `extract --ci` prints `✅ No files were updated` and `status` shows your locale at `100%`. Empty-value errors from `status` mean a key you left untranslated (or the derived placeholder you forgot to replace); `extract --ci` failures mean a key used in code is missing from your file.
+
+> **Count-bearing keys and CLDR plurals.** A key called as `t("summary_messages_count", { count: n })` is pluralized automatically: the tool expects `summary_messages_count_one`/`_other` (English) and `summary_messages_count_one`/`_few`/`_many`/`_other` (Russian, Polish, etc.). When you copy `en.json`, copy the `_one`/`_other` plural pairs too, and add the extra `_few`/`_many` forms your language's CLDR rule requires. The plural suffix separator is `_` (set via `pluralSeparator` in the config). If your language has a count-bearing call site the extractor hasn't seen, `extract` will generate the right suffix set for your locale automatically — just translate the values.
+
+> **What the old custom checker did that this gate does not.** The retired `scripts/i18n-check.ts` also ran advisory `[unused]` (dead-key detection), `[dynamic]` (unresolvable `t()` calls), and `[hardcoded]` (raw user-facing strings) warnings, plus a strict same-key-set `[parity]` check that broke on CLDR plural divergence. The i18next-cli gate replaces the hard checks (plural-aware) and drops those advisories. Dynamic keys (`t(\`prefix_${x}\`)`, registry-driven `t(labelKey)`) are preserved by `removeUnusedKeys: false` rather than flagged.
 
 ---
 
@@ -138,7 +156,7 @@ The one loading string that *is* localized — `loading_app` — lives in `apps/
 
 A few components branch on the active locale for **linguistic or content** reasons that i18n keys can't express:
 
-- `components/build/BuildMode.tsx` — Russian plural forms for "token/токен/токена/токенов" (1 токен, 2 токена, 5 токенов). English has a simple singular/plural; Russian has three forms governed by final-digit rules.
+- `components/build/BuildMode.tsx` — Russian plural forms for "token/токен/токена/токенов" (1 токен, 2 токена, 5 токенов). English has a simple singular/plural; Russian has three forms governed by final-digit rules. **Legacy:** this predates the i18next-native CLDR plural mechanism — new count-bearing strings should use `t(key, { count })` with `_one`/`_few`/`_many`/`_other` suffix keys (see Validation above) instead of a hand-rolled `locale === "ru"` ladder. Migrating this branch is a separate cleanup.
 - `components/build/editors/LorebookEditor.tsx` — a `locale === "ru"` branch for locale-specific UI behavior.
 - `toLocaleString(locale)` — number/date formatting driven by the locale string, which works for any registered id automatically.
 
@@ -148,12 +166,13 @@ These are **legitimate per-locale logic, not registration sites.** They do not n
 
 ## Checklist
 
-- [ ] New `apps/web/src/i18n/locales/<id>.json` with **every** key from `en.json` translated; no English values left behind, no raw keys missing.
+- [ ] New `apps/web/src/i18n/locales/<id>.json` with **every** key from `en.json` translated (including `_one`/`_other` plural pairs — and the extra `_few`/`_many` forms your language's CLDR rule requires); no English values left behind, no raw keys missing.
 - [ ] One `LocaleDef` appended to `LOCALES` in `registry.ts`; `id` matches the JSON filename; `label` in the native language; `match` set if the browser language should auto-detect it.
+- [ ] Same `id` appended to the `locales` array in `apps/web/i18next.config.ts` (so the gate checks the new locale).
 - [ ] `DEFAULT_LOCALE` left as `"en"` unless this is an intentional default change.
 - [ ] No fixed-width (`w-[…px]`, `w-[…ch]`) containers on i18n strings touched or added in the same change (AD-022).
 - [ ] No "Loading…" text added to `loading-placeholder.ts` or `index.html` (pre-React exception).
-- [ ] `bun run i18n:check` prints `✓ clean` for the new file — zero `[parity]`/`[duplicate]`/`[missing-key]` errors. (`[unused]`/`[hardcoded]` warnings are advisory and don't block.)
+- [ ] `bun run i18n:check` green for the new locale — `extract --ci` reports `✅ No files were updated` and `status` shows the locale at `100%`.
 - [ ] `bun run typecheck` green.
 - [ ] Verified in `bun run dev`: the new option appears in **both** the desktop Tweaks panel and mobile settings; it persists across reload; selecting it switches the UI text; with the browser language set to match `match[]`, a fresh profile auto-detects it.
 - [ ] Checked at mobile width (375px) in the new locale — no clipping, wrapping, or overflow in the areas the change touches.
