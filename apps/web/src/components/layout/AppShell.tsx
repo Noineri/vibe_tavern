@@ -68,10 +68,6 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
   const selectedTraceId = useChatStore((s) => s.selectedTraceId);
   const confirmDestroy = useCharacterStore((s) => s.confirmDestroy);
   const setConfirmDestroy = useCharacterStore((s) => s.setConfirmDestroy);
-  const renamingChatId = useCharacterStore((s) => s.renamingChatId);
-  const setRenamingChatId = useCharacterStore((s) => s.setRenamingChatId);
-  const renameDraft = useCharacterStore((s) => s.renameDraft);
-  const setRenameDraft = useCharacterStore((s) => s.setRenameDraft);
 
   // Modal store
   const tweaksOpen = useModalStore((s) => s.tweaksOpen);

@@ -1,6 +1,5 @@
 import { create } from "zustand";
 import type { ReactNode } from "react";
-import type { ChatId } from "@vibe-tavern/domain";
 import type { BuildTab } from "../components/build/BuildMode.js";
 
 export interface ConfirmDestroyDialog {
@@ -21,8 +20,6 @@ export interface CharacterState {
   mdViewMode: MdViewMode;
   isImportDragActive: boolean;
   confirmDestroy: ConfirmDestroyDialog | null;
-  renamingChatId: ChatId | null;
-  renameDraft: string;
   isSavingCharacter: boolean;
 }
 
@@ -31,8 +28,6 @@ export interface CharacterActions {
   setMdViewMode: (mode: MdViewMode) => void;
   setIsImportDragActive: (active: boolean) => void;
   setConfirmDestroy: (dialog: ConfirmDestroyDialog | null) => void;
-  setRenamingChatId: (id: ChatId | null) => void;
-  setRenameDraft: (draft: string) => void;
   setIsSavingCharacter: (saving: boolean) => void;
 }
 
@@ -43,16 +38,12 @@ export const useCharacterStore = create<CharacterStore>()((set) => ({
   mdViewMode: "form",
   isImportDragActive: false,
   confirmDestroy: null,
-  renamingChatId: null,
-  renameDraft: "",
   isSavingCharacter: false,
 
   setBuildTab: (tab) => set({ buildTab: tab }),
   setMdViewMode: (mode) => set({ mdViewMode: mode }),
   setIsImportDragActive: (active) => set({ isImportDragActive: active }),
   setConfirmDestroy: (dialog) => set({ confirmDestroy: dialog }),
-  setRenamingChatId: (id) => set({ renamingChatId: id }),
-  setRenameDraft: (draft) => set({ renameDraft: draft }),
   setIsSavingCharacter: (saving) => set({ isSavingCharacter: saving }),
 }));
 
