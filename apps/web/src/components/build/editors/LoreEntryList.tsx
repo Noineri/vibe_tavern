@@ -39,6 +39,7 @@ import { TokenCounter } from "../../shared/TokenCounter.js";
 import { Toggle } from "../../shared/Toggle.js";
 import { CustomTooltip } from "../../shared/Tooltip.js";
 import type { LoreEntryRecord } from "../../../app-client.js";
+import { useT } from "../../../i18n/context.js";
 import {
 	POSITION_SECTIONS,
 	getSection,
@@ -288,6 +289,7 @@ export function LoreEntryList({
 	onReorder,
 	onToggleEnabled,
 }: LoreEntryListProps) {
+	const { tDynamic } = useT();
 	const [activeDragId, setActiveDragId] = useState<string | null>(null);
 	const [optimisticEntries, setOptimisticEntries] = useState<LoreEntryRecord[] | null>(null);
 
@@ -381,7 +383,7 @@ export function LoreEntryList({
 							<div className="mb-1.5 flex items-center gap-2 px-1">
 								<div className="h-px flex-1 bg-border" />
 								<span className="shrink-0 font-ui text-[11px] uppercase tracking-wider text-t3/60">
-									{t("pos_" + sec)}
+									{tDynamic("pos_" + sec)}
 								</span>
 								<div className="h-px flex-1 bg-border" />
 							</div>

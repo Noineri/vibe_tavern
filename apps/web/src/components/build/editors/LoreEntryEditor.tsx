@@ -73,6 +73,7 @@ export function LoreEntryEditor({
   t,
   existingGroups,
 }: LoreEntryEditorProps) {
+  const { tDynamic } = useT();
   // ── Local UI state ──
   const [keyInput, setKeyInput] = useState("");
   const [secKeyInput, setSecKeyInput] = useState("");
@@ -426,7 +427,7 @@ export function LoreEntryEditor({
                     "outlet",
                   ] as const
                 ).map((pos) => (
-                  <CustomTooltip key={pos} content={t("pos_" + pos + "_hint")} side="top">
+                  <CustomTooltip key={pos} content={tDynamic("pos_" + pos + "_hint")} side="top">
                     <button
                       type="button"
                       onClick={() => updateAct("position", pos)}
@@ -437,7 +438,7 @@ export function LoreEntryEditor({
                           : "border-border bg-s3 text-t2 hover:border-t3 hover:text-t1"
                       )}
                     >
-                      {t("pos_" + pos)}
+                      {tDynamic("pos_" + pos)}
                     </button>
                   </CustomTooltip>
                 ))}
@@ -482,7 +483,7 @@ export function LoreEntryEditor({
                   ] as const
                 ).map((src) => ({
                   value: src,
-                  label: t("match_src_" + src),
+                  label: tDynamic("match_src_" + src),
                 }))}
                 onChange={(v) => updateAct("matchSources", v)}
               />

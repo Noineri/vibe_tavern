@@ -80,7 +80,7 @@ export interface VibeMdViewProps {
 }
 
 export function VibeMdView({ form, characterId, isSaving }: VibeMdViewProps) {
-  const { t } = useT();
+  const { t, tDynamic } = useT();
   const isMobile = useIsMobile();
   const { watch, setValue } = form;
 
@@ -447,7 +447,7 @@ export function VibeMdView({ form, characterId, isSaving }: VibeMdViewProps) {
           <div className="mb-1.5 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <label className={lblCls}>{t("dialog_examples")}</label>
             <div className="flex items-center gap-2">
-              <CustomTooltip content={t(`mes_example_mode_tooltip_${mesExampleMode || "always"}`)}>
+              <CustomTooltip content={tDynamic(`mes_example_mode_tooltip_${mesExampleMode || "always"}`)}>
                 <SegmentedControl
                   value={mesExampleMode || "always"}
                   options={[

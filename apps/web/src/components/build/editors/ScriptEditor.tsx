@@ -121,7 +121,7 @@ function SortableScriptCard({ script, isActive, isMobile, onClick }: {
 }
 
 export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEditor, onBackToList }: ScriptPanelProps) {
-  const { t } = useT();
+  const { t, tDynamic } = useT();
   const isMobile = useIsMobile();
 
   const [activeScriptId, setActiveScriptIdRaw] = useState<string | null>(null);
@@ -397,7 +397,7 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
               <div className="mt-3 text-[11px] text-t3">{t("script_templates")}:</div>
               <div className="mt-2 flex flex-wrap gap-2">
                 {Object.entries(SCRIPT_TEMPLATES).map(([key, tpl]) => (
-                  <button type="button" key={key} className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 font-ui text-[11px] text-t2 transition-all hover:bg-s2 hover:text-t1" onClick={() => { handleAddFromTemplate(key); setImportOpen(false); setImportCode(""); }}>{t("script_template_" + key) || tpl.name}</button>
+                  <button type="button" key={key} className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 font-ui text-[11px] text-t2 transition-all hover:bg-s2 hover:text-t1" onClick={() => { handleAddFromTemplate(key); setImportOpen(false); setImportCode(""); }}>{tDynamic("script_template_" + key) || tpl.name}</button>
                 ))}
               </div>
             </div>
@@ -617,7 +617,7 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
         <div className="mb-2 text-[12px] font-semibold uppercase tracking-[0.06em] text-accent-t">{t("script_templates")}</div>
         <div className="flex flex-wrap gap-2">
           {Object.entries(SCRIPT_TEMPLATES).map(([key, tpl]) => (
-            <button type="button" key={key} className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 font-ui text-[11px] text-t2 transition-all hover:bg-s2 hover:text-t1" onClick={() => handleAddFromTemplate(key)}>{t("script_template_" + key) || tpl.name}</button>
+            <button type="button" key={key} className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 font-ui text-[11px] text-t2 transition-all hover:bg-s2 hover:text-t1" onClick={() => handleAddFromTemplate(key)}>{tDynamic("script_template_" + key) || tpl.name}</button>
           ))}
         </div>
       </div>

@@ -82,7 +82,7 @@ export function CharacterForm({
   onAfterImport,
   onExportJson, onExportPng, onDuplicate, onDelete, hasAvatar, characterId
 }: CharacterFormProps) {
-  const { t } = useT();
+  const { t, tDynamic } = useT();
   const { register, formState: { errors }, watch, setValue, handleSubmit } = form;
 
   const [altGreetIdx, setAltGreetIdx] = useState(0);
@@ -679,7 +679,7 @@ export function CharacterForm({
           <label className={lblCls}>{t("dialog_examples")}</label>
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
             <div className="flex min-w-0 items-center gap-1 sm:min-w-fit">
-              <CustomTooltip content={t(`mes_example_mode_tooltip_${mesExampleMode || "always"}`)}>
+              <CustomTooltip content={tDynamic(`mes_example_mode_tooltip_${mesExampleMode || "always"}`)}>
               <SegmentedControl
                 value={mesExampleMode || "always"}
                 options={[
