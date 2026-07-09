@@ -42,6 +42,31 @@ export default defineConfig({
 		// scripts/i18n-check.ts handled this via prefix-aware heuristics; here
 		// we simply keep all existing keys and only add newly-detected ones.
 		removeUnusedKeys: false,
+		// Suppress false-positive phantom keys. Two sources, both verified by a
+		// real `extract --ci` run this session:
+		//  (a) prefix-concat calls like t("pos_" + pos) — the extractor resolves
+		//      the static left operand as a literal key, emitting a bare `pos_`
+		//      that is never a real key. Anchored patterns match ONLY the bare
+		//      prefix, never the real suffixed keys (pos_first, etc.). The five
+		//      prefixes are the complete Class-A inventory from the old checker;
+		//      only `pos_` currently phantoms, the rest are listed defensively.
+		//  (b) comment text — see extractFromComments below.
+		preservePatterns: [
+			"^pos_$",
+			"^match_src_$",
+			"^script_template_$",
+			"^st_phase_$",
+			"^mes_example_mode_tooltip_$",
+		],
+		// Do NOT extract translation keys from comments. The extractor parses
+		// t("...") inside // and /* */ blocks (a feature for declaring keys that
+		// can't be found statically), which turns JSDoc examples like
+		//   * e.g. `<AddButton>{t("new")}</AddButton>`   (add-button.tsx)
+		// into phantom keys. This codebase has no comment-declared keys (dynamic
+		// keys are covered by removeUnusedKeys:false + loose registry literals),
+		// so disabling matches the old checker's behavior and removes the whole
+		// false-positive class.
+		extractFromComments: false,
 	},
 	types: {
 		input: ["src/i18n/locales/en.json"],
