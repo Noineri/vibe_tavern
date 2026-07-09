@@ -24,8 +24,7 @@ import { useCharacterController } from "../../hooks/use-character-controller.js"
 import { useBootstrapStore } from "../../stores/api-actions/bootstrap-actions.js";
 import { useChatMeta } from "../../stores/chat-selectors.js";
 import { useNavigationStore, useChatStore, useCharacterStore, useModalStore } from "../../stores/index.js";
-import { ListSortToggle } from "../shared/ListSortToggle.js";
-import { ListSearchPanel } from "../shared/ListSearchPanel.js";
+import { ListSectionHeader } from "./sections/ListSectionHeader.js";
 import { CustomTooltip } from "../shared/Tooltip.js";
 import { OverflowTooltip } from "../shared/OverflowTooltip.js";
 import { useBuildPanels } from "../../hooks/use-build-panels.js";
@@ -304,38 +303,19 @@ export function Sidebar() {
             />
 
             <section className="min-h-0 flex-1 overflow-y-auto border-b-0 pb-1.5">
-              <div className="sticky top-0 z-[110] glass-blur bg-surface">
-                <div className="flex items-center pr-2.5">
-                  <div className="flex-1 px-[13px] pt-1 pb-[5px] text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.08em] text-t3">{t("sidebar_chats")}</div>
-                  <ListSortToggle mode={chatSortMode} onChange={setChatSortMode} />
-                  <CustomTooltip content={t("search_name_placeholder")}>
-                    <button type="button" className={cn("iBtn size-5", chatSearchOpen && "text-accent-t")} aria-pressed={chatSearchOpen} onClick={() => setChatSearchOpen((v) => !v)}>
-                      <Icons.Search />
-                    </button>
-                  </CustomTooltip>
-                  <CustomTooltip content={t("sidebar_import_chat")}>
-                    <button type="button" className="iBtn size-5" onClick={() => setImportModal("chat")}>
-                      <Icons.Import />
-                    </button>
-                  </CustomTooltip>
-                <CustomTooltip content={t("sidebar_new_chat_active_char")}>
-                  <button type="button" className="iBtn size-5" onClick={() => {
-                    const charId = currentCharacterId;
-                    void character.handleCreateChat(charId ?? undefined);
-                  }}>
-                    <Icons.Plus />
-                  </button>
-                </CustomTooltip>
-              </div>
-              {chatSearchOpen && (
-                <ListSearchPanel
-                  query={chatListQuery}
-                  onQueryChange={setChatListQuery}
-                  selectedTags={[]}
-                  onSelectedTagsChange={() => {}}
-                />
-              )}
-              </div>
+              <ListSectionHeader
+                titleKey="sidebar_chats"
+                sortMode={chatSortMode}
+                onSortChange={setChatSortMode}
+                searchOpen={chatSearchOpen}
+                onToggleSearch={() => setChatSearchOpen((v) => !v)}
+                searchQuery={chatListQuery}
+                onSearchQueryChange={setChatListQuery}
+                importTooltipKey="sidebar_import_chat"
+                onImport={() => setImportModal("chat")}
+                createTooltipKey="sidebar_new_chat_active_char"
+                onCreate={() => { void character.handleCreateChat(currentCharacterId ?? undefined); }}
+              />
               {chats.length === 0 ? (
                 <div className="px-[14px] py-5 text-center text-xs leading-relaxed text-t3">
                   {t("sidebar_send_a_message")}

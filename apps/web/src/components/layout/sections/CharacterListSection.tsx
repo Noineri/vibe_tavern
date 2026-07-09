@@ -18,9 +18,8 @@ import { initials } from "../app-shell-helpers.js";
 import { tabAvatarSrc } from "../sidebar-utils.js";
 import { Icons } from "../../shared/icons.js";
 import { cn } from "../../../lib/cn.js";
-import { ListSortToggle } from "../../shared/ListSortToggle.js";
-import { ListSearchPanel } from "../../shared/ListSearchPanel.js";
 import { CustomTooltip } from "../../shared/Tooltip.js";
+import { ListSectionHeader } from "./ListSectionHeader.js";
 import { useModalStore } from "../../../stores/index.js";
 import type { ListSortMode } from "../../../stores/navigation-store.js";
 import type { CharacterControllerActions } from "../../../hooks/use-character-controller.js";
@@ -73,36 +72,22 @@ export function CharacterListSection({
 }) {
   return (
     <section className="min-h-0 max-h-[50%] overflow-y-auto border-b border-border pb-1.5">
-      <div className="sticky top-0 z-[110] glass-blur bg-surface">
-        <div className="flex items-center pr-2.5">
-          <div className="flex-1 px-[13px] pt-1 pb-[5px] text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.08em] text-t3">{t("sidebar_characters")}</div>
-          <ListSortToggle mode={characterSortMode} onChange={setCharacterSortMode} />
-          <CustomTooltip content={t("search_name_placeholder")}>
-            <button type="button" className={cn("iBtn size-5", charSearchOpen && "text-accent-t")} aria-pressed={charSearchOpen} onClick={() => setCharSearchOpen((v) => !v)}>
-              <Icons.Search />
-            </button>
-          </CustomTooltip>
-          <CustomTooltip content={t("sidebar_import_character")}>
-            <button type="button" className="iBtn size-5" onClick={onImportCharacter}>
-              <Icons.Import />
-            </button>
-          </CustomTooltip>
-          <CustomTooltip content={t("sidebar_create_character")}>
-            <button type="button" className="iBtn size-5" onClick={() => useModalStore.getState().setCreateCharacterModalOpen(true)}>
-              <Icons.Plus />
-            </button>
-          </CustomTooltip>
-        </div>
-        {charSearchOpen && (
-          <ListSearchPanel
-            query={charQuery}
-            onQueryChange={setCharQuery}
-            selectedTags={charSelectedTags}
-            onSelectedTagsChange={setCharSelectedTags}
-            availableTags={charTagPool}
-          />
-        )}
-      </div>
+      <ListSectionHeader
+        titleKey="sidebar_characters"
+        sortMode={characterSortMode}
+        onSortChange={setCharacterSortMode}
+        searchOpen={charSearchOpen}
+        onToggleSearch={() => setCharSearchOpen((v) => !v)}
+        searchQuery={charQuery}
+        onSearchQueryChange={setCharQuery}
+        importTooltipKey="sidebar_import_character"
+        onImport={onImportCharacter}
+        createTooltipKey="sidebar_create_character"
+        onCreate={() => useModalStore.getState().setCreateCharacterModalOpen(true)}
+        selectedTags={charSelectedTags}
+        onSelectedTagsChange={setCharSelectedTags}
+        availableTags={charTagPool}
+      />
       {characterTabs.length === 0 ? (
         <div className="px-[14px] py-5 text-center text-xs leading-relaxed text-t3">
           {t("sidebar_no_characters")}
