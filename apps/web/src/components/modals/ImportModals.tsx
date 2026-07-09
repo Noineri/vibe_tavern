@@ -159,12 +159,13 @@ export function StFolderImport({ onImported }: StFolderImportProps) {
       setImportResult(result);
       setImportErrors(result.errors);
 
-      const msg = t("st_import_results")
-        .replace("{characters}", String(result.characters))
-        .replace("{chats}", String(result.chats))
-        .replace("{lorebooks}", String(result.lorebooks))
-        .replace("{presets}", String(result.presets))
-        .replace("{personas}", String(result.personas));
+      const msg = t("st_import_results", {
+        characters: result.characters,
+        chats: result.chats,
+        lorebooks: result.lorebooks,
+        presets: result.presets,
+        personas: result.personas,
+      });
       toast.success(msg);
       if (result.errors.length > 0) {
         toast.warning(t("st_import_errors", { count: result.errors.length }));
@@ -250,12 +251,13 @@ export function StFolderImport({ onImported }: StFolderImportProps) {
       {scanResult && !scanning && !importing && (
         <div className="mt-3">
           <div className="mb-2.5 font-ui text-xs text-t2">
-            {t("st_scan_results")
-              .replace("{personas}", String(scanResult.persona?.count ?? 0))
-              .replace("{characters}", String(scanResult.characters.length))
-              .replace("{chats}", String(scanResult.chats.length))
-              .replace("{presets}", String(scanResult.presets.length))
-              .replace("{lorebooks}", String(scanResult.lorebooks.length))}
+            {t("st_scan_results", {
+              personas: scanResult.persona?.count ?? 0,
+              characters: scanResult.characters.length,
+              chats: scanResult.chats.length,
+              presets: scanResult.presets.length,
+              lorebooks: scanResult.lorebooks.length,
+            })}
           </div>
           <button type="button"
             className="h-[34px] cursor-pointer rounded-md bg-accent px-5 font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-on-accent transition-all hover:brightness-110 disabled:cursor-default disabled:opacity-45"
@@ -296,12 +298,13 @@ export function StFolderImport({ onImported }: StFolderImportProps) {
       {importResult && !importing && (
         <div className="mt-3">
           <div className="font-ui text-xs text-t2">
-            {t("st_import_results")
-              .replace("{characters}", String(importResult.characters))
-              .replace("{chats}", String(importResult.chats))
-              .replace("{lorebooks}", String(importResult.lorebooks))
-              .replace("{presets}", String(importResult.presets))
-              .replace("{personas}", String(importResult.personas))}
+            {t("st_import_results", {
+              characters: importResult.characters,
+              chats: importResult.chats,
+              lorebooks: importResult.lorebooks,
+              presets: importResult.presets,
+              personas: importResult.personas,
+            })}
           </div>
           {importErrors.length > 0 && (
             <details className="mt-2.5">

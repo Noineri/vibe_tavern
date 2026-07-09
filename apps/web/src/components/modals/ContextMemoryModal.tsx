@@ -568,10 +568,11 @@ export function ContextMemoryModal({
       {/* ── Token estimate ── */}
       <section className="mt-3 rounded-lg border border-border bg-input-bg p-4">
         <div className="mb-2 font-ui text-[12px] text-t3">
-          {t("summary_token_line")
-            .replace("{summary}", String(tokenEstimate.summaryTokens))
-            .replace("{history}", String(tokenEstimate.historyTokens))
-            .replace("{total}", String(tokenEstimate.total))}
+          {t("summary_token_line", {
+            summary: tokenEstimate.summaryTokens,
+            history: tokenEstimate.historyTokens,
+            total: tokenEstimate.total,
+          })}
         </div>
         <div className="h-1.5 overflow-hidden rounded-full bg-s3">
           <div className="h-full bg-accent transition-all" style={{ width: `${tokenEstimate.total > 0 ? Math.min(100, Math.round((tokenEstimate.summaryTokens / tokenEstimate.total) * 100)) : 0}%` }} />

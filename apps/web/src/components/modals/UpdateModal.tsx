@@ -2,10 +2,11 @@ import { useEffect, useState } from "react";
 import { Modal } from "../shared/Modal.js";
 import { Icons } from "../shared/icons.js";
 import { useT } from "../../i18n/context.js";
+import type Resources from "../../i18n/resources.js";
 import { Markdown } from "../../lib/markdown.js";
 import { useUpdateFlow } from "../../hooks/use-update-flow.js";
 import { useModalStore } from "../../stores/index.js";
-import { fetchRuntimeInfo, type RuntimeInfo } from "../../api/runtime-api.js";
+import { fetchRuntimeInfo, type RuntimeInfo, type RuntimeUpdatePhase } from "../../api/runtime-api.js";
 
 interface UpdateModalProps {
 	latestVersion: string | null;
@@ -14,7 +15,7 @@ interface UpdateModalProps {
 	releaseNotes: string | null;
 }
 
-const PHASE_I18N_KEYS: Record<string, string> = {
+const PHASE_I18N_KEYS: Record<RuntimeUpdatePhase, keyof Resources["en"]> = {
 	idle: "update_modal_phase_idle",
 	checking: "update_modal_phase_checking",
 	"downloading-archive": "update_modal_phase_downloading_archive",
@@ -49,7 +50,7 @@ function GitHubFallbackButton({ releaseUrl }: { releaseUrl: string }) {
 }
 
 export function UpdateModal({ latestVersion, latestTag, releaseUrl, releaseNotes }: UpdateModalProps) {
-	const { t, tDynamic } = useT();
+	const { t } = useT();
 	const open = useModalStore((s) => s.isUpdateModalOpen);
 	const setOpen = useModalStore((s) => s.setUpdateModalOpen);
 	const [runtimeInfo, setRuntimeInfo] = useState<RuntimeInfo | null>(null);
@@ -123,7 +124,7 @@ export function UpdateModal({ latestVersion, latestTag, releaseUrl, releaseNotes
 
 				{flow.state.kind === "running" && (
 					<RunningView
-						phaseLabel={PHASE_I18N_KEYS[flow.state.phase] ? tDynamic(PHASE_I18N_KEYS[flow.state.phase]) : flow.state.phase}
+						phaseLabel={t(PHASE_I18N_KEYS[flow.state.phase])}
 						progress={flow.state.progress}
 					/>
 				)}

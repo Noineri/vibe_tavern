@@ -301,12 +301,12 @@ export function useCharacterController(): CharacterControllerActions {
 
       if (imported.imported.kind === "character") {
         useNavigationStore.getState().setMode("play");
-        toast.success(`${getT()("imported_character").replace("{name}", imported.imported.name)}${formatImportWarnings(imported.imported.warningCount)}`);
+        toast.success(`${getT()("imported_character", { name: imported.imported.name })}${formatImportWarnings(imported.imported.warningCount)}`);
       } else if (imported.imported.kind === "chat") {
         useNavigationStore.getState().setMode("play");
-        toast.success(`${getT()("imported_chat").replace("{name}", imported.imported.name)}${formatImportWarnings(imported.imported.warningCount)}`);
+        toast.success(`${getT()("imported_chat", { name: imported.imported.name })}${formatImportWarnings(imported.imported.warningCount)}`);
       } else {
-        toast.success(`${getT()("attached_lorebook").replace("{name}", imported.imported.name).replace("{char}", imported.imported.attachedToCharacterName ?? "current character")}${formatImportWarnings(imported.imported.warningCount)}`);
+        toast.success(`${getT()("attached_lorebook", { name: imported.imported.name, char: imported.imported.attachedToCharacterName ?? "current character" })}${formatImportWarnings(imported.imported.warningCount)}`);
       }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : getT()("import_failed_notice"));
