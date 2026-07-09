@@ -51,6 +51,7 @@ export function ListSearchPanel({
   const [tagInput, setTagInput] = useState("");
   const [tagFocused, setTagFocused] = useState(false);
   const tagInputRef = useRef<HTMLInputElement | null>(null);
+  const comboboxRef = useRef<HTMLDivElement | null>(null);
 
   const showTags = availableTags !== undefined;
 
@@ -107,11 +108,12 @@ export function ListSearchPanel({
           <Popover.Anchor asChild>
             <div className="tag-combobox-wrap relative">
               <div
+                ref={comboboxRef}
                 className={cn(
                   "flex min-h-[30px] flex-wrap items-center gap-1 rounded border bg-s2 px-1.5 py-1 transition-colors",
                   tagFocused ? "border-accent" : "border-border",
                 )}
-                onClick={() => tagInputRef.current?.focus()}
+                onClick={() => { tagInputRef.current?.focus(); setTagFocused(true); }}
               >
                 {selectedTags.map((tag) => (
                   <span
@@ -145,6 +147,14 @@ export function ListSearchPanel({
               align="start"
               sideOffset={2}
               onOpenAutoFocus={(e) => e.preventDefault()}
+              onFocusOutside={(e) => e.preventDefault()}
+              onInteractOutside={(e) => {
+                // The combobox input lives in the Anchor, not the Content, so a
+                // pointerdown on it (incl. the opening click) is "outside the
+                // content" — guard it so only genuine outside clicks dismiss.
+                const target = e.target as Node | null;
+                if (target && comboboxRef.current?.contains(target)) e.preventDefault();
+              }}
               className="glass-blur z-[400] max-h-[180px] overflow-y-auto rounded-md border border-border2 bg-glass-bg py-1 shadow-[0_8px_24px_rgba(0,0,0,0.4)] outline-none data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95"
             >
               {suggestions.map((tag) => (
