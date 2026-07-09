@@ -15,8 +15,7 @@
  *   - ScriptEditor (useScriptPanel) — script editor
  */
 import type { ReactNode } from "react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useDebouncedCallback } from "use-debounce";
+import { useEffect, useRef, useState } from "react";
 import { useKeyDown } from "../../../hooks/use-key-down.js";
 
 import { Ic } from "../../shared/icons.js";
@@ -24,24 +23,22 @@ import { AddButton } from "../../shared/add-button.js";
 import { cn } from "../../../lib/cn.js";
 import { useT } from "../../../i18n/context.js";
 import {
-  listAllLorebooks,
-  listLorebooks,
   createLorebook,
   updateLorebookMeta,
   deleteLorebook,
-  listLoreEntries,
   createLoreEntry,
   updateLoreEntry,
   reorderLoreEntries,
-  getLorebookLinks,
-  setLorebookLinks,
   duplicateLorebook,
   exportLorebookSt,
-  type LorebookRecord,
   type LoreEntryRecord,
-  type LorebookLinkRecord,
 } from "../../../app-client.js";
 
+import {
+  useLorebookEditorState,
+  writeStickyWorldLoreTab,
+  type Tab,
+} from "./use-lorebook-editor-state.js";
 import { useScriptPanel } from "./ScriptEditor.js";
 import { CustomTooltip } from "../../shared/Tooltip.js";
 import { LorebookAccordion } from "./LorebookAccordion.js";
@@ -54,23 +51,6 @@ import { useAllCharacters } from "../../../stores/snapshot-store.js";
 import { useBootstrapStore } from "../../../stores/api-actions/bootstrap-actions.js";
 
 // ── Types ──────────────────────────────────────────────────────────────
-
-type Tab = "lorebooks" | "scripts";
-type View = "pick" | "list" | "editor";
-
-const WORLD_LORE_TAB_KEY = "vibe-tavern.world-lore-tab";
-
-function readStickyWorldLoreTab(): Tab | null {
-  if (typeof window === "undefined") return null;
-  const value = window.sessionStorage.getItem(WORLD_LORE_TAB_KEY);
-  return value === "lorebooks" || value === "scripts" ? value : null;
-}
-
-function writeStickyWorldLoreTab(tab: Tab | null): void {
-  if (typeof window === "undefined") return;
-  if (tab) window.sessionStorage.setItem(WORLD_LORE_TAB_KEY, tab);
-  else window.sessionStorage.removeItem(WORLD_LORE_TAB_KEY);
-}
 
 interface LorebookEditorProps {
   characterId: string;
@@ -120,11 +100,32 @@ export function LorebookEditor({
   const { t } = useT();
   const isMobile = useIsMobile();
 
-  // ── Navigation ──
-  const stickyInitialTab = useRef<Tab | null>(readStickyWorldLoreTab());
-  const [view, setView] = useState<View>(() => stickyInitialTab.current ? "list" : "pick");
-  const [tab, setTab] = useState<Tab>(() => stickyInitialTab.current ?? "lorebooks");
-  const [scope, setScope] = useState<Scope>("all");
+  // ── Data + navigation state (extracted controller) ──
+  // See use-lorebook-editor-state.ts. Destructured under the original names
+  // so the handlers and render below read identically to the pre-extraction
+  // code — this is a relocation, not a redesign.
+  const {
+    view,
+    tab,
+    scope,
+    setView,
+    setTab,
+    setScope,
+    activeEntryId,
+    activeLorebookIdForEntry,
+    setActiveEntryId,
+    setActiveLorebookIdForEntry,
+    lorebooks,
+    lorebookLinksMap,
+    activeEntry,
+    existingGroups,
+    savingState,
+    dirtyCount,
+    flushSave,
+    updateAct,
+    refreshLorebooks,
+    handleSetLinks,
+  } = useLorebookEditorState({ characterId, chatId, personaId });
 
   // Transition animations
   const [phase, setPhase] = useState<"idle" | "fading" | "done">("idle");
@@ -218,25 +219,6 @@ export function LorebookEditor({
     onBackToList: () => setView("list"),
   });
 
-  // ── Active entry ──
-  const [activeEntryId, _setActiveEntryId] = useState<string | null>(null);
-  const [activeLorebookIdForEntry, _setActiveLorebookId] = useState<
-    string | null
-  >(null);
-
-  // Refs for current values (stale-closure guard in updateAct)
-  const activeEntryIdRef = useRef<string | null>(null);
-  const activeLorebookIdRef = useRef<string | null>(null);
-
-  const setActiveEntryId = (id: string | null) => {
-    _setActiveEntryId(id);
-    activeEntryIdRef.current = id;
-  };
-  const setActiveLorebookIdForEntry = (id: string | null) => {
-    _setActiveLorebookId(id);
-    activeLorebookIdRef.current = id;
-  };
-
   // ── Lorebook delete confirmation ──
   const [confirmDeleteLorebook, setConfirmDeleteLorebook] = useState<
     string | null
@@ -245,40 +227,6 @@ export function LorebookEditor({
 
   // ── Import modal ──
   const [importOpen, setImportOpen] = useState(false);
-
-  // ── Scope → ownerId ──
-  const getOwnerId = useCallback(
-    (s: Scope): string | undefined => {
-      if (s === "character") return characterId;
-      if (s === "persona") return personaId ?? undefined;
-      if (s === "chat") return chatId ?? undefined;
-      return undefined;
-    },
-    [characterId, personaId, chatId]
-  );
-
-  // ═══ Lorebook loading ═══
-  const [lorebooks, setLorebooks] = useState<LorebookRecord[]>([]);
-  const [loadingLorebooks, setLoadingLorebooks] = useState(false);
-
-  const refreshLorebooks = useCallback(async () => {
-    setLoadingLorebooks(true);
-    try {
-      // "all" is a display filter, not a real scopeType — it lists every
-      // lorebook regardless of binding. The dedicated endpoint returns the
-      // unfiltered set; ownerId is irrelevant for it.
-      setLorebooks(scope === "all" ? await listAllLorebooks() : await listLorebooks(scope, getOwnerId(scope)));
-    } finally {
-      setLoadingLorebooks(false);
-    }
-  }, [scope, getOwnerId(scope)]);
-
-  useEffect(() => {
-    if (view !== "pick") void refreshLorebooks();
-  }, [view, refreshLorebooks]);
-
-  // ── Links state: per-lorebook link data ──
-  const [lorebookLinksMap, setLorebookLinksMap] = useState<Map<string, LorebookLinkRecord[]>>(new Map());
 
   // ── Reference data for link popover ──
   const allCharacters = useAllCharacters();
@@ -302,50 +250,6 @@ export function LorebookEditor({
     avatarFullExt: p.avatarFullExt,
     updatedAt: p.updatedAt,
   }));
-
-  // Load links when lorebooks change
-  useEffect(() => {
-    if (lorebooks.length === 0) {
-      setLorebookLinksMap(new Map());
-      return;
-    }
-    let cancelled = false;
-    Promise.all(
-      lorebooks.map(async (lb) => {
-        try {
-          const links = await getLorebookLinks(lb.id);
-          return [lb.id, links] as const;
-        } catch {
-          return [lb.id, [] as LorebookLinkRecord[]] as const;
-        }
-      }),
-    ).then((results) => {
-      if (cancelled) return;
-      const map = new Map<string, LorebookLinkRecord[]>();
-      for (const [id, links] of results) map.set(id, links);
-      setLorebookLinksMap(map);
-    });
-    return () => { cancelled = true; };
-  }, [lorebooks]);
-
-  // ═══ Entry loading (for the active lorebook) ═══
-  const [entries, setEntries] = useState<LoreEntryRecord[]>([]);
-  const activeEntry = entries.find((e) => e.id === activeEntryId) ?? null;
-  // Distinct non-empty group names in the current lorebook — used by the
-  // entry editor's group-name input autocomplete (datalist).
-  const existingGroups = useMemo(
-    () => Array.from(new Set(entries.map((e) => e.groupName).filter((g): g is string => !!g))).sort(),
-    [entries],
-  );
-
-  const refreshEntries = useCallback(async () => {
-    if (!activeLorebookIdForEntry) return;
-    setEntries(await listLoreEntries(activeLorebookIdForEntry));
-  }, [activeLorebookIdForEntry]);
-
-  useEffect(() => {
-    if (activeLorebookIdForEntry) void refreshEntries();
-  }, [activeLorebookIdForEntry, refreshEntries]);
 
   // ═══ Lorebook mutations ═══
 
@@ -420,19 +324,6 @@ export function LorebookEditor({
     setConfirmDeleteLorebook(null);
   };
 
-  // ── Link management ──
-  const handleSetLinks = async (
-    lorebookId: string,
-    links: Array<{ targetType: "character" | "persona"; targetId: string }>,
-  ) => {
-    const updated = await setLorebookLinks(lorebookId, links);
-    setLorebookLinksMap((prev) => {
-      const next = new Map(prev);
-      next.set(lorebookId, updated);
-      return next;
-    });
-  };
-
   // ── Duplicate lorebook ──
   const handleDuplicateLb = async (lorebookId: string) => {
     const result = await duplicateLorebook(lorebookId);
@@ -504,68 +395,6 @@ export function LorebookEditor({
     setActiveLorebookIdForEntry(lorebookId);
     setView("editor");
   };
-
-  // ═══ Entry autosave (debounced) ═══
-
-  const [savingState, setSavingState] = useState<
-    "idle" | "saving" | "saved" | "error"
-  >("idle");
-  const dirtyFieldsRef = useRef<Record<string, unknown>>({});
-  const [dirtyCount, setDirtyCount] = useState(0);
-
-  const flushSave = useCallback(async () => {
-    const entryId = activeEntryIdRef.current;
-    const lbId = activeLorebookIdRef.current;
-    if (!entryId || !lbId) return;
-    const fields = { ...dirtyFieldsRef.current };
-    if (Object.keys(fields).length === 0) return;
-    setSavingState("saving");
-    try {
-      await updateLoreEntry(
-        lbId,
-        entryId,
-        fields as Partial<LoreEntryRecord>
-      );
-      dirtyFieldsRef.current = {};
-      setDirtyCount(0);
-      setSavingState("saved");
-      setTimeout(
-        () => setSavingState((prev) => (prev === "saved" ? "idle" : prev)),
-        2000
-      );
-    } catch {
-      setSavingState("error");
-    }
-  }, []);
-
-  // Debounced save trigger: 1s after the last edit. `useDebouncedCallback`
-  // owns the timer + unmount cleanup internally and exposes `.flush()` — used
-  // below to fire any pending save on unmount/leave instead of dropping it.
-  // (Replaces the manual saveTimer useRef + clearTimeout/setTimeout pair.)
-  const debouncedSave = useDebouncedCallback(flushSave, 1000);
-
-  const updateAct = useCallback((field: string, value: unknown) => {
-    const entryId = activeEntryIdRef.current;
-    const lbId = activeLorebookIdRef.current;
-    if (!entryId || !lbId) return;
-
-    setEntries((prev) =>
-      prev.map((e) => (e.id === entryId ? { ...e, [field]: value } : e))
-    );
-
-    dirtyFieldsRef.current[field] = value;
-    setDirtyCount((c) => c + 1);
-    setSavingState("idle");
-
-    debouncedSave();
-  }, [debouncedSave]);
-
-  // Fire any pending save on unmount (was: clearTimeout → silent drop).
-  useEffect(() => {
-    return () => {
-      void debouncedSave.flush();
-    };
-  }, [debouncedSave]);
 
   // ═══ Helpers ═══
 
