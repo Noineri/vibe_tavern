@@ -1,10 +1,24 @@
-import { beforeEach, describe, expect, test } from "vitest";
+import { beforeEach, describe, expect, test, vi } from "vitest";
 import type { ChatId, CharacterId } from "@vibe-tavern/domain";
 import type { AppSnapshot, ChatListItem } from "../../app-client.js";
 import { useChatStore } from "../chat-store.js";
 import { useSnapshotStore } from "../snapshot-store.js";
 import { useNavigationStore } from "../navigation-store.js";
-import { switchModeAction } from "./chat-actions.js";
+import { deleteChatAction, switchModeAction } from "./chat-actions.js";
+
+// Mocks for the deleteChatAction tests below. `deleteChat` returns the
+// backend's ChatListResponse ({ chats }); the fire-and-forget bootstrap is
+// stubbed so it can't race the assertion. Other app-client exports stay real
+// (spread), so the switchModeAction tests in this file are unaffected.
+const { deleteChatMock } = vi.hoisted(() => ({ deleteChatMock: vi.fn() }));
+vi.mock("../../app-client.js", async (importOriginal) => {
+  const actual = await importOriginal() as typeof import("../../app-client.js");
+  return { ...actual, deleteChat: deleteChatMock };
+});
+vi.mock("./bootstrap-actions.js", async (importOriginal) => {
+  const actual = await importOriginal() as typeof import("./bootstrap-actions.js");
+  return { ...actual, fetchBootstrapAction: vi.fn().mockResolvedValue(undefined) };
+});
 
 const chatId = (id: string) => id as ChatId;
 const characterId = (id: string) => id as CharacterId;
@@ -160,5 +174,24 @@ describe("switchModeAction", () => {
 
     expect(useChatStore.getState().activeChatId).toBe(chatId("rp-1"));
     expect(switched).toEqual([chatId("rp-1")]);
+  });
+});
+
+describe("deleteChatAction", () => {
+  test("syncs the refreshed chats list so the deleted chat leaves no ghost", async () => {
+    // Seed two chats and make the to-be-deleted one active.
+    seed([listItem("c1", "rp"), listItem("c2", "rp")]);
+    useChatStore.getState().setActiveChatId(chatId("c1"));
+
+    // Backend returns the post-delete chats list (ChatListResponse) — this is
+    // the ghost-chat fix: delete previously returned 204 with no body, so the
+    // list refresh relied on a racy fire-and-forget bootstrap.
+    deleteChatMock.mockResolvedValue({ chats: [listItem("c2", "rp")] } as unknown as AppSnapshot);
+    await deleteChatAction(chatId("c1"));
+
+    const state = useSnapshotStore.getState();
+    expect(state.chatsById["c1"]).toBeUndefined();       // deleted chat is gone (no ghost)
+    expect(state.chatIds).toEqual([chatId("c2")]);         // sibling remains
+    expect(useChatStore.getState().activeChatId).toBeNull(); // active cleared
   });
 });

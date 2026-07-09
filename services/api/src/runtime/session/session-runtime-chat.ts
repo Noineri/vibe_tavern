@@ -388,11 +388,17 @@ export class ChatRuntime {
     throw new Error("Not implemented: cloneChat will be handled in B-DM6");
   }
 
-  async deleteChat(chatId: string): Promise<void> {
+  async deleteChat(chatId: string): Promise<ChatListResponse> {
     const typedChatId = brandId<ChatId>(chatId);
     this.deps.chatOrder.remove(typedChatId);
     this.pendingPromptTraceByChat.delete(typedChatId);
     await this.deps.chats.delete(typedChatId);
+    // Return the refreshed chats list so the sidebar deterministically drops
+    // the deleted chat. Previously the route returned 204 with no body, so the
+    // frontend relied on a racy fire-and-forget bootstrap to refresh the list
+    // — and a switchChat ingest (whose snapshot omits `chats`) could land last
+    // and preserve the stale list, leaving a "ghost" chat until page reload.
+    return this.deps.buildChatListResponse();
   }
 
   async assemblePromptPreview(

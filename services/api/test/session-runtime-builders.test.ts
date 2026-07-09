@@ -144,6 +144,24 @@ describe("Wave B1.1 — per-endpoint response builder shapes", () => {
 		expect(r.chats.length).toBeGreaterThan(0);
 	});
 
+	it("deleteChat returns the refreshed chats list (ChatListResponse), not void — ghost-chat fix", async () => {
+		// Self-contained runtime so deleting the seeded chat does not perturb the
+		// shared chatId used by the rest of this suite.
+		const ctx = await createTestRuntime();
+		try {
+			const result = await ctx.runtime.chatRuntime.deleteChat(ctx.chatId);
+			// Contract: deleteChat now returns { chats } (buildChatListResponse) so
+			// the frontend can drop the deleted chat deterministically instead of
+			// relying on a racy fire-and-forget bootstrap.
+			expect(sortedKeys(result)).toEqual(["chats"]);
+			// The only seeded chat was deleted → the refreshed list is empty, i.e.
+			// the deleted id is excluded (not preserved as a ghost).
+			expect(result.chats).toEqual([]);
+		} finally {
+			await ctx.cleanup();
+		}
+	});
+
 	it("buildChatSwitchResponse: clone-shape (no opts)", async () => {
 		const r = await runtime.buildChatSwitchResponse(chatId);
 		expect(sortedKeys(r)).toEqual([

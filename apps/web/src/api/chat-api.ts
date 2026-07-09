@@ -42,9 +42,12 @@ export async function applyCoauthorDraft(
   return { snapshot: normalizeSnapshot(data), corrections };
 }
 
-export async function deleteChat(chatId: ChatId): Promise<void> {
+export async function deleteChat(chatId: ChatId): Promise<AppSnapshot> {
   const response = await client.api.chats[":chatId"].$delete({ param: { chatId } });
-  if (!response.ok) throw await unwrapError(response);
+  // The backend returns the refreshed chats list (ChatListResponse) so the
+  // sidebar can drop the deleted chat deterministically instead of relying on
+  // a racy fire-and-forget bootstrap (ghost-chat fix).
+  return normalizeSnapshot(await unwrapRpc<AppSnapshot>(response));
 }
 
 export async function clearChat(chatId: ChatId): Promise<AppSnapshot> {

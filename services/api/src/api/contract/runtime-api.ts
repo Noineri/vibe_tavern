@@ -105,7 +105,7 @@ export interface ChatRuntimeApi {
 	 *  `corrections` (e.g. an empty name restored from the existing card). */
 	applyCoauthorDraft: (chatId: string, body: CoauthorApplyRequest) => Promise<CoauthorApplyResponse>;
 	cloneChat: (chatId: string) => Promise<SessionSnapshot>;
-	deleteChat: (chatId: string) => Promise<void>;
+	deleteChat: (chatId: string) => Promise<ChatListResponse>;
 	clearChat: (chatId: string) => Promise<ChatCreateResponse>;
 	renameChat: (chatId: string, title: string) => Promise<ChatListResponse>;
 	setGreetingIndex: (chatId: string, greetingIndex: number) => Promise<VariantResponse>;

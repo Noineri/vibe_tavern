@@ -98,7 +98,13 @@ export async function createChatAction(characterId: string, mode?: ChatMode): Pr
 }
 
 export async function deleteChatAction(chatId: ChatId): Promise<void> {
-  await deleteChat(chatId);
+  // The backend returns the refreshed chats list (ChatListResponse) on delete.
+  // Sync it directly so the sidebar drops the deleted chat deterministically.
+  // Previously the route returned 204 with no body, so the list refresh relied
+  // on a fire-and-forget bootstrap that raced against switchChatAction's
+  // chats-less ingest and could leave a "ghost" chat until page reload.
+  const snapshot = await deleteChat(chatId);
+  syncSnapshot(snapshot);
   // Clear deleted chat from active
   const current = useChatStore.getState().activeChatId;
   if (current === chatId) {

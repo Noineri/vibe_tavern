@@ -303,8 +303,7 @@ export function createChatRoutes(runtime: ChatRuntimeApi) {
       return c.json(await runtime.deleteBranch(c.req.param("chatId"), c.req.param("branchId")));
     })
     .delete("/api/chats/:chatId", async (c) => {
-      runtime.deleteChat(c.req.param("chatId"));
-      return c.body(null, 204);
+      return c.json(await runtime.deleteChat(c.req.param("chatId")));
     })
     .post("/api/chats/:chatId/clear", async (c) => {
       const snapshot = await runtime.clearChat(c.req.param("chatId"));
