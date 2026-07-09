@@ -112,6 +112,8 @@ When adding a language, your loop is: create the JSON, register it (steps 1–3)
 
 > **What the old custom checker did that this gate does not.** The retired `scripts/i18n-check.ts` also ran advisory `[unused]` (dead-key detection), `[dynamic]` (unresolvable `t()` calls), and `[hardcoded]` (raw user-facing strings) warnings, plus a strict same-key-set `[parity]` check that broke on CLDR plural divergence. The i18next-cli gate replaces the hard checks (plural-aware) and drops those advisories. Dynamic keys (`t(\`prefix_${x}\`)`, registry-driven `t(labelKey)`) are preserved by `removeUnusedKeys: false` rather than flagged.
 
+> **Advisory hardcoded-string scan: `bun run i18n:lint`.** A separate, non-blocking `i18next-cli lint` command is available for catching raw user-facing strings that bypass i18n (`<button>Cancel</button>` instead of `{t("cancel")}`). It is **not** part of `bun run check` (its signal-to-noise is too low to gate on — ~38 residual findings are legitimate non-translatable content: font-sample "Aa", units "px", emojis, brand names, demo/preview copy). Run it on demand during a translation pass and eyeball the output for genuine new hardcoded strings. `dev/**` is excluded (not shipped UI); SillyTavern-macro literals (`{{char}}`/`{{user}}` shown verbatim in hints) are suppressed via `checkInterpolationParams: false` in the config.
+
 ---
 
 ## Layout & text length

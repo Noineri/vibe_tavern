@@ -72,4 +72,23 @@ export default defineConfig({
 		input: ["src/i18n/locales/en.json"],
 		output: "src/i18n/i18next.d.ts",
 	},
+	lint: {
+		// Exclude the dev playground — not shipped UI. dev/ThemeTuner alone
+		// accounts for 53 of ~91 hardcoded findings (Russian descriptive copy
+		// for OKLCH sliders, color values, etc.).
+		ignore: ["src/components/dev/**"],
+		// SillyTavern macros {{char}} / {{user}} appear LITERALLY in many hint and
+		// placeholder strings (they document macro syntax to the user). With our
+		// single-brace interpolation ({}/{}) i18next reads {{user}} as a param
+		// and flags it "not provided" — 100% false positives for this codebase
+		// (verified: every interpolation finding is a macro literal; zero genuine
+		// param mismatches across the 1166-key set). Runtime is unaffected:
+		// i18next leaves unmatched params as-is, so {{user}} renders literally.
+		// Disabling the check here beats per-site // i18next-instrument-ignore
+		// directives, which are awkward across JSX-child / JSX-attribute / JS
+		// contexts and would multiply with every macro-referencing hint. A genuine
+		// future mismatch (JSON {count} vs code passing {n}) would render the
+		// literal placeholder in the UI and be caught in QA, not silently.
+		checkInterpolationParams: false,
+	},
 });
