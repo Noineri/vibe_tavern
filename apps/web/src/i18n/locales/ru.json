@@ -1262,5 +1262,21 @@
   "update_modal_runtime_error_unknown": "Обновление не удалось по неизвестной причине (детали ошибки не получены).",
   "update_modal_runtime_error_rejected": "Сервер отклонил обновление.",
   "coauthor_author_assistant": "Соавтор",
-  "coauthor_author_you": "Вы"
+  "coauthor_author_you": "Вы",
+  "st_persona_import_result_few": "Импортировано персон: {count}.",
+  "st_persona_import_result_many": "Импортировано персон: {count}.",
+  "st_persona_import_result_one": "Импортировано персон: {count}.",
+  "st_persona_import_result_other": "Импортировано персон: {count}.",
+  "st_import_errors_few": "{count} элемента не удалось импортировать",
+  "st_import_errors_many": "{count} элементов не удалось импортировать",
+  "st_import_errors_one": "{count} элемент не удалось импортировать",
+  "st_import_errors_other": "{count} элементов не удалось импортировать",
+  "st_persona_preview_title_few": "Выбрано: {count}",
+  "st_persona_preview_title_many": "Выбрано: {count}",
+  "st_persona_preview_title_one": "Выбрано: {count}",
+  "st_persona_preview_title_other": "Выбрано: {count}",
+  "summary_messages_count_few": "{count} сообщения",
+  "summary_messages_count_many": "{count} сообщений",
+  "summary_messages_count_one": "{count} сообщение",
+  "summary_messages_count_other": "{count} сообщений"
 }

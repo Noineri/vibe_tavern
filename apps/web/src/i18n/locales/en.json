@@ -1262,5 +1262,13 @@
   "update_modal_runtime_error_unknown": "Update failed for an unknown reason (no error detail surfaced).",
   "update_modal_runtime_error_rejected": "Update rejected by the server.",
   "coauthor_author_assistant": "Co-Author",
-  "coauthor_author_you": "You"
+  "coauthor_author_you": "You",
+  "st_persona_import_result_one": "{count} persona imported.",
+  "st_persona_import_result_other": "{count} personas imported.",
+  "st_import_errors_one": "{count} item could not be imported",
+  "st_import_errors_other": "{count} items could not be imported",
+  "st_persona_preview_title_one": "{count} selected",
+  "st_persona_preview_title_other": "{count} selected",
+  "summary_messages_count_one": "{count} message",
+  "summary_messages_count_other": "{count} messages"
 }
