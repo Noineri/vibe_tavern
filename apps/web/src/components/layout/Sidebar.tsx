@@ -28,7 +28,7 @@ import { OverflowTooltip } from "../shared/OverflowTooltip.js";
 import { useBuildPanels } from "../../hooks/use-build-panels.js";
 
 export function Sidebar() {
-  const { t } = useT();
+  const { t, tDynamic } = useT();
 
   // --- Sub-hooks ---
   const chat = useChatController();
@@ -275,7 +275,7 @@ export function Sidebar() {
             <div className="my-1 h-px w-8 shrink-0 bg-border" />
 
             {buildPanelItems.map((item) => (
-              <CustomTooltip key={item.id} content={t(item.labelKey)} side="right">
+              <CustomTooltip key={item.id} content={tDynamic(item.labelKey)} side="right">
                 <div
                   className={cn(
                     'flex h-10 w-10 shrink-0 cursor-pointer items-center justify-center transition-all duration-150',
@@ -713,7 +713,7 @@ export function Sidebar() {
                   onClick={() => setBuildTab(item.id)}
                 >
                   {item.icon}
-                  <span>{t(item.labelKey)}</span>
+                  <span>{tDynamic(item.labelKey)}</span>
                 </div>
               ))}
             </div>

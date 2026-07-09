@@ -74,7 +74,7 @@ export function CharacterChatsSheet({
 	character, setConfirmDestroy, setChatImportOpen,
 	onClose, onSwitchChat, onCreateChat,
 }: CharacterChatsSheetProps) {
-	const { t } = useT();
+	const { t, tDynamic } = useT();
 
 	// ── UI state ──
 	const [chatQuery, setChatQuery] = useState("");
@@ -163,7 +163,7 @@ export function CharacterChatsSheet({
 					{chats.length === 0 ? (
 						<div className="empty-state" style={{ minHeight: 160, padding: "32px 16px" }}>
 							<div className="empty-icon" style={{ width: 40, height: 40 }}><Icons.Chat className="h-5 w-5" /></div>
-							<div className="empty-title">{t(emptyTitleKey)}</div>
+							<div className="empty-title">{tDynamic(emptyTitleKey)}</div>
 							<button type="button" className="empty-cta" onClick={onCreateChat}>{t("new_chat")}</button>
 						</div>
 					) : filtered.length === 0 ? (

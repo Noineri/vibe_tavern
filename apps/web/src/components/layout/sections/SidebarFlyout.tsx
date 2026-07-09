@@ -27,6 +27,7 @@ import { CustomTooltip } from "../../shared/Tooltip.js";
 import { OverflowTooltip } from "../../shared/OverflowTooltip.js";
 import type { CharacterControllerActions } from "../../../hooks/use-character-controller.js";
 import type { ChatControllerActions } from "../../../hooks/use-chat-controller.js";
+import { useT } from "../../../i18n/context.js";
 import type { CharacterTab } from "../app-shell-types.js";
 import type { TFn } from "./section-types.js";
 
@@ -69,6 +70,7 @@ export function SidebarFlyout({
   emptyTitleKey: string;
   t: TFn;
 }) {
+  const { tDynamic } = useT();
   if (!flyoutCharId || !sidebarCollapsed) return null;
 
   const tab = characterTabs.find(tc => tc.id === flyoutCharId);
@@ -131,7 +133,7 @@ export function SidebarFlyout({
         {flyoutChats.length === 0 ? (
           <div className="empty-state" style={{ minHeight: 160, padding: "32px 16px" }}>
             <div className="empty-icon" style={{ width: 40, height: 40 }}><Icons.Chat /></div>
-            <div className="empty-title">{t(emptyTitleKey)}</div>
+            <div className="empty-title">{tDynamic(emptyTitleKey)}</div>
             <button type="button" className="empty-cta" onClick={() => { void character.handleCreateChat(flyoutCharId, createChatMode); }}>{t("new_chat")}</button>
           </div>
         ) : filtered.length === 0 ? (

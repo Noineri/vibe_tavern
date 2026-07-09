@@ -49,7 +49,7 @@ function RailRow({ icon, label, active, onClick }: { icon: React.ReactNode; labe
 
 
 export function Rail({ hidden }: { hidden?: boolean }) {
-  const { t } = useT();
+  const { t, tDynamic } = useT();
   const mode = useNavigationStore((s) => s.mode);
   const activeChatId = useChatStore((s) => s.activeChatId);
   const selectedCharacterId = useChatStore((s) => s.selectedCharacterId);
@@ -195,7 +195,7 @@ export function Rail({ hidden }: { hidden?: boolean }) {
         <div className="flex min-h-0 flex-1 flex-col items-center gap-1.5 overflow-y-scroll overflow-x-hidden py-2">
           {mode === "build" ? (
             buildPanels.map((panel) => (
-              <Ico key={panel.id} icon={panel.icon} onClick={() => { useCharacterStore.getState().setBuildTab(panel.id); useNavigationStore.getState().setMode('build'); }} title={t(panel.labelKey)} />
+              <Ico key={panel.id} icon={panel.icon} onClick={() => { useCharacterStore.getState().setBuildTab(panel.id); useNavigationStore.getState().setMode('build'); }} title={tDynamic(panel.labelKey)} />
             ))
           ) : (
             <RailCollapsedStrip
@@ -246,7 +246,7 @@ export function Rail({ hidden }: { hidden?: boolean }) {
             <div className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-scroll px-2 py-2">
               {mode === "build" ? (
                 buildPanels.map((panel) => (
-                  <RailRow key={panel.id} icon={panel.icon} label={t(panel.labelKey)}
+                  <RailRow key={panel.id} icon={panel.icon} label={tDynamic(panel.labelKey)}
                        onClick={() => { useCharacterStore.getState().setBuildTab(panel.id); close(); }} />
                 ))
               ) : (
