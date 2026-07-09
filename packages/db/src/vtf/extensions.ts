@@ -103,24 +103,52 @@ export function isFrontmatterOwned(key: string): boolean {
 export const PERSONALITY_SUMMARY_STASH_KEY = "vt_personality_summary";
 
 /**
- * Ensure a non-empty `personalitySummary` is stashed into the extensions blob
- * (idempotent: if the stash key is already present it is overwritten with the
- * canonical value; a null/empty summary leaves an existing stash untouched —
- * callers that must clear it do so by editing `extensions` directly).
+ * Keep the reserved stash key in sync with `personalitySummary`: set it when
+ * the field is non-empty, REMOVE it when the field is null/empty.
+ *
+ * Removing on empty is load-bearing. The stash key is a serialization
+ * artifact; `personalitySummary` is the canonical field. Without the removal,
+ * an emptied `personalitySummary` resurrects its old value on the next read,
+ * because the stale stash survives in `extensions.json` AND leaks back into
+ * storage through the store round-trip: `getById` returns the stash key inside
+ * `extensions`, `CharacterRuntime.update` reuses that blob
+ * (`input.extensions ?? current.extensions`) when the frontend sends no
+ * `extensions`, and so the stale key is re-persisted to disk + DB on every
+ * save. Clearing the field must clear the stash — there is no caller that can
+ * be relied on to edit `extensions` directly.
  */
 export function stashPersonalitySummary(
   extensions: Record<string, unknown>,
   personalitySummary: string | null,
 ): Record<string, unknown> {
-  if (personalitySummary === null || personalitySummary.trim().length === 0) return extensions;
+  if (personalitySummary === null || personalitySummary.trim().length === 0) {
+    return stripPersonalityStash(extensions);
+  }
   return { ...extensions, [PERSONALITY_SUMMARY_STASH_KEY]: personalitySummary };
 }
 
-/** Read a stashed legacy `personalitySummary` back out of the extensions blob (null when absent/empty). */
+/** Read a stashed legacy `personalitySummary` back out of the extensions blob (null when absent/empty). Does not mutate. */
 export function unstashPersonalitySummary(extensions: Record<string, unknown>): string | null {
   const stashed = extensions[PERSONALITY_SUMMARY_STASH_KEY];
   if (typeof stashed !== "string" || stashed.trim().length === 0) return null;
   return stashed;
+}
+
+/**
+ * Remove the reserved `personalitySummary` stash key from an extensions blob.
+ * Used on serialize-clear (empty field) and on parse (the stashed value is
+ * promoted to the `personalitySummary` field, so it must not also linger in
+ * `extensions` — otherwise it leaks back into storage via the store
+ * round-trip and resurrects an emptied field). Returns the input by reference
+ * when the key is absent (no allocation).
+ */
+export function stripPersonalityStash(extensions: Record<string, unknown>): Record<string, unknown> {
+  if (!(PERSONALITY_SUMMARY_STASH_KEY in extensions)) return extensions;
+  const next: Record<string, unknown> = {};
+  for (const key of Object.keys(extensions)) {
+    if (key !== PERSONALITY_SUMMARY_STASH_KEY) next[key] = extensions[key];
+  }
+  return next;
 }
 
 // ───────────────────────────────────────────────────────────────────────────

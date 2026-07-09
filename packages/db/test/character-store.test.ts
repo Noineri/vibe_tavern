@@ -347,6 +347,41 @@ describe("CharacterStore folder storage (B1)", () => {
 		expect(fetched?.alternateGreetings).toEqual([]);
 	});
 
+	// ── personalitySummary clear regression ─────────────────────────────────
+	// Reproduces the user bug "описание личности нельзя удалить": once a non-empty
+	// personalitySummary is stashed into extensions.json, clearing the field used
+	// to resurrect the old value on the next getById, because (a) getById returns
+	// the stash key inside `extensions`, (b) CharacterRuntime.update reuses that
+	// extensions blob (`input.extensions ?? current.extensions`) when the frontend
+	// does not send extensions, and (c) the codec left a stale stash untouched on
+	// empty. The faithful repro mimics the runtime's extensions round-trip.
+	test("clearing personalitySummary does not resurrect its previous value", async () => {
+		const { store } = await setup();
+		const created = await store.create({
+			name: "Aria",
+			description: "storm mage",
+			personalitySummary: "Legacy personality summary.",
+			extensions: {},
+		});
+
+		// Establish the stash on disk + the in-memory extensions leak (getById).
+		const before = await store.getById(created.id);
+		expect(before?.personalitySummary).toBe("Legacy personality summary.");
+
+		// Mimic CharacterRuntime.update: the frontend clears personalitySummary
+		// and sends no `extensions`, so the runtime falls back to the current
+		// character's extensions (the leaky getById blob).
+		await store.update(created.id, {
+			personalitySummary: "",
+			extensions: before?.extensions ?? {},
+		});
+
+		const after = await store.getById(created.id);
+		expect(after?.personalitySummary).toBeNull();
+		// The stash key must not linger in the extensions blob returned to callers.
+		expect(after?.extensions["vt_personality_summary"]).toBeUndefined();
+	});
+
 	// ── VTF-8: migration ────────────────────────────────────────────────────
 
 	test("migrateToVtf rewrites the VTF folder from the DB row and is idempotent", async () => {

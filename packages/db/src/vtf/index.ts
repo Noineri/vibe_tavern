@@ -56,6 +56,7 @@ import {
   readExtensions,
   stashPersonalitySummary,
   unstashPersonalitySummary,
+  stripPersonalityStash,
   PERSONALITY_SUMMARY_STASH_KEY,
 } from "./extensions.js";
 
@@ -159,6 +160,12 @@ export function parseCharacterFolder(entries: FolderFileEntry[]): VtfCharacterCo
     characterVersion: profile.characterVersion,
   });
   const personalitySummary = unstashPersonalitySummary(extensions);
+  // The stash key is a serialization artifact: its value has just been promoted
+  // to the `personalitySummary` field, so strip it from the returned
+  // `extensions`. Without this it would leak back into storage through the
+  // store round-trip (getById → CharacterRuntime.update's `extensions ??
+  // current.extensions` fallback) and resurrect an emptied field.
+  const extensionsClean = stripPersonalityStash(extensions);
 
   return {
     name: profile.name,
@@ -177,7 +184,7 @@ export function parseCharacterFolder(entries: FolderFileEntry[]): VtfCharacterCo
     depthPromptRole: instructions.depthPromptRole,
     systemPrompt: instructions.systemPrompt,
     tags: profile.tags,
-    extensions,
+    extensions: extensionsClean,
   };
 }
 

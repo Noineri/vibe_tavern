@@ -152,7 +152,20 @@ describe("monolith: Character → monolith → Character", () => {
     original.personalitySummary = "Legacy personality summary.";
     const back = unpackMonolith(packMonolith(original));
     expect(back.personalitySummary).toBe("Legacy personality summary.");
-    expect(back.extensions[PERSONALITY_SUMMARY_STASH_KEY]).toBe("Legacy personality summary.");
+    // The stash key is pulled OUT into `personalitySummary` and must NOT linger
+    // in the returned `extensions` (it would leak back into storage otherwise).
+    expect(back.extensions[PERSONALITY_SUMMARY_STASH_KEY]).toBeUndefined();
+  });
+
+  it("clearing a previously-set personalitySummary does not resurrect the old value (regression)", () => {
+    const original = fullCharacter();
+    original.personalitySummary = "Legacy personality summary.";
+    const established = unpackMonolith(packMonolith(original));
+    expect(established.personalitySummary).toBe("Legacy personality summary.");
+    established.personalitySummary = "";
+    const cleared = unpackMonolith(packMonolith(established));
+    expect(cleared.personalitySummary).toBeNull();
+    expect(cleared.extensions[PERSONALITY_SUMMARY_STASH_KEY]).toBeUndefined();
   });
 
   it("round-trips a nested character_book inside the extensions fence", () => {

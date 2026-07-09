@@ -108,6 +108,7 @@ import {
   readExtensions,
   stashPersonalitySummary,
   unstashPersonalitySummary,
+  stripPersonalityStash,
 } from "./extensions.js";
 // Type-only import: erased at compile time, so no runtime cycle with the facade
 // (which re-exports this module's functions).
@@ -196,6 +197,9 @@ export function unpackMonolith(md: string): VtfCharacterContent {
     { creator: profile.creator, characterVersion: profile.characterVersion },
   );
   const personalitySummary = unstashPersonalitySummary(extensions);
+  // Strip the stash artifact from the returned extensions — see
+  // parseCharacterFolder (vtf/index.ts) for why this must not leak.
+  const extensionsClean = stripPersonalityStash(extensions);
 
   return {
     name: profile.name,
@@ -214,7 +218,7 @@ export function unpackMonolith(md: string): VtfCharacterContent {
     depthPromptRole: roleFromVt(vtMap.get(VT_DEPTH_PROMPT_ROLE)),
     systemPrompt: bodyOrNull(sections.get(HEADING_SYSTEM)),
     tags: profile.tags,
-    extensions,
+    extensions: extensionsClean,
   };
 }
 

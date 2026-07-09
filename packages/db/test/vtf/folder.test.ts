@@ -107,14 +107,42 @@ describe("facade: Character → folder → Character", () => {
     original.personalitySummary = "Legacy personality summary.";
     const back = parseCharacterFolder(serializeCharacterFolder(original));
     expect(back.personalitySummary).toBe("Legacy personality summary.");
-    // The stash key is internal — it surfaces in extensions but is pulled back out.
-    expect(back.extensions[PERSONALITY_SUMMARY_STASH_KEY]).toBe("Legacy personality summary.");
+    // The stash key is a serialization artifact — it is pulled OUT into the
+    // `personalitySummary` field and must NOT linger in the returned
+    // `extensions` (otherwise it leaks back into storage via the store
+    // round-trip and resurrects an emptied field).
+    expect(back.extensions[PERSONALITY_SUMMARY_STASH_KEY]).toBeUndefined();
   });
 
   it("drops an empty/whitespace personalitySummary (no stash pollution)", () => {
     const original = fullCharacter();
     original.personalitySummary = "   ";
     const back = parseCharacterFolder(serializeCharacterFolder(original));
+    expect(back.personalitySummary).toBeNull();
+    expect(back.extensions[PERSONALITY_SUMMARY_STASH_KEY]).toBeUndefined();
+  });
+
+  it("clearing a previously-set personalitySummary does not resurrect the old value (regression)", () => {
+    const original = fullCharacter();
+    original.personalitySummary = "Legacy personality summary.";
+    // Round-trip once to establish the stash in the serialized form.
+    const established = parseCharacterFolder(serializeCharacterFolder(original));
+    expect(established.personalitySummary).toBe("Legacy personality summary.");
+    // Now clear the field and round-trip again — the stale stash must NOT survive.
+    established.personalitySummary = "";
+    const cleared = parseCharacterFolder(serializeCharacterFolder(established));
+    expect(cleared.personalitySummary).toBeNull();
+    expect(cleared.extensions[PERSONALITY_SUMMARY_STASH_KEY]).toBeUndefined();
+  });
+
+  it("a stale stash key paired with an empty personalitySummary is cleared on serialize (regression)", () => {
+    // Simulate a corrupted extensions blob (a stale stash from a prior value)
+    // paired with an emptied personalitySummary — the exact state that used to
+    // resurrect the old value through the store round-trip.
+    const corrupted = fullCharacter();
+    corrupted.personalitySummary = "";
+    corrupted.extensions = { ...corrupted.extensions, [PERSONALITY_SUMMARY_STASH_KEY]: "stale legacy" };
+    const back = parseCharacterFolder(serializeCharacterFolder(corrupted));
     expect(back.personalitySummary).toBeNull();
     expect(back.extensions[PERSONALITY_SUMMARY_STASH_KEY]).toBeUndefined();
   });
