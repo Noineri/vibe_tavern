@@ -13,6 +13,7 @@ import { useKeyDown } from "../../../hooks/use-key-down.js";
 
 import { Ic } from "../../shared/icons.js";
 import { cn } from "../../../lib/cn.js";
+import type { TFunc } from "../../../i18n/locale-helpers.js";
 import {
   importLorebookEntries,
   type LorebookRecord,
@@ -30,7 +31,7 @@ interface LorebookImportModalProps {
   chatId: string | null;
   onClose: () => void;
   onImportComplete: () => void;
-  t: (key: string) => string;
+  t: TFunc;
 }
 
 // ── Component ──────────────────────────────────────────────────────────

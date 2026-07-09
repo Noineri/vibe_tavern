@@ -9,6 +9,7 @@ import { useCallback, useState } from "react";
 import * as Popover from "@radix-ui/react-popover";
 
 import { cn } from "../../lib/cn.js";
+import type { TFunc } from "../../i18n/locale-helpers.js";
 import { CustomTooltip } from "./Tooltip.js";
 import { getModalPortal } from "./modal-helpers.js";
 import { resolveEntityAvatarUrl, avatarUrl } from "../../lib/avatar.js";
@@ -43,7 +44,7 @@ interface LinkBindingPopoverProps {
   lorebooks?: LinkTarget[];
   scripts?: LinkTarget[];
   onSetLinks: (links: LinkBindingRecord[]) => void;
-  t: (key: string) => string;
+  t: TFunc;
   isMobile: boolean;
   tooltipLabel?: string;
   emptyLabel?: string;

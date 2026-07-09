@@ -6,7 +6,7 @@ import { Icons } from "../shared/icons.js";
 import { BottomSheet } from "../shared/BottomSheet.js";
 import { getModalPortal } from "../shared/modal-helpers.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
-import { useT } from "../../i18n/context.js";
+import { useT, type TFunc } from "../../i18n/context.js";
 import { useChatStore } from "../../stores/chat-store.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
 import { useProviderStore } from "../../stores/provider-store.js";
@@ -104,7 +104,7 @@ function usePresetName(presetId: string | null): string | null {
   }, [presetId, presets]);
 }
 
-function statusLabel(status: QueueJob["status"], t: (k: string) => string): string {
+function statusLabel(status: QueueJob["status"], t: TFunc): string {
   switch (status) {
     case "pending": return t("queue_queued");
     case "running": return t("queue_running");

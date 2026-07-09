@@ -28,6 +28,8 @@ import {
 import { LoreEntryList } from "./LoreEntryList.js";
 import { LinkBindingPopover, type LinkTarget } from "../../shared/LinkBindingPopover.js";
 import { countTokens } from "../../../utils/tokenizer.js";
+import type { TFunc } from "../../../i18n/locale-helpers.js";
+import type Resources from "../../../i18n/resources.js";
 
 // ── Helpers ────────────────────────────────────────────────────────────
 
@@ -45,7 +47,7 @@ function formatTokenCount(n: number): string {
  * scope. Global lorebooks return null (no binding icon — they are unbound by
  * definition). Multi-bind surface is a follow-up.
  */
-function lorebookBindingIcon(lb: LorebookRecord): { icon: ReactNode; tooltipKey: string } | null {
+function lorebookBindingIcon(lb: LorebookRecord): { icon: ReactNode; tooltipKey: keyof Resources["en"] } | null {
   if (lb.scopeType === "global") return null;
   if (lb.chatId) return { icon: <Ic.chat />, tooltipKey: "scope_chat" };
   if (lb.characterId) return { icon: <Ic.book />, tooltipKey: "scope_char" };
@@ -68,7 +70,7 @@ interface LorebookAccordionProps {
   isMobile: boolean;
   actionMenuOpen: boolean;
   onToggleActionMenu: () => void;
-  t: (key: string) => string;
+  t: TFunc;
   onToggle: () => void;
   onStartEdit: () => void;
   onSaveEdit: () => void;

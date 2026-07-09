@@ -14,7 +14,7 @@ import {
 	updateCoauthorModuleAction,
 	deleteCoauthorModuleAction,
 } from "../../stores/api-actions/chat-actions.js";
-import { useT } from "../../i18n/context.js";
+import { useT, type TFunc } from "../../i18n/context.js";
 import { toast } from "sonner";
 import { cn } from "../../lib/cn.js";
 import type { CoauthorModule, CoauthorModuleCreate, CoauthorToolSet } from "@vibe-tavern/api-contracts";
@@ -392,7 +392,7 @@ interface ModuleListProps {
 	selectedId: string | null;
 	activeModuleId: string;
 	detailMode: DetailMode;
-	t: (key: string) => string;
+	t: TFunc;
 	onSelect: (id: string) => void;
 	onAdd: () => void;
 	onEdit: (m: CoauthorModule) => void;
@@ -501,7 +501,7 @@ function ModuleList({ modules, isLoading, selectedId, activeModuleId, detailMode
 
 interface ModuleViewProps {
 	module: CoauthorModule;
-	t: (key: string) => string;
+	t: TFunc;
 	isSelectedActive: boolean;
 	onEdit: () => void;
 	onDelete: () => void;
@@ -594,7 +594,7 @@ function ModuleView({ module, t, onEdit, onDelete }: ModuleViewProps) {
 
 interface ModuleEditorProps {
 	draft: ModuleDraft;
-	t: (key: string) => string;
+	t: TFunc;
 	onUpdate: <K extends keyof ModuleDraft>(key: K, value: ModuleDraft[K]) => void;
 	onToggleSkill: (skillId: string) => void;
 	onToggleTool: (key: keyof CoauthorToolSet) => void;

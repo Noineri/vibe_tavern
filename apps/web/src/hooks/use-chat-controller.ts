@@ -1,7 +1,8 @@
 import { useCallback, useMemo, useRef } from "react";
 import { toast } from "sonner";
 import type { Attachment, ChatBranchId, ChatId } from "@vibe-tavern/domain";
-import { getT } from "../i18n/locale-helpers.js";
+import { getT, type TFunc } from "../i18n/locale-helpers.js";
+import type Resources from "../i18n/resources.js";
 import {
   generateReplyStream,
   logClientSendDebug,
@@ -62,7 +63,7 @@ const TRANSIENT_PROVIDER_CATEGORIES = new Set(["rate_limit", "timeout", "network
  * `unknown` (and for non-ProviderStreamError errors, e.g. network failures
  * before the request reached the server).
  */
-function showProviderErrorToast(error: unknown, t: (key: string) => string, fallbackKey = "message_send_failed"): void {
+function showProviderErrorToast(error: unknown, t: TFunc, fallbackKey: keyof Resources["en"] = "message_send_failed"): void {
   const message = error instanceof Error && error.message ? error.message : t(fallbackKey);
   const category = error instanceof ProviderStreamError ? error.category : "unknown";
 

@@ -37,7 +37,7 @@ import { NumberInput } from "../../shared/NumberInput.js";
 import { TokenCounter } from "../../shared/TokenCounter.js";
 import { AiQuickPill, type AiQuickSettings } from "../../shared/AiQuickPill.js";
 import { AiAssistantModal } from "../../shared/AiAssistantModal.js";
-import { useT } from "../../../i18n/context.js";
+import { useT, type TFunc } from "../../../i18n/context.js";
 import {
   testLoreActivation,
   deleteLoreEntry,
@@ -56,7 +56,7 @@ interface LoreEntryEditorProps {
   updateAct: (field: string, value: unknown) => void;
   onDeleted: () => void;
   isMobile: boolean;
-  t: (key: string) => string;
+  t: TFunc;
   /** Existing group names in the same lorebook, for the group-name autocomplete. */
   existingGroups?: string[];
 }

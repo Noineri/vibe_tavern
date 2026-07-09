@@ -39,7 +39,7 @@ import { TokenCounter } from "../../shared/TokenCounter.js";
 import { Toggle } from "../../shared/Toggle.js";
 import { CustomTooltip } from "../../shared/Tooltip.js";
 import type { LoreEntryRecord } from "../../../app-client.js";
-import { useT } from "../../../i18n/context.js";
+import { useT, type TFunc } from "../../../i18n/context.js";
 import {
 	POSITION_SECTIONS,
 	getSection,
@@ -53,7 +53,7 @@ interface EntryCardVisualProps {
 	entry: LoreEntryRecord;
 	isActive: boolean;
 	isMobile: boolean;
-	t: (key: string) => string;
+	t: TFunc;
 	onClick?: () => void;
 	rootRef?: (node: HTMLElement | null) => void;
 	mobileHandleRef?: (node: HTMLElement | null) => void;
@@ -218,7 +218,7 @@ function SortableEntryCard({
 	entry: LoreEntryRecord;
 	isActive: boolean;
 	isMobile: boolean;
-	t: (key: string) => string;
+	t: TFunc;
 	onClick: () => void;
 	onToggleEnabled?: (entryId: string, enabled: boolean) => void;
 }) {
@@ -274,7 +274,7 @@ interface LoreEntryListProps {
 	entries: LoreEntryRecord[];
 	activeEntryId: string | null;
 	isMobile: boolean;
-	t: (key: string) => string;
+	t: TFunc;
 	onEntryClick: (entryId: string) => void;
 	onReorder: (updates: Array<{ id: string; sortOrder: number; position?: string }>) => void | Promise<unknown>;
 	onToggleEnabled?: (entryId: string, enabled: boolean) => void | Promise<void>;
