@@ -14,6 +14,7 @@ import { SidebarFlyout } from "./sections/SidebarFlyout.js";
 import { SidebarFooter, type FooterLauncherItem } from "./sections/SidebarFooter.js";
 import { SidebarBranchRename } from "./sections/SidebarBranchRename.js";
 import { RichChatRow } from "./sections/RichChatRow.js";
+import { ChatListSection } from "./sections/ChatListSection.js";
 import { Icons } from "../shared/icons.js";
 
 import { cn } from "../../lib/cn.js";
@@ -92,7 +93,7 @@ export function Sidebar() {
   const [chatListQuery, setChatListQuery] = useState("");
   const [chatSearchOpen, setChatSearchOpen] = useState(false);
 
-  const { chats, rpVisibleChats, sectionChats } = useSidebarChats({
+  const { chats, sectionChats } = useSidebarChats({
     allChats,
     characterId: currentCharacterId ?? null,
     query: chatListQuery,
@@ -292,45 +293,41 @@ export function Sidebar() {
               setCharMenuId={setCharMenuId}
             />
 
-            <section className="min-h-0 flex-1 overflow-y-auto border-b-0 pb-1.5">
-              <ListSectionHeader
-                titleKey="sidebar_chats"
-                sortMode={chatSortMode}
-                onSortChange={setChatSortMode}
-                searchOpen={chatSearchOpen}
-                onToggleSearch={() => setChatSearchOpen((v) => !v)}
-                searchQuery={chatListQuery}
-                onSearchQueryChange={setChatListQuery}
-                importTooltipKey="sidebar_import_chat"
-                onImport={() => setImportModal("chat")}
-                createTooltipKey="sidebar_new_chat_active_char"
-                onCreate={() => { void character.handleCreateChat(currentCharacterId ?? undefined); }}
-              />
-              {chats.length === 0 ? (
-                <div className="px-[14px] py-5 text-center text-xs leading-relaxed text-t3">
-                  {t("sidebar_send_a_message")}
-                </div>
-              ) : sectionChats.length === 0 ? (
-                <div className="px-[14px] py-5 text-center text-xs leading-relaxed text-t3">
-                  {t("search_no_results")}
-                </div>
-              ) : (
-                <>
-                {rpVisibleChats.map((chatItem) => (
-                  <RichChatRow
-                    key={chatItem.id}
-                    chatItem={chatItem}
-                    isActive={chatItem.id === activeChatId}
-                    branches={branches}
-                    activeBranchId={activeBranchId}
-                    chat={chat}
-                    character={character}
-                    setConfirmDestroy={setConfirmDestroy}
-                  />
-                ))}
-                </>
+            <ChatListSection
+              sectionClassName="min-h-0 flex-1 overflow-y-auto border-b-0 pb-1.5"
+              header={
+                <ListSectionHeader
+                  titleKey="sidebar_chats"
+                  sortMode={chatSortMode}
+                  onSortChange={setChatSortMode}
+                  searchOpen={chatSearchOpen}
+                  onToggleSearch={() => setChatSearchOpen((v) => !v)}
+                  searchQuery={chatListQuery}
+                  onSearchQueryChange={setChatListQuery}
+                  importTooltipKey="sidebar_import_chat"
+                  onImport={() => setImportModal("chat")}
+                  createTooltipKey="sidebar_new_chat_active_char"
+                  onCreate={() => { void character.handleCreateChat(currentCharacterId ?? undefined); }}
+                />
+              }
+              chats={chats}
+              sectionChats={sectionChats}
+              activeChatId={activeChatId}
+              emptyAllKey="sidebar_send_a_message"
+              emptyFilteredKey="search_no_results"
+              renderRow={(chatItem, isActive) => (
+                <RichChatRow
+                  key={chatItem.id}
+                  chatItem={chatItem}
+                  isActive={isActive}
+                  branches={branches}
+                  activeBranchId={activeBranchId}
+                  chat={chat}
+                  character={character}
+                  setConfirmDestroy={setConfirmDestroy}
+                />
               )}
-            </section>
+            />
             </div>
 
             <SidebarFooter items={rpFooterItems} />
