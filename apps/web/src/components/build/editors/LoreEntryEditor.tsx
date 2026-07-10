@@ -99,6 +99,10 @@ export function LoreEntryEditor({
   // content is read in several places (the textareas via Controller below, plus
   // TokenCounter + AiAssistantModal) — watch it once so they stay live.
   const content = form.watch("content");
+  // these drive conditional sub-fields / the group-chip filter.
+  const position = form.watch("position");
+  const delayUntilRecursion = form.watch("delayUntilRecursion");
+  const groupName = form.watch("groupName");
   // ── Local UI state ──
   const [keyInput, setKeyInput] = useState("");
   const [secKeyInput, setSecKeyInput] = useState("");
@@ -151,11 +155,11 @@ export function LoreEntryEditor({
             placeholder={t("lore_entry_title")}
             {...form.register("title")}
           />
-          <Toggle
-            checked={entry.enabled}
-            onChange={(v) => updateAct("enabled", v)}
-            className="ml-1"
-          />
+          <ControlledField name="enabled">
+            {(field) => (
+              <Toggle checked={field.value} onChange={field.onChange} className="ml-1" />
+            )}
+          </ControlledField>
           <CustomTooltip content={t("lore_save_entry")}>
             <button type="button"
               className="flex h-8 w-8 cursor-pointer items-center justify-center rounded text-t3 transition-all hover:bg-s2 hover:text-danger"
@@ -204,32 +208,32 @@ export function LoreEntryEditor({
         {/* ── Activation flags (always visible, not in advanced mode) ── */}
         <div className="flex flex-wrap gap-x-5 gap-y-2.5">
           <CustomTooltip content={t("constant_hint")} align="start">
-            <Checkbox
-              checked={entry.constant}
-              onChange={(v) => updateAct("constant", v)}
-              label={t("lore_constant")}
-            />
+            <ControlledField name="constant">
+              {(field) => (
+                <Checkbox checked={field.value} onChange={field.onChange} label={t("lore_constant")} />
+              )}
+            </ControlledField>
           </CustomTooltip>
           <CustomTooltip content={t("case_sensitive_hint")} align="start">
-            <Checkbox
-              checked={entry.caseSensitive}
-              onChange={(v) => updateAct("caseSensitive", v)}
-              label={t("lore_case_sensitive")}
-            />
+            <ControlledField name="caseSensitive">
+              {(field) => (
+                <Checkbox checked={field.value} onChange={field.onChange} label={t("lore_case_sensitive")} />
+              )}
+            </ControlledField>
           </CustomTooltip>
           <CustomTooltip content={t("match_whole_words_hint")} align="start">
-            <Checkbox
-              checked={entry.matchWholeWords}
-              onChange={(v) => updateAct("matchWholeWords", v)}
-              label={t("lore_match_whole_words")}
-            />
+            <ControlledField name="matchWholeWords">
+              {(field) => (
+                <Checkbox checked={field.value} onChange={field.onChange} label={t("lore_match_whole_words")} />
+              )}
+            </ControlledField>
           </CustomTooltip>
           <CustomTooltip content={t("ignore_budget_hint")} align="start">
-            <Checkbox
-              checked={entry.ignoreBudget}
-              onChange={(v) => updateAct("ignoreBudget", v)}
-              label={t("lore_ignore_budget")}
-            />
+            <ControlledField name="ignoreBudget">
+              {(field) => (
+                <Checkbox checked={field.value} onChange={field.onChange} label={t("lore_ignore_budget")} />
+              )}
+            </ControlledField>
           </CustomTooltip>
         </div>
 
@@ -298,32 +302,40 @@ export function LoreEntryEditor({
                 <FieldLabel>
                   {t("lore_logic_label")}
                 </FieldLabel>
-                <SegmentedControl
-                  value={entry.logic}
-                  options={[
-                    { value: "and_any", label: t("lore_logic_any"), tooltip: t("lore_logic_any_hint") },
-                    { value: "and_all", label: t("lore_logic_all"), tooltip: t("lore_logic_all_hint") },
-                    { value: "not_any", label: t("lore_logic_none"), tooltip: t("lore_logic_none_hint") },
-                    { value: "not_all", label: t("lore_logic_not_all"), tooltip: t("lore_logic_not_all_hint") },
-                  ]}
-                  onChange={(v) => updateAct("logic", v)}
-                  compact
-                />
+                <ControlledField name="logic">
+                  {(field) => (
+                    <SegmentedControl
+                      value={field.value}
+                      options={[
+                        { value: "and_any", label: t("lore_logic_any"), tooltip: t("lore_logic_any_hint") },
+                        { value: "and_all", label: t("lore_logic_all"), tooltip: t("lore_logic_all_hint") },
+                        { value: "not_any", label: t("lore_logic_none"), tooltip: t("lore_logic_none_hint") },
+                        { value: "not_all", label: t("lore_logic_not_all"), tooltip: t("lore_logic_not_all_hint") },
+                      ]}
+                      onChange={field.onChange}
+                      compact
+                    />
+                  )}
+                </ControlledField>
               </div>
               <div>
                 <FieldLabel>
                   {t("lore_role_label")}
                 </FieldLabel>
-                  <SegmentedControl
-                    value={entry.role}
-                    options={[
-                      { value: "system", label: t("lore_role_system") },
-                      { value: "user", label: t("lore_role_user") },
-                      { value: "assistant", label: t("lore_role_assistant") },
-                    ]}
-                    onChange={(v) => updateAct("role", v)}
-                    compact
-                  />
+                  <ControlledField name="role">
+                    {(field) => (
+                      <SegmentedControl
+                        value={field.value}
+                        options={[
+                          { value: "system", label: t("lore_role_system") },
+                          { value: "user", label: t("lore_role_user") },
+                          { value: "assistant", label: t("lore_role_assistant") },
+                        ]}
+                        onChange={field.onChange}
+                        compact
+                      />
+                    )}
+                  </ControlledField>
                 </div>
             </div>
 
@@ -384,10 +396,10 @@ export function LoreEntryEditor({
                   <CustomTooltip key={pos} content={tDynamic("pos_" + pos + "_hint")} side="top">
                     <button
                       type="button"
-                      onClick={() => updateAct("position", pos)}
+                      onClick={() => form.setValue("position", pos, { shouldDirty: true })}
                       className={cn(
                         "rounded-md border px-2 py-1.5 text-[11px] font-ui font-medium transition-all",
-                        entry.position === pos
+                        position === pos
                           ? "border-accent bg-accent-dim text-accent-t"
                           : "border-border bg-s3 text-t2 hover:border-t3 hover:text-t1"
                       )}
@@ -398,20 +410,20 @@ export function LoreEntryEditor({
                 ))}
               </div>
 
-              {(entry.position === "at_depth" ||
-                entry.position === "top_an" ||
-                entry.position === "bottom_an") && (
+              {(position === "at_depth" ||
+                position === "top_an" ||
+                position === "bottom_an") && (
                 <div className="max-w-[170px]">
                   <CustomTooltip content={t("lore_depth_hint")} side="top" align="start">
                     <div>
                       <FieldLabel help>
                         {t("lore_depth_label")}
                       </FieldLabel>
-                      <NumberInput
-                        min={0}
-                        value={entry.depth}
-                        onChange={(v) => updateAct("depth", v)}
-                      />
+                      <ControlledField name="depth">
+                        {(field) => (
+                          <NumberInput min={0} value={field.value} onChange={field.onChange} />
+                        )}
+                      </ControlledField>
                     </div>
                   </CustomTooltip>
                 </div>
@@ -460,11 +472,11 @@ export function LoreEntryEditor({
                   <FieldLabel help>
                     {t("lore_priority_label")}
                   </FieldLabel>
-                  <NumberInput
-                    min={0}
-                    value={entry.priority}
-                    onChange={(v) => updateAct("priority", v)}
-                  />
+                  <ControlledField name="priority">
+                    {(field) => (
+                      <NumberInput min={0} value={field.value} onChange={field.onChange} />
+                    )}
+                  </ControlledField>
                 </div>
               </CustomTooltip>
               <div>
@@ -473,12 +485,11 @@ export function LoreEntryEditor({
                     {t("lore_probability")}
                   </FieldLabel>
                 </CustomTooltip>
-                <NumberInput
-                  min={0}
-                  max={100}
-                  value={entry.probability}
-                  onChange={(v) => updateAct("probability", v)}
-                />
+                <ControlledField name="probability">
+                  {(field) => (
+                    <NumberInput min={0} max={100} value={field.value} onChange={field.onChange} />
+                  )}
+                </ControlledField>
               </div>
               <div>
                 <CustomTooltip content={t("scan_depth_override_hint")}>
@@ -486,11 +497,11 @@ export function LoreEntryEditor({
                     {t("lore_scan_depth_override")}
                   </FieldLabel>
                 </CustomTooltip>
-                <NumberInput
-                  min={-1}
-                  value={entry.scanDepthOverride ?? -1}
-                  onChange={(v) => updateAct("scanDepthOverride", v)}
-                />
+                <ControlledField name="scanDepthOverride">
+                  {(field) => (
+                    <NumberInput min={-1} value={field.value ?? -1} onChange={field.onChange} />
+                  )}
+                </ControlledField>
               </div>
             </div>
 
@@ -520,36 +531,36 @@ export function LoreEntryEditor({
                       {t("lore_group_weight")}
                     </FieldLabel>
                   </CustomTooltip>
-                  <NumberInput
-                    min={0}
-                    value={entry.groupWeight}
-                    onChange={(v) => updateAct("groupWeight", v)}
-                  />
+                  <ControlledField name="groupWeight">
+                    {(field) => (
+                      <NumberInput min={0} value={field.value} onChange={field.onChange} />
+                    )}
+                  </ControlledField>
                 </div>
                 <CustomTooltip content={t("prioritize_inclusion_hint")} align="start">
-                  <Checkbox
-                    checked={entry.prioritizeInclusion}
-                    onChange={(v) => updateAct("prioritizeInclusion", v)}
-                    label={t("lore_prioritize_inclusion")}
-                  />
+                  <ControlledField name="prioritizeInclusion">
+                    {(field) => (
+                      <Checkbox checked={field.value} onChange={field.onChange} label={t("lore_prioritize_inclusion")} />
+                    )}
+                  </ControlledField>
                 </CustomTooltip>
                 <CustomTooltip content={t("group_scoring_hint")} align="start">
-                  <Checkbox
-                    checked={entry.useGroupScoring}
-                    onChange={(v) => updateAct("useGroupScoring", v)}
-                    label={t("lore_use_group_scoring")}
-                  />
+                  <ControlledField name="useGroupScoring">
+                    {(field) => (
+                      <Checkbox checked={field.value} onChange={field.onChange} label={t("lore_use_group_scoring")} />
+                    )}
+                  </ControlledField>
                 </CustomTooltip>
               </div>
-              {existingGroups && existingGroups.filter((g) => g !== entry.groupName).length > 0 && (
+              {existingGroups && existingGroups.filter((g) => g !== groupName).length > 0 && (
                 <div className="mt-2 flex flex-wrap gap-1.5">
                   {existingGroups
-                    .filter((g) => g !== entry.groupName)
+                    .filter((g) => g !== groupName)
                     .map((g) => (
                       <span
                         key={g}
                         className="flex cursor-pointer items-center gap-1 rounded bg-accent-dim px-2 py-0.5 text-[12px] text-accent-t transition-all hover:bg-border2 hover:text-t1"
-                        onClick={() => updateAct("groupName", g)}
+                        onClick={() => form.setValue("groupName", g, { shouldDirty: true })}
                       >
                         {g}
                       </span>
@@ -586,11 +597,11 @@ export function LoreEntryEditor({
                     <FieldLabel>
                       {t("lore_sticky_window")}
                     </FieldLabel>
-                    <NumberInput
-                      min={0}
-                      value={entry.stickyWindow}
-                      onChange={(v) => updateAct("stickyWindow", v)}
-                    />
+                    <ControlledField name="stickyWindow">
+                      {(field) => (
+                        <NumberInput min={0} value={field.value} onChange={field.onChange} />
+                      )}
+                    </ControlledField>
                   </div>
                 </CustomTooltip>
                 <CustomTooltip content={t("cooldown_hint")}>
@@ -598,11 +609,11 @@ export function LoreEntryEditor({
                     <FieldLabel>
                       {t("lore_cooldown_window")}
                     </FieldLabel>
-                    <NumberInput
-                      min={0}
-                      value={entry.cooldownWindow}
-                      onChange={(v) => updateAct("cooldownWindow", v)}
-                    />
+                    <ControlledField name="cooldownWindow">
+                      {(field) => (
+                        <NumberInput min={0} value={field.value} onChange={field.onChange} />
+                      )}
+                    </ControlledField>
                   </div>
                 </CustomTooltip>
                 <CustomTooltip content={t("delay_hint")}>
@@ -610,11 +621,11 @@ export function LoreEntryEditor({
                     <FieldLabel>
                       {t("lore_delay_window")}
                     </FieldLabel>
-                    <NumberInput
-                      min={0}
-                      value={entry.delayWindow}
-                      onChange={(v) => updateAct("delayWindow", v)}
-                    />
+                    <ControlledField name="delayWindow">
+                      {(field) => (
+                        <NumberInput min={0} value={field.value} onChange={field.onChange} />
+                      )}
+                    </ControlledField>
                   </div>
                 </CustomTooltip>
               </div>
@@ -630,39 +641,39 @@ export function LoreEntryEditor({
               </CustomTooltip>
               <div className="flex flex-wrap gap-4">
                 <CustomTooltip content={t("exclude_recursion_hint")} align="start">
-                  <Checkbox
-                    checked={entry.excludeRecursion}
-                    onChange={(v) => updateAct("excludeRecursion", v)}
-                    label={t("lore_exclude_recursion")}
-                  />
+                  <ControlledField name="excludeRecursion">
+                    {(field) => (
+                      <Checkbox checked={field.value} onChange={field.onChange} label={t("lore_exclude_recursion")} />
+                    )}
+                  </ControlledField>
                 </CustomTooltip>
                 <CustomTooltip content={t("prevent_recursion_hint")} align="start">
-                  <Checkbox
-                    checked={entry.preventRecursion}
-                    onChange={(v) => updateAct("preventRecursion", v)}
-                    label={t("lore_prevent_recursion")}
-                  />
+                  <ControlledField name="preventRecursion">
+                    {(field) => (
+                      <Checkbox checked={field.value} onChange={field.onChange} label={t("lore_prevent_recursion")} />
+                    )}
+                  </ControlledField>
                 </CustomTooltip>
                 <CustomTooltip content={t("delay_until_recursion_hint")} align="start">
-                  <Checkbox
-                    checked={entry.delayUntilRecursion}
-                    onChange={(v) => updateAct("delayUntilRecursion", v)}
-                    label={t("lore_delay_until_recursion")}
-                  />
+                  <ControlledField name="delayUntilRecursion">
+                    {(field) => (
+                      <Checkbox checked={field.value} onChange={field.onChange} label={t("lore_delay_until_recursion")} />
+                    )}
+                  </ControlledField>
                 </CustomTooltip>
               </div>
-              {entry.delayUntilRecursion && (
+              {delayUntilRecursion && (
                 <div className="mt-3 max-w-[160px]">
                   <CustomTooltip content={t("recursion_level_hint")}>
                     <FieldLabel>
                       {t("lore_recursion_label")}
                     </FieldLabel>
                   </CustomTooltip>
-                  <NumberInput
-                    min={0}
-                    value={entry.recursionLevel}
-                    onChange={(v) => updateAct("recursionLevel", v)}
-                  />
+                  <ControlledField name="recursionLevel">
+                    {(field) => (
+                      <NumberInput min={0} value={field.value} onChange={field.onChange} />
+                    )}
+                  </ControlledField>
                 </div>
               )}
             </div>

@@ -153,4 +153,28 @@ describe("LoreEntryEditor (RHF field binding)", () => {
     expect(form.formState.isDirty).toBe(true);
     expect(updateAct).not.toHaveBeenCalled();
   });
+
+  it("constant checkbox binds via ControlledField (not updateAct)", () => {
+    const { form, updateAct, getByText } = renderEditor(
+      makeEntry({ constant: false }),
+    );
+    fireEvent.click(getByText("lore_constant"));
+    expect(form.getValues("constant")).toBe(true);
+    expect(form.formState.isDirty).toBe(true);
+    expect(updateAct).not.toHaveBeenCalled();
+  });
+
+  it("priority number binds via ControlledField (not updateAct)", () => {
+    const { form, updateAct, getByText } = renderEditor(
+      makeEntry({ priority: 0 }),
+    );
+    fireEvent.click(getByText(/lore_advanced_settings/)); // open advanced
+    // NumberInput commits on blur; scope its input via the priority FieldLabel.
+    const priorityInput = getByText("lore_priority_label").parentElement!.querySelector("input")!;
+    fireEvent.change(priorityInput, { target: { value: "5" } });
+    fireEvent.blur(priorityInput);
+    expect(form.getValues("priority")).toBe(5);
+    expect(form.formState.isDirty).toBe(true);
+    expect(updateAct).not.toHaveBeenCalled();
+  });
 });
