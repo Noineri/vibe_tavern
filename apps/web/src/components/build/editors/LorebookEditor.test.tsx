@@ -41,6 +41,7 @@ import {
   type LorebookRecord,
 } from "../../../app-client.js";
 import { LorebookEditor } from "./LorebookEditor.js";
+import { toast } from "sonner";
 
 // ── Module-boundary mocks (hoisted above the import of LorebookEditor) ─────
 
@@ -53,6 +54,12 @@ vi.mock("../../../i18n/context.js", () => ({
     setLocale: () => {},
     ready: true,
   }),
+}));
+
+// sonner toasts — stubbed so the duplicate test can assert success feedback
+// fires (the whole point of the toast: the duplicate must not be silent).
+vi.mock("sonner", () => ({
+  toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() },
 }));
 
 // CustomTooltip needs a Radix TooltipProvider context irrelevant here;
@@ -422,5 +429,9 @@ describe("LorebookEditor (characterization)", () => {
     await waitFor(() => {
       expect(queryByTestId("active-title")).not.toBeNull();
     });
+    // Success toast fires — the duplicate is NOT silent (the copy looks
+    // identical to the source, so without explicit feedback the user can't
+    // tell they're on the copy).
+    expect(toast.success).toHaveBeenCalledWith("lore_entry_duplicated");
   });
 });

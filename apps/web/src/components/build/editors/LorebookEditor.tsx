@@ -22,6 +22,7 @@ import { FormProvider } from "react-hook-form";
 import { Ic } from "../../shared/icons.js";
 import { AddButton } from "../../shared/add-button.js";
 import { cn } from "../../../lib/cn.js";
+import { toast } from "sonner";
 import { useT } from "../../../i18n/context.js";
 import {
   createLorebook,
@@ -391,18 +392,26 @@ export function LorebookEditor({
     // (the autosave invariant), so the original is persisted with the same
     // edits the copy was created from — nothing is lost.
     const { id: _id, lorebookId: _lb, sortOrder: _so, ...fields } = form.getValues();
-    void createLoreEntry(lorebookId, fields).then(async (created) => {
-      if (!created) return;
-      // We're already in this lorebook's editor, so activeLorebookIdForEntry
-      // won't change and the entry-loading effect won't refetch on its own —
-      // without this, the copy never enters `entries`, activeEntry resolves to
-      // null, and the editor view falls through to the script panel (a blank
-      // screen until a full page reload).
-      await refreshEntries();
-      setActiveEntryId(created.id);
-      setActiveLorebookIdForEntry(lorebookId);
-      setView("editor");
-    });
+    void createLoreEntry(lorebookId, fields)
+      .then(async (created) => {
+        if (!created) return;
+        // We're already in this lorebook's editor, so activeLorebookIdForEntry
+        // won't change and the entry-loading effect won't refetch on its own —
+        // without this, the copy never enters `entries`, activeEntry resolves to
+        // null, and the editor view falls through to the script panel (a blank
+        // screen until a full page reload).
+        await refreshEntries();
+        setActiveEntryId(created.id);
+        setActiveLorebookIdForEntry(lorebookId);
+        setView("editor");
+        // Explicit success feedback: the editor switches to a copy that looks
+        // identical to the source, so without a toast the duplicate is silent
+        // and the user can't tell they're on the copy, not the original.
+        toast.success(t("lore_entry_duplicated"));
+      })
+      .catch((err) => {
+        toast.error(err instanceof Error ? err.message : t("lore_entry_duplicate_failed"));
+      });
   };
 
   // ═══ Helpers ═══

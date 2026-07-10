@@ -496,6 +496,8 @@ export default interface Resources {
     "lore_entry_ai_prompt_placeholder": "Describe what this lorebook entry should contain...",
     "lore_entry_content": "Content",
     "lore_entry_content_placeholder": "Describe a fact, location, or rule...",
+    "lore_entry_duplicate_failed": "Failed to duplicate entry",
+    "lore_entry_duplicated": "Duplicate entry created",
     "lore_entry_keys": "Keys",
     "lore_entry_keys_placeholder": "Enter keywords...",
     "lore_entry_secondary_keys": "Secondary Keys",
