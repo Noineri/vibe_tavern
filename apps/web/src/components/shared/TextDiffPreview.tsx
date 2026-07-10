@@ -1,3 +1,4 @@
+import { diffArrays } from "diff";
 import { cn } from "../../lib/cn.js";
 
 export type TextDiffLineKind = "same" | "add" | "remove";
@@ -28,40 +29,17 @@ export function buildLineDiff(oldText: string, newText: string): TextDiffSummary
     };
   }
 
-  const dp = Array.from({ length: oldLines.length + 1 }, () => new Array<number>(newLines.length + 1).fill(0));
-  for (let i = oldLines.length - 1; i >= 0; i--) {
-    for (let j = newLines.length - 1; j >= 0; j--) {
-      dp[i][j] = oldLines[i] === newLines[j]
-        ? dp[i + 1][j + 1] + 1
-        : Math.max(dp[i + 1][j], dp[i][j + 1]);
-    }
-  }
-
+  const changes = diffArrays(oldLines, newLines);
   const lines: TextDiffLine[] = [];
   let added = 0;
   let removed = 0;
-  let i = 0;
-  let j = 0;
-  while (i < oldLines.length && j < newLines.length) {
-    if (oldLines[i] === newLines[j]) {
-      lines.push({ kind: "same", text: oldLines[i] });
-      i++;
-      j++;
-    } else if (dp[i + 1][j] >= dp[i][j + 1]) {
-      lines.push({ kind: "remove", text: oldLines[i++] });
-      removed++;
-    } else {
-      lines.push({ kind: "add", text: newLines[j++] });
-      added++;
+  for (const change of changes) {
+    const kind: TextDiffLineKind = change.added ? "add" : change.removed ? "remove" : "same";
+    for (const text of change.value) {
+      lines.push({ kind, text });
+      if (kind === "add") added++;
+      else if (kind === "remove") removed++;
     }
-  }
-  while (i < oldLines.length) {
-    lines.push({ kind: "remove", text: oldLines[i++] });
-    removed++;
-  }
-  while (j < newLines.length) {
-    lines.push({ kind: "add", text: newLines[j++] });
-    added++;
   }
 
   return { lines, added, removed, tooLarge: false };

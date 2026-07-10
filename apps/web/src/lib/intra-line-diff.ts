@@ -3,16 +3,16 @@
  * Co-author diff view (`HunkSelectionDiff`). The line-level diff in
  * `buildLineDiff` tags each line add/remove/same; this module goes one level
  * deeper: within a hunk it PAIRS remove lines with add lines positionally and
- * runs a token-level LCS to mark which substrings are SHARED (common) vs
+ * runs jsdiff's `diffArrays` over `Intl.Segmenter` word-tokens to mark which substrings are SHARED (common) vs
  * CHANGED. The renderer colors the line with the dim background and stamps the
  * changed substrings with a stronger ("strong") highlight — exactly GitHub's
  * "word-diff" look.
  *
- * Pure: no React, no I/O. The LCS shape mirrors `buildLineDiff` but operates
- * over tokens (letter / digit / whitespace / "other" runs) instead of lines.
- * Unicode-aware (`u` flag) so Cyrillic prose — the app ships Russian — is
- * tokenized per-word, not per-byte.
+ * Pure: no React, no I/O. Word tokenization is delegated to `Intl.Segmenter`
+ * (Unicode-aware, handles Cyrillic/Latin/CJK per-platform), so Russian prose —
+ * the app ships Russian — is segmented per-word, not per-byte.
  */
+import { diffArrays } from "diff";
 import type { TextDiffLine } from "../components/shared/TextDiffPreview.js";
 
 /** A contiguous run of text within a line, flagged shared vs changed. */
@@ -29,28 +29,31 @@ export interface IntraLineDiff {
 }
 
 /**
- * Skip intra-line diffing when old+new tokens exceed this. Guards against a
- * pathological paste triggering a large O(n·m) LCS allocation. 4000 combined
- * (~2000 tokens/side ≈ a 1500-word single-line field) keeps the DP well under
- * ~20ms and covers realistic greeting/paragraph sizes with huge headroom — a
- * typical greeting paragraph is ~200–300 tokens/side.
+ * Skip intra-line diffing when old+new word-segments exceed this. Guards
+ * against a pathological paste. 4000 combined (~2000 segments/side) covers
+ * realistic greeting/paragraph sizes with huge headroom — a typical greeting
+ * paragraph is ~200–300 segments/side.
  */
 const MAX_INTRA_TOKENS = 4000;
 
 /**
- * Tokenize into: whitespace runs, letter runs, digit runs, and "other"
- * (punctuation/symbol) runs. `[\w]` is ASCII-only without `u`, so we use the
- * Unicode properties `\p{L}` / `\p{N}` to keep Cyrillic/accented text wordwise.
+ * Unicode-aware word segmenter for Cyrillic/Latin prose. `granularity: "word"`
+ * handles all scripts (Russian, English, CJK) per-platform — no custom regex
+ * needed. Locale "ru" word-bounds both Cyrillic and Latin correctly.
  */
+const WORD_SEGMENTER = new Intl.Segmenter("ru", { granularity: "word" });
+
 function tokenize(text: string): string[] {
-  return text.match(/\s+|\p{L}+|\p{N}+|[^\s\p{L}\p{N}]+/gu) ?? [];
+  return Array.from(WORD_SEGMENTER.segment(text), (s) => s.segment);
 }
 
 /**
- * Compute word-level segments for a paired (old, new) line. Returns null when
- * intra-line diffing is not applicable — either line empty, or the pair is too
- * large — in which case the caller renders the whole line as a plain change
- * (no highlight), matching GitHub's treatment of fully-new/removed lines.
+ * Compute word-level segments for a paired (old, new) line by tokenizing both
+ * with `Intl.Segmenter` and diffing the token arrays via jsdiff's `diffArrays`
+ * (Myers). Returns null when intra-line diffing is not applicable — either
+ * line empty, or the pair is too large — in which case the caller renders the
+ * whole line as a plain change (no highlight), matching GitHub's treatment of
+ * fully-new/removed lines.
  */
 export function diffIntraLine(oldText: string, newText: string): IntraLineDiff | null {
   if (!oldText || !newText) return null;
@@ -59,55 +62,21 @@ export function diffIntraLine(oldText: string, newText: string): IntraLineDiff |
   if (oldTokens.length === 0 || newTokens.length === 0) return null;
   if (oldTokens.length + newTokens.length > MAX_INTRA_TOKENS) return null;
 
-  const n = oldTokens.length;
-  const m = newTokens.length;
-  // LCS DP, token-indexed (same shape as buildLineDiff).
-  const dp: number[][] = Array.from({ length: n + 1 }, () => new Array<number>(m + 1).fill(0));
-  for (let i = n - 1; i >= 0; i--) {
-    for (let j = m - 1; j >= 0; j--) {
-      dp[i][j] = oldTokens[i] === newTokens[j]
-        ? dp[i + 1][j + 1] + 1
-        : Math.max(dp[i + 1][j], dp[i][j + 1]);
-    }
-  }
-
-  // Walk the DP, classifying each token as common (shared) or changed.
-  const oldCommon = new Array<boolean>(n).fill(false);
-  const newCommon = new Array<boolean>(m).fill(false);
-  let i = 0;
-  let j = 0;
-  while (i < n && j < m) {
-    if (oldTokens[i] === newTokens[j]) {
-      oldCommon[i] = true;
-      newCommon[j] = true;
-      i++;
-      j++;
-    } else if (dp[i + 1]![j] >= dp[i]![j + 1]) {
-      i++; // old token removed on the new side
+  const changes = diffArrays(oldTokens, newTokens);
+  const oldSegments: LineSegment[] = [];
+  const newSegments: LineSegment[] = [];
+  for (const change of changes) {
+    const text = change.value.join("");
+    if (change.added) {
+      newSegments.push({ text, common: false });
+    } else if (change.removed) {
+      oldSegments.push({ text, common: false });
     } else {
-      j++; // new token added on the new side
+      oldSegments.push({ text, common: true });
+      newSegments.push({ text, common: true });
     }
   }
-
-  return {
-    oldSegments: collapse(oldTokens, oldCommon),
-    newSegments: collapse(newTokens, newCommon),
-  };
-}
-
-/** Collapse consecutive tokens sharing the same common-flag into one segment. */
-function collapse(tokens: string[], common: boolean[]): LineSegment[] {
-  const segs: LineSegment[] = [];
-  for (let k = 0; k < tokens.length; k++) {
-    const flag = common[k]!;
-    const last = segs[segs.length - 1];
-    if (last && last.common === flag) {
-      last.text += tokens[k]!;
-    } else {
-      segs.push({ text: tokens[k]!, common: flag });
-    }
-  }
-  return segs;
+  return { oldSegments, newSegments };
 }
 
 /** A hunk line annotated with its intra-line segments (null = whole-line change). */
