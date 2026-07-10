@@ -22,7 +22,7 @@
  * tests (LorebookEditor.test.tsx) pin the observable contract.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useForm, type UseFormReturn } from "react-hook-form";
+import { useForm, type UseFormReturn, type FieldPath, type FieldPathValue } from "react-hook-form";
 import { useDebouncedCallback } from "use-debounce";
 import {
   listAllLorebooks,
@@ -147,7 +147,6 @@ export interface LorebookEditorState {
   existingGroups: string[];
   // Entry autosave
   savingState: "idle" | "saving" | "saved" | "error";
-  dirtyCount: number;
   flushSave: () => Promise<void>;
   updateAct: (field: string, value: unknown) => void;
   // Active-entry edit form (react-hook-form) — Step 2 scaffolding; Steps 3–4
@@ -316,20 +315,33 @@ export function useLorebookEditorState({
   const [savingState, setSavingState] = useState<
     "idle" | "saving" | "saved" | "error"
   >("idle");
-  const dirtyFieldsRef = useRef<Record<string, unknown>>({});
-  const [dirtyCount, setDirtyCount] = useState(0);
 
   const flushSave = useCallback(async () => {
     const entryId = activeEntryIdRef.current;
     const lbId = activeLorebookIdRef.current;
     if (!entryId || !lbId) return;
-    const fields = { ...dirtyFieldsRef.current };
-    if (Object.keys(fields).length === 0) return;
+    // Build the partial patch from the form's dirty fields. RHF's
+    // dirtyFields is a boolean tree mirroring the values shape (arrays and
+    // objects become sub-trees); we only need top-level truthiness to know
+    // which fields the user touched since the last reset. This replaces the
+    // hand-rolled dirtyFieldsRef accumulator — form.formState.dirtyFields is
+    // the project-standard source of "what is dirty".
+    const values = form.getValues();
+    const dirty = form.formState.dirtyFields as unknown as Record<
+      string,
+      unknown
+    >;
+    const patch: Record<string, unknown> = {};
+    for (const k of Object.keys(values)) {
+      if (dirty[k]) patch[k] = values[k as keyof LoreEntryDraft];
+    }
+    if (Object.keys(patch).length === 0) return;
     setSavingState("saving");
     try {
-      await updateLoreEntry(lbId, entryId, fields as Partial<LoreEntryRecord>);
-      dirtyFieldsRef.current = {};
-      setDirtyCount(0);
+      await updateLoreEntry(lbId, entryId, patch as Partial<LoreEntryRecord>);
+      // Mark the form clean: reset defaults to the just-saved values so
+      // formState.isDirty clears and the save button leaves its dirty state.
+      form.reset(values);
       setSavingState("saved");
       setTimeout(
         () => setSavingState((prev) => (prev === "saved" ? "idle" : prev)),
@@ -338,7 +350,7 @@ export function useLorebookEditorState({
     } catch {
       setSavingState("error");
     }
-  }, []);
+  }, [form]);
 
   // Debounced save trigger: 1s after the last edit. `useDebouncedCallback`
   // owns the timer + unmount cleanup internally and exposes `.flush()` — used
@@ -355,13 +367,20 @@ export function useLorebookEditorState({
         prev.map((e) => (e.id === entryId ? { ...e, [field]: value } : e)),
       );
 
-      dirtyFieldsRef.current[field] = value;
-      setDirtyCount((c) => c + 1);
+      // Bridge the edit into the RHF form so formState.dirtyFields drives the
+      // autosave flush above. Step 4 swaps these updateAct call sites for
+      // register/Controller, making the form the direct input and removing
+      // this bridge (and updateAct) entirely.
+      form.setValue(
+        field as FieldPath<LoreEntryDraft>,
+        value as FieldPathValue<LoreEntryDraft, FieldPath<LoreEntryDraft>>,
+        { shouldDirty: true },
+      );
       setSavingState("idle");
 
       debouncedSave();
     },
-    [debouncedSave],
+    [debouncedSave, form],
   );
 
   // Fire any pending save on unmount.
@@ -395,7 +414,6 @@ export function useLorebookEditorState({
     existingGroups,
     // Autosave
     savingState,
-    dirtyCount,
     flushSave,
     updateAct,
     form,

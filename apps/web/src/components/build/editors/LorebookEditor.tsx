@@ -108,7 +108,6 @@ export function LorebookEditor({
     activeEntry,
     existingGroups,
     savingState,
-    dirtyCount,
     flushSave,
     updateAct,
     refreshLorebooks,
@@ -722,6 +721,10 @@ export function LorebookEditor({
   );
 
   // ── Header bar (editor) ──
+  // form.formState.isDirty drives the autosave affordance (Step 3 retired the
+  // hand-rolled dirtyCount). Reading it during render subscribes this
+  // component to dirty-state changes so the button updates on edit / flush.
+  const dirty = form.formState.isDirty;
   const editorHeader = (
     <div
       className="flex shrink-0 items-center gap-2 border-b border-border bg-surface"
@@ -751,12 +754,12 @@ export function LorebookEditor({
               ? "bg-success-dim text-success-text"
               : savingState === "error"
                 ? "bg-danger-dim text-danger-text cursor-pointer"
-                : dirtyCount > 0
+                : dirty
                   ? "bg-accent text-on-accent"
                   : "bg-s3 text-t3"
         )}
         onClick={
-          savingState === "error" || dirtyCount > 0 ? flushSave : undefined
+          savingState === "error" || dirty ? flushSave : undefined
         }
       >
         {savingState === "saving"
@@ -765,7 +768,7 @@ export function LorebookEditor({
             ? t("lore_saved")
             : savingState === "error"
               ? t("retry")
-              : dirtyCount > 0
+              : dirty
                 ? t("lore_save_entry")
                 : t("lore_saved")}
       </button>

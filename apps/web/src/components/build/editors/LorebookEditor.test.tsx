@@ -13,7 +13,7 @@
  *     "all"; listLorebooks(scope, ownerId) otherwise); switching scope re-fetches;
  *   - entry-loading: selecting an entry loads its lorebook's entries;
  *   - autosave: editing a field debounces (1s) a single updateLoreEntry with
- *     exactly the dirty field, then clears dirty (dirtyFieldsRef/dirtyCount).
+ *     exactly the dirty field, then clears dirty (form.formState.dirtyFields / isDirty).
  *
  * Runner: vitest (apps/web uses vitest, NOT bun:test — see vitest.config.ts;
  * the mock.module/bunfig gotchas in AGENTS.md don't apply here; vi.mock is
@@ -326,7 +326,7 @@ describe("LorebookEditor (characterization)", () => {
     await waitFor(() => expect(getByTestId("entry-field")).toBeTruthy());
 
     // In editor view the only <button> is the editor-header autosave indicator;
-    // its text reflects savingState/dirtyCount (identity-t → i18n keys).
+    // its text reflects savingState / form.formState.isDirty (identity-t → i18n keys).
     const autosaveBtn = () => container.querySelector("button");
     // Before any edit: idle (NOT the dirty "save entry" affordance).
     expect(autosaveBtn()?.textContent ?? "").not.toBe("lore_save_entry");
@@ -334,7 +334,7 @@ describe("LorebookEditor (characterization)", () => {
     // Edit the field → updateAct marks dirty + schedules the 1s debounce.
     fireEvent.change(getByTestId("entry-field"), { target: { value: "Hobgoblin" } });
 
-    // Dirty is observable immediately: dirtyCount > 0 → "save entry".
+    // Dirty is observable immediately: form.formState.isDirty → "save entry".
     await waitFor(() => {
       expect(autosaveBtn()?.textContent).toBe("lore_save_entry");
     });
