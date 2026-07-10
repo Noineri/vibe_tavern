@@ -42,15 +42,11 @@ echo Server: http://127.0.0.1:%RP_PLATFORM_PORT%
 if /i "%LOG_LEVEL%"=="debug" echo Log level: debug
 echo.
 
-echo Checking dependencies...
-if not exist "node_modules" goto :do_install
-if not exist "node_modules\hono" goto :do_install
-if not exist "node_modules\vite" goto :do_install
-echo Dependencies OK.
-goto :build
-
-:do_install
-echo Installing dependencies...
+rem Reconcile node_modules against bun.lock on every launch. `bun install`
+rem is a no-op (~30ms) when already in sync and self-heals when a dep was
+rem added/removed since the last launch — unlike the old sentinel check
+rem (node_modules\hono / \vite), which silently missed newly added packages.
+echo Checking dependencies against bun.lock...
 call %BUN_EXE% install
 if errorlevel 1 (
     echo.
