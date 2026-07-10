@@ -878,7 +878,7 @@ export function LorebookEditor({
 
           {/* Editor */}
           {view === "editor" && (
-            <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+            <div className="animate-[lbFadeIn_250ms_ease-out] flex min-h-0 flex-1 flex-col overflow-hidden">
               {editorHeader}
               <div
                 className="min-h-0 flex-1 overflow-y-auto"
@@ -935,7 +935,7 @@ export function LorebookEditor({
           )}
 
           {view === "editor" && (
-            <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+            <div className="animate-[lbFadeIn_250ms_ease-out] flex min-h-0 flex-1 flex-col overflow-hidden">
               {editorHeader}
               <div className="flex min-h-0 flex-1 overflow-hidden">
                 <div
