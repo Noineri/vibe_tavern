@@ -243,9 +243,12 @@ async function renderAtList(props?: { characterId?: string; chatId?: string | nu
       personaId={props?.personaId ?? null}
     />,
   );
-  // Pick view → click the Lorebooks card → after the 260ms transition, view
-  // flips to "list" and the load effect fires listAllLorebooks.
+  // Pick view → click the Lorebooks card → the exit animation's
+  // onAnimationEnd (lbFadeOut) advances the event-driven phase machine to
+  // view "list", which fires the load effect (listAllLorebooks). happy-dom
+  // does not run CSS animations, so drive onAnimationEnd explicitly.
   fireEvent.click(utils.getByText("lorebooks_card_title"));
+  fireEvent.animationEnd(utils.getByText("lorebooks_card_title"));
   await waitFor(() => expect(listAllLorebooks).toHaveBeenCalledTimes(1));
   await waitFor(() => expect(utils.getByTestId("lb-name").textContent).toBe("Bestiary"));
   return utils;

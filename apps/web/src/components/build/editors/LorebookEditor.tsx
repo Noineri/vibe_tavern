@@ -15,7 +15,7 @@
  *   - ScriptEditor (useScriptPanel) — script editor
  */
 import type { ReactNode } from "react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useKeyDown } from "../../../hooks/use-key-down.js";
 
 import { Ic } from "../../shared/icons.js";
@@ -58,21 +58,8 @@ interface LorebookEditorProps {
   personaId: string | null;
 }
 
-// ── Inline keyframes (injected once) ────────────────────────────
-
-const STYLE_ID = "lb-anim-style";
-function ensureAnimStyle() {
-  if (typeof document === "undefined") return;
-  if (document.getElementById(STYLE_ID)) return;
-  const s = document.createElement("style");
-  s.id = STYLE_ID;
-  s.textContent = `
-@keyframes lbFadeOut{to{opacity:0;transform:scale(.96) translateY(6px)}}
-@keyframes lbFadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
-@keyframes lbSlideIn{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:translateY(0)}}
-`;
-  document.head.appendChild(s);
-}
+// View-transition keyframes (lbFadeOut / lbFadeIn / lbSlideIn) live in
+// styles.css — no runtime <style> injection.
 
 // ── Mobile detection hook ──
 
@@ -127,14 +114,11 @@ export function LorebookEditor({
     handleSetLinks,
   } = useLorebookEditorState({ characterId, chatId, personaId });
 
-  // Transition animations
+  // Transition animations — event-driven phase machine (no setTimeout chain):
+  //   handlePick → phase "fading" → pick card onAnimationEnd (lbFadeOut) →
+  //   phase "done" + view "list" → list onAnimationEnd (lbFadeIn) → phase "idle".
   const [phase, setPhase] = useState<"idle" | "fading" | "done">("idle");
   const [fadingTab, setFadingTab] = useState<Tab | null>(null);
-  const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
-  useEffect(() => {
-    ensureAnimStyle();
-    return () => clearTimeout(timer.current);
-  }, []);
 
   // ── Expanded accordions ──
   const [expandedLorebooks, setExpandedLorebooks] = useState<Set<string>>(
@@ -166,14 +150,9 @@ export function LorebookEditor({
     writeStickyWorldLoreTab(target);
     setFadingTab(target);
     setPhase("fading");
-    timer.current = setTimeout(() => {
-      setView("list");
-      setPhase("done");
-      timer.current = setTimeout(() => {
-        setPhase("idle");
-        setFadingTab(null);
-      }, 300);
-    }, 260);
+    // The view swap is driven by the pick card's onAnimationEnd (lbFadeOut)
+    // below — no setTimeout coordination. The 260/300ms magic delays are gone;
+    // only the legitimate keyframe durations remain in the class strings.
   };
 
   const handleBackToPick = () => {
@@ -504,6 +483,12 @@ export function LorebookEditor({
           )}
           style={{ padding: isMobile ? "28px 24px" : "40px 36px" }}
           onClick={() => phase === "idle" && handlePick("lorebooks")}
+          onAnimationEnd={() => {
+            if (phase === "fading") {
+              setView("list");
+              setPhase("done");
+            }
+          }}
         >
           <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-accent-dim text-accent-t">
             <Ic.book />
@@ -524,6 +509,12 @@ export function LorebookEditor({
           )}
           style={{ padding: isMobile ? "28px 24px" : "40px 36px" }}
           onClick={() => phase === "idle" && handlePick("scripts")}
+          onAnimationEnd={() => {
+            if (phase === "fading") {
+              setView("list");
+              setPhase("done");
+            }
+          }}
         >
           <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-accent-dim text-accent-t">
             <Ic.terminal />
@@ -870,6 +861,12 @@ export function LorebookEditor({
                 "w-full flex flex-1 flex-col overflow-hidden",
                 listAnim
               )}
+              onAnimationEnd={(e) => {
+                if (e.animationName === "lbFadeIn") {
+                  setPhase("idle");
+                  setFadingTab(null);
+                }
+              }}
             >
               <div className={cn("w-full", headerAnim)}>{headerBar}</div>
               {scopeBarMobile}
@@ -920,6 +917,12 @@ export function LorebookEditor({
           {view === "list" && (
             <div
               className={cn("flex flex-1 flex-col overflow-hidden", listAnim)}
+              onAnimationEnd={(e) => {
+                if (e.animationName === "lbFadeIn") {
+                  setPhase("idle");
+                  setFadingTab(null);
+                }
+              }}
             >
               <div className={headerAnim}>{headerBar}</div>
               <div className="flex flex-1 overflow-hidden">
