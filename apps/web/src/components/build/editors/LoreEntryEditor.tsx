@@ -11,9 +11,13 @@
  * and the delete-confirmation modal (confirmDeleteEntry).
  *
  * Receives from the parent:
- *   - entry (entry data)
- *   - updateAct (callback for changing fields → autosave)
  *   - onDeleted (callback after successful deletion)
+ *
+ * Field edits bind DIRECTLY to the lifted RHF form (lifted to LorebookEditor,
+ * provided via <FormProvider> — see useLorebookEditorState). Every field is a
+ * register / ControlledField binding; there is no entry prop or updateAct
+ * bridge. The form→entries mirror in the hook keeps the master list live and
+ * re-arms the debounced autosave on every field change.
  */
 import { useState, type ReactNode } from "react";
 import { useFormContext, useController, type FieldPath, type UseControllerReturn } from "react-hook-form";
@@ -46,10 +50,8 @@ import { CharacterFilterPicker } from "./character-filter-picker.js";
 // ── Types ──────────────────────────────────────────────────────────────
 
 interface LoreEntryEditorProps {
-  entry: LoreEntryRecord;
   entryId: string;
   lorebookId: string;
-  updateAct: (field: string, value: unknown) => void;
   onDeleted: () => void;
   isMobile: boolean;
   t: TFunc;
@@ -82,10 +84,8 @@ function ControlledField<P extends FieldPath<LoreEntryRecord>>({
 // ── Component ──────────────────────────────────────────────────────────
 
 export function LoreEntryEditor({
-  entry,
   entryId,
   lorebookId,
-  updateAct,
   onDeleted,
   isMobile,
   t,
@@ -93,8 +93,9 @@ export function LoreEntryEditor({
 }: LoreEntryEditorProps) {
   const { tDynamic } = useT();
   // Active-entry form (lifted to LorebookEditor in Step 2, provided via
-  // <FormProvider>). Step 4 binds fields to it directly (register / Controller),
-  // retiring the entry-prop + updateAct round-trip field by field.
+  // <FormProvider>). Every field binds to it directly (register /
+  // ControlledField); the form→entries mirror in the hook keeps the master
+  // list live and re-arms the debounced autosave on every change.
   const form = useFormContext<LoreEntryRecord>();
   // content is read in several places (the textareas via Controller below, plus
   // TokenCounter + AiAssistantModal) — watch it once so they stay live.
@@ -113,25 +114,6 @@ export function LoreEntryEditor({
   const [aiHelperOpen, setAiHelperOpen] = useState(false);
   const activeCharacter = useActiveCharacter();
   const activePersona = useActivePersona();
-
-  // ── Keyword handlers ──
-  const handleKeyAdd = (
-    e: React.KeyboardEvent,
-    type: "keys" | "secondaryKeys"
-  ) => {
-    if (e.key !== "Enter") return;
-    e.preventDefault();
-    const val = (type === "keys" ? keyInput : secKeyInput).trim();
-    if (!val) return;
-    const arr = entry[type];
-    if (!arr.includes(val)) updateAct(type, [...arr, val]);
-    type === "keys" ? setKeyInput("") : setSecKeyInput("");
-  };
-
-  const removeKey = (type: "keys" | "secondaryKeys", keyToRemove: string) => {
-    const arr = entry[type];
-    updateAct(type, arr.filter((k) => k !== keyToRemove));
-  };
 
   // ── Delete entry ──
   const handleDelete = async () => {
@@ -176,32 +158,43 @@ export function LoreEntryEditor({
             {t("lore_entry_keys")}
           </FieldLabel>
           <div className="flex items-start gap-2">
-            <div
-              className="flex flex-1 flex-wrap items-center gap-1.5 rounded-md border border-border bg-s2 px-2.5 py-1.5"
-              style={{ minHeight: 38 }}
-            >
-              {entry.keys.map((k) => (
-                <span
-                  key={k}
-                  className="flex cursor-pointer items-center gap-1 rounded bg-accent-dim px-2 py-0.5 text-[12px] text-accent-t transition-all hover:bg-border2 hover:text-t1"
-                  onClick={() => removeKey("keys", k)}
+            <ControlledField name="keys">
+              {(field) => (
+                <div
+                  className="flex flex-1 flex-wrap items-center gap-1.5 rounded-md border border-border bg-s2 px-2.5 py-1.5"
+                  style={{ minHeight: 38 }}
                 >
-                  {k} <Icons.Close />
-                </span>
-              ))}
-              <input
-                className="min-w-[80px] flex-1 border-0 bg-transparent text-[13px] text-t1 outline-none"
-                value={keyInput}
-                onChange={(e) => setKeyInput(e.target.value)}
-                onKeyDown={(e) => handleKeyAdd(e, "keys")}
-                placeholder={
-                  entry.keys.length === 0
-                    ? t("lore_entry_keys_placeholder")
-                    : ""
-                }
-              />
-            </div>
-            <LoreKeysAiPill entry={entry} updateAct={updateAct} />
+                  {field.value.map((k) => (
+                    <span
+                      key={k}
+                      className="flex cursor-pointer items-center gap-1 rounded bg-accent-dim px-2 py-0.5 text-[12px] text-accent-t transition-all hover:bg-border2 hover:text-t1"
+                      onClick={() => field.onChange(field.value.filter((x) => x !== k))}
+                    >
+                      {k} <Icons.Close />
+                    </span>
+                  ))}
+                  <input
+                    className="min-w-[80px] flex-1 border-0 bg-transparent text-[13px] text-t1 outline-none"
+                    value={keyInput}
+                    onChange={(e) => setKeyInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key !== "Enter") return;
+                      e.preventDefault();
+                      const val = keyInput.trim();
+                      if (!val) return;
+                      if (!field.value.includes(val)) field.onChange([...field.value, val]);
+                      setKeyInput("");
+                    }}
+                    placeholder={
+                      field.value.length === 0
+                        ? t("lore_entry_keys_placeholder")
+                        : ""
+                    }
+                  />
+                </div>
+              )}
+            </ControlledField>
+            <LoreKeysAiPill />
           </div>
         </div>
 
@@ -344,26 +337,37 @@ export function LoreEntryEditor({
               <FieldLabel>
                 {t("lore_entry_secondary_keys")}
               </FieldLabel>
-              <div
-                className="flex flex-wrap items-center gap-1.5 rounded-md border border-border bg-s2 px-2.5 py-1.5"
-                style={{ minHeight: 38 }}
-              >
-                {entry.secondaryKeys.map((k) => (
-                  <span
-                    key={k}
-                    className="flex cursor-pointer items-center gap-1 rounded bg-accent-dim px-2 py-0.5 text-[12px] text-accent-t transition-all hover:bg-border2 hover:text-t1"
-                    onClick={() => removeKey("secondaryKeys", k)}
+              <ControlledField name="secondaryKeys">
+                {(field) => (
+                  <div
+                    className="flex flex-wrap items-center gap-1.5 rounded-md border border-border bg-s2 px-2.5 py-1.5"
+                    style={{ minHeight: 38 }}
                   >
-                    {k} <Icons.Close />
-                  </span>
-                ))}
-                <input
-                  className="min-w-[80px] flex-1 border-0 bg-transparent text-[13px] text-t1 outline-none"
-                  value={secKeyInput}
-                  onChange={(e) => setSecKeyInput(e.target.value)}
-                  onKeyDown={(e) => handleKeyAdd(e, "secondaryKeys")}
-                />
-              </div>
+                    {field.value.map((k) => (
+                      <span
+                        key={k}
+                        className="flex cursor-pointer items-center gap-1 rounded bg-accent-dim px-2 py-0.5 text-[12px] text-accent-t transition-all hover:bg-border2 hover:text-t1"
+                        onClick={() => field.onChange(field.value.filter((x) => x !== k))}
+                      >
+                        {k} <Icons.Close />
+                      </span>
+                    ))}
+                    <input
+                      className="min-w-[80px] flex-1 border-0 bg-transparent text-[13px] text-t1 outline-none"
+                      value={secKeyInput}
+                      onChange={(e) => setSecKeyInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key !== "Enter") return;
+                        e.preventDefault();
+                        const val = secKeyInput.trim();
+                        if (!val) return;
+                        if (!field.value.includes(val)) field.onChange([...field.value, val]);
+                        setSecKeyInput("");
+                      }}
+                    />
+                  </div>
+                )}
+              </ControlledField>
             </div>
 
             {/* ── Position ── */}
@@ -435,24 +439,28 @@ export function LoreEntryEditor({
               <FieldLabel>
                 {t("lore_matchsources_section")}
               </FieldLabel>
-              <ToggleChips
-                selected={entry.matchSources}
-                options={(
-                  [
-                    "chat_messages",
-                    "character_desc",
-                    "character_personality",
-                    "character_note",
-                    "persona_desc",
-                    "scenario",
-                    "creator_notes",
-                  ] as const
-                ).map((src) => ({
-                  value: src,
-                  label: tDynamic("match_src_" + src),
-                }))}
-                onChange={(v) => updateAct("matchSources", v)}
-              />
+              <ControlledField name="matchSources">
+                {(field) => (
+                  <ToggleChips
+                    selected={field.value}
+                    options={(
+                      [
+                        "chat_messages",
+                        "character_desc",
+                        "character_personality",
+                        "character_note",
+                        "persona_desc",
+                        "scenario",
+                        "creator_notes",
+                      ] as const
+                    ).map((src) => ({
+                      value: src,
+                      label: tDynamic("match_src_" + src),
+                    }))}
+                    onChange={field.onChange}
+                  />
+                )}
+              </ControlledField>
             </div>
 
             {/* ── Priority + Probability + Scan depth ── */}
@@ -569,12 +577,7 @@ export function LoreEntryEditor({
               )}
             </div>
 
-            <CharacterFilterPicker
-              characterFilter={entry.characterFilter}
-              characterFilterExclude={entry.characterFilterExclude}
-              updateAct={updateAct}
-              t={t}
-            />
+            <CharacterFilterPicker t={t} />
 
             {/* ── Temporary effects ── */}
             <div className="mb-6 pb-6 border-b border-border/50">

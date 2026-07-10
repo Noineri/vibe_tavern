@@ -22,7 +22,7 @@
  * tests (LorebookEditor.test.tsx) pin the observable contract.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useForm, type UseFormReturn, type FieldPath, type FieldPathValue } from "react-hook-form";
+import { useForm, type UseFormReturn } from "react-hook-form";
 import { useDebouncedCallback } from "use-debounce";
 import {
   listAllLorebooks,
@@ -148,7 +148,6 @@ export interface LorebookEditorState {
   // Entry autosave
   savingState: "idle" | "saving" | "saved" | "error";
   flushSave: () => Promise<void>;
-  updateAct: (field: string, value: unknown) => void;
   // Active-entry edit form (react-hook-form) — Step 2 scaffolding; Steps 3–4
   // bind fields to it and rewire autosave onto form.formState.
   form: UseFormReturn<LoreEntryDraft>;
@@ -177,7 +176,7 @@ export function useLorebookEditorState({
     string | null
   >(null);
 
-  // Refs for current values (stale-closure guard in updateAct / flushSave).
+  // Refs for current values (stale-closure guard in flushSave).
   const activeEntryIdRef = useRef<string | null>(null);
   const activeLorebookIdRef = useRef<string | null>(null);
 
@@ -358,13 +357,12 @@ export function useLorebookEditorState({
   const debouncedSave = useDebouncedCallback(flushSave, 1000);
 
   // Form → entries mirror + debounced-autosave arm. The form is the direct
-  // input for the active entry's fields (register / Controller in the editor,
-  // and updateAct's setValue below for not-yet-migrated fields). This mirrors
-  // form changes back into `entries` so the master list (title / enabled /
-  // group / keys / content …) stays live while editing — replacing the old
-  // updateAct → setEntries write — and re-arms the debounced autosave on every
-  // edit. `reset` notifications carry no field `name`, so the `!name` guard
-  // skips entry switches (no entries storm / spurious save arm).
+  // input for the active entry's fields (register / ControlledField in the
+  // editor). This mirrors form changes back into `entries` so the master list
+  // (title / enabled / group / keys / content …) stays live while editing, and
+  // re-arms the debounced autosave on every field change. `reset` notifications
+  // carry no field `name`, so the `!name` guard skips entry switches (no entries
+  // storm / spurious save arm).
   useEffect(() => {
     const sub = form.watch((data, { name }) => {
       if (!name) return;
@@ -382,25 +380,6 @@ export function useLorebookEditorState({
     });
     return () => sub.unsubscribe();
   }, [form, debouncedSave]);
-
-  // updateAct bridges a not-yet-migrated field edit into the RHF form. The
-  // form→entries mirror above handles syncing the entry list + re-arming the
-  // debounced autosave (setValue triggers the watch subscription), so this is
-  // now just a typed setValue. Step 4d removes updateAct entirely once every
-  // field binds to the form via register / Controller.
-  const updateAct = useCallback(
-    (field: string, value: unknown) => {
-      const entryId = activeEntryIdRef.current;
-      const lbId = activeLorebookIdRef.current;
-      if (!entryId || !lbId) return;
-      form.setValue(
-        field as FieldPath<LoreEntryDraft>,
-        value as FieldPathValue<LoreEntryDraft, FieldPath<LoreEntryDraft>>,
-        { shouldDirty: true },
-      );
-    },
-    [form],
-  );
 
   // Fire any pending save on unmount.
   useEffect(() => {
@@ -434,7 +413,6 @@ export function useLorebookEditorState({
     // Autosave
     savingState,
     flushSave,
-    updateAct,
     form,
   };
 }

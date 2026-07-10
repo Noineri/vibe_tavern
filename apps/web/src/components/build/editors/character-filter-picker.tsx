@@ -5,11 +5,13 @@
  * reports/lorebook-editor-form-state-gap.md Step 1).
  *
  * Owns its picker open-state (`charFilterPicker`: null | "add" | index). Reads
- * `characterFilter` / `characterFilterExclude`, writes via `updateAct`; pulls
- * the character list from the snapshot store itself. `updateAct` is the
- * current (pre-RHF) edit channel — it becomes `useFormContext` in a later step.
+ * `characterFilter` / `characterFilterExclude` and writes them DIRECTLY to the
+ * lifted RHF form via `useFormContext` (the form→entries mirror in
+ * useLorebookEditorState keeps the master list live + re-arms the debounced
+ * autosave); pulls the character list from the snapshot store itself.
  */
 import { useState } from "react";
+import { useFormContext, useController } from "react-hook-form";
 import * as Popover from "@radix-ui/react-popover";
 
 import { useAllCharacters } from "../../../stores/snapshot-store.js";
@@ -19,20 +21,20 @@ import { cn } from "../../../lib/cn.js";
 import { resolveEntityAvatarUrl } from "../../../lib/avatar.js";
 import { getModalPortal } from "../../shared/modal-helpers.js";
 import { popoverMaxHeight } from "../../shared/popover-constants.js";
-import type { TFunc } from "../../../i18n/context.js";
+import { useT, type TFunc } from "../../../i18n/context.js";
 import type { LoreEntryRecord } from "../../../app-client.js";
 
-export function CharacterFilterPicker({
-  characterFilter,
-  characterFilterExclude,
-  updateAct,
-  t,
-}: {
-  characterFilter: LoreEntryRecord["characterFilter"];
-  characterFilterExclude: boolean;
-  updateAct: (field: string, value: unknown) => void;
-  t: TFunc;
-}) {
+export function CharacterFilterPicker({ t }: { t: TFunc }) {
+  const form = useFormContext<LoreEntryRecord>();
+  // characterFilter drives the avatar-chip render (map/filter/some) — watch it
+  // so the chips stay live as entries are added/removed.
+  const characterFilter = form.watch("characterFilter");
+  // The exclude toggle is a single controlled checkbox — bind it directly via
+  // useController (scoped subscription, no whole-picker re-render on toggle).
+  const { field: excludeField } = useController({
+    control: form.control,
+    name: "characterFilterExclude",
+  });
   const allCharacters = useAllCharacters();
   const [charFilterPicker, setCharFilterPicker] = useState<"add" | number | null>(null);
 
@@ -89,9 +91,10 @@ export function CharacterFilterPicker({
                       className="ml-0.5 cursor-pointer text-t3 hover:text-t1"
                       onClick={(e) => {
                         e.stopPropagation();
-                        updateAct(
+                        form.setValue(
                           "characterFilter",
                           characterFilter.filter((_, i) => i !== idx),
+                          { shouldDirty: true },
                         );
                       }}
                     >
@@ -147,7 +150,7 @@ export function CharacterFilterPicker({
                             // Bind the ghost at this index to the chosen character.
                             next[charFilterPicker] = { id: c.id, name: c.name };
                           }
-                          updateAct("characterFilter", next);
+                          form.setValue("characterFilter", next, { shouldDirty: true });
                           setCharFilterPicker(null);
                         }}
                       >
@@ -171,8 +174,8 @@ export function CharacterFilterPicker({
       </Popover.Root>
       <div className="mt-2">
         <Checkbox
-          checked={characterFilterExclude}
-          onChange={(v) => updateAct("characterFilterExclude", v)}
+          checked={excludeField.value}
+          onChange={excludeField.onChange}
           label={t("lore_char_filter_exclude")}
         />
       </div>

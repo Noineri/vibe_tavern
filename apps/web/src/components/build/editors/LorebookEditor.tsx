@@ -109,7 +109,6 @@ export function LorebookEditor({
     existingGroups,
     savingState,
     flushSave,
-    updateAct,
     refreshLorebooks,
     handleSetLinks,
     form,
@@ -911,11 +910,9 @@ export function LorebookEditor({
                 {tab === "lorebooks" && activeEntry ? (
                   <FormProvider {...form}>
                     <LoreEntryEditor
-                      entry={activeEntry}
                       entryId={activeEntry.id}
                       lorebookId={activeLorebookIdForEntry!}
                       existingGroups={existingGroups}
-                      updateAct={updateAct}
                       onDeleted={() => {
                         setActiveEntryId(null);
                         setView("list");
@@ -965,11 +962,9 @@ export function LorebookEditor({
                   {tab === "lorebooks" && activeEntry ? (
                     <FormProvider {...form}>
                       <LoreEntryEditor
-                        entry={activeEntry}
                         entryId={activeEntry.id}
                         lorebookId={activeLorebookIdForEntry!}
                         existingGroups={existingGroups}
-                        updateAct={updateAct}
                         onDeleted={() => {
                           setActiveEntryId(null);
                           setView("list");

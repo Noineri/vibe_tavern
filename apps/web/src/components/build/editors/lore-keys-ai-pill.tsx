@@ -4,11 +4,13 @@
  * — see reports/lorebook-editor-form-state-gap.md Step 1). Owns its AI
  * provider/model settings + the streaming generation + append/replace logic.
  *
- * Reads `entry.content/keys/secondaryKeys/logic`; writes `keys` /
- * `secondaryKeys` via `updateAct`. The `updateAct` prop is the current
- * (pre-RHF) edit channel — it becomes `useFormContext` in a later step.
+ * Reads the active entry's `content` / `keys` / `secondaryKeys` / `logic` and
+ * writes `keys` / `secondaryKeys` DIRECTLY to the lifted RHF form via
+ * `useFormContext` (the form→entries mirror in useLorebookEditorState keeps the
+ * master list live + re-arms the debounced autosave).
  */
 import { useEffect, useRef, useState } from "react";
+import { useFormContext } from "react-hook-form";
 import { toast } from "sonner";
 
 import { useBootstrapStore } from "../../../stores/api-actions/bootstrap-actions.js";
@@ -21,14 +23,11 @@ import {
   type LoreEntryRecord,
 } from "../../../app-client.js";
 
-export function LoreKeysAiPill({
-  entry,
-  updateAct,
-}: {
-  entry: LoreEntryRecord;
-  updateAct: (field: string, value: unknown) => void;
-}) {
+export function LoreKeysAiPill() {
   const { t } = useT();
+  const form = useFormContext<LoreEntryRecord>();
+  // content gates the generate button (render-time read) — watch keeps it live.
+  const content = form.watch("content");
   const [settings, setSettings] = useState<AiQuickSettings>({
     providerId: "",
     modelName: "",
@@ -51,7 +50,10 @@ export function LoreKeysAiPill({
   const handleGenerate = async () => {
     const providerId = settings.providerId || bootstrapUiSettings?.aiAssistantProviderId || "";
     const modelName = settings.modelName || bootstrapUiSettings?.aiAssistantModelName || "";
-    if (!entry.content.trim()) return;
+    // One-shot read of the current entry values at click time (fresher than a
+    // prop snapshot would be — getValues reads the live form state).
+    const v = form.getValues();
+    if (!v.content.trim()) return;
     if (!providerId) {
       toast.error(t("select_provider_first"));
       return;
@@ -62,13 +64,13 @@ export function LoreKeysAiPill({
       const request: AiAssistantRequestBody = {
         mode: "lore_keys",
         instruction: "",
-        existingContent: entry.content,
+        existingContent: v.content,
         providerProfileId: providerId,
         model: modelName || undefined,
         enabledLayers: [],
-        existingKeys: entry.keys,
-        existingSecondaryKeys: entry.secondaryKeys,
-        logic: entry.logic,
+        existingKeys: v.keys,
+        existingSecondaryKeys: v.secondaryKeys,
+        logic: v.logic,
         keyTarget: settings.keyTarget ?? "both",
       };
       let raw = "";
@@ -87,13 +89,13 @@ export function LoreKeysAiPill({
       const wantPrimary = target !== "secondary";
       const wantSecondary = target !== "primary";
       if (settings.appendMode) {
-        const newKeys = wantPrimary ? (parsed.keys ?? []).filter((k) => !entry.keys.includes(k)) : [];
-        const newSec = wantSecondary ? (parsed.secondaryKeys ?? []).filter((k) => !entry.secondaryKeys.includes(k)) : [];
-        if (newKeys.length) updateAct("keys", [...entry.keys, ...newKeys]);
-        if (newSec.length) updateAct("secondaryKeys", [...entry.secondaryKeys, ...newSec]);
+        const newKeys = wantPrimary ? (parsed.keys ?? []).filter((k) => !v.keys.includes(k)) : [];
+        const newSec = wantSecondary ? (parsed.secondaryKeys ?? []).filter((k) => !v.secondaryKeys.includes(k)) : [];
+        if (newKeys.length) form.setValue("keys", [...v.keys, ...newKeys], { shouldDirty: true });
+        if (newSec.length) form.setValue("secondaryKeys", [...v.secondaryKeys, ...newSec], { shouldDirty: true });
       } else {
-        if (wantPrimary && parsed.keys?.length) updateAct("keys", parsed.keys);
-        if (wantSecondary && parsed.secondaryKeys?.length) updateAct("secondaryKeys", parsed.secondaryKeys);
+        if (wantPrimary && parsed.keys?.length) form.setValue("keys", parsed.keys, { shouldDirty: true });
+        if (wantSecondary && parsed.secondaryKeys?.length) form.setValue("secondaryKeys", parsed.secondaryKeys, { shouldDirty: true });
       }
     } catch (err) {
       if (err instanceof DOMException && err.name === "AbortError") return;
@@ -119,7 +121,7 @@ export function LoreKeysAiPill({
       onSettingsChange={handleSettingsChange}
       settings={settings}
       loading={loading}
-      disabled={!entry.content.trim()}
+      disabled={!content.trim()}
       showAppendToggle
       showKeyTarget
       starTooltip={t("ai_pill_generate_keys")}

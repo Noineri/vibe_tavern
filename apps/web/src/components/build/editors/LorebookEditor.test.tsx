@@ -22,9 +22,10 @@
  * Heavy subtrees (LoreEntryEditor, LorebookAccordion, LorebookImportModal,
  * useScriptPanel) are stubbed to lightweight components that fire the parent's
  * REAL callbacks — this isolates the parent's state logic (the extraction
- * target), not the children's rendering. The stubbed LoreEntryEditor calls
- * `updateAct`, and the stubbed LorebookAccordion calls `onEntryClick`, so the
- * autosave + entry-loading contracts exercise the genuine code paths.
+ * target), not the children's rendering. The stubbed LoreEntryEditor writes
+ * directly to the lifted RHF form, and the stubbed LorebookAccordion calls
+ * `onEntryClick`, so the autosave + entry-loading contracts exercise the
+ * genuine code paths.
  */
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import type { ReactNode } from "react";
@@ -78,20 +79,28 @@ vi.mock("./ScriptEditor.js", () => ({
   }),
 }));
 
-// Entry editor — stub to a single field that fires updateAct (the autosave
-// entry point). The real LoreEntryEditor pulls Radix popovers / TokenCounter /
-// AiAssistantModal — irrelevant to the parent's dirty+debounce logic and too
-// heavy for happy-dom.
-vi.mock("./LoreEntryEditor.js", () => ({
-  LoreEntryEditor: (props: {
-    updateAct: (field: string, value: unknown) => void;
-  }) => (
-    <input
-      data-testid="entry-field"
-      onChange={(e) => props.updateAct("title", e.target.value)}
-    />
-  ),
-}));
+// Entry editor — stub to a single field that writes to the lifted RHF form
+// (the autosave entry point: every real field binds via register /
+// ControlledField, so the stub mimics that by writing directly to the form it
+// receives through <FormProvider>). The real LoreEntryEditor pulls Radix
+// popovers / TokenCounter / AiAssistantModal — irrelevant to the parent's
+// dirty+debounce logic and too heavy for happy-dom. The factory imports
+// useFormContext via vi.importActual because vi.mock is hoisted above the
+// file's own imports (top-level imports are not initialized when the factory runs).
+vi.mock("./LoreEntryEditor.js", async () => {
+  const { useFormContext } = await vi.importActual<typeof import("react-hook-form")>("react-hook-form");
+  return {
+    LoreEntryEditor: () => {
+      const form = useFormContext();
+      return (
+        <input
+          data-testid="entry-field"
+          onChange={(e) => form?.setValue("title", e.currentTarget.value, { shouldDirty: true })}
+        />
+      );
+    },
+  };
+});
 
 // Lorebook accordion — stub to a row that (a) renders the lorebook name and
 // (b) fires onEntryClick with a fixed entry id, so the parent's entry-loading
@@ -332,7 +341,8 @@ describe("LorebookEditor (characterization)", () => {
     // Before any edit: idle (indicator faded out).
     expect(indicator()?.getAttribute("data-state")).toBe("idle");
 
-    // Edit the field → updateAct bridges to form.setValue (dirty) + schedules the 1s debounce.
+    // Edit the field → the stub writes form.setValue("title", …, { shouldDirty: true })
+    // (dirty immediately) + the mirror re-arms the 1s debounce.
     fireEvent.change(getByTestId("entry-field"), { target: { value: "Hobgoblin" } });
 
     // Dirty is observable immediately: form.formState.isDirty → "pending".

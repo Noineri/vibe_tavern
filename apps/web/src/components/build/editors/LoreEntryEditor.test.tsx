@@ -1,13 +1,11 @@
 /**
  * LoreEntryEditor — react-hook-form field-binding characterization.
  *
- * Pins that the editor's migrated fields bind DIRECTLY to the lifted RHF form
- * (register / Controller), not to the `entry` prop + `updateAct` round-trip:
- * editing a migrated field updates `form.getValues` + `formState.isDirty` and
- * does NOT call `updateAct` (the form is the direct input; the form→entries
- * mirror in useLorebookEditorState keeps the master list live). Extended per
- * field group as the Step 4 migration proceeds (scalars → numbers/selects →
- * toggles → arrays); once every field is bound, `updateAct` is removed.
+ * Pins that the editor's fields bind DIRECTLY to the lifted RHF form
+ * (register / ControlledField): editing a field updates `form.getValues` +
+ * `formState.isDirty`. The form→entries mirror in useLorebookEditorState keeps
+ * the master list live + re-arms the debounced autosave. There is no `entry`
+ * prop or `updateAct` bridge — the form is the direct input.
  *
  * Runner: vitest (apps/web — see vitest.config.ts; vi.mock is file-scoped).
  * Heavy subtrees (ActivationTestPanel, CharacterFilterPicker, LoreKeysAiPill,
@@ -91,7 +89,6 @@ function makeEntry(overrides: Partial<LoreEntryRecord> = {}): LoreEntryRecord {
 }
 
 function renderEditor(entry: LoreEntryRecord) {
-  const updateAct = vi.fn();
   // useForm is a hook — it must run inside a component. The harness creates
   // the form, provides it, and captures it via a holder so the test can read
   // getValues / formState after render.
@@ -109,10 +106,8 @@ function renderEditor(entry: LoreEntryRecord) {
     return (
       <FormProvider {...form}>
         <LoreEntryEditor
-          entry={entry}
           entryId={entry.id}
           lorebookId={entry.lorebookId}
-          updateAct={updateAct}
           onDeleted={vi.fn()}
           isMobile={false}
           t={(k: string) => k}
@@ -122,24 +117,22 @@ function renderEditor(entry: LoreEntryRecord) {
     );
   }
   const result = render(<Harness />);
-  return { form: formHolder.current!, updateAct, ...result };
+  return { form: formHolder.current!, ...result };
 }
 
 describe("LoreEntryEditor (RHF field binding)", () => {
-  it("title binds to the form via register (not updateAct)", () => {
-    const { form, updateAct, container } = renderEditor(makeEntry());
+  it("title binds to the form via register", () => {
+    const { form, container } = renderEditor(makeEntry());
     const title = container.querySelector<HTMLInputElement>('input[name="title"]')!;
     // register seeds the input from the form defaultValues (uncontrolled via ref).
     expect(title.value).toBe("Goblin");
     fireEvent.change(title, { target: { value: "Hobgoblin" } });
     expect(form.getValues("title")).toBe("Hobgoblin");
     expect(form.formState.isDirty).toBe(true);
-    // migrated field: the form is the direct input, updateAct is NOT called.
-    expect(updateAct).not.toHaveBeenCalled();
   });
 
   it("groupName binds to the form via register (advanced settings)", () => {
-    const { form, updateAct, getByText, container } = renderEditor(
+    const { form, getByText, container } = renderEditor(
       makeEntry({ groupName: "foes" }),
     );
     // open the advanced-settings disclosure (t identity → label is the i18n key)
@@ -151,23 +144,17 @@ describe("LoreEntryEditor (RHF field binding)", () => {
     fireEvent.change(groupName, { target: { value: "bosses" } });
     expect(form.getValues("groupName")).toBe("bosses");
     expect(form.formState.isDirty).toBe(true);
-    expect(updateAct).not.toHaveBeenCalled();
   });
 
-  it("constant checkbox binds via ControlledField (not updateAct)", () => {
-    const { form, updateAct, getByText } = renderEditor(
-      makeEntry({ constant: false }),
-    );
+  it("constant checkbox binds via ControlledField", () => {
+    const { form, getByText } = renderEditor(makeEntry({ constant: false }));
     fireEvent.click(getByText("lore_constant"));
     expect(form.getValues("constant")).toBe(true);
     expect(form.formState.isDirty).toBe(true);
-    expect(updateAct).not.toHaveBeenCalled();
   });
 
-  it("priority number binds via ControlledField (not updateAct)", () => {
-    const { form, updateAct, getByText } = renderEditor(
-      makeEntry({ priority: 0 }),
-    );
+  it("priority number binds via ControlledField", () => {
+    const { form, getByText } = renderEditor(makeEntry({ priority: 0 }));
     fireEvent.click(getByText(/lore_advanced_settings/)); // open advanced
     // NumberInput commits on blur; scope its input via the priority FieldLabel.
     const priorityInput = getByText("lore_priority_label").parentElement!.querySelector("input")!;
@@ -175,6 +162,15 @@ describe("LoreEntryEditor (RHF field binding)", () => {
     fireEvent.blur(priorityInput);
     expect(form.getValues("priority")).toBe(5);
     expect(form.formState.isDirty).toBe(true);
-    expect(updateAct).not.toHaveBeenCalled();
+  });
+
+  it("keys chip-input binds via ControlledField (add on Enter)", () => {
+    const { form, getByText } = renderEditor(makeEntry({ keys: ["goblin"] }));
+    // The keys FieldLabel scopes the chip-input's text <input>.
+    const keysInput = getByText("lore_entry_keys").parentElement!.querySelector("input")!;
+    fireEvent.change(keysInput, { target: { value: "ghost" } });
+    fireEvent.keyDown(keysInput, { key: "Enter" });
+    expect(form.getValues("keys")).toEqual(["goblin", "ghost"]);
+    expect(form.formState.isDirty).toBe(true);
   });
 });
