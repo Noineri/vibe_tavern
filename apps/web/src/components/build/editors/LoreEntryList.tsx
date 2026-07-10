@@ -65,6 +65,12 @@ interface EntryCardVisualProps {
 	/** When provided, an enabled-toggle renders at the row's right edge.
 	 *  Omitted in the drag-overlay copy (display-only, pointer-events-none). */
 	onToggleEnabled?: (entryId: string, enabled: boolean) => void;
+	/** True suppresses all drag affordances (grab bar, mobile handle, grab
+	 *  cursor) and disables `useSortable`. Used while a list filter is active:
+	 *  reordering a filtered subset is unsafe (buildReorderUpdates assigns
+	 *  sortOrder by index in the passed list, so it would collide with the
+	 *  hidden entries' preserved order). */
+	dragDisabled?: boolean;
 }
 
 function EntryCardVisual({
@@ -81,6 +87,7 @@ function EntryCardVisual({
 	draggingPlaceholder = false,
 	overlay = false,
 	onToggleEnabled,
+	dragDisabled = false,
 }: EntryCardVisualProps) {
 	return (
 		<div
@@ -91,7 +98,7 @@ function EntryCardVisual({
 			className={cn(
 				"relative rounded-lg border transition-shadow min-h-[44px]",
 				isMobile && "flex",
-				!isMobile && !overlay && "cursor-grab active:cursor-grabbing",
+				!isMobile && !overlay && !dragDisabled && "cursor-grab active:cursor-grabbing",
 				isActive
 					? "border-accent bg-accent-dim"
 					: "border-border bg-surface hover:bg-s2",
@@ -101,14 +108,14 @@ function EntryCardVisual({
 			{...rootProps}
 		>
 			{/* Desktop: centered under the card's top edge, visual only. */}
-			{!isMobile && (
+			{!isMobile && !dragDisabled && (
 				<div className="pointer-events-none absolute left-1/2 top-1.5 z-10 -translate-x-1/2">
 					<div className="h-[4px] w-11 rounded-full bg-t3/25 shadow-sm" />
 				</div>
 			)}
 
 			{/* Mobile: left-side dedicated drag handle. */}
-			{isMobile && (
+			{isMobile && !dragDisabled && (
 				<div
 					ref={mobileHandleRef}
 					className={cn(
@@ -214,6 +221,7 @@ function SortableEntryCard({
 	t,
 	onClick,
 	onToggleEnabled,
+	dragDisabled = false,
 }: {
 	entry: LoreEntryRecord;
 	isActive: boolean;
@@ -221,9 +229,11 @@ function SortableEntryCard({
 	t: TFunc;
 	onClick: () => void;
 	onToggleEnabled?: (entryId: string, enabled: boolean) => void;
+	dragDisabled?: boolean;
 }) {
 	const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({
 		id: entry.id,
+		disabled: dragDisabled,
 	});
 
 	const handleRootRef = useCallback(
@@ -259,6 +269,7 @@ function SortableEntryCard({
 			t={t}
 			onClick={onClick}
 			onToggleEnabled={onToggleEnabled}
+			dragDisabled={dragDisabled}
 			rootRef={handleRootRef}
 			style={style}
 			rootProps={!isMobile ? { ...attributes, ...listeners } : undefined}
@@ -278,6 +289,10 @@ interface LoreEntryListProps {
 	onEntryClick: (entryId: string) => void;
 	onReorder: (updates: Array<{ id: string; sortOrder: number; position?: string }>) => void | Promise<unknown>;
 	onToggleEnabled?: (entryId: string, enabled: boolean) => void | Promise<void>;
+	/** Disable drag-and-drop entirely (no grab affordances, useSortable disabled).
+	 *  Set while a list filter is active — reordering a filtered subset would
+	 *  corrupt global sortOrder (buildReorderUpdates is index-based). */
+	dndDisabled?: boolean;
 }
 
 export function LoreEntryList({
@@ -288,6 +303,7 @@ export function LoreEntryList({
 	onEntryClick,
 	onReorder,
 	onToggleEnabled,
+	dndDisabled = false,
 }: LoreEntryListProps) {
 	const { tDynamic } = useT();
 	const [activeDragId, setActiveDragId] = useState<string | null>(null);
@@ -398,6 +414,7 @@ export function LoreEntryList({
 										t={t}
 										onClick={() => onEntryClick(entry.id)}
 										onToggleEnabled={onToggleEnabled}
+										dragDisabled={dndDisabled}
 									/>
 								))}
 							</div>

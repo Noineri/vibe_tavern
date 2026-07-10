@@ -27,6 +27,7 @@ import {
   type LorebookLinkRecord,
 } from "../../../app-client.js";
 import { LoreEntryList } from "./LoreEntryList.js";
+import { ListSearchPanel } from "../../shared/ListSearchPanel.js";
 import { LinkBindingPopover, type LinkTarget } from "../../shared/LinkBindingPopover.js";
 import { countTokens } from "../../../utils/tokenizer.js";
 import type { TFunc } from "../../../i18n/locale-helpers.js";
@@ -134,6 +135,13 @@ export function LorebookAccordion({
   //    and remain available when expanded.
   const [entries, setEntries] = useState<LoreEntryRecord[]>([]);
 
+  // ── In-accordion search: name/content text query + activation-key tag
+  //    filter. Owned here (not in the parent) because the accordion loads its
+  //    own entries and the filter is a local view concern. Reuses ListSearchPanel
+  //    (the sidebar character-search pattern); tag chips combine with AND.
+  const [searchQuery, setSearchQuery] = useState("");
+  const [selectedKeys, setSelectedKeys] = useState<string[]>([]);
+
   useEffect(() => {
     let cancelled = false;
     listLoreEntries(lorebook.id).then((data) => {
@@ -152,6 +160,32 @@ export function LorebookAccordion({
         : countTokens(entries.map((e) => e.content).join("\n")),
     [entries],
   );
+
+  // Distinct activation keys across all entries — the tag pool for the
+  // search combobox. Sorted for stable dropdown order.
+  const availableKeys = useMemo(
+    () =>
+      Array.from(
+        new Set(entries.flatMap((e) => e.keys).filter((k): k is string => !!k)),
+      ).sort((a, b) => a.localeCompare(b)),
+    [entries],
+  );
+
+  // Filtered view of entries for the expanded list. Text query matches title
+  // OR content (case-insensitive); selected key chips combine with AND (the
+  // entry's keys must include every selected key). The header counter stays on
+  // the full `entries.length` (total), not the filtered count.
+  const isFiltering = searchQuery.trim() !== "" || selectedKeys.length > 0;
+  const filteredEntries = useMemo(() => {
+    if (!isFiltering) return entries;
+    const q = searchQuery.trim().toLowerCase();
+    return entries.filter((e) => {
+      if (q && !`${e.title} ${e.content}`.toLowerCase().includes(q)) return false;
+      if (selectedKeys.length > 0 && !selectedKeys.every((k) => e.keys.includes(k)))
+        return false;
+      return true;
+    });
+  }, [entries, isFiltering, searchQuery, selectedKeys]);
 
   const handleReorderEntries = async (
     updates: Array<{ id: string; sortOrder: number; position?: string }>
@@ -507,14 +541,22 @@ export function LorebookAccordion({
           </div>
 
           {/* Drag-and-drop entry list grouped by position */}
+          <ListSearchPanel
+            query={searchQuery}
+            onQueryChange={setSearchQuery}
+            selectedTags={selectedKeys}
+            onSelectedTagsChange={setSelectedKeys}
+            availableTags={availableKeys}
+          />
           <LoreEntryList
-            entries={entries}
+            entries={filteredEntries}
             activeEntryId={activeEntryId}
             isMobile={isMobile}
             t={t}
             onEntryClick={onEntryClick}
             onReorder={handleReorderEntries}
             onToggleEnabled={handleToggleEntryEnabled}
+            dndDisabled={isFiltering}
           />
 
           {/* Add entry button */}
