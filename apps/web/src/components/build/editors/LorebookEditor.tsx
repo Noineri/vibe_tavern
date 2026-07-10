@@ -17,6 +17,7 @@
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 import { useKeyDown } from "../../../hooks/use-key-down.js";
+import { FormProvider } from "react-hook-form";
 
 import { Ic } from "../../shared/icons.js";
 import { AddButton } from "../../shared/add-button.js";
@@ -112,6 +113,7 @@ export function LorebookEditor({
     updateAct,
     refreshLorebooks,
     handleSetLinks,
+    form,
   } = useLorebookEditorState({ characterId, chatId, personaId });
 
   // Transition animations — event-driven phase machine (no setTimeout chain):
@@ -891,19 +893,21 @@ export function LorebookEditor({
                 }}
               >
                 {tab === "lorebooks" && activeEntry ? (
-                  <LoreEntryEditor
-                    entry={activeEntry}
-                    entryId={activeEntry.id}
-                    lorebookId={activeLorebookIdForEntry!}
-                    existingGroups={existingGroups}
-                    updateAct={updateAct}
-                    onDeleted={() => {
-                      setActiveEntryId(null);
-                      setView("list");
-                    }}
-                    isMobile={isMobile}
-                    t={t}
-                  />
+                  <FormProvider {...form}>
+                    <LoreEntryEditor
+                      entry={activeEntry}
+                      entryId={activeEntry.id}
+                      lorebookId={activeLorebookIdForEntry!}
+                      existingGroups={existingGroups}
+                      updateAct={updateAct}
+                      onDeleted={() => {
+                        setActiveEntryId(null);
+                        setView("list");
+                      }}
+                      isMobile={isMobile}
+                      t={t}
+                    />
+                  </FormProvider>
                 ) : (
                   scriptPanel.scriptEditorPanel
                 )}
@@ -943,19 +947,21 @@ export function LorebookEditor({
                   style={{ padding: "24px 32px" }}
                 >
                   {tab === "lorebooks" && activeEntry ? (
-                    <LoreEntryEditor
-                      entry={activeEntry}
-                      entryId={activeEntry.id}
-                      lorebookId={activeLorebookIdForEntry!}
-                      existingGroups={existingGroups}
-                      updateAct={updateAct}
-                      onDeleted={() => {
-                        setActiveEntryId(null);
-                        setView("list");
-                      }}
-                      isMobile={isMobile}
-                      t={t}
-                    />
+                    <FormProvider {...form}>
+                      <LoreEntryEditor
+                        entry={activeEntry}
+                        entryId={activeEntry.id}
+                        lorebookId={activeLorebookIdForEntry!}
+                        existingGroups={existingGroups}
+                        updateAct={updateAct}
+                        onDeleted={() => {
+                          setActiveEntryId(null);
+                          setView("list");
+                        }}
+                        isMobile={isMobile}
+                        t={t}
+                      />
+                    </FormProvider>
                   ) : (
                     scriptPanel.scriptEditorPanel
                   )}

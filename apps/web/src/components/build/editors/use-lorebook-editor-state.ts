@@ -22,6 +22,7 @@
  * tests (LorebookEditor.test.tsx) pin the observable contract.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useForm, type UseFormReturn } from "react-hook-form";
 import { useDebouncedCallback } from "use-debounce";
 import {
   listAllLorebooks,
@@ -40,6 +41,60 @@ import type { Scope } from "./LorebookAccordion.js";
 
 export type Tab = "lorebooks" | "scripts";
 export type View = "pick" | "list" | "editor";
+
+// ── Active-entry form values (react-hook-form) ─────────────────────────
+
+/**
+ * The RHF form-values shape for the active-entry editor. It is the whole
+ * `LoreEntryRecord`: non-editable fields (`id`, `lorebookId`, `sortOrder`)
+ * are carried as defaultValues and simply never registered, so they never
+ * become dirty. Keeping the full record lets `form.reset(activeEntry)` work
+ * directly with no stripping/projection.
+ */
+export type LoreEntryDraft = LoreEntryRecord;
+
+/**
+ * Placeholder defaultValues before any entry is open (activeEntry is null).
+ * Its values are never rendered — the editor only mounts once an entry
+ * resolves, and the reset effect repopulates the form on open — so the exact
+ * placeholders are immaterial; they just satisfy `useForm`'s defaultValues
+ * and keep every field non-undefined.
+ */
+const EMPTY_ENTRY_DRAFT: LoreEntryDraft = {
+  id: "",
+  lorebookId: "",
+  title: "",
+  content: "",
+  keys: [],
+  secondaryKeys: [],
+  logic: "AND_ANY",
+  position: "before_char",
+  depth: 0,
+  priority: 0,
+  stickyWindow: 0,
+  cooldownWindow: 0,
+  delayWindow: 0,
+  enabled: true,
+  constant: false,
+  probability: 100,
+  ignoreBudget: false,
+  role: "system",
+  groupName: "",
+  groupWeight: 100,
+  prioritizeInclusion: false,
+  useGroupScoring: false,
+  excludeRecursion: false,
+  preventRecursion: false,
+  delayUntilRecursion: false,
+  recursionLevel: 0,
+  scanDepthOverride: null,
+  caseSensitive: false,
+  matchWholeWords: false,
+  characterFilter: [],
+  characterFilterExclude: false,
+  matchSources: [],
+  sortOrder: 0,
+};
 
 // ── Sticky-tab persistence (sessionStorage) ────────────────────────────
 
@@ -95,6 +150,9 @@ export interface LorebookEditorState {
   dirtyCount: number;
   flushSave: () => Promise<void>;
   updateAct: (field: string, value: unknown) => void;
+  // Active-entry edit form (react-hook-form) — Step 2 scaffolding; Steps 3–4
+  // bind fields to it and rewire autosave onto form.formState.
+  form: UseFormReturn<LoreEntryDraft>;
 }
 
 // ── Hook ───────────────────────────────────────────────────────────────
@@ -237,6 +295,23 @@ export function useLorebookEditorState({
     if (activeLorebookIdForEntry) void refreshEntries();
   }, [activeLorebookIdForEntry, refreshEntries]);
 
+  // ═══ Active-entry edit form (react-hook-form) ═══
+  // The form owns the active entry's field state. defaultValues come from the
+  // active entry (or an empty placeholder before one is open); a reset effect
+  // repopulates it whenever the active entry *id* changes (open / switch).
+  // The dep is the id, not the entry object, so in-flight edits — which mutate
+  // `entries` but keep the id — do not wipe the form. Field binding and the
+  // autosave rewire onto form.formState land in Steps 3–4; this step only
+  // establishes the form instance + the <FormProvider> context the editor
+  // view wraps in.
+  const form = useForm<LoreEntryDraft>({
+    defaultValues: activeEntry ?? EMPTY_ENTRY_DRAFT,
+  });
+  useEffect(() => {
+    if (activeEntry) form.reset(activeEntry);
+    // dep: entry id only — see the block comment above.
+  }, [activeEntry?.id]);
+
   // ═══ Entry autosave (debounced) ═══
   const [savingState, setSavingState] = useState<
     "idle" | "saving" | "saved" | "error"
@@ -323,5 +398,6 @@ export function useLorebookEditorState({
     dirtyCount,
     flushSave,
     updateAct,
+    form,
   };
 }
