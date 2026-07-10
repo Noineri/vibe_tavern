@@ -16,6 +16,7 @@
  *   - onDeleted (callback after successful deletion)
  */
 import { useState } from "react";
+import { useFormContext } from "react-hook-form";
 import { useKeyDown } from "../../../hooks/use-key-down.js";
 import { FieldLabel } from "../fields/field-label.js";
 
@@ -69,6 +70,10 @@ export function LoreEntryEditor({
   existingGroups,
 }: LoreEntryEditorProps) {
   const { tDynamic } = useT();
+  // Active-entry form (lifted to LorebookEditor in Step 2, provided via
+  // <FormProvider>). Step 4 binds fields to it directly (register / Controller),
+  // retiring the entry-prop + updateAct round-trip field by field.
+  const form = useFormContext<LoreEntryRecord>();
   // ── Local UI state ──
   const [keyInput, setKeyInput] = useState("");
   const [secKeyInput, setSecKeyInput] = useState("");
@@ -118,9 +123,8 @@ export function LoreEntryEditor({
           <input
             className="flex-1 rounded-md border border-border bg-s2 px-2.5 py-1.5 text-[15px] font-semibold text-t1 outline-none focus:border-accent"
             type="text"
-            value={entry.title}
-            onChange={(e) => updateAct("title", e.target.value)}
             placeholder={t("lore_entry_title")}
+            {...form.register("title")}
           />
           <Toggle
             checked={entry.enabled}
@@ -478,8 +482,7 @@ export function LoreEntryEditor({
                   <input
                     className="h-8 w-full rounded-md border border-border bg-s2 px-2.5 text-[13px] text-t1 outline-none focus:border-accent"
                     type="text"
-                    value={entry.groupName}
-                    onChange={(e) => updateAct("groupName", e.target.value)}
+                    {...form.register("groupName")}
                   />
                 </div>
                 <div className="min-w-[100px]">

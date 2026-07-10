@@ -357,30 +357,49 @@ export function useLorebookEditorState({
   // below to fire any pending save on unmount/leave instead of dropping it.
   const debouncedSave = useDebouncedCallback(flushSave, 1000);
 
+  // Form → entries mirror + debounced-autosave arm. The form is the direct
+  // input for the active entry's fields (register / Controller in the editor,
+  // and updateAct's setValue below for not-yet-migrated fields). This mirrors
+  // form changes back into `entries` so the master list (title / enabled /
+  // group / keys / content …) stays live while editing — replacing the old
+  // updateAct → setEntries write — and re-arms the debounced autosave on every
+  // edit. `reset` notifications carry no field `name`, so the `!name` guard
+  // skips entry switches (no entries storm / spurious save arm).
+  useEffect(() => {
+    const sub = form.watch((data, { name }) => {
+      if (!name) return;
+      const entryId = activeEntryIdRef.current;
+      if (!entryId) return;
+      setEntries((prev) =>
+        prev.map((e) =>
+          e.id === entryId
+            ? { ...e, [name]: (data as Record<string, unknown>)[name] }
+            : e,
+        ),
+      );
+      setSavingState("idle");
+      debouncedSave();
+    });
+    return () => sub.unsubscribe();
+  }, [form, debouncedSave]);
+
+  // updateAct bridges a not-yet-migrated field edit into the RHF form. The
+  // form→entries mirror above handles syncing the entry list + re-arming the
+  // debounced autosave (setValue triggers the watch subscription), so this is
+  // now just a typed setValue. Step 4d removes updateAct entirely once every
+  // field binds to the form via register / Controller.
   const updateAct = useCallback(
     (field: string, value: unknown) => {
       const entryId = activeEntryIdRef.current;
       const lbId = activeLorebookIdRef.current;
       if (!entryId || !lbId) return;
-
-      setEntries((prev) =>
-        prev.map((e) => (e.id === entryId ? { ...e, [field]: value } : e)),
-      );
-
-      // Bridge the edit into the RHF form so formState.dirtyFields drives the
-      // autosave flush above. Step 4 swaps these updateAct call sites for
-      // register/Controller, making the form the direct input and removing
-      // this bridge (and updateAct) entirely.
       form.setValue(
         field as FieldPath<LoreEntryDraft>,
         value as FieldPathValue<LoreEntryDraft, FieldPath<LoreEntryDraft>>,
         { shouldDirty: true },
       );
-      setSavingState("idle");
-
-      debouncedSave();
     },
-    [debouncedSave, form],
+    [form],
   );
 
   // Fire any pending save on unmount.
