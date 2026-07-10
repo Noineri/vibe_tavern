@@ -15,8 +15,8 @@
  *   - updateAct (callback for changing fields → autosave)
  *   - onDeleted (callback after successful deletion)
  */
-import { useState } from "react";
-import { useFormContext } from "react-hook-form";
+import { useState, type ReactNode } from "react";
+import { useFormContext, useController, type FieldPath, type UseControllerReturn } from "react-hook-form";
 import { useKeyDown } from "../../../hooks/use-key-down.js";
 import { FieldLabel } from "../fields/field-label.js";
 
@@ -57,6 +57,28 @@ interface LoreEntryEditorProps {
   existingGroups?: string[];
 }
 
+// ── Controlled field binding ───────────────────────────────────────────
+
+/**
+ * Binds a controlled component (value / checked + onChange(value)) to a
+ * top-level form field — a thin render-prop over `useController` so the ~25
+ * custom inputs (NumberInput, Checkbox, Toggle, SegmentedControl, …) bind
+ * without repeating the Controller scaffolding per field, and each field
+ * re-renders only on its own change (scoped subscription, not a whole-editor
+ * re-render). Native text inputs keep using `register` directly.
+ */
+function ControlledField<P extends FieldPath<LoreEntryRecord>>({
+  name,
+  children,
+}: {
+  name: P;
+  children: (field: UseControllerReturn<LoreEntryRecord, P>["field"]) => ReactNode;
+}) {
+  const { control } = useFormContext<LoreEntryRecord>();
+  const { field } = useController<LoreEntryRecord, P>({ control, name });
+  return <>{children(field)}</>;
+}
+
 // ── Component ──────────────────────────────────────────────────────────
 
 export function LoreEntryEditor({
@@ -74,6 +96,9 @@ export function LoreEntryEditor({
   // <FormProvider>). Step 4 binds fields to it directly (register / Controller),
   // retiring the entry-prop + updateAct round-trip field by field.
   const form = useFormContext<LoreEntryRecord>();
+  // content is read in several places (the textareas via Controller below, plus
+  // TokenCounter + AiAssistantModal) — watch it once so they stay live.
+  const content = form.watch("content");
   // ── Local UI state ──
   const [keyInput, setKeyInput] = useState("");
   const [secKeyInput, setSecKeyInput] = useState("");
@@ -223,21 +248,25 @@ export function LoreEntryEditor({
           <FieldLabel>
             {t("lore_entry_content")}
           </FieldLabel>
-          <MobileExpandTextarea
-            value={entry.content}
-            onChange={(v) => updateAct("content", v)}
-            label={t("lore_entry_content")}
-          >
-            <AutoTextarea
-              className="w-full min-h-[180px] rounded-md border border-border bg-s2 px-2.5 py-1.5 text-[13px] text-t1 outline-none focus:border-accent leading-[1.6]"
-              style={{}}
-              maxRows={25}
-              value={entry.content}
-              onChange={(e) => updateAct("content", e.target.value)}
-              placeholder={t("lore_entry_content_placeholder")}
-            />
-          </MobileExpandTextarea>
-          <TokenCounter text={entry.content} />
+          <ControlledField name="content">
+            {(field) => (
+              <MobileExpandTextarea
+                value={field.value}
+                onChange={field.onChange}
+                label={t("lore_entry_content")}
+              >
+                <AutoTextarea
+                  className="w-full min-h-[180px] rounded-md border border-border bg-s2 px-2.5 py-1.5 text-[13px] text-t1 outline-none focus:border-accent leading-[1.6]"
+                  style={{}}
+                  maxRows={25}
+                  value={field.value}
+                  onChange={field.onChange}
+                  placeholder={t("lore_entry_content_placeholder")}
+                />
+              </MobileExpandTextarea>
+            )}
+          </ControlledField>
+          <TokenCounter text={content} />
         </div>
 
         <ActivationTestPanel lorebookId={lorebookId} isMobile={isMobile} t={t} />
@@ -645,9 +674,15 @@ export function LoreEntryEditor({
         isOpen={aiHelperOpen}
         onClose={() => setAiHelperOpen(false)}
         apiMode="lore_entry"
-        existingContent={entry.content}
-        onReplace={(text) => updateAct("content", text)}
-        onInsert={(text) => updateAct("content", entry.content ? `${entry.content.trimEnd()}\n\n${text}` : text)}
+        existingContent={content}
+        onReplace={(text) => form.setValue("content", text, { shouldDirty: true })}
+        onInsert={(text) =>
+          form.setValue(
+            "content",
+            content ? `${content.trimEnd()}\n\n${text}` : text,
+            { shouldDirty: true },
+          )
+        }
         mode="full"
         scopeContext={{
           characterId: activeCharacter?.id,
