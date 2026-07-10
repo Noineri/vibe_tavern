@@ -84,6 +84,14 @@ export function SegmentedControl({
         )}
       >
         {options.map((opt) => {
+          // The fill/mobileFill flex classes belong on the element that is the
+          // flex child of the row. With a tooltip the trigger span is that
+          // child; without it the radio item is. (Only matters for fill/
+          // mobileFill; the compact logic control — the only tooltip call site
+          // today — is unaffected.)
+          const flexCls = (fill || mobileFill)
+            ? "flex min-w-0 flex-1 items-center justify-center truncate sm:flex-none"
+            : "";
           const item = (
             <RadioGroup.Item
               value={opt.value}
@@ -92,7 +100,7 @@ export function SegmentedControl({
                 // Only the properties that actually change — `transition-all` watches
                 // every property and causes unexpected color/padding transitions.
                 "cursor-pointer rounded-[5px] font-ui transition-[background-color,color,box-shadow,transform] duration-150 ease-out select-none active:scale-[0.96]",
-                (fill || mobileFill) && "flex min-w-0 flex-1 items-center justify-center truncate sm:flex-none",
+                opt.tooltip ? "w-full" : flexCls,
                 compact ? "min-h-9 px-2.5 py-1 text-[11px] sm:min-h-0" : "min-h-10 px-3 py-1.5 text-[13px] sm:min-h-0",
                 "text-t2 hover:text-t1",
                 "data-[state=checked]:bg-s2 data-[state=checked]:text-accent data-[state=checked]:shadow-sm data-[state=checked]:font-medium",
@@ -101,9 +109,15 @@ export function SegmentedControl({
               <span className="min-w-0 truncate sm:overflow-visible sm:whitespace-normal sm:text-clip">{opt.label}</span>
             </RadioGroup.Item>
           );
+          // CustomTooltip's Trigger (asChild) injects its own `data-state` onto
+          // its child. If that child were the RadioGroup.Item it would CLOBBER
+          // the radio's `data-state=checked` (the visual-selection hook) with the
+          // tooltip's open/closed state — the selected segment would lose its
+          // highlight. Wrap the item in a span so each Radix primitive owns its
+          // own DOM node (span = tooltip trigger; button = radio).
           const segment = opt.tooltip ? (
             <CustomTooltip content={opt.tooltip} align="start">
-              {item}
+              <span className={cn("inline-flex", flexCls)}>{item}</span>
             </CustomTooltip>
           ) : item;
           // Wrap in a hover scope when trailing actions are present so the caller

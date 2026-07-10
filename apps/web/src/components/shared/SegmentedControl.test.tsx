@@ -174,6 +174,28 @@ describe("SegmentedControl — option slots (load-bearing for VersionSwitcher)",
 		fireEvent.click(getByText("Banana"));
 		expect(onChange).toHaveBeenLastCalledWith("b");
 	});
+
+	it("selected segment keeps data-state=checked even when wrapped in a tooltip", () => {
+		// Regression: CustomTooltip's Trigger (asChild) injects its own `data-state`
+		// onto its child. When the child WAS the RadioGroup.Item, the tooltip's
+		// open/closed state clobbered the radio's `data-state=checked` (the
+		// visual-selection CSS hook) — the selected logic segment lost its
+		// highlight. The fix wraps the item in a span so each Radix primitive owns
+		// its own DOM node. This pins that the radio keeps data-state=checked.
+		const { getAllByRole } = render(
+			<SegmentedControl
+				value="a"
+				options={[
+					{ value: "a", label: "Apple", tooltip: "an apple" },
+					{ value: "b", label: "Banana", tooltip: "a banana" },
+				]}
+				onChange={() => {}}
+			/>,
+		);
+		const radios = getAllByRole("radio");
+		expect(radios[0].getAttribute("data-state")).toBe("checked");
+		expect(radios[1].getAttribute("data-state")).toBe("unchecked");
+	});
 });
 
 describe("SegmentedControl — keyboard navigation", () => {
