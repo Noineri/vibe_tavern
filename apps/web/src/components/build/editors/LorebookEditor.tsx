@@ -721,10 +721,22 @@ export function LorebookEditor({
   );
 
   // ── Header bar (editor) ──
-  // form.formState.isDirty drives the autosave affordance (Step 3 retired the
-  // hand-rolled dirtyCount). Reading it during render subscribes this
-  // component to dirty-state changes so the button updates on edit / flush.
+  // Autosave indicator state. form.formState.isDirty (read during render)
+  // subscribes this component to dirty changes; `autosaveStatus` drives the
+  // passive indicator — mirrors ProviderModal: no manual save button, the
+  // debounced flushSave persists edits (floppy flashes on save, fades when
+  // idle + clean; error stays red and self-heals on the next edit / leave).
   const dirty = form.formState.isDirty;
+  const autosaveStatus =
+    savingState === "saving"
+      ? "saving"
+      : savingState === "saved"
+        ? "saved"
+        : savingState === "error"
+          ? "error"
+          : dirty
+            ? "pending"
+            : "idle";
   const editorHeader = (
     <div
       className="flex shrink-0 items-center gap-2 border-b border-border bg-surface"
@@ -744,34 +756,35 @@ export function LorebookEditor({
       <span className="flex-1 truncate font-ui text-[14px] font-semibold text-t1">
         {tab === "lorebooks" ? activeEntry?.title || "" : ""}
       </span>
-      {/* Autosave indicator */}
-      <button type="button"
+      {/* Autosave indicator — passive (mirrors ProviderModal): no manual
+          save button; the debounced flushSave persists edits. Floppy while
+          pending / saving, a check on saved; fades out when idle + clean.
+          Error stays red — the next edit or leaving the entry re-flushes. */}
+      <div
+        data-testid="autosave-indicator"
+        data-state={autosaveStatus}
         className={cn(
-          "h-8 cursor-pointer rounded-md px-3 font-ui text-xs font-medium transition-all select-none",
-          savingState === "saving"
-            ? "bg-s3 text-t3"
-            : savingState === "saved"
-              ? "bg-success-dim text-success-text"
-              : savingState === "error"
-                ? "bg-danger-dim text-danger-text cursor-pointer"
-                : dirty
-                  ? "bg-accent text-on-accent"
-                  : "bg-s3 text-t3"
+          "flex items-center gap-1.5 font-ui text-[12px] transition-opacity duration-300",
+          autosaveStatus === "idle"
+            ? "opacity-0"
+            : autosaveStatus === "saved"
+              ? "text-success-t opacity-100"
+              : autosaveStatus === "error"
+                ? "text-danger opacity-100"
+                : "text-t3 opacity-100",
         )}
-        onClick={
-          savingState === "error" || dirty ? flushSave : undefined
-        }
       >
-        {savingState === "saving"
-          ? t("lore_saving")
-          : savingState === "saved"
-            ? t("lore_saved")
-            : savingState === "error"
-              ? t("retry")
-              : dirty
-                ? t("lore_save_entry")
-                : t("lore_saved")}
-      </button>
+        {autosaveStatus === "saved" ? Ic.check() : Ic.floppy()}
+        <span>
+          {autosaveStatus === "saving"
+            ? t("lore_saving")
+            : autosaveStatus === "saved"
+              ? t("lore_saved")
+              : autosaveStatus === "error"
+                ? t("retry")
+                : t("autosaving")}
+        </span>
+      </div>
     </div>
   );
 

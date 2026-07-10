@@ -325,18 +325,19 @@ describe("LorebookEditor (characterization)", () => {
     // Entries load → activeEntry resolves → stubbed editor renders.
     await waitFor(() => expect(getByTestId("entry-field")).toBeTruthy());
 
-    // In editor view the only <button> is the editor-header autosave indicator;
-    // its text reflects savingState / form.formState.isDirty (identity-t → i18n keys).
-    const autosaveBtn = () => container.querySelector("button");
-    // Before any edit: idle (NOT the dirty "save entry" affordance).
-    expect(autosaveBtn()?.textContent ?? "").not.toBe("lore_save_entry");
+    // The autosave indicator reflects savingState / form.formState.isDirty
+    // via a data-state attr (idle | pending | saving | saved | error).
+    const indicator = () =>
+      container.querySelector('[data-testid="autosave-indicator"]');
+    // Before any edit: idle (indicator faded out).
+    expect(indicator()?.getAttribute("data-state")).toBe("idle");
 
-    // Edit the field → updateAct marks dirty + schedules the 1s debounce.
+    // Edit the field → updateAct bridges to form.setValue (dirty) + schedules the 1s debounce.
     fireEvent.change(getByTestId("entry-field"), { target: { value: "Hobgoblin" } });
 
-    // Dirty is observable immediately: form.formState.isDirty → "save entry".
+    // Dirty is observable immediately: form.formState.isDirty → "pending".
     await waitFor(() => {
-      expect(autosaveBtn()?.textContent).toBe("lore_save_entry");
+      expect(indicator()?.getAttribute("data-state")).toBe("pending");
     });
 
     // After the debounce, flushSave fires updateLoreEntry with exactly the
@@ -347,9 +348,9 @@ describe("LorebookEditor (characterization)", () => {
     // One edit → exactly one save (the debounce coalesces, no double-fire).
     expect(updateLoreEntry).toHaveBeenCalledTimes(1);
 
-    // Dirty cleared after the flush → no longer the dirty affordance.
+    // Dirty cleared after the flush (form.reset) → indicator leaves "pending".
     await waitFor(() => {
-      expect(autosaveBtn()?.textContent).not.toBe("lore_save_entry");
+      expect(indicator()?.getAttribute("data-state")).not.toBe("pending");
     });
   });
 });
