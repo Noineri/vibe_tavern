@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import type { ProviderProbeResponse } from "@vibe-tavern/domain";
-import { PROVIDER_TYPE } from "@vibe-tavern/domain";
+import { PROVIDER_TYPE, tag } from "@vibe-tavern/domain";
 import { getT } from "../i18n/locale-helpers.js";
 import { computeHydration } from "./hydrate-provider.js";
 import { computeSavePatch, computeOverlayPatch, connectionToSavePatch, validateSavePatch, buildFavoriteModelSwitchPatch } from "./save-provider-patch.js";
@@ -84,7 +84,7 @@ export function useProviderProfiles() {
     // 3. Auto-write detected vision model
     if (plan.autoWriteVision) {
       patchConnection({ visionModel: plan.autoWriteVision.modelId });
-      console.log('[Hydrate] AUTO-WRITING visionModel to DB:', plan.autoWriteVision.modelId, '(profile.visionModel was empty)');
+      tag("hydrate").debug('AUTO-WRITING visionModel to DB:', plan.autoWriteVision.modelId, '(profile.visionModel was empty)');
       void updateProviderProfileAction(plan.autoWriteVision.profileId, { visionModel: plan.autoWriteVision.modelId }).catch(() => {});
     }
 
@@ -524,7 +524,7 @@ export function useProviderProfiles() {
           ? await updateProviderProfileAction(form.id, basePatch)
           : await saveProviderProfileAction(basePatch);
       }
-      console.log('[handleSave] saved result:', { id: saved?.id, defaultModel: saved?.defaultModel, visionModel: saved?.visionModel, overlayMode: isInOverlayMode });
+      tag("handleSave").debug('saved result:', { id: saved?.id, defaultModel: saved?.defaultModel, visionModel: saved?.visionModel, overlayMode: isInOverlayMode });
       if (saved && !form.id) {
         await activateProviderProfileAction(saved.id);
       }

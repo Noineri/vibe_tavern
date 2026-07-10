@@ -15,7 +15,9 @@
 import type { ConnectionState } from "../components/layout/app-shell-types.js";
 import type { FormState } from "../components/modals/ProviderModal.js";
 import { normalizeOpenAiCompatibleBaseUrl } from "../openai-compatible.js";
-import { PROVIDER_TYPE, type ModelSettingsOverlay } from "@vibe-tavern/domain";
+import { PROVIDER_TYPE, type ModelSettingsOverlay, tag } from "@vibe-tavern/domain";
+
+const saveLog = tag("save");
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -110,7 +112,7 @@ export function computeSavePatch(form: FormState): ProviderSavePatch {
     customSamplers: form.customSamplers,
   };
 
-  console.log("[Save] computeSavePatch:", {
+  saveLog.debug("computeSavePatch:", {
     id: form.id,
     defaultModel: patch.defaultModel,
     visionModel: patch.visionModel,
@@ -236,7 +238,7 @@ export function connectionToSavePatch(conn: ConnectionState): ProviderSavePatch 
     customSamplers: conn.customSamplers,
   };
 
-  console.log("[Save] connectionToSavePatch:", {
+  saveLog.debug("connectionToSavePatch:", {
     name: patch.name,
     defaultModel: patch.defaultModel,
     visionModel: patch.visionModel,

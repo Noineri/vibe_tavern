@@ -24,9 +24,34 @@ const LEVEL_ORDER: Record<LogLevel, number> = {
   error: 3,
 };
 
+/**
+ * Minimal browser-global shape used only for level resolution, so `domain`
+ * stays free of a DOM lib dependency. Accessed via `globalThis` because
+ * `location` / `localStorage` are not typed under the package's ESNext lib.
+ */
+interface BrowserLogEnv {
+  location?: { hash?: string };
+  localStorage?: { getItem(key: string): string | null };
+}
+
 function resolveMinLevel(): LogLevel {
+  // Backend (Bun): LOG_LEVEL env var.
   const env = (typeof process !== "undefined" && process?.env?.LOG_LEVEL?.toLowerCase()) as string | undefined;
-  if (env && env in LEVEL_ORDER) return env as LogLevel;
+  // Frontend (browser): debug diagnostics are hidden by default (info). Re-enable
+  // without a rebuild via `#log=debug` in the URL (one-shot) or by setting
+  // localStorage["vt:log-level"] once (persists across reloads). Mirrors the
+  // backend LOG_LEVEL gate. localStorage can throw in private mode → guarded.
+  let browser: string | undefined;
+  try {
+    const g = globalThis as unknown as BrowserLogEnv;
+    const fromUrl = g.location?.hash?.match(/log=(\w+)/)?.[1]?.toLowerCase();
+    const fromLs = g.localStorage?.getItem("vt:log-level")?.toLowerCase();
+    browser = fromUrl ?? fromLs;
+  } catch {
+    browser = undefined;
+  }
+  const level = env ?? browser;
+  if (level && level in LEVEL_ORDER) return level as LogLevel;
   return "info";
 }
 

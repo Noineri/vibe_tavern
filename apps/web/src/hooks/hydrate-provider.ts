@@ -12,7 +12,9 @@
 import type { ConnectionState } from "../components/layout/app-shell-types.js";
 import type { ProviderProfileRecord } from "../api/types.js";
 import { normalizeOpenAiCompatibleBaseUrl } from "../openai-compatible.js";
-import { PROVIDER_TYPE } from "@vibe-tavern/domain";
+import { PROVIDER_TYPE, tag } from "@vibe-tavern/domain";
+
+const hydrateLog = tag("hydrate");
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -100,7 +102,7 @@ export function computeHydration(
   // Probe on first hydration only (skip if already probed or no model)
   const shouldProbe = !!activeProfile.defaultModel && !alreadyProbedIds.has(activeProfile.id);
 
-  console.log("[Hydrate] computeHydration:", {
+  hydrateLog.debug("computeHydration:", {
     profileId: activeProfile.id,
     name: activeProfile.name,
     defaultModel: activeProfile.defaultModel,
