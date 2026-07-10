@@ -107,6 +107,7 @@ export function LorebookEditor({
     lorebookLinksMap,
     activeEntry,
     existingGroups,
+    refreshEntries,
     savingState,
     flushSave,
     refreshLorebooks,
@@ -360,8 +361,15 @@ export function LorebookEditor({
       characterFilterExclude: false,
       matchSources: [],
     };
-    void createLoreEntry(lorebookId, newEntry).then((created) => {
+    void createLoreEntry(lorebookId, newEntry).then(async (created) => {
       if (created) {
+        // Refetch so the new entry lands in `entries` before we switch to it.
+        // activeLorebookIdForEntry may already be this lorebook (e.g. adding
+        // after returning to the list from an editor), in which case the
+        // entry-loading effect won't refetch on its own and activeEntry would
+        // resolve to null. No-op when activeLorebookIdForEntry is null (first
+        // open): setActiveLorebookIdForEntry below triggers the effect.
+        await refreshEntries();
         setActiveEntryId(created.id);
         setActiveLorebookIdForEntry(lorebookId);
         setView("editor");
@@ -383,8 +391,14 @@ export function LorebookEditor({
     // (the autosave invariant), so the original is persisted with the same
     // edits the copy was created from — nothing is lost.
     const { id: _id, lorebookId: _lb, sortOrder: _so, ...fields } = form.getValues();
-    void createLoreEntry(lorebookId, fields).then((created) => {
+    void createLoreEntry(lorebookId, fields).then(async (created) => {
       if (!created) return;
+      // We're already in this lorebook's editor, so activeLorebookIdForEntry
+      // won't change and the entry-loading effect won't refetch on its own —
+      // without this, the copy never enters `entries`, activeEntry resolves to
+      // null, and the editor view falls through to the script panel (a blank
+      // screen until a full page reload).
+      await refreshEntries();
       setActiveEntryId(created.id);
       setActiveLorebookIdForEntry(lorebookId);
       setView("editor");

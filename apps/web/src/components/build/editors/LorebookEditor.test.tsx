@@ -93,8 +93,13 @@ vi.mock("./LoreEntryEditor.js", async () => {
   return {
     LoreEntryEditor: (props: { onDuplicate: () => void }) => {
       const form = useFormContext();
+      // Reactive title — lets the duplicate test assert the editor stayed
+      // mounted on the COPY (activeEntry resolved) rather than falling through
+      // to the script-panel fallback (activeEntry null → stub unmounts).
+      const title = form?.watch?.("title") ?? "";
       return (
         <>
+          <span data-testid="active-title">{title}</span>
           <input
             data-testid="entry-field"
             onChange={(e) => form?.setValue("title", e.currentTarget.value, { shouldDirty: true })}
@@ -372,24 +377,34 @@ describe("LorebookEditor (characterization)", () => {
     });
   });
 
-  it("duplicate: creates a copy and persists the source's pending edit before switching", async () => {
-    // The duplicate button is the one in-editor entry-switch path (the accordion
-    // entry-click path can't reach it: the list unmounts on view "editor"). It
-    // must flush the source entry's pending edits before switching (the
-    // autosave flush-on-switch invariant) and create the copy from the current
-    // form state — so nothing is lost and the copy matches what the user sees.
-    vi.mocked(createLoreEntry).mockResolvedValue(
-      makeEntry({ id: "entry-2", title: "Hobgoblin" }),
+  it("duplicate: creates a copy, persists the source's pending edit, and opens the copy", async () => {
+    // Stateful list mock: the backend doesn't have entry-2 until createLoreEntry
+    // succeeds, so listLoreEntries returns [entry-1] before the create and
+    // [entry-1, entry-2] after. This pins the real stale-entries failure mode:
+    // without the post-create refreshEntries, the copy never enters `entries`,
+    // activeEntry resolves to null, and the editor falls through to the script
+    // panel (a blank screen until a full page reload) — which the active-title
+    // assertion at the end catches.
+    let created = false;
+    vi.mocked(createLoreEntry).mockImplementation(async (_lb, fields) => {
+      created = true;
+      return makeEntry({ id: "entry-2", ...(fields as Partial<LoreEntryRecord>) });
+    });
+    vi.mocked(listLoreEntries).mockImplementation(async () =>
+      created
+        ? [makeEntry(), makeEntry({ id: "entry-2", title: "Hobgoblin" })]
+        : [makeEntry()],
     );
     vi.mocked(updateLoreEntry).mockImplementation(async (_lb, entryId, patch) =>
       makeEntry({ id: entryId, ...(patch as Partial<LoreEntryRecord>) }),
     );
-    const { getByTestId } = await renderAtList();
+    const { getByTestId, queryByTestId } = await renderAtList();
     fireEvent.click(getByTestId("entry-click")); // load entry-1
-    await waitFor(() => expect(getByTestId("entry-field")).toBeTruthy());
+    await waitFor(() => expect(getByTestId("active-title")).toBeTruthy());
     // Edit the source entry (arms the 1s debounce).
     fireEvent.change(getByTestId("entry-field"), { target: { value: "Hobgoblin" } });
-    // Duplicate — flushes entry-1's edit, then creates + selects the copy.
+    // Duplicate — flushes entry-1's edit, refetches (entry-2 now in entries),
+    // then creates + selects the copy.
     fireEvent.click(getByTestId("duplicate-btn"));
     // The copy is created from the current (edited) state, minus identity fields.
     await waitFor(() => expect(createLoreEntry).toHaveBeenCalledTimes(1));
@@ -400,6 +415,12 @@ describe("LorebookEditor (characterization)", () => {
     // The source's pending edit was flushed before the switch — not lost.
     await waitFor(() => {
       expect(updateLoreEntry).toHaveBeenCalledWith(LB_ID, "entry-1", { title: "Hobgoblin" });
+    });
+    // The editor now shows the COPY (activeEntry resolved to entry-2 — not the
+    // script-panel fallback). Without the refreshEntries fix activeEntry is
+    // null and the stub unmounts, so active-title disappears.
+    await waitFor(() => {
+      expect(queryByTestId("active-title")).not.toBeNull();
     });
   });
 });

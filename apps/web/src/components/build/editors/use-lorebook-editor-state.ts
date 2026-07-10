@@ -145,6 +145,11 @@ export interface LorebookEditorState {
   // Entry data (for the active lorebook)
   activeEntry: LoreEntryRecord | null;
   existingGroups: string[];
+  /** Refetch the active lorebook's entries. Used after creating an entry
+   * (add / duplicate) so the new record lands in `entries` before the editor
+   * switches to it — otherwise `activeEntry` resolves to null and the editor
+   * view falls through to the script panel (a stale-`entries` blank screen). */
+  refreshEntries: () => Promise<void>;
   // Entry autosave
   savingState: "idle" | "saving" | "saved" | "error";
   flushSave: () => Promise<void>;
@@ -438,6 +443,7 @@ export function useLorebookEditorState({
     // Entry data
     activeEntry,
     existingGroups,
+    refreshEntries,
     // Autosave
     savingState,
     flushSave,
