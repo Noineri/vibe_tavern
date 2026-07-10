@@ -53,6 +53,8 @@ interface LoreEntryEditorProps {
   entryId: string;
   lorebookId: string;
   onDeleted: () => void;
+  /** Duplicate the active entry (creates a copy and selects it). */
+  onDuplicate: () => void;
   isMobile: boolean;
   t: TFunc;
   /** Existing group names in the same lorebook, for the group-name autocomplete. */
@@ -87,6 +89,7 @@ export function LoreEntryEditor({
   entryId,
   lorebookId,
   onDeleted,
+  onDuplicate,
   isMobile,
   t,
   existingGroups,
@@ -142,7 +145,15 @@ export function LoreEntryEditor({
               <Toggle checked={field.value} onChange={field.onChange} className="ml-1" />
             )}
           </ControlledField>
-          <CustomTooltip content={t("lore_save_entry")}>
+          <CustomTooltip content={t("lore_duplicate_entry")}>
+            <button type="button"
+              className="flex h-8 w-8 cursor-pointer items-center justify-center rounded text-t3 transition-all hover:bg-s2 hover:text-t1"
+              onClick={onDuplicate}
+            >
+              <Ic.copy />
+            </button>
+          </CustomTooltip>
+          <CustomTooltip content={t("delete_entry_confirm")}>
             <button type="button"
               className="flex h-8 w-8 cursor-pointer items-center justify-center rounded text-t3 transition-all hover:bg-s2 hover:text-danger"
               onClick={() => setConfirmDeleteEntry(true)}

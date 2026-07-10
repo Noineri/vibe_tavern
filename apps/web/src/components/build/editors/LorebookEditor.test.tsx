@@ -36,6 +36,7 @@ import {
   listLoreEntries,
   getLorebookLinks,
   updateLoreEntry,
+  createLoreEntry,
   type LoreEntryRecord,
   type LorebookRecord,
 } from "../../../app-client.js";
@@ -90,13 +91,19 @@ vi.mock("./ScriptEditor.js", () => ({
 vi.mock("./LoreEntryEditor.js", async () => {
   const { useFormContext } = await vi.importActual<typeof import("react-hook-form")>("react-hook-form");
   return {
-    LoreEntryEditor: () => {
+    LoreEntryEditor: (props: { onDuplicate: () => void }) => {
       const form = useFormContext();
       return (
-        <input
-          data-testid="entry-field"
-          onChange={(e) => form?.setValue("title", e.currentTarget.value, { shouldDirty: true })}
-        />
+        <>
+          <input
+            data-testid="entry-field"
+            onChange={(e) => form?.setValue("title", e.currentTarget.value, { shouldDirty: true })}
+          />
+          {/* Duplicate trigger — exercises the in-editor entry switch (the
+              autosave flush-on-switch invariant), which the accordion entry-click
+              path can't reach (the list unmounts on view "editor"). */}
+          <button data-testid="duplicate-btn" onClick={props.onDuplicate} />
+        </>
       );
     },
   };
@@ -145,6 +152,7 @@ vi.mock("../../../app-client.js", async (importOriginal) => {
     listLoreEntries: vi.fn(),
     getLorebookLinks: vi.fn(),
     updateLoreEntry: vi.fn(),
+    createLoreEntry: vi.fn(),
   };
 });
 
@@ -361,6 +369,37 @@ describe("LorebookEditor (characterization)", () => {
     // Dirty cleared after the flush (form.reset) → indicator leaves "pending".
     await waitFor(() => {
       expect(indicator()?.getAttribute("data-state")).not.toBe("pending");
+    });
+  });
+
+  it("duplicate: creates a copy and persists the source's pending edit before switching", async () => {
+    // The duplicate button is the one in-editor entry-switch path (the accordion
+    // entry-click path can't reach it: the list unmounts on view "editor"). It
+    // must flush the source entry's pending edits before switching (the
+    // autosave flush-on-switch invariant) and create the copy from the current
+    // form state — so nothing is lost and the copy matches what the user sees.
+    vi.mocked(createLoreEntry).mockResolvedValue(
+      makeEntry({ id: "entry-2", title: "Hobgoblin" }),
+    );
+    vi.mocked(updateLoreEntry).mockImplementation(async (_lb, entryId, patch) =>
+      makeEntry({ id: entryId, ...(patch as Partial<LoreEntryRecord>) }),
+    );
+    const { getByTestId } = await renderAtList();
+    fireEvent.click(getByTestId("entry-click")); // load entry-1
+    await waitFor(() => expect(getByTestId("entry-field")).toBeTruthy());
+    // Edit the source entry (arms the 1s debounce).
+    fireEvent.change(getByTestId("entry-field"), { target: { value: "Hobgoblin" } });
+    // Duplicate — flushes entry-1's edit, then creates + selects the copy.
+    fireEvent.click(getByTestId("duplicate-btn"));
+    // The copy is created from the current (edited) state, minus identity fields.
+    await waitFor(() => expect(createLoreEntry).toHaveBeenCalledTimes(1));
+    const [, fields] = vi.mocked(createLoreEntry).mock.calls[0]!;
+    expect(fields.title).toBe("Hobgoblin");
+    expect(fields).not.toHaveProperty("id");
+    expect(fields).not.toHaveProperty("sortOrder");
+    // The source's pending edit was flushed before the switch — not lost.
+    await waitFor(() => {
+      expect(updateLoreEntry).toHaveBeenCalledWith(LB_ID, "entry-1", { title: "Hobgoblin" });
     });
   });
 });

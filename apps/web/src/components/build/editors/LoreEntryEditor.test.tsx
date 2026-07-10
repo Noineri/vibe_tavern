@@ -109,6 +109,7 @@ function renderEditor(entry: LoreEntryRecord) {
           entryId={entry.id}
           lorebookId={entry.lorebookId}
           onDeleted={vi.fn()}
+          onDuplicate={vi.fn()}
           isMobile={false}
           t={(k: string) => k}
           existingGroups={[]}

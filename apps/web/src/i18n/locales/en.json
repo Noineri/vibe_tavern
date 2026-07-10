@@ -849,6 +849,7 @@
   "group_weight_hint": "Higher weight = higher chance of being picked. Default 100.",
   "prioritize_inclusion_hint": "If set, this entry always wins its group and the others are skipped — group weights are ignored. Use it to force one canonical entry per group.",
   "lore_save_entry": "Save",
+  "lore_duplicate_entry": "Duplicate entry",
   "lore_saving": "Saving...",
   "lore_saved": "Saved",
   "delete_entry_confirm": "Delete Entry",

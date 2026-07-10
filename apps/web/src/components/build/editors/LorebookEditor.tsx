@@ -375,6 +375,22 @@ export function LorebookEditor({
     setView("editor");
   };
 
+  const handleDuplicateEntry = (lorebookId: string) => {
+    // Snapshot the form's current values (includes any uncommitted edits) and
+    // strip the non-editable identity fields — the backend assigns fresh ones
+    // for the copy. createLoreEntry resolves to the created record; switching
+    // to it via setActiveEntryId flushes the SOURCE entry's pending edits first
+    // (the autosave invariant), so the original is persisted with the same
+    // edits the copy was created from — nothing is lost.
+    const { id: _id, lorebookId: _lb, sortOrder: _so, ...fields } = form.getValues();
+    void createLoreEntry(lorebookId, fields).then((created) => {
+      if (!created) return;
+      setActiveEntryId(created.id);
+      setActiveLorebookIdForEntry(lorebookId);
+      setView("editor");
+    });
+  };
+
   // ═══ Helpers ═══
 
   const handleAddLorebook = () => {
@@ -913,6 +929,7 @@ export function LorebookEditor({
                       entryId={activeEntry.id}
                       lorebookId={activeLorebookIdForEntry!}
                       existingGroups={existingGroups}
+                      onDuplicate={() => handleDuplicateEntry(activeLorebookIdForEntry!)}
                       onDeleted={() => {
                         setActiveEntryId(null);
                         setView("list");
@@ -965,6 +982,7 @@ export function LorebookEditor({
                         entryId={activeEntry.id}
                         lorebookId={activeLorebookIdForEntry!}
                         existingGroups={existingGroups}
+                        onDuplicate={() => handleDuplicateEntry(activeLorebookIdForEntry!)}
                         onDeleted={() => {
                           setActiveEntryId(null);
                           setView("list");

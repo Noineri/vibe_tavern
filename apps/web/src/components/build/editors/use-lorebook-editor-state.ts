@@ -181,6 +181,23 @@ export function useLorebookEditorState({
   const activeLorebookIdRef = useRef<string | null>(null);
 
   const setActiveEntryId = (id: string | null) => {
+    if (id !== activeEntryIdRef.current) {
+      // Persist the outgoing entry's pending edits BEFORE swapping the active
+      // id. Without this, the entry-switch reset (form.reset in the effect
+      // below) would clear the outgoing entry's dirty state before the 1s
+      // debounce fires, silently dropping the edit — the ref would already
+      // point at the new entry when the timer fires, so flushSave would build
+      // an empty patch. flush() captures the outgoing form state synchronously;
+      // the PATCH then completes in the background, and flushSave guards its
+      // post-save reset so a backgrounded save never clobbers the now-active
+      // entry's form. flush() returns early when the outgoing entry is clean,
+      // so clean switches stay instant.
+      debouncedSave.flush();
+      // The new entry loads clean (form.reset in the switch effect); clear any
+      // "saving" the outgoing flush just armed so the indicator reflects the
+      // new entry, not the backgrounded save.
+      setSavingState("idle");
+    }
     _setActiveEntryId(id);
     activeEntryIdRef.current = id;
   };
@@ -338,6 +355,13 @@ export function useLorebookEditorState({
     setSavingState("saving");
     try {
       await updateLoreEntry(lbId, entryId, patch as Partial<LoreEntryRecord>);
+      // Only mark the form clean / flash "saved" if this entry is STILL active.
+      // A save flushed just before an entry switch completes in the background
+      // while the user is already on a different entry; resetting the (shared)
+      // form to this entry's values would clobber the active one, and flashing
+      // "saved" would mislabel its indicator. The PATCH itself landed — that is
+      // the load-bearing part.
+      if (activeEntryIdRef.current !== entryId) return;
       // Mark the form clean: reset defaults to the just-saved values so
       // formState.isDirty clears and the save button leaves its dirty state.
       form.reset(values);
@@ -347,13 +371,17 @@ export function useLorebookEditorState({
         2000,
       );
     } catch {
-      setSavingState("error");
+      // Only surface the error if this entry is still active — a backgrounded
+      // save of an entry the user already left shouldn't hijack the indicator.
+      if (activeEntryIdRef.current === entryId) setSavingState("error");
     }
   }, [form]);
 
   // Debounced save trigger: 1s after the last edit. `useDebouncedCallback`
   // owns the timer + unmount cleanup internally and exposes `.flush()` — used
-  // below to fire any pending save on unmount/leave instead of dropping it.
+  // to fire any pending save on unmount/leave AND on entry switch
+  // (setActiveEntryId flushes the outgoing entry before swapping), so a pending
+  // edit is never dropped.
   const debouncedSave = useDebouncedCallback(flushSave, 1000);
 
   // Form → entries mirror + debounced-autosave arm. The form is the direct

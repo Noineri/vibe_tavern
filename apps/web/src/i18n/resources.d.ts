@@ -487,6 +487,7 @@ export default interface Resources {
     "lore_depth_hint": "For '@ Depth', how many messages back from the end to insert. For Top/Bottom AN, used as Author's Note depth when supported.",
     "lore_depth_label": "Depth",
     "lore_duplicate": "Duplicate",
+    "lore_duplicate_entry": "Duplicate entry",
     "lore_entry_ai_changes": "Changes preview",
     "lore_entry_ai_generated": "Generated entry content",
     "lore_entry_ai_no_changes": "No changes detected.",
