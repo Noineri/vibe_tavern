@@ -1,31 +1,28 @@
 /**
  * LoreEntryEditor — editing form for a single lorebook entry.
  *
- * Manages its own UI state:
- *   - keyInput / secKeyInput — keyword input
- *   - testText — text for activation testing
- *   - advancedOpen — advanced settings disclosure
- *   - confirmDeleteEntry — delete confirmation modal
+ * Owns the field rendering for a `LoreEntryRecord`. Self-contained feature
+ * blocks were extracted into sibling files (behavior-preserving — see
+ * reports/lorebook-editor-form-state-gap.md Step 1): `ActivationTestPanel`
+ * (the activation tester), `CharacterFilterPicker` (the id-bound character
+ * filter), and `LoreKeysAiPill` (AI key generation). This component keeps the
+ * local UI state for keyword input (keyInput / secKeyInput), the advanced-
+ * settings disclosure (advancedOpen), the AI helper modal (aiHelperOpen),
+ * and the delete-confirmation modal (confirmDeleteEntry).
  *
  * Receives from the parent:
  *   - entry (entry data)
  *   - updateAct (callback for changing fields → autosave)
  *   - onDeleted (callback after successful deletion)
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useState } from "react";
 import { useKeyDown } from "../../../hooks/use-key-down.js";
-import * as Popover from "@radix-ui/react-popover";
 import { FieldLabel } from "../fields/field-label.js";
-import { toast } from "sonner";
 
-import { useBootstrapStore } from "../../../stores/api-actions/bootstrap-actions.js";
-import { useActiveCharacter, useActivePersona, useAllCharacters } from "../../../stores/snapshot-store.js";
+import { useActiveCharacter, useActivePersona } from "../../../stores/snapshot-store.js";
 import { Ic, Icons } from "../../shared/icons.js";
 import { cn } from "../../../lib/cn.js";
-import { resolveEntityAvatarUrl } from "../../../lib/avatar.js";
 import { CustomTooltip } from "../../shared/Tooltip.js";
-import { getModalPortal } from "../../shared/modal-helpers.js";
-import { popoverMaxHeight } from "../../shared/popover-constants.js";
 import { DestructiveConfirmModal } from "../../shared/destructive-confirm-modal.js";
 import { Checkbox } from "../../shared/Checkbox.js";
 import { SegmentedControl } from "../../shared/SegmentedControl.js";
@@ -35,17 +32,15 @@ import { MobileExpandTextarea } from "../../shared/MobileExpandTextarea.js";
 import { AutoTextarea } from "../../shared/auto-textarea.js";
 import { NumberInput } from "../../shared/NumberInput.js";
 import { TokenCounter } from "../../shared/TokenCounter.js";
-import { AiQuickPill, type AiQuickSettings } from "../../shared/AiQuickPill.js";
 import { AiAssistantModal } from "../../shared/AiAssistantModal.js";
 import { useT, type TFunc } from "../../../i18n/context.js";
 import {
-  testLoreActivation,
   deleteLoreEntry,
-  streamAiAssistant,
-  updateUiSettings,
-  type AiAssistantRequestBody,
   type LoreEntryRecord,
 } from "../../../app-client.js";
+import { LoreKeysAiPill } from "./lore-keys-ai-pill.js";
+import { ActivationTestPanel } from "./activation-test-panel.js";
+import { CharacterFilterPicker } from "./character-filter-picker.js";
 
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -77,27 +72,9 @@ export function LoreEntryEditor({
   // ── Local UI state ──
   const [keyInput, setKeyInput] = useState("");
   const [secKeyInput, setSecKeyInput] = useState("");
-  const [testText, setTestText] = useState("");
-  const [testResult, setTestResult] = useState<{
-    ok: boolean;
-    msg: string;
-  } | null>(null);
-  const [testMutData, setTestMutData] = useState<{
-    activatedIds: string[];
-    totalEntries: number;
-  } | null>(null);
-  const [testingActivation, setTestingActivation] = useState(false);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [confirmDeleteEntry, setConfirmDeleteEntry] = useState(false);
   useKeyDown("Escape", () => setConfirmDeleteEntry(false), { enabled: confirmDeleteEntry });
-
-  // characterFilter picker: null = closed; "add" = adding a new entry;
-  // number = binding the ghost at that index to a real character.
-  const allCharacters = useAllCharacters();
-  const [charFilterPicker, setCharFilterPicker] = useState<"add" | number | null>(null);
-  // The picker closes on outside-click + Escape via Radix Popover natively
-  // (formerly useKeyDown + useOutsideClick; both removed when the picker
-  // migrated to Popover). The confirm-delete Escape handler below is separate.
 
   const [aiHelperOpen, setAiHelperOpen] = useState(false);
   const activeCharacter = useActiveCharacter();
@@ -120,21 +97,6 @@ export function LoreEntryEditor({
   const removeKey = (type: "keys" | "secondaryKeys", keyToRemove: string) => {
     const arr = entry[type];
     updateAct(type, arr.filter((k) => k !== keyToRemove));
-  };
-
-  // ── Activation test ──
-  const runTest = async () => {
-    if (!testText.trim()) return;
-    setTestingActivation(true);
-    try {
-      const result = await testLoreActivation(lorebookId, testText);
-      setTestMutData(result);
-      setTestResult({ ok: result.activatedIds.length > 0, msg: "" });
-    } catch {
-      setTestResult({ ok: false, msg: "Error" });
-    } finally {
-      setTestingActivation(false);
-    }
   };
 
   // ── Delete entry ──
@@ -274,48 +236,7 @@ export function LoreEntryEditor({
           <TokenCounter text={entry.content} />
         </div>
 
-        {/* ── Activation test (right under the content) ── */}
-        <div className={cn("flex gap-2", isMobile && "flex-col")}>
-          <input
-            className={cn(
-              "h-8 flex-1 rounded-md border border-border bg-s2 px-3 text-[13px] text-t1 outline-none focus:border-accent",
-              isMobile && "min-h-[44px]"
-            )}
-            type="text"
-            value={testText}
-            onChange={(e) => setTestText(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && runTest()}
-            placeholder={t("lore_test_placeholder")}
-          />
-          <button type="button"
-            className={cn(
-              "h-8 cursor-pointer rounded-md bg-accent px-4 text-[12px] font-medium text-on-accent transition-all hover:opacity-90",
-              isMobile && "min-h-[44px]"
-            )}
-            onClick={runTest}
-            disabled={testingActivation}
-          >
-            {testingActivation ? "..." : t("lore_test_run")}
-          </button>
-        </div>
-        {testResult && (
-          <div
-            className={cn(
-              "flex items-center gap-2 rounded-md text-[12px] font-medium px-3 py-2",
-              testResult.ok
-                ? "border border-success bg-success-dim text-success-text"
-                : "border border-danger bg-danger-dim text-danger-text"
-            )}
-          >
-            {testResult.ok ? <Ic.check /> : <Ic.close />} {testResult.msg}
-          </div>
-        )}
-        {testMutData && (
-          <div className="flex items-center gap-2 rounded-md border border-success bg-success-dim px-3 py-2 text-[12px] font-medium text-success-text">
-            <Ic.check /> {t("activated_label")} {testMutData.activatedIds.length} /{" "}
-            {testMutData.totalEntries} {t("entries_label")}
-          </div>
-        )}
+        <ActivationTestPanel lorebookId={lorebookId} isMobile={isMobile} t={t} />
 
         {/* ── Advanced settings toggle ── */}
         <button type="button"
@@ -605,147 +526,12 @@ export function LoreEntryEditor({
               )}
             </div>
 
-            {/* ── Character filter — id-bound picker with ghost-binding ── */}
-            <div className="mb-6 pb-6 border-b border-border/50">
-              <FieldLabel>
-                {t("lore_charfilter_section")}
-              </FieldLabel>
-              <Popover.Root open={charFilterPicker !== null} onOpenChange={(o) => { if (!o) setCharFilterPicker(null); }}>
-                <Popover.Anchor asChild>
-                  <div
-                    className="flex flex-wrap items-center gap-1.5 rounded-md border border-border bg-s2 px-2.5 py-1.5"
-                    style={{ minHeight: 38 }}
-                  >
-                {entry.characterFilter.map((f, idx) => {
-                  const isGhost = f.id === null;
-                  const ch = f.id ? allCharacters.find((c) => c.id === f.id) : undefined;
-                  const avatarUrl = ch
-                    ? resolveEntityAvatarUrl({
-                        kind: "characters",
-                        id: ch.id,
-                        avatarExt: ch.avatarExt,
-                        avatarAssetId: ch.avatarAssetId,
-                        avatarFullExt: ch.avatarFullExt,
-                        avatarFullAssetId: ch.avatarFullAssetId,
-                        updatedAt: ch.updatedAt,
-                      })
-                    : null;
-                  return (
-                    <span
-                      key={`${f.id ?? "ghost"}-${idx}`}
-                      className={cn(
-                        "flex items-center gap-1 rounded px-1.5 py-0.5 text-[12px] transition-all",
-                        isGhost
-                          ? "cursor-pointer border border-dashed border-amber-500/60 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20"
-                          : "bg-accent-dim text-accent-t hover:bg-border2 hover:text-t1",
-                      )}
-                      title={isGhost ? t("lore_char_filter_bind") : undefined}
-                      onClick={isGhost ? () => setCharFilterPicker(idx) : undefined}
-                    >
-                      <span className="h-4 w-4 shrink-0 overflow-hidden rounded-full bg-s3">
-                        {avatarUrl ? (
-                          <img src={avatarUrl} alt="" className="h-full w-full object-cover" />
-                        ) : (
-                          <span className="flex h-full w-full items-center justify-center text-[8px] font-bold text-t3">
-                            {f.name.charAt(0).toUpperCase()}
-                          </span>
-                        )}
-                      </span>
-                      <span className="max-w-[120px] truncate">{f.name}</span>
-                      {!isGhost && (
-                        <button
-                          type="button"
-                          className="ml-0.5 cursor-pointer text-t3 hover:text-t1"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            updateAct(
-                              "characterFilter",
-                              entry.characterFilter.filter((_, i) => i !== idx),
-                            );
-                          }}
-                        >
-                          ✕
-                        </button>
-                      )}
-                    </span>
-                  );
-                })}
-                <button
-                  type="button"
-                  className="cursor-pointer rounded px-2 py-0.5 text-[12px] text-t3 transition-all hover:bg-s3 hover:text-t1"
-                  onClick={() => setCharFilterPicker("add")}
-                >
-                  + {t("lore_char_filter_placeholder")}
-                </button>
-                  </div>
-                </Popover.Anchor>
-                <Popover.Portal container={getModalPortal() ?? undefined}>
-                  <Popover.Content
-                    side="bottom"
-                    align="start"
-                    sideOffset={4}
-                    className="glass-blur z-[220] w-full overflow-y-auto rounded-lg border border-border2 bg-glass-bg py-1 shadow-[0_12px_28px_rgba(0,0,0,0.45)] outline-none data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95"
-                    style={{ maxHeight: popoverMaxHeight("singleLine") }}
-                  >
-                    {charFilterPicker !== null && (
-                    allCharacters.filter((c) => !entry.characterFilter.some((f) => f.id === c.id)).length === 0 ? (
-                      <div className="px-3 py-2 text-[12px] text-t3">{t("lore_char_filter_empty")}</div>
-                    ) : (
-                      allCharacters
-                        .filter((c) => !entry.characterFilter.some((f) => f.id === c.id))
-                        .map((c) => {
-                          const url = resolveEntityAvatarUrl({
-                            kind: "characters",
-                            id: c.id,
-                            avatarExt: c.avatarExt,
-                            avatarAssetId: c.avatarAssetId,
-                            avatarFullExt: c.avatarFullExt,
-                            avatarFullAssetId: c.avatarFullAssetId,
-                            updatedAt: c.updatedAt,
-                          });
-                          return (
-                            <button
-                              type="button"
-                              key={c.id}
-                              className="flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-left text-[13px] text-t1 hover:bg-s2"
-                              onClick={() => {
-                                const next = [...entry.characterFilter];
-                                if (charFilterPicker === "add") {
-                                  next.push({ id: c.id, name: c.name });
-                                } else {
-                                  // Bind the ghost at this index to the chosen character.
-                                  next[charFilterPicker] = { id: c.id, name: c.name };
-                                }
-                                updateAct("characterFilter", next);
-                                setCharFilterPicker(null);
-                              }}
-                            >
-                              <span className="h-5 w-5 shrink-0 overflow-hidden rounded-full bg-s3">
-                                {url ? (
-                                  <img src={url} alt="" className="h-full w-full object-cover" />
-                                ) : (
-                                  <span className="flex h-full w-full items-center justify-center text-[10px] font-bold text-t3">
-                                    {c.name.charAt(0).toUpperCase()}
-                                  </span>
-                                )}
-                              </span>
-                              <span className="truncate">{c.name}</span>
-                            </button>
-                          );
-                        })
-                    )
-                    )}
-                  </Popover.Content>
-                </Popover.Portal>
-              </Popover.Root>
-              <div className="mt-2">
-                <Checkbox
-                  checked={entry.characterFilterExclude}
-                  onChange={(v) => updateAct("characterFilterExclude", v)}
-                  label={t("lore_char_filter_exclude")}
-                />
-              </div>
-            </div>
+            <CharacterFilterPicker
+              characterFilter={entry.characterFilter}
+              characterFilterExclude={entry.characterFilterExclude}
+              updateAct={updateAct}
+              t={t}
+            />
 
             {/* ── Temporary effects ── */}
             <div className="mb-6 pb-6 border-b border-border/50">
@@ -877,115 +663,5 @@ export function LoreEntryEditor({
         />
       )}
     </>
-  );
-}
-
-// ── Lore Keys AI Pill ──────────────────────────────────────────────────
-
-function LoreKeysAiPill({
-  entry,
-  updateAct,
-}: {
-  entry: LoreEntryRecord;
-  updateAct: (field: string, value: unknown) => void;
-}) {
-  const { t } = useT();
-  const [settings, setSettings] = useState<AiQuickSettings>({
-    providerId: "",
-    modelName: "",
-    keyTarget: "both",
-  });
-  const [loading, setLoading] = useState(false);
-  const abortRef = useRef<AbortController | null>(null);
-  const bootstrapUiSettings = useBootstrapStore((s) => s.data?.uiSettings ?? null);
-
-  // Bootstrap persisted provider/model
-  useEffect(() => {
-    if (settings.providerId || !bootstrapUiSettings) return;
-    setSettings((s) => ({
-      ...s,
-      providerId: bootstrapUiSettings.aiAssistantProviderId ?? "",
-      modelName: bootstrapUiSettings.aiAssistantModelName ?? "",
-    }));
-  }, [settings.providerId, bootstrapUiSettings]);
-
-  const handleGenerate = async () => {
-    const providerId = settings.providerId || bootstrapUiSettings?.aiAssistantProviderId || "";
-    const modelName = settings.modelName || bootstrapUiSettings?.aiAssistantModelName || "";
-    if (!entry.content.trim()) return;
-    if (!providerId) {
-      toast.error(t("select_provider_first"));
-      return;
-    }
-    setLoading(true);
-    abortRef.current = new AbortController();
-    try {
-      const request: AiAssistantRequestBody = {
-        mode: "lore_keys",
-        instruction: "",
-        existingContent: entry.content,
-        providerProfileId: providerId,
-        model: modelName || undefined,
-        enabledLayers: [],
-        existingKeys: entry.keys,
-        existingSecondaryKeys: entry.secondaryKeys,
-        logic: entry.logic,
-        keyTarget: settings.keyTarget ?? "both",
-      };
-      let raw = "";
-      for await (const chunk of streamAiAssistant(request, { signal: abortRef.current.signal })) {
-        if (chunk.type === "text" && chunk.text) raw += chunk.text;
-        if (chunk.type === "error" && chunk.error) throw new Error(chunk.error);
-        if (chunk.type === "done") break;
-      }
-      // Parse JSON response
-      const cleaned = raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
-      const parsed = JSON.parse(cleaned) as { keys?: string[]; secondaryKeys?: string[] };
-      const target = settings.keyTarget ?? "both";
-      // Safety net: never touch the key set the user did NOT request, even if
-      // the model returned one. The backend prompt asks for the matching shape,
-      // but models are not fully reliable — gate on the client too.
-      const wantPrimary = target !== "secondary";
-      const wantSecondary = target !== "primary";
-      if (settings.appendMode) {
-        const newKeys = wantPrimary ? (parsed.keys ?? []).filter((k) => !entry.keys.includes(k)) : [];
-        const newSec = wantSecondary ? (parsed.secondaryKeys ?? []).filter((k) => !entry.secondaryKeys.includes(k)) : [];
-        if (newKeys.length) updateAct("keys", [...entry.keys, ...newKeys]);
-        if (newSec.length) updateAct("secondaryKeys", [...entry.secondaryKeys, ...newSec]);
-      } else {
-        if (wantPrimary && parsed.keys?.length) updateAct("keys", parsed.keys);
-        if (wantSecondary && parsed.secondaryKeys?.length) updateAct("secondaryKeys", parsed.secondaryKeys);
-      }
-    } catch (err) {
-      if (err instanceof DOMException && err.name === "AbortError") return;
-      toast.error(err instanceof Error ? err.message : "Key generation failed");
-    } finally {
-      setLoading(false);
-      abortRef.current = null;
-    }
-  };
-
-  const handleSettingsChange = (s: AiQuickSettings) => {
-    setSettings(s);
-    void updateUiSettings({
-      aiAssistantProviderId: s.providerId || null,
-      aiAssistantModelName: s.modelName || null,
-    }).catch(() => {});
-  };
-
-  return (
-    <AiQuickPill
-      onGenerate={() => void handleGenerate()}
-      onCancel={() => { abortRef.current?.abort(); }}
-      onSettingsChange={handleSettingsChange}
-      settings={settings}
-      loading={loading}
-      disabled={!entry.content.trim()}
-      showAppendToggle
-      showKeyTarget
-      starTooltip={t("ai_pill_generate_keys")}
-      gearTooltip={t("ai_pill_generate_keys_settings")}
-      size="md"
-    />
   );
 }
