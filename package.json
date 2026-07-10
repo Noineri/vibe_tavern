@@ -55,5 +55,10 @@
   },
   "optionalDependencies": {
     "@rolldown/binding-win32-x64-msvc": "1.1.5"
-  }
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Noineri/vibe_tavern"
+  },
+  "license": "AGPL-3.0"
 }
