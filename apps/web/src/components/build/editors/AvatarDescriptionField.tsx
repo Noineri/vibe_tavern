@@ -25,9 +25,10 @@
  *   While `describing` is true the textarea is LOCKED (disabled). The card
  *   surfaces the in-progress state through three reinforcing cues so the user
  *   never wonders whether something is happening:
- *     1. a 2px indeterminate progress bar slides across the top of the card,
- *     2. the textarea tints accent and is covered by a shimmer overlay with a
+ *     1. the textarea tints accent and is covered by a shimmer overlay with a
  *        spinner + "Describing…" label,
+ *     2. if any text is already presented in the text area, a blur is applied
+ *        to existing text while re-generating,
  *     3. the action button morphs (opacity crossfade) from
  *        "Describe via vision" into a "Cancel" control with an inline status.
  *   When the description arrives (empty → non-empty transition), the textarea
