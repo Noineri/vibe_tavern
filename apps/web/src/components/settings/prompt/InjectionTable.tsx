@@ -132,6 +132,43 @@ type ZonesState = {
   depth1: CanvasItem[];
 };
 
+/** Drop-zone container ids → ZonesState keys. Replaces the former 6-rung
+ *  if-ladder in `findZoneAndIndex` with a single lookup. The ids match the `id`
+ *  props passed to `<SortableZone>` in the canvas JSX below. */
+const ZONE_ID_TO_KEY: Record<string, keyof ZonesState> = {
+  "zone-before_chat": "before_chat",
+  "zone-after_chat": "after_chat",
+  "depth-4": "depth4",
+  "depth-3": "depth3",
+  "depth-2": "depth2",
+  "depth-1": "depth1",
+};
+
+/** A single sortable zone: a droppable container wrapping one SortableContext
+ *  of canvas items. Collapses the 6× copy-pasted zone blocks (before_chat, the
+ *  4 depth tiers, after_chat) into one parameterized component — only the id,
+ *  label, depth, and items differ between zones. Behavior is identical to the
+ *  inline `<DroppableDepthContainer><SortableContext>…</…>` it replaces. */
+function SortableZone({ id, label, depth, items, activeDragKey }: {
+  id: string;
+  label: string;
+  depth: number | "before" | "after";
+  items: CanvasItem[];
+  activeDragKey: string | null;
+}) {
+  return (
+    <DroppableDepthContainer id={id} depth={depth} label={label}>
+      <SortableContext items={items.map((i) => i.key)} strategy={verticalListSortingStrategy}>
+        {items.map((item) => (
+          <SortableCanvasItem key={item.key} id={item.key} overlayActive={item.key === activeDragKey}>
+            {item.render()}
+          </SortableCanvasItem>
+        ))}
+      </SortableContext>
+    </DroppableDepthContainer>
+  );
+}
+
 /**
  * PromptOrderCanvas
  * 
@@ -323,12 +360,8 @@ export function PromptOrderCanvas({ injections, onChange, draft, onUpdateField, 
   const zonesToRender = activeZones || defaultZones;
 
   function findZoneAndIndex(id: string, zones: ZonesState): { zoneKey: keyof ZonesState | null; index: number } {
-    if (id === "zone-before_chat") return { zoneKey: "before_chat", index: -1 };
-    if (id === "zone-after_chat") return { zoneKey: "after_chat", index: -1 };
-    if (id === "depth-4") return { zoneKey: "depth4", index: -1 };
-    if (id === "depth-3") return { zoneKey: "depth3", index: -1 };
-    if (id === "depth-2") return { zoneKey: "depth2", index: -1 };
-    if (id === "depth-1") return { zoneKey: "depth1", index: -1 };
+    const zoneKey = ZONE_ID_TO_KEY[id];
+    if (zoneKey) return { zoneKey, index: -1 };
 
     for (const [key, items] of Object.entries(zones)) {
       const idx = items.findIndex(i => i.key === id);
@@ -470,15 +503,7 @@ export function PromptOrderCanvas({ injections, onChange, draft, onUpdateField, 
         <div className="flex flex-col gap-4">
           
           {/* ZONE 1: BEFORE CHAT */}
-          <DroppableDepthContainer id="zone-before_chat" depth="before" label={t("prompt_zone_before_chat")}>
-            <SortableContext items={zonesToRender.before_chat.map(i => i.key)} strategy={verticalListSortingStrategy}>
-              {zonesToRender.before_chat.map((item) => (
-                <SortableCanvasItem key={item.key} id={item.key} overlayActive={item.key === activeDragKey}>
-                  {item.render()}
-                </SortableCanvasItem>
-              ))}
-            </SortableContext>
-          </DroppableDepthContainer>
+          <SortableZone id="zone-before_chat" label={t("prompt_zone_before_chat")} depth="before" items={zonesToRender.before_chat} activeDragKey={activeDragKey} />
 
           {/* ZONE 2: CHAT HISTORY ACCORDION */}
           <div className="rounded-md border border-accent/35 bg-accent/10">
@@ -502,65 +527,25 @@ export function PromptOrderCanvas({ injections, onChange, draft, onUpdateField, 
             
             {accordionOpen && (
               <div className="flex flex-col gap-1 p-2 border-t border-accent/20 bg-surface rounded-b-md">
-                <DroppableDepthContainer id="depth-4" depth={4} label={t("depth_zone_4plus")}>
-                  <SortableContext items={zonesToRender.depth4.map(i => i.key)} strategy={verticalListSortingStrategy}>
-                    {zonesToRender.depth4.map((item) => (
-                      <SortableCanvasItem key={item.key} id={item.key} overlayActive={item.key === activeDragKey}>
-                        {item.render()}
-                      </SortableCanvasItem>
-                    ))}
-                  </SortableContext>
-                </DroppableDepthContainer>
+                <SortableZone id="depth-4" label={t("depth_zone_4plus")} depth={4} items={zonesToRender.depth4} activeDragKey={activeDragKey} />
 
                 <div className="mx-2 h-px bg-border/60" />
 
-                <DroppableDepthContainer id="depth-3" depth={3} label={t("depth_zone_3")}>
-                  <SortableContext items={zonesToRender.depth3.map(i => i.key)} strategy={verticalListSortingStrategy}>
-                    {zonesToRender.depth3.map((item) => (
-                      <SortableCanvasItem key={item.key} id={item.key} overlayActive={item.key === activeDragKey}>
-                        {item.render()}
-                      </SortableCanvasItem>
-                    ))}
-                  </SortableContext>
-                </DroppableDepthContainer>
+                <SortableZone id="depth-3" label={t("depth_zone_3")} depth={3} items={zonesToRender.depth3} activeDragKey={activeDragKey} />
 
                 <div className="mx-2 h-px bg-border/60" />
 
-                <DroppableDepthContainer id="depth-2" depth={2} label={t("depth_zone_2")}>
-                  <SortableContext items={zonesToRender.depth2.map(i => i.key)} strategy={verticalListSortingStrategy}>
-                    {zonesToRender.depth2.map((item) => (
-                      <SortableCanvasItem key={item.key} id={item.key} overlayActive={item.key === activeDragKey}>
-                        {item.render()}
-                      </SortableCanvasItem>
-                    ))}
-                  </SortableContext>
-                </DroppableDepthContainer>
+                <SortableZone id="depth-2" label={t("depth_zone_2")} depth={2} items={zonesToRender.depth2} activeDragKey={activeDragKey} />
 
                 <div className="mx-2 h-px bg-border/60" />
 
-                <DroppableDepthContainer id="depth-1" depth={1} label={t("depth_zone_1")}>
-                  <SortableContext items={zonesToRender.depth1.map(i => i.key)} strategy={verticalListSortingStrategy}>
-                    {zonesToRender.depth1.map((item) => (
-                      <SortableCanvasItem key={item.key} id={item.key} overlayActive={item.key === activeDragKey}>
-                        {item.render()}
-                      </SortableCanvasItem>
-                    ))}
-                  </SortableContext>
-                </DroppableDepthContainer>
+                <SortableZone id="depth-1" label={t("depth_zone_1")} depth={1} items={zonesToRender.depth1} activeDragKey={activeDragKey} />
               </div>
             )}
           </div>
 
           {/* ZONE 3: AFTER CHAT */}
-          <DroppableDepthContainer id="zone-after_chat" depth="after" label={t("prompt_zone_after_chat")}>
-            <SortableContext items={zonesToRender.after_chat.map(i => i.key)} strategy={verticalListSortingStrategy}>
-              {zonesToRender.after_chat.map((item) => (
-                <SortableCanvasItem key={item.key} id={item.key} overlayActive={item.key === activeDragKey}>
-                  {item.render()}
-                </SortableCanvasItem>
-              ))}
-            </SortableContext>
-          </DroppableDepthContainer>
+          <SortableZone id="zone-after_chat" label={t("prompt_zone_after_chat")} depth="after" items={zonesToRender.after_chat} activeDragKey={activeDragKey} />
 
           {/* Prefill: pinned, not draggable */}
           {prefillItem && (
