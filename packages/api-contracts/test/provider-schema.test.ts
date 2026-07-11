@@ -12,6 +12,7 @@ import {
   modelSettingsOverlaySchema,
   samplerPresetPayloadSchema,
 } from "../src/schemas/provider-schema.js";
+import { SAMPLER_FIELDS, type SamplerFieldId } from "@vibe-tavern/domain";
 
 /**
  * Characterization tests for the provider schemas.
@@ -401,5 +402,117 @@ describe("samplerPresetPayloadSchema (clipboard)", () => {
 
   it("rejects malformed logitBias bias (shares the overlay's -100..100 bound)", () => {
     expectReject(samplerPresetPayloadSchema.safeParse({ logitBias: [{ tokenId: 1, bias: 999 }] }));
+  });
+});
+
+// ── Sampler single-source invariant (ERA-1) ─────────────────────────────────
+// The canonical sampler field list lives in @vibe-tavern/domain as
+// `SamplerFieldId` (type) / `SAMPLER_FIELDS` (runtime array derived from the
+// NONE capability record). Both provider schemas MUST cover every canonical
+// field — a missing sampler key here is the avatarFullExt disease in another
+// module: a field the domain knows about silently disappearing from the
+// wire contract. These tests pin coverage + round-trip on the CURRENT
+// (hand-typed) schema so the upcoming single-source refactor (deriving the
+// sampler sub-schema from SAMPLER_FIELDS) can't drop or retype a field.
+describe("sampler single-source invariant (ERA-1)", () => {
+  // Compile-time proof the `satisfies`-spread preserved zod's inferred sampler
+  // output types (did NOT erase them to `any`). Spreading a widened
+  // Record<SamplerFieldId, z.ZodTypeAny> would have made every sampler field
+  // `any` on the inferred output; the concrete-literal + `satisfies` keeps
+  // `temperature: number | undefined`, etc. If a future change widens the
+  // spread, these assignments stop compiling.
+  type _CoreOut = z.infer<typeof saveProviderDraftSchema>;
+  type _IsAny<T> = 0 extends 1 & T ? true : false;
+  const _temperatureTypeOk: _IsAny<_CoreOut["temperature"]> extends false ? true : never = true;
+  const _logitBiasTypeOk: _IsAny<_CoreOut["logitBias"]> extends false ? true : never = true;
+  void _temperatureTypeOk;
+  void _logitBiasTypeOk;
+
+  // saveProviderDraftSchema = providerCoreSchema.extend({ id }) — its shape is
+  // the core keys plus `id`, so it exposes providerCoreSchema's full surface.
+  const coreKeys = (): Set<string> => new Set(Object.keys(saveProviderDraftSchema.shape));
+  const overlayKeys = (): Set<string> => new Set(Object.keys(modelSettingsOverlaySchema.shape));
+
+  it("every SAMPLER_FIELDS is present in providerCoreSchema (no missing sampler field)", () => {
+    const keys = coreKeys();
+    for (const f of SAMPLER_FIELDS) {
+      expect(keys.has(f), `sampler field "${f}" missing from providerCoreSchema`).toBe(true);
+    }
+  });
+
+  it("every SAMPLER_FIELDS is present in modelSettingsOverlaySchema (no missing sampler field)", () => {
+    const keys = overlayKeys();
+    for (const f of SAMPLER_FIELDS) {
+      expect(keys.has(f), `sampler field "${f}" missing from modelSettingsOverlaySchema`).toBe(true);
+    }
+  });
+
+  // Pin the documented count so a duplicate or accidental union shrink is
+  // caught loudly. Update this number only when SamplerFieldId genuinely gains
+  // or loses a field.
+  it("SAMPLER_FIELDS has the expected cardinality (24)", () => {
+    expect(SAMPLER_FIELDS.length).toBe(24);
+    expect(new Set(SAMPLER_FIELDS).size).toBe(SAMPLER_FIELDS.length); // no dupes
+  });
+
+  // Distinct sentinel per field so a field that silently stops round-tripping
+  // (dropped key, coerced type) is caught against its own expected value.
+  function samplerSamplePayload(): Record<SamplerFieldId, unknown> {
+    return {
+      temperature: 0.42,
+      topP: 0.91,
+      topK: 40,
+      topA: 0.1,
+      minP: 0.05,
+      typicalP: 0.88,
+      tfsZ: 0.97,
+      repeatLastN: 64,
+      mirostat: 2,
+      mirostatTau: 5.5,
+      mirostatEta: 0.11,
+      dryMultiplier: 0.8,
+      dryBase: 1.77,
+      dryAllowedLength: 3,
+      drySequenceBreakers: ["\\n"],
+      xtcThreshold: 0.13,
+      xtcProbability: 0.05,
+      frequencyPenalty: 0.2,
+      presencePenalty: 0.3,
+      repetitionPenalty: 1.1,
+      stopSequences: ["END"],
+      logitBias: [{ tokenId: 7, bias: 12 }],
+      seed: "99988",
+      reasoningEffort: "high",
+    };
+  }
+
+  it("providerCoreSchema round-trips every sampler field (parse + read)", () => {
+    const payload = samplerSamplePayload();
+    const parsed = saveProviderDraftSchema.parse({ ...validSaveDraft(), ...payload }) as Record<string, unknown>;
+    for (const f of SAMPLER_FIELDS) {
+      expect(parsed[f], `sampler field "${f}" did not round-trip`).toEqual(payload[f]);
+    }
+  });
+
+  it("modelSettingsOverlaySchema round-trips every sampler field (parse + read)", () => {
+    const payload = samplerSamplePayload();
+    const parsed = modelSettingsOverlaySchema.parse(payload) as Record<string, unknown>;
+    for (const f of SAMPLER_FIELDS) {
+      expect(parsed[f], `sampler field "${f}" did not round-trip in overlay`).toEqual(payload[f]);
+    }
+  });
+
+  // Guard against the single-source refactor's spread accidentally clobbering
+  // or dropping a non-sampler core field.
+  it("preserves non-sampler core fields alongside the derived sampler set", () => {
+    const keys = coreKeys();
+    const nonSamplerCore = [
+      "name", "providerPreset", "endpoint", "apiKey", "defaultModel",
+      "contextBudget", "pinContextBudget", "bindPerModel", "maxTokens",
+      "showReasoning", "streamResponse", "customSamplers", "visionModel", "id",
+    ];
+    for (const k of nonSamplerCore) {
+      expect(keys.has(k), `non-sampler field "${k}" dropped from providerCoreSchema`).toBe(true);
+    }
   });
 });

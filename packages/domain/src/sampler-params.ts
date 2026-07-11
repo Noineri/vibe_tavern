@@ -103,6 +103,14 @@ const NONE: SamplerCapabilityFlags = {
   reasoningEffort: false,
 };
 
+/** Runtime-ordered list of every sampler field id, derived from the `NONE`
+ *  capability record (a full `Record<SamplerFieldId, boolean>`) — the single
+ *  source for "what sampler fields exist". Consumed by the API-contracts schema
+ *  (builds the sampler sub-schema), the FormState coverage assertion, and the
+ *  DB column-coverage test. Adding a field to `SamplerFieldId` + `NONE`
+ *  propagates here automatically — no parallel hand-typed list to drift. */
+export const SAMPLER_FIELDS = Object.keys(NONE) as SamplerFieldId[];
+
 function set(...fields: SamplerFieldId[]): SamplerCapabilityFlags {
   return fields.reduce<SamplerCapabilityFlags>((acc, field) => {
     acc[field] = true;
