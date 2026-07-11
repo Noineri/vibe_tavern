@@ -20,7 +20,7 @@ import { MobileExpandTextarea } from "../../shared/MobileExpandTextarea.js";
 import { SegmentedControl } from "../../shared/SegmentedControl.js";
 import { NumberInput } from "../../shared/NumberInput.js";
 import { inputPad, monoCls, lblCls } from "./field-styles.js";
-import { TokenBadge } from "./TextAreaField.js";
+import { TokenCounter } from "../../shared/TokenCounter.js";
 
 export interface DepthPromptFieldProps {
   /** The react-hook-form instance (shared with the parent form). */
@@ -80,7 +80,7 @@ export function DepthPromptField({ form, isSaving }: DepthPromptFieldProps) {
           minRows={3}
         />
       </MobileExpandTextarea>
-      <TokenBadge text={depthPrompt || ""} />
+      <TokenCounter text={depthPrompt || ""} />
     </div>
   );
 }

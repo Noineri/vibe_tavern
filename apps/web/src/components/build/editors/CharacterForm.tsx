@@ -23,7 +23,8 @@ import { BoundResourcesField } from "../../shared/BoundResourcesField.js";
 import { SegmentedControl } from "../../shared/SegmentedControl.js";
 import { NumberInput } from "../../shared/NumberInput.js";
 import { inputPad, inputCls, monoCls, lblCls } from "../fields/field-styles.js";
-import { TextAreaField, TokenBadge } from "../fields/TextAreaField.js";
+import { TextAreaField } from "../fields/TextAreaField.js";
+import { TokenCounter } from "../../shared/TokenCounter.js";
 import { DepthPromptField } from "../fields/DepthPromptField.js";
 import { TagsField } from "../fields/TagsField.js";
 import { VibeMdView } from "./VibeMdView.js";
@@ -613,7 +614,7 @@ export function CharacterForm({
         <MobileExpandTextarea value={description || ""} onChange={(v) => setValue("description", v)} label={t("char_desc_label")}>
           <AutoTextarea className={inputCls + mInput} style={{ ...inputPad }} disabled={isSaving} register={register("description")} minRows={5} />
         </MobileExpandTextarea>
-        <TokenBadge text={description || ""} />
+        <TokenCounter text={description || ""} />
       </div>
 
       {/* First Message */}
@@ -622,7 +623,7 @@ export function CharacterForm({
         <MobileExpandTextarea value={firstMessage || ""} onChange={(v) => setValue("firstMessage", v)} label={t("first_message_label")}>
           <AutoTextarea className={inputCls + mInput} style={{ ...inputPad }} disabled={isSaving} placeholder={t("first_message_placeholder")} register={register("firstMessage")} minRows={6} />
         </MobileExpandTextarea>
-        <TokenBadge text={firstMessage || ""} />
+        <TokenCounter text={firstMessage || ""} />
       </div>
 
       {/* Alternate Greetings */}
@@ -668,7 +669,7 @@ export function CharacterForm({
                 setValue("alternateGreetings", next, { shouldDirty: true });
               }} placeholder={t("alternate_greeting_placeholder")} />
             </MobileExpandTextarea>
-            <TokenBadge text={alternateGreetings[altGreetIdx] || ""} />
+            <TokenCounter text={alternateGreetings[altGreetIdx] || ""} />
           </div>
         )}
       </div>
@@ -711,7 +712,7 @@ export function CharacterForm({
         <MobileExpandTextarea value={mesExample || ""} onChange={(v) => setValue("mesExample", v)} label={t("char_mes_example_label")}>
           <AutoTextarea className={monoCls + mInput} style={{ ...inputPad }} disabled={isSaving} placeholder="<START>..." register={register("mesExample")} minRows={6} />
         </MobileExpandTextarea>
-        <TokenBadge text={mesExample || ""} />
+        <TokenCounter text={mesExample || ""} />
       </div>
 
       {/* Scenario */}
@@ -720,7 +721,7 @@ export function CharacterForm({
         <MobileExpandTextarea value={scenario || ""} onChange={(v) => setValue("scenario", v)} label={t("char_scenario_label")}>
           <AutoTextarea className={inputCls + mInput} style={{ ...inputPad }} disabled={isSaving} register={register("scenario")} minRows={5} />
         </MobileExpandTextarea>
-        <TokenBadge text={scenario || ""} />
+        <TokenCounter text={scenario || ""} />
       </div>
 
       {/* Personality Summary */}
@@ -729,7 +730,7 @@ export function CharacterForm({
         <MobileExpandTextarea value={personalitySummary || ""} onChange={(v) => setValue("personalitySummary", v)} label={t("char_personality_summary_label")}>
           <AutoTextarea className={inputCls + mInput} style={{ ...inputPad }} disabled={isSaving} register={register("personalitySummary")} minRows={3} />
         </MobileExpandTextarea>
-        <TokenBadge text={personalitySummary || ""} />
+        <TokenCounter text={personalitySummary || ""} />
       </div>
 
       {/* Advanced separator */}

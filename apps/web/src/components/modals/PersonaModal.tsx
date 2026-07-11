@@ -14,10 +14,10 @@ import { AutoTextarea } from "../shared/auto-textarea.js";
 import { MobileExpandTextarea } from "../shared/MobileExpandTextarea.js";
 import { Checkbox } from "../shared/Checkbox.js";
 import { Modal } from "../shared/Modal.js";
+import { TokenCounter } from "../shared/TokenCounter.js";
 import { resolveEntityAvatarUrl } from "../../lib/avatar.js";
 
 import { createPersona, uploadPersonaAvatar, exportPersona } from "../../app-client.js";
-import { useTokenCount } from "../../hooks/use-token-count.js";
 import { useT } from "../../i18n/context.js";
 import { useModalStore } from "../../stores/modal-store.js";
 import { parseStPersonas, type StPersonaEntry } from "@vibe-tavern/import-export";
@@ -73,12 +73,6 @@ type PersonaFormData = {
   avatarPreview: string | null;
 };
 
-
-function PersonaTokenBadge({ text }: { text: string }) {
-  const { t } = useT();
-  const count = useTokenCount(text);
-  return <span className="font-ui text-[11px] tabular-nums text-t3">{count.toLocaleString()} {t("tokens_label")}</span>;
-}
 
 // Empty baseline for the persona edit form. Kept at module scope so the
 // reference is stable across renders (matters for the `values` prop on
@@ -677,7 +671,7 @@ export function PersonaModal(input: PersonaModalProps) {
                 />
               </MobileExpandTextarea>
               <div className="absolute bottom-2 right-2">
-                <PersonaTokenBadge text={editDescription} />
+                <TokenCounter text={editDescription} className="font-ui text-[11px] tabular-nums text-t3" />
               </div>
             </div>
             {/* Bound lorebooks — reverse-direction binding (PR-12). Shown only
@@ -781,7 +775,7 @@ export function PersonaModal(input: PersonaModalProps) {
                 return null;
               })()}
               <div className={cn("font-ui text-[13px] leading-snug text-t3", isMobile ? "line-clamp-2" : "line-clamp-3")}>{persona.description}</div>
-              <PersonaTokenBadge text={persona.description} />
+              <TokenCounter text={persona.description} className="font-ui text-[11px] tabular-nums text-t3" />
             </div>
             {/* Actions — PR-10 revised:
                 Desktop: all 4 buttons (Edit/Export/Copy/Delete) inline, visible on card hover.

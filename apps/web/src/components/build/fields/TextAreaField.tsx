@@ -16,11 +16,10 @@
 import type { UseFormReturn } from "react-hook-form";
 import type { BuildCharacterDraft } from "@vibe-tavern/api-contracts";
 
-import { useTokenCount } from "../../../hooks/use-token-count.js";
-import { useT } from "../../../i18n/context.js";
 import { useIsMobile } from "../../../hooks/use-mobile.js";
 import { AutoTextarea } from "../../shared/auto-textarea.js";
 import { MobileExpandTextarea } from "../../shared/MobileExpandTextarea.js";
+import { TokenCounter } from "../../shared/TokenCounter.js";
 import { inputPad, inputCls, monoCls, lblCls } from "./field-styles.js";
 
 /** Draft field names whose value is a plain string rendered as a textarea. */
@@ -84,18 +83,7 @@ export function TextAreaField({
           minRows={minRows}
         />
       </MobileExpandTextarea>
-      <TokenBadge text={value || ""} />
+      <TokenCounter text={value || ""} />
     </div>
-  );
-}
-
-/** Small inline token-count badge shown beneath a field. */
-export function TokenBadge({ text }: { text: string }) {
-  const count = useTokenCount(text);
-  const { t } = useT();
-  return (
-    <span className="flex justify-end font-ui text-[11px] tabular-nums text-t3">
-      {count.toLocaleString()} {t("tokens_label")}
-    </span>
   );
 }
