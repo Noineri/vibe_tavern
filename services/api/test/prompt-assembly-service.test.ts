@@ -260,9 +260,13 @@ function makeFilterService(
     includeInPrompt: boolean;
     caption?: string;
   }>,
-  options?: { includeGalleryInPrompt?: boolean },
+  options?: {
+    includeGalleryInPrompt?: boolean;
+    messages?: Array<{ id: string; position: number; role: "user" | "assistant"; content: string; branchId: string }>;
+  },
 ) {
   const includeGalleryInPrompt = options?.includeGalleryInPrompt ?? true;
+  const messages = options?.messages ?? [];
 
   const stores = {
     chats: {
@@ -281,7 +285,7 @@ function makeFilterService(
       getBranches: async () => [{ id: "branch_1", chatId: "chat_1", parentBranchId: null, label: "main" }],
       getMessages: async () => [],
     },
-    messages: { getMessages: async () => [] },
+    messages: { getMessages: async () => messages },
     personas: { listAll: async () => [] },
     presets: { listAll: async () => [] },
     chatSummaries: { listByChatBranch: async () => [] },
@@ -363,5 +367,44 @@ describe("PromptAssemblyService gallery includeInPrompt filter (D7)", () => {
         `includeGalleryInPrompt=${includeGalleryInPrompt}`,
       ).toBeDefined();
     }
+  });
+});
+
+describe("PromptAssemblyService ranged summaries", () => {
+  const messages = Array.from({ length: 81 }, (_, index) => ({
+    id: `msg_${index + 1}`,
+    position: index,
+    role: index === 80 ? "user" as const : index % 2 === 0 ? "user" as const : "assistant" as const,
+    content: `Message ${index + 1}`,
+    branchId: "branch_1",
+  }));
+  const excludedMessageIds = messages.slice(60).map((message) => message.id as MessageId);
+
+  it("honors the selected range in summary mode but retains the send safeguard in chat mode", async () => {
+    const service = makeFilterService([], { messages });
+
+    const summary = await service.assembleForChat({
+      chatId: "chat_1" as ChatId,
+      model: "test-model",
+      mode: "summary",
+      excludeMessageIds: excludedMessageIds,
+    });
+    const summaryContents = (summary.prompt.finalPayload as { messages: Array<{ content: string }> }).messages
+      .map((message) => message.content)
+      .join("\n");
+    expect(summaryContents).toContain("Message 60");
+    expect(summaryContents).not.toContain("Message 61");
+    expect(summaryContents).not.toContain("Message 81");
+
+    const chat = await service.assembleForChat({
+      chatId: "chat_1" as ChatId,
+      model: "test-model",
+      mode: "chat",
+      excludeMessageIds: excludedMessageIds,
+    });
+    const chatContents = (chat.prompt.finalPayload as { messages: Array<{ content: string }> }).messages
+      .map((message) => message.content)
+      .join("\n");
+    expect(chatContents).toContain("Message 81");
   });
 });

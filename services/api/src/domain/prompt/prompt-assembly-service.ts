@@ -206,9 +206,13 @@ export class PromptAssemblyService {
     const filteredMessages = branchMessages.filter((message) =>
       !excludedMessageIds.has(message.id as MessageId) && !isInExcludedSummaryRange(message.position),
     );
-    // Always keep the last user message (needed for send/regenerate)
-    const lastUserMsg = [...branchMessages].reverse().find(m => m.role === 'user');
-    const ensureLastUser = lastUserMsg && !filteredMessages.some(m => m.id === lastUserMsg.id)
+    // Send/regenerate require the final user turn even when history filters
+    // omit it. Summary callers instead choose an exact range and append their
+    // own synthetic final user instruction after assembly, so exclusions win.
+    const lastUserMsg = input.mode === "summary"
+      ? undefined
+      : [...branchMessages].reverse().find((message) => message.role === "user");
+    const ensureLastUser = lastUserMsg && !filteredMessages.some((message) => message.id === lastUserMsg.id)
       ? [...filteredMessages, lastUserMsg]
       : filteredMessages;
     const messageLimit = input.recentMessageLimit ?? (chat.messageHistoryLimit || Infinity);
