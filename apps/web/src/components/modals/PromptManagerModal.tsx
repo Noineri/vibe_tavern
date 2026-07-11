@@ -17,7 +17,7 @@ import { ConfirmCloseModal } from "../shared/confirm-close-modal.js";
 
 type SaveState = "idle" | "saving" | "saved" | "error";
 
-type DraftData = {
+export type DraftData = {
   name: string;
   system: string;
   jailbreak: string;
@@ -67,6 +67,24 @@ const emptyDraft: DraftData = {
   promptOrder: [],
   advancedMode: false,
 };
+
+/**
+ * Build the create-preset payload for "Duplicate" — a DEEP copy of the live
+ * draft so the new preset's payload shares no mutable array/object references
+ * (`promptOrder`, `customInjections`, `aiAssistantPrompts`) with the source. A
+ * former shallow `{...draft}` spread aliased those nested values and let edits
+ * to the copy leak back into the source's in-memory state. `aiAssistantPrompts`
+ * is stringified to the JSON the DTO/API store expects (matches handleSave).
+ * Pure/exported so the no-aliasing invariant has a characterization test
+ * (PRESET_COPY_DELETE_CORRUPTION bug 1). */
+export function buildDuplicatePayload(draft: DraftData, fallbackName: string) {
+  const copy = structuredClone(draft);
+  return {
+    ...copy,
+    aiAssistantPrompts: JSON.stringify(copy.aiAssistantPrompts),
+    name: `${draft.name || fallbackName} (copy)`,
+  };
+}
 
 function mergePromptOrder(current: PromptOrderEntry[], imported: PromptOrderEntry[]): PromptOrderEntry[] {
   const map = new Map(current.map((entry) => [entry.identifier, entry]));
@@ -208,9 +226,7 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
   };
 
   const handleDuplicate = () => {
-    // draft.aiAssistantPrompts is a parsed Record; onCreate expects the JSON
-    // string the DTO/API store (matches handleSave's stringification).
-    void input.onCreate({ ...draft, aiAssistantPrompts: JSON.stringify(draft.aiAssistantPrompts), name: `${draft.name || t("presets")} (copy)` }).then((created) => {
+    void input.onCreate(buildDuplicatePayload(draft, t("presets"))).then((created) => {
       if (created?.id) input.setActivePresetId(created.id);
     });
   };
