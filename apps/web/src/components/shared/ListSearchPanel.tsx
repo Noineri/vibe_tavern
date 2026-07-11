@@ -37,8 +37,6 @@ interface ListSearchPanelProps {
   className?: string;
 }
 
-const MAX_SUGGESTIONS = 12;
-
 export function ListSearchPanel({
   query,
   onQueryChange,
@@ -60,8 +58,7 @@ export function ListSearchPanel({
     const q = tagInput.trim().toLowerCase();
     return availableTags!
       .filter((tag) => !selectedTags.includes(tag))
-      .filter((tag) => (q ? tag.toLowerCase().includes(q) : true))
-      .slice(0, MAX_SUGGESTIONS);
+      .filter((tag) => (q ? tag.toLowerCase().includes(q) : true));
   }, [showTags, availableTags, tagInput, selectedTags]);
 
   const dropdownOpen = tagFocused && suggestions.length > 0;
