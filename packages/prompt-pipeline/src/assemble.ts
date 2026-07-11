@@ -6,7 +6,7 @@ import type {
   RecentMessage,
 } from "./types.js";
 import type { AssemblyMode } from "./types.js";
-import { estimateTokens, findSafeCompactionBoundary } from "./compaction.js";
+import { estimateTokens, planHistoryCompaction } from "./compaction.js";
 import { createFullMacroEngine } from "./macro-registry.js";
 import { buildPromptVariableContext, type PromptVariableContext } from "./prompt-variable-context.js";
 import { inferSlot, DEFAULT_PROMPT_ORDER, tag } from "@vibe-tavern/domain";
@@ -784,78 +784,6 @@ function buildLayers(context: PromptAssemblyContext, resolver: PositionResolver)
   let recentMessagesForHistory = context.chat.recentMessages;
   let compactionSummary: string | undefined;
 
-  /*
-   * --- Compaction ---
-   *
-   * If contextBudget is set and the estimated token count exceeds it,
-   * we trim older messages from the history using a budget-aware strategy:
-   *
-   * 1. Reserve tokens for the model's response (`responseReserve`).
-   * 2. Calculate how many tokens are available for history:
-   *      historyBudget = contextBudget - nonHistoryTokens - responseReserve
-   * 3. Walk messages from end to start, keeping as many as fit within historyBudget.
-   * 4. Always keep at least 2 messages (user+assistant pair).
-   * 5. Use findSafeCompactionBoundary() to avoid splitting assistant→tool pairs.
-   */
-  if (
-    typeof context.config?.contextBudget === "number" &&
-    context.config.contextBudget > 0 &&
-    context.chat.recentMessages.length > 3
-  ) {
-    const nonHistoryTokens = layers.reduce((sum, layer) => sum + layer.tokenCount, 0);
-    const fullHistoryTokens = estimateTokens(formatRecentMessages(context.chat.recentMessages));
-    const totalBeforeCompaction = nonHistoryTokens + fullHistoryTokens;
-
-    if (totalBeforeCompaction > context.config.contextBudget) {
-      const responseReserve = context.config.responseReserve ?? 0;
-      const historyBudget = Math.max(0, context.config.contextBudget - nonHistoryTokens - responseReserve);
-
-      // Walk from end, accumulating tokens until we exceed historyBudget
-      let accTokens = 0;
-      let keepCount = 0;
-      const allMsgs = context.chat.recentMessages;
-      for (let i = allMsgs.length - 1; i >= 0; i--) {
-        const msgTokens = estimateTokens(formatRecentMessages([allMsgs[i]]));
-        if (accTokens + msgTokens > historyBudget && keepCount >= 2) break;
-        accTokens += msgTokens;
-        keepCount++;
-      }
-      keepCount = Math.max(keepCount, 2);
-
-      const keepFrom = findSafeCompactionBoundary(
-        context.chat.recentMessages,
-        keepCount,
-      );
-      if (keepFrom > 0) {
-        recentMessagesForHistory = context.chat.recentMessages.slice(keepFrom);
-        const preservedTokens = estimateTokens(formatRecentMessages(recentMessagesForHistory));
-        const droppedCount = context.chat.recentMessages.length - recentMessagesForHistory.length;
-        compactionSummary =
-          `Kept ${recentMessagesForHistory.length} of ` +
-          `${context.chat.recentMessages.length} recent messages ` +
-          `(~${preservedTokens} tokens after compaction, ` +
-          `${totalBeforeCompaction} tokens before, ` +
-          `budget ${context.config.contextBudget}, ` +
-          `responseReserve ${responseReserve}).`;
-      }
-    }
-  }
-
-  const historyText = formatRecentMessages(recentMessagesForHistory);
-  if (historyText && resolver.enabled("chatHistory")) {
-    layers.push(
-      makeLayer({
-        id: PROMPT_LAYER_ID.recentHistory,
-        sourceType: PROMPT_LAYER_SOURCE_TYPE.chatHistory,
-        sourceId: context.identity.chatId,
-        sourceName: "Chat History",
-        priority: PROMPT_LAYER_PRIORITY.recentHistory,
-        subPosition: resolver.rank("chatHistory", DEFAULT_PROMPT_ORDER.chatHistory),
-        text: historyText,
-      }),
-    );
-  }
-
   if (context.character.mesExample?.trim() && resolver.enabled("dialogueExamples")) {
     const mesExampleMode = context.character.mesExampleMode ?? "always";
     const isFirstTurn = context.chat.recentMessages.length <= 1;
@@ -941,6 +869,41 @@ function buildLayers(context: PromptAssemblyContext, resolver: PositionResolver)
     });
     layer.injectionDepth = 0;
     layers.push(layer);
+  }
+
+  // All non-history layers must exist before planning. The planner measures the
+  // exact formatted history suffix, including role labels and separators.
+  const compactionPlan = planHistoryCompaction({
+    messages: context.chat.recentMessages,
+    nonHistoryTokens: layers.reduce((sum, layer) => sum + layer.tokenCount, 0),
+    contextBudget: context.config?.contextBudget,
+    responseReserve: context.config?.responseReserve,
+    countHistoryTokens: (messages) => estimateTokens(formatRecentMessages([...messages])),
+  });
+  if (compactionPlan) {
+    recentMessagesForHistory = compactionPlan.messages;
+    compactionSummary =
+      `Kept ${recentMessagesForHistory.length} of ` +
+      `${context.chat.recentMessages.length} recent messages ` +
+      `(~${compactionPlan.preservedHistoryTokens} tokens after compaction, ` +
+      `${compactionPlan.totalBeforeCompaction} tokens before, ` +
+      `budget ${context.config?.contextBudget}, ` +
+      `responseReserve ${compactionPlan.responseReserve}).`;
+  }
+
+  const historyText = formatRecentMessages(recentMessagesForHistory);
+  if (historyText && resolver.enabled("chatHistory")) {
+    layers.push(
+      makeLayer({
+        id: PROMPT_LAYER_ID.recentHistory,
+        sourceType: PROMPT_LAYER_SOURCE_TYPE.chatHistory,
+        sourceId: context.identity.chatId,
+        sourceName: "Chat History",
+        priority: PROMPT_LAYER_PRIORITY.recentHistory,
+        subPosition: resolver.rank("chatHistory", DEFAULT_PROMPT_ORDER.chatHistory),
+        text: historyText,
+      }),
+    );
   }
 
   return { layers, droppedLayers, compactionSummary, recentMessagesForHistory };

@@ -26,7 +26,7 @@ import type { AssemblePromptResponse } from "@vibe-tavern/domain";
 import type { ChatModeAssembleInput, ChatModeAssembleResult } from "./chat-mode-strategy.js";
 import { buildCoauthorTools, COAUTHOR_MAX_STEPS } from "./coauthor-tools.js";
 import { loadPromptAsset } from "../../shared/prompt-asset-loader.js";
-import { estimateTokens, findSafeCompactionBoundary, setModelHint } from "@vibe-tavern/prompt-pipeline";
+import { estimateTokens, planHistoryCompaction, setModelHint } from "@vibe-tavern/prompt-pipeline";
 import type { ToolCallPart, ToolResultPart } from "ai";
 import { getCoauthorModule, isSeedModule } from "../coauthor/modules/module-registry.js";
 
@@ -101,15 +101,17 @@ function renderLoreContext(entries: CoauthorLoreEntry[]): string {
   return ["# Lorebook context (read-only reference — do NOT edit)", ...blocks].join("\n");
 }
 
-function estimateCoauthorMessageTokens(msg: CoauthorHistoryMessage): number {
-  let contentStr = "";
-  if (msg.role === "tool") {
-    contentStr = JSON.stringify(msg.content);
-  } else {
-    contentStr = msg.content || "";
-    if (msg.toolCalls) contentStr += JSON.stringify(msg.toolCalls);
-  }
-  return estimateTokens(`${msg.role.toUpperCase()}: ${contentStr}`);
+function formatCoauthorHistoryMessages(messages: ReadonlyArray<CoauthorHistoryMessage>): string {
+  return messages.map((message) => {
+    const content = message.role === "tool"
+      ? JSON.stringify(message.content)
+      : `${message.content || ""}${message.toolCalls ? JSON.stringify(message.toolCalls) : ""}`;
+    return `${message.role.toUpperCase()}: ${content}`;
+  }).join("\n\n");
+}
+
+function estimateCoauthorHistoryTokens(messages: ReadonlyArray<CoauthorHistoryMessage>): number {
+  return estimateTokens(formatCoauthorHistoryMessages(messages));
 }
 
 /**
@@ -227,42 +229,23 @@ export async function assembleCoauthorPrompt(input: ChatModeAssembleInput): Prom
   let compactionSummary: string | undefined;
 
   const nonHistoryTokens = estimateTokens(systemContent);
-  let totalTokenEstimate = nonHistoryTokens + history.reduce((sum, msg) => sum + estimateCoauthorMessageTokens(msg), 0);
-
-  if (
-    typeof input.contextBudget === "number" &&
-    input.contextBudget > 0 &&
-    history.length > 3
-  ) {
-    const fullHistoryTokens = totalTokenEstimate - nonHistoryTokens;
-
-    if (totalTokenEstimate > input.contextBudget) {
-      const responseReserve = input.responseReserve ?? 0;
-      const historyBudget = Math.max(0, input.contextBudget - nonHistoryTokens - responseReserve);
-
-      let accTokens = 0;
-      let keepCount = 0;
-      for (let i = history.length - 1; i >= 0; i--) {
-        const msgTokens = estimateCoauthorMessageTokens(history[i]);
-        if (accTokens + msgTokens > historyBudget && keepCount >= 2) break;
-        accTokens += msgTokens;
-        keepCount++;
-      }
-      keepCount = Math.max(keepCount, 2);
-
-      const keepFrom = findSafeCompactionBoundary(history, keepCount);
-      if (keepFrom > 0) {
-        recentMessagesForHistory = history.slice(keepFrom);
-        const preservedTokens = recentMessagesForHistory.reduce((sum, msg) => sum + estimateCoauthorMessageTokens(msg), 0);
-        totalTokenEstimate = nonHistoryTokens + preservedTokens;
-        compactionSummary =
-          `Kept ${recentMessagesForHistory.length} of ` +
-          `${history.length} recent messages ` +
-          `(~${preservedTokens} tokens after compaction, ` +
-          `${nonHistoryTokens + fullHistoryTokens} tokens before, ` +
-          `budget: ${input.contextBudget}, reserve: ${responseReserve})`;
-      }
-    }
+  let totalTokenEstimate = nonHistoryTokens + estimateCoauthorHistoryTokens(history);
+  const compactionPlan = planHistoryCompaction({
+    messages: history,
+    nonHistoryTokens,
+    contextBudget: input.contextBudget,
+    responseReserve: input.responseReserve,
+    countHistoryTokens: estimateCoauthorHistoryTokens,
+  });
+  if (compactionPlan) {
+    recentMessagesForHistory = compactionPlan.messages;
+    totalTokenEstimate = nonHistoryTokens + compactionPlan.preservedHistoryTokens;
+    compactionSummary =
+      `Kept ${recentMessagesForHistory.length} of ` +
+      `${history.length} recent messages ` +
+      `(~${compactionPlan.preservedHistoryTokens} tokens after compaction, ` +
+      `${compactionPlan.totalBeforeCompaction} tokens before, ` +
+      `budget: ${input.contextBudget}, reserve: ${compactionPlan.responseReserve})`;
   }
 
   const finalPayload = {
@@ -343,7 +326,7 @@ export async function assembleCoauthorPrompt(input: ChatModeAssembleInput): Prom
     });
   }
 
-  const preservedTokens = recentMessagesForHistory.reduce((sum, msg) => sum + estimateCoauthorMessageTokens(msg), 0);
+  const preservedTokens = estimateCoauthorHistoryTokens(recentMessagesForHistory);
   layers.push({
     id: "chat_history",
     sourceType: "chat_history",

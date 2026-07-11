@@ -243,6 +243,27 @@ describe("assembleCoauthorPrompt", () => {
     }]);
   });
 
+  test("compacts when response reserve makes an otherwise fitting prompt exceed context", async () => {
+    const { setTokenCountFn } = await import("@vibe-tavern/prompt-pipeline");
+    setTokenCountFn((text: string) => text.length);
+    const loaders = makeLoaders({
+      messages: [
+        { id: "msg_1", role: "user", content: "Old user message." } as never,
+        { id: "msg_2", role: "assistant", content: "Old assistant message." } as never,
+        { id: "msg_3", role: "user", content: "Recent user message." } as never,
+        { id: "msg_4", role: "assistant", content: "Recent assistant message." } as never,
+      ],
+    });
+    const unbounded = await assembleCoauthorPrompt(makeInput(loaders));
+    const result = await assembleCoauthorPrompt(makeInput(loaders, {
+      contextBudget: unbounded.prompt.tokenAccounting.total + 5,
+      responseReserve: 10,
+    }));
+
+    expect(result.promptTraceDraft.compactionSummary).toBeDefined();
+    expect(result.prompt.tokenAccounting.recentHistory).toBeLessThan(4);
+  });
+
   test("CS-5: applies token compaction and preserves tool-call pairs", async () => {
     // Inject a fake token counter for this test so estimateTokens doesn't return 0
     const { setTokenCountFn } = await import("@vibe-tavern/prompt-pipeline");

@@ -72,6 +72,68 @@ export function estimateMessageArrayTokens(messages: Array<{ content: string }>)
  * @param preserveCount The minimum number of recent messages to preserve.
  * @returns The index of the first message to be preserved (everything before it can be summarized).
  */
+export interface HistoryCompactionPlan<T> {
+  messages: T[];
+  fullHistoryTokens: number;
+  preservedHistoryTokens: number;
+  totalBeforeCompaction: number;
+  responseReserve: number;
+}
+
+/**
+ * Plans the largest safe suffix of history that fits the complete prompt
+ * budget. The supplied counter must measure the exact history representation
+ * the caller will send, including role labels and separators.
+ *
+ * Returns `null` when no history needs dropping. When even the required two
+ * most-recent messages do not fit, it preserves them anyway; callers can then
+ * surface truthful accounting instead of splitting a conversational pair.
+ */
+export function planHistoryCompaction<T extends { role: string }>(input: {
+  messages: ReadonlyArray<T>;
+  nonHistoryTokens: number;
+  contextBudget: number | null | undefined;
+  responseReserve?: number;
+  countHistoryTokens: (messages: ReadonlyArray<T>) => number;
+  minPreservedMessages?: number;
+}): HistoryCompactionPlan<T> | null {
+  const { messages, nonHistoryTokens, contextBudget, countHistoryTokens } = input;
+  const responseReserve = Math.max(0, input.responseReserve ?? 0);
+  const minPreservedMessages = Math.max(1, input.minPreservedMessages ?? 2);
+
+  if (typeof contextBudget !== "number" || contextBudget <= 0 || messages.length <= minPreservedMessages) {
+    return null;
+  }
+
+  const fullHistoryTokens = countHistoryTokens(messages);
+  const totalBeforeCompaction = nonHistoryTokens + fullHistoryTokens;
+  if (totalBeforeCompaction + responseReserve <= contextBudget) {
+    return null;
+  }
+
+  const historyBudget = Math.max(0, contextBudget - nonHistoryTokens - responseReserve);
+  let keepCount = minPreservedMessages;
+  for (let candidateCount = minPreservedMessages + 1; candidateCount <= messages.length; candidateCount++) {
+    const candidate = messages.slice(messages.length - candidateCount);
+    if (countHistoryTokens(candidate) > historyBudget) break;
+    keepCount = candidateCount;
+  }
+
+  const keepFrom = findSafeCompactionBoundary(messages, keepCount);
+  if (keepFrom <= 0) {
+    return null;
+  }
+
+  const preservedMessages = messages.slice(keepFrom);
+  return {
+    messages: preservedMessages,
+    fullHistoryTokens,
+    preservedHistoryTokens: countHistoryTokens(preservedMessages),
+    totalBeforeCompaction,
+    responseReserve,
+  };
+}
+
 export function findSafeCompactionBoundary(
   messages: ReadonlyArray<{ role: string }>,
   preserveCount: number
