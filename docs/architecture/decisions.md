@@ -391,13 +391,13 @@ Adding a native provider (e.g. Vertex AI) meant touching all four sites and keep
 | **Strategy/enum per axis** | Separate registry per concern (capabilities, model, ops, samplers) | Four registries to keep in sync — same problem, relocated |
 | **One `ProtocolAdapter` per type** | A single object per `ProviderType` carrying capabilities + model resolution + limitations + probe/test/list | One edit site; the adapter is the protocol's complete description |
 
-**Decision:** One `ProtocolAdapter` object per `ProviderType`, registered in an exhaustive `Record<ProviderType, ProtocolAdapter>` in `domain/providers/protocol-registry.ts`. `resolveProtocol(type)` is the single lookup. The gateway is a thin delegator. The legacy `mapProfileToSdkModel` / `PROVIDER_CAPABILITIES` compat shims that initially bridged callers during the registry rollout have since been deleted (T3, 2026-06); all callers now go through `resolveProtocol()` directly.
+**Decision:** One complete `ProtocolAdapter` object per `ProviderType`, defined in its protocol's own `domain/providers/*-adapter.ts` module and registered by `domain/providers/protocol-registry.ts` in an exhaustive `Record<ProviderType, ProtocolAdapter>`. `resolveProtocol(type)` is the single lookup. The gateway is a thin delegator. The legacy `mapProfileToSdkModel` / `PROVIDER_CAPABILITIES` compat shims that initially bridged callers during the registry rollout have since been deleted (T3, 2026-06); all callers now go through `resolveProtocol()` directly.
 
 **Rationale:**
-- **One-site edits** — adding a native protocol is one object entry + one `protocols` record line, not a four-site lock-step edit
+- **One-site implementation** — adding a native protocol is one complete protocol module + one `protocols` record line, not a four-site lock-step edit
 - **Compile-time exhaustiveness** — the `Record<ProviderType, ProtocolAdapter>` is exhaustive over the union; a new `PROVIDER_TYPE` without an adapter is a type error, not a silent fallthrough
-- **Colocation** — a protocol's capabilities, model resolution, limitations, and HTTP ops sit together; nothing about one protocol is spread across files
-- **Gateway stays thin** — `provider-gateway.ts` only normalizes the preset and dispatches; per-protocol HTTP shapes live in the registry, not in a switch
+- **Colocation** — a protocol's capabilities, model resolution, limitations, and HTTP ops sit together in its own module; nothing about one protocol is spread across files
+- **Gateway stays thin** — `provider-gateway.ts` only normalizes the preset and dispatches; per-protocol HTTP shapes live in protocol modules, not in a switch
 - **Forward-looking axis** — the `textCompletion` capability flag is present on every adapter (default `false`) and is the sole switch needed to opt a protocol into Novel Mode's flat-prompt assembler (plan §5.3.3)
 
 **Trade-off:** One intentional switch remains: per-protocol sampler *wire serialization* in `buildSamplerConfig` (`infrastructure/ai/sampler-mapper.ts`). Native parameter names genuinely differ per protocol (`repeat_penalty` vs `repetition_penalty`, `typical` vs `typical_p`, etc.), so this is legitimate per-protocol logic, not a registry candidate. Capability *gating* is registry-driven (`SAMPLER_SETS`); only the wire *names* are switched.

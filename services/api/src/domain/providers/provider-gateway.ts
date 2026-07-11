@@ -3,13 +3,14 @@
  *
  * Public entry points for provider connection probing, test-chat, and model
  * listing. Each function normalises the raw preset to a {@link ProviderType}
- * and delegates to the matching {@link ProtocolAdapter} in
- * `protocol-registry.ts`.
+ * and delegates through `protocol-registry.ts` to the matching
+ * {@link ProtocolAdapter}.
  *
- * The per-protocol HTTP shapes (and capability/model-resolution logic) live in
- * the registry now — this file is just the dispatch surface + the
- * cross-cutting `requiresAuthForModels` guard. Adding a provider is a registry
- * entry, not an edit here.
+ * Per-protocol HTTP shapes (and capability/model-resolution logic) live in
+ * complete protocol modules; the registry is the exhaustive lookup table.
+ * This file is just the dispatch surface + the cross-cutting
+ * `requiresAuthForModels` guard. Adding a provider is a protocol module +
+ * registry entry, not an edit here.
  *
  * Refactor plan: `CODE_REVIEW_REFACTOR_PLAN.md` §5.3.2.
  */

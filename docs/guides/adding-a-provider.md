@@ -24,7 +24,9 @@ packages/domain/src/
 
 services/api/src/
 ├── domain/providers/
-│   ├── protocol-registry.ts  THE source of truth: one ProtocolAdapter per ProviderType
+│   ├── protocol-types.ts     shared ProtocolAdapter contracts (adapter modules import this leaf)
+│   ├── protocol-registry.ts  exhaustive ProtocolAdapter registration + lookup
+│   ├── *-adapter.ts          one complete adapter per protocol (model resolver + HTTP operations)
 │   ├── vendor-registry.ts    aggregator-specific /models quirks (VendorAdapter)
 │   ├── provider-orchestrator.ts  AUTH_REQUIRED_FOR_MODEL_LIST, model caching
 │   ├── provider-gateway.ts   thin dispatch surface (probe/test/list)
@@ -130,12 +132,16 @@ Register preset id(s) in `PRESET_TO_PROVIDER_TYPE`:
 [PROVIDER_TYPE.vertex]: PROVIDER_TYPE.vertex,
 ```
 
-### Step 3 — ProtocolAdapter (the core)
+### Step 3 — Protocol module + registry entry (the core)
 
-Add a `ProtocolAdapter` object in `services/api/src/domain/providers/protocol-registry.ts` and register it in the `protocols` record. This is where all per-protocol knowledge lives:
+Create `services/api/src/domain/providers/vertex-adapter.ts`. It owns the complete protocol description: capabilities, model resolver, limitations, and its `probe` / `testChat` / `listModels` HTTP operations. Import the contract from `protocol-types.ts`, **not** from `protocol-registry.ts`: the registry imports the adapter back, so importing through the registry would create an adapter → registry → adapter cycle.
 
 ```ts
-const vertexProtocol: ProtocolAdapter = {
+// vertex-adapter.ts
+import { PROVIDER_TYPE, SAMPLER_SETS } from "@vibe-tavern/domain";
+import type { ProtocolAdapter } from "./protocol-types.js";
+
+export const vertexProtocol: ProtocolAdapter = {
   id: PROVIDER_TYPE.vertex,
   capabilities: {
     nonStreamGeneration: true,
@@ -149,27 +155,32 @@ const vertexProtocol: ProtocolAdapter = {
   resolveModel(profile, model) {
     // Build the Vercel AI SDK LanguageModel for this protocol.
     // Usually createXxx() from the matching @ai-sdk/* package.
-    // See existing adapters (openaiCompatProtocol, googleProtocol) for patterns.
     throw new Error("TODO");
   },
   limitations: [
     "Describe any user-facing constraints, e.g. 'Tool calling not supported.'",
   ],
-  probe: probeVertexConnection,       // your connectivity-probe fn
-  testChat: testVertexChat,           // your minimal "Hi" generation fn
-  listModels: listVertexModels,       // your /models fetch fn
+  probe: probeVertexConnection,       // define in this module
+  testChat: testVertexChat,           // define in this module
+  listModels: listVertexModels,       // define in this module
 };
+```
 
-// Register it:
+The `probe` / `testChat` / `listModels` functions implement that protocol's HTTP shape. Copy the structure of the closest existing protocol module (e.g. `google-adapter.ts`) and adapt endpoints, headers, auth, and response parsing. Shared helpers (`buildHeaders`, `tryParseUrl`, `wrapProviderNetworkError`, `extractChoiceContent`, the timeout constants) live in `provider-transport.ts` — reuse them, do not reinvent.
+
+Register the completed adapter in the exhaustive lookup record:
+
+```ts
+// protocol-registry.ts
+import { vertexProtocol } from "./vertex-adapter.js";
+
 const protocols: Record<ProviderType, ProtocolAdapter> = {
   // ...existing
   [PROVIDER_TYPE.vertex]: vertexProtocol,
 };
 ```
 
-The `probe` / `testChat` / `listModels` functions implement that protocol's HTTP shape. Copy the structure of the closest existing protocol's functions (e.g. `probeGoogleConnection` / `testGoogleChat` / `listGoogleModels`) and adapt endpoints, headers, auth, and response parsing. Shared helpers (`buildHeaders`, `tryParseUrl`, `wrapProviderNetworkError`, `extractChoiceContent`, the timeout constants) live in `provider-transport.ts` — reuse them, do not reinvent.
-
-If the protocol has a **native (non-SDK)** text-completion shape like KoboldCPP or Ollama, create a dedicated adapter file (`domain/providers/vertex-adapter.ts`) exporting a `createVertexModel(...)` that returns a `LanguageModel`, and call it from `resolveModel`. See `ollama-adapter.ts` / `koboldcpp-adapter.ts` for the pattern.
+If the protocol has a **native (non-SDK)** request shape like KoboldCPP or Ollama, keep its native model wrapper in this same `vertex-adapter.ts` module and call it from `resolveModel`. See `ollama-adapter.ts` / `koboldcpp-adapter.ts` for the pattern; do not split a single protocol's adapter description across files.
 
 ### Step 4 — Sampler set
 
@@ -200,7 +211,7 @@ Verify: `bun run typecheck` (the exhaustive `protocols` record makes TypeScript 
 
 ## Capability flags reference
 
-`ProviderCapabilityFlags` (defined in `protocol-registry.ts`) drives the UI and the executors. Set them truthfully — they gate real behaviour.
+`ProviderCapabilityFlags` (defined in `protocol-types.ts`, re-exported by `protocol-registry.ts`) drives the UI and the executors. Set them truthfully — they gate real behaviour.
 
 | Flag | Meaning | If true | If false |
 |------|---------|---------|----------|
@@ -237,7 +248,7 @@ The `textCompletion` flag is present on every adapter (default `false` everywher
 ## Common mistakes
 
 - **Adding a `PROVIDER_TYPE` without a `protocols` entry** — TypeScript will error because the `protocols: Record<ProviderType, ProtocolAdapter>` is exhaustive. This is intentional; do not silence it.
-- **Putting vendor HTTP logic in `provider-gateway.ts`** — the gateway is a thin delegator. Per-protocol HTTP belongs in the registry; vendor `/models` quirks belong in `vendor-registry.ts`.
+- **Putting vendor HTTP logic in `provider-gateway.ts`** — the gateway is a thin delegator. Per-protocol HTTP belongs in that protocol's `*-adapter.ts` module; vendor `/models` quirks belong in `vendor-registry.ts`.
 - **Reinventing URL normalisation / headers / timeouts** — reuse `provider-transport.ts` helpers and the `PROBE_TIMEOUT_MS` / `MODEL_LIST_TIMEOUT_MS` / `TEST_CHAT_TIMEOUT_MS` constants.
 - **Hardcoding a sampler surface in the UI** — sampler visibility is driven by `resolveSamplerCapabilities` → `SAMPLER_SETS`. Add the set, don't special-case the component.
 - **Flipping `textCompletion` expecting Novel Mode to work** — it is a forward-looking flag; the text-completion request path is not wired yet (§5.3.3).

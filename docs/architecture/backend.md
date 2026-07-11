@@ -335,11 +335,11 @@ This pattern (cache keyed by input content in `context.state`) is the recommende
 
 ## AI Execution Layer
 
-The AI layer is split across two slices: **provider knowledge** lives in `domain/providers/` (the registry), and the **generation pipeline** lives in `infrastructure/ai/` (executors, sampler wiring, tokenizer, vision).
+The AI layer is split across two slices: **provider knowledge** lives in `domain/providers/` (complete per-protocol adapter modules plus the exhaustive registry lookup), and the **generation pipeline** lives in `infrastructure/ai/` (executors, sampler wiring, tokenizer, vision).
 
 ### Protocol registry — `domain/providers/protocol-registry.ts`
 
-The single source of truth for per-protocol behaviour. Each canonical `ProviderType` (defined in `packages/domain/src/platform-constants.ts`) has one `ProtocolAdapter` object that carries **everything** previously scattered across four hand-synced switch-ladders:
+The exhaustive registration and lookup boundary for per-protocol behaviour. Each canonical `ProviderType` (defined in `packages/domain/src/platform-constants.ts`) has one complete `ProtocolAdapter` object in its own protocol module (`openai-compat-adapter.ts`, `google-adapter.ts`, `ollama-adapter.ts`, and so on); `protocol-registry.ts` imports those constants into the exhaustive `Record<ProviderType, ProtocolAdapter>`. Each adapter carries **everything** previously scattered across four hand-synced switch-ladders:
 
 - `capabilities` — capability flags (`streaming`, `nonStreamGeneration`, `abortSignal`, `prefill`, `logitBias`, `samplers`, `textCompletion`). The derived `PROTOCOL_CAPABILITIES` map is exported for compat callers.
 - `resolveModel(profile, model)` — builds the Vercel AI SDK `LanguageModel` (chat model) for this protocol.
@@ -348,7 +348,7 @@ The single source of truth for per-protocol behaviour. Each canonical `ProviderT
 
 `resolveProtocol(type)` looks up the adapter. `normalizeProviderType(raw)` (in `packages/domain/src/provider-support.ts`) maps a raw preset id to a `ProviderType` via `PRESET_TO_PROVIDER_TYPE`, falling back to `openai_compat`.
 
-The 7 protocols: `openai_compat`, `anthropic`, `google`, `ollama`, `llamacpp`, `koboldcpp`, `unsloth`. Native (non-SDK) protocols (`ollama`, `koboldcpp`) have dedicated adapters (`ollama-adapter.ts`, `koboldcpp-adapter.ts`) for their text-completion API shapes.
+The 7 protocols: `openai_compat`, `anthropic`, `google`, `ollama`, `llamacpp`, `koboldcpp`, `unsloth`. Every protocol has a dedicated `*-adapter.ts` module; native (non-SDK) protocols (`ollama`, `koboldcpp`) additionally keep their `LanguageModelV3` wrappers in those same modules for their native API shapes.
 
 ### Model resolution — `infrastructure/ai/provider-executor-utils.ts`
 
@@ -356,12 +356,12 @@ The 7 protocols: `openai_compat`, `anthropic`, `google`, `ollama`, `llamacpp`, `
 
 ### Gateway & orchestrator — `domain/providers/`
 
-- `provider-gateway.ts` — public dispatch surface for probe / test-chat / model-list. `normalizeProviderType` → `resolveProtocol(type).<op>`. Plus the `requiresAuthForModels` guard. This is a thin delegator; the per-protocol HTTP shapes live in the registry, not here.
+- `provider-gateway.ts` — public dispatch surface for probe / test-chat / model-list. `normalizeProviderType` → `resolveProtocol(type).<op>`. Plus the `requiresAuthForModels` guard. This is a thin delegator; the per-protocol HTTP shapes live in protocol modules, not here.
 - `vendor-registry.ts` — aggregator-specific quirks for OpenAI-compat `/models` responses (OpenRouter, xAI, ElectronHub, Groq, etc.). `resolveVendor(baseUrl)` returns a `VendorAdapter` (match regex, optional `buildModelsUrl` / `extractRecords` / `filterRecords` / `extractCapabilities`). First match wins, else `genericVendor`. Adding a vendor that speaks standard OpenAI-compat = zero new code; a vendor with a non-standard model list = one `VendorAdapter` entry here.
 - `provider-orchestrator.ts` → `ProviderOrchestrator.refreshProfileModels()` composes `listProviderModels` + `provider-profile-service` caching + a `defaultModel` fallback.
 - `provider-transport.ts` — shared HTTP helpers (URL normalisation, header building, timeouts, `extractChoiceContent`, error wrapping) and the shared types (`ProviderConnectionInput`, `ProviderModelOption`, `ProviderProbeResult`, `TestChatResult`).
 
-**Why a registry:** Adding a native provider is one object entry in `protocol-registry.ts`, not a four-site lock-step edit. See [Adding a new AI provider](../guides/adding-a-provider.md).
+**Why a registry:** Adding a native provider is one complete protocol module plus one exhaustive-record entry in `protocol-registry.ts`, not a four-site lock-step edit. See [Adding a new AI provider](../guides/adding-a-provider.md).
 
 ### Sampler wiring — `infrastructure/ai/sampler-mapper.ts`
 
