@@ -1,6 +1,8 @@
 export { CharacterStore } from './character-store.js';
 export type { Character, CreateCharacterData, UpdateCharacterData } from './character-store.js';
 
+export { CharacterFolder } from './character-folder.js';
+
 export { VersionStore } from './version-store.js';
 
 export { CharacterAssetStore } from './character-asset-store.js';
