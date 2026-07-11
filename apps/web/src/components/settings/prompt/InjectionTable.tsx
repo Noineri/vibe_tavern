@@ -195,6 +195,16 @@ export function PromptOrderCanvas({ injections, onChange, draft, onUpdateField, 
   
   const sensors = useDndSensors();
 
+  // Single read index over `promptOrder`. Every slot helper below reads the
+  // canvas entry for an identifier O(1) via this Map instead of an O(N)
+  // `promptOrder.find()` — the former `defaultZones` sort comparator turned
+  // the read path into O(N²logN); this collapses it to O(NlogN). Rebuilt only
+  // when `promptOrder` changes.
+  const orderByIdentifier = useMemo(
+    () => new Map(promptOrder.map((e) => [e.identifier, e] as const)),
+    [promptOrder],
+  );
+
   // Content-only write: `name`/`content`/`role` live on the injection.
   // Positional state (`enabled`/`zone`/`depth`/`order`) is written via the
   // dedicated canvas callbacks (togglePromptSlot / updateSlotDepth) — never here.
@@ -224,7 +234,7 @@ export function PromptOrderCanvas({ injections, onChange, draft, onUpdateField, 
     ]);
   }
   function togglePromptSlot(identifier: string) {
-    const existing = promptOrder.find((entry) => entry.identifier === identifier);
+    const existing = orderByIdentifier.get(identifier);
     const enabled = existing?.enabled ?? true;
     const next = existing
       ? promptOrder.map((entry) => entry.identifier === identifier ? { ...entry, enabled: !enabled } : entry)
@@ -232,14 +242,14 @@ export function PromptOrderCanvas({ injections, onChange, draft, onUpdateField, 
     onPromptOrderChange?.(next);
   }
   function slotEnabled(identifier: string) {
-    return promptOrder.find((entry) => entry.identifier === identifier)?.enabled ?? true;
+    return orderByIdentifier.get(identifier)?.enabled ?? true;
   }
   function customIdentifier(injection: CustomInjection, index: number) {
     return injection.identifier || `custom_${index}`;
   }
 
   function slotLabelFor(identifier: string): string | null {
-    const entry = promptOrder.find(e => e.identifier === identifier);
+    const entry = orderByIdentifier.get(identifier);
     const zone = entry?.zone;
     if (!zone) return null;
     if (zone === "before_chat") return null;
@@ -249,7 +259,7 @@ export function PromptOrderCanvas({ injections, onChange, draft, onUpdateField, 
   }
 
   function slotDepthFor(identifier: string): number | null {
-    const entry = promptOrder.find(e => e.identifier === identifier);
+    const entry = orderByIdentifier.get(identifier);
     if (entry?.zone === "in_chat") return entry.depth ?? 4;
     return null;
   }
@@ -266,7 +276,7 @@ export function PromptOrderCanvas({ injections, onChange, draft, onUpdateField, 
   // SAME canvas entry as built-ins. Falls back to `inferSlot` from default order
   // when no canvas entry exists yet (e.g. a built-in never toggled/moved).
   function getCanvasItemSlot(item: CanvasItem): PromptSlot {
-    const existingOrder = promptOrder.find(e => e.identifier === item.identifier);
+    const existingOrder = orderByIdentifier.get(item.identifier);
     if (existingOrder?.zone) {
       return { zone: existingOrder.zone, depth: existingOrder.depth ?? null, order: existingOrder.order ?? item.defaultOrder };
     }
@@ -310,7 +320,7 @@ export function PromptOrderCanvas({ injections, onChange, draft, onUpdateField, 
       defaultOrder,
       injectionIndex: i,
       render: () => {
-        const entry = promptOrder.find(e => e.identifier === identifier);
+        const entry = orderByIdentifier.get(identifier);
         const slot: PromptSlot = entry?.zone
           ? { zone: entry.zone, depth: entry.depth ?? null, order: entry.order ?? defaultOrder }
           : inferSlot({ defaultOrder, order: defaultOrder });
@@ -331,9 +341,18 @@ export function PromptOrderCanvas({ injections, onChange, draft, onUpdateField, 
     };
   });
 
-  const canvasItems = useMemo(() => [...canvasFixedItems, ...customItems], [canvasFixedItems, customItems]);
+  // NOTE: `canvasItems` and `defaultZones` below are intentionally NOT memoized.
+  // `fixedItems`/`customItems` are rebuilt each render (they close over `t`,
+  // `draft`, `characterDraft`, and the slot helpers), so a useMemo over them
+  // would bust every render anyway — the former useMemo wrappers were no-ops
+  // that only misled. With the `orderByIdentifier` Map index above, the
+  // `defaultZones` build is O(N·log N) (the sort comparator reads the Map in
+  // O(1)), cheap at the canvas's ~15-20 items. The DnD invariant is unaffected:
+  // `activeZones` (null-on-start, no useEffect sync) is independent state — see
+  // the WARNING above.
+  const canvasItems = [...canvasFixedItems, ...customItems];
 
-  const defaultZones: ZonesState = useMemo(() => {
+  const defaultZones: ZonesState = (() => {
     const zones: ZonesState = {
       before_chat: [], after_chat: [], depth4: [], depth3: [], depth2: [], depth1: []
     };
@@ -353,7 +372,7 @@ export function PromptOrderCanvas({ injections, onChange, draft, onUpdateField, 
       zones[key].sort((a, b) => getCanvasItemSlot(a).order - getCanvasItemSlot(b).order);
     }
     return zones;
-  }, [canvasItems]);
+  })();
 
   const [activeZones, setActiveZones] = useState<ZonesState | null>(null);
 
