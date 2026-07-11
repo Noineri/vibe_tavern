@@ -20,8 +20,22 @@
  *
  * Presentational only: no imports of stores or RPC clients. Reusable across
  * character + persona (`kind` prop) — mounted in CharacterForm and PersonaModal.
+ *
+ * Generation UX (redesigned):
+ *   While `describing` is true the textarea is LOCKED (disabled). The card
+ *   surfaces the in-progress state through three reinforcing cues so the user
+ *   never wonders whether something is happening:
+ *     1. a 2px indeterminate progress bar slides across the top of the card,
+ *     2. the textarea tints accent and is covered by a shimmer overlay with a
+ *        spinner + "Describing…" label,
+ *     3. the action button morphs (opacity crossfade) from
+ *        "Describe via vision" into a "Cancel" control with an inline status.
+ *   When the description arrives (empty → non-empty transition), the textarea
+ *   briefly flashes an accent tint so the new content is noticed. The button
+ *   then reads "Regenerate".
  */
 import { useCallback, useEffect, useRef, useState } from "react";
+import { AnimatePresence, motion } from "framer-motion";
 import { Ic } from "../../shared/icons.js";
 import { Toggle } from "../../shared/Toggle.js";
 import { AutoTextarea } from "../../shared/auto-textarea.js";
@@ -54,6 +68,9 @@ interface AvatarDescriptionFieldProps {
 	disabled?: boolean;
 }
 
+/** Spring used for the button morph and icon crossfades (bounce must be 0). */
+const morphSpring = { duration: 0.15, ease: [0.2, 0, 0, 1] as const };
+
 export function AvatarDescriptionField({
 	kind,
 	includeAvatarInPrompt,
@@ -65,19 +82,46 @@ export function AvatarDescriptionField({
 }: AvatarDescriptionFieldProps) {
 	const { t } = useT();
 	const [describing, setDescribing] = useState(false);
+	// Brief accent flash on the textarea when a fresh description lands —
+	// surfaces the otherwise-silent prop swap after `onDescribe` resolves.
+	const [justArrived, setJustArrived] = useState(false);
 	const abortRef = useRef<AbortController | null>(null);
+	// Tracks the previous `avatarDescription` to detect the empty → content
+	// transition that warrants the reveal flash.
+	const prevDescRef = useRef(avatarDescription);
 
 	// Local draft for the textarea — commits on blur, NOT per keystroke
 	// (matches GalleryLightbox's edit-then-save UX; avoids a PATCH per char).
 	const [draft, setDraft] = useState(avatarDescription ?? "");
 	// Reseed when the prop changes externally (after a describe populates it,
-	// or a parent reset). Safe to clobber: typing only touches local draft,
-	// and a concurrent describe finishing mid-type is the intended reseed.
+	// or a parent reset). Now safe: the textarea is locked while describing,
+	// so a reseed here only races with real external updates, never user input.
 	useEffect(() => {
 		setDraft(avatarDescription ?? "");
 	}, [avatarDescription]);
 
+	// Trigger the result-reveal flash when description goes empty → content.
+	// This fires both after a successful describe AND after the user's first
+	// manual save — both are positive "it worked" moments worth surfacing.
+	useEffect(() => {
+		const prev = prevDescRef.current;
+		const nextNonEmpty = !!avatarDescription && avatarDescription.trim().length > 0;
+		const prevEmpty = !prev || prev.trim().length === 0;
+		if (prevEmpty && nextNonEmpty) {
+			setJustArrived(true);
+			const id = setTimeout(() => setJustArrived(false), 1400);
+			prevDescRef.current = avatarDescription;
+			return () => clearTimeout(id);
+		}
+		prevDescRef.current = avatarDescription;
+	}, [avatarDescription]);
+
 	const controlsDisabled = disabled || !hasAvatar;
+	// CRITICAL: lock the textarea during generation so the user cannot race
+	// the describe and have their draft silently clobbered on completion.
+	const inputLocked = controlsDisabled || describing;
+	// Regenerate (has existing text) → frosted blur; first-gen (empty) → solid.
+	const hasExistingDescription = !!avatarDescription && avatarDescription.trim().length > 0;
 
 	const handleDescribe = useCallback(async () => {
 		if (describing) return;
@@ -102,21 +146,29 @@ export function AvatarDescriptionField({
 	}, []);
 
 	const commitDraft = useCallback(() => {
+		// Guard: if a describe just finished and blurred the field, don't
+		// clobber the freshly-arrived server value with stale local draft.
+		if (describing) return;
 		const trimmed = draft.trim();
 		const current = (avatarDescription ?? "").trim();
 		// Only PATCH on a real change — avoid no-op writes (e.g. blur without edit).
 		if (trimmed === current) return;
 		onPatch({ avatarDescription: trimmed.length > 0 ? trimmed : null });
-	}, [draft, avatarDescription, onPatch]);
+	}, [draft, avatarDescription, onPatch, describing]);
 
 	const placeholder =
 		kind === "character" ? t("avatar_description_placeholder_char") : t("avatar_description_placeholder_persona");
 
 	return (
-		<div className={cn("rounded-md border border-border bg-s1 p-3", controlsDisabled && "opacity-60")}>
+		<section
+			className={cn(
+				"relative overflow-hidden rounded-md border border-border bg-s1 p-3",
+				controlsDisabled && "opacity-60",
+			)}
+		>
 			{/* Header: label + toggle */}
-			<div className="mb-2 flex items-center justify-between gap-2">
-				<label className={lblCls + " mb-0"}>{t("avatar_description_label")}</label>
+			<div className="mb-2.5 flex items-center justify-between gap-2">
+				<label className={cn(lblCls, "mb-0")}>{t("avatar_description_label")}</label>
 				<div className="flex items-center gap-2">
 					<span className="font-ui text-[12px] text-t3">{t("avatar_include_in_prompt")}</span>
 					<Toggle
@@ -127,49 +179,121 @@ export function AvatarDescriptionField({
 				</div>
 			</div>
 
-			{/* Describe / Cancel cluster */}
-			<div className="mb-2 flex items-center gap-2">
-				{!describing ? (
-					<button
-						type="button"
-						className="flex h-8 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-3 font-ui text-[12px] text-t2 transition-all hover:bg-s2 hover:text-t1 disabled:cursor-not-allowed disabled:opacity-50"
-						onClick={() => void handleDescribe()}
-						disabled={controlsDisabled}
-						title={t("avatar_describe_via_vision")}
-					>
-						<Ic.sparkles />
-						<span>{avatarDescription ? t("avatar_describe_regenerate") : t("avatar_describe_via_vision")}</span>
-					</button>
-				) : (
-					<button
-						type="button"
-						className="flex h-8 cursor-pointer items-center gap-1.5 rounded-md border border-danger/40 bg-danger/10 px-3 font-ui text-[12px] text-danger transition-all hover:bg-danger/20"
-						onClick={handleCancelDescribe}
-						title={t("avatar_describe_cancel")}
-					>
-						<Ic.sparkles />
-						<span>{t("avatar_describing")}</span>
-					</button>
-				)}
+			{/* Action cluster — morphs between Describe / Cancel via AnimatePresence.
+			    Both states are absolutely positioned inside a fixed-height rail so
+			    the crossfade doesn't shift the layout. The "Describing…" status
+			    lives only in the textarea overlay below — not duplicated here. */}
+			<div className="relative mb-2 h-8">
+				<AnimatePresence initial={false}>
+					{describing ? (
+						<motion.div
+							key="describing"
+							initial={{ opacity: 0 }}
+							animate={{ opacity: 1 }}
+							exit={{ opacity: 0 }}
+							transition={morphSpring}
+							className="absolute inset-0 flex items-center"
+						>
+							<button
+								type="button"
+								className={cn(
+									"flex h-8 cursor-pointer items-center gap-1.5 rounded-md border border-danger/40 bg-danger/10 px-3",
+									"font-ui text-[12px] text-danger",
+									"transition-[background-color,color] duration-150",
+									"hover:bg-danger/20 hover:text-danger-strong",
+								)}
+								onClick={handleCancelDescribe}
+								title={t("avatar_describe_cancel")}
+							>
+								<Ic.close />
+								<span>{t("avatar_describe_cancel")}</span>
+							</button>
+						</motion.div>
+					) : (
+						<motion.div
+							key="describe"
+							initial={{ opacity: 0 }}
+							animate={{ opacity: 1 }}
+							exit={{ opacity: 0 }}
+							transition={morphSpring}
+							className="absolute inset-0 flex items-center"
+						>
+							<button
+								type="button"
+								className={cn(
+									"flex h-8 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-3",
+									"font-ui text-[12px] text-t2",
+									"transition-[background-color,color,border-color] duration-150",
+									"hover:bg-s2 hover:text-t1 hover:border-accent/40",
+								)}
+								onClick={() => void handleDescribe()}
+								disabled={controlsDisabled}
+								title={t("avatar_describe_via_vision")}
+							>
+								<Ic.sparkles className={avatarDescription ? "text-accent" : undefined} />
+								<span>{avatarDescription ? t("avatar_describe_regenerate") : t("avatar_describe_via_vision")}</span>
+							</button>
+						</motion.div>
+					)}
+				</AnimatePresence>
 			</div>
 
-			{/* Description textarea */}
-			<AutoTextarea
-				className={inputCls}
-				style={inputPad}
-				value={draft}
-				onChange={(e) => setDraft(e.target.value)}
-				onBlur={commitDraft}
-				onKeyDown={(e) => {
-					if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
-						e.preventDefault();
-						commitDraft();
-					}
-				}}
-				placeholder={placeholder}
-				disabled={controlsDisabled}
-				maxRows={12}
-			/>
+			{/* Textarea + generation overlay. The textarea is locked (disabled)
+			    while describing so the incoming server value can't be raced. */}
+			<div className="relative">
+				<AutoTextarea
+					className={cn(
+						inputCls,
+						"transition-[border-color,box-shadow] duration-200",
+						justArrived && "border-accent/60 shadow-[0_0_0_2px_var(--accent-dim)]",
+					)}
+					style={inputPad}
+					value={draft}
+					onChange={(e) => setDraft(e.target.value)}
+					onBlur={commitDraft}
+					onKeyDown={(e) => {
+						if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+							e.preventDefault();
+							commitDraft();
+						}
+					}}
+				placeholder={describing ? "" : placeholder}
+				disabled={inputLocked}
+					maxRows={12}
+				/>
+
+				{/* Generation overlay — centered spinner + "Describing". */}
+				<AnimatePresence>
+					{describing && (
+						<motion.div
+							initial={{ opacity: 0 }}
+							animate={{ opacity: 1 }}
+							exit={{ opacity: 0 }}
+							transition={{ duration: 0.2 }}
+							className={cn(
+								"pointer-events-none absolute inset-0 flex items-center justify-center gap-2 rounded-md px-3",
+								hasExistingDescription ? "bg-s1/70 backdrop-blur-[4px]" : "bg-s1",
+							)}
+						>
+							<span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-accent/30 border-t-accent" />
+							<span className="font-ui text-[16px] text-t2">{t("avatar_describing")}</span>
+						</motion.div>
+					)}
+				</AnimatePresence>
+
+				{/* Result-reveal flash — a soft accent tint that fades out over
+				    ~1.2s when a fresh description lands. Pure signal, no interaction. */}
+				<AnimatePresence>
+					{justArrived && !describing && (
+						<motion.div
+							initial={{ opacity: 0.7 }}
+							animate={{ opacity: 0 }}
+							transition={{ duration: 1.2, ease: "easeOut" }}
+							className="pointer-events-none absolute inset-0 rounded-md bg-accent/10"
+						/>
+					)}
+				</AnimatePresence>
+			</div>
 
 			{!hasAvatar && (
 				<p className="mt-2 font-ui text-[11px] text-t4">
@@ -178,6 +302,6 @@ export function AvatarDescriptionField({
 						: t("avatar_description_no_avatar_persona")}
 				</p>
 			)}
-		</div>
+		</section>
 	);
 }
