@@ -46,8 +46,13 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
     defaultValues: EMPTY_BUILD_DRAFT,
   });
 
-  const { register, formState: { errors, isSubmitting, isDirty }, watch, setValue, getValues } = form;
-  const busy = isSubmitting;
+  const { register, formState: { errors, isDirty }, watch, setValue, getValues } = form;
+  // `isSubmitting` never flips here — the save button is type="button" (no native
+  // form submit) — so a local submitting flag + re-entry ref drive the in-flight
+  // UI and prevent a double-click from firing two creates.
+  const [submitting, setSubmitting] = useState(false);
+  const submittingRef = useRef(false);
+  const busy = submitting;
   const name = watch("name");
   const alternateGreetings = watch("alternateGreetings") || [];
   const tags = watch("tags") || [];
@@ -111,7 +116,9 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
   }
 
   async function handleSave() {
-    if (!canSave) return;
+    if (!canSave || submittingRef.current) return;
+    submittingRef.current = true;
+    setSubmitting(true);
     const v = getValues();
     await onSave(
       {
@@ -132,7 +139,10 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
       },
       avatar.file,
       avatar.originalFile,
-    );
+    ).finally(() => {
+      submittingRef.current = false;
+      setSubmitting(false);
+    });
   }
 
   return (
