@@ -88,7 +88,7 @@ export function CharacterFieldCard({ identifier, enabled = true, onToggle, label
             )}
           </div>
           <AutoTextarea
-            className="w-full resize-none overflow-hidden rounded-md border border-border bg-s2 px-2.5 py-2 font-mono text-[12px] leading-[1.6] text-t1 outline-none focus:border-accent"
+            className="w-full resize-none rounded-md border border-border bg-s2 px-2.5 py-2 font-mono text-[12px] leading-[1.6] text-t1 outline-none focus:border-accent"
             style={{}}
             minRows={4}
             value={value}

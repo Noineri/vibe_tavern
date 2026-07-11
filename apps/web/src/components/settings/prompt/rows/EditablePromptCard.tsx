@@ -73,7 +73,7 @@ export function EditablePromptCard({ identifier, enabled = true, onToggle, label
             </CustomTooltip>
           )}
           <AutoTextarea
-            className="w-full resize-none overflow-hidden rounded-md border border-border bg-s2 px-2.5 py-2 font-mono text-[12px] leading-[1.6] text-t1 outline-none focus:border-accent disabled:opacity-60"
+            className="w-full resize-none rounded-md border border-border bg-s2 px-2.5 py-2 font-mono text-[12px] leading-[1.6] text-t1 outline-none focus:border-accent disabled:opacity-60"
             style={{}}
             minRows={6}
             value={value}
