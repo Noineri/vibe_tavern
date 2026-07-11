@@ -9,8 +9,9 @@ import type { AssemblyMode } from "./types.js";
 import { estimateTokens, planHistoryCompaction } from "./compaction.js";
 import { createFullMacroEngine } from "./macro-registry.js";
 import { buildPromptVariableContext, type PromptVariableContext } from "./prompt-variable-context.js";
-import { inferSlot, DEFAULT_PROMPT_ORDER, tag } from "@vibe-tavern/domain";
+import { DEFAULT_PROMPT_ORDER, tag } from "@vibe-tavern/domain";
 import { createResolver, type PositionResolver } from "./resolvers/position-resolver.js";
+import { buildLoreLayers } from "./build-lore-layers.js";
 import {
   DEFAULT_PROMPT_LAYER_PRIORITY,
   LAYER_MODES,
@@ -109,35 +110,6 @@ function sortLayers(layers: PromptLayer[]): PromptLayer[] {
 }
 
 const phaseOneMacroEngine = createFullMacroEngine();
-
-/**
- * Compute a lore entry's subPosition relative to a built-in anchor slot
- * (authorsNote / dialogueExamples) or its world-info slot, via the resolver's
- * rank. Mode-blind: simple uses DEFAULT_PROMPT_ORDER, advanced uses the canvas.
- */
-function lorePromptSubPosition(
-  resolver: PositionResolver,
-  lorePosition: string | undefined,
-  worldInfoIdentifier: string | null,
-  fallbackSubPosition: number | undefined,
-): number | undefined {
-  switch (lorePosition) {
-    case "top_an":
-      return resolver.rank("authorsNote") - 0.1;
-    case "bottom_an":
-      return resolver.rank("authorsNote") + 0.1;
-    case "before_examples":
-      return resolver.rank("dialogueExamples") - 0.1;
-    case "after_examples":
-      return resolver.rank("dialogueExamples") + 0.1;
-    default:
-      // Only before_char/after_char carry a worldInfoIdentifier. For
-      // pipeline-native positions (in_prompt/in_chat/etc.) or anything else
-      // without a marker, fall back to the resolved subPosition.
-      if (!worldInfoIdentifier) return fallbackSubPosition;
-      return resolver.rank(worldInfoIdentifier, DEFAULT_PROMPT_ORDER[worldInfoIdentifier] ?? fallbackSubPosition);
-  }
-}
 
 function buildAssemblyVariableContext(context: PromptAssemblyContext): PromptVariableContext {
   return buildPromptVariableContext({
@@ -630,109 +602,9 @@ function buildLayers(context: PromptAssemblyContext, resolver: PositionResolver)
     );
   }
 
-  for (const loreEntry of context.lore ?? []) {
-    if (!loreEntry.content.trim()) {
-      droppedLayers.push({ id: loreEntry.id, reason: PROMPT_LAYER_REASON.emptyLoreContent });
-      continue;
-    }
-
-    // Map legacy lorebook position strings to pipeline positions.
-    // If the position is already a pipeline position, pass through unchanged.
-    const resolvedPosition = (() => {
-      switch (loreEntry.position) {
-        case "before_char":    return "in_prompt";
-        case "after_char":     return "in_prompt";
-        case "before_examples": return "in_prompt";
-        case "after_examples":  return "in_prompt";
-        case "top_an":         return "in_prompt";
-        case "bottom_an":      return "in_prompt";
-        case "at_depth":       return "in_chat";
-        case "outlet":         return "hidden_system";
-        // Pipeline-native positions pass through unchanged
-        case "before_prompt":  return "before_prompt";
-        case "in_prompt":      return "in_prompt";
-        case "in_chat":        return "in_chat";
-        case "hidden_system":  return "hidden_system";
-        default:                return "in_prompt";
-      }
-    })();
-
-    // Map ST position to subPosition for fine-grained WI Anchor ordering
-    const subPos = (() => {
-      switch (loreEntry.position) {
-        case "after_char":     return IN_PROMPT_SUB_POSITION.afterChar;
-        case "top_an":         return IN_PROMPT_SUB_POSITION.beforeAuthorNote;
-        case "bottom_an":      return IN_PROMPT_SUB_POSITION.afterAuthorNote;
-        case "before_examples": return IN_PROMPT_SUB_POSITION.beforeExamples;
-        case "after_examples":  return IN_PROMPT_SUB_POSITION.afterExamples;
-        default:                return undefined;
-      }
-    })();
-
-    // Only `before_char` and `after_char` map onto the worldInfoBefore /
-    // worldInfoAfter prompt-order markers (matching ST: only position 0 →
-    // WIBeforeEntries, only position 1 → WIAfterEntries). Other ST positions
-    // (top_an, bottom_an, at_depth, before/after_examples, outlet) route to
-    // their own slots and must NOT be dropped when a WI marker is disabled.
-    // See lorebook-st-parity-audit.md §2.1.
-    const worldInfoIdentifier = loreEntry.position === "before_char"
-      ? "worldInfoBefore"
-      : loreEntry.position === "after_char" ? "worldInfoAfter" : null;
-    if (worldInfoIdentifier && !resolver.enabled(worldInfoIdentifier)) {
-      droppedLayers.push({ id: loreEntry.id, reason: `skipped: ${worldInfoIdentifier} disabled by prompt order` });
-      continue;
-    }
-
-    const layer = makeLayer({
-      id: createLoreLayerId(loreEntry.id),
-      sourceType: PROMPT_LAYER_SOURCE_TYPE.loreEntry,
-      sourceId: loreEntry.id,
-      sourceName: loreEntry.title || loreEntry.id,
-      position: resolvedPosition,
-      priority: loreEntry.priority,
-      role: loreEntry.role,
-      subPosition: lorePromptSubPosition(resolver, loreEntry.position, worldInfoIdentifier, subPos),
-      insertionOrder: loreEntry.sortOrder,
-      reason: PROMPT_LAYER_REASON.activatedLoreEntry,
-      text: joinNonEmpty([loreEntry.title ? PROMPT_FORMAT.loreHeader(loreEntry.title) : null, loreEntry.content]),
-    });
-
-    // Determine lore placement from the worldInfo slot's canvas zone.
-    // The canvas stores { zone, order, depth } on each promptOrder entry.
-    // Zone is the authoritative source of truth for where lore entries land —
-    // but ONLY in advanced mode, and ONLY for before_char/after_char entries
-    // (the two positions that map onto a WI marker). Other positions already
-    // resolved to the right slot above and must not be overridden by the
-    // marker's zone. Simple mode ignores the canvas entirely.
-    if (worldInfoIdentifier) {
-      const worldInfoOrderEntry = resolver.worldInfoEntry(worldInfoIdentifier);
-      if (worldInfoOrderEntry?.zone && layer.position !== "hidden_system") {
-        if (worldInfoOrderEntry.zone === "after_chat") {
-          layer.position = "in_chat";
-          layer.injectionDepth = 0;
-        } else if (worldInfoOrderEntry.zone === "in_chat") {
-          layer.position = "in_chat";
-          layer.injectionDepth = worldInfoOrderEntry.depth ?? 0;
-        }
-        // "before_chat" stays in_prompt (default from resolvedPosition)
-      } else {
-        // Legacy/simple fallback: no canvas zone — infer from defaults
-        const inferred = inferSlot({ defaultOrder: DEFAULT_PROMPT_ORDER[worldInfoIdentifier] });
-        if (inferred.zone === "after_chat" && layer.position !== "hidden_system") {
-          layer.position = "in_chat";
-          layer.injectionDepth = 0;
-        }
-      }
-    }
-
-    // at_depth injects into chat history at a specific depth
-    if (loreEntry.position === "at_depth") {
-      layer.position = "in_chat";
-      layer.injectionDepth = loreEntry.depth ?? 4;
-    }
-
-    layers.push(layer);
-  }
+  const loreResult = buildLoreLayers({ lore: context.lore, resolver });
+  layers.push(...loreResult.layers);
+  droppedLayers.push(...loreResult.droppedLayers);
 
   for (const memory of context.memory?.summary ?? []) {
     if (!memory.summary.trim()) {
