@@ -67,16 +67,6 @@ interface ScriptPanelProps {
 
 // Templates are imported from scriptTemplates.ts
 
-/** Strip markdown code fences that AI models sometimes wrap their output in */
-function cleanAiCode(raw: string): string {
-  let code = raw.trim();
-  // Remove opening fence: ```js, ```javascript, ```
-  code = code.replace(/^```(?:js|javascript)?\s*\n?/i, '');
-  // Remove closing fence
-  code = code.replace(/\n?```\s*$/,'');
-  return code.trim();
-}
-
 /** Sortable wrapper for a script card in the list view. Mirrors LoreEntryList's
  *  SortableEntryCard: desktop drags the whole card (MouseSensor distance: 2
  *  keeps click-vs-drag distinct), mobile uses a ≡ handle as the activator. */
