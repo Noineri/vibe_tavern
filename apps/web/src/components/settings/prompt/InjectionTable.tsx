@@ -23,11 +23,8 @@ import { cn } from "../../../lib/cn.js";
 import { useIsMobile } from "../../../hooks/use-mobile.js";
 import { useDndSensors } from "../../../hooks/use-dnd-sensors.js";
 import { DragHandleContext } from "./drag-handle.js";
-import type { PromptCanvasDraft } from "./canvas-shared.js";
-import { PromptOrderMarker } from "./rows/PromptOrderMarker.js";
-import { EditablePromptCard } from "./rows/EditablePromptCard.js";
-import { EditableAuthorNoteCard } from "./rows/EditableAuthorNoteCard.js";
-import { CharacterFieldCard } from "./rows/CharacterFieldCard.js";
+import { buildFixedItems } from "./build-fixed-items.js";
+import type { CanvasItem, CharacterCanvasDraft, PromptCanvasDraft } from "./canvas-shared.js";
 import { InjectionRowView } from "./rows/InjectionRowView.js";
 
 // NOTE (CANVAS_SINGLE_SOURCE_PLAN Wave 4): injection rows are content-only
@@ -35,13 +32,10 @@ import { InjectionRowView } from "./rows/InjectionRowView.js";
 // (enabled/zone/depth/order) lives on the matching `PromptOrderEntry` in
 // `promptOrder` — the canvas is the single source of truth.
 
-export type CharacterCanvasDraft = {
-  charSystemPrompt: string;
-  charPostHistory: string;
-  charDepthPrompt: string;
-  charDepthPromptDepth: number;
-  charDepthPromptRole: string;
-};
+// `CharacterCanvasDraft` + `CanvasItem` now live in `canvas-shared.ts` (shared with
+// `build-fixed-items.tsx` + the row components); re-exported here for
+// `PromptManagerModal` + the characterization test, which import it from here.
+export type { CharacterCanvasDraft };
 
 interface InjectionTableProps {
   injections: CustomInjection[];
@@ -73,11 +67,6 @@ function DroppableDepthContainer({ id, depth, children, label, className }: { id
     </div>
   );
 }
-
-type CanvasItem =
-  | { key: string; identifier: string; kind: "slot"; defaultOrder: number; render: () => ReactNode }
-  | { key: string; identifier: string; kind: "field"; defaultOrder: number; render: () => ReactNode }
-  | { key: string; identifier: string; kind: "custom"; defaultOrder: number; injectionIndex: number; render: () => ReactNode };
 
 type ZonesState = {
   before_chat: CanvasItem[];
@@ -239,26 +228,7 @@ export function PromptOrderCanvas({ injections, onChange, draft, onUpdateField, 
     return inferSlot({ defaultOrder: item.defaultOrder, order: existingOrder?.order ?? item.defaultOrder });
   }
 
-  const fixedItems: CanvasItem[] = [
-    { key: "field:main", identifier: "main", kind: "field", defaultOrder: 0, render: () => <EditablePromptCard identifier="main" enabled={slotEnabled("main")} onToggle={togglePromptSlot} label={t("system_prompt")} role="system" value={draft?.system ?? ""} placeholder={t("system_prompt_placeholder")} disabled={!draft || !onUpdateField} onChange={(value) => onUpdateField?.("system", value)} slotLabel={slotLabelFor("main")} slotDepth={slotDepthFor("main")} onSlotDepthChange={(d) => updateSlotDepth("main", d)} /> },
-    { key: "slot:worldInfoBefore", identifier: "worldInfoBefore", kind: "slot", defaultOrder: 10, render: () => <PromptOrderMarker identifier="worldInfoBefore" label={t("prompt_slot_world_info_before")} tooltip={t("prompt_slot_world_info_before_hint")} kind="marker" enabled={slotEnabled("worldInfoBefore")} onToggle={togglePromptSlot} /> },
-    { key: "slot:personaDescription", identifier: "personaDescription", kind: "slot", defaultOrder: 20, render: () => <PromptOrderMarker identifier="personaDescription" label={t("prompt_slot_persona")} kind="builtIn" enabled={slotEnabled("personaDescription")} onToggle={togglePromptSlot} /> },
-    { key: "slot:charDescription", identifier: "charDescription", kind: "slot", defaultOrder: 30, render: () => <PromptOrderMarker identifier="charDescription" label={t("prompt_slot_character_description")} kind="builtIn" enabled={slotEnabled("charDescription")} onToggle={togglePromptSlot} /> },
-    { key: "slot:charPersonality", identifier: "charPersonality", kind: "slot", defaultOrder: 40, render: () => <PromptOrderMarker identifier="charPersonality" label={t("prompt_slot_character_personality")} kind="builtIn" enabled={slotEnabled("charPersonality")} onToggle={togglePromptSlot} /> },
-    { key: "slot:scenario", identifier: "scenario", kind: "slot", defaultOrder: 50, render: () => <PromptOrderMarker identifier="scenario" label={t("scenario")} kind="builtIn" enabled={slotEnabled("scenario")} onToggle={togglePromptSlot} /> },
-    { key: "field:authorsNote", identifier: "authorsNote", kind: "field", defaultOrder: 60, render: () => <EditableAuthorNoteCard identifier="authorsNote" enabled={slotEnabled("authorsNote")} onToggle={togglePromptSlot} draft={draft} onUpdateField={onUpdateField} slotLabel={slotLabelFor("authorsNote")} slotDepth={slotDepthFor("authorsNote")} onSlotDepthChange={(d) => updateSlotDepth("authorsNote", d)} /> },
-    { key: "field:enhanceDefinitions", identifier: "enhanceDefinitions", kind: "field", defaultOrder: 70, render: () => <EditablePromptCard identifier="enhanceDefinitions" enabled={slotEnabled("enhanceDefinitions")} onToggle={togglePromptSlot} label={t("enhance_definitions")} role="system" value={draft?.enhanceDefinitions ?? ""} placeholder={t("enhance_definitions_placeholder")} disabled={!draft || !onUpdateField} onChange={(value) => onUpdateField?.("enhanceDefinitions", value)} slotLabel={slotLabelFor("enhanceDefinitions")} slotDepth={slotDepthFor("enhanceDefinitions")} onSlotDepthChange={(d) => updateSlotDepth("enhanceDefinitions", d)} /> },
-    { key: "field:nsfw", identifier: "nsfw", kind: "field", defaultOrder: 75, render: () => <EditablePromptCard identifier="nsfw" enabled={slotEnabled("nsfw")} onToggle={togglePromptSlot} label={t("nsfw_prompt")} role="system" value={draft?.nsfw ?? ""} placeholder={t("nsfw_prompt_placeholder")} disabled={!draft || !onUpdateField} onChange={(value) => onUpdateField?.("nsfw", value)} slotLabel={slotLabelFor("nsfw")} slotDepth={slotDepthFor("nsfw")} onSlotDepthChange={(d) => updateSlotDepth("nsfw", d)} /> },
-    { key: "slot:worldInfoAfter", identifier: "worldInfoAfter", kind: "slot", defaultOrder: 80, render: () => <PromptOrderMarker identifier="worldInfoAfter" label={t("prompt_slot_world_info_after")} tooltip={t("prompt_slot_world_info_after_hint")} kind="marker" enabled={slotEnabled("worldInfoAfter")} onToggle={togglePromptSlot} /> },
-    { key: "slot:dialogueExamples", identifier: "dialogueExamples", kind: "slot", defaultOrder: 90, render: () => <PromptOrderMarker identifier="dialogueExamples" label={t("prompt_slot_dialogue_examples")} kind="marker" enabled={slotEnabled("dialogueExamples")} onToggle={togglePromptSlot} /> },
-    { key: "field:jailbreak", identifier: "jailbreak", kind: "field", defaultOrder: 110, render: () => <EditablePromptCard identifier="jailbreak" enabled={slotEnabled("jailbreak")} onToggle={togglePromptSlot} label={t("post_history_instructions")} role="system" value={draft?.jailbreak ?? ""} placeholder={t("jailbreak_placeholder")} disabled={!draft || !onUpdateField} onChange={(value) => onUpdateField?.("jailbreak", value)} slotLabel={slotLabelFor("jailbreak")} slotDepth={slotDepthFor("jailbreak")} onSlotDepthChange={(d) => updateSlotDepth("jailbreak", d)} /> },
-    { key: "field:assistantPrefill", identifier: "assistantPrefill", kind: "field", defaultOrder: 999, render: () => <EditablePromptCard identifier="assistantPrefill" enabled={slotEnabled("assistantPrefill")} onToggle={togglePromptSlot} label={t("prefill_assistant")} role="assistant" value={draft?.prefill ?? ""} placeholder={t("prefill_placeholder")} disabled={!draft || !onUpdateField} onChange={(value) => onUpdateField?.("prefill", value)} draggable={false} /> },
-
-    // Character V3 overrides — only shown when character has these fields
-    ...(characterDraft ? [{ key: "char:systemPrompt", identifier: "charSystemPrompt", kind: "field" as const, defaultOrder: 1, render: () => <CharacterFieldCard identifier="charSystemPrompt" enabled={slotEnabled("charSystemPrompt")} onToggle={togglePromptSlot} label={t("character_system_prompt")} role="system" value={characterDraft.charSystemPrompt} onChange={(v) => onCharacterFieldUpdate?.("charSystemPrompt", v)} slotLabel={slotLabelFor("charSystemPrompt")} slotDepth={slotDepthFor("charSystemPrompt")} onSlotDepthChange={(d) => updateSlotDepth("charSystemPrompt", d)} /> }] : []),
-    ...(characterDraft ? [{ key: "char:postHistory", identifier: "charPostHistory", kind: "field" as const, defaultOrder: 115, render: () => <CharacterFieldCard identifier="charPostHistory" enabled={slotEnabled("charPostHistory")} onToggle={togglePromptSlot} label={t("character_post_history")} role="system" value={characterDraft.charPostHistory} onChange={(v) => onCharacterFieldUpdate?.("charPostHistory", v)} slotLabel={slotLabelFor("charPostHistory")} slotDepth={slotDepthFor("charPostHistory")} onSlotDepthChange={(d) => updateSlotDepth("charPostHistory", d)} /> }] : []),
-    ...(characterDraft ? [{ key: "char:depthPrompt", identifier: "charDepthPrompt", kind: "field" as const, defaultOrder: 65, render: () => <CharacterFieldCard identifier="charDepthPrompt" enabled={slotEnabled("charDepthPrompt")} onToggle={togglePromptSlot} label={t("character_depth_prompt")} role={characterDraft.charDepthPromptRole || "system"} value={characterDraft.charDepthPrompt} onChange={(v) => onCharacterFieldUpdate?.("charDepthPrompt", v)} depth={characterDraft.charDepthPromptDepth} onDepthChange={(d) => onCharacterFieldUpdate?.("charDepthPromptDepth", d)} onRoleChange={(r) => onCharacterFieldUpdate?.("charDepthPromptRole", r)} slotLabel={slotLabelFor("charDepthPrompt")} slotDepth={slotDepthFor("charDepthPrompt")} onSlotDepthChange={(d) => updateSlotDepth("charDepthPrompt", d)} /> }] : []),
-  ];
+  const fixedItems = buildFixedItems({ t, draft, onUpdateField, characterDraft, onCharacterFieldUpdate, slotEnabled, togglePromptSlot, slotLabelFor, slotDepthFor, updateSlotDepth });
 
   // Prefill is special: always last, not draggable
   const prefillItem = fixedItems.find(i => i.identifier === "assistantPrefill");
