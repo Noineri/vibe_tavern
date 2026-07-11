@@ -141,6 +141,10 @@ export function LorebookAccordion({
   //    (the sidebar character-search pattern); tag chips combine with AND.
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedKeys, setSelectedKeys] = useState<string[]>([]);
+  // Secondary activation keys get their OWN combobox (a distinct input, not a
+  // merged pool) so users can target them specifically — primary and secondary
+  // are different activation surfaces in the lorebook model.
+  const [selectedSecondaryKeys, setSelectedSecondaryKeys] = useState<string[]>([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -171,11 +175,24 @@ export function LorebookAccordion({
     [entries],
   );
 
+  // Same for secondary keys — a separate pool for the separate input.
+  const availableSecondaryKeys = useMemo(
+    () =>
+      Array.from(
+        new Set(entries.flatMap((e) => e.secondaryKeys).filter((k): k is string => !!k)),
+      ).sort((a, b) => a.localeCompare(b)),
+    [entries],
+  );
+
   // Filtered view of entries for the expanded list. Text query matches title
-  // OR content (case-insensitive); selected key chips combine with AND (the
-  // entry's keys must include every selected key). The header counter stays on
-  // the full `entries.length` (total), not the filtered count.
-  const isFiltering = searchQuery.trim() !== "" || selectedKeys.length > 0;
+  // OR content (case-insensitive); primary key chips AND over entry.keys;
+  // secondary key chips AND over entry.secondaryKeys. The primary and secondary
+  // filters are independent (both must match). The header counter stays on the
+  // full `entries.length` (total), not the filtered count.
+  const isFiltering =
+    searchQuery.trim() !== "" ||
+    selectedKeys.length > 0 ||
+    selectedSecondaryKeys.length > 0;
   const filteredEntries = useMemo(() => {
     if (!isFiltering) return entries;
     const q = searchQuery.trim().toLowerCase();
@@ -183,9 +200,14 @@ export function LorebookAccordion({
       if (q && !`${e.title} ${e.content}`.toLowerCase().includes(q)) return false;
       if (selectedKeys.length > 0 && !selectedKeys.every((k) => e.keys.includes(k)))
         return false;
+      if (
+        selectedSecondaryKeys.length > 0 &&
+        !selectedSecondaryKeys.every((k) => e.secondaryKeys.includes(k))
+      )
+        return false;
       return true;
     });
-  }, [entries, isFiltering, searchQuery, selectedKeys]);
+  }, [entries, isFiltering, searchQuery, selectedKeys, selectedSecondaryKeys]);
 
   const handleReorderEntries = async (
     updates: Array<{ id: string; sortOrder: number; position?: string }>
@@ -547,6 +569,11 @@ export function LorebookAccordion({
             selectedTags={selectedKeys}
             onSelectedTagsChange={setSelectedKeys}
             availableTags={availableKeys}
+            tagInputPlaceholder={t("lore_search_keys_placeholder")}
+            secondarySelectedTags={selectedSecondaryKeys}
+            onSecondarySelectedTagsChange={setSelectedSecondaryKeys}
+            secondaryAvailableTags={availableSecondaryKeys}
+            secondaryTagInputPlaceholder={t("lore_search_secondary_keys_placeholder")}
           />
           <LoreEntryList
             entries={filteredEntries}

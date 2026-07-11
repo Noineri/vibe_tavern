@@ -852,6 +852,8 @@
   "lore_duplicate_entry": "Дублировать запись",
   "lore_entry_duplicated": "Копия записи создана",
   "lore_entry_duplicate_failed": "Не удалось создать копию записи",
+  "lore_search_keys_placeholder": "Поиск по ключам",
+  "lore_search_secondary_keys_placeholder": "Поиск по вторичным ключам",
   "lore_saving": "Сохранение...",
   "lore_saved": "Сохранено",
   "delete_entry_confirm": "Удалить запись",

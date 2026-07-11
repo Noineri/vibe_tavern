@@ -550,6 +550,8 @@ export default interface Resources {
     "lore_scan_depth": "Scan Depth",
     "lore_scan_depth_hint": "How many chat messages back to scan for keywords.",
     "lore_scan_depth_override": "Scan Depth Override",
+    "lore_search_keys_placeholder": "Search by keys",
+    "lore_search_secondary_keys_placeholder": "Search by secondary keys",
     "lore_sticky_window": "Sticky Window",
     "lore_test_placeholder": "Type a message to test key activation...",
     "lore_test_run": "Run Test",

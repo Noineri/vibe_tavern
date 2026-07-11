@@ -852,6 +852,8 @@
   "lore_duplicate_entry": "Duplicate entry",
   "lore_entry_duplicated": "Duplicate entry created",
   "lore_entry_duplicate_failed": "Failed to duplicate entry",
+  "lore_search_keys_placeholder": "Search by keys",
+  "lore_search_secondary_keys_placeholder": "Search by secondary keys",
   "lore_saving": "Saving...",
   "lore_saved": "Saved",
   "delete_entry_confirm": "Delete Entry",

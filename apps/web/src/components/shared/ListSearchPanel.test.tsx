@@ -61,4 +61,27 @@ describe("ListSearchPanel suggestions", () => {
     const buttons = await screen.findAllByRole("button");
     expect(buttons).toHaveLength(2); // apple + apricot
   });
+
+  it("renders a distinct secondary combobox with its own placeholder", () => {
+    render(
+      <ListSearchPanel
+        query=""
+        onQueryChange={() => {}}
+        selectedTags={[]}
+        onSelectedTagsChange={() => {}}
+        availableTags={["a"]}
+        tagInputPlaceholder="Primary"
+        secondarySelectedTags={[]}
+        onSecondarySelectedTagsChange={() => {}}
+        secondaryAvailableTags={["b"]}
+        secondaryTagInputPlaceholder="Secondary"
+      />,
+    );
+    // Both comboxes render with their own (custom) placeholders → the caller
+    // can relabel "tags" to "keys" and run a second, independent pool.
+    expect(screen.getByPlaceholderText("Primary")).toBeTruthy();
+    expect(screen.getByPlaceholderText("Secondary")).toBeTruthy();
+    // The sidebar default is not leaked when a custom placeholder is set.
+    expect(screen.queryByPlaceholderText("search_tags_placeholder")).toBeNull();
+  });
 });

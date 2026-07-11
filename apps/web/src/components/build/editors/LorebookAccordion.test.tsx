@@ -129,13 +129,13 @@ function makeEntry(over: Partial<LoreEntryRecord>): LoreEntryRecord {
   };
 }
 
-// e1 "Dragon" / content "breathes fire" / keys [boss, fire]
-// e2 "Castle" / content "stone walls"  / keys [stone]
-// e3 "Fire Sprite" / content "ember"   / keys [fire]   (key "fire" shared with e1)
+// e1 "Dragon" / content "breathes fire" / keys [boss, fire]  / secondary [lair]
+// e2 "Castle" / content "stone walls"  / keys [stone]        / secondary [moat]
+// e3 "Fire Sprite" / content "ember"   / keys [fire]         / secondary [lair]   (key "fire" + sec "lair" shared)
 const ENTRIES: LoreEntryRecord[] = [
-  makeEntry({ id: "e1", title: "Dragon", content: "breathes fire", keys: ["boss", "fire"] }),
-  makeEntry({ id: "e2", title: "Castle", content: "stone walls", keys: ["stone"] }),
-  makeEntry({ id: "e3", title: "Fire Sprite", content: "ember", keys: ["fire"] }),
+  makeEntry({ id: "e1", title: "Dragon", content: "breathes fire", keys: ["boss", "fire"], secondaryKeys: ["lair"] }),
+  makeEntry({ id: "e2", title: "Castle", content: "stone walls", keys: ["stone"], secondaryKeys: ["moat"] }),
+  makeEntry({ id: "e3", title: "Fire Sprite", content: "ember", keys: ["fire"], secondaryKeys: ["lair"] }),
 ];
 
 function renderAccordion() {
@@ -206,7 +206,7 @@ describe("LorebookAccordion search", () => {
   it("activation-key chips combine with AND; clears with the query", async () => {
     const { findAllByTestId, getByPlaceholderText } = renderAccordion();
     await findAllByTestId("entry-row");
-    const tagInput = getByPlaceholderText("search_tags_placeholder");
+    const tagInput = getByPlaceholderText("lore_search_keys_placeholder");
     // key "fire" → e1 + e3 (both have it)
     fireEvent.change(tagInput, { target: { value: "fire" } });
     fireEvent.keyDown(tagInput, { key: "Enter" });
@@ -215,6 +215,27 @@ describe("LorebookAccordion search", () => {
     fireEvent.change(tagInput, { target: { value: "boss" } });
     fireEvent.keyDown(tagInput, { key: "Enter" });
     expect(await findAllByTestId("entry-row")).toHaveLength(1);
+  });
+
+  it("secondary-key combobox is a distinct input filtering on secondaryKeys", async () => {
+    const { findAllByTestId, queryAllByTestId, getByPlaceholderText } = renderAccordion();
+    await findAllByTestId("entry-row");
+    // The secondary combobox has its own placeholder (distinct from primary).
+    const secInput = getByPlaceholderText("lore_search_secondary_keys_placeholder");
+    // secondary "lair" → e1 + e3 (both have it in secondaryKeys)
+    fireEvent.change(secInput, { target: { value: "lair" } });
+    fireEvent.keyDown(secInput, { key: "Enter" });
+    expect(await findAllByTestId("entry-row")).toHaveLength(2);
+    // primary "fire" (e1+e3) AND secondary "moat" (e2 only) → no overlap → 0
+    const primInput = getByPlaceholderText("lore_search_keys_placeholder");
+    fireEvent.change(primInput, { target: { value: "fire" } });
+    fireEvent.keyDown(primInput, { key: "Enter" });
+    fireEvent.change(secInput, { target: { value: "moat" } });
+    fireEvent.keyDown(secInput, { key: "Enter" });
+    // queryAll (not findAll) — findAllByTestId throws when zero match.
+    await waitFor(() =>
+      expect(queryAllByTestId("entry-row")).toHaveLength(0),
+    );
   });
 
   it("DnD is disabled while a filter is active, re-enabled when clear", async () => {
@@ -232,7 +253,7 @@ describe("LorebookAccordion search", () => {
     });
     expect(getByTestId("entry-list").getAttribute("data-dnd-disabled")).toBe("false");
     // tag filter arms it too
-    const tagInput = getByPlaceholderText("search_tags_placeholder");
+    const tagInput = getByPlaceholderText("lore_search_keys_placeholder");
     fireEvent.change(tagInput, { target: { value: "stone" } });
     fireEvent.keyDown(tagInput, { key: "Enter" });
     expect(getByTestId("entry-list").getAttribute("data-dnd-disabled")).toBe("true");
