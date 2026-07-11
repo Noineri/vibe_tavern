@@ -24,6 +24,19 @@ import type {
   LanguageModelV3FinishReason,
   LanguageModelV3Text,
 } from "@ai-sdk/provider";
+import {
+  MODEL_LIST_TIMEOUT_MS,
+  TEST_CHAT_TIMEOUT_MS,
+  normalizeKoboldCppBaseUrl,
+  tryParseUrl,
+  wrapProviderNetworkError,
+  type ProviderConnectionInput,
+  type ProviderModelOption,
+  type ProviderProbeResult,
+  type TestChatResult,
+} from "./provider-transport.js";
+import { PROVIDER_TYPE, SAMPLER_SETS } from "@vibe-tavern/domain";
+import type { ProtocolAdapter, ProbeInput, ListModelsInput } from "./protocol-types.js";
 
 // ─── Types ───────────────────────────────────────────────────────────────
 
@@ -361,3 +374,123 @@ export async function fetchKoboldModel(baseURL: string): Promise<string> {
   const data = (await res.json()) as KoboldModelInfo;
   return data.result;
 }
+
+// ─── Registry-facing operations (probe / testChat / listModels) ───────────
+// Moved from protocol-registry.ts; colocated with the native SDK wrapper so
+// the full KoboldCPP protocol description lives in one file.
+
+export async function probeKoboldCppConnection(input: ProbeInput): Promise<ProviderProbeResult> {
+  try {
+    const models = await listKoboldCppModels(input);
+    return { success: true, modelCount: models.length };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+export async function testKoboldCppChat(input: ProviderConnectionInput): Promise<TestChatResult> {
+  const baseUrl = normalizeKoboldCppBaseUrl(input.baseUrl);
+  if (!baseUrl) return { success: false, error: "Provider endpoint is required." };
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), TEST_CHAT_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(`${baseUrl}/api/v1/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({
+        prompt: "User: Hi\nAssistant:",
+        max_length: 64,
+        temperature: 0.7,
+        stream: false,
+      }),
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => "");
+      return {
+        success: false,
+        error: `${response.status} ${response.statusText}${errorText ? `: ${errorText.slice(0, 200)}` : ""}`,
+      };
+    }
+
+    const payload = (await response.json()) as { results?: Array<{ text?: string }> };
+    const content = payload.results?.[0]?.text?.trim() ?? "";
+    return { success: true, reply: content || "(empty response)" };
+  } catch (error) {
+    clearTimeout(timer);
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    if (
+      error instanceof Error &&
+      (error.name === "TimeoutError" || /aborted/i.test(error.message))
+    ) {
+      return {
+        success: false,
+        error: `Timed out after ${Math.floor(TEST_CHAT_TIMEOUT_MS / 1000)}s.`,
+      };
+    }
+    return { success: false, error: msg };
+  }
+}
+
+export async function listKoboldCppModels(input: ListModelsInput): Promise<ProviderModelOption[]> {
+  const baseUrl = normalizeKoboldCppBaseUrl(input.baseUrl);
+  if (!baseUrl || !tryParseUrl(baseUrl)) {
+    throw new Error(`Invalid provider endpoint: ${input.baseUrl}`);
+  }
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), MODEL_LIST_TIMEOUT_MS);
+
+  let response: Response;
+  try {
+    response = await fetch(`${baseUrl}/api/v1/model`, {
+      method: "GET",
+      headers: { Accept: "application/json" },
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+  } catch (error) {
+    clearTimeout(timer);
+    throw wrapProviderNetworkError(error, { operation: "KoboldCPP model list", timeoutMs: MODEL_LIST_TIMEOUT_MS });
+  }
+
+  if (!response.ok) {
+    throw new Error(`KoboldCPP model list failed: ${response.status} ${response.statusText}`);
+  }
+
+  const payload = (await response.json()) as { result?: string; model?: string; name?: string };
+  const id = (payload.result ?? payload.model ?? payload.name ?? "koboldcpp-loaded-model").trim();
+  return [{ id: id || "koboldcpp-loaded-model", label: id || "KoboldCPP loaded model" }];
+}
+
+export const koboldCppProtocol: ProtocolAdapter = {
+  id: PROVIDER_TYPE.koboldCpp,
+  capabilities: {
+    nonStreamGeneration: true,
+    abortSignal: true,
+    streaming: true,
+    prefill: false,
+    logitBias: false,
+    samplers: SAMPLER_SETS.koboldcpp_native,
+    textCompletion: false,
+  },
+  resolveModel(profile, model) {
+    const endpoint = (profile.endpoint || "").replace(/\/+$/, "") || "http://localhost:5001";
+    return createKoboldCppModel({ baseURL: endpoint, modelId: model ?? "koboldcpp" });
+  },
+  limitations: [
+    "Uses KoboldCPP native /api/v1/generate endpoint (not OpenAI-compat).",
+    "Chat messages are serialized into a flat text prompt.",
+    "Tool calling is not supported.",
+  ],
+  probe: probeKoboldCppConnection,
+  testChat: testKoboldCppChat,
+  listModels: listKoboldCppModels,
+};

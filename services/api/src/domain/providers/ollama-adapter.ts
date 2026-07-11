@@ -22,6 +22,18 @@ import type {
   LanguageModelV3FinishReason,
   LanguageModelV3Text,
 } from "@ai-sdk/provider";
+import {
+  PROBE_TIMEOUT_MS,
+  MODEL_LIST_TIMEOUT_MS,
+  TEST_CHAT_TIMEOUT_MS,
+  wrapProviderNetworkError,
+  type ProviderConnectionInput,
+  type ProviderModelOption,
+  type ProviderProbeResult,
+  type TestChatResult,
+} from "./provider-transport.js";
+import { PROVIDER_TYPE, SAMPLER_SETS } from "@vibe-tavern/domain";
+import type { ProtocolAdapter, ProbeInput, ListModelsInput } from "./protocol-types.js";
 
 // ─── Types ───────────────────────────────────────────────────────────────
 
@@ -382,3 +394,206 @@ export async function fetchOllamaModels(baseURL: string): Promise<string[]> {
     .filter((m) => !m.capabilities?.includes("embedding") || m.capabilities?.includes("completion"))
     .map((m) => m.name);
 }
+
+// ─── Registry-facing operations (probe / testChat / listModels) ───────────
+// Moved from protocol-registry.ts; colocated with the native SDK wrapper so
+// the full Ollama protocol description lives in one file.
+
+export async function probeOllamaConnection(input: ProbeInput): Promise<ProviderProbeResult> {
+  try {
+    const models = await listOllamaModels(input);
+    return { success: true, modelCount: models.length };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+export async function testOllamaChat(input: ProviderConnectionInput): Promise<TestChatResult> {
+  const baseUrl = (input.baseUrl || "").replace(/\/+$/, "").replace(/\/v1$/, "");
+  if (!baseUrl) return { success: false, error: "Provider endpoint is required." };
+  if (!input.model) return { success: false, error: "Model is required." };
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), TEST_CHAT_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(`${baseUrl}/api/chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({
+        model: input.model,
+        messages: [{ role: "user", content: "Hi" }],
+        stream: false,
+        options: { num_predict: 64, temperature: 0.7 },
+      }),
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => "");
+      return {
+        success: false,
+        error: `${response.status} ${response.statusText}${errorText ? `: ${errorText.slice(0, 200)}` : ""}`,
+      };
+    }
+
+    const payload = (await response.json()) as { message?: { content?: string } };
+    const content = payload.message?.content?.trim() ?? "";
+    return { success: true, reply: content || "(empty response)" };
+  } catch (error) {
+    clearTimeout(timer);
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    if (
+      error instanceof Error &&
+      (error.name === "TimeoutError" || /aborted/i.test(error.message))
+    ) {
+      return {
+        success: false,
+        error: `Timed out after ${Math.floor(TEST_CHAT_TIMEOUT_MS / 1000)}s.`,
+      };
+    }
+    return { success: false, error: msg };
+  }
+}
+
+export async function listOllamaModels(input: ListModelsInput): Promise<ProviderModelOption[]> {
+  const baseUrl = (input.baseUrl || "").replace(/\/+$/, "").replace(/\/v1$/, "");
+  const url = `${baseUrl}/api/tags`;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), MODEL_LIST_TIMEOUT_MS);
+
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method: "GET",
+      headers: { Accept: "application/json" },
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+  } catch (error) {
+    clearTimeout(timer);
+    throw wrapProviderNetworkError(error, { operation: "Ollama model list", timeoutMs: MODEL_LIST_TIMEOUT_MS });
+  }
+
+  if (!response.ok) {
+    throw new Error(`Ollama model list failed: ${response.status} ${response.statusText}`);
+  }
+
+  interface OllamaModel { name: string; model?: string; capabilities?: string[]; }
+  const payload = (await response.json()) as { models?: OllamaModel[] };
+  const records = Array.isArray(payload.models) ? payload.models : [];
+  const baseOptions = records
+    .filter((r) => !r.capabilities?.includes("embedding") || r.capabilities?.includes("completion"))
+    .map((r) => {
+      const id = (r.name ?? r.model ?? "").trim();
+      return id ? { id, label: id } : null;
+    })
+    .filter((r): r is ProviderModelOption => r !== null);
+
+  const enriched = await Promise.all(
+    baseOptions.map(async (option) => ({
+      ...option,
+      ...(await fetchOllamaModelMetadata(baseUrl, option.id)),
+    })),
+  );
+
+  return enriched.sort((a, b) => a.id.localeCompare(b.id));
+}
+
+async function fetchOllamaModelMetadata(
+  baseUrl: string,
+  model: string,
+): Promise<Partial<ProviderModelOption>> {
+  try {
+    const response = await fetch(`${baseUrl}/api/show`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({ model }),
+      signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
+    });
+    if (!response.ok) return {};
+
+    const payload = (await response.json()) as {
+      capabilities?: string[];
+      details?: {
+        family?: string;
+        families?: string[];
+        format?: string;
+        parameter_size?: string;
+        quantization_level?: string;
+      };
+      model_info?: Record<string, unknown>;
+      parameters?: string;
+    };
+
+    const metadata: Partial<ProviderModelOption> = {};
+    const contextLength = extractOllamaContextLength(payload);
+    if (contextLength) metadata.contextLength = contextLength;
+
+    const details = payload.details;
+    const detailParts = [
+      details?.parameter_size,
+      details?.quantization_level,
+      details?.family,
+      details?.format,
+    ].filter(Boolean);
+    if (detailParts.length > 0) metadata.description = detailParts.join(" · ");
+    if (payload.capabilities) {
+      metadata.capabilities = {
+        vision: payload.capabilities.includes("vision"),
+      };
+    }
+
+    return metadata;
+  } catch {
+    return {};
+  }
+}
+
+function extractOllamaContextLength(payload: {
+  model_info?: Record<string, unknown>;
+  parameters?: string;
+}): number | undefined {
+  const info = payload.model_info ?? {};
+  for (const [key, value] of Object.entries(info)) {
+    if (!/(^|\.)context_length$/.test(key)) continue;
+    const parsed = typeof value === "number" ? value : Number(value);
+    if (Number.isFinite(parsed) && parsed > 0) return parsed;
+  }
+
+  const numCtxMatch = payload.parameters?.match(/(?:^|\n)\s*num_ctx\s+(\d+)/i);
+  if (numCtxMatch?.[1]) {
+    const parsed = Number(numCtxMatch[1]);
+    if (Number.isFinite(parsed) && parsed > 0) return parsed;
+  }
+
+  return undefined;
+}
+
+export const ollamaProtocol: ProtocolAdapter = {
+  id: PROVIDER_TYPE.ollama,
+  capabilities: {
+    nonStreamGeneration: true,
+    abortSignal: true,
+    streaming: true,
+    prefill: true,
+    logitBias: true,
+    samplers: SAMPLER_SETS.openai_local,
+    textCompletion: false,
+  },
+  resolveModel(profile, model) {
+    const endpoint = (profile.endpoint || "").replace(/\/+$/, "") || "http://localhost:11434";
+    return createOllamaModel({ baseURL: endpoint, modelId: model });
+  },
+  limitations: [
+    "Uses Ollama native /api/chat endpoint for full sampler support.",
+    "Model list uses Ollama's native /api/tags endpoint.",
+  ],
+  probe: probeOllamaConnection,
+  testChat: testOllamaChat,
+  listModels: listOllamaModels,
+};
