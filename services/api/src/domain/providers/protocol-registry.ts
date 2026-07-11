@@ -27,12 +27,11 @@
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
-import type { LanguageModel } from "ai";
 import {
 	PROVIDER_TYPE,
 	SAMPLER_SETS,
 } from "@vibe-tavern/domain";
-import type { ProviderType, SamplerCapabilityFlags } from "@vibe-tavern/domain";
+import type { ProviderType } from "@vibe-tavern/domain";
 import { providerError } from "../../shared/errors.js";
 import { createReasoningAwareFetch } from "./openai-reasoning-fetch.js";
 import { createKoboldCppModel } from "./koboldcpp-adapter.js";
@@ -60,74 +59,26 @@ import {
 	type TestChatResult,
 	type OpenAiChatCompletionResponse,
 } from "./provider-transport.js";
+import type {
+	ProtocolAdapter,
+	ProviderCapabilityFlags,
+	ProviderProfileInput,
+	ProbeInput,
+	ListModelsInput,
+} from "./protocol-types.js";
+import { interpretProbeResponse } from "./probe-helpers.js";
 
-// ---------------------------------------------------------------------------
-// Capability flags (canonical type — source of truth lives here now)
-// ---------------------------------------------------------------------------
-
-export interface ProviderCapabilityFlags {
-	/** Provider can produce a complete non-streamed reply. */
-	nonStreamGeneration: boolean;
-	/** Provider execution respects an AbortSignal for cancellation. */
-	abortSignal: boolean;
-	/** Provider supports SSE/streaming responses. */
-	streaming: boolean;
-	/** Provider supports prefill (prefixing assistant content). */
-	prefill: boolean;
-	/** Provider supports logit bias (token-level output control). */
-	logitBias: boolean;
-	/** Granular sampler controls supported by this provider type. */
-	samplers: SamplerCapabilityFlags;
-	/**
-	 * Whether this protocol can serve a raw text-completion request
-	 * (`/v1/completions` or a native equivalent like KoboldCPP `/api/v1/generate`),
-	 * as required by Novel Mode's flat-prompt assembler.
-	 *
-	 * Refactor plan §5.3.3. Default false everywhere until Novel Mode's
-	 * text-completion wiring lands; flipping a flag here is the only change
-	 * needed to opt a protocol in.
-	 */
-	textCompletion: boolean;
-}
-
-export interface ProviderProfileInput {
-	providerPreset: string;
-	endpoint: string;
-	apiKey: string | null;
-}
-
-// ---------------------------------------------------------------------------
-// Protocol adapter
-// ---------------------------------------------------------------------------
-
-/** Input for a connection probe (no model required). */
-export interface ProbeInput {
-	baseUrl: string;
-	apiKey: string;
-}
-
-/** Input for a model list request (no model required). */
-export type ListModelsInput = Omit<ProviderConnectionInput, "model">;
-
-export interface ProtocolAdapter {
-	id: ProviderType;
-	capabilities: ProviderCapabilityFlags;
-	/**
-	 * Resolve a Vercel AI SDK chat {@link LanguageModel} for this protocol.
-	 *
-	 * (Text-completion mode lands with §5.3.3; for now every protocol resolves
-	 * a chat model.)
-	 */
-	resolveModel(profile: ProviderProfileInput, model: string): LanguageModel;
-	/** Human-readable limitations surfaced to the UI. */
-	limitations: string[];
-	/** Connectivity probe (hit a models/tags endpoint, return success + count). */
-	probe(input: ProbeInput): Promise<ProviderProbeResult>;
-	/** Send a minimal "Hi" chat request to verify generation works. */
-	testChat(input: ProviderConnectionInput): Promise<TestChatResult>;
-	/** List available models from the provider's models/tags endpoint. */
-	listModels(input: ListModelsInput): Promise<ProviderModelOption[]>;
-}
+// Protocol contracts (ProviderCapabilityFlags / ProtocolAdapter / etc.) live in
+// protocol-types.ts now — extracted so per-protocol adapter modules can import
+// their own contract without the registry importing them back (a circular dep).
+// Re-exported here for public compatibility; the registry was their historical home.
+export type {
+	ProviderCapabilityFlags,
+	ProviderProfileInput,
+	ProbeInput,
+	ListModelsInput,
+	ProtocolAdapter,
+} from "./protocol-types.js";
 
 // ===========================================================================
 // Per-protocol operations (probe / testChat / listModels)
@@ -137,38 +88,6 @@ export interface ProtocolAdapter {
 // ===========================================================================
 
 // ── OpenAI-compatible (shared by openai_compat, llamaCpp, unsloth) ─────────
-
-/**
- * Interpret a probe /models response into a ProviderProbeResult. Shared by
- * the OpenAI-compatible / Google / Anthropic probes, which differ only in the
- * JSON shape (where the model list lives) and which statuses count as auth
- * failures (Google also treats 400 as auth-rejected).
- */
-async function interpretProbeResponse(
-	response: Response,
-	readModelCount: (payload: unknown) => number | undefined,
-	authStatuses: number[] = [401, 403],
-): Promise<ProviderProbeResult> {
-	if (response.ok) {
-		let modelCount: number | undefined;
-		try {
-			modelCount = readModelCount(await response.json());
-		} catch {
-			modelCount = undefined;
-		}
-		return { success: true, modelCount };
-	}
-	if (authStatuses.includes(response.status)) {
-		return {
-			success: false,
-			error: `Authentication rejected (${response.status} ${response.statusText}).`,
-		};
-	}
-	if (response.status === 404) {
-		return { success: false, error: "Provider does not expose a /models endpoint." };
-	}
-	return { success: false, error: `Probe failed: ${response.status} ${response.statusText}` };
-}
 
 async function probeOpenAiCompatibleConnection(input: ProbeInput): Promise<ProviderProbeResult> {
 	const baseUrl = normalizeOpenAiCompatibleBaseUrl(input.baseUrl);
