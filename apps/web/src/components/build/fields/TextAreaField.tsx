@@ -46,6 +46,10 @@ export interface TextAreaFieldProps {
   /** Minimum textarea height in rows. Scales with the user-adjustable font
    *  size — see AutoTextarea docs for why rows, not px. */
   minRows: number;
+  /** Maximum textarea height in rows before internal scrolling kicks in.
+   *  Omit to let the field grow unbounded (the Build editor default). The
+   *  create-character modal passes 20 to cap growth inside its scrollable body. */
+  maxRows?: number;
   /** Use the monospace variant (prompt-instruction fields). */
   mono?: boolean;
   /** Optional placeholder text. */
@@ -61,6 +65,7 @@ export function TextAreaField({
   label,
   mobileExpandLabel,
   minRows,
+  maxRows,
   mono,
   placeholder,
   isSaving,
@@ -81,6 +86,7 @@ export function TextAreaField({
           placeholder={placeholder}
           register={register(field)}
           minRows={minRows}
+          maxRows={maxRows}
         />
       </MobileExpandTextarea>
       <TokenCounter text={value || ""} />

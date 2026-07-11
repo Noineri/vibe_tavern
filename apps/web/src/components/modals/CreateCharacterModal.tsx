@@ -1,41 +1,22 @@
 import { useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { z } from 'zod';
+import { buildCharacterDraftSchema } from '@vibe-tavern/api-contracts';
+import type { BuildCharacterDraft } from '@vibe-tavern/api-contracts';
 import { Ic } from '../shared/icons';
 import { cn } from '../../lib/cn';
 import { Modal } from "../shared/Modal.js";
 import { useIsMobile } from '../../hooks/use-mobile.js';
 import { CustomTooltip } from '../shared/Tooltip.js';
 import { useT } from '../../i18n/context.js';
-import { DropdownSelect } from '../shared/DropdownSelect.js';
 import { AutoTextarea } from '../shared/auto-textarea.js';
 import { MobileExpandTextarea } from '../shared/MobileExpandTextarea.js';
-import { NumberInput } from '../shared/NumberInput.js';
 import { AvatarCropModal } from '../shared/AvatarCropModal.js';
 import type { AvatarCropResult } from '../shared/AvatarCropModal.js';
-
-const createCharacterFormSchema = z.object({
-  name: z.string().min(1),
-  description: z.string(),
-  firstMessage: z.string(),
-  mesExample: z.string(),
-  defaultScenario: z.string(),
-  personalitySummary: z.string(),
-  alternateGreetings: z.array(z.string()),
-  postHistoryInstructions: z.string(),
-  creatorNotes: z.string(),
-  systemPrompt: z.string(),
-  depthPrompt: z.string(),
-  depthPromptDepth: z.number(),
-  depthPromptRole: z.string(),
-  tags: z.array(z.string()),
-  avatarFile: z.unknown().nullable().optional(),
-  avatarOriginalFile: z.unknown().nullable().optional(),
-  avatarPreview: z.string().nullable().optional(),
-});
-
-type CreateCharacterFormData = z.infer<typeof createCharacterFormSchema>;
+import { TextAreaField } from '../build/fields/TextAreaField.js';
+import { DepthPromptField } from '../build/fields/DepthPromptField.js';
+import { TokenCounter } from '../shared/TokenCounter.js';
+import { EMPTY_BUILD_DRAFT } from '../../lib/character-draft.js';
 
 interface CreateCharacterModalProps {
   onClose: () => void;
@@ -60,63 +41,38 @@ interface CreateCharacterModalProps {
 export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalProps) {
   const { t } = useT();
   const isMobile = useIsMobile();
-  const form = useForm<CreateCharacterFormData>({
-    resolver: zodResolver(createCharacterFormSchema),
-    defaultValues: {
-      name: '',
-      description: '',
-      personalitySummary: '',
-      mesExample: '',
-      defaultScenario: '',
-      firstMessage: '',
-      alternateGreetings: [],
-      postHistoryInstructions: '',
-      creatorNotes: '',
-      systemPrompt: '',
-      tags: [],
-      avatarFile: null,
-      avatarOriginalFile: null,
-      avatarPreview: null,
-      depthPrompt: '',
-      depthPromptDepth: 4,
-      depthPromptRole: 'system',
-    },
+  const form = useForm<BuildCharacterDraft>({
+    resolver: zodResolver(buildCharacterDraftSchema),
+    defaultValues: EMPTY_BUILD_DRAFT,
   });
 
-  const { register, formState: { errors, isSubmitting, isDirty }, watch, setValue, handleSubmit } = form;
+  const { register, formState: { errors, isSubmitting, isDirty }, watch, setValue, getValues } = form;
   const busy = isSubmitting;
-  const dirty = isDirty;
+  const name = watch("name");
+  const alternateGreetings = watch("alternateGreetings") || [];
+  const tags = watch("tags") || [];
 
   const [altGreetIdx, setAltGreetIdx] = useState(0);
   const [tagInput, setTagInput] = useState('');
   const avaInputRef = useRef<HTMLInputElement>(null);
   const [pendingAvatar, setPendingAvatar] = useState<{ file: File; url: string } | null>(null);
+  // Confirmed (post-crop) avatar lives outside the form: BuildCharacterDraft has
+  // no avatar fields (it is a content draft), and the create flow handles raw
+  // File uploads rather than the asset-id model the build editor uses.
+  const [avatar, setAvatar] = useState<{ file: File | null; originalFile: File | null; preview: string | null }>({
+    file: null,
+    originalFile: null,
+    preview: null,
+  });
 
-
-
-  const name = watch('name');
-  const description = watch('description');
-  const firstMessage = watch('firstMessage');
-  const mesExample = watch('mesExample');
-  const defaultScenario = watch('defaultScenario');
-  const personalitySummary = watch('personalitySummary');
-  const alternateGreetings = watch('alternateGreetings') || [];
-  const postHistoryInstructions = watch('postHistoryInstructions');
-  const creatorNotes = watch('creatorNotes');
-  const systemPrompt = watch('systemPrompt');
-  const depthPrompt = watch('depthPrompt');
-  const depthPromptDepth = watch('depthPromptDepth');
-  const depthPromptRole = watch('depthPromptRole');
-  const tags = watch('tags') || [];
-  const avatarPreview = watch('avatarPreview') as string | null;
-  const avatarFile = watch('avatarFile') as File | null;
-  const avatarOriginalFile = watch('avatarOriginalFile') as File | null;
-
+  // A picked avatar counts as an unsaved change even though it is not in the
+  // react-hook-form state, so it is folded into the dirty flag manually.
+  const dirty = isDirty || avatar.file !== null;
   const canSave = (name || '').trim().length > 0 && !busy;
 
-  function patchForm(patch: Partial<CreateCharacterFormData>) {
+  function patchForm(patch: Partial<BuildCharacterDraft>) {
     for (const [key, value] of Object.entries(patch)) {
-      setValue(key as keyof CreateCharacterFormData, value, { shouldDirty: true });
+      setValue(key as keyof BuildCharacterDraft, value, { shouldDirty: true });
     }
   }
 
@@ -127,10 +83,10 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
   }
 
   function handleAvatarCropConfirm(result: AvatarCropResult) {
-    patchForm({
-      avatarFile: result.croppedFile,
-      avatarOriginalFile: pendingAvatar!.file,
-      avatarPreview: pendingAvatar!.url,
+    setAvatar({
+      file: result.croppedFile,
+      originalFile: pendingAvatar!.file,
+      preview: pendingAvatar!.url,
     });
     setPendingAvatar(null);
   }
@@ -141,7 +97,7 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
   }
 
   function removeTag(tag: string) {
-    patchForm({ tags: tags.filter((t: string) => t !== tag) });
+    patchForm({ tags: tags.filter((tn: string) => tn !== tag) });
   }
 
   function handleTagKey(e: React.KeyboardEvent<HTMLInputElement>) {
@@ -156,25 +112,26 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
 
   async function handleSave() {
     if (!canSave) return;
+    const v = getValues();
     await onSave(
       {
-        name: name.trim(),
-        description: description.trim() || undefined,
-        firstMessage: firstMessage.trim() || undefined,
-        scenario: defaultScenario.trim() || undefined,
-        personalitySummary: personalitySummary.trim() || undefined,
-        mesExample: mesExample.trim() || undefined,
-        alternateGreetings: alternateGreetings.length > 0 ? alternateGreetings : undefined,
-        postHistoryInstructions: postHistoryInstructions.trim() || undefined,
-        creatorNotes: creatorNotes.trim() || undefined,
-        systemPrompt: systemPrompt.trim() || undefined,
-        depthPrompt: depthPrompt.trim() || undefined,
-        depthPromptDepth: depthPromptDepth || undefined,
-        depthPromptRole: depthPromptRole || undefined,
-        tags: tags.length > 0 ? tags : undefined,
+        name: v.name.trim(),
+        description: v.description.trim() || undefined,
+        firstMessage: v.firstMessage.trim() || undefined,
+        scenario: v.scenario.trim() || undefined,
+        personalitySummary: v.personalitySummary.trim() || undefined,
+        mesExample: v.mesExample.trim() || undefined,
+        alternateGreetings: v.alternateGreetings.length > 0 ? v.alternateGreetings : undefined,
+        postHistoryInstructions: v.postHistoryInstructions.trim() || undefined,
+        creatorNotes: v.creatorNotes.trim() || undefined,
+        systemPrompt: v.systemPrompt.trim() || undefined,
+        depthPrompt: v.depthPrompt.trim() || undefined,
+        depthPromptDepth: v.depthPromptDepth || undefined,
+        depthPromptRole: v.depthPromptRole || undefined,
+        tags: v.tags.length > 0 ? v.tags : undefined,
       },
-      avatarFile,
-      avatarOriginalFile,
+      avatar.file,
+      avatar.originalFile,
     );
   }
 
@@ -213,9 +170,9 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
                 accept="image/*"
                 onChange={e => handleAvatarPick(e.target.files)}
               />
-              {avatarPreview ? (
+              {avatar.preview ? (
                 <>
-                  <img src={avatarPreview} alt="" className="h-full w-full object-cover" />
+                  <img src={avatar.preview} alt="" className="h-full w-full object-cover" />
                   <div className="absolute inset-0 flex items-center justify-center bg-black/50 text-white opacity-0 transition-opacity group-hover:opacity-100">{Ic.edit()}</div>
                 </>
               ) : (
@@ -245,33 +202,27 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
           </div>
 
           {/* Description */}
-          <div className="mb-5">
-            <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("char_desc_label")}</label>
-            <MobileExpandTextarea label={t("char_desc_label")} value={description || ''} onChange={v => setValue('description', v, { shouldDirty: true })}>
-              <AutoTextarea
-                className="w-full rounded-md border border-border bg-s2 px-2.5 py-1.5 font-body text-t1 outline-none focus:border-accent"
-                style={{}}
-                maxRows={20}
-                minRows={5}
-                register={register('description')}
-              />
-            </MobileExpandTextarea>
-          </div>
+          <TextAreaField
+            form={form}
+            field="description"
+            label={t("char_desc_label")}
+            mobileExpandLabel={t("char_desc_label")}
+            minRows={5}
+            maxRows={20}
+            isSaving={busy}
+          />
 
           {/* First Message */}
-          <div className="mb-5">
-            <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("ws_first_msg_label")}</label>
-            <MobileExpandTextarea label={t("ws_first_msg_label")} value={firstMessage || ''} onChange={v => setValue('firstMessage', v, { shouldDirty: true })}>
-              <AutoTextarea
-                className="w-full rounded-md border border-border bg-s2 px-2.5 py-1.5 font-body text-t1 outline-none focus:border-accent"
-                style={{}}
-                maxRows={20}
-                minRows={6}
-                placeholder={t("first_message_placeholder")}
-                register={register('firstMessage')}
-              />
-            </MobileExpandTextarea>
-          </div>
+          <TextAreaField
+            form={form}
+            field="firstMessage"
+            label={t("ws_first_msg_label")}
+            mobileExpandLabel={t("ws_first_msg_label")}
+            minRows={6}
+            maxRows={20}
+            placeholder={t("first_message_placeholder")}
+            isSaving={busy}
+          />
 
           {/* Alternate Greetings */}
           <div className="mb-5">
@@ -306,165 +257,113 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
               >+</span>
             </div>
             {alternateGreetings.length > 0 && (
-              <MobileExpandTextarea
-                label={t("alternate_greetings")}
-                value={alternateGreetings[altGreetIdx] || ''}
-                onChange={v => {
-                  const next = [...alternateGreetings];
-                  next[altGreetIdx] = v;
-                  setValue('alternateGreetings', next, { shouldDirty: true });
-                }}
-              >
-                <AutoTextarea
-                  className="w-full rounded-md border border-border bg-s2 px-2.5 py-1.5 font-body text-t1 outline-none focus:border-accent"
-                  style={{}}
-                  maxRows={20}
-                  minRows={6}
+              <>
+                <MobileExpandTextarea
+                  label={t("alternate_greetings")}
                   value={alternateGreetings[altGreetIdx] || ''}
-                  onChange={e => {
+                  onChange={v => {
                     const next = [...alternateGreetings];
-                    next[altGreetIdx] = e.target.value;
+                    next[altGreetIdx] = v;
                     setValue('alternateGreetings', next, { shouldDirty: true });
                   }}
-                  placeholder={t("alternate_greeting_placeholder")}
-                />
-              </MobileExpandTextarea>
+                >
+                  <AutoTextarea
+                    className="w-full rounded-md border border-border bg-s2 px-2.5 py-1.5 font-body text-t1 outline-none focus:border-accent"
+                    style={{}}
+                    maxRows={20}
+                    minRows={6}
+                    value={alternateGreetings[altGreetIdx] || ''}
+                    onChange={e => {
+                      const next = [...alternateGreetings];
+                      next[altGreetIdx] = e.target.value;
+                      setValue('alternateGreetings', next, { shouldDirty: true });
+                    }}
+                    placeholder={t("alternate_greeting_placeholder")}
+                  />
+                </MobileExpandTextarea>
+                <TokenCounter text={alternateGreetings[altGreetIdx] || ""} />
+              </>
             )}
           </div>
 
           {/* Mes Example */}
-          <div className="mb-5">
-            <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("dialog_examples")}</label>
-            <MobileExpandTextarea label={t("dialog_examples")} value={mesExample || ''} onChange={v => setValue('mesExample', v, { shouldDirty: true })}>
-              <AutoTextarea
-                className="w-full rounded-md border border-border bg-s2 px-2.5 py-1.5 font-ui text-t1 outline-none focus:border-accent font-mono text-xs"
-                style={{}}
-                maxRows={20}
-                minRows={6}
-                register={register('mesExample')}
-                placeholder={t("dialog_examples_placeholder")}
-              />
-            </MobileExpandTextarea>
-          </div>
+          <TextAreaField
+            form={form}
+            field="mesExample"
+            label={t("dialog_examples")}
+            mobileExpandLabel={t("dialog_examples")}
+            minRows={6}
+            maxRows={20}
+            mono
+            placeholder={t("dialog_examples_placeholder")}
+            isSaving={busy}
+          />
 
           {/* Scenario */}
-          <div className="mb-5">
-            <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("scenario")}</label>
-            <MobileExpandTextarea label={t("scenario")} value={defaultScenario || ''} onChange={v => setValue('defaultScenario', v, { shouldDirty: true })}>
-              <AutoTextarea
-                className="w-full rounded-md border border-border bg-s2 px-2.5 py-1.5 font-body text-t1 outline-none focus:border-accent"
-                style={{}}
-                maxRows={20}
-                minRows={5}
-                register={register('defaultScenario')}
-              />
-            </MobileExpandTextarea>
-          </div>
+          <TextAreaField
+            form={form}
+            field="scenario"
+            label={t("scenario")}
+            mobileExpandLabel={t("scenario")}
+            minRows={5}
+            maxRows={20}
+            isSaving={busy}
+          />
 
           {/* Personality */}
-          <div className="mb-5">
-            <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("char_personality_label")}</label>
-            <MobileExpandTextarea label={t("char_personality_label")} value={personalitySummary || ''} onChange={v => setValue('personalitySummary', v, { shouldDirty: true })}>
-              <AutoTextarea
-                className="w-full rounded-md border border-border bg-s2 px-2.5 py-1.5 font-body text-t1 outline-none focus:border-accent"
-                style={{}}
-                maxRows={20}
-                minRows={3}
-                register={register('personalitySummary')}
-              />
-            </MobileExpandTextarea>
-          </div>
+          <TextAreaField
+            form={form}
+            field="personalitySummary"
+            label={t("char_personality_label")}
+            mobileExpandLabel={t("char_personality_label")}
+            minRows={3}
+            maxRows={20}
+            isSaving={busy}
+          />
 
           {/* Advanced separator */}
           <div className="border-b border-border font-ui text-[calc(var(--ui-fs)-3px)] font-semibold uppercase tracking-[0.05em] text-t3 mt-6 mb-3 pb-1.5">{t("advanced_fields_v3")}</div>
 
           {/* Post History Instructions */}
-          <div className="mb-5">
-            <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("post_history_instructions")}</label>
-            <MobileExpandTextarea label={t("post_history_instructions")} value={postHistoryInstructions || ''} onChange={v => setValue('postHistoryInstructions', v, { shouldDirty: true })}>
-              <AutoTextarea
-                className="w-full rounded-md border border-border bg-s2 px-2.5 py-1.5 font-ui text-t1 outline-none focus:border-accent font-mono text-xs"
-                style={{}}
-                maxRows={20}
-                minRows={3}
-                register={register('postHistoryInstructions')}
-                placeholder={t("post_history_placeholder")}
-              />
-            </MobileExpandTextarea>
-          </div>
+          <TextAreaField
+            form={form}
+            field="postHistoryInstructions"
+            label={t("post_history_instructions")}
+            mobileExpandLabel={t("post_history_instructions")}
+            minRows={3}
+            maxRows={20}
+            mono
+            placeholder={t("post_history_placeholder")}
+            isSaving={busy}
+          />
 
           {/* Creator Notes */}
-          <div className="mb-5">
-            <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("creator_notes")}</label>
-            <MobileExpandTextarea label={t("creator_notes")} value={creatorNotes || ''} onChange={v => setValue('creatorNotes', v, { shouldDirty: true })}>
-              <AutoTextarea
-                className="w-full rounded-md border border-border bg-s2 px-2.5 py-1.5 font-body text-t1 outline-none focus:border-accent"
-                style={{}}
-                maxRows={20}
-                minRows={3}
-                register={register('creatorNotes')}
-                placeholder={t("creator_notes_placeholder")}
-              />
-            </MobileExpandTextarea>
-          </div>
+          <TextAreaField
+            form={form}
+            field="creatorNotes"
+            label={t("creator_notes")}
+            mobileExpandLabel={t("creator_notes")}
+            minRows={3}
+            maxRows={20}
+            placeholder={t("creator_notes_placeholder")}
+            isSaving={busy}
+          />
 
           {/* Depth Prompt */}
-          <div className="mb-5">
-            <div className="mb-1.5 flex flex-col gap-3 lg:flex-row lg:flex-wrap lg:items-center lg:justify-between">
-              <label className="font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("depth_prompt")}</label>
-              <div className="flex flex-col gap-2 lg:flex-row lg:flex-wrap lg:items-center lg:gap-x-4">
-                <div className="flex items-center gap-2">
-                  <span className="font-ui text-[11px] font-medium uppercase tracking-wider text-t3">{t("role")}</span>
-                  <DropdownSelect
-                    className="w-[120px]"
-                    searchable={false}
-                    value={depthPromptRole}
-                    options={[
-                      { id: "system", label: "system" },
-                      { id: "user", label: "user" },
-                      { id: "assistant", label: "assistant" },
-                    ]}
-                    onChange={v => setValue('depthPromptRole', v, { shouldDirty: true })}
-                  />
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="font-ui text-[11px] font-medium uppercase tracking-wider text-t3">{t("depth")}</span>
-                  <NumberInput
-                    className="w-[90px]"
-                    min={0}
-                    max={999}
-                    value={depthPromptDepth}
-                    onChange={v => setValue('depthPromptDepth', v, { shouldDirty: true })}
-                  />
-                </div>
-              </div>
-            </div>
-            <MobileExpandTextarea label={t("depth_prompt")} value={depthPrompt || ''} onChange={v => setValue('depthPrompt', v, { shouldDirty: true })}>
-              <AutoTextarea
-                className="w-full rounded-md border border-border bg-s2 px-2.5 py-1.5 font-ui text-t1 outline-none focus:border-accent font-mono text-xs"
-                style={{}}
-                maxRows={20}
-                minRows={3}
-                register={register('depthPrompt')}
-                placeholder={t("depth_prompt_placeholder")}
-              />
-            </MobileExpandTextarea>
-          </div>
+          <DepthPromptField form={form} isSaving={busy} />
 
           {/* System Prompt Override */}
-          <div className="mb-5">
-            <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("system_prompt_override")}</label>
-            <MobileExpandTextarea label={t("system_prompt_override")} value={systemPrompt || ''} onChange={v => setValue('systemPrompt', v, { shouldDirty: true })}>
-              <AutoTextarea
-                className="w-full min-h-[80px] rounded-md border border-border bg-s2 px-2.5 py-1.5 font-ui text-t1 outline-none focus:border-accent font-mono text-xs"
-                style={{}}
-                maxRows={20}
-                minRows={4}
-                register={register('systemPrompt')}
-                placeholder={t("system_prompt_override_placeholder")}
-              />
-            </MobileExpandTextarea>
-          </div>
+          <TextAreaField
+            form={form}
+            field="systemPrompt"
+            label={t("system_prompt_override")}
+            mobileExpandLabel={t("system_prompt_override")}
+            minRows={4}
+            maxRows={20}
+            mono
+            placeholder={t("system_prompt_override_placeholder")}
+            isSaving={busy}
+          />
 
           {/* Tags */}
           <div className="mb-5">

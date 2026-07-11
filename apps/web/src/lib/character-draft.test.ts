@@ -10,9 +10,10 @@
  * (non-null) fields preserved verbatim.
  */
 import { describe, it, expect } from "vitest";
+import { buildCharacterDraftSchema } from "@vibe-tavern/api-contracts";
 import type { BuildCharacterDraft } from "@vibe-tavern/api-contracts";
 import type { AppCharacter } from "../app-client.js";
-import { characterDefaults } from "./character-draft.js";
+import { characterDefaults, EMPTY_BUILD_DRAFT } from "./character-draft.js";
 
 function makeCharacter(over: Partial<AppCharacter> = {}): AppCharacter {
 	return {
@@ -112,5 +113,31 @@ describe("characterDefaults", () => {
 		// `?? 4` defensive fallback must NOT fire on it.
 		const draft = characterDefaults(makeCharacter({ mesExampleDepth: 0 }));
 		expect(draft.mesExampleDepth).toBe(0);
+	});
+});
+
+describe("EMPTY_BUILD_DRAFT", () => {
+	it("covers every field in buildCharacterDraftSchema (no missing/extra keys)", () => {
+		// The create-character modal seeds useForm from this baseline. A new required
+		// field added to BuildCharacterDraft must be added here too — the
+		// `: BuildCharacterDraft` annotation catches a missing key at compile time;
+		// this asserts the runtime key set matches the schema shape so a shape/seed
+		// drift can't slip through either side.
+		const schemaKeys = Object.keys(buildCharacterDraftSchema.shape).sort();
+		const draftKeys = Object.keys(EMPTY_BUILD_DRAFT).sort();
+		expect(draftKeys).toEqual(schemaKeys);
+	});
+
+	it("seeds creation-faithful defaults (mode/depth/role + empty collections)", () => {
+		// name "" intentionally fails the schema's min(1) — the user must enter a
+		// name, and `canSave` gates submission until they do; the resolver only
+		// validates on submit, so mounting on the empty baseline is fine.
+		expect(EMPTY_BUILD_DRAFT.name).toBe("");
+		expect(EMPTY_BUILD_DRAFT.mesExampleMode).toBe("always");
+		expect(EMPTY_BUILD_DRAFT.mesExampleDepth).toBe(4);
+		expect(EMPTY_BUILD_DRAFT.depthPromptDepth).toBe(4);
+		expect(EMPTY_BUILD_DRAFT.depthPromptRole).toBe("system");
+		expect(EMPTY_BUILD_DRAFT.alternateGreetings).toEqual([]);
+		expect(EMPTY_BUILD_DRAFT.tags).toEqual([]);
 	});
 });
