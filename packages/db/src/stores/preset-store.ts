@@ -1,11 +1,32 @@
 import { eq, sql } from 'drizzle-orm';
+import { Database } from 'bun:sqlite';
 import { promptPresets } from '../db-schema.js';
 import type { AppDb } from '../db-connection.js';
 import { resolveStoreRuntime, type StoreClock, type StoreIdGenerator } from '../persistence.js';
 import type { ContentStore } from '../content-store.js';
 import { STORAGE_FOLDERS } from '../file-store.js';
-import type { CustomInjection, PromptOrderEntry } from '@vibe-tavern/domain';
-import { normalizePresetCanvas } from '@vibe-tavern/domain';
+import { type CustomInjection, type PromptOrderEntry, normalizePresetCanvas, log } from '@vibe-tavern/domain';
+
+const logger = log.tag('preset-db');
+
+// ─── FK-delete diagnostics (PRESET_COPY_DELETE_CORRUPTION bug 2) ───────────────
+
+/** Reach the raw `bun:sqlite` handle off the drizzle wrapper. `AppDb` is
+ *  `ReturnType<typeof drizzle>`; the `$client` intersection isn't surfaced in
+ *  every overload resolution (see db-connection-fk-rebuild.test using the same
+ *  cast), so reach it this way for pragmas. */
+function rawClient(db: AppDb): Database {
+  return (db as unknown as { $client: Database }).$client;
+}
+
+/** Narrow an unknown thrown value to a SQLite foreign-key constraint failure.
+ *  bun:sqlite throws `SQLiteError` with `code:"SQLITE_CONSTRAINT_FOREIGNKEY"`
+ *  and message "FOREIGN KEY constraint failed"; accept either signal. */
+function isSqliteForeignKeyError(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  if ((err as { code?: unknown }).code === 'SQLITE_CONSTRAINT_FOREIGNKEY') return true;
+  return /FOREIGN KEY/i.test(err.message);
+}
 
 // ─── Input types ──────────────────────────────────────────────────────────────
 
@@ -208,7 +229,72 @@ export class PresetStore {
       await this.content.deleteEntity(STORAGE_FOLDERS.promptPresets, id);
     }
 
-    await this.db.delete(promptPresets).where(eq(promptPresets.id, id)).run();
+    try {
+      await this.db.delete(promptPresets).where(eq(promptPresets.id, id)).run();
+    } catch (err) {
+      // A bare `SQLITE_CONSTRAINT_FOREIGNKEY` names neither the offending child
+      // table nor the row. Attach a diagnostic so the next occurrence is
+      // triageable instead of opaque: which child rows still reference this
+      // preset (the usual blocker — an FK that is NO ACTION in this DB, or a SET
+      // NULL blocked by a NOT NULL column), plus any pre-existing orphan
+      // corruption. The delete STILL fails — the diagnostic only adds context.
+      if (isSqliteForeignKeyError(err)) {
+        const diag = this.diagnoseForeignKeyDeleteFailure(id);
+        logger.warn('delete(%s) FK constraint failed — %s', id, diag);
+        if (err instanceof Error) err.message = `${err.message} — ${diag}`;
+      }
+      throw err;
+    }
+  }
+
+  /** Gather what a bare FK-constraint error hides. Two complementary sweeps:
+   *  (1) a dynamic enumeration of every table whose FK references
+   *  `prompt_presets`, counting rows pointing at the preset being deleted
+   *  (this is what actually blocks a NO ACTION / NOT-NULL-blocked SET NULL
+   *  delete — `PRAGMA foreign_key_check` returns nothing for it because the
+   *  parent row still exists when the delete aborts); (2) `PRAGMA
+   *  foreign_key_check` for any pre-existing orphan corruption. The diagnostic
+   *  never masks the original failure — if the sweeps themselves throw, that is
+   *  recorded and the original error still propagates from `delete()`. */
+  private diagnoseForeignKeyDeleteFailure(presetId: string): string {
+    const client = rawClient(this.db);
+    const parts: string[] = [];
+    try {
+      // (1) Which child tables/rows still reference this preset?
+      const tables = client
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '__drizzle%'",
+        )
+        .all() as { name: string }[];
+      const refs: string[] = [];
+      for (const { name } of tables) {
+        const fks = client.prepare(`PRAGMA foreign_key_list("${name}")`).all() as Array<{
+          table: string;
+          from: string;
+          on_delete: string;
+        }>;
+        for (const fk of fks) {
+          if (fk.table !== 'prompt_presets') continue;
+          const row = client
+            .prepare(`SELECT COUNT(*) AS c FROM "${name}" WHERE "${fk.from}" = ?`)
+            .get(presetId) as { c: number };
+          if (row.c > 0) refs.push(`${name}.${fk.from}=${row.c}(on_delete:${fk.on_delete})`);
+        }
+      }
+      parts.push(refs.length ? `referencing_children=[${refs.join(', ')}]` : 'referencing_children=(none)');
+
+      // (2) Pre-existing orphan corruption (unrelated dangling refs).
+      const fkCheck = client.prepare('PRAGMA foreign_key_check').all() as Array<{
+        table: string;
+        rowid: number;
+        parent: string;
+      }>;
+      const orphans = fkCheck.map((v) => `${v.table}:${v.rowid}->${v.parent}`).join(', ');
+      parts.push(orphans ? `foreign_key_check=[${orphans}]` : 'foreign_key_check=(none)');
+    } catch (diagErr) {
+      parts.push(`diagnostic_failed=${diagErr instanceof Error ? diagErr.message : String(diagErr)}`);
+    }
+    return parts.join(' ');
   }
 
   async duplicate(id: string): Promise<PromptPreset> {

@@ -12,6 +12,7 @@
  * install has zero presets, so `ensureDefault()` exercises the seed path.
  */
 import { describe, test, expect, beforeEach } from "bun:test";
+import { Database } from "bun:sqlite";
 import { createDb } from "../src/db-connection.js";
 import { PresetStore } from "../src/stores/preset-store.js";
 import type { StoreClock, StoreIdGenerator } from "../src/persistence.js";
@@ -133,5 +134,61 @@ describe("PresetStore — isDefault designated-default marker", () => {
     const refreshed = await store.listAll();
     expect(refreshed.find((p) => p.id === def.id)?.isDefault).toBe(false);
     expect(refreshed.find((p) => p.id === other.id)?.isDefault).toBe(true);
+  });
+});
+
+describe("PresetStore — delete() FK diagnostics (PRESET_COPY_DELETE_CORRUPTION bug 2)", () => {
+  beforeEach(() => {
+    clockTick = 0;
+    idCounters = new Map();
+  });
+
+  test("on FK failure, the thrown error names the referencing child table/rows and the preset is NOT deleted", async () => {
+    const { db, store } = await createStore();
+    const preset = await store.ensureDefault();
+
+    // Synthesize a child table with a NO-ACTION FK to prompt_presets and a row
+    // referencing the seeded preset — the realistic shape of hypothesis (a): a
+    // DB from an older build where the FK was added without ON DELETE SET NULL
+    // (SQLite cannot retroactively change an FK; only a table rebuild can).
+    // The real schema's three preset FKs are all SET NULL, so they cannot block
+    // a delete; this synthetic blocker stands in for the stale-FK case.
+    const client = (db as unknown as { $client: Database }).$client;
+    client.exec(
+      'CREATE TABLE test_preset_blocker (child_id TEXT PRIMARY KEY, preset_id TEXT NOT NULL REFERENCES prompt_presets(id))',
+    );
+    client
+      .prepare('INSERT INTO test_preset_blocker (child_id, preset_id) VALUES (\'b1\', ?)')
+      .run(preset.id);
+
+    // The delete fails with the FK constraint, but now carrying the diagnostic.
+    let thrown: unknown;
+    try {
+      await store.delete(preset.id);
+    } catch (err) {
+      thrown = err;
+    }
+    expect(thrown).toBeInstanceOf(Error);
+    const msg = (thrown as Error).message;
+    expect(msg).toContain('FOREIGN KEY');
+    // The diagnostic surfaced the blocking child (table.column=count).
+    expect(msg).toContain('test_preset_blocker');
+    expect(msg).toContain('preset_id=1');
+    expect(msg).toContain('referencing_children=');
+    // No pre-existing orphan corruption in this setup.
+    expect(msg).toContain('foreign_key_check=(none)');
+
+    // The delete did NOT happen — preset row still present (diagnostic must not
+    // swallow/downgrade the failure into a silent success).
+    expect(await store.getById(preset.id)).not.toBeNull();
+  });
+
+  test("an unblocked delete still succeeds and throws nothing (diagnostic path is FK-only)", async () => {
+    const { store } = await createStore();
+    const preset = await store.ensureDefault();
+    // Nothing references the preset → delete succeeds; the try/catch must not
+    // break the normal path or attach any diagnostic.
+    await expect(store.delete(preset.id)).resolves.toBeUndefined();
+    expect(await store.getById(preset.id)).toBeNull();
   });
 });
