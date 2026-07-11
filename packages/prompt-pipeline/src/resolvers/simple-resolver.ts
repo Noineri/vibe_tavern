@@ -6,8 +6,9 @@
  * retains them for switching back to advanced mode). Zone is inferred from the
  * default order relative to `chatHistory` (100): above it = before_chat, below
  * it = after_chat (= in_chat at depth 0). The author's note is NOT routed
- * through this resolver — it has its own flat position fields
- * (`authorsNotePosition`/`Depth`/`Role`) that apply in both modes.
+ * through this resolver in Simple mode — its flat position fields
+ * (`authorsNotePosition`/`Depth`/`Role`) are authoritative here; Advanced mode
+ * instead takes placement from the canvas entry.
  */
 
 import { DEFAULT_PROMPT_ORDER } from "@vibe-tavern/domain";

@@ -289,12 +289,9 @@ the user's authored content.
 - **Advanced → Simple:** the canvas state is retained on the preset but ignored
   at assembly; the basic fields still drive the four core slots.
 
-### Author's Note — flat fields are authoritative
+### Author's Note — placement follows the active mode
 
-The Author's Note is special: it owns **flat position fields**
-(`authorsNotePosition` / `authorsNoteDepth` / `authorsNoteRole`) that are
-**authoritative in both modes**. The resolver contributes only `subPosition`
-(sort rank) for the note — it never relocates it. The three placements:
+The Author's Note keeps its **flat position fields** (`authorsNotePosition` / `authorsNoteDepth` / `authorsNoteRole`) when a preset switches modes, but placement follows the active mode. In Simple mode the flat fields are authoritative. In Advanced mode the canvas `authorsNote` entry is authoritative for zone, depth, enabled state, and order; the flat position/depth values remain persisted only so switching back to Simple restores the user's choice. The three Simple-mode placements:
 
 | `authorsNotePosition` | layer position | `injectionDepth` |
 |---|---|---|
@@ -360,19 +357,20 @@ Layers are filtered by the current `AssemblyMode`. Not all layers belong in ever
 
 ## Context Compaction
 
-When `contextBudget` is set and the prompt exceeds it, older messages are trimmed.
+When `contextBudget` is set and the complete prompt plus its response reserve exceeds it, older messages are trimmed.
 
 ### Algorithm
 
+`planHistoryCompaction()` is a pure shared planner used by both RP assembly and Coauthor assembly. Callers first build every non-history layer, then give the planner their exact history formatter/token counter.
+
 ```
-1. Calculate nonHistoryTokens = sum of all non-history layers
-2. Reserve tokens for model response (responseReserve)
-3. historyBudget = contextBudget - nonHistoryTokens - responseReserve
-4. Walk messages from END to START, accumulating tokens
-5. Stop when accumulated tokens > historyBudget (but keep ≥ 2 messages)
+1. Calculate nonHistoryTokens = every non-history layer, including mesExample, depth prompts, and script injections
+2. Count the fully formatted history (role labels and separators included)
+3. Trigger when nonHistoryTokens + fullHistoryTokens + responseReserve > contextBudget
+4. historyBudget = contextBudget - nonHistoryTokens - responseReserve
+5. Test complete trailing history suffixes against historyBudget, preserving at least 2 messages
 6. Apply findSafeCompactionBoundary() — never split assistant→tool pairs
-7. Discard messages before the boundary
-8. Add a diagnostic layer explaining what was compacted
+7. Discard messages before the safe boundary and add truthful diagnostic accounting
 ```
 
 ### Token Counting
@@ -755,7 +753,9 @@ Test files:
 
 | File | What it tests |
 |------|---------------|
-| `assemble.test.ts` | Layer creation, sorting, mode filtering, compaction, author's-note flat-field placement |
+| `assemble.test.ts` | Layer creation, sorting, mode filtering, and Author's Note mode authority |
+| `compaction-budget.test.ts` | Reserve trigger, late-layer accounting, formatted-history separators, and assistant/tool boundary safety |
+| `build-lore-layers.test.ts` | Direct ST lore position, canvas zone, insertion-order, and dropped-reason mapping |
 | `macro-resolution.test.ts` | All macro types, variables, conditionals, random, roll, nested if |
 | `lore-activation.test.ts` | Lore keyword matching, logic operators, cooldown, group weights |
 | `macros.test.ts` | Legacy macro tests (skipped — module removed) |

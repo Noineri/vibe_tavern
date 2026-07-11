@@ -82,6 +82,112 @@ function makeLayer(input: {
   };
 }
 
+function buildAuthorsNoteLayer(
+  preset: NonNullable<PromptAssemblyContext["preset"]>,
+  resolver: PositionResolver,
+): PromptLayer | null {
+  if (!preset.authorsNote?.trim() || !resolver.enabled("authorsNote")) return null;
+
+  const role = preset.authorsNoteRole ?? "system";
+  const subPosition = resolver.rank("authorsNote", DEFAULT_PROMPT_ORDER.authorsNote);
+  if (preset.advancedMode) {
+    return resolver.position(makeLayer({
+      id: PROMPT_LAYER_ID.promptPresetAuthorsNote,
+      sourceType: PROMPT_LAYER_SOURCE_TYPE.promptPreset,
+      sourceId: preset.id,
+      sourceName: "Author's Note",
+      position: "in_prompt",
+      priority: PROMPT_LAYER_PRIORITY.promptPresetAuthorsNote,
+      role,
+      subPosition,
+      text: preset.authorsNote,
+    }), "authorsNote");
+  }
+
+  const position = preset.authorsNotePosition ?? "in_chat";
+  const layer = makeLayer({
+    id: PROMPT_LAYER_ID.promptPresetAuthorsNote,
+    sourceType: PROMPT_LAYER_SOURCE_TYPE.promptPreset,
+    sourceId: preset.id,
+    sourceName: position === "in_chat" ? "Author's Note (depth)" : "Author's Note",
+    position: position === "in_prompt" ? "in_prompt" : "in_chat",
+    priority: PROMPT_LAYER_PRIORITY.promptPresetAuthorsNote,
+    role,
+    subPosition,
+    text: preset.authorsNote,
+  });
+  if (position !== "in_prompt") layer.injectionDepth = position === "after_chat" ? 0 : (preset.authorsNoteDepth ?? 4);
+  return layer;
+}
+
+function buildCustomInjectionLayers(
+  preset: PromptAssemblyContext["preset"],
+  resolver: PositionResolver,
+): PromptLayer[] {
+  if (!preset || !resolver.includeCustomInjections) return [];
+
+  const builtInIdentifiers = new Set(["nsfw", "enhanceDefinitions"]);
+  return preset.customInjections?.flatMap((injection) => {
+    if (!injection.content?.trim()) return [];
+    const identifier = injection.identifier ?? injection.name;
+    if (builtInIdentifiers.has(identifier)) return [];
+    const canvasEntry = preset.promptOrder?.find((entry) => entry.identifier === identifier);
+    if (!canvasEntry?.enabled) return [];
+
+    const zone = canvasEntry.zone;
+    const layer = makeLayer({
+      id: `preset_injection_${identifier}`,
+      sourceType: PROMPT_LAYER_SOURCE_TYPE.promptPreset,
+      sourceId: preset.id,
+      sourceName: injection.name,
+      position: zone === "before_chat" ? "in_prompt" : "in_chat",
+      subPosition: resolver.rank(identifier, canvasEntry.order),
+      role: injection.role === "user" || injection.role === "assistant" ? injection.role : "system",
+      reason: `included (canvas zone=${zone}, depth=${canvasEntry.depth ?? "-"}, order=${canvasEntry.order})`,
+      text: injection.content,
+    });
+    if (zone === "in_chat") layer.injectionDepth = canvasEntry.depth ?? 0;
+    else if (zone === "after_chat") layer.injectionDepth = 0;
+    return [layer];
+  }) ?? [];
+}
+
+function buildMesExample(
+  context: PromptAssemblyContext,
+  resolver: PositionResolver,
+): { layer: PromptLayer | null; droppedReason: string | null } {
+  if (!context.character.mesExample?.trim() || !resolver.enabled("dialogueExamples")) {
+    return { layer: null, droppedReason: null };
+  }
+
+  const mode = context.character.mesExampleMode ?? "always";
+  const isFirstTurn = context.chat.recentMessages.length <= 1;
+  const shouldInclude = mode === "always" || (mode === "once" && isFirstTurn) || mode === "depth";
+  if (!shouldInclude) {
+    return {
+      layer: null,
+      droppedReason: mode === "disabled"
+        ? "skipped: mes_example_mode=disabled"
+        : `skipped: mes_example_mode=once, not first turn (${context.chat.recentMessages.length} messages)`,
+    };
+  }
+
+  const isDepthMode = mode === "depth";
+  const layer = makeLayer({
+    id: PROMPT_LAYER_ID.mesExample,
+    sourceType: PROMPT_LAYER_SOURCE_TYPE.character,
+    sourceId: context.character.id,
+    sourceName: `${context.character.name} — Examples`,
+    priority: PROMPT_LAYER_PRIORITY.mesExample,
+    reason: isDepthMode ? `included (depth mode, depth=${context.character.mesExampleDepth ?? 4})` : isFirstTurn ? "included" : "included (always mode)",
+    text: PROMPT_FORMAT.exampleMessages(context.character.mesExample),
+  });
+  layer.subPosition = resolver.rank("dialogueExamples", DEFAULT_PROMPT_ORDER.dialogueExamples);
+  layer.position = "in_chat";
+  layer.injectionDepth = isDepthMode ? (context.character.mesExampleDepth ?? 4) : 0;
+  return { layer: resolver.position(layer, "dialogueExamples"), droppedReason: null };
+}
+
 /**
  * Sort layers by position first (`before_prompt` < `in_prompt` < `in_chat` < `hidden_system`),
  * then by priority **descending** within the same position group.
@@ -325,73 +431,8 @@ function buildLayers(context: PromptAssemblyContext, resolver: PositionResolver)
     layers.push(layer);
   }
 
-  if (context.preset?.authorsNote?.trim() && resolver.enabled("authorsNote")) {
-    const role = context.preset.authorsNoteRole ?? "system";
-    const noteSubPosition = resolver.rank("authorsNote", DEFAULT_PROMPT_ORDER.authorsNote);
-
-    if (context.preset.advancedMode) {
-      // Advanced (canvas) mode: the canvas entry for "authorsNote" is the single
-      // source of truth for zone/depth/order — exactly like every other built-in
-      // slot, the note is routed through resolver.position(). The flat
-      // authorsNotePosition/Depth fields are NOT consulted for placement here;
-      // they stay persisted on the preset so switching back to simple mode
-      // restores the user's dropdown choice. (Bug fix: previously the flat
-      // fields were authoritative in BOTH modes, so dragging the note on the
-      // canvas had no effect on its actual placement.)
-      const layer = makeLayer({
-        id: PROMPT_LAYER_ID.promptPresetAuthorsNote,
-        sourceType: PROMPT_LAYER_SOURCE_TYPE.promptPreset,
-        sourceId: context.preset.id,
-        sourceName: "Author's Note",
-        position: "in_prompt", // overwritten by resolver.position() per canvas zone
-        priority: PROMPT_LAYER_PRIORITY.promptPresetAuthorsNote,
-        role,
-        subPosition: noteSubPosition,
-        text: context.preset.authorsNote,
-      });
-      layers.push(resolver.position(layer, "authorsNote"));
-    } else {
-      // Simple mode: the flat position fields (authorsNotePosition/Depth) are
-      // authoritative — they are what the simple-mode dropdown drives. The
-      // resolver's position() would infer zone from DEFAULT_PROMPT_ORDER alone
-      // (authorsNote=60 < chatHistory=100 → before_chat), silently dropping an
-      // after_chat placement, so the note is NOT routed through the resolver
-      // here. subPosition still comes from resolver.rank() for sort stability.
-      const position = context.preset.authorsNotePosition ?? "in_chat";
-      const depth = context.preset.authorsNoteDepth ?? 4;
-
-      if (position === "in_prompt") {
-        // Inside the system prompt block.
-        layers.push(makeLayer({
-          id: PROMPT_LAYER_ID.promptPresetAuthorsNote,
-          sourceType: PROMPT_LAYER_SOURCE_TYPE.promptPreset,
-          sourceId: context.preset.id,
-          sourceName: "Author's Note",
-          position: "in_prompt",
-          priority: PROMPT_LAYER_PRIORITY.promptPresetAuthorsNote,
-          role,
-          subPosition: noteSubPosition,
-          text: context.preset.authorsNote,
-        }));
-      } else {
-        // after_chat (depth=0) and in_chat (at `depth`) both land in the chat at a
-        // numeric injectionDepth; the only difference is the depth value.
-        const layer = makeLayer({
-          id: PROMPT_LAYER_ID.promptPresetAuthorsNote,
-          sourceType: PROMPT_LAYER_SOURCE_TYPE.promptPreset,
-          sourceId: context.preset.id,
-          sourceName: position === "after_chat" ? "Author's Note" : "Author's Note (depth)",
-          position: "in_chat",
-          priority: PROMPT_LAYER_PRIORITY.promptPresetAuthorsNote,
-          role,
-          subPosition: noteSubPosition,
-          text: context.preset.authorsNote,
-        });
-        layer.injectionDepth = position === "after_chat" ? 0 : depth;
-        layers.push(layer);
-      }
-    }
-  }
+  const authorsNoteLayer = context.preset ? buildAuthorsNoteLayer(context.preset, resolver) : null;
+  if (authorsNoteLayer) layers.push(authorsNoteLayer);
 
   // Enhance Definitions — built-in ST prompt block (disabled by default, content-driven)
   if (context.preset?.enhanceDefinitions?.trim() && resolver.enabled("enhanceDefinitions")) {
@@ -423,57 +464,7 @@ function buildLayers(context: PromptAssemblyContext, resolver: PositionResolver)
   // STORES them (preset is a 2-in-1 container), but they do not participate in
   // assembly — the user cannot author them in simple mode and they would
   // duplicate the preset's 4 basic fields (main/jailbreak/authorsNote/prefill).
-  if (resolver.includeCustomInjections) {
-    // CANVAS_SINGLE_SOURCE_PLAN Wave 5: `customInjections` is content-only
-    // ({identifier, name, content, role}). Positional + enabled state live on
-    // the matching `PromptOrderEntry` in `promptOrder` — the canvas is the
-    // single source of truth for assembly, mirroring the UI's single-read path.
-    // `role` is content metadata (the assembled layer's message role), taken
-    // from the injection — NOT the canvas (I12). D1: in_chat items carry
-    // depth ≥ 1 so they never collide with after_chat (pinned at depth 0).
-  // Skip built-in identifiers that are handled as dedicated fields (nsfw, enhanceDefinitions).
-  const BUILTIN_FIELD_IDENTIFIERS = new Set(["nsfw", "enhanceDefinitions"]);
-  for (const injection of (context.preset?.customInjections ?? [])) {
-    if (!injection.content?.trim()) continue;
-    if (BUILTIN_FIELD_IDENTIFIERS.has(injection.identifier ?? injection.name)) continue;
-
-    const role = injection.role === "user" || injection.role === "assistant" ? injection.role : "system";
-    const identifier = injection.identifier ?? injection.name;
-
-    // Single canvas-lookup read path: enabled/zone/depth/order come ONLY from
-    // the matching canvas entry. No canvas entry = skip (defensive —
-    // normalizePresetCanvas in Wave 2 guarantees one per custom injection on
-    // hydrate, so this only guards against hand-crafted/legacy input).
-    const canvasEntry = context.preset?.promptOrder?.find(e => e.identifier === identifier);
-    if (!canvasEntry?.enabled) continue;
-
-    const zone = canvasEntry.zone;
-    const depth = canvasEntry.depth ?? null;
-    const order = canvasEntry.order;
-
-    const layer = makeLayer({
-      id: `preset_injection_${identifier}`,
-      sourceType: PROMPT_LAYER_SOURCE_TYPE.promptPreset,
-      sourceId: context.preset?.id ?? "",
-      sourceName: injection.name,
-      position: zone === "before_chat" ? "in_prompt" : "in_chat",
-      // priority omitted — custom injections always carry a subPosition, which
-      // sortLayers/inChatWithDepth consult before priority (synthetic priority
-      // would be dead weight). makeLayer defaults to 0.
-      subPosition: resolver.rank(identifier, order),
-      role,
-      reason: `included (canvas zone=${zone}, depth=${depth ?? "-"}, order=${order})`,
-      text: injection.content,
-    });
-
-    if (zone === "in_chat") {
-      layer.injectionDepth = depth ?? 0;
-    } else if (zone === "after_chat") {
-      layer.injectionDepth = 0;
-    }
-    layers.push(layer);
-  }
-  } // end advanced-only custom injections
+  layers.push(...buildCustomInjectionLayers(context.preset, resolver));
 
   if (context.preset?.summary?.trim()) {
     layers.push(
@@ -656,48 +647,10 @@ function buildLayers(context: PromptAssemblyContext, resolver: PositionResolver)
   let recentMessagesForHistory = context.chat.recentMessages;
   let compactionSummary: string | undefined;
 
-  if (context.character.mesExample?.trim() && resolver.enabled("dialogueExamples")) {
-    const mesExampleMode = context.character.mesExampleMode ?? "always";
-    const isFirstTurn = context.chat.recentMessages.length <= 1;
-    const shouldInclude =
-      mesExampleMode === "always" ||
-      (mesExampleMode === "once" && isFirstTurn) ||
-      mesExampleMode === "depth";
-
-    if (shouldInclude) {
-      const isDepthMode = mesExampleMode === "depth";
-      const depth = context.character.mesExampleDepth ?? 4;
-      const layer = makeLayer({
-        id: PROMPT_LAYER_ID.mesExample,
-        sourceType: PROMPT_LAYER_SOURCE_TYPE.character,
-        sourceId: context.character.id,
-        sourceName: context.character.name + " — Examples",
-        priority: PROMPT_LAYER_PRIORITY.mesExample,
-        reason: isDepthMode
-          ? `included (depth mode, depth=${depth})`
-          : isFirstTurn ? "included" : "included (always mode)",
-        text: PROMPT_FORMAT.exampleMessages(context.character.mesExample),
-      });
-
-      layer.subPosition = resolver.rank("dialogueExamples", DEFAULT_PROMPT_ORDER.dialogueExamples);
-      if (isDepthMode) {
-        layer.position = "in_chat";
-        layer.injectionDepth = depth;
-      } else {
-        // always/once: place after chat history (before jailbreak)
-        // Higher priority than jailbreak (990) so examples come first
-        layer.position = "in_chat";
-        layer.injectionDepth = 0;
-      }
-      layers.push(resolver.position(layer, "dialogueExamples"));
-    } else {
-      droppedLayers.push({
-        id: PROMPT_LAYER_ID.mesExample,
-        reason: mesExampleMode === "disabled"
-          ? "skipped: mes_example_mode=disabled"
-          : `skipped: mes_example_mode=once, not first turn (${context.chat.recentMessages.length} messages)`,
-      });
-    }
+  const mesExample = buildMesExample(context, resolver);
+  if (mesExample.layer) layers.push(mesExample.layer);
+  if (mesExample.droppedReason) {
+    droppedLayers.push({ id: PROMPT_LAYER_ID.mesExample, reason: mesExample.droppedReason });
   }
 
 
