@@ -175,38 +175,6 @@ export class CharacterStore {
     return this.mergeVtfContent(char, override);
   }
 
-  // ─── Version folder snapshots (VTF Phase 3) ──────────────────────────────
-  // The active version's content lives at the entity root; non-active versions
-  // are full folder snapshots under versions/{versionId}/. These methods move
-  // the canonical VTF file set (profile.md + instructions.json + extensions.json
-  // + greetings/) between root and a version slot. VersionStore orchestrates
-  // them and owns the character_versions DB rows; getById stays version-agnostic
-  // (it always reads the root, which always reflects the active version).
-
-  /** Snapshot the current root VTF folder into versions/{versionId}/ (overwrites). */
-  async snapshotRootToVersion(id: string, versionId: string): Promise<void> {
-    if (!this.folder) throw new Error('CharacterFolder required for VTF version snapshots');
-    await this.folder.snapshotToVersion(id, versionId);
-  }
-
-  /** Restore a version snapshot from versions/{versionId}/ to the root folder. */
-  async restoreVersionToRoot(id: string, versionId: string): Promise<void> {
-    if (!this.folder) throw new Error('CharacterFolder required for VTF version snapshots');
-    await this.folder.restoreFromVersion(id, versionId);
-  }
-
-  /** Remove the versions/{versionId}/ subfolder. No-op if missing. */
-  async removeVersionFolder(id: string, versionId: string): Promise<void> {
-    if (!this.folder) return;
-    await this.folder.removeVersionFolder(id, versionId);
-  }
-
-  /** True if a version snapshot with a profile.md exists at versions/{versionId}/. */
-  async versionFolderExists(id: string, versionId: string): Promise<boolean> {
-    if (!this.folder) return false;
-    return this.folder.versionExists(id, versionId);
-  }
-
   /** Override the content fields of a DB-row character with VTF-parsed content (sourced from {@link CharacterFolder}.readVtfOverride). Media/avatar/status/timestamps are preserved. */
   private mergeVtfContent(base: Character, vtf: VtfCharacterContent): Character {
     return {

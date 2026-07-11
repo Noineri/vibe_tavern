@@ -27,8 +27,9 @@ async function setup() {
   const dataRoot = await mkdtemp(join(tmpdir(), "vt-versionstore-test-"));
   const db = await createDb(join(dataRoot, "test.db"));
   const content = new ContentStore({ fileStore: createFileStore(dataRoot) });
-  const characters = new CharacterStore(db, { folder: new CharacterFolder(content), clock, idGenerator: idGen });
-  const versions = new VersionStore(db, { clock, idGenerator: idGen, characters });
+  const characterFolder = new CharacterFolder(content);
+  const characters = new CharacterStore(db, { folder: characterFolder, clock, idGenerator: idGen });
+  const versions = new VersionStore(db, { clock, idGenerator: idGen, folder: characterFolder });
   return { dataRoot, db, content, characters, versions };
 }
 

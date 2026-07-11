@@ -2,7 +2,7 @@ import { asc, and, eq } from 'drizzle-orm';
 import { characterVersions } from '../db-schema.js';
 import type { AppDb } from '../db-connection.js';
 import { resolveStoreRuntime, type StoreClock, type StoreIdGenerator } from '../persistence.js';
-import type { CharacterStore } from './character-store.js';
+import { CharacterFolder } from './character-folder.js';
 import { brandId, type CharacterVersion, type CharacterVersionId, type CharacterId } from '@vibe-tavern/domain';
 
 /**
@@ -12,8 +12,8 @@ import { brandId, type CharacterVersion, type CharacterVersionId, type Character
  * active version's content lives at the character folder ROOT (read by
  * `CharacterStore.getById`, which is version-agnostic); non-active versions
  * live as full folder snapshots under `data/characters/{id}/versions/{vid}/`.
- * Folder mechanics (snapshot/restore/remove) are delegated to `CharacterStore`
- * so the VTF codec knowledge stays in one place.
+ * Folder mechanics (snapshot/restore/remove) are delegated to `CharacterFolder`,
+ * which owns the on-disk character-folder layout.
  *
  * Branching model (decided): a character always has exactly one active version.
  * `createVersion` snapshots the current root into the OLD active version's slot
@@ -31,17 +31,17 @@ export class VersionStore {
   private readonly db: AppDb;
   private readonly clock: StoreClock;
   private readonly idGen: StoreIdGenerator;
-  private readonly characters: CharacterStore;
+  private readonly folder: CharacterFolder;
 
   constructor(
     db: AppDb,
-    options: { clock?: StoreClock; idGenerator?: StoreIdGenerator; characters: CharacterStore },
+    options: { clock?: StoreClock; idGenerator?: StoreIdGenerator; folder: CharacterFolder },
   ) {
     this.db = db;
     const runtime = resolveStoreRuntime(options);
     this.clock = runtime.clock;
     this.idGen = runtime.idGenerator;
-    this.characters = options.characters;
+    this.folder = options.folder;
   }
 
   private mapRow(row: typeof characterVersions.$inferSelect): CharacterVersion {
@@ -123,7 +123,7 @@ export class VersionStore {
     const current = await this.ensureBaseVersion(characterId);
     // Preserve the currently-active version as a non-active snapshot. Root is
     // unchanged — the new version starts as an identical copy of `current`.
-    await this.characters.snapshotRootToVersion(characterId, current.id);
+    await this.folder.snapshotToVersion(characterId, current.id);
     const id = this.idGen.next('charver');
     const now = this.clock.now();
     await this.db.transaction(async (tx) => {
@@ -161,9 +161,9 @@ export class VersionStore {
     const current = await this.getActiveVersion(characterId);
     if (current && current.id === target.id) return target;
     if (current) {
-      await this.characters.snapshotRootToVersion(characterId, current.id);
+      await this.folder.snapshotToVersion(characterId, current.id);
     }
-    await this.characters.restoreVersionToRoot(characterId, versionId);
+    await this.folder.restoreFromVersion(characterId, versionId);
     await this.activateOnly(characterId, versionId);
     return target;
   }
@@ -191,7 +191,7 @@ export class VersionStore {
     if (version.isActive) {
       throw new Error('Cannot delete the active version');
     }
-    await this.characters.removeVersionFolder(characterId, versionId);
+    await this.folder.removeVersionFolder(characterId, versionId);
     await this.db.delete(characterVersions).where(eq(characterVersions.id, versionId)).run();
   }
 
