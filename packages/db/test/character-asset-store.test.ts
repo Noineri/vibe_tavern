@@ -8,6 +8,7 @@ import { ContentStore } from "../src/content-store.js";
 import { createFileStore, STORAGE_FOLDERS } from "../src/file-store.js";
 import { CharacterAssetStore } from "../src/stores/character-asset-store.js";
 import { CharacterStore } from "../src/stores/character-store.js";
+import { CharacterFolder } from "../src/stores/character-folder.js";
 import type { StoreClock, StoreIdGenerator } from "../src/persistence.js";
 
 const CHARS = STORAGE_FOLDERS.characters;
@@ -20,7 +21,7 @@ async function setup() {
 	const dataRoot = await mkdtemp(join(tmpdir(), "vt-assetstore-test-"));
 	const db = await createDb(join(dataRoot, "test.db"));
 	const content = new ContentStore({ fileStore: createFileStore(dataRoot) });
-	const characterStore = new CharacterStore(db, { content, clock: fixedClock, idGenerator: idGen });
+	const characterStore = new CharacterStore(db, { folder: new CharacterFolder(content), clock: fixedClock, idGenerator: idGen });
 	const store = new CharacterAssetStore(db, { clock: fixedClock, idGenerator: idGen });
 	const char = await characterStore.create({ name: "Aria" });
 	return { dataRoot, db, content, store, characterStore, charId: char.id };

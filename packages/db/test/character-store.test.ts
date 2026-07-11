@@ -9,6 +9,7 @@ import { characters as charactersTable } from "../src/db-schema.js";
 import { ContentStore } from "../src/content-store.js";
 import { createFileStore, STORAGE_FOLDERS } from "../src/file-store.js";
 import { CharacterStore } from "../src/stores/character-store.js";
+import { CharacterFolder } from "../src/stores/character-folder.js";
 import type { StoreClock, StoreIdGenerator } from "../src/persistence.js";
 
 const CHARS = STORAGE_FOLDERS.characters;
@@ -21,7 +22,7 @@ async function setup() {
 	const dataRoot = await mkdtemp(join(tmpdir(), "vt-charstore-test-"));
 	const db = await createDb(join(dataRoot, "test.db"));
 	const content = new ContentStore({ fileStore: createFileStore(dataRoot) });
-	const store = new CharacterStore(db, { content, clock: fixedClock, idGenerator: idGen });
+	const store = new CharacterStore(db, { folder: new CharacterFolder(content), clock: fixedClock, idGenerator: idGen });
 	return { dataRoot, db, content, store };
 }
 

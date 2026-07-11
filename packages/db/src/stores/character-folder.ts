@@ -79,6 +79,16 @@ export class CharacterFolder {
   }
 
   /**
+   * True if a `profile.md` physically exists at the entity root — the VTF-native
+   * marker. This is a real filesystem check (not the text cache, which may be
+   * stale if the file was removed out-of-band), so `migrateToVtf`'s idempotency
+   * guard can trust it.
+   */
+  async hasVtfProfile(id: string): Promise<boolean> {
+    return this.content.entityLeafExists(FOLDER, id, 'profile.md');
+  }
+
+  /**
    * Read every VTF leaf file for an entity into a {@link FolderFileEntry} list.
    * `subdir` reads from a nested folder (e.g. `versions/{vid}`); the returned
    * entry `path` is always relative to the entity ROOT (no subdir prefix), so a
