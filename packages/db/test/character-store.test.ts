@@ -8,7 +8,7 @@ import { createDb } from "../src/db-connection.js";
 import { characters as charactersTable } from "../src/db-schema.js";
 import { ContentStore } from "../src/content-store.js";
 import { createFileStore, STORAGE_FOLDERS } from "../src/file-store.js";
-import { CharacterStore } from "../src/stores/character-store.js";
+import { CharacterStore, type Character, type CreateCharacterData } from "../src/stores/character-store.js";
 import { CharacterFolder } from "../src/stores/character-folder.js";
 import type { StoreClock, StoreIdGenerator } from "../src/persistence.js";
 
@@ -604,5 +604,137 @@ describe("CharacterStore — characterization (refactor safety net + coverage)",
 		expect(fetched?.avatarDescription).toBe("a storm mage");
 		expect(fetched?.includeGalleryInPrompt).toBe(true);
 		expect(fetched?.includeAvatarInPrompt).toBe(true);
+	});
+});
+
+// DB-only setup (no CharacterFolder): isolates the DB-column contract from VTF
+// folder serialization, so the assertions below test ONLY whether each method
+// preserves every content column — the exact surface where the avatarFullExt
+// data-loss bug (finding #4) and the includeGallery/Avatar drift (see duplicate
+// test below) live.
+async function setupDbOnly() {
+	const dataRoot = await mkdtemp(join(tmpdir(), "vt-charstore-test-"));
+	const db = await createDb(join(dataRoot, "test.db"));
+	const store = new CharacterStore(db, { clock: fixedClock, idGenerator: idGen });
+	return { dataRoot, db, store };
+}
+
+// ERA-2 drift guard. Two layers:
+//  (1) Compile-time: FULL_CONTENT is typed Required<CreateCharacterData>, so any
+//      field added to CreateCharacterData forces this fixture (and thus every
+//      assertion below) to cover it, or TypeScript errors here.
+//  (2) Behavioural: expectContentFields() checks every fixture field survives
+//      each method, so a method that forgets to carry a field fails the test.
+// Avatar ext/asset fields are null here to avoid folder-file I/O; their column
+// survival across duplicate is covered by the dedicated tests above (avatarExt
+// L192, avatarFullExt L209).
+describe("CharacterStore — field-preservation drift guard (ERA-2)", () => {
+	// Distinct sentinel per field so a no-op carry (field silently left at the
+	// DB default) is caught rather than masked by an equal default value.
+	const FULL_CONTENT: Required<CreateCharacterData> = {
+		name: "Aria",
+		description: "storm mage",
+		personalitySummary: "electric",
+		defaultScenario: "tavern, stormy night",
+		firstMessage: "Lightning crackles.",
+		mesExample: "<START>\n{{user}}: hi\n{{char}}: hm",
+		mesExampleMode: "always",
+		mesExampleDepth: 4,
+		alternateGreetings: ["Alt greeting one"],
+		postHistoryInstructions: "keep going",
+		creatorNotes: "creator notes",
+		characterBook: { entries: [{ keys: ["storm"] }] },
+		depthPrompt: "at depth",
+		depthPromptDepth: 3,
+		depthPromptRole: "system",
+		extensions: { source: "test" },
+		systemPrompt: "be vivid",
+		tags: ["wizard", "storm"],
+		avatarAssetId: null,
+		avatarFullAssetId: null,
+		avatarCropJson: null,
+		avatarExt: null,
+		avatarFullExt: null,
+		avatarSourceAssetId: null,
+		includeGalleryInPrompt: true,
+		includeAvatarInPrompt: true,
+		avatarDescription: "an electric portrait",
+	};
+
+	// Every field flipped to a distinct second sentinel so the update path can
+	// detect a missing `if (data.X !== undefined)` guard — the field would stay
+	// at the pre-update value and the assertion would fail.
+	const UPDATED_CONTENT: Required<CreateCharacterData> = {
+		name: "Aria Renamed",
+		description: "fire mage",
+		personalitySummary: "burning",
+		defaultScenario: "desert, noon",
+		firstMessage: "Embers rise.",
+		mesExample: "<START>\n{{user}}: yo\n{{char}}: hey",
+		mesExampleMode: "on-first",
+		mesExampleDepth: 2,
+		alternateGreetings: ["Different alt"],
+		postHistoryInstructions: "stop here",
+		creatorNotes: "new notes",
+		characterBook: { entries: [{ keys: ["fire"] }] },
+		depthPrompt: "new depth",
+		depthPromptDepth: 5,
+		depthPromptRole: "user",
+		extensions: { source: "test2" },
+		systemPrompt: "be terse",
+		tags: ["pyromancer", "ash"],
+		avatarAssetId: null,
+		avatarFullAssetId: null,
+		avatarCropJson: null,
+		avatarExt: null,
+		avatarFullExt: null,
+		avatarSourceAssetId: null,
+		includeGalleryInPrompt: false,
+		includeAvatarInPrompt: false,
+		avatarDescription: "a scorched portrait",
+	};
+
+	// Assert every content field of `actual` equals the sentinel in `expected`.
+	// Iterates the fixture keys, so adding a field to the fixture auto-extends
+	// every call site. `skip` is for managed transforms (duplicate suffixes name).
+	function expectContentFields(
+		actual: Character,
+		expected: Required<CreateCharacterData>,
+		skip: ReadonlySet<keyof CreateCharacterData> = new Set(),
+	) {
+		for (const key of Object.keys(expected) as (keyof CreateCharacterData)[]) {
+			if (skip.has(key)) continue;
+			expect(actual[key], `field "${key}" not preserved`).toEqual(expected[key]);
+		}
+	}
+
+	test("create + getById round-trip preserves every content field (create insert + mapRow)", async () => {
+		const { store } = await setupDbOnly();
+		const created = await store.create(FULL_CONTENT);
+		expectContentFields(created, FULL_CONTENT);
+		const fetched = await store.getById(created.id);
+		expect(fetched).not.toBeNull();
+		expectContentFields(fetched!, FULL_CONTENT);
+	});
+
+	test("duplicate preserves every content field except name (which gets the (copy) suffix)", async () => {
+		const { store } = await setupDbOnly();
+		const original = await store.create(FULL_CONTENT);
+		const copy = await store.duplicate(original.id);
+		expect(copy.id).not.toBe(original.id);
+		expect(copy.name).toBe(`${FULL_CONTENT.name} (copy)`);
+		// Regression catch: this assertion is what surfaced that duplicate() used
+		// to drop includeGalleryInPrompt / includeAvatarInPrompt / avatarDescription
+		// (same drift disease as the avatarFullExt data-loss bug, finding #4).
+		expectContentFields(copy, FULL_CONTENT, new Set(["name"]));
+	});
+
+	test("update with a full second payload changes every content field", async () => {
+		const { store } = await setupDbOnly();
+		const created = await store.create(FULL_CONTENT);
+		const updated = await store.update(created.id, UPDATED_CONTENT);
+		expectContentFields(updated, UPDATED_CONTENT);
+		const fetched = await store.getById(created.id);
+		expectContentFields(fetched!, UPDATED_CONTENT);
 	});
 });
