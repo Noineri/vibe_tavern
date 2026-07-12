@@ -18,15 +18,7 @@ import { useProviderProfiles } from "../../hooks/use-provider-profiles.js";
 import { usePresetController } from "../../hooks/use-preset-controller.js";
 import { useUpdateCheck } from "../../hooks/use-update-check.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
-import { Sidebar } from "./Sidebar.js";
-import { Rail } from "./Rail.js";
-import { CoauthorRail } from "../coauthor/CoauthorRail.js";
-import { CoauthorSidebar } from "../coauthor/CoauthorSidebar.js";
-import { TopBar } from "./TopBar.js";
-import { CoauthorTopBar } from "../coauthor/CoauthorTopBar.js";
-import { PlayMode } from "../play/PlayMode.js";
-import { BuildMode } from "../build/BuildMode.js";
-import { CoauthorMode } from "../coauthor/CoauthorMode.js";
+import { useShellSurface } from "../../hooks/use-shell-surface.js";
 import { ContextMemoryModal } from "../modals/ContextMemoryModal.js";
 import { CreateCharacterModal } from "../modals/CreateCharacterModal.js";
 import { PersonaModal } from "../modals/PersonaModal.js";
@@ -53,7 +45,6 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
   // --- Store subscriptions (reactive) ---
   const isMobile = useIsMobile();
   const showRail = tweaksSettings.showRail;
-  const mode = useNavigationStore((s) => s.mode);
   const theme = useNavigationStore((s) => s.theme);
   const setTheme = useNavigationStore((s) => s.setTheme);
   const activeChatId = useChatStore((s) => s.activeChatId);
@@ -182,6 +173,18 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
   const contextUsed = activePromptTrace?.tokenAccounting?.total ?? 0;
   const contextLimit = provider.activeProviderProfile?.contextBudget ?? 0;
 
+  // Shell dispatch via the chat-mode registry (SURFACE_REGISTRY step 2):
+  // chatMode drives the package, navMode contributes only the play/build axis,
+  // platform picks the rail/sidebar variant. Returns ready-to-render elements.
+  // The empty-state guard below ignores shell.surface and renders a placeholder.
+  const shell = useShellSurface({
+    showRail,
+    onShowRail: () => useNavigationStore.getState().triggerRailOpen(),
+    update: updateCheck.hasUpdate && updateCheck.latestVersion && updateCheck.releaseUrl
+      ? { latestVersion: updateCheck.latestVersion, releaseUrl: updateCheck.releaseUrl }
+      : null,
+  });
+
   let shellSurface: React.ReactNode;
 
   if (!hasActiveSnapshot && !wizardVisible) {
@@ -252,15 +255,10 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
     );
     }
   } else {
-    // Central surface mirrors the navigation mode. Co-author is a first-class
-    // navigation mode (CA-8b): NavigationStore.mode is reconciled to the active
-    // chat's mode on every transition (create/switch/bootstrap), so switching
-    // to a co-author chat flips `mode` to 'coauthor' and renders CoauthorMode
-    // here. RP chats keep mode in play/build as before.
-    shellSurface =
-      mode === "coauthor" ? <CoauthorMode /> :
-      mode === "play" ? <PlayMode /> :
-      <BuildMode />;
+    // Central surface comes from the chat-mode registry hook (chatMode drives
+    // the package). The empty-state guards above are unchanged — only the
+    // mode-driven branch is delegated to the hook.
+    shellSurface = shell.surface;
   }
 
   // AvatarPanel shows the full-size original image (for zoom/pan preview).
@@ -294,27 +292,9 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
   // bg-bg here — it masks --page-bg (see docs/guides/adding-a-theme.md).
   return (
     <div className="flex text-t1 font-ui" style={{ height: "100dvh", paddingBottom: "env(safe-area-inset-bottom, 0px)", overflow: "hidden" }}>
-      {isMobile
-        ? (mode === "coauthor" ? <CoauthorRail hidden={!showRail} /> : <Rail hidden={!showRail} />)
-        : (mode === "coauthor" ? <CoauthorSidebar /> : <Sidebar />)}
+      {shell.leftChrome}
       <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
-        {/* Chrome is selected by navigation mode (Wave 3 / CS-18): co-author
-            owns a dedicated CoauthorTopBar (no preset switcher — presets move
-            to the InputArea pill in Wave 4); play/build keep the shared TopBar.
-            Exactly one bar renders — never both. The central panel switch below
-            ({shellSurface}) is unchanged by this selection. */}
-        {mode === "coauthor"
-          ? <CoauthorTopBar
-              railHidden={isMobile && !showRail}
-              onShowRail={() => useNavigationStore.getState().triggerRailOpen()}
-            />
-          : <TopBar
-              railHidden={isMobile && !showRail}
-              onShowRail={() => useNavigationStore.getState().triggerRailOpen()}
-              update={updateCheck.hasUpdate && updateCheck.latestVersion && updateCheck.releaseUrl
-                ? { latestVersion: updateCheck.latestVersion, releaseUrl: updateCheck.releaseUrl }
-                : null}
-            />}
+        {shell.topBar}
         {shellSurface}
       </main>
 
