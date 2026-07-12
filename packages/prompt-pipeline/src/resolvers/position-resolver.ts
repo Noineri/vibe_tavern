@@ -19,8 +19,7 @@
  */
 
 import type { PromptAssemblyContext, PromptLayer } from "../types.js";
-import { createSimpleResolver } from "./simple-resolver.js";
-import { createAdvancedResolver } from "./advanced-resolver.js";
+import { createRegisteredResolver } from "./resolver-registry.js";
 
 /** Structural shape of a `preset.promptOrder` entry (mirrors the inline type). */
 export type ResolverPromptOrderEntry = {
@@ -64,7 +63,5 @@ export interface PositionResolver {
  * is truthy, otherwise simple. A `null`/`undefined` preset yields simple mode.
  */
 export function createResolver(preset: PromptAssemblyContext["preset"]): PositionResolver {
-  return preset?.advancedMode
-    ? createAdvancedResolver((preset.promptOrder ?? []) as ResolverPromptOrderEntry[])
-    : createSimpleResolver();
+  return createRegisteredResolver(preset);
 }
