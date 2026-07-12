@@ -93,27 +93,49 @@ function mapSelectiveLogic(value: unknown): LoreLogic {
   }
 }
 
-/**
- * Map a SillyTavern World Info numeric position enum to VT's
- * `LoreEntryPosition`. All 8 ST positions are preserved 1:1 so the user's
- * before/after split survives import (see lorebook-st-parity-audit.md §2.1:
- * previously this collapsed every prompt-area position to `in_prompt`, which
- * made the `worldInfoBefore` prompt-order marker structurally unreachable).
- * `assemble.ts` switches on these literals to route each entry to the right
- * marker and fine-grained subPosition.
- */
-function mapLoreEntryPosition(value: unknown): LoreEntryPosition {
-  switch (value) {
-    case 0: return "before_char";
-    case 1: return "after_char";
-    case 2: return "top_an";
-    case 3: return "bottom_an";
-    case 4: return "at_depth";
-    case 5: return "before_examples";
-    case 6: return "after_examples";
-    case 7: return "outlet";
-    default: return "before_char"; // ST's own default for new entries
+/** VT logic → ST `selectiveLogic` number (export direction; inverse of {@link mapSelectiveLogic}). */
+function logicToSt(logic: string): number {
+  switch (logic) {
+    case "not_all": return 1;
+    case "not_any": return 2;
+    case "and_all": return 3;
+    case "and_any":
+    default: return 0;
   }
+}
+
+/**
+ * Single bidirectional mapping between VT `LoreEntryPosition` (string) and the
+ * SillyTavern World Info numeric position enum. Consumed by both directions:
+ * import (`mapLoreEntryPosition`: ST number → VT string) and export
+ * (`vtPositionToSt`: VT string → ST number). Previously the two directions were
+ * hand-maintained in two packages (st-lorebook.ts + lorebook-store.ts) with no
+ * compile link — adding a 9th position would silently drift. All 8 ST positions
+ * are preserved 1:1 so the user's before/after split survives import (see
+ * lorebook-st-parity-audit.md §2.1: previously this collapsed every prompt-area
+ * position to `in_prompt`, making the `worldInfoBefore` prompt-order marker
+ * structurally unreachable). `assemble.ts` switches on these literals to route
+ * each entry to the right marker and fine-grained subPosition.
+ */
+const LORE_ENTRY_POSITION_TABLE: ReadonlyArray<{ readonly vt: LoreEntryPosition; readonly st: number }> = [
+  { vt: "before_char", st: 0 },
+  { vt: "after_char", st: 1 },
+  { vt: "top_an", st: 2 },
+  { vt: "bottom_an", st: 3 },
+  { vt: "at_depth", st: 4 },
+  { vt: "before_examples", st: 5 },
+  { vt: "after_examples", st: 6 },
+  { vt: "outlet", st: 7 },
+];
+
+/** ST numeric position → VT position (import direction). ST default is `before_char`. */
+function mapLoreEntryPosition(value: unknown): LoreEntryPosition {
+  return LORE_ENTRY_POSITION_TABLE.find((r) => r.st === value)?.vt ?? "before_char";
+}
+
+/** VT position → ST numeric position (export direction). Unknown VT → ST default `after_char` (1). */
+function vtPositionToSt(vt: string): number {
+  return LORE_ENTRY_POSITION_TABLE.find((r) => r.vt === vt)?.st ?? 1;
 }
 
 function getEntryRecords(root: Record<string, unknown>): StLorebookEntryRecord[] {
@@ -273,5 +295,129 @@ export function importStLorebookJson(
     lorebook,
     entries,
     warnings,
+  };
+}
+
+// ─── Export (inverse of importStLorebookJson) ─────────────────────────────────
+
+/**
+ * Read-only contract for {@link exportLorebookToSt} — the lorebook-level fields
+ * the serializer reads. Types are deliberately wider than `Lorebook` (it ignores
+ * ids/scope/timestamps) so BOTH domain entities and store entities satisfy it
+ * with no caller-side casting or field-by-field mapping.
+ */
+interface StExportLorebook {
+  readonly name: string;
+  readonly description: string;
+  readonly scanDepth: number;
+  readonly tokenBudget: number;
+  readonly tokenBudgetPercent: number | null;
+  readonly recursiveScanning: boolean;
+  readonly maxRecursionSteps: number;
+  readonly extensions: Record<string, unknown>;
+}
+
+/**
+ * Read-only contract for {@link exportLorebookToSt} — the entry fields the
+ * serializer reads. Enum-typed fields (logic/position/role) are typed as plain
+ * `string` because the serializer treats them as opaque (it maps them to ST
+ * keys without validating), which also lets both domain entities (narrow
+ * unions) and store entities (loose strings) satisfy the contract with no
+ * caller-side casting.
+ */
+interface StExportLoreEntry {
+  readonly keys: string[];
+  readonly secondaryKeys: string[];
+  readonly title: string;
+  readonly content: string;
+  readonly constant: boolean;
+  readonly logic: string;
+  readonly priority: number;
+  readonly position: string;
+  readonly depth: number;
+  readonly enabled: boolean;
+  readonly stickyWindow: number;
+  readonly cooldownWindow: number;
+  readonly delayWindow: number;
+  readonly probability: number;
+  readonly role: string;
+  readonly groupName: string;
+  readonly groupWeight: number;
+  readonly scanDepthOverride: number | null;
+  readonly caseSensitive: boolean;
+  readonly matchWholeWords: boolean;
+  readonly characterFilter: ReadonlyArray<{ name: string }>;
+  readonly characterFilterExclude: boolean;
+  readonly automationId: string;
+  readonly excludeRecursion: boolean;
+  readonly preventRecursion: boolean;
+  readonly delayUntilRecursion: boolean;
+  readonly metadata: Record<string, unknown>;
+}
+
+/**
+ * Serialize a lorebook + its entries to SillyTavern-compatible JSON. Pure: no DB
+ * access. The inverse of {@link importStLorebookJson} — together they share
+ * {@link LORE_ENTRY_POSITION_TABLE} and the selective-logic pair
+ * (mapSelectiveLogic / logicToSt) so a position/logic added in one direction
+ * cannot drift from the other. Colocated with its inverse (previously the
+ * export lived in the db store, split from its inverse across two packages).
+ */
+export function exportLorebookToSt(
+  lorebook: StExportLorebook,
+  entries: readonly StExportLoreEntry[],
+): Record<string, unknown> {
+  const stEntries: Record<string, unknown> = {};
+  for (let i = 0; i < entries.length; i++) {
+    const e = entries[i];
+    stEntries[String(i)] = {
+      uid: i,
+      key: e.keys,
+      keysecondary: e.secondaryKeys,
+      comment: e.title,
+      content: e.content,
+      constant: e.constant,
+      selective: e.secondaryKeys.length > 0,
+      selectiveLogic: logicToSt(e.logic),
+      order: e.priority,
+      position: vtPositionToSt(e.position),
+      depth: e.depth,
+      disable: !e.enabled,
+      sticky: e.stickyWindow,
+      cooldown: e.cooldownWindow,
+      delay: e.delayWindow,
+      probability: e.probability,
+      useProbability: true,
+      role: e.role,
+      group: e.groupName,
+      groupWeight: e.groupWeight,
+      scanDepth: e.scanDepthOverride,
+      caseSensitive: e.caseSensitive,
+      matchWholeWords: e.matchWholeWords,
+      // characterFilter: strip the bound id (ST has no notion of it) and emit
+      // the name list. Ghosts (id=null) round-trip as plain names. The exclude
+      // flag is a VT extension; emitted so VT-origin cards lossless round-trip.
+      character_filter: e.characterFilter.map((c) => c.name),
+      character_filter_exclude: e.characterFilterExclude,
+      automationId: e.automationId,
+      excludeRecursion: e.excludeRecursion,
+      preventRecursion: e.preventRecursion,
+      delayUntilRecursion: e.delayUntilRecursion,
+      metadata: e.metadata,
+    };
+  }
+
+  return {
+    entries: stEntries,
+    name: lorebook.name,
+    description: lorebook.description,
+    scan_depth: lorebook.scanDepth,
+    token_budget: lorebook.tokenBudget,
+    token_budget_percent: lorebook.tokenBudgetPercent,
+    recursive_scanning: lorebook.recursiveScanning,
+    extensions: {
+      ...((lorebook.extensions as Record<string, unknown>) ?? {}),
+      max_recursion_steps: lorebook.maxRecursionSteps,
+    },
   };
 }

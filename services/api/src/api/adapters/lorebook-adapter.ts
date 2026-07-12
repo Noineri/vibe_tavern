@@ -1,6 +1,7 @@
 import type { LorebookRuntimeApi } from "../contract/runtime-api.js";
 import type { StoreContainer, CreateLoreEntryData, UpdateLoreEntryData } from "@vibe-tavern/db";
 import { importLorebook } from "../../domain/lorebook/lorebook-import-service.js";
+import { exportLorebookToSt } from "@vibe-tavern/import-export";
 
 export class LorebookAdapter implements LorebookRuntimeApi {
 	constructor(private readonly stores: StoreContainer) {}
@@ -25,8 +26,15 @@ export class LorebookAdapter implements LorebookRuntimeApi {
 	duplicateLorebook = (lorebookId: string, overrides?: { name?: string; scopeType?: string; characterId?: string | null; personaId?: string | null }) =>
 		this.stores.lorebooks.duplicateLorebook(lorebookId, overrides);
 
-	exportLorebook = (lorebookId: string) =>
-		this.stores.lorebooks.exportToStFormat(lorebookId);
+	exportLorebook = async (lorebookId: string) => {
+		const lorebook = await this.stores.lorebooks.getLorebook(lorebookId);
+		if (!lorebook) throw new Error(`Lorebook '${lorebookId}' not found`);
+		const entries = await this.stores.lorebooks.listEntries(lorebookId);
+		// Pure serializer lives next to its inverse (importStLorebookJson) in the
+		// import-export package; the store stays DB-only. exportLorebookToSt takes
+		// a structural read contract so store entities pass through without casting.
+		return exportLorebookToSt(lorebook, entries);
+	};
 
 	getLorebookLinks = (lorebookId: string) =>
 		this.stores.lorebooks.getLinks(lorebookId);
