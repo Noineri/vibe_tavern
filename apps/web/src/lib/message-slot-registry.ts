@@ -15,7 +15,17 @@ import type { ReactNode } from "react";
 /**
  * Named injection points inside a message shell.
  *
+ * `assistant_header_zone` is special: it is resolved INSIDE the assistant
+ * message's adaptive context header (AssistantContextHeader), NOT rendered
+ * flat like the six below-header positions. The header composes the resolved
+ * descriptors (identity + N insight zones) into a compact row ↔ expanded
+ * multi-column panel. Objective (order 1) and Scene (order 2) register here
+ * with `roles: ["assistant"]`; identity (avatar + name) is built into the
+ * header, not registered. With zero descriptors resolved the header renders
+ * identity-only — visually identical to the legacy avatar + name row.
+ *
  * Layout order (top → bottom):
+ *   assistant_header_zone — insight zones IN the assistant header (identity + Objective + Scene)
  *   after_reasoning    — after reasoning accordion, before message content
  *   tool_activity      — co-author tool-call cards (summary + proposed preview)
  *   before_content     — right before message text
@@ -24,6 +34,7 @@ import type { ReactNode } from "react";
  *   attachment_area    — where attachments render (after metadata)
  */
 export type MessageSlotId =
+  | "assistant_header_zone"
   | "after_reasoning"
   | "tool_activity"
   | "before_content"

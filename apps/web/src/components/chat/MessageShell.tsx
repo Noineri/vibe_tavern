@@ -4,6 +4,7 @@ import { cn } from "../../lib/cn.js";
 import { initials } from "../layout/app-shell-helpers.js";
 import { Icons } from "../shared/icons.js";
 import { ActionSheet, type ActionSheetItem } from "../shared/ActionSheet.js";
+import { AssistantContextHeader } from "./AssistantContextHeader.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
 import { useT } from "../../i18n/context.js";
 import {
@@ -211,6 +212,21 @@ export function MessageShell(props: MessageShellProps) {
       <div className={isMobile ? "relative mx-auto w-full px-3" : "relative mx-auto max-w-[min(calc(var(--mw)+160px),calc(100vw-var(--sw)-64px))] px-7"}>
         <div className={msgWrap}>
           {/* ── Author Header ── */}
+          {/* Assistant messages use the adaptive context header (identity +
+              insight zones; the flat avatar+name row is the 0-zone fallback).
+              User/system/tool keep the legacy inline row. See
+              AssistantContextHeader + the ASSISTANT_CONTEXT_HEADER report. */}
+          {role === "assistant" ? (
+            <AssistantContextHeader
+              author={author}
+              slotCtx={slotCtx}
+              greetingControls={greetingControls}
+              isMobile={isMobile}
+              isEditing={isEditing}
+              isGenerating={isGenerating}
+              onToggleMobileMenu={() => setMobileMenuOpen(v => !v)}
+            />
+          ) : (
           <div className={cn(
             "mb-[12px] flex items-center gap-[10px] text-[calc(var(--ui-fs)-2px)] font-semibold tracking-[0.04em] text-t3",
             !isUser && "text-accent-t opacity-85",
@@ -253,6 +269,7 @@ export function MessageShell(props: MessageShellProps) {
               </div>
             )}
           </div>
+          )}
 
           {/* F12 — Mobile message actions: shared bottom sheet instead of a
               bespoke getBoundingClientRect popover. Items mirror the old
