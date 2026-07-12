@@ -1,6 +1,7 @@
 import { describe, it, expect } from "bun:test";
 import { assemblePrompt } from "../src/assemble.ts";
 import { getAiAssistantAssembler } from "../src/ai-assistant/ai-assistant-assemblers.ts";
+import { getSummaryStrategy } from "../src/summary/summary-strategies.ts";
 
 function baseContext(overrides = {}) {
   return {
@@ -609,7 +610,7 @@ describe("assemblePrompt", () => {
     });
 
     it("pins the summary assembly", () => {
-      expect(projectAssembly(assemblePrompt(modeContext("summary")))).toEqual({
+      expect(projectAssembly(getSummaryStrategy().assemble(modeContext("summary")))).toEqual({
         layers: [
           characterSystem,
           persona,
@@ -640,16 +641,6 @@ describe("assemblePrompt", () => {
           { role: "system", content: "Character: Nora\nDetective.", layerId: "character_base" },
           { role: "system", content: "User persona (Alex, they/them): Journalist.", layerId: "persona" },
           { role: "user", content: "Write a helper.", layerId: "ai_assistant_instruction" },
-        ],
-      });
-    });
-
-    it("pins the distinct, unreachable tool-call assembly", () => {
-      expect(projectAssembly(assemblePrompt(modeContext("tool_call")))).toEqual({
-        layers: [recentHistory, toolInstructions],
-        messages: [
-          { role: "system", content: "Tool instruction.", layerId: "tool_instructions" },
-          ...historyMessages,
         ],
       });
     });

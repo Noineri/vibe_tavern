@@ -5,7 +5,6 @@ import type {
   PromptLayerPosition,
   RecentMessage,
 } from "./types.js";
-import type { AssemblyMode } from "./types.js";
 import { estimateTokens, planHistoryCompaction } from "./compaction.js";
 import { createFullMacroEngine } from "./macro-registry.js";
 import { buildPromptVariableContext, type PromptVariableContext } from "./prompt-variable-context.js";
@@ -14,7 +13,6 @@ import { createResolver, type PositionResolver } from "./resolvers/position-reso
 import { buildLoreLayers } from "./build-lore-layers.js";
 import {
   DEFAULT_PROMPT_LAYER_PRIORITY,
-  LAYER_MODES,
   PROMPT_FORMAT,
   PROMPT_LAYER_ID,
   PROMPT_LAYER_POSITION_RANK,
@@ -34,6 +32,20 @@ import {
 // LOG_LEVEL=debug to bring it back. Replaces raw console.log calls that
 // bypassed the level gate and spammed the console on every turn.
 const logger = tag("assemble");
+
+const SUMMARY_LAYER_IDS: Set<string> = new Set([
+  PROMPT_LAYER_ID.promptPresetSummary,
+  PROMPT_LAYER_ID.characterSystemPrompt,
+  PROMPT_LAYER_ID.characterBase,
+  PROMPT_LAYER_ID.characterScenario,
+  PROMPT_LAYER_ID.characterPersonality,
+  PROMPT_LAYER_ID.characterAvatar,
+  PROMPT_LAYER_ID.characterGallery,
+  PROMPT_LAYER_ID.personaAvatar,
+  PROMPT_LAYER_ID.persona,
+  PROMPT_LAYER_ID.mesExample,
+  PROMPT_LAYER_ID.recentHistory,
+]);
 
 export function joinNonEmpty(parts: Array<string | null | undefined>, separator = "\n"): string {
   return parts.map((part) => part?.trim() ?? "").filter(Boolean).join(separator);
@@ -360,15 +372,12 @@ function applyMacrosToContext(context: PromptAssemblyContext): PromptAssemblyCon
  *  3. **Compaction** — if the total exceeds `contextBudget`, trim older messages
  *     while preserving at least `max(2, ceil(N/2))` recent messages and never
  *     splitting an assistant→tool pair (see {@link findSafeCompactionBoundary})
- *  4. **Mode filtering** — drop layers not active for the current {@link AssemblyMode}
- *  5. **Sorting** — order by position, then priority descending
- *  6. **Assembly** — build the final `messages` array, interleaving depth-aware
+ *  4. **Sorting** — order by position, then priority descending
+ *  5. **Assembly** — build the final `messages` array, interleaving depth-aware
  *     `in_chat` layers into the history
  */
 export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssemblyResult {
   const context = applyMacrosToContext(rawContext);
-  const effectiveMode: AssemblyMode = context.mode ?? "chat";
-
   // The resolver encodes the simple/advanced mode decision once and is shared
   // by both assembly stages so the mode never has to be re-derived downstream.
   const resolver = createResolver(context.preset);
@@ -378,9 +387,13 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
 /** Pure summary-specific entry point. The caller supplies the same complete
  * prepared state as a chat turn; only the final visibility selection differs. */
 export function assembleSummaryPrompt(rawContext: PromptAssemblyContext): PromptAssemblyResult {
-  const context = applyMacrosToContext(rawContext);
+  const context = applyMacrosToContext({ ...rawContext, config: { ...rawContext.config, summary: true } });
   const resolver = createResolver(context.preset);
-  return finalizeAssembly(context, buildLayers(context, resolver), resolver, "summary");
+  const built = buildLayers(context, resolver);
+  return finalizeAssembly(context, {
+    ...built,
+    layers: built.layers.filter((layer) => SUMMARY_LAYER_IDS.has(layer.id)),
+  }, resolver);
 }
 
 /**
@@ -469,7 +482,7 @@ function buildLayers(context: PromptAssemblyContext, resolver: PositionResolver)
   // duplicate the preset's 4 basic fields (main/jailbreak/authorsNote/prefill).
   layers.push(...buildCustomInjectionLayers(context.preset, resolver));
 
-  if (context.preset?.summary?.trim()) {
+  if (context.preset?.summary?.trim() && context.config?.summary) {
     layers.push(
       makeLayer({
         id: PROMPT_LAYER_ID.promptPresetSummary,
@@ -738,41 +751,19 @@ function buildLayers(context: PromptAssemblyContext, resolver: PositionResolver)
 }
 
 /**
- * Stages 3–6 — mode filtering, sort, compaction-aware messages assembly.
+ * Stages 3–5 — sort and compaction-aware messages assembly.
  *
- * Mode-agnostic: operates purely on the PromptLayer[] from buildLayers.
- * `effectiveMode` here is the AssemblyMode axis (chat/continue/regenerate/...),
- * orthogonal to the preset simple/advanced axis resolved in buildLayers.
+ * Operates purely on the RP-chat PromptLayer[] from buildLayers; the resolver
+ * remains the sole simple/advanced axis.
  */
 function finalizeAssembly(
   context: PromptAssemblyContext,
   built: { layers: PromptLayer[]; droppedLayers: Array<{ id: string; reason: string }>; compactionSummary: string | undefined; recentMessagesForHistory: PromptAssemblyContext["chat"]["recentMessages"] },
   resolver: PositionResolver,
-  effectiveMode: AssemblyMode = context.mode ?? "chat",
 ): PromptAssemblyResult {
   const { layers, droppedLayers, compactionSummary, recentMessagesForHistory } = built;
 
-  // --- Assign modes to built-in layers from LAYER_MODES ---
-  for (const layer of layers) {
-    const layerModes = LAYER_MODES[layer.id];
-    if (layerModes) {
-      layer.modes = layerModes;
-    } else if (
-      layer.sourceType === PROMPT_LAYER_SOURCE_TYPE.loreEntry ||
-      layer.sourceType === PROMPT_LAYER_SOURCE_TYPE.summaryMemory ||
-      layer.sourceType === PROMPT_LAYER_SOURCE_TYPE.retrievalMemory
-    ) {
-      layer.modes = ["chat", "continue", "regenerate"];
-    }
-  }
-
-  // --- Mode filtering ---
-  const modeFilteredLayers = layers.filter((layer) => {
-    if (!layer.modes) return true; // no modes = always active (backward compat)
-    return layer.modes.includes(effectiveMode);
-  });
-
-  const orderedLayers = sortLayers(modeFilteredLayers).filter((layer) => layer.text.length > 0);
+  const orderedLayers = sortLayers(layers).filter((layer) => layer.text.length > 0);
   const totalTokenEstimate = orderedLayers.reduce((sum, layer) => sum + layer.tokenCount, 0);
 
   logger.debug(`${orderedLayers.length} layers, ${totalTokenEstimate} tokens estimated`);

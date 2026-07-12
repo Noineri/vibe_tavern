@@ -1,7 +1,6 @@
 import type { PromptAssemblyContext, PromptAssemblyResult, PromptLayer } from "../types.js";
 import { joinNonEmpty, makeLayer, sortLayers } from "../assemble.js";
 import {
-  LAYER_MODES,
   PROMPT_FORMAT,
   PROMPT_LAYER_ID,
   PROMPT_LAYER_PRIORITY,
@@ -114,12 +113,6 @@ export function assembleAiAssistant(context: PromptAssemblyContext): PromptAssem
       priority: PROMPT_LAYER_PRIORITY.aiAssistantInstruction,
       text: ai.instruction,
     }));
-  }
-
-  // Assign modes to all layers
-  for (const layer of layers) {
-    const layerModes = LAYER_MODES[layer.id];
-    if (layerModes) layer.modes = layerModes;
   }
 
   const orderedLayers = sortLayers(layers).filter((layer) => layer.text.length > 0);

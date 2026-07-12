@@ -7,6 +7,6 @@ export { activateLoreEntries, type ActivatableLoreEntry } from "./lore-activatio
 export { createPhaseOneMacroEngine, createFullMacroEngine } from "./macro-registry.js";
 export { PRESET_PRONOUN_FORMS, resolvePronounForms } from "./pronoun-forms.js";
 export { buildPromptVariableContext } from "./prompt-variable-context.js";
-export { PROMPT_LAYER_ID, PROMPT_LAYER_PRIORITY, LAYER_MODES } from "./prompt-layer-constants.js";
+export { PROMPT_LAYER_ID, PROMPT_LAYER_PRIORITY } from "./prompt-layer-constants.js";
 export { setTokenCountFn, setModelHint, estimateMessageArrayTokens, findSafeCompactionBoundary, planHistoryCompaction, estimateTokens } from "./compaction.js";
-export type { AssemblyMode, AiAssistantMode, PromptAssemblyContext, PromptAssemblyResult, PromptLayer, RecentMessage } from "./types.js";
+export type { AiAssistantMode, PromptAssemblyContext, PromptAssemblyResult, PromptLayer, RecentMessage } from "./types.js";

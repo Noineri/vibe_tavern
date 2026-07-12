@@ -3,18 +3,6 @@ import type { PromptLayerPosition, PronounForms } from "@vibe-tavern/domain";
 export type { PromptLayerPosition };
 
 /**
- * Which generation scenario this prompt assembly is for.
- *
- * - `chat`          — normal user turn (system layers + history + new user message)
- * - `continue`      — continuation without a new user message
- * - `regenerate`    — regenerating a specific message in-place
- * - `summary`       — summarization pass (only summary-relevant layers active)
- * - `tool_call`     — tool-calling pass (tool instructions active)
- * - `ai_assistant`  — AI assistant modes (script, lore, impersonate)
- */
-export type AssemblyMode = "chat" | "continue" | "regenerate" | "summary" | "tool_call" | "ai_assistant";
-
-/**
  * AI assistant operating modes.
  *
  * Each mode determines the system prompt, user message format, output parsing,
@@ -53,11 +41,6 @@ export interface PromptLayer {
    * must decide final prompt order independently of lorebook/link order.
    */
   insertionOrder?: number;
-  /**
-   * Which {@link AssemblyMode}s this layer is active in.
-   * Undefined = active in all modes (backward compat).
-   */
-  modes?: AssemblyMode[];
   /**
    * Message role for in_chat layers inserted into history.
    * Defaults to "system" if not specified.
@@ -152,8 +135,6 @@ export interface PromptAssemblyContext {
     }>;
     promptOrder?: Array<{ identifier: string; enabled: boolean; order?: number; kind?: "built_in" | "custom"; zone?: "before_chat" | "in_chat" | "after_chat"; depth?: number | null }>;
   } | null;
-  /** Assembly mode. Defaults to `"chat"` when not specified. */
-  mode?: AssemblyMode;
   /** AI assistant context. Only used when mode is "ai_assistant". */
   aiAssistant?: {
     /** Which assistant mode is active — determines system prompt, output format, etc. */
@@ -206,6 +187,8 @@ export interface PromptAssemblyContext {
     /** Tokens reserved for the model's response. Subtracted from contextBudget during compaction. */
     responseReserve?: number;
     model?: string;
+    /** Internal summary-strategy visibility selector. */
+    summary?: boolean;
   };
 }
 

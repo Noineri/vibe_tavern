@@ -318,7 +318,6 @@ export class PromptAssemblyService {
             promptOrder: promptPreset.promptOrder,
           }
         : null,
-      mode: input.mode,
       lore: activeLoreEntries.map((entry) => ({
         id: entry.id,
         title: entry.title,
@@ -351,6 +350,7 @@ export class PromptAssemblyService {
         contextBudget: input.contextBudget ?? null,
         responseReserve: input.responseReserve ?? 0,
         model: input.model,
+        summary: input.summary,
       },
     };
     const result = input.summary

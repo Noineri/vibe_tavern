@@ -185,7 +185,6 @@ async function prepareAiAssistantRequest(
     },
     persona: toPipelinePersonas(resolvedContext)[0] ?? null,
     lore: toPipelineLore(resolvedContext),
-    mode: "ai_assistant",
     aiAssistant: {
       mode: request.mode,
       enabledLayers: request.enabledLayers,

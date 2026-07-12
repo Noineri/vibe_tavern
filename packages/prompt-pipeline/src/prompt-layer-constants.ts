@@ -1,5 +1,4 @@
 import type { PromptLayerPosition } from "./types.js";
-import type { AssemblyMode } from "./types.js";
 
 export const DEFAULT_PROMPT_LAYER_PRIORITY = 0;
 
@@ -195,38 +194,3 @@ export const PROMPT_LAYER_REASON = {
   preflightCompaction: (droppedCount: number) => `preflight_compaction_dropped_${droppedCount}`,
 } as const;
 
-/**
- * Maps built-in layer IDs to the list of {@link AssemblyMode}s they are active in.
- *
- * Lore and memory layers are not listed here; they default to
- * `["chat", "continue", "regenerate"]` via runtime logic.
- */
-export const LAYER_MODES: Record<string, AssemblyMode[]> = {
-  prompt_preset_system:        ["chat", "continue", "regenerate"],
-  prompt_preset_jailbreak:     ["chat", "continue", "regenerate"],
-  prompt_preset_summary:       ["summary"],
-  prompt_preset_authors_note:  ["chat", "continue", "regenerate"],
-  prompt_preset_nsfw:          ["chat", "continue", "regenerate"],
-  prompt_preset_enhance_definitions: ["chat", "continue", "regenerate"],
-  character_system_prompt:     ["chat", "continue", "regenerate", "summary"],
-  character_base:              ["chat", "continue", "regenerate", "summary"],
-  character_scenario:          ["chat", "continue", "regenerate", "summary"],
-  character_personality:       ["chat", "continue", "regenerate", "summary"],
-  // Media (A7) — appearance blocks participate in all chat modes + summary
-  // (a summary of the chat should still "see" the character's appearance).
-  character_avatar:            ["chat", "continue", "regenerate", "summary"],
-  character_gallery:           ["chat", "continue", "regenerate", "summary"],
-  persona_avatar:              ["chat", "continue", "regenerate", "summary"],
-  persona:                     ["chat", "continue", "regenerate", "summary"],
-  tool_instructions:           ["chat", "continue", "regenerate", "tool_call"],
-  post_history_instructions:   ["chat", "continue", "regenerate"],
-  mes_example:                 ["chat", "continue", "regenerate", "summary"],
-  preflight_compaction:        ["chat", "continue", "regenerate"],
-  // Lore and memory layers default to chat modes
-  // (lore entries inherit from their source; these are fallbacks)
-  // AI assistant layers
-  ai_assistant_system:      ["ai_assistant"],
-  ai_assistant_context:     ["ai_assistant"],
-  ai_assistant_existing:    ["ai_assistant"],
-  ai_assistant_instruction: ["ai_assistant"],
-};
