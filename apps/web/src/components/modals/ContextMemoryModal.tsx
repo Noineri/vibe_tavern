@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import type { ChatId } from "@vibe-tavern/domain";
 import type { AutoSummaryConfig, ChatSummaryRecord } from "../../app-client.js";
@@ -90,18 +90,6 @@ export function DualRangeSlider({ min, max, from, to, disabled, onChange }: {
   );
 }
 
-/* ─── Auto-resize textarea hook ─── */
-function useAutoResize(): [RefObject<HTMLTextAreaElement | null>, () => void] {
-  const ref = useRef<HTMLTextAreaElement | null>(null);
-  const resize = useCallback(() => {
-    const el = ref.current;
-    if (!el) return;
-    el.style.height = "auto";
-    el.style.height = Math.max(86, el.scrollHeight) + "px";
-  }, []);
-  return [ref, resize];
-}
-
 /* ─── Main component ─── */
 interface ContextMemoryModalProps {
   isOpen: boolean;
@@ -174,7 +162,6 @@ export function ContextMemoryModal({
   //     large can't extend, so the range freezes near the small branch's value.
   // Keying on chatId|branchId resets on BOTH chat and branch switches.
   const prevScopeRef = useRef<string | null>(null);
-  const [textareaRef, autoResize] = useAutoResize();
 
   const maxMessage = Math.max(1, messageCount - 1);
   const activeSummary = summaries.find((s) => s.id === activeSummaryId) ?? null;
