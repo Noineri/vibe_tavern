@@ -1,10 +1,11 @@
 /**
- * computeRangeAfterChange — message-range reset logic for the memory modal.
+ * computeRangeAfterChange + upsertSummary — Summary tab pure helpers.
  *
- * The range (from..to) is BRANCH-scoped: each branch has its own independent
- * message set. The helper resets the range to the full span (1..maxMessage)
- * on any chat OR branch switch (`scopeChanged`), and clamps within the same
- * scope (preserving the user's selection when messages are added/removed).
+ * computeRangeAfterChange: the range (from..to) is BRANCH-scoped — each branch
+ * has its own independent message set. The helper resets the range to the full
+ * span (1..maxMessage) on any chat OR branch switch (`scopeChanged`), and
+ * clamps within the same scope (preserving the user's selection when messages
+ * are added/removed).
  *
  * Regression coverage for two reported bugs:
  *  - "always shows 1" after switching chats (clearMessages dip collapses the
@@ -12,9 +13,16 @@
  *  - "shows 12 where there are 2 / 2 where there are 12" jumble after
  *    switching branches within the same chat (clamp shrinks large→small but
  *    cannot extend small→large, so the range freezes near a stale value).
+ *
+ * upsertSummary: archive list ordering — insert sorts ascending by
+ * summarizedFrom (stable by createdAt), replace is in place by id, never
+ * mutates the input.
+ *
+ * These moved with the Summary body from ContextMemoryModal into SummaryTab
+ * (components/context/); the test moved with them.
  */
 import { describe, expect, test } from "vitest";
-import { computeRangeAfterChange, upsertSummary } from "./ContextMemoryModal.js";
+import { computeRangeAfterChange, upsertSummary } from "./SummaryTab.js";
 import type { ChatSummaryRecord } from "../../app-client.js";
 
 describe("upsertSummary — archive list ordering", () => {
