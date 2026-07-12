@@ -13,7 +13,8 @@ import { NumberInput } from "../shared/NumberInput.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
 import { cn } from "../../lib/cn.js";
 import { useT } from "../../i18n/context.js";
-import { countTokens } from "../../utils/tokenizer.js";
+import { DualRangeSlider } from "../context/DualRangeSlider.js";
+import { computeTokenEstimate, TokenEstimate } from "../context/TokenEstimate.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
 import {
   createChatSummaryAction,
@@ -34,61 +35,6 @@ const DEFAULT_AUTO_CONFIG: AutoSummaryConfig = {
   useChatModel: true,
   excludeSummarized: true,
 };
-
-/* ─── Dual-range slider ─── */
-export function DualRangeSlider({ min, max, from, to, disabled, onChange }: {
-  min: number; max: number; from: number; to: number;
-  disabled?: boolean;
-  onChange: (from: number, to: number) => void;
-}) {
-  const clampValue = (v: number) => Math.min(max, Math.max(min, Number.isFinite(v) ? v : min));
-  const safeFrom = Math.min(clampValue(from), clampValue(to));
-  const safeTo = Math.max(clampValue(from), clampValue(to));
-
-  function handleFrom(v: number) {
-    const next = clampValue(v);
-    onChange(Math.min(next, safeTo), safeTo);
-  }
-  function handleTo(v: number) {
-    const next = clampValue(v);
-    onChange(safeFrom, Math.max(safeFrom, next));
-  }
-  const trackPct = (v: number) => max > min ? Math.min(100, Math.max(0, ((clampValue(v) - min) / (max - min)) * 100)) : 0;
-
-  const thumbCls =
-    "absolute inset-x-0 top-0 h-5 w-full appearance-none bg-transparent " +
-    "[&::-webkit-slider-thumb]:h-[16px] [&::-webkit-slider-thumb]:w-[16px] " +
-    "[&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full " +
-    "[&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-accent " +
-    "[&::-webkit-slider-thumb]:bg-surface [&::-webkit-slider-thumb]:shadow-sm " +
-    "[&::-webkit-slider-thumb]:transition-shadow [&::-webkit-slider-thumb]:hover:shadow-[0_0_0_3px_var(--accent-dim)] " +
-    "[&::-webkit-slider-thumb]:pointer-events-auto [&::-webkit-slider-thumb]:cursor-pointer";
-
-  return (
-    <div className="relative h-5 pb-4">
-      {/* Track bg */}
-      <div className="absolute left-0 right-0 top-[7px] h-[6px] rounded-full bg-s3" />
-      {/* Filled track between the two thumbs */}
-      <div
-        className="absolute top-[7px] h-[6px] rounded-full bg-accent"
-        style={{ left: `${trackPct(safeFrom)}%`, width: `${Math.max(0, trackPct(safeTo) - trackPct(safeFrom))}%` }}
-      />
-      {/* Both inputs: pointer-events:none on container, auto on thumb via Tailwind */}
-      <input
-        type="range" min={min} max={max} value={safeFrom}
-        disabled={disabled}
-        onChange={(e) => handleFrom(Number(e.target.value))}
-        className={cn("dual-range-l z-[2] pointer-events-none", thumbCls)}
-      />
-      <input
-        type="range" min={min} max={max} value={safeTo}
-        disabled={disabled}
-        onChange={(e) => handleTo(Number(e.target.value))}
-        className={cn("dual-range-u z-[3] pointer-events-none", thumbCls)}
-      />
-    </div>
-  );
-}
 
 /* ─── Main component ─── */
 interface ContextMemoryModalProps {
@@ -543,22 +489,7 @@ export function ContextMemoryModal({
       </section>
 
       {/* ── Token estimate ── */}
-      <section className="mt-3 rounded-lg border border-border bg-input-bg p-4">
-        <div className="mb-2 font-ui text-[12px] text-t3">
-          {t("summary_token_line", {
-            summary: tokenEstimate.summaryTokens,
-            history: tokenEstimate.historyTokens,
-            total: tokenEstimate.total,
-          })}
-        </div>
-        <div className="h-1.5 overflow-hidden rounded-full bg-s3">
-          <div className="h-full bg-accent transition-all" style={{ width: `${tokenEstimate.total > 0 ? Math.min(100, Math.round((tokenEstimate.summaryTokens / tokenEstimate.total) * 100)) : 0}%` }} />
-        </div>
-        <div className="mt-2 flex items-center justify-between font-ui text-[11px] text-t4">
-          <span>{t("summary_without_line", { tokens: tokenEstimate.selectedRawTokens })}</span>
-          <span className="text-success-text">{t("summary_saved_line", { tokens: tokenEstimate.saved, pct: tokenEstimate.pct })}</span>
-        </div>
-      </section>
+      <TokenEstimate estimate={tokenEstimate} />
 
       {/* ── Provider & Model ── */}
       <section className="mt-4">
@@ -793,34 +724,6 @@ export function computeRangeAfterChange(
     from: clamp(prevFrom, 1, maxMessage),
     to: clamp(Math.max(prevTo, 1), 1, maxMessage),
   };
-}
-
-/**
- * Compute the token-savings estimate for the Summary memory strategy. Pure
- * (mirrors the original `useMemo` body) so the arithmetic — history excludes
- * summarized ranges then slices to the limit; `saved`/`pct` derive from the
- * selected-range raw tokens minus the summary — is unit-testable without
- * rendering the modal.
- */
-export function computeTokenEstimate(
-  draftText: string,
-  excludedRanges: ReadonlyArray<{ from: number; to: number }>,
-  historyLimit: number,
-  messages: ReadonlyArray<{ position?: number | null; content: string }>,
-  selectedRangeMessages: ReadonlyArray<{ content: string }>,
-): { summaryTokens: number; historyTokens: number; total: number; selectedRawTokens: number; saved: number; pct: number } {
-  const summaryTokens = countTokens(draftText);
-  const limitedMessages = messages
-    .filter((m) => {
-      const pos = (m.position ?? 0) + 1;
-      return !excludedRanges.some((r) => pos >= r.from && pos <= r.to);
-    })
-    .slice(-(historyLimit || messages.length));
-  const historyTokens = limitedMessages.reduce((sum, m) => sum + countTokens(m.content), 0);
-  const selectedRawTokens = selectedRangeMessages.reduce((sum, m) => sum + countTokens(m.content), 0);
-  const saved = Math.max(0, selectedRawTokens - summaryTokens);
-  const pct = selectedRawTokens > 0 ? Math.round((saved / selectedRawTokens) * 100) : 0;
-  return { summaryTokens, historyTokens, total: summaryTokens + historyTokens, selectedRawTokens, saved, pct };
 }
 
 export function upsertSummary(list: ChatSummaryRecord[], summary: ChatSummaryRecord): ChatSummaryRecord[] {
