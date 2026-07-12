@@ -75,6 +75,19 @@ function DesktopInputArea({ data }: { data: ReturnType<typeof useInputArea> }) {
         onDrop={handleDrop}
       >
         <div className="relative rounded-lg border border-border bg-input-bg transition-colors duration-150 focus-within:border-border2">
+          {showGenerateMore && (
+            <div className="absolute right-2 top-2 z-20">
+              <CustomTooltip content={t("generate_more_tooltip")}>
+                <button type="button"
+                  onClick={handleGenerateMore}
+                  className="flex cursor-pointer items-center gap-1 whitespace-nowrap rounded-md border border-border2 bg-s2 px-2.5 py-1 font-ui text-[12px] font-medium text-t2 transition-colors duration-150 hover:bg-s3 hover:text-t1"
+                >
+                  <Icons.Plus />
+                  <span>{t("generate_more_label")}</span>
+                </button>
+              </CustomTooltip>
+            </div>
+          )}
           {isDragOver && (
             <div className="pointer-events-none absolute inset-0 z-[100] flex items-center justify-center rounded-lg border-2 border-dashed border-accent bg-accent/5">
               <span className="flex items-center gap-2 font-ui text-[15px] font-medium text-accent">
@@ -147,18 +160,6 @@ function DesktopInputArea({ data }: { data: ReturnType<typeof useInputArea> }) {
                 { label: t("context_tools"), value: buckets.tools },
               ]}
             />
-
-            {showGenerateMore && (
-              <CustomTooltip content={t("generate_more_tooltip")}>
-                <button type="button"
-                  onClick={handleGenerateMore}
-                  className="ml-auto flex h-[26px] cursor-pointer items-center gap-1 whitespace-nowrap rounded-md border border-border2 bg-s2 px-2.5 font-ui text-[12px] font-medium text-t2 transition-colors duration-150 hover:bg-s3 hover:text-t1"
-                >
-                  <Icons.Plus />
-                  <span>{t("generate_more_label")}</span>
-                </button>
-              </CustomTooltip>
-            )}
 
             <div className="absolute right-3 bottom-[9px] flex items-center gap-[9px]">
                 <ToolbarSelect
