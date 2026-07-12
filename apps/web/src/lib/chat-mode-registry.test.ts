@@ -28,7 +28,7 @@ describe("chat-mode-registry", () => {
 		it("returns the coauthor package with play only (no build)", () => {
 			const co = getChatModePackage("coauthor");
 			expect(co.chatMode).toBe("coauthor");
-			expect(co.play).toEqual({ surface: "CoauthorMode", leftChrome: "coauthor", topBar: "coauthor" });
+			expect(co.play).toEqual({ surface: "CoauthorMode", leftChrome: "coauthor", topBar: "coauthor", rightPanel: "CoauthorEditor" });
 			expect(co.build).toBeUndefined();
 			expect(co.routes).toEqual({ play: "/coauthor" });
 		});
@@ -69,6 +69,13 @@ describe("chat-mode-registry", () => {
 				expect(pkg.play.leftChrome, `${pkg.chatMode}.play.leftChrome`).toBeTruthy();
 				expect(pkg.play.topBar, `${pkg.chatMode}.play.topBar`).toBeTruthy();
 			}
+		});
+
+		it("rightPanel is declared ONLY by modes that own a desktop side column (coauthor)", () => {
+			const withPanel = CHAT_MODE_PACKAGES.filter((p) => p.play.rightPanel);
+			expect(withPanel.map((p) => p.chatMode)).toEqual(["coauthor"]);
+			expect(getChatModePackage("coauthor").play.rightPanel).toBe("CoauthorEditor");
+			expect(getChatModePackage("rp").play.rightPanel).toBeUndefined();
 		});
 
 		it("every build slot (when present) names all three parts", () => {

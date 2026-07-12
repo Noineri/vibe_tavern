@@ -29,6 +29,7 @@ import {
 } from "../lib/chat-mode-registry.js";
 import {
 	SURFACE_LEFT_CHROME,
+	SURFACE_RIGHT_PANELS,
 	SURFACE_SURFACES,
 	SURFACE_TOP_BARS,
 	type TopBarPartProps,
@@ -50,6 +51,13 @@ export interface ResolvedShell {
 	leftChrome: ReactElement<{ hidden?: boolean }>;
 	/** Top bar, already prop-dressed (railHidden / onShowRail / update). */
 	topBar: ReactElement<TopBarPartProps>;
+	/**
+	 * Optional right panel (desktop side column, e.g. the co-author editor), or
+	 * `null` when the active package omits the `rightPanel` slot OR the shell
+	 * resolved for mobile (a side column is desktop-only — see
+	 * ShellSlotNames.rightPanel).
+	 */
+	rightPanel: ReactElement | null;
 	/** The platform the shell resolved for. */
 	platform: SurfacePlatform;
 }
@@ -81,6 +89,11 @@ export function useShellSurface({ showRail, onShowRail, update }: ShellSurfacePr
 	const Surface = SURFACE_SURFACES[slot.surface];
 	const chromePair = SURFACE_LEFT_CHROME[slot.leftChrome];
 	const TopBar = SURFACE_TOP_BARS[slot.topBar];
+	// rightPanel is OPTIONAL — packages without a right column (rp) omit it and
+	// resolve to null. It is also DESKTOP-ONLY: a side column is a desktop
+	// concept, and mobile renders its in-flow panel (co-author Chat/Doc) inside
+	// the central surface instead (RIGHT_PANEL_SHELL_SLOT_REPORT variant B).
+	const RightPanel = slot.rightPanel ? SURFACE_RIGHT_PANELS[slot.rightPanel] : undefined;
 
 	// Desktop chrome takes no args; mobile chrome takes `hidden`. The two have
 	// different prop signatures, so branch on platform to keep this type-safe
@@ -98,6 +111,7 @@ export function useShellSurface({ showRail, onShowRail, update }: ShellSurfacePr
 				update={update}
 			/>
 		),
+		rightPanel: RightPanel && platform === "desktop" ? <RightPanel /> : null,
 		platform,
 	};
 }

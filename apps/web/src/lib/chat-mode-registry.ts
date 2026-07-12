@@ -37,10 +37,10 @@ export type SurfacePlatform = "desktop" | "mobile";
 /**
  * Part slots within one surface, each referenced by a catalog NAME (a key into
  * the per-slot maps in `surface-parts.tsx`), never by component. Splitting the
- * catalog per slot (surfaces / left-chrome / top-bars) lets the same name (e.g.
- * "default") resolve to a different component shape in different slots — the
- * flat single-record design the report draft proposed could not hold this
- * package's own data without a name collision.
+ * catalog per slot (surfaces / left-chrome / top-bars / right-panels) lets the
+ * same name (e.g. "default") resolve to a different component shape in
+ * different slots — the flat single-record design the report draft proposed
+ * could not hold this package's own data without a name collision.
  */
 export interface ShellSlotNames {
 	/** Central panel — a no-arg component (PlayMode / BuildMode / CoauthorMode). */
@@ -49,6 +49,14 @@ export interface ShellSlotNames {
 	leftChrome: string;
 	/** Top bar — a chrome component taking railHidden/onShowRail/update. */
 	topBar: string;
+	/**
+	 * Optional right panel — a desktop side column (no-arg component reading its
+	 * own stores). OMITTED by modes with no right panel (rp today). Resolved by
+	 * `useShellSurface` DESKTOP-ONLY — mobile has no side column; a mode that
+	 * needs an in-flow mobile panel (co-author's Chat/Doc swap) keeps that inside
+	 * its central surface. See RIGHT_PANEL_SHELL_SLOT_REPORT (variant B).
+	 */
+	rightPanel?: string;
 }
 
 /**
@@ -81,7 +89,7 @@ export const CHAT_MODE_PACKAGES: readonly ChatModePackage[] = [
 	},
 	{
 		chatMode: "coauthor",
-		play: { surface: "CoauthorMode", leftChrome: "coauthor", topBar: "coauthor" },
+		play: { surface: "CoauthorMode", leftChrome: "coauthor", topBar: "coauthor", rightPanel: "CoauthorEditor" },
 		routes: { play: "/coauthor" },
 	},
 ];

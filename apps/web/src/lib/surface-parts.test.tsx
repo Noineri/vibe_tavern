@@ -14,10 +14,11 @@
  */
 import { describe, expect, it } from "vitest";
 import { CHAT_MODE_PACKAGES } from "./chat-mode-registry.js";
-import { SURFACE_LEFT_CHROME, SURFACE_SURFACES, SURFACE_TOP_BARS } from "./surface-parts.js";
+import { SURFACE_LEFT_CHROME, SURFACE_RIGHT_PANELS, SURFACE_SURFACES, SURFACE_TOP_BARS } from "./surface-parts.js";
 import { PlayMode } from "../components/play/PlayMode.js";
 import { BuildMode } from "../components/build/BuildMode.js";
 import { CoauthorMode } from "../components/coauthor/CoauthorMode.js";
+import { CoauthorEditorPanel } from "../components/coauthor/CoauthorEditorPanel.js";
 import { Sidebar } from "../components/layout/Sidebar.js";
 import { Rail } from "../components/layout/Rail.js";
 import { CoauthorSidebar } from "../components/coauthor/CoauthorSidebar.js";
@@ -26,8 +27,8 @@ import { TopBar } from "../components/layout/TopBar.js";
 import { CoauthorTopBar } from "../components/coauthor/CoauthorTopBar.js";
 
 /** Collect every (slot, name) pair the registry references. */
-function registryNames(): { slot: "surface" | "leftChrome" | "topBar"; name: string }[] {
-	const pairs: { slot: "surface" | "leftChrome" | "topBar"; name: string }[] = [];
+function registryNames(): { slot: "surface" | "leftChrome" | "topBar" | "rightPanel"; name: string }[] {
+	const pairs: { slot: "surface" | "leftChrome" | "topBar" | "rightPanel"; name: string }[] = [];
 	for (const pkg of CHAT_MODE_PACKAGES) {
 		for (const slot of [pkg.play, pkg.build] as const) {
 			if (!slot) continue;
@@ -36,6 +37,7 @@ function registryNames(): { slot: "surface" | "leftChrome" | "topBar"; name: str
 				{ slot: "leftChrome", name: slot.leftChrome },
 				{ slot: "topBar", name: slot.topBar },
 			);
+			if (slot.rightPanel) pairs.push({ slot: "rightPanel", name: slot.rightPanel });
 		}
 	}
 	return pairs;
@@ -68,6 +70,13 @@ describe("surface-parts catalog", () => {
 				expect(SURFACE_TOP_BARS[p.name], `topBar "${p.name}"`).toBeDefined();
 			}
 		});
+
+		it("all rightPanel names resolve to a component", () => {
+			for (const p of pairs) {
+				if (p.slot !== "rightPanel") continue;
+				expect(SURFACE_RIGHT_PANELS[p.name], `rightPanel "${p.name}"`).toBeDefined();
+			}
+		});
 	});
 
 	describe("identity — each entry is the component it claims to be", () => {
@@ -87,6 +96,10 @@ describe("surface-parts catalog", () => {
 		it("top bars", () => {
 			expect(SURFACE_TOP_BARS.default).toBe(TopBar);
 			expect(SURFACE_TOP_BARS.coauthor).toBe(CoauthorTopBar);
+		});
+
+		it("right panels", () => {
+			expect(SURFACE_RIGHT_PANELS.CoauthorEditor).toBe(CoauthorEditorPanel);
 		});
 	});
 });

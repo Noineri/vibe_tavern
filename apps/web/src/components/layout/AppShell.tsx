@@ -297,6 +297,7 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
         {shell.topBar}
         {shellSurface}
       </main>
+      {shell.rightPanel}
 
       {tweaksOpen && <TweaksPanel settings={tweaksPanelSettings} setSetting={handleSetTweak} onClose={() => setTweaksOpen(false)} onOpenMobileAccess={async () => {
           // Ensure a token exists before opening the modal

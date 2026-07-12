@@ -25,6 +25,7 @@ import { CoauthorTopBar } from "../components/coauthor/CoauthorTopBar.js";
 import { PlayMode } from "../components/play/PlayMode.js";
 import { BuildMode } from "../components/build/BuildMode.js";
 import { CoauthorMode } from "../components/coauthor/CoauthorMode.js";
+import { CoauthorEditorPanel } from "../components/coauthor/CoauthorEditorPanel.js";
 
 /** Props every top bar accepts. CoauthorTopBar ignores `update` (it accepts a subset). */
 export interface TopBarPartProps {
@@ -59,4 +60,14 @@ export const SURFACE_LEFT_CHROME: Record<string, LeftChromePart> = {
 export const SURFACE_TOP_BARS: Record<string, TopBarComponent> = {
 	default: TopBar,
 	coauthor: CoauthorTopBar,
+};
+
+/**
+ * Right-panel parts — keyed by the `rightPanel` name in a ShellSlotNames. A
+ * no-arg component reading its own stores (the co-author editor). Resolved
+ * DESKTOP-ONLY by `useShellSurface` — mobile has no side column (see
+ * ShellSlotNames.rightPanel + RIGHT_PANEL_SHELL_SLOT_REPORT variant B).
+ */
+export const SURFACE_RIGHT_PANELS: Record<string, ComponentType> = {
+	CoauthorEditor: CoauthorEditorPanel,
 };

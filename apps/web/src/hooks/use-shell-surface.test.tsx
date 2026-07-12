@@ -32,7 +32,7 @@ vi.mock("./use-mobile.js", () => ({
 
 import { useIsMobile } from "./use-mobile.js";
 import { useShellSurface, type ShellSurfaceProps } from "./use-shell-surface.js";
-import { SURFACE_LEFT_CHROME, SURFACE_SURFACES, SURFACE_TOP_BARS } from "../lib/surface-parts.js";
+import { SURFACE_LEFT_CHROME, SURFACE_RIGHT_PANELS, SURFACE_SURFACES, SURFACE_TOP_BARS } from "../lib/surface-parts.js";
 
 const setActiveChat = (mode: "rp" | "coauthor") =>
 	useSnapshotStore.setState({
@@ -69,16 +69,19 @@ describe("useShellSurface", () => {
 			expect(result.current.surface.type).toBe(SURFACE_SURFACES.BuildMode);
 			expect(result.current.leftChrome.type).toBe(SURFACE_LEFT_CHROME.default.desktop);
 			expect(result.current.topBar.type).toBe(SURFACE_TOP_BARS.default);
+			expect(result.current.rightPanel).toBeNull();
 		});
 	});
 
 	describe("Coauthor mode", () => {
-		it("play axis → CoauthorMode + CoauthorSidebar + CoauthorTopBar", () => {
+		it("play axis → CoauthorMode + CoauthorSidebar + CoauthorTopBar + rightPanel", () => {
 			setActiveChat("coauthor");
 			const { result } = renderHook(() => useShellSurface(baseProps));
 			expect(result.current.surface.type).toBe(SURFACE_SURFACES.CoauthorMode);
 			expect(result.current.leftChrome.type).toBe(SURFACE_LEFT_CHROME.coauthor.desktop);
 			expect(result.current.topBar.type).toBe(SURFACE_TOP_BARS.coauthor);
+			// The hoisted editor is resolved as the desktop right panel.
+			expect(result.current.rightPanel?.type).toBe(SURFACE_RIGHT_PANELS.CoauthorEditor);
 		});
 
 		it("CLAMPS a stale build toggle down to play (coauthor has no build slot)", () => {
@@ -89,6 +92,14 @@ describe("useShellSurface", () => {
 			expect(result.current.surface.type).toBe(SURFACE_SURFACES.CoauthorMode);
 			expect(result.current.leftChrome.type).toBe(SURFACE_LEFT_CHROME.coauthor.desktop);
 			expect(result.current.topBar.type).toBe(SURFACE_TOP_BARS.coauthor);
+		});
+
+		it("mobile → NO right panel (side column is desktop-only; mobile swap is in-surface)", () => {
+			vi.mocked(useIsMobile).mockReturnValue(true);
+			setActiveChat("coauthor");
+			const { result } = renderHook(() => useShellSurface(baseProps));
+			expect(result.current.platform).toBe("mobile");
+			expect(result.current.rightPanel).toBeNull();
 		});
 	});
 

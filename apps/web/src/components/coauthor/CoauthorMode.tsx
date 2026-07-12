@@ -142,20 +142,23 @@ export function CoauthorMode() {
             <CoauthorInputArea />
           </div>
         </div>
-        {/* Right: the live co-author MD editor (CA-10). Desktop keeps the split
-            (`hidden lg:flex`); mobile shows it full-width under the Doc tab.
-            Always mounted — only visibility toggles — so editor state survives
-            tab switches (see component doc). */}
-        <aside
-          className={cn(
-            "shrink-0 flex-col bg-surface",
-            isMobile
-              ? cn("w-full", mobileTab !== "doc" && "hidden")
-              : "hidden w-[460px] border-l border-border/50 lg:flex",
-          )}
-        >
-          <CoauthorCharacterForm />
-        </aside>
+        {/* Mobile: the live co-author MD editor (CA-10) in-flow under the Doc
+            tab. Desktop editor is now shell-owned (the `rightPanel` slot →
+            CoauthorEditorPanel, rendered as a sibling column by AppShell).
+            Mobile keeps this in-surface swap because a side column is a
+            desktop concept and the tab bar lives here — see
+            RIGHT_PANEL_SHELL_SLOT_REPORT (variant B). Always mounted; only
+            visibility toggles so editor state survives tab switches. */}
+        {isMobile && (
+          <aside
+            className={cn(
+              "shrink-0 w-full flex-col bg-surface",
+              mobileTab !== "doc" && "hidden",
+            )}
+          >
+            <CoauthorCharacterForm />
+          </aside>
+        )}
       </div>
     </div>
   );
