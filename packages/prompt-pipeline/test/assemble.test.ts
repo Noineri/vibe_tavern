@@ -547,6 +547,118 @@ describe("assemblePrompt", () => {
   // index is recomputed as history grows, so the compensation inverted the
   // payload. The jailbreak layer was also labeled with the preset's name
   // instead of the honest "Post-History Instructions".
+  describe("assembly mode characterization (AR-1a)", () => {
+    const characterSystem = { id: "character_system_prompt", text: "Character system.", position: "in_prompt" };
+    const persona = { id: "persona", text: "User persona (Alex, they/them): Journalist.", position: "in_prompt" };
+    const characterBase = { id: "character_base", text: "Character: Nora\nDetective.", position: "in_prompt" };
+    const recentHistory = { id: "recent_history", text: "USER: Where is the file?\n\nASSISTANT: In the drawer.", position: "in_prompt" };
+    const toolInstructions = { id: "tool_instructions", text: "Tool instruction.", position: "in_prompt" };
+    const historyMessages = [
+      { role: "user", content: "Where is the file?", messageId: "msg_mode_1" },
+      { role: "assistant", content: "In the drawer.", messageId: "msg_mode_2" },
+    ];
+
+    function modeContext(mode: "chat" | "continue" | "regenerate" | "summary" | "tool_call" | "ai_assistant" = "chat") {
+      return {
+        identity: { chatId: "chat_mode" },
+        character: { id: "char_mode", name: "Nora", description: "Detective.", systemPrompt: "Character system." },
+        persona: { id: "persona_mode", name: "Alex", description: "Journalist.", pronouns: "they/them" },
+        preset: { id: "preset_mode", name: "Mode preset", summary: "Summarize the case." },
+        instructions: { toolInstructions: "Tool instruction." },
+        chat: {
+          recentMessages: [
+            { id: "msg_mode_1", role: "user", content: "Where is the file?" },
+            { id: "msg_mode_2", role: "assistant", content: "In the drawer." },
+          ],
+        },
+        aiAssistant: {
+          mode: "script" as const,
+          enabledLayers: ["character_base", "persona"],
+          systemPrompt: "Assistant system.",
+          instruction: "Write a helper.",
+        },
+        mode,
+      };
+    }
+
+    function projectAssembly(result: ReturnType<typeof assemblePrompt>) {
+      return {
+        layers: result.layers.map(({ id, text, position, role }) => ({ id, text, position, ...(role ? { role } : {}) })),
+        messages: result.finalPayload.messages,
+      };
+    }
+
+    const chatExpected = {
+      layers: [characterSystem, persona, characterBase, recentHistory, toolInstructions],
+      messages: [
+        { role: "system", content: "Character system.", layerId: "character_system_prompt" },
+        { role: "system", content: "User persona (Alex, they/them): Journalist.", layerId: "persona" },
+        { role: "system", content: "Character: Nora\nDetective.", layerId: "character_base" },
+        { role: "system", content: "Tool instruction.", layerId: "tool_instructions" },
+        ...historyMessages,
+      ],
+    };
+
+    it("pins the complete chat assembly under both simple and canvas resolvers", () => {
+      expect(projectAssembly(assemblePrompt(modeContext()))).toEqual(chatExpected);
+      expect(projectAssembly(assemblePrompt({
+        ...modeContext(),
+        preset: { ...modeContext().preset, advancedMode: true, promptOrder: [] },
+      }))).toEqual(chatExpected);
+    });
+
+    it("pins the summary assembly", () => {
+      expect(projectAssembly(assemblePrompt(modeContext("summary")))).toEqual({
+        layers: [
+          characterSystem,
+          persona,
+          characterBase,
+          recentHistory,
+          { id: "prompt_preset_summary", text: "Summarize the case.", position: "in_prompt" },
+        ],
+        messages: [
+          { role: "system", content: "Character system.", layerId: "character_system_prompt" },
+          { role: "system", content: "User persona (Alex, they/them): Journalist.", layerId: "persona" },
+          { role: "system", content: "Character: Nora\nDetective.", layerId: "character_base" },
+          { role: "system", content: "Summarize the case.", layerId: "prompt_preset_summary" },
+          ...historyMessages,
+        ],
+      });
+    });
+
+    it("pins the AI assistant assembly", () => {
+      expect(projectAssembly(assemblePrompt(modeContext("ai_assistant")))).toEqual({
+        layers: [
+          { id: "ai_assistant_system", text: "Assistant system.", position: "in_prompt" },
+          characterBase,
+          persona,
+          { id: "ai_assistant_instruction", text: "Write a helper.", position: "in_prompt" },
+        ],
+        messages: [
+          { role: "system", content: "Assistant system.", layerId: "ai_assistant_system" },
+          { role: "system", content: "Character: Nora\nDetective.", layerId: "character_base" },
+          { role: "system", content: "User persona (Alex, they/them): Journalist.", layerId: "persona" },
+          { role: "user", content: "Write a helper.", layerId: "ai_assistant_instruction" },
+        ],
+      });
+    });
+
+    it("pins the distinct, unreachable tool-call assembly", () => {
+      expect(projectAssembly(assemblePrompt(modeContext("tool_call")))).toEqual({
+        layers: [recentHistory, toolInstructions],
+        messages: [
+          { role: "system", content: "Tool instruction.", layerId: "tool_instructions" },
+          ...historyMessages,
+        ],
+      });
+    });
+
+    it("proves continue and regenerate are aliases of chat", () => {
+      expect(projectAssembly(assemblePrompt(modeContext("continue")))).toEqual(chatExpected);
+      expect(projectAssembly(assemblePrompt(modeContext("regenerate")))).toEqual(chatExpected);
+    });
+  });
+
   describe("same-depth inject order + jailbreak label (Wave B)", () => {
     function twoInjectionContext(zone: "after_chat" | "in_chat", depth: number | null) {
       return {
