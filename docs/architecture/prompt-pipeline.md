@@ -11,23 +11,26 @@ The pipeline transforms raw character/persona/preset/lore/memory data into an or
 ```
 PromptAssemblyContext
   │
-  ├─ 0. Mode resolution        ← resolvers/ (SimpleResolver | AdvancedResolver)
+  ├─ 0. Resolver selection      ← resolvers/ (Simple | Advanced) — the single mode decision
   ├─ 1. Macro resolution        ← macro-registry.ts (AST parser + evaluator)
   ├─ 2. Layer creation          ← buildLayers() — the SINGLE mode-sensitive stage
   │     • asks the resolver: enabled? rank? position? include custom injections?
   ├─ 3. Compaction              ← compaction.ts (if contextBudget exceeded)
-  ├─ 4. Mode filtering          ← drop layers not active for current AssemblyMode
-  ├─ 5. Sorting                 ← position → subPosition → insertionOrder → priority
-  └─ 6. Final assembly          ← finalizeAssembly() — interleave in_chat layers into history
+  ├─ 4. Sorting                 ← position → subPosition → insertionOrder → priority
+  └─ 5. Final assembly          ← finalizeAssembly() — interleave in_chat layers into history
   │
   ▼
 PromptAssemblyResult (layers + messages + metadata)
 ```
 
-Stages 1 and 3–6 are **mode-agnostic** — identical in Simple and Advanced modes.
-Only stage 2 (layer creation) consults the [mode resolver](#simple-vs-advanced-mode),
-and even there only for three policy questions (is this slot enabled? what rank
-sorts it? what zone/depth does it land in?). See [Mode-aware assembly](#simple-vs-advanced-mode).
+The pipeline builds exactly one thing — an **RP chat turn** (simple or
+advanced/canvas, via the [mode resolver](#simple-vs-advanced-mode)). Summary and
+AI-assistant prompts have their own pure entry points behind registries
+([§ Registries](#registries-what-builds-a-prompt)); they never branch inside
+`assemblePrompt`. Stages 1 and 3–5 are **mode-agnostic** — identical in Simple
+and Advanced modes. Only stage 2 (layer creation) consults the resolver, and even
+there only for three policy questions (is this slot enabled? what rank sorts it?
+what zone/depth does it land in?). See [Simple vs Advanced Mode](#simple-vs-advanced-mode).
 
 ---
 
@@ -41,8 +44,6 @@ resolver](#simple-vs-advanced-mode) once, and delegates to two stages:
 ```ts
 export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssemblyResult {
   const context = applyMacrosToContext(rawContext);
-  if (effectiveMode === "ai_assistant") return assembleAiAssistant(context);
-
   const resolver = createResolver(context.preset);   // ← the single mode decision
   return finalizeAssembly(context, buildLayers(context, resolver), resolver);
 }
@@ -52,9 +53,11 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
   Creates a `PromptLayer` per non-empty content source, asking the resolver
   three questions per slot: `enabled(id)`, `rank(id)`, `position(layer, id)`.
   Also runs compaction (it needs non-history layer token counts).
-- **`finalizeAssembly(context, built, resolver)`** — stages 3–6. Mode-agnostic:
-  assigns `LAYER_MODES`, filters by `AssemblyMode`, sorts, interleaves in_chat
-  layers into history, and builds `finalPayload`.
+- **`finalizeAssembly(context, built, resolver)`** — stages 3–5. Mode-agnostic:
+  sorts, interleaves in_chat layers into history, and builds `finalPayload`. (The
+  summary entry point reuses `buildLayers` + `finalizeAssembly` but filters the
+  built layers to a fixed summary allowlist before finalizing — see
+  [§ Registries](#registries-what-builds-a-prompt).)
 
 Both stages share the same resolver instance, so the mode is decided exactly
 once and never re-derived downstream.
@@ -87,12 +90,12 @@ result.prefill            // string | null — assistant prefill from preset
 | `character` | `object` | Name, description, scenario, personality, systemPrompt, mesExample, postHistoryInstructions |
 | `persona` | `object \| null` | Name, description, pronouns |
 | `preset` | `object \| null` | System prompt (`text`), jailbreak, summary prompt, tools prompt, prefill, author's note, custom injections, `promptOrder`, `advancedMode` |
-| `mode` | `AssemblyMode` | `"chat"` \| `"continue"` \| `"regenerate"` \| `"summary"` \| `"tool_call"` \| `"ai_assistant"` |
+| `aiAssistant` | `object \| null` | Build AI-assistant context (mode, enabledLayers, instruction, systemPrompt, existingContent) — consumed by `getAiAssistantAssembler(mode)`, not by `assemblePrompt` |
 | `lore` | `array` | Activated lore entries (title, content, priority, position, depth, role) |
 | `memory` | `object` | `{ summary: [...], retrieval: [...] }` |
 | `chat` | `object` | `recentMessages`, `scriptInjections` |
 | `instructions` | `object` | `toolInstructions` text |
-| `config` | `object` | `contextBudget`, `responseReserve`, `model` |
+| `config` | `object` | `contextBudget`, `responseReserve`, `model`, `summary` (internal flag selecting the summary layer set) |
 
 ### Output: `PromptAssemblyResult`
 
@@ -102,7 +105,7 @@ result.prefill            // string | null — assistant prefill from preset
 | `totalTokenEstimate` | `number` | Sum of all layer token counts |
 | `activatedLoreEntries` | `string[]` | IDs of lore entries that were included |
 | `usedMemoryBlocks` | `string[]` | IDs of memory blocks that were included |
-| `droppedLayers` | `{ id, reason }[]` | Layers discarded (empty content, wrong mode, etc.) |
+| `droppedLayers` | `{ id, reason }[]` | Layers discarded (empty content, skipped example-message mode, etc.) |
 | `finalPayload` | `{ messages }` | Final `messages` array ready for LLM API |
 | `prefill` | `string \| null` | Assistant prefill text |
 
@@ -127,7 +130,6 @@ interface PromptLayer {
   role?: "system" | "user" | "assistant"; // Message role for in_chat injections
   text: string;          // Actual content
   tokenCount: number;    // Estimated token count
-  modes?: AssemblyMode[]; // Which modes this layer is active in
   reason: string;        // Why it was included/dropped
   enabled: boolean;
 }
@@ -256,7 +258,8 @@ The mode decision is encapsulated in a `PositionResolver`
 
 ```
 resolvers/
-├── position-resolver.ts   interface + createResolver(preset) factory
+├── resolver-registry.ts   RESOLVERS manifest (simple | advanced) + getResolverId + createRegisteredResolver
+├── position-resolver.ts   PositionResolver interface + createResolver(preset) → delegates to the registry
 ├── simple-resolver.ts     built-in always-on, DEFAULT_PROMPT_ORDER, no custom injections
 └── advanced-resolver.ts   canvas (promptOrder) is the single source of truth
 ```
@@ -323,35 +326,29 @@ explicit `zone`.
 
 ---
 
-## Assembly Modes
+## Registries: what builds a prompt
 
-Layers are filtered by the current `AssemblyMode`. Not all layers belong in every scenario:
+`assemblePrompt` builds exactly one thing — an **RP chat turn** (simple or advanced/canvas, via the [resolver seam](#the-positionresolver-seam)). The other two prompt shapes have their own pure entry points, each behind a registry, so the chat pipeline has no `if (mode === ...)` branches:
 
-| Layer | chat | continue | regenerate | summary | tool_call |
-|-------|------|----------|------------|---------|-----------|
-| System prompt | ✓ | ✓ | ✓ | — | — |
-| Jailbreak | ✓ | ✓ | ✓ | — | — |
-| Character base | ✓ | ✓ | ✓ | ✓ | — |
-| Persona | ✓ | ✓ | ✓ | ✓ | — |
-| Lore entries | ✓ | ✓ | ✓ | — | — |
-| Summary memory | ✓ | ✓ | ✓ | — | — |
-| Tool instructions | ✓ | ✓ | ✓ | — | ✓ |
-| Author's Note | ✓ | ✓ | ✓ | — | — |
-| Example messages | ✓ | ✓ | ✓ | ✓ | — |
-| Recent history | ✓ | ✓ | ✓ | — | — |
-| Summary preset | — | — | — | ✓ | — |
+| Registry | Entry point | Builds | Selected by |
+|---|---|---|---|
+| `PositionResolver` | `createResolver(preset)` | the RP chat turn's slot policy (enabled / rank / position) | `preset.advancedMode` → simple \| advanced |
+| `SummaryStrategy` | `getSummaryStrategy().assemble(ctx)` | a chat-summary prompt | `SUMMARY_STRATEGIES.default` |
+| `AiAssistantAssembler` | `getAiAssistantAssembler(mode).assemble(ctx)` | a Build AI-assistant one-shot | `AiAssistantMode` (script \| lore_entry \| lore_keys \| chat_impersonate \| md_import \| vision_describe) |
 
-### `ai_assistant` mode
+All three are pure (prompt in, `PromptAssemblyResult` out); LLM invocation, storage, and provider resolution stay with the caller — `ChatSummaryService` for summaries, `ai-assistant-stream.ts` for the assistant.
 
-`ai_assistant` uses a simplified assembly path (`assembleAiAssistant`) instead of the normal chat/layer filtering flow. It builds layers from:
+### Summary strategy
 
-- AI assistant system prompt
-- Character context (if enabled)
-- Persona context (if enabled)
-- Lore entries (if enabled)
-- Existing content
-- Chat history for `chat_impersonate` mode
-- User instruction (emitted as the final user message)
+`assembleSummaryPrompt` (in `assemble.ts`) reuses the chat `buildLayers` + `finalizeAssembly`, but **before finalizing it filters the built layers to a fixed summary allowlist** (`SUMMARY_LAYER_IDS` — system, character base/scenario/personality, persona, example messages, recent history, the summary-preset prompt, and the media layers). This replaces the old `mode:"summary"` visibility filter: summary visibility is now an explicit layer-id set owned by the summary path, not a dimension of the chat pipeline. The caller (`ChatSummaryService`) prepares the same context a chat turn would use and optionally reshapes the final user message. `SUMMARY_STRATEGIES` is `{ default: DefaultSummaryStrategy } as const satisfies Record<string, SummaryStrategy>` — one strategy today; the registry shape is what lets a future strategy (e.g. abstractive) slot in without touching the chat pipeline.
+
+### AI-assistant assembler
+
+`getAiAssistantAssembler(mode)` returns a per-mode assembler. All six modes currently share one `DefaultAiAssistantAssembler` (`assembleAiAssistant`), which builds a minimal layer set: system prompt → optional context (character / persona / lore, gated by `aiAssistant.enabledLayers`) → existing content → user instruction (emitted as the final user message); `chat_impersonate` additionally loads chat history. The registry is typed `as const satisfies Record<AiAssistantMode, AiAssistantAssembler>`, so adding a new `AiAssistantMode` is a **compile error** until an assembler is registered — a mode that needs a divergent layer set gets its own entry, and the chat pipeline is not involved.
+
+### Why these are not chat modes
+
+A chat mode (rp, coauthor) wires `ChatModeStrategy` + a shell surface (see [Adding a chat mode](../guides/adding-a-chat-mode.md)); its turns go through `assemblePrompt`. Summary and AI-assistant are **not chat turns** — they are one-shot generations triggered from different surfaces (a background summarizer; the Build lightbulb). Giving them their own registries keeps the chat pipeline single-purpose and makes each prompt shape's nature explicit.
 
 ---
 
@@ -753,7 +750,8 @@ Test files:
 
 | File | What it tests |
 |------|---------------|
-| `assemble.test.ts` | Layer creation, sorting, mode filtering, and Author's Note mode authority |
+| `assemble.test.ts` | Layer creation, sorting, and Author's Note mode authority (RP chat pinned under both simple and canvas resolvers) |
+| `registry-manifests.test.ts` | Registry completeness — every `AiAssistantMode` resolves to an assembler; resolver + summary registries resolve |
 | `compaction-budget.test.ts` | Reserve trigger, late-layer accounting, formatted-history separators, and assistant/tool boundary safety |
 | `build-lore-layers.test.ts` | Direct ST lore position, canvas zone, insertion-order, and dropped-reason mapping |
 | `macro-resolution.test.ts` | All macro types, variables, conditionals, random, roll, nested if |

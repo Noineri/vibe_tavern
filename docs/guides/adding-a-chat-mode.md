@@ -80,6 +80,8 @@ Implement `ChatModeStrategy` and register it. This defines how a turn of this mo
 
 Returning the **standard assembled-prompt shape** from `assemble` is what makes streaming / abort / reasoning / `drainStream` work for every mode with no mode-specific branches in the executor. Do not invent a parallel return type.
 
+> A chat-mode strategy's `assemble` goes through `assembleForChat` → `assemblePrompt`, which builds exactly one thing: an RP-style chat turn (the [resolver seam](../architecture/prompt-pipeline.md#the-positionresolver-seam) picks simple vs canvas). **Chat-summary generation and the Build AI-assistant are not chat turns** — they live in their own registries (`SummaryStrategy`, `AiAssistantAssembler` in `packages/prompt-pipeline`) and never enter `ChatModeStrategy`. A new chat mode does not touch them.
+
 Create the strategy class in `chat-mode-strategy.ts` (or a sibling module it imports — co-author keeps its `assemble` body in `coauthor-prompt.ts`), then add one line to the `strategies` Map:
 
 ```ts
