@@ -36,7 +36,7 @@ const DEFAULT_AUTO_CONFIG: AutoSummaryConfig = {
 };
 
 /* ─── Dual-range slider ─── */
-function DualRangeSlider({ min, max, from, to, disabled, onChange }: {
+export function DualRangeSlider({ min, max, from, to, disabled, onChange }: {
   min: number; max: number; from: number; to: number;
   disabled?: boolean;
   onChange: (from: number, to: number) => void;
@@ -195,20 +195,10 @@ export function ContextMemoryModal({
       .map((s) => ({ from: s.summarizedFrom, to: s.summarizedTo }));
   }, [summaries]);
 
-  const tokenEstimate = useMemo(() => {
-    const summaryTokens = countTokens(draftText);
-    const limitedMessages = messages
-      .filter((m) => {
-        const pos = (m.position ?? 0) + 1;
-        return !excludedRanges.some((r) => pos >= r.from && pos <= r.to);
-      })
-      .slice(-(historyLimit || messages.length));
-    const historyTokens = limitedMessages.reduce((sum, m) => sum + countTokens(m.content), 0);
-    const selectedRawTokens = selectedRangeMessages.reduce((sum, m) => sum + countTokens(m.content), 0);
-    const saved = Math.max(0, selectedRawTokens - summaryTokens);
-    const pct = selectedRawTokens > 0 ? Math.round((saved / selectedRawTokens) * 100) : 0;
-    return { summaryTokens, historyTokens, total: summaryTokens + historyTokens, selectedRawTokens, saved, pct };
-  }, [draftText, excludedRanges, historyLimit, messages, selectedRangeMessages]);
+  const tokenEstimate = useMemo(
+    () => computeTokenEstimate(draftText, excludedRanges, historyLimit, messages, selectedRangeMessages),
+    [draftText, excludedRanges, historyLimit, messages, selectedRangeMessages],
+  );
 
   const contextPct = contextWindow.limit > 0 ? Math.min(100, Math.round((contextWindow.used / contextWindow.limit) * 100)) : 0;
 
@@ -818,7 +808,35 @@ export function computeRangeAfterChange(
   };
 }
 
-function upsertSummary(list: ChatSummaryRecord[], summary: ChatSummaryRecord): ChatSummaryRecord[] {
+/**
+ * Compute the token-savings estimate for the Summary memory strategy. Pure
+ * (mirrors the original `useMemo` body) so the arithmetic — history excludes
+ * summarized ranges then slices to the limit; `saved`/`pct` derive from the
+ * selected-range raw tokens minus the summary — is unit-testable without
+ * rendering the modal.
+ */
+export function computeTokenEstimate(
+  draftText: string,
+  excludedRanges: ReadonlyArray<{ from: number; to: number }>,
+  historyLimit: number,
+  messages: ReadonlyArray<{ position?: number | null; content: string }>,
+  selectedRangeMessages: ReadonlyArray<{ content: string }>,
+): { summaryTokens: number; historyTokens: number; total: number; selectedRawTokens: number; saved: number; pct: number } {
+  const summaryTokens = countTokens(draftText);
+  const limitedMessages = messages
+    .filter((m) => {
+      const pos = (m.position ?? 0) + 1;
+      return !excludedRanges.some((r) => pos >= r.from && pos <= r.to);
+    })
+    .slice(-(historyLimit || messages.length));
+  const historyTokens = limitedMessages.reduce((sum, m) => sum + countTokens(m.content), 0);
+  const selectedRawTokens = selectedRangeMessages.reduce((sum, m) => sum + countTokens(m.content), 0);
+  const saved = Math.max(0, selectedRawTokens - summaryTokens);
+  const pct = selectedRawTokens > 0 ? Math.round((saved / selectedRawTokens) * 100) : 0;
+  return { summaryTokens, historyTokens, total: summaryTokens + historyTokens, selectedRawTokens, saved, pct };
+}
+
+export function upsertSummary(list: ChatSummaryRecord[], summary: ChatSummaryRecord): ChatSummaryRecord[] {
   const idx = list.findIndex((item) => item.id === summary.id);
   if (idx < 0) return [...list, summary].sort((a, b) => a.summarizedFrom - b.summarizedFrom || a.createdAt.localeCompare(b.createdAt));
   const next = [...list];

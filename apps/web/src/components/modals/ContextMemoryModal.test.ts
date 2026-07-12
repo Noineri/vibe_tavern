@@ -14,7 +14,95 @@
  *    cannot extend small→large, so the range freezes near a stale value).
  */
 import { describe, expect, test } from "vitest";
-import { computeRangeAfterChange } from "./ContextMemoryModal.js";
+import { computeRangeAfterChange, upsertSummary, computeTokenEstimate } from "./ContextMemoryModal.js";
+import { countTokens } from "../../utils/tokenizer.js";
+import type { ChatSummaryRecord } from "../../app-client.js";
+
+describe("upsertSummary — archive list ordering", () => {
+	const base = (over: Partial<ChatSummaryRecord> = {}): ChatSummaryRecord => ({
+		id: "x", chatId: "c", branchId: "b", label: "L", content: "", summarizedFrom: 1, summarizedTo: 1,
+		includeInContext: true, excludeSummarized: true, source: "manual", sortOrder: 0, contentHash: null,
+		createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z", ...over,
+	});
+
+	test("inserts into an empty list", () => {
+		const out = upsertSummary([], base({ id: "a" }));
+		expect(out).toHaveLength(1);
+		expect(out[0].id).toBe("a");
+	});
+
+	test("inserts sorted ascending by summarizedFrom (stable by createdAt on tie)", () => {
+		// Pre-existing entry spanning T5..T8; inserting a T1..T3 entry lands first.
+		const out = upsertSummary([base({ id: "b", summarizedFrom: 5, summarizedTo: 8 })], base({ id: "a", summarizedFrom: 1, summarizedTo: 3 }));
+		expect(out.map((s) => s.id)).toEqual(["a", "b"]);
+	});
+
+	test("replaces an existing entry in place (keeps position by summarizedFrom)", () => {
+		const a = base({ id: "a", summarizedFrom: 1, content: "old" });
+		const b = base({ id: "b", summarizedFrom: 5 });
+		const updated = base({ id: "a", summarizedFrom: 1, content: "new" });
+		const out = upsertSummary([a, b], updated);
+		expect(out).toHaveLength(2);
+		expect(out.map((s) => s.id)).toEqual(["a", "b"]);
+		expect(out[0].content).toBe("new");
+	});
+
+	test("does not mutate the input list", () => {
+		const orig = [base({ id: "a" })];
+		const snapshot = [...orig];
+		upsertSummary(orig, base({ id: "b" }));
+		expect(orig).toEqual(snapshot);
+	});
+});
+
+describe("computeTokenEstimate — savings arithmetic", () => {
+	const msg = (position: number, content: string) => ({ position, content });
+	const tokens = (s: string) => countTokens(s);
+
+	test("summary + history tokens add to total; savings computed from selected range", () => {
+		const draft = "A compact summary.";
+		const messages = [msg(0, "hello world"), msg(1, "another message here"), msg(2, "third one")];
+		const selected = [messages[0], messages[1]];
+		const out = computeTokenEstimate(draft, [], 100, messages, selected);
+		expect(out.summaryTokens).toBe(tokens(draft));
+		expect(out.historyTokens).toBe(tokens("hello world") + tokens("another message here") + tokens("third one"));
+		expect(out.total).toBe(out.summaryTokens + out.historyTokens);
+		const selectedRaw = tokens("hello world") + tokens("another message here");
+		expect(out.selectedRawTokens).toBe(selectedRaw);
+		expect(out.saved).toBe(Math.max(0, selectedRaw - out.summaryTokens));
+		expect(out.pct).toBe(Math.round((out.saved / selectedRaw) * 100));
+	});
+
+	test("history excludes messages inside an excluded range, then slices to the limit", () => {
+		// Five messages (positions 0..4 → 1-indexed 1..5). Exclude the two
+		// middle ones (1-indexed 3,4 = original positions 2,3). historyLimit = 2 →
+		// tail-2 of the remaining [pos0,pos1,pos4] is [pos1,pos4] = bbbb, eeee.
+		const messages = [
+			msg(0, "aaaa"), msg(1, "bbbb"), msg(2, "excluded one"), msg(3, "excluded two"), msg(4, "eeee"),
+		];
+		const out = computeTokenEstimate("", [{ from: 3, to: 4 }], 2, messages, []);
+		expect(out.historyTokens).toBe(tokens("bbbb") + tokens("eeee"));
+	});
+
+	test("historyLimit 0 means ‘no limit’ — all non-excluded messages count", () => {
+		const messages = [msg(0, "a"), msg(1, "b"), msg(2, "c")];
+		const out = computeTokenEstimate("", [], 0, messages, []);
+		expect(out.historyTokens).toBe(tokens("a") + tokens("b") + tokens("c"));
+	});
+
+	test("selectedRawTokens 0 → saved 0, pct 0 (no divide-by-zero)", () => {
+		const out = computeTokenEstimate("summary", [], 10, [msg(0, "x")], []);
+		expect(out.selectedRawTokens).toBe(0);
+		expect(out.saved).toBe(0);
+		expect(out.pct).toBe(0);
+	});
+
+	test("summary longer than the selected range → saved floored at 0 (no negative savings)", () => {
+		const out = computeTokenEstimate("x".repeat(2000), [], 10, [], [{ content: "short" }]);
+		expect(out.saved).toBe(0);
+		expect(out.pct).toBe(0);
+	});
+});
 
 describe("computeRangeAfterChange — scope change resets range", () => {
 	test("scope change resets the range to the full span (1..maxMessage)", () => {
