@@ -330,6 +330,53 @@ explicit `zone`.
 
 `assemblePrompt` builds exactly one thing — an **RP chat turn** (simple or advanced/canvas, via the [resolver seam](#the-positionresolver-seam)). The other two prompt shapes have their own pure entry points, each behind a registry, so the chat pipeline has no `if (mode === ...)` branches:
 
+```text
+                            prompt building
+                                  │
+      ┌───────────────────────────┼───────────────────────────┐
+      ▼                           ▼                           ▼
+ chat turn (stream)          one-shot                     one-shot
+                             (summary)                  (ai-assistant)
+      │                           │                           │
+      ▼                           ▼                           ▼
+┌──────────────────┐     ┌─────────────────┐     ┌──────────────────┐
+│ ChatModeStrategy │     │ Summary         │     │ AiAssistant      │
+│ registry         │     │ Strategy        │     │ Assembler        │
+│ ──────────────   │     │ registry        │     │ registry         │
+│ rp · coauthor    │     │ ─────────       │     │ ──────────       │
+│ (+novel/group    │     │ { default }     │     │ { 6 AiAssistant- │
+│  reserved)       │     │                 │     │   Mode keys }    │
+│ services/api/    │     │ prompt-         │     │ prompt-pipeline/ │
+│ domain/chat/     │     │  pipeline/      │     │ ai-assistant/    │
+│ chat-mode-       │     │ summary/        │     │ ai-assistant-    │
+│ strategy.ts      │     │ summary-        │     │ assemblers.ts    │
+│                  │     │ strategies.ts   │     │                  │
+└────────┬─────────┘     └────────┬────────┘     └────────┬─────────┘
+         │                        │                        │
+         │ .assemble()            │ .assemble()            │ .assemble(mode)
+         ▼                        ▼                        ▼
+   assemblePrompt()       assembleSummaryPrompt()   assembleAiAssistant()
+   ──────────────────────────────────────────────────────────────────
+        PURE · prompt-pipeline package   →   PromptAssemblyResult
+        (no I/O: LLM / storage / provider stay with the caller)
+         │
+         │  nested sub-registry — the RP-only simple/canvas axis:
+         ▼
+   ┌──────────────────────┐
+   │ PositionResolver     │  ← chosen ONCE from preset.advancedMode,
+   │ registry             │    threaded through both pipeline stages;
+   │ ───────────          │    also reused by assembleSummaryPrompt.
+   │ simple · advanced    │
+   │ (canvas)             │
+   │ resolvers/           │
+   │ resolver-registry.ts │
+   └──────────┬───────────┘
+              ▼
+        layer pipeline (see Overview diagram above)
+```
+
+Three top-level registries on the *kind-of-generation* axis (chat turn / summary / ai-assistant — mutually exclusive paths); `ChatModeStrategy` is the **umbrella** over chat turns (rp/coauthor), under which the RP branch carries a fourth, nested sub-registry — `PositionResolver` (simple | canvas). Summary and AI-assistant are **not** chat turns and never enter `ChatModeStrategy`.
+
 | Registry | Entry point | Builds | Selected by |
 |---|---|---|---|
 | `PositionResolver` | `createResolver(preset)` | the RP chat turn's slot policy (enabled / rank / position) | `preset.advancedMode` → simple \| advanced |
