@@ -27,7 +27,7 @@ function DesktopInputArea({ data }: { data: ReturnType<typeof useInputArea> }) {
     personas, activePersonaId,
     contextSize, maxTokens, favoriteModels, activeModelId,
     fileInputRef, draftAttachments, onFileInputChange, handlePaste, canSend,
-    buckets, inputTokens,
+    buckets, inputTokens, showGenerateMore, handleGenerateMore,
   } = data;
 
   const [isDragOver, setIsDragOver] = useState(false);
@@ -147,6 +147,18 @@ function DesktopInputArea({ data }: { data: ReturnType<typeof useInputArea> }) {
                 { label: t("context_tools"), value: buckets.tools },
               ]}
             />
+
+            {showGenerateMore && (
+              <CustomTooltip content={t("generate_more_tooltip")}>
+                <button type="button"
+                  onClick={handleGenerateMore}
+                  className="ml-auto flex h-[26px] cursor-pointer items-center gap-1 whitespace-nowrap rounded-md border border-border2 bg-s2 px-2.5 font-ui text-[12px] font-medium text-t2 transition-colors duration-150 hover:bg-s3 hover:text-t1"
+                >
+                  <Icons.Plus />
+                  <span>{t("generate_more_label")}</span>
+                </button>
+              </CustomTooltip>
+            )}
 
             <div className="absolute right-3 bottom-[9px] flex items-center gap-[9px]">
                 <ToolbarSelect

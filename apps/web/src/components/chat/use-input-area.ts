@@ -19,8 +19,9 @@ import { useChatController } from "../../hooks/use-chat-controller.js";
 import { useCharacterController } from "../../hooks/use-character-controller.js";
 import { useProviderProfiles } from "../../hooks/use-provider-profiles.js";
 import { usePresetController } from "../../hooks/use-preset-controller.js";
+import { enqueueGenerateMore } from "../../hooks/use-generation-queue.js";
 import { useChatStore, useProviderStore, useIsSending } from "../../stores/index.js";
-import { useActiveTrace, useChatMeta } from "../../stores/chat-selectors.js";
+import { useActiveTrace, useChatMeta, useActiveStreamingMessageId } from "../../stores/chat-selectors.js";
 import { useBootstrapStore } from "../../stores/api-actions/bootstrap-actions.js";
 import { uploadAsset } from "../../app-client.js";
 
@@ -53,6 +54,23 @@ export function useInputArea() {
   const maxTokens = provider.activeProviderProfile?.maxTokens ?? 0;
   const favoriteModels = provider.activeProviderProfile ? (provider.favoriteModelsByProfile[provider.activeProviderProfile.id] ?? []) : [];
   const activeModelId = provider.activeProviderProfile?.defaultModel ?? connection.model ?? null;
+
+  // GMR (Generate-More Relocation): the in-flight streaming target for the
+  // active chat. The composer's "Generate more" button (relocated from the
+  // message header — see GENERATE_MORE_RELOCATION) enqueues another variant
+  // onto THIS message. Null on idle → `showGenerateMore` is simply
+  // `streamingMessageId !== null` (which also implies isSending, so the
+  // Send/Cancel cluster is showing Cancel whenever this is true).
+  const streamingMessageId = useActiveStreamingMessageId();
+  const showGenerateMore = streamingMessageId !== null;
+  // Snapshot model + preset as KEYS at enqueue time (Q1a — values resolve live
+  // at pop). Same model resolution as the former MessageBlock handler: the
+  // active provider profile's default model, falling back to the connection
+  // model. Guarded — can't queue without a target message + model.
+  const handleGenerateMore = (): void => {
+    if (!streamingMessageId || !activeModelId) return;
+    enqueueGenerateMore(streamingMessageId, activeModelId, activePromptPresetId);
+  };
 
   // --- Attachments ---
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -149,6 +167,7 @@ export function useInputArea() {
     contextSize, maxTokens, favoriteModels, activeModelId,
     fileInputRef, draftAttachments, handleFileSelected, onFileInputChange, handlePaste,
     canSend, buckets, inputTokens,
+    showGenerateMore, handleGenerateMore,
   };
 }
 

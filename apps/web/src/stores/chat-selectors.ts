@@ -172,6 +172,28 @@ export function useIsStreamingTarget(messageId: string): boolean {
   });
 }
 
+/**
+ * Returns the message id currently being streamed into for the active chat,
+ * or null when no generation is in flight (or there is no active chat).
+ * Active-chat scoped (like {@link useIsStreamingTarget}) and source-agnostic —
+ * reads the explicit `streamingMessageId` identity field, so it returns the
+ * right target whether one generation is in flight (today) or a sequential
+ * queue is running (tomorrow — each popped job rewrites the field).
+ *
+ * The composer (InputArea) uses this to address a "Generate more" enqueue to
+ * the in-flight message WITHOUT subscribing to the mutating generation object
+ * on every streaming tick: the returned id is stable across ticks of a single
+ * generation and only changes when a generation starts/stops. Null on idle →
+ * the composer's generate-more gate is simply `streamingMessageId !== null`.
+ */
+export function useActiveStreamingMessageId(): string | null {
+  return useChatStore((s) => {
+    if (!s.activeChatId) return null;
+    const gen = s.generations[s.activeChatId];
+    return gen?.isSending ? (gen.streamingMessageId ?? null) : null;
+  });
+}
+
 export interface StreamingRevealInfo {
   streamingText: string;
   revealedText: string;
