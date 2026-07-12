@@ -25,8 +25,8 @@ import type { ChatMode } from "@vibe-tavern/domain";
  * The shell editing axis — orthogonal to `ChatMode`. `play` = interact with the
  * chat; `build` = edit the character/lore/script structure. `coauthor` is NOT an
  * AppMode — it is a `ChatMode`, and its package (below) declares the surfaces it
- * owns. Re-exported from `app-shell-types.ts` once fix-step 4 collapses the old
- * `"play" | "build" | "coauthor"` union down to this.
+ * owns. Re-exported from `app-shell-types.ts` (the back-compat hub, mirroring
+ * `ThemeMode`) for navigation-store + chat-actions.
  */
 export const APP_MODES = ["play", "build"] as const;
 export type AppMode = (typeof APP_MODES)[number];

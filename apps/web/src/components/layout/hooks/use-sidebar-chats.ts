@@ -25,6 +25,7 @@ import { useMemo } from "react";
 import type { ChatListItem } from "../../../app-client.js";
 import { filterAndSortList } from "../../../lib/list-filter.js";
 import { useNavigationStore } from "../../../stores/index.js";
+import { useSnapshotStore } from "../../../stores/snapshot-store.js";
 
 export interface UseSidebarChatsArgs {
 	/** Full chat list (typically `chatMeta?.chats ?? []`). */
@@ -47,13 +48,13 @@ export interface UseSidebarChatsResult {
 	readonly rpVisibleChats: readonly ChatListItem[];
 	/** `visibleChats` filtered to co-author chats (`mode === "coauthor"`). */
 	readonly coauthorVisibleChats: readonly ChatListItem[];
-	/** The subset active for the current nav mode: co-author chats under `coauthor`, RP chats otherwise (incl. `build`). */
+	/** The subset for the active chat's bucket: co-author chats when the active chat is coauthor, RP chats otherwise. */
 	readonly sectionChats: readonly ChatListItem[];
 }
 
 export function useSidebarChats({ allChats, characterId, query }: UseSidebarChatsArgs): UseSidebarChatsResult {
 	const sortMode = useNavigationStore((s) => s.chatSortMode);
-	const mode = useNavigationStore((s) => s.mode);
+	const activeChatMode = useSnapshotStore((s) => s.activeChat?.mode);
 
 	// Step 1 — character-scope. Matches the previous inline memo: scoped when a
 	// character is selected, otherwise the full list (NOT a copy — downstream
@@ -87,7 +88,7 @@ export function useSidebarChats({ allChats, characterId, query }: UseSidebarChat
 		return { rpVisibleChats: rp, coauthorVisibleChats: co };
 	}, [visibleChats]);
 
-	const sectionChats = mode === "coauthor" ? coauthorVisibleChats : rpVisibleChats;
+	const sectionChats = activeChatMode === "coauthor" ? coauthorVisibleChats : rpVisibleChats;
 
 	return { chats, visibleChats, rpVisibleChats, coauthorVisibleChats, sectionChats };
 }

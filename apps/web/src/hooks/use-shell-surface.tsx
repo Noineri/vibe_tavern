@@ -25,7 +25,6 @@ import { useSnapshotStore } from "../stores/snapshot-store.js";
 import {
 	getChatModePackage,
 	hasBuildSurface,
-	type AppMode,
 	type SurfacePlatform,
 } from "../lib/chat-mode-registry.js";
 import {
@@ -71,16 +70,12 @@ export function useShellSurface({ showRail, onShowRail, update }: ShellSurfacePr
 	const chatMode = activeChat?.mode ?? "rp";
 	const pkg = getChatModePackage(chatMode);
 
-	// Narrow the navigation mode to the editing axis. During the transition
-	// (before fix-step 4 collapses `coauthor` out of AppMode), navMode may still
-	// be "coauthor" — anything that is not a real "build" is treated as "play",
-	// and chatMode (not navMode) drives the package, so this is safe.
-	const requestedAxis: AppMode = navMode === "build" ? "build" : "play";
-
+	// navMode (AppMode) is now purely the play/build editing axis — "coauthor"
+	// lives on the chat (a ChatMode), not in navMode, so no narrowing is needed.
 	// Clamp: if the toggle is "build" but this mode has no build surface (e.g.
 	// coauthor), fall back to play. Preserves the toggle as user intent, never
 	// renders an impossible build screen.
-	const useBuildSlot = requestedAxis === "build" && hasBuildSurface(chatMode);
+	const useBuildSlot = navMode === "build" && hasBuildSurface(chatMode);
 	const slot = useBuildSlot && pkg.build ? pkg.build : pkg.play;
 
 	const Surface = SURFACE_SURFACES[slot.surface];

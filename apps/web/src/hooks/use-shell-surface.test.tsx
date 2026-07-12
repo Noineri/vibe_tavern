@@ -98,13 +98,6 @@ describe("useShellSurface", () => {
 			const { result } = renderHook(() => useShellSurface(baseProps));
 			expect(result.current.surface.type).toBe(SURFACE_SURFACES.PlayMode);
 		});
-
-		it("transitional navMode 'coauthor' is treated as play, not build", () => {
-			setActiveChat("rp");
-			useNavigationStore.setState({ mode: "coauthor" });
-			const { result } = renderHook(() => useShellSurface(baseProps));
-			expect(result.current.surface.type).toBe(SURFACE_SURFACES.PlayMode);
-		});
 	});
 
 	describe("mobile chrome", () => {

@@ -29,6 +29,7 @@ import type { ChatListItem } from "../../../app-client.js";
 import { buildCharacterTabs } from "../../../lib/character-tabs.js";
 import { filterAndSortList } from "../../../lib/list-filter.js";
 import { useNavigationStore } from "../../../stores/index.js";
+import { useSnapshotStore } from "../../../stores/snapshot-store.js";
 import type { CharacterTab } from "../app-shell-types.js";
 
 export interface UseSidebarCharactersArgs {
@@ -62,15 +63,16 @@ export interface UseSidebarCharactersResult {
 
 export function useSidebarCharacters({ allCharacters, allChats, query, selectedTags }: UseSidebarCharactersArgs): UseSidebarCharactersResult {
 	const sortMode = useNavigationStore((s) => s.characterSortMode);
-	const mode = useNavigationStore((s) => s.mode);
+	const activeChatMode = useSnapshotStore((s) => s.activeChat?.mode);
 
-	// Step 1 — F-6 fix: scope chats to the current nav mode before the character
-	// tabs are built, so a character's resolved chatId is always from this mode.
-	// `buildCharacterTabs` picks the first chat per character; without this filter
-	// it could pick a co-author chat for an RP character tab (or vice versa).
+	// Step 1 — F-6 fix: scope chats to the active chat's bucket before the
+	// character tabs are built, so a character's resolved chatId always matches
+	// the shell it appears in. `buildCharacterTabs` picks the first chat per
+	// character; without this filter it could pick a co-author chat for an RP
+	// character tab (or vice versa).
 	const modeChats = useMemo(
-		() => (mode === "coauthor" ? allChats.filter((c) => c.mode === "coauthor") : allChats.filter((c) => c.mode !== "coauthor")),
-		[allChats, mode],
+		() => (activeChatMode === "coauthor" ? allChats.filter((c) => c.mode === "coauthor") : allChats.filter((c) => c.mode !== "coauthor")),
+		[allChats, activeChatMode],
 	);
 
 	// Step 2 — build tabs over the mode-scoped chats.

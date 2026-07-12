@@ -84,9 +84,7 @@ export function TopBar({ railHidden, onShowRail, update }: TopBarProps) {
         {update && <UpdateBadge latestVersion={update.latestVersion} releaseUrl={update.releaseUrl} />}
         <div className="cursor-pointer rounded-full bg-accent-dim px-3 py-1 text-[calc(var(--ui-fs)-3px)] font-medium tracking-[0.02em] text-accent-t transition-colors duration-150 hover:bg-accent-hover"
           onClick={() => setMode(mode === 'build' ? 'play' : 'build')}>
-          {mode === 'coauthor'
-            ? <span className="flex items-center gap-1"><span className="text-[calc(var(--ui-fs)-3px)]"><Icons.Caret direction="l" /></span>{t("topbar_back_to_editor")}</span>
-            : mode === 'play' ? t("topbar_build_mode") : t("topbar_play_mode")}
+          {mode === 'play' ? t("topbar_build_mode") : t("topbar_play_mode")}
         </div>
       </div>
     );
@@ -174,9 +172,7 @@ export function TopBar({ railHidden, onShowRail, update }: TopBarProps) {
           <div className="cursor-pointer rounded-full bg-accent-dim px-3 py-1 text-[calc(var(--ui-fs)-3px)] font-medium tracking-[0.02em] text-accent-t transition-colors duration-150 hover:bg-accent-hover"
             tabIndex={0}
             onClick={() => setMode(mode === 'build' ? 'play' : 'build')}>
-            {mode === 'coauthor'
-              ? <span className="flex items-center gap-1"><span className="text-[calc(var(--ui-fs)-3px)]"><Icons.Caret direction="l" /></span>{t("topbar_back_to_editor")}</span>
-              : mode === 'play' ? t("topbar_build_mode") : t("topbar_play_mode")}
+            {mode === 'play' ? t("topbar_build_mode") : t("topbar_play_mode")}
           </div>
 
           <CustomTooltip content={t("topbar_interface_settings")}>
