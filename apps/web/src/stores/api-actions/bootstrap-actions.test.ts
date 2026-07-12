@@ -3,7 +3,7 @@ import type { ChatId, CharacterId } from "@vibe-tavern/domain";
 import type { AppSnapshot } from "../../app-client.js";
 import { useChatStore } from "../chat-store.js";
 import { useSnapshotStore } from "../snapshot-store.js";
-import { syncBootstrapSnapshotForActiveChat, reconcileNavModeFromChat } from "./bootstrap-actions.js";
+import { syncBootstrapSnapshotForActiveChat } from "./bootstrap-actions.js";
 import { useNavigationStore } from "../navigation-store.js";
 
 const chatId = (id: string) => id as ChatId;
@@ -178,57 +178,5 @@ describe("syncBootstrapSnapshotForActiveChat", () => {
     const state = useSnapshotStore.getState();
     expect(state.activeChat?.id).toBe(chatId("initial-chat"));
     expect(state.persona?.name).toBe("Bootstrap persona");
-  });
-});
-
-describe("reconcileNavModeFromChat", () => {
-  test("a co-author chat sets nav mode to 'coauthor'", () => {
-    useNavigationStore.getState().setMode("play");
-    reconcileNavModeFromChat({ mode: "coauthor" });
-    expect(useNavigationStore.getState().mode).toBe("coauthor");
-  });
-
-  test("a co-author chat flips nav mode from build to coauthor too", () => {
-    useNavigationStore.getState().setMode("build");
-    reconcileNavModeFromChat({ mode: "coauthor" });
-    expect(useNavigationStore.getState().mode).toBe("coauthor");
-  });
-
-  test("an RP chat entered from coauthor exits back to 'play'", () => {
-    useNavigationStore.getState().setMode("coauthor");
-    reconcileNavModeFromChat({ mode: "rp" });
-    expect(useNavigationStore.getState().mode).toBe("play");
-  });
-
-  test("an RP chat does not clobber a deliberate 'build' view", () => {
-    useNavigationStore.getState().setMode("build");
-    reconcileNavModeFromChat({ mode: "rp" });
-    expect(useNavigationStore.getState().mode).toBe("build");
-  });
-
-  test("a co-author chat with idempotent re-reconcile stays coauthor", () => {
-    useNavigationStore.getState().setMode("coauthor");
-    reconcileNavModeFromChat({ mode: "coauthor" });
-    expect(useNavigationStore.getState().mode).toBe("coauthor");
-  });
-
-  test("no active chat (undefined) exits coauthor to play, leaves play/build untouched", () => {
-    useNavigationStore.getState().setMode("coauthor");
-    reconcileNavModeFromChat(undefined);
-    expect(useNavigationStore.getState().mode).toBe("play");
-
-    useNavigationStore.getState().setMode("play");
-    reconcileNavModeFromChat(undefined);
-    expect(useNavigationStore.getState().mode).toBe("play");
-
-    useNavigationStore.getState().setMode("build");
-    reconcileNavModeFromChat(undefined);
-    expect(useNavigationStore.getState().mode).toBe("build");
-  });
-
-  test("an active chat whose mode is absent (RP) exits coauthor to play", () => {
-    useNavigationStore.getState().setMode("coauthor");
-    reconcileNavModeFromChat({ mode: undefined });
-    expect(useNavigationStore.getState().mode).toBe("play");
   });
 });

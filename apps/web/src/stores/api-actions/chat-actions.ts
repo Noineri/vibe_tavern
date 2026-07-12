@@ -39,7 +39,7 @@ import type { AutoSummaryConfig, ChatSummaryRecord } from "../../app-client.js";
 import { useSnapshotStore } from "../snapshot-store.js";
 import { useChatStore } from "../chat-store.js";
 import { useNavigationStore } from "../navigation-store.js";
-import { fetchBootstrapAction, reconcileNavModeFromChat } from "./bootstrap-actions.js";
+import { fetchBootstrapAction } from "./bootstrap-actions.js";
 
 // Single canonical backend snapshot cache.
 function syncSnapshot(snapshot: AppSnapshot) {
@@ -91,9 +91,6 @@ export async function createChatAction(characterId: string, mode?: ChatMode): Pr
   if (newChatId) {
     useChatStore.getState().setActiveChatId(newChatId);
   }
-  // Flip nav mode to match the new chat (co-author chat → co-author shell).
-  // See reconcileNavModeFromChat in bootstrap-actions (CA-8b.2).
-  reconcileNavModeFromChat(snapshot.activeChat);
   void fetchBootstrapAction({ silent: true });
 }
 
@@ -204,10 +201,6 @@ export async function switchChatAction(chatId: ChatId): Promise<void> {
   const snapshot = await fetchChat(chatId);
   syncSnapshot(snapshot);
   syncSelectedCharacterFromSnapshot(snapshot);
-  // Flip nav mode to match the switched-to chat: a co-author chat enters the
-  // co-author shell, and switching from co-author back to an RP chat exits it.
-  // See reconcileNavModeFromChat in bootstrap-actions (CA-8b.2).
-  reconcileNavModeFromChat(snapshot.activeChat);
 }
 
 /**
