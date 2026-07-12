@@ -317,7 +317,7 @@ function normalizeMaxMessages(value: number): number {
   return Math.max(1, Math.floor(value));
 }
 
-function withSummaryPromptAsFinalUserMessage(prompt: AssemblePromptResponse): AssemblePromptResponse {
+export function withSummaryPromptAsFinalUserMessage(prompt: AssemblePromptResponse): AssemblePromptResponse {
   const payload = prompt.finalPayload as { messages?: unknown } | undefined;
   const messages = Array.isArray(payload?.messages) ? payload.messages : [];
   const summaryLayer = prompt.layers.find((layer) => layer.id === "prompt_preset_summary");

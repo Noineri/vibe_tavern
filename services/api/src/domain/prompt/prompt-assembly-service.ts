@@ -19,7 +19,7 @@ import type {
   ActivatedLoreDetail,
 } from "@vibe-tavern/domain";
 import type { StoreContainer } from "@vibe-tavern/db";
-import { assemblePrompt, setModelHint } from "@vibe-tavern/prompt-pipeline";
+import { assemblePrompt, getSummaryStrategy, setModelHint } from "@vibe-tavern/prompt-pipeline";
 import { logSendDebug } from "../../shared/send-debug-log.js";
 import { type FileStore, STORAGE_FOLDERS } from "@vibe-tavern/db";
 
@@ -133,7 +133,9 @@ export interface AssemblePromptForChatInput {
   contextBudget?: number | null;
   /** Tokens reserved for the model's response. Subtracted from contextBudget during compaction. */
   responseReserve?: number;
-  mode?: "chat" | "continue" | "regenerate" | "summary" | "tool_call";
+  mode?: "chat" | "continue" | "regenerate" | "tool_call";
+  /** Summary preparation is source-loading policy, not a pipeline mode. */
+  summary?: boolean;
   /**
    * Optional per-request prompt preset override (Wave Q1b). When set, the
    * assembled prompt uses this preset instead of the chat's `promptPresetId`,
@@ -192,7 +194,7 @@ export class PromptAssemblyService {
       promptPresetResolved: promptPreset ? { id: promptPreset.id, name: promptPreset.name, systemLength: promptPreset.text.length } : null,
     });
     const excludedMessageIds = new Set(input.excludeMessageIds ?? []);
-    const branchSummaries = input.mode === "summary"
+    const branchSummaries = input.summary
       ? []
       : await this.stores.chatSummaries.listByChatBranch(chat.id, branchId);
     const enabledSummaries = branchSummaries.filter((summary) => summary.includeInContext && summary.content.trim());
@@ -209,7 +211,7 @@ export class PromptAssemblyService {
     // Send/regenerate require the final user turn even when history filters
     // omit it. Summary callers instead choose an exact range and append their
     // own synthetic final user instruction after assembly, so exclusions win.
-    const lastUserMsg = input.mode === "summary"
+    const lastUserMsg = input.summary
       ? undefined
       : [...branchMessages].reverse().find((message) => message.role === "user");
     const ensureLastUser = lastUserMsg && !filteredMessages.some((message) => message.id === lastUserMsg.id)
@@ -250,7 +252,7 @@ export class PromptAssemblyService {
       },
       messages: recentMessages.map(m => ({ role: m.role, content: m.content })),
       activeLoreEntries,
-      mode: input.mode ?? 'chat',
+      mode: input.summary ? "summary" : (input.mode ?? "chat"),
       persona: persona ? { name: persona.name, description: persona.description } : undefined,
     });
 
@@ -271,7 +273,7 @@ export class PromptAssemblyService {
         .filter((row) => row.description?.trim() && row.includeInPrompt)
         .map((row) => ({ caption: row.caption || `gallery-${row.id}`, description: row.description!.trim() }));
 
-    const result = assemblePrompt({
+    const pipelineContext = {
       identity: {
         chatId: chat.id as ChatId,
       },
@@ -350,7 +352,10 @@ export class PromptAssemblyService {
         responseReserve: input.responseReserve ?? 0,
         model: input.model,
       },
-    });
+    };
+    const result = input.summary
+      ? getSummaryStrategy().assemble(pipelineContext)
+      : assemblePrompt(pipelineContext);
 
     // Build script injection trace data — one row per script that ran (P4),
     // instead of the old single synthetic '__pipeline' row that flattened all

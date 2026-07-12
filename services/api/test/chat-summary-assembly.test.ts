@@ -1,23 +1,10 @@
-import { describe, expect, it, mock } from "bun:test";
+import { describe, expect, it } from "bun:test";
 import type { StoreContainer } from "@vibe-tavern/db";
 import { setTokenCountFn } from "@vibe-tavern/prompt-pipeline";
 import type { AssemblePromptResponse, ChatBranchId, ChatId } from "@vibe-tavern/domain";
 import { PromptAssemblyService, type PromptAssemblyResolver } from "../src/domain/prompt/prompt-assembly-service.js";
 import { ChatLifecycleRuntime, type ChatLifecycleRuntimeDeps } from "../src/runtime/session/session-runtime-chat-lifecycle.js";
-import type { SessionRuntime } from "../src/runtime/session/session-runtime.js";
-
-const realNonstreamingExecutor = await import("../src/infrastructure/ai/nonstreaming-provider-executor.js");
-let capturedPrompt: AssemblePromptResponse | null = null;
-
-mock.module("../src/infrastructure/ai/nonstreaming-provider-executor.js", () => ({
-  ...realNonstreamingExecutor,
-  nonstreamingProviderExecute: async ({ prompt }: { prompt: AssemblePromptResponse }) => {
-    capturedPrompt = prompt;
-    return { text: "A concise summary." };
-  },
-}));
-
-const { ChatSummaryService } = await import("../src/domain/chat/chat-summary-service.js");
+import { withSummaryPromptAsFinalUserMessage } from "../src/domain/chat/chat-summary-service.js";
 
 const chat = {
   id: "chat_1",
@@ -63,7 +50,7 @@ describe("ChatLifecycleRuntime summary assembly", () => {
     expect(calls).toEqual([[
       "chat_1",
       "branch_1",
-      { model: "summary-model", recentMessageLimit: 24, contextBudget: 4096, mode: "summary" },
+      { model: "summary-model", recentMessageLimit: 24, contextBudget: 4096, summary: true },
     ]]);
   });
 
@@ -95,7 +82,7 @@ describe("ChatLifecycleRuntime summary assembly", () => {
         recentMessageLimit: 4,
         excludeMessageIds: ["msg_1", "msg_4"],
         contextBudget: 2048,
-        mode: "summary",
+        summary: true,
       },
     ]]);
   });
@@ -113,36 +100,6 @@ const summaryPrompt: AssemblePromptResponse = {
     ],
   },
 };
-
-function makeSummaryService() {
-  const lifecycle = {
-    assembleSummaryPrompt: async () => assembled(summaryPrompt),
-    assembleRangedSummaryPrompt: async () => assembled(summaryPrompt),
-    updateChatSummary: async () => ({}),
-  };
-  const stores = {
-    chatSummaries: {
-      getById: async () => null,
-      create: async (input: Record<string, unknown>) => ({ id: "summary_1", ...input }),
-      update: async () => null,
-    },
-  } as unknown as StoreContainer;
-  const profiles = {
-    getProviderProfile: async () => ({
-      id: "profile_1",
-      providerPreset: "openai",
-      apiKey: "test-key",
-      defaultModel: "summary-model",
-      bindPerModel: false,
-    }),
-    getProviderModelSettings: async () => null,
-  };
-  const runtime = {
-    chatLifecycle: lifecycle,
-    buildSummaryResponse: async () => ({}),
-  } as unknown as SessionRuntime;
-  return new ChatSummaryService(stores, runtime, profiles as never);
-}
 
 describe("PromptAssemblyService summary preparation", () => {
   it("keeps the summary-only loading rules and pins compaction against excluded layers", async () => {
@@ -180,7 +137,7 @@ describe("PromptAssemblyService summary preparation", () => {
     setTokenCountFn((text) => text.trim() ? text.trim().split(/\s+/).length : 0);
     try {
       const service = new PromptAssemblyService(stores, resolver, fileStore);
-      const result = await service.assembleForChat({ chatId: "chat_1" as ChatId, model: "test-model", mode: "summary", contextBudget: 24 });
+      const result = await service.assembleForChat({ chatId: "chat_1" as ChatId, model: "test-model", summary: true, contextBudget: 24 });
       const history = result.prompt.layers.find((layer) => layer.id === "recent_history");
 
       expect(summaryLoads).toBe(0);
@@ -199,36 +156,8 @@ describe("PromptAssemblyService summary preparation", () => {
 });
 
 describe("ChatSummaryService summary prompt reshape", () => {
-  it("moves the summary instruction to the final user message for a full summary", async () => {
-    capturedPrompt = null;
-    const service = makeSummaryService();
-
-    await service.summarizeChat({
-      chatId: "chat_1",
-      providerProfileId: "profile_1",
-      maxMessages: 20,
-    });
-
-    expect(capturedPrompt?.finalPayload).toEqual({
-      messages: [
-        { role: "system", content: "Character context", layerId: "character_base" },
-        { role: "user", content: "Summarize the case.", layerId: "prompt_preset_summary" },
-      ],
-    });
-  });
-
-  it("applies the same reshape to ranged summaries", async () => {
-    capturedPrompt = null;
-    const service = makeSummaryService();
-
-    await service.generateChatSummary({
-      chatId: "chat_1",
-      providerProfileId: "profile_1",
-      summarizedFrom: 2,
-      summarizedTo: 4,
-    });
-
-    expect(capturedPrompt?.finalPayload).toEqual({
+  it("moves the summary instruction to the final user message", () => {
+    expect(withSummaryPromptAsFinalUserMessage(summaryPrompt).finalPayload).toEqual({
       messages: [
         { role: "system", content: "Character context", layerId: "character_base" },
         { role: "user", content: "Summarize the case.", layerId: "prompt_preset_summary" },

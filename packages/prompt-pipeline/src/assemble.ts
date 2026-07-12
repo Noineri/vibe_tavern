@@ -380,6 +380,14 @@ export function assemblePrompt(rawContext: PromptAssemblyContext): PromptAssembl
   return finalizeAssembly(context, buildLayers(context, resolver), resolver);
 }
 
+/** Pure summary-specific entry point. The caller supplies the same complete
+ * prepared state as a chat turn; only the final visibility selection differs. */
+export function assembleSummaryPrompt(rawContext: PromptAssemblyContext): PromptAssemblyResult {
+  const context = applyMacrosToContext(rawContext);
+  const resolver = createResolver(context.preset);
+  return finalizeAssembly(context, buildLayers(context, resolver), resolver, "summary");
+}
+
 /**
  * Stage 2 — create a PromptLayer for every non-empty content source.
  *
@@ -745,9 +753,9 @@ function finalizeAssembly(
   context: PromptAssemblyContext,
   built: { layers: PromptLayer[]; droppedLayers: Array<{ id: string; reason: string }>; compactionSummary: string | undefined; recentMessagesForHistory: PromptAssemblyContext["chat"]["recentMessages"] },
   resolver: PositionResolver,
+  effectiveMode: AssemblyMode = context.mode ?? "chat",
 ): PromptAssemblyResult {
   const { layers, droppedLayers, compactionSummary, recentMessagesForHistory } = built;
-  const effectiveMode: AssemblyMode = context.mode ?? "chat";
 
   // --- Assign modes to built-in layers from LAYER_MODES ---
   for (const layer of layers) {

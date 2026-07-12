@@ -386,7 +386,7 @@ describe("PromptAssemblyService ranged summaries", () => {
     const summary = await service.assembleForChat({
       chatId: "chat_1" as ChatId,
       model: "test-model",
-      mode: "summary",
+      summary: true,
       excludeMessageIds: excludedMessageIds,
     });
     const summaryContents = (summary.prompt.finalPayload as { messages: Array<{ content: string }> }).messages

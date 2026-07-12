@@ -1,4 +1,6 @@
 export { assemblePrompt } from "./assemble.js";
+export { getSummaryStrategy, SUMMARY_STRATEGIES } from "./summary/summary-strategies.js";
+export type { SummaryStrategy } from "./summary/summary-strategy.js";
 export { activateLoreEntries, type ActivatableLoreEntry } from "./lore-activation.js";
 export { createPhaseOneMacroEngine, createFullMacroEngine } from "./macro-registry.js";
 export { PRESET_PRONOUN_FORMS, resolvePronounForms } from "./pronoun-forms.js";

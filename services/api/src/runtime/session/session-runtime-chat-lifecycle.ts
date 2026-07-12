@@ -62,7 +62,8 @@ export interface ChatLifecycleRuntimeDeps {
 			excludeMessageIds?: import("@vibe-tavern/domain").MessageId[];
 			model?: string;
 			recentMessageLimit?: number;
-			mode?: "chat" | "continue" | "regenerate" | "summary" | "tool_call";
+			mode?: "chat" | "continue" | "regenerate" | "tool_call";
+			summary?: boolean;
 			contextBudget?: number | null;
 			responseReserve?: number;
 		},
@@ -230,7 +231,7 @@ export class ChatLifecycleRuntime {
 			model: input.model,
 			recentMessageLimit: input.recentMessageLimit,
 			contextBudget: input.contextBudget ?? null,
-			mode: "summary",
+			summary: true,
 		});
 	}
 
@@ -260,7 +261,7 @@ export class ChatLifecycleRuntime {
 			recentMessageLimit: messages.length,
 			excludeMessageIds,
 			contextBudget: input.contextBudget ?? null,
-			mode: "summary",
+			summary: true,
 		});
 	}
 
