@@ -428,6 +428,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
       isEditing={isEditing}
       isGenerating={isGenerating}
       isBusy={isBusy}
+      isBranching={messageActionId === input.messageId}
       canBranch={canBranch}
       canRegenerate={canRegenerate}
       canResend={canResend}

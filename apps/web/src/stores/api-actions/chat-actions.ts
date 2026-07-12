@@ -283,9 +283,28 @@ export async function selectVariantAction(chatId: ChatId, messageId: string, var
   }
 }
 
+const pendingForks = new Map<string, Promise<void>>();
+
+function forkRequestKey(chatId: ChatId, fromMessageId?: string): string {
+  return `${chatId}::${fromMessageId ?? "head"}`;
+}
+
 export async function forkBranchAction(chatId: ChatId, fromMessageId?: string): Promise<void> {
-  const snapshot = await forkBranch(chatId, fromMessageId);
-  syncSnapshot(snapshot);
+  const key = forkRequestKey(chatId, fromMessageId);
+  const pending = pendingForks.get(key);
+  if (pending) return pending;
+
+  const request = (async () => {
+    const snapshot = await forkBranch(chatId, fromMessageId);
+    syncSnapshot(snapshot);
+  })();
+  pendingForks.set(key, request);
+
+  try {
+    await request;
+  } finally {
+    if (pendingForks.get(key) === request) pendingForks.delete(key);
+  }
 }
 
 export async function activateBranchAction(chatId: ChatId, branchId: ChatBranchId): Promise<void> {

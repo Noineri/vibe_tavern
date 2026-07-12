@@ -4,16 +4,16 @@ import type { AppSnapshot, ChatListItem } from "../../app-client.js";
 import { useChatStore } from "../chat-store.js";
 import { useSnapshotStore } from "../snapshot-store.js";
 import { useNavigationStore } from "../navigation-store.js";
-import { deleteChatAction, switchModeAction } from "./chat-actions.js";
+import { deleteChatAction, forkBranchAction, switchModeAction } from "./chat-actions.js";
 
 // Mocks for the deleteChatAction tests below. `deleteChat` returns the
 // backend's ChatListResponse ({ chats }); the fire-and-forget bootstrap is
 // stubbed so it can't race the assertion. Other app-client exports stay real
 // (spread), so the switchModeAction tests in this file are unaffected.
-const { deleteChatMock } = vi.hoisted(() => ({ deleteChatMock: vi.fn() }));
+const { deleteChatMock, forkBranchMock } = vi.hoisted(() => ({ deleteChatMock: vi.fn(), forkBranchMock: vi.fn() }));
 vi.mock("../../app-client.js", async (importOriginal) => {
   const actual = await importOriginal() as typeof import("../../app-client.js");
-  return { ...actual, deleteChat: deleteChatMock };
+  return { ...actual, deleteChat: deleteChatMock, forkBranch: forkBranchMock };
 });
 vi.mock("./bootstrap-actions.js", async (importOriginal) => {
   const actual = await importOriginal() as typeof import("./bootstrap-actions.js");
@@ -58,10 +58,39 @@ function seed(chats: ChatListItem[], activeId: string | null = null): void {
 }
 
 beforeEach(() => {
+  deleteChatMock.mockReset();
+  forkBranchMock.mockReset();
   useSnapshotStore.getState().clear();
   useChatStore.getState().setActiveChatId(null);
   useChatStore.getState().setSelectedCharacterId(null);
   useNavigationStore.getState().setMode("play");
+});
+
+describe("forkBranchAction", () => {
+  test("joins identical pending forks but permits another fork after settlement", async () => {
+    let resolveFirst: (snapshot: AppSnapshot) => void = () => {};
+    forkBranchMock.mockImplementationOnce(() => new Promise<AppSnapshot>((resolve) => { resolveFirst = resolve; }));
+
+    const first = forkBranchAction(chatId("chat-1"), "message-1");
+    const duplicate = forkBranchAction(chatId("chat-1"), "message-1");
+    expect(forkBranchMock).toHaveBeenCalledTimes(1);
+
+    resolveFirst({});
+    await Promise.all([first, duplicate]);
+
+    forkBranchMock.mockResolvedValueOnce({});
+    await forkBranchAction(chatId("chat-1"), "message-1");
+    expect(forkBranchMock).toHaveBeenCalledTimes(2);
+  });
+
+  test("clears a rejected fork so the user can retry", async () => {
+    forkBranchMock.mockRejectedValueOnce(new Error("offline"));
+    await expect(forkBranchAction(chatId("chat-1"), "message-1")).rejects.toThrow("offline");
+
+    forkBranchMock.mockResolvedValueOnce({});
+    await forkBranchAction(chatId("chat-1"), "message-1");
+    expect(forkBranchMock).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe("switchModeAction", () => {

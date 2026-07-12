@@ -85,6 +85,8 @@ export interface MessageShellProps {
   isGenerating: boolean;
   /** Whether the app is busy (sending or processing). */
   isBusy: boolean;
+  /** Whether this message is waiting for a branch fork response. */
+  isBranching?: boolean;
   /** Whether user can branch from this message. */
   canBranch: boolean;
   /** Whether user can regenerate this message. */
@@ -133,6 +135,7 @@ export function MessageShell(props: MessageShellProps) {
     isEditing,
     isGenerating,
     isBusy,
+    isBranching = false,
     canBranch,
     canRegenerate,
     canResend,
@@ -348,6 +351,7 @@ export function MessageShell(props: MessageShellProps) {
               editLabel={editLabel}
               hiddenVariantControls={!!variantControlsOverlay}
               isBusy={isBusy}
+              isBranching={isBranching}
               isGreeting={isGreeting}
               isUser={isUser}
               regenLabel={regenLabel}
@@ -374,6 +378,7 @@ export function MessageShell(props: MessageShellProps) {
               canResend={canResend}
               canSwitchVariant={canSwitchVariant}
               isBusy={isBusy}
+              isBranching={isBranching}
               isGreeting={isGreeting}
               isUser={isUser}
               regenLabel={regenLabel}
@@ -458,6 +463,7 @@ function DesktopMessageActions(props: {
   editLabel: string;
   hiddenVariantControls: boolean;
   isBusy: boolean;
+  isBranching: boolean;
   isGreeting: boolean;
   isUser: boolean;
   regenLabel: string;
@@ -476,7 +482,7 @@ function DesktopMessageActions(props: {
   const {
     branchLabel, canBranch, canRegenerate, canResend, canSwitchVariant,
     copied, copiedLabel, copyLabel, editLabel, hiddenVariantControls,
-    isBusy, isGreeting, isUser, regenLabel, resendLabel,
+    isBusy, isBranching, isGreeting, isUser, regenLabel, resendLabel,
     variantControlsRef, variantCount,
     variantControls,
     onBranch, onCopy, onDelete, onEdit, onRegenerate, onResend,
@@ -495,7 +501,7 @@ function DesktopMessageActions(props: {
       <span className={desktopActionClass} onClick={() => { if (!isBusy) onEdit(); }}><Icons.Edit />{editLabel}</span>
 
       {canResend && <span className={desktopActionClass} onClick={() => { if (!isBusy) onResend(); }}><Icons.Regen />{resendLabel}</span>}
-      {canBranch && <span className={desktopActionClass} onClick={() => { if (!isBusy) onBranch(); }}><Icons.Branch />{branchLabel}</span>}
+      {canBranch && <span className={desktopActionClass} aria-busy={isBranching} onClick={() => { if (!isBusy) onBranch(); }}>{isBranching ? <span className="h-3 w-3 animate-spin rounded-full border border-current border-t-transparent" /> : <Icons.Branch />}{branchLabel}</span>}
       {canRegenerate && <span className={desktopActionClass} onClick={() => { if (!isBusy) onRegenerate(); }}><Icons.Regen />{regenLabel}</span>}
 
       {!isUser && !isGreeting && variantCount > 1 && canSwitchVariant && variantControls}
@@ -521,6 +527,7 @@ function MobileMessageActions(props: {
   canResend: boolean;
   canSwitchVariant: boolean;
   isBusy: boolean;
+  isBranching: boolean;
   isGreeting: boolean;
   isUser: boolean;
   regenLabel: string;
@@ -534,7 +541,7 @@ function MobileMessageActions(props: {
 }) {
   const {
     branchLabel, canBranch, canRegenerate, canResend, canSwitchVariant,
-    isBusy, isGreeting, isUser, regenLabel, resendLabel,
+    isBusy, isBranching, isGreeting, isUser, regenLabel, resendLabel,
     variantControls,
     onBranch, onRegenerate, onResend,
   } = props;
@@ -543,8 +550,8 @@ function MobileMessageActions(props: {
     <div className="mt-2 grid grid-cols-[44px_minmax(0,1fr)_44px] items-center gap-2">
       <div className="flex justify-start">
         {canBranch && (
-          <button type="button" className="flex h-11 w-11 cursor-pointer items-center justify-center rounded-lg text-t3 active:bg-s2 [&_svg]:h-5 [&_svg]:w-5" onClick={() => { if (!isBusy) onBranch(); }} title={branchLabel}>
-            <Icons.Branch />
+          <button type="button" className="flex h-11 w-11 cursor-pointer items-center justify-center rounded-lg text-t3 active:bg-s2 [&_svg]:h-5 [&_svg]:w-5" aria-busy={isBranching} onClick={() => { if (!isBusy) onBranch(); }} title={branchLabel}>
+            {isBranching ? <span className="h-5 w-5 animate-spin rounded-full border-2 border-current border-t-transparent" /> : <Icons.Branch />}
           </button>
         )}
       </div>

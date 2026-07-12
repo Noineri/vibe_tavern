@@ -8,6 +8,7 @@ import {
 	type PromptPresetId,
 	type StoredProviderProfileRecord,
 	SYSTEM_RESOURCE_ID,
+	tag,
 } from "@vibe-tavern/domain";
 import { ChatApplicationService } from "../../domain/chat/chat-application-service.js";
 import { getChatModeStrategy, type ChatModeStrategy, type ChatModeAssembleLoaders } from "../../domain/chat/chat-mode-strategy.js";
@@ -26,6 +27,8 @@ import {
 
 export type { PreparedLiveTurn } from "./session-runtime-chat.js";
 export type { MessageDto } from "./session-runtime-dto.js";
+
+const logger = tag("session.branch");
 
 // Domain response DTOs live in the contract now (api/contract/session-types).
 // Imported locally so this module can name them in its own signatures, and
@@ -364,18 +367,30 @@ export function pickBootstrapChatId<T extends string>(
 
 	/** Branch-mutating ops: fork, activate, delete-branch (conversation text moves). */
 	async buildBranchResponse(chatId: ChatId): Promise<BranchResponse> {
+		const startedAt = performance.now();
 		const { branch, messages } = await this.chatApp.getChatState(chatId);
 		const branchId = branch.id as ChatBranchId;
+		const timings: Record<string, number> = {};
+		const measure = async <T>(name: string, operation: () => Promise<T>): Promise<T> => {
+			const started = performance.now();
+			try {
+				return await operation();
+			} finally {
+				timings[name] = Math.round(performance.now() - started);
+			}
+		};
+
 		// `chats` (sidebar list) is included because fork / activate change the
 		// chat's active branch, and each ChatListItem.messageCount is the active
 		// branch's count — the sidebar number must refresh on every branch switch.
 		const [messagesWithVariants, branches, summaries, contextPreview, chats] = await Promise.all([
-			this.buildMessagesWithVariants(messages, branchId),
-			this.fetchBranchesWithCounts(chatId),
-			this.fetchSummaries(chatId, branchId),
-			this.assembleContextPreview(chatId, branchId),
-			this.fetchChatList(),
+			measure("messages", () => this.buildMessagesWithVariants(messages, branchId)),
+			measure("branches", () => this.fetchBranchesWithCounts(chatId)),
+			measure("summaries", () => this.fetchSummaries(chatId, branchId)),
+			measure("contextPreview", () => this.assembleContextPreview(chatId, branchId)),
+			measure("chats", () => this.fetchChatList()),
 		]);
+		logger.info("response chat=%s branch=%s messages=%d totalMs=%d timings=%o", chatId, branchId, messages.length, Math.round(performance.now() - startedAt), timings);
 		return {
 			messages: messagesWithVariants,
 			activeBranch: branch,

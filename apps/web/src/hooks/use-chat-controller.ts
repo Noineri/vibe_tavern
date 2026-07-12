@@ -571,7 +571,21 @@ export function useChatController(): ChatControllerActions {
   async function handleFork(messageId?: string): Promise<void> {
     const activeChatId = getActiveChatId();
     if (!activeChatId) return;
-    await forkBranchAction(activeChatId, messageId);
+
+    // Forking a long branch can take seconds. Avoid a distracting flash for
+    // fast requests, but make the originating message visibly busy when it
+    // crosses the interaction-feedback threshold.
+    const feedbackTimer = messageId == null
+      ? null
+      : window.setTimeout(() => useChatStore.getState().setMessageActionId(messageId), 200);
+    try {
+      await forkBranchAction(activeChatId, messageId);
+    } finally {
+      if (feedbackTimer != null) window.clearTimeout(feedbackTimer);
+      if (messageId != null && useChatStore.getState().messageActionId === messageId) {
+        useChatStore.getState().setMessageActionId(null);
+      }
+    }
   }
 
   async function handleActivateBranch(branchId: ChatBranchId): Promise<void> {
