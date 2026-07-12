@@ -179,6 +179,179 @@ export interface LorebookLink {
   targetId: string;
 }
 
+// ─── Entry field-map spec (single source of truth) ───────────────────────────
+//
+// The ~33 lore-entry fields are mapped at three transform-bearing boundaries
+// (createEntry insert, updateEntry patch, mapEntryRow read) plus one identity
+// projection (duplicateLorebook). Previously each site hand-maintained the
+// field list with bool→int coercion, JSON serialization, and `?? default` —
+// the same structural drift class that shipped the avatar `avatarFullExt` bug
+// (one map silently dropped a field). In fact duplicateLorebook's projection
+// had ALREADY dropped useGroupScoring/automationId/sortOrder — caught by the
+// characterization test. `ENTRY_FIELD_SPEC` is the one table the three
+// transform-bearing sites derive from; keyed by `keyof CreateLoreEntryData` so
+// adding a field to the input type without adding it here is a compile error
+// (exhaustiveness via the mapped type). The duplicate projection needs no
+// transforms (it is LoreEntry→CreateLoreEntryData, same domain types) so it is
+// a structural destructure, not a spec loop — type-safe and auto-exhaustive.
+
+type EntryCoerce = 'bool' | 'json' | 'raw';
+
+interface EntryFieldSpec {
+  /** Drizzle column on `loreEntries`. */
+  readonly column: keyof typeof loreEntries.$inferInsert;
+  /** Transform at the DB boundary: bool→0/1 int, json→stringify, raw→passthrough. */
+  readonly coerce: EntryCoerce;
+  /** Value used on create when the input omits the field. */
+  readonly insertDefault: unknown;
+}
+
+const ENTRY_FIELD_SPEC: { readonly [K in keyof CreateLoreEntryData]: EntryFieldSpec } = {
+  title:                  { column: 'title',                  coerce: 'raw',  insertDefault: '' },
+  content:                { column: 'content',                coerce: 'raw',  insertDefault: '' },
+  keys:                   { column: 'keysJson',               coerce: 'json', insertDefault: [] },
+  secondaryKeys:          { column: 'secondaryKeysJson',      coerce: 'json', insertDefault: [] },
+  logic:                  { column: 'logic',                  coerce: 'raw',  insertDefault: 'and_any' },
+  position:               { column: 'position',               coerce: 'raw',  insertDefault: 'in_prompt' },
+  depth:                  { column: 'depth',                  coerce: 'raw',  insertDefault: 4 },
+  priority:               { column: 'priority',               coerce: 'raw',  insertDefault: 100 },
+  stickyWindow:           { column: 'stickyWindow',           coerce: 'raw',  insertDefault: 0 },
+  cooldownWindow:         { column: 'cooldownWindow',         coerce: 'raw',  insertDefault: 0 },
+  delayWindow:            { column: 'delayWindow',            coerce: 'raw',  insertDefault: 0 },
+  constant:               { column: 'constant',               coerce: 'bool', insertDefault: false },
+  probability:            { column: 'probability',            coerce: 'raw',  insertDefault: 100 },
+  ignoreBudget:           { column: 'ignoreBudget',           coerce: 'bool', insertDefault: false },
+  role:                   { column: 'role',                   coerce: 'raw',  insertDefault: 'system' },
+  groupName:              { column: 'groupName',              coerce: 'raw',  insertDefault: '' },
+  groupWeight:            { column: 'groupWeight',            coerce: 'raw',  insertDefault: 100 },
+  prioritizeInclusion:    { column: 'prioritizeInclusion',    coerce: 'bool', insertDefault: false },
+  useGroupScoring:        { column: 'useGroupScoring',        coerce: 'bool', insertDefault: false },
+  excludeRecursion:       { column: 'excludeRecursion',       coerce: 'bool', insertDefault: false },
+  preventRecursion:       { column: 'preventRecursion',       coerce: 'bool', insertDefault: false },
+  delayUntilRecursion:    { column: 'delayUntilRecursion',    coerce: 'bool', insertDefault: false },
+  recursionLevel:         { column: 'recursionLevel',         coerce: 'raw',  insertDefault: 0 },
+  scanDepthOverride:      { column: 'scanDepthOverride',      coerce: 'raw',  insertDefault: null },
+  caseSensitive:          { column: 'caseSensitive',          coerce: 'bool', insertDefault: false },
+  matchWholeWords:        { column: 'matchWholeWords',        coerce: 'bool', insertDefault: false },
+  characterFilter:        { column: 'characterFilterJson',    coerce: 'json', insertDefault: [] },
+  characterFilterExclude: { column: 'characterFilterExclude', coerce: 'bool', insertDefault: false },
+  matchSources:           { column: 'matchSourcesJson',       coerce: 'json', insertDefault: [] },
+  enabled:                { column: 'enabled',                coerce: 'bool', insertDefault: true },
+  sortOrder:              { column: 'sortOrder',              coerce: 'raw',  insertDefault: 0 },
+  automationId:           { column: 'automationId',           coerce: 'raw',  insertDefault: '' },
+  metadata:               { column: 'metadataJson',           coerce: 'json', insertDefault: {} },
+};
+
+/** Encode a domain value into its DB representation (write boundary). */
+function encodeEntryField(coerce: EntryCoerce, value: unknown): number | string | null {
+  switch (coerce) {
+    case 'bool': return value ? 1 : 0;
+    case 'json': return JSON.stringify(value);
+    case 'raw':  return value as number | string | null;
+  }
+}
+
+/** Decode a DB cell into its domain value (read boundary). */
+function decodeEntryField(coerce: EntryCoerce, value: unknown): unknown {
+  switch (coerce) {
+    case 'bool': return value === 1;
+    case 'json': return JSON.parse(value as string);
+    case 'raw':  return value;
+  }
+}
+
+/** Build the data-field payload for `createEntry`'s `.values()` (create path). */
+function buildEntryInsert(data: CreateLoreEntryData): Partial<typeof loreEntries.$inferInsert> {
+  const out: Record<string, number | string | null> = {};
+  for (const [domain, spec] of Object.entries(ENTRY_FIELD_SPEC) as Array<[keyof CreateLoreEntryData, EntryFieldSpec]>) {
+    const value = data[domain] ?? spec.insertDefault;
+    out[spec.column] = encodeEntryField(spec.coerce, value);
+  }
+  // Single concrete assertion at the DB boundary (the spec loop cannot assign
+  // to specific keys of the Drizzle insert type per-iteration without it).
+  // Exhaustiveness is guaranteed by ENTRY_FIELD_SPEC's mapped-type keying;
+  // coerce correctness is pinned by the entry field round-trip tests.
+  return out as Partial<typeof loreEntries.$inferInsert>;
+}
+
+/** Build the partial patch for `updateEntry` (only fields the caller provided). */
+function buildEntryPatch(data: UpdateLoreEntryData): Partial<typeof loreEntries.$inferInsert> {
+  const out: Record<string, number | string | null> = {};
+  for (const [domain, spec] of Object.entries(ENTRY_FIELD_SPEC) as Array<[keyof CreateLoreEntryData, EntryFieldSpec]>) {
+    const value = data[domain];
+    if (value !== undefined) {
+      out[spec.column] = encodeEntryField(spec.coerce, value);
+    }
+  }
+  return out as Partial<typeof loreEntries.$inferInsert>;
+}
+
+/**
+ * Project a stored `LoreEntry` back into `CreateLoreEntryData` (for
+ * `duplicateLorebook` and any replay-into-create path). This is an identity
+ * projection — LoreEntry and CreateLoreEntryData share the same domain field
+ * types — so a structural destructure is type-safe, auto-exhaustive, and cannot
+ * silently drop a field. (Previously a hand-written 31-field literal here
+ * dropped useGroupScoring/automationId/sortOrder.)
+ */
+function entryToCreateData(entry: LoreEntry): CreateLoreEntryData {
+  const { id: _id, lorebookId: _lorebookId, createdAt: _createdAt, updatedAt: _updatedAt, ...rest } = entry;
+  return rest;
+}
+
+/**
+ * Recover the original ST WI position from import metadata, or canonicalize a
+ * prompt-layer position that leaked into lorebook-UI semantics. Pure helper —
+ * no `this` — so it lives at module scope for `decodeEntryFields` to call.
+ */
+function normalizeImportedEntryPosition(
+  position: string,
+  metadata: Record<string, unknown>,
+): string {
+  // Older ST imports collapsed most ST WI positions into canonical "in_prompt".
+  // Recover the original ST-like UI position from import metadata when present.
+  const stPosition = metadata.stPosition;
+  if ((position === 'in_prompt' || position === 'before_prompt' || position === 'in_chat' || position === 'hidden_system') && typeof stPosition === 'number') {
+    switch (stPosition) {
+      case 0: return 'before_char';
+      case 1: return 'after_char';
+      case 2: return 'top_an';
+      case 3: return 'bottom_an';
+      case 4: return 'at_depth';
+      case 5: return 'before_examples';
+      case 6: return 'after_examples';
+      case 7: return 'outlet';
+    }
+  }
+
+  // Canonical prompt-layer positions should not leak into lorebook UI semantics.
+  switch (position) {
+    case 'before_prompt': return 'before_char';
+    case 'in_prompt': return 'after_char';
+    case 'in_chat': return 'at_depth';
+    case 'hidden_system': return 'outlet';
+    default: return position;
+  }
+}
+
+/**
+ * Decode every spec field from a DB row into its domain value, applying the
+ * two read-side post-processes the flat coerce kinds cannot express: position
+ * recovery (ST-import `stPosition` metadata / prompt-layer leak canonicalization)
+ * and the legacy `characterFilter` migration (raw string[] → ghost entries).
+ * `id`/`lorebookId`/timestamps are added by the caller (`mapEntryRow`).
+ */
+function decodeEntryFields(row: typeof loreEntries.$inferSelect): Omit<LoreEntry, 'id' | 'lorebookId' | 'createdAt' | 'updatedAt'> {
+  const out: Record<string, unknown> = {};
+  for (const [domain, spec] of Object.entries(ENTRY_FIELD_SPEC) as Array<[keyof CreateLoreEntryData, EntryFieldSpec]>) {
+    out[domain] = decodeEntryField(spec.coerce, row[spec.column]);
+  }
+  const metadata = (out.metadata as Record<string, unknown>) ?? {};
+  out.position = normalizeImportedEntryPosition(out.position as string, metadata);
+  out.characterFilter = parseCharacterFilter(out.characterFilter);
+  return out as Omit<LoreEntry, 'id' | 'lorebookId' | 'createdAt' | 'updatedAt'>;
+}
+
 // ─── Store ────────────────────────────────────────────────────────────────────
 
 export class LorebookStore {
@@ -430,41 +603,9 @@ export class LorebookStore {
       .values({
         id,
         lorebookId,
-        title: data.title ?? '',
-        content: data.content ?? '',
-        keysJson: JSON.stringify(data.keys ?? []),
-        secondaryKeysJson: JSON.stringify(data.secondaryKeys ?? []),
-        logic: data.logic ?? 'and_any',
-        position: data.position ?? 'in_prompt',
-        depth: data.depth ?? 4,
-        priority: data.priority ?? 100,
-        stickyWindow: data.stickyWindow ?? 0,
-        cooldownWindow: data.cooldownWindow ?? 0,
-        delayWindow: data.delayWindow ?? 0,
-        constant: (data.constant ?? false) ? 1 : 0,
-        probability: data.probability ?? 100,
-        ignoreBudget: data.ignoreBudget ? 1 : 0,
-        role: data.role ?? 'system',
-        groupName: data.groupName ?? '',
-        groupWeight: data.groupWeight ?? 100,
-        prioritizeInclusion: (data.prioritizeInclusion ?? false) ? 1 : 0,
-        useGroupScoring: (data.useGroupScoring ?? false) ? 1 : 0,
-        excludeRecursion: (data.excludeRecursion ?? false) ? 1 : 0,
-        preventRecursion: (data.preventRecursion ?? false) ? 1 : 0,
-        delayUntilRecursion: (data.delayUntilRecursion ?? false) ? 1 : 0,
-        recursionLevel: data.recursionLevel ?? 0,
-        scanDepthOverride: data.scanDepthOverride ?? null,
-        caseSensitive: (data.caseSensitive ?? false) ? 1 : 0,
-        matchWholeWords: (data.matchWholeWords ?? false) ? 1 : 0,
-        characterFilterJson: JSON.stringify(data.characterFilter ?? []),
-        characterFilterExclude: (data.characterFilterExclude ?? false) ? 1 : 0,
-        matchSourcesJson: JSON.stringify(data.matchSources ?? []),
-        enabled: (data.enabled ?? true) ? 1 : 0,
-        sortOrder: nextSortOrder,
-        automationId: data.automationId ?? "",
-        metadataJson: JSON.stringify(data.metadata ?? {}),
         createdAt: now,
         updatedAt: now,
+        ...buildEntryInsert({ ...data, sortOrder: nextSortOrder }),
       })
       .returning();
 
@@ -478,40 +619,7 @@ export class LorebookStore {
 
   async updateEntry(id: string, data: UpdateLoreEntryData): Promise<LoreEntry> {
     const now = this.clock.now();
-    const values: Partial<typeof loreEntries.$inferInsert> = { updatedAt: now };
-    if (data.title !== undefined) values.title = data.title;
-    if (data.content !== undefined) values.content = data.content;
-    if (data.keys !== undefined) values.keysJson = JSON.stringify(data.keys);
-    if (data.secondaryKeys !== undefined) values.secondaryKeysJson = JSON.stringify(data.secondaryKeys);
-    if (data.logic !== undefined) values.logic = data.logic;
-    if (data.position !== undefined) values.position = data.position;
-    if (data.depth !== undefined) values.depth = data.depth;
-    if (data.priority !== undefined) values.priority = data.priority;
-    if (data.stickyWindow !== undefined) values.stickyWindow = data.stickyWindow;
-    if (data.cooldownWindow !== undefined) values.cooldownWindow = data.cooldownWindow;
-    if (data.delayWindow !== undefined) values.delayWindow = data.delayWindow;
-    if (data.constant !== undefined) values.constant = data.constant ? 1 : 0;
-    if (data.probability !== undefined) values.probability = data.probability;
-    if (data.ignoreBudget !== undefined) values.ignoreBudget = data.ignoreBudget ? 1 : 0;
-    if (data.role !== undefined) values.role = data.role;
-    if (data.groupName !== undefined) values.groupName = data.groupName;
-    if (data.groupWeight !== undefined) values.groupWeight = data.groupWeight;
-    if (data.prioritizeInclusion !== undefined) values.prioritizeInclusion = data.prioritizeInclusion ? 1 : 0;
-    if (data.useGroupScoring !== undefined) values.useGroupScoring = data.useGroupScoring ? 1 : 0;
-    if (data.excludeRecursion !== undefined) values.excludeRecursion = data.excludeRecursion ? 1 : 0;
-    if (data.preventRecursion !== undefined) values.preventRecursion = data.preventRecursion ? 1 : 0;
-    if (data.delayUntilRecursion !== undefined) values.delayUntilRecursion = data.delayUntilRecursion ? 1 : 0;
-    if (data.recursionLevel !== undefined) values.recursionLevel = data.recursionLevel;
-    if (data.scanDepthOverride !== undefined) values.scanDepthOverride = data.scanDepthOverride;
-    if (data.caseSensitive !== undefined) values.caseSensitive = data.caseSensitive ? 1 : 0;
-    if (data.matchWholeWords !== undefined) values.matchWholeWords = data.matchWholeWords ? 1 : 0;
-    if (data.characterFilter !== undefined) values.characterFilterJson = JSON.stringify(data.characterFilter);
-    if (data.characterFilterExclude !== undefined) values.characterFilterExclude = data.characterFilterExclude ? 1 : 0;
-    if (data.matchSources !== undefined) values.matchSourcesJson = JSON.stringify(data.matchSources);
-    if (data.enabled !== undefined) values.enabled = data.enabled ? 1 : 0;
-    if (data.sortOrder !== undefined) values.sortOrder = data.sortOrder;
-    if (data.automationId !== undefined) values.automationId = data.automationId;
-    if (data.metadata !== undefined) values.metadataJson = JSON.stringify(data.metadata);
+    const values: Partial<typeof loreEntries.$inferInsert> = { updatedAt: now, ...buildEntryPatch(data) };
 
     const [row] = await this.db
       .update(loreEntries)
@@ -774,38 +882,7 @@ export class LorebookStore {
     });
 
     // Copy all entries
-    await this.bulkCreateEntries(created.id, sourceEntries.map((e) => ({
-      title: e.title,
-      content: e.content,
-      keys: e.keys,
-      secondaryKeys: e.secondaryKeys,
-      logic: e.logic,
-      position: e.position,
-      depth: e.depth,
-      priority: e.priority,
-      stickyWindow: e.stickyWindow,
-      cooldownWindow: e.cooldownWindow,
-      delayWindow: e.delayWindow,
-      constant: e.constant,
-      probability: e.probability,
-      ignoreBudget: e.ignoreBudget,
-      role: e.role,
-      groupName: e.groupName,
-      groupWeight: e.groupWeight,
-      prioritizeInclusion: e.prioritizeInclusion,
-      excludeRecursion: e.excludeRecursion,
-      preventRecursion: e.preventRecursion,
-      delayUntilRecursion: e.delayUntilRecursion,
-      recursionLevel: e.recursionLevel,
-      scanDepthOverride: e.scanDepthOverride,
-      caseSensitive: e.caseSensitive,
-      matchWholeWords: e.matchWholeWords,
-      characterFilter: e.characterFilter,
-      characterFilterExclude: e.characterFilterExclude,
-      matchSources: e.matchSources,
-      enabled: e.enabled,
-      metadata: e.metadata,
-    })));
+    await this.bulkCreateEntries(created.id, sourceEntries.map(entryToCreateData));
 
     // Copy links
     if (sourceLinks.length > 0) {
@@ -1012,194 +1089,14 @@ export class LorebookStore {
     };
   }
 
-  private normalizeImportedEntryPosition(
-    position: string,
-    metadata: Record<string, unknown>,
-  ): string {
-    // Older ST imports collapsed most ST WI positions into canonical "in_prompt".
-    // Recover the original ST-like UI position from import metadata when present.
-    const stPosition = metadata.stPosition;
-    if ((position === 'in_prompt' || position === 'before_prompt' || position === 'in_chat' || position === 'hidden_system') && typeof stPosition === 'number') {
-      switch (stPosition) {
-        case 0: return 'before_char';
-        case 1: return 'after_char';
-        case 2: return 'top_an';
-        case 3: return 'bottom_an';
-        case 4: return 'at_depth';
-        case 5: return 'before_examples';
-        case 6: return 'after_examples';
-        case 7: return 'outlet';
-      }
-    }
-
-    // Canonical prompt-layer positions should not leak into lorebook UI semantics.
-    switch (position) {
-      case 'before_prompt': return 'before_char';
-      case 'in_prompt': return 'after_char';
-      case 'in_chat': return 'at_depth';
-      case 'hidden_system': return 'outlet';
-      default: return position;
-    }
-  }
-
   private mapEntryRow(row: typeof loreEntries.$inferSelect): LoreEntry {
-    const metadata = JSON.parse(row.metadataJson) as Record<string, unknown>;
-
+    const fields = decodeEntryFields(row);
     return {
       id: row.id,
       lorebookId: row.lorebookId,
-      title: row.title,
-      content: row.content,
-      keys: JSON.parse(row.keysJson),
-      secondaryKeys: JSON.parse(row.secondaryKeysJson),
-      logic: row.logic,
-      position: this.normalizeImportedEntryPosition(row.position, metadata),
-      depth: row.depth,
-      priority: row.priority,
-      stickyWindow: row.stickyWindow,
-      cooldownWindow: row.cooldownWindow,
-      delayWindow: row.delayWindow,
-      constant: row.constant === 1,
-      probability: row.probability,
-      ignoreBudget: row.ignoreBudget === 1,
-      role: row.role,
-      groupName: row.groupName,
-      groupWeight: row.groupWeight,
-      prioritizeInclusion: row.prioritizeInclusion === 1,
-      useGroupScoring: row.useGroupScoring === 1,
-      excludeRecursion: row.excludeRecursion === 1,
-      preventRecursion: row.preventRecursion === 1,
-      delayUntilRecursion: row.delayUntilRecursion === 1,
-      recursionLevel: row.recursionLevel,
-      scanDepthOverride: row.scanDepthOverride,
-      caseSensitive: row.caseSensitive === 1,
-      matchWholeWords: row.matchWholeWords === 1,
-      characterFilter: parseCharacterFilter(JSON.parse(row.characterFilterJson)),
-      characterFilterExclude: row.characterFilterExclude === 1,
-      matchSources: JSON.parse(row.matchSourcesJson),
-      enabled: row.enabled === 1,
-      sortOrder: row.sortOrder,
-      automationId: row.automationId,
-      metadata,
+      ...fields,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
     };
-  }
-
-  // ─── Migration ────────────────────────────────────────────────────────────
-
-  /**
-   * Migrate a character's characterBookJson blob into a normalized lorebook + entries.
-   * Returns the created lorebook ID, or null if no migration needed.
-   */
-  async migrateCharacterBookJson(characterId: string, characterBookJson: string): Promise<string | null> {
-    let parsed: Record<string, unknown>;
-    try {
-      parsed = JSON.parse(characterBookJson);
-    } catch {
-      return null;
-    }
-
-    if (!parsed || typeof parsed !== 'object') return null;
-
-    // Extract lorebook metadata
-    const name = typeof parsed.name === 'string' ? parsed.name : 'Character Lorebook';
-    const description = typeof parsed.description === 'string' ? parsed.description : '';
-    const scanDepth = typeof parsed.scan_depth === 'number' ? parsed.scan_depth :
-                      typeof parsed.ext_scan_depth === 'number' ? parsed.ext_scan_depth : 10;
-    const tokenBudget = typeof parsed.token_budget === 'number' ? parsed.token_budget : 2048;
-    const recursiveScanning = typeof parsed.recursive_scanning === 'boolean' ? parsed.recursive_scanning : false;
-    const maxRecursionSteps = typeof parsed.ext_max_recursion_steps === 'number' ? parsed.ext_max_recursion_steps : 5;
-
-    // Check if this character already has a character-scoped lorebook
-    const existing = await this.listLorebooksByScope('character', characterId);
-    if (existing.length > 0) return null;
-
-    // Create lorebook
-    const lorebook = await this.createLorebook({
-      name,
-      description,
-      scopeType: 'character',
-      characterId,
-      scanDepth,
-      tokenBudget,
-      recursiveScanning,
-      maxRecursionSteps,
-      includeNames: false,
-    });
-
-    // Parse entries from the blob
-    const rawEntries = parsed.entries;
-    if (!Array.isArray(rawEntries)) return lorebook.id;
-
-    for (let index = 0; index < rawEntries.length; index++) {
-      const raw = rawEntries[index];
-      if (!raw || typeof raw !== 'object') continue;
-      const entry = raw as Record<string, unknown>;
-
-      const rawKeys = entry.keys;
-      const keys = Array.isArray(rawKeys) ? rawKeys.filter((k): k is string => typeof k === 'string') : [];
-      const rawSecondary = (entry.secondary_keys ?? entry.secondaryKeys);
-      const secondaryKeys = Array.isArray(rawSecondary) ? rawSecondary.filter((k): k is string => typeof k === 'string') : [];
-      const content = typeof entry.content === 'string' ? entry.content : '';
-      if (!content && keys.length === 0) continue;
-
-      await this.createEntry(lorebook.id, {
-        title: typeof entry.name === 'string' ? entry.name : (entry.comment ?? '') as string,
-        content,
-        keys,
-        secondaryKeys,
-        logic: typeof entry.logic === 'string' ? entry.logic : 'and_any',
-        position: typeof entry.position === 'string' ? entry.position : 'before_char',
-        depth: typeof entry.depth === 'number' ? entry.depth : 4,
-        priority: typeof entry.priority === 'number' ? entry.priority : 10,
-        sortOrder: index,
-        constant: typeof entry.constant === 'boolean' ? entry.constant : false,
-        probability: typeof entry.probability === 'number' ? entry.probability : 100,
-        ignoreBudget: typeof entry.ignore_budget === 'boolean' ? entry.ignore_budget : false,
-        role: typeof entry.role === 'number' ? this.mapRoleNumber(entry.role) : (typeof entry.role === 'string' ? entry.role : 'system'),
-        groupName: typeof entry.group === 'string' ? entry.group : (typeof entry.groupName === 'string' ? entry.groupName as string : ''),
-        groupWeight: typeof entry.group_weight === 'number' ? entry.group_weight : (typeof entry.groupWeight === 'number' ? entry.groupWeight : 1),
-        prioritizeInclusion: typeof (entry.prioritize_inclusion ?? entry.prioritizeInclusion) === 'boolean' ? !!(entry.prioritize_inclusion ?? entry.prioritizeInclusion) : false,
-        excludeRecursion: typeof (entry.exclude_recursion ?? entry.excludeRecursion) === 'boolean' ? !!(entry.exclude_recursion ?? entry.excludeRecursion) : false,
-        preventRecursion: typeof (entry.prevent_recursion ?? entry.preventRecursion) === 'boolean' ? !!(entry.prevent_recursion ?? entry.preventRecursion) : false,
-        delayUntilRecursion: typeof (entry.delay_until_recursion ?? entry.delayUntilRecursion) === 'boolean' ? !!(entry.delay_until_recursion ?? entry.delayUntilRecursion) : false,
-        recursionLevel: typeof (entry.recursion_level ?? entry.recursionLevel) === 'number' ? (entry.recursion_level ?? entry.recursionLevel) as number : 0,
-        scanDepthOverride: typeof (entry.scan_depth_override ?? entry.scanDepthOverride) === 'number' ? (entry.scan_depth_override ?? entry.scanDepthOverride) as number : null,
-        caseSensitive: typeof (entry.case_sensitive ?? entry.caseSensitive) === 'boolean' ? !!(entry.case_sensitive ?? entry.caseSensitive) : false,
-        matchWholeWords: typeof (entry.match_whole_words ?? entry.matchWholeWords) === 'boolean' ? !!(entry.match_whole_words ?? entry.matchWholeWords) : false,
-        characterFilter: (() => {
-          const v = entry.character_filter ?? entry.characterFilter;
-          // Legacy ST cards store raw names (string[]); VT rows store {id,name}[].
-          // Both become CharacterFilterEntry[] — names without a known id are ghosts.
-          if (!Array.isArray(v)) return [];
-          return v.map((item): CharacterFilterEntry | null => {
-            if (typeof item === 'string') return item.length > 0 ? { id: null, name: item } : null;
-            if (item && typeof item === 'object' && typeof (item as { name?: unknown }).name === 'string') {
-              const obj = item as { id?: unknown; name: string };
-              return { id: typeof obj.id === 'string' ? obj.id : null, name: obj.name };
-            }
-            return null;
-          }).filter((x): x is CharacterFilterEntry => x !== null);
-        })(),
-        characterFilterExclude: typeof (entry.character_filter_exclude ?? entry.characterFilterExclude) === 'boolean' ? !!(entry.character_filter_exclude ?? entry.characterFilterExclude) : false,
-        matchSources: (() => { const v = entry.match_sources ?? entry.matchSources; return Array.isArray(v) ? v.filter((k): k is string => typeof k === 'string') : []; })(),
-        enabled: typeof (entry.enabled ?? entry.disable) === 'boolean' ? (entry.enabled ?? !entry.disable) as boolean : true,
-        stickyWindow: typeof (entry.sticky_window ?? entry.stickyWindow) === 'number' ? (entry.sticky_window ?? entry.stickyWindow) as number : 0,
-        cooldownWindow: typeof (entry.cooldown_window ?? entry.cooldownWindow) === 'number' ? (entry.cooldown_window ?? entry.cooldownWindow) as number : 0,
-        delayWindow: typeof (entry.delay_window ?? entry.delayWindow) === 'number' ? (entry.delay_window ?? entry.delayWindow) as number : 0,
-      });
-    }
-
-    return lorebook.id;
-  }
-
-  private mapRoleNumber(role: number): string {
-    switch (role) {
-      case 0: return 'system';
-      case 1: return 'user';
-      case 2: return 'assistant';
-      default: return 'system';
-    }
   }
 }
