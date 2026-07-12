@@ -11,11 +11,13 @@ import { CustomTooltip } from "../shared/Tooltip.js";
 import { MemBadge } from "../settings/popovers/MemBadge.js";
 
 /**
- * Co-Author chrome — the dedicated top bar for `mode === "coauthor"`, selected
- * by AppShell in place of the shared {@link TopBar}. Co-author is a first-class
- * navigation mode (CA-8b), so it owns its surface chrome rather than reusing the
- * RP bar. This keeps the co-author surface honest about what it is: not a chat
- * variant with a hidden preset switcher, but a distinct authoring environment.
+ * Co-Author chrome — the dedicated top bar for co-author chats, resolved by the
+ * shell dispatch (`useShellSurface`) in place of the shared {@link TopBar} when
+ * `activeChat.mode === "coauthor"`. Co-author is a first-class `ChatMode` (not
+ * an `AppMode` — it never lives in `useNavigationStore`), so it owns its surface
+ * chrome via the chat-mode registry rather than reusing the RP bar. This keeps
+ * the co-author surface honest about what it is: not a chat variant with a
+ * hidden preset switcher, but a distinct authoring environment.
  *
  * Layout (CS-20 — full bar):
  *   desktop — avatar/name · memory badge · provider-settings pill · [spacer] ·

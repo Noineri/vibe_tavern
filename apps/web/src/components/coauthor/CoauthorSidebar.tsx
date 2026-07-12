@@ -1,5 +1,5 @@
 /**
- * CoauthorSidebar — the desktop sidebar for `mode === "coauthor"`.
+ * CoauthorSidebar — the desktop sidebar for co-author chats.
  *
  * Forked from the RP `Sidebar` (SF-4, COAUTHOR_SHELL_FORK_PLAN.md Wave 2). This
  * is the co-author surface only: character list (selection), co-author chat
@@ -7,11 +7,13 @@
  * design), and the "Author Modules" launcher. Persona launcher, Prompt
  * Manager, build mode, and all RP chat-row chrome are absent.
  *
- * Wave 1 shared substrate is consumed: `useSidebarChats` (mode-split chat
- * derivation) and `useSidebarCharacters` (character-tabs + filter/sort), plus
- * the `sidebar-utils` pure helpers. The `mode` is hardcoded to `"coauthor"`
- * here — there is no runtime mode switch inside this component (the shell root
- * selects between `<Sidebar/>` and `<CoauthorSidebar/>` by nav mode).
+ * Wave 1 shared substrate is consumed: `useSidebarChats` (chat-bucket split by
+ * the active chat's `ChatMode`) and `useSidebarCharacters` (character-tabs +
+ * filter/sort), plus the `sidebar-utils` pure helpers. The `mode` is hardcoded
+ * to `"coauthor"` here — there is no runtime mode switch inside this component
+ * (the shell dispatch in `useShellSurface` selects between `<Sidebar/>` and
+ * `<CoauthorSidebar/>` by `activeChat.mode`, i.e. the chat's `ChatMode`, not a
+ * navigation mode).
  *
  * NOTE: large portions of JSX are duplicated verbatim from `Sidebar.tsx`
  * (header, character list section, flyout). This is intentional for the fork

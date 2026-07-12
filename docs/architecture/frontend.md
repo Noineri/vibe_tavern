@@ -25,7 +25,7 @@ The stores split into three layers: **canonical backend-confirmed state**, **UI/
 | `useGalleryStore` | `stores/gallery-store.ts` | Per-character media-gallery cache (UI/cache, not canonical — the server owns the gallery). See [Media Gallery](#media-gallery). |
 | `useProviderDataStore` | `stores/provider-data-store.ts` | Provider profiles, favorite models per profile. |
 | `useCharacterStore` | `stores/character-store.ts` | Build-mode UI state, rename/confirm-destroy dialogs. |
-| `useNavigationStore` | `stores/navigation-store.ts` | Theme, mode (chat/build/play), sidebar/rail state. |
+| `useNavigationStore` | `stores/navigation-store.ts` | Theme, mode (play/build), sidebar/rail state. (`coauthor` is a `ChatMode` on the chat, not a nav mode — see [Shell Dispatch & Chat Modes](#shell-dispatch--chat-modes).) |
 | `useProviderStore` | `stores/provider-store.ts` | Connection test UI state. |
 | `useModalStore` | `stores/modal-store.ts` | Modal open/close state. |
 
@@ -335,9 +335,39 @@ Build Mode's prev/next trace navigation indexes the cached branch-scoped list.
 
 ---
 
+## Shell Dispatch & Chat Modes
+
+`AppShell` does not decide which central panel / left chrome / top bar to render with a tangle of ternaries. The decision is **registry-driven**: a pure manifest maps each `ChatMode` to a "package" of named surface parts, a catalog resolves those names to components, and a single hook joins `(chatMode × play/build × platform)` into ready-to-render elements.
+
+```
+chat-mode-registry.ts   CHAT_MODE_PACKAGES — pure descriptors (parts by NAME)
+        │  getChatModePackage(chatMode) → ChatModePackage
+        │  getShellRoutes() → flat route list (wouter hand-off)
+        ▼
+surface-parts.tsx       per-slot maps: name → component
+        │  (SURFACES, LEFT_CHROME[desktop|mobile], TOP_BARS)
+        ▼
+use-shell-surface.tsx   useShellSurface({ showRail, onShowRail, update })
+        │  joins chatMode (activeChat.mode) × navMode × platform
+        │  clamps a stale `build` toggle to `play` when the mode has no build slot
+        ▼  returns { surface, leftChrome, topBar } — ready elements
+AppShell.tsx            renders shell.surface / shell.leftChrome / shell.topBar
+```
+
+Two orthogonal dimensions drive the shell:
+
+- **`ChatMode`** (`"rp" | "coauthor" | "novel" | "group"` — defined in `@vibe-tavern/domain`, carried by the chat as `activeChat.mode`) decides *which package* renders — i.e. which central surface and its dedicated chrome. This is the rp/coauthor split (and where novel/group will live). It is the **single source of truth** for which shell renders; the shell reads it straight off the active chat.
+- **`AppMode`** (`"play" | "build"` — defined in the registry, re-exported via `app-shell-types.ts`, carried by `useNavigationStore`) is the *editing axis* orthogonal to chat mode: `play` interacts with the chat, `build` edits the character/lore/script structure. Only modes whose package declares a `build` slot (today: `rp`) honor it; a `build` toggle on a build-less mode clamps to `play` at render time, so the toggle is preserved as user intent but never renders an impossible build screen.
+
+**`coauthor` is a `ChatMode`, NOT an `AppMode`** — it never appears in `useNavigationStore`. Its package declares a `play`-only surface (`CoauthorMode` + `CoauthorSidebar`/`CoauthorRail` + `CoauthorTopBar`), no build slot. The shell renders the coauthor surface directly from `activeChat.mode === "coauthor"`; there is no nav-mode mirror to reconcile (an earlier `reconcileNavModeFromChat` was removed once the registry made it redundant).
+
+Reserved-but-unimplemented modes (`novel`, `group`) have no package entry and fall back to the `rp` package via `getChatModePackage`, so the shell renders a sane default until a real surface is added. Adding a real chat mode is one registry entry + its catalog components — see [Adding a new chat mode](../guides/adding-a-chat-mode.md). The design and fix history are in `SURFACE_REGISTRY_REPORT.md` (planning repo).
+
+---
+
 ## Play Mode
 
-`PlayMode.tsx` is the chat-focused layout (as opposed to Build Mode's editor layout). It composes `MessageList` + `QueueManager` + `InputArea`. The active mode (chat/build/play) lives in `useNavigationStore`.
+`PlayMode.tsx` is the chat-focused layout (as opposed to Build Mode's editor layout). It composes `MessageList` + `QueueManager` + `InputArea`. PlayMode is selected by the shell dispatch when the active chat's package resolves its `play` surface (see [Shell Dispatch & Chat Modes](#shell-dispatch--chat-modes) above).
 
 A deliberate remount detail: `MessageList` is keyed by `${chatId}|${branchId}` so Virtuoso's `initialTopMostItemIndex` re-runs and pins to the bottom natively on chat/branch switch, rather than fighting Virtuoso's measurement cache with a manual rAF pin.
 
