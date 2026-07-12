@@ -40,15 +40,18 @@ function listItem(id: string, mode: "rp" | "coauthor", charId = "char-1", lastMe
 }
 
 /**
- * Seed the snapshot store with a chats list + optionally an active chat.
- * switchModeAction reads `chatsById`, `chatIds` (recency-sorted on ingest),
- * and `activeChat.characterId`, so this is all the state it needs.
+ * Seed the snapshot store with a chats list + optionally an active chat. The
+ * active chat mirrors the matching list item's id/characterId/mode, because
+ * switchModeAction (after SURFACE_REGISTRY step 4) reads `activeChat.mode` to
+ * detect the coauthor bucket — it no longer reads navMode for that. Pass
+ * activeId = null (the default) to leave the snapshot without an active chat.
  */
-function seed(chats: ChatListItem[], activeChatCharacterId: string | null = "char-1"): void {
+function seed(chats: ChatListItem[], activeId: string | null = null): void {
+  const active = activeId ? chats.find((c) => c.id === chatId(activeId)) ?? null : null;
   const snap = {
     chats,
-    ...(activeChatCharacterId !== null
-      ? { activeChat: { characterId: characterId(activeChatCharacterId) } }
+    ...(active
+      ? { activeChat: { id: active.id, characterId: active.characterId, mode: active.mode } }
       : {}),
   } as unknown as AppSnapshot;
   useSnapshotStore.getState().ingestSnapshot(snap);
@@ -64,7 +67,7 @@ beforeEach(() => {
 describe("switchModeAction", () => {
   test("within-bucket play→build flips mode and does not reselect a chat", async () => {
     useChatStore.getState().setActiveChatId(chatId("rp-1"));
-    seed([listItem("rp-1", "rp")]);
+    seed([listItem("rp-1", "rp")], "rp-1");
     useNavigationStore.getState().setMode("play");
 
     const switched: ChatId[] = [];
@@ -77,7 +80,7 @@ describe("switchModeAction", () => {
 
   test("no-op when the requested mode equals the current mode", async () => {
     useChatStore.getState().setActiveChatId(chatId("rp-1"));
-    seed([listItem("rp-1", "rp")]);
+    seed([listItem("rp-1", "rp")], "rp-1");
     useNavigationStore.getState().setMode("play");
 
     const switched: ChatId[] = [];
@@ -88,13 +91,13 @@ describe("switchModeAction", () => {
   });
 
   test("F-5: exiting coauthor→build selects the RP chat for the same character", async () => {
-    // A character has both a co-author chat (active) and an RP chat.
+    // Active chat is coauthor; "back to editor" must cross to the RP chat. The
+    // boundary is detected from activeChat.mode (chatMode), NOT navMode.
     useChatStore.getState().setActiveChatId(chatId("co-1"));
     seed([
       listItem("co-1", "coauthor", "char-1", "2026-02-01T00:00:00.000Z"),
       listItem("rp-1", "rp", "char-1", "2026-01-01T00:00:00.000Z"),
-    ]);
-    useNavigationStore.getState().setMode("coauthor");
+    ], "co-1");
 
     const switched: ChatId[] = [];
     await switchModeAction("build", { switchChat: async (id) => { switched.push(id); } });
@@ -110,8 +113,7 @@ describe("switchModeAction", () => {
       listItem("co-1", "coauthor", "char-1", "2026-03-01T00:00:00.000Z"),
       listItem("rp-old", "rp", "char-1", "2026-01-01T00:00:00.000Z"),
       listItem("rp-new", "rp", "char-1", "2026-02-01T00:00:00.000Z"),
-    ]);
-    useNavigationStore.getState().setMode("coauthor");
+    ], "co-1");
 
     const switched: ChatId[] = [];
     await switchModeAction("build", { switchChat: async (id) => { switched.push(id); } });
@@ -122,8 +124,7 @@ describe("switchModeAction", () => {
 
   test("F-5: with no RP chat for the character, clears activeChatId to the placeholder", async () => {
     useChatStore.getState().setActiveChatId(chatId("co-1"));
-    seed([listItem("co-1", "coauthor", "char-1")]);
-    useNavigationStore.getState().setMode("coauthor");
+    seed([listItem("co-1", "coauthor", "char-1")], "co-1");
 
     const switched: ChatId[] = [];
     await switchModeAction("build", { switchChat: async (id) => { switched.push(id); } });
@@ -138,43 +139,33 @@ describe("switchModeAction", () => {
     seed([
       listItem("co-1", "coauthor", "char-1"),
       listItem("rp-other", "rp", "char-2"),
-    ]);
-    useNavigationStore.getState().setMode("coauthor");
+    ], "co-1");
 
     await switchModeAction("build", { switchChat: async () => {} });
 
     expect(useChatStore.getState().activeChatId).toBeNull();
   });
 
-  test("symmetric: switching build→coauthor selects the co-author chat for the character", async () => {
-    useChatStore.getState().setActiveChatId(chatId("rp-1"));
-    seed([
-      listItem("rp-1", "rp", "char-1"),
-      listItem("co-1", "coauthor", "char-1"),
-    ]);
-    useNavigationStore.getState().setMode("build");
-
-    const switched: ChatId[] = [];
-    await switchModeAction("coauthor", { switchChat: async (id) => { switched.push(id); } });
-
-    expect(useNavigationStore.getState().mode).toBe("coauthor");
-    expect(useChatStore.getState().activeChatId).toBe(chatId("co-1"));
-    expect(switched).toEqual([chatId("co-1")]);
-  });
-
-  test("falls back to selectedCharacterId when no active chat is mounted", async () => {
-    // No active chat (activeChat null), but a character is selected — the
-    // selectedCharacterId is the anchor for the reselection.
-    useChatStore.getState().setSelectedCharacterId("char-1");
+  test("no active chat: flips mode only, no reselection", async () => {
+    // switchModeAction's sole production caller (CoauthorTopBar "back to editor")
+    // requires an active coauthor chat, so an absent active chat is unreachable
+    // in practice — the contract here is simply: flip mode, switch no chat.
     seed([listItem("rp-1", "rp", "char-1")], null);
-    useNavigationStore.getState().setMode("coauthor");
 
     const switched: ChatId[] = [];
     await switchModeAction("build", { switchChat: async (id) => { switched.push(id); } });
 
-    expect(useChatStore.getState().activeChatId).toBe(chatId("rp-1"));
-    expect(switched).toEqual([chatId("rp-1")]);
+    expect(useNavigationStore.getState().mode).toBe("build");
+    expect(useChatStore.getState().activeChatId).toBeNull();
+    expect(switched).toEqual([]);
   });
+
+  // The old "symmetric build→coauthor" case is intentionally gone. After
+  // SURFACE_REGISTRY step 4, "coauthor" is a ChatMode (on the chat), not an
+  // AppMode (navMode), so switchModeAction cannot be asked for "coauthor".
+  // Switching TO a coauthor chat is done by selecting it in the sidebar
+  // (switchChatAction), not by switchModeAction; the registry renders the
+  // coauthor surface from activeChat.mode directly.
 });
 
 describe("deleteChatAction", () => {

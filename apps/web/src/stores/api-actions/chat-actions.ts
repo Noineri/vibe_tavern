@@ -211,27 +211,21 @@ export async function switchChatAction(chatId: ChatId): Promise<void> {
 }
 
 /**
- * User-initiated navigation-mode switch (the forward direction of the
- * mode↔activeChat coupling — `reconcileNavModeFromChat` is the inverse).
+ * User-initiated editing-mode switch. navMode (AppMode) carries only the
+ * play/build editing axis — the rp/coauthor split lives on the chat itself
+ * (chatMode = activeChat.mode), read directly by the shell registry hook. So
+ * this function never inspects or sets a "coauthor" navMode.
  *
- * Today every nav `setMode` site either stays inside the RP bucket (play↔build:
- * TopBar toggle, Rail build-panel, MediaMenu/MediaModal, import) or crosses the
- * coauthor↔RP boundary (CoauthorTopBar "back to editor"). The within-bucket
- * case is a plain mode flip with the active chat untouched. The boundary case
- * is the F-5 fix: flipping mode alone left `activeChatId` on the co-author
- * chat, so the RP surface mounted a co-author chat indefinitely. Now the
- * boundary crossing also reselects a chat of the new bucket for the active
- * character (most-recent first), so mode and activeChat always agree.
+ * Two cases, keyed on the ACTIVE CHAT's mode (not navMode):
+ * - Active chat is RP (or absent): a plain play↔build flip, active chat untouched.
+ * - Active chat is coauthor: the user is leaving coauthor for the RP editor
+ *   (sole caller: CoauthorTopBar "back to editor" → newMode "build"). Reselect
+ *   an RP chat for the same character first so the RP surface never mounts the
+ *   coauthor chat (F-5 fix, preserved). When no RP chat exists for the
+ *   character, clears activeChatId to the placeholder.
  *
- * Ping-pong safety: `switchChatAction` calls `reconcileNavModeFromChat`, but
- * that only flips mode ACROSS the boundary — after the reselection we are
- * in-bucket, so it is a no-op and the two reconcile directions cannot loop.
- *
- * Anchors the reselection on the active chat's `characterId` (falling back to
- * `selectedCharacterId`), not on `selectedCharacterId` alone, so the result is
- * robust against a stale selection. When no chat of the new bucket exists for
- * the character, clears `activeChatId` to the placeholder rather than leaving
- * the cross-bucket chat mounted.
+ * Anchors the reselection on the active chat's characterId (falling back to
+ * selectedCharacterId) for robustness against a stale selection.
  */
 export async function switchModeAction(
   newMode: AppMode,
@@ -239,46 +233,39 @@ export async function switchModeAction(
 ): Promise<void> {
   const switchChat = deps.switchChat ?? switchChatAction;
   const nav = useNavigationStore.getState();
-  const prevMode = nav.mode;
-  if (prevMode === newMode) return;
+  const snap = useSnapshotStore.getState();
+  const activeChat = snap.activeChat;
 
-  const crossingBoundary = (prevMode === "coauthor") !== (newMode === "coauthor");
-  // Within-bucket switch (play↔build): keep the active RP chat, just flip mode.
-  if (!crossingBoundary) {
-    nav.setMode(newMode);
+  // RP bucket (active chat is RP or absent): plain play↔build flip. navMode has
+  // no "coauthor" value anymore; the registry reads chatMode for rp/coauthor.
+  if (!activeChat || activeChat.mode !== "coauthor") {
+    if (nav.mode !== newMode) nav.setMode(newMode);
     return;
   }
 
-  // Crossing coauthor↔RP: reselect a chat of the new bucket for the active
-  // character before flipping mode, so the new surface never mounts the old
-  // bucket's chat.
-  const snap = useSnapshotStore.getState();
-  const characterId = snap.activeChat?.characterId ?? useChatStore.getState().selectedCharacterId;
-  nav.setMode(newMode);
+  // Active chat is coauthor but the user wants the RP editor. Reselect an RP
+  // chat for the same character before flipping mode, so the RP surface never
+  // mounts the coauthor chat (F-5).
+  const characterId = activeChat.characterId ?? useChatStore.getState().selectedCharacterId;
+  if (nav.mode !== newMode) nav.setMode(newMode);
   if (!characterId) return;
 
-  const wantCoauthor = newMode === "coauthor";
   const candidate = snap.chatIds
     .map((id) => snap.chatsById[id])
     .filter((c): c is NonNullable<typeof c> => Boolean(c))
-    .find((c) =>
-      c.characterId === characterId &&
-      (wantCoauthor ? c.mode === "coauthor" : c.mode !== "coauthor"),
-    );
+    .find((c) => c.characterId === characterId && c.mode !== "coauthor");
 
   const chat = useChatStore.getState();
   if (!candidate) {
-    // No chat of the new bucket for this character → placeholder.
+    // No RP chat for this character → placeholder.
     if (chat.activeChatId) chat.setActiveChatId(null);
     return;
   }
   if (candidate.id === chat.activeChatId) return;
-  // Load the target chat's snapshot. switchChatAction runs
-  // reconcileNavModeFromChat internally; it is an in-bucket no-op here.
+  // Load the target RP chat's snapshot; the registry renders its RP surface.
   await switchChat(candidate.id);
   chat.setActiveChatId(candidate.id);
-  // switchChatAction's reconcile may have chosen 'play' for an RP chat; pin the
-  // user's exact requested mode (e.g. 'build' from "back to editor").
+  // Pin the user's exact requested mode (e.g. 'build' from "back to editor").
   if (useNavigationStore.getState().mode !== newMode) {
     useNavigationStore.getState().setMode(newMode);
   }
