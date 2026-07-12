@@ -12,6 +12,7 @@ import { PersonaCardEditor } from "./PersonaCardEditor.js";
 import { cn } from "../../lib/cn.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
 import { useStPersonaImport } from "../../hooks/use-st-persona-import.js";
+import { useRevealOnCreate } from "../../hooks/use-reveal-on-create.js";
 import { CustomTooltip } from "../shared/Tooltip.js";
 import { AutoTextarea } from "../shared/auto-textarea.js";
 import { MobileExpandTextarea } from "../shared/MobileExpandTextarea.js";
@@ -126,76 +127,6 @@ export function PersonaModal(input: PersonaModalProps) {
   const [deleteConfirm, setDeleteConfirm] = useState<{ id: string; error: string } | null>(null);
   const isMobile = useIsMobile();
   const stImport = useStPersonaImport({ isOpen });
-
-  // PR-11: auto-scroll to a newly created persona.
-  //
-  // WHY NOT scrollIntoView / rAF: the new card mounts collapsed, then
-  // transitions to the expanded edit form (setEditingId fires in the same
-  // click). The edit form's AutoTextarea auto-resizes via useLayoutEffect, so
-  // the card's height is NOT final when the ref callback (or its rAF) runs.
-  // A one-shot scrollIntoView caches its target pixel against the stale
-  // (short) height and under-scrolls — the user sees the new card cut off
-  // near the footer when starting from scrollTop 0.
-  //
-  // FIX: ResizeObserver on the new card. Since the new persona is always the
-  // LAST list item (backend listAll has no ORDER BY → rowid/insertion order),
-  // "reveal it" == "pin the scroll container to its bottom". The observer
-  // re-pins on every height change DURING THE REVEAL PHASE (collapsed→expanded,
-  // initial textarea auto-resize, avatar load) so the destination is always
-  // computed against the CURRENT card height.
-  //
-  // DIRTY-GATE (PR-11 rev 2): the observer must STOP re-pinning once the user
-  // is actively editing — otherwise every keystroke that grows the textarea
-  // yanks the scroll back to the bottom. The reveal phase completes before the
-  // user types (baseline is captured at create time against the empty form, so
-  // isDirty is false through expand + auto-resize), so gating on !isDirty lets
-  // all the reveal-phase resizes pin the bottom while making typing-induced
-  // resizes a no-op. Reads isDirty through a ref to avoid re-creating the
-  // observer (which would detach/reattach the ref callback) on every edit.
-  //
-  // NOT the MessageList rAF bottom-pinning pattern — that is a different
-  // concern (live message append during streaming); this is a static list.
-  const scrollBodyRef = useRef<HTMLDivElement>(null);
-  const cardRefs = useRef<Map<string, HTMLDivElement>>(new Map());
-  const createdCardObserver = useRef<ResizeObserver | null>(null);
-  // Mirror of `isDirty` (computed below) read inside the ResizeObserver
-  // callback. Assigned during render so it's always current when the observer
-  // fires; the ref is stable so handleCardRef's deps don't churn.
-  const isDirtyRef = useRef(false);
-  const handleCardRef = useCallback((personaId: string, el: HTMLDivElement | null) => {
-    if (el) {
-      cardRefs.current.set(personaId, el);
-      if (personaId === createdDraftPersonaId) {
-        // Start observing this card's size; each change pins the list to its
-        // bottom, which always reveals the last item (the new persona).
-        createdCardObserver.current?.disconnect();
-        const body = scrollBodyRef.current;
-        const ro = new ResizeObserver(() => {
-          if (!body) return;
-          // DIRTY-GATE: stop re-pinning once the user is actively editing so
-          // typing doesn't yank the scroll. See the PR-11 rev 2 note above.
-          if (isDirtyRef.current) return;
-          body.scrollTo({ top: body.scrollHeight, behavior: "smooth" });
-        });
-        ro.observe(el);
-        createdCardObserver.current = ro;
-      }
-    } else {
-      cardRefs.current.delete(personaId);
-      if (personaId === createdDraftPersonaId) {
-        createdCardObserver.current?.disconnect();
-        createdCardObserver.current = null;
-      }
-    }
-  }, [createdDraftPersonaId]);
-  // Disconnect the observer when the created-draft id changes (new creation,
-  // discard, or save) or the modal unmounts.
-  useEffect(() => {
-    return () => {
-      createdCardObserver.current?.disconnect();
-      createdCardObserver.current = null;
-    };
-  }, [createdDraftPersonaId]);
   // ── Avatar crop modal state ──
   const [pendingAvatar, setPendingAvatar] = useState<{ file: File; url: string } | null>(null);
 
@@ -357,8 +288,7 @@ export function PersonaModal(input: PersonaModalProps) {
   // don't reliably track this fully-controlled (no-register) form.
   const allFormValues = form.watch();
   const isDirty = computePersonaIsDirty(allFormValues, baselineRef.current);
-  // Mirror for the PR-11 reveal-scroll dirty-gate (see createdCardObserver).
-  isDirtyRef.current = isDirty;
+  const { containerRef: scrollBodyRef, cardRef: handleCardRef } = useRevealOnCreate(createdDraftPersonaId, isDirty);
 
   // Avatar-in-prompt fields live OUT-OF-BAND on the persona (excluded from
   // this modal's react-hook-form, same design as the character side — see
