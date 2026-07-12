@@ -549,18 +549,17 @@ describe("assemblePrompt", () => {
   // index is recomputed as history grows, so the compensation inverted the
   // payload. The jailbreak layer was also labeled with the preset's name
   // instead of the honest "Post-History Instructions".
-  describe("assembly mode characterization (AR-1a)", () => {
+  describe("assembly registry characterization (AR-1a)", () => {
     const characterSystem = { id: "character_system_prompt", text: "Character system.", position: "in_prompt" };
     const persona = { id: "persona", text: "User persona (Alex, they/them): Journalist.", position: "in_prompt" };
     const characterBase = { id: "character_base", text: "Character: Nora\nDetective.", position: "in_prompt" };
     const recentHistory = { id: "recent_history", text: "USER: Where is the file?\n\nASSISTANT: In the drawer.", position: "in_prompt" };
-    const toolInstructions = { id: "tool_instructions", text: "Tool instruction.", position: "in_prompt" };
     const historyMessages = [
       { role: "user", content: "Where is the file?", messageId: "msg_mode_1" },
       { role: "assistant", content: "In the drawer.", messageId: "msg_mode_2" },
     ];
 
-    function modeContext(mode: "chat" | "continue" | "regenerate" | "summary" | "tool_call" | "ai_assistant" = "chat") {
+    function registryContext() {
       return {
         identity: { chatId: "chat_mode" },
         character: { id: "char_mode", name: "Nora", description: "Detective.", systemPrompt: "Character system." },
@@ -579,7 +578,6 @@ describe("assemblePrompt", () => {
           systemPrompt: "Assistant system.",
           instruction: "Write a helper.",
         },
-        mode,
       };
     }
 
@@ -591,7 +589,7 @@ describe("assemblePrompt", () => {
     }
 
     const chatExpected = {
-      layers: [characterSystem, persona, characterBase, recentHistory, toolInstructions],
+      layers: [characterSystem, persona, characterBase, recentHistory, { id: "tool_instructions", text: "Tool instruction.", position: "in_prompt" }],
       messages: [
         { role: "system", content: "Character system.", layerId: "character_system_prompt" },
         { role: "system", content: "User persona (Alex, they/them): Journalist.", layerId: "persona" },
@@ -602,15 +600,15 @@ describe("assemblePrompt", () => {
     };
 
     it("pins the complete chat assembly under both simple and canvas resolvers", () => {
-      expect(projectAssembly(assemblePrompt(modeContext()))).toEqual(chatExpected);
+      expect(projectAssembly(assemblePrompt(registryContext()))).toEqual(chatExpected);
       expect(projectAssembly(assemblePrompt({
-        ...modeContext(),
-        preset: { ...modeContext().preset, advancedMode: true, promptOrder: [] },
+        ...registryContext(),
+        preset: { ...registryContext().preset, advancedMode: true, promptOrder: [] },
       }))).toEqual(chatExpected);
     });
 
     it("pins the summary assembly", () => {
-      expect(projectAssembly(getSummaryStrategy().assemble(modeContext("summary")))).toEqual({
+      expect(projectAssembly(getSummaryStrategy().assemble(registryContext()))).toEqual({
         layers: [
           characterSystem,
           persona,
@@ -629,7 +627,7 @@ describe("assemblePrompt", () => {
     });
 
     it("pins the AI assistant assembly", () => {
-      expect(projectAssembly(getAiAssistantAssembler("script").assemble(modeContext("ai_assistant")))).toEqual({
+      expect(projectAssembly(getAiAssistantAssembler("script").assemble(registryContext()))).toEqual({
         layers: [
           { id: "ai_assistant_system", text: "Assistant system.", position: "in_prompt" },
           characterBase,
@@ -645,10 +643,6 @@ describe("assemblePrompt", () => {
       });
     });
 
-    it("proves continue and regenerate are aliases of chat", () => {
-      expect(projectAssembly(assemblePrompt(modeContext("continue")))).toEqual(chatExpected);
-      expect(projectAssembly(assemblePrompt(modeContext("regenerate")))).toEqual(chatExpected);
-    });
   });
 
   describe("same-depth inject order + jailbreak label (Wave B)", () => {
