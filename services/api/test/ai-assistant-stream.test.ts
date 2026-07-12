@@ -1,4 +1,5 @@
-import { describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { setTokenCountFn } from "@vibe-tavern/prompt-pipeline";
 import { countAiAssistantTokens, type StreamDeps } from "../src/domain/ai-assistant/ai-assistant-stream.js";
 
 function deps(overrides: Partial<StreamDeps> = {}): StreamDeps {
@@ -15,6 +16,12 @@ function deps(overrides: Partial<StreamDeps> = {}): StreamDeps {
 }
 
 describe("AI assistant stream prompt preparation", () => {
+  // The production server injects a model-aware tokenizer at bootstrap. Use a
+  // deterministic local substitute so this test cannot inherit another file's
+  // process-global tokenizer.
+  beforeEach(() => setTokenCountFn((text) => text.length));
+  afterEach(() => setTokenCountFn(() => 0));
+
   it("loads history only for chat_impersonate and includes it in the traced assembly", async () => {
     const calls: Array<[string, number]> = [];
     const result = await countAiAssistantTokens({
@@ -30,7 +37,7 @@ describe("AI assistant stream prompt preparation", () => {
     } }));
 
     expect(calls).toEqual([["chat_1", 7]]);
-    expect(result).toEqual({ tokens: 0, model: "model_1", layerCount: 3, messageCount: 3 });
+    expect(result).toEqual({ tokens: 65, model: "model_1", layerCount: 3, messageCount: 3 });
   });
 
   it("keeps md_import as a direct two-message path with no resolved context", async () => {
@@ -44,6 +51,6 @@ describe("AI assistant stream prompt preparation", () => {
     }, deps({ getCharacterById: async () => { resolvedContext = true; return null; } }));
 
     expect(resolvedContext).toBeFalse();
-    expect(result).toEqual({ tokens: 0, model: "model_1", layerCount: 2, messageCount: 2 });
+    expect(result).toEqual({ tokens: 36, model: "model_1", layerCount: 2, messageCount: 2 });
   });
 });
