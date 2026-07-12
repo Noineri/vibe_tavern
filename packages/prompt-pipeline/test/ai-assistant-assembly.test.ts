@@ -1,8 +1,8 @@
 import { describe, expect, it } from "bun:test";
-import { assemblePrompt } from "../src/assemble.ts";
+import { getAiAssistantAssembler } from "../src/ai-assistant/ai-assistant-assemblers.ts";
 
 function assemble(overrides: Record<string, unknown> = {}) {
-  return assemblePrompt({
+  return getAiAssistantAssembler("script").assemble({
     identity: { chatId: "assistant_1" },
     character: { id: "char_1", name: "Aria", description: "A fire mage.", personality: "Bold.", scenario: "A burning tower." },
     persona: { id: "persona_1", name: "Mira", description: "A scholar." },
@@ -10,7 +10,7 @@ function assemble(overrides: Record<string, unknown> = {}) {
     chat: { recentMessages: [] },
     mode: "ai_assistant",
     aiAssistant: {
-      mode: "character_description",
+      mode: "script",
       enabledLayers: ["character_base", "persona", "lore"],
       systemPrompt: "You improve character cards.",
       existingContent: "Old description.",
@@ -46,7 +46,7 @@ describe("AI assistant assembly", () => {
 
   it("gates only optional context layers", () => {
     const result = assemble({ aiAssistant: {
-      mode: "character_description",
+      mode: "script",
       enabledLayers: [],
       systemPrompt: "System.",
       existingContent: "Existing.",

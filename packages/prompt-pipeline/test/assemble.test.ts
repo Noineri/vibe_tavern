@@ -1,5 +1,6 @@
 import { describe, it, expect } from "bun:test";
 import { assemblePrompt } from "../src/assemble.ts";
+import { getAiAssistantAssembler } from "../src/ai-assistant/ai-assistant-assemblers.ts";
 
 function baseContext(overrides = {}) {
   return {
@@ -627,7 +628,7 @@ describe("assemblePrompt", () => {
     });
 
     it("pins the AI assistant assembly", () => {
-      expect(projectAssembly(assemblePrompt(modeContext("ai_assistant")))).toEqual({
+      expect(projectAssembly(getAiAssistantAssembler("script").assemble(modeContext("ai_assistant")))).toEqual({
         layers: [
           { id: "ai_assistant_system", text: "Assistant system.", position: "in_prompt" },
           characterBase,

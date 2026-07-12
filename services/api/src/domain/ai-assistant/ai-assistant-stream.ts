@@ -12,7 +12,7 @@
 import { streamText } from "ai";
 import type { LanguageModel } from "ai";
 import {
-  assemblePrompt,
+  getAiAssistantAssembler,
   estimateMessageArrayTokens,
   setModelHint,
   type AiAssistantMode,
@@ -197,7 +197,7 @@ async function prepareAiAssistantRequest(
   };
 
   setModelHint(modelName);
-  const assembly = assemblePrompt(pipelineContext);
+  const assembly = getAiAssistantAssembler(request.mode).assemble(pipelineContext);
   const messages = assembly.finalPayload.messages as Array<{
     role: "system" | "user" | "assistant";
     content: string;
