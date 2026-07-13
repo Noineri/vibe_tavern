@@ -77,8 +77,8 @@ describe("InsightsPanel (INS-2)", () => {
     expect(getByText("insights_tracker_title")).toBeTruthy();
     const switches = getAllByRole("switch");
     expect(switches).toHaveLength(2);
-    expect(switches[0]).toHaveAttribute("aria-checked", "false");
-    expect(switches[1]).toHaveAttribute("aria-checked", "false");
+    expect(switches[0].getAttribute("aria-checked")).toBe("false");
+    expect(switches[1].getAttribute("aria-checked")).toBe("false");
   });
 
   it("reflects the live config — objective on, tracker off", () => {
@@ -88,8 +88,8 @@ describe("InsightsPanel (INS-2)", () => {
     };
     const { getAllByRole } = render(<InsightsPanel />);
     const switches = getAllByRole("switch");
-    expect(switches[0]).toHaveAttribute("aria-checked", "true");
-    expect(switches[1]).toHaveAttribute("aria-checked", "false");
+    expect(switches[0].getAttribute("aria-checked")).toBe("true");
+    expect(switches[1].getAttribute("aria-checked")).toBe("false");
   });
 
   it("flipping the Objective toggle dispatches the objective-only patch", () => {
