@@ -293,3 +293,33 @@ export const LORE_MATCH_SOURCE = {
 } as const;
 
 export type LoreMatchSource = typeof LORE_MATCH_SOURCE[keyof typeof LORE_MATCH_SOURCE];
+
+/**
+ * The two per-chat opt-in insight features (INSIGHTS_PLAN).
+ *
+ * - `objective` — Objective Tracker: an LLM-generated task roadmap; the active task is injected as a prompt layer so the model plays toward it.
+ * - `tracker` — Scene Tracker: LLM-filled structured scene state per message; the latest is injected as a prompt layer so the model knows the current scene.
+ */
+export const INSIGHT_FEATURE = {
+  objective: "objective",
+  tracker: "tracker",
+} as const;
+
+export type InsightFeature = typeof INSIGHT_FEATURE[keyof typeof INSIGHT_FEATURE];
+
+/**
+ * Lifecycle states of an objective task in the Objective Tracker insight.
+ *
+ * - `pending` — not yet started
+ * - `active` — the current task the model is playing toward (injected as a prompt layer)
+ * - `completed` — finished
+ * - `abandoned` — dropped / superseded
+ */
+export const OBJECTIVE_TASK_STATUS = {
+  pending: "pending",
+  active: "active",
+  completed: "completed",
+  abandoned: "abandoned",
+} as const;
+
+export type ObjectiveTaskStatus = typeof OBJECTIVE_TASK_STATUS[keyof typeof OBJECTIVE_TASK_STATUS];

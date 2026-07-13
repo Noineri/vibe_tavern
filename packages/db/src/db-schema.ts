@@ -151,6 +151,18 @@ export const chats = sqliteTable('chats', {
   updatedAt: text('updated_at').notNull(),
   loreActivationStateJson: text('lore_activation_state_json').notNull().default('{}'),
   scriptStateJson: text('script_state_json').notNull().default('{}'),
+  // Insights (INSIGHTS_PLAN): per-chat opt-in Objective Tracker + Scene Tracker.
+  // Both features OFF by default; zero DOM and zero prompt-layer injection when off.
+  // insightsConfigJson holds both features' toggles + per-feature config
+  // (injection depth, scene inject-last-N, model pick, prompts).
+  insightsConfigJson: text('insights_config_json').notNull().default('{"objectiveEnabled":false,"trackerEnabled":false}'),
+  // The objective task tree — frequently updated on completion checks; separate
+  // column for update-pattern isolation (like scriptStateJson).
+  insightsObjectiveStateJson: text('insights_objective_state_json').notNull().default('{}'),
+  // The latest scene state for MAIN-MODEL injection — updated each tracker-generate.
+  // Per-message tracker data for the UI lives on messages.extra.sceneTracker; this
+  // is the chat-level mirror the prompt assembly reads (one field, stays current).
+  insightsCurrentSceneJson: text('insights_current_scene_json').notNull().default('{}'),
   // Co-author mode only (CA-13): lorebook ids the user explicitly bound to
   // this chat as read-only editor context (the right-panel picker). NOT the
   // RP keyword-activation set — these expand wholesale into the editor prompt

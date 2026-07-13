@@ -70,6 +70,8 @@ export const PROMPT_LAYER_PRIORITY = {
   retrievalMemory: 400,
   promptPresetSummary: 350,
   toolInstructions: 300,
+  objectiveTask: 180,
+  sceneState: 175,
   promptPresetAuthorsNote: 170,
   postHistoryInstructions: 160,
   mesExample: 150,
@@ -104,6 +106,8 @@ export const PROMPT_LAYER_ID = {
   recentHistory: "recent_history",
   mesExample: "mes_example",
   characterDepthPrompt: "character_depth_prompt",
+  objectiveTask: "objective_task",
+  sceneState: "scene_state",
   postHistoryInstructions: "post_history_instructions",
   // AI assistant layers
   aiAssistantSystem: "ai_assistant_system",
@@ -125,6 +129,8 @@ export const PROMPT_LAYER_SOURCE_TYPE = {
   loreEntry: "lore_entry",
   summaryMemory: "summary_memory",
   retrievalMemory: "retrieval_memory",
+  objectiveTask: "objective_task",
+  sceneState: "scene_state",
   toolProfile: "tool_profile",
   compaction: "compaction",
   chatHistory: "chat_history",
@@ -163,6 +169,7 @@ export function createRetrievalMemoryLayerId(id: string): string {
  * - `exampleMessages(text)`          — `"[Example messages]\n{text}"`
  */
 export const PROMPT_FORMAT = {
+  sceneState: (text: string) => `[Scene state] ${text}`,
   characterHeader: (name: string) => `Character: ${name}`,
   scenarioHeader: (text: string) => `Scenario: ${text}`,
   personaBlock: (name: string, desc: string, pronouns?: string | null) => {
