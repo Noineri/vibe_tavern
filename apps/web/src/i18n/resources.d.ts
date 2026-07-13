@@ -481,6 +481,8 @@ export default interface Resources {
     "obj_zone_expand": "Show objective route",
     "obj_zone_collapse": "Collapse",
     "obj_zone_route": "Route",
+    "obj_zone_regenerate": "Regenerate route",
+    "obj_zone_check": "Check completion",
     "obj_model_label": "Model",
     "obj_use_chat_model": "Use chat model",
     "obj_provider_label": "Provider",

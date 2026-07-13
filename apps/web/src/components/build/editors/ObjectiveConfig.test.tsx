@@ -11,7 +11,7 @@
  * Runner: vitest (apps/web — vi.mock is file-scoped, no cross-file leak).
  */
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { render, fireEvent, cleanup } from "@testing-library/react";
+import { render, fireEvent, cleanup, waitFor } from "@testing-library/react";
 import { ObjectiveConfig } from "./ObjectiveConfig.js";
 import type { ObjectiveState } from "../../../api/types.js";
 
@@ -157,7 +157,12 @@ describe("ObjectiveConfig (INS-5)", () => {
     withState({ ...EMPTY, tasks: [{ id: "t1", description: "A task", status: "pending" }] });
     mocks.deleteObjectiveTaskAction.mockResolvedValue(undefined);
     const { getByTitle } = render(<ObjectiveConfig chatId={"chat_1" as never} />);
-    fireEvent.click(getByTitle("obj_delete_task"));
+    const deleteButton = getByTitle("obj_delete_task");
+    const classes = deleteButton.className.split(/\s+/);
+    expect(classes).not.toContain("opacity-0");
+    expect(classes).toContain("md:opacity-0");
+    expect(classes).toContain("md:group-hover:opacity-100");
+    fireEvent.click(deleteButton);
     expect(mocks.deleteObjectiveTaskAction).toHaveBeenCalledWith("chat_1", "t1");
   });
 
@@ -169,5 +174,18 @@ describe("ObjectiveConfig (INS-5)", () => {
     // The single switch in ObjectiveConfig is the ModelSelector's useChatModel toggle.
     fireEvent.click(getByRole("switch"));
     expect(mocks.updateObjectiveConfigAction).toHaveBeenCalledWith("chat_1", { useChatModel: false });
+  });
+
+  it("locks both dropdowns and the pin while using the chat model", async () => {
+    withState({ ...EMPTY, model: "gpt-mini" });
+    const { getByRole, getByTitle } = render(<ObjectiveConfig chatId={"chat_1" as never} />);
+
+    const providerDropdown = getByRole("button", { name: /Active/ });
+    await waitFor(() => expect(getByRole("button", { name: /GPT Active/ })).toBeTruthy());
+    const modelDropdown = getByRole("button", { name: /GPT Active/ });
+
+    expect(providerDropdown.className).toContain("opacity-40");
+    expect(modelDropdown.className).toContain("opacity-40");
+    expect((getByTitle("obj_model_unpin") as HTMLButtonElement).disabled).toBe(true);
   });
 });

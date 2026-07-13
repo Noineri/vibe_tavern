@@ -3,8 +3,8 @@
  *
  * Pins the zone's own behavior: the collapsed summary reflects the live active
  * task + progress; clicking it expands (writing `objectiveOpen`); the expanded
- * route renders per-task rows; node click cycles status; description click →
- * inline rename; both dispatch `updateObjectiveTaskAction`. The visible-gate
+ * route exposes regenerate/check actions and renders per-task rows; node click
+ * cycles status; description click → inline rename. The visible-gate
  * backstop renders null when objective is off or no active task exists.
  *
  * The header-level concerns this zone plugs INTO — avatar growth, separators,
@@ -14,10 +14,10 @@
  *
  * Runner: vitest (apps/web). The snapshot store + header-zone-expansion store
  * are exercised for real (seeded/reset per test); `useT` + the objective action
- * are mocked.
+ * actions are mocked.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, fireEvent, cleanup } from "@testing-library/react";
+import { render, fireEvent, cleanup, waitFor } from "@testing-library/react";
 import { ObjectiveZone } from "./objective-zone.js";
 import { useSnapshotStore } from "../../../stores/snapshot-store.js";
 import { useHeaderZoneExpansionStore } from "../../../stores/header-zone-expansion.js";
@@ -25,6 +25,8 @@ import type { ObjectiveState } from "../../../api/types.js";
 
 const mocks = vi.hoisted(() => ({
   updateObjectiveTaskAction: vi.fn(),
+  generateObjectiveTasksAction: vi.fn(),
+  checkObjectiveCompletionAction: vi.fn(),
 }));
 
 vi.mock("../../../i18n/context.js", () => ({
@@ -33,6 +35,8 @@ vi.mock("../../../i18n/context.js", () => ({
 
 vi.mock("../../../stores/api-actions/chat-actions.js", () => ({
   updateObjectiveTaskAction: mocks.updateObjectiveTaskAction,
+  generateObjectiveTasksAction: mocks.generateObjectiveTasksAction,
+  checkObjectiveCompletionAction: mocks.checkObjectiveCompletionAction,
 }));
 
 afterEach(() => {
@@ -40,6 +44,8 @@ afterEach(() => {
   useSnapshotStore.setState({ activeChat: null });
   useHeaderZoneExpansionStore.setState({ open: {} });
   mocks.updateObjectiveTaskAction.mockReset();
+  mocks.generateObjectiveTasksAction.mockReset();
+  mocks.checkObjectiveCompletionAction.mockReset();
 });
 
 function seedState(state: ObjectiveState, objectiveEnabled: boolean) {
@@ -72,6 +78,8 @@ const ROUTE: ObjectiveState = {
 describe("ObjectiveZone (INS-6)", () => {
   beforeEach(() => {
     mocks.updateObjectiveTaskAction.mockResolvedValue(undefined);
+    mocks.generateObjectiveTasksAction.mockResolvedValue(undefined);
+    mocks.checkObjectiveCompletionAction.mockResolvedValue(undefined);
   });
 
   it("collapsed: shows the active task + progress and expands on click", () => {
@@ -95,6 +103,20 @@ describe("ObjectiveZone (INS-6)", () => {
     expect(getByText("Find the cave")).toBeTruthy();
     // Verify the zone rendered DOM (not null).
     expect(container.firstChild).not.toBeNull();
+  });
+
+  it("expanded: regenerate and check buttons dispatch the existing objective actions", async () => {
+    seedState(ROUTE, true);
+    useHeaderZoneExpansionStore.setState({ open: { m1: { objectiveOpen: true } } });
+    const { getByTitle } = render(<ObjectiveZone chatId="c1" messageId="m1" />);
+
+    const regenerate = getByTitle("obj_zone_regenerate");
+    fireEvent.click(regenerate);
+    expect(mocks.generateObjectiveTasksAction).toHaveBeenCalledWith("c1");
+    await waitFor(() => expect((regenerate as HTMLButtonElement).disabled).toBe(false));
+
+    fireEvent.click(getByTitle("obj_zone_check"));
+    expect(mocks.checkObjectiveCompletionAction).toHaveBeenCalledWith("c1");
   });
 
   it("expanded: clicking a node cycles the task status via updateObjectiveTaskAction", () => {

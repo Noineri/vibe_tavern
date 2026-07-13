@@ -42,6 +42,8 @@
   "obj_zone_expand": "Показать маршрут цели",
   "obj_zone_collapse": "Свернуть",
   "obj_zone_route": "Маршрут",
+  "obj_zone_regenerate": "Сгенерировать маршрут заново",
+  "obj_zone_check": "Проверить выполнение",
   "obj_model_label": "Модель",
   "obj_use_chat_model": "Использовать модель чата",
   "obj_provider_label": "Провайдер",

@@ -13,8 +13,8 @@
  * the avatar + draw separators — that machinery lives in AssistantContextHeader,
  * NOT here):
  *   • collapsed — one-line summary: [node][progress][active task][chevron].
- *   • expanded  — vertical route: a row per task with a node-state button
- *                 (click = cycle status) and an inline-edit description.
+ *   • expanded  — route actions (regenerate/check) + a row per task with a
+ *                 node-state button (click = cycle status) and inline edit.
  *
  * Render-isolation (CHAT_FRONTEND_REFACTOR_PLAN contract + INSIGHTS_PLAN §6):
  * the snapshot store replaces `activeChat` WHOLESALE whenever any activeChat
@@ -29,11 +29,16 @@
  * objects does NOT work here.
  */
 import { useMemo, useState } from "react";
+import { toast } from "sonner";
 import { brandId, type ChatId } from "@vibe-tavern/domain";
 import { registerMessageSlot, type MessageSlotContext } from "../../../lib/message-slot-registry.js";
 import { useSnapshotStore } from "../../../stores/snapshot-store.js";
 import { useHeaderZoneOpen, useHeaderZoneExpansionStore } from "../../../stores/header-zone-expansion.js";
-import { updateObjectiveTaskAction } from "../../../stores/api-actions/chat-actions.js";
+import {
+  checkObjectiveCompletionAction,
+  generateObjectiveTasksAction,
+  updateObjectiveTaskAction,
+} from "../../../stores/api-actions/chat-actions.js";
 import { useT } from "../../../i18n/context.js";
 import { cn } from "../../../lib/cn.js";
 import { Ic } from "../../shared/icons.js";
@@ -52,6 +57,8 @@ function ObjectiveZone({ chatId, messageId }: { chatId: string; messageId: strin
   const { t } = useT();
   const open = useHeaderZoneOpen(messageId, "objectiveOpen");
   const toggle = useHeaderZoneExpansionStore((s) => s.toggle);
+  const [busy, setBusy] = useState<"generate" | "check" | null>(null);
+  const objectiveChatId = brandId<ChatId>(chatId);
 
   // ── Primitive selectors only (render-isolation — see file header). ──
   const objectiveEnabled = useSnapshotStore((s) => s.activeChat?.insightsConfig?.objectiveEnabled ?? false);
@@ -81,6 +88,18 @@ function ObjectiveZone({ chatId, messageId }: { chatId: string; messageId: strin
     }
   }, [routeBlob]);
 
+  async function run(which: "generate" | "check", action: (id: ChatId) => Promise<void>) {
+    if (busy) return;
+    setBusy(which);
+    try {
+      await action(objectiveChatId);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : t("obj_action_failed"));
+    } finally {
+      setBusy(null);
+    }
+  }
+
   // Backstop: `visible` already gates this, but a state race (toggle flipped
   // while the route is mutating) can momentarily leave no active task.
   if (!objectiveEnabled || !activeId || !activeStatus || !activeDesc) return null;
@@ -105,25 +124,47 @@ function ObjectiveZone({ chatId, messageId }: { chatId: string; messageId: strin
     );
   }
 
-  // ── Expanded: vertical route + per-task inline edit. ──
+  // ── Expanded: route actions + vertical task list + inline edit. ──
   return (
     <div className="flex min-w-0 flex-col gap-1.5">
       <div className="flex items-center gap-1.5">
         <span className="shrink-0 text-accent"><Ic.target /></span>
         <span className="text-[10px] font-semibold uppercase tracking-[0.06em] text-t4">{t("obj_zone_route")}</span>
         <span className="shrink-0 tabular-nums text-t4">{progress}</span>
-        <button
-          type="button"
-          onClick={() => toggle(messageId, "objectiveOpen")}
-          className="ml-auto flex h-5 w-5 items-center justify-center rounded text-t4 transition-colors hover:text-t2"
-          title={t("obj_zone_collapse")}
-        >
-          <Chevron open />
-        </button>
+        <div className="ml-auto flex shrink-0 items-center gap-0.5">
+          <button
+            type="button"
+            onClick={() => void run("generate", generateObjectiveTasksAction)}
+            disabled={busy !== null}
+            className="flex h-7 w-7 items-center justify-center rounded text-t4 transition-colors hover:bg-s2 hover:text-accent disabled:opacity-40 md:h-5 md:w-5"
+            title={t("obj_zone_regenerate")}
+            aria-label={t("obj_zone_regenerate")}
+          >
+            {busy === "generate" ? <ActionSpinner /> : <Ic.regen />}
+          </button>
+          <button
+            type="button"
+            onClick={() => void run("check", checkObjectiveCompletionAction)}
+            disabled={busy !== null || tasks.length === 0}
+            className="flex h-7 w-7 items-center justify-center rounded text-t4 transition-colors hover:bg-s2 hover:text-success-text disabled:opacity-40 md:h-5 md:w-5"
+            title={t("obj_zone_check")}
+            aria-label={t("obj_zone_check")}
+          >
+            {busy === "check" ? <ActionSpinner /> : <Ic.checkCircle />}
+          </button>
+          <button
+            type="button"
+            onClick={() => toggle(messageId, "objectiveOpen")}
+            className="flex h-7 w-7 items-center justify-center rounded text-t4 transition-colors hover:bg-s2 hover:text-t2 md:h-5 md:w-5"
+            title={t("obj_zone_collapse")}
+          >
+            <Chevron open />
+          </button>
+        </div>
       </div>
       <ol className="flex flex-col">
         {tasks.map((task) => (
-          <RouteRow key={task.id} chatId={brandId<ChatId>(chatId)} task={task} />
+          <RouteRow key={task.id} chatId={objectiveChatId} task={task} />
         ))}
       </ol>
     </div>
@@ -201,6 +242,10 @@ function RouteRow({ chatId, task }: { chatId: ChatId; task: ObjectiveTask }) {
       )}
     </li>
   );
+}
+
+function ActionSpinner() {
+  return <span className="h-2.5 w-2.5 animate-spin rounded-full border border-current border-t-transparent" />;
 }
 
 /** Compact status indicator for the collapsed summary (non-interactive there). */

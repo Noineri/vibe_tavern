@@ -280,7 +280,7 @@ function TaskRow({ chatId, index, task }: { chatId: ChatId; index: number; task:
       <button
         type="button"
         onClick={() => void remove()}
-        className="shrink-0 text-t4 opacity-0 transition-opacity hover:text-danger-text group-hover:opacity-100"
+        className="shrink-0 text-t4 transition-opacity hover:text-danger-text md:opacity-0 md:group-hover:opacity-100"
         title={t("obj_delete_task")}
       >
         <Ic.del />
@@ -349,8 +349,14 @@ function ModelSelector({ chatId, state }: { chatId: ChatId; state: ObjectiveStat
   }
 
   const providerOptions = useMemo(() => profiles.map((p) => ({ id: p.id, label: p.name })), [profiles]);
-  // Effective model = the pin, else the profile's default.
-  const effectiveModel = (pinnedModel ?? profile?.defaultModel ?? "").trim();
+  // "Use chat model" is strict: show and use the active chat provider's
+  // default model, ignoring any secondary pin preserved for when the toggle is
+  // turned back off. This mirrors Summary's locked provider+model controls.
+  const effectiveModel = (
+    useChatModel
+      ? (profile?.defaultModel ?? "")
+      : (pinnedModel ?? profile?.defaultModel ?? "")
+  ).trim();
 
   return (
     <div className="border-t border-border pt-3">
@@ -373,7 +379,7 @@ function ModelSelector({ chatId, state }: { chatId: ChatId; state: ObjectiveStat
             value={effectiveModel}
             options={models}
             onChange={(id) => save({ model: id })}
-            disabled={!profileId}
+            disabled={useChatModel || !profileId || loadingModels}
             placeholder={loadingModels ? "…" : t("obj_model_label")}
             searchPlaceholder={t("obj_model_label")}
             className="flex-1"
@@ -381,12 +387,12 @@ function ModelSelector({ chatId, state }: { chatId: ChatId; state: ObjectiveStat
           <button
             type="button"
             className={cn(
-              "flex h-8 w-8 shrink-0 items-center justify-center rounded-md border transition-colors",
+              "flex h-8 w-8 shrink-0 items-center justify-center rounded-md border transition-colors disabled:pointer-events-none disabled:opacity-40",
               pinnedModel ? "border-accent bg-accent-dim text-accent" : "border-border text-t4 hover:text-t3",
             )}
             title={pinnedModel ? t("obj_model_unpin") : t("obj_model_pin")}
             onClick={() => save({ model: pinnedModel ? null : (effectiveModel || null) })}
-            disabled={!effectiveModel}
+            disabled={useChatModel || !effectiveModel}
           >
             {pinnedModel ? <Ic.starFilled /> : <Ic.star />}
           </button>

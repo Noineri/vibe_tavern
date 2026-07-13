@@ -426,10 +426,10 @@ export class ObjectiveService {
   /**
    * Resolve the insight (generate/check) provider + model from the stored
    * ObjectiveState config — mirrors {@link ChatSummaryService.triggerAutoSummary}'s
-   * resolution: `useChatModel` → the chat's active profile; else the pinned
-   * `providerProfileId`. The stored `model` overrides the profile's
-   * `defaultModel` in either mode (the "pin"). Returns null when no usable
-   * profile/model is configured (the caller logs + skips).
+   * resolution: `useChatModel` → the chat's active profile + default model;
+   * otherwise the pinned `providerProfileId` + optional secondary model override.
+   * The secondary pin is preserved but ignored while chat-model mode is on.
+   * Returns null when no usable profile/model is configured (caller skips).
    */
   async resolveInsightProvider(
     state: ObjectiveState,
@@ -438,7 +438,12 @@ export class ObjectiveService {
       ? await this.providerProfiles.resolveActiveProviderProfile()
       : (state.providerProfileId ? await this.providerProfiles.getProviderProfile(state.providerProfileId) : null);
     if (!profile?.id) return null;
-    const model = state.model?.trim() || profile.defaultModel?.trim();
+    // "Use chat model" means the active profile AND its chat/default model;
+    // a secondary pin is preserved in state for toggling back, but must not
+    // silently override the chat model while this mode is enabled.
+    const model = state.useChatModel
+      ? profile.defaultModel?.trim()
+      : (state.model?.trim() || profile.defaultModel?.trim());
     if (!model) return null;
     return { profile: profile as NonNullable<Awaited<ReturnType<ProviderProfileService["resolveActiveProviderProfile"]>>>, model };
   }

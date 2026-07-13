@@ -411,6 +411,34 @@ describe("ObjectiveService.triggerAutoCheck (INS-4 orchestration)", () => {
     expect(t.readState().tasks[0].status).toBe(OBJECTIVE_TASK_STATUS.pending);
   });
 
+  it("ignores a stored secondary-model pin while using the chat model", async () => {
+    let activeCalls = 0;
+    let pinnedCalls = 0;
+    const providerProfiles = {
+      resolveActiveProviderProfile: async () => {
+        activeCalls += 1;
+        return { id: "prof_active", defaultModel: "chat-model" };
+      },
+      getProviderProfile: async () => {
+        pinnedCalls += 1;
+        return { id: "prof_pinned", defaultModel: "secondary-default" };
+      },
+    } as never;
+    const service = new ObjectiveService({} as StoreContainer, {} as never, providerProfiles, async () => ({ text: "" }) as never, async () => "");
+
+    const resolved = await service.resolveInsightProvider({
+      ...defaultObjectiveState(),
+      useChatModel: true,
+      providerProfileId: "prof_pinned",
+      model: "secondary-model",
+    });
+
+    expect(activeCalls).toBe(1);
+    expect(pinnedCalls).toBe(0);
+    expect(resolved?.profile.id).toBe("prof_active");
+    expect(resolved?.model).toBe("chat-model");
+  });
+
   it("resolves a separately pinned provider/model instead of the active chat profile", async () => {
     let activeCalls = 0;
     let pinnedCalls = 0;
