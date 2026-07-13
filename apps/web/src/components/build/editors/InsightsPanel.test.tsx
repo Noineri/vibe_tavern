@@ -15,7 +15,7 @@
  * is covered, not stubbed.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, fireEvent, cleanup } from "@testing-library/react";
+import { render, fireEvent, cleanup, waitFor } from "@testing-library/react";
 import { InsightsPanel } from "./InsightsPanel.js";
 
 // Hoisted mock state — vi.mock factories are hoisted above imports, so the
@@ -121,5 +121,39 @@ describe("InsightsPanel (INS-2)", () => {
     expect(mocks.updateInsightsConfigAction).toHaveBeenCalledWith("chat_7", {
       insightsConfig: { trackerEnabled: true },
     });
+  });
+
+  it("flips optimistically without dimming either row while the PATCH is pending", () => {
+    mocks.activeChat = {
+      id: "chat_1",
+      insightsConfig: { objectiveEnabled: false, trackerEnabled: false },
+    };
+    mocks.updateInsightsConfigAction.mockImplementation(() => new Promise<void>(() => {}));
+
+    const { container, getAllByRole } = render(<InsightsPanel />);
+    const switches = getAllByRole("switch");
+    fireEvent.click(switches[0]);
+
+    // The selected thumb responds immediately instead of waiting for the RPC.
+    expect(switches[0].getAttribute("aria-checked")).toBe("true");
+    expect(switches[1].getAttribute("aria-checked")).toBe("false");
+    // The global saving lock may block another click, but it must be invisible:
+    // previously both feature rows received opacity-60 and flashed together.
+    expect(container.querySelector(".opacity-60")).toBeNull();
+  });
+
+  it("rolls the optimistic value back to store state when the PATCH fails", async () => {
+    mocks.activeChat = {
+      id: "chat_1",
+      insightsConfig: { objectiveEnabled: false, trackerEnabled: false },
+    };
+    mocks.updateInsightsConfigAction.mockRejectedValue(new Error("offline"));
+
+    const { getAllByRole } = render(<InsightsPanel />);
+    const objectiveSwitch = getAllByRole("switch")[0];
+    fireEvent.click(objectiveSwitch);
+    expect(objectiveSwitch.getAttribute("aria-checked")).toBe("true");
+
+    await waitFor(() => expect(objectiveSwitch.getAttribute("aria-checked")).toBe("false"));
   });
 });

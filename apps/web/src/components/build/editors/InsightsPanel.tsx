@@ -23,15 +23,20 @@ import { updateInsightsConfigAction } from "../../../stores/api-actions/chat-act
  * gated on `objectiveEnabled` / `trackerEnabled`.
  *
  * The panel reads the live chat config from the snapshot store and writes each
- * toggle through the action, which round-trips the whole snapshot back
- * (optimistic via the store + confirmed by the server response). A `saving`
- * guard disables both toggles during the in-flight PATCH so a rapid double-flip
- * can't desync the merge (the adapter merges partial config — see INS-1b).
+ * toggle through the action, which round-trips the whole snapshot back. A local
+ * pending patch flips the selected Toggle immediately, then yields to the
+ * confirmed snapshot (or rolls back to store state on failure). The same pending
+ * state invisibly locks both toggles so rapid/concurrent PATCH responses cannot
+ * overwrite each other; feature rows never dim while the network is in flight.
  */
 export function InsightsPanel() {
   const { t } = useT();
   const activeChat = useSnapshotStore((s) => s.activeChat);
-  const [saving, setSaving] = useState<"objective" | "tracker" | null>(null);
+  const [pending, setPending] = useState<{
+    chatId: ChatId;
+    which: "objective" | "tracker";
+    patch: { objectiveEnabled?: boolean; trackerEnabled?: boolean };
+  } | null>(null);
 
   if (!activeChat) {
     // Build Mode can be opened standalone (character editor, no active chat).
@@ -54,17 +59,23 @@ export function InsightsPanel() {
   // so reading `activeChat.id` into a `const` here is what gives the closure a
   // sound `ChatId` rather than `ChatId | null`.
   const chatId: ChatId = activeChat.id;
-  const objectiveEnabled = activeChat.insightsConfig?.objectiveEnabled ?? false;
-  const trackerEnabled = activeChat.insightsConfig?.trackerEnabled ?? false;
+  const pendingPatch = pending?.chatId === chatId ? pending.patch : null;
+  const objectiveEnabled = pendingPatch?.objectiveEnabled
+    ?? activeChat.insightsConfig?.objectiveEnabled
+    ?? false;
+  const trackerEnabled = pendingPatch?.trackerEnabled
+    ?? activeChat.insightsConfig?.trackerEnabled
+    ?? false;
 
   async function persist(patch: { objectiveEnabled?: boolean; trackerEnabled?: boolean }, which: "objective" | "tracker") {
-    setSaving(which);
+    if (pending) return;
+    setPending({ chatId, which, patch });
     try {
       await updateInsightsConfigAction(chatId, { insightsConfig: patch });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : t("insights_save_failed"));
     } finally {
-      setSaving(null);
+      setPending((current) => current?.chatId === chatId && current.which === which ? null : current);
     }
   }
 
@@ -75,7 +86,7 @@ export function InsightsPanel() {
         title={t("insights_objective_title")}
         desc={t("insights_objective_desc")}
         checked={objectiveEnabled}
-        disabled={saving !== null}
+        disabled={pending !== null}
         onChange={(v) => void persist({ objectiveEnabled: v }, "objective")}
       />
       {objectiveEnabled && <ObjectiveConfig chatId={chatId} />}
@@ -84,7 +95,7 @@ export function InsightsPanel() {
         title={t("insights_tracker_title")}
         desc={t("insights_tracker_desc")}
         checked={trackerEnabled}
-        disabled={saving !== null}
+        disabled={pending !== null}
         onChange={(v) => void persist({ trackerEnabled: v }, "tracker")}
       />
       {!objectiveEnabled && !trackerEnabled && (
@@ -112,7 +123,7 @@ function FeatureToggleRow({ icon, title, desc, checked, disabled, onChange }: {
 }) {
   return (
     <div
-      className={`flex items-start gap-3 rounded-lg border border-border bg-s2 p-4 transition-colors hover:border-border2 ${disabled ? "cursor-default opacity-60" : "cursor-pointer"}`}
+      className={`flex items-start gap-3 rounded-lg border border-border bg-s2 p-4 transition-colors hover:border-border2 ${disabled ? "cursor-default" : "cursor-pointer"}`}
       onClick={disabled ? undefined : () => onChange(!checked)}
     >
       <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-accent-dim text-accent">
