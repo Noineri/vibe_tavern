@@ -1,0 +1,118 @@
+/**
+ * InsightsPanel — INS-2 characterization.
+ *
+ * Pins three things:
+ *  1. The no-chat empty state renders (Build Mode opened standalone — Insights
+ *     are chat-level config, so dead toggles must not render).
+ *  2. The two toggle rows reflect the live chat config (objective / tracker).
+ *  3. Flipping a toggle dispatches the right partial patch through the INS-1b
+ *     pipe — `{ insightsConfig: { objectiveEnabled } }` / `{ trackerEnabled }` —
+ *     so the adapter-side merge preserves the other toggle.
+ *
+ * Runner: vitest (apps/web — see vitest.config.ts; vi.mock is file-scoped).
+ * The snapshot store + the action are mocked; the real Toggle (Radix Switch) is
+ * exercised end-to-end so the click → onCheckedChange → onChange → persist path
+ * is covered, not stubbed.
+ */
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { render, fireEvent, cleanup } from "@testing-library/react";
+import { InsightsPanel } from "./InsightsPanel.js";
+
+// Hoisted mock state — vi.mock factories are hoisted above imports, so the
+// shared objects they close over must be created with vi.hoisted too.
+const mocks = vi.hoisted(() => ({
+  activeChat: null as
+    | null
+    | { id: string; insightsConfig: { objectiveEnabled: boolean; trackerEnabled: boolean } },
+  updateInsightsConfigAction: vi.fn(),
+}));
+
+vi.mock("../../../i18n/context.js", () => ({
+  useT: () => ({
+    // Return the key verbatim — assertions check for key strings.
+    t: (k: string) => k,
+    tDynamic: (k: string) => k,
+    locale: "en",
+    setLocale: () => {},
+    ready: true,
+  }),
+}));
+
+vi.mock("../../../stores/snapshot-store.js", () => ({
+  // The component subscribes with a selector; invoke it against a stub state.
+  useSnapshotStore: (selector: (s: { activeChat: typeof mocks.activeChat }) => unknown) =>
+    selector({ activeChat: mocks.activeChat }),
+}));
+
+vi.mock("../../../stores/api-actions/chat-actions.js", () => ({
+  updateInsightsConfigAction: mocks.updateInsightsConfigAction,
+}));
+
+afterEach(() => {
+  cleanup();
+  mocks.activeChat = null;
+  mocks.updateInsightsConfigAction.mockReset();
+});
+
+describe("InsightsPanel (INS-2)", () => {
+  beforeEach(() => {
+    mocks.updateInsightsConfigAction.mockResolvedValue(undefined);
+  });
+
+  it("renders the no-chat empty state when no chat is active", () => {
+    mocks.activeChat = null;
+    const { getByText, queryByRole } = render(<InsightsPanel />);
+    expect(getByText("insights_no_chat_title")).toBeTruthy();
+    // No toggle rows in the empty state.
+    expect(queryByRole("switch")).toBeNull();
+  });
+
+  it("renders both toggles unchecked when the config is all-off (default)", () => {
+    mocks.activeChat = {
+      id: "chat_1",
+      insightsConfig: { objectiveEnabled: false, trackerEnabled: false },
+    };
+    const { getByText, getAllByRole } = render(<InsightsPanel />);
+    expect(getByText("insights_objective_title")).toBeTruthy();
+    expect(getByText("insights_tracker_title")).toBeTruthy();
+    const switches = getAllByRole("switch");
+    expect(switches).toHaveLength(2);
+    expect(switches[0]).toHaveAttribute("aria-checked", "false");
+    expect(switches[1]).toHaveAttribute("aria-checked", "false");
+  });
+
+  it("reflects the live config — objective on, tracker off", () => {
+    mocks.activeChat = {
+      id: "chat_1",
+      insightsConfig: { objectiveEnabled: true, trackerEnabled: false },
+    };
+    const { getAllByRole } = render(<InsightsPanel />);
+    const switches = getAllByRole("switch");
+    expect(switches[0]).toHaveAttribute("aria-checked", "true");
+    expect(switches[1]).toHaveAttribute("aria-checked", "false");
+  });
+
+  it("flipping the Objective toggle dispatches the objective-only patch", () => {
+    mocks.activeChat = {
+      id: "chat_1",
+      insightsConfig: { objectiveEnabled: false, trackerEnabled: false },
+    };
+    const { getAllByRole } = render(<InsightsPanel />);
+    fireEvent.click(getAllByRole("switch")[0]);
+    expect(mocks.updateInsightsConfigAction).toHaveBeenCalledWith("chat_1", {
+      insightsConfig: { objectiveEnabled: true },
+    });
+  });
+
+  it("flipping the Tracker toggle dispatches the tracker-only patch", () => {
+    mocks.activeChat = {
+      id: "chat_7",
+      insightsConfig: { objectiveEnabled: true, trackerEnabled: false },
+    };
+    const { getAllByRole } = render(<InsightsPanel />);
+    fireEvent.click(getAllByRole("switch")[1]);
+    expect(mocks.updateInsightsConfigAction).toHaveBeenCalledWith("chat_7", {
+      insightsConfig: { trackerEnabled: true },
+    });
+  });
+});

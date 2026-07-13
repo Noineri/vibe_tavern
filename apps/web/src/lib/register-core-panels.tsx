@@ -2,6 +2,7 @@ import { registerBuildPanel } from "../lib/build-panel-registry.js";
 import { Icons } from "../components/shared/icons.js";
 import { CharacterForm } from "../components/build/editors/CharacterForm.js";
 import { LorebookEditor } from "../components/build/editors/LorebookEditor.js";
+import { InsightsPanel } from "../components/build/editors/InsightsPanel.js";
 
 registerBuildPanel({
   id: "character",
@@ -37,5 +38,17 @@ registerBuildPanel({
   render() {
     // Trace panel is complex — handled via BuildModeInner wrapper
     return null;
+  },
+});
+
+registerBuildPanel({
+  id: "insights",
+  icon: <Icons.Target />,
+  labelKey: "sidebar_build_insights",
+  render() {
+    // InsightsPanel reads the live chat config from the snapshot store
+    // directly, so it needs nothing from the BuildPanelContext (it shows an
+    // empty state when no chat is active).
+    return <InsightsPanel />;
   },
 });
