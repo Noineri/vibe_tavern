@@ -120,3 +120,148 @@ describe("BackgroundTaskLocks", () => {
     expect(calls).toBe(2);
   });
 });
+
+describe("BackgroundTaskLocks.runExclusiveTrailing", () => {
+  /** Build a sequence of deferred gates the test can release one at a time, so a
+   *  task parks once per invocation and the test controls when each run ends. */
+  function gateSequence() {
+    const gates: Array<{ promise: Promise<void>; resolve: () => void }> = [];
+    const next = () => {
+      const g = deferred();
+      gates.push(g);
+      return g.promise;
+    };
+    return { gates, next };
+  }
+
+  test("marks a dropped trigger as dirty and re-runs the task once before releasing", async () => {
+    const locks = new BackgroundTaskLocks();
+    const { gates, next } = gateSequence();
+    const invocations: number[] = [];
+    let n = 0;
+    const task = async () => {
+      n += 1;
+      invocations.push(n);
+      await next();
+    };
+
+    const first = locks.runExclusiveTrailing("k", task, () => {});
+    await Promise.resolve(); // acquire + park on gate[0]
+
+    // A trigger arriving mid-flight is dropped (returns false) and sets dirty.
+    const dropped = await locks.runExclusiveTrailing("k", task, () => {});
+    expect(dropped).toBe(false);
+    expect(locks.has("k")).toBe(true);
+
+    // Releasing gate[0] lets the run finish; the loop sees dirty → re-runs.
+    gates[0].resolve();
+    while (gates.length < 2) await Promise.resolve(); // wait for the re-run to park
+    // No further trigger → releasing gate[1] ends the loop.
+    gates[1].resolve();
+    await first;
+
+    expect(invocations).toEqual([1, 2]); // exactly one trailing re-run
+    expect(locks.has("k")).toBe(false);
+  });
+
+  test("does not re-run when no trigger arrived during the run", async () => {
+    const locks = new BackgroundTaskLocks();
+    const { gates, next } = gateSequence();
+    let n = 0;
+    const task = async () => {
+      n += 1;
+      await next();
+    };
+
+    const first = locks.runExclusiveTrailing("k", task, () => {});
+    await Promise.resolve();
+    expect(gates).toHaveLength(1);
+
+    gates[0].resolve(); // clean finish — no dirty flag set
+    await first;
+
+    expect(n).toBe(1);
+    expect(locks.has("k")).toBe(false);
+  });
+
+  test("the trailing re-run re-invokes the closure, which re-reads fresh state", async () => {
+    // The correctness guarantee for forward-injected tasks: the latest event is
+    // evaluated, because the re-run calls the SAME closure and that closure
+    // re-reads state on each invocation (it does NOT close over a snapshot).
+    const locks = new BackgroundTaskLocks();
+    const { gates, next } = gateSequence();
+    let stateValue = "stale";
+    const seen: string[] = [];
+    const task = async () => {
+      seen.push(stateValue);
+      await next();
+    };
+
+    const first = locks.runExclusiveTrailing("k", task, () => {});
+    await Promise.resolve(); // first run captured "stale"
+
+    // Drop a trigger, THEN mutate the state the closure reads.
+    await locks.runExclusiveTrailing("k", task, () => {});
+    stateValue = "fresh";
+
+    gates[0].resolve();
+    while (gates.length < 2) await Promise.resolve();
+    gates[1].resolve();
+    await first;
+
+    // The re-run re-read → saw the mutated (latest) value, not the stale one.
+    expect(seen).toEqual(["stale", "fresh"]);
+  });
+
+  test("forwards errors to onError and still re-runs when a trigger arrived during the failed run", async () => {
+    const locks = new BackgroundTaskLocks();
+    const { gates, next } = gateSequence();
+    const errors: unknown[] = [];
+    let n = 0;
+    const task = async () => {
+      n += 1;
+      await next();
+      if (n === 1) throw new Error("boom");
+    };
+
+    const first = locks.runExclusiveTrailing("k", task, (e) => errors.push(e));
+    await Promise.resolve(); // run 1 parked on gate[0]
+
+    // Drop a trigger during the (soon-to-fail) first run.
+    await locks.runExclusiveTrailing("k", task, () => {});
+
+    gates[0].resolve(); // run 1 resumes → throws → onError; dirty set → re-run
+    while (gates.length < 2) await Promise.resolve();
+    gates[1].resolve(); // run 2 succeeds; no dirty → exit
+    await first;
+
+    expect(n).toBe(2);
+    expect(errors).toHaveLength(1);
+    expect((errors[0] as Error).message).toBe("boom");
+    expect(locks.has("k")).toBe(false);
+  });
+
+  test("coalesces a burst of dropped triggers into a single re-run", async () => {
+    const locks = new BackgroundTaskLocks();
+    const { gates, next } = gateSequence();
+    let n = 0;
+    const task = async () => {
+      n += 1;
+      await next();
+    };
+
+    const first = locks.runExclusiveTrailing("k", task, () => {});
+    await Promise.resolve();
+    // Burst of N drops — all coalesce into one dirty flag → one re-run.
+    for (let i = 0; i < 5; i++) {
+      expect(await locks.runExclusiveTrailing("k", task, () => {})).toBe(false);
+    }
+
+    gates[0].resolve();
+    while (gates.length < 2) await Promise.resolve();
+    gates[1].resolve();
+    await first;
+
+    expect(n).toBe(2); // initial run + exactly one trailing re-run
+  });
+});
