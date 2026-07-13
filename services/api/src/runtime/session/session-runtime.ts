@@ -769,7 +769,7 @@ export function pickBootstrapChatId<T extends string>(
 	private async assemblePrompt(
 		chatId: ChatId,
 		branchId?: ChatBranchId,
-		options?: { excludeMessageIds?: MessageId[]; model?: string; recentMessageLimit?: number; mode?: "chat" | "continue" | "regenerate" | "tool_call"; summary?: boolean; contextBudget?: number | null; responseReserve?: number; presetId?: PromptPresetId },
+		options?: { excludeMessageIds?: MessageId[]; model?: string; recentMessageLimit?: number; summary?: boolean; contextBudget?: number | null; responseReserve?: number; presetId?: PromptPresetId },
 	) {
 		void await this.getActiveProviderProfile();
 		const strategy = await this.resolveChatModeStrategy(chatId);
@@ -781,7 +781,6 @@ export function pickBootstrapChatId<T extends string>(
 			model: options?.model ?? SYSTEM_RESOURCE_ID.unresolvedModel,
 			excludeMessageIds: options?.excludeMessageIds,
 			recentMessageLimit: options?.recentMessageLimit,
-			mode: options?.mode,
 			summary: options?.summary,
 			contextBudget: options?.contextBudget ?? null,
 			responseReserve: options?.responseReserve,

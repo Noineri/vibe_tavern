@@ -125,7 +125,6 @@ describe("SessionRuntime summary assembly", () => {
       excludeMessageIds: ["msg_1"],
       model: "summary-model",
       recentMessageLimit: 20,
-      mode: "regenerate" as const,
       summary: true,
       contextBudget: 4096,
       responseReserve: 512,
@@ -180,7 +179,7 @@ describe("PromptAssemblyService summary preparation", () => {
       { id: "msg_4", position: 3, role: "assistant", content: "ten eleven twelve", branchId: "branch_1" },
     ];
     let summaryLoads = 0;
-    let scriptMode: string | null = null;
+    let scriptCalled = false;
     const stores = {
       chats: {
         getById: async () => ({ id: "chat_1", characterId: "char_1", personaId: "persona_1", promptPresetId: "preset_1", activeBranchId: "branch_1", messageHistoryLimit: 0 }),
@@ -197,9 +196,9 @@ describe("PromptAssemblyService summary preparation", () => {
       getPromptPreset: async () => ({ id: "preset_1", name: "P", text: "preset words that are excluded from the summary output", summary: "Summarize this history.", jailbreak: "jailbreak words that are excluded from the summary output", tools: "", prefill: "", authorsNote: "", authorsNoteDepth: 0 }),
       listActiveLoreEntries: async () => [{ id: "lore_1", title: "Lore", content: "lore words that are excluded from the summary output", priority: 1 }],
       listRetrievedMemories: async () => [],
-      executeScripts: async (input) => {
-        scriptMode = input.mode;
-        return { personality: input.characterRecord.personality ?? "", scenario: input.characterRecord.scenario ?? "", injectedMessages: [], errors: [], scriptRuns: [] };
+      executeScripts: async () => {
+        scriptCalled = true;
+        return { personality: "", scenario: "", injectedMessages: [], errors: [], scriptRuns: [] };
       },
       getToolInstructions: () => null,
     };
@@ -211,7 +210,7 @@ describe("PromptAssemblyService summary preparation", () => {
       const history = result.prompt.layers.find((layer) => layer.id === "recent_history");
 
       expect(summaryLoads).toBe(0);
-      expect(scriptMode).toBe("summary");
+      expect(scriptCalled).toBe(true);
       expect(history?.text).toBe("USER: seven eight nine\n\nASSISTANT: ten eleven twelve");
       expect(result.prompt.layers.map((layer) => layer.id)).toEqual([
         "persona",

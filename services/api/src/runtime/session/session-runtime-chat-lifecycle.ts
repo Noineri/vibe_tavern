@@ -62,7 +62,6 @@ export interface ChatLifecycleRuntimeDeps {
 			excludeMessageIds?: import("@vibe-tavern/domain").MessageId[];
 			model?: string;
 			recentMessageLimit?: number;
-			mode?: "chat" | "continue" | "regenerate" | "tool_call";
 			summary?: boolean;
 			contextBudget?: number | null;
 			responseReserve?: number;

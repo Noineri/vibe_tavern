@@ -104,7 +104,6 @@ export interface PromptAssemblyResolver {
     };
     messages: Array<{ role: string; content: string }>;
     activeLoreEntries: LoreEntry[];
-    mode: string;
     persona?: { name: string; description: string };
   }): Promise<{
     personality: string;
@@ -135,7 +134,6 @@ export interface AssemblePromptForChatInput {
   contextBudget?: number | null;
   /** Tokens reserved for the model's response. Subtracted from contextBudget during compaction. */
   responseReserve?: number;
-  mode?: "chat" | "continue" | "regenerate" | "tool_call";
   /** Summary preparation is source-loading policy, not a pipeline mode. */
   summary?: boolean;
   /**
@@ -278,7 +276,6 @@ export class PromptAssemblyService {
       },
       messages: recentMessages.map(m => ({ role: m.role, content: m.content })),
       activeLoreEntries,
-      mode: input.summary ? "summary" : (input.mode ?? "chat"),
       persona: persona ? { name: persona.name, description: persona.description } : undefined,
     });
 

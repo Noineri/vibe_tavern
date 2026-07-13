@@ -222,7 +222,6 @@ export class StaticPromptResolver implements PromptAssemblyResolver {
 		};
 		messages: Array<{ role: string; content: string }>;
 		activeLoreEntries: LoreEntry[];
-		mode: string;
 		/** Effective persona for the turn. Passed through to the sandbox as
 		 *  `context.persona` (read-only). Optional — absent when no persona is
 		 *  resolved, in which case scripts see `context.persona` as undefined. */
