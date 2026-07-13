@@ -70,7 +70,7 @@ export function InsightsPanel() {
   return (
     <div className="mx-auto max-w-2xl space-y-3 p-1">
       <FeatureToggleRow
-        icon={<Ic.clipboard />}
+        icon={<Ic.checkCircle />}
         title={t("insights_objective_title")}
         desc={t("insights_objective_desc")}
         checked={objectiveEnabled}
@@ -78,7 +78,7 @@ export function InsightsPanel() {
         onChange={(v) => void persist({ objectiveEnabled: v }, "objective")}
       />
       <FeatureToggleRow
-        icon={<Ic.checkCircle />}
+        icon={<Ic.clipboard />}
         title={t("insights_tracker_title")}
         desc={t("insights_tracker_desc")}
         checked={trackerEnabled}

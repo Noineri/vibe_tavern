@@ -95,9 +95,9 @@ export const Ic = {
   // a newer GitHub release is available. Stroke-only so it inherits the
   // accent color in every theme.
   arrowUpCircle:()=><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="8" cy="8" r="6.5"/><line x1="8" y1="11" x2="8" y2="5"/><polyline points="5.5 7.5 8 5 10.5 7.5"/></svg>,
-  // Clipboard with list lines — the Objective Tracker section icon (INS-2).
+  // Clipboard with list lines — the Scene Tracker section icon (INS-2).
   clipboard:()=><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="5" y="1.5" width="6" height="2.5" rx="0.5"/><path d="M10.5 2.5h2v12h-9v-12h2"/><path d="M5.5 8h5M5.5 11h3"/></svg>,
-  // Checkmark in a circle — the Scene Tracker section icon (INS-2).
+  // Checkmark in a circle — the Objective Tracker section icon (INS-2).
   checkCircle:()=><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="8" cy="8" r="6"/><polyline points="5 8 7 10 11 6"/></svg>,
 };
 
