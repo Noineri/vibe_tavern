@@ -125,19 +125,21 @@ export function AssistantContextHeader(props: AssistantContextHeaderProps) {
 
 // ────────────────────────────────────────────────────────────────────────────
 // Identity avatar — a PERSISTENT element whose size transitions smoothly
-// between the compact circle (h-11 w-11 rounded-full) and the expanded portrait
-// (h-28 w-28 rounded-2xl). Same element across states so the CSS transition
+// between the compact circle (h-11 w-11 rounded-[50%]) and the expanded portrait
+// (h-28 w-28 rounded-2xl). The finite 50% radius interpolates smoothly; using
+// rounded-full (9999px) would stay visually clamped to a circle until the end.
+// Same element across states so the CSS transition
 // fires (no unmount/remount). On mobile `portrait` is always false.
 // ────────────────────────────────────────────────────────────────────────────
 
 function HeaderAvatar({ author, portrait }: { author: MessageShellAuthorInfo; portrait: boolean }) {
   return (
     <div className={cn(
-      "shrink-0 overflow-hidden bg-s3 font-body italic text-t3 transition-all duration-300 ease-out [&_img]:h-full [&_img]:w-full [&_img]:object-cover",
+      "shrink-0 overflow-hidden bg-s3 font-body italic text-t3 transition-[width,height,border-radius,font-size] duration-300 ease-out [&_img]:h-full [&_img]:w-full [&_img]:object-cover",
       "flex items-center justify-center",
       portrait
         ? "h-28 w-28 rounded-2xl text-[calc(var(--ui-fs)+5px)]"
-        : "h-11 w-11 rounded-full text-[calc(var(--ui-fs)+1px)]",
+        : "h-11 w-11 rounded-[50%] text-[calc(var(--ui-fs)+1px)]",
     )}>
       {author.avatarNode ?? (
         author.avatarSrc

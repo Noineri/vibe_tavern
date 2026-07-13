@@ -120,7 +120,7 @@ describe("AssistantContextHeader — 0-zone fallback (identity-only)", () => {
     // Avatar present, compact size.
     const avatar = avatarEl(container);
     expect(avatar.className).toContain("h-11");
-    expect(avatar.className).toContain("rounded-full");
+    expect(avatar.className).toContain("rounded-[50%]");
 
     // Name present.
     expect(container.textContent).toContain("Aria");
@@ -169,7 +169,7 @@ describe("AssistantContextHeader — ≥1 zone adaptive (mock objective zone)", 
     // Avatar transitioned to portrait.
     expect(avatar.className).toContain("h-28");
     expect(avatar.className).toContain("rounded-2xl");
-    expect(avatar.className).not.toContain("rounded-full");
+    expect(avatar.className).not.toContain("rounded-[50%]");
 
     // Expanded content now visible; collapsed summary gone.
     expect(container.querySelector('[data-testid="obj-expanded"]')).not.toBeNull();
@@ -187,7 +187,7 @@ describe("AssistantContextHeader — ≥1 zone adaptive (mock objective zone)", 
 
     fireEvent.click(toggle); // collapse
     expect(avatar.className).toContain("h-11");
-    expect(avatar.className).toContain("rounded-full");
+    expect(avatar.className).toContain("rounded-[50%]");
   });
 
   test("avatar-less character: expanding a zone does NOT grow the avatar (no empty portrait column)", () => {
