@@ -183,7 +183,7 @@ export interface PromptAssemblyContext {
     toolInstructions?: string | null;
   };
   /** Insights — Objective Tracker: the active task injected as an `in_chat` layer (priority 180). `null`/undefined = objective off or no active task. */
-  objectiveTask?: { description: string; injectPrompt: string } | null;
+  objectiveTask?: { description: string; injectPrompt: string; injectionDepth: number } | null;
   /** Insights — Scene Tracker: the latest scene state (formatted text) injected as an `in_chat` layer (priority 175). `null`/undefined = tracker off or no scene yet. */
   sceneState?: { text: string } | null;
   config?: {

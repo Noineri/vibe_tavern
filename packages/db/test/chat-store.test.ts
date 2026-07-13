@@ -799,3 +799,48 @@ describe("ChatStore — insights config (INS-1b)", () => {
     expect(reloaded?.insightsConfig).toEqual({ objectiveEnabled: false });
   });
 });
+
+describe("ChatStore — objective state (INS-3)", () => {
+  let db: Awaited<ReturnType<typeof createTestDb>>;
+  let store: ChatStore;
+
+  beforeEach(async () => {
+    db = await createTestDb();
+    bootstrap(db);
+    clockTick = 0;
+    idCounters = new Map();
+    store = new ChatStore(db, { clock: testClock, idGenerator: testIdGen });
+  });
+
+  test("a new chat defaults to an empty objective state", async () => {
+    const chat = await store.createChat({ characterId: "char_1", title: "c", promptPresetId: "preset_1" });
+    expect(chat.insightsObjectiveState).toEqual({});
+  });
+
+  test("updateInsightsObjectiveState round-trips and persists across getById", async () => {
+    const chat = await store.createChat({ characterId: "char_1", title: "c", promptPresetId: "preset_1" });
+    const state = {
+      objectiveDescription: "Defeat the warlord",
+      tasks: [{ id: "t1", description: "Reach the city", status: "pending" }],
+      autoCheckFrequency: 0,
+      injectionDepth: 1,
+      generatePrompt: "",
+      checkPrompt: "",
+      injectPrompt: "",
+    };
+    const updated = await store.updateInsightsObjectiveState(chat.id, { insightsObjectiveState: state });
+    expect(updated.insightsObjectiveState).toEqual(state);
+    const reloaded = await store.getById(chat.id);
+    expect(reloaded?.insightsObjectiveState).toEqual(state);
+  });
+
+  test("updateInsightsObjectiveState replaces wholesale (the service computes the full next state)", async () => {
+    const chat = await store.createChat({ characterId: "char_1", title: "c", promptPresetId: "preset_1" });
+    await store.updateInsightsObjectiveState(chat.id, { insightsObjectiveState: { objectiveDescription: "A", tasks: [], autoCheckFrequency: 0, injectionDepth: 1, generatePrompt: "", checkPrompt: "", injectPrompt: "" } });
+    // A second write REPLACES (the service always writes the computed full
+    // state) — old keys do not linger.
+    await store.updateInsightsObjectiveState(chat.id, { insightsObjectiveState: { objectiveDescription: "B", tasks: [], autoCheckFrequency: 5, injectionDepth: 2, generatePrompt: "g", checkPrompt: "c", injectPrompt: "i" } });
+    const reloaded = await store.getById(chat.id);
+    expect(reloaded?.insightsObjectiveState).toEqual({ objectiveDescription: "B", tasks: [], autoCheckFrequency: 5, injectionDepth: 2, generatePrompt: "g", checkPrompt: "c", injectPrompt: "i" });
+  });
+});

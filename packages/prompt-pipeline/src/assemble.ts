@@ -630,6 +630,27 @@ function buildLayers(context: PromptAssemblyContext, resolver: PositionResolver)
     );
   }
 
+  // Insights — Objective Tracker (INSIGHTS_PLAN): inject the active task as an
+  // `in_chat` layer at priority 180, default depth 1 (just before the latest
+  // user message) so the model sees the current objective as the thing to do
+  // now. Absent entirely when objective is off or there is no active task.
+  // Mirrors the authorsNote / custom-injection depth pattern: the layer is built
+  // `in_chat`, then injectionDepth is assigned post-hoc on the mutable layer.
+  if (context.objectiveTask) {
+    const task = context.objectiveTask;
+    const objectiveLayer = makeLayer({
+      id: PROMPT_LAYER_ID.objectiveTask,
+      sourceType: PROMPT_LAYER_SOURCE_TYPE.objectiveTask,
+      sourceId: PROMPT_LAYER_ID.objectiveTask,
+      sourceName: "Objective Task",
+      position: "in_chat",
+      priority: PROMPT_LAYER_PRIORITY.objectiveTask,
+      text: PROMPT_FORMAT.objectiveTask(task.injectPrompt, task.description),
+    });
+    objectiveLayer.injectionDepth = Math.max(0, task.injectionDepth ?? 1);
+    layers.push(objectiveLayer);
+  }
+
   for (const memory of [...(context.memory?.retrieval ?? [])].sort((a, b) => b.score - a.score)) {
     if (!memory.content.trim()) {
       droppedLayers.push({ id: memory.id, reason: PROMPT_LAYER_REASON.emptyRetrievalMemory });

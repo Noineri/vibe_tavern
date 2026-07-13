@@ -21,6 +21,8 @@ export interface Chat {
   autoSummaryConfig: Record<string, unknown>;
   /** Insights (INSIGHTS_PLAN): per-chat opt-in toggles + per-feature config for the Objective Tracker + Scene Tracker. Both off by default. */
   insightsConfig: Record<string, unknown>;
+  /** Insights (INSIGHTS_PLAN): the Objective Tracker state — objective description, the task route, custom prompts. Empty object = not yet generated. */
+  insightsObjectiveState: Record<string, unknown>;
   status: 'active' | 'archived';
   mode: ChatMode;
   selectedGreetingIndex: number;
@@ -235,6 +237,20 @@ export class ChatStore {
       .where(eq(chats.id, id))
       .returning();
     if (!row) throw new Error(`Chat '${id}' not found after insights config update`);
+    return this.mapRow(row);
+  }
+
+  /** Replace the chat's Objective Tracker state wholesale (INSIGHTS_PLAN). The service computes the full next state and writes it atomically. */
+  async updateInsightsObjectiveState(id: string, input: { insightsObjectiveState?: Record<string, unknown> }): Promise<Chat> {
+    const now = this.clock.now();
+    const values: Partial<typeof chats.$inferInsert> = { updatedAt: now };
+    if (input.insightsObjectiveState !== undefined) values.insightsObjectiveStateJson = JSON.stringify(input.insightsObjectiveState);
+    const [row] = await this.db
+      .update(chats)
+      .set(values)
+      .where(eq(chats.id, id))
+      .returning();
+    if (!row) throw new Error(`Chat '${id}' not found after objective state update`);
     return this.mapRow(row);
   }
 
@@ -738,6 +754,7 @@ export class ChatStore {
       messageHistoryLimit: row.messageHistoryLimit,
       autoSummaryConfig: safeParseJson(row.autoSummaryConfigJson),
       insightsConfig: safeParseJson(row.insightsConfigJson),
+      insightsObjectiveState: safeParseJson(row.insightsObjectiveStateJson),
       status: row.status as Chat['status'],
       mode: row.mode as Chat['mode'],
       selectedGreetingIndex: row.selectedGreetingIndex,

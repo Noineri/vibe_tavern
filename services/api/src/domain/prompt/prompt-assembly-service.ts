@@ -1,4 +1,4 @@
-import { brandId, parseStoredAttachments } from "@vibe-tavern/domain";
+import { brandId, parseStoredAttachments, OBJECTIVE_TASK_STATUS } from "@vibe-tavern/domain";
 import type {
   AssemblePromptResponse,
   CustomInjection,
@@ -17,6 +17,8 @@ import type {
   RetrievedMemoryHit,
   ActiveLoreEntry,
   ActivatedLoreDetail,
+  ObjectiveTask,
+  ObjectiveState,
 } from "@vibe-tavern/domain";
 import type { StoreContainer } from "@vibe-tavern/db";
 import { assemblePrompt, getSummaryStrategy, setModelHint } from "@vibe-tavern/prompt-pipeline";
@@ -157,6 +159,30 @@ export interface AssemblePromptForChatResult {
   promptTraceDraft: PromptTraceDraft;
 }
 
+/**
+ * Insights — Objective Tracker (INSIGHTS_PLAN): resolve the active-task context
+ * field injected into the prompt pipeline. Returns null when the feature is off,
+ * when no state has been generated yet, or when there is no active/pending task —
+ * so the pipeline emits NO objective layer (zero added tokens / DOM). Pure and
+ * exported so the selection rule (first 'active', else first 'pending') and the
+ * depth/injectPrompt defaults are unit-testable without a DB.
+ */
+export function resolveObjectiveTaskContext(input: {
+  insightsConfig: Record<string, unknown>;
+  insightsObjectiveState: Record<string, unknown>;
+}): { description: string; injectPrompt: string; injectionDepth: number } | null {
+  if (!input.insightsConfig?.objectiveEnabled) return null;
+  const state = input.insightsObjectiveState as Partial<ObjectiveState>;
+  const tasks = Array.isArray(state?.tasks) ? (state.tasks as ObjectiveTask[]) : [];
+  const active =
+    tasks.find((t) => t && t.status === OBJECTIVE_TASK_STATUS.active) ??
+    tasks.find((t) => t && t.status === OBJECTIVE_TASK_STATUS.pending);
+  if (!active || !String(active.description ?? "").trim()) return null;
+  const injectionDepth = typeof state?.injectionDepth === "number" ? state.injectionDepth : 1;
+  const injectPrompt = typeof state?.injectPrompt === "string" ? state.injectPrompt : "";
+  return { description: String(active.description), injectPrompt, injectionDepth };
+}
+
 export class PromptAssemblyService {
   constructor(
     private readonly stores: StoreContainer,
@@ -273,6 +299,11 @@ export class PromptAssemblyService {
         .filter((row) => row.description?.trim() && row.includeInPrompt)
         .map((row) => ({ caption: row.caption || `gallery-${row.id}`, description: row.description!.trim() }));
 
+    const objectiveTask = resolveObjectiveTaskContext({
+      insightsConfig: chat.insightsConfig,
+      insightsObjectiveState: chat.insightsObjectiveState,
+    });
+
     const pipelineContext = {
       identity: {
         chatId: chat.id as ChatId,
@@ -339,6 +370,7 @@ export class PromptAssemblyService {
           score: memory.score,
         })),
       },
+      objectiveTask,
       chat: {
         recentMessages,
         scriptInjections: scriptResult.injectedMessages,

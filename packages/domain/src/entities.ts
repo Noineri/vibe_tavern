@@ -33,6 +33,7 @@ import type {
   LoreMatchSource,
   LoreEntryPosition,
   PromptLayerPosition,
+  ObjectiveTaskStatus,
 } from "./platform-constants.js";
 
 export type Timestamp = string;
@@ -519,4 +520,27 @@ export interface PromptPreset {
   aiAssistantPrompts: string;
   createdAt: Timestamp;
   updatedAt: Timestamp;
+}
+
+/** A single task in the objective route tree (INSIGHTS_PLAN). Flat array — order is the route order. */
+export interface ObjectiveTask {
+  id: string;
+  description: string;
+  status: ObjectiveTaskStatus;
+}
+
+/** The full objective state for a chat (INSIGHTS_PLAN). Stored as JSON in chats.insights_objective_state_json. */
+export interface ObjectiveState {
+  /** User's high-level goal. */
+  objectiveDescription: string;
+  /** Flat ordered task list — the route. */
+  tasks: ObjectiveTask[];
+  /** How often to auto-check completion (in assistant messages). 0 = manual only. */
+  autoCheckFrequency: number;
+  /** in_chat injectionDepth for the active-task layer; default 1 (just before the latest user message). */
+  injectionDepth: number;
+  /** Custom LLM prompts for generate / check / inject. */
+  generatePrompt: string;
+  checkPrompt: string;
+  injectPrompt: string;
 }

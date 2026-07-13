@@ -178,6 +178,14 @@ export const PROMPT_FORMAT = {
   },
   loreHeader: (title: string) => `Lore: ${title}`,
   summaryMemory: (kind: string, text: string) => `[${kind}] ${text}`,
+  objectiveTask: (injectPrompt: string, description: string) => {
+    const task = description.trim();
+    const lead = injectPrompt.trim();
+    // The user's custom inject prompt (when set) frames HOW the active task is
+    // presented; otherwise a default label. Either way the active task is the
+    // last line so it reads as the thing to do now.
+    return lead ? `${lead}\n[Active objective] ${task}` : `[Active objective] ${task}`;
+  },
   retrievalMemory: (sourceType: string, content: string) => `[Retrieved ${sourceType}] ${content}`,
   exampleMessages: (text: string) => `[Example messages]\n${text}`,
 } as const;
