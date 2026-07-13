@@ -62,6 +62,10 @@ export {
 export {
   insightsConfigSchema,
   updateInsightsConfigSchema,
+  objectiveModelSchema,
+  addObjectiveTaskSchema,
+  updateObjectiveTaskSchema,
+  setObjectiveDescriptionSchema,
 } from "./insights-schema.js";
 export {
   debugSendLogSchema,

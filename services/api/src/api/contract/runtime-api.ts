@@ -391,6 +391,19 @@ export interface MobileAccessRuntimeApi {
  * Aggregate contract between Hono routes and the backend service layer.
  * Each sub-interface is consumed by exactly one route file.
  */
+// ─── Insights — Objective Tracker (INSIGHTS_PLAN INS-4) ──────────────────
+// Manual actions return via RPC (no SSE); auto background checks persist to
+// insightsObjectiveStateJson and the UI reads them on the next snapshot refresh.
+
+export interface InsightsRuntimeApi {
+	generateObjectiveTasks: (chatId: string, body: { providerProfileId?: string; model?: string }, signal?: AbortSignal) => Promise<ConfigPatchResponse>;
+	checkObjectiveCompletion: (chatId: string, body: { providerProfileId?: string; model?: string }, signal?: AbortSignal) => Promise<ConfigPatchResponse>;
+	addObjectiveTask: (chatId: string, body: { description: string }) => Promise<ConfigPatchResponse>;
+	updateObjectiveTask: (chatId: string, taskId: string, body: { description?: string; status?: string }) => Promise<ConfigPatchResponse>;
+	deleteObjectiveTask: (chatId: string, taskId: string) => Promise<ConfigPatchResponse>;
+	setObjectiveDescription: (chatId: string, body: { objectiveDescription: string }) => Promise<ConfigPatchResponse>;
+}
+
 export interface RuntimeApi {
 	bootstrap: BootstrapRuntimeApi["bootstrap"];
 	chat: ChatRuntimeApi;
@@ -405,4 +418,5 @@ export interface RuntimeApi {
 	aiAssistant: AiAssistantRuntimeApi;
 	settings: SettingsRuntimeApi;
 	mobileAccess: MobileAccessRuntimeApi;
+	insights: InsightsRuntimeApi;
 }

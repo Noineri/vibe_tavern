@@ -21,7 +21,7 @@ import type {
   ObjectiveState,
 } from "@vibe-tavern/domain";
 import type { StoreContainer } from "@vibe-tavern/db";
-import { assemblePrompt, getSummaryStrategy, setModelHint } from "@vibe-tavern/prompt-pipeline";
+import { assemblePrompt, getSummaryStrategy, setModelHint, type PromptAssemblyContext } from "@vibe-tavern/prompt-pipeline";
 import { logSendDebug } from "../../shared/send-debug-log.js";
 import { type FileStore, STORAGE_FOLDERS } from "@vibe-tavern/db";
 
@@ -181,6 +181,23 @@ export function resolveObjectiveTaskContext(input: {
   return { description: String(active.description), injectPrompt, injectionDepth };
 }
 
+export interface BuiltPipelineContext {
+  /** The full RP world context (character / persona / activated lorebook /
+   *  script injections / recent window) under the chat's preset toggles — the
+   *  same input a chat turn or a summary build receives. Insight one-shots reuse
+   *  it (running buildLayers + stripping the insight self-injection layers). */
+  context: PromptAssemblyContext;
+  branchId: ChatBranchId;
+  chatId: ChatId;
+  chatPromptPresetId: string | null;
+  promptPresetId: string | null;
+  promptPresetName: string | null;
+  activeLoreEntries: ActiveLoreEntry[];
+  retrievedMemories: RetrievedMemoryHit[];
+  scriptResult: Awaited<ReturnType<PromptAssemblyResolver["executeScripts"]>>;
+  recentMessageCount: number;
+}
+
 export class PromptAssemblyService {
   constructor(
     private readonly stores: StoreContainer,
@@ -189,6 +206,110 @@ export class PromptAssemblyService {
   ) {}
 
   async assembleForChat(input: AssemblePromptForChatInput): Promise<AssemblePromptForChatResult> {
+    const built = await this.buildPipelineContext(input);
+    const result = input.summary
+      ? getSummaryStrategy().assemble(built.context)
+      : assemblePrompt(built.context);
+
+    // Build script injection trace data — one row per script that ran (P4),
+    // instead of the old single synthetic '__pipeline' row that flattened all
+    // scripts into one concatenated error string. A run gets a trace row when
+    // it produced any observable effect (mutation / injection / console) or
+    // errored — no-op runs are omitted to keep the trace signal-high.
+    const scriptInjections = built.scriptResult.scriptRuns
+      .filter(run =>
+        run.status === 'errored'
+        || run.personalityMutation !== ''
+        || run.scenarioMutation !== ''
+        || run.injectedMessages.length > 0
+        || run.console.length > 0,
+      )
+      .map(run => ({
+        scriptId: run.scriptId,
+        scriptName: run.scriptName,
+        status: run.status,
+        personalityMutation: run.personalityMutation,
+        scenarioMutation: run.scenarioMutation,
+        injectedMessages: run.injectedMessages,
+        console: run.console,
+        error: run.error,
+        line: run.line,
+      }));
+
+    // Per-entry activation reasons for the prompt trace (parallel to
+    // activatedLoreEntries; same ids in activation order). Built from the
+    // enriched resolver result so the trace UI can show WHY each fired.
+    const activatedLoreDetail: ActivatedLoreDetail[] = built.activeLoreEntries.map((entry) => ({
+      id: entry.id as string,
+      title: entry.title,
+      reason: entry.activationReason,
+    }));
+
+    return {
+      branchId: built.branchId,
+      prompt: {
+        layers: result.layers.map(mapPromptLayerDto),
+        tokenAccounting: {
+          total: result.totalTokenEstimate,
+          recentHistory: built.recentMessageCount,
+        },
+        activatedLoreEntries: result.activatedLoreEntries,
+        activatedLoreDetail,
+        scriptInjections,
+        retrievedMemories: built.retrievedMemories.map((memory) => ({
+          id: memory.id,
+          sourceType: memory.sourceType,
+          score: memory.score,
+          sourceId: memory.sourceId,
+        })),
+        finalPayload: result.finalPayload,
+        prefill: result.prefill,
+      },
+      promptTraceDraft: {
+        chatId: built.chatId,
+        branchId: built.branchId,
+        model: input.model,
+        presetName: built.promptPresetName ?? built.chatPromptPresetId ?? "(none)",
+        // The fully-resolved preset id (override → chat → global default; see
+        // the cascade above). Carried out of assembly so the message-meta path
+        // can record on each reply the preset that was ACTUALLY used — not just
+        // presetName for the trace. Read by ChatRuntime.appendAssistantReply /
+        // appendMessageVariant to populate messages/variants.presetId.
+        presetId: built.promptPresetId ?? null,
+        assembledLayers: result.layers.map((layer) => mapPromptLayerDto(layer)),
+        tokenAccounting: {
+          total: result.totalTokenEstimate,
+        },
+        activatedLoreEntries: result.activatedLoreEntries.map((id) => brandId<LoreEntryId>(id)),
+        activatedLoreDetail,
+        scriptInjections,
+        retrievedMemories: built.retrievedMemories.map((memory) => ({
+          id: memory.id,
+          sourceType: memory.sourceType,
+          sourceId: memory.sourceId,
+          score: memory.score,
+          matchedKeys: memory.matchedKeys,
+        })),
+        finalPayload: result.finalPayload,
+        latencyMs: 0,
+        prefill: result.prefill,
+        compactionSummary: result.compactionSummary,
+      },
+    };
+  }
+
+  /**
+   * Build the full RP world context for a chat WITHOUT assembling it. The
+   * chat-turn path (assembleForChat) and the insight one-shots (objective
+   * check/generate, scene generate) both need the same world (character /
+   * persona / activated lorebook / script injections / recent window under
+   * the chat preset toggles); insight assemblers reuse buildLayers on this
+   * context (minus the insight self-injection layers) and append their
+   * instruction. Extracted so the insight path gets the raw context without
+   * re-running assembly — no flag on assembleForChat (the assembler choice
+   * stays registry-driven; see InsightsAssembler).
+   */
+  async buildPipelineContext(input: AssemblePromptForChatInput): Promise<BuiltPipelineContext> {
     const chat = await this.stores.chats.getById(input.chatId);
     if (!chat) {
       throw new Error(`Chat '${input.chatId}' was not found.`);
@@ -382,94 +503,18 @@ export class PromptAssemblyService {
         summary: input.summary,
       },
     };
-    const result = input.summary
-      ? getSummaryStrategy().assemble(pipelineContext)
-      : assemblePrompt(pipelineContext);
-
-    // Build script injection trace data — one row per script that ran (P4),
-    // instead of the old single synthetic '__pipeline' row that flattened all
-    // scripts into one concatenated error string. A run gets a trace row when
-    // it produced any observable effect (mutation / injection / console) or
-    // errored — no-op runs are omitted to keep the trace signal-high.
-    const scriptInjections = scriptResult.scriptRuns
-      .filter(run =>
-        run.status === 'errored'
-        || run.personalityMutation !== ''
-        || run.scenarioMutation !== ''
-        || run.injectedMessages.length > 0
-        || run.console.length > 0,
-      )
-      .map(run => ({
-        scriptId: run.scriptId,
-        scriptName: run.scriptName,
-        status: run.status,
-        personalityMutation: run.personalityMutation,
-        scenarioMutation: run.scenarioMutation,
-        injectedMessages: run.injectedMessages,
-        console: run.console,
-        error: run.error,
-        line: run.line,
-      }));
-
-    // Per-entry activation reasons for the prompt trace (parallel to
-    // activatedLoreEntries; same ids in activation order). Built from the
-    // enriched resolver result so the trace UI can show WHY each fired.
-    const activatedLoreDetail: ActivatedLoreDetail[] = activeLoreEntries.map((entry) => ({
-      id: entry.id as string,
-      title: entry.title,
-      reason: entry.activationReason,
-    }));
 
     return {
+      context: pipelineContext,
       branchId,
-      prompt: {
-        layers: result.layers.map(mapPromptLayerDto),
-        tokenAccounting: {
-          total: result.totalTokenEstimate,
-          recentHistory: recentMessages.length,
-        },
-        activatedLoreEntries: result.activatedLoreEntries,
-        activatedLoreDetail,
-        scriptInjections,
-        retrievedMemories: retrievedMemories.map((memory) => ({
-          id: memory.id,
-          sourceType: memory.sourceType,
-          score: memory.score,
-          sourceId: memory.sourceId,
-        })),
-        finalPayload: result.finalPayload,
-        prefill: result.prefill,
-      },
-      promptTraceDraft: {
-        chatId: chat.id as ChatId,
-        branchId: branchId as ChatBranchId,
-        model: input.model,
-        presetName: promptPreset?.name ?? chat.promptPresetId ?? "(none)",
-        // The fully-resolved preset id (override → chat → global default; see
-        // the cascade above). Carried out of assembly so the message-meta path
-        // can record on each reply the preset that was ACTUALLY used — not just
-        // presetName for the trace. Read by ChatRuntime.appendAssistantReply /
-        // appendMessageVariant to populate messages/variants.presetId.
-        presetId: promptPresetId ?? null,
-        assembledLayers: result.layers.map((layer) => mapPromptLayerDto(layer)),
-        tokenAccounting: {
-          total: result.totalTokenEstimate,
-        },
-        activatedLoreEntries: result.activatedLoreEntries.map((id) => brandId<LoreEntryId>(id)),
-        activatedLoreDetail,
-        scriptInjections,
-        retrievedMemories: retrievedMemories.map((memory) => ({
-          id: memory.id,
-          sourceType: memory.sourceType,
-          sourceId: memory.sourceId,
-          score: memory.score,
-          matchedKeys: memory.matchedKeys,
-        })),
-        finalPayload: result.finalPayload,
-        latencyMs: 0,
-        prefill: result.prefill,
-        compactionSummary: result.compactionSummary,
-      },
+      chatId: chat.id as ChatId,
+      chatPromptPresetId: chat.promptPresetId ?? null,
+      promptPresetId: promptPresetId ?? null,
+      promptPresetName: promptPreset?.name ?? null,
+      activeLoreEntries,
+      retrievedMemories,
+      scriptResult,
+      recentMessageCount: recentMessages.length,
     };
   }
 

@@ -41,10 +41,22 @@ import type { PromptAssemblyContext, PromptAssemblyResult } from "@vibe-tavern/p
 import { nonstreamingProviderExecute } from "../../infrastructure/ai/nonstreaming-provider-executor.js";
 import type { ProviderExecutionInput } from "../../infrastructure/ai/provider-execution-types.js";
 import { resolveInsightsPrompt } from "./insights-prompts.js";
+import type { SessionRuntime } from "../../runtime/session/session-runtime.js";
+import type { ProviderProfileService } from "../providers/provider-profile-service.js";
+import { BackgroundTaskLocks } from "../../shared/background-task-locks.js";
+import { logSendDebug } from "../../shared/send-debug-log.js";
 
 type Execute = typeof nonstreamingProviderExecute;
 type ResolvePrompt = typeof resolveInsightsPrompt;
 type ResolvedProfile = ProviderExecutionInput["profile"];
+
+/** How many recent messages the objective model sees (INSIGHTS_PLAN design
+ *  decision: objective needs depth → 10). Configurable per-chat in INS-5. */
+export const OBJECTIVE_CONTEXT_WINDOW = 10;
+
+function isObjectiveEnabled(insightsConfig: Record<string, unknown>): boolean {
+  return insightsConfig?.objectiveEnabled === true;
+}
 
 /** Default ObjectiveState for a chat that has none yet (or for addTask on an empty chat). */
 export function defaultObjectiveState(): ObjectiveState {
@@ -170,8 +182,16 @@ export interface ObjectiveGenerateInput {
 export interface ObjectiveCheckInput extends ObjectiveGenerateInput {}
 
 export class ObjectiveService {
+  /** Trailing-edge lock for auto-check — a trigger dropped mid-flight marks the
+   *  key dirty and the running check re-runs once before releasing, so the
+   *  latest message is always evaluated (objective is forward-injected → a
+   *  one-turn detection lag is toxic). See BackgroundTaskLocks.runExclusiveTrailing. */
+  private readonly autoCheckLocks = new BackgroundTaskLocks();
+
   constructor(
     private readonly stores: StoreContainer,
+    private readonly sessionRuntime: SessionRuntime,
+    private readonly providerProfiles: ProviderProfileService,
     private readonly execute: Execute = nonstreamingProviderExecute,
     private readonly resolvePrompt: ResolvePrompt = resolveInsightsPrompt,
   ) {}
@@ -281,6 +301,58 @@ export class ObjectiveService {
     const next: ObjectiveState = { ...base, objectiveDescription };
     await this.saveState(chatId, next);
     return next;
+  }
+
+  /**
+   * INS-4 — auto-check entry point fired by the Insights FeatureModule on each
+   * `message.appended` (send/generate only — the swipe/regenerate path does not
+   * emit it). Gates on objectiveEnabled + autoCheckFrequency, then runs
+   * {@link checkCompletion} under the trailing-edge lock so a burst of messages
+   * never leaves the latest unevaluated. The task closure re-reads fresh context
+   * on each invocation (trailing re-run correctness). Provider/model: INS-4 uses
+   * the active provider profile + its default model; INS-5 adds the per-insight
+   * pinned provider/model config. Fire-and-forget — the EventBus caller never
+   * waits on or sees errors from this path (they go to logSendDebug).
+   */
+  async triggerAutoCheck(chatIdValue: string): Promise<void> {
+    const chat = await this.stores.chats.getById(chatIdValue);
+    if (!chat) return;
+    if (!isObjectiveEnabled(chat.insightsConfig)) return;
+    const state = await this.getState(chat.id as ChatId);
+    if (!state || state.autoCheckFrequency <= 0) return;
+    const messages = await this.stores.messages.getMessages(chat.activeBranchId);
+    const assistantCount = messages.filter((m) => m.role === "assistant").length;
+    if (assistantCount === 0 || assistantCount % state.autoCheckFrequency !== 0) return;
+
+    const profile = await this.providerProfiles.resolveActiveProviderProfile();
+    if (!profile?.id) {
+      logSendDebug("insights.objective.auto.skip", { chatId: chat.id, reason: "no_provider" });
+      return;
+    }
+    const model = profile.defaultModel?.trim();
+    if (!model) {
+      logSendDebug("insights.objective.auto.skip", { chatId: chat.id, reason: "no_model", providerProfileId: profile.id });
+      return;
+    }
+
+    const lockKey = `${chat.id}:${chat.activeBranchId}`;
+    await this.autoCheckLocks.runExclusiveTrailing(
+      lockKey,
+      async () => {
+        // Re-build context on every invocation (incl. the trailing re-run) so
+        // the check evaluates the LATEST messages, not a trigger-time snapshot.
+        const built = await this.sessionRuntime.chatLifecycle.buildPipelineContext({
+          chatId: chat.id as ChatId,
+          model,
+          recentMessageLimit: OBJECTIVE_CONTEXT_WINDOW,
+        });
+        await this.checkCompletion({ chatId: chat.id as ChatId, profile, model, context: built.context });
+      },
+      (err) => logSendDebug("insights.objective.auto.error", {
+        chatId: chat.id,
+        message: err instanceof Error ? err.message : String(err),
+      }),
+    );
   }
 
   private async saveState(chatId: ChatId, state: ObjectiveState): Promise<void> {

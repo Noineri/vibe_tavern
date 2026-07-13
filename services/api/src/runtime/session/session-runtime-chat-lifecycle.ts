@@ -11,7 +11,7 @@ import {
 } from "@vibe-tavern/domain";
 import { notFound, validation } from "../../shared/errors.js";
 import type { ChatApplicationService } from "../../domain/chat/chat-application-service.js";
-import type { PromptTraceDraft } from "../../domain/prompt/prompt-assembly-service.js";
+import type { BuiltPipelineContext, PromptTraceDraft } from "../../domain/prompt/prompt-assembly-service.js";
 import type { IChatOrder } from "./session-runtime-chat-order.js";
 import type { PersonaRuntime } from "../../domain/persona/persona-runtime.js";
 import type {
@@ -71,6 +71,19 @@ export interface ChatLifecycleRuntimeDeps {
 		prompt: import("@vibe-tavern/domain").AssemblePromptResponse;
 		promptTraceDraft: PromptTraceDraft;
 	}>;
+	/** Build the raw RP world context (pre-assembly) for an insight one-shot
+	 *  (objective check/generate, scene generate). Mirrors assemblePrompt but
+	 *  returns the context instead of assembling it — insight assemblers reuse
+	 *  buildLayers on it. */
+	buildPipelineContext: (
+		chatId: ChatId,
+		branchId?: ChatBranchId,
+		options?: {
+			model?: string;
+			recentMessageLimit?: number;
+			contextBudget?: number | null;
+		},
+	) => Promise<BuiltPipelineContext>;
 }
 
 /**
@@ -262,6 +275,33 @@ export class ChatLifecycleRuntime {
 			contextBudget: input.contextBudget ?? null,
 			summary: true,
 		});
+	}
+
+	/**
+	 * Build the raw RP world context for an insight one-shot (objective
+	 * check/generate, scene generate) WITHOUT assembling it — the insight
+	 * assemblers reuse buildLayers on this context. Mirrors assembleSummaryPrompt
+	 * but returns the pre-assembly context instead of the assembled prompt.
+	 */
+	async buildPipelineContext(input: {
+		chatId: ChatId;
+		model: string;
+		recentMessageLimit?: number;
+		contextBudget?: number | null;
+	}): Promise<BuiltPipelineContext> {
+		const chat = await this.deps.stores.chats.getById(input.chatId);
+		if (!chat) {
+			throw notFound("Chat", `Chat '${input.chatId}' was not found.`);
+		}
+		return this.deps.buildPipelineContext(
+			input.chatId,
+			chat.activeBranchId as ChatBranchId,
+			{
+				model: input.model,
+				recentMessageLimit: input.recentMessageLimit,
+				contextBudget: input.contextBudget ?? null,
+			},
+		);
 	}
 
 	async updateChatSummary(chatId: ChatId, summary: string): Promise<ConfigPatchResponse> {

@@ -18,6 +18,8 @@ import { PresetAdapter } from "./preset-adapter.js";
 import { ImportExportAdapter } from "./import-export-adapter.js";
 import { AssetAdapter } from "./asset-adapter.js";
 import { AiAssistantAdapter } from "./ai-assistant-adapter.js";
+import { InsightsAdapter } from "./insights-adapter.js";
+import type { ObjectiveService } from "../../domain/insights/objective-service.js";
 import { SettingsAdapter } from "./settings-adapter.js";
 import { MobileAccessAdapter } from "./mobile-access-adapter.js";
 
@@ -44,6 +46,7 @@ export class RuntimeApiAdapter implements RuntimeApi {
 	readonly aiAssistant: AiAssistantAdapter;
 	readonly settings: SettingsAdapter;
 	readonly mobileAccess: MobileAccessAdapter;
+	readonly insights: InsightsAdapter;
 
 	constructor(
 		stores: StoreContainer,
@@ -54,6 +57,7 @@ export class RuntimeApiAdapter implements RuntimeApi {
 		promptPresetService: PromptPresetService,
 		assetService: AssetService,
 		mobileAccessService: MobileAccessService,
+		objectiveService: ObjectiveService,
 	) {
 		const bootstrapAdapter = new BootstrapAdapter(sessionRuntime);
 		this.bootstrap = bootstrapAdapter.bootstrap;
@@ -72,5 +76,6 @@ export class RuntimeApiAdapter implements RuntimeApi {
 		this.aiAssistant = new AiAssistantAdapter(stores);
 		this.settings = new SettingsAdapter(stores);
 		this.mobileAccess = new MobileAccessAdapter(mobileAccessService);
+		this.insights = new InsightsAdapter(stores, sessionRuntime, providerProfileService, objectiveService);
 	}
 }

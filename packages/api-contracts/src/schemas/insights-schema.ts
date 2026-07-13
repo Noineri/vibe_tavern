@@ -30,3 +30,24 @@ export const updateInsightsConfigSchema = z.object({
     trackerEnabled: z.boolean().optional(),
   }).optional(),
 });
+
+/** Objective Tracker — manual action request bodies (INSIGHTS_PLAN INS-4).
+ *  generate/check take an optional pinned provider + model (default: the active
+ *  provider + its default model). The CRUD bodies mirror ObjectiveTask fields. */
+export const objectiveModelSchema = z.object({
+  providerProfileId: z.string().optional(),
+  model: z.string().optional(),
+});
+
+export const addObjectiveTaskSchema = z.object({
+  description: z.string().min(1),
+});
+
+export const updateObjectiveTaskSchema = z.object({
+  description: z.string().optional(),
+  status: z.string().optional(),
+});
+
+export const setObjectiveDescriptionSchema = z.object({
+  objectiveDescription: z.string(),
+});

@@ -152,7 +152,7 @@ function serviceWith(
     return { text: reply } as never; // service only reads result.text
   };
   const resolvePrompt = async () => promptBase;
-  return { service: new ObjectiveService(stores, execute as never, resolvePrompt as never), capturedPrompt: () => captured };
+  return { service: new ObjectiveService(stores, null as never, null as never, execute as never, resolvePrompt as never), capturedPrompt: () => captured };
 }
 
 describe("ObjectiveService (INS-3b logic + INS-3c assembler wiring)", () => {
@@ -209,7 +209,7 @@ describe("ObjectiveService (INS-3b logic + INS-3c assembler wiring)", () => {
   it("CRUD: addTask appends pending; updateTask patches; deleteTask removes; unknown id throws", async () => {
     const initial: ObjectiveState = { objectiveDescription: "x", tasks: [{ id: "t1", description: "first", status: OBJECTIVE_TASK_STATUS.pending }], autoCheckFrequency: 0, injectionDepth: 1, generatePrompt: "", checkPrompt: "", injectPrompt: "" };
     const { stores } = makeMockStates(initial);
-    const service = new ObjectiveService(stores, async () => ({ text: "" }) as never);
+    const service = new ObjectiveService(stores, null as never, null as never, async () => ({ text: "" }) as never);
 
     const withAdded = await service.addTask("chat_1" as never, "second");
     expect(withAdded.tasks).toHaveLength(2);
@@ -227,7 +227,7 @@ describe("ObjectiveService (INS-3b logic + INS-3c assembler wiring)", () => {
 
   it("setObjectiveDescription sets the high-level goal on an empty chat", async () => {
     const { stores } = makeMockStores();
-    const service = new ObjectiveService(stores, async () => ({ text: "" }) as never);
+    const service = new ObjectiveService(stores, null as never, null as never, async () => ({ text: "" }) as never);
     const state = await service.setObjectiveDescription("chat_1" as never, "Survive the winter");
     expect(state.objectiveDescription).toBe("Survive the winter");
   });
@@ -265,9 +265,146 @@ describe("ObjectiveService (INS-3b logic + INS-3c assembler wiring)", () => {
       receivedOverride = override ?? null;
       return override?.trim() || "DEFAULT";
     };
-    const service = new ObjectiveService(stores, execute as never, resolvePrompt as never);
+    const service = new ObjectiveService(stores, null as never, null as never, execute as never, resolvePrompt as never);
 
     await service.generateTasks({ chatId: "chat_1" as never, profile, model: "m", context });
     expect(receivedOverride).toBe("MY-CUSTOM-GEN-PROMPT");
+  });
+});
+
+describe("ObjectiveService.triggerAutoCheck (INS-4 orchestration)", () => {
+  /** Build a service wired for the auto-check path: a chat with insightsConfig +
+   *  a messages store, a stub sessionRuntime.chatLifecycle.buildPipelineContext,
+   *  and a stub providerProfiles.resolveActiveProviderProfile. The trailing-lock
+   *  mechanics are unit-tested in background-task-locks.test.ts; this pins the
+   *  orchestration: gate (enabled / frequency / assistant count) → context build
+   *  → check, with the closure rebuilding context on each invocation. */
+  function makeTriggerService(opts: {
+    objectiveEnabled: boolean;
+    autoCheckFrequency: number;
+    assistantCount: number;
+    tasks?: ObjectiveTask[];
+    reply?: string;
+    hasProvider?: boolean;
+    model?: string;
+  }): {
+    service: ObjectiveService;
+    getBuildCalls: () => number;
+    getExecuteCalls: () => number;
+    readState: () => ObjectiveState;
+  } {
+    const { objectiveEnabled, autoCheckFrequency, assistantCount, tasks = [], reply = "DONE", hasProvider = true, model = "gpt-test" } = opts;
+    const baseState: ObjectiveState = {
+      objectiveDescription: "Defeat the warlord",
+      tasks,
+      autoCheckFrequency,
+      injectionDepth: 1,
+      generatePrompt: "",
+      checkPrompt: "",
+      injectPrompt: "",
+    };
+    let state: Record<string, unknown> = baseState as unknown as Record<string, unknown>;
+    const messages = Array.from({ length: assistantCount }, (_, i) => ({ id: `a${i}`, role: "assistant", position: i, content: `msg ${i}` }));
+    const stores = {
+      chats: {
+        getById: async () => ({ id: "chat_1", activeBranchId: "branch_1", insightsConfig: { objectiveEnabled }, insightsObjectiveState: state }),
+        updateInsightsObjectiveState: async (_id: string, input: { insightsObjectiveState?: Record<string, unknown> }) => {
+          if (input.insightsObjectiveState !== undefined) state = input.insightsObjectiveState;
+          return { insightsObjectiveState: state };
+        },
+      },
+      messages: { getMessages: async () => messages },
+    } as unknown as StoreContainer;
+    let buildCalls = 0;
+    let executeCalls = 0;
+    const sessionRuntime = {
+      chatLifecycle: {
+        buildPipelineContext: async () => {
+          buildCalls += 1;
+          return { context };
+        },
+      },
+    } as never;
+    const providerProfiles = {
+      resolveActiveProviderProfile: async () => (hasProvider ? { id: "prof_1", defaultModel: model } : null),
+    } as never;
+    const execute = async () => {
+      executeCalls += 1;
+      return { text: reply } as never;
+    };
+    const resolvePrompt = async () => "BASE-INSTRUCTION";
+    const service = new ObjectiveService(stores, sessionRuntime, providerProfiles, execute as never, resolvePrompt as never);
+    return {
+      service,
+      getBuildCalls: () => buildCalls,
+      getExecuteCalls: () => executeCalls,
+      readState: () => state as unknown as ObjectiveState,
+    };
+  }
+
+  it("no-ops when objective is disabled (no provider lookup, no context build)", async () => {
+    const t = makeTriggerService({ objectiveEnabled: false, autoCheckFrequency: 1, assistantCount: 1 });
+    await t.service.triggerAutoCheck("chat_1");
+    expect(t.getBuildCalls()).toBe(0);
+    expect(t.getExecuteCalls()).toBe(0);
+  });
+
+  it("no-ops when autoCheckFrequency is 0 (manual only)", async () => {
+    const t = makeTriggerService({ objectiveEnabled: true, autoCheckFrequency: 0, assistantCount: 5 });
+    await t.service.triggerAutoCheck("chat_1");
+    expect(t.getBuildCalls()).toBe(0);
+    expect(t.getExecuteCalls()).toBe(0);
+  });
+
+  it("gates on the assistant-message count modulo frequency (every N messages)", async () => {
+    // frequency 3: counts 1 and 2 do not trigger; count 3 does.
+    const off1 = makeTriggerService({ objectiveEnabled: true, autoCheckFrequency: 3, assistantCount: 1 });
+    await off1.service.triggerAutoCheck("chat_1");
+    expect(off1.getExecuteCalls()).toBe(0);
+    const off2 = makeTriggerService({ objectiveEnabled: true, autoCheckFrequency: 3, assistantCount: 2 });
+    await off2.service.triggerAutoCheck("chat_1");
+    expect(off2.getExecuteCalls()).toBe(0);
+    const on3 = makeTriggerService({
+      objectiveEnabled: true,
+      autoCheckFrequency: 3,
+      assistantCount: 3,
+      tasks: [{ id: "obj_task_1", description: "Reach the gates", status: OBJECTIVE_TASK_STATUS.pending }],
+    });
+    await on3.service.triggerAutoCheck("chat_1");
+    expect(on3.getExecuteCalls()).toBe(1);
+    expect(on3.readState().tasks[0].status).toBe(OBJECTIVE_TASK_STATUS.completed);
+  });
+
+  it("skips silently when no active provider profile is configured", async () => {
+    const t = makeTriggerService({ objectiveEnabled: true, autoCheckFrequency: 1, assistantCount: 1, hasProvider: false });
+    await t.service.triggerAutoCheck("chat_1");
+    expect(t.getBuildCalls()).toBe(0);
+    expect(t.getExecuteCalls()).toBe(0);
+  });
+
+  it("builds context via chatLifecycle and advances the active task on a DONE verdict", async () => {
+    const t = makeTriggerService({
+      objectiveEnabled: true,
+      autoCheckFrequency: 1,
+      assistantCount: 1,
+      tasks: [{ id: "obj_task_1", description: "Reach the gates", status: OBJECTIVE_TASK_STATUS.pending }],
+    });
+    await t.service.triggerAutoCheck("chat_1");
+    expect(t.getBuildCalls()).toBe(1); // context built via the session runtime
+    expect(t.getExecuteCalls()).toBe(1);
+    expect(t.readState().tasks[0].status).toBe(OBJECTIVE_TASK_STATUS.completed);
+  });
+
+  it("does not advance when the LLM says PENDING", async () => {
+    const t = makeTriggerService({
+      objectiveEnabled: true,
+      autoCheckFrequency: 1,
+      assistantCount: 1,
+      reply: "PENDING",
+      tasks: [{ id: "obj_task_1", description: "Reach the gates", status: OBJECTIVE_TASK_STATUS.pending }],
+    });
+    await t.service.triggerAutoCheck("chat_1");
+    expect(t.getExecuteCalls()).toBe(1);
+    expect(t.readState().tasks[0].status).toBe(OBJECTIVE_TASK_STATUS.pending);
   });
 });

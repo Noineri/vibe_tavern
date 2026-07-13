@@ -6,6 +6,8 @@ import { countTokens, warmupTokenizers } from "../infrastructure/ai/tokenizer-se
 import { AssetService } from "../domain/asset/asset-service.js";
 import { createChatSummaryFeature } from "../domain/chat/chat-summary-feature.js";
 import { ChatSummaryService } from "../domain/chat/chat-summary-service.js";
+import { ObjectiveService } from "../domain/insights/objective-service.js";
+import { createInsightsFeature } from "../domain/insights/insights-feature.js";
 import { LiveChatOrchestrator } from "../domain/chat/live-chat-orchestrator.js";
 import { FeatureRegistry } from "../shared/feature-registry.js";
 import { MobileAccessService } from "../domain/mobile-access/mobile-access-service.js";
@@ -169,6 +171,7 @@ export async function startServerRuntime(config: ServerRuntimeConfig): Promise<v
 		const providerOrchestrator = new ProviderOrchestrator(providerProfileService);
 		const events = new EventBus();
 		const chatSummaryService = new ChatSummaryService(stores, sessionRuntime, providerProfileService);
+		const objectiveService = new ObjectiveService(stores, sessionRuntime, providerProfileService);
 		const liveChatOrchestrator = new LiveChatOrchestrator(
 			sessionRuntime.chatRuntime,
 			sessionRuntime.chatApp,
@@ -180,6 +183,7 @@ export async function startServerRuntime(config: ServerRuntimeConfig): Promise<v
 		// Feature registry — features subscribe to events and mount routes
 		const features = new FeatureRegistry();
 		features.register(createChatSummaryFeature({ stores, sessionRuntime, providerProfileService }));
+		features.register(createInsightsFeature({ objectiveService }));
 
 		const assetService = new AssetService(config.assetsDir, stores.content);
 		const mobileAccessService = new MobileAccessService(config.dataDir);
@@ -194,6 +198,7 @@ export async function startServerRuntime(config: ServerRuntimeConfig): Promise<v
 			promptPresetService,
 			assetService,
 			mobileAccessService,
+			objectiveService,
 		);
 
 		features.register(createAiAssistantFeature(runtime.aiAssistant));

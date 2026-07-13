@@ -177,6 +177,14 @@ export function pickBootstrapChatId<T extends string>(
 				this.chatLifecycle.seedImportedOpening(chatId, firstMessage, alternateGreetings),
 			assemblePrompt: (chatId, branchId, opts) =>
 				this.assemblePrompt(chatId, branchId, opts),
+			buildPipelineContext: (chatId, branchId, opts) =>
+				this.promptService.buildPipelineContext({
+					chatId,
+					...(branchId ? { branchId } : {}),
+					model: opts?.model ?? "",
+					...(opts?.recentMessageLimit !== undefined ? { recentMessageLimit: opts.recentMessageLimit } : {}),
+					contextBudget: opts?.contextBudget ?? null,
+				}),
 		});
 		this.character = new CharacterRuntime({
 			stores,
