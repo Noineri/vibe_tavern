@@ -90,6 +90,13 @@ export {
   exportChatJsonl,
   exportPromptTrace,
   logClientSendDebug,
+  generateObjectiveTasks,
+  checkObjectiveCompletion,
+  addObjectiveTask,
+  updateObjectiveTask,
+  deleteObjectiveTask,
+  setObjectiveDescription,
+  updateObjectiveConfig,
 } from "./api/chat-api.js";
 
 // ─── Character ──────────────────────────────────────────────────────────

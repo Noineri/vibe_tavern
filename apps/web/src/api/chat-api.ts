@@ -363,6 +363,66 @@ export async function updateInsightsConfig(
   return normalizeSnapshot(data);
 }
 
+// ─── Insights — Objective Tracker (INS-5) ────────────────────────────────
+// Manual actions return via RPC (no SSE); each round-trips the snapshot so the
+// store refreshes. Provider/model omitted → the backend resolves the active
+// provider profile + its default model.
+
+export async function generateObjectiveTasks(
+  chatId: ChatId,
+  input: { providerProfileId?: string; model?: string },
+  options?: { signal?: AbortSignal },
+): Promise<AppSnapshot> {
+  const response = await client.api.chats[":chatId"].insights.objective.generate.$post(
+    { param: { chatId }, json: input },
+    { init: { signal: options?.signal } },
+  );
+  return normalizeSnapshot(await unwrapRpc<AppSnapshot>(response));
+}
+
+export async function checkObjectiveCompletion(
+  chatId: ChatId,
+  input: { providerProfileId?: string; model?: string },
+  options?: { signal?: AbortSignal },
+): Promise<AppSnapshot> {
+  const response = await client.api.chats[":chatId"].insights.objective.check.$post(
+    { param: { chatId }, json: input },
+    { init: { signal: options?.signal } },
+  );
+  return normalizeSnapshot(await unwrapRpc<AppSnapshot>(response));
+}
+
+export async function addObjectiveTask(chatId: ChatId, description: string): Promise<AppSnapshot> {
+  const response = await client.api.chats[":chatId"].insights.objective.tasks.$post({ param: { chatId }, json: { description } });
+  return normalizeSnapshot(await unwrapRpc<AppSnapshot>(response));
+}
+
+export async function updateObjectiveTask(chatId: ChatId, taskId: string, input: { description?: string; status?: string }): Promise<AppSnapshot> {
+  const response = await client.api.chats[":chatId"].insights.objective.tasks[":taskId"].$patch({ param: { chatId, taskId }, json: input });
+  return normalizeSnapshot(await unwrapRpc<AppSnapshot>(response));
+}
+
+export async function deleteObjectiveTask(chatId: ChatId, taskId: string): Promise<AppSnapshot> {
+  const response = await client.api.chats[":chatId"].insights.objective.tasks[":taskId"].$delete({ param: { chatId, taskId } });
+  return normalizeSnapshot(await unwrapRpc<AppSnapshot>(response));
+}
+
+export async function setObjectiveDescription(chatId: ChatId, objectiveDescription: string): Promise<AppSnapshot> {
+  const response = await client.api.chats[":chatId"].insights.objective.description.$put({ param: { chatId }, json: { objectiveDescription } });
+  return normalizeSnapshot(await unwrapRpc<AppSnapshot>(response));
+}
+
+export async function updateObjectiveConfig(chatId: ChatId, input: {
+  autoCheckFrequency?: number;
+  injectionDepth?: number;
+  generatePrompt?: string;
+  checkPrompt?: string;
+  injectPrompt?: string;
+}): Promise<AppSnapshot> {
+  const response = await client.api.chats[":chatId"].insights.objective.config.$put({ param: { chatId }, json: input });
+  return normalizeSnapshot(await unwrapRpc<AppSnapshot>(response));
+}
+
 // ─── Export ─────────────────────────────────────────────────────────────
 
 export async function exportChatJsonl(chatId: ChatId): Promise<string> {

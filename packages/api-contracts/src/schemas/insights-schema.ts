@@ -51,3 +51,14 @@ export const updateObjectiveTaskSchema = z.object({
 export const setObjectiveDescriptionSchema = z.object({
   objectiveDescription: z.string(),
 });
+
+/** Objective Tracker — advanced config (INS-5): auto-check frequency, injection
+ *  depth, and custom prompt overrides (empty → the `.md` asset default). All
+ *  optional; the service merges + clamps (frequency >= 0, depth >= 1). */
+export const updateObjectiveConfigSchema = z.object({
+  autoCheckFrequency: z.number().int().min(0).optional(),
+  injectionDepth: z.number().int().min(1).optional(),
+  generatePrompt: z.string().optional(),
+  checkPrompt: z.string().optional(),
+  injectPrompt: z.string().optional(),
+});

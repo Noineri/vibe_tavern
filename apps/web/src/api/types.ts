@@ -57,6 +57,27 @@ export interface InsightsConfig {
   trackerEnabled: boolean;
 }
 
+/** Objective task status (mirrors domain OBJECTIVE_TASK_STATUS). */
+export type ObjectiveTaskStatus = "pending" | "active" | "completed" | "abandoned";
+
+/** A single task in the objective route (flat ordered list). */
+export interface ObjectiveTask {
+  id: string;
+  description: string;
+  status: ObjectiveTaskStatus;
+}
+
+/** The full objective state for a chat. Stored as JSON in chats.insights_objective_state_json; sent to the frontend as a freeform object on activeChat.insightsObjectiveState. Empty `{}` when unused. */
+export interface ObjectiveState {
+  objectiveDescription: string;
+  tasks: ObjectiveTask[];
+  autoCheckFrequency: number;
+  injectionDepth: number;
+  generatePrompt: string;
+  checkPrompt: string;
+  injectPrompt: string;
+}
+
 export type ChatGenerationStatus =
   | "idle"
   | "preparing"
@@ -172,7 +193,7 @@ export interface AppSnapshot {
   /** All known characters (sidebar, build mode). Absent → preserve. */
   allCharacters?: AppCharacterEntry[];
   /** Active chat metadata (title, settings, greetingIndex, etc). Absent → preserve. */
-  activeChat?: Chat & { summary?: string; messageHistoryLimit?: number; autoSummaryConfig?: AutoSummaryConfig; insightsConfig?: InsightsConfig };
+  activeChat?: Chat & { summary?: string; messageHistoryLimit?: number; autoSummaryConfig?: AutoSummaryConfig; insightsConfig?: InsightsConfig; insightsObjectiveState?: ObjectiveState };
   /** Currently active branch. Absent → preserve. */
   activeBranch?: ChatBranch;
   /** All branches for the active chat. Absent → preserve. */

@@ -27,5 +27,8 @@ export function createInsightsRoutes(runtime: InsightsRuntimeApi) {
     })
     .put("/api/chats/:chatId/insights/objective/description", zValidator("json", schemas.setObjectiveDescriptionSchema), async (c) => {
       return c.json(await runtime.setObjectiveDescription(c.req.param("chatId"), c.req.valid("json")));
+    })
+    .put("/api/chats/:chatId/insights/objective/config", zValidator("json", schemas.updateObjectiveConfigSchema), async (c) => {
+      return c.json(await runtime.updateObjectiveConfig(c.req.param("chatId"), c.req.valid("json")));
     });
 }

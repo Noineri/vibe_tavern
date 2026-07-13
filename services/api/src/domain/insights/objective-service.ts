@@ -304,6 +304,34 @@ export class ObjectiveService {
   }
 
   /**
+   * INS-5 — update the non-task objective config (tuning + custom prompts). All
+   * fields optional; only present keys are merged. autoCheckFrequency is clamped
+   * to >= 0 (0 = manual only), injectionDepth to >= 1. The custom prompts are
+   * empty by default → the insights-prompts loader falls back to the `.md`
+   * asset; setting a non-empty value here overrides it per-chat.
+   */
+  async updateObjectiveConfig(
+    chatId: ChatId,
+    patch: Partial<Pick<ObjectiveState, "autoCheckFrequency" | "injectionDepth" | "generatePrompt" | "checkPrompt" | "injectPrompt">>,
+  ): Promise<ObjectiveState> {
+    const base = (await this.getState(chatId)) ?? defaultObjectiveState();
+    const next: ObjectiveState = { ...base };
+    if (patch.autoCheckFrequency !== undefined) {
+      const n = Math.floor(patch.autoCheckFrequency);
+      next.autoCheckFrequency = Number.isFinite(n) && n >= 0 ? n : 0;
+    }
+    if (patch.injectionDepth !== undefined) {
+      const d = Math.floor(patch.injectionDepth);
+      next.injectionDepth = Number.isFinite(d) && d >= 1 ? d : 1;
+    }
+    if (patch.generatePrompt !== undefined) next.generatePrompt = patch.generatePrompt;
+    if (patch.checkPrompt !== undefined) next.checkPrompt = patch.checkPrompt;
+    if (patch.injectPrompt !== undefined) next.injectPrompt = patch.injectPrompt;
+    await this.saveState(chatId, next);
+    return next;
+  }
+
+  /**
    * INS-4 — auto-check entry point fired by the Insights FeatureModule on each
    * `message.appended` (send/generate only — the swipe/regenerate path does not
    * emit it). Gates on objectiveEnabled + autoCheckFrequency, then runs

@@ -92,6 +92,15 @@ export class InsightsAdapter {
 		return this.refresh(chatId);
 	};
 
+	updateObjectiveConfig = async (
+		chatId: string,
+		body: { autoCheckFrequency?: number; injectionDepth?: number; generatePrompt?: string; checkPrompt?: string; injectPrompt?: string },
+	): Promise<ConfigPatchResponse> => {
+		await this.ensureChat(chatId);
+		await this.objectiveService.updateObjectiveConfig(brandId<ChatId>(chatId), body);
+		return this.refresh(chatId);
+	};
+
 	private async ensureChat(chatId: string): Promise<void> {
 		const chat = await this.stores.chats.getById(chatId);
 		if (!chat) throw notFound("Chat", `Chat '${chatId}' was not found.`);

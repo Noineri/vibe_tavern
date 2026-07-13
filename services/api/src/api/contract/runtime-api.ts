@@ -401,6 +401,7 @@ export interface InsightsRuntimeApi {
 	addObjectiveTask: (chatId: string, body: { description: string }) => Promise<ConfigPatchResponse>;
 	updateObjectiveTask: (chatId: string, taskId: string, body: { description?: string; status?: string }) => Promise<ConfigPatchResponse>;
 	deleteObjectiveTask: (chatId: string, taskId: string) => Promise<ConfigPatchResponse>;
+	updateObjectiveConfig: (chatId: string, body: { autoCheckFrequency?: number; injectionDepth?: number; generatePrompt?: string; checkPrompt?: string; injectPrompt?: string }) => Promise<ConfigPatchResponse>;
 	setObjectiveDescription: (chatId: string, body: { objectiveDescription: string }) => Promise<ConfigPatchResponse>;
 }
 

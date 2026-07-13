@@ -20,6 +20,13 @@ import {
   deleteChatSummary,
   updateMemorySettings,
   updateInsightsConfig,
+  generateObjectiveTasks,
+  checkObjectiveCompletion,
+  addObjectiveTask,
+  updateObjectiveTask,
+  deleteObjectiveTask,
+  setObjectiveDescription,
+  updateObjectiveConfig,
   saveChatSummary,
   summarizeChat,
   regenerateChatMessage,
@@ -374,5 +381,44 @@ export async function updateMemorySettingsAction(chatId: ChatId, input: { messag
 
 export async function updateInsightsConfigAction(chatId: ChatId, input: { insightsConfig?: Partial<InsightsConfig> }): Promise<void> {
   const snapshot = await updateInsightsConfig(chatId, input);
+  syncSnapshot(snapshot);
+}
+
+// ─── Objective Tracker (INS-5) ──────────────────────────────────────────
+// Each action round-trips the snapshot (the backend returns ConfigPatchResponse
+// with activeChat updated). The caller toasts on throw.
+
+export async function generateObjectiveTasksAction(chatId: ChatId, signal?: AbortSignal): Promise<void> {
+  const snapshot = await generateObjectiveTasks(chatId, {}, { signal });
+  syncSnapshot(snapshot);
+}
+
+export async function checkObjectiveCompletionAction(chatId: ChatId, signal?: AbortSignal): Promise<void> {
+  const snapshot = await checkObjectiveCompletion(chatId, {}, { signal });
+  syncSnapshot(snapshot);
+}
+
+export async function addObjectiveTaskAction(chatId: ChatId, description: string): Promise<void> {
+  const snapshot = await addObjectiveTask(chatId, description);
+  syncSnapshot(snapshot);
+}
+
+export async function updateObjectiveTaskAction(chatId: ChatId, taskId: string, input: { description?: string; status?: string }): Promise<void> {
+  const snapshot = await updateObjectiveTask(chatId, taskId, input);
+  syncSnapshot(snapshot);
+}
+
+export async function deleteObjectiveTaskAction(chatId: ChatId, taskId: string): Promise<void> {
+  const snapshot = await deleteObjectiveTask(chatId, taskId);
+  syncSnapshot(snapshot);
+}
+
+export async function setObjectiveDescriptionAction(chatId: ChatId, objectiveDescription: string): Promise<void> {
+  const snapshot = await setObjectiveDescription(chatId, objectiveDescription);
+  syncSnapshot(snapshot);
+}
+
+export async function updateObjectiveConfigAction(chatId: ChatId, input: Parameters<typeof updateObjectiveConfig>[1]): Promise<void> {
+  const snapshot = await updateObjectiveConfig(chatId, input);
   syncSnapshot(snapshot);
 }
