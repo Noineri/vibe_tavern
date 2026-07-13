@@ -4,7 +4,11 @@ import { setTokenCountFn } from "@vibe-tavern/prompt-pipeline";
 import type { AssemblePromptResponse, ChatBranchId, ChatId } from "@vibe-tavern/domain";
 import { PromptAssemblyService, type PromptAssemblyResolver } from "../src/domain/prompt/prompt-assembly-service.js";
 import { ChatLifecycleRuntime, type ChatLifecycleRuntimeDeps } from "../src/runtime/session/session-runtime-chat-lifecycle.js";
-import { withSummaryPromptAsFinalUserMessage } from "../src/domain/chat/chat-summary-service.js";
+import { SessionRuntime } from "../src/runtime/session/session-runtime.js";
+import type { nonstreamingProviderExecute } from "../src/infrastructure/ai/nonstreaming-provider-executor.js";
+import { ChatSummaryService, withSummaryPromptAsFinalUserMessage } from "../src/domain/chat/chat-summary-service.js";
+
+let capturedPrompt: AssemblePromptResponse | null = null;
 
 const chat = {
   id: "chat_1",
@@ -101,6 +105,72 @@ const summaryPrompt: AssemblePromptResponse = {
   },
 };
 
+describe("SessionRuntime summary assembly", () => {
+  it("forwards every assembly option to the active chat-mode strategy", async () => {
+    let received: Record<string, unknown> | null = null;
+    const runtime = {
+      getActiveProviderProfile: async () => null,
+      resolveChatModeStrategy: async () => ({
+        assemble: async (input: Record<string, unknown>) => {
+          received = input;
+          return {};
+        },
+      }),
+      promptService: {},
+      buildChatModeLoaders: () => ({}),
+    };
+
+    const assemblePrompt = Reflect.get(SessionRuntime.prototype, "assemblePrompt");
+    const options = {
+      excludeMessageIds: ["msg_1"],
+      model: "summary-model",
+      recentMessageLimit: 20,
+      mode: "regenerate" as const,
+      summary: true,
+      contextBudget: 4096,
+      responseReserve: 512,
+      presetId: "preset_1",
+    };
+    await Reflect.apply(assemblePrompt, runtime, ["chat_1", "branch_1", options]);
+
+    expect(received).toEqual(expect.objectContaining(options));
+  });
+});
+
+function makeSummaryService() {
+  const lifecycle = {
+    assembleSummaryPrompt: async () => assembled(summaryPrompt),
+    assembleRangedSummaryPrompt: async () => assembled(summaryPrompt),
+    updateChatSummary: async () => ({}),
+  };
+  const stores = {
+    chatSummaries: {
+      getById: async () => null,
+      create: async (input: Record<string, unknown>) => ({ id: "summary_1", ...input }),
+      update: async () => null,
+    },
+  } as unknown as StoreContainer;
+  const profiles = {
+    getProviderProfile: async () => ({
+      id: "profile_1",
+      providerPreset: "openai",
+      apiKey: "test-key",
+      defaultModel: "summary-model",
+      bindPerModel: false,
+    }),
+    getProviderModelSettings: async () => null,
+  };
+  const runtime = {
+    chatLifecycle: lifecycle,
+    buildSummaryResponse: async () => ({}),
+  } as unknown as SessionRuntime;
+  const execute: typeof nonstreamingProviderExecute = async ({ prompt }) => {
+    capturedPrompt = prompt;
+    return { text: "A concise summary." } as Awaited<ReturnType<typeof nonstreamingProviderExecute>>;
+  };
+  return new ChatSummaryService(stores, runtime, profiles as never, execute);
+}
+
 describe("PromptAssemblyService summary preparation", () => {
   it("keeps the summary-only loading rules and pins compaction against excluded layers", async () => {
     const messages = [
@@ -156,7 +226,44 @@ describe("PromptAssemblyService summary preparation", () => {
 });
 
 describe("ChatSummaryService summary prompt reshape", () => {
-  it("moves the summary instruction to the final user message", () => {
+  it("sends the full-summary instruction as the final user message", async () => {
+    capturedPrompt = null;
+    const service = makeSummaryService();
+
+    await service.summarizeChat({
+      chatId: "chat_1",
+      providerProfileId: "profile_1",
+      maxMessages: 20,
+    });
+
+    expect(capturedPrompt?.finalPayload).toEqual({
+      messages: [
+        { role: "system", content: "Character context", layerId: "character_base" },
+        { role: "user", content: "Summarize the case.", layerId: "prompt_preset_summary" },
+      ],
+    });
+  });
+
+  it("sends the ranged-summary instruction as the final user message", async () => {
+    capturedPrompt = null;
+    const service = makeSummaryService();
+
+    await service.generateChatSummary({
+      chatId: "chat_1",
+      providerProfileId: "profile_1",
+      summarizedFrom: 2,
+      summarizedTo: 4,
+    });
+
+    expect(capturedPrompt?.finalPayload).toEqual({
+      messages: [
+        { role: "system", content: "Character context", layerId: "character_base" },
+        { role: "user", content: "Summarize the case.", layerId: "prompt_preset_summary" },
+      ],
+    });
+  });
+
+  it("keeps the pure reshape contract", () => {
     expect(withSummaryPromptAsFinalUserMessage(summaryPrompt).finalPayload).toEqual({
       messages: [
         { role: "system", content: "Character context", layerId: "character_base" },

@@ -49,6 +49,7 @@ export class ChatSummaryService {
     private readonly stores: StoreContainer,
     private readonly sessionRuntime: SessionRuntime,
     private readonly providerProfiles: ProviderProfileService,
+    private readonly execute: typeof nonstreamingProviderExecute = nonstreamingProviderExecute,
   ) {}
 
   /**
@@ -102,7 +103,7 @@ export class ChatSummaryService {
     });
 
     const startedAt = Date.now();
-    const result = await nonstreamingProviderExecute({
+    const result = await this.execute({
       profile: effectiveProfile,
       model,
       prompt,
@@ -159,7 +160,7 @@ export class ChatSummaryService {
     });
     const prompt = withSummaryPromptAsFinalUserMessage(assembled.prompt);
     const startedAt = Date.now();
-    const result = await nonstreamingProviderExecute({
+    const result = await this.execute({
       profile: effectiveProfile,
       model,
       prompt,

@@ -782,6 +782,7 @@ export function pickBootstrapChatId<T extends string>(
 			excludeMessageIds: options?.excludeMessageIds,
 			recentMessageLimit: options?.recentMessageLimit,
 			mode: options?.mode,
+			summary: options?.summary,
 			contextBudget: options?.contextBudget ?? null,
 			responseReserve: options?.responseReserve,
 			presetId: options?.presetId,
