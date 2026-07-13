@@ -1,3 +1,4 @@
+import { OBJECTIVE_TASK_STATUS } from "@vibe-tavern/domain";
 import { z } from "zod";
 
 /**
@@ -39,17 +40,26 @@ export const objectiveModelSchema = z.object({
   model: z.string().optional(),
 });
 
+export const objectiveTaskStatusSchema = z.enum([
+  OBJECTIVE_TASK_STATUS.pending,
+  OBJECTIVE_TASK_STATUS.active,
+  OBJECTIVE_TASK_STATUS.completed,
+  OBJECTIVE_TASK_STATUS.abandoned,
+]);
+
+const nonEmptyDescriptionSchema = z.string().trim().min(1);
+
 export const addObjectiveTaskSchema = z.object({
-  description: z.string().min(1),
+  description: nonEmptyDescriptionSchema,
 });
 
 export const updateObjectiveTaskSchema = z.object({
-  description: z.string().optional(),
-  status: z.string().optional(),
+  description: nonEmptyDescriptionSchema.optional(),
+  status: objectiveTaskStatusSchema.optional(),
 });
 
 export const setObjectiveDescriptionSchema = z.object({
-  objectiveDescription: z.string(),
+  objectiveDescription: nonEmptyDescriptionSchema,
 });
 
 /** Objective Tracker — advanced config (INS-5): auto-check frequency, injection

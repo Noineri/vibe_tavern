@@ -1,4 +1,4 @@
-import { brandId, OBJECTIVE_TASK_STATUS, type ChatId, type ObjectiveTaskStatus } from "@vibe-tavern/domain";
+import { brandId, type ChatId, type ObjectiveTaskStatus } from "@vibe-tavern/domain";
 import type { StoreContainer } from "@vibe-tavern/db";
 import type { SessionRuntime } from "../../runtime/session/session-runtime.js";
 import type { ProviderProfileService } from "../../domain/providers/provider-profile-service.js";
@@ -62,20 +62,10 @@ export class InsightsAdapter {
 	updateObjectiveTask = async (
 		chatId: string,
 		taskId: string,
-		body: { description?: string; status?: string },
+		body: { description?: string; status?: ObjectiveTaskStatus },
 	): Promise<ConfigPatchResponse> => {
 		await this.ensureChat(chatId);
-		const patch: { description?: string; status?: ObjectiveTaskStatus } = {};
-		if (body.description !== undefined) patch.description = body.description.trim();
-		if (body.status !== undefined) {
-			const status = body.status as ObjectiveTaskStatus;
-			// Guard against an unknown status string corrupting the state machine —
-			// the four valid values are the only transitions the UI should send.
-			const valid = [OBJECTIVE_TASK_STATUS.pending, OBJECTIVE_TASK_STATUS.active, OBJECTIVE_TASK_STATUS.completed, OBJECTIVE_TASK_STATUS.abandoned];
-			if (!valid.includes(status)) throw validation(`Unknown objective task status: '${body.status}'.`);
-			patch.status = status;
-		}
-		await this.objectiveService.updateTask(brandId<ChatId>(chatId), taskId, patch);
+		await this.objectiveService.updateTask(brandId<ChatId>(chatId), taskId, body);
 		return this.refresh(chatId);
 	};
 
@@ -87,7 +77,7 @@ export class InsightsAdapter {
 
 	setObjectiveDescription = async (chatId: string, body: { objectiveDescription: string }): Promise<ConfigPatchResponse> => {
 		await this.ensureChat(chatId);
-		await this.objectiveService.setObjectiveDescription(brandId<ChatId>(chatId), body.objectiveDescription ?? "");
+		await this.objectiveService.setObjectiveDescription(brandId<ChatId>(chatId), body.objectiveDescription);
 		return this.refresh(chatId);
 	};
 

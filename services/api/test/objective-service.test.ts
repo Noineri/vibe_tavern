@@ -3,7 +3,7 @@
  *
  * Two layers of coverage:
  *  1. The PURE helpers (parseTaskList, parseCheckVerdict, selectActiveTask,
- *     advanceAfterCompletion) — the parse / select / advance logic, no DB, no LLM.
+ *     advanceAfterCompletion) — strict JSON parse / select / advance logic, no DB, no LLM.
  *  2. The SERVICE end-to-end via the injected `execute` + `resolvePrompt` (DI,
  *     per AGENTS.md §1.4 — the deps are injected, NOT mocked globally):
  *     generateTasks → tree; getActiveTask → first pending; checkCompletion
@@ -33,39 +33,34 @@ import type { ProviderExecutionInput } from "../src/infrastructure/ai/provider-e
 
 // ─── pure helpers ───────────────────────────────────────────────────────────
 
-describe("parseTaskList (INS-3b)", () => {
-  it("parses numbered '1.' lines into pending tasks in order", () => {
-    const tasks = parseTaskList("1. Reach the city\n2. Find the contact\n3. Escape");
+describe("parseTaskList (OFA-1)", () => {
+  it("parses a strict structured task route into pending tasks in order", () => {
+    const tasks = parseTaskList('{"tasks":[{"description":"Reach the city"},{"description":"Find the contact"},{"description":"Escape"}]}');
     expect(tasks.map((t) => t.description)).toEqual(["Reach the city", "Find the contact", "Escape"]);
     expect(tasks.every((t) => t.status === OBJECTIVE_TASK_STATUS.pending)).toBe(true);
-    expect(tasks[0].id).toBe("obj_task_1");
+    expect(tasks.map((t) => t.id)).toEqual(["obj_task_1", "obj_task_2", "obj_task_3"]);
   });
 
-  it("accepts '1)' and bullet '-' / '*' markers", () => {
-    const tasks = parseTaskList("1) First\n- Second\n* Third");
-    expect(tasks.map((t) => t.description)).toEqual(["First", "Second", "Third"]);
-  });
-
-  it("ignores non-list chatter/preamble so it never pollutes the route", () => {
-    const tasks = parseTaskList("Here is the plan:\n\n1. Real task\nsome commentary\n2. Another real one");
-    expect(tasks.map((t) => t.description)).toEqual(["Real task", "Another real one"]);
-  });
-
-  it("returns an empty array when nothing parses", () => {
-    expect(parseTaskList("no list here at all")).toEqual([]);
+  it("accepts fenced JSON but rejects free-text lists, empty tasks, and unknown fields", () => {
+    expect(parseTaskList('```json\n{"tasks":[{"description":"First"}]}\n```')[0].description).toBe("First");
+    expect(() => parseTaskList("1. First\n2. Second")).toThrow();
+    expect(() => parseTaskList('{"tasks":[]}')).toThrow();
+    expect(() => parseTaskList('{"tasks":[{"description":"First","status":"active"}]}')).toThrow();
   });
 });
 
-describe("parseCheckVerdict (INS-3b)", () => {
-  it("treats DONE / COMPLETED / FINISHED / YES as complete (case-insensitive)", () => {
-    expect(parseCheckVerdict("DONE")).toBe(true);
-    expect(parseCheckVerdict("the task is completed.")).toBe(true);
-    expect(parseCheckVerdict("Yes, it's finished.")).toBe(true);
+describe("parseCheckVerdict (OFA-1)", () => {
+  it("accepts only the schema-validated boolean verdict", () => {
+    expect(parseCheckVerdict('{"completed":true}')).toBe(true);
+    expect(parseCheckVerdict('{"completed":false}')).toBe(false);
+    expect(parseCheckVerdict('```json\n{"completed":false}\n```')).toBe(false);
   });
-  it("defaults to NOT complete for PENDING or garbled output (never falsely advances)", () => {
-    expect(parseCheckVerdict("PENDING")).toBe(false);
-    expect(parseCheckVerdict("")).toBe(false);
-    expect(parseCheckVerdict("asdfgh")).toBe(false);
+
+  it("rejects negative prose and malformed or ambiguous output instead of advancing", () => {
+    expect(() => parseCheckVerdict("NOT DONE")).toThrow();
+    expect(() => parseCheckVerdict("No, the task is not complete")).toThrow();
+    expect(() => parseCheckVerdict('{"completed":"yes"}')).toThrow();
+    expect(() => parseCheckVerdict("")).toThrow();
   });
 });
 
@@ -159,7 +154,7 @@ function serviceWith(
 describe("ObjectiveService (INS-3b logic + INS-3c assembler wiring)", () => {
   it("generateTasks parses the LLM list into a pending route, then getActiveTask returns the first", async () => {
     const { stores, readState } = makeMockStores({ objectiveDescription: "Defeat the warlord", tasks: [], autoCheckFrequency: 0, injectionDepth: 1, generatePrompt: "", checkPrompt: "", injectPrompt: "" });
-    const { service } = serviceWith(stores, "1. Reach the city gates\n2. Confront the warlord\n3. End the siege");
+    const { service } = serviceWith(stores, '{"tasks":[{"description":"Reach the city gates"},{"description":"Confront the warlord"},{"description":"End the siege"}]}');
 
     const state = await service.generateTasks({ chatId: "chat_1" as never, profile, model: "m", context });
     expect(state.tasks.map((t) => t.description)).toEqual(["Reach the city gates", "Confront the warlord", "End the siege"]);
@@ -170,10 +165,16 @@ describe("ObjectiveService (INS-3b logic + INS-3c assembler wiring)", () => {
     expect((readState() as ObjectiveState).tasks).toHaveLength(3);
   });
 
-  it("generateTasks throws when the LLM produces no parseable tasks", async () => {
-    const { stores } = makeMockStores();
+  it("generateTasks preserves the previous route when the LLM output is malformed", async () => {
+    const initial: ObjectiveState = {
+      ...defaultObjectiveState(),
+      objectiveDescription: "Escape",
+      tasks: [{ id: "t1", description: "Keep this route", status: OBJECTIVE_TASK_STATUS.pending }],
+    };
+    const { stores, readState } = makeMockStores(initial as unknown as Record<string, unknown>);
     const { service } = serviceWith(stores, "I cannot help with that.");
     await expect(service.generateTasks({ chatId: "chat_1" as never, profile, model: "m", context })).rejects.toThrow();
+    expect((readState() as ObjectiveState).tasks).toEqual(initial.tasks);
   });
 
   it("checkCompletion advances the route when the LLM says DONE", async () => {
@@ -186,7 +187,7 @@ describe("ObjectiveService (INS-3b logic + INS-3c assembler wiring)", () => {
       autoCheckFrequency: 0, injectionDepth: 1, generatePrompt: "", checkPrompt: "", injectPrompt: "",
     };
     const { stores } = makeMockStates(initial);
-    const { service } = serviceWith(stores, "DONE");
+    const { service } = serviceWith(stores, '{"completed":true}');
 
     const after = await service.checkCompletion({ chatId: "chat_1" as never, profile, model: "m", context });
     expect(after.tasks[0].status).toBe(OBJECTIVE_TASK_STATUS.completed);
@@ -201,7 +202,7 @@ describe("ObjectiveService (INS-3b logic + INS-3c assembler wiring)", () => {
       autoCheckFrequency: 0, injectionDepth: 1, generatePrompt: "", checkPrompt: "", injectPrompt: "",
     };
     const { stores } = makeMockStates(initial);
-    const { service } = serviceWith(stores, "PENDING");
+    const { service } = serviceWith(stores, '{"completed":false}');
 
     const after = await service.checkCompletion({ chatId: "chat_1" as never, profile, model: "m", context });
     expect(after.tasks[0].status).toBe(OBJECTIVE_TASK_STATUS.pending);
@@ -226,6 +227,57 @@ describe("ObjectiveService (INS-3b logic + INS-3c assembler wiring)", () => {
     await expect(service.deleteTask("chat_1" as never, "nope")).rejects.toThrow();
   });
 
+  it("setting a task active deterministically demotes every other active task", async () => {
+    const initial: ObjectiveState = {
+      ...defaultObjectiveState(),
+      tasks: [
+        { id: "t1", description: "first", status: OBJECTIVE_TASK_STATUS.active },
+        { id: "t2", description: "second", status: OBJECTIVE_TASK_STATUS.pending },
+      ],
+    };
+    const { stores } = makeMockStates(initial);
+    const service = new ObjectiveService(stores, null as never, null as never, async () => ({ text: "" }) as never);
+
+    const updated = await service.updateTask("chat_1" as never, "t2", { status: OBJECTIVE_TASK_STATUS.active });
+    expect(updated.tasks.map((task) => task.status)).toEqual([
+      OBJECTIVE_TASK_STATUS.pending,
+      OBJECTIVE_TASK_STATUS.active,
+    ]);
+  });
+
+  it("normalizes stored tasks to valid non-empty statuses with at most one active task", async () => {
+    const { stores } = makeMockStores({
+      ...defaultObjectiveState(),
+      tasks: [
+        { id: "t1", description: "  first  ", status: OBJECTIVE_TASK_STATUS.active },
+        { id: "t2", description: "second", status: OBJECTIVE_TASK_STATUS.active },
+        { id: "t3", description: "invalid", status: "done" },
+        { id: "t4", description: "   ", status: OBJECTIVE_TASK_STATUS.pending },
+      ],
+    });
+    const service = new ObjectiveService(stores, null as never, null as never, async () => ({ text: "" }) as never);
+
+    const normalized = await service.getState("chat_1" as never);
+    expect(normalized.tasks).toEqual([
+      { id: "t1", description: "first", status: OBJECTIVE_TASK_STATUS.active },
+      { id: "t2", description: "second", status: OBJECTIVE_TASK_STATUS.pending },
+    ]);
+  });
+
+  it("rejects empty task and objective descriptions at the persistence boundary", async () => {
+    const initial: ObjectiveState = {
+      ...defaultObjectiveState(),
+      objectiveDescription: "Keep this",
+      tasks: [{ id: "t1", description: "Keep this task", status: OBJECTIVE_TASK_STATUS.pending }],
+    };
+    const { stores } = makeMockStates(initial);
+    const service = new ObjectiveService(stores, null as never, null as never, async () => ({ text: "" }) as never);
+
+    await expect(service.addTask("chat_1" as never, "   ")).rejects.toThrow("required");
+    await expect(service.updateTask("chat_1" as never, "t1", { description: "   " })).rejects.toThrow("required");
+    await expect(service.setObjectiveDescription("chat_1" as never, "   ")).rejects.toThrow("required");
+  });
+
   it("setObjectiveDescription sets the high-level goal on an empty chat", async () => {
     const { stores } = makeMockStores();
     const service = new ObjectiveService(stores, null as never, null as never, async () => ({ text: "" }) as never);
@@ -241,7 +293,7 @@ describe("ObjectiveService (INS-3b logic + INS-3c assembler wiring)", () => {
 
   it("generateTasks hands the executor the RP context + the composed instruction as the final user message", async () => {
     const { stores } = makeMockStores({ objectiveDescription: "Defeat the warlord", tasks: [], autoCheckFrequency: 0, injectionDepth: 1, generatePrompt: "", checkPrompt: "", injectPrompt: "" });
-    const { service, capturedPrompt } = serviceWith(stores, "1. Fight");
+    const { service, capturedPrompt } = serviceWith(stores, '{"tasks":[{"description":"Fight"}]}');
 
     await service.generateTasks({ chatId: "chat_1" as never, profile, model: "m", context });
     const messages = (capturedPrompt()!.finalPayload as { messages: Array<{ role: string; content: string; layerId?: string }> }).messages;
@@ -261,7 +313,7 @@ describe("ObjectiveService (INS-3b logic + INS-3c assembler wiring)", () => {
     const { stores } = makeMockStores({ objectiveDescription: "Escape", tasks: [], autoCheckFrequency: 0, injectionDepth: 1, generatePrompt: "MY-CUSTOM-GEN-PROMPT", checkPrompt: "", injectPrompt: "" });
     // resolvePrompt receives the override; a real loader would return it verbatim.
     let receivedOverride: string | null = null;
-    const execute = async () => ({ text: "1. Go" }) as never;
+    const execute = async () => ({ text: '{"tasks":[{"description":"Go"}]}' }) as never;
     const resolvePrompt = async (_key: string, override?: string) => {
       receivedOverride = override ?? null;
       return override?.trim() || "DEFAULT";
@@ -294,7 +346,7 @@ describe("ObjectiveService.triggerAutoCheck (INS-4 orchestration)", () => {
     getExecuteCalls: () => number;
     readState: () => ObjectiveState;
   } {
-    const { objectiveEnabled, autoCheckFrequency, assistantCount, tasks = [], reply = "DONE", hasProvider = true, model = "gpt-test" } = opts;
+    const { objectiveEnabled, autoCheckFrequency, assistantCount, tasks = [], reply = '{"completed":true}', hasProvider = true, model = "gpt-test" } = opts;
     // Deliberately the PRE-model-selection persisted shape: getState must
     // normalize it to useChatModel:true so existing chats keep auto-checking.
     const baseState = {
@@ -403,7 +455,7 @@ describe("ObjectiveService.triggerAutoCheck (INS-4 orchestration)", () => {
       objectiveEnabled: true,
       autoCheckFrequency: 1,
       assistantCount: 1,
-      reply: "PENDING",
+      reply: '{"completed":false}',
       tasks: [{ id: "obj_task_1", description: "Reach the gates", status: OBJECTIVE_TASK_STATUS.pending }],
     });
     await t.service.triggerAutoCheck("chat_1");

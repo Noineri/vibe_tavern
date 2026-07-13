@@ -1,4 +1,4 @@
-import type { ChatBranchId, ChatId, ChatMode } from "@vibe-tavern/domain";
+import type { ChatBranchId, ChatId, ChatMode, ObjectiveTaskStatus } from "@vibe-tavern/domain";
 import type { AppMode } from "../../components/layout/app-shell-types.js";
 import {
   activateBranch,
@@ -403,7 +403,7 @@ export async function addObjectiveTaskAction(chatId: ChatId, description: string
   syncSnapshot(snapshot);
 }
 
-export async function updateObjectiveTaskAction(chatId: ChatId, taskId: string, input: { description?: string; status?: string }): Promise<void> {
+export async function updateObjectiveTaskAction(chatId: ChatId, taskId: string, input: { description?: string; status?: ObjectiveTaskStatus }): Promise<void> {
   const snapshot = await updateObjectiveTask(chatId, taskId, input);
   syncSnapshot(snapshot);
 }

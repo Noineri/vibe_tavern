@@ -1,4 +1,4 @@
-import type { ChatId, ChatMode, PromptTraceRecordDto } from "@vibe-tavern/domain";
+import type { ChatId, ChatMode, ObjectiveTaskStatus, PromptTraceRecordDto } from "@vibe-tavern/domain";
 import type { CoauthorApplyRequest, CoauthorCorrection, CoauthorModule, CoauthorModuleCreate, CoauthorModuleUpdate } from "@vibe-tavern/api-contracts";
 import type { AppSnapshot, AppMessage, ChatListItem, ChatSummaryRecord, AutoSummaryConfig, InsightsConfig } from "./types.js";
 import { client } from "./client.js";
@@ -397,7 +397,7 @@ export async function addObjectiveTask(chatId: ChatId, description: string): Pro
   return normalizeSnapshot(await unwrapRpc<AppSnapshot>(response));
 }
 
-export async function updateObjectiveTask(chatId: ChatId, taskId: string, input: { description?: string; status?: string }): Promise<AppSnapshot> {
+export async function updateObjectiveTask(chatId: ChatId, taskId: string, input: { description?: string; status?: ObjectiveTaskStatus }): Promise<AppSnapshot> {
   const response = await client.api.chats[":chatId"].insights.objective.tasks[":taskId"].$patch({ param: { chatId, taskId }, json: input });
   return normalizeSnapshot(await unwrapRpc<AppSnapshot>(response));
 }

@@ -33,8 +33,9 @@
  * checkCompletion marks the current target 'completed'; the next pending then
  * becomes the implicit target.
  */
-import type { AssemblePromptResponse, ChatId, ObjectiveState, ObjectiveTask } from "@vibe-tavern/domain";
+import type { AssemblePromptResponse, ChatId, ObjectiveState, ObjectiveTask, ObjectiveTaskStatus } from "@vibe-tavern/domain";
 import { OBJECTIVE_TASK_STATUS } from "@vibe-tavern/domain";
+import { z } from "zod";
 import type { StoreContainer } from "@vibe-tavern/db";
 import { getInsightsAssembler } from "@vibe-tavern/prompt-pipeline";
 import type { PromptAssemblyContext, PromptAssemblyResult } from "@vibe-tavern/prompt-pipeline";
@@ -45,6 +46,7 @@ import type { SessionRuntime } from "../../runtime/session/session-runtime.js";
 import type { ProviderProfileService } from "../providers/provider-profile-service.js";
 import { BackgroundTaskLocks } from "../../shared/background-task-locks.js";
 import { logSendDebug } from "../../shared/send-debug-log.js";
+import { parseStructuredOutput } from "./structured-output.js";
 
 type Execute = typeof nonstreamingProviderExecute;
 type ResolvePrompt = typeof resolveInsightsPrompt;
@@ -74,33 +76,36 @@ export function defaultObjectiveState(): ObjectiveState {
   };
 }
 
-/**
- * Parse an LLM task-list response into typed tasks. Accepts numbered
- * (`1.`, `1)`) and bulleted (`-`, `*`) lines; everything else is ignored (so
- * preamble/chatter doesn't pollute the route). All parsed tasks start 'pending'.
- */
-export function parseTaskList(text: string): ObjectiveTask[] {
-  const tasks: ObjectiveTask[] = [];
-  let i = 0;
-  for (const raw of text.split(/\r?\n/)) {
-    const m = raw.match(/^\s*(?:\d+[\.)]|[-*])\s+(.+?)\s*$/);
-    if (!m) continue;
-    const description = m[1].trim();
-    if (!description) continue;
-    i += 1;
-    tasks.push({ id: `obj_task_${i}`, description, status: OBJECTIVE_TASK_STATUS.pending });
-  }
-  return tasks;
+const generatedTaskRouteSchema = z.object({
+  tasks: z.array(z.object({ description: z.string().trim().min(1) }).strict()).min(1),
+}).strict();
+
+const completionVerdictSchema = z.object({ completed: z.boolean() }).strict();
+
+const OBJECTIVE_TASK_STATUSES: readonly ObjectiveTaskStatus[] = [
+  OBJECTIVE_TASK_STATUS.pending,
+  OBJECTIVE_TASK_STATUS.active,
+  OBJECTIVE_TASK_STATUS.completed,
+  OBJECTIVE_TASK_STATUS.abandoned,
+];
+
+function isObjectiveTaskStatus(value: unknown): value is ObjectiveTaskStatus {
+  return typeof value === "string" && OBJECTIVE_TASK_STATUSES.some((status) => status === value);
 }
 
-/**
- * Parse the check-LLM's verdict. Returns true when the active task is judged
- * complete. Keyword-based (DONE / COMPLETE(D) / FINISHED / ACCOMPLISHED / YES),
- * case-insensitive; defaults to NOT complete so a garbled response never
- * falsely advances the route.
- */
+/** Parse the generation model's strict JSON route. All generated tasks start pending. */
+export function parseTaskList(text: string): ObjectiveTask[] {
+  const route = parseStructuredOutput(text, generatedTaskRouteSchema);
+  return route.tasks.map((task, index) => ({
+    id: `obj_task_${index + 1}`,
+    description: task.description,
+    status: OBJECTIVE_TASK_STATUS.pending,
+  }));
+}
+
+/** Parse the completion model's strict `{ completed: boolean }` JSON verdict. */
 export function parseCheckVerdict(text: string): boolean {
-  return /\b(DONE|COMPLETE[D]?|FINISHED|ACCOMPLISHED|YES)\b/i.test(text.trim());
+  return parseStructuredOutput(text, completionVerdictSchema).completed;
 }
 
 /** The active target = first 'active' task, else first 'pending'. Null when the route is exhausted. */
@@ -156,11 +161,11 @@ export function insightsAssemblyToPromptResponse(assembly: PromptAssemblyResult)
 
 /** Compose the final instruction: override-or-default base + dynamic objective context. */
 function composeGenerateInstruction(base: string, objectiveDescription: string): string {
-  return `${base}\n\nObjective: ${objectiveDescription.trim() || "(unspecified)"}`;
+  return `${base}\n\nObjective: ${objectiveDescription.trim() || "(unspecified)"}\n\nRequired output: one JSON object shaped exactly as {"tasks":[{"description":"..."}]}.`;
 }
 
 function composeCheckInstruction(base: string, objectiveDescription: string, taskDescription: string): string {
-  return `${base}\n\nObjective: ${objectiveDescription.trim() || "(unspecified)"}\nActive task: ${taskDescription}`;
+  return `${base}\n\nObjective: ${objectiveDescription.trim() || "(unspecified)"}\nActive task: ${taskDescription}\n\nRequired output: one JSON object shaped exactly as {"completed":true} or {"completed":false}.`;
 }
 
 /**
@@ -175,12 +180,22 @@ function normalizeObjectiveState(raw: unknown): ObjectiveState {
   const base = defaultObjectiveState();
   if (typeof raw !== "object" || raw === null) return base;
   const r = raw as Partial<ObjectiveState>;
-  const tasks = Array.isArray(r.tasks)
-    ? r.tasks.filter((t): t is ObjectiveState["tasks"][number] =>
-      typeof t === "object" && t !== null && typeof (t as ObjectiveTask).id === "string"
-        && typeof (t as ObjectiveTask).description === "string"
-        && typeof (t as ObjectiveTask).status === "string")
-    : base.tasks;
+  const tasks: ObjectiveTask[] = [];
+  let activeSeen = false;
+  if (Array.isArray(r.tasks)) {
+    for (const candidate of r.tasks as unknown[]) {
+      if (typeof candidate !== "object" || candidate === null) continue;
+      const task = candidate as Partial<ObjectiveTask>;
+      const id = typeof task.id === "string" ? task.id.trim() : "";
+      const description = typeof task.description === "string" ? task.description.trim() : "";
+      if (!id || !description || !isObjectiveTaskStatus(task.status)) continue;
+      const status = task.status === OBJECTIVE_TASK_STATUS.active && activeSeen
+        ? OBJECTIVE_TASK_STATUS.pending
+        : task.status;
+      if (status === OBJECTIVE_TASK_STATUS.active) activeSeen = true;
+      tasks.push({ id, description, status });
+    }
+  }
   return {
     objectiveDescription: typeof r.objectiveDescription === "string" ? r.objectiveDescription : base.objectiveDescription,
     tasks,
@@ -293,10 +308,12 @@ export class ObjectiveService {
 
   /** Append a new 'pending' task to the route (creating state if none exists). */
   async addTask(chatId: ChatId, description: string): Promise<ObjectiveState> {
+    const normalizedDescription = description.trim();
+    if (!normalizedDescription) throw new Error("Objective task description is required.");
     const base = (await this.getState(chatId)) ?? defaultObjectiveState();
     const task: ObjectiveTask = {
       id: `obj_task_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`,
-      description,
+      description: normalizedDescription,
       status: OBJECTIVE_TASK_STATUS.pending,
     };
     const next: ObjectiveState = { ...base, tasks: [...base.tasks, task] };
@@ -306,12 +323,26 @@ export class ObjectiveService {
 
   /** Patch a task (description and/or status). Throws if the task id is unknown. */
   async updateTask(chatId: ChatId, taskId: string, patch: Partial<Pick<ObjectiveTask, "description" | "status">>): Promise<ObjectiveState> {
+    const description = patch.description?.trim();
+    if (patch.description !== undefined && !description) throw new Error("Objective task description is required.");
+    if (patch.status !== undefined && !isObjectiveTaskStatus(patch.status)) {
+      throw new Error(`Unknown objective task status: '${String(patch.status)}'.`);
+    }
     const base = (await this.getState(chatId)) ?? defaultObjectiveState();
     let found = false;
-    const tasks = base.tasks.map((t) => {
-      if (t.id !== taskId) return t;
-      found = true;
-      return { ...t, ...patch };
+    const tasks = base.tasks.map((task) => {
+      if (task.id === taskId) {
+        found = true;
+        return {
+          ...task,
+          ...(description !== undefined ? { description } : {}),
+          ...(patch.status !== undefined ? { status: patch.status } : {}),
+        };
+      }
+      if (patch.status === OBJECTIVE_TASK_STATUS.active && task.status === OBJECTIVE_TASK_STATUS.active) {
+        return { ...task, status: OBJECTIVE_TASK_STATUS.pending };
+      }
+      return task;
     });
     if (!found) throw new Error(`Objective task '${taskId}' not found in chat '${chatId}'.`);
     const next: ObjectiveState = { ...base, tasks };
@@ -332,8 +363,10 @@ export class ObjectiveService {
 
   /** Set/replace the objective description (the high-level goal). */
   async setObjectiveDescription(chatId: ChatId, objectiveDescription: string): Promise<ObjectiveState> {
+    const normalizedDescription = objectiveDescription.trim();
+    if (!normalizedDescription) throw new Error("Objective description is required.");
     const base = (await this.getState(chatId)) ?? defaultObjectiveState();
-    const next: ObjectiveState = { ...base, objectiveDescription };
+    const next: ObjectiveState = { ...base, objectiveDescription: normalizedDescription };
     await this.saveState(chatId, next);
     return next;
   }

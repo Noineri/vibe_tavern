@@ -20,7 +20,7 @@ import type {
 	SummaryResponse,
 	CharacterVersionResponse,
 } from "./session-types.js";
-import type { PromptTraceRecordDto, PromptPresetDto, PronounForms } from "@vibe-tavern/domain";
+import type { ObjectiveTaskStatus, PromptTraceRecordDto, PromptPresetDto, PronounForms } from "@vibe-tavern/domain";
 import type { ChatMode } from "@vibe-tavern/domain";
 import type {
 	ChatSummary,
@@ -399,7 +399,7 @@ export interface InsightsRuntimeApi {
 	generateObjectiveTasks: (chatId: string, body: { providerProfileId?: string; model?: string }, signal?: AbortSignal) => Promise<ConfigPatchResponse>;
 	checkObjectiveCompletion: (chatId: string, body: { providerProfileId?: string; model?: string }, signal?: AbortSignal) => Promise<ConfigPatchResponse>;
 	addObjectiveTask: (chatId: string, body: { description: string }) => Promise<ConfigPatchResponse>;
-	updateObjectiveTask: (chatId: string, taskId: string, body: { description?: string; status?: string }) => Promise<ConfigPatchResponse>;
+	updateObjectiveTask: (chatId: string, taskId: string, body: { description?: string; status?: ObjectiveTaskStatus }) => Promise<ConfigPatchResponse>;
 	deleteObjectiveTask: (chatId: string, taskId: string) => Promise<ConfigPatchResponse>;
 	updateObjectiveConfig: (chatId: string, body: {
 		autoCheckFrequency?: number;
