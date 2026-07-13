@@ -83,6 +83,11 @@ export const PROMPT_LAYER_PRIORITY = {
   aiAssistantContext: 900,
   aiAssistantExisting: 50,
   aiAssistantInstruction: 10,
+  // Insights one-shot layers (objective check/generate, scene generate) —
+  // the SECONDARY model's own prompt, not the main RP stack. Trace-only
+  // priorities (the insight prompt is not user-visible); mirror ai-assistant.
+  insightsContext: 100,
+  insightsInstruction: 10,
 } as const;
 
 export const PROMPT_LAYER_ID = {
@@ -115,6 +120,9 @@ export const PROMPT_LAYER_ID = {
   aiAssistantExisting: "ai_assistant_existing",
   aiAssistantChatHistory: "ai_assistant_chat_history",
   aiAssistantInstruction: "ai_assistant_instruction",
+  // Insights one-shot layers (objective check/generate, scene generate).
+  insightsContext: "insights_context",
+  insightsInstruction: "insights_instruction",
 } as const;
 
 export const PROMPT_LAYER_SOURCE_TYPE = {
@@ -135,6 +143,7 @@ export const PROMPT_LAYER_SOURCE_TYPE = {
   compaction: "compaction",
   chatHistory: "chat_history",
   aiAssistant: "ai_assistant",
+  insights: "insights",
 } as const;
 
 export const PROMPT_LAYER_SOURCE_ID = {

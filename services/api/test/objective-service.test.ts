@@ -1,19 +1,23 @@
 /**
- * ObjectiveService (INSIGHTS_PLAN INS-3b).
+ * ObjectiveService (INSIGHTS_PLAN INS-3b + INS-3c).
  *
  * Two layers of coverage:
  *  1. The PURE helpers (parseTaskList, parseCheckVerdict, selectActiveTask,
- *     advanceAfterCompletion, withObjectiveInstructionAsFinalUserMessage) — the
- *     parse / select / advance logic, no DB, no LLM.
- *  2. The SERVICE end-to-end via the injected `execute` (DI, per AGENTS.md §1.4 —
- *     the dep is injected, NOT mocked globally): generateTasks → tree;
- *     getActiveTask → first pending; checkCompletion advances; CRUD round-trips.
+ *     advanceAfterCompletion) — the parse / select / advance logic, no DB, no LLM.
+ *  2. The SERVICE end-to-end via the injected `execute` + `resolvePrompt` (DI,
+ *     per AGENTS.md §1.4 — the deps are injected, NOT mocked globally):
+ *     generateTasks → tree; getActiveTask → first pending; checkCompletion
+ *     advances; CRUD round-trips; AND the prompt handed to the executor is built
+ *     by the InsightsAssembler (recent window + instruction as the final user
+ *     message). The old `withObjectiveInstructionAsFinalUserMessage` boundary
+ *     (INS-3b) now lives in the assembler test — relocated, not deleted — and is
+ *     re-pinned here at the service→executor seam.
  *
  * The store is a tiny stub (getById + updateInsightsObjectiveState) — the
  * service only touches those two chat-store methods.
  */
 import { describe, it, expect } from "bun:test";
-import type { AssemblePromptResponse, ObjectiveState } from "@vibe-tavern/domain";
+import type { ObjectiveState } from "@vibe-tavern/domain";
 import { OBJECTIVE_TASK_STATUS } from "@vibe-tavern/domain";
 import type { StoreContainer } from "@vibe-tavern/db";
 import {
@@ -22,8 +26,8 @@ import {
   parseCheckVerdict,
   selectActiveTask,
   advanceAfterCompletion,
-  withObjectiveInstructionAsFinalUserMessage,
 } from "../src/domain/insights/objective-service.js";
+import type { ProviderExecutionInput } from "../src/infrastructure/ai/provider-execution-types.js";
 
 // ─── pure helpers ───────────────────────────────────────────────────────────
 
@@ -98,18 +102,7 @@ describe("selectActiveTask + advanceAfterCompletion (INS-3b)", () => {
   });
 });
 
-describe("withObjectiveInstructionAsFinalUserMessage (INS-3b)", () => {
-  it("appends the instruction as the final user message, preserving prior messages", () => {
-    const prompt = { finalPayload: { messages: [{ role: "system", content: "ctx" }] } } as unknown as AssemblePromptResponse;
-    const out = withObjectiveInstructionAsFinalUserMessage(prompt, "Do the thing.");
-    const messages = (out.finalPayload as { messages: Array<{ role: string; content: string }> }).messages;
-    expect(messages).toHaveLength(2);
-    expect(messages[0]).toEqual({ role: "system", content: "ctx" });
-    expect(messages[1]).toEqual({ role: "user", content: "Do the thing.", layerId: "objective_instruction" });
-  });
-});
-
-// ─── service (DI execute) ───────────────────────────────────────────────────
+// ─── service (DI execute + resolvePrompt) ───────────────────────────────────
 
 function makeMockStores(initial: Record<string, unknown> | null = null): { stores: StoreContainer; readState: () => Record<string, unknown> } {
   let state: Record<string, unknown> = initial ?? {};
@@ -125,20 +118,42 @@ function makeMockStores(initial: Record<string, unknown> | null = null): { store
   return { stores, readState: () => state };
 }
 
-const contextPrompt = { finalPayload: { messages: [{ role: "system", content: "Recent RP context." }] } } as unknown as AssemblePromptResponse;
-const profile = {} as never; // fake execute ignores it
-
-function serviceWith(stores: StoreContainer, reply: string) {
-  const execute = async () => ({ text: reply }) as never; // service only reads result.text
-  return new ObjectiveService(stores, execute as never);
+// Variant of makeMockStores that takes a typed ObjectiveState (non-null).
+function makeMockStates(initial: ObjectiveState): { stores: StoreContainer } {
+  return { stores: makeMockStores(initial as unknown as Record<string, unknown>).stores };
 }
 
-describe("ObjectiveService (INS-3b)", () => {
+const recentMessages = [
+  { role: "user" as const, content: "I draw my sword." },
+  { role: "assistant" as const, content: "The warlord sneers." },
+];
+const profile = {} as never; // fake execute ignores it
+
+/**
+ * Build a service whose `execute` captures the prompt it receives (so the test
+ * can pin the service→executor seam) and returns `reply`; whose `resolvePrompt`
+ * returns `promptBase` (standing in for the override-or-default .md resolution).
+ */
+function serviceWith(
+  stores: StoreContainer,
+  reply: string,
+  promptBase = "BASE-INSTRUCTION",
+): { service: ObjectiveService; capturedPrompt: () => ProviderExecutionInput["prompt"] | null } {
+  let captured: ProviderExecutionInput["prompt"] | null = null;
+  const execute = async (input: ProviderExecutionInput) => {
+    captured = input.prompt;
+    return { text: reply } as never; // service only reads result.text
+  };
+  const resolvePrompt = async () => promptBase;
+  return { service: new ObjectiveService(stores, execute as never, resolvePrompt as never), capturedPrompt: () => captured };
+}
+
+describe("ObjectiveService (INS-3b logic + INS-3c assembler wiring)", () => {
   it("generateTasks parses the LLM list into a pending route, then getActiveTask returns the first", async () => {
     const { stores, readState } = makeMockStores({ objectiveDescription: "Defeat the warlord", tasks: [], autoCheckFrequency: 0, injectionDepth: 1, generatePrompt: "", checkPrompt: "", injectPrompt: "" });
-    const service = serviceWith(stores, "1. Reach the city gates\n2. Confront the warlord\n3. End the siege");
+    const { service } = serviceWith(stores, "1. Reach the city gates\n2. Confront the warlord\n3. End the siege");
 
-    const state = await service.generateTasks({ chatId: "chat_1" as never, profile, model: "m", contextPrompt });
+    const state = await service.generateTasks({ chatId: "chat_1" as never, profile, model: "m", recentMessages });
     expect(state.tasks.map((t) => t.description)).toEqual(["Reach the city gates", "Confront the warlord", "End the siege"]);
     expect(state.objectiveDescription).toBe("Defeat the warlord"); // preserved
     expect((await service.getActiveTask("chat_1" as never))?.description).toBe("Reach the city gates");
@@ -149,8 +164,8 @@ describe("ObjectiveService (INS-3b)", () => {
 
   it("generateTasks throws when the LLM produces no parseable tasks", async () => {
     const { stores } = makeMockStores();
-    const service = serviceWith(stores, "I cannot help with that.");
-    await expect(service.generateTasks({ chatId: "chat_1" as never, profile, model: "m", contextPrompt })).rejects.toThrow();
+    const { service } = serviceWith(stores, "I cannot help with that.");
+    await expect(service.generateTasks({ chatId: "chat_1" as never, profile, model: "m", recentMessages })).rejects.toThrow();
   });
 
   it("checkCompletion advances the route when the LLM says DONE", async () => {
@@ -163,9 +178,9 @@ describe("ObjectiveService (INS-3b)", () => {
       autoCheckFrequency: 0, injectionDepth: 1, generatePrompt: "", checkPrompt: "", injectPrompt: "",
     };
     const { stores } = makeMockStates(initial);
-    const service = serviceWith(stores, "DONE");
+    const { service } = serviceWith(stores, "DONE");
 
-    const after = await service.checkCompletion({ chatId: "chat_1" as never, profile, model: "m", contextPrompt });
+    const after = await service.checkCompletion({ chatId: "chat_1" as never, profile, model: "m", recentMessages });
     expect(after.tasks[0].status).toBe(OBJECTIVE_TASK_STATUS.completed);
     expect(after.tasks[1].status).toBe(OBJECTIVE_TASK_STATUS.pending);
     expect((await service.getActiveTask("chat_1" as never))?.description).toBe("Run");
@@ -178,9 +193,9 @@ describe("ObjectiveService (INS-3b)", () => {
       autoCheckFrequency: 0, injectionDepth: 1, generatePrompt: "", checkPrompt: "", injectPrompt: "",
     };
     const { stores } = makeMockStates(initial);
-    const service = serviceWith(stores, "PENDING");
+    const { service } = serviceWith(stores, "PENDING");
 
-    const after = await service.checkCompletion({ chatId: "chat_1" as never, profile, model: "m", contextPrompt });
+    const after = await service.checkCompletion({ chatId: "chat_1" as never, profile, model: "m", recentMessages });
     expect(after.tasks[0].status).toBe(OBJECTIVE_TASK_STATUS.pending);
   });
 
@@ -209,9 +224,40 @@ describe("ObjectiveService (INS-3b)", () => {
     const state = await service.setObjectiveDescription("chat_1" as never, "Survive the winter");
     expect(state.objectiveDescription).toBe("Survive the winter");
   });
-});
 
-// Variant of makeMockStores that takes a typed ObjectiveState (non-null).
-function makeMockStates(initial: ObjectiveState): { stores: StoreContainer } {
-  return { stores: makeMockStores(initial as unknown as Record<string, unknown>).stores };
-}
+  // ─── INS-3c: the prompt handed to the executor is built by the assembler ──
+  // Re-pins the boundary the old withObjectiveInstructionAsFinalUserMessage test
+  // held: the recent window reaches the model as real turns and the instruction
+  // is the FINAL user message (now composed from the resolved base + dynamic
+  // context, shaped by the InsightsAssembler — no caller-built contextPrompt).
+
+  it("generateTasks hands the executor the recent window as turns + the composed instruction as the final user message", async () => {
+    const { stores } = makeMockStores({ objectiveDescription: "Defeat the warlord", tasks: [], autoCheckFrequency: 0, injectionDepth: 1, generatePrompt: "", checkPrompt: "", injectPrompt: "" });
+    const { service, capturedPrompt } = serviceWith(stores, "1. Fight");
+
+    await service.generateTasks({ chatId: "chat_1" as never, profile, model: "m", recentMessages });
+    const messages = (capturedPrompt()!.finalPayload as { messages: Array<{ role: string; content: string }> }).messages;
+    // Recent window preserved as real turns.
+    expect(messages[0]).toEqual({ role: "user", content: "I draw my sword." });
+    expect(messages[1]).toEqual({ role: "assistant", content: "The warlord sneers." });
+    // Final user message = resolved base (override-or-default) + dynamic objective context.
+    expect(messages[2].role).toBe("user");
+    expect(messages[2].content).toContain("BASE-INSTRUCTION");
+    expect(messages[2].content).toContain("Objective: Defeat the warlord");
+  });
+
+  it("the override flows through resolvePrompt: a custom generatePrompt replaces the default base", async () => {
+    const { stores } = makeMockStores({ objectiveDescription: "Escape", tasks: [], autoCheckFrequency: 0, injectionDepth: 1, generatePrompt: "MY-CUSTOM-GEN-PROMPT", checkPrompt: "", injectPrompt: "" });
+    // resolvePrompt receives the override; a real loader would return it verbatim.
+    let receivedOverride: string | null = null;
+    const execute = async () => ({ text: "1. Go" }) as never;
+    const resolvePrompt = async (_key: string, override?: string) => {
+      receivedOverride = override ?? null;
+      return override?.trim() || "DEFAULT";
+    };
+    const service = new ObjectiveService(stores, execute as never, resolvePrompt as never);
+
+    await service.generateTasks({ chatId: "chat_1" as never, profile, model: "m", recentMessages });
+    expect(receivedOverride).toBe("MY-CUSTOM-GEN-PROMPT");
+  });
+});

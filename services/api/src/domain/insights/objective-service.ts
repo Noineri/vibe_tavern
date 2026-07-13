@@ -1,5 +1,5 @@
 /**
- * Objective Tracker service (INSIGHTS_PLAN INS-3b).
+ * Objective Tracker service (INSIGHTS_PLAN INS-3b + INS-3c).
  *
  * Owns the Objective Tracker state for a chat: generating a task route from the
  * conversation, checking whether the active task is complete and advancing,
@@ -8,12 +8,17 @@
  * and check → advance paths are unit-testable without `mock.module()` (per
  * AGENTS.md §1.4 — inject the dep, don't mock it globally).
  *
- * The service does NOT assemble the conversation context itself — the caller
- * (the route / FeatureModule in INS-4) supplies an assembled
- * `AssemblePromptResponse` (recent RP context); the service appends the
- * objective instruction as the final user message and sends. This keeps the
- * service focused on objective LOGIC (parse / select / advance / persist) and
- * the prompt-pipeline plumbing in INS-4.
+ * INS-3c — prompt assembly via the InsightsAssembler registry. The check/generate
+ * prompt is built by `getInsightsAssembler("objective")` (a pure registry peer
+ * to Summary / AI-assistant; see `docs/architecture/prompt-pipeline.md` §
+ * Registries), NOT by a flag on `assemblePrompt`. The caller supplies the recent
+ * conversation window (sliced per `contextWindow`); the service resolves the
+ * instruction (override-or-default via `insights-prompts.ts` → `.md` assets,
+ * also injected for testability) and composes the dynamic context (objective
+ * description / active task). The assembler turns recent window + instruction
+ * into a `PromptAssemblyResult`; this service maps it to the
+ * `AssemblePromptResponse` the executor consumes. NO RP stack reaches the
+ * objective model — just the committed conversation + the instruction.
  *
  * Status model (flat ordered task list — order is the route order):
  *  - 'pending'    → not started (the default after generate)
@@ -27,10 +32,14 @@
 import type { AssemblePromptResponse, ChatId, ObjectiveState, ObjectiveTask } from "@vibe-tavern/domain";
 import { OBJECTIVE_TASK_STATUS } from "@vibe-tavern/domain";
 import type { StoreContainer } from "@vibe-tavern/db";
+import { getInsightsAssembler } from "@vibe-tavern/prompt-pipeline";
+import type { InsightsRecentMessage, PromptAssemblyResult } from "@vibe-tavern/prompt-pipeline";
 import { nonstreamingProviderExecute } from "../../infrastructure/ai/nonstreaming-provider-executor.js";
 import type { ProviderExecutionInput } from "../../infrastructure/ai/provider-execution-types.js";
+import { resolveInsightsPrompt } from "./insights-prompts.js";
 
 type Execute = typeof nonstreamingProviderExecute;
+type ResolvePrompt = typeof resolveInsightsPrompt;
 type ResolvedProfile = ProviderExecutionInput["profile"];
 
 /** Default ObjectiveState for a chat that has none yet (or for addTask on an empty chat). */
@@ -96,39 +105,43 @@ export function advanceAfterCompletion(tasks: ObjectiveTask[]): ObjectiveTask[] 
 }
 
 /**
- * Append the objective instruction as the FINAL user message of an assembled
- * context prompt (mirrors `withSummaryPromptAsFinalUserMessage`, but appends an
- * explicit instruction string instead of relocating a preset layer — the
- * objective instruction is dynamic, not a registered layer).
+ * Map a pure pipeline `PromptAssemblyResult` (from the InsightsAssembler) to the
+ * `AssemblePromptResponse` DTO the executor consumes. The insight prompt has no
+ * lore activation, scripts, or retrieval — those trace fields stay empty. The
+ * executor only reads `finalPayload.messages` (via `toSdkMessages`); the mapped
+ * `layers` exist for trace/logging consistency.
  */
-export function withObjectiveInstructionAsFinalUserMessage(
-  prompt: AssemblePromptResponse,
-  instruction: string,
-): AssemblePromptResponse {
-  const payload = prompt.finalPayload as { messages?: unknown } | undefined;
-  const messages = Array.isArray(payload?.messages) ? payload.messages : [];
+export function insightsAssemblyToPromptResponse(assembly: PromptAssemblyResult): AssemblePromptResponse {
   return {
-    ...prompt,
-    finalPayload: {
-      ...(prompt.finalPayload ?? {}),
-      messages: [
-        ...messages,
-        { role: "user", content: instruction, layerId: "objective_instruction" },
-      ],
-    },
+    layers: assembly.layers.map((layer) => ({
+      id: layer.id,
+      sourceType: layer.sourceType,
+      sourceId: layer.sourceId,
+      sourceName: layer.sourceName,
+      position: layer.position,
+      priority: layer.priority,
+      enabled: layer.enabled,
+      reason: layer.reason,
+      tokenCount: layer.tokenCount,
+      text: layer.text,
+      ...(layer.injectionDepth !== undefined ? { injectionDepth: layer.injectionDepth } : {}),
+    })),
+    tokenAccounting: { total: assembly.totalTokenEstimate },
+    activatedLoreEntries: [],
+    scriptInjections: [],
+    retrievedMemories: [],
+    finalPayload: assembly.finalPayload,
+    prefill: assembly.prefill ?? null,
   };
 }
 
-function buildGenerateInstruction(generatePrompt: string, objectiveDescription: string): string {
-  const lead = generatePrompt.trim()
-    || "Break the objective below into a numbered list of concrete, sequential tasks the characters must accomplish to reach it. One task per line, formatted '1. ...'.";
-  return `${lead}\n\nObjective: ${objectiveDescription.trim() || "(unspecified)"}`;
+/** Compose the final instruction: override-or-default base + dynamic objective context. */
+function composeGenerateInstruction(base: string, objectiveDescription: string): string {
+  return `${base}\n\nObjective: ${objectiveDescription.trim() || "(unspecified)"}`;
 }
 
-function buildCheckInstruction(checkPrompt: string, objectiveDescription: string, taskDescription: string): string {
-  const lead = checkPrompt.trim()
-    || "Read the conversation and decide whether the active task below has been accomplished in the story so far. Reply with a single word: DONE or PENDING.";
-  return `${lead}\n\nObjective: ${objectiveDescription.trim() || "(unspecified)"}\nActive task: ${taskDescription}`;
+function composeCheckInstruction(base: string, objectiveDescription: string, taskDescription: string): string {
+  return `${base}\n\nObjective: ${objectiveDescription.trim() || "(unspecified)"}\nActive task: ${taskDescription}`;
 }
 
 function isObjectiveState(raw: unknown): raw is ObjectiveState {
@@ -139,8 +152,8 @@ export interface ObjectiveGenerateInput {
   chatId: ChatId;
   profile: ResolvedProfile;
   model: string;
-  /** Assembled recent RP context (caller-provided — see file doc). */
-  contextPrompt: AssemblePromptResponse;
+  /** Recent conversation window (caller slices per `contextWindow`). */
+  recentMessages: InsightsRecentMessage[];
   signal?: AbortSignal;
 }
 
@@ -150,6 +163,7 @@ export class ObjectiveService {
   constructor(
     private readonly stores: StoreContainer,
     private readonly execute: Execute = nonstreamingProviderExecute,
+    private readonly resolvePrompt: ResolvePrompt = resolveInsightsPrompt,
   ) {}
 
   /** Load the chat's objective state, or null when none has been generated. */
@@ -172,17 +186,18 @@ export class ObjectiveService {
    */
   async generateTasks(input: ObjectiveGenerateInput): Promise<ObjectiveState> {
     const existing = await this.getState(input.chatId);
-    const base = existing ?? defaultObjectiveState();
-    const instruction = buildGenerateInstruction(base.generatePrompt, base.objectiveDescription);
-    const prompt = withObjectiveInstructionAsFinalUserMessage(input.contextPrompt, instruction);
+    const state = existing ?? defaultObjectiveState();
+    const instructionBase = await this.resolvePrompt("objectiveGenerate", state.generatePrompt);
+    const instruction = composeGenerateInstruction(instructionBase, state.objectiveDescription);
+    const prompt = this.buildPrompt("objective", input.recentMessages, instruction);
     const result = await this.execute({ profile: input.profile, model: input.model, prompt, signal: input.signal });
     const tasks = parseTaskList(result.text);
     if (tasks.length === 0) {
       throw new Error("Objective generation produced no tasks — try adjusting the objective description or the generate prompt.");
     }
-    const state: ObjectiveState = { ...base, tasks };
-    await this.saveState(input.chatId, state);
-    return state;
+    const next: ObjectiveState = { ...state, tasks };
+    await this.saveState(input.chatId, next);
+    return next;
   }
 
   /**
@@ -195,13 +210,24 @@ export class ObjectiveService {
     if (!state) return defaultObjectiveState();
     const target = selectActiveTask(state.tasks);
     if (!target) return state;
-    const instruction = buildCheckInstruction(state.checkPrompt, state.objectiveDescription, target.description);
-    const prompt = withObjectiveInstructionAsFinalUserMessage(input.contextPrompt, instruction);
+    const instructionBase = await this.resolvePrompt("objectiveCheck", state.checkPrompt);
+    const instruction = composeCheckInstruction(instructionBase, state.objectiveDescription, target.description);
+    const prompt = this.buildPrompt("objective", input.recentMessages, instruction);
     const result = await this.execute({ profile: input.profile, model: input.model, prompt, signal: input.signal });
     if (!parseCheckVerdict(result.text)) return state;
     const next: ObjectiveState = { ...state, tasks: advanceAfterCompletion(state.tasks) };
     await this.saveState(input.chatId, next);
     return next;
+  }
+
+  /** Build the insight one-shot prompt (recent window + instruction) via the assembler registry. */
+  private buildPrompt(
+    kind: "objective" | "scene",
+    recentMessages: InsightsRecentMessage[],
+    instruction: string,
+  ): AssemblePromptResponse {
+    const assembly = getInsightsAssembler(kind).assemble({ kind, recentMessages, instruction });
+    return insightsAssemblyToPromptResponse(assembly);
   }
 
   /** Append a new 'pending' task to the route (creating state if none exists). */

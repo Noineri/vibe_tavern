@@ -79,6 +79,7 @@ Adding one of these is mostly mechanical — each guide walks through the regist
 - [Adding an AI provider](./docs/guides/adding-a-provider.md)
 - [Adding a chat mode (shell surface + prompt strategy)](./docs/guides/adding-a-chat-mode.md)
 - [Adding a feature (assistant mode vs background LLM feature)](./docs/guides/adding-a-feature.md)
+- [Adding a prompt-assembly kind (one-shot registry: summary / AI-assistant / insights)](./docs/guides/adding-an-assembly-kind.md)
 - [Adding a UI theme](./docs/guides/adding-a-theme.md)
 - [Adding a language (i18n)](./docs/guides/adding-a-language.md)
 
