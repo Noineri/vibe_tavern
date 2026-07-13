@@ -1,13 +1,16 @@
-import { useState, type ReactNode } from "react";
+import { useState, useEffect, useMemo, type ReactNode } from "react";
 import { toast } from "sonner";
 import type { ChatId } from "@vibe-tavern/domain";
 import { Ic } from "../../shared/icons.js";
 import { cn } from "../../../lib/cn.js";
 import { AutoTextarea } from "../../shared/auto-textarea.js";
 import { EmptyState } from "../../shared/empty-state.js";
-import { inputCls, monoCls, lblCls } from "../fields/field-styles.js";
+import { Toggle } from "../../shared/Toggle.js";
+import { DropdownSelect } from "../../shared/DropdownSelect.js";
+import { inputCls, monoCls, inputPad, lblCls } from "../fields/field-styles.js";
 import { useT } from "../../../i18n/context.js";
 import { useSnapshotStore } from "../../../stores/snapshot-store.js";
+import { useProviderDataStore } from "../../../stores/provider-data-store.js";
 import {
   generateObjectiveTasksAction,
   checkObjectiveCompletionAction,
@@ -17,15 +20,17 @@ import {
   setObjectiveDescriptionAction,
   updateObjectiveConfigAction,
 } from "../../../stores/api-actions/chat-actions.js";
+import { fetchProviderModelsAction } from "../../../stores/api-actions/provider-actions.js";
 import type { ObjectiveState, ObjectiveTask, ObjectiveTaskStatus } from "../../../api/types.js";
 
 /**
  * Objective Tracker config editor (INSIGHTS_PLAN INS-5). Shown inside the
  * Insights panel when the Objective toggle is ON. Lets the user set the
  * high-level goal, generate / check the task route via the LLM, and manually
- * edit the task tree (status cycle, inline rename, add, delete). An advanced
- * section tunes auto-check frequency, injection depth, and custom prompt
- * overrides (empty → the `.md` asset default).
+ * edit the task tree (status cycle, inline rename, add, delete), and pin a
+ * separate secondary provider/model (or follow the chat model) exactly like
+ * auto-summary. An advanced section tunes auto-check frequency, injection
+ * depth, and custom prompt overrides (empty → the `.md` asset default).
  *
  * Reads the live state from the snapshot store (`activeChat.insightsObjectiveState`);
  * every mutating action round-trips the snapshot, so the tree refreshes on
@@ -43,8 +48,18 @@ export function ObjectiveConfig({ chatId }: { chatId: ChatId }) {
   // `activeChat` is guaranteed by the parent (InsightsPanel guards no-chat), but
   // defend in case this is ever mounted standalone — never crash on a missing chat.
   const raw = activeChat?.insightsObjectiveState;
+  // Backward compatibility: existing chats may carry an ObjectiveState written
+  // before the secondary-model fields existed. Merge defaults instead of
+  // casting the raw JSON wholesale; otherwise an absent `useChatModel` would
+  // render as false and incorrectly suggest a separate model was configured.
   const state: ObjectiveState = raw && typeof raw === "object" && Array.isArray(raw.tasks)
-    ? (raw as ObjectiveState)
+    ? {
+        ...EMPTY_STATE,
+        ...raw,
+        useChatModel: typeof raw.useChatModel === "boolean" ? raw.useChatModel : true,
+        providerProfileId: typeof raw.providerProfileId === "string" ? raw.providerProfileId : null,
+        model: typeof raw.model === "string" ? raw.model : null,
+      }
     : EMPTY_STATE;
 
   async function run(which: "generate" | "check", fn: (id: ChatId, signal: AbortSignal) => Promise<void>) {
@@ -70,6 +85,7 @@ export function ObjectiveConfig({ chatId }: { chatId: ChatId }) {
         <label className={lblCls}>{t("obj_description_label")}</label>
         <AutoTextarea
           className={inputCls + " mt-1.5"}
+          style={inputPad}
           defaultValue={state.objectiveDescription}
           placeholder={t("obj_description_placeholder")}
           minRows={2}
@@ -107,6 +123,9 @@ export function ObjectiveConfig({ chatId }: { chatId: ChatId }) {
       {/* Task route */}
       <TaskRoute chatId={chatId} tasks={state.tasks} />
 
+      {/* Model selection (secondary insight model — mirrors Summary) */}
+      <ModelSelector chatId={chatId} state={state} />
+
       {/* Advanced config */}
       <div className="border-t border-border pt-2">
         <button
@@ -131,6 +150,9 @@ const EMPTY_STATE: ObjectiveState = {
   generatePrompt: "",
   checkPrompt: "",
   injectPrompt: "",
+  useChatModel: true,
+  providerProfileId: null,
+  model: null,
 };
 
 // ─── Task route (ordered list + add) ────────────────────────────────────
@@ -173,6 +195,7 @@ function TaskRoute({ chatId, tasks }: { chatId: ChatId; tasks: ObjectiveTask[] }
       <div className="mt-2 flex gap-1.5">
         <input
           className={inputCls + " flex-1"}
+          style={inputPad}
           value={draft}
           placeholder={t("obj_add_task_placeholder")}
           onChange={(e) => setDraft(e.target.value)}
@@ -234,7 +257,8 @@ function TaskRow({ chatId, index, task }: { chatId: ChatId; index: number; task:
         <input
           autoFocus
           defaultValue={task.description}
-          className={inputCls + " flex-1 py-0.5"}
+          className={inputCls + " flex-1"}
+          style={inputPad}
           onBlur={(e) => void saveDescription(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); (e.target as HTMLInputElement).blur(); } if (e.key === "Escape") setEditing(false); }}
         />
@@ -289,6 +313,89 @@ function statusClass(status: ObjectiveTaskStatus): string {
   }
 }
 
+// ─── Model selection (secondary insight model — mirrors Summary) ───────
+
+function ModelSelector({ chatId, state }: { chatId: ChatId; state: ObjectiveState }) {
+  const { t } = useT();
+  const profiles = useProviderDataStore((s) => s.profiles);
+  const activeProvider = useMemo(() => profiles.find((p) => p.isActive) ?? profiles[0] ?? null, [profiles]);
+  const useChatModel = state.useChatModel;
+  const pinnedModel = state.model;
+
+  // The provider whose models we list + use: the chat's active one when
+  // `useChatModel`, else the pinned `providerProfileId`.
+  const profileId = useChatModel ? (activeProvider?.id ?? "") : (state.providerProfileId ?? "");
+  const profile = profiles.find((p) => p.id === profileId) ?? null;
+
+  const [models, setModels] = useState<Array<{ id: string; label: string }>>([]);
+  const [loadingModels, setLoadingModels] = useState(false);
+  useEffect(() => {
+    if (!profileId) { setModels([]); return; }
+    let cancelled = false;
+    setLoadingModels(true);
+    fetchProviderModelsAction(profileId)
+      .then((res) => {
+        if (cancelled) return;
+        setModels(res.models.map((m) => ({ id: m.id, label: m.label ?? m.id })));
+      })
+      .catch(() => { if (!cancelled) setModels([]); })
+      .finally(() => { if (!cancelled) setLoadingModels(false); });
+    return () => { cancelled = true; };
+  }, [profileId]);
+
+  function save(patch: Partial<Pick<ObjectiveState, "useChatModel" | "providerProfileId" | "model">>) {
+    updateObjectiveConfigAction(chatId, patch)
+      .catch((err) => toast.error(err instanceof Error ? err.message : t("obj_action_failed")));
+  }
+
+  const providerOptions = useMemo(() => profiles.map((p) => ({ id: p.id, label: p.name })), [profiles]);
+  // Effective model = the pin, else the profile's default.
+  const effectiveModel = (pinnedModel ?? profile?.defaultModel ?? "").trim();
+
+  return (
+    <div className="border-t border-border pt-3">
+      <label className={lblCls}>{t("obj_model_label")}</label>
+      <label className="mb-2 mt-1.5 flex items-center gap-2 font-ui text-[12px] text-t2">
+        <Toggle checked={useChatModel} onChange={(v) => save({ useChatModel: v })} />
+        {t("obj_use_chat_model")}
+      </label>
+      <div className="grid grid-cols-2 gap-2">
+        <DropdownSelect
+          value={profileId}
+          options={providerOptions}
+          onChange={(id) => save({ providerProfileId: id, model: null })}
+          disabled={useChatModel}
+          placeholder={t("obj_provider_label")}
+          searchPlaceholder={t("obj_provider_label")}
+        />
+        <div className="flex items-center gap-1.5">
+          <DropdownSelect
+            value={effectiveModel}
+            options={models}
+            onChange={(id) => save({ model: id })}
+            disabled={!profileId}
+            placeholder={loadingModels ? "…" : t("obj_model_label")}
+            searchPlaceholder={t("obj_model_label")}
+            className="flex-1"
+          />
+          <button
+            type="button"
+            className={cn(
+              "flex h-8 w-8 shrink-0 items-center justify-center rounded-md border transition-colors",
+              pinnedModel ? "border-accent bg-accent-dim text-accent" : "border-border text-t4 hover:text-t3",
+            )}
+            title={pinnedModel ? t("obj_model_unpin") : t("obj_model_pin")}
+            onClick={() => save({ model: pinnedModel ? null : (effectiveModel || null) })}
+            disabled={!effectiveModel}
+          >
+            {pinnedModel ? <Ic.starFilled /> : <Ic.star />}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Advanced config (frequency / depth / prompts) ──────────────────────
 
 function AdvancedConfig({ chatId, state }: { chatId: ChatId; state: ObjectiveState }) {
@@ -313,6 +420,7 @@ function AdvancedConfig({ chatId, state }: { chatId: ChatId; state: ObjectiveSta
             min={0}
             defaultValue={state.autoCheckFrequency}
             className={inputCls + " mt-1.5"}
+            style={inputPad}
             onBlur={(e) => saveNumber("autoCheckFrequency", e.target.value)}
           />
           <p className="mt-1 font-ui text-[10px] leading-relaxed text-t4">{t("obj_frequency_hint")}</p>
@@ -324,6 +432,7 @@ function AdvancedConfig({ chatId, state }: { chatId: ChatId; state: ObjectiveSta
             min={1}
             defaultValue={state.injectionDepth}
             className={inputCls + " mt-1.5"}
+            style={inputPad}
             onBlur={(e) => saveNumber("injectionDepth", e.target.value)}
           />
           <p className="mt-1 font-ui text-[10px] leading-relaxed text-t4">{t("obj_depth_hint")}</p>
@@ -351,6 +460,7 @@ function PromptField({ label, hint, defaultValue, onSave }: { label: string; hin
       <label className={lblCls}>{label}</label>
       <AutoTextarea
         className={monoCls + " mt-1.5"}
+        style={inputPad}
         defaultValue={defaultValue}
         placeholder={hint}
         minRows={2}

@@ -76,6 +76,6 @@ export class RuntimeApiAdapter implements RuntimeApi {
 		this.aiAssistant = new AiAssistantAdapter(stores);
 		this.settings = new SettingsAdapter(stores);
 		this.mobileAccess = new MobileAccessAdapter(mobileAccessService);
-		this.insights = new InsightsAdapter(stores, sessionRuntime, providerProfileService, objectiveService);
+		this.insights = new InsightsAdapter(stores, sessionRuntime, objectiveService);
 	}
 }

@@ -543,4 +543,14 @@ export interface ObjectiveState {
   generatePrompt: string;
   checkPrompt: string;
   injectPrompt: string;
+  /**
+   * Secondary model selection (mirrors AutoSummaryConfig). When `useChatModel`
+   * is true the objective generate/check runs on the chat's active provider +
+   * its default model; when false, the pinned `providerProfileId` + `model`
+   * are used. The insight call runs in parallel with the streaming chat (own
+   * profile/signal), never blocking it.
+   */
+  useChatModel: boolean;
+  providerProfileId: string | null;
+  model: string | null;
 }

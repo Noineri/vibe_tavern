@@ -418,6 +418,9 @@ export async function updateObjectiveConfig(chatId: ChatId, input: {
   generatePrompt?: string;
   checkPrompt?: string;
   injectPrompt?: string;
+  useChatModel?: boolean;
+  providerProfileId?: string | null;
+  model?: string | null;
 }): Promise<AppSnapshot> {
   const response = await client.api.chats[":chatId"].insights.objective.config.$put({ param: { chatId }, json: input });
   return normalizeSnapshot(await unwrapRpc<AppSnapshot>(response));

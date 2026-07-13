@@ -45,6 +45,21 @@ vi.mock("../../../stores/api-actions/chat-actions.js", () => ({
   updateObjectiveConfigAction: mocks.updateObjectiveConfigAction,
 }));
 
+vi.mock("../../../stores/provider-data-store.js", () => ({
+  // Two profiles, the first active — mirrors the real store shape ModelSelector reads.
+  useProviderDataStore: (selector: (s: { profiles: Array<{ id: string; name: string; defaultModel: string | null; isActive: boolean }> }) => unknown) =>
+    selector({
+      profiles: [
+        { id: "prof_active", name: "Active", defaultModel: "gpt-active", isActive: true },
+        { id: "prof_other", name: "Other", defaultModel: "claude-other", isActive: false },
+      ],
+    }),
+}));
+
+vi.mock("../../../stores/api-actions/provider-actions.js", () => ({
+  fetchProviderModelsAction: vi.fn().mockResolvedValue({ models: [{ id: "gpt-active", label: "GPT Active" }, { id: "gpt-mini", label: "GPT Mini" }] }),
+}));
+
 afterEach(() => {
   cleanup();
   mocks.activeChat = null;
@@ -65,6 +80,9 @@ const EMPTY: ObjectiveState = {
   generatePrompt: "",
   checkPrompt: "",
   injectPrompt: "",
+  useChatModel: true,
+  providerProfileId: null,
+  model: null,
 };
 
 function withState(state: ObjectiveState) {
@@ -141,5 +159,15 @@ describe("ObjectiveConfig (INS-5)", () => {
     const { getByTitle } = render(<ObjectiveConfig chatId={"chat_1" as never} />);
     fireEvent.click(getByTitle("obj_delete_task"));
     expect(mocks.deleteObjectiveTaskAction).toHaveBeenCalledWith("chat_1", "t1");
+  });
+
+  it("toggling 'use chat model' off dispatches updateObjectiveConfigAction", () => {
+    // useChatModel defaults to true (EMPTY); turning it off pins a separate model.
+    withState(EMPTY);
+    mocks.updateObjectiveConfigAction.mockResolvedValue(undefined);
+    const { getByRole } = render(<ObjectiveConfig chatId={"chat_1" as never} />);
+    // The single switch in ObjectiveConfig is the ModelSelector's useChatModel toggle.
+    fireEvent.click(getByRole("switch"));
+    expect(mocks.updateObjectiveConfigAction).toHaveBeenCalledWith("chat_1", { useChatModel: false });
   });
 });

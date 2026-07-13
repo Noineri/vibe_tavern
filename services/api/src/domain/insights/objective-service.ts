@@ -68,6 +68,9 @@ export function defaultObjectiveState(): ObjectiveState {
     generatePrompt: "",
     checkPrompt: "",
     injectPrompt: "",
+    useChatModel: true,
+    providerProfileId: null,
+    model: null,
   };
 }
 
@@ -160,8 +163,40 @@ function composeCheckInstruction(base: string, objectiveDescription: string, tas
   return `${base}\n\nObjective: ${objectiveDescription.trim() || "(unspecified)"}\nActive task: ${taskDescription}`;
 }
 
-function isObjectiveState(raw: unknown): raw is ObjectiveState {
-  return typeof raw === "object" && raw !== null && Array.isArray((raw as ObjectiveState).tasks);
+/**
+ * Normalize a raw stored value into a complete ObjectiveState, filling any
+ * missing field with its default. This is the backward-compat migration path:
+ * chats created before the model-selection fields (useChatModel/
+ * providerProfileId/model) — or stored as `{}` — load with `useChatModel: true`
+ * (the chat's active provider + default model), so auto-check keeps working
+ * without a DB migration. Mirrors {@link normalizeAutoSummaryConfig}.
+ */
+function normalizeObjectiveState(raw: unknown): ObjectiveState {
+  const base = defaultObjectiveState();
+  if (typeof raw !== "object" || raw === null) return base;
+  const r = raw as Partial<ObjectiveState>;
+  const tasks = Array.isArray(r.tasks)
+    ? r.tasks.filter((t): t is ObjectiveState["tasks"][number] =>
+      typeof t === "object" && t !== null && typeof (t as ObjectiveTask).id === "string"
+        && typeof (t as ObjectiveTask).description === "string"
+        && typeof (t as ObjectiveTask).status === "string")
+    : base.tasks;
+  return {
+    objectiveDescription: typeof r.objectiveDescription === "string" ? r.objectiveDescription : base.objectiveDescription,
+    tasks,
+    autoCheckFrequency: typeof r.autoCheckFrequency === "number" && Number.isFinite(r.autoCheckFrequency)
+      ? Math.max(0, Math.floor(r.autoCheckFrequency))
+      : base.autoCheckFrequency,
+    injectionDepth: typeof r.injectionDepth === "number" && Number.isFinite(r.injectionDepth)
+      ? Math.max(1, Math.floor(r.injectionDepth))
+      : base.injectionDepth,
+    generatePrompt: typeof r.generatePrompt === "string" ? r.generatePrompt : base.generatePrompt,
+    checkPrompt: typeof r.checkPrompt === "string" ? r.checkPrompt : base.checkPrompt,
+    injectPrompt: typeof r.injectPrompt === "string" ? r.injectPrompt : base.injectPrompt,
+    useChatModel: typeof r.useChatModel === "boolean" ? r.useChatModel : base.useChatModel,
+    providerProfileId: typeof r.providerProfileId === "string" && r.providerProfileId.trim() ? r.providerProfileId : base.providerProfileId,
+    model: typeof r.model === "string" && r.model.trim() ? r.model : base.model,
+  };
 }
 
 export interface ObjectiveGenerateInput {
@@ -197,10 +232,10 @@ export class ObjectiveService {
   ) {}
 
   /** Load the chat's objective state, or null when none has been generated. */
-  async getState(chatId: ChatId): Promise<ObjectiveState | null> {
+  async getState(chatId: ChatId): Promise<ObjectiveState> {
     const chat = await this.stores.chats.getById(chatId);
-    if (!chat) return null;
-    return isObjectiveState(chat.insightsObjectiveState) ? chat.insightsObjectiveState : null;
+    if (!chat) return defaultObjectiveState();
+    return normalizeObjectiveState(chat.insightsObjectiveState);
   }
 
   /** The current active task (first 'active', else first 'pending'), or null. */
@@ -312,7 +347,7 @@ export class ObjectiveService {
    */
   async updateObjectiveConfig(
     chatId: ChatId,
-    patch: Partial<Pick<ObjectiveState, "autoCheckFrequency" | "injectionDepth" | "generatePrompt" | "checkPrompt" | "injectPrompt">>,
+    patch: Partial<Pick<ObjectiveState, "autoCheckFrequency" | "injectionDepth" | "generatePrompt" | "checkPrompt" | "injectPrompt" | "useChatModel" | "providerProfileId" | "model">>,
   ): Promise<ObjectiveState> {
     const base = (await this.getState(chatId)) ?? defaultObjectiveState();
     const next: ObjectiveState = { ...base };
@@ -327,6 +362,9 @@ export class ObjectiveService {
     if (patch.generatePrompt !== undefined) next.generatePrompt = patch.generatePrompt;
     if (patch.checkPrompt !== undefined) next.checkPrompt = patch.checkPrompt;
     if (patch.injectPrompt !== undefined) next.injectPrompt = patch.injectPrompt;
+    if (patch.useChatModel !== undefined) next.useChatModel = patch.useChatModel;
+    if (patch.providerProfileId !== undefined) next.providerProfileId = patch.providerProfileId?.trim() || null;
+    if (patch.model !== undefined) next.model = patch.model?.trim() || null;
     await this.saveState(chatId, next);
     return next;
   }
@@ -337,10 +375,10 @@ export class ObjectiveService {
    * emit it). Gates on objectiveEnabled + autoCheckFrequency, then runs
    * {@link checkCompletion} under the trailing-edge lock so a burst of messages
    * never leaves the latest unevaluated. The task closure re-reads fresh context
-   * on each invocation (trailing re-run correctness). Provider/model: INS-4 uses
-   * the active provider profile + its default model; INS-5 adds the per-insight
-   * pinned provider/model config. Fire-and-forget — the EventBus caller never
-   * waits on or sees errors from this path (they go to logSendDebug).
+   * on each invocation (trailing re-run correctness). Provider/model resolution
+   * comes from the stored per-insight config (use chat model or the separately
+   * pinned profile/model), mirroring auto-summary. Fire-and-forget — the EventBus
+   * caller never waits on or sees errors from this path (they go to logSendDebug).
    */
   async triggerAutoCheck(chatIdValue: string): Promise<void> {
     const chat = await this.stores.chats.getById(chatIdValue);
@@ -352,16 +390,12 @@ export class ObjectiveService {
     const assistantCount = messages.filter((m) => m.role === "assistant").length;
     if (assistantCount === 0 || assistantCount % state.autoCheckFrequency !== 0) return;
 
-    const profile = await this.providerProfiles.resolveActiveProviderProfile();
-    if (!profile?.id) {
-      logSendDebug("insights.objective.auto.skip", { chatId: chat.id, reason: "no_provider" });
+    const resolved = await this.resolveInsightProvider(state);
+    if (!resolved) {
+      logSendDebug("insights.objective.auto.skip", { chatId: chat.id, reason: state.useChatModel ? "no_provider" : "no_provider_or_model" });
       return;
     }
-    const model = profile.defaultModel?.trim();
-    if (!model) {
-      logSendDebug("insights.objective.auto.skip", { chatId: chat.id, reason: "no_model", providerProfileId: profile.id });
-      return;
-    }
+    const { profile, model } = resolved;
 
     const lockKey = `${chat.id}:${chat.activeBranchId}`;
     await this.autoCheckLocks.runExclusiveTrailing(
@@ -387,5 +421,25 @@ export class ObjectiveService {
     await this.stores.chats.updateInsightsObjectiveState(chatId, {
       insightsObjectiveState: state as unknown as Record<string, unknown>,
     });
+  }
+
+  /**
+   * Resolve the insight (generate/check) provider + model from the stored
+   * ObjectiveState config — mirrors {@link ChatSummaryService.triggerAutoSummary}'s
+   * resolution: `useChatModel` → the chat's active profile; else the pinned
+   * `providerProfileId`. The stored `model` overrides the profile's
+   * `defaultModel` in either mode (the "pin"). Returns null when no usable
+   * profile/model is configured (the caller logs + skips).
+   */
+  async resolveInsightProvider(
+    state: ObjectiveState,
+  ): Promise<{ profile: NonNullable<Awaited<ReturnType<ProviderProfileService["resolveActiveProviderProfile"]>>>; model: string } | null> {
+    const profile = state.useChatModel
+      ? await this.providerProfiles.resolveActiveProviderProfile()
+      : (state.providerProfileId ? await this.providerProfiles.getProviderProfile(state.providerProfileId) : null);
+    if (!profile?.id) return null;
+    const model = state.model?.trim() || profile.defaultModel?.trim();
+    if (!model) return null;
+    return { profile: profile as NonNullable<Awaited<ReturnType<ProviderProfileService["resolveActiveProviderProfile"]>>>, model };
   }
 }

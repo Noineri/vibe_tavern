@@ -64,6 +64,9 @@ const ROUTE: ObjectiveState = {
   generatePrompt: "",
   checkPrompt: "",
   injectPrompt: "",
+  useChatModel: true,
+  providerProfileId: null,
+  model: null,
 };
 
 describe("ObjectiveZone (INS-6)", () => {

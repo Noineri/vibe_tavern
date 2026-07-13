@@ -48,6 +48,13 @@ vi.mock("../../../stores/api-actions/chat-actions.js", () => ({
   updateInsightsConfigAction: mocks.updateInsightsConfigAction,
 }));
 
+// ObjectiveConfig is a separate boundary (covered by its own test file). Stub
+// it so the PANEL test stays focused on the toggle behavior and does not drag
+// in the config editor's provider/model dependencies.
+vi.mock("./ObjectiveConfig.js", () => ({
+  ObjectiveConfig: () => <div data-testid="objective-config" />,
+}));
+
 afterEach(() => {
   cleanup();
   mocks.activeChat = null;

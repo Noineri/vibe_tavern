@@ -76,6 +76,9 @@ export interface ObjectiveState {
   generatePrompt: string;
   checkPrompt: string;
   injectPrompt: string;
+  useChatModel: boolean;
+  providerProfileId: string | null;
+  model: string | null;
 }
 
 export type ChatGenerationStatus =

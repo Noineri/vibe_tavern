@@ -23,6 +23,7 @@ import type { StoreContainer } from "@vibe-tavern/db";
 import type { PromptAssemblyContext } from "@vibe-tavern/prompt-pipeline";
 import {
   ObjectiveService,
+  defaultObjectiveState,
   parseTaskList,
   parseCheckVerdict,
   selectActiveTask,
@@ -294,7 +295,9 @@ describe("ObjectiveService.triggerAutoCheck (INS-4 orchestration)", () => {
     readState: () => ObjectiveState;
   } {
     const { objectiveEnabled, autoCheckFrequency, assistantCount, tasks = [], reply = "DONE", hasProvider = true, model = "gpt-test" } = opts;
-    const baseState: ObjectiveState = {
+    // Deliberately the PRE-model-selection persisted shape: getState must
+    // normalize it to useChatModel:true so existing chats keep auto-checking.
+    const baseState = {
       objectiveDescription: "Defeat the warlord",
       tasks,
       autoCheckFrequency,
@@ -302,7 +305,7 @@ describe("ObjectiveService.triggerAutoCheck (INS-4 orchestration)", () => {
       generatePrompt: "",
       checkPrompt: "",
       injectPrompt: "",
-    };
+    } satisfies Omit<ObjectiveState, "useChatModel" | "providerProfileId" | "model">;
     let state: Record<string, unknown> = baseState as unknown as Record<string, unknown>;
     const messages = Array.from({ length: assistantCount }, (_, i) => ({ id: `a${i}`, role: "assistant", position: i, content: `msg ${i}` }));
     const stores = {
@@ -406,5 +409,34 @@ describe("ObjectiveService.triggerAutoCheck (INS-4 orchestration)", () => {
     await t.service.triggerAutoCheck("chat_1");
     expect(t.getExecuteCalls()).toBe(1);
     expect(t.readState().tasks[0].status).toBe(OBJECTIVE_TASK_STATUS.pending);
+  });
+
+  it("resolves a separately pinned provider/model instead of the active chat profile", async () => {
+    let activeCalls = 0;
+    let pinnedCalls = 0;
+    const providerProfiles = {
+      resolveActiveProviderProfile: async () => {
+        activeCalls += 1;
+        return { id: "prof_active", defaultModel: "chat-model" };
+      },
+      getProviderProfile: async (id: string) => {
+        pinnedCalls += 1;
+        expect(id).toBe("prof_pinned");
+        return { id, defaultModel: "provider-default" };
+      },
+    } as never;
+    const service = new ObjectiveService({} as StoreContainer, {} as never, providerProfiles, async () => ({ text: "" }) as never, async () => "");
+
+    const resolved = await service.resolveInsightProvider({
+      ...defaultObjectiveState(),
+      useChatModel: false,
+      providerProfileId: "prof_pinned",
+      model: "secondary-model",
+    });
+
+    expect(activeCalls).toBe(0);
+    expect(pinnedCalls).toBe(1);
+    expect(resolved?.profile.id).toBe("prof_pinned");
+    expect(resolved?.model).toBe("secondary-model");
   });
 });

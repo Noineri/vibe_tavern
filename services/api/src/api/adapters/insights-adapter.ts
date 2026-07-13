@@ -22,18 +22,17 @@ export class InsightsAdapter {
 	constructor(
 		private readonly stores: StoreContainer,
 		private readonly sessionRuntime: SessionRuntime,
-		private readonly providerProfiles: ProviderProfileService,
 		private readonly objectiveService: ObjectiveService,
 	) {}
 
 	/** Generate a task route from the conversation. */
 	generateObjectiveTasks = async (
 		chatId: string,
-		body: { providerProfileId?: string; model?: string },
+		_body: { providerProfileId?: string; model?: string },
 		signal?: AbortSignal,
 	): Promise<ConfigPatchResponse> => {
 		await this.ensureChat(chatId);
-		const { profile, model } = await this.resolveProvider(body);
+		const { profile, model } = await this.resolveInsightProviderOrThrow(chatId);
 		const context = await this.buildContext(chatId, model);
 		await this.objectiveService.generateTasks({ chatId: brandId<ChatId>(chatId), profile, model, context, signal });
 		return this.refresh(chatId);
@@ -42,11 +41,11 @@ export class InsightsAdapter {
 	/** Manually check whether the active task is complete (advancing if so). */
 	checkObjectiveCompletion = async (
 		chatId: string,
-		body: { providerProfileId?: string; model?: string },
+		_body: { providerProfileId?: string; model?: string },
 		signal?: AbortSignal,
 	): Promise<ConfigPatchResponse> => {
 		await this.ensureChat(chatId);
-		const { profile, model } = await this.resolveProvider(body);
+		const { profile, model } = await this.resolveInsightProviderOrThrow(chatId);
 		const context = await this.buildContext(chatId, model);
 		await this.objectiveService.checkCompletion({ chatId: brandId<ChatId>(chatId), profile, model, context, signal });
 		return this.refresh(chatId);
@@ -94,7 +93,16 @@ export class InsightsAdapter {
 
 	updateObjectiveConfig = async (
 		chatId: string,
-		body: { autoCheckFrequency?: number; injectionDepth?: number; generatePrompt?: string; checkPrompt?: string; injectPrompt?: string },
+		body: {
+			autoCheckFrequency?: number;
+			injectionDepth?: number;
+			generatePrompt?: string;
+			checkPrompt?: string;
+			injectPrompt?: string;
+			useChatModel?: boolean;
+			providerProfileId?: string | null;
+			model?: string | null;
+		},
 	): Promise<ConfigPatchResponse> => {
 		await this.ensureChat(chatId);
 		await this.objectiveService.updateObjectiveConfig(brandId<ChatId>(chatId), body);
@@ -106,14 +114,20 @@ export class InsightsAdapter {
 		if (!chat) throw notFound("Chat", `Chat '${chatId}' was not found.`);
 	}
 
-	private async resolveProvider(body: { providerProfileId?: string; model?: string }): Promise<{ profile: NonNullable<Awaited<ReturnType<ProviderProfileService["resolveActiveProviderProfile"]>>>; model: string }> {
-		const profile = body.providerProfileId?.trim()
-			? await this.providerProfiles.getProviderProfile(body.providerProfileId)
-			: await this.providerProfiles.resolveActiveProviderProfile();
-		if (!profile?.id) throw validation("No provider profile configured. Set an active provider or pass providerProfileId.");
-		const model = body.model?.trim() || profile.defaultModel?.trim();
-		if (!model) throw validation("Select a model for the objective model.");
-		return { profile, model };
+	/**
+	 * Resolve the insight provider/model from the chat's STORED ObjectiveState
+	 * config (mirrors ChatSummaryService.triggerAutoSummary). The manual
+	 * generate/check no longer takes provider/model from the request body — the
+	 * pinned config in Build Mode → Insights is the single source of truth.
+	 * Throws a validation error when nothing is configured so the UI surfaces it.
+	 */
+	private async resolveInsightProviderOrThrow(chatId: string): Promise<{ profile: NonNullable<Awaited<ReturnType<ProviderProfileService["resolveActiveProviderProfile"]>>>; model: string }> {
+		const state = await this.objectiveService.getState(brandId<ChatId>(chatId));
+		const resolved = await this.objectiveService.resolveInsightProvider(state);
+		if (!resolved) {
+			throw validation("No provider/model configured for the Objective insight. Set one in Build Mode → Insights.");
+		}
+		return resolved;
 	}
 
 	private async buildContext(chatId: string, model: string) {

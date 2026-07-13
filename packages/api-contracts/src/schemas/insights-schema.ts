@@ -61,4 +61,7 @@ export const updateObjectiveConfigSchema = z.object({
   generatePrompt: z.string().optional(),
   checkPrompt: z.string().optional(),
   injectPrompt: z.string().optional(),
+  useChatModel: z.boolean().optional(),
+  providerProfileId: z.string().nullable().optional(),
+  model: z.string().nullable().optional(),
 });
