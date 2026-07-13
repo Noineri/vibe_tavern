@@ -11,14 +11,18 @@
  * INS-3c — prompt assembly via the InsightsAssembler registry. The check/generate
  * prompt is built by `getInsightsAssembler("objective")` (a pure registry peer
  * to Summary / AI-assistant; see `docs/architecture/prompt-pipeline.md` §
- * Registries), NOT by a flag on `assemblePrompt`. The caller supplies the recent
- * conversation window (sliced per `contextWindow`); the service resolves the
- * instruction (override-or-default via `insights-prompts.ts` → `.md` assets,
- * also injected for testability) and composes the dynamic context (objective
- * description / active task). The assembler turns recent window + instruction
- * into a `PromptAssemblyResult`; this service maps it to the
- * `AssemblePromptResponse` the executor consumes. NO RP stack reaches the
- * objective model — just the committed conversation + the instruction.
+ * Registries), NOT by a flag on `assemblePrompt`. The caller supplies the full
+ * RP world context (character / persona / activated lorebook / script
+ * injections / recent window, sliced per `contextWindow`, WITHOUT the
+ * objectiveTask/sceneState injection fields); the assembler reuses the chat-turn
+ * pipeline (`buildLayers`) so the objective model sees the same world the main
+ * model sees — under the same preset toggles — minus only the insight
+ * self-injection layers, plus the resolved instruction as the final user
+ * message. The service resolves the instruction (override-or-default via
+ * `insights-prompts.ts` → `.md` assets, also injected for testability) and
+ * composes the dynamic context (objective description / active task). The
+ * assembler returns a `PromptAssemblyResult`; this service maps it to the
+ * `AssemblePromptResponse` the executor consumes.
  *
  * Status model (flat ordered task list — order is the route order):
  *  - 'pending'    → not started (the default after generate)
@@ -33,7 +37,7 @@ import type { AssemblePromptResponse, ChatId, ObjectiveState, ObjectiveTask } fr
 import { OBJECTIVE_TASK_STATUS } from "@vibe-tavern/domain";
 import type { StoreContainer } from "@vibe-tavern/db";
 import { getInsightsAssembler } from "@vibe-tavern/prompt-pipeline";
-import type { InsightsRecentMessage, PromptAssemblyResult } from "@vibe-tavern/prompt-pipeline";
+import type { PromptAssemblyContext, PromptAssemblyResult } from "@vibe-tavern/prompt-pipeline";
 import { nonstreamingProviderExecute } from "../../infrastructure/ai/nonstreaming-provider-executor.js";
 import type { ProviderExecutionInput } from "../../infrastructure/ai/provider-execution-types.js";
 import { resolveInsightsPrompt } from "./insights-prompts.js";
@@ -152,8 +156,14 @@ export interface ObjectiveGenerateInput {
   chatId: ChatId;
   profile: ResolvedProfile;
   model: string;
-  /** Recent conversation window (caller slices per `contextWindow`). */
-  recentMessages: InsightsRecentMessage[];
+  /**
+   * The full RP world context (character / persona / activated lorebook /
+   * script injections / recent window sliced per `contextWindow`), WITHOUT the
+   * `objectiveTask`/`sceneState` injection fields. Built by the caller
+   * (prompt-assembly-service in INS-4) the same way a chat turn is, so the
+   * objective model sees the same world the main model sees.
+   */
+  context: PromptAssemblyContext;
   signal?: AbortSignal;
 }
 
@@ -189,7 +199,7 @@ export class ObjectiveService {
     const state = existing ?? defaultObjectiveState();
     const instructionBase = await this.resolvePrompt("objectiveGenerate", state.generatePrompt);
     const instruction = composeGenerateInstruction(instructionBase, state.objectiveDescription);
-    const prompt = this.buildPrompt("objective", input.recentMessages, instruction);
+    const prompt = this.buildPrompt(input.context, instruction);
     const result = await this.execute({ profile: input.profile, model: input.model, prompt, signal: input.signal });
     const tasks = parseTaskList(result.text);
     if (tasks.length === 0) {
@@ -212,7 +222,7 @@ export class ObjectiveService {
     if (!target) return state;
     const instructionBase = await this.resolvePrompt("objectiveCheck", state.checkPrompt);
     const instruction = composeCheckInstruction(instructionBase, state.objectiveDescription, target.description);
-    const prompt = this.buildPrompt("objective", input.recentMessages, instruction);
+    const prompt = this.buildPrompt(input.context, instruction);
     const result = await this.execute({ profile: input.profile, model: input.model, prompt, signal: input.signal });
     if (!parseCheckVerdict(result.text)) return state;
     const next: ObjectiveState = { ...state, tasks: advanceAfterCompletion(state.tasks) };
@@ -220,13 +230,9 @@ export class ObjectiveService {
     return next;
   }
 
-  /** Build the insight one-shot prompt (recent window + instruction) via the assembler registry. */
-  private buildPrompt(
-    kind: "objective" | "scene",
-    recentMessages: InsightsRecentMessage[],
-    instruction: string,
-  ): AssemblePromptResponse {
-    const assembly = getInsightsAssembler(kind).assemble({ kind, recentMessages, instruction });
+  /** Build the insight one-shot prompt (RP world context + instruction) via the assembler registry. */
+  private buildPrompt(context: PromptAssemblyContext, instruction: string): AssemblePromptResponse {
+    const assembly = getInsightsAssembler("objective").assemble(context, instruction);
     return insightsAssemblyToPromptResponse(assembly);
   }
 

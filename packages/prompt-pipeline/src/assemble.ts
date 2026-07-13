@@ -397,6 +397,48 @@ export function assembleSummaryPrompt(rawContext: PromptAssemblyContext): Prompt
 }
 
 /**
+ * Pure insights-specific entry point (INSIGHTS_PLAN INS-3c). The caller supplies
+ * the same prepared state as a chat turn — character / persona / activated lore
+ * / script injections / recent window — and this builds the full RP world context
+ * the insight model needs to evaluate the conversation, then appends the resolved
+ * instruction as the final user message. The insight model sees what the main
+ * model sees, under the SAME preset toggles (examples, lore activation,
+ * authorsNote all follow the chat's config — no insight-specific policy).
+ *
+ * The ONE filter: strip the insight self-injection layers (`objectiveTask` /
+ * `sceneState`). They are main-model steering layers — including `objectiveTask`
+ * here would duplicate the instruction (which already names the active task),
+ * and `sceneState` would add scene noise to the very model judging it. The
+ * caller also omits those context fields, so this filter is defensive.
+ */
+export function assembleInsightsPrompt(
+  rawContext: PromptAssemblyContext,
+  instruction: string,
+): PromptAssemblyResult {
+  const context = applyMacrosToContext(rawContext);
+  const resolver = createResolver(context.preset);
+  const built = buildLayers(context, resolver);
+  const layers = built.layers.filter(
+    (layer) => layer.id !== PROMPT_LAYER_ID.objectiveTask && layer.id !== PROMPT_LAYER_ID.sceneState,
+  );
+  const finalized = finalizeAssembly(context, { ...built, layers }, resolver);
+  const trimmedInstruction = instruction.trim();
+  if (!trimmedInstruction) return finalized;
+  const messages = finalized.finalPayload.messages as Array<{
+    role: "system" | "user" | "assistant" | "tool";
+    content: string;
+    layerId?: string;
+  }>;
+  return {
+    ...finalized,
+    finalPayload: {
+      ...finalized.finalPayload,
+      messages: [...messages, { role: "user", content: trimmedInstruction, layerId: "insights_instruction" }],
+    },
+  };
+}
+
+/**
  * Stage 2 — create a PromptLayer for every non-empty content source.
  *
  * The single mode-sensitive stage of the pipeline: simple and advanced modes

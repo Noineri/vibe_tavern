@@ -20,6 +20,7 @@ import { describe, it, expect } from "bun:test";
 import type { ObjectiveState } from "@vibe-tavern/domain";
 import { OBJECTIVE_TASK_STATUS } from "@vibe-tavern/domain";
 import type { StoreContainer } from "@vibe-tavern/db";
+import type { PromptAssemblyContext } from "@vibe-tavern/prompt-pipeline";
 import {
   ObjectiveService,
   parseTaskList,
@@ -123,10 +124,16 @@ function makeMockStates(initial: ObjectiveState): { stores: StoreContainer } {
   return { stores: makeMockStores(initial as unknown as Record<string, unknown>).stores };
 }
 
-const recentMessages = [
-  { role: "user" as const, content: "I draw my sword." },
-  { role: "assistant" as const, content: "The warlord sneers." },
-];
+const context: PromptAssemblyContext = {
+  identity: { chatId: "chat_1" },
+  character: { id: "char_1", name: "Aria", description: "A fire mage." },
+  chat: {
+    recentMessages: [
+      { id: "m1", role: "user", content: "I draw my sword." },
+      { id: "m2", role: "assistant", content: "The warlord sneers." },
+    ],
+  },
+} as PromptAssemblyContext;
 const profile = {} as never; // fake execute ignores it
 
 /**
@@ -153,7 +160,7 @@ describe("ObjectiveService (INS-3b logic + INS-3c assembler wiring)", () => {
     const { stores, readState } = makeMockStores({ objectiveDescription: "Defeat the warlord", tasks: [], autoCheckFrequency: 0, injectionDepth: 1, generatePrompt: "", checkPrompt: "", injectPrompt: "" });
     const { service } = serviceWith(stores, "1. Reach the city gates\n2. Confront the warlord\n3. End the siege");
 
-    const state = await service.generateTasks({ chatId: "chat_1" as never, profile, model: "m", recentMessages });
+    const state = await service.generateTasks({ chatId: "chat_1" as never, profile, model: "m", context });
     expect(state.tasks.map((t) => t.description)).toEqual(["Reach the city gates", "Confront the warlord", "End the siege"]);
     expect(state.objectiveDescription).toBe("Defeat the warlord"); // preserved
     expect((await service.getActiveTask("chat_1" as never))?.description).toBe("Reach the city gates");
@@ -165,7 +172,7 @@ describe("ObjectiveService (INS-3b logic + INS-3c assembler wiring)", () => {
   it("generateTasks throws when the LLM produces no parseable tasks", async () => {
     const { stores } = makeMockStores();
     const { service } = serviceWith(stores, "I cannot help with that.");
-    await expect(service.generateTasks({ chatId: "chat_1" as never, profile, model: "m", recentMessages })).rejects.toThrow();
+    await expect(service.generateTasks({ chatId: "chat_1" as never, profile, model: "m", context })).rejects.toThrow();
   });
 
   it("checkCompletion advances the route when the LLM says DONE", async () => {
@@ -180,7 +187,7 @@ describe("ObjectiveService (INS-3b logic + INS-3c assembler wiring)", () => {
     const { stores } = makeMockStates(initial);
     const { service } = serviceWith(stores, "DONE");
 
-    const after = await service.checkCompletion({ chatId: "chat_1" as never, profile, model: "m", recentMessages });
+    const after = await service.checkCompletion({ chatId: "chat_1" as never, profile, model: "m", context });
     expect(after.tasks[0].status).toBe(OBJECTIVE_TASK_STATUS.completed);
     expect(after.tasks[1].status).toBe(OBJECTIVE_TASK_STATUS.pending);
     expect((await service.getActiveTask("chat_1" as never))?.description).toBe("Run");
@@ -195,7 +202,7 @@ describe("ObjectiveService (INS-3b logic + INS-3c assembler wiring)", () => {
     const { stores } = makeMockStates(initial);
     const { service } = serviceWith(stores, "PENDING");
 
-    const after = await service.checkCompletion({ chatId: "chat_1" as never, profile, model: "m", recentMessages });
+    const after = await service.checkCompletion({ chatId: "chat_1" as never, profile, model: "m", context });
     expect(after.tasks[0].status).toBe(OBJECTIVE_TASK_STATUS.pending);
   });
 
@@ -231,19 +238,22 @@ describe("ObjectiveService (INS-3b logic + INS-3c assembler wiring)", () => {
   // is the FINAL user message (now composed from the resolved base + dynamic
   // context, shaped by the InsightsAssembler — no caller-built contextPrompt).
 
-  it("generateTasks hands the executor the recent window as turns + the composed instruction as the final user message", async () => {
+  it("generateTasks hands the executor the RP context + the composed instruction as the final user message", async () => {
     const { stores } = makeMockStores({ objectiveDescription: "Defeat the warlord", tasks: [], autoCheckFrequency: 0, injectionDepth: 1, generatePrompt: "", checkPrompt: "", injectPrompt: "" });
     const { service, capturedPrompt } = serviceWith(stores, "1. Fight");
 
-    await service.generateTasks({ chatId: "chat_1" as never, profile, model: "m", recentMessages });
-    const messages = (capturedPrompt()!.finalPayload as { messages: Array<{ role: string; content: string }> }).messages;
-    // Recent window preserved as real turns.
-    expect(messages[0]).toEqual({ role: "user", content: "I draw my sword." });
-    expect(messages[1]).toEqual({ role: "assistant", content: "The warlord sneers." });
-    // Final user message = resolved base (override-or-default) + dynamic objective context.
-    expect(messages[2].role).toBe("user");
-    expect(messages[2].content).toContain("BASE-INSTRUCTION");
-    expect(messages[2].content).toContain("Objective: Defeat the warlord");
+    await service.generateTasks({ chatId: "chat_1" as never, profile, model: "m", context });
+    const messages = (capturedPrompt()!.finalPayload as { messages: Array<{ role: string; content: string; layerId?: string }> }).messages;
+    // The character context reaches the insight model (it sees the RP world).
+    expect(messages.some((m) => m.content.includes("A fire mage."))).toBe(true);
+    // The recent window is preserved as real turns.
+    expect(messages.some((m) => m.content === "I draw my sword." && m.role === "user")).toBe(true);
+    // The final user message = resolved base (override-or-default) + dynamic objective context.
+    const last = messages.at(-1)!;
+    expect(last.role).toBe("user");
+    expect(last.layerId).toBe("insights_instruction");
+    expect(last.content).toContain("BASE-INSTRUCTION");
+    expect(last.content).toContain("Objective: Defeat the warlord");
   });
 
   it("the override flows through resolvePrompt: a custom generatePrompt replaces the default base", async () => {
@@ -257,7 +267,7 @@ describe("ObjectiveService (INS-3b logic + INS-3c assembler wiring)", () => {
     };
     const service = new ObjectiveService(stores, execute as never, resolvePrompt as never);
 
-    await service.generateTasks({ chatId: "chat_1" as never, profile, model: "m", recentMessages });
+    await service.generateTasks({ chatId: "chat_1" as never, profile, model: "m", context });
     expect(receivedOverride).toBe("MY-CUSTOM-GEN-PROMPT");
   });
 });

@@ -6,21 +6,45 @@
  *     the registry's `satisfies Record<InsightsKind, InsightsAssembler>` guard
  *     is reflected in its key set (so adding a kind without registering is a
  *     compile error, not a silent hole).
- *  2. BEHAVIOR — the assembler builds the recent window as REAL role-tagged
- *     turns + the instruction as the FINAL user message, with NO RP stack (no
- *     character / lore / authorsNote / the insight layers themselves). This is
- *     the boundary `withObjectiveInstructionAsFinalUserMessage` used to pin at
- *     the service level (INS-3b) — relocated here because the assembler now
- *     owns it (the service just passes the resolved instruction string).
+ *  2. BEHAVIOR — the insight prompt is the chat's full RP world context
+ *     (character / persona / activated lorebook / recent window) PLUS the
+ *     instruction as the final user message, with the insight self-injection
+ *     layers (`objectiveTask` / `sceneState`) stripped (they would duplicate the
+ *     instruction / add scene noise to the model judging them). `mes_example`
+ *     follows the chat's own toggle (resolver / `mesExampleMode`) — no
+ *     insight-specific visibility policy.
  *
  * Pure pipeline test: no DB, no LLM, no I/O.
  */
 import { describe, expect, it } from "bun:test";
 import { getInsightsAssembler, INSIGHTS_ASSEMBLERS } from "../src/insights/insights-assemblers.ts";
-import type { InsightsKind } from "../src/insights/insights-assembler.ts";
+import type { PromptAssemblyContext, InsightsKind } from "../src/types.ts";
 
 function messagesOf(result: ReturnType<ReturnType<typeof getInsightsAssembler>["assemble"]>) {
-  return result.finalPayload.messages as Array<{ role: string; content: string }>;
+  return result.finalPayload.messages as Array<{ role: string; content: string; layerId?: string }>;
+}
+
+function makeContext(overrides: Partial<PromptAssemblyContext> = {}): PromptAssemblyContext {
+  return {
+    identity: { chatId: "chat_1" },
+    character: {
+      id: "char_1",
+      name: "Aria",
+      description: "A fire mage.",
+      personality: "Bold.",
+      scenario: "A burning tower.",
+      mesExample: "[Example]\nAria: Feel my fire!",
+    },
+    persona: { id: "persona_1", name: "Mira", description: "A scholar." },
+    lore: [{ id: "lore_1", title: "Ember", content: "Fire magic is forbidden.", priority: 100 }],
+    chat: {
+      recentMessages: [
+        { id: "m1", role: "user", content: "I draw my sword." },
+        { id: "m2", role: "assistant", content: "The warlord sneers." },
+      ],
+    },
+    ...overrides,
+  } as PromptAssemblyContext;
 }
 
 describe("InsightsAssembler registry (INS-3c manifest)", () => {
@@ -38,88 +62,55 @@ describe("InsightsAssembler registry (INS-3c manifest)", () => {
 });
 
 describe("assembleInsights (INS-3c behavior)", () => {
-  it("emits the recent window as real role-tagged turns + the instruction as the final user message", () => {
-    const result = getInsightsAssembler("objective").assemble({
-      kind: "objective",
-      recentMessages: [
-        { role: "user", content: "I draw my sword." },
-        { role: "assistant", content: "The warlord sneers." },
-      ],
-      instruction: "Is the active task done? Reply DONE or PENDING.",
-    });
+  it("includes the RP world context the main model sees (character / persona / lore)", () => {
+    const result = getInsightsAssembler("objective").assemble(makeContext(), "Is the task done?");
+    const ids = result.layers.map((l) => l.id);
+    expect(ids).toContain("character_base");
+    expect(ids).toContain("persona");
+    expect(ids.some((id) => id.startsWith("lore_"))).toBe(true);
+  });
+
+  it("appends the instruction as the FINAL user message after the recent window", () => {
+    const result = getInsightsAssembler("scene").assemble(makeContext(), "Produce the scene JSON.");
     const msgs = messagesOf(result);
-    expect(msgs).toHaveLength(3);
-    expect(msgs[0]).toEqual({ role: "user", content: "I draw my sword." });
-    expect(msgs[1]).toEqual({ role: "assistant", content: "The warlord sneers." });
-    expect(msgs[2]).toEqual({ role: "user", content: "Is the active task done? Reply DONE or PENDING." });
+    expect(msgs.at(-1)).toEqual({ role: "user", content: "Produce the scene JSON.", layerId: "insights_instruction" });
+    // The recent window is preserved as real turns before the instruction.
+    expect(msgs.some((m) => m.content === "I draw my sword." && m.role === "user")).toBe(true);
+    expect(msgs.some((m) => m.content === "The warlord sneers." && m.role === "assistant")).toBe(true);
   });
 
-  it("never includes any RP-stack layer (no character / lore / authorsNote / insight layers)", () => {
-    const rpIds = new Set([
-      "character_base", "character_personality", "character_scenario", "character_system_prompt",
-      "persona", "lore_entry", "authors_note", "objective_task", "scene_state",
-    ]);
-    const result = getInsightsAssembler("scene").assemble({
-      kind: "scene",
-      recentMessages: [{ role: "user", content: "We enter the tavern." }],
-      instruction: "Produce the scene JSON.",
+  it("strips the insight self-injection layers even when the context carries them (no duplication/noise)", () => {
+    const ctx = makeContext({
+      objectiveTask: { description: "Pick the lock", injectPrompt: "", injectionDepth: 1 },
+      sceneState: { text: "Tavern, dusk" },
     });
-    for (const layer of result.layers) {
-      expect(rpIds.has(layer.id)).toBe(false);
-      expect(layer.sourceType).toBe("insights"); // only insights-source layers
-    }
-    expect(result.layers.map((l) => l.id).sort()).toEqual(["insights_context", "insights_instruction"]);
+    const result = getInsightsAssembler("objective").assemble(ctx, "Is the active task done?");
+    const ids = result.layers.map((l) => l.id);
+    expect(ids).not.toContain("objective_task");
+    expect(ids).not.toContain("scene_state");
   });
 
-  it("drops empty turns so they never produce blank messages", () => {
-    const result = getInsightsAssembler("objective").assemble({
-      kind: "objective",
-      recentMessages: [
-        { role: "user", content: "   " },
-        { role: "assistant", content: "Real reply." },
-      ],
-      instruction: "Check.",
-    });
-    const msgs = messagesOf(result);
-    expect(msgs).toEqual([
-      { role: "assistant", content: "Real reply." },
-      { role: "user", content: "Check." },
-    ]);
+  it("mes_example follows the chat's toggle — included by default, absent when mesExampleMode=disabled", () => {
+    const on = getInsightsAssembler("objective").assemble(makeContext(), "x");
+    expect(on.layers.map((l) => l.id)).toContain("mes_example");
+
+    const off = getInsightsAssembler("objective").assemble(
+      makeContext({ character: { ...makeContext().character, mesExampleMode: "disabled" } }),
+      "x",
+    );
+    expect(off.layers.map((l) => l.id)).not.toContain("mes_example");
   });
 
-  it("still emits the instruction as the final user message when the window is empty", () => {
-    const result = getInsightsAssembler("objective").assemble({
-      kind: "objective",
-      recentMessages: [],
-      instruction: "Break this objective into tasks.",
-    });
-    const msgs = messagesOf(result);
-    expect(msgs).toEqual([{ role: "user", content: "Break this objective into tasks." }]);
-    // No context layer when the window is empty; only the instruction layer.
-    expect(result.layers.map((l) => l.id)).toEqual(["insights_instruction"]);
+  it("emits no instruction message when the instruction is blank", () => {
+    const result = getInsightsAssembler("objective").assemble(makeContext(), "   ");
+    expect(messagesOf(result).at(-1)?.layerId).not.toBe("insights_instruction");
   });
 
-  it("emits no instruction message/layer when the instruction is blank", () => {
-    const result = getInsightsAssembler("scene").assemble({
-      kind: "scene",
-      recentMessages: [{ role: "user", content: "Hello." }],
-      instruction: "   ",
-    });
-    expect(messagesOf(result)).toEqual([{ role: "user", content: "Hello." }]);
-    expect(result.layers.map((l) => l.id)).toEqual(["insights_context"]);
-  });
-
-  it("returns a clean PromptAssemblyResult (empty lore/memory, no dropped layers, null prefill)", () => {
-    const result = getInsightsAssembler("objective").assemble({
-      kind: "objective",
-      recentMessages: [{ role: "user", content: "Hi." }],
-      instruction: "Do it.",
-    });
-    expect(result.activatedLoreEntries).toEqual([]);
-    expect(result.usedMemoryBlocks).toEqual([]);
+  it("returns a clean PromptAssemblyResult (activated lore surfaced, null prefill when none)", () => {
+    const result = getInsightsAssembler("objective").assemble(makeContext(), "Do it.");
+    expect(result.activatedLoreEntries).toContain("lore_1");
     expect(result.droppedLayers).toEqual([]);
     expect(result.prefill).toBeNull();
-    expect(result.compactionSummary).toBeNull();
     expect(result.layers.length).toBeGreaterThan(0);
   });
 });

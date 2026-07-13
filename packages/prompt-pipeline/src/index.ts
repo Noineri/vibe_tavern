@@ -3,7 +3,7 @@ export { getSummaryStrategy, SUMMARY_STRATEGIES } from "./summary/summary-strate
 export { getAiAssistantAssembler, AI_ASSISTANT_ASSEMBLERS } from "./ai-assistant/ai-assistant-assemblers.js";
 export { getInsightsAssembler, INSIGHTS_ASSEMBLERS } from "./insights/insights-assemblers.js";
 export type { AiAssistantAssembler } from "./ai-assistant/ai-assistant-assembler.js";
-export type { InsightsAssembler, InsightsKind, InsightsAssemblyInput, InsightsRecentMessage } from "./insights/insights-assembler.js";
+export type { InsightsAssembler, InsightsKind } from "./insights/insights-assembler.js";
 export type { SummaryStrategy } from "./summary/summary-strategy.js";
 export { activateLoreEntries, type ActivatableLoreEntry } from "./lore-activation.js";
 export { createPhaseOneMacroEngine, createFullMacroEngine } from "./macro-registry.js";
