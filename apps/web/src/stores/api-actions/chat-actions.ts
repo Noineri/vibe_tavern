@@ -19,6 +19,7 @@ import {
   updateChatSummary,
   deleteChatSummary,
   updateMemorySettings,
+  updateInsightsConfig,
   saveChatSummary,
   summarizeChat,
   regenerateChatMessage,
@@ -35,7 +36,7 @@ import {
   setChatPersona,
   type AppSnapshot,
 } from "../../app-client.js";
-import type { AutoSummaryConfig, ChatSummaryRecord } from "../../app-client.js";
+import type { AutoSummaryConfig, ChatSummaryRecord, InsightsConfig } from "../../app-client.js";
 import { useSnapshotStore } from "../snapshot-store.js";
 import { useChatStore } from "../chat-store.js";
 import { useNavigationStore } from "../navigation-store.js";
@@ -368,5 +369,10 @@ export async function generateChatSummaryAction(chatId: ChatId, input: Parameter
 
 export async function updateMemorySettingsAction(chatId: ChatId, input: { messageHistoryLimit?: number; autoSummaryConfig?: Partial<AutoSummaryConfig> }): Promise<void> {
   const snapshot = await updateMemorySettings(chatId, input);
+  syncSnapshot(snapshot);
+}
+
+export async function updateInsightsConfigAction(chatId: ChatId, input: { insightsConfig?: Partial<InsightsConfig> }): Promise<void> {
+  const snapshot = await updateInsightsConfig(chatId, input);
   syncSnapshot(snapshot);
 }

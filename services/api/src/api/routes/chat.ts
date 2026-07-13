@@ -261,6 +261,9 @@ export function createChatRoutes(runtime: ChatRuntimeApi) {
     .patch("/api/chats/:chatId/memory-settings", zValidator("json", schemas.updateMemorySettingsSchema), async (c) => {
       return c.json(await runtime.updateMemorySettings(c.req.param("chatId"), c.req.valid("json")));
     })
+    .patch("/api/chats/:chatId/insights-config", zValidator("json", schemas.updateInsightsConfigSchema), async (c) => {
+      return c.json(await runtime.updateInsightsConfig(c.req.param("chatId"), c.req.valid("json")));
+    })
     .post("/api/chats/:chatId/summary", zValidator("json", schemas.summarizeChatSchema), async (c) => {
       const chatId = c.req.param("chatId");
       const body = c.req.valid("json");

@@ -349,6 +349,18 @@ export class ChatAdapter implements ChatRuntimeApi {
 		return this.sessionRuntime.buildConfigPatchResponse(brandId<ChatId>(chatId), { activeChat: true });
 	};
 
+	updateInsightsConfig = async (chatId: string, body: { insightsConfig?: { objectiveEnabled?: boolean; trackerEnabled?: boolean } }) => {
+		const chat = await this.stores.chats.getById(chatId);
+		if (!chat) throw notFound("Chat", `Chat '${chatId}' was not found.`);
+		const insightsConfig = body.insightsConfig
+			? { ...chat.insightsConfig, ...body.insightsConfig }
+			: undefined;
+		await this.stores.chats.updateInsightsConfig(chatId, { insightsConfig });
+		// insightsConfig lives on the chat row → return activeChat so the Insights
+		// panel refreshes.
+		return this.sessionRuntime.buildConfigPatchResponse(brandId<ChatId>(chatId), { activeChat: true });
+	};
+
 	summarizeChat = (
 		chatId: string,
 		body: { providerProfileId: string; model?: string; maxMessages: number },

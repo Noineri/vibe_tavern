@@ -58,6 +58,11 @@ export {
   summarizeChatSchema,
   saveChatSummarySchema,
 } from "./summarize-schema.js";
+
+export {
+  insightsConfigSchema,
+  updateInsightsConfigSchema,
+} from "./insights-schema.js";
 export {
   debugSendLogSchema,
   importJsonSchema,

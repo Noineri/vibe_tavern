@@ -760,3 +760,42 @@ describe("ChatStore — mode column", () => {
     expect(forChar2).toHaveLength(1);
   });
 });
+
+describe("ChatStore — insights config (INS-1b)", () => {
+  let db: Awaited<ReturnType<typeof createTestDb>>;
+  let store: ChatStore;
+
+  beforeEach(async () => {
+    db = await createTestDb();
+    bootstrap(db);
+    clockTick = 0;
+    idCounters = new Map();
+    store = new ChatStore(db, { clock: testClock, idGenerator: testIdGen });
+  });
+
+  test("a new chat defaults to both insights toggles off", async () => {
+    const chat = await store.createChat({ characterId: "char_1", title: "c", promptPresetId: "preset_1" });
+    expect(chat.insightsConfig).toEqual({ objectiveEnabled: false, trackerEnabled: false });
+  });
+
+  test("updateInsightsConfig round-trips and persists across getById", async () => {
+    const chat = await store.createChat({ characterId: "char_1", title: "c", promptPresetId: "preset_1" });
+    const updated = await store.updateInsightsConfig(chat.id, { insightsConfig: { objectiveEnabled: true } });
+    expect(updated.insightsConfig.objectiveEnabled).toBe(true);
+    // Reload from the DB — persistence, not just the in-memory return value.
+    const reloaded = await store.getById(chat.id);
+    expect(reloaded?.insightsConfig.objectiveEnabled).toBe(true);
+  });
+
+  test("updateInsightsConfig writes the given config (replace at the store layer; merge is the adapter's job)", async () => {
+    const chat = await store.createChat({ characterId: "char_1", title: "c", promptPresetId: "preset_1" });
+    await store.updateInsightsConfig(chat.id, { insightsConfig: { objectiveEnabled: true, trackerEnabled: true } });
+    // The store writes EXACTLY what it is given — it does not merge with prior
+    // values. Partial-merge (preserve unmentioned keys) is the adapter's job
+    // (it spreads ...chat.insightsConfig before ...body), mirroring
+    // updateMemorySettings. So a store-level write replaces wholesale:
+    await store.updateInsightsConfig(chat.id, { insightsConfig: { objectiveEnabled: false } });
+    const reloaded = await store.getById(chat.id);
+    expect(reloaded?.insightsConfig).toEqual({ objectiveEnabled: false });
+  });
+});

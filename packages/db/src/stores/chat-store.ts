@@ -19,6 +19,8 @@ export interface Chat {
   summary: string;
   messageHistoryLimit: number;
   autoSummaryConfig: Record<string, unknown>;
+  /** Insights (INSIGHTS_PLAN): per-chat opt-in toggles + per-feature config for the Objective Tracker + Scene Tracker. Both off by default. */
+  insightsConfig: Record<string, unknown>;
   status: 'active' | 'archived';
   mode: ChatMode;
   selectedGreetingIndex: number;
@@ -220,6 +222,19 @@ export class ChatStore {
       .where(eq(chats.id, id))
       .returning();
     if (!row) throw new Error(`Chat '${id}' not found after memory settings update`);
+    return this.mapRow(row);
+  }
+
+  async updateInsightsConfig(id: string, input: { insightsConfig?: Record<string, unknown> }): Promise<Chat> {
+    const now = this.clock.now();
+    const values: Partial<typeof chats.$inferInsert> = { updatedAt: now };
+    if (input.insightsConfig !== undefined) values.insightsConfigJson = JSON.stringify(input.insightsConfig);
+    const [row] = await this.db
+      .update(chats)
+      .set(values)
+      .where(eq(chats.id, id))
+      .returning();
+    if (!row) throw new Error(`Chat '${id}' not found after insights config update`);
     return this.mapRow(row);
   }
 
@@ -722,6 +737,7 @@ export class ChatStore {
       summary: row.summary,
       messageHistoryLimit: row.messageHistoryLimit,
       autoSummaryConfig: safeParseJson(row.autoSummaryConfigJson),
+      insightsConfig: safeParseJson(row.insightsConfigJson),
       status: row.status as Chat['status'],
       mode: row.mode as Chat['mode'],
       selectedGreetingIndex: row.selectedGreetingIndex,

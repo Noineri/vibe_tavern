@@ -51,6 +51,12 @@ export interface AutoSummaryConfig {
   model?: string;
 }
 
+/** Per-chat Insights toggles (INSIGHTS_PLAN). Both off by default. */
+export interface InsightsConfig {
+  objectiveEnabled: boolean;
+  trackerEnabled: boolean;
+}
+
 export type ChatGenerationStatus =
   | "idle"
   | "preparing"
@@ -166,7 +172,7 @@ export interface AppSnapshot {
   /** All known characters (sidebar, build mode). Absent → preserve. */
   allCharacters?: AppCharacterEntry[];
   /** Active chat metadata (title, settings, greetingIndex, etc). Absent → preserve. */
-  activeChat?: Chat & { summary?: string; messageHistoryLimit?: number; autoSummaryConfig?: AutoSummaryConfig };
+  activeChat?: Chat & { summary?: string; messageHistoryLimit?: number; autoSummaryConfig?: AutoSummaryConfig; insightsConfig?: InsightsConfig };
   /** Currently active branch. Absent → preserve. */
   activeBranch?: ChatBranch;
   /** All branches for the active chat. Absent → preserve. */
