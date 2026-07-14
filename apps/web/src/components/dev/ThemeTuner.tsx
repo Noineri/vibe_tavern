@@ -22,6 +22,7 @@ import { MessageReasoning } from "../chat/MessageReasoning.js";
 import { THEMES, applyThemeClass, type ThemeId } from "../../themes/registry.js";
 import coffeeRaw from "../../themes/coffee.css?raw";
 import milkCoffeeRaw from "../../themes/milk-coffee.css?raw";
+import mysticDawnRaw from "../../themes/mystic-dawn.css?raw";
 import mysticRaw from "../../themes/mystic-night.css?raw";
 import lavaRaw from "../../themes/light-lava.css?raw";
 import darkLavaRaw from "../../themes/dark-lava.css?raw";
@@ -46,6 +47,7 @@ import {
 const THEME_RAW: Record<ThemeId, string> = {
   coffee: coffeeRaw,
   "milk-coffee": milkCoffeeRaw,
+  "mystic-dawn": mysticDawnRaw,
   "mystic-night": mysticRaw,
   "light-lava": lavaRaw,
   "dark-lava": darkLavaRaw,
@@ -76,6 +78,10 @@ const TOKEN_HINTS: Record<string, string> = {
   "--accent-t": "Текст акцента",
   "--accent-dim": "Фон выбранной строки",
   "--accent-hover": "Hover по акценту",
+  "--mode-switch-bg": "Фон кнопки Игра / Билд",
+  "--mode-switch-text": "Текст кнопки Игра / Билд",
+  "--mode-switch-hover-bg": "Фон кнопки Игра / Билд при hover",
+  "--mode-switch-hover-text": "Текст кнопки Игра / Билд при hover",
   "--sel-bg": "Выделение текста",
   "--on-accent": "Текст на акценте",
   "--on-danger": "Текст на danger",
@@ -748,7 +754,7 @@ function Preview({ drifting }: { drifting: boolean }) {
           <span className="tt-win-name">Adrian Mor</span>
           <span className="tt-win-pill tt-pill-success">● Память</span>
           <span className="tt-win-pill">Kimi K2</span>
-          <span className="tt-win-topbar-right">Редактор</span>
+          <button type="button" className="tt-win-mode-switch">Вернуться к игре</button>
         </div>
 
         <div className="tt-win-messages">
@@ -1000,7 +1006,8 @@ const TT_CSS = `
 .tt-win-name{font-size:14px;font-weight:600;color:var(--t1)}
 .tt-win-pill{font-size:11px;color:var(--t2);background:var(--s2);border:1px solid var(--border);border-radius:20px;padding:2px 8px}
 .tt-pill-success{color:var(--success-text);border-color:var(--success-dim);background:var(--success-dim)}
-.tt-win-topbar-right{margin-left:auto;font-size:13px;color:var(--accent-t);font-weight:500}
+.tt-win-mode-switch{margin-left:auto;border:0;border-radius:999px;background:var(--mode-switch-bg,var(--accent-dim));color:var(--mode-switch-text,var(--accent-t));padding:4px 12px;font-size:13px;font-weight:500;cursor:pointer;transition:background-color .15s,color .15s}
+.tt-win-mode-switch:hover{background:var(--mode-switch-hover-bg,var(--accent-hover));color:var(--mode-switch-hover-text,var(--accent-t))}
 
 .tt-win-messages{flex:1;overflow-y:auto;padding:20px 24px;display:flex;flex-direction:column;gap:18px}
 .tt-msg-head{display:flex;align-items:center;gap:8px;margin-bottom:5px}

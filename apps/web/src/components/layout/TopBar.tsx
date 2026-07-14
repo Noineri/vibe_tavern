@@ -82,7 +82,7 @@ export function TopBar({ railHidden, onShowRail, update }: TopBarProps) {
         </div>
         {characterId && <MediaMenu characterId={characterId} characterName={characterName} />}
         {update && <UpdateBadge latestVersion={update.latestVersion} releaseUrl={update.releaseUrl} />}
-        <div className="cursor-pointer rounded-full bg-accent-dim px-3 py-1 text-[calc(var(--ui-fs)-3px)] font-medium tracking-[0.02em] text-accent-t transition-colors duration-150 hover:bg-accent-hover"
+        <div className="cursor-pointer rounded-full bg-mode-switch-bg px-3 py-1 text-[calc(var(--ui-fs)-3px)] font-medium tracking-[0.02em] text-mode-switch-text transition-colors duration-150 hover:bg-mode-switch-hover-bg hover:text-mode-switch-hover-text"
           onClick={() => setMode(mode === 'build' ? 'play' : 'build')}>
           {mode === 'play' ? t("topbar_build_mode") : t("topbar_play_mode")}
         </div>
@@ -169,7 +169,7 @@ export function TopBar({ railHidden, onShowRail, update }: TopBarProps) {
 
           {update && <UpdateBadge latestVersion={update.latestVersion} releaseUrl={update.releaseUrl} />}
 
-          <div className="cursor-pointer rounded-full bg-accent-dim px-3 py-1 text-[calc(var(--ui-fs)-3px)] font-medium tracking-[0.02em] text-accent-t transition-colors duration-150 hover:bg-accent-hover"
+          <div className="cursor-pointer rounded-full bg-mode-switch-bg px-3 py-1 text-[calc(var(--ui-fs)-3px)] font-medium tracking-[0.02em] text-mode-switch-text transition-colors duration-150 hover:bg-mode-switch-hover-bg hover:text-mode-switch-hover-text"
             tabIndex={0}
             onClick={() => setMode(mode === 'build' ? 'play' : 'build')}>
             {mode === 'play' ? t("topbar_build_mode") : t("topbar_play_mode")}

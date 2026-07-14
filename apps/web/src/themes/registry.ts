@@ -46,11 +46,12 @@ export interface ThemeDef {
 // Icon convention: outlined icons mark LIGHT themes, filled icons mark DARK
 // themes (e.g. `coffee` outline vs `coffeeFilled`, `flame` vs `flameFilled`).
 export const THEMES: readonly ThemeDef[] = [
-	{ id: "milk-coffee",  className: "milk-coffee",  icon: "coffee" },        // light  → outlined cup
-	{ id: "coffee",       className: "",             icon: "coffeeFilled" },  // dark (default) → filled cup
-	{ id: "mystic-night", className: "mystic-night", icon: "sparklesFilled" }, // dark   → filled sparkles
-	{ id: "light-lava",   className: "light-lava",   icon: "flame" },         // light  → outlined flame
-	{ id: "dark-lava",    className: "dark-lava",    icon: "flameFilled" },   // dark   → filled flame
+	{ id: "milk-coffee",  className: "milk-coffee",  icon: "coffee" },         // light  → outlined cup
+	{ id: "coffee",       className: "",             icon: "coffeeFilled" },   // dark (default) → filled cup
+	{ id: "mystic-dawn",  className: "mystic-dawn",  icon: "sparkles" },        // light  → outlined sparkles
+	{ id: "mystic-night", className: "mystic-night", icon: "sparklesFilled" },  // dark   → filled sparkles
+	{ id: "light-lava",   className: "light-lava",   icon: "flame" },           // light  → outlined flame
+	{ id: "dark-lava",    className: "dark-lava",    icon: "flameFilled" },     // dark   → filled flame
 ];
 
 /** Union of all theme ids. The canonical `ThemeMode` type. */

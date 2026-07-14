@@ -393,6 +393,7 @@ export const GROUPS: readonly TokenGroup[] = [
   { title: "Текст сообщений", tokens: ["--msg-t1", "--msg-t2"] },
   { title: "Markdown", tokens: ["--md-italic", "--md-bold", "--md-bold-italic", "--md-quoted"] },
   { title: "Акцент", tokens: ["--accent", "--accent-t", "--accent-dim", "--accent-hover"] },
+  { title: "Переключатель Игра / Билд", tokens: ["--mode-switch-bg", "--mode-switch-text", "--mode-switch-hover-bg", "--mode-switch-hover-text"] },
   { title: "Выделение", tokens: ["--sel-bg"] },
   {
     title: "Семантика",

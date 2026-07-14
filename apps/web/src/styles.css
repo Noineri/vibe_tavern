@@ -3,6 +3,7 @@
 @import "./themes/coffee.css";
 @import "./themes/milk-coffee.css";
 @import "./themes/mystic-night.css";
+@import "./themes/mystic-dawn.css";
 @import "./themes/light-lava.css";
 @import "./themes/dark-lava.css";
 
@@ -84,6 +85,10 @@
   --color-accent-t: var(--accent-t);
   --color-accent-dim: var(--accent-dim);
   --color-accent-hover: var(--accent-hover);
+  --color-mode-switch-bg: var(--mode-switch-bg, var(--accent-dim));
+  --color-mode-switch-text: var(--mode-switch-text, var(--accent-t));
+  --color-mode-switch-hover-bg: var(--mode-switch-hover-bg, var(--accent-hover));
+  --color-mode-switch-hover-text: var(--mode-switch-hover-text, var(--accent-t));
   --color-on-accent: var(--on-accent);
   --color-danger: var(--danger);
   --color-danger-dim: var(--danger-dim);

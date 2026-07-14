@@ -1,0 +1,116 @@
+/* ══════════════════════════════════════════════════════════════
+   Mystic Dawn Theme (Lavender Paper, Iris Ink & Antique Gold)
+   Light reading twin of Mystic Night: opaque book-like surfaces,
+   Literata body text, no white SaaS cards, glass, mint, or coral.
+   The Literata-MN faces are declared by mystic-night.css, which is imported
+   globally before this file regardless of the active theme.
+   ══════════════════════════════════════════════════════════════ */
+:root.mystic-dawn {
+  /* ─── Backgrounds (powdered lavender paper at sunrise) ─── */
+  --bg:       oklch(0.940 0.018 288);
+  /* One fixed sunrise wash, mirroring Mystic Night's single vignette:
+     pale orange at the horizon fading into lavender paper. */
+  --page-bg:  radial-gradient(circle at 50% 0%, oklch(0.975 0.055 55), oklch(0.925 0.022 292) 72%);
+
+  /* Opaque, progressively deeper paper layers — never white cards on gray. */
+  --surface:  oklch(0.955 0.035 281);
+  --s2:       oklch(0.845 0.032 292);
+  --s3:       oklch(0.800 0.040 292);
+
+  /* ─── Borders (lavender graphite) ─── */
+  --border:   oklch(0.760 0.040 292);
+  --border2:  oklch(0.680 0.050 292);
+
+  /* ─── Interface text (plum ink) ─── */
+  --t1:       oklch(0.240 0.040 292);
+  --t2:       oklch(0.400 0.045 292);
+  --t3:       oklch(0.550 0.040 292);
+  --t4:       oklch(0.680 0.030 292);
+
+  /* Mystic Night's book typography, retained for the light twin. */
+  --font-body: 'Literata-MN', Georgia, serif;
+
+  /* ─── Long-form message text (softer than UI ink) ─── */
+  --msg-t1:   oklch(0.300 0.045 315);
+  --msg-t2:   oklch(0.470 0.040 300);
+
+  /* ─── Text selection (antique gold wash) ─── */
+  --sel-bg:   oklch(0.700 0.110 82 / 25%);
+  --sel-text: oklch(0.220 0.040 292);
+
+  /* ─── Accent (deep iris, deliberately not SaaS blue) ─── */
+  --accent:       oklch(0.500 0.170 292);
+  --accent-t:     oklch(0.430 0.180 292);
+  --accent-dim:   oklch(0.500 0.170 292 / 10%);
+  --accent-hover: oklch(0.460 0.180 292);
+  --accent-mid:   oklch(0.380 0.130 292);
+
+  /* ─── Play / Build mode switch ─── */
+  --mode-switch-bg:         oklch(0.890 0.040 281);
+  --mode-switch-text:       oklch(0.400 0.150 292);
+  --mode-switch-hover-bg:   oklch(0.500 0.170 292);
+  --mode-switch-hover-text: oklch(0.970 0.010 281);
+
+  /* ─── User message (dusty dawn rose) ─── */
+  --user-bg:  oklch(0.875 0.040 335);
+
+  /* Slightly lighter recessed writing field against the lavender page. */
+  --input-bg: oklch(0.960 0.014 292);
+
+  /* Opaque reading theme: popovers use paper, not glass. */
+  --glass-bg:   var(--surface);
+  --glass-blur: 0px;
+
+  /* ─── Danger / Success / Info / Warning ─── */
+  --danger:         oklch(0.520 0.160 18);
+  --danger-dim:     oklch(0.860 0.035 18);
+  --danger-text:    oklch(0.400 0.140 18);
+  --danger-strong:  oklch(0.760 0.130 18);
+
+  --success:        oklch(0.480 0.100 155);
+  --success-dim:    oklch(0.860 0.035 155);
+  --success-text:   oklch(0.380 0.090 155);
+  --success-strong: oklch(0.760 0.110 155);
+
+  --info:           oklch(0.480 0.130 255);
+  --info-dim:       oklch(0.860 0.035 255);
+  --info-text:      oklch(0.380 0.110 255);
+
+  --warning:        oklch(0.530 0.110 80);
+  --warning-dim:    oklch(0.860 0.035 80);
+  --warning-text:   oklch(0.400 0.090 80);
+
+  /* ─── On-color text ─── */
+  --on-accent: oklch(0.960 0.015 292);
+  --on-danger: oklch(0.960 0.015 292);
+
+  /* ─── Plum-tinted shadows ─── */
+  --shadow-sm: 0 4px 16px oklch(0.24 0.05 292 / 8%);
+  --shadow-md: 0 12px 28px oklch(0.24 0.05 292 / 12%);
+  --shadow-lg: 0 24px 60px oklch(0.20 0.05 292 / 16%);
+  --shadow-xl: 0 8px 40px oklch(0.20 0.05 292 / 14%);
+
+  /* ─── Markdown inline sizes ─── */
+  --md-fs-italic:      calc(var(--mfs) + 1px);
+  --md-fs-bold-italic: calc(var(--mfs) + 1px);
+
+  /* ─── Markdown inline colors (dusk blue, wine rose, old gold) ─── */
+  --md-italic:      oklch(0.430 0.100 255);
+  --md-bold:        oklch(0.240 0.055 300);
+  --md-bold-italic: oklch(0.440 0.130 335);
+  --md-quoted:      oklch(0.460 0.110 78);
+
+  /* ─── Syntax highlighting (dawn ink) ─── */
+  --syn-bg:          var(--bg);
+  --syn-keyword:     oklch(0.450 0.140 295);
+  --syn-string:      oklch(0.430 0.100 155);
+  --syn-number:      oklch(0.520 0.130 335);
+  --syn-comment:     var(--t3);
+  --syn-variable:    var(--t1);
+  --syn-property:    oklch(0.480 0.110 80);
+  --syn-operator:    oklch(0.500 0.130 20);
+  --syn-punctuation: oklch(0.430 0.080 255);
+  --syn-bool:        oklch(0.500 0.130 295);
+  --syn-null:        oklch(0.500 0.130 335);
+  --syn-function:    oklch(0.420 0.130 255);
+}
