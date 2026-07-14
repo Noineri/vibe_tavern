@@ -1,5 +1,5 @@
 import { eq, and, desc, asc } from 'drizzle-orm';
-import { messages, messageVariants } from '../db-schema.js';
+import { messages, messageVariants, sceneBackfillRuns } from '../db-schema.js';
 import type { AppDb } from '../db-connection.js';
 import { resolveStoreRuntime, type StoreClock, type StoreIdGenerator } from '../persistence.js';
 import { extractThinkingTags } from '@vibe-tavern/domain';
@@ -45,6 +45,53 @@ export interface MessageVariant {
   coauthorSkillId?: string | null;
   toolCalls?: Array<{ id: string; name: string; args: unknown; providerOptions?: unknown }> | null;
   toolCallId?: string | null;
+  /** Canonical per-variant Scene record; null when the variant has none yet
+   *  (just created, or cleared on content edit). Owned by this variant's
+   *  immutable id. Parsed from scene_tracker_json at this boundary. */
+  sceneTracker: MessageVariantSceneRecord | null;
+}
+
+/**
+ * Store-level Scene record — the plain-string mirror of the domain
+ * SceneTrackerRecord. Brands are applied at the API boundary (like Message /
+ * MessageVariant ids). One record per immutable variant, stored as JSON in
+ * message_variants.scene_tracker_json.
+ */
+export interface MessageVariantSceneRecord {
+  /** The immutable variant this record was generated for (ownership identity). */
+  variantId: string;
+  /** The config schemaHash captured at generation time. */
+  schemaHash: string;
+  /** The config revision captured at generation time. */
+  configRevision: number;
+  /** Hash of the variant source content captured at generation time. */
+  sourceHash: string;
+  /** The validated scene state, matching the then-current schema. */
+  sceneState: Record<string, unknown>;
+  /** The model that produced this record (for trace). */
+  modelId: string | null;
+  generatedAt: string;
+}
+
+/**
+ * Store-level Scene backfill run — durable job state for history backfill
+ * (SCENE_TRACKER_PLAN Wave 7). Tracks the JOB only (ownership / frozen
+ * manifest / cursor / status / per-item errors / cancel / summary); it is
+ * NEVER authoritative for Scene data, which lives on message_variants.
+ */
+export interface SceneBackfillRun {
+  id: string;
+  chatId: string;
+  mode: string;
+  status: string;
+  manifestJson: string;
+  totalItems: number;
+  cursor: number;
+  errorsJson: string;
+  cancelRequested: boolean;
+  summaryJson: string | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
 // ─── Store ────────────────────────────────────────────────────────────────────
@@ -363,8 +410,14 @@ export class MessageStore {
         .where(eq(messages.id, id))
         .run();
 
-      // Also update the selected variant content + reasoning
-      const variantUpdate: Record<string, unknown> = { content: mainContent };
+      // Also update the selected variant content + reasoning.
+      // A content edit invalidates that variant's Scene record (its sourceHash
+      // no longer matches the new content), so clear it in the same tx. Only the
+      // edited variant is affected — sibling variants keep their own records.
+      const variantUpdate: Record<string, unknown> = {
+        content: mainContent,
+        sceneTrackerJson: null,
+      };
       if (extractedReasoning !== undefined) {
         variantUpdate.reasoning = extractedReasoning;
       }
@@ -594,6 +647,88 @@ export class MessageStore {
     });
   }
 
+  // ─── Scene records (per immutable variant) ────────────────────────────────
+  // Scene data is owned by the immutable variant id, never by variantIndex.
+  // variantIndex is display order only and is recompacted on deletion, so any
+  // index-keyed Scene read would retarget the wrong record after a delete;
+  // the id is stable for the variant's lifetime. (SCENE_TRACKER_PLAN, SCN-3.)
+
+  async getSceneRecord(variantId: string): Promise<MessageVariantSceneRecord | null> {
+    const row = await this.db.select({ sceneTrackerJson: messageVariants.sceneTrackerJson })
+      .from(messageVariants)
+      .where(eq(messageVariants.id, variantId))
+      .get();
+    return row?.sceneTrackerJson ? JSON.parse(row.sceneTrackerJson) : null;
+  }
+
+  async setSceneRecord(variantId: string, record: MessageVariantSceneRecord): Promise<void> {
+    await this.db.update(messageVariants)
+      .set({ sceneTrackerJson: JSON.stringify(record) })
+      .where(eq(messageVariants.id, variantId))
+      .run();
+  }
+
+  async clearSceneRecord(variantId: string): Promise<void> {
+    await this.db.update(messageVariants)
+      .set({ sceneTrackerJson: null })
+      .where(eq(messageVariants.id, variantId))
+      .run();
+  }
+
+  // ─── Scene backfill runs (durable job state) ──────────────────────────────
+  // Tracks the backfill JOB only; never authoritative for Scene data. The run
+  // row lets Wave 7 resume/retry/report progress across reload and restart.
+
+  async createSceneBackfillRun(input: {
+    chatId: string;
+    mode?: string;
+    manifestJson: string;
+    totalItems: number;
+  }): Promise<SceneBackfillRun> {
+    const id = this.idGen.next('sbr');
+    const now = this.clock.now();
+    await this.db.insert(sceneBackfillRuns).values({
+      id,
+      chatId: input.chatId,
+      mode: input.mode ?? 'fill-missing',
+      status: 'pending',
+      manifestJson: input.manifestJson,
+      totalItems: input.totalItems,
+      cursor: 0,
+      errorsJson: '[]',
+      cancelRequested: 0,
+      summaryJson: null,
+      createdAt: now,
+      updatedAt: now,
+    }).run();
+    const row = await this.db.select().from(sceneBackfillRuns)
+      .where(eq(sceneBackfillRuns.id, id)).get();
+    return this.mapRowBackfillRun(row!);
+  }
+
+  async getSceneBackfillRun(id: string): Promise<SceneBackfillRun | null> {
+    const row = await this.db.select().from(sceneBackfillRuns)
+      .where(eq(sceneBackfillRuns.id, id)).get();
+    return row ? this.mapRowBackfillRun(row) : null;
+  }
+
+  async updateSceneBackfillRun(id: string, patch: {
+    status?: string;
+    cursor?: number;
+    errorsJson?: string;
+    cancelRequested?: boolean;
+    summaryJson?: string | null;
+  }): Promise<void> {
+    const update: Record<string, unknown> = { updatedAt: this.clock.now() };
+    if (patch.status !== undefined) update.status = patch.status;
+    if (patch.cursor !== undefined) update.cursor = patch.cursor;
+    if (patch.errorsJson !== undefined) update.errorsJson = patch.errorsJson;
+    if (patch.cancelRequested !== undefined) update.cancelRequested = patch.cancelRequested ? 1 : 0;
+    if (patch.summaryJson !== undefined) update.summaryJson = patch.summaryJson;
+    await this.db.update(sceneBackfillRuns).set(update)
+      .where(eq(sceneBackfillRuns.id, id)).run();
+  }
+
   // ─── Row mappers ──────────────────────────────────────────────────────────
 
   private mapRowMessage(row: typeof messages.$inferSelect): Message {
@@ -630,7 +765,25 @@ export class MessageStore {
       coauthorSkillId: row.coauthorSkillId,
       toolCalls: row.toolCallsJson ? JSON.parse(row.toolCallsJson) : null,
       toolCallId: row.toolCallId,
+      sceneTracker: row.sceneTrackerJson ? JSON.parse(row.sceneTrackerJson) : null,
       createdAt: row.createdAt,
+    };
+  }
+
+  private mapRowBackfillRun(row: typeof sceneBackfillRuns.$inferSelect): SceneBackfillRun {
+    return {
+      id: row.id,
+      chatId: row.chatId,
+      mode: row.mode,
+      status: row.status,
+      manifestJson: row.manifestJson,
+      totalItems: row.totalItems,
+      cursor: row.cursor,
+      errorsJson: row.errorsJson,
+      cancelRequested: row.cancelRequested === 1,
+      summaryJson: row.summaryJson,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
     };
   }
 }

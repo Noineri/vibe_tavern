@@ -159,9 +159,14 @@ export const chats = sqliteTable('chats', {
   // The objective task tree — frequently updated on completion checks; separate
   // column for update-pattern isolation (like scriptStateJson).
   insightsObjectiveStateJson: text('insights_objective_state_json').notNull().default('{}'),
-  // The latest scene state for MAIN-MODEL injection — updated each tracker-generate.
-  // Per-message tracker data for the UI lives on messages.extra.sceneTracker; this
-  // is the chat-level mirror the prompt assembly reads (one field, stays current).
+  // Derived cache of the currently selected variant's Scene state, rebuilt on
+  // generate / edit / delete / selection / branch activation / variant deletion
+  // / message deletion / schema change (SCENE_TRACKER_PLAN, Wave 3 cache
+  // projection). NOT authoritative — the canonical per-variant Scene record
+  // lives on message_variants.scene_tracker_json (owned by immutable variant
+  // id); this is just the chat-level mirror the prompt assembly injects for the
+  // main model, kept current with the active selection. (The obsolete
+  // messages.extra.sceneTracker draft this comment used to describe was removed.)
   insightsCurrentSceneJson: text('insights_current_scene_json').notNull().default('{}'),
   // Co-author mode only (CA-13): lorebook ids the user explicitly bound to
   // this chat as read-only editor context (the right-panel picker). NOT the
@@ -425,6 +430,13 @@ export const messageVariants = sqliteTable('message_variants', {
   toolCallId: text('tool_call_id'),
   coauthorModuleId: text('coauthor_module_id'),
   coauthorSkillId: text('coauthor_skill_id'),
+  // Canonical per-variant Scene Tracker record (SCENE_TRACKER_PLAN, SCN-3).
+  // Null = no record yet (variant just created, or cleared when its content
+  // changed). This is authoritative for THIS variant's scene state; the
+  // chat-level insights_current_scene_json is only a derived cache rebuilt
+  // from the currently selected valid variant. Owned by the immutable variant
+  // id, never by variantIndex (variantIndex is display order only).
+  sceneTrackerJson: text('scene_tracker_json'),
   createdAt: text('created_at').notNull(),
 }, (table) => ({
   uniqueVariant: uniqueIndex('idx_message_variants_unique').on(table.messageId, table.variantIndex),
@@ -593,3 +605,37 @@ export const uiSettings = sqliteTable('ui_settings', {
   aiAssistantModelName: text('ai_assistant_model_name'),
   updatedAt: text('updated_at').notNull(),
 });
+
+// ─── sceneBackfillRuns ─────────────────────────────────────────────────────────
+// History backfill job state for the Scene Tracker (SCENE_TRACKER_PLAN, SCN-3
+// storage / Wave 7 orchestration). One row per backfill run. This row tracks
+// the JOB ONLY (ownership / frozen manifest / cursor / status / per-item errors
+// / cancel state / partial-success summary) — it is NEVER authoritative for
+// Scene data. Scene records are owned by message_variants.scene_tracker_json;
+// this row just drives resume/retry/progress and survives reload/restart.
+export const sceneBackfillRuns = sqliteTable('scene_backfill_runs', {
+  id: text('id').primaryKey(),
+  chatId: text('chat_id').notNull().references(() => chats.id, { onDelete: 'cascade' }),
+  // 'fill-missing' (default) | 'rebuild' (regenerate even existing records).
+  mode: text('mode').notNull().default('fill-missing'),
+  // 'pending' | 'running' | 'completed' | 'cancelled' | 'failed'.
+  status: text('status').notNull().default('pending'),
+  // Frozen oldest-to-newest manifest of selected immutable variant ids captured
+  // at run start, each with its then-current source/schema/config fingerprint so
+  // resume/retry can revalidate before persisting. JSON array of manifest items.
+  manifestJson: text('manifest_json').notNull().default('[]'),
+  // Total manifest length (for progress current/total without re-parsing).
+  totalItems: integer('total_items').notNull().default(0),
+  // Next manifest index to process (durable cursor for restart-safe resume).
+  cursor: integer('cursor').notNull().default(0),
+  // Per-item errors accumulated while continue-through-errors is on (JSON array).
+  errorsJson: text('errors_json').notNull().default('[]'),
+  // Set by an explicit Cancel; the active item never persists on cancel.
+  cancelRequested: integer('cancel_requested').notNull().default(0),
+  // Partial-success summary written on terminal status (JSON object, nullable).
+  summaryJson: text('summary_json'),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+}, (table) => ({
+  chatIdx: index('idx_scene_backfill_runs_chat').on(table.chatId),
+}));

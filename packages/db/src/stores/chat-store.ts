@@ -2,7 +2,7 @@ import { eq, and, desc, asc, lte, count, inArray } from 'drizzle-orm';
 import { chats, chatBranches, characters, messages, messageVariants, promptTraces } from '../db-schema.js';
 import type { AppDb } from '../db-connection.js';
 import { resolveStoreRuntime, type StoreClock, type StoreIdGenerator } from '../persistence.js';
-import { normalizeSceneTrackerConfig, applySceneTrackerConfigPatch, type ChatMode, type SceneTrackerConfigPatch } from '@vibe-tavern/domain';
+import { normalizeSceneTrackerConfig, applySceneTrackerConfigPatch, rekeySceneRecordJson, type ChatMode, type SceneTrackerConfigPatch } from '@vibe-tavern/domain';
 
 // ─── Return types ─────────────────────────────────────────────────────────────
 
@@ -431,8 +431,15 @@ export class ChatStore {
         const variants = await tx.select().from(messageVariants)
           .where(eq(messageVariants.messageId, msg.id)).all();
         for (const v of variants) {
+          // Preserve each variant's Scene record into the fork. The forked
+          // variant gets a fresh immutable id, so the copied record is re-keyed
+          // to that new id (ownership identity must follow the new variant);
+          // content is identical to the source, so the captured sourceHash
+          // still matches and the record stays valid. A null/unparseable
+          // record yields null (see rekeySceneRecordJson).
+          const newVariantId = this.idGen.next('mvar');
           newVariants.push({
-            id: this.idGen.next('mvar'), messageId: newMsgId, variantIndex: v.variantIndex,
+            id: newVariantId, messageId: newMsgId, variantIndex: v.variantIndex,
             content: v.content, isSelected: v.isSelected, finishReason: v.finishReason,
             reasoning: v.reasoning, reasoningDurationMs: v.reasoningDurationMs,
             // Q5: preserve per-variant provenance so the fork keeps model + preset
@@ -441,6 +448,7 @@ export class ChatStore {
             modelId: v.modelId, presetId: v.presetId,
             toolCallsJson: v.toolCallsJson,
             toolCallId: v.toolCallId,
+            sceneTrackerJson: rekeySceneRecordJson(v.sceneTrackerJson, newVariantId),
             createdAt: now,
           });
         }
@@ -644,6 +652,7 @@ export class ChatStore {
               coauthorSkillId: null,
               toolCallsJson: null,
               toolCallId: null,
+              sceneTrackerJson: null,
               createdAt: this.clock.now(),
             }).run();
             currentVariants = [{
@@ -661,6 +670,7 @@ export class ChatStore {
               coauthorSkillId: null,
               toolCallsJson: null,
               toolCallId: null,
+              sceneTrackerJson: null,
               createdAt: this.clock.now(),
             }];
             changed = true;
@@ -693,6 +703,7 @@ export class ChatStore {
               coauthorSkillId: null,
               toolCallsJson: null,
               toolCallId: null,
+              sceneTrackerJson: null,
               createdAt: now,
             }))).run();
             currentVariants = [
@@ -712,6 +723,7 @@ export class ChatStore {
                 coauthorSkillId: null,
                 toolCallsJson: null,
                 toolCallId: null,
+                sceneTrackerJson: null,
                 createdAt: now,
               })),
             ];

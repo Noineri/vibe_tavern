@@ -365,3 +365,28 @@ export function applySceneTrackerConfigPatch(
     revision: existing.revision + 1,
   };
 }
+
+/**
+ * Rewrite the `variantId` ownership field inside a serialized Scene record JSON
+ * to point at a different immutable variant, preserving every other field
+ * (schemaHash, configRevision, sourceHash, sceneState, modelId, generatedAt).
+ *
+ * Used by branch fork: the copied variant gets a fresh immutable id, but its
+ * content is identical to the source, so the captured `sourceHash` still
+ * matches and the record stays valid for the forked variant. Only the
+ * ownership identity (`variantId`) must move. A null/unparseable input yields
+ * null (a corrupt stored record is dropped on fork rather than carried into
+ * the new branch as corruption) — this is deliberate handling, not a swallowed
+ * error: fork must not propagate a record it cannot trust.
+ */
+export function rekeySceneRecordJson(json: string | null, newVariantId: string): string | null {
+  if (!json) return null;
+  let parsed: Record<string, unknown>;
+  try {
+    parsed = JSON.parse(json) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+  parsed.variantId = newVariantId;
+  return JSON.stringify(parsed);
+}
