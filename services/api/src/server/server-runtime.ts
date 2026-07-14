@@ -7,7 +7,8 @@ import { AssetService } from "../domain/asset/asset-service.js";
 import { createChatSummaryFeature } from "../domain/chat/chat-summary-feature.js";
 import { ChatSummaryService } from "../domain/chat/chat-summary-service.js";
 import { ObjectiveService } from "../domain/insights/objective-service.js";
-import { createInsightsFeature } from "../domain/insights/insights-feature.js";
+import { SceneTrackerService } from "../domain/insights/tracker-service.js";
+import { createInsightsFeature, composeForwardStateWait } from "../domain/insights/insights-feature.js";
 import { LiveChatOrchestrator } from "../domain/chat/live-chat-orchestrator.js";
 import { FeatureRegistry } from "../shared/feature-registry.js";
 import { MobileAccessService } from "../domain/mobile-access/mobile-access-service.js";
@@ -172,19 +173,20 @@ export async function startServerRuntime(config: ServerRuntimeConfig): Promise<v
 		const events = new EventBus();
 		const chatSummaryService = new ChatSummaryService(stores, sessionRuntime, providerProfileService);
 		const objectiveService = new ObjectiveService(stores, sessionRuntime, providerProfileService);
+		const trackerService = new SceneTrackerService(stores, sessionRuntime, providerProfileService);
 		const liveChatOrchestrator = new LiveChatOrchestrator(
 			sessionRuntime.chatRuntime,
 			sessionRuntime.chatApp,
 			providerOrchestrator,
 			events,
 			(chatId: string) => sessionRuntime.resolveChatModeStrategy(chatId as never),
-			(chatId: string, signal?: AbortSignal) => objectiveService.waitForForwardState(chatId as never, signal),
+			composeForwardStateWait(objectiveService, trackerService),
 		);
 
 		// Feature registry — features subscribe to events and mount routes
 		const features = new FeatureRegistry();
 		features.register(createChatSummaryFeature({ stores, sessionRuntime, providerProfileService }));
-		features.register(createInsightsFeature({ objectiveService }));
+		features.register(createInsightsFeature({ objectiveService, trackerService }));
 
 		const assetService = new AssetService(config.assetsDir, stores.content);
 		const mobileAccessService = new MobileAccessService(config.dataDir);

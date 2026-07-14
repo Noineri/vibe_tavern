@@ -42,7 +42,7 @@ import type {
 	SceneTrackerRecord,
 	Timestamp,
 } from "@vibe-tavern/domain";
-import { computeSceneSourceHash, normalizeSceneTrackerConfig } from "@vibe-tavern/domain";
+import { brandId, computeSceneSourceHash, normalizeSceneTrackerConfig } from "@vibe-tavern/domain";
 import type { StoreContainer } from "@vibe-tavern/db";
 import { getInsightsAssembler } from "@vibe-tavern/prompt-pipeline";
 import type { PromptAssemblyContext } from "@vibe-tavern/prompt-pipeline";
@@ -54,6 +54,7 @@ import { insightsAssemblyToPromptResponse } from "./objective-service.js";
 import type { SessionRuntime } from "../../runtime/session/session-runtime.js";
 import type { ProviderProfileService } from "../providers/provider-profile-service.js";
 import { parseStructuredOutput } from "./structured-output.js";
+import { isSceneRecordCurrent } from "./scene-cache.js";
 import { logSendDebug } from "../../shared/send-debug-log.js";
 
 type Execute = typeof nonstreamingProviderExecute;
@@ -66,6 +67,17 @@ export interface SceneTarget {
 	branchId: ChatBranchId;
 	messageId: MessageId;
 	variantId: MessageVariantId;
+}
+
+export interface SceneAutoGenerateTrigger {
+	chatId: string;
+	branchId: string;
+	messageId: string;
+}
+
+/** The chat-level Insights config gates Scene auto-generation (mirrors Objective's gate). */
+function isTrackerEnabled(insightsConfig: Record<string, unknown>): boolean {
+	return insightsConfig?.trackerEnabled === true;
 }
 
 /** One prior valid selected-variant record fed to the model as continuity input. */
@@ -463,5 +475,154 @@ export class SceneTrackerService {
 				() => undefined,
 			),
 		);
+	}
+
+	// ─── SCN-8: auto-start + chat-level wait ─────────────────────────────────
+
+	/**
+	 * Event-driven auto-start (SCN-8). Fired by the Insights feature on each
+	 * assistant `message.appended`. Resolves the appended message's selected
+	 * variant; if the tracker is on and the variant's record is missing/stale,
+	 * starts a background generation (fire-and-forget). Skips silently when the
+	 * tracker is off, the variant has no selected variant, the record is already
+	 * current, or no provider/model resolves. Errors are logged, never thrown —
+	 * the EventBus caller never sees them (mirrors Objective.triggerAutoCheck).
+	 */
+	async triggerAutoGenerate(trigger: SceneAutoGenerateTrigger): Promise<void> {
+		try {
+			const chat = await this.stores.chats.getById(trigger.chatId);
+			if (!chat || !isTrackerEnabled(chat.insightsConfig)) return;
+			const config = await this.getConfig(trigger.chatId as ChatId);
+			const selected = await this.stores.messages.getSelectedVariant(trigger.messageId);
+			if (!selected) return;
+			const record = await this.stores.messages.getSceneRecord(selected.id);
+			if (record && isSceneRecordCurrent(record, config)) return; // already current
+			const target: SceneTarget = {
+				chatId: brandId<ChatId>(trigger.chatId),
+				branchId: brandId<ChatBranchId>(trigger.branchId),
+				messageId: brandId<MessageId>(trigger.messageId),
+				variantId: brandId<MessageVariantId>(selected.id),
+			};
+			void this.ensureTargetJob(target);
+		} catch (error: unknown) {
+			logSendDebug("insights.scene.auto.error", {
+				chatId: trigger.chatId as string,
+				messageId: trigger.messageId as string,
+				message: error instanceof Error ? error.message : String(error),
+			});
+		}
+	}
+
+	/**
+	 * Wait for the active branch's latest assistant selected-variant Scene to
+	 * become current before the next main-model response (SCN-8). Joins an active
+	 * target job (e.g. the event-driven auto-start) or starts a missing/stale job,
+	 * then waits cancellably. Cancelling the waiter DETACHES it — the shared
+	 * background job keeps running. Never rejects: the underlying target job
+	 * swallows failures, so a Scene generation error resolves the wait (the main
+	 * model proceeds with latest-valid/no Scene) rather than blocking chat.
+	 */
+	async waitForForwardState(chatId: ChatId, signal?: AbortSignal): Promise<void> {
+		signal?.throwIfAborted();
+		const chat = await this.stores.chats.getById(chatId);
+		if (!chat || !isTrackerEnabled(chat.insightsConfig)) return;
+
+		const latest = await this.stores.messages.getLatestSelectedVariant(chat.activeBranchId);
+		if (!latest) return; // no latest assistant selected variant → nothing to track
+		const target: SceneTarget = {
+			chatId,
+			branchId: brandId<ChatBranchId>(chat.activeBranchId),
+			messageId: brandId<MessageId>(latest.messageId),
+			variantId: brandId<MessageVariantId>(latest.variantId),
+		};
+
+		let job = this.getTargetJob(target);
+		if (!job) {
+			// No active job: if the record is already current, nothing to do;
+			// otherwise (missing/stale) start one and join it.
+			const config = await this.getConfig(chatId);
+			const record = await this.stores.messages.getSceneRecord(latest.variantId);
+			if (record && isSceneRecordCurrent(record, config)) return;
+			job = this.ensureTargetJob(target);
+		}
+		await this.waitCancellable(job, signal);
+	}
+
+	/**
+	 * Resolve-or-join the target's generation job. Registers EARLY (before the
+	 * provider/context setup awaits) via {@link joinTargetJob} so a concurrent
+	 * caller — the wait path racing the event-driven auto-start — joins the same
+	 * job instead of starting a duplicate. The returned promise never rejects.
+	 */
+	private ensureTargetJob(target: SceneTarget): Promise<void> {
+		const existing = this.getTargetJob(target);
+		if (existing) return existing;
+		const run = this.startAutoGenerate(target).then(
+			() => undefined,
+			() => undefined,
+		);
+		this.joinTargetJob(target, run);
+		return run;
+	}
+
+	/**
+	 * Full auto-generation setup for a target: resolve the provider/model, build
+	 * the RP pipeline context (same shape a chat turn uses, sliced per
+	 * `contextWindow`), collect continuity, and run {@link generateScene}. The
+	 * generation registers + cleans up its own target job; this wrapper only adds
+	 * the resolution/context build around it. Logs + returns on skip (no provider).
+	 */
+	private async startAutoGenerate(target: SceneTarget): Promise<void> {
+		const config = await this.getConfig(target.chatId);
+		const resolved = await this.resolveSceneProvider(config);
+		if (!resolved) {
+			logSendDebug("insights.scene.auto.skip", {
+				chatId: target.chatId as string,
+				variantId: target.variantId as string,
+				reason: config.useChatModel ? "no_provider" : "no_provider_or_model",
+			});
+			return;
+		}
+		const continuity = await this.collectContinuity(target.branchId, target.messageId, config);
+		const built = await this.sessionRuntime.chatLifecycle.buildPipelineContext({
+			chatId: target.chatId,
+			branchId: target.branchId,
+			model: resolved.model,
+			recentMessageLimit: config.contextWindow,
+		});
+		await this.generateScene({
+			target,
+			profile: resolved.profile,
+			model: resolved.model,
+			context: built.context,
+			continuity,
+		});
+	}
+
+	/** Wait on a (never-rejecting) job, detached by an abort signal. Mirrors
+	 *  ObjectiveService.waitForForwardState's settle pattern: abort rejects the
+	 *  WAITER (so the caller can cancel the send) but the job itself is untouched. */
+	private waitCancellable(job: Promise<void>, signal?: AbortSignal): Promise<void> {
+		if (!signal) return job;
+		// The signal may have aborted DURING the setup awaits above (getById /
+		// getLatestSelectedVariant / getConfig / getSceneRecord). addEventListener
+		// won't fire for an already-aborted signal, so check up front — otherwise
+		// the wait would hang with a lost abort.
+		if (signal.aborted) return Promise.reject(signal.reason);
+		return new Promise<void>((resolve, reject) => {
+			let settled = false;
+			const settle = (callback: () => void) => {
+				if (settled) return;
+				settled = true;
+				signal.removeEventListener("abort", onAbort);
+				callback();
+			};
+			const onAbort = () => settle(() => reject(signal.reason));
+			signal.addEventListener("abort", onAbort, { once: true });
+			void job.then(
+				() => settle(resolve),
+				(error: unknown) => settle(() => reject(error)),
+			);
+		});
 	}
 }

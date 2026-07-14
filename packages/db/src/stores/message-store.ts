@@ -710,6 +710,26 @@ export class MessageStore {
   }
 
   /**
+   * The latest assistant message's currently SELECTED variant (record-agnostic),
+   * for the Scene auto-start/wait path (SCENE_TRACKER_PLAN SCN-8). Unlike
+   * {@link getCurrentSceneTarget} this returns the target even when the variant
+   * has NO scene record yet — the common auto-generate case (a freshly committed
+   * assistant reply is record-less until the background job lands). null only
+   * when the branch has no assistant message with a selected variant.
+   */
+  async getLatestSelectedVariant(branchId: string): Promise<{ messageId: string; variantId: string } | null> {
+    const branchMessages = await this.getMessages(branchId);
+    for (let index = branchMessages.length - 1; index >= 0; index -= 1) {
+      const message = branchMessages[index];
+      if (!message || message.role !== "assistant") continue;
+      const selected = await this.getSelectedVariant(message.id);
+      if (!selected) continue;
+      return { messageId: message.id, variantId: selected.id };
+    }
+    return null;
+  }
+
+  /**
    * Scene Tracker history for main-model injection (SCENE_TRACKER_PLAN SCN-7).
    * Walks the branch's assistant messages newest→oldest, up to `scanLimit`
    * assistants, and returns the RAW scene record of each one's currently
