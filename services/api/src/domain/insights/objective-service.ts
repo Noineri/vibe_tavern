@@ -65,6 +65,7 @@ export function defaultObjectiveState(): ObjectiveState {
     objectiveDescription: "",
     tasks: [],
     autoCheckFrequency: 0,
+    autoCheckEventCount: 0,
     contextWindow: OBJECTIVE_CONTEXT_WINDOW,
     injectionDepth: 1,
     generatePrompt: "",
@@ -202,6 +203,9 @@ function normalizeObjectiveState(raw: unknown): ObjectiveState {
     autoCheckFrequency: typeof r.autoCheckFrequency === "number" && Number.isFinite(r.autoCheckFrequency)
       ? Math.max(0, Math.floor(r.autoCheckFrequency))
       : base.autoCheckFrequency,
+    autoCheckEventCount: typeof r.autoCheckEventCount === "number" && Number.isFinite(r.autoCheckEventCount)
+      ? Math.max(0, Math.floor(r.autoCheckEventCount))
+      : base.autoCheckEventCount,
     contextWindow: typeof r.contextWindow === "number" && Number.isFinite(r.contextWindow)
       ? Math.max(1, Math.floor(r.contextWindow))
       : base.contextWindow,
@@ -272,6 +276,8 @@ export class ObjectiveService {
    *  branch before releasing. See BackgroundTaskLocks.runExclusiveTrailing. */
   private readonly autoCheckLocks = new BackgroundTaskLocks();
   private readonly latestAutoTrigger = new Map<string, ObjectiveAutoCheckTrigger>();
+  /** Every committed qualifying event is counted even when the trailing lock coalesces its work. */
+  private readonly pendingAutoCheckEvents = new Map<string, number>();
   private readonly forwardStateJobs = new Map<string, Promise<void>>();
   /** Long lane: generate/check LLM work is serialized per chat. */
   private readonly llmCoordinator = new ObjectiveKeyedCoordinator();
@@ -463,6 +469,7 @@ export class ObjectiveService {
       if (patch.autoCheckFrequency !== undefined) {
         const n = Math.floor(patch.autoCheckFrequency);
         next.autoCheckFrequency = Number.isFinite(n) && n >= 0 ? n : 0;
+        if (next.autoCheckFrequency === 0) next.autoCheckEventCount = 0;
       }
       if (patch.contextWindow !== undefined) {
         const n = Math.floor(patch.contextWindow);
@@ -528,6 +535,8 @@ export class ObjectiveService {
   async triggerAutoCheck(trigger: ObjectiveAutoCheckTrigger): Promise<void> {
     const lockKey = trigger.chatId;
     this.latestAutoTrigger.set(lockKey, trigger);
+    this.pendingAutoCheckEvents.set(lockKey, (this.pendingAutoCheckEvents.get(lockKey) ?? 0) + 1);
+
     // Calls dropped into an existing trailing run must join its owner promise,
     // not replace it with their immediately-resolved `false` result.
     const ownsForwardStateJob = !this.autoCheckLocks.has(lockKey);
@@ -539,18 +548,44 @@ export class ObjectiveService {
         const latest = this.latestAutoTrigger.get(lockKey);
         if (!latest) return;
         const chat = await this.stores.chats.getById(latest.chatId);
-        if (!chat || !isObjectiveEnabled(chat.insightsConfig)) return;
+        if (!chat || !isObjectiveEnabled(chat.insightsConfig)) {
+          this.pendingAutoCheckEvents.delete(lockKey);
+          return;
+        }
         const chatId = chat.id as ChatId;
         const branchId = brandId<ChatBranchId>(latest.branchId);
         const state = await this.getState(chatId);
-        if (state.autoCheckFrequency <= 0) return;
-        const messages = await this.stores.messages.getMessages(branchId);
-        const assistantCount = messages.filter((message) => message.role === "assistant").length;
-        if (assistantCount === 0 || assistantCount % state.autoCheckFrequency !== 0) return;
+        if (state.autoCheckFrequency <= 0 || !selectActiveTask(state.tasks)) {
+          this.pendingAutoCheckEvents.delete(lockKey);
+          return;
+        }
 
-        const resolved = await this.resolveInsightProvider(state);
+        // The lock may coalesce many rapid events into one trailing run, but
+        // cadence must not under-count them. Drain the exact pending total into
+        // the persisted state before deciding whether a check is due.
+        const pendingEvents = this.pendingAutoCheckEvents.get(lockKey) ?? 0;
+        this.pendingAutoCheckEvents.delete(lockKey);
+        let cadenceState: ObjectiveState;
+        try {
+          cadenceState = await this.commitState(chatId, (current) => {
+            if (current.autoCheckFrequency <= 0 || !selectActiveTask(current.tasks)) return null;
+            return {
+              ...current,
+              autoCheckEventCount: current.autoCheckEventCount + pendingEvents,
+            };
+          });
+        } catch (err) {
+          this.pendingAutoCheckEvents.set(
+            lockKey,
+            (this.pendingAutoCheckEvents.get(lockKey) ?? 0) + pendingEvents,
+          );
+          throw err;
+        }
+        if (cadenceState.autoCheckEventCount < cadenceState.autoCheckFrequency) return;
+
+        const resolved = await this.resolveInsightProvider(cadenceState);
         if (!resolved) {
-          logSendDebug("insights.objective.auto.skip", { chatId: chat.id, messageId: latest.messageId, reason: state.useChatModel ? "no_provider" : "no_provider_or_model" });
+          logSendDebug("insights.objective.auto.skip", { chatId: chat.id, messageId: latest.messageId, reason: cadenceState.useChatModel ? "no_provider" : "no_provider_or_model" });
           return;
         }
         const { profile, model } = resolved;
@@ -558,9 +593,19 @@ export class ObjectiveService {
           chatId,
           branchId,
           model,
-          recentMessageLimit: state.contextWindow,
+          recentMessageLimit: cadenceState.contextWindow,
         });
+        const checkedThroughCount = cadenceState.autoCheckEventCount;
         await this.checkCompletion({ chatId, profile, model, context: built.context });
+
+        // Reset only the events represented by this check. Events committed
+        // during the LLM await remain pending/persisted for the trailing run.
+        await this.commitState(chatId, (current) => {
+          const autoCheckEventCount = Math.max(0, current.autoCheckEventCount - checkedThroughCount);
+          return autoCheckEventCount === current.autoCheckEventCount
+            ? null
+            : { ...current, autoCheckEventCount };
+        });
       },
       (err) => {
         const failedTrigger = this.latestAutoTrigger.get(lockKey) ?? trigger;
@@ -585,7 +630,12 @@ export class ObjectiveService {
 
     // The lock owner has consumed every dirty trailing trigger before `ran`
     // resolves. Dropped callers return `false`, so only the owner cleans up.
-    if (ran) this.latestAutoTrigger.delete(lockKey);
+    if (ran) {
+      this.latestAutoTrigger.delete(lockKey);
+      if ((this.pendingAutoCheckEvents.get(lockKey) ?? 0) === 0) {
+        this.pendingAutoCheckEvents.delete(lockKey);
+      }
+    }
   }
 
   /**

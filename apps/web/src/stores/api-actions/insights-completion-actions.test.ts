@@ -38,6 +38,7 @@ function objective(description: string): ObjectiveState {
     objectiveDescription: description,
     tasks: [{ id: `task_${description}`, description, status: "active" }],
     autoCheckFrequency: 1,
+    autoCheckEventCount: 0,
     contextWindow: 10,
     injectionDepth: 1,
     generatePrompt: "",

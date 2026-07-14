@@ -16,6 +16,11 @@
  *   • expanded  — route actions (regenerate/check) + a row per task with a
  *                 node-state button (click = cycle status) and inline edit.
  *
+ * Objective state is intentionally chat-global: every assistant header is a
+ * live view of the same current route, not a historical per-message snapshot.
+ * Route changes therefore update every mounted Objective zone. Scene differs:
+ * its tracker is selected-variant scoped and must preserve cross-message isolation.
+ *
  * Render-isolation (CHAT_FRONTEND_REFACTOR_PLAN contract + INSIGHTS_PLAN §6):
  * the snapshot store replaces `activeChat` WHOLESALE whenever any activeChat
  * field changes (snapshot-store.ts `if (!deepEqual(...)) draft.activeChat = next`),
@@ -214,8 +219,8 @@ function RouteRow({ chatId, task }: { chatId: ChatId; task: ObjectiveTask }) {
     const next = STATUS_ORDER[(STATUS_ORDER.indexOf(task.status) + 1) % STATUS_ORDER.length];
     try {
       await updateObjectiveTaskAction(chatId, task.id, { status: next });
-    } catch {
-      // Silent in the header — the Build Mode panel surfaces objective errors.
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : t("obj_action_failed"));
     }
   }
 
@@ -224,8 +229,8 @@ function RouteRow({ chatId, task }: { chatId: ChatId; task: ObjectiveTask }) {
     if (value !== task.description) {
       try {
         await updateObjectiveTaskAction(chatId, task.id, { description: value });
-      } catch {
-        // Silent — see above.
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : t("obj_action_failed"));
       }
     }
   }

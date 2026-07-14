@@ -33,7 +33,8 @@ export function createInsightsFeature(deps: {
     id: "insights",
 
     activate({ events }: FeatureDeps): void {
-      unsubscribe = events.on("message.appended", ({ chatId, branchId, messageId }) => {
+      unsubscribe = events.on("message.appended", ({ chatId, branchId, messageId, role }) => {
+        if (role !== "assistant") return;
         void objectiveService.triggerAutoCheck({ chatId, branchId, messageId });
       });
     },

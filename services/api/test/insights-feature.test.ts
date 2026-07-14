@@ -6,7 +6,7 @@ import type { ObjectiveAutoCheckTrigger, ObjectiveService } from "../src/domain/
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 describe("Insights feature immutable event targeting (OFA-4)", () => {
-  it("forwards the committed chat, branch, and non-empty message identity to Objective auto-check", async () => {
+  it("forwards only qualifying assistant appends with immutable chat, branch, and message identity", async () => {
     const seen: ObjectiveAutoCheckTrigger[] = [];
     const objectiveService = {
       triggerAutoCheck: async (trigger: ObjectiveAutoCheckTrigger) => {
@@ -17,6 +17,12 @@ describe("Insights feature immutable event targeting (OFA-4)", () => {
     const feature = createInsightsFeature({ objectiveService });
     feature.activate({ events, router: null as never });
 
+    events.emit("message.appended", {
+      chatId: "chat_1",
+      branchId: "branch_user",
+      messageId: "message_user",
+      role: "user",
+    });
     events.emit("message.appended", {
       chatId: "chat_1",
       branchId: "branch_committed",

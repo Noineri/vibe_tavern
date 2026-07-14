@@ -107,6 +107,10 @@ MessageBlock (memo)
 └── Editing mode (AutoTextarea replacement)
 ```
 
+### Assistant context header insight scope
+
+Objective zones are intentionally chat-global live views: every mounted assistant header reads the same current Objective route from `activeChat.insightsObjectiveState`, so a route edit or completion updates all Objective headers. Their primitive selectors still isolate them from unrelated `activeChat` changes. Scene zones are different by contract: Scene data is selected-variant scoped, and changing message A's tracker must not commit message B; INS-11 carries the required real-slot profiler test for that invariant.
+
 ### Variant System
 
 Messages support **multiple variants** (swipes). Each variant has its own `content` and optional `reasoning`.

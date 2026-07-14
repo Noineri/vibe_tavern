@@ -238,7 +238,7 @@ Verify with `bun run check`, then smoke-test against `dev:web` using the Playwri
 | Return value | `true` if `task` ran (success or failure); `false` if skipped. |
 | Per-instance scoping | Each service owns its own `BackgroundTaskLocks`. Different features on the same chat run in parallel. |
 
-Forward-steering jobs such as Objective and Scene use `runExclusiveTrailing`, retain the owner promise through every dirty trailing rerun, and expose a feature-local join method. The assistant response that triggers the job remains fire-and-forget; the next live prompt joins the preceding job cancellably before reading injected state. Cancelling that waiter must not cancel the shared job, and ordinary CRUD/config writes remain on their separate short commit lane.
+Forward-steering jobs such as Objective and Scene use `runExclusiveTrailing`, retain the owner promise through every dirty trailing rerun, and expose a feature-local join method. A trigger during the current run produces at most one trailing rerun, and that rerun must re-read the latest immutable target and fresh state. If cadence matters, persist a qualifying-event counter instead of deriving it from historical database rows; coalesced triggers must add their exact pending count before the cadence decision. The assistant response that triggers the job remains fire-and-forget; the next live prompt joins the preceding job cancellably before reading injected state. Cancelling that waiter must not cancel the shared job, and ordinary CRUD/config writes remain on their separate short commit lane.
 
 For UI delivery without SSE, expose a chat-scoped completion-refresh RPC that accepts the immutable committed-message target, joins that same owner promise, revalidates target ownership after the wait, and returns an echoed target plus only the refreshed insight/message patch. Never return a whole session snapshot from this seam: after a fresh committed send/generate (not regenerate), the frontend starts this wait only when an insight is enabled, detaches an older waiter when a newer target arrives, validates both the echoed target and current snapshot-store ownership, and merges only the scoped fields through `applyInsightsCompletionPatch()`.
 
@@ -268,7 +268,7 @@ The chat orchestrator emits domain events on the `EventBus`. The primary backgro
 - [ ] If you added a table/column: migration generated via `bun run db:generate`; store has a characterization test if it carries logic.
 - [ ] If you added a prompt layer: confirm the layer id appears in `prompt.layers` for relevant chats (check via a prompt-assembly test or the debug log).
 - [ ] Trigger the feature (event-driven and/or manual route); confirm the persisted entity matches expectations.
-- [ ] Fire the trigger twice rapidly; confirm only one background run executes (dedup).
+- [ ] Fire the trigger during an in-flight run; confirm one current run plus at most one trailing rerun executes, and the trailing run reads the latest target and fresh state.
 - [ ] Force the LLM call to fail; confirm the error is logged via `onError` and the lock is released (next trigger still runs).
 - [ ] If a prompt layer is injected: confirm future generations include it; for forward-steering state, hold the background job and prove the next live prompt waits for its commit while waiter cancellation leaves the shared job running.
 

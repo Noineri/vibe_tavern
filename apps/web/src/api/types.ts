@@ -72,6 +72,8 @@ export interface ObjectiveState {
   objectiveDescription: string;
   tasks: ObjectiveTask[];
   autoCheckFrequency: number;
+  /** Internal persisted count of qualifying assistant events since the last completed auto-check. */
+  autoCheckEventCount: number;
   contextWindow: number;
   injectionDepth: number;
   generatePrompt: string;

@@ -470,6 +470,14 @@ describe("ObjectiveService (INS-3b logic + INS-3c assembler wiring)", () => {
     expect((await service.updateObjectiveConfig("chat_1" as never, { contextWindow: 6 })).contextWindow).toBe(6);
   });
 
+  it("defaults, normalizes, and clears the persisted auto-check event count in manual mode", async () => {
+    expect(defaultObjectiveState().autoCheckEventCount).toBe(0);
+    const { stores } = makeMockStores({ ...defaultObjectiveState(), autoCheckFrequency: 3, autoCheckEventCount: 4.8 });
+    const service = new ObjectiveService(stores, null as never, null as never, async () => ({ text: "" }) as never);
+    expect((await service.getState("chat_1" as never)).autoCheckEventCount).toBe(4);
+    expect((await service.updateObjectiveConfig("chat_1" as never, { autoCheckFrequency: 0 })).autoCheckEventCount).toBe(0);
+  });
+
   it("setting a task active deterministically demotes every other active task", async () => {
     const initial: ObjectiveState = {
       ...defaultObjectiveState(),
@@ -574,8 +582,8 @@ describe("ObjectiveService.triggerAutoCheck (INS-4 orchestration)", () => {
    *  a messages store, a stub sessionRuntime.chatLifecycle.buildPipelineContext,
    *  and a stub providerProfiles.resolveActiveProviderProfile. The trailing-lock
    *  mechanics are unit-tested in background-task-locks.test.ts; this pins the
-   *  orchestration: gate (enabled / frequency / assistant count) → context build
-   *  → check, with the closure rebuilding context on each invocation. */
+   *  orchestration: gate (enabled / persisted qualifying-event cadence) →
+   *  context build → check, with the closure rebuilding context on each invocation. */
   function makeTriggerService(opts: {
     objectiveEnabled: boolean;
     autoCheckFrequency: number;
@@ -591,7 +599,6 @@ describe("ObjectiveService.triggerAutoCheck (INS-4 orchestration)", () => {
     getBuildCalls: () => number;
     getRecentMessageLimit: () => number | undefined;
     getExecuteCalls: () => number;
-    getMessageBranchIds: () => string[];
     getContextBranchIds: () => string[];
     readState: () => ObjectiveState;
   } {
@@ -607,10 +614,9 @@ describe("ObjectiveService.triggerAutoCheck (INS-4 orchestration)", () => {
       generatePrompt: "",
       checkPrompt: "",
       injectPrompt: "",
-    } satisfies Omit<ObjectiveState, "useChatModel" | "providerProfileId" | "model">;
+    } satisfies Omit<ObjectiveState, "autoCheckEventCount" | "useChatModel" | "providerProfileId" | "model">;
     let state: Record<string, unknown> = baseState as unknown as Record<string, unknown>;
-    const messages = Array.from({ length: assistantCount }, (_, i) => ({ id: `a${i}`, role: "assistant", position: i, content: `msg ${i}` }));
-    const messageBranchIds: string[] = [];
+    const messages = Array.from({ length: assistantCount }, (_, i) => ({ id: `a${i}`, role: "assistant", position: i, content: `legacy msg ${i}` }));
     const contextBranchIds: string[] = [];
     const stores = {
       chats: {
@@ -620,10 +626,9 @@ describe("ObjectiveService.triggerAutoCheck (INS-4 orchestration)", () => {
           return { insightsObjectiveState: state };
         },
       },
-      messages: { getMessages: async (branchId: string) => {
-        messageBranchIds.push(branchId);
-        return messages;
-      } },
+      // Legacy assistant rows deliberately remain available so cadence tests
+      // prove that seed/imported history no longer influences auto-checking.
+      messages: { getMessages: async () => messages },
     } as unknown as StoreContainer;
     let buildCalls = 0;
     let recentMessageLimit: number | undefined;
@@ -652,7 +657,6 @@ describe("ObjectiveService.triggerAutoCheck (INS-4 orchestration)", () => {
       getBuildCalls: () => buildCalls,
       getRecentMessageLimit: () => recentMessageLimit,
       getExecuteCalls: () => executeCalls,
-      getMessageBranchIds: () => messageBranchIds,
       getContextBranchIds: () => contextBranchIds,
       readState: () => state as unknown as ObjectiveState,
     };
@@ -672,30 +676,62 @@ describe("ObjectiveService.triggerAutoCheck (INS-4 orchestration)", () => {
     expect(t.getExecuteCalls()).toBe(0);
   });
 
-  it("gates on the assistant-message count modulo frequency (every N messages)", async () => {
-    // frequency 3: counts 1 and 2 do not trigger; count 3 does.
-    const off1 = makeTriggerService({ objectiveEnabled: true, autoCheckFrequency: 3, assistantCount: 1 });
-    await off1.service.triggerAutoCheck(trigger());
-    expect(off1.getExecuteCalls()).toBe(0);
-    const off2 = makeTriggerService({ objectiveEnabled: true, autoCheckFrequency: 3, assistantCount: 2 });
-    await off2.service.triggerAutoCheck(trigger());
-    expect(off2.getExecuteCalls()).toBe(0);
-    const on3 = makeTriggerService({
+  it("counts qualifying append events since the last check and ignores legacy assistant rows", async () => {
+    const t = makeTriggerService({
       objectiveEnabled: true,
       autoCheckFrequency: 3,
-      assistantCount: 3,
+      assistantCount: 50,
+      reply: '{"completed":false}',
       tasks: [{ id: "obj_task_1", description: "Reach the gates", status: OBJECTIVE_TASK_STATUS.pending }],
     });
-    await on3.service.triggerAutoCheck(trigger());
-    expect(on3.getExecuteCalls()).toBe(1);
-    expect(on3.readState().tasks[0].status).toBe(OBJECTIVE_TASK_STATUS.completed);
+
+    await t.service.triggerAutoCheck(trigger("branch_1", "message_1"));
+    expect(t.getExecuteCalls()).toBe(0);
+    expect(t.readState().autoCheckEventCount).toBe(1);
+
+    await t.service.triggerAutoCheck(trigger("branch_1", "message_2"));
+    expect(t.getExecuteCalls()).toBe(0);
+    expect(t.readState().autoCheckEventCount).toBe(2);
+
+    await t.service.triggerAutoCheck(trigger("branch_1", "message_3"));
+    expect(t.getExecuteCalls()).toBe(1);
+    expect(t.readState().autoCheckEventCount).toBe(0);
   });
 
-  it("skips silently when no active provider profile is configured", async () => {
-    const t = makeTriggerService({ objectiveEnabled: true, autoCheckFrequency: 1, assistantCount: 1, hasProvider: false });
+  it("retains the qualifying-event count when no active provider profile is configured", async () => {
+    const t = makeTriggerService({
+      objectiveEnabled: true,
+      autoCheckFrequency: 1,
+      assistantCount: 1,
+      hasProvider: false,
+      tasks: [{ id: "obj_task_1", description: "Reach the gates", status: OBJECTIVE_TASK_STATUS.pending }],
+    });
     await t.service.triggerAutoCheck(trigger());
     expect(t.getBuildCalls()).toBe(0);
     expect(t.getExecuteCalls()).toBe(0);
+    expect(t.readState().autoCheckEventCount).toBe(1);
+  });
+
+  it("retains cadence after a failed check and retries on the next qualifying event", async () => {
+    let attempts = 0;
+    const t = makeTriggerService({
+      objectiveEnabled: true,
+      autoCheckFrequency: 1,
+      assistantCount: 0,
+      tasks: [{ id: "obj_task_1", description: "Reach the gates", status: OBJECTIVE_TASK_STATUS.pending }],
+      executeOverride: async () => {
+        attempts += 1;
+        if (attempts === 1) throw new Error("provider failed");
+        return { text: '{"completed":false}' };
+      },
+    });
+
+    await t.service.triggerAutoCheck(trigger("branch_1", "message_1"));
+    expect(t.readState().autoCheckEventCount).toBe(1);
+
+    await t.service.triggerAutoCheck(trigger("branch_1", "message_2"));
+    expect(attempts).toBe(2);
+    expect(t.readState().autoCheckEventCount).toBe(0);
   });
 
   it("builds context via chatLifecycle and advances the active task on a DONE verdict", async () => {
@@ -709,7 +745,6 @@ describe("ObjectiveService.triggerAutoCheck (INS-4 orchestration)", () => {
     await t.service.triggerAutoCheck(trigger("branch_committed", "message_committed"));
     expect(t.getBuildCalls()).toBe(1); // context built via the session runtime
     expect(t.getRecentMessageLimit()).toBe(4);
-    expect(t.getMessageBranchIds()).toEqual(["branch_committed"]);
     expect(t.getContextBranchIds()).toEqual(["branch_committed"]);
     expect(t.getExecuteCalls()).toBe(1);
     expect(t.readState().tasks[0].status).toBe(OBJECTIVE_TASK_STATUS.completed);
@@ -865,26 +900,25 @@ describe("ObjectiveService.triggerAutoCheck (INS-4 orchestration)", () => {
     expect(maxActiveExecutions).toBe(1);
   });
 
-  it("uses the latest immutable branch for a trailing event from another branch", async () => {
-    const state: ObjectiveState = {
+  it("coalesces rapid events into one fresh trailing check without under-counting them", async () => {
+    let state: ObjectiveState = {
       ...defaultObjectiveState(),
       objectiveDescription: "Escape",
       autoCheckFrequency: 1,
       tasks: [{ id: "t1", description: "Wait", status: OBJECTIVE_TASK_STATUS.pending }],
     };
-    const messageBranchIds: string[] = [];
     const contextBranchIds: string[] = [];
     const stores = {
       chats: {
         // Simulate the UI switching elsewhere while the committed event still
         // identifies the branch whose assistant message caused the trigger.
         getById: async () => ({ id: "chat_1", activeBranchId: "branch_switched", insightsConfig: { objectiveEnabled: true }, insightsObjectiveState: state }),
-        updateInsightsObjectiveState: async () => ({ insightsObjectiveState: state }),
+        updateInsightsObjectiveState: async (_id: string, input: { insightsObjectiveState?: ObjectiveState }) => {
+          if (input.insightsObjectiveState) state = input.insightsObjectiveState;
+          return { insightsObjectiveState: state };
+        },
       },
-      messages: { getMessages: async (branchId: string) => {
-        messageBranchIds.push(branchId);
-        return [{ id: `message_${branchId}`, role: "assistant", position: 0, content: "reply" }];
-      } },
+      messages: { getMessages: async () => [] },
     } as unknown as StoreContainer;
     const sessionRuntime = {
       chatLifecycle: {
@@ -895,11 +929,13 @@ describe("ObjectiveService.triggerAutoCheck (INS-4 orchestration)", () => {
       },
     } as never;
     let executeCalls = 0;
+    const eventCountsAtExecution: number[] = [];
     let releaseFirst: (() => void) | undefined;
     let markFirstStarted: (() => void) | undefined;
     const firstStarted = new Promise<void>((resolve) => { markFirstStarted = resolve; });
     const execute = async () => {
       executeCalls += 1;
+      eventCountsAtExecution.push(state.autoCheckEventCount);
       if (executeCalls === 1) {
         markFirstStarted?.();
         await new Promise<void>((resolve) => { releaseFirst = resolve; });
@@ -912,6 +948,7 @@ describe("ObjectiveService.triggerAutoCheck (INS-4 orchestration)", () => {
     const first = service.triggerAutoCheck(trigger("branch_a", "message_a"));
     await firstStarted;
     await service.triggerAutoCheck(trigger("branch_b", "message_b"));
+    await service.triggerAutoCheck(trigger("branch_c", "message_c"));
     let joined = false;
     const joining = service.waitForForwardState("chat_1" as never).then(() => { joined = true; });
     await Promise.resolve();
@@ -921,9 +958,10 @@ describe("ObjectiveService.triggerAutoCheck (INS-4 orchestration)", () => {
     await Promise.all([first, joining]);
 
     expect(joined).toBe(true);
-    expect(messageBranchIds).toEqual(["branch_a", "branch_b"]);
-    expect(contextBranchIds).toEqual(["branch_a", "branch_b"]);
+    expect(contextBranchIds).toEqual(["branch_a", "branch_c"]);
     expect(executeCalls).toBe(2);
+    expect(eventCountsAtExecution).toEqual([1, 2]);
+    expect(state.autoCheckEventCount).toBe(0);
   });
 
   it("does not advance when the LLM says PENDING", async () => {

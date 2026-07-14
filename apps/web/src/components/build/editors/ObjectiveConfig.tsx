@@ -170,6 +170,7 @@ const EMPTY_STATE: ObjectiveState = {
   objectiveDescription: "",
   tasks: [],
   autoCheckFrequency: 0,
+  autoCheckEventCount: 0,
   contextWindow: 10,
   injectionDepth: 1,
   generatePrompt: "",

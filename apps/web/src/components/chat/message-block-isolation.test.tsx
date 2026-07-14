@@ -11,8 +11,11 @@ import { render, act } from "@testing-library/react";
  *   the render-isolation contract established by CHAT_FRONTEND_REFACTOR_PLAN
  *   Wave A, and it is the gate every future MessageBlock subscription must
  *   keep green — the generation queue (CHAT_GENERATION_QUEUE_PLAN) and Insights
- *   (INSIGHTS_PLAN) plug in by writing per-message / primitive / reference-
- *   stable selectors, never a broad chat-wide one.
+ *   (INSIGHTS_PLAN) plug in through primitive / reference-stable selectors,
+ *   never a broad chat object. Objective is the intentional exception to
+ *   cross-message isolation: it is a chat-global live route, so its primitive
+ *   route changes must commit every mounted Objective header. Scene remains
+ *   per-message/selected-variant scoped and is pinned when INS-11 lands.
  *
  * HOW IT PROVES IT
  *   The real MessageBlock is mounted for message A (its subscription graph is
@@ -142,6 +145,7 @@ async function loadModules() {
 // ---------------------------------------------------------------------------
 
 import type { AppCharacter, AppMessage, AppSnapshot, AppPersona } from "../../app-client.js";
+import type { ObjectiveState } from "../../api/types.js";
 import type { ChatId, ChatBranchId } from "@vibe-tavern/domain";
 
 const asChatId = (id: string): ChatId => id as ChatId;
@@ -190,11 +194,17 @@ function makeMultiVariantMessage(id: string): AppMessage {
   } as unknown as AppMessage;
 }
 
-function seed(messages: AppMessage[], persona: AppPersona | null = null): AppSnapshot {
+function seed(messages: AppMessage[], persona: AppPersona | null = null, objectiveState?: ObjectiveState): AppSnapshot {
   return {
     chats: [{ id: "chat-1", title: "Chat 1", characterId: "c1", characterName: "Char c1", subtitle: "", activeBranchLabel: "main", mode: "rp", messageCount: messages.length, updatedAt: "2026-01-01T00:00:00.000Z" }],
     allCharacters: [],
-    activeChat: { id: "chat-1", title: "Chat 1", characterId: "c1" } as unknown as AppSnapshot["activeChat"],
+    activeChat: {
+      id: "chat-1",
+      title: "Chat 1",
+      characterId: "c1",
+      insightsConfig: { objectiveEnabled: objectiveState !== undefined, trackerEnabled: false },
+      insightsObjectiveState: objectiveState,
+    } as unknown as AppSnapshot["activeChat"],
     activeBranch: { id: "b1", chatId: "chat-1", label: "main" } as unknown as AppSnapshot["activeBranch"],
     branches: [],
     messages,
@@ -329,6 +339,65 @@ describe("MessageBlock — render isolation invariant", () => {
 
     expect(probeA.commits).toBe(1); // A untouched by B's edit
     probeA.unmount();
+  });
+
+  test("Objective headers are chat-global live views without subscribing to unrelated chat fields", async () => {
+    const { snapshotStore, chatStore } = await loadModules();
+    const objectiveState: ObjectiveState = {
+      objectiveDescription: "Escape the citadel",
+      tasks: [{ id: "t1", description: "Reach the gate", status: "active" }],
+      autoCheckFrequency: 3,
+      autoCheckEventCount: 0,
+      contextWindow: 10,
+      injectionDepth: 1,
+      generatePrompt: "",
+      checkPrompt: "",
+      injectPrompt: "",
+      useChatModel: true,
+      providerProfileId: null,
+      model: null,
+    };
+    snapshotStore.useSnapshotStore.getState().ingestSnapshot(
+      seed([makeAssistantMessage("m1"), makeAssistantMessage("m2")], null, objectiveState),
+    );
+    chatStore.useChatStore.getState().setActiveChatId(asChatId(CHAT));
+
+    const probeA = await mountBlockForCounting("m1");
+    const probeB = await mountBlockForCounting("m2");
+    probeA.reset();
+    probeB.reset();
+
+    act(() => {
+      const activeChat = snapshotStore.useSnapshotStore.getState().activeChat!;
+      snapshotStore.useSnapshotStore.getState().ingestSnapshot({
+        activeChat: {
+          ...activeChat,
+          insightsObjectiveState: {
+            ...objectiveState,
+            tasks: [{ id: "t1", description: "Open the gate", status: "active" }],
+          },
+        },
+      } as AppSnapshot);
+    });
+    await act(async () => { await Promise.resolve(); });
+
+    expect(probeA.commits).toBeGreaterThan(0);
+    expect(probeB.commits).toBeGreaterThan(0);
+    probeA.reset();
+    probeB.reset();
+
+    act(() => {
+      const activeChat = snapshotStore.useSnapshotStore.getState().activeChat!;
+      snapshotStore.useSnapshotStore.getState().ingestSnapshot({
+        activeChat: { ...activeChat, title: "Unrelated title change" },
+      } as AppSnapshot);
+    });
+    await act(async () => { await Promise.resolve(); });
+
+    expect(probeA.commits).toBe(0);
+    expect(probeB.commits).toBe(0);
+    probeA.unmount();
+    probeB.unmount();
   });
 
   test("POSITIVE CONTROL: changing persona (chat-wide, read by useMessageAuthor) re-renders A", async () => {

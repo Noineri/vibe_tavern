@@ -30,7 +30,10 @@ const mocks = vi.hoisted(() => ({
   generateObjectiveTasksAction: vi.fn(),
   checkObjectiveCompletionAction: vi.fn(),
   refreshInsightsCompletion: vi.fn(),
+  toastError: vi.fn(),
 }));
+
+vi.mock("sonner", () => ({ toast: { error: mocks.toastError } }));
 
 vi.mock("../../../i18n/context.js", () => ({
   useT: () => ({ t: (k: string) => k, tDynamic: (k: string) => k, locale: "en", setLocale: () => {}, ready: true }),
@@ -55,6 +58,7 @@ afterEach(() => {
   mocks.generateObjectiveTasksAction.mockReset();
   mocks.checkObjectiveCompletionAction.mockReset();
   mocks.refreshInsightsCompletion.mockReset();
+  mocks.toastError.mockReset();
   cancelInsightsCompletionRefresh("c1" as never);
 });
 
@@ -76,6 +80,7 @@ const ROUTE: ObjectiveState = {
     { id: "t3", description: "Find the cave", status: "pending" },
   ],
   autoCheckFrequency: 0,
+  autoCheckEventCount: 0,
   contextWindow: 10,
   injectionDepth: 1,
   generatePrompt: "",
@@ -174,6 +179,31 @@ describe("ObjectiveZone (INS-6)", () => {
     fireEvent.change(input, { target: { value: "Enter the dark forest" } });
     fireEvent.blur(input);
     expect(mocks.updateObjectiveTaskAction).toHaveBeenCalledWith("c1", "t2", { description: "Enter the dark forest" });
+  });
+
+  it("reports status-cycle failures instead of swallowing them", async () => {
+    mocks.updateObjectiveTaskAction.mockRejectedValueOnce(new Error("status save failed"));
+    seedState(ROUTE, true);
+    useHeaderZoneExpansionStore.setState({ open: { m1: { objectiveOpen: true } } });
+    const { getAllByTitle } = render(<ObjectiveZone chatId="c1" messageId="m1" />);
+
+    fireEvent.click(getAllByTitle("obj_cycle_status")[1]!);
+
+    await waitFor(() => expect(mocks.toastError).toHaveBeenCalledWith("status save failed"));
+  });
+
+  it("reports inline-rename failures instead of swallowing them", async () => {
+    mocks.updateObjectiveTaskAction.mockRejectedValueOnce("rename save failed");
+    seedState(ROUTE, true);
+    useHeaderZoneExpansionStore.setState({ open: { m1: { objectiveOpen: true } } });
+    const { getByText, getByDisplayValue } = render(<ObjectiveZone chatId="c1" messageId="m1" />);
+
+    fireEvent.click(getByText("Enter the forest"));
+    const input = getByDisplayValue("Enter the forest") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "Enter the dark forest" } });
+    fireEvent.blur(input);
+
+    await waitFor(() => expect(mocks.toastError).toHaveBeenCalledWith("obj_action_failed"));
   });
 
   it("visible-gate backstop: renders nothing when objective is disabled", () => {

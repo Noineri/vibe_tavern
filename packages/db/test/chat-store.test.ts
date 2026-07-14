@@ -823,6 +823,7 @@ describe("ChatStore — objective state (INS-3)", () => {
       objectiveDescription: "Defeat the warlord",
       tasks: [{ id: "t1", description: "Reach the city", status: "pending" }],
       autoCheckFrequency: 0,
+      autoCheckEventCount: 2,
       injectionDepth: 1,
       generatePrompt: "",
       checkPrompt: "",
@@ -836,11 +837,11 @@ describe("ChatStore — objective state (INS-3)", () => {
 
   test("updateInsightsObjectiveState replaces wholesale (the service computes the full next state)", async () => {
     const chat = await store.createChat({ characterId: "char_1", title: "c", promptPresetId: "preset_1" });
-    await store.updateInsightsObjectiveState(chat.id, { insightsObjectiveState: { objectiveDescription: "A", tasks: [], autoCheckFrequency: 0, injectionDepth: 1, generatePrompt: "", checkPrompt: "", injectPrompt: "" } });
+    await store.updateInsightsObjectiveState(chat.id, { insightsObjectiveState: { objectiveDescription: "A", tasks: [], autoCheckFrequency: 0, autoCheckEventCount: 4, injectionDepth: 1, generatePrompt: "", checkPrompt: "", injectPrompt: "" } });
     // A second write REPLACES (the service always writes the computed full
     // state) — old keys do not linger.
-    await store.updateInsightsObjectiveState(chat.id, { insightsObjectiveState: { objectiveDescription: "B", tasks: [], autoCheckFrequency: 5, injectionDepth: 2, generatePrompt: "g", checkPrompt: "c", injectPrompt: "i" } });
+    await store.updateInsightsObjectiveState(chat.id, { insightsObjectiveState: { objectiveDescription: "B", tasks: [], autoCheckFrequency: 5, autoCheckEventCount: 1, injectionDepth: 2, generatePrompt: "g", checkPrompt: "c", injectPrompt: "i" } });
     const reloaded = await store.getById(chat.id);
-    expect(reloaded?.insightsObjectiveState).toEqual({ objectiveDescription: "B", tasks: [], autoCheckFrequency: 5, injectionDepth: 2, generatePrompt: "g", checkPrompt: "c", injectPrompt: "i" });
+    expect(reloaded?.insightsObjectiveState).toEqual({ objectiveDescription: "B", tasks: [], autoCheckFrequency: 5, autoCheckEventCount: 1, injectionDepth: 2, generatePrompt: "g", checkPrompt: "c", injectPrompt: "i" });
   });
 });

@@ -537,6 +537,8 @@ export interface ObjectiveState {
   tasks: ObjectiveTask[];
   /** How often to auto-check completion (in qualifying assistant events). 0 = manual only. */
   autoCheckFrequency: number;
+  /** Persisted qualifying assistant events accumulated since the last completed auto-check. */
+  autoCheckEventCount: number;
   /** Number of recent branch messages supplied to the Objective model. */
   contextWindow: number;
   /** in_chat injectionDepth for the active-task layer; default 1 (just before the latest user message). */
