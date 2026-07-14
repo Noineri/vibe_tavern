@@ -67,6 +67,13 @@ type CoauthorHistoryMessage =
   | { role: "user" | "assistant"; content: string; toolCalls?: ToolCallPart[] }
   | { role: "tool"; content: ToolResultPart[] };
 
+/** Narrow opaque JSON read from tool_calls_json back to AI SDK options. */
+function asToolProviderOptions(value: unknown): ToolCallPart["providerOptions"] {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as ToolCallPart["providerOptions"]
+    : undefined;
+}
+
 function latestUserMessage(history: CoauthorHistoryMessage[]): string {
   for (let i = history.length - 1; i >= 0; i--) {
     const m = history[i];
@@ -169,12 +176,16 @@ export async function assembleCoauthorPrompt(input: ChatModeAssembleInput): Prom
           // SDK v6 ToolCallPart: `input` (the parsed args), not `args`.
           const msg: CoauthorHistoryMessage = { role: m.role as "user" | "assistant", content: m.content };
           if (m.toolCalls && m.toolCalls.length > 0) {
-            msg.toolCalls = m.toolCalls.map(tc => ({
-              type: "tool-call",
-              toolCallId: tc.id,
-              toolName: tc.name,
-              input: tc.args,
-            }));
+            msg.toolCalls = m.toolCalls.map((tc) => {
+              const providerOptions = asToolProviderOptions(tc.providerOptions);
+              return {
+                type: "tool-call",
+                toolCallId: tc.id,
+                toolName: tc.name,
+                input: tc.args,
+                ...(providerOptions ? { providerOptions } : {}),
+              };
+            });
           }
           return msg;
         });

@@ -380,6 +380,8 @@ export interface ToolCall {
   id: string;
   name: string;
   args: unknown;
+  /** Opaque AI SDK replay metadata (for example Gemini 3 thoughtSignature). */
+  providerOptions?: unknown;
 }
 
 export interface Message {

@@ -208,7 +208,12 @@ describe("assembleCoauthorPrompt", () => {
           id: "msg_2", 
           role: "assistant", 
           content: "calling tool",
-          toolCalls: [{ id: "call_1", name: "edit_personality", args: { content: "Bold." } }]
+          toolCalls: [{
+            id: "call_1",
+            name: "edit_personality",
+            args: { content: "Bold." },
+            providerOptions: { google: { thoughtSignature: "sig_google_1" } },
+          }]
         } as never,
         { id: "msg_3", role: "tool", toolCallId: "call_1", content: "Success" } as never,
       ],
@@ -224,7 +229,8 @@ describe("assembleCoauthorPrompt", () => {
       type: "tool-call",
       toolCallId: "call_1",
       toolName: "edit_personality",
-      input: { content: "Bold." }
+      input: { content: "Bold." },
+      providerOptions: { google: { thoughtSignature: "sig_google_1" } },
     }]);
 
     expect(messages[3].role).toBe("tool");

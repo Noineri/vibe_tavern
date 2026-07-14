@@ -4,6 +4,7 @@ import type { AppSnapshot, ChatListItem } from "../../app-client.js";
 import { useChatStore } from "../chat-store.js";
 import { useSnapshotStore } from "../snapshot-store.js";
 import { useNavigationStore } from "../navigation-store.js";
+import { useCoauthorTurnStore } from "../coauthor-turn-store.js";
 import { deleteChatAction, forkBranchAction, generateObjectiveTasksAction, generateReplyAction, sendChatMessageAction, switchModeAction } from "./chat-actions.js";
 
 // Mocks for the deleteChatAction tests below. `deleteChat` returns the
@@ -82,6 +83,7 @@ beforeEach(() => {
   sendChatMessageMock.mockReset();
   startCompletionRefreshMock.mockReset();
   useSnapshotStore.getState().clear();
+  useCoauthorTurnStore.setState({ turnsByChat: {} });
   useChatStore.getState().setActiveChatId(null);
   useChatStore.getState().setSelectedCharacterId(null);
   useNavigationStore.getState().setMode("play");
@@ -95,6 +97,51 @@ describe("committed assistant completion refresh", () => {
     await sendChatMessageAction(chatId("chat-1"), "Hello");
 
     expect(startCompletionRefreshMock).toHaveBeenCalledWith(chatId("chat-1"), snapshot);
+  });
+
+  test("hydrates committed co-author proposals after a non-streaming send", async () => {
+    const snapshot = {
+      activeChat: { id: chatId("chat-1"), characterId: characterId("char-1"), mode: "coauthor" },
+      messages: [
+        { id: "user_1", role: "user", content: "edit examples" },
+        {
+          id: "assistant_call",
+          role: "assistant",
+          content: "",
+          toolCalls: [{ id: "call_1", name: "edit_examples", args: {} }],
+        },
+        {
+          id: "tool_1",
+          role: "tool",
+          toolCallId: "call_1",
+          content: JSON.stringify({
+            target: "profile",
+            proposed: "# EXAMPLES\nUpdated",
+            summary: "Updated examples",
+          }),
+        },
+        { id: "assistant_final", role: "assistant", content: "Done" },
+      ],
+    } as unknown as AppSnapshot;
+    sendChatMessageMock.mockResolvedValueOnce(snapshot);
+    useCoauthorTurnStore.getState().upsertActivity("chat-1", {
+      toolCallId: "old_call",
+      toolName: "edit_profile",
+      status: "done",
+    });
+
+    await sendChatMessageAction(chatId("chat-1"), "edit examples");
+
+    expect(useCoauthorTurnStore.getState().getActivities("chat-1")).toEqual([{
+      toolCallId: "call_1",
+      toolName: "edit_examples",
+      status: "done",
+      target: "profile",
+      proposed: "# EXAMPLES\nUpdated",
+      summary: "Updated examples",
+      greetingIndex: undefined,
+      isAdd: undefined,
+    }]);
   });
 
   test("starts the scoped refresh after a non-streaming generate-reply snapshot is ingested", async () => {

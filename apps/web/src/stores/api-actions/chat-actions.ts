@@ -48,6 +48,7 @@ import type { AutoSummaryConfig, ChatSummaryRecord, InsightsConfig } from "../..
 import { useSnapshotStore } from "../snapshot-store.js";
 import { useChatStore } from "../chat-store.js";
 import { useNavigationStore } from "../navigation-store.js";
+import { extractPersistedCoauthorActivities, useCoauthorTurnStore } from "../coauthor-turn-store.js";
 import { fetchBootstrapAction } from "./bootstrap-actions.js";
 import { startInsightsCompletionRefreshFromSnapshot } from "./insights-completion-actions.js";
 
@@ -60,6 +61,20 @@ function syncSelectedCharacterFromSnapshot(snapshot: AppSnapshot): void {
   const characterId = snapshot.character?.id ?? snapshot.activeChat?.characterId ?? null;
   if (characterId) {
     useChatStore.getState().setSelectedCharacterId(characterId);
+  }
+}
+
+/** Hydrate proposals that non-streaming responses expose only after commit. */
+function syncCommittedCoauthorTurn(chatId: ChatId): void {
+  const snapshot = useSnapshotStore.getState();
+  if (snapshot.activeChat?.id !== chatId || snapshot.activeChat.mode !== "coauthor") return;
+  const messages = snapshot.messageOrder
+    .map((id) => snapshot.messagesById[id])
+    .filter((message) => message !== undefined);
+  const turnStore = useCoauthorTurnStore.getState();
+  turnStore.clearTurn(chatId);
+  for (const activity of extractPersistedCoauthorActivities(messages)) {
+    turnStore.upsertActivity(chatId, activity);
   }
 }
 
@@ -179,14 +194,17 @@ export async function setCoauthorModuleAction(chatId: ChatId, moduleId: string |
 }
 
 export async function sendChatMessageAction(chatId: ChatId, content: string, attachments?: { id: string; name: string; type: "image" | "file" | "video"; assetId: string; mimeType: string; sizeBytes: number; }[], signal?: AbortSignal): Promise<void> {
+  useCoauthorTurnStore.getState().clearTurn(chatId);
   const snapshot = await sendChatMessage(chatId, { content, attachments }, { signal });
   syncSnapshot(snapshot);
+  syncCommittedCoauthorTurn(chatId);
   startInsightsCompletionRefreshFromSnapshot(chatId, snapshot);
 }
 
 export async function regenerateMessageAction(chatId: ChatId, messageId: string, signal?: AbortSignal, override?: { model?: string; promptPresetId?: string }): Promise<void> {
   const snapshot = await regenerateChatMessage(chatId, messageId, { signal, override });
   syncSnapshot(snapshot);
+  syncCommittedCoauthorTurn(chatId);
 }
 
 export async function editMessageAction(chatId: ChatId, messageId: string, content: string): Promise<void> {
@@ -335,8 +353,10 @@ export async function renameBranchAction(chatId: ChatId, branchId: ChatBranchId,
 }
 
 export async function generateReplyAction(chatId: ChatId, signal?: AbortSignal): Promise<void> {
+  useCoauthorTurnStore.getState().clearTurn(chatId);
   const snapshot = await generateReply(chatId, { signal });
   syncSnapshot(snapshot);
+  syncCommittedCoauthorTurn(chatId);
   startInsightsCompletionRefreshFromSnapshot(chatId, snapshot);
 }
 

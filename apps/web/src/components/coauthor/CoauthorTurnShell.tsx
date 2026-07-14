@@ -307,6 +307,8 @@ const CoauthorTurnPart = memo(function CoauthorTurnPart({ messageId, chatId }: {
             <MessageReasoning reasoning={finalReasoning} reasoningDurationMs={selectedVariant?.reasoningDurationMs ?? null} variant="minimal" />
           )}
 
+          <CoauthorToolActivitySlot chatId={chatId} messageId={messageId} isStreaming={isStreamingHere} />
+
           {(msg.displayContent || isStreamingHere) && (
             <div translate="yes" className="font-body text-[length:var(--mfs)] leading-[1.65] text-msg-t1 [&_em]:italic [&_em]:text-msg-t2">
               {isStreamingHere ? (
@@ -316,8 +318,6 @@ const CoauthorTurnPart = memo(function CoauthorTurnPart({ messageId, chatId }: {
               )}
             </div>
           )}
-
-          <CoauthorToolActivitySlot chatId={chatId} messageId={messageId} isStreaming={isStreamingHere} />
         </>
       )}
     </div>

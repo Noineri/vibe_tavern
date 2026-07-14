@@ -50,7 +50,12 @@ describe("Agentic message sequence persistence (CS-3)", () => {
 
 		// 2. Mock reasoning data for 2 tool calls
 		const toolCalls: ExtractedToolCall[] = [
-			{ toolCallId: "tc_1", toolName: "runCommand", args: { cmd: "fix" } },
+			{
+				toolCallId: "tc_1",
+				toolName: "runCommand",
+				args: { cmd: "fix" },
+				providerOptions: { google: { thoughtSignature: "sig_google_1" } },
+			},
 			{ toolCallId: "tc_2", toolName: "runCommand", args: { cmd: "test" } },
 		];
 		const toolResults: ExtractedToolResult[] = [
@@ -87,6 +92,9 @@ describe("Agentic message sequence persistence (CS-3)", () => {
 		expect(assistantVariant.toolCalls).toBeTruthy();
 		expect(assistantVariant.toolCalls!.length).toBe(2);
 		expect(assistantVariant.toolCalls![0].id).toBe("tc_1");
+		expect(assistantVariant.toolCalls![0].providerOptions).toEqual({
+			google: { thoughtSignature: "sig_google_1" },
+		});
 		expect(assistantVariant.toolCalls![1].id).toBe("tc_2");
 
 		// Message 2: tool (result 1)

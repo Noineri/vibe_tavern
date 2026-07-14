@@ -181,7 +181,12 @@ export class ChatRuntime {
         presetId: pending?.draft.presetId ?? null,
         reasoning: reasoningData.reasoning,
         reasoningDurationMs: reasoningData.reasoningDurationMs,
-        toolCallsJson: JSON.stringify(reasoningData.toolCalls.map(tc => ({ id: tc.toolCallId, name: tc.toolName, args: tc.args }))),
+        toolCallsJson: JSON.stringify(reasoningData.toolCalls.map(tc => ({
+          id: tc.toolCallId,
+          name: tc.toolName,
+          args: tc.args,
+          ...(tc.providerOptions ? { providerOptions: tc.providerOptions } : {}),
+        }))),
       });
 
       if (reasoningData.toolResults) {

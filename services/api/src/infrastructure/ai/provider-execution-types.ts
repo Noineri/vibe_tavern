@@ -11,7 +11,7 @@ import type { AssemblePromptResponse } from "@vibe-tavern/domain";
 import type { ProviderType } from "@vibe-tavern/domain";
 import type { StoredProviderProfileRecord } from "@vibe-tavern/domain";
 import type { ProviderErrorCategory } from "@vibe-tavern/api-contracts";
-import type { ToolSet } from "ai";
+import type { ProviderMetadata, ToolSet } from "ai";
 
 // ---------------------------------------------------------------------------
 // Provider profile reference (subset needed for generation)
@@ -103,6 +103,8 @@ export interface ExtractedToolCall {
   toolCallId: string;
   toolName: string;
   args: Record<string, unknown>;
+  /** Replay-critical provider metadata, renamed for ModelMessage providerOptions. */
+  providerOptions?: ProviderMetadata;
 }
 
 export interface ExtractedToolResult {
@@ -144,7 +146,7 @@ export interface SentConfigSnapshot {
 export type ProviderStreamChunk =
   | { type: "text-delta"; delta: string }
   | { type: "reasoning-delta"; textDelta: string }
-  | { type: "tool-call"; toolCallId: string; toolName: string; args: Record<string, unknown> }
+  | { type: "tool-call"; toolCallId: string; toolName: string; args: Record<string, unknown>; providerOptions?: ProviderMetadata }
   | { type: "tool-input-start"; toolCallId: string; toolName: string }
   | { type: "tool-input-delta"; toolCallId: string; inputTextDelta: string }
   | { type: "tool-result"; toolCallId: string; toolName: string; output: unknown; isError?: boolean };

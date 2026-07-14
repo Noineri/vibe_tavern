@@ -7,8 +7,9 @@
  */
 
 import { generateText, stepCountIs } from "ai";
+import type { ProviderMetadata } from "ai";
 import { ProviderExecutionError } from "./provider-execution-types.js";
-import type { GenerationResult } from "./provider-execution-types.js";
+import type { ExtractedToolCall, ExtractedToolResult, GenerationResult } from "./provider-execution-types.js";
 import type { ProviderExecutionInput } from "./provider-execution-types.js";
 import { resolveModel, toSdkMessages, prepareSdkMessages } from "./provider-executor-utils.js";
 import { buildSamplerConfig } from "./sampler-mapper.js";
@@ -17,6 +18,55 @@ import { classifyProviderError, extractProviderErrorStatusCode } from "./provide
 import { extractProviderErrorMessage } from "./provider-error-message.js";
 import { cancelled } from "../../shared/errors.js";
 import { logSendDebug } from "../../shared/send-debug-log.js";
+
+interface NonstreamingToolStep {
+  toolCalls?: ReadonlyArray<{
+    toolCallId: string;
+    toolName: string;
+    input?: unknown;
+    providerMetadata?: ProviderMetadata;
+  }>;
+  toolResults?: ReadonlyArray<{
+    toolCallId: string;
+    toolName: string;
+    input?: unknown;
+    output: unknown;
+  }>;
+}
+
+/** Normalize AI SDK completed steps without dropping provider replay metadata. */
+export function extractNonstreamingToolInteractions(
+  steps: ReadonlyArray<NonstreamingToolStep>,
+): { toolCalls: ExtractedToolCall[]; toolResults: ExtractedToolResult[] } {
+  const toolCalls: ExtractedToolCall[] = [];
+  const toolResults: ExtractedToolResult[] = [];
+
+  for (const step of steps) {
+    for (const tc of step.toolCalls ?? []) {
+      toolCalls.push({
+        toolCallId: tc.toolCallId,
+        toolName: tc.toolName,
+        args: tc.input && typeof tc.input === "object" && !Array.isArray(tc.input)
+          ? tc.input as Record<string, unknown>
+          : {},
+        ...(tc.providerMetadata ? { providerOptions: tc.providerMetadata } : {}),
+      });
+    }
+    for (const tr of step.toolResults ?? []) {
+      toolResults.push({
+        toolCallId: tr.toolCallId,
+        toolName: tr.toolName,
+        args: tr.input && typeof tr.input === "object" && !Array.isArray(tr.input)
+          ? tr.input as Record<string, unknown>
+          : {},
+        result: tr.output,
+        isError: false,
+      });
+    }
+  }
+
+  return { toolCalls, toolResults };
+}
 
 export async function nonstreamingProviderExecute(
   input: ProviderExecutionInput,
@@ -124,34 +174,13 @@ export async function nonstreamingProviderExecute(
       stepsCount: result.steps.length ?? undefined,
     });
 
-    const extractedToolCalls: import("./provider-execution-types.js").ExtractedToolCall[] = [];
-    const extractedToolResults: import("./provider-execution-types.js").ExtractedToolResult[] = [];
-    if (result.steps) {
-      // AI SDK v6 (ai@6.0.209): TypedToolCall carries `input` (the parsed tool
-      // arguments) and TypedToolResult carries `input` + `output`. There is NO
-      // `args`/`result`/`isError` field on these — failures are a separate
-      // `tool-error` part, so a result in `step.toolResults` is never an error.
-      // (The streaming path sets isError via the tool-error→tool-result
-      // normalization in stream-helpers.ts; the non-stream path never sees one.)
-      for (const step of result.steps) {
-        for (const tc of step.toolCalls ?? []) {
-          extractedToolCalls.push({
-            toolCallId: tc.toolCallId,
-            toolName: tc.toolName,
-            args: (tc.input ?? {}) as Record<string, unknown>,
-          });
-        }
-        for (const tr of step.toolResults ?? []) {
-          extractedToolResults.push({
-            toolCallId: tr.toolCallId,
-            toolName: tr.toolName,
-            args: (tr.input ?? {}) as Record<string, unknown>,
-            result: tr.output,
-            isError: false,
-          });
-        }
-      }
-    }
+    // AI SDK v6 completed tool calls carry provider replay metadata separately
+    // from their parsed input. Preserve both through the same persisted history
+    // path used by streaming calls; Gemini 3 requires thoughtSignature on replay.
+    const {
+      toolCalls: extractedToolCalls,
+      toolResults: extractedToolResults,
+    } = extractNonstreamingToolInteractions(result.steps ?? []);
 
     return {
       text: result.text,

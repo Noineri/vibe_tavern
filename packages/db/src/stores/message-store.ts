@@ -22,7 +22,7 @@ export interface Message {
   createdAt: string;
   updatedAt: string;
   attachmentsJson?: string | null;
-  toolCalls?: Array<{ id: string; name: string; args: unknown }> | null;
+  toolCalls?: Array<{ id: string; name: string; args: unknown; providerOptions?: unknown }> | null;
   toolCallId?: string | null;
 }
 
@@ -43,7 +43,7 @@ export interface MessageVariant {
   createdAt: string;
   coauthorModuleId?: string | null;
   coauthorSkillId?: string | null;
-  toolCalls?: Array<{ id: string; name: string; args: unknown }> | null;
+  toolCalls?: Array<{ id: string; name: string; args: unknown; providerOptions?: unknown }> | null;
   toolCallId?: string | null;
 }
 

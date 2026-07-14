@@ -65,15 +65,30 @@ describe("createMappedStream", () => {
     ]);
   });
 
-  it("yields tool-call chunks with args", async () => {
-    // AI SDK v6 fullStream `tool-call` part carries the parsed args as `input` (not `args`).
+  it("yields tool-call chunks with args and replay-critical provider metadata", async () => {
+    // AI SDK v6 fullStream `tool-call` carries parsed args as `input` and
+    // provider-specific replay data as `providerMetadata`. Gemini 3 places its
+    // thoughtSignature there; dropping it makes the next request replay the
+    // functionCall without its reasoning signature.
     const parts = [
-      { type: "tool-call", toolCallId: "tc_1", toolName: "roll_dice", input: { sides: 6 } },
+      {
+        type: "tool-call",
+        toolCallId: "tc_1",
+        toolName: "roll_dice",
+        input: { sides: 6 },
+        providerMetadata: { google: { thoughtSignature: "sig_google_1" } },
+      },
     ];
     const { stream } = createMappedStream(fromParts(parts));
     const chunks = await collect(stream);
     expect(chunks).toEqual([
-      { type: "tool-call", toolCallId: "tc_1", toolName: "roll_dice", args: { sides: 6 } },
+      {
+        type: "tool-call",
+        toolCallId: "tc_1",
+        toolName: "roll_dice",
+        args: { sides: 6 },
+        providerOptions: { google: { thoughtSignature: "sig_google_1" } },
+      },
     ]);
   });
 

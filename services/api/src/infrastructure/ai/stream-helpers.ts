@@ -9,6 +9,7 @@ import { logSendDebug } from "../../shared/send-debug-log.js";
 import { extractProviderErrorMessage } from "./provider-error-message.js";
 import { cancelled, providerError } from "../../shared/errors.js";
 import { REASONING_START_MARKER, REASONING_END_MARKER } from "../../domain/providers/openai-reasoning-fetch.js";
+import type { ProviderMetadata } from "ai";
 import type { ProviderStreamChunk, ProviderStreamFinish } from "./provider-execution-types.js";
 
 // ─── createMappedStream ──────────────────────────────────────────────────
@@ -53,12 +54,26 @@ export function createMappedStream(
       // ── Tool calls (informational — AI SDK handles execution) ──
       // fullStream `tool-call` part carries the fully-parsed `input` (the parsed tool args).
       if (p.type === "tool-call") {
-        const tc = part as { type: string; toolCallId?: string; toolName?: string; input?: unknown; args?: unknown };
+        const tc = part as {
+          type: string;
+          toolCallId?: string;
+          toolName?: string;
+          input?: unknown;
+          providerMetadata?: ProviderMetadata;
+        };
         if (tc.toolCallId && tc.toolName) {
-          // AI SDK v6 fullStream uses `input` for the parsed tool arguments.
-          const rawInput = (tc as { input?: unknown }).input;
-          const args = (typeof rawInput === "object" && rawInput !== null ? rawInput : {}) as Record<string, unknown>;
-          yield { type: "tool-call", toolCallId: tc.toolCallId, toolName: tc.toolName, args };
+          // AI SDK v6 fullStream uses `input` for parsed arguments and
+          // `providerMetadata` for replay-critical provider data. ModelMessage
+          // expects that same data under `providerOptions`; Gemini 3 stores its
+          // thoughtSignature here and rejects/warns when history drops it.
+          const args = (typeof tc.input === "object" && tc.input !== null ? tc.input : {}) as Record<string, unknown>;
+          yield {
+            type: "tool-call",
+            toolCallId: tc.toolCallId,
+            toolName: tc.toolName,
+            args,
+            ...(tc.providerMetadata ? { providerOptions: tc.providerMetadata } : {}),
+          };
           continue;
         }
       }

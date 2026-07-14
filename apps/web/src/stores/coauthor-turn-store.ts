@@ -1,5 +1,6 @@
 import { create } from "zustand";
-import type { CoauthorTarget } from "@vibe-tavern/api-contracts";
+import { coauthorToolOutputSchema, type CoauthorTarget } from "@vibe-tavern/api-contracts";
+import type { AppMessage } from "../api/types.js";
 // CA-15: persistence of unapplied proposals across reloads. Imported here (not
 // subscribed) so the two resolution points — finalize (upsert) and discard
 // (clear) — are the ONLY places persistence is touched. The import forms a
@@ -47,6 +48,59 @@ export interface CoauthorToolActivity {
   proposed?: string;
   greetingIndex?: number;
   isAdd?: boolean;
+}
+
+/**
+ * Rebuild the latest turn's proposals from a committed non-streaming response.
+ * Streaming turns fill the same store incrementally through SSE callbacks;
+ * non-streaming turns only expose tool results after snapshot commit.
+ */
+export function extractPersistedCoauthorActivities(
+  messages: ReadonlyArray<AppMessage>,
+): CoauthorToolActivity[] {
+  let latestUserIndex = -1;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i]?.role === "user") {
+      latestUserIndex = i;
+      break;
+    }
+  }
+
+  const turnMessages = messages.slice(latestUserIndex + 1);
+  const toolNameById = new Map<string, string>();
+  for (const message of turnMessages) {
+    for (const toolCall of message.toolCalls ?? []) {
+      toolNameById.set(toolCall.id, toolCall.name);
+    }
+  }
+
+  const activities: CoauthorToolActivity[] = [];
+  for (const message of turnMessages) {
+    if (message.role !== "tool") continue;
+    const toolCallId = message.toolCallId ?? message.id;
+    let rawOutput: unknown;
+    try {
+      rawOutput = JSON.parse(message.content);
+    } catch (error) {
+      rawOutput = { parseError: error instanceof Error ? error.message : String(error) };
+    }
+    const output = coauthorToolOutputSchema.safeParse(rawOutput);
+    activities.push({
+      toolCallId,
+      toolName: toolNameById.get(toolCallId) ?? "",
+      status: output.success ? "done" : "error",
+      ...(output.success
+        ? {
+            summary: output.data.summary,
+            target: output.data.target,
+            proposed: output.data.proposed,
+            greetingIndex: output.data.greetingIndex,
+            isAdd: output.data.isAdd,
+          }
+        : { summary: message.content }),
+    });
+  }
+  return activities;
 }
 
 interface CoauthorTurnState {

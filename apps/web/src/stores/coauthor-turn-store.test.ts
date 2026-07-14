@@ -1,10 +1,47 @@
 import { describe, expect, it, beforeEach } from "vitest";
-import { useCoauthorTurnStore } from "./coauthor-turn-store.js";
+import { extractPersistedCoauthorActivities, useCoauthorTurnStore } from "./coauthor-turn-store.js";
+import type { AppMessage } from "../api/types.js";
 
 describe("useCoauthorTurnStore", () => {
   beforeEach(() => {
     // Reset to a clean state before each case (the store is process-global).
     useCoauthorTurnStore.setState({ turnsByChat: {} });
+  });
+
+  it("rebuilds only the latest committed non-streaming turn with tool names and proposals", () => {
+    const messages = [
+      { id: "user_old", role: "user", content: "old" },
+      { id: "tool_old", role: "tool", toolCallId: "call_old", content: "{}" },
+      { id: "user_new", role: "user", content: "edit examples" },
+      {
+        id: "assistant_call",
+        role: "assistant",
+        content: "",
+        toolCalls: [{ id: "call_new", name: "edit_examples", args: {} }],
+      },
+      {
+        id: "tool_new",
+        role: "tool",
+        toolCallId: "call_new",
+        content: JSON.stringify({
+          target: "profile",
+          proposed: "# EXAMPLES\nUpdated",
+          summary: "Updated examples",
+        }),
+      },
+      { id: "assistant_final", role: "assistant", content: "Done" },
+    ] as AppMessage[];
+
+    expect(extractPersistedCoauthorActivities(messages)).toEqual([{
+      toolCallId: "call_new",
+      toolName: "edit_examples",
+      status: "done",
+      target: "profile",
+      proposed: "# EXAMPLES\nUpdated",
+      summary: "Updated examples",
+      greetingIndex: undefined,
+      isAdd: undefined,
+    }]);
   });
 
   it("inserts a new activity for a chat", () => {

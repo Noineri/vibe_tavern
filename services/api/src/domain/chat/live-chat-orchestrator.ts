@@ -605,7 +605,8 @@ export class LiveChatOrchestrator {
           extractedToolCalls.push({
             toolCallId: chunk.toolCallId,
             toolName: chunk.toolName,
-            args: chunk.args as Record<string, unknown>,
+            args: chunk.args,
+            ...(chunk.providerOptions ? { providerOptions: chunk.providerOptions } : {}),
           });
           logSendDebug(`${debugLabel}.tool-call`, { chatId: input.chatId, n: toolCallCount, toolCallId: chunk.toolCallId, toolName: chunk.toolName, args: chunk.args });
           yield { event: "tool-call", data: JSON.stringify({ toolCallId: chunk.toolCallId, toolName: chunk.toolName, args: chunk.args }) };
