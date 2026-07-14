@@ -585,6 +585,7 @@ describe("ObjectiveService.triggerAutoCheck (INS-4 orchestration)", () => {
     reply?: string;
     hasProvider?: boolean;
     model?: string;
+    executeOverride?: () => Promise<{ text: string }>;
   }): {
     service: ObjectiveService;
     getBuildCalls: () => number;
@@ -594,7 +595,7 @@ describe("ObjectiveService.triggerAutoCheck (INS-4 orchestration)", () => {
     getContextBranchIds: () => string[];
     readState: () => ObjectiveState;
   } {
-    const { objectiveEnabled, autoCheckFrequency, assistantCount, contextWindow = 10, tasks = [], reply = '{"completed":true}', hasProvider = true, model = "gpt-test" } = opts;
+    const { objectiveEnabled, autoCheckFrequency, assistantCount, contextWindow = 10, tasks = [], reply = '{"completed":true}', hasProvider = true, model = "gpt-test", executeOverride } = opts;
     // Deliberately the PRE-model-selection persisted shape: getState must
     // normalize it to useChatModel:true so existing chats keep auto-checking.
     const baseState = {
@@ -642,7 +643,7 @@ describe("ObjectiveService.triggerAutoCheck (INS-4 orchestration)", () => {
     } as never;
     const execute = async () => {
       executeCalls += 1;
-      return { text: reply } as never;
+      return executeOverride ? executeOverride() : { text: reply } as never;
     };
     const resolvePrompt = async () => "BASE-INSTRUCTION";
     const service = new ObjectiveService(stores, sessionRuntime, providerProfiles, execute as never, resolvePrompt as never);
@@ -712,6 +713,104 @@ describe("ObjectiveService.triggerAutoCheck (INS-4 orchestration)", () => {
     expect(t.getContextBranchIds()).toEqual(["branch_committed"]);
     expect(t.getExecuteCalls()).toBe(1);
     expect(t.readState().tasks[0].status).toBe(OBJECTIVE_TASK_STATUS.completed);
+  });
+
+  it("returns immediately when there is no forward-state job to join", async () => {
+    const t = makeTriggerService({ objectiveEnabled: true, autoCheckFrequency: 1, assistantCount: 1 });
+
+    await t.service.waitForForwardState("chat_1" as never);
+
+    expect(t.getExecuteCalls()).toBe(0);
+  });
+
+  it("joins the in-flight auto-check through its committed state update", async () => {
+    let markStarted: (() => void) | undefined;
+    let release: (() => void) | undefined;
+    const started = new Promise<void>((resolve) => { markStarted = resolve; });
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const t = makeTriggerService({
+      objectiveEnabled: true,
+      autoCheckFrequency: 1,
+      assistantCount: 1,
+      tasks: [{ id: "obj_task_1", description: "Reach the gates", status: OBJECTIVE_TASK_STATUS.pending }],
+      executeOverride: async () => {
+        markStarted?.();
+        await gate;
+        return { text: '{"completed":true}' };
+      },
+    });
+
+    const automatic = t.service.triggerAutoCheck(trigger());
+    await started;
+    let joined = false;
+    const joining = t.service.waitForForwardState("chat_1" as never).then(() => { joined = true; });
+    await Promise.resolve();
+    expect(joined).toBe(false);
+    expect(t.readState().tasks[0]?.status).toBe(OBJECTIVE_TASK_STATUS.pending);
+
+    release?.();
+    await Promise.all([automatic, joining]);
+
+    expect(joined).toBe(true);
+    expect(t.readState().tasks[0]?.status).toBe(OBJECTIVE_TASK_STATUS.completed);
+  });
+
+  it("cancels only the waiter while the shared auto-check keeps running", async () => {
+    let markStarted: (() => void) | undefined;
+    let release: (() => void) | undefined;
+    const started = new Promise<void>((resolve) => { markStarted = resolve; });
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const t = makeTriggerService({
+      objectiveEnabled: true,
+      autoCheckFrequency: 1,
+      assistantCount: 1,
+      tasks: [{ id: "obj_task_1", description: "Reach the gates", status: OBJECTIVE_TASK_STATUS.pending }],
+      executeOverride: async () => {
+        markStarted?.();
+        await gate;
+        return { text: '{"completed":true}' };
+      },
+    });
+
+    const automatic = t.service.triggerAutoCheck(trigger());
+    await started;
+    const controller = new AbortController();
+    const joining = t.service.waitForForwardState("chat_1" as never, controller.signal);
+    controller.abort(new Error("cancel forward-state wait"));
+
+    await expect(joining).rejects.toThrow("cancel forward-state wait");
+    expect(t.readState().tasks[0]?.status).toBe(OBJECTIVE_TASK_STATUS.pending);
+
+    release?.();
+    await automatic;
+    expect(t.readState().tasks[0]?.status).toBe(OBJECTIVE_TASK_STATUS.completed);
+  });
+
+  it("keeps ordinary config writes available while the forward-state LLM is running", async () => {
+    let markStarted: (() => void) | undefined;
+    let release: (() => void) | undefined;
+    const started = new Promise<void>((resolve) => { markStarted = resolve; });
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const t = makeTriggerService({
+      objectiveEnabled: true,
+      autoCheckFrequency: 1,
+      assistantCount: 1,
+      tasks: [{ id: "obj_task_1", description: "Reach the gates", status: OBJECTIVE_TASK_STATUS.pending }],
+      executeOverride: async () => {
+        markStarted?.();
+        await gate;
+        return { text: '{"completed":false}' };
+      },
+    });
+
+    const automatic = t.service.triggerAutoCheck(trigger());
+    await started;
+    await t.service.updateObjectiveConfig("chat_1" as never, { injectionDepth: 7 });
+
+    expect(t.readState().injectionDepth).toBe(7);
+    release?.();
+    await automatic;
+    expect(t.readState().injectionDepth).toBe(7);
   });
 
   it("serializes a manual generation against an auto-check for the same chat", async () => {
@@ -813,9 +912,15 @@ describe("ObjectiveService.triggerAutoCheck (INS-4 orchestration)", () => {
     const first = service.triggerAutoCheck(trigger("branch_a", "message_a"));
     await firstStarted;
     await service.triggerAutoCheck(trigger("branch_b", "message_b"));
-    releaseFirst?.();
-    await first;
+    let joined = false;
+    const joining = service.waitForForwardState("chat_1" as never).then(() => { joined = true; });
+    await Promise.resolve();
+    expect(joined).toBe(false);
 
+    releaseFirst?.();
+    await Promise.all([first, joining]);
+
+    expect(joined).toBe(true);
     expect(messageBranchIds).toEqual(["branch_a", "branch_b"]);
     expect(contextBranchIds).toEqual(["branch_a", "branch_b"]);
     expect(executeCalls).toBe(2);

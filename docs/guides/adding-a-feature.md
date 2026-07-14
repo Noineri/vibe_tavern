@@ -189,8 +189,8 @@ export function createMyFeatureFeature(deps: {
 
     activate({ events, router }: FeatureDeps): void {
       // Background trigger: subscribe to the event that should fire the task.
-      unsubscribe = events.on("message.appended", ({ chatId }) => {
-        void service.trigger({ chatId });
+      unsubscribe = events.on("message.appended", ({ chatId, branchId, messageId }) => {
+        void service.trigger({ chatId, branchId, messageId });
       });
 
       // Optional: manual/CRUD routes for the frontend.
@@ -238,6 +238,8 @@ Verify with `bun run check`, then smoke-test against `dev:web` using the Playwri
 | Return value | `true` if `task` ran (success or failure); `false` if skipped. |
 | Per-instance scoping | Each service owns its own `BackgroundTaskLocks`. Different features on the same chat run in parallel. |
 
+Forward-steering jobs such as Objective and Scene use `runExclusiveTrailing`, retain the owner promise through every dirty trailing rerun, and expose a feature-local join method. The assistant response that triggers the job remains fire-and-forget; the next live prompt joins the preceding job cancellably before reading injected state. Cancelling that waiter must not cancel the shared job, and ordinary CRUD/config writes remain on their separate short commit lane.
+
 ---
 
 ## Event hooks (reference)
@@ -246,7 +248,7 @@ The chat orchestrator emits domain events on the `EventBus`. The primary backgro
 
 | Event | Emitted from | Payload | Typical use |
 |-------|--------------|---------|-------------|
-| `message.appended` | `live-chat-orchestrator.ts` (after an assistant message is appended) | `{ chatId, messageId, role }` | Fire-and-forget background tasks (summary, objective check, tracker, badge) |
+| `message.appended` | `live-chat-orchestrator.ts` (after an assistant message is appended) | `{ chatId, branchId, messageId, role }` | Fire-and-forget background tasks (summary, objective check, tracker, badge) |
 | `message.created` | `live-chat-orchestrator.ts` (on message creation) | `{ ... }` | Less common — use only if you need to act before append |
 
 > **`ChatModeStrategy.onMessageAppended` is a separate, narrower hook** for mode-specific behaviour (group/coauthor routing). Do **not** use it for background LLM tasks — those go through the `EventBus` + `FeatureModule` path. The two are deliberately separate; mixing them creates double-trigger bugs.
@@ -266,7 +268,7 @@ The chat orchestrator emits domain events on the `EventBus`. The primary backgro
 - [ ] Trigger the feature (event-driven and/or manual route); confirm the persisted entity matches expectations.
 - [ ] Fire the trigger twice rapidly; confirm only one background run executes (dedup).
 - [ ] Force the LLM call to fail; confirm the error is logged via `onError` and the lock is released (next trigger still runs).
-- [ ] If a prompt layer is injected: confirm future generations include it; confirm `excludeSummarized`-style flags (if any) are honoured.
+- [ ] If a prompt layer is injected: confirm future generations include it; for forward-steering state, hold the background job and prove the next live prompt waits for its commit while waiter cancellation leaves the shared job running.
 
 ---
 
@@ -275,7 +277,7 @@ The chat orchestrator emits domain events on the `EventBus`. The primary backgro
 - **Putting a stateful background task in the AI-assistant registry.** That registry has no event hook, no persistence, and no prompt-layer injection. If the result is stored or affects future prompts, it is Case B — use `FeatureModule`.
 - **Unifying the feature-specific parts.** Trigger condition, persist target, output shape, and injection are *meant* to differ between features. A shared interface for them becomes a God-interface every feature fights. Share `BackgroundTaskLocks` + `nonstreamingProviderExecute` + the provider-resolution pattern; leave the rest feature-local.
 - **Using `ChatModeStrategy.onMessageAppended` for background LLM tasks.** It is a mode-routing hook, not a task trigger. Subscribe to `message.appended` on the `EventBus` from your `FeatureModule` instead.
-- **Skipping the lock "because it's just one call."** Overlapping `message.appended` events are normal (rapid messages, retries). Without `runExclusive` you will double-run and corrupt state.
-- **Acquiring the lock before the cheap guards.** Feature-enabled / chat-exists checks should run *before* `runExclusive`, so a disabled feature does not hold a lock pointlessly. The original `has()`-then-`add()` race was fixed by `runExclusive`'s atomic check-and-acquire — don't reintroduce a gap.
+- **Skipping the lock "because it's just one call."** Overlapping `message.appended` events are normal (rapid messages, retries). Retrospective work uses `runExclusive`; forward-steering work uses `runExclusiveTrailing` plus a joinable owner promise so the latest event is evaluated before the next prompt reads state.
+- **Putting trailing-run guards outside the rerun closure.** A `runExclusive` drop-only task may perform cheap feature/chat guards before acquiring its lock. A `runExclusiveTrailing` forward-state task must re-read those guards and fresh event identity inside the task closure on every rerun; otherwise the trailing pass evaluates stale state.
 - **Editing an existing migration file.** Add a new one via `bun run db:generate`. Existing migrations are immutable history.
 - **Forgetting the prompt-layer id.** A new assembler arm without a `PROMPT_LAYER_IDS` entry will not round-trip through compaction correctly (the compaction boundary algorithm preserves tool-call/result pairs and layer identity — see its doc comment).

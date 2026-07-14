@@ -272,6 +272,7 @@ export class ObjectiveService {
    *  branch before releasing. See BackgroundTaskLocks.runExclusiveTrailing. */
   private readonly autoCheckLocks = new BackgroundTaskLocks();
   private readonly latestAutoTrigger = new Map<string, ObjectiveAutoCheckTrigger>();
+  private readonly forwardStateJobs = new Map<string, Promise<void>>();
   /** Long lane: generate/check LLM work is serialized per chat. */
   private readonly llmCoordinator = new ObjectiveKeyedCoordinator();
   /** Short lane: every Objective read-modify-write commit is atomic per chat. */
@@ -482,6 +483,37 @@ export class ObjectiveService {
   }
 
   /**
+   * Wait for the chat's current automatic forward-state mutation to commit.
+   * Cancelling detaches this waiter; it never aborts the shared background job.
+   */
+  async waitForForwardState(chatId: ChatId, signal?: AbortSignal): Promise<void> {
+    signal?.throwIfAborted();
+    const job = this.forwardStateJobs.get(chatId as string);
+    if (!job) return;
+    if (!signal) {
+      await job;
+      return;
+    }
+
+    await new Promise<void>((resolve, reject) => {
+      let settled = false;
+      const settle = (callback: () => void) => {
+        if (settled) return;
+        settled = true;
+        signal.removeEventListener("abort", onAbort);
+        callback();
+      };
+      const onAbort = () => settle(() => reject(signal.reason));
+
+      signal.addEventListener("abort", onAbort, { once: true });
+      void job.then(
+        () => settle(resolve),
+        (error: unknown) => settle(() => reject(error)),
+      );
+    });
+  }
+
+  /**
    * INS-4 — auto-check entry point fired by the Insights FeatureModule on each
    * `message.appended` (send/generate only — the swipe/regenerate path does not
    * emit it). Gates on objectiveEnabled + autoCheckFrequency, then runs
@@ -496,7 +528,10 @@ export class ObjectiveService {
   async triggerAutoCheck(trigger: ObjectiveAutoCheckTrigger): Promise<void> {
     const lockKey = trigger.chatId;
     this.latestAutoTrigger.set(lockKey, trigger);
-    const ran = await this.autoCheckLocks.runExclusiveTrailing(
+    // Calls dropped into an existing trailing run must join its owner promise,
+    // not replace it with their immediately-resolved `false` result.
+    const ownsForwardStateJob = !this.autoCheckLocks.has(lockKey);
+    const lockRun = this.autoCheckLocks.runExclusiveTrailing(
       lockKey,
       async () => {
         // Trailing runs consume the latest immutable event identity, not the
@@ -536,6 +571,18 @@ export class ObjectiveService {
         });
       },
     );
+    const forwardStateJob = lockRun.then(() => undefined);
+    if (ownsForwardStateJob) this.forwardStateJobs.set(lockKey, forwardStateJob);
+
+    let ran = false;
+    try {
+      ran = await lockRun;
+    } finally {
+      if (ownsForwardStateJob && this.forwardStateJobs.get(lockKey) === forwardStateJob) {
+        this.forwardStateJobs.delete(lockKey);
+      }
+    }
+
     // The lock owner has consumed every dirty trailing trigger before `ran`
     // resolves. Dropped callers return `false`, so only the owner cleans up.
     if (ran) this.latestAutoTrigger.delete(lockKey);

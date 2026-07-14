@@ -31,6 +31,8 @@ export class LiveChatOrchestrator {
      * `chat.mode` for each turn, not fixed at construction — so adding a mode
      * is a new strategy class + registry entry, never a branch here. */
     private readonly resolveStrategy: (chatId: string) => Promise<ChatModeStrategy>,
+    /** Join the preceding forward-state job before any new prompt is built. */
+    private readonly waitForForwardState?: (chatId: string, signal?: AbortSignal) => Promise<void>,
   ) {}
 
   // ─── Non-streaming methods ────────────────────────────────────────────
@@ -484,7 +486,9 @@ export class LiveChatOrchestrator {
     chatId: string;
     profile: StoredProviderProfileRecord;
     model: string;
+    signal?: AbortSignal;
   }): Promise<{ profile: StoredProviderProfileRecord; model: string }> {
+    await this.waitForForwardState?.(input.chatId, input.signal);
     const strategy = await this.resolveStrategy(input.chatId);
     return strategy.resolveProvider(input);
   }

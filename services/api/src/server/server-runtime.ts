@@ -178,6 +178,7 @@ export async function startServerRuntime(config: ServerRuntimeConfig): Promise<v
 			providerOrchestrator,
 			events,
 			(chatId: string) => sessionRuntime.resolveChatModeStrategy(chatId as never),
+			(chatId: string, signal?: AbortSignal) => objectiveService.waitForForwardState(chatId as never, signal),
 		);
 
 		// Feature registry — features subscribe to events and mount routes
