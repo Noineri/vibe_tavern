@@ -78,6 +78,7 @@ export const PROMPT_LAYER_PRIORITY = {
   characterDepthPrompt: 155,
   recentHistory: 100,
   preflightCompaction: 50,
+  insightsInstruction: 10,
   // AI assistant layers
   aiAssistantSystem: 1000,
   aiAssistantContext: 900,
@@ -108,6 +109,7 @@ export const PROMPT_LAYER_ID = {
   characterDepthPrompt: "character_depth_prompt",
   objectiveTask: "objective_task",
   sceneState: "scene_state",
+  insightsInstruction: "insights_instruction",
   postHistoryInstructions: "post_history_instructions",
   // AI assistant layers
   aiAssistantSystem: "ai_assistant_system",
@@ -131,6 +133,7 @@ export const PROMPT_LAYER_SOURCE_TYPE = {
   retrievalMemory: "retrieval_memory",
   objectiveTask: "objective_task",
   sceneState: "scene_state",
+  insightsInstruction: "insights_instruction",
   toolProfile: "tool_profile",
   compaction: "compaction",
   chatHistory: "chat_history",

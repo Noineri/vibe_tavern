@@ -16,13 +16,18 @@
  *
  * Pure pipeline test: no DB, no LLM, no I/O.
  */
-import { describe, expect, it } from "bun:test";
+import { beforeEach, describe, expect, it } from "bun:test";
 import { getInsightsAssembler, INSIGHTS_ASSEMBLERS } from "../src/insights/insights-assemblers.ts";
+import { setTokenCountFn } from "../src/compaction.ts";
 import type { PromptAssemblyContext, InsightsKind } from "../src/types.ts";
 
 function messagesOf(result: ReturnType<ReturnType<typeof getInsightsAssembler>["assemble"]>) {
   return result.finalPayload.messages as Array<{ role: string; content: string; layerId?: string }>;
 }
+
+beforeEach(() => {
+  setTokenCountFn((text) => text.length);
+});
 
 function makeContext(overrides: Partial<PromptAssemblyContext> = {}): PromptAssemblyContext {
   return {
@@ -71,12 +76,56 @@ describe("assembleInsights (INS-3c behavior)", () => {
   });
 
   it("appends the instruction as the FINAL user message after the recent window", () => {
-    const result = getInsightsAssembler("scene").assemble(makeContext(), "Produce the scene JSON.");
+    const result = getInsightsAssembler("scene").assemble(makeContext({
+      character: {
+        ...makeContext().character,
+        postHistoryInstructions: "Continue the roleplay.",
+      },
+      chat: {
+        ...makeContext().chat,
+        scriptInjections: [{ role: "system", content: "Script depth-zero injection." }],
+      },
+    }), "Produce the scene JSON.");
     const msgs = messagesOf(result);
     expect(msgs.at(-1)).toEqual({ role: "user", content: "Produce the scene JSON.", layerId: "insights_instruction" });
-    // The recent window is preserved as real turns before the instruction.
+    // The recent window and other depth-zero injections remain before the instruction.
     expect(msgs.some((m) => m.content === "I draw my sword." && m.role === "user")).toBe(true);
     expect(msgs.some((m) => m.content === "The warlord sneers." && m.role === "assistant")).toBe(true);
+    expect(msgs.findIndex((m) => m.content === "Continue the roleplay.")).toBeLessThan(msgs.length - 1);
+    expect(msgs.findIndex((m) => m.content === "Script depth-zero injection.")).toBeLessThan(msgs.length - 1);
+  });
+
+  it("budgets a long instruction before compaction and reports truthful layer tokens", () => {
+    const recentMessages = Array.from({ length: 8 }, (_, index) => ({
+      id: `m${index + 1}`,
+      role: index % 2 === 0 ? "user" as const : "assistant" as const,
+      content: `History turn ${index + 1}: ${"h".repeat(40)}`,
+    }));
+    const context = makeContext({ chat: { recentMessages } });
+    const shortInstruction = "Check.";
+    const shortUnbounded = getInsightsAssembler("objective").assemble(context, shortInstruction);
+    const contextBudget = shortUnbounded.totalTokenEstimate;
+    const shortBounded = getInsightsAssembler("objective").assemble({
+      ...context,
+      config: { contextBudget },
+    }, shortInstruction);
+    const longBounded = getInsightsAssembler("scene").assemble({
+      ...context,
+      config: { contextBudget },
+    }, `Produce JSON using this schema: ${"s".repeat(180)}`);
+
+    expect(shortBounded.compactionSummary).toBeNull();
+    expect(longBounded.compactionSummary).not.toBeNull();
+    expect(longBounded.layers.find((layer) => layer.id === "insights_instruction")).toMatchObject({
+      role: "user",
+      position: "in_chat",
+      injectionDepth: 0,
+    });
+    expect(longBounded.totalTokenEstimate).toBe(
+      longBounded.layers.reduce((sum, layer) => sum + layer.tokenCount, 0),
+    );
+    expect(longBounded.totalTokenEstimate).toBeLessThanOrEqual(contextBudget);
+    expect(messagesOf(longBounded).at(-1)?.layerId).toBe("insights_instruction");
   });
 
   it("strips the insight self-injection layers even when the context carries them (no duplication/noise)", () => {

@@ -400,9 +400,9 @@ export function assembleSummaryPrompt(rawContext: PromptAssemblyContext): Prompt
  * Pure insights-specific entry point (INSIGHTS_PLAN INS-3c). The caller supplies
  * the same prepared state as a chat turn — character / persona / activated lore
  * / script injections / recent window — and this builds the full RP world context
- * the insight model needs to evaluate the conversation, then appends the resolved
- * instruction as the final user message. The insight model sees what the main
- * model sees, under the SAME preset toggles (examples, lore activation,
+ * the insight model needs to evaluate the conversation, then includes the resolved
+ * instruction as a budgeted depth-zero layer and final user message. The insight
+ * model sees what the main model sees, under the SAME preset toggles (examples, lore activation,
  * authorsNote all follow the chat's config — no insight-specific policy).
  *
  * The ONE filter: strip the insight self-injection layers (`objectiveTask` /
@@ -417,42 +417,51 @@ export function assembleInsightsPrompt(
 ): PromptAssemblyResult {
   const context = applyMacrosToContext(rawContext);
   const resolver = createResolver(context.preset);
-  const built = buildLayers(context, resolver);
+  const trimmedInstruction = instruction.trim();
+  const instructionLayer = trimmedInstruction ? makeLayer({
+    id: PROMPT_LAYER_ID.insightsInstruction,
+    sourceType: PROMPT_LAYER_SOURCE_TYPE.insightsInstruction,
+    sourceId: context.identity.chatId,
+    sourceName: "Insights Instruction",
+    position: "in_chat",
+    priority: PROMPT_LAYER_PRIORITY.insightsInstruction,
+    role: "user",
+    reason: "included as the final budgeted insights instruction",
+    text: trimmedInstruction,
+  }) : null;
+  if (instructionLayer) instructionLayer.injectionDepth = 0;
+
+  // Seed the instruction before buildLayers plans history compaction. This
+  // makes its tokens part of the non-history budget rather than appending an
+  // unaccounted message after finalization.
+  const built = buildLayers(context, resolver, instructionLayer ? [instructionLayer] : []);
   const layers = built.layers.filter(
     (layer) => layer.id !== PROMPT_LAYER_ID.objectiveTask && layer.id !== PROMPT_LAYER_ID.sceneState,
   );
-  const finalized = finalizeAssembly(context, { ...built, layers }, resolver);
-  const trimmedInstruction = instruction.trim();
-  if (!trimmedInstruction) return finalized;
-  const messages = finalized.finalPayload.messages as Array<{
-    role: "system" | "user" | "assistant" | "tool";
-    content: string;
-    layerId?: string;
-  }>;
-  return {
-    ...finalized,
-    finalPayload: {
-      ...finalized.finalPayload,
-      messages: [...messages, { role: "user", content: trimmedInstruction, layerId: "insights_instruction" }],
-    },
-  };
+  return finalizeAssembly(context, { ...built, layers }, resolver);
 }
 
 /**
  * Stage 2 — create a PromptLayer for every non-empty content source.
  *
  * The single mode-sensitive stage of the pipeline: simple and advanced modes
- * diverge here (see SimpleResolver/AdvancedResolver). Compaction also runs here
- * because it depends on non-history layer tokens and feeds the chatHistory layer.
- * Returns layers + droppedLayers + compactionSummary for finalizeAssembly.
+ * diverge here (see SimpleResolver/AdvancedResolver). Callers may seed endpoint-
+ * owned layers that must participate in the budget before ordinary layer creation.
+ * Compaction also runs here because it depends on non-history layer tokens and
+ * feeds the chatHistory layer. Returns layers + droppedLayers + compactionSummary
+ * for finalizeAssembly.
  */
-function buildLayers(context: PromptAssemblyContext, resolver: PositionResolver): {
+function buildLayers(
+  context: PromptAssemblyContext,
+  resolver: PositionResolver,
+  initialLayers: PromptLayer[] = [],
+): {
   layers: PromptLayer[];
   droppedLayers: Array<{ id: string; reason: string }>;
   compactionSummary: string | undefined;
   recentMessagesForHistory: PromptAssemblyContext["chat"]["recentMessages"];
 } {
-  const layers: PromptLayer[] = [];
+  const layers: PromptLayer[] = [...initialLayers];
   const droppedLayers: Array<{ id: string; reason: string }> = [];
 
   // System prompt: character override takes priority over preset
@@ -858,6 +867,13 @@ function finalizeAssembly(
     .sort((a, b) => {
       const depthDiff = b.injectionDepth! - a.injectionDepth!;
       if (depthDiff !== 0) return depthDiff;
+      // An insight one-shot has one endpoint-owned depth-zero user layer that
+      // must remain after every history and steering message. Keep this
+      // semantic guarantee explicit rather than relying on incidental numeric
+      // priorities shared with ordinary prompt layers.
+      const aIsInsightsInstruction = a.id === PROMPT_LAYER_ID.insightsInstruction;
+      const bIsInsightsInstruction = b.id === PROMPT_LAYER_ID.insightsInstruction;
+      if (aIsInsightsInstruction !== bIsInsightsInstruction) return aIsInsightsInstruction ? 1 : -1;
       // Same depth: resolve in ascending canvas (subPosition) order. The
       // splice index below RECOMPUTES as history grows, so a forward sort
       // yields forward payload order. (A prior DESC tiebreaker assumed a

@@ -17,7 +17,9 @@
  * sees exactly what the main model sees, minus the insight layers that would
  * duplicate the instruction, plus the instruction. `mes_example`, lore
  * activation, authorsNote all follow the chat's own toggles — no insight-specific
- * visibility policy.
+ * visibility policy. The endpoint-owned instruction enters `buildLayers` as a
+ * real depth-zero user layer, so compaction reserves its tokens and finalization
+ * keeps it after every history and steering message.
  *
  * Like the other registries this is PURE: prompt in, `PromptAssemblyResult` out.
  * LLM invocation, storage, provider resolution, and instruction-text loading

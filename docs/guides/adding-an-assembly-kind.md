@@ -24,7 +24,7 @@ Every prompt the app sends to a model is built by exactly one of four pure regis
 
 Both reuse the same pure building blocks (`buildLayers` + `finalizeAssembly` in `assemble.ts`); they differ in **how much of the RP world** the one-shot model needs:
 
-- **Full RP context (summary, insights).** The model evaluates the conversation and needs the world it takes place in — character, persona, activated lorebook, script injections, recent window. The assembler takes a `PromptAssemblyContext` (the same type a chat turn takes), reuses `buildLayers`, then applies a **filter** (a visibility set) and/or a **reshape** (relocate/append the final user message). Everything follows the chat's own preset toggles — no one-shot-specific visibility policy.
+- **Full RP context (summary, insights).** The model evaluates the conversation and needs the world it takes place in — character, persona, activated lorebook, script injections, recent window. The assembler takes a `PromptAssemblyContext` (the same type a chat turn takes), reuses `buildLayers`, then applies a **filter** (a visibility set) and/or seeds endpoint-owned layers before compaction. Everything follows the chat's own preset toggles — no one-shot-specific visibility policy.
 - **Minimal context (AI assistant).** The model performs a tool task (rewrite a field, generate a script) and needs only a system prompt + a few optional context layers + the instruction. `AiAssistantAssembler` builds its own minimal layer set from `context.aiAssistant.enabledLayers` rather than reusing the chat pipeline.
 
 Pick by content, not by taste: if the one-shot's quality depends on the character/world (summarizing, judging task completion, extracting scene state), it needs the full RP context → reuse `buildLayers`. If it is a pure tool prompt, the minimal shape is enough.
@@ -35,7 +35,7 @@ Pick by content, not by taste: if the one-shot's quality depends on the characte
 packages/prompt-pipeline/src/
 ├── assemble.ts                  assemblePrompt (chat turn)
 │                                + assembleSummaryPrompt (filter to SUMMARY_LAYER_IDS)
-│                                + assembleInsightsPrompt (strip insight layers + append instruction)
+│                                + assembleInsightsPrompt (seed instruction + strip self-injection layers)
 │                                + shared buildLayers / finalizeAssembly (internal)
 ├── summary/
 │   ├── summary-strategy.ts      SummaryStrategy interface + DefaultSummaryStrategy
@@ -52,7 +52,7 @@ All four are **pure**: prompt in, `PromptAssemblyResult` out. LLM invocation, st
 
 ## The reference implementation
 
-For the **full-RP-context** shape (the common case), the **insights** assembler is the worked example: `assembleInsightsPrompt` in `assemble.ts` reuses `buildLayers`, strips only the insight self-injection layers, and appends the instruction. Mirror it. For the **minimal** shape, mirror `AiAssistantAssembler`.
+For the **full-RP-context** shape (the common case), the **insights** assembler is the worked example: `assembleInsightsPrompt` in `assemble.ts` seeds its instruction as a real user-role depth-0 layer before `buildLayers` plans compaction, then strips only the insight self-injection layers. Mirror it. For the **minimal** shape, mirror `AiAssistantAssembler`.
 
 ## Step 1 — The kind type + the interface
 
@@ -71,26 +71,35 @@ If the one-shot carries an extra parameter (insights carries a resolved `instruc
 
 ## Step 2 — The pure assembly function (in `assemble.ts`)
 
-For a full-RP-context one-shot, add an `assembleXxxPrompt` function **inside `assemble.ts`** (next to `assembleSummaryPrompt`), because `buildLayers` / `finalizeAssembly` are internal there. Run `applyMacrosToContext` + `createResolver` + `buildLayers`, apply your filter, `finalizeAssembly`, then reshape the final payload.
+For a full-RP-context one-shot, add an `assembleXxxPrompt` function **inside `assemble.ts`** (next to `assembleSummaryPrompt`), because `buildLayers` / `finalizeAssembly` are internal there. Run `applyMacrosToContext` + `createResolver`, create any endpoint-owned layers, pass them to `buildLayers` before compaction, apply your filter, then call `finalizeAssembly`.
 
 ```ts
 // packages/prompt-pipeline/src/assemble.ts
 export function assembleInsightsPrompt(rawContext: PromptAssemblyContext, instruction: string): PromptAssemblyResult {
   const context = applyMacrosToContext(rawContext);
   const resolver = createResolver(context.preset);
-  const built = buildLayers(context, resolver);
-  // The ONE insight-specific filter: strip the insight self-injection layers
-  // (they duplicate the instruction / add noise to the model judging them).
+  const trimmedInstruction = instruction.trim();
+  const instructionLayer = trimmedInstruction ? makeLayer({
+    id: PROMPT_LAYER_ID.insightsInstruction,
+    sourceType: PROMPT_LAYER_SOURCE_TYPE.insightsInstruction,
+    sourceId: context.identity.chatId,
+    position: "in_chat",
+    priority: PROMPT_LAYER_PRIORITY.insightsInstruction,
+    role: "user",
+    text: trimmedInstruction,
+  }) : null;
+  if (instructionLayer) instructionLayer.injectionDepth = 0;
+
+  // Seed endpoint-owned layers before buildLayers plans history compaction.
+  const built = buildLayers(context, resolver, instructionLayer ? [instructionLayer] : []);
   const layers = built.layers.filter(
     (layer) => layer.id !== PROMPT_LAYER_ID.objectiveTask && layer.id !== PROMPT_LAYER_ID.sceneState,
   );
-  const finalized = finalizeAssembly(context, { ...built, layers }, resolver);
-  // …append the instruction as the final user message…
-  return finalized;
+  return finalizeAssembly(context, { ...built, layers }, resolver);
 }
 ```
 
-The filter is the only place a one-shot imposes its own visibility. **Do not invent a new toggle policy** — `mes_example`, lore activation, authorsNote all follow the chat's preset toggles via the resolver. Strip only the layers that are genuinely redundant or harmful for your one-shot (for insights: the objective/scene injection layers, which would duplicate the instruction).
+Endpoint-owned text that must reach the model belongs in a real `PromptLayer` before `buildLayers` plans compaction; never append an uncounted message after `finalizeAssembly`. The filter is the only place a one-shot imposes its own visibility. **Do not invent a new toggle policy** — `mes_example`, lore activation, authorsNote all follow the chat's preset toggles via the resolver. Strip only the layers that are genuinely redundant or harmful for your one-shot (for insights: the objective/scene injection layers, which would duplicate the instruction).
 
 The thin `DefaultXxxAssembler` in the registry package delegates to this function:
 
@@ -149,6 +158,6 @@ const result = await this.execute({ profile, model, prompt, signal });
 Two test layers, both in the pipeline package (`packages/prompt-pipeline/test/`):
 
 1. **Manifest** — every key of the discriminator resolves, and the registry's key set matches it (the `satisfies` guard made visible).
-2. **Behavior** — the assembler builds the expected `finalPayload.messages` with the RP context the one-shot needs, applies its filter correctly (for insights: character/persona/lore present; `objectiveTask`/`sceneState` stripped even when the context carries them; the instruction is the final user message), and inherits the chat's toggles (e.g. `mes_example` follows `mesExampleMode`).
+2. **Behavior** — the assembler builds the expected `finalPayload.messages` with the RP context the one-shot needs, applies its filter correctly (for insights: character/persona/lore present; `objectiveTask`/`sceneState` stripped even when the context carries them; the instruction is a real budgeted layer and the final user message), and inherits the chat's toggles (e.g. `mes_example` follows `mesExampleMode`). Include a constrained-budget case proving a longer endpoint instruction forces additional history compaction without exceeding `contextBudget`.
 
 If a refactor later relocates a boundary (e.g. the objective service used to reshape the final user message itself, then the assembler took over), re-pin the boundary at its new owner — do not just delete the old test.
