@@ -400,9 +400,11 @@ export interface InsightsRuntimeApi {
 	checkObjectiveCompletion: (chatId: string, body: { providerProfileId?: string; model?: string }, signal?: AbortSignal) => Promise<ConfigPatchResponse>;
 	addObjectiveTask: (chatId: string, body: { description: string }) => Promise<ConfigPatchResponse>;
 	updateObjectiveTask: (chatId: string, taskId: string, body: { description?: string; status?: ObjectiveTaskStatus }) => Promise<ConfigPatchResponse>;
+	reorderObjectiveTasks: (chatId: string, body: { taskIds: string[] }) => Promise<ConfigPatchResponse>;
 	deleteObjectiveTask: (chatId: string, taskId: string) => Promise<ConfigPatchResponse>;
 	updateObjectiveConfig: (chatId: string, body: {
 		autoCheckFrequency?: number;
+		contextWindow?: number;
 		injectionDepth?: number;
 		generatePrompt?: string;
 		checkPrompt?: string;

@@ -52,8 +52,7 @@ type Execute = typeof nonstreamingProviderExecute;
 type ResolvePrompt = typeof resolveInsightsPrompt;
 type ResolvedProfile = ProviderExecutionInput["profile"];
 
-/** How many recent messages the objective model sees (INSIGHTS_PLAN design
- *  decision: objective needs depth → 10). Configurable per-chat in INS-5. */
+/** Default recent-message window for the Objective model. */
 export const OBJECTIVE_CONTEXT_WINDOW = 10;
 
 function isObjectiveEnabled(insightsConfig: Record<string, unknown>): boolean {
@@ -66,6 +65,7 @@ export function defaultObjectiveState(): ObjectiveState {
     objectiveDescription: "",
     tasks: [],
     autoCheckFrequency: 0,
+    contextWindow: OBJECTIVE_CONTEXT_WINDOW,
     injectionDepth: 1,
     generatePrompt: "",
     checkPrompt: "",
@@ -202,6 +202,9 @@ function normalizeObjectiveState(raw: unknown): ObjectiveState {
     autoCheckFrequency: typeof r.autoCheckFrequency === "number" && Number.isFinite(r.autoCheckFrequency)
       ? Math.max(0, Math.floor(r.autoCheckFrequency))
       : base.autoCheckFrequency,
+    contextWindow: typeof r.contextWindow === "number" && Number.isFinite(r.contextWindow)
+      ? Math.max(1, Math.floor(r.contextWindow))
+      : base.contextWindow,
     injectionDepth: typeof r.injectionDepth === "number" && Number.isFinite(r.injectionDepth)
       ? Math.max(1, Math.floor(r.injectionDepth))
       : base.injectionDepth,
@@ -350,6 +353,23 @@ export class ObjectiveService {
     return next;
   }
 
+  /** Reorder the route. The supplied ids must be one complete permutation. */
+  async reorderTasks(chatId: ChatId, taskIds: string[]): Promise<ObjectiveState> {
+    const base = (await this.getState(chatId)) ?? defaultObjectiveState();
+    const uniqueIds = new Set(taskIds);
+    const taskById = new Map(base.tasks.map((task) => [task.id, task]));
+    if (taskIds.length !== base.tasks.length || uniqueIds.size !== base.tasks.length || taskIds.some((id) => !taskById.has(id))) {
+      throw new Error("Objective task order must be a complete permutation of the current route.");
+    }
+    const tasks = taskIds.map((id) => taskById.get(id));
+    if (tasks.some((task) => task === undefined)) {
+      throw new Error("Objective task order must be a complete permutation of the current route.");
+    }
+    const next: ObjectiveState = { ...base, tasks: tasks.filter((task): task is ObjectiveTask => task !== undefined) };
+    await this.saveState(chatId, next);
+    return next;
+  }
+
   /** Remove a task from the route. Throws if the task id is unknown. */
   async deleteTask(chatId: ChatId, taskId: string): Promise<ObjectiveState> {
     const base = (await this.getState(chatId)) ?? defaultObjectiveState();
@@ -380,13 +400,17 @@ export class ObjectiveService {
    */
   async updateObjectiveConfig(
     chatId: ChatId,
-    patch: Partial<Pick<ObjectiveState, "autoCheckFrequency" | "injectionDepth" | "generatePrompt" | "checkPrompt" | "injectPrompt" | "useChatModel" | "providerProfileId" | "model">>,
+    patch: Partial<Pick<ObjectiveState, "autoCheckFrequency" | "contextWindow" | "injectionDepth" | "generatePrompt" | "checkPrompt" | "injectPrompt" | "useChatModel" | "providerProfileId" | "model">>,
   ): Promise<ObjectiveState> {
     const base = (await this.getState(chatId)) ?? defaultObjectiveState();
     const next: ObjectiveState = { ...base };
     if (patch.autoCheckFrequency !== undefined) {
       const n = Math.floor(patch.autoCheckFrequency);
       next.autoCheckFrequency = Number.isFinite(n) && n >= 0 ? n : 0;
+    }
+    if (patch.contextWindow !== undefined) {
+      const n = Math.floor(patch.contextWindow);
+      next.contextWindow = Number.isFinite(n) && n >= 1 ? n : OBJECTIVE_CONTEXT_WINDOW;
     }
     if (patch.injectionDepth !== undefined) {
       const d = Math.floor(patch.injectionDepth);
@@ -439,7 +463,7 @@ export class ObjectiveService {
         const built = await this.sessionRuntime.chatLifecycle.buildPipelineContext({
           chatId: chat.id as ChatId,
           model,
-          recentMessageLimit: OBJECTIVE_CONTEXT_WINDOW,
+          recentMessageLimit: state.contextWindow,
         });
         await this.checkCompletion({ chatId: chat.id as ChatId, profile, model, context: built.context });
       },

@@ -1,10 +1,10 @@
-import { brandId, type ChatId, type ObjectiveTaskStatus } from "@vibe-tavern/domain";
+import { brandId, type ChatId, type ObjectiveState, type ObjectiveTaskStatus } from "@vibe-tavern/domain";
 import type { StoreContainer } from "@vibe-tavern/db";
 import type { SessionRuntime } from "../../runtime/session/session-runtime.js";
 import type { ProviderProfileService } from "../../domain/providers/provider-profile-service.js";
 import type { ConfigPatchResponse } from "../contract/session-types.js";
 import { notFound, validation } from "../../shared/errors.js";
-import { OBJECTIVE_CONTEXT_WINDOW, ObjectiveService } from "../../domain/insights/objective-service.js";
+import { ObjectiveService } from "../../domain/insights/objective-service.js";
 
 // ────────────────────────────────────────────────────────────────────────────
 // InsightsAdapter — RPC surface for the Objective Tracker (INSIGHTS_PLAN INS-4)
@@ -32,8 +32,8 @@ export class InsightsAdapter {
 		signal?: AbortSignal,
 	): Promise<ConfigPatchResponse> => {
 		await this.ensureChat(chatId);
-		const { profile, model } = await this.resolveInsightProviderOrThrow(chatId);
-		const context = await this.buildContext(chatId, model);
+		const { profile, model, state } = await this.resolveInsightProviderOrThrow(chatId);
+		const context = await this.buildContext(chatId, model, state.contextWindow);
 		await this.objectiveService.generateTasks({ chatId: brandId<ChatId>(chatId), profile, model, context, signal });
 		return this.refresh(chatId);
 	};
@@ -45,8 +45,8 @@ export class InsightsAdapter {
 		signal?: AbortSignal,
 	): Promise<ConfigPatchResponse> => {
 		await this.ensureChat(chatId);
-		const { profile, model } = await this.resolveInsightProviderOrThrow(chatId);
-		const context = await this.buildContext(chatId, model);
+		const { profile, model, state } = await this.resolveInsightProviderOrThrow(chatId);
+		const context = await this.buildContext(chatId, model, state.contextWindow);
 		await this.objectiveService.checkCompletion({ chatId: brandId<ChatId>(chatId), profile, model, context, signal });
 		return this.refresh(chatId);
 	};
@@ -69,6 +69,12 @@ export class InsightsAdapter {
 		return this.refresh(chatId);
 	};
 
+	reorderObjectiveTasks = async (chatId: string, body: { taskIds: string[] }): Promise<ConfigPatchResponse> => {
+		await this.ensureChat(chatId);
+		await this.objectiveService.reorderTasks(brandId<ChatId>(chatId), body.taskIds);
+		return this.refresh(chatId);
+	};
+
 	deleteObjectiveTask = async (chatId: string, taskId: string): Promise<ConfigPatchResponse> => {
 		await this.ensureChat(chatId);
 		await this.objectiveService.deleteTask(brandId<ChatId>(chatId), taskId);
@@ -85,6 +91,7 @@ export class InsightsAdapter {
 		chatId: string,
 		body: {
 			autoCheckFrequency?: number;
+			contextWindow?: number;
 			injectionDepth?: number;
 			generatePrompt?: string;
 			checkPrompt?: string;
@@ -111,20 +118,20 @@ export class InsightsAdapter {
 	 * pinned config in Build Mode → Insights is the single source of truth.
 	 * Throws a validation error when nothing is configured so the UI surfaces it.
 	 */
-	private async resolveInsightProviderOrThrow(chatId: string): Promise<{ profile: NonNullable<Awaited<ReturnType<ProviderProfileService["resolveActiveProviderProfile"]>>>; model: string }> {
+	private async resolveInsightProviderOrThrow(chatId: string): Promise<{ profile: NonNullable<Awaited<ReturnType<ProviderProfileService["resolveActiveProviderProfile"]>>>; model: string; state: ObjectiveState }> {
 		const state = await this.objectiveService.getState(brandId<ChatId>(chatId));
 		const resolved = await this.objectiveService.resolveInsightProvider(state);
 		if (!resolved) {
 			throw validation("No provider/model configured for the Objective insight. Set one in Build Mode → Insights.");
 		}
-		return resolved;
+		return { ...resolved, state };
 	}
 
-	private async buildContext(chatId: string, model: string) {
+	private async buildContext(chatId: string, model: string, contextWindow: number) {
 		const built = await this.sessionRuntime.chatLifecycle.buildPipelineContext({
 			chatId: brandId<ChatId>(chatId),
 			model,
-			recentMessageLimit: OBJECTIVE_CONTEXT_WINDOW,
+			recentMessageLimit: contextWindow,
 		});
 		return built.context;
 	}

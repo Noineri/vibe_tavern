@@ -19,6 +19,9 @@ export function createInsightsRoutes(runtime: InsightsRuntimeApi) {
     .post("/api/chats/:chatId/insights/objective/tasks", zValidator("json", schemas.addObjectiveTaskSchema), async (c) => {
       return c.json(await runtime.addObjectiveTask(c.req.param("chatId"), c.req.valid("json")));
     })
+    .put("/api/chats/:chatId/insights/objective/tasks/reorder", zValidator("json", schemas.reorderObjectiveTasksSchema), async (c) => {
+      return c.json(await runtime.reorderObjectiveTasks(c.req.param("chatId"), c.req.valid("json")));
+    })
     .patch("/api/chats/:chatId/insights/objective/tasks/:taskId", zValidator("json", schemas.updateObjectiveTaskSchema), async (c) => {
       return c.json(await runtime.updateObjectiveTask(c.req.param("chatId"), c.req.param("taskId"), c.req.valid("json")));
     })

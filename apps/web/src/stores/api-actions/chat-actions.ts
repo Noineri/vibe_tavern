@@ -24,6 +24,7 @@ import {
   checkObjectiveCompletion,
   addObjectiveTask,
   updateObjectiveTask,
+  reorderObjectiveTasks,
   deleteObjectiveTask,
   setObjectiveDescription,
   updateObjectiveConfig,
@@ -405,6 +406,11 @@ export async function addObjectiveTaskAction(chatId: ChatId, description: string
 
 export async function updateObjectiveTaskAction(chatId: ChatId, taskId: string, input: { description?: string; status?: ObjectiveTaskStatus }): Promise<void> {
   const snapshot = await updateObjectiveTask(chatId, taskId, input);
+  syncSnapshot(snapshot);
+}
+
+export async function reorderObjectiveTasksAction(chatId: ChatId, taskIds: string[]): Promise<void> {
+  const snapshot = await reorderObjectiveTasks(chatId, taskIds);
   syncSnapshot(snapshot);
 }
 

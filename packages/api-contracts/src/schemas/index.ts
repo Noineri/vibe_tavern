@@ -66,6 +66,7 @@ export {
   objectiveTaskStatusSchema,
   addObjectiveTaskSchema,
   updateObjectiveTaskSchema,
+  reorderObjectiveTasksSchema,
   setObjectiveDescriptionSchema,
   updateObjectiveConfigSchema,
 } from "./insights-schema.js";

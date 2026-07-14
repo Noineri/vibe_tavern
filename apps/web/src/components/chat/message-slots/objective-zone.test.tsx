@@ -66,6 +66,7 @@ const ROUTE: ObjectiveState = {
     { id: "t3", description: "Find the cave", status: "pending" },
   ],
   autoCheckFrequency: 0,
+  contextWindow: 10,
   injectionDepth: 1,
   generatePrompt: "",
   checkPrompt: "",

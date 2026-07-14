@@ -21,6 +21,7 @@ const mocks = vi.hoisted(() => ({
   checkObjectiveCompletionAction: vi.fn(),
   addObjectiveTaskAction: vi.fn(),
   updateObjectiveTaskAction: vi.fn(),
+  reorderObjectiveTasksAction: vi.fn(),
   deleteObjectiveTaskAction: vi.fn(),
   setObjectiveDescriptionAction: vi.fn(),
   updateObjectiveConfigAction: vi.fn(),
@@ -40,6 +41,7 @@ vi.mock("../../../stores/api-actions/chat-actions.js", () => ({
   checkObjectiveCompletionAction: mocks.checkObjectiveCompletionAction,
   addObjectiveTaskAction: mocks.addObjectiveTaskAction,
   updateObjectiveTaskAction: mocks.updateObjectiveTaskAction,
+  reorderObjectiveTasksAction: mocks.reorderObjectiveTasksAction,
   deleteObjectiveTaskAction: mocks.deleteObjectiveTaskAction,
   setObjectiveDescriptionAction: mocks.setObjectiveDescriptionAction,
   updateObjectiveConfigAction: mocks.updateObjectiveConfigAction,
@@ -67,6 +69,7 @@ afterEach(() => {
   mocks.checkObjectiveCompletionAction.mockReset();
   mocks.addObjectiveTaskAction.mockReset();
   mocks.updateObjectiveTaskAction.mockReset();
+  mocks.reorderObjectiveTasksAction.mockReset();
   mocks.deleteObjectiveTaskAction.mockReset();
   mocks.setObjectiveDescriptionAction.mockReset();
   mocks.updateObjectiveConfigAction.mockReset();
@@ -76,6 +79,7 @@ const EMPTY: ObjectiveState = {
   objectiveDescription: "",
   tasks: [],
   autoCheckFrequency: 0,
+  contextWindow: 10,
   injectionDepth: 1,
   generatePrompt: "",
   checkPrompt: "",
@@ -90,10 +94,15 @@ function withState(state: ObjectiveState) {
 }
 
 describe("ObjectiveConfig (INS-5)", () => {
-  it("renders the empty state when there are no tasks", () => {
+  it("renders the empty state and still allows creating the first task manually", () => {
     withState(EMPTY);
-    const { getByText } = render(<ObjectiveConfig chatId={"chat_1" as never} />);
+    mocks.addObjectiveTaskAction.mockResolvedValue(undefined);
+    const { getByText, getByPlaceholderText } = render(<ObjectiveConfig chatId={"chat_1" as never} />);
     expect(getByText("obj_empty_title")).toBeTruthy();
+    const input = getByPlaceholderText("obj_add_task_placeholder");
+    fireEvent.change(input, { target: { value: "Start manually" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(mocks.addObjectiveTaskAction).toHaveBeenCalledWith("chat_1", "Start manually");
   });
 
   it("renders the task route when the state has tasks (generate → tree appears)", () => {
@@ -151,6 +160,39 @@ describe("ObjectiveConfig (INS-5)", () => {
     const { getByTitle } = render(<ObjectiveConfig chatId={"chat_1" as never} />);
     fireEvent.click(getByTitle("obj_cycle_status"));
     expect(mocks.updateObjectiveTaskAction).toHaveBeenCalledWith("chat_1", "t1", { status: "completed" });
+  });
+
+  it("reorders tasks with accessible up/down controls", () => {
+    withState({
+      ...EMPTY,
+      tasks: [
+        { id: "t1", description: "First", status: "pending" },
+        { id: "t2", description: "Second", status: "pending" },
+      ],
+    });
+    mocks.reorderObjectiveTasksAction.mockResolvedValue(undefined);
+    const { getAllByTitle } = render(<ObjectiveConfig chatId={"chat_1" as never} />);
+    const moveUpButtons = getAllByTitle("obj_move_task_up");
+    expect((moveUpButtons[0] as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(moveUpButtons[1]);
+    expect(mocks.reorderObjectiveTasksAction).toHaveBeenCalledWith("chat_1", ["t2", "t1"]);
+  });
+
+  it("saves contextWindow and exposes the injection prompt in Advanced config", () => {
+    withState({ ...EMPTY, injectPrompt: "CUSTOM-INJECT" });
+    mocks.updateObjectiveConfigAction.mockResolvedValue(undefined);
+    const { getByText, getByDisplayValue } = render(<ObjectiveConfig chatId={"chat_1" as never} />);
+    fireEvent.click(getByText("obj_advanced_label"));
+
+    const contextInput = getByDisplayValue("10") as HTMLInputElement;
+    fireEvent.change(contextInput, { target: { value: "6" } });
+    fireEvent.blur(contextInput);
+    expect(mocks.updateObjectiveConfigAction).toHaveBeenCalledWith("chat_1", { contextWindow: 6 });
+
+    const injectPrompt = getByDisplayValue("CUSTOM-INJECT") as HTMLTextAreaElement;
+    fireEvent.change(injectPrompt, { target: { value: "UPDATED-INJECT" } });
+    fireEvent.blur(injectPrompt);
+    expect(mocks.updateObjectiveConfigAction).toHaveBeenCalledWith("chat_1", { injectPrompt: "UPDATED-INJECT" });
   });
 
   it("hovering + clicking delete dispatches deleteObjectiveTaskAction", () => {

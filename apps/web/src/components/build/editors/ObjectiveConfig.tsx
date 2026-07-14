@@ -16,6 +16,7 @@ import {
   checkObjectiveCompletionAction,
   addObjectiveTaskAction,
   updateObjectiveTaskAction,
+  reorderObjectiveTasksAction,
   deleteObjectiveTaskAction,
   setObjectiveDescriptionAction,
   updateObjectiveConfigAction,
@@ -146,6 +147,7 @@ const EMPTY_STATE: ObjectiveState = {
   objectiveDescription: "",
   tasks: [],
   autoCheckFrequency: 0,
+  contextWindow: 10,
   injectionDepth: 1,
   generatePrompt: "",
   checkPrompt: "",
@@ -161,18 +163,6 @@ function TaskRoute({ chatId, tasks }: { chatId: ChatId; tasks: ObjectiveTask[] }
   const { t } = useT();
   const [draft, setDraft] = useState("");
 
-  if (tasks.length === 0) {
-    return (
-      <div className="rounded-md border border-dashed border-border2 bg-s2/40 px-3 py-4">
-        <EmptyState
-          icon={<Ic.target />}
-          title={t("obj_empty_title")}
-          sub={t("obj_empty_sub")}
-        />
-      </div>
-    );
-  }
-
   async function addTask() {
     const v = draft.trim();
     if (!v) return;
@@ -184,14 +174,43 @@ function TaskRoute({ chatId, tasks }: { chatId: ChatId; tasks: ObjectiveTask[] }
     }
   }
 
+  async function moveTask(index: number, offset: -1 | 1) {
+    const targetIndex = index + offset;
+    if (targetIndex < 0 || targetIndex >= tasks.length) return;
+    const taskIds = tasks.map((task) => task.id);
+    [taskIds[index], taskIds[targetIndex]] = [taskIds[targetIndex], taskIds[index]];
+    try {
+      await reorderObjectiveTasksAction(chatId, taskIds);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : t("obj_action_failed"));
+    }
+  }
+
   return (
     <div>
       <label className={lblCls}>{t("obj_route_label")}</label>
-      <ol className="mt-1.5 space-y-1">
-        {tasks.map((task, i) => (
-          <TaskRow key={task.id} chatId={chatId} index={i} task={task} />
-        ))}
-      </ol>
+      {tasks.length === 0 ? (
+        <div className="mt-1.5 rounded-md border border-dashed border-border2 bg-s2/40 px-3 py-4">
+          <EmptyState
+            icon={<Ic.target />}
+            title={t("obj_empty_title")}
+            sub={t("obj_empty_sub")}
+          />
+        </div>
+      ) : (
+        <ol className="mt-1.5 space-y-1">
+          {tasks.map((task, index) => (
+            <TaskRow
+              key={task.id}
+              chatId={chatId}
+              index={index}
+              task={task}
+              taskCount={tasks.length}
+              onMove={(offset) => void moveTask(index, offset)}
+            />
+          ))}
+        </ol>
+      )}
       <div className="mt-2 flex gap-1.5">
         <input
           className={inputCls + " flex-1"}
@@ -219,7 +238,7 @@ function TaskRoute({ chatId, tasks }: { chatId: ChatId; tasks: ObjectiveTask[] }
 
 const STATUS_ORDER: ObjectiveTaskStatus[] = ["pending", "active", "completed", "abandoned"];
 
-function TaskRow({ chatId, index, task }: { chatId: ChatId; index: number; task: ObjectiveTask }) {
+function TaskRow({ chatId, index, task, taskCount, onMove }: { chatId: ChatId; index: number; task: ObjectiveTask; taskCount: number; onMove: (offset: -1 | 1) => void }) {
   const { t } = useT();
   const [editing, setEditing] = useState(false);
 
@@ -277,14 +296,36 @@ function TaskRow({ chatId, index, task }: { chatId: ChatId; index: number; task:
           {task.description}
         </button>
       )}
-      <button
-        type="button"
-        onClick={() => void remove()}
-        className="shrink-0 text-t4 transition-opacity hover:text-danger-text md:opacity-0 md:group-hover:opacity-100"
-        title={t("obj_delete_task")}
-      >
-        <Ic.del />
-      </button>
+      <div className="flex shrink-0 items-center gap-0.5">
+        <button
+          type="button"
+          onClick={() => onMove(-1)}
+          disabled={index === 0}
+          className="flex h-6 w-6 items-center justify-center text-t4 hover:text-t2 disabled:opacity-25"
+          title={t("obj_move_task_up")}
+          aria-label={t("obj_move_task_up")}
+        >
+          {Ic.caret("u")}
+        </button>
+        <button
+          type="button"
+          onClick={() => onMove(1)}
+          disabled={index === taskCount - 1}
+          className="flex h-6 w-6 items-center justify-center text-t4 hover:text-t2 disabled:opacity-25"
+          title={t("obj_move_task_down")}
+          aria-label={t("obj_move_task_down")}
+        >
+          {Ic.caret("d")}
+        </button>
+        <button
+          type="button"
+          onClick={() => void remove()}
+          className="shrink-0 text-t4 transition-opacity hover:text-danger-text md:opacity-0 md:group-hover:opacity-100"
+          title={t("obj_delete_task")}
+        >
+          <Ic.del />
+        </button>
+      </div>
     </li>
   );
 }
@@ -407,7 +448,7 @@ function ModelSelector({ chatId, state }: { chatId: ChatId; state: ObjectiveStat
 function AdvancedConfig({ chatId, state }: { chatId: ChatId; state: ObjectiveState }) {
   const { t } = useT();
 
-  function saveNumber(field: "autoCheckFrequency" | "injectionDepth", raw: string) {
+  function saveNumber(field: "autoCheckFrequency" | "contextWindow" | "injectionDepth", raw: string) {
     const n = Number.parseInt(raw, 10);
     if (!Number.isFinite(n)) return;
     updateObjectiveConfigAction(chatId, { [field]: n }).catch((err) => toast.error(err instanceof Error ? err.message : t("obj_action_failed")));
@@ -418,7 +459,7 @@ function AdvancedConfig({ chatId, state }: { chatId: ChatId; state: ObjectiveSta
 
   return (
     <div className="mt-2 space-y-3">
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <div>
           <label className={lblCls}>{t("obj_frequency_label")}</label>
           <input
@@ -430,6 +471,18 @@ function AdvancedConfig({ chatId, state }: { chatId: ChatId; state: ObjectiveSta
             onBlur={(e) => saveNumber("autoCheckFrequency", e.target.value)}
           />
           <p className="mt-1 font-ui text-[10px] leading-relaxed text-t4">{t("obj_frequency_hint")}</p>
+        </div>
+        <div>
+          <label className={lblCls}>{t("obj_context_window_label")}</label>
+          <input
+            type="number"
+            min={1}
+            defaultValue={state.contextWindow}
+            className={inputCls + " mt-1.5"}
+            style={inputPad}
+            onBlur={(e) => saveNumber("contextWindow", e.target.value)}
+          />
+          <p className="mt-1 font-ui text-[10px] leading-relaxed text-t4">{t("obj_context_window_hint")}</p>
         </div>
         <div>
           <label className={lblCls}>{t("obj_depth_label")}</label>
@@ -455,6 +508,12 @@ function AdvancedConfig({ chatId, state }: { chatId: ChatId; state: ObjectiveSta
         hint={t("obj_prompt_hint")}
         defaultValue={state.checkPrompt}
         onSave={(v) => savePrompt("checkPrompt", v)}
+      />
+      <PromptField
+        label={t("obj_inject_prompt_label")}
+        hint={t("obj_prompt_hint")}
+        defaultValue={state.injectPrompt}
+        onSave={(v) => savePrompt("injectPrompt", v)}
       />
     </div>
   );

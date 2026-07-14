@@ -58,6 +58,13 @@ export const updateObjectiveTaskSchema = z.object({
   status: objectiveTaskStatusSchema.optional(),
 });
 
+export const reorderObjectiveTasksSchema = z.object({
+  taskIds: z.array(z.string().trim().min(1)).min(1),
+}).refine(({ taskIds }) => new Set(taskIds).size === taskIds.length, {
+  message: "Task ids must be unique.",
+  path: ["taskIds"],
+});
+
 export const setObjectiveDescriptionSchema = z.object({
   objectiveDescription: nonEmptyDescriptionSchema,
 });
@@ -67,6 +74,7 @@ export const setObjectiveDescriptionSchema = z.object({
  *  optional; the service merges + clamps (frequency >= 0, depth >= 1). */
 export const updateObjectiveConfigSchema = z.object({
   autoCheckFrequency: z.number().int().min(0).optional(),
+  contextWindow: z.number().int().min(1).optional(),
   injectionDepth: z.number().int().min(1).optional(),
   generatePrompt: z.string().optional(),
   checkPrompt: z.string().optional(),

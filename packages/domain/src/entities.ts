@@ -535,8 +535,10 @@ export interface ObjectiveState {
   objectiveDescription: string;
   /** Flat ordered task list — the route. */
   tasks: ObjectiveTask[];
-  /** How often to auto-check completion (in assistant messages). 0 = manual only. */
+  /** How often to auto-check completion (in qualifying assistant events). 0 = manual only. */
   autoCheckFrequency: number;
+  /** Number of recent branch messages supplied to the Objective model. */
+  contextWindow: number;
   /** in_chat injectionDepth for the active-task layer; default 1 (just before the latest user message). */
   injectionDepth: number;
   /** Custom LLM prompts for generate / check / inject. */

@@ -2,7 +2,9 @@ import { describe, expect, it } from "bun:test";
 import { OBJECTIVE_TASK_STATUS } from "@vibe-tavern/domain";
 import {
   addObjectiveTaskSchema,
+  reorderObjectiveTasksSchema,
   setObjectiveDescriptionSchema,
+  updateObjectiveConfigSchema,
   updateObjectiveTaskSchema,
 } from "../src/schemas/insights-schema.js";
 
@@ -28,5 +30,18 @@ describe("Objective request schemas", () => {
   it("trims and rejects an empty objective description", () => {
     expect(setObjectiveDescriptionSchema.parse({ objectiveDescription: "  Escape  " })).toEqual({ objectiveDescription: "Escape" });
     expect(setObjectiveDescriptionSchema.safeParse({ objectiveDescription: "   " }).success).toBe(false);
+  });
+
+  it("validates contextWindow as an optional positive integer without patch defaults", () => {
+    expect(updateObjectiveConfigSchema.parse({ contextWindow: 4 })).toEqual({ contextWindow: 4 });
+    expect(updateObjectiveConfigSchema.parse({})).toEqual({});
+    expect(updateObjectiveConfigSchema.safeParse({ contextWindow: 0 }).success).toBe(false);
+    expect(updateObjectiveConfigSchema.safeParse({ contextWindow: 1.5 }).success).toBe(false);
+  });
+
+  it("accepts a complete unique task order and rejects empty or duplicate ids", () => {
+    expect(reorderObjectiveTasksSchema.parse({ taskIds: ["t2", "t1"] })).toEqual({ taskIds: ["t2", "t1"] });
+    expect(reorderObjectiveTasksSchema.safeParse({ taskIds: [] }).success).toBe(false);
+    expect(reorderObjectiveTasksSchema.safeParse({ taskIds: ["t1", "t1"] }).success).toBe(false);
   });
 });

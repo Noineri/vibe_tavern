@@ -72,6 +72,7 @@ export interface ObjectiveState {
   objectiveDescription: string;
   tasks: ObjectiveTask[];
   autoCheckFrequency: number;
+  contextWindow: number;
   injectionDepth: number;
   generatePrompt: string;
   checkPrompt: string;

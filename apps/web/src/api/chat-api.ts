@@ -402,6 +402,11 @@ export async function updateObjectiveTask(chatId: ChatId, taskId: string, input:
   return normalizeSnapshot(await unwrapRpc<AppSnapshot>(response));
 }
 
+export async function reorderObjectiveTasks(chatId: ChatId, taskIds: string[]): Promise<AppSnapshot> {
+  const response = await client.api.chats[":chatId"].insights.objective.tasks.reorder.$put({ param: { chatId }, json: { taskIds } });
+  return normalizeSnapshot(await unwrapRpc<AppSnapshot>(response));
+}
+
 export async function deleteObjectiveTask(chatId: ChatId, taskId: string): Promise<AppSnapshot> {
   const response = await client.api.chats[":chatId"].insights.objective.tasks[":taskId"].$delete({ param: { chatId, taskId } });
   return normalizeSnapshot(await unwrapRpc<AppSnapshot>(response));
@@ -414,6 +419,7 @@ export async function setObjectiveDescription(chatId: ChatId, objectiveDescripti
 
 export async function updateObjectiveConfig(chatId: ChatId, input: {
   autoCheckFrequency?: number;
+  contextWindow?: number;
   injectionDepth?: number;
   generatePrompt?: string;
   checkPrompt?: string;

@@ -227,6 +227,32 @@ describe("ObjectiveService (INS-3b logic + INS-3c assembler wiring)", () => {
     await expect(service.deleteTask("chat_1" as never, "nope")).rejects.toThrow();
   });
 
+  it("reorders the complete route and rejects incomplete or duplicate permutations", async () => {
+    const initial: ObjectiveState = {
+      ...defaultObjectiveState(),
+      tasks: [
+        { id: "t1", description: "first", status: OBJECTIVE_TASK_STATUS.pending },
+        { id: "t2", description: "second", status: OBJECTIVE_TASK_STATUS.active },
+        { id: "t3", description: "third", status: OBJECTIVE_TASK_STATUS.pending },
+      ],
+    };
+    const { stores } = makeMockStates(initial);
+    const service = new ObjectiveService(stores, null as never, null as never, async () => ({ text: "" }) as never);
+
+    const reordered = await service.reorderTasks("chat_1" as never, ["t2", "t1", "t3"]);
+    expect(reordered.tasks.map((task) => task.id)).toEqual(["t2", "t1", "t3"]);
+    await expect(service.reorderTasks("chat_1" as never, ["t1", "t2"])).rejects.toThrow("complete permutation");
+    await expect(service.reorderTasks("chat_1" as never, ["t1", "t1", "t3"])).rejects.toThrow("complete permutation");
+  });
+
+  it("defaults and normalizes contextWindow to a positive integer", async () => {
+    expect(defaultObjectiveState().contextWindow).toBe(10);
+    const { stores } = makeMockStores({ ...defaultObjectiveState(), contextWindow: 3.8 });
+    const service = new ObjectiveService(stores, null as never, null as never, async () => ({ text: "" }) as never);
+    expect((await service.getState("chat_1" as never)).contextWindow).toBe(3);
+    expect((await service.updateObjectiveConfig("chat_1" as never, { contextWindow: 6 })).contextWindow).toBe(6);
+  });
+
   it("setting a task active deterministically demotes every other active task", async () => {
     const initial: ObjectiveState = {
       ...defaultObjectiveState(),
@@ -336,6 +362,7 @@ describe("ObjectiveService.triggerAutoCheck (INS-4 orchestration)", () => {
     objectiveEnabled: boolean;
     autoCheckFrequency: number;
     assistantCount: number;
+    contextWindow?: number;
     tasks?: ObjectiveTask[];
     reply?: string;
     hasProvider?: boolean;
@@ -343,16 +370,18 @@ describe("ObjectiveService.triggerAutoCheck (INS-4 orchestration)", () => {
   }): {
     service: ObjectiveService;
     getBuildCalls: () => number;
+    getRecentMessageLimit: () => number | undefined;
     getExecuteCalls: () => number;
     readState: () => ObjectiveState;
   } {
-    const { objectiveEnabled, autoCheckFrequency, assistantCount, tasks = [], reply = '{"completed":true}', hasProvider = true, model = "gpt-test" } = opts;
+    const { objectiveEnabled, autoCheckFrequency, assistantCount, contextWindow = 10, tasks = [], reply = '{"completed":true}', hasProvider = true, model = "gpt-test" } = opts;
     // Deliberately the PRE-model-selection persisted shape: getState must
     // normalize it to useChatModel:true so existing chats keep auto-checking.
     const baseState = {
       objectiveDescription: "Defeat the warlord",
       tasks,
       autoCheckFrequency,
+      contextWindow,
       injectionDepth: 1,
       generatePrompt: "",
       checkPrompt: "",
@@ -371,11 +400,13 @@ describe("ObjectiveService.triggerAutoCheck (INS-4 orchestration)", () => {
       messages: { getMessages: async () => messages },
     } as unknown as StoreContainer;
     let buildCalls = 0;
+    let recentMessageLimit: number | undefined;
     let executeCalls = 0;
     const sessionRuntime = {
       chatLifecycle: {
-        buildPipelineContext: async () => {
+        buildPipelineContext: async (input: { recentMessageLimit?: number }) => {
           buildCalls += 1;
+          recentMessageLimit = input.recentMessageLimit;
           return { context };
         },
       },
@@ -392,6 +423,7 @@ describe("ObjectiveService.triggerAutoCheck (INS-4 orchestration)", () => {
     return {
       service,
       getBuildCalls: () => buildCalls,
+      getRecentMessageLimit: () => recentMessageLimit,
       getExecuteCalls: () => executeCalls,
       readState: () => state as unknown as ObjectiveState,
     };
@@ -442,10 +474,12 @@ describe("ObjectiveService.triggerAutoCheck (INS-4 orchestration)", () => {
       objectiveEnabled: true,
       autoCheckFrequency: 1,
       assistantCount: 1,
+      contextWindow: 4,
       tasks: [{ id: "obj_task_1", description: "Reach the gates", status: OBJECTIVE_TASK_STATUS.pending }],
     });
     await t.service.triggerAutoCheck("chat_1");
     expect(t.getBuildCalls()).toBe(1); // context built via the session runtime
+    expect(t.getRecentMessageLimit()).toBe(4);
     expect(t.getExecuteCalls()).toBe(1);
     expect(t.readState().tasks[0].status).toBe(OBJECTIVE_TASK_STATUS.completed);
   });

@@ -94,6 +94,7 @@ export {
   checkObjectiveCompletion,
   addObjectiveTask,
   updateObjectiveTask,
+  reorderObjectiveTasks,
   deleteObjectiveTask,
   setObjectiveDescription,
   updateObjectiveConfig,
