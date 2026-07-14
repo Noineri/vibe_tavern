@@ -422,6 +422,9 @@ export interface MessageVariant {
   coauthorModuleId?: string | null;
   coauthorSkillId?: string | null;
   createdAt: Timestamp;
+  /** Canonical per-variant Scene record (SCENE_TRACKER_PLAN); null/undefined
+   *  when the variant has none. Owned by this variant's immutable id. */
+  sceneTracker?: SceneTrackerRecord | null;
 }
 
 export interface SummaryMemorySnapshot {

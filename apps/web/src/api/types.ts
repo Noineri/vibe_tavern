@@ -7,7 +7,7 @@
  */
 import type { Chat, ChatBranch, ChatId, CharacterId, Message, MessageVariant } from "@vibe-tavern/domain";
 import type { AssemblePromptResponse, PromptPresetDto, PromptTraceRecordDto } from "@vibe-tavern/domain";
-import type { SceneTrackerConfig, SceneTrackerConfigPatch } from "@vibe-tavern/domain";
+import type { SceneTrackerConfig, SceneTrackerConfigPatch, SceneTrackerRecord } from "@vibe-tavern/domain";
 
 // Wire-format output types shared with the backend (single source of truth in
 // @vibe-tavern/api-contracts). Two are imported under local aliases that the
@@ -38,6 +38,9 @@ export interface AppMessage extends Message {
   variants: MessageVariant[];
   selectedVariantIndex: number | null;
   modelId: string | null;
+  /** Active Scene record — mirrors the currently selected variant, swapped
+   *  locally on selection (no fetch). Null when the selected variant has none. */
+  sceneTracker: SceneTrackerRecord | null;
   coauthorModuleId?: string | null;
   coauthorSkillId?: string | null;
   attachments?: { id: string; assetId: string; type: string; name?: string; mimeType?: string; sizeBytes?: number; description?: string | null }[];

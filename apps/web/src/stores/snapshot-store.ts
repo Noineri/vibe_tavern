@@ -373,6 +373,9 @@ export const useSnapshotStore = create<SnapshotStore>()(
           if (variant) {
             existing.content = variant.content;
             existing.modelId = variant.modelId ?? null;
+            // Swap the active Scene record locally — every variant already
+            // carries its own record via the DTO, so selecting needs no fetch.
+            existing.sceneTracker = variant.sceneTracker ?? null;
           }
         }
         draft.swipeDirection = direction;

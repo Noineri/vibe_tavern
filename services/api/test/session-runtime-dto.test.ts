@@ -41,6 +41,43 @@ describe("mapMessageDto", () => {
     expect(result.content).toBe("Hello");
     expect(result.variants).toHaveLength(0);
   });
+
+  it("exposes each variant's immutable id and scene record (SCN-4)", () => {
+    const message = { id: "m1", role: "assistant", content: "Reply A" };
+    const variants = [
+      { id: "var_0", content: "Reply A", variantIndex: 0, isSelected: true, sceneTracker: { variantId: "var_0", schemaHash: "h0", sourceHash: "s0", sceneState: { mood: "calm" } } },
+      { id: "var_1", content: "Reply B", variantIndex: 1, isSelected: false, sceneTracker: { variantId: "var_1", schemaHash: "h1", sourceHash: "s1", sceneState: { mood: "tense" } } },
+    ];
+    const result = mapMessageDto(message, variants);
+    // Both immutable ids + per-variant records are projected through.
+    expect(result.variants[0].id).toBe("var_0");
+    expect(result.variants[1].id).toBe("var_1");
+    expect(result.variants[0].sceneTracker.sceneState).toEqual({ mood: "calm" });
+    expect(result.variants[1].sceneTracker.sceneState).toEqual({ mood: "tense" });
+    // The message-level active record mirrors the selected variant (var_0).
+    expect(result.sceneTracker.variantId).toBe("var_0");
+  });
+
+  it("message-level sceneTracker follows the selected variant — selected-swap (SCN-4)", () => {
+    const message = { id: "m1", role: "assistant", content: "Reply A" };
+    const variants = [
+      { id: "var_0", content: "Reply A", variantIndex: 0, isSelected: false, sceneTracker: { variantId: "var_0", schemaHash: "h0", sceneState: { mood: "calm" } } },
+      { id: "var_1", content: "Reply B", variantIndex: 1, isSelected: true, sceneTracker: { variantId: "var_1", schemaHash: "h1", sceneState: { mood: "tense" } } },
+    ];
+    const result = mapMessageDto(message, variants);
+    expect(result.selectedVariantIndex).toBe(1);
+    expect(result.sceneTracker.variantId).toBe("var_1");
+    expect(result.sceneTracker.sceneState).toEqual({ mood: "tense" });
+  });
+
+  it("message-level sceneTracker is null when the selected variant has no record (SCN-4)", () => {
+    const message = { id: "m1", role: "assistant", content: "Reply A" };
+    const variants = [
+      { id: "var_0", content: "Reply A", variantIndex: 0, isSelected: true, sceneTracker: null },
+    ];
+    const result = mapMessageDto(message, variants);
+    expect(result.sceneTracker).toBeNull();
+  });
 });
 
 // ─── entryMatchesRecentText ──────────────────────────────────────────────

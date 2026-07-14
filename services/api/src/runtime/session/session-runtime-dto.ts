@@ -1,5 +1,5 @@
 import { brandId, type ChatId, type ChatBranchId, type MessageId, type PromptTraceRecordDto, type ModelSettingsOverlay } from "@vibe-tavern/domain";
-import type { LoreEntry, Message, MessageVariant, Attachment } from "@vibe-tavern/domain";
+import type { LoreEntry, Message, MessageVariant, Attachment, SceneTrackerRecord } from "@vibe-tavern/domain";
 import { parseStoredAttachments } from "@vibe-tavern/domain";
 import type { PromptTrace as DbPromptTrace, Message as DbMessage, MessageVariant as DbMessageVariant } from "@vibe-tavern/db";
 import type {
@@ -26,6 +26,10 @@ export interface MessageDto extends Message {
   variants: MessageVariant[];
   selectedVariantIndex: number | null;
   modelId: string | null;
+  /** Active Scene record — mirrors the currently selected variant (like
+   *  `modelId`/`content`), so selecting a variant swaps Scene data without a
+   *  fetch. Null when the selected variant has no record. (SCENE_TRACKER_PLAN.) */
+  sceneTracker: SceneTrackerRecord | null;
   coauthorModuleId?: string | null;
   coauthorSkillId?: string | null;
   attachments?: Attachment[];
@@ -57,7 +61,12 @@ export function mapPromptTraceRecord(trace: DbPromptTrace): PromptTraceRecordDto
 export function mapMessageDto(message: Message, variants: MessageVariant[]): MessageDto;
 export function mapMessageDto(message: DbMessage, variants: DbMessageVariant[]): MessageDto;
 export function mapMessageDto(message: Message | DbMessage, variants: MessageVariant[] | DbMessageVariant[]): MessageDto {
-  const selectedVariant = variants.find((variant) => variant.isSelected) ?? null;
+  // Normalize once: store variants (plain-string ids) and domain variants are
+  // structurally identical apart from phantom id brands, so a single cast carries
+  // the per-variant Scene record through unchanged. Reading the selection off the
+  // typed array keeps `selectedVariant.sceneTracker` correctly typed.
+  const domainVariants = variants as MessageVariant[];
+  const selectedVariant = domainVariants.find((variant) => variant.isSelected) ?? null;
   const attachments = parseStoredAttachments('attachmentsJson' in message ? message.attachmentsJson : null);
   return {
     id: message.id as MessageId,
@@ -68,12 +77,13 @@ export function mapMessageDto(message: Message | DbMessage, variants: MessageVar
     position: message.position,
     content: selectedVariant?.content ?? message.content,
     modelId: selectedVariant?.modelId ?? null,
+    sceneTracker: selectedVariant?.sceneTracker ?? null,
     coauthorModuleId: selectedVariant?.coauthorModuleId ?? null,
     coauthorSkillId: selectedVariant?.coauthorSkillId ?? null,
     state: message.state as Message['state'],
     createdAt: message.createdAt,
     updatedAt: message.updatedAt,
-    variants: variants as MessageVariant[],
+    variants: domainVariants,
     selectedVariantIndex: selectedVariant?.variantIndex ?? null,
     ...(attachments ? { attachments } : {}),
   } satisfies MessageDto;

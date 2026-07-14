@@ -249,3 +249,42 @@ describe("ingestSnapshot — dedup / reference stability (Wave B2)", () => {
     expect(useSnapshotStore.getState().chatsById["chat-1"]?.title).toBe("Chat 1 (renamed)");
   });
 });
+
+// ── SCN-4: variant Scene projection + local selected-swap ────────────────
+
+describe("selectVariant — Scene swap (SCN-4)", () => {
+  test("selecting a variant swaps the active Scene record locally without a fetch", () => {
+    const sceneA = { variantId: "var_0", schemaHash: "h0", configRevision: 1, sourceHash: "s0", sceneState: { mood: "calm" }, modelId: null, generatedAt: "2026-01-01T00:00:00.000Z" };
+    const sceneB = { variantId: "var_1", schemaHash: "h1", configRevision: 1, sourceHash: "s1", sceneState: { mood: "tense" }, modelId: null, generatedAt: "2026-01-01T00:00:00.000Z" };
+    const message = {
+      id: "m1",
+      role: "assistant",
+      content: "Reply A",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      variants: [
+        { id: "var_0", messageId: "m1", variantIndex: 0, content: "Reply A", isSelected: true, finishReason: null, createdAt: "2026-01-01T00:00:00.000Z", sceneTracker: sceneA },
+        { id: "var_1", messageId: "m1", variantIndex: 1, content: "Reply B", isSelected: false, finishReason: null, createdAt: "2026-01-01T00:00:00.000Z", sceneTracker: sceneB },
+      ],
+      selectedVariantIndex: 0,
+      modelId: null,
+      sceneTracker: sceneA,
+    } as unknown as AppMessage;
+
+    useSnapshotStore.getState().ingestSnapshot({ messages: [message] } as AppSnapshot);
+
+    // After ingest, the active record mirrors the selected variant (var_0).
+    const afterIngest = useSnapshotStore.getState().messagesById["m1"]!;
+    expect(afterIngest.selectedVariantIndex).toBe(0);
+    expect(afterIngest.sceneTracker).toEqual(sceneA);
+
+    // Select variant 1 locally — the active record swaps to var_1, no fetch.
+    useSnapshotStore.getState().selectVariant("m1", 1, 1);
+    const afterSelect = useSnapshotStore.getState().messagesById["m1"]!;
+    expect(afterSelect.selectedVariantIndex).toBe(1);
+    expect(afterSelect.sceneTracker).toEqual(sceneB);
+    // Both per-variant records remain on their own variants.
+    expect(afterSelect.variants[0]!.sceneTracker).toEqual(sceneA);
+    expect(afterSelect.variants[1]!.sceneTracker).toEqual(sceneB);
+  });
+});
