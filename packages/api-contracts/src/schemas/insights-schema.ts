@@ -40,6 +40,14 @@ export const objectiveModelSchema = z.object({
   model: z.string().optional(),
 });
 
+/** Join the background insight job associated with one committed assistant message. */
+export const insightsCompletionRefreshSchema = z.object({
+  target: z.object({
+    branchId: z.string().trim().min(1),
+    messageId: z.string().trim().min(1),
+  }),
+});
+
 export const objectiveTaskStatusSchema = z.enum([
   OBJECTIVE_TASK_STATUS.pending,
   OBJECTIVE_TASK_STATUS.active,

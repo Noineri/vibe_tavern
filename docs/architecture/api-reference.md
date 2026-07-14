@@ -438,6 +438,23 @@ Update memory/summary configuration.
 
 **Response:** `SessionSnapshot`
 
+### `POST /api/chats/:chatId/insights/completion-refresh`
+
+Join the current chat-scoped forward-state insight job without cancelling the shared job if this request is aborted. The target must still be an assistant message owned by the path chat and requested branch both before and after the join.
+
+**Body:** `insightsCompletionRefreshSchema`
+
+```json
+{
+  "target": {
+    "branchId": "branch_1",
+    "messageId": "msg_42"
+  }
+}
+```
+
+**Response:** `InsightsCompletionPatchResponse` — echoes the immutable `{ chatId, branchId, messageId }` target and returns only the refreshed `patch.objectiveState`; the optional target message patch is reserved for variant-scoped Scene delivery. It never returns a whole `SessionSnapshot`.
+
 ### `POST /api/chats/:chatId/summary`
 
 Summarize chat messages using AI (legacy endpoint).

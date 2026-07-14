@@ -240,6 +240,8 @@ Verify with `bun run check`, then smoke-test against `dev:web` using the Playwri
 
 Forward-steering jobs such as Objective and Scene use `runExclusiveTrailing`, retain the owner promise through every dirty trailing rerun, and expose a feature-local join method. The assistant response that triggers the job remains fire-and-forget; the next live prompt joins the preceding job cancellably before reading injected state. Cancelling that waiter must not cancel the shared job, and ordinary CRUD/config writes remain on their separate short commit lane.
 
+For UI delivery without SSE, expose a chat-scoped completion-refresh RPC that accepts the immutable committed-message target, joins that same owner promise, revalidates target ownership after the wait, and returns an echoed target plus only the refreshed insight/message patch. Never return a whole session snapshot from this seam: the frontend uses the echoed target to reject stale work before applying the scoped patch.
+
 ---
 
 ## Event hooks (reference)

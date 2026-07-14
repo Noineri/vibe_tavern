@@ -2,7 +2,7 @@ import { brandId, type ChatId, type ObjectiveState, type ObjectiveTaskStatus } f
 import type { StoreContainer } from "@vibe-tavern/db";
 import type { SessionRuntime } from "../../runtime/session/session-runtime.js";
 import type { ProviderProfileService } from "../../domain/providers/provider-profile-service.js";
-import type { ConfigPatchResponse } from "../contract/session-types.js";
+import type { ConfigPatchResponse, InsightsCompletionPatchResponse } from "../contract/session-types.js";
 import { notFound, validation } from "../../shared/errors.js";
 import { ObjectiveService } from "../../domain/insights/objective-service.js";
 
@@ -13,9 +13,9 @@ import { ObjectiveService } from "../../domain/insights/objective-service.js";
 // provider resolution + context building before calling the service's pure-ish
 // generateTasks/checkCompletion (which take an already-built context + resolved
 // profile). The CRUD operations (add/update/delete task, set description)
-// delegate directly. Every method persists the new state (inside the service)
-// and returns a ConfigPatchResponse so the UI refreshes the chat row — no SSE
-// (manual actions return via RPC; auto checks persist + refresh on snapshot).
+// delegate directly. Manual methods return ConfigPatchResponse; automatic work
+// is delivered separately by a cancellable, target-scoped completion-refresh
+// join so neither path needs a global SSE channel or a whole-session snapshot.
 // ────────────────────────────────────────────────────────────────────────────
 
 export class InsightsAdapter {
@@ -24,6 +24,27 @@ export class InsightsAdapter {
 		private readonly sessionRuntime: SessionRuntime,
 		private readonly objectiveService: ObjectiveService,
 	) {}
+
+	/** Join current forward-state work and return only its target-scoped patch. */
+	refreshInsightsCompletion = async (
+		chatId: string,
+		body: { target: { branchId: string; messageId: string } },
+		signal?: AbortSignal,
+	): Promise<InsightsCompletionPatchResponse> => {
+		signal?.throwIfAborted();
+		await this.ensureChat(chatId);
+		await this.ensureCompletionTarget(chatId, body.target);
+		signal?.throwIfAborted();
+		await this.objectiveService.waitForForwardState(brandId<ChatId>(chatId), signal);
+		signal?.throwIfAborted();
+		await this.ensureCompletionTarget(chatId, body.target);
+		const objectiveState = await this.objectiveService.getState(brandId<ChatId>(chatId));
+		signal?.throwIfAborted();
+		return {
+			target: { chatId, ...body.target },
+			patch: { objectiveState },
+		};
+	};
 
 	/** Generate a task route from the conversation. */
 	generateObjectiveTasks = async (
@@ -109,6 +130,25 @@ export class InsightsAdapter {
 	private async ensureChat(chatId: string): Promise<void> {
 		const chat = await this.stores.chats.getById(chatId);
 		if (!chat) throw notFound("Chat", `Chat '${chatId}' was not found.`);
+	}
+
+	private async ensureCompletionTarget(
+		chatId: string,
+		target: { branchId: string; messageId: string },
+	): Promise<void> {
+		const message = await this.stores.messages.getMessageById(target.messageId);
+		if (!message) {
+			throw notFound(
+				"Message",
+				`Insight completion target message '${target.messageId}' is no longer available.`,
+			);
+		}
+		if (message.chatId !== chatId || message.branchId !== target.branchId || message.role !== "assistant") {
+			throw notFound(
+				"Message",
+				`Insight completion target message '${target.messageId}' does not belong to chat '${chatId}' and branch '${target.branchId}'.`,
+			);
+		}
 	}
 
 	/**

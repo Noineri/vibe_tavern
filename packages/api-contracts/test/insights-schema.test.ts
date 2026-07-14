@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { OBJECTIVE_TASK_STATUS } from "@vibe-tavern/domain";
 import {
   addObjectiveTaskSchema,
+  insightsCompletionRefreshSchema,
   reorderObjectiveTasksSchema,
   setObjectiveDescriptionSchema,
   updateObjectiveConfigSchema,
@@ -37,6 +38,18 @@ describe("Objective request schemas", () => {
     expect(updateObjectiveConfigSchema.parse({})).toEqual({});
     expect(updateObjectiveConfigSchema.safeParse({ contextWindow: 0 }).success).toBe(false);
     expect(updateObjectiveConfigSchema.safeParse({ contextWindow: 1.5 }).success).toBe(false);
+  });
+
+  it("accepts a scoped completion-refresh target and rejects blank identities", () => {
+    expect(insightsCompletionRefreshSchema.parse({
+      target: { branchId: " branch_1 ", messageId: " msg_1 " },
+    })).toEqual({ target: { branchId: "branch_1", messageId: "msg_1" } });
+    expect(insightsCompletionRefreshSchema.safeParse({
+      target: { branchId: "", messageId: "msg_1" },
+    }).success).toBe(false);
+    expect(insightsCompletionRefreshSchema.safeParse({
+      target: { branchId: "branch_1", messageId: "   " },
+    }).success).toBe(false);
   });
 
   it("accepts a complete unique task order and rejects empty or duplicate ids", () => {

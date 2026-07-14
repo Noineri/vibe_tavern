@@ -23,6 +23,7 @@ import type {
 	AssemblePromptResponse,
 	CharacterId,
 	ChatId,
+	ObjectiveState,
 	PromptPresetDto,
 	PromptTraceRecordDto,
 } from "@vibe-tavern/domain";
@@ -212,6 +213,23 @@ export interface ConfigPatchResponse {
 	character?: SessionSnapshot["character"];
 	/** memory-settings writes the chat row. */
 	activeChat?: SessionSnapshot["activeChat"];
+}
+
+/** Immutable assistant response whose background insight work is being joined. */
+export interface InsightsCompletionTarget {
+	chatId: string;
+	branchId: string;
+	messageId: string;
+}
+
+/** Target-scoped insight delivery; never expands into a whole session snapshot. */
+export interface InsightsCompletionPatchResponse {
+	target: InsightsCompletionTarget;
+	patch: {
+		objectiveState?: ObjectiveState;
+		/** Reserved for variant-scoped Scene completion in INS-9. */
+		message?: MessageDto;
+	};
 }
 
 /**

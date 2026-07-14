@@ -63,6 +63,7 @@ export {
   insightsConfigSchema,
   updateInsightsConfigSchema,
   objectiveModelSchema,
+  insightsCompletionRefreshSchema,
   objectiveTaskStatusSchema,
   addObjectiveTaskSchema,
   updateObjectiveTaskSchema,

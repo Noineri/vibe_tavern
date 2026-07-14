@@ -16,6 +16,7 @@ import type {
 	ChatListResponse,
 	ChatListItem,
 	ConfigPatchResponse,
+	InsightsCompletionPatchResponse,
 	CoauthorApplyResponse,
 	SummaryResponse,
 	CharacterVersionResponse,
@@ -392,10 +393,11 @@ export interface MobileAccessRuntimeApi {
  * Each sub-interface is consumed by exactly one route file.
  */
 // ─── Insights — Objective Tracker (INSIGHTS_PLAN INS-4) ──────────────────
-// Manual actions return via RPC (no SSE); auto background checks persist to
-// insightsObjectiveStateJson and the UI reads them on the next snapshot refresh.
+// Manual actions return directly; automatic completion is delivered through a
+// target-scoped join rather than SSE or a whole-session snapshot.
 
 export interface InsightsRuntimeApi {
+	refreshInsightsCompletion: (chatId: string, body: { target: { branchId: string; messageId: string } }, signal?: AbortSignal) => Promise<InsightsCompletionPatchResponse>;
 	generateObjectiveTasks: (chatId: string, body: { providerProfileId?: string; model?: string }, signal?: AbortSignal) => Promise<ConfigPatchResponse>;
 	checkObjectiveCompletion: (chatId: string, body: { providerProfileId?: string; model?: string }, signal?: AbortSignal) => Promise<ConfigPatchResponse>;
 	addObjectiveTask: (chatId: string, body: { description: string }) => Promise<ConfigPatchResponse>;
