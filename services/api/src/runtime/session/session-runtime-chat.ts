@@ -31,6 +31,13 @@ export interface PreparedLiveTurn {
   };
 }
 
+/** Internal append result: wire response plus immutable committed identity. */
+export interface AppendedAssistantReply {
+  response: MessageResponse;
+  branchId: ChatBranchId;
+  messageId: MessageId;
+}
+
 interface PendingPromptTraceTurn {
   branchId: ChatBranchId;
   draft: PromptTraceDraft;
@@ -154,18 +161,19 @@ export class ChatRuntime {
       toolCalls?: import("../../infrastructure/ai/provider-execution-types.js").ExtractedToolCall[];
       toolResults?: import("../../infrastructure/ai/provider-execution-types.js").ExtractedToolResult[];
     },
-  ): Promise<MessageResponse> {
+  ): Promise<AppendedAssistantReply> {
     const { chats, messages, traces, buildMessageResponse } = this.deps;
     const chat = (await chats.getById(chatId))!;
+    const branchId = chat.activeBranchId as ChatBranchId;
 
-    const pending = this.consumePendingPromptTrace(chatId, chat.activeBranchId as ChatBranchId);
+    const pending = this.consumePendingPromptTrace(chatId, branchId);
 
     let assistantMessage: import("@vibe-tavern/db").Message;
 
     if (reasoningData?.toolCalls && reasoningData.toolCalls.length > 0) {
       await messages.addMessage({
         chatId,
-        branchId: chat.activeBranchId,
+        branchId,
         role: "assistant",
         authorType: "assistant",
         content: "",
@@ -180,7 +188,7 @@ export class ChatRuntime {
         for (const tr of reasoningData.toolResults) {
           await messages.addMessage({
             chatId,
-            branchId: chat.activeBranchId,
+            branchId,
             role: "tool",
             authorType: "tool",
             content: typeof tr.result === "string" ? tr.result : JSON.stringify(tr.result),
@@ -191,7 +199,7 @@ export class ChatRuntime {
 
       assistantMessage = await messages.addMessage({
         chatId,
-        branchId: chat.activeBranchId,
+        branchId,
         role: "assistant",
         authorType: "assistant",
         content,
@@ -203,7 +211,7 @@ export class ChatRuntime {
     } else {
       assistantMessage = await messages.addMessage({
         chatId,
-        branchId: chat.activeBranchId,
+        branchId,
         role: "assistant",
         authorType: "assistant",
         content,
@@ -248,7 +256,7 @@ export class ChatRuntime {
       latestTraceLayers: response.promptTrace?.layers?.length ?? 0,
       personaLayerSourceId: response.promptTrace?.layers?.find((l: { sourceType: string }) => l.sourceType === "persona")?.sourceId ?? null,
     });
-    return response;
+    return { response, branchId, messageId: assistantMessage.id as MessageId };
   }
 
   async appendMessageVariant(

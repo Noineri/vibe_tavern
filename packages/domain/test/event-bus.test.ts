@@ -9,13 +9,13 @@ describe("EventBus", () => {
     const seen: string[] = [];
 
     bus.on("message.appended", (payload) => {
-      seen.push(`${payload.role}:${payload.messageId}`);
+      seen.push(`${payload.role}:${payload.branchId}:${payload.messageId}`);
     });
 
-    bus.emit("message.appended", { chatId: "chat-1", messageId: "msg-1", role: "assistant" });
+    bus.emit("message.appended", { chatId: "chat-1", branchId: "branch-1", messageId: "msg-1", role: "assistant" });
     await flush();
 
-    expect(seen).toEqual(["assistant:msg-1"]);
+    expect(seen).toEqual(["assistant:branch-1:msg-1"]);
   });
 
   test("unsubscribes explicit handlers", async () => {

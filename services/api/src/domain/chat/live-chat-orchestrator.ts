@@ -1,5 +1,5 @@
 import { brandId, EventBus } from "@vibe-tavern/domain";
-import type { ChatId, MessageId, PromptPresetId, Attachment } from "@vibe-tavern/domain";
+import type { ChatBranchId, ChatId, MessageId, PromptPresetId, Attachment } from "@vibe-tavern/domain";
 import type { ChatRuntime } from "../../runtime/session/session-runtime-chat.js";
 import type { SessionSnapshot, MessageResponse } from "../../api/contract/session-types.js";
 import type { ProviderOrchestrator } from "../providers/provider-orchestrator.js";
@@ -107,13 +107,14 @@ export class LiveChatOrchestrator {
 
     const latencyMs = Date.now() - startedAt;
     logSendDebug("live.send.provider.done", { chatId: input.chatId, latencyMs, replyLength: reply.length });
-    const snapshot = await this.chatRuntime.appendAssistantReply(brandId<ChatId>(input.chatId), reply, latencyMs, {
+    const appended = await this.chatRuntime.appendAssistantReply(brandId<ChatId>(input.chatId), reply, latencyMs, {
       reasoning,
       toolCalls,
       toolResults,
     });
+    const snapshot = appended.response;
     logSendDebug("live.send.append.done", { chatId: input.chatId, messageCount: snapshot.messages.length });
-    this.notifyAssistantAppended(input.chatId, snapshot.messages[snapshot.messages.length - 1]?.id ?? "");
+    this.notifyAssistantAppended(input.chatId, appended.branchId, appended.messageId);
 
     return {
       preparedMessageCount: prepared.snapshot.messages.length,
@@ -177,12 +178,13 @@ export class LiveChatOrchestrator {
 
     const latencyMs = Date.now() - startedAt;
     logSendDebug("live.generateReply.done", { chatId: input.chatId, latencyMs, replyLength: reply.length });
-    const snapshot = await this.chatRuntime.appendAssistantReply(brandId<ChatId>(input.chatId), reply, latencyMs, {
+    const appended = await this.chatRuntime.appendAssistantReply(brandId<ChatId>(input.chatId), reply, latencyMs, {
       reasoning,
       toolCalls,
       toolResults,
     });
-    this.notifyAssistantAppended(input.chatId, snapshot.messages[snapshot.messages.length - 1]?.id ?? "");
+    const snapshot = appended.response;
+    this.notifyAssistantAppended(input.chatId, appended.branchId, appended.messageId);
     return {
       promptMessageCount: countPromptMessages(prompt),
       reply,
@@ -323,23 +325,23 @@ export class LiveChatOrchestrator {
       prefill,
       onAbort: async (text, reasoning, reasoningDurationMs, latencyMs) => {
         if (text) {
-          await this.chatRuntime.appendAssistantReply(brandId<ChatId>(input.chatId), text, latencyMs, {
+          const appended = await this.chatRuntime.appendAssistantReply(brandId<ChatId>(input.chatId), text, latencyMs, {
             reasoning: reasoning || undefined,
             reasoningDurationMs,
           });
-          this.notifyAssistantAppended(input.chatId, "");
+          this.notifyAssistantAppended(input.chatId, appended.branchId, appended.messageId);
         }
       },
       onFinal: async (text, reasoning, reasoningDurationMs, latencyMs, toolCalls, toolResults) => {
-        const snapshot = await this.chatRuntime.appendAssistantReply(brandId<ChatId>(input.chatId), text, latencyMs, {
+        const appended = await this.chatRuntime.appendAssistantReply(brandId<ChatId>(input.chatId), text, latencyMs, {
           reasoning,
           reasoningDurationMs,
           toolCalls,
           toolResults,
         });
         logSendDebug("live.send-stream.done", { chatId: input.chatId, latencyMs, replyLength: text.length });
-        this.notifyAssistantAppended(input.chatId, snapshot.messages[snapshot.messages.length - 1]?.id ?? "");
-        return snapshot;
+        this.notifyAssistantAppended(input.chatId, appended.branchId, appended.messageId);
+        return appended.response;
       },
     });
   }
@@ -382,23 +384,23 @@ export class LiveChatOrchestrator {
       prefill,
       onAbort: async (text, reasoning, reasoningDurationMs, latencyMs) => {
         if (text) {
-          await this.chatRuntime.appendAssistantReply(brandId<ChatId>(input.chatId), text, latencyMs, {
+          const appended = await this.chatRuntime.appendAssistantReply(brandId<ChatId>(input.chatId), text, latencyMs, {
             reasoning: reasoning || undefined,
             reasoningDurationMs,
           });
-          this.notifyAssistantAppended(input.chatId, "");
+          this.notifyAssistantAppended(input.chatId, appended.branchId, appended.messageId);
         }
       },
       onFinal: async (text, reasoning, reasoningDurationMs, latencyMs, toolCalls, toolResults) => {
-        const snapshot = await this.chatRuntime.appendAssistantReply(brandId<ChatId>(input.chatId), text, latencyMs, {
+        const appended = await this.chatRuntime.appendAssistantReply(brandId<ChatId>(input.chatId), text, latencyMs, {
           reasoning,
           reasoningDurationMs,
           toolCalls,
           toolResults,
         });
         logSendDebug("live.generateReply-stream.done", { chatId: input.chatId, latencyMs, replyLength: text.length });
-        this.notifyAssistantAppended(input.chatId, snapshot.messages[snapshot.messages.length - 1]?.id ?? "");
-        return snapshot;
+        this.notifyAssistantAppended(input.chatId, appended.branchId, appended.messageId);
+        return appended.response;
       },
     });
   }
@@ -497,8 +499,8 @@ export class LiveChatOrchestrator {
     });
   }
 
-  private notifyAssistantAppended(chatId: string, messageId: string): void {
-    this.events.emit("message.appended", { chatId, messageId, role: "assistant" });
+  private notifyAssistantAppended(chatId: string, branchId: ChatBranchId, messageId: MessageId): void {
+    this.events.emit("message.appended", { chatId, branchId, messageId, role: "assistant" });
     // Delegate mode-specific post-append work (no-op for RP/coauthor; future
     // hooks for novel/group). Resolved per-chat from `chat.mode`.
     void this.resolveStrategy(chatId).then((s) =>

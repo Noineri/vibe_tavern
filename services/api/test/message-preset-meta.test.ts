@@ -70,10 +70,17 @@ describe("message meta — preset recorded on every reply path", () => {
 		// Send path: append a user message + assemble (sets the pending draft
 		// carrying the resolved preset id), then append the assistant reply.
 		await runtime.chatRuntime.prepareLiveTurn(chatId, "Hello!", "test-model");
-		const response = await runtime.chatRuntime.appendAssistantReply(chatId, "Hi there!", 42);
+		const appended = await runtime.chatRuntime.appendAssistantReply(chatId, "Hi there!", 42);
+		const response = appended.response;
+
+		// Internal append metadata pins the exact committed message + branch for
+		// downstream EventBus consumers without widening the HTTP response DTO.
+		expect(appended.branchId).toBe(chat.activeBranchId);
+		expect(appended.messageId).toBeTruthy();
 
 		// The reply is the last assistant message.
 		const reply = response.messages[response.messages.length - 1];
+		expect(appended.messageId).toBe(reply.id);
 		expect(reply).toBeTruthy();
 		expect(reply.role).toBe("assistant");
 

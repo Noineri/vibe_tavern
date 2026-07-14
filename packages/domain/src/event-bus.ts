@@ -29,7 +29,7 @@ const eventBusLogger = tag("event-bus");
  */
 export interface EventMap {
   /** A message was fully appended to the chat (streaming done or non-streaming). */
-  "message.appended": { chatId: string; messageId: string; role: "user" | "assistant" | "system" | "tool" };
+  "message.appended": { chatId: string; branchId: string; messageId: string; role: "user" | "assistant" | "system" | "tool" };
   /** A new message was created (before any content is appended). */
   "message.created": { chatId: string; messageId: string; role: "user" | "assistant" | "system" | "tool"; content: string };
   /** A chat was loaded/opened. */

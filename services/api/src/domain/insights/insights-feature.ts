@@ -23,7 +23,7 @@ import type { ObjectiveService } from "./objective-service.js";
 // ────────────────────────────────────────────────────────────────────────────
 
 export function createInsightsFeature(deps: {
-  objectiveService: ObjectiveService;
+  objectiveService: Pick<ObjectiveService, "triggerAutoCheck">;
 }): FeatureModule {
   const objectiveService = deps.objectiveService;
   let unsubscribe: (() => void) | null = null;
@@ -32,8 +32,8 @@ export function createInsightsFeature(deps: {
     id: "insights",
 
     activate({ events }: FeatureDeps): void {
-      unsubscribe = events.on("message.appended", ({ chatId }) => {
-        void objectiveService.triggerAutoCheck(chatId);
+      unsubscribe = events.on("message.appended", ({ chatId, branchId, messageId }) => {
+        void objectiveService.triggerAutoCheck({ chatId, branchId, messageId });
       });
     },
 

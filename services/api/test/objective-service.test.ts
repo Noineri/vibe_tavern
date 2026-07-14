@@ -203,6 +203,145 @@ describe("ObjectiveService (INS-3b logic + INS-3c assembler wiring)", () => {
     expect((readState() as ObjectiveState).tasks).toEqual(initial.tasks);
   });
 
+  it("does not overwrite a task edit made while generation is in flight", async () => {
+    const initial: ObjectiveState = {
+      ...defaultObjectiveState(),
+      objectiveDescription: "Escape",
+      tasks: [{ id: "t1", description: "Original route", status: OBJECTIVE_TASK_STATUS.pending }],
+    };
+    const { stores, readState } = makeMockStores(initial as unknown as Record<string, unknown>);
+    let releaseExecute: ((value: { text: string }) => void) | undefined;
+    let markStarted: (() => void) | undefined;
+    const started = new Promise<void>((resolve) => { markStarted = resolve; });
+    const execute = async () => new Promise<{ text: string }>((resolve) => {
+      releaseExecute = resolve;
+      markStarted?.();
+    });
+    const service = new ObjectiveService(stores, null as never, null as never, execute as never, async () => "BASE");
+
+    const pending = service.generateTasks({ chatId: "chat_1" as never, profile, model: "m", context });
+    await started;
+    await service.updateTask("chat_1" as never, "t1", { description: "User-edited route" });
+    releaseExecute?.({ text: '{"tasks":[{"description":"Stale generated route"}]}' });
+
+    const result = await pending;
+    expect(result.tasks[0].description).toBe("User-edited route");
+    expect((readState() as ObjectiveState).tasks[0].description).toBe("User-edited route");
+  });
+
+  it("merges generated tasks into fresh config changed during the LLM await", async () => {
+    const initial: ObjectiveState = {
+      ...defaultObjectiveState(),
+      objectiveDescription: "Escape",
+      tasks: [{ id: "t1", description: "Original route", status: OBJECTIVE_TASK_STATUS.pending }],
+      injectionDepth: 1,
+    };
+    const { stores, readState } = makeMockStores(initial as unknown as Record<string, unknown>);
+    let releaseExecute: ((value: { text: string }) => void) | undefined;
+    let markStarted: (() => void) | undefined;
+    const started = new Promise<void>((resolve) => { markStarted = resolve; });
+    const execute = async () => new Promise<{ text: string }>((resolve) => {
+      releaseExecute = resolve;
+      markStarted?.();
+    });
+    const service = new ObjectiveService(stores, null as never, null as never, execute as never, async () => "BASE");
+
+    const pending = service.generateTasks({ chatId: "chat_1" as never, profile, model: "m", context });
+    await started;
+    await service.updateObjectiveConfig("chat_1" as never, { injectionDepth: 7 });
+    releaseExecute?.({ text: '{"tasks":[{"description":"Fresh generated route"}]}' });
+
+    const result = await pending;
+    expect(result.tasks[0].description).toBe("Fresh generated route");
+    expect(result.injectionDepth).toBe(7);
+    expect((readState() as ObjectiveState).injectionDepth).toBe(7);
+  });
+
+  it("does not lose a config write started after the generation commit read", async () => {
+    let state: ObjectiveState = {
+      ...defaultObjectiveState(),
+      objectiveDescription: "Escape",
+      tasks: [{ id: "t1", description: "Original route", status: OBJECTIVE_TASK_STATUS.pending }],
+      injectionDepth: 1,
+    };
+    let updateCalls = 0;
+    let releaseFirstSave: (() => void) | undefined;
+    let markFirstSaveStarted: (() => void) | undefined;
+    const firstSaveStarted = new Promise<void>((resolve) => { markFirstSaveStarted = resolve; });
+    const stores = {
+      chats: {
+        getById: async () => ({ insightsObjectiveState: state }),
+        updateInsightsObjectiveState: async (_id: string, input: { insightsObjectiveState?: Record<string, unknown> }) => {
+          updateCalls += 1;
+          const next = input.insightsObjectiveState as unknown as ObjectiveState;
+          if (updateCalls === 1) {
+            markFirstSaveStarted?.();
+            await new Promise<void>((resolve) => { releaseFirstSave = resolve; });
+          }
+          state = next;
+          return { insightsObjectiveState: state };
+        },
+      },
+    } as unknown as StoreContainer;
+    const service = new ObjectiveService(
+      stores,
+      null as never,
+      null as never,
+      async () => ({ text: '{"tasks":[{"description":"Generated route"}]}' }) as never,
+      async () => "BASE",
+    );
+
+    const generation = service.generateTasks({ chatId: "chat_1" as never, profile, model: "m", context });
+    await firstSaveStarted;
+    const config = service.updateObjectiveConfig("chat_1" as never, { injectionDepth: 7 });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    releaseFirstSave?.();
+    await Promise.all([generation, config]);
+
+    expect(state.tasks[0].description).toBe("Generated route");
+    expect(state.injectionDepth).toBe(7);
+    expect(updateCalls).toBe(2);
+  });
+
+  it("serializes generate and check LLM work per chat", async () => {
+    const initial: ObjectiveState = {
+      ...defaultObjectiveState(),
+      objectiveDescription: "Escape",
+      tasks: [{ id: "t1", description: "Wait", status: OBJECTIVE_TASK_STATUS.pending }],
+    };
+    const { stores } = makeMockStores(initial as unknown as Record<string, unknown>);
+    const releases: Array<(value: { text: string }) => void> = [];
+    let executeCalls = 0;
+    let activeExecutions = 0;
+    let maxActiveExecutions = 0;
+    const execute = async () => {
+      const call = executeCalls++;
+      activeExecutions += 1;
+      maxActiveExecutions = Math.max(maxActiveExecutions, activeExecutions);
+      return new Promise<{ text: string }>((resolve) => {
+        releases[call] = (value) => {
+          activeExecutions -= 1;
+          resolve(value);
+        };
+      });
+    };
+    const service = new ObjectiveService(stores, null as never, null as never, execute as never, async () => "BASE");
+
+    const generate = service.generateTasks({ chatId: "chat_1" as never, profile, model: "m", context });
+    while (executeCalls < 1) await Promise.resolve();
+    const check = service.checkCompletion({ chatId: "chat_1" as never, profile, model: "m", context });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const callsBeforeFirstRelease = executeCalls;
+
+    releases[0]?.({ text: '{"tasks":[{"description":"Generated task"}]}' });
+    while (executeCalls < 2) await Promise.resolve();
+    releases[1]?.({ text: '{"completed":false}' });
+    await Promise.all([generate, check]);
+
+    expect(callsBeforeFirstRelease).toBe(1);
+    expect(maxActiveExecutions).toBe(1);
+  });
+
   it("checkCompletion advances the route when the LLM says DONE", async () => {
     const initial: ObjectiveState = {
       objectiveDescription: "Escape",
@@ -219,6 +358,32 @@ describe("ObjectiveService (INS-3b logic + INS-3c assembler wiring)", () => {
     expect(after.tasks[0].status).toBe(OBJECTIVE_TASK_STATUS.completed);
     expect(after.tasks[1].status).toBe(OBJECTIVE_TASK_STATUS.pending);
     expect((await service.getActiveTask("chat_1" as never))?.description).toBe("Run");
+  });
+
+  it("does not complete a target edited while its check is in flight", async () => {
+    const initial: ObjectiveState = {
+      ...defaultObjectiveState(),
+      objectiveDescription: "Escape",
+      tasks: [{ id: "t1", description: "Pick the lock", status: OBJECTIVE_TASK_STATUS.pending }],
+    };
+    const { stores, readState } = makeMockStores(initial as unknown as Record<string, unknown>);
+    let releaseExecute: ((value: { text: string }) => void) | undefined;
+    let markStarted: (() => void) | undefined;
+    const started = new Promise<void>((resolve) => { markStarted = resolve; });
+    const execute = async () => new Promise<{ text: string }>((resolve) => {
+      releaseExecute = resolve;
+      markStarted?.();
+    });
+    const service = new ObjectiveService(stores, null as never, null as never, execute as never, async () => "BASE");
+
+    const pending = service.checkCompletion({ chatId: "chat_1" as never, profile, model: "m", context });
+    await started;
+    await service.updateTask("chat_1" as never, "t1", { description: "Find another exit" });
+    releaseExecute?.({ text: '{"completed":true}' });
+
+    const result = await pending;
+    expect(result.tasks[0]).toEqual({ id: "t1", description: "Find another exit", status: OBJECTIVE_TASK_STATUS.pending });
+    expect((readState() as ObjectiveState).tasks[0].status).toBe(OBJECTIVE_TASK_STATUS.pending);
   });
 
   it("checkCompletion is a no-op when the LLM says PENDING", async () => {
@@ -404,6 +569,7 @@ describe("ObjectiveService (INS-3b logic + INS-3c assembler wiring)", () => {
 });
 
 describe("ObjectiveService.triggerAutoCheck (INS-4 orchestration)", () => {
+  const trigger = (branchId = "branch_1", messageId = "message_1") => ({ chatId: "chat_1", branchId, messageId });
   /** Build a service wired for the auto-check path: a chat with insightsConfig +
    *  a messages store, a stub sessionRuntime.chatLifecycle.buildPipelineContext,
    *  and a stub providerProfiles.resolveActiveProviderProfile. The trailing-lock
@@ -424,6 +590,8 @@ describe("ObjectiveService.triggerAutoCheck (INS-4 orchestration)", () => {
     getBuildCalls: () => number;
     getRecentMessageLimit: () => number | undefined;
     getExecuteCalls: () => number;
+    getMessageBranchIds: () => string[];
+    getContextBranchIds: () => string[];
     readState: () => ObjectiveState;
   } {
     const { objectiveEnabled, autoCheckFrequency, assistantCount, contextWindow = 10, tasks = [], reply = '{"completed":true}', hasProvider = true, model = "gpt-test" } = opts;
@@ -441,6 +609,8 @@ describe("ObjectiveService.triggerAutoCheck (INS-4 orchestration)", () => {
     } satisfies Omit<ObjectiveState, "useChatModel" | "providerProfileId" | "model">;
     let state: Record<string, unknown> = baseState as unknown as Record<string, unknown>;
     const messages = Array.from({ length: assistantCount }, (_, i) => ({ id: `a${i}`, role: "assistant", position: i, content: `msg ${i}` }));
+    const messageBranchIds: string[] = [];
+    const contextBranchIds: string[] = [];
     const stores = {
       chats: {
         getById: async () => ({ id: "chat_1", activeBranchId: "branch_1", insightsConfig: { objectiveEnabled }, insightsObjectiveState: state }),
@@ -449,16 +619,20 @@ describe("ObjectiveService.triggerAutoCheck (INS-4 orchestration)", () => {
           return { insightsObjectiveState: state };
         },
       },
-      messages: { getMessages: async () => messages },
+      messages: { getMessages: async (branchId: string) => {
+        messageBranchIds.push(branchId);
+        return messages;
+      } },
     } as unknown as StoreContainer;
     let buildCalls = 0;
     let recentMessageLimit: number | undefined;
     let executeCalls = 0;
     const sessionRuntime = {
       chatLifecycle: {
-        buildPipelineContext: async (input: { recentMessageLimit?: number }) => {
+        buildPipelineContext: async (input: { recentMessageLimit?: number; branchId?: string }) => {
           buildCalls += 1;
           recentMessageLimit = input.recentMessageLimit;
+          if (input.branchId) contextBranchIds.push(input.branchId);
           return { context };
         },
       },
@@ -477,20 +651,22 @@ describe("ObjectiveService.triggerAutoCheck (INS-4 orchestration)", () => {
       getBuildCalls: () => buildCalls,
       getRecentMessageLimit: () => recentMessageLimit,
       getExecuteCalls: () => executeCalls,
+      getMessageBranchIds: () => messageBranchIds,
+      getContextBranchIds: () => contextBranchIds,
       readState: () => state as unknown as ObjectiveState,
     };
   }
 
   it("no-ops when objective is disabled (no provider lookup, no context build)", async () => {
     const t = makeTriggerService({ objectiveEnabled: false, autoCheckFrequency: 1, assistantCount: 1 });
-    await t.service.triggerAutoCheck("chat_1");
+    await t.service.triggerAutoCheck(trigger());
     expect(t.getBuildCalls()).toBe(0);
     expect(t.getExecuteCalls()).toBe(0);
   });
 
   it("no-ops when autoCheckFrequency is 0 (manual only)", async () => {
     const t = makeTriggerService({ objectiveEnabled: true, autoCheckFrequency: 0, assistantCount: 5 });
-    await t.service.triggerAutoCheck("chat_1");
+    await t.service.triggerAutoCheck(trigger());
     expect(t.getBuildCalls()).toBe(0);
     expect(t.getExecuteCalls()).toBe(0);
   });
@@ -498,10 +674,10 @@ describe("ObjectiveService.triggerAutoCheck (INS-4 orchestration)", () => {
   it("gates on the assistant-message count modulo frequency (every N messages)", async () => {
     // frequency 3: counts 1 and 2 do not trigger; count 3 does.
     const off1 = makeTriggerService({ objectiveEnabled: true, autoCheckFrequency: 3, assistantCount: 1 });
-    await off1.service.triggerAutoCheck("chat_1");
+    await off1.service.triggerAutoCheck(trigger());
     expect(off1.getExecuteCalls()).toBe(0);
     const off2 = makeTriggerService({ objectiveEnabled: true, autoCheckFrequency: 3, assistantCount: 2 });
-    await off2.service.triggerAutoCheck("chat_1");
+    await off2.service.triggerAutoCheck(trigger());
     expect(off2.getExecuteCalls()).toBe(0);
     const on3 = makeTriggerService({
       objectiveEnabled: true,
@@ -509,14 +685,14 @@ describe("ObjectiveService.triggerAutoCheck (INS-4 orchestration)", () => {
       assistantCount: 3,
       tasks: [{ id: "obj_task_1", description: "Reach the gates", status: OBJECTIVE_TASK_STATUS.pending }],
     });
-    await on3.service.triggerAutoCheck("chat_1");
+    await on3.service.triggerAutoCheck(trigger());
     expect(on3.getExecuteCalls()).toBe(1);
     expect(on3.readState().tasks[0].status).toBe(OBJECTIVE_TASK_STATUS.completed);
   });
 
   it("skips silently when no active provider profile is configured", async () => {
     const t = makeTriggerService({ objectiveEnabled: true, autoCheckFrequency: 1, assistantCount: 1, hasProvider: false });
-    await t.service.triggerAutoCheck("chat_1");
+    await t.service.triggerAutoCheck(trigger());
     expect(t.getBuildCalls()).toBe(0);
     expect(t.getExecuteCalls()).toBe(0);
   });
@@ -529,11 +705,120 @@ describe("ObjectiveService.triggerAutoCheck (INS-4 orchestration)", () => {
       contextWindow: 4,
       tasks: [{ id: "obj_task_1", description: "Reach the gates", status: OBJECTIVE_TASK_STATUS.pending }],
     });
-    await t.service.triggerAutoCheck("chat_1");
+    await t.service.triggerAutoCheck(trigger("branch_committed", "message_committed"));
     expect(t.getBuildCalls()).toBe(1); // context built via the session runtime
     expect(t.getRecentMessageLimit()).toBe(4);
+    expect(t.getMessageBranchIds()).toEqual(["branch_committed"]);
+    expect(t.getContextBranchIds()).toEqual(["branch_committed"]);
     expect(t.getExecuteCalls()).toBe(1);
     expect(t.readState().tasks[0].status).toBe(OBJECTIVE_TASK_STATUS.completed);
+  });
+
+  it("serializes a manual generation against an auto-check for the same chat", async () => {
+    let state: ObjectiveState = {
+      ...defaultObjectiveState(),
+      objectiveDescription: "Escape",
+      autoCheckFrequency: 1,
+      tasks: [{ id: "t1", description: "Wait", status: OBJECTIVE_TASK_STATUS.pending }],
+    };
+    const stores = {
+      chats: {
+        getById: async () => ({ id: "chat_1", activeBranchId: "branch_1", insightsConfig: { objectiveEnabled: true }, insightsObjectiveState: state }),
+        updateInsightsObjectiveState: async (_id: string, input: { insightsObjectiveState?: ObjectiveState }) => {
+          if (input.insightsObjectiveState) state = input.insightsObjectiveState;
+          return { insightsObjectiveState: state };
+        },
+      },
+      messages: { getMessages: async () => [{ id: "message_1", role: "assistant", position: 0, content: "reply" }] },
+    } as unknown as StoreContainer;
+    const sessionRuntime = { chatLifecycle: { buildPipelineContext: async () => ({ context }) } } as never;
+    const providerProfiles = { resolveActiveProviderProfile: async () => ({ id: "profile_1", defaultModel: "model_1" }) } as never;
+    let executeCalls = 0;
+    let activeExecutions = 0;
+    let maxActiveExecutions = 0;
+    let releaseFirst: (() => void) | undefined;
+    let markFirstStarted: (() => void) | undefined;
+    const firstStarted = new Promise<void>((resolve) => { markFirstStarted = resolve; });
+    const execute = async () => {
+      executeCalls += 1;
+      activeExecutions += 1;
+      maxActiveExecutions = Math.max(maxActiveExecutions, activeExecutions);
+      if (executeCalls === 1) {
+        markFirstStarted?.();
+        await new Promise<void>((resolve) => { releaseFirst = resolve; });
+        activeExecutions -= 1;
+        return { text: '{"tasks":[{"description":"Generated task"}]}' } as never;
+      }
+      activeExecutions -= 1;
+      return { text: '{"completed":false}' } as never;
+    };
+    const service = new ObjectiveService(stores, sessionRuntime, providerProfiles, execute as never, async () => "BASE");
+
+    const manual = service.generateTasks({ chatId: "chat_1" as never, profile, model: "m", context });
+    await firstStarted;
+    const automatic = service.triggerAutoCheck(trigger());
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(executeCalls).toBe(1);
+    releaseFirst?.();
+    await Promise.all([manual, automatic]);
+
+    expect(executeCalls).toBe(2);
+    expect(maxActiveExecutions).toBe(1);
+  });
+
+  it("uses the latest immutable branch for a trailing event from another branch", async () => {
+    const state: ObjectiveState = {
+      ...defaultObjectiveState(),
+      objectiveDescription: "Escape",
+      autoCheckFrequency: 1,
+      tasks: [{ id: "t1", description: "Wait", status: OBJECTIVE_TASK_STATUS.pending }],
+    };
+    const messageBranchIds: string[] = [];
+    const contextBranchIds: string[] = [];
+    const stores = {
+      chats: {
+        // Simulate the UI switching elsewhere while the committed event still
+        // identifies the branch whose assistant message caused the trigger.
+        getById: async () => ({ id: "chat_1", activeBranchId: "branch_switched", insightsConfig: { objectiveEnabled: true }, insightsObjectiveState: state }),
+        updateInsightsObjectiveState: async () => ({ insightsObjectiveState: state }),
+      },
+      messages: { getMessages: async (branchId: string) => {
+        messageBranchIds.push(branchId);
+        return [{ id: `message_${branchId}`, role: "assistant", position: 0, content: "reply" }];
+      } },
+    } as unknown as StoreContainer;
+    const sessionRuntime = {
+      chatLifecycle: {
+        buildPipelineContext: async (input: { branchId: string }) => {
+          contextBranchIds.push(input.branchId);
+          return { context };
+        },
+      },
+    } as never;
+    let executeCalls = 0;
+    let releaseFirst: (() => void) | undefined;
+    let markFirstStarted: (() => void) | undefined;
+    const firstStarted = new Promise<void>((resolve) => { markFirstStarted = resolve; });
+    const execute = async () => {
+      executeCalls += 1;
+      if (executeCalls === 1) {
+        markFirstStarted?.();
+        await new Promise<void>((resolve) => { releaseFirst = resolve; });
+      }
+      return { text: '{"completed":false}' } as never;
+    };
+    const providerProfiles = { resolveActiveProviderProfile: async () => ({ id: "profile_1", defaultModel: "model_1" }) } as never;
+    const service = new ObjectiveService(stores, sessionRuntime, providerProfiles, execute as never, async () => "BASE");
+
+    const first = service.triggerAutoCheck(trigger("branch_a", "message_a"));
+    await firstStarted;
+    await service.triggerAutoCheck(trigger("branch_b", "message_b"));
+    releaseFirst?.();
+    await first;
+
+    expect(messageBranchIds).toEqual(["branch_a", "branch_b"]);
+    expect(contextBranchIds).toEqual(["branch_a", "branch_b"]);
+    expect(executeCalls).toBe(2);
   });
 
   it("does not advance when the LLM says PENDING", async () => {
@@ -544,7 +829,7 @@ describe("ObjectiveService.triggerAutoCheck (INS-4 orchestration)", () => {
       reply: '{"completed":false}',
       tasks: [{ id: "obj_task_1", description: "Reach the gates", status: OBJECTIVE_TASK_STATUS.pending }],
     });
-    await t.service.triggerAutoCheck("chat_1");
+    await t.service.triggerAutoCheck(trigger());
     expect(t.getExecuteCalls()).toBe(1);
     expect(t.readState().tasks[0].status).toBe(OBJECTIVE_TASK_STATUS.pending);
   });

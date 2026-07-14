@@ -33,8 +33,8 @@
  * checkCompletion marks the current target 'completed'; the next pending then
  * becomes the implicit target.
  */
-import type { AssemblePromptResponse, ChatId, ObjectiveState, ObjectiveTask, ObjectiveTaskStatus } from "@vibe-tavern/domain";
-import { OBJECTIVE_TASK_STATUS } from "@vibe-tavern/domain";
+import type { AssemblePromptResponse, ChatBranchId, ChatId, ObjectiveState, ObjectiveTask, ObjectiveTaskStatus } from "@vibe-tavern/domain";
+import { brandId, OBJECTIVE_TASK_STATUS } from "@vibe-tavern/domain";
 import { z } from "zod";
 import type { StoreContainer } from "@vibe-tavern/db";
 import { getInsightsAssembler } from "@vibe-tavern/prompt-pipeline";
@@ -234,12 +234,48 @@ export interface ObjectiveGenerateInput {
 
 export interface ObjectiveCheckInput extends ObjectiveGenerateInput {}
 
+export interface ObjectiveAutoCheckTrigger {
+  chatId: string;
+  branchId: string;
+  messageId: string;
+}
+
+function routeRevision(state: ObjectiveState): string {
+  return JSON.stringify({ objectiveDescription: state.objectiveDescription, tasks: state.tasks });
+}
+
+/** Small FIFO keyed coordinator used for independent LLM and commit lanes. */
+class ObjectiveKeyedCoordinator {
+  private readonly tails = new Map<string, Promise<void>>();
+
+  async run<T>(chatId: ChatId, task: () => Promise<T>): Promise<T> {
+    const key = chatId as string;
+    const previous = this.tails.get(key) ?? Promise.resolve();
+    let release: (() => void) | undefined;
+    const slot = new Promise<void>((resolve) => { release = resolve; });
+    const tail = previous.catch(() => undefined).then(() => slot);
+    this.tails.set(key, tail);
+
+    await previous.catch(() => undefined);
+    try {
+      return await task();
+    } finally {
+      release?.();
+      if (this.tails.get(key) === tail) this.tails.delete(key);
+    }
+  }
+}
+
 export class ObjectiveService {
-  /** Trailing-edge lock for auto-check — a trigger dropped mid-flight marks the
-   *  key dirty and the running check re-runs once before releasing, so the
-   *  latest message is always evaluated (objective is forward-injected → a
-   *  one-turn detection lag is toxic). See BackgroundTaskLocks.runExclusiveTrailing. */
+  /** Chat-keyed trailing lock for auto-check. A trigger dropped mid-flight
+   *  replaces `latestAutoTrigger`; the owner re-runs against that event's exact
+   *  branch before releasing. See BackgroundTaskLocks.runExclusiveTrailing. */
   private readonly autoCheckLocks = new BackgroundTaskLocks();
+  private readonly latestAutoTrigger = new Map<string, ObjectiveAutoCheckTrigger>();
+  /** Long lane: generate/check LLM work is serialized per chat. */
+  private readonly llmCoordinator = new ObjectiveKeyedCoordinator();
+  /** Short lane: every Objective read-modify-write commit is atomic per chat. */
+  private readonly stateCoordinator = new ObjectiveKeyedCoordinator();
 
   constructor(
     private readonly stores: StoreContainer,
@@ -268,22 +304,28 @@ export class ObjectiveService {
    * list. Throws on an empty generation (the LLM produced no parseable tasks).
    */
   async generateTasks(input: ObjectiveGenerateInput): Promise<ObjectiveState> {
-    input.signal?.throwIfAborted();
-    const existing = await this.getState(input.chatId);
-    const state = existing ?? defaultObjectiveState();
-    const instructionBase = await this.resolvePrompt("objectiveGenerate", state.generatePrompt);
-    const instruction = composeGenerateInstruction(instructionBase, state.objectiveDescription);
-    const prompt = this.buildPrompt(input.context, instruction);
-    const result = await this.execute({ profile: input.profile, model: input.model, prompt, signal: input.signal });
-    input.signal?.throwIfAborted();
-    const tasks = parseTaskList(result.text);
-    if (tasks.length === 0) {
-      throw new Error("Objective generation produced no tasks — try adjusting the objective description or the generate prompt.");
-    }
-    const next: ObjectiveState = { ...state, tasks };
-    input.signal?.throwIfAborted();
-    await this.saveState(input.chatId, next);
-    return next;
+    return this.llmCoordinator.run(input.chatId, async () => {
+      input.signal?.throwIfAborted();
+      const state = await this.getState(input.chatId);
+      const revision = routeRevision(state);
+      const instructionBase = await this.resolvePrompt("objectiveGenerate", state.generatePrompt);
+      const instruction = composeGenerateInstruction(instructionBase, state.objectiveDescription);
+      const prompt = this.buildPrompt(input.context, instruction);
+      const result = await this.execute({ profile: input.profile, model: input.model, prompt, signal: input.signal });
+      input.signal?.throwIfAborted();
+      const tasks = parseTaskList(result.text);
+      if (tasks.length === 0) {
+        throw new Error("Objective generation produced no tasks — try adjusting the objective description or the generate prompt.");
+      }
+
+      // CRUD/config remain responsive during the LLM await. Re-read and merge
+      // only the generated route; if the user edited the route/goal itself,
+      // discard this stale generation rather than overwriting their intent.
+      return this.commitState(input.chatId, (current) => {
+        if (routeRevision(current) !== revision) return null;
+        return { ...current, tasks };
+      }, input.signal);
+    });
   }
 
   /**
@@ -292,21 +334,35 @@ export class ObjectiveService {
    * LLM says PENDING. Returns the (possibly updated) state.
    */
   async checkCompletion(input: ObjectiveCheckInput): Promise<ObjectiveState> {
-    input.signal?.throwIfAborted();
-    const state = await this.getState(input.chatId);
-    if (!state) return defaultObjectiveState();
-    const target = selectActiveTask(state.tasks);
-    if (!target) return state;
-    const instructionBase = await this.resolvePrompt("objectiveCheck", state.checkPrompt);
-    const instruction = composeCheckInstruction(instructionBase, state.objectiveDescription, target.description);
-    const prompt = this.buildPrompt(input.context, instruction);
-    const result = await this.execute({ profile: input.profile, model: input.model, prompt, signal: input.signal });
-    input.signal?.throwIfAborted();
-    if (!parseCheckVerdict(result.text)) return state;
-    const next: ObjectiveState = { ...state, tasks: advanceAfterCompletion(state.tasks) };
-    input.signal?.throwIfAborted();
-    await this.saveState(input.chatId, next);
-    return next;
+    return this.llmCoordinator.run(input.chatId, async () => {
+      input.signal?.throwIfAborted();
+      const state = await this.getState(input.chatId);
+      const target = selectActiveTask(state.tasks);
+      if (!target) return state;
+      const instructionBase = await this.resolvePrompt("objectiveCheck", state.checkPrompt);
+      const instruction = composeCheckInstruction(instructionBase, state.objectiveDescription, target.description);
+      const prompt = this.buildPrompt(input.context, instruction);
+      const result = await this.execute({ profile: input.profile, model: input.model, prompt, signal: input.signal });
+      input.signal?.throwIfAborted();
+      const completed = parseCheckVerdict(result.text);
+      if (!completed) return this.getState(input.chatId);
+
+      return this.commitState(input.chatId, (current) => {
+        // The verdict belongs to one immutable target. A route edit/reorder/status
+        // change during the await invalidates it; never advance a replacement.
+        const currentTarget = selectActiveTask(current.tasks);
+        const matchingTask = current.tasks.find((task) => task.id === target.id);
+        if (
+          currentTarget?.id !== target.id ||
+          !matchingTask ||
+          matchingTask.description !== target.description ||
+          matchingTask.status !== target.status
+        ) {
+          return null;
+        }
+        return { ...current, tasks: advanceAfterCompletion(current.tasks) };
+      }, input.signal);
+    });
   }
 
   /** Build the insight one-shot prompt (RP world context + instruction) via the assembler registry. */
@@ -319,15 +375,14 @@ export class ObjectiveService {
   async addTask(chatId: ChatId, description: string): Promise<ObjectiveState> {
     const normalizedDescription = description.trim();
     if (!normalizedDescription) throw new Error("Objective task description is required.");
-    const base = (await this.getState(chatId)) ?? defaultObjectiveState();
-    const task: ObjectiveTask = {
-      id: `obj_task_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`,
-      description: normalizedDescription,
-      status: OBJECTIVE_TASK_STATUS.pending,
-    };
-    const next: ObjectiveState = { ...base, tasks: [...base.tasks, task] };
-    await this.saveState(chatId, next);
-    return next;
+    return this.commitState(chatId, (base) => {
+      const task: ObjectiveTask = {
+        id: `obj_task_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`,
+        description: normalizedDescription,
+        status: OBJECTIVE_TASK_STATUS.pending,
+      };
+      return { ...base, tasks: [...base.tasks, task] };
+    });
   }
 
   /** Patch a task (description and/or status). Throws if the task id is unknown. */
@@ -337,64 +392,58 @@ export class ObjectiveService {
     if (patch.status !== undefined && !isObjectiveTaskStatus(patch.status)) {
       throw new Error(`Unknown objective task status: '${String(patch.status)}'.`);
     }
-    const base = (await this.getState(chatId)) ?? defaultObjectiveState();
-    let found = false;
-    const tasks = base.tasks.map((task) => {
-      if (task.id === taskId) {
-        found = true;
-        return {
-          ...task,
-          ...(description !== undefined ? { description } : {}),
-          ...(patch.status !== undefined ? { status: patch.status } : {}),
-        };
-      }
-      if (patch.status === OBJECTIVE_TASK_STATUS.active && task.status === OBJECTIVE_TASK_STATUS.active) {
-        return { ...task, status: OBJECTIVE_TASK_STATUS.pending };
-      }
-      return task;
+    return this.commitState(chatId, (base) => {
+      let found = false;
+      const tasks = base.tasks.map((task) => {
+        if (task.id === taskId) {
+          found = true;
+          return {
+            ...task,
+            ...(description !== undefined ? { description } : {}),
+            ...(patch.status !== undefined ? { status: patch.status } : {}),
+          };
+        }
+        if (patch.status === OBJECTIVE_TASK_STATUS.active && task.status === OBJECTIVE_TASK_STATUS.active) {
+          return { ...task, status: OBJECTIVE_TASK_STATUS.pending };
+        }
+        return task;
+      });
+      if (!found) throw new Error(`Objective task '${taskId}' not found in chat '${chatId}'.`);
+      return { ...base, tasks };
     });
-    if (!found) throw new Error(`Objective task '${taskId}' not found in chat '${chatId}'.`);
-    const next: ObjectiveState = { ...base, tasks };
-    await this.saveState(chatId, next);
-    return next;
   }
 
   /** Reorder the route. The supplied ids must be one complete permutation. */
   async reorderTasks(chatId: ChatId, taskIds: string[]): Promise<ObjectiveState> {
-    const base = (await this.getState(chatId)) ?? defaultObjectiveState();
-    const uniqueIds = new Set(taskIds);
-    const taskById = new Map(base.tasks.map((task) => [task.id, task]));
-    if (taskIds.length !== base.tasks.length || uniqueIds.size !== base.tasks.length || taskIds.some((id) => !taskById.has(id))) {
-      throw new Error("Objective task order must be a complete permutation of the current route.");
-    }
-    const tasks = taskIds.map((id) => taskById.get(id));
-    if (tasks.some((task) => task === undefined)) {
-      throw new Error("Objective task order must be a complete permutation of the current route.");
-    }
-    const next: ObjectiveState = { ...base, tasks: tasks.filter((task): task is ObjectiveTask => task !== undefined) };
-    await this.saveState(chatId, next);
-    return next;
+    return this.commitState(chatId, (base) => {
+      const uniqueIds = new Set(taskIds);
+      const taskById = new Map(base.tasks.map((task) => [task.id, task]));
+      if (taskIds.length !== base.tasks.length || uniqueIds.size !== base.tasks.length || taskIds.some((id) => !taskById.has(id))) {
+        throw new Error("Objective task order must be a complete permutation of the current route.");
+      }
+      const tasks = taskIds.map((id) => taskById.get(id));
+      if (tasks.some((task) => task === undefined)) {
+        throw new Error("Objective task order must be a complete permutation of the current route.");
+      }
+      return { ...base, tasks: tasks.filter((task): task is ObjectiveTask => task !== undefined) };
+    });
   }
 
   /** Remove a task from the route. Throws if the task id is unknown. */
   async deleteTask(chatId: ChatId, taskId: string): Promise<ObjectiveState> {
-    const base = (await this.getState(chatId)) ?? defaultObjectiveState();
-    if (!base.tasks.some((t) => t.id === taskId)) {
-      throw new Error(`Objective task '${taskId}' not found in chat '${chatId}'.`);
-    }
-    const next: ObjectiveState = { ...base, tasks: base.tasks.filter((t) => t.id !== taskId) };
-    await this.saveState(chatId, next);
-    return next;
+    return this.commitState(chatId, (base) => {
+      if (!base.tasks.some((task) => task.id === taskId)) {
+        throw new Error(`Objective task '${taskId}' not found in chat '${chatId}'.`);
+      }
+      return { ...base, tasks: base.tasks.filter((task) => task.id !== taskId) };
+    });
   }
 
   /** Set/replace the objective description (the high-level goal). */
   async setObjectiveDescription(chatId: ChatId, objectiveDescription: string): Promise<ObjectiveState> {
     const normalizedDescription = objectiveDescription.trim();
     if (!normalizedDescription) throw new Error("Objective description is required.");
-    const base = (await this.getState(chatId)) ?? defaultObjectiveState();
-    const next: ObjectiveState = { ...base, objectiveDescription: normalizedDescription };
-    await this.saveState(chatId, next);
-    return next;
+    return this.commitState(chatId, (base) => ({ ...base, objectiveDescription: normalizedDescription }));
   }
 
   /**
@@ -408,28 +457,28 @@ export class ObjectiveService {
     chatId: ChatId,
     patch: Partial<Pick<ObjectiveState, "autoCheckFrequency" | "contextWindow" | "injectionDepth" | "generatePrompt" | "checkPrompt" | "injectPrompt" | "useChatModel" | "providerProfileId" | "model">>,
   ): Promise<ObjectiveState> {
-    const base = (await this.getState(chatId)) ?? defaultObjectiveState();
-    const next: ObjectiveState = { ...base };
-    if (patch.autoCheckFrequency !== undefined) {
-      const n = Math.floor(patch.autoCheckFrequency);
-      next.autoCheckFrequency = Number.isFinite(n) && n >= 0 ? n : 0;
-    }
-    if (patch.contextWindow !== undefined) {
-      const n = Math.floor(patch.contextWindow);
-      next.contextWindow = Number.isFinite(n) && n >= 1 ? n : OBJECTIVE_CONTEXT_WINDOW;
-    }
-    if (patch.injectionDepth !== undefined) {
-      const d = Math.floor(patch.injectionDepth);
-      next.injectionDepth = Number.isFinite(d) && d >= 1 ? d : 1;
-    }
-    if (patch.generatePrompt !== undefined) next.generatePrompt = patch.generatePrompt;
-    if (patch.checkPrompt !== undefined) next.checkPrompt = patch.checkPrompt;
-    if (patch.injectPrompt !== undefined) next.injectPrompt = patch.injectPrompt;
-    if (patch.useChatModel !== undefined) next.useChatModel = patch.useChatModel;
-    if (patch.providerProfileId !== undefined) next.providerProfileId = patch.providerProfileId?.trim() || null;
-    if (patch.model !== undefined) next.model = patch.model?.trim() || null;
-    await this.saveState(chatId, next);
-    return next;
+    return this.commitState(chatId, (base) => {
+      const next: ObjectiveState = { ...base };
+      if (patch.autoCheckFrequency !== undefined) {
+        const n = Math.floor(patch.autoCheckFrequency);
+        next.autoCheckFrequency = Number.isFinite(n) && n >= 0 ? n : 0;
+      }
+      if (patch.contextWindow !== undefined) {
+        const n = Math.floor(patch.contextWindow);
+        next.contextWindow = Number.isFinite(n) && n >= 1 ? n : OBJECTIVE_CONTEXT_WINDOW;
+      }
+      if (patch.injectionDepth !== undefined) {
+        const d = Math.floor(patch.injectionDepth);
+        next.injectionDepth = Number.isFinite(d) && d >= 1 ? d : 1;
+      }
+      if (patch.generatePrompt !== undefined) next.generatePrompt = patch.generatePrompt;
+      if (patch.checkPrompt !== undefined) next.checkPrompt = patch.checkPrompt;
+      if (patch.injectPrompt !== undefined) next.injectPrompt = patch.injectPrompt;
+      if (patch.useChatModel !== undefined) next.useChatModel = patch.useChatModel;
+      if (patch.providerProfileId !== undefined) next.providerProfileId = patch.providerProfileId?.trim() || null;
+      if (patch.model !== undefined) next.model = patch.model?.trim() || null;
+      return next;
+    });
   }
 
   /**
@@ -437,52 +486,82 @@ export class ObjectiveService {
    * `message.appended` (send/generate only — the swipe/regenerate path does not
    * emit it). Gates on objectiveEnabled + autoCheckFrequency, then runs
    * {@link checkCompletion} under the trailing-edge lock so a burst of messages
-   * never leaves the latest unevaluated. The task closure re-reads fresh context
-   * on each invocation (trailing re-run correctness). Provider/model resolution
+   * never leaves the latest unevaluated. Each invocation consumes the latest
+   * immutable `{ chatId, branchId, messageId }` event and re-reads state/context
+   * for that branch (trailing re-run correctness). Provider/model resolution
    * comes from the stored per-insight config (use chat model or the separately
    * pinned profile/model), mirroring auto-summary. Fire-and-forget — the EventBus
    * caller never waits on or sees errors from this path (they go to logSendDebug).
    */
-  async triggerAutoCheck(chatIdValue: string): Promise<void> {
-    const chat = await this.stores.chats.getById(chatIdValue);
-    if (!chat) return;
-    if (!isObjectiveEnabled(chat.insightsConfig)) return;
-    const state = await this.getState(chat.id as ChatId);
-    if (!state || state.autoCheckFrequency <= 0) return;
-    const messages = await this.stores.messages.getMessages(chat.activeBranchId);
-    const assistantCount = messages.filter((m) => m.role === "assistant").length;
-    if (assistantCount === 0 || assistantCount % state.autoCheckFrequency !== 0) return;
-
-    const resolved = await this.resolveInsightProvider(state);
-    if (!resolved) {
-      logSendDebug("insights.objective.auto.skip", { chatId: chat.id, reason: state.useChatModel ? "no_provider" : "no_provider_or_model" });
-      return;
-    }
-    const { profile, model } = resolved;
-
-    const lockKey = `${chat.id}:${chat.activeBranchId}`;
-    await this.autoCheckLocks.runExclusiveTrailing(
+  async triggerAutoCheck(trigger: ObjectiveAutoCheckTrigger): Promise<void> {
+    const lockKey = trigger.chatId;
+    this.latestAutoTrigger.set(lockKey, trigger);
+    const ran = await this.autoCheckLocks.runExclusiveTrailing(
       lockKey,
       async () => {
-        // Re-build context on every invocation (incl. the trailing re-run) so
-        // the check evaluates the LATEST messages, not a trigger-time snapshot.
+        // Trailing runs consume the latest immutable event identity, not the
+        // first closure's branch. Every read and context build targets it.
+        const latest = this.latestAutoTrigger.get(lockKey);
+        if (!latest) return;
+        const chat = await this.stores.chats.getById(latest.chatId);
+        if (!chat || !isObjectiveEnabled(chat.insightsConfig)) return;
+        const chatId = chat.id as ChatId;
+        const branchId = brandId<ChatBranchId>(latest.branchId);
+        const state = await this.getState(chatId);
+        if (state.autoCheckFrequency <= 0) return;
+        const messages = await this.stores.messages.getMessages(branchId);
+        const assistantCount = messages.filter((message) => message.role === "assistant").length;
+        if (assistantCount === 0 || assistantCount % state.autoCheckFrequency !== 0) return;
+
+        const resolved = await this.resolveInsightProvider(state);
+        if (!resolved) {
+          logSendDebug("insights.objective.auto.skip", { chatId: chat.id, messageId: latest.messageId, reason: state.useChatModel ? "no_provider" : "no_provider_or_model" });
+          return;
+        }
+        const { profile, model } = resolved;
         const built = await this.sessionRuntime.chatLifecycle.buildPipelineContext({
-          chatId: chat.id as ChatId,
+          chatId,
+          branchId,
           model,
           recentMessageLimit: state.contextWindow,
         });
-        await this.checkCompletion({ chatId: chat.id as ChatId, profile, model, context: built.context });
+        await this.checkCompletion({ chatId, profile, model, context: built.context });
       },
-      (err) => logSendDebug("insights.objective.auto.error", {
-        chatId: chat.id,
-        message: err instanceof Error ? err.message : String(err),
-      }),
+      (err) => {
+        const failedTrigger = this.latestAutoTrigger.get(lockKey) ?? trigger;
+        logSendDebug("insights.objective.auto.error", {
+          chatId: failedTrigger.chatId,
+          messageId: failedTrigger.messageId,
+          message: err instanceof Error ? err.message : String(err),
+        });
+      },
     );
+    // The lock owner has consumed every dirty trailing trigger before `ran`
+    // resolves. Dropped callers return `false`, so only the owner cleans up.
+    if (ran) this.latestAutoTrigger.delete(lockKey);
   }
 
-  private async saveState(chatId: ChatId, state: ObjectiveState): Promise<void> {
-    await this.stores.chats.updateInsightsObjectiveState(chatId, {
-      insightsObjectiveState: state as unknown as Record<string, unknown>,
+  /**
+   * Serialize the short read-modify-write commit for every Objective mutation.
+   * Returning null discards a stale LLM result without writing. CRUD/config can
+   * run while an LLM is in flight; they only serialize against this final DB
+   * commit, closing the fresh-read → whole-JSON-save lost-update window.
+   */
+  private async commitState(
+    chatId: ChatId,
+    mutate: (current: ObjectiveState) => ObjectiveState | null,
+    signal?: AbortSignal,
+  ): Promise<ObjectiveState> {
+    return this.stateCoordinator.run(chatId, async () => {
+      signal?.throwIfAborted();
+      const current = await this.getState(chatId);
+      const next = mutate(current);
+      if (!next) return current;
+      signal?.throwIfAborted();
+      await this.stores.chats.updateInsightsObjectiveState(chatId, {
+        insightsObjectiveState: next as unknown as Record<string, unknown>,
+      });
+      return next;
     });
   }
 

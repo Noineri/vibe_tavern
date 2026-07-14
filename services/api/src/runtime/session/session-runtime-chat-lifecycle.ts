@@ -282,9 +282,12 @@ export class ChatLifecycleRuntime {
 	 * check/generate, scene generate) WITHOUT assembling it — the insight
 	 * assemblers reuse buildLayers on this context. Mirrors assembleSummaryPrompt
 	 * but returns the pre-assembly context instead of the assembled prompt.
+	 * Background callers pass the committed event branch explicitly; interactive
+	 * callers may omit it to retain the active-branch fallback.
 	 */
 	async buildPipelineContext(input: {
 		chatId: ChatId;
+		branchId?: ChatBranchId;
 		model: string;
 		recentMessageLimit?: number;
 		contextBudget?: number | null;
@@ -295,7 +298,7 @@ export class ChatLifecycleRuntime {
 		}
 		return this.deps.buildPipelineContext(
 			input.chatId,
-			chat.activeBranchId as ChatBranchId,
+			input.branchId ?? (chat.activeBranchId as ChatBranchId),
 			{
 				model: input.model,
 				recentMessageLimit: input.recentMessageLimit,
