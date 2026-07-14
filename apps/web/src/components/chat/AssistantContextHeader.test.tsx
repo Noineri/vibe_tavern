@@ -1,6 +1,6 @@
 import { describe, test, expect, beforeEach, afterEach } from "vitest";
 import { Profiler, type ProfilerOnRenderCallback } from "react";
-import { render, fireEvent } from "@testing-library/react";
+import { render, fireEvent, act } from "@testing-library/react";
 import {
   AssistantContextHeader,
   type AssistantContextHeaderProps,
@@ -19,12 +19,11 @@ import {
 /**
  * AssistantContextHeader — adaptive-layout + fallback + isolation tests.
  *
- * The Objective/Scene zones are supplied by INSIGHTS_PLAN (not landed). These
- * tests exercise the HOST with a mock `assistant_header_zone` descriptor so the
- * adaptive mechanism (resolve → layout by count + anyExpanded → avatar grow +
- * separators → render-isolation) is proven independently of the real content.
- * The 0-zone fallback (the only path active in prod until INS-6 lands) is
- * asserted to render identity-only.
+ * Objective registers a real production zone; these tests use an additional
+ * mock `assistant_header_zone` descriptor to isolate the host's adaptive layout
+ * (resolve → layout by count + anyExpanded → avatar growth + separators →
+ * render-isolation) from feature content. Real Objective visibility transitions
+ * are pinned in `message-slots/objective-zone.test.tsx`.
  */
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -136,6 +135,24 @@ describe("AssistantContextHeader — 0-zone fallback (identity-only)", () => {
     expect(avatar.className).toContain("h-11");
     expect(avatar.textContent).toContain("A"); // initials fallback
   });
+});
+
+test("re-resolves slots registered and removed after the header mounts", () => {
+  const { container } = render(<AssistantContextHeader {...makeProps()} />);
+  expect(container.querySelector('[data-testid="obj-zone"]')).toBeNull();
+
+  act(() => {
+    unsubscribe = registerMessageSlot(MOCK_OBJECTIVE_DESCRIPTOR);
+  });
+  expect(container.querySelector('[data-testid="obj-zone"]')).not.toBeNull();
+  expect(container.querySelector('[class*="bg-border"]')).not.toBeNull();
+
+  act(() => {
+    unsubscribe?.();
+    unsubscribe = null;
+  });
+  expect(container.querySelector('[data-testid="obj-zone"]')).toBeNull();
+  expect(container.querySelector('[class*="bg-border"]')).toBeNull();
 });
 
 describe("AssistantContextHeader — ≥1 zone adaptive (mock objective zone)", () => {

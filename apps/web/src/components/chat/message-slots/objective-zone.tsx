@@ -53,6 +53,15 @@ function pickActiveTask(tasks: ObjectiveTask[]): ObjectiveTask | null {
   return tasks.find((t) => t.status === "active") ?? tasks.find((t) => t.status === "pending") ?? null;
 }
 
+function getObjectiveVisibilitySnapshot(): string {
+  const chat = useSnapshotStore.getState().activeChat;
+  const enabled = chat?.insightsConfig?.objectiveEnabled ?? false;
+  const activeTaskId = enabled
+    ? pickActiveTask(chat?.insightsObjectiveState?.tasks ?? EMPTY)?.id ?? ""
+    : "";
+  return `${enabled ? "1" : "0"}:${activeTaskId}`;
+}
+
 function ObjectiveZone({ chatId, messageId }: { chatId: string; messageId: string }) {
   const { t } = useT();
   const open = useHeaderZoneOpen(messageId, "objectiveOpen");
@@ -325,11 +334,20 @@ registerMessageSlot({
   slot: "assistant_header_zone",
   order: 1,
   roles: ["assistant"],
+  visibility: {
+    getSnapshot: getObjectiveVisibilitySnapshot,
+    subscribe: (_ctx, listener) => {
+      let current = getObjectiveVisibilitySnapshot();
+      return useSnapshotStore.subscribe(() => {
+        const next = getObjectiveVisibilitySnapshot();
+        if (next === current) return;
+        current = next;
+        listener();
+      });
+    },
+  },
   visible: (ctx: MessageSlotContext) => {
     if (ctx.messageRole !== "assistant") return false;
-    // Non-reactive read (mirrors CoauthorToolActivitySlot's `mode` check) — the
-    // header re-renders via its own snapshot subscription; `visible` is a filter,
-    // not a subscription, so getState() is correct here.
     const chat = useSnapshotStore.getState().activeChat;
     if (!chat?.insightsConfig?.objectiveEnabled) return false;
     const tasks = chat.insightsObjectiveState?.tasks ?? EMPTY;

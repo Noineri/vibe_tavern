@@ -17,7 +17,8 @@
  * actions are mocked.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, fireEvent, cleanup, waitFor } from "@testing-library/react";
+import { render, fireEvent, cleanup, waitFor, act } from "@testing-library/react";
+import { AssistantContextHeader } from "../AssistantContextHeader.js";
 import { ObjectiveZone } from "./objective-zone.js";
 import { useSnapshotStore } from "../../../stores/snapshot-store.js";
 import { useHeaderZoneExpansionStore } from "../../../stores/header-zone-expansion.js";
@@ -183,5 +184,56 @@ describe("ObjectiveZone (INS-6)", () => {
     seedState(done, true);
     const { container } = render(<ObjectiveZone chatId="c1" messageId="m1" />);
     expect(container.firstChild).toBeNull();
+  });
+});
+
+describe("Objective slot + real AssistantContextHeader", () => {
+  it("reacts absent → present → absent with no orphan divider or zone DOM", () => {
+    const exhausted: ObjectiveState = {
+      ...ROUTE,
+      tasks: ROUTE.tasks.map((task) => ({ ...task, status: "completed" as const })),
+    };
+    seedState(exhausted, true);
+
+    const { container } = render(
+      <AssistantContextHeader
+        author={{
+          name: "Aria",
+          avatarAssetId: null,
+          avatarCropJson: null,
+          avatarSrc: null,
+          avatarNode: undefined,
+        }}
+        slotCtx={{
+          chatId: "c1",
+          messageId: "m1",
+          messageRole: "assistant",
+          variantIndex: 0,
+          isStreaming: false,
+          extras: {},
+        }}
+        isMobile={false}
+        isEditing={false}
+        isGenerating={false}
+        onToggleMobileMenu={() => {}}
+      />,
+    );
+
+    expect(container.textContent).toContain("Aria");
+    expect(container.textContent).not.toContain("Enter the forest");
+    expect(container.querySelector('[title="obj_zone_expand"]')).toBeNull();
+    expect(container.querySelector('[class*="bg-border"]')).toBeNull();
+
+    act(() => seedState(ROUTE, true));
+
+    expect(container.textContent).toContain("Enter the forest");
+    expect(container.querySelector('[title="obj_zone_expand"]')).not.toBeNull();
+    expect(container.querySelector('[class*="bg-border"]')).not.toBeNull();
+
+    act(() => seedState(exhausted, true));
+
+    expect(container.textContent).not.toContain("Enter the forest");
+    expect(container.querySelector('[title="obj_zone_expand"]')).toBeNull();
+    expect(container.querySelector('[class*="bg-border"]')).toBeNull();
   });
 });

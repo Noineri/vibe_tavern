@@ -3,10 +3,10 @@ import { cn } from "../../lib/cn.js";
 import { initials } from "../layout/app-shell-helpers.js";
 import { Icons } from "../shared/icons.js";
 import {
-  resolveMessageSlots,
   type MessageSlotContext,
   type MessageSlotDescriptor,
 } from "../../lib/message-slot-registry.js";
+import { useResolvedMessageSlots } from "../../hooks/use-resolved-message-slots.js";
 import { useAnyHeaderZoneOpen } from "../../stores/header-zone-expansion.js";
 import type { MessageShellAuthorInfo } from "./MessageShell.js";
 
@@ -28,9 +28,9 @@ import type { MessageShellAuthorInfo } from "./MessageShell.js";
 // grow the avatar (desktop only), switch to column layout, and show separators.
 // See ASSISTANT_CONTEXT_HEADER report + INSIGHTS_PLAN for the full contract.
 //
-// Render-isolation: the only subscription here is `useAnyHeaderZoneOpen` (a
-// primitive boolean keyed by messageId), so a non-target message's header never
-// re-renders when another message's zone toggles.
+// Render-isolation: expansion is a primitive boolean keyed by messageId, while
+// slot visibility comes from descriptor-owned primitive snapshots. Unrelated
+// store changes therefore do not re-render this header.
 // ────────────────────────────────────────────────────────────────────────────
 
 export interface AssistantContextHeaderProps {
@@ -46,7 +46,7 @@ export interface AssistantContextHeaderProps {
 export function AssistantContextHeader(props: AssistantContextHeaderProps) {
   const { author, slotCtx, greetingControls, isMobile, isEditing, isGenerating, onToggleMobileMenu } = props;
 
-  const zones = resolveMessageSlots("assistant_header_zone", slotCtx);
+  const zones = useResolvedMessageSlots("assistant_header_zone", slotCtx);
   const anyExpanded = useAnyHeaderZoneOpen(slotCtx.messageId);
   const hasAvatar = !!(author.avatarNode ?? author.avatarSrc);
 

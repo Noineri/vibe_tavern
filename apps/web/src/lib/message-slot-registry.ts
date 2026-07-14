@@ -65,11 +65,22 @@ export interface MessageSlotContext {
   extras: Record<string, unknown>;
 }
 
+/** Primitive, Object.is-stable snapshot exposed by a visibility source. */
+export type MessageSlotVisibilitySnapshot = string | number | boolean | null;
+
 /**
- * Describes a slot renderer registered by a feature.
+ * External-store signal that tells a reactive slot host when to re-run a
+ * descriptor's `visible` predicate. Snapshots stay primitive so React can
+ * compare them with Object.is without broad object subscriptions.
  */
+export interface MessageSlotVisibilitySource {
+  getSnapshot: (ctx: MessageSlotContext) => MessageSlotVisibilitySnapshot;
+  subscribe: (ctx: MessageSlotContext, listener: () => void) => () => void;
+}
+
+/** Describes a slot renderer registered by a feature. */
 export interface MessageSlotDescriptor {
-  /** Unique id for this slot renderer (e.g. "insights-objective-route"). */
+  /** Unique id for this slot renderer (e.g. `insights-objective-route`). */
   id: string;
   /** Which named slot to render in. */
   slot: MessageSlotId;
@@ -84,6 +95,11 @@ export interface MessageSlotDescriptor {
    * Defaults to true if omitted.
    */
   visible?: (ctx: MessageSlotContext) => boolean;
+  /**
+   * Optional reactive signal for external state read by `visible`. The source
+   * only invalidates resolution; `visible` remains the visibility decision.
+   */
+  visibility?: MessageSlotVisibilitySource;
   /**
    * Sort order within the same slot position (lower = rendered first).
    * Default is 0.
@@ -104,8 +120,10 @@ type Listener = () => void;
 
 const slots: MessageSlotDescriptor[] = [];
 const listeners: Set<Listener> = new Set();
+let registryVersion = 0;
 
 function notify(): void {
+  registryVersion += 1;
   for (const fn of listeners) fn();
 }
 
@@ -132,9 +150,14 @@ export function getMessageSlots(): readonly MessageSlotDescriptor[] {
   return slots;
 }
 
+/** Primitive snapshot for reactive hosts tracking registry add/remove/replace. */
+export function getMessageSlotRegistryVersion(): number {
+  return registryVersion;
+}
+
 /**
  * Subscribe to changes in the slot registry.
- * Used by MessageShell to re-render when slots change.
+ * Reactive hosts use this to rebuild descriptor visibility subscriptions.
  */
 export function subscribeMessageSlots(listener: Listener): () => void {
   listeners.add(listener);
