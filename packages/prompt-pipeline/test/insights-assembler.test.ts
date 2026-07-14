@@ -131,7 +131,7 @@ describe("assembleInsights (INS-3c behavior)", () => {
   it("strips the insight self-injection layers even when the context carries them (no duplication/noise)", () => {
     const ctx = makeContext({
       objectiveTask: { description: "Pick the lock", injectPrompt: "", injectionDepth: 1 },
-      sceneState: { text: "Tavern, dusk" },
+      sceneState: { entries: [{ mood: "calm" }], format: "json", injectionDepth: 1, injectPrompt: "" },
     });
     const result = getInsightsAssembler("objective").assemble(ctx, "Is the active task done?");
     const ids = result.layers.map((l) => l.id);

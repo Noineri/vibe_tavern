@@ -184,8 +184,13 @@ export interface PromptAssemblyContext {
   };
   /** Insights — Objective Tracker: the active task injected as an `in_chat` layer (priority 180). `null`/undefined = objective off or no active task. */
   objectiveTask?: { description: string; injectPrompt: string; injectionDepth: number } | null;
-  /** Insights — Scene Tracker: the latest scene state (formatted text) injected as an `in_chat` layer (priority 175). `null`/undefined = tracker off or no scene yet. */
-  sceneState?: { text: string } | null;
+  /** Insights — Scene Tracker: the last N validated scene states injected as an `in_chat` layer (priority 175). `entries` are oldest→newest; `format` is injection-only serialization (generation output stays strict JSON); `injectionDepth` mirrors the authorsNote / objectiveTask depth pattern; `injectPrompt` is the user's optional framing override ("" = default `[Scene state]` label). `null`/undefined = tracker off or no valid scene yet. */
+  sceneState?: {
+    entries: ReadonlyArray<Readonly<Record<string, unknown>>>;
+    format: "json" | "xml";
+    injectionDepth: number;
+    injectPrompt: string;
+  } | null;
   config?: {
     contextBudget?: number | null;
     /** Tokens reserved for the model's response. Subtracted from contextBudget during compaction. */

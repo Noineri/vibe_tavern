@@ -709,6 +709,32 @@ export class MessageStore {
     return null;
   }
 
+  /**
+   * Scene Tracker history for main-model injection (SCENE_TRACKER_PLAN SCN-7).
+   * Walks the branch's assistant messages newest→oldest, up to `scanLimit`
+   * assistants, and returns the RAW scene record of each one's currently
+   * SELECTED variant (when it has one). Newest-first. The caller applies the
+   * freshness filter (`isSceneRecordCurrent`) and takes the last `injectLastN`
+   * valid entries — the store deliberately returns raw records so one freshness
+   * rule governs both this path and the SCN-6 cache.
+   */
+  async getSelectedSceneHistory(branchId: string, scanLimit: number): Promise<CurrentSceneTarget[]> {
+    const branchMessages = await this.getMessages(branchId);
+    const out: CurrentSceneTarget[] = [];
+    let scanned = 0;
+    for (let index = branchMessages.length - 1; index >= 0 && scanned < scanLimit; index -= 1) {
+      const message = branchMessages[index];
+      if (!message || message.role !== "assistant") continue;
+      scanned += 1;
+      const selected = await this.getSelectedVariant(message.id);
+      if (!selected) continue;
+      const record = await this.getSceneRecord(selected.id);
+      if (!record) continue;
+      out.push({ messageId: message.id, variantId: selected.id, record });
+    }
+    return out;
+  }
+
   // ─── Scene backfill runs (durable job state) ──────────────────────────────
   // Tracks the backfill JOB only; never authoritative for Scene data. The run
   // row lets Wave 7 resume/retry/report progress across reload and restart.

@@ -1,4 +1,4 @@
-import { brandId, parseStoredAttachments, OBJECTIVE_TASK_STATUS } from "@vibe-tavern/domain";
+import { brandId, parseStoredAttachments, OBJECTIVE_TASK_STATUS, normalizeSceneTrackerConfig } from "@vibe-tavern/domain";
 import type {
   AssemblePromptResponse,
   CustomInjection,
@@ -22,6 +22,7 @@ import type {
 } from "@vibe-tavern/domain";
 import type { StoreContainer } from "@vibe-tavern/db";
 import { assemblePrompt, getSummaryStrategy, setModelHint, type PromptAssemblyContext } from "@vibe-tavern/prompt-pipeline";
+import { isSceneRecordCurrent } from "../insights/scene-cache.js";
 import { logSendDebug } from "../../shared/send-debug-log.js";
 import { type FileStore, STORAGE_FOLDERS } from "@vibe-tavern/db";
 
@@ -309,6 +310,38 @@ export class PromptAssemblyService {
    * re-running assembly — no flag on assembleForChat (the assembler choice
    * stays registry-driven; see InsightsAssembler).
    */
+  /**
+   * Resolve the Scene Tracker injection context for the main model
+   * (SCENE_TRACKER_PLAN SCN-7). Reads the chat's tracker config, scans the
+   * active branch's last `contextWindow` assistant messages for their SELECTED
+   * variant's scene records, keeps only the freshness-valid ones
+   * (`isSceneRecordCurrent` — the same rule the SCN-6 cache uses), and takes the
+   * last `injectLastN` in conversation order. Returns the resolved layer input,
+   * or null when the tracker is off / injection is disabled / nothing valid is
+   * in window. Nonselected variants' records are never substituted.
+   */
+  private async resolveSceneInjection(
+    insightsConfig: Record<string, unknown>,
+    branchId: string,
+  ): Promise<NonNullable<PromptAssemblyContext["sceneState"]> | null> {
+    if (!insightsConfig?.trackerEnabled) return null;
+    const config = normalizeSceneTrackerConfig(insightsConfig.tracker);
+    if (config.injectLastN <= 0) return null;
+    const scanLimit = Math.max(1, config.contextWindow);
+    const raw = await this.stores.messages.getSelectedSceneHistory(branchId, scanLimit);
+    const valid = raw.filter((target) => isSceneRecordCurrent(target.record, config));
+    // raw is newest-first; take the last `injectLastN` valid, then reverse to
+    // oldest→newest (conversation order) for the formatter.
+    const selected = valid.slice(0, config.injectLastN).reverse();
+    if (selected.length === 0) return null;
+    return {
+      entries: selected.map((target) => target.record.sceneState),
+      format: config.promptFormat,
+      injectionDepth: config.injectionDepth,
+      injectPrompt: config.injectPrompt ?? "",
+    };
+  }
+
   async buildPipelineContext(input: AssemblePromptForChatInput): Promise<BuiltPipelineContext> {
     const chat = await this.stores.chats.getById(input.chatId);
     if (!chat) {
@@ -422,6 +455,13 @@ export class PromptAssemblyService {
       insightsObjectiveState: chat.insightsObjectiveState,
     });
 
+    // Scene Tracker (SCENE_TRACKER_PLAN SCN-7): query the last `injectLastN`
+    // VALID selected-variant records from the active branch (freshness-filtered
+    // via the same isSceneRecordCurrent rule as the SCN-6 cache) and hand them to
+    // the pipeline as the `sceneState` injection layer. null when the tracker is
+    // off, injectLastN is 0, or no current-scene records exist in the window.
+    const sceneState = await this.resolveSceneInjection(chat.insightsConfig, branchId);
+
     const pipelineContext = {
       identity: {
         chatId: chat.id as ChatId,
@@ -489,6 +529,7 @@ export class PromptAssemblyService {
         })),
       },
       objectiveTask,
+      sceneState,
       chat: {
         recentMessages,
         scriptInjections: scriptResult.injectedMessages,

@@ -369,6 +369,12 @@ All four are pure (prompt in, `PromptAssemblyResult` out); LLM invocation, stora
 
 A chat mode (rp, coauthor) wires `ChatModeStrategy` + a shell surface (see [Adding a chat mode](../guides/adding-a-chat-mode.md)); its turns go through `assemblePrompt`. Summary, AI-assistant, and insights are **not chat turns** — they are one-shot generations triggered from different surfaces (a background summarizer, the Build lightbulb, or an Objective/Scene job). Giving them their own registries keeps the chat pipeline single-purpose and makes each prompt shape's nature explicit.
 
+### Scene Tracker main-model injection
+
+The Scene Tracker (SCENE_TRACKER_PLAN) steers the main model with a single `scene_state` `in_chat` layer at priority 175 (just below the Objective layer at 180), at the chat's configured `injectionDepth`. `PromptAssemblyService.resolveSceneInjection` queries the active branch's last `contextWindow` assistant messages for their **selected** variant's scene records, keeps only the freshness-valid ones (`isSceneRecordCurrent` — the same rule the derived cache uses), and takes the last `injectLastN` in conversation order. The pipeline serializes that history (JSON numbered list or escaped XML `<scene_history>`) and wraps it via `PROMPT_FORMAT.sceneState`; an optional user `injectPrompt` frames the block. Injection is read-only against already-validated records — Scene generation output is always strict schema-validated JSON, so `promptFormat` controls only main-model serialization, never model free-text parsing.
+
+The no-self-injection invariant: `assembleInsightsPrompt` (the Scene generation path) strips BOTH `scene_state` and `objective_task`, so the model judging a scene never sees scene noise or a duplicated task — while the main chat path still injects both.
+
 ---
 
 ## Context Compaction

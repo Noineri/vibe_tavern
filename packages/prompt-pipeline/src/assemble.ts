@@ -7,6 +7,7 @@ import type {
 } from "./types.js";
 import { estimateTokens, planHistoryCompaction } from "./compaction.js";
 import { createFullMacroEngine } from "./macro-registry.js";
+import { formatSceneHistory } from "./scene-injection.js";
 import { buildPromptVariableContext, type PromptVariableContext } from "./prompt-variable-context.js";
 import { DEFAULT_PROMPT_ORDER, tag } from "@vibe-tavern/domain";
 import { createResolver, type PositionResolver } from "./resolvers/position-resolver.js";
@@ -700,6 +701,31 @@ function buildLayers(
     });
     objectiveLayer.injectionDepth = Math.max(0, task.injectionDepth ?? 1);
     layers.push(objectiveLayer);
+  }
+
+  // Insights — Scene Tracker (SCENE_TRACKER_PLAN SCN-7): inject the last N
+  // validated scene states as a single `in_chat` layer at priority 175 (just
+  // before the objective layer at 180), at the configured depth. The entries are
+  // already oldest→newest and freshness-filtered by the service; this block only
+  // serializes (JSON/XML) and wraps them. Absent entirely when the tracker is
+  // off or there is no valid scene to inject. Mirrors the objectiveTask depth
+  // pattern: built `in_chat`, depth assigned post-hoc on the mutable layer.
+  if (context.sceneState) {
+    const scene = context.sceneState;
+    const body = formatSceneHistory(scene.entries, scene.format);
+    const lead = scene.injectPrompt.trim();
+    const text = lead ? `${lead}\n${PROMPT_FORMAT.sceneState(body)}` : PROMPT_FORMAT.sceneState(body);
+    const sceneLayer = makeLayer({
+      id: PROMPT_LAYER_ID.sceneState,
+      sourceType: PROMPT_LAYER_SOURCE_TYPE.sceneState,
+      sourceId: PROMPT_LAYER_ID.sceneState,
+      sourceName: "Scene State",
+      position: "in_chat",
+      priority: PROMPT_LAYER_PRIORITY.sceneState,
+      text,
+    });
+    sceneLayer.injectionDepth = Math.max(0, scene.injectionDepth ?? 1);
+    layers.push(sceneLayer);
   }
 
   for (const memory of [...(context.memory?.retrieval ?? [])].sort((a, b) => b.score - a.score)) {
