@@ -28,7 +28,7 @@
  * note in CoauthorToolActivitySlot.tsx for why `useShallow` on freshly-rebuilt
  * objects does NOT work here.
  */
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { brandId, type ChatId } from "@vibe-tavern/domain";
 import { registerMessageSlot, type MessageSlotContext } from "../../../lib/message-slot-registry.js";
@@ -58,6 +58,7 @@ function ObjectiveZone({ chatId, messageId }: { chatId: string; messageId: strin
   const open = useHeaderZoneOpen(messageId, "objectiveOpen");
   const toggle = useHeaderZoneExpansionStore((s) => s.toggle);
   const [busy, setBusy] = useState<"generate" | "check" | null>(null);
+  const activeAction = useRef<{ chatId: ChatId; which: "generate" | "check"; controller: AbortController } | null>(null);
   const objectiveChatId = brandId<ChatId>(chatId);
 
   // ── Primitive selectors only (render-isolation — see file header). ──
@@ -88,15 +89,39 @@ function ObjectiveZone({ chatId, messageId }: { chatId: string; messageId: strin
     }
   }, [routeBlob]);
 
-  async function run(which: "generate" | "check", action: (id: ChatId) => Promise<void>) {
-    if (busy) return;
+  useEffect(() => {
+    setBusy(null);
+    return () => {
+      const current = activeAction.current;
+      if (current?.chatId !== objectiveChatId) return;
+      activeAction.current = null;
+      current.controller.abort();
+    };
+  }, [objectiveChatId]);
+
+  function stop(which: "generate" | "check") {
+    const current = activeAction.current;
+    if (!current || current.chatId !== objectiveChatId || current.which !== which) return;
+    activeAction.current = null;
+    current.controller.abort();
+    setBusy(null);
+  }
+
+  async function run(which: "generate" | "check", action: (id: ChatId, signal?: AbortSignal) => Promise<void>) {
+    if (activeAction.current) return;
+    const current = { chatId: objectiveChatId, which, controller: new AbortController() };
+    activeAction.current = current;
     setBusy(which);
     try {
-      await action(objectiveChatId);
+      await action(objectiveChatId, current.controller.signal);
     } catch (err) {
+      if (current.controller.signal.aborted) return;
       toast.error(err instanceof Error ? err.message : t("obj_action_failed"));
     } finally {
-      setBusy(null);
+      if (activeAction.current === current) {
+        activeAction.current = null;
+        setBusy(null);
+      }
     }
   }
 
@@ -134,21 +159,21 @@ function ObjectiveZone({ chatId, messageId }: { chatId: string; messageId: strin
         <div className="ml-auto flex shrink-0 items-center gap-0.5">
           <button
             type="button"
-            onClick={() => void run("generate", generateObjectiveTasksAction)}
-            disabled={busy !== null}
+            onClick={() => busy === "generate" ? stop("generate") : void run("generate", generateObjectiveTasksAction)}
+            disabled={busy !== null && busy !== "generate"}
             className="flex h-7 w-7 items-center justify-center rounded text-t4 transition-colors hover:bg-s2 hover:text-accent disabled:opacity-40 md:h-5 md:w-5"
-            title={t("obj_zone_regenerate")}
-            aria-label={t("obj_zone_regenerate")}
+            title={t(busy === "generate" ? "obj_stop_button" : "obj_zone_regenerate")}
+            aria-label={t(busy === "generate" ? "obj_stop_button" : "obj_zone_regenerate")}
           >
             {busy === "generate" ? <ActionSpinner /> : <Ic.regen />}
           </button>
           <button
             type="button"
-            onClick={() => void run("check", checkObjectiveCompletionAction)}
-            disabled={busy !== null || tasks.length === 0}
+            onClick={() => busy === "check" ? stop("check") : void run("check", checkObjectiveCompletionAction)}
+            disabled={(busy !== null && busy !== "check") || (busy === null && tasks.length === 0)}
             className="flex h-7 w-7 items-center justify-center rounded text-t4 transition-colors hover:bg-s2 hover:text-success-text disabled:opacity-40 md:h-5 md:w-5"
-            title={t("obj_zone_check")}
-            aria-label={t("obj_zone_check")}
+            title={t(busy === "check" ? "obj_stop_button" : "obj_zone_check")}
+            aria-label={t(busy === "check" ? "obj_stop_button" : "obj_zone_check")}
           >
             {busy === "check" ? <ActionSpinner /> : <Ic.checkCircle />}
           </button>

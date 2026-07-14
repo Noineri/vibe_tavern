@@ -132,6 +132,56 @@ describe("ObjectiveConfig (INS-5)", () => {
     expect(mocks.generateObjectiveTasksAction).toHaveBeenCalledWith("chat_1", expect.any(AbortSignal));
   });
 
+  it("switches Generate to Stop and aborts the active request without an error toast", async () => {
+    withState(EMPTY);
+    let receivedSignal: AbortSignal | undefined;
+    mocks.generateObjectiveTasksAction.mockImplementation((_chatId: string, signal: AbortSignal) => {
+      receivedSignal = signal;
+      return new Promise<void>((_resolve, reject) => {
+        signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+      });
+    });
+    const { getByText } = render(<ObjectiveConfig chatId={"chat_1" as never} />);
+
+    fireEvent.click(getByText("obj_generate_button"));
+    fireEvent.click(getByText("obj_stop_button"));
+
+    expect(receivedSignal?.aborted).toBe(true);
+    await waitFor(() => expect(getByText("obj_generate_button")).toBeTruthy());
+  });
+
+  it("aborts an active Objective request when the editor unmounts", () => {
+    withState(EMPTY);
+    let receivedSignal: AbortSignal | undefined;
+    mocks.generateObjectiveTasksAction.mockImplementation((_chatId: string, signal: AbortSignal) => {
+      receivedSignal = signal;
+      return new Promise<void>((_resolve, reject) => {
+        signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+      });
+    });
+    const view = render(<ObjectiveConfig chatId={"chat_1" as never} />);
+    fireEvent.click(view.getByText("obj_generate_button"));
+
+    view.unmount();
+    expect(receivedSignal?.aborted).toBe(true);
+  });
+
+  it("aborts an active Objective request when the editor switches chats", () => {
+    withState(EMPTY);
+    let receivedSignal: AbortSignal | undefined;
+    mocks.generateObjectiveTasksAction.mockImplementation((_chatId: string, signal: AbortSignal) => {
+      receivedSignal = signal;
+      return new Promise<void>((_resolve, reject) => {
+        signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+      });
+    });
+    const view = render(<ObjectiveConfig chatId={"chat_1" as never} />);
+    fireEvent.click(view.getByText("obj_generate_button"));
+
+    view.rerender(<ObjectiveConfig chatId={"chat_2" as never} />);
+    expect(receivedSignal?.aborted).toBe(true);
+  });
+
   it("typing + Enter in the add-task field dispatches addObjectiveTaskAction", () => {
     withState({ ...EMPTY, tasks: [{ id: "t1", description: "First", status: "pending" }] });
     mocks.addObjectiveTaskAction.mockResolvedValue(undefined);

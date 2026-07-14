@@ -113,11 +113,33 @@ describe("ObjectiveZone (INS-6)", () => {
 
     const regenerate = getByTitle("obj_zone_regenerate");
     fireEvent.click(regenerate);
-    expect(mocks.generateObjectiveTasksAction).toHaveBeenCalledWith("c1");
+    expect(mocks.generateObjectiveTasksAction).toHaveBeenCalledWith("c1", expect.any(AbortSignal));
     await waitFor(() => expect((regenerate as HTMLButtonElement).disabled).toBe(false));
 
     fireEvent.click(getByTitle("obj_zone_check"));
-    expect(mocks.checkObjectiveCompletionAction).toHaveBeenCalledWith("c1");
+    expect(mocks.checkObjectiveCompletionAction).toHaveBeenCalledWith("c1", expect.any(AbortSignal));
+  });
+
+  it("expanded: regenerate switches to a cancellable Stop action and aborts on unmount", async () => {
+    seedState(ROUTE, true);
+    useHeaderZoneExpansionStore.setState({ open: { m1: { objectiveOpen: true } } });
+    let receivedSignal: AbortSignal | undefined;
+    mocks.generateObjectiveTasksAction.mockImplementation((_chatId: string, signal: AbortSignal) => {
+      receivedSignal = signal;
+      return new Promise<void>((_resolve, reject) => {
+        signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+      });
+    });
+    const view = render(<ObjectiveZone chatId="c1" messageId="m1" />);
+
+    fireEvent.click(view.getByTitle("obj_zone_regenerate"));
+    fireEvent.click(view.getByTitle("obj_stop_button"));
+    expect(receivedSignal?.aborted).toBe(true);
+    await waitFor(() => expect(view.getByTitle("obj_zone_regenerate")).toBeTruthy());
+
+    fireEvent.click(view.getByTitle("obj_zone_regenerate"));
+    view.unmount();
+    expect(receivedSignal?.aborted).toBe(true);
   });
 
   it("expanded: clicking a node cycles the task status via updateObjectiveTaskAction", () => {

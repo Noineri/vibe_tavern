@@ -391,11 +391,13 @@ export async function updateInsightsConfigAction(chatId: ChatId, input: { insigh
 
 export async function generateObjectiveTasksAction(chatId: ChatId, signal?: AbortSignal): Promise<void> {
   const snapshot = await generateObjectiveTasks(chatId, {}, { signal });
+  if (signal?.aborted) return;
   syncSnapshot(snapshot);
 }
 
 export async function checkObjectiveCompletionAction(chatId: ChatId, signal?: AbortSignal): Promise<void> {
   const snapshot = await checkObjectiveCompletion(chatId, {}, { signal });
+  if (signal?.aborted) return;
   syncSnapshot(snapshot);
 }
 

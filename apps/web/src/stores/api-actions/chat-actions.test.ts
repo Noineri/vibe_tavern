@@ -4,16 +4,16 @@ import type { AppSnapshot, ChatListItem } from "../../app-client.js";
 import { useChatStore } from "../chat-store.js";
 import { useSnapshotStore } from "../snapshot-store.js";
 import { useNavigationStore } from "../navigation-store.js";
-import { deleteChatAction, forkBranchAction, switchModeAction } from "./chat-actions.js";
+import { deleteChatAction, forkBranchAction, generateObjectiveTasksAction, switchModeAction } from "./chat-actions.js";
 
 // Mocks for the deleteChatAction tests below. `deleteChat` returns the
 // backend's ChatListResponse ({ chats }); the fire-and-forget bootstrap is
 // stubbed so it can't race the assertion. Other app-client exports stay real
 // (spread), so the switchModeAction tests in this file are unaffected.
-const { deleteChatMock, forkBranchMock } = vi.hoisted(() => ({ deleteChatMock: vi.fn(), forkBranchMock: vi.fn() }));
+const { deleteChatMock, forkBranchMock, generateObjectiveTasksMock } = vi.hoisted(() => ({ deleteChatMock: vi.fn(), forkBranchMock: vi.fn(), generateObjectiveTasksMock: vi.fn() }));
 vi.mock("../../app-client.js", async (importOriginal) => {
   const actual = await importOriginal() as typeof import("../../app-client.js");
-  return { ...actual, deleteChat: deleteChatMock, forkBranch: forkBranchMock };
+  return { ...actual, deleteChat: deleteChatMock, forkBranch: forkBranchMock, generateObjectiveTasks: generateObjectiveTasksMock };
 });
 vi.mock("./bootstrap-actions.js", async (importOriginal) => {
   const actual = await importOriginal() as typeof import("./bootstrap-actions.js");
@@ -60,10 +60,26 @@ function seed(chats: ChatListItem[], activeId: string | null = null): void {
 beforeEach(() => {
   deleteChatMock.mockReset();
   forkBranchMock.mockReset();
+  generateObjectiveTasksMock.mockReset();
   useSnapshotStore.getState().clear();
   useChatStore.getState().setActiveChatId(null);
   useChatStore.getState().setSelectedCharacterId(null);
   useNavigationStore.getState().setMode("play");
+});
+
+describe("generateObjectiveTasksAction", () => {
+  test("does not ingest a snapshot that resolves after cancellation", async () => {
+    let resolveRequest: (snapshot: AppSnapshot) => void = () => {};
+    generateObjectiveTasksMock.mockImplementationOnce(() => new Promise<AppSnapshot>((resolve) => { resolveRequest = resolve; }));
+    const controller = new AbortController();
+
+    const pending = generateObjectiveTasksAction(chatId("chat-1"), controller.signal);
+    controller.abort();
+    resolveRequest({ activeChat: { id: chatId("stale-chat") } } as unknown as AppSnapshot);
+    await pending;
+
+    expect(useSnapshotStore.getState().activeChat).toBeNull();
+  });
 });
 
 describe("forkBranchAction", () => {

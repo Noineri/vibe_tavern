@@ -21,6 +21,7 @@
   "obj_description_label": "Objective",
   "obj_description_placeholder": "Describe the high-level goal of this roleplay...",
   "obj_generate_button": "Generate tasks",
+  "obj_stop_button": "Stop",
   "obj_check_button": "Check completion",
   "obj_advanced_label": "Advanced",
   "obj_empty_title": "No tasks yet",

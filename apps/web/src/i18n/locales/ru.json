@@ -21,6 +21,7 @@
   "obj_description_label": "Цель",
   "obj_description_placeholder": "Опишите общую цель этой ролевой игры...",
   "obj_generate_button": "Сгенерировать задачи",
+  "obj_stop_button": "Остановить",
   "obj_check_button": "Проверить выполнение",
   "obj_advanced_label": "Дополнительно",
   "obj_empty_title": "Задач пока нет",

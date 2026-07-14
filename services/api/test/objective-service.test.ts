@@ -177,6 +177,32 @@ describe("ObjectiveService (INS-3b logic + INS-3c assembler wiring)", () => {
     expect((readState() as ObjectiveState).tasks).toEqual(initial.tasks);
   });
 
+  it("does not persist a generation result when cancellation wins after the LLM await", async () => {
+    const initial: ObjectiveState = {
+      ...defaultObjectiveState(),
+      objectiveDescription: "Escape",
+      tasks: [{ id: "t1", description: "Keep this route", status: OBJECTIVE_TASK_STATUS.pending }],
+    };
+    const { stores, readState } = makeMockStores(initial as unknown as Record<string, unknown>);
+    let releaseExecute: ((value: { text: string }) => void) | undefined;
+    let markStarted: (() => void) | undefined;
+    const started = new Promise<void>((resolve) => { markStarted = resolve; });
+    const execute = async () => new Promise<{ text: string }>((resolve) => {
+      releaseExecute = resolve;
+      markStarted?.();
+    });
+    const service = new ObjectiveService(stores, null as never, null as never, execute as never, async () => "BASE");
+    const controller = new AbortController();
+
+    const pending = service.generateTasks({ chatId: "chat_1" as never, profile, model: "m", context, signal: controller.signal });
+    await started;
+    controller.abort();
+    releaseExecute?.({ text: '{"tasks":[{"description":"Overwrite"}]}' });
+
+    await expect(pending).rejects.toThrow();
+    expect((readState() as ObjectiveState).tasks).toEqual(initial.tasks);
+  });
+
   it("checkCompletion advances the route when the LLM says DONE", async () => {
     const initial: ObjectiveState = {
       objectiveDescription: "Escape",
@@ -206,6 +232,32 @@ describe("ObjectiveService (INS-3b logic + INS-3c assembler wiring)", () => {
 
     const after = await service.checkCompletion({ chatId: "chat_1" as never, profile, model: "m", context });
     expect(after.tasks[0].status).toBe(OBJECTIVE_TASK_STATUS.pending);
+  });
+
+  it("does not advance a task when completion checking is cancelled after the LLM await", async () => {
+    const initial: ObjectiveState = {
+      ...defaultObjectiveState(),
+      objectiveDescription: "Escape",
+      tasks: [{ id: "t1", description: "Wait", status: OBJECTIVE_TASK_STATUS.pending }],
+    };
+    const { stores, readState } = makeMockStores(initial as unknown as Record<string, unknown>);
+    let releaseExecute: ((value: { text: string }) => void) | undefined;
+    let markStarted: (() => void) | undefined;
+    const started = new Promise<void>((resolve) => { markStarted = resolve; });
+    const execute = async () => new Promise<{ text: string }>((resolve) => {
+      releaseExecute = resolve;
+      markStarted?.();
+    });
+    const service = new ObjectiveService(stores, null as never, null as never, execute as never, async () => "BASE");
+    const controller = new AbortController();
+
+    const pending = service.checkCompletion({ chatId: "chat_1" as never, profile, model: "m", context, signal: controller.signal });
+    await started;
+    controller.abort();
+    releaseExecute?.({ text: '{"completed":true}' });
+
+    await expect(pending).rejects.toThrow();
+    expect((readState() as ObjectiveState).tasks[0].status).toBe(OBJECTIVE_TASK_STATUS.pending);
   });
 
   it("CRUD: addTask appends pending; updateTask patches; deleteTask removes; unknown id throws", async () => {

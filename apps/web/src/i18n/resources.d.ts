@@ -676,6 +676,7 @@ export default interface Resources {
     "obj_prompt_hint": "Leave empty to use the built-in default.",
     "obj_provider_label": "Provider",
     "obj_route_label": "Task route",
+    "obj_stop_button": "Stop",
     "obj_use_chat_model": "Use chat model",
     "obj_zone_check": "Check completion",
     "obj_zone_collapse": "Collapse",

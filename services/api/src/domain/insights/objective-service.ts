@@ -268,17 +268,20 @@ export class ObjectiveService {
    * list. Throws on an empty generation (the LLM produced no parseable tasks).
    */
   async generateTasks(input: ObjectiveGenerateInput): Promise<ObjectiveState> {
+    input.signal?.throwIfAborted();
     const existing = await this.getState(input.chatId);
     const state = existing ?? defaultObjectiveState();
     const instructionBase = await this.resolvePrompt("objectiveGenerate", state.generatePrompt);
     const instruction = composeGenerateInstruction(instructionBase, state.objectiveDescription);
     const prompt = this.buildPrompt(input.context, instruction);
     const result = await this.execute({ profile: input.profile, model: input.model, prompt, signal: input.signal });
+    input.signal?.throwIfAborted();
     const tasks = parseTaskList(result.text);
     if (tasks.length === 0) {
       throw new Error("Objective generation produced no tasks — try adjusting the objective description or the generate prompt.");
     }
     const next: ObjectiveState = { ...state, tasks };
+    input.signal?.throwIfAborted();
     await this.saveState(input.chatId, next);
     return next;
   }
@@ -289,6 +292,7 @@ export class ObjectiveService {
    * LLM says PENDING. Returns the (possibly updated) state.
    */
   async checkCompletion(input: ObjectiveCheckInput): Promise<ObjectiveState> {
+    input.signal?.throwIfAborted();
     const state = await this.getState(input.chatId);
     if (!state) return defaultObjectiveState();
     const target = selectActiveTask(state.tasks);
@@ -297,8 +301,10 @@ export class ObjectiveService {
     const instruction = composeCheckInstruction(instructionBase, state.objectiveDescription, target.description);
     const prompt = this.buildPrompt(input.context, instruction);
     const result = await this.execute({ profile: input.profile, model: input.model, prompt, signal: input.signal });
+    input.signal?.throwIfAborted();
     if (!parseCheckVerdict(result.text)) return state;
     const next: ObjectiveState = { ...state, tasks: advanceAfterCompletion(state.tasks) };
+    input.signal?.throwIfAborted();
     await this.saveState(input.chatId, next);
     return next;
   }

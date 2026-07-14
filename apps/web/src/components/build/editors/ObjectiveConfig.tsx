@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, type ReactNode } from "react";
+import { useState, useEffect, useMemo, useRef, type ReactNode } from "react";
 import { toast } from "sonner";
 import type { ChatId } from "@vibe-tavern/domain";
 import { Ic } from "../../shared/icons.js";
@@ -45,6 +45,7 @@ export function ObjectiveConfig({ chatId }: { chatId: ChatId }) {
   const activeChat = useSnapshotStore((s) => s.activeChat);
   const [busy, setBusy] = useState<"generate" | "check" | null>(null);
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  const activeAction = useRef<{ chatId: ChatId; which: "generate" | "check"; controller: AbortController } | null>(null);
 
   // `activeChat` is guaranteed by the parent (InsightsPanel guards no-chat), but
   // defend in case this is ever mounted standalone — never crash on a missing chat.
@@ -63,17 +64,39 @@ export function ObjectiveConfig({ chatId }: { chatId: ChatId }) {
       }
     : EMPTY_STATE;
 
+  useEffect(() => {
+    setBusy(null);
+    return () => {
+      const current = activeAction.current;
+      if (current?.chatId !== chatId) return;
+      activeAction.current = null;
+      current.controller.abort();
+    };
+  }, [chatId]);
+
+  function stop(which: "generate" | "check") {
+    const current = activeAction.current;
+    if (!current || current.chatId !== chatId || current.which !== which) return;
+    activeAction.current = null;
+    current.controller.abort();
+    setBusy(null);
+  }
+
   async function run(which: "generate" | "check", fn: (id: ChatId, signal: AbortSignal) => Promise<void>) {
-    if (busy) return;
+    if (activeAction.current) return;
+    const current = { chatId, which, controller: new AbortController() };
+    activeAction.current = current;
     setBusy(which);
-    const ctrl = new AbortController();
     try {
-      await fn(chatId, ctrl.signal);
+      await fn(chatId, current.controller.signal);
     } catch (err) {
-      if (ctrl.signal.aborted) return;
+      if (current.controller.signal.aborted) return;
       toast.error(err instanceof Error ? err.message : t("obj_action_failed"));
     } finally {
-      setBusy(null);
+      if (activeAction.current === current) {
+        activeAction.current = null;
+        setBusy(null);
+      }
     }
   }
 
@@ -103,21 +126,21 @@ export function ObjectiveConfig({ chatId }: { chatId: ChatId }) {
       <div className="flex flex-wrap gap-2">
         <button
           type="button"
-          disabled={busy !== null}
-          onClick={() => void run("generate", (id, signal) => generateObjectiveTasksAction(id, signal))}
+          disabled={busy !== null && busy !== "generate"}
+          onClick={() => busy === "generate" ? stop("generate") : void run("generate", generateObjectiveTasksAction)}
           className="inline-flex items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 font-ui text-[12px] font-medium text-on-accent transition-opacity hover:opacity-90 disabled:opacity-50"
         >
           {busy === "generate" ? spinner : <Ic.plus />}
-          {t("obj_generate_button")}
+          {t(busy === "generate" ? "obj_stop_button" : "obj_generate_button")}
         </button>
         <button
           type="button"
-          disabled={busy !== null || state.tasks.length === 0}
-          onClick={() => void run("check", (id, signal) => checkObjectiveCompletionAction(id, signal))}
+          disabled={(busy !== null && busy !== "check") || (busy === null && state.tasks.length === 0)}
+          onClick={() => busy === "check" ? stop("check") : void run("check", checkObjectiveCompletionAction)}
           className="inline-flex items-center gap-1.5 rounded-md border border-border2 bg-s2 px-3 py-1.5 font-ui text-[12px] font-medium text-t2 transition-colors hover:border-accent disabled:opacity-50"
         >
           {busy === "check" ? spinner : <Ic.checkCircle />}
-          {t("obj_check_button")}
+          {t(busy === "check" ? "obj_stop_button" : "obj_check_button")}
         </button>
       </div>
 
