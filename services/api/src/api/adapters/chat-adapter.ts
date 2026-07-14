@@ -1,5 +1,5 @@
 import type { ChatRuntimeApi } from "../contract/runtime-api.js";
-import { brandId, parseStoredAttachments, resolveEffectiveSettings, type ChatId, type ChatBranchId, type MessageId, type PromptPresetId } from "@vibe-tavern/domain";
+import { brandId, parseStoredAttachments, resolveEffectiveSettings, type ChatId, type ChatBranchId, type MessageId, type PromptPresetId, type SceneTrackerConfigPatch } from "@vibe-tavern/domain";
 import type { Attachment } from "@vibe-tavern/domain";
 import type { StoreContainer } from "@vibe-tavern/db";
 import { validation, notFound } from "../../shared/errors.js";
@@ -349,15 +349,32 @@ export class ChatAdapter implements ChatRuntimeApi {
 		return this.sessionRuntime.buildConfigPatchResponse(brandId<ChatId>(chatId), { activeChat: true });
 	};
 
-	updateInsightsConfig = async (chatId: string, body: { insightsConfig?: { objectiveEnabled?: boolean; trackerEnabled?: boolean } }) => {
-		const chat = await this.stores.chats.getById(chatId);
-		if (!chat) throw notFound("Chat", `Chat '${chatId}' was not found.`);
-		const insightsConfig = body.insightsConfig
-			? { ...chat.insightsConfig, ...body.insightsConfig }
-			: undefined;
-		await this.stores.chats.updateInsightsConfig(chatId, { insightsConfig });
+	updateInsightsConfig = async (chatId: string, body: { insightsConfig?: { objectiveEnabled?: boolean; trackerEnabled?: boolean; tracker?: SceneTrackerConfigPatch } }) => {
+		const existing = await this.stores.chats.getById(chatId);
+		if (!existing) throw notFound("Chat", `Chat '${chatId}' was not found.`);
+		const patch = body.insightsConfig;
+
+		// Toggle PATCH: shallow-merge onto the current config, preserving the
+		// tracker sub-object and every other key (the store replaces wholesale).
+		if (patch && (patch.objectiveEnabled !== undefined || patch.trackerEnabled !== undefined)) {
+			const merged = {
+				...existing.insightsConfig,
+				...(patch.objectiveEnabled !== undefined ? { objectiveEnabled: patch.objectiveEnabled } : {}),
+				...(patch.trackerEnabled !== undefined ? { trackerEnabled: patch.trackerEnabled } : {}),
+			};
+			await this.stores.chats.updateInsightsConfig(chatId, { insightsConfig: merged });
+		}
+
+		// Scene config PATCH: deep-merge field-by-field via the store (atomic
+		// revision/schemaHash bump; preserves toggles). Runs after the toggle
+		// write so it re-reads the freshly-toggled config. Objective state lives
+		// in a separate column and is never touched here.
+		if (patch?.tracker !== undefined) {
+			await this.stores.chats.updateSceneTrackerConfig(chatId, patch.tracker);
+		}
+
 		// insightsConfig lives on the chat row → return activeChat so the Insights
-		// panel refreshes.
+		// panel (and the tracker config editor) refreshes.
 		return this.sessionRuntime.buildConfigPatchResponse(brandId<ChatId>(chatId), { activeChat: true });
 	};
 

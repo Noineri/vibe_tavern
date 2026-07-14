@@ -2,7 +2,7 @@ import { eq, and, desc, asc, lte, count, inArray } from 'drizzle-orm';
 import { chats, chatBranches, characters, messages, messageVariants, promptTraces } from '../db-schema.js';
 import type { AppDb } from '../db-connection.js';
 import { resolveStoreRuntime, type StoreClock, type StoreIdGenerator } from '../persistence.js';
-import type { ChatMode } from '@vibe-tavern/domain';
+import { normalizeSceneTrackerConfig, applySceneTrackerConfigPatch, type ChatMode, type SceneTrackerConfigPatch } from '@vibe-tavern/domain';
 
 // ─── Return types ─────────────────────────────────────────────────────────────
 
@@ -237,6 +237,39 @@ export class ChatStore {
       .where(eq(chats.id, id))
       .returning();
     if (!row) throw new Error(`Chat '${id}' not found after insights config update`);
+    return this.mapRow(row);
+  }
+
+  /**
+   * Deep-merge a partial Scene Tracker config PATCH into the chat's stored
+   * `insightsConfigJson.tracker` sub-object (SCENE_TRACKER_PLAN SCN-2). The
+   * existing tracker is normalized from the fixed defaults first (so old chats
+   * without `tracker` adopt defaults), then the PATCH's settable fields override
+   * field-by-field, `revision` is bumped, and `schemaHash` is recomputed from
+   * the merged schema — all in one atomic write. The Objective toggles
+   * (`objectiveEnabled` / `trackerEnabled`) and any other `insightsConfigJson`
+   * keys are preserved; the Objective state column is never touched. No DB
+   * migration: the tracker nests inside the existing freeform JSON column.
+   */
+  async updateSceneTrackerConfig(id: string, patch: SceneTrackerConfigPatch): Promise<Chat> {
+    const chat = await this.getById(id);
+    if (!chat) throw new Error(`Chat '${id}' not found for scene tracker config update`);
+    const nextTracker = applySceneTrackerConfigPatch(
+      normalizeSceneTrackerConfig(chat.insightsConfig.tracker),
+      patch,
+    );
+    const mergedConfig = { ...chat.insightsConfig, tracker: nextTracker };
+    const now = this.clock.now();
+    const values: Partial<typeof chats.$inferInsert> = {
+      updatedAt: now,
+      insightsConfigJson: JSON.stringify(mergedConfig),
+    };
+    const [row] = await this.db
+      .update(chats)
+      .set(values)
+      .where(eq(chats.id, id))
+      .returning();
+    if (!row) throw new Error(`Chat '${id}' not found after scene tracker config update`);
     return this.mapRow(row);
   }
 

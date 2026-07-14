@@ -1,5 +1,6 @@
 import { OBJECTIVE_TASK_STATUS } from "@vibe-tavern/domain";
 import { z } from "zod";
+import { sceneTrackerConfigSchema, updateTrackerConfigSchema } from "./tracker-schema.js";
 
 /**
  * Per-chat Insights config (INSIGHTS_PLAN): the two opt-in feature toggles for
@@ -15,6 +16,14 @@ import { z } from "zod";
 export const insightsConfigSchema = z.object({
   objectiveEnabled: z.boolean().default(false),
   trackerEnabled: z.boolean().default(false),
+  /**
+   * Scene Tracker per-chat config (SCENE_TRACKER_PLAN SCN-2). Nested inside the
+   * toggles JSON column (`insights_config_json.tracker`); absent on chats stored
+   * before the feature existed, so optional here — readers normalize via
+   * `normalizeSceneTrackerConfig`. Deep-merged field-by-field on PATCH (see
+   * updateInsightsConfigSchema); Objective toggles/state are never touched.
+   */
+  tracker: sceneTrackerConfigSchema.optional(),
 });
 
 /**
@@ -29,6 +38,14 @@ export const updateInsightsConfigSchema = z.object({
   insightsConfig: z.object({
     objectiveEnabled: z.boolean().optional(),
     trackerEnabled: z.boolean().optional(),
+    /**
+     * Partial Scene config PATCH (default-free, mirrors updateObjectiveConfig):
+     * the store deep-merges it field-by-field into the stored `tracker`
+     * sub-object, bumps `revision`, and recomputes `schemaHash` atomically. A
+     * `schema` PATCH replaces the whole DSL. Server-managed `revision`/
+     * `schemaHash` are intentionally absent.
+     */
+    tracker: updateTrackerConfigSchema.optional(),
   }).optional(),
 });
 

@@ -7,6 +7,7 @@
  */
 import type { Chat, ChatBranch, ChatId, CharacterId, Message, MessageVariant } from "@vibe-tavern/domain";
 import type { AssemblePromptResponse, PromptPresetDto, PromptTraceRecordDto } from "@vibe-tavern/domain";
+import type { SceneTrackerConfig, SceneTrackerConfigPatch } from "@vibe-tavern/domain";
 
 // Wire-format output types shared with the backend (single source of truth in
 // @vibe-tavern/api-contracts). Two are imported under local aliases that the
@@ -51,10 +52,19 @@ export interface AutoSummaryConfig {
   model?: string;
 }
 
-/** Per-chat Insights toggles (INSIGHTS_PLAN). Both off by default. */
+/** Per-chat Insights toggles + nested Scene Tracker config (INSIGHTS_PLAN / SCENE_TRACKER_PLAN). */
 export interface InsightsConfig {
   objectiveEnabled: boolean;
   trackerEnabled: boolean;
+  /** Scene Tracker per-chat config; absent on old chats (normalized to defaults at read). */
+  tracker?: SceneTrackerConfig;
+}
+
+/** PATCH body for `updateInsightsConfig`: toggles + an optional partial tracker config (deep-merged server-side). */
+export interface InsightsConfigPatch {
+  objectiveEnabled?: boolean;
+  trackerEnabled?: boolean;
+  tracker?: SceneTrackerConfigPatch;
 }
 
 /** Objective task status (mirrors domain OBJECTIVE_TASK_STATUS). */

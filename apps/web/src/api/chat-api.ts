@@ -1,6 +1,6 @@
 import type { ChatId, ChatMode, ObjectiveTaskStatus, PromptTraceRecordDto } from "@vibe-tavern/domain";
 import type { CoauthorApplyRequest, CoauthorCorrection, CoauthorModule, CoauthorModuleCreate, CoauthorModuleUpdate } from "@vibe-tavern/api-contracts";
-import type { AppSnapshot, AppMessage, ChatListItem, ChatSummaryRecord, AutoSummaryConfig, InsightsConfig, InsightsCompletionPatchResponse, InsightsCompletionTarget } from "./types.js";
+import type { AppSnapshot, AppMessage, ChatListItem, ChatSummaryRecord, AutoSummaryConfig, InsightsConfigPatch, InsightsCompletionPatchResponse, InsightsCompletionTarget } from "./types.js";
 import { client } from "./client.js";
 import { unwrapRpc, unwrapError } from "./unwrap.js";
 import { normalizeMessage, normalizeSnapshot } from "./normalize.js";
@@ -356,7 +356,7 @@ export async function updateMemorySettings(
 
 export async function updateInsightsConfig(
   chatId: ChatId,
-  input: { insightsConfig?: Partial<InsightsConfig> },
+  input: { insightsConfig?: InsightsConfigPatch },
 ): Promise<AppSnapshot> {
   const response = await client.api.chats[":chatId"]["insights-config"].$patch({ param: { chatId }, json: input });
   const data = await unwrapRpc<AppSnapshot>(response);

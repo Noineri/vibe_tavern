@@ -24,6 +24,7 @@ export type {
   ChatSummaryRecord,
   AutoSummaryConfig,
   InsightsConfig,
+  InsightsConfigPatch,
   InsightsCompletionTarget,
   InsightsCompletionPatchResponse,
   ObjectiveState,

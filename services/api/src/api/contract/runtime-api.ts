@@ -21,7 +21,7 @@ import type {
 	SummaryResponse,
 	CharacterVersionResponse,
 } from "./session-types.js";
-import type { ObjectiveTaskStatus, PromptTraceRecordDto, PromptPresetDto, PronounForms } from "@vibe-tavern/domain";
+import type { ObjectiveTaskStatus, PromptTraceRecordDto, PromptPresetDto, PronounForms, SceneTrackerConfigPatch } from "@vibe-tavern/domain";
 import type { ChatMode } from "@vibe-tavern/domain";
 import type {
 	ChatSummary,
@@ -155,7 +155,7 @@ export interface ChatRuntimeApi {
 	deleteChatSummaryRecord: (chatId: string, summaryId: string) => Promise<{ ok: boolean; snapshot: SummaryResponse }>;
 	generateChatSummary: (chatId: string, body: { providerProfileId: string; model?: string; summarizedFrom: number; summarizedTo: number; targetSummaryId?: string; label?: string; includeInContext?: boolean; excludeSummarized?: boolean }, signal?: AbortSignal) => Promise<GenerateChatSummaryResult>;
 	updateMemorySettings: (chatId: string, body: { messageHistoryLimit?: number; autoSummaryConfig?: { enabled?: boolean; everyN?: number; useChatModel?: boolean; providerProfileId?: string; model?: string } }) => Promise<ConfigPatchResponse>;
-	updateInsightsConfig: (chatId: string, body: { insightsConfig?: { objectiveEnabled?: boolean; trackerEnabled?: boolean } }) => Promise<ConfigPatchResponse>;
+	updateInsightsConfig: (chatId: string, body: { insightsConfig?: { objectiveEnabled?: boolean; trackerEnabled?: boolean; tracker?: SceneTrackerConfigPatch } }) => Promise<ConfigPatchResponse>;
 	summarizeChat: (chatId: string, body: { providerProfileId: string; model?: string; maxMessages: number }, signal?: AbortSignal) => Promise<SummarizeChatResult>;
 	saveChatSummary: (chatId: string, body: { summary: string }) => Promise<SummarizeChatResult>;
 }

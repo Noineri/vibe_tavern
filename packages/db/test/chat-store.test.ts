@@ -5,6 +5,13 @@ import * as schema from "../src/db-schema.js";
 import { ChatStore } from "../src/stores/chat-store.js";
 import { MessageStore } from "../src/stores/message-store.js";
 import type { StoreClock, StoreIdGenerator } from "../src/persistence.js";
+import {
+  computeSceneSchemaHash,
+  createDefaultSceneTrackerConfig,
+  normalizeSceneTrackerConfig,
+  type SceneTrackerConfig,
+  type SceneTrackerDsl,
+} from "@vibe-tavern/domain";
 
 // ─── Test helpers ───────────────────────────────────────────────────────────
 
@@ -797,6 +804,103 @@ describe("ChatStore — insights config (INS-1b)", () => {
     await store.updateInsightsConfig(chat.id, { insightsConfig: { objectiveEnabled: false } });
     const reloaded = await store.getById(chat.id);
     expect(reloaded?.insightsConfig).toEqual({ objectiveEnabled: false });
+  });
+});
+
+describe("ChatStore — scene tracker config (SCN-2)", () => {
+  let db: Awaited<ReturnType<typeof createTestDb>>;
+  let store: ChatStore;
+
+  beforeEach(async () => {
+    db = await createTestDb();
+    bootstrap(db);
+    clockTick = 0;
+    idCounters = new Map();
+    store = new ChatStore(db, { clock: testClock, idGenerator: testIdGen });
+  });
+
+  test("a PATCH on an old chat (no tracker) normalizes to fixed defaults, bumps revision, and persists", async () => {
+    const chat = await store.createChat({ characterId: "char_1", title: "c", promptPresetId: "preset_1" });
+    // Old chat: insightsConfig is exactly the two toggles, no `tracker`.
+    expect(chat.insightsConfig.tracker).toBeUndefined();
+
+    const updated = await store.updateSceneTrackerConfig(chat.id, { contextWindow: 12 });
+    const tracker = normalizeSceneTrackerConfig(updated.insightsConfig.tracker);
+    // Defaults filled for every unmentioned field.
+    expect(tracker.autoMode).toBe("assistant");
+    expect(tracker.promptFormat).toBe("json");
+    expect(tracker.useChatModel).toBe(true);
+    expect(tracker.schema).toEqual({});
+    // The PATCHed field overrides.
+    expect(tracker.contextWindow).toBe(12);
+    // revision bumps 0 -> 1; schemaHash matches the (empty) schema.
+    expect(tracker.revision).toBe(1);
+    expect(tracker.schemaHash).toBe(computeSceneSchemaHash({}));
+
+    // Persists across reload.
+    const reloaded = await store.getById(chat.id);
+    const reloadedTracker = normalizeSceneTrackerConfig(reloaded?.insightsConfig.tracker);
+    expect(reloadedTracker.contextWindow).toBe(12);
+    expect(reloadedTracker.revision).toBe(1);
+  });
+
+  test("a PATCH deep-merges field-by-field: unmentioned tracker fields are preserved", async () => {
+    const chat = await store.createChat({ characterId: "char_1", title: "c", promptPresetId: "preset_1" });
+    await store.updateSceneTrackerConfig(chat.id, { contextWindow: 12, continuityLastN: 5, autoMode: "manual" });
+    // Now PATCH only autoMode back — contextWindow + continuityLastN must survive.
+    const updated = await store.updateSceneTrackerConfig(chat.id, { autoMode: "assistant" });
+    const tracker = normalizeSceneTrackerConfig(updated.insightsConfig.tracker);
+    expect(tracker.autoMode).toBe("assistant");
+    expect(tracker.contextWindow).toBe(12);
+    expect(tracker.continuityLastN).toBe(5);
+    // Two PATCHes -> revision 2.
+    expect(tracker.revision).toBe(2);
+  });
+
+  test("a PATCH preserves Objective toggles and never touches the Objective state column", async () => {
+    const chat = await store.createChat({ characterId: "char_1", title: "c", promptPresetId: "preset_1" });
+    // Turn both toggles on and write some Objective state.
+    await store.updateInsightsConfig(chat.id, { insightsConfig: { objectiveEnabled: true, trackerEnabled: true } });
+    await store.updateInsightsObjectiveState(chat.id, { insightsObjectiveState: { objectiveDescription: "goal", tasks: [] } });
+
+    await store.updateSceneTrackerConfig(chat.id, { contextWindow: 9 });
+
+    const reloaded = await store.getById(chat.id);
+    expect(reloaded?.insightsConfig.objectiveEnabled).toBe(true);
+    expect(reloaded?.insightsConfig.trackerEnabled).toBe(true);
+    // Objective state column is untouched by the tracker PATCH.
+    expect(reloaded?.insightsObjectiveState).toEqual({ objectiveDescription: "goal", tasks: [] });
+    // And the tracker itself was written.
+    expect(normalizeSceneTrackerConfig(reloaded?.insightsConfig.tracker).contextWindow).toBe(9);
+  });
+
+  test("a schema PATCH replaces the whole DSL and recomputes schemaHash atomically with the revision bump", async () => {
+    const dsl: SceneTrackerDsl = { tension: { $type: "number", min: 0, max: 10 } };
+    const chat = await store.createChat({ characterId: "char_1", title: "c", promptPresetId: "preset_1" });
+    const updated = await store.updateSceneTrackerConfig(chat.id, { schema: dsl });
+    const tracker = normalizeSceneTrackerConfig(updated.insightsConfig.tracker);
+    expect(tracker.schema).toEqual(dsl);
+    expect(tracker.schemaHash).toBe(computeSceneSchemaHash(dsl));
+    expect(tracker.schemaHash).not.toBe(computeSceneSchemaHash({}));
+    expect(tracker.revision).toBe(1);
+  });
+
+  test("normalization recovers defaults from a corrupt/partial stored tracker before merging", async () => {
+    const chat = await store.createChat({ characterId: "char_1", title: "c", promptPresetId: "preset_1" });
+    // Inject a malformed tracker (bogus scalar, unknown enum, missing fields) directly.
+    await store.updateInsightsConfig(chat.id, {
+      insightsConfig: { objectiveEnabled: true, trackerEnabled: true, tracker: { contextWindow: "oops", autoMode: "weird" } },
+    });
+    // The store normalizes the existing value first, then applies the PATCH.
+    const updated = await store.updateSceneTrackerConfig(chat.id, { injectLastN: 4 });
+    const tracker = normalizeSceneTrackerConfig(updated.insightsConfig.tracker);
+    expect(tracker.contextWindow).toBe(createDefaultSceneTrackerConfig().contextWindow); // bogus -> default
+    expect(tracker.autoMode).toBe("assistant"); // unknown enum -> default
+    expect(tracker.injectLastN).toBe(4); // PATCH applied
+    expect(tracker.revision).toBe(1);
+    // Toggles injected alongside the corrupt tracker survive the PATCH.
+    expect(updated.insightsConfig.objectiveEnabled).toBe(true);
+    expect(updated.insightsConfig.trackerEnabled).toBe(true);
   });
 });
 

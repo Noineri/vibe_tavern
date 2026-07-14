@@ -283,3 +283,85 @@ export function createDefaultSceneTrackerConfig(): SceneTrackerConfig {
     schemaHash: computeSceneSchemaHash(schema),
   };
 }
+
+// ---------------------------------------------------------------------------
+// Config PATCH merge + read normalization (SCN-2)
+// ---------------------------------------------------------------------------
+
+/**
+ * The settable fields of a {@link SceneTrackerConfig} PATCH — everything except
+ * the server-managed `revision` and `schemaHash`, all optional. Structurally
+ * mirrors the api-contracts `updateTrackerConfigSchema` input (db cannot import
+ * api-contracts, so the store types the patch against this domain type); only
+ * present keys override on merge.
+ */
+export type SceneTrackerConfigPatch = Partial<Omit<SceneTrackerConfig, "revision" | "schemaHash">>;
+
+/** A finite integer >= `min` floored, else `fallback`. Used by read-time clamps. */
+function finiteIntOr(value: unknown, min: number, fallback: number): number {
+  return typeof value === "number" && Number.isFinite(value) && value >= min
+    ? Math.floor(value)
+    : fallback;
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * Normalize a raw stored tracker value into a complete, integrity-correct
+ * {@link SceneTrackerConfig}. Missing/invalid fields fall back to the fixed
+ * defaults; `schemaHash` is always recomputed from the schema so a stored hash
+ * can never drift from the schema it claims; `revision` is preserved when a
+ * finite non-negative integer is present (else 0).
+ *
+ * This is the lazy no-migration path for chats whose `insightsConfigJson`
+ * predates the `tracker` sub-object: the store calls it on the existing value
+ * before applying a PATCH, and the client calls it on read so old chats
+ * surface defaults. Full DSL validation (limits, reserved segments) is the
+ * route's job via api-contracts; this only defends against corrupt/partial
+ * stored JSON, so it never throws.
+ */
+export function normalizeSceneTrackerConfig(raw: unknown): SceneTrackerConfig {
+  const base = createDefaultSceneTrackerConfig();
+  if (!isPlainRecord(raw)) return base;
+  const schema: SceneTrackerDsl = isPlainRecord(raw.schema) ? (raw.schema as SceneTrackerDsl) : base.schema;
+  return {
+    schema,
+    autoMode: raw.autoMode === SCENE_AUTO_MODE.manual ? SCENE_AUTO_MODE.manual : base.autoMode,
+    contextWindow: finiteIntOr(raw.contextWindow, 1, base.contextWindow),
+    continuityLastN: finiteIntOr(raw.continuityLastN, 0, base.continuityLastN),
+    injectionDepth: finiteIntOr(raw.injectionDepth, 1, base.injectionDepth),
+    injectLastN: finiteIntOr(raw.injectLastN, 0, base.injectLastN),
+    promptFormat: raw.promptFormat === SCENE_PROMPT_FORMAT.xml ? SCENE_PROMPT_FORMAT.xml : base.promptFormat,
+    useChatModel: typeof raw.useChatModel === "boolean" ? raw.useChatModel : base.useChatModel,
+    generatePrompt: typeof raw.generatePrompt === "string" ? raw.generatePrompt : base.generatePrompt,
+    injectPrompt: typeof raw.injectPrompt === "string" ? raw.injectPrompt : base.injectPrompt,
+    providerProfileId: typeof raw.providerProfileId === "string" && raw.providerProfileId ? raw.providerProfileId : null,
+    model: typeof raw.model === "string" && raw.model ? raw.model : null,
+    revision: finiteIntOr(raw.revision, 0, 0),
+    schemaHash: computeSceneSchemaHash(schema),
+  };
+}
+
+/**
+ * Apply a partial tracker config PATCH to a full existing config: shallow-merge
+ * the settable top-level fields (a `schema` PATCH replaces the whole DSL — DSL
+ * trees are never merged node-by-node), recompute `schemaHash` from the merged
+ * schema, and bump the internal `revision`. Only sent keys override; unmentioned
+ * fields are never reset. `revision`/`schemaHash` are recomputed here, never
+ * taken from the PATCH. Mirrors ObjectiveService.updateObjectiveConfig's merge.
+ */
+export function applySceneTrackerConfigPatch(
+  existing: SceneTrackerConfig,
+  patch: SceneTrackerConfigPatch,
+): SceneTrackerConfig {
+  const schema = patch.schema ?? existing.schema;
+  return {
+    ...existing,
+    ...patch,
+    schema,
+    schemaHash: computeSceneSchemaHash(schema),
+    revision: existing.revision + 1,
+  };
+}

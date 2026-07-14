@@ -25,6 +25,7 @@
         "../../packages/prompt-pipeline/src/index.ts"
       ]
     },
-    "composite": false
+    "composite": false,
+    "declaration": false
   }
 }
