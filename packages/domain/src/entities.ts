@@ -36,6 +36,12 @@ import type {
   ObjectiveTaskStatus,
 } from "./platform-constants.js";
 
+import type {
+  SceneAutoMode,
+  ScenePromptFormat,
+  SceneTrackerDsl,
+} from "./scene-tracker-constants.js";
+
 export type Timestamp = string;
 
 export {
@@ -557,4 +563,71 @@ export interface ObjectiveState {
   useChatModel: boolean;
   providerProfileId: string | null;
   model: string | null;
+}
+
+/**
+ * The full Scene Tracker config for a chat (SCENE_TRACKER_PLAN). Stored as JSON
+ * under `chats.insights_config_json.tracker`, isolated from the Objective
+ * config: a Scene config PATCH deep-merges only this sub-object and never
+ * touches the Objective toggles or Objective state.
+ *
+ * `schema` is the user-authored shape grammar; `revision` is a monotonic
+ * counter incremented on edit; `schemaHash` is the canonical hash of `schema`,
+ * recomputed whenever the DSL changes, so records generated under an old schema
+ * become invisible until regenerated. Defaults are fixed — see
+ * `createDefaultSceneTrackerConfig`.
+ */
+export interface SceneTrackerConfig {
+  /** The bounded shape grammar describing the scene state the model must fill. */
+  schema: SceneTrackerDsl;
+  /** When to auto-generate (after each assistant response, or manual only). */
+  autoMode: SceneAutoMode;
+  /** Number of recent branch messages supplied to the Scene generation model. */
+  contextWindow: number;
+  /** How many previous valid selected-variant records feed continuity input. */
+  continuityLastN: number;
+  /** in_chat injectionDepth for the sceneState prompt layer; default 1. */
+  injectionDepth: number;
+  /** How many of the latest valid selected-variant scenes to inject. */
+  injectLastN: number;
+  /** Serialization of the validated sceneState block for main-model injection. */
+  promptFormat: ScenePromptFormat;
+  /** Run Scene generation on the chat's active provider+model when true. */
+  useChatModel: boolean;
+  /** Custom generate prompt override (empty → the scene-generate.md asset default). */
+  generatePrompt: string;
+  /** Custom inject prompt override (empty → default). */
+  injectPrompt: string;
+  /** Pinned provider for Scene generation when `useChatModel` is false. */
+  providerProfileId: string | null;
+  /** Pinned model for Scene generation when `useChatModel` is false. */
+  model: string | null;
+  /** Internal monotonic config revision; stamped on generated records for freshness. */
+  revision: number;
+  /** Canonical hash of `schema`; stamped on generated records so old-schema output is detectable. */
+  schemaHash: string;
+}
+
+/**
+ * One generated Scene record, canonical per immutable message variant. Stored
+ * on `message_variants.scene_tracker_json` (SCN-3); `chats.insights_current_scene_json`
+ * is a derived/rebuildable cache only. The freshness metadata (`schemaHash`,
+ * `configRevision`, `sourceHash`) lets the service reject stale output after
+ * the LLM await: a record whose stamped values no longer match the live
+ * config/source is invisible and non-injectable until regenerated.
+ */
+export interface SceneTrackerRecord {
+  /** The immutable variant this record was generated for (ownership identity). */
+  variantId: MessageVariantId;
+  /** The config `schemaHash` captured at generation time. */
+  schemaHash: string;
+  /** The config `revision` captured at generation time. */
+  configRevision: number;
+  /** Hash of the variant source content captured at generation time. */
+  sourceHash: string;
+  /** The validated scene state, matching the then-current schema. */
+  sceneState: Record<string, unknown>;
+  /** The model that produced this record (for trace). */
+  modelId: string | null;
+  generatedAt: Timestamp;
 }

@@ -72,6 +72,24 @@ export {
   updateObjectiveConfigSchema,
 } from "./insights-schema.js";
 export {
+  sceneTrackerNodeSchema,
+  sceneTrackerDslSchema,
+  buildSceneValueSchema,
+  buildSceneDataSchema,
+  validateSceneData,
+  sceneTrackerEditPathSegmentSchema,
+  sceneTrackerEditPathSchema,
+  resolveSceneDslPath,
+  sceneTrackerConfigSchema,
+  updateTrackerConfigSchema,
+} from "./tracker-schema.js";
+export type {
+  SceneTrackerConfigInput,
+  SceneTrackerConfigParsed,
+  UpdateSceneTrackerConfig,
+  ScenePathResolution,
+} from "./tracker-schema.js";
+export {
   debugSendLogSchema,
   importJsonSchema,
   importJsonBatchSchema,
