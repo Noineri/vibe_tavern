@@ -74,6 +74,18 @@ export interface MessageVariantSceneRecord {
 }
 
 /**
+ * The active branch's latest assistant message + its selected variant's raw
+ * Scene record — the source for the derived current-Scene cache (SCN-6).
+ * Null when the branch has no assistant message, the latest assistant has no
+ * selected variant, or that variant has no record. See {@link MessageStore.getCurrentSceneTarget}.
+ */
+export interface CurrentSceneTarget {
+  messageId: string;
+  variantId: string;
+  record: MessageVariantSceneRecord;
+}
+
+/**
  * Store-level Scene backfill run — durable job state for history backfill
  * (SCENE_TRACKER_PLAN Wave 7). Tracks the JOB only (ownership / frozen
  * manifest / cursor / status / per-item errors / cancel / summary); it is
@@ -673,6 +685,28 @@ export class MessageStore {
       .set({ sceneTrackerJson: null })
       .where(eq(messageVariants.id, variantId))
       .run();
+  }
+
+  /**
+   * The active branch's latest assistant message + its selected variant's raw
+   * Scene record — the source for the derived current-Scene cache (SCN-6).
+   * LATEST-assistant-only (no fallback): the cache mirrors the CURRENT
+   * selection, so a not-yet-tracked latest reply yields null rather than a
+   * stale earlier scene. The record is RAW — no freshness filter here; the
+   * cache layer validates schemaHash/configRevision against the live config.
+   */
+  async getCurrentSceneTarget(branchId: string): Promise<CurrentSceneTarget | null> {
+    const branchMessages = await this.getMessages(branchId);
+    for (let index = branchMessages.length - 1; index >= 0; index -= 1) {
+      const message = branchMessages[index];
+      if (!message || message.role !== "assistant") continue;
+      const selected = await this.getSelectedVariant(message.id);
+      if (!selected) return null;
+      const record = await this.getSceneRecord(selected.id);
+      if (!record) return null;
+      return { messageId: message.id, variantId: selected.id, record };
+    }
+    return null;
   }
 
   // ─── Scene backfill runs (durable job state) ──────────────────────────────

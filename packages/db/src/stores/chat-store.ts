@@ -287,6 +287,21 @@ export class ChatStore {
     return this.mapRow(row);
   }
 
+  /**
+   * Write the derived current-Scene cache (SCN-6). `null`/empty resets it to the
+   * `'{}'` default. NOT authoritative — the canonical record lives on
+   * `message_variants.scene_tracker_json`; this is the chat-level mirror kept
+   * current with the active selection by `scene-cache.ts`. Returns void: no
+   * caller needs the chat back from a cache write.
+   */
+  async updateInsightsCurrentScene(id: string, value: object | null): Promise<void> {
+    await this.db
+      .update(chats)
+      .set({ insightsCurrentSceneJson: value === null ? "{}" : JSON.stringify(value), updatedAt: this.clock.now() })
+      .where(eq(chats.id, id))
+      .run();
+  }
+
   async setPersona(id: string, personaId: string | null): Promise<Chat> {
     const now = this.clock.now();
     const [row] = await this.db

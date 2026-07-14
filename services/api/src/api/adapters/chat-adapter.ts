@@ -1,5 +1,6 @@
 import type { ChatRuntimeApi } from "../contract/runtime-api.js";
 import { brandId, parseStoredAttachments, resolveEffectiveSettings, type ChatId, type ChatBranchId, type MessageId, type PromptPresetId, type SceneTrackerConfigPatch } from "@vibe-tavern/domain";
+import { rebuildCurrentSceneCache } from "../../domain/insights/scene-cache.js";
 import type { Attachment } from "@vibe-tavern/domain";
 import type { StoreContainer } from "@vibe-tavern/db";
 import { validation, notFound } from "../../shared/errors.js";
@@ -371,6 +372,10 @@ export class ChatAdapter implements ChatRuntimeApi {
 		// in a separate column and is never touched here.
 		if (patch?.tracker !== undefined) {
 			await this.stores.chats.updateSceneTrackerConfig(chatId, patch.tracker);
+			// A schema/revision change can stale the current-Scene cache (a record
+			// generated under the old schema is no longer current) — re-project it
+			// from the live selection so the cache never drifts (SCN-6).
+			await rebuildCurrentSceneCache(this.stores, brandId<ChatId>(chatId));
 		}
 
 		// insightsConfig lives on the chat row → return activeChat so the Insights
