@@ -216,6 +216,18 @@ export function computeSceneSchemaHash(dsl: SceneTrackerDsl): string {
   return fnv1a64Hex(stableStringify(dsl));
 }
 
+/**
+ * Canonical hash of a variant's source content (its assistant text). Stamped as
+ * a record's `sourceHash` at generation/edit time so the service can detect
+ * content drift after the LLM await: if the variant was edited while the model
+ * was working, the stamped `sourceHash` no longer matches the live content and
+ * the stale result is discarded. Same primitive as {@link computeSceneSchemaHash}
+ * so both freshness hashes are comparable in kind.
+ */
+export function computeSceneSourceHash(content: string): string {
+  return fnv1a64Hex(stableStringify(content));
+}
+
 /** Deterministic JSON serialization: object keys sorted ascending, arrays in order. */
 function stableStringify(value: unknown): string {
   if (value === null) return "null";
