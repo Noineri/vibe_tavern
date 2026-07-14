@@ -22,17 +22,24 @@ import { AssistantContextHeader } from "../AssistantContextHeader.js";
 import { ObjectiveZone } from "./objective-zone.js";
 import { useSnapshotStore } from "../../../stores/snapshot-store.js";
 import { useHeaderZoneExpansionStore } from "../../../stores/header-zone-expansion.js";
-import type { ObjectiveState } from "../../../api/types.js";
+import type { InsightsCompletionPatchResponse, ObjectiveState } from "../../../api/types.js";
+import { cancelInsightsCompletionRefresh, startInsightsCompletionRefresh } from "../../../stores/api-actions/insights-completion-actions.js";
 
 const mocks = vi.hoisted(() => ({
   updateObjectiveTaskAction: vi.fn(),
   generateObjectiveTasksAction: vi.fn(),
   checkObjectiveCompletionAction: vi.fn(),
+  refreshInsightsCompletion: vi.fn(),
 }));
 
 vi.mock("../../../i18n/context.js", () => ({
   useT: () => ({ t: (k: string) => k, tDynamic: (k: string) => k, locale: "en", setLocale: () => {}, ready: true }),
 }));
+
+vi.mock("../../../app-client.js", async (importOriginal) => {
+  const actual = await importOriginal() as typeof import("../../../app-client.js");
+  return { ...actual, refreshInsightsCompletion: mocks.refreshInsightsCompletion };
+});
 
 vi.mock("../../../stores/api-actions/chat-actions.js", () => ({
   updateObjectiveTaskAction: mocks.updateObjectiveTaskAction,
@@ -47,6 +54,8 @@ afterEach(() => {
   mocks.updateObjectiveTaskAction.mockReset();
   mocks.generateObjectiveTasksAction.mockReset();
   mocks.checkObjectiveCompletionAction.mockReset();
+  mocks.refreshInsightsCompletion.mockReset();
+  cancelInsightsCompletionRefresh("c1" as never);
 });
 
 function seedState(state: ObjectiveState, objectiveEnabled: boolean) {
@@ -235,5 +244,59 @@ describe("Objective slot + real AssistantContextHeader", () => {
     expect(container.textContent).not.toContain("Enter the forest");
     expect(container.querySelector('[title="obj_zone_expand"]')).toBeNull();
     expect(container.querySelector('[class*="bg-border"]')).toBeNull();
+  });
+
+  it("mounts the real zone when an asynchronous completion-refresh patch arrives", async () => {
+    const exhausted: ObjectiveState = {
+      ...ROUTE,
+      tasks: ROUTE.tasks.map((task) => ({ ...task, status: "completed" as const })),
+    };
+    seedState(exhausted, true);
+    useSnapshotStore.getState().ingestSnapshot({
+      messages: [{
+        id: "m1",
+        chatId: "c1",
+        branchId: "b1",
+        role: "assistant",
+        position: 1,
+        content: "Committed reply",
+        variants: [],
+        selectedVariantIndex: null,
+        modelId: null,
+      } as never],
+    });
+
+    let resolveRefresh: (response: InsightsCompletionPatchResponse) => void = () => {};
+    mocks.refreshInsightsCompletion.mockReturnValueOnce(new Promise<InsightsCompletionPatchResponse>((resolve) => {
+      resolveRefresh = resolve;
+    }));
+
+    const { container } = render(
+      <AssistantContextHeader
+        author={{ name: "Aria", avatarAssetId: null, avatarCropJson: null, avatarSrc: null, avatarNode: undefined }}
+        slotCtx={{ chatId: "c1", messageId: "m1", messageRole: "assistant", variantIndex: 0, isStreaming: false, extras: {} }}
+        isMobile={false}
+        isEditing={false}
+        isGenerating={false}
+        onToggleMobileMenu={() => {}}
+      />,
+    );
+
+    expect(container.textContent).not.toContain("Enter the forest");
+    expect(container.querySelector('[class*="bg-border"]')).toBeNull();
+
+    act(() => startInsightsCompletionRefresh("c1" as never, { branchId: "b1", messageId: "m1" }));
+    expect(container.textContent).not.toContain("Enter the forest");
+
+    await act(async () => {
+      resolveRefresh({
+        target: { chatId: "c1", branchId: "b1", messageId: "m1" },
+        patch: { objectiveState: ROUTE },
+      });
+    });
+
+    await waitFor(() => expect(container.textContent).toContain("Enter the forest"));
+    expect(container.querySelector('[title="obj_zone_expand"]')).not.toBeNull();
+    expect(container.querySelector('[class*="bg-border"]')).not.toBeNull();
   });
 });

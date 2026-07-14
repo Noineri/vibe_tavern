@@ -453,7 +453,7 @@ Join the current chat-scoped forward-state insight job without cancelling the sh
 }
 ```
 
-**Response:** `InsightsCompletionPatchResponse` — echoes the immutable `{ chatId, branchId, messageId }` target and returns only the refreshed `patch.objectiveState`; the optional target message patch is reserved for variant-scoped Scene delivery. It never returns a whole `SessionSnapshot`.
+**Response:** `InsightsCompletionPatchResponse` — echoes the immutable `{ chatId, branchId, messageId }` target and returns only the refreshed `patch.objectiveState`; the optional target message patch is reserved for variant-scoped Scene delivery. It never returns a whole `SessionSnapshot`. The frontend applies it only while the request remains the latest target for that chat and the echoed message still belongs to the active chat/branch.
 
 ### `POST /api/chats/:chatId/summary`
 

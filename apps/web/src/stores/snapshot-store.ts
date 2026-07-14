@@ -8,6 +8,7 @@ import type {
   AppPersona,
   AppCharacterEntry,
   ChatListItem,
+  InsightsCompletionPatchResponse,
 } from "../app-client.js";
 import type { ChatBranch, PromptTraceRecordDto, AssemblePromptResponse, PronounForms } from "@vibe-tavern/domain";
 
@@ -83,6 +84,9 @@ interface SnapshotActions {
    * data — components only re-render when their specific values change.
    */
   ingestSnapshot(snapshot: AppSnapshot): void;
+
+  /** Apply a completion patch only while its immutable chat/message target is current. */
+  applyInsightsCompletionPatch(response: InsightsCompletionPatchResponse): boolean;
 
   /**
    * Clear all chat data (used before switching chats or on logout).
@@ -198,7 +202,7 @@ function sameStringArray(a: string[], b: string[]): boolean {
 // ── Store ──────────────────────────────────────────────────────────────
 
 export const useSnapshotStore = create<SnapshotStore>()(
-  immer((set) => ({
+  immer((set, get) => ({
     ...initialState,
 
     ingestSnapshot: (snapshot) =>
@@ -298,6 +302,44 @@ export const useSnapshotStore = create<SnapshotStore>()(
           }
         }
       }),
+
+    applyInsightsCompletionPatch: (response) => {
+      const current = get();
+      const { target, patch } = response;
+      const targetMessage = current.messagesById[target.messageId];
+      if (
+        current.activeChat?.id !== target.chatId ||
+        !targetMessage ||
+        targetMessage.chatId !== target.chatId ||
+        targetMessage.branchId !== target.branchId ||
+        targetMessage.role !== "assistant"
+      ) {
+        return false;
+      }
+      if (
+        patch.message &&
+        (
+          patch.message.id !== target.messageId ||
+          patch.message.chatId !== target.chatId ||
+          patch.message.branchId !== target.branchId ||
+          patch.message.role !== "assistant"
+        )
+      ) {
+        return false;
+      }
+
+      set((draft) => {
+        if (patch.objectiveState && draft.activeChat) {
+          if (!deepEqual(draft.activeChat.insightsObjectiveState, patch.objectiveState)) {
+            draft.activeChat.insightsObjectiveState = patch.objectiveState;
+          }
+        }
+        if (patch.message && !deepEqual(draft.messagesById[target.messageId], patch.message)) {
+          draft.messagesById[target.messageId] = patch.message;
+        }
+      });
+      return true;
+    },
 
     clear: () =>
       set((draft) => {

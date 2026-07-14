@@ -15,8 +15,9 @@ import type { ObjectiveService } from "./objective-service.js";
 // (runExclusiveTrailing — a dropped trigger marks the key dirty and the running
 // check re-runs once before releasing, so the latest message is always
 // evaluated; objective is forward-injected, so a one-turn detection lag is
-// toxic). No SSE — manual actions return via RPC; auto persists to
-// insightsObjectiveStateJson and the UI reads it on the next snapshot refresh.
+// toxic). No SSE — manual actions return directly; auto persists to
+// insightsObjectiveStateJson, the next prompt joins its job, and the frontend
+// receives the committed state through the target-scoped completion-refresh RPC.
 //
 // Mirrors chat-summary-feature.ts's shape. Scene Tracker (INS-9) will share
 // this module (a second message.appended subscription + its own trailing lock).

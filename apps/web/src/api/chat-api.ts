@@ -1,9 +1,9 @@
 import type { ChatId, ChatMode, ObjectiveTaskStatus, PromptTraceRecordDto } from "@vibe-tavern/domain";
 import type { CoauthorApplyRequest, CoauthorCorrection, CoauthorModule, CoauthorModuleCreate, CoauthorModuleUpdate } from "@vibe-tavern/api-contracts";
-import type { AppSnapshot, AppMessage, ChatListItem, ChatSummaryRecord, AutoSummaryConfig, InsightsConfig } from "./types.js";
+import type { AppSnapshot, AppMessage, ChatListItem, ChatSummaryRecord, AutoSummaryConfig, InsightsConfig, InsightsCompletionPatchResponse, InsightsCompletionTarget } from "./types.js";
 import { client } from "./client.js";
 import { unwrapRpc, unwrapError } from "./unwrap.js";
-import { normalizeSnapshot } from "./normalize.js";
+import { normalizeMessage, normalizeSnapshot } from "./normalize.js";
 import { sendStream, regenerateStream, generateReplyStream, type StreamOpts } from "./stream.js";
 import { getGatewayBaseUrl, getMobileToken } from "./client.js";
 import { appendTokenQuery } from "../lib/mobile-token.js";
@@ -364,9 +364,25 @@ export async function updateInsightsConfig(
 }
 
 // ─── Insights — Objective Tracker (INS-5) ────────────────────────────────
-// Manual actions return via RPC (no SSE); each round-trips the snapshot so the
-// store refreshes. Provider/model omitted → the backend resolves the active
-// provider profile + its default model.
+// Manual actions return via RPC. Automatic work remains fire-and-forget and is
+// delivered by the scoped completion-refresh join rather than SSE.
+
+export async function refreshInsightsCompletion(
+  chatId: ChatId,
+  target: InsightsCompletionTarget,
+  options?: { signal?: AbortSignal },
+): Promise<InsightsCompletionPatchResponse> {
+  const response = await client.api.chats[":chatId"].insights["completion-refresh"].$post(
+    { param: { chatId }, json: { target } },
+    { init: { signal: options?.signal } },
+  );
+  const data = await unwrapRpc<InsightsCompletionPatchResponse>(response);
+  if (!data.patch.message) return data;
+  return {
+    ...data,
+    patch: { ...data.patch, message: normalizeMessage(data.patch.message) },
+  };
+}
 
 export async function generateObjectiveTasks(
   chatId: ChatId,

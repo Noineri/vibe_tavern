@@ -82,6 +82,19 @@ export interface ObjectiveState {
   model: string | null;
 }
 
+export interface InsightsCompletionTarget {
+  branchId: string;
+  messageId: string;
+}
+
+export interface InsightsCompletionPatchResponse {
+  target: InsightsCompletionTarget & { chatId: string };
+  patch: {
+    objectiveState?: ObjectiveState;
+    message?: AppMessage;
+  };
+}
+
 export type ChatGenerationStatus =
   | "idle"
   | "preparing"

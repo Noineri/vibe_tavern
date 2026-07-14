@@ -49,6 +49,7 @@ import { useSnapshotStore } from "../snapshot-store.js";
 import { useChatStore } from "../chat-store.js";
 import { useNavigationStore } from "../navigation-store.js";
 import { fetchBootstrapAction } from "./bootstrap-actions.js";
+import { startInsightsCompletionRefreshFromSnapshot } from "./insights-completion-actions.js";
 
 // Single canonical backend snapshot cache.
 function syncSnapshot(snapshot: AppSnapshot) {
@@ -74,11 +75,12 @@ export async function waitForPendingVariantSelections(chatId: ChatId): Promise<v
 // Chat Actions
 // ---------------------------------------------------------------------------
 
-export async function fetchChatAction(chatId: ChatId): Promise<void> {
+export async function fetchChatAction(chatId: ChatId): Promise<AppSnapshot> {
   await waitForPendingVariantSelections(chatId);
   const snapshot = await fetchChat(chatId);
   syncSnapshot(snapshot);
   syncSelectedCharacterFromSnapshot(snapshot);
+  return snapshot;
 }
 
 export async function setChatPersonaAction(chatId: ChatId, personaId: string): Promise<void> {
@@ -179,6 +181,7 @@ export async function setCoauthorModuleAction(chatId: ChatId, moduleId: string |
 export async function sendChatMessageAction(chatId: ChatId, content: string, attachments?: { id: string; name: string; type: "image" | "file" | "video"; assetId: string; mimeType: string; sizeBytes: number; }[], signal?: AbortSignal): Promise<void> {
   const snapshot = await sendChatMessage(chatId, { content, attachments }, { signal });
   syncSnapshot(snapshot);
+  startInsightsCompletionRefreshFromSnapshot(chatId, snapshot);
 }
 
 export async function regenerateMessageAction(chatId: ChatId, messageId: string, signal?: AbortSignal, override?: { model?: string; promptPresetId?: string }): Promise<void> {
@@ -334,6 +337,7 @@ export async function renameBranchAction(chatId: ChatId, branchId: ChatBranchId,
 export async function generateReplyAction(chatId: ChatId, signal?: AbortSignal): Promise<void> {
   const snapshot = await generateReply(chatId, { signal });
   syncSnapshot(snapshot);
+  startInsightsCompletionRefreshFromSnapshot(chatId, snapshot);
 }
 
 export async function summarizeChatAction(chatId: ChatId, input: Parameters<typeof summarizeChat>[1]): Promise<{ summary: string }> {

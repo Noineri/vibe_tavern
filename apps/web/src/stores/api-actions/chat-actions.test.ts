@@ -4,17 +4,34 @@ import type { AppSnapshot, ChatListItem } from "../../app-client.js";
 import { useChatStore } from "../chat-store.js";
 import { useSnapshotStore } from "../snapshot-store.js";
 import { useNavigationStore } from "../navigation-store.js";
-import { deleteChatAction, forkBranchAction, generateObjectiveTasksAction, switchModeAction } from "./chat-actions.js";
+import { deleteChatAction, forkBranchAction, generateObjectiveTasksAction, generateReplyAction, sendChatMessageAction, switchModeAction } from "./chat-actions.js";
 
 // Mocks for the deleteChatAction tests below. `deleteChat` returns the
 // backend's ChatListResponse ({ chats }); the fire-and-forget bootstrap is
 // stubbed so it can't race the assertion. Other app-client exports stay real
 // (spread), so the switchModeAction tests in this file are unaffected.
-const { deleteChatMock, forkBranchMock, generateObjectiveTasksMock } = vi.hoisted(() => ({ deleteChatMock: vi.fn(), forkBranchMock: vi.fn(), generateObjectiveTasksMock: vi.fn() }));
+const { deleteChatMock, forkBranchMock, generateObjectiveTasksMock, generateReplyMock, sendChatMessageMock, startCompletionRefreshMock } = vi.hoisted(() => ({
+  deleteChatMock: vi.fn(),
+  forkBranchMock: vi.fn(),
+  generateObjectiveTasksMock: vi.fn(),
+  generateReplyMock: vi.fn(),
+  sendChatMessageMock: vi.fn(),
+  startCompletionRefreshMock: vi.fn(),
+}));
 vi.mock("../../app-client.js", async (importOriginal) => {
   const actual = await importOriginal() as typeof import("../../app-client.js");
-  return { ...actual, deleteChat: deleteChatMock, forkBranch: forkBranchMock, generateObjectiveTasks: generateObjectiveTasksMock };
+  return {
+    ...actual,
+    deleteChat: deleteChatMock,
+    forkBranch: forkBranchMock,
+    generateObjectiveTasks: generateObjectiveTasksMock,
+    generateReply: generateReplyMock,
+    sendChatMessage: sendChatMessageMock,
+  };
 });
+vi.mock("./insights-completion-actions.js", () => ({
+  startInsightsCompletionRefreshFromSnapshot: startCompletionRefreshMock,
+}));
 vi.mock("./bootstrap-actions.js", async (importOriginal) => {
   const actual = await importOriginal() as typeof import("./bootstrap-actions.js");
   return { ...actual, fetchBootstrapAction: vi.fn().mockResolvedValue(undefined) };
@@ -61,10 +78,33 @@ beforeEach(() => {
   deleteChatMock.mockReset();
   forkBranchMock.mockReset();
   generateObjectiveTasksMock.mockReset();
+  generateReplyMock.mockReset();
+  sendChatMessageMock.mockReset();
+  startCompletionRefreshMock.mockReset();
   useSnapshotStore.getState().clear();
   useChatStore.getState().setActiveChatId(null);
   useChatStore.getState().setSelectedCharacterId(null);
   useNavigationStore.getState().setMode("play");
+});
+
+describe("committed assistant completion refresh", () => {
+  test("starts the scoped refresh after a non-streaming send snapshot is ingested", async () => {
+    const snapshot = { messages: [{ id: "msg_1" }] } as unknown as AppSnapshot;
+    sendChatMessageMock.mockResolvedValueOnce(snapshot);
+
+    await sendChatMessageAction(chatId("chat-1"), "Hello");
+
+    expect(startCompletionRefreshMock).toHaveBeenCalledWith(chatId("chat-1"), snapshot);
+  });
+
+  test("starts the scoped refresh after a non-streaming generate-reply snapshot is ingested", async () => {
+    const snapshot = { messages: [{ id: "msg_2" }] } as unknown as AppSnapshot;
+    generateReplyMock.mockResolvedValueOnce(snapshot);
+
+    await generateReplyAction(chatId("chat-1"));
+
+    expect(startCompletionRefreshMock).toHaveBeenCalledWith(chatId("chat-1"), snapshot);
+  });
 });
 
 describe("generateObjectiveTasksAction", () => {

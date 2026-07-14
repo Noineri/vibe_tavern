@@ -31,7 +31,7 @@ The stores split into three layers: **canonical backend-confirmed state**, **UI/
 
 Bootstrap reference data (prompt presets, personas, first-run/loading state) lives in the action module `stores/api-actions/bootstrap-actions.ts`, not a dedicated store.
 
-**Key pattern:** `useSnapshotStore.ingestSnapshot(snapshot)` is the single entry point for backend data. API actions (`stores/api-actions/*.ts`) call the backend, receive a snapshot or partial response, and write it through this method. No individual `setState` calls for server data.
+**Key pattern:** `useSnapshotStore.ingestSnapshot(snapshot)` is the normal entry point for snapshot-shaped backend data. API actions (`stores/api-actions/*.ts`) call the backend, receive a snapshot or partial response, and write it through this method. The deliberate exception is `applyInsightsCompletionPatch()`: completion refreshes are not snapshots, so this action first verifies the echoed chat/branch/message target and then merges only `objectiveState` and/or the one target message. No individual component `setState` calls are used for server data.
 
 ### Selectors
 
@@ -247,7 +247,9 @@ User sends message
   → SSE stream yields text-delta / reasoning-delta chunks
   → StreamingReveal.pushDelta() → streamingRevealedText updates on each tick
   → MessageBlock for the streaming-target message renders the revealed text inline
-  → Stream finishes → flush() → backend returns snapshot → ingestSnapshot()
+  → Stream finishes → flush() → fetch committed snapshot → ingestSnapshot()
+  → Fresh send/generate starts a fire-and-forget completion-refresh wait (including a cancelled stream that committed a new partial assistant message; regenerate and pre-content cancellation do not)
+  → Matching scoped insight/message patch → applyInsightsCompletionPatch()
   → Ghost message filter prevents duplicate user message
   → StreamingContent disappears (generation becomes idle)
 ```

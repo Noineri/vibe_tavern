@@ -9,6 +9,7 @@ import {
   regenerateChatMessageStream,
   sendChatMessageStream,
   type AppMessage,
+  type AppSnapshot,
   type ChatGenerationStatus,
 } from "../app-client.js";
 import { useChatStore } from "../stores/chat-store.js";
@@ -35,6 +36,7 @@ import {
   deleteBranchAction,
   renameBranchAction,
 } from "../stores/api-actions/chat-actions.js";
+import { findCurrentInsightsCompletionTarget, startInsightsCompletionRefreshFromSnapshot } from "../stores/api-actions/insights-completion-actions.js";
 import { ProviderStreamError } from "../api/provider-stream-error.js";
 
 function restoreDraftAfterSendError(content?: string | null, attachments?: Attachment[]): void {
@@ -160,17 +162,17 @@ export function useChatController(): ChatControllerActions {
   // --- Snapshot cache helpers ---
 
   /** Refetch chat snapshot cache from the canonical source. */
-  async function refreshChatSnapshotCache(chatId: ChatId): Promise<void> {
-    await fetchChatAction(chatId);
+  async function refreshChatSnapshotCache(chatId: ChatId): Promise<AppSnapshot> {
+    return fetchChatAction(chatId);
   }
 
   /**
    * After an abort, the backend needs a moment to save the partial variant
    * before we fetch the snapshot.
    */
-  async function refreshAfterAbort(chatId: ChatId): Promise<void> {
+  async function refreshAfterAbort(chatId: ChatId): Promise<AppSnapshot> {
     await new Promise((r) => setTimeout(r, 200));
-    await refreshChatSnapshotCache(chatId);
+    return refreshChatSnapshotCache(chatId);
   }
 
   // --- Common streaming helper ---
@@ -201,6 +203,9 @@ export function useChatController(): ChatControllerActions {
      */
     streamingMessageId?: string | null,
   ): Promise<StreamOutcome> {
+    const completionTargetBeforeStream = streamingMessageId
+      ? null
+      : findCurrentInsightsCompletionTarget(chatId);
     const controller = useChatStore.getState().startGeneration(chatId, pendingUserContent, pendingAttachments, streamingMessageId);
     const store = useChatStore.getState();
     store.setDraft("");
@@ -265,13 +270,22 @@ export function useChatController(): ChatControllerActions {
 
       await reveal.waitForReveal();
       useChatStore.getState().setPendingContent(chatId, null);
-      await refreshChatSnapshotCache(chatId);
+      const snapshot = await refreshChatSnapshotCache(chatId);
+      // Fresh send/generate paths emit message.appended and start insight work;
+      // regenerate targets an existing message and intentionally does not.
+      if (!streamingMessageId) startInsightsCompletionRefreshFromSnapshot(chatId, snapshot);
       void logClientSendDebug("web.hook.stream.success", { chatId, replyLength: collected.length });
       return "done";
     } catch (error) {
       if (controller.signal.aborted) {
         void logClientSendDebug("web.hook.stream.cancelled", { chatId });
-        await refreshAfterAbort(chatId);
+        const snapshot = await refreshAfterAbort(chatId);
+        // The backend persists and emits message.appended for a partial fresh
+        // assistant response. Refresh only when abort produced a new target;
+        // cancellation before any assistant text remains a true no-op.
+        if (!streamingMessageId) {
+          startInsightsCompletionRefreshFromSnapshot(chatId, snapshot, completionTargetBeforeStream);
+        }
         toast.info(getT()("generation_cancelled"));
         return "cancelled";
       }

@@ -109,7 +109,7 @@ Before writing code, know which parts to reuse and which to write fresh:
 | Concern | Feature-specific (write your own) | Why |
 |---------|-----------------------------------|-----|
 | Trigger condition | ❌ | summary: `everyN` messages past last covered; objective: check-counter; tracker: every assistant msg; dream: manual/scheduled |
-| Persist target | ❌ | summary: `chatSummaries` table; objective: `chats.insightsObjectiveStateJson`; tracker: `message.extra.sceneTracker` |
+| Persist target | ❌ | summary: `chatSummaries` table; objective: `chats.insightsObjectiveStateJson`; tracker: planned `message_variants.sceneTrackerJson` |
 | Output shape | ❌ | text vs. task tree vs. recursive JSON vs. short badge text |
 | Prompt-layer injection | ❌ | each layer has its own `PROMPT_LAYER_IDS` entry and its own assembler arm |
 
@@ -119,7 +119,7 @@ Unifying the feature-specific parts produces a God-interface every feature has t
 
 Decide where the feature's output lives:
 - **New table** (e.g. summaries, dream memories) → add to `packages/db/src/db-schema.ts`, add a store in `packages/db/src/stores/`, run `bun run db:generate`. **Never edit existing migration files.**
-- **JSON column on an existing entity** (e.g. `chats.insightsObjectiveStateJson`, `message.extra.sceneTracker`) → add the column via migration, type the accessor.
+- **JSON column on an existing entity** (e.g. `chats.insightsObjectiveStateJson`, planned `message_variants.sceneTrackerJson`) → add the column via migration, type the accessor.
 
 See [Database Migrations](../DATABASE_MIGRATIONS.md).
 
@@ -240,7 +240,7 @@ Verify with `bun run check`, then smoke-test against `dev:web` using the Playwri
 
 Forward-steering jobs such as Objective and Scene use `runExclusiveTrailing`, retain the owner promise through every dirty trailing rerun, and expose a feature-local join method. The assistant response that triggers the job remains fire-and-forget; the next live prompt joins the preceding job cancellably before reading injected state. Cancelling that waiter must not cancel the shared job, and ordinary CRUD/config writes remain on their separate short commit lane.
 
-For UI delivery without SSE, expose a chat-scoped completion-refresh RPC that accepts the immutable committed-message target, joins that same owner promise, revalidates target ownership after the wait, and returns an echoed target plus only the refreshed insight/message patch. Never return a whole session snapshot from this seam: the frontend uses the echoed target to reject stale work before applying the scoped patch.
+For UI delivery without SSE, expose a chat-scoped completion-refresh RPC that accepts the immutable committed-message target, joins that same owner promise, revalidates target ownership after the wait, and returns an echoed target plus only the refreshed insight/message patch. Never return a whole session snapshot from this seam: after a fresh committed send/generate (not regenerate), the frontend starts this wait only when an insight is enabled, detaches an older waiter when a newer target arrives, validates both the echoed target and current snapshot-store ownership, and merges only the scoped fields through `applyInsightsCompletionPatch()`.
 
 ---
 
