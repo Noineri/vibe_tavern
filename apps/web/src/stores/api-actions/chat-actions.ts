@@ -34,6 +34,10 @@ import {
   deleteScene,
   cancelScene,
   getSceneStatus,
+  startSceneBackfill,
+  getSceneBackfillStatus,
+  cancelSceneBackfill,
+  retrySceneBackfill,
   saveChatSummary,
   summarizeChat,
   regenerateChatMessage,
@@ -50,7 +54,7 @@ import {
   setChatPersona,
   type AppSnapshot,
 } from "../../app-client.js";
-import type { AutoSummaryConfig, ChatSummaryRecord, InsightsConfigPatch, ScenePreviewResponse, SceneTargetResponse, SceneStatusResponse } from "../../app-client.js";
+import type { AutoSummaryConfig, ChatSummaryRecord, InsightsConfigPatch, ScenePreviewResponse, SceneTargetResponse, SceneStatusResponse, SceneBackfillMode, SceneBackfillStatusResponse } from "../../app-client.js";
 import { useSnapshotStore } from "../snapshot-store.js";
 import { useSceneGenerationStore } from "../scene-generation-store.js";
 import { useChatStore } from "../chat-store.js";
@@ -503,6 +507,32 @@ export async function getSceneStatusAction(
   if (res.generating) store.markGenerating(target.variantId);
   else store.clearGenerating(target.variantId);
   return res;
+}
+
+/** Start a Scene history backfill run for the active branch (SCN-15).
+ *  Idempotent — reattaches to an active run instead of starting a duplicate.
+ *  The run is server-authoritative; per-item generation lands Scene records on
+ *  the variants, so the CALLER refreshes the snapshot when the run goes terminal
+ *  (the status response carries run state only, not the generated records). */
+export async function startSceneBackfillAction(chatId: ChatId, mode?: SceneBackfillMode): Promise<SceneBackfillStatusResponse> {
+  return startSceneBackfill(chatId, mode);
+}
+
+/** Poll a backfill run's typed status (SCN-15). */
+export async function getSceneBackfillStatusAction(chatId: ChatId, runId: string): Promise<SceneBackfillStatusResponse> {
+  return getSceneBackfillStatus(chatId, runId);
+}
+
+/** Request cancellation (SCN-15): durable flag + aborts the active item; the
+ *  active item is never persisted, completed records are preserved. */
+export async function cancelSceneBackfillAction(chatId: ChatId, runId: string): Promise<SceneBackfillStatusResponse> {
+  return cancelSceneBackfill(chatId, runId);
+}
+
+/** Retry failed + unprocessed items (SCN-15); succeeded items are never
+ *  regenerated. No-op on a fully-succeeded run. */
+export async function retrySceneBackfillAction(chatId: ChatId, runId: string): Promise<SceneBackfillStatusResponse> {
+  return retrySceneBackfill(chatId, runId);
 }
 
 // ─── Objective Tracker (INS-5) ──────────────────────────────────────────

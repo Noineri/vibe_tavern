@@ -11,6 +11,7 @@ import { Toggle } from "../../shared/Toggle.js";
 import { DropdownSelect } from "../../shared/DropdownSelect.js";
 import { NumberInput } from "../../shared/NumberInput.js";
 import { inputCls, monoCls, inputPad, lblCls } from "../fields/field-styles.js";
+import { SceneHistoryBackfill } from "./SceneHistoryBackfill.js";
 import { useT } from "../../../i18n/context.js";
 import { useSnapshotStore } from "../../../stores/snapshot-store.js";
 import { useProviderDataStore } from "../../../stores/provider-data-store.js";
@@ -290,6 +291,13 @@ export function TrackerConfig({ chatId }: { chatId: ChatId }) {
           </pre>
         </div>
       )}
+
+      {/* History backfill (SCN-15) — Build → Insights → Scene → History */}
+      <div className="border-t border-border pt-3">
+        <label className={lblCls}>{t("scn_history_label")}</label>
+        <p className="mb-2 mt-0.5 font-ui text-[10px] leading-relaxed text-t4">{t("scn_history_hint")}</p>
+        <SceneHistoryBackfill chatId={chatId} />
+      </div>
     </div>
   );
 }

@@ -7,7 +7,7 @@
  */
 import type { Chat, ChatBranch, ChatId, CharacterId, Message, MessageVariant } from "@vibe-tavern/domain";
 import type { AssemblePromptResponse, PromptPresetDto, PromptTraceRecordDto } from "@vibe-tavern/domain";
-import type { SceneTrackerConfig, SceneTrackerConfigPatch, SceneTrackerRecord } from "@vibe-tavern/domain";
+import type { SceneTrackerConfig, SceneTrackerConfigPatch, SceneTrackerRecord, SceneBackfillErrorEntry, SceneBackfillSummary } from "@vibe-tavern/domain";
 
 // Wire-format output types shared with the backend (single source of truth in
 // @vibe-tavern/api-contracts). Two are imported under local aliases that the
@@ -140,6 +140,28 @@ export interface SceneStatusResponse {
   target: InsightsCompletionTarget & { chatId: string };
   generating: boolean;
   record: SceneTrackerRecord | null;
+}
+
+/** Scene history backfill mode (SCN-14/15). `fill-missing` skips variants that
+ *  already carry a current record; `rebuild` regenerates all. Mirrors the domain
+ *  `SceneBackfillMode` / `SCENE_BACKFILL_MODE` constants. */
+export type SceneBackfillMode = "fill-missing" | "rebuild";
+
+/** Server-authoritative backfill run status (SCN-14/15). The run row owns JOB
+ *  state only (manifest/cursor/errors/cancel/summary); canonical Scene records
+ *  remain the durable result on the variants. Polled by the client; a reload
+ *  reattaches via the persisted runId. Mirrors `SceneBackfillStatusResponse`. */
+export interface SceneBackfillStatusResponse {
+  runId: string;
+  chatId: string;
+  mode: SceneBackfillMode;
+  status: "pending" | "running" | "completed" | "cancelled" | "failed";
+  total: number;
+  processed: number;
+  current: { messageId: string; variantId: string } | null;
+  errors: SceneBackfillErrorEntry[];
+  summary: SceneBackfillSummary | null;
+  cancelRequested: boolean;
 }
 
 export type ChatGenerationStatus =

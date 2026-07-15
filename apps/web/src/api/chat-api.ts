@@ -1,6 +1,6 @@
 import type { ChatId, ChatMode, ObjectiveTaskStatus, PromptTraceRecordDto, SceneTrackerConfig } from "@vibe-tavern/domain";
 import type { CoauthorApplyRequest, CoauthorCorrection, CoauthorModule, CoauthorModuleCreate, CoauthorModuleUpdate } from "@vibe-tavern/api-contracts";
-import type { AppSnapshot, AppMessage, ChatListItem, ChatSummaryRecord, AutoSummaryConfig, InsightsConfigPatch, InsightsCompletionPatchResponse, InsightsCompletionTarget, ScenePreviewResponse, SceneTargetResponse, SceneStatusResponse } from "./types.js";
+import type { AppSnapshot, AppMessage, ChatListItem, ChatSummaryRecord, AutoSummaryConfig, InsightsConfigPatch, InsightsCompletionPatchResponse, InsightsCompletionTarget, ScenePreviewResponse, SceneTargetResponse, SceneStatusResponse, SceneBackfillMode, SceneBackfillStatusResponse } from "./types.js";
 import { client } from "./client.js";
 import { unwrapRpc, unwrapError } from "./unwrap.js";
 import { normalizeMessage, normalizeSnapshot } from "./normalize.js";
@@ -466,6 +466,57 @@ export async function getSceneStatus(
     { param: { chatId }, json: body },
   );
   return unwrapRpc<SceneStatusResponse>(response);
+}
+
+/** Start a Scene history backfill run for the chat's active branch (SCN-15).
+ *  `mode` defaults to `fill-missing` on the server. Idempotent: if an active run
+ *  already exists it reattaches and returns its status instead of starting a
+ *  duplicate. Returns the run's status; the client polls via getSceneBackfillStatus. */
+export async function startSceneBackfill(
+  chatId: ChatId,
+  mode?: SceneBackfillMode,
+): Promise<SceneBackfillStatusResponse> {
+  const response = await client.api.chats[":chatId"].insights.scene.backfill.start.$post(
+    { param: { chatId }, json: mode ? { mode } : {} },
+  );
+  return unwrapRpc<SceneBackfillStatusResponse>(response);
+}
+
+/** Poll a backfill run's status (SCN-15). Drives progress/current-target/
+ *  cancel/retry/resume + reload reattachment via the persisted runId. */
+export async function getSceneBackfillStatus(
+  chatId: ChatId,
+  runId: string,
+): Promise<SceneBackfillStatusResponse> {
+  const response = await client.api.chats[":chatId"].insights.scene.backfill[":runId"].status.$post(
+    { param: { chatId, runId } },
+  );
+  return unwrapRpc<SceneBackfillStatusResponse>(response);
+}
+
+/** Request cancellation of a backfill run (SCN-15). Durable flag + aborts the
+ *  owned in-memory controller; the active item is never persisted. Completed
+ *  records are preserved. */
+export async function cancelSceneBackfill(
+  chatId: ChatId,
+  runId: string,
+): Promise<SceneBackfillStatusResponse> {
+  const response = await client.api.chats[":chatId"].insights.scene.backfill[":runId"].cancel.$post(
+    { param: { chatId, runId } },
+  );
+  return unwrapRpc<SceneBackfillStatusResponse>(response);
+}
+
+/** Retry a backfill run's failed + unprocessed items (SCN-15). Succeeded items
+ *  are never regenerated. No-op on a fully-succeeded run. */
+export async function retrySceneBackfill(
+  chatId: ChatId,
+  runId: string,
+): Promise<SceneBackfillStatusResponse> {
+  const response = await client.api.chats[":chatId"].insights.scene.backfill[":runId"].retry.$post(
+    { param: { chatId, runId } },
+  );
+  return unwrapRpc<SceneBackfillStatusResponse>(response);
 }
 
 export async function generateObjectiveTasks(

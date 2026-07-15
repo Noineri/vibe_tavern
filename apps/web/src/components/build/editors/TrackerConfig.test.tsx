@@ -30,8 +30,8 @@ vi.mock("../../../i18n/context.js", () => ({
 }));
 
 vi.mock("../../../stores/snapshot-store.js", () => ({
-  useSnapshotStore: (selector: (s: { activeChat: typeof mocks.activeChat }) => unknown) =>
-    selector({ activeChat: mocks.activeChat }),
+  useSnapshotStore: (selector: (s: { activeChat: typeof mocks.activeChat; messageOrder: string[]; messagesById: Record<string, { role?: string }> }) => unknown) =>
+    selector({ activeChat: mocks.activeChat, messageOrder: [], messagesById: {} }),
 }));
 
 vi.mock("../../../stores/api-actions/chat-actions.js", async (importOriginal) => {
