@@ -322,7 +322,11 @@ export const useSnapshotStore = create<SnapshotStore>()(
           patch.message.id !== target.messageId ||
           patch.message.chatId !== target.chatId ||
           patch.message.branchId !== target.branchId ||
-          patch.message.role !== "assistant"
+          patch.message.role !== "assistant" ||
+          // Variant-aware: when the target carries a variantId the patch must still
+          // contain that variant — a swipe/delete may have removed it mid-flight.
+          (target.variantId &&
+            !patch.message.variants.some((variant) => variant.id === target.variantId))
         )
       ) {
         return false;

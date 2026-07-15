@@ -18,7 +18,11 @@ function sameTarget(
   left: InsightsCompletionTarget,
   right: InsightsCompletionTarget,
 ): boolean {
-  return left.branchId === right.branchId && left.messageId === right.messageId;
+  return (
+    left.branchId === right.branchId &&
+    left.messageId === right.messageId &&
+    left.variantId === right.variantId
+  );
 }
 
 export function findInsightsCompletionTarget(
@@ -35,7 +39,12 @@ export function findInsightsCompletionTarget(
       message.branchId &&
       message.id
     ) {
-      return { branchId: message.branchId, messageId: message.id };
+      const variantId = message.variants[message.selectedVariantIndex ?? -1]?.id;
+      return {
+        branchId: message.branchId,
+        messageId: message.id,
+        ...(variantId ? { variantId } : {}),
+      };
     }
   }
   return null;
@@ -49,7 +58,12 @@ export function findCurrentInsightsCompletionTarget(
   for (let index = store.messageOrder.length - 1; index >= 0; index -= 1) {
     const message = store.messagesById[store.messageOrder[index] ?? ""];
     if (message?.role === "assistant" && message.chatId === chatId) {
-      return { branchId: message.branchId, messageId: message.id };
+      const variantId = message.variants[message.selectedVariantIndex ?? -1]?.id;
+      return {
+        branchId: message.branchId,
+        messageId: message.id,
+        ...(variantId ? { variantId } : {}),
+      };
     }
   }
   return null;

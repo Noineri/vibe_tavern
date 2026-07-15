@@ -100,6 +100,10 @@ export interface ObjectiveState {
 export interface InsightsCompletionTarget {
   branchId: string;
   messageId: string;
+  /** Immutable variant id. Present when Scene-aware — the refresh joins the
+   *  exact variant's Scene job concurrently with Objective and returns a scoped
+   *  message patch. Absent for the Objective-only refresh (no message patch). */
+  variantId?: string;
 }
 
 export interface InsightsCompletionPatchResponse {

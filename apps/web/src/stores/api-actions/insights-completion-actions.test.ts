@@ -32,6 +32,9 @@ vi.mock("../../app-client.js", async (importOriginal) => {
 const chatId = "chat_1" as ChatId;
 const TARGET_A: InsightsCompletionTarget = { branchId: "branch_1", messageId: "msg_1" };
 const TARGET_B: InsightsCompletionTarget = { branchId: "branch_1", messageId: "msg_2" };
+const VARIANT_A = "var_1";
+const VARIANT_B = "var_2";
+const TARGET_A_VARIANT_A: InsightsCompletionTarget = { ...TARGET_A, variantId: VARIANT_A };
 
 function objective(description: string): ObjectiveState {
   return {
@@ -83,6 +86,16 @@ function response(target: InsightsCompletionTarget, state: ObjectiveState): Insi
     target: { chatId, ...target },
     patch: { objectiveState: state },
   };
+}
+
+function variantMessage(target: InsightsCompletionTarget, variantId: string, content = "scene content"): AppMessage {
+  const base = message(target);
+  return {
+    ...base,
+    content,
+    variants: [{ id: variantId, messageId: target.messageId, variantIndex: 0, content, isSelected: true } as unknown as AppMessage["variants"][number]],
+    selectedVariantIndex: 0,
+  } as unknown as AppMessage;
 }
 
 function deferred<T>() {
@@ -231,5 +244,95 @@ describe("committed assistant target discovery", () => {
     });
     startInsightsCompletionRefreshFromSnapshot(chatId, { messages: [message(TARGET_A)] });
     expect(mocks.refreshInsightsCompletion).not.toHaveBeenCalled();
+  });
+});
+
+describe("variant-aware completion refresh (SCN-10)", () => {
+  test("target discovery includes the selected variant id when the latest assistant carries one", () => {
+    const snapshot: AppSnapshot = { messages: [variantMessage(TARGET_A, VARIANT_A)] };
+    expect(findInsightsCompletionTarget(chatId, snapshot)).toEqual(TARGET_A_VARIANT_A);
+  });
+
+  test("target discovery omits variantId when the latest assistant has no selected variant", () => {
+    const snapshot: AppSnapshot = { messages: [message(TARGET_A)] };
+    expect(findInsightsCompletionTarget(chatId, snapshot)).toEqual(TARGET_A);
+  });
+
+  test("applies objectiveState + scoped message patch together when the variant matches", async () => {
+    useSnapshotStore.getState().ingestSnapshot({
+      activeChat: { id: chatId, insightsConfig: { objectiveEnabled: true, trackerEnabled: true } } as NonNullable<AppSnapshot["activeChat"]>,
+      messages: [variantMessage(TARGET_A_VARIANT_A, VARIANT_A)],
+    });
+    const fresh = { ...variantMessage(TARGET_A_VARIANT_A, VARIANT_A, "updated content") };
+    mocks.refreshInsightsCompletion.mockResolvedValueOnce({
+      target: { chatId, ...TARGET_A_VARIANT_A },
+      patch: { objectiveState: objective("Dual patch"), message: fresh },
+    });
+
+    await expect(refreshInsightsCompletionAction(chatId, TARGET_A_VARIANT_A)).resolves.toBe(true);
+    expect(useSnapshotStore.getState().activeChat?.insightsObjectiveState?.objectiveDescription).toBe("Dual patch");
+    expect(useSnapshotStore.getState().messagesById.msg_1?.content).toBe("updated content");
+  });
+
+  test("rejects the patch when the target variant was removed mid-flight (stale variant)", async () => {
+    useSnapshotStore.getState().ingestSnapshot({
+      activeChat: { id: chatId, insightsConfig: { objectiveEnabled: true, trackerEnabled: true } } as NonNullable<AppSnapshot["activeChat"]>,
+      messages: [variantMessage(TARGET_A_VARIANT_A, VARIANT_A)],
+    });
+    // The patch carries a message whose only variant is VARIANT_B (VARIANT_A was deleted).
+    const stale = variantMessage(TARGET_A_VARIANT_A, VARIANT_B);
+    mocks.refreshInsightsCompletion.mockResolvedValueOnce({
+      target: { chatId, ...TARGET_A_VARIANT_A },
+      patch: { objectiveState: objective("Must not apply"), message: stale },
+    });
+
+    await expect(refreshInsightsCompletionAction(chatId, TARGET_A_VARIANT_A)).resolves.toBe(false);
+    expect(useSnapshotStore.getState().activeChat?.insightsObjectiveState).toBeUndefined();
+    expect(useSnapshotStore.getState().messagesById.msg_1?.content).toBe("scene content");
+  });
+
+  test("a swipe to a different variant of the same message detaches the older waiter", async () => {
+    // msg_1 with two variants; selectedVariantIndex points at VARIANT_A initially.
+    const dual: AppMessage = {
+      ...variantMessage(TARGET_A, VARIANT_A),
+      variants: [
+        { id: VARIANT_A, messageId: "msg_1", variantIndex: 0, content: "a", isSelected: false } as unknown as AppMessage["variants"][number],
+        { id: VARIANT_B, messageId: "msg_1", variantIndex: 1, content: "b", isSelected: true } as unknown as AppMessage["variants"][number],
+      ],
+      selectedVariantIndex: 1,
+    } as unknown as AppMessage;
+    useSnapshotStore.getState().ingestSnapshot({
+      activeChat: { id: chatId, insightsConfig: { objectiveEnabled: true, trackerEnabled: true } } as NonNullable<AppSnapshot["activeChat"]>,
+      messages: [dual],
+    });
+
+    const oldGate = deferred<InsightsCompletionPatchResponse>();
+    let oldSignal: AbortSignal | undefined;
+    mocks.refreshInsightsCompletion
+      .mockImplementationOnce((_chatId, _target, options) => {
+        oldSignal = options?.signal;
+        return oldGate.promise;
+      })
+      .mockResolvedValueOnce({
+        target: { chatId, ...TARGET_A, variantId: VARIANT_B },
+        patch: { objectiveState: objective("Swiped variant") },
+      });
+
+    const oldRefresh = refreshInsightsCompletionAction(chatId, TARGET_A_VARIANT_A);
+    const newRefresh = refreshInsightsCompletionAction(chatId, { ...TARGET_A, variantId: VARIANT_B });
+
+    expect(oldSignal?.aborted).toBe(true);
+    await expect(newRefresh).resolves.toBe(true);
+    oldGate.resolve({ target: { chatId, ...TARGET_A_VARIANT_A }, patch: { objectiveState: objective("Old variant") } });
+    await expect(oldRefresh).resolves.toBe(false);
+    expect(useSnapshotStore.getState().activeChat?.insightsObjectiveState?.objectiveDescription).toBe("Swiped variant");
+  });
+
+  test("preserves Objective-only behavior when the target carries no variantId", async () => {
+    seed([TARGET_A]);
+    mocks.refreshInsightsCompletion.mockResolvedValueOnce(response(TARGET_A, objective("Objective only")));
+
+    await expect(refreshInsightsCompletionAction(chatId, TARGET_A)).resolves.toBe(true);
+    expect(useSnapshotStore.getState().activeChat?.insightsObjectiveState?.objectiveDescription).toBe("Objective only");
   });
 });
