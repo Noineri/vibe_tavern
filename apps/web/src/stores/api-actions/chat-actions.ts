@@ -29,6 +29,11 @@ import {
   setObjectiveDescription,
   updateObjectiveConfig,
   previewScene,
+  generateScene,
+  editScene,
+  deleteScene,
+  cancelScene,
+  getSceneStatus,
   saveChatSummary,
   summarizeChat,
   regenerateChatMessage,
@@ -45,8 +50,9 @@ import {
   setChatPersona,
   type AppSnapshot,
 } from "../../app-client.js";
-import type { AutoSummaryConfig, ChatSummaryRecord, InsightsConfigPatch, ScenePreviewResponse } from "../../app-client.js";
+import type { AutoSummaryConfig, ChatSummaryRecord, InsightsConfigPatch, ScenePreviewResponse, SceneTargetResponse, SceneStatusResponse } from "../../app-client.js";
 import { useSnapshotStore } from "../snapshot-store.js";
+import { useSceneGenerationStore } from "../scene-generation-store.js";
 import { useChatStore } from "../chat-store.js";
 import { useNavigationStore } from "../navigation-store.js";
 import { extractPersistedCoauthorActivities, useCoauthorTurnStore } from "../coauthor-turn-store.js";
@@ -423,6 +429,80 @@ export async function previewSceneAction(
   signal?: AbortSignal,
 ): Promise<ScenePreviewResponse> {
   return previewScene(chatId, { target, config }, { signal });
+}
+
+// ─── Scene Tracker header actions (SCN-12) ──────────────────────────────
+// Generate/Update/Edit/Delete/Cancel key off the immutable variant id and apply
+// the server's scoped message patch (never a whole snapshot). The generation
+// cache is marked optimistically on generate and cleared on settle/cancel so the
+// header shows a loading/Cancel affordance immediately; the server coordinator
+// remains authoritative (hydrated via getSceneStatusAction on mount/reload).
+
+/** Generate (missing record) or Update (regenerate in place) the Scene record
+ *  for the target variant. Overwrites the prior record ONLY on success, so a
+ *  failure/cancel preserves the last valid record. Marks the variant generating
+ *  optimistically and clears it on settle. Throws on failure (caller toasts). */
+export async function generateSceneAction(
+  chatId: ChatId,
+  target: { branchId: string; messageId: string; variantId: string },
+  signal?: AbortSignal,
+): Promise<SceneTargetResponse> {
+  useSceneGenerationStore.getState().markGenerating(target.variantId);
+  try {
+    const res = await generateScene(chatId, { target }, { signal });
+    useSnapshotStore.getState().applySceneTargetPatch(res);
+    return res;
+  } finally {
+    useSceneGenerationStore.getState().clearGenerating(target.variantId);
+  }
+}
+
+/** Manually edit the target variant's scene state (no LLM). The server validates
+ *  strictly against the current DSL and throws path-specific errors on mismatch
+ *  — nothing persists on validation failure. Throws on failure (caller toasts). */
+export async function editSceneAction(
+  chatId: ChatId,
+  target: { branchId: string; messageId: string; variantId: string },
+  sceneState: Record<string, unknown>,
+): Promise<SceneTargetResponse> {
+  const res = await editScene(chatId, { target, sceneState });
+  useSnapshotStore.getState().applySceneTargetPatch(res);
+  return res;
+}
+
+/** Delete the target variant's Scene record. Clears the record in the header. */
+export async function deleteSceneAction(
+  chatId: ChatId,
+  target: { branchId: string; messageId: string; variantId: string },
+): Promise<SceneTargetResponse> {
+  const res = await deleteScene(chatId, { target });
+  useSnapshotStore.getState().applySceneTargetPatch(res);
+  return res;
+}
+
+/** Explicitly cancel the active Scene generation for the target variant. Sync
+ *  ack — output discarded, coordinator slot freed, prior record preserved. */
+export async function cancelSceneAction(
+  chatId: ChatId,
+  target: { branchId: string; messageId: string; variantId: string },
+): Promise<void> {
+  await cancelScene(chatId, { target });
+  useSceneGenerationStore.getState().clearGenerating(target.variantId);
+}
+
+/** Server-authoritative Scene status for the target variant. Drives reload /
+ *  multi-tab hydration of the header loading state: a `generating` result marks
+ *  the variant in the cache so the header reflects an in-flight job started in
+ *  another tab or before the reload. */
+export async function getSceneStatusAction(
+  chatId: ChatId,
+  target: { branchId: string; messageId: string; variantId: string },
+): Promise<SceneStatusResponse> {
+  const res = await getSceneStatus(chatId, { target });
+  const store = useSceneGenerationStore.getState();
+  if (res.generating) store.markGenerating(target.variantId);
+  else store.clearGenerating(target.variantId);
+  return res;
 }
 
 // ─── Objective Tracker (INS-5) ──────────────────────────────────────────

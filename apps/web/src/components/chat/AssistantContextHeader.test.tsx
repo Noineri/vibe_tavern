@@ -58,6 +58,34 @@ const MOCK_OBJECTIVE_DESCRIPTOR: MessageSlotDescriptor = {
 };
 
 // ────────────────────────────────────────────────────────────────────────────
+// Mock Scene zone — mirrors the SCN-12 scene-zone contract: registers at
+// `assistant_header_zone` (order 2), toggles `sceneOpen`. Used to pin the
+// 2-zone composition (Objective + Scene side by side) without importing the
+// heavy real zone (whose visibility/render is pinned in scene-zone.test.tsx).
+// ────────────────────────────────────────────────────────────────────────────
+
+function MockSceneContent({ messageId }: { messageId: string }) {
+  const open = useHeaderZoneOpen(messageId, "sceneOpen");
+  const toggle = useHeaderZoneExpansionStore((s) => s.toggle);
+  return (
+    <div data-testid="scene-zone">
+      <button data-testid="scene-toggle" onClick={() => toggle(messageId, "sceneOpen")}>
+        {open ? "collapse" : "expand"}
+      </button>
+      {open ? <div data-testid="scene-expanded">scene state</div> : <div data-testid="scene-collapsed">▣ mood</div>}
+    </div>
+  );
+}
+
+const MOCK_SCENE_DESCRIPTOR: MessageSlotDescriptor = {
+  id: "test-scene",
+  slot: "assistant_header_zone",
+  roles: ["assistant"],
+  order: 2,
+  render: (ctx: MessageSlotContext) => <MockSceneContent messageId={ctx.messageId} />,
+};
+
+// ────────────────────────────────────────────────────────────────────────────
 // Fixtures
 // ────────────────────────────────────────────────────────────────────────────
 
@@ -96,6 +124,7 @@ function avatarEl(container: HTMLElement): HTMLElement {
 }
 
 let unsubscribe: (() => void) | null = null;
+let unsubscribeScene: (() => void) | null = null;
 
 beforeEach(() => {
   useHeaderZoneExpansionStore.setState({ open: {} });
@@ -105,6 +134,10 @@ afterEach(() => {
   if (unsubscribe) {
     unsubscribe();
     unsubscribe = null;
+  }
+  if (unsubscribeScene) {
+    unsubscribeScene();
+    unsubscribeScene = null;
   }
 });
 
@@ -268,5 +301,64 @@ describe("AssistantContextHeader — render-isolation", () => {
     // POSITIVE CONTROL: toggle m1's own zone — m1 re-renders (avatar grows).
     fireEvent.click(toggles[0]!);
     expect(m1Commits).toBeGreaterThan(0);
+  });
+});
+
+describe("AssistantContextHeader — Objective + Scene composition (SCN-12)", () => {
+  test("both zones resolve: two zone blocks + separators render side by side", () => {
+    unsubscribe = registerMessageSlot(MOCK_OBJECTIVE_DESCRIPTOR);
+    unsubscribeScene = registerMessageSlot(MOCK_SCENE_DESCRIPTOR);
+    const { container } = render(<AssistantContextHeader {...makeProps()} />);
+
+    // Both zones present.
+    expect(container.querySelector('[data-testid="obj-zone"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="scene-zone"]')).not.toBeNull();
+
+    // Two separators (identity┊objective┊scene) on desktop (vertical w-px).
+    const dividers = container.querySelectorAll('[class*="bg-border"]');
+    expect(dividers.length).toBe(2);
+    expect(dividers[0]!.className).toContain("w-px");
+  });
+
+  test("expanding EITHER zone grows the avatar (anyExpanded is the aggregate)", () => {
+    unsubscribe = registerMessageSlot(MOCK_OBJECTIVE_DESCRIPTOR);
+    unsubscribeScene = registerMessageSlot(MOCK_SCENE_DESCRIPTOR);
+    const { container } = render(<AssistantContextHeader {...makeProps()} />);
+    const avatar = avatarEl(container);
+    expect(avatar.className).toContain("h-11");
+
+    // Expand the SCENE zone (order 2) — the header reads anyExpanded.
+    fireEvent.click(container.querySelector('[data-testid="scene-toggle"]')!);
+    expect(avatar.className).toContain("h-28");
+
+    // Collapse scene, expand objective — still grown.
+    fireEvent.click(container.querySelector('[data-testid="scene-toggle"]')!);
+    expect(avatar.className).toContain("h-11");
+    fireEvent.click(container.querySelector('[data-testid="obj-toggle"]')!);
+    expect(avatar.className).toContain("h-28");
+  });
+
+  test("Scene-only (no Objective): one zone resolves, identity + scene + one separator", () => {
+    unsubscribeScene = registerMessageSlot(MOCK_SCENE_DESCRIPTOR);
+    const { container } = render(<AssistantContextHeader {...makeProps()} />);
+    expect(container.querySelector('[data-testid="scene-zone"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="obj-zone"]')).toBeNull();
+    expect(container.querySelectorAll('[class*="bg-border"]').length).toBe(1);
+  });
+
+  test("mobile: both zones stack vertically with horizontal dividers, avatar never grows", () => {
+    unsubscribe = registerMessageSlot(MOCK_OBJECTIVE_DESCRIPTOR);
+    unsubscribeScene = registerMessageSlot(MOCK_SCENE_DESCRIPTOR);
+    const { container } = render(<AssistantContextHeader {...makeProps({ isMobile: true })} />);
+    const avatar = avatarEl(container);
+
+    const dividers = container.querySelectorAll('[class*="bg-border"]');
+    expect(dividers.length).toBe(2);
+    expect(dividers[0]!.className).toContain("h-px"); // horizontal on mobile
+
+    // Expand both — avatar stays compact on mobile.
+    fireEvent.click(container.querySelector('[data-testid="scene-toggle"]')!);
+    expect(avatar.className).toContain("h-11");
+    expect(avatar.className).not.toContain("h-28");
   });
 });

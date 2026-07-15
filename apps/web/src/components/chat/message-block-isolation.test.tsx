@@ -79,6 +79,23 @@ vi.mock("../../i18n/context.js", () => ({
   useT: () => ({ t: (key: string) => key, tDynamic: (key: string) => key, locale: "en", setLocale: NOOP, ready: true }),
 }));
 
+// Scene header actions (SCN-12): keep the status-hydration mount effect
+// hermetic — the real getSceneStatusAction would hit the network. Spreading
+// `...actual` keeps every other chat-action intact; only the 5 Scene funcs are
+// stubbed so the scene zone mounts cleanly under MessageBlock.
+vi.mock("../../stores/api-actions/chat-actions.js", async (importOriginal) => {
+  const actual = await importOriginal() as Record<string, unknown>;
+  return {
+    ...actual,
+    getSceneStatusAction: () => Promise.resolve({ generating: false, record: null }),
+    generateSceneAction: () => Promise.resolve({}),
+    editSceneAction: () => Promise.resolve({}),
+    deleteSceneAction: () => Promise.resolve({}),
+    cancelSceneAction: () => Promise.resolve(),
+    previewSceneAction: () => Promise.resolve({}),
+  };
+});
+
 // ---------------------------------------------------------------------------
 // SCOPED happy-dom registration + jsdom shims.
 //
@@ -191,6 +208,20 @@ function makeMultiVariantMessage(id: string): AppMessage {
       { variantIndex: 2, content: "variant-2", reasoning: null, reasoningDurationMs: null, isSelected: false },
     ],
     selectedVariantIndex: 0, modelId: null,
+  } as unknown as AppMessage;
+}
+
+/** Assistant message with a selected variant + a current-valid Scene record
+ *  (SCN-12). Used to pin that a Scene record mutation on B does not re-render
+ *  A's MessageBlock — the scene zone's selectors are scoped per-message. */
+function makeSceneMessage(id: string, mood = "calm"): AppMessage {
+  return {
+    id, role: "assistant", content: `msg ${id}`,
+    chatId: "chat-1", branchId: "b1",
+    createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z",
+    variants: [{ id: `${id}-v0`, messageId: id, variantIndex: 0, content: `msg ${id}`, isSelected: true }],
+    selectedVariantIndex: 0, modelId: null,
+    sceneTracker: { variantId: `${id}-v0`, schemaHash: "h1", configRevision: 1, sourceHash: "s1", sceneState: { mood }, modelId: null, generatedAt: "2026-01-01T00:00:00.000Z" },
   } as unknown as AppMessage;
 }
 
@@ -418,6 +449,42 @@ describe("MessageBlock — render isolation invariant", () => {
     await act(async () => { await Promise.resolve(); });
 
     expect(probeA.commits).toBeGreaterThan(1); // useMessageAuthor fired — proves it is wired
+    probeA.unmount();
+  });
+
+  test("NEGATIVE: a Scene record mutation on B does NOT re-render A (SCN-12)", async () => {
+    const { snapshotStore, chatStore } = await loadModules();
+    // Tracker ON + a config whose schemaHash/revision match the records, so the
+    // scene zone mounts on BOTH messages (m1 latest, m2 older-with-valid-record).
+    snapshotStore.useSnapshotStore.getState().ingestSnapshot({
+      chats: [{ id: "chat-1", title: "Chat 1", characterId: "c1", characterName: "Char c1", subtitle: "", activeBranchLabel: "main", mode: "rp", messageCount: 2, updatedAt: "2026-01-01T00:00:00.000Z" }],
+      allCharacters: [],
+      activeChat: {
+        id: "chat-1", title: "Chat 1", characterId: "c1",
+        insightsConfig: { objectiveEnabled: false, trackerEnabled: true, tracker: { schema: { mood: { $type: "string" } }, schemaHash: "h1", revision: 1 } },
+      } as unknown as AppSnapshot["activeChat"],
+      activeBranch: { id: "b1", chatId: "chat-1", label: "main" } as unknown as AppSnapshot["activeBranch"],
+      branches: [], messages: [makeSceneMessage("m1"), makeSceneMessage("m2")], summaries: [],
+      promptTrace: null, contextPreview: null, character: makeCharacter("c1"), persona: null,
+    } as unknown as AppSnapshot);
+    chatStore.useChatStore.getState().setActiveChatId(asChatId(CHAT));
+
+    const probeA = await mountBlockForCounting("m1");
+    expect(probeA.commits).toBe(1); // mount
+    // Let the latest zone's status-hydration effect settle.
+    await act(async () => { await new Promise((r) => setTimeout(r, 10)); });
+    probeA.reset();
+
+    // Mutate B's scene record (an unrelated message/variant). A's scene zone
+    // selectors are scoped to m1, so A must NOT re-render.
+    act(() => {
+      snapshotStore.useSnapshotStore.getState().updateMessage("m2", {
+        sceneTracker: { variantId: "m2-v0", schemaHash: "h1", configRevision: 1, sourceHash: "s1", sceneState: { mood: "stormy" }, modelId: null, generatedAt: "2026-01-01T00:00:00.000Z" } as never,
+      });
+    });
+    await act(async () => { await Promise.resolve(); });
+
+    expect(probeA.commits).toBe(0); // A untouched by B's Scene mutation
     probeA.unmount();
   });
 

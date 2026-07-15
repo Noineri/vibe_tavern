@@ -20,6 +20,7 @@ import { useT } from "../../i18n/context.js";
 import "./MessageReasoning.js";
 import "./CoauthorToolActivitySlot.js";
 import "./message-slots/objective-zone.js";
+import "./message-slots/scene-zone.js";
 import { useChatController } from "../../hooks/use-chat-controller.js";
 import { replaceUiMacros } from "../../lib/macros.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";

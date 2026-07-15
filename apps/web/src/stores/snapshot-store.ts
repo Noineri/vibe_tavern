@@ -9,6 +9,7 @@ import type {
   AppCharacterEntry,
   ChatListItem,
   InsightsCompletionPatchResponse,
+  SceneTargetResponse,
 } from "../app-client.js";
 import type { ChatBranch, PromptTraceRecordDto, AssemblePromptResponse, PronounForms } from "@vibe-tavern/domain";
 
@@ -87,6 +88,12 @@ interface SnapshotActions {
 
   /** Apply a completion patch only while its immutable chat/message target is current. */
   applyInsightsCompletionPatch(response: InsightsCompletionPatchResponse): boolean;
+
+  /** Apply a manual Scene mutation response (generate/update/edit/delete) only
+   *  while its immutable chat/branch/message/assistant/variant target is current.
+   *  Returns false (no-op) when the target no longer matches — e.g. the user
+   *  switched chat/branch or the variant was deleted mid-flight. */
+  applySceneTargetPatch(response: SceneTargetResponse): boolean;
 
   /**
    * Clear all chat data (used before switching chats or on logout).
@@ -340,6 +347,33 @@ export const useSnapshotStore = create<SnapshotStore>()(
         }
         if (patch.message && !deepEqual(draft.messagesById[target.messageId], patch.message)) {
           draft.messagesById[target.messageId] = patch.message;
+        }
+      });
+      return true;
+    },
+
+    applySceneTargetPatch: (response) => {
+      const current = get();
+      const { target, message } = response;
+      const targetMessage = current.messagesById[target.messageId];
+      // Ownership guard (mirrors applyInsightsCompletionPatch): the target must
+      // still be the active chat/branch/assistant message AND the variant must
+      // still exist on the message — a swipe/branch-switch/delete mid-flight
+      // discards the patch rather than retargeting it onto the wrong variant.
+      if (
+        current.activeChat?.id !== target.chatId ||
+        !targetMessage ||
+        targetMessage.chatId !== target.chatId ||
+        targetMessage.branchId !== target.branchId ||
+        targetMessage.role !== "assistant" ||
+        !target.variantId ||
+        !message.variants.some((variant) => variant.id === target.variantId)
+      ) {
+        return false;
+      }
+      set((draft) => {
+        if (!deepEqual(draft.messagesById[target.messageId], message)) {
+          draft.messagesById[target.messageId] = message;
         }
       });
       return true;

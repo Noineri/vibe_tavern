@@ -123,6 +123,25 @@ export interface ScenePreviewResponse {
   sceneState: Record<string, unknown>;
 }
 
+/** Manual Scene mutation response (SCN-12): generate/update/edit/delete all
+ *  return the target's refreshed message — the frontend applies the scoped
+ *  message patch (never a whole snapshot). `message.sceneTracker` mirrors the
+ *  currently selected variant, so a generate/edit that succeeds swaps the
+ *  rendered record in place. */
+export interface SceneTargetResponse {
+  target: InsightsCompletionTarget & { chatId: string };
+  message: AppMessage;
+}
+
+/** Server-authoritative Scene status (SCN-12): `generating` reflects the target
+ *  coordinator (drives the header loading state + edit lock on reload/multi-tab);
+ *  `record` is the variant's current canonical record (null when absent). */
+export interface SceneStatusResponse {
+  target: InsightsCompletionTarget & { chatId: string };
+  generating: boolean;
+  record: SceneTrackerRecord | null;
+}
+
 export type ChatGenerationStatus =
   | "idle"
   | "preparing"

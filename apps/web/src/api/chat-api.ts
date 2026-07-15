@@ -1,6 +1,6 @@
 import type { ChatId, ChatMode, ObjectiveTaskStatus, PromptTraceRecordDto, SceneTrackerConfig } from "@vibe-tavern/domain";
 import type { CoauthorApplyRequest, CoauthorCorrection, CoauthorModule, CoauthorModuleCreate, CoauthorModuleUpdate } from "@vibe-tavern/api-contracts";
-import type { AppSnapshot, AppMessage, ChatListItem, ChatSummaryRecord, AutoSummaryConfig, InsightsConfigPatch, InsightsCompletionPatchResponse, InsightsCompletionTarget, ScenePreviewResponse } from "./types.js";
+import type { AppSnapshot, AppMessage, ChatListItem, ChatSummaryRecord, AutoSummaryConfig, InsightsConfigPatch, InsightsCompletionPatchResponse, InsightsCompletionTarget, ScenePreviewResponse, SceneTargetResponse, SceneStatusResponse } from "./types.js";
 import { client } from "./client.js";
 import { unwrapRpc, unwrapError } from "./unwrap.js";
 import { normalizeMessage, normalizeSnapshot } from "./normalize.js";
@@ -397,6 +397,75 @@ export async function previewScene(
     { init: { signal: options?.signal } },
   );
   return unwrapRpc<ScenePreviewResponse>(response);
+}
+
+/** Generate (or regenerate) a Scene record for the target variant via the LLM
+ *  (SCN-12). Both the missing-record Generate and the existing-record Update
+ *  actions hit this — the service overwrites the prior record ONLY on success.
+ *  Returns the refreshed message so the header swaps the record in place. */
+export async function generateScene(
+  chatId: ChatId,
+  body: { target: { branchId: string; messageId: string; variantId: string } },
+  options?: { signal?: AbortSignal },
+): Promise<SceneTargetResponse> {
+  const response = await client.api.chats[":chatId"].insights.scene.generate.$post(
+    { param: { chatId }, json: body },
+    { init: { signal: options?.signal } },
+  );
+  const raw = await unwrapRpc<SceneTargetResponse & { message: AppMessage }>(response);
+  return { ...raw, message: normalizeMessage(raw.message) };
+}
+
+/** Manual structured edit of the target variant's scene state (no LLM)
+ *  (SCN-12). `sceneState` is validated strictly against the chat's current DSL
+ *  on the server; nothing persists on validation failure (the action throws). */
+export async function editScene(
+  chatId: ChatId,
+  body: { target: { branchId: string; messageId: string; variantId: string }; sceneState: Record<string, unknown> },
+): Promise<SceneTargetResponse> {
+  const response = await client.api.chats[":chatId"].insights.scene.edit.$post(
+    { param: { chatId }, json: body },
+  );
+  const raw = await unwrapRpc<SceneTargetResponse & { message: AppMessage }>(response);
+  return { ...raw, message: normalizeMessage(raw.message) };
+}
+
+/** Delete the target variant's Scene record (SCN-12). Returns the refreshed
+ *  message (record cleared). Ownership is keyed by immutable variant id. */
+export async function deleteScene(
+  chatId: ChatId,
+  body: { target: { branchId: string; messageId: string; variantId: string } },
+): Promise<SceneTargetResponse> {
+  const response = await client.api.chats[":chatId"].insights.scene.delete.$post(
+    { param: { chatId }, json: body },
+  );
+  const raw = await unwrapRpc<SceneTargetResponse & { message: AppMessage }>(response);
+  return { ...raw, message: normalizeMessage(raw.message) };
+}
+
+/** Explicitly cancel the active Scene generation for the target variant
+ *  (SCN-12). Synchronous ack — the output is discarded, the coordinator slot
+ *  freed, and the prior valid record (if any) preserved. Never persists. */
+export async function cancelScene(
+  chatId: ChatId,
+  body: { target: { branchId: string; messageId: string; variantId: string } },
+): Promise<{ target: InsightsCompletionTarget & { chatId: string } }> {
+  const response = await client.api.chats[":chatId"].insights.scene.cancel.$post(
+    { param: { chatId }, json: body },
+  );
+  return unwrapRpc<{ target: InsightsCompletionTarget & { chatId: string } }>(response);
+}
+
+/** Server-authoritative Scene status for the target variant (SCN-12): drives
+ *  reload/multi-tab hydration of the header loading state + edit preflight. */
+export async function getSceneStatus(
+  chatId: ChatId,
+  body: { target: { branchId: string; messageId: string; variantId: string } },
+): Promise<SceneStatusResponse> {
+  const response = await client.api.chats[":chatId"].insights.scene.status.$post(
+    { param: { chatId }, json: body },
+  );
+  return unwrapRpc<SceneStatusResponse>(response);
 }
 
 export async function generateObjectiveTasks(

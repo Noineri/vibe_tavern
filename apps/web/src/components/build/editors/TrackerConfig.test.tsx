@@ -15,7 +15,7 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 import { createElement } from "react";
 import { render, fireEvent, cleanup, waitFor } from "@testing-library/react";
 import { TrackerConfig } from "./TrackerConfig.js";
-import type { SceneTrackerConfig } from "@vibe-tavern/domain";
+import { brandId, type ChatId, type SceneTrackerConfig } from "@vibe-tavern/domain";
 
 const mocks = vi.hoisted(() => ({
   activeChat: null as null | { id: string; insightsConfig: { tracker?: SceneTrackerConfig; trackerEnabled: boolean; objectiveEnabled: boolean } },
@@ -73,6 +73,8 @@ vi.mock("../../shared/CodeEditor.js", async () => {
 
 const VALID_DSL = JSON.stringify({ mood: { $type: "string" } });
 
+const CHAT_ID = brandId<ChatId>("chat_1");
+
 function seed(tracker?: Partial<SceneTrackerConfig>): void {
   mocks.activeChat = {
     id: "chat_1",
@@ -112,7 +114,7 @@ afterEach(() => {
 describe("TrackerConfig (SCN-11)", () => {
   it("renders the editor with Save disabled (not dirty) and Preview enabled", () => {
     seed();
-    const { getByText } = render(createElement(TrackerConfig, { chatId: "chat_1" }));
+    const { getByText } = render(createElement(TrackerConfig, { chatId: CHAT_ID }));
     expect(getByText("scn_schema_label")).toBeTruthy();
     expect(getByText("scn_save_button")).toBeTruthy();
     expect(getByText("scn_preview_button")).toBeTruthy();
@@ -123,7 +125,7 @@ describe("TrackerConfig (SCN-11)", () => {
 
   it("an invalid DSL shows an inline error and disables Save + Preview", async () => {
     seed();
-    const { getByTestId, getByText } = render(createElement(TrackerConfig, { chatId: "chat_1" }));
+    const { getByTestId, getByText } = render(createElement(TrackerConfig, { chatId: CHAT_ID }));
     fireEvent.change(getByTestId("scn-dsl"), { target: { value: "{ not json" } });
     await waitFor(() => expect(getByText("scn_save_button").closest("button")!.disabled).toBe(true));
     expect(getByText("scn_preview_button").closest("button")!.disabled).toBe(true);
@@ -131,7 +133,7 @@ describe("TrackerConfig (SCN-11)", () => {
 
   it("an invalid $type is rejected by the schema and disables Save + Preview", async () => {
     seed();
-    const { getByTestId, getByText } = render(createElement(TrackerConfig, { chatId: "chat_1" }));
+    const { getByTestId, getByText } = render(createElement(TrackerConfig, { chatId: CHAT_ID }));
     fireEvent.change(getByTestId("scn-dsl"), { target: { value: JSON.stringify({ bad: { $type: "nope" } }) } });
     await waitFor(() => expect(getByText("scn_save_button").closest("button")!.disabled).toBe(true));
     expect(getByText("scn_preview_button").closest("button")!.disabled).toBe(true);
@@ -140,7 +142,7 @@ describe("TrackerConfig (SCN-11)", () => {
   it("a valid DSL edit makes the draft dirty and Save persists a partial tracker PATCH (Objective untouched)", async () => {
     seed();
     mocks.updateInsightsConfigAction.mockResolvedValue(undefined);
-    const { getByTestId, getByText } = render(createElement(TrackerConfig, { chatId: "chat_1" }));
+    const { getByTestId, getByText } = render(createElement(TrackerConfig, { chatId: CHAT_ID }));
     fireEvent.change(getByTestId("scn-dsl"), { target: { value: VALID_DSL } });
     const saveBtn = getByText("scn_save_button").closest("button")!;
     await waitFor(() => expect(saveBtn.disabled).toBe(false));
@@ -161,7 +163,7 @@ describe("TrackerConfig (SCN-11)", () => {
   it("Preview trial-runs with the DRAFT config + the selected variant target", async () => {
     seed();
     mocks.previewSceneAction.mockResolvedValue({ target: { chatId: "chat_1" }, sceneState: { mood: "tense" } });
-    const { getByTestId, getByText } = render(createElement(TrackerConfig, { chatId: "chat_1" }));
+    const { getByTestId, getByText } = render(createElement(TrackerConfig, { chatId: CHAT_ID }));
     fireEvent.change(getByTestId("scn-dsl"), { target: { value: VALID_DSL } });
     fireEvent.click(getByText("scn_preview_button"));
     await waitFor(() => expect(mocks.previewSceneAction).toHaveBeenCalledTimes(1));
@@ -174,7 +176,7 @@ describe("TrackerConfig (SCN-11)", () => {
   it("preserves the last-valid preview when a retry fails (last-valid preservation)", async () => {
     seed();
     mocks.previewSceneAction.mockResolvedValueOnce({ target: { chatId: "chat_1" }, sceneState: { mood: "calm" } });
-    const { getByTestId, getByText } = render(createElement(TrackerConfig, { chatId: "chat_1" }));
+    const { getByTestId, getByText } = render(createElement(TrackerConfig, { chatId: CHAT_ID }));
     fireEvent.change(getByTestId("scn-dsl"), { target: { value: VALID_DSL } });
     fireEvent.click(getByText("scn_preview_button"));
     await waitFor(() => expect(mocks.previewSceneAction).toHaveBeenCalledTimes(1));
@@ -194,7 +196,7 @@ describe("TrackerConfig (SCN-11)", () => {
     mocks.previewSceneAction.mockImplementationOnce(
       () => new Promise((resolve) => { release = () => resolve({ target: { chatId: "chat_1" }, sceneState: {} }); }),
     );
-    const { getByTestId, getByText } = render(createElement(TrackerConfig, { chatId: "chat_1" }));
+    const { getByTestId, getByText } = render(createElement(TrackerConfig, { chatId: CHAT_ID }));
     fireEvent.change(getByTestId("scn-dsl"), { target: { value: VALID_DSL } });
     fireEvent.click(getByText("scn_preview_button"));
     await waitFor(() => expect(getByText("scn_preview_stop_button")).toBeTruthy()); // now shows Cancel
@@ -207,7 +209,7 @@ describe("TrackerConfig (SCN-11)", () => {
   it("Preview without a selected assistant variant toasts and does not call the action", async () => {
     seed();
     mocks.findCurrentInsightsCompletionTarget.mockReturnValue(null);
-    const { getByTestId, getByText } = render(createElement(TrackerConfig, { chatId: "chat_1" }));
+    const { getByTestId, getByText } = render(createElement(TrackerConfig, { chatId: CHAT_ID }));
     fireEvent.change(getByTestId("scn-dsl"), { target: { value: VALID_DSL } });
     fireEvent.click(getByText("scn_preview_button"));
     await waitFor(() => expect(mocks.previewSceneAction).not.toHaveBeenCalled());
