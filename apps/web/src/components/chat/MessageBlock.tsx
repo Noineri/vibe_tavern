@@ -17,10 +17,14 @@ import { Icons } from "../shared/icons.js";
 import { AutoTextarea } from "../shared/auto-textarea.js";
 import { MobileExpandTextarea } from "../shared/MobileExpandTextarea.js";
 import { useT } from "../../i18n/context.js";
+import { toast } from "sonner";
+import { brandId, type ChatId } from "@vibe-tavern/domain";
 import "./MessageReasoning.js";
 import "./CoauthorToolActivitySlot.js";
 import "./message-slots/objective-zone.js";
 import "./message-slots/scene-zone.js";
+import { useSceneGenerationStore, useIsSceneGenerating, isVariantSceneGenerating } from "../../stores/scene-generation-store.js";
+import { getSceneStatusAction, cancelSceneAction } from "../../stores/api-actions/chat-actions.js";
 import { useChatController } from "../../hooks/use-chat-controller.js";
 import { replaceUiMacros } from "../../lib/macros.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
@@ -154,6 +158,16 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
       presetName: v.presetId && promptPresets ? promptPresets.find((p) => p.id === v.presetId)?.name ?? null : null,
     }));
   }, [variants, variantCount, promptPresets]);
+
+  // SCN-13 — Scene edit lock. The selected variant's immutable id drives the
+  // generation flag (primitive boolean selector → a non-generating variant's
+  // MessageBlock never re-renders when an unrelated variant starts generating).
+  // `trackerEnabled` gates the click-time status preflight so a Tracker-OFF chat
+  // pays zero network cost on Edit. Both hooks run before the early returns
+  // (Rules of Hooks); a null `msg` yields "" / false stubs.
+  const sceneVariantId = selectedVariant?.id ?? "";
+  const sceneEditLocked = useIsSceneGenerating(sceneVariantId);
+  const trackerEnabled = useSnapshotStore((s) => s.activeChat?.insightsConfig?.trackerEnabled ?? false);
 
   if (input.messageId === "__pending-user") {
     return <PendingUserMessage />;
@@ -382,15 +396,63 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
 
   const confirmDeleteMessage = async () => {
     setDeleteConfirmOpen(false);
+    // SCN-13: cancel any in-flight Scene job for this message's variants before
+    // the delete removes the rows, so the coordinator slot is freed. Best-effort
+    // — a cancel failure must not block the user's delete.
+    const chatId = brandId<ChatId>(authorInfo.activeChatId);
+    const gen = useSceneGenerationStore.getState().generating;
+    for (const v of msg.variants) {
+      if (gen.has(v.id)) {
+        try { await cancelSceneAction(chatId, { branchId: msg.branchId, messageId: msg.id, variantId: v.id }); }
+        catch { /* best-effort: delete proceeds regardless */ }
+      }
+    }
     await chat.handleDeleteMessage(msg.id);
   };
 
   const confirmDeleteVariant = async () => {
     setDeleteConfirmOpen(false);
+    // SCN-13: cancel the selected variant's Scene job (if generating) before
+    // deleting the variant, freeing the coordinator slot.
+    const variantId = selectedVariant?.id;
+    const chatId = brandId<ChatId>(authorInfo.activeChatId);
+    if (variantId && isVariantSceneGenerating(variantId)) {
+      try { await cancelSceneAction(chatId, { branchId: msg.branchId, messageId: msg.id, variantId }); }
+      catch { /* best-effort: delete proceeds regardless */ }
+    }
     await chat.handleDeleteVariant(msg.id, selectedVariantBackendIndex);
   };
 
   const hasSwipes = variantCount > 1 && !isCoauthorMode;
+
+  // SCN-13 — Edit entrypoint with a Scene-generation lock + cross-tab preflight.
+  // The reactive `sceneEditLocked` disables the affordance up front (local
+  // optimistic marks + the latest zone's server hydration). This handler is the
+  // safety net for the case the reactive lock hasn't fired yet (older message,
+  // or a reload race): it re-checks the store, then — only when Tracker is on —
+  // does a one-shot server status preflight so a job started in another tab is
+  // caught before the editor opens. A preflight network failure is NOT fatal:
+  // editing is allowed (don't block the user on infra).
+  const handleEditClick = async () => {
+    if (isBusy) return;
+    const variantId = selectedVariant?.id;
+    if (!variantId) { chat.handleStartEdit(msg); return; }
+    if (isVariantSceneGenerating(variantId)) return; // locked — UI already disabled
+    if (trackerEnabled) {
+      try {
+        const chatId = brandId<ChatId>(authorInfo.activeChatId);
+        const status = await getSceneStatusAction(chatId, { branchId: msg.branchId, messageId: msg.id, variantId });
+        if (status.generating) {
+          // getSceneStatusAction already marked the store → reactive lock flips.
+          toast.warning(t("scn_edit_locked_toast"));
+          return;
+        }
+      } catch {
+        // Preflight failed — allow the edit (best-effort cross-tab safety).
+      }
+    }
+    chat.handleStartEdit(msg);
+  };
 
   // ── Message metadata context (variant-scoped provenance) ──
   const metaCtx: MessageMetaContext = {
@@ -437,6 +499,8 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
       selectedVariantIndex={selectedVariantIndex}
       variantCount={isCoauthorMode ? 1 : variantCount}
       canSwitchVariant={canSwitchVariant}
+      editLocked={sceneEditLocked}
+      editLockedHint={t("scn_edit_locked_hint")}
       metaCtx={metaCtx}
       copied={copied}
       slotExtras={{ reasoning: reasoningForSlot }}
@@ -447,7 +511,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
       mobileVariantControls={mobileVariantControls}
       actions={{
         onCopy: () => { void navigator.clipboard?.writeText(msg.displayContent); setCopied(true); setTimeout(() => setCopied(false), 1000); },
-        onEdit: () => chat.handleStartEdit(msg),
+        onEdit: () => void handleEditClick(),
         onDelete: () => setDeleteConfirmOpen(true),
         onBranch: () => void chat.handleFork(msg.id),
         onRegenerate: () => void chat.handleRegenerateMessage(msg.id),

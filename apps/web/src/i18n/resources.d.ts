@@ -939,6 +939,8 @@ export default interface Resources {
     "scn_dirty_hint": "Unsaved changes",
     "scn_edit_add_item": "Add item",
     "scn_edit_cancel": "Cancel",
+    "scn_edit_locked_hint": "Scene is being updated",
+    "scn_edit_locked_toast": "Scene is being updated in another session. Editing is temporarily locked.",
     "scn_edit_nested_array_unsupported": "Nested arrays are not editable here.",
     "scn_edit_remove_item": "Remove item",
     "scn_edit_save": "Save",

@@ -67,6 +67,13 @@ export function useIsSceneGenerating(variantId: string): boolean {
   return useSceneGenerationStore((s) => s.generating.has(variantId));
 }
 
+/** Non-hook imperative check — for click-time guards / preflight in event
+ *  handlers (e.g. the SCN-13 edit lock in MessageBlock) that must read the
+ *  current generating set outside the render cycle. */
+export function isVariantSceneGenerating(variantId: string): boolean {
+  return useSceneGenerationStore.getState().generating.has(variantId);
+}
+
 // Debug helper — mirrors the window.__ exposure pattern used by the other
 // ephemeral stores. Lets a live Playwright / dev-console session inspect which
 // variants are generating to diagnose "header stuck loading".

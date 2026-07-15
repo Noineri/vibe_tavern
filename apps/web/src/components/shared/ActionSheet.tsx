@@ -15,6 +15,12 @@ export interface ActionSheetItem {
   label: string;
   danger?: boolean;
   action: () => void;
+  /** When true the row renders disabled: dimmed, non-interactive, and removed
+   *  from the tab order via the native `disabled` button attribute (screen
+   *  readers announce it as unavailable). Used by the Scene edit lock (SCN-13)
+   *  to grey out Edit while a variant's Scene is generating. Generic — any
+   *  feature may disable a row. */
+  disabled?: boolean;
   /** Optional always-visible trailing icon buttons rendered at the row's right
    *  edge (e.g. per-version rename/delete). Mobile has no hover, so these are
    *  shown by default — NOT revealed on hover. The row's main tap target still
@@ -57,11 +63,14 @@ export function ActionSheet({ open, title, items, onClose }: ActionSheetProps) {
           return (
             <button type="button"
               key={i}
+              disabled={item.disabled}
               className={cn(
-                "flex w-full cursor-pointer items-center gap-4 px-5 min-h-[52px] text-[calc(var(--ui-fs)+1px)] transition-colors duration-100 active:bg-s3 text-left",
+                "flex w-full items-center gap-4 px-5 min-h-[52px] text-[calc(var(--ui-fs)+1px)] transition-colors duration-100 text-left",
+                item.disabled && "opacity-40",
                 item.danger ? "text-danger-text" : "text-t2",
+                !item.disabled && "cursor-pointer active:bg-s3",
               )}
-              onClick={() => { onClose(); item.action(); }}
+              onClick={() => { if (item.disabled) return; onClose(); item.action(); }}
             >
               <span className={cn(
                 "flex h-10 w-10 shrink-0 items-center justify-center rounded-xl",
@@ -76,11 +85,14 @@ export function ActionSheet({ open, title, items, onClose }: ActionSheetProps) {
         return (
           <div key={i} className="flex items-center pr-3">
             <button type="button"
+              disabled={item.disabled}
               className={cn(
-                "flex flex-1 cursor-pointer items-center gap-4 px-5 min-h-[52px] text-[calc(var(--ui-fs)+1px)] transition-colors duration-100 active:bg-s3 text-left",
+                "flex flex-1 items-center gap-4 px-5 min-h-[52px] text-[calc(var(--ui-fs)+1px)] transition-colors duration-100 text-left",
+                item.disabled && "opacity-40",
                 item.danger ? "text-danger-text" : "text-t2",
+                !item.disabled && "cursor-pointer active:bg-s3",
               )}
-              onClick={() => { onClose(); item.action(); }}
+              onClick={() => { if (item.disabled) return; onClose(); item.action(); }}
             >
               <span className={cn(
                 "flex h-10 w-10 shrink-0 items-center justify-center rounded-xl",

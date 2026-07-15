@@ -71,6 +71,8 @@
   "scn_edit_add_item": "Добавить элемент",
   "scn_edit_remove_item": "Удалить элемент",
   "scn_edit_nested_array_unsupported": "Вложенные массивы здесь редактировать нельзя.",
+  "scn_edit_locked_hint": "Сцена обновляется",
+  "scn_edit_locked_toast": "Сцена обновляется в другом окне. Редактирование временно заблокировано.",
   "obj_description_label": "Цель",
   "obj_description_placeholder": "Опишите общую цель этой ролевой игры...",
   "obj_generate_button": "Сгенерировать задачи",
