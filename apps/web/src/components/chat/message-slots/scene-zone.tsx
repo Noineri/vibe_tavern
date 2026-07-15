@@ -221,7 +221,7 @@ function SceneZone({ chatId, messageId }: { chatId: string; messageId: string })
           onClick={() => toggle(messageId, "sceneOpen")}
           title={t("scn_zone_expand")}
           className={cn(
-            "group flex min-w-0 items-center gap-1.5 rounded px-1 py-0.5",
+            "group flex w-full min-w-0 items-center gap-1.5 rounded px-1 py-0.5",
             "text-[11px] font-medium text-t3 transition-colors hover:text-t2",
           )}
         >
@@ -394,8 +394,8 @@ function SceneKvSummary({ schema, state, placeholder }: { schema: SceneTrackerDs
     }
     return out;
   }, [schema, state]);
-  if (!parts.length) return <span className="truncate text-t4">{placeholder}</span>;
-  return <span className="truncate">{parts.join(" · ")}</span>;
+  if (!parts.length) return <span className="min-w-0 flex-1 truncate text-t4">{placeholder}</span>;
+  return <span className="min-w-0 flex-1 truncate">{parts.join(" · ")}</span>;
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -456,12 +456,12 @@ function ConfirmDelete({ open, isMobile, onCancel, onConfirm, t }: {
 
 function SceneGlyph({ generating, hasRecord, fresh }: { generating: boolean; hasRecord: boolean; fresh: boolean }) {
   if (generating) return <ActionSpinner />;
-  if (!hasRecord) return <span className="text-t4"><Ic.target /></span>;
-  return <span className={fresh ? "text-accent" : "text-warning"}><Ic.target /></span>;
+  if (!hasRecord) return <span className="shrink-0 text-t4"><Ic.target /></span>;
+  return <span className={cn("shrink-0", fresh ? "text-accent" : "text-warning")}><Ic.target /></span>;
 }
 
 function ActionSpinner() {
-  return <span className="h-2.5 w-2.5 animate-spin rounded-full border border-current border-t-transparent" />;
+  return <span className="h-2.5 w-2.5 shrink-0 animate-spin rounded-full border border-current border-t-transparent" />;
 }
 
 function Chevron({ open }: { open: boolean }) {

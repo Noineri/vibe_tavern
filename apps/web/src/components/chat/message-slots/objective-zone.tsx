@@ -151,13 +151,13 @@ function ObjectiveZone({ chatId, messageId }: { chatId: string; messageId: strin
         onClick={() => toggle(messageId, "objectiveOpen")}
         title={t("obj_zone_expand")}
         className={cn(
-          "group flex min-w-0 items-center gap-1.5 rounded px-1 py-0.5",
+          "group flex w-full min-w-0 items-center gap-1.5 rounded px-1 py-0.5",
           "text-[11px] font-medium text-t3 transition-colors hover:text-t2",
         )}
       >
         <NodeGlyph status={activeStatus} />
         <span className="shrink-0 tabular-nums text-t4">{progress}</span>
-        <span className="truncate">{activeDesc}</span>
+        <span className="min-w-0 flex-1 truncate">{activeDesc}</span>
         <Chevron open={false} />
       </button>
     );

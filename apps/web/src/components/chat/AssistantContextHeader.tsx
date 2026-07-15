@@ -96,14 +96,27 @@ export function AssistantContextHeader(props: AssistantContextHeaderProps) {
     );
   }
 
-  // Desktop adaptive.
+  // Desktop adaptive — CSS GRID (not flex). Each zone owns a bounded
+  // `minmax(0,1fr)` track that is independent of its content's intrinsic
+  // width, so the zone's truncated summary has a definite column edge to clip
+  // against. A flex row of content-sized zone items never shares space — the
+  // 2-zone overlap bug: both nowrap summaries rendered at full width and
+  // collided. Grid tracks solve it structurally; the leading `auto` track keeps
+  // the identity anchor at content width so the name is never squeezed.
+  // (ASSISTANT_CONTEXT_HEADER report fix step 2: “switch layout by resolved
+  // count”; this is the 2-zone desktop template.)
+  const gridCols = `auto${zones.map(() => " 1px minmax(0,1fr)").join("")}`;
   return (
-    <div className={cn(
-      "mb-[12px] flex text-[calc(var(--ui-fs)-2px)] font-semibold tracking-[0.04em] text-t3 text-accent-t opacity-85",
-      expanded ? "items-start gap-4" : "items-center gap-[10px]",
-    )}>
-      {/* Identity anchor: avatar + name (+ greeting). Portrait → caption stack. */}
-      <div className={cn("min-w-0", expanded ? "flex flex-col items-start gap-1" : "flex items-center gap-[10px]")}>
+    <div
+      className={cn(
+        "mb-[12px] grid text-[calc(var(--ui-fs)-2px)] font-semibold tracking-[0.04em] text-t3 text-accent-t opacity-85",
+        expanded ? "items-start gap-4" : "items-center gap-[10px]",
+      )}
+      style={{ gridTemplateColumns: gridCols }}
+    >
+      {/* Identity anchor: avatar + name (+ greeting). Portrait → caption stack.
+          The `auto` grid track sizes it to content, so it never gets squeezed. */}
+      <div className={cn("min-w-0 flex", expanded ? "flex-col items-start gap-1" : "items-center gap-[10px]")}>
         <HeaderAvatar author={author} portrait={portrait} />
         <div className="flex items-center gap-[10px]">
           {nameNode}
@@ -114,7 +127,7 @@ export function AssistantContextHeader(props: AssistantContextHeaderProps) {
       {zones.map((z) => (
         <Fragment key={z.id}>
           <ZoneDivider vertical />
-          <div className={cn(expanded && "min-w-0 flex-1")}>
+          <div className="min-w-0 overflow-x-hidden">
             <ZoneRenderer descriptor={z} ctx={slotCtx} />
           </div>
         </Fragment>
