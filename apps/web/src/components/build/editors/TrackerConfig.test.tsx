@@ -157,6 +157,26 @@ describe("TrackerConfig (SCN-11)", () => {
     expect(getByText("scn_preview_button").closest("button")!.disabled).toBe(false);
   });
 
+  it("renders the DSL authoring disclosure (grammar + copyable example)", () => {
+    seed();
+    const { getByText } = render(createElement(TrackerConfig, { chatId: CHAT_ID }));
+    expect(getByText("scn_schema_example_summary")).toBeTruthy();
+    expect(getByText("scn_schema_grammar")).toBeTruthy();
+  });
+
+  it("shows the Raw XML disclosure under XML format, not under JSON", () => {
+    seed({ promptFormat: "xml", schema: { mood: { $type: "string" as const } } });
+    const xmlView = render(createElement(TrackerConfig, { chatId: CHAT_ID }));
+    fireEvent.click(xmlView.getByText("scn_preview_button"));
+    expect(xmlView.getByText("scn_preview_raw_xml")).toBeTruthy();
+    cleanup();
+
+    seed({ promptFormat: "json", schema: { mood: { $type: "string" as const } } });
+    const jsonView = render(createElement(TrackerConfig, { chatId: CHAT_ID }));
+    fireEvent.click(jsonView.getByText("scn_preview_button"));
+    expect(jsonView.queryByText("scn_preview_raw_xml")).toBeNull();
+  });
+
   it("a valid DSL edit makes the draft dirty and Save persists a partial tracker PATCH (Objective untouched)", async () => {
     seed();
     mocks.updateInsightsConfigAction.mockResolvedValue(undefined);

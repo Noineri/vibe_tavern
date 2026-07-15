@@ -12,6 +12,7 @@ import { DropdownSelect } from "../../shared/DropdownSelect.js";
 import { NumberInput } from "../../shared/NumberInput.js";
 import { SegmentedControl } from "../../shared/SegmentedControl.js";
 import { SceneStateView } from "../../shared/SceneStateView.js";
+import { formatSceneHistory } from "@vibe-tavern/prompt-pipeline";
 import { inputCls, monoCls, inputPad, lblCls } from "../fields/field-styles.js";
 import { SceneHistoryBackfill } from "./SceneHistoryBackfill.js";
 import { useT } from "../../../i18n/context.js";
@@ -21,6 +22,18 @@ import { updateInsightsConfigAction, previewSceneAction } from "../../../stores/
 import { findCurrentInsightsCompletionTarget } from "../../../stores/api-actions/insights-completion-actions.js";
 import { fetchProviderModelsAction } from "../../../stores/api-actions/provider-actions.js";
 import { useSceneRenderStore, type SceneRenderVariant } from "../../../stores/scene-render-store.js";
+
+/** A copyable worked example for the DSL authoring disclosure — exercises every
+ *  node kind ($type, ranged number, object/properties, array/items, label). */
+const SCENE_DSL_EXAMPLE = `{
+  "mood": { "$type": "string", "label": "Mood" },
+  "tension": { "$type": "number", "min": 0, "max": 10 },
+  "location": {
+    "$type": "object",
+    "properties": { "room": { "$type": "string" } }
+  },
+  "tags": { "$type": "array", "items": { "$type": "string" } }
+}`;
 
 /**
  * Scene Tracker config editor (SCENE_TRACKER_PLAN SCN-11). Mirrors the Objective
@@ -204,6 +217,31 @@ export function TrackerConfig({ chatId }: { chatId: ChatId }) {
         {effectiveSchemaError && (
           <p className="mt-1.5 font-ui text-[11px] leading-relaxed text-danger-text">{effectiveSchemaError}</p>
         )}
+        {/* Authoring aid — grammar summary + a copyable worked example
+            (progressive disclosure: collapsed until the user needs it). */}
+        <details className="group mt-1.5">
+          <summary className="inline-flex cursor-pointer select-none items-center gap-1 font-ui text-[11px] text-t4 hover:text-t3">
+            <Ic.help />
+            {t("scn_schema_example_summary")}
+          </summary>
+          <div className="mt-1.5 space-y-1.5 rounded-md border border-border2 bg-s2/40 p-2">
+            <p className="font-ui text-[11px] leading-relaxed text-t3">{t("scn_schema_grammar")}</p>
+            <div className="relative">
+              <pre className={cn(monoCls, "max-h-56 overflow-auto rounded p-2 pr-9 text-[11px] leading-relaxed text-t2")}>{SCENE_DSL_EXAMPLE}</pre>
+              <button
+                type="button"
+                onClick={() => {
+                  navigator.clipboard?.writeText(SCENE_DSL_EXAMPLE);
+                  toast.success(t("copied"));
+                }}
+                className="absolute right-1.5 top-1.5 inline-flex h-6 w-6 items-center justify-center rounded text-t4 hover:bg-s2 hover:text-t2"
+                title={t("copy")}
+              >
+                <Ic.copy />
+              </button>
+            </div>
+          </div>
+        </details>
       </div>
 
       {/* Auto-generate mode */}
@@ -361,6 +399,14 @@ export function TrackerConfig({ chatId }: { chatId: ChatId }) {
               {JSON.stringify(previewState, null, 2)}
             </pre>
           </details>
+          {draft.promptFormat === SCENE_PROMPT_FORMAT.xml && (
+            <details className="mt-2">
+              <summary className="cursor-pointer select-none font-ui text-[11px] text-t4 hover:text-t3">{t("scn_preview_raw_xml")}</summary>
+              <pre className={cn(monoCls, "mt-1 max-h-48 overflow-auto rounded p-2 text-[11px] leading-relaxed text-t2")}>
+                {formatSceneHistory([previewState], "xml")}
+              </pre>
+            </details>
+          )}
         </div>
       )}
 
