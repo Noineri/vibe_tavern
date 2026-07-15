@@ -998,6 +998,7 @@ export default interface Resources {
     "scn_test_generation_button": "Test generation",
     "scn_test_generation_hint": "Run a real AI generation to validate the schema + prompt pipeline (uses tokens)",
     "scn_use_chat_model": "Use chat model",
+    "scn_xml_key_error": "XML format needs ASCII field names (letters, digits, _, -, .) — switch to JSON to allow any. Invalid:",
     "scn_zone_action_failed": "Scene action failed.",
     "scn_zone_cancel": "Cancel scene generation",
     "scn_zone_collapse": "Hide scene state",

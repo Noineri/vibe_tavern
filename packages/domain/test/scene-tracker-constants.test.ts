@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { synthesizeSceneSample, stripLabels, computeSceneSchemaHash } from "../src/scene-tracker-constants.js";
+import { synthesizeSceneSample, stripLabels, computeSceneSchemaHash, findInvalidXmlKeys } from "../src/scene-tracker-constants.js";
 import type { SceneTrackerDsl } from "../src/scene-tracker-constants.js";
 
 describe("synthesizeSceneSample", () => {
@@ -126,5 +126,48 @@ describe("computeSceneSchemaHash (label invariance)", () => {
       npc: { $type: "object", properties: { trust: { $type: "number", min: 0, max: 5 } } }, // bounds changed
     });
     expect(after).not.toBe(before);
+  });
+});
+
+describe("findInvalidXmlKeys", () => {
+  it("returns no keys when every key is XML-safe", () => {
+    const dsl: SceneTrackerDsl = {
+      mood: { $type: "string" },
+      hp: { $type: "number", min: 0, max: 100 },
+      "with-dots.and_underscores": { $type: "string" },
+      _leadingUnderscore: { $type: "boolean" },
+    };
+    expect(findInvalidXmlKeys(dsl)).toEqual([]);
+  });
+
+  it("flags root keys that are not valid XML names (space / leading digit / sigil)", () => {
+    const dsl: SceneTrackerDsl = {
+      "first name": { $type: "string" },
+      "123abc": { $type: "number" },
+      "$sigil": { $type: "boolean" },
+      ok: { $type: "string" },
+    } as unknown as SceneTrackerDsl;
+    expect(findInvalidXmlKeys(dsl)).toEqual(["first name", "123abc", "$sigil"]);
+  });
+
+  it("recurses into nested object properties with dotted paths", () => {
+    const dsl: SceneTrackerDsl = {
+      location: { $type: "object", properties: { room: { $type: "string" }, "bad key": { $type: "string" } } },
+    } as unknown as SceneTrackerDsl;
+    expect(findInvalidXmlKeys(dsl)).toEqual(["location.bad key"]);
+  });
+
+  it("recurses into array item object properties", () => {
+    const dsl: SceneTrackerDsl = {
+      party: { $type: "array", items: { $type: "object", properties: { name: { $type: "string" }, "bad key": { $type: "string" } } } },
+    } as unknown as SceneTrackerDsl;
+    expect(findInvalidXmlKeys(dsl)).toEqual(["party.bad key"]);
+  });
+
+  it("returns nothing for JSON-irrelevant schemas (any key is JSON-valid)", () => {
+    // The check is XML-only; this just confirms the helper is pure and does not
+    // depend on any promptFormat — the caller gates on format.
+    const dsl: SceneTrackerDsl = { "totally fine for json": { $type: "string" } } as unknown as SceneTrackerDsl;
+    expect(findInvalidXmlKeys(dsl)).toEqual(["totally fine for json"]);
   });
 });

@@ -1,5 +1,5 @@
 import type { ChatRuntimeApi } from "../contract/runtime-api.js";
-import { brandId, parseStoredAttachments, resolveEffectiveSettings, type ChatId, type ChatBranchId, type MessageId, type PromptPresetId, type SceneTrackerConfigPatch } from "@vibe-tavern/domain";
+import { brandId, parseStoredAttachments, resolveEffectiveSettings, normalizeSceneTrackerConfig, applySceneTrackerConfigPatch, findInvalidXmlKeys, SCENE_PROMPT_FORMAT, type ChatId, type ChatBranchId, type MessageId, type PromptPresetId, type SceneTrackerConfigPatch } from "@vibe-tavern/domain";
 import { rebuildCurrentSceneCache } from "../../domain/insights/scene-cache.js";
 import type { Attachment } from "@vibe-tavern/domain";
 import type { StoreContainer } from "@vibe-tavern/db";
@@ -371,6 +371,24 @@ export class ChatAdapter implements ChatRuntimeApi {
 		// write so it re-reads the freshly-toggled config. Objective state lives
 		// in a separate column and is never touched here.
 		if (patch?.tracker !== undefined) {
+			// Defense-in-depth: the route validates the PATCH in isolation (no
+			// cross-field check is possible there — `schema` and `promptFormat` may
+			// arrive in separate PATCHes), so re-check the MERGED config here before
+			// it persists. Under XML format, every schema key must be an XML Name or
+			// the serializer would emit malformed tags (`<first name>`, `<123>`).
+			const mergedTracker = applySceneTrackerConfigPatch(
+				normalizeSceneTrackerConfig(existing.insightsConfig.tracker),
+				patch.tracker,
+			);
+			if (mergedTracker.promptFormat === SCENE_PROMPT_FORMAT.xml) {
+				const bad = findInvalidXmlKeys(mergedTracker.schema);
+				if (bad.length > 0) {
+					throw validation(
+						`XML format requires ASCII field names (letters, digits, "_", "-", "."); invalid: ${bad.join(", ")}.`,
+						{ invalidKeys: bad },
+					);
+				}
+			}
 			await this.stores.chats.updateSceneTrackerConfig(chatId, patch.tracker);
 			// A schema/revision change can stale the current-Scene cache (a record
 			// generated under the old schema is no longer current) — re-project it

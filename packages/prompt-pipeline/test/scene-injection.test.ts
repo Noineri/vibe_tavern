@@ -68,6 +68,56 @@ describe("formatSceneHistory — serialization (SCN-7)", () => {
 		);
 	});
 
+	it("xml: recurses into a nested object (no [object Object])", () => {
+		const body = formatSceneHistory([{ location: { name: "tavern", safety: 3 } }], "xml");
+		expect(body).toBe(
+			"<scene_history>\n" +
+			'<scene index="1">\n' +
+			"\t<location>\n" +
+			"\t\t<name>tavern</name>\n" +
+			"\t\t<safety>3</safety>\n" +
+			"\t</location>\n" +
+			"</scene>\n" +
+			"</scene_history>",
+		);
+	});
+
+	it("xml: renders an array as repeating <item> children", () => {
+		const body = formatSceneHistory([{ tags: ["a", "b"] }], "xml");
+		expect(body).toBe(
+			"<scene_history>\n" +
+			'<scene index="1">\n' +
+			"\t<tags>\n" +
+			"\t\t<item>a</item>\n" +
+			"\t\t<item>b</item>\n" +
+			"\t</tags>\n" +
+			"</scene>\n" +
+			"</scene_history>",
+		);
+	});
+
+	it("xml: renders an array of objects with nested fields per <item>", () => {
+		const body = formatSceneHistory([{ party: [{ name: "Aria", trust: 80 }] }], "xml");
+		expect(body).toBe(
+			"<scene_history>\n" +
+			'<scene index="1">\n' +
+			"\t<party>\n" +
+			"\t\t<item>\n" +
+			"\t\t\t<name>Aria</name>\n" +
+			"\t\t\t<trust>80</trust>\n" +
+			"\t\t</item>\n" +
+			"\t</party>\n" +
+			"</scene>\n" +
+			"</scene_history>",
+		);
+	});
+
+	it("xml: an empty object/array renders an empty tag (key preserved, no children)", () => {
+		const body = formatSceneHistory([{ empty: {}, list: [] }], "xml");
+		expect(body).toContain("<empty></empty>");
+		expect(body).toContain("<list></list>");
+	});
+
 	it("empty history yields an empty string", () => {
 		expect(formatSceneHistory([], "json")).toBe("");
 		expect(formatSceneHistory([], "xml")).toBe("");

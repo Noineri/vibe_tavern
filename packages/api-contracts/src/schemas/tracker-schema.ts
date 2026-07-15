@@ -6,6 +6,7 @@ import {
   computeSceneSchemaHash,
   countSceneDataNodes,
   countSceneSchemaNodes,
+  findInvalidXmlKeys,
   isReservedSceneSegment,
   sceneSchemaDepth,
 } from "@vibe-tavern/domain";
@@ -366,6 +367,21 @@ export const sceneTrackerConfigSchema = z
         message: "schemaHash does not match the canonical hash of schema.",
       });
       return config;
+    }
+    // XML prompt format requires ASCII-safe field names (the XML serializer
+    // emits `<key>…</key>` tags and only escapes entities, not tag-name chars);
+    // a key with a space / leading digit / `$` would produce malformed XML.
+    // Fail loudly at config time; JSON accepts any string key.
+    if (config.promptFormat === SCENE_PROMPT_FORMAT.xml) {
+      const bad = findInvalidXmlKeys(config.schema);
+      if (bad.length > 0) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["schema"],
+          message: `XML format requires ASCII field names (letters, digits, "_", "-", "."); invalid: ${bad.join(", ")}. Switch the prompt format to JSON to allow any key.`,
+        });
+        return config;
+      }
     }
     return { ...config, schemaHash: expected };
   });

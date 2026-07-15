@@ -141,6 +141,22 @@ describe("TrackerConfig (SCN-11)", () => {
     expect(getByText("scn_preview_button").closest("button")!.disabled).toBe(true);
   });
 
+  it("XML prompt format + a non-XML-name key shows the XML error and disables Preview", async () => {
+    seed({ promptFormat: "xml", schema: { "first name": { $type: "string" as const } } });
+    const { getByText } = render(createElement(TrackerConfig, { chatId: CHAT_ID }));
+    // The XML key error is surfaced and names the bad key.
+    const err = getByText(/scn_xml_key_error/);
+    expect(err.textContent).toContain("first name");
+    // Preview (instant) is disabled while the schema is not XML-safe.
+    expect(getByText("scn_preview_button").closest("button")!.disabled).toBe(true);
+  });
+
+  it("JSON prompt format allows the same key (XML check is XML-only)", async () => {
+    seed({ promptFormat: "json", schema: { "first name": { $type: "string" as const } } });
+    const { getByText } = render(createElement(TrackerConfig, { chatId: CHAT_ID }));
+    expect(getByText("scn_preview_button").closest("button")!.disabled).toBe(false);
+  });
+
   it("a valid DSL edit makes the draft dirty and Save persists a partial tracker PATCH (Objective untouched)", async () => {
     seed();
     mocks.updateInsightsConfigAction.mockResolvedValue(undefined);

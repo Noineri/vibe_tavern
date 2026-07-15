@@ -21,6 +21,7 @@
   "scn_schema_label": "Схема сцены",
   "scn_schema_hint": "Определите структурированные поля, которые модель отслеживает каждый ход. Объекты: {\"$type\": \"object\", \"properties\": {…}}; листья: {\"$type\": \"string\"}.",
   "scn_schema_invalid_json": "Невалидный JSON.",
+  "scn_xml_key_error": "Формату XML нужны ASCII-имена полей (буквы, цифры, _, -, .) — переключите на JSON, чтобы разрешить любые. Некорректные:",
   "scn_auto_mode_label": "Авто-генерация",
   "scn_auto_mode_assistant": "На каждый ответ ассистента",
   "scn_auto_mode_manual": "Только вручную",

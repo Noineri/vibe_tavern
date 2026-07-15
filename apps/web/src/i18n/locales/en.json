@@ -21,6 +21,7 @@
   "scn_schema_label": "Scene schema",
   "scn_schema_hint": "Define the structured fields the model tracks each turn. Objects: {\"$type\": \"object\", \"properties\": {…}}; leaves: {\"$type\": \"string\"}.",
   "scn_schema_invalid_json": "Invalid JSON.",
+  "scn_xml_key_error": "XML format needs ASCII field names (letters, digits, _, -, .) — switch to JSON to allow any. Invalid:",
   "scn_auto_mode_label": "Auto-generate",
   "scn_auto_mode_assistant": "On every assistant reply",
   "scn_auto_mode_manual": "Manual only",

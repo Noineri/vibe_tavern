@@ -300,6 +300,44 @@ function stripLabelsNode(node: SceneTrackerSchemaNode): SceneTrackerSchemaNode {
   }
 }
 
+/**
+ * Pattern for an XML-safe field name (a restricted XML Name): an ASCII letter or
+ * underscore, then ASCII letters / digits / underscores / hyphens / dots. Spaces
+ * and leading digits — which `sceneFieldNameSchema` otherwise permits — would
+ * produce malformed XML tags (`<first name>`, `<123>`), so under
+ * `promptFormat === "xml"` every schema key must match. JSON has no analogue
+ * (any string key is valid JSON), so the check is XML-only.
+ */
+const XML_KEY_PATTERN = /^[A-Za-z_][A-Za-z0-9_\-.]*$/;
+
+/**
+ * Collect the dotted paths of every schema key that is not a valid XML Name,
+ * recursing into object properties and array items. Empty when every key is
+ * XML-safe. Used to fail loudly at config time when `promptFormat === "xml"`, so
+ * a bad key never reaches the XML serializer and silently produces malformed
+ * injection XML (`<first name>…`, `<123>…`).
+ */
+export function findInvalidXmlKeys(dsl: SceneTrackerDsl): string[] {
+  const bad: string[] = [];
+  for (const [key, node] of Object.entries(dsl)) {
+    if (!XML_KEY_PATTERN.test(key)) bad.push(key);
+    collectInvalidXmlKeys(node, key, bad);
+  }
+  return bad;
+}
+
+function collectInvalidXmlKeys(node: SceneTrackerSchemaNode, prefix: string, out: string[]): void {
+  if (node.$type === "object") {
+    for (const [k, child] of Object.entries(node.properties)) {
+      const path = `${prefix}.${k}`;
+      if (!XML_KEY_PATTERN.test(k)) out.push(path);
+      collectInvalidXmlKeys(child, path, out);
+    }
+  } else if (node.$type === "array") {
+    collectInvalidXmlKeys(node.items, prefix, out);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Canonical schema hash
 // ---------------------------------------------------------------------------

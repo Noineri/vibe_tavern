@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { toast } from "sonner";
 import type { ChatId, SceneTrackerConfig, SceneTrackerConfigPatch } from "@vibe-tavern/domain";
-import { normalizeSceneTrackerConfig, synthesizeSceneSample, SCENE_AUTO_MODE, SCENE_PROMPT_FORMAT } from "@vibe-tavern/domain";
+import { normalizeSceneTrackerConfig, synthesizeSceneSample, findInvalidXmlKeys, SCENE_AUTO_MODE, SCENE_PROMPT_FORMAT } from "@vibe-tavern/domain";
 import { sceneTrackerDslSchema } from "@vibe-tavern/api-contracts";
 import { Ic } from "../../shared/icons.js";
 import { cn } from "../../../lib/cn.js";
@@ -116,7 +116,7 @@ export function TrackerConfig({ chatId }: { chatId: ChatId }) {
   }
 
   async function save() {
-    if (schemaError || saving) return;
+    if (effectiveSchemaError || saving) return;
     setSaving(true);
     try {
       await updateInsightsConfigAction(chatId, { insightsConfig: { tracker: configPatch(draft) } });
@@ -132,12 +132,12 @@ export function TrackerConfig({ chatId }: { chatId: ChatId }) {
    *  the DRAFT schema (no LLM, no network). Demonstrates the render layout only;
    *  it never validates the generation pipeline (use Test generation for that). */
   function previewSample() {
-    if (schemaError) return;
+    if (effectiveSchemaError) return;
     setPreviewState(synthesizeSceneSample(draft.schema));
   }
 
   async function testGeneration() {
-    if (schemaError || testing) return;
+    if (effectiveSchemaError || testing) return;
     const target = findCurrentInsightsCompletionTarget(chatId);
     if (!target?.variantId) {
       toast.error(t("scn_no_target"));
@@ -167,11 +167,24 @@ export function TrackerConfig({ chatId }: { chatId: ChatId }) {
     testAbort.current?.abort();
   }
 
-  const canSave = dirty && !schemaError && !saving;
+  // XML prompt format requires ASCII-safe field names (the serializer emits
+  // `<key>` tags and only escapes entities, not tag-name chars, so a space /
+  // leading digit / `$` would yield malformed XML). Surface it as a schema error
+  // so Save/Preview/Test are blocked until the keys are fixed or the format is
+  // switched back to JSON. Reactive to both schema + promptFormat (not just the
+  // schema text), so flipping the format to XML re-checks immediately.
+  const xmlKeyError = useMemo(() => {
+    if (draft.promptFormat !== SCENE_PROMPT_FORMAT.xml) return null;
+    const bad = findInvalidXmlKeys(draft.schema);
+    return bad.length > 0 ? `${t("scn_xml_key_error")} ${bad.join(", ")}` : null;
+  }, [draft.promptFormat, draft.schema, t]);
+  const effectiveSchemaError = schemaError ?? xmlKeyError;
+
+  const canSave = dirty && !effectiveSchemaError && !saving;
   // Instant preview needs only a valid schema. The generation-test button stays
   // ENABLED while testing so Stop is clickable (disabled-buttons are not
   // clickable in a real browser — gating Stop on `!testing` would break cancel).
-  const canPreview = !schemaError;
+  const canPreview = !effectiveSchemaError;
   const spinner = <span className="h-3 w-3 animate-spin rounded-full border-2 border-accent border-t-transparent" />;
 
   return (
@@ -188,8 +201,8 @@ export function TrackerConfig({ chatId }: { chatId: ChatId }) {
             className="font-mono text-[12px]"
           />
         </div>
-        {schemaError && (
-          <p className="mt-1.5 font-ui text-[11px] leading-relaxed text-danger-text">{schemaError}</p>
+        {effectiveSchemaError && (
+          <p className="mt-1.5 font-ui text-[11px] leading-relaxed text-danger-text">{effectiveSchemaError}</p>
         )}
       </div>
 
@@ -306,7 +319,7 @@ export function TrackerConfig({ chatId }: { chatId: ChatId }) {
         <button
           type="button"
           onClick={() => (testing ? stopTest() : void testGeneration())}
-          disabled={schemaError !== null && !testing}
+          disabled={effectiveSchemaError !== null && !testing}
           title={t("scn_test_generation_hint")}
           className="inline-flex items-center gap-1.5 rounded-md border border-border2 bg-s2 px-3 py-1.5 font-ui text-[12px] font-medium text-t2 transition-colors hover:border-accent disabled:opacity-40"
         >

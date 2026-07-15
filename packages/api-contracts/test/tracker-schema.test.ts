@@ -361,6 +361,29 @@ describe("sceneTrackerConfigSchema", () => {
     expect(sceneTrackerConfigSchema.safeParse({ contextWindow: 0 }).success).toBe(false);
     expect(sceneTrackerConfigSchema.safeParse({ autoMode: "always" }).success).toBe(false);
   });
+
+  it("XML format accepts ASCII-safe keys", () => {
+    const schema: SceneTrackerDsl = { mood: { $type: "string" }, hp: { $type: "number", min: 0, max: 100 } };
+    expect(sceneTrackerConfigSchema.safeParse({ promptFormat: "xml", schema }).success).toBe(true);
+  });
+
+  it("XML format rejects keys that are not valid XML names and names them", () => {
+    const schema = { "first name": { $type: "string" }, "123": { $type: "number" }, ok: { $type: "string" } } as unknown as SceneTrackerDsl;
+    const result = sceneTrackerConfigSchema.safeParse({ promptFormat: "xml", schema });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const msg = JSON.stringify(result.error.issues);
+      expect(msg).toContain("first name");
+      expect(msg).toContain("123");
+      expect(msg).not.toContain("\"ok\""); // the valid key is not flagged
+      expect(issuePaths(result).some((p) => p === "schema")).toBe(true);
+    }
+  });
+
+  it("JSON format allows any string key (the XML check is XML-only)", () => {
+    const schema = { "first name": { $type: "string" }, "$x": { $type: "number" } } as unknown as SceneTrackerDsl;
+    expect(sceneTrackerConfigSchema.safeParse({ promptFormat: "json", schema }).success).toBe(true);
+  });
 });
 
 describe("updateTrackerConfigSchema (PATCH)", () => {
