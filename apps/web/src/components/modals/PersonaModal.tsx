@@ -146,8 +146,6 @@ export function PersonaModal(input: PersonaModalProps) {
     defaultValues: EMPTY_PERSONA_FORM,
   });
 
-  if (!isOpen) return null;
-
   const isEditing = editingId !== null;
   const isLastPersona = input.personas.length <= 1;
 
@@ -289,6 +287,11 @@ export function PersonaModal(input: PersonaModalProps) {
   const allFormValues = form.watch();
   const isDirty = computePersonaIsDirty(allFormValues, baselineRef.current);
   const { containerRef: scrollBodyRef, cardRef: handleCardRef } = useRevealOnCreate(createdDraftPersonaId, isDirty);
+
+  // PersonaModal stays mounted in AppShell while closed. Every hook above must
+  // run on both closed and open renders; returning before useRevealOnCreate
+  // changed the hook count on first open and triggered React error #310.
+  if (!isOpen) return null;
 
   // Avatar-in-prompt fields live OUT-OF-BAND on the persona (excluded from
   // this modal's react-hook-form, same design as the character side — see

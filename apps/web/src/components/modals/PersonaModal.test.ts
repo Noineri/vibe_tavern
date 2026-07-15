@@ -11,8 +11,12 @@
  * end-to-end wiring (form.watch() feeding `current`, baselineRef set on reset)
  * is exercised by the render path; the logic contract is what's guarded here.
  */
-import { describe, expect, test } from "vitest";
-import { computePersonaIsDirty } from "./PersonaModal.js";
+import { createElement } from "react";
+import { act, render } from "@testing-library/react";
+import { afterEach, describe, expect, test } from "vitest";
+import { useModalStore } from "../../stores/modal-store.js";
+import { TooltipProvider } from "../shared/Tooltip.js";
+import { computePersonaIsDirty, PersonaModal } from "./PersonaModal.js";
 
 const baseline = {
 	name: "Noi",
@@ -28,6 +32,33 @@ const baseline = {
 	avatarCropJson: null,
 	avatarPreview: null,
 };
+
+afterEach(() => {
+	useModalStore.setState({ isPersonaModalOpen: false });
+});
+
+describe("PersonaModal render lifecycle", () => {
+	test("opens after being mounted closed without changing its hook order", () => {
+		useModalStore.setState({ isPersonaModalOpen: false });
+		const view = render(createElement(TooltipProvider, null,
+			createElement(PersonaModal, {
+				personas: [],
+				activePersonaId: null,
+				isSaving: false,
+				onSaveEdit: () => {},
+				onSetActive: () => {},
+				onCreatePersona: async () => null,
+				onDuplicatePersona: async () => {},
+				onDeletePersona: async () => ({ ok: true }),
+				onSetDefaultPersona: async () => {},
+			}),
+		));
+
+		expect(view.queryByText("persona_manager_title")).toBeNull();
+		act(() => useModalStore.getState().setIsPersonaModalOpen(true));
+		expect(view.getByText("persona_manager_title")).toBeTruthy();
+	});
+});
 
 describe("computePersonaIsDirty", () => {
 	test("returns false when there is no baseline yet (form never reset)", () => {
