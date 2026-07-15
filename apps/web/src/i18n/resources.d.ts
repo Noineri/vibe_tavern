@@ -995,6 +995,8 @@ export default interface Resources {
     "scn_schema_hint": "Define the structured fields the model tracks each turn. Objects: {\"$type\": \"object\", \"properties\": {…}}; leaves: {\"$type\": \"string\"}.",
     "scn_schema_invalid_json": "Invalid JSON.",
     "scn_schema_label": "Scene schema",
+    "scn_test_generation_button": "Test generation",
+    "scn_test_generation_hint": "Run a real AI generation to validate the schema + prompt pipeline (uses tokens)",
     "scn_use_chat_model": "Use chat model",
     "scn_zone_action_failed": "Scene action failed.",
     "scn_zone_cancel": "Cancel scene generation",

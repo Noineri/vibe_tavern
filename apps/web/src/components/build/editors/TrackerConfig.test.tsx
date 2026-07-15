@@ -16,6 +16,7 @@ import { createElement } from "react";
 import { render, fireEvent, cleanup, waitFor } from "@testing-library/react";
 import { TrackerConfig } from "./TrackerConfig.js";
 import { brandId, type ChatId, type SceneTrackerConfig } from "@vibe-tavern/domain";
+import { useSceneRenderStore } from "../../../stores/scene-render-store.js";
 
 const mocks = vi.hoisted(() => ({
   activeChat: null as null | { id: string; insightsConfig: { tracker?: SceneTrackerConfig; trackerEnabled: boolean; objectiveEnabled: boolean } },
@@ -118,6 +119,7 @@ describe("TrackerConfig (SCN-11)", () => {
     expect(getByText("scn_schema_label")).toBeTruthy();
     expect(getByText("scn_save_button")).toBeTruthy();
     expect(getByText("scn_preview_button")).toBeTruthy();
+    expect(getByText("scn_test_generation_button")).toBeTruthy();
     // Save is a button — assert it is disabled when not dirty.
     const saveBtn = getByText("scn_save_button").closest("button")!;
     expect(saveBtn.disabled).toBe(true);
@@ -160,12 +162,28 @@ describe("TrackerConfig (SCN-11)", () => {
     expect(input.insightsConfig.tracker.schemaHash).toBeUndefined();
   });
 
-  it("Preview trial-runs with the DRAFT config + the selected variant target", async () => {
+  it("Preview (instant) synthesizes a placeholder sample without calling the AI", async () => {
+    seed();
+    useSceneRenderStore.setState({ variant: "rich" });
+    const { getByTestId, getByText, container } = render(createElement(TrackerConfig, { chatId: CHAT_ID }));
+    // A schema with a bounded number + a string, so the placeholder exercises
+    // midpoint (5) + ellipsis and renders a meter in the rich variant.
+    fireEvent.change(getByTestId("scn-dsl"), { target: { value: JSON.stringify({ mood: { $type: "string" }, tension: { $type: "number", min: 0, max: 10 } }) } });
+    fireEvent.click(getByText("scn_preview_button"));
+    // No AI call — the sample is synthesized client-side from the schema.
+    await waitFor(() => expect(mocks.previewSceneAction).not.toHaveBeenCalled());
+    // The placeholder rendered: a meter whose value is the (0,10) midpoint.
+    const meter = container.querySelector('[role="meter"]');
+    expect(meter).not.toBeNull();
+    expect(meter!.getAttribute("aria-valuenow")).toBe("5");
+  });
+
+  it("Test generation trial-runs with the DRAFT config + the selected variant target", async () => {
     seed();
     mocks.previewSceneAction.mockResolvedValue({ target: { chatId: "chat_1" }, sceneState: { mood: "tense" } });
     const { getByTestId, getByText } = render(createElement(TrackerConfig, { chatId: CHAT_ID }));
     fireEvent.change(getByTestId("scn-dsl"), { target: { value: VALID_DSL } });
-    fireEvent.click(getByText("scn_preview_button"));
+    fireEvent.click(getByText("scn_test_generation_button"));
     await waitFor(() => expect(mocks.previewSceneAction).toHaveBeenCalledTimes(1));
     const [previewChatId, target, config] = mocks.previewSceneAction.mock.calls[0];
     expect(previewChatId).toBe("chat_1");
@@ -173,24 +191,24 @@ describe("TrackerConfig (SCN-11)", () => {
     expect(config.schema).toEqual({ mood: { $type: "string" } }); // the DRAFT, not the stored {}
   });
 
-  it("preserves the last-valid preview when a retry fails (last-valid preservation)", async () => {
+  it("preserves the last-valid sample when a generation retry fails (last-valid preservation)", async () => {
     seed();
     mocks.previewSceneAction.mockResolvedValueOnce({ target: { chatId: "chat_1" }, sceneState: { mood: "calm" } });
     const { getByTestId, getByText } = render(createElement(TrackerConfig, { chatId: CHAT_ID }));
     fireEvent.change(getByTestId("scn-dsl"), { target: { value: VALID_DSL } });
-    fireEvent.click(getByText("scn_preview_button"));
+    fireEvent.click(getByText("scn_test_generation_button"));
     await waitFor(() => expect(mocks.previewSceneAction).toHaveBeenCalledTimes(1));
     expect(getByText("calm")).toBeTruthy();
 
-    // Second preview rejects — the prior preview (calm) must remain visible.
+    // Second generation rejects — the prior sample (calm) must remain visible.
     mocks.previewSceneAction.mockRejectedValueOnce(new Error("boom"));
-    fireEvent.click(getByText("scn_preview_button"));
+    fireEvent.click(getByText("scn_test_generation_button"));
     await waitFor(() => expect(mocks.previewSceneAction).toHaveBeenCalledTimes(2));
-    await waitFor(() => expect(getByText("scn_preview_button")).toBeTruthy()); // not previewing anymore
+    await waitFor(() => expect(getByText("scn_test_generation_button")).toBeTruthy()); // not testing anymore
     expect(getByText("calm")).toBeTruthy(); // last-valid preserved
   });
 
-  it("Preview is cancellable (Cancel aborts the in-flight trial)", async () => {
+  it("Test generation is cancellable (Cancel aborts the in-flight trial; Stop stays clickable)", async () => {
     seed();
     let release!: () => void;
     mocks.previewSceneAction.mockImplementationOnce(
@@ -198,20 +216,23 @@ describe("TrackerConfig (SCN-11)", () => {
     );
     const { getByTestId, getByText } = render(createElement(TrackerConfig, { chatId: CHAT_ID }));
     fireEvent.change(getByTestId("scn-dsl"), { target: { value: VALID_DSL } });
-    fireEvent.click(getByText("scn_preview_button"));
+    fireEvent.click(getByText("scn_test_generation_button"));
     await waitFor(() => expect(getByText("scn_preview_stop_button")).toBeTruthy()); // now shows Cancel
+    // The Stop button must NOT be disabled while testing (a real browser cannot
+    // click a disabled button — gating Stop on `!testing` would break cancel).
+    expect(getByText("scn_preview_stop_button").closest("button")!.disabled).toBe(false);
     fireEvent.click(getByText("scn_preview_stop_button"));
-    // Abort does not crash; the button returns to Preview after the promise settles.
+    // Abort does not crash; the button returns to Test generation after settle.
     release();
-    await waitFor(() => expect(getByText("scn_preview_button")).toBeTruthy());
+    await waitFor(() => expect(getByText("scn_test_generation_button")).toBeTruthy());
   });
 
-  it("Preview without a selected assistant variant toasts and does not call the action", async () => {
+  it("Test generation without a selected assistant variant toasts and does not call the action", async () => {
     seed();
     mocks.findCurrentInsightsCompletionTarget.mockReturnValue(null);
     const { getByTestId, getByText } = render(createElement(TrackerConfig, { chatId: CHAT_ID }));
     fireEvent.change(getByTestId("scn-dsl"), { target: { value: VALID_DSL } });
-    fireEvent.click(getByText("scn_preview_button"));
+    fireEvent.click(getByText("scn_test_generation_button"));
     await waitFor(() => expect(mocks.previewSceneAction).not.toHaveBeenCalled());
   });
 });

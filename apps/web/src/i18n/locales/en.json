@@ -45,6 +45,8 @@
   "scn_save_button": "Save config",
   "scn_save_failed": "Failed to save Scene config.",
   "scn_preview_button": "Preview",
+  "scn_test_generation_button": "Test generation",
+  "scn_test_generation_hint": "Run a real AI generation to validate the schema + prompt pipeline (uses tokens)",
   "scn_preview_stop_button": "Cancel",
   "scn_preview_failed": "Preview failed.",
   "scn_preview_title": "Preview",

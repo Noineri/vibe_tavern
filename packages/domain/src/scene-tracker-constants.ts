@@ -213,6 +213,54 @@ export function countSceneDataNodes(value: unknown): number {
   return 1;
 }
 
+/**
+ * Synthesize a placeholder `sceneState` sample directly from a tracker DSL —
+ * no LLM, no network. Used by the TrackerConfig Preview to show how the renderer
+ * (rich/compact/JSON) lays out a schema-conforming block, so the visual layout
+ * can be inspected instantly and for free while iterating on the schema.
+ *
+ * The sample ALWAYS conforms to the schema by construction (a string node → a
+ * string, a bounded number → its midpoint, an object → its properties recursed,
+ * an array → a one-element sample of its `items`), so it does NOT validate the
+ * generation pipeline — a real "Test generation" call is the only thing that
+ * catches a DSL / generation-prompt that makes the model emit non-conforming
+ * data. Recursion is structurally finite (the DSL is a value tree, no $ref),
+ * so the depth cap is insurance against a hand-authored pathology, not a real
+ * limit a normal schema ever hits.
+ */
+const SAMPLE_MAX_DEPTH = 8;
+
+export function synthesizeSceneSample(dsl: SceneTrackerDsl): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [key, node] of Object.entries(dsl)) out[key] = sampleSceneNode(node, 0);
+  return out;
+}
+
+function sampleSceneNode(node: SceneTrackerSchemaNode, depth: number): unknown {
+  if (depth >= SAMPLE_MAX_DEPTH) return null;
+  switch (node.$type) {
+    case "string":
+      return "…";
+    case "number": {
+      const min = node.min;
+      const max = node.max;
+      if (typeof min === "number" && typeof max === "number") return min + (max - min) / 2;
+      if (typeof min === "number") return min;
+      if (typeof max === "number") return max;
+      return 0;
+    }
+    case "boolean":
+      return false;
+    case "object": {
+      const out: Record<string, unknown> = {};
+      for (const [k, child] of Object.entries(node.properties)) out[k] = sampleSceneNode(child, depth + 1);
+      return out;
+    }
+    case "array":
+      return [sampleSceneNode(node.items, depth + 1)];
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Canonical schema hash
 // ---------------------------------------------------------------------------

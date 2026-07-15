@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { toast } from "sonner";
 import type { ChatId, SceneTrackerConfig, SceneTrackerConfigPatch } from "@vibe-tavern/domain";
-import { normalizeSceneTrackerConfig, SCENE_AUTO_MODE, SCENE_PROMPT_FORMAT } from "@vibe-tavern/domain";
+import { normalizeSceneTrackerConfig, synthesizeSceneSample, SCENE_AUTO_MODE, SCENE_PROMPT_FORMAT } from "@vibe-tavern/domain";
 import { sceneTrackerDslSchema } from "@vibe-tavern/api-contracts";
 import { Ic } from "../../shared/icons.js";
 import { cn } from "../../../lib/cn.js";
@@ -27,8 +27,13 @@ import { useSceneRenderStore, type SceneRenderVariant } from "../../../stores/sc
  * config editor's structure but uses a DRAFT-state model: every field edits a
  * local copy, a Save button persists the whole draft as a partial PATCH (the
  * store deep-merges it into `tracker`, preserving Objective), and a Preview
- * button trial-runs the generate pipeline with the DRAFT config against the
- * selected assistant variant WITHOUT committing (the result is transient).
+ * **Preview** button synthesizes an instant schema-conforming placeholder
+ * sample (no LLM, no network) so the render layout can be inspected for free
+ * while iterating on the schema; **Test generation** trial-runs the REAL
+ * generate pipeline with the DRAFT config against the selected assistant
+ * variant WITHOUT committing (transient) — the only way to catch a DSL /
+ * prompt that makes the model emit non-conforming data. The split keeps
+ * render-checking free and instant while still preserving pipeline validation.
  *
  * The draft model exists for three reasons the Objective editor (auto-save on
  * blur) doesn't share: (1) the DSL must validate before it can save or preview;
@@ -38,10 +43,12 @@ import { useSceneRenderStore, type SceneRenderVariant } from "../../../stores/sc
  * is belt-and-suspenders against another tab's edit). Switching chats discards
  * the draft (an explicit action); staying on the chat preserves it.
  *
- * Preview is cancellable (owned AbortController), preserves the LAST-VALID result
- * across retries (a failed retry toasts but keeps the prior preview), and is gated
- * on a valid schema + a selected assistant variant. Preview data is never
- * ingested into the snapshot.
+ * Test generation is cancellable (owned AbortController), preserves the
+ * LAST-VALID result across retries (a failed retry toasts but keeps the prior
+ * sample), and is gated on a valid schema + a selected assistant variant. Both
+ * the placeholder sample and a real generation write the same transient
+ * `previewState` (whichever ran last wins); neither is ever ingested into the
+ * snapshot.
  */
 export function TrackerConfig({ chatId }: { chatId: ChatId }) {
   const { t } = useT();
@@ -60,8 +67,8 @@ export function TrackerConfig({ chatId }: { chatId: ChatId }) {
   const [advancedOpen, setAdvancedOpen] = useState(false);
 
   const [previewState, setPreviewState] = useState<Record<string, unknown> | null>(null);
-  const [previewing, setPreviewing] = useState(false);
-  const previewController = useRef<AbortController | null>(null);
+  const [testing, setTesting] = useState(false);
+  const testAbort = useRef<AbortController | null>(null);
 
   // Re-sync the draft from the stored config. On a CHAT SWITCH (chatId changed)
   // the draft is discarded — switching chats is an explicit action. On a
@@ -81,8 +88,8 @@ export function TrackerConfig({ chatId }: { chatId: ChatId }) {
     }
   }, [savedTracker, chatId, dirty]);
 
-  // Abort any in-flight preview on unmount (no persistence, no dangling fetch).
-  useEffect(() => () => previewController.current?.abort(), []);
+  // Abort any in-flight generation test on unmount (no persistence, no dangling fetch).
+  useEffect(() => () => testAbort.current?.abort(), []);
 
   function update<K extends keyof SceneTrackerConfig>(field: K, value: SceneTrackerConfig[K]) {
     setDraft((d) => ({ ...d, [field]: value }));
@@ -121,17 +128,25 @@ export function TrackerConfig({ chatId }: { chatId: ChatId }) {
     }
   }
 
-  async function preview() {
-    if (schemaError || previewing) return;
+  /** Instant placeholder preview — synthesizes a schema-conforming sample from
+   *  the DRAFT schema (no LLM, no network). Demonstrates the render layout only;
+   *  it never validates the generation pipeline (use Test generation for that). */
+  function previewSample() {
+    if (schemaError) return;
+    setPreviewState(synthesizeSceneSample(draft.schema));
+  }
+
+  async function testGeneration() {
+    if (schemaError || testing) return;
     const target = findCurrentInsightsCompletionTarget(chatId);
     if (!target?.variantId) {
       toast.error(t("scn_no_target"));
       return;
     }
-    previewController.current?.abort();
+    testAbort.current?.abort();
     const controller = new AbortController();
-    previewController.current = controller;
-    setPreviewing(true);
+    testAbort.current = controller;
+    setTesting(true);
     try {
       const res = await previewSceneAction(chatId, { branchId: target.branchId, messageId: target.messageId, variantId: target.variantId }, draft, controller.signal);
       if (controller.signal.aborted) return;
@@ -141,19 +156,22 @@ export function TrackerConfig({ chatId }: { chatId: ChatId }) {
       toast.error(err instanceof Error ? err.message : t("scn_preview_failed"));
       // keep the prior previewState (last-valid preservation)
     } finally {
-      if (previewController.current === controller) {
-        previewController.current = null;
-        setPreviewing(false);
+      if (testAbort.current === controller) {
+        testAbort.current = null;
+        setTesting(false);
       }
     }
   }
 
-  function stopPreview() {
-    previewController.current?.abort();
+  function stopTest() {
+    testAbort.current?.abort();
   }
 
   const canSave = dirty && !schemaError && !saving;
-  const canPreview = !schemaError && !previewing;
+  // Instant preview needs only a valid schema. The generation-test button stays
+  // ENABLED while testing so Stop is clickable (disabled-buttons are not
+  // clickable in a real browser — gating Stop on `!testing` would break cancel).
+  const canPreview = !schemaError;
   const spinner = <span className="h-3 w-3 animate-spin rounded-full border-2 border-accent border-t-transparent" />;
 
   return (
@@ -272,14 +290,28 @@ export function TrackerConfig({ chatId }: { chatId: ChatId }) {
           {saving ? spinner : <Ic.floppy />}
           {t("scn_save_button")}
         </button>
+        {/* Instant placeholder preview — no LLM; synthesizes a schema-conforming
+            sample so the render layout can be inspected for free. */}
         <button
           type="button"
-          onClick={() => (previewing ? stopPreview() : void preview())}
+          onClick={() => previewSample()}
           disabled={!canPreview}
           className="inline-flex items-center gap-1.5 rounded-md border border-border2 bg-s2 px-3 py-1.5 font-ui text-[12px] font-medium text-t2 transition-colors hover:border-accent disabled:opacity-40"
         >
-          {previewing ? spinner : <Ic.eye />}
-          {t(previewing ? "scn_preview_stop_button" : "scn_preview_button")}
+          <Ic.eye />
+          {t("scn_preview_button")}
+        </button>
+        {/* Test generation — real AI call; validates the pipeline end-to-end.
+            Stays enabled while testing so Stop is clickable in a real browser. */}
+        <button
+          type="button"
+          onClick={() => (testing ? stopTest() : void testGeneration())}
+          disabled={schemaError !== null && !testing}
+          title={t("scn_test_generation_hint")}
+          className="inline-flex items-center gap-1.5 rounded-md border border-border2 bg-s2 px-3 py-1.5 font-ui text-[12px] font-medium text-t2 transition-colors hover:border-accent disabled:opacity-40"
+        >
+          {testing ? spinner : <Ic.regen />}
+          {t(testing ? "scn_preview_stop_button" : "scn_test_generation_button")}
         </button>
         {dirty && <span className="font-ui text-[11px] text-accent">{t("scn_dirty_hint")}</span>}
         {/* Render variant — shared with the chat header (Scene zone expanded).

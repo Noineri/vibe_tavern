@@ -45,6 +45,8 @@
   "scn_save_button": "Сохранить конфиг",
   "scn_save_failed": "Не удалось сохранить конфиг сцены.",
   "scn_preview_button": "Превью",
+  "scn_test_generation_button": "Тест генерации",
+  "scn_test_generation_hint": "Запустить реальную AI-генерацию, чтобы проверить схему и промпт (тратит токены)",
   "scn_preview_stop_button": "Отмена",
   "scn_preview_failed": "Превью не удалось.",
   "scn_preview_title": "Превью",
