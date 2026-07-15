@@ -39,7 +39,7 @@ export function InjectionRowView({ injection, index, isMobile, enabled, slot, on
   const showDepthBadge = slotZone === "in_chat";
 
   return (
-    <div className={cn("rounded-md border transition-colors", enabled ? "border-border bg-surface" : "border-border2 bg-s1 opacity-60")}>
+    <div className={cn("rounded-md border transition-colors", enabled ? "border-border bg-surface" : "border-border2 opacity-60")}>
       <div
         className="group flex items-center gap-2.5 px-3 py-2 cursor-pointer select-none"
         onClick={() => setExpanded(!expanded)}

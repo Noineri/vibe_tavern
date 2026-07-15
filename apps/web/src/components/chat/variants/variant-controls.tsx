@@ -31,7 +31,7 @@ export function VariantControls(props: VariantControlsProps) {
 
   if (mobile) {
     return (
-      <div className="inline-flex items-center justify-center gap-1 rounded-lg bg-s1/60 px-1 py-0.5">
+      <div className="inline-flex items-center justify-center gap-1 rounded-lg px-1 py-0.5">
         <button
           type="button"
           className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-lg text-t3 active:bg-s2 disabled:opacity-35 [&_svg]:h-5 [&_svg]:w-5"

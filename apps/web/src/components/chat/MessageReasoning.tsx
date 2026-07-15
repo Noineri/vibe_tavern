@@ -48,7 +48,7 @@ const VARIANT_STYLES: Record<ReasoningVariant, VariantStyle> = {
 		bodyAs: "markdown",
 	},
 	minimal: {
-		container: "overflow-hidden rounded border border-border bg-s1",
+		container: "overflow-hidden rounded border border-border",
 		header: "flex w-full cursor-pointer select-none items-center px-3 py-1.5 font-ui text-[11px] font-medium text-t3 transition-colors hover:text-t2",
 		showIcon: false,
 		showDuration: false,

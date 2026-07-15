@@ -414,7 +414,7 @@ export function VibeMdView({ form, characterId, isSaving }: VibeMdViewProps) {
           // Auto-grow: NO maxHeight, NO overflow-auto (VTF-13 rework). The CM6
           // theme sets `& { height: auto }` + `.cm-scroller { overflow: hidden }`
           // so content drives the height and the page scroll is the only scroll.
-          className="vibe-md-editor rounded-lg border border-border bg-s1"
+          className="vibe-md-editor rounded-lg border border-border"
           style={{ minHeight: 420 }}
         />
         <p className="mt-1.5 font-ui text-[11px] text-t4">{t("vmd_editor_hint")}</p>

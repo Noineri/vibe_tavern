@@ -17,7 +17,7 @@ export function PromptOrderMarker({ identifier, label, kind, enabled = true, onT
       "flex min-w-0 items-center gap-2 rounded-md border px-3 py-2 font-ui text-[12px] transition-colors",
       !enabled && "opacity-55",
       kind === "chat" ? "border-accent/35 bg-accent/10 text-accent-t" :
-      kind === "marker" ? "border-border2 bg-s1 text-t4" :
+      kind === "marker" ? "border-border2 text-t4" :
       "border-border bg-s2/70 text-t2",
     )}>
       <DragHandle />

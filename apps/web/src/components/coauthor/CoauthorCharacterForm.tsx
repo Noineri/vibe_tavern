@@ -418,7 +418,7 @@ function CoauthorCharacterFormInner({ character }: CoauthorCharacterFormInnerPro
           <label className={lblCls + " mb-1.5 block"}>{t("coauthor.editor.label")}</label>
           <div
             ref={editorHostRef}
-            className="vibe-md-editor rounded-lg border border-border bg-s1"
+            className="vibe-md-editor rounded-lg border border-border"
             style={{ minHeight: 360 }}
           />
           <p className="mt-1.5 font-ui text-[11px] text-t4">{t("coauthor.editor.hint")}</p>

@@ -163,7 +163,7 @@ export function AvatarDescriptionField({
 	return (
 		<section
 			className={cn(
-				"relative overflow-hidden rounded-md border border-border bg-s1 p-3",
+				"relative overflow-hidden rounded-md border border-border p-3",
 				controlsDisabled && "opacity-60",
 			)}
 		>
@@ -273,7 +273,7 @@ export function AvatarDescriptionField({
 							transition={{ duration: 0.2 }}
 							className={cn(
 								"pointer-events-none absolute inset-0 flex items-center justify-center gap-2 rounded-md px-3",
-								hasExistingDescription ? "bg-s1/70 backdrop-blur-[4px]" : "bg-s1",
+								hasExistingDescription ? "backdrop-blur-[4px]" : "",
 							)}
 						>
 							<span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-accent/30 border-t-accent" />

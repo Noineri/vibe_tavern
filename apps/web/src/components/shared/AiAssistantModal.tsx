@@ -656,7 +656,7 @@ export function AiAssistantModal({
                                     />
                                     <div className="min-w-0 flex-1">
                                       <div className="text-[11px] uppercase text-t3">{fieldLabel} #{idx + 1}</div>
-                                      <div className="max-h-40 overflow-y-auto whitespace-pre-wrap rounded border border-border2 bg-s1 px-2 py-1.5 font-mono text-[12px] leading-[1.4] text-t1">
+                                      <div className="max-h-40 overflow-y-auto whitespace-pre-wrap rounded border border-border2 px-2 py-1.5 font-mono text-[12px] leading-[1.4] text-t1">
                                         {item}
                                       </div>
                                     </div>
@@ -691,7 +691,7 @@ export function AiAssistantModal({
                                 />
                                 <div className="min-w-0 flex-1">
                                   <div className="text-[11px] uppercase text-t3">{getMdImportFieldLabel(sourceKey)}</div>
-                                  <div className="max-h-40 overflow-y-auto whitespace-pre-wrap rounded border border-border2 bg-s1 px-2 py-1.5 font-mono text-[12px] leading-[1.4] text-t1">
+                                  <div className="max-h-40 overflow-y-auto whitespace-pre-wrap rounded border border-border2 px-2 py-1.5 font-mono text-[12px] leading-[1.4] text-t1">
                                     {preview}
                                   </div>
                                 </div>

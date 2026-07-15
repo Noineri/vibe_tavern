@@ -629,7 +629,7 @@ export function ProviderModal({
         detailTitle={form?.name ?? t("provider_settings_title")}
         dirty={dirty}
         containerClassName="max-h-[calc(100vh-60px)] max-w-[calc(100vw-32px)] h-[680px] w-[860px] rounded-xl border border-border2 shadow-[0_24px_60px_rgba(0,0,0,.5)]"
-        masterClassName="flex w-[220px] shrink-0 flex-col border-r border-border bg-s1"
+        masterClassName="flex w-[220px] shrink-0 flex-col border-r border-border"
         detailClassName={isMobile ? "p-4" : "p-5"}
         headerClassName={isMobile ? "px-3 py-2.5" : "px-6 pt-5 pb-4"}
         masterContent={() => (

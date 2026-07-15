@@ -286,7 +286,7 @@ export function TrackerConfig({ chatId }: { chatId: ChatId }) {
             <Ic.eye />
             {t("scn_preview_title")}
           </div>
-          <pre className={cn(monoCls, "max-h-64 overflow-auto rounded bg-s1/60 p-2 text-[11px] leading-relaxed text-t2")}>
+          <pre className={cn(monoCls, "max-h-64 overflow-auto rounded p-2 text-[11px] leading-relaxed text-t2")}>
             {JSON.stringify(previewState, null, 2)}
           </pre>
         </div>

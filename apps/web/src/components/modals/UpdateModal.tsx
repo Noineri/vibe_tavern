@@ -108,7 +108,7 @@ export function UpdateModal({ latestVersion, latestTag, releaseUrl, releaseNotes
 					{flow.state.kind === "idle" && (
 						<>
 							{showReleaseNotes ? (
-								<div className="md-content-plain max-h-[40vh] overflow-y-auto rounded-md border border-border2 bg-s1 p-3.5 text-[calc(var(--ui-fs)-1px)] leading-relaxed text-t2">
+								<div className="md-content-plain max-h-[40vh] overflow-y-auto rounded-md border border-border2 p-3.5 text-[calc(var(--ui-fs)-1px)] leading-relaxed text-t2">
 									<Markdown text={releaseNotes ?? ""} variant="plain" />
 								</div>
 							) : (
@@ -287,7 +287,7 @@ function ErrorView({
 				</div>
 			</div>
 			{detail && (
-				<details className="rounded-md border border-border2 bg-s1">
+				<details className="rounded-md border border-border2">
 					<summary className="cursor-pointer px-3 py-1.5 text-[calc(var(--ui-fs)-3px)] text-t3 hover:text-t1">{labels.details}</summary>
 					<pre className="max-h-[30vh] overflow-auto whitespace-pre-wrap break-all px-3 pb-3 font-mono text-[calc(var(--ui-fs)-3px)] text-t3">{detail}</pre>
 				</details>

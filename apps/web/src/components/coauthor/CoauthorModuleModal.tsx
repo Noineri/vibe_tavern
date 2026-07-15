@@ -302,7 +302,7 @@ export function CoauthorModuleModal() {
 				subtitle={t("coauthor.module.manager_subtitle")}
 				dirty={dirty}
 				containerClassName="max-h-[calc(100vh-60px)] max-w-[calc(100vw-32px)] h-[760px] w-[1040px] rounded-xl border border-border2 shadow-[0_24px_60px_rgba(0,0,0,.5)]"
-				masterClassName="flex w-[260px] shrink-0 flex-col border-r border-border bg-s1"
+				masterClassName="flex w-[260px] shrink-0 flex-col border-r border-border"
 				masterContent={({ openDetail }) => (
 					<ModuleList
 						modules={modules}
@@ -566,7 +566,7 @@ function ModuleView({ module, t, onEdit, onDelete }: ModuleViewProps) {
 					{module.skillIds.length > 0 ? (
 						<div className="flex flex-wrap gap-1.5">
 							{module.skillIds.map((id) => (
-								<span key={id} className="rounded-full border border-border bg-s1 px-2 py-0.5 font-mono text-[11px] text-t2">{id}</span>
+								<span key={id} className="rounded-full border border-border px-2 py-0.5 font-mono text-[11px] text-t2">{id}</span>
 							))}
 						</div>
 					) : (
@@ -578,7 +578,7 @@ function ModuleView({ module, t, onEdit, onDelete }: ModuleViewProps) {
 					{enabledTools.length > 0 ? (
 						<div className="flex flex-wrap gap-1.5">
 							{enabledTools.map(({ key, label }) => (
-								<span key={key} className="rounded-full border border-border bg-s1 px-2 py-0.5 font-mono text-[11px] text-t2">{label}</span>
+								<span key={key} className="rounded-full border border-border px-2 py-0.5 font-mono text-[11px] text-t2">{label}</span>
 							))}
 						</div>
 					) : (

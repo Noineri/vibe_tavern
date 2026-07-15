@@ -422,7 +422,7 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
         detailTitle={t("prompt_manager_title")}
         dirty={dirty}
         containerClassName="max-h-[calc(100vh-32px)] max-w-[calc(100vw-32px)] w-[920px] h-[880px] rounded-xl border border-border2 shadow-[0_24px_60px_rgba(0,0,0,.5)]"
-        masterClassName="flex w-[240px] shrink-0 flex-col border-r border-border bg-s1"
+        masterClassName="flex w-[240px] shrink-0 flex-col border-r border-border"
         detailClassName="p-0"
         headerClassName={isMobile ? "px-4 pt-4 pb-3" : "px-5 pt-[18px] pb-[14px]"}
         masterContent={() => (
@@ -475,7 +475,7 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
             </div>
 
             {advancedMode && (
-              <div className={cn("mt-3 rounded-md border border-border2 bg-s1 py-3", isMobile ? "mx-3 px-2.5" : "mx-5 px-4")}>
+              <div className={cn("mt-3 rounded-md border border-border2 py-3", isMobile ? "mx-3 px-2.5" : "mx-5 px-4")}>
                 <PromptOrderCanvas
                   injections={draft.customInjections}
                   onChange={(injections) => { setDraft((d) => ({ ...d, customInjections: injections })); setDirty(true); setSaveState("idle"); }}

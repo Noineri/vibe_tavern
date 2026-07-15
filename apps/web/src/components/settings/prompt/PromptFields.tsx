@@ -188,7 +188,7 @@ export function PromptFields({ draft, onUpdateField, prefillSupported, hideChatP
         </>
       )}
 
-      <div className="rounded-md border border-border2 bg-s1/40">
+      <div className="rounded-md border border-border2">
         <button type="button"
           className="flex w-full cursor-pointer items-center gap-3 px-3 py-2.5 text-left transition-colors hover:bg-s2/70"
           onClick={() => setServiceOpen((v) => !v)}
