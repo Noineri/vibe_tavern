@@ -249,15 +249,39 @@ export interface Blob {
   comment?: string;
 }
 
+export interface GradientStop {
+  color: OkColor;
+  position: number;
+}
+
+export type PageGradient =
+  | {
+      kind: "linear";
+      angle: number;
+      start: GradientStop;
+      end: GradientStop;
+    }
+  | {
+      kind: "radial";
+      x: number;
+      y: number;
+      start: GradientStop;
+      end: GradientStop;
+    };
+
+const COLOR_SOURCE = "(oklch\\([^)]*\\)|#[0-9a-fA-F]{3,6})";
 const BLOB_RE =
   /radial-gradient\(\s*circle\s+at\s+([\d.]+)%\s+([\d.]+)%\s*,\s*(oklch\([^)]*\)|#[0-9a-fA-F]{3,6})\s*,\s*transparent\s+([\d.]+)%\s*\)\s*,\s*(?:\/\*([\s\S]*?)\*\/)?/g;
+const BASE_RADIAL_RE = new RegExp(
+  `radial-gradient\\(\\s*circle\\s+at\\s+([\\d.]+)%\\s+([\\d.]+)%\\s*,\\s*${COLOR_SOURCE}(?:\\s+([\\d.]+)%)?\\s*,\\s*${COLOR_SOURCE}(?:\\s+([\\d.]+)%)?\\s*\\)`,
+  "i",
+);
+const BASE_LINEAR_RE = new RegExp(
+  `linear-gradient\\(\\s*(-?[\\d.]+)deg\\s*,\\s*${COLOR_SOURCE}(?:\\s+([\\d.]+)%)?\\s*,\\s*${COLOR_SOURCE}(?:\\s+([\\d.]+)%)?\\s*\\)`,
+  "i",
+);
 
-/**
- * Parse the blob stack out of a `--page-bg` value. Returns an empty array when
- * the value isn't a lava-style `transparent`-falloff blob stack (e.g. mystic's
- * 2-stop vignette, or themes with no page-bg), so the tuner can hide the blob
- * editor gracefully.
- */
+/** Parse the transparent radial overlays used by the animated lava themes. */
 export function parsePageBgBlobs(value: string): Blob[] {
   const out: Blob[] = [];
   BLOB_RE.lastIndex = 0;
@@ -271,6 +295,50 @@ export function parsePageBgBlobs(value: string): Blob[] {
   return out;
 }
 
+/** Parse the editable two-stop base gradient beneath any blob overlays. */
+export function parsePageGradient(value: string): PageGradient | null {
+  const radial = value.match(BASE_RADIAL_RE);
+  if (radial) {
+    const start = parseColor(radial[3]);
+    const end = parseColor(radial[5]);
+    if (start && end) {
+      return {
+        kind: "radial",
+        x: parseFloat(radial[1]),
+        y: parseFloat(radial[2]),
+        start: { color: start, position: radial[4] == null ? 0 : parseFloat(radial[4]) },
+        end: { color: end, position: radial[6] == null ? 100 : parseFloat(radial[6]) },
+      };
+    }
+  }
+
+  const linear = value.match(BASE_LINEAR_RE);
+  if (linear) {
+    const start = parseColor(linear[2]);
+    const end = parseColor(linear[4]);
+    if (start && end) {
+      return {
+        kind: "linear",
+        angle: parseFloat(linear[1]),
+        start: { color: start, position: linear[3] == null ? 0 : parseFloat(linear[3]) },
+        end: { color: end, position: linear[5] == null ? 100 : parseFloat(linear[5]) },
+      };
+    }
+  }
+
+  return null;
+}
+
+export function serializePageGradient(gradient: PageGradient): string {
+  const stops = `${serialize(gradient.start.color)} ${round(gradient.start.position, 1)}%, ${serialize(
+    gradient.end.color,
+  )} ${round(gradient.end.position, 1)}%`;
+  if (gradient.kind === "linear") {
+    return `linear-gradient(${round(gradient.angle, 1)}deg, ${stops})`;
+  }
+  return `radial-gradient(circle at ${round(gradient.x, 1)}% ${round(gradient.y, 1)}%, ${stops})`;
+}
+
 /** Find the raw value of a CSS custom property in theme source (multi-line safe). */
 export function extractTokenValue(raw: string, name: string): string | null {
   const re = new RegExp(`${escapeRe(name)}\\s*:\\s*([\\s\\S]*?);`);
@@ -278,21 +346,17 @@ export function extractTokenValue(raw: string, name: string): string | null {
   return m ? m[1].trim() : null;
 }
 
-/** Serialize a blob stack back into a `--page-bg` value (indented, multiline).
- *  No leading indent: replacePageBgInCss keeps the `--page-bg:\n    ` prefix from
- *  the original declaration, so the first layer lands on its own line right
- *  under the colon and subsequent lines indent consistently. A leading "\n    "
- *  here would leave a blank line after the colon. Each layer keeps its trailing
- *  `/* ... *‍/` comment (between the comma and the line break) when set. */
-export function serializePageBg(blobs: Blob[]): string {
+/** Serialize the complete page-background stack: blobs on top, base beneath. */
+export function serializePageBg(blobs: Blob[], gradient: PageGradient | null = null): string {
   const layers = blobs.map((b) => {
     const grad = `radial-gradient(circle at ${round(b.x, 1)}% ${round(b.y, 1)}%, ${serialize(
       b.color,
     )}, transparent ${round(b.size, 1)}%)`;
-    const c = b.comment?.trim();
-    return c ? `${grad},  /* ${c} */` : `${grad},`;
+    const comment = b.comment?.trim();
+    return comment ? `${grad},  /* ${comment} */` : `${grad},`;
   });
-  return layers.join("\n    ") + "\n    var(--bg)";
+  layers.push(gradient ? serializePageGradient(gradient) : "var(--bg)");
+  return layers.join("\n    ");
 }
 
 /** Replace the `--page-bg` declaration value in theme CSS (preserves the rest). */
@@ -387,19 +451,19 @@ export interface TokenGroup {
 }
 
 export const GROUPS: readonly TokenGroup[] = [
-  { title: "Фоны", tokens: ["--bg", "--surface", "--s2", "--s3", "--user-bg", "--input-bg", "--page-bg"] },
+  { title: "Фоны", tokens: ["--bg", "--surface", "--s2", "--s3", "--user-bg", "--input-bg", "--glass-bg"] },
   { title: "Границы", tokens: ["--border", "--border2"] },
   { title: "Текст UI", tokens: ["--t1", "--t2", "--t3", "--t4"] },
   { title: "Текст сообщений", tokens: ["--msg-t1", "--msg-t2"] },
   { title: "Markdown", tokens: ["--md-italic", "--md-bold", "--md-bold-italic", "--md-quoted"] },
-  { title: "Акцент", tokens: ["--accent", "--accent-t", "--accent-dim", "--accent-hover"] },
+  { title: "Акцент", tokens: ["--accent", "--accent-t", "--accent-dim", "--accent-hover", "--accent-mid"] },
   { title: "Переключатель Игра / Билд", tokens: ["--mode-switch-bg", "--mode-switch-text", "--mode-switch-hover-bg", "--mode-switch-hover-text"] },
-  { title: "Выделение", tokens: ["--sel-bg"] },
+  { title: "Выделение", tokens: ["--sel-bg", "--sel-text"] },
   {
     title: "Семантика",
     tokens: [
-      "--danger", "--danger-dim", "--danger-text",
-      "--success", "--success-dim", "--success-text",
+      "--danger", "--danger-dim", "--danger-text", "--danger-strong",
+      "--success", "--success-dim", "--success-text", "--success-strong",
       "--info", "--info-dim", "--info-text",
       "--warning", "--warning-dim", "--warning-text",
     ],
