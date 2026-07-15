@@ -44,7 +44,7 @@ export function InsightsPanel() {
     // Insights are chat-level config, so there is nothing to configure until a
     // chat is open — surface that explicitly rather than rendering dead toggles.
     return (
-      <div className="mx-auto max-w-2xl p-1">
+      <div className="mx-auto max-w-4xl p-1">
         <EmptyState
           icon={<Ic.target />}
           title={t("insights_no_chat_title")}
@@ -81,7 +81,7 @@ export function InsightsPanel() {
   }
 
   return (
-    <div className="mx-auto max-w-2xl space-y-3 p-1">
+    <div className="mx-auto max-w-4xl space-y-3 p-1">
       <FeatureToggleRow
         icon={<Ic.checkCircle />}
         title={t("insights_objective_title")}
