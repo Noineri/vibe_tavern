@@ -1,4 +1,4 @@
-import type { ChatBranchId, ChatId, ChatMode, ObjectiveTaskStatus } from "@vibe-tavern/domain";
+import type { ChatBranchId, ChatId, ChatMode, ObjectiveTaskStatus, SceneTrackerConfig } from "@vibe-tavern/domain";
 import type { AppMode } from "../../components/layout/app-shell-types.js";
 import {
   activateBranch,
@@ -28,6 +28,7 @@ import {
   deleteObjectiveTask,
   setObjectiveDescription,
   updateObjectiveConfig,
+  previewScene,
   saveChatSummary,
   summarizeChat,
   regenerateChatMessage,
@@ -44,7 +45,7 @@ import {
   setChatPersona,
   type AppSnapshot,
 } from "../../app-client.js";
-import type { AutoSummaryConfig, ChatSummaryRecord, InsightsConfigPatch } from "../../app-client.js";
+import type { AutoSummaryConfig, ChatSummaryRecord, InsightsConfigPatch, ScenePreviewResponse } from "../../app-client.js";
 import { useSnapshotStore } from "../snapshot-store.js";
 import { useChatStore } from "../chat-store.js";
 import { useNavigationStore } from "../navigation-store.js";
@@ -407,6 +408,21 @@ export async function updateMemorySettingsAction(chatId: ChatId, input: { messag
 export async function updateInsightsConfigAction(chatId: ChatId, input: { insightsConfig?: InsightsConfigPatch }): Promise<void> {
   const snapshot = await updateInsightsConfig(chatId, input);
   syncSnapshot(snapshot);
+}
+
+// ─── Scene Tracker (SCN-11) ─────────────────────────────────────────────
+// A non-persisting trial-run: run the generate pipeline with a DRAFT config
+// against the target variant and return the would-be scene state WITHOUT
+// committing. The caller owns cancellation (AbortController) + last-valid
+// preservation — preview data is never ingested into the snapshot.
+
+export async function previewSceneAction(
+  chatId: ChatId,
+  target: { branchId: string; messageId: string; variantId: string },
+  config: SceneTrackerConfig,
+  signal?: AbortSignal,
+): Promise<ScenePreviewResponse> {
+  return previewScene(chatId, { target, config }, { signal });
 }
 
 // ─── Objective Tracker (INS-5) ──────────────────────────────────────────

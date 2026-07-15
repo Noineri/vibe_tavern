@@ -257,6 +257,16 @@ export interface SceneStatusResponse {
 	record: SceneTrackerRecord | null;
 }
 
+/** Non-persisting Scene preview (SCN-11): the scene state a DRAFT config would
+ *  produce for the target variant, generated but NOT committed (no record is
+ *  written). Drives the config editor's cancellable trial-run preview so a
+ *  schema/prompt/model change can be validated before saving. */
+export interface ScenePreviewResponse {
+	target: InsightsCompletionTarget;
+	/** The generated scene state — transient (never persisted to the variant record). */
+	sceneState: Record<string, unknown>;
+}
+
 /**
  * Co-Author Apply response (CA-7). Extends {@link ConfigPatchResponse} (the
  * character field is the updated card) with `corrections` — backend-applied

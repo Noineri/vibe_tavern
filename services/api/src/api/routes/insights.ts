@@ -51,5 +51,8 @@ export function createInsightsRoutes(runtime: InsightsRuntimeApi) {
     })
     .post("/api/chats/:chatId/insights/scene/status", zValidator("json", schemas.sceneTargetBodySchema), async (c) => {
       return c.json(await runtime.getSceneStatus(c.req.param("chatId"), c.req.valid("json")));
+    })
+    .post("/api/chats/:chatId/insights/scene/preview", zValidator("json", schemas.scenePreviewSchema), async (c) => {
+      return c.json(await runtime.previewScene(c.req.param("chatId"), c.req.valid("json"), c.req.raw.signal));
     });
 }

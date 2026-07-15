@@ -29,6 +29,10 @@ function sceneRuntime(capture: { method: string; chatId?: string; body?: unknown
 			capture.push({ method: "getSceneStatus", chatId, body });
 			return { target: { chatId, ...SCENE_TARGET }, generating: false, record: null };
 		},
+		previewScene: async (chatId: string, body: unknown, signal?: AbortSignal) => {
+			capture.push({ method: "previewScene", chatId, body, signal });
+			return { target: { chatId, ...SCENE_TARGET }, sceneState: { mood: "preview" } };
+		},
 	} as unknown as InsightsRuntimeApi;
 }
 
@@ -164,5 +168,39 @@ describe("Insights Scene routes (SCN-9)", () => {
       expect(response.status).toBe(400);
       expect(capture).toHaveLength(0);
     }
+  });
+
+  it("preview forwards the target + draft config + signal, and rejects an invalid config", async () => {
+    const capture: { method: string; chatId?: string; body?: unknown; signal?: AbortSignal }[] = [];
+    const app = createInsightsRoutes(sceneRuntime(capture));
+    const controller = new AbortController();
+    const draftConfig = {
+      schema: { mood: { $type: "string" } },
+      autoMode: "assistant", contextWindow: 6, continuityLastN: 3, injectLastN: 1,
+      injectionDepth: 1, promptFormat: "json", useChatModel: true,
+      generatePrompt: "", injectPrompt: "", providerProfileId: null, model: null,
+      revision: 0, schemaHash: "",
+    };
+
+    const response = await app.request("/api/chats/chat_1/insights/scene/preview", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ target: SCENE_TARGET, config: draftConfig }),
+      signal: controller.signal,
+    });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ target: { chatId: "chat_1", ...SCENE_TARGET }, sceneState: { mood: "preview" } });
+    expect(capture[0]).toEqual({ method: "previewScene", chatId: "chat_1", body: { target: SCENE_TARGET, config: expect.objectContaining({ autoMode: "assistant" }) }, signal: controller.signal });
+
+    // An invalid draft config (bad $type) is rejected at the schema boundary.
+    const badCapture: { method: string }[] = [];
+    const badApp = createInsightsRoutes(sceneRuntime(badCapture));
+    const bad = await badApp.request("/api/chats/chat_1/insights/scene/preview", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ target: SCENE_TARGET, config: { ...draftConfig, schema: { mood: { $type: "not-a-real-type" } } } }),
+    });
+    expect(bad.status).toBe(400);
+    expect(badCapture).toHaveLength(0);
   });
 });

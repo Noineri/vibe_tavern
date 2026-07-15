@@ -5,6 +5,7 @@ import { Ic } from "../../shared/icons.js";
 import { Toggle } from "../../shared/Toggle.js";
 import { EmptyState } from "../../shared/empty-state.js";
 import { ObjectiveConfig } from "./ObjectiveConfig.js";
+import { TrackerConfig } from "./TrackerConfig.js";
 import { useT } from "../../../i18n/context.js";
 import { useSnapshotStore } from "../../../stores/snapshot-store.js";
 import { updateInsightsConfigAction } from "../../../stores/api-actions/chat-actions.js";
@@ -98,6 +99,7 @@ export function InsightsPanel() {
         disabled={pending !== null}
         onChange={(v) => void persist({ trackerEnabled: v }, "tracker")}
       />
+      {trackerEnabled && <TrackerConfig chatId={chatId} />}
       {!objectiveEnabled && !trackerEnabled && (
         <p className="px-1 pt-1 font-ui text-[11px] leading-relaxed text-t4">
           {t("insights_coming_soon_hint")}

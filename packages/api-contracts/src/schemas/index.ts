@@ -68,6 +68,7 @@ export {
   sceneGenerateSchema,
   sceneEditSchema,
   sceneTargetBodySchema,
+  scenePreviewSchema,
   objectiveTaskStatusSchema,
   addObjectiveTaskSchema,
   updateObjectiveTaskSchema,

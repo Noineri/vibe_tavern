@@ -602,6 +602,55 @@ export class SceneTrackerService {
 	}
 
 	/**
+	 * Non-persisting preview (SCN-11): run the full generate pipeline with a DRAFT
+	 * config against the target variant and return the would-be record WITHOUT
+	 * committing. No `setSceneRecord`, no coordinator lane, no `targetJobs`
+	 * registration — a preview is an independent trial that must not join or
+	 * block a real generation, and is cancellable only via the external signal.
+	 * The config editor uses it to validate a schema/prompt/model change against
+	 * the live RP world before saving. Mirrors {@link generateForTarget}'s setup
+	 * but takes the config as an ARGUMENT (not from the store) and skips the
+	 * commit + freshness re-check (a draft config is expected to differ from the
+	 * stored one). Throws on any failure — the route surfaces it; the prior
+	 * record is untouched because nothing is written.
+	 */
+	async previewForTarget(
+		target: SceneTarget,
+		draftConfig: SceneTrackerConfig,
+		signal?: AbortSignal,
+	): Promise<SceneTrackerRecord> {
+		signal?.throwIfAborted();
+		const resolved = await this.resolveSceneProvider(draftConfig);
+		if (!resolved) {
+			throw new Error("No provider/model configured for the Scene insight. Set one in Build Mode → Insights.");
+		}
+		const variant = await this.getTargetVariant(target);
+		if (!variant) throw new SceneTargetGoneError(target);
+		const continuity = await this.collectContinuity(target.branchId, target.messageId, draftConfig);
+		const built = await this.sessionRuntime.chatLifecycle.buildPipelineContext({
+			chatId: target.chatId,
+			branchId: target.branchId,
+			model: resolved.model,
+			recentMessageLimit: draftConfig.contextWindow,
+		});
+		const instructionBase = await this.resolvePrompt("sceneGenerate", draftConfig.generatePrompt);
+		const instruction = composeSceneInstruction(instructionBase, draftConfig.schema, continuity);
+		const prompt = this.buildPrompt(built.context, instruction);
+		const result = await this.execute({ profile: resolved.profile, model: resolved.model, prompt, signal });
+		signal?.throwIfAborted();
+		const sceneState = parseStructuredOutput(result.text, buildSceneDataSchema(draftConfig.schema));
+		return {
+			variantId: target.variantId,
+			schemaHash: draftConfig.schemaHash,
+			configRevision: draftConfig.revision,
+			sourceHash: computeSceneSourceHash(variant.content),
+			sceneState,
+			modelId: resolved.model,
+			generatedAt: new Date().toISOString() as Timestamp,
+		};
+	}
+
+	/**
 	 * Resolve-or-join the target's generation job. Registers EARLY (before the
 	 * provider/context setup awaits) via {@link joinTargetJob} so a concurrent
 	 * caller — the wait path racing the event-driven auto-start — joins the same

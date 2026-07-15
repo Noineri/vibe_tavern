@@ -26,6 +26,7 @@ function noopTracker(overrides: TrackerMock = {}): TrackerMock {
 		waitForForwardState: async () => undefined,
 		waitForTarget: async () => undefined,
 		generateForTarget: async () => ({}) as never,
+		previewForTarget: async () => ({}) as never,
 		editScene: async () => ({}) as never,
 		deleteScene: async () => undefined,
 		cancelTarget: () => undefined,
@@ -207,6 +208,7 @@ describe("InsightsAdapter completion refresh", () => {
 describe("InsightsAdapter Scene manual routes (SCN-9)", () => {
 	function sceneAdapter(options?: {
 		generateForTarget?: (target: SceneTarget, signal?: AbortSignal) => Promise<unknown>;
+		previewForTarget?: (target: SceneTarget, config: unknown, signal?: AbortSignal) => Promise<unknown>;
 		editScene?: (target: SceneTarget, sceneState: Record<string, unknown>) => Promise<unknown>;
 		deleteScene?: (target: SceneTarget) => Promise<void>;
 		record?: object | null;
@@ -214,6 +216,7 @@ describe("InsightsAdapter Scene manual routes (SCN-9)", () => {
 	}) {
 		const tracker = noopTracker({
 			generateForTarget: options?.generateForTarget ?? (async () => ({})),
+			previewForTarget: options?.previewForTarget ?? (async () => ({})),
 			editScene: options?.editScene ?? (async () => ({})),
 			deleteScene: options?.deleteScene ?? (async () => undefined),
 			getRecord: async () => options?.record ?? null,
@@ -315,6 +318,35 @@ describe("InsightsAdapter Scene manual routes (SCN-9)", () => {
 		const response = await adapter.getSceneStatus("chat_1", { target: SCENE_TARGET });
 		expect(response.generating).toBe(true);
 		expect(response.record).toEqual(record);
+	});
+
+	it("preview forwards the DRAFT config + signal to previewForTarget and returns the would-be sceneState (no message patch)", async () => {
+		let received: { target: SceneTarget; config: unknown; signal?: AbortSignal } | undefined;
+		const draftConfig = { schema: {}, autoMode: "assistant", contextWindow: 6, continuityLastN: 3, injectLastN: 1, injectionDepth: 1, promptFormat: "json", useChatModel: true, generatePrompt: "", injectPrompt: "", providerProfileId: null, model: null, revision: 0, schemaHash: "h" };
+		const adapter = sceneAdapter({
+			previewForTarget: async (target, config, signal) => { received = { target, config, signal }; return { sceneState: { mood: "preview" } }; },
+		});
+		const controller = new AbortController();
+		const response = await adapter.previewScene("chat_1", { target: SCENE_TARGET, config: draftConfig as never }, controller.signal);
+		expect(received?.target).toEqual({ chatId: "chat_1", branchId: "branch_1", messageId: "msg_1", variantId: "var_1" });
+		expect(received?.config).toBe(draftConfig);
+		expect(received?.signal).toBe(controller.signal);
+		expect(response).toEqual({ target: { chatId: "chat_1", ...SCENE_TARGET }, sceneState: { mood: "preview" } });
+		expect((response as { message?: unknown }).message).toBeUndefined(); // preview never returns a message patch
+	});
+
+	it("preview rejects a wrong-owner target before calling the service", async () => {
+		let previewCalls = 0;
+		const stores = {
+			chats: { getById: async (chatId: string) => ({ id: chatId }) },
+			messages: {
+				getMessageById: async () => ({ ...MESSAGE_ROW, chatId: "chat_2" }),
+				getVariants: async () => [VARIANT_ROW],
+			},
+		} as unknown as StoreContainer;
+		const adapter = new InsightsAdapter(stores, {} as SessionRuntime, {} as never, noopTracker({ previewForTarget: async () => { previewCalls += 1; return {}; } }) as SceneTrackerService);
+		await expect(adapter.previewScene("chat_1", { target: SCENE_TARGET, config: {} as never })).rejects.toThrow("does not belong");
+		expect(previewCalls).toBe(0);
 	});
 });
 

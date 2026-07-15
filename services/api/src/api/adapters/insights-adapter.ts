@@ -1,8 +1,8 @@
-import { brandId, type ChatBranchId, type ChatId, type MessageId, type MessageVariantId, type ObjectiveState, type ObjectiveTaskStatus } from "@vibe-tavern/domain";
+import { brandId, type ChatBranchId, type ChatId, type MessageId, type MessageVariantId, type ObjectiveState, type ObjectiveTaskStatus, type SceneTrackerConfig } from "@vibe-tavern/domain";
 import type { StoreContainer } from "@vibe-tavern/db";
 import type { SessionRuntime } from "../../runtime/session/session-runtime.js";
 import type { ProviderProfileService } from "../../domain/providers/provider-profile-service.js";
-import type { ConfigPatchResponse, InsightsCompletionPatchResponse, SceneStatusResponse, SceneTargetResponse } from "../contract/session-types.js";
+import type { ConfigPatchResponse, InsightsCompletionPatchResponse, ScenePreviewResponse, SceneStatusResponse, SceneTargetResponse } from "../contract/session-types.js";
 import { mapMessageDto } from "../../runtime/session/session-runtime-dto.js";
 import { notFound, validation } from "../../shared/errors.js";
 import { ObjectiveService } from "../../domain/insights/objective-service.js";
@@ -222,6 +222,22 @@ export class InsightsAdapter {
 		await this.ensureSceneTarget(chatId, body.target);
 		const record = await this.trackerService.getRecord(target);
 		return { target: { chatId, ...body.target }, generating: this.trackerService.hasTargetJob(target), record };
+	};
+
+	/** Non-persisting Scene preview (SCN-11): trial-run the generate pipeline with
+	 *  a DRAFT config against the target variant; returns the would-be scene state
+	 *  WITHOUT committing. The config editor uses this to validate a
+	 *  schema/prompt/model change before saving. Forwards the request signal so the
+	 *  trial is cancellable. */
+	previewScene = async (
+		chatId: string,
+		body: { target: { branchId: string; messageId: string; variantId: string }; config: SceneTrackerConfig },
+		signal?: AbortSignal,
+	): Promise<ScenePreviewResponse> => {
+		const target = this.sceneTargetFrom(chatId, body.target);
+		await this.ensureSceneTarget(chatId, body.target);
+		const record = await this.trackerService.previewForTarget(target, body.config, signal);
+		return { target: { chatId, ...body.target }, sceneState: record.sceneState };
 	};
 
 	/**

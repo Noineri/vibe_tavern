@@ -100,6 +100,17 @@ export const sceneTargetBodySchema = z.object({
   target: sceneTargetSchema,
 });
 
+/** Non-persisting Scene preview (SCN-11): runs the full generate pipeline with a
+ *  DRAFT config against the target variant and returns the would-be scene state
+ *  WITHOUT committing (no `setSceneRecord`). The config editor uses it to trial
+ *  a schema/prompt/model change against the live RP world before saving.
+ *  `config` is the FULL draft (recomputes `schemaHash` via `.transform`), so an
+ *  invalid DSL is rejected at this boundary — the route never reaches the LLM. */
+export const scenePreviewSchema = z.object({
+  target: sceneTargetSchema,
+  config: sceneTrackerConfigSchema,
+});
+
 export const objectiveTaskStatusSchema = z.enum([
   OBJECTIVE_TASK_STATUS.pending,
   OBJECTIVE_TASK_STATUS.active,

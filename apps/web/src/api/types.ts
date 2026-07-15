@@ -114,6 +114,15 @@ export interface InsightsCompletionPatchResponse {
   };
 }
 
+/** Non-persisting Scene preview (SCN-11): the scene state a DRAFT config would
+ *  produce for the target variant, generated but NOT committed. Drives the
+ *  config editor's cancellable trial-run preview. */
+export interface ScenePreviewResponse {
+  target: InsightsCompletionTarget & { chatId: string };
+  /** Transient (never persisted to the variant record). */
+  sceneState: Record<string, unknown>;
+}
+
 export type ChatGenerationStatus =
   | "idle"
   | "preparing"

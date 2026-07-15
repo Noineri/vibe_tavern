@@ -1,6 +1,6 @@
-import type { ChatId, ChatMode, ObjectiveTaskStatus, PromptTraceRecordDto } from "@vibe-tavern/domain";
+import type { ChatId, ChatMode, ObjectiveTaskStatus, PromptTraceRecordDto, SceneTrackerConfig } from "@vibe-tavern/domain";
 import type { CoauthorApplyRequest, CoauthorCorrection, CoauthorModule, CoauthorModuleCreate, CoauthorModuleUpdate } from "@vibe-tavern/api-contracts";
-import type { AppSnapshot, AppMessage, ChatListItem, ChatSummaryRecord, AutoSummaryConfig, InsightsConfigPatch, InsightsCompletionPatchResponse, InsightsCompletionTarget } from "./types.js";
+import type { AppSnapshot, AppMessage, ChatListItem, ChatSummaryRecord, AutoSummaryConfig, InsightsConfigPatch, InsightsCompletionPatchResponse, InsightsCompletionTarget, ScenePreviewResponse } from "./types.js";
 import { client } from "./client.js";
 import { unwrapRpc, unwrapError } from "./unwrap.js";
 import { normalizeMessage, normalizeSnapshot } from "./normalize.js";
@@ -382,6 +382,21 @@ export async function refreshInsightsCompletion(
     ...data,
     patch: { ...data.patch, message: normalizeMessage(data.patch.message) },
   };
+}
+
+/** Non-persisting Scene preview (SCN-11): trial-run the generate pipeline with a
+ *  DRAFT config against the target variant's selected assistant reply; returns
+ *  the would-be scene state WITHOUT committing. Cancellable via the signal. */
+export async function previewScene(
+  chatId: ChatId,
+  body: { target: { branchId: string; messageId: string; variantId: string }; config: SceneTrackerConfig },
+  options?: { signal?: AbortSignal },
+): Promise<ScenePreviewResponse> {
+  const response = await client.api.chats[":chatId"].insights.scene.preview.$post(
+    { param: { chatId }, json: body },
+    { init: { signal: options?.signal } },
+  );
+  return unwrapRpc<ScenePreviewResponse>(response);
 }
 
 export async function generateObjectiveTasks(

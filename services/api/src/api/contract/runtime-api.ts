@@ -17,13 +17,14 @@ import type {
 	ChatListItem,
 	ConfigPatchResponse,
 	InsightsCompletionPatchResponse,
+	ScenePreviewResponse,
 	SceneStatusResponse,
 	SceneTargetResponse,
 	CoauthorApplyResponse,
 	SummaryResponse,
 	CharacterVersionResponse,
 } from "./session-types.js";
-import type { ObjectiveTaskStatus, PromptTraceRecordDto, PromptPresetDto, PronounForms, SceneTrackerConfigPatch } from "@vibe-tavern/domain";
+import type { ObjectiveTaskStatus, PromptTraceRecordDto, PromptPresetDto, PronounForms, SceneTrackerConfig, SceneTrackerConfigPatch } from "@vibe-tavern/domain";
 import type { ChatMode } from "@vibe-tavern/domain";
 import type {
 	ChatSummary,
@@ -424,6 +425,7 @@ export interface InsightsRuntimeApi {
 	deleteScene: (chatId: string, body: { target: { branchId: string; messageId: string; variantId: string } }) => Promise<SceneTargetResponse>;
 	cancelScene: (chatId: string, body: { target: { branchId: string; messageId: string; variantId: string } }) => { target: { chatId: string; branchId: string; messageId: string; variantId: string }; cancelled: true };
 	getSceneStatus: (chatId: string, body: { target: { branchId: string; messageId: string; variantId: string } }) => Promise<SceneStatusResponse>;
+	previewScene: (chatId: string, body: { target: { branchId: string; messageId: string; variantId: string }; config: SceneTrackerConfig }, signal?: AbortSignal) => Promise<ScenePreviewResponse>;
 }
 
 export interface RuntimeApi {
