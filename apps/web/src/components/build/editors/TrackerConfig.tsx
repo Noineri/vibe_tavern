@@ -6,6 +6,7 @@ import { sceneTrackerDslSchema } from "@vibe-tavern/api-contracts";
 import { Ic } from "../../shared/icons.js";
 import { cn } from "../../../lib/cn.js";
 import { CodeEditor } from "../../shared/CodeEditor.js";
+import { CustomTooltip } from "../../shared/Tooltip.js";
 import { AutoTextarea } from "../../shared/auto-textarea.js";
 import { Toggle } from "../../shared/Toggle.js";
 import { DropdownSelect } from "../../shared/DropdownSelect.js";
@@ -245,17 +246,18 @@ export function TrackerConfig({ chatId }: { chatId: ChatId }) {
             <p className="font-ui text-[11px] leading-relaxed text-t3">{t("scn_schema_grammar")}</p>
             <div className="relative">
               <pre className={cn(monoCls, "max-h-56 overflow-auto rounded p-2 pr-9 text-[11px] leading-relaxed text-t2")}>{SCENE_DSL_EXAMPLE}</pre>
-              <button
-                type="button"
-                onClick={() => {
-                  navigator.clipboard?.writeText(SCENE_DSL_EXAMPLE);
-                  toast.success(t("copied"));
-                }}
-                className="absolute right-1.5 top-1.5 inline-flex h-6 w-6 items-center justify-center rounded text-t4 hover:bg-s2 hover:text-t2"
-                title={t("copy")}
-              >
-                <Ic.copy />
-              </button>
+              <CustomTooltip content={t("copy")}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard?.writeText(SCENE_DSL_EXAMPLE);
+                    toast.success(t("copied"));
+                  }}
+                  className="absolute right-1.5 top-1.5 inline-flex h-6 w-6 items-center justify-center rounded text-t4 hover:bg-s2 hover:text-t2"
+                >
+                  <Ic.copy />
+                </button>
+              </CustomTooltip>
             </div>
           </div>
         </details>
@@ -382,16 +384,17 @@ export function TrackerConfig({ chatId }: { chatId: ChatId }) {
         </button>
         {/* Test generation — real AI call; validates the pipeline end-to-end.
             Stays enabled while testing so Stop is clickable in a real browser. */}
-        <button
-          type="button"
-          onClick={() => (testing ? stopTest() : void testGeneration())}
-          disabled={effectiveSchemaError !== null && !testing}
-          title={t("scn_test_generation_hint")}
-          className="inline-flex items-center gap-1.5 rounded-md border border-border2 bg-s2 px-3 py-1.5 font-ui text-[12px] font-medium text-t2 transition-colors hover:border-accent disabled:opacity-40"
-        >
-          {testing ? spinner : <Ic.regen />}
-          {t(testing ? "scn_preview_stop_button" : "scn_test_generation_button")}
-        </button>
+        <CustomTooltip content={t("scn_test_generation_hint")}>
+          <button
+            type="button"
+            onClick={() => (testing ? stopTest() : void testGeneration())}
+            disabled={effectiveSchemaError !== null && !testing}
+            className="inline-flex items-center gap-1.5 rounded-md border border-border2 bg-s2 px-3 py-1.5 font-ui text-[12px] font-medium text-t2 transition-colors hover:border-accent disabled:opacity-40"
+          >
+            {testing ? spinner : <Ic.regen />}
+            {t(testing ? "scn_preview_stop_button" : "scn_test_generation_button")}
+          </button>
+        </CustomTooltip>
         {dirty && <span className="font-ui text-[11px] text-accent">{t("scn_dirty_hint")}</span>}
         {/* Render variant — shared with the chat header (Scene zone expanded).
             Always visible so it can be set before running Preview; selecting it
@@ -569,18 +572,19 @@ function SceneModelSelector({
             searchPlaceholder={t("scn_model_label")}
             className="flex-1"
           />
-          <button
-            type="button"
-            className={cn(
-              "flex h-8 w-8 shrink-0 items-center justify-center rounded-md border transition-colors disabled:pointer-events-none disabled:opacity-40",
-              pinnedModel ? "border-accent bg-accent-dim text-accent" : "border-border text-t4 hover:text-t3",
-            )}
-            title={pinnedModel ? t("scn_model_unpin") : t("scn_model_pin")}
-            onClick={() => onUpdate("model", pinnedModel ? null : (effectiveModel || null))}
-            disabled={useChatModel || !effectiveModel}
-          >
-            {pinnedModel ? <Ic.starFilled /> : <Ic.star />}
-          </button>
+          <CustomTooltip content={pinnedModel ? t("scn_model_unpin") : t("scn_model_pin")}>
+            <button
+              type="button"
+              className={cn(
+                "flex h-8 w-8 shrink-0 items-center justify-center rounded-md border transition-colors disabled:pointer-events-none disabled:opacity-40",
+                pinnedModel ? "border-accent bg-accent-dim text-accent" : "border-border text-t4 hover:text-t3",
+              )}
+              onClick={() => onUpdate("model", pinnedModel ? null : (effectiveModel || null))}
+              disabled={useChatModel || !effectiveModel}
+            >
+              {pinnedModel ? <Ic.starFilled /> : <Ic.star />}
+            </button>
+          </CustomTooltip>
         </div>
       </div>
     </div>

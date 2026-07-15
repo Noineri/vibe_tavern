@@ -47,6 +47,7 @@ import {
 import { useT } from "../../../i18n/context.js";
 import { cn } from "../../../lib/cn.js";
 import { Ic } from "../../shared/icons.js";
+import { CustomTooltip } from "../../shared/Tooltip.js";
 import type { ObjectiveTask, ObjectiveTaskStatus } from "../../../api/types.js";
 
 const STATUS_ORDER: ObjectiveTaskStatus[] = ["pending", "active", "completed", "abandoned"];
@@ -146,20 +147,22 @@ function ObjectiveZone({ chatId, messageId }: { chatId: string; messageId: strin
   // ── Collapsed: one-line summary (click anywhere to expand). ──
   if (!open) {
     return (
-      <button
-        type="button"
-        onClick={() => toggle(messageId, "objectiveOpen")}
-        title={t("obj_zone_expand")}
-        className={cn(
-          "group flex w-full min-w-0 items-center gap-1.5 rounded px-1 py-0.5",
-          "text-[11px] font-medium text-t3 transition-colors hover:text-t2",
-        )}
-      >
-        <NodeGlyph status={activeStatus} />
-        <span className="shrink-0 tabular-nums text-t4">{progress}</span>
-        <span className="min-w-0 flex-1 truncate">{activeDesc}</span>
-        <Chevron open={false} />
-      </button>
+      <CustomTooltip content={t("obj_zone_expand")}>
+        <button
+          type="button"
+          onClick={() => toggle(messageId, "objectiveOpen")}
+          aria-label={t("obj_zone_expand")}
+          className={cn(
+            "group flex w-full min-w-0 items-center gap-1.5 rounded px-1 py-0.5",
+            "text-[11px] font-medium text-t3 transition-colors hover:text-t2",
+          )}
+        >
+          <NodeGlyph status={activeStatus} />
+          <span className="shrink-0 tabular-nums text-t4">{progress}</span>
+          <span className="min-w-0 flex-1 truncate">{activeDesc}</span>
+          <Chevron open={false} />
+        </button>
+      </CustomTooltip>
     );
   }
 
@@ -171,34 +174,38 @@ function ObjectiveZone({ chatId, messageId }: { chatId: string; messageId: strin
         <span className="text-[10px] font-semibold uppercase tracking-[0.06em] text-t4">{t("obj_zone_route")}</span>
         <span className="shrink-0 tabular-nums text-t4">{progress}</span>
         <div className="ml-auto flex shrink-0 items-center gap-0.5">
-          <button
-            type="button"
-            onClick={() => busy === "generate" ? stop("generate") : void run("generate", generateObjectiveTasksAction)}
-            disabled={busy !== null && busy !== "generate"}
-            className="flex h-7 w-7 items-center justify-center rounded text-t4 transition-colors hover:bg-s2 hover:text-accent disabled:opacity-40 md:h-5 md:w-5"
-            title={t(busy === "generate" ? "obj_stop_button" : "obj_zone_regenerate")}
-            aria-label={t(busy === "generate" ? "obj_stop_button" : "obj_zone_regenerate")}
-          >
-            {busy === "generate" ? <ActionSpinner /> : <Ic.regen />}
-          </button>
-          <button
-            type="button"
-            onClick={() => busy === "check" ? stop("check") : void run("check", checkObjectiveCompletionAction)}
-            disabled={(busy !== null && busy !== "check") || (busy === null && tasks.length === 0)}
-            className="flex h-7 w-7 items-center justify-center rounded text-t4 transition-colors hover:bg-s2 hover:text-success-text disabled:opacity-40 md:h-5 md:w-5"
-            title={t(busy === "check" ? "obj_stop_button" : "obj_zone_check")}
-            aria-label={t(busy === "check" ? "obj_stop_button" : "obj_zone_check")}
-          >
-            {busy === "check" ? <ActionSpinner /> : <Ic.checkCircle />}
-          </button>
-          <button
-            type="button"
-            onClick={() => toggle(messageId, "objectiveOpen")}
-            className="flex h-7 w-7 items-center justify-center rounded text-t4 transition-colors hover:bg-s2 hover:text-t2 md:h-5 md:w-5"
-            title={t("obj_zone_collapse")}
-          >
-            <Chevron open />
-          </button>
+          <CustomTooltip content={t(busy === "generate" ? "obj_stop_button" : "obj_zone_regenerate")}>
+            <button
+              type="button"
+              onClick={() => busy === "generate" ? stop("generate") : void run("generate", generateObjectiveTasksAction)}
+              disabled={busy !== null && busy !== "generate"}
+              className="flex h-7 w-7 items-center justify-center rounded text-t4 transition-colors hover:bg-s2 hover:text-accent disabled:opacity-40 md:h-5 md:w-5"
+              aria-label={t(busy === "generate" ? "obj_stop_button" : "obj_zone_regenerate")}
+            >
+              {busy === "generate" ? <ActionSpinner /> : <Ic.regen />}
+            </button>
+          </CustomTooltip>
+          <CustomTooltip content={t(busy === "check" ? "obj_stop_button" : "obj_zone_check")}>
+            <button
+              type="button"
+              onClick={() => busy === "check" ? stop("check") : void run("check", checkObjectiveCompletionAction)}
+              disabled={(busy !== null && busy !== "check") || (busy === null && tasks.length === 0)}
+              className="flex h-7 w-7 items-center justify-center rounded text-t4 transition-colors hover:bg-s2 hover:text-success-text disabled:opacity-40 md:h-5 md:w-5"
+              aria-label={t(busy === "check" ? "obj_stop_button" : "obj_zone_check")}
+            >
+              {busy === "check" ? <ActionSpinner /> : <Ic.checkCircle />}
+            </button>
+          </CustomTooltip>
+          <CustomTooltip content={t("obj_zone_collapse")}>
+            <button
+              type="button"
+              onClick={() => toggle(messageId, "objectiveOpen")}
+              className="flex h-7 w-7 items-center justify-center rounded text-t4 transition-colors hover:bg-s2 hover:text-t2 md:h-5 md:w-5"
+              aria-label={t("obj_zone_collapse")}
+            >
+              <Chevron open />
+            </button>
+          </CustomTooltip>
         </div>
       </div>
       <ol className="flex flex-col">
@@ -237,19 +244,21 @@ function RouteRow({ chatId, task }: { chatId: ChatId; task: ObjectiveTask }) {
 
   return (
     <li className="flex items-start gap-1.5 py-0.5">
-      <button
-        type="button"
-        onClick={() => void cycleStatus()}
-        title={t("obj_cycle_status")}
-        className={cn(
-          "mt-[1px] flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full border transition-colors [&_svg]:h-2 [&_svg]:w-2",
-          statusClass(task.status),
-        )}
-      >
-        {task.status === "active" && <span className="h-1.5 w-1.5 rounded-full bg-current" />}
-        {task.status === "completed" && <Ic.check />}
-        {task.status === "abandoned" && <Ic.close />}
-      </button>
+      <CustomTooltip content={t("obj_cycle_status")}>
+        <button
+          type="button"
+          onClick={() => void cycleStatus()}
+          aria-label={t("obj_cycle_status")}
+          className={cn(
+            "mt-[1px] flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full border transition-colors [&_svg]:h-2 [&_svg]:w-2",
+            statusClass(task.status),
+          )}
+        >
+          {task.status === "active" && <span className="h-1.5 w-1.5 rounded-full bg-current" />}
+          {task.status === "completed" && <Ic.check />}
+          {task.status === "abandoned" && <Ic.close />}
+        </button>
+      </CustomTooltip>
       {editing ? (
         <input
           autoFocus
@@ -265,19 +274,20 @@ function RouteRow({ chatId, task }: { chatId: ChatId; task: ObjectiveTask }) {
           )}
         />
       ) : (
-        <button
-          type="button"
-          onClick={() => setEditing(true)}
-          title={t("obj_edit_task")}
-          className={cn(
-            "min-w-0 flex-1 truncate text-left font-ui text-[11px] transition-colors hover:text-t2",
-            task.status === "completed" && "text-success-text line-through",
-            task.status === "abandoned" && "text-t4 line-through",
+        <CustomTooltip content={t("obj_edit_task")}>
+          <button
+            type="button"
+            onClick={() => setEditing(true)}
+            className={cn(
+              "min-w-0 flex-1 truncate text-left font-ui text-[11px] transition-colors hover:text-t2",
+              task.status === "completed" && "text-success-text line-through",
+              task.status === "abandoned" && "text-t4 line-through",
             (task.status === "pending" || task.status === "active") && (task.status === "active" ? "text-t2" : "text-t3"),
           )}
         >
           {task.description}
         </button>
+        </CustomTooltip>
       )}
     </li>
   );

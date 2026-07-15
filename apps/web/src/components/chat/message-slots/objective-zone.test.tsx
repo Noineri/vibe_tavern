@@ -17,6 +17,7 @@
  * actions are mocked.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { type ReactNode } from "react";
 import { render, fireEvent, cleanup, waitFor, act } from "@testing-library/react";
 import { AssistantContextHeader } from "../AssistantContextHeader.js";
 import { ObjectiveZone } from "./objective-zone.js";
@@ -48,6 +49,13 @@ vi.mock("../../../stores/api-actions/chat-actions.js", () => ({
   updateObjectiveTaskAction: mocks.updateObjectiveTaskAction,
   generateObjectiveTasksAction: mocks.generateObjectiveTasksAction,
   checkObjectiveCompletionAction: mocks.checkObjectiveCompletionAction,
+}));
+
+// CustomTooltip is presentational; these tests verify zone button behavior, not
+// tooltip rendering. Passthrough children so no Radix TooltipProvider is needed.
+vi.mock("../../shared/Tooltip.js", () => ({
+  CustomTooltip: ({ children }: { children: ReactNode }) => children,
+  TooltipProvider: ({ children }: { children: ReactNode }) => children,
 }));
 
 afterEach(() => {
@@ -124,14 +132,14 @@ describe("ObjectiveZone (INS-6)", () => {
   it("expanded: regenerate and check buttons dispatch the existing objective actions", async () => {
     seedState(ROUTE, true);
     useHeaderZoneExpansionStore.setState({ open: { m1: { objectiveOpen: true } } });
-    const { getByTitle } = render(<ObjectiveZone chatId="c1" messageId="m1" />);
+    const { getByLabelText } = render(<ObjectiveZone chatId="c1" messageId="m1" />);
 
-    const regenerate = getByTitle("obj_zone_regenerate");
+    const regenerate = getByLabelText("obj_zone_regenerate");
     fireEvent.click(regenerate);
     expect(mocks.generateObjectiveTasksAction).toHaveBeenCalledWith("c1", expect.any(AbortSignal));
     await waitFor(() => expect((regenerate as HTMLButtonElement).disabled).toBe(false));
 
-    fireEvent.click(getByTitle("obj_zone_check"));
+    fireEvent.click(getByLabelText("obj_zone_check"));
     expect(mocks.checkObjectiveCompletionAction).toHaveBeenCalledWith("c1", expect.any(AbortSignal));
   });
 
@@ -147,12 +155,12 @@ describe("ObjectiveZone (INS-6)", () => {
     });
     const view = render(<ObjectiveZone chatId="c1" messageId="m1" />);
 
-    fireEvent.click(view.getByTitle("obj_zone_regenerate"));
-    fireEvent.click(view.getByTitle("obj_stop_button"));
+    fireEvent.click(view.getByLabelText("obj_zone_regenerate"));
+    fireEvent.click(view.getByLabelText("obj_stop_button"));
     expect(receivedSignal?.aborted).toBe(true);
-    await waitFor(() => expect(view.getByTitle("obj_zone_regenerate")).toBeTruthy());
+    await waitFor(() => expect(view.getByLabelText("obj_zone_regenerate")).toBeTruthy());
 
-    fireEvent.click(view.getByTitle("obj_zone_regenerate"));
+    fireEvent.click(view.getByLabelText("obj_zone_regenerate"));
     view.unmount();
     expect(receivedSignal?.aborted).toBe(true);
   });
@@ -161,10 +169,10 @@ describe("ObjectiveZone (INS-6)", () => {
     seedState(ROUTE, true);
     // Pre-open the zone (simulate a prior toggle).
     useHeaderZoneExpansionStore.setState({ open: { m1: { objectiveOpen: true } } });
-    const { getAllByTitle } = render(<ObjectiveZone chatId="c1" messageId="m1" />);
+    const { getAllByLabelText } = render(<ObjectiveZone chatId="c1" messageId="m1" />);
     // Route renders in order: t1 (completed), t2 (active), t3 (pending).
     // nodes[1] = t2 (active) → cycles to completed.
-    const nodes = getAllByTitle("obj_cycle_status");
+    const nodes = getAllByLabelText("obj_cycle_status");
     fireEvent.click(nodes[1]!);
     expect(mocks.updateObjectiveTaskAction).toHaveBeenCalledWith("c1", "t2", { status: "completed" });
   });
@@ -185,9 +193,9 @@ describe("ObjectiveZone (INS-6)", () => {
     mocks.updateObjectiveTaskAction.mockRejectedValueOnce(new Error("status save failed"));
     seedState(ROUTE, true);
     useHeaderZoneExpansionStore.setState({ open: { m1: { objectiveOpen: true } } });
-    const { getAllByTitle } = render(<ObjectiveZone chatId="c1" messageId="m1" />);
+    const { getAllByLabelText } = render(<ObjectiveZone chatId="c1" messageId="m1" />);
 
-    fireEvent.click(getAllByTitle("obj_cycle_status")[1]!);
+    fireEvent.click(getAllByLabelText("obj_cycle_status")[1]!);
 
     await waitFor(() => expect(mocks.toastError).toHaveBeenCalledWith("status save failed"));
   });
@@ -260,19 +268,19 @@ describe("Objective slot + real AssistantContextHeader", () => {
 
     expect(container.textContent).toContain("Aria");
     expect(container.textContent).not.toContain("Enter the forest");
-    expect(container.querySelector('[title="obj_zone_expand"]')).toBeNull();
+    expect(container.querySelector('[aria-label="obj_zone_expand"]')).toBeNull();
     expect(container.querySelector('[class*="bg-border"]')).toBeNull();
 
     act(() => seedState(ROUTE, true));
 
     expect(container.textContent).toContain("Enter the forest");
-    expect(container.querySelector('[title="obj_zone_expand"]')).not.toBeNull();
+    expect(container.querySelector('[aria-label="obj_zone_expand"]')).not.toBeNull();
     expect(container.querySelector('[class*="bg-border"]')).not.toBeNull();
 
     act(() => seedState(exhausted, true));
 
     expect(container.textContent).not.toContain("Enter the forest");
-    expect(container.querySelector('[title="obj_zone_expand"]')).toBeNull();
+    expect(container.querySelector('[aria-label="obj_zone_expand"]')).toBeNull();
     expect(container.querySelector('[class*="bg-border"]')).toBeNull();
   });
 
@@ -326,7 +334,7 @@ describe("Objective slot + real AssistantContextHeader", () => {
     });
 
     await waitFor(() => expect(container.textContent).toContain("Enter the forest"));
-    expect(container.querySelector('[title="obj_zone_expand"]')).not.toBeNull();
+    expect(container.querySelector('[aria-label="obj_zone_expand"]')).not.toBeNull();
     expect(container.querySelector('[class*="bg-border"]')).not.toBeNull();
   });
 });

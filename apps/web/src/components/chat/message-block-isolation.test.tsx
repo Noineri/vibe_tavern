@@ -96,6 +96,13 @@ vi.mock("../../stores/api-actions/chat-actions.js", async (importOriginal) => {
   };
 });
 
+// Scene/Objective zones render CustomTooltip (icon buttons); presentational here —
+// passthrough so no Radix TooltipProvider is needed.
+vi.mock("../shared/Tooltip.js", () => ({
+  CustomTooltip: ({ children }: { children: ReactNode }) => children,
+  TooltipProvider: ({ children }: { children: ReactNode }) => children,
+}));
+
 // ---------------------------------------------------------------------------
 // SCOPED happy-dom registration + jsdom shims.
 //

@@ -16,6 +16,7 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, fireEvent, cleanup, waitFor } from "@testing-library/react";
+import type { ReactNode } from "react";
 import { InsightsPanel } from "./InsightsPanel.js";
 
 // Hoisted mock state — vi.mock factories are hoisted above imports, so the
@@ -56,6 +57,13 @@ vi.mock("../../../stores/api-actions/chat-actions.js", () => ({
 // in the config editor's provider/model dependencies.
 vi.mock("./ObjectiveConfig.js", () => ({
   ObjectiveConfig: () => <div data-testid="objective-config" />,
+}));
+
+// TrackerConfig renders CustomTooltip (icon buttons); presentational here —
+// passthrough so no Radix TooltipProvider is needed.
+vi.mock("../../shared/Tooltip.js", () => ({
+  CustomTooltip: ({ children }: { children: ReactNode }) => children,
+  TooltipProvider: ({ children }: { children: ReactNode }) => children,
 }));
 
 // TrackerConfig renders the shared AiAssistantModal (scene_schema generator).

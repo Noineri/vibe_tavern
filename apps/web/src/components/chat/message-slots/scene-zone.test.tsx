@@ -16,7 +16,7 @@
  * Scene actions + i18n + mobile hook + Modal/BottomSheet chrome are mocked.
  */
 import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
-import { createElement } from "react";
+import { createElement, type ReactNode } from "react";
 import { render, fireEvent, cleanup } from "@testing-library/react";
 import { useSnapshotStore } from "../../../stores/snapshot-store.js";
 import { useSceneGenerationStore } from "../../../stores/scene-generation-store.js";
@@ -60,6 +60,13 @@ vi.mock("../../shared/Modal.js", () => ({
 vi.mock("../../shared/BottomSheet.js", () => ({
   BottomSheet: ({ children, open }: { children: React.ReactNode; open: boolean }) =>
     open ? createElement("div", { "data-testid": "sheet" }, children) : null,
+}));
+
+// CustomTooltip is presentational; these tests verify zone button behavior, not
+// tooltip rendering. Passthrough children so no Radix TooltipProvider is needed.
+vi.mock("../../shared/Tooltip.js", () => ({
+  CustomTooltip: ({ children }: { children: ReactNode }) => children,
+  TooltipProvider: ({ children }: { children: ReactNode }) => children,
 }));
 
 // ── Fixtures ──────────────────────────────────────────────────────────────
@@ -186,16 +193,16 @@ describe("Scene zone visibility (SCN-12)", () => {
 describe("Scene zone component (SCN-12)", () => {
   it("latest with no record renders a Generate control (expanded)", () => {
     seed([msg("m1", { variantId: "v1" })]);
-    const { getByText, getByTitle, getByLabelText, container } = render(createElement(SceneZone, { chatId: "chat-1", messageId: "m1" }));
+    const { getByText, getByLabelText, container } = render(createElement(SceneZone, { chatId: "chat-1", messageId: "m1" }));
     // Collapsed by default — expand first.
-    fireEvent.click(getByTitle("scn_zone_expand"));
+    fireEvent.click(getByLabelText("scn_zone_expand"));
     expect(getByLabelText("scn_zone_generate")).toBeTruthy();
   });
 
   it("a valid record renders Update + Edit + Delete and the read view", () => {
     seed([msg("m1", { variantId: "v1", rec: record("v1", { mood: "tense", tension: 7 }) })]);
-    const { getByText, getByTitle, getByLabelText, container } = render(createElement(SceneZone, { chatId: "chat-1", messageId: "m1" }));
-    fireEvent.click(getByTitle("scn_zone_expand"));
+    const { getByText, getByLabelText, container } = render(createElement(SceneZone, { chatId: "chat-1", messageId: "m1" }));
+    fireEvent.click(getByLabelText("scn_zone_expand"));
     expect(getByLabelText("scn_zone_update")).toBeTruthy();
     expect(getByLabelText("scn_zone_edit")).toBeTruthy();
     expect(getByLabelText("scn_zone_delete")).toBeTruthy();
@@ -209,8 +216,8 @@ describe("Scene zone component (SCN-12)", () => {
   it("read view follows the shared render-variant store — compact hides the meter", () => {
     seed([msg("m1", { variantId: "v1", rec: record("v1", { mood: "tense", tension: 7 }) })]);
     useSceneRenderStore.setState({ variant: "compact" });
-    const { getByTitle, container } = render(createElement(SceneZone, { chatId: "chat-1", messageId: "m1" }));
-    fireEvent.click(getByTitle("scn_zone_expand"));
+    const { getByLabelText, container } = render(createElement(SceneZone, { chatId: "chat-1", messageId: "m1" }));
+    fireEvent.click(getByLabelText("scn_zone_expand"));
     // compact renders bounded numbers as text (no meter); the value 7 still shows.
     expect(container.querySelector('[role="meter"]')).toBeNull();
     expect(container.textContent).toContain("7");
@@ -224,8 +231,8 @@ describe("Scene zone component (SCN-12)", () => {
       return { target: { ...target, chatId: "chat-1" }, message: m };
     });
     seed([msg("m1", { variantId: "v1" })]);
-    const { getByText, getByTitle, getByLabelText, container } = render(createElement(SceneZone, { chatId: "chat-1", messageId: "m1" }));
-    fireEvent.click(getByTitle("scn_zone_expand"));
+    const { getByText, getByLabelText, container } = render(createElement(SceneZone, { chatId: "chat-1", messageId: "m1" }));
+    fireEvent.click(getByLabelText("scn_zone_expand"));
     fireEvent.click(getByLabelText("scn_zone_generate"));
     await vi.waitFor(() => expect(mocks.generateSceneAction).toHaveBeenCalledTimes(1));
     const [, target] = mocks.generateSceneAction.mock.calls[0];
@@ -235,8 +242,8 @@ describe("Scene zone component (SCN-12)", () => {
   it("while generating, shows a Cancel control that fires cancelSceneAction", async () => {
     seed([msg("m1", { variantId: "v1" })]);
     useSceneGenerationStore.getState().markGenerating("v1");
-    const { getByText, getByTitle, getByLabelText, container } = render(createElement(SceneZone, { chatId: "chat-1", messageId: "m1" }));
-    fireEvent.click(getByTitle("scn_zone_expand"));
+    const { getByText, getByLabelText, container } = render(createElement(SceneZone, { chatId: "chat-1", messageId: "m1" }));
+    fireEvent.click(getByLabelText("scn_zone_expand"));
     fireEvent.click(getByLabelText("scn_zone_cancel"));
     await vi.waitFor(() => expect(mocks.cancelSceneAction).toHaveBeenCalledTimes(1));
   });
@@ -244,8 +251,8 @@ describe("Scene zone component (SCN-12)", () => {
   it("Delete opens a confirm, then fires deleteSceneAction", async () => {
     mocks.deleteSceneAction.mockResolvedValue({ target: { chatId: "chat-1", branchId: "b1", messageId: "m1", variantId: "v1" }, message: msg("m1", { variantId: "v1", rec: null }) });
     seed([msg("m1", { variantId: "v1", rec: record("v1", { mood: "tense" }) })]);
-    const { getByText, getByTitle, getByLabelText, container } = render(createElement(SceneZone, { chatId: "chat-1", messageId: "m1" }));
-    fireEvent.click(getByTitle("scn_zone_expand"));
+    const { getByText, getByLabelText, container } = render(createElement(SceneZone, { chatId: "chat-1", messageId: "m1" }));
+    fireEvent.click(getByLabelText("scn_zone_expand"));
     fireEvent.click(getByLabelText("scn_zone_delete"));
     // Confirm dialog appears.
     fireEvent.click(container.querySelector("button.bg-danger")!);
@@ -255,8 +262,8 @@ describe("Scene zone component (SCN-12)", () => {
   it("Edit opens the structured editor and Save fires editSceneAction", async () => {
     mocks.editSceneAction.mockResolvedValue({ target: { chatId: "chat-1", branchId: "b1", messageId: "m1", variantId: "v1" }, message: msg("m1", { variantId: "v1", rec: record("v1", { mood: "edited" }) }) });
     seed([msg("m1", { variantId: "v1", rec: record("v1", { mood: "tense", tension: 7 }) })]);
-    const { getByText, getByTitle, getByLabelText, container } = render(createElement(SceneZone, { chatId: "chat-1", messageId: "m1" }));
-    fireEvent.click(getByTitle("scn_zone_expand"));
+    const { getByText, getByLabelText, container } = render(createElement(SceneZone, { chatId: "chat-1", messageId: "m1" }));
+    fireEvent.click(getByLabelText("scn_zone_expand"));
     fireEvent.click(getByLabelText("scn_zone_edit"));
     // Editor modal renders the Save button.
     const saveBtn = Array.from(container.querySelectorAll("button")).find((b) => b.textContent === "scn_edit_save")!;
@@ -292,8 +299,8 @@ describe("Scene zone component (SCN-12)", () => {
     (m as { selectedVariantIndex: number }).selectedVariantIndex = 1;
     (m as { sceneTracker: unknown }).sceneTracker = record("v2", { mood: "stormy" });
     seed([m]);
-    const { getByText, getByTitle, getByLabelText, container } = render(createElement(SceneZone, { chatId: "chat-1", messageId: "m1" }));
-    fireEvent.click(getByTitle("scn_zone_expand"));
+    const { getByText, getByLabelText, container } = render(createElement(SceneZone, { chatId: "chat-1", messageId: "m1" }));
+    fireEvent.click(getByLabelText("scn_zone_expand"));
     expect(getByText("stormy")).toBeTruthy();
   });
 

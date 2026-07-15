@@ -12,7 +12,7 @@
  * Runner: vitest (apps/web — vi.mock is file-scoped, no cross-file leak).
  */
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { createElement } from "react";
+import { createElement, type ReactNode } from "react";
 import { render, fireEvent, cleanup, waitFor, act } from "@testing-library/react";
 import { TrackerConfig } from "./TrackerConfig.js";
 import { brandId, computeSceneSchemaHash, type ChatId, type SceneTrackerConfig } from "@vibe-tavern/domain";
@@ -74,6 +74,13 @@ vi.mock("../../shared/CodeEditor.js", async () => {
       }),
   };
 });
+
+// CustomTooltip is presentational; these tests verify button behavior/wiring, not
+// tooltip rendering. Passthrough children so no Radix TooltipProvider is needed.
+vi.mock("../../shared/Tooltip.js", () => ({
+  CustomTooltip: ({ children }: { children: ReactNode }) => children,
+  TooltipProvider: ({ children }: { children: ReactNode }) => children,
+}));
 
 // Stub the AiAssistantModal to a no-op that captures its props, so the
 // TrackerConfig wiring (mode/promptFormat/existingContent/scopeContext) and

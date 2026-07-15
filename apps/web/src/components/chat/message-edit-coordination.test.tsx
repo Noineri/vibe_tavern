@@ -27,7 +27,7 @@
  * scene-generation stores are real and seeded directly.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { createElement } from "react";
+import { createElement, type ReactNode } from "react";
 import { render, fireEvent, cleanup, waitFor, act } from "@testing-library/react";
 import type { AppMessage, AppSnapshot, AppCharacter } from "../../app-client.js";
 import type { SceneTrackerRecord } from "@vibe-tavern/domain";
@@ -72,6 +72,13 @@ vi.mock("../../i18n/context.js", () => ({
 }));
 
 vi.mock("../../hooks/use-mobile.js", () => ({ useIsMobile: () => false }));
+
+// Scene/Objective zones render CustomTooltip (icon buttons); presentational here —
+// passthrough so no Radix TooltipProvider is needed.
+vi.mock("../shared/Tooltip.js", () => ({
+  CustomTooltip: ({ children }: { children: ReactNode }) => children,
+  TooltipProvider: ({ children }: { children: ReactNode }) => children,
+}));
 
 // ActionSheet renders into the shared BottomSheet; stub it to render children so
 // the item→button mapping (the `disabled` flag under test) is drivable without

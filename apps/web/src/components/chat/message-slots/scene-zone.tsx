@@ -56,6 +56,7 @@ import { Ic } from "../../shared/icons.js";
 import { Modal } from "../../shared/Modal.js";
 import { BottomSheet } from "../../shared/BottomSheet.js";
 import { SceneStateView } from "../../shared/SceneStateView.js";
+import { CustomTooltip } from "../../shared/Tooltip.js";
 import { SceneEditorBody } from "./scene-editor.js";
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -219,19 +220,21 @@ function SceneZone({ chatId, messageId }: { chatId: string; messageId: string })
   if (!open) {
     return (
       <>
-        <button
-          type="button"
-          onClick={() => toggle(messageId, "sceneOpen")}
-          title={t("scn_zone_expand")}
-          className={cn(
-            "group flex w-full min-w-0 items-center gap-1.5 rounded px-1 py-0.5",
-            "text-[11px] font-medium text-t3 transition-colors hover:text-t2",
-          )}
-        >
-          <SceneGlyph generating={generating} hasRecord={hasRecord} fresh={fresh} />
-          <SceneKvSummary schema={schema} state={sceneState} placeholder={t(hasRecord ? (fresh ? "scn_zone_summary_fresh" : "scn_zone_summary_stale") : "scn_zone_summary_empty")} />
-          <Chevron open={false} />
-        </button>
+        <CustomTooltip content={t("scn_zone_expand")}>
+          <button
+            type="button"
+            onClick={() => toggle(messageId, "sceneOpen")}
+            aria-label={t("scn_zone_expand")}
+            className={cn(
+              "group flex w-full min-w-0 items-center gap-1.5 rounded px-1 py-0.5",
+              "text-[11px] font-medium text-t3 transition-colors hover:text-t2",
+            )}
+          >
+            <SceneGlyph generating={generating} hasRecord={hasRecord} fresh={fresh} />
+            <SceneKvSummary schema={schema} state={sceneState} placeholder={t(hasRecord ? (fresh ? "scn_zone_summary_fresh" : "scn_zone_summary_stale") : "scn_zone_summary_empty")} />
+            <Chevron open={false} />
+          </button>
+        </CustomTooltip>
         {editing && <SceneEditorModal open={editing} isMobile={isMobile} schema={schema} state={sceneState ?? {}} onClose={() => setEditing(false)} onSave={runEdit} t={t} />}
       </>
     );
@@ -246,59 +249,65 @@ function SceneZone({ chatId, messageId }: { chatId: string; messageId: string })
         <div className="ml-auto flex shrink-0 items-center gap-0.5">
           {/* Generate (no record) OR Update (stale/valid record). While generating → Cancel. */}
           {generating ? (
-            <button
-              type="button"
-              onClick={() => void runCancel()}
-              className="flex h-7 w-7 items-center justify-center rounded text-t4 transition-colors hover:bg-s2 hover:text-danger md:h-5 md:w-5"
-              title={t("scn_zone_cancel")}
-              aria-label={t("scn_zone_cancel")}
-            >
-              <ActionSpinner />
-            </button>
+            <CustomTooltip content={t("scn_zone_cancel")}>
+              <button
+                type="button"
+                onClick={() => void runCancel()}
+                className="flex h-7 w-7 items-center justify-center rounded text-t4 transition-colors hover:bg-s2 hover:text-danger md:h-5 md:w-5"
+                aria-label={t("scn_zone_cancel")}
+              >
+                <ActionSpinner />
+              </button>
+            </CustomTooltip>
           ) : (
-            <button
-              type="button"
-              onClick={() => void runGenerate()}
-              disabled={!hasRecord && !isLatest}
-              className="flex h-7 w-7 items-center justify-center rounded text-t4 transition-colors hover:bg-s2 hover:text-accent disabled:opacity-40 md:h-5 md:w-5"
-              title={t(hasRecord ? "scn_zone_update" : "scn_zone_generate")}
-              aria-label={t(hasRecord ? "scn_zone_update" : "scn_zone_generate")}
-            >
-              {hasRecord ? <Ic.regen /> : <Ic.plus />}
-            </button>
+            <CustomTooltip content={t(hasRecord ? "scn_zone_update" : "scn_zone_generate")}>
+              <button
+                type="button"
+                onClick={() => void runGenerate()}
+                disabled={!hasRecord && !isLatest}
+                className="flex h-7 w-7 items-center justify-center rounded text-t4 transition-colors hover:bg-s2 hover:text-accent disabled:opacity-40 md:h-5 md:w-5"
+                aria-label={t(hasRecord ? "scn_zone_update" : "scn_zone_generate")}
+              >
+                {hasRecord ? <Ic.regen /> : <Ic.plus />}
+              </button>
+            </CustomTooltip>
           )}
           {/* Edit (valid record only — editing a stale/wrong-schema record is meaningless). */}
           {fresh && (
-            <button
-              type="button"
-              onClick={() => setEditing(true)}
-              className="flex h-7 w-7 items-center justify-center rounded text-t4 transition-colors hover:bg-s2 hover:text-t2 md:h-5 md:w-5"
-              title={t("scn_zone_edit")}
-              aria-label={t("scn_zone_edit")}
-            >
-              <Ic.edit />
-            </button>
+            <CustomTooltip content={t("scn_zone_edit")}>
+              <button
+                type="button"
+                onClick={() => setEditing(true)}
+                className="flex h-7 w-7 items-center justify-center rounded text-t4 transition-colors hover:bg-s2 hover:text-t2 md:h-5 md:w-5"
+                aria-label={t("scn_zone_edit")}
+              >
+                <Ic.edit />
+              </button>
+            </CustomTooltip>
           )}
           {/* Delete (any record present). */}
           {hasRecord && (
+            <CustomTooltip content={t("scn_zone_delete")}>
+              <button
+                type="button"
+                onClick={() => setConfirmDelete(true)}
+                className="flex h-7 w-7 items-center justify-center rounded text-t4 transition-colors hover:bg-s2 hover:text-danger md:h-5 md:w-5"
+                aria-label={t("scn_zone_delete")}
+              >
+                <Ic.del />
+              </button>
+            </CustomTooltip>
+          )}
+          <CustomTooltip content={t("scn_zone_collapse")}>
             <button
               type="button"
-              onClick={() => setConfirmDelete(true)}
-              className="flex h-7 w-7 items-center justify-center rounded text-t4 transition-colors hover:bg-s2 hover:text-danger md:h-5 md:w-5"
-              title={t("scn_zone_delete")}
-              aria-label={t("scn_zone_delete")}
+              onClick={() => toggle(messageId, "sceneOpen")}
+              className="flex h-7 w-7 items-center justify-center rounded text-t4 transition-colors hover:bg-s2 hover:text-t2 md:h-5 md:w-5"
+              aria-label={t("scn_zone_collapse")}
             >
-              <Ic.del />
+              <Chevron open />
             </button>
-          )}
-          <button
-            type="button"
-            onClick={() => toggle(messageId, "sceneOpen")}
-            className="flex h-7 w-7 items-center justify-center rounded text-t4 transition-colors hover:bg-s2 hover:text-t2 md:h-5 md:w-5"
-            title={t("scn_zone_collapse")}
-          >
-            <Chevron open />
-          </button>
+          </CustomTooltip>
         </div>
       </div>
 
