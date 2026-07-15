@@ -1000,7 +1000,6 @@ export default interface Resources {
     "scn_provider_label": "Provider",
     "scn_save_button": "Save config",
     "scn_save_failed": "Failed to save Scene config.",
-    "scn_schema_example_summary": "Example & format",
     "scn_schema_grammar": "Each field needs $type: string | number | boolean | object | array. Number takes optional min/max (both or neither). Object takes properties: {…}; array takes items: {…}. Optional label shows a human display name in the UI (data keys stay machine-stable). Under XML format, keys must be ASCII names (letters, digits, _, -, .).",
     "scn_schema_hint": "Define the structured fields the model tracks each turn. Objects: {\"$type\": \"object\", \"properties\": {…}}; leaves: {\"$type\": \"string\"}.",
     "scn_schema_invalid_json": "Invalid JSON.",

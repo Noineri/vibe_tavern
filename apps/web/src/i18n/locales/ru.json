@@ -28,7 +28,6 @@
   "scn_schema_hint": "Определите структурированные поля, которые модель отслеживает каждый ход. Объекты: {\"$type\": \"object\", \"properties\": {…}}; листья: {\"$type\": \"string\"}.",
   "scn_schema_invalid_json": "Невалидный JSON.",
   "scn_xml_key_error": "Формату XML нужны ASCII-имена полей (буквы, цифры, _, -, .) — переключите на JSON, чтобы разрешить любые. Некорректные:",
-  "scn_schema_example_summary": "Пример и формат",
   "scn_schema_grammar": "У каждого поля должен быть $type: string | number | boolean | object | array. У number могут быть min/max (оба или никак). Object принимает properties: {…}; array принимает items: {…}. Необязательный label задаёт читаемое имя в UI (ключи данных остаются машинными). В формате XML ключи должны быть ASCII-именами (буквы, цифры, _, -, .).",
   "scn_preview_raw_xml": "Сырой XML",
   "scn_auto_mode_label": "Авто-генерация",

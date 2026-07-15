@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { toast } from "sonner";
 import type { ChatId, SceneTrackerConfig, SceneTrackerConfigPatch } from "@vibe-tavern/domain";
-import { normalizeSceneTrackerConfig, synthesizeSceneSample, findInvalidXmlKeys, SCENE_AUTO_MODE, SCENE_PROMPT_FORMAT } from "@vibe-tavern/domain";
+import { normalizeSceneTrackerConfig, synthesizeSceneSample, findInvalidXmlKeys, computeSceneSchemaHash, SCENE_AUTO_MODE, SCENE_PROMPT_FORMAT } from "@vibe-tavern/domain";
 import { sceneTrackerDslSchema } from "@vibe-tavern/api-contracts";
 import { Ic } from "../../shared/icons.js";
 import { cn } from "../../../lib/cn.js";
@@ -130,7 +130,10 @@ export function TrackerConfig({ chatId }: { chatId: ChatId }) {
       return;
     }
     setSchemaError(null);
-    setDraft((d) => ({ ...d, schema: result.data }));
+    // Keep the draft self-consistent: recompute schemaHash whenever the schema
+    // changes, so an unsaved draft can be previewed (the server's full-config
+    // contract rejects a stale/non-empty hash that doesn't match the schema).
+    setDraft((d) => ({ ...d, schema: result.data, schemaHash: computeSceneSchemaHash(result.data) }));
   }
 
   /** Strip ```json fences the model may wrap its output in, then run the same
@@ -230,26 +233,15 @@ export function TrackerConfig({ chatId }: { chatId: ChatId }) {
             {t("scn_ai_generate")}
           </button>
         </div>
-        <p className="mb-1.5 mt-0.5 font-ui text-[10px] leading-relaxed text-t4">{t("scn_schema_hint")}</p>
-        <div className="mt-1.5 overflow-hidden rounded-md border border-border2">
-          <CodeEditor
-            value={schemaText}
-            onChange={onSchemaChange}
-            minHeight="160px"
-            className="font-mono text-[12px]"
-          />
-        </div>
-        {effectiveSchemaError && (
-          <p className="mt-1.5 font-ui text-[11px] leading-relaxed text-danger-text">{effectiveSchemaError}</p>
-        )}
-        {/* Authoring aid — grammar summary + a copyable worked example
-            (progressive disclosure: collapsed until the user needs it). */}
-        <details className="group mt-1.5">
-          <summary className="inline-flex cursor-pointer select-none items-center gap-1 font-ui text-[11px] text-t4 hover:text-t3">
-            <Ic.help />
-            {t("scn_schema_example_summary")}
+        {/* Authoring aid — the short hint is always visible as the disclosure
+            summary (ⓘ); expanding reveals the full grammar + a copyable worked
+            example. Sits right under the header, above the editor. */}
+        <details className="group mt-1">
+          <summary className="flex w-full cursor-pointer select-none items-start gap-1.5 font-ui text-[10px] leading-relaxed text-t4 hover:text-t3">
+            <span className="mt-px shrink-0"><Ic.help /></span>
+            <span>{t("scn_schema_hint")}</span>
           </summary>
-          <div className="mt-1.5 space-y-1.5 rounded-md border border-border2 bg-s2/40 p-2">
+          <div className="mt-2 space-y-2 rounded-md border border-border2 bg-s2/40 p-2.5">
             <p className="font-ui text-[11px] leading-relaxed text-t3">{t("scn_schema_grammar")}</p>
             <div className="relative">
               <pre className={cn(monoCls, "max-h-56 overflow-auto rounded p-2 pr-9 text-[11px] leading-relaxed text-t2")}>{SCENE_DSL_EXAMPLE}</pre>
@@ -267,6 +259,17 @@ export function TrackerConfig({ chatId }: { chatId: ChatId }) {
             </div>
           </div>
         </details>
+        <div className="mt-1.5 overflow-hidden rounded-md border border-border2">
+          <CodeEditor
+            value={schemaText}
+            onChange={onSchemaChange}
+            minHeight="160px"
+            className="font-mono text-[12px]"
+          />
+        </div>
+        {effectiveSchemaError && (
+          <p className="mt-1.5 font-ui text-[11px] leading-relaxed text-danger-text">{effectiveSchemaError}</p>
+        )}
       </div>
 
       {/* Auto-generate mode */}

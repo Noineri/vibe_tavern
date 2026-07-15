@@ -15,7 +15,7 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 import { createElement } from "react";
 import { render, fireEvent, cleanup, waitFor, act } from "@testing-library/react";
 import { TrackerConfig } from "./TrackerConfig.js";
-import { brandId, type ChatId, type SceneTrackerConfig } from "@vibe-tavern/domain";
+import { brandId, computeSceneSchemaHash, type ChatId, type SceneTrackerConfig } from "@vibe-tavern/domain";
 import { useSceneRenderStore } from "../../../stores/scene-render-store.js";
 
 const mocks = vi.hoisted(() => ({
@@ -169,10 +169,11 @@ describe("TrackerConfig (SCN-11)", () => {
     expect(getByText("scn_preview_button").closest("button")!.disabled).toBe(false);
   });
 
-  it("renders the DSL authoring disclosure (grammar + copyable example)", () => {
+  it("renders the DSL authoring disclosure (hint summary + grammar + copyable example)", () => {
     seed();
     const { getByText } = render(createElement(TrackerConfig, { chatId: CHAT_ID }));
-    expect(getByText("scn_schema_example_summary")).toBeTruthy();
+    // The hint is always visible as the disclosure summary; grammar + example live in the body.
+    expect(getByText("scn_schema_hint")).toBeTruthy();
     expect(getByText("scn_schema_grammar")).toBeTruthy();
   });
 
@@ -288,6 +289,9 @@ describe("TrackerConfig (SCN-11)", () => {
     expect(previewChatId).toBe("chat_1");
     expect(target).toEqual({ branchId: "b1", messageId: "m1", variantId: "v1" });
     expect(config.schema).toEqual({ mood: { $type: "string" } }); // the DRAFT, not the stored {}
+    // Regression: the draft's schemaHash must stay in sync with the edited schema,
+    // or the server's full-config contract rejects the preview with 400 (stale hash).
+    expect(config.schemaHash).toBe(computeSceneSchemaHash(config.schema));
   });
 
   it("preserves the last-valid sample when a generation retry fails (last-valid preservation)", async () => {
