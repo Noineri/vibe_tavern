@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { synthesizeSceneSample } from "../src/scene-tracker-constants.js";
+import { synthesizeSceneSample, stripLabels, computeSceneSchemaHash } from "../src/scene-tracker-constants.js";
 import type { SceneTrackerDsl } from "../src/scene-tracker-constants.js";
 
 describe("synthesizeSceneSample", () => {
@@ -60,5 +60,71 @@ describe("synthesizeSceneSample", () => {
     const dsl: SceneTrackerDsl = { root: inner };
     // 12 levels of object wrapping exceeds the 8-deep cap → the deepest leaf is null.
     expect(synthesizeSceneSample(dsl)).toEqual({ root: { v: { v: { v: { v: { v: { v: { v: { v: null } } } } } } } } });
+  });
+});
+
+describe("stripLabels", () => {
+  it("removes labels at every level (leaf, object, array, nested)", () => {
+    const dsl: SceneTrackerDsl = {
+      mood: { $type: "string", label: "Настроение" },
+      hp: { $type: "number", min: 0, max: 100, label: "HP" },
+      party: {
+        $type: "array",
+        label: "Группа",
+        items: { $type: "object", label: "Член", properties: { name: { $type: "string", label: "Имя" } } },
+      },
+      npc: { $type: "object", label: "NPC", properties: { trust: { $type: "number", min: 0, max: 10, label: "Доверие" } } },
+    };
+    expect(stripLabels(dsl)).toEqual({
+      mood: { $type: "string" },
+      hp: { $type: "number", min: 0, max: 100 },
+      party: { $type: "array", items: { $type: "object", properties: { name: { $type: "string" } } } },
+      npc: { $type: "object", properties: { trust: { $type: "number", min: 0, max: 10 } } },
+    });
+  });
+
+  it("is a no-op when no labels are present (backward compatible)", () => {
+    const dsl: SceneTrackerDsl = { mood: { $type: "string" }, hp: { $type: "number", min: 0, max: 100 } };
+    expect(stripLabels(dsl)).toEqual(dsl);
+  });
+
+  it("does not mutate the input DSL", () => {
+    const dsl: SceneTrackerDsl = { mood: { $type: "string", label: "Mood" } };
+    stripLabels(dsl);
+    expect(dsl.mood.label).toBe("Mood");
+  });
+});
+
+describe("computeSceneSchemaHash (label invariance)", () => {
+  const base: SceneTrackerDsl = {
+    mood: { $type: "string" },
+    hp: { $type: "number", min: 0, max: 100 },
+    npc: { $type: "object", properties: { trust: { $type: "number", min: 0, max: 10 } } },
+  };
+
+  it("is unchanged when a label is added, changed, or removed", () => {
+    const noLabel = computeSceneSchemaHash(base);
+    const withLabel = computeSceneSchemaHash({
+      mood: { $type: "string", label: "Mood" },
+      hp: { $type: "number", min: 0, max: 100, label: "HP" },
+      npc: { $type: "object", label: "NPC", properties: { trust: { $type: "number", min: 0, max: 10, label: "Trust" } } },
+    });
+    const changedLabel = computeSceneSchemaHash({
+      mood: { $type: "string", label: "Совсем другое" },
+      hp: { $type: "number", min: 0, max: 100 },
+      npc: { $type: "object", properties: { trust: { $type: "number", min: 0, max: 10 } } },
+    });
+    expect(withLabel).toBe(noLabel);
+    expect(changedLabel).toBe(noLabel);
+  });
+
+  it("changes when the actual structure (key/type/bounds) changes", () => {
+    const before = computeSceneSchemaHash(base);
+    const after = computeSceneSchemaHash({
+      mood: { $type: "string" },
+      hp: { $type: "number", min: 0, max: 100, label: "HP" }, // label-only → same
+      npc: { $type: "object", properties: { trust: { $type: "number", min: 0, max: 5 } } }, // bounds changed
+    });
+    expect(after).not.toBe(before);
   });
 });

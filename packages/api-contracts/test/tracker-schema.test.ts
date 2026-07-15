@@ -78,6 +78,27 @@ describe("sceneTrackerNodeSchema", () => {
     expect(sceneTrackerNodeSchema.safeParse({ $type: "object", properties: {}, extra: 1 }).success).toBe(false);
   });
 
+  it("accepts an optional `label` on every node kind (renderer-only metadata)", () => {
+    expect(sceneTrackerNodeSchema.parse({ $type: "string", label: "Mood" })).toEqual({ $type: "string", label: "Mood" });
+    expect(sceneTrackerNodeSchema.parse({ $type: "boolean", label: "Ready" })).toEqual({ $type: "boolean", label: "Ready" });
+    expect(sceneTrackerNodeSchema.parse({ $type: "number", min: 0, max: 10, label: "Tension" })).toEqual({ $type: "number", min: 0, max: 10, label: "Tension" });
+    expect(sceneTrackerNodeSchema.parse({ $type: "array", items: { $type: "string" }, label: "Tags" })).toEqual({ $type: "array", items: { $type: "string" }, label: "Tags" });
+    expect(sceneTrackerNodeSchema.parse({ $type: "object", properties: { a: { $type: "string" } }, label: "NPC" })).toEqual({ $type: "object", properties: { a: { $type: "string" } }, label: "NPC" });
+    // A label-less node still validates (backward compatible).
+    expect(sceneTrackerNodeSchema.safeParse({ $type: "string" }).success).toBe(true);
+  });
+
+  it("rejects a label that is too long or multi-line", () => {
+    expect(sceneTrackerNodeSchema.safeParse({ $type: "string", label: "x".repeat(61) }).success).toBe(false);
+    expect(sceneTrackerNodeSchema.safeParse({ $type: "string", label: "two\nlines" }).success).toBe(false);
+    // At the limit is fine.
+    expect(sceneTrackerNodeSchema.safeParse({ $type: "string", label: "x".repeat(60) }).success).toBe(true);
+  });
+
+  it("rejects a non-string label", () => {
+    expect(sceneTrackerNodeSchema.safeParse({ $type: "string", label: 5 }).success).toBe(false);
+  });
+
   it("enforces the ranged-number descriptor: both or neither, min <= max", () => {
     expect(sceneTrackerNodeSchema.safeParse({ $type: "number", min: 0 }).success).toBe(false);
     expect(sceneTrackerNodeSchema.safeParse({ $type: "number", max: 10 }).success).toBe(false);

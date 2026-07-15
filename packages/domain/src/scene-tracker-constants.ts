@@ -39,6 +39,8 @@ export const SCENE_TRACKER_LIMITS = {
   maxArrayItems: 64,
   /** Maximum length of a generated string leaf. */
   maxStringLength: 4000,
+  /** Maximum length of a node `label` (renderer-only display name, e.g. «Здоровье»). */
+  maxLabelLength: 60,
 } as const;
 
 export type SceneTrackerLimit = keyof typeof SCENE_TRACKER_LIMITS;
@@ -132,11 +134,11 @@ export type ScenePromptFormat = (typeof SCENE_PROMPT_FORMAT)[keyof typeof SCENE_
  * never appear as a user field.
  */
 export type SceneTrackerSchemaNode =
-  | { $type: "string" }
-  | { $type: "number"; min?: number; max?: number }
-  | { $type: "boolean" }
-  | { $type: "object"; properties: Record<string, SceneTrackerSchemaNode> }
-  | { $type: "array"; items: SceneTrackerSchemaNode };
+  | { $type: "string"; label?: string }
+  | { $type: "number"; min?: number; max?: number; label?: string }
+  | { $type: "boolean"; label?: string }
+  | { $type: "object"; properties: Record<string, SceneTrackerSchemaNode>; label?: string }
+  | { $type: "array"; items: SceneTrackerSchemaNode; label?: string };
 
 /**
  * The root of a Scene schema is a fields map (an implicit object): the natural
@@ -261,6 +263,43 @@ function sampleSceneNode(node: SceneTrackerSchemaNode, depth: number): unknown {
   }
 }
 
+/**
+ * Project a DSL with every `label` removed, recursing into object properties and
+ * array items. `label` is renderer-only presentation metadata, so it MUST NOT
+ * affect data identity: the schema hash is computed over this projection (so
+ * adding / changing / removing a label never invalidates existing records), and
+ * the generation-prompt schema description is built from it (the model sees
+ * stable machine keys like `health`, never the human «Здоровье»). A no-op when
+ * no labels are present, so label-less schemas hash and validate identically.
+ */
+export function stripLabels(dsl: SceneTrackerDsl): SceneTrackerDsl {
+  const out: SceneTrackerDsl = {};
+  for (const [key, node] of Object.entries(dsl)) out[key] = stripLabelsNode(node);
+  return out;
+}
+
+function stripLabelsNode(node: SceneTrackerSchemaNode): SceneTrackerSchemaNode {
+  switch (node.$type) {
+    case "object": {
+      const properties: Record<string, SceneTrackerSchemaNode> = {};
+      for (const [k, child] of Object.entries(node.properties)) properties[k] = stripLabelsNode(child);
+      return { $type: "object", properties };
+    }
+    case "array":
+      return { $type: "array", items: stripLabelsNode(node.items) };
+    case "string":
+      return { $type: "string" };
+    case "boolean":
+      return { $type: "boolean" };
+    case "number": {
+      const out: { $type: "number"; min?: number; max?: number } = { $type: "number" };
+      if (node.min !== undefined) out.min = node.min;
+      if (node.max !== undefined) out.max = node.max;
+      return out;
+    }
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Canonical schema hash
 // ---------------------------------------------------------------------------
@@ -279,7 +318,7 @@ function sampleSceneNode(node: SceneTrackerSchemaNode, depth: number): unknown {
  * Pure JS (no `node:crypto`) so it runs unchanged in the browser too.
  */
 export function computeSceneSchemaHash(dsl: SceneTrackerDsl): string {
-  return fnv1a64Hex(stableStringify(dsl));
+  return fnv1a64Hex(stableStringify(stripLabels(dsl)));
 }
 
 /**

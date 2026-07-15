@@ -176,6 +176,18 @@ describe("composeSceneInstruction (SCN-5)", () => {
 		expect(instruction).toContain("Required output: one JSON object");
 	});
 
+	it("strips `label` from the schema descriptor (the model sees machine keys only)", () => {
+		const instruction = composeSceneInstruction("BASE", {
+			mood: { $type: "string", label: "Настроение" },
+			hp: { $type: "number", min: 0, max: 100, label: "HP" },
+		}, []);
+		expect(instruction).toContain('"mood"');
+		expect(instruction).toContain('"hp"');
+		// `label` is renderer-only presentation — it must never reach the model.
+		expect(instruction).not.toContain('"label"');
+		expect(instruction).not.toContain("Настроение");
+	});
+
 	it("emits an empty continuity array when none is provided", () => {
 		const instruction = composeSceneInstruction("BASE", TEST_SCHEMA, []);
 		expect(instruction).toContain("[]");

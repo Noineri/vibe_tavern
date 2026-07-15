@@ -44,7 +44,7 @@ export function SceneStateView({ schema, data, variant = "rich", stale, classNam
   return (
     <div className={cn("flex flex-col gap-0.5", stale && "opacity-50", className)}>
       {Object.entries(schema).map(([key, node]) => (
-        <Field key={key} label={key} node={node} value={data[key]} variant={variant} />
+        <Field key={key} label={node.label ?? key} node={node} value={data[key]} variant={variant} />
       ))}
     </div>
   );
@@ -76,7 +76,7 @@ function Field({
           <div className={cn(variant === "rich" ? "ml-2 border-l border-border pl-2" : "ml-3", "flex flex-col gap-0.5")}>
             {child
               ? Object.entries(node.properties).map(([k, n]) => (
-                  <Field key={k} label={k} node={n} value={child[k]} variant={variant} />
+                  <Field key={k} label={n.label ?? k} node={n} value={child[k]} variant={variant} />
                 ))
               : <Dash />}
           </div>
@@ -128,7 +128,7 @@ function ArrayItem({
         <span className="text-[10px] text-t4">#{index + 1}</span>
         {child
           ? Object.entries(itemNode.properties).map(([k, n]) => (
-              <Field key={k} label={k} node={n} value={child[k]} variant={variant} />
+              <Field key={k} label={n.label ?? k} node={n} value={child[k]} variant={variant} />
             ))
           : <Dash />}
       </div>

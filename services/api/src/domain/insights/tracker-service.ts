@@ -44,7 +44,7 @@ import type {
 	SceneTrackerRecord,
 	Timestamp,
 } from "@vibe-tavern/domain";
-import { brandId, computeSceneSourceHash, normalizeSceneTrackerConfig, SCENE_BACKFILL_MODE } from "@vibe-tavern/domain";
+import { brandId, computeSceneSourceHash, normalizeSceneTrackerConfig, stripLabels, SCENE_BACKFILL_MODE } from "@vibe-tavern/domain";
 import type { SceneBackfillMode } from "@vibe-tavern/domain";
 import type { StoreContainer } from "@vibe-tavern/db";
 import { getInsightsAssembler } from "@vibe-tavern/prompt-pipeline";
@@ -174,7 +174,7 @@ export function composeSceneInstruction(
 	schema: SceneTrackerDsl,
 	continuity: readonly SceneContinuityRecord[],
 ): string {
-	const schemaJson = JSON.stringify(schema);
+	const schemaJson = JSON.stringify(stripLabels(schema));
 	const continuityJson =
 		continuity.length > 0 ? JSON.stringify(continuity.map((record) => record.sceneState)) : "[]";
 	return (

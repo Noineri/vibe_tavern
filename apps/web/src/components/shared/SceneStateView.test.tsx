@@ -169,3 +169,44 @@ describe("SceneStateView — stale + shared coverage", () => {
     }
   });
 });
+
+describe("SceneStateView — per-node `label` (label || key)", () => {
+  it("shows the `label` instead of the raw key when present", () => {
+    const schema = {
+      mood: { $type: "string", label: "Настроение" },
+      hp: { $type: "number", min: 0, max: 100, label: "Здоровье" },
+    } as const satisfies SceneTrackerDsl;
+    const c = r(schema, { mood: "tense", hp: 80 });
+    expect(c.textContent).toContain("Настроение");
+    expect(c.textContent).toContain("Здоровье");
+    // The raw machine keys do NOT render (they stay data/serialization identity).
+    expect(c.textContent).not.toContain("mood:");
+    expect(c.textContent).not.toContain("hp:");
+  });
+
+  it("falls back to the raw key when no `label` is set", () => {
+    const schema = { mood: { $type: "string" } } as const satisfies SceneTrackerDsl;
+    expect(r(schema, { mood: "calm" }).textContent).toContain("mood");
+  });
+
+  it("uses the `label` on nested object fields and array items too", () => {
+    const schema = {
+      npc: {
+        $type: "object",
+        label: "Персонаж",
+        properties: { trust: { $type: "number", min: 0, max: 10, label: "Доверие" } },
+      },
+      party: {
+        $type: "array",
+        label: "Группа",
+        items: { $type: "object", properties: { name: { $type: "string", label: "Имя" } } },
+      },
+    } as const satisfies SceneTrackerDsl;
+    const c = r(schema, { npc: { trust: 7 }, party: [{ name: "Aria" }] });
+    expect(c.textContent).toContain("Персонаж");
+    expect(c.textContent).toContain("Доверие");
+    expect(c.textContent).toContain("Группа");
+    expect(c.textContent).toContain("Имя");
+    expect(c.textContent).toContain("Aria");
+  });
+});

@@ -39,8 +39,13 @@ import { z } from "zod";
 // DSL (shape grammar) schemas
 // ---------------------------------------------------------------------------
 
-const sceneNodeStringSchema = z.object({ $type: z.literal("string") }).strict();
-const sceneNodeBooleanSchema = z.object({ $type: z.literal("boolean") }).strict();
+const sceneNodeLabelSchema = z
+  .string()
+  .max(SCENE_TRACKER_LIMITS.maxLabelLength)
+  .refine((v) => !v.includes("\n"), "Label must be a single line.");
+
+const sceneNodeStringSchema = z.object({ $type: z.literal("string"), label: sceneNodeLabelSchema.optional() }).strict();
+const sceneNodeBooleanSchema = z.object({ $type: z.literal("boolean"), label: sceneNodeLabelSchema.optional() }).strict();
 
 const sceneNodeNumberSchema = z
   .object({
@@ -49,6 +54,8 @@ const sceneNodeNumberSchema = z
     min: z.number().optional(),
     /** Upper bound; present iff `min` is present (ranged descriptor). */
     max: z.number().optional(),
+    /** Optional human display name (renderer-only; stripped from the hash + model prompt). */
+    label: sceneNodeLabelSchema.optional(),
   })
   .strict();
 
@@ -69,12 +76,16 @@ const sceneFieldNameSchema = z
 const sceneNodeObjectSchema = z.object({
   $type: z.literal("object"),
   properties: z.record(sceneFieldNameSchema, z.lazy(() => sceneTrackerNodeSchema)),
+  /** Optional human display name (renderer-only; stripped from the hash + model prompt). */
+  label: sceneNodeLabelSchema.optional(),
 }).strict();
 
 const sceneNodeArraySchema = z.object({
   $type: z.literal("array"),
   /** Single item template — the array is homogeneous over this shape. */
   items: z.lazy(() => sceneTrackerNodeSchema),
+  /** Optional human display name (renderer-only; stripped from the hash + model prompt). */
+  label: sceneNodeLabelSchema.optional(),
 }).strict();
 
 /**
