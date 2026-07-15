@@ -180,14 +180,14 @@ describe("TrackerConfig (SCN-11)", () => {
     fireEvent.change(getByTestId("scn-dsl"), { target: { value: VALID_DSL } });
     fireEvent.click(getByText("scn_preview_button"));
     await waitFor(() => expect(mocks.previewSceneAction).toHaveBeenCalledTimes(1));
-    expect(getByText(/"mood": "calm"/)).toBeTruthy();
+    expect(getByText("calm")).toBeTruthy();
 
     // Second preview rejects — the prior preview (calm) must remain visible.
     mocks.previewSceneAction.mockRejectedValueOnce(new Error("boom"));
     fireEvent.click(getByText("scn_preview_button"));
     await waitFor(() => expect(mocks.previewSceneAction).toHaveBeenCalledTimes(2));
     await waitFor(() => expect(getByText("scn_preview_button")).toBeTruthy()); // not previewing anymore
-    expect(getByText(/"mood": "calm"/)).toBeTruthy(); // last-valid preserved
+    expect(getByText("calm")).toBeTruthy(); // last-valid preserved
   });
 
   it("Preview is cancellable (Cancel aborts the in-flight trial)", async () => {

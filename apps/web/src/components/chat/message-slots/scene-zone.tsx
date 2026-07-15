@@ -36,7 +36,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import { brandId, type ChatId, type SceneTrackerDsl, type SceneTrackerSchemaNode } from "@vibe-tavern/domain";
+import { brandId, type ChatId, type SceneTrackerDsl } from "@vibe-tavern/domain";
 import { registerMessageSlot, type MessageSlotContext } from "../../../lib/message-slot-registry.js";
 import { useSnapshotStore } from "../../../stores/snapshot-store.js";
 import { useHeaderZoneOpen, useHeaderZoneExpansionStore } from "../../../stores/header-zone-expansion.js";
@@ -54,6 +54,7 @@ import { cn } from "../../../lib/cn.js";
 import { Ic } from "../../shared/icons.js";
 import { Modal } from "../../shared/Modal.js";
 import { BottomSheet } from "../../shared/BottomSheet.js";
+import { SceneStateView } from "../../shared/SceneStateView.js";
 import { SceneEditorBody } from "./scene-editor.js";
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -306,11 +307,9 @@ function SceneZone({ chatId, messageId }: { chatId: string; messageId: string })
         </div>
       )}
 
-      {/* Read view — stale records render dimmed. */}
+      {/* Read view — rich graphical variant; stale records render dimmed. */}
       {hasRecord && sceneState && (
-        <div className={cn("flex flex-col gap-0.5", !fresh && "opacity-50")}>
-          <SceneReadView schema={schema} data={sceneState} />
-        </div>
+        <SceneStateView schema={schema} data={sceneState} variant="rich" stale={!fresh} />
       )}
       {!hasRecord && !generating && (
         <p className="text-[11px] text-t4">{t("scn_zone_no_record")}</p>
@@ -322,60 +321,6 @@ function SceneZone({ chatId, messageId }: { chatId: string; messageId: string })
       {confirmDelete && (
         <ConfirmDelete open={confirmDelete} isMobile={isMobile} onCancel={() => setConfirmDelete(false)} onConfirm={() => void runDelete()} t={t} />
       )}
-    </div>
-  );
-}
-
-// ────────────────────────────────────────────────────────────────────────────
-// Read view — recursive, schema-guided, bounded (the data is already validated
-// against the schema on the server, so this is presentation only).
-// ────────────────────────────────────────────────────────────────────────────
-
-function SceneReadView({ schema, data }: { schema: SceneTrackerDsl | { $type: "object"; properties: Record<string, SceneTrackerSchemaNode> }; data: Record<string, unknown> }) {
-  const props = "$type" in schema && schema.$type === "object" ? schema.properties : schema;
-  return (
-    <>
-      {Object.entries(props).map(([key, node]) => (
-        <SceneReadField key={key} k={key} node={node} value={(data as Record<string, unknown>)[key]} />
-      ))}
-    </>
-  );
-}
-
-function SceneReadField({ k, node, value }: { k: string; node: SceneTrackerSchemaNode; value: unknown }) {
-  if (node.$type === "object") {
-    return (
-      <div className="flex flex-col">
-        <span className="text-[10px] font-semibold uppercase tracking-[0.04em] text-t4">{k}</span>
-        <div className="ml-2 flex flex-col gap-0.5 border-l border-border pl-2">
-          {value && typeof value === "object" ? <SceneReadView schema={node} data={value as Record<string, unknown>} /> : <span className="text-[11px] text-t4">—</span>}
-        </div>
-      </div>
-    );
-  }
-  if (node.$type === "array") {
-    const items = Array.isArray(value) ? value : [];
-    return (
-      <div className="flex flex-col">
-        <span className="text-[10px] font-semibold uppercase tracking-[0.04em] text-t4">{k}</span>
-        <div className="ml-2 flex flex-col gap-0.5 border-l border-border pl-2">
-          {items.length === 0 ? <span className="text-[11px] text-t4">[]</span> : items.map((item, i) => <SceneReadLeaf key={i} node={node.items} value={item} />)}
-        </div>
-      </div>
-    );
-  }
-  return <SceneReadLeaf node={node} value={value} label={k} />;
-}
-
-function SceneReadLeaf({ node, value, label }: { node: SceneTrackerSchemaNode; value: unknown; label?: string }) {
-  let text: string;
-  if (node.$type === "boolean") text = value ? "✓" : "✗";
-  else if (node.$type === "number") text = typeof value === "number" ? String(value) : "—";
-  else text = typeof value === "string" ? value : value == null ? "—" : String(value);
-  return (
-    <div className="flex min-w-0 items-baseline gap-1.5">
-      {label && <span className="shrink-0 text-[11px] text-t4">{label}:</span>}
-      <span className="truncate text-[11px] text-t2">{text}</span>
     </div>
   );
 }
