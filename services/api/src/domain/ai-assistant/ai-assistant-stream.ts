@@ -78,6 +78,11 @@ export interface AiAssistantStreamRequest {
   maxOutputTokens?: number;
   /** Override temperature for this request. Per-mode defaults used if omitted. */
   temperature?: number;
+
+  // Scene schema extras
+  /** Selected Scene prompt format — selects the scene_schema default prompt file
+   *  (json/xml) so the generated schema obeys XML-safe key rules when needed. */
+  promptFormat?: "json" | "xml";
 }
 
 export interface StreamDeps extends ContextResolverDeps {
@@ -131,6 +136,7 @@ async function prepareAiAssistantRequest(
   const { prompt: systemPrompt, source } = await resolveSystemPrompt(request.mode, {
     aiAssistantPrompts: presetData.aiAssistantPrompts,
     scriptAiSystemPrompt: presetData.scriptAiSystemPrompt,
+    promptFormat: request.promptFormat,
   });
 
   deps.logDebug?.("api.ai-assistant.prompt-resolved", {
@@ -840,6 +846,14 @@ function buildUserMessage(
     case "md_import": {
       const content = request.existingContent ?? request.instruction;
       return `Parse this character description into structured data:\n\n${content}`;
+    }
+
+    case "scene_schema": {
+      const parts: string[] = [request.instruction?.trim() || "Design a Scene Tracker schema."];
+      if (request.existingContent?.trim()) {
+        parts.push(`\nCurrent schema (refine it, keeping what still fits):\n${request.existingContent.trim()}`);
+      }
+      return parts.join("\n");
     }
 
     default:

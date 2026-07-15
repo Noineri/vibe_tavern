@@ -16,6 +16,11 @@ export interface AiAssistantModeConfig {
   presetKey: string;
   /** Default .md file basename (loaded from assets dir). */
   defaultPromptFile: string;
+  /** For format-aware modes (scene_schema): per-format default prompt files.
+   *  When the request carries a promptFormat matching a key here, that file
+   *  replaces defaultPromptFile in the default-md fallback branch (preset
+   *  overrides still win and are format-agnostic). */
+  formatPromptFiles?: Partial<Record<"json" | "xml", string>>;
   /** Backward-compat column for script mode. null for other modes. */
   legacyColumn?: "scriptAiSystemPrompt";
   /** Whether reasoning is stripped from SSE output (only final result emitted). */
@@ -86,7 +91,32 @@ const MODE_CONFIGS: Record<AiAssistantMode, AiAssistantModeConfig> = {
     outputFormat: "text",
     jsonSchemaHint: null,
   },
+  scene_schema: {
+    mode: "scene_schema",
+    presetKey: "scene_schema",
+    // Default (and JSON). XML requests select scene-schema-xml.md instead.
+    defaultPromptFile: "scene-schema-json.md",
+    formatPromptFiles: { json: "scene-schema-json.md", xml: "scene-schema-xml.md" },
+    stripReasoning: true,
+    outputFormat: "json",
+    jsonSchemaHint:
+      '{ "mood": { "$type": "string" }, "tension": { "$type": "number", "min": 0, "max": 10 } }',
+  },
 };
+
+/** Resolve the default prompt FILE NAME for a mode, honoring a format-aware
+ *  mode's per-format override when promptFormat is supplied. */
+export function getDefaultPromptFile(
+  mode: AiAssistantMode,
+  promptFormat?: "json" | "xml",
+): string {
+  const config = getModeConfig(mode);
+  if (promptFormat && config.formatPromptFiles) {
+    const file = config.formatPromptFiles[promptFormat];
+    if (file) return file;
+  }
+  return config.defaultPromptFile;
+}
 
 export function getModeConfig(mode: AiAssistantMode): AiAssistantModeConfig {
   const config = MODE_CONFIGS[mode];

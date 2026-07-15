@@ -42,6 +42,9 @@ vi.mock("../../../stores/snapshot-store.js", () => ({
   // The component subscribes with a selector; invoke it against a stub state.
   useSnapshotStore: (selector: (s: { activeChat: typeof mocks.activeChat; messageOrder: string[]; messagesById: Record<string, { role?: string }> }) => unknown) =>
     selector({ activeChat: mocks.activeChat, messageOrder: [], messagesById: {} }),
+  // TrackerConfig (rendered as a child) reads these for the scene_schema AI modal scopeContext.
+  useActiveCharacter: () => ({ id: "char_1", name: "Hero" }),
+  useActivePersona: () => ({ id: "persona_1", name: "User" }),
 }));
 
 vi.mock("../../../stores/api-actions/chat-actions.js", () => ({
@@ -53,6 +56,12 @@ vi.mock("../../../stores/api-actions/chat-actions.js", () => ({
 // in the config editor's provider/model dependencies.
 vi.mock("./ObjectiveConfig.js", () => ({
   ObjectiveConfig: () => <div data-testid="objective-config" />,
+}));
+
+// TrackerConfig renders the shared AiAssistantModal (scene_schema generator).
+// Stub it so this panel-level test doesn't pull the modal's snapshot/app-client deps.
+vi.mock("../../shared/AiAssistantModal.js", () => ({
+  AiAssistantModal: () => null,
 }));
 
 afterEach(() => {

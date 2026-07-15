@@ -459,7 +459,7 @@ export interface AiAssistantChunk {
   error?: string;
 }
 
-export type AiAssistantMode = "script" | "lore_entry" | "lore_keys" | "chat_impersonate" | "md_import" | "vision_describe";
+export type AiAssistantMode = "script" | "lore_entry" | "lore_keys" | "chat_impersonate" | "md_import" | "vision_describe" | "scene_schema";
 
 export interface AiAssistantRequestBody {
   mode: AiAssistantMode;
@@ -480,4 +480,7 @@ export interface AiAssistantRequestBody {
   keyTarget?: "primary" | "secondary" | "both";
   maxOutputTokens?: number;
   temperature?: number;
+  /** scene_schema: select the format-aware default prompt (json/xml) so the
+   *  generated schema obeys XML-safe key rules when needed. */
+  promptFormat?: "json" | "xml";
 }

@@ -16,13 +16,12 @@ import {
 	loadPromptAsset,
 	resolvePromptAssetPath,
 } from "../../shared/prompt-asset-loader.js";
-import { getModeConfig } from "./ai-assistant-modes.js";
+import { getModeConfig, getDefaultPromptFile } from "./ai-assistant-modes.js";
 
 // ─── Path resolution ─────────────────────────────────────────────────────────
 
-export async function resolvePromptPathForMode(mode: AiAssistantMode): Promise<string> {
-  const config = getModeConfig(mode);
-  return resolvePromptAssetPath(config.defaultPromptFile);
+export async function resolvePromptPathForMode(mode: AiAssistantMode, promptFormat?: "json" | "xml"): Promise<string> {
+  return resolvePromptAssetPath(getDefaultPromptFile(mode, promptFormat));
 }
 
 // ─── Public API ──────────────────────────────────────────────────────────────
@@ -32,9 +31,8 @@ export async function resolvePromptPathForMode(mode: AiAssistantMode): Promise<s
  * Cached per filename by the shared loader (equivalent to the former mode-keyed
  * cache, since each mode maps to exactly one `defaultPromptFile`).
  */
-export async function getDefaultPromptForMode(mode: AiAssistantMode): Promise<string> {
-  const config = getModeConfig(mode);
-  return loadPromptAsset(config.defaultPromptFile);
+export async function getDefaultPromptForMode(mode: AiAssistantMode, promptFormat?: "json" | "xml"): Promise<string> {
+  return loadPromptAsset(getDefaultPromptFile(mode, promptFormat));
 }
 
 /**
@@ -51,6 +49,9 @@ export async function resolveSystemPrompt(
     aiAssistantPrompts: Record<string, string> | null;
     /** Legacy `scriptAiSystemPrompt` value (used only for script mode). */
     scriptAiSystemPrompt?: string | null;
+    /** For format-aware modes (scene_schema): select the default file. Ignored
+     *  when a preset override is present (overrides are format-agnostic). */
+    promptFormat?: "json" | "xml";
   },
 ): Promise<{ prompt: string; source: "preset_override" | "preset_legacy" | "default_md" }> {
   const config = getModeConfig(mode);
@@ -68,8 +69,8 @@ export async function resolveSystemPrompt(
     return { prompt: options.scriptAiSystemPrompt.trim(), source: "preset_legacy" };
   }
 
-  // 3. Default .md file
-  const defaultPrompt = await getDefaultPromptForMode(mode);
+  // 3. Default .md file (format-aware for scene_schema)
+  const defaultPrompt = await getDefaultPromptForMode(mode, options.promptFormat);
   return { prompt: defaultPrompt, source: "default_md" };
 }
 

@@ -8,6 +8,7 @@ export const AI_ASSISTANT_ASSEMBLERS = {
   chat_impersonate: DefaultAiAssistantAssembler,
   md_import: DefaultAiAssistantAssembler,
   vision_describe: DefaultAiAssistantAssembler,
+  scene_schema: DefaultAiAssistantAssembler,
 } as const satisfies Record<AiAssistantMode, AiAssistantAssembler>;
 
 export function getAiAssistantAssembler(mode: AiAssistantMode): AiAssistantAssembler {

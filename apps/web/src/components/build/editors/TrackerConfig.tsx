@@ -12,11 +12,12 @@ import { DropdownSelect } from "../../shared/DropdownSelect.js";
 import { NumberInput } from "../../shared/NumberInput.js";
 import { SegmentedControl } from "../../shared/SegmentedControl.js";
 import { SceneStateView } from "../../shared/SceneStateView.js";
+import { AiAssistantModal } from "../../shared/AiAssistantModal.js";
 import { formatSceneHistory } from "@vibe-tavern/prompt-pipeline";
 import { inputCls, monoCls, inputPad, lblCls } from "../fields/field-styles.js";
 import { SceneHistoryBackfill } from "./SceneHistoryBackfill.js";
 import { useT } from "../../../i18n/context.js";
-import { useSnapshotStore } from "../../../stores/snapshot-store.js";
+import { useSnapshotStore, useActiveCharacter, useActivePersona } from "../../../stores/snapshot-store.js";
 import { useProviderDataStore } from "../../../stores/provider-data-store.js";
 import { updateInsightsConfigAction, previewSceneAction } from "../../../stores/api-actions/chat-actions.js";
 import { findCurrentInsightsCompletionTarget } from "../../../stores/api-actions/insights-completion-actions.js";
@@ -82,6 +83,10 @@ export function TrackerConfig({ chatId }: { chatId: ChatId }) {
   const [previewState, setPreviewState] = useState<Record<string, unknown> | null>(null);
   const [testing, setTesting] = useState(false);
   const testAbort = useRef<AbortController | null>(null);
+  const [schemaAiOpen, setSchemaAiOpen] = useState(false);
+
+  const activeCharacter = useActiveCharacter();
+  const activePersona = useActivePersona();
 
   // Re-sync the draft from the stored config. On a CHAT SWITCH (chatId changed)
   // the draft is discarded — switching chats is an explicit action. On a
@@ -126,6 +131,16 @@ export function TrackerConfig({ chatId }: { chatId: ChatId }) {
     }
     setSchemaError(null);
     setDraft((d) => ({ ...d, schema: result.data }));
+  }
+
+  /** Strip ```json fences the model may wrap its output in, then run the same
+   *  parse→validate→setDraft path as manual editing. Valid output replaces the
+   *  draft schema (dirty); invalid output lands verbatim in the editor with the
+   *  existing validation error shown inline, leaving the prior valid draft
+   *  schema intact until the user fixes it. */
+  function applyGeneratedSchema(raw: string) {
+    const stripped = raw.trim().replace(/^```(?:json)?\s*\n?/i, "").replace(/\n?```\s*$/, "").trim();
+    onSchemaChange(stripped);
   }
 
   async function save() {
@@ -204,7 +219,17 @@ export function TrackerConfig({ chatId }: { chatId: ChatId }) {
     <div className="space-y-4 rounded-lg border border-border bg-s2/50 p-4">
       {/* DSL schema editor */}
       <div>
-        <label className={lblCls}>{t("scn_schema_label")}</label>
+        <div className="flex items-center gap-2">
+          <label className={lblCls}>{t("scn_schema_label")}</label>
+          <button
+            type="button"
+            onClick={() => setSchemaAiOpen(true)}
+            className="ml-auto inline-flex items-center gap-1 rounded-md border border-border2 bg-s3 px-2 py-1 font-ui text-[11px] font-medium text-t2 transition-colors hover:border-accent hover:text-accent"
+          >
+            <Ic.sparkles />
+            {t("scn_ai_generate")}
+          </button>
+        </div>
         <p className="mb-1.5 mt-0.5 font-ui text-[10px] leading-relaxed text-t4">{t("scn_schema_hint")}</p>
         <div className="mt-1.5 overflow-hidden rounded-md border border-border2">
           <CodeEditor
@@ -416,6 +441,20 @@ export function TrackerConfig({ chatId }: { chatId: ChatId }) {
         <p className="mb-2 mt-0.5 font-ui text-[10px] leading-relaxed text-t4">{t("scn_history_hint")}</p>
         <SceneHistoryBackfill chatId={chatId} />
       </div>
+
+      <AiAssistantModal
+        mode="full"
+        apiMode="scene_schema"
+        isOpen={schemaAiOpen}
+        onClose={() => setSchemaAiOpen(false)}
+        existingContent={schemaText}
+        promptFormat={draft.promptFormat}
+        onReplace={applyGeneratedSchema}
+        scopeContext={{
+          characterId: activeCharacter?.id,
+          personaId: activePersona?.id ?? null,
+        }}
+      />
     </div>
   );
 }

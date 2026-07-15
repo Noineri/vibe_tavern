@@ -13,7 +13,7 @@
  */
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { createElement } from "react";
-import { render, fireEvent, cleanup, waitFor } from "@testing-library/react";
+import { render, fireEvent, cleanup, waitFor, act } from "@testing-library/react";
 import { TrackerConfig } from "./TrackerConfig.js";
 import { brandId, type ChatId, type SceneTrackerConfig } from "@vibe-tavern/domain";
 import { useSceneRenderStore } from "../../../stores/scene-render-store.js";
@@ -24,6 +24,7 @@ const mocks = vi.hoisted(() => ({
   previewSceneAction: vi.fn(),
   findCurrentInsightsCompletionTarget: vi.fn(),
   fetchProviderModelsAction: vi.fn(),
+  aiModalProps: null as null | Record<string, unknown>,
 }));
 
 vi.mock("../../../i18n/context.js", () => ({
@@ -33,6 +34,8 @@ vi.mock("../../../i18n/context.js", () => ({
 vi.mock("../../../stores/snapshot-store.js", () => ({
   useSnapshotStore: (selector: (s: { activeChat: typeof mocks.activeChat; messageOrder: string[]; messagesById: Record<string, { role?: string }> }) => unknown) =>
     selector({ activeChat: mocks.activeChat, messageOrder: [], messagesById: {} }),
+  useActiveCharacter: () => ({ id: "char_1", name: "Hero" }),
+  useActivePersona: () => ({ id: "persona_1", name: "User" }),
 }));
 
 vi.mock("../../../stores/api-actions/chat-actions.js", async (importOriginal) => {
@@ -72,6 +75,14 @@ vi.mock("../../shared/CodeEditor.js", async () => {
   };
 });
 
+// Stub the AiAssistantModal to a no-op that captures its props, so the
+// TrackerConfig wiring (mode/promptFormat/existingContent/scopeContext) and
+// the onReplace apply-safety can be tested in isolation — without driving the
+// modal's own streaming/context internals (those have their own coverage).
+vi.mock("../../shared/AiAssistantModal.js", () => ({
+  AiAssistantModal: (props: unknown) => { mocks.aiModalProps = props as Record<string, unknown>; return null; },
+}));
+
 const VALID_DSL = JSON.stringify({ mood: { $type: "string" } });
 
 const CHAT_ID = brandId<ChatId>("chat_1");
@@ -110,6 +121,7 @@ afterEach(() => {
   mocks.findCurrentInsightsCompletionTarget.mockReset();
   mocks.findCurrentInsightsCompletionTarget.mockReturnValue({ branchId: "b1", messageId: "m1", variantId: "v1" });
   mocks.activeChat = null;
+  mocks.aiModalProps = null;
 });
 
 describe("TrackerConfig (SCN-11)", () => {
@@ -175,6 +187,57 @@ describe("TrackerConfig (SCN-11)", () => {
     const jsonView = render(createElement(TrackerConfig, { chatId: CHAT_ID }));
     fireEvent.click(jsonView.getByText("scn_preview_button"));
     expect(jsonView.queryByText("scn_preview_raw_xml")).toBeNull();
+  });
+
+  // --- AI schema generation (step 4) ---
+  // The modal is mocked to capture props; these tests pin TrackerConfig's wiring
+  // (mode/promptFormat/existingContent/scopeContext) + the onReplace apply safety,
+  // not the modal's own streaming internals.
+  it("renders a Generate-with-AI button that opens the scene_schema modal with the chat character as context", () => {
+    seed();
+    const { getByText } = render(createElement(TrackerConfig, { chatId: CHAT_ID }));
+    fireEvent.click(getByText("scn_ai_generate"));
+    const props = mocks.aiModalProps!;
+    expect(props.apiMode).toBe("scene_schema");
+    expect(props.isOpen).toBe(true);
+    expect(props.promptFormat).toBe("json"); // default
+    expect(props.existingContent).toBe(JSON.stringify({}, null, 2)); // current schema
+    expect((props.scopeContext as { characterId: string }).characterId).toBe("char_1");
+  });
+
+  it("passes promptFormat=xml to the modal under XML format", () => {
+    seed({ promptFormat: "xml" });
+    render(createElement(TrackerConfig, { chatId: CHAT_ID }));
+    expect(mocks.aiModalProps!.promptFormat).toBe("xml");
+  });
+
+  it("onReplace: valid fenced JSON updates the draft schema, marks it dirty, and clears errors", async () => {
+    seed();
+    const { getByTestId, getByText } = render(createElement(TrackerConfig, { chatId: CHAT_ID }));
+    // Draft is initially not dirty → Save disabled.
+    expect(getByText("scn_save_button").closest("button")!.disabled).toBe(true);
+    const onReplace = mocks.aiModalProps!.onReplace as (text: string) => void;
+    await act(async () => {
+      onReplace("```json\n" + JSON.stringify({ mood: { $type: "string" }, tension: { $type: "number", min: 0, max: 10 } }) + "\n```");
+    });
+    // The DSL textarea now holds the stripped, pretty-printed schema.
+    const dsl = (getByTestId("scn-dsl") as HTMLTextAreaElement).value;
+    expect(JSON.parse(dsl)).toEqual({ mood: { $type: "string" }, tension: { $type: "number", min: 0, max: 10 } });
+    // Dirty → Save enabled.
+    expect(getByText("scn_save_button").closest("button")!.disabled).toBe(false);
+  });
+
+  it("onReplace: invalid model output lands verbatim in the editor with an error, leaving Save disabled", async () => {
+    seed({ schema: { mood: { $type: "string" as const } } });
+    const { getByTestId, getByText } = render(createElement(TrackerConfig, { chatId: CHAT_ID }));
+    const onReplace = mocks.aiModalProps!.onReplace as (text: string) => void;
+    await act(async () => {
+      onReplace("this is not json {");
+    });
+    // The bad text is shown in the editor for the user to fix.
+    expect((getByTestId("scn-dsl") as HTMLTextAreaElement).value).toBe("this is not json {");
+    // Save stays disabled — onSchemaChange surfaced the parse error and did NOT set the draft schema.
+    expect(getByText("scn_save_button").closest("button")!.disabled).toBe(true);
   });
 
   it("a valid DSL edit makes the draft dirty and Save persists a partial tracker PATCH (Objective untouched)", async () => {
