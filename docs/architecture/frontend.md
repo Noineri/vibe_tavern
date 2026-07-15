@@ -111,6 +111,18 @@ MessageBlock (memo)
 
 Objective zones are intentionally chat-global live views: every mounted assistant header reads the same current Objective route from `activeChat.insightsObjectiveState`, so a route edit or completion updates all Objective headers. Their primitive selectors still isolate them from unrelated `activeChat` changes. Scene zones are different by contract: Scene data is selected-variant scoped, and changing message A's tracker must not commit message B; INS-11 carries the required real-slot profiler test for that invariant.
 
+#### Scene header zone — focused latest-header control
+
+The Scene zone (`message-slots/scene-zone.tsx`, registered as an `assistant_header_zone` at order 2) renders **focused missing-state control only on the latest assistant message**: the latest assistant mounts `Generate Scene` when its selected variant has no current record and `Update Scene` when the record is stale (schema/config/source drift). An older assistant mounts only a read-only view of its current valid record — never a Generate/Update action. Tracker-off yields zero DOM. The visibility decision is a single primitive snapshot string (`${trackerEnabled}:${isLatest}:${messageId}:${variantId}:${fresh}`) so the zone re-renders only when one of those facts changes, not on every snapshot tick. After valid data exists the header permanently retains accessible `Update Scene` / `Edit Scene` / `Delete` controls (Delete is kept for consistency with the Objective header design; off does not erase history until a record is deliberately removed). `Edit Scene` opens a shared desktop `Modal` / mobile `BottomSheet` structured-value editor that validates schema paths, reserved segments, ranges, array bounds, and ownership/config revision before atomic persistence — it does not expand a recursive editor inside the compact header.
+
+#### Message edit coordination
+
+While the selected variant is known to be generating a Scene, `MessageBlock` / `MessageShell` disable that variant's edit action with an accessible `Scene is being updated` explanation; edit activation performs a target-status preflight so another tab cannot bypass the lock. Explicit `Cancel` re-enables editing; switching variants is unaffected. Deleting the generating variant coordinates/cancels its Scene job. A content edit after unlock invalidates only that variant's record (server stale guards remain the final backstop). This coordination is best-effort UX — the server-side source-hash/config-revision/ownership revalidation after the LLM await is the correctness backstop and is present unconditionally.
+
+#### Scene History Backfill (client)
+
+Build → Insights → Scene → History (`SceneHistoryBackfill.tsx`, mounted in `TrackerConfig`) drives the server-authoritative backfill run. The idle form shows a bounded call count (assistant messages in the active branch) + a conditional monetary estimate shown only when the resolved model carries `pricing.output` ($/Mtok × a conservative output-token budget). While running it polls typed status (progress/total + current target + Cancel); on a terminal transition it refreshes the snapshot (`fetchChatAction`) so the generated records land in the header zones. The active runId persists to `localStorage` keyed by chat, so a same-client reload reattaches to the run; a server restart is resume-safe via the status poll. The run never blocks ordinary chat — it is fire-and-forget server-side; the client only drives start/status/cancel/retry.
+
 ### Variant System
 
 Messages support **multiple variants** (swipes). Each variant has its own `content` and optional `reasoning`.

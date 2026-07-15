@@ -440,7 +440,7 @@ Update memory/summary configuration.
 
 ### `POST /api/chats/:chatId/insights/completion-refresh`
 
-Join the current chat-scoped forward-state insight job without cancelling the shared job if this request is aborted. The target must still be an assistant message owned by the path chat and requested branch both before and after the join.
+Join the current forward-state insight jobs (Objective and, when Scene-aware, the exact Scene target) without cancelling the shared jobs if this request is aborted. The target must still be owned by the path chat and requested branch — and, when `variantId` is present, the assistant variant must still exist — both before and after the join. This is the **single** completion transport: there is no second completion endpoint and no SSE channel for insight delivery.
 
 **Body:** `insightsCompletionRefreshSchema`
 
@@ -448,12 +448,63 @@ Join the current chat-scoped forward-state insight job without cancelling the sh
 {
   "target": {
     "branchId": "branch_1",
-    "messageId": "msg_42"
+    "messageId": "msg_42",
+    "variantId": "var_7"
   }
 }
 ```
 
-**Response:** `InsightsCompletionPatchResponse` — echoes the immutable `{ chatId, branchId, messageId }` target and returns only the refreshed `patch.objectiveState`; the optional target message patch is reserved for variant-scoped Scene delivery. It never returns a whole `SessionSnapshot`. The frontend applies it only while the request remains the latest target for that chat and the echoed message still belongs to the active chat/branch.
+`variantId` is optional: present → Scene-aware exact-variant join + scoped `message` patch returned; absent → backward-compatible Objective-only refresh. The two waits are composed through a `Promise.all` where each is individually failure-contained (one auxiliary failure never blocks the other or the main response).
+
+**Response:** `InsightsCompletionPatchResponse` — echoes the immutable `{ chatId, branchId, messageId, variantId? }` target and returns only the matching scoped patch: `patch.objectiveState` (when Objective completed) and `patch.message` (the refreshed variant-bearing message, when the Scene target completed). It never returns a whole `SessionSnapshot`. The frontend applies it only while the request remains the latest target for that chat and the echoed message/variant still belongs to the active chat/branch.
+
+## Scene Tracker (insights)
+
+Scene state is owned by the **immutable assistant variant** (`{ chatId, branchId, messageId, variantId }`), never by message index. All Scene targets are trimmed-ownership objects; a wrong/stale target is rejected.
+
+### `POST /api/chats/:chatId/insights/scene/generate`
+
+Generate **or** Update the Scene record for a target variant. One route serves both the missing-record Generate and the existing-record Update: the service overwrites only on success, so failure/parse-error/cancel never erases a valid record. Generation is strict schema-validated JSON output (the prompt's `promptFormat` controls only main-model serialization, never model free-text parsing). Returns a scoped message patch (the refreshed variant-bearing message), not a whole snapshot.
+
+### `POST /api/chats/:chatId/insights/scene/preview`
+
+Trial-run the full generate pipeline for a target **without persisting** — returns the candidate record for UI preview. It is non-committing and cancellable.
+
+### `POST /api/chats/:chatId/insights/scene/edit`
+
+Manually edit a target variant's scene state against the current DSL (`{ target, sceneState }`); the service validates strictly (schema paths, reserved segments, ranges, bounds, limits, ownership/config revision) before atomic persistence. Returns a scoped message patch.
+
+### `DELETE /api/chats/:chatId/insights/scene`
+
+Delete the target variant's Scene record (`{ target }` in the body). Clears the canonical column; the cache follows.
+
+### `POST /api/chats/:chatId/insights/scene/cancel`
+
+Explicitly cancel an in-flight generation for a target (`{ target }`). Reaches the target coordinator and **never persists** a partial/cancelled result.
+
+### `GET /api/chats/:chatId/insights/scene/status`
+
+Server-authoritative target status (in-flight vs settled, current record freshness). Used for reload/multi-tab hydration and edit preflight — the frontend `scene-generation-store` is only a UX hint; this endpoint is the source of truth.
+
+### `GET /api/chats/:chatId/insights/scene/config`
+
+Read the chat's `SceneTrackerConfig` (DSL schema, auto-mode, context/injection windows, generation/inject prompts, provider profile + model, schemaHash + revision).
+
+### `POST /api/chats/:chatId/insights/scene/backfill/start`
+
+Start a durable history backfill run. **Body:** `{ mode?: "fill-missing" | "rebuild" }` (default `fill-missing`). Returns the typed `SceneBackfillStatusResponse`. The run is fire-and-forget server-side and **never blocks ordinary chat**.
+
+### `POST /api/chats/:chatId/insights/scene/backfill/:runId/status`
+
+Poll a run's typed status (`{ runId, status, total, processed, current, errors, summary, cancelRequested }`). Used by the client for progress + reload reattach; a stale `running` row resumes the unprocessed tail after a server restart.
+
+### `POST /api/chats/:chatId/insights/scene/backfill/:runId/cancel`
+
+Request cancellation of a run (`cancelRequested`); the active item is not force-persisted. Returns the updated status.
+
+### `POST /api/chats/:chatId/insights/scene/backfill/:runId/retry`
+
+Retry a run, reprocessing **only** failed + unprocessed items (succeeded items are never regenerated). Returns the updated (running) status.
 
 ### `POST /api/chats/:chatId/summary`
 

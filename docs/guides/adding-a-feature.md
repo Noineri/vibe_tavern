@@ -109,7 +109,7 @@ Before writing code, know which parts to reuse and which to write fresh:
 | Concern | Feature-specific (write your own) | Why |
 |---------|-----------------------------------|-----|
 | Trigger condition | ❌ | summary: `everyN` messages past last covered; objective: check-counter; tracker: every assistant msg; dream: manual/scheduled |
-| Persist target | ❌ | summary: `chatSummaries` table; objective: `chats.insightsObjectiveStateJson`; tracker: planned `message_variants.sceneTrackerJson` |
+| Persist target | ❌ | summary: `chatSummaries` table; objective: `chats.insightsObjectiveStateJson`; tracker: `message_variants.scene_tracker_json` (per immutable variant) |
 | Output shape | ❌ | text vs. task tree vs. recursive JSON vs. short badge text |
 | Prompt-layer injection | ❌ | each layer has its own `PROMPT_LAYER_IDS` entry and its own assembler arm |
 
@@ -119,7 +119,7 @@ Unifying the feature-specific parts produces a God-interface every feature has t
 
 Decide where the feature's output lives:
 - **New table** (e.g. summaries, dream memories) → add to `packages/db/src/db-schema.ts`, add a store in `packages/db/src/stores/`, run `bun run db:generate`. **Never edit existing migration files.**
-- **JSON column on an existing entity** (e.g. `chats.insightsObjectiveStateJson`, planned `message_variants.sceneTrackerJson`) → add the column via migration, type the accessor.
+- **JSON column on an existing entity** (e.g. `chats.insightsObjectiveStateJson`, or `message_variants.scene_tracker_json` for the per-variant Scene Tracker) → add the column via migration, type the accessor.
 
 See [Database Migrations](../DATABASE_MIGRATIONS.md).
 
@@ -222,6 +222,18 @@ Add a `features.register(createMyFeatureFeature({...}))` line in `services/api/s
 ### Done
 
 Verify with `bun run check`, then smoke-test against `dev:web` using the Playwright MCP server.
+
+### Case B variant — target-scoped ownership (Scene Tracker)
+
+Objective is chat-scoped (one record per chat). The Scene Tracker is the variant of this pattern where ownership is the **immutable assistant variant** instead of the chat — every job, coordinator key, API target, stale check, and persisted record is keyed by `{ chatId, branchId, messageId, variantId }`. `variantIndex` is mutable presentation order (delete compacts it) and must never be the identity. When you build a target-scoped feature, mirror the Scene implementation (`domain/insights/tracker-service.ts`) and keep these deviations from the chat-scoped Objective shape:
+
+- **Config isolation:** the feature config lives under its own key on `chat.insightsConfig` (Scene: `tracker` + `trackerEnabled`), fully isolated from Objective; Build → Insights emits feature-scoped patches.
+- **Generation freshness:** capture `{ variantId, sourceHash, schemaHash, configRevision }` before the LLM await and revalidate ownership/content/config after the await — discard stale/cancelled/wrong-owner output so it never overwrites a newer reality. Malformed/cancel/failure never clears the prior record (in-place Update overwrites only on success). The no-self-injection rule applies: the feature's secondary prompt reuses the chat-turn pipeline (`getInsightsAssembler`) but strips its own injection layer (and Objective's) so derived state never feeds back — see [Prompt Pipeline → Insights assembler](../architecture/prompt-pipeline.md).
+- **Derived cache authority:** a memoization cache is fine, but the DB column is canonical; repopulate on miss. The frontend hint store is not a correctness boundary.
+- **Failure-contained forward-state wait:** if the feature must be current before the next main-model response, hook the live-turn provider-resolution chokepoint and compose its wait with Objective's through `composeForwardStateWait` (`Promise.all`, each wait individually failure-contained — one auxiliary failure never blocks the main response or the other wait; Scene failure falls back to latest-valid/no-Scene). The send waiter aborting cancels neither shared job.
+- **Completion transport:** deliver refreshed records through the **single** `POST /api/chats/:chatId/insights/completion-refresh` endpoint (its `target` carries the optional `variantId`); return only the matching scoped `{ objectiveState?, message? }` patch. Do **not** add a second completion endpoint or an SSE channel.
+- **Focused latest-header control:** the header zone mounts missing-state actions (Generate/Update) only on the **latest** assistant; older assistants render read-only. Edit coordination disables the variant's edit action during generation (with a target-status preflight so another tab cannot bypass it). Server stale guards remain the final backstop.
+- **Durable history backfill:** if the feature backfills across existing messages, back it with a server-authoritative run row (`scene_backfill_runs`) with start/status/cancel/retry RPC; the client polls + reattaches via a persisted runId; the loop is fire-and-forget and never blocks ordinary chat; retry reprocesses only failed + unprocessed items.
 
 ---
 

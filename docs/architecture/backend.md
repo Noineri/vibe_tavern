@@ -229,6 +229,40 @@ Scripts run BEFORE prompt assembly. They can modify `character.personality`, `ch
 
 ---
 
+## Insights Subsystem (Objective & Scene Tracker)
+
+The Insights subsystem holds the two derived-state background-LLM features: **Objective** (chat-scoped, a route/checklist the model steers toward) and **Scene Tracker** (selected-variant-scoped structured scene state). Both reuse the chat-turn prompt pipeline (`getInsightsAssembler("objective" | "scene")` → full character/persona/lore/history/world context under the chat's preset toggles) but strip their own self-injection layer so a derived state never feeds itself back in (see [Prompt Pipeline → Insights assembler](./prompt-pipeline.md)). They are domain services (`domain/insights/`), wired into the runtime, not `FeatureModule`s — their routes mount on the insights sub-router and their auto-triggers subscribe to `message.appended` directly.
+
+### Ownership is the immutable variant, never the index
+
+Every Scene job, coordinator key, API target, stale check, persisted record, and UI action is keyed by `{ chatId, branchId, messageId, variantId }`. `MessageVariantId` is the ownership identity; `variantIndex` is mutable presentation order (delete compacts it) and must never be used as the identity. `Objective` is chat-scoped (one active route per chat); **Scene is target-scoped** — each assistant variant carries its own `SceneTrackerRecord` in `message_variants.scene_tracker_json`. The Scene service is therefore keyed by variant, not by chat.
+
+### Config isolation
+
+Each feature has its own per-chat config under `chat.insightsConfig`: `insightsObjectiveState`/`objectiveConfig` and `tracker`/`trackerEnabled` (`SceneTrackerConfig`). Scene config (the DSL schema, auto-mode, context/injection windows, generation/inject prompts, provider profile + model, schemaHash + revision) is fully isolated from Objective config — editing one never patches the other; the Build → Insights panel emits feature-scoped patches. The stored config revision + canonical schema hash are captured into every generated record for freshness checks.
+
+### Generation freshness — source + config + ownership
+
+Every Scene generation captures `{ variantId, sourceHash, schemaHash, configRevision }` from the live config + variant content **before** the LLM await. After the await, the commit lane re-reads ownership/content/config and **discards** (throws) on schema/config/source drift, wrong-owner, cancelled, or deleted-target output — so a stale result can never overwrite a newer reality. Malformed/parse-error/cancel/provider-failure never clears the prior record: an in-place Update overwrites only on success, preserving the previous-valid record. `isSceneRecordCurrent` (in `scene-cache.ts`) is the single shared freshness rule used by the cache, the prompt injection, and the auto-trigger.
+
+### Derived cache authority
+
+The Scene cache (`scene-cache.ts`) is a memoization of already-validated records — it is never authoritative. The DB column `message_variants.scene_tracker_json` is canonical; the cache is repopulated from it on miss. The frontend `scene-generation-store` is likewise a UX hint, not a correctness boundary: the server coordinator + freshness guards remain authoritative.
+
+### Failure-contained forward-state wait + fallback
+
+Before the next main-model response, the existing live-turn provider-resolution chokepoint makes a best-effort current-Scene attempt for the latest selected assistant variant (via `insights-feature.ts`). It joins an active target job or starts a missing/stale one, then waits cancellably before provider execution. Objective and Scene waits are composed through `composeForwardStateWait` — a `Promise.all` where **each wait is individually failure-contained**: a non-abort error is logged + swallowed, so one auxiliary failure never blocks the main-model response and never cancels the other wait. Scene failure falls back to the latest valid Scene record, or to no Scene when none exists. Aborting the send waiter cancels neither shared job (each `waitForForwardState` detaches on abort). This is why an auxiliary insight failure can never block chat.
+
+### Completion transport (no second RPC)
+
+There is a single completion-refresh endpoint: `POST /api/chats/:chatId/insights/completion-refresh`. Its `target` gained an optional `variantId` (present when Scene-aware). The adapter joins Objective and the exact Scene target job concurrently (same `Promise.all` + failure-containment), revalidates chat/branch/message/assistant/variant ownership **after** the wait, and returns only the matching `{ objectiveState?, message? }` scoped patch — never a whole `SessionSnapshot`. Absent `variantId`, it is the backward-compatible Objective-only refresh. There is **no** second completion endpoint and **no** SSE channel for this.
+
+### Durable history backfill
+
+A backfill regenerates Scene records across existing assistant messages (fill-missing or rebuild). It is backed by a durable server-authoritative run row (`scene_backfill_runs`: chat/branch ownership, mode, frozen manifest, cursor/status, per-item errors, cancel request, timestamps). The client drives start/status/cancel/retry over typed RPC and polls status; a frontend reload reattaches to the run via a persisted runId, and a server restart leaves it resumable (a stale `running` row resumes the unprocessed tail rather than pretending work is active). The loop is fire-and-forget — it reuses `generateForTarget` per item (a normal per-target job, sequential for rate-limit safety) and **never blocks ordinary chat**; only the latest selected target can independently participate in the normal send wait. Retry reprocesses only failed + unprocessed items (succeeded items are never regenerated). Completed canonical records are the durable result.
+
+---
+
 ## Lorebook Activation Engine
 
 **File:** `domain/prompt/lore-activation-engine.ts` — **pure function**, no DB access, no side effects.
