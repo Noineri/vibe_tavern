@@ -41,6 +41,7 @@ import { registerMessageSlot, type MessageSlotContext } from "../../../lib/messa
 import { useSnapshotStore } from "../../../stores/snapshot-store.js";
 import { useHeaderZoneOpen, useHeaderZoneExpansionStore } from "../../../stores/header-zone-expansion.js";
 import { useIsSceneGenerating, useSceneGenerationStore } from "../../../stores/scene-generation-store.js";
+import { useSceneRenderStore } from "../../../stores/scene-render-store.js";
 import {
   generateSceneAction,
   editSceneAction,
@@ -104,6 +105,7 @@ function SceneZone({ chatId, messageId }: { chatId: string; messageId: string })
   const isMobile = useIsMobile();
   const open = useHeaderZoneOpen(messageId, "sceneOpen");
   const toggle = useHeaderZoneExpansionStore((s) => s.toggle);
+  const renderVariant = useSceneRenderStore((s) => s.variant);
   const objectiveChatId = brandId<ChatId>(chatId);
 
   // ── Primitive selectors only (render-isolation — see objective-zone header). ──
@@ -307,9 +309,10 @@ function SceneZone({ chatId, messageId }: { chatId: string; messageId: string })
         </div>
       )}
 
-      {/* Read view — rich graphical variant; stale records render dimmed. */}
+      {/* Read view — rendered in the shared variant (selectable in the
+          TrackerConfig Preview); stale records render dimmed. */}
       {hasRecord && sceneState && (
-        <SceneStateView schema={schema} data={sceneState} variant="rich" stale={!fresh} />
+        <SceneStateView schema={schema} data={sceneState} variant={renderVariant} stale={!fresh} />
       )}
       {!hasRecord && !generating && (
         <p className="text-[11px] text-t4">{t("scn_zone_no_record")}</p>

@@ -21,6 +21,7 @@ import { render, fireEvent, cleanup } from "@testing-library/react";
 import { useSnapshotStore } from "../../../stores/snapshot-store.js";
 import { useSceneGenerationStore } from "../../../stores/scene-generation-store.js";
 import { useHeaderZoneExpansionStore } from "../../../stores/header-zone-expansion.js";
+import { useSceneRenderStore } from "../../../stores/scene-render-store.js";
 import { resolveMessageSlots, type MessageSlotContext } from "../../../lib/message-slot-registry.js";
 // Side-effect import: registers the scene descriptor at module load.
 import "./scene-zone.js";
@@ -127,6 +128,8 @@ beforeEach(() => {
   // The expansion store persists across tests (separate zustand store); reset it
   // so each test starts collapsed.
   useHeaderZoneExpansionStore.setState({ open: {} });
+  // Reset the shared render-variant preference so each test starts at rich.
+  useSceneRenderStore.setState({ variant: "rich" });
 });
 
 afterEach(() => {
@@ -199,6 +202,18 @@ describe("Scene zone component (SCN-12)", () => {
     // Read view shows the scene values.
     expect(getByText("tense")).toBeTruthy();
     expect(getByText("7")).toBeTruthy();
+    // Rich (the default) renders bounded numbers as a meter.
+    expect(container.querySelector('[role="meter"]')).not.toBeNull();
+  });
+
+  it("read view follows the shared render-variant store — compact hides the meter", () => {
+    seed([msg("m1", { variantId: "v1", rec: record("v1", { mood: "tense", tension: 7 }) })]);
+    useSceneRenderStore.setState({ variant: "compact" });
+    const { getByTitle, container } = render(createElement(SceneZone, { chatId: "chat-1", messageId: "m1" }));
+    fireEvent.click(getByTitle("scn_zone_expand"));
+    // compact renders bounded numbers as text (no meter); the value 7 still shows.
+    expect(container.querySelector('[role="meter"]')).toBeNull();
+    expect(container.textContent).toContain("7");
   });
 
   it("Generate fires generateSceneAction with the immutable variant target", async () => {

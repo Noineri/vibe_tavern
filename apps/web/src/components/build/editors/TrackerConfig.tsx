@@ -20,9 +20,7 @@ import { useProviderDataStore } from "../../../stores/provider-data-store.js";
 import { updateInsightsConfigAction, previewSceneAction } from "../../../stores/api-actions/chat-actions.js";
 import { findCurrentInsightsCompletionTarget } from "../../../stores/api-actions/insights-completion-actions.js";
 import { fetchProviderModelsAction } from "../../../stores/api-actions/provider-actions.js";
-
-/** Preview render mode (Build → Insights → Scene Preview). */
-type PreviewMode = "rich" | "compact" | "json";
+import { useSceneRenderStore, type SceneRenderVariant } from "../../../stores/scene-render-store.js";
 
 /**
  * Scene Tracker config editor (SCENE_TRACKER_PLAN SCN-11). Mirrors the Objective
@@ -48,6 +46,8 @@ type PreviewMode = "rich" | "compact" | "json";
 export function TrackerConfig({ chatId }: { chatId: ChatId }) {
   const { t } = useT();
   const activeChat = useSnapshotStore((s) => s.activeChat);
+  const renderVariant = useSceneRenderStore((s) => s.variant);
+  const setRenderVariant = useSceneRenderStore((s) => s.setVariant);
 
   const rawTracker = activeChat?.insightsConfig?.tracker;
   const savedTracker = useMemo(() => normalizeSceneTrackerConfig(rawTracker), [JSON.stringify(rawTracker)]);
@@ -61,7 +61,6 @@ export function TrackerConfig({ chatId }: { chatId: ChatId }) {
 
   const [previewState, setPreviewState] = useState<Record<string, unknown> | null>(null);
   const [previewing, setPreviewing] = useState(false);
-  const [previewMode, setPreviewMode] = useState<PreviewMode>("rich");
   const previewController = useRef<AbortController | null>(null);
 
   // Re-sync the draft from the stored config. On a CHAT SWITCH (chatId changed)
@@ -283,39 +282,40 @@ export function TrackerConfig({ chatId }: { chatId: ChatId }) {
           {t(previewing ? "scn_preview_stop_button" : "scn_preview_button")}
         </button>
         {dirty && <span className="font-ui text-[11px] text-accent">{t("scn_dirty_hint")}</span>}
+        {/* Render variant — shared with the chat header (Scene zone expanded).
+            Always visible so it can be set before running Preview; selecting it
+            here also re-renders the header. Raw JSON stays a Preview-only
+            disclosure below the rendered output. */}
+        <div className="ml-auto">
+          <SegmentedControl
+            compact
+            value={renderVariant}
+            onChange={(v) => setRenderVariant(v as SceneRenderVariant)}
+            options={[
+              { value: "rich", label: t("scn_preview_mode_rich") },
+              { value: "compact", label: t("scn_preview_mode_compact") },
+            ]}
+          />
+        </div>
       </div>
 
-      {/* Preview result (transient — last-valid preserved). Default renders the
-          graphical (rich) variant; JSON keeps the raw object for debugging. */}
+      {/* Preview result (transient — last-valid preserved). Rendered in the
+          shared variant (same as the header); Raw JSON is a collapsed disclosure. */}
       {previewState !== null && (
         <div className="rounded-md border border-border bg-s2 p-3">
-          <div className="mb-2 flex items-center gap-2">
-            <span className="flex items-center gap-1.5 font-ui text-[11px] font-medium uppercase tracking-[0.05em] text-t3">
-              <Ic.eye />
-              {t("scn_preview_title")}
-            </span>
-            <div className="ml-auto">
-              <SegmentedControl
-                compact
-                value={previewMode}
-                onChange={(v) => setPreviewMode(v as PreviewMode)}
-                options={[
-                  { value: "rich", label: t("scn_preview_mode_rich") },
-                  { value: "compact", label: t("scn_preview_mode_compact") },
-                  { value: "json", label: t("scn_preview_mode_json") },
-                ]}
-              />
-            </div>
+          <div className="mb-2 flex items-center gap-1.5 font-ui text-[11px] font-medium uppercase tracking-[0.05em] text-t3">
+            <Ic.eye />
+            {t("scn_preview_title")}
           </div>
-          {previewMode === "json" ? (
-            <pre className={cn(monoCls, "max-h-64 overflow-auto rounded p-2 text-[11px] leading-relaxed text-t2")}>
+          <div className="max-h-64 overflow-auto rounded p-1">
+            <SceneStateView schema={draft.schema} data={previewState} variant={renderVariant} className="gap-1" />
+          </div>
+          <details className="mt-2">
+            <summary className="cursor-pointer select-none font-ui text-[11px] text-t4 hover:text-t3">{t("scn_preview_raw_json")}</summary>
+            <pre className={cn(monoCls, "mt-1 max-h-48 overflow-auto rounded p-2 text-[11px] leading-relaxed text-t2")}>
               {JSON.stringify(previewState, null, 2)}
             </pre>
-          ) : (
-            <div className="max-h-64 overflow-auto rounded p-1">
-              <SceneStateView schema={draft.schema} data={previewState} variant={previewMode === "compact" ? "compact" : "rich"} className="gap-1" />
-            </div>
-          )}
+          </details>
         </div>
       )}
 

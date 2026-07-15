@@ -50,7 +50,7 @@
   "scn_preview_title": "Превью",
   "scn_preview_mode_rich": "Графический",
   "scn_preview_mode_compact": "Компактный",
-  "scn_preview_mode_json": "JSON",
+  "scn_preview_raw_json": "Сырой JSON",
   "scn_no_target": "Сначала отправьте сообщение для превью.",
   "scn_dirty_hint": "Несохранённые изменения",
   "scn_zone_title": "Сцена",

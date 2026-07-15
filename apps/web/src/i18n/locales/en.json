@@ -50,7 +50,7 @@
   "scn_preview_title": "Preview",
   "scn_preview_mode_rich": "Graphical",
   "scn_preview_mode_compact": "Compact",
-  "scn_preview_mode_json": "JSON",
+  "scn_preview_raw_json": "Raw JSON",
   "scn_no_target": "Send a message first to preview against it.",
   "scn_dirty_hint": "Unsaved changes",
   "scn_zone_title": "Scene",
