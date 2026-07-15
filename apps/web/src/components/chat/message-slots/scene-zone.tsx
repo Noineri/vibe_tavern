@@ -421,7 +421,7 @@ function SceneEditorModal({ open, isMobile, schema, state, onClose, onSave, t }:
   }
   return (
     <Modal open={open} onClose={onClose} title={t("scn_zone_edit")}>
-      <div className="w-[min(92vw,560px)] max-h-[80vh] overflow-y-auto rounded-xl border border-border bg-s1 p-4">
+      <div className="w-[min(92vw,560px)] max-h-[80vh] overflow-y-auto rounded-xl border border-border bg-surface p-4">
         {body}
       </div>
     </Modal>
@@ -447,7 +447,7 @@ function ConfirmDelete({ open, isMobile, onCancel, onConfirm, t }: {
   if (isMobile) {
     return <BottomSheet open={open} onClose={onCancel} title={t("scn_zone_delete")}>{body}</BottomSheet>;
   }
-  return <Modal open={open} onClose={onCancel} compact title={t("scn_zone_delete")}><div className="w-[min(92vw,400px)] rounded-xl border border-border bg-s1">{body}</div></Modal>;
+  return <Modal open={open} onClose={onCancel} compact title={t("scn_zone_delete")}><div className="w-[min(92vw,400px)] rounded-xl border border-border bg-surface">{body}</div></Modal>;
 }
 
 // ────────────────────────────────────────────────────────────────────────────
