@@ -26,6 +26,7 @@ import type {
 	ObjectiveState,
 	PromptPresetDto,
 	PromptTraceRecordDto,
+	SceneTrackerRecord,
 } from "@vibe-tavern/domain";
 import type { Chat, ChatBranch, UiSettings } from "@vibe-tavern/db";
 import type { MessageDto } from "../../runtime/session/session-runtime-dto.js";
@@ -220,6 +221,11 @@ export interface InsightsCompletionTarget {
 	chatId: string;
 	branchId: string;
 	messageId: string;
+	/** Optional immutable variant id (SCN-9). Present when the caller is
+	 *  Scene-aware: the join targets the exact variant's Scene job, ownership is
+	 *  revalidated against the variant after the wait, and the scoped message
+	 *  patch is returned. Absent for Objective-only refresh. */
+	variantId?: string;
 }
 
 /** Target-scoped insight delivery; never expands into a whole session snapshot. */
@@ -227,9 +233,28 @@ export interface InsightsCompletionPatchResponse {
 	target: InsightsCompletionTarget;
 	patch: {
 		objectiveState?: ObjectiveState;
-		/** Reserved for variant-scoped Scene completion in INS-9. */
+		/** The target message DTO carrying the variant whose Scene record settled
+		 *  (the per-variant `sceneTracker` reflects the committed/cleared record).
+		 *  Returned only when the refresh target carries a `variantId` (SCN-9). */
 		message?: MessageDto;
 	};
+}
+
+/** Manual Scene mutation response (SCN-9): the target message DTO reflecting
+ *  the committed/cleared record. generate/update/edit/delete all return this —
+ *  the frontend applies the scoped message patch, never a whole snapshot. */
+export interface SceneTargetResponse {
+	target: InsightsCompletionTarget;
+	message: MessageDto;
+}
+
+/** Server-authoritative Scene status (SCN-9): drives reload/multi-tab hydration
+ *  and edit preflight. `generating` reflects the target coordinator; `record` is
+ *  the variant's current canonical record (null when absent). */
+export interface SceneStatusResponse {
+	target: InsightsCompletionTarget;
+	generating: boolean;
+	record: SceneTrackerRecord | null;
 }
 
 /**

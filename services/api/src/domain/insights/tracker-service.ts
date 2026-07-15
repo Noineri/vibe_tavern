@@ -222,6 +222,13 @@ export class SceneTrackerService {
 		return normalizeSceneTrackerConfig(chat.insightsConfig.tracker);
 	}
 
+	/** Read the target variant's current canonical record (null when absent).
+	 *  The store holds plain-string records; the brand is applied at this
+	 *  DB→domain read boundary (the inverse of the branded→plain write path). */
+	async getRecord(target: SceneTarget): Promise<SceneTrackerRecord | null> {
+		return (await this.stores.messages.getSceneRecord(target.variantId)) as SceneTrackerRecord | null;
+	}
+
 	/** Read the target variant's content (for source hashing + existence check). */
 	private async getTargetVariant(target: SceneTarget): Promise<VariantContent | null> {
 		const variants = await this.stores.messages.getVariants(target.messageId);
@@ -515,12 +522,12 @@ export class SceneTrackerService {
 
 	/**
 	 * Wait for the active branch's latest assistant selected-variant Scene to
-	 * become current before the next main-model response (SCN-8). Joins an active
-	 * target job (e.g. the event-driven auto-start) or starts a missing/stale job,
-	 * then waits cancellably. Cancelling the waiter DETACHES it — the shared
-	 * background job keeps running. Never rejects: the underlying target job
-	 * swallows failures, so a Scene generation error resolves the wait (the main
-	 * model proceeds with latest-valid/no Scene) rather than blocking chat.
+	 * become current before the next main-model response (SCN-8). Resolves the
+	 * latest target then delegates to {@link waitForTarget}. Cancelling the
+	 * waiter DETACHES it — the shared background job keeps running. Never
+	 * rejects: the underlying target job swallows failures, so a Scene generation
+	 * error resolves the wait (the main model proceeds with latest-valid/no
+	 * Scene) rather than blocking chat.
 	 */
 	async waitForForwardState(chatId: ChatId, signal?: AbortSignal): Promise<void> {
 		signal?.throwIfAborted();
@@ -535,17 +542,63 @@ export class SceneTrackerService {
 			messageId: brandId<MessageId>(latest.messageId),
 			variantId: brandId<MessageVariantId>(latest.variantId),
 		};
+		await this.waitForTarget(target, signal);
+	}
 
+	/**
+	 * Wait for an EXACT target variant's Scene to settle (SCN-9 completion-refresh
+	 * + the SCN-8 chokepoint via {@link waitForForwardState}). Joins an active
+	 * target job; if none is active, returns immediately when the record is
+	 * already current, otherwise starts a missing/stale job and joins it. Cancelling
+	 * the waiter DETACHES it — the shared job keeps running. Never rejects (the
+	 * underlying job swallows failures), so a generation error resolves the wait.
+	 */
+	async waitForTarget(target: SceneTarget, signal?: AbortSignal): Promise<void> {
+		signal?.throwIfAborted();
 		let job = this.getTargetJob(target);
 		if (!job) {
 			// No active job: if the record is already current, nothing to do;
 			// otherwise (missing/stale) start one and join it.
-			const config = await this.getConfig(chatId);
-			const record = await this.stores.messages.getSceneRecord(latest.variantId);
+			const config = await this.getConfig(target.chatId);
+			const record = await this.stores.messages.getSceneRecord(target.variantId);
 			if (record && isSceneRecordCurrent(record, config)) return;
 			job = this.ensureTargetJob(target);
 		}
 		await this.waitCancellable(job, signal);
+	}
+
+	/**
+	 * Full manual generation for a target (SCN-9 route path). Resolves the
+	 * provider/model from the stored Scene config, builds the RP pipeline context
+	 * (same shape a chat turn uses, sliced per `contextWindow`), collects
+	 * continuity, and runs {@link generateScene}. Throws on any failure — no
+	 * provider/model configured, provider error, malformed/oversized output,
+	 * cancellation, or a schema/config/content drift detected at commit — so the
+	 * route surfaces it. The prior record is preserved on every failure path
+	 * (generateScene overwrites only on success). Mirrors {@link startAutoGenerate}'s
+	 * setup but does NOT swallow — this is an explicit user action.
+	 */
+	async generateForTarget(target: SceneTarget, signal?: AbortSignal): Promise<SceneTrackerRecord> {
+		const config = await this.getConfig(target.chatId);
+		const resolved = await this.resolveSceneProvider(config);
+		if (!resolved) {
+			throw new Error("No provider/model configured for the Scene insight. Set one in Build Mode → Insights.");
+		}
+		const continuity = await this.collectContinuity(target.branchId, target.messageId, config);
+		const built = await this.sessionRuntime.chatLifecycle.buildPipelineContext({
+			chatId: target.chatId,
+			branchId: target.branchId,
+			model: resolved.model,
+			recentMessageLimit: config.contextWindow,
+		});
+		return this.generateScene({
+			target,
+			profile: resolved.profile,
+			model: resolved.model,
+			context: built.context,
+			continuity,
+			signal,
+		});
 	}
 
 	/**

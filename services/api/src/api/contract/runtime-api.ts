@@ -17,6 +17,8 @@ import type {
 	ChatListItem,
 	ConfigPatchResponse,
 	InsightsCompletionPatchResponse,
+	SceneStatusResponse,
+	SceneTargetResponse,
 	CoauthorApplyResponse,
 	SummaryResponse,
 	CharacterVersionResponse,
@@ -397,7 +399,7 @@ export interface MobileAccessRuntimeApi {
 // target-scoped join rather than SSE or a whole-session snapshot.
 
 export interface InsightsRuntimeApi {
-	refreshInsightsCompletion: (chatId: string, body: { target: { branchId: string; messageId: string } }, signal?: AbortSignal) => Promise<InsightsCompletionPatchResponse>;
+	refreshInsightsCompletion: (chatId: string, body: { target: { branchId: string; messageId: string; variantId?: string } }, signal?: AbortSignal) => Promise<InsightsCompletionPatchResponse>;
 	generateObjectiveTasks: (chatId: string, body: { providerProfileId?: string; model?: string }, signal?: AbortSignal) => Promise<ConfigPatchResponse>;
 	checkObjectiveCompletion: (chatId: string, body: { providerProfileId?: string; model?: string }, signal?: AbortSignal) => Promise<ConfigPatchResponse>;
 	addObjectiveTask: (chatId: string, body: { description: string }) => Promise<ConfigPatchResponse>;
@@ -416,6 +418,12 @@ export interface InsightsRuntimeApi {
 		model?: string | null;
 	}) => Promise<ConfigPatchResponse>;
 	setObjectiveDescription: (chatId: string, body: { objectiveDescription: string }) => Promise<ConfigPatchResponse>;
+	// ─── Scene Tracker (SCENE_TRACKER_PLAN SCN-9) — immutable variant ownership ──
+	generateScene: (chatId: string, body: { target: { branchId: string; messageId: string; variantId: string } }, signal?: AbortSignal) => Promise<SceneTargetResponse>;
+	editScene: (chatId: string, body: { target: { branchId: string; messageId: string; variantId: string }; sceneState: Record<string, unknown> }) => Promise<SceneTargetResponse>;
+	deleteScene: (chatId: string, body: { target: { branchId: string; messageId: string; variantId: string } }) => Promise<SceneTargetResponse>;
+	cancelScene: (chatId: string, body: { target: { branchId: string; messageId: string; variantId: string } }) => { target: { chatId: string; branchId: string; messageId: string; variantId: string }; cancelled: true };
+	getSceneStatus: (chatId: string, body: { target: { branchId: string; messageId: string; variantId: string } }) => Promise<SceneStatusResponse>;
 }
 
 export interface RuntimeApi {

@@ -57,12 +57,47 @@ export const objectiveModelSchema = z.object({
   model: z.string().optional(),
 });
 
-/** Join the background insight job associated with one committed assistant message. */
+/** Join the background insight job(s) associated with one committed assistant message.
+ *  `variantId` is optional: present when the caller is Scene-aware (joins the
+ *  exact variant's Scene job + revalidates variant ownership + returns the
+ *  scoped message patch); absent for Objective-only refresh (SCENE_TRACKER_PLAN SCN-9). */
 export const insightsCompletionRefreshSchema = z.object({
   target: z.object({
     branchId: z.string().trim().min(1),
     messageId: z.string().trim().min(1),
+    variantId: z.string().trim().min(1).optional(),
   }),
+});
+
+/** Immutable Scene ownership identity (SCN-9). `variantId` is canonical — a
+ *  job, RPC, record, or UI action never retargets when a variant index compacts. */
+export const sceneTargetSchema = z.object({
+  branchId: z.string().trim().min(1),
+  messageId: z.string().trim().min(1),
+  variantId: z.string().trim().min(1),
+});
+
+/** Generate (or regenerate) a Scene record for the target variant via the LLM.
+ *  Both the missing-record Generate and the existing-record Update actions hit
+ *  this — the service overwrites the prior record ONLY on success, so failure
+ *  never erases a valid record (in-place Update semantics). */
+export const sceneGenerateSchema = z.object({
+  target: sceneTargetSchema,
+});
+
+/** Manual structured edit of the target variant's scene state (no LLM).
+ *  `sceneState` is a freeform object here; the service validates it strictly
+ *  against the chat's current DSL (paths/ranges/limits/ownership) and throws
+ *  path-specific errors on mismatch — nothing persists on validation failure. */
+export const sceneEditSchema = z.object({
+  target: sceneTargetSchema,
+  sceneState: z.record(z.string(), z.unknown()),
+});
+
+/** Target-scoped Scene status / explicit cancel (SCN-9). Status is
+ *  server-authoritative for reload/multi-tab hydration and edit preflight. */
+export const sceneTargetBodySchema = z.object({
+  target: sceneTargetSchema,
 });
 
 export const objectiveTaskStatusSchema = z.enum([
@@ -108,3 +143,7 @@ export const updateObjectiveConfigSchema = z.object({
   providerProfileId: z.string().nullable().optional(),
   model: z.string().nullable().optional(),
 });
+
+// Scene Tracker manual route bodies (SCN-9). generate / edit / status / cancel /
+// delete all key off the immutable variant id (`sceneTargetSchema`); the
+// provider/model come from the stored Scene config, never the request body.

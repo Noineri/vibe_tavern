@@ -202,6 +202,7 @@ export async function startServerRuntime(config: ServerRuntimeConfig): Promise<v
 			assetService,
 			mobileAccessService,
 			objectiveService,
+			trackerService,
 		);
 
 		features.register(createAiAssistantFeature(runtime.aiAssistant));

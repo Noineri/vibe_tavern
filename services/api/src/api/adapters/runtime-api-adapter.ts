@@ -20,6 +20,7 @@ import { AssetAdapter } from "./asset-adapter.js";
 import { AiAssistantAdapter } from "./ai-assistant-adapter.js";
 import { InsightsAdapter } from "./insights-adapter.js";
 import type { ObjectiveService } from "../../domain/insights/objective-service.js";
+import type { SceneTrackerService } from "../../domain/insights/tracker-service.js";
 import { SettingsAdapter } from "./settings-adapter.js";
 import { MobileAccessAdapter } from "./mobile-access-adapter.js";
 
@@ -58,6 +59,7 @@ export class RuntimeApiAdapter implements RuntimeApi {
 		assetService: AssetService,
 		mobileAccessService: MobileAccessService,
 		objectiveService: ObjectiveService,
+		trackerService: SceneTrackerService,
 	) {
 		const bootstrapAdapter = new BootstrapAdapter(sessionRuntime);
 		this.bootstrap = bootstrapAdapter.bootstrap;
@@ -76,6 +78,6 @@ export class RuntimeApiAdapter implements RuntimeApi {
 		this.aiAssistant = new AiAssistantAdapter(stores);
 		this.settings = new SettingsAdapter(stores);
 		this.mobileAccess = new MobileAccessAdapter(mobileAccessService);
-		this.insights = new InsightsAdapter(stores, sessionRuntime, objectiveService);
+		this.insights = new InsightsAdapter(stores, sessionRuntime, objectiveService, trackerService);
 	}
 }

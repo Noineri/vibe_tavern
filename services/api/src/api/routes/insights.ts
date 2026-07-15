@@ -35,5 +35,21 @@ export function createInsightsRoutes(runtime: InsightsRuntimeApi) {
     })
     .put("/api/chats/:chatId/insights/objective/config", zValidator("json", schemas.updateObjectiveConfigSchema), async (c) => {
       return c.json(await runtime.updateObjectiveConfig(c.req.param("chatId"), c.req.valid("json")));
+    })
+    // ─── Scene Tracker (SCENE_TRACKER_PLAN SCN-9) — immutable variant ownership ──
+    .post("/api/chats/:chatId/insights/scene/generate", zValidator("json", schemas.sceneGenerateSchema), async (c) => {
+      return c.json(await runtime.generateScene(c.req.param("chatId"), c.req.valid("json"), c.req.raw.signal));
+    })
+    .post("/api/chats/:chatId/insights/scene/edit", zValidator("json", schemas.sceneEditSchema), async (c) => {
+      return c.json(await runtime.editScene(c.req.param("chatId"), c.req.valid("json")));
+    })
+    .post("/api/chats/:chatId/insights/scene/delete", zValidator("json", schemas.sceneTargetBodySchema), async (c) => {
+      return c.json(await runtime.deleteScene(c.req.param("chatId"), c.req.valid("json")));
+    })
+    .post("/api/chats/:chatId/insights/scene/cancel", zValidator("json", schemas.sceneTargetBodySchema), async (c) => {
+      return c.json(runtime.cancelScene(c.req.param("chatId"), c.req.valid("json")));
+    })
+    .post("/api/chats/:chatId/insights/scene/status", zValidator("json", schemas.sceneTargetBodySchema), async (c) => {
+      return c.json(await runtime.getSceneStatus(c.req.param("chatId"), c.req.valid("json")));
     });
 }
