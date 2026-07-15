@@ -204,3 +204,78 @@ describe("Insights Scene routes (SCN-9)", () => {
     expect(badCapture).toHaveLength(0);
   });
 });
+
+describe("Insights Scene backfill routes (SCN-14)", () => {
+  /** A runtime stub whose backfill methods are individually overridable + recorded. */
+  function backfillRuntime(capture: { method: string; chatId?: string; arg?: unknown }[]) {
+    const status = { runId: "sbr_1", chatId: "chat_1", mode: "fill-missing", status: "completed", total: 2, processed: 2, current: null, errors: [], summary: { total: 2, succeeded: 2, skipped: 0, failed: 0 }, cancelRequested: false };
+    return {
+      ...sceneRuntime([]),
+      startSceneBackfill: async (chatId: string, mode: string) => {
+        capture.push({ method: "startSceneBackfill", chatId, arg: mode });
+        return { ...status, status: "running", mode };
+      },
+      getSceneBackfillStatus: async (chatId: string, runId: string) => {
+        capture.push({ method: "getSceneBackfillStatus", chatId, arg: runId });
+        return { ...status, runId };
+      },
+      cancelSceneBackfill: (chatId: string, runId: string) => {
+        capture.push({ method: "cancelSceneBackfill", chatId, arg: runId });
+        return { runId, cancelled: true as const };
+      },
+      retrySceneBackfill: async (chatId: string, runId: string) => {
+        capture.push({ method: "retrySceneBackfill", chatId, arg: runId });
+        return { ...status, runId };
+      },
+    } as unknown as InsightsRuntimeApi;
+  }
+
+  it("start forwards the mode (defaulting to fill-missing) and returns the status", async () => {
+    const capture: { method: string; chatId?: string; arg?: unknown }[] = [];
+    const app = createInsightsRoutes(backfillRuntime(capture));
+
+    // Explicit rebuild mode.
+    const res = await app.request("/api/chats/chat_1/insights/scene/backfill/start", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ mode: "rebuild" }),
+    });
+    expect(res.status).toBe(200);
+    expect(capture[0]).toEqual({ method: "startSceneBackfill", chatId: "chat_1", arg: "rebuild" });
+
+    // Empty body → defaults to fill-missing.
+    const capture2: { method: string; arg?: unknown }[] = [];
+    const app2 = createInsightsRoutes(backfillRuntime(capture2));
+    const res2 = await app2.request("/api/chats/chat_1/insights/scene/backfill/start", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    expect(res2.status).toBe(200);
+    expect(capture2[0]!.arg).toBe("fill-missing");
+  });
+
+  it("status / cancel / retry forward the path runId", async () => {
+    for (const [path, method] of [["status", "getSceneBackfillStatus"], ["cancel", "cancelSceneBackfill"], ["retry", "retrySceneBackfill"]] as const) {
+      const capture: { method: string; chatId?: string; arg?: unknown }[] = [];
+      const app = createInsightsRoutes(backfillRuntime(capture));
+      const res = await app.request(`/api/chats/chat_1/insights/scene/backfill/sbr_9/${path}`, {
+        method: "POST",
+      });
+      expect(res.status).toBe(200);
+      expect(capture[0]).toEqual({ method, chatId: "chat_1", arg: "sbr_9" });
+    }
+  });
+
+  it("start rejects an unknown mode at the schema boundary (400, runtime untouched)", async () => {
+    const capture: { method: string }[] = [];
+    const app = createInsightsRoutes(backfillRuntime(capture));
+    const res = await app.request("/api/chats/chat_1/insights/scene/backfill/start", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ mode: "purge-everything" }),
+    });
+    expect(res.status).toBe(400);
+    expect(capture).toHaveLength(0);
+  });
+});

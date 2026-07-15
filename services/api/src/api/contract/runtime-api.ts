@@ -17,6 +17,7 @@ import type {
 	ChatListItem,
 	ConfigPatchResponse,
 	InsightsCompletionPatchResponse,
+	SceneBackfillStatusResponse,
 	ScenePreviewResponse,
 	SceneStatusResponse,
 	SceneTargetResponse,
@@ -426,6 +427,11 @@ export interface InsightsRuntimeApi {
 	cancelScene: (chatId: string, body: { target: { branchId: string; messageId: string; variantId: string } }) => { target: { chatId: string; branchId: string; messageId: string; variantId: string }; cancelled: true };
 	getSceneStatus: (chatId: string, body: { target: { branchId: string; messageId: string; variantId: string } }) => Promise<SceneStatusResponse>;
 	previewScene: (chatId: string, body: { target: { branchId: string; messageId: string; variantId: string }; config: SceneTrackerConfig }, signal?: AbortSignal) => Promise<ScenePreviewResponse>;
+	// ─── Scene Tracker history backfill (SCENE_TRACKER_PLAN SCN-14) ───────────
+	startSceneBackfill: (chatId: string, mode: string) => Promise<SceneBackfillStatusResponse>;
+	getSceneBackfillStatus: (chatId: string, runId: string) => Promise<SceneBackfillStatusResponse>;
+	cancelSceneBackfill: (chatId: string, runId: string) => { runId: string; cancelled: true };
+	retrySceneBackfill: (chatId: string, runId: string) => Promise<SceneBackfillStatusResponse>;
 }
 
 export interface RuntimeApi {

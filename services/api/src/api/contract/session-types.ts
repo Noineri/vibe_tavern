@@ -26,6 +26,8 @@ import type {
 	ObjectiveState,
 	PromptPresetDto,
 	PromptTraceRecordDto,
+	SceneBackfillErrorEntry,
+	SceneBackfillSummary,
 	SceneTrackerRecord,
 } from "@vibe-tavern/domain";
 import type { Chat, ChatBranch, UiSettings } from "@vibe-tavern/db";
@@ -265,6 +267,28 @@ export interface ScenePreviewResponse {
 	target: InsightsCompletionTarget;
 	/** The generated scene state — transient (never persisted to the variant record). */
 	sceneState: Record<string, unknown>;
+}
+
+/** Server-authoritative Scene history-backfill run status (SCN-14). Drives the
+ *  client's progress polling, Cancel, retry/resume, and partial-success summary.
+ *  `processed` is the durable cursor (next manifest index to process); `current`
+ *  is the item being generated RIGHT NOW (in-memory only — null on reload before
+ *  the run reattaches). The run row is JOB state only; Scene data still lives on
+ *  message_variants.scene_tracker_json. The error/summary shapes are shared from
+ *  `@vibe-tavern/domain` so the service + contract + client never drift. */
+export interface SceneBackfillStatusResponse {
+	runId: string;
+	chatId: string;
+	/** 'fill-missing' | 'rebuild'. */
+	mode: string;
+	/** 'pending' | 'running' | 'completed' | 'cancelled' | 'failed'. */
+	status: string;
+	total: number;
+	processed: number;
+	current: { messageId: string; variantId: string } | null;
+	errors: SceneBackfillErrorEntry[];
+	summary: SceneBackfillSummary | null;
+	cancelRequested: boolean;
 }
 
 /**

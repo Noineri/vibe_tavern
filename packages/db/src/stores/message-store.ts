@@ -1,4 +1,4 @@
-import { eq, and, desc, asc } from 'drizzle-orm';
+import { eq, and, desc, asc, inArray } from 'drizzle-orm';
 import { messages, messageVariants, sceneBackfillRuns } from '../db-schema.js';
 import type { AppDb } from '../db-connection.js';
 import { resolveStoreRuntime, type StoreClock, type StoreIdGenerator } from '../persistence.js';
@@ -789,6 +789,22 @@ export class MessageStore {
   async getSceneBackfillRun(id: string): Promise<SceneBackfillRun | null> {
     const row = await this.db.select().from(sceneBackfillRuns)
       .where(eq(sceneBackfillRuns.id, id)).get();
+    return row ? this.mapRowBackfillRun(row) : null;
+  }
+
+  /** The chat's most recent non-terminal (pending/running) backfill run, or null
+   *  (SCN-14). Start uses this to reattach to an in-flight run instead of
+   *  starting a duplicate; status uses it for reload reattachment. A run that
+   *  crashed mid-flight is still 'running' here — the service detects stale
+   *  'running' (no in-memory handle) and resumes it. */
+  async getActiveSceneBackfillRun(chatId: string): Promise<SceneBackfillRun | null> {
+    const row = await this.db.select().from(sceneBackfillRuns)
+      .where(and(
+        eq(sceneBackfillRuns.chatId, chatId),
+        inArray(sceneBackfillRuns.status, ['pending', 'running']),
+      ))
+      .orderBy(desc(sceneBackfillRuns.createdAt))
+      .limit(1).get();
     return row ? this.mapRowBackfillRun(row) : null;
   }
 

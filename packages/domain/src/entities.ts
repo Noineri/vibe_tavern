@@ -636,3 +636,28 @@ export interface SceneTrackerRecord {
   modelId: string | null;
   generatedAt: Timestamp;
 }
+
+/** Outcome of one frozen manifest item in a Scene history-backfill run
+ *  (SCENE_TRACKER_PLAN SCN-14). `skipped` = bypassed without an LLM call (the
+ *  variant vanished, or its frozen source/schema/config fingerprint drifted
+ *  since the run started); `failed` = an LLM/parse/persistence error. Succeeded
+ *  items are NOT listed — they are implied by `processed - errors.length`. */
+export interface SceneBackfillErrorEntry {
+  /** Manifest index of the item. */
+  index: number;
+  variantId: string;
+  messageId: string;
+  kind: "failed" | "skipped";
+  message: string;
+}
+
+/** Partial-success summary written when a backfill run reaches a terminal
+ *  status (SCN-14). `succeeded` + `skipped` + `failed` is the count of items
+ *  processed so far (the manifest total minus any unprocessed tail after a
+ *  cancel). */
+export interface SceneBackfillSummary {
+  total: number;
+  succeeded: number;
+  skipped: number;
+  failed: number;
+}

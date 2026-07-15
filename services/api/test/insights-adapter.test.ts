@@ -415,3 +415,61 @@ describe("InsightsAdapter variant-aware completion refresh (SCN-9)", () => {
 		await expect(adapter.refreshInsightsCompletion("chat_1", { target: SCENE_TARGET })).rejects.toThrow("no longer available");
 	});
 });
+
+describe("InsightsAdapter Scene backfill routes (SCN-14)", () => {
+	/** A tracker mock whose backfill methods record their calls. */
+	function backfillTracker(capture: { method: string; chatId?: string; arg?: unknown }[]) {
+		const status = { runId: "sbr_1", chatId: "chat_1", mode: "fill-missing", status: "running", total: 3, processed: 1, current: { messageId: "msg_1", variantId: "var_1" }, errors: [], summary: null, cancelRequested: false };
+		return noopTracker({
+			startBackfill: async (chatId: unknown, mode: unknown) => {
+				capture.push({ method: "startBackfill", chatId: chatId as string, arg: mode });
+				return { ...status, mode: mode as string };
+			},
+			getBackfillStatus: async (chatId: unknown, runId: unknown) => {
+				capture.push({ method: "getBackfillStatus", chatId: chatId as string, arg: runId });
+				return { ...status, runId: runId as string };
+			},
+			cancelBackfill: (chatId: unknown, runId: unknown) => {
+				capture.push({ method: "cancelBackfill", chatId: chatId as string, arg: runId });
+			},
+			retryBackfill: async (chatId: unknown, runId: unknown) => {
+				capture.push({ method: "retryBackfill", chatId: chatId as string, arg: runId });
+				return { ...status, runId: runId as string };
+			},
+		} as TrackerMock) as SceneTrackerService;
+	}
+
+	function adapter(capture: { method: string; chatId?: string; arg?: unknown }[]) {
+		const stores = { chats: { getById: async (chatId: string) => ({ id: chatId }) } } as unknown as StoreContainer;
+		return new InsightsAdapter(stores, {} as SessionRuntime, {} as never, backfillTracker(capture));
+	}
+
+	it("start delegates to startBackfill with the branded chatId + mode", async () => {
+		const capture: { method: string; chatId?: string; arg?: unknown }[] = [];
+		const res = await adapter(capture).startSceneBackfill("chat_1", "rebuild");
+		expect(capture[0]).toEqual({ method: "startBackfill", chatId: "chat_1", arg: "rebuild" });
+		expect(res.mode).toBe("rebuild");
+	});
+
+	it("status delegates to getBackfillStatus and returns the service status verbatim", async () => {
+		const capture: { method: string; chatId?: string; arg?: unknown }[] = [];
+		const res = await adapter(capture).getSceneBackfillStatus("chat_1", "sbr_9");
+		expect(capture[0]).toEqual({ method: "getBackfillStatus", chatId: "chat_1", arg: "sbr_9" });
+		expect(res.runId).toBe("sbr_9");
+		expect(res.current).toEqual({ messageId: "msg_1", variantId: "var_1" });
+	});
+
+	it("cancel delegates to cancelBackfill and returns {runId, cancelled:true}", async () => {
+		const capture: { method: string; chatId?: string; arg?: unknown }[] = [];
+		const res = adapter(capture).cancelSceneBackfill("chat_1", "sbr_9");
+		expect(capture[0]).toEqual({ method: "cancelBackfill", chatId: "chat_1", arg: "sbr_9" });
+		expect(res).toEqual({ runId: "sbr_9", cancelled: true });
+	});
+
+	it("retry delegates to retryBackfill with the branded chatId + runId", async () => {
+		const capture: { method: string; chatId?: string; arg?: unknown }[] = [];
+		const res = await adapter(capture).retrySceneBackfill("chat_1", "sbr_9");
+		expect(capture[0]).toEqual({ method: "retryBackfill", chatId: "chat_1", arg: "sbr_9" });
+		expect(res.runId).toBe("sbr_9");
+	});
+});

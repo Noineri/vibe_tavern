@@ -54,5 +54,19 @@ export function createInsightsRoutes(runtime: InsightsRuntimeApi) {
     })
     .post("/api/chats/:chatId/insights/scene/preview", zValidator("json", schemas.scenePreviewSchema), async (c) => {
       return c.json(await runtime.previewScene(c.req.param("chatId"), c.req.valid("json"), c.req.raw.signal));
+    })
+    // ─── Scene Tracker history backfill (SCENE_TRACKER_PLAN SCN-14) ───────────
+    .post("/api/chats/:chatId/insights/scene/backfill/start", zValidator("json", schemas.sceneBackfillStartSchema), async (c) => {
+      const body = c.req.valid("json");
+      return c.json(await runtime.startSceneBackfill(c.req.param("chatId"), body.mode ?? "fill-missing"));
+    })
+    .post("/api/chats/:chatId/insights/scene/backfill/:runId/status", async (c) => {
+      return c.json(await runtime.getSceneBackfillStatus(c.req.param("chatId"), c.req.param("runId")));
+    })
+    .post("/api/chats/:chatId/insights/scene/backfill/:runId/cancel", async (c) => {
+      return c.json(runtime.cancelSceneBackfill(c.req.param("chatId"), c.req.param("runId")));
+    })
+    .post("/api/chats/:chatId/insights/scene/backfill/:runId/retry", async (c) => {
+      return c.json(await runtime.retrySceneBackfill(c.req.param("chatId"), c.req.param("runId")));
     });
 }

@@ -299,4 +299,25 @@ describe("scene backfill runs (SCN-3)", () => {
     expect(await messages.getSceneRecord(v!.id)).toEqual(record);
     expect((await messages.getVariants(msg.id))[0]!.sceneTracker).toEqual(record);
   });
+
+  test("getActiveSceneBackfillRun returns the pending/running run and null once terminal (SCN-14)", async () => {
+    // No runs yet → null.
+    expect(await messages.getActiveSceneBackfillRun("chat_1")).toBeNull();
+
+    // A pending run is active.
+    const run = await messages.createSceneBackfillRun({
+      chatId: "chat_1", manifestJson: "[]", totalItems: 2,
+    });
+    expect(await messages.getActiveSceneBackfillRun("chat_1")).toEqual(run);
+
+    // A running run is still active.
+    await messages.updateSceneBackfillRun(run.id, { status: "running", cursor: 1 });
+    const active = await messages.getActiveSceneBackfillRun("chat_1");
+    expect(active!.id).toBe(run.id);
+    expect(active!.status).toBe("running");
+
+    // Once terminal (completed/cancelled/failed) it is no longer active.
+    await messages.updateSceneBackfillRun(run.id, { status: "completed", summaryJson: "{}" });
+    expect(await messages.getActiveSceneBackfillRun("chat_1")).toBeNull();
+  });
 });

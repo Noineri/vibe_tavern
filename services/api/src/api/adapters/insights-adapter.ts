@@ -1,8 +1,8 @@
-import { brandId, type ChatBranchId, type ChatId, type MessageId, type MessageVariantId, type ObjectiveState, type ObjectiveTaskStatus, type SceneTrackerConfig } from "@vibe-tavern/domain";
+import { brandId, type ChatBranchId, type ChatId, type MessageId, type MessageVariantId, type ObjectiveState, type ObjectiveTaskStatus, type SceneBackfillMode, type SceneTrackerConfig } from "@vibe-tavern/domain";
 import type { StoreContainer } from "@vibe-tavern/db";
 import type { SessionRuntime } from "../../runtime/session/session-runtime.js";
 import type { ProviderProfileService } from "../../domain/providers/provider-profile-service.js";
-import type { ConfigPatchResponse, InsightsCompletionPatchResponse, ScenePreviewResponse, SceneStatusResponse, SceneTargetResponse } from "../contract/session-types.js";
+import type { ConfigPatchResponse, InsightsCompletionPatchResponse, SceneBackfillStatusResponse, ScenePreviewResponse, SceneStatusResponse, SceneTargetResponse } from "../contract/session-types.js";
 import { mapMessageDto } from "../../runtime/session/session-runtime-dto.js";
 import { notFound, validation } from "../../shared/errors.js";
 import { ObjectiveService } from "../../domain/insights/objective-service.js";
@@ -238,6 +238,35 @@ export class InsightsAdapter {
 		await this.ensureSceneTarget(chatId, body.target);
 		const record = await this.trackerService.previewForTarget(target, body.config, signal);
 		return { target: { chatId, ...body.target }, sceneState: record.sceneState };
+	};
+
+	// ─── Scene Tracker history backfill (SCENE_TRACKER_PLAN SCN-14) ───────────
+
+	/** Start a durable backfill run for the chat's active branch. Freezes the
+	 *  manifest, kicks off the background loop, and returns the initial status.
+	 *  Idempotent: reattaches to an in-flight run. The run runs fire-and-forget —
+	 *  it never blocks ordinary chat; only the latest selected target can join a
+	 *  normal send wait. */
+	startSceneBackfill = async (chatId: string, mode: string): Promise<SceneBackfillStatusResponse> => {
+		return this.trackerService.startBackfill(brandId<ChatId>(chatId), mode as SceneBackfillMode);
+	};
+
+	/** Server-authoritative backfill status for progress polling + reload
+	 *  reattachment. A stale 'running' run (interrupted by a restart) is resumed. */
+	getSceneBackfillStatus = async (chatId: string, runId: string): Promise<SceneBackfillStatusResponse> => {
+		return this.trackerService.getBackfillStatus(brandId<ChatId>(chatId), runId);
+	};
+
+	/** Explicitly cancel a run: aborts the active item (nothing persists) and
+	 *  stops the loop before the next item. */
+	cancelSceneBackfill = (chatId: string, runId: string): { runId: string; cancelled: true } => {
+		this.trackerService.cancelBackfill(brandId<ChatId>(chatId), runId);
+		return { runId, cancelled: true };
+	};
+
+	/** Retry/resume a terminal run's failed + unprocessed frozen-manifest items. */
+	retrySceneBackfill = async (chatId: string, runId: string): Promise<SceneBackfillStatusResponse> => {
+		return this.trackerService.retryBackfill(brandId<ChatId>(chatId), runId);
 	};
 
 	/**

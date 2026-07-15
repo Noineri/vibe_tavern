@@ -37,12 +37,15 @@ import type {
 	ChatId,
 	MessageId,
 	MessageVariantId,
+	SceneBackfillErrorEntry,
+	SceneBackfillSummary,
 	SceneTrackerConfig,
 	SceneTrackerDsl,
 	SceneTrackerRecord,
 	Timestamp,
 } from "@vibe-tavern/domain";
-import { brandId, computeSceneSourceHash, normalizeSceneTrackerConfig } from "@vibe-tavern/domain";
+import { brandId, computeSceneSourceHash, normalizeSceneTrackerConfig, SCENE_BACKFILL_MODE } from "@vibe-tavern/domain";
+import type { SceneBackfillMode } from "@vibe-tavern/domain";
 import type { StoreContainer } from "@vibe-tavern/db";
 import { getInsightsAssembler } from "@vibe-tavern/prompt-pipeline";
 import type { PromptAssemblyContext } from "@vibe-tavern/prompt-pipeline";
@@ -84,6 +87,38 @@ function isTrackerEnabled(insightsConfig: Record<string, unknown>): boolean {
 export interface SceneContinuityRecord {
 	variantId: MessageVariantId;
 	sceneState: Record<string, unknown>;
+}
+
+/** One frozen manifest item in a Scene history-backfill run (SCN-14): a selected
+ *  assistant variant captured oldest-to-newest at run start, with its then-
+ *  current source/schema/config fingerprint so resume/retry can revalidate the
+ *  item is still generatable before spending an LLM call on it. Plain-string ids
+ *  — this is serialized to JSON in the run row, not a branded domain record. */
+export interface SceneBackfillManifestItem {
+	/** Position in the frozen manifest (0 = oldest). */
+	index: number;
+	branchId: string;
+	messageId: string;
+	variantId: string;
+	sourceHash: string;
+	schemaHash: string;
+	configRevision: number;
+}
+
+/** Service-level backfill run status (SCN-14). Structurally compatible with the
+ *  contract {@link SceneBackfillStatusResponse}; the adapter returns it as-is.
+ *  The error/summary shapes are shared from `@vibe-tavern/domain`. */
+export interface SceneBackfillStatus {
+	runId: string;
+	chatId: string;
+	mode: string;
+	status: string;
+	total: number;
+	processed: number;
+	current: { messageId: string; variantId: string } | null;
+	errors: SceneBackfillErrorEntry[];
+	summary: SceneBackfillSummary | null;
+	cancelRequested: boolean;
 }
 
 export interface SceneGenerateInput {
@@ -162,6 +197,35 @@ function linkAbort(external: AbortSignal | undefined, controller: AbortControlle
 		() => controller.abort(external.reason),
 		{ once: true },
 	);
+}
+
+// ─── SCN-14 backfill helpers (module-level, pure) ───────────────────────────
+
+/** Inclusive-start, exclusive-end integer range (empty when start >= end). */
+function range(start: number, end: number): number[] {
+	const out: number[] = [];
+	for (let i = start; i < end; i += 1) out.push(i);
+	return out;
+}
+
+/** Unique integers sorted ascending (for the retry-index union). */
+function uniqueSorted(values: number[]): number[] {
+	return [...new Set(values)].sort((a, b) => a - b);
+}
+
+/** Parse a run row's errorsJson defensively; an unparseable/corrupt blob → []. */
+function parseBackfillErrors(json: string): SceneBackfillErrorEntry[] {
+	try {
+		const parsed = JSON.parse(json);
+		return Array.isArray(parsed) ? (parsed as SceneBackfillErrorEntry[]) : [];
+	} catch {
+		return [];
+	}
+}
+
+/** Stable error-message extraction for recorded per-item errors. */
+function errorMessage(error: unknown): string {
+	return error instanceof Error ? error.message : String(error);
 }
 
 /**
@@ -726,5 +790,310 @@ export class SceneTrackerService {
 				(error: unknown) => settle(() => reject(error)),
 			);
 		});
+	}
+
+	// ─── SCN-14: durable history backfill ──────────────────────────────────────
+	// A server-authoritative BATCH over the per-target coordinator. Start freezes
+	// an oldest-to-newest manifest of selected assistant variants; the loop
+	// processes items SEQUENTIALLY (rate-limit-safe), revalidating each item's
+	// frozen variant/source/schema/config/branch fingerprint before generation,
+	// continuing through per-item errors, and advancing a durable cursor + errors
+	// list after every item so a reload/restart resumes from the right place. The
+	// batch NEVER blocks ordinary chat: it runs fire-and-forget in the background,
+	// and each item's generation registers a normal per-target job — so the ONLY
+	// interaction with a chat send is that the latest selected target (if it is in
+	// the manifest) can independently join the normal send wait, exactly like any
+	// other Scene generation. Cancel aborts the active item (its result never
+	// persists — the commit lane checks the signal) and stops the loop.
+
+	/** One owned AbortController per ACTIVE run so {@link cancelBackfill} can reach
+	 *  the in-flight item's generation without the caller's signal. */
+	private readonly activeBackfills = new Map<string, AbortController>();
+	/** The manifest item being generated RIGHT NOW (in-memory only; drives status
+	 *  `current`). Absent on reload until the run reattaches. */
+	private readonly currentBackfillItem = new Map<string, { messageId: string; variantId: string }>();
+
+	/** Start a backfill run for the chat's active branch. Freezes the manifest,
+	 *  writes the run row, kicks off the background loop, and returns the initial
+	 *  status. Idempotent: if a non-terminal run already exists for the chat it is
+	 *  reattached (and resumed if stale) instead of starting a duplicate. Throws
+	 *  when the chat is missing, the tracker is off, or no provider/model resolves. */
+	async startBackfill(chatId: ChatId, mode: SceneBackfillMode): Promise<SceneBackfillStatus> {
+		const chat = await this.stores.chats.getById(chatId);
+		if (!chat) throw new Error(`Chat '${chatId}' was not found.`);
+		if (!isTrackerEnabled(chat.insightsConfig)) {
+			throw new Error("Scene Tracker is off — enable it in Build Mode → Insights before backfilling history.");
+		}
+		const config = await this.getConfig(chatId);
+		const resolved = await this.resolveSceneProvider(config);
+		if (!resolved) {
+			throw new Error("No provider/model configured for the Scene insight. Set one in Build Mode → Insights.");
+		}
+		// Reattach to an in-flight run instead of starting a duplicate.
+		const active = await this.stores.messages.getActiveSceneBackfillRun(chatId as string);
+		if (active) {
+			this.ensureRunProcessing(chatId, active);
+			return this.runToStatus(active);
+		}
+		const manifest = await this.buildBackfillManifest(chat.activeBranchId, mode, config);
+		const run = await this.stores.messages.createSceneBackfillRun({
+			chatId: chatId as string,
+			mode,
+			manifestJson: JSON.stringify(manifest),
+			totalItems: manifest.length,
+		});
+		if (manifest.length === 0) {
+			// Empty manifest → nothing to do; finalize immediately as completed.
+			const summary: SceneBackfillSummary = { total: 0, succeeded: 0, skipped: 0, failed: 0 };
+			await this.stores.messages.updateSceneBackfillRun(run.id, { status: "completed", summaryJson: JSON.stringify(summary) });
+		} else {
+			this.kickoffBackfill(chatId, run.id, manifest.map((item) => item.index));
+		}
+		const fresh = await this.stores.messages.getSceneBackfillRun(run.id);
+		return this.runToStatus(fresh!);
+	}
+
+	/** Server-authoritative status for progress polling / reload reattachment
+	 *  (SCN-14). A 'running'/'pending' run with no in-memory handle was
+	 *  interrupted by a restart — its unprocessed tail is resumed here (restart-
+	 *  safe). Returns the live row + the in-memory `current` item. */
+	async getBackfillStatus(chatId: ChatId, runId: string): Promise<SceneBackfillStatus> {
+		const run = await this.loadOwnedRun(chatId, runId);
+		this.ensureRunProcessing(chatId, run);
+		return this.runToStatus(run);
+	}
+
+	/** Explicitly cancel a run (SCN-14). Sets the durable cancel flag AND aborts
+	 *  the active item's generation — its result never persists (the commit lane
+	 *  checks the signal), and the loop stops before the next item. No-op when the
+	 *  run is terminal or not in memory. */
+	cancelBackfill(chatId: ChatId, runId: string): void {
+		void this.stores.messages.updateSceneBackfillRun(runId, { cancelRequested: true }).catch(() => undefined);
+		this.activeBackfills.get(runId)?.abort();
+		logSendDebug("insights.scene.backfill.cancel", { runId });
+	}
+
+	/** Retry/resume a TERMINAL run's failed + unprocessed items (SCN-14). The
+	 *  retry set is the union of errored manifest indices and the unprocessed
+	 *  tail (cursor..total); succeeded items are never regenerated. Reopens the
+	 *  run (clears cancel + summary) and kicks off the loop. No-op (returns the
+	 *  current status) when the run is still active or there is nothing to retry. */
+	async retryBackfill(chatId: ChatId, runId: string): Promise<SceneBackfillStatus> {
+		const run = await this.loadOwnedRun(chatId, runId);
+		if (run.status === "running" || run.status === "pending" || this.activeBackfills.has(runId)) {
+			return this.runToStatus(run);
+		}
+		const errors = parseBackfillErrors(run.errorsJson);
+		const retryIndices = uniqueSorted([...errors.map((entry) => entry.index), ...range(run.cursor, run.totalItems)]);
+		if (retryIndices.length === 0) return this.runToStatus(run);
+		this.kickoffBackfill(chatId, runId, retryIndices);
+		const fresh = await this.stores.messages.getSceneBackfillRun(runId);
+		return this.runToStatus(fresh!);
+	}
+
+	/** Resume a non-terminal run if it is not already in flight (restart-safe /
+	 *  reload reattachment). Processes the unprocessed tail (cursor..total). */
+	private ensureRunProcessing(chatId: ChatId, run: { id: string; status: string; cursor: number; totalItems: number }): void {
+		if (run.status !== "running" && run.status !== "pending") return;
+		if (this.activeBackfills.has(run.id)) return;
+		const tail = range(run.cursor, run.totalItems);
+		if (tail.length === 0) {
+			// Status says running/pending but nothing remains + not in memory → finalize.
+			void this.finalizeRun(run.id);
+			return;
+		}
+		this.kickoffBackfill(chatId, run.id, tail);
+	}
+
+	/** Fire-and-forget a processing pass over `indices`. Double-start guard is
+	 *  inside {@link runBackfillLoop} (synchronous check-and-set). */
+	private kickoffBackfill(chatId: ChatId, runId: string, indices: number[]): void {
+		if (this.activeBackfills.has(runId)) return;
+		void this.runBackfillLoop(chatId, runId, indices);
+	}
+
+	/** The sequential processing loop (SCN-14). Processes `indices` in order,
+	 *  revalidating + generating each, continuing through per-item errors, and
+	 *  persisting the cursor + errors after every item. Cancel (DB flag or the
+	 *  owned controller) stops before the next item; the active item's result is
+	 *  discarded (its generation aborts before the commit lane persists). */
+	private async runBackfillLoop(chatId: ChatId, runId: string, indices: number[]): Promise<void> {
+		// Synchronous double-start guard: two callers (start + status-resume, or
+		// retry + status-resume) cannot both enter. The set happens before the
+		// first await, so by the time this call returns the slot is reserved.
+		if (this.activeBackfills.has(runId)) return;
+		const controller = new AbortController();
+		this.activeBackfills.set(runId, controller);
+		try {
+			const initial = await this.stores.messages.getSceneBackfillRun(runId);
+			if (!initial) return;
+			await this.stores.messages.updateSceneBackfillRun(runId, { status: "running", cancelRequested: false, summaryJson: null });
+			const manifest = JSON.parse(initial.manifestJson) as SceneBackfillManifestItem[];
+			const mode = initial.mode as SceneBackfillMode;
+			let errors = parseBackfillErrors(initial.errorsJson);
+			let cursor = initial.cursor;
+
+			for (const idx of indices) {
+				if (controller.signal.aborted) break;
+				const polled = await this.stores.messages.getSceneBackfillRun(runId);
+				if (polled?.cancelRequested) break;
+
+				const item = manifest[idx];
+				if (!item) continue;
+
+				this.currentBackfillItem.set(runId, { messageId: item.messageId, variantId: item.variantId });
+				const outcome = await this.processBackfillItem(chatId, item, mode, controller.signal);
+				this.currentBackfillItem.delete(runId);
+
+				if (outcome.cancelled) break;
+
+				// Drop any prior error for this index; record a new one on failure/skip.
+				errors = errors.filter((entry) => entry.index !== idx);
+				if (outcome.error) {
+					errors.push({ index: idx, variantId: item.variantId, messageId: item.messageId, kind: outcome.error.kind, message: outcome.error.message });
+				}
+				cursor = Math.max(cursor, idx + 1);
+				await this.stores.messages.updateSceneBackfillRun(runId, { cursor, errorsJson: JSON.stringify(errors) });
+			}
+
+			await this.finalizeRun(runId);
+		} catch (error: unknown) {
+			// An unrecoverable LOOP error (not a per-item error — those are caught
+			// inside processBackfillItem). Mark the run failed so it is retryable.
+			logSendDebug("insights.scene.backfill.error", { runId, message: errorMessage(error) });
+			await this.stores.messages.updateSceneBackfillRun(runId, { status: "failed" }).catch(() => undefined);
+		} finally {
+			this.activeBackfills.delete(runId);
+			this.currentBackfillItem.delete(runId);
+		}
+	}
+
+	/** Process one manifest item: revalidate the frozen fingerprint, then generate
+	 *  (fill-missing skips items that became current). Returns the outcome — a
+	 *  `cancelled` outcome stops the loop without persisting the active item; an
+	 *  `error` outcome is recorded and the loop continues (continue-through-errors). */
+	private async processBackfillItem(
+		chatId: ChatId,
+		item: SceneBackfillManifestItem,
+		mode: SceneBackfillMode,
+		signal: AbortSignal,
+	): Promise<{ cancelled?: boolean; error?: { kind: "failed" | "skipped"; message: string } }> {
+		try {
+			signal.throwIfAborted();
+			// revalidate: message still in its frozen branch.
+			const branchMessages = await this.stores.messages.getMessages(item.branchId);
+			if (!branchMessages.some((message) => message.id === item.messageId)) {
+				return { error: { kind: "skipped", message: "Message no longer in its branch." } };
+			}
+			// revalidate: variant still exists on the message.
+			const variants = await this.stores.messages.getVariants(item.messageId);
+			const variant = variants.find((candidate) => candidate.id === item.variantId);
+			if (!variant) return { error: { kind: "skipped", message: "Variant no longer exists." } };
+			// revalidate: schema/config fingerprint unchanged since freeze.
+			const config = await this.getConfig(chatId);
+			if (config.schemaHash !== item.schemaHash || config.revision !== item.configRevision) {
+				return { error: { kind: "skipped", message: "Scene schema/config changed since the run started." } };
+			}
+			// revalidate: variant content unchanged since freeze.
+			if (computeSceneSourceHash(variant.content) !== item.sourceHash) {
+				return { error: { kind: "skipped", message: "Variant content changed since the run started." } };
+			}
+			// fill-missing: a current record appeared (e.g. via auto-gen) → success no-op.
+			const record = await this.stores.messages.getSceneRecord(item.variantId);
+			if (mode === SCENE_BACKFILL_MODE.fillMissing && record && isSceneRecordCurrent(record, config)) {
+				return {};
+			}
+			// Generate. Reuses the shared per-target coordinator + target-job registry,
+			// so the latest selected target can independently join a normal send wait.
+			const target: SceneTarget = {
+				chatId,
+				branchId: brandId<ChatBranchId>(item.branchId),
+				messageId: brandId<MessageId>(item.messageId),
+				variantId: brandId<MessageVariantId>(item.variantId),
+			};
+			await this.generateForTarget(target, signal);
+			return {};
+		} catch (error: unknown) {
+			if (signal.aborted || error instanceof SceneTargetCancelledError) return { cancelled: true };
+			if (error instanceof SceneTargetGoneError) {
+				return { error: { kind: "skipped", message: "Target variant disappeared during generation." } };
+			}
+			return { error: { kind: "failed", message: errorMessage(error) } };
+		}
+	}
+
+	/** Freeze the oldest-to-newest manifest of selected assistant variants for the
+	 *  branch (SCN-14). fill-missing omits items that already have a current
+	 *  record; rebuild includes every selected assistant variant. Each item
+	 *  captures the source/schema/config fingerprint at freeze time. */
+	private async buildBackfillManifest(
+		branchId: string,
+		mode: SceneBackfillMode,
+		config: SceneTrackerConfig,
+	): Promise<SceneBackfillManifestItem[]> {
+		const messages = await this.stores.messages.getMessages(branchId);
+		const items: SceneBackfillManifestItem[] = [];
+		for (const message of messages) {
+			if (message.role !== "assistant") continue;
+			const selected = await this.stores.messages.getSelectedVariant(message.id);
+			if (!selected) continue;
+			if (mode === SCENE_BACKFILL_MODE.fillMissing) {
+				const record = await this.stores.messages.getSceneRecord(selected.id);
+				if (record && isSceneRecordCurrent(record, config)) continue;
+			}
+			items.push({
+				index: items.length,
+				branchId,
+				messageId: message.id,
+				variantId: selected.id,
+				sourceHash: computeSceneSourceHash(selected.content),
+				schemaHash: config.schemaHash,
+				configRevision: config.revision,
+			});
+		}
+		return items;
+	}
+
+	/** Write the terminal status + partial-success summary for a run (SCN-14).
+	 *  `cancelled` if the durable flag is set; otherwise `completed` (per-item
+	 *  failures are reflected in the summary, not the status). */
+	private async finalizeRun(runId: string): Promise<void> {
+		const run = await this.stores.messages.getSceneBackfillRun(runId);
+		if (!run) return;
+		const errors = parseBackfillErrors(run.errorsJson);
+		const failed = errors.filter((entry) => entry.kind === "failed").length;
+		const skipped = errors.filter((entry) => entry.kind === "skipped").length;
+		// All error entries correspond to processed items (index < cursor), so
+		// succeeded = processed minus the errored/skipped count.
+		const succeeded = Math.max(0, run.cursor - errors.length);
+		const summary: SceneBackfillSummary = { total: run.totalItems, succeeded, skipped, failed };
+		const status = run.cancelRequested ? "cancelled" : "completed";
+		await this.stores.messages.updateSceneBackfillRun(runId, { status, summaryJson: JSON.stringify(summary) });
+	}
+
+	/** Load a run, validating it belongs to the chat. Throws if missing/mismatched. */
+	private async loadOwnedRun(chatId: ChatId, runId: string) {
+		const run = await this.stores.messages.getSceneBackfillRun(runId);
+		if (!run || run.chatId !== (chatId as string)) {
+			throw new Error(`Backfill run '${runId}' was not found for chat '${chatId}'.`);
+		}
+		return run;
+	}
+
+	/** Map a run row to the service-level status DTO, reading the live `current`
+	 *  item from the in-memory map. */
+	private runToStatus(run: { id: string; chatId: string; mode: string; status: string; totalItems: number; cursor: number; errorsJson: string; summaryJson: string | null; cancelRequested: boolean }): SceneBackfillStatus {
+		return {
+			runId: run.id,
+			chatId: run.chatId,
+			mode: run.mode,
+			status: run.status,
+			total: run.totalItems,
+			processed: run.cursor,
+			current: this.currentBackfillItem.get(run.id) ?? null,
+			errors: parseBackfillErrors(run.errorsJson),
+			summary: run.summaryJson ? (JSON.parse(run.summaryJson) as SceneBackfillSummary) : null,
+			cancelRequested: run.cancelRequested,
+		};
 	}
 }

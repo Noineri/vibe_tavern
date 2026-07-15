@@ -83,6 +83,24 @@ export const SCENE_AUTO_MODE = {
 export type SceneAutoMode = (typeof SCENE_AUTO_MODE)[keyof typeof SCENE_AUTO_MODE];
 
 /**
+ * History-backfill run mode (SCENE_TRACKER_PLAN SCN-14).
+ *
+ * - `fill-missing` (default) — generate Scene records only for selected
+ *   assistant variants whose record is absent OR stale (wrong schema/config).
+ * - `rebuild` — regenerate EVERY selected assistant variant in the active
+ *   branch, even those with a current record.
+ *
+ * The manifest is frozen at run start; both modes revalidate each item's
+ * frozen variant/source/schema/config fingerprint before persisting.
+ */
+export const SCENE_BACKFILL_MODE = {
+  fillMissing: "fill-missing",
+  rebuild: "rebuild",
+} as const;
+
+export type SceneBackfillMode = (typeof SCENE_BACKFILL_MODE)[keyof typeof SCENE_BACKFILL_MODE];
+
+/**
  * How the validated `sceneState` block is serialized for main-model injection.
  *
  * Scene generation output is ALWAYS strict schema-validated JSON; this only

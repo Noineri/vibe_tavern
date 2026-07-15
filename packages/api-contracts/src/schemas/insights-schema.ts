@@ -1,4 +1,7 @@
-import { OBJECTIVE_TASK_STATUS } from "@vibe-tavern/domain";
+import {
+  OBJECTIVE_TASK_STATUS,
+  SCENE_BACKFILL_MODE,
+} from "@vibe-tavern/domain";
 import { z } from "zod";
 import { sceneTrackerConfigSchema, updateTrackerConfigSchema } from "./tracker-schema.js";
 
@@ -109,6 +112,15 @@ export const sceneTargetBodySchema = z.object({
 export const scenePreviewSchema = z.object({
   target: sceneTargetSchema,
   config: sceneTrackerConfigSchema,
+});
+
+/** Scene history backfill start body (SCENE_TRACKER_PLAN SCN-14). `mode` defaults
+ *  to `fill-missing` (generate only records that are absent or stale);
+ *  `rebuild` regenerates every selected assistant variant in the active branch.
+ *  The run freezes an oldest-to-newest manifest at start; per-item revalidation +
+ *  continue-through-errors + durable cursor/errors make it restart-safe. */
+export const sceneBackfillStartSchema = z.object({
+  mode: z.enum([SCENE_BACKFILL_MODE.fillMissing, SCENE_BACKFILL_MODE.rebuild]).optional(),
 });
 
 export const objectiveTaskStatusSchema = z.enum([
