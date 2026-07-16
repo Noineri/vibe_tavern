@@ -78,6 +78,11 @@ export {
   updateObjectiveTaskSchema,
   reorderObjectiveTasksSchema,
   setObjectiveDescriptionSchema,
+  setObjectiveModeSchema,
+  updateObjectiveLongTermGoalSchema,
+  addObjectiveShortTermGoalSchema,
+  updateObjectiveShortTermGoalSchema,
+  selectObjectiveShortTermGoalSchema,
   updateObjectiveConfigSchema,
 } from "./insights-schema.js";
 export {

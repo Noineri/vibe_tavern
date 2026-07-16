@@ -1,4 +1,5 @@
 import {
+  OBJECTIVE_MODE,
   OBJECTIVE_TASK_STATUS,
   SCENE_BACKFILL_MODE,
 } from "@vibe-tavern/domain";
@@ -150,6 +151,37 @@ export const reorderObjectiveTasksSchema = z.object({
 
 export const setObjectiveDescriptionSchema = z.object({
   objectiveDescription: nonEmptyDescriptionSchema,
+});
+
+/** Objective Tracker goals mode (OGM): switch modes without clearing either mode's data. */
+export const setObjectiveModeSchema = z.object({
+  mode: z.enum([OBJECTIVE_MODE.route, OBJECTIVE_MODE.goals]),
+});
+
+/** Create or patch the singular long-term goal (description and/or status). */
+export const updateObjectiveLongTermGoalSchema = z.object({
+  description: nonEmptyDescriptionSchema.optional(),
+  status: objectiveTaskStatusSchema.optional(),
+}).refine(({ description, status }) => description !== undefined || status !== undefined, {
+  message: "Long-term goal patch must include a description or status.",
+});
+
+/** Append a short-term goal. */
+export const addObjectiveShortTermGoalSchema = z.object({
+  description: nonEmptyDescriptionSchema,
+});
+
+/** Patch one short-term goal. */
+export const updateObjectiveShortTermGoalSchema = z.object({
+  description: nonEmptyDescriptionSchema.optional(),
+  status: objectiveTaskStatusSchema.optional(),
+}).refine(({ description, status }) => description !== undefined || status !== undefined, {
+  message: "Short-term goal patch must include a description or status.",
+});
+
+/** Select exactly one short-term goal as the active focus. */
+export const selectObjectiveShortTermGoalSchema = z.object({
+  goalId: z.string().trim().min(1),
 });
 
 /** Objective Tracker — advanced config (INS-5): auto-check frequency, injection

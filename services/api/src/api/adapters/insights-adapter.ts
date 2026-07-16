@@ -1,4 +1,4 @@
-import { brandId, type ChatBranchId, type ChatId, type MessageId, type MessageVariantId, type ObjectiveState, type ObjectiveTaskStatus, type SceneBackfillMode, type SceneTrackerConfig } from "@vibe-tavern/domain";
+import { brandId, type ChatBranchId, type ChatId, type MessageId, type MessageVariantId, type ObjectiveMode, type ObjectiveState, type ObjectiveTaskStatus, type SceneBackfillMode, type SceneTrackerConfig } from "@vibe-tavern/domain";
 import type { StoreContainer } from "@vibe-tavern/db";
 import type { SessionRuntime } from "../../runtime/session/session-runtime.js";
 import type { ProviderProfileService } from "../../domain/providers/provider-profile-service.js";
@@ -133,6 +133,49 @@ export class InsightsAdapter {
 	setObjectiveDescription = async (chatId: string, body: { objectiveDescription: string }): Promise<ConfigPatchResponse> => {
 		await this.ensureChat(chatId);
 		await this.objectiveService.setObjectiveDescription(brandId<ChatId>(chatId), body.objectiveDescription);
+		return this.refresh(chatId);
+	};
+
+	setObjectiveMode = async (chatId: string, body: { mode: ObjectiveMode }): Promise<ConfigPatchResponse> => {
+		await this.ensureChat(chatId);
+		await this.objectiveService.setObjectiveMode(brandId<ChatId>(chatId), body.mode);
+		return this.refresh(chatId);
+	};
+
+	updateObjectiveLongTermGoal = async (
+		chatId: string,
+		body: { description?: string; status?: ObjectiveTaskStatus },
+	): Promise<ConfigPatchResponse> => {
+		await this.ensureChat(chatId);
+		await this.objectiveService.updateLongTermGoal(brandId<ChatId>(chatId), body);
+		return this.refresh(chatId);
+	};
+
+	addObjectiveShortTermGoal = async (chatId: string, body: { description: string }): Promise<ConfigPatchResponse> => {
+		await this.ensureChat(chatId);
+		await this.objectiveService.addShortTermGoal(brandId<ChatId>(chatId), body.description);
+		return this.refresh(chatId);
+	};
+
+	updateObjectiveShortTermGoal = async (
+		chatId: string,
+		goalId: string,
+		body: { description?: string; status?: ObjectiveTaskStatus },
+	): Promise<ConfigPatchResponse> => {
+		await this.ensureChat(chatId);
+		await this.objectiveService.updateShortTermGoal(brandId<ChatId>(chatId), goalId, body);
+		return this.refresh(chatId);
+	};
+
+	deleteObjectiveShortTermGoal = async (chatId: string, goalId: string): Promise<ConfigPatchResponse> => {
+		await this.ensureChat(chatId);
+		await this.objectiveService.deleteShortTermGoal(brandId<ChatId>(chatId), goalId);
+		return this.refresh(chatId);
+	};
+
+	selectObjectiveShortTermGoal = async (chatId: string, body: { goalId: string }): Promise<ConfigPatchResponse> => {
+		await this.ensureChat(chatId);
+		await this.objectiveService.selectShortTermGoal(brandId<ChatId>(chatId), body.goalId);
 		return this.refresh(chatId);
 	};
 

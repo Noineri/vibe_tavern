@@ -25,7 +25,7 @@ import type {
 	SummaryResponse,
 	CharacterVersionResponse,
 } from "./session-types.js";
-import type { ObjectiveTaskStatus, PromptTraceRecordDto, PromptPresetDto, PronounForms, SceneTrackerConfig, SceneTrackerConfigPatch } from "@vibe-tavern/domain";
+import type { ObjectiveMode, ObjectiveTaskStatus, PromptTraceRecordDto, PromptPresetDto, PronounForms, SceneTrackerConfig, SceneTrackerConfigPatch } from "@vibe-tavern/domain";
 import type { ChatMode } from "@vibe-tavern/domain";
 import type {
 	ChatSummary,
@@ -408,6 +408,12 @@ export interface InsightsRuntimeApi {
 	updateObjectiveTask: (chatId: string, taskId: string, body: { description?: string; status?: ObjectiveTaskStatus }) => Promise<ConfigPatchResponse>;
 	reorderObjectiveTasks: (chatId: string, body: { taskIds: string[] }) => Promise<ConfigPatchResponse>;
 	deleteObjectiveTask: (chatId: string, taskId: string) => Promise<ConfigPatchResponse>;
+	setObjectiveMode: (chatId: string, body: { mode: ObjectiveMode }) => Promise<ConfigPatchResponse>;
+	updateObjectiveLongTermGoal: (chatId: string, body: { description?: string; status?: ObjectiveTaskStatus }) => Promise<ConfigPatchResponse>;
+	addObjectiveShortTermGoal: (chatId: string, body: { description: string }) => Promise<ConfigPatchResponse>;
+	updateObjectiveShortTermGoal: (chatId: string, goalId: string, body: { description?: string; status?: ObjectiveTaskStatus }) => Promise<ConfigPatchResponse>;
+	deleteObjectiveShortTermGoal: (chatId: string, goalId: string) => Promise<ConfigPatchResponse>;
+	selectObjectiveShortTermGoal: (chatId: string, body: { goalId: string }) => Promise<ConfigPatchResponse>;
 	updateObjectiveConfig: (chatId: string, body: {
 		autoCheckFrequency?: number;
 		contextWindow?: number;

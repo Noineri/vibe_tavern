@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import type { StoreContainer } from "@vibe-tavern/db";
 import type { ObjectiveState } from "@vibe-tavern/domain";
+import { OBJECTIVE_MODE, OBJECTIVE_TASK_STATUS } from "@vibe-tavern/domain";
 import { InsightsAdapter } from "../src/api/adapters/insights-adapter.js";
 import { defaultObjectiveState, type ObjectiveService } from "../src/domain/insights/objective-service.js";
 import type { SceneTrackerService, SceneTarget } from "../src/domain/insights/tracker-service.js";
@@ -99,6 +100,47 @@ describe("InsightsAdapter Objective context", () => {
 		expect(recentMessageLimit).toBe(4);
 		expect(receivedContext).toBe(context);
 	});
+});
+
+describe("InsightsAdapter Objective goals operations (OGM)", () => {
+  it("delegates mode/long-term/short-term mutations and refreshes activeChat", async () => {
+    const calls: Array<{ method: string; args: unknown[] }> = [];
+    const refreshes: Array<{ chatId: string; flags: unknown }> = [];
+    const stores = { chats: { getById: async () => ({ id: "chat_1" }) } } as unknown as StoreContainer;
+    const sessionRuntime = {
+      buildConfigPatchResponse: async (chatId: string, flags: unknown) => {
+        refreshes.push({ chatId, flags });
+        return { activeChat: {} };
+      },
+    } as unknown as SessionRuntime;
+    const objectiveService = {
+      setObjectiveMode: async (...args: unknown[]) => { calls.push({ method: "mode", args }); },
+      updateLongTermGoal: async (...args: unknown[]) => { calls.push({ method: "long-term", args }); },
+      addShortTermGoal: async (...args: unknown[]) => { calls.push({ method: "short-add", args }); },
+      updateShortTermGoal: async (...args: unknown[]) => { calls.push({ method: "short-update", args }); },
+      deleteShortTermGoal: async (...args: unknown[]) => { calls.push({ method: "short-delete", args }); },
+      selectShortTermGoal: async (...args: unknown[]) => { calls.push({ method: "short-select", args }); },
+    } as unknown as ObjectiveService;
+    const adapter = new InsightsAdapter(stores, sessionRuntime, objectiveService, noopTracker() as SceneTrackerService);
+
+    await adapter.setObjectiveMode("chat_1", { mode: OBJECTIVE_MODE.goals });
+    await adapter.updateObjectiveLongTermGoal("chat_1", { description: "Free the city", status: OBJECTIVE_TASK_STATUS.active });
+    await adapter.addObjectiveShortTermGoal("chat_1", { description: "Reach the gate" });
+    await adapter.updateObjectiveShortTermGoal("chat_1", "goal_1", { status: OBJECTIVE_TASK_STATUS.completed });
+    await adapter.deleteObjectiveShortTermGoal("chat_1", "goal_1");
+    await adapter.selectObjectiveShortTermGoal("chat_1", { goalId: "goal_2" });
+
+    expect(calls).toEqual([
+      { method: "mode", args: ["chat_1", OBJECTIVE_MODE.goals] },
+      { method: "long-term", args: ["chat_1", { description: "Free the city", status: OBJECTIVE_TASK_STATUS.active }] },
+      { method: "short-add", args: ["chat_1", "Reach the gate"] },
+      { method: "short-update", args: ["chat_1", "goal_1", { status: OBJECTIVE_TASK_STATUS.completed }] },
+      { method: "short-delete", args: ["chat_1", "goal_1"] },
+      { method: "short-select", args: ["chat_1", "goal_2"] },
+    ]);
+    expect(refreshes).toHaveLength(6);
+    expect(refreshes.every((entry) => entry.chatId === "chat_1" && JSON.stringify(entry.flags) === JSON.stringify({ activeChat: true }))).toBe(true);
+  });
 });
 
 describe("InsightsAdapter completion refresh", () => {

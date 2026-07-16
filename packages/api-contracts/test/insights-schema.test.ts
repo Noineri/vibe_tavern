@@ -1,11 +1,16 @@
 import { describe, expect, it } from "bun:test";
-import { OBJECTIVE_TASK_STATUS } from "@vibe-tavern/domain";
+import { OBJECTIVE_MODE, OBJECTIVE_TASK_STATUS } from "@vibe-tavern/domain";
 import {
+  addObjectiveShortTermGoalSchema,
   addObjectiveTaskSchema,
   insightsCompletionRefreshSchema,
   reorderObjectiveTasksSchema,
+  selectObjectiveShortTermGoalSchema,
   setObjectiveDescriptionSchema,
+  setObjectiveModeSchema,
   updateObjectiveConfigSchema,
+  updateObjectiveLongTermGoalSchema,
+  updateObjectiveShortTermGoalSchema,
   updateObjectiveTaskSchema,
 } from "../src/schemas/insights-schema.js";
 
@@ -31,6 +36,19 @@ describe("Objective request schemas", () => {
   it("trims and rejects an empty objective description", () => {
     expect(setObjectiveDescriptionSchema.parse({ objectiveDescription: "  Escape  " })).toEqual({ objectiveDescription: "Escape" });
     expect(setObjectiveDescriptionSchema.safeParse({ objectiveDescription: "   " }).success).toBe(false);
+  });
+
+  it("validates goals-mode requests and rejects empty patches", () => {
+    expect(setObjectiveModeSchema.parse({ mode: OBJECTIVE_MODE.goals })).toEqual({ mode: OBJECTIVE_MODE.goals });
+    expect(setObjectiveModeSchema.safeParse({ mode: "quest" }).success).toBe(false);
+    expect(updateObjectiveLongTermGoalSchema.parse({ description: "  Free the city  " })).toEqual({ description: "Free the city" });
+    expect(updateObjectiveLongTermGoalSchema.parse({ status: OBJECTIVE_TASK_STATUS.completed })).toEqual({ status: OBJECTIVE_TASK_STATUS.completed });
+    expect(updateObjectiveLongTermGoalSchema.safeParse({}).success).toBe(false);
+    expect(addObjectiveShortTermGoalSchema.parse({ description: "  Reach the gate  " })).toEqual({ description: "Reach the gate" });
+    expect(updateObjectiveShortTermGoalSchema.parse({ status: OBJECTIVE_TASK_STATUS.active })).toEqual({ status: OBJECTIVE_TASK_STATUS.active });
+    expect(updateObjectiveShortTermGoalSchema.safeParse({}).success).toBe(false);
+    expect(selectObjectiveShortTermGoalSchema.parse({ goalId: " goal_1 " })).toEqual({ goalId: "goal_1" });
+    expect(selectObjectiveShortTermGoalSchema.safeParse({ goalId: "   " }).success).toBe(false);
   });
 
   it("validates contextWindow as an optional positive integer without patch defaults", () => {

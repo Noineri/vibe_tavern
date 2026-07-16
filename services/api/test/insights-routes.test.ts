@@ -104,6 +104,60 @@ describe("Insights completion-refresh route", () => {
   });
 });
 
+describe("Insights Objective goals routes (OGM)", () => {
+  it("validates and forwards mode/long-term/short-term operations", async () => {
+    const calls: Array<{ method: string; chatId: string; goalId?: string; body?: unknown }> = [];
+    const ok = async () => ({ activeChat: {} });
+    const runtime = {
+      setObjectiveMode: async (chatId: string, body: unknown) => { calls.push({ method: "mode", chatId, body }); return ok(); },
+      updateObjectiveLongTermGoal: async (chatId: string, body: unknown) => { calls.push({ method: "long-term", chatId, body }); return ok(); },
+      addObjectiveShortTermGoal: async (chatId: string, body: unknown) => { calls.push({ method: "short-add", chatId, body }); return ok(); },
+      selectObjectiveShortTermGoal: async (chatId: string, body: unknown) => { calls.push({ method: "short-select", chatId, body }); return ok(); },
+      updateObjectiveShortTermGoal: async (chatId: string, goalId: string, body: unknown) => { calls.push({ method: "short-update", chatId, goalId, body }); return ok(); },
+      deleteObjectiveShortTermGoal: async (chatId: string, goalId: string) => { calls.push({ method: "short-delete", chatId, goalId }); return ok(); },
+    } as unknown as InsightsRuntimeApi;
+    const app = createInsightsRoutes(runtime);
+    const jsonHeaders = { "content-type": "application/json" };
+
+    const requests = [
+      app.request("/api/chats/chat_1/insights/objective/mode", { method: "PUT", headers: jsonHeaders, body: JSON.stringify({ mode: "goals" }) }),
+      app.request("/api/chats/chat_1/insights/objective/long-term", { method: "PATCH", headers: jsonHeaders, body: JSON.stringify({ description: "  Free the city  " }) }),
+      app.request("/api/chats/chat_1/insights/objective/short-term", { method: "POST", headers: jsonHeaders, body: JSON.stringify({ description: "  Reach the gate  " }) }),
+      app.request("/api/chats/chat_1/insights/objective/short-term/select", { method: "PUT", headers: jsonHeaders, body: JSON.stringify({ goalId: " goal_2 " }) }),
+      app.request("/api/chats/chat_1/insights/objective/short-term/goal_2", { method: "PATCH", headers: jsonHeaders, body: JSON.stringify({ status: "completed" }) }),
+      app.request("/api/chats/chat_1/insights/objective/short-term/goal_2", { method: "DELETE" }),
+    ];
+    const responses = await Promise.all(requests);
+    expect(responses.map((response) => response.status)).toEqual([200, 200, 200, 200, 200, 200]);
+    expect(calls.toSorted((a, b) => a.method.localeCompare(b.method))).toEqual([
+      { method: "long-term", chatId: "chat_1", body: { description: "Free the city" } },
+      { method: "mode", chatId: "chat_1", body: { mode: "goals" } },
+      { method: "short-add", chatId: "chat_1", body: { description: "Reach the gate" } },
+      { method: "short-delete", chatId: "chat_1", goalId: "goal_2" },
+      { method: "short-select", chatId: "chat_1", body: { goalId: "goal_2" } },
+      { method: "short-update", chatId: "chat_1", goalId: "goal_2", body: { status: "completed" } },
+    ]);
+  });
+
+  it("rejects invalid goals-mode bodies before runtime", async () => {
+    let calls = 0;
+    const runtime = {
+      setObjectiveMode: async () => { calls += 1; return { activeChat: {} }; },
+      updateObjectiveLongTermGoal: async () => { calls += 1; return { activeChat: {} }; },
+      selectObjectiveShortTermGoal: async () => { calls += 1; return { activeChat: {} }; },
+    } as unknown as InsightsRuntimeApi;
+    const app = createInsightsRoutes(runtime);
+    const headers = { "content-type": "application/json" };
+    const responses = await Promise.all([
+      app.request("/api/chats/chat_1/insights/objective/mode", { method: "PUT", headers, body: JSON.stringify({ mode: "quest" }) }),
+      app.request("/api/chats/chat_1/insights/objective/long-term", { method: "PATCH", headers, body: JSON.stringify({}) }),
+      app.request("/api/chats/chat_1/insights/objective/short-term/select", { method: "PUT", headers, body: JSON.stringify({ goalId: "" }) }),
+    ]);
+    expect(responses.map((response) => response.status)).toEqual([400, 400, 400]);
+    expect(calls).toBe(0);
+  });
+});
+
 describe("Insights Scene routes (SCN-9)", () => {
   it("generate forwards the immutable target + request signal to the runtime", async () => {
     const capture: { method: string; chatId?: string; body?: unknown; signal?: AbortSignal }[] = [];

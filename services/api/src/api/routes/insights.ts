@@ -33,6 +33,24 @@ export function createInsightsRoutes(runtime: InsightsRuntimeApi) {
     .put("/api/chats/:chatId/insights/objective/description", zValidator("json", schemas.setObjectiveDescriptionSchema), async (c) => {
       return c.json(await runtime.setObjectiveDescription(c.req.param("chatId"), c.req.valid("json")));
     })
+    .put("/api/chats/:chatId/insights/objective/mode", zValidator("json", schemas.setObjectiveModeSchema), async (c) => {
+      return c.json(await runtime.setObjectiveMode(c.req.param("chatId"), c.req.valid("json")));
+    })
+    .patch("/api/chats/:chatId/insights/objective/long-term", zValidator("json", schemas.updateObjectiveLongTermGoalSchema), async (c) => {
+      return c.json(await runtime.updateObjectiveLongTermGoal(c.req.param("chatId"), c.req.valid("json")));
+    })
+    .post("/api/chats/:chatId/insights/objective/short-term", zValidator("json", schemas.addObjectiveShortTermGoalSchema), async (c) => {
+      return c.json(await runtime.addObjectiveShortTermGoal(c.req.param("chatId"), c.req.valid("json")));
+    })
+    .put("/api/chats/:chatId/insights/objective/short-term/select", zValidator("json", schemas.selectObjectiveShortTermGoalSchema), async (c) => {
+      return c.json(await runtime.selectObjectiveShortTermGoal(c.req.param("chatId"), c.req.valid("json")));
+    })
+    .patch("/api/chats/:chatId/insights/objective/short-term/:goalId", zValidator("json", schemas.updateObjectiveShortTermGoalSchema), async (c) => {
+      return c.json(await runtime.updateObjectiveShortTermGoal(c.req.param("chatId"), c.req.param("goalId"), c.req.valid("json")));
+    })
+    .delete("/api/chats/:chatId/insights/objective/short-term/:goalId", async (c) => {
+      return c.json(await runtime.deleteObjectiveShortTermGoal(c.req.param("chatId"), c.req.param("goalId")));
+    })
     .put("/api/chats/:chatId/insights/objective/config", zValidator("json", schemas.updateObjectiveConfigSchema), async (c) => {
       return c.json(await runtime.updateObjectiveConfig(c.req.param("chatId"), c.req.valid("json")));
     })
