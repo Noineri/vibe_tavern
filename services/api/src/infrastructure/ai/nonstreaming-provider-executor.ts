@@ -16,6 +16,7 @@ import { buildSamplerConfig } from "./sampler-mapper.js";
 import { normalizeProviderType } from "@vibe-tavern/domain";
 import { classifyProviderError, extractProviderErrorStatusCode } from "./provider-error-classifier.js";
 import { extractProviderErrorMessage } from "./provider-error-message.js";
+import { serializeProviderResponseTrace } from "./provider-response-trace.js";
 import { cancelled } from "../../shared/errors.js";
 import { logSendDebug } from "../../shared/send-debug-log.js";
 
@@ -182,6 +183,17 @@ export async function nonstreamingProviderExecute(
       toolResults: extractedToolResults,
     } = extractNonstreamingToolInteractions(result.steps ?? []);
 
+    const providerResponse = serializeProviderResponseTrace(
+      "nonstream",
+      result.steps.map((step) => ({
+        response: step.response,
+        providerMetadata: step.providerMetadata,
+        finishReason: step.finishReason,
+        rawFinishReason: step.rawFinishReason,
+        usage: step.usage,
+      })),
+    );
+
     return {
       text: result.text,
       reasoning: result.reasoningText ?? undefined,
@@ -193,6 +205,7 @@ export async function nonstreamingProviderExecute(
           }
         : undefined,
       sentConfig,
+      providerResponse,
       toolCalls: extractedToolCalls.length > 0 ? extractedToolCalls : undefined,
       toolResults: extractedToolResults.length > 0 ? extractedToolResults : undefined,
     };

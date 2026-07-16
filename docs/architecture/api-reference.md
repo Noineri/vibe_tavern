@@ -544,7 +544,7 @@ Change the active prompt preset for this chat.
 
 ### `GET /api/prompt-traces/:traceId/export`
 
-Export a prompt trace as JSON (shows all layers, token counts, and the final messages array).
+Export a prompt trace as JSON (shows all layers, token counts, the final request messages, and the captured provider response for each model step). Non-streaming responses include the raw HTTP body when exposed by the provider; streaming responses include raw provider chunks. Diagnostic response headers such as rate-limit and request IDs are retained, while recognized credential-bearing headers are removed.
 
 **Response:** JSON prompt trace object.
 

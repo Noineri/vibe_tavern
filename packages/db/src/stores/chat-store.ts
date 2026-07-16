@@ -517,6 +517,7 @@ export class ChatStore {
               compactionSummary: t.compactionSummary,
               latencyMs: t.latencyMs,
               sentConfigJson: t.sentConfigJson,
+              providerResponseJson: t.providerResponseJson,
               createdAt: t.createdAt,
             });
           }

@@ -94,9 +94,10 @@ export class LiveChatOrchestrator {
       reasoning = result.reasoning;
       toolCalls = result.toolCalls;
       toolResults = result.toolResults;
-      if (result.sentConfig) {
-        this.chatRuntime.patchPendingTrace(brandId<ChatId>(input.chatId), { sentConfig: result.sentConfig });
-      }
+      this.chatRuntime.patchPendingTrace(brandId<ChatId>(input.chatId), {
+        ...(result.sentConfig ? { sentConfig: result.sentConfig } : {}),
+        providerResponse: result.providerResponse,
+      });
     } catch (err) {
       this.chatRuntime.discardPendingPromptTrace(brandId<ChatId>(input.chatId));
       throw err;
@@ -165,9 +166,10 @@ export class LiveChatOrchestrator {
       reasoning = result.reasoning;
       toolCalls = result.toolCalls;
       toolResults = result.toolResults;
-      if (result.sentConfig) {
-        this.chatRuntime.patchPendingTrace(brandId<ChatId>(input.chatId), { sentConfig: result.sentConfig });
-      }
+      this.chatRuntime.patchPendingTrace(brandId<ChatId>(input.chatId), {
+        ...(result.sentConfig ? { sentConfig: result.sentConfig } : {}),
+        providerResponse: result.providerResponse,
+      });
     } catch (err) {
       this.chatRuntime.discardPendingPromptTrace(brandId<ChatId>(input.chatId));
       throw err;
@@ -250,9 +252,10 @@ export class LiveChatOrchestrator {
       reasoning = result.reasoning;
       toolCalls = result.toolCalls;
       toolResults = result.toolResults;
-      if (result.sentConfig) {
-        this.chatRuntime.patchPendingTrace(brandId<ChatId>(input.chatId), { sentConfig: result.sentConfig });
-      }
+      this.chatRuntime.patchPendingTrace(brandId<ChatId>(input.chatId), {
+        ...(result.sentConfig ? { sentConfig: result.sentConfig } : {}),
+        providerResponse: result.providerResponse,
+      });
     } catch (err) {
       this.chatRuntime.discardPendingPromptTrace(brandId<ChatId>(input.chatId));
       throw err;
@@ -306,7 +309,10 @@ export class LiveChatOrchestrator {
         }
       : undefined;
     const { streamResult, startedAt } = await this.startStream({ ...input, ...provider, onAttachmentDescriptions, tools: prepared.tools, maxSteps: prepared.maxSteps }, prepared.prompt);
-    if (streamResult.sentConfig) { this.chatRuntime.patchPendingTrace(brandId<ChatId>(input.chatId), { sentConfig: streamResult.sentConfig }); }
+    this.chatRuntime.patchPendingTrace(brandId<ChatId>(input.chatId), {
+      ...(streamResult.sentConfig ? { sentConfig: streamResult.sentConfig } : {}),
+      providerResponse: streamResult.providerResponse,
+    });
 
     if (prepared.coauthorModuleId) {
       yield {
@@ -365,7 +371,10 @@ export class LiveChatOrchestrator {
     });
     const prefill = prompt.prefill ?? undefined;
     const { streamResult, startedAt } = await this.startStream({ ...input, ...provider, tools: prompt.tools, maxSteps: prompt.maxSteps }, prompt);
-    if (streamResult.sentConfig) { this.chatRuntime.patchPendingTrace(brandId<ChatId>(input.chatId), { sentConfig: streamResult.sentConfig }); }
+    this.chatRuntime.patchPendingTrace(brandId<ChatId>(input.chatId), {
+      ...(streamResult.sentConfig ? { sentConfig: streamResult.sentConfig } : {}),
+      providerResponse: streamResult.providerResponse,
+    });
 
     if (prompt.coauthorModuleId) {
       yield {
@@ -429,7 +438,10 @@ export class LiveChatOrchestrator {
     });
     const prefill = prompt.prefill ?? undefined;
     const { streamResult, startedAt } = await this.startStream({ ...input, ...provider, tools: prompt.tools, maxSteps: prompt.maxSteps }, prompt);
-    if (streamResult.sentConfig) { this.chatRuntime.patchPendingTrace(brandId<ChatId>(input.chatId), { sentConfig: streamResult.sentConfig }); }
+    this.chatRuntime.patchPendingTrace(brandId<ChatId>(input.chatId), {
+      ...(streamResult.sentConfig ? { sentConfig: streamResult.sentConfig } : {}),
+      providerResponse: streamResult.providerResponse,
+    });
 
     if (prompt.coauthorModuleId) {
       yield {

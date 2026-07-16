@@ -53,6 +53,18 @@ function makeTraceData(
 		prefill: `prefill-${tag}`,
 		compactionSummary: null,
 		sentConfig: null,
+		providerResponse: {
+			mode: "nonstream",
+			steps: [{
+				response: {
+					id: `response-${tag}`,
+					modelId: `model-${tag}`,
+					headers: { "x-ratelimit-remaining-requests": "8" },
+					body: { text: `reply-${tag}` },
+				},
+				finishReason: "stop",
+			}],
+		},
 	};
 }
 
@@ -153,6 +165,18 @@ describe("ChatStore.forkBranch — trace inheritance (Defect C)", () => {
 		expect(t0Copy.prefill).toBe("prefill-T0");
 		expect(t0Copy.assembledLayers).toEqual([{ layer: "T0" }]);
 		expect(t0Copy.activatedLoreEntries).toEqual(["T0"]);
+		expect(t0Copy.providerResponse).toEqual({
+			mode: "nonstream",
+			steps: [{
+				response: {
+					id: "response-T0",
+					modelId: "model-T0",
+					headers: { "x-ratelimit-remaining-requests": "8" },
+					body: { text: "reply-T0" },
+				},
+				finishReason: "stop",
+			}],
+		});
 		expect(t0Copy.latencyMs).toBe(100);
 
 		// Source branch is unchanged: still 3 traces, still on brnch_1.

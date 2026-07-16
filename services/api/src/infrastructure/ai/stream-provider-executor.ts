@@ -117,9 +117,10 @@ export const streamProviderExecutor: ProviderExecutor = async (input) => {
       ...samplerConfig,
       ...(input.tools ? { tools: input.tools } : {}),
       ...(input.tools && input.maxSteps ? { stopWhen: stepCountIs(input.maxSteps) } : {}),
+      includeRawChunks: true,
     });
 
-    const { stream, hasRedacted } = createMappedStream(result.fullStream);
+    const { stream, state } = createMappedStream(result.fullStream);
 
     // Attach catch handlers immediately. On manual cancellation AI SDK v5 can
     // reject these promises later with NoOutputGeneratedError even after our
@@ -133,8 +134,11 @@ export const streamProviderExecutor: ProviderExecutor = async (input) => {
       finished,
       text,
       reasoning,
-      hasRedactedReasoning: hasRedacted,
+      get hasRedactedReasoning() {
+        return state.hasRedacted;
+      },
       sentConfig,
+      providerResponse: state.providerResponse,
     };
   } catch (error) {
     if (input.signal?.aborted) throw cancelled();

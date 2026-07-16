@@ -7,7 +7,7 @@
  * unchanged until FW-AI2 swaps it.
  */
 
-import type { AssemblePromptResponse } from "@vibe-tavern/domain";
+import type { AssemblePromptResponse, ProviderResponseTrace } from "@vibe-tavern/domain";
 import type { ProviderType } from "@vibe-tavern/domain";
 import type { StoredProviderProfileRecord } from "@vibe-tavern/domain";
 import type { ProviderErrorCategory } from "@vibe-tavern/api-contracts";
@@ -84,6 +84,8 @@ export interface GenerationResult {
   usage?: GenerationUsage;
   /** Snapshot of what was sent to the provider. */
   sentConfig?: SentConfigSnapshot;
+  /** Raw response bodies, headers, and metadata for every model step. */
+  providerResponse: ProviderResponseTrace;
   /** Accumulated tool calls from all steps in this generation turn. */
   toolCalls?: ExtractedToolCall[];
   /** Accumulated tool results from all steps in this generation turn. */
@@ -174,6 +176,8 @@ export interface ProviderStreamResult {
   hasRedactedReasoning: boolean;
   /** Snapshot of what was sent to the provider. */
   sentConfig?: SentConfigSnapshot;
+  /** Live trace object populated as the provider stream is consumed. */
+  providerResponse: ProviderResponseTrace;
 }
 
 /** Input to the streaming executor. */

@@ -10,7 +10,9 @@ import { extractProviderErrorMessage } from "./provider-error-message.js";
 import { cancelled, providerError } from "../../shared/errors.js";
 import { REASONING_START_MARKER, REASONING_END_MARKER } from "../../domain/providers/openai-reasoning-fetch.js";
 import type { ProviderMetadata } from "ai";
+import type { ProviderResponseTrace } from "@vibe-tavern/domain";
 import type { ProviderStreamChunk, ProviderStreamFinish } from "./provider-execution-types.js";
+import { serializeProviderResponseStep, toTraceJsonValue } from "./provider-response-trace.js";
 
 // ─── createMappedStream ──────────────────────────────────────────────────
 
@@ -20,18 +22,32 @@ import type { ProviderStreamChunk, ProviderStreamFinish } from "./provider-execu
  * Filters for `text-delta` and `reasoning` parts only.
  * Tracks whether a `redacted-reasoning` part was seen (e.g. Claude extended thinking).
  *
- * Also handles the REASONING_START/REASONING_END marker protocol injected
- * by our `createReasoningAwareFetch()` wrapper for OpenAI Chat Completions
- * providers that return `reasoning_content` in streaming deltas.
+ * Also retains compatibility with the legacy REASONING_START/REASONING_END
+ * marker protocol. Current OpenAI-compatible providers flow through AI SDK's
+ * native `reasoning_content` / `reasoning` support instead.
  */
 export function createMappedStream(
   fullStream: AsyncIterable<unknown>,
 ): {
   stream: AsyncGenerator<ProviderStreamChunk>;
-  hasRedacted: boolean;
+  state: {
+    hasRedacted: boolean;
+    providerResponse: ProviderResponseTrace;
+  };
 } {
-  let hasRedacted = false;
+  const state = {
+    hasRedacted: false,
+    providerResponse: { mode: "stream", steps: [] } as ProviderResponseTrace,
+  };
   let inReasoning = false;
+  let currentStepIndex = -1;
+
+  const ensureCurrentStep = (): number => {
+    if (currentStepIndex >= 0) return currentStepIndex;
+    state.providerResponse.steps.push({ rawChunks: [] });
+    currentStepIndex = state.providerResponse.steps.length - 1;
+    return currentStepIndex;
+  };
 
   async function* walk(): AsyncGenerator<ProviderStreamChunk> {
     let chunkCount = 0;
@@ -49,6 +65,49 @@ export function createMappedStream(
         const errMsg = pErr.errorText ?? extractProviderErrorMessage(pErr.error);
         logSendDebug("reasoning.stream-error", { chunkCount, error: errMsg, partTypes: [...partTypes].sort() });
         throw providerError(errMsg);
+      }
+
+      // ── Raw provider response capture, grouped by AI SDK model step ──
+      if (p.type === "start-step") {
+        state.providerResponse.steps.push({ rawChunks: [] });
+        currentStepIndex = state.providerResponse.steps.length - 1;
+        continue;
+      }
+      if (p.type === "raw") {
+        const raw = part as { type: "raw"; rawValue: unknown };
+        const step = state.providerResponse.steps[ensureCurrentStep()];
+        step?.rawChunks?.push(toTraceJsonValue(raw.rawValue));
+        continue;
+      }
+      if (p.type === "finish-step") {
+        const finishedStep = part as {
+          type: "finish-step";
+          response: {
+            id?: string;
+            timestamp?: Date | string;
+            modelId?: string;
+            headers?: Record<string, string>;
+            body?: unknown;
+          };
+          usage?: { inputTokens?: number; outputTokens?: number; totalTokens?: number };
+          finishReason?: string;
+          rawFinishReason?: string;
+          providerMetadata?: ProviderMetadata;
+        };
+        const index = ensureCurrentStep();
+        const rawChunks = state.providerResponse.steps[index]?.rawChunks ?? [];
+        state.providerResponse.steps[index] = serializeProviderResponseStep(
+          {
+            response: finishedStep.response,
+            usage: finishedStep.usage,
+            finishReason: finishedStep.finishReason,
+            rawFinishReason: finishedStep.rawFinishReason,
+            providerMetadata: finishedStep.providerMetadata,
+          },
+          rawChunks,
+        );
+        currentStepIndex = -1;
+        continue;
       }
 
       // ── Tool calls (informational — AI SDK handles execution) ──
@@ -154,7 +213,7 @@ export function createMappedStream(
         reasoningCount++;
         yield { type: "reasoning-delta", textDelta: p2.delta };
       } else if (p.type === "redacted-reasoning") {
-        hasRedacted = true;
+        state.hasRedacted = true;
       }
       // reasoning-start, reasoning-end, text-start, text-end, source, etc. — silently ignored
     }
@@ -163,11 +222,11 @@ export function createMappedStream(
       totalChunks: chunkCount,
       reasoningChunks: reasoningCount,
       partTypes: [...partTypes].sort(),
-      hasRedacted,
+      hasRedacted: state.hasRedacted,
     });
   }
 
-  return { stream: walk(), hasRedacted };
+  return { stream: walk(), state };
 }
 
 // ─── mapFinish ───────────────────────────────────────────────────────────

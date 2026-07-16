@@ -302,6 +302,8 @@
   "trace_search_placeholder": "Search...",
   "trace_mobile_hint": "Exact prompt assembly sent to the model on the last turn (System, Context, RAG, History).",
   "trace_json_payload": "View JSON Payload",
+  "trace_json_request": "Download request JSON",
+  "trace_json_response": "Download response JSON",
   "trace_no_traces_yet": "No traces recorded yet. Send a message to generate one.",
   "trace_chat_history": "Chat History",
   "trace_messages_label": "msgs",

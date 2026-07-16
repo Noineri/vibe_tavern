@@ -456,12 +456,45 @@ export interface RetrievedMemoryHit {
   createdAt: Timestamp;
 }
 
+/** JSON-safe value persisted in prompt traces and downloadable without custom serializers. */
+export type TraceJsonValue = string | number | boolean | null | TraceJsonValue[] | { [key: string]: TraceJsonValue };
+
+/** One provider call inside a traced turn. Tool loops can produce multiple steps. */
+export interface ProviderResponseStep {
+  response?: {
+    id?: string;
+    timestamp?: string;
+    modelId?: string;
+    /** Response headers with credential-bearing fields removed. */
+    headers?: Record<string, string>;
+    /** Raw HTTP response body when the provider exposes one. */
+    body?: TraceJsonValue;
+  };
+  providerMetadata?: TraceJsonValue;
+  finishReason?: string;
+  rawFinishReason?: string;
+  usage?: {
+    inputTokens?: number;
+    outputTokens?: number;
+    totalTokens?: number;
+  };
+  /** Raw provider SSE payloads for this streaming step. */
+  rawChunks?: TraceJsonValue[];
+}
+
+/** Provider response captured alongside the outbound prompt payload. */
+export interface ProviderResponseTrace {
+  mode: "nonstream" | "stream";
+  steps: ProviderResponseStep[];
+}
+
 /**
  * Full audit record of an assembled prompt, used for debugging only — never
  * consumed at runtime.
  *
  * `assembledLayers` lists every layer that was included.
  * `finalPayload` is the exact JSON sent to the provider.
+ * `providerResponse` records what the provider returned for each model step.
  */
 export interface PromptTrace {
   id: PromptTraceId;
@@ -497,6 +530,8 @@ export interface PromptTrace {
   }>;
   retrievedMemories: Array<Record<string, unknown>>;
   finalPayload: Record<string, unknown>;
+  /** Absent on previews and traces persisted before response capture existed. */
+  providerResponse?: ProviderResponseTrace | null;
   latencyMs: number;
   prefill?: string | null;
   compactionSummary?: string | null;

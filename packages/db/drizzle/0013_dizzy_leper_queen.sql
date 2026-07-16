@@ -1,0 +1,1 @@
+ALTER TABLE `prompt_traces` ADD `provider_response_json` text;

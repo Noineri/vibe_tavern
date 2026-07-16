@@ -302,6 +302,8 @@
   "trace_search_placeholder": "Поиск...",
   "trace_mobile_hint": "Точная сборка промпта, отправленного модели на последнем ходу (System, Context, RAG, History).",
   "trace_json_payload": "Просмотр JSON Payload",
+  "trace_json_request": "Скачать JSON запроса",
+  "trace_json_response": "Скачать JSON ответа",
   "trace_no_traces_yet": "Трассировок ещё нет. Отправьте сообщение для записи.",
   "trace_chat_history": "История чата",
   "trace_messages_label": "сообщ.",

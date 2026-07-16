@@ -10,6 +10,7 @@ import { Icons } from "../shared/icons.js";
 import { DropdownSelect } from "../shared/DropdownSelect.js";
 import { CharacterForm } from "./editors/CharacterForm.js";
 import { TracePayloadView } from "./trace-payload-view.js";
+import { TraceJsonDownloads } from "./trace-json-downloads.js";
 import { formatTraceTimestamp } from "../layout/app-shell-helpers.js";
 import { resolveEntityAvatarUrl } from "../../lib/avatar.js";
 import { useT } from "../../i18n/context.js";
@@ -88,7 +89,6 @@ export function BuildMode() {
     isSaving={isSaving}
     buildTab={buildTab}
     activeTrace={activeTrace}
-    promptPayloadText={promptPayloadText}
     promptTraceCount={promptTraceCount}
     currentTraceIndex={currentTraceIndex}
     imageAttachmentsCount={imageAttachmentsCount}
@@ -123,7 +123,6 @@ interface BuildModeInnerProps {
   isSaving: boolean;
   buildTab: BuildTab;
   activeTrace: PromptTraceRecordDto | AssemblePromptResponse | null;
-  promptPayloadText: string;
   promptTraceCount: number;
   currentTraceIndex: number;
   imageAttachmentsCount: number;
@@ -145,7 +144,7 @@ interface BuildModeInnerProps {
   hasAvatar: boolean;
 }
 
-function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptPayloadText, promptTraceCount, currentTraceIndex, imageAttachmentsCount, setSelectedTraceId, promptTraceHistory, traceFetchStatus, traceFetchError, onRefetchTraceHistory, onSave, onAvatarUpload, characterId, activeChatId, personaId, onExportJson, onExportPng, onDuplicate, onDelete, onCreateChat, hasAvatar }: BuildModeInnerProps) {
+function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptTraceCount, currentTraceIndex, imageAttachmentsCount, setSelectedTraceId, promptTraceHistory, traceFetchStatus, traceFetchError, onRefetchTraceHistory, onSave, onAvatarUpload, characterId, activeChatId, personaId, onExportJson, onExportPng, onDuplicate, onDelete, onCreateChat, hasAvatar }: BuildModeInnerProps) {
   const { t, locale } = useT();
   const isMobile = useIsMobile();
   const panels = useBuildPanels();
@@ -268,17 +267,8 @@ function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptPayl
     const trace = activeTrace;
     const totalTokens = trace ? (trace.tokenAccounting?.total ?? trace.layers.reduce((sum, l) => sum + l.tokenCount, 0)) : 0;
     const visionDescriptions = trace?.sentConfig?.visionDescriptions ?? [];
-    const downloadPayload = () => {
-      const blob = new Blob([promptPayloadText], { type: "application/json" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `prompt-payload-${activeTrace && 'id' in activeTrace ? (activeTrace as { id: string }).id : 'trace'}.json`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-    };
+    const traceId = trace && "id" in trace ? trace.id : "trace";
+    const providerResponse = trace && "providerResponse" in trace ? trace.providerResponse : undefined;
 
     // Fetch-status banner for the lazy-loaded history (TL-B2). The main trace
     // view still renders from `activeTrace` (latest/contextPreview) while the
@@ -371,9 +361,12 @@ function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptPayl
                     {t("trace_sent_with_attachments", { n: imageAttachmentsCount })}
                   </div>
                 )}
-                <button type="button" className="h-9 rounded-md bg-s2 px-4 font-ui text-[12px] font-medium text-t2 active:bg-s3" onClick={downloadPayload}>
-                  {t("trace_json_payload")}
-                </button>
+                <TraceJsonDownloads
+                  traceId={traceId}
+                  requestPayload={trace.finalPayload}
+                  providerResponse={providerResponse}
+                  mobile
+                />
               </div>
             </div>
           ) : (
@@ -487,22 +480,11 @@ function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptPayl
             <TracePayloadView trace={trace} searchQuery={traceSearch} formatTokens={formatTokenCount} compact={!isMobile} />
 
             <div className="mt-5">
-              <button type="button"
-                className="inline-flex cursor-pointer items-center rounded-md border-0 bg-s3 px-4 py-2 font-ui text-xs font-medium text-t2 transition-colors hover:bg-border2 hover:text-t1"
-                onClick={() => {
-                  const blob = new Blob([promptPayloadText], { type: "application/json" });
-                  const url = URL.createObjectURL(blob);
-                  const a = document.createElement("a");
-                  a.href = url;
-                  a.download = `prompt-payload-${activeTrace && 'id' in activeTrace ? (activeTrace as { id: string }).id : 'trace'}.json`;
-                  document.body.appendChild(a);
-                  a.click();
-                  document.body.removeChild(a);
-                  URL.revokeObjectURL(url);
-                }}
-              >
-                {t("view_raw_json")}
-              </button>
+              <TraceJsonDownloads
+                traceId={traceId}
+                requestPayload={trace.finalPayload}
+                providerResponse={providerResponse}
+              />
             </div>
           </div>
         ) : (

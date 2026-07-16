@@ -1,6 +1,6 @@
 import { eq, and, desc } from 'drizzle-orm';
 import { promptTraces } from '../db-schema.js';
-import type { ActivatedLoreDetail } from '@vibe-tavern/domain';
+import type { ActivatedLoreDetail, ProviderResponseTrace } from '@vibe-tavern/domain';
 import type { AppDb } from '../db-connection.js';
 import { resolveStoreRuntime, type StoreClock, type StoreIdGenerator } from '../persistence.js';
 
@@ -39,6 +39,7 @@ export interface PromptTrace {
       description: string;
     }>;
   } | null;
+  providerResponse?: ProviderResponseTrace | null;
 }
 
 // ─── Input type ───────────────────────────────────────────────────────────────
@@ -70,6 +71,7 @@ export interface SaveTraceData {
       description: string;
     }>;
   } | null;
+  providerResponse?: ProviderResponseTrace | null;
 }
 
 // ─── Store ────────────────────────────────────────────────────────────────────
@@ -119,6 +121,7 @@ export class PromptTraceStore {
         prefill: data.prefill ?? null,
         compactionSummary: data.compactionSummary ?? null,
         sentConfigJson: data.sentConfig ? JSON.stringify(data.sentConfig) : null,
+        providerResponseJson: data.providerResponse ? JSON.stringify(data.providerResponse) : null,
         latencyMs: data.latencyMs,
         createdAt: now,
       })
@@ -181,6 +184,7 @@ export class PromptTraceStore {
       prefill: row.prefill ?? null,
       compactionSummary: row.compactionSummary ?? null,
       sentConfig: row.sentConfigJson ? JSON.parse(row.sentConfigJson) : null,
+      providerResponse: row.providerResponseJson ? JSON.parse(row.providerResponseJson) : null,
       createdAt: row.createdAt,
     };
   }

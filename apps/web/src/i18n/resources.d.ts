@@ -1335,6 +1335,8 @@ export default interface Resources {
     "trace_inject_depth": "Depth {n}",
     "trace_injects_label": "injects",
     "trace_json_payload": "View JSON Payload",
+    "trace_json_request": "Download request JSON",
+    "trace_json_response": "Download response JSON",
     "trace_loading": "Loading trace history…",
     "trace_message_group_one": "Message {n}",
     "trace_message_group_range": "Messages {start}–{end}",

@@ -11,7 +11,6 @@
  */
 
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
-import { createReasoningAwareFetch } from "./openai-reasoning-fetch.js";
 import { resolveVendor, buildDefaultModelsUrl, type OpenAiModelsResponse } from "./vendor-registry.js";
 import {
 	PROBE_TIMEOUT_MS,
@@ -230,7 +229,6 @@ export const openaiCompatProtocol: ProtocolAdapter = {
 			name: "openai_compat",
 			apiKey: apiKey || "not-needed",
 			baseURL: endpoint || "https://api.openai.com/v1",
-			fetch: createReasoningAwareFetch(),
 			// Many OpenAI-compatible aggregators/models support response_format:
 			// json_schema, but the generic provider defaults this capability to
 			// false unless declared.

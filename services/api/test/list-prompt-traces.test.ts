@@ -129,6 +129,18 @@ describe("TL-A1 — listPromptTraces (lazy-loaded history)", () => {
 		expect(typeof authored.id).toBe("string");
 		expect(authored.latencyMs).toBe(100);
 		expect(authored.tokenAccounting).toEqual({ total: 1 });
+		expect(authored.providerResponse).toEqual({
+			mode: "nonstream",
+			steps: [{
+				response: {
+					id: "response-T1",
+					modelId: "model-T1",
+					headers: { "x-ratelimit-remaining-requests": "8" },
+					body: { text: "reply-T1" },
+				},
+				finishReason: "stop",
+			}],
+		});
 	});
 });
 
@@ -149,5 +161,17 @@ function traceSeed(chatId: string, branchId: string, messageId: string, tag: str
 		prefill: `prefill-${tag}`,
 		compactionSummary: null,
 		sentConfig: null,
+		providerResponse: {
+			mode: "nonstream" as const,
+			steps: [{
+				response: {
+					id: `response-${tag}`,
+					modelId: `model-${tag}`,
+					headers: { "x-ratelimit-remaining-requests": "8" },
+					body: { text: `reply-${tag}` },
+				},
+				finishReason: "stop",
+			}],
+		},
 	};
 }

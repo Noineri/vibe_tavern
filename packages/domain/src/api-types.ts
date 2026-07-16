@@ -3,7 +3,7 @@ import type {
   ChatId,
   MessageId,
 } from "./ids.js";
-import type { ActivatedLoreDetail } from "./entities.js";
+import type { ActivatedLoreDetail, ProviderResponseTrace } from "./entities.js";
 
 export interface PromptLayerDto {
   id: string;
@@ -75,6 +75,8 @@ export interface PromptTraceRecordDto extends AssemblePromptResponse {
   model: string;
   presetName: string;
   latencyMs: number;
+  /** What the provider returned, grouped by model step. Absent on legacy traces and previews. */
+  providerResponse?: ProviderResponseTrace;
   createdAt: string;
 }
 

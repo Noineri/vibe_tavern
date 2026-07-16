@@ -8,9 +8,8 @@
  *
  * Supported tags: <thinking>, <think>, <thought>, <CoT> (and their closing tags).
  *
- * If reasoning was already extracted by the stream executor (via marker
- * protocol or native reasoning parts), the caller's `reasoning` argument
- * takes precedence.
+ * If reasoning was already extracted by the provider adapter, an identical
+ * tagged copy is discarded while distinct reasoning fragments are preserved.
  */
 export function extractThinkingTags(
 	text: string,
@@ -39,9 +38,9 @@ export function extractThinkingTags(
 
 	const mainContent = text.replace(THINKING_RE, "").trim();
 
-	// Merge: stream-detected reasoning first, then tag-extracted
-	const combinedReasoning = [existingReasoning, tagReasoning]
-		.filter(Boolean)
+	// Preserve distinct fragments, but do not duplicate the same reasoning when
+	// a provider exposes it both natively and inside the visible content.
+	const combinedReasoning = [...new Set([existingReasoning?.trim(), tagReasoning].filter((part): part is string => Boolean(part)))]
 		.join("\n\n");
 
 	return {

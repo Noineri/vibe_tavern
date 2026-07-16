@@ -10,7 +10,6 @@
  */
 
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
-import { createReasoningAwareFetch } from "./openai-reasoning-fetch.js";
 import { normalizeLocalOpenAiCompatibleBaseUrl } from "./provider-transport.js";
 import { PROVIDER_TYPE, SAMPLER_SETS } from "@vibe-tavern/domain";
 import type { ProtocolAdapter } from "./protocol-types.js";
@@ -38,7 +37,6 @@ export const llamaCppProtocol: ProtocolAdapter = {
 			name: "llamacpp",
 			apiKey: apiKey || "not-needed",
 			baseURL: endpoint,
-			fetch: createReasoningAwareFetch(),
 		});
 		return provider.chatModel(model);
 	},

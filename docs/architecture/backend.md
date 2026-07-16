@@ -209,7 +209,7 @@ POST /api/chats/:chatId/messages/stream
   │
   └─ ChatRuntime.appendAssistantReply()
       ├─ INSERT assistant message + variant
-      ├─ INSERT prompt trace
+      ├─ INSERT prompt trace (request payload + provider response steps/body or raw chunks + diagnostic headers)
       ├─ triggerAutoSummary()           → fire-and-forget background
       └─ getSnapshot()                  → full state for frontend
 ```
@@ -426,9 +426,9 @@ Logit bias is model-aware and fail-closed because token IDs are tokenizer/model-
 
 The non-streaming path (`nonstreaming-provider-executor.ts`) uses `generateText()` and awaits the full reply instead.
 
-### OpenAI Reasoning Fetch
+### OpenAI-Compatible Reasoning
 
-`domain/providers/openai-reasoning-fetch.ts` — custom fetch wrapper that intercepts SSE streams and rewrites `reasoning_content` fields into regular content with markers. This prevents AI SDK from silently stripping reasoning from providers that include it as a non-standard field.
+AI SDK v6 natively maps both `reasoning_content` and `reasoning` fields for streaming and non-streaming OpenAI-compatible responses. Provider response bodies are therefore passed through unchanged; `domain/providers/openai-reasoning-fetch.ts` retains only the legacy boundary constants used by marker-compatible parsers.
 
 ### Tokenizer Service
 

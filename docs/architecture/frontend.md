@@ -349,7 +349,7 @@ Prompt traces used to ship in every `SessionSnapshot` (`promptTraceHistory`). Th
 
 Keying by branch is what fixes two trace defects: switching branches changes the key, so the fetcher pulls the new branch's traces rather than showing the previous branch's stale set (no explicit invalidation hook needed for fork/activate/delete — they all change `activeBranchId`, which changes the key). The single **latest** trace still lives on the snapshot store (`promptTrace`) so the post-generation badge lights up immediately without a refetch.
 
-Build Mode's prev/next trace navigation indexes the cached branch-scoped list.
+Build Mode's prev/next trace navigation indexes the cached branch-scoped list. Each persisted trace exposes separate JSON downloads for the exact outbound request payload and the captured provider response; previews and legacy traces without response capture show only the request download.
 
 ---
 

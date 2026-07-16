@@ -176,16 +176,85 @@ describe("createMappedStream", () => {
       { type: "text-delta", text: "visible" },
       { type: "redacted-reasoning" },
     ];
-    const { stream, hasRedacted } = createMappedStream(fromParts(parts));
-    // hasRedacted is set during iteration, so we need to consume the stream
-    // BUT hasRedacted is a closure variable — it's updated as the generator runs.
-    // The value returned from createMappedStream is the initial false.
-    // After consuming, we need to read it from the closure — but we can't.
-    // Instead, test that consuming doesn't throw and the stream yields the text part.
+    const { stream, state } = createMappedStream(fromParts(parts));
     const chunks = await collect(stream);
     expect(chunks).toEqual([{ type: "text-delta", delta: "visible" }]);
-    // Note: hasRedacted is a primitive returned by value before iteration starts,
-    // so we can't test the post-iteration value from outside.
+    expect(state.hasRedacted).toBe(true);
+  });
+
+  it("collects raw provider chunks and response metadata per model step", async () => {
+    const parts = [
+      { type: "start-step", request: {}, warnings: [] },
+      { type: "raw", rawValue: { id: "chunk_1", delta: "Hel" } },
+      { type: "raw", rawValue: { id: "chunk_2", delta: "lo" } },
+      {
+        type: "finish-step",
+        response: {
+          id: "resp_1",
+          timestamp: new Date("2026-07-16T12:00:00.000Z"),
+          modelId: "model-a",
+          headers: {
+            "x-ratelimit-remaining-requests": "9",
+            "set-cookie": "session=secret",
+          },
+        },
+        usage: { inputTokens: 10, outputTokens: 2, totalTokens: 12 },
+        finishReason: "tool-calls",
+        rawFinishReason: "tool_calls",
+        providerMetadata: { google: { thoughtSignature: "sig_1" } },
+      },
+      { type: "start-step", request: {}, warnings: [] },
+      { type: "raw", rawValue: { id: "chunk_3", delta: "Done" } },
+      {
+        type: "finish-step",
+        response: {
+          id: "resp_2",
+          timestamp: new Date("2026-07-16T12:00:01.000Z"),
+          modelId: "model-a",
+          headers: { "retry-after": "2" },
+        },
+        usage: { inputTokens: 20, outputTokens: 1, totalTokens: 21 },
+        finishReason: "stop",
+        rawFinishReason: "stop",
+        providerMetadata: undefined,
+      },
+    ];
+
+    const { stream, state } = createMappedStream(fromParts(parts));
+    expect(await collect(stream)).toEqual([]);
+    expect(state.providerResponse).toEqual({
+      mode: "stream",
+      steps: [
+        {
+          response: {
+            id: "resp_1",
+            timestamp: "2026-07-16T12:00:00.000Z",
+            modelId: "model-a",
+            headers: { "x-ratelimit-remaining-requests": "9" },
+          },
+          providerMetadata: { google: { thoughtSignature: "sig_1" } },
+          finishReason: "tool-calls",
+          rawFinishReason: "tool_calls",
+          usage: { inputTokens: 10, outputTokens: 2, totalTokens: 12 },
+          rawChunks: [
+            { id: "chunk_1", delta: "Hel" },
+            { id: "chunk_2", delta: "lo" },
+          ],
+        },
+        {
+          response: {
+            id: "resp_2",
+            timestamp: "2026-07-16T12:00:01.000Z",
+            modelId: "model-a",
+            headers: { "retry-after": "2" },
+          },
+          finishReason: "stop",
+          rawFinishReason: "stop",
+          usage: { inputTokens: 20, outputTokens: 1, totalTokens: 21 },
+          rawChunks: [{ id: "chunk_3", delta: "Done" }],
+        },
+      ],
+    });
   });
 
   it("ignores unknown part types", async () => {

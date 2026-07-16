@@ -1,4 +1,4 @@
-import type { AssemblePromptResponse, Message, PromptTrace } from "@vibe-tavern/domain";
+import type { AssemblePromptResponse, Message, PromptTrace, ProviderResponseTrace } from "@vibe-tavern/domain";
 import { brandId, type ChatBranchId, type ChatId, type MessageId, type PromptPresetId } from "@vibe-tavern/domain";
 import type { ChatStore, MessageStore, PromptTraceStore } from "@vibe-tavern/db";
 import type { ToolSet } from "ai";
@@ -143,12 +143,15 @@ export class ChatRuntime {
     this.pendingPromptTraceByChat.delete(chatId);
   }
 
-  /** Patch the pending prompt trace with executor-level data (e.g. sentConfig). */
-  patchPendingTrace(chatId: ChatId, patch: { sentConfig?: AssemblePromptResponse["sentConfig"] }): void {
+  /** Patch the pending prompt trace with executor-level request/response data. */
+  patchPendingTrace(chatId: ChatId, patch: {
+    sentConfig?: AssemblePromptResponse["sentConfig"];
+    providerResponse?: ProviderResponseTrace;
+  }): void {
     const pending = this.pendingPromptTraceByChat.get(chatId);
-    if (pending && patch.sentConfig) {
-      (pending.draft as Record<string, unknown>).sentConfig = patch.sentConfig;
-    }
+    if (!pending) return;
+    if (patch.sentConfig) pending.draft.sentConfig = patch.sentConfig;
+    if (patch.providerResponse) pending.draft.providerResponse = patch.providerResponse;
   }
 
   async appendAssistantReply(
@@ -246,7 +249,8 @@ export class ChatRuntime {
         latencyMs,
         prefill: pending.draft.prefill,
         compactionSummary: pending.draft.compactionSummary,
-        sentConfig: (pending.draft as Record<string, unknown>).sentConfig as AssemblePromptResponse["sentConfig"],
+        sentConfig: pending.draft.sentConfig,
+        providerResponse: pending.draft.providerResponse,
       });
     }
 
@@ -318,7 +322,8 @@ export class ChatRuntime {
         latencyMs: input.latencyMs,
         prefill: pending.draft.prefill,
         compactionSummary: pending.draft.compactionSummary,
-        sentConfig: (pending.draft as Record<string, unknown>).sentConfig as AssemblePromptResponse["sentConfig"],
+        sentConfig: pending.draft.sentConfig,
+        providerResponse: pending.draft.providerResponse,
       });
     }
     return await buildMessageResponse(chatId);

@@ -55,6 +55,7 @@ export function mapPromptTraceRecord(trace: DbPromptTrace): PromptTraceRecordDto
     prefill: trace.prefill ?? null,
     compactionSummary: trace.compactionSummary ?? null,
     sentConfig: trace.sentConfig ?? undefined,
+    providerResponse: trace.providerResponse ?? undefined,
   };
 }
 

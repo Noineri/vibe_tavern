@@ -170,6 +170,7 @@ export async function exportPromptTrace(
 		finalPayload: trace.finalPayload,
 		compactionSummary: trace.compactionSummary ?? null,
 		sentConfig: trace.sentConfig ?? undefined,
+		providerResponse: trace.providerResponse ?? undefined,
 	};
 }
 

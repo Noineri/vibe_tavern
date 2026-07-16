@@ -5,7 +5,9 @@
  * before the API call. Most providers return only the continuation tokens,
  * effectively "skipping" the prefill in the raw response. Some providers echo
  * it back. This function handles both cases by prepending the prefill only
- * when the response does not already start with it.
+ * when the response does not already start with it. An unclosed thinking-tag
+ * prefill is restored only when the continuation supplies a closing tag;
+ * otherwise native reasoning responses would leak the prefill into visible text.
  *
  * Must be called BEFORE extractThinkingTags() so that the prefill is part of
  * the main content when thinking tags are stripped.
@@ -26,6 +28,13 @@ export function ensurePrefillInResponse(
 
 	// Response already includes the prefill — nothing to do.
 	if (text.startsWith(prefill) || text.trimStart().startsWith(trimmedPrefill)) {
+		return text;
+	}
+
+	const thinkingOpen = /^<(?:thinking|think|thought|CoT)>/i.test(trimmedPrefill);
+	const prefillHasThinkingClose = /<\/(?:thinking|think|thought|CoT)>/i.test(trimmedPrefill);
+	const responseHasThinkingClose = /<\/(?:thinking|think|thought|CoT)>/i.test(text);
+	if (thinkingOpen && !prefillHasThinkingClose && !responseHasThinkingClose) {
 		return text;
 	}
 
