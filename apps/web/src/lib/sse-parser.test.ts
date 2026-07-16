@@ -106,7 +106,7 @@ describe("parseSSEStream", () => {
 		await parseSSEStream({
 			response: sseResponse([
 				"event: tool-call\n",
-				'data: {"toolCallId":"call_1","toolName":"edit_profile","args":{"target":"personality","proposed":"Bold."}}\n\n',
+				'data: {"toolCallId":"call_1","toolName":"write_profile","args":{"target":"personality","proposed":"Bold."}}\n\n',
 			]),
 			onStatus: o.onStatus,
 			onChunk: o.onChunk,
@@ -115,7 +115,7 @@ describe("parseSSEStream", () => {
 		expect(onToolCall).toHaveBeenCalledTimes(1);
 		expect(onToolCall.mock.calls[0]![0]).toEqual({
 			toolCallId: "call_1",
-			toolName: "edit_profile",
+			toolName: "write_profile",
 			args: { target: "personality", proposed: "Bold." },
 		});
 	});
@@ -147,7 +147,7 @@ describe("parseSSEStream", () => {
 		await parseSSEStream({
 			response: sseResponse([
 				"event: tool-result\n",
-				'data: {"toolCallId":"call_1","toolName":"edit_profile","output":{"ok":true},"isError":false}\n\n',
+				'data: {"toolCallId":"call_1","toolName":"write_profile","output":{"ok":true},"isError":false}\n\n',
 			]),
 			onStatus: o.onStatus,
 			onChunk: o.onChunk,
@@ -156,7 +156,7 @@ describe("parseSSEStream", () => {
 		expect(onToolResult).toHaveBeenCalledTimes(1);
 		expect(onToolResult.mock.calls[0]![0]).toEqual({
 			toolCallId: "call_1",
-			toolName: "edit_profile",
+			toolName: "write_profile",
 			output: { ok: true },
 			isError: false,
 		});
@@ -186,9 +186,9 @@ describe("parseSSEStream", () => {
 		await parseSSEStream({
 			response: sseResponse([
 				"event: tool-call\n",
-				'data: {"toolCallId":"call_1","toolName":"edit_profile","args":{}}\n\n',
+				'data: {"toolCallId":"call_1","toolName":"write_profile","args":{}}\n\n',
 				"event: tool-result\n",
-				'data: {"toolCallId":"call_1","toolName":"edit_profile","output":{},"isError":false}\n\n',
+				'data: {"toolCallId":"call_1","toolName":"write_profile","output":{},"isError":false}\n\n',
 			]),
 			onStatus: o.onStatus,
 			onChunk: o.onChunk,

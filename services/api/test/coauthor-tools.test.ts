@@ -31,10 +31,10 @@ function sampleProfileMd(
 /** Shared tool-execution context stub (the tools ignore it). */
 const ctx = { messages: [], toolCallId: "t", abort: () => {} } as never;
 
-describe("coauthor-tools: edit_profile", () => {
+describe("coauthor-tools: write_profile", () => {
   test("validates via parseProfileMd round-trip and returns the profile target", async () => {
     const tools = buildCoauthorTools();
-    const out = (await tools.edit_profile.execute(
+    const out = (await tools.write_profile.execute(
       { profileMd: sampleProfileMd(), summary: "Tighten personality." },
       {
         messages: [], toolCallId: "t1", abort: () => {},
@@ -53,7 +53,7 @@ describe("coauthor-tools: edit_profile", () => {
   test("rejects empty profile.md", async () => {
     const tools = buildCoauthorTools();
     await expect(
-      tools.edit_profile.execute(
+      tools.write_profile.execute(
         { profileMd: "   ", summary: "x" },
         { messages: [], toolCallId: "t2", abort: () => {} } as never,
       ),
@@ -66,7 +66,7 @@ describe("coauthor-tools: edit_profile", () => {
     // serialization; the only hard gate is the empty-input guard above (and the
     // lost-section guard below).
     const tools = buildCoauthorTools();
-    const out = (await tools.edit_profile.execute(
+    const out = (await tools.write_profile.execute(
       { profileMd: "just some prose, no frontmatter, no headings", summary: "x" },
       { messages: [], toolCallId: "t2b", abort: () => {} } as never,
     )) as never;
@@ -75,7 +75,7 @@ describe("coauthor-tools: edit_profile", () => {
   });
 });
 
-describe("coauthor-tools: edit_profile content-loss guard (CA-17)", () => {
+describe("coauthor-tools: write_profile content-loss guard (CA-17)", () => {
   // The codec recognizes ONLY H1 known sections. A known section at the wrong
   // level (e.g. `## PERSONALITY`) is silently dropped during canonicalization —
   // inside the tool, before the frontend diff sees it. The guard refuses to
@@ -91,20 +91,20 @@ describe("coauthor-tools: edit_profile content-loss guard (CA-17)", () => {
       "# SCENARIO", "A forest cave.", "",
     ].join("\n");
     await expect(
-      tools.edit_profile.execute(
+      tools.write_profile.execute(
         { profileMd: malformed, summary: "Harden personality." },
         { messages: [], toolCallId: "g1", abort: () => {} } as never,
       ),
     ).rejects.toThrow(/PERSONALITY/);
     // Actionable: tells the model which heading to use and that the body is dropped.
     await expect(
-      tools.edit_profile.execute(
+      tools.write_profile.execute(
         { profileMd: malformed, summary: "x" },
         { messages: [], toolCallId: "g1b", abort: () => {} } as never,
       ),
     ).rejects.toThrow(/## PERSONALITY/);
     await expect(
-      tools.edit_profile.execute(
+      tools.write_profile.execute(
         { profileMd: malformed, summary: "x" },
         { messages: [], toolCallId: "g1c", abort: () => {} } as never,
       ),
@@ -119,7 +119,7 @@ describe("coauthor-tools: edit_profile content-loss guard (CA-17)", () => {
       "### SCENARIO", "A forest cave at dusk.", "",
     ].join("\n");
     await expect(
-      tools.edit_profile.execute(
+      tools.write_profile.execute(
         { profileMd: malformed, summary: "x" },
         { messages: [], toolCallId: "g2", abort: () => {} } as never,
       ),
@@ -133,7 +133,7 @@ describe("coauthor-tools: edit_profile content-loss guard (CA-17)", () => {
       "# PERSONALITY", "Bold, direct, and a little dangerous.", "",
       "# SCENARIO", "A forest cave.", "",
     ].join("\n");
-    const out = (await tools.edit_profile.execute(
+    const out = (await tools.write_profile.execute(
       { profileMd: correct, summary: "x" },
       { messages: [], toolCallId: "g3", abort: () => {} } as never,
     )) as never;
@@ -150,7 +150,7 @@ describe("coauthor-tools: edit_profile content-loss guard (CA-17)", () => {
       "# PERSONALITY", "", "",
       "# SCENARIO", "A forest cave.", "",
     ].join("\n");
-    const out = (await tools.edit_profile.execute(
+    const out = (await tools.write_profile.execute(
       { profileMd: cleared, summary: "Clear personality." },
       { messages: [], toolCallId: "g4", abort: () => {} } as never,
     )) as never;
@@ -167,7 +167,7 @@ describe("coauthor-tools: edit_profile content-loss guard (CA-17)", () => {
     ].join("\n");
     // The throw surfaces all three lost sections (the model fixes them in one re-emit).
     await expect(
-      tools.edit_profile.execute(
+      tools.write_profile.execute(
         { profileMd: malformed, summary: "x" },
         { messages: [], toolCallId: "g5", abort: () => {} } as never,
       ),
@@ -184,7 +184,7 @@ describe("coauthor-tools: edit_profile content-loss guard (CA-17)", () => {
       "# PERSONALITY", "Bold and direct.", "",
       "## CUSTOM NOTES", "Some aside.", "",
     ].join("\n");
-    const out = (await tools.edit_profile.execute(
+    const out = (await tools.write_profile.execute(
       { profileMd: doc, summary: "x" },
       { messages: [], toolCallId: "g6", abort: () => {} } as never,
     )) as never;
@@ -511,10 +511,10 @@ describe("coauthor-tools: composition + serialized non-poisoning queue (CED-2)",
   });
 });
 
-describe("coauthor-tools: edit_profile ordering within a turn (CED-2)", () => {
-  test("edit_profile first is valid; a later section edit composes on top", async () => {
+describe("coauthor-tools: write_profile ordering within a turn (CED-2)", () => {
+  test("write_profile first is valid; a later section edit composes on top", async () => {
     const tools = buildCoauthorTools({ profileMd: sampleProfileMd() });
-    await tools.edit_profile.execute(
+    await tools.write_profile.execute(
       { profileMd: sampleProfileMd({ description: "Wholesale base." }), summary: "base rewrite" },
       ctx,
     );
@@ -525,13 +525,13 @@ describe("coauthor-tools: edit_profile ordering within a turn (CED-2)", () => {
     expect(out.proposed).toContain("# PERSONALITY\nWholesale base, refined.");
   });
 
-  test("edit_profile AFTER a section mutation rejects and preserves composed state", async () => {
+  test("write_profile AFTER a section mutation rejects and preserves composed state", async () => {
     const tools = buildCoauthorTools({ profileMd: sampleProfileMd() });
     await tools.edit_personality.execute(
       { edits: [{ search: "A test character.", replace: "Composed." }], summary: "1" },
       ctx,
     );
-    await expect(tools.edit_profile.execute(
+    await expect(tools.write_profile.execute(
       { profileMd: sampleProfileMd(), summary: "late rewrite" },
       ctx,
     )).rejects.toThrow(/FIRST profile change/);
@@ -559,8 +559,8 @@ describe("coauthor-tools: edit_alt_greeting", () => {
 
 describe("coauthor-tools: toolSet filtering", () => {
   test("filters tools by the provided toolSet config", () => {
-    const tools = buildCoauthorTools({ toolSet: { edit_profile: true, edit_scenario: false } }) as unknown as Record<string, unknown>;
-    expect(tools.edit_profile).toBeDefined();
+    const tools = buildCoauthorTools({ toolSet: { write_profile: true, edit_scenario: false } }) as unknown as Record<string, unknown>;
+    expect(tools.write_profile).toBeDefined();
     expect(tools.edit_scenario).toBeUndefined();
     expect(tools.edit_greeting).toBeUndefined();
   });
@@ -572,7 +572,7 @@ describe("coauthor-tools: toolSet filtering", () => {
     expect(tools.write_personality).toBeDefined();
     expect(tools.write_examples).toBeDefined();
     expect(tools.write_scenario).toBeUndefined();
-    expect(tools.edit_profile).toBeUndefined();
+    expect(tools.write_profile).toBeUndefined();
     expect(tools.edit_personality).toBeUndefined();
   });
 });

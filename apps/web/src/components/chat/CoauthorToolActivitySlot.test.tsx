@@ -25,7 +25,7 @@ vi.mock("../../i18n/context.js", () => ({
 function activity(over: Partial<CoauthorToolActivity> = {}): CoauthorToolActivity {
 	return {
 		toolCallId: "call_1",
-		toolName: "edit_profile",
+		toolName: "write_profile",
 		status: "done",
 		summary: "Made the personality more assertive.",
 		target: "profile",

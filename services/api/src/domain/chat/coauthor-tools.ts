@@ -257,7 +257,7 @@ export function buildCoauthorTools(opts: { toolSet?: Record<string, boolean>; pr
   const { toolSet } = opts;
 
   // ── Turn-local composable profile state (CED-2) ───────────────────────────
-  // Every successful profile mutation in one assembled turn — edit_profile,
+  // Every successful profile mutation in one assembled turn — write_profile,
   // edit_personality/scenario/examples, write_personality/scenario/examples —
   // shares this single working profile and a single serialized, non-poisoning
   // queue. The working profile starts from the canonical storage profile.md
@@ -337,10 +337,12 @@ export function buildCoauthorTools(opts: { toolSet?: Record<string, boolean>; pr
   }
 
   const allTools = {
-    edit_profile: tool({
+    write_profile: tool({
       description:
-        "Propose a full rewrite of the character's profile.md (YAML frontmatter + the three H1 sections: PERSONALITY, SCENARIO, EXAMPLES). " +
-        "Retain any section the user did NOT ask to change, verbatim. The proposed document is shown to the user as a diff before applying.",
+        "Replace the ENTIRE profile document — the YAML frontmatter and all three H1 sections (PERSONALITY, SCENARIO, EXAMPLES) — with `profileMd`. " +
+        "This is the whole-document write: use it for a ground-up rewrite, or a change that spans multiple sections and/or frontmatter at once. " +
+        "Retain any section the user did NOT ask to change, verbatim. It must be the FIRST profile change in a turn — once a section edit/write has composed into the working profile, refine it with edit_*/write_* instead. " +
+        "The proposed document is shown to the user as a diff before applying.",
       inputSchema: z.object({
         profileMd: z
           .string()
@@ -355,25 +357,25 @@ export function buildCoauthorTools(opts: { toolSet?: Record<string, boolean>; pr
       execute: async ({ profileMd, summary }): Promise<CoauthorToolOutput> =>
         runQueued(async () => {
           if (!profileMd.trim()) {
-            logger.warn("edit_profile REJECTED empty input summary=%s", summary);
-            throw new Error("edit_profile: profileMd must not be empty");
+            logger.warn("write_profile REJECTED empty input summary=%s", summary);
+            throw new Error("write_profile: profileMd must not be empty");
           }
-          // edit_profile is the explicit whole-document escape hatch: it may
+          // write_profile is the explicit whole-document escape hatch: it may
           // run ONLY as the first profile mutation in the turn. Once any section
           // edit/write has composed into the working profile, a full rewrite
           // would silently erase that work — reject and steer the model to the
-          // section tools. (A guard-thrown edit_profile does NOT increment the
+          // section tools. (A guard-thrown write_profile does NOT increment the
           // count, so a self-correct re-emit in the same turn is still allowed.)
           if (profileMutationCount > 0) {
-            logger.warn("edit_profile REJECTED late whole-profile rewrite after %d mutation(s)", profileMutationCount);
+            logger.warn("write_profile REJECTED late whole-profile rewrite after %d mutation(s)", profileMutationCount);
             throw new Error(
-              "edit_profile: a whole-profile rewrite can only be the FIRST profile change in a turn. " +
+              "write_profile: a whole-profile rewrite can only be the FIRST profile change in a turn. " +
                 "Earlier section edits already composed into the working profile; a full rewrite now would erase them. " +
                 "Use edit_personality / edit_scenario / edit_examples (exact edits) or write_personality / write_scenario / write_examples (whole-section writes) to refine the composed result.",
             );
           }
-          logger.info("edit_profile IN %s summary=%s", describeProfileInput(profileMd), summary);
-          logger.debug("edit_profile RAW BODY:\n%s", splitFrontmatter(profileMd).bodyText);
+          logger.info("write_profile IN %s summary=%s", describeProfileInput(profileMd), summary);
+          logger.debug("write_profile RAW BODY:\n%s", splitFrontmatter(profileMd).bodyText);
           let canonical: string;
           try {
             canonical = validateProfileMd(profileMd);
@@ -381,12 +383,12 @@ export function buildCoauthorTools(opts: { toolSet?: Record<string, boolean>; pr
             // The lost-section guard throws to force a self-correct re-emit.
             const msg = (err as Error).message;
             const bodySnippet = splitFrontmatter(profileMd).bodyText.slice(0, 200);
-            logger.warn("edit_profile REJECTED guard-threw msg=%s bodySnippet=%j", msg, bodySnippet);
+            logger.warn("write_profile REJECTED guard-threw msg=%s bodySnippet=%j", msg, bodySnippet);
             throw err;
           }
           workingProfileMd = canonical;
           profileMutationCount += 1;
-          logger.info("edit_profile OK canonical len=%d", canonical.length);
+          logger.info("write_profile OK canonical len=%d", canonical.length);
           return { target: "profile", proposed: canonical, summary };
         }),
     }),

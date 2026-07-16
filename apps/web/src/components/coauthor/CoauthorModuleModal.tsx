@@ -25,7 +25,7 @@ import type { CoauthorModule, CoauthorModuleCreate, CoauthorToolSet } from "@vib
  * Order is fixed for a stable layout. Mirrors the backend tool registry.
  */
 const TOOL_OPTIONS: Array<{ key: keyof CoauthorToolSet; label: string }> = [
-	{ key: "edit_profile", label: "edit_profile" },
+	{ key: "write_profile", label: "write_profile" },
 	{ key: "edit_personality", label: "edit_personality" },
 	{ key: "edit_scenario", label: "edit_scenario" },
 	{ key: "edit_examples", label: "edit_examples" },

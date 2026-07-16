@@ -35,7 +35,7 @@ const SEED_MODULE_DEFS: readonly SeedModuleDef[] = [
       "I'm ready to help you build {{char}} — I can revise the profile, personality, scenario, greetings, and example dialogue. What would you like to work on?",
     skillIds: ["general-writing"],
     toolSet: {
-      edit_profile: true,
+      write_profile: true,
       edit_personality: true,
       edit_scenario: true,
       edit_examples: true,
@@ -57,7 +57,7 @@ const SEED_MODULE_DEFS: readonly SeedModuleDef[] = [
       "I'll focus on {{char}}'s profile — personality, scenario, and description. Tell me what feels flat or underdeveloped and I'll propose targeted edits.",
     skillIds: ["profile-analysis"],
     toolSet: {
-      edit_profile: true,
+      write_profile: true,
       edit_personality: true,
       edit_scenario: true,
       write_personality: true,

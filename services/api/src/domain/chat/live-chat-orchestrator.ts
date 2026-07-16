@@ -557,7 +557,7 @@ export class LiveChatOrchestrator {
   }): AsyncGenerator<{ event: string; data: string }> {
     const { streamResult, signal, startedAt, debugLabel, onAbort, onFinal, omitMessageCountInFinish, prefill } = input;
     // ── CA-17/CANARY: loop observability. Counts every tool interaction so a
-    // tool-loop runaway (model re-calling edit_profile, or a false-positive
+    // tool-loop runaway (model re-calling write_profile, or a false-positive
     // guard refusing valid input) is diagnosable from send-debug.log. Without
     // this the tool path is invisible: errors feed back to the model via the
     // SDK-internal stepCountIs loop and never reach a log line.

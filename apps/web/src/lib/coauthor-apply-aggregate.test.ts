@@ -7,7 +7,7 @@
  * load-bearing contract: the backend never sees AI SDK tool shapes, only the
  * canonical character fields, so a wrong aggregation = a wrong Apply.
  *
- * Covers: profile-only (last edit_profile wins), greeting edit (primary +
+ * Covers: profile-only (last write_profile wins), greeting edit (primary +
  * alternate), add_alt_greeting (append), mixed profile+greetings, sequential
  * dependent greeting calls, no-proposal fallthrough, and the exclusion of
  * streaming/error placeholders.
@@ -43,7 +43,7 @@ function baseDraft(over: Partial<BuildCharacterDraft> = {}): BuildCharacterDraft
 	};
 }
 
-/** A canonical profile.md string (what edit_profile's backend execute returns). */
+/** A canonical profile.md string (what write_profile's backend execute returns). */
 function profileMd(personality: string, scenario: string, examples: string, name = "Kira"): string {
 	return [
 		"---",
@@ -64,7 +64,7 @@ function profileMd(personality: string, scenario: string, examples: string, name
 }
 
 function profileActivity(toolCallId: string, proposed: string, summary = "Made personality assertive."): CoauthorToolActivity {
-	return { toolCallId, toolName: "edit_profile", status: "done", target: "profile", proposed, summary };
+	return { toolCallId, toolName: "write_profile", status: "done", target: "profile", proposed, summary };
 }
 
 function editGreetingActivity(toolCallId: string, index: number, content: string, summary = "Tweaked greeting."): CoauthorToolActivity {
@@ -86,8 +86,8 @@ describe("aggregateCoauthorProposal — no proposal", () => {
 	});
 
 	it("excludes streaming and error activities (only done+proposed count)", () => {
-		const streaming: CoauthorToolActivity = { toolCallId: "t1", toolName: "edit_profile", status: "streaming" };
-		const errored: CoauthorToolActivity = { toolCallId: "t2", toolName: "edit_profile", status: "error", target: "profile", proposed: "x" };
+		const streaming: CoauthorToolActivity = { toolCallId: "t1", toolName: "write_profile", status: "streaming" };
+		const errored: CoauthorToolActivity = { toolCallId: "t2", toolName: "write_profile", status: "error", target: "profile", proposed: "x" };
 		const result = aggregateCoauthorProposal([streaming, errored], baseDraft());
 		expect(result.hasProposal).toBe(false);
 		expect(result.applyRequest).toEqual({});
@@ -95,7 +95,7 @@ describe("aggregateCoauthorProposal — no proposal", () => {
 });
 
 describe("aggregateCoauthorProposal — profile", () => {
-	it("a single edit_profile → profileMd verbatim + parsed prose in proposedDraft", () => {
+	it("a single write_profile → profileMd verbatim + parsed prose in proposedDraft", () => {
 		const proposed = profileMd("Bold and direct.", "A torchlit cave.", "{{char}}: *grins*");
 		const result = aggregateCoauthorProposal([profileActivity("t1", proposed)], baseDraft());
 		expect(result.hasProposal).toBe(true);
@@ -108,7 +108,7 @@ describe("aggregateCoauthorProposal — profile", () => {
 		expect(result.summaries).toEqual(["Made personality assertive."]);
 	});
 
-	it("the LAST edit_profile wins when several revise the profile mid-turn", () => {
+	it("the LAST write_profile wins when several revise the profile mid-turn", () => {
 		const first = profileMd("First revision.", "S1", "E1");
 		const second = profileMd("Second revision.", "S2", "E2");
 		const result = aggregateCoauthorProposal(
@@ -214,7 +214,7 @@ describe("buildPartialApplyRequest — hunk-level (CA-12)", () => {
 		const merged = mergeSelectedBody(diff, allHunkIds(groupHunks(diff))); // all
 		const req = buildPartialApplyRequest(merged, base);
 		expect(req.profileMd).toBeDefined();
-		// Production edit_profile returns an ALREADY-canonical profileMd
+		// Production write_profile returns an ALREADY-canonical profileMd
 		// (serialize(parse(input))), so rebuild is byte-stable there. The test
 		// helper builds a non-canonical string (no vt: block), so compare the
 		// PARSED semantics instead — the load-bearing parity: same prose fields.

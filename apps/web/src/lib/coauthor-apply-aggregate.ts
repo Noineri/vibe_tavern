@@ -8,7 +8,7 @@
  *      (canonical body → proposed body).
  *   2. `applyRequest` — a `CoauthorApplyRequest` sent to the CA-7 Apply RPC.
  *
- * WHY THE DIFF IS IN BODY SPACE (not profile.md). The `edit_profile` tool's
+ * WHY THE DIFF IS IN BODY SPACE (not profile.md). A profile-targeting tool's
  * `proposed` is a full canonical `profile.md` (frontmatter + the three prose
  * H1s). But the canonical `profile.md` of the CURRENT card cannot be rebuilt
  * faithfully on the frontend: `creator` / `character_version` live in
@@ -80,7 +80,8 @@ function finalizedActivities(activities: CoauthorToolActivity[]): ProposedActivi
  * Aggregate a turn's activities into a proposal. `currentDraft` is the document
  * the editor currently shows (the diff canonical and the greeting base).
  *
- * Profile: the LAST `edit_profile` wins (the model may revise mid-turn; later
+ * Profile: the LAST profile-targeting tool wins (write_profile / edit_* /
+ * write_* all emit target:"profile"; the model may revise mid-turn, so later
  * revisions are more coherent). Its `proposed` becomes `applyRequest.profileMd`
  * verbatim (the backend already canonicalized it) and is parsed for the prose
  * fields of `proposedDraft`.
@@ -107,7 +108,7 @@ export function aggregateCoauthorProposal(
 	let proposedDraft: BuildCharacterDraft = { ...currentDraft };
 	const applyRequest: CoauthorApplyRequest = {};
 
-	// ── Profile (last edit_profile wins) ──────────────────────────────────────
+	// ── Profile (last profile-targeting tool wins) ─────────────────────────────
 	let lastProfile: ProposedActivity | undefined;
 	for (const a of finalized) {
 		if (a.target === "profile") lastProfile = a;

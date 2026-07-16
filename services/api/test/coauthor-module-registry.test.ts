@@ -17,7 +17,7 @@ function userModule(id: string): Omit<CoauthorModule, "isBuiltIn"> & { createdAt
     basePrompt: "user prompt text",
     openingMessage: "user opening",
     skillIds: ["general-writing"],
-    toolSet: { edit_profile: true },
+    toolSet: { write_profile: true },
     maxSteps: 4,
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",

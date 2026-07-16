@@ -126,7 +126,7 @@ describe("committed assistant completion refresh", () => {
     sendChatMessageMock.mockResolvedValueOnce(snapshot);
     useCoauthorTurnStore.getState().upsertActivity("chat-1", {
       toolCallId: "old_call",
-      toolName: "edit_profile",
+      toolName: "write_profile",
       status: "done",
     });
 

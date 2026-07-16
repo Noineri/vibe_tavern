@@ -28,7 +28,7 @@ import { useCoauthorTurnStore } from "../stores/coauthor-turn-store.js";
 import type { CoauthorToolActivity } from "../stores/coauthor-turn-store.js";
 
 function profileActivity(toolCallId: string, proposed: string, summary = "Made personality assertive."): CoauthorToolActivity {
-	return { toolCallId, toolName: "edit_profile", status: "done", target: "profile", proposed, summary };
+	return { toolCallId, toolName: "write_profile", status: "done", target: "profile", proposed, summary };
 }
 
 function greetingActivity(toolCallId: string, index: number, proposed: string): CoauthorToolActivity {
@@ -41,9 +41,9 @@ const PROFILE_B = "---\nname: A\n---\n# PERSONALITY\nBolder.";
 describe("coauthor-draft — pure serialization", () => {
 	it("finalizeForPersistence keeps only done + proposed activities, dedupes by toolCallId in order", () => {
 		const activities: CoauthorToolActivity[] = [
-			{ toolCallId: "c1", toolName: "edit_profile", status: "streaming" }, // transient → dropped
+			{ toolCallId: "c1", toolName: "write_profile", status: "streaming" }, // transient → dropped
 			profileActivity("c2", PROFILE_A),
-			{ toolCallId: "c3", toolName: "edit_profile", status: "error" }, // error → dropped
+			{ toolCallId: "c3", toolName: "write_profile", status: "error" }, // error → dropped
 			greetingActivity("c4", 0, "Hi."),
 			profileActivity("c2", PROFILE_B), // duplicate id, later wins
 		];
@@ -54,7 +54,7 @@ describe("coauthor-draft — pure serialization", () => {
 
 	it("finalizeForPersistence drops a done activity missing target/proposed", () => {
 		const activities = [
-			{ toolCallId: "c1", toolName: "edit_profile", status: "done" }, // no target/proposed
+			{ toolCallId: "c1", toolName: "write_profile", status: "done" }, // no target/proposed
 			profileActivity("c2", PROFILE_A),
 		] as CoauthorToolActivity[];
 		expect(finalizeForPersistence(activities).map((a) => a.toolCallId)).toEqual(["c2"]);
@@ -62,7 +62,7 @@ describe("coauthor-draft — pure serialization", () => {
 
 	it("serializeDraft returns null when there is nothing to persist", () => {
 		expect(serializeDraft([])).toBeNull();
-		expect(serializeDraft([{ toolCallId: "c1", toolName: "edit_profile", status: "streaming" }])).toBeNull();
+		expect(serializeDraft([{ toolCallId: "c1", toolName: "write_profile", status: "streaming" }])).toBeNull();
 	});
 
 	it("serializeDraft → parseDraft round-trips finalized activities", () => {
@@ -127,7 +127,7 @@ describe("coauthor-draft — localStorage I/O", () => {
 		saveDraft("chat_1", [profileActivity("c1", PROFILE_A)]);
 		expect(loadDraft("chat_1")).not.toBeNull();
 		// A subsequent save with only transient activities clears it.
-		saveDraft("chat_1", [{ toolCallId: "c1", toolName: "edit_profile", status: "streaming" }]);
+		saveDraft("chat_1", [{ toolCallId: "c1", toolName: "write_profile", status: "streaming" }]);
 		expect(loadDraft("chat_1")).toBeNull();
 	});
 
@@ -175,7 +175,7 @@ describe("coauthor-draft — store integration (the reload contract)", () => {
 	});
 
 	it("upsertActivity of a streaming placeholder does NOT persist (no finalized)", () => {
-		useCoauthorTurnStore.getState().upsertActivity("chat_1", { toolCallId: "c1", toolName: "edit_profile", status: "streaming" });
+		useCoauthorTurnStore.getState().upsertActivity("chat_1", { toolCallId: "c1", toolName: "write_profile", status: "streaming" });
 		expect(loadDraft("chat_1")).toBeNull();
 	});
 

@@ -28,4 +28,4 @@ A weak personality reads as adjectives with no behavior: "mysterious, kind, guar
 
 - Can you point to the specific line of behavior that proves each trait you kept or added? If not, it's still abstract.
 - Did you preserve the user's intent? Deepen means sharpen what's there, not swap in a different character.
-- Are SCENARIO / EXAMPLES / frontmatter unchanged from the current document, byte-for-byte, unless the user explicitly asked about them? (Section tools preserve them automatically; only `edit_profile` requires you to copy them verbatim.)
+- Are SCENARIO / EXAMPLES / frontmatter unchanged from the current document, byte-for-byte, unless the user explicitly asked about them? (Section tools preserve them automatically; only `write_profile` requires you to copy them verbatim.)

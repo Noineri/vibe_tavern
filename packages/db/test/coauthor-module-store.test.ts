@@ -33,7 +33,7 @@ const PAYLOAD = {
   basePrompt: "You are a co-author. ...",
   openingMessage: "Hi, I'll help with {{char}}.",
   skillIds: ["general-writing"],
-  toolSet: { edit_profile: true, edit_personality: true },
+  toolSet: { write_profile: true, edit_personality: true },
   maxSteps: 4,
 };
 
@@ -46,7 +46,7 @@ describe("CoauthorModuleStore (CS-24)", () => {
     expect(created.basePrompt).toBe("You are a co-author. ...");
     expect(created.openingMessage).toBe("Hi, I'll help with {{char}}.");
     expect(created.skillIds).toEqual(["general-writing"]);
-    expect(created.toolSet).toEqual({ edit_profile: true, edit_personality: true });
+    expect(created.toolSet).toEqual({ write_profile: true, edit_personality: true });
     expect(created.maxSteps).toBe(4);
 
     const fetched = await store.getById(created.id);
@@ -101,6 +101,18 @@ describe("CoauthorModuleStore (CS-24)", () => {
     expect(await store.getById(created.id)).toBeNull();
     // Deleting again does not throw (idempotent).
     await store.delete(created.id);
+  });
+
+  test("legacy `edit_profile` toolSet flag is normalized to `write_profile` on read", async () => {
+    // A module saved before the edit_profile→write_profile rename carries the
+    // old flag in toolSetJson; parseToolSet aliases it on read (the registry
+    // reads toolSet raw, so this read boundary is the single alias site) so the
+    // tool stays enabled without a data migration.
+    const store = await mkStore();
+    const created = await store.create({ ...PAYLOAD, toolSet: { edit_profile: true } });
+    expect(created.toolSet).toEqual({ write_profile: true });
+    const fetched = await store.getById(created.id);
+    expect(fetched?.toolSet).toEqual({ write_profile: true });
   });
 
   test("getById returns null for a missing id", async () => {

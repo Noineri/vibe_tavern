@@ -231,7 +231,7 @@ describe("CoauthorCharacterForm", () => {
 			"{{char}}: *tilts head*",
 			"",
 		].join("\n");
-		return { toolCallId, toolName: "edit_profile", status: "done", target: "profile", proposed, summary };
+		return { toolCallId, toolName: "write_profile", status: "done", target: "profile", proposed, summary };
 	}
 
 	/** Seed the snapshot with a character + an active co-author chat (for chatId). */
@@ -259,7 +259,7 @@ describe("CoauthorCharacterForm", () => {
 		seedReviewing();
 		useCoauthorTurnStore.getState().upsertActivity(
 			TEST_CHAT,
-			{ toolCallId: "t1", toolName: "edit_profile", status: "streaming" },
+			{ toolCallId: "t1", toolName: "write_profile", status: "streaming" },
 		);
 		const { getByText } = render(<CoauthorCharacterForm />);
 		expect(() => getByText("coauthor.review.state")).toThrow(); // idle, not reviewing
@@ -370,7 +370,7 @@ describe("CoauthorCharacterForm", () => {
 			"# SCENARIO", "A forest cave at dusk.", "",
 			"# EXAMPLES", "{{char}}: *tilts head*", "",
 		].join("\n");
-		return { toolCallId: "t1", toolName: "edit_profile", status: "done", target: "profile", proposed, summary: "Rewrote personality + scenario." };
+		return { toolCallId: "t1", toolName: "write_profile", status: "done", target: "profile", proposed, summary: "Rewrote personality + scenario." };
 	}
 
 	it("CA-12: reviewing renders one checkbox per hunk, all selected by default", () => {
@@ -491,7 +491,7 @@ describe("CoauthorCharacterForm", () => {
 	// check; it cannot reproduce a runtime failure (SSE not arriving, store
 	// cleared, isSending stuck). For those, a live Playwright repro is needed.
 
-	it("wire contract: edit_profile execute() output survives JSON round-trip through coauthorToolOutputSchema", () => {
+	it("wire contract: write_profile execute() output survives JSON round-trip through coauthorToolOutputSchema", () => {
 		// Mirrors the real execute() return in coauthor-tools.ts.
 		const output = {
 			target: "profile",

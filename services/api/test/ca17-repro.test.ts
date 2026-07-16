@@ -97,9 +97,9 @@ describe("CA-17 canary — round-trip fidelity (validateProfileMd path)", () => 
 		// validateProfileMd is not exported; exercise it indirectly via the tool set.
 		const tools = (mod as { buildCoauthorTools: () => Record<string, { execute: (a: unknown) => Promise<unknown> }> }).buildCoauthorTools();
 		const md = "---\nname: Noah\ntags: []\n---\n\n# PERSONALITY\n## Appearance\nPale skin.\n## Health\nAutistic.\n";
-		// edit_profile.execute returns { target, proposed, summary } on success;
+		// write_profile.execute returns { target, proposed, summary } on success;
 		// throws (lost-section guard) on refusal.
-		const out = await tools.edit_profile.execute({ profileMd: md, summary: "test" });
+		const out = await tools.write_profile.execute({ profileMd: md, summary: "test" });
 		expect(out).toMatchObject({ target: "profile" });
 	});
 });

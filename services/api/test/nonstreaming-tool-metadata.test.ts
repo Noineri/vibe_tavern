@@ -35,13 +35,13 @@ describe("extractNonstreamingToolInteractions", () => {
 
   it("keeps provider-neutral tool calls unchanged", () => {
     const result = extractNonstreamingToolInteractions([{
-      toolCalls: [{ toolCallId: "tc_1", toolName: "edit_profile", input: {} }],
+      toolCalls: [{ toolCallId: "tc_1", toolName: "write_profile", input: {} }],
       toolResults: [],
     }]);
 
     expect(result.toolCalls).toEqual([{
       toolCallId: "tc_1",
-      toolName: "edit_profile",
+      toolName: "write_profile",
       args: {},
     }]);
   });

@@ -70,7 +70,11 @@ export function extractPersistedCoauthorActivities(
   const toolNameById = new Map<string, string>();
   for (const message of turnMessages) {
     for (const toolCall of message.toolCalls ?? []) {
-      toolNameById.set(toolCall.id, toolCall.name);
+      // Legacy alias: `edit_profile` was renamed to `write_profile` (whole-
+      // document write). Historical committed turns still carry the old name;
+      // normalize on reload so the activity store always reflects the canonical
+      // tool name the current label/render map expects.
+      toolNameById.set(toolCall.id, toolCall.name === "edit_profile" ? "write_profile" : toolCall.name);
     }
   }
 

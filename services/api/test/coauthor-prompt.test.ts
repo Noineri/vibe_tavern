@@ -84,7 +84,7 @@ describe("assembleCoauthorPrompt", () => {
     // Tools + maxSteps ride out for the executor (CA-5 wiring).
     expect(result.tools).toBeDefined();
     expect(result.maxSteps).toBe(5);
-    expect(result.tools).toHaveProperty("edit_profile");
+    expect(result.tools).toHaveProperty("write_profile");
     expect(result.tools).toHaveProperty("edit_greeting");
     expect(result.tools).toHaveProperty("add_alt_greeting");
 
@@ -312,14 +312,14 @@ describe("assembleCoauthorPrompt", () => {
   });
 
   describe("CED-3: edit/write tool routing per module", () => {
-    test("default module exposes all edit_*/write_* section tools + edit_profile + greetings; no generic write_section", async () => {
+    test("default module exposes all edit_*/write_* section tools + write_profile + greetings; no generic write_section", async () => {
       const loaders = makeLoaders();
       const result = await assembleCoauthorPrompt(makeInput(loaders));
       const names = new Set(Object.keys(result.tools));
       for (const n of [
         "edit_personality", "edit_scenario", "edit_examples",
         "write_personality", "write_scenario", "write_examples",
-        "edit_profile", "edit_greeting", "edit_alt_greeting", "add_alt_greeting",
+        "write_profile", "edit_greeting", "edit_alt_greeting", "add_alt_greeting",
       ]) {
         expect(names.has(n)).toBe(true);
       }
@@ -354,14 +354,14 @@ describe("assembleCoauthorPrompt", () => {
       expect(names.has("write_scenario")).toBe(false);
     });
 
-    test("base prompt teaches edit vs write vs edit_profile routing", async () => {
+    test("base prompt teaches edit vs write vs write_profile routing", async () => {
       const loaders = makeLoaders();
       const result = await assembleCoauthorPrompt(makeInput(loaders));
       const system = (result.prompt.finalPayload as { messages: Array<{ content: string }> }).messages[0].content;
       expect(system).toContain("edit_personality");
       expect(system).toContain("write_personality");
-      expect(system).toContain("edit_profile");
-      // edit_profile is taught as first-profile-change-only.
+      expect(system).toContain("write_profile");
+      // write_profile is taught as first-profile-change-only.
       expect(system).toMatch(/first profile change/);
       // edit_* takes exact search/replace pairs, not a full section content.
       expect(system).toContain("search");

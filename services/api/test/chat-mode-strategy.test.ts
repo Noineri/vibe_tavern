@@ -82,7 +82,7 @@ describe("CoauthorModeStrategy.assemble", () => {
     const out = await strategy.assemble(input);
     // CA-6: assemble is now real (no longer NOT_IMPLEMENTED) and emits the
     // editor tool set + maxSteps for the executor's tool-loop.
-    expect(out.tools).toHaveProperty("edit_profile");
+    expect(out.tools).toHaveProperty("write_profile");
     expect(out.maxSteps).toBe(5);
   });
 

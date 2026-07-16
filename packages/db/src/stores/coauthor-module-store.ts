@@ -148,8 +148,19 @@ function parseStringArray(text: string): string[] {
 function parseToolSet(text: string): Partial<Record<string, boolean>> {
   try {
     const parsed: unknown = JSON.parse(text || '{}');
-    if (parsed && typeof parsed === 'object') return parsed as Partial<Record<string, boolean>>;
-    return {};
+    if (!parsed || typeof parsed !== 'object') return {};
+    const raw = parsed as Partial<Record<string, boolean>>;
+    // Legacy alias: `edit_profile` was renamed to `write_profile` (whole-document
+    // write, to match the edit=search/replace vs write=full-replace taxonomy).
+    // Modules saved before that rename carry `edit_profile`; normalize on read so
+    // the tool stays enabled without a data migration. The registry reads toolSet
+    // raw (it does not re-validate through the api-contracts schema), so this read
+    // boundary is the single place the alias must live.
+    if (raw.edit_profile !== undefined && raw.write_profile === undefined) {
+      raw.write_profile = raw.edit_profile;
+      delete raw.edit_profile;
+    }
+    return raw;
   } catch {
     return {};
   }

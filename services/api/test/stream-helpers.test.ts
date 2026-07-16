@@ -107,12 +107,12 @@ describe("createMappedStream", () => {
 
   it("normalizes a tool-error part into a tool-result chunk with isError + error payload", async () => {
     const parts = [
-      { type: "tool-error", toolCallId: "tc_2", toolName: "edit_profile", error: new Error("invalid heading") },
+      { type: "tool-error", toolCallId: "tc_2", toolName: "write_profile", error: new Error("invalid heading") },
     ];
     const { stream } = createMappedStream(fromParts(parts));
     const chunks = await collect(stream);
     expect(chunks).toEqual([
-      { type: "tool-result", toolCallId: "tc_2", toolName: "edit_profile", output: { error: "invalid heading" }, isError: true },
+      { type: "tool-result", toolCallId: "tc_2", toolName: "write_profile", output: { error: "invalid heading" }, isError: true },
     ]);
   });
 
@@ -120,14 +120,14 @@ describe("createMappedStream", () => {
     // AI SDK streams tool args as: tool-input-start (toolName) → N× tool-input-delta (inputTextDelta)
     // → final tool-call. Co-Author forwards these so the UI can render the model writing the document.
     const parts = [
-      { type: "tool-input-start", id: "tc_3", toolName: "edit_profile" },
+      { type: "tool-input-start", id: "tc_3", toolName: "write_profile" },
       { type: "tool-input-delta", id: "tc_3", inputTextDelta: "{\"profileMd\":\"# P" },
       { type: "tool-input-delta", id: "tc_3", inputTextDelta: "ERSONALITY\"}" },
     ];
     const { stream } = createMappedStream(fromParts(parts));
     const chunks = await collect(stream);
     expect(chunks).toEqual([
-      { type: "tool-input-start", toolCallId: "tc_3", toolName: "edit_profile" },
+      { type: "tool-input-start", toolCallId: "tc_3", toolName: "write_profile" },
       { type: "tool-input-delta", toolCallId: "tc_3", inputTextDelta: "{\"profileMd\":\"# P" },
       { type: "tool-input-delta", toolCallId: "tc_3", inputTextDelta: "ERSONALITY\"}" },
     ]);

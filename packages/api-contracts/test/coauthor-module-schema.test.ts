@@ -102,7 +102,7 @@ describe("coauthorModuleCreateSchema", () => {
       basePrompt: "You are...",
       openingMessage: "Hi!",
       skillIds: ["general-writing"],
-      toolSet: { edit_profile: true },
+      toolSet: { write_profile: true },
       maxSteps: 5,
     };
     expect(coauthorModuleCreateSchema.parse(payload)).toEqual(payload);
