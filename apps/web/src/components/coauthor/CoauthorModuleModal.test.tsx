@@ -281,4 +281,48 @@ describe("CoauthorModuleModal (CS-25 manager)", () => {
 		await waitFor(() => expect(setCoauthorModuleAction).toHaveBeenCalledTimes(1));
 		expect(setCoauthorModuleAction.mock.calls[0]).toEqual(["chat_test", "profile-editor"]);
 	});
+
+	it("exposes the three section write tools as toggle pills in the editor (CED-4)", async () => {
+		setActiveChat(null);
+		openModal();
+		const { getByTestId, getByRole } = render(<CoauthorModuleModal />);
+		await waitFor(() => expect(getByTestId("module-edit-btn-cmod_1")).toBeTruthy());
+		fireEvent.click(getByTestId("module-edit-btn-cmod_1"));
+		await waitFor(() => expect(getByRole("button", { name: "write_personality" })).toBeTruthy());
+		expect(getByRole("button", { name: "write_scenario" })).toBeTruthy();
+		expect(getByRole("button", { name: "write_examples" })).toBeTruthy();
+	});
+
+	it("toggling a write tool persists on save without disabling its edit sibling", async () => {
+		// USER_MODULE ships toolSet { edit_examples: true } — write_examples is off.
+		setActiveChat(null);
+		openModal();
+		const { getByTestId, getByRole } = render(<CoauthorModuleModal />);
+		await waitFor(() => expect(getByTestId("module-edit-btn-cmod_1")).toBeTruthy());
+		fireEvent.click(getByTestId("module-edit-btn-cmod_1"));
+		await waitFor(() => expect(getByRole("button", { name: "write_examples" })).toBeTruthy());
+		// Turn write_examples ON; edit_examples stays ON (independent flags).
+		fireEvent.click(getByRole("button", { name: "write_examples" }));
+		fireEvent.click(getByTestId("module-save-btn"));
+		await waitFor(() => expect(updateCoauthorModuleAction).toHaveBeenCalledTimes(1));
+		const input = updateCoauthorModuleAction.mock.calls[0][1] as { toolSet: Record<string, boolean> };
+		expect(input.toolSet).toStrictEqual({ edit_examples: true, write_examples: true });
+	});
+
+	it("toggling an edit tool on does not enable its write sibling", async () => {
+		// USER_MODULE ships toolSet { edit_examples: true }; edit_personality and
+		// write_personality are both off. Toggling edit_personality ON must not
+		// flip write_personality.
+		setActiveChat(null);
+		openModal();
+		const { getByTestId, getByRole } = render(<CoauthorModuleModal />);
+		await waitFor(() => expect(getByTestId("module-edit-btn-cmod_1")).toBeTruthy());
+		fireEvent.click(getByTestId("module-edit-btn-cmod_1"));
+		await waitFor(() => expect(getByRole("button", { name: "edit_personality" })).toBeTruthy());
+		fireEvent.click(getByRole("button", { name: "edit_personality" }));
+		fireEvent.click(getByTestId("module-save-btn"));
+		await waitFor(() => expect(updateCoauthorModuleAction).toHaveBeenCalledTimes(1));
+		const input = updateCoauthorModuleAction.mock.calls[0][1] as { toolSet: Record<string, boolean> };
+		expect(input.toolSet).toStrictEqual({ edit_examples: true, edit_personality: true });
+	});
 });

@@ -27,8 +27,11 @@ import type { CoauthorModule, CoauthorModuleCreate, CoauthorToolSet } from "@vib
 const TOOL_OPTIONS: Array<{ key: keyof CoauthorToolSet; label: string }> = [
 	{ key: "write_profile", label: "write_profile" },
 	{ key: "edit_personality", label: "edit_personality" },
+	{ key: "write_personality", label: "write_personality" },
 	{ key: "edit_scenario", label: "edit_scenario" },
+	{ key: "write_scenario", label: "write_scenario" },
 	{ key: "edit_examples", label: "edit_examples" },
+	{ key: "write_examples", label: "write_examples" },
 	{ key: "edit_greeting", label: "edit_greeting" },
 	{ key: "add_alt_greeting", label: "add_alt_greeting" },
 	{ key: "edit_alt_greeting", label: "edit_alt_greeting" },
