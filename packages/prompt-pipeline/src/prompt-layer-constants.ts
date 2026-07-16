@@ -71,6 +71,7 @@ export const PROMPT_LAYER_PRIORITY = {
   promptPresetSummary: 350,
   toolInstructions: 300,
   objectiveTask: 180,
+  objectiveLongTerm: 178,
   sceneState: 175,
   promptPresetAuthorsNote: 170,
   postHistoryInstructions: 160,
@@ -108,6 +109,7 @@ export const PROMPT_LAYER_ID = {
   mesExample: "mes_example",
   characterDepthPrompt: "character_depth_prompt",
   objectiveTask: "objective_task",
+  objectiveLongTerm: "objective_long_term",
   sceneState: "scene_state",
   insightsInstruction: "insights_instruction",
   postHistoryInstructions: "post_history_instructions",
@@ -132,6 +134,7 @@ export const PROMPT_LAYER_SOURCE_TYPE = {
   summaryMemory: "summary_memory",
   retrievalMemory: "retrieval_memory",
   objectiveTask: "objective_task",
+  objectiveLongTerm: "objective_long_term",
   sceneState: "scene_state",
   insightsInstruction: "insights_instruction",
   toolProfile: "tool_profile",
@@ -188,6 +191,14 @@ export const PROMPT_FORMAT = {
     // presented; otherwise a default label. Either way the active task is the
     // last line so it reads as the thing to do now.
     return lead ? `${lead}\n[Active objective] ${task}` : `[Active objective] ${task}`;
+  },
+  objectiveLongTerm: (injectPrompt: string, description: string) => {
+    const goal = description.trim();
+    const lead = injectPrompt.trim();
+    // The enduring long-term goal — persistent RP framing the model keeps in
+    // mind across the whole story. Rendered just above the active short-term
+    // objective so both goals sit together at the decision point.
+    return lead ? `${lead}\n[Long-term goal] ${goal}` : `[Long-term goal] ${goal}`;
   },
   retrievalMemory: (sourceType: string, content: string) => `[Retrieved ${sourceType}] ${content}`,
   exampleMessages: (text: string) => `[Example messages]\n${text}`,

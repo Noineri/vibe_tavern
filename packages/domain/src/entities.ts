@@ -34,6 +34,8 @@ import type {
   LoreEntryPosition,
   PromptLayerPosition,
   ObjectiveTaskStatus,
+  ObjectiveMode,
+  OBJECTIVE_MODE,
 } from "./platform-constants.js";
 
 import type {
@@ -540,12 +542,40 @@ export interface ObjectiveTask {
   status: ObjectiveTaskStatus;
 }
 
+/**
+ * Goals mode (OGM): the enduring long-term goal. Always injected into the RP
+ * prompt while its status is `pending`/`active`; skipped once `completed`/`abandoned`.
+ * Singular — there is at most one long-term goal per chat.
+ */
+export interface ObjectiveLongTermGoal {
+  description: string;
+  status: ObjectiveTaskStatus;
+}
+
+/**
+ * Goals mode (OGM): a short-term goal. Flat list — independent and unordered
+ * relative to each other. Exactly one is `active` (the selected/injected one) at
+ * a time; the rest are `pending`/`completed`/`abandoned`. Reuses the task status
+ * set + the selectActiveTask invariant (first `active`, else first `pending`).
+ */
+export interface ObjectiveShortTermGoal {
+  id: string;
+  description: string;
+  status: ObjectiveTaskStatus;
+}
+
 /** The full objective state for a chat (INSIGHTS_PLAN). Stored as JSON in chats.insights_objective_state_json. */
 export interface ObjectiveState {
+  /** Tracker mode — `route` (original ordered task route) or `goals` (long-term + short-term goals, OGM). Absent on legacy data → `route`. */
+  mode?: ObjectiveMode;
   /** User's high-level goal. */
   objectiveDescription: string;
-  /** Flat ordered task list — the route. */
+  /** Flat ordered task list — the route (route mode). */
   tasks: ObjectiveTask[];
+  /** Goals mode: the enduring long-term goal, or null when unset. */
+  longTermGoal: ObjectiveLongTermGoal | null;
+  /** Goals mode: flat list of independent short-term goals (one active at a time). */
+  shortTermGoals: ObjectiveShortTermGoal[];
   /** How often to auto-check completion (in qualifying assistant events). 0 = manual only. */
   autoCheckFrequency: number;
   /** Persisted qualifying assistant events accumulated since the last completed auto-check. */

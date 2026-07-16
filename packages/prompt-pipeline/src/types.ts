@@ -184,6 +184,8 @@ export interface PromptAssemblyContext {
   };
   /** Insights — Objective Tracker: the active task injected as an `in_chat` layer (priority 180). `null`/undefined = objective off or no active task. */
   objectiveTask?: { description: string; injectPrompt: string; injectionDepth: number } | null;
+  /** Insights — Objective Tracker (OGM, goals mode): the enduring long-term goal injected as an `in_chat` layer (priority 178), just above the active short-term objective. `null`/undefined = goals mode off, no long-term goal, or the goal is completed/abandoned (completed goals are not injected). */
+  objectiveLongTerm?: { description: string; injectPrompt: string; injectionDepth: number } | null;
   /** Insights — Scene Tracker: the last N validated scene states injected as an `in_chat` layer (priority 175). `entries` are oldest→newest; `format` is injection-only serialization (generation output stays strict JSON); `injectionDepth` mirrors the authorsNote / objectiveTask depth pattern; `injectPrompt` is the user's optional framing override ("" = default `[Scene state]` label). `null`/undefined = tracker off or no valid scene yet. */
   sceneState?: {
     entries: ReadonlyArray<Readonly<Record<string, unknown>>>;

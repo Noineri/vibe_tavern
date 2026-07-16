@@ -703,6 +703,27 @@ function buildLayers(
     layers.push(objectiveLayer);
   }
 
+  // Insights — Objective Tracker (OGM, goals mode): inject the enduring
+  // long-term goal as an `in_chat` layer at priority 178 (just above the active
+  // short-term objective at 180) at the configured depth, so the model keeps the
+  // overarching goal in mind next to the current focus. Absent entirely in route
+  // mode, when there is no long-term goal, or when it is completed/abandoned
+  // (the service skips those — a finished long-term goal is no longer framing).
+  if (context.objectiveLongTerm) {
+    const goal = context.objectiveLongTerm;
+    const longTermLayer = makeLayer({
+      id: PROMPT_LAYER_ID.objectiveLongTerm,
+      sourceType: PROMPT_LAYER_SOURCE_TYPE.objectiveLongTerm,
+      sourceId: PROMPT_LAYER_ID.objectiveLongTerm,
+      sourceName: "Objective Long-term Goal",
+      position: "in_chat",
+      priority: PROMPT_LAYER_PRIORITY.objectiveLongTerm,
+      text: PROMPT_FORMAT.objectiveLongTerm(goal.injectPrompt, goal.description),
+    });
+    longTermLayer.injectionDepth = Math.max(0, goal.injectionDepth ?? 1);
+    layers.push(longTermLayer);
+  }
+
   // Insights — Scene Tracker (SCENE_TRACKER_PLAN SCN-7): inject the last N
   // validated scene states as a single `in_chat` layer at priority 175 (just
   // before the objective layer at 180), at the configured depth. The entries are

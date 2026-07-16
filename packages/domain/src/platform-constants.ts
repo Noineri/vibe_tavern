@@ -323,3 +323,24 @@ export const OBJECTIVE_TASK_STATUS = {
 } as const;
 
 export type ObjectiveTaskStatus = typeof OBJECTIVE_TASK_STATUS[keyof typeof OBJECTIVE_TASK_STATUS];
+
+/**
+ * Objective Tracker mode (OGM — OBJECTIVE_GOALS_MODE_PLAN).
+ *
+ * - `route` — the original mode: one high-level objective broken into an ordered
+ *   task route (`ObjectiveState.tasks`), one active target at a time, advanced
+ *   sequentially toward the objective's resolution.
+ * - `goals` — one enduring long-term goal plus a flat list of independent
+ *   short-term goals. The long-term goal is always injected into the RP prompt
+ *   (until completed); the one selected (active) short-term goal is injected
+ *   next to it. Short-term goals are completable independently and may be
+ *   unrelated to the long-term goal.
+ *
+ * Absent on disk → `route` (existing chats stay unchanged).
+ */
+export const OBJECTIVE_MODE = {
+  route: "route",
+  goals: "goals",
+} as const;
+
+export type ObjectiveMode = typeof OBJECTIVE_MODE[keyof typeof OBJECTIVE_MODE];
