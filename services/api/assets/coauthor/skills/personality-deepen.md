@@ -21,11 +21,11 @@ A weak personality reads as adjectives with no behavior: "mysterious, kind, guar
 ## How to proceed
 
 - Open with a one-line diagnosis of what's flat ("the personality lists traits but no behavior; the greeting could be any character").
-- Call `edit_profile` with the deepened `# PERSONALITY` (retain SCENARIO and EXAMPLES verbatim unless the user asked about them).
+- Call `write_personality` with the deepened PERSONALITY body — deepening usually rewrites the section wholesale, so a whole-section write is the right operation (SCENARIO and EXAMPLES are preserved automatically unless the user asked about them). If only a few traits are being swapped, use `edit_personality` with exact `{ search, replace }` edits instead.
 - If the greetings need to follow suit, call `edit_greeting` for each — sequentially if one references another, in parallel if independent.
 
 ## Quality checks before you call a tool
 
 - Can you point to the specific line of behavior that proves each trait you kept or added? If not, it's still abstract.
 - Did you preserve the user's intent? Deepen means sharpen what's there, not swap in a different character.
-- Are SCENARIO / EXAMPLES / frontmatter unchanged from the current document, byte-for-byte, unless the user explicitly asked about them?
+- Are SCENARIO / EXAMPLES / frontmatter unchanged from the current document, byte-for-byte, unless the user explicitly asked about them? (Section tools preserve them automatically; only `edit_profile` requires you to copy them verbatim.)

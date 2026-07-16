@@ -311,6 +311,64 @@ describe("assembleCoauthorPrompt", () => {
     expect(result.prompt.tokenAccounting.recentHistory).toBeLessThan(4);
   });
 
+  describe("CED-3: edit/write tool routing per module", () => {
+    test("default module exposes all edit_*/write_* section tools + edit_profile + greetings; no generic write_section", async () => {
+      const loaders = makeLoaders();
+      const result = await assembleCoauthorPrompt(makeInput(loaders));
+      const names = new Set(Object.keys(result.tools));
+      for (const n of [
+        "edit_personality", "edit_scenario", "edit_examples",
+        "write_personality", "write_scenario", "write_examples",
+        "edit_profile", "edit_greeting", "edit_alt_greeting", "add_alt_greeting",
+      ]) {
+        expect(names.has(n)).toBe(true);
+      }
+      // No generic/unrestricted section tool, no legacy search_replace naming.
+      expect(names.has("write_section")).toBe(false);
+      expect(names.has("edit_section")).toBe(false);
+      expect([...names].some((n) => /search_replace/i.test(n))).toBe(false);
+    });
+
+    test("profile-editor module exposes only PERSONALITY/SCENARIO edit+write (no EXAMPLES, no greetings)", async () => {
+      const loaders = makeLoaders({ chat: { id: "chat_test", coauthorModuleId: "profile-editor" } as never });
+      const result = await assembleCoauthorPrompt(makeInput(loaders));
+      const names = new Set(Object.keys(result.tools));
+      expect(names.has("edit_personality")).toBe(true);
+      expect(names.has("write_personality")).toBe(true);
+      expect(names.has("edit_scenario")).toBe(true);
+      expect(names.has("write_scenario")).toBe(true);
+      expect(names.has("edit_examples")).toBe(false);
+      expect(names.has("write_examples")).toBe(false);
+      expect(names.has("edit_greeting")).toBe(false);
+    });
+
+    test("dialogue-writer module exposes only EXAMPLES edit+write + greetings (no PERSONALITY/SCENARIO)", async () => {
+      const loaders = makeLoaders({ chat: { id: "chat_test", coauthorModuleId: "dialogue-writer" } as never });
+      const result = await assembleCoauthorPrompt(makeInput(loaders));
+      const names = new Set(Object.keys(result.tools));
+      expect(names.has("edit_examples")).toBe(true);
+      expect(names.has("write_examples")).toBe(true);
+      expect(names.has("edit_greeting")).toBe(true);
+      expect(names.has("edit_personality")).toBe(false);
+      expect(names.has("write_personality")).toBe(false);
+      expect(names.has("write_scenario")).toBe(false);
+    });
+
+    test("base prompt teaches edit vs write vs edit_profile routing", async () => {
+      const loaders = makeLoaders();
+      const result = await assembleCoauthorPrompt(makeInput(loaders));
+      const system = (result.prompt.finalPayload as { messages: Array<{ content: string }> }).messages[0].content;
+      expect(system).toContain("edit_personality");
+      expect(system).toContain("write_personality");
+      expect(system).toContain("edit_profile");
+      // edit_profile is taught as first-profile-change-only.
+      expect(system).toMatch(/first profile change/);
+      // edit_* takes exact search/replace pairs, not a full section content.
+      expect(system).toContain("search");
+      expect(system).toContain("replace");
+    });
+  });
+
   test("CS-5: applies token compaction and preserves tool-call pairs", async () => {
     // Inject a fake token counter for this test so estimateTokens doesn't return 0
     const { setTokenCountFn } = await import("@vibe-tavern/prompt-pipeline");
