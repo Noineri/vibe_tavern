@@ -152,17 +152,28 @@ function serviceWith(
 }
 
 describe("ObjectiveService (INS-3b logic + INS-3c assembler wiring)", () => {
-  it("generateTasks parses the LLM list into a pending route, then getActiveTask returns the first", async () => {
+  it("generateTasks auto-activates the first task and leaves the rest pending, so getActiveTask returns the first", async () => {
     const { stores, readState } = makeMockStores({ objectiveDescription: "Defeat the warlord", tasks: [], autoCheckFrequency: 0, injectionDepth: 1, generatePrompt: "", checkPrompt: "", injectPrompt: "" });
     const { service } = serviceWith(stores, '{"tasks":[{"description":"Reach the city gates"},{"description":"Confront the warlord"},{"description":"End the siege"}]}');
 
     const state = await service.generateTasks({ chatId: "chat_1" as never, profile, model: "m", context });
     expect(state.tasks.map((t) => t.description)).toEqual(["Reach the city gates", "Confront the warlord", "End the siege"]);
     expect(state.objectiveDescription).toBe("Defeat the warlord"); // preserved
+    // The first generated task is explicitly 'active' (the current target); the
+    // rest stay 'pending' until reached. This is what makes the freshly
+    // generated route immediately show a current task in the UI.
+    expect(state.tasks.map((t) => t.status)).toEqual([
+      OBJECTIVE_TASK_STATUS.active,
+      OBJECTIVE_TASK_STATUS.pending,
+      OBJECTIVE_TASK_STATUS.pending,
+    ]);
     expect((await service.getActiveTask("chat_1" as never))?.description).toBe("Reach the city gates");
 
-    // Persisted: readState reflects the saved tasks.
-    expect((readState() as ObjectiveState).tasks).toHaveLength(3);
+    // Persisted: readState reflects the saved tasks with the same activation.
+    const persisted = (readState() as ObjectiveState).tasks;
+    expect(persisted).toHaveLength(3);
+    expect(persisted[0].status).toBe(OBJECTIVE_TASK_STATUS.active);
+    expect(persisted[1].status).toBe(OBJECTIVE_TASK_STATUS.pending);
   });
 
   it("generateTasks preserves the previous route when the LLM output is malformed", async () => {

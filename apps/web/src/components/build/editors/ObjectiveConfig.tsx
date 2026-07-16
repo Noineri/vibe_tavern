@@ -100,7 +100,7 @@ export function ObjectiveConfig({ chatId }: { chatId: ChatId }) {
     }
   }
 
-  const spinner = <span className="h-3 w-3 animate-spin rounded-full border-2 border-accent border-t-transparent" />;
+  const spinner = <span className="h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent" />;
 
   return (
     <div className="space-y-4 rounded-lg border border-border bg-s2/50 p-4">
@@ -128,7 +128,12 @@ export function ObjectiveConfig({ chatId }: { chatId: ChatId }) {
           type="button"
           disabled={busy !== null && busy !== "generate"}
           onClick={() => busy === "generate" ? stop("generate") : void run("generate", generateObjectiveTasksAction)}
-          className="inline-flex items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 font-ui text-[12px] font-medium text-on-accent transition-opacity hover:opacity-90 disabled:opacity-50"
+          className={cn(
+            "inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 font-ui text-[12px] font-medium transition-colors disabled:opacity-50",
+            busy === "generate"
+              ? "border border-danger/40 bg-danger/10 text-danger hover:bg-danger/20"
+              : "bg-accent text-on-accent hover:opacity-90",
+          )}
         >
           {busy === "generate" ? spinner : <Ic.plus />}
           {t(busy === "generate" ? "obj_stop_button" : "obj_generate_button")}

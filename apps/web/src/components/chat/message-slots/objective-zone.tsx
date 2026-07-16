@@ -179,7 +179,12 @@ function ObjectiveZone({ chatId, messageId }: { chatId: string; messageId: strin
               type="button"
               onClick={() => busy === "generate" ? stop("generate") : void run("generate", generateObjectiveTasksAction)}
               disabled={busy !== null && busy !== "generate"}
-              className="flex h-7 w-7 items-center justify-center rounded text-t4 transition-colors hover:bg-s2 hover:text-accent disabled:opacity-40 md:h-5 md:w-5"
+              className={cn(
+                "flex h-7 w-7 items-center justify-center rounded transition-colors disabled:opacity-40 md:h-5 md:w-5",
+                busy === "generate"
+                  ? "text-danger hover:bg-danger/10"
+                  : "text-t4 hover:bg-s2 hover:text-accent",
+              )}
               aria-label={t(busy === "generate" ? "obj_stop_button" : "obj_zone_regenerate")}
             >
               {busy === "generate" ? <ActionSpinner /> : <Ic.regen />}

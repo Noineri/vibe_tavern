@@ -320,10 +320,15 @@ export class ObjectiveService {
       const prompt = this.buildPrompt(input.context, instruction);
       const result = await this.execute({ profile: input.profile, model: input.model, prompt, signal: input.signal });
       input.signal?.throwIfAborted();
-      const tasks = parseTaskList(result.text);
-      if (tasks.length === 0) {
+      const parsed = parseTaskList(result.text);
+      if (parsed.length === 0) {
         throw new Error("Objective generation produced no tasks — try adjusting the objective description or the generate prompt.");
       }
+      // Auto-activate the first task so the route has an explicit current
+      // target the moment it is generated; the rest stay pending until reached.
+      const tasks = parsed.map((task, index) =>
+        index === 0 ? { ...task, status: OBJECTIVE_TASK_STATUS.active } : task,
+      );
 
       // CRUD/config remain responsive during the LLM await. Re-read and merge
       // only the generated route; if the user edited the route/goal itself,
