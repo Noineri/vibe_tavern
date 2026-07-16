@@ -1,15 +1,14 @@
 /**
- * CA-9.2b — CoauthorToolActivityCard DOM tests.
+ * CA-9.2b / CED-6 — CoauthorToolActivityCard DOM tests.
  *
- * Pins the card's visible behaviours (the slot wrapper is store-driven and
- * covered by the coauthor-turn-store tests in CA-9.2a; here we exercise the
- * pure, prop-driven card):
- *   - a `done` activity renders the model's summary and expands to the proposed
- *     preview on click;
- *   - a `streaming` activity shows the "editing…" label, disables the toggle,
- *     and hides the proposed preview;
- *   - an `error` activity shows the error label;
- *   - an empty summary falls back to the section label.
+ * Pins the card's OPERATION-LEVEL previews (the slot wrapper is store-driven and
+ * covered by the coauthor-turn-store tests; here we exercise the pure,
+ * prop-driven card). The card must look like an IDE/CLI operation, not a full
+ * profile dump: it renders the operation INPUT (scoped SEARCH/REPLACE for
+ * edits, the section body for writes, the slot text for greetings) — never the
+ * full cumulative `proposed` profile, except for a true whole-document
+ * `write_profile`. Historical rows without input show their summary but must
+ * not fall back to printing the full proposed snapshot.
  */
 import { describe, it, expect, vi } from "vitest";
 import { render, fireEvent } from "@testing-library/react";
@@ -22,35 +21,124 @@ vi.mock("../../i18n/context.js", () => ({
 	useT: () => ({ t: (key: string) => key, tDynamic: (key: string) => key, locale: "en", setLocale: () => {}, ready: true }),
 }));
 
-function activity(over: Partial<CoauthorToolActivity> = {}): CoauthorToolActivity {
+// A full cumulative profile.md (what `proposed` carries for profile-target ops).
+// Section ops must NOT render this verbatim — only write_profile may.
+const FULL_PROFILE = "---\nname: Kira\n---\n# PERSONALITY\nBold and direct.\n# SCENARIO\nA quiet bar.\n# EXAMPLES\n{{char}}: Hi.";
+
+function activity(over: Partial<CoauthorToolActivity>): CoauthorToolActivity {
 	return {
 		toolCallId: "call_1",
 		toolName: "write_profile",
 		status: "done",
 		summary: "Made the personality more assertive.",
 		target: "profile",
-		proposed: "---\nname: Kira\n---\n# PERSONALITY\nBold and direct.",
+		proposed: FULL_PROFILE,
 		...over,
 	};
 }
 
-describe("ToolActivityCard", () => {
-
-	it("renders the summary for a done activity and expands to the proposed preview on click", () => {
-		const { getByText, queryByText, container } = render(<ToolActivityCard activity={activity()} />);
-		expect(getByText("Made the personality more assertive.")).toBeDefined();
-		// Proposed preview is hidden until expanded.
-		expect(queryByText(/# PERSONALITY/)).toBeNull();
-		fireEvent.click(getByText("Made the personality more assertive."));
-		expect(getByText(/# PERSONALITY/)).toBeDefined();
+describe("ToolActivityCard — operation previews (CED-6)", () => {
+	it("an exact-edit card shows only the SEARCH/REPLACE deltas, never the full profile", () => {
+		const { getByText, queryByText } = render(
+			<ToolActivityCard
+				activity={activity({
+					toolName: "edit_personality",
+					summary: "sharpen",
+					args: { edits: [{ search: "Bold and direct.", replace: "Bold, direct, and a little cruel." }], summary: "sharpen" },
+				})}
+			/>,
+		);
+		fireEvent.click(getByText("sharpen"));
+		// The scoped search + replace content is shown.
+		expect(getByText("Bold and direct.")).toBeDefined();
+		expect(getByText("Bold, direct, and a little cruel.")).toBeDefined();
+		// A section the edit did NOT touch must NOT leak → we are not printing the full profile.
+		expect(queryByText("A quiet bar.")).toBeNull();
+		expect(queryByText(/# EXAMPLES/)).toBeNull();
 	});
 
-	it("shows the streaming label, disables the toggle, and hides the proposed preview", () => {
-		const { getByText, queryByText } = render(<ToolActivityCard activity={activity({ status: "streaming", summary: "Tightening the scenario." })} />);
+	it("a whole-section write card shows only the new section body + write label, never the full profile", () => {
+		const { getByText, queryByText } = render(
+			<ToolActivityCard
+				activity={activity({
+					toolName: "write_scenario",
+					summary: "rewrite scenario",
+					args: { content: "A neon-lit rooftop in the rain.", summary: "rewrite scenario" },
+				})}
+			/>,
+		);
+		fireEvent.click(getByText("rewrite scenario"));
+		expect(getByText("A neon-lit rooftop in the rain.")).toBeDefined();
+		expect(getByText("coauthor_tool_op_section_write")).toBeDefined();
+		// Untouched sections do not leak.
+		expect(queryByText("A quiet bar.")).toBeNull();
+		expect(queryByText(/# PERSONALITY/)).toBeNull();
+	});
+
+	it("a greeting card shows the affected slot content + slot label", () => {
+		const { getByText, queryByText } = render(
+			<ToolActivityCard
+				activity={activity({
+					toolName: "edit_greeting",
+					summary: "rewrite opener",
+					target: "greeting",
+					greetingIndex: 0,
+					proposed: "{{char}} leans on the bar, smirking.",
+					args: { index: 0, content: "{{char}} leans on the bar, smirking.", summary: "rewrite opener" },
+				})}
+			/>,
+		);
+		fireEvent.click(getByText("rewrite opener"));
+		expect(getByText("{{char}} leans on the bar, smirking.")).toBeDefined();
+		expect(getByText("coauthor_tool_op_greeting_primary")).toBeDefined();
+		// The profile document is not involved in a greeting op.
+		expect(queryByText(/# PERSONALITY/)).toBeNull();
+	});
+
+	it("write_profile is the only op that shows the full profile document", () => {
+		const { getByText } = render(
+			<ToolActivityCard
+				activity={activity({
+					toolName: "write_profile",
+					summary: "full rewrite",
+					args: { profileMd: FULL_PROFILE, summary: "full rewrite" },
+				})}
+			/>,
+		);
+		fireEvent.click(getByText("full rewrite"));
+		// The full document is shown (multiple sections present).
+		expect(getByText(/# PERSONALITY/)).toBeDefined();
+		expect(getByText(/# SCENARIO/)).toBeDefined();
+	});
+
+	it("a historical activity without input shows its summary but never the full proposed snapshot", () => {
+		const { getByText, queryByText } = render(
+			<ToolActivityCard
+				activity={activity({
+					toolName: "edit_personality",
+					summary: "older edit",
+					args: undefined, // missing input (historical / no carrier call)
+				})}
+			/>,
+		);
+		// Summary still visible; toggle enabled.
+		expect(getByText("older edit")).toBeDefined();
+		fireEvent.click(getByText("older edit"));
+		// Explicit "unavailable" note (no input to reconstruct the operation).
+		expect(getByText("coauthor_tool_op_unavailable")).toBeDefined();
+		// The full cumulative profile must NOT be printed as a fallback.
+		expect(queryByText("A quiet bar.")).toBeNull();
+		expect(queryByText(/# EXAMPLES/)).toBeNull();
+	});
+});
+
+describe("ToolActivityCard — affordances (unchanged)", () => {
+	it("shows the streaming label, disables the toggle, and hides the preview", () => {
+		const { getByText, queryByText } = render(
+			<ToolActivityCard activity={activity({ status: "streaming", summary: "Tightening the scenario." })} />,
+		);
 		expect(getByText("Tightening the scenario.")).toBeDefined();
-		// The streaming affordance label (i18n key, returned verbatim by the mock).
 		expect(getByText("coauthor_tool_streaming")).toBeDefined();
-		// Proposed preview must not render while streaming.
 		expect(queryByText(/# PERSONALITY/)).toBeNull();
 	});
 
@@ -60,7 +148,7 @@ describe("ToolActivityCard", () => {
 		expect(getByText("coauthor_tool_error")).toBeDefined();
 	});
 
-	it("falls back to the section label when the summary is empty/blank", () => {
+	it("falls back to the generic label when the summary is empty/blank", () => {
 		const { getByText } = render(<ToolActivityCard activity={activity({ summary: "   " })} />);
 		expect(getByText("coauthor_tool_activity")).toBeDefined();
 	});

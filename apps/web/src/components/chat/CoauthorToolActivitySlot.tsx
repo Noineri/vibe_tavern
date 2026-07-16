@@ -2,6 +2,7 @@ import { useState, useMemo } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { registerMessageSlot, type MessageSlotContext } from "../../lib/message-slot-registry.js";
 import { useCoauthorTurnStore, extractPersistedCoauthorActivities, type CoauthorToolActivity } from "../../stores/coauthor-turn-store.js";
+import { coauthorSectionEditInputSchema, coauthorSectionWriteInputSchema } from "@vibe-tavern/api-contracts";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
 import type { AppMessage } from "../../app-client.js";
 import { Icons } from "../shared/icons.js";
@@ -112,6 +113,132 @@ function CoauthorToolActivitySlot({
   );
 }
 
+// ─── Operation preview (CED-6) ─────────────────────────────────────────────
+// The card reads the operation INPUT (args), not the cumulative `proposed`, so
+// it looks like an IDE/CLI operation: scoped SEARCH/REPLACE for edits, the
+// section body for writes, the slot text for greetings. Only a true
+// whole-document `write_profile` may show the full profile. A historical row
+// without input renders an "unavailable" note and NEVER falls back to the full
+// proposed snapshot (the F-2 UX dissonance: a section edit looked like a full
+// profile rewrite because the card printed `proposed` verbatim).
+type GreetingLabelKey =
+  | "coauthor_tool_op_greeting_primary"
+  | "coauthor_tool_op_greeting_alt"
+  | "coauthor_tool_op_greeting_new";
+
+type OpPreview =
+  | { kind: "edit"; edits: { search: string; replace: string }[] }
+  | { kind: "write-section"; content: string }
+  | { kind: "write-profile" }
+  | { kind: "greeting"; labelKey: GreetingLabelKey; labelNum?: number; content: string }
+  | null;
+
+/** Narrow the opaque `args` per `toolName` into a renderable operation, or
+ * `null` when the input is missing/unparseable (historical or malformed). */
+function parseOperation(toolName: string, args: unknown): OpPreview {
+  if (args == null || typeof args !== "object") return null;
+  switch (toolName) {
+    case "edit_personality":
+    case "edit_scenario":
+    case "edit_examples": {
+      const parsed = coauthorSectionEditInputSchema.safeParse(args);
+      if (!parsed.success) return null;
+      return { kind: "edit", edits: parsed.data.edits.map(({ search, replace }) => ({ search, replace })) };
+    }
+    case "write_personality":
+    case "write_scenario":
+    case "write_examples": {
+      const parsed = coauthorSectionWriteInputSchema.safeParse(args);
+      if (!parsed.success) return null;
+      return { kind: "write-section", content: parsed.data.content };
+    }
+    case "write_profile":
+      return { kind: "write-profile" };
+    case "add_alt_greeting": {
+      const a = args as { content?: string };
+      return typeof a.content === "string" ? { kind: "greeting", labelKey: "coauthor_tool_op_greeting_new", content: a.content } : null;
+    }
+    case "edit_alt_greeting": {
+      const a = args as { index?: number; content?: string };
+      if (typeof a.content !== "string") return null;
+      return { kind: "greeting", labelKey: "coauthor_tool_op_greeting_alt", labelNum: typeof a.index === "number" ? a.index : 1, content: a.content };
+    }
+    case "edit_greeting": {
+      const a = args as { content?: string };
+      return typeof a.content === "string" ? { kind: "greeting", labelKey: "coauthor_tool_op_greeting_primary", content: a.content } : null;
+    }
+    default:
+      return null;
+  }
+}
+
+const PREVIEW_PRE_CLS = "whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed text-msg-t2";
+const PREVIEW_LABEL_CLS = "font-ui text-[10px] uppercase tracking-wide text-t3";
+
+/** One SEARCH/REPLACE hunk, unified-diff style: `-` search lines, `+` replace lines. */
+function DiffHunk({ search, replace }: { search: string; replace: string }) {
+  const { t } = useT();
+  const searchLines = search.split("\n");
+  const replaceLines = replace.split("\n");
+  return (
+    <div className="flex flex-col">
+      <span className={PREVIEW_LABEL_CLS}>{t("coauthor_tool_op_search")}</span>
+      {searchLines.map((l, i) => (
+        <div key={`s${i}`} className="flex gap-1 font-mono text-[11px] leading-relaxed">
+          <span className="select-none text-danger-text">-</span>
+          <span className="whitespace-pre-wrap break-words text-msg-t2">{l}</span>
+        </div>
+      ))}
+      <span className={`mt-1 ${PREVIEW_LABEL_CLS}`}>{t("coauthor_tool_op_replace")}</span>
+      {replaceLines.map((l, i) => (
+        <div key={`r${i}`} className="flex gap-1 font-mono text-[11px] leading-relaxed">
+          <span className="select-none text-success-text">+</span>
+          <span className="whitespace-pre-wrap break-words text-msg-t2">{l}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** Scoped operation preview rendered when the card is expanded. */
+function OperationPreview({ op, proposed }: { op: OpPreview; proposed?: string }) {
+  const { t } = useT();
+  if (!op) {
+    // Historical/malformed: no input to reconstruct the operation. Do NOT fall
+    // back to the full cumulative `proposed` — the summary is still shown above.
+    return <div className={PREVIEW_LABEL_CLS}>{t("coauthor_tool_op_unavailable")}</div>;
+  }
+  switch (op.kind) {
+    case "edit":
+      return (
+        <div className="flex flex-col gap-2">
+          {op.edits.map((e, i) => (
+            <DiffHunk key={i} search={e.search} replace={e.replace} />
+          ))}
+        </div>
+      );
+    case "write-section":
+      return (
+        <div className="flex flex-col gap-1">
+          <span className={PREVIEW_LABEL_CLS}>{t("coauthor_tool_op_section_write")}</span>
+          <pre className={PREVIEW_PRE_CLS}>{op.content}</pre>
+        </div>
+      );
+    case "greeting":
+      return (
+        <div className="flex flex-col gap-1">
+          <span className={PREVIEW_LABEL_CLS}>
+            {op.labelNum != null ? `${t(op.labelKey)} ${op.labelNum}` : t(op.labelKey)}
+          </span>
+          <pre className={PREVIEW_PRE_CLS}>{op.content}</pre>
+        </div>
+      );
+    case "write-profile":
+      // The ONLY case the full cumulative document is shown — the operation itself is document-wide.
+      return <pre className={PREVIEW_PRE_CLS}>{proposed ?? ""}</pre>;
+  }
+}
+
 function ToolActivityCard({ activity }: { activity: CoauthorToolActivity }) {
   const { t } = useT();
   const [open, setOpen] = useState(false);
@@ -146,11 +273,9 @@ function ToolActivityCard({ activity }: { activity: CoauthorToolActivity }) {
       {errored && (
         <div className="px-3 py-1.5 font-ui text-[11px] text-danger-text">{t("coauthor_tool_error")}</div>
       )}
-      {!streaming && open && activity.proposed != null && (
+      {!streaming && open && (
         <div className="max-h-48 overflow-auto px-3 py-2 border-l-2 border-border/50 ml-2 mt-1">
-          <pre className="whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed text-msg-t2">
-            {activity.proposed}
-          </pre>
+          <OperationPreview op={parseOperation(activity.toolName, activity.args)} proposed={activity.proposed} />
         </div>
       )}
     </div>
