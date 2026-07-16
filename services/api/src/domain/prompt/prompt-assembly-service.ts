@@ -1,4 +1,4 @@
-import { brandId, parseStoredAttachments, OBJECTIVE_TASK_STATUS, normalizeSceneTrackerConfig } from "@vibe-tavern/domain";
+import { brandId, parseStoredAttachments, OBJECTIVE_MODE, OBJECTIVE_TASK_STATUS, normalizeSceneTrackerConfig } from "@vibe-tavern/domain";
 import type {
   AssemblePromptResponse,
   CustomInjection,
@@ -177,14 +177,40 @@ export function resolveObjectiveTaskContext(input: {
 }): { description: string; injectPrompt: string; injectionDepth: number } | null {
   if (!input.insightsConfig?.objectiveEnabled) return null;
   const state = input.insightsObjectiveState as Partial<ObjectiveState>;
-  const tasks = Array.isArray(state?.tasks) ? (state.tasks as ObjectiveTask[]) : [];
+  // Route mode → the active route task; goals mode → the selected (active) short-term goal.
+  const items = state?.mode === OBJECTIVE_MODE.goals
+    ? (Array.isArray(state?.shortTermGoals) ? (state.shortTermGoals as ObjectiveTask[]) : [])
+    : (Array.isArray(state?.tasks) ? (state.tasks as ObjectiveTask[]) : []);
   const active =
-    tasks.find((t) => t && t.status === OBJECTIVE_TASK_STATUS.active) ??
-    tasks.find((t) => t && t.status === OBJECTIVE_TASK_STATUS.pending);
+    items.find((t) => t && t.status === OBJECTIVE_TASK_STATUS.active) ??
+    items.find((t) => t && t.status === OBJECTIVE_TASK_STATUS.pending);
   if (!active || !String(active.description ?? "").trim()) return null;
   const injectionDepth = typeof state?.injectionDepth === "number" ? state.injectionDepth : 1;
   const injectPrompt = typeof state?.injectPrompt === "string" ? state.injectPrompt : "";
   return { description: String(active.description), injectPrompt, injectionDepth };
+}
+
+/**
+ * Insights — Objective Tracker (OGM, goals mode): resolve the long-term goal
+ * context field injected into the prompt pipeline. Returns null outside goals
+ * mode, when no long-term goal is set, or when it is completed/abandoned (a
+ * finished long-term goal is no longer framing) — the pipeline then emits NO
+ * long-term layer. Pure and exported so the gating + depth/injectPrompt
+ * defaults are unit-testable without a DB.
+ */
+export function resolveObjectiveLongTermContext(input: {
+  insightsConfig: Record<string, unknown>;
+  insightsObjectiveState: Record<string, unknown>;
+}): { description: string; injectPrompt: string; injectionDepth: number } | null {
+  if (!input.insightsConfig?.objectiveEnabled) return null;
+  const state = input.insightsObjectiveState as Partial<ObjectiveState>;
+  if (state?.mode !== OBJECTIVE_MODE.goals) return null;
+  const goal = state.longTermGoal;
+  if (!goal || !String(goal.description ?? "").trim()) return null;
+  if (goal.status === OBJECTIVE_TASK_STATUS.completed || goal.status === OBJECTIVE_TASK_STATUS.abandoned) return null;
+  const injectionDepth = typeof state?.injectionDepth === "number" ? state.injectionDepth : 1;
+  const injectPrompt = typeof state?.injectPrompt === "string" ? state.injectPrompt : "";
+  return { description: String(goal.description), injectPrompt, injectionDepth };
 }
 
 export interface BuiltPipelineContext {
@@ -470,6 +496,10 @@ export class PromptAssemblyService {
       insightsConfig: chat.insightsConfig,
       insightsObjectiveState: chat.insightsObjectiveState,
     });
+    const objectiveLongTerm = resolveObjectiveLongTermContext({
+      insightsConfig: chat.insightsConfig,
+      insightsObjectiveState: chat.insightsObjectiveState,
+    });
 
     // Scene Tracker (SCENE_TRACKER_PLAN SCN-7): query the last `injectLastN`
     // VALID selected-variant records from the active branch (freshness-filtered
@@ -545,6 +575,7 @@ export class PromptAssemblyService {
         })),
       },
       objectiveTask,
+      objectiveLongTerm,
       sceneState,
       chat: {
         recentMessages,

@@ -33,8 +33,8 @@
  * checkCompletion marks the current target 'completed'; the next pending then
  * becomes the implicit target.
  */
-import type { AssemblePromptResponse, ChatBranchId, ChatId, ObjectiveState, ObjectiveTask, ObjectiveTaskStatus } from "@vibe-tavern/domain";
-import { brandId, OBJECTIVE_TASK_STATUS } from "@vibe-tavern/domain";
+import type { AssemblePromptResponse, ChatBranchId, ChatId, ObjectiveLongTermGoal, ObjectiveMode, ObjectiveShortTermGoal, ObjectiveState, ObjectiveTask, ObjectiveTaskStatus } from "@vibe-tavern/domain";
+import { brandId, OBJECTIVE_MODE, OBJECTIVE_TASK_STATUS } from "@vibe-tavern/domain";
 import { z } from "zod";
 import type { StoreContainer } from "@vibe-tavern/db";
 import { getInsightsAssembler } from "@vibe-tavern/prompt-pipeline";
@@ -62,8 +62,11 @@ function isObjectiveEnabled(insightsConfig: Record<string, unknown>): boolean {
 /** Default ObjectiveState for a chat that has none yet (or for addTask on an empty chat). */
 export function defaultObjectiveState(): ObjectiveState {
   return {
+    mode: OBJECTIVE_MODE.route,
     objectiveDescription: "",
     tasks: [],
+    longTermGoal: null,
+    shortTermGoals: [],
     autoCheckFrequency: 0,
     autoCheckEventCount: 0,
     contextWindow: OBJECTIVE_CONTEXT_WINDOW,
@@ -79,6 +82,11 @@ export function defaultObjectiveState(): ObjectiveState {
 
 const generatedTaskRouteSchema = z.object({
   tasks: z.array(z.object({ description: z.string().trim().min(1) }).strict()).min(1),
+}).strict();
+
+const generatedGoalsSchema = z.object({
+  longTerm: z.object({ description: z.string().trim().min(1) }).strict(),
+  shortTerm: z.array(z.object({ description: z.string().trim().min(1) }).strict()).min(1),
 }).strict();
 
 const completionVerdictSchema = z.object({ completed: z.boolean() }).strict();
@@ -104,16 +112,37 @@ export function parseTaskList(text: string): ObjectiveTask[] {
   }));
 }
 
+/** Parse the goals-mode generation: one long-term goal + a non-empty short-term list. All start pending. */
+export function parseGoalsResult(text: string): {
+  longTermGoal: ObjectiveLongTermGoal;
+  shortTermGoals: ObjectiveShortTermGoal[];
+} {
+  const parsed = parseStructuredOutput(text, generatedGoalsSchema);
+  return {
+    longTermGoal: { description: parsed.longTerm.description, status: OBJECTIVE_TASK_STATUS.pending },
+    shortTermGoals: parsed.shortTerm.map((goal, index) => ({
+      id: `obj_st_${index + 1}`,
+      description: goal.description,
+      status: OBJECTIVE_TASK_STATUS.pending,
+    })),
+  };
+}
+
 /** Parse the completion model's strict `{ completed: boolean }` JSON verdict. */
 export function parseCheckVerdict(text: string): boolean {
   return parseStructuredOutput(text, completionVerdictSchema).completed;
 }
 
-/** The active target = first 'active' task, else first 'pending'. Null when the route is exhausted. */
-export function selectActiveTask(tasks: ObjectiveTask[]): ObjectiveTask | null {
+/**
+ * The active target = first 'active' item, else first 'pending'. Null when the
+ * route/list is exhausted. Generic over the task/goal shape (ObjectiveTask and
+ * ObjectiveShortTermGoal share it) so route tasks and goals-mode short-term
+ * goals reuse the same invariant.
+ */
+export function selectActiveTask<T extends ObjectiveTask = ObjectiveTask>(items: T[]): T | null {
   return (
-    tasks.find((t) => t.status === OBJECTIVE_TASK_STATUS.active) ??
-    tasks.find((t) => t.status === OBJECTIVE_TASK_STATUS.pending) ??
+    items.find((t) => t.status === OBJECTIVE_TASK_STATUS.active) ??
+    items.find((t) => t.status === OBJECTIVE_TASK_STATUS.pending) ??
     null
   );
 }
@@ -123,10 +152,10 @@ export function selectActiveTask(tasks: ObjectiveTask[]): ObjectiveTask | null {
  * array (no mutation). The next 'pending' implicitly becomes the target on the
  * next selectActiveTask call. No-op when there is no active target.
  */
-export function advanceAfterCompletion(tasks: ObjectiveTask[]): ObjectiveTask[] {
-  const target = selectActiveTask(tasks);
-  if (!target) return tasks;
-  return tasks.map((t) => (t.id === target.id ? { ...t, status: OBJECTIVE_TASK_STATUS.completed } : t));
+export function advanceAfterCompletion<T extends ObjectiveTask = ObjectiveTask>(items: T[]): T[] {
+  const target = selectActiveTask(items);
+  if (!target) return items;
+  return items.map((t) => (t.id === target.id ? { ...t, status: OBJECTIVE_TASK_STATUS.completed } : t));
 }
 
 /**
@@ -169,6 +198,50 @@ function composeCheckInstruction(base: string, objectiveDescription: string, tas
   return `${base}\n\nObjective: ${objectiveDescription.trim() || "(unspecified)"}\nActive task: ${taskDescription}\n\nRequired output: one JSON object shaped exactly as {"completed":true} or {"completed":false}.`;
 }
 
+function composeGenerateGoalsInstruction(base: string): string {
+  return `${base}\n\nRequired output: one JSON object shaped exactly as {"longTerm":{"description":"..."},"shortTerm":[{"description":"..."}]}.`;
+}
+
+function composeCheckGoalsInstruction(base: string, longTermDescription: string | null, shortTermDescription: string): string {
+  const longTermLine = longTermDescription?.trim() ? `Long-term goal: ${longTermDescription.trim()}\n` : "";
+  return `${base}\n\n${longTermLine}Active short-term goal: ${shortTermDescription}\n\nRequired output: one JSON object shaped exactly as {"completed":true} or {"completed":false}.`;
+}
+
+/**
+ * Normalize a raw stored array of `{id,description,status}` items — route tasks OR
+ * goals-mode short-term goals — collapsing to at most one `active` (the rest that
+ * claim `active` fall back to `pending`). Shared by both modes since the item
+ * shape is identical; the caller assigns the result to the typed field.
+ */
+function normalizeObjectiveItems(raw: unknown): { id: string; description: string; status: ObjectiveTaskStatus }[] {
+  const items: { id: string; description: string; status: ObjectiveTaskStatus }[] = [];
+  let activeSeen = false;
+  if (Array.isArray(raw)) {
+    for (const candidate of raw as unknown[]) {
+      if (typeof candidate !== "object" || candidate === null) continue;
+      const item = candidate as Partial<ObjectiveTask>;
+      const id = typeof item.id === "string" ? item.id.trim() : "";
+      const description = typeof item.description === "string" ? item.description.trim() : "";
+      if (!id || !description || !isObjectiveTaskStatus(item.status)) continue;
+      const status = item.status === OBJECTIVE_TASK_STATUS.active && activeSeen
+        ? OBJECTIVE_TASK_STATUS.pending
+        : item.status;
+      if (status === OBJECTIVE_TASK_STATUS.active) activeSeen = true;
+      items.push({ id, description, status });
+    }
+  }
+  return items;
+}
+
+/** Normalize a raw stored long-term goal. Returns null when malformed/absent. */
+function normalizeLongTermGoal(raw: unknown): ObjectiveLongTermGoal | null {
+  if (typeof raw !== "object" || raw === null) return null;
+  const goal = raw as Partial<ObjectiveLongTermGoal>;
+  const description = typeof goal.description === "string" ? goal.description.trim() : "";
+  if (!description || !isObjectiveTaskStatus(goal.status)) return null;
+  return { description, status: goal.status };
+}
+
 /**
  * Normalize a raw stored value into a complete ObjectiveState, filling any
  * missing field with its default. This is the backward-compat migration path:
@@ -181,25 +254,13 @@ function normalizeObjectiveState(raw: unknown): ObjectiveState {
   const base = defaultObjectiveState();
   if (typeof raw !== "object" || raw === null) return base;
   const r = raw as Partial<ObjectiveState>;
-  const tasks: ObjectiveTask[] = [];
-  let activeSeen = false;
-  if (Array.isArray(r.tasks)) {
-    for (const candidate of r.tasks as unknown[]) {
-      if (typeof candidate !== "object" || candidate === null) continue;
-      const task = candidate as Partial<ObjectiveTask>;
-      const id = typeof task.id === "string" ? task.id.trim() : "";
-      const description = typeof task.description === "string" ? task.description.trim() : "";
-      if (!id || !description || !isObjectiveTaskStatus(task.status)) continue;
-      const status = task.status === OBJECTIVE_TASK_STATUS.active && activeSeen
-        ? OBJECTIVE_TASK_STATUS.pending
-        : task.status;
-      if (status === OBJECTIVE_TASK_STATUS.active) activeSeen = true;
-      tasks.push({ id, description, status });
-    }
-  }
+  const tasks = normalizeObjectiveItems(r.tasks);
   return {
+    mode: r.mode === OBJECTIVE_MODE.goals ? OBJECTIVE_MODE.goals : OBJECTIVE_MODE.route,
     objectiveDescription: typeof r.objectiveDescription === "string" ? r.objectiveDescription : base.objectiveDescription,
     tasks,
+    longTermGoal: normalizeLongTermGoal(r.longTermGoal),
+    shortTermGoals: normalizeObjectiveItems(r.shortTermGoals),
     autoCheckFrequency: typeof r.autoCheckFrequency === "number" && Number.isFinite(r.autoCheckFrequency)
       ? Math.max(0, Math.floor(r.autoCheckFrequency))
       : base.autoCheckFrequency,
@@ -246,6 +307,10 @@ export interface ObjectiveAutoCheckTrigger {
 
 function routeRevision(state: ObjectiveState): string {
   return JSON.stringify({ objectiveDescription: state.objectiveDescription, tasks: state.tasks });
+}
+
+function goalsRevision(state: ObjectiveState): string {
+  return JSON.stringify({ mode: state.mode, longTermGoal: state.longTermGoal, shortTermGoals: state.shortTermGoals });
 }
 
 /** Small FIFO keyed coordinator used for independent LLM and commit lanes. */
@@ -306,75 +371,143 @@ export class ObjectiveService {
   }
 
   /**
-   * Generate a task route from the conversation. Preserves the existing config
-   * (prompts, depth, frequency) and objective description; replaces the task
-   * list. Throws on an empty generation (the LLM produced no parseable tasks).
+   * Generate objectives from the conversation, dispatching by mode: route mode
+   * builds an ordered task route; goals mode builds one long-term + short-term
+   * goals. Both preserve the existing config and replace only the generated
+   * items; both discard a stale result if the user edited the items mid-flight.
    */
   async generateTasks(input: ObjectiveGenerateInput): Promise<ObjectiveState> {
     return this.llmCoordinator.run(input.chatId, async () => {
       input.signal?.throwIfAborted();
       const state = await this.getState(input.chatId);
-      const revision = routeRevision(state);
-      const instructionBase = await this.resolvePrompt("objectiveGenerate", state.generatePrompt);
-      const instruction = composeGenerateInstruction(instructionBase, state.objectiveDescription);
-      const prompt = this.buildPrompt(input.context, instruction);
-      const result = await this.execute({ profile: input.profile, model: input.model, prompt, signal: input.signal });
-      input.signal?.throwIfAborted();
-      const parsed = parseTaskList(result.text);
-      if (parsed.length === 0) {
-        throw new Error("Objective generation produced no tasks — try adjusting the objective description or the generate prompt.");
-      }
-      // Auto-activate the first task so the route has an explicit current
-      // target the moment it is generated; the rest stay pending until reached.
-      const tasks = parsed.map((task, index) =>
-        index === 0 ? { ...task, status: OBJECTIVE_TASK_STATUS.active } : task,
-      );
-
-      // CRUD/config remain responsive during the LLM await. Re-read and merge
-      // only the generated route; if the user edited the route/goal itself,
-      // discard this stale generation rather than overwriting their intent.
-      return this.commitState(input.chatId, (current) => {
-        if (routeRevision(current) !== revision) return null;
-        return { ...current, tasks };
-      }, input.signal);
+      return state.mode === OBJECTIVE_MODE.goals
+        ? this.generateGoalsTasks(input, state)
+        : this.generateRouteTasks(input, state);
     });
   }
 
+  /** Route mode: generate an ordered task route from the conversation. */
+  private async generateRouteTasks(input: ObjectiveGenerateInput, state: ObjectiveState): Promise<ObjectiveState> {
+    input.signal?.throwIfAborted();
+    const revision = routeRevision(state);
+    const instructionBase = await this.resolvePrompt("objectiveGenerate", state.generatePrompt);
+    const instruction = composeGenerateInstruction(instructionBase, state.objectiveDescription);
+    const prompt = this.buildPrompt(input.context, instruction);
+    const result = await this.execute({ profile: input.profile, model: input.model, prompt, signal: input.signal });
+    input.signal?.throwIfAborted();
+    const parsed = parseTaskList(result.text);
+    if (parsed.length === 0) {
+      throw new Error("Objective generation produced no tasks — try adjusting the objective description or the generate prompt.");
+    }
+    // Auto-activate the first task so the route has an explicit current
+    // target the moment it is generated; the rest stay pending until reached.
+    const tasks = parsed.map((task, index) =>
+      index === 0 ? { ...task, status: OBJECTIVE_TASK_STATUS.active } : task,
+    );
+
+    // CRUD/config remain responsive during the LLM await. Re-read and merge
+    // only the generated route; if the user edited the route/goal itself,
+    // discard this stale generation rather than overwriting their intent.
+    return this.commitState(input.chatId, (current) => {
+      if (routeRevision(current) !== revision) return null;
+      return { ...current, tasks };
+    }, input.signal);
+  }
+
+  /** Goals mode: generate one long-term goal + short-term goals (first short-term auto-active). */
+  private async generateGoalsTasks(input: ObjectiveGenerateInput, state: ObjectiveState): Promise<ObjectiveState> {
+    input.signal?.throwIfAborted();
+    const revision = goalsRevision(state);
+    const instructionBase = await this.resolvePrompt("objectiveGenerateGoals", state.generatePrompt);
+    const instruction = composeGenerateGoalsInstruction(instructionBase);
+    const prompt = this.buildPrompt(input.context, instruction);
+    const result = await this.execute({ profile: input.profile, model: input.model, prompt, signal: input.signal });
+    input.signal?.throwIfAborted();
+    const parsed = parseGoalsResult(result.text);
+    // Auto-activate the first short-term goal as the current focus; the rest stay pending.
+    const shortTermGoals = parsed.shortTermGoals.map((goal, index) =>
+      index === 0 ? { ...goal, status: OBJECTIVE_TASK_STATUS.active } : goal,
+    );
+
+    return this.commitState(input.chatId, (current) => {
+      if (goalsRevision(current) !== revision) return null;
+      return { ...current, longTermGoal: parsed.longTermGoal, shortTermGoals };
+    }, input.signal);
+  }
+
   /**
-   * Ask the LLM whether the current active task is complete; if so, mark it
-   * 'completed' (advancing the route). No-op when there is no active task or the
-   * LLM says PENDING. Returns the (possibly updated) state.
+   * Ask the LLM whether the current active target is complete; if so, mark it
+   * 'completed'. Dispatches by mode: route mode checks the active task; goals
+   * mode checks the selected short-term goal. The long-term goal is never
+   * auto-checked — it is completed manually. No-op when there is no active
+   * target or the LLM says PENDING. Returns the (possibly updated) state.
    */
   async checkCompletion(input: ObjectiveCheckInput): Promise<ObjectiveState> {
     return this.llmCoordinator.run(input.chatId, async () => {
       input.signal?.throwIfAborted();
       const state = await this.getState(input.chatId);
-      const target = selectActiveTask(state.tasks);
-      if (!target) return state;
-      const instructionBase = await this.resolvePrompt("objectiveCheck", state.checkPrompt);
-      const instruction = composeCheckInstruction(instructionBase, state.objectiveDescription, target.description);
-      const prompt = this.buildPrompt(input.context, instruction);
-      const result = await this.execute({ profile: input.profile, model: input.model, prompt, signal: input.signal });
-      input.signal?.throwIfAborted();
-      const completed = parseCheckVerdict(result.text);
-      if (!completed) return this.getState(input.chatId);
-
-      return this.commitState(input.chatId, (current) => {
-        // The verdict belongs to one immutable target. A route edit/reorder/status
-        // change during the await invalidates it; never advance a replacement.
-        const currentTarget = selectActiveTask(current.tasks);
-        const matchingTask = current.tasks.find((task) => task.id === target.id);
-        if (
-          currentTarget?.id !== target.id ||
-          !matchingTask ||
-          matchingTask.description !== target.description ||
-          matchingTask.status !== target.status
-        ) {
-          return null;
-        }
-        return { ...current, tasks: advanceAfterCompletion(current.tasks) };
-      }, input.signal);
+      return state.mode === OBJECTIVE_MODE.goals
+        ? this.checkGoalsCompletion(input, state)
+        : this.checkRouteCompletion(input, state);
     });
+  }
+
+  /** Route mode: check the active task; if complete, advance the route. */
+  private async checkRouteCompletion(input: ObjectiveCheckInput, state: ObjectiveState): Promise<ObjectiveState> {
+    input.signal?.throwIfAborted();
+    const target = selectActiveTask(state.tasks);
+    if (!target) return state;
+    const instructionBase = await this.resolvePrompt("objectiveCheck", state.checkPrompt);
+    const instruction = composeCheckInstruction(instructionBase, state.objectiveDescription, target.description);
+    const prompt = this.buildPrompt(input.context, instruction);
+    const result = await this.execute({ profile: input.profile, model: input.model, prompt, signal: input.signal });
+    input.signal?.throwIfAborted();
+    const completed = parseCheckVerdict(result.text);
+    if (!completed) return this.getState(input.chatId);
+
+    return this.commitState(input.chatId, (current) => {
+      // The verdict belongs to one immutable target. A route edit/reorder/status
+      // change during the await invalidates it; never advance a replacement.
+      const currentTarget = selectActiveTask(current.tasks);
+      const matchingTask = current.tasks.find((task) => task.id === target.id);
+      if (
+        currentTarget?.id !== target.id ||
+        !matchingTask ||
+        matchingTask.description !== target.description ||
+        matchingTask.status !== target.status
+      ) {
+        return null;
+      }
+      return { ...current, tasks: advanceAfterCompletion(current.tasks) };
+    }, input.signal);
+  }
+
+  /** Goals mode: check the selected short-term goal; if complete, mark it completed. */
+  private async checkGoalsCompletion(input: ObjectiveCheckInput, state: ObjectiveState): Promise<ObjectiveState> {
+    input.signal?.throwIfAborted();
+    const target = selectActiveTask(state.shortTermGoals);
+    if (!target) return state;
+    const instructionBase = await this.resolvePrompt("objectiveCheck", state.checkPrompt);
+    const instruction = composeCheckGoalsInstruction(instructionBase, state.longTermGoal?.description ?? null, target.description);
+    const prompt = this.buildPrompt(input.context, instruction);
+    const result = await this.execute({ profile: input.profile, model: input.model, prompt, signal: input.signal });
+    input.signal?.throwIfAborted();
+    const completed = parseCheckVerdict(result.text);
+    if (!completed) return this.getState(input.chatId);
+
+    return this.commitState(input.chatId, (current) => {
+      const currentTarget = selectActiveTask(current.shortTermGoals);
+      const matching = current.shortTermGoals.find((goal) => goal.id === target.id);
+      if (
+        currentTarget?.id !== target.id ||
+        !matching ||
+        matching.description !== target.description ||
+        matching.status !== target.status
+      ) {
+        return null;
+      }
+      return { ...current, shortTermGoals: advanceAfterCompletion(current.shortTermGoals) };
+    }, input.signal);
   }
 
   /** Build the insight one-shot prompt (RP world context + instruction) via the assembler registry. */
@@ -456,6 +589,103 @@ export class ObjectiveService {
     const normalizedDescription = objectiveDescription.trim();
     if (!normalizedDescription) throw new Error("Objective description is required.");
     return this.commitState(chatId, (base) => ({ ...base, objectiveDescription: normalizedDescription }));
+  }
+
+  /**
+   * Goals mode (OGM): switch the tracker mode (route ↔ goals). Preserves the
+   * other mode's data — switching back restores it exactly. The mode lives in
+   * the same JSON blob; no field is cleared.
+   */
+  async setObjectiveMode(chatId: ChatId, mode: ObjectiveMode): Promise<ObjectiveState> {
+    return this.commitState(chatId, (base) => ({ ...base, mode }));
+  }
+
+  /**
+   * Goals mode (OGM): create or update the long-term goal. Patching a
+   * description when none exists creates it (status pending); patching status
+   * cycles it. Throws when a non-empty description is required but missing.
+   */
+  async updateLongTermGoal(chatId: ChatId, patch: Partial<Pick<ObjectiveLongTermGoal, "description" | "status">>): Promise<ObjectiveState> {
+    const description = patch.description?.trim();
+    if (patch.description !== undefined && !description) throw new Error("Long-term goal description is required.");
+    if (patch.status !== undefined && !isObjectiveTaskStatus(patch.status)) {
+      throw new Error(`Unknown objective task status: '${String(patch.status)}'.`);
+    }
+    return this.commitState(chatId, (base) => {
+      const nextDescription = description ?? base.longTermGoal?.description;
+      if (!nextDescription) throw new Error("Long-term goal description is required.");
+      const nextStatus = patch.status ?? base.longTermGoal?.status ?? OBJECTIVE_TASK_STATUS.pending;
+      return { ...base, longTermGoal: { description: nextDescription, status: nextStatus } };
+    });
+  }
+
+  /** Goals mode (OGM): append a new 'pending' short-term goal. */
+  async addShortTermGoal(chatId: ChatId, description: string): Promise<ObjectiveState> {
+    const normalizedDescription = description.trim();
+    if (!normalizedDescription) throw new Error("Short-term goal description is required.");
+    return this.commitState(chatId, (base) => ({
+      ...base,
+      shortTermGoals: [...base.shortTermGoals, {
+        id: `obj_st_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`,
+        description: normalizedDescription,
+        status: OBJECTIVE_TASK_STATUS.pending,
+      }],
+    }));
+  }
+
+  /** Goals mode (OGM): patch a short-term goal (description and/or status). Setting one goal 'active' demotes any other active goal (one-active invariant). */
+  async updateShortTermGoal(chatId: ChatId, goalId: string, patch: Partial<Pick<ObjectiveShortTermGoal, "description" | "status">>): Promise<ObjectiveState> {
+    const description = patch.description?.trim();
+    if (patch.description !== undefined && !description) throw new Error("Short-term goal description is required.");
+    if (patch.status !== undefined && !isObjectiveTaskStatus(patch.status)) {
+      throw new Error(`Unknown objective task status: '${String(patch.status)}'.`);
+    }
+    return this.commitState(chatId, (base) => {
+      let found = false;
+      const shortTermGoals = base.shortTermGoals.map((goal) => {
+        if (goal.id === goalId) {
+          found = true;
+          return {
+            ...goal,
+            ...(description !== undefined ? { description } : {}),
+            ...(patch.status !== undefined ? { status: patch.status } : {}),
+          };
+        }
+        if (patch.status === OBJECTIVE_TASK_STATUS.active && goal.status === OBJECTIVE_TASK_STATUS.active) {
+          return { ...goal, status: OBJECTIVE_TASK_STATUS.pending };
+        }
+        return goal;
+      });
+      if (!found) throw new Error(`Short-term goal '${goalId}' not found in chat '${chatId}'.`);
+      return { ...base, shortTermGoals };
+    });
+  }
+
+  /** Goals mode (OGM): remove a short-term goal. Throws if the id is unknown. */
+  async deleteShortTermGoal(chatId: ChatId, goalId: string): Promise<ObjectiveState> {
+    return this.commitState(chatId, (base) => {
+      if (!base.shortTermGoals.some((goal) => goal.id === goalId)) {
+        throw new Error(`Short-term goal '${goalId}' not found in chat '${chatId}'.`);
+      }
+      return { ...base, shortTermGoals: base.shortTermGoals.filter((goal) => goal.id !== goalId) };
+    });
+  }
+
+  /** Goals mode (OGM): select one short-term goal as the active focus (demotes any other active). */
+  async selectShortTermGoal(chatId: ChatId, goalId: string): Promise<ObjectiveState> {
+    return this.commitState(chatId, (base) => {
+      if (!base.shortTermGoals.some((goal) => goal.id === goalId)) {
+        throw new Error(`Short-term goal '${goalId}' not found in chat '${chatId}'.`);
+      }
+      const shortTermGoals = base.shortTermGoals.map((goal) =>
+        goal.id === goalId
+          ? { ...goal, status: OBJECTIVE_TASK_STATUS.active }
+          : goal.status === OBJECTIVE_TASK_STATUS.active
+            ? { ...goal, status: OBJECTIVE_TASK_STATUS.pending }
+            : goal,
+      );
+      return { ...base, shortTermGoals };
+    });
   }
 
   /**

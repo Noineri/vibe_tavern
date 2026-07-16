@@ -18,13 +18,14 @@
  */
 import { describe, it, expect } from "bun:test";
 import type { ObjectiveState } from "@vibe-tavern/domain";
-import { OBJECTIVE_TASK_STATUS } from "@vibe-tavern/domain";
+import { OBJECTIVE_MODE, OBJECTIVE_TASK_STATUS } from "@vibe-tavern/domain";
 import type { StoreContainer } from "@vibe-tavern/db";
 import type { PromptAssemblyContext } from "@vibe-tavern/prompt-pipeline";
 import {
   ObjectiveService,
   defaultObjectiveState,
   parseTaskList,
+  parseGoalsResult,
   parseCheckVerdict,
   selectActiveTask,
   advanceAfterCompletion,
@@ -1043,5 +1044,180 @@ describe("ObjectiveService.triggerAutoCheck (INS-4 orchestration)", () => {
     expect(pinnedCalls).toBe(1);
     expect(resolved?.profile.id).toBe("prof_pinned");
     expect(resolved?.model).toBe("secondary-model");
+  });
+});
+
+describe("ObjectiveService — goals mode (OGM)", () => {
+  it("parseGoalsResult parses one long-term + a short-term list, all pending", () => {
+    const parsed = parseGoalsResult('{"longTerm":{"description":"Liberate the city"},"shortTerm":[{"description":"Reach the gates"},{"description":"Bribe the guard"}]}');
+    expect(parsed.longTermGoal).toEqual({ description: "Liberate the city", status: OBJECTIVE_TASK_STATUS.pending });
+    expect(parsed.shortTermGoals).toEqual([
+      { id: "obj_st_1", description: "Reach the gates", status: OBJECTIVE_TASK_STATUS.pending },
+      { id: "obj_st_2", description: "Bribe the guard", status: OBJECTIVE_TASK_STATUS.pending },
+    ]);
+  });
+
+  it("parseGoalsResult rejects malformed goals JSON", () => {
+    expect(() => parseGoalsResult('{"longTerm":{"description":"x"}}')).toThrow(); // missing shortTerm
+    expect(() => parseGoalsResult("nope")).toThrow();
+  });
+
+  it("generateTasks (goals) auto-activates the first short-term, sets the long-term pending, and requests the goals prompt", async () => {
+    const initial: ObjectiveState = { ...defaultObjectiveState(), mode: OBJECTIVE_MODE.goals };
+    const { stores } = makeMockStates(initial);
+    let resolvedKey = "";
+    const execute = async () => ({ text: '{"longTerm":{"description":"Free the city"},"shortTerm":[{"description":"Reach gates"},{"description":"Find ally"}]}' });
+    const resolvePrompt = async (key: string) => { resolvedKey = key; return "GOAL-BASE"; };
+    const service = new ObjectiveService(stores, null as never, null as never, execute as never, resolvePrompt as never);
+
+    const state = await service.generateTasks({ chatId: "chat_1" as never, profile, model: "m", context });
+    expect(resolvedKey).toBe("objectiveGenerateGoals");
+    expect(state.mode).toBe(OBJECTIVE_MODE.goals);
+    expect(state.longTermGoal).toEqual({ description: "Free the city", status: OBJECTIVE_TASK_STATUS.pending });
+    expect(state.shortTermGoals.map((g) => [g.description, g.status])).toEqual([
+      ["Reach gates", OBJECTIVE_TASK_STATUS.active],
+      ["Find ally", OBJECTIVE_TASK_STATUS.pending],
+    ]);
+  });
+
+  it("generateTasks (goals) discards a stale result when the goals are edited mid-flight", async () => {
+    const initial: ObjectiveState = {
+      ...defaultObjectiveState(),
+      mode: OBJECTIVE_MODE.goals,
+      longTermGoal: { description: "Keep", status: OBJECTIVE_TASK_STATUS.pending },
+      shortTermGoals: [{ id: "g1", description: "Old", status: OBJECTIVE_TASK_STATUS.pending }],
+    };
+    const { stores, readState } = makeMockStores(initial as unknown as Record<string, unknown>);
+    let releaseExecute: ((value: { text: string }) => void) | undefined;
+    let markStarted: (() => void) | undefined;
+    const started = new Promise<void>((resolve) => { markStarted = resolve; });
+    const execute = async () => new Promise<{ text: string }>((resolve) => { releaseExecute = resolve; markStarted?.(); });
+    const service = new ObjectiveService(stores, null as never, null as never, execute as never, async () => "BASE");
+
+    const pending = service.generateTasks({ chatId: "chat_1" as never, profile, model: "m", context });
+    await started;
+    await service.addShortTermGoal("chat_1" as never, "User-added goal");
+    releaseExecute?.({ text: '{"longTerm":{"description":"Stale"},"shortTerm":[{"description":"x"}]}' });
+
+    const result = await pending;
+    // Stale generation discarded (goalsRevision changed); the user's edit survives.
+    expect(result.shortTermGoals.some((g) => g.description === "User-added goal")).toBe(true);
+    expect(result.longTermGoal?.description).toBe("Keep");
+    expect((readState() as ObjectiveState).shortTermGoals).toHaveLength(2);
+  });
+
+  it("checkCompletion (goals) completes the selected short-term; the long-term is never auto-checked", async () => {
+    const initial: ObjectiveState = {
+      ...defaultObjectiveState(),
+      mode: OBJECTIVE_MODE.goals,
+      longTermGoal: { description: "Free the city", status: OBJECTIVE_TASK_STATUS.pending },
+      shortTermGoals: [
+        { id: "g1", description: "Reach gates", status: OBJECTIVE_TASK_STATUS.active },
+        { id: "g2", description: "Find ally", status: OBJECTIVE_TASK_STATUS.pending },
+      ],
+    };
+    const { stores } = makeMockStates(initial);
+    const { service } = serviceWith(stores, '{"completed":true}');
+    const state = await service.checkCompletion({ chatId: "chat_1" as never, profile, model: "m", context });
+    expect(state.shortTermGoals.find((g) => g.id === "g1")?.status).toBe(OBJECTIVE_TASK_STATUS.completed);
+    expect(state.longTermGoal?.status).toBe(OBJECTIVE_TASK_STATUS.pending);
+    expect(state.shortTermGoals.find((g) => g.id === "g2")?.status).toBe(OBJECTIVE_TASK_STATUS.pending);
+  });
+
+  it("checkCompletion (goals) is a no-op when no short-term is active/pending", async () => {
+    const initial: ObjectiveState = {
+      ...defaultObjectiveState(),
+      mode: OBJECTIVE_MODE.goals,
+      longTermGoal: { description: "Done arc", status: OBJECTIVE_TASK_STATUS.completed },
+      shortTermGoals: [{ id: "g1", description: "Only", status: OBJECTIVE_TASK_STATUS.completed }],
+    };
+    const { stores } = makeMockStates(initial);
+    let executed = false;
+    const execute = async () => { executed = true; return { text: '{"completed":true}' }; };
+    const service = new ObjectiveService(stores, null as never, null as never, execute as never, async () => "BASE");
+    const state = await service.checkCompletion({ chatId: "chat_1" as never, profile, model: "m", context });
+    expect(executed).toBe(false);
+    expect(state.shortTermGoals[0].status).toBe(OBJECTIVE_TASK_STATUS.completed);
+  });
+
+  it("setObjectiveMode switches modes and preserves the other mode's data", async () => {
+    const initial: ObjectiveState = {
+      ...defaultObjectiveState(),
+      mode: OBJECTIVE_MODE.route,
+      objectiveDescription: "Route goal",
+      tasks: [{ id: "t1", description: "Route task", status: OBJECTIVE_TASK_STATUS.pending }],
+    };
+    const { stores } = makeMockStates(initial);
+    const service = new ObjectiveService(stores, null as never, null as never, async () => ({ text: "" }) as never, async () => "BASE");
+    const goals = await service.setObjectiveMode("chat_1" as never, OBJECTIVE_MODE.goals);
+    expect(goals.mode).toBe(OBJECTIVE_MODE.goals);
+    expect(goals.tasks).toHaveLength(1); // route data preserved across the switch
+    const back = await service.setObjectiveMode("chat_1" as never, OBJECTIVE_MODE.route);
+    expect(back.mode).toBe(OBJECTIVE_MODE.route);
+    expect(back.tasks[0].description).toBe("Route task");
+  });
+
+  it("updateLongTermGoal creates (pending) then cycles status", async () => {
+    const initial: ObjectiveState = { ...defaultObjectiveState(), mode: OBJECTIVE_MODE.goals };
+    const { stores } = makeMockStates(initial);
+    const service = new ObjectiveService(stores, null as never, null as never, async () => ({ text: "" }) as never, async () => "BASE");
+    const created = await service.updateLongTermGoal("chat_1" as never, { description: "Liberate the city" });
+    expect(created.longTermGoal).toEqual({ description: "Liberate the city", status: OBJECTIVE_TASK_STATUS.pending });
+    const done = await service.updateLongTermGoal("chat_1" as never, { status: OBJECTIVE_TASK_STATUS.completed });
+    expect(done.longTermGoal).toEqual({ description: "Liberate the city", status: OBJECTIVE_TASK_STATUS.completed });
+  });
+
+  it("updateLongTermGoal rejects an empty description and an unknown status", async () => {
+    const initial: ObjectiveState = { ...defaultObjectiveState(), mode: OBJECTIVE_MODE.goals };
+    const { stores } = makeMockStates(initial);
+    const service = new ObjectiveService(stores, null as never, null as never, async () => ({ text: "" }) as never, async () => "BASE");
+    await expect(service.updateLongTermGoal("chat_1" as never, { description: "   " })).rejects.toThrow();
+    await expect(service.updateLongTermGoal("chat_1" as never, { status: "bogus" as never })).rejects.toThrow();
+  });
+
+  it("addShortTermGoal / updateShortTermGoal / deleteShortTermGoal round-trip", async () => {
+    const initial: ObjectiveState = { ...defaultObjectiveState(), mode: OBJECTIVE_MODE.goals };
+    const { stores } = makeMockStates(initial);
+    const service = new ObjectiveService(stores, null as never, null as never, async () => ({ text: "" }) as never, async () => "BASE");
+    const added = await service.addShortTermGoal("chat_1" as never, "Reach the gates");
+    const id = added.shortTermGoals[0].id;
+    expect(added.shortTermGoals[0].status).toBe(OBJECTIVE_TASK_STATUS.pending);
+    const updated = await service.updateShortTermGoal("chat_1" as never, id, { description: "Reach the gates at dawn" });
+    expect(updated.shortTermGoals[0].description).toBe("Reach the gates at dawn");
+    const deleted = await service.deleteShortTermGoal("chat_1" as never, id);
+    expect(deleted.shortTermGoals).toHaveLength(0);
+    await expect(service.updateShortTermGoal("chat_1" as never, id, { description: "x" })).rejects.toThrow();
+  });
+
+  it("selectShortTermGoal sets exactly one short-term active (demotes the previous active)", async () => {
+    const initial: ObjectiveState = {
+      ...defaultObjectiveState(),
+      mode: OBJECTIVE_MODE.goals,
+      shortTermGoals: [
+        { id: "g1", description: "A", status: OBJECTIVE_TASK_STATUS.active },
+        { id: "g2", description: "B", status: OBJECTIVE_TASK_STATUS.pending },
+      ],
+    };
+    const { stores } = makeMockStates(initial);
+    const service = new ObjectiveService(stores, null as never, null as never, async () => ({ text: "" }) as never, async () => "BASE");
+    const state = await service.selectShortTermGoal("chat_1" as never, "g2");
+    expect(state.shortTermGoals.find((g) => g.id === "g2")?.status).toBe(OBJECTIVE_TASK_STATUS.active);
+    expect(state.shortTermGoals.find((g) => g.id === "g1")?.status).toBe(OBJECTIVE_TASK_STATUS.pending);
+  });
+
+  it("getState backfills goals defaults, defaults absent mode to route, and collapses duplicate actives", async () => {
+    const { stores } = makeMockStores({
+      // legacy blob: no mode/goals fields; duplicate actives must collapse to one each.
+      tasks: [{ id: "t1", description: "T", status: "active" }, { id: "t2", description: "T2", status: "active" }],
+      shortTermGoals: [{ id: "s1", description: "S", status: "active" }, { id: "s2", description: "S2", status: "active" }],
+    });
+    const service = new ObjectiveService(stores, null as never, null as never, async () => ({ text: "" }) as never, async () => "BASE");
+    const state = await service.getState("chat_1" as never);
+    expect(state.mode).toBe(OBJECTIVE_MODE.route); // absent → route
+    expect(state.longTermGoal).toBeNull();
+    expect(state.shortTermGoals).toHaveLength(2);
+    expect(state.shortTermGoals.filter((g) => g.status === OBJECTIVE_TASK_STATUS.active)).toHaveLength(1);
+    expect(state.shortTermGoals[0].status).toBe(OBJECTIVE_TASK_STATUS.active);
+    expect(state.tasks.filter((t) => t.status === OBJECTIVE_TASK_STATUS.active)).toHaveLength(1);
   });
 });

@@ -1,7 +1,8 @@
 import { describe, it, expect } from "bun:test";
-import { PromptAssemblyService, type PromptAssemblyResolver } from "../src/domain/prompt/prompt-assembly-service.js";
+import { PromptAssemblyService, type PromptAssemblyResolver, resolveObjectiveTaskContext, resolveObjectiveLongTermContext } from "../src/domain/prompt/prompt-assembly-service.js";
 import type { StoreContainer } from "@vibe-tavern/db";
 import type { ChatId, ChatBranchId, LoreEntry, MessageId, RetrievedMemoryHit } from "@vibe-tavern/domain";
+import { OBJECTIVE_MODE, OBJECTIVE_TASK_STATUS } from "@vibe-tavern/domain";
 
 // ─── Mock helpers ──────────────────────────────────────────────────────────
 
@@ -459,5 +460,70 @@ describe("PromptAssemblyService prefix-bound window (Scene backfill — SCENE_TR
       .map((message) => message.content)
       .join("\n");
     expect(contents).toContain("Backfill turn 6 — FUTURE");
+  });
+});
+
+describe("resolveObjectiveTaskContext + resolveObjectiveLongTermContext (OGM)", () => {
+  const enabled = { objectiveEnabled: true };
+
+  it("route mode: resolves the active route task as objectiveTask (first 'active' wins); long-term is null", () => {
+    const result = resolveObjectiveTaskContext({
+      insightsConfig: enabled,
+      insightsObjectiveState: {
+        mode: OBJECTIVE_MODE.route,
+        tasks: [
+          { id: "t1", description: "First", status: OBJECTIVE_TASK_STATUS.pending },
+          { id: "t2", description: "Second", status: OBJECTIVE_TASK_STATUS.active },
+        ],
+        injectionDepth: 2,
+        injectPrompt: "FRAME",
+      },
+    });
+    expect(result?.description).toBe("Second");
+    expect(result?.injectionDepth).toBe(2);
+    expect(result?.injectPrompt).toBe("FRAME");
+    // route mode never injects a long-term goal
+    expect(resolveObjectiveLongTermContext({
+      insightsConfig: enabled,
+      insightsObjectiveState: { mode: OBJECTIVE_MODE.route },
+    })).toBeNull();
+  });
+
+  it("goals mode: resolves the selected short-term as objectiveTask (NOT the route tasks)", () => {
+    const result = resolveObjectiveTaskContext({
+      insightsConfig: enabled,
+      insightsObjectiveState: {
+        mode: OBJECTIVE_MODE.goals,
+        tasks: [{ id: "t1", description: "Route task ignored in goals mode", status: OBJECTIVE_TASK_STATUS.active }],
+        shortTermGoals: [
+          { id: "s1", description: "Short A", status: OBJECTIVE_TASK_STATUS.pending },
+          { id: "s2", description: "Short B", status: OBJECTIVE_TASK_STATUS.active },
+        ],
+        injectionDepth: 1,
+      },
+    });
+    expect(result?.description).toBe("Short B");
+  });
+
+  it("goals mode: long-term resolves while pending/active; null when completed/abandoned", () => {
+    const resolve = (status: string) =>
+      resolveObjectiveLongTermContext({
+        insightsConfig: enabled,
+        insightsObjectiveState: { mode: OBJECTIVE_MODE.goals, longTermGoal: { description: "Free the city", status } },
+      });
+    expect(resolve(OBJECTIVE_TASK_STATUS.pending)?.description).toBe("Free the city");
+    expect(resolve(OBJECTIVE_TASK_STATUS.active)?.description).toBe("Free the city");
+    expect(resolve(OBJECTIVE_TASK_STATUS.completed)).toBeNull();
+    expect(resolve(OBJECTIVE_TASK_STATUS.abandoned)).toBeNull();
+  });
+
+  it("returns null when objective is disabled, no goal/list, or goals-mode has an empty short-term list", () => {
+    const disabled = { objectiveEnabled: false };
+    expect(resolveObjectiveTaskContext({ insightsConfig: disabled, insightsObjectiveState: { mode: OBJECTIVE_MODE.goals, shortTermGoals: [] } })).toBeNull();
+    expect(resolveObjectiveLongTermContext({ insightsConfig: disabled, insightsObjectiveState: { mode: OBJECTIVE_MODE.goals } })).toBeNull();
+    // goals mode, no long-term set
+    expect(resolveObjectiveLongTermContext({ insightsConfig: enabled, insightsObjectiveState: { mode: OBJECTIVE_MODE.goals } })).toBeNull();
+    // goals mode, empty short-term list → no active task
+    expect(resolveObjectiveTaskContext({ insightsConfig: enabled, insightsObjectiveState: { mode: OBJECTIVE_MODE.goals, shortTermGoals: [] } })).toBeNull();
   });
 });

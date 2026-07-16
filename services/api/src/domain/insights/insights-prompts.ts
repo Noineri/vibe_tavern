@@ -20,6 +20,7 @@ import { loadPromptAsset } from "../../shared/prompt-asset-loader.js";
 /** Maps each insight one-shot to its default `.md` asset filename. */
 export const INSIGHTS_PROMPT_FILES = {
   objectiveGenerate: "objective-generate.md",
+  objectiveGenerateGoals: "objective-generate-goals.md",
   objectiveCheck: "objective-check.md",
   sceneGenerate: "scene-generate.md",
 } as const;
