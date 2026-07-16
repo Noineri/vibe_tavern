@@ -43,12 +43,15 @@ import {
   checkObjectiveCompletionAction,
   generateObjectiveTasksAction,
   updateObjectiveTaskAction,
+  updateObjectiveLongTermGoalAction,
+  updateObjectiveShortTermGoalAction,
+  selectObjectiveShortTermGoalAction,
 } from "../../../stores/api-actions/chat-actions.js";
 import { useT } from "../../../i18n/context.js";
 import { cn } from "../../../lib/cn.js";
 import { Ic } from "../../shared/icons.js";
 import { CustomTooltip } from "../../shared/Tooltip.js";
-import type { ObjectiveTask, ObjectiveTaskStatus } from "../../../api/types.js";
+import type { ObjectiveLongTermGoal, ObjectiveMode, ObjectiveTask, ObjectiveTaskStatus } from "../../../api/types.js";
 
 const STATUS_ORDER: ObjectiveTaskStatus[] = ["pending", "active", "completed", "abandoned"];
 
@@ -59,13 +62,25 @@ function pickActiveTask(tasks: ObjectiveTask[]): ObjectiveTask | null {
   return tasks.find((t) => t.status === "active") ?? tasks.find((t) => t.status === "pending") ?? null;
 }
 
+function objectiveMode(mode: ObjectiveMode | undefined): ObjectiveMode {
+  return mode === "goals" ? "goals" : "route";
+}
+
+function isOpenLongTerm(goal: ObjectiveLongTermGoal | null | undefined): goal is ObjectiveLongTermGoal {
+  return Boolean(goal?.description?.trim()) && goal?.status !== "completed" && goal?.status !== "abandoned";
+}
+
 function getObjectiveVisibilitySnapshot(): string {
   const chat = useSnapshotStore.getState().activeChat;
   const enabled = chat?.insightsConfig?.objectiveEnabled ?? false;
-  const activeTaskId = enabled
-    ? pickActiveTask(chat?.insightsObjectiveState?.tasks ?? EMPTY)?.id ?? ""
+  const state = chat?.insightsObjectiveState;
+  const mode = objectiveMode(state?.mode);
+  const items = mode === "goals" ? (state?.shortTermGoals ?? EMPTY) : (state?.tasks ?? EMPTY);
+  const activeTaskId = enabled ? pickActiveTask(items)?.id ?? "" : "";
+  const longTerm = enabled && mode === "goals" && isOpenLongTerm(state?.longTermGoal)
+    ? `${state.longTermGoal.status}:${state.longTermGoal.description}`
     : "";
-  return `${enabled ? "1" : "0"}:${activeTaskId}`;
+  return `${enabled ? "1" : "0"}:${mode}:${activeTaskId}:${longTerm}`;
 }
 
 function ObjectiveZone({ chatId, messageId }: { chatId: string; messageId: string }) {
@@ -78,21 +93,45 @@ function ObjectiveZone({ chatId, messageId }: { chatId: string; messageId: strin
 
   // ── Primitive selectors only (render-isolation — see file header). ──
   const objectiveEnabled = useSnapshotStore((s) => s.activeChat?.insightsConfig?.objectiveEnabled ?? false);
-  const activeId = useSnapshotStore((s) => pickActiveTask(s.activeChat?.insightsObjectiveState?.tasks ?? EMPTY)?.id ?? null);
-  const activeStatus = useSnapshotStore((s) => pickActiveTask(s.activeChat?.insightsObjectiveState?.tasks ?? EMPTY)?.status ?? null);
-  const activeDesc = useSnapshotStore((s) => pickActiveTask(s.activeChat?.insightsObjectiveState?.tasks ?? EMPTY)?.description ?? null);
+  const mode = useSnapshotStore((s) => objectiveMode(s.activeChat?.insightsObjectiveState?.mode));
+  const activeId = useSnapshotStore((s) => {
+    const state = s.activeChat?.insightsObjectiveState;
+    const items = objectiveMode(state?.mode) === "goals" ? (state?.shortTermGoals ?? EMPTY) : (state?.tasks ?? EMPTY);
+    return pickActiveTask(items)?.id ?? null;
+  });
+  const activeStatus = useSnapshotStore((s) => {
+    const state = s.activeChat?.insightsObjectiveState;
+    const items = objectiveMode(state?.mode) === "goals" ? (state?.shortTermGoals ?? EMPTY) : (state?.tasks ?? EMPTY);
+    return pickActiveTask(items)?.status ?? null;
+  });
+  const activeDesc = useSnapshotStore((s) => {
+    const state = s.activeChat?.insightsObjectiveState;
+    const items = objectiveMode(state?.mode) === "goals" ? (state?.shortTermGoals ?? EMPTY) : (state?.tasks ?? EMPTY);
+    return pickActiveTask(items)?.description ?? null;
+  });
+  const longTermStatus = useSnapshotStore((s) => {
+    const state = s.activeChat?.insightsObjectiveState;
+    const goal = state?.longTermGoal;
+    return objectiveMode(state?.mode) === "goals" && goal?.description?.trim() ? goal.status : null;
+  });
+  const longTermDesc = useSnapshotStore((s) => {
+    const state = s.activeChat?.insightsObjectiveState;
+    const goal = state?.longTermGoal;
+    return objectiveMode(state?.mode) === "goals" && goal?.description?.trim() ? goal.description : null;
+  });
   const progress = useSnapshotStore((s) => {
-    const tasks = s.activeChat?.insightsObjectiveState?.tasks ?? EMPTY;
-    return `${tasks.filter((x) => x.status === "completed").length}/${tasks.length}`;
+    const state = s.activeChat?.insightsObjectiveState;
+    const items = objectiveMode(state?.mode) === "goals" ? (state?.shortTermGoals ?? EMPTY) : (state?.tasks ?? EMPTY);
+    return `${items.filter((x) => x.status === "completed").length}/${items.length}`;
   });
 
-  // ── Expanded route — a JSON-string blob (primitive → Object.is) so the zone
-  //    only re-renders when the route CONTENT changes. Skipped while collapsed
-  //    (returns a stable "" sentinel) to keep the common case cheap. ──
+  // ── Expanded route/short-term list — JSON-string primitive so unrelated
+  // activeChat mutations do not re-render every mounted assistant header. ──
   const routeBlob = useSnapshotStore((s) => {
     if (!open) return "";
-    const tasks = s.activeChat?.insightsObjectiveState?.tasks ?? EMPTY;
-    return tasks.length ? JSON.stringify(tasks.map((tk) => [tk.id, tk.status, tk.description] as const)) : "";
+    const state = s.activeChat?.insightsObjectiveState;
+    const items = objectiveMode(state?.mode) === "goals" ? (state?.shortTermGoals ?? EMPTY) : (state?.tasks ?? EMPTY);
+    return items.length ? JSON.stringify(items.map((item) => [item.id, item.status, item.description] as const)) : "";
   });
   const tasks = useMemo<ObjectiveTask[]>(() => {
     if (!routeBlob) return EMPTY;
@@ -140,9 +179,14 @@ function ObjectiveZone({ chatId, messageId }: { chatId: string; messageId: strin
     }
   }
 
-  // Backstop: `visible` already gates this, but a state race (toggle flipped
-  // while the route is mutating) can momentarily leave no active task.
-  if (!objectiveEnabled || !activeId || !activeStatus || !activeDesc) return null;
+  // Backstop: `visible` already gates this, but a state race can momentarily
+  // leave neither a route target nor any open goals-mode framing.
+  if (!objectiveEnabled) return null;
+  if (mode === "route" && (!activeId || !activeStatus || !activeDesc)) return null;
+  const longTermOpen = Boolean(longTermDesc && longTermStatus !== "completed" && longTermStatus !== "abandoned");
+  if (mode === "goals" && !longTermOpen && (!activeId || !activeStatus || !activeDesc)) return null;
+  const summaryStatus = activeStatus ?? (longTermOpen ? longTermStatus : null);
+  if (!summaryStatus) return null;
 
   // ── Collapsed: one-line summary (click anywhere to expand). ──
   if (!open) {
@@ -157,9 +201,13 @@ function ObjectiveZone({ chatId, messageId }: { chatId: string; messageId: strin
             "text-[11px] font-medium text-t3 transition-colors hover:text-t2",
           )}
         >
-          <NodeGlyph status={activeStatus} />
+          <NodeGlyph status={summaryStatus} />
           <span className="shrink-0 tabular-nums text-t4">{progress}</span>
-          <span className="min-w-0 flex-1 truncate">{activeDesc}</span>
+          {mode === "goals" && longTermDesc && (
+            <span className="min-w-0 truncate text-t4" title={longTermDesc}>{longTermDesc}</span>
+          )}
+          {mode === "goals" && longTermDesc && activeDesc && <span className="shrink-0 text-t4">›</span>}
+          {activeDesc && <span className="min-w-0 flex-1 truncate">{activeDesc}</span>}
           <Chevron open={false} />
         </button>
       </CustomTooltip>
@@ -171,10 +219,10 @@ function ObjectiveZone({ chatId, messageId }: { chatId: string; messageId: strin
     <div className="flex min-w-0 flex-col gap-1.5">
       <div className="flex items-center gap-1.5">
         <span className="shrink-0 text-accent"><Ic.target /></span>
-        <span className="text-[10px] font-semibold uppercase tracking-[0.06em] text-t4">{t("obj_zone_route")}</span>
+        <span className="text-[10px] font-semibold uppercase tracking-[0.06em] text-t4">{t(mode === "goals" ? "obj_zone_goals" : "obj_zone_route")}</span>
         <span className="shrink-0 tabular-nums text-t4">{progress}</span>
         <div className="ml-auto flex shrink-0 items-center gap-0.5">
-          <CustomTooltip content={t(busy === "generate" ? "obj_stop_button" : "obj_zone_regenerate")}>
+          <CustomTooltip content={t(busy === "generate" ? "obj_stop_button" : mode === "goals" ? "obj_zone_regenerate_goals" : "obj_zone_regenerate")}>
             <button
               type="button"
               onClick={() => busy === "generate" ? stop("generate") : void run("generate", generateObjectiveTasksAction)}
@@ -185,7 +233,7 @@ function ObjectiveZone({ chatId, messageId }: { chatId: string; messageId: strin
                   ? "text-danger hover:bg-danger/10"
                   : "text-t4 hover:bg-s2 hover:text-accent",
               )}
-              aria-label={t(busy === "generate" ? "obj_stop_button" : "obj_zone_regenerate")}
+              aria-label={t(busy === "generate" ? "obj_stop_button" : mode === "goals" ? "obj_zone_regenerate_goals" : "obj_zone_regenerate")}
             >
               {busy === "generate" ? <ActionSpinner /> : <Ic.regen />}
             </button>
@@ -213,10 +261,13 @@ function ObjectiveZone({ chatId, messageId }: { chatId: string; messageId: strin
           </CustomTooltip>
         </div>
       </div>
+      {mode === "goals" && longTermDesc && longTermStatus && (
+        <LongTermZoneRow chatId={objectiveChatId} goal={{ description: longTermDesc, status: longTermStatus }} />
+      )}
       <ol className="flex flex-col">
-        {tasks.map((task) => (
-          <RouteRow key={task.id} chatId={objectiveChatId} task={task} />
-        ))}
+        {tasks.map((task) => mode === "goals"
+          ? <ShortTermZoneRow key={task.id} chatId={objectiveChatId} task={task} />
+          : <RouteRow key={task.id} chatId={objectiveChatId} task={task} />)}
       </ol>
     </div>
   );
@@ -298,6 +349,130 @@ function RouteRow({ chatId, task }: { chatId: ChatId; task: ObjectiveTask }) {
   );
 }
 
+function LongTermZoneRow({ chatId, goal }: { chatId: ChatId; goal: ObjectiveLongTermGoal }) {
+  const { t } = useT();
+  const [editing, setEditing] = useState(false);
+
+  async function cycleStatus() {
+    const next = STATUS_ORDER[(STATUS_ORDER.indexOf(goal.status) + 1) % STATUS_ORDER.length];
+    try {
+      await updateObjectiveLongTermGoalAction(chatId, { status: next });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : t("obj_action_failed"));
+    }
+  }
+
+  async function commitRename(value: string) {
+    setEditing(false);
+    const normalized = value.trim();
+    if (!normalized || normalized === goal.description) return;
+    try {
+      await updateObjectiveLongTermGoalAction(chatId, { description: normalized });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : t("obj_action_failed"));
+    }
+  }
+
+  return (
+    <div className="flex items-start gap-1.5 rounded bg-accent-dim/20 px-1 py-0.5">
+      <CustomTooltip content={t("obj_cycle_status")}>
+        <button
+          type="button"
+          onClick={() => void cycleStatus()}
+          aria-label={t("obj_cycle_status")}
+          className={cn("mt-[1px] flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full border transition-colors [&_svg]:h-2 [&_svg]:w-2", statusClass(goal.status))}
+        >
+          {goal.status === "active" && <span className="h-1.5 w-1.5 rounded-full bg-current" />}
+          {goal.status === "completed" && <Ic.check />}
+          {goal.status === "abandoned" && <Ic.close />}
+        </button>
+      </CustomTooltip>
+      <span className="shrink-0 font-ui text-[10px] font-semibold text-accent">{t("obj_zone_long_term")}:</span>
+      {editing ? (
+        <input
+          autoFocus
+          defaultValue={goal.description}
+          onBlur={(e) => void commitRename(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); if (e.key === "Escape") setEditing(false); }}
+          className="min-w-0 flex-1 rounded border border-border2 bg-s2 px-1.5 py-0.5 font-ui text-[11px] text-t2 outline-none focus:border-accent"
+        />
+      ) : (
+        <button type="button" onClick={() => setEditing(true)} className="min-w-0 flex-1 truncate text-left font-ui text-[11px] text-t2 hover:text-accent">
+          {goal.description}
+        </button>
+      )}
+    </div>
+  );
+}
+
+function ShortTermZoneRow({ chatId, task }: { chatId: ChatId; task: ObjectiveTask }) {
+  const { t } = useT();
+  const [editing, setEditing] = useState(false);
+
+  async function cycleStatus() {
+    try {
+      if (task.status === "pending") {
+        await selectObjectiveShortTermGoalAction(chatId, task.id);
+        return;
+      }
+      const next = STATUS_ORDER[(STATUS_ORDER.indexOf(task.status) + 1) % STATUS_ORDER.length];
+      await updateObjectiveShortTermGoalAction(chatId, task.id, { status: next });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : t("obj_action_failed"));
+    }
+  }
+
+  async function commitRename(value: string) {
+    setEditing(false);
+    const normalized = value.trim();
+    if (!normalized || normalized === task.description) return;
+    try {
+      await updateObjectiveShortTermGoalAction(chatId, task.id, { description: normalized });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : t("obj_action_failed"));
+    }
+  }
+
+  return (
+    <li className="flex items-start gap-1.5 py-0.5">
+      <CustomTooltip content={t("obj_cycle_status")}>
+        <button
+          type="button"
+          onClick={() => void cycleStatus()}
+          aria-label={t("obj_cycle_status")}
+          className={cn("mt-[1px] flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full border transition-colors [&_svg]:h-2 [&_svg]:w-2", statusClass(task.status))}
+        >
+          {task.status === "active" && <span className="h-1.5 w-1.5 rounded-full bg-current" />}
+          {task.status === "completed" && <Ic.check />}
+          {task.status === "abandoned" && <Ic.close />}
+        </button>
+      </CustomTooltip>
+      {editing ? (
+        <input
+          autoFocus
+          defaultValue={task.description}
+          onBlur={(e) => void commitRename(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); if (e.key === "Escape") setEditing(false); }}
+          className="min-w-0 flex-1 rounded border border-border2 bg-s2 px-1.5 py-0.5 font-ui text-[11px] text-t2 outline-none focus:border-accent"
+        />
+      ) : (
+        <button
+          type="button"
+          onClick={() => setEditing(true)}
+          className={cn(
+            "min-w-0 flex-1 truncate text-left font-ui text-[11px] transition-colors hover:text-t2",
+            task.status === "completed" && "text-success-text line-through",
+            task.status === "abandoned" && "text-t4 line-through",
+            (task.status === "pending" || task.status === "active") && (task.status === "active" ? "text-t2" : "text-t3"),
+          )}
+        >
+          {task.description}
+        </button>
+      )}
+    </li>
+  );
+}
+
 function ActionSpinner() {
   return <span className="h-2.5 w-2.5 animate-spin rounded-full border border-current border-t-transparent" />;
 }
@@ -370,8 +545,10 @@ registerMessageSlot({
     if (ctx.messageRole !== "assistant") return false;
     const chat = useSnapshotStore.getState().activeChat;
     if (!chat?.insightsConfig?.objectiveEnabled) return false;
-    const tasks = chat.insightsObjectiveState?.tasks ?? EMPTY;
-    return pickActiveTask(tasks) !== null;
+    const state = chat.insightsObjectiveState;
+    const mode = objectiveMode(state?.mode);
+    const items = mode === "goals" ? (state?.shortTermGoals ?? EMPTY) : (state?.tasks ?? EMPTY);
+    return pickActiveTask(items) !== null || (mode === "goals" && isOpenLongTerm(state?.longTermGoal));
   },
   render: (ctx) => <ObjectiveZone chatId={ctx.chatId} messageId={ctx.messageId} />,
 });

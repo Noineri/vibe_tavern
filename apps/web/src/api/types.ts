@@ -70,7 +70,10 @@ export interface InsightsConfigPatch {
   tracker?: SceneTrackerConfigPatch;
 }
 
-/** Objective task status (mirrors domain OBJECTIVE_TASK_STATUS). */
+/** Objective Tracker mode (mirrors domain OBJECTIVE_MODE). Absent on legacy snapshots → route. */
+export type ObjectiveMode = "route" | "goals";
+
+/** Objective task/goal status (mirrors domain OBJECTIVE_TASK_STATUS). */
 export type ObjectiveTaskStatus = "pending" | "active" | "completed" | "abandoned";
 
 /** A single task in the objective route (flat ordered list). */
@@ -80,10 +83,23 @@ export interface ObjectiveTask {
   status: ObjectiveTaskStatus;
 }
 
+/** Goals mode: the singular enduring goal (no id — one per chat). */
+export interface ObjectiveLongTermGoal {
+  description: string;
+  status: ObjectiveTaskStatus;
+}
+
+/** Goals mode: a flat independent near-term goal; same item shape as a route task. */
+export type ObjectiveShortTermGoal = ObjectiveTask;
+
 /** The full objective state for a chat. Stored as JSON in chats.insights_objective_state_json; sent to the frontend as a freeform object on activeChat.insightsObjectiveState. Empty `{}` when unused. */
 export interface ObjectiveState {
+  /** Optional for legacy snapshots; readers normalize absent/unknown to `route`. */
+  mode?: ObjectiveMode;
   objectiveDescription: string;
   tasks: ObjectiveTask[];
+  longTermGoal?: ObjectiveLongTermGoal | null;
+  shortTermGoals?: ObjectiveShortTermGoal[];
   autoCheckFrequency: number;
   /** Internal persisted count of qualifying assistant events since the last completed auto-check. */
   autoCheckEventCount: number;

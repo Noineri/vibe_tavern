@@ -1,4 +1,4 @@
-import type { ChatBranchId, ChatId, ChatMode, ObjectiveTaskStatus, SceneTrackerConfig } from "@vibe-tavern/domain";
+import type { ChatBranchId, ChatId, ChatMode, ObjectiveMode, ObjectiveTaskStatus, SceneTrackerConfig } from "@vibe-tavern/domain";
 import type { AppMode } from "../../components/layout/app-shell-types.js";
 import {
   activateBranch,
@@ -27,6 +27,12 @@ import {
   reorderObjectiveTasks,
   deleteObjectiveTask,
   setObjectiveDescription,
+  setObjectiveMode,
+  updateObjectiveLongTermGoal,
+  addObjectiveShortTermGoal,
+  updateObjectiveShortTermGoal,
+  deleteObjectiveShortTermGoal,
+  selectObjectiveShortTermGoal,
   updateObjectiveConfig,
   previewScene,
   generateScene,
@@ -573,6 +579,36 @@ export async function deleteObjectiveTaskAction(chatId: ChatId, taskId: string):
 
 export async function setObjectiveDescriptionAction(chatId: ChatId, objectiveDescription: string): Promise<void> {
   const snapshot = await setObjectiveDescription(chatId, objectiveDescription);
+  syncSnapshot(snapshot);
+}
+
+export async function setObjectiveModeAction(chatId: ChatId, mode: ObjectiveMode): Promise<void> {
+  const snapshot = await setObjectiveMode(chatId, mode);
+  syncSnapshot(snapshot);
+}
+
+export async function updateObjectiveLongTermGoalAction(chatId: ChatId, input: { description?: string; status?: ObjectiveTaskStatus }): Promise<void> {
+  const snapshot = await updateObjectiveLongTermGoal(chatId, input);
+  syncSnapshot(snapshot);
+}
+
+export async function addObjectiveShortTermGoalAction(chatId: ChatId, description: string): Promise<void> {
+  const snapshot = await addObjectiveShortTermGoal(chatId, description);
+  syncSnapshot(snapshot);
+}
+
+export async function updateObjectiveShortTermGoalAction(chatId: ChatId, goalId: string, input: { description?: string; status?: ObjectiveTaskStatus }): Promise<void> {
+  const snapshot = await updateObjectiveShortTermGoal(chatId, goalId, input);
+  syncSnapshot(snapshot);
+}
+
+export async function deleteObjectiveShortTermGoalAction(chatId: ChatId, goalId: string): Promise<void> {
+  const snapshot = await deleteObjectiveShortTermGoal(chatId, goalId);
+  syncSnapshot(snapshot);
+}
+
+export async function selectObjectiveShortTermGoalAction(chatId: ChatId, goalId: string): Promise<void> {
+  const snapshot = await selectObjectiveShortTermGoal(chatId, goalId);
   syncSnapshot(snapshot);
 }
 

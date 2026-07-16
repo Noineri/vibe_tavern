@@ -24,6 +24,12 @@ const mocks = vi.hoisted(() => ({
   reorderObjectiveTasksAction: vi.fn(),
   deleteObjectiveTaskAction: vi.fn(),
   setObjectiveDescriptionAction: vi.fn(),
+  setObjectiveModeAction: vi.fn(),
+  updateObjectiveLongTermGoalAction: vi.fn(),
+  addObjectiveShortTermGoalAction: vi.fn(),
+  updateObjectiveShortTermGoalAction: vi.fn(),
+  deleteObjectiveShortTermGoalAction: vi.fn(),
+  selectObjectiveShortTermGoalAction: vi.fn(),
   updateObjectiveConfigAction: vi.fn(),
 }));
 
@@ -44,6 +50,12 @@ vi.mock("../../../stores/api-actions/chat-actions.js", () => ({
   reorderObjectiveTasksAction: mocks.reorderObjectiveTasksAction,
   deleteObjectiveTaskAction: mocks.deleteObjectiveTaskAction,
   setObjectiveDescriptionAction: mocks.setObjectiveDescriptionAction,
+  setObjectiveModeAction: mocks.setObjectiveModeAction,
+  updateObjectiveLongTermGoalAction: mocks.updateObjectiveLongTermGoalAction,
+  addObjectiveShortTermGoalAction: mocks.addObjectiveShortTermGoalAction,
+  updateObjectiveShortTermGoalAction: mocks.updateObjectiveShortTermGoalAction,
+  deleteObjectiveShortTermGoalAction: mocks.deleteObjectiveShortTermGoalAction,
+  selectObjectiveShortTermGoalAction: mocks.selectObjectiveShortTermGoalAction,
   updateObjectiveConfigAction: mocks.updateObjectiveConfigAction,
 }));
 
@@ -72,12 +84,21 @@ afterEach(() => {
   mocks.reorderObjectiveTasksAction.mockReset();
   mocks.deleteObjectiveTaskAction.mockReset();
   mocks.setObjectiveDescriptionAction.mockReset();
+  mocks.setObjectiveModeAction.mockReset();
+  mocks.updateObjectiveLongTermGoalAction.mockReset();
+  mocks.addObjectiveShortTermGoalAction.mockReset();
+  mocks.updateObjectiveShortTermGoalAction.mockReset();
+  mocks.deleteObjectiveShortTermGoalAction.mockReset();
+  mocks.selectObjectiveShortTermGoalAction.mockReset();
   mocks.updateObjectiveConfigAction.mockReset();
 });
 
 const EMPTY: ObjectiveState = {
+  mode: "route",
   objectiveDescription: "",
   tasks: [],
+  longTermGoal: null,
+  shortTermGoals: [],
   autoCheckFrequency: 0,
   autoCheckEventCount: 0,
   contextWindow: 10,
@@ -123,6 +144,57 @@ describe("ObjectiveConfig (INS-5)", () => {
     expect(getByText("Find the cave")).toBeTruthy();
     // The objective description seeds the textarea.
     expect(getByDisplayValue("Find the lost amulet")).toBeTruthy();
+  });
+
+  it("switches to goals mode through the shared segmented control", () => {
+    withState(EMPTY);
+    mocks.setObjectiveModeAction.mockResolvedValue(undefined);
+    const { getByRole } = render(<ObjectiveConfig chatId={"chat_1" as never} />);
+    fireEvent.click(getByRole("radio", { name: "obj_mode_goals" }));
+    expect(mocks.setObjectiveModeAction).toHaveBeenCalledWith("chat_1", "goals");
+  });
+
+  it("goals mode renders long/short goals and dispatches edit/add/select/delete actions", () => {
+    withState({
+      ...EMPTY,
+      mode: "goals",
+      longTermGoal: { description: "Free the city", status: "pending" },
+      shortTermGoals: [
+        { id: "s1", description: "Reach the gate", status: "active" },
+        { id: "s2", description: "Find an ally", status: "pending" },
+      ],
+    });
+    mocks.updateObjectiveLongTermGoalAction.mockResolvedValue(undefined);
+    mocks.addObjectiveShortTermGoalAction.mockResolvedValue(undefined);
+    mocks.updateObjectiveShortTermGoalAction.mockResolvedValue(undefined);
+    mocks.deleteObjectiveShortTermGoalAction.mockResolvedValue(undefined);
+    mocks.selectObjectiveShortTermGoalAction.mockResolvedValue(undefined);
+    const view = render(<ObjectiveConfig chatId={"chat_1" as never} />);
+
+    expect(view.getByText("obj_long_term_label")).toBeTruthy();
+    expect(view.getByText("Reach the gate")).toBeTruthy();
+    const longTerm = view.getByDisplayValue("Free the city") as HTMLTextAreaElement;
+    fireEvent.change(longTerm, { target: { value: "Protect the free city" } });
+    fireEvent.blur(longTerm);
+    expect(mocks.updateObjectiveLongTermGoalAction).toHaveBeenCalledWith("chat_1", { description: "Protect the free city" });
+
+    const addInput = view.getByPlaceholderText("obj_add_short_placeholder");
+    fireEvent.change(addInput, { target: { value: "Secure supplies" } });
+    fireEvent.keyDown(addInput, { key: "Enter" });
+    expect(mocks.addObjectiveShortTermGoalAction).toHaveBeenCalledWith("chat_1", "Secure supplies");
+
+    // Status controls: long-term, active short-term, pending short-term. Pending click selects it.
+    fireEvent.click(view.getAllByTitle("obj_cycle_status")[2]!);
+    expect(mocks.selectObjectiveShortTermGoalAction).toHaveBeenCalledWith("chat_1", "s2");
+
+    fireEvent.click(view.getByText("Reach the gate"));
+    const shortInput = view.getByDisplayValue("Reach the gate") as HTMLInputElement;
+    fireEvent.change(shortInput, { target: { value: "Reach the eastern gate" } });
+    fireEvent.blur(shortInput);
+    expect(mocks.updateObjectiveShortTermGoalAction).toHaveBeenCalledWith("chat_1", "s1", { description: "Reach the eastern gate" });
+
+    fireEvent.click(view.getAllByTitle("obj_delete_short")[0]!);
+    expect(mocks.deleteObjectiveShortTermGoalAction).toHaveBeenCalledWith("chat_1", "s1");
   });
 
   it("clicking Generate dispatches generateObjectiveTasksAction", () => {

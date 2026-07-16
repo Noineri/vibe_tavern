@@ -117,6 +117,12 @@ export {
   reorderObjectiveTasks,
   deleteObjectiveTask,
   setObjectiveDescription,
+  setObjectiveMode,
+  updateObjectiveLongTermGoal,
+  addObjectiveShortTermGoal,
+  updateObjectiveShortTermGoal,
+  deleteObjectiveShortTermGoal,
+  selectObjectiveShortTermGoal,
   updateObjectiveConfig,
 } from "./api/chat-api.js";
 

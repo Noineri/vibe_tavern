@@ -7,6 +7,7 @@ import { AutoTextarea } from "../../shared/auto-textarea.js";
 import { EmptyState } from "../../shared/empty-state.js";
 import { Toggle } from "../../shared/Toggle.js";
 import { DropdownSelect } from "../../shared/DropdownSelect.js";
+import { SegmentedControl } from "../../shared/SegmentedControl.js";
 import { inputCls, monoCls, inputPad, lblCls } from "../fields/field-styles.js";
 import { useT } from "../../../i18n/context.js";
 import { useSnapshotStore } from "../../../stores/snapshot-store.js";
@@ -19,10 +20,16 @@ import {
   reorderObjectiveTasksAction,
   deleteObjectiveTaskAction,
   setObjectiveDescriptionAction,
+  setObjectiveModeAction,
+  updateObjectiveLongTermGoalAction,
+  addObjectiveShortTermGoalAction,
+  updateObjectiveShortTermGoalAction,
+  deleteObjectiveShortTermGoalAction,
+  selectObjectiveShortTermGoalAction,
   updateObjectiveConfigAction,
 } from "../../../stores/api-actions/chat-actions.js";
 import { fetchProviderModelsAction } from "../../../stores/api-actions/provider-actions.js";
-import type { ObjectiveState, ObjectiveTask, ObjectiveTaskStatus } from "../../../api/types.js";
+import type { ObjectiveLongTermGoal, ObjectiveShortTermGoal, ObjectiveState, ObjectiveTask, ObjectiveTaskStatus } from "../../../api/types.js";
 
 /**
  * Objective Tracker config editor (INSIGHTS_PLAN INS-5). Shown inside the
@@ -58,11 +65,18 @@ export function ObjectiveConfig({ chatId }: { chatId: ChatId }) {
     ? {
         ...EMPTY_STATE,
         ...raw,
+        mode: raw.mode === "goals" ? "goals" : "route",
+        longTermGoal: raw.longTermGoal && typeof raw.longTermGoal === "object" ? raw.longTermGoal : null,
+        shortTermGoals: Array.isArray(raw.shortTermGoals) ? raw.shortTermGoals : [],
         useChatModel: typeof raw.useChatModel === "boolean" ? raw.useChatModel : true,
         providerProfileId: typeof raw.providerProfileId === "string" ? raw.providerProfileId : null,
         model: typeof raw.model === "string" ? raw.model : null,
       }
     : EMPTY_STATE;
+  const mode = state.mode ?? "route";
+  const shortTermGoals = state.shortTermGoals ?? [];
+  const hasCheckTarget = (mode === "goals" ? shortTermGoals : state.tasks)
+    .some((item) => item.status === "active" || item.status === "pending");
 
   useEffect(() => {
     setBusy(null);
@@ -104,23 +118,41 @@ export function ObjectiveConfig({ chatId }: { chatId: ChatId }) {
 
   return (
     <div className="space-y-4 rounded-lg border border-border bg-s2/50 p-4">
-      {/* Description */}
-      <div>
-        <label className={lblCls}>{t("obj_description_label")}</label>
-        <AutoTextarea
-          className={inputCls + " mt-1.5"}
-          style={inputPad}
-          defaultValue={state.objectiveDescription}
-          placeholder={t("obj_description_placeholder")}
-          minRows={2}
-          onBlur={(e) => {
-            const v = e.target.value;
-            if (v !== state.objectiveDescription) {
-              setObjectiveDescriptionAction(chatId, v).catch((err) => toast.error(err instanceof Error ? err.message : t("obj_action_failed")));
-            }
-          }}
-        />
-      </div>
+      <SegmentedControl
+        value={mode}
+        fill
+        compact
+        options={[
+          { value: "route", label: t("obj_mode_route") },
+          { value: "goals", label: t("obj_mode_goals") },
+        ]}
+        onChange={(value) => {
+          if (value !== "route" && value !== "goals") return;
+          void setObjectiveModeAction(chatId, value)
+            .catch((err) => toast.error(err instanceof Error ? err.message : t("obj_action_failed")));
+        }}
+      />
+
+      {mode === "route" ? (
+        <div>
+          <label className={lblCls}>{t("obj_description_label")}</label>
+          <AutoTextarea
+            className={inputCls + " mt-1.5"}
+            style={inputPad}
+            defaultValue={state.objectiveDescription}
+            placeholder={t("obj_description_placeholder")}
+            minRows={2}
+            onBlur={(e) => {
+              const v = e.target.value;
+              if (v !== state.objectiveDescription) {
+                setObjectiveDescriptionAction(chatId, v).catch((err) => toast.error(err instanceof Error ? err.message : t("obj_action_failed")));
+              }
+            }}
+          />
+        </div>
+      ) : (
+        <LongTermGoalEditor chatId={chatId} goal={state.longTermGoal ?? null} />
+      )}
 
       {/* Generate / Check */}
       <div className="flex flex-wrap gap-2">
@@ -136,11 +168,11 @@ export function ObjectiveConfig({ chatId }: { chatId: ChatId }) {
           )}
         >
           {busy === "generate" ? spinner : <Ic.plus />}
-          {t(busy === "generate" ? "obj_stop_button" : "obj_generate_button")}
+          {t(busy === "generate" ? "obj_stop_button" : mode === "goals" ? "obj_generate_goals_button" : "obj_generate_button")}
         </button>
         <button
           type="button"
-          disabled={(busy !== null && busy !== "check") || (busy === null && state.tasks.length === 0)}
+          disabled={(busy !== null && busy !== "check") || (busy === null && !hasCheckTarget)}
           onClick={() => busy === "check" ? stop("check") : void run("check", checkObjectiveCompletionAction)}
           className="inline-flex items-center gap-1.5 rounded-md border border-border2 bg-s2 px-3 py-1.5 font-ui text-[12px] font-medium text-t2 transition-colors hover:border-accent disabled:opacity-50"
         >
@@ -149,8 +181,11 @@ export function ObjectiveConfig({ chatId }: { chatId: ChatId }) {
         </button>
       </div>
 
-      {/* Task route */}
-      <TaskRoute chatId={chatId} tasks={state.tasks} />
+      {mode === "route" ? (
+        <TaskRoute chatId={chatId} tasks={state.tasks} />
+      ) : (
+        <ShortTermGoals chatId={chatId} goals={shortTermGoals} />
+      )}
 
       {/* Model selection (secondary insight model — mirrors Summary) */}
       <ModelSelector chatId={chatId} state={state} />
@@ -172,8 +207,11 @@ export function ObjectiveConfig({ chatId }: { chatId: ChatId }) {
 }
 
 const EMPTY_STATE: ObjectiveState = {
+  mode: "route",
   objectiveDescription: "",
   tasks: [],
+  longTermGoal: null,
+  shortTermGoals: [],
   autoCheckFrequency: 0,
   autoCheckEventCount: 0,
   contextWindow: 10,
@@ -185,6 +223,171 @@ const EMPTY_STATE: ObjectiveState = {
   providerProfileId: null,
   model: null,
 };
+
+// ─── Goals mode (one long-term + flat independent short-term list) ──────
+
+function LongTermGoalEditor({ chatId, goal }: { chatId: ChatId; goal: ObjectiveLongTermGoal | null }) {
+  const { t } = useT();
+
+  async function cycleStatus() {
+    if (!goal) return;
+    const next = STATUS_ORDER[(STATUS_ORDER.indexOf(goal.status) + 1) % STATUS_ORDER.length];
+    try {
+      await updateObjectiveLongTermGoalAction(chatId, { status: next });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : t("obj_action_failed"));
+    }
+  }
+
+  return (
+    <div>
+      <label className={lblCls}>{t("obj_long_term_label")}</label>
+      <div className="mt-1.5 flex items-start gap-2 rounded-md border border-accent/30 bg-accent-dim/30 p-2.5">
+        {goal ? <StatusDot status={goal.status} onClick={() => void cycleStatus()} title={t("obj_cycle_status")} /> : <span className="mt-1 text-accent"><Ic.target /></span>}
+        <AutoTextarea
+          key={goal?.description ?? "empty-long-term"}
+          className={inputCls + " flex-1"}
+          style={inputPad}
+          defaultValue={goal?.description ?? ""}
+          placeholder={t("obj_long_term_placeholder")}
+          minRows={2}
+          onBlur={(e) => {
+            const value = e.target.value.trim();
+            if (!value || value === goal?.description) return;
+            void updateObjectiveLongTermGoalAction(chatId, { description: value })
+              .catch((err) => toast.error(err instanceof Error ? err.message : t("obj_action_failed")));
+          }}
+        />
+      </div>
+      <p className="mt-1 font-ui text-[10px] leading-relaxed text-t4">{t("obj_long_term_hint")}</p>
+    </div>
+  );
+}
+
+function ShortTermGoals({ chatId, goals }: { chatId: ChatId; goals: ObjectiveShortTermGoal[] }) {
+  const { t } = useT();
+  const [draft, setDraft] = useState("");
+
+  async function addGoal() {
+    const value = draft.trim();
+    if (!value) return;
+    setDraft("");
+    try {
+      await addObjectiveShortTermGoalAction(chatId, value);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : t("obj_action_failed"));
+    }
+  }
+
+  return (
+    <div>
+      <label className={lblCls}>{t("obj_short_term_label")}</label>
+      {goals.length === 0 ? (
+        <div className="mt-1.5 rounded-md border border-dashed border-border2 bg-s2/40 px-3 py-4">
+          <EmptyState icon={<Ic.target />} title={t("obj_short_empty_title")} sub={t("obj_short_empty_sub")} />
+        </div>
+      ) : (
+        <ul className="mt-1.5 space-y-1">
+          {goals.map((goal) => <ShortTermGoalRow key={goal.id} chatId={chatId} goal={goal} />)}
+        </ul>
+      )}
+      <div className="mt-2 flex gap-1.5">
+        <input
+          className={inputCls + " flex-1"}
+          style={inputPad}
+          value={draft}
+          placeholder={t("obj_add_short_placeholder")}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void addGoal(); } }}
+        />
+        <button
+          type="button"
+          onClick={() => void addGoal()}
+          disabled={!draft.trim()}
+          className="inline-flex items-center justify-center rounded-md border border-border2 bg-s2 px-2.5 text-t2 hover:border-accent disabled:opacity-40"
+          title={t("obj_add_short_button")}
+        >
+          <Ic.plus />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function ShortTermGoalRow({ chatId, goal }: { chatId: ChatId; goal: ObjectiveShortTermGoal }) {
+  const { t } = useT();
+  const [editing, setEditing] = useState(false);
+
+  async function cycleStatus() {
+    try {
+      if (goal.status === "pending") {
+        await selectObjectiveShortTermGoalAction(chatId, goal.id);
+        return;
+      }
+      const next = STATUS_ORDER[(STATUS_ORDER.indexOf(goal.status) + 1) % STATUS_ORDER.length];
+      await updateObjectiveShortTermGoalAction(chatId, goal.id, { status: next });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : t("obj_action_failed"));
+    }
+  }
+
+  async function saveDescription(value: string) {
+    setEditing(false);
+    const normalized = value.trim();
+    if (!normalized || normalized === goal.description) return;
+    try {
+      await updateObjectiveShortTermGoalAction(chatId, goal.id, { description: normalized });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : t("obj_action_failed"));
+    }
+  }
+
+  async function remove() {
+    try {
+      await deleteObjectiveShortTermGoalAction(chatId, goal.id);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : t("obj_action_failed"));
+    }
+  }
+
+  return (
+    <li className="group flex items-center gap-2 rounded-md border border-border bg-s2 px-2 py-1.5">
+      <StatusDot status={goal.status} onClick={() => void cycleStatus()} title={t("obj_cycle_status")} />
+      {editing ? (
+        <input
+          autoFocus
+          defaultValue={goal.description}
+          className={inputCls + " flex-1"}
+          style={inputPad}
+          onBlur={(e) => void saveDescription(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); if (e.key === "Escape") setEditing(false); }}
+        />
+      ) : (
+        <button
+          type="button"
+          onClick={() => setEditing(true)}
+          className={cn(
+            "min-w-0 flex-1 truncate text-left font-ui text-[12px] hover:text-accent",
+            goal.status === "completed" && "text-success-text line-through",
+            goal.status === "abandoned" && "text-t4 line-through",
+            (goal.status === "pending" || goal.status === "active") && "text-t2",
+          )}
+          title={t("obj_edit_short")}
+        >
+          {goal.description}
+        </button>
+      )}
+      <button
+        type="button"
+        onClick={() => void remove()}
+        className="shrink-0 text-t4 transition-opacity hover:text-danger-text md:opacity-0 md:group-hover:opacity-100"
+        title={t("obj_delete_short")}
+      >
+        <Ic.del />
+      </button>
+    </li>
+  );
+}
 
 // ─── Task route (ordered list + add) ────────────────────────────────────
 

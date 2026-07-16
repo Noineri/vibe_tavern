@@ -28,6 +28,9 @@ import { cancelInsightsCompletionRefresh, startInsightsCompletionRefresh } from 
 
 const mocks = vi.hoisted(() => ({
   updateObjectiveTaskAction: vi.fn(),
+  updateObjectiveLongTermGoalAction: vi.fn(),
+  updateObjectiveShortTermGoalAction: vi.fn(),
+  selectObjectiveShortTermGoalAction: vi.fn(),
   generateObjectiveTasksAction: vi.fn(),
   checkObjectiveCompletionAction: vi.fn(),
   refreshInsightsCompletion: vi.fn(),
@@ -47,6 +50,9 @@ vi.mock("../../../app-client.js", async (importOriginal) => {
 
 vi.mock("../../../stores/api-actions/chat-actions.js", () => ({
   updateObjectiveTaskAction: mocks.updateObjectiveTaskAction,
+  updateObjectiveLongTermGoalAction: mocks.updateObjectiveLongTermGoalAction,
+  updateObjectiveShortTermGoalAction: mocks.updateObjectiveShortTermGoalAction,
+  selectObjectiveShortTermGoalAction: mocks.selectObjectiveShortTermGoalAction,
   generateObjectiveTasksAction: mocks.generateObjectiveTasksAction,
   checkObjectiveCompletionAction: mocks.checkObjectiveCompletionAction,
 }));
@@ -63,6 +69,9 @@ afterEach(() => {
   useSnapshotStore.setState({ activeChat: null });
   useHeaderZoneExpansionStore.setState({ open: {} });
   mocks.updateObjectiveTaskAction.mockReset();
+  mocks.updateObjectiveLongTermGoalAction.mockReset();
+  mocks.updateObjectiveShortTermGoalAction.mockReset();
+  mocks.selectObjectiveShortTermGoalAction.mockReset();
   mocks.generateObjectiveTasksAction.mockReset();
   mocks.checkObjectiveCompletionAction.mockReset();
   mocks.refreshInsightsCompletion.mockReset();
@@ -81,7 +90,10 @@ function seedState(state: ObjectiveState, objectiveEnabled: boolean) {
 }
 
 const ROUTE: ObjectiveState = {
+  mode: "route",
   objectiveDescription: "Find the amulet",
+  longTermGoal: null,
+  shortTermGoals: [],
   tasks: [
     { id: "t1", description: "Ask the innkeeper", status: "completed" },
     { id: "t2", description: "Enter the forest", status: "active" },
@@ -99,9 +111,24 @@ const ROUTE: ObjectiveState = {
   model: null,
 };
 
+const GOALS: ObjectiveState = {
+  ...ROUTE,
+  mode: "goals",
+  tasks: [],
+  longTermGoal: { description: "Free the city", status: "pending" },
+  shortTermGoals: [
+    { id: "s1", description: "Secure supplies", status: "completed" },
+    { id: "s2", description: "Reach the gate", status: "active" },
+    { id: "s3", description: "Find an ally", status: "pending" },
+  ],
+};
+
 describe("ObjectiveZone (INS-6)", () => {
   beforeEach(() => {
     mocks.updateObjectiveTaskAction.mockResolvedValue(undefined);
+    mocks.updateObjectiveLongTermGoalAction.mockResolvedValue(undefined);
+    mocks.updateObjectiveShortTermGoalAction.mockResolvedValue(undefined);
+    mocks.selectObjectiveShortTermGoalAction.mockResolvedValue(undefined);
     mocks.generateObjectiveTasksAction.mockResolvedValue(undefined);
     mocks.checkObjectiveCompletionAction.mockResolvedValue(undefined);
   });
@@ -127,6 +154,35 @@ describe("ObjectiveZone (INS-6)", () => {
     expect(getByText("Find the cave")).toBeTruthy();
     // Verify the zone rendered DOM (not null).
     expect(container.firstChild).not.toBeNull();
+  });
+
+  it("goals mode shows long-term + selected short-term and edits the expanded goal list", () => {
+    seedState(GOALS, true);
+    const view = render(<ObjectiveZone chatId="c1" messageId="m1" />);
+    expect(view.getByText("Free the city")).toBeTruthy();
+    expect(view.getByText("Reach the gate")).toBeTruthy();
+    expect(view.getByText("1/3")).toBeTruthy();
+
+    fireEvent.click(view.getByText("Reach the gate"));
+    expect(view.getByText("obj_zone_goals")).toBeTruthy();
+    expect(view.getByText("obj_zone_long_term:")).toBeTruthy();
+    expect(view.getByText("Find an ally")).toBeTruthy();
+
+    // Controls: long-term, completed, active, pending. Pending click selects it.
+    fireEvent.click(view.getAllByLabelText("obj_cycle_status")[3]!);
+    expect(mocks.selectObjectiveShortTermGoalAction).toHaveBeenCalledWith("c1", "s3");
+
+    fireEvent.click(view.getByText("Free the city"));
+    const longInput = view.getByDisplayValue("Free the city") as HTMLInputElement;
+    fireEvent.change(longInput, { target: { value: "Keep the city free" } });
+    fireEvent.blur(longInput);
+    expect(mocks.updateObjectiveLongTermGoalAction).toHaveBeenCalledWith("c1", { description: "Keep the city free" });
+
+    fireEvent.click(view.getByText("Reach the gate"));
+    const shortInput = view.getByDisplayValue("Reach the gate") as HTMLInputElement;
+    fireEvent.change(shortInput, { target: { value: "Reach the eastern gate" } });
+    fireEvent.blur(shortInput);
+    expect(mocks.updateObjectiveShortTermGoalAction).toHaveBeenCalledWith("c1", "s2", { description: "Reach the eastern gate" });
   });
 
   it("expanded: regenerate and check buttons dispatch the existing objective actions", async () => {

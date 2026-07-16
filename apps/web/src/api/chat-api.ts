@@ -1,4 +1,4 @@
-import type { ChatId, ChatMode, ObjectiveTaskStatus, PromptTraceRecordDto, SceneTrackerConfig } from "@vibe-tavern/domain";
+import type { ChatId, ChatMode, ObjectiveMode, ObjectiveTaskStatus, PromptTraceRecordDto, SceneTrackerConfig } from "@vibe-tavern/domain";
 import type { CoauthorApplyRequest, CoauthorCorrection, CoauthorModule, CoauthorModuleCreate, CoauthorModuleUpdate } from "@vibe-tavern/api-contracts";
 import type { AppSnapshot, AppMessage, ChatListItem, ChatSummaryRecord, AutoSummaryConfig, InsightsConfigPatch, InsightsCompletionPatchResponse, InsightsCompletionTarget, ScenePreviewResponse, SceneTargetResponse, SceneStatusResponse, SceneBackfillMode, SceneBackfillStatusResponse } from "./types.js";
 import { client } from "./client.js";
@@ -565,6 +565,36 @@ export async function deleteObjectiveTask(chatId: ChatId, taskId: string): Promi
 
 export async function setObjectiveDescription(chatId: ChatId, objectiveDescription: string): Promise<AppSnapshot> {
   const response = await client.api.chats[":chatId"].insights.objective.description.$put({ param: { chatId }, json: { objectiveDescription } });
+  return normalizeSnapshot(await unwrapRpc<AppSnapshot>(response));
+}
+
+export async function setObjectiveMode(chatId: ChatId, mode: ObjectiveMode): Promise<AppSnapshot> {
+  const response = await client.api.chats[":chatId"].insights.objective.mode.$put({ param: { chatId }, json: { mode } });
+  return normalizeSnapshot(await unwrapRpc<AppSnapshot>(response));
+}
+
+export async function updateObjectiveLongTermGoal(chatId: ChatId, input: { description?: string; status?: ObjectiveTaskStatus }): Promise<AppSnapshot> {
+  const response = await client.api.chats[":chatId"].insights.objective["long-term"].$patch({ param: { chatId }, json: input });
+  return normalizeSnapshot(await unwrapRpc<AppSnapshot>(response));
+}
+
+export async function addObjectiveShortTermGoal(chatId: ChatId, description: string): Promise<AppSnapshot> {
+  const response = await client.api.chats[":chatId"].insights.objective["short-term"].$post({ param: { chatId }, json: { description } });
+  return normalizeSnapshot(await unwrapRpc<AppSnapshot>(response));
+}
+
+export async function updateObjectiveShortTermGoal(chatId: ChatId, goalId: string, input: { description?: string; status?: ObjectiveTaskStatus }): Promise<AppSnapshot> {
+  const response = await client.api.chats[":chatId"].insights.objective["short-term"][":goalId"].$patch({ param: { chatId, goalId }, json: input });
+  return normalizeSnapshot(await unwrapRpc<AppSnapshot>(response));
+}
+
+export async function deleteObjectiveShortTermGoal(chatId: ChatId, goalId: string): Promise<AppSnapshot> {
+  const response = await client.api.chats[":chatId"].insights.objective["short-term"][":goalId"].$delete({ param: { chatId, goalId } });
+  return normalizeSnapshot(await unwrapRpc<AppSnapshot>(response));
+}
+
+export async function selectObjectiveShortTermGoal(chatId: ChatId, goalId: string): Promise<AppSnapshot> {
+  const response = await client.api.chats[":chatId"].insights.objective["short-term"].select.$put({ param: { chatId }, json: { goalId } });
   return normalizeSnapshot(await unwrapRpc<AppSnapshot>(response));
 }
 
