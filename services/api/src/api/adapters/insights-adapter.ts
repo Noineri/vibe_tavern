@@ -4,7 +4,7 @@ import type { SessionRuntime } from "../../runtime/session/session-runtime.js";
 import type { ProviderProfileService } from "../../domain/providers/provider-profile-service.js";
 import type { ConfigPatchResponse, InsightsCompletionPatchResponse, SceneBackfillStatusResponse, ScenePreviewResponse, SceneStatusResponse, SceneTargetResponse } from "../contract/session-types.js";
 import { mapMessageDto } from "../../runtime/session/session-runtime-dto.js";
-import { notFound, validation } from "../../shared/errors.js";
+import { conflict, notFound, validation } from "../../shared/errors.js";
 import { ObjectiveService } from "../../domain/insights/objective-service.js";
 import { SceneTrackerService, type SceneTarget } from "../../domain/insights/tracker-service.js";
 import { logSendDebug } from "../../shared/send-debug-log.js";
@@ -173,6 +173,7 @@ export class InsightsAdapter {
 	): Promise<SceneTargetResponse> => {
 		const target = this.sceneTargetFrom(chatId, body.target);
 		await this.ensureSceneTarget(chatId, body.target);
+		await this.ensureLatestAssistantTarget(chatId, body.target);
 		await this.trackerService.generateForTarget(target, signal);
 		return { target: { chatId, ...body.target }, message: await this.buildTargetMessageDto(body.target.messageId) };
 	};
@@ -282,6 +283,22 @@ export class InsightsAdapter {
 			throw notFound(
 				"Variant",
 				`Scene target variant '${target.variantId}' is no longer available on message '${target.messageId}'.`,
+			);
+		}
+	}
+
+	/** Ordinary LLM Generate/Update is allowed ONLY for the active branch's latest
+	 *  selected assistant variant (step 3). Older persisted records are view/edit/
+	 *  delete only; their LLM replacement goes through explicit history backfill/rebuild.
+	 *  Manual editScene/deleteScene are intentionally NOT gated here. */
+	private async ensureLatestAssistantTarget(chatId: string, target: { branchId: string; messageId: string; variantId: string }): Promise<void> {
+		const branch = await this.stores.chats.getActiveBranch(chatId);
+		const branchId = branch?.id ?? target.branchId;
+		const latest = await this.stores.messages.getLatestSelectedVariant(branchId);
+		if (!latest || latest.messageId !== target.messageId || latest.variantId !== target.variantId) {
+			throw conflict(
+				"Scene LLM generation is only available for the latest assistant message; use history backfill to regenerate older records.",
+				{ target, latest },
 			);
 		}
 	}

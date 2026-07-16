@@ -67,6 +67,10 @@ function makeStore(opts: {
 	variants?: Record<string, MockVariant[]>;
 	records?: Record<string, MockRecord>;
 	messages?: Array<{ id: string; role: string }>;
+	/** Wire the current-Scene cache rebuild path (getCurrentSceneTarget + updateInsightsCurrentScene). */
+	cacheRebuild?: boolean;
+	/** Make updateInsightsCurrentScene throw (to prove rebuild failures are swallowed). */
+	cacheThrow?: boolean;
 }) {
 	let trackerRaw: Record<string, unknown> = opts.tracker ?? { schema: TEST_SCHEMA };
 	const variants: Record<string, MockVariant[]> = opts.variants ?? {
@@ -75,11 +79,36 @@ function makeStore(opts: {
 	const records: Record<string, MockRecord> = opts.records ? structuredClone(opts.records) : {};
 	const messages = opts.messages ?? [];
 
+	const cacheWrites: unknown[] = [];
 	const stores = {
 		chats: {
 			getById: async () => ({ insightsConfig: { tracker: trackerRaw } }),
+			...(opts.cacheRebuild
+				? {
+						updateInsightsCurrentScene: async (_chatId: string, cache: unknown) => {
+							if (opts.cacheThrow) throw new Error("cache write failed");
+							cacheWrites.push(cache);
+						},
+					}
+				: {}),
 		},
 		messages: {
+			...(opts.cacheRebuild
+				? {
+						getCurrentSceneTarget: async () => {
+							for (let i = messages.length - 1; i >= 0; i -= 1) {
+								const m = messages[i];
+								if (!m || m.role !== "assistant") continue;
+								const sel = (variants[m.id] ?? []).find((v) => v.isSelected);
+								if (!sel) continue;
+								const rec = records[sel.id];
+								if (!rec) continue;
+								return { messageId: m.id, variantId: sel.id, record: rec };
+							}
+							return null;
+						},
+					}
+				: {}),
 			getVariants: async (messageId: string) =>
 				(variants[messageId] ?? []).map((v) => ({ id: v.id, content: v.content, isSelected: v.isSelected ?? false })),
 			getSceneRecord: async (variantId: string) => records[variantId] ?? null,
@@ -99,6 +128,7 @@ function makeStore(opts: {
 
 	return {
 		stores,
+		cacheWrites,
 		/** Replace the raw tracker config mid-job (schema/revision drift). */
 		setTracker: (next: Record<string, unknown>) => {
 			trackerRaw = next;
@@ -428,5 +458,36 @@ describe("SceneTrackerService — concurrency + seams (SCN-5)", () => {
 		release(VALID_REPLY);
 		await pending;
 		expect(service.hasTargetJob(BASE_TARGET)).toBe(false); // cleaned up after settle
+	});
+});
+
+describe("Scene cache rebuild wiring (SCENE_TRACKER_STATE_LIFECYCLE step 7)", () => {
+	it("rebuilds the current-Scene cache after a successful generation", async () => {
+		const handle = makeStore({ messages: [{ id: "m2", role: "assistant" }], cacheRebuild: true });
+		const { service } = quickService(handle, VALID_REPLY);
+		await service.generateScene(generateInput());
+		// The canonical record persisted AND the derived cache was rebuilt with it.
+		expect(handle.getRecord("var_1")).not.toBeNull();
+		expect(handle.cacheWrites).toHaveLength(1);
+		expect((handle.cacheWrites[0] as { sceneState: Record<string, unknown> }).sceneState).toEqual({ mood: "calm", tension: 3 });
+	});
+
+	it("a cache rebuild failure is swallowed — the canonical record survives and generation does not throw", async () => {
+		const handle = makeStore({ messages: [{ id: "m2", role: "assistant" }], cacheRebuild: true, cacheThrow: true });
+		const { service } = quickService(handle, VALID_REPLY);
+		await service.generateScene(generateInput()); // must NOT throw
+		expect(handle.getRecord("var_1")).not.toBeNull(); // canonical record untouched by the cache failure
+		expect(handle.cacheWrites).toHaveLength(0);
+	});
+
+	it("rebuilds the cache after edit and clears it after delete", async () => {
+		const handle = makeStore({ messages: [{ id: "m2", role: "assistant" }], cacheRebuild: true });
+		const { service } = quickService(handle, VALID_REPLY);
+		await service.editScene(BASE_TARGET, { mood: "tense", tension: 7 });
+		expect(handle.cacheWrites).toHaveLength(1);
+		expect((handle.cacheWrites[0] as { sceneState: Record<string, unknown> }).sceneState).toEqual({ mood: "tense", tension: 7 });
+		await service.deleteScene(BASE_TARGET);
+		expect(handle.cacheWrites).toHaveLength(2);
+		expect(handle.cacheWrites[1]).toBeNull(); // delete → cache cleared
 	});
 });

@@ -213,6 +213,10 @@ describe("InsightsAdapter Scene manual routes (SCN-9)", () => {
 		deleteScene?: (target: SceneTarget) => Promise<void>;
 		record?: object | null;
 		generating?: boolean;
+		/** The active branch's latest selected assistant variant; defaults to SCENE_TARGET
+	 *  (target is latest). Set to a newer message to exercise the retro-generation guard. */
+		latestTarget?: { messageId: string; variantId: string } | null;
+		activeBranchId?: string;
 	}) {
 		const tracker = noopTracker({
 			generateForTarget: options?.generateForTarget ?? (async () => ({})),
@@ -222,11 +226,16 @@ describe("InsightsAdapter Scene manual routes (SCN-9)", () => {
 			getRecord: async () => options?.record ?? null,
 			hasTargetJob: () => options?.generating ?? false,
 		});
+		const latestTarget = options?.latestTarget === undefined ? { messageId: "msg_1", variantId: "var_1" } : options.latestTarget;
 		const stores = {
-			chats: { getById: async (chatId: string) => ({ id: chatId }) },
+			chats: {
+				getById: async (chatId: string) => ({ id: chatId }),
+				getActiveBranch: async () => ({ id: options?.activeBranchId ?? "branch_1" }),
+			},
 			messages: {
 				getMessageById: async () => MESSAGE_ROW,
 				getVariants: async () => [VARIANT_ROW],
+				getLatestSelectedVariant: async () => latestTarget,
 			},
 		} as unknown as StoreContainer;
 		return new InsightsAdapter(stores, {} as SessionRuntime, {} as never, tracker as SceneTrackerService);
@@ -280,6 +289,30 @@ describe("InsightsAdapter Scene manual routes (SCN-9)", () => {
 		const adapter = new InsightsAdapter(stores, {} as SessionRuntime, {} as never, noopTracker({ generateForTarget: async () => { generateCalls += 1; return {}; } }) as SceneTrackerService);
 		await expect(adapter.generateScene("chat_1", { target: SCENE_TARGET })).rejects.toThrow("no longer available");
 		expect(generateCalls).toBe(0);
+	});
+
+	it("generate rejects a non-latest target — ordinary retro LLM generation is forbidden (step 3)", async () => {
+		let generateCalls = 0;
+		const adapter = sceneAdapter({
+			generateForTarget: async () => { generateCalls += 1; return {}; },
+			latestTarget: { messageId: "msg_newer", variantId: "var_newer" }, // a newer assistant is now latest
+		});
+		await expect(adapter.generateScene("chat_1", { target: SCENE_TARGET })).rejects.toThrow("only available for the latest assistant message");
+		expect(generateCalls).toBe(0);
+	});
+
+	it("manual edit and delete are NOT gated by the latest-target rule (older records remain editable/deletable)", async () => {
+		let editCalls = 0;
+		let deleteCalls = 0;
+		const adapter = sceneAdapter({
+			editScene: async () => { editCalls += 1; return {}; },
+			deleteScene: async () => { deleteCalls += 1; },
+			latestTarget: { messageId: "msg_newer", variantId: "var_newer" }, // SCENE_TARGET is an older record
+		});
+		await adapter.editScene("chat_1", { target: SCENE_TARGET, sceneState: { mood: "calm" } });
+		await adapter.deleteScene("chat_1", { target: SCENE_TARGET });
+		expect(editCalls).toBe(1);
+		expect(deleteCalls).toBe(1);
 	});
 
 	it("edit forwards the sceneState to the service and returns the message patch", async () => {

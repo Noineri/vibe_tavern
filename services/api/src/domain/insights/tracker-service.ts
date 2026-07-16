@@ -58,7 +58,7 @@ import { insightsAssemblyToPromptResponse } from "./objective-service.js";
 import type { SessionRuntime } from "../../runtime/session/session-runtime.js";
 import type { ProviderProfileService } from "../providers/provider-profile-service.js";
 import { parseStructuredOutput } from "./structured-output.js";
-import { isRecordSchemaCompatible } from "./scene-cache.js";
+import { isRecordSchemaCompatible, rebuildCurrentSceneCache } from "./scene-cache.js";
 import { logSendDebug } from "../../shared/send-debug-log.js";
 
 type Execute = typeof nonstreamingProviderExecute;
@@ -132,6 +132,9 @@ export interface SceneGenerateInput {
 	context: PromptAssemblyContext;
 	/** Previous valid selected-variant records (oldest→newest) for continuity. */
 	continuity?: SceneContinuityRecord[];
+	/** Rebuild the derived current-Scene cache after a successful commit (default
+	 *  true). Backfill suppresses per-item rebuilds and rebuilds once at run end. */
+	rebuildCache?: boolean;
 	signal?: AbortSignal;
 }
 
@@ -363,7 +366,7 @@ export class SceneTrackerService {
 		// Generated output is ALWAYS strict schema-validated JSON against the
 		// schema captured above; a mismatch throws and nothing is persisted.
 		const sceneState = parseStructuredOutput(result.text, buildSceneDataSchema(config.schema));
-		return this.commitRecord(input.target, baseline, sceneState, input.model, signal);
+		return this.commitRecord(input.target, baseline, sceneState, input.model, signal, input.rebuildCache ?? true);
 	}
 
 	/**
@@ -379,6 +382,7 @@ export class SceneTrackerService {
 		sceneState: Record<string, unknown>,
 		model: string | null,
 		signal: AbortSignal | undefined,
+		rebuildCache = true,
 	): Promise<SceneTrackerRecord> {
 		return this.commitCoordinator.run(target.variantId as string, async () => {
 			signal?.throwIfAborted();
@@ -413,6 +417,7 @@ export class SceneTrackerService {
 				generatedAt: new Date().toISOString() as Timestamp,
 			};
 			await this.stores.messages.setSceneRecord(target.variantId, record);
+			if (rebuildCache) await this.rebuildCache(target.chatId);
 			return record;
 		});
 	}
@@ -449,6 +454,7 @@ export class SceneTrackerService {
 				generatedAt: new Date().toISOString() as Timestamp,
 			};
 			await this.stores.messages.setSceneRecord(target.variantId, record);
+			await this.rebuildCache(target.chatId);
 			return record;
 		});
 	}
@@ -457,7 +463,20 @@ export class SceneTrackerService {
 	async deleteScene(target: SceneTarget): Promise<void> {
 		return this.commitCoordinator.run(target.variantId as string, async () => {
 			await this.stores.messages.clearSceneRecord(target.variantId);
+			await this.rebuildCache(target.chatId);
 		});
+	}
+
+	/** Rebuild the derived current-Scene cache after a canonical record mutation
+	 *  (generate/edit/delete). The cache is a non-authoritative mirror; a rebuild
+	 *  failure must NEVER propagate or remove a canonical record — it is logged and
+	 *  swallowed so the mutation itself always succeeds. (SCENE_TRACKER_STATE_LIFECYCLE step 7.) */
+	private async rebuildCache(chatId: ChatId): Promise<void> {
+		try {
+			await rebuildCurrentSceneCache(this.stores, chatId);
+		} catch (error: unknown) {
+			logSendDebug("insights.scene.cache.rebuild.failed", { chatId, message: errorMessage(error) });
+		}
 	}
 
 	/**
@@ -656,7 +675,7 @@ export class SceneTrackerService {
 	 * (generateScene overwrites only on success). Mirrors {@link startAutoGenerate}'s
 	 * setup but does NOT swallow — this is an explicit user action.
 	 */
-	async generateForTarget(target: SceneTarget, signal?: AbortSignal): Promise<SceneTrackerRecord> {
+	async generateForTarget(target: SceneTarget, signal?: AbortSignal, rebuildCache = true): Promise<SceneTrackerRecord> {
 		const config = await this.getConfig(target.chatId);
 		const resolved = await this.resolveSceneProvider(config);
 		if (!resolved) {
@@ -675,6 +694,7 @@ export class SceneTrackerService {
 			model: resolved.model,
 			context: built.context,
 			continuity,
+			rebuildCache,
 			signal,
 		});
 	}
@@ -977,6 +997,10 @@ export class SceneTrackerService {
 			logSendDebug("insights.scene.backfill.error", { runId, message: errorMessage(error) });
 			await this.stores.messages.updateSceneBackfillRun(runId, { status: "failed" }).catch(() => undefined);
 		} finally {
+			// One cache rebuild for the whole run (per-item rebuilds are suppressed in
+			// processBackfillItem); the cache mirrors the latest selected record
+			// regardless of which older targets backfill regenerated.
+			await this.rebuildCache(chatId);
 			this.activeBackfills.delete(runId);
 			this.currentBackfillItem.delete(runId);
 		}
@@ -1025,7 +1049,7 @@ export class SceneTrackerService {
 				messageId: brandId<MessageId>(item.messageId),
 				variantId: brandId<MessageVariantId>(item.variantId),
 			};
-			await this.generateForTarget(target, signal);
+			await this.generateForTarget(target, signal, false); // backfill rebuilds the cache once at run end
 			return {};
 		} catch (error: unknown) {
 			if (signal.aborted || error instanceof SceneTargetCancelledError) return { cancelled: true };
