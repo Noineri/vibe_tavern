@@ -132,6 +132,11 @@ export interface AssemblePromptForChatInput {
   model: string;
   recentMessageLimit?: number;
   excludeMessageIds?: MessageId[];
+  /** Bound the message window to the branch PREFIX through this message inclusive
+   *  (no future turns). Used by Scene history backfill so each target is generated
+   *  from only the history that preceded it. When set, the global last-user-turn
+   *  re-add is suppressed (the target's turn is the natural end of the window). */
+  throughMessageId?: MessageId;
   contextBudget?: number | null;
   /** Tokens reserved for the model's response. Subtracted from contextBudget during compaction. */
   responseReserve?: number;
@@ -372,6 +377,17 @@ export class PromptAssemblyService {
       promptPresetResolved: promptPreset ? { id: promptPreset.id, name: promptPreset.name, systemLength: promptPreset.text.length } : null,
     });
     const excludedMessageIds = new Set(input.excludeMessageIds ?? []);
+    // Scene history backfill: bound the window to the branch prefix through the
+    // target message inclusive, so each target is generated from only the history
+    // that preceded it (no future-turn bleed). When set, the target's turn is the
+    // natural end of the window.
+    const prefixBound = (() => {
+      if (!input.throughMessageId) return false;
+      const idx = branchMessages.findIndex((message) => message.id === input.throughMessageId);
+      if (idx < 0) return false;
+      for (const message of branchMessages.slice(idx + 1)) excludedMessageIds.add(message.id as MessageId);
+      return true;
+    })();
     const branchSummaries = input.summary
       ? []
       : await this.stores.chatSummaries.listByChatBranch(chat.id, branchId);
@@ -389,7 +405,7 @@ export class PromptAssemblyService {
     // Send/regenerate require the final user turn even when history filters
     // omit it. Summary callers instead choose an exact range and append their
     // own synthetic final user instruction after assembly, so exclusions win.
-    const lastUserMsg = input.summary
+    const lastUserMsg = (input.summary || prefixBound)
       ? undefined
       : [...branchMessages].reverse().find((message) => message.role === "user");
     const ensureLastUser = lastUserMsg && !filteredMessages.some((message) => message.id === lastUserMsg.id)

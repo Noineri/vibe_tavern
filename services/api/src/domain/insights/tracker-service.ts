@@ -699,7 +699,7 @@ export class SceneTrackerService {
 	 * (generateScene overwrites only on success). Mirrors {@link startAutoGenerate}'s
 	 * setup but does NOT swallow — this is an explicit user action.
 	 */
-	async generateForTarget(target: SceneTarget, signal?: AbortSignal, rebuildCache = true): Promise<SceneTrackerRecord> {
+	async generateForTarget(target: SceneTarget, signal?: AbortSignal, rebuildCache = true, throughMessageId?: MessageId): Promise<SceneTrackerRecord> {
 		const config = await this.getConfig(target.chatId);
 		const resolved = await this.resolveSceneProvider(config);
 		if (!resolved) {
@@ -711,6 +711,7 @@ export class SceneTrackerService {
 			branchId: target.branchId,
 			model: resolved.model,
 			recentMessageLimit: config.contextWindow,
+			...(throughMessageId ? { throughMessageId } : {}),
 		});
 		return this.generateScene({
 			target,
@@ -1073,7 +1074,7 @@ export class SceneTrackerService {
 				messageId: brandId<MessageId>(item.messageId),
 				variantId: brandId<MessageVariantId>(item.variantId),
 			};
-			await this.generateForTarget(target, signal, false); // backfill rebuilds the cache once at run end
+			await this.generateForTarget(target, signal, false, target.messageId); // backfill: prefix-bound context + rebuild once at run end
 			return {};
 		} catch (error: unknown) {
 			if (signal.aborted || error instanceof SceneTargetCancelledError) return { cancelled: true };

@@ -408,3 +408,56 @@ describe("PromptAssemblyService ranged summaries", () => {
     expect(chatContents).toContain("Message 81");
   });
 });
+
+describe("PromptAssemblyService prefix-bound window (Scene backfill — SCENE_TRACKER_STATE_LIFECYCLE step 4)", () => {
+  // a1(greeting), u1, a2, u2, a3, u3(FUTURE). Backfill targets the assistant
+  // turns msg_1/msg_3/msg_5 in order; each context must end at its own target.
+  const messages = [
+    { id: "msg_1", position: 0, role: "assistant" as const, content: "Backfill turn 1 — greeting", branchId: "branch_1" },
+    { id: "msg_2", position: 1, role: "user" as const, content: "Backfill turn 2 — user", branchId: "branch_1" },
+    { id: "msg_3", position: 2, role: "assistant" as const, content: "Backfill turn 3 — assistant", branchId: "branch_1" },
+    { id: "msg_4", position: 3, role: "user" as const, content: "Backfill turn 4 — user", branchId: "branch_1" },
+    { id: "msg_5", position: 4, role: "assistant" as const, content: "Backfill turn 5 — assistant", branchId: "branch_1" },
+    { id: "msg_6", position: 5, role: "user" as const, content: "Backfill turn 6 — FUTURE", branchId: "branch_1" },
+  ];
+
+  async function boundedWindow(throughMessageId: MessageId, recentMessageLimit?: number): Promise<string[]> {
+    const service = makeFilterService([], { messages });
+    const result = await service.assembleForChat({
+      chatId: "chat_1" as ChatId,
+      model: "test-model",
+      throughMessageId,
+      ...(recentMessageLimit === undefined ? {} : { recentMessageLimit }),
+    });
+    return (result.prompt.finalPayload as { messages: Array<{ content: string }> }).messages
+      .map((message) => message.content)
+      .filter((content) => content.startsWith("Backfill turn"));
+  }
+
+  it("builds progressive 1-message → 3-message → bounded-prefix contexts without future turns", async () => {
+    expect(await boundedWindow("msg_1" as MessageId)).toEqual([
+      "Backfill turn 1 — greeting",
+    ]);
+    expect(await boundedWindow("msg_3" as MessageId)).toEqual([
+      "Backfill turn 1 — greeting",
+      "Backfill turn 2 — user",
+      "Backfill turn 3 — assistant",
+    ]);
+    // contextWindow=3 is applied AFTER prefixing through msg_5: keep turns 3–5,
+    // never append the global last-user turn msg_6 from the future.
+    expect(await boundedWindow("msg_5" as MessageId, 3)).toEqual([
+      "Backfill turn 3 — assistant",
+      "Backfill turn 4 — user",
+      "Backfill turn 5 — assistant",
+    ]);
+  });
+
+  it("without throughMessageId the normal window still includes the latest user turn", async () => {
+    const service = makeFilterService([], { messages });
+    const result = await service.assembleForChat({ chatId: "chat_1" as ChatId, model: "test-model" });
+    const contents = (result.prompt.finalPayload as { messages: Array<{ content: string }> }).messages
+      .map((message) => message.content)
+      .join("\n");
+    expect(contents).toContain("Backfill turn 6 — FUTURE");
+  });
+});

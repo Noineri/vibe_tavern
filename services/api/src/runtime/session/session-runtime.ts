@@ -184,6 +184,7 @@ export function pickBootstrapChatId<T extends string>(
 					model: opts?.model ?? "",
 					...(opts?.recentMessageLimit !== undefined ? { recentMessageLimit: opts.recentMessageLimit } : {}),
 					contextBudget: opts?.contextBudget ?? null,
+					...(opts?.throughMessageId ? { throughMessageId: opts.throughMessageId } : {}),
 				}),
 		});
 		this.character = new CharacterRuntime({
