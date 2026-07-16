@@ -82,6 +82,8 @@ describe("profile-md: MD → Form → MD (canonical stability)", () => {
   });
 
   it("parses a hand-authored canonical document back to identical MD", () => {
+    // The stable skeleton always emits all three prose headings; a hand-authored
+    // doc that omits EXAMPLES is canonicalized to add the bare heading.
     const handAuthored = [
       "---",
       "name: Andrea",
@@ -96,6 +98,8 @@ describe("profile-md: MD → Form → MD (canonical stability)", () => {
       "",
       "# SCENARIO",
       "A VIP host club fronting for trafficking.",
+      "",
+      "# EXAMPLES",
     ].join("\n");
     const reSerialized = serializeProfileMd(parseProfileMd(handAuthored));
     expect(reSerialized).toBe(handAuthored + "\n");
@@ -141,16 +145,34 @@ describe("profile-md: prose-only contract (functional sections are not emitted)"
 // ─── Canonical emission ────────────────────────────────────────────────────
 
 describe("profile-md: canonical emission", () => {
-  it("omits empty optionals (no tags/creator/scenario/etc lines)", () => {
+  it("omits empty frontmatter optionals but always emits the prose skeleton", () => {
+    // Frontmatter optionals are still omitted when empty.
     const md = serializeProfileMd(minimalProfile());
     expect(md).not.toContain("tags:");
     expect(md).not.toContain("creator:");
     expect(md).not.toContain("character_version:");
     expect(md).not.toContain("creator_notes:");
-    expect(md).not.toContain("# SCENARIO");
-    expect(md).not.toContain("# EXAMPLES");
-    // PERSONALITY is always present (required description).
-    expect(md).toContain("# PERSONALITY");
+    // The prose skeleton is ALWAYS complete: all three H1 headings in fixed
+    // order, even when SCENARIO/EXAMPLES bodies are empty (bare headings).
+    const headings = md.split("\n").filter((l) => /^# /.test(l)).map((l) => l.slice(2));
+    expect(headings).toEqual(["PERSONALITY", "SCENARIO", "EXAMPLES"]);
+    // Empty SCENARIO body is a bare heading (no body line before # EXAMPLES).
+    const scenarioIdx = md.indexOf("# SCENARIO");
+    const between = md.slice(scenarioIdx + "# SCENARIO".length, md.indexOf("# EXAMPLES"));
+    expect(between.trim()).toBe("");
+    // Empty EXAMPLES body is a bare heading at the end of the document.
+    const examplesIdx = md.indexOf("# EXAMPLES");
+    expect(md.slice(examplesIdx + "# EXAMPLES".length).trim()).toBe("");
+  });
+
+  it("round-trips an empty-optional profile through the stable skeleton losslessly", () => {
+    // Bare SCENARIO/EXAMPLES headings parse back to null and re-emit as bare
+    // headings — the skeleton is stable across MD → Form → MD.
+    const md = serializeProfileMd(minimalProfile());
+    expect(serializeProfileMd(parseProfileMd(md))).toBe(md);
+    const parsed = parseProfileMd(md);
+    expect(parsed.profile.scenario).toBeNull();
+    expect(parsed.profile.mesExample).toBeNull();
   });
 
   it("always emits # PERSONALITY even with an empty body (Threat 2 pinning)", () => {
@@ -161,10 +183,13 @@ describe("profile-md: canonical emission", () => {
       profile: { ...minimalProfile().profile, description: "" },
     });
     expect(md).toContain("# PERSONALITY");
-    // The body under the heading is empty (next line is EOF or another heading).
+    // The body directly under the heading is empty — the next thing is the
+    // following stable-skeleton heading (SCENARIO), not a body line.
     const personalityIdx = md.indexOf("# PERSONALITY");
-    const afterHeading = md.slice(personalityIdx + "# PERSONALITY".length);
-    expect(afterHeading.trim()).toBe("");
+    const rest = md.slice(personalityIdx + "# PERSONALITY".length);
+    const nextHeadingIdx = rest.indexOf("# ");
+    const bodyUntilNext = rest.slice(0, nextHeadingIdx);
+    expect(bodyUntilNext.trim()).toBe("");
     // Round-trip: bare heading → empty description.
     const back = parseProfileMd(md);
     expect(back.profile.description).toBe("");

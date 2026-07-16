@@ -145,8 +145,12 @@ const EMPTY_EXTENSIONS_JSON = "{}\n";
 
 /**
  * Serialize a character's content fields into the canonical monolith exchange
- * document. Optional sections are omitted when empty; the `vtf-extensions`
- * fence is omitted when the (creator/version-stripped) extensions blob is empty.
+ * document. The prose skeleton (PERSONALITY/SCENARIO/EXAMPLES) is ALWAYS
+ * emitted (inherited from `serializeProfileMd`, including bare headings for
+ * empty optional sections); the FUNCTIONAL optional sections (SYSTEM,
+ * POST-HISTORY, DEPTH PROMPT, GREETINGS) are omitted when empty, as is the
+ * `vtf-extensions` fence when the (creator/version-stripped) extensions blob
+ * is empty.
  */
 export function packMonolith(character: VtfCharacterContent): string {
   const profile = profileFromCharacter(character);

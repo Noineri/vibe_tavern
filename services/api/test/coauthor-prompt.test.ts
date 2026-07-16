@@ -2,6 +2,7 @@ import { describe, test, expect, mock, beforeEach } from "bun:test";
 import type { ChatModeAssembleInput, ChatModeAssembleLoaders } from "../src/domain/chat/chat-mode-strategy.js";
 import { assembleCoauthorPrompt } from "../src/domain/chat/coauthor-prompt.js";
 import type { Character, Message as DbMessage, Chat as DbChat } from "@vibe-tavern/db";
+import { serializeProfileMd } from "@vibe-tavern/db";
 
 /**
  * Co-Author assembly characterization. Pins what the model + frontend can
@@ -113,6 +114,46 @@ describe("assembleCoauthorPrompt", () => {
     expect(system).toContain("ALT ONE");
     expect(system).toContain("PRIMARY (firstMessage)");
     expect(system).toContain("ALT 1");
+  });
+
+  test("CED-1: model-facing profile exposes the stable three-heading skeleton even when SCENARIO/EXAMPLES are empty", async () => {
+    // Storage writes `profile.md` via serializeProfileMd, which now ALWAYS emits
+    // PERSONALITY/SCENARIO/EXAMPLES (bare headings for empty optionals). The
+    // co-author prompt embeds that storage text verbatim (renderCurrentCard),
+    // so the model must see all three headings — never a profile shape that
+    // hides empty optional sections the editor exposes.
+    const profileMd = serializeProfileMd({
+      profile: {
+        name: "Test",
+        tags: [],
+        creator: null,
+        characterVersion: null,
+        creatorNotes: null,
+        mesExampleMode: "always",
+        mesExampleDepth: 4,
+        description: "A test character.",
+        scenario: null,
+        mesExample: null,
+      },
+    });
+    // Sanity: the storage text itself carries the stable skeleton.
+    expect(profileMd).toContain("# PERSONALITY");
+    expect(profileMd).toContain("# SCENARIO");
+    expect(profileMd).toContain("# EXAMPLES");
+
+    const loaders = makeLoaders({ profileMd });
+    const result = await assembleCoauthorPrompt(makeInput(loaders));
+    const system = (result.prompt.finalPayload as { messages: Array<{ content: string }> }).messages[0].content;
+
+    // All three prose headings reach the model verbatim, in canonical order.
+    expect(system).toContain("# PERSONALITY");
+    expect(system).toContain("# SCENARIO");
+    expect(system).toContain("# EXAMPLES");
+    const persIdx = system.indexOf("# PERSONALITY");
+    const scenIdx = system.indexOf("# SCENARIO");
+    const exIdx = system.indexOf("# EXAMPLES");
+    expect(scenIdx).toBeGreaterThan(persIdx);
+    expect(exIdx).toBeGreaterThan(scenIdx);
   });
 
   test("loads the general-writing skill", async () => {

@@ -157,8 +157,11 @@ function emitSection(heading: string, body: string): string {
  * Emit the canonical editor MD body for a draft. The body carries the FOUR H1
  * sections as a STABLE SKELETON — PERSONALITY / SCENARIO / EXAMPLES / GREETINGS
  * are ALWAYS emitted (even when empty), so the user always sees four locked
- * headings. This is an editor-only concern: STORAGE (`profile.md` via the db
- * codec) still omits empty SCENARIO/EXAMPLES; only the editor view pads them.
+ * headings. This now AGREES with storage: the db codec (`serializeProfileMd`)
+ * also always emits PERSONALITY/SCENARIO/EXAMPLES (bare headings for empty
+ * optionals), so the editor view and `profile.md` expose the same prose
+ * skeleton. `# GREETINGS` remains editor-only (a view of the `greetings/`
+ * folder, not a `profile.md` section).
  * `parseProfileMd` is tolerant of empty sections (parses to null → empty field),
  * so the round-trip `draftToBody → applyBodyToDraft → draftToBody` is stable.
  *

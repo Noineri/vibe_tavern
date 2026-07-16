@@ -28,7 +28,9 @@
  *  - `Form → MD → Form` produces identical field values.
  *  - `MD → Form → MD` produces textually identical MD after canonicalization
  *    (canonical frontmatter key order, canonical heading order, single blank
- *    line between sections, empty optionals omitted).
+ *    line between sections, stable three-heading prose skeleton —
+ *    PERSONALITY/SCENARIO/EXAMPLES are ALWAYS emitted, even when an optional
+ *    section body is empty, as a bare heading).
  */
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -525,25 +527,25 @@ function serializeFrontmatter(input: ProfileMd): string[] {
 function serializeBody(input: ProfileMd): string[] {
   const p = input.profile;
   const lines: string[] = [];
-  // PERSONALITY is ALWAYS emitted (required section — Threat 2 structural
-  // pinning guarantee: a missing/renamed/broken heading must self-heal on
-  // save). An empty body is emitted as a bare heading so round-trip of an
-  // empty description stays lossless (`# PERSONALITY` with no body parses back
-  // to empty `description`). SCENARIO/EXAMPLES are optional — omitted when empty.
-  lines.push("");
-  lines.push("# PERSONALITY");
-  if (p.description.trim().length > 0) {
-    lines.push(p.description.replace(/^\n+|\n+$/g, ""));
-  }
-  const optional: { heading: string; body: string | null }[] = [
+  // The three prose H1 sections form a STABLE skeleton — ALWAYS emitted in
+  // fixed canonical order, even when a section body is empty (bare heading).
+  // This aligns storage `profile.md`, the model-facing co-author context, the
+  // build editor, and the `vtmd` monolith exchange chunk on one structure, so
+  // the model never sees a profile shape the editor/storage hides. An empty
+  // body → bare heading → parses back to null/empty (description "" for
+  // PERSONALITY, null for the optionals): lossless round-trip. This also
+  // preserves the Threat 2 self-heal guarantee for a missing/renamed heading.
+  const sections: { heading: string; body: string | null }[] = [
+    { heading: "PERSONALITY", body: p.description },
     { heading: "SCENARIO", body: p.scenario },
     { heading: "EXAMPLES", body: p.mesExample },
   ];
-  for (const section of optional) {
-    if (section.body && section.body.trim().length > 0) {
-      lines.push("");
-      lines.push(`# ${section.heading}`);
-      lines.push(section.body.replace(/^\n+|\n+$/g, ""));
+  for (const section of sections) {
+    lines.push("");
+    lines.push(`# ${section.heading}`);
+    const body = section.body ?? "";
+    if (body.trim().length > 0) {
+      lines.push(body.replace(/^\n+|\n+$/g, ""));
     }
   }
   for (const u of input.unknownSections ?? []) {

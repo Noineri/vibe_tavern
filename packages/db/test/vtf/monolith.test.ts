@@ -98,11 +98,16 @@ describe("monolith: pack structure", () => {
     expect(md).not.toMatch(/"character_version"/);
   });
 
-  it("omits optional sections + the fence on a minimal character", () => {
+  it("omits optional functional sections + the fence on a minimal character", () => {
+    // The prose skeleton (PERSONALITY/SCENARIO/EXAMPLES) is ALWAYS emitted by
+    // serializeProfileMd — including bare headings for empty SCENARIO/EXAMPLES
+    // — so the monolith inherits the stable skeleton. The FUNCTIONAL optional
+    // sections (SYSTEM/POST-HISTORY/DEPTH PROMPT/GREETINGS) are still omitted
+    // when empty, as is the extensions fence.
     const md = packMonolith(minimalCharacter());
     expect(md).toContain("# PERSONALITY");
-    expect(md).not.toContain("# SCENARIO");
-    expect(md).not.toContain("# EXAMPLES");
+    expect(md).toContain("# SCENARIO");
+    expect(md).toContain("# EXAMPLES");
     expect(md).not.toContain("# SYSTEM");
     expect(md).not.toContain("# POST-HISTORY");
     expect(md).not.toContain("# DEPTH PROMPT");

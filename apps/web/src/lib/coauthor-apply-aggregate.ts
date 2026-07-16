@@ -205,8 +205,10 @@ export function buildPartialApplyRequest(
 				...parsed.profile,
 				description: mergedProse.description,
 				// The editor body codec uses empty-string for an absent optional section;
-				// the profile-md codec uses null. Translate so re-serialization omits
-				// empty sections (matching canonical emission), not `# SCENARIO` + "".
+				// the profile-md codec uses null. Translate so the in-memory profile
+				// stays canonical (absent = null). The serialized skeleton is stable
+				// either way: null and empty-string both emit a bare `# SCENARIO` /
+				// `# EXAMPLES` heading (see serializeProfileMd).
 				scenario: mergedProse.scenario.trim() ? mergedProse.scenario : null,
 				mesExample: mergedProse.mesExample.trim() ? mergedProse.mesExample : null,
 			},
