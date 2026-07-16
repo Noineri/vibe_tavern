@@ -1,8 +1,7 @@
 import { useState, useMemo } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { registerMessageSlot, type MessageSlotContext } from "../../lib/message-slot-registry.js";
-import { useCoauthorTurnStore, type CoauthorToolActivity } from "../../stores/coauthor-turn-store.js";
-import type { CoauthorTarget } from "@vibe-tavern/api-contracts";
+import { useCoauthorTurnStore, extractPersistedCoauthorActivities, type CoauthorToolActivity } from "../../stores/coauthor-turn-store.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
 import type { AppMessage } from "../../app-client.js";
 import { Icons } from "../shared/icons.js";
@@ -77,30 +76,20 @@ function CoauthorToolActivitySlot({
     }
     return out.length > 0 ? out : EMPTY_MSGS;
   }));
-  // A persisted tool message's content is the JSON the backend wrote from the
-  // tool's execute() output (coauthorToolOutputSchema: summary/proposed/target).
-  // It may also be a plain string if the result wasn't an object — the catch
-  // wraps that as a summary so the card still renders something useful.
+  // The carrier assistant message for this bubble — its persisted `toolCalls`
+  // entry carries the canonical tool name AND the operation input (args) that a
+  // result-only parse cannot recover. Ref-stable (Immer structurally shared).
+  const assistantMessage = useSnapshotStore(useShallow((s): AppMessage | undefined => s.messagesById[messageId]));
+  // Reloaded/review cards reconstruct from the SAME extractor the non-streaming
+  // hydration path uses (chat-actions.syncCommittedCoauthorTurn), so in-session
+  // and reloaded cards agree on one reconstruction contract: the carrier
+  // assistant + its trailing tool rows. With no user message in this slice the
+  // extractor treats the whole slice as the turn, recovering name+args from the
+  // assistant toolCalls and the result fields from the tool rows.
   const persistedActivities = useMemo<CoauthorToolActivity[]>(() => {
-    type PersistedToolResult = { summary?: string; proposed?: string; target?: CoauthorTarget };
-    return trailingToolMessages.map((m) => {
-      let output: PersistedToolResult = {};
-      try {
-        const parsed: unknown = JSON.parse(m.content);
-        output = (parsed && typeof parsed === "object") ? parsed as PersistedToolResult : { summary: m.content };
-      } catch {
-        output = { summary: m.content };
-      }
-      return {
-        toolCallId: m.toolCallId || m.id,
-        toolName: "",
-        status: "done",
-        summary: output.summary,
-        proposed: output.proposed,
-        target: output.target,
-      };
-    });
-  }, [trailingToolMessages]);
+    if (!assistantMessage) return EMPTY;
+    return extractPersistedCoauthorActivities([assistantMessage, ...trailingToolMessages]);
+  }, [assistantMessage, trailingToolMessages]);
 
   const activities = useMemo(() => {
     const map = new Map<string, CoauthorToolActivity>();

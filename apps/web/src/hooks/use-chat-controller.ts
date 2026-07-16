@@ -234,9 +234,14 @@ export function useChatController(): ChatControllerActions {
           // Reasoning complete — text stays until snapshot refresh
         },
         onToolCall: (info) => {
+          // Capture the full operation INPUT (args) here — onToolCall fires once
+          // the call's args are complete, before execution. onToolResult later
+          // merges result fields without erasing args (CED-5), so the activity
+          // carries both the input and the cumulative output for the operation card.
           useCoauthorTurnStore.getState().upsertActivity(chatId, {
             toolCallId: info.toolCallId,
             toolName: info.toolName,
+            args: info.args,
             status: "streaming",
           });
         },

@@ -100,6 +100,10 @@ describe("committed assistant completion refresh", () => {
   });
 
   test("hydrates committed co-author proposals after a non-streaming send", async () => {
+    // The carrier toolCall carries the operation INPUT (args); the non-streaming
+    // hydration path (syncCommittedCoauthorTurn → extractPersistedCoauthorActivities)
+    // must reconstruct the SAME name+input+output shape the streaming path builds.
+    const editArgs = { edits: [{ search: "old", replace: "new" }], summary: "Updated examples" };
     const snapshot = {
       activeChat: { id: chatId("chat-1"), characterId: characterId("char-1"), mode: "coauthor" },
       messages: [
@@ -108,7 +112,7 @@ describe("committed assistant completion refresh", () => {
           id: "assistant_call",
           role: "assistant",
           content: "",
-          toolCalls: [{ id: "call_1", name: "edit_examples", args: {} }],
+          toolCalls: [{ id: "call_1", name: "edit_examples", args: editArgs }],
         },
         {
           id: "tool_1",
@@ -135,6 +139,7 @@ describe("committed assistant completion refresh", () => {
     expect(useCoauthorTurnStore.getState().getActivities("chat-1")).toEqual([{
       toolCallId: "call_1",
       toolName: "edit_examples",
+      args: editArgs,
       status: "done",
       target: "profile",
       proposed: "# EXAMPLES\nUpdated",

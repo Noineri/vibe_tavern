@@ -35,6 +35,7 @@ describe("useCoauthorTurnStore", () => {
     expect(extractPersistedCoauthorActivities(messages)).toEqual([{
       toolCallId: "call_new",
       toolName: "edit_examples",
+      args: {},
       status: "done",
       target: "profile",
       proposed: "# EXAMPLES\nUpdated",
@@ -42,6 +43,56 @@ describe("useCoauthorTurnStore", () => {
       greetingIndex: undefined,
       isAdd: undefined,
     }]);
+  });
+
+  it("retains the operation input (args) for edit and write tools", () => {
+    // The carrier assistant toolCalls entry carries the operation INPUT (args);
+    // the extractor correlates it with the tool result so a later operation card
+    // can render a scoped SEARCH/REPLACE or section-write preview.
+    const editArgs = { edits: [{ search: "old", replace: "new" }], summary: "swap" };
+    const writeArgs = { content: "# fresh body", summary: "fill scenario" };
+    const messages = [
+      { id: "user_new", role: "user", content: "work" },
+      {
+        id: "assistant_call",
+        role: "assistant",
+        content: "",
+        toolCalls: [
+          { id: "call_edit", name: "edit_personality", args: editArgs },
+          { id: "call_write", name: "write_scenario", args: writeArgs },
+        ],
+      },
+      { id: "tool_edit", role: "tool", toolCallId: "call_edit", content: JSON.stringify({ target: "profile", proposed: "---\nname: A\n---\n# PERSONALITY\nnew", summary: "swap" }) },
+      { id: "tool_write", role: "tool", toolCallId: "call_write", content: JSON.stringify({ target: "profile", proposed: "---\nname: A\n---\n# SCENARIO\n# fresh body", summary: "fill scenario" }) },
+    ] as AppMessage[];
+
+    const acts = extractPersistedCoauthorActivities(messages);
+    expect(acts).toHaveLength(2);
+    expect(acts[0]).toMatchObject({ toolCallId: "call_edit", toolName: "edit_personality", args: editArgs });
+    expect(acts[1]).toMatchObject({ toolCallId: "call_write", toolName: "write_scenario", args: writeArgs });
+  });
+
+  it("a historical result without a matching carrier call renders with no name/args", () => {
+    // Old rows whose assistant toolCalls entry is missing still render safely —
+    // they just carry an empty name and no input preview.
+    const messages = [
+      { id: "user_new", role: "user", content: "work" },
+      { id: "orphan_tool", role: "tool", toolCallId: "call_orphan", content: JSON.stringify({ target: "profile", proposed: "---\nname: A\n---\n# PERSONALITY\nX", summary: "orphan" }) },
+    ] as AppMessage[];
+
+    const acts = extractPersistedCoauthorActivities(messages);
+    expect(acts).toHaveLength(1);
+    expect(acts[0]).toEqual({
+      toolCallId: "call_orphan",
+      toolName: "",
+      args: undefined,
+      status: "done",
+      target: "profile",
+      proposed: "---\nname: A\n---\n# PERSONALITY\nX",
+      summary: "orphan",
+      greetingIndex: undefined,
+      isAdd: undefined,
+    });
   });
 
   it("normalizes the legacy `edit_profile` tool name to `write_profile` on reload", () => {
@@ -107,6 +158,27 @@ describe("useCoauthorTurnStore", () => {
       proposed: "---\nname: A\n---\n# PERSONALITY\nBold.",
       summary: "Made the personality more assertive.",
     });
+  });
+
+  it("a tool-result merge preserves the args captured by the earlier tool-call event", () => {
+    // Streaming path: onToolCall captures args; onToolResult later merges result
+    // fields without re-passing args. The store's merge-by-toolCallId must not
+    // erase the already-captured input (CED-5).
+    const store = useCoauthorTurnStore.getState();
+    const editArgs = { edits: [{ search: "a", replace: "b" }], summary: "s" };
+    store.upsertActivity("chat_1", { toolCallId: "call_1", toolName: "edit_personality", args: editArgs, status: "streaming" });
+    store.upsertActivity("chat_1", {
+      toolCallId: "call_1",
+      toolName: "edit_personality",
+      status: "done",
+      target: "profile",
+      proposed: "---\nname: A\n---\n# PERSONALITY\nb",
+      summary: "s",
+    });
+    const acts = useCoauthorTurnStore.getState().getActivities("chat_1");
+    expect(acts).toHaveLength(1);
+    expect(acts[0].args).toStrictEqual(editArgs);
+    expect(acts[0].status).toBe("done");
   });
 
   it("clearTurn drops the chat's activities", () => {

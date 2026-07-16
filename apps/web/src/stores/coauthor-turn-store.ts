@@ -42,6 +42,13 @@ export interface CoauthorToolActivity {
   toolCallId: string;
   toolName: string;
   status: CoauthorToolStatus;
+  /** Opaque tool-call args — the operation INPUT (edits / content / profileMd /
+   * index+content for greetings). Captured from the streaming `onToolCall` event
+   * and from the persisted assistant `toolCalls` entry on reload, so a later
+   * operation card (CED-6) can render a scoped SEARCH/REPLACE or section-write
+   * preview instead of only the cumulative `proposed`. `undefined` for
+   * historical rows whose carrier assistant call is missing. */
+  args?: unknown;
   /** From CoauthorToolOutput — populated on tool-result. */
   summary?: string;
   target?: CoauthorTarget;
@@ -67,14 +74,19 @@ export function extractPersistedCoauthorActivities(
   }
 
   const turnMessages = messages.slice(latestUserIndex + 1);
-  const toolNameById = new Map<string, string>();
+  // Correlate each tool RESULT with its carrier assistant toolCall entry to
+  // recover both the canonical tool name and the operation INPUT (args). A
+  // result without a matching call (a malformed/historical row) still renders —
+  // it just carries no name/args preview.
+  const toolCallInfoById = new Map<string, { name: string; args: unknown }>();
   for (const message of turnMessages) {
     for (const toolCall of message.toolCalls ?? []) {
       // Legacy alias: `edit_profile` was renamed to `write_profile` (whole-
       // document write). Historical committed turns still carry the old name;
       // normalize on reload so the activity store always reflects the canonical
       // tool name the current label/render map expects.
-      toolNameById.set(toolCall.id, toolCall.name === "edit_profile" ? "write_profile" : toolCall.name);
+      const name = toolCall.name === "edit_profile" ? "write_profile" : toolCall.name;
+      toolCallInfoById.set(toolCall.id, { name, args: toolCall.args });
     }
   }
 
@@ -82,6 +94,7 @@ export function extractPersistedCoauthorActivities(
   for (const message of turnMessages) {
     if (message.role !== "tool") continue;
     const toolCallId = message.toolCallId ?? message.id;
+    const info = toolCallInfoById.get(toolCallId);
     let rawOutput: unknown;
     try {
       rawOutput = JSON.parse(message.content);
@@ -91,7 +104,8 @@ export function extractPersistedCoauthorActivities(
     const output = coauthorToolOutputSchema.safeParse(rawOutput);
     activities.push({
       toolCallId,
-      toolName: toolNameById.get(toolCallId) ?? "",
+      toolName: info?.name ?? "",
+      args: info?.args,
       status: output.success ? "done" : "error",
       ...(output.success
         ? {
