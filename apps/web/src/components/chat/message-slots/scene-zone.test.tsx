@@ -37,6 +37,7 @@ const mocks = vi.hoisted(() => ({
   deleteSceneAction: vi.fn(),
   cancelSceneAction: vi.fn(),
   getSceneStatusAction: vi.fn().mockResolvedValue({ generating: false, record: null }),
+  startInsightsCompletionRefresh: vi.fn(),
 }));
 
 vi.mock("../../../i18n/context.js", () => ({
@@ -51,6 +52,10 @@ vi.mock("../../../stores/api-actions/chat-actions.js", () => ({
   deleteSceneAction: mocks.deleteSceneAction,
   cancelSceneAction: mocks.cancelSceneAction,
   getSceneStatusAction: mocks.getSceneStatusAction,
+}));
+
+vi.mock("../../../stores/api-actions/insights-completion-actions.js", () => ({
+  startInsightsCompletionRefresh: mocks.startInsightsCompletionRefresh,
 }));
 
 // Stub Modal + BottomSheet chrome (Radix Dialog is heavy in happy-dom); both
@@ -148,6 +153,7 @@ afterEach(() => {
   mocks.editSceneAction.mockReset();
   mocks.deleteSceneAction.mockReset();
   mocks.cancelSceneAction.mockReset();
+  mocks.startInsightsCompletionRefresh.mockReset();
   mocks.getSceneStatusAction.mockReset();
   mocks.getSceneStatusAction.mockResolvedValue({ generating: false, record: null });
 });
@@ -300,6 +306,9 @@ describe("Scene zone component (SCN-12)", () => {
     // The store-marking is the action's own logic (mocked here); this pins the
     // zone's hydration BOUNDARY: it asks the server, for the latest variant.
     await vi.waitFor(() => expect(mocks.getSceneStatusAction).toHaveBeenCalledWith("chat-1", expect.objectContaining({ variantId: "v2" })));
+    // A positive hydration (server-owned job in flight) joins the completion-refresh
+    // so the generation flag clears when the job settles (step 6).
+    await vi.waitFor(() => expect(mocks.startInsightsCompletionRefresh).toHaveBeenCalledWith("chat-1", expect.objectContaining({ variantId: "v2" })));
   });
 
   it("does NOT hydrate status for an older message", () => {

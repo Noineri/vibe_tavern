@@ -49,6 +49,7 @@ import {
   cancelSceneAction,
   getSceneStatusAction,
 } from "../../../stores/api-actions/chat-actions.js";
+import { startInsightsCompletionRefresh } from "../../../stores/api-actions/insights-completion-actions.js";
 import { useT, type TFunc } from "../../../i18n/context.js";
 import { useIsMobile } from "../../../hooks/use-mobile.js";
 import { cn } from "../../../lib/cn.js";
@@ -155,11 +156,17 @@ function SceneZone({ chatId, messageId }: { chatId: string; messageId: string })
     let cancelled = false;
     void (async () => {
       try {
-        await getSceneStatusAction(objectiveChatId, targetOf(messageId, variantId, useSnapshotStore.getState()));
+        const target = targetOf(messageId, variantId, useSnapshotStore.getState());
+        const status = await getSceneStatusAction(objectiveChatId, target);
+        if (cancelled) return;
+        // A positive hydration (a server-owned job still in flight) joins the same
+        // completion-refresh the send path uses, so the generation flag clears when
+        // the job settles (step 6) — otherwise a reload/multi-tab spinner sticks
+        // until a manual Cancel.
+        if (status.generating) startInsightsCompletionRefresh(objectiveChatId, target);
       } catch {
         /* non-authoritative hydration; ignore */
       }
-      if (cancelled) return;
     })();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps

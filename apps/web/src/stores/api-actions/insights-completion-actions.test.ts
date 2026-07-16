@@ -8,6 +8,7 @@ import type {
   ObjectiveState,
 } from "../../app-client.js";
 import { useSnapshotStore } from "../snapshot-store.js";
+import { useSceneGenerationStore } from "../scene-generation-store.js";
 import {
   cancelInsightsCompletionRefresh,
   findInsightsCompletionTarget,
@@ -108,6 +109,7 @@ beforeEach(() => {
   mocks.refreshInsightsCompletion.mockReset();
   mocks.logClientSendDebug.mockReset();
   useSnapshotStore.getState().clear();
+  useSceneGenerationStore.getState().clearAll();
 });
 
 afterEach(() => {
@@ -326,6 +328,24 @@ describe("variant-aware completion refresh (SCN-10)", () => {
     oldGate.resolve({ target: { chatId, ...TARGET_A_VARIANT_A }, patch: { objectiveState: objective("Old variant") } });
     await expect(oldRefresh).resolves.toBe(false);
     expect(useSnapshotStore.getState().activeChat?.insightsObjectiveState?.objectiveDescription).toBe("Swiped variant");
+  });
+
+  test("clears the Scene generation flag for the target variant when the job settles (step 6)", async () => {
+    useSnapshotStore.getState().ingestSnapshot({
+      activeChat: { id: chatId, insightsConfig: { objectiveEnabled: true, trackerEnabled: true } } as NonNullable<AppSnapshot["activeChat"]>,
+      messages: [variantMessage(TARGET_A_VARIANT_A, VARIANT_A)],
+    });
+    useSceneGenerationStore.getState().markGenerating(VARIANT_A);
+    expect(useSceneGenerationStore.getState().generating.has(VARIANT_A)).toBe(true);
+
+    mocks.refreshInsightsCompletion.mockResolvedValueOnce({
+      target: { chatId, ...TARGET_A_VARIANT_A },
+      patch: { objectiveState: objective("Settled") },
+    });
+
+    await expect(refreshInsightsCompletionAction(chatId, TARGET_A_VARIANT_A)).resolves.toBe(true);
+    // The server-owned job settled → the spinner flag must clear without a manual Cancel.
+    expect(useSceneGenerationStore.getState().generating.has(VARIANT_A)).toBe(false);
   });
 
   test("preserves Objective-only behavior when the target carries no variantId", async () => {

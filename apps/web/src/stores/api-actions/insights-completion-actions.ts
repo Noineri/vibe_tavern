@@ -6,6 +6,7 @@ import {
   type InsightsCompletionTarget,
 } from "../../app-client.js";
 import { useSnapshotStore } from "../snapshot-store.js";
+import { useSceneGenerationStore } from "../scene-generation-store.js";
 
 interface PendingCompletionRefresh {
   controller: AbortController;
@@ -98,7 +99,17 @@ export async function refreshInsightsCompletionAction(
     ) {
       return false;
     }
-    return useSnapshotStore.getState().applyInsightsCompletionPatch(response);
+    const applied = useSnapshotStore.getState().applyInsightsCompletionPatch(response);
+    // The background insight job for this target has settled (success or failure).
+    // Clear its Scene generation flag so the spinner does not stick until a manual
+    // Cancel — this is the authoritative settle signal for server-owned generation
+    // (SCENE_TRACKER_STATE_LIFECYCLE step 6). Only reached when THIS waiter is still
+    // current (latest === pending, not aborted/superseded), so a stale waiter cannot
+    // clear another target's still-active flag.
+    if (response.target.variantId) {
+      useSceneGenerationStore.getState().clearGenerating(response.target.variantId);
+    }
+    return applied;
   } catch (error) {
     if (!controller.signal.aborted) {
       logClientSendDebug("web.insights.completion-refresh.error", {
