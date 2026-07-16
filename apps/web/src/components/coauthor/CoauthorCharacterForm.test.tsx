@@ -450,6 +450,55 @@ describe("CoauthorCharacterForm", () => {
 		expect(body).toContain("A forest cave at dusk.");
 	});
 
+	// ── CED-7: operation input (args) is display-only ────────────────────────
+	// CED-5/6 added the operation INPUT (`args`) to CoauthorToolActivity for the
+	// tool-card preview. This regression proves that metadata does NOT alter the
+	// reviewing overlay, hunk selection, or the Apply request: aggregation reads
+	// `proposed` only. An edit_personality activity (which carries SEARCH/REPLACE
+	// args) must behave exactly like a write_profile at the Apply boundary.
+
+	it("CED-7: an edit_personality carrying `args` does not leak operation input into the Apply request", async () => {
+		__isSending = false;
+		seedReviewing({ description: "A reserved arachnid weaver." });
+		// edit_personality returns a FULL cumulative profile.md (CED-2) and now
+		// also carries the operation INPUT (args) for the card preview (CED-5/6).
+		const proposed = [
+			"---", "name: Kira", "tags: []", "---", "",
+			"# PERSONALITY", "Bold and direct.", "",
+			"# SCENARIO", "A forest cave.", "",
+			"# EXAMPLES", "{{char}}: *tilts head*", "",
+		].join("\n");
+		useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, {
+			toolCallId: "t1", toolName: "edit_personality", status: "done", target: "profile",
+			proposed, summary: "sharpen personality",
+			args: { edits: [{ search: "A reserved arachnid weaver.", replace: "Bold and direct." }], summary: "sharpen personality" },
+		});
+
+		const fetchMock = vi.fn((_u: unknown, _i: unknown) =>
+			Promise.resolve({ ok: true, status: 200, json: async () => ({ character: makeCharacter({ description: "Bold and direct." }), corrections: [] }), text: async () => "" }),
+		);
+		globalThis.fetch = fetchMock as never;
+
+		const { container, getByText } = render(<CoauthorCharacterForm />);
+		// Reviewing entered; exactly one hunk (personality changed; scenario/examples match canonical).
+		expect(getByText("coauthor.review.state")).toBeTruthy();
+		expect(container.querySelectorAll('input[type="checkbox"]')).toHaveLength(1);
+
+		fireEvent.click(getByText("coauthor.review.apply"));
+		await waitFor(() => { expect(fetchMock).toHaveBeenCalledTimes(1); });
+		const call = fetchMock.mock.calls[0] as unknown as [unknown, RequestInit | undefined];
+		const body = String(call[1]?.body ?? "");
+		// The cumulative proposed profile ships (aggregated from `proposed`).
+		expect(body).toContain("profileMd");
+		expect(body).toContain("Bold and direct.");
+		// The operation INPUT (args) never reaches the Apply request: neither the
+		// args envelope keys nor the canonical personality (which is only the
+		// edit's `search` operand) appear in the serialized request.
+		expect(body).not.toContain('"edits"');
+		expect(body).not.toContain('"search"');
+		expect(body).not.toContain("A reserved arachnid weaver.");
+	});
+
 	it("CA-12: 'select none' then Apply sends a canonical-body request (all changes reverted)", async () => {
 		__isSending = false;
 		seedReviewing();

@@ -7,10 +7,12 @@
  * load-bearing contract: the backend never sees AI SDK tool shapes, only the
  * canonical character fields, so a wrong aggregation = a wrong Apply.
  *
- * Covers: profile-only (last write_profile wins), greeting edit (primary +
+ * Covers: profile-only (cumulative checkpoints — the last proposed profile
+ * already contains every earlier op), greeting edit (primary +
  * alternate), add_alt_greeting (append), mixed profile+greetings, sequential
- * dependent greeting calls, no-proposal fallthrough, and the exclusion of
- * streaming/error placeholders.
+ * dependent greeting calls, no-proposal fallthrough, exclusion of
+ * streaming/error placeholders, and args-neutrality (operation input is
+ * display-only, never read by aggregation).
  */
 import { describe, it, expect } from "vitest";
 import type { BuildCharacterDraft } from "@vibe-tavern/api-contracts";
@@ -108,16 +110,50 @@ describe("aggregateCoauthorProposal — profile", () => {
 		expect(result.summaries).toEqual(["Made personality assertive."]);
 	});
 
-	it("the LAST write_profile wins when several revise the profile mid-turn", () => {
-		const first = profileMd("First revision.", "S1", "E1");
-		const second = profileMd("Second revision.", "S2", "E2");
+	it("cumulative checkpoints: the last proposed profile (which already contains every earlier op) ships, so no earlier mutation disappears", () => {
+		// CED-2: composable tools each return a FULL cumulative canonical
+		// profile.md of the turn-local working profile AFTER their mutation. So
+		// t2's `proposed` already carries op A (personality) as well as op B.
+		const afterA = profileMd("Bold and direct.", "A cave.", "{{char}}: *nods*"); // edit_personality
+		const afterAB = profileMd("Bold and direct.", "A rooftop in the rain.", "{{char}}: *nods*"); // + write_scenario
 		const result = aggregateCoauthorProposal(
-			[profileActivity("t1", first, "v1"), profileActivity("t2", second, "v2")],
+			[
+				{ toolCallId: "t1", toolName: "edit_personality", status: "done", target: "profile", proposed: afterA, summary: "sharpen personality" },
+				{ toolCallId: "t2", toolName: "write_scenario", status: "done", target: "profile", proposed: afterAB, summary: "rewrite scenario" },
+			],
 			baseDraft(),
 		);
-		expect(result.applyRequest.profileMd).toBe(second);
-		expect(result.proposedDraft.description).toBe("Second revision.");
-		expect(result.summaries).toEqual(["v1", "v2"]); // both summaries preserved in order
+		// The last cumulative checkpoint ships verbatim → contains BOTH ops.
+		expect(result.applyRequest.profileMd).toBe(afterAB);
+		expect(result.applyRequest.profileMd).toContain("Bold and direct."); // op A preserved (not dropped)
+		expect(result.applyRequest.profileMd).toContain("A rooftop in the rain."); // op B
+		expect(result.proposedDraft.description).toBe("Bold and direct.");
+		expect(result.proposedDraft.scenario).toBe("A rooftop in the rain.");
+		// Summaries remain chronological across different tool kinds.
+		expect(result.summaries).toEqual(["sharpen personality", "rewrite scenario"]);
+	});
+
+	it("activity `args` (operation input) is display-only — it does not alter aggregation", () => {
+		// CED-5/6: the operation INPUT (edits/content/profileMd args) is carried
+		// for the card preview, not for aggregation. Two activities with identical
+		// proposed/target/summary but different args (one carrying edit args, one
+		// carrying none) must aggregate identically — aggregation reads
+		// `proposed`, never `args`.
+		const proposed = profileMd("Bold and direct.", "A cave.", "{{char}}: *nods*");
+		const withArgs: CoauthorToolActivity = {
+			toolCallId: "t1", toolName: "edit_personality", status: "done", target: "profile",
+			proposed, summary: "sharpen",
+			args: { edits: [{ search: "Calm weaver.", replace: "Bold and direct." }], summary: "sharpen" },
+		};
+		const withoutArgs: CoauthorToolActivity = {
+			toolCallId: "t1", toolName: "write_profile", status: "done", target: "profile",
+			proposed, summary: "sharpen",
+		};
+		const a = aggregateCoauthorProposal([withArgs], baseDraft());
+		const b = aggregateCoauthorProposal([withoutArgs], baseDraft());
+		expect(a.applyRequest).toEqual(b.applyRequest);
+		expect(a.proposedDraft).toEqual(b.proposedDraft);
+		expect(a.summaries).toEqual(b.summaries);
 	});
 
 	it("proposedDraft body differs from the canonical body on a real edit (diff is non-empty)", () => {
