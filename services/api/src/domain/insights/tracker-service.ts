@@ -39,6 +39,7 @@ import type {
 	MessageVariantId,
 	SceneBackfillErrorEntry,
 	SceneBackfillSummary,
+	ScenePromptFormat,
 	SceneTrackerConfig,
 	SceneTrackerDsl,
 	SceneTrackerRecord,
@@ -57,7 +58,7 @@ import { insightsAssemblyToPromptResponse } from "./objective-service.js";
 import type { SessionRuntime } from "../../runtime/session/session-runtime.js";
 import type { ProviderProfileService } from "../providers/provider-profile-service.js";
 import { parseStructuredOutput } from "./structured-output.js";
-import { isSceneRecordCurrent } from "./scene-cache.js";
+import { isRecordSchemaCompatible } from "./scene-cache.js";
 import { logSendDebug } from "../../shared/send-debug-log.js";
 
 type Execute = typeof nonstreamingProviderExecute;
@@ -139,6 +140,10 @@ interface SceneFreshness {
 	schemaHash: string;
 	configRevision: number;
 	sourceHash: string;
+	/** Schema DSL captured at generation time — the record's self-describing snapshot. */
+	schema: SceneTrackerDsl;
+	/** Prompt format captured at generation time. */
+	promptFormat: ScenePromptFormat;
 }
 
 /** A minimal view of a variant the service needs (content for source hashing). */
@@ -338,12 +343,15 @@ export class SceneTrackerService {
 		const variant = await this.getTargetVariant(input.target);
 		if (!variant) throw new SceneTargetGoneError(input.target);
 
-		// Capture the freshness baseline BEFORE the await. A schema/config/content
-		// edit during the LLM call invalidates this result at commit time.
+		// Capture the baseline BEFORE the await. The schema + promptFormat are
+		// stamped on the record as its self-describing snapshot; only a content
+		// edit during the LLM call invalidates the result (checked at commit).
 		const baseline: SceneFreshness = {
 			schemaHash: config.schemaHash,
 			configRevision: config.revision,
 			sourceHash: computeSceneSourceHash(variant.content),
+			schema: config.schema,
+			promptFormat: config.promptFormat,
 		};
 
 		const instructionBase = await this.resolvePrompt("sceneGenerate", config.generatePrompt);
@@ -359,9 +367,10 @@ export class SceneTrackerService {
 	}
 
 	/**
-	 * Atomic commit lane. Re-reads the live freshness and discards (throws) when
-	 * schema/config/content drifted during the await, so a stale LLM result never
-	 * overwrites a newer reality. Never clears on discard — the prior record, if
+	 * Atomic commit lane. Re-reads the live variant content and discards (throws)
+	 * ONLY when the source content drifted during the await; a schema/config/model
+	 * change during the await does NOT discard — the record persists under its
+	 * captured snapshot as a fact of that recipe. Never clears on discard — the prior record, if
 	 * any, is preserved (in-place Update overwrites only on success).
 	 */
 	private async commitRecord(
@@ -381,14 +390,14 @@ export class SceneTrackerService {
 				schemaHash: freshConfig.schemaHash,
 				configRevision: freshConfig.revision,
 				sourceHash: computeSceneSourceHash(freshVariant.content),
+				schema: freshConfig.schema,
+				promptFormat: freshConfig.promptFormat,
 			};
-			if (
-				fresh.schemaHash !== baseline.schemaHash ||
-				fresh.configRevision !== baseline.configRevision ||
-				fresh.sourceHash !== baseline.sourceHash
-			) {
+			// Only a CONTENT change during the await invalidates the result. A schema/
+			// config/model change is fine: the record persists under its captured snapshot.
+			if (fresh.sourceHash !== baseline.sourceHash) {
 				throw new Error(
-					`Scene target '${target.variantId}' is stale (schema/config/content changed during generation); result discarded.`,
+					`Scene target '${target.variantId}' content changed during generation; result discarded.`,
 				);
 			}
 
@@ -397,6 +406,8 @@ export class SceneTrackerService {
 				schemaHash: baseline.schemaHash,
 				configRevision: baseline.configRevision,
 				sourceHash: baseline.sourceHash,
+				schema: baseline.schema,
+				promptFormat: baseline.promptFormat,
 				sceneState,
 				modelId: model,
 				generatedAt: new Date().toISOString() as Timestamp,
@@ -431,6 +442,8 @@ export class SceneTrackerService {
 				schemaHash: config.schemaHash,
 				configRevision: config.revision,
 				sourceHash: computeSceneSourceHash(variant.content),
+				schema: config.schema,
+				promptFormat: config.promptFormat,
 				sceneState: parsed.data,
 				modelId: null,
 				generatedAt: new Date().toISOString() as Timestamp,
@@ -484,10 +497,11 @@ export class SceneTrackerService {
 	/**
 	 * Collect the last `continuityLastN` valid selected-variant records from the
 	 * branch, scanning backwards from the target (most recent first), returning
-	 * them in conversation order (oldest→newest). A record is "valid" when its
-	 * stamped `schemaHash`/`configRevision` match the current config — stale or
-	 * wrong-schema records are excluded so continuity never feeds the model a
-	 * shape it can no longer produce. Bounded: stops after N valid records.
+	 * them in conversation order (oldest→newest). A record is a valid continuity
+	 * baseline when its `schemaHash` matches the current config — wrong-schema
+	 * records are skipped (not deleted) so continuity never feeds the model a
+	 * shape it can no longer produce. `configRevision` is trace, not a gate.
+	 * Bounded: stops after N valid records.
 	 */
 	async collectContinuity(
 		branchId: ChatBranchId,
@@ -509,7 +523,7 @@ export class SceneTrackerService {
 			if (!selected) continue;
 			const record = await this.stores.messages.getSceneRecord(selected.id);
 			if (!record) continue;
-			if (record.schemaHash !== config.schemaHash || record.configRevision !== config.revision) continue;
+			if (record.schemaHash !== config.schemaHash) continue; // schema-compatible baseline only (revision is trace)
 			collected.push({ variantId: selected.id as MessageVariantId, sceneState: record.sceneState });
 		}
 		return collected.reverse(); // oldest → newest for the prompt
@@ -567,7 +581,7 @@ export class SceneTrackerService {
 			const selected = await this.stores.messages.getSelectedVariant(trigger.messageId);
 			if (!selected) return;
 			const record = await this.stores.messages.getSceneRecord(selected.id);
-			if (record && isSceneRecordCurrent(record, config)) return; // already current
+			if (record && isRecordSchemaCompatible(record, config)) return; // already has a current-schema record
 			const target: SceneTarget = {
 				chatId: brandId<ChatId>(trigger.chatId),
 				branchId: brandId<ChatBranchId>(trigger.branchId),
@@ -625,7 +639,7 @@ export class SceneTrackerService {
 			// otherwise (missing/stale) start one and join it.
 			const config = await this.getConfig(target.chatId);
 			const record = await this.stores.messages.getSceneRecord(target.variantId);
-			if (record && isSceneRecordCurrent(record, config)) return;
+			if (record && isRecordSchemaCompatible(record, config)) return;
 			job = this.ensureTargetJob(target);
 		}
 		await this.waitCancellable(job, signal);
@@ -1000,7 +1014,7 @@ export class SceneTrackerService {
 			}
 			// fill-missing: a current record appeared (e.g. via auto-gen) → success no-op.
 			const record = await this.stores.messages.getSceneRecord(item.variantId);
-			if (mode === SCENE_BACKFILL_MODE.fillMissing && record && isSceneRecordCurrent(record, config)) {
+			if (mode === SCENE_BACKFILL_MODE.fillMissing && record) {
 				return {};
 			}
 			// Generate. Reuses the shared per-target coordinator + target-job registry,
@@ -1039,7 +1053,7 @@ export class SceneTrackerService {
 			if (!selected) continue;
 			if (mode === SCENE_BACKFILL_MODE.fillMissing) {
 				const record = await this.stores.messages.getSceneRecord(selected.id);
-				if (record && isSceneRecordCurrent(record, config)) continue;
+				if (record) continue; // any persisted record → not missing; rebuild replaces explicitly
 			}
 			items.push({
 				index: items.length,

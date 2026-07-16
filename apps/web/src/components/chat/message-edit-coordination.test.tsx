@@ -242,94 +242,51 @@ async function mountBlock(messageId: string) {
 }
 
 // ────────────────────────────────────────────────────────────────────────────
-// Edit lock + preflight
+// Edit is never blocked by Scene generation
 // ────────────────────────────────────────────────────────────────────────────
 
-describe("SCN-13 — Edit lock + preflight", () => {
-  it("Tracker OFF: Edit is clickable with NO preflight; handleStartEdit fires", async () => {
-    seed([sceneMessage("m1", "v1")], /* trackerEnabled */ false);
+describe("Edit is never blocked by Scene generation", () => {
+  it("Tracker ON or OFF: Edit is always clickable, fires handleStartEdit, with NO status preflight", async () => {
+    seed([sceneMessage("m1", "v1")]);
     const { getByText } = await mountBlock("m1");
     fireEvent.click(getByText("edit"));
     await waitFor(() => expect(mocks.startEdit).toHaveBeenCalledTimes(1));
-    // No status preflight when Tracker is off.
+    // The edit path no longer consults the Scene status at all.
     expect(mocks.getSceneStatus).not.toHaveBeenCalled();
   });
 
-  it("local generation mark disables Edit (aria-disabled + title hint) and blocks the click", async () => {
+  it("a local generation mark does NOT disable Edit; clicking still opens the editor", async () => {
     seed([sceneMessage("m1", "v1")]);
     useSceneGenerationStore.getState().markGenerating("v1");
     const { getByText } = await mountBlock("m1");
     const edit = getByText("edit");
-    expect(edit.getAttribute("aria-disabled")).toBe("true");
-    expect(edit.getAttribute("title")).toBe("scn_edit_locked_hint");
+    // Edit is fully enabled — no aria-disabled, no dimming title.
+    expect(edit.getAttribute("aria-disabled")).not.toBe("true");
+    expect(edit.getAttribute("title")).toBeFalsy();
     fireEvent.click(edit);
-    // Locked → handler is a no-op.
-    await new Promise((r) => setTimeout(r, 10));
-    expect(mocks.startEdit).not.toHaveBeenCalled();
+    await waitFor(() => expect(mocks.startEdit).toHaveBeenCalledTimes(1));
   });
 
-  it("preflight catches a cross-tab job: status generating → toast + no edit", async () => {
+  it("clicking Edit during an in-flight generation issues NO preflight and NO warning toast", async () => {
     seed([sceneMessage("m1", "v1")]);
-    // The real getSceneStatusAction ALSO marks the store as a side effect, but
-    // that is the action's own contract (pinned in scene-zone.test). Here we
-    // test MessageBlock's COORDINATION boundary: it asks the server, and on a
-    // generating result it toasts + refuses to open the editor. (Marking the
-    // store from inside the mock would re-enter React's render during the click
-    // and is not this layer's responsibility.)
+    // Even if a server would report generating, MessageBlock no longer asks.
     mocks.getSceneStatus.mockResolvedValue({ generating: true, record: null });
     const { getByText } = await mountBlock("m1");
     fireEvent.click(getByText("edit"));
-    await waitFor(() => expect(mocks.getSceneStatus).toHaveBeenCalledTimes(1));
-    // Preflight target is the immutable variant id.
-    expect(mocks.getSceneStatus).toHaveBeenCalledWith("chat-1", expect.objectContaining({ variantId: "v1", messageId: "m1", branchId: "b1" }));
-    // Edit blocked + warning toast.
-    expect(mocks.startEdit).not.toHaveBeenCalled();
-    await waitFor(() => expect(mocks.toastWarning).toHaveBeenCalledWith("scn_edit_locked_toast"));
-  });
-
-  it("preflight allows when not generating: handleStartEdit fires", async () => {
-    seed([sceneMessage("m1", "v1")]);
-    mocks.getSceneStatus.mockResolvedValue({ generating: false, record: null });
-    const { getByText } = await mountBlock("m1");
-    fireEvent.click(getByText("edit"));
     await waitFor(() => expect(mocks.startEdit).toHaveBeenCalledTimes(1));
-    expect(useSceneGenerationStore.getState().generating.has("v1")).toBe(false);
-  });
-
-  it("preflight network failure does NOT block editing (best-effort)", async () => {
-    seed([sceneMessage("m1", "v1")]);
-    mocks.getSceneStatus.mockRejectedValue(new Error("network"));
-    const { getByText } = await mountBlock("m1");
-    fireEvent.click(getByText("edit"));
-    await waitFor(() => expect(mocks.startEdit).toHaveBeenCalledTimes(1));
+    expect(mocks.getSceneStatus).not.toHaveBeenCalled();
     expect(mocks.toastWarning).not.toHaveBeenCalled();
   });
 
-  it("cancel (clearing the flag) re-enables Edit", async () => {
-    seed([sceneMessage("m1", "v1")]);
-    const { getByText } = await mountBlock("m1");
-    act(() => { useSceneGenerationStore.getState().markGenerating("v1"); });
-    expect(getByText("edit").getAttribute("aria-disabled")).toBe("true");
-    // Scene generation settles (cancel/complete) → flag clears.
-    act(() => { useSceneGenerationStore.getState().clearGenerating("v1"); });
-    // Re-render to pick up the store change (MessageBlock subscribes via the
-    // store; the act of clearing triggers its subscriber synchronously).
-    await waitFor(() => expect(getByText("edit").getAttribute("aria-disabled")).not.toBe("true"));
-    fireEvent.click(getByText("edit"));
-    await waitFor(() => expect(mocks.startEdit).toHaveBeenCalled());
-  });
-
-  it("variant switch: lock is per-variant — switching off a generating variant re-enables Edit", async () => {
+  it("switching variants during generation keeps Edit enabled on every variant", async () => {
     seed([twoVariantMessage("m1", "vA", "vB")]);
-    act(() => { useSceneGenerationStore.getState().markGenerating("vA"); }); // vA (selected) generating
+    act(() => { useSceneGenerationStore.getState().markGenerating("vA"); });
     const utils = await mountBlock("m1");
-    expect(utils.getByText("edit").getAttribute("aria-disabled")).toBe("true");
-    // Switch to variant B (not generating).
+    expect(utils.getByText("edit").getAttribute("aria-disabled")).not.toBe("true");
     act(() => { useSnapshotStore.getState().selectVariant("m1", 1, 1); });
     await waitFor(() => expect(utils.getByText("edit").getAttribute("aria-disabled")).not.toBe("true"));
-    // Switching back to A re-locks.
     act(() => { useSnapshotStore.getState().selectVariant("m1", 0, -1); });
-    await waitFor(() => expect(utils.getByText("edit").getAttribute("aria-disabled")).toBe("true"));
+    await waitFor(() => expect(utils.getByText("edit").getAttribute("aria-disabled")).not.toBe("true"));
   });
 });
 

@@ -174,15 +174,17 @@ describe("PromptAssemblyService.resolveSceneInjection (SCN-7)", () => {
 		expect((built.context.sceneState!.entries[0] as { tension: number }).tension).toBe(2);
 	});
 
-	it("excludes config-revision-mismatched records", async () => {
+	it("INCLUDES same-schema records regardless of config revision (revision is trace, not a gate)", async () => {
 		const service = makeSceneService({
 			revision: 3, // config at revision 3
 			injectLastN: 2,
-			rawTargets: [target(1, { configRevision: 0 }), target(2, { configRevision: 3 })], // t1 stale, t2 fresh
+			rawTargets: [target(1, { configRevision: 0 }), target(2, { configRevision: 3 })], // both share the live schemaHash
 		});
 		const built = await service.buildPipelineContext({ chatId: "chat_1" as ChatId, model: "m" });
-		expect(built.context.sceneState!.entries).toHaveLength(1);
-		expect((built.context.sceneState!.entries[0] as { tension: number }).tension).toBe(2);
+		// Both records share the live schemaHash → both injected (revision no longer filters).
+		expect(built.context.sceneState!.entries).toHaveLength(2);
+		const tensions = (built.context.sceneState!.entries as { tension: number }[]).map((e) => e.tension).sort();
+		expect(tensions).toEqual([1, 2]);
 	});
 
 	it("passes format / depth / injectPrompt through from config", async () => {

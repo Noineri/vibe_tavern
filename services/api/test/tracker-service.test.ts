@@ -263,30 +263,39 @@ describe("SceneTrackerService.generateScene (SCN-5)", () => {
 		await started;
 		handle.setVariantContent("m2", "var_1", "The warlord lunges — EDITED."); // content drift
 		release(VALID_REPLY);
-		await expect(pending).rejects.toThrow(/stale/i);
+		// Only a CONTENT change during the await invalidates the result.
+		await expect(pending).rejects.toThrow(/content changed/i);
 		expect(handle.getRecord("var_1")).toBeNull(); // nothing persisted
 	});
 
-	it("discards a result when the schema changed during the LLM await (schema drift)", async () => {
+	it("PERSISTS a result when the schema changed during the LLM await (the record carries its baseline snapshot)", async () => {
 		const handle = makeStore({});
 		const { service, started, release } = blockingService(handle);
 		const pending = service.generateScene(generateInput());
 		await started;
 		handle.setTracker({ schema: { location: { $type: "string" } } }); // schema drift
 		release(VALID_REPLY);
-		await expect(pending).rejects.toThrow(/stale/i);
-		expect(handle.getRecord("var_1")).toBeNull();
+		// A schema change does NOT discard — the record is persisted as a fact of
+		// its baseline (gen-start) schema, with its own snapshot for rendering.
+		const record = await pending;
+		expect(record.sceneState).toEqual({ mood: "calm", tension: 3 }); // parsed under the baseline schema
+		const stored = handle.getRecord("var_1");
+		expect(stored).not.toBeNull();
+		expect(stored?.sceneState).toEqual({ mood: "calm", tension: 3 });
 	});
 
-	it("discards a result when the config revision bumped during the LLM await", async () => {
+	it("PERSISTS a result when the config revision bumped during the LLM await (revision is trace, not a gate)", async () => {
 		const handle = makeStore({});
 		const { service, started, release } = blockingService(handle);
 		const pending = service.generateScene(generateInput());
 		await started;
 		handle.setTracker({ schema: TEST_SCHEMA, revision: 7 }); // revision drift
 		release(VALID_REPLY);
-		await expect(pending).rejects.toThrow(/stale/i);
-		expect(handle.getRecord("var_1")).toBeNull();
+		// A revision bump (model/provider/prompt change) does NOT discard — the
+		// record keeps the baseline revision it was generated under.
+		const record = await pending;
+		expect(record.configRevision).toBe(0); // baseline, not the bumped 7
+		expect(handle.getRecord("var_1")).not.toBeNull();
 	});
 
 	it("never persists when cancelled mid-job (explicit Cancel never persists)", async () => {

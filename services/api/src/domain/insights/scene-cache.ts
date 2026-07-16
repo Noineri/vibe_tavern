@@ -12,19 +12,25 @@
  * The cache ALWAYS reflects the actual current selection and never a
  * just-finished nonselected job: a generation that completes for a now-unselected
  * variant persists its own record on that variant, but this rebuild reads back
- * from the SELECTED variant of the latest assistant message. A record is current
- * only when its stamped `schemaHash`/`configRevision` match the live tracker
- * config — a stale or wrong-schema record yields an empty cache (the Scene is
- * invisible until regenerated under the current schema).
+ * from the SELECTED variant of the latest assistant message.
  *
- * Rebuild is triggered by every mutation that can change the current selection or
- * its freshness: generate/edit/delete (tracker-service, wired in SCN-9 routes),
- * selection/branch/variant/message deletion and content edit (runtime, SCN-8),
- * and schema/config change (chat-adapter). This module is the engine; the wiring
- * lands in the units that own each mutation site.
+ * A record is a PERSISTED FACT, not a cache entry of the current generation
+ * recipe: the live tracker config (schema/model/provider/prompt/render/injection)
+ * NEVER gates visibility here. Whatever schema/revision the selected variant's
+ * record was generated under, as long as the record exists it is mirrored —
+ * rendered via its own `schema` snapshot (falling back to the live config only
+ * for legacy records persisted before the snapshot contract). Schema
+ * compatibility (`schemaHash`) is reused only as a COHERENCE check for injection
+ * and continuity baselines, never as a visibility gate; see
+ * {@link isRecordSchemaCompatible}.
+ *
+ * Rebuild is triggered by every mutation that can change the current selection:
+ * generate/edit/delete (tracker-service), selection/branch/variant/message
+ * deletion and content edit (runtime, SCN-8), and schema/config change
+ * (chat-adapter). This module is the engine; the wiring lands in the units that
+ * own each mutation site.
  */
-import type { ChatId } from "@vibe-tavern/domain";
-import { normalizeSceneTrackerConfig } from "@vibe-tavern/domain";
+import type { ChatId, SceneTrackerDsl, ScenePromptFormat } from "@vibe-tavern/domain";
 import type { StoreContainer } from "@vibe-tavern/db";
 
 /** The chat-level current-Scene cache value (the selected variant's record +
@@ -35,39 +41,47 @@ export interface CurrentSceneCache {
 	schemaHash: string;
 	configRevision: number;
 	sourceHash: string;
+	/** The record's own schema snapshot (absent on legacy records → consumer
+	 *  falls back to the live config schema to render). */
+	schema: SceneTrackerDsl | undefined;
+	/** The record's own prompt-format snapshot (absent on legacy records). */
+	promptFormat: ScenePromptFormat | undefined;
 	sceneState: Record<string, unknown>;
 	modelId: string | null;
 	generatedAt: string;
 }
 
-/** Any record/config shape carrying the freshness stamps the cache compares. */
-interface SceneRecordFreshness {
+/** Record/config shapes carrying the identity stamps compared for coherence. */
+interface SceneRecordIdentity {
 	schemaHash: string;
-	configRevision: number;
 }
-interface SceneConfigFreshness {
+interface SceneConfigIdentity {
 	schemaHash: string;
-	revision: number;
 }
 
 /**
- * A record is "current" when its captured schema/config stamps match the live
- * config — i.e. it was generated under the schema the chat uses right now.
- * (The record stamps `configRevision`; the config stamps `revision` — same value,
- * different field names at their respective layers.) Reused by the
- * prompt-injection path (SCN-7) so the same freshness rule governs both the
- * cache and main-model injection.
+ * A record is "schema-compatible" with the live config when its captured
+ * `schemaHash` matches — i.e. it was generated under the same schema shape the
+ * chat uses right now (a `label`-stripped structural identity; model/provider/
+ * prompt/render changes do NOT change it). This is a COHERENCE check only: it
+ * decides whether a record may act as a continuity baseline or be injected into
+ * the current-schema prompt. It is NEVER a visibility gate — an incompatible
+ * record stays visible/renderable/retained; it is simply omitted from continuity
+ * and current-schema injection until the schema matches again (or replaced via
+ * an explicit rebuild).
  */
-export function isSceneRecordCurrent(record: SceneRecordFreshness, config: SceneConfigFreshness): boolean {
-	return record.schemaHash === config.schemaHash && record.configRevision === config.revision;
+export function isRecordSchemaCompatible(record: SceneRecordIdentity, config: SceneConfigIdentity): boolean {
+	return record.schemaHash === config.schemaHash;
 }
 
 /**
  * Rebuild `insightsCurrentSceneJson` from the live variant state and return the
  * computed cache (or null when there is no current Scene). Writes the cache
  * column on every call — including the empty (`'{}'`) reset — so the stored value
- * never drifts from the actual selection. Null when the chat, the active branch's
- * latest assistant selected variant, or its (fresh) record is absent.
+ * never drifts from the actual selection. Null when the chat, the active
+ * branch's latest assistant selected variant, or its record is absent. NEVER
+ * nulls out a record because of a schema/config mismatch — the record is a
+ * persisted fact and is mirrored with its own schema snapshot regardless.
  */
 export async function rebuildCurrentSceneCache(
 	stores: StoreContainer,
@@ -76,11 +90,10 @@ export async function rebuildCurrentSceneCache(
 	const chat = await stores.chats.getById(chatId);
 	if (!chat) return null;
 
-	const config = normalizeSceneTrackerConfig(chat.insightsConfig.tracker);
 	const target = await stores.messages.getCurrentSceneTarget(chat.activeBranchId);
-	if (!target || !isSceneRecordCurrent(target.record, config)) {
-		// No latest-assistant selected record, or it is stale (wrong schema/config)
-		// → empty cache. The nonselected variant's own record is NOT substituted.
+	if (!target) {
+		// No latest-assistant selected record → empty cache. The nonselected
+		// variant's own record is NOT substituted.
 		await stores.chats.updateInsightsCurrentScene(chatId, null);
 		return null;
 	}
@@ -91,6 +104,8 @@ export async function rebuildCurrentSceneCache(
 		schemaHash: target.record.schemaHash,
 		configRevision: target.record.configRevision,
 		sourceHash: target.record.sourceHash,
+		schema: target.record.schema,
+		promptFormat: target.record.promptFormat,
 		sceneState: target.record.sceneState,
 		modelId: target.record.modelId,
 		generatedAt: target.record.generatedAt,

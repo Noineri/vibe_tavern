@@ -294,7 +294,7 @@ describe("SceneTrackerService backfill — manifest freeze + modes (SCN-14)", ()
 		expect(terminal.summary!.succeeded).toBe(2);
 	});
 
-	it("fill-missing regenerates a STALE record (wrong schema hash)", async () => {
+	it("fill-missing LEAVES a wrong-schema record alone (only rebuild replaces it)", async () => {
 		const stale = { ...currentRecord("v1"), schemaHash: "wrong_hash" };
 		const handle = makeStore({
 			assistants: [{ id: "m1", variantId: "v1", content: "one", record: stale }],
@@ -302,8 +302,10 @@ describe("SceneTrackerService backfill — manifest freeze + modes (SCN-14)", ()
 		const { service } = makeService(handle, [VALID_REPLY]);
 		const status = await service.startBackfill(CHAT, SCENE_BACKFILL_MODE.fillMissing);
 		const terminal = await awaitTerminal(service, status.runId);
-		expect(terminal.total).toBe(1); // stale record not excluded
-		expect(handle.execLog).toHaveLength(1);
+		// The record exists (a persisted fact) → not "missing" → excluded from the
+		// manifest. fill-missing never regenerates an existing record; rebuild does.
+		expect(terminal.total).toBe(0);
+		expect(handle.execLog).toHaveLength(0);
 	});
 
 	it("an empty manifest completes immediately with a zero summary", async () => {
@@ -540,11 +542,11 @@ describe("SceneTrackerService backfill — per-item revalidation (SCN-14)", () =
 		handle.setTracker({ schema: { only: { $type: "string" } } }); // different schema → different hash
 		release(VALID_REPLY);
 		const terminal = await awaitTerminal(service, status.runId);
-		// v1: commit-lane freshness guard discards (schema changed mid-gen).
+		// v1: schema changed mid-gen, but the commit lane no longer discards on schema
+		// drift — the record persists under its baseline (freeze-time) schema.
 		// v2: revalidation pre-check skips (schema hash mismatch vs frozen item).
-		expect(terminal.summary!.succeeded).toBe(0);
-		expect(terminal.errors.length).toBeGreaterThanOrEqual(1);
-		expect(terminal.errors.every((entry) => entry.kind !== "failed" || true)).toBe(true);
+		expect(terminal.summary!.succeeded).toBe(1);
+		expect(terminal.summary!.skipped).toBeGreaterThanOrEqual(1);
 	});
 });
 

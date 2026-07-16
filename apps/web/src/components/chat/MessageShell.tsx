@@ -99,12 +99,6 @@ export interface MessageShellProps {
   variantCount: number;
   /** Whether variant switching is allowed. */
   canSwitchVariant: boolean;
-  /** SCN-13: when true the Edit affordance is disabled (the selected variant's
-   *  Scene is generating). Dimmed + aria-disabled + title hint on desktop, and
-   *  a disabled row in the mobile action sheet. */
-  editLocked?: boolean;
-  /** Reason shown as the Edit affordance's title/aria hint when editLocked. */
-  editLockedHint?: string;
   /** Message metadata context — variant-scoped provenance + token count + timestamp. */
   metaCtx: MessageMetaContext;
   /** Whether the copy button was recently clicked (shows checkmark). */
@@ -148,8 +142,6 @@ export function MessageShell(props: MessageShellProps) {
     selectedVariantIndex,
     variantCount,
     canSwitchVariant,
-    editLocked = false,
-    editLockedHint,
     metaCtx,
     copied,
     slotExtras,
@@ -301,7 +293,6 @@ export function MessageShell(props: MessageShellProps) {
                   icon: <Icons.Edit />,
                   label: editLabel,
                   action: actions.onEdit,
-                  disabled: editLocked,
                 },
                 {
                   icon: <Icons.Trash />,
@@ -358,8 +349,6 @@ export function MessageShell(props: MessageShellProps) {
               copiedLabel={t("copied")}
               copyLabel={copyLabel}
               editLabel={editLabel}
-              editLocked={editLocked}
-              editLockedHint={editLockedHint}
               hiddenVariantControls={!!variantControlsOverlay}
               isBusy={isBusy}
               isBranching={isBranching}
@@ -472,8 +461,6 @@ function DesktopMessageActions(props: {
   copiedLabel: string;
   copyLabel: string;
   editLabel: string;
-  editLocked: boolean;
-  editLockedHint?: string;
   hiddenVariantControls: boolean;
   isBusy: boolean;
   isBranching: boolean;
@@ -494,7 +481,7 @@ function DesktopMessageActions(props: {
 }) {
   const {
     branchLabel, canBranch, canRegenerate, canResend, canSwitchVariant,
-    copied, copiedLabel, copyLabel, editLabel, editLocked, editLockedHint, hiddenVariantControls,
+    copied, copiedLabel, copyLabel, editLabel, hiddenVariantControls,
     isBusy, isBranching, isGreeting, isUser, regenLabel, resendLabel,
     variantControlsRef, variantCount,
     variantControls,
@@ -512,10 +499,8 @@ function DesktopMessageActions(props: {
       >{copied ? <Icons.Check /> : <Icons.Copy />}{copied ? copiedLabel : copyLabel}</span>
 
       <span
-        className={cn(desktopActionClass, editLocked && "opacity-40 pointer-events-none")}
-        aria-disabled={editLocked || undefined}
-        title={editLocked ? editLockedHint : undefined}
-        onClick={() => { if (!isBusy && !editLocked) onEdit(); }}
+        className={desktopActionClass}
+        onClick={() => { if (!isBusy) onEdit(); }}
       ><Icons.Edit />{editLabel}</span>
 
       {canResend && <span className={desktopActionClass} onClick={() => { if (!isBusy) onResend(); }}><Icons.Regen />{resendLabel}</span>}

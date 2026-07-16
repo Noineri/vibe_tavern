@@ -56,6 +56,8 @@ function makeRecord(variantId: string, over: Partial<MessageVariantSceneRecord> 
 		schemaHash: HASH_A,
 		configRevision: 0,
 		sourceHash: "src",
+		schema: SCHEMA_A,
+		promptFormat: "json",
 		sceneState: { mood: "calm", tension: 3 },
 		modelId: "model-a",
 		generatedAt: FIXED_NOW,
@@ -127,16 +129,25 @@ describe("rebuildCurrentSceneCache — transition matrix (SCN-6)", () => {
 		expect(await readCache(chatId)).toEqual({});
 	});
 
-	test("a stale-schema record is excluded (cache empty)", async () => {
+	test("a different-schema record is STILL mirrored (schema is not a visibility gate)", async () => {
 		const { variants } = await addAssistant(["Reply A"]);
-		await messages.setSceneRecord(variants[0]!.id, makeRecord(variants[0]!.id, { schemaHash: "wrong-hash" }));
-		expect(await rebuildCurrentSceneCache(stores, chatId as never)).toBeNull();
+		// A record stamped with a schemaHash that differs from the live config's
+		// (HASH_A) stays visible — it is a persisted fact under its own schema.
+		await messages.setSceneRecord(variants[0]!.id, makeRecord(variants[0]!.id, { schemaHash: "wrong-hash", schema: SCHEMA_B, sceneState: { location: "keep" } }));
+		const cache = await rebuildCurrentSceneCache(stores, chatId as never);
+		expect(cache?.variantId).toBe(variants[0]!.id);
+		expect(cache?.schemaHash).toBe("wrong-hash");
+		expect(cache?.sceneState).toEqual({ location: "keep" });
 	});
 
-	test("a stale-revision record is excluded (cache empty)", async () => {
+	test("a different-revision record is STILL mirrored (revision is trace, not a gate)", async () => {
 		const { variants } = await addAssistant(["Reply A"]);
-		await messages.setSceneRecord(variants[0]!.id, makeRecord(variants[0]!.id, { configRevision: 99 }));
-		expect(await rebuildCurrentSceneCache(stores, chatId as never)).toBeNull();
+		// A model/provider/prompt change bumps revision; the prior record survives.
+		await messages.setSceneRecord(variants[0]!.id, makeRecord(variants[0]!.id, { configRevision: 99, sceneState: { mood: "kept" } }));
+		const cache = await rebuildCurrentSceneCache(stores, chatId as never);
+		expect(cache?.variantId).toBe(variants[0]!.id);
+		expect(cache?.configRevision).toBe(99);
+		expect((cache?.sceneState as { mood: string }).mood).toBe("kept");
 	});
 
 	test("a nonselected variant's record is NEVER substituted for the selected one", async () => {
@@ -194,13 +205,16 @@ describe("rebuildCurrentSceneCache — transition matrix (SCN-6)", () => {
 		expect((cache?.sceneState as { mood: string }).mood).toBe("first");
 	});
 
-	test("editing the selected variant's content clears its record → cache empty", async () => {
+	test("editing the selected variant's content LEAVES its record intact → cache still mirrors it", async () => {
 		const { messageId, variants } = await addAssistant(["Reply A"]);
-		await messages.setSceneRecord(variants[0]!.id, makeRecord(variants[0]!.id));
+		await messages.setSceneRecord(variants[0]!.id, makeRecord(variants[0]!.id, { sceneState: { mood: "kept" } }));
 		await rebuildCurrentSceneCache(stores, chatId as never);
-		await messages.editMessage(messageId, "Edited content"); // SCN-3: clears the selected variant's record
-		expect(await rebuildCurrentSceneCache(stores, chatId as never)).toBeNull();
-		expect(await readCache(chatId)).toEqual({});
+		// A content edit (e.g. a typo fix) must NOT wipe the Scene record — it is a
+		// persisted fact; the user should not have to regenerate after an edit.
+		await messages.editMessage(messageId, "Edited content");
+		const cache = await rebuildCurrentSceneCache(stores, chatId as never);
+		expect(cache?.variantId).toBe(variants[0]!.id);
+		expect((cache?.sceneState as { mood: string }).mood).toBe("kept");
 	});
 
 	test("editing a NON-selected variant leaves the selected record (and cache) intact", async () => {
@@ -216,12 +230,48 @@ describe("rebuildCurrentSceneCache — transition matrix (SCN-6)", () => {
 		expect((cache?.sceneState as { mood: string }).mood).toBe("A");
 	});
 
-	test("a schema change excludes records generated under the old schema", async () => {
+	test("a schema change does NOT exclude the prior-schema record (cache still mirrors it)", async () => {
 		const { variants } = await addAssistant(["Reply A"]);
-		await messages.setSceneRecord(variants[0]!.id, makeRecord(variants[0]!.id)); // fresh under SCHEMA_A / HASH_A
+		await messages.setSceneRecord(variants[0]!.id, makeRecord(variants[0]!.id, { sceneState: { mood: "under-A" } })); // fresh under SCHEMA_A / HASH_A
 		expect((await rebuildCurrentSceneCache(stores, chatId as never))?.variantId).toBe(variants[0]!.id);
-		await setConfig(chatId, SCHEMA_B); // schema change → HASH_B; record stamped HASH_A is now stale
-		expect(await rebuildCurrentSceneCache(stores, chatId as never)).toBeNull();
+		await setConfig(chatId, SCHEMA_B); // live schema is now HASH_B; the HASH_A record must NOT disappear
+		const cache = await rebuildCurrentSceneCache(stores, chatId as never);
+		expect(cache?.variantId).toBe(variants[0]!.id);
+		expect(cache?.schemaHash).toBe(HASH_A); // the record's own identity, not the live HASH_B
+		expect((cache?.sceneState as { mood: string }).mood).toBe("under-A");
+	});
+
+	test("records of two different schemas coexist on the same branch", async () => {
+		// Older assistant carries a SCHEMA_A record; newer assistant carries a
+		// SCHEMA_B record. Both persist independently; the cache mirrors whichever
+		// is the latest selection, regardless of schema mismatch with either.
+		const first = await addAssistant(["First reply"]);
+		await messages.setSceneRecord(first.variants[0]!.id, makeRecord(first.variants[0]!.id, { schema: SCHEMA_A, schemaHash: HASH_A, sceneState: { mood: "a" } }));
+		const second = await addAssistant(["Second reply"]);
+		await messages.setSceneRecord(second.variants[0]!.id, makeRecord(second.variants[0]!.id, { schema: SCHEMA_B, schemaHash: HASH_B, sceneState: { location: "b" } }));
+		// Live config is SCHEMA_A; the latest (second) record is SCHEMA_B — still mirrored.
+		let cache = await rebuildCurrentSceneCache(stores, chatId as never);
+		expect(cache?.variantId).toBe(second.variants[0]!.id);
+		expect(cache?.schemaHash).toBe(HASH_B);
+		// Delete the latest → cache falls back to the older SCHEMA_A record, which
+		// also survived (it was never invalidated by the schema divergence).
+		await messages.deleteMessage(second.messageId);
+		cache = await rebuildCurrentSceneCache(stores, chatId as never);
+		expect(cache?.variantId).toBe(first.variants[0]!.id);
+		expect(cache?.schemaHash).toBe(HASH_A);
+	});
+
+	test("a legacy record without a schema snapshot still mirrors (live-config fallback)", async () => {
+		// A record persisted before the snapshot contract carries no `schema`.
+		// It must still be mirrored; its hash matches the live schema here so the
+		// live-config fallback renders it correctly.
+		const { variants } = await addAssistant(["Reply A"]);
+		const legacy = makeRecord(variants[0]!.id, { sceneState: { mood: "legacy" } });
+		delete (legacy as Partial<typeof legacy>).schema;
+		await messages.setSceneRecord(variants[0]!.id, legacy);
+		const cache = await rebuildCurrentSceneCache(stores, chatId as never);
+		expect(cache?.variantId).toBe(variants[0]!.id);
+		expect((cache?.sceneState as { mood: string }).mood).toBe("legacy");
 	});
 
 	test("a forked branch's re-keyed record is picked up once the branch activates", async () => {

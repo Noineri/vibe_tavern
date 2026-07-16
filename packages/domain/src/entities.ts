@@ -616,21 +616,42 @@ export interface SceneTrackerConfig {
 /**
  * One generated Scene record, canonical per immutable message variant. Stored
  * on `message_variants.scene_tracker_json` (SCN-3); `chats.insights_current_scene_json`
- * is a derived/rebuildable cache only. The freshness metadata (`schemaHash`,
- * `configRevision`, `sourceHash`) lets the service reject stale output after
- * the LLM await: a record whose stamped values no longer match the live
- * config/source is invisible and non-injectable until regenerated.
+ * is a derived/rebuildable cache only.
+ *
+ * A record is a PERSISTED FACT, not a cache entry of the current generation
+ * recipe: changing the tracker config (schema/model/provider/prompt/render/injection)
+ * NEVER hides, invalidates, or deletes an already-saved record. Each record
+ * carries its own `schema` + `promptFormat` snapshot so it stays self-describing
+ * and renderable/injectable even after the live config moves on. Different-schema
+ * records coexist in the same branch; their mass replacement happens only via an
+ * explicit rebuild/backfill, never automatically.
+ *
+ * The stamped metadata serves two distinct roles:
+ *  - `sourceHash` is a CORRECTNESS GUARD: a record whose source content drifted
+ *    (the variant was edited while the LLM was working) is discarded at commit.
+ *  - `schemaHash`/`configRevision` are IDENTITY + TRACE, never a visibility gate:
+ *    `schemaHash` is reused only as a coherence check (whether a record may act
+ *    as a continuity baseline or be injected into the current-schema prompt),
+ *    and `configRevision` is pure trace. Neither makes a record invisible.
+ *
+ * `schema`/`promptFormat` are optional only because records persisted before this
+ * contract carried no snapshot; they are ALWAYS set on newly generated/edited
+ * records, and legacy readers fall back to the live config when absent.
  */
 export interface SceneTrackerRecord {
   /** The immutable variant this record was generated for (ownership identity). */
   variantId: MessageVariantId;
-  /** The config `schemaHash` captured at generation time. */
+  /** The config `schemaHash` captured at generation time (identity + coherence check; NOT a visibility gate). */
   schemaHash: string;
-  /** The config `revision` captured at generation time. */
+  /** The config `revision` captured at generation time (pure trace; NOT a visibility gate). */
   configRevision: number;
-  /** Hash of the variant source content captured at generation time. */
+  /** Hash of the variant source content captured at generation time (correctness guard against content drift). */
   sourceHash: string;
-  /** The validated scene state, matching the then-current schema. */
+  /** The schema DSL (with labels) this record was generated/edited under — its self-describing snapshot for rendering/injection. Absent only on legacy records (fall back to live config). */
+  schema?: SceneTrackerDsl;
+  /** The prompt format captured at generation time. Absent only on legacy records (fall back to live config). */
+  promptFormat?: ScenePromptFormat;
+  /** The validated scene state, matching the record's own `schema` snapshot. */
   sceneState: Record<string, unknown>;
   /** The model that produced this record (for trace). */
   modelId: string | null;

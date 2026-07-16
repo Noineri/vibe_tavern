@@ -81,9 +81,13 @@ function selectedVariantIdOf(state: { messagesById: Record<string, { variants?: 
   return msg.variants?.[idx ?? -1]?.id ?? "";
 }
 
-/** Record freshness vs the live config (mirrors server isSceneRecordCurrent). */
+/** Record freshness vs the live tracker SCHEMA only (schemaHash match). configRevision
+ *  is trace, not a gate — a model/provider/render change never makes a record "stale".
+ *  Mirrors server `isRecordSchemaCompatible`. A schemaHash mismatch means the record
+ *  belongs to a different tracker schema: still rendered (read-only, dimmed) and never
+ *  auto-hidden/deleted; just not editable (server validates edits against the live schema). */
 function isRecordFresh(record: { schemaHash: string; configRevision: number } | null, config: { schemaHash: string; revision: number }): boolean {
-  return !!record && record.schemaHash === config.schemaHash && record.configRevision === config.revision;
+  return !!record && record.schemaHash === config.schemaHash;
 }
 
 function getSceneVisibilitySnapshot(ctx: MessageSlotContext): string {
@@ -91,10 +95,10 @@ function getSceneVisibilitySnapshot(ctx: MessageSlotContext): string {
   const enabled = s.activeChat?.insightsConfig?.trackerEnabled ?? false;
   const variantId = selectedVariantIdOf(s, ctx.messageId);
   const isLatest = ctx.messageId === getLatestAssistantMessageId(s);
-  const config = s.activeChat?.insightsConfig?.tracker;
-  const record = s.messagesById[ctx.messageId]?.sceneTracker ?? null;
-  const fresh = config ? isRecordFresh(record, config) : false;
-  return `${enabled ? 1 : 0}:${isLatest ? 1 : 0}:${variantId}:${fresh ? 1 : 0}`;
+  // Visibility tracks record PRESENCE (a persisted fact), not schema freshness —
+  // a config/schema/model change must neither hide nor reveal an older record.
+  const hasRecord = !!s.messagesById[ctx.messageId]?.sceneTracker;
+  return `${enabled ? 1 : 0}:${isLatest ? 1 : 0}:${variantId}:${hasRecord ? 1 : 0}`;
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -124,7 +128,7 @@ function SceneZone({ chatId, messageId }: { chatId: string; messageId: string })
   const [confirmDelete, setConfirmDelete] = useState(false);
   const activeGen = useRef<{ variantId: string; controller: AbortController } | null>(null);
 
-  const record = useMemo(() => (recordBlob ? (JSON.parse(recordBlob) as { sceneState: Record<string, unknown>; schemaHash: string; configRevision: number }) : null), [recordBlob]);
+  const record = useMemo(() => (recordBlob ? (JSON.parse(recordBlob) as { sceneState: Record<string, unknown>; schemaHash: string; configRevision: number; schema?: SceneTrackerDsl }) : null), [recordBlob]);
   const [schema, schemaHash, revision] = useMemo<[SceneTrackerDsl, string, number]>(() => {
     if (!configBlob) return [{}, "", 0];
     try {
@@ -136,6 +140,10 @@ function SceneZone({ chatId, messageId }: { chatId: string; messageId: string })
   }, [configBlob]);
   const fresh = isRecordFresh(record, { schemaHash, revision });
   const sceneState = record?.sceneState ?? null;
+  // Render against the record's OWN schema snapshot when it carries one (a record
+  // from a different tracker schema renders its own fields, not the live ones);
+  // fall back to the live config schema for legacy records without a snapshot.
+  const renderSchema: SceneTrackerDsl = record?.schema ?? schema;
 
   // ── Hydrate the generating flag from the server on mount (latest only). The
   //    server coordinator is authoritative; this re-attaches a reload/multi-tab
@@ -231,11 +239,11 @@ function SceneZone({ chatId, messageId }: { chatId: string; messageId: string })
             )}
           >
             <SceneGlyph generating={generating} hasRecord={hasRecord} fresh={fresh} />
-            <SceneKvSummary schema={schema} state={sceneState} placeholder={t(hasRecord ? (fresh ? "scn_zone_summary_fresh" : "scn_zone_summary_stale") : "scn_zone_summary_empty")} />
+            <SceneKvSummary schema={renderSchema} state={sceneState} placeholder={t(hasRecord ? (fresh ? "scn_zone_summary_fresh" : "scn_zone_summary_stale") : "scn_zone_summary_empty")} />
             <Chevron open={false} />
           </button>
         </CustomTooltip>
-        {editing && <SceneEditorModal open={editing} isMobile={isMobile} schema={schema} state={sceneState ?? {}} onClose={() => setEditing(false)} onSave={runEdit} t={t} />}
+        {editing && <SceneEditorModal open={editing} isMobile={isMobile} schema={renderSchema} state={sceneState ?? {}} onClose={() => setEditing(false)} onSave={runEdit} t={t} />}
       </>
     );
   }
@@ -247,7 +255,10 @@ function SceneZone({ chatId, messageId }: { chatId: string; messageId: string })
         <span className="shrink-0 text-accent"><SceneGlyph generating={generating} hasRecord={hasRecord} fresh={fresh} /></span>
         <span className="text-[10px] font-semibold uppercase tracking-[0.06em] text-t4">{t("scn_zone_title")}</span>
         <div className="ml-auto flex shrink-0 items-center gap-0.5">
-          {/* Generate (no record) OR Update (stale/valid record). While generating → Cancel. */}
+          {/* LLM Generate (no record) / Update (record) — only the latest assistant
+              target is eligible; older persisted records are view/edit/delete only,
+              their LLM replacement goes through explicit history backfill/rebuild.
+              While generating → Cancel. */}
           {generating ? (
             <CustomTooltip content={t("scn_zone_cancel")}>
               <button
@@ -259,19 +270,18 @@ function SceneZone({ chatId, messageId }: { chatId: string; messageId: string })
                 <ActionSpinner />
               </button>
             </CustomTooltip>
-          ) : (
+          ) : isLatest ? (
             <CustomTooltip content={t(hasRecord ? "scn_zone_update" : "scn_zone_generate")}>
               <button
                 type="button"
                 onClick={() => void runGenerate()}
-                disabled={!hasRecord && !isLatest}
-                className="flex h-7 w-7 items-center justify-center rounded text-t4 transition-colors hover:bg-s2 hover:text-accent disabled:opacity-40 md:h-5 md:w-5"
+                className="flex h-7 w-7 items-center justify-center rounded text-t4 transition-colors hover:bg-s2 hover:text-accent md:h-5 md:w-5"
                 aria-label={t(hasRecord ? "scn_zone_update" : "scn_zone_generate")}
               >
                 {hasRecord ? <Ic.regen /> : <Ic.plus />}
               </button>
             </CustomTooltip>
-          )}
+          ) : null}
           {/* Edit (valid record only — editing a stale/wrong-schema record is meaningless). */}
           {fresh && (
             <CustomTooltip content={t("scn_zone_edit")}>
@@ -321,14 +331,14 @@ function SceneZone({ chatId, messageId }: { chatId: string; messageId: string })
       {/* Read view — rendered in the shared variant (selectable in the
           TrackerConfig Preview); stale records render dimmed. */}
       {hasRecord && sceneState && (
-        <SceneStateView schema={schema} data={sceneState} variant={renderVariant} stale={!fresh} />
+        <SceneStateView schema={renderSchema} data={sceneState} variant={renderVariant} stale={!fresh} />
       )}
       {!hasRecord && !generating && (
         <p className="text-[11px] text-t4">{t("scn_zone_no_record")}</p>
       )}
 
       {editing && (
-        <SceneEditorModal open={editing} isMobile={isMobile} schema={schema} state={sceneState ?? {}} onClose={() => setEditing(false)} onSave={runEdit} t={t} />
+        <SceneEditorModal open={editing} isMobile={isMobile} schema={renderSchema} state={sceneState ?? {}} onClose={() => setEditing(false)} onSave={runEdit} t={t} />
       )}
       {confirmDelete && (
         <ConfirmDelete open={confirmDelete} isMobile={isMobile} onCancel={() => setConfirmDelete(false)} onConfirm={() => void runDelete()} t={t} />
@@ -461,9 +471,10 @@ registerMessageSlot({
     const variantId = msg.variants?.[msg.selectedVariantIndex ?? -1]?.id;
     if (!variantId) return false;
     const isLatest = ctx.messageId === getLatestAssistantMessageId(s);
-    const config = s.activeChat.insightsConfig.tracker;
-    const fresh = config ? isRecordFresh(msg.sceneTracker ?? null, config) : false;
-    return isLatest || fresh;
+    // The latest assistant always mounts (Generate affordance even with no record);
+    // any other assistant mounts only when it carries a persisted Scene record,
+    // rendered read-only — a historical snapshot, never auto-hidden by config.
+    return isLatest || !!msg.sceneTracker;
   },
   render: (ctx) => <SceneZone chatId={ctx.chatId} messageId={ctx.messageId} />,
 });

@@ -2,7 +2,7 @@ import { eq, and, desc, asc, inArray } from 'drizzle-orm';
 import { messages, messageVariants, sceneBackfillRuns } from '../db-schema.js';
 import type { AppDb } from '../db-connection.js';
 import { resolveStoreRuntime, type StoreClock, type StoreIdGenerator } from '../persistence.js';
-import { extractThinkingTags } from '@vibe-tavern/domain';
+import { extractThinkingTags, type SceneTrackerDsl, type ScenePromptFormat } from '@vibe-tavern/domain';
 
 // ─── Return types ─────────────────────────────────────────────────────────────
 
@@ -56,17 +56,27 @@ export interface MessageVariant {
  * SceneTrackerRecord. Brands are applied at the API boundary (like Message /
  * MessageVariant ids). One record per immutable variant, stored as JSON in
  * message_variants.scene_tracker_json.
+ *
+ * A record is a persisted fact: a tracker config change never hides or deletes
+ * it. `schema`/`promptFormat` are the record's self-describing snapshot (absent
+ * only on legacy records persisted before the snapshot contract — readers fall
+ * back to the live config then). `schemaHash`/`configRevision` are identity +
+ * trace, never a visibility gate; `sourceHash` is the content-drift guard.
  */
 export interface MessageVariantSceneRecord {
   /** The immutable variant this record was generated for (ownership identity). */
   variantId: string;
-  /** The config schemaHash captured at generation time. */
+  /** The config schemaHash captured at generation time (identity/coherence, NOT a visibility gate). */
   schemaHash: string;
-  /** The config revision captured at generation time. */
+  /** The config revision captured at generation time (pure trace). */
   configRevision: number;
   /** Hash of the variant source content captured at generation time. */
   sourceHash: string;
-  /** The validated scene state, matching the then-current schema. */
+  /** The schema DSL (with labels) captured at generation time — self-describing snapshot. Absent on legacy records. */
+  schema?: SceneTrackerDsl;
+  /** The prompt format captured at generation time. Absent on legacy records. */
+  promptFormat?: ScenePromptFormat;
+  /** The validated scene state, matching the record's own `schema` snapshot. */
   sceneState: Record<string, unknown>;
   /** The model that produced this record (for trace). */
   modelId: string | null;
@@ -422,13 +432,14 @@ export class MessageStore {
         .where(eq(messages.id, id))
         .run();
 
-      // Also update the selected variant content + reasoning.
-      // A content edit invalidates that variant's Scene record (its sourceHash
-      // no longer matches the new content), so clear it in the same tx. Only the
-      // edited variant is affected — sibling variants keep their own records.
+      // Also update the selected variant content + reasoning. The variant's
+      // Scene record is a PERSISTED FACT and is intentionally left intact: a
+      // content edit (e.g. a typo fix) must not wipe a record the user would
+      // then have to regenerate. The record's stamped `sourceHash` becomes trace
+      // metadata for the pre-edit content; a later manual Update or auto-gen
+      // naturally replaces it under the current content when desired.
       const variantUpdate: Record<string, unknown> = {
         content: mainContent,
-        sceneTrackerJson: null,
       };
       if (extractedReasoning !== undefined) {
         variantUpdate.reasoning = extractedReasoning;

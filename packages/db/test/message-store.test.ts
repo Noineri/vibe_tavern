@@ -142,7 +142,7 @@ describe("MessageStore scene records (SCN-3)", () => {
     expect(await messages.getSceneRecord("mvar_does_not_exist")).toBeNull();
   });
 
-  test("content edit clears only the edited (selected) variant; siblings keep theirs", async () => {
+  test("content edit LEAVES the edited variant's record intact (persisted fact); siblings keep theirs", async () => {
     const msg = await messages.addMessage({
       chatId: "chat_1", branchId: "brnch_1",
       role: "assistant", authorType: "assistant", content: "v0",
@@ -155,11 +155,14 @@ describe("MessageStore scene records (SCN-3)", () => {
     expect(await messages.getSceneRecord(v0!.id)).not.toBeNull();
     expect(await messages.getSceneRecord(v1!.id)).not.toBeNull();
 
-    // Editing a message rewrites the SELECTED variant's content (v0) — its Scene
-    // record is invalidated (sourceHash no longer matches). v1 is untouched.
+    // Editing a message (e.g. a typo fix) rewrites the SELECTED variant's content
+    // (v0) but must NOT wipe its Scene record — it is a persisted fact, not a
+    // cache entry of the current content. The user should not have to regenerate
+    // after an edit. v1 is untouched either way.
     await messages.editMessage(msg.id, "v0 edited");
 
-    expect(await messages.getSceneRecord(v0!.id)).toBeNull();
+    expect(await messages.getSceneRecord(v0!.id)).not.toBeNull();
+    expect((await messages.getSceneRecord(v0!.id))!.sourceHash).toBe("source_1");
     expect((await messages.getSceneRecord(v1!.id))!.sourceHash).toBe("v1_src");
   });
 

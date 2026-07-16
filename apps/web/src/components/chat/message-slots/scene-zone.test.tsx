@@ -3,10 +3,12 @@
  *
  * Pins the header-zone boundary: the descriptor registers at
  * `assistant_header_zone` (order 2) and its `visible` predicate implements the
- * focused-latest-header contract — the LATEST assistant mounts Generate/Update
- * when missing/stale, an OLDER assistant mounts ONLY when its selected variant
- * has a current valid record, and Tracker OFF is true zero DOM. The component
- * then renders Generate/Update/Edit/Delete/Cancel and the recursive read view,
+ * persisted-record-header contract — the LATEST assistant always mounts (Generate
+ * with no record, Update with one); an OLDER assistant mounts whenever it carries
+ * a persisted Scene record of ANY schema (rendered read-only — a historical
+ * snapshot, never auto-hidden by a config/schema/model change), and Tracker OFF is
+ * true zero DOM. The component then renders Generate/Update/Edit/Delete/Cancel
+ * (LLM Generate/Update is latest-only) and the recursive read view,
  * hydrates the generating flag from the server status on mount (latest only),
  * and preserves cross-message isolation (a mutation for message A yields 0
  * commits for message B).
@@ -175,9 +177,10 @@ describe("Scene zone visibility (SCN-12)", () => {
     expect(visible("m1")).toBe(true);
   });
 
-  it("older assistant with a STALE record stays absent", () => {
+  it("older assistant with a STALE (different-schema) record STILL mounts (persisted fact, never auto-hidden)", () => {
     seed([msg("m1", { variantId: "v1", rec: record("v1", { mood: "calm" }, { stale: true }) }), msg("m2", { variantId: "v2" })]);
-    expect(visible("m1")).toBe(false);
+    // A config/schema change never hides a historical record — it renders read-only.
+    expect(visible("m1")).toBe(true);
   });
 
   it("a message without a selected variant does not mount", () => {
@@ -211,6 +214,21 @@ describe("Scene zone component (SCN-12)", () => {
     expect(getByText("7")).toBeTruthy();
     // Rich (the default) renders bounded numbers as a meter.
     expect(container.querySelector('[role="meter"]')).not.toBeNull();
+  });
+
+  it("an OLDER record renders read-only — no LLM Generate/Update; Edit + Delete remain", () => {
+    seed([
+      msg("m1", { variantId: "v1", rec: record("v1", { mood: "tense", tension: 7 }) }),
+      msg("m2", { variantId: "v2" }), // m2 is latest; m1 is older.
+    ]);
+    const { getByLabelText, queryByLabelText } = render(createElement(SceneZone, { chatId: "chat-1", messageId: "m1" }));
+    fireEvent.click(getByLabelText("scn_zone_expand"));
+    // LLM Generate/Update is latest-only → neither button renders for an older record.
+    expect(queryByLabelText("scn_zone_update")).toBeNull();
+    expect(queryByLabelText("scn_zone_generate")).toBeNull();
+    // Manual Edit (same-schema record) + Delete remain available on older records.
+    expect(getByLabelText("scn_zone_edit")).toBeTruthy();
+    expect(getByLabelText("scn_zone_delete")).toBeTruthy();
   });
 
   it("read view follows the shared render-variant store — compact hides the meter", () => {
