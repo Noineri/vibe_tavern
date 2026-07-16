@@ -77,12 +77,15 @@ describe("CoauthorModeStrategy.assemble", () => {
         getCoauthorLorebookEntries: async () => [],
         getChatSummaries: async () => [],
         getCoauthorUserModules: async () => [],
+        getSkillCatalog: async () => [],
       },
     };
     const out = await strategy.assemble(input);
     // CA-6: assemble is now real (no longer NOT_IMPLEMENTED) and emits the
     // editor tool set + maxSteps for the executor's tool-loop.
     expect(out.tools).toHaveProperty("write_profile");
+    // CTX-S4: read_skill_file is always available (catalog-driven skill access).
+    expect(out.tools).toHaveProperty("read_skill_file");
     expect(out.maxSteps).toBe(5);
   });
 

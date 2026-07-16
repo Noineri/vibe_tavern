@@ -78,6 +78,14 @@ export interface ChatModeAssembleLoaders {
    * built-in case. Seed modules never come from here.
    */
   getCoauthorUserModules(): Promise<Array<Omit<import("@vibe-tavern/api-contracts").CoauthorModule, "isBuiltIn">>>;
+  /**
+   * The merged Co-Author skill catalog (built-in + user, user precedence) for
+   * the system prompt's 'Available skills' section and for read_skill_file
+   * path resolution (CTX-S4). Each entry carries discovery metadata plus the
+   * ABSOLUTE skill dir (used only server-side to derive the skill roots; the
+   * wire DTO strips it). Returns an empty array when no skills are installed.
+   */
+  getSkillCatalog(): Promise<import("../coauthor/skills/skill-scanner.js").SkillCatalogEntry[]>;
 }
 
 /**
@@ -106,7 +114,7 @@ export type ChatModeAssembleResult = AssemblePromptForChatResult & {
   maxSteps?: number;
   /** Emitted per turn in coauthor mode for UI badging (CS-28). */
   coauthorModuleId?: string;
-  coauthorSkillId?: string;
+  coauthorSkillId?: string | null;
 };
 
 /**

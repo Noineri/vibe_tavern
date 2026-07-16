@@ -7,7 +7,7 @@
  *
  * Prompt shape (what the model sees, via `prompt.finalPayload.messages` — the
  * only field the executor's `toSdkMessages` reads):
- *   1. system: base editor prompt + active skill + current card (profile.md + greetings)
+ *   1. system: base editor prompt + available-skills catalog + current card (profile.md + greetings)
  *      [+ the chat's BOUND lorebook entries as read-only reference, when any are bound — CA-13]
  *   2. user/assistant pairs: the chat's own last-N messages (conversation history)
  *
@@ -25,38 +25,15 @@ import { brandId } from "@vibe-tavern/domain";
 import type { AssemblePromptResponse } from "@vibe-tavern/domain";
 import type { ChatModeAssembleInput, ChatModeAssembleResult } from "./chat-mode-strategy.js";
 import { buildCoauthorTools, COAUTHOR_MAX_STEPS } from "./coauthor-tools.js";
-import { loadPromptAsset } from "../../shared/prompt-asset-loader.js";
 import { estimateTokens, planHistoryCompaction, setModelHint } from "@vibe-tavern/prompt-pipeline";
 import type { ToolCallPart, ToolResultPart } from "ai";
+import { dirname } from "node:path";
 import { getCoauthorModule, isSeedModule } from "../coauthor/modules/module-registry.js";
+import type { SkillCatalogEntry } from "../coauthor/skills/skill-scanner.js";
 
 /** How many of the chat's most recent messages to include as conversation history. */
 const HISTORY_LIMIT = 20;
 
-// Skill prompt files live under services/api/assets/coauthor/skills/.
-const BASE_PROMPT_FILE = "coauthor/base.md";
-const FALLBACK_SKILL = "profile-overview";
-
-/**
- * Keyword → skill autodetection. First match wins (order matters: more
- * specific keys first). When nothing matches, {@link FALLBACK_SKILL} is used.
- * (The explicit user-pick half of skill resolution needs a chat-level setting
- * that does not exist yet — it lands in a later wave. Autodetect-on-message
- * ships now so a message like "make the personality deeper" routes correctly.)
- */
-const SKILL_KEYWORDS: Array<{ skill: string; keywords: string[] }> = [
-  { skill: "personality-deepen", keywords: ["personality", "deepen", "flat", "generic", "more interesting", "deeper", "flesh out"] },
-];
-
-function detectSkill(userText: string, allowedSkillIds: string[]): string {
-  const lower = userText.toLowerCase();
-  for (const { skill, keywords } of SKILL_KEYWORDS) {
-    if (allowedSkillIds.includes(skill) && keywords.some((k) => lower.includes(k))) return skill;
-  }
-  return allowedSkillIds[0] ?? FALLBACK_SKILL;
-}
-
-/** Extract the most recent user message text for skill autodetection (empty-safe). */
 /** The assembled co-author history message shape (matches SDK message parts
  *  one-to-one). Tool calls/results use the SDK v6 field names: a tool call
  *  carries `input` (the parsed args), a tool result carries `output`. Earlier
@@ -74,12 +51,28 @@ function asToolProviderOptions(value: unknown): ToolCallPart["providerOptions"] 
     : undefined;
 }
 
-function latestUserMessage(history: CoauthorHistoryMessage[]): string {
-  for (let i = history.length - 1; i >= 0; i--) {
-    const m = history[i];
-    if (m.role === "user") return m.content;
-  }
-  return "";
+/**
+ * Render the 'Available skills' catalog section (Wave 2 / CTX-S4). Metadata
+ * only — id, description, and the portable root-relative manifest path the
+ * model reads via `read_skill_file`. No skill BODY is loaded eagerly; the
+ * model matches the request, reads the relevant SKILL.md, and follows links to
+ * assets/references only as needed. Empty string when no skills are available
+ * (the section is omitted entirely so the prompt is unchanged for a fresh
+ * install with no built-ins).
+ */
+function renderSkillCatalog(entries: readonly SkillCatalogEntry[]): string {
+  if (entries.length === 0) return "";
+  const lines = [
+    "# Available skills (Agent Skills flow)",
+    "Skills are loaded on demand, IDE/CLI-style. To use one: pick the skill whose description matches the user's request, call `read_skill_file` with its manifest `path` to read its `SKILL.md`, obey that workflow, and read only the referenced assets/references the current task actually needs. Do NOT read a skill you do not need.",
+    "",
+    ...entries.map((e) => {
+      const shadow = e.shadowsBuiltin ? " (user override of built-in)" : "";
+      const desc = e.description.trim() || "(no description)";
+      return `- **${e.id}**${shadow} — ${desc}  → read \`${e.rootRelativeManifestPath}\``;
+    }),
+  ];
+  return lines.join("\n");
 }
 
 /** Render the current card (profile.md + greetings) as read-only context for the model. */
@@ -129,9 +122,9 @@ function estimateCoauthorHistoryTokens(messages: ReadonlyArray<CoauthorHistoryMe
 export async function assembleCoauthorPrompt(input: ChatModeAssembleInput): Promise<ChatModeAssembleResult> {
   const { chatId, model, loaders } = input;
 
-  // Pull the card state + conversation history up front. The skill overlay is
-  // chosen from the latest user message, so history must be resolved before the
-  // asset load. Co-author is a flat editor chat — no branches, no compaction.
+  // Pull the card state + conversation history up front. Co-author is a flat
+  // editor chat — no branches, no compaction. (Skills are catalog-only in the
+  // prompt; the model reads them on demand via read_skill_file — CTX-S4.)
   const [chat, character, history] = await Promise.all([
     loaders.getChat(chatId),
     loaders.getCharacter(chatId),
@@ -198,22 +191,27 @@ export async function assembleCoauthorPrompt(input: ChatModeAssembleInput): Prom
   // activation. Co-author is an editor, not a roleplay.
   // Resolve the active module. Seed modules (the common case) need no DB read —
   // only user-created modules do, so gate the loader call on isSeedModule.
-  // basePrompt is now INLINE on the module (CS-24); the old loadPromptAsset
-  // call for the base prompt is gone (skill prompts still load from disk).
+  // basePrompt is INLINE on the module (CS-24). Skills are no longer eagerly
+  // loaded or keyword-detected: the catalog (metadata only) is injected below
+  // and the model reads SKILL.md/references on demand via read_skill_file.
   const userModules = isSeedModule(chat.coauthorModuleId)
     ? []
     : await loaders.getCoauthorUserModules();
   const module = await getCoauthorModule(chat.coauthorModuleId, userModules);
-  const skillId = detectSkill(latestUserMessage(history), module.skillIds);
-  const [profileMd, loreEntries, skillPrompt, branchSummaries] = await Promise.all([
+  const [profileMd, loreEntries, skillCatalog, branchSummaries] = await Promise.all([
     loaders.getProfileMdText(character.id as unknown as import("@vibe-tavern/domain").CharacterId),
     loaders.getCoauthorLorebookEntries(chatId),
-    loadPromptAsset(`coauthor/skills/${skillId}/SKILL.md`),
+    loaders.getSkillCatalog(),
     loaders.getChatSummaries(chatId, input.branchId ?? (chat.activeBranchId as ChatBranchId)),
   ]);
   const basePrompt = module.basePrompt;
   const currentCard = renderCurrentCard(profileMd, character);
   const loreBlock = renderLoreContext(loreEntries);
+  const skillCatalogBlock = renderSkillCatalog(skillCatalog);
+  // Derive the skill roots (user + built-in) from the catalog entries' skill
+  // dirs so read_skill_file resolves paths against the same roots the catalog
+  // was built from. Empty when no skills are available (reads then reject).
+  const skillRoots = [...new Set(skillCatalog.map((e) => dirname(e.skillDir)))];
 
   const enabledSummaries = branchSummaries.filter((s) => s.includeInContext && s.content.trim());
   const memoryItems = enabledSummaries.length > 0
@@ -223,7 +221,11 @@ export async function assembleCoauthorPrompt(input: ChatModeAssembleInput): Prom
     ? ["# Conversation Summary", ...memoryItems].join("\n")
     : "";
 
-  const sections = [basePrompt, "", "# Active skill", skillPrompt, "", currentCard];
+  const sections = [basePrompt];
+  if (skillCatalogBlock) {
+    sections.push("", skillCatalogBlock);
+  }
+  sections.push("", currentCard);
   if (memoryBlock) {
     sections.push("", memoryBlock);
   }
@@ -281,18 +283,20 @@ export async function assembleCoauthorPrompt(input: ChatModeAssembleInput): Prom
     tokenCount: estimateTokens(basePrompt)
   });
 
-  layers.push({
-    id: `skill-${skillId}`,
-    sourceType: "coauthor_skill",
-    sourceId: skillId,
-    sourceName: `Skill: ${skillId}`,
-    position: "in_prompt",
-    priority: 950,
-    text: skillPrompt,
-    enabled: true,
-    reason: "",
-    tokenCount: estimateTokens(skillPrompt)
-  });
+  if (skillCatalogBlock) {
+    layers.push({
+      id: "skill_catalog",
+      sourceType: "coauthor_skill",
+      sourceId: "catalog",
+      sourceName: `Available skills (${skillCatalog.length})`,
+      position: "in_prompt",
+      priority: 950,
+      text: skillCatalogBlock,
+      enabled: true,
+      reason: "",
+      tokenCount: estimateTokens(skillCatalogBlock)
+    });
+  }
 
   layers.push({
     id: "current_card",
@@ -404,9 +408,9 @@ export async function assembleCoauthorPrompt(input: ChatModeAssembleInput): Prom
       latencyMs: 0,
       compactionSummary,
     },
-    tools: buildCoauthorTools({ toolSet: module.toolSet, profileMd }),
+    tools: buildCoauthorTools({ toolSet: module.toolSet, profileMd, skillRoots }),
     maxSteps: module.maxSteps,
     coauthorModuleId: module.id,
-    coauthorSkillId: skillId,
+    coauthorSkillId: null,
   };
 }

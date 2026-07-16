@@ -167,9 +167,17 @@ export async function startServerRuntime(config: ServerRuntimeConfig): Promise<v
 		// Services
 		const providerProfileService = createProviderProfileService(stores.providers);
 		const promptPresetService = new PromptPresetService(stores.presets, stores.chats);
+		// Skill library is constructed before SessionRuntime so the catalog can be
+		// injected (CTX-S4): the co-author prompt shows a metadata-only catalog
+		// and the model reads skill files on demand via read_skill_file.
+		const skillLibraryService = new SkillLibraryService(
+			resolveUserSkillsRoot(config.dataDir),
+			await resolveBuiltinSkillsRoot(),
+		);
 		const sessionRuntime = new SessionRuntime(stores, {
 			getActiveProviderProfile: () => providerProfileService.resolveActiveProviderProfile(),
 			dataDir: config.dataDir,
+			getSkillCatalog: async () => (await skillLibraryService.listCatalog()).entries,
 		});
 		const providerOrchestrator = new ProviderOrchestrator(providerProfileService);
 		const events = new EventBus();
@@ -192,10 +200,6 @@ export async function startServerRuntime(config: ServerRuntimeConfig): Promise<v
 
 		const assetService = new AssetService(config.assetsDir, stores.content);
 		const mobileAccessService = new MobileAccessService(config.dataDir);
-		const skillLibraryService = new SkillLibraryService(
-			resolveUserSkillsRoot(config.dataDir),
-			await resolveBuiltinSkillsRoot(),
-		);
 
 		// RuntimeApi adapter
 		const runtime = new RuntimeApiAdapter(

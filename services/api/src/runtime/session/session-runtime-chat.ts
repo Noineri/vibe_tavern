@@ -23,7 +23,7 @@ export interface PreparedLiveTurn {
   /** Max tool-calling rounds (only meaningful when `tools` is set). */
   maxSteps?: number;
   coauthorModuleId?: string;
-  coauthorSkillId?: string;
+  coauthorSkillId?: string | null;
   snapshot: SessionSnapshot;
   userMessage?: {
     id: MessageId;
@@ -417,7 +417,7 @@ export class ChatRuntime {
   async assemblePromptPreview(
     chatId: ChatId,
     options: { excludeMessageId?: MessageId; model: string; contextBudget?: number | null; responseReserve?: number; presetId?: PromptPresetId },
-  ): Promise<AssemblePromptResponse & { tools?: ToolSet; maxSteps?: number; coauthorModuleId?: string; coauthorSkillId?: string }> {
+  ): Promise<AssemblePromptResponse & { tools?: ToolSet; maxSteps?: number; coauthorModuleId?: string; coauthorSkillId?: string | null }> {
     const { assemblePrompt } = this.deps;
     const assembled = await assemblePrompt(chatId, undefined, {
       excludeMessageIds: options.excludeMessageId ? [options.excludeMessageId] : [],

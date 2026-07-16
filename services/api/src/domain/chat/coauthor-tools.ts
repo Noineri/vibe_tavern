@@ -31,6 +31,7 @@ import {
   type CoauthorToolOutput,
 } from "@vibe-tavern/api-contracts";
 import { log } from "@vibe-tavern/domain";
+import { buildReadSkillFileTool } from "../coauthor/skills/skill-read-tool.js";
 
 /** CA-17/CANARY: structured log for every co-author tool call. Without this
  * there is NO observability on the co-author path — tool I/O, the lost-section
@@ -253,8 +254,8 @@ function setSectionField(profile: VtfProfile, field: SectionField, value: string
  * validates and echoes the proposal; the strategy passes this set to the
  * executor (tools propose; the Apply RPC is the sole write path).
  */
-export function buildCoauthorTools(opts: { toolSet?: Record<string, boolean>; profileMd?: string } = {}) {
-  const { toolSet } = opts;
+export function buildCoauthorTools(opts: { toolSet?: Record<string, boolean>; profileMd?: string; skillRoots?: readonly string[] } = {}) {
+  const { toolSet, skillRoots } = opts;
 
   // ── Turn-local composable profile state (CED-2) ───────────────────────────
   // Every successful profile mutation in one assembled turn — write_profile,
@@ -520,9 +521,13 @@ export function buildCoauthorTools(opts: { toolSet?: Record<string, boolean>; pr
   };
 
   if (toolSet) {
-    return Object.fromEntries(Object.entries(allTools).filter(([name]) => toolSet[name] === true)) as typeof allTools;
+    const filtered = Object.fromEntries(Object.entries(allTools).filter(([name]) => toolSet[name] === true)) as typeof allTools;
+    // read_skill_file is always available in Co-Author mode: it is the universal,
+    // read-only skill-access channel and is NOT gated by a module's toolSet
+    // (which only scopes the mutating profile/greeting tools). Wave 2 (CTX-S4).
+    return { ...filtered, read_skill_file: buildReadSkillFileTool(skillRoots ?? []) } as typeof allTools & { read_skill_file: ReturnType<typeof buildReadSkillFileTool> };
   }
-  return allTools;
+  return { ...allTools, read_skill_file: buildReadSkillFileTool(skillRoots ?? []) } as typeof allTools & { read_skill_file: ReturnType<typeof buildReadSkillFileTool> };
 }
 
 /**

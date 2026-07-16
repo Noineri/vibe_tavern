@@ -19,6 +19,7 @@ function makeLoaders(overrides?: Partial<{
   messages: DbMessage[];
   loreEntries: Array<{ id: string; title: string; content: string }>;
   userModules: Array<Omit<import("@vibe-tavern/api-contracts").CoauthorModule, "isBuiltIn">>;
+  skillCatalog: import("../src/domain/coauthor/skills/skill-scanner.js").SkillCatalogEntry[];
 }>): ChatModeAssembleLoaders {
   const character: Character = {
     id: "char_test",
@@ -57,6 +58,7 @@ function makeLoaders(overrides?: Partial<{
     getCoauthorLorebookEntries: async () => overrides?.loreEntries ?? [],
     getChatSummaries: async () => [],
     getCoauthorUserModules: async () => overrides?.userModules ?? [],
+    getSkillCatalog: async () => overrides?.skillCatalog ?? DEFAULT_MOCK_CATALOG,
   };
 }
 
@@ -69,6 +71,22 @@ function makeInput(loaders: ChatModeAssembleLoaders, partial?: Partial<ChatModeA
     ...partial,
   } as ChatModeAssembleInput;
 }
+
+/** A small hermetic catalog (does not touch disk) so prompt-assembly tests do
+ *  not couple to the exact set of built-in skills (which Wave 3 reshuffles).
+ *  The real scanner→catalog path is pinned in coauthor-skill-scanner.test.ts. */
+const DEFAULT_MOCK_CATALOG: import("../src/domain/coauthor/skills/skill-scanner.js").SkillCatalogEntry[] = [
+  {
+    id: "general-writing",
+    source: "builtin",
+    name: "general-writing",
+    description: "General writing guidance for prose, pacing, and voice.",
+    skillDir: "/skills/general-writing",
+    manifestPath: "/skills/general-writing/SKILL.md",
+    rootRelativeManifestPath: "general-writing/SKILL.md",
+    shadowsBuiltin: false,
+  },
+];
 
 describe("assembleCoauthorPrompt", () => {
   test("assembles system + history + tools/maxSteps", async () => {
@@ -156,14 +174,25 @@ describe("assembleCoauthorPrompt", () => {
     expect(exIdx).toBeGreaterThan(scenIdx);
   });
 
-  test("loads the general-writing skill", async () => {
+  test("CTX-S4: renders the skill catalog (metadata only) and exposes read_skill_file; no eager skill body", async () => {
     const loaders = makeLoaders({
       messages: [{ role: "user", content: "hello" } as never],
     });
     const result = await assembleCoauthorPrompt(makeInput(loaders));
     const system = (result.prompt.finalPayload as { messages: Array<{ content: string }> }).messages[0].content;
-    expect(system).toContain("# Active skill");
-    expect(system).toContain("General Writing");
+    // Catalog section: id + description + the portable manifest path the model reads.
+    expect(system).toContain("# Available skills");
+    expect(system).toContain("general-writing");
+    expect(system).toContain("General writing guidance");
+    expect(system).toContain("general-writing/SKILL.md");
+    // No eager skill BODY — the model reads it on demand via read_skill_file.
+    expect(system).not.toContain("# Active skill");
+    // The catalog replaces the old single-skill trace layer.
+    expect(result.coauthorSkillId).toBeNull();
+    const skillLayer = result.prompt.layers.find((l) => l.sourceType === "coauthor_skill");
+    expect(skillLayer?.id).toBe("skill_catalog");
+    // read_skill_file is always available (not gated by the module toolSet).
+    expect(result.tools).toHaveProperty("read_skill_file");
   });
 
   test("promptTraceDraft carries coauthor preset name and no RP-pipeline layers", async () => {

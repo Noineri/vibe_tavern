@@ -121,6 +121,7 @@ export function pickBootstrapChatId<T extends string>(
 	private readonly chatOrder: ChatOrderService;
 	private defaultsEnsured = false;
 	private readonly getActiveProviderProfile: () => Promise<StoredProviderProfileRecord | null>;
+	private readonly getSkillCatalog: () => Promise<import("../../domain/coauthor/skills/skill-scanner.js").SkillCatalogEntry[]>;
 
 	readonly chatRuntime: ChatRuntime;
 	readonly persona: PersonaRuntime;
@@ -132,6 +133,7 @@ export function pickBootstrapChatId<T extends string>(
 		options?: {
 			getActiveProviderProfile?: () => Promise<StoredProviderProfileRecord | null>;
 			dataDir?: string;
+			getSkillCatalog?: () => Promise<import("../../domain/coauthor/skills/skill-scanner.js").SkillCatalogEntry[]>;
 		},
 	) {
 		this.stores = stores;
@@ -140,6 +142,8 @@ export function pickBootstrapChatId<T extends string>(
 		this.promptService = new PromptAssemblyService(stores, this.resolver, this.stores.content.fileStore);
 		this.getActiveProviderProfile =
 			options?.getActiveProviderProfile ?? (async () => null);
+		this.getSkillCatalog =
+			options?.getSkillCatalog ?? (async () => []);
 		this.chatOrder = new ChatOrderService(stores.chats);
 		this.chatRuntime = new ChatRuntime({
 			chats: stores.chats,
@@ -862,6 +866,7 @@ export function pickBootstrapChatId<T extends string>(
 				// createdAt/updatedAt which the registry's toUserModule drops.
 				return this.stores.coauthorModules.list();
 			},
+			getSkillCatalog: () => this.getSkillCatalog(),
 		};
 	}
 
