@@ -43,6 +43,7 @@ import type {
 	SceneTrackerConfig,
 	SceneTrackerDsl,
 	SceneTrackerRecord,
+	SceneTrackerSchemaNode,
 	Timestamp,
 } from "@vibe-tavern/domain";
 import { brandId, computeSceneSourceHash, normalizeSceneTrackerConfig, stripLabels, SCENE_BACKFILL_MODE } from "@vibe-tavern/domain";
@@ -185,12 +186,35 @@ export function composeSceneInstruction(
 	const schemaJson = JSON.stringify(stripLabels(schema));
 	const continuityJson =
 		continuity.length > 0 ? JSON.stringify(continuity.map((record) => record.sceneState)) : "[]";
+	const labelHints = collectLabelHints(schema);
+	const labelBlock = labelHints.length > 0
+		? `\n\nField labels (human names for the schema keys; they do NOT add, rename, or remove any field — output the machine keys exactly as in the schema): ${JSON.stringify(labelHints)}`
+		: "";
 	return (
 		`${base}\n\n` +
 		`Scene schema (produce one JSON object with exactly these fields, no extras): ${schemaJson}\n\n` +
-		`Recent scene continuity (prior states — evolve them to match the current scene): ${continuityJson}\n\n` +
-		`Required output: one JSON object matching the schema exactly.`
+		`Recent scene continuity (prior states — evolve them to match the current scene): ${continuityJson}` +
+		labelBlock +
+		`\n\nRequired output: one JSON object matching the schema exactly.`
 	);
+}
+
+/** Collect `label` hints (human names for machine keys) recursively. They are sent
+ *  SEPARATELY from the schema JSON so a label can never affect `schemaHash` (it is
+ *  renderer-only presentation). The model still outputs the machine keys, but can
+ *  read the human meaning of each field (e.g. `obedience` → "Silvius's Obedience"). */
+function collectLabelHints(dsl: SceneTrackerDsl): string[] {
+	const hints: string[] = [];
+	const walk = (path: string, node: SceneTrackerSchemaNode): void => {
+		if (node.label) hints.push(`${path}: ${node.label}`);
+		if (node.$type === "object") {
+			for (const [key, child] of Object.entries(node.properties)) walk(`${path}.${key}`, child);
+		} else if (node.$type === "array") {
+			walk(`${path}[]`, node.items);
+		}
+	};
+	for (const [key, node] of Object.entries(dsl)) walk(key, node);
+	return hints;
 }
 
 /** Forward an external AbortSignal onto a service-owned controller (one-shot). */

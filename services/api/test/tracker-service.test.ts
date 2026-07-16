@@ -206,16 +206,19 @@ describe("composeSceneInstruction (SCN-5)", () => {
 		expect(instruction).toContain("Required output: one JSON object");
 	});
 
-	it("strips `label` from the schema descriptor (the model sees machine keys only)", () => {
+	it("keeps the schema descriptor machine-key-only but passes labels as separate hash-invariant hints", () => {
 		const instruction = composeSceneInstruction("BASE", {
 			mood: { $type: "string", label: "Настроение" },
 			hp: { $type: "number", min: 0, max: 100, label: "HP" },
 		}, []);
-		expect(instruction).toContain('"mood"');
-		expect(instruction).toContain('"hp"');
-		// `label` is renderer-only presentation — it must never reach the model.
-		expect(instruction).not.toContain('"label"');
-		expect(instruction).not.toContain("Настроение");
+		// The schema descriptor itself stays label-free (labels are renderer-only and
+		// must never change schemaHash) — no `label` keys leak into the schema JSON.
+		expect(instruction).toContain('"$type":"string"');
+		expect(instruction).not.toMatch(/"label"\s*:/);
+		// ...but the human names travel as a SEPARATE hints block so the model can read
+		// each field's meaning (e.g. `hp` → "HP") without affecting the schema hash.
+		expect(instruction).toContain("Настроение");
+		expect(instruction).toContain("HP");
 	});
 
 	it("emits an empty continuity array when none is provided", () => {
