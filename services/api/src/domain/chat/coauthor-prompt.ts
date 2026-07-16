@@ -208,7 +208,7 @@ export async function assembleCoauthorPrompt(input: ChatModeAssembleInput): Prom
   const [profileMd, loreEntries, skillPrompt, branchSummaries] = await Promise.all([
     loaders.getProfileMdText(character.id as unknown as import("@vibe-tavern/domain").CharacterId),
     loaders.getCoauthorLorebookEntries(chatId),
-    loadPromptAsset(`coauthor/skills/${skillId}.md`),
+    loadPromptAsset(`coauthor/skills/${skillId}/SKILL.md`),
     loaders.getChatSummaries(chatId, input.branchId ?? (chat.activeBranchId as ChatBranchId)),
   ]);
   const basePrompt = module.basePrompt;
