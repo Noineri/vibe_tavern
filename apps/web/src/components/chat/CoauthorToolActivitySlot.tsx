@@ -26,6 +26,7 @@ import { useT } from "../../i18n/context.js";
  */
 
 const EMPTY: CoauthorToolActivity[] = [];
+const EMPTY_MSGS: AppMessage[] = [];
 
 /**
  * Slot-rendered component. `visible`/`render` in the registry are plain
@@ -42,6 +43,26 @@ function CoauthorToolActivitySlot({
   isStreaming: boolean;
 }) {
   const activeActivities = useCoauthorTurnStore(useShallow((s) => s.turnsByChat[chatId] ?? EMPTY));
+  // Primitive signature, not an ordered-message array subscription: each
+  // MessageBlock must remain isolated from unrelated message/variant updates.
+  // Zustand compares this string with Object.is, so a mutation on message B
+  // does not commit message A merely because the selector rescanned the turn.
+  const persistedActiveIdKey = useSnapshotStore((s) => {
+    if (activeActivities.length === 0) return "";
+    const activeIds = new Set(activeActivities.map((activity) => activity.toolCallId));
+    const messages = s.messageOrder
+      .map((id) => s.messagesById[id])
+      .filter((message): message is AppMessage => message !== undefined);
+    return extractPersistedCoauthorActivities(messages)
+      .map((activity) => activity.toolCallId)
+      .filter((toolCallId) => activeIds.has(toolCallId))
+      .sort()
+      .join("\u0000");
+  });
+  const persistedToolCallIds = useMemo(
+    () => new Set(persistedActiveIdKey ? persistedActiveIdKey.split("\u0000") : []),
+    [persistedActiveIdKey],
+  );
   const isLastAssistant = useSnapshotStore(
     useShallow((s) => {
       const order = s.messageOrder;
@@ -63,7 +84,6 @@ function CoauthorToolActivitySlot({
   // Selector now returns the tool MESSAGES themselves (same refs the store
   // holds, structurally shared via Immer → Object.is holds), and the derived
   // CoauthorToolActivity[] is built in a useMemo below.
-  const EMPTY_MSGS: AppMessage[] = [];
   const trailingToolMessages = useSnapshotStore(useShallow((s): AppMessage[] => {
     const order = s.messageOrder;
     const msgs = s.messagesById;
@@ -97,10 +117,20 @@ function CoauthorToolActivitySlot({
     for (const a of persistedActivities) map.set(a.toolCallId, a);
     
     if (isStreaming || isLastAssistant) {
-      for (const a of activeActivities) map.set(a.toolCallId, a);
+      for (const a of activeActivities) {
+        // During generation the active store is the only source and belongs on
+        // the streaming assistant. After commit, however, each persisted call
+        // is rendered by its carrier assistant. Re-attaching the same active ID
+        // to the final text assistant produced the duplicated card pairs seen
+        // before Apply. Keep the final-assistant fallback only for genuinely
+        // unpersisted/historical active rows.
+        if (isStreaming || !persistedToolCallIds.has(a.toolCallId)) {
+          map.set(a.toolCallId, a);
+        }
+      }
     }
     return Array.from(map.values());
-  }, [persistedActivities, activeActivities, isStreaming, isLastAssistant]);
+  }, [persistedActivities, activeActivities, persistedToolCallIds, isStreaming, isLastAssistant]);
 
   if (activities.length === 0) return null;
 

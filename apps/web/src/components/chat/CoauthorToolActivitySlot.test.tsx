@@ -10,10 +10,13 @@
  * `write_profile`. Historical rows without input show their summary but must
  * not fall back to printing the full proposed snapshot.
  */
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, fireEvent } from "@testing-library/react";
-import { ToolActivityCard } from "./CoauthorToolActivitySlot.js";
-import type { CoauthorToolActivity } from "../../stores/coauthor-turn-store.js";
+import { CoauthorToolActivitySlot, ToolActivityCard } from "./CoauthorToolActivitySlot.js";
+import { useCoauthorTurnStore, type CoauthorToolActivity } from "../../stores/coauthor-turn-store.js";
+import { useSnapshotStore } from "../../stores/snapshot-store.js";
+import type { AppMessage } from "../../api/types.js";
+import { brandId, type ChatBranchId, type ChatId, type MessageId, type MessageVariantId } from "@vibe-tavern/domain";
 
 // Mock useT at the module boundary — the card imports i18n for labels.
 // Returns the key verbatim so assertions can match on stable key strings.
@@ -36,6 +39,109 @@ function activity(over: Partial<CoauthorToolActivity>): CoauthorToolActivity {
 		...over,
 	};
 }
+
+afterEach(() => {
+	useSnapshotStore.getState().clear();
+	useCoauthorTurnStore.setState({ turnsByChat: {} });
+});
+
+describe("CoauthorToolActivitySlot — persisted carrier + final response", () => {
+	it("renders a selected-variant tool call once with its operation input", () => {
+		const chatId = brandId<ChatId>("chat_slot");
+		const branchId = brandId<ChatBranchId>("branch_slot");
+		const carrierId = brandId<MessageId>("assistant_carrier");
+		const toolResultId = brandId<MessageId>("tool_result");
+		const finalResponseId = brandId<MessageId>("assistant_final");
+		const createdAt = "2026-07-16T00:00:00.000Z";
+		const baseMessage = {
+			chatId,
+			branchId,
+			modelId: null,
+			sceneTracker: null,
+			state: "complete" as const,
+			createdAt,
+			updatedAt: createdAt,
+		};
+		const editArgs = { edits: [{ search: "old trait", replace: "new trait" }], summary: "swap" };
+		const carrier: AppMessage = {
+			...baseMessage,
+			id: carrierId,
+			role: "assistant",
+			authorType: "assistant",
+			position: 0,
+			content: "",
+			variants: [{
+				id: brandId<MessageVariantId>("variant_carrier"),
+				messageId: carrierId,
+				variantIndex: 0,
+				content: "",
+				isSelected: true,
+				finishReason: null,
+				createdAt,
+				toolCalls: [{ id: "call_edit", name: "edit_personality", args: editArgs }],
+				toolCallId: null,
+			}],
+			selectedVariantIndex: 0,
+		};
+		const toolResult: AppMessage = {
+			...baseMessage,
+			id: toolResultId,
+			role: "tool",
+			authorType: "tool",
+			position: 1,
+			content: JSON.stringify({ target: "profile", proposed: FULL_PROFILE, summary: "swap" }),
+			variants: [{
+				id: brandId<MessageVariantId>("variant_result"),
+				messageId: toolResultId,
+				variantIndex: 0,
+				content: "",
+				isSelected: true,
+				finishReason: null,
+				createdAt,
+				toolCallId: "call_edit",
+			}],
+			selectedVariantIndex: 0,
+		};
+		const finalResponse: AppMessage = {
+			...baseMessage,
+			id: finalResponseId,
+			role: "assistant",
+			authorType: "assistant",
+			position: 2,
+			content: "Done",
+			variants: [],
+			selectedVariantIndex: null,
+		};
+
+		useSnapshotStore.setState({
+			messageOrder: [carrier.id, toolResult.id, finalResponse.id],
+			messagesById: {
+				[carrier.id]: carrier,
+				[toolResult.id]: toolResult,
+				[finalResponse.id]: finalResponse,
+			},
+		});
+		// Mirrors the observed post-commit state: a live activity remains available
+		// for Reviewing, but its persisted carrier is now authoritative for display.
+		// It must not be rendered a second time under the final assistant.
+		useCoauthorTurnStore.setState({
+			turnsByChat: { [chatId]: [activity({ toolCallId: "call_edit", toolName: "edit_personality", summary: "swap", args: undefined })] },
+		});
+
+		const { getAllByText, getByText, queryByText } = render(
+			<>
+				<CoauthorToolActivitySlot chatId={chatId} messageId={carrier.id} isStreaming={false} />
+				<CoauthorToolActivitySlot chatId={chatId} messageId={finalResponse.id} isStreaming={false} />
+			</>,
+		);
+
+		expect(getAllByText("swap")).toHaveLength(1);
+		fireEvent.click(getByText("swap"));
+		expect(getByText("old trait")).toBeDefined();
+		expect(getByText("new trait")).toBeDefined();
+		expect(queryByText("coauthor_tool_op_unavailable")).toBeNull();
+	});
+});
 
 describe("ToolActivityCard — operation previews (CED-6)", () => {
 	it("an exact-edit card shows only the SEARCH/REPLACE deltas, never the full profile", () => {

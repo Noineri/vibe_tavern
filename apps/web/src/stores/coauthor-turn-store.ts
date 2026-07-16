@@ -14,15 +14,14 @@ import { saveDraft, clearDraft } from "../lib/coauthor-draft.js";
  * active co-author turn's tool calls, fed by the tool SSE events parsed in
  * `sse-parser.ts` (CA-9.1) and wired in `use-chat-controller.executeStreamAction`.
  *
- * WHY A SEPARATE STORE (not chat-store generation state): the backend does NOT
- * persist tool calls onto the message record in V1 (the plan's "draft model —
- * no separate draft store" decision: each turn starts fresh from canonical,
- * cross-session persistence is deferred to CA-15). Reasoning survives the
- * turn-end snapshot refresh only because it IS persisted on the message; tool
- * activity has no persisted counterpart, so it would be wiped by the snapshot
- * ingest that fires at turn end. Keeping it here — outside snapshot-store /
- * chat-store — lets the activity (and CA-11's Apply, which aggregates it)
- * survive across the turn-end refresh within the session.
+ * WHY A SEPARATE STORE (not chat-store generation state): live tool events
+ * arrive before their assistant/tool message rows are committed, while the
+ * Reviewing overlay needs a stable turn-scoped proposal throughout generation
+ * and after the turn-end snapshot refresh. Committed snapshots now persist the
+ * assistant tool calls and tool-result rows (and hydrate this same store on the
+ * non-streaming path), but keeping the live accumulation outside snapshot-store
+ * still prevents a refresh from interrupting in-flight activity and gives CA-11
+ * one provider-neutral Apply source.
  *
  * Lifecycle: keyed by chatId → the LATEST turn's activities only (each turn
  * starts fresh). `clearTurn` is called at turn start (controller), on chat
@@ -57,6 +56,30 @@ export interface CoauthorToolActivity {
   isAdd?: boolean;
 }
 
+/** Selected-variant metadata is the real chat-snapshot wire shape. Some older
+ * callers/tests still provide the same fields flattened on AppMessage, so keep
+ * those as the first-choice compatibility source. */
+function selectedVariant(message: AppMessage) {
+  // `variants` is required on the current AppMessage wire type, but legacy
+  // snapshots and lightweight callers may omit it; keep extraction total.
+  const variants = message.variants ?? [];
+  const selectedIndex = message.selectedVariantIndex;
+  if (typeof selectedIndex === "number") {
+    return variants.find((variant) => variant.variantIndex === selectedIndex)
+      ?? variants[selectedIndex];
+  }
+  return variants.find((variant) => variant.isSelected);
+}
+
+function messageToolCalls(message: AppMessage) {
+  if (message.toolCalls && message.toolCalls.length > 0) return message.toolCalls;
+  return selectedVariant(message)?.toolCalls ?? [];
+}
+
+function messageToolCallId(message: AppMessage): string | null | undefined {
+  return message.toolCallId ?? selectedVariant(message)?.toolCallId;
+}
+
 /**
  * Rebuild the latest turn's proposals from a committed non-streaming response.
  * Streaming turns fill the same store incrementally through SSE callbacks;
@@ -80,7 +103,7 @@ export function extractPersistedCoauthorActivities(
   // it just carries no name/args preview.
   const toolCallInfoById = new Map<string, { name: string; args: unknown }>();
   for (const message of turnMessages) {
-    for (const toolCall of message.toolCalls ?? []) {
+    for (const toolCall of messageToolCalls(message)) {
       // Legacy alias: `edit_profile` was renamed to `write_profile` (whole-
       // document write). Historical committed turns still carry the old name;
       // normalize on reload so the activity store always reflects the canonical
@@ -93,7 +116,7 @@ export function extractPersistedCoauthorActivities(
   const activities: CoauthorToolActivity[] = [];
   for (const message of turnMessages) {
     if (message.role !== "tool") continue;
-    const toolCallId = message.toolCallId ?? message.id;
+    const toolCallId = messageToolCallId(message) ?? message.id;
     const info = toolCallInfoById.get(toolCallId);
     let rawOutput: unknown;
     try {

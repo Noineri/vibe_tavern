@@ -72,6 +72,55 @@ describe("useCoauthorTurnStore", () => {
     expect(acts[1]).toMatchObject({ toolCallId: "call_write", toolName: "write_scenario", args: writeArgs });
   });
 
+  it("reconstructs operation input from selected-variant fields used by the real chat snapshot", () => {
+    // GET /api/chats/:id does not flatten variant-scoped tool fields onto the
+    // AppMessage. Both assistant toolCalls and tool-result toolCallId live on
+    // the selected variant. The extractor must follow that real wire shape;
+    // otherwise valid persisted args become "operation details unavailable".
+    const editArgs = { edits: [{ search: "old", replace: "new" }], summary: "swap" };
+    const messages = [
+      { id: "user_new", role: "user", content: "work", variants: [], selectedVariantIndex: null },
+      {
+        id: "assistant_call",
+        role: "assistant",
+        content: "",
+        variants: [{
+          id: "variant_call",
+          variantIndex: 0,
+          isSelected: true,
+          toolCalls: [{ id: "call_edit", name: "edit_personality", args: editArgs }],
+          toolCallId: null,
+        }],
+        selectedVariantIndex: 0,
+      },
+      {
+        id: "tool_edit",
+        role: "tool",
+        content: JSON.stringify({ target: "profile", proposed: "---\nname: A\n---\n# PERSONALITY\nnew", summary: "swap" }),
+        variants: [{
+          id: "variant_result",
+          variantIndex: 0,
+          isSelected: true,
+          toolCalls: null,
+          toolCallId: "call_edit",
+        }],
+        selectedVariantIndex: 0,
+      },
+    ] as AppMessage[];
+
+    expect(extractPersistedCoauthorActivities(messages)).toEqual([{
+      toolCallId: "call_edit",
+      toolName: "edit_personality",
+      args: editArgs,
+      status: "done",
+      target: "profile",
+      proposed: "---\nname: A\n---\n# PERSONALITY\nnew",
+      summary: "swap",
+      greetingIndex: undefined,
+      isAdd: undefined,
+    }]);
+  });
+
   it("a historical result without a matching carrier call renders with no name/args", () => {
     // Old rows whose assistant toolCalls entry is missing still render safely —
     // they just carry an empty name and no input preview.
