@@ -158,6 +158,13 @@ export function advanceAfterCompletion<T extends ObjectiveTask = ObjectiveTask>(
   return items.map((t) => (t.id === target.id ? { ...t, status: OBJECTIVE_TASK_STATUS.completed } : t));
 }
 
+/** Current mode's active target: route task or selected short-term goal. */
+function selectStateTarget(state: ObjectiveState): ObjectiveTask | null {
+  return state.mode === OBJECTIVE_MODE.goals
+    ? selectActiveTask(state.shortTermGoals)
+    : selectActiveTask(state.tasks);
+}
+
 /**
  * Map a pure pipeline `PromptAssemblyResult` (from the InsightsAssembler) to the
  * `AssemblePromptResponse` DTO the executor consumes. The insight prompt has no
@@ -306,7 +313,7 @@ export interface ObjectiveAutoCheckTrigger {
 }
 
 function routeRevision(state: ObjectiveState): string {
-  return JSON.stringify({ objectiveDescription: state.objectiveDescription, tasks: state.tasks });
+  return JSON.stringify({ mode: state.mode, objectiveDescription: state.objectiveDescription, tasks: state.tasks });
 }
 
 function goalsRevision(state: ObjectiveState): string {
@@ -364,10 +371,10 @@ export class ObjectiveService {
     return normalizeObjectiveState(chat.insightsObjectiveState);
   }
 
-  /** The current active task (first 'active', else first 'pending'), or null. */
+  /** The current mode's active target (route task or selected short-term goal), or null. */
   async getActiveTask(chatId: ChatId): Promise<ObjectiveTask | null> {
     const state = await this.getState(chatId);
-    return state ? selectActiveTask(state.tasks) : null;
+    return selectStateTarget(state);
   }
 
   /**
@@ -467,7 +474,8 @@ export class ObjectiveService {
 
     return this.commitState(input.chatId, (current) => {
       // The verdict belongs to one immutable target. A route edit/reorder/status
-      // change during the await invalidates it; never advance a replacement.
+      // change OR a mode switch during the await invalidates it.
+      if (current.mode !== OBJECTIVE_MODE.route) return null;
       const currentTarget = selectActiveTask(current.tasks);
       const matchingTask = current.tasks.find((task) => task.id === target.id);
       if (
@@ -496,6 +504,7 @@ export class ObjectiveService {
     if (!completed) return this.getState(input.chatId);
 
     return this.commitState(input.chatId, (current) => {
+      if (current.mode !== OBJECTIVE_MODE.goals) return null;
       const currentTarget = selectActiveTask(current.shortTermGoals);
       const matching = current.shortTermGoals.find((goal) => goal.id === target.id);
       if (
@@ -790,7 +799,7 @@ export class ObjectiveService {
         const chatId = chat.id as ChatId;
         const branchId = brandId<ChatBranchId>(latest.branchId);
         const state = await this.getState(chatId);
-        if (state.autoCheckFrequency <= 0 || !selectActiveTask(state.tasks)) {
+        if (state.autoCheckFrequency <= 0 || !selectStateTarget(state)) {
           this.pendingAutoCheckEvents.delete(lockKey);
           return;
         }
@@ -803,7 +812,7 @@ export class ObjectiveService {
         let cadenceState: ObjectiveState;
         try {
           cadenceState = await this.commitState(chatId, (current) => {
-            if (current.autoCheckFrequency <= 0 || !selectActiveTask(current.tasks)) return null;
+            if (current.autoCheckFrequency <= 0 || !selectStateTarget(current)) return null;
             return {
               ...current,
               autoCheckEventCount: current.autoCheckEventCount + pendingEvents,

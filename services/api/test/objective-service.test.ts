@@ -17,7 +17,7 @@
  * service only touches those two chat-store methods.
  */
 import { describe, it, expect } from "bun:test";
-import type { ObjectiveState } from "@vibe-tavern/domain";
+import type { ObjectiveLongTermGoal, ObjectiveMode, ObjectiveState, ObjectiveTask } from "@vibe-tavern/domain";
 import { OBJECTIVE_MODE, OBJECTIVE_TASK_STATUS } from "@vibe-tavern/domain";
 import type { StoreContainer } from "@vibe-tavern/db";
 import type { PromptAssemblyContext } from "@vibe-tavern/prompt-pipeline";
@@ -601,7 +601,10 @@ describe("ObjectiveService.triggerAutoCheck (INS-4 orchestration)", () => {
     autoCheckFrequency: number;
     assistantCount: number;
     contextWindow?: number;
+    mode?: ObjectiveMode;
     tasks?: ObjectiveTask[];
+    longTermGoal?: ObjectiveLongTermGoal | null;
+    shortTermGoals?: ObjectiveTask[];
     reply?: string;
     hasProvider?: boolean;
     model?: string;
@@ -614,12 +617,15 @@ describe("ObjectiveService.triggerAutoCheck (INS-4 orchestration)", () => {
     getContextBranchIds: () => string[];
     readState: () => ObjectiveState;
   } {
-    const { objectiveEnabled, autoCheckFrequency, assistantCount, contextWindow = 10, tasks = [], reply = '{"completed":true}', hasProvider = true, model = "gpt-test", executeOverride } = opts;
+    const { objectiveEnabled, autoCheckFrequency, assistantCount, contextWindow = 10, mode = OBJECTIVE_MODE.route, tasks = [], longTermGoal = null, shortTermGoals = [], reply = '{"completed":true}', hasProvider = true, model = "gpt-test", executeOverride } = opts;
     // Deliberately the PRE-model-selection persisted shape: getState must
     // normalize it to useChatModel:true so existing chats keep auto-checking.
     const baseState = {
+      mode,
       objectiveDescription: "Defeat the warlord",
       tasks,
+      longTermGoal,
+      shortTermGoals,
       autoCheckFrequency,
       contextWindow,
       injectionDepth: 1,
@@ -686,6 +692,31 @@ describe("ObjectiveService.triggerAutoCheck (INS-4 orchestration)", () => {
     await t.service.triggerAutoCheck(trigger());
     expect(t.getBuildCalls()).toBe(0);
     expect(t.getExecuteCalls()).toBe(0);
+  });
+
+  it("auto-checks the selected short-term goal in goals mode (not the hidden route)", async () => {
+    const t = makeTriggerService({
+      objectiveEnabled: true,
+      autoCheckFrequency: 1,
+      assistantCount: 1,
+      mode: OBJECTIVE_MODE.goals,
+      tasks: [],
+      longTermGoal: { description: "Free the city", status: OBJECTIVE_TASK_STATUS.pending },
+      shortTermGoals: [
+        { id: "s1", description: "Reach the gate", status: OBJECTIVE_TASK_STATUS.active },
+        { id: "s2", description: "Find an ally", status: OBJECTIVE_TASK_STATUS.pending },
+      ],
+      reply: '{"completed":true}',
+    });
+
+    await t.service.triggerAutoCheck(trigger());
+
+    expect(t.getBuildCalls()).toBe(1);
+    expect(t.getExecuteCalls()).toBe(1);
+    expect(t.readState().shortTermGoals[0]?.status).toBe(OBJECTIVE_TASK_STATUS.completed);
+    expect(t.readState().shortTermGoals[1]?.status).toBe(OBJECTIVE_TASK_STATUS.pending);
+    expect(t.readState().longTermGoal?.status).toBe(OBJECTIVE_TASK_STATUS.pending);
+    expect(t.readState().autoCheckEventCount).toBe(0);
   });
 
   it("counts qualifying append events since the last check and ignores legacy assistant rows", async () => {
@@ -1122,6 +1153,30 @@ describe("ObjectiveService — goals mode (OGM)", () => {
     expect(state.shortTermGoals.find((g) => g.id === "g1")?.status).toBe(OBJECTIVE_TASK_STATUS.completed);
     expect(state.longTermGoal?.status).toBe(OBJECTIVE_TASK_STATUS.pending);
     expect(state.shortTermGoals.find((g) => g.id === "g2")?.status).toBe(OBJECTIVE_TASK_STATUS.pending);
+  });
+
+  it("checkCompletion (goals) discards its verdict when the mode switches during the LLM await", async () => {
+    const initial: ObjectiveState = {
+      ...defaultObjectiveState(),
+      mode: OBJECTIVE_MODE.goals,
+      longTermGoal: { description: "Free the city", status: OBJECTIVE_TASK_STATUS.pending },
+      shortTermGoals: [{ id: "g1", description: "Reach gates", status: OBJECTIVE_TASK_STATUS.active }],
+    };
+    const { stores } = makeMockStates(initial);
+    let releaseExecute: ((value: { text: string }) => void) | undefined;
+    let markStarted: (() => void) | undefined;
+    const started = new Promise<void>((resolve) => { markStarted = resolve; });
+    const execute = async () => new Promise<{ text: string }>((resolve) => { releaseExecute = resolve; markStarted?.(); });
+    const service = new ObjectiveService(stores, null as never, null as never, execute as never, async () => "BASE");
+
+    const checking = service.checkCompletion({ chatId: "chat_1" as never, profile, model: "m", context });
+    await started;
+    await service.setObjectiveMode("chat_1" as never, OBJECTIVE_MODE.route);
+    releaseExecute?.({ text: '{"completed":true}' });
+    const state = await checking;
+
+    expect(state.mode).toBe(OBJECTIVE_MODE.route);
+    expect(state.shortTermGoals[0]?.status).toBe(OBJECTIVE_TASK_STATUS.active);
   });
 
   it("checkCompletion (goals) is a no-op when no short-term is active/pending", async () => {

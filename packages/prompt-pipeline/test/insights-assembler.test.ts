@@ -130,6 +130,7 @@ describe("assembleInsights (INS-3c behavior)", () => {
 
   it("strips the insight self-injection layers even when the context carries them (no duplication/noise)", () => {
     const ctx = makeContext({
+      objectiveLongTerm: { description: "Escape the prison", injectPrompt: "", injectionDepth: 1 },
       objectiveTask: { description: "Pick the lock", injectPrompt: "", injectionDepth: 1 },
       sceneState: { entries: [{ mood: "calm" }], format: "json", injectionDepth: 1, injectPrompt: "" },
     });
@@ -137,6 +138,9 @@ describe("assembleInsights (INS-3c behavior)", () => {
     const ids = result.layers.map((l) => l.id);
     expect(ids).not.toContain("objective_task");
     expect(ids).not.toContain("scene_state");
+    // Long-term framing is deliberately NOT self-injection: the objective model
+    // needs the enduring arc while generating/checking short-term goals.
+    expect(ids).toContain("objective_long_term");
   });
 
   it("mes_example follows the chat's toggle — included by default, absent when mesExampleMode=disabled", () => {

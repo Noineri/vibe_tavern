@@ -69,6 +69,26 @@ describe("assemblePrompt — objective_task layer (INS-3)", () => {
     expect(layer!.injectionDepth).toBe(3);
   });
 
+  it("emits the long-term goal just above the active objective in goals mode", () => {
+    const result = assemblePrompt(
+      baseContext({
+        objectiveLongTerm: { description: "Free the city", injectPrompt: "Remember the arc.", injectionDepth: 2 },
+        objectiveTask: { description: "Reach the gate", injectPrompt: "", injectionDepth: 2 },
+      }),
+    );
+    const longTerm = result.layers.find((layer) => layer.id === "objective_long_term");
+    const active = result.layers.find((layer) => layer.id === "objective_task");
+    expect(longTerm).toMatchObject({ sourceType: "objective_long_term", position: "in_chat", priority: 178, injectionDepth: 2 });
+    expect(longTerm?.text).toBe("Remember the arc.\n[Long-term goal] Free the city");
+    expect(active).toMatchObject({ priority: 180, injectionDepth: 2 });
+    expect(result.layers.filter((layer) => layer.id === "objective_long_term")).toHaveLength(1);
+  });
+
+  it("emits no long-term layer when objectiveLongTerm is null/absent", () => {
+    expect(assemblePrompt(baseContext({ objectiveLongTerm: null })).layers.find((layer) => layer.id === "objective_long_term")).toBeUndefined();
+    expect(assemblePrompt(baseContext()).layers.find((layer) => layer.id === "objective_long_term")).toBeUndefined();
+  });
+
   it("emits NO objective_task layer when context.objectiveTask is null", () => {
     const result = assemblePrompt(baseContext({ objectiveTask: null }));
     expect(result.layers.find((l) => l.id === "objective_task")).toBeUndefined();
