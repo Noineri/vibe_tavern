@@ -23,6 +23,8 @@ import type { ObjectiveService } from "../../domain/insights/objective-service.j
 import type { SceneTrackerService } from "../../domain/insights/tracker-service.js";
 import { SettingsAdapter } from "./settings-adapter.js";
 import { MobileAccessAdapter } from "./mobile-access-adapter.js";
+import { CoauthorSkillAdapter } from "./coauthor-skill-adapter.js";
+import type { SkillLibraryService } from "../../domain/coauthor/skills/skill-library.js";
 
 /**
  * Thin composite that wires domain adapters into the RuntimeApi contract.
@@ -48,6 +50,7 @@ export class RuntimeApiAdapter implements RuntimeApi {
 	readonly settings: SettingsAdapter;
 	readonly mobileAccess: MobileAccessAdapter;
 	readonly insights: InsightsAdapter;
+	readonly coauthorSkills: CoauthorSkillAdapter;
 
 	constructor(
 		stores: StoreContainer,
@@ -60,6 +63,7 @@ export class RuntimeApiAdapter implements RuntimeApi {
 		mobileAccessService: MobileAccessService,
 		objectiveService: ObjectiveService,
 		trackerService: SceneTrackerService,
+		skillLibraryService: SkillLibraryService,
 	) {
 		const bootstrapAdapter = new BootstrapAdapter(sessionRuntime);
 		this.bootstrap = bootstrapAdapter.bootstrap;
@@ -79,5 +83,6 @@ export class RuntimeApiAdapter implements RuntimeApi {
 		this.settings = new SettingsAdapter(stores);
 		this.mobileAccess = new MobileAccessAdapter(mobileAccessService);
 		this.insights = new InsightsAdapter(stores, sessionRuntime, objectiveService, trackerService);
+		this.coauthorSkills = new CoauthorSkillAdapter(skillLibraryService);
 	}
 }

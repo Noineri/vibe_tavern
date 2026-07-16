@@ -20,6 +20,8 @@ import { RuntimeApiAdapter } from "../api/adapters/runtime-api-adapter.js";
 import { SessionRuntime } from "../runtime/session/session-runtime.js";
 import { createAiAssistantFeature } from "../domain/ai-assistant/ai-assistant-feature.js";
 import { createRuntimeStore } from "../runtime/session/session-runtime-store.js";
+import { SkillLibraryService } from "../domain/coauthor/skills/skill-library.js";
+import { resolveBuiltinSkillsRoot, resolveUserSkillsRoot } from "../domain/coauthor/skills/skill-scanner.js";
 import { configureLogDir } from "../shared/send-debug-log.js";
 import { createApp } from "./app-factory.js";
 import { createLoadingHandler } from "./loading-placeholder.js";
@@ -190,6 +192,10 @@ export async function startServerRuntime(config: ServerRuntimeConfig): Promise<v
 
 		const assetService = new AssetService(config.assetsDir, stores.content);
 		const mobileAccessService = new MobileAccessService(config.dataDir);
+		const skillLibraryService = new SkillLibraryService(
+			resolveUserSkillsRoot(config.dataDir),
+			await resolveBuiltinSkillsRoot(),
+		);
 
 		// RuntimeApi adapter
 		const runtime = new RuntimeApiAdapter(
@@ -203,6 +209,7 @@ export async function startServerRuntime(config: ServerRuntimeConfig): Promise<v
 			mobileAccessService,
 			objectiveService,
 			trackerService,
+			skillLibraryService,
 		);
 
 		features.register(createAiAssistantFeature(runtime.aiAssistant));

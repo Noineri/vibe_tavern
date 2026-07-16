@@ -15,6 +15,7 @@ import { createMobileAccessRoutes } from "./mobile-access.js";
 import { createInsightsRoutes } from "./insights.js";
 import { createRuntimeRoutes } from "./runtime.js";
 import { createFsRoutes } from "./fs.js";
+import { createCoauthorSkillRoutes } from "./coauthor-skill.js";
 
 export type { RuntimeApi } from "../contract/runtime-api.js";
 
@@ -35,6 +36,7 @@ export function createApiRouter(runtime: RuntimeApi) {
     .route("/", createInsightsRoutes(runtime.insights))
     .route("/", createRuntimeRoutes())
     .route("/", createFsRoutes())
+    .route("/", createCoauthorSkillRoutes(runtime.coauthorSkills))
   ;
 }
 

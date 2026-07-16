@@ -44,6 +44,7 @@ import type { LorebookImportResult } from "../../domain/lorebook/lorebook-import
 import type { ScriptTestResult } from "../../domain/scripts-engine/script-test-service.js";
 import type { StDirectoryScanResult, StDirectoryImportResult, ImportStreamEvent } from "../../shared/st-directory-scanner.js";
 import type { MobileAccessInfo } from "../../domain/mobile-access/mobile-access-service.js";
+import type { SkillImportFile, SkillImportResult } from "../../domain/coauthor/skills/skill-library.js";
 
 // ─── Shared type aliases ────────────────────────────────────────────
 //
@@ -390,7 +391,22 @@ export interface MobileAccessRuntimeApi {
 	revokeMobileAccess: () => Promise<{ token: null }>;
 }
 
-// ─── Composite ───────────────────────────────────────────────────────
+// ─── Co-Author Skills (filesystem skill libraries) ──────────────────
+// CTX-S2: import (multipart files → validated atomic tree under
+// <dataDir>/coauthor/skills) + delete one user skill directory. Built-in
+// skills are read-only and cannot be deleted. Catalog list/read land in CTX-S3.
+
+export interface CoauthorSkillsRuntimeApi {
+	/** Validate + atomically import a skill tree (ordinary files with relative
+	 *  paths). Rejects unsafe paths, malformed manifests, and trees with no
+	 *  SKILL.md WITHOUT writing anything. Returns the imported skill ids. */
+	importSkills: (files: SkillImportFile[]) => Promise<SkillImportResult>;
+	/** Delete one top-level user skill directory. Rejects built-in ids, unsafe
+	 *  ids, and missing directories. */
+	deleteSkill: (id: string) => Promise<{ id: string }>;
+}
+
+// ─── Composite ──────────────────────────────────────────────────────────
 
 /**
  * Aggregate contract between Hono routes and the backend service layer.
@@ -451,6 +467,7 @@ export interface RuntimeApi {
 	preset: PresetRuntimeApi;
 	importExport: ImportExportRuntimeApi;
 	asset: AssetRuntimeApi;
+	coauthorSkills: CoauthorSkillsRuntimeApi;
 	aiAssistant: AiAssistantRuntimeApi;
 	settings: SettingsRuntimeApi;
 	mobileAccess: MobileAccessRuntimeApi;
