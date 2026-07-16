@@ -43,6 +43,43 @@ describe("coauthorModuleSchema", () => {
   });
 });
 
+describe("coauthorToolSetSchema: write_* section-write flags (CED-2)", () => {
+  test("accepts the paired write_personality / write_scenario / write_examples flags", () => {
+    const payload = {
+      id: "x",
+      name: "X",
+      description: "",
+      basePrompt: "p",
+      openingMessage: "",
+      skillIds: [],
+      toolSet: {
+        edit_personality: true,
+        write_personality: true,
+        write_scenario: false,
+        write_examples: true,
+      },
+      maxSteps: 3,
+      isBuiltIn: false,
+    };
+    expect(coauthorModuleSchema.parse(payload)).toEqual(payload);
+  });
+
+  test("a toolSet without any write_* flags still parses (backward compatible)", () => {
+    const payload = {
+      id: "legacy",
+      name: "Legacy",
+      description: "",
+      basePrompt: "p",
+      openingMessage: "",
+      skillIds: [],
+      toolSet: { edit_personality: true, edit_scenario: true },
+      maxSteps: 3,
+      isBuiltIn: false,
+    };
+    expect(coauthorModuleSchema.parse(payload)).toEqual(payload);
+  });
+});
+
 describe("setCoauthorModuleSchema", () => {
   test("accepts a valid module id", () => {
     expect(setCoauthorModuleSchema.parse({ moduleId: "greeting-writer" })).toEqual({ moduleId: "greeting-writer" });

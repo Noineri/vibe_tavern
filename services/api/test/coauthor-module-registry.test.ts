@@ -57,6 +57,33 @@ describe("Coauthor Module Registry — seed resolution", () => {
   });
 });
 
+describe("Coauthor Module Registry — CED-2 paired write_* tool scopes", () => {
+  test("write_* tools are scoped per seed module (only where the matching edit_* is allowed)", () => {
+    const byId = new Map(getSeedModuleDefs().map((m) => [m.id, m.toolSet]));
+
+    // Default Co-Author: all three write_* tools (it can edit everything).
+    const def = byId.get("default")!;
+    expect(def.write_personality).toBe(true);
+    expect(def.write_scenario).toBe(true);
+    expect(def.write_examples).toBe(true);
+
+    // Profile Editor: PERSONALITY/SCENARIO writes only (mirrors its edit_*
+    // scope); must NOT reach EXAMPLES.
+    const editor = byId.get("profile-editor")!;
+    expect(editor.write_personality).toBe(true);
+    expect(editor.write_scenario).toBe(true);
+    expect(editor.write_examples).toBeUndefined();
+    expect(editor.edit_examples).toBeUndefined();
+
+    // Dialogue Writer: EXAMPLES write only; must NOT reach PERSONALITY/SCENARIO.
+    const dialogue = byId.get("dialogue-writer")!;
+    expect(dialogue.write_examples).toBe(true);
+    expect(dialogue.write_personality).toBeUndefined();
+    expect(dialogue.write_scenario).toBeUndefined();
+    expect(dialogue.edit_personality).toBeUndefined();
+  });
+});
+
 describe("Coauthor Module Registry — seed + user merge (CS-24)", () => {
   test("getCoauthorModules merges seed (first, isBuiltIn) + user (appended, isBuiltIn:false)", async () => {
     const modules = await getCoauthorModules([userModule("u1"), userModule("u2")]);

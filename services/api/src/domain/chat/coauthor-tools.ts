@@ -23,8 +23,13 @@
 
 import { tool } from "ai";
 import { z } from "zod";
-import { parseProfileMd, serializeProfileMd, splitFrontmatter } from "@vibe-tavern/db";
-import type { CoauthorTarget, CoauthorToolOutput } from "@vibe-tavern/api-contracts";
+import { parseProfileMd, serializeProfileMd, splitFrontmatter, type VtfProfile } from "@vibe-tavern/db";
+import {
+  coauthorSectionEditInputSchema,
+  coauthorSectionWriteInputSchema,
+  type CoauthorTarget,
+  type CoauthorToolOutput,
+} from "@vibe-tavern/api-contracts";
 import { log } from "@vibe-tavern/domain";
 
 /** CA-17/CANARY: structured log for every co-author tool call. Without this
@@ -60,8 +65,11 @@ export type { CoauthorTarget, CoauthorToolOutput };
  */
 const KNOWN_PROSE_SECTIONS = ["PERSONALITY", "SCENARIO", "EXAMPLES"] as const;
 
+/** A `VtfProfile` prose field owned by one of the three H1 sections. */
+type SectionField = "description" | "scenario" | "mesExample";
+
 /** Maps a known prose section name to the `VtfProfile` field it feeds. */
-const SECTION_TO_PROFILE_FIELD: Readonly<Record<string, "description" | "scenario" | "mesExample">> = {
+const SECTION_TO_PROFILE_FIELD: Readonly<Record<string, SectionField>> = {
   PERSONALITY: "description",
   SCENARIO: "scenario",
   EXAMPLES: "mesExample",
@@ -171,46 +179,70 @@ function validateProfileMd(profileMd: string): string {
   return serializeProfileMd(parsed);
 }
 
+/** Count non-overlapping literal occurrences of `needle` in `haystack`. */
+function countOccurrences(haystack: string, needle: string): number {
+  if (needle.length === 0) return 0;
+  let count = 0;
+  let idx = 0;
+  while ((idx = haystack.indexOf(needle, idx)) !== -1) {
+    count++;
+    idx += needle.length;
+  }
+  return count;
+}
+
 /**
- * Shared execute body for the per-section edit tools (edit_personality /
- * edit_scenario / edit_examples): overwrite exactly one VtfProfile field on the
- * canonical profile, re-serialize, and run the lost-section guard. The other
- * sections are untouched (preserved from the canonical profile passed to
- * buildCoauthorTools), so the tool payload carries ONLY the targeted section's
- * new text — the model never has to re-emit the sections it is not changing.
- *
- * Returns the full proposed profile.md under `{ target: "profile", proposed }`
- * — the same shape as edit_profile — so the apply pipeline (diff + Apply RPC)
- * treats a section edit identically to a wholesale edit. This is why splitting
- * the former edit_section tool into three is transparent to the frontend.
+ * Apply an ordered batch of exact SEARCH/REPLACE edits to a single section body
+ * (pure). Each `search` must be non-empty, differ from `replace`, and match
+ * EXACTLY ONCE in the CURRENT (already-mutated-by-prior-items-in-this-batch)
+ * body. Matching is literal — case-sensitive, no regex, no `$` substitution —
+ * implemented via indexOf+slice so replacement text is never reinterpreted. A
+ * failed item throws and the caller discards the partial result, so a batch
+ * commits atomically (all-or-nothing).
  */
-async function applySectionEdit(
-  field: "description" | "scenario" | "mesExample",
+function applyExactEditsToBody(
+  body: string,
+  edits: ReadonlyArray<{ search: string; replace: string }>,
   toolName: string,
-  content: string,
-  summary: string,
-  profileMd: string | undefined,
-): Promise<CoauthorToolOutput> {
-  if (!profileMd) {
-    logger.warn("%s REJECTED missing profileMd context", toolName);
-    throw new Error(`${toolName}: Internal error, missing canonical profile context`);
+): string {
+  let result = body;
+  for (const { search, replace } of edits) {
+    if (!search) {
+      throw new Error(`${toolName}: edit.search must not be empty`);
+    }
+    if (search === replace) {
+      throw new Error(`${toolName}: edit is a no-op (search === replace): ${JSON.stringify(search.slice(0, 80))}`);
+    }
+    const count = countOccurrences(result, search);
+    if (count === 0) {
+      throw new Error(
+        `${toolName}: edit.search not found in the current section body: ${JSON.stringify(search.slice(0, 80))}`,
+      );
+    }
+    if (count > 1) {
+      throw new Error(
+        `${toolName}: edit.search is ambiguous (${count} matches) — add more surrounding context so it matches once: ${JSON.stringify(search.slice(0, 80))}`,
+      );
+    }
+    const idx = result.indexOf(search);
+    result = result.slice(0, idx) + replace + result.slice(idx + search.length);
   }
-  if (!content.trim()) {
-    logger.warn("%s REJECTED empty input", toolName);
-    throw new Error(`${toolName}: content must not be empty`);
-  }
-  logger.info("%s IN len=%d summary=%s", toolName, content.length, summary);
-  const parsed = parseProfileMd(profileMd);
-  parsed.profile[field] = content;
-  const merged = serializeProfileMd(parsed);
-  try {
-    const canonical = validateProfileMd(merged);
-    logger.info("%s OK merged canonical len=%d", toolName, canonical.length);
-    return { target: "profile", proposed: canonical, summary };
-  } catch (err) {
-    const msg = (err as Error).message;
-    logger.warn("%s REJECTED guard-threw msg=%s", toolName, msg);
-    throw err;
+  return result;
+}
+
+/**
+ * Assign a mutated section body back onto a {@link VtfProfile} field in a
+ * type-safe way (PERSONALITY is always a string; the optional sections fall back
+ * to `null` when the body is emptied, matching canonical field shape). Branches
+ * per field so the indexer never has to satisfy a union of field nullabilities.
+ */
+function setSectionField(profile: VtfProfile, field: SectionField, value: string): void {
+  if (field === "description") {
+    profile.description = value;
+  } else if (field === "scenario") {
+    profile.scenario = value.trim().length > 0 ? value : null;
+  } else {
+    profile.mesExample = value.trim().length > 0 ? value : null;
   }
 }
 
@@ -222,7 +254,88 @@ async function applySectionEdit(
  * executor (tools propose; the Apply RPC is the sole write path).
  */
 export function buildCoauthorTools(opts: { toolSet?: Record<string, boolean>; profileMd?: string } = {}) {
-  const { toolSet, profileMd } = opts;
+  const { toolSet } = opts;
+
+  // ── Turn-local composable profile state (CED-2) ───────────────────────────
+  // Every successful profile mutation in one assembled turn — edit_profile,
+  // edit_personality/scenario/examples, write_personality/scenario/examples —
+  // shares this single working profile and a single serialized, non-poisoning
+  // queue. The working profile starts from the canonical storage profile.md
+  // captured at turn start; each successful call advances it, so a later call
+  // sees earlier mutations (composition). A rejected call cannot poison the
+  // queue or corrupt the working profile — its change is discarded and the next
+  // call proceeds against the last good state.
+  let workingProfileMd: string | undefined = opts.profileMd;
+  let profileMutationCount = 0;
+  let turnChain: Promise<unknown> = Promise.resolve();
+
+  /** Serialize a profile mutation onto the turn queue (non-poisoning). */
+  function runQueued<T>(fn: () => Promise<T>): Promise<T> {
+    // Neutralize any prior rejection so this call runs regardless; then run fn.
+    const result = turnChain.catch(() => undefined).then(fn);
+    // The tail chain for the NEXT call swallows this call's outcome, so a
+    // rejection here never blocks a later queued call.
+    turnChain = result.then(() => undefined, () => undefined);
+    return result;
+  }
+
+  /** Shared exact-edit path for edit_personality / edit_scenario / edit_examples. */
+  async function runSectionExactEdit(
+    field: SectionField,
+    toolName: string,
+    edits: ReadonlyArray<{ search: string; replace: string }>,
+    summary: string,
+  ): Promise<CoauthorToolOutput> {
+    return runQueued(async () => {
+      if (edits.length === 0) {
+        throw new Error(`${toolName}: edits must not be empty`);
+      }
+      if (!workingProfileMd) {
+        logger.warn("%s REJECTED missing profileMd context", toolName);
+        throw new Error(`${toolName}: Internal error, missing canonical profile context`);
+      }
+      logger.info("%s IN edits=%d summary=%s", toolName, edits.length, summary);
+      const parsed = parseProfileMd(workingProfileMd);
+      const currentBody = parsed.profile[field] ?? "";
+      const newBody = applyExactEditsToBody(currentBody, edits, toolName);
+      setSectionField(parsed.profile, field, newBody);
+      const merged = serializeProfileMd(parsed);
+      const canonical = validateProfileMd(merged); // CA-17 guard + canonicalize
+      workingProfileMd = canonical; // advance ONLY on success — atomic on failure
+      profileMutationCount += 1;
+      logger.info("%s OK canonical len=%d", toolName, canonical.length);
+      return { target: "profile", proposed: canonical, summary };
+    });
+  }
+
+  /** Shared whole-section write path for write_personality / write_scenario / write_examples. */
+  async function runSectionWrite(
+    field: SectionField,
+    toolName: string,
+    content: string,
+    summary: string,
+  ): Promise<CoauthorToolOutput> {
+    return runQueued(async () => {
+      if (!content.trim()) {
+        logger.warn("%s REJECTED empty input", toolName);
+        throw new Error(`${toolName}: content must not be empty`);
+      }
+      if (!workingProfileMd) {
+        logger.warn("%s REJECTED missing profileMd context", toolName);
+        throw new Error(`${toolName}: Internal error, missing canonical profile context`);
+      }
+      logger.info("%s IN len=%d summary=%s", toolName, content.length, summary);
+      const parsed = parseProfileMd(workingProfileMd);
+      setSectionField(parsed.profile, field, content);
+      const merged = serializeProfileMd(parsed);
+      const canonical = validateProfileMd(merged);
+      workingProfileMd = canonical;
+      profileMutationCount += 1;
+      logger.info("%s OK canonical len=%d", toolName, canonical.length);
+      return { target: "profile", proposed: canonical, summary };
+    });
+  }
+
   const allTools = {
     edit_profile: tool({
       description:
@@ -239,26 +352,43 @@ export function buildCoauthorTools(opts: { toolSet?: Record<string, boolean>; pr
           .max(200)
           .describe("One-line description of what this edit changes, shown above the Apply button. e.g. 'Made the personality more assertive.'"),
       }),
-      execute: async ({ profileMd, summary }): Promise<CoauthorToolOutput> => {
-        if (!profileMd.trim()) {
-          logger.warn("edit_profile REJECTED empty input summary=%s", summary);
-          throw new Error("edit_profile: profileMd must not be empty");
-        }
-        logger.info("edit_profile IN %s summary=%s", describeProfileInput(profileMd), summary);
-        logger.debug("edit_profile RAW BODY:\n%s", splitFrontmatter(profileMd).bodyText);
-        try {
-          const canonical = validateProfileMd(profileMd);
+      execute: async ({ profileMd, summary }): Promise<CoauthorToolOutput> =>
+        runQueued(async () => {
+          if (!profileMd.trim()) {
+            logger.warn("edit_profile REJECTED empty input summary=%s", summary);
+            throw new Error("edit_profile: profileMd must not be empty");
+          }
+          // edit_profile is the explicit whole-document escape hatch: it may
+          // run ONLY as the first profile mutation in the turn. Once any section
+          // edit/write has composed into the working profile, a full rewrite
+          // would silently erase that work — reject and steer the model to the
+          // section tools. (A guard-thrown edit_profile does NOT increment the
+          // count, so a self-correct re-emit in the same turn is still allowed.)
+          if (profileMutationCount > 0) {
+            logger.warn("edit_profile REJECTED late whole-profile rewrite after %d mutation(s)", profileMutationCount);
+            throw new Error(
+              "edit_profile: a whole-profile rewrite can only be the FIRST profile change in a turn. " +
+                "Earlier section edits already composed into the working profile; a full rewrite now would erase them. " +
+                "Use edit_personality / edit_scenario / edit_examples (exact edits) or write_personality / write_scenario / write_examples (whole-section writes) to refine the composed result.",
+            );
+          }
+          logger.info("edit_profile IN %s summary=%s", describeProfileInput(profileMd), summary);
+          logger.debug("edit_profile RAW BODY:\n%s", splitFrontmatter(profileMd).bodyText);
+          let canonical: string;
+          try {
+            canonical = validateProfileMd(profileMd);
+          } catch (err) {
+            // The lost-section guard throws to force a self-correct re-emit.
+            const msg = (err as Error).message;
+            const bodySnippet = splitFrontmatter(profileMd).bodyText.slice(0, 200);
+            logger.warn("edit_profile REJECTED guard-threw msg=%s bodySnippet=%j", msg, bodySnippet);
+            throw err;
+          }
+          workingProfileMd = canonical;
+          profileMutationCount += 1;
           logger.info("edit_profile OK canonical len=%d", canonical.length);
           return { target: "profile", proposed: canonical, summary };
-        } catch (err) {
-          // The lost-section guard throws to force a self-correct re-emit.
-          // Log the verdict + a body snippet so a false-positive (or a model
-          // that loops on valid input) is diagnosable from the server log.
-          const msg = (err as Error).message;
-          const bodySnippet = splitFrontmatter(profileMd).bodyText.slice(0, 200);
-          logger.warn("edit_profile REJECTED guard-threw msg=%s bodySnippet=%j", msg, bodySnippet);
-          throw err;
-        }      },
+        }),
     }),
 
     edit_greeting: tool({
@@ -313,35 +443,50 @@ export function buildCoauthorTools(opts: { toolSet?: Record<string, boolean>; pr
 
     edit_personality: tool({
       description:
-        "Propose a rewrite of the PERSONALITY section only. The other sections (SCENARIO, EXAMPLES) are preserved automatically from the current profile — do not include them.",
-      inputSchema: z.object({
-        content: z.string().describe("The full proposed PERSONALITY text (do NOT include the '# PERSONALITY' heading)."),
-        summary: z.string().max(200).describe("One-line description of what this edit changes, shown above the Apply button."),
-      }),
-      execute: async ({ content, summary }): Promise<CoauthorToolOutput> =>
-        applySectionEdit("description", "edit_personality", content, summary, profileMd),
+        "Apply exact SEARCH/REPLACE edits to the PERSONALITY section body only. Each `search` must match exactly once in the current PERSONALITY text; use this for targeted changes to existing prose. The other sections (SCENARIO, EXAMPLES) are preserved. Edits compose across calls within one turn.",
+      inputSchema: coauthorSectionEditInputSchema,
+      execute: async ({ edits, summary }): Promise<CoauthorToolOutput> =>
+        runSectionExactEdit("description", "edit_personality", edits, summary),
     }),
 
     edit_scenario: tool({
       description:
-        "Propose a rewrite of the SCENARIO section only. The other sections (PERSONALITY, EXAMPLES) are preserved automatically from the current profile — do not include them.",
-      inputSchema: z.object({
-        content: z.string().describe("The full proposed SCENARIO text (do NOT include the '# SCENARIO' heading)."),
-        summary: z.string().max(200).describe("One-line description of what this edit changes, shown above the Apply button."),
-      }),
-      execute: async ({ content, summary }): Promise<CoauthorToolOutput> =>
-        applySectionEdit("scenario", "edit_scenario", content, summary, profileMd),
+        "Apply exact SEARCH/REPLACE edits to the SCENARIO section body only. Each `search` must match exactly once in the current SCENARIO text; use this for targeted changes. The other sections (PERSONALITY, EXAMPLES) are preserved. Edits compose across calls within one turn.",
+      inputSchema: coauthorSectionEditInputSchema,
+      execute: async ({ edits, summary }): Promise<CoauthorToolOutput> =>
+        runSectionExactEdit("scenario", "edit_scenario", edits, summary),
     }),
 
     edit_examples: tool({
       description:
-        "Propose a rewrite of the EXAMPLES section (example dialogue) only. The other sections (PERSONALITY, SCENARIO) are preserved automatically from the current profile — do not include them.",
-      inputSchema: z.object({
-        content: z.string().describe("The full proposed EXAMPLES text (example dialogue; do NOT include the '# EXAMPLES' heading)."),
-        summary: z.string().max(200).describe("One-line description of what this edit changes, shown above the Apply button."),
-      }),
+        "Apply exact SEARCH/REPLACE edits to the EXAMPLES section body (example dialogue) only. Each `search` must match exactly once in the current EXAMPLES text; use this for targeted changes. The other sections (PERSONALITY, SCENARIO) are preserved. Edits compose across calls within one turn.",
+      inputSchema: coauthorSectionEditInputSchema,
+      execute: async ({ edits, summary }): Promise<CoauthorToolOutput> =>
+        runSectionExactEdit("mesExample", "edit_examples", edits, summary),
+    }),
+
+    write_personality: tool({
+      description:
+        "Replace the ENTIRE PERSONALITY section body with `content`. Use this to populate an empty PERSONALITY or to intentionally rewrite the whole section; use edit_personality for targeted changes to existing prose. The other sections (SCENARIO, EXAMPLES) are preserved. Writes compose with other edits within one turn.",
+      inputSchema: coauthorSectionWriteInputSchema,
       execute: async ({ content, summary }): Promise<CoauthorToolOutput> =>
-        applySectionEdit("mesExample", "edit_examples", content, summary, profileMd),
+        runSectionWrite("description", "write_personality", content, summary),
+    }),
+
+    write_scenario: tool({
+      description:
+        "Replace the ENTIRE SCENARIO section body with `content`. Use this to populate an empty SCENARIO or to intentionally rewrite the whole section; use edit_scenario for targeted changes. The other sections (PERSONALITY, EXAMPLES) are preserved. Writes compose with other edits within one turn.",
+      inputSchema: coauthorSectionWriteInputSchema,
+      execute: async ({ content, summary }): Promise<CoauthorToolOutput> =>
+        runSectionWrite("scenario", "write_scenario", content, summary),
+    }),
+
+    write_examples: tool({
+      description:
+        "Replace the ENTIRE EXAMPLES section body (example dialogue) with `content`. Use this to populate empty EXAMPLES or to intentionally rewrite the whole section; use edit_examples for targeted changes. The other sections (PERSONALITY, SCENARIO) are preserved. Writes compose with other edits within one turn.",
+      inputSchema: coauthorSectionWriteInputSchema,
+      execute: async ({ content, summary }): Promise<CoauthorToolOutput> =>
+        runSectionWrite("mesExample", "write_examples", content, summary),
     }),
 
     edit_alt_greeting: tool({

@@ -89,6 +89,62 @@ export const coauthorToolOutputSchema = z.object({
 export type CoauthorToolOutput = z.infer<typeof coauthorToolOutputSchema>;
 
 /**
+ * One exact SEARCH/REPLACE edit applied to a single prose section body. Used by
+ * the per-section `edit_*` tools (edit_personality / edit_scenario /
+ * edit_examples) and by the frontend operation-card renderer (Wave 6), so the
+ * tool definition and the rendered preview agree on the input shape.
+ *
+ * Semantics (enforced in the backend `execute()`, not by Zod, so rejections
+ * surface as actionable tool-errors the model can self-correct from):
+ *  - `search` must be non-empty and match EXACTLY ONCE in the current scoped
+ *    section body (literal, not regex; case-sensitive).
+ *  - `replace` may be empty (deletion) but must differ from `search` (no-op
+ *    rejected).
+ */
+export const coauthorEditItemSchema = z.object({
+  search: z
+    .string()
+    .describe("Exact literal text to find in the current section body. Must occur exactly once; add surrounding context to disambiguate."),
+  replace: z
+    .string()
+    .describe("The replacement text. May be empty to delete the match. Must differ from `search`."),
+});
+export type CoauthorEditItem = z.infer<typeof coauthorEditItemSchema>;
+
+/**
+ * Input for a per-section exact-edit tool. `edits` is applied in array order to
+ * the section's CURRENT (cumulative within the turn) body; a batch commits
+ * atomically (any failed item rejects the whole batch and changes nothing).
+ */
+export const coauthorSectionEditInputSchema = z.object({
+  edits: z
+    .array(coauthorEditItemSchema)
+    .describe("Ordered exact SEARCH/REPLACE edits applied to this section's body in array order. Non-empty."),
+  summary: z
+    .string()
+    .max(200)
+    .describe("One-line description of what this edit changes, shown above the Apply button."),
+});
+export type CoauthorSectionEditInput = z.infer<typeof coauthorSectionEditInputSchema>;
+
+/**
+ * Input for a per-section whole-write tool (write_personality / write_scenario /
+ * write_examples). `content` replaces the ENTIRE body of one section — the
+ * correct operation for populating an empty section or an intentional
+ * whole-section rewrite. Non-empty (whitespace-only rejected in `execute()`).
+ */
+export const coauthorSectionWriteInputSchema = z.object({
+  content: z
+    .string()
+    .describe("The full proposed body for this one section (do NOT include the heading)."),
+  summary: z
+    .string()
+    .max(200)
+    .describe("One-line description of what this write changes, shown above the Apply button."),
+});
+export type CoauthorSectionWriteInput = z.infer<typeof coauthorSectionWriteInputSchema>;
+
+/**
  * A backend-applied correction during Co-Author Apply (CA-7 R3). Returned to the
  * frontend so the user is notified (not silently masked) when the model's
  * proposal would have lost data — e.g. an empty `name` restored from the

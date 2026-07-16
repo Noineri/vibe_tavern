@@ -9,7 +9,9 @@ import { buildCoauthorTools } from "../src/domain/chat/coauthor-tools.js";
  * UI and the Apply RPC (CA-7) will depend on.
  */
 
-function sampleProfileMd() {
+function sampleProfileMd(
+  over?: { description?: string; scenario?: string | null; mesExample?: string | null },
+): string {
   return serializeProfileMd({
     profile: {
       name: "Test",
@@ -19,12 +21,15 @@ function sampleProfileMd() {
       creatorNotes: null,
       mesExampleMode: "depth",
       mesExampleDepth: 4,
-      description: "A test character.",
-      scenario: "A scene.",
-      mesExample: null,
+      description: over?.description ?? "A test character.",
+      scenario: over?.scenario !== undefined ? over.scenario : "A scene.",
+      mesExample: over?.mesExample !== undefined ? over.mesExample : null,
     },
   });
 }
+
+/** Shared tool-execution context stub (the tools ignore it). */
+const ctx = { messages: [], toolCallId: "t", abort: () => {} } as never;
 
 describe("coauthor-tools: edit_profile", () => {
   test("validates via parseProfileMd round-trip and returns the profile target", async () => {
@@ -247,76 +252,294 @@ describe("coauthor-tools: add_alt_greeting", () => {
   });
 });
 
-describe("coauthor-tools: per-section edits (edit_personality / edit_scenario / edit_examples)", () => {
-  test("edit_personality replaces only PERSONALITY and preserves the other sections", async () => {
+describe("coauthor-tools: edit_* exact SEARCH/REPLACE (CED-2)", () => {
+  test("applies a unique exact edit to PERSONALITY and preserves other sections", async () => {
     const tools = buildCoauthorTools({ profileMd: sampleProfileMd() });
     const out = (await tools.edit_personality.execute(
-      { content: "A sharper personality.", summary: "Harden personality." },
-      { messages: [], toolCallId: "t8", abort: () => {} } as never,
+      { edits: [{ search: "A test character.", replace: "A bold, sharp character." }], summary: "Harden personality." },
+      ctx,
     )) as never;
-
     expect(out.target).toBe("profile");
-    expect(out.proposed).toContain("# PERSONALITY\nA sharper personality.");
-    expect(out.proposed).toContain("# SCENARIO\nA scene."); // unmodified
+    expect(out.proposed).toContain("# PERSONALITY\nA bold, sharp character.");
+    expect(out.proposed).toContain("# SCENARIO\nA scene."); // preserved
   });
 
-  test("edit_scenario replaces only SCENARIO and preserves PERSONALITY", async () => {
+  test("edit_scenario targets only SCENARIO and preserves PERSONALITY", async () => {
     const tools = buildCoauthorTools({ profileMd: sampleProfileMd() });
     const out = (await tools.edit_scenario.execute(
-      { content: "A new scenario text.", summary: "Update scenario." },
-      { messages: [], toolCallId: "t9", abort: () => {} } as never,
+      { edits: [{ search: "A scene.", replace: "A darker scene." }], summary: "x" },
+      ctx,
     )) as never;
-
-    expect(out.target).toBe("profile");
-    expect(out.proposed).toContain("# SCENARIO\nA new scenario text.");
-    expect(out.proposed).toContain("# PERSONALITY\nA test character."); // unmodified
+    expect(out.proposed).toContain("# SCENARIO\nA darker scene.");
+    expect(out.proposed).toContain("# PERSONALITY\nA test character.");
   });
 
-  test("edit_examples replaces only EXAMPLES and preserves PERSONALITY", async () => {
+  test("rejects when search is not found in the current section body", async () => {
     const tools = buildCoauthorTools({ profileMd: sampleProfileMd() });
-    const out = (await tools.edit_examples.execute(
-      { content: "{{char}}: Hello there.", summary: "Add example dialogue." },
-      { messages: [], toolCallId: "t10", abort: () => {} } as never,
-    )) as never;
-
-    expect(out.target).toBe("profile");
-    expect(out.proposed).toContain("# EXAMPLES\n{{char}}: Hello there.");
-    expect(out.proposed).toContain("# PERSONALITY\nA test character."); // unmodified
+    await expect(tools.edit_personality.execute(
+      { edits: [{ search: "NONEXISTENT TEXT", replace: "x" }], summary: "x" },
+      ctx,
+    )).rejects.toThrow(/not found/);
   });
 
-  test("each per-section tool rejects empty content", async () => {
+  test("rejects an ambiguous search (2+ matches)", async () => {
+    const tools = buildCoauthorTools({ profileMd: sampleProfileMd({ description: "na na twice" }) });
+    await expect(tools.edit_personality.execute(
+      { edits: [{ search: "na", replace: "x" }], summary: "x" },
+      ctx,
+    )).rejects.toThrow(/ambiguous/i);
+  });
+
+  test("rejects a no-op (search === replace)", async () => {
     const tools = buildCoauthorTools({ profileMd: sampleProfileMd() });
-    for (const t of ["edit_personality", "edit_scenario", "edit_examples"] as const) {
-      await expect(
-        tools[t].execute(
-          { content: "   ", summary: "x" },
-          { messages: [], toolCallId: "t11", abort: () => {} } as never,
-        ),
-      ).rejects.toThrow(/empty/);
-    }
+    await expect(tools.edit_personality.execute(
+      { edits: [{ search: "A test character.", replace: "A test character." }], summary: "x" },
+      ctx,
+    )).rejects.toThrow(/no-op/);
+  });
+
+  test("rejects an empty search item", async () => {
+    const tools = buildCoauthorTools({ profileMd: sampleProfileMd() });
+    await expect(tools.edit_personality.execute(
+      { edits: [{ search: "", replace: "x" }], summary: "x" },
+      ctx,
+    )).rejects.toThrow(/search must not be empty/);
+  });
+
+  test("rejects an empty edits batch", async () => {
+    const tools = buildCoauthorTools({ profileMd: sampleProfileMd() });
+    await expect(tools.edit_personality.execute(
+      { edits: [], summary: "x" },
+      ctx,
+    )).rejects.toThrow(/edits must not be empty/);
+  });
+
+  test("deletes text via an empty replace", async () => {
+    const tools = buildCoauthorTools({ profileMd: sampleProfileMd({ description: "Keep this. Remove this." }) });
+    const out = (await tools.edit_personality.execute(
+      { edits: [{ search: " Remove this.", replace: "" }], summary: "Trim." },
+      ctx,
+    )) as never;
+    expect(out.proposed).toContain("# PERSONALITY\nKeep this.");
+  });
+
+  test("applies an ordered multi-edit batch in array order", async () => {
+    const tools = buildCoauthorTools({ profileMd: sampleProfileMd({ description: "alpha beta gamma" }) });
+    const out = (await tools.edit_personality.execute(
+      { edits: [{ search: "alpha", replace: "ALPHA" }, { search: "ALPHA beta", replace: "ALPHA BETA" }], summary: "x" },
+      ctx,
+    )) as never;
+    expect(out.proposed).toContain("# PERSONALITY\nALPHA BETA gamma");
+  });
+
+  test("a batch is atomic: a later failed item rejects and changes nothing", async () => {
+    const tools = buildCoauthorTools({ profileMd: sampleProfileMd({ description: "alpha beta" }) });
+    await expect(tools.edit_personality.execute(
+      { edits: [{ search: "alpha", replace: "ALPHA" }, { search: "NONEXISTENT", replace: "x" }], summary: "x" },
+      ctx,
+    )).rejects.toThrow(/not found/);
+    // Working profile untouched: a subsequent edit still sees the ORIGINAL body.
+    const out = (await tools.edit_personality.execute(
+      { edits: [{ search: "alpha", replace: "CHANGED" }], summary: "x" },
+      ctx,
+    )) as never;
+    expect(out.proposed).toContain("# PERSONALITY\nCHANGED beta");
+  });
+
+  test("CA-17 guard rejects a wrong-level known heading introduced by an edit", async () => {
+    const tools = buildCoauthorTools({ profileMd: sampleProfileMd() });
+    await expect(tools.edit_scenario.execute(
+      { edits: [{ search: "A scene.", replace: "## EXAMPLES\n\nleaked" }], summary: "x" },
+      ctx,
+    )).rejects.toThrow(/EXAMPLES/);
   });
 
   test("rejects if context profileMd is missing", async () => {
     const tools = buildCoauthorTools();
-    await expect(
-      tools.edit_scenario.execute(
-        { content: "Valid", summary: "x" },
-        { messages: [], toolCallId: "t12", abort: () => {} } as never,
-      ),
-    ).rejects.toThrow(/missing canonical profile context/);
+    await expect(tools.edit_personality.execute(
+      { edits: [{ search: "x", replace: "y" }], summary: "x" },
+      ctx,
+    )).rejects.toThrow(/missing canonical profile context/);
+  });
+});
+
+describe("coauthor-tools: write_* whole-section writes (CED-2)", () => {
+  test("write_personality replaces only PERSONALITY and preserves other sections", async () => {
+    const tools = buildCoauthorTools({ profileMd: sampleProfileMd() });
+    const out = (await tools.write_personality.execute(
+      { content: "A brand-new personality.", summary: "Rewrite personality." },
+      ctx,
+    )) as never;
+    expect(out.target).toBe("profile");
+    expect(out.proposed).toContain("# PERSONALITY\nA brand-new personality.");
+    expect(out.proposed).toContain("# SCENARIO\nA scene."); // preserved
   });
 
-  test("runs the lost-section guard on the merged result", async () => {
-    // A section payload that itself contains a wrong-level known heading is
-    // caught by the same CA-17 guard edit_profile uses (the merged document is
-    // validated wholesale).
+  test("write_examples populates an empty EXAMPLES section", async () => {
+    const tools = buildCoauthorTools({ profileMd: sampleProfileMd() }); // mesExample null
+    const out = (await tools.write_examples.execute(
+      { content: "{{char}}: Hello there.", summary: "Add dialogue." },
+      ctx,
+    )) as never;
+    expect(out.proposed).toContain("# EXAMPLES\n{{char}}: Hello there.");
+    expect(out.proposed).toContain("# PERSONALITY\nA test character."); // preserved
+  });
+
+  test("each write_* rejects empty content", async () => {
     const tools = buildCoauthorTools({ profileMd: sampleProfileMd() });
-    await expect(
-      tools.edit_scenario.execute(
-        { content: "## EXAMPLES\n\nsome examples here", summary: "x" },
-        { messages: [], toolCallId: "t13", abort: () => {} } as never,
-      ),
-    ).rejects.toThrow(/EXAMPLES/);
+    for (const t of ["write_personality", "write_scenario", "write_examples"] as const) {
+      await expect(tools[t].execute({ content: "   ", summary: "x" }, ctx)).rejects.toThrow(/empty/);
+    }
+  });
+
+  test("CA-17 guard runs on a write body", async () => {
+    const tools = buildCoauthorTools({ profileMd: sampleProfileMd() });
+    await expect(tools.write_scenario.execute(
+      { content: "### EXAMPLES\n\nleaked", summary: "x" },
+      ctx,
+    )).rejects.toThrow(/EXAMPLES/);
+  });
+
+  test("rejects if context profileMd is missing", async () => {
+    const tools = buildCoauthorTools();
+    await expect(tools.write_personality.execute({ content: "x", summary: "x" }, ctx)).rejects.toThrow(
+      /missing canonical profile context/,
+    );
+  });
+
+  test("returns the full cumulative canonical profile checkpoint", async () => {
+    const tools = buildCoauthorTools({ profileMd: sampleProfileMd() });
+    const out = (await tools.write_scenario.execute({ content: "New scene.", summary: "x" }, ctx)) as never;
+    expect(out.target).toBe("profile");
+    expect(out.proposed).toMatch(/^---\nname: Test/);
+    expect(out.proposed).toContain("# PERSONALITY");
+    expect(out.proposed).toContain("# SCENARIO\nNew scene.");
+    expect(out.proposed).toContain("# EXAMPLES");
+  });
+});
+
+describe("coauthor-tools: composition + serialized non-poisoning queue (CED-2)", () => {
+  test("two different-section edits compose into the final proposal", async () => {
+    const tools = buildCoauthorTools({ profileMd: sampleProfileMd() });
+    await tools.edit_personality.execute(
+      { edits: [{ search: "A test character.", replace: "Edited personality." }], summary: "p" },
+      ctx,
+    );
+    const out = (await tools.edit_scenario.execute(
+      { edits: [{ search: "A scene.", replace: "Edited scenario." }], summary: "s" },
+      ctx,
+    )) as never;
+    expect(out.proposed).toContain("# PERSONALITY\nEdited personality.");
+    expect(out.proposed).toContain("# SCENARIO\nEdited scenario.");
+  });
+
+  test("two same-section edits compose (second searches text introduced by the first)", async () => {
+    const tools = buildCoauthorTools({ profileMd: sampleProfileMd() });
+    await tools.edit_personality.execute(
+      { edits: [{ search: "A test character.", replace: "A bold character." }], summary: "1" },
+      ctx,
+    );
+    const out = (await tools.edit_personality.execute(
+      { edits: [{ search: "A bold character.", replace: "A BOLD persona." }], summary: "2" },
+      ctx,
+    )) as never;
+    expect(out.proposed).toContain("# PERSONALITY\nA BOLD persona.");
+  });
+
+  test("edit then write on the same section composes", async () => {
+    const tools = buildCoauthorTools({ profileMd: sampleProfileMd() });
+    await tools.edit_scenario.execute(
+      { edits: [{ search: "A scene.", replace: "An interim scene." }], summary: "e" },
+      ctx,
+    );
+    const out = (await tools.write_scenario.execute({ content: "A wholesale new scene.", summary: "w" }, ctx)) as never;
+    expect(out.proposed).toContain("# SCENARIO\nA wholesale new scene.");
+  });
+
+  test("write then edit on the same section composes", async () => {
+    const tools = buildCoauthorTools({ profileMd: sampleProfileMd({ mesExample: null }) });
+    await tools.write_examples.execute({ content: "Line one. Line two.", summary: "w" }, ctx);
+    const out = (await tools.edit_examples.execute(
+      { edits: [{ search: "Line two.", replace: "Second line." }], summary: "e" },
+      ctx,
+    )) as never;
+    expect(out.proposed).toContain("# EXAMPLES\nLine one. Second line.");
+  });
+
+  test("dependent edits fired without awaiting serialize deterministically (FIFO)", async () => {
+    const tools = buildCoauthorTools({ profileMd: sampleProfileMd() });
+    const p1 = tools.edit_personality.execute(
+      { edits: [{ search: "A test character.", replace: "A bold character." }], summary: "1" },
+      ctx,
+    );
+    const p2 = tools.edit_personality.execute(
+      { edits: [{ search: "A bold character.", replace: "A BOLD persona." }], summary: "2" },
+      ctx,
+    );
+    const [r1, r2] = (await Promise.all([p1, p2])) as never;
+    expect(r1.proposed).toContain("A bold character.");
+    expect(r2.proposed).toContain("# PERSONALITY\nA BOLD persona.");
+  });
+
+  test("a failed call does not poison the queue (next call succeeds against last good state)", async () => {
+    const tools = buildCoauthorTools({ profileMd: sampleProfileMd() });
+    await expect(tools.edit_personality.execute(
+      { edits: [{ search: "GONE", replace: "x" }], summary: "fail" },
+      ctx,
+    )).rejects.toThrow(/not found/);
+    const out = (await tools.edit_personality.execute(
+      { edits: [{ search: "A test character.", replace: "Recovered." }], summary: "ok" },
+      ctx,
+    )) as never;
+    expect(out.proposed).toContain("# PERSONALITY\nRecovered.");
+  });
+
+  test("each composable output carries the full cumulative proposed checkpoint", async () => {
+    const tools = buildCoauthorTools({ profileMd: sampleProfileMd() });
+    const a = (await tools.edit_personality.execute(
+      { edits: [{ search: "A test character.", replace: "P-new." }], summary: "a" },
+      ctx,
+    )) as never;
+    const b = (await tools.edit_scenario.execute(
+      { edits: [{ search: "A scene.", replace: "S-new." }], summary: "b" },
+      ctx,
+    )) as never;
+    expect(a.proposed).toContain("P-new.");
+    expect(a.proposed).not.toContain("S-new.");
+    expect(b.proposed).toContain("P-new.");
+    expect(b.proposed).toContain("S-new.");
+  });
+});
+
+describe("coauthor-tools: edit_profile ordering within a turn (CED-2)", () => {
+  test("edit_profile first is valid; a later section edit composes on top", async () => {
+    const tools = buildCoauthorTools({ profileMd: sampleProfileMd() });
+    await tools.edit_profile.execute(
+      { profileMd: sampleProfileMd({ description: "Wholesale base." }), summary: "base rewrite" },
+      ctx,
+    );
+    const out = (await tools.edit_personality.execute(
+      { edits: [{ search: "Wholesale base.", replace: "Wholesale base, refined." }], summary: "refine" },
+      ctx,
+    )) as never;
+    expect(out.proposed).toContain("# PERSONALITY\nWholesale base, refined.");
+  });
+
+  test("edit_profile AFTER a section mutation rejects and preserves composed state", async () => {
+    const tools = buildCoauthorTools({ profileMd: sampleProfileMd() });
+    await tools.edit_personality.execute(
+      { edits: [{ search: "A test character.", replace: "Composed." }], summary: "1" },
+      ctx,
+    );
+    await expect(tools.edit_profile.execute(
+      { profileMd: sampleProfileMd(), summary: "late rewrite" },
+      ctx,
+    )).rejects.toThrow(/FIRST profile change/);
+    const out = (await tools.edit_personality.execute(
+      { edits: [{ search: "Composed.", replace: "Still composed." }], summary: "2" },
+      ctx,
+    )) as never;
+    expect(out.proposed).toContain("# PERSONALITY\nStill composed.");
   });
 });
 
@@ -340,5 +563,16 @@ describe("coauthor-tools: toolSet filtering", () => {
     expect(tools.edit_profile).toBeDefined();
     expect(tools.edit_scenario).toBeUndefined();
     expect(tools.edit_greeting).toBeUndefined();
+  });
+
+  test("filters write_* tools independently from their edit siblings (CED-2)", () => {
+    const tools = buildCoauthorTools({
+      toolSet: { write_personality: true, write_examples: true },
+    }) as unknown as Record<string, unknown>;
+    expect(tools.write_personality).toBeDefined();
+    expect(tools.write_examples).toBeDefined();
+    expect(tools.write_scenario).toBeUndefined();
+    expect(tools.edit_profile).toBeUndefined();
+    expect(tools.edit_personality).toBeUndefined();
   });
 });
