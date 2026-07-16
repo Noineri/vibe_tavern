@@ -234,7 +234,7 @@ export async function scanSkillRoot(root: ScanRoot): Promise<SkillScanResult> {
  * array order and results concatenated, so a caller that lists built-ins first
  * then user skills gets a deterministic catalog. The scanner does NOT deduplicate
  * by id or name — a user skill with the same id as a built-in is surfaced
- * alongside it, and the catalog layer (Wave 2 / CTX-S3) decides precedence.
+ * alongside it, and the catalog layer ({@link buildSkillCatalog}) decides precedence.
  */
 export async function discoverSkills(roots: readonly ScanRoot[]): Promise<SkillScanResult> {
   const results = await Promise.all(roots.map(scanSkillRoot));
@@ -242,6 +242,62 @@ export async function discoverSkills(roots: readonly ScanRoot[]): Promise<SkillS
     skills: results.flatMap((r) => r.skills),
     errors: results.flatMap((r) => r.errors),
   };
+}
+
+// ─── Catalog (merge + precedence) ────────────────────────────────────────────
+
+/**
+ * A catalog entry: a discovered skill plus whether it shadows a built-in. The
+ * absolute paths (`skillDir`, `manifestPath`) are kept for server-side readers
+ * (Wave 2's `read_skill_file`); the wire DTO strips them (CTX-S3 adapter).
+ */
+export interface SkillCatalogEntry extends DiscoveredSkill {
+  /** True when a user skill with this id shadows a built-in (user precedence won). */
+  readonly shadowsBuiltin: boolean;
+}
+
+export interface SkillCatalog {
+  /** One entry per skill id (user precedence on collision), sorted by id. */
+  readonly entries: SkillCatalogEntry[];
+  /** Malformed-manifest errors surfaced from every root (not fatal). */
+  readonly errors: SkillScanError[];
+}
+
+/**
+ * Build the merged skill catalog: scan every root, then dedupe by id with
+ * **user > built-in precedence** — a user skill with the same id as a built-in
+ * shadows it (the user wins), and its entry is flagged `shadowsBuiltin`. This is
+ * the standard "user customizes/overrides a built-in" model: importing a same-id
+ * skill is a shadow, and deleting it removes only the user copy (restoring the
+ * built-in) — handled by `deleteUserSkill`, which never touches the built-in root.
+ *
+ * Precedence is enforced by iterating built-ins BEFORE user skills when filling
+ * the id map, so the result is independent of the input root order. Entries are
+ * sorted by id for a stable catalog. Malformed manifests do not abort the build;
+ * they are returned in `errors`.
+ */
+export async function buildSkillCatalog(roots: readonly ScanRoot[]): Promise<SkillCatalog> {
+  const { skills, errors } = await discoverSkills(roots);
+  const builtinIds = new Set(skills.filter((s) => s.source === "builtin").map((s) => s.id));
+
+  const byId = new Map<string, DiscoveredSkill>();
+  // Builtin first, then user → a user entry with a colliding id overwrites the
+  // built-in in the map (user precedence), regardless of the caller's root order.
+  const ordered = [...skills].sort((a, b) => {
+    const au = a.source === "user" ? 1 : 0;
+    const bu = b.source === "user" ? 1 : 0;
+    return au - bu;
+  });
+  for (const skill of ordered) byId.set(skill.id, skill);
+
+  const entries: SkillCatalogEntry[] = [...byId.values()]
+    .map((skill) => ({
+      ...skill,
+      shadowsBuiltin: skill.source === "user" && builtinIds.has(skill.id),
+    }))
+    .sort((a, b) => a.id.localeCompare(b.id));
+
+  return { entries, errors };
 }
 
 // ─── Root resolvers (production wiring) ──────────────────────────────────────

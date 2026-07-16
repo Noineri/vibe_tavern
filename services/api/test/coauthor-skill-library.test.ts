@@ -11,6 +11,7 @@ import {
   type SkillImportFile,
 } from "../src/domain/coauthor/skills/skill-library.js";
 import { scanSkillRoot } from "../src/domain/coauthor/skills/skill-scanner.js";
+import { SkillLibraryService } from "../src/domain/coauthor/skills/skill-library.js";
 
 /**
  * CTX-S2 — Filesystem skill library (import + delete). Pins the eight
@@ -239,22 +240,100 @@ describe("deleteUserSkill", () => {
     expect(skills).toEqual([]);
   });
 
-  test("built-in immutability: deleting a built-in id is rejected and touches nothing", async () => {
-    // A user skill coincidentally exists, but the requested id is built-in.
-    await importSkillTree([file("profile-overview/SKILL.md", manifest("profile-overview", "user copy"))], userRoot);
-    expect(await listTopLevelDirs(userRoot)).toEqual(["profile-overview"]);
-
+  test("pure built-in (no user dir) → rejected as read-only; nothing written", async () => {
+    // No user directory exists for this id; it is a pure built-in. The built-in
+    // files live in a separate root `deleteUserSkill` never touches — this is the
+    // immutability boundary (the S2 user-verified case: DELETE profile-overview → 400).
     await expect(deleteUserSkill("profile-overview", userRoot, ["profile-overview"])).rejects.toThrow(
       /cannot delete built-in skill/,
     );
-    // The user's directory is untouched.
+    expect(await listTopLevelDirs(userRoot)).toEqual([]);
+  });
+
+  test("user shadow of a built-in → deletable, removes ONLY the user copy (built-in immutability preserved)", async () => {
+    // A user imported their own copy of a built-in id (a shadow / customization).
+    // The shadow lives under userRoot, so deleting it removes the user copy and
+    // restores the built-in in the catalog — it does NOT touch the built-in root.
+    await importSkillTree([file("profile-overview/SKILL.md", manifest("profile-overview", "user copy"))], userRoot);
     expect(await listTopLevelDirs(userRoot)).toEqual(["profile-overview"]);
-    expect(await Bun.file(join(userRoot, "profile-overview", "SKILL.md")).exists()).toBe(true);
+
+    const res = await deleteUserSkill("profile-overview", userRoot, ["profile-overview"]);
+    expect(res).toEqual({ id: "profile-overview" });
+    // The user's shadow directory is gone; the (separate) built-in root is untouched.
+    expect(await listTopLevelDirs(userRoot)).toEqual([]);
+    expect(await Bun.file(join(userRoot, "profile-overview", "SKILL.md")).exists()).toBe(false);
   });
 
   test("unsafe ids and missing dirs are rejected", async () => {
     await expect(deleteUserSkill("..", userRoot)).rejects.toThrow(SkillImportError);
     await expect(deleteUserSkill("a/b", userRoot)).rejects.toThrow(SkillImportError);
     await expect(deleteUserSkill("never-imported", userRoot)).rejects.toThrow(/does not exist/);
+  });
+});
+
+// ─── SkillLibraryService — catalog (list/read) ───────────────────────────────
+
+/**
+ * CTX-S3 — the service-layer catalog. Verifies `listCatalog` / `readCatalogEntry`
+ * merge the service's two roots with user precedence and that `deleteSkill`
+ * honors the corrected shadow model (user shadow deletable, pure built-in
+ * rejected) through the cached built-in id set.
+ */
+describe("SkillLibraryService — catalog + shadow-aware delete", () => {
+  test("listCatalog merges builtin + user with user precedence; readCatalogEntry resolves by id", async () => {
+    const builtin = await freshRoot();
+    const user = await freshRoot();
+    await importSkillTree([file("alpha/SKILL.md", manifest("alpha", "built-in alpha"))], builtin);
+    await importSkillTree(
+      [
+        file("alpha/SKILL.md", manifest("alpha", "user shadow of alpha")),
+        file("beta/SKILL.md", manifest("beta", "user-only beta")),
+      ],
+      user,
+    );
+
+    const service = new SkillLibraryService(user, builtin);
+    const { entries, errors } = await service.listCatalog();
+    expect(errors).toEqual([]);
+    expect(entries.map((e) => e.id)).toEqual(["alpha", "beta"]);
+
+    const alpha = entries.find((e) => e.id === "alpha");
+    expect(alpha?.source).toBe("user");
+    expect(alpha?.description).toBe("user shadow of alpha");
+    expect(alpha?.shadowsBuiltin).toBe(true);
+    expect(entries.find((e) => e.id === "beta")?.shadowsBuiltin).toBe(false);
+
+    const read = await service.readCatalogEntry("beta");
+    expect(read?.id).toBe("beta");
+    expect(await service.readCatalogEntry("nope")).toBeNull();
+  });
+
+  test("deleteSkill removes a user shadow of a built-in (built-in root untouched)", async () => {
+    const builtin = await freshRoot();
+    const user = await freshRoot();
+    await importSkillTree([file("profile-overview/SKILL.md", manifest("profile-overview", "built-in"))], builtin);
+    await importSkillTree([file("profile-overview/SKILL.md", manifest("profile-overview", "user shadow"))], user);
+
+    const service = new SkillLibraryService(user, builtin);
+    const res = await service.deleteSkill("profile-overview");
+    expect(res).toEqual({ id: "profile-overview" });
+    // User shadow gone; built-in file intact in its own root.
+    expect(await Bun.file(join(user, "profile-overview", "SKILL.md")).exists()).toBe(false);
+    expect(await Bun.file(join(builtin, "profile-overview", "SKILL.md")).exists()).toBe(true);
+
+    // After shadow removal, the catalog falls back to the built-in version.
+    const after = await service.readCatalogEntry("profile-overview");
+    expect(after?.source).toBe("builtin");
+    expect(after?.shadowsBuiltin).toBe(false);
+  });
+
+  test("deleteSkill rejects a pure built-in (no user dir) as read-only", async () => {
+    const builtin = await freshRoot();
+    const user = await freshRoot();
+    await importSkillTree([file("profile-overview/SKILL.md", manifest("profile-overview", "built-in"))], builtin);
+
+    const service = new SkillLibraryService(user, builtin);
+    await expect(service.deleteSkill("profile-overview")).rejects.toThrow(/cannot delete built-in skill/);
+    expect(await Bun.file(join(builtin, "profile-overview", "SKILL.md")).exists()).toBe(true);
   });
 });

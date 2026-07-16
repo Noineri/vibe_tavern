@@ -393,17 +393,43 @@ export interface MobileAccessRuntimeApi {
 
 // ─── Co-Author Skills (filesystem skill libraries) ──────────────────
 // CTX-S2: import (multipart files → validated atomic tree under
-// <dataDir>/coauthor/skills) + delete one user skill directory. Built-in
-// skills are read-only and cannot be deleted. Catalog list/read land in CTX-S3.
+// <dataDir>/coauthor/skills) + delete one user skill directory.
+// CTX-S3: metadata-only catalog (list/read) merging built-in + user roots with
+// user precedence. Absolute filesystem paths never leave the server — only the
+// portable root-relative manifest path (`<id>/SKILL.md`) is exposed.
+
+/**
+ * Wire shape for one skill catalog entry. Metadata only — no file BODY (the
+ * manifest text is fetched on demand by Wave 2's `read_skill_file`) and no
+ * ABSOLUTE path (only the portable root-relative manifest path is exposed).
+ */
+export interface SkillCatalogEntryDto {
+	/** Stable skill id = the skill directory name. */
+	readonly id: string;
+	/** Where the winning copy lives: a user skill shadows a same-id built-in. */
+	readonly source: "builtin" | "user";
+	readonly name: string;
+	readonly description: string;
+	/** Path to `SKILL.md` relative to its root (`<id>/SKILL.md`) — portable. */
+	readonly manifestPath: string;
+	/** True when a user skill with this id shadows a built-in (user precedence). */
+	readonly shadowsBuiltin: boolean;
+}
 
 export interface CoauthorSkillsRuntimeApi {
 	/** Validate + atomically import a skill tree (ordinary files with relative
 	 *  paths). Rejects unsafe paths, malformed manifests, and trees with no
 	 *  SKILL.md WITHOUT writing anything. Returns the imported skill ids. */
 	importSkills: (files: SkillImportFile[]) => Promise<SkillImportResult>;
-	/** Delete one top-level user skill directory. Rejects built-in ids, unsafe
-	 *  ids, and missing directories. */
+	/** Delete one top-level user skill directory. A user shadow of a built-in is
+	 *  deletable (removes only the user copy); a pure built-in (no user dir) is
+	 *  rejected as read-only; unsafe ids and missing ids are rejected. */
 	deleteSkill: (id: string) => Promise<{ id: string }>;
+	/** Merged metadata-only catalog (built-in + user, user precedence). Malformed
+	 *  manifests are surfaced in `errors`, never fatal. */
+	listSkills: () => Promise<{ entries: SkillCatalogEntryDto[]; errors: { source: "builtin" | "user"; id: string; reason: string }[] }>;
+	/** One catalog entry by id, or `null` if no such skill exists in either root. */
+	readSkill: (id: string) => Promise<SkillCatalogEntryDto | null>;
 }
 
 // ─── Composite ──────────────────────────────────────────────────────────

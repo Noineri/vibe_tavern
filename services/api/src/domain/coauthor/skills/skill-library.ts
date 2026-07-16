@@ -26,7 +26,8 @@
 import { lstat, mkdir, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { randomUUID } from "node:crypto";
-import { parseSkillManifest } from "./skill-scanner.js";
+import { parseSkillManifest, buildSkillCatalog } from "./skill-scanner.js";
+import type { SkillCatalog, SkillCatalogEntry, ScanRoot } from "./skill-scanner.js";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -256,12 +257,16 @@ export async function importSkillTree(
 /**
  * Delete one top-level user skill directory. Rejects (throws) when:
  *  - the id is unsafe (traversal/absolute/empty) — never resolves outside root;
- *  - the id resolves to a built-in skill directory (built-in immutability);
- *  - the directory does not exist under the user root.
+ *  - the id has NO user directory AND is a built-in skill (built-in immutability:
+ *    a pure built-in cannot be removed — it lives in the read-only assets root);
+ *  - the id has NO user directory and is not a built-in (does not exist).
  *
- * `builtinSkillIds` is the set of ids discovered in the built-in root (from the
- * scanner); a delete request for any of them is rejected so the UI can never
- * remove a built-in, even though the delete itself only ever touches userRoot.
+ * A user skill that SHADOWS a built-in (same id, user imported their own copy)
+ * IS deletable: deleting removes only the user directory under `userRoot`, so the
+ * built-in file under the assets root is never touched and reappears in the
+ * catalog once the shadow is gone. `builtinSkillIds` is the set of ids discovered
+ * in the built-in root (from the scanner), used only to distinguish a pure
+ * built-in delete (rejected) from a genuinely missing id.
  */
 export async function deleteUserSkill(
   id: string,
@@ -274,9 +279,6 @@ export async function deleteUserSkill(
   if (id === "." || id === ".." || id.includes("/") || id.includes("\\") || id.includes("\0")) {
     throw new SkillImportError(`refusing unsafe skill id: ${id}`);
   }
-  if (builtinSkillIds.includes(id)) {
-    throw new SkillImportError(`cannot delete built-in skill '${id}' (built-in skills are read-only)`);
-  }
 
   const root = resolve(userRoot);
   const target = resolve(root, id);
@@ -286,13 +288,20 @@ export async function deleteUserSkill(
   }
 
   const stat = await lstat(target).catch(() => null);
-  if (!stat) {
-    throw new SkillImportError(`skill '${id}' does not exist`);
-  }
-  if (stat.isSymbolicLink()) {
+  if (stat?.isSymbolicLink()) {
     throw new SkillImportError(`refusing to delete a symlink at '${id}'`);
   }
+  if (!stat) {
+    // No user directory for this id. If it is a built-in, that is the
+    // immutability boundary (cannot remove a read-only built-in); otherwise the
+    // id simply does not exist.
+    if (builtinSkillIds.includes(id)) {
+      throw new SkillImportError(`cannot delete built-in skill '${id}' (built-in skills are read-only)`);
+    }
+    throw new SkillImportError(`skill '${id}' does not exist`);
+  }
 
+  // A real user directory (possibly a shadow of a built-in) — deletable.
   await rm(target, { recursive: true, force: true });
   return { id };
 }
@@ -325,11 +334,11 @@ export async function listTopLevelDirs(rootDir: string): Promise<string[]> {
 
 /**
  * Domain service that owns the resolved skill roots and exposes the mutating
- * operations to the adapter layer. The built-in skill ids are scanned lazily
- * and cached (they change only on an application update, never at runtime), so
- * the built-in-immutability check on delete is a single Map lookup after the
- * first call. Read-only discovery + catalog list/read live in the scanner /
- * CTX-S3 and are NOT exposed here.
+ * operations (import/delete) AND the read-only catalog (list/read) to the
+ * adapter layer. The built-in skill ids are scanned lazily and cached (they
+ * change only on an application update, never at runtime), so the
+ * built-in-immutability check on delete is a single lookup after the first call.
+ * Read-only discovery + catalog merge live in the scanner (`buildSkillCatalog`).
  */
 export class SkillLibraryService {
   private builtinIdsCache: readonly string[] | null = null;
@@ -347,11 +356,26 @@ export class SkillLibraryService {
     return deleteUserSkill(id, this.userRoot, builtinIds);
   };
 
-  /** Read-only helper for future catalog/list endpoints (CTX-S3). */
+  /** Read-only merged catalog (built-in + user, user precedence on id collision). */
+  listCatalog = async (): Promise<SkillCatalog> =>
+    buildSkillCatalog(this.scanRoots());
+
+  /** One catalog entry by id, or `null` if no such skill exists in either root. */
+  readCatalogEntry = async (id: string): Promise<SkillCatalogEntry | null> => {
+    const { entries } = await this.listCatalog();
+    return entries.find((e) => e.id === id) ?? null;
+  };
+
+  /** The resolved roots this service reads from / writes to. */
   readonly roots = (): { userRoot: string; builtinRoot: string } => ({
     userRoot: this.userRoot,
     builtinRoot: this.builtinRoot,
   });
+
+  private readonly scanRoots = (): ScanRoot[] => [
+    { path: this.builtinRoot, source: "builtin" },
+    { path: this.userRoot, source: "user" },
+  ];
 
   private async getBuiltinSkillIds(): Promise<readonly string[]> {
     if (this.builtinIdsCache) return this.builtinIdsCache;

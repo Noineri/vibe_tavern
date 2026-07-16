@@ -111,3 +111,47 @@ describe("DELETE /api/coauthor/skills/:id", () => {
     expect((await res.json()).error).toMatch(/does not exist/);
   });
 });
+
+describe("GET /api/coauthor/skills — catalog", () => {
+  test("list returns the merged metadata-only catalog (built-in + user, user precedence)", async () => {
+    // Seed a built-in and a user skill that shadows it, plus a user-only skill.
+    const { writeFile, mkdir } = await import("node:fs/promises");
+    await mkdir(join(builtinRoot, "profile-overview"), { recursive: true });
+    await writeFile(join(builtinRoot, "profile-overview", "SKILL.md"), manifest("profile-overview", "built-in"), "utf8");
+    await mkdir(join(userRoot, "profile-overview"), { recursive: true });
+    await writeFile(join(userRoot, "profile-overview", "SKILL.md"), manifest("profile-overview", "user shadow"), "utf8");
+    await mkdir(join(userRoot, "my-skill"), { recursive: true });
+    await writeFile(join(userRoot, "my-skill", "SKILL.md"), manifest("my-skill", "mine"), "utf8");
+
+    const app = makeApp();
+    const res = await app.request("/api/coauthor/skills");
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.errors).toEqual([]);
+    expect(body.entries.map((e: { id: string }) => e.id)).toEqual(["my-skill", "profile-overview"]);
+
+    const overview = body.entries.find((e: { id: string }) => e.id === "profile-overview");
+    expect(overview.source).toBe("user");
+    expect(overview.shadowsBuiltin).toBe(true);
+    expect(overview.description).toBe("user shadow");
+    // Metadata-only DTO: portable manifest path, NO absolute filesystem path.
+    expect(overview.manifestPath).toBe("profile-overview/SKILL.md");
+    expect(JSON.stringify(body)).not.toContain(builtinRoot.replace(/\\/g, "/"));
+    expect(JSON.stringify(body)).not.toContain(userRoot.replace(/\\/g, "/"));
+  });
+
+  test("read by id → 200 with the entry; missing id → 404", async () => {
+    const { writeFile, mkdir } = await import("node:fs/promises");
+    await mkdir(join(userRoot, "my-skill"), { recursive: true });
+    await writeFile(join(userRoot, "my-skill", "SKILL.md"), manifest("my-skill", "hello"), "utf8");
+
+    const app = makeApp();
+    const ok = await app.request("/api/coauthor/skills/my-skill");
+    expect(ok.status).toBe(200);
+    expect((await ok.json()).description).toBe("hello");
+
+    const missing = await app.request("/api/coauthor/skills/nope");
+    expect(missing.status).toBe(404);
+    expect((await missing.json()).error).toMatch(/does not exist/);
+  });
+});

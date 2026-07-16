@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  buildSkillCatalog,
   discoverSkills,
   parseSkillManifest,
   resolveBuiltinSkillsRoot,
@@ -318,5 +319,101 @@ describe("root resolvers", () => {
   test("resolveUserSkillsRoot builds <dataDir>/coauthor/skills", () => {
     const root = resolveUserSkillsRoot(join(tmpRoot, "data"));
     expect(root.replace(/\\/g, "/").endsWith("data/coauthor/skills")).toBe(true);
+  });
+});
+
+// ─── buildSkillCatalog (merge + user > builtin precedence) ────────────────────
+
+/**
+ * CTX-S3 — the merged catalog. Discovery (S1) deliberately surfaces same-id
+ * collisions; the catalog decides precedence: user > builtin (a user skill
+ * shadows a same-id built-in), flagged `shadowsBuiltin`. Entries are deduped by
+ * id and sorted; malformed manifests are surfaced, not fatal.
+ */
+describe("buildSkillCatalog — merge + user precedence", () => {
+  test("merges builtin + user roots into one sorted, deduped-by-id catalog", async () => {
+    const builtin = await makeTmpDir("builtin");
+    const user = await makeTmpDir("user");
+    await writeManifest(builtin, "alpha", manifest("alpha", "builtin alpha"));
+    await writeManifest(builtin, "beta", manifest("beta", "builtin beta"));
+    await writeManifest(user, "gamma", manifest("gamma", "user gamma"));
+
+    const { entries, errors } = await buildSkillCatalog([
+      { path: builtin, source: "builtin" },
+      { path: user, source: "user" },
+    ]);
+
+    expect(errors).toEqual([]);
+    expect(entries.map((e) => e.id)).toEqual(["alpha", "beta", "gamma"]);
+    expect(entries.map((e) => e.source)).toEqual(["builtin", "builtin", "user"]);
+    expect(entries.every((e) => e.shadowsBuiltin === false)).toBe(true);
+    // Portable root-relative manifest path, no absolute path leaks on the entry.
+    expect(entries[0].manifestPath).toBe(join(builtin, "alpha", "SKILL.md"));
+    expect(entries[0].rootRelativeManifestPath).toBe("alpha/SKILL.md");
+  });
+
+  test("a user skill with a built-in id SHADOWS it (user precedence) and is flagged", async () => {
+    const builtin = await makeTmpDir("builtin");
+    const user = await makeTmpDir("user");
+    await writeManifest(builtin, "profile-overview", manifest("profile-overview", "built-in version"));
+    await writeManifest(user, "profile-overview", manifest("profile-overview", "user-customized version"));
+    await writeManifest(user, "only-user", manifest("only-user", "user only"));
+
+    const { entries } = await buildSkillCatalog([
+      { path: builtin, source: "builtin" },
+      { path: user, source: "user" },
+    ]);
+
+    // One entry per id (deduped), user version won.
+    const overview = entries.find((e) => e.id === "profile-overview");
+    expect(overview?.source).toBe("user");
+    expect(overview?.description).toBe("user-customized version");
+    expect(overview?.shadowsBuiltin).toBe(true);
+    // A non-colliding user skill is not flagged.
+    expect(entries.find((e) => e.id === "only-user")?.shadowsBuiltin).toBe(false);
+    expect(entries.map((e) => e.id)).toEqual(["only-user", "profile-overview"]);
+  });
+
+  test("precedence is independent of the input root order", async () => {
+    const builtin = await makeTmpDir("builtin");
+    const user = await makeTmpDir("user");
+    await writeManifest(builtin, "shared", manifest("shared", "built-in"));
+    await writeManifest(user, "shared", manifest("shared", "user"));
+
+    // User-first input order must still yield the user version (precedence is
+    // not "last root wins" — it is explicitly user > builtin).
+    const { entries } = await buildSkillCatalog([
+      { path: user, source: "user" },
+      { path: builtin, source: "builtin" },
+    ]);
+    expect(entries[0].source).toBe("user");
+    expect(entries[0].description).toBe("user");
+    expect(entries[0].shadowsBuiltin).toBe(true);
+  });
+
+  test("malformed manifests are surfaced in errors and do not abort the catalog", async () => {
+    const builtin = await makeTmpDir("builtin");
+    const user = await makeTmpDir("user");
+    await writeManifest(builtin, "good", manifest("good", "ok"));
+    await writeManifest(user, "broken", "# no frontmatter at all");
+
+    const { entries, errors } = await buildSkillCatalog([
+      { path: builtin, source: "builtin" },
+      { path: user, source: "user" },
+    ]);
+    expect(entries.map((e) => e.id)).toEqual(["good"]);
+    expect(errors).toHaveLength(1);
+    expect(errors[0].source).toBe("user");
+    expect(errors[0].reason).toMatch(/frontmatter/);
+  });
+
+  test("the nine-skill fixture imports as one catalog of nine skills (S3 self-check)", async () => {
+    await buildNineSkillFixture(tmpRoot);
+    const { entries, errors } = await buildSkillCatalog([{ path: tmpRoot, source: "user" }]);
+    expect(errors).toEqual([]);
+    // Eight plain + one tricky (janitor-public-bio) = nine skills; the
+    // shared-card-references dir (no SKILL.md) is NOT a skill.
+    expect(entries).toHaveLength(9);
+    expect(entries.find((e) => e.id === "janitor-public-bio")?.description).toMatch(/Builds and rewrites public bio/);
   });
 });
