@@ -48,6 +48,24 @@ class MobilePackagingTest {
         assertFalse(installer.contains("bun run build"))
     }
 
+    @Test
+    fun `active Android surfaces use canonical Vibe Tavern branding`() {
+        val manifest = File(repoRoot, "mobile/android/app/src/main/AndroidManifest.xml").readText()
+        val activeResources = listOf(
+            "mobile/android/app/src/main/res/layout/screen_launch.xml",
+            "mobile/android/app/src/main/res/layout/screen_install_termux.xml",
+            "mobile/android/app/src/main/res/layout/screen_permission_guide.xml",
+            "mobile/android/app/src/main/res/values/themes.xml",
+        ).joinToString("\n") { relativePath -> File(repoRoot, relativePath).readText() }
+
+        assertTrue(manifest.contains("android:icon=\"@mipmap/ic_launcher\""))
+        assertTrue(activeResources.contains("@drawable/vt_logo"))
+        assertTrue(activeResources.contains("@font/alegreya_variable"))
+        assertFalse(activeResources.contains("🌴"))
+        assertFalse(activeResources.contains("#7C3AED", ignoreCase = true))
+        assertFalse(activeResources.contains("#1A1A2E", ignoreCase = true))
+    }
+
     private fun findRepoRoot(start: File): File {
         var current: File? = start
         while (current != null) {

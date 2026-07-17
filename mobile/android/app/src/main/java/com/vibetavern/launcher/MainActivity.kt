@@ -362,6 +362,14 @@ class MainActivity : AppCompatActivity() {
     private fun tr(en: String, ru: String): String = if (isRu()) ru else en
 
     private fun applyLaunchTexts() {
+        findViewById<TextView>(R.id.launch_intro).text = tr(
+            "The launcher manages the local server; Vibe Tavern opens in your browser.",
+            "Лаунчер управляет локальным сервером, а Vibe Tavern открывается в браузере.",
+        )
+        findViewById<TextView>(R.id.management_label).text = tr(
+            "Launcher and server management",
+            "Управление лаунчером и сервером",
+        )
         launchBtn.text = tr("🚀 Start Server in Termux", "🚀 Запустить сервер в Termux")
         openBtn.text = tr("🌐 Open in Browser", "🌐 Открыть в браузере")
         stopBtn.text = tr("⏹ Stop Server", "⏹ Остановить сервер")
@@ -400,6 +408,22 @@ class MainActivity : AppCompatActivity() {
 
     private fun showTermuxInstallGuide() {
         setContentView(R.layout.screen_install_termux)
+        findViewById<TextView>(R.id.termux_step_title).text = tr(
+            "Step 1: Install Termux",
+            "Шаг 1: установите Termux",
+        )
+        findViewById<TextView>(R.id.termux_install_body).text = tr(
+            "Vibe Tavern needs Termux to run the local server on your device.\n\nIMPORTANT: install Termux from F-Droid, not the Play Store. The Play Store version is outdated and will not work.",
+            "Vibe Tavern использует Termux для запуска локального сервера на устройстве.\n\nВАЖНО: установите Termux из F-Droid, а не из Play Store. Версия из Play Store устарела и не работает.",
+        )
+        findViewById<Button>(R.id.btn_install_termux).text = tr(
+            "Install Termux from F-Droid",
+            "Установить Termux из F-Droid",
+        )
+        findViewById<Button>(R.id.btn_check_again).text = tr(
+            "I've installed it — continue",
+            "Termux установлен — продолжить",
+        )
         findViewById<Button>(R.id.btn_install_termux).setOnClickListener {
             startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://f-droid.org/packages/com.termux/")))
         }
@@ -408,6 +432,19 @@ class MainActivity : AppCompatActivity() {
 
     private fun showPermissionGuide() {
         setContentView(R.layout.screen_permission_guide)
+        findViewById<TextView>(R.id.permission_step_title).text = tr(
+            "Step 2: Grant Permission",
+            "Шаг 2: выдайте разрешение",
+        )
+        findViewById<TextView>(R.id.permission_guide_body).text = tr(
+            "This permission belongs to Vibe Tavern, not Termux.\n\nFirst run this in Termux:\n  mkdir -p ~/.termux\n  echo \"allow-external-apps=true\" >> ~/.termux/termux.properties\n\nIf termux-reload-settings crashes, force stop Termux and open it again.\n\nThen:\n1. Open Vibe Tavern settings below\n2. Use ⋮ → \"Allow restricted settings\"\n3. Open Permissions → ⋮ → \"All permissions\"\n4. Enable \"Run commands in Termux environment\"\n5. Return here and tap Continue",
+            "Это разрешение нужно приложению Vibe Tavern, а не Termux.\n\nСначала выполните в Termux:\n  mkdir -p ~/.termux\n  echo \"allow-external-apps=true\" >> ~/.termux/termux.properties\n\nЕсли termux-reload-settings завершается с ошибкой, принудительно остановите Termux и откройте его снова.\n\nЗатем:\n1. Откройте настройки Vibe Tavern кнопкой ниже\n2. Выберите ⋮ → «Разрешить ограниченные настройки»\n3. Откройте «Разрешения» → ⋮ → «Все разрешения»\n4. Включите «Выполнение команд в среде Termux»\n5. Вернитесь сюда и нажмите «Продолжить»",
+        )
+        findViewById<Button>(R.id.btn_open_termux_settings).text = tr(
+            "Open Vibe Tavern Settings",
+            "Открыть настройки Vibe Tavern",
+        )
+        findViewById<Button>(R.id.btn_continue_after_permission).text = tr("Continue", "Продолжить")
         findViewById<Button>(R.id.btn_open_termux_settings).setOnClickListener { openAppSettings(packageName) }
         findViewById<Button>(R.id.btn_continue_after_permission).setOnClickListener { recreate() }
     }

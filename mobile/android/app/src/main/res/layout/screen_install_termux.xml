@@ -1,64 +1,75 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="vertical"
-    android:gravity="center"
-    android:padding="32dp"
-    android:background="#FF1A1A2E">
+    android:background="@color/vt_background"
+    android:fillViewport="true">
 
-    <TextView
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="🌴"
-        android:textSize="64sp"
-        android:gravity="center"
-        android:layout_marginBottom="16dp" />
-
-    <TextView
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="Vibe Tavern"
-        android:textSize="28sp"
-        android:textColor="#FFFFFF"
-        android:textStyle="bold"
-        android:gravity="center"
-        android:layout_marginBottom="8dp" />
-
-    <TextView
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="Step 1: Install Termux"
-        android:textSize="16sp"
-        android:textColor="#A0A0B0"
-        android:gravity="center"
-        android:layout_marginBottom="24dp" />
-
-    <TextView
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="Vibe Tavern needs Termux to run the server on your phone.\n\n⚠ IMPORTANT: Install from F-Droid, NOT the Play Store.\nThe Play Store version is outdated and won't work."
-        android:textSize="14sp"
-        android:textColor="#CCCCDD"
-        android:gravity="center"
-        android:lineSpacingExtra="4dp"
-        android:layout_marginBottom="24dp" />
+        android:gravity="center_horizontal"
+        android:orientation="vertical"
+        android:padding="28dp">
 
-    <Button
-        android:id="@+id/btn_install_termux"
-        android:layout_width="match_parent"
-        android:layout_height="56dp"
-        android:text="Install Termux from F-Droid"
-        android:textSize="16sp"
-        android:layout_marginBottom="12dp"
-        style="@style/Widget.VibeTavern.Button.Primary" />
+        <ImageView
+            android:layout_width="144dp"
+            android:layout_height="88dp"
+            android:contentDescription="@string/logo_content_description"
+            android:src="@drawable/vt_logo" />
 
-    <Button
-        android:id="@+id/btn_check_again"
-        android:layout_width="match_parent"
-        android:layout_height="48dp"
-        android:text="I've installed it — continue"
-        android:textSize="14sp"
-        style="@style/Widget.VibeTavern.Button.Secondary" />
+        <TextView
+            android:id="@+id/termux_product_title"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:fontFamily="@font/alegreya_variable"
+            android:gravity="center"
+            android:text="@string/app_name"
+            android:textColor="@color/vt_text_primary"
+            android:textSize="30sp"
+            android:textStyle="bold" />
 
-</LinearLayout>
+        <TextView
+            android:id="@+id/termux_step_title"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="22dp"
+            android:gravity="center"
+            android:text="@string/step_install_termux"
+            android:textColor="@color/vt_text_secondary"
+            android:textSize="16sp" />
+
+        <TextView
+            android:id="@+id/termux_install_body"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="24dp"
+            android:background="@color/vt_surface"
+            android:gravity="center"
+            android:lineSpacingExtra="4dp"
+            android:padding="16dp"
+            android:text="@string/termux_install_body"
+            android:textColor="@color/vt_text_primary"
+            android:textSize="14sp" />
+
+        <Button
+            android:id="@+id/btn_install_termux"
+            style="@style/Widget.VibeTavern.Button.Primary"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="12dp"
+            android:minHeight="56dp"
+            android:text="@string/btn_install_termux"
+            android:textSize="16sp" />
+
+        <Button
+            android:id="@+id/btn_check_again"
+            style="@style/Widget.VibeTavern.Button.Secondary"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:minHeight="48dp"
+            android:text="@string/btn_installed_continue"
+            android:textSize="14sp" />
+
+    </LinearLayout>
+</ScrollView>
