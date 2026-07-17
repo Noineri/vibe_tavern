@@ -20,6 +20,8 @@ import {
 import type { CoauthorApplyRequest, CoauthorCorrection } from "@vibe-tavern/api-contracts";
 import { PromptAssemblyService } from "../../domain/prompt/prompt-assembly-service.js";
 import { StaticPromptResolver } from "../../domain/prompt/prompt-resolver.js";
+import { createLoreDelegate } from "../../domain/coauthor/lore/lore-delegate.js";
+import { nonstreamingProviderExecute } from "../../infrastructure/ai/nonstreaming-provider-executor.js";
 import {
 	mapMessageDto,
 	mapPromptTraceRecord,
@@ -800,12 +802,27 @@ export function pickBootstrapChatId<T extends string>(
 	) {
 		void await this.getActiveProviderProfile();
 		const strategy = await this.resolveChatModeStrategy(chatId);
+		const model = options?.model ?? SYSTEM_RESOURCE_ID.unresolvedModel;
+		// Construct the lore AI-delegation callback (CTX-L2b) when a provider is
+		// configured and a real model is selected. The co-author strategy injects
+		// it into buildCoauthorTools so ai_write_lore_entry / ai_generate_lore_keys
+		// can fire an isolated one-shot LLM call. Absent (undefined) when no
+		// provider/model is available — the tools then throw a clear error if the
+		// model still tries to invoke them. The delegate reuses the chat's active
+		// provider + model by default; a dedicated smaller model is a future
+		// config knob on this seam (createLoreDelegate accepts any profile+model).
+		const profile = await this.getActiveProviderProfile();
+		const loreDelegate =
+			profile && model && model !== SYSTEM_RESOURCE_ID.unresolvedModel
+				? createLoreDelegate({ execute: nonstreamingProviderExecute, profile, model })
+				: undefined;
 		return strategy.assemble({
 			promptService: this.promptService,
 			loaders: this.buildChatModeLoaders(),
+			loreDelegate,
 			chatId,
 			branchId,
-			model: options?.model ?? SYSTEM_RESOURCE_ID.unresolvedModel,
+			model,
 			excludeMessageIds: options?.excludeMessageIds,
 			recentMessageLimit: options?.recentMessageLimit,
 			summary: options?.summary,

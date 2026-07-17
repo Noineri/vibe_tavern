@@ -161,3 +161,54 @@ describe("LoreDraftState — proposal-only draft engine (CTX-L1)", () => {
 		expect(lb).not.toBe(le);
 	});
 });
+
+describe("LoreDraftState — AI-delegation updates (CTX-L2b)", () => {
+	it("setLoreEntryContent replaces an entry's content (immutable replace)", async () => {
+		const draft = makeDraft();
+		await draft.createLorebook({ name: "LB" });
+		await draft.createLoreEntry({ lorebookId: "lorebook_1", title: "T", content: "old" });
+		const snap1 = draft.snapshot();
+
+		const snap2 = await draft.setLoreEntryContent({ entryId: "lore_entry_1", content: "AI-generated prose." });
+		expect(snap2.entries[0]!.content).toBe("AI-generated prose.");
+		// Immutable replace: the earlier snapshot is unaffected.
+		expect(snap1.entries[0]!.content).toBe("old");
+	});
+
+	it("setLoreEntryContent rejects a missing entry", async () => {
+		const draft = makeDraft();
+		await expect(draft.setLoreEntryContent({ entryId: "ghost", content: "x" })).rejects.toThrow(
+			/entry 'ghost' does not exist/,
+		);
+	});
+
+	it("setLoreEntryKeys replaces primary keys and optional secondary keys", async () => {
+		const draft = makeDraft();
+		await draft.createLorebook({ name: "LB" });
+		await draft.createLoreEntry({ lorebookId: "lorebook_1", keys: ["old"] });
+
+		const snap = await draft.setLoreEntryKeys({
+			entryId: "lore_entry_1",
+			keys: ["Vex", "commander"],
+			secondaryKeys: ["fleet", "rank"],
+		});
+		expect(snap.entries[0]!.keys).toEqual(["Vex", "commander"]);
+		expect(snap.entries[0]!.secondaryKeys).toEqual(["fleet", "rank"]);
+	});
+
+	it("setLoreEntryKeys without secondaryKeys leaves secondaryKeys untouched", async () => {
+		const draft = makeDraft();
+		await draft.createLorebook({ name: "LB" });
+		await draft.createLoreEntry({ lorebookId: "lorebook_1", secondaryKeys: ["keep"] });
+		const snap = await draft.setLoreEntryKeys({ entryId: "lore_entry_1", keys: ["a"] });
+		expect(snap.entries[0]!.keys).toEqual(["a"]);
+		expect(snap.entries[0]!.secondaryKeys).toEqual(["keep"]);
+	});
+
+	it("setLoreEntryKeys rejects a missing entry", async () => {
+		const draft = makeDraft();
+		await expect(draft.setLoreEntryKeys({ entryId: "ghost", keys: [] })).rejects.toThrow(
+			/entry 'ghost' does not exist/,
+		);
+	});
+});

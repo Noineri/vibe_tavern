@@ -39,6 +39,7 @@ import {
   type LoreDraftIdGen,
   type LoreDraftScopeType,
 } from "../coauthor/lore/lore-draft-state.js";
+import type { LoreDelegate, LoreDelegateInput } from "../coauthor/lore/lore-delegate.js";
 
 /** CA-17/CANARY: structured log for every co-author tool call. Without this
  * there is NO observability on the co-author path — tool I/O, the lost-section
@@ -261,8 +262,8 @@ function setSectionField(profile: VtfProfile, field: SectionField, value: string
  * validates and echoes the proposal; the strategy passes this set to the
  * executor (tools propose; the Apply RPC is the sole write path).
  */
-export function buildCoauthorTools(opts: { toolSet?: Record<string, boolean>; profileMd?: string; skillRoots?: readonly string[]; loreIdGen?: LoreDraftIdGen } = {}) {
-  const { toolSet, skillRoots } = opts;
+export function buildCoauthorTools(opts: { toolSet?: Record<string, boolean>; profileMd?: string; skillRoots?: readonly string[]; loreIdGen?: LoreDraftIdGen; loreDelegate?: LoreDelegate } = {}) {
+  const { toolSet, skillRoots, loreDelegate } = opts;
 
   // ── Turn-local composable profile state (CED-2) ───────────────────────────
   // Every successful profile mutation in one assembled turn — write_profile,
@@ -351,6 +352,33 @@ export function buildCoauthorTools(opts: { toolSet?: Record<string, boolean>; pr
       logger.info("%s OK canonical len=%d", toolName, canonical.length);
       return { target: "profile", proposed: canonical, summary };
     });
+  }
+
+  /** Gather the delegation context for a drafted entry (entry + parent lorebook). */
+  function buildLoreDelegateInput(
+    kind: "write_entry" | "generate_keys",
+    entryId: string,
+    instruction: string,
+    toolName: string,
+  ): LoreDelegateInput {
+    const snap = loreDraft.snapshot();
+    const entry = snap.entries.find((e) => e.id === entryId);
+    if (!entry) {
+      throw new Error(`${toolName}: entry '${entryId}' does not exist in the draft`);
+    }
+    const lorebook = snap.lorebooks.find((lb) => lb.id === entry.lorebookId);
+    return {
+      kind,
+      characterProfileMd: workingProfileMd ?? "",
+      lorebookName: lorebook?.name ?? "",
+      lorebookDescription: lorebook?.description ?? "",
+      entryId: entry.id,
+      entryTitle: entry.title,
+      entryContent: entry.content,
+      entryKeys: entry.keys,
+      entrySecondaryKeys: entry.secondaryKeys,
+      instruction,
+    };
   }
 
   const allTools = {
@@ -593,6 +621,56 @@ export function buildCoauthorTools(opts: { toolSet?: Record<string, boolean>; pr
       execute: async ({ entryId, constant, enabled, summary }): Promise<CoauthorLoreBundleOutput> => {
         logger.info("set_lore_activation IN entryId=%s constant=%s enabled=%s summary=%s", entryId, constant, enabled, summary);
         const bundle = await loreDraft.setLoreActivation({ entryId, constant, enabled });
+        return { target: "lore_bundle", bundle, summary };
+      },
+    }),
+
+    // ── Wave 4: AI-delegation lore tools (CTX-L2b) ───────────────────────────
+    // These delegate content / key generation to the AI-assistant via an
+    // isolated one-shot LLM call (a focused, separate model authors the prose
+    // / proposes keys) — IDE-style. Like the other lore tools they mutate ONLY
+    // the turn-local draft; Apply is the sole persistence boundary. The
+    // delegate reuses the standalone assistant's lore system-prompt assets and
+    // grounds on the live working profile of the character being authored.
+    ai_write_lore_entry: tool({
+      description:
+        "Delegate WRITING the content body of a lore entry to the AI-assistant (a separate, focused generation call — a smaller model authors dense worldbuilding prose). Use this when an entry drafted this turn needs its content written or rewritten. `entryId` MUST be the id of an entry returned earlier this turn. Give a brief `instruction` describing what the entry should cover (subject, focus, specifics). The generated content updates the draft entry for review. Returns the complete cumulative lore draft.",
+      inputSchema: z.object({
+        entryId: z.string().describe("The id of the entry whose content to write (from an earlier create_lore_entry result this turn)."),
+        instruction: z.string().describe("A brief describing what the entry should contain: the subject, focus, and any specifics the AI-assistant should cover."),
+        summary: z.string().max(200).describe("One-line description of this delegation, shown above the Apply button."),
+      }),
+      execute: async ({ entryId, instruction, summary }): Promise<CoauthorLoreBundleOutput> => {
+        if (!loreDelegate) {
+          throw new Error("ai_write_lore_entry: no provider is configured for AI delegation");
+        }
+        logger.info("ai_write_lore_entry IN entryId=%s instructionLen=%d summary=%s", entryId, instruction.length, summary);
+        const input = buildLoreDelegateInput("write_entry", entryId, instruction, "ai_write_lore_entry");
+        const result = await loreDelegate(input);
+        const content = result.content ?? "";
+        const bundle = await loreDraft.setLoreEntryContent({ entryId, content });
+        logger.info("ai_write_lore_entry OK entryId=%s contentLen=%d", entryId, content.length);
+        return { target: "lore_bundle", bundle, summary };
+      },
+    }),
+
+    ai_generate_lore_keys: tool({
+      description:
+        "Delegate GENERATING activation keys for a lore entry to the AI-assistant (a separate, focused generation call analyzes the entry and proposes conversational trigger keywords). Use this when an entry needs activation triggers. `entryId` MUST be the id of an entry returned earlier this turn. The generated primary + secondary keys update the draft entry for review. Returns the complete cumulative lore draft.",
+      inputSchema: z.object({
+        entryId: z.string().describe("The id of the entry whose activation keys to generate (from an earlier create_lore_entry result this turn)."),
+        summary: z.string().max(200).describe("One-line description of this delegation, shown above the Apply button."),
+      }),
+      execute: async ({ entryId, summary }): Promise<CoauthorLoreBundleOutput> => {
+        if (!loreDelegate) {
+          throw new Error("ai_generate_lore_keys: no provider is configured for AI delegation");
+        }
+        logger.info("ai_generate_lore_keys IN entryId=%s summary=%s", entryId, summary);
+        const input = buildLoreDelegateInput("generate_keys", entryId, "", "ai_generate_lore_keys");
+        const result = await loreDelegate(input);
+        const keys = result.keys ?? [];
+        const bundle = await loreDraft.setLoreEntryKeys({ entryId, keys, secondaryKeys: result.secondaryKeys });
+        logger.info("ai_generate_lore_keys OK entryId=%s keys=%d secondary=%d", entryId, keys.length, (result.secondaryKeys ?? []).length);
         return { target: "lore_bundle", bundle, summary };
       },
     }),

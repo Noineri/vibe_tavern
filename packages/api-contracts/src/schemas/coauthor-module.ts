@@ -19,6 +19,13 @@ export const coauthorToolSetSchema = z.object({
   create_lorebook: z.boolean().optional(),
   create_lore_entry: z.boolean().optional(),
   set_lore_activation: z.boolean().optional(),
+  // AI-delegation tools (CTX-L2b): the co-author delegates content/keys
+  // generation to the AI-assistant via an ISOLATED one-shot prompt (a
+  // separate LLM call, configurable to a smaller model) — IDE-style
+  // character authoring. Like the other lore tools, they update ONLY the
+  // turn-local draft; Apply is the sole persistence boundary.
+  ai_write_lore_entry: z.boolean().optional(),
+  ai_generate_lore_keys: z.boolean().optional(),
 });
 
 export type CoauthorToolSet = z.infer<typeof coauthorToolSetSchema>;

@@ -64,6 +64,19 @@ export interface SetLoreActivationInput {
 	enabled?: boolean;
 }
 
+/** Patch input for AI-delegated entry content (CTX-L2b). */
+export interface SetLoreEntryContentInput {
+	entryId: string;
+	content: string;
+}
+
+/** Patch input for AI-delegated activation keys (CTX-L2b). */
+export interface SetLoreEntryKeysInput {
+	entryId: string;
+	keys: string[];
+	secondaryKeys?: string[];
+}
+
 /** Defaults for a newly drafted lorebook (scopeType mirrors lorebook routes). */
 const DEFAULT_LOREBOOK_SCOPE: LoreDraftScopeType = "character";
 
@@ -160,6 +173,46 @@ export class LoreDraftState {
 				...(input.enabled !== undefined ? { enabled: input.enabled } : {}),
 			};
 			this.entries.set(existing.id, next);
+			return this.snapshot();
+		});
+	}
+
+	/**
+	 * Replace the content body of an existing draft entry (immutable replace).
+	 * Used by the `ai_write_lore_entry` delegation tool after the AI-assistant
+	 * returns generated prose. Rejects if the entry is absent.
+	 */
+	setLoreEntryContent(input: SetLoreEntryContentInput): Promise<CoauthorLoreBundle> {
+		return this.runQueued(() => {
+			const existing = this.entries.get(input.entryId);
+			if (!existing) {
+				throw new Error(
+					`setLoreEntryContent: entry '${input.entryId}' does not exist in the draft`,
+				);
+			}
+			this.entries.set(existing.id, { ...existing, content: input.content });
+			return this.snapshot();
+		});
+	}
+
+	/**
+	 * Replace the activation keys of an existing draft entry (immutable replace).
+	 * Used by the `ai_generate_lore_keys` delegation tool after the AI-assistant
+	 * returns suggested keywords. Rejects if the entry is absent.
+	 */
+	setLoreEntryKeys(input: SetLoreEntryKeysInput): Promise<CoauthorLoreBundle> {
+		return this.runQueued(() => {
+			const existing = this.entries.get(input.entryId);
+			if (!existing) {
+				throw new Error(
+					`setLoreEntryKeys: entry '${input.entryId}' does not exist in the draft`,
+				);
+			}
+			this.entries.set(existing.id, {
+				...existing,
+				keys: input.keys,
+				...(input.secondaryKeys !== undefined ? { secondaryKeys: input.secondaryKeys } : {}),
+			});
 			return this.snapshot();
 		});
 	}

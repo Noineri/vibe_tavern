@@ -100,6 +100,14 @@ export interface ChatModeAssembleLoaders {
 export interface ChatModeAssembleInput extends AssemblePromptForChatInput {
   promptService: PromptAssemblyService;
   loaders: ChatModeAssembleLoaders;
+  /**
+   * Optional AI-delegation callback for lore tools (CTX-L2b). When present,
+   * the co-author strategy injects it into `buildCoauthorTools` so the
+   * `ai_write_lore_entry` / `ai_generate_lore_keys` tools can fire an isolated
+   * one-shot LLM call. Absent when no provider profile is resolved (the
+   * delegation tools then throw a clear error if invoked). RP mode ignores it.
+   */
+  loreDelegate?: import("../coauthor/lore/lore-delegate.js").LoreDelegate;
 }
 
 /** Re-exported so callers don't reach into the prompt service module. */

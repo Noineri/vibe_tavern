@@ -1,6 +1,7 @@
 import { describe, test, expect } from "bun:test";
 import { serializeProfileMd } from "@vibe-tavern/db";
 import { buildCoauthorTools } from "../src/domain/chat/coauthor-tools.js";
+import type { LoreDelegate, LoreDelegateInput } from "../src/domain/coauthor/lore/lore-delegate.js";
 
 /**
  * Co-Author tools propose edits; they never write. These tests pin the
@@ -646,5 +647,102 @@ describe("coauthor-tools: Wave 4 lore tools (CTX-L1)", () => {
     expect(tools.create_lore_entry).toBeDefined();
     expect(tools.set_lore_activation).toBeDefined();
     expect(tools.read_skill_file).toBeDefined();
+  });
+});
+
+describe("coauthor-tools: AI-delegation lore tools (CTX-L2b)", () => {
+  function deterministicIdGen(): (prefix: "lorebook" | "lore_entry") => string {
+    const counters = new Map<string, number>();
+    return (prefix) => {
+      const n = (counters.get(prefix) ?? 0) + 1;
+      counters.set(prefix, n);
+      return `${prefix}_${n}`;
+    };
+  }
+
+  /** A mock delegate that records its input and returns canned results. */
+  function mockDelegate(capture: { input: LoreDelegateInput | null }): LoreDelegate {
+    return async (input) => {
+      capture.input = input;
+      if (input.kind === "write_entry") return { content: "AI-authored lore prose." };
+      return { keys: ["Vex", "commander"], secondaryKeys: ["fleet"] };
+    };
+  }
+
+  test("ai_write_lore_entry delegates to the assistant, grounds on the live profile, and writes the draft content", async () => {
+    const captured = { input: null as LoreDelegateInput | null };
+    const tools = buildCoauthorTools({
+      profileMd: "# PERSONALITY\nVex is a commander.",
+      loreIdGen: deterministicIdGen(),
+      loreDelegate: mockDelegate(captured),
+    });
+    await tools.create_lorebook.execute({ name: "Bridge Crew", description: "Officers.", summary: "s" }, ctx);
+    await tools.create_lore_entry.execute({ lorebookId: "lorebook_1", title: "Vex", summary: "s" }, ctx);
+
+    const out = await tools.ai_write_lore_entry.execute(
+      { entryId: "lore_entry_1", instruction: "Her command style.", summary: "Wrote Vex content." },
+      ctx,
+    );
+    expect(out.target).toBe("lore_bundle");
+    expect(out.bundle.entries[0]!.content).toBe("AI-authored lore prose.");
+    expect(out.summary).toBe("Wrote Vex content.");
+    // The delegate was grounded on the lorebook + live working profile.
+    expect(captured.input!.kind).toBe("write_entry");
+    expect(captured.input!.lorebookName).toBe("Bridge Crew");
+    expect(captured.input!.entryTitle).toBe("Vex");
+    expect(captured.input!.characterProfileMd).toContain("Vex is a commander.");
+    expect(captured.input!.instruction).toBe("Her command style.");
+  });
+
+  test("ai_generate_lore_keys delegates and writes primary + secondary keys", async () => {
+    const captured = { input: null as LoreDelegateInput | null };
+    const tools = buildCoauthorTools({
+      loreIdGen: deterministicIdGen(),
+      loreDelegate: mockDelegate(captured),
+    });
+    await tools.create_lorebook.execute({ name: "LB", summary: "s" }, ctx);
+    await tools.create_lore_entry.execute({ lorebookId: "lorebook_1", title: "T", content: "some content", summary: "s" }, ctx);
+
+    const out = await tools.ai_generate_lore_keys.execute(
+      { entryId: "lore_entry_1", summary: "Generated keys." },
+      ctx,
+    );
+    expect(out.bundle.entries[0]!.keys).toEqual(["Vex", "commander"]);
+    expect(out.bundle.entries[0]!.secondaryKeys).toEqual(["fleet"]);
+    expect(captured.input!.kind).toBe("generate_keys");
+    expect(captured.input!.entryContent).toBe("some content");
+  });
+
+  test("delegation tools reject a missing entry", async () => {
+    const tools = buildCoauthorTools({ loreDelegate: mockDelegate({ input: null }) });
+    await expect(
+      tools.ai_write_lore_entry.execute({ entryId: "ghost", instruction: "x", summary: "s" }, ctx),
+    ).rejects.toThrow(/entry 'ghost' does not exist/);
+    await expect(
+      tools.ai_generate_lore_keys.execute({ entryId: "ghost", summary: "s" }, ctx),
+    ).rejects.toThrow(/entry 'ghost' does not exist/);
+  });
+
+  test("delegation tools throw a clear error when no provider/delegate is configured", async () => {
+    // No loreDelegate injected (the runtime omits it when no provider is set).
+    const tools = buildCoauthorTools({ loreIdGen: deterministicIdGen() });
+    await tools.create_lorebook.execute({ name: "LB", summary: "s" }, ctx);
+    await tools.create_lore_entry.execute({ lorebookId: "lorebook_1", summary: "s" }, ctx);
+    await expect(
+      tools.ai_write_lore_entry.execute({ entryId: "lore_entry_1", instruction: "x", summary: "s" }, ctx),
+    ).rejects.toThrow(/no provider is configured/);
+    await expect(
+      tools.ai_generate_lore_keys.execute({ entryId: "lore_entry_1", summary: "s" }, ctx),
+    ).rejects.toThrow(/no provider is configured/);
+  });
+
+  test("delegation tools are gated by toolSet alongside the other lore tools", () => {
+    const on = buildCoauthorTools({
+      toolSet: { create_lorebook: true, create_lore_entry: true, ai_write_lore_entry: true, ai_generate_lore_keys: true },
+    }) as unknown as Record<string, unknown>;
+    expect(on.ai_write_lore_entry).toBeDefined();
+    expect(on.ai_generate_lore_keys).toBeDefined();
+    // set_lore_activation not enabled → absent; delegation tools only when toggled.
+    expect(on.set_lore_activation).toBeUndefined();
   });
 });
