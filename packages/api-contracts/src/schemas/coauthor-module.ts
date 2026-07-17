@@ -11,6 +11,14 @@ export const coauthorToolSetSchema = z.object({
   edit_greeting: z.boolean().optional(),
   add_alt_greeting: z.boolean().optional(),
   edit_alt_greeting: z.boolean().optional(),
+  // ── Wave 4: proposal-only lore authoring (CTX-L1/L2). Lore tools are a new
+  // scope, independent of the profile write_*/edit_* scope (CED-2). The three
+  // non-delegation tools land in L1; the two AI-delegation toggles
+  // (ai_write_lore_entry / ai_generate_lore_keys) are added in L2 alongside
+  // their tool implementations.
+  create_lorebook: z.boolean().optional(),
+  create_lore_entry: z.boolean().optional(),
+  set_lore_activation: z.boolean().optional(),
 });
 
 export type CoauthorToolSet = z.infer<typeof coauthorToolSetSchema>;

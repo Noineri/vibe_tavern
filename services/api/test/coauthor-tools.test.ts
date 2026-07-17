@@ -576,3 +576,75 @@ describe("coauthor-tools: toolSet filtering", () => {
     expect(tools.edit_personality).toBeUndefined();
   });
 });
+
+describe("coauthor-tools: Wave 4 lore tools (CTX-L1)", () => {
+  /** Deterministic id generator so assertions can name lorebook_1 / lore_entry_1. */
+  function deterministicIdGen(): (prefix: "lorebook" | "lore_entry") => string {
+    const counters = new Map<string, number>();
+    return (prefix) => {
+      const n = (counters.get(prefix) ?? 0) + 1;
+      counters.set(prefix, n);
+      return `${prefix}_${n}`;
+    };
+  }
+
+  test("create_lorebook returns a lore_bundle output carrying the cumulative bundle", async () => {
+    const tools = buildCoauthorTools({ loreIdGen: deterministicIdGen() });
+    const out = await tools.create_lorebook.execute(
+      { name: "World Lore", summary: "Add a world lorebook." },
+      ctx,
+    );
+    expect(out.target).toBe("lore_bundle");
+    expect(out.bundle.lorebooks).toHaveLength(1);
+    expect(out.bundle.lorebooks[0]).toMatchObject({ id: "lorebook_1", name: "World Lore", scopeType: "character" });
+    expect(out.bundle.entries).toEqual([]);
+    expect(out.summary).toBe("Add a world lorebook.");
+  });
+
+  test("create_lore_entry depends on a prior create_lorebook and composes into the bundle", async () => {
+    const tools = buildCoauthorTools({ loreIdGen: deterministicIdGen() });
+    await tools.create_lorebook.execute({ name: "Book", summary: "s" }, ctx);
+    const out = await tools.create_lore_entry.execute(
+      { lorebookId: "lorebook_1", title: "Castle", keys: ["anvil"], summary: "Add castle entry." },
+      ctx,
+    );
+    expect(out.target).toBe("lore_bundle");
+    expect(out.bundle.lorebooks).toHaveLength(1);
+    expect(out.bundle.entries).toHaveLength(1);
+    expect(out.bundle.entries[0]).toMatchObject({ id: "lore_entry_1", lorebookId: "lorebook_1", keys: ["anvil"] });
+  });
+
+  test("create_lore_entry rejects a missing parent with a tool error", async () => {
+    const tools = buildCoauthorTools({ loreIdGen: deterministicIdGen() });
+    await expect(
+      tools.create_lore_entry.execute({ lorebookId: "ghost", summary: "s" }, ctx),
+    ).rejects.toThrow(/parent lorebook 'ghost' does not exist/);
+  });
+
+  test("set_lore_activation flips constant and returns the cumulative bundle", async () => {
+    const tools = buildCoauthorTools({ loreIdGen: deterministicIdGen() });
+    await tools.create_lorebook.execute({ name: "Book", summary: "s" }, ctx);
+    await tools.create_lore_entry.execute({ lorebookId: "lorebook_1", summary: "s" }, ctx);
+    const out = await tools.set_lore_activation.execute(
+      { entryId: "lore_entry_1", constant: true, summary: "Make constant." },
+      ctx,
+    );
+    expect(out.bundle.entries[0].constant).toBe(true);
+  });
+
+  test("lore tools are gated by toolSet like profile/greeting tools", () => {
+    const on = buildCoauthorTools({ toolSet: { create_lorebook: true, create_lore_entry: true } }) as unknown as Record<string, unknown>;
+    expect(on.create_lorebook).toBeDefined();
+    expect(on.create_lore_entry).toBeDefined();
+    expect(on.set_lore_activation).toBeUndefined();
+    expect(on.write_profile).toBeUndefined();
+  });
+
+  test("without a toolSet, all lore tools are available alongside profile/greeting tools", () => {
+    const tools = buildCoauthorTools() as unknown as Record<string, unknown>;
+    expect(tools.create_lorebook).toBeDefined();
+    expect(tools.create_lore_entry).toBeDefined();
+    expect(tools.set_lore_activation).toBeDefined();
+    expect(tools.read_skill_file).toBeDefined();
+  });
+});

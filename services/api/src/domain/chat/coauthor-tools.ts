@@ -27,11 +27,18 @@ import { parseProfileMd, serializeProfileMd, splitFrontmatter, type VtfProfile }
 import {
   coauthorSectionEditInputSchema,
   coauthorSectionWriteInputSchema,
+  type CoauthorLoreBundleOutput,
   type CoauthorTarget,
   type CoauthorToolOutput,
 } from "@vibe-tavern/api-contracts";
 import { log } from "@vibe-tavern/domain";
 import { buildReadSkillFileTool } from "../coauthor/skills/skill-read-tool.js";
+import {
+  defaultLoreDraftIdGen,
+  LoreDraftState,
+  type LoreDraftIdGen,
+  type LoreDraftScopeType,
+} from "../coauthor/lore/lore-draft-state.js";
 
 /** CA-17/CANARY: structured log for every co-author tool call. Without this
  * there is NO observability on the co-author path — tool I/O, the lost-section
@@ -254,7 +261,7 @@ function setSectionField(profile: VtfProfile, field: SectionField, value: string
  * validates and echoes the proposal; the strategy passes this set to the
  * executor (tools propose; the Apply RPC is the sole write path).
  */
-export function buildCoauthorTools(opts: { toolSet?: Record<string, boolean>; profileMd?: string; skillRoots?: readonly string[] } = {}) {
+export function buildCoauthorTools(opts: { toolSet?: Record<string, boolean>; profileMd?: string; skillRoots?: readonly string[]; loreIdGen?: LoreDraftIdGen } = {}) {
   const { toolSet, skillRoots } = opts;
 
   // ── Turn-local composable profile state (CED-2) ───────────────────────────
@@ -279,6 +286,15 @@ export function buildCoauthorTools(opts: { toolSet?: Record<string, boolean>; pr
     turnChain = result.then(() => undefined, () => undefined);
     return result;
   }
+
+  // ── Turn-local lore draft state (CTX-L1, Wave 4) ──────────────────────────
+  // Proposal-only: allocates stable draft IDs and mutates closure state only —
+  // NO LorebookStore, NO SQLite. Apply (CTEX-L2) is the sole persistence
+  // boundary; Cancel drops this instance. The engine self-serializes its own
+  // mutations through a separate non-poisoning queue (independent of the
+  // profile queue), validates parent lorebook refs, and returns the complete
+  // cumulative bundle from every successful call.
+  const loreDraft = new LoreDraftState({ idGen: opts.loreIdGen ?? defaultLoreDraftIdGen() });
 
   /** Shared exact-edit path for edit_personality / edit_scenario / edit_examples. */
   async function runSectionExactEdit(
@@ -516,6 +532,68 @@ export function buildCoauthorTools(opts: { toolSet?: Record<string, boolean>; pr
         }
         logger.info("edit_alt_greeting IN index=%d len=%d summary=%s", index, content.length, summary);
         return { target: "greeting", greetingIndex: index, proposed: content, summary };
+      },
+    }),
+
+    // ── Wave 4: proposal-only lore tools (CTX-L1) ────────────────────────────
+    // These allocate stable draft IDs and mutate ONLY the turn-local
+    // LoreDraftState; they never touch LorebookStore / SQLite. Each returns the
+    // complete cumulative lore bundle so aggregation keeps the whole graph. The
+    // AI-delegation tools (ai_write_lore_entry / ai_generate_lore_keys) land in
+    // CTX-L2 alongside the Apply transaction.
+    create_lorebook: tool({
+      description:
+        "Propose creating a NEW lorebook (world-info book) for the character. Returns the complete cumulative lore draft (all books + entries proposed this turn). The book is shown for review before applying — nothing is persisted until Apply.",
+      inputSchema: z.object({
+        name: z.string().describe("The lorebook's display name, e.g. 'World Lore' or 'Castle Anvil'."),
+        description: z.string().optional().describe("A short description of what this lorebook covers."),
+        scopeType: z
+          .enum(["global", "character", "persona", "chat"])
+          .optional()
+          .describe("Where this lorebook is scoped. 'character' (default) attaches it to the current character."),
+        enabled: z.boolean().optional().describe("Whether the lorebook is active. Defaults to true."),
+        summary: z.string().max(200).describe("One-line description of this lorebook, shown above the Apply button."),
+      }),
+      execute: async ({ name, description, scopeType, enabled, summary }): Promise<CoauthorLoreBundleOutput> => {
+        logger.info("create_lorebook IN name=%j scopeType=%s summary=%s", name, scopeType ?? "(default)", summary);
+        const bundle = await loreDraft.createLorebook({ name, description, scopeType: scopeType as LoreDraftScopeType | undefined, enabled });
+        return { target: "lore_bundle", bundle, summary };
+      },
+    }),
+
+    create_lore_entry: tool({
+      description:
+        "Propose adding a NEW entry to a lorebook drafted this turn. `lorebookId` MUST be the id of a lorebook returned by an earlier create_lorebook in this turn. Returns the complete cumulative lore draft. The entry is shown for review (with its keys, content, and activation) before applying.",
+      inputSchema: z.object({
+        lorebookId: z.string().describe("The id of the parent lorebook (from a create_lorebook result this turn)."),
+        title: z.string().optional().describe("A short title for the entry (organizational; not an activation trigger)."),
+        content: z.string().optional().describe("The lore content injected when this entry activates."),
+        keys: z.array(z.string()).optional().describe("Activation trigger keywords. The entry activates when any key matches the recent context."),
+        constant: z.boolean().optional().describe("If true the entry activates every turn regardless of key match. Defaults to false."),
+        position: z.string().optional().describe("Where the entry injects (e.g. 'before_char'). Defaults to 'before_char'."),
+        depth: z.number().int().optional().describe("Injection depth for depth-aware positions. Defaults to 4."),
+        summary: z.string().max(200).describe("One-line description of this entry, shown above the Apply button."),
+      }),
+      execute: async ({ lorebookId, title, content, keys, constant, position, depth, summary }): Promise<CoauthorLoreBundleOutput> => {
+        logger.info("create_lore_entry IN lorebookId=%s title=%j keys=%d summary=%s", lorebookId, title, keys?.length ?? 0, summary);
+        const bundle = await loreDraft.createLoreEntry({ lorebookId, title, content, keys, constant, position, depth });
+        return { target: "lore_bundle", bundle, summary };
+      },
+    }),
+
+    set_lore_activation: tool({
+      description:
+        "Adjust activation fields on a lore entry drafted this turn (e.g. make it constant so it always injects, or disable it). `entryId` MUST be the id of an entry returned earlier this turn. Returns the complete cumulative lore draft.",
+      inputSchema: z.object({
+        entryId: z.string().describe("The id of the entry to adjust (from an earlier create_lore_entry result this turn)."),
+        constant: z.boolean().optional().describe("If true the entry activates every turn regardless of key match."),
+        enabled: z.boolean().optional().describe("Whether the entry is active at all."),
+        summary: z.string().max(200).describe("One-line description of this activation change, shown above the Apply button."),
+      }),
+      execute: async ({ entryId, constant, enabled, summary }): Promise<CoauthorLoreBundleOutput> => {
+        logger.info("set_lore_activation IN entryId=%s constant=%s enabled=%s summary=%s", entryId, constant, enabled, summary);
+        const bundle = await loreDraft.setLoreActivation({ entryId, constant, enabled });
+        return { target: "lore_bundle", bundle, summary };
       },
     }),
   };
