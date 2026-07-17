@@ -11,4 +11,12 @@
     <string name="permission_guide">1. Tap the button below to open Termux settings\n2. Tap &quot;Permissions&quot; → &quot;Additional permissions&quot;\n3. Enable &quot;Run commands in Termux environment&quot;\n4. Come back here and tap Continue</string>
     <string name="loading">Starting server…</string>
     <string name="notification_server_running">Server is running on localhost:8787</string>
+    <string name="launcher_version_status">Launcher and server versions</string>
+    <string name="check_launcher_update">Check for launcher update</string>
+    <string name="launcher_update_available">Launcher update available</string>
+    <string name="download_launcher_apk">Download APK</string>
+    <string name="launcher_download_in_progress">Downloading launcher update…</string>
+    <string name="install_launcher_update">Install downloaded launcher update</string>
+    <string name="unknown_sources_guidance">Allow installs from Vibe Tavern, then return here.</string>
+    <string name="confirm_system_installer">Confirm the launcher update in Android\'s installer.</string>
 </resources>

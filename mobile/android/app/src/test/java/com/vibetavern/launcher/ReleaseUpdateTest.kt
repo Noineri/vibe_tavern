@@ -129,6 +129,48 @@ class ReleaseUpdateTest {
         assertEquals("offline", (decision as ReleaseUpdateDecision.Error).message)
     }
 
+    @Test
+    fun `downloaded APK identity must match package expected version and increase version code`() {
+        val accepted = validateDownloadedApkIdentity(
+            expectedPackageName = "com.vibetavern.launcher",
+            currentVersionCode = 1_002_003,
+            expectedVersionName = "1.3.0",
+            downloaded = DownloadedApkIdentity("com.vibetavern.launcher", 1_003_000, "1.3.0"),
+        )
+        val wrongPackage = validateDownloadedApkIdentity(
+            "com.vibetavern.launcher",
+            1_002_003,
+            "1.3.0",
+            DownloadedApkIdentity("com.example.impostor", 1_003_000, "1.3.0"),
+        )
+        val staleVersionCode = validateDownloadedApkIdentity(
+            "com.vibetavern.launcher",
+            1_002_003,
+            "1.3.0",
+            DownloadedApkIdentity("com.vibetavern.launcher", 1_002_003, "1.3.0"),
+        )
+        val wrongVersionName = validateDownloadedApkIdentity(
+            "com.vibetavern.launcher",
+            1_002_003,
+            "1.3.0",
+            DownloadedApkIdentity("com.vibetavern.launcher", 1_003_000, "9.9.9"),
+        )
+
+        assertEquals(ApkIdentityDecision.Accepted, accepted)
+        assertEquals(
+            ApkIdentityDecision.Rejected(ApkRejectionReason.WRONG_PACKAGE),
+            wrongPackage,
+        )
+        assertEquals(
+            ApkIdentityDecision.Rejected(ApkRejectionReason.VERSION_NOT_NEWER),
+            staleVersionCode,
+        )
+        assertEquals(
+            ApkIdentityDecision.Rejected(ApkRejectionReason.VERSION_NAME_MISMATCH),
+            wrongVersionName,
+        )
+    }
+
     private fun releaseJson(
         tag: String,
         draft: Boolean = false,

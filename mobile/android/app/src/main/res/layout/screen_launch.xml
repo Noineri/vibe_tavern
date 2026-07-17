@@ -37,7 +37,18 @@
             android:textSize="13sp"
             android:textColor="#9999AA"
             android:gravity="center"
-            android:layout_marginBottom="20dp" />
+            android:layout_marginBottom="12dp" />
+
+        <TextView
+            android:id="@+id/launcher_version_status"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Launcher and server versions"
+            android:textSize="12sp"
+            android:textColor="#B8B8CC"
+            android:gravity="center"
+            android:lineSpacingExtra="2dp"
+            android:layout_marginBottom="16dp" />
 
         <TextView
             android:id="@+id/status_text"
@@ -107,6 +118,15 @@
             android:textStyle="bold"
             android:gravity="center"
             android:layout_marginBottom="10dp" />
+
+        <Button
+            android:id="@+id/btn_check_launcher_update"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:text="Check for launcher update"
+            android:textSize="14sp"
+            android:layout_marginBottom="10dp"
+            style="@style/Widget.VibeTavern.Button.Secondary" />
 
         <Button
             android:id="@+id/btn_first_time_setup"

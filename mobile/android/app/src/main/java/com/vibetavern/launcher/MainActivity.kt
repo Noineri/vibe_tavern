@@ -1,5 +1,6 @@
 package com.vibetavern.launcher
 
+import android.app.DownloadManager
 import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.ClipData
@@ -18,6 +19,7 @@ import android.provider.Settings
 import android.view.View
 import android.widget.Button
 import android.widget.ProgressBar
+import android.widget.ScrollView
 import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
@@ -49,10 +51,22 @@ class MainActivity : AppCompatActivity() {
     private lateinit var uninstallBtn: Button
     private lateinit var languageBtn: Button
     private lateinit var firstTimeSetupBtn: Button
+    private lateinit var launcherUpdateBtn: Button
+    private lateinit var launcherVersionText: TextView
 
     private val mainScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private val releaseClient = GitHubReleaseClient()
+    private val apkUpdateManager by lazy { ApkUpdateManager(this) }
     private var pollingJob: Job? = null
     private var archiveServerJob: Job? = null
+    private var updateCheckJob: Job? = null
+    private var downloadPollingJob: Job? = null
+    private var downloadReceiverRegistered = false
+    private var resultReceiverRegistered = false
+    private var installerHandoffInProgress = false
+    private var activityStarted = false
+    private var pendingUpdateRelease: PublishedRelease? = null
+    private var launcherUpdateAction = LauncherUpdateAction.CHECK
 
     private val RUN_CMD_PERM = "com.termux.permission.RUN_COMMAND"
     private val TERMUX_RESULT_ACTION = "com.vibetavern.launcher.TERMUX_RESULT"
@@ -227,6 +241,16 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private val downloadReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action != DownloadManager.ACTION_DOWNLOAD_COMPLETE) return
+            val downloadId = intent.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1L)
+            if (apkUpdateManager.isTrackedDownload(downloadId) && ::launcherUpdateBtn.isInitialized) {
+                observeLauncherDownload(installWhenReady = true)
+            }
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -242,17 +266,57 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    override fun onStart() {
+        super.onStart()
+        activityStarted = true
+        if (!downloadReceiverRegistered) {
+            ContextCompat.registerReceiver(
+                this,
+                downloadReceiver,
+                IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE),
+                ContextCompat.RECEIVER_EXPORTED,
+            )
+            downloadReceiverRegistered = true
+        }
+    }
+
     override fun onResume() {
         super.onResume()
+        installerHandoffInProgress = false
+        pendingUpdateRelease?.let { release ->
+            pendingUpdateRelease = null
+            showLauncherUpdateConsent(release)
+        }
         if (::statusText.isInitialized) refreshServerStatus(showChecking = false)
+        if (::launcherUpdateBtn.isInitialized) {
+            if (apkUpdateManager.isAwaitingInstallPermission() && apkUpdateManager.canInstallPackages()) {
+                beginDownloadedApkInstall()
+            } else {
+                observeLauncherDownload(installWhenReady = false)
+            }
+        }
+    }
+
+    override fun onStop() {
+        activityStarted = false
+        if (downloadReceiverRegistered) {
+            unregisterReceiver(downloadReceiver)
+            downloadReceiverRegistered = false
+        }
+        super.onStop()
     }
 
     override fun onDestroy() {
-        super.onDestroy()
         pollingJob?.cancel()
         archiveServerJob?.cancel()
+        updateCheckJob?.cancel()
+        downloadPollingJob?.cancel()
+        if (resultReceiverRegistered) {
+            unregisterReceiver(resultReceiver)
+            resultReceiverRegistered = false
+        }
         mainScope.cancel()
-        try { unregisterReceiver(resultReceiver) } catch (_: Exception) {}
+        super.onDestroy()
     }
 
     private fun isTermuxInstalled() = try {
@@ -305,6 +369,8 @@ class MainActivity : AppCompatActivity() {
         uninstallBtn.text = tr("🗑 Uninstall", "🗑 Удалить")
         languageBtn.text = tr("🌐 Language: English", "🌐 Язык: Русский")
         firstTimeSetupBtn.text = tr("🔧 First-Time Setup", "🔧 Первичная настройка")
+        updateLauncherActionUi()
+        updateVersionStatus()
         findViewById<Button>(R.id.btn_help).text = tr("❓ Help / Troubleshooting", "❓ Справка / проблемы")
         findViewById<TextView>(R.id.help_hint).text = tr(
             "Tip: if the web UI lags after switching apps, disable battery optimization for Termux.",
@@ -327,6 +393,7 @@ class MainActivity : AppCompatActivity() {
                 "📦 Переустановить сервер v${BuildConfig.VERSION_NAME}",
             )
         }
+        updateVersionStatus()
     }
 
     // ========== Screens ==========
@@ -357,6 +424,8 @@ class MainActivity : AppCompatActivity() {
         uninstallBtn = findViewById(R.id.btn_uninstall)
         languageBtn = findViewById(R.id.btn_language)
         firstTimeSetupBtn = findViewById(R.id.btn_first_time_setup)
+        launcherUpdateBtn = findViewById(R.id.btn_check_launcher_update)
+        launcherVersionText = findViewById(R.id.launcher_version_status)
 
         setupBtn.setOnClickListener { doOneTimeSetup() }
         firstTimeSetupBtn.setOnClickListener { showFirstTimeSetupGuide() }
@@ -365,12 +434,235 @@ class MainActivity : AppCompatActivity() {
         stopBtn.setOnClickListener { stopServer() }
         uninstallBtn.setOnClickListener { confirmUninstall() }
         languageBtn.setOnClickListener { showLanguageDialog() }
+        launcherUpdateBtn.setOnClickListener { handleLauncherUpdateAction() }
         findViewById<Button>(R.id.btn_help).setOnClickListener { showHelpDialog() }
 
+        apkUpdateManager.cleanupStaleDownload()
         applyLaunchTexts()
         setProgress(null, visible = false)
         setServerRunningUi(running = false, checking = true)
         refreshServerStatus(showChecking = true)
+        observeLauncherDownload(installWhenReady = false)
+        if (!automaticUpdateCheckStarted && !apkUpdateManager.hasTrackedDownload()) {
+            automaticUpdateCheckStarted = true
+            checkForLauncherUpdate(manual = false)
+        }
+    }
+
+    // ========== Launcher update ==========
+
+    private fun updateVersionStatus() {
+        if (!::launcherVersionText.isInitialized) return
+        val serverVersion = installedPayloadVersion()?.let { "v$it" }
+            ?: tr("not applied", "не установлена")
+        launcherVersionText.text = tr(
+            "Launcher v${BuildConfig.VERSION_NAME} • Server payload $serverVersion",
+            "Лаунчер v${BuildConfig.VERSION_NAME} • Серверная часть $serverVersion",
+        )
+    }
+
+    private fun updateLauncherActionUi() {
+        if (!::launcherUpdateBtn.isInitialized) return
+        launcherUpdateBtn.text = when (launcherUpdateAction) {
+            LauncherUpdateAction.CHECK -> tr(
+                "Check for launcher update",
+                "Проверить обновление лаунчера",
+            )
+            LauncherUpdateAction.DOWNLOADING -> tr(
+                "Downloading launcher update…",
+                "Загрузка обновления лаунчера…",
+            )
+            LauncherUpdateAction.INSTALL -> tr(
+                "Install downloaded launcher update",
+                "Установить загруженное обновление лаунчера",
+            )
+        }
+        launcherUpdateBtn.isEnabled = launcherUpdateAction != LauncherUpdateAction.DOWNLOADING
+    }
+
+    private fun setLauncherUpdateStatus(message: String) {
+        if (!::launcherVersionText.isInitialized) return
+        updateVersionStatus()
+        launcherVersionText.append("\n$message")
+    }
+
+    private fun handleLauncherUpdateAction() {
+        when (launcherUpdateAction) {
+            LauncherUpdateAction.CHECK -> checkForLauncherUpdate(manual = true)
+            LauncherUpdateAction.DOWNLOADING -> Unit
+            LauncherUpdateAction.INSTALL -> beginDownloadedApkInstall()
+        }
+    }
+
+    private fun checkForLauncherUpdate(manual: Boolean) {
+        updateCheckJob?.cancel()
+        if (manual) {
+            launcherUpdateBtn.isEnabled = false
+            setLauncherUpdateStatus(tr("Checking GitHub Releases…", "Проверяю GitHub Releases…"))
+        }
+        updateCheckJob = mainScope.launch {
+            when (val decision = releaseClient.checkForUpdate(BuildConfig.VERSION_NAME)) {
+                is ReleaseUpdateDecision.UpdateAvailable -> {
+                    setLauncherUpdateStatus(tr(
+                        "Launcher v${decision.release.version} is available.",
+                        "Доступен лаунчер v${decision.release.version}.",
+                    ))
+                    if (activityStarted) {
+                        showLauncherUpdateConsent(decision.release)
+                    } else {
+                        pendingUpdateRelease = decision.release
+                    }
+                }
+                is ReleaseUpdateDecision.UpToDate -> if (manual) {
+                    setLauncherUpdateStatus(tr(
+                        "Launcher is up to date.",
+                        "Лаунчер уже обновлён.",
+                    ))
+                }
+                is ReleaseUpdateDecision.Unavailable -> if (manual) {
+                    setLauncherUpdateStatus(tr(
+                        "No compatible Android launcher release was found.",
+                        "Совместимый Android-релиз лаунчера не найден.",
+                    ))
+                }
+                is ReleaseUpdateDecision.Error -> if (manual) {
+                    setLauncherUpdateStatus(tr(
+                        "Update check failed: ${decision.message}",
+                        "Не удалось проверить обновление: ${decision.message}",
+                    ))
+                }
+            }
+            updateLauncherActionUi()
+        }
+    }
+
+    private fun showLauncherUpdateConsent(release: PublishedRelease) {
+        if (isFinishing || isDestroyed) return
+        val padding = (20 * resources.displayMetrics.density).toInt()
+        val notes = TextView(this).apply {
+            text = tr(
+                "Launcher v${release.version}\n\n${release.notes.ifBlank { "No release notes." }}\n\nThe APK will download only if you confirm. Android will then ask you to approve installation.",
+                "Лаунчер v${release.version}\n\n${release.notes.ifBlank { "Без примечаний к релизу." }}\n\nAPK загрузится только после подтверждения. Затем Android отдельно попросит разрешить установку.",
+            )
+            setPadding(padding, padding / 2, padding, padding / 2)
+            textSize = 15f
+        }
+        val scroll = ScrollView(this).apply { addView(notes) }
+        AlertDialog.Builder(this)
+            .setTitle(tr("Launcher update available", "Доступно обновление лаунчера"))
+            .setView(scroll)
+            .setPositiveButton(tr("Download APK", "Скачать APK")) { _, _ ->
+                startLauncherDownload(release)
+            }
+            .setNegativeButton(tr("Later", "Позже"), null)
+            .show()
+    }
+
+    private fun startLauncherDownload(release: PublishedRelease) {
+        try {
+            apkUpdateManager.enqueue(release)
+            launcherUpdateAction = LauncherUpdateAction.DOWNLOADING
+            updateLauncherActionUi()
+            setLauncherUpdateStatus(tr(
+                "Downloading launcher v${release.version}…",
+                "Загружаю лаунчер v${release.version}…",
+            ))
+            observeLauncherDownload(installWhenReady = true)
+        } catch (error: Exception) {
+            launcherUpdateAction = LauncherUpdateAction.CHECK
+            updateLauncherActionUi()
+            setLauncherUpdateStatus(tr(
+                "Could not start download: ${error.message}",
+                "Не удалось начать загрузку: ${error.message}",
+            ))
+        }
+    }
+
+    private fun observeLauncherDownload(installWhenReady: Boolean) {
+        downloadPollingJob?.cancel()
+        downloadPollingJob = mainScope.launch {
+            while (isActive) {
+                when (val state = apkUpdateManager.reconcile()) {
+                    ApkDownloadState.Idle -> {
+                        launcherUpdateAction = LauncherUpdateAction.CHECK
+                        updateLauncherActionUi()
+                        return@launch
+                    }
+                    is ApkDownloadState.Downloading -> {
+                        launcherUpdateAction = LauncherUpdateAction.DOWNLOADING
+                        updateLauncherActionUi()
+                        val progress = state.progressPercent?.let { "$it%" }
+                            ?: tr("in progress", "в процессе")
+                        setLauncherUpdateStatus(tr(
+                            "Downloading launcher update: $progress",
+                            "Загрузка обновления лаунчера: $progress",
+                        ))
+                        delay(750)
+                    }
+                    is ApkDownloadState.Ready -> {
+                        launcherUpdateAction = LauncherUpdateAction.INSTALL
+                        updateLauncherActionUi()
+                        setLauncherUpdateStatus(tr(
+                            "Launcher v${state.expectedVersionName} downloaded; ready for Android's installer.",
+                            "Лаунчер v${state.expectedVersionName} загружен; можно открыть установщик Android.",
+                        ))
+                        if (installWhenReady) beginDownloadedApkInstall()
+                        return@launch
+                    }
+                    is ApkDownloadState.Failed -> {
+                        launcherUpdateAction = LauncherUpdateAction.CHECK
+                        updateLauncherActionUi()
+                        setLauncherUpdateStatus(tr(
+                            "Download failed: ${state.reason}",
+                            "Ошибка загрузки: ${state.reason}",
+                        ))
+                        return@launch
+                    }
+                }
+            }
+        }
+    }
+
+    private fun beginDownloadedApkInstall() {
+        if (installerHandoffInProgress) return
+        installerHandoffInProgress = true
+        mainScope.launch {
+            when (val handoff = apkUpdateManager.prepareInstall()) {
+                is ApkInstallHandoff.LaunchInstaller -> {
+                    setLauncherUpdateStatus(tr(
+                        "Confirm the launcher update in Android's installer.",
+                        "Подтвердите обновление лаунчера в установщике Android.",
+                    ))
+                    startActivity(handoff.intent)
+                }
+                is ApkInstallHandoff.PermissionRequired -> {
+                    installerHandoffInProgress = false
+                    setLauncherUpdateStatus(tr(
+                        "Allow installs from Vibe Tavern, then return here.",
+                        "Разрешите установку из Vibe Tavern, затем вернитесь сюда.",
+                    ))
+                    startActivity(handoff.settingsIntent)
+                }
+                is ApkInstallHandoff.Rejected -> {
+                    installerHandoffInProgress = false
+                    launcherUpdateAction = LauncherUpdateAction.CHECK
+                    updateLauncherActionUi()
+                    setLauncherUpdateStatus(tr(
+                        "Downloaded APK rejected: ${handoff.reason}",
+                        "Загруженный APK отклонён: ${handoff.reason}",
+                    ))
+                }
+                ApkInstallHandoff.MissingDownload -> {
+                    installerHandoffInProgress = false
+                    launcherUpdateAction = LauncherUpdateAction.CHECK
+                    updateLauncherActionUi()
+                    setLauncherUpdateStatus(tr(
+                        "Downloaded launcher APK is no longer available.",
+                        "Загруженный APK лаунчера больше недоступен.",
+                    ))
+                }
+            }
+        }
     }
 
     // ========== One-time setup ==========
@@ -764,9 +1056,14 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun tryRegisterResultReceiver() {
-        try {
-            registerReceiver(resultReceiver, IntentFilter(TERMUX_RESULT_ACTION), RECEIVER_NOT_EXPORTED)
-        } catch (_: Exception) {}
+        if (resultReceiverRegistered) return
+        ContextCompat.registerReceiver(
+            this,
+            resultReceiver,
+            IntentFilter(TERMUX_RESULT_ACTION),
+            ContextCompat.RECEIVER_NOT_EXPORTED,
+        )
+        resultReceiverRegistered = true
     }
 
     // ========== Browser / help / settings ==========
@@ -1028,5 +1325,16 @@ class MainActivity : AppCompatActivity() {
         ServerService.stop(this)
         setServerRunningUi(running = false, checking = false)
         updateSetupButtonText()
+        updateVersionStatus()
+    }
+
+    private enum class LauncherUpdateAction {
+        CHECK,
+        DOWNLOADING,
+        INSTALL,
+    }
+
+    companion object {
+        private var automaticUpdateCheckStarted = false
     }
 }
