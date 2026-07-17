@@ -97,6 +97,43 @@ export interface CreateLoreEntryData {
 
 export type UpdateLoreEntryData = Partial<CreateLoreEntryData>;
 
+// ─── Co-Author lore draft Apply (CTX-L2, Wave 4) ──────────────────────────────
+
+/**
+ * The co-author lore draft bundle persisted by Apply. Structurally identical
+ * to the api-contracts `CoauthorLoreBundle` — the store (packages/db) cannot
+ * import api-contracts (dependency graph: db ← domain only), so the shape is
+ * re-declared here and the caller passes the contract bundle verbatim (TS
+ * structural typing accepts it without a forbidden import).
+ *
+ * `id`s are PREALLOCATED in the request-local draft engine and become the DB
+ * primary keys; Apply is idempotent (re-Apply upserts the same rows). The
+ * scopeType→owner mapping mirrors `createLorebook`: a 'character'-scoped draft
+ * book is written with `characterId` set so the activation engine (FK ∪
+ * junction) finds it.
+ */
+export interface CoauthorLoreDraftBundle {
+  lorebooks: Array<{
+    id: string;
+    name: string;
+    description: string;
+    scopeType: 'global' | 'character' | 'persona' | 'chat';
+    enabled: boolean;
+  }>;
+  entries: Array<{
+    id: string;
+    lorebookId: string;
+    title: string;
+    content: string;
+    keys: string[];
+    secondaryKeys: string[];
+    constant: boolean;
+    position: string;
+    depth: number;
+    enabled: boolean;
+  }>;
+}
+
 // ─── Return types ─────────────────────────────────────────────────────────────
 
 /**
@@ -650,6 +687,115 @@ export class LorebookStore {
     if (this.content && lorebookId) {
       await this.syncFile(lorebookId);
     }
+  }
+
+  /**
+   * CTX-L2: persist a co-author lore draft bundle as character-scoped lorebooks
+   * + entries using the PREALLOCATED draft ids, IDEMPOTENTLY. This is the sole
+   * persistence boundary for lore proposals — tool execution only mutates the
+   * request-local draft state; nothing reaches SQLite until Apply. Re-Apply
+   * (same ids) upserts the same rows rather than creating duplicates; a first
+   * Apply inserts. Runs in ONE transaction so a partial failure rolls back the
+   * whole graph. Dependency validation: every entry's parent lorebook must be
+   * present in the bundle (the draft engine enforces this, but Apply re-checks
+   * defensively). The scopeType→owner mapping mirrors `createLorebook` (a
+   * 'character'-scoped book sets `characterId`), so the activation engine (FK ∪
+   * junction) discovers the new book.
+   */
+  async applyCoauthorLoreDraft(
+    characterId: string,
+    bundle: CoauthorLoreDraftBundle,
+  ): Promise<{ lorebookIds: string[]; entryIds: string[] }> {
+    const bookIds = new Set(bundle.lorebooks.map((lb) => lb.id));
+    for (const entry of bundle.entries) {
+      if (!bookIds.has(entry.lorebookId)) {
+        throw new Error(
+          `applyCoauthorLoreDraft: entry '${entry.id}' references unknown parent lorebook '${entry.lorebookId}'`,
+        );
+      }
+    }
+
+    const now = this.clock.now();
+    const lorebookIds: string[] = [];
+    const entryIds: string[] = [];
+
+    await this.db.transaction(async (tx) => {
+      for (const lb of bundle.lorebooks) {
+        const charScoped = lb.scopeType === 'character';
+        await tx
+          .insert(lorebooks)
+          .values({
+            id: lb.id,
+            name: lb.name,
+            description: lb.description,
+            scopeType: lb.scopeType,
+            scanDepth: 10,
+            tokenBudget: 1000,
+            tokenBudgetPercent: null,
+            recursiveScanning: 0,
+            maxRecursionSteps: 5,
+            includeNames: 0,
+            minActivations: 0,
+            minActivationsDepthMax: 0,
+            overflowAlert: 0,
+            characterStrategy: 0,
+            sortOrder: 0,
+            enabled: lb.enabled ? 1 : 0,
+            characterId: charScoped ? characterId : null,
+            personaId: null,
+            chatId: null,
+            extensionsJson: '{}',
+            createdAt: now,
+            updatedAt: now,
+          })
+          .onConflictDoUpdate({
+            target: lorebooks.id,
+            // Re-Apply updates mutable fields but preserves createdAt + id.
+            set: {
+              name: lb.name,
+              description: lb.description,
+              scopeType: lb.scopeType,
+              enabled: lb.enabled ? 1 : 0,
+              characterId: charScoped ? characterId : null,
+              updatedAt: now,
+            },
+          })
+          .run();
+        lorebookIds.push(lb.id);
+      }
+      for (const e of bundle.entries) {
+        const fields = buildEntryInsert({
+          title: e.title,
+          content: e.content,
+          keys: e.keys,
+          secondaryKeys: e.secondaryKeys,
+          constant: e.constant,
+          position: e.position,
+          depth: e.depth,
+          enabled: e.enabled,
+        });
+        await tx
+          .insert(loreEntries)
+          .values({ id: e.id, lorebookId: e.lorebookId, createdAt: now, updatedAt: now, ...fields })
+          .onConflictDoUpdate({
+            target: loreEntries.id,
+            set: { lorebookId: e.lorebookId, updatedAt: now, ...buildEntryPatch({
+              title: e.title, content: e.content, keys: e.keys, secondaryKeys: e.secondaryKeys,
+              constant: e.constant, position: e.position, depth: e.depth, enabled: e.enabled,
+            }) },
+          })
+          .run();
+        entryIds.push(e.id);
+      }
+    });
+
+    // Dual-write canonical JSON files after the transaction commits (mirrors
+    // createLorebook/createEntry's syncFile calls).
+    for (const id of lorebookIds) {
+      await this.syncFile(id);
+    }
+
+    return { lorebookIds, entryIds };
   }
 
   // ─── Scope-aware listing (pipeline entry point) ────────────────────────────

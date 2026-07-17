@@ -301,6 +301,12 @@ export interface SceneBackfillStatusResponse {
  */
 export interface CoauthorApplyResponse extends ConfigPatchResponse {
 	corrections: CoauthorCorrection[];
+	/**
+	 * CTX-L2 (Wave 4): ids of lorebooks/entries written by the lore-bundle Apply
+	 * branch. Empty arrays when no lore bundle was applied. The frontend uses
+	 * these to confirm what was persisted (and to refresh its lore surfaces).
+	 */
+	lore?: { lorebookIds: string[]; entryIds: string[] };
 }
 
 /** Summary CRUD: create / update / delete ranged summary. */

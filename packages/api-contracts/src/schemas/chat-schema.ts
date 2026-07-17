@@ -45,6 +45,84 @@ export const renameBranchSchema = z.object({
   label: z.string().min(1),
 });
 
+// ─── Wave 4: proposal-only lore authoring (CTX-L1) ───────────────────────────
+// Lore tools are PROPOSAL-ONLY: tool execution allocates stable draft IDs and
+// mutates ONLY a request-local LoreDraftState (no LorebookStore, no SQLite).
+// Apply is the sole persistence boundary; Cancel leaves the DB unchanged. The
+// contract below is the cumulative bundle that every successful lore mutation
+// returns in full, so last-proposal aggregation can never discard earlier
+// entries or fields. The draft lorebook/entry shapes are authoring-focused
+// (stable IDs + parent refs + content + keys + activation), not the full
+// ST-parity LoreEntry — Apply (CTX-L2) fills store defaults for the rest.
+
+/**
+ * A draft lorebook proposed by a lore tool. Stable `id` is allocated in the
+ * request-local closure and becomes the DB primary key at Apply (CTX-L2
+ * upsert-with-id). `scopeType` mirrors {@link LoreScopeType}; default
+ * "character" (the co-author edits a character card's lore).
+ */
+export const coauthorDraftLorebookSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  description: z.string(),
+  scopeType: z.enum(["global", "character", "persona", "chat"]),
+  enabled: z.boolean(),
+});
+export type CoauthorDraftLorebook = z.infer<typeof coauthorDraftLorebookSchema>;
+
+/**
+ * A draft lore entry proposed by a lore tool. `lorebookId` is the parent
+ * reference — it MUST resolve to a lorebook id present in the same bundle
+ * (validated before the snapshot advances; a missing parent is rejected and
+ * leaves all prior draft state intact). `keys` are activation triggers;
+ * `constant`/`position`/`depth` are the activation fields a co-author sets.
+ */
+export const coauthorDraftLoreEntrySchema = z.object({
+  id: z.string(),
+  lorebookId: z.string(),
+  title: z.string(),
+  content: z.string(),
+  keys: z.array(z.string()),
+  secondaryKeys: z.array(z.string()),
+  /** Constant entries activate every turn regardless of key match. */
+  constant: z.boolean(),
+  /** Where the entry injects (mirrors LoreEntryPosition, string form). */
+  position: z.string(),
+  depth: z.number().int(),
+  enabled: z.boolean(),
+});
+export type CoauthorDraftLoreEntry = z.infer<typeof coauthorDraftLoreEntrySchema>;
+
+/**
+ * The complete cumulative lore draft — every lorebook and entry proposed in
+ * the turn so far. Returned IN FULL by every successful lore mutation so the
+ * frontend always aggregates the latest complete graph (never a delta that
+ * could drop earlier entries). This is the `bundle` payload of
+ * {@link coauthorLoreBundleOutputSchema} and of the loreBundle Apply field.
+ */
+export const coauthorLoreBundleSchema = z.object({
+  lorebooks: z.array(coauthorDraftLorebookSchema),
+  entries: z.array(coauthorDraftLoreEntrySchema),
+});
+export type CoauthorLoreBundle = z.infer<typeof coauthorLoreBundleSchema>;
+
+/**
+ * The `output` payload of a `lore_bundle` `tool-result` SSE event (CTX-L1).
+ * A PROPOSAL (unlike `coauthorSkillReadOutputSchema` which is a non-proposal
+ * read): the frontend aggregates the latest bundle per turn and renders it as
+ * a structured review surface (CTX-L3). `target` is the literal
+ * `"lore_bundle"` so aggregation can route it distinctly from profile/greeting
+ * proposals. The backend canonical definition lives in `lore-draft-state.ts` /
+ * `coauthor-tools.ts`; this schema is the single source of truth for the wire
+ * shape.
+ */
+export const coauthorLoreBundleOutputSchema = z.object({
+  target: z.literal("lore_bundle"),
+  bundle: coauthorLoreBundleSchema,
+  summary: z.string(),
+});
+export type CoauthorLoreBundleOutput = z.infer<typeof coauthorLoreBundleOutputSchema>;
+
 /**
  * Co-Author Apply request (CA-7). The frontend aggregates `CoauthorToolOutput[]`
  * from a co-author turn into this canonical proposed state; the backend never
@@ -59,6 +137,13 @@ export const coauthorApplySchema = z.object({
   firstMessage: z.string().optional(),
   /** Full replacement array for `alternateGreetings` (indices 1..N). */
   alternateGreetings: z.array(z.string()).optional(),
+  /**
+   * CTX-L2 (Wave 4): the accepted cumulative lore draft (lorebooks + entries
+   * with preallocated stable ids). Apply is the sole persistence boundary for
+   * lore proposals — tool execution only mutates a request-local draft; this
+   * field carries the user-accepted graph to be written idempotently.
+   */
+  loreBundle: coauthorLoreBundleSchema.optional(),
 });
 
 export type CoauthorApplyRequest = z.infer<typeof coauthorApplySchema>;
@@ -223,81 +308,3 @@ export const coauthorCorrectionSchema = z.object({
 });
 
 export type CoauthorCorrection = z.infer<typeof coauthorCorrectionSchema>;
-
-// ─── Wave 4: proposal-only lore authoring (CTX-L1) ───────────────────────────
-// Lore tools are PROPOSAL-ONLY: tool execution allocates stable draft IDs and
-// mutates ONLY a request-local LoreDraftState (no LorebookStore, no SQLite).
-// Apply is the sole persistence boundary; Cancel leaves the DB unchanged. The
-// contract below is the cumulative bundle that every successful lore mutation
-// returns in full, so last-proposal aggregation can never discard earlier
-// entries or fields. The draft lorebook/entry shapes are authoring-focused
-// (stable IDs + parent refs + content + keys + activation), not the full
-// ST-parity LoreEntry — Apply (CTX-L2) fills store defaults for the rest.
-
-/**
- * A draft lorebook proposed by a lore tool. Stable `id` is allocated in the
- * request-local closure and becomes the DB primary key at Apply (CTX-L2
- * upsert-with-id). `scopeType` mirrors {@link LoreScopeType}; default
- * "character" (the co-author edits a character card's lore).
- */
-export const coauthorDraftLorebookSchema = z.object({
-  id: z.string(),
-  name: z.string(),
-  description: z.string(),
-  scopeType: z.enum(["global", "character", "persona", "chat"]),
-  enabled: z.boolean(),
-});
-export type CoauthorDraftLorebook = z.infer<typeof coauthorDraftLorebookSchema>;
-
-/**
- * A draft lore entry proposed by a lore tool. `lorebookId` is the parent
- * reference — it MUST resolve to a lorebook id present in the same bundle
- * (validated before the snapshot advances; a missing parent is rejected and
- * leaves all prior draft state intact). `keys` are activation triggers;
- * `constant`/`position`/`depth` are the activation fields a co-author sets.
- */
-export const coauthorDraftLoreEntrySchema = z.object({
-  id: z.string(),
-  lorebookId: z.string(),
-  title: z.string(),
-  content: z.string(),
-  keys: z.array(z.string()),
-  secondaryKeys: z.array(z.string()),
-  /** Constant entries activate every turn regardless of key match. */
-  constant: z.boolean(),
-  /** Where the entry injects (mirrors LoreEntryPosition, string form). */
-  position: z.string(),
-  depth: z.number().int(),
-  enabled: z.boolean(),
-});
-export type CoauthorDraftLoreEntry = z.infer<typeof coauthorDraftLoreEntrySchema>;
-
-/**
- * The complete cumulative lore draft — every lorebook and entry proposed in
- * the turn so far. Returned IN FULL by every successful lore mutation so the
- * frontend always aggregates the latest complete graph (never a delta that
- * could drop earlier entries). This is the `bundle` payload of
- * {@link coauthorLoreBundleOutputSchema}.
- */
-export const coauthorLoreBundleSchema = z.object({
-  lorebooks: z.array(coauthorDraftLorebookSchema),
-  entries: z.array(coauthorDraftLoreEntrySchema),
-});
-export type CoauthorLoreBundle = z.infer<typeof coauthorLoreBundleSchema>;
-
-/**
- * The `output` payload of a `lore_bundle` `tool-result` SSE event (CTX-L1).
- * A PROPOSAL (unlike `coauthorSkillReadOutputSchema` which is a non-proposal
- * read): the frontend aggregates the latest bundle per turn and renders it as
- * a structured review surface (CTX-L3). `target` is the literal
- * `"lore_bundle"` so aggregation can route it distinctly from profile/greeting
- * proposals. The backend canonical definition lives in `lore-draft-state.ts` /
- * `coauthor-tools.ts`; this schema is the single source of truth for the wire
- * shape.
- */
-export const coauthorLoreBundleOutputSchema = z.object({
-  target: z.literal("lore_bundle"),
-  bundle: coauthorLoreBundleSchema,
-  summary: z.string(),
-});
-export type CoauthorLoreBundleOutput = z.infer<typeof coauthorLoreBundleOutputSchema>;

@@ -52,6 +52,7 @@ export type {
   Lorebook as LorebookRow,
   LoreEntry as LoreEntryRow,
   LorebookLink,
+  CoauthorLoreDraftBundle,
 } from './lorebook-store.js';
 
 export { ScriptStore } from './script-store.js';

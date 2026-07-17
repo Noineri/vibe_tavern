@@ -770,7 +770,21 @@ export function pickBootstrapChatId<T extends string>(
 		const patch = await this.character.update(characterId, updateInput, {
 			rebuildChatOrder: () => this.rebuildChatOrder(),
 		});
-		return { ...patch, corrections };
+
+		// CTX-L2 (Wave 4): lore-bundle Apply branch. The accepted cumulative draft
+		// is persisted idempotently (preallocated ids upsert the same rows) in one
+		// transaction. Character-scoped draft books are written with characterId so
+		// the activation engine discovers them. Absent/empty bundle = no-op (the
+		// common profile/greeting-only Apply path is unchanged).
+		let lore: { lorebookIds: string[]; entryIds: string[] } | undefined;
+		if (body.loreBundle && (body.loreBundle.lorebooks.length > 0 || body.loreBundle.entries.length > 0)) {
+			lore = await this.stores.lorebooks.applyCoauthorLoreDraft(
+				characterId as unknown as string,
+				body.loreBundle,
+			);
+		}
+
+		return { ...patch, corrections, ...(lore ? { lore } : {}) };
 	}
 
 	/**
