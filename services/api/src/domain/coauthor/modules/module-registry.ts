@@ -28,11 +28,11 @@ interface SeedModuleDef {
 const SEED_MODULE_DEFS: readonly SeedModuleDef[] = [
   {
     id: "default",
-    name: "Default Co-Author",
-    description: "A balanced co-author module for general roleplay, scene continuation, and editing.",
+    name: "Character Workshop",
+    description: "The default collaborative mode. Develops a premise conversationally — gathers requirements, contributes alternatives, and discusses trade-offs before drafting.",
     basePromptFile: "coauthor/modules/default.md",
     openingMessage:
-      "I'm ready to help you build {{char}} — I can revise the profile, personality, scenario, greetings, and example dialogue. What would you like to work on?",
+      "Let's develop {{char}} together. Tell me the premise — even a few lines is enough — and I'll help shape it: the core fantasy, your role, the tone. We'll settle a direction before I draft anything.",
     skillIds: ["character-workshop"],
     toolSet: {
       write_profile: true,
@@ -49,12 +49,34 @@ const SEED_MODULE_DEFS: readonly SeedModuleDef[] = [
     maxSteps: 5,
   },
   {
+    id: "quick-draft",
+    name: "Quick Draft",
+    description: "Turns a sparse brief into a complete, reviewable card fast. Reads its card-building skill and template, fills reasonable gaps, and asks only blocking questions.",
+    basePromptFile: "coauthor/modules/quick-draft.md",
+    openingMessage:
+      "Give me a brief for {{char}} — a trope, a vibe, a few lines — and I'll read my card template and draft a complete first pass for you to review. I'll only ask when something blocks coherence.",
+    skillIds: ["quick-draft"],
+    toolSet: {
+      write_profile: true,
+      edit_personality: true,
+      edit_scenario: true,
+      edit_examples: true,
+      write_personality: true,
+      write_scenario: true,
+      write_examples: true,
+      edit_greeting: true,
+      add_alt_greeting: true,
+      edit_alt_greeting: true,
+    },
+    maxSteps: 5,
+  },
+  {
     id: "profile-editor",
-    name: "Profile Editor",
-    description: "Focuses entirely on refining character profiles, personalities, and scenarios.",
+    name: "Revision Workshop",
+    description: "Revises an existing card. Audits what's weak, agrees scope and preservation constraints, then applies only the selected revisions.",
     basePromptFile: "coauthor/modules/profile-editor.md",
     openingMessage:
-      "I'll focus on {{char}}'s profile — personality, scenario, and description. Tell me what feels flat or underdeveloped and I'll propose targeted edits.",
+      "Let's tighten {{char}} up. I'll audit the personality and scenario first — name the highest-impact issues and what's already working — and we'll agree on what to change before I touch anything.",
     skillIds: ["revision-workshop"],
     toolSet: {
       write_profile: true,
@@ -67,11 +89,11 @@ const SEED_MODULE_DEFS: readonly SeedModuleDef[] = [
   },
   {
     id: "dialogue-writer",
-    name: "Dialogue Writer",
-    description: "Specializes in writing character greetings and example dialogue.",
+    name: "Dialogue Studio",
+    description: "Voice, greetings, and example dialogue. Brainstorms opener directions and variants before writing, and stays conversational throughout.",
     basePromptFile: "coauthor/modules/dialogue-writer.md",
     openingMessage:
-      "I'll help you write and refine {{char}}'s greetings and example dialogue. Want fresh opening lines, alternates, or a rewrite of what's there?",
+      "Let's find {{char}}'s voice. I can brainstorm opener directions and alternates before we write anything, or go straight to drafting greetings and example dialogue. What are we after?",
     skillIds: ["dialogue-studio"],
     toolSet: {
       edit_examples: true,

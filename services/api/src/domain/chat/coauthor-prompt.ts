@@ -29,6 +29,7 @@ import { estimateTokens, planHistoryCompaction, setModelHint } from "@vibe-taver
 import type { ToolCallPart, ToolResultPart } from "ai";
 import { dirname } from "node:path";
 import { getCoauthorModule, isSeedModule } from "../coauthor/modules/module-registry.js";
+import { loadPromptAsset } from "../../shared/prompt-asset-loader.js";
 import type { SkillCatalogEntry } from "../coauthor/skills/skill-scanner.js";
 
 /** How many of the chat's most recent messages to include as conversation history. */
@@ -205,6 +206,12 @@ export async function assembleCoauthorPrompt(input: ChatModeAssembleInput): Prom
     loaders.getChatSummaries(chatId, input.branchId ?? (chat.activeBranchId as ChatBranchId)),
   ]);
   const basePrompt = module.basePrompt;
+  // Shared editor preamble (Role + tool mechanics + editing discipline) loaded
+  // from coauthor/base.md. This is the universal co-author framing; the module's
+  // basePrompt specializes it with mode-specific behavior. Prepending it here
+  // keeps the tool mechanics in one place (DRY) and ensures every module — seed
+  // or user, original or duplicated (M3) — carries the editing contract.
+  const coauthorBase = await loadPromptAsset("coauthor/base.md");
   const currentCard = renderCurrentCard(profileMd, character);
   const loreBlock = renderLoreContext(loreEntries);
   const skillCatalogBlock = renderSkillCatalog(skillCatalog);
@@ -221,7 +228,7 @@ export async function assembleCoauthorPrompt(input: ChatModeAssembleInput): Prom
     ? ["# Conversation Summary", ...memoryItems].join("\n")
     : "";
 
-  const sections = [basePrompt];
+  const sections = [coauthorBase, "", basePrompt];
   if (skillCatalogBlock) {
     sections.push("", skillCatalogBlock);
   }
@@ -270,6 +277,19 @@ export async function assembleCoauthorPrompt(input: ChatModeAssembleInput): Prom
 
   const layers: import("@vibe-tavern/domain").PromptLayerDto[] = [];
   
+  layers.push({
+    id: "coauthor-base",
+    sourceType: "coauthor_module",
+    sourceId: "base",
+    sourceName: "Co-Author base (editor contract)",
+    position: "in_prompt",
+    priority: 1100,
+    text: coauthorBase,
+    enabled: true,
+    reason: "",
+    tokenCount: estimateTokens(coauthorBase)
+  });
+
   layers.push({
     id: `module-${module.id}`,
     sourceType: "coauthor_module",

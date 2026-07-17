@@ -483,3 +483,56 @@ describe("assembleCoauthorPrompt", () => {
     expect(result.promptTraceDraft.compactionSummary).toContain("Kept 3 of 4 recent messages");
   });
 });
+
+/**
+ * CTX-M2 — Wave-3 module prompt contracts. Pin the collaborative-workflow policy
+ * of each rebuilt seed (discussion-first vs direct-draft vs revision vs ideation)
+ * and prove no seed carries the former minimize-chat or blanket-routing policy.
+ * These read the REAL module prompt assets (loaders only mock the catalog), so a
+ * regression in any .md is caught here.
+ */
+async function assembleForModule(moduleId: string): Promise<string> {
+  const loaders = makeLoaders({ chat: { id: "chat_test", coauthorModuleId: moduleId } as never });
+  const result = await assembleCoauthorPrompt(makeInput(loaders));
+  return (result.prompt.finalPayload as { messages: Array<{ content: string }> }).messages[0].content;
+}
+
+describe("assembleCoauthorPrompt — Wave-3 module prompt contracts (CTX-M2)", () => {
+  test("Character Workshop (default) is discussion-first: develops the premise before mutating", async () => {
+    const system = await assembleForModule("default");
+    // The discussion-before-mutation policy is present.
+    expect(system).toContain("Discuss before you mutate");
+    // And it frames itself as collaborative development, not immediate tool use.
+    expect(system.toLowerCase()).toContain("develop");
+  });
+
+  test("Quick Draft is tool-forward: reads its card skill + template and drafts directly", async () => {
+    const system = await assembleForModule("quick-draft");
+    // The workflow tells the model to read_skill_file its SKILL + template first.
+    expect(system).toContain("read_skill_file");
+    expect(system).toContain("card-template");
+    // And to produce a complete draft (speed mode), while flagging it as a draft.
+    expect(system.toLowerCase()).toContain("draft");
+  });
+
+  test("Revision Workshop (profile-editor) audits first and preserves unselected content", async () => {
+    const system = await assembleForModule("profile-editor");
+    expect(system.toLowerCase()).toContain("audit");
+    // Preservation discipline: retain unchanged prose / off-limits respect.
+    expect(system).toMatch(/preserv|off-limits|retain unchanged/i);
+  });
+
+  test("Dialogue Studio (dialogue-writer) permits ideation before greeting/example proposals", async () => {
+    const system = await assembleForModule("dialogue-writer");
+    expect(system.toLowerCase()).toContain("ideate");
+  });
+
+  test("no seed prompt minimizes chat or blanket-routes adjacent requests away", async () => {
+    // The former anti-patterns — removed from every seed in Wave 3.
+    for (const id of ["default", "quick-draft", "profile-editor", "dialogue-writer"]) {
+      const system = await assembleForModule(id);
+      expect(system).not.toContain("Minimize conversational chatter");
+      expect(system).not.toMatch(/decline and tell the user to switch/i);
+    }
+  });
+});
