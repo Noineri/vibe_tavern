@@ -71,6 +71,38 @@ function splitMigrationStatements(sqlContent: string): string[] {
   return statements;
 }
 
+interface DrizzleSnapshotColumn {
+  name: string;
+  type: string;
+  primaryKey: boolean;
+  notNull: boolean;
+  default?: string | number | boolean;
+}
+
+interface DrizzleSnapshotForeignKey {
+  tableTo: string;
+  columnsFrom: string[];
+  columnsTo: string[];
+  onDelete?: string;
+  onUpdate?: string;
+}
+
+interface DrizzleSnapshotTable {
+  name: string;
+  columns: Record<string, DrizzleSnapshotColumn>;
+  indexes: Record<string, { columns: string[]; isUnique: boolean }>;
+  foreignKeys: Record<string, DrizzleSnapshotForeignKey>;
+  uniqueConstraints: Record<string, { columns: string[] }>;
+}
+
+interface DrizzleSnapshot {
+  tables: Record<string, DrizzleSnapshotTable>;
+}
+
+function quoteSqlIdentifier(identifier: string): string {
+  return `"${identifier.replaceAll('"', '""')}"`;
+}
+
 /**
  * Resolve the drizzle migrations folder.
  *
@@ -339,6 +371,103 @@ async function repairMissingTables(sqlite: Database, migrationsFolder: string): 
 }
 
 /**
+ * Reconcile columns against the latest Drizzle snapshot, which represents the
+ * final schema after every migration. Reading the final snapshot (rather than
+ * CREATE TABLE statements from the baseline) is essential: baseline columns
+ * may be intentionally removed by later rebuild migrations and must never be
+ * resurrected.
+ *
+ * Only additive ALTER TABLE operations are allowed here. Any missing primary or
+ * unique column fails startup rather than attempting a destructive table rebuild.
+ */
+async function ensureFinalSchemaColumns(sqlite: Database, migrationsFolder: string): Promise<void> {
+  const metaFolder = resolve(migrationsFolder, 'meta');
+  const journalPath = resolve(metaFolder, '_journal.json');
+  if (!await Bun.file(journalPath).exists()) return;
+  const journal = JSON.parse(await Bun.file(journalPath).text()) as {
+    entries?: { idx: number }[];
+  };
+  const entries = journal.entries ?? [];
+  if (entries.length === 0) return;
+  const latestEntry = entries.reduce(
+    (latest, entry) => entry.idx > latest.idx ? entry : latest,
+  );
+
+  const snapshotPath = resolve(
+    metaFolder,
+    `${String(latestEntry.idx).padStart(4, '0')}_snapshot.json`,
+  );
+  if (!await Bun.file(snapshotPath).exists()) return;
+  const snapshot = JSON.parse(await Bun.file(snapshotPath).text()) as DrizzleSnapshot;
+  const tableRows = sqlite
+    .prepare("SELECT name FROM sqlite_master WHERE type='table'")
+    .all() as { name: string }[];
+  const existingTables = new Set(tableRows.map(row => row.name.toLowerCase()));
+  const columnCache = new Map<string, Set<string>>();
+
+  function columnsFor(table: string): Set<string> {
+    const key = table.toLowerCase();
+    let columns = columnCache.get(key);
+    if (!columns) {
+      const rows = sqlite
+        .prepare(`PRAGMA table_info(${quoteSqlIdentifier(table)})`)
+        .all() as { name: string }[];
+      columns = new Set(rows.map(row => row.name.toLowerCase()));
+      columnCache.set(key, columns);
+    }
+    return columns;
+  }
+
+  let fixed = 0;
+  for (const table of Object.values(snapshot.tables)) {
+    if (!existingTables.has(table.name.toLowerCase())) continue;
+    for (const column of Object.values(table.columns)) {
+      if (columnsFor(table.name).has(column.name.toLowerCase())) continue;
+      const isUnique = Object.values(table.indexes).some(
+        index => index.isUnique && index.columns.includes(column.name),
+      ) || Object.values(table.uniqueConstraints).some(
+        constraint => constraint.columns.includes(column.name),
+      );
+      if (column.primaryKey || isUnique) {
+        throw new Error(
+          `[db] Cannot safely restore constrained column ${table.name}.${column.name} with ALTER TABLE`,
+        );
+      }
+
+      const definition = [column.type];
+      if (column.default !== undefined) {
+        const defaultSql = typeof column.default === 'boolean'
+          ? (column.default ? '1' : '0')
+          : String(column.default);
+        definition.push(`DEFAULT ${defaultSql}`);
+      }
+      if (column.notNull) definition.push('NOT NULL');
+      const foreignKey = Object.values(table.foreignKeys).find(
+        key => key.columnsFrom.length === 1 && key.columnsFrom[0] === column.name,
+      );
+      if (foreignKey?.columnsTo[0]) {
+        definition.push(
+          `REFERENCES ${quoteSqlIdentifier(foreignKey.tableTo)}(${quoteSqlIdentifier(foreignKey.columnsTo[0])})`,
+        );
+        if (foreignKey.onUpdate) definition.push(`ON UPDATE ${foreignKey.onUpdate}`);
+        if (foreignKey.onDelete) definition.push(`ON DELETE ${foreignKey.onDelete}`);
+      }
+
+      sqlite.exec(
+        `ALTER TABLE ${quoteSqlIdentifier(table.name)} ADD COLUMN ${quoteSqlIdentifier(column.name)} ${definition.join(' ')}`,
+      );
+      columnsFor(table.name).add(column.name.toLowerCase());
+      fixed++;
+      console.log(`[db] Pre-flight: restored final-schema column ${table.name}.${column.name}`);
+    }
+  }
+
+  if (fixed > 0) {
+    console.log(`[db] Pre-flight: restored ${fixed} column(s) omitted by legacy baselining.`);
+  }
+}
+
+/**
  * Pre-flight: ensure ALTER TABLE ADD COLUMN statements from all migrations
  * have been applied. Unlike repairMissingTables (which only looks at unstamped
  * migrations), this checks EVERY migration's ALTER TABLE statements against
@@ -515,6 +644,7 @@ export async function createDb(dbPath: string, migrationsFolderOverride?: string
 
     // Post-migration integrity checks
     await repairMissingTables(sqlite, migrationsFolder);
+    await ensureFinalSchemaColumns(sqlite, migrationsFolder);
     await ensureAlterColumns(sqlite, migrationsFolder);
   } finally {
     // Restore FK enforcement for normal app queries (the OFF above was scoped
