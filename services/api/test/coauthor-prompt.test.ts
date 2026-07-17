@@ -319,6 +319,57 @@ describe("assembleCoauthorPrompt", () => {
     }]);
   });
 
+  test("CTX-S5: read_skill_file (non-proposal) pair reconstructs in history replay — no orphaning", async () => {
+    // The history mapper is tool-name-agnostic, so a read_skill_file pair must
+    // rebuild into the same SDK v6 ToolCallPart + tool-result shape CS-4 pins
+    // for proposal tools. This guards against a future regression that
+    // special-cases proposal tool names in the mapper and silently drops reads
+    // (the model would then lose the file content it just asked for).
+    const loaders = makeLoaders({
+      messages: [
+        { id: "msg_1", role: "user", content: "use general-writing" } as never,
+        {
+          id: "msg_2",
+          role: "assistant",
+          content: "",
+          toolCalls: [{
+            id: "call_read",
+            name: "read_skill_file",
+            args: { path: "general-writing/SKILL.md" },
+            providerOptions: { google: { thoughtSignature: "sig_read" } },
+          }],
+        } as never,
+        {
+          id: "msg_3",
+          role: "tool",
+          toolCallId: "call_read",
+          // Persisted tool-result content is the JSON-stringified read result.
+          content: JSON.stringify({ path: "general-writing/SKILL.md", content: "# General Writing" }),
+        } as never,
+      ],
+    });
+    const result = await assembleCoauthorPrompt(makeInput(loaders));
+    const messages = (result.prompt.finalPayload as { messages: Array<Record<string, unknown>> }).messages;
+
+    // system + user + assistant(carrier) + tool(result).
+    expect(messages.length).toBe(4);
+    expect(messages[2].role).toBe("assistant");
+    expect(messages[2].toolCalls).toEqual([{
+      type: "tool-call",
+      toolCallId: "call_read",
+      toolName: "read_skill_file",
+      input: { path: "general-writing/SKILL.md" },
+      providerOptions: { google: { thoughtSignature: "sig_read" } },
+    }]);
+    expect(messages[3].role).toBe("tool");
+    expect(messages[3].content).toEqual([{
+      type: "tool-result",
+      toolCallId: "call_read",
+      toolName: "read_skill_file",
+      output: { type: "text", value: JSON.stringify({ path: "general-writing/SKILL.md", content: "# General Writing" }) },
+    }]);
+  });
+
   test("compacts when response reserve makes an otherwise fitting prompt exceed context", async () => {
     const { setTokenCountFn } = await import("@vibe-tavern/prompt-pipeline");
     setTokenCountFn((text: string) => text.length);
