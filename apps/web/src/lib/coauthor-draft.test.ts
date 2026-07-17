@@ -35,6 +35,19 @@ function greetingActivity(toolCallId: string, index: number, proposed: string): 
 	return { toolCallId, toolName: "edit_greeting", status: "done", target: "greeting", proposed, greetingIndex: index };
 }
 
+function loreActivity(toolCallId: string): CoauthorToolActivity {
+	return {
+		toolCallId,
+		toolName: "create_lore_entry",
+		status: "done",
+		summary: "Drafted lore.",
+		loreBundle: {
+			lorebooks: [{ id: "lb1", name: "Lore", description: "", scopeType: "character", enabled: true }],
+			entries: [{ id: "e1", lorebookId: "lb1", title: "Fear", content: "Backstory.", keys: ["name"], secondaryKeys: [], constant: false, position: "before_char", depth: 4, enabled: true }],
+		},
+	};
+}
+
 const PROFILE_A = "---\nname: A\n---\n# PERSONALITY\nBold.";
 const PROFILE_B = "---\nname: A\n---\n# PERSONALITY\nBolder.";
 
@@ -71,6 +84,15 @@ describe("coauthor-draft — pure serialization", () => {
 		expect(json).not.toBeNull();
 		const back = parseDraft(json);
 		expect(back).toEqual(activities);
+	});
+
+	it("CTX-L3: lore_bundle activities survive serialize → parse with the cumulative graph intact", () => {
+		const json = serializeDraft([loreActivity("l1")]);
+		expect(json).not.toBeNull();
+		const back = parseDraft(json);
+		expect(back).toHaveLength(1);
+		expect(back?.[0]?.loreBundle?.lorebooks[0]?.id).toBe("lb1");
+		expect(back?.[0]?.loreBundle?.entries[0]?.keys).toEqual(["name"]);
 	});
 
 	it("parseDraft returns null for malformed JSON", () => {

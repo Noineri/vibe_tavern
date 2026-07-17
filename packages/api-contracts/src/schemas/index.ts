@@ -15,6 +15,8 @@ export {
   coauthorCorrectionSchema,
   coauthorTargetSchema,
   coauthorToolOutputSchema,
+  coauthorLoreBundleOutputSchema,
+  coauthorLoreBundleSchema,
   coauthorSkillReadOutputSchema,
   skillCatalogEntrySchema,
   skillCatalogErrorSchema,

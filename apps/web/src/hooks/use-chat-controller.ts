@@ -20,7 +20,7 @@ import { StreamingReveal } from "../lib/streaming-reveal.js";
 import { useSnapshotStore } from "../stores/snapshot-store.js";
 import { useTraceHistoryStore } from "../stores/trace-history-store.js";
 import { useCoauthorTurnStore } from "../stores/coauthor-turn-store.js";
-import { coauthorToolOutputSchema, coauthorSkillReadOutputSchema } from "@vibe-tavern/api-contracts";
+import { coauthorToolOutputSchema, coauthorSkillReadOutputSchema, coauthorLoreBundleOutputSchema } from "@vibe-tavern/api-contracts";
 import {
   fetchChatAction,
   sendChatMessageAction,
@@ -263,6 +263,24 @@ export function useChatController(): ChatControllerActions {
               toolName: info.toolName,
               status: info.isError || !read.success ? "error" : "done",
               ...(read.success ? { readPath: read.data.path } : {}),
+            });
+            return;
+          }
+          // CTX-L3: a lore_bundle result is a distinct PROPOSAL arm (the
+          // cumulative lore draft). Recognize it before the profile/greeting
+          // parse (which would otherwise flag it an error). The five lore tools
+          // all return {target:"lore_bundle", bundle, summary}.
+          if (
+            info.toolName === "create_lorebook" || info.toolName === "create_lore_entry"
+            || info.toolName === "set_lore_activation" || info.toolName === "ai_write_lore_entry"
+            || info.toolName === "ai_generate_lore_keys"
+          ) {
+            const lore = coauthorLoreBundleOutputSchema.safeParse(info.output);
+            useCoauthorTurnStore.getState().upsertActivity(chatId, {
+              toolCallId: info.toolCallId,
+              toolName: info.toolName,
+              status: info.isError || !lore.success ? "error" : "done",
+              ...(lore.success ? { loreBundle: lore.data.bundle, summary: lore.data.summary } : {}),
             });
             return;
           }

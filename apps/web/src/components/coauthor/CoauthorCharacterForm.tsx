@@ -55,6 +55,7 @@ import { groupHunks, mergeSelectedBody, allHunkIds } from "../../lib/coauthor-hu
 import { lblCls } from "../build/fields/field-styles.js";
 import { characterDefaults } from "../../lib/character-draft.js";
 import { aggregateCoauthorProposal, buildPartialApplyRequest } from "../../lib/coauthor-apply-aggregate.js";
+import { selectLoreBundle, allLorebookIds, allEntryIds } from "../../lib/lore-selection.js";
 import { applyCoauthorDraft } from "../../api/chat-api.js";
 import type { AppCharacter } from "../../app-client.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
@@ -67,6 +68,7 @@ import { LinkBindingPopover, type LinkTarget } from "../shared/LinkBindingPopove
 import { listAllLorebooks } from "../../api/lorebook-api.js";
 import type { LorebookRecord } from "../../api/types.js";
 import { setCoauthorLorebooksAction } from "../../stores/api-actions/chat-actions.js";
+import { CoauthorLoreReview, type CoauthorLoreReviewLabels } from "./CoauthorLoreReview.js";
 
 /**
  * Stable empty array for the turn-store selector fallback. Returning a fresh
@@ -161,7 +163,7 @@ function CoauthorCharacterFormInner({ character }: CoauthorCharacterFormInnerPro
   // diff overlay + Apply/Reject (rendered below). hasProposal is a cheap guard
   // so we don't aggregate on every render; the full aggregation is memoized.
   const hasProposal =
-    !isSending && activities.some((a) => a.status === "done" && !!a.proposed && !!a.target);
+    !isSending && activities.some((a) => a.status === "done" && ((!!a.proposed && !!a.target) || !!a.loreBundle));
   const editorState: "idle" | "generating" | "reviewing" = isSending
     ? "generating"
     : hasProposal
@@ -198,16 +200,30 @@ function CoauthorCharacterFormInner({ character }: CoauthorCharacterFormInnerPro
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reviewing, proposal]);
   // Single source of truth for the reviewing UI: hide the editor surface AND
-  // mount the overlay only when we actually have a diff to show. The editor
+  // mount the overlay only when we actually have something to show — a body
+  // diff (profile/greeting) AND/OR a proposed lore bundle (CTX-L3). The editor
   // container stays in the DOM (display:none) so its CM6 lifecycle is never
   // torn down between states — it just leaves flow so it can't be scrolled to.
-  const showReview = reviewing && !!diff;
+  const showReview = reviewing && (!!diff || !!proposal?.loreBundle);
   const hunks = useMemo(() => (diff ? groupHunks(diff) : []), [diff]);
   const [selectedHunkIds, setSelectedHunkIds] = useState<Set<number>>(new Set());
   useEffect(() => {
     // New proposal → start from "apply everything" (wholesale default).
     setSelectedHunkIds(allHunkIds(hunks));
   }, [hunks]);
+
+  // ── CTX-L3: lore per-item selection (parent-dependency enforced at render +
+  //    Apply). Defaults to ALL (wholesale), reset on each new lore bundle. ─
+  const loreBundle = proposal?.loreBundle;
+  const [selectedLorebookIds, setSelectedLorebookIds] = useState<Set<string>>(new Set());
+  const [selectedEntryIds, setSelectedEntryIds] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    // New lore proposal → start from "accept everything".
+    if (loreBundle) {
+      setSelectedLorebookIds(allLorebookIds(loreBundle));
+      setSelectedEntryIds(allEntryIds(loreBundle));
+    }
+  }, [loreBundle]);
 
   // ── Greetings widget handlers (draft-backed; same rationale as VibeMdView). ──
   function forceEditorFromBody(): void {
@@ -325,7 +341,19 @@ function CoauthorCharacterFormInner({ character }: CoauthorCharacterFormInnerPro
       // profileMd with proposed frontmatter + merged prose, + merged greetings).
       const request = diff
         ? buildPartialApplyRequest(mergeSelectedBody(diff, selectedHunkIds), proposal)
-        : proposal.applyRequest;
+        : { ...proposal.applyRequest };
+      // CTX-L3: narrow the lore bundle by the user's per-item selection
+      // (parent-dependency enforced — an entry whose book was rejected is
+      // dropped). A fully-deselected bundle yields an empty graph; omit it so
+      // Apply leaves lore untouched (consistent with omitted profile/greeting).
+      if (proposal.loreBundle) {
+        const selected = selectLoreBundle(proposal.loreBundle, selectedLorebookIds, selectedEntryIds);
+        if (selected.lorebooks.length > 0) {
+          request.loreBundle = selected;
+        } else {
+          delete request.loreBundle;
+        }
+      }
       const { snapshot, corrections } = await applyCoauthorDraft(
         brandId<ChatId>(chatId),
         request,
@@ -442,6 +470,38 @@ function CoauthorCharacterFormInner({ character }: CoauthorCharacterFormInnerPro
             applying={applying}
             onApply={() => { void handleApply(); }}
             onReject={handleReject}
+            loreBundle={proposal.loreBundle}
+            selectedLorebookIds={selectedLorebookIds}
+            selectedEntryIds={selectedEntryIds}
+            onToggleLorebook={(id) =>
+              setSelectedLorebookIds((prev) => {
+                const next = new Set(prev);
+                if (next.has(id)) next.delete(id); else next.add(id);
+                return next;
+              })
+            }
+            onToggleEntry={(id) =>
+              setSelectedEntryIds((prev) => {
+                const next = new Set(prev);
+                if (next.has(id)) next.delete(id); else next.add(id);
+                return next;
+              })
+            }
+            loreLabels={{
+              title: t("coauthor.lore.review.title"),
+              lorebook: t("coauthor.lore.review.lorebook"),
+              keys: t("coauthor.lore.review.keys"),
+              secondaryKeys: t("coauthor.lore.review.secondary_keys"),
+              constant: t("coauthor.lore.review.constant"),
+              entriesOne: t("coauthor.lore.review.entries_one"),
+              entriesFew: t("coauthor.lore.review.entries_few"),
+              entriesMany: t("coauthor.lore.review.entries_many"),
+              scopeCharacter: t("coauthor.lore.review.scope_character"),
+              scopePersona: t("coauthor.lore.review.scope_persona"),
+              scopeGlobal: t("coauthor.lore.review.scope_global"),
+              scopeChat: t("coauthor.lore.review.scope_chat"),
+              noContent: t("coauthor.lore.review.no_content"),
+            }}
             labels={{
               title: t("coauthor.review.title"),
               tooLarge: t("coauthor.review.too_large"),
@@ -479,10 +539,16 @@ function ReviewingOverlay({
   applying,
   onApply,
   onReject,
+  loreBundle,
+  selectedLorebookIds,
+  selectedEntryIds,
+  onToggleLorebook,
+  onToggleEntry,
+  loreLabels,
   labels,
 }: {
   summary: string;
-  diff: ReturnType<typeof buildLineDiff>;
+  diff: ReturnType<typeof buildLineDiff> | null;
   hunks: ReturnType<typeof groupHunks>;
   selectedHunkIds: Set<number>;
   onToggleHunk: (id: number) => void;
@@ -491,6 +557,13 @@ function ReviewingOverlay({
   applying: boolean;
   onApply: () => void;
   onReject: () => void;
+  /** CTX-L3: the proposed lore bundle (absent on profile/greeting-only turns). */
+  loreBundle?: import("@vibe-tavern/api-contracts").CoauthorLoreBundle;
+  selectedLorebookIds: ReadonlySet<string>;
+  selectedEntryIds: ReadonlySet<string>;
+  onToggleLorebook: (id: string) => void;
+  onToggleEntry: (id: string) => void;
+  loreLabels: CoauthorLoreReviewLabels;
   labels: {
     title: string;
     tooLarge: string;
@@ -515,28 +588,45 @@ function ReviewingOverlay({
           <div className="font-ui text-[12px] font-medium text-t2">{summary}</div>
         </div>
       </div>
-      {/* Diff — fills the remaining space; HunkSelectionDiff stretches and its
-          <pre> scrolls internally. */}
-      <div className="flex min-h-0 flex-1 flex-col px-1 py-2">
-        <HunkSelectionDiff
-          diff={diff}
-          hunks={hunks}
-          selectedIds={selectedHunkIds}
-          onToggleHunk={onToggleHunk}
-          onSelectAll={onSelectAll}
-          onSelectNone={onSelectNone}
-          labels={{
-            title: labels.title,
-            tooLarge: labels.tooLarge,
-            noChanges: labels.noChanges,
-            selectAll: labels.selectAll,
-            selectNone: labels.selectNone,
-            applyingCount: labels.applyingCount,
-            hunkN: labels.hunkN,
-            skipped: labels.skipped,
-          }}
-        />
-      </div>
+      {/* Body diff (profile/greeting) — shown iff proposed. Each section takes
+          flex-1 so a mixed turn (diff + lore) splits the space 50/50 and each
+          scrolls internally; a single-section turn fills the whole area. */}
+      {diff && (
+        <div className="flex min-h-0 flex-1 flex-col px-1 py-2">
+          <HunkSelectionDiff
+            diff={diff}
+            hunks={hunks}
+            selectedIds={selectedHunkIds}
+            onToggleHunk={onToggleHunk}
+            onSelectAll={onSelectAll}
+            onSelectNone={onSelectNone}
+            labels={{
+              title: labels.title,
+              tooLarge: labels.tooLarge,
+              noChanges: labels.noChanges,
+              selectAll: labels.selectAll,
+              selectNone: labels.selectNone,
+              applyingCount: labels.applyingCount,
+              hunkN: labels.hunkN,
+              skipped: labels.skipped,
+            }}
+          />
+        </div>
+      )}
+      {/* CTX-L3: structured lore review (lorebooks + entries). Shown iff proposed. */}
+      {loreBundle && (
+        <div className="flex min-h-0 flex-1 flex-col">
+          <CoauthorLoreReview
+            bundle={loreBundle}
+            selectedLorebookIds={selectedLorebookIds}
+            selectedEntryIds={selectedEntryIds}
+            onToggleLorebook={onToggleLorebook}
+            onToggleEntry={onToggleEntry}
+            applying={applying}
+            labels={loreLabels}
+          />
+        </div>
+      )}
       <div className="flex shrink-0 items-center justify-end gap-2 border-t border-border/50 bg-surface px-4 py-2.5">
         <button
           type="button"

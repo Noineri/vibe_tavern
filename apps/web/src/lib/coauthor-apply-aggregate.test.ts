@@ -15,7 +15,7 @@
  * display-only, never read by aggregation).
  */
 import { describe, it, expect } from "vitest";
-import type { BuildCharacterDraft } from "@vibe-tavern/api-contracts";
+import type { BuildCharacterDraft, CoauthorLoreBundle } from "@vibe-tavern/api-contracts";
 import { parseProfileMd } from "@vibe-tavern/db/codecs";
 import { aggregateCoauthorProposal, buildPartialApplyRequest } from "./coauthor-apply-aggregate.js";
 import type { CoauthorToolActivity } from "../stores/coauthor-turn-store.js";
@@ -75,6 +75,19 @@ function editGreetingActivity(toolCallId: string, index: number, content: string
 
 function addGreetingActivity(toolCallId: string, content: string, summary = "Added an alt."): CoauthorToolActivity {
 	return { toolCallId, toolName: "add_alt_greeting", status: "done", target: "greeting", isAdd: true, proposed: content, summary };
+}
+
+/** CTX-L3: a lore_bundle activity carrying the complete cumulative draft. */
+function loreActivity(toolCallId: string, lbundle: CoauthorLoreBundle, summary = "Drafted lore."): CoauthorToolActivity {
+	return { toolCallId, toolName: "create_lore_entry", status: "done", loreBundle: lbundle, summary };
+}
+
+function sampleLoreBundle(over: Partial<CoauthorLoreBundle> = {}): CoauthorLoreBundle {
+	return {
+		lorebooks: [{ id: "lb1", name: "World Lore", description: "", scopeType: "global", enabled: true }],
+		entries: [{ id: "e1", lorebookId: "lb1", title: "A", content: "c", keys: ["k"], secondaryKeys: [], constant: false, position: "before_char", depth: 4, enabled: true }],
+		...over,
+	};
 }
 
 /** CTX-S6: a read_skill_file activity — `done` with a `readPath`, but NO
@@ -383,5 +396,72 @@ describe("buildPartialApplyRequest — hunk-level (CA-12)", () => {
 		const req = buildPartialApplyRequest(mergeSelectedBody(diff), base);
 		expect(req.profileMd).toBeUndefined();
 		expect(req.alternateGreetings).toBeDefined();
+	});
+});
+
+/**
+ * CTX-L3 — lore_bundle aggregation: the LAST lore_bundle activity's cumulative
+ * graph ships (every tool returns the complete graph, so the latest carries
+ * every earlier op — same rationale as cumulative profile checkpoints). A lore
+ * activity counts as a proposal on its own (lore-only turn), and composes with
+ * profile/greeting in a mixed turn.
+ */
+describe("aggregateCoauthorProposal — lore_bundle (CTX-L3)", () => {
+	it("a lore-only turn counts as a proposal and ships the bundle wholesale", () => {
+		const lbundle = sampleLoreBundle();
+		const result = aggregateCoauthorProposal([loreActivity("t1", lbundle, "Drafted a lorebook.")], baseDraft());
+		expect(result.hasProposal).toBe(true);
+		expect(result.loreBundle).toEqual(lbundle);
+		expect(result.applyRequest.loreBundle).toEqual(lbundle);
+		// Profile/greeting untouched.
+		expect(result.applyRequest.profileMd).toBeUndefined();
+		expect(result.applyRequest.firstMessage).toBeUndefined();
+		// The proposed body is the unchanged canonical (lore is not a body edit).
+		expect(draftToBody(result.proposedDraft)).toBe(draftToBody(baseDraft()));
+		expect(result.summaries).toEqual(["Drafted a lorebook."]);
+	});
+
+	it("cumulative: the LAST lore_bundle (complete graph) wins, dropping no earlier entry", () => {
+		// t1 proposes one book + one entry; t2 adds a second entry and returns the
+		// full graph (both entries). Aggregation takes t2's bundle verbatim.
+		const afterOne = sampleLoreBundle();
+		const afterTwo = sampleLoreBundle({
+			entries: [
+				{ id: "e1", lorebookId: "lb1", title: "A", content: "c", keys: ["k"], secondaryKeys: [], constant: false, position: "before_char", depth: 4, enabled: true },
+				{ id: "e2", lorebookId: "lb1", title: "B", content: "c2", keys: ["k2"], secondaryKeys: [], constant: true, position: "before_char", depth: 4, enabled: true },
+			],
+		});
+		const result = aggregateCoauthorProposal(
+			[loreActivity("t1", afterOne, "first"), loreActivity("t2", afterTwo, "second")],
+			baseDraft(),
+		);
+		expect(result.loreBundle).toEqual(afterTwo);
+		expect(result.applyRequest.loreBundle?.entries).toHaveLength(2);
+		expect(result.summaries).toEqual(["first", "second"]);
+	});
+
+	it("mixed: profile + lore in one turn → both arms in the request", () => {
+		const proposed = profileMd("Fierce.", "A cave.", "{{char}}: *grins*");
+		const lbundle = sampleLoreBundle();
+		const result = aggregateCoauthorProposal(
+			[
+				profileActivity("t1", proposed, "Rewrote personality."),
+				loreActivity("t2", lbundle, "Drafted lore."),
+			],
+			baseDraft(),
+		);
+		expect(result.applyRequest.profileMd).toBe(proposed);
+		expect(result.applyRequest.loreBundle).toEqual(lbundle);
+		expect(result.proposedDraft.description).toBe("Fierce.");
+		expect(result.loreBundle).toEqual(lbundle);
+	});
+
+	it("a streaming/error lore activity is excluded", () => {
+		const lbundle = sampleLoreBundle();
+		const streaming: CoauthorToolActivity = { toolCallId: "t1", toolName: "create_lorebook", status: "streaming" };
+		const errored: CoauthorToolActivity = { toolCallId: "t2", toolName: "create_lorebook", status: "error", loreBundle: lbundle };
+		const result = aggregateCoauthorProposal([streaming, errored], baseDraft());
+		expect(result.hasProposal).toBe(false);
+		expect(result.applyRequest.loreBundle).toBeUndefined();
 	});
 });
