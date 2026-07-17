@@ -72,6 +72,11 @@ async function main() {
 		await mkdir(ANDROID_DIST, { recursive: true });
 	});
 
+	await step("Writing payload version marker", async () => {
+		await Bun.write(join(ANDROID_DIST, "version.txt"), `${VERSION}\n`);
+		console.log(`   → ${join(ANDROID_DIST, "version.txt")}`);
+	});
+
 	await step("Building frontend", async () => {
 		await run(["bun", "run", "--filter", "@vibe-tavern/web", "build"]);
 	});
@@ -158,6 +163,9 @@ async function main() {
 	});
 
 	await step("Packaging out/vibe-tavern-android-arm64.tar.gz", async () => {
+		if (!(await Bun.file(join(ANDROID_DIST, "version.txt")).exists())) {
+			throw new Error("Android payload version marker is missing");
+		}
 		await run([
 			"tar",
 			"-czf",

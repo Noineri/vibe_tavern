@@ -58,6 +58,7 @@ class MainActivity : AppCompatActivity() {
     private val TERMUX_RESULT_ACTION = "com.vibetavern.launcher.TERMUX_RESULT"
     private val PREFS = "vibe_tavern_launcher"
     private val PREF_INSTALLED = "installed_once"
+    private val PREF_PAYLOAD_VERSION = "installed_payload_version"
     private val PREF_LANGUAGE = "language"
     private val serverUrl = "http://127.0.0.1:8787"
     private val launcherBuildLabel = "archive-orchestrator-${BuildConfig.VERSION_NAME}"
@@ -262,11 +263,25 @@ class MainActivity : AppCompatActivity() {
         ContextCompat.checkSelfPermission(this, RUN_CMD_PERM) == PackageManager.PERMISSION_GRANTED
 
     private fun markInstalled(installed: Boolean) {
-        getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(PREF_INSTALLED, installed).apply()
+        val editor = getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(PREF_INSTALLED, installed)
+        if (!installed) editor.remove(PREF_PAYLOAD_VERSION)
+        editor.apply()
+    }
+
+    private fun markCurrentPayloadInstalled() {
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+            .putBoolean(PREF_INSTALLED, true)
+            .putString(PREF_PAYLOAD_VERSION, BuildConfig.VERSION_NAME)
+            .apply()
     }
 
     private fun wasInstalledOnce(): Boolean =
         getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(PREF_INSTALLED, false)
+
+    private fun installedPayloadVersion(): String? =
+        getSharedPreferences(PREFS, MODE_PRIVATE).getString(PREF_PAYLOAD_VERSION, null)
+
+    private fun payloadUpdateRequired(): Boolean = installedPayloadVersion() != BuildConfig.VERSION_NAME
 
     private fun currentLanguage(): String {
         val saved = getSharedPreferences(PREFS, MODE_PRIVATE).getString(PREF_LANGUAGE, null)
@@ -286,11 +301,7 @@ class MainActivity : AppCompatActivity() {
         launchBtn.text = tr("🚀 Start Server in Termux", "🚀 Запустить сервер в Termux")
         openBtn.text = tr("🌐 Open in Browser", "🌐 Открыть в браузере")
         stopBtn.text = tr("⏹ Stop Server", "⏹ Остановить сервер")
-        setupBtn.text = if (wasInstalledOnce()) {
-            tr("🔄 Update Program", "🔄 Обновить программу")
-        } else {
-            tr("📦 Install / Update", "📦 Установить / обновить")
-        }
+        updateSetupButtonText()
         uninstallBtn.text = tr("🗑 Uninstall", "🗑 Удалить")
         languageBtn.text = tr("🌐 Language: English", "🌐 Язык: Русский")
         firstTimeSetupBtn.text = tr("🔧 First-Time Setup", "🔧 Первичная настройка")
@@ -299,6 +310,23 @@ class MainActivity : AppCompatActivity() {
             "Tip: if the web UI lags after switching apps, disable battery optimization for Termux.",
             "Совет: если веб-интерфейс лагает после сворачивания, отключите оптимизацию батареи для Termux."
         )
+    }
+
+    private fun updateSetupButtonText() {
+        setupBtn.text = when {
+            !wasInstalledOnce() -> tr(
+                "📦 Install server v${BuildConfig.VERSION_NAME}",
+                "📦 Установить сервер v${BuildConfig.VERSION_NAME}",
+            )
+            payloadUpdateRequired() -> tr(
+                "🔄 Update server to v${BuildConfig.VERSION_NAME}",
+                "🔄 Обновить сервер до v${BuildConfig.VERSION_NAME}",
+            )
+            else -> tr(
+                "📦 Reinstall server v${BuildConfig.VERSION_NAME}",
+                "📦 Переустановить сервер v${BuildConfig.VERSION_NAME}",
+            )
+        }
     }
 
     // ========== Screens ==========
@@ -536,7 +564,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         openTermux()
-        startPolling(maxAttempts = 90, waitingLabel = tr("Waiting for server", "Ожидание сервера"), markInstalledOnSuccess = true)
+        startPolling(maxAttempts = 90, waitingLabel = tr("Waiting for server", "Ожидание сервера"))
     }
 
     private fun stopServer() {
@@ -609,8 +637,8 @@ class MainActivity : AppCompatActivity() {
             withContext(Dispatchers.Main) {
                 progressBar.visibility = View.GONE
                 if (started) {
-                    if (markInstalledOnSuccess) markInstalled(true)
-                    setupBtn.text = tr("🔄 Update Program", "🔄 Обновить программу")
+                    if (markInstalledOnSuccess) markCurrentPayloadInstalled()
+                    updateSetupButtonText()
                     progressText.text = tr("✅ Server running. Tap Open to use Vibe Tavern.", "✅ Сервер работает. Нажмите «Открыть», чтобы перейти в Vibe Tavern.")
                     progressText.visibility = View.VISIBLE
                     ServerService.start(this@MainActivity)
@@ -631,7 +659,7 @@ class MainActivity : AppCompatActivity() {
             withContext(Dispatchers.Main) {
                 if (running) {
                     markInstalled(true)
-                    setupBtn.text = tr("🔄 Update Program", "🔄 Обновить программу")
+                    updateSetupButtonText()
                     ServerService.start(this@MainActivity)
                 }
                 setServerRunningUi(running = running, checking = false)
@@ -661,15 +689,32 @@ class MainActivity : AppCompatActivity() {
         }
 
         if (running) {
-            statusText.text = tr("✅ Server is running", "✅ Сервер работает") + "\n$serverUrl"
+            val payloadHint = if (payloadUpdateRequired()) {
+                "\n" + tr(
+                    "Server payload update to v${BuildConfig.VERSION_NAME} is available",
+                    "Доступно обновление серверной части до v${BuildConfig.VERSION_NAME}",
+                )
+            } else {
+                "\n" + tr(
+                    "Server payload v${BuildConfig.VERSION_NAME}",
+                    "Серверная часть v${BuildConfig.VERSION_NAME}",
+                )
+            }
+            statusText.text = tr("✅ Server is running", "✅ Сервер работает") + "\n$serverUrl" + payloadHint
             launchBtn.visibility = View.GONE
             openBtn.visibility = View.VISIBLE
             stopBtn.visibility = View.VISIBLE
         } else {
-            val installHint = if (wasInstalledOnce()) {
-                tr("Installed, server is off", "Установлено, сервер выключен")
-            } else {
-                tr("Not running. Install/update first if this is a fresh setup.", "Сервер не запущен. Если это первая установка, сначала нажмите «Установить / обновить».")
+            val installHint = when {
+                !wasInstalledOnce() -> tr(
+                    "Not installed. Install server v${BuildConfig.VERSION_NAME} first.",
+                    "Не установлено. Сначала установите сервер v${BuildConfig.VERSION_NAME}.",
+                )
+                payloadUpdateRequired() -> tr(
+                    "Server is off; update its payload to v${BuildConfig.VERSION_NAME}.",
+                    "Сервер выключен; обновите серверную часть до v${BuildConfig.VERSION_NAME}.",
+                )
+                else -> tr("Installed, server is off", "Установлено, сервер выключен")
             }
             statusText.text = "⏹ $installHint"
             launchBtn.visibility = View.VISIBLE
@@ -982,6 +1027,6 @@ class MainActivity : AppCompatActivity() {
         markInstalled(false)
         ServerService.stop(this)
         setServerRunningUi(running = false, checking = false)
-        setupBtn.text = tr("📦 Install / Update", "📦 Установить / обновить")
+        updateSetupButtonText()
     }
 }

@@ -90,10 +90,20 @@ echo "📦 Step 5/5: Installing Vibe Tavern inside Ubuntu..."
 rm -rf "$NEXT_DIR"
 mkdir -p "$NEXT_DIR"
 tar -xzf "$TMP_ARCHIVE" -C "$NEXT_DIR"
-if [ ! -x "$NEXT_DIR/vibe-tavern" ]; then
-    echo "❌ Bundled archive does not contain an executable Vibe Tavern server."
+if [ ! -s "$NEXT_DIR/version.txt" ]; then
+    echo "❌ Bundled archive does not contain a payload version marker."
     exit 26
 fi
+INCOMING_VERSION="$(tr -d '\r\n' < "$NEXT_DIR/version.txt")"
+if [ -z "$INCOMING_VERSION" ]; then
+    echo "❌ Bundled archive contains an empty payload version marker."
+    exit 27
+fi
+if [ ! -x "$NEXT_DIR/vibe-tavern" ]; then
+    echo "❌ Bundled archive does not contain an executable Vibe Tavern server."
+    exit 28
+fi
+echo "Installing Vibe Tavern server payload v$INCOMING_VERSION"
 
 mkdir -p "$DATA_DIR"
 
@@ -125,6 +135,6 @@ START_SCRIPT
 chmod +x "$HOME/start-vibe-tavern.sh"
 UBUNTU_INSTALL
 
-echo "✅ Vibe Tavern installed/updated from the bundled APK archive."
+echo "✅ Vibe Tavern server payload installed from the bundled APK archive."
 echo "🚀 Starting server in this Termux session..."
 proot-distro login "$DISTRO" -- bash -lc 'exec "$HOME/start-vibe-tavern.sh"'
