@@ -99,9 +99,15 @@ if [ -z "$INCOMING_VERSION" ]; then
     echo "❌ Bundled archive contains an empty payload version marker."
     exit 27
 fi
-if [ ! -x "$NEXT_DIR/vibe-tavern" ]; then
-    echo "❌ Bundled archive does not contain an executable Vibe Tavern server."
+if [ ! -s "$NEXT_DIR/vibe-tavern" ]; then
+    echo "❌ Bundled archive does not contain the Vibe Tavern server."
     exit 28
+fi
+# Windows-hosted archive builds cannot preserve POSIX executable bits reliably.
+chmod 755 "$NEXT_DIR/vibe-tavern"
+if [ ! -x "$NEXT_DIR/vibe-tavern" ]; then
+    echo "❌ Could not mark the Vibe Tavern server as executable."
+    exit 29
 fi
 echo "Installing Vibe Tavern server payload v$INCOMING_VERSION"
 
