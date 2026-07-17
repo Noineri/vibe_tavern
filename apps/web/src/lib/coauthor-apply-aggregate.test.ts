@@ -77,6 +77,58 @@ function addGreetingActivity(toolCallId: string, content: string, summary = "Add
 	return { toolCallId, toolName: "add_alt_greeting", status: "done", target: "greeting", isAdd: true, proposed: content, summary };
 }
 
+/** CTX-S6: a read_skill_file activity — `done` with a `readPath`, but NO
+ *  target/proposed, so it must never enter proposal aggregation. */
+function readActivity(toolCallId: string, path: string): CoauthorToolActivity {
+	return { toolCallId, toolName: "read_skill_file", status: "done", readPath: path };
+}
+
+describe("aggregateCoauthorProposal — read_skill_file isolation (CTX-S6)", () => {
+	it("reads never count as a proposal on their own", () => {
+		const result = aggregateCoauthorProposal([
+			readActivity("r1", "general-writing/SKILL.md"),
+			readActivity("r2", "general-writing/references/rules.md"),
+		], baseDraft());
+		expect(result.hasProposal).toBe(false);
+		expect(result.applyRequest).toEqual({});
+		expect(result.summaries).toEqual([]);
+	});
+
+	it("multi-skill reads followed by a profile proposal aggregate correctly (reads do not displace)", () => {
+		const proposed = profileMd("Bold and direct.", "A torchlit cave.", "{{char}}: *grins*");
+		const result = aggregateCoauthorProposal([
+			readActivity("r1", "general-writing/SKILL.md"),
+			readActivity("r2", "dialogue-generation/SKILL.md"),
+			profileActivity("p1", proposed, "Rewrote personality per general-writing."),
+		], baseDraft());
+		expect(result.hasProposal).toBe(true);
+		// ONLY the proposal's profileMd — reads carry no profileMd.
+		expect(result.applyRequest.profileMd).toBe(proposed);
+		// The proposal's summary is present; reads contribute NO summary.
+		expect(result.summaries).toEqual(["Rewrote personality per general-writing."]);
+		// proposedDraft prose comes from the proposal, not the reads.
+		expect(result.proposedDraft.description).toBe("Bold and direct.");
+	});
+
+	it("hunk selection is unchanged when reads are present (buildPartialApplyRequest)", () => {
+		const proposed = profileMd("Bold and direct.", "A torchlit cave.", "{{char}}: *grins*");
+		const base = aggregateCoauthorProposal([
+			readActivity("r1", "general-writing/SKILL.md"),
+			profileActivity("p1", proposed),
+		], baseDraft());
+		// Build the merged body from the proposed draft (simulate all-hunks-selected);
+		// the rebuilt request must equal the wholesale proposal's profileMd frontmatter
+		// + the proposed prose — the read activity does not appear anywhere in the path.
+		const mergedBody = draftToBody(base.proposedDraft);
+		const withReads = buildPartialApplyRequest(mergedBody, base);
+		// Compare against the same call WITHOUT reads in the base — must be identical.
+		const baseNoReads = aggregateCoauthorProposal([profileActivity("p1", proposed)], baseDraft());
+		const withoutReads = buildPartialApplyRequest(mergedBody, baseNoReads);
+		expect(withReads).toEqual(withoutReads);
+		expect(withReads.profileMd).toBeDefined();
+	});
+});
+
 describe("aggregateCoauthorProposal — no proposal", () => {
 	it("returns hasProposal=false and an empty request when there are no finalized activities", () => {
 		const draft = baseDraft();

@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { coauthorToolOutputSchema, type CoauthorTarget } from "@vibe-tavern/api-contracts";
+import { coauthorToolOutputSchema, coauthorSkillReadOutputSchema, type CoauthorTarget } from "@vibe-tavern/api-contracts";
 import type { AppMessage } from "../api/types.js";
 // CA-15: persistence of unapplied proposals across reloads. Imported here (not
 // subscribed) so the two resolution points — finalize (upsert) and discard
@@ -54,6 +54,11 @@ export interface CoauthorToolActivity {
   proposed?: string;
   greetingIndex?: number;
   isAdd?: boolean;
+  /** CTX-S6: present iff this is a `read_skill_file` activity (the model read a
+   *  skill file on demand). Read activities carry NO `target`/`proposed`, so
+   *  they never enter proposal aggregation and are not persisted as drafts —
+   *  they render only as glanceable tool activity (the path read). */
+  readPath?: string;
 }
 
 /** Selected-variant metadata is the real chat-snapshot wire shape. Some older
@@ -123,6 +128,20 @@ export function extractPersistedCoauthorActivities(
       rawOutput = JSON.parse(message.content);
     } catch (error) {
       rawOutput = { parseError: error instanceof Error ? error.message : String(error) };
+    }
+    // CTX-S6: a read_skill_file result is {path, content} — NOT a proposal, so
+    // it must not be flagged as an error (the proposal-schema parse below
+    // would). Recognize it first so the card renders as a normal done read.
+    if (info?.name === "read_skill_file") {
+      const read = coauthorSkillReadOutputSchema.safeParse(rawOutput);
+      activities.push({
+        toolCallId,
+        toolName: info.name,
+        args: info.args,
+        status: read.success ? "done" : "error",
+        ...(read.success ? { readPath: read.data.path } : { summary: message.content }),
+      });
+      continue;
     }
     const output = coauthorToolOutputSchema.safeParse(rawOutput);
     activities.push({

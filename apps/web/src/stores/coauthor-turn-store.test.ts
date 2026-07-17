@@ -45,6 +45,72 @@ describe("useCoauthorTurnStore", () => {
     }]);
   });
 
+  it("CTX-S6: recognizes a read_skill_file result as a done read (not an error card)", () => {
+    // A read result is {path, content} — it must NOT fall through the proposal
+    // schema (which would flag it error). The extractor keys off the carrier
+    // tool name and emits a done read activity carrying readPath.
+    const messages = [
+      { id: "user_new", role: "user", content: "use general-writing" },
+      {
+        id: "assistant_call",
+        role: "assistant",
+        content: "",
+        toolCalls: [{ id: "call_read", name: "read_skill_file", args: { path: "general-writing/SKILL.md" } }],
+      },
+      {
+        id: "tool_read",
+        role: "tool",
+        toolCallId: "call_read",
+        content: JSON.stringify({ path: "general-writing/SKILL.md", content: "# General Writing\nWrite vivid prose." }),
+      },
+      { id: "assistant_final", role: "assistant", content: "Done" },
+    ] as AppMessage[];
+
+    expect(extractPersistedCoauthorActivities(messages)).toEqual([{
+      toolCallId: "call_read",
+      toolName: "read_skill_file",
+      args: { path: "general-writing/SKILL.md" },
+      status: "done",
+      readPath: "general-writing/SKILL.md",
+    }]);
+  });
+
+  it("CTX-S6: a read activity coexists with a later proposal in the same turn", () => {
+    const messages = [
+      { id: "user_new", role: "user", content: "polish it" },
+      {
+        id: "assistant_read",
+        role: "assistant",
+        content: "",
+        toolCalls: [{ id: "call_read", name: "read_skill_file", args: { path: "general-writing/SKILL.md" } }],
+      },
+      {
+        id: "tool_read",
+        role: "tool",
+        toolCallId: "call_read",
+        content: JSON.stringify({ path: "general-writing/SKILL.md", content: "# General Writing" }),
+      },
+      {
+        id: "assistant_write",
+        role: "assistant",
+        content: "",
+        toolCalls: [{ id: "call_write", name: "write_profile", args: {} }],
+      },
+      {
+        id: "tool_write",
+        role: "tool",
+        toolCallId: "call_write",
+        content: JSON.stringify({ target: "profile", proposed: "---\nname: A\n---\n# PERSONALITY\nBold", summary: "sharpen" }),
+      },
+      { id: "assistant_final", role: "assistant", content: "Done" },
+    ] as AppMessage[];
+
+    const acts = extractPersistedCoauthorActivities(messages);
+    expect(acts).toHaveLength(2);
+    expect(acts[0]).toMatchObject({ toolName: "read_skill_file", status: "done", readPath: "general-writing/SKILL.md" });
+    expect(acts[1]).toMatchObject({ toolName: "write_profile", status: "done", target: "profile", proposed: expect.stringContaining("Bold") });
+  });
+
   it("retains the operation input (args) for edit and write tools", () => {
     // The carrier assistant toolCalls entry carries the operation INPUT (args);
     // the extractor correlates it with the tool result so a later operation card

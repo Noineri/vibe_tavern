@@ -238,7 +238,47 @@ describe("ToolActivityCard — operation previews (CED-6)", () => {
 	});
 });
 
-describe("ToolActivityCard — affordances (unchanged)", () => {
+	describe("ToolActivityCard — read_skill_file activity (CTX-S6)", () => {
+		it("renders the read path as the title with NO error label (a done read, not an error)", () => {
+			const { getByText, queryByText } = render(
+				<ToolActivityCard
+					activity={activity({
+						toolName: "read_skill_file",
+						status: "done",
+						summary: undefined,
+						target: undefined,
+						proposed: undefined,
+						readPath: "general-writing/SKILL.md",
+					})}
+				/>,
+			);
+			expect(getByText("general-writing/SKILL.md")).toBeDefined();
+			// The pre-S6 path flagged reads as error because {path,content} failed the
+			// proposal schema. A done read must render cleanly with no error label.
+			expect(queryByText("coauthor_tool_error")).toBeNull();
+		});
+
+		it("is not expandable — no operation preview renders on click", () => {
+			const { getByText, queryByText } = render(
+				<ToolActivityCard
+					activity={activity({
+						toolName: "read_skill_file",
+						status: "done",
+						summary: undefined,
+						target: undefined,
+						proposed: undefined,
+						readPath: "general-writing/references/rules.md",
+					})}
+				/>,
+			);
+			fireEvent.click(getByText("general-writing/references/rules.md"));
+			// Reads have no SEARCH/REPLACE/body preview (the path IS the label).
+			expect(queryByText("coauthor_tool_op_unavailable")).toBeNull();
+			expect(queryByText("coauthor_tool_op_section_write")).toBeNull();
+		});
+	});
+
+	describe("ToolActivityCard — affordances (unchanged)", () => {
 	it("shows the streaming label, disables the toggle, and hides the preview", () => {
 		const { getByText, queryByText } = render(
 			<ToolActivityCard activity={activity({ status: "streaming", summary: "Tightening the scenario." })} />,

@@ -15,6 +15,7 @@ export {
   coauthorCorrectionSchema,
   coauthorTargetSchema,
   coauthorToolOutputSchema,
+  coauthorSkillReadOutputSchema,
   coauthorEditItemSchema,
   coauthorSectionEditInputSchema,
   coauthorSectionWriteInputSchema,

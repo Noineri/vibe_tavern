@@ -20,7 +20,7 @@ import { StreamingReveal } from "../lib/streaming-reveal.js";
 import { useSnapshotStore } from "../stores/snapshot-store.js";
 import { useTraceHistoryStore } from "../stores/trace-history-store.js";
 import { useCoauthorTurnStore } from "../stores/coauthor-turn-store.js";
-import { coauthorToolOutputSchema } from "@vibe-tavern/api-contracts";
+import { coauthorToolOutputSchema, coauthorSkillReadOutputSchema } from "@vibe-tavern/api-contracts";
 import {
   fetchChatAction,
   sendChatMessageAction,
@@ -253,6 +253,19 @@ export function useChatController(): ChatControllerActions {
           });
         },
         onToolResult: (info) => {
+          // CTX-S6: a read_skill_file result is {path, content} — NOT a proposal.
+          // Recognize it before the proposal-schema parse so the card renders as
+          // a normal done read (green check + path) instead of an error card.
+          if (info.toolName === "read_skill_file") {
+            const read = coauthorSkillReadOutputSchema.safeParse(info.output);
+            useCoauthorTurnStore.getState().upsertActivity(chatId, {
+              toolCallId: info.toolCallId,
+              toolName: info.toolName,
+              status: info.isError || !read.success ? "error" : "done",
+              ...(read.success ? { readPath: read.data.path } : {}),
+            });
+            return;
+          }
           // Narrow the opaque `output` to the CoauthorToolOutput wire contract; a
           // malformed payload (or an explicit tool error) marks the card as error.
           const parsed = coauthorToolOutputSchema.safeParse(info.output);

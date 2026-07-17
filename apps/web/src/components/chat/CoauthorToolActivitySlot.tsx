@@ -273,17 +273,29 @@ function ToolActivityCard({ activity }: { activity: CoauthorToolActivity }) {
   const { t } = useT();
   const [open, setOpen] = useState(false);
 
+  const isRead = activity.readPath !== undefined;
   const streaming = activity.status === "streaming";
   const errored = activity.status === "error";
-  // Status icon + color: done → check (success), error → close (danger),
-  // streaming → wrench (neutral, the AI is editing).
-  const statusIcon = errored ? <Icons.Close /> : streaming ? <Icons.Wrench /> : <Icons.Check />;
+  // Status icon + color: done proposal → check (success), read → file icon
+  // (success, but a distinct glyph so reads don't read as completed edits),
+  // error → close (danger), streaming → wrench (neutral, the AI is editing).
+  const statusIcon = isRead
+    ? <Icons.FileText />
+    : errored
+      ? <Icons.Close />
+      : streaming
+        ? <Icons.Wrench />
+        : <Icons.Check />;
   const statusClass = errored
     ? "text-danger-text"
     : streaming
       ? "text-t3"
       : "text-success-text";
-  const title = activity.summary?.trim() || t("coauthor_tool_activity");
+  // A read activity's meaningful label is the path it read; proposals keep the
+  // model-supplied summary (commit-message label).
+  const title = isRead
+    ? activity.readPath!
+    : activity.summary?.trim() || t("coauthor_tool_activity");
 
   return (
     <div className="overflow-hidden">
@@ -296,14 +308,16 @@ function ToolActivityCard({ activity }: { activity: CoauthorToolActivity }) {
         <span className={statusClass}>{statusIcon}</span>
         <span className="truncate">{title}</span>
         {streaming && <span className="italic text-t3">{t("coauthor_tool_streaming")}</span>}
-        {!streaming && (
+        {/* Reads have no operation preview (the path IS the label; the file
+            content is intentionally not surfaced — it can be large), so no caret. */}
+        {!streaming && !isRead && (
           <span className="ml-auto text-t3">{open ? <Icons.Caret direction="u" /> : <Icons.Caret direction="d" />}</span>
         )}
       </button>
       {errored && (
         <div className="px-3 py-1.5 font-ui text-[11px] text-danger-text">{t("coauthor_tool_error")}</div>
       )}
-      {!streaming && open && (
+      {!streaming && !isRead && open && (
         <div className="max-h-48 overflow-auto px-3 py-2 border-l-2 border-border/50 ml-2 mt-1">
           <OperationPreview op={parseOperation(activity.toolName, activity.args)} proposed={activity.proposed} />
         </div>

@@ -89,6 +89,22 @@ export const coauthorToolOutputSchema = z.object({
 export type CoauthorToolOutput = z.infer<typeof coauthorToolOutputSchema>;
 
 /**
+ * The `output` payload of a `read_skill_file` `tool-result` SSE event (CTX-S4).
+ * A read is NOT a proposal — it carries no `target`/`proposed`, so it never
+ * enters proposal aggregation (CTX-S6); it is shown only as glanceable tool
+ * activity (the file path the model read). The backend sandboxed reader
+ * (`skill-read-tool.ts`) returns this shape; it crosses the wire verbatim as
+ * the `tool-result` event's `output` and is persisted as the `role:"tool"`
+ * row's JSON content. `content` is intentionally NOT surfaced in the activity
+ * card (it can be large) — only `path` is rendered.
+ */
+export const coauthorSkillReadOutputSchema = z.object({
+  path: z.string(),
+  content: z.string(),
+});
+export type CoauthorSkillReadOutput = z.infer<typeof coauthorSkillReadOutputSchema>;
+
+/**
  * One exact SEARCH/REPLACE edit applied to a single prose section body. Used by
  * the per-section `edit_*` tools (edit_personality / edit_scenario /
  * edit_examples) and by the frontend operation-card renderer (Wave 6), so the
