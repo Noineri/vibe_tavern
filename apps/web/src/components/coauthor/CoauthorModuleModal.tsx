@@ -18,7 +18,7 @@ import {
 import { useT, type TFunc } from "../../i18n/context.js";
 import { toast } from "sonner";
 import { cn } from "../../lib/cn.js";
-import { type CoauthorModule, type CoauthorModuleCreate, type CoauthorToolSet, type SkillCatalogEntryDto, COAUTHOR_TOOL_KEYS } from "@vibe-tavern/api-contracts";
+import { type CoauthorModule, type CoauthorModuleCreate, type CoauthorToolSet, type SkillCatalogEntryDto, COAUTHOR_TOOL_KEYS, COAUTHOR_MAX_STEPS_MIN, COAUTHOR_MAX_STEPS_MAX, COAUTHOR_MAX_STEPS_DEFAULT } from "@vibe-tavern/api-contracts";
 
 // The toggleable tool list is derived from `COAUTHOR_TOOL_KEYS` (the wire
 // contract in api-contracts) so adding a tool to `coauthorToolSetSchema`
@@ -42,7 +42,7 @@ const EMPTY_DRAFT: ModuleDraft = {
 	openingMessage: "",
 	skillIds: [],
 	toolSet: {},
-	maxSteps: 5,
+	maxSteps: COAUTHOR_MAX_STEPS_DEFAULT,
 };
 
 interface ModuleDraft {
@@ -750,11 +750,11 @@ function ModuleEditor({ draft, skills, t, onUpdate, onToggleSkill, onToggleTool 
 			<Field label={t("coauthor.module.max_steps")} hint={t("coauthor.module.max_steps_hint")}>
 				<input
 					type="number"
-					min={1}
-					max={20}
+					min={COAUTHOR_MAX_STEPS_MIN}
+					max={COAUTHOR_MAX_STEPS_MAX}
 					className="w-20 rounded border border-border bg-bg px-2 py-1.5 font-mono text-[13px] text-t1 outline-none focus:border-accent"
 					value={draft.maxSteps}
-					onChange={(e) => onUpdate("maxSteps", Math.max(1, Math.min(20, Number(e.target.value) || 1)))}
+					onChange={(e) => onUpdate("maxSteps", Math.max(COAUTHOR_MAX_STEPS_MIN, Math.min(COAUTHOR_MAX_STEPS_MAX, Number(e.target.value) || COAUTHOR_MAX_STEPS_MIN)))}
 				/>
 			</Field>
 		</div>

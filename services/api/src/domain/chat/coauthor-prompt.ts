@@ -24,7 +24,7 @@ import type { ChatBranchId, ChatId, LoreEntryId } from "@vibe-tavern/domain";
 import { brandId } from "@vibe-tavern/domain";
 import type { AssemblePromptResponse } from "@vibe-tavern/domain";
 import type { ChatModeAssembleInput, ChatModeAssembleResult } from "./chat-mode-strategy.js";
-import { buildCoauthorTools, COAUTHOR_MAX_STEPS } from "./coauthor-tools.js";
+import { buildCoauthorTools } from "./coauthor-tools.js";
 import { estimateTokens, planHistoryCompaction, setModelHint } from "@vibe-tavern/prompt-pipeline";
 import type { ToolCallPart, ToolResultPart } from "ai";
 import { dirname } from "node:path";

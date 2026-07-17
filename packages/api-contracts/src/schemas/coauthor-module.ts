@@ -42,6 +42,18 @@ export type CoauthorToolSet = z.infer<typeof coauthorToolSetSchema>;
 export const COAUTHOR_TOOL_KEYS = Object.keys(coauthorToolSetSchema.shape) as (keyof CoauthorToolSet)[];
 
 /**
+ * Bounds + default for a module's `maxSteps` — the AI SDK multi-step tool-loop
+ * limit (stopWhen: stepCountIs(maxSteps)). Centralized so the Zod validation,
+ * the editor input bounds, and the new-module default all read one source
+ * instead of scattered magic numbers (mirrors COAUTHOR_TOOL_KEYS). The cap is a
+ * defensive guard against runaway tool rounds (cost/latency); bump it here in
+ * one place if a flow needs more headroom.
+ */
+export const COAUTHOR_MAX_STEPS_MIN = 1;
+export const COAUTHOR_MAX_STEPS_MAX = 20;
+export const COAUTHOR_MAX_STEPS_DEFAULT = 5;
+
+/**
  * A resolved Co-Author module as served to the client / consumed by the
  * prompt assembler. `basePrompt` is INLINE prompt text (not a file reference):
  * seed modules load their `.md` at registry init, user modules store prompt
@@ -58,7 +70,7 @@ export const coauthorModuleSchema = z.object({
   openingMessage: z.string(),
   skillIds: z.array(z.string().min(1)),
   toolSet: coauthorToolSetSchema,
-  maxSteps: z.number().int().min(1).max(20),
+  maxSteps: z.number().int().min(COAUTHOR_MAX_STEPS_MIN).max(COAUTHOR_MAX_STEPS_MAX),
   isBuiltIn: z.boolean(),
 });
 
@@ -82,7 +94,7 @@ export const coauthorModuleCreateSchema = z.object({
   openingMessage: z.string(),
   skillIds: z.array(z.string().min(1)),
   toolSet: coauthorToolSetSchema,
-  maxSteps: z.number().int().min(1).max(20),
+  maxSteps: z.number().int().min(COAUTHOR_MAX_STEPS_MIN).max(COAUTHOR_MAX_STEPS_MAX),
 });
 
 export type CoauthorModuleCreate = z.infer<typeof coauthorModuleCreateSchema>;

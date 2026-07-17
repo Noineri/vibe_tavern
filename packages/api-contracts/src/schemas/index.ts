@@ -134,6 +134,9 @@ export {
   coauthorModuleCreateSchema,
   coauthorModuleUpdateSchema,
   COAUTHOR_TOOL_KEYS,
+  COAUTHOR_MAX_STEPS_MIN,
+  COAUTHOR_MAX_STEPS_MAX,
+  COAUTHOR_MAX_STEPS_DEFAULT,
 } from "./coauthor-module.js";
 export type {
   CoauthorModule,

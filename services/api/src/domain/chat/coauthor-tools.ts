@@ -686,12 +686,3 @@ export function buildCoauthorTools(opts: { toolSet?: Record<string, boolean>; pr
   }
   return { ...allTools, read_skill_file: buildReadSkillFileTool(skillRoots ?? []) } as typeof allTools & { read_skill_file: ReturnType<typeof buildReadSkillFileTool> };
 }
-
-/**
- * Max tool-calling rounds per Co-Author turn (consensus maxSteps from the
- * CA-6 design review). Hardcoded for V1 — made user-tunable in CA-16, where the
- * storage decision (global `uiSettings.coauthorMaxSteps` vs per-chat
- * `coauthor_config_json`) is taken once the Wave-3 UI is visible. See
- * VTF_COAUTHOR_PLAN.md → `CA-16_configurable_max_steps`.
- */
-export const COAUTHOR_MAX_STEPS = 5;
