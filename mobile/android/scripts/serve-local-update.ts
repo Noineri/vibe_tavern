@@ -21,6 +21,8 @@ const updateVersion = args.get("update-version") ?? "0.0.1";
 const baseVersionCode = Number(args.get("base-code") ?? "1");
 const updateVersionCode = Number(args.get("update-code") ?? "2");
 const skipBuild = args.get("skip-build") === "true";
+const skipBaseBuild = args.get("skip-base") === "true";
+const includePayload = args.get("include-payload") === "true";
 
 if (!Number.isInteger(port) || port < 1 || port > 65_535) throw new Error("--port must be a valid TCP port");
 if (!versionPattern.test(baseVersion) || !versionPattern.test(updateVersion)) {
@@ -58,13 +60,18 @@ const origin = `http://${publicHost}:${port}`;
 const releasePath = "/repos/Noineri/vibe_tavern/releases/latest";
 const releaseUrl = `${origin}${releasePath}`;
 
-async function runGradle(versionName: string, versionCode: number): Promise<void> {
+async function runGradle(
+	versionName: string,
+	versionCode: number,
+	withPayload: boolean,
+): Promise<void> {
 	const gradleArguments = [
 		"assembleDebug",
 		`-PVIBE_UPDATE_TEST_URL=${releaseUrl}`,
 		`-PVIBE_UPDATE_TEST_VERSION_NAME=${versionName}`,
 		`-PVIBE_UPDATE_TEST_VERSION_CODE=${versionCode}`,
 	];
+	if (withPayload) gradleArguments.push("-PVIBE_UPDATE_TEST_INCLUDE_PAYLOAD=true");
 	const command = process.platform === "win32"
 		? ["cmd.exe", "/d", "/c", "gradlew.bat", ...gradleArguments]
 		: ["./gradlew", ...gradleArguments];
@@ -85,12 +92,28 @@ async function copyBuiltApk(destination: string): Promise<void> {
 }
 
 if (!skipBuild) {
-	console.log(`Building base debug APK v${baseVersion} (${baseVersionCode})…`);
-	await runGradle(baseVersion, baseVersionCode);
-	await copyBuiltApk(baseApk);
+	if (!skipBaseBuild) {
+		console.log(`Building base debug APK v${baseVersion} (${baseVersionCode})…`);
+		await runGradle(baseVersion, baseVersionCode, false);
+		await copyBuiltApk(baseApk);
+	}
 
-	console.log(`\nBuilding update debug APK v${updateVersion} (${updateVersionCode})…`);
-	await runGradle(updateVersion, updateVersionCode);
+	if (includePayload) {
+		const archiveDirectory = join(androidRoot, "app", "src", "main", "assets");
+		const archiveName = "vibe-tavern-android-arm64.tgz";
+		const marker = Bun.spawn(["tar", "-xOf", archiveName, "./version.txt"], {
+			cwd: archiveDirectory,
+			stdout: "pipe",
+			stderr: "inherit",
+		});
+		const payloadVersion = (await new Response(marker.stdout).text()).trim();
+		if ((await marker.exited) !== 0 || payloadVersion !== updateVersion) {
+			throw new Error(`Embedded ARM payload v${payloadVersion || "<missing>"} does not match update v${updateVersion}`);
+		}
+	}
+
+	console.log(`\nBuilding update debug APK v${updateVersion} (${updateVersionCode})${includePayload ? " with ARM payload" : ""}…`);
+	await runGradle(updateVersion, updateVersionCode, includePayload);
 	await copyBuiltApk(updateApk);
 }
 

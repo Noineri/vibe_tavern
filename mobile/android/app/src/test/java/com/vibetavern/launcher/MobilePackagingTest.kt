@@ -77,6 +77,7 @@ class MobilePackagingTest {
         assertTrue(gradle.contains("VIBE_UPDATE_TEST_URL"))
         assertTrue(gradle.contains("VIBE_UPDATE_TEST_VERSION_NAME"))
         assertTrue(gradle.contains("VIBE_UPDATE_TEST_VERSION_CODE"))
+        assertTrue(gradle.contains("VIBE_UPDATE_TEST_INCLUDE_PAYLOAD"))
         assertTrue(gradle.contains("Local updater test properties are forbidden for release builds"))
         assertTrue(releaseClient.contains("https://api.github.com/repos/Noineri/vibe_tavern/releases/latest"))
         assertTrue(releaseClient.contains("allowInsecureHttp"))
