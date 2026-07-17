@@ -99,6 +99,18 @@ const baseFile = Bun.file(baseApk);
 if (!(await updateFile.exists()) || !(await baseFile.exists())) {
 	throw new Error("Local updater APKs are missing; run once without --skip-build true");
 }
+function apkResponse(file: Blob, fileName: string): Response {
+	return new Response(file, {
+		headers: {
+			"Content-Type": "application/vnd.android.package-archive",
+			"Content-Disposition": `attachment; filename="${fileName}"`,
+			"Cache-Control": "no-store",
+			"Content-Length": String(file.size),
+			Connection: "close",
+		},
+	});
+}
+
 const releaseJson = JSON.stringify({
 	tag_name: `v${updateVersion}`,
 	name: `Vibe Tavern v${updateVersion} — local LAN fixture`,
@@ -124,14 +136,10 @@ Bun.serve({
 			});
 		}
 		if (pathname === `/${updateAssetName}`) {
-			return new Response(updateFile, {
-				headers: { "Content-Type": "application/vnd.android.package-archive" },
-			});
+			return apkResponse(updateFile, updateAssetName);
 		}
 		if (pathname === "/base.apk") {
-			return new Response(baseFile, {
-				headers: { "Content-Type": "application/vnd.android.package-archive" },
-			});
+			return apkResponse(baseFile, `Vibe-Tavern-v${baseVersion}-android-base.apk`);
 		}
 		return new Response("Not found", { status: 404 });
 	},
@@ -139,7 +147,7 @@ Bun.serve({
 
 console.log(`\nLocal Android updater fixture is listening on ${bindAddress}:${port}`);
 console.log(`Phone-visible release API: ${releaseUrl}`);
-console.log(`1. On a same-LAN device, open ${origin}/base.apk and install the base APK.`);
+console.log(`1. On a same-LAN device, open ${origin}/base.apk and install the lightweight base APK.`);
 console.log("2. Open Vibe Tavern and use Check for launcher update.");
 console.log("3. Confirm download, grant install permission when requested, then confirm Android's installer.");
 console.log("If the device cannot connect, allow this port through Windows Firewall for private networks.");

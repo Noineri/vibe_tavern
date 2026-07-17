@@ -85,6 +85,20 @@ android {
     }
 }
 
+if (localUpdaterTestUrl != null) {
+    tasks.matching { it.name == "mergeDebugAssets" }.configureEach {
+        inputs.property("localUpdaterPayloadExcluded", true)
+        doLast {
+            val bundledPayloads = outputs.files.asFileTree.matching {
+                include("**/vibe-tavern-android-arm64.tgz")
+            }.files
+            bundledPayloads.forEach { payload ->
+                check(payload.delete()) { "Could not exclude local-test payload: $payload" }
+            }
+        }
+    }
+}
+
 tasks.matching { it.name == "preReleaseBuild" }.configureEach {
     doFirst {
         val suppliedTestProperties = localUpdaterTestProperties.filter { localUpdaterTestValues[it] != null }
