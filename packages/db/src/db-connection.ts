@@ -15,6 +15,62 @@ function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : "";
 }
 
+/** Split migration SQL without treating semicolons inside line comments or
+ * quoted literals as statement boundaries. Bun's sqlite.exec rejects
+ * comment-only input, so comments are removed while scanning. */
+function splitMigrationStatements(sqlContent: string): string[] {
+  const statements: string[] = [];
+  let current = "";
+  let quote: "'" | '"' | "`" | null = null;
+  let inLineComment = false;
+
+  for (let index = 0; index < sqlContent.length; index++) {
+    const char = sqlContent[index];
+    const next = sqlContent[index + 1];
+
+    if (inLineComment) {
+      if (char === "\n") {
+        inLineComment = false;
+        current += char;
+      }
+      continue;
+    }
+    if (quote !== null) {
+      current += char;
+      if (char === quote) {
+        if (next === quote) {
+          current += next;
+          index++;
+        } else {
+          quote = null;
+        }
+      }
+      continue;
+    }
+    if (char === "-" && next === "-") {
+      inLineComment = true;
+      index++;
+      continue;
+    }
+    if (char === "'" || char === '"' || char === "`") {
+      quote = char;
+      current += char;
+      continue;
+    }
+    if (char === ";") {
+      const statement = current.trim();
+      if (statement.length > 0) statements.push(statement);
+      current = "";
+      continue;
+    }
+    current += char;
+  }
+
+  const trailing = current.trim();
+  if (trailing.length > 0) statements.push(trailing);
+  return statements;
+}
+
 /**
  * Resolve the drizzle migrations folder.
  *
@@ -249,10 +305,7 @@ async function repairMissingTables(sqlite: Database, migrationsFolder: string): 
     try {
       // Apply statements individually to tolerate partial state
       // (e.g. ALTER TABLE column already exists but CREATE TABLE is missing)
-      const statements = sqlContent
-        .split(';')
-        .map(s => s.trim())
-        .filter(s => s.length > 0);
+      const statements = splitMigrationStatements(sqlContent);
       for (const stmt of statements) {
         try {
           sqlite.exec(stmt);
@@ -391,11 +444,7 @@ async function healPartialMigrations(sqlite: Database, migrationsFolder: string)
       continue;
     }
 
-    // Split SQL into individual statements, stripping comments
-    const statements = sqlContent
-      .split(';')
-      .map((s: string) => s.replace(/--[^\n]*/g, '').trim())
-      .filter((s: string) => s.length > 0);
+    const statements = splitMigrationStatements(sqlContent);
 
     let allOk = true;
     for (const stmt of statements) {
