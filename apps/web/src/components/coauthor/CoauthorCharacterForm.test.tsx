@@ -357,6 +357,103 @@ describe("CoauthorCharacterForm", () => {
 		expect(useCoauthorTurnStore.getState().getActivities(TEST_CHAT)).toEqual([]);
 	});
 
+	// ── CTX-L3: lore proposal reviewing + Apply / Reject ───────────────────────
+	// A lore-only turn (no profile/greeting) must still enter Reviewing, render the
+	// structured lore surface, and commit the user's per-item selection via Apply.
+	// Parent-dependency is enforced at the Apply boundary: deselecting a lorebook
+	// drops its entries from the shipped bundle (selectLoreBundle).
+
+	function makeLoreActivity(): CoauthorToolActivity {
+		return {
+			toolCallId: "l1",
+			toolName: "create_lore_entry",
+			status: "done",
+			summary: "Drafted lore.",
+			loreBundle: {
+				lorebooks: [
+					{ id: "lb1", name: "World Lore", description: "", scopeType: "global", enabled: true },
+					{ id: "lb2", name: "Char Lore", description: "", scopeType: "character", enabled: true },
+				],
+				entries: [
+					{ id: "e1", lorebookId: "lb1", title: "Eldoria", content: "c", keys: ["k"], secondaryKeys: [], constant: false, position: "before_char", depth: 4, enabled: true },
+					{ id: "e2", lorebookId: "lb2", title: "Vex", content: "c2", keys: ["k2"], secondaryKeys: [], constant: true, position: "before_char", depth: 4, enabled: true },
+				],
+			},
+		};
+	}
+
+	it("CTX-L3: a lore-only turn enters Reviewing and Apply ships the wholesale loreBundle (no profileMd)", async () => {
+		__isSending = false;
+		seedReviewing();
+		useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, makeLoreActivity());
+
+		const fetchMock = vi.fn((_u: unknown, _i: unknown) =>
+			Promise.resolve({ ok: true, status: 200, json: async () => ({ character: makeCharacter(), corrections: [] }), text: async () => "" }),
+		);
+		globalThis.fetch = fetchMock as never;
+
+		const { getByText } = render(<CoauthorCharacterForm />);
+		// Lore-only reviewing: the lore review title is shown.
+		expect(getByText("coauthor.lore.review.title")).toBeTruthy();
+		expect(getByText("coauthor.review.apply")).toBeTruthy();
+
+		fireEvent.click(getByText("coauthor.review.apply"));
+		await waitFor(() => {
+			expect(fetchMock).toHaveBeenCalledTimes(1);
+			const call = fetchMock.mock.calls[0] as unknown as [unknown, RequestInit | undefined];
+			expect(String(call[0])).toContain("/coauthor/apply");
+			const body = JSON.parse(String(call[1]?.body ?? "{}"));
+			// loreBundle ships wholesale (both books + entries); profile/greeting omitted.
+			expect(body.profileMd).toBeUndefined();
+			expect(body.loreBundle.lorebooks).toHaveLength(2);
+			expect(body.loreBundle.entries).toHaveLength(2);
+		});
+		await waitFor(() => {
+			expect(useCoauthorTurnStore.getState().getActivities(TEST_CHAT)).toEqual([]);
+		});
+	});
+
+	it("CTX-L3: Apply with a deselected lorebook drops its entries (parent-dependency at the Apply boundary)", async () => {
+		__isSending = false;
+		seedReviewing();
+		useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, makeLoreActivity());
+
+		const fetchMock = vi.fn((_u: unknown, _i: unknown) =>
+			Promise.resolve({ ok: true, status: 200, json: async () => ({ character: makeCharacter(), corrections: [] }), text: async () => "" }),
+		);
+		globalThis.fetch = fetchMock as never;
+
+		const { getByText, getAllByRole } = render(<CoauthorCharacterForm />);
+		// Checkboxes in DOM order: lb1, e1, lb2, e2. Deselect lb1 (index 0).
+		const checks = getAllByRole("checkbox");
+		fireEvent.click(checks[0]!);
+
+		fireEvent.click(getByText("coauthor.review.apply"));
+		await waitFor(() => {
+			expect(fetchMock).toHaveBeenCalledTimes(1);
+			const call = fetchMock.mock.calls[0] as unknown as [unknown, RequestInit | undefined];
+			const body = JSON.parse(String(call[1]?.body ?? "{}"));
+			// lb1 rejected → only lb2 + e2 ship; e1 is orphaned by its rejected parent
+			// and dropped (invalid child-without-parent prevention).
+			expect(body.loreBundle.lorebooks.map((lb: { id: string }) => lb.id)).toEqual(["lb2"]);
+			expect(body.loreBundle.entries.map((e: { id: string }) => e.id)).toEqual(["e2"]);
+		});
+	});
+
+	it("CTX-L3: Reject discards a lore proposal without an RPC", () => {
+		__isSending = false;
+		seedReviewing();
+		useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, makeLoreActivity());
+
+		const fetchMock = vi.fn(() => Promise.resolve({ ok: true, status: 200, json: async () => ({}), text: async () => "" }));
+		globalThis.fetch = fetchMock as never;
+
+		const { getByText } = render(<CoauthorCharacterForm />);
+		fireEvent.click(getByText("coauthor.review.reject"));
+		expect(fetchMock).not.toHaveBeenCalled();
+		expect(useCoauthorTurnStore.getState().getActivities(TEST_CHAT)).toEqual([]);
+	});
+
 	// ── CA-12: hunk-level (granular) Apply ────────────────────────────────────
 	// The reviewing overlay renders each change hunk as a selectable block. The
 	// user toggles hunks on/off; Apply rebuilds the request from the merged body
