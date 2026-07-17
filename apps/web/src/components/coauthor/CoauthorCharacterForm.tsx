@@ -578,6 +578,13 @@ function ReviewingOverlay({
     skipped: string;
   };
 }) {
+  // The diff section only fills the column when it actually has selectable
+  // hunks. When the diff is empty / too-large it renders a one-line message
+  // (no flex-1 inside HunkSelectionDiff) — if THIS wrapper still took flex-1,
+  // that message would sit at the top with a dead gap below it, and a mixed
+  // turn (empty diff + lore) would split the column 50/50 against empty space.
+  // shrink-0 lets the message take natural height and gives the rest to lore.
+  const hasDiffContent = !!diff && !diff.tooLarge && hunks.length > 0;
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-surface">
       {/* Summary — pinned top, frosted (.glass-blur) so it doesn't see-through
@@ -592,7 +599,7 @@ function ReviewingOverlay({
           flex-1 so a mixed turn (diff + lore) splits the space 50/50 and each
           scrolls internally; a single-section turn fills the whole area. */}
       {diff && (
-        <div className="flex min-h-0 flex-1 flex-col px-1 py-2">
+        <div className={"flex flex-col px-1 py-2 " + (hasDiffContent ? "min-h-0 flex-1 " : "shrink-0 ")}>
           <HunkSelectionDiff
             diff={diff}
             hunks={hunks}
