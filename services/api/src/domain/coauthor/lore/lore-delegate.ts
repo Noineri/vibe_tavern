@@ -48,8 +48,17 @@ export interface LoreDelegateInput {
 	entryContent: string;
 	entryKeys: readonly string[];
 	entrySecondaryKeys: readonly string[];
-	/** write_entry: the co-author's brief / direction for the prose. */
+	/** write_entry: the co-author's brief / direction for the prose; also an
+	 *  optional additional instruction for generate_keys (mirrors the manual
+	 *  lore_keys flow). */
 	instruction: string;
+	/** generate_keys: which key set to generate (mirrors the manual lore_keys
+	 *  `keyTarget`). Unused for write_entry. */
+	keyTarget: "primary" | "secondary" | "both";
+	/** generate_keys: the entry's activation logic (AND_ANY etc.) — drives the
+	 *  logic hint. Draft entries don't track logic (Apply fills the store
+	 *  default AND_ANY), so the caller passes "and_any". Unused for write_entry. */
+	logic: string;
 }
 
 /** The parsed structured result handed back to the tool layer. */
@@ -78,6 +87,17 @@ const LORE_KEYS_ASSET = "lore-keys-ai-prompt.md";
 /** Token cap for delegation calls — keeps the one-shot cheap and focused. */
 const WRITE_ENTRY_MAX_TOKENS = 1024;
 const GENERATE_KEYS_MAX_TOKENS = 512;
+
+/** Mirrors `getLogicHint` in ai-assistant-stream.ts — kept inline (not
+ *  imported) so co-author/lore stays self-contained (it reuses the assistant's
+ *  PROMPT ASSETS, not its code). Update both if the logic guidance changes. */
+const AND_ANY_HINT = "(secondary keys provide additional activation signal — generate related terms)";
+const LOGIC_HINTS: Record<string, string> = {
+	and_any: AND_ANY_HINT,
+	and_all: "(ALL secondary keys must match — keep the set small and tightly related)",
+	not_any: "(secondary keys PREVENT activation when matched — generate terms indicating the conversation moved away from this topic)",
+	not_all: "(secondary keys prevent activation when ALL match — generate unrelated-topic indicators)",
+};
 
 /** Build the minimal one-shot AssemblePromptResponse the executor consumes. */
 function buildOneShotPrompt(system: string, user: string): AssemblePromptResponse {
@@ -121,19 +141,33 @@ function buildWriteEntryUserMessage(input: LoreDelegateInput): string {
 	return `${instruction || `Write lorebook entry content for: ${input.entryTitle || "(untitled entry)"}.`}\n\nReturn the lorebook entry content only. Do not include a title, keys, JSON, markdown, or explanation.`;
 }
 
-/** Mirror `buildUserMessage` (lore_keys) in ai-assistant-stream.ts. */
+/** Mirror `buildUserMessage` (lore_keys) in ai-assistant-stream.ts — same
+ * keyTarget directive, existing-keys dedup, logic hint, and optional
+ * additional instruction so delegated generation matches the manual flow's
+ * prompt exactly. Keep in sync with that branch. */
 function buildGenerateKeysUserMessage(input: LoreDelegateInput): string {
 	const parts: string[] = [];
 	parts.push(`Generate activation keys for this lorebook entry:\n\n${input.entryContent || "(no content yet)"}`);
-	// Draft entries do not track a logic mode (Apply fills the store default,
-	// AND ANY); pass the default so the model follows the AND ANY key guidance.
-	parts.push("\nLogic mode: AND_ANY");
-	parts.push("(secondary keys provide additional activation signal — generate related terms)");
+	// Per-request target directive — constrains the model to one key set so the
+	// output does not contradict the chosen target. The model still returns the
+	// full {keys, secondaryKeys} shape (the unused array as []) so parsing stays
+	// valid; the merge layer gates on the target too.
+	if (input.keyTarget === "primary") {
+		parts.push("\nTarget: generate ONLY primary keys. Return secondaryKeys as an empty array.");
+	} else if (input.keyTarget === "secondary") {
+		parts.push("\nTarget: generate ONLY secondary keys. Return keys as an empty array.");
+	}
 	if (input.entryKeys.length) {
 		parts.push(`\nExisting primary keys (do NOT duplicate): ${JSON.stringify([...input.entryKeys])}`);
 	}
 	if (input.entrySecondaryKeys.length) {
 		parts.push(`Existing secondary keys (do NOT duplicate): ${JSON.stringify([...input.entrySecondaryKeys])}`);
+	}
+	const logicKey = input.logic.toLowerCase();
+	parts.push(`\nLogic mode: ${logicKey}`);
+	parts.push(LOGIC_HINTS[logicKey] ?? AND_ANY_HINT);
+	if (input.instruction.trim()) {
+		parts.push(`\nAdditional instruction: ${input.instruction}`);
 	}
 	return parts.join("\n");
 }

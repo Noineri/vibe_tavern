@@ -32,6 +32,8 @@ function sampleInput(kind: LoreDelegateInput["kind"]): LoreDelegateInput {
 		entryKeys: ["Vex"],
 		entrySecondaryKeys: [],
 		instruction: "Write her command style and reputation.",
+		keyTarget: "both",
+		logic: "and_any",
 	};
 }
 
@@ -132,10 +134,54 @@ describe("createLoreDelegate (CTX-L2b)", () => {
 		const user = messagesOf(captured!.prompt)[1]!.content;
 		expect(user).toContain("Generate activation keys for this lorebook entry");
 		expect(user).toContain("Vex commands the bridge.");
-		expect(user).toContain("Logic mode: AND_ANY");
+		expect(user).toContain("Logic mode: and_any");
 		expect(user).toContain('Existing primary keys (do NOT duplicate)');
 		// The system prompt reuses lore-keys-ai-prompt.md.
 		expect(messagesOf(captured!.prompt)[0]!.content).toContain("lexical analysis AI");
+	});
+
+	it("generate_keys: keyTarget=primary emits the only-primary directive (mirrors the manual lore_keys flow)", async () => {
+		let captured: ProviderExecutionInput | null = null;
+		const execute: LoreExecutor = async (input) => {
+			captured = input;
+			return { text: '{"keys":["Vex"],"secondaryKeys":[]}' };
+		};
+		const delegate = createLoreDelegate({ execute, profile: fakeProfile, model: "m" });
+		const input = { ...sampleInput("generate_keys"), keyTarget: "primary" as const, instruction: "" };
+		await delegate(input);
+
+		const user = messagesOf(captured!.prompt)[1]!.content;
+		expect(user).toContain("Target: generate ONLY primary keys. Return secondaryKeys as an empty array.");
+		// No secondary-only directive.
+		expect(user).not.toContain("ONLY secondary keys");
+	});
+
+	it("generate_keys: keyTarget=secondary emits the only-secondary directive", async () => {
+		let captured: ProviderExecutionInput | null = null;
+		const execute: LoreExecutor = async (input) => {
+			captured = input;
+			return { text: '{"keys":[],"secondaryKeys":["bridge"]}' };
+		};
+		const delegate = createLoreDelegate({ execute, profile: fakeProfile, model: "m" });
+		const input = { ...sampleInput("generate_keys"), keyTarget: "secondary" as const };
+		await delegate(input);
+
+		const user = messagesOf(captured!.prompt)[1]!.content;
+		expect(user).toContain("Target: generate ONLY secondary keys. Return keys as an empty array.");
+		expect(user).not.toContain("ONLY primary keys");
+	});
+
+	it("generate_keys: a non-empty instruction is appended as 'Additional instruction'", async () => {
+		let captured: ProviderExecutionInput | null = null;
+		const execute: LoreExecutor = async (input) => {
+			captured = input;
+			return { text: '{"keys":["Vex"],"secondaryKeys":[]}' };
+		};
+		const delegate = createLoreDelegate({ execute, profile: fakeProfile, model: "m" });
+		const input = { ...sampleInput("generate_keys"), instruction: "Prefer nouns and ranks." };
+		await delegate(input);
+
+		expect(messagesOf(captured!.prompt)[1]!.content).toContain("Additional instruction: Prefer nouns and ranks.");
 	});
 
 	it("generate_keys: rejects on non-JSON output", async () => {

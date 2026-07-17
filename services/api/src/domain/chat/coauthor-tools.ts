@@ -360,6 +360,7 @@ export function buildCoauthorTools(opts: { toolSet?: Record<string, boolean>; pr
     entryId: string,
     instruction: string,
     toolName: string,
+    opts?: { keyTarget?: "primary" | "secondary" | "both" },
   ): LoreDelegateInput {
     const snap = loreDraft.snapshot();
     const entry = snap.entries.find((e) => e.id === entryId);
@@ -378,6 +379,10 @@ export function buildCoauthorTools(opts: { toolSet?: Record<string, boolean>; pr
       entryKeys: entry.keys,
       entrySecondaryKeys: entry.secondaryKeys,
       instruction,
+      // generate_keys params (ignored for write_entry). Draft entries don't
+      // track a logic mode (Apply fills the store default AND_ANY).
+      keyTarget: opts?.keyTarget ?? "both",
+      logic: "and_any",
     };
   }
 
@@ -657,21 +662,51 @@ export function buildCoauthorTools(opts: { toolSet?: Record<string, boolean>; pr
 
     ai_generate_lore_keys: tool({
       description:
-        "Delegate GENERATING activation keys for a lore entry to the AI-assistant (a separate, focused generation call analyzes the entry and proposes conversational trigger keywords). Use this when an entry needs activation triggers. `entryId` MUST be the id of an entry returned earlier this turn. The generated primary + secondary keys update the draft entry for review. Returns the complete cumulative lore draft.",
+        "Delegate GENERATING activation keys for a lore entry to the AI-assistant (a separate, focused generation call analyzes the entry and proposes conversational trigger keywords), exactly as the manual key-generation quickpill does. Use this when an entry needs activation triggers. `entryId` MUST be the id of an entry returned earlier this turn. Control WHICH key set to generate with `keyTarget`, and HOW the generated keys combine with the entry's existing keys with `appendMode` (false = REPLACE the targeted set(s); true = AUGMENT — append only newly-generated keys, deduped). The non-targeted key set is always left untouched. Returns the complete cumulative lore draft.",
       inputSchema: z.object({
         entryId: z.string().describe("The id of the entry whose activation keys to generate (from an earlier create_lore_entry result this turn)."),
+        keyTarget: z
+          .enum(["primary", "secondary", "both"])
+          .optional()
+          .describe("Which key set to generate: 'primary' (activation triggers only), 'secondary' (additional signal only), or 'both' (default). The non-targeted set is left untouched."),
+        appendMode: z
+          .boolean()
+          .optional()
+          .describe("How to combine generated keys with the entry's existing ones. false (default) = REPLACE the targeted set(s); true = AUGMENT (append only newly-generated keys, deduped against existing)."),
         summary: z.string().max(200).describe("One-line description of this delegation, shown above the Apply button."),
       }),
-      execute: async ({ entryId, summary }): Promise<CoauthorLoreBundleOutput> => {
+      execute: async ({ entryId, keyTarget, appendMode, summary }): Promise<CoauthorLoreBundleOutput> => {
         if (!loreDelegate) {
           throw new Error("ai_generate_lore_keys: no provider is configured for AI delegation");
         }
-        logger.info("ai_generate_lore_keys IN entryId=%s summary=%s", entryId, summary);
-        const input = buildLoreDelegateInput("generate_keys", entryId, "", "ai_generate_lore_keys");
+        const target = keyTarget ?? "both";
+        const augment = appendMode ?? false;
+        logger.info("ai_generate_lore_keys IN entryId=%s target=%s augment=%s summary=%s", entryId, target, augment, summary);
+        const input = buildLoreDelegateInput("generate_keys", entryId, "", "ai_generate_lore_keys", { keyTarget: target });
         const result = await loreDelegate(input);
-        const keys = result.keys ?? [];
-        const bundle = await loreDraft.setLoreEntryKeys({ entryId, keys, secondaryKeys: result.secondaryKeys });
-        logger.info("ai_generate_lore_keys OK entryId=%s keys=%d secondary=%d", entryId, keys.length, (result.secondaryKeys ?? []).length);
+        // Merge the generated keys with the entry's existing ones, mirroring the
+        // manual lore_keys quickpill (lore-keys-ai-pill.tsx): gate by target,
+        // then replace the targeted set(s) or augment (append, deduped). The
+        // non-targeted set is always left untouched.
+        const snap = loreDraft.snapshot();
+        const entry = snap.entries.find((e) => e.id === entryId);
+        const existingKeys = entry ? [...entry.keys] : [];
+        const existingSec = entry ? [...entry.secondaryKeys] : [];
+        const wantPrimary = target !== "secondary";
+        const wantSecondary = target !== "primary";
+        const genKeys = result.keys ?? [];
+        const genSec = result.secondaryKeys ?? [];
+        let nextKeys = existingKeys;
+        let nextSec = existingSec;
+        if (augment) {
+          if (wantPrimary) nextKeys = [...existingKeys, ...genKeys.filter((k) => !existingKeys.includes(k))];
+          if (wantSecondary) nextSec = [...existingSec, ...genSec.filter((k) => !existingSec.includes(k))];
+        } else {
+          if (wantPrimary && genKeys.length) nextKeys = genKeys;
+          if (wantSecondary && genSec.length) nextSec = genSec;
+        }
+        const bundle = await loreDraft.setLoreEntryKeys({ entryId, keys: nextKeys, secondaryKeys: nextSec });
+        logger.info("ai_generate_lore_keys OK entryId=%s keys=%d secondary=%d (target=%s augment=%s)", entryId, nextKeys.length, nextSec.length, target, augment);
         return { target: "lore_bundle", bundle, summary };
       },
     }),
