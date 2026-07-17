@@ -130,6 +130,31 @@ class ReleaseUpdateTest {
     }
 
     @Test
+    fun `cleartext update URLs require the explicit private-LAN test policy`() {
+        val lanAssets = """
+            [{"name":"Vibe-Tavern-v1.1.0-android.apk","browser_download_url":"http://192.168.1.20:8791/Vibe-Tavern-v1.1.0-android.apk","size":200}]
+        """.trimIndent()
+        val defaultDecision = classifyLatestRelease(
+            "1.0.0",
+            releaseJson(tag = "v1.1.0", assets = lanAssets),
+        )
+        val testDecision = classifyLatestRelease(
+            "1.0.0",
+            releaseJson(tag = "v1.1.0", assets = lanAssets),
+            allowInsecureHttp = true,
+        )
+
+        assertEquals(
+            ReleaseUnavailableReason.ANDROID_ASSET_MISSING,
+            (defaultDecision as ReleaseUpdateDecision.Unavailable).reason,
+        )
+        assertTrue(testDecision is ReleaseUpdateDecision.UpdateAvailable)
+        assertFalse(isAllowedUpdateUrl("http://example.com/update.apk", allowInsecureHttp = true))
+        assertTrue(isAllowedUpdateUrl("http://10.0.0.5:8791/update.apk", allowInsecureHttp = true))
+        assertTrue(isAllowedUpdateUrl("https://github.com/update.apk", allowInsecureHttp = false))
+    }
+
+    @Test
     fun `downloaded APK identity must match package expected version and increase version code`() {
         val accepted = validateDownloadedApkIdentity(
             expectedPackageName = "com.vibetavern.launcher",

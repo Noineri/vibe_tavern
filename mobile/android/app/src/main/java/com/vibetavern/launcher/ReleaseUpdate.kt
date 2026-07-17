@@ -1,6 +1,7 @@
 package com.vibetavern.launcher
 
 import java.net.HttpURLConnection
+import java.net.URI
 import java.net.URL
 import java.util.concurrent.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
@@ -119,14 +120,19 @@ class UrlConnectionReleaseTransport(
 
 class GitHubReleaseClient(
     private val transport: ReleaseTransport = UrlConnectionReleaseTransport(),
+    private val endpointUrl: String = PRODUCTION_RELEASE_API_URL,
+    private val allowInsecureHttp: Boolean = false,
 ) {
     suspend fun checkForUpdate(currentVersion: String): ReleaseUpdateDecision {
+        if (!isAllowedUpdateUrl(endpointUrl, allowInsecureHttp)) {
+            return ReleaseUpdateDecision.Error("Release API URL is not allowed")
+        }
         return try {
-            val response = transport.get(latestReleaseRequest)
+            val response = transport.get(latestReleaseRequest())
             if (response.statusCode !in 200..299) {
                 ReleaseUpdateDecision.Error("GitHub release request failed with HTTP ${response.statusCode}")
             } else {
-                classifyLatestRelease(currentVersion, response.body)
+                classifyLatestRelease(currentVersion, response.body, allowInsecureHttp)
             }
         } catch (error: CancellationException) {
             throw error
@@ -135,23 +141,43 @@ class GitHubReleaseClient(
         }
     }
 
-    companion object {
-        private val latestReleaseRequest = ReleaseRequest(
-            url = "https://api.github.com/repos/Noineri/vibe_tavern/releases/latest",
-            headers = mapOf(
-                "Accept" to "application/vnd.github+json",
-                "X-GitHub-Api-Version" to "2022-11-28",
-                "User-Agent" to "Vibe-Tavern-Android",
-            ),
-            connectTimeoutMillis = 10_000,
-            readTimeoutMillis = 15_000,
-        )
+    private fun latestReleaseRequest() = ReleaseRequest(
+        url = endpointUrl,
+        headers = mapOf(
+            "Accept" to "application/vnd.github+json",
+            "X-GitHub-Api-Version" to "2022-11-28",
+            "User-Agent" to "Vibe-Tavern-Android",
+        ),
+        connectTimeoutMillis = 10_000,
+        readTimeoutMillis = 15_000,
+    )
+}
+
+const val PRODUCTION_RELEASE_API_URL =
+    "https://api.github.com/repos/Noineri/vibe_tavern/releases/latest"
+
+fun isAllowedUpdateUrl(url: String, allowInsecureHttp: Boolean): Boolean {
+    val uri = try {
+        URI(url)
+    } catch (_: Exception) {
+        return false
     }
+    val host = uri.host?.lowercase() ?: return false
+    if (uri.scheme.equals("https", ignoreCase = true)) return true
+    if (!allowInsecureHttp || !uri.scheme.equals("http", ignoreCase = true)) return false
+    if (host == "localhost" || host == "127.0.0.1") return true
+
+    val octets = host.split('.').map { it.toIntOrNull() ?: return false }
+    if (octets.size != 4 || octets.any { it !in 0..255 }) return false
+    return octets[0] == 10 ||
+        (octets[0] == 172 && octets[1] in 16..31) ||
+        (octets[0] == 192 && octets[1] == 168)
 }
 
 fun classifyLatestRelease(
     currentVersion: String,
     json: String,
+    allowInsecureHttp: Boolean = false,
 ): ReleaseUpdateDecision {
     val current = try {
         SemanticVersion.parse(currentVersion)
@@ -192,7 +218,7 @@ fun classifyLatestRelease(
     val assetJson = matchingAssets.single()
     val downloadUrl = assetJson.optString("browser_download_url")
     val sizeBytes = assetJson.optLong("size", -1L)
-    if (!downloadUrl.startsWith("https://") || sizeBytes < 0L) {
+    if (!isAllowedUpdateUrl(downloadUrl, allowInsecureHttp) || sizeBytes < 0L) {
         return ReleaseUpdateDecision.Unavailable(ReleaseUnavailableReason.ANDROID_ASSET_MISSING)
     }
 

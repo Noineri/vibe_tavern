@@ -66,6 +66,22 @@ class MobilePackagingTest {
         assertFalse(activeResources.contains("#1A1A2E", ignoreCase = true))
     }
 
+    @Test
+    fun `local updater overrides are debug-only and fail closed for release`() {
+        val gradle = File(repoRoot, "mobile/android/app/build.gradle.kts").readText()
+        val releaseClient = File(
+            repoRoot,
+            "mobile/android/app/src/main/java/com/vibetavern/launcher/ReleaseUpdate.kt",
+        ).readText()
+
+        assertTrue(gradle.contains("VIBE_UPDATE_TEST_URL"))
+        assertTrue(gradle.contains("VIBE_UPDATE_TEST_VERSION_NAME"))
+        assertTrue(gradle.contains("VIBE_UPDATE_TEST_VERSION_CODE"))
+        assertTrue(gradle.contains("Local updater test properties are forbidden for release builds"))
+        assertTrue(releaseClient.contains("https://api.github.com/repos/Noineri/vibe_tavern/releases/latest"))
+        assertTrue(releaseClient.contains("allowInsecureHttp"))
+    }
+
     private fun findRepoRoot(start: File): File {
         var current: File? = start
         while (current != null) {

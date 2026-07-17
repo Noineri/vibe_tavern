@@ -55,7 +55,10 @@ class MainActivity : AppCompatActivity() {
     private lateinit var launcherVersionText: TextView
 
     private val mainScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
-    private val releaseClient = GitHubReleaseClient()
+    private val releaseClient = GitHubReleaseClient(
+        endpointUrl = BuildConfig.RELEASE_API_URL,
+        allowInsecureHttp = BuildConfig.ALLOW_INSECURE_RELEASE_URL,
+    )
     private val apkUpdateManager by lazy { ApkUpdateManager(this) }
     private var pollingJob: Job? = null
     private var archiveServerJob: Job? = null
