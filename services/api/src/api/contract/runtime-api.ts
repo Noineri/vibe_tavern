@@ -27,6 +27,10 @@ import type {
 } from "./session-types.js";
 import type { ObjectiveMode, ObjectiveTaskStatus, PromptTraceRecordDto, PromptPresetDto, PronounForms, SceneTrackerConfig, SceneTrackerConfigPatch } from "@vibe-tavern/domain";
 import type { ChatMode } from "@vibe-tavern/domain";
+import type { SkillCatalogEntryDto } from "@vibe-tavern/api-contracts";
+// Re-export so existing imports from this module (the skill adapter) keep
+// resolving; the canonical wire type lives in api-contracts (single source).
+export type { SkillCatalogEntryDto };
 import type {
 	ChatSummary,
 	FavoriteModel,
@@ -398,23 +402,6 @@ export interface MobileAccessRuntimeApi {
 // user precedence. Absolute filesystem paths never leave the server — only the
 // portable root-relative manifest path (`<id>/SKILL.md`) is exposed.
 
-/**
- * Wire shape for one skill catalog entry. Metadata only — no file BODY (the
- * manifest text is fetched on demand by Wave 2's `read_skill_file`) and no
- * ABSOLUTE path (only the portable root-relative manifest path is exposed).
- */
-export interface SkillCatalogEntryDto {
-	/** Stable skill id = the skill directory name. */
-	readonly id: string;
-	/** Where the winning copy lives: a user skill shadows a same-id built-in. */
-	readonly source: "builtin" | "user";
-	readonly name: string;
-	readonly description: string;
-	/** Path to `SKILL.md` relative to its root (`<id>/SKILL.md`) — portable. */
-	readonly manifestPath: string;
-	/** True when a user skill with this id shadows a built-in (user precedence). */
-	readonly shadowsBuiltin: boolean;
-}
 
 export interface CoauthorSkillsRuntimeApi {
 	/** Validate + atomically import a skill tree (ordinary files with relative

@@ -165,6 +165,7 @@ export function CoauthorRail({ hidden }: { hidden?: boolean }) {
         {/* Bottom quick actions */}
         <div className="flex shrink-0 flex-col items-center gap-1 border-t border-border py-2">
           <Ico icon={<Ic.tool />} onClick={() => useModalStore.getState().setCoauthorModuleModalOpen(true)} title={t("coauthor.sidebar.modules")} />
+          <Ico icon={<Ic.book />} onClick={() => useModalStore.getState().setCoauthorSkillModalOpen(true)} title={t("coauthor.sidebar.skills")} />
           <Ico icon={<Ic.plug />} onClick={() => useModalStore.getState().setIsProviderModalOpen(true)} title={t("provider_settings_tooltip")} />
           <Ico icon={<Ic.sliders />} onClick={() => useModalStore.getState().setTweaksOpen(true)} title={t("interface_settings_tooltip")} />
         </div>
@@ -335,6 +336,7 @@ export function CoauthorRail({ hidden }: { hidden?: boolean }) {
             {/* Bottom quick actions */}
             <div className="flex shrink-0 flex-col gap-0.5 border-t border-border bg-s2/30 px-2 py-3">
               <NavRow icon={<Ic.tool />} label={t("coauthor.sidebar.modules")} onClick={() => { useModalStore.getState().setCoauthorModuleModalOpen(true); close(); }} />
+              <NavRow icon={<Ic.book />} label={t("coauthor.sidebar.skills")} onClick={() => { useModalStore.getState().setCoauthorSkillModalOpen(true); close(); }} />
               <NavRow icon={<Ic.plug />} label={t("provider_settings_tooltip")} onClick={() => { useModalStore.getState().setIsProviderModalOpen(true); close(); }} />
               <NavRow icon={<Ic.sliders />} label={t("interface_settings_tooltip")} onClick={() => { useModalStore.getState().setTweaksOpen(true); close(); }} />
             </div>

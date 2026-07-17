@@ -14,6 +14,7 @@ declare global {
     __useCoauthorTurnStore: typeof import("../stores/coauthor-turn-store").useCoauthorTurnStore;
     __useSessionStore: typeof import("../stores/session-store").useSessionStore;
     __useSceneRenderStore: typeof import("../stores/scene-render-store").useSceneRenderStore;
+    __useCoauthorSkillStore: typeof import("../stores/coauthor-skill-store").useCoauthorSkillStore;
     __setLorebookView: (view: "pick" | "list" | "editor") => void;
     __setLorebookTab: (tab: "lorebooks" | "scripts") => void;
     __getLorebookView: () => "pick" | "list" | "editor";

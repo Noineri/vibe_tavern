@@ -25,6 +25,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { render, fireEvent, waitFor } from "@testing-library/react";
 import { useModalStore } from "../../stores/modal-store.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
+import { useCoauthorSkillStore } from "../../stores/coauthor-skill-store.js";
 import type { CoauthorModule } from "@vibe-tavern/api-contracts";
 
 // Mock useT at the module boundary — returns keys verbatim so assertions match.
@@ -106,6 +107,24 @@ vi.mock("../../stores/api-actions/chat-actions.js", () => ({
 	deleteCoauthorModuleAction,
 }));
 
+// CTX-S7: skill catalog the module editor's skill picker renders. Mocked so the
+// modal's `loadSkills()` on open resolves cleanly (no real fetch) and the
+// picker is exercised against a known catalog.
+const SKILL_CATALOG = {
+	entries: [
+		{ id: "general-writing", source: "builtin" as const, name: "General Writing", description: "Vivid prose.", manifestPath: "general-writing/SKILL.md", shadowsBuiltin: false },
+		{ id: "dialogue-generation", source: "builtin" as const, name: "Dialogue Generation", description: "Voice/dialogue.", manifestPath: "dialogue-generation/SKILL.md", shadowsBuiltin: false },
+	],
+	errors: [],
+};
+const { listSkillsMock } = vi.hoisted(() => ({ listSkillsMock: vi.fn(() => Promise.resolve(SKILL_CATALOG)) }));
+vi.mock("../../api/skill-api.js", () => ({
+	listCoauthorSkills: listSkillsMock,
+	readCoauthorSkill: vi.fn(),
+	importCoauthorSkills: vi.fn(),
+	deleteCoauthorSkill: vi.fn(),
+}));
+
 // MasterDetailModal passthrough: render master + detail + footer + headerActions
 // flat. Supports both node and render-prop children.
 // `...real` spread preserves MasterDetailMobileDrillDown + other exports for
@@ -162,6 +181,7 @@ const { CoauthorModuleModal } = await import("./CoauthorModuleModal.js");
 
 beforeEach(() => {
 	listCoauthorModulesAction.mockReturnValue(Promise.resolve(ALL_MODULES));
+	listSkillsMock.mockReturnValue(Promise.resolve(SKILL_CATALOG));
 	setCoauthorModuleAction.mockClear();
 	createCoauthorModuleAction.mockClear();
 	updateCoauthorModuleAction.mockClear();
@@ -171,6 +191,7 @@ beforeEach(() => {
 afterEach(() => {
 	useModalStore.setState({ isCoauthorModuleModalOpen: false });
 	useSnapshotStore.setState({ activeChat: null });
+	useCoauthorSkillStore.setState({ entries: [], errors: [], isLoading: false, hasLoaded: false });
 });
 
 function openModal() {
@@ -324,5 +345,40 @@ describe("CoauthorModuleModal (CS-25 manager)", () => {
 		await waitFor(() => expect(updateCoauthorModuleAction).toHaveBeenCalledTimes(1));
 		const input = updateCoauthorModuleAction.mock.calls[0][1] as { toolSet: Record<string, boolean> };
 		expect(input.toolSet).toStrictEqual({ edit_examples: true, edit_personality: true });
+	});
+});
+
+describe("CoauthorModuleModal — catalog-driven skill picker (CTX-S7)", () => {
+	it("renders the merged skill catalog as toggle chips (not a hardcoded list)", async () => {
+		setActiveChat(null);
+		openModal();
+		const { getByTestId, getByRole } = render(<CoauthorModuleModal />);
+		await waitFor(() => expect(getByTestId("module-edit-btn-cmod_1")).toBeTruthy());
+		fireEvent.click(getByTestId("module-edit-btn-cmod_1"));
+		// Catalog-driven: chips are the skill NAMES from the catalog, not the old
+		// hardcoded id list. Both catalog skills appear; the one this module
+		// binds (dialogue-generation) is active.
+		await waitFor(() => expect(getByRole("button", { name: "General Writing" })).toBeTruthy());
+		expect(getByRole("button", { name: "Dialogue Generation" })).toBeTruthy();
+		const bound = getByRole("button", { name: "Dialogue Generation" });
+		expect(bound.className).toContain("accent");
+	});
+
+	it("renders an orphan binding (skill no longer in the catalog) distinctly so it can be unbound", async () => {
+		// Empty catalog → the module's `dialogue-generation` binding is now orphaned.
+		listSkillsMock.mockReturnValue(Promise.resolve({ entries: [], errors: [] }));
+		setActiveChat(null);
+		openModal();
+		const { getByTestId } = render(<CoauthorModuleModal />);
+		await waitFor(() => expect(getByTestId("module-edit-btn-cmod_1")).toBeTruthy());
+		fireEvent.click(getByTestId("module-edit-btn-cmod_1"));
+		// The orphan chip is present (struck-through, danger) and unbinds on click.
+		const orphan = await waitFor(() => getByTestId("module-skill-orphan-dialogue-generation"));
+		expect(orphan.className).toContain("line-through");
+		fireEvent.click(orphan);
+		fireEvent.click(getByTestId("module-save-btn"));
+		await waitFor(() => expect(updateCoauthorModuleAction).toHaveBeenCalledTimes(1));
+		const input = updateCoauthorModuleAction.mock.calls[0][1] as { skillIds: string[] };
+		expect(input.skillIds).toEqual([]);
 	});
 });

@@ -7,6 +7,7 @@ import { Icons } from "../shared/icons.js";
 import { inputCls, monoCls, inputPad, lblCls } from "../build/fields/field-styles.js";
 import { useModalStore } from "../../stores/modal-store.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
+import { useCoauthorSkillStore } from "../../stores/coauthor-skill-store.js";
 import {
 	listCoauthorModulesAction,
 	setCoauthorModuleAction,
@@ -17,7 +18,7 @@ import {
 import { useT, type TFunc } from "../../i18n/context.js";
 import { toast } from "sonner";
 import { cn } from "../../lib/cn.js";
-import type { CoauthorModule, CoauthorModuleCreate, CoauthorToolSet } from "@vibe-tavern/api-contracts";
+import type { CoauthorModule, CoauthorModuleCreate, CoauthorToolSet, SkillCatalogEntryDto } from "@vibe-tavern/api-contracts";
 
 /**
  * Tool options keyed by CoauthorToolSet field. Rendered as checkboxes in the
@@ -38,17 +39,13 @@ const TOOL_OPTIONS: Array<{ key: keyof CoauthorToolSet; label: string }> = [
 ];
 
 /**
- * Skill IDs backed by `services/api/assets/coauthor/skills/<id>.md`. Each
- * toggle controls whether the module allows that skill's prompt overlay to be
- * autodetected and injected during assembly.
+ * The skill picker is CATALOG-DRIVEN (CTX-S7): it renders every entry of the
+ * merged skill catalog (`useCoauthorSkillStore`) plus any orphan bindings
+ * (skillIds the module already holds but that no longer exist in the catalog —
+ * e.g. a user skill that was deleted while still referenced). There is no
+ * hardcoded skill list anymore; built-in and user-imported skills are treated
+ * uniformly.
  */
-const SKILL_OPTIONS = [
-	"general-writing",
-	"profile-analysis",
-	"profile-overview",
-	"personality-deepen",
-	"dialogue-generation",
-] as const;
 
 const DEFAULT_MODULE_ID = "default";
 const EMPTY_DRAFT: ModuleDraft = {
@@ -127,6 +124,12 @@ export function CoauthorModuleModal() {
 	const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 	const [confirmDiscardOpen, setConfirmDiscardOpen] = useState(false);
 
+	// CTX-S7: catalog-driven skill picker. The merged catalog is shared with the
+	// skill manager modal; loading it here keeps the picker in sync after an
+	// import or delete in the other surface.
+	const skillEntries = useCoauthorSkillStore((s) => s.entries);
+	const loadSkills = useCoauthorSkillStore((s) => s.load);
+
 	const loadModules = async () => {
 		setIsLoading(true);
 		try {
@@ -141,7 +144,10 @@ export function CoauthorModuleModal() {
 	};
 
 	useEffect(() => {
-		if (isOpen) void loadModules();
+		if (isOpen) {
+			void loadModules();
+			void loadSkills();
+		}
 		// Reset editor state when the modal closes so reopening starts fresh.
 		if (!isOpen) {
 			setDetailMode("view");
@@ -324,6 +330,7 @@ export function CoauthorModuleModal() {
 					isEditing ? (
 						<ModuleEditor
 							draft={draft}
+							skills={skillEntries}
 							t={t}
 							onUpdate={updateDraft}
 							onToggleSkill={toggleSkill}
@@ -597,13 +604,16 @@ function ModuleView({ module, t, onEdit, onDelete }: ModuleViewProps) {
 
 interface ModuleEditorProps {
 	draft: ModuleDraft;
+	/** Merged skill catalog (built-in + user). Drives the skill toggles; any
+	 *  `draft.skillIds` not present here render as orphan (broken) bindings. */
+	skills: SkillCatalogEntryDto[];
 	t: TFunc;
 	onUpdate: <K extends keyof ModuleDraft>(key: K, value: ModuleDraft[K]) => void;
 	onToggleSkill: (skillId: string) => void;
 	onToggleTool: (key: keyof CoauthorToolSet) => void;
 }
 
-function ModuleEditor({ draft, t, onUpdate, onToggleSkill, onToggleTool }: ModuleEditorProps) {
+function ModuleEditor({ draft, skills, t, onUpdate, onToggleSkill, onToggleTool }: ModuleEditorProps) {
 	return (
 		<div className="flex flex-col gap-4" data-testid="module-editor">
 			<div className="flex flex-col gap-1">
@@ -656,25 +666,47 @@ function ModuleEditor({ draft, t, onUpdate, onToggleSkill, onToggleTool }: Modul
 				<p className="font-ui text-[10px] leading-relaxed text-t3">{t("coauthor.module.opening_message_hint")}</p>
 			</div>
 
-			<Field label={t("coauthor.module.skills")}>
-				<div className="flex flex-wrap gap-1.5">
-					{SKILL_OPTIONS.map((skillId) => {
-						const active = draft.skillIds.includes(skillId);
-						return (
-							<button
-								key={skillId}
-								type="button"
-								className={cn(
-									"cursor-pointer rounded-full border px-2.5 py-0.5 font-mono text-[11px] transition-colors",
-									active ? "border-accent bg-accent-dim text-accent-t" : "border-border text-t3 hover:text-t1",
-								)}
-								onClick={() => onToggleSkill(skillId)}
-							>
-								{skillId}
-							</button>
-						);
-					})}
-				</div>
+			<Field label={t("coauthor.module.skills")} hint={t("coauthor.module.skills_hint")}>
+				{skills.length === 0 && draft.skillIds.length === 0 ? (
+					<span className="font-ui text-[12px] text-t3">{t("coauthor.module.no_skills")}</span>
+				) : (
+					<div className="flex flex-wrap gap-1.5">
+						{skills.map((skill) => {
+							const active = draft.skillIds.includes(skill.id);
+							return (
+								<button
+									key={skill.id}
+									type="button"
+									title={skill.description}
+									className={cn(
+										"cursor-pointer rounded-full border px-2.5 py-0.5 font-mono text-[11px] transition-colors",
+										active ? "border-accent bg-accent-dim text-accent-t" : "border-border text-t3 hover:text-t1",
+									)}
+									onClick={() => onToggleSkill(skill.id)}
+								>
+									{skill.name}
+								</button>
+							);
+						})}
+						{/* Orphan bindings: skillIds the module holds that are no longer in the
+						 * catalog (e.g. a user skill deleted while still referenced). Rendered
+						 * distinctly so the user can see and unbind them — never silently kept. */}
+						{draft.skillIds
+							.filter((id) => !skills.some((s) => s.id === id))
+							.map((orphanId) => (
+								<button
+									key={`orphan:${orphanId}`}
+									type="button"
+									data-testid={`module-skill-orphan-${orphanId}`}
+									title={t("coauthor.module.skill_orphan_title")}
+									className="cursor-pointer rounded-full border border-dashed border-danger/50 px-2.5 py-0.5 font-mono text-[11px] text-danger-text line-through transition-colors hover:bg-danger-dim"
+									onClick={() => onToggleSkill(orphanId)}
+								>
+									{orphanId}
+								</button>
+							))}
+					</div>
+				)}
 			</Field>
 
 			<Field label={t("coauthor.module.tools")}>

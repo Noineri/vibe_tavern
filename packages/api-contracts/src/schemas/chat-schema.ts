@@ -105,6 +105,53 @@ export const coauthorSkillReadOutputSchema = z.object({
 export type CoauthorSkillReadOutput = z.infer<typeof coauthorSkillReadOutputSchema>;
 
 /**
+ * Metadata-only catalog entry for a Co-Author skill (CTX-S3 / CTX-S7). One row
+ * per discovered skill directory (built-in or user); a user skill shadows a
+ * same-id built-in. Deliberately carries NO file body (the manifest text is
+ * fetched on demand by the model via `read_skill_file`) and NO absolute
+ * filesystem path — only the portable root-relative manifest path crosses the
+ * wire. This is the shared wire contract consumed by both the skill-library
+ * HTTP routes and the frontend skill manager / module-editor skill picker.
+ */
+export const skillCatalogEntrySchema = z.object({
+  /** Stable skill id = the skill directory name. */
+  id: z.string(),
+  /** Where the winning copy lives: a user skill shadows a same-id built-in. */
+  source: z.enum(["builtin", "user"]),
+  name: z.string(),
+  description: z.string(),
+  /** Path to `SKILL.md` relative to its root (`<id>/SKILL.md`) — portable. */
+  manifestPath: z.string(),
+  /** True when a user skill with this id shadows a built-in (user precedence). */
+  shadowsBuiltin: z.boolean(),
+});
+export type SkillCatalogEntryDto = z.infer<typeof skillCatalogEntrySchema>;
+
+/** A malformed-manifest notice surfaced with the skill id (no absolute path). */
+export const skillCatalogErrorSchema = z.object({
+  source: z.enum(["builtin", "user"]),
+  id: z.string(),
+  reason: z.string(),
+});
+export type SkillCatalogError = z.infer<typeof skillCatalogErrorSchema>;
+
+/** Merged metadata-only catalog: built-in + user skills (user precedence). */
+export const skillCatalogSchema = z.object({
+  entries: z.array(skillCatalogEntrySchema),
+  errors: z.array(skillCatalogErrorSchema),
+});
+export type SkillCatalog = z.infer<typeof skillCatalogSchema>;
+
+/** Result of an atomic skill-tree import (CTX-S2). */
+export const skillImportResultSchema = z.object({
+  /** Top-level directories that contain a SKILL.md after the import (the skills). */
+  importedSkillIds: z.array(z.string()),
+  /** Every top-level directory written, including non-skill siblings. */
+  importedTopLevelDirs: z.array(z.string()),
+});
+export type SkillImportResult = z.infer<typeof skillImportResultSchema>;
+
+/**
  * One exact SEARCH/REPLACE edit applied to a single prose section body. Used by
  * the per-section `edit_*` tools (edit_personality / edit_scenario /
  * edit_examples) and by the frontend operation-card renderer (Wave 6), so the

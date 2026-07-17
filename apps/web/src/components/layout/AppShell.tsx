@@ -31,6 +31,7 @@ import { MobileSettings } from "../settings/popovers/MobileSettings.js";
 import { MobileAccessModal } from "../modals/MobileAccessModal.js";
 import { UpdateModal } from "../modals/UpdateModal.js";
 import { CoauthorModuleModal } from "../coauthor/CoauthorModuleModal.js";
+import { CoauthorSkillModal } from "../coauthor/CoauthorSkillModal.js";
 import { AvatarPanel } from "../settings/popovers/AvatarPanel.js";
 import type { TweaksSettings } from "../../lib/local-storage.js";
 
@@ -421,6 +422,7 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
         releaseNotes={updateCheck.releaseNotes}
       />
       <CoauthorModuleModal />
+      <CoauthorSkillModal />
       <SetupWizard onVisibilityChange={setWizardVisible} />
       <Toaster
         position={isMobile ? "top-center" : "bottom-right"}

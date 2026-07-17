@@ -130,6 +130,7 @@ export function CoauthorSidebar() {
 
   const coauthorFooterItems: FooterLauncherItem[] = [
     { key: "modules", label: t("coauthor.sidebar.modules"), onClick: () => useModalStore.getState().setCoauthorModuleModalOpen(true), icon: <Icons.Tool /> },
+    { key: "skills", label: t("coauthor.sidebar.skills"), onClick: () => useModalStore.getState().setCoauthorSkillModalOpen(true), icon: <Icons.Book /> },
   ];
 
   return (

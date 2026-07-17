@@ -28,6 +28,10 @@ import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { randomUUID } from "node:crypto";
 import { parseSkillManifest, buildSkillCatalog } from "./skill-scanner.js";
 import type { SkillCatalog, SkillCatalogEntry, ScanRoot } from "./skill-scanner.js";
+import type { SkillImportResult } from "@vibe-tavern/api-contracts";
+// Re-export so callers importing from this module keep resolving; the
+// canonical wire type lives in api-contracts (single source of truth).
+export type { SkillImportResult };
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -35,14 +39,6 @@ import type { SkillCatalog, SkillCatalogEntry, ScanRoot } from "./skill-scanner.
 export interface SkillImportFile {
   readonly relativePath: string;
   readonly bytes: Uint8Array;
-}
-
-/** Result of a successful import: the top-level skill ids written (dirs with a SKILL.md). */
-export interface SkillImportResult {
-  /** Top-level directories that contain a SKILL.md after the import (the actual skills). */
-  readonly importedSkillIds: string[];
-  /** Every top-level directory written, including non-skill siblings (e.g. shared references). */
-  readonly importedTopLevelDirs: string[];
 }
 
 export class SkillImportError extends Error {

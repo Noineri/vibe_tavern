@@ -16,11 +16,15 @@ export {
   coauthorTargetSchema,
   coauthorToolOutputSchema,
   coauthorSkillReadOutputSchema,
+  skillCatalogEntrySchema,
+  skillCatalogErrorSchema,
+  skillCatalogSchema,
+  skillImportResultSchema,
   coauthorEditItemSchema,
   coauthorSectionEditInputSchema,
   coauthorSectionWriteInputSchema,
 } from "./chat-schema.js";
-export type { CoauthorApplyRequest, CoauthorCorrection, CoauthorToolOutput, CoauthorTarget, CoauthorEditItem, CoauthorSectionEditInput, CoauthorSectionWriteInput } from "./chat-schema.js";
+export type { CoauthorApplyRequest, CoauthorCorrection, CoauthorToolOutput, CoauthorTarget, CoauthorEditItem, CoauthorSectionEditInput, CoauthorSectionWriteInput, SkillCatalogEntryDto, SkillCatalogError, SkillCatalog, SkillImportResult, CoauthorSkillReadOutput } from "./chat-schema.js";
 export { regenerateOverrideSchema } from "./chat-regenerate-schema.js";
 export type { RegenerateOverride } from "./chat-regenerate-schema.js";
 export {
