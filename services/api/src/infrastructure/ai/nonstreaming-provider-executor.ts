@@ -20,6 +20,15 @@ import { serializeProviderResponseTrace } from "./provider-response-trace.js";
 import { cancelled } from "../../shared/errors.js";
 import { logSendDebug } from "../../shared/send-debug-log.js";
 
+/** Loose `step.content` part shape — we only consume `tool-error` parts. */
+type NonstreamingToolContentPart = {
+  type: string;
+  toolCallId?: string;
+  toolName?: string;
+  input?: unknown;
+  error?: unknown;
+};
+
 interface NonstreamingToolStep {
   toolCalls?: ReadonlyArray<{
     toolCallId: string;
@@ -27,12 +36,18 @@ interface NonstreamingToolStep {
     input?: unknown;
     providerMetadata?: ProviderMetadata;
   }>;
+  // AI SDK v6: toolResults holds SUCCESSFUL executions only. A failed execute()
+  // surfaces as a `tool-error` part in `content`, NOT a toolResults entry.
+  // Reading only toolResults orphaned failed calls (their toolCall was recorded
+  // but no result), which broke the next turn's history reconstruction with
+  // "Tool result is missing for tool call X" — see extractNonstreamingToolInteractions.
   toolResults?: ReadonlyArray<{
     toolCallId: string;
     toolName: string;
     input?: unknown;
     output: unknown;
   }>;
+  content?: ReadonlyArray<NonstreamingToolContentPart>;
 }
 
 /** Normalize AI SDK completed steps without dropping provider replay metadata. */
@@ -62,6 +77,27 @@ export function extractNonstreamingToolInteractions(
           : {},
         result: tr.output,
         isError: false,
+      });
+    }
+    // AI SDK v6: a failed execute() is a `tool-error` part in step.content, not
+    // a toolResults entry. Synthesize an error result so the call is not
+    // orphaned (its toolCall was already recorded above). Without this, the
+    // next turn's history reconstruction throws "Tool result is missing for
+    // tool call X" and the chat deadlocks after any failed tool call.
+    for (const part of step.content ?? []) {
+      if (part.type !== "tool-error") continue;
+      const id = part.toolCallId;
+      if (!id) continue;
+      if (toolResults.some((r) => r.toolCallId === id)) continue; // already has a (success) result
+      const matchedCall = toolCalls.find((c) => c.toolCallId === id);
+      toolResults.push({
+        toolCallId: id,
+        toolName: part.toolName ?? matchedCall?.toolName ?? "",
+        args: matchedCall?.args ?? {},
+        result: part.error instanceof Error
+          ? { error: part.error.message }
+          : { error: part.error != null ? String(part.error) : "tool execution error" },
+        isError: true,
       });
     }
   }
