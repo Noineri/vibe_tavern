@@ -60,136 +60,16 @@ class MainActivity : AppCompatActivity() {
     private val PREF_INSTALLED = "installed_once"
     private val PREF_LANGUAGE = "language"
     private val serverUrl = "http://127.0.0.1:8787"
-    private val launcherBuildLabel = "orchestrator-v3-archive-diagnostics-2026-06-06-0315"
+    private val launcherBuildLabel = "archive-orchestrator-${BuildConfig.VERSION_NAME}"
     private val bundledArchiveName = "vibe-tavern-android-arm64.tgz"
-    private val installerScriptName = "vibe-tavern-install-v5.sh"
+    private val installerScriptName = "vibe-tavern-install.sh"
     private val archiveServerPort = 8790
     private val sharedArchivePath = "/sdcard/Download/$bundledArchiveName"
     private val sharedInstallerPath = "/sdcard/Download/$installerScriptName"
     private val localArchiveUrl = "http://127.0.0.1:$archiveServerPort/$bundledArchiveName"
     private var installerArchivePath = sharedArchivePath
 
-    // ========== One-time setup script (proot-distro Ubuntu + bundled archive) ==========
-    private val setupScript: String
-        get() = """
-            set -euo pipefail
-            ARCHIVE_PATH="$installerArchivePath"
-            ARCHIVE_URL="$localArchiveUrl"
-            LOG="${'$'}HOME/vibe-tavern-install.log"
-            exec > >(tee -a "${'$'}LOG") 2>&1
-            echo "=== Vibe Tavern install: $(date) ==="
-
-            # Important: do not wildcard-pick old archives from Downloads.
-            # The launcher must install the archive bundled in this APK, copied to
-            # the exact path below, or fall back to the APK localhost server.
-
-            echo '📦 Step 1/5: Updating system packages (fixes broken curl on fresh Termux)...'
-            yes | apt update -y 2>/dev/null || true
-            yes | apt full-upgrade -y 2>/dev/null || true
-
-            echo '📦 Step 2/5: Installing Termux packages...'
-            pkg update -y
-            pkg install -y curl tar proot-distro procps
-            printf '\n' | termux-setup-storage 2>/dev/null || true
-            termux-wake-lock 2>/dev/null || true
-
-            echo '📦 Step 3/5: Getting archive...'
-            echo "HOME=${'$'}HOME"
-            echo "TERMUX_VERSION=${'$'}{TERMUX_VERSION:-unknown}"
-            echo 'Downloads listing for Vibe Tavern files:'
-            ls -lah /sdcard/Download/vibe-tavern-* 2>/dev/null || echo 'No /sdcard/Download/vibe-tavern-* files visible to Termux.'
-            echo
-            TERMUX_ARCHIVE="${'$'}HOME/$bundledArchiveName"
-            RENAMED_ARCHIVE="${'$'}ARCHIVE_PATH.gz"
-            rm -f "${'$'}TERMUX_ARCHIVE"
-            if [ -n "${'$'}ARCHIVE_PATH" ] && [ -f "${'$'}ARCHIVE_PATH" ]; then
-              echo "Using archive from Downloads: ${'$'}ARCHIVE_PATH"
-              cp "${'$'}ARCHIVE_PATH" "${'$'}TERMUX_ARCHIVE"
-            elif [ -n "${'$'}RENAMED_ARCHIVE" ] && [ -f "${'$'}RENAMED_ARCHIVE" ]; then
-              echo "Using Android-renamed archive from Downloads: ${'$'}RENAMED_ARCHIVE"
-              cp "${'$'}RENAMED_ARCHIVE" "${'$'}TERMUX_ARCHIVE"
-            else
-              echo 'Archive is not visible at the expected Downloads paths:'
-              echo "  ${'$'}ARCHIVE_PATH"
-              echo "  ${'$'}RENAMED_ARCHIVE"
-              echo 'This is OK only if the APK localhost fallback is reachable.'
-              echo "Checking APK localhost archive server: ${'$'}ARCHIVE_URL"
-              if ! curl --fail --head --connect-timeout 5 "${'$'}ARCHIVE_URL"; then
-                echo 'HEAD check failed; trying full download anyway for the real error...'
-              fi
-              echo "Trying APK localhost archive server: ${'$'}ARCHIVE_URL"
-              if ! curl --fail --location --verbose --connect-timeout 10 --retry 3 --retry-delay 1 "${'$'}ARCHIVE_URL" -o "${'$'}TERMUX_ARCHIVE"; then
-                echo
-                echo '❌ Could not get the bundled archive.'
-                echo 'Likely causes:'
-                echo '  1) Android/Termux storage permission is missing, so Downloads is invisible;'
-                echo '  2) the APK background localhost archive server was killed or did not start;'
-                echo '  3) this APK build does not contain vibe-tavern-android-arm64.tgz.'
-                echo
-                echo 'Fix: return to the APK and tap Install / Update again. If it repeats, reinstall the APK built with the bundled archive.'
-                exit 23
-              fi
-            fi
-            if [ ! -s "${'$'}TERMUX_ARCHIVE" ]; then
-              echo "❌ Archive copy/download produced an empty file: ${'$'}TERMUX_ARCHIVE"
-              exit 24
-            fi
-            if ! tar -tzf "${'$'}TERMUX_ARCHIVE" >/dev/null; then
-              echo "❌ Archive is not a valid gzip tarball: ${'$'}TERMUX_ARCHIVE"
-              exit 25
-            fi
-            ls -lh "${'$'}TERMUX_ARCHIVE"
-
-            echo '🐧 Step 4/5: Setting up proot Ubuntu...'
-            yes | proot-distro install ubuntu 2>/dev/null || true
-
-            mkdir -p ~/.termux
-            grep -qxF 'allow-external-apps=true' ~/.termux/termux.properties 2>/dev/null || echo 'allow-external-apps=true' >> ~/.termux/termux.properties
-            termux-reload-settings 2>/dev/null || true
-
-            echo '📦 Step 5/5: Installing Vibe Tavern into Ubuntu...'
-            proot-distro login ubuntu -- bash -s -- "${'$'}TERMUX_ARCHIVE" <<'UBUNTU_INSTALL'
-            set -euo pipefail
-            ARCHIVE_PATH="${'$'}1"
-            APP_DIR="${'$'}HOME/vibe-tavern"
-            DATA_DIR="${'$'}HOME/.local/share/vibe-tavern"
-            TMP_ARCHIVE="/tmp/vibe-tavern-android-arm64.tgz"
-            NEXT_DIR="${'$'}HOME/vibe-tavern.next"
-            OLD_DIR="${'$'}HOME/vibe-tavern.old"
-
-            export DEBIAN_FRONTEND=noninteractive
-            apt-get update -y
-            apt-get install -y ca-certificates curl tar procps
-            mkdir -p "${'$'}DATA_DIR"
-            cp "${'$'}ARCHIVE_PATH" "${'$'}TMP_ARCHIVE"
-
-            rm -rf "${'$'}NEXT_DIR"
-            mkdir -p "${'$'}NEXT_DIR"
-            tar -xzf "${'$'}TMP_ARCHIVE" -C "${'$'}NEXT_DIR"
-            chmod +x "${'$'}NEXT_DIR/vibe-tavern"
-
-            rm -rf "${'$'}OLD_DIR"
-            if [ -d "${'$'}APP_DIR" ]; then mv "${'$'}APP_DIR" "${'$'}OLD_DIR"; fi
-            mv "${'$'}NEXT_DIR" "${'$'}APP_DIR"
-            rm -rf "${'$'}OLD_DIR" "${'$'}TMP_ARCHIVE"
-
-            cat > "${'$'}HOME/start-vibe-tavern.sh" <<'START_SCRIPT'
-            #!/usr/bin/env bash
-            set -euo pipefail
-            export RP_PLATFORM_OPEN_BROWSER=0
-            export RP_PLATFORM_HOST=127.0.0.1
-            export RP_PLATFORM_PORT=8787
-            export RP_PLATFORM_DATA_DIR="${'$'}HOME/.local/share/vibe-tavern"
-            export RP_PLATFORM_WEB_DIR="${'$'}HOME/vibe-tavern/web"
-            cd "${'$'}HOME/vibe-tavern"
-            exec ./vibe-tavern
-            START_SCRIPT
-            chmod +x "${'$'}HOME/start-vibe-tavern.sh"
-            UBUNTU_INSTALL
-            echo '✅ Vibe Tavern installed/updated from bundled APK archive.'
-            echo '🚀 Starting server in this Termux session...'
-            proot-distro login ubuntu -- bash -lc 'exec ~/start-vibe-tavern.sh'
-        """.trimIndent() + "\n"
+    // The APK asset `install.sh` is the single installer source of truth.
 
     // ========== Quick launch (post-setup, inside proot) ==========
     private val startCmd = """
@@ -521,6 +401,8 @@ class MainActivity : AppCompatActivity() {
               exit 1
             fi
             echo 'Starting installer with trace...'
+            VIBE_TAVERN_ARCHIVE_PATH='$archivePath' \
+            VIBE_TAVERN_ARCHIVE_URL='$localArchiveUrl' \
             bash -x '$installerPath'
             code=${'$'}?
             echo
@@ -587,7 +469,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun copyInstallerScriptToDownloads(): String? {
         return copyToDownloads(installerScriptName, "text/x-shellscript") { output ->
-            output.write(setupScript.toByteArray(Charsets.UTF_8))
+            assets.open("install.sh").use { input -> input.copyTo(output) }
         }
     }
 
