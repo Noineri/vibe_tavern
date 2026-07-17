@@ -160,7 +160,7 @@ export function CoauthorLoreReview({
                               )}
                             </div>
                             {e.content ? (
-                              <pre className="mt-1 max-h-28 overflow-y-auto whitespace-pre-wrap break-words font-body text-[11.5px] leading-relaxed text-t2">
+                              <pre className="mt-1 whitespace-pre-wrap break-words font-body text-[11.5px] leading-relaxed text-t2">
                                 {e.content}
                               </pre>
                             ) : (
