@@ -18,25 +18,12 @@ import {
 import { useT, type TFunc } from "../../i18n/context.js";
 import { toast } from "sonner";
 import { cn } from "../../lib/cn.js";
-import type { CoauthorModule, CoauthorModuleCreate, CoauthorToolSet, SkillCatalogEntryDto } from "@vibe-tavern/api-contracts";
+import { type CoauthorModule, type CoauthorModuleCreate, type CoauthorToolSet, type SkillCatalogEntryDto, COAUTHOR_TOOL_KEYS } from "@vibe-tavern/api-contracts";
 
-/**
- * Tool options keyed by CoauthorToolSet field. Rendered as checkboxes in the
- * editor so the user can toggle which edits a module is allowed to propose.
- * Order is fixed for a stable layout. Mirrors the backend tool registry.
- */
-const TOOL_OPTIONS: Array<{ key: keyof CoauthorToolSet; label: string }> = [
-	{ key: "write_profile", label: "write_profile" },
-	{ key: "edit_personality", label: "edit_personality" },
-	{ key: "write_personality", label: "write_personality" },
-	{ key: "edit_scenario", label: "edit_scenario" },
-	{ key: "write_scenario", label: "write_scenario" },
-	{ key: "edit_examples", label: "edit_examples" },
-	{ key: "write_examples", label: "write_examples" },
-	{ key: "edit_greeting", label: "edit_greeting" },
-	{ key: "add_alt_greeting", label: "add_alt_greeting" },
-	{ key: "edit_alt_greeting", label: "edit_alt_greeting" },
-];
+// The toggleable tool list is derived from `COAUTHOR_TOOL_KEYS` (the wire
+// contract in api-contracts) so adding a tool to `coauthorToolSetSchema`
+// surfaces it in the editor + read-only view automatically — no parallel
+// hardcoded array to drift out of sync.
 
 /**
  * The skill picker is CATALOG-DRIVEN (CTX-S7): it renders every entry of the
@@ -537,7 +524,7 @@ interface ModuleViewProps {
 }
 
 function ModuleView({ module, t, onEdit, onDuplicate, onDelete }: ModuleViewProps) {
-	const enabledTools = TOOL_OPTIONS.filter(({ key }) => module.toolSet[key] === true);
+	const enabledTools = COAUTHOR_TOOL_KEYS.filter((key) => module.toolSet[key] === true);
 	return (
 		<div className="flex flex-col gap-5">
 			<div>
@@ -589,7 +576,7 @@ function ModuleView({ module, t, onEdit, onDuplicate, onDelete }: ModuleViewProp
 
 			<dl className="flex flex-col gap-3">
 				<PreviewRow label={t("coauthor.module.base_prompt")}>
-					<pre className="max-h-32 overflow-auto whitespace-pre-wrap break-words rounded bg-s2 p-2 font-mono text-[11px] leading-relaxed text-t2">{module.basePrompt}</pre>
+					<pre className="whitespace-pre-wrap break-words rounded bg-s2 p-2 font-mono text-[11px] leading-relaxed text-t2">{module.basePrompt}</pre>
 				</PreviewRow>
 
 				{module.openingMessage && (
@@ -617,8 +604,8 @@ function ModuleView({ module, t, onEdit, onDuplicate, onDelete }: ModuleViewProp
 				<PreviewRow label={t("coauthor.module.tools")}>
 					{enabledTools.length > 0 ? (
 						<div className="flex flex-wrap gap-1.5">
-							{enabledTools.map(({ key, label }) => (
-								<span key={key} className="rounded-full border border-border px-2 py-0.5 font-mono text-[11px] text-t2">{label}</span>
+							{enabledTools.map((key) => (
+								<span key={key} className="rounded-full border border-border px-2 py-0.5 font-mono text-[11px] text-t2">{key}</span>
 							))}
 						</div>
 					) : (
@@ -741,7 +728,7 @@ function ModuleEditor({ draft, skills, t, onUpdate, onToggleSkill, onToggleTool 
 
 			<Field label={t("coauthor.module.tools")}>
 				<div className="flex flex-wrap gap-1.5">
-					{TOOL_OPTIONS.map(({ key, label }) => {
+					{COAUTHOR_TOOL_KEYS.map((key) => {
 						const active = draft.toolSet[key] === true;
 						return (
 							<button
@@ -753,7 +740,7 @@ function ModuleEditor({ draft, skills, t, onUpdate, onToggleSkill, onToggleTool 
 								)}
 								onClick={() => onToggleTool(key)}
 							>
-								{label}
+								{key}
 							</button>
 						);
 					})}

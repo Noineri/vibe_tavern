@@ -133,6 +133,7 @@ export {
   setCoauthorModuleSchema,
   coauthorModuleCreateSchema,
   coauthorModuleUpdateSchema,
+  COAUTHOR_TOOL_KEYS,
 } from "./coauthor-module.js";
 export type {
   CoauthorModule,

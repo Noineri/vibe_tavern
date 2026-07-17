@@ -31,6 +31,17 @@ export const coauthorToolSetSchema = z.object({
 export type CoauthorToolSet = z.infer<typeof coauthorToolSetSchema>;
 
 /**
+ * Every tool a module may toggle in its `toolSet`, in stable definition order.
+ * Derived from `coauthorToolSetSchema` so the wire contract is the single
+ * source of truth: adding a tool to the schema automatically surfaces it in
+ * the module editor's toggle list — no parallel hardcoded array to drift out
+ * of sync (the lore tools shipped in Wave 4 were missing from that list for
+ * exactly this reason). `read_skill_file` is intentionally absent: it is the
+ * always-on, read-only skill-access channel and is not gated by a toolSet.
+ */
+export const COAUTHOR_TOOL_KEYS = Object.keys(coauthorToolSetSchema.shape) as (keyof CoauthorToolSet)[];
+
+/**
  * A resolved Co-Author module as served to the client / consumed by the
  * prompt assembler. `basePrompt` is INLINE prompt text (not a file reference):
  * seed modules load their `.md` at registry init, user modules store prompt

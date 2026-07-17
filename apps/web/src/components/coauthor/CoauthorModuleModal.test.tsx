@@ -314,6 +314,22 @@ describe("CoauthorModuleModal (CS-25 manager)", () => {
 		expect(getByRole("button", { name: "write_examples" })).toBeTruthy();
 	});
 
+	it("surfaces lore tools as toggle pills (derived from the schema, not hardcoded)", async () => {
+		// Wave 4 lore tools must appear alongside the profile/greeting tools. The
+		// list is derived from COAUTHOR_TOOL_KEYS (= coauthorToolSetSchema), so this
+		// also pins that a newly-added schema key surfaces here automatically.
+		setActiveChat(null);
+		openModal();
+		const { getByTestId, getByRole } = render(<CoauthorModuleModal />);
+		await waitFor(() => expect(getByTestId("module-edit-btn-cmod_1")).toBeTruthy());
+		fireEvent.click(getByTestId("module-edit-btn-cmod_1"));
+		await waitFor(() => expect(getByRole("button", { name: "create_lorebook" })).toBeTruthy());
+		expect(getByRole("button", { name: "create_lore_entry" })).toBeTruthy();
+		expect(getByRole("button", { name: "set_lore_activation" })).toBeTruthy();
+		expect(getByRole("button", { name: "ai_write_lore_entry" })).toBeTruthy();
+		expect(getByRole("button", { name: "ai_generate_lore_keys" })).toBeTruthy();
+	});
+
 	it("toggling a write tool persists on save without disabling its edit sibling", async () => {
 		// USER_MODULE ships toolSet { edit_examples: true } — write_examples is off.
 		setActiveChat(null);
