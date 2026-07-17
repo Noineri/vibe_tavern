@@ -30,6 +30,9 @@ class MobilePackagingTest {
         assertTrue(workflow.contains("ANDROID_KEY_PASSWORD"))
         assertTrue(workflow.contains("apksigner"))
         assertTrue(workflow.contains("testDebugUnitTest assembleRelease"))
+        assertTrue(workflow.contains("out/Vibe-Tavern-v\${VERSION}-android.apk"))
+        assertTrue(workflow.contains("out/Vibe-Tavern-v\${{ env.VERSION }}-android.apk"))
+        assertTrue(gradle.contains("applicationId = \"com.vibetavern.launcher\""))
         assertTrue(gradle.contains("create(\"release\")"))
         assertTrue(gradle.contains("ANDROID_KEYSTORE_PATH"))
         assertFalse(gradle.contains("signingConfigs.getByName(\"debug\")"))
@@ -84,6 +87,38 @@ class MobilePackagingTest {
         assertTrue(gradle.contains("Local updater test properties are forbidden for release builds"))
         assertTrue(releaseClient.contains("https://api.github.com/repos/Noineri/vibe_tavern/releases/latest"))
         assertTrue(releaseClient.contains("allowInsecureHttp"))
+    }
+
+    @Test
+    fun `obsolete token and duplicate manual flows stay removed`() {
+        val obsoletePaths = listOf(
+            "mobile/android/app/src/main/res/layout/screen_token_input.xml",
+            "mobile/android/app/src/main/res/drawable/token_input_bg.xml",
+            "mobile/scripts/install.sh",
+            "mobile/scripts/update.sh",
+            "mobile/scripts/start.sh",
+        )
+        assertTrue(obsoletePaths.none { File(repoRoot, it).exists() })
+
+        val activity = File(
+            repoRoot,
+            "mobile/android/app/src/main/java/com/vibetavern/launcher/MainActivity.kt",
+        ).readText()
+        val releaseClient = File(
+            repoRoot,
+            "mobile/android/app/src/main/java/com/vibetavern/launcher/ReleaseUpdate.kt",
+        ).readText()
+        val installer = File(repoRoot, "mobile/android/app/src/main/assets/install.sh").readText()
+        val starter = File(repoRoot, "mobile/android/app/src/main/assets/start.sh").readText()
+
+        assertFalse(releaseClient.contains("Authorization"))
+        assertTrue(activity.contains("setPositiveButton(tr(\"Download APK\""))
+        assertTrue(activity.contains("startLauncherDownload(release)"))
+        assertTrue(activity.contains("apkUpdateManager.enqueue(release)"))
+        assertTrue(starter.contains("proot-distro login \"\${DISTRO}\""))
+        assertTrue(starter.contains("RP_PLATFORM_DATA_DIR=\"\$HOME/.local/share/vibe-tavern\""))
+        assertTrue(installer.contains("cat > \"\$HOME/start-vibe-tavern.sh\""))
+        assertTrue(installer.contains("exec ./vibe-tavern"))
     }
 
     private fun findRepoRoot(start: File): File {
