@@ -1230,6 +1230,8 @@
   "coauthor.module.new": "Новый модуль",
   "coauthor.module.edit": "Изменить",
   "coauthor.module.delete": "Удалить",
+  "coauthor.module.duplicate": "Дублировать",
+  "coauthor.module.duplicate_suffix": " (копия)",
   "coauthor.module.save": "Сохранить",
   "coauthor.module.cancel": "Отмена",
   "coauthor.module.name_label": "Название",

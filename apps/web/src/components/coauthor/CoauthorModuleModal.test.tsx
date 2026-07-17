@@ -94,7 +94,7 @@ const {
 } = vi.hoisted(() => ({
 	listCoauthorModulesAction: vi.fn(() => Promise.resolve(ALL_MODULES)),
 	setCoauthorModuleAction: vi.fn<(chatId: string, moduleId: string | null) => Promise<void>>(async () => {}),
-	createCoauthorModuleAction: vi.fn(async () => ({}) as CoauthorModule),
+	createCoauthorModuleAction: vi.fn(async (_input: unknown) => ({}) as CoauthorModule),
 	updateCoauthorModuleAction: vi.fn(async (_id: string, _input: unknown) => ({}) as CoauthorModule),
 	deleteCoauthorModuleAction: vi.fn(async (_id: string) => {}),
 }));
@@ -380,5 +380,55 @@ describe("CoauthorModuleModal — catalog-driven skill picker (CTX-S7)", () => {
 		await waitFor(() => expect(updateCoauthorModuleAction).toHaveBeenCalledTimes(1));
 		const input = updateCoauthorModuleAction.mock.calls[0][1] as { skillIds: string[] };
 		expect(input.skillIds).toEqual([]);
+	});
+});
+
+describe("CoauthorModuleModal — built-in Duplicate (CTX-M3)", () => {
+	it("built-in detail view shows a Duplicate button and stays read-only (no edit/delete)", async () => {
+		setActiveChat(null);
+		openModal();
+		const { getByTestId, queryByTestId } = render(<CoauthorModuleModal />);
+		await waitFor(() => expect(getByTestId("module-view-duplicate-btn")).toBeTruthy());
+		expect(queryByTestId("module-view-edit-btn")).toBeNull();
+		expect(queryByTestId("module-view-delete-btn")).toBeNull();
+	});
+
+	it("Duplicate seeds the editor with the resolved prompt + skills + tools + budget, and Save creates a user copy", async () => {
+		setActiveChat(null);
+		openModal();
+		const { getByTestId } = render(<CoauthorModuleModal />);
+		await waitFor(() => expect(getByTestId("module-view-duplicate-btn")).toBeTruthy());
+		fireEvent.click(getByTestId("module-view-duplicate-btn"));
+		const nameInput = await waitFor(() => getByTestId("module-name-input") as HTMLInputElement);
+		// Name carries the copy-suffix key appended (the useT mock returns keys
+		// verbatim, per the file convention; the real " (copy)" value is pinned
+		// by i18n:check). Proves the built-in name is the seed of the new draft.
+		expect(nameInput.value).toBe("Default Co-Author" + "coauthor.module.duplicate_suffix");
+		fireEvent.click(getByTestId("module-save-btn"));
+		await waitFor(() => expect(createCoauthorModuleAction).toHaveBeenCalledTimes(1));
+		// The created user copy carries the built-in's RESOLVED fields verbatim —
+		// later seed changes never mutate it (it is persisted with its own text).
+		const created = createCoauthorModuleAction.mock.calls[0][0] as {
+			name: string; basePrompt: string; skillIds: string[];
+			toolSet: Record<string, boolean>; maxSteps: number;
+		};
+		expect(created.name).toBe("Default Co-Author" + "coauthor.module.duplicate_suffix");
+		expect(created.basePrompt).toBe("You are a co-author assistant. ...");
+		expect(created.skillIds).toEqual(["general-writing"]);
+		expect(created.toolSet.write_profile).toBe(true);
+		expect(created.toolSet.edit_personality).toBe(true);
+		expect(created.maxSteps).toBe(5);
+	});
+
+	it("Duplicate then clearing the name blocks Save with the validation toast (no RPC)", async () => {
+		setActiveChat(null);
+		openModal();
+		const { getByTestId } = render(<CoauthorModuleModal />);
+		await waitFor(() => expect(getByTestId("module-view-duplicate-btn")).toBeTruthy());
+		fireEvent.click(getByTestId("module-view-duplicate-btn"));
+		const nameInput = await waitFor(() => getByTestId("module-name-input") as HTMLInputElement);
+		fireEvent.change(nameInput, { target: { value: "" } });
+		fireEvent.click(getByTestId("module-save-btn"));
+		await waitFor(() => expect(createCoauthorModuleAction).not.toHaveBeenCalled());
 	});
 });

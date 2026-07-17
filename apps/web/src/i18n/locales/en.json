@@ -1230,6 +1230,8 @@
   "coauthor.module.new": "New module",
   "coauthor.module.edit": "Edit",
   "coauthor.module.delete": "Delete",
+  "coauthor.module.duplicate": "Duplicate",
+  "coauthor.module.duplicate_suffix": " (copy)",
   "coauthor.module.save": "Save",
   "coauthor.module.cancel": "Cancel",
   "coauthor.module.name_label": "Name",

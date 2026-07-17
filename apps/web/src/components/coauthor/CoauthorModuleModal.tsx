@@ -193,6 +193,22 @@ export function CoauthorModuleModal() {
 		openDetail?.();
 	};
 
+	// CTX-M3: Duplicate a built-in (read-only) module into an editable user copy.
+	// The draft is seeded from the module's RESOLVED fields — basePrompt is the
+	// inline text the API already materialized for seeds (a snapshot), plus
+	// openingMessage / skillIds / toolSet / maxSteps. Later seed changes never
+	// mutate the copy: it is persisted as a user module with its own text.
+	const handleDuplicate = (module: CoauthorModule, openDetail?: () => void) => {
+		if (dirty) {
+			setConfirmDiscardOpen(true);
+			return;
+		}
+		setDraft({ ...moduleToDraft(module), name: module.name + t("coauthor.module.duplicate_suffix") });
+		setDetailMode("create");
+		setSelectedId(null);
+		openDetail?.();
+	};
+
 	const updateDraft = <K extends keyof ModuleDraft>(key: K, value: ModuleDraft[K]) => {
 		setDraft((prev) => ({ ...prev, [key]: value }));
 		setDirty(true);
@@ -342,6 +358,7 @@ export function CoauthorModuleModal() {
 							t={t}
 							isSelectedActive={isSelectedActive}
 							onEdit={() => handleEdit(selected)}
+							onDuplicate={() => handleDuplicate(selected)}
 							onDelete={() => setConfirmDeleteId(selected.id)}
 							closeDetail={closeDetail}
 						/>
@@ -514,11 +531,12 @@ interface ModuleViewProps {
 	t: TFunc;
 	isSelectedActive: boolean;
 	onEdit: () => void;
+	onDuplicate: () => void;
 	onDelete: () => void;
 	closeDetail?: () => void;
 }
 
-function ModuleView({ module, t, onEdit, onDelete }: ModuleViewProps) {
+function ModuleView({ module, t, onEdit, onDuplicate, onDelete }: ModuleViewProps) {
 	const enabledTools = TOOL_OPTIONS.filter(({ key }) => module.toolSet[key] === true);
 	return (
 		<div className="flex flex-col gap-5">
@@ -534,7 +552,19 @@ function ModuleView({ module, t, onEdit, onDelete }: ModuleViewProps) {
 				<p className="mt-1 font-ui text-[13px] leading-relaxed text-t2">{module.description}</p>
 			</div>
 
-			{!module.isBuiltIn && (
+			{module.isBuiltIn ? (
+				<div className="flex gap-2">
+					<button
+						type="button"
+						data-testid="module-view-duplicate-btn"
+						className="flex cursor-pointer items-center gap-1.5 rounded-md border border-border bg-transparent px-3 py-1.5 font-ui text-[12px] text-t2 transition-colors hover:text-t1"
+						onClick={onDuplicate}
+					>
+						<Icons.Copy className="h-3 w-3" />
+						{t("coauthor.module.duplicate")}
+					</button>
+				</div>
+			) : (
 				<div className="flex gap-2">
 					<button
 						type="button"
