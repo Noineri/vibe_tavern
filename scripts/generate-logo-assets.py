@@ -1,17 +1,19 @@
 #!/usr/bin/env python3
-"""Regenerate the Vibe Tavern favicon + binary icon from the canonical logo.
+"""Regenerate the Vibe Tavern web and Android assets from the canonical logo.
 
-Source of truth for the path data is
+Source of truth for the path data is read directly from
 `apps/web/src/components/shared/vt-logo.ts` (BOOK_PATH + STAR_DEFS). The
 colors are the coffee-theme accent tokens baked to sRGB (favicons / .ico
 can't use CSS variables):
   --accent     oklch(0.72 0.14 75)   -> #D79628  (stars)
   --accent-mid oklch(0.55 0.105 75)  -> #95671C  (book)
 
-Outputs (in apps/web/public/):
-  logo.svg      square vt_sign mark, the raster source of truth
-  logo-256.png  256x256 PNG favicon
-  logo.ico      multi-resolution icon (256/128/64/48/32/16) for the binary
+Outputs:
+  apps/web/public/logo.svg, logo-256.png, logo.ico
+  mobile/android/.../drawable/vt_logo.xml
+  mobile/android/.../drawable/ic_launcher_foreground.xml
+  mobile/android/.../drawable/ic_launcher_background.xml
+  mobile/android/.../font/inter_variable.ttf, alegreya_variable.ttf
 
 Usage:  python scripts/generate-logo-assets.py
 Requires: Inkscape (on PATH or INKSCAPE env), Pillow.
@@ -19,6 +21,7 @@ Requires: Inkscape (on PATH or INKSCAPE env), Pillow.
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -29,44 +32,25 @@ from PIL import Image
 
 ROOT = Path(__file__).resolve().parent.parent
 PUBLIC = ROOT / "apps" / "web" / "public"
+ANDROID_RES = ROOT / "mobile" / "android" / "app" / "src" / "main" / "res"
+ANDROID_DRAWABLE = ANDROID_RES / "drawable"
+ANDROID_FONT = ANDROID_RES / "font"
+WEB_FONT = PUBLIC / "fonts"
 
-# --- Canonical paths (mirror apps/web/src/components/shared/vt-logo.ts) -------
-BOOK_PATH = (
-    "M228.277 60.5653L169.085 141.858L261.622 83.8188L269.364 96.163L176.183 "
-    "154.606L281.244 126.197L285.047 140.264L159.958 174.088C158.598 165.58 "
-    "151.226 159.078 142.334 159.078C133.476 159.078 126.127 165.53 124.726 "
-    "173.99L0 140.264L3.80371 126.197L108.864 154.606L15.6831 96.163L23.4258 "
-    "83.8188L115.962 141.858L56.7705 60.5653L68.5498 51.9882L142.523 153.582"
-    "L216.498 51.9882L228.277 60.5653Z"
-)
-# Stars render at their absolute path coordinates (static rest pose).
-STARS = [
-    "M165.904 2.23722C166.998 -0.68871 171.137 -0.68873 172.23 2.23722L178.572 "
-    "19.1986C178.86 19.9707 179.422 20.6109 180.149 20.998L192.127 27.3681"
-    "C194.515 28.6384 194.515 32.0607 192.127 33.331L180.149 39.7011"
-    "C179.422 40.0881 178.86 40.7283 178.572 41.5004L172.23 58.4618"
-    "C171.137 61.3878 166.998 61.3878 165.904 58.4618L159.563 41.5004"
-    "C159.274 40.7283 158.713 40.0881 157.985 39.7011L146.008 33.331"
-    "C143.62 32.0607 143.62 28.6384 146.008 27.3681L157.985 20.998"
-    "C158.713 20.6109 159.274 19.9707 159.563 19.1986L165.904 2.23722Z",
-    "M122.963 49.1806C123.338 48.1762 124.759 48.1762 125.135 49.1806L129.501 "
-    "60.8603C129.6 61.1253 129.793 61.3451 130.042 61.4779L138.271 65.8539"
-    "C139.091 66.29 139.091 67.4652 138.271 67.9013L130.042 72.2777"
-    "C129.793 72.4106 129.6 72.63 129.501 72.8949L125.135 84.5746"
-    "C124.759 85.579 123.338 85.579 122.963 84.5746L118.597 72.8949"
-    "C118.498 72.63 118.305 72.4106 118.055 72.2777L109.826 67.9013"
-    "C109.006 67.4652 109.006 66.29 109.826 65.8539L118.055 61.4779"
-    "C118.305 61.3451 118.498 61.1253 118.597 60.8603L122.963 49.1806Z",
-    "M110.472 0.778726C110.86 -0.259575 112.329 -0.259575 112.717 0.778726"
-    "L115.842 9.1381C115.945 9.41208 116.144 9.63943 116.402 9.77677"
-    "L122.297 12.912C123.145 13.3628 123.145 14.5775 122.297 15.0282"
-    "L116.402 18.164C116.144 18.3013 115.945 18.5282 115.842 18.8022"
-    "L112.717 27.1615C112.329 28.1998 110.86 28.1998 110.472 27.1615"
-    "L107.347 18.8022C107.244 18.5282 107.045 18.3013 106.787 18.164"
-    "L100.891 15.0282C100.044 14.5775 100.044 13.3628 100.891 12.912"
-    "L106.787 9.77677C107.045 9.63942 107.244 9.41209 107.347 9.1381"
-    "L110.472 0.778726Z",
-]
+# --- Canonical paths (read from the TypeScript source of truth) ---------------
+CANONICAL_LOGO = ROOT / "apps" / "web" / "src" / "components" / "shared" / "vt-logo.ts"
+
+
+def load_canonical_paths() -> tuple[str, list[str]]:
+    source = CANONICAL_LOGO.read_text(encoding="utf-8")
+    book_match = re.search(r'export const BOOK_PATH\s*=\s*"([^"]+)";', source)
+    stars = re.findall(r'path:\s*"([^"]+)"', source)
+    if book_match is None or len(stars) != 3:
+        raise RuntimeError(f"Could not read the canonical book and three stars from {CANONICAL_LOGO}")
+    return book_match.group(1), stars
+
+
+BOOK_PATH, STARS = load_canonical_paths()
 
 # Coffee-theme accent tokens baked to sRGB (see header comment).
 ACCENT = "#D79628"      # stars  (--accent)
@@ -96,6 +80,79 @@ def build_svg() -> str:
 """
 
 
+def build_android_logo() -> str:
+    stars = "\n".join(
+        f'    <path android:fillColor="@color/vt_accent" android:pathData="{p}" />'
+        for p in STARS
+    )
+    return f'''<?xml version="1.0" encoding="utf-8"?>
+<!-- GENERATED by scripts/generate-logo-assets.py. Do not edit by hand. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="160dp"
+    android:height="98dp"
+    android:viewportWidth="286"
+    android:viewportHeight="175">
+    <path android:fillColor="@color/vt_accent_mid" android:pathData="{BOOK_PATH}" />
+{stars}
+</vector>
+'''
+
+
+def build_android_foreground() -> str:
+    stars = "\n".join(
+        f'        <path android:fillColor="@color/vt_accent" android:pathData="{p}" />'
+        for p in STARS
+    )
+    return f'''<?xml version="1.0" encoding="utf-8"?>
+<!-- GENERATED by scripts/generate-logo-assets.py. Do not edit by hand. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="468"
+    android:viewportHeight="468">
+    <!-- The 286x175 mark is centered in the adaptive-icon 66dp safe zone. -->
+    <group android:translateX="91" android:translateY="146.5">
+        <path android:fillColor="@color/vt_accent_mid" android:pathData="{BOOK_PATH}" />
+{stars}
+    </group>
+</vector>
+'''
+
+
+def build_android_background() -> str:
+    return '''<?xml version="1.0" encoding="utf-8"?>
+<!-- GENERATED by scripts/generate-logo-assets.py. Do not edit by hand. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path android:fillColor="@color/vt_background" android:pathData="M0,0h108v108H0z" />
+</vector>
+'''
+
+
+def write_android_assets() -> None:
+    ANDROID_DRAWABLE.mkdir(parents=True, exist_ok=True)
+    outputs = {
+        ANDROID_DRAWABLE / "vt_logo.xml": build_android_logo(),
+        ANDROID_DRAWABLE / "ic_launcher_foreground.xml": build_android_foreground(),
+        ANDROID_DRAWABLE / "ic_launcher_background.xml": build_android_background(),
+    }
+    for path, content in outputs.items():
+        path.write_text(content, encoding="utf-8")
+        print(f"wrote {path.relative_to(ROOT)}")
+
+    ANDROID_FONT.mkdir(parents=True, exist_ok=True)
+    fonts = {
+        WEB_FONT / "Inter-VariableFont_opsz,wght.ttf": ANDROID_FONT / "inter_variable.ttf",
+        WEB_FONT / "Alegreya-VariableFont_wght.ttf": ANDROID_FONT / "alegreya_variable.ttf",
+    }
+    for source, destination in fonts.items():
+        shutil.copyfile(source, destination)
+        print(f"copied {source.relative_to(ROOT)} -> {destination.relative_to(ROOT)}")
+
+
 def find_inkscape() -> str:
     for name in ("inkscape", "inkscape.exe"):
         exe = shutil.which(name)
@@ -117,6 +174,7 @@ def rasterize(inkscape: str, svg: Path, out: Path, size: int) -> None:
 
 def main() -> None:
     PUBLIC.mkdir(parents=True, exist_ok=True)
+    write_android_assets()
     svg_text = build_svg()
     svg_path = PUBLIC / "logo.svg"
     svg_path.write_text(svg_text, encoding="utf-8")

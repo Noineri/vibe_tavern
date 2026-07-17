@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Coffee theme tokens mirrored from apps/web/src/themes/coffee.css. -->
+    <color name="vt_background">#141210</color>
+    <color name="vt_surface">#1F1D1A</color>
+    <color name="vt_surface_raised">#272420</color>
+    <color name="vt_border">#36312C</color>
+    <color name="vt_text_primary">#D1D0BA</color>
+    <color name="vt_text_secondary">#A3988F</color>
+    <color name="vt_text_muted">#756A5F</color>
+    <color name="vt_accent">#D79628</color>
+    <color name="vt_accent_mid">#95671C</color>
+    <color name="vt_on_accent">#141210</color>
+    <color name="vt_destructive">#C65A4D</color>
+    <color name="vt_on_destructive">#FFFFFF</color>
+</resources>
