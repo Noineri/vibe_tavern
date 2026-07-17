@@ -32,6 +32,8 @@ class MobilePackagingTest {
         assertTrue(workflow.contains("testDebugUnitTest assembleRelease"))
         assertTrue(workflow.contains("out/Vibe-Tavern-v\${VERSION}-android.apk"))
         assertTrue(workflow.contains("out/Vibe-Tavern-v\${{ env.VERSION }}-android.apk"))
+        assertTrue(workflow.contains("unzip -p \"\$APK\" assets/vibe-tavern-android-arm64.tgz"))
+        assertTrue(workflow.contains("tar -xOf \"\$PAYLOAD\" ./version.txt"))
         assertTrue(gradle.contains("applicationId = \"com.vibetavern.launcher\""))
         assertTrue(gradle.contains("create(\"release\")"))
         assertTrue(gradle.contains("ANDROID_KEYSTORE_PATH"))

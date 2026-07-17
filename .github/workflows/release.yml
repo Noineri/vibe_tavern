@@ -142,6 +142,16 @@ jobs:
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: ./gradlew testDebugUnitTest assembleRelease
+      - name: Verify embedded ARM payload
+        run: |
+          set -euo pipefail
+          APK="mobile/android/app/build/outputs/apk/release/app-release.apk"
+          PAYLOAD="$RUNNER_TEMP/vibe-tavern-android-arm64.tgz"
+          unzip -p "$APK" assets/vibe-tavern-android-arm64.tgz > "$PAYLOAD"
+          test -s "$PAYLOAD"
+          tar -tzf "$PAYLOAD" >/dev/null
+          test "$(tar -xOf "$PAYLOAD" ./version.txt | tr -d '\r\n')" = "$VERSION"
+          tar -tvzf "$PAYLOAD" | awk '$NF == "vibe-tavern" && $1 ~ /^-rwx/ { found=1 } END { exit !found }'
       - name: Verify APK signature
         run: |
           set -euo pipefail
