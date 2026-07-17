@@ -3,6 +3,14 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
+val releaseSigningVariables = listOf(
+    "ANDROID_KEYSTORE_PATH",
+    "ANDROID_KEYSTORE_PASSWORD",
+    "ANDROID_KEY_ALIAS",
+    "ANDROID_KEY_PASSWORD",
+)
+val releaseSigning = releaseSigningVariables.associateWith(System::getenv)
+
 android {
     namespace = "com.vibetavern.launcher"
     compileSdk = 35
@@ -16,12 +24,20 @@ android {
 
     }
 
+    signingConfigs {
+        create("release") {
+            storeFile = releaseSigning["ANDROID_KEYSTORE_PATH"]?.takeIf(String::isNotBlank)?.let(::file)
+            storePassword = releaseSigning["ANDROID_KEYSTORE_PASSWORD"]
+            keyAlias = releaseSigning["ANDROID_KEY_ALIAS"]
+            keyPassword = releaseSigning["ANDROID_KEY_PASSWORD"]
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            // Use debug signing for CI builds (user adds release keystore for production)
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName("release")
         }
         debug {
             isMinifyEnabled = false
@@ -40,6 +56,15 @@ android {
     buildFeatures {
         viewBinding = true
         buildConfig = true
+    }
+}
+
+tasks.matching { it.name == "preReleaseBuild" }.configureEach {
+    doFirst {
+        val missing = releaseSigningVariables.filter { releaseSigning[it].isNullOrBlank() }
+        check(missing.isEmpty()) {
+            "Release signing requires environment variables: ${missing.joinToString(", ")}"
+        }
     }
 }
 

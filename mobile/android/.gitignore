@@ -12,3 +12,8 @@ local.properties
 /app/build
 /app/src/main/assets/vibe-tavern-android-arm64.tar.gz
 /app/src/main/assets/vibe-tavern-android-arm64.tgz
+*.jks
+*.keystore
+/signing.properties
+/app/signing.properties
+/app/*.apk
