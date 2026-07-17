@@ -238,6 +238,92 @@ describe("ToolActivityCard — operation previews (CED-6)", () => {
 	});
 });
 
+describe("ToolActivityCard — lore tool previews (CTX-L3)", () => {
+	it("create_lorebook shows the book name + description instead of 'unavailable'", () => {
+		const { getByText, queryByText } = render(
+			<ToolActivityCard activity={activity({
+				toolName: "create_lorebook",
+				summary: "Drafted a new lorebook.",
+				args: { name: "Castle Anvil", description: "Seat of the crown.", summary: "Drafted a new lorebook." },
+			})} />,
+		);
+		fireEvent.click(getByText("Drafted a new lorebook."));
+		expect(getByText("coauthor_tool_op_lore_book")).toBeDefined();
+		expect(getByText(/Castle Anvil/)).toBeDefined();
+		expect(getByText(/Seat of the crown\./)).toBeDefined();
+		expect(queryByText("coauthor_tool_op_unavailable")).toBeNull();
+	});
+
+	it("create_lore_entry shows activation keys as chips + the entry content", () => {
+		const { getByText } = render(
+			<ToolActivityCard activity={activity({
+				toolName: "create_lore_entry",
+				summary: "Added the Castle entry.",
+				args: { lorebookId: "lb1", title: "Castle", content: "An ancient stronghold.", keys: ["castle", "fortress"], summary: "Added the Castle entry." },
+			})} />,
+		);
+		fireEvent.click(getByText("Added the Castle entry."));
+		expect(getByText("coauthor_tool_op_lore_entry")).toBeDefined();
+		expect(getByText("castle")).toBeDefined();
+		expect(getByText("fortress")).toBeDefined();
+		expect(getByText("An ancient stronghold.")).toBeDefined();
+	});
+
+	it("ai_write_lore_entry shows the delegated instruction brief", () => {
+		const { getByText } = render(
+			<ToolActivityCard activity={activity({
+				toolName: "ai_write_lore_entry",
+				summary: "Wrote the backstory.",
+				args: { entryId: "e1", instruction: "Cover the originating incident and the sensory trigger.", summary: "Wrote the backstory." },
+			})} />,
+		);
+		fireEvent.click(getByText("Wrote the backstory."));
+		expect(getByText("coauthor_tool_op_lore_write")).toBeDefined();
+		expect(getByText("Cover the originating incident and the sensory trigger.")).toBeDefined();
+	});
+
+	it("ai_generate_lore_keys shows keyTarget + mode params (default both / replace)", () => {
+		const { getByText } = render(
+			<ToolActivityCard activity={activity({
+				toolName: "ai_generate_lore_keys",
+				summary: "Generated activation keys.",
+				args: { entryId: "e1", summary: "Generated activation keys." },
+			})} />,
+		);
+		fireEvent.click(getByText("Generated activation keys."));
+		expect(getByText("coauthor_tool_op_lore_keys")).toBeDefined();
+		expect(getByText("ai_quickpill_key_target_both")).toBeDefined();
+		expect(getByText("coauthor_tool_op_replace")).toBeDefined();
+	});
+
+	it("ai_generate_lore_keys reflects keyTarget=primary + appendMode (augment)", () => {
+		const { getByText, queryByText } = render(
+			<ToolActivityCard activity={activity({
+				toolName: "ai_generate_lore_keys",
+				summary: "Added primary triggers.",
+				args: { entryId: "e1", keyTarget: "primary", appendMode: true, summary: "Added primary triggers." },
+			})} />,
+		);
+		fireEvent.click(getByText("Added primary triggers."));
+		expect(getByText("ai_quickpill_key_target_primary")).toBeDefined();
+		expect(getByText("ai_quickpill_append")).toBeDefined();
+		expect(queryByText("ai_quickpill_key_target_secondary")).toBeNull();
+	});
+
+	it("set_lore_activation shows the constant toggle", () => {
+		const { getByText } = render(
+			<ToolActivityCard activity={activity({
+				toolName: "set_lore_activation",
+				summary: "Made the entry constant.",
+				args: { entryId: "e1", constant: true, summary: "Made the entry constant." },
+			})} />,
+		);
+		fireEvent.click(getByText("Made the entry constant."));
+		expect(getByText("coauthor_tool_op_lore_activation")).toBeDefined();
+		expect(getByText("coauthor_tool_op_lore_constant")).toBeDefined();
+	});
+});
+
 	describe("ToolActivityCard — read_skill_file activity (CTX-S6)", () => {
 		it("renders the read path as the title with NO error label (a done read, not an error)", () => {
 			const { getByText, queryByText } = render(
