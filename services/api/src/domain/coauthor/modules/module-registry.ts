@@ -33,7 +33,7 @@ const SEED_MODULE_DEFS: readonly SeedModuleDef[] = [
     basePromptFile: "coauthor/modules/default.md",
     openingMessage:
       "I'm ready to help you build {{char}} — I can revise the profile, personality, scenario, greetings, and example dialogue. What would you like to work on?",
-    skillIds: ["general-writing"],
+    skillIds: ["character-workshop"],
     toolSet: {
       write_profile: true,
       edit_personality: true,
@@ -55,7 +55,7 @@ const SEED_MODULE_DEFS: readonly SeedModuleDef[] = [
     basePromptFile: "coauthor/modules/profile-editor.md",
     openingMessage:
       "I'll focus on {{char}}'s profile — personality, scenario, and description. Tell me what feels flat or underdeveloped and I'll propose targeted edits.",
-    skillIds: ["profile-analysis"],
+    skillIds: ["revision-workshop"],
     toolSet: {
       write_profile: true,
       edit_personality: true,
@@ -72,7 +72,7 @@ const SEED_MODULE_DEFS: readonly SeedModuleDef[] = [
     basePromptFile: "coauthor/modules/dialogue-writer.md",
     openingMessage:
       "I'll help you write and refine {{char}}'s greetings and example dialogue. Want fresh opening lines, alternates, or a rewrite of what's there?",
-    skillIds: ["dialogue-generation"],
+    skillIds: ["dialogue-studio"],
     toolSet: {
       edit_examples: true,
       write_examples: true,

@@ -300,20 +300,31 @@ describe("scanSkillRoot — duplicate names", () => {
 // ─── resolvers ───────────────────────────────────────────────────────────────
 
 describe("root resolvers", () => {
-  test("resolveBuiltinSkillsRoot points at the converted built-in tree and finds the five skills", async () => {
+  test("resolveBuiltinSkillsRoot points at the built-in tree and finds the four workflow bundles", async () => {
     const root = await resolveBuiltinSkillsRoot();
     const { skills, errors } = await scanSkillRoot({ path: root, source: "builtin" });
     expect(errors).toEqual([]);
     expect(skills.map((s) => s.id).sort()).toEqual([
-      "dialogue-generation",
-      "general-writing",
-      "personality-deepen",
-      "profile-analysis",
-      "profile-overview",
+      "character-workshop",
+      "dialogue-studio",
+      "quick-draft",
+      "revision-workshop",
     ]);
-    // The two skills that already carried frontmatter keep their parsed names.
-    const overview = skills.find((s) => s.id === "profile-overview");
-    expect(overview?.description.length).toBeGreaterThan(0);
+    // Every workflow bundle carries a parsed description (catalog metadata).
+    for (const skill of skills) {
+      expect(skill.description.length).toBeGreaterThan(0);
+    }
+  });
+
+  test("quick-draft ships a card template that resolves as a skill-local reference (CTX-M1)", async () => {
+    // Self-check: every manifest parses and every local/shared reference resolves.
+    // Quick Draft's SKILL.md references references/card-template.md; confirm that
+    // file exists under the built-in root and is non-empty.
+    const root = await resolveBuiltinSkillsRoot();
+    const templatePath = join(root, "quick-draft", "references", "card-template.md");
+    const templateFile = Bun.file(templatePath);
+    expect(await templateFile.exists()).toBe(true);
+    expect((await templateFile.text()).length).toBeGreaterThan(0);
   });
 
   test("resolveUserSkillsRoot builds <dataDir>/coauthor/skills", () => {

@@ -73,8 +73,8 @@ export interface ScanRoot {
 
 const MANIFEST_NAME = "SKILL.md";
 const SKILLS_ASSET_DIR = "coauthor/skills";
-/** A built-in manifest that always exists after the Wave-1 directory conversion — used to locate the built-in root. */
-const BUILTIN_LOCATOR_MANIFEST = `${SKILLS_ASSET_DIR}/profile-overview/${MANIFEST_NAME}`;
+/** A built-in manifest that always exists after the Wave-3 skill-bundle rebuild — used to locate the built-in root. */
+const BUILTIN_LOCATOR_MANIFEST = `${SKILLS_ASSET_DIR}/character-workshop/${MANIFEST_NAME}`;
 
 // ─── Manifest parsing (read-only) ────────────────────────────────────────────
 
@@ -314,7 +314,7 @@ export async function buildSkillCatalog(roots: readonly ScanRoot[]): Promise<Ski
  */
 export async function resolveBuiltinSkillsRoot(): Promise<string> {
   const locator = await resolvePromptAssetPath(BUILTIN_LOCATOR_MANIFEST);
-  // locator = <skills-root>/profile-overview/SKILL.md → climb twice.
+  // locator = <skills-root>/character-workshop/SKILL.md → climb twice.
   return dirname(dirname(locator));
 }
 
