@@ -15,6 +15,7 @@
         <ImageView
             android:layout_width="144dp"
             android:layout_height="88dp"
+            android:layout_marginBottom="10dp"
             android:contentDescription="@string/logo_content_description"
             android:src="@drawable/vt_logo" />
 
