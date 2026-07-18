@@ -18,6 +18,7 @@ import { useBootstrapStore } from "../../stores/api-actions/bootstrap-actions.js
 import { countTokens } from "../../utils/tokenizer.js";
 import { useChatController } from "../../hooks/use-chat-controller.js";
 import { useShallow } from "zustand/react/shallow";
+import { copyText } from "../../lib/clipboard.js";
 
 export const CoauthorTurnShell = memo(function CoauthorTurnShell({
   turnId,
@@ -160,7 +161,7 @@ export const CoauthorTurnShell = memo(function CoauthorTurnShell({
   };
 
   const actions = {
-    onCopy: () => {
+    onCopy: async () => {
       const state = useSnapshotStore.getState();
       const text = turnMessageIds
         .map(id => state.messagesById[id])
@@ -168,9 +169,11 @@ export const CoauthorTurnShell = memo(function CoauthorTurnShell({
         .map(m => m?.content)
         .filter(Boolean)
         .join("\n\n");
-      void navigator.clipboard?.writeText(text);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1000);
+      const result = await copyText(text);
+      if (result.ok) {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1000);
+      }
     },
     onEdit: () => {
       const state = useSnapshotStore.getState();

@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { copyText } from "./clipboard.js";
 
 interface MarkdownProps {
   text: string;
@@ -372,12 +373,13 @@ function CodeBlock({ children }: { children?: React.ReactNode }) {
 
   const isWrap = WRAP_LANGS.has(lang);
 
-  function handleCopy() {
+  async function handleCopy() {
     const text = extractText(children);
-    navigator.clipboard.writeText(text).then(() => {
+    const result = await copyText(text);
+    if (result.ok) {
       setCopied(true);
       setTimeout(() => setCopied(false), 1800);
-    }).catch(() => {/* silent — clipboard unavailable */});
+    }
   }
 
   return (
