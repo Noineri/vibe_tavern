@@ -617,4 +617,29 @@ describe("assembleCoauthorPrompt — Wave-3 module prompt contracts (CTX-M2)", (
       expect(system).not.toMatch(/decline and tell the user to switch/i);
     }
   });
+
+  test("CE-E2: lore-bearing modules point at the lorebook-authoring skill and drop inline lore mechanics", async () => {
+    // The verbose lore tool-mechanics (delegate-tool names, keyTarget/appendMode
+    // controls) moved to the lorebook-authoring skill (CE-E0); the module prompt
+    // now carries only a one-line pointer. Pinned so a regression that re-expands
+    // the module lore section is caught.
+    for (const id of ["default", "quick-draft"]) {
+      const system = await assembleForModule(id);
+      expect(system).toContain("read_skill_file('lorebook-authoring')");
+      // Inline lore mechanics no longer live in the module prompt.
+      expect(system).not.toContain("appendMode");
+      expect(system).not.toContain("keyTarget");
+      expect(system).not.toContain("ai_write_lore_entry");
+    }
+  });
+
+  test("CE-E2: base prompt teaches the 3-level context model and the binding boundary", async () => {
+    // Every module inherits base, so the shared context model lives there once.
+    const system = await assembleForModule("default");
+    expect(system).toContain("Context you can reach");
+    expect(system).toContain("search_context");
+    expect(system).toContain("read_context_item");
+    // Binding is the author's action, not the model's.
+    expect(system).toMatch(/Binding is the author's action/);
+  });
 });

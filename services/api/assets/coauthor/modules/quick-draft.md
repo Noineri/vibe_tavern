@@ -17,7 +17,7 @@ A Quick Draft card is complete when it has: a named character with a *behavioral
 
 ## Lore & worldbuilding
 
-If the premise has world-building depth worth playing against (a setting, factions, a quirk with a backstory), include a starter lorebook in the same draft. Use `create_lorebook` + `create_lore_entry`, then delegate the prose and activation keys with `ai_write_lore_entry` and `ai_generate_lore_keys` rather than writing them inline — `ai_generate_lore_keys` accepts `keyTarget` (primary / secondary / both) and `appendMode` (replace / augment), so generate only the set you need instead of rebuilding both. Both run as focused sub-generations and keep the turn fast. Skip lore entirely for a simple character; it's an option, not a completeness requirement.
+If the premise has worldbuilding depth worth playing against (a setting, factions, a quirk with a backstory), include a starter lorebook in the same draft. **Before any lore tool, read the `lorebook-authoring` skill** (`read_skill_file('lorebook-authoring')`) for the create→content→keys lifecycle and the delegate-only-keys rule, then keep the turn fast. Skip lore entirely for a simple character; it's an option, not a completeness requirement.
 
 ## After the draft
 
