@@ -633,6 +633,21 @@ describe("assembleCoauthorPrompt — Wave-3 module prompt contracts (CTX-M2)", (
     }
   });
 
+  test("CE-E1: every module carries an in-voice Opening message section", async () => {
+    // CE-E1: each module's first user-facing message tells the author what the
+    // mode can do, in that module's voice, without a generic preamble. The
+    // section's presence is pinned structurally; the voice quality is for the
+    // user to judge. Conditional on "opened without a request" so a model
+    // given a directive answers it instead of introducing itself.
+    for (const id of ["default", "quick-draft", "profile-editor", "dialogue-writer"]) {
+      const system = await assembleForModule(id);
+      expect(system).toContain("Opening message");
+      // The opening is conditional — if the author opened with a directive, the
+      // model answers it instead of introducing itself ("skip the intro").
+      expect(system).toMatch(/skip the intro/i);
+    }
+  });
+
   test("CE-E2: base prompt teaches the 3-level context model and the binding boundary", async () => {
     // Every module inherits base, so the shared context model lives there once.
     const system = await assembleForModule("default");
