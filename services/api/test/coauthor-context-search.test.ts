@@ -7,33 +7,57 @@ import { createContextSearchSession, type ContextSearchStoreReads } from "../src
  * underlying index is already pinned in packages/db/test/context-search-index.test.ts).
  */
 
+function baseCharacters(): import("../src/domain/context/context-search-service.js").ContextSearchCharacterView[] {
+  return [
+    { id: "ch_aria", name: "Aria Stormwind", description: "Captain of the northern fleet.", personalitySummary: "Bold leader.", tags: ["fantasy", "captain"] },
+    { id: "ch_boris", name: "Борис Крэг", description: "Старый harbour-master.", personalitySummary: null, tags: [] },
+  ];
+}
+function basePersonas(): import("../src/domain/context/context-search-service.js").ContextSearchPersonaView[] {
+  return [{ id: "ps_default", name: "Default Persona", description: "Neutral narrator voice." }];
+}
+function baseLorebooks(): import("../src/domain/context/context-search-service.js").ContextSearchLorebookView[] {
+  return [
+    { id: "lb_world", name: "World Lore", description: "Geography and factions.", scopeType: "character", characterId: "ch_aria", personaId: null, chatId: null },
+    { id: "lb_global", name: "Global Encyclopedia", description: "Universal facts.", scopeType: "global", characterId: null, personaId: null, chatId: null },
+  ];
+}
+function baseEntries(lorebookId: string): import("../src/domain/context/context-search-service.js").ContextSearchLoreEntryView[] {
+  if (lorebookId === "lb_world") {
+    return [
+      { id: "le_aurora", lorebookId: "lb_world", title: "The Aurora", content: "Aria's flagship, docked at harbor.", keys: ["aurora", "flagship"], logic: "and_any", enabled: true },
+      { id: "le_disabled", lorebookId: "lb_world", title: "Disabled Entry", content: "This should not appear.", keys: [], logic: "and_any", enabled: false },
+    ];
+  }
+  return [];
+}
+function baseScripts(): import("../src/domain/context/context-search-service.js").ContextSearchScriptView[] {
+  return [
+    { id: "sc_dice", name: "Dice Roller", description: "Rolls polyhedral dice.", code: "console.log('roll')", scopeType: "character", characterId: "ch_aria", personaId: null },
+  ];
+}
+
 function makeStores(overrides?: Partial<ContextSearchStoreReads>): ContextSearchStoreReads {
   return {
-    listAllCharacters: async () => [
-      { id: "ch_aria", name: "Aria Stormwind", description: "Captain of the northern fleet.", personalitySummary: "Bold leader.", tags: ["fantasy", "captain"] },
-      { id: "ch_boris", name: "Борис Крэг", description: "Старый harbour-master.", personalitySummary: null, tags: [] },
-    ],
-    listAllPersonas: async () => [
-      { id: "ps_default", name: "Default Persona", description: "Neutral narrator voice." },
-    ],
-    listAllLorebooks: async () => [
-      { id: "lb_world", name: "World Lore", description: "Geography and factions.", scopeType: "character", characterId: "ch_aria", personaId: null, chatId: null },
-      { id: "lb_global", name: "Global Encyclopedia", description: "Universal facts.", scopeType: "global", characterId: null, personaId: null, chatId: null },
-    ],
-    listEntries: async (lorebookId: string) => {
-      if (lorebookId === "lb_world") {
-        return [
-          { id: "le_aurora", lorebookId: "lb_world", title: "The Aurora", content: "Aria's flagship, docked at harbor.", keys: ["aurora", "flagship"], logic: "and_any", enabled: true },
-          { id: "le_disabled", lorebookId: "lb_world", title: "Disabled Entry", content: "This should not appear.", keys: [], logic: "and_any", enabled: false },
-        ];
-      }
-      return [];
-    },
-    listAllScripts: async () => [
-      { id: "sc_dice", name: "Dice Roller", description: "Rolls polyhedral dice.", code: "console.log('roll')", scopeType: "character", characterId: "ch_aria", personaId: null },
-    ],
+    listAllCharacters: async () => baseCharacters(),
+    listAllPersonas: async () => basePersonas(),
+    listAllLorebooks: async () => baseLorebooks(),
+    listEntries: async (lorebookId: string) => baseEntries(lorebookId),
+    listAllScripts: async () => baseScripts(),
     listLorebooksLinkedToTarget: async () => [],
     listScriptsLinkedToTarget: async () => [],
+    // Direct lookups — back the canonical read path (O(1)).
+    getCharacter: async (id) => baseCharacters().find((c) => c.id === id) ?? null,
+    getPersona: async (id) => basePersonas().find((p) => p.id === id) ?? null,
+    getLorebook: async (id) => baseLorebooks().find((lb) => lb.id === id) ?? null,
+    getEntry: async (id) => {
+      for (const lb of baseLorebooks()) {
+        const e = baseEntries(lb.id).find((en) => en.id === id);
+        if (e) return e;
+      }
+      return null;
+    },
+    getScript: async (id) => baseScripts().find((sc) => sc.id === id) ?? null,
     ...overrides,
   };
 }
@@ -147,6 +171,47 @@ describe("context-search-session: read", () => {
   test("read missing entity throws", async () => {
     const session = createContextSearchSession(makeStores(), defaultScope);
     await expect(session.read("character", "ghost")).rejects.toThrow(/not found/);
+    session.dispose();
+  });
+
+  test("read uses O(1) direct lookups, not bulk scans", async () => {
+    // CE-D2 finding #3: read('lore-entry') previously scanned ALL lorebooks ×
+    // every entry (O(lorebooks) DB calls). It must now use getEntry(id) only.
+    // We assert by instrumenting the bulk reads: if read touched them, the
+    // counters would be non-zero.
+    let bulkListLorebooks = 0;
+    let bulkListEntries = 0;
+    let bulkListCharacters = 0;
+    let bulkListScripts = 0;
+    const stores = makeStores({
+      listAllLorebooks: async () => {
+        bulkListLorebooks++;
+        return baseLorebooks();
+      },
+      listEntries: async (id) => {
+        bulkListEntries++;
+        return baseEntries(id);
+      },
+      listAllCharacters: async () => {
+        bulkListCharacters++;
+        return baseCharacters();
+      },
+      listAllScripts: async () => {
+        bulkListScripts++;
+        return baseScripts();
+      },
+    });
+    const session = createContextSearchSession(stores, defaultScope);
+
+    await session.read("lore-entry", "le_aurora");
+    expect(bulkListLorebooks).toBe(0);
+    expect(bulkListEntries).toBe(0);
+
+    await session.read("character", "ch_aria");
+    expect(bulkListCharacters).toBe(0);
+
+    await session.read("script", "sc_dice");
+    expect(bulkListScripts).toBe(0);
     session.dispose();
   });
 

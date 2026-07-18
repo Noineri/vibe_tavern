@@ -72,6 +72,7 @@ export interface ContextSearchScriptView {
 
 /** Structural read-store subset the session lazily reads. */
 export interface ContextSearchStoreReads {
+  // ── Bulk reads for projection (index build) ──
   listAllCharacters(): Promise<ContextSearchCharacterView[]>;
   listAllPersonas(): Promise<ContextSearchPersonaView[]>;
   listAllLorebooks(): Promise<ContextSearchLorebookView[]>;
@@ -81,6 +82,12 @@ export interface ContextSearchStoreReads {
   listLorebooksLinkedToTarget(targetType: "character" | "persona", targetId: string): Promise<ContextSearchLorebookView[]>;
   /** Scripts M:N-linked to a character (junction table). */
   listScriptsLinkedToTarget(targetType: "character" | "persona", targetId: string): Promise<ContextSearchScriptView[]>;
+  // ── Direct lookups for canonical read (O(1), avoid N+1 scans) ──
+  getCharacter(id: string): Promise<ContextSearchCharacterView | null>;
+  getPersona(id: string): Promise<ContextSearchPersonaView | null>;
+  getLorebook(id: string): Promise<ContextSearchLorebookView | null>;
+  getEntry(id: string): Promise<ContextSearchLoreEntryView | null>;
+  getScript(id: string): Promise<ContextSearchScriptView | null>;
 }
 
 /** Active-scope metadata — the chat's character/persona and their bound sets. */
@@ -122,14 +129,12 @@ export interface ContextSearchToolResult {
 
 async function readCanonicalContent(
   stores: ContextSearchStoreReads,
-  rec: ContextSearchResult,
+  type: string,
+  id: string,
 ): Promise<ContextSearchReadResult> {
-  const { type, id } = rec;
-
   switch (type) {
     case "character": {
-      const chars = await stores.listAllCharacters();
-      const c = chars.find((ch) => ch.id === id);
+      const c = await stores.getCharacter(id);
       if (!c) throw new Error(`character '${id}' not found`);
       const parts = [`# ${c.name}`];
       if (c.description) parts.push(c.description);
@@ -138,49 +143,45 @@ async function readCanonicalContent(
       return { type, id, title: c.name, content: parts.join("\n") };
     }
     case "persona": {
-      const personas = await stores.listAllPersonas();
-      const p = personas.find((ps) => ps.id === id);
+      const p = await stores.getPersona(id);
       if (!p) throw new Error(`persona '${id}' not found`);
       return { type, id, title: p.name, content: `# ${p.name}\n${p.description}` };
     }
     case "lorebook": {
-      const lorebooks = await stores.listAllLorebooks();
-      const lb = lorebooks.find((l) => l.id === id);
+      const lb = await stores.getLorebook(id);
       if (!lb) throw new Error(`lorebook '${id}' not found`);
-      const entries = await stores.listEntries(id);
-      const enabledEntries = entries.filter((e) => e.enabled);
+      // One call for the lorebook's entries (enabled filter applied here —
+      // disabled entries are hidden from canonical read just as they are from
+      // the index). This is a single query, not an N+1 scan.
+      const entries = (await stores.listEntries(id)).filter((e) => e.enabled);
       const parts = [`# ${lb.name}`];
       if (lb.description) parts.push(lb.description);
-      if (enabledEntries.length > 0) {
+      if (entries.length > 0) {
         parts.push("\n## Entries");
-        for (const e of enabledEntries) {
+        for (const e of entries) {
           parts.push(`\n### ${e.title}\n${e.content}`);
         }
       }
       return { type, id, title: lb.name, content: parts.join("\n") };
     }
     case "lore-entry": {
-      // Find entry across all lorebooks.
-      const lorebooks = await stores.listAllLorebooks();
-      for (const lb of lorebooks) {
-        const entries = await stores.listEntries(lb.id);
-        const entry = entries.find((e) => e.id === id);
-        if (entry) {
-          const content = [
-            `# ${entry.title}`,
-            entry.content,
-            entry.keys.length > 0 ? `\nKeys: ${entry.keys.join(", ")}` : "",
-          ]
-            .filter(Boolean)
-            .join("\n");
-          return { type, id, title: entry.title, content };
-        }
-      }
-      throw new Error(`lore-entry '${id}' not found`);
+      // O(1) direct lookup — replaces the previous scan of every lorebook ×
+      // every entry. A disabled entry is unreachable via search (the index
+      // excludes it); a direct read by id still returns its content, matching
+      // the prior scan behaviour.
+      const e = await stores.getEntry(id);
+      if (!e) throw new Error(`lore-entry '${id}' not found`);
+      const content = [
+        `# ${e.title}`,
+        e.content,
+        e.keys.length > 0 ? `\nKeys: ${e.keys.join(", ")}` : "",
+      ]
+        .filter(Boolean)
+        .join("\n");
+      return { type, id, title: e.title, content };
     }
     case "script": {
-      const scripts = await stores.listAllScripts();
-      const sc = scripts.find((s) => s.id === id);
+      const sc = await stores.getScript(id);
       if (!sc) throw new Error(`script '${id}' not found`);
       const parts = [`# ${sc.name}`];
       if (sc.description) parts.push(sc.description);
@@ -423,23 +424,13 @@ export function createContextSearchSession(
     },
 
     async read(type: string, id: string): Promise<ContextSearchReadResult> {
-      // Canonical read goes straight to the stores — it does NOT use the
-      // index, so we must NOT call ensureIndex() here. Building the index is
-      // a side effect of search only; coupling read to it would (a) trigger a
-      // full library projection for a single read when the model calls
-      // read_context_item without a prior search, and (b) make read depend on
-      // resolveActiveScope succeeding even though read needs no scope.
-      return readCanonicalContent(stores, {
-        channel: "entity",
-        type,
-        id,
-        title: "", // title is resolved from the store
-        scope: "",
-        ownerId: null,
-        parentId: null,
-        meta: {},
-        matchKind: "exact-title",
-      });
+      // Canonical read goes straight to the stores via O(1) direct lookups —
+      // it does NOT use the index, so we must NOT call ensureIndex() here.
+      // Building the index is a side effect of search only; coupling read to it
+      // would (a) trigger a full library projection for a single read when the
+      // model calls read_context_item without a prior search, and (b) make read
+      // depend on resolveActiveScope succeeding even though read needs no scope.
+      return readCanonicalContent(stores, type, id);
     },
 
     dispose() {

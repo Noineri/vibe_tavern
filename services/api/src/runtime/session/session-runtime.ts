@@ -980,6 +980,11 @@ export function pickBootstrapChatId<T extends string>(
 					stores.lorebooks.listLorebooksLinkedToTarget(targetType, targetId),
 				listScriptsLinkedToTarget: (targetType: "character" | "persona", targetId: string) =>
 					stores.scripts.listScriptsLinkedToTarget(targetType, targetId),
+				getCharacter: (id: string) => stores.characters.getById(id),
+				getPersona: (id: string) => stores.personas.getById(id),
+				getLorebook: (id: string) => stores.lorebooks.getLorebook(id),
+				getEntry: (id: string) => stores.lorebooks.getEntry(id),
+				getScript: (id: string) => stores.scripts.getById(id),
 			},
 			async () => {
 				const chat = await stores.chats.getById(chatId);
