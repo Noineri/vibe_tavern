@@ -888,19 +888,20 @@ export function buildCoauthorTools(opts: { toolSet?: Record<string, boolean>; pr
     // wired (test contexts); the tools then throw a clear error if invoked.
     search_context: tool({
       description:
-        "Search the user's library by keyword (characters, personas, lorebooks, lore entries, scripts). " +
-        "Returns compact locator metadata only (type, id, title, scope, match kind) — no full content. " +
+        "Search the user's library by keyword (characters, personas, lorebooks, lore entries, scripts, AND Co-Author skills). " +
+        "Returns compact locator metadata only (type, id, title, scope, meta, match kind) — no full content. " +
         "Use concise source-language keywords; retry with synonyms or translation if the first search misses. " +
         "When you know the item's title, pass it as the query — exact-title matches rank above content matches. " +
-        "After identifying the correct item, call `read_context_item` to get its full content.",
+        "HOW TO READ RESULTS: for type 'character'/'persona'/'lorebook'/'lore-entry'/'script', call `read_context_item` to get full content. " +
+        "For type 'skill' (a Co-Author workflow skill), DO NOT use read_context_item — instead call `read_skill_file` with the 'manifestPath' from the result's meta to load the skill's SKILL.md and follow its workflow.",
       inputSchema: z.object({
         query: z.string().min(1).describe("Search keywords. Short, content-language, no operators needed."),
-        types: z.array(z.enum(["character", "persona", "lorebook", "lore-entry", "script"]))
+        types: z.array(z.enum(["character", "persona", "lorebook", "lore-entry", "script", "skill"]))
           .optional()
-          .describe("Restrict results to these entity types. Omit to search all."),
+          .describe("Restrict results to these types. Omit to search all (entities + skills)."),
         scope: z.enum(["active_first", "library"])
           .optional()
-          .describe("'active_first' (default) boosts the active character/persona and their bound resources. 'library' disables boosting."),
+          .describe("'active_first' (default) boosts the active character/persona and their bound resources. 'library' disables boosting. Skills are never boosted (library-wide)."),
       }),
       execute: async ({ query, types, scope }): Promise<{ results: import("../context/context-search-service.js").ContextSearchToolResult[] }> => {
         if (!contextSearchSession) {
@@ -918,11 +919,13 @@ export function buildCoauthorTools(opts: { toolSet?: Record<string, boolean>; pr
 
     read_context_item: tool({
       description:
-        "Read the full canonical content of one entity found via `search_context`. " +
+        "Read the full canonical content of one ENTITY found via `search_context` " +
+        "(character, persona, lorebook, lore-entry, or script). " +
         "Returns the entity's complete text (character profile, persona description, " +
         "lorebook metadata + enabled entries, lore entry content + keys, or script description + code). " +
         "Use this AFTER `search_context` identified the correct item. " +
-        "Never call this without a prior search — the type and id come from search results.",
+        "Never call this without a prior search — the type and id come from search results. " +
+        "NOTE: this tool does NOT read Co-Author skills (type 'skill') — load those via `read_skill_file` using the manifestPath from the search result.",
       inputSchema: z.object({
         type: z.enum(["character", "persona", "lorebook", "lore-entry", "script"])
           .describe("Entity type from a search_context result."),

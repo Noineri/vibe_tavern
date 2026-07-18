@@ -36,6 +36,12 @@ function baseScripts(): import("../src/domain/context/context-search-service.js"
     { id: "sc_dice", name: "Dice Roller", description: "Rolls polyhedral dice.", code: "console.log('roll')", scopeType: "character", characterId: "ch_aria", personaId: null },
   ];
 }
+function baseSkills(): import("../src/domain/context/context-search-service.js").ContextSearchSkillView[] {
+  return [
+    { id: "card-workshop", name: "Character Card Workshop", description: "Step-by-step character card authoring workflow.", manifestPath: "card-workshop/SKILL.md", source: "builtin" },
+    { id: "dialogue-studio", name: "Dialogue Studio", description: "Craft vivid example dialogue lines.", manifestPath: "dialogue-studio/SKILL.md", source: "user" },
+  ];
+}
 
 function makeStores(overrides?: Partial<ContextSearchStoreReads>): ContextSearchStoreReads {
   return {
@@ -46,6 +52,7 @@ function makeStores(overrides?: Partial<ContextSearchStoreReads>): ContextSearch
     listAllScripts: async () => baseScripts(),
     listLorebooksLinkedToTarget: async () => [],
     listScriptsLinkedToTarget: async () => [],
+    listSkills: async () => baseSkills(),
     // Direct lookups — back the canonical read path (O(1)).
     getCharacter: async (id) => baseCharacters().find((c) => c.id === id) ?? null,
     getPersona: async (id) => basePersonas().find((p) => p.id === id) ?? null,
@@ -230,6 +237,75 @@ describe("context-search-session: read", () => {
     const result = await session.read("persona", "ps_default");
     expect(scopeResolved).toBe(false);
     expect(result.content).toContain("Neutral narrator voice");
+    session.dispose();
+  });
+});
+
+describe("context-search-session: skill channel (CE-D3)", () => {
+  test("search finds a skill by keyword", async () => {
+    const session = createContextSearchSession(makeStores(), defaultScope);
+    const results = await session.search("character card authoring");
+    const ws = results.find((r) => r.type === "skill" && r.id === "card-workshop");
+    expect(ws).toBeDefined();
+    expect(ws?.title).toBe("Character Card Workshop");
+    session.dispose();
+  });
+
+  test("skill results carry manifestPath + source in meta, no body", async () => {
+    const session = createContextSearchSession(makeStores(), defaultScope);
+    const results = await session.search("dialogue");
+    const ds = results.find((r) => r.type === "skill" && r.id === "dialogue-studio");
+    expect(ds).toBeDefined();
+    expect(ds?.meta.manifestPath).toBe("dialogue-studio/SKILL.md");
+    expect(ds?.meta.source).toBe("user");
+    // The tool result is metadata-only — no content/body field exists.
+    expect("content" in (ds as object)).toBe(false);
+    session.dispose();
+  });
+
+  test("exact skill title promotes above content matches", async () => {
+    const session = createContextSearchSession(makeStores(), defaultScope);
+    const results = await session.search("Character Card Workshop");
+    expect(results[0].type).toBe("skill");
+    expect(results[0].id).toBe("card-workshop");
+    expect(results[0].matchKind).toBe("exact-title");
+    session.dispose();
+  });
+
+  test("skills are never scope-boosted even in active_first mode", async () => {
+    // A skill and the active character both match 'character'. The active
+    // character is boosted within its tier; the skill (global scope) is never
+    // boosted, so the active character ranks above the skill when both are in
+    // the same content tier.
+    const session = createContextSearchSession(makeStores(), defaultScope);
+    const results = await session.search("character");
+    const aria = results.find((r) => r.id === "ch_aria");
+    const skill = results.find((r) => r.type === "skill");
+    if (aria && skill) {
+      expect(results.indexOf(aria)).toBeLessThan(results.indexOf(skill));
+      expect(skill.scope).toBe("global");
+    }
+    session.dispose();
+  });
+
+  test("type filter 'skill' restricts to skills only", async () => {
+    const session = createContextSearchSession(makeStores(), defaultScope);
+    const results = await session.search("character", { types: ["skill"] });
+    expect(results.length).toBeGreaterThan(0);
+    expect(results.every((r) => r.type === "skill")).toBe(true);
+    session.dispose();
+  });
+
+  test("skills appear alongside entities in an unfiltered search", async () => {
+    const session = createContextSearchSession(makeStores(), defaultScope);
+    const results = await session.search("workshop");
+    expect(results.some((r) => r.type === "skill")).toBe(true);
+    session.dispose();
+  });
+
+  test("read('skill') is rejected — skills load via read_skill_file", async () => {
+    const session = createContextSearchSession(makeStores(), defaultScope);
+    await expect(session.read("skill", "card-workshop")).rejects.toThrow(/read_skill_file/);
     session.dispose();
   });
 });

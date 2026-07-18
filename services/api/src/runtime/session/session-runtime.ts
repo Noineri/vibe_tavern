@@ -985,6 +985,19 @@ export function pickBootstrapChatId<T extends string>(
 				getLorebook: (id: string) => stores.lorebooks.getLorebook(id),
 				getEntry: (id: string) => stores.lorebooks.getEntry(id),
 				getScript: (id: string) => stores.scripts.getById(id),
+				listSkills: async () => {
+					// CE-D3: project the skill catalog into the search index's skill channel.
+					// getSkillCatalog returns SkillCatalogEntry[] (already user>builtin merged);
+					// map to the narrow ContextSearchSkillView the session expects.
+					const entries = await this.getSkillCatalog();
+					return entries.map((s) => ({
+						id: s.id,
+						name: s.name,
+						description: s.description,
+						manifestPath: s.rootRelativeManifestPath,
+						source: s.source,
+					}));
+				},
 			},
 			async () => {
 				const chat = await stores.chats.getById(chatId);

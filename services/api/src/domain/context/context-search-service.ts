@@ -70,6 +70,20 @@ export interface ContextSearchScriptView {
   personaId: string | null;
 }
 
+/** Discovery metadata for a Co-Author skill (CE-D3 skill channel). */
+export interface ContextSearchSkillView {
+  /** Stable skill id = the skill directory name. */
+  id: string;
+  /** Human-readable name from the manifest frontmatter. */
+  name: string;
+  /** One-line description from the manifest frontmatter (may be empty). */
+  description: string;
+  /** Root-relative manifest path (`<id>/SKILL.md`) — the read_skill_file target. */
+  manifestPath: string;
+  /** Where the winning copy lives: a user skill shadows a same-id built-in. */
+  source: "builtin" | "user";
+}
+
 /** Structural read-store subset the session lazily reads. */
 export interface ContextSearchStoreReads {
   // ── Bulk reads for projection (index build) ──
@@ -82,6 +96,8 @@ export interface ContextSearchStoreReads {
   listLorebooksLinkedToTarget(targetType: "character" | "persona", targetId: string): Promise<ContextSearchLorebookView[]>;
   /** Scripts M:N-linked to a character (junction table). */
   listScriptsLinkedToTarget(targetType: "character" | "persona", targetId: string): Promise<ContextSearchScriptView[]>;
+  /** Co-Author skill catalog entries (CE-D3 skill channel). */
+  listSkills(): Promise<ContextSearchSkillView[]>;
   // ── Direct lookups for canonical read (O(1), avoid N+1 scans) ──
   getCharacter(id: string): Promise<ContextSearchCharacterView | null>;
   getPersona(id: string): Promise<ContextSearchPersonaView | null>;
@@ -188,6 +204,16 @@ async function readCanonicalContent(
       parts.push(`\n\`\`\`js\n${sc.code}\n\`\`\``);
       return { type, id, title: sc.name, content: parts.join("\n") };
     }
+    case "skill":
+      // Skills are workflow instructions, not data entities — they are loaded
+      // via the separate read_skill_file tool (progressive disclosure), never
+      // via read_context_item. The read_context_item schema enum already
+      // excludes "skill"; this explicit guard keeps the contract clear if the
+      // session.read() surface is ever called directly with type "skill".
+      throw new Error(
+        `skills are read via the read_skill_file tool, not read_context_item — ` +
+          `use the manifestPath from the search_context result`,
+      );
     default:
       throw new Error(`Unknown context type '${type}'`);
   }
@@ -267,11 +293,12 @@ async function projectAllRecords(
   const boundLorebookIds = new Set(linkedLorebooks.map((lb) => lb.id));
   const boundScriptIds = new Set(linkedScripts.map((sc) => sc.id));
 
-  const [characters, personas, lorebooks, scripts] = await Promise.all([
+  const [characters, personas, lorebooks, scripts, skills] = await Promise.all([
     stores.listAllCharacters(),
     stores.listAllPersonas(),
     stores.listAllLorebooks(),
     stores.listAllScripts(),
+    stores.listSkills(),
   ]);
 
   const records: IndexedContextRecord[] = [];
@@ -355,6 +382,25 @@ async function projectAllRecords(
       ownerId: sc.characterId ?? sc.personaId ?? null,
       parentId: null,
       meta: {},
+    });
+  }
+
+  // Skills (CE-D3) — library-wide workflow instructions, not data entities.
+  // They carry no owner scope (always "global", never boosted) and are read via
+  // the separate `read_skill_file` tool, NOT read_context_item. Surfacing them
+  // in the same index lets the model discover the right skill by keyword and
+  // then load its manifest — the existing progressive-disclosure flow.
+  for (const sk of skills) {
+    records.push({
+      channel: "skill",
+      type: "skill",
+      id: sk.id,
+      title: sk.name,
+      body: sk.description,
+      scope: "global",
+      ownerId: null,
+      parentId: null,
+      meta: { manifestPath: sk.manifestPath, source: sk.source },
     });
   }
 
