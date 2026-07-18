@@ -52,6 +52,9 @@ const SEED_MODULE_DEFS: readonly SeedModuleDef[] = [
       set_lore_activation: true,
       ai_write_lore_entry: true,
       ai_generate_lore_keys: true,
+      // CE-D2: indexed two-step context search.
+      search_context: true,
+      read_context_item: true,
     },
     maxSteps: 5,
   },
@@ -80,6 +83,9 @@ const SEED_MODULE_DEFS: readonly SeedModuleDef[] = [
       set_lore_activation: true,
       ai_write_lore_entry: true,
       ai_generate_lore_keys: true,
+      // CE-D2: indexed two-step context search.
+      search_context: true,
+      read_context_item: true,
     },
     maxSteps: 5,
   },
@@ -97,6 +103,9 @@ const SEED_MODULE_DEFS: readonly SeedModuleDef[] = [
       edit_scenario: true,
       write_personality: true,
       write_scenario: true,
+      // CE-D2: indexed two-step context search.
+      search_context: true,
+      read_context_item: true,
     },
     maxSteps: 3,
   },
@@ -114,6 +123,9 @@ const SEED_MODULE_DEFS: readonly SeedModuleDef[] = [
       edit_greeting: true,
       add_alt_greeting: true,
       edit_alt_greeting: true,
+      // CE-D2: indexed two-step context search.
+      search_context: true,
+      read_context_item: true,
     },
     maxSteps: 3,
   },

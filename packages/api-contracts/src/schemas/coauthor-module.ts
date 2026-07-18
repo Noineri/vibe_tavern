@@ -26,6 +26,12 @@ export const coauthorToolSetSchema = z.object({
   // turn-local draft; Apply is the sole persistence boundary.
   ai_write_lore_entry: z.boolean().optional(),
   ai_generate_lore_keys: z.boolean().optional(),
+  // CE-D2: indexed two-step context search. search_context returns metadata
+  // only; read_context_item returns canonical full content. Both are
+  // read-only and never mutate state. Gated by toolSet so modules can
+  // opt out if they don't need library search.
+  search_context: z.boolean().optional(),
+  read_context_item: z.boolean().optional(),
 });
 
 export type CoauthorToolSet = z.infer<typeof coauthorToolSetSchema>;

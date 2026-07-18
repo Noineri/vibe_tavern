@@ -159,7 +159,7 @@ function estimateCoauthorHistoryTokens(messages: ReadonlyArray<CoauthorHistoryMe
  * the result and are threaded into the executor by CA-5's wiring.
  */
 export async function assembleCoauthorPrompt(input: ChatModeAssembleInput): Promise<ChatModeAssembleResult> {
-  const { chatId, model, loaders, loreDelegate, loreEntityLookup } = input;
+  const { chatId, model, loaders, loreDelegate, loreEntityLookup, contextSearchSession } = input;
 
   // Pull the card state + conversation history up front. Co-author is a flat
   // editor chat — no branches, no compaction. (Skills are catalog-only in the
@@ -514,7 +514,7 @@ export async function assembleCoauthorPrompt(input: ChatModeAssembleInput): Prom
       latencyMs: 0,
       compactionSummary,
     },
-    tools: buildCoauthorTools({ toolSet: module.toolSet, profileMd, skillRoots, loreDelegate, loreEntityLookup }),
+    tools: buildCoauthorTools({ toolSet: module.toolSet, profileMd, skillRoots, loreDelegate, loreEntityLookup, contextSearchSession }),
     maxSteps: module.maxSteps,
     coauthorModuleId: module.id,
     coauthorSkillId: null,

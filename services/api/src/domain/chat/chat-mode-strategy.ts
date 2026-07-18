@@ -176,6 +176,14 @@ export interface ChatModeAssembleInput extends AssemblePromptForChatInput {
    * production always supplies it.
    */
   loreEntityLookup?: import("../chat/coauthor-tools.js").LoreEntityLookup;
+  /**
+   * CE-D2: optional context-search session for indexed entity discovery.
+   * Lazily projects canonical entities into FTS5 on first search; read
+   * returns canonical full content. Absent when stores are not wired
+   * (test contexts); search_context/read_context_item then throw a clear
+   * error if invoked.
+   */
+  contextSearchSession?: import("../context/context-search-service.js").ContextSearchSession;
 }
 
 /** Re-exported so callers don't reach into the prompt service module. */

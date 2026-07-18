@@ -279,8 +279,8 @@ function setSectionField(profile: VtfProfile, field: SectionField, value: string
  * validates and echoes the proposal; the strategy passes this set to the
  * executor (tools propose; the Apply RPC is the sole write path).
  */
-export function buildCoauthorTools(opts: { toolSet?: Record<string, boolean>; profileMd?: string; skillRoots?: readonly string[]; loreIdGen?: LoreDraftIdGen; loreDelegate?: LoreDelegate; loreEntityLookup?: LoreEntityLookup } = {}) {
-  const { toolSet, skillRoots, loreDelegate, loreEntityLookup } = opts;
+export function buildCoauthorTools(opts: { toolSet?: Record<string, boolean>; profileMd?: string; skillRoots?: readonly string[]; loreIdGen?: LoreDraftIdGen; loreDelegate?: LoreDelegate; loreEntityLookup?: LoreEntityLookup; contextSearchSession?: import("../context/context-search-service.js").ContextSearchSession } = {}) {
+  const { toolSet, skillRoots, loreDelegate, loreEntityLookup, contextSearchSession } = opts;
 
   // ── Turn-local composable profile state (CED-2) ───────────────────────────
   // Every successful profile mutation in one assembled turn — write_profile,
@@ -876,6 +876,67 @@ export function buildCoauthorTools(opts: { toolSet?: Record<string, boolean>; pr
         const bundle = await loreDraft.setLoreEntryKeys({ entryId, keys: nextKeys, secondaryKeys: nextSec });
         logger.info("ai_generate_lore_keys OK entryId=%s keys=%d secondary=%d (target=%s augment=%s)", entryId, nextKeys.length, nextSec.length, target, augment);
         return { target: "lore_bundle", bundle, summary };
+      },
+    }),
+
+    // ── CE-D2: indexed two-step context search ──────────────────────────────
+    // search_context returns compact locator metadata only (no body);
+    // read_context_item returns canonical full content for one chosen item.
+    // Both are read-only and never mutate state. The session lazily projects
+    // all canonical entities into FTS5 on its first search and memoizes the
+    // immutable snapshot for the rest of the turn. Absent when stores are not
+    // wired (test contexts); the tools then throw a clear error if invoked.
+    search_context: tool({
+      description:
+        "Search the user's library by keyword (characters, personas, lorebooks, lore entries, scripts). " +
+        "Returns compact locator metadata only (type, id, title, scope, match kind) — no full content. " +
+        "Use concise source-language keywords; retry with synonyms or translation if the first search misses. " +
+        "When you know the item's title, pass it as the query — exact-title matches rank above content matches. " +
+        "After identifying the correct item, call `read_context_item` to get its full content.",
+      inputSchema: z.object({
+        query: z.string().min(1).describe("Search keywords. Short, content-language, no operators needed."),
+        types: z.array(z.enum(["character", "persona", "lorebook", "lore-entry", "script"]))
+          .optional()
+          .describe("Restrict results to these entity types. Omit to search all."),
+        scope: z.enum(["active_first", "library"])
+          .optional()
+          .describe("'active_first' (default) boosts the active character/persona and their bound resources. 'library' disables boosting."),
+      }),
+      execute: async ({ query, types, scope }): Promise<{ results: import("../context/context-search-service.js").ContextSearchToolResult[] }> => {
+        if (!contextSearchSession) {
+          throw new Error("search_context: context search is not available in this session");
+        }
+        logger.info("search_context IN query=%s types=%s scope=%s", query, types?.join(",") ?? "(all)", scope ?? "active_first");
+        const results = await contextSearchSession.search(query, {
+          types,
+          scopeMode: scope ?? "active_first",
+        });
+        logger.info("search_context OK results=%d", results.length);
+        return { results };
+      },
+    }),
+
+    read_context_item: tool({
+      description:
+        "Read the full canonical content of one entity found via `search_context`. " +
+        "Returns the entity's complete text (character profile, persona description, " +
+        "lorebook metadata + enabled entries, lore entry content + keys, or script description + code). " +
+        "Use this AFTER `search_context` identified the correct item. " +
+        "Never call this without a prior search — the type and id come from search results.",
+      inputSchema: z.object({
+        type: z.enum(["character", "persona", "lorebook", "lore-entry", "script"])
+          .describe("Entity type from a search_context result."),
+        id: z.string().min(1)
+          .describe("Entity id from a search_context result."),
+      }),
+      execute: async ({ type, id }): Promise<import("../context/context-search-service.js").ContextSearchReadResult> => {
+        if (!contextSearchSession) {
+          throw new Error("read_context_item: context search is not available in this session");
+        }
+        logger.info("read_context_item IN type=%s id=%s", type, id);
+        const result = await contextSearchSession.read(type, id);
+        logger.info("read_context_item OK type=%s id=%s contentLen=%d", type, id, result.content.length);
+        return result;
       },
     }),
   };

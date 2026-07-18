@@ -22,6 +22,7 @@ import { PromptAssemblyService } from "../../domain/prompt/prompt-assembly-servi
 import { StaticPromptResolver } from "../../domain/prompt/prompt-resolver.js";
 import { createLoreDelegate } from "../../domain/coauthor/lore/lore-delegate.js";
 import { createLoreEntityLookup } from "../../domain/coauthor/lore/lore-entity-lookup.js";
+import { createContextSearchSession } from "../../domain/context/context-search-service.js";
 import { nonstreamingProviderExecute } from "../../infrastructure/ai/nonstreaming-provider-executor.js";
 import {
 	mapMessageDto,
@@ -823,11 +824,15 @@ export function pickBootstrapChatId<T extends string>(
 		// always wires it); absent in minimal/test contexts — edit tools that need
 		// it then throw a clear "no lookup configured" error.
 		const loreEntityLookup = this.stores?.lorebooks ? createLoreEntityLookup(this.stores.lorebooks) : undefined;
+		// CE-D2: context-search session for indexed entity discovery.
+		// Lazily projects all canonical entities into FTS5 on first search.
+		const contextSearchSession = this.stores ? this.buildContextSearchSession(chatId) : undefined;
 		return strategy.assemble({
 			promptService: this.promptService,
 			loaders: this.buildChatModeLoaders(),
 			loreDelegate,
 			loreEntityLookup,
+			contextSearchSession,
 			chatId,
 			branchId,
 			model,
@@ -955,6 +960,35 @@ export function pickBootstrapChatId<T extends string>(
 			},
 			getSkillCatalog: () => this.getSkillCatalog(),
 		};
+	}
+
+	/**
+	 * Build a lazy per-turn context-search session (CE-D2) for the co-author's
+	 * search_context / read_context_item tools. Projects all canonical entities
+	 * into FTS5 on the first search; the next turn rebuilds from stores.
+	 */
+	private buildContextSearchSession(chatId: ChatId): import("../../domain/context/context-search-service.js").ContextSearchSession {
+		const stores = this.stores;
+		return createContextSearchSession(
+			{
+				listAllCharacters: () => stores.characters.listAll(),
+				listAllPersonas: () => stores.personas.listAll(),
+				listAllLorebooks: () => stores.lorebooks.listAllLorebooks(),
+				listEntries: (lorebookId: string) => stores.lorebooks.listEntries(lorebookId),
+				listAllScripts: () => stores.scripts.listAll(),
+				listLorebooksLinkedToTarget: (targetType: "character" | "persona", targetId: string) =>
+					stores.lorebooks.listLorebooksLinkedToTarget(targetType, targetId),
+				listScriptsLinkedToTarget: (targetType: "character" | "persona", targetId: string) =>
+					stores.scripts.listScriptsLinkedToTarget(targetType, targetId),
+			},
+			async () => {
+				const chat = await stores.chats.getById(chatId);
+				return {
+					activeCharacterId: chat?.characterId ?? null,
+					activePersonaId: chat?.personaId ?? null,
+				};
+			},
+		);
 	}
 
 	private async ensureDefaultPresetId(): Promise<PromptPresetId> {
