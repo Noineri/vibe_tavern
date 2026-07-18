@@ -1310,6 +1310,8 @@
   "coauthor.lore.review.keys": "Ключи",
   "coauthor.lore.review.secondary_keys": "Доп.",
   "coauthor.lore.review.constant": "всегда",
+  "coauthor.lore.review.editing": "правка",
+  "coauthor.lore.review.existing_lorebook": "Существующая книга",
   "coauthor.lore.review.entries_one": "запись",
   "coauthor.lore.review.entries_few": "записи",
   "coauthor.lore.review.entries_many": "записей",

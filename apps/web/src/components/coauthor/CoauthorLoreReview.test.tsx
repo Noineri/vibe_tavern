@@ -20,6 +20,8 @@ const labels: CoauthorLoreReviewLabels = {
 	keys: "Keys",
 	secondaryKeys: "Alt",
 	constant: "always-on",
+	editing: "editing",
+	existingLorebook: "Existing lorebook",
 	entriesOne: "entry",
 	entriesFew: "entries",
 	entriesMany: "entries",
@@ -177,5 +179,41 @@ describe("CoauthorLoreReview — parent-dependency (CTX-L3)", () => {
 		);
 		// The entry card itself or an ancestor carries opacity-50; assert it exists.
 		expect(entryCard).toBeTruthy();
+	});
+});
+
+describe("CoauthorLoreReview — edit badge (CE-B2)", () => {
+	it("shows the editing badge on mode:'edit' lorebooks and entries, not on create nodes", () => {
+		const b: CoauthorLoreBundle = {
+			lorebooks: [
+				{ id: "lbNew", name: "New Book", description: "", scopeType: "character", enabled: true },
+				{ id: "lbEdit", name: "Existing Book", description: "", scopeType: "character", enabled: true, mode: "edit" },
+			],
+			entries: [
+				{ id: "eNew", lorebookId: "lbNew", title: "Fresh", content: "c", keys: [], secondaryKeys: [], constant: false, position: "before_char", depth: 4, enabled: true },
+				{ id: "eEdit", lorebookId: "lbEdit", title: "Tweaked", content: "c", keys: [], secondaryKeys: [], constant: false, position: "before_char", depth: 4, enabled: true, mode: "edit" },
+			],
+		};
+		const { container, getAllByText } = renderReview({ bundle: b, ...allSelected(b) });
+		// Both edit nodes (one lorebook + one entry) carry the editing badge.
+		expect(getAllByText("editing")).toHaveLength(2);
+		// The create nodes render their titles without an editing badge.
+		expect(container.textContent).toContain("Fresh");
+		expect(container.textContent).toContain("Tweaked");
+	});
+
+	it("renders a verified persisted-parent entry even when no lorebook node is proposed", () => {
+		const b: CoauthorLoreBundle = {
+			lorebooks: [],
+			entries: [
+				{ id: "ePersisted", lorebookId: "lb_existing", title: "Cross-turn edit", content: "Updated prose", keys: ["trigger"], secondaryKeys: [], constant: false, position: "before_char", depth: 4, enabled: true, mode: "edit", parentMode: "persisted" },
+			],
+		};
+		const { getByText, getByRole } = renderReview({ bundle: b, ...allSelected(b) });
+		expect(getByText("Existing lorebook")).toBeTruthy();
+		expect(getByText("lb_existing")).toBeTruthy();
+		expect(getByText("Cross-turn edit")).toBeTruthy();
+		// No proposed parent checkbox exists; the entry is independently selectable.
+		expect((getByRole("checkbox") as HTMLButtonElement).disabled).toBe(false);
 	});
 });

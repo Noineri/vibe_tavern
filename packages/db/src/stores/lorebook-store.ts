@@ -124,6 +124,8 @@ export interface CoauthorLoreDraftBundle {
     scanDepth?: number;
     tokenBudget?: number;
     recursiveScanning?: boolean;
+    /** CE-B1 review metadata; Apply already routes create/edit via PK upsert. */
+    mode?: 'create' | 'edit';
   }>;
   entries: Array<{
     id: string;
@@ -138,6 +140,10 @@ export interface CoauthorLoreDraftBundle {
     /** CE-A2: activation logic / match mode (LORE_LOGIC); falls back to 'and_any' when absent. */
     logic?: string;
     enabled: boolean;
+    /** CE-B1 review metadata; Apply already routes create/edit via PK upsert. */
+    mode?: 'create' | 'edit';
+    /** CE-B2: verified persisted parent absent from this proposal bundle. */
+    parentMode?: 'persisted';
   }>;
 }
 
@@ -714,8 +720,18 @@ export class LorebookStore {
     bundle: CoauthorLoreDraftBundle,
   ): Promise<{ lorebookIds: string[]; entryIds: string[] }> {
     const bookIds = new Set(bundle.lorebooks.map((lb) => lb.id));
+    // CE-B2: an entry may reference a persisted parent lorebook NOT in the
+    // bundle (edit_lore_entry on a persisted entry, or add_lore_entry to an
+    // existing book). Accept a parent that exists in the DB in addition to one
+    // drafted in this bundle; only reject a parent that is neither.
+    const externalParentIds = [...new Set(
+      bundle.entries.map((e) => e.lorebookId).filter((id) => !bookIds.has(id)),
+    )];
+    const externalParentSet = externalParentIds.length
+      ? new Set((await this.db.select({ id: lorebooks.id }).from(lorebooks).where(inArray(lorebooks.id, externalParentIds))).map((r) => r.id))
+      : new Set<string>();
     for (const entry of bundle.entries) {
-      if (!bookIds.has(entry.lorebookId)) {
+      if (!bookIds.has(entry.lorebookId) && !externalParentSet.has(entry.lorebookId)) {
         throw new Error(
           `applyCoauthorLoreDraft: entry '${entry.id}' references unknown parent lorebook '${entry.lorebookId}'`,
         );
@@ -803,7 +819,7 @@ export class LorebookStore {
             target: loreEntries.id,
             set: { lorebookId: e.lorebookId, updatedAt: now, ...buildEntryPatch({
               title: e.title, content: e.content, keys: e.keys, secondaryKeys: e.secondaryKeys,
-              constant: e.constant, position: e.position, depth: e.depth, enabled: e.enabled,
+              constant: e.constant, position: e.position, depth: e.depth, logic: e.logic, enabled: e.enabled,
             }) },
           })
           .run();

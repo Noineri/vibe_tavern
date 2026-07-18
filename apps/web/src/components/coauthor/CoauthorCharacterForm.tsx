@@ -493,6 +493,8 @@ function CoauthorCharacterFormInner({ character }: CoauthorCharacterFormInnerPro
               keys: t("coauthor.lore.review.keys"),
               secondaryKeys: t("coauthor.lore.review.secondary_keys"),
               constant: t("coauthor.lore.review.constant"),
+              editing: t("coauthor.lore.review.editing"),
+              existingLorebook: t("coauthor.lore.review.existing_lorebook"),
               entriesOne: t("coauthor.lore.review.entries_one"),
               entriesFew: t("coauthor.lore.review.entries_few"),
               entriesMany: t("coauthor.lore.review.entries_many"),

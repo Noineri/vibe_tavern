@@ -61,6 +61,8 @@ export interface CreateLoreEntryInput {
 	/** Activation logic / match mode (domain LORE_LOGIC). Default `and_any`. */
 	logic?: string;
 	enabled?: boolean;
+	/** CE-B2: parent is a verified persisted lorebook absent from the bundle. */
+	parentMode?: "persisted";
 }
 
 export interface SetLoreActivationInput {
@@ -217,6 +219,7 @@ export class LoreDraftState {
 			depth: input.depth ?? DEFAULT_ENTRY_DEPTH,
 			logic: input.logic ?? DEFAULT_ENTRY_LOGIC,
 			enabled: input.enabled ?? true,
+			...(input.parentMode !== undefined ? { parentMode: input.parentMode } : {}),
 		};
 		return [entry.id, entry];
 	}
@@ -311,7 +314,9 @@ export class LoreDraftState {
 	/** CE-B1: upsert an entry node as an EDIT target (force mode "edit"). */
 	importEntry(node: CoauthorDraftLoreEntry): Promise<CoauthorLoreBundle> {
 		return this.runQueued(() => {
-			this.entries.set(node.id, { ...node, mode: "edit" });
+			// A persisted entry's parent is itself persisted and intentionally need
+			// not appear as a no-op lorebook node in the proposal bundle.
+			this.entries.set(node.id, { ...node, mode: "edit", parentMode: "persisted" });
 			return this.snapshot();
 		});
 	}

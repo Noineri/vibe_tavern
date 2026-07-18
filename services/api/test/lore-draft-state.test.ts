@@ -245,7 +245,7 @@ describe("LoreDraftState — edit + import (CE-B1)", () => {
 			keys: ["k"], secondaryKeys: [], constant: true, position: "before_char",
 			depth: 4, logic: "and_all", enabled: true,
 		});
-		expect(e.entries[0]).toMatchObject({ id: "le_persisted", logic: "and_all", mode: "edit" });
+		expect(e.entries[0]).toMatchObject({ id: "le_persisted", logic: "and_all", mode: "edit", parentMode: "persisted" });
 		expect(draft.hasEntry("le_persisted")).toBe(true);
 	});
 

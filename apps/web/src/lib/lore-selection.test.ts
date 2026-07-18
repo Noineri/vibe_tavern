@@ -56,15 +56,33 @@ describe("selectLoreBundle — parent-dependency enforcement (CTX-L3)", () => {
 		expect(out.entries).toEqual([]);
 	});
 
-	it("entry whose parent is not even in the proposed bundle is dropped", () => {
+	it("entry whose parent is not in the bundle and was NOT verified as persisted is dropped", () => {
 		const b: CoauthorLoreBundle = {
 			lorebooks: [],
 			entries: [{ id: "e9", lorebookId: "ghost", title: "X", content: "c", keys: [], secondaryKeys: [], constant: false, position: "before_char", depth: 4, enabled: true }],
 		};
-		// The ghost parent cannot be selected (it isn't proposed), so the entry is
-		// always orphaned regardless of its own selection state.
+		// No parentMode marker: this is a real malformed orphan, not an intentional
+		// reference to a DB-existing lorebook.
 		const out = selectLoreBundle(b, new Set(), new Set(["e9"]));
 		expect(out.entries).toEqual([]);
+	});
+
+	it("CE-B2: selected entry with parentMode:persisted survives without a proposed parent", () => {
+		const b: CoauthorLoreBundle = {
+			lorebooks: [],
+			entries: [{ id: "ePersisted", lorebookId: "lb_existing", title: "Edit", content: "c", keys: [], secondaryKeys: [], constant: false, position: "before_char", depth: 4, enabled: true, mode: "edit", parentMode: "persisted" }],
+		};
+		const out = selectLoreBundle(b, new Set(), new Set(["ePersisted"]));
+		expect(out.entries.map((e) => e.id)).toEqual(["ePersisted"]);
+	});
+
+	it("CE-B2: rejecting a persisted-parent edit drops it from Apply", () => {
+		const b: CoauthorLoreBundle = {
+			lorebooks: [],
+			entries: [{ id: "ePersisted", lorebookId: "lb_existing", title: "Edit", content: "c", keys: [], secondaryKeys: [], constant: false, position: "before_char", depth: 4, enabled: true, mode: "edit", parentMode: "persisted" }],
+		};
+		const out = selectLoreBundle(b, new Set(), new Set());
+		expect(out).toEqual({ lorebooks: [], entries: [] });
 	});
 
 	it("order is preserved (the model's authoring order)", () => {
@@ -82,12 +100,13 @@ describe("allLorebookIds / allEntryIds / orphanEntryIds (CTX-L3)", () => {
 		expect(orphanEntryIds(b)).toEqual(new Set());
 	});
 
-	it("orphanEntryIds flags entries whose parent is absent", () => {
+	it("orphanEntryIds flags an absent unverified parent but excludes a verified persisted parent", () => {
 		const b: CoauthorLoreBundle = {
 			lorebooks: [{ id: "lb1", name: "L", description: "", scopeType: "global", enabled: true }],
 			entries: [
 				{ id: "e1", lorebookId: "lb1", title: "A", content: "c", keys: [], secondaryKeys: [], constant: false, position: "before_char", depth: 4, enabled: true },
 				{ id: "e9", lorebookId: "ghost", title: "X", content: "c", keys: [], secondaryKeys: [], constant: false, position: "before_char", depth: 4, enabled: true },
+				{ id: "ePersisted", lorebookId: "lb_existing", title: "Edit", content: "c", keys: [], secondaryKeys: [], constant: false, position: "before_char", depth: 4, enabled: true, parentMode: "persisted" },
 			],
 		};
 		expect(orphanEntryIds(b)).toEqual(new Set(["e9"]));

@@ -862,7 +862,7 @@ describe("coauthor-tools: edit + add lore tools (CE-B1)", () => {
     const tools = buildCoauthorTools({ loreEntityLookup: lookup });
     const out = await tools.edit_lore_entry.execute({ entryId: "le_p", title: "New", logic: "not_any", summary: "s" }, ctx);
     const e = out.bundle.entries[0]!;
-    expect(e).toMatchObject({ id: "le_p", title: "New", logic: "not_any", mode: "edit" });
+    expect(e).toMatchObject({ id: "le_p", title: "New", logic: "not_any", mode: "edit", parentMode: "persisted" });
     // Content + keys came from the import (edit_lore_entry does not touch them).
     expect(e.content).toBe("kept prose");
     expect(e.keys).toEqual(["kept"]);
@@ -887,8 +887,10 @@ describe("coauthor-tools: edit + add lore tools (CE-B1)", () => {
     const tools = buildCoauthorTools({ loreIdGen: deterministicIdGen(), loreEntityLookup: lookup });
     const out = await tools.add_lore_entry.execute({ lorebookId: "lb_p", title: "Extra", summary: "s" }, ctx);
     expect(out.bundle.entries[0]).toMatchObject({ id: "lore_entry_1", lorebookId: "lb_p", title: "Extra" });
-    // A create-style entry; the persisted parent is NOT imported (no edit badge).
+    // A create-style entry; the persisted parent is NOT imported (no edit badge)
+    // and is explicitly marked as a verified external parent for review/apply.
     expect(out.bundle.entries[0]!.mode).toBeUndefined();
+    expect(out.bundle.entries[0]!.parentMode).toBe("persisted");
     expect(out.bundle.lorebooks.find((lb) => lb.id === "lb_p")).toBeUndefined();
   });
 
@@ -907,7 +909,7 @@ describe("coauthor-tools: edit + add lore tools (CE-B1)", () => {
     });
     const out = await tools.ai_generate_lore_keys.execute({ entryId: "le_p", summary: "s" }, ctx);
     // The persisted entry was imported (mode:edit) then keys regenerated (replace).
-    expect(out.bundle.entries[0]).toMatchObject({ id: "le_p", mode: "edit" });
+    expect(out.bundle.entries[0]).toMatchObject({ id: "le_p", mode: "edit", parentMode: "persisted" });
     expect(out.bundle.entries[0]!.keys).toEqual(["Vex"]);
   });
 

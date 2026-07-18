@@ -482,4 +482,58 @@ describe("LorebookStore.applyCoauthorLoreDraft (CTX-L2)", () => {
     await store.applyCoauthorLoreDraft("char_1", bundle);
     expect(await store.getLinks("lb_global")).toEqual([]);
   });
+
+  test("CE-B2: an entry may reference a persisted parent lorebook NOT in the bundle (edit/add to an existing book)", async () => {
+    const store = await mkStoreWithChar();
+    // A pre-existing lorebook (created outside this draft) — the bundle will
+    // reference it by id WITHOUT including the lorebook node.
+    const persisted = await store.createLorebook({ name: "Existing Book", scopeType: "global" });
+    const bundle = {
+      lorebooks: [],
+      entries: [
+        { id: "le_added", lorebookId: persisted.id, title: "New entry", content: "c", keys: ["k"], secondaryKeys: [], constant: false, position: "before_char", depth: 4, enabled: true },
+      ],
+    };
+    const res = await store.applyCoauthorLoreDraft("char_1", bundle);
+    expect(res.entryIds).toEqual(["le_added"]);
+    const entry = await store.getEntry("le_added");
+    expect(entry).not.toBeNull();
+    expect(entry!.lorebookId).toBe(persisted.id);
+    expect(await store.listEntries(persisted.id)).toHaveLength(1);
+  });
+
+  test("CE-B2: an entry referencing a parent that is neither in the bundle nor in the DB is still rejected", async () => {
+    const store = await mkStoreWithChar();
+    const bad = {
+      lorebooks: [],
+      entries: [
+        { id: "le_x", lorebookId: "totally_ghost", title: "t", content: "c", keys: [], secondaryKeys: [], constant: false, position: "before_char", depth: 4, enabled: true },
+      ],
+    };
+    await expect(store.applyCoauthorLoreDraft("char_1", bad)).rejects.toThrow(/unknown parent lorebook 'totally_ghost'/);
+    expect(await store.getEntry("le_x")).toBeNull();
+  });
+
+  test("CE-B2: logic survives a re-Apply via the conflict-patch (was INSERT-only)", async () => {
+    const store = await mkStoreWithChar();
+    const bundle = (logic: string, editing = false) => ({
+      lorebooks: [
+        { id: "lb_logic", name: "L", description: "", scopeType: "character" as const, enabled: true, ...(editing ? { mode: "edit" as const } : {}) },
+      ],
+      entries: [
+        { id: "le_logic", lorebookId: "lb_logic", title: "t", content: "c", keys: ["k"], secondaryKeys: [], constant: false, position: "before_char", depth: 4, logic, enabled: true, ...(editing ? { mode: "edit" as const } : {}) },
+      ],
+    });
+    // First Apply INSERTs with logic "and_all".
+    await store.applyCoauthorLoreDraft("char_1", bundle("and_all"));
+    expect((await store.getEntry("le_logic"))!.logic).toBe("and_all");
+    // Re-Apply with a changed logic hits the conflict path — logic is now in
+    // the patch set, so the change is written (pre-CE-B2 it was dropped).
+    await store.applyCoauthorLoreDraft("char_1", bundle("not_any", true));
+    expect((await store.getEntry("le_logic"))!.logic).toBe("not_any");
+    // mode:"edit" is review metadata; the existing PK upsert updates the same
+    // rows rather than inserting duplicates.
+    expect(await store.listAllLorebooks()).toHaveLength(1);
+    expect(await store.listEntries("lb_logic")).toHaveLength(1);
+  });
 });

@@ -1310,6 +1310,8 @@
   "coauthor.lore.review.keys": "Keys",
   "coauthor.lore.review.secondary_keys": "Alt",
   "coauthor.lore.review.constant": "always-on",
+  "coauthor.lore.review.editing": "editing",
+  "coauthor.lore.review.existing_lorebook": "Existing lorebook",
   "coauthor.lore.review.entries_one": "entry",
   "coauthor.lore.review.entries_few": "entries",
   "coauthor.lore.review.entries_many": "entries",

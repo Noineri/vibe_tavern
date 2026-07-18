@@ -108,6 +108,14 @@ export const coauthorDraftLoreEntrySchema = z.object({
   logic: z.string().optional(),
   enabled: z.boolean(),
   /**
+   * CE-B2: parent-reference provenance. Omitted = the parent lorebook MUST be
+   * present in this proposal bundle (normal create flow). "persisted" = the
+   * parent was verified via LoreEntityLookup and intentionally lives only in
+   * the DB (edit_lore_entry / add_lore_entry across turns). Apply + review may
+   * therefore accept/render the entry without a parent node in the bundle.
+   */
+  parentMode: z.literal("persisted").optional(),
+  /**
    * CE-B1: whether this node is a NEW creation (INSERT) or an EDIT of an
    * existing persisted entry (UPDATE via Apply's upsert). Omitted / "create"
    * = a new entry proposed this turn; "edit" = a co-author-created entry

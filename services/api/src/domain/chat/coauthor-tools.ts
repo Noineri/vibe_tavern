@@ -770,9 +770,10 @@ export function buildCoauthorTools(opts: { toolSet?: Record<string, boolean>; pr
       execute: async ({ lorebookId, title, constant, position, depth, logic, summary }): Promise<CoauthorLoreBundleOutput> => {
         logger.info("add_lore_entry IN lorebookId=%s title=%j summary=%s", lorebookId, title, summary);
         // Validate the parent exists: if not in the draft, confirm via the
-        // lookup. The parent is NOT imported (it would badge as an edit
-        // confusingly); the new entry references it by id and Apply's
-        // parent check (relaxed in CE-B2) accepts a persisted parent.
+        // lookup. The parent is NOT imported (it would badge as an edit and a
+        // no-op Apply could rewrite ownership); instead the new entry carries
+        // parentMode:"persisted" so review/selection accept the external parent.
+        let parentMode: "persisted" | undefined;
         if (!loreDraft.hasLorebook(lorebookId)) {
           if (!loreEntityLookup) {
             throw new Error(
@@ -783,8 +784,9 @@ export function buildCoauthorTools(opts: { toolSet?: Record<string, boolean>; pr
           if (!exists) {
             throw new Error(`add_lore_entry: lorebook '${lorebookId}' does not exist`);
           }
+          parentMode = "persisted";
         }
-        const bundle = await loreDraft.addLoreEntry({ lorebookId, title, constant, position, depth, logic });
+        const bundle = await loreDraft.addLoreEntry({ lorebookId, title, constant, position, depth, logic, parentMode });
         return { target: "lore_bundle", bundle, summary };
       },
     }),
