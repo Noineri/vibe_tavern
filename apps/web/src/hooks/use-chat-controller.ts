@@ -351,6 +351,80 @@ export function useChatController(): ChatControllerActions {
     }
   }
 
+  // --- Non-streaming helper ---
+
+  /**
+   * Execute a non-streaming action (send / regenerate / generateReply) with the
+   * SAME lifecycle contract as {@link executeStreamAction}: it owns
+   * startGeneration/finishGeneration, treats a signal abort as a settled
+   * "cancelled" outcome (refreshAfterAbort + toast), and NEVER throws — so
+   * callers can bracket message-level flags (messageActionId) with plain
+   * set/clear around the await without an early `return` leaking the clear.
+   *
+   * Why this exists: the non-stream path used to hand-roll startGeneration →
+   * try/catch(signal.aborted)/finally/finishGeneration in four call sites,
+   * each with slightly different cleanup. One of those clones (the abort
+   * branch of handleRegenerateMessage) early-returned before its
+   * `setMessageActionId(null)` and left the regenerated message permanently
+   * busy (`MessageBlock.isBusy`/`isBranching` key off messageActionId).
+   * Centralizing the lifecycle here makes that class of leak unreachable.
+   *
+   * Post-success trace hydration (selectedTraceId + branch-scoped cache
+   * upsert) is folded in because all four call sites do it identically.
+   * Non-abort error recovery is caller-owned via {@link opts.onError} (toast,
+   * draft restore, snapshot refresh) — the helper does not second-guess it and
+   * resolves as "failed". generationStatus is intentionally NOT touched:
+   * nothing reads it for non-stream paths today (only executeStreamAction
+   * sets "failed" there, and only for debug consumption).
+   */
+  async function executeNonStreamAction(
+    chatId: ChatId,
+    fn: (signal: AbortSignal) => Promise<unknown>,
+    opts: {
+      pendingUserContent?: string | null;
+      pendingAttachments?: Attachment[];
+      streamingMessageId?: string | null;
+      /** Suppress the default "generation cancelled" toast — the queue path
+       *  (runRegenerateJob) owns its own job-row affordances and stays silent. */
+      suppressCancelToast?: boolean;
+      /** Caller-specific non-abort error recovery (toast / draft restore /
+       *  snapshot refresh). Abort is handled uniformly by the helper. */
+      onError?: (error: unknown) => void | Promise<void>;
+      /** When set, the helper emits `${label}.success/.cancelled/.error` debug
+       *  logs — uniformizing what call sites previously logged inconsistently. */
+      debugLabel?: string;
+    } = {},
+  ): Promise<StreamOutcome> {
+    const controller = useChatStore.getState().startGeneration(
+      chatId,
+      opts.pendingUserContent ?? null,
+      opts.pendingAttachments,
+      opts.streamingMessageId ?? null,
+    );
+    try {
+      await fn(controller.signal);
+      const snapshot = useSnapshotStore.getState();
+      useChatStore.getState().setSelectedTraceId(snapshot.promptTrace?.id ?? null);
+      if (snapshot.promptTrace && snapshot.activeBranch?.id) {
+        useTraceHistoryStore.getState().upsertLatest(chatId, snapshot.activeBranch.id, snapshot.promptTrace);
+      }
+      if (opts.debugLabel) void logClientSendDebug(`${opts.debugLabel}.success`, { chatId });
+      return "done";
+    } catch (error) {
+      if (controller.signal.aborted) {
+        if (opts.debugLabel) void logClientSendDebug(`${opts.debugLabel}.cancelled`, { chatId });
+        await refreshAfterAbort(chatId);
+        if (!opts.suppressCancelToast) toast.info(getT()("generation_cancelled"));
+        return "cancelled";
+      }
+      if (opts.debugLabel) void logClientSendDebug(`${opts.debugLabel}.error`, { chatId, error: String(error) });
+      await opts.onError?.(error);
+      return "failed";
+    } finally {
+      useChatStore.getState().finishGeneration(chatId);
+    }
+  }
+
   // --- Actions ---
 
   const handleSend = useCallback(async (): Promise<void> => {
@@ -409,42 +483,35 @@ export function useChatController(): ChatControllerActions {
       void logClientSendDebug("web.hook.handleSend.request", { activeChatId });
       const currentAttachments = [...csStore.draftAttachments];
       csStore.clearDraftAttachments();
-      const controller = csStore.startGeneration(activeChatId, draft, currentAttachments);
       csStore.setDraft("");
-      try {
-        await sendChatMessageAction(activeChatId, trimmed, attachments.length > 0 ? attachments : undefined, controller.signal);
-        const snapshot = useSnapshotStore.getState();
-        csStore.setSelectedTraceId(snapshot.promptTrace?.id ?? null);
-        // Optimistically add the fresh trace to the branch-scoped cache so the
-        // Trace tab (if open) shows it without a refetch (TL-B2).
-        if (snapshot.promptTrace && snapshot.activeBranch?.id) {
-          useTraceHistoryStore.getState().upsertLatest(activeChatId, snapshot.activeBranch.id, snapshot.promptTrace);
-        }
-        void logClientSendDebug("web.hook.handleSend.success", { activeChatId });
-      } catch (error) {
-        if (controller.signal.aborted) {
-          void logClientSendDebug("web.hook.handleSend.cancelled", { activeChatId });
-          await refreshAfterAbort(activeChatId);
-          toast.info(getT()("generation_cancelled"));
-          return;
-        }
-        logClientSendDebug("web.hook.handleSend.error", { chatId: activeChatId, error: String(error) });
-        if (error instanceof Error && error.message === "VISION_NOT_SUPPORTED") {
-          toast.error(getT()("vision_not_supported"), {
-            description: getT()("vision_not_supported_desc"),
-            action: {
-              label: getT()("open_provider_settings"),
-              onClick: () => useModalStore.getState().setIsProviderModalOpen(true),
-            },
-          });
-          restoreDraftAfterSendError(draft, currentAttachments);
-        } else {
-          restoreDraftAfterSendError(draft, currentAttachments);
-          showProviderErrorToast(error, getT());
-        }
-      } finally {
-        useChatStore.getState().finishGeneration(activeChatId);
-      }
+      // Draft restore is caller-specific (and only on non-abort errors — an
+      // abort is an explicit user cancel, the message is already gone from
+      // the draft by design). executeNonStreamAction owns the lifecycle and
+      // treats abort as a settled "cancelled" outcome without invoking onError.
+      await executeNonStreamAction(
+        activeChatId,
+        (signal) => sendChatMessageAction(activeChatId, trimmed, attachments.length > 0 ? attachments : undefined, signal),
+        {
+          pendingUserContent: draft,
+          pendingAttachments: currentAttachments,
+          debugLabel: "web.hook.handleSend",
+          onError: (error) => {
+            if (error instanceof Error && error.message === "VISION_NOT_SUPPORTED") {
+              toast.error(getT()("vision_not_supported"), {
+                description: getT()("vision_not_supported_desc"),
+                action: {
+                  label: getT()("open_provider_settings"),
+                  onClick: () => useModalStore.getState().setIsProviderModalOpen(true),
+                },
+              });
+              restoreDraftAfterSendError(draft, currentAttachments);
+            } else {
+              restoreDraftAfterSendError(draft, currentAttachments);
+              showProviderErrorToast(error, getT());
+            }
+          },
+        },
+      );
     }
   }, []);
 
@@ -467,27 +534,17 @@ export function useChatController(): ChatControllerActions {
         (opts) => generateReplyStream(activeChatId, opts),
       );
     } else {
-      const controller = useChatStore.getState().startGeneration(activeChatId);
-      try {
-        await generateReplyAction(activeChatId, controller.signal);
-        const snapshot = useSnapshotStore.getState();
-        useChatStore.getState().setSelectedTraceId(snapshot.promptTrace?.id ?? null);
-        if (snapshot.promptTrace && snapshot.activeBranch?.id) {
-          useTraceHistoryStore.getState().upsertLatest(activeChatId, snapshot.activeBranch.id, snapshot.promptTrace);
-        }
-        void logClientSendDebug("web.hook.handleResend.success", { activeChatId });
-      } catch (error) {
-        if (controller.signal.aborted) {
-          void logClientSendDebug("web.hook.handleResend.cancelled", { activeChatId });
-          await refreshAfterAbort(activeChatId);
-          toast.info(getT()("generation_cancelled"));
-          return;
-        }
-        await refreshChatSnapshotCache(activeChatId);
-        showProviderErrorToast(error, getT(), "resend_failed");
-      } finally {
-        useChatStore.getState().finishGeneration(activeChatId);
-      }
+      await executeNonStreamAction(
+        activeChatId,
+        (signal) => generateReplyAction(activeChatId, signal),
+        {
+          debugLabel: "web.hook.handleResend",
+          onError: async (error) => {
+            await refreshChatSnapshotCache(activeChatId);
+            showProviderErrorToast(error, getT(), "resend_failed");
+          },
+        },
+      );
     }
   }, []);
 
@@ -572,44 +629,41 @@ export function useChatController(): ChatControllerActions {
       return;
     }
 
+    // Bracket messageActionId with try/finally so EVERY settle path clears it:
+    // success, abort, provider error, or a throw out of refreshAfterAbort. The
+    // prior non-stream branch early-returned on abort and skipped this clear,
+    // leaving the message permanently busy (MessageBlock.isBusy/isBranching).
     useChatStore.getState().setMessageActionId(messageId);
-
-    if (streamResponseRef.current) {
-      void logClientSendDebug("web.hook.handleRegenerate.stream-request", {
-        activeChatId, messageId,
-        generationStatus: getGenerationStatus(activeChatId),
-      });
-      await executeStreamAction(
-        activeChatId,
-        (opts) => regenerateChatMessageStream(activeChatId, messageId, opts),
-        undefined,
-        undefined,
-        messageId,
-      );
-    } else {
-      const controller = useChatStore.getState().startGeneration(activeChatId, undefined, undefined, messageId);
-      try {
-        await regenerateMessageAction(activeChatId, messageId, controller.signal);
-        const snapshot = useSnapshotStore.getState();
-        useChatStore.getState().setSelectedTraceId(snapshot.promptTrace?.id ?? null);
-        if (snapshot.promptTrace && snapshot.activeBranch?.id) {
-          useTraceHistoryStore.getState().upsertLatest(activeChatId, snapshot.activeBranch.id, snapshot.promptTrace);
-        }
-      } catch (error) {
-        if (controller.signal.aborted) {
-          void logClientSendDebug("web.hook.handleRegenerate.cancelled", { activeChatId, messageId });
-          await refreshAfterAbort(activeChatId);
-          toast.info(getT()("generation_cancelled"));
-          return;
-        }
-        await refreshChatSnapshotCache(activeChatId);
-        toast.error(error instanceof Error ? error.message : getT()("regen_failed"));
-      } finally {
-        useChatStore.getState().finishGeneration(activeChatId);
+    try {
+      if (streamResponseRef.current) {
+        void logClientSendDebug("web.hook.handleRegenerate.stream-request", {
+          activeChatId, messageId,
+          generationStatus: getGenerationStatus(activeChatId),
+        });
+        await executeStreamAction(
+          activeChatId,
+          (opts) => regenerateChatMessageStream(activeChatId, messageId, opts),
+          undefined,
+          undefined,
+          messageId,
+        );
+      } else {
+        await executeNonStreamAction(
+          activeChatId,
+          (signal) => regenerateMessageAction(activeChatId, messageId, signal),
+          {
+            streamingMessageId: messageId,
+            debugLabel: "web.hook.handleRegenerate",
+            onError: async (error) => {
+              await refreshChatSnapshotCache(activeChatId);
+              toast.error(error instanceof Error ? error.message : getT()("regen_failed"));
+            },
+          },
+        );
       }
+    } finally {
+      useChatStore.getState().setMessageActionId(null);
     }
-
-    useChatStore.getState().setMessageActionId(null);
   }
 
   async function handleSelectMessageVariant(messageId: string, variantIndex: number): Promise<void> {
@@ -694,26 +748,20 @@ export function useChatController(): ChatControllerActions {
             messageId,
           );
         }
-        // Non-stream path: mirror handleRegenerateMessage's branch, threading override.
-        const controller = useChatStore.getState().startGeneration(chatId, undefined, undefined, messageId);
-        try {
-          await regenerateMessageAction(chatId, messageId, controller.signal, override);
-          const snapshot = useSnapshotStore.getState();
-          useChatStore.getState().setSelectedTraceId(snapshot.promptTrace?.id ?? null);
-          if (snapshot.promptTrace && snapshot.activeBranch?.id) {
-            useTraceHistoryStore.getState().upsertLatest(chatId, snapshot.activeBranch.id, snapshot.promptTrace);
-          }
-          return "done";
-        } catch (error) {
-          if (controller.signal.aborted) {
-            await refreshAfterAbort(chatId);
-            return "cancelled";
-          }
-          await refreshChatSnapshotCache(chatId);
-          return "failed";
-        } finally {
-          useChatStore.getState().finishGeneration(chatId);
-        }
+        // Non-stream path: same lifecycle contract via executeNonStreamAction.
+        // suppressCancelToast — the queue manager owns job-row affordances and
+        // stays silent on cancel/error (mirrors the prior behavior).
+        return await executeNonStreamAction(
+          chatId,
+          (signal) => regenerateMessageAction(chatId, messageId, signal, override),
+          {
+            streamingMessageId: messageId,
+            suppressCancelToast: true,
+            onError: async () => {
+              await refreshChatSnapshotCache(chatId);
+            },
+          },
+        );
       } finally {
         useChatStore.getState().setMessageActionId(null);
       }
