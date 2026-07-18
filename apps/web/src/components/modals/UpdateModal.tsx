@@ -83,7 +83,8 @@ export function UpdateModal({ latestVersion, latestTag, releaseUrl, releaseNotes
 	const showReleaseNotes = showConfirm && Boolean(releaseNotes);
 
 	const onClose = () => {
-		if (flow.state.kind === "running") return;
+		// "complete" = server has already process.exit(0)'d; closing would strand the user on a dead page.
+		if (flow.state.kind === "running" || flow.state.kind === "complete") return;
 		setOpen(false);
 	};
 
@@ -98,7 +99,7 @@ export function UpdateModal({ latestVersion, latestTag, releaseUrl, releaseNotes
 						</span>
 						<h2 className="font-ui text-[calc(var(--ui-fs)+1px)] font-semibold text-t1">{headerLabel}</h2>
 					</div>
-					{flow.state.kind !== "running" && (
+					{flow.state.kind !== "running" && flow.state.kind !== "complete" && (
 						<button type="button" onClick={onClose} className="text-t3 hover:text-t1"><Icons.close /></button>
 					)}
 				</div>
@@ -190,9 +191,10 @@ export function UpdateModal({ latestVersion, latestTag, releaseUrl, releaseNotes
 						<button
 							type="button"
 							className="flex items-center gap-1.5 rounded-md bg-accent px-4 py-1.5 text-[calc(var(--ui-fs)-2px)] font-semibold text-on-accent transition-[filter] hover:brightness-110"
-							onClick={() => setOpen(false)}
+							onClick={() => window.location.reload()}
 						>
-							{t("update_modal_close")}
+							<Icons.regen />
+							{t("update_modal_reload_page")}
 						</button>
 					)}
 

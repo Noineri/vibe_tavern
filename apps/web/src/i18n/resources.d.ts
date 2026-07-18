@@ -1456,6 +1456,7 @@ export default interface Resources {
     "update_modal_phase_verifying": "Verifying checksum",
     "update_modal_redownload": "Re-download from GitHub",
     "update_modal_release_header": "Release {tag}",
+    "update_modal_reload_page": "Reload page",
     "update_modal_restart_instructions": "Please restart Vibe Tavern manually to apply the changes.",
     "update_modal_retry": "Retry",
     "update_modal_runtime_error_rejected": "Update rejected by the server.",
