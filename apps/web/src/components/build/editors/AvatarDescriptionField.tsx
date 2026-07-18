@@ -21,29 +21,23 @@
  * Presentational only: no imports of stores or RPC clients. Reusable across
  * character + persona (`kind` prop) — mounted in CharacterForm and PersonaModal.
  *
- * Generation UX (redesigned):
- *   While `describing` is true the textarea is LOCKED (disabled). The card
- *   surfaces the in-progress state through three reinforcing cues so the user
- *   never wonders whether something is happening:
- *     1. the textarea tints accent and is covered by a shimmer overlay with a
- *        spinner + "Describing…" label,
- *     2. if any text is already presented in the text area, a blur is applied
- *        to existing text while re-generating,
- *     3. the action button morphs (opacity crossfade) from
- *        "Describe via vision" into a "Cancel" control with an inline status.
- *   When the description arrives (empty → non-empty transition), the textarea
- *   briefly flashes an accent tint so the new content is noticed. The button
- *   then reads "Regenerate".
+ * The generation feedback UX (button morph, generating overlay, result-reveal
+ * flash, abort handling) is provided by `shared/generation-feedback.tsx`. This
+ * component owns only the field-specific glue: draft state, commit-on-blur,
+ * the toggle, and the no-avatar hint.
  */
-import { useCallback, useEffect, useRef, useState } from "react";
-import { AnimatePresence, motion } from "framer-motion";
-import { Ic } from "../../shared/icons.js";
+import { useCallback, useEffect, useState } from "react";
 import { Toggle } from "../../shared/Toggle.js";
 import { AutoTextarea } from "../../shared/auto-textarea.js";
 import { cn } from "../../../lib/cn.js";
 import { useT } from "../../../i18n/context.js";
 import { lblCls, inputCls, inputPad } from "../fields/field-styles.js";
 import { toast } from "sonner";
+import {
+	GenerateCancelButton,
+	GenerationSurface,
+	useGenerationTask,
+} from "../../shared/generation-feedback.js";
 
 export interface AvatarDescriptionPatch {
 	includeAvatarInPrompt?: boolean;
@@ -69,9 +63,6 @@ interface AvatarDescriptionFieldProps {
 	disabled?: boolean;
 }
 
-/** Spring used for the button morph and icon crossfades (bounce must be 0). */
-const morphSpring = { duration: 0.15, ease: [0.2, 0, 0, 1] as const };
-
 export function AvatarDescriptionField({
 	kind,
 	includeAvatarInPrompt,
@@ -82,80 +73,32 @@ export function AvatarDescriptionField({
 	disabled,
 }: AvatarDescriptionFieldProps) {
 	const { t } = useT();
-	const [describing, setDescribing] = useState(false);
-	// Brief accent flash on the textarea when a fresh description lands —
-	// surfaces the otherwise-silent prop swap after `onDescribe` resolves.
-	const [justArrived, setJustArrived] = useState(false);
-	const abortRef = useRef<AbortController | null>(null);
-	// Tracks the previous `avatarDescription` to detect the empty → content
-	// transition that warrants the reveal flash.
-	const prevDescRef = useRef(avatarDescription);
+	const { generating, start, cancel } = useGenerationTask({
+		onGenerate: onDescribe,
+		onError: (e) => toast.error(e instanceof Error ? e.message : String(e)),
+	});
 
 	// Local draft for the textarea — commits on blur, NOT per keystroke
 	// (matches GalleryLightbox's edit-then-save UX; avoids a PATCH per char).
 	const [draft, setDraft] = useState(avatarDescription ?? "");
 	// Reseed when the prop changes externally (after a describe populates it,
-	// or a parent reset). Now safe: the textarea is locked while describing,
-	// so a reseed here only races with real external updates, never user input.
+	// or a parent reset). Safe because the textarea is locked while generating.
 	useEffect(() => {
 		setDraft(avatarDescription ?? "");
 	}, [avatarDescription]);
 
-	// Trigger the result-reveal flash when description goes empty → content.
-	// This fires both after a successful describe AND after the user's first
-	// manual save — both are positive "it worked" moments worth surfacing.
-	useEffect(() => {
-		const prev = prevDescRef.current;
-		const nextNonEmpty = !!avatarDescription && avatarDescription.trim().length > 0;
-		const prevEmpty = !prev || prev.trim().length === 0;
-		if (prevEmpty && nextNonEmpty) {
-			setJustArrived(true);
-			const id = setTimeout(() => setJustArrived(false), 1400);
-			prevDescRef.current = avatarDescription;
-			return () => clearTimeout(id);
-		}
-		prevDescRef.current = avatarDescription;
-	}, [avatarDescription]);
-
 	const controlsDisabled = disabled || !hasAvatar;
-	// CRITICAL: lock the textarea during generation so the user cannot race
-	// the describe and have their draft silently clobbered on completion.
-	const inputLocked = controlsDisabled || describing;
-	// Regenerate (has existing text) → frosted blur; first-gen (empty) → solid.
-	const hasExistingDescription = !!avatarDescription && avatarDescription.trim().length > 0;
-
-	const handleDescribe = useCallback(async () => {
-		if (describing) return;
-		const controller = new AbortController();
-		abortRef.current = controller;
-		setDescribing(true);
-		try {
-			await onDescribe(controller.signal);
-		} catch (err) {
-			// User cancelled (Cancel button) — silent, like gallery-store.describe.
-			if (controller.signal.aborted) return;
-			const message = err instanceof Error ? err.message : String(err);
-			toast.error(message);
-		} finally {
-			if (abortRef.current === controller) abortRef.current = null;
-			setDescribing(false);
-		}
-	}, [describing, onDescribe]);
-
-	const handleCancelDescribe = useCallback(() => {
-		abortRef.current?.abort();
-	}, []);
 
 	const commitDraft = useCallback(() => {
-		// Guard: if a describe just finished and blurred the field, don't
-		// clobber the freshly-arrived server value with stale local draft.
-		if (describing) return;
+		// Guard: a describe in flight blurs the field — don't clobber the
+		// freshly-arriving server value with a stale local draft.
+		if (generating) return;
 		const trimmed = draft.trim();
 		const current = (avatarDescription ?? "").trim();
 		// Only PATCH on a real change — avoid no-op writes (e.g. blur without edit).
 		if (trimmed === current) return;
 		onPatch({ avatarDescription: trimmed.length > 0 ? trimmed : null });
-	}, [draft, avatarDescription, onPatch, describing]);
+	}, [draft, avatarDescription, onPatch, generating]);
 
 	const placeholder =
 		kind === "character" ? t("avatar_description_placeholder_char") : t("avatar_description_placeholder_persona");
@@ -180,121 +123,55 @@ export function AvatarDescriptionField({
 				</div>
 			</div>
 
-			{/* Action cluster — morphs between Describe / Cancel via AnimatePresence.
-			    Both states are absolutely positioned inside a fixed-height rail so
-			    the crossfade doesn't shift the layout. The "Describing…" status
-			    lives only in the textarea overlay below — not duplicated here. */}
-			<div className="relative mb-2 h-8">
-				<AnimatePresence initial={false}>
-					{describing ? (
-						<motion.div
-							key="describing"
-							initial={{ opacity: 0 }}
-							animate={{ opacity: 1 }}
-							exit={{ opacity: 0 }}
-							transition={morphSpring}
-							className="absolute inset-0 flex items-center"
-						>
-							<button
-								type="button"
-								className={cn(
-									"flex h-8 cursor-pointer items-center gap-1.5 rounded-md border border-danger/40 bg-danger/10 px-3",
-									"font-ui text-[12px] text-danger",
-									"transition-[background-color,color] duration-150",
-									"hover:bg-danger/20 hover:text-danger-strong",
-								)}
-								onClick={handleCancelDescribe}
-								title={t("avatar_describe_cancel")}
-							>
-								<Ic.close />
-								<span>{t("avatar_describe_cancel")}</span>
-							</button>
-						</motion.div>
-					) : (
-						<motion.div
-							key="describe"
-							initial={{ opacity: 0 }}
-							animate={{ opacity: 1 }}
-							exit={{ opacity: 0 }}
-							transition={morphSpring}
-							className="absolute inset-0 flex items-center"
-						>
-							<button
-								type="button"
-								className={cn(
-									"flex h-8 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-3",
-									"font-ui text-[12px] text-t2",
-									"transition-[background-color,color,border-color] duration-150",
-									"hover:bg-s2 hover:text-t1 hover:border-accent/40",
-								)}
-								onClick={() => void handleDescribe()}
-								disabled={controlsDisabled}
-								title={t("avatar_describe_via_vision")}
-							>
-								<Ic.sparkles className={avatarDescription ? "text-accent" : undefined} />
-								<span>{avatarDescription ? t("avatar_describe_regenerate") : t("avatar_describe_via_vision")}</span>
-							</button>
-						</motion.div>
-					)}
-				</AnimatePresence>
-			</div>
+			{/* Action cluster — morphs between Describe / Cancel. The rail,
+			    spring, and both button variants live in GenerateCancelButton
+			    so other generation surfaces can reuse them verbatim. */}
+			<GenerateCancelButton
+				generating={generating}
+				hasValue={!!avatarDescription?.trim()}
+				labels={{
+					generate: t("avatar_describe_via_vision"),
+					regenerate: t("avatar_describe_regenerate"),
+					cancel: t("avatar_describe_cancel"),
+				}}
+				titles={{
+					generate: t("avatar_describe_via_vision"),
+					cancel: t("avatar_describe_cancel"),
+				}}
+				onGenerate={start}
+				onCancel={cancel}
+				disabled={controlsDisabled}
+			/>
 
 			{/* Textarea + generation overlay. The textarea is locked (disabled)
-			    while describing so the incoming server value can't be raced. */}
-			<div className="relative">
-				<AutoTextarea
-					className={cn(
-						inputCls,
-						"transition-[border-color,box-shadow] duration-200",
-						justArrived && "border-accent/60 shadow-[0_0_0_2px_var(--accent-dim)]",
-					)}
-					style={inputPad}
-					value={draft}
-					onChange={(e) => setDraft(e.target.value)}
-					onBlur={commitDraft}
-					onKeyDown={(e) => {
-						if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
-							e.preventDefault();
-							commitDraft();
-						}
-					}}
-				placeholder={describing ? "" : placeholder}
-				disabled={inputLocked}
-					maxRows={12}
-				/>
-
-				{/* Generation overlay — centered spinner + "Describing". */}
-				<AnimatePresence>
-					{describing && (
-						<motion.div
-							initial={{ opacity: 0 }}
-							animate={{ opacity: 1 }}
-							exit={{ opacity: 0 }}
-							transition={{ duration: 0.2 }}
-							className={cn(
-								"pointer-events-none absolute inset-0 flex items-center justify-center gap-2 rounded-md px-3",
-								hasExistingDescription ? "backdrop-blur-[4px]" : "",
-							)}
-						>
-							<span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-accent/30 border-t-accent" />
-							<span className="font-ui text-[16px] text-t2">{t("avatar_describing")}</span>
-						</motion.div>
-					)}
-				</AnimatePresence>
-
-				{/* Result-reveal flash — a soft accent tint that fades out over
-				    ~1.2s when a fresh description lands. Pure signal, no interaction. */}
-				<AnimatePresence>
-					{justArrived && !describing && (
-						<motion.div
-							initial={{ opacity: 0.7 }}
-							animate={{ opacity: 0 }}
-							transition={{ duration: 1.2, ease: "easeOut" }}
-							className="pointer-events-none absolute inset-0 rounded-md bg-accent/10"
-						/>
-					)}
-				</AnimatePresence>
-			</div>
+			    while describing so the incoming server value can't be raced.
+			    The overlay (spinner + "Describing…", blur on existing content)
+			    and the result-reveal flash are owned by GenerationSurface. */}
+			<GenerationSurface
+				generating={generating}
+				value={avatarDescription ?? ""}
+				generatingLabel={t("avatar_describing")}
+				disabled={controlsDisabled}
+			>
+				{({ disabled, controlClassName }) => (
+					<AutoTextarea
+						className={cn(inputCls, controlClassName)}
+						style={inputPad}
+						value={draft}
+						onChange={(e) => setDraft(e.target.value)}
+						onBlur={commitDraft}
+						onKeyDown={(e) => {
+							if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+								e.preventDefault();
+								commitDraft();
+							}
+						}}
+						placeholder={generating ? "" : placeholder}
+						disabled={disabled}
+						maxRows={12}
+					/>
+				)}
+			</GenerationSurface>
 
 			{!hasAvatar && (
 				<p className="mt-2 font-ui text-[11px] text-t4">
