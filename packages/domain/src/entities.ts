@@ -162,6 +162,18 @@ export interface Persona {
   updatedAt: Timestamp;
 }
 
+/**
+ * SillyTavern-parity defaults for a newly authored lorebook (scan depth, token
+ * budget, recursive scanning off). Single source of truth consumed by BOTH the
+ * co-author draft engine (services/api) and the Apply transaction (db) — import
+ * from `@vibe-tavern/domain` rather than re-literalizing 10 / 1000 / false.
+ */
+export const LOREBOOK_DEFAULTS = {
+  scanDepth: 10,
+  tokenBudget: 1000,
+  recursiveScanning: false,
+} as const;
+
 export interface Lorebook {
   id: LorebookId;
   name: string;

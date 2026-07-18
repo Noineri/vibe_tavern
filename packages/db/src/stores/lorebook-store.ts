@@ -5,6 +5,7 @@ import { resolveStoreRuntime, type StoreClock, type StoreIdGenerator } from '../
 import type { ContentStore } from '../content-store.js';
 import { STORAGE_FOLDERS } from '../file-store.js';
 import type { CharacterFilterEntry } from '@vibe-tavern/domain';
+import { LOREBOOK_DEFAULTS } from '@vibe-tavern/domain';
 
 /**
  * Parse a raw `characterFilterJson` value into the canonical `CharacterFilterEntry[]`
@@ -119,6 +120,10 @@ export interface CoauthorLoreDraftBundle {
     description: string;
     scopeType: 'global' | 'character' | 'persona' | 'chat';
     enabled: boolean;
+    /** CE-A1: activation overrides authored by the co-author. Apply falls back to `LOREBOOK_DEFAULTS` when absent. */
+    scanDepth?: number;
+    tokenBudget?: number;
+    recursiveScanning?: boolean;
   }>;
   entries: Array<{
     id: string;
@@ -729,10 +734,10 @@ export class LorebookStore {
             name: lb.name,
             description: lb.description,
             scopeType: lb.scopeType,
-            scanDepth: 10,
-            tokenBudget: 1000,
+            scanDepth: lb.scanDepth ?? LOREBOOK_DEFAULTS.scanDepth,
+            tokenBudget: lb.tokenBudget ?? LOREBOOK_DEFAULTS.tokenBudget,
             tokenBudgetPercent: null,
-            recursiveScanning: 0,
+            recursiveScanning: (lb.recursiveScanning ?? LOREBOOK_DEFAULTS.recursiveScanning) ? 1 : 0,
             maxRecursionSteps: 5,
             includeNames: 0,
             minActivations: 0,
@@ -750,17 +755,31 @@ export class LorebookStore {
           })
           .onConflictDoUpdate({
             target: lorebooks.id,
-            // Re-Apply updates mutable fields but preserves createdAt + id.
+            // Re-Apply updates mutable fields (incl. CE-A1 activation params) but preserves createdAt + id.
             set: {
               name: lb.name,
               description: lb.description,
               scopeType: lb.scopeType,
+              scanDepth: lb.scanDepth ?? LOREBOOK_DEFAULTS.scanDepth,
+              tokenBudget: lb.tokenBudget ?? LOREBOOK_DEFAULTS.tokenBudget,
+              recursiveScanning: (lb.recursiveScanning ?? LOREBOOK_DEFAULTS.recursiveScanning) ? 1 : 0,
               enabled: lb.enabled ? 1 : 0,
               characterId: charScoped ? characterId : null,
               updatedAt: now,
             },
           })
           .run();
+        // CE-A1: a character-scoped lorebook is bound to its character via
+        // lorebook_links (idempotent), so the co-author's book is discoverable
+        // by the activation engine (FK ∪ junction) without the user binding it
+        // manually. Non-character scopes do not create a character link.
+        if (charScoped) {
+          await tx
+            .insert(lorebookLinks)
+            .values({ lorebookId: lb.id, targetType: 'character', targetId: characterId })
+            .onConflictDoNothing()
+            .run();
+        }
         lorebookIds.push(lb.id);
       }
       for (const e of bundle.entries) {

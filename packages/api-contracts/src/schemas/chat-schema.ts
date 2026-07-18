@@ -67,6 +67,12 @@ export const coauthorDraftLorebookSchema = z.object({
   description: z.string(),
   scopeType: z.enum(["global", "character", "persona", "chat"]),
   enabled: z.boolean(),
+  /** Activation: how many recent messages to scan for key matches (CE-A1). Optional — the draft engine fills `LOREBOOK_DEFAULTS`; Apply honors the co-author's choice. */
+  scanDepth: z.number().int().optional(),
+  /** Activation: max tokens the lorebook may inject per turn (CE-A1). */
+  tokenBudget: z.number().int().optional(),
+  /** Activation: whether a key match can recurse into matched entries' keys (CE-A1). */
+  recursiveScanning: z.boolean().optional(),
 });
 export type CoauthorDraftLorebook = z.infer<typeof coauthorDraftLorebookSchema>;
 

@@ -26,6 +26,7 @@ import type {
 	CoauthorDraftLoreEntry,
 	CoauthorLoreBundle,
 } from "@vibe-tavern/api-contracts";
+import { LOREBOOK_DEFAULTS } from "@vibe-tavern/domain";
 
 /** Allocates a stable, DB-primary-key-compatible id for a draft node. */
 export type LoreDraftIdGen = (prefix: "lorebook" | "lore_entry") => string;
@@ -41,6 +42,10 @@ export interface CreateLorebookInput {
 	description?: string;
 	scopeType?: LoreDraftScopeType;
 	enabled?: boolean;
+	/** CE-A1: activation overrides; default to `LOREBOOK_DEFAULTS`. */
+	scanDepth?: number;
+	tokenBudget?: number;
+	recursiveScanning?: boolean;
 }
 
 export interface CreateLoreEntryInput {
@@ -120,6 +125,9 @@ export class LoreDraftState {
 				description: input.description ?? "",
 				scopeType: input.scopeType ?? DEFAULT_LOREBOOK_SCOPE,
 				enabled: input.enabled ?? true,
+				scanDepth: input.scanDepth ?? LOREBOOK_DEFAULTS.scanDepth,
+				tokenBudget: input.tokenBudget ?? LOREBOOK_DEFAULTS.tokenBudget,
+				recursiveScanning: input.recursiveScanning ?? LOREBOOK_DEFAULTS.recursiveScanning,
 			};
 			this.lorebooks.set(lorebook.id, lorebook);
 			return this.snapshot();

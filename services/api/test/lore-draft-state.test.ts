@@ -5,6 +5,7 @@ import {
 	type LoreDraftIdGen,
 } from "../src/domain/coauthor/lore/lore-draft-state.js";
 import type { CoauthorLoreBundle } from "@vibe-tavern/api-contracts";
+import { LOREBOOK_DEFAULTS } from "@vibe-tavern/domain";
 
 /** Deterministic id generator for assertions: lorebook_1, lore_entry_1, ... */
 function deterministicIdGen(): LoreDraftIdGen {
@@ -43,6 +44,19 @@ describe("LoreDraftState — proposal-only draft engine (CTX-L1)", () => {
 			description: "",
 			scopeType: "character",
 			enabled: true,
+			scanDepth: LOREBOOK_DEFAULTS.scanDepth,
+			tokenBudget: LOREBOOK_DEFAULTS.tokenBudget,
+			recursiveScanning: LOREBOOK_DEFAULTS.recursiveScanning,
+		});
+	});
+
+	it("createLorebook honors explicitly-passed activation params (CE-A1)", async () => {
+		const draft = makeDraft();
+		const bundle = await draft.createLorebook({ name: "Tuned", scanDepth: 25, tokenBudget: 2048, recursiveScanning: true });
+		expect(bundle.lorebooks[0]).toMatchObject({
+			scanDepth: 25,
+			tokenBudget: 2048,
+			recursiveScanning: true,
 		});
 	});
 

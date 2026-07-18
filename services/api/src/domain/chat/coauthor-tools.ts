@@ -585,11 +585,14 @@ export function buildCoauthorTools(opts: { toolSet?: Record<string, boolean>; pr
           .optional()
           .describe("Where this lorebook is scoped. 'character' (default) attaches it to the current character."),
         enabled: z.boolean().optional().describe("Whether the lorebook is active. Defaults to true."),
+        scanDepth: z.number().int().optional().describe("Activation: how many recent messages to scan for key matches. Default 10."),
+        tokenBudget: z.number().int().optional().describe("Activation: max tokens this lorebook may inject per turn. Default 1000."),
+        recursiveScanning: z.boolean().optional().describe("Activation: whether a key match can recurse into matched entries' keys. Default false."),
         summary: z.string().max(200).describe("One-line description of this lorebook, shown above the Apply button."),
       }),
-      execute: async ({ name, description, scopeType, enabled, summary }): Promise<CoauthorLoreBundleOutput> => {
-        logger.info("create_lorebook IN name=%j scopeType=%s summary=%s", name, scopeType ?? "(default)", summary);
-        const bundle = await loreDraft.createLorebook({ name, description, scopeType: scopeType as LoreDraftScopeType | undefined, enabled });
+      execute: async ({ name, description, scopeType, enabled, scanDepth, tokenBudget, recursiveScanning, summary }): Promise<CoauthorLoreBundleOutput> => {
+        logger.info("create_lorebook IN name=%j scopeType=%s scanDepth=%s tokenBudget=%s recursive=%s summary=%s", name, scopeType ?? "(default)", scanDepth ?? "(default)", tokenBudget ?? "(default)", recursiveScanning ?? "(default)", summary);
+        const bundle = await loreDraft.createLorebook({ name, description, scopeType: scopeType as LoreDraftScopeType | undefined, enabled, scanDepth, tokenBudget, recursiveScanning });
         return { target: "lore_bundle", bundle, summary };
       },
     }),

@@ -436,4 +436,50 @@ describe("LorebookStore.applyCoauthorLoreDraft (CTX-L2)", () => {
     expect((await store.getEntry("le_a1"))!.constant).toBe(true);
     expect((await store.getEntry("le_b1"))!.depth).toBe(2);
   });
+
+  test("CE-A1: activation params (scanDepth/tokenBudget/recursiveScanning) are honored, not hardcoded", async () => {
+    const store = await mkStoreWithChar();
+    const bundle = {
+      lorebooks: [
+        { id: "lb_params", name: "Tuned", description: "", scopeType: "character" as const, enabled: true, scanDepth: 25, tokenBudget: 2048, recursiveScanning: true },
+      ],
+      entries: [],
+    };
+    await store.applyCoauthorLoreDraft("char_1", bundle);
+    const lb = await store.getLorebook("lb_params");
+    expect(lb!.scanDepth).toBe(25);
+    expect(lb!.tokenBudget).toBe(2048);
+    expect(lb!.recursiveScanning).toBe(true);
+  });
+
+  test("CE-A1: activation params fall back to LOREBOOK_DEFAULTS when the bundle omits them", async () => {
+    const store = await mkStoreWithChar();
+    await store.applyCoauthorLoreDraft("char_1", sampleBundle());
+    const lb = await store.getLorebook("lorebook_draft1");
+    expect(lb!.scanDepth).toBe(10);
+    expect(lb!.tokenBudget).toBe(1000);
+    expect(lb!.recursiveScanning).toBe(false);
+  });
+
+  test("CE-A1: a character-scoped lorebook is bound to its character via lorebook_links (no manual binding)", async () => {
+    const store = await mkStoreWithChar();
+    await store.applyCoauthorLoreDraft("char_1", sampleBundle());
+    const links = await store.getLinks("lorebook_draft1");
+    expect(links).toContainEqual({ lorebookId: "lorebook_draft1", targetType: "character", targetId: "char_1" });
+    // Idempotent: re-Apply does not duplicate the link (composite PK).
+    await store.applyCoauthorLoreDraft("char_1", sampleBundle());
+    expect(await store.getLinks("lorebook_draft1")).toHaveLength(1);
+  });
+
+  test("CE-A1: a non-character-scoped lorebook does NOT get a character link", async () => {
+    const store = await mkStoreWithChar();
+    const bundle = {
+      lorebooks: [
+        { id: "lb_global", name: "Global", description: "", scopeType: "global" as const, enabled: true },
+      ],
+      entries: [],
+    };
+    await store.applyCoauthorLoreDraft("char_1", bundle);
+    expect(await store.getLinks("lb_global")).toEqual([]);
+  });
 });
