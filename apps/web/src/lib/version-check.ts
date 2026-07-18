@@ -26,10 +26,11 @@
  * `bun run dev`.
  */
 
-const GITHUB_RELEASES_URL = "https://api.github.com/repos/Noineri/vibe_tavern/releases/latest";
+const GITHUB_RELEASES_URL = `${__UPDATE_API_BASE__}/releases/latest`;
 const CACHE_KEY = "vibe-tavern.update-check.v3";
 const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
 const FETCH_TIMEOUT_MS = 8000;
+const RELEASE_NOTE_COMMIT_SUFFIX_RE = /^([ \t]*(?:[-*+]|\d+\.)[ \t]+.*?)[ \t]+\([0-9a-f]{7,40}\)[ \t]*\r?$/gim;
 
 export interface UpdateInfo {
 	/** Normalized latest version without leading `v` (e.g. `"1.2.3"`). */
@@ -100,6 +101,10 @@ export function compareSemver(a: string, b: string): number {
 		if (pa[i] !== pb[i]) return pa[i] - pb[i];
 	}
 	return 0;
+}
+
+export function cleanReleaseNotes(notes: string): string {
+	return notes.replace(RELEASE_NOTE_COMMIT_SUFFIX_RE, "$1");
 }
 
 function readCache(): CachedEntry | null {
@@ -190,7 +195,7 @@ function pickUpdate(release: RawRelease | null, currentVersion: string): UpdateI
 			latestVersion: release.latestVersion,
 			latestTag: release.latestTag,
 			releaseUrl: release.releaseUrl,
-			releaseNotes: release.releaseNotes,
+			releaseNotes: cleanReleaseNotes(release.releaseNotes),
 		}
 		: null;
 }

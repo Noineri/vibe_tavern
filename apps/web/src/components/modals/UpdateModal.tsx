@@ -88,8 +88,8 @@ export function UpdateModal({ latestVersion, latestTag, releaseUrl, releaseNotes
 	};
 
 	return (
-		<Modal open={open} onClose={onClose} compact title={headerLabel} description={t("update_modal_description")}>
-			<div className="flex max-h-[80vh] w-[min(560px,92vw)] flex-col rounded-lg border border-border2 bg-surface shadow-xl">
+			<Modal open={open} onClose={onClose} title={headerLabel} description={t("update_modal_description")}>
+			<div className="flex max-h-[80vh] w-[min(760px,94vw)] flex-col rounded-lg border border-border2 bg-surface shadow-xl">
 				{/* Header */}
 				<div className="flex items-center justify-between border-b border-border2 px-5 py-3.5">
 					<div className="flex items-center gap-2.5">
@@ -108,7 +108,7 @@ export function UpdateModal({ latestVersion, latestTag, releaseUrl, releaseNotes
 					{flow.state.kind === "idle" && (
 						<>
 							{showReleaseNotes ? (
-								<div className="md-content-plain max-h-[40vh] overflow-y-auto rounded-md border border-border2 p-3.5 text-[calc(var(--ui-fs)-1px)] leading-relaxed text-t2">
+								<div className="md-content-plain max-h-[40vh] overflow-y-auto break-words rounded-md border border-border2 p-3.5 text-[calc(var(--ui-fs)-1px)] leading-relaxed text-t2">
 									<Markdown text={releaseNotes ?? ""} variant="plain" />
 								</div>
 							) : (
