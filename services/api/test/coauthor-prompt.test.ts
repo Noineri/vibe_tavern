@@ -19,6 +19,7 @@ function makeLoaders(overrides?: Partial<{
   messages: DbMessage[];
   loreEntries: Array<{ id: string; title: string; content: string }>;
   contextItems: Array<{ type: "character" | "persona" | "lorebook" | "script"; id: string; title: string; content: string }>;
+  boundResources: { lorebooks: Array<{ id: string; name: string; entryTitles: string[] }>; scripts: Array<{ id: string; name: string; summary: string }> };
   userModules: Array<Omit<import("@vibe-tavern/api-contracts").CoauthorModule, "isBuiltIn">>;
   skillCatalog: import("../src/domain/coauthor/skills/skill-scanner.js").SkillCatalogEntry[];
 }>): ChatModeAssembleLoaders {
@@ -57,6 +58,7 @@ function makeLoaders(overrides?: Partial<{
     getCharacter: async () => character,
     getProfileMdText: async () => overrides?.profileMd ?? "---\nname: Test\n---\n# PERSONALITY\nA test character.\n",
     getCoauthorContextItems: async () => overrides?.contextItems ?? (overrides?.loreEntries ?? []).map((e) => ({ type: "lorebook" as const, ...e })),
+    getCoauthorBoundResources: async () => overrides?.boundResources ?? { lorebooks: [], scripts: [] },
     getChatSummaries: async () => [],
     getCoauthorUserModules: async () => overrides?.userModules ?? [],
     getSkillCatalog: async () => overrides?.skillCatalog ?? DEFAULT_MOCK_CATALOG,
@@ -271,6 +273,51 @@ describe("assembleCoauthorPrompt", () => {
     const ctxLayer = result.prompt.layers.find((l) => l.id === "pinned_context");
     expect(ctxLayer).toBeTruthy();
     expect(ctxLayer!.sourceType).toBe("coauthor_context");
+  });
+
+  test("CE-C2/C3: bound lorebooks + scripts render as awareness (names/titles only, NOT content)", async () => {
+    const loaders = makeLoaders({
+      boundResources: {
+        lorebooks: [
+          { id: "lb_1", name: "World Atlas", entryTitles: ["Kingdom of Aldor", "The Spine"] },
+          { id: "lb_2", name: "Empty Book", entryTitles: [] },
+        ],
+        scripts: [{ id: "sc_1", name: "greeter.js", summary: "A friendly greeter macro." }],
+      },
+    });
+    const result = await assembleCoauthorPrompt(makeInput(loaders));
+    const system = (result.prompt.finalPayload as { messages: Array<{ content: string }> }).messages[0].content;
+
+    // Lorebook awareness: names + entry titles appear.
+    expect(system).toContain("Bound lorebooks (awareness");
+    expect(system).toContain("World Atlas");
+    expect(system).toContain("Kingdom of Aldor");
+    expect(system).toContain("The Spine");
+    // A book with no enabled entries shows the placeholder, not a content leak.
+    expect(system).toContain("Empty Book");
+    expect(system).toContain("(no enabled entries)");
+
+    // Script awareness: name + summary appear; there is no CODE injection.
+    expect(system).toContain("Bound scripts (awareness");
+    expect(system).toContain("greeter.js");
+    expect(system).toContain("A friendly greeter macro.");
+
+    // Each bound resource gets its own dedicated layer (distinct from pinned).
+    const lbLayer = result.prompt.layers.find((l) => l.id === "bound_lorebooks");
+    const scLayer = result.prompt.layers.find((l) => l.id === "bound_scripts");
+    expect(lbLayer).toBeTruthy();
+    expect(lbLayer!.sourceName).toBe("Bound Lorebooks (2)");
+    expect(scLayer).toBeTruthy();
+    expect(scLayer!.sourceName).toBe("Bound Scripts (1)");
+  });
+
+  test("CE-C2/C3: with no bound resources the awareness sections are omitted", async () => {
+    const loaders = makeLoaders({ boundResources: { lorebooks: [], scripts: [] } });
+    const result = await assembleCoauthorPrompt(makeInput(loaders));
+    const system = (result.prompt.finalPayload as { messages: Array<{ content: string }> }).messages[0].content;
+    expect(system).not.toContain("Bound lorebooks");
+    expect(system).not.toContain("Bound scripts");
+    expect(result.prompt.layers.find((l) => l.id === "bound_lorebooks" || l.id === "bound_scripts")).toBeUndefined();
   });
 
   test("CA-13/CE-C1: with nothing pinned the prompt carries no context section (unchanged)", async () => {

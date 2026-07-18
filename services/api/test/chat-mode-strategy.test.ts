@@ -75,6 +75,7 @@ describe("CoauthorModeStrategy.assemble", () => {
         getCharacter: async () => ({ id: "char_test", firstMessage: "x", alternateGreetings: [] } as never),
         getProfileMdText: async () => "---\nname: Test\n---\n# PERSONALITY\nx\n",
         getCoauthorContextItems: async () => [],
+        getCoauthorBoundResources: async () => ({ lorebooks: [], scripts: [] }),
         getChatSummaries: async () => [],
         getCoauthorUserModules: async () => [],
         getSkillCatalog: async () => [],

@@ -918,6 +918,34 @@ export function pickBootstrapChatId<T extends string>(
 			getChatSummaries: async (chatId, branchId) => {
 				return this.stores.chatSummaries.listByChatBranch(chatId, branchId);
 			},
+			getCoauthorBoundResources: async (characterId) => {
+				// CE-C2/C3: the character's M:N-bound lorebooks + scripts as awareness
+				// metadata (name + entry titles / name + description) — NOT full
+				// content (Level 1) and NOT RP keyword activation. Mirrors exactly
+				// what BoundResourcesField shows the user as 'bound' (links-only via
+				// listLorebooksLinkedToTarget / listScriptsLinkedToTarget).
+				const [boundLorebooks, boundScripts] = await Promise.all([
+					this.stores.lorebooks.listLorebooksLinkedToTarget('character', characterId as string),
+					this.stores.scripts.listScriptsLinkedToTarget('character', characterId as string),
+				]);
+				const lorebookItems = await Promise.all(
+					boundLorebooks.map(async (lb) => ({
+						id: lb.id,
+						name: lb.name,
+						// Entry titles only — the CONTENT is Level 1's job when pinned.
+						entryTitles: (await this.stores.lorebooks.listEntries(lb.id))
+							.filter((e) => e.enabled)
+							.map((e) => e.title),
+					})),
+				);
+				const scriptItems = boundScripts.map((sc) => ({
+					id: sc.id,
+					name: sc.name,
+					// Description is the human-written summary; the CODE stays out.
+					summary: sc.description.trim(),
+				}));
+				return { lorebooks: lorebookItems, scripts: scriptItems };
+			},
 			getCoauthorUserModules: async () => {
 				// CS-24: user-created modules (editable). Seed modules never come from
 				// here — the registry loads those from disk. The row carries

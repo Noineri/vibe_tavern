@@ -41,6 +41,14 @@ interface BoundResourcesFieldProps {
   /** The persisted entity id (personaId / characterId). */
   entityId: string;
   isMobile: boolean;
+  /** CE-C2/C3: optional muted caption rendered under the lorebook section
+   *  label, explaining what binding MEANS in this host (e.g. the co-author
+   *  surfaces bound lorebooks as name+title awareness only). Omitted in the
+   *  card editor, where binding means RP keyword activation — different
+   *  semantics, different (tooltip) guidance already in place. */
+  lorebookCaption?: string;
+  /** CE-C3: symmetric caption for the script section. */
+  scriptCaption?: string;
 }
 
 /**
@@ -60,7 +68,7 @@ function scriptToTarget(sc: ScriptRecord): LinkTarget {
   return { id: sc.id, name: sc.name, avatarAssetId: null };
 }
 
-export function BoundResourcesField({ entityKind, entityId, isMobile }: BoundResourcesFieldProps) {
+export function BoundResourcesField({ entityKind, entityId, isMobile, lorebookCaption, scriptCaption }: BoundResourcesFieldProps) {
   const { t } = useT();
   const [allLorebooks, setAllLorebooks] = useState<LorebookRecord[]>([]);
   const [boundIds, setBoundIds] = useState<Set<string>>(new Set());
@@ -207,6 +215,9 @@ export function BoundResourcesField({ entityKind, entityId, isMobile }: BoundRes
         emptyLabel={t("bound_lorebooks_empty")}
         lorebookSectionLabel={t("bound_lorebooks_section")}
       />
+      {lorebookCaption && (
+        <p className="mb-2 mt-1 font-ui text-[11px] leading-snug text-t4">{lorebookCaption}</p>
+      )}
 
       <div className="mt-3 mb-1.5 flex items-center gap-1.5">
         <span className="font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">
@@ -230,6 +241,9 @@ export function BoundResourcesField({ entityKind, entityId, isMobile }: BoundRes
         emptyLabel={t("bound_scripts_empty")}
         scriptSectionLabel={t("bound_scripts_section")}
       />
+      {scriptCaption && (
+        <p className="mb-2 mt-1 font-ui text-[11px] leading-snug text-t4">{scriptCaption}</p>
+      )}
     </div>
   );
 }

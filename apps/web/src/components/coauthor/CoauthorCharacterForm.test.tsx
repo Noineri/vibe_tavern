@@ -62,6 +62,28 @@ vi.mock("../../api/script-api.js", () => ({
 	listAllScripts: () => Promise.resolve([]),
 }));
 
+// CE-C2/C3: BoundResourcesField (rendered inside the form) reads + writes
+// character lorebook/script bindings via app-client. Mock those binding
+// functions to empty/no-op so the field renders without hitting the network.
+// Spread the real module first (preserves every other app-client export,
+// including the AppCharacter TYPE the form itself imports).
+vi.mock("../../app-client.js", async (importOriginal) => {
+	const realAppClient = await importOriginal() as typeof import("../../app-client.js");
+	return {
+		...realAppClient,
+		listAllLorebooks: () => Promise.resolve([]),
+		listCharacterLorebooks: () => Promise.resolve([]),
+		listPersonaLorebooks: () => Promise.resolve([]),
+		getLorebookLinks: () => Promise.resolve([]),
+		setLorebookLinks: () => Promise.resolve([]),
+		listAllScripts: () => Promise.resolve([]),
+		listCharacterScripts: () => Promise.resolve([]),
+		listPersonaScripts: () => Promise.resolve([]),
+		getScriptLinks: () => Promise.resolve([]),
+		setScriptLinks: () => Promise.resolve([]),
+	};
+});
+
 // chat-store: spread the REAL module first (preserves every other export for
 // any co-running test file), override ONLY useIsSending with a controllable
 // value. See AGENTS.md mock.module gotcha. Under vitest `vi.mock` is hoisted
@@ -223,6 +245,23 @@ describe("CoauthorCharacterForm", () => {
 		});
 		const { getByText } = render(<CoauthorCharacterForm />);
 		expect(getByText("Mira")).toBeTruthy();
+	});
+
+	it("CE-C2/C3: context-level captions render so the L1/L2/L3 distinction is obvious", async () => {
+		// The three levels each carry a caption stating what the model sees:
+		// L1 full content, L2 lorebook names+titles, L3 script names+summaries.
+		useSnapshotStore.setState({
+			character: makeCharacter(),
+			activeChat: { id: TEST_CHAT } as never,
+		});
+		const { getByText, findByText } = render(<CoauthorCharacterForm />);
+		// L1 caption renders immediately (not behind BoundResourcesField's load).
+		// useT is mocked to return keys verbatim — assert the KEY renders, not the
+		// translated prose (translation parity is covered by the i18n status check).
+		expect(getByText("coauthor.context.caption_full")).toBeTruthy();
+		// L2/L3 captions render once BoundResourcesField resolves its (mocked) reads.
+		expect(await findByText("coauthor.context.bound_lorebooks_caption")).toBeTruthy();
+		expect(await findByText("coauthor.context.bound_scripts_caption")).toBeTruthy();
 	});
 
 	// ── CA-11: reviewing state + Apply/Reject ──────────────────────────────────

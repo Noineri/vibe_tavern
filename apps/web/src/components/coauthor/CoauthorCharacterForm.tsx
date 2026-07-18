@@ -65,6 +65,7 @@ import type { CoauthorToolActivity } from "../../stores/coauthor-turn-store.js";
 import { useCharacterController } from "../../hooks/use-character-controller.js";
 import { useT } from "../../i18n/context.js";
 import { LinkBindingPopover, type LinkTarget } from "../shared/LinkBindingPopover.js";
+import { BoundResourcesField } from "../shared/BoundResourcesField.js";
 import { listAllLorebooks } from "../../api/lorebook-api.js";
 import { listAllScripts } from "../../api/script-api.js";
 import { listPersonas } from "../../api/persona-api.js";
@@ -455,24 +456,43 @@ function CoauthorCharacterFormInner({ character }: CoauthorCharacterFormInnerPro
         </button>
       </div>
 
-      {/* CE-C1: pinned Level-1 context picker. Reuses LinkBindingPopover with
-          all four target kinds (character/persona/lorebook/script); sections
-          with no entries don't render. The model sees each pinned entity's
-          full content as a read-only reference block in the editor prompt. */}
-      <div className="flex shrink-0 items-center gap-2 border-b border-border/50 bg-surface px-4 py-2">
-        <span className="font-ui text-[10px] font-semibold uppercase tracking-[0.06em] text-t3">{t("coauthor.context.label")}</span>
-        <LinkBindingPopover
-          links={[...contextLinks]}
-          characters={characterTargets}
-          personas={personaTargets}
-          lorebooks={lorebookTargets}
-          scripts={scriptTargets}
-          onSetLinks={(next) => handleSetContextLinks(next as { targetType: "character" | "persona" | "lorebook" | "script"; targetId: string }[])}
-          t={t}
-          isMobile={false}
-          tooltipLabel={t("coauthor.context.add")}
-          emptyLabel={t("coauthor.context.empty")}
-        />
+      {/* CE-C1/C2/C3: the three context LEVELS, grouped so their distinction
+          is obvious. Each level has a caption stating what the model actually
+          sees — L1 full content vs L2/L3 awareness-only (names/titles). L1
+          persists on the chat (coauthorContextLinks); L2/L3 bind to the
+          character (lorebook_links / script_links via BoundResourcesField, the
+          same shared primitive the card editor uses). */}
+      <div className="shrink-0 border-b border-border/50 bg-surface px-4 py-2">
+        {/* Level 1 — pinned, full content. */}
+        <div className="flex items-center gap-2">
+          <span className="font-ui text-[10px] font-semibold uppercase tracking-[0.06em] text-t3">{t("coauthor.context.label")}</span>
+          <LinkBindingPopover
+            links={[...contextLinks]}
+            characters={characterTargets}
+            personas={personaTargets}
+            lorebooks={lorebookTargets}
+            scripts={scriptTargets}
+            onSetLinks={(next) => handleSetContextLinks(next as { targetType: "character" | "persona" | "lorebook" | "script"; targetId: string }[])}
+            t={t}
+            isMobile={false}
+            tooltipLabel={t("coauthor.context.add")}
+            emptyLabel={t("coauthor.context.empty")}
+          />
+        </div>
+        <p className="mt-1 font-ui text-[11px] leading-snug text-t4">{t("coauthor.context.caption_full")}</p>
+        {/* Level 2/3 — bound lorebooks & scripts, awareness only. Skipped when
+            the character has no persisted id (unsaved draft has no bindings). */}
+        {character.id && (
+          <div className="mt-1">
+            <BoundResourcesField
+              entityKind="character"
+              entityId={character.id}
+              isMobile={false}
+              lorebookCaption={t("coauthor.context.bound_lorebooks_caption")}
+              scriptCaption={t("coauthor.context.bound_scripts_caption")}
+            />
+          </div>
+        )}
       </div>
 
       {/* Body: editor surface OR the reviewing overlay (CA-11/CA-12). The editor

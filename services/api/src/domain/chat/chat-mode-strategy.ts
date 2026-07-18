@@ -53,6 +53,31 @@ export interface CoauthorContextItem {
   content: string;
 }
 
+/** CE-C2: a lorebook M:N-bound to the character, surfaced to the co-author
+ *  model as AWARENESS ONLY — the book's name plus its enabled entries' titles
+ *  (a table of contents), NOT entry content. Full content is Level 1
+ *  (`getCoauthorContextItems`) when the user explicitly pins the book. */
+export interface CoauthorBoundLorebook {
+  id: string;
+  name: string;
+  entryTitles: string[];
+}
+
+/** CE-C3: a script M:N-bound to the character, surfaced as AWARENESS ONLY —
+ *  name + description (summary). The script's CODE is not injected; if the
+ *  model needs the code, the user pins it as Level-1 context. */
+export interface CoauthorBoundScript {
+  id: string;
+  name: string;
+  summary: string;
+}
+
+/** CE-C2/C3: the character's bound lorebooks + scripts as awareness metadata. */
+export interface CoauthorBoundResources {
+  lorebooks: CoauthorBoundLorebook[];
+  scripts: CoauthorBoundScript[];
+}
+
 export interface ChatModeAssembleLoaders {
   /** Active-branch messages for the chat (position-ascending); `limit` takes the last N. */
   getMessages(chatId: ChatId, branchId?: ChatBranchId, limit?: number): Promise<DbMessage[]>;
@@ -74,6 +99,17 @@ export interface ChatModeAssembleLoaders {
    * Returns `CoauthorContextItem[]` — no activation reason / windows.
    */
   getCoauthorContextItems(chatId: ChatId): Promise<CoauthorContextItem[]>;
+  /**
+   * Co-author bound Level-2/3 awareness (CE-C2/C3): the lorebooks + scripts
+   * M:N-linked to the character (via `lorebook_links` / `script_links`),
+   * surfaced to the model as a compact table of contents — lorebook NAME +
+   * enabled entry TITLES, script NAME + description. NOT full content (that is
+   * Level 1 when pinned) and NOT RP keyword activation. Lets the model know
+   * these resources exist and reference them by name without spending the
+   * tokens their full content would cost. Returns empty arrays when the
+   * character has no bound resources.
+   */
+  getCoauthorBoundResources(characterId: CharacterId): Promise<CoauthorBoundResources>;
   /** Gets chat summaries bound to this branch. */
   getChatSummaries(chatId: ChatId, branchId: ChatBranchId): Promise<Array<{
     id: string;
