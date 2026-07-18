@@ -12,6 +12,16 @@ export {
 } from './persistence.js';
 export { createFileStore, STORAGE_FOLDERS, IMAGE_EXTENSIONS, type FileStore, type StorageFolder } from './file-store.js';
 export { ContentStore } from './content-store.js';
+export {
+  buildContextSearchIndex,
+  DEFAULT_SEARCH_LIMIT,
+  type ContextChannel,
+  type ContextMatchKind,
+  type ContextSearchIndex,
+  type ContextSearchOptions,
+  type ContextSearchResult,
+  type IndexedContextRecord,
+} from './context-search-index.js';
 
 // VTF codecs — exposed for the Vibe MD editor sync core (apps/web) and other
 // consumers that need to parse/serialize the canonical profile.md document
