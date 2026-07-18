@@ -26,7 +26,7 @@ import type {
 	CoauthorDraftLoreEntry,
 	CoauthorLoreBundle,
 } from "@vibe-tavern/api-contracts";
-import { LOREBOOK_DEFAULTS } from "@vibe-tavern/domain";
+import { LOREBOOK_DEFAULTS, LORE_LOGIC } from "@vibe-tavern/domain";
 
 /** Allocates a stable, DB-primary-key-compatible id for a draft node. */
 export type LoreDraftIdGen = (prefix: "lorebook" | "lore_entry") => string;
@@ -52,13 +52,14 @@ export interface CreateLoreEntryInput {
 	/** Parent lorebook draft id; MUST already exist in this draft. */
 	lorebookId: string;
 	title?: string;
-	content?: string;
-	keys?: string[];
-	secondaryKeys?: string[];
+	/** CE-A2: the entry is a SKELETON. Content + keys come ONLY from delegates
+	 *  (ai_write_lore_entry / ai_generate_lore_keys), never set inline here. */
 	constant?: boolean;
 	/** Injection position (mirrors LoreEntryPosition). Default `before_char`. */
 	position?: string;
 	depth?: number;
+	/** Activation logic / match mode (domain LORE_LOGIC). Default `and_any`. */
+	logic?: string;
 	enabled?: boolean;
 }
 
@@ -88,6 +89,8 @@ const DEFAULT_LOREBOOK_SCOPE: LoreDraftScopeType = "character";
 /** Defaults for a newly drafted entry — SillyTavern's common new-entry values. */
 const DEFAULT_ENTRY_POSITION = "before_char";
 const DEFAULT_ENTRY_DEPTH = 4;
+/** CE-A2: default activation logic — ST's AND_ANY (at least one key matches). */
+const DEFAULT_ENTRY_LOGIC = LORE_LOGIC.andAny;
 
 export class LoreDraftState {
 	private readonly lorebooks = new Map<string, CoauthorDraftLorebook>();
@@ -150,12 +153,14 @@ export class LoreDraftState {
 				id: this.deps.idGen("lore_entry"),
 				lorebookId: input.lorebookId,
 				title: input.title ?? "",
-				content: input.content ?? "",
-				keys: input.keys ?? [],
-				secondaryKeys: input.secondaryKeys ?? [],
+				// CE-A2: skeleton — content + keys are delegate-only, start empty.
+				content: "",
+				keys: [],
+				secondaryKeys: [],
 				constant: input.constant ?? false,
 				position: input.position ?? DEFAULT_ENTRY_POSITION,
 				depth: input.depth ?? DEFAULT_ENTRY_DEPTH,
+				logic: input.logic ?? DEFAULT_ENTRY_LOGIC,
 				enabled: input.enabled ?? true,
 			};
 			this.entries.set(entry.id, entry);

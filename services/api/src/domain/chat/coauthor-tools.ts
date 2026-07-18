@@ -31,7 +31,7 @@ import {
   type CoauthorTarget,
   type CoauthorToolOutput,
 } from "@vibe-tavern/api-contracts";
-import { log } from "@vibe-tavern/domain";
+import { log, LORE_LOGIC } from "@vibe-tavern/domain";
 import { buildReadSkillFileTool } from "../coauthor/skills/skill-read-tool.js";
 import {
   defaultLoreDraftIdGen,
@@ -379,10 +379,10 @@ export function buildCoauthorTools(opts: { toolSet?: Record<string, boolean>; pr
       entryKeys: entry.keys,
       entrySecondaryKeys: entry.secondaryKeys,
       instruction,
-      // generate_keys params (ignored for write_entry). Draft entries don't
-      // track a logic mode (Apply fills the store default AND_ANY).
+      // generate_keys params (ignored for write_entry). CE-A2: logic now
+      // flows from the draft entry (settable via create_lore_entry); default and_any.
       keyTarget: opts?.keyTarget ?? "both",
-      logic: "and_any",
+      logic: entry.logic ?? LORE_LOGIC.andAny,
     };
   }
 
@@ -599,20 +599,19 @@ export function buildCoauthorTools(opts: { toolSet?: Record<string, boolean>; pr
 
     create_lore_entry: tool({
       description:
-        "Propose adding a NEW entry to a lorebook drafted this turn. `lorebookId` MUST be the id of a lorebook returned by an earlier create_lorebook in this turn. Returns the complete cumulative lore draft. The entry is shown for review (with its keys, content, and activation) before applying.",
+        "Propose adding a NEW entry SKELETON to a lorebook drafted this turn. `lorebookId` MUST be the id of a lorebook returned by an earlier create_lorebook in this turn. This creates the entry with a title + activation params ONLY — it does NOT set content or keys. After creating the skeleton: delegate CONTENT via ai_write_lore_entry, then delegate KEYS via ai_generate_lore_keys. Returns the complete cumulative lore draft.",
       inputSchema: z.object({
         lorebookId: z.string().describe("The id of the parent lorebook (from a create_lorebook result this turn)."),
         title: z.string().optional().describe("A short title for the entry (organizational; not an activation trigger)."),
-        content: z.string().optional().describe("The lore content injected when this entry activates."),
-        keys: z.array(z.string()).optional().describe("Activation trigger keywords. The entry activates when any key matches the recent context."),
         constant: z.boolean().optional().describe("If true the entry activates every turn regardless of key match. Defaults to false."),
         position: z.string().optional().describe("Where the entry injects (e.g. 'before_char'). Defaults to 'before_char'."),
         depth: z.number().int().optional().describe("Injection depth for depth-aware positions. Defaults to 4."),
+        logic: z.enum([LORE_LOGIC.andAny, LORE_LOGIC.andAll, LORE_LOGIC.notAny, LORE_LOGIC.notAll] as const).optional().describe("How keys combine for activation. 'and_any' (default) = at least one key matches; 'and_all' = all must match; 'not_any' = none may match; 'not_all' = not all match."),
         summary: z.string().max(200).describe("One-line description of this entry, shown above the Apply button."),
       }),
-      execute: async ({ lorebookId, title, content, keys, constant, position, depth, summary }): Promise<CoauthorLoreBundleOutput> => {
-        logger.info("create_lore_entry IN lorebookId=%s title=%j keys=%d summary=%s", lorebookId, title, keys?.length ?? 0, summary);
-        const bundle = await loreDraft.createLoreEntry({ lorebookId, title, content, keys, constant, position, depth });
+      execute: async ({ lorebookId, title, constant, position, depth, logic, summary }): Promise<CoauthorLoreBundleOutput> => {
+        logger.info("create_lore_entry IN lorebookId=%s title=%j logic=%s summary=%s", lorebookId, title, logic ?? "(default)", summary);
+        const bundle = await loreDraft.createLoreEntry({ lorebookId, title, constant, position, depth, logic });
         return { target: "lore_bundle", bundle, summary };
       },
     }),

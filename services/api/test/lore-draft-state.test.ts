@@ -75,6 +75,7 @@ describe("LoreDraftState — proposal-only draft engine (CTX-L1)", () => {
 			constant: false,
 			position: "before_char",
 			depth: 4,
+			logic: "and_any",
 			enabled: true,
 		});
 	});
@@ -85,7 +86,7 @@ describe("LoreDraftState — proposal-only draft engine (CTX-L1)", () => {
 		expect(b1.lorebooks).toHaveLength(1);
 		expect(b1.entries).toHaveLength(0);
 
-		const b2 = await draft.createLoreEntry({ lorebookId: "lorebook_1", title: "Entry 1", keys: ["castle"] });
+		const b2 = await draft.createLoreEntry({ lorebookId: "lorebook_1", title: "Entry 1" });
 		// The entry bundle still carries the lorebook from the earlier call —
 		// aggregation can never discard earlier entries or fields.
 		expect(b2.lorebooks).toHaveLength(1);
@@ -109,7 +110,7 @@ describe("LoreDraftState — proposal-only draft engine (CTX-L1)", () => {
 		const draft = makeDraft();
 		await draft.createLorebook({ name: "Book" });
 		// lorebook_1 was allocated by the prior call; the entry depends on it.
-		const bundle = await draft.createLoreEntry({ lorebookId: "lorebook_1", keys: ["night"] });
+		const bundle = await draft.createLoreEntry({ lorebookId: "lorebook_1" });
 		expect(bundle.entries[0].lorebookId).toBe("lorebook_1");
 	});
 
@@ -180,13 +181,13 @@ describe("LoreDraftState — AI-delegation updates (CTX-L2b)", () => {
 	it("setLoreEntryContent replaces an entry's content (immutable replace)", async () => {
 		const draft = makeDraft();
 		await draft.createLorebook({ name: "LB" });
-		await draft.createLoreEntry({ lorebookId: "lorebook_1", title: "T", content: "old" });
+		await draft.createLoreEntry({ lorebookId: "lorebook_1", title: "T" });
 		const snap1 = draft.snapshot();
 
 		const snap2 = await draft.setLoreEntryContent({ entryId: "lore_entry_1", content: "AI-generated prose." });
 		expect(snap2.entries[0]!.content).toBe("AI-generated prose.");
-		// Immutable replace: the earlier snapshot is unaffected.
-		expect(snap1.entries[0]!.content).toBe("old");
+		// Immutable replace: the earlier snapshot is unaffected (skeleton started empty).
+		expect(snap1.entries[0]!.content).toBe("");
 	});
 
 	it("setLoreEntryContent rejects a missing entry", async () => {
@@ -199,7 +200,7 @@ describe("LoreDraftState — AI-delegation updates (CTX-L2b)", () => {
 	it("setLoreEntryKeys replaces primary keys and optional secondary keys", async () => {
 		const draft = makeDraft();
 		await draft.createLorebook({ name: "LB" });
-		await draft.createLoreEntry({ lorebookId: "lorebook_1", keys: ["old"] });
+		await draft.createLoreEntry({ lorebookId: "lorebook_1" });
 
 		const snap = await draft.setLoreEntryKeys({
 			entryId: "lore_entry_1",
@@ -213,7 +214,9 @@ describe("LoreDraftState — AI-delegation updates (CTX-L2b)", () => {
 	it("setLoreEntryKeys without secondaryKeys leaves secondaryKeys untouched", async () => {
 		const draft = makeDraft();
 		await draft.createLorebook({ name: "LB" });
-		await draft.createLoreEntry({ lorebookId: "lorebook_1", secondaryKeys: ["keep"] });
+		await draft.createLoreEntry({ lorebookId: "lorebook_1" });
+		// Seed existing secondary keys via setLoreEntryKeys itself (createLoreEntry is a skeleton now).
+		await draft.setLoreEntryKeys({ entryId: "lore_entry_1", keys: [], secondaryKeys: ["keep"] });
 		const snap = await draft.setLoreEntryKeys({ entryId: "lore_entry_1", keys: ["a"] });
 		expect(snap.entries[0]!.keys).toEqual(["a"]);
 		expect(snap.entries[0]!.secondaryKeys).toEqual(["keep"]);

@@ -606,13 +606,14 @@ describe("coauthor-tools: Wave 4 lore tools (CTX-L1)", () => {
     const tools = buildCoauthorTools({ loreIdGen: deterministicIdGen() });
     await tools.create_lorebook.execute({ name: "Book", summary: "s" }, ctx);
     const out = await tools.create_lore_entry.execute(
-      { lorebookId: "lorebook_1", title: "Castle", keys: ["anvil"], summary: "Add castle entry." },
+      { lorebookId: "lorebook_1", title: "Castle", summary: "Add castle entry." },
       ctx,
     );
     expect(out.target).toBe("lore_bundle");
     expect(out.bundle.lorebooks).toHaveLength(1);
     expect(out.bundle.entries).toHaveLength(1);
-    expect(out.bundle.entries[0]).toMatchObject({ id: "lore_entry_1", lorebookId: "lorebook_1", keys: ["anvil"] });
+    // CE-A2: skeleton — keys start empty (filled later by ai_generate_lore_keys); logic defaults to and_any.
+    expect(out.bundle.entries[0]).toMatchObject({ id: "lore_entry_1", lorebookId: "lorebook_1", keys: [], logic: "and_any" });
   });
 
   test("create_lore_entry rejects a missing parent with a tool error", async () => {
@@ -701,7 +702,9 @@ describe("coauthor-tools: AI-delegation lore tools (CTX-L2b)", () => {
       loreDelegate: mockDelegate(captured),
     });
     await tools.create_lorebook.execute({ name: "LB", summary: "s" }, ctx);
-    await tools.create_lore_entry.execute({ lorebookId: "lorebook_1", title: "T", content: "some content", summary: "s" }, ctx);
+    await tools.create_lore_entry.execute({ lorebookId: "lorebook_1", title: "T", summary: "s" }, ctx);
+    // CE-A2: content is delegate-only — establish it via ai_write_lore_entry first.
+    await tools.ai_write_lore_entry.execute({ entryId: "lore_entry_1", instruction: "write it", summary: "s" }, ctx);
 
     const out = await tools.ai_generate_lore_keys.execute(
       { entryId: "lore_entry_1", summary: "Generated keys." },
@@ -710,7 +713,7 @@ describe("coauthor-tools: AI-delegation lore tools (CTX-L2b)", () => {
     expect(out.bundle.entries[0]!.keys).toEqual(["Vex", "commander"]);
     expect(out.bundle.entries[0]!.secondaryKeys).toEqual(["fleet"]);
     expect(captured.input!.kind).toBe("generate_keys");
-    expect(captured.input!.entryContent).toBe("some content");
+    expect(captured.input!.entryContent).toBe("AI-authored lore prose.");
   });
 
   test("ai_generate_lore_keys: keyTarget=primary replaces ONLY primary; secondary stays empty even if the delegate returns one", async () => {
@@ -720,7 +723,7 @@ describe("coauthor-tools: AI-delegation lore tools (CTX-L2b)", () => {
       loreDelegate: async (input) => { captured.input = input; return { keys: ["Vex", "commander"], secondaryKeys: ["fleet"] }; },
     });
     await tools.create_lorebook.execute({ name: "LB", summary: "s" }, ctx);
-    await tools.create_lore_entry.execute({ lorebookId: "lorebook_1", title: "T", content: "c", keys: ["alpha"], summary: "s" }, ctx);
+    await tools.create_lore_entry.execute({ lorebookId: "lorebook_1", title: "T", summary: "s" }, ctx);
 
     const out = await tools.ai_generate_lore_keys.execute(
       { entryId: "lore_entry_1", keyTarget: "primary", summary: "primary only" },
@@ -739,13 +742,15 @@ describe("coauthor-tools: AI-delegation lore tools (CTX-L2b)", () => {
       loreDelegate: async () => ({ keys: ["Vex", "commander"], secondaryKeys: ["fleet"] }),
     });
     await tools.create_lorebook.execute({ name: "LB", summary: "s" }, ctx);
-    await tools.create_lore_entry.execute({ lorebookId: "lorebook_1", title: "T", content: "c", keys: ["alpha"], summary: "s" }, ctx);
+    await tools.create_lore_entry.execute({ lorebookId: "lorebook_1", title: "T", summary: "s" }, ctx);
+    // CE-A2: seed existing primary keys via the delegate (keys are delegate-only now).
+    await tools.ai_generate_lore_keys.execute({ entryId: "lore_entry_1", keyTarget: "primary", summary: "seed" }, ctx);
 
     const out = await tools.ai_generate_lore_keys.execute(
       { entryId: "lore_entry_1", keyTarget: "secondary", summary: "secondary only" },
       ctx,
     );
-    expect(out.bundle.entries[0]!.keys).toEqual(["alpha"]); // untouched
+    expect(out.bundle.entries[0]!.keys).toEqual(["Vex", "commander"]); // untouched (seeded via delegate)
     expect(out.bundle.entries[0]!.secondaryKeys).toEqual(["fleet"]); // replaced
   });
 
@@ -756,13 +761,16 @@ describe("coauthor-tools: AI-delegation lore tools (CTX-L2b)", () => {
     });
     await tools.create_lorebook.execute({ name: "LB", summary: "s" }, ctx);
     // Seed an existing primary key overlapping a generated one ('Vex') to prove dedup.
-    await tools.create_lore_entry.execute({ lorebookId: "lorebook_1", title: "T", content: "c", keys: ["Vex"], summary: "s" }, ctx);
+    await tools.create_lore_entry.execute({ lorebookId: "lorebook_1", title: "T", summary: "s" }, ctx);
+    // CE-A2: seed existing primary keys via the delegate (keys are delegate-only now),
+    // then augment to prove dedup against the generated set.
+    await tools.ai_generate_lore_keys.execute({ entryId: "lore_entry_1", keyTarget: "primary", summary: "seed" }, ctx);
 
     const out = await tools.ai_generate_lore_keys.execute(
       { entryId: "lore_entry_1", appendMode: true, summary: "augment" },
       ctx,
     );
-    // 'Vex' not duplicated; 'commander' appended; secondary populated.
+    // Existing [Vex, commander] augmented with the same generated set — deduped, no duplicates.
     expect(out.bundle.entries[0]!.keys).toEqual(["Vex", "commander"]);
     expect(out.bundle.entries[0]!.secondaryKeys).toEqual(["fleet"]);
   });

@@ -135,6 +135,8 @@ export interface CoauthorLoreDraftBundle {
     constant: boolean;
     position: string;
     depth: number;
+    /** CE-A2: activation logic / match mode (LORE_LOGIC); falls back to 'and_any' when absent. */
+    logic?: string;
     enabled: boolean;
   }>;
 }
@@ -791,6 +793,7 @@ export class LorebookStore {
           constant: e.constant,
           position: e.position,
           depth: e.depth,
+          logic: e.logic,
           enabled: e.enabled,
         });
         await tx

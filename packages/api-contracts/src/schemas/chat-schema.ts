@@ -95,6 +95,8 @@ export const coauthorDraftLoreEntrySchema = z.object({
   /** Where the entry injects (mirrors LoreEntryPosition, string form). */
   position: z.string(),
   depth: z.number().int(),
+  /** CE-A2: activation logic / match mode (ST selective_logic via domain LORE_LOGIC; default "and_any"). Optional — the draft engine fills the default; Apply honors the co-author's choice. */
+  logic: z.string().optional(),
   enabled: z.boolean(),
 });
 export type CoauthorDraftLoreEntry = z.infer<typeof coauthorDraftLoreEntrySchema>;
