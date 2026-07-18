@@ -649,6 +649,22 @@ describe("coauthor-tools: Wave 4 lore tools (CTX-L1)", () => {
     expect(tools.set_lore_activation).toBeDefined();
     expect(tools.read_skill_file).toBeDefined();
   });
+
+  // CE-D2: search_context / read_context_item are gated by toolSet exactly like
+  // the lore / profile / greeting tools (they are NOT always-on like
+  // read_skill_file). All four seed modules enable them, but a user-created
+  // module that omits them must have them excluded.
+  test("search_context / read_context_item are gated by toolSet", () => {
+    const on = buildCoauthorTools({ toolSet: { search_context: true, read_context_item: true } }) as unknown as Record<string, unknown>;
+    expect(on.search_context).toBeDefined();
+    expect(on.read_context_item).toBeDefined();
+    expect(on.write_profile).toBeUndefined();
+
+    const off = buildCoauthorTools({ toolSet: { write_profile: true } }) as unknown as Record<string, unknown>;
+    expect(off.search_context).toBeUndefined();
+    expect(off.read_context_item).toBeUndefined();
+    expect(off.write_profile).toBeDefined();
+  });
 });
 
 describe("coauthor-tools: AI-delegation lore tools (CTX-L2b)", () => {

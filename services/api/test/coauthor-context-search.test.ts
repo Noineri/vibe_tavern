@@ -149,4 +149,22 @@ describe("context-search-session: read", () => {
     await expect(session.read("character", "ghost")).rejects.toThrow(/not found/);
     session.dispose();
   });
+
+  test("bare read does not build the index or resolve active scope", async () => {
+    // CE-D2 finding #1: read() must NOT call ensureIndex(). It reads canonical
+    // content straight from the stores, so it must neither trigger a full
+    // library projection nor depend on resolveActiveScope succeeding. We pin
+    // this by making resolveActiveScope throw and every listAll* observable:
+    // if read touched them, the throw would propagate.
+    let scopeResolved = false;
+    const explodingStores = makeStores();
+    const session = createContextSearchSession(explodingStores, async () => {
+      scopeResolved = true;
+      throw new Error("scope must not be resolved for a bare read");
+    });
+    const result = await session.read("persona", "ps_default");
+    expect(scopeResolved).toBe(false);
+    expect(result.content).toContain("Neutral narrator voice");
+    session.dispose();
+  });
 });

@@ -423,8 +423,12 @@ export function createContextSearchSession(
     },
 
     async read(type: string, id: string): Promise<ContextSearchReadResult> {
-      // Build a minimal ContextSearchResult for the canonical reader.
-      await ensureIndex();
+      // Canonical read goes straight to the stores — it does NOT use the
+      // index, so we must NOT call ensureIndex() here. Building the index is
+      // a side effect of search only; coupling read to it would (a) trigger a
+      // full library projection for a single read when the model calls
+      // read_context_item without a prior search, and (b) make read depend on
+      // resolveActiveScope succeeding even though read needs no scope.
       return readCanonicalContent(stores, {
         channel: "entity",
         type,
