@@ -53,14 +53,22 @@ export interface CoauthorContextItem {
   content: string;
 }
 
+/** CE-C2: one enabled entry in bound-lorebook awareness. The stable id is
+ * intentionally paired with its title: cross-turn edit/re-delegation tools
+ * require `entryId`, while awareness stays content-free (Level 2). */
+export interface CoauthorBoundLoreEntry {
+  id: string;
+  title: string;
+}
+
 /** CE-C2: a lorebook M:N-bound to the character, surfaced to the co-author
- *  model as AWARENESS ONLY — the book's name plus its enabled entries' titles
- *  (a table of contents), NOT entry content. Full content is Level 1
- *  (`getCoauthorContextItems`) when the user explicitly pins the book. */
+ * model as AWARENESS ONLY — the book's name plus enabled-entry titles and
+ * stable ids (a table of contents), NOT entry content. Full content is Level 1
+ * (`getCoauthorContextItems`) when the user explicitly pins the book. */
 export interface CoauthorBoundLorebook {
   id: string;
   name: string;
-  entryTitles: string[];
+  entries: CoauthorBoundLoreEntry[];
 }
 
 /** CE-C3: a script M:N-bound to the character, surfaced as AWARENESS ONLY —

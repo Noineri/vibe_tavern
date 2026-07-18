@@ -800,10 +800,10 @@ export function buildCoauthorTools(opts: { toolSet?: Record<string, boolean>; pr
     // grounds on the live working profile of the character being authored.
     ai_write_lore_entry: tool({
       description:
-        "Delegate WRITING the content body of a lore entry to the AI-assistant (a separate, focused generation call — a smaller model authors dense worldbuilding prose). Use this when an entry drafted this turn needs its content written or rewritten. `entryId` MUST be the id of an entry returned earlier this turn. " +
+        "Delegate WRITING the content body of a lore entry to the AI-assistant (a separate, focused generation call — a smaller model authors dense worldbuilding prose). Use this for an entry drafted this turn OR a persisted entry whose stable `entryId` is shown beside its title in Bound lorebooks awareness. Never pass a display title as `entryId`. " +
         "CRITICAL: the AI-assistant sees ONLY the character card + this entry's lorebook + your `instruction` — it does NOT see this conversation. So `instruction` must be a COMPLETE, self-contained authoring brief: translate the user's request (however vague) into a precise generation directive — the subject to cover, the specific facts/angles/sensory detail to include, and any tone or length guidance. Do NOT write 'as we discussed' or 'the thing the user mentioned' — spell out everything the assistant needs to author the entry in isolation. The generated content updates the draft entry for review. Returns the complete cumulative lore draft.",
       inputSchema: z.object({
-        entryId: z.string().describe("The id of the entry whose content to write (from an earlier create_lore_entry result this turn)."),
+        entryId: z.string().describe("Stable entry id: from a create_lore_entry result this turn, or the [entryId: ...] shown beside a persisted bound entry's title. Never use the display title."),
         instruction: z.string().describe("A COMPLETE, self-contained authoring brief for the AI-assistant (which sees ONLY the character card + this instruction, not the conversation). State the subject, the specifics/facts/angles to cover, and any tone. Expand the user's request into a precise directive — e.g. 'Write the backstory for why {{char}} fears the word X: the originating incident, the sensory trigger, how the fear manifests. Eerie tone, 2-3 paragraphs.'"),
         summary: z.string().max(200).describe("One-line description of this delegation, shown above the Apply button."),
       }),
@@ -826,9 +826,9 @@ export function buildCoauthorTools(opts: { toolSet?: Record<string, boolean>; pr
 
     ai_generate_lore_keys: tool({
       description:
-        "Delegate GENERATING activation keys for a lore entry to the AI-assistant (a separate, focused generation call analyzes the entry and proposes conversational trigger keywords), exactly as the manual key-generation quickpill does. Use this when an entry needs activation triggers. `entryId` MUST be the id of an entry returned earlier this turn. Control WHICH key set to generate with `keyTarget`, and HOW the generated keys combine with the entry's existing keys with `appendMode` (false = REPLACE the targeted set(s); true = AUGMENT — append only newly-generated keys, deduped). The non-targeted key set is always left untouched. Returns the complete cumulative lore draft.",
+        "Delegate GENERATING activation keys for a lore entry to the AI-assistant (a separate, focused generation call analyzes the entry and proposes conversational trigger keywords), exactly as the manual key-generation quickpill does. Use this for an entry drafted this turn OR a persisted entry whose stable `entryId` is shown beside its title in Bound lorebooks awareness. Never pass a display title as `entryId`. Control WHICH key set to generate with `keyTarget`, and HOW the generated keys combine with the entry's existing keys with `appendMode` (false = REPLACE the targeted set(s); true = AUGMENT — append only newly-generated keys, deduped). The non-targeted key set is always left untouched. Returns the complete cumulative lore draft.",
       inputSchema: z.object({
-        entryId: z.string().describe("The id of the entry whose activation keys to generate (from an earlier create_lore_entry result this turn)."),
+        entryId: z.string().describe("Stable entry id: from a create_lore_entry result this turn, or the [entryId: ...] shown beside a persisted bound entry's title. Never use the display title."),
         keyTarget: z
           .enum(["primary", "secondary", "both"])
           .optional()

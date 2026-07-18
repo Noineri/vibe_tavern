@@ -932,10 +932,11 @@ export function pickBootstrapChatId<T extends string>(
 					boundLorebooks.map(async (lb) => ({
 						id: lb.id,
 						name: lb.name,
-						// Entry titles only — the CONTENT is Level 1's job when pinned.
-						entryTitles: (await this.stores.lorebooks.listEntries(lb.id))
+						// Level-2 metadata only: title + stable id, never content. The id
+						// lets CE-B1's cross-turn tools target this persisted entry.
+						entries: (await this.stores.lorebooks.listEntries(lb.id))
 							.filter((e) => e.enabled)
-							.map((e) => e.title),
+							.map((e) => ({ id: e.id, title: e.title })),
 					})),
 				);
 				const scriptItems = boundScripts.map((sc) => ({

@@ -19,7 +19,7 @@ function makeLoaders(overrides?: Partial<{
   messages: DbMessage[];
   loreEntries: Array<{ id: string; title: string; content: string }>;
   contextItems: Array<{ type: "character" | "persona" | "lorebook" | "script"; id: string; title: string; content: string }>;
-  boundResources: { lorebooks: Array<{ id: string; name: string; entryTitles: string[] }>; scripts: Array<{ id: string; name: string; summary: string }> };
+  boundResources: { lorebooks: Array<{ id: string; name: string; entries: Array<{ id: string; title: string }> }>; scripts: Array<{ id: string; name: string; summary: string }> };
   userModules: Array<Omit<import("@vibe-tavern/api-contracts").CoauthorModule, "isBuiltIn">>;
   skillCatalog: import("../src/domain/coauthor/skills/skill-scanner.js").SkillCatalogEntry[];
 }>): ChatModeAssembleLoaders {
@@ -275,12 +275,19 @@ describe("assembleCoauthorPrompt", () => {
     expect(ctxLayer!.sourceType).toBe("coauthor_context");
   });
 
-  test("CE-C2/C3: bound lorebooks + scripts render as awareness (names/titles only, NOT content)", async () => {
+  test("CE-C2/C3: bound lorebooks + scripts render compact awareness (entry title + stable ID, NOT content)", async () => {
     const loaders = makeLoaders({
       boundResources: {
         lorebooks: [
-          { id: "lb_1", name: "World Atlas", entryTitles: ["Kingdom of Aldor", "The Spine"] },
-          { id: "lb_2", name: "Empty Book", entryTitles: [] },
+          {
+            id: "lb_1",
+            name: "World Atlas",
+            entries: [
+              { id: "le_aldor", title: "Kingdom of Aldor" },
+              { id: "le_spine", title: "The Spine" },
+            ],
+          },
+          { id: "lb_2", name: "Empty Book", entries: [] },
         ],
         scripts: [{ id: "sc_1", name: "greeter.js", summary: "A friendly greeter macro." }],
       },
@@ -288,11 +295,13 @@ describe("assembleCoauthorPrompt", () => {
     const result = await assembleCoauthorPrompt(makeInput(loaders));
     const system = (result.prompt.finalPayload as { messages: Array<{ content: string }> }).messages[0].content;
 
-    // Lorebook awareness: names + entry titles appear.
+    // Lorebook awareness: names + entry title/ID pairs appear, so the model
+    // can call CE-B1 cross-turn tools without guessing a display title as id.
     expect(system).toContain("Bound lorebooks (awareness");
     expect(system).toContain("World Atlas");
-    expect(system).toContain("Kingdom of Aldor");
-    expect(system).toContain("The Spine");
+    expect(system).toContain("Kingdom of Aldor [entryId: le_aldor]");
+    expect(system).toContain("The Spine [entryId: le_spine]");
+    expect(system).toContain("use the shown entryId for an existing entry");
     // A book with no enabled entries shows the placeholder, not a content leak.
     expect(system).toContain("Empty Book");
     expect(system).toContain("(no enabled entries)");

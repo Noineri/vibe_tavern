@@ -106,20 +106,21 @@ function renderContextBlocks(items: CoauthorContextItem[]): string {
   return ["# Pinned context (read-only reference — do NOT edit)", ...blocks].join("\n");
 }
 
-/** CE-C2: bound-lorebook awareness — names + entry titles only (a table of
- *  contents). The model learns these books exist for this character and can
- *  reference them by name; entry CONTENT is NOT injected (that is Level 1 when
- *  the user pins the book). Keeps token cost to a compact summary. */
+/** CE-C2: bound-lorebook awareness — names plus entry title/ID pairs (a
+ * compact table of contents). IDs are intentionally visible: CE-B1's
+ * cross-turn edit and re-delegation tools take a persisted `entryId`, so a
+ * title alone leaves the model unable to target the entry. Entry CONTENT is
+ * still NOT injected (that is Level 1 when the user pins the book). */
 function renderBoundLorebooksAwareness(lorebooks: CoauthorBoundResources["lorebooks"]): string {
   if (lorebooks.length === 0) return "";
   const blocks = lorebooks.map((lb) => {
-    const titles = lb.entryTitles.length > 0
-      ? lb.entryTitles.map((t) => `  - ${t}`).join("\n")
+    const entries = lb.entries.length > 0
+      ? lb.entries.map((entry) => `  - ${entry.title} [entryId: ${entry.id}]`).join("\n")
       : "  (no enabled entries)";
-    return `## ${lb.name}\n${titles}`;
+    return `## ${lb.name}\n${entries}`;
   });
   return [
-    "# Bound lorebooks (awareness — titles only; ask the user to pin a book for its full content)",
+    "# Bound lorebooks (awareness — titles + stable entry IDs only; use the shown entryId for an existing entry; ask the user to pin a book for full content)",
     ...blocks,
   ].join("\n");
 }
