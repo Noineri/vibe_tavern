@@ -151,13 +151,13 @@ export function LinkBindingPopover({
     <CustomTooltip key={`${type}:${target.id}`} content={`${target.name} — ${t("lore_click_to_unlink")}`}>
       <div
         className={cn(
-          "flex cursor-pointer items-center gap-1 rounded-full border border-border bg-s2 pl-0.5 pr-2 text-t2 transition-colors hover:border-danger hover:text-danger select-none",
+          "flex min-w-0 cursor-pointer items-center gap-1 rounded-full border border-border bg-s2 pl-0.5 pr-2 text-t2 transition-colors hover:border-danger hover:text-danger select-none",
           pillCls,
         )}
         onClick={() => toggle(type, target.id)}
       >
         <AvatarDot target={target} size={pillAvatarSize} />
-        <span className="max-w-[80px] truncate">{target.name}</span>
+        <span className="truncate">{target.name}</span>
       </div>
     </CustomTooltip>
   );
@@ -188,12 +188,11 @@ export function LinkBindingPopover({
   );
 
   return (
-    <div className="relative w-fit">
-      <div className="inline-flex items-center gap-1 flex-wrap">
-        {charLinks.map((l) => {
-          const c = charMap.get(l.targetId);
-          return c ? pill(c, "character") : null;
-        })}
+    <div data-testid="resource-row" className="flex w-full flex-wrap items-center gap-1.5">
+      {charLinks.map((l) => {
+        const c = charMap.get(l.targetId);
+        return c ? pill(c, "character") : null;
+      })}
         {personaLinks.map((l) => {
           const p = personaMap.get(l.targetId);
           return p ? pill(p, "persona") : null;
@@ -206,21 +205,20 @@ export function LinkBindingPopover({
           const sc = scriptMap.get(l.targetId);
           return sc ? pill(sc, "script") : null;
         })}
-      </div>
       <Popover.Root open={open} onOpenChange={setOpen}>
         <CustomTooltip content={addLabel}>
           <Popover.Trigger asChild>
             <button
               type="button"
-              className={cn(
-                "group flex shrink-0 grow-0 justify-center text-t3 transition-colors hover:text-accent-t",
-                isMobile ? "h-11 w-7 items-center" : "h-[22px] w-[22px] items-start",
-              )}
               aria-label={addLabel}
+              className={cn(
+                "flex shrink-0 items-center justify-center rounded-full text-t3",
+                isMobile ? "h-11 w-11" : "h-[22px] w-[22px]",
+              )}
             >
               <span
                 className={cn(
-                  "flex shrink-0 items-center justify-center rounded-full border border-dashed border-border2 leading-none transition-colors group-hover:border-accent group-hover:text-accent-t",
+                  "flex items-center justify-center rounded-full border border-dashed border-border2 leading-none transition-colors hover:border-accent hover:text-accent-t",
                   isMobile ? "h-7 w-7 text-[12px]" : "h-[22px] w-[22px] text-[12px]",
                 )}
               >
