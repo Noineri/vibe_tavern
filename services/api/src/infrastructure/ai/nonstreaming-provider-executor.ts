@@ -8,14 +8,12 @@
 
 import { generateText, stepCountIs } from "ai";
 import type { ProviderMetadata } from "ai";
-import { ProviderExecutionError } from "./provider-execution-types.js";
 import type { ExtractedToolCall, ExtractedToolResult, GenerationResult } from "./provider-execution-types.js";
 import type { ProviderExecutionInput } from "./provider-execution-types.js";
 import { resolveModel, toSdkMessages, prepareSdkMessages } from "./provider-executor-utils.js";
 import { buildSamplerConfig } from "./sampler-mapper.js";
 import { normalizeProviderType } from "@vibe-tavern/domain";
-import { classifyProviderError, extractProviderErrorStatusCode } from "./provider-error-classifier.js";
-import { extractProviderErrorMessage } from "./provider-error-message.js";
+import { wrapProviderExecutionError } from "./provider-error-wrapper.js";
 import { serializeProviderResponseTrace } from "./provider-response-trace.js";
 import { cancelled } from "../../shared/errors.js";
 import { logSendDebug } from "../../shared/send-debug-log.js";
@@ -250,11 +248,6 @@ export async function nonstreamingProviderExecute(
     // Normalize at the execution boundary: classify once into ProviderExecutionError
     // so the category, providerType, and statusCode travel as structured data
     // (the SSE/HTTP emit sites and the global error handler read them).
-    throw new ProviderExecutionError(
-      extractProviderErrorMessage(error),
-      classifyProviderError(error),
-      normalizeProviderType(input.profile.providerPreset),
-      { statusCode: extractProviderErrorStatusCode(error), cause: error },
-    );
+    throw wrapProviderExecutionError(error, input.profile.providerPreset);
   }
 }
