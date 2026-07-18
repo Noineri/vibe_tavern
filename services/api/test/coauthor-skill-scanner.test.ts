@@ -300,13 +300,14 @@ describe("scanSkillRoot — duplicate names", () => {
 // ─── resolvers ───────────────────────────────────────────────────────────────
 
 describe("root resolvers", () => {
-  test("resolveBuiltinSkillsRoot points at the built-in tree and finds the four workflow bundles", async () => {
+  test("resolveBuiltinSkillsRoot points at the built-in tree and finds the five workflow bundles", async () => {
     const root = await resolveBuiltinSkillsRoot();
     const { skills, errors } = await scanSkillRoot({ path: root, source: "builtin" });
     expect(errors).toEqual([]);
     expect(skills.map((s) => s.id).sort()).toEqual([
       "character-workshop",
       "dialogue-studio",
+      "lorebook-authoring",
       "quick-draft",
       "revision-workshop",
     ]);
