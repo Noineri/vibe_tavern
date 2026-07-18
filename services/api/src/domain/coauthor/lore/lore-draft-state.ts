@@ -83,6 +83,38 @@ export interface SetLoreEntryKeysInput {
 	secondaryKeys?: string[];
 }
 
+/**
+ * CE-B1: patch for editing a draft lorebook's mutable fields. All fields
+ * optional — only the supplied ones are applied (immutable replace). `id`
+ * targets either a turn-drafted lorebook or an imported (persisted) one.
+ */
+export interface EditLorebookInput {
+	id: string;
+	name?: string;
+	description?: string;
+	scopeType?: LoreDraftScopeType;
+	enabled?: boolean;
+	scanDepth?: number;
+	tokenBudget?: number;
+	recursiveScanning?: boolean;
+}
+
+/**
+ * CE-B1: patch for editing a draft entry's mutable fields (title + activation
+ * params + logic + enabled). Keys/content are NOT editable here — they stay
+ * delegate-only (ai_generate_lore_keys / ai_write_lore_entry). All fields
+ * optional; only the supplied ones are applied (immutable replace).
+ */
+export interface EditLoreEntryInput {
+	id: string;
+	title?: string;
+	constant?: boolean;
+	position?: string;
+	depth?: number;
+	logic?: string;
+	enabled?: boolean;
+}
+
 /** Defaults for a newly drafted lorebook (scopeType mirrors lorebook routes). */
 const DEFAULT_LOREBOOK_SCOPE: LoreDraftScopeType = "character";
 
@@ -149,23 +181,44 @@ export class LoreDraftState {
 					`create_lore_entry: parent lorebook '${input.lorebookId}' does not exist in the draft`,
 				);
 			}
-			const entry: CoauthorDraftLoreEntry = {
-				id: this.deps.idGen("lore_entry"),
-				lorebookId: input.lorebookId,
-				title: input.title ?? "",
-				// CE-A2: skeleton — content + keys are delegate-only, start empty.
-				content: "",
-				keys: [],
-				secondaryKeys: [],
-				constant: input.constant ?? false,
-				position: input.position ?? DEFAULT_ENTRY_POSITION,
-				depth: input.depth ?? DEFAULT_ENTRY_DEPTH,
-				logic: input.logic ?? DEFAULT_ENTRY_LOGIC,
-				enabled: input.enabled ?? true,
-			};
-			this.entries.set(entry.id, entry);
+			const [id, entry] = this.appendEntry(input);
+			this.entries.set(id, entry);
 			return this.snapshot();
 		});
+	}
+
+	/**
+	 * CE-B1: allocate a new entry skeleton under a lorebook that may be EITHER a
+	 * turn-drafted book OR an existing persisted book (the tool layer validates
+	 * persisted parents via the entity lookup before calling). Unlike
+	 * {@link createLoreEntry} the parent need NOT be present in this draft, so a
+	 * co-author can add an entry to a previously-created book across turns.
+	 */
+	addLoreEntry(input: CreateLoreEntryInput): Promise<CoauthorLoreBundle> {
+		return this.runQueued(() => {
+			const [id, entry] = this.appendEntry(input);
+			this.entries.set(id, entry);
+			return this.snapshot();
+		});
+	}
+
+	/** Build a fresh draft entry (CE-A2 skeleton) from a create/add input. */
+	private appendEntry(input: CreateLoreEntryInput): [string, CoauthorDraftLoreEntry] {
+		const entry: CoauthorDraftLoreEntry = {
+			id: this.deps.idGen("lore_entry"),
+			lorebookId: input.lorebookId,
+			title: input.title ?? "",
+			// CE-A2: skeleton — content + keys are delegate-only, start empty.
+			content: "",
+			keys: [],
+			secondaryKeys: [],
+			constant: input.constant ?? false,
+			position: input.position ?? DEFAULT_ENTRY_POSITION,
+			depth: input.depth ?? DEFAULT_ENTRY_DEPTH,
+			logic: input.logic ?? DEFAULT_ENTRY_LOGIC,
+			enabled: input.enabled ?? true,
+		};
+		return [entry.id, entry];
 	}
 
 	/**
@@ -226,6 +279,88 @@ export class LoreDraftState {
 				keys: input.keys,
 				...(input.secondaryKeys !== undefined ? { secondaryKeys: input.secondaryKeys } : {}),
 			});
+			return this.snapshot();
+		});
+	}
+
+	// ── CE-B1: edit + import capability ──────────────────────────────────────
+
+	/** True when a node with this id is already in the draft. */
+	hasLorebook(id: string): boolean {
+		return this.lorebooks.has(id);
+	}
+	hasEntry(id: string): boolean {
+		return this.entries.has(id);
+	}
+
+	/**
+	 * CE-B1: upsert a lorebook node as an EDIT target (force mode "edit"). Used
+	 * by the tool layer to bring a persisted lorebook into the draft before
+	 * editing it — the node carries the entity's full current state (loaded via
+	 * the injected entity lookup). Re-importing the same id replaces the node
+	 * (idempotent). The tool layer validates existence via the lookup first, so
+	 * a node reaching here is known to exist in the DB.
+	 */
+	importLorebook(node: CoauthorDraftLorebook): Promise<CoauthorLoreBundle> {
+		return this.runQueued(() => {
+			this.lorebooks.set(node.id, { ...node, mode: "edit" });
+			return this.snapshot();
+		});
+	}
+
+	/** CE-B1: upsert an entry node as an EDIT target (force mode "edit"). */
+	importEntry(node: CoauthorDraftLoreEntry): Promise<CoauthorLoreBundle> {
+		return this.runQueued(() => {
+			this.entries.set(node.id, { ...node, mode: "edit" });
+			return this.snapshot();
+		});
+	}
+
+	/**
+	 * CE-B1: apply a partial patch to a draft lorebook (immutable replace; only
+	 * supplied fields are applied). Preserves the node's `mode` (a create stays
+	 * a create, an imported edit stays an edit). Rejects if the lorebook is
+	 * absent from the draft.
+	 */
+	editLorebook(input: EditLorebookInput): Promise<CoauthorLoreBundle> {
+		return this.runQueued(() => {
+			const existing = this.lorebooks.get(input.id);
+			if (!existing) {
+				throw new Error(`edit_lorebook: lorebook '${input.id}' does not exist in the draft`);
+			}
+			const patch: Partial<CoauthorDraftLorebook> = {};
+			if (input.name !== undefined) patch.name = input.name;
+			if (input.description !== undefined) patch.description = input.description;
+			if (input.scopeType !== undefined) patch.scopeType = input.scopeType;
+			if (input.enabled !== undefined) patch.enabled = input.enabled;
+			if (input.scanDepth !== undefined) patch.scanDepth = input.scanDepth;
+			if (input.tokenBudget !== undefined) patch.tokenBudget = input.tokenBudget;
+			if (input.recursiveScanning !== undefined) patch.recursiveScanning = input.recursiveScanning;
+			this.lorebooks.set(existing.id, { ...existing, ...patch });
+			return this.snapshot();
+		});
+	}
+
+	/**
+	 * CE-B1: apply a partial patch to a draft entry's mutable fields (title +
+	 * activation params + logic + enabled). Keys/content are NOT editable here —
+	 * they stay delegate-only (`ai_generate_lore_keys` / `ai_write_lore_entry`).
+	 * Immutable replace; preserves `mode`. Rejects if the entry is absent.
+	 */
+	editLoreEntry(input: EditLoreEntryInput): Promise<CoauthorLoreBundle> {
+		return this.runQueued(() => {
+			const existing = this.entries.get(input.id);
+			if (!existing) {
+				throw new Error(`edit_lore_entry: entry '${input.id}' does not exist in the draft`);
+			}
+			const patch: Partial<CoauthorDraftLoreEntry> = {};
+			if (input.title !== undefined) patch.title = input.title;
+			if (input.constant !== undefined) patch.constant = input.constant;
+			if (input.position !== undefined) patch.position = input.position;
+			if (input.depth !== undefined) patch.depth = input.depth;
+			if (input.logic !== undefined) patch.logic = input.logic;
+			if (input.enabled !== undefined) patch.enabled = input.enabled;
+			this.entries.set(existing.id, { ...existing, ...patch });
 			return this.snapshot();
 		});
 	}

@@ -73,6 +73,15 @@ export const coauthorDraftLorebookSchema = z.object({
   tokenBudget: z.number().int().optional(),
   /** Activation: whether a key match can recurse into matched entries' keys (CE-A1). */
   recursiveScanning: z.boolean().optional(),
+  /**
+   * CE-B1: whether this node is a NEW creation (INSERT) or an EDIT of an
+   * existing persisted entity (UPDATE via Apply's upsert). Omitted / "create"
+   * = a new lorebook proposed this turn; "edit" = a co-author-created
+   * lorebook being modified (the `id` is its real DB primary key). Apply
+   * upserts either way (it does not branch on mode); the marker is consumed
+   * by the review UI to badge new-vs-edit. Set by the draft engine.
+   */
+  mode: z.enum(["create", "edit"]).optional(),
 });
 export type CoauthorDraftLorebook = z.infer<typeof coauthorDraftLorebookSchema>;
 
@@ -98,6 +107,14 @@ export const coauthorDraftLoreEntrySchema = z.object({
   /** CE-A2: activation logic / match mode (ST selective_logic via domain LORE_LOGIC; default "and_any"). Optional — the draft engine fills the default; Apply honors the co-author's choice. */
   logic: z.string().optional(),
   enabled: z.boolean(),
+  /**
+   * CE-B1: whether this node is a NEW creation (INSERT) or an EDIT of an
+   * existing persisted entry (UPDATE via Apply's upsert). Omitted / "create"
+   * = a new entry proposed this turn; "edit" = a co-author-created entry
+   * being modified (the `id` is its real DB primary key). Apply upserts
+   * either way; the marker badges the review UI's new-vs-edit distinction.
+   */
+  mode: z.enum(["create", "edit"]).optional(),
 });
 export type CoauthorDraftLoreEntry = z.infer<typeof coauthorDraftLoreEntrySchema>;
 

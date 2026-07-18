@@ -21,6 +21,7 @@ import type { CoauthorApplyRequest, CoauthorCorrection } from "@vibe-tavern/api-
 import { PromptAssemblyService } from "../../domain/prompt/prompt-assembly-service.js";
 import { StaticPromptResolver } from "../../domain/prompt/prompt-resolver.js";
 import { createLoreDelegate } from "../../domain/coauthor/lore/lore-delegate.js";
+import { createLoreEntityLookup } from "../../domain/coauthor/lore/lore-entity-lookup.js";
 import { nonstreamingProviderExecute } from "../../infrastructure/ai/nonstreaming-provider-executor.js";
 import {
 	mapMessageDto,
@@ -816,10 +817,17 @@ export function pickBootstrapChatId<T extends string>(
 			profile && model && model !== SYSTEM_RESOURCE_ID.unresolvedModel
 				? createLoreDelegate({ execute: nonstreamingProviderExecute, profile, model })
 				: undefined;
+		// CE-B1: lore entity lookup lets the edit / re-delegation tools target
+		// previously-created (persisted) lore entities across turns, not just
+		// ones drafted this turn. Built when a lorebook store is wired (production
+		// always wires it); absent in minimal/test contexts — edit tools that need
+		// it then throw a clear "no lookup configured" error.
+		const loreEntityLookup = this.stores?.lorebooks ? createLoreEntityLookup(this.stores.lorebooks) : undefined;
 		return strategy.assemble({
 			promptService: this.promptService,
 			loaders: this.buildChatModeLoaders(),
 			loreDelegate,
+			loreEntityLookup,
 			chatId,
 			branchId,
 			model,

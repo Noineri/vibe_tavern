@@ -108,6 +108,16 @@ export interface ChatModeAssembleInput extends AssemblePromptForChatInput {
    * delegation tools then throw a clear error if invoked). RP mode ignores it.
    */
   loreDelegate?: import("../coauthor/lore/lore-delegate.js").LoreDelegate;
+  /**
+   * CE-B1: optional lookup that loads a persisted lore entity's current state
+   * as a draft node, so the edit tools (edit_lorebook / edit_lore_entry /
+   * add_lore_entry) and the re-delegation tools (ai_write_lore_entry /
+   * ai_generate_lore_keys) can target previously-created entities across
+   * turns, not just ones drafted this turn. The co-author strategy injects it
+   * into `buildCoauthorTools`. Absent only in test contexts without a store;
+   * production always supplies it.
+   */
+  loreEntityLookup?: import("../chat/coauthor-tools.js").LoreEntityLookup;
 }
 
 /** Re-exported so callers don't reach into the prompt service module. */

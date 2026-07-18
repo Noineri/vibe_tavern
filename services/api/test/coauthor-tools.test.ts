@@ -776,13 +776,25 @@ describe("coauthor-tools: AI-delegation lore tools (CTX-L2b)", () => {
   });
 
   test("delegation tools reject a missing entry", async () => {
-    const tools = buildCoauthorTools({ loreDelegate: mockDelegate({ input: null }) });
+    // CE-B1: production always supplies a loreEntityLookup; a missing entry
+    // resolves to null and the tool throws the clear "does not exist" error.
+    const nullLookup = { lorebook: async () => null, entry: async () => null };
+    const tools = buildCoauthorTools({ loreDelegate: mockDelegate({ input: null }), loreEntityLookup: nullLookup });
     await expect(
       tools.ai_write_lore_entry.execute({ entryId: "ghost", instruction: "x", summary: "s" }, ctx),
     ).rejects.toThrow(/entry 'ghost' does not exist/);
     await expect(
       tools.ai_generate_lore_keys.execute({ entryId: "ghost", summary: "s" }, ctx),
     ).rejects.toThrow(/entry 'ghost' does not exist/);
+  });
+
+  test("CE-B1: delegation tools reject a non-draft id when no entity lookup is configured", async () => {
+    // No loreEntityLookup injected (test context without a store): a
+    // persisted id that is not in the turn draft cannot be resolved.
+    const tools = buildCoauthorTools({ loreDelegate: mockDelegate({ input: null }) });
+    await expect(
+      tools.ai_write_lore_entry.execute({ entryId: "persisted_entry", instruction: "x", summary: "s" }, ctx),
+    ).rejects.toThrow(/no entity lookup is configured/);
   });
 
   test("delegation tools throw a clear error when no provider/delegate is configured", async () => {
@@ -806,5 +818,106 @@ describe("coauthor-tools: AI-delegation lore tools (CTX-L2b)", () => {
     expect(on.ai_generate_lore_keys).toBeDefined();
     // set_lore_activation not enabled → absent; delegation tools only when toggled.
     expect(on.set_lore_activation).toBeUndefined();
+  });
+});
+
+describe("coauthor-tools: edit + add lore tools (CE-B1)", () => {
+  /** Deterministic id gen for assertions (scoped to this block). */
+  function deterministicIdGen() {
+    const counters = new Map<string, number>();
+    return (prefix: "lorebook" | "lore_entry") => {
+      const n = (counters.get(prefix) ?? 0) + 1;
+      counters.set(prefix, n);
+      return `${prefix}_${n}`;
+    };
+  }
+  /** A canned persisted lorebook draft node returned by the lookup mock. */
+  const persistedBook = {
+    id: "lb_p", name: "Old Book", description: "d",
+    scopeType: "character" as const, enabled: true,
+    scanDepth: 10, tokenBudget: 1000, recursiveScanning: false,
+  };
+  /** A canned persisted entry draft node. */
+  const persistedEntry = {
+    id: "le_p", lorebookId: "lb_p", title: "Old", content: "kept prose",
+    keys: ["kept"], secondaryKeys: [], constant: false, position: "before_char",
+    depth: 4, logic: "and_any", enabled: true,
+  };
+  /** Lookup mock: resolves the two canned ids, null otherwise. */
+  const lookup = {
+    lorebook: async (id: string) => (id === "lb_p" ? persistedBook : null),
+    entry: async (id: string) => (id === "le_p" ? persistedEntry : null),
+  };
+
+  test("edit_lore_entry on a turn-drafted entry patches fields, stays mode:create", async () => {
+    const tools = buildCoauthorTools({ loreIdGen: deterministicIdGen() });
+    await tools.create_lorebook.execute({ name: "LB", summary: "s" }, ctx);
+    await tools.create_lore_entry.execute({ lorebookId: "lorebook_1", title: "T", summary: "s" }, ctx);
+    const out = await tools.edit_lore_entry.execute({ entryId: "lore_entry_1", title: "T2", logic: "and_all", summary: "s" }, ctx);
+    expect(out.bundle.entries[0]).toMatchObject({ id: "lore_entry_1", title: "T2", logic: "and_all" });
+    expect(out.bundle.entries[0]!.mode).toBeUndefined();
+  });
+
+  test("edit_lore_entry on a persisted entry imports it (mode:edit) and patches, preserving content/keys", async () => {
+    const tools = buildCoauthorTools({ loreEntityLookup: lookup });
+    const out = await tools.edit_lore_entry.execute({ entryId: "le_p", title: "New", logic: "not_any", summary: "s" }, ctx);
+    const e = out.bundle.entries[0]!;
+    expect(e).toMatchObject({ id: "le_p", title: "New", logic: "not_any", mode: "edit" });
+    // Content + keys came from the import (edit_lore_entry does not touch them).
+    expect(e.content).toBe("kept prose");
+    expect(e.keys).toEqual(["kept"]);
+  });
+
+  test("edit_lorebook on a persisted lorebook imports it and patches activation params", async () => {
+    const tools = buildCoauthorTools({ loreEntityLookup: lookup });
+    const out = await tools.edit_lorebook.execute({ lorebookId: "lb_p", name: "Renamed", scanDepth: 3, summary: "s" }, ctx);
+    expect(out.bundle.lorebooks[0]).toMatchObject({ id: "lb_p", name: "Renamed", scanDepth: 3, mode: "edit" });
+  });
+
+  test("add_lore_entry to a turn-drafted lorebook creates a skeleton entry", async () => {
+    const tools = buildCoauthorTools({ loreIdGen: deterministicIdGen() });
+    await tools.create_lorebook.execute({ name: "LB", summary: "s" }, ctx);
+    const out = await tools.add_lore_entry.execute({ lorebookId: "lorebook_1", title: "New", summary: "s" }, ctx);
+    expect(out.bundle.entries[0]).toMatchObject({ id: "lore_entry_1", lorebookId: "lorebook_1", title: "New" });
+    expect(out.bundle.entries[0]!.mode).toBeUndefined();
+    expect(out.bundle.entries[0]!.content).toBe("");
+  });
+
+  test("add_lore_entry to a persisted lorebook validates the parent via the lookup", async () => {
+    const tools = buildCoauthorTools({ loreIdGen: deterministicIdGen(), loreEntityLookup: lookup });
+    const out = await tools.add_lore_entry.execute({ lorebookId: "lb_p", title: "Extra", summary: "s" }, ctx);
+    expect(out.bundle.entries[0]).toMatchObject({ id: "lore_entry_1", lorebookId: "lb_p", title: "Extra" });
+    // A create-style entry; the persisted parent is NOT imported (no edit badge).
+    expect(out.bundle.entries[0]!.mode).toBeUndefined();
+    expect(out.bundle.lorebooks.find((lb) => lb.id === "lb_p")).toBeUndefined();
+  });
+
+  test("add_lore_entry rejects an unknown parent", async () => {
+    const tools = buildCoauthorTools({ loreEntityLookup: lookup });
+    await expect(tools.add_lore_entry.execute({ lorebookId: "ghost", summary: "s" }, ctx)).rejects.toThrow(
+      /lorebook 'ghost' does not exist/,
+    );
+  });
+
+  test("re-delegation (ai_generate_lore_keys) imports a persisted entry before generating", async () => {
+    const tools = buildCoauthorTools({
+      loreIdGen: deterministicIdGen(),
+      loreEntityLookup: lookup,
+      loreDelegate: async () => ({ keys: ["Vex"], secondaryKeys: [] }),
+    });
+    const out = await tools.ai_generate_lore_keys.execute({ entryId: "le_p", summary: "s" }, ctx);
+    // The persisted entry was imported (mode:edit) then keys regenerated (replace).
+    expect(out.bundle.entries[0]).toMatchObject({ id: "le_p", mode: "edit" });
+    expect(out.bundle.entries[0]!.keys).toEqual(["Vex"]);
+  });
+
+  test("edit tools are gated by toolSet like the other lore tools", () => {
+    const on = buildCoauthorTools({ toolSet: { edit_lorebook: true, edit_lore_entry: true, add_lore_entry: true } }) as unknown as Record<string, unknown>;
+    expect(on.edit_lorebook).toBeDefined();
+    expect(on.edit_lore_entry).toBeDefined();
+    expect(on.add_lore_entry).toBeDefined();
+    const off = buildCoauthorTools({ toolSet: { create_lorebook: true } }) as unknown as Record<string, unknown>;
+    expect(off.edit_lorebook).toBeUndefined();
+    expect(off.add_lore_entry).toBeUndefined();
   });
 });

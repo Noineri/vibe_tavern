@@ -229,3 +229,86 @@ describe("LoreDraftState — AI-delegation updates (CTX-L2b)", () => {
 		);
 	});
 });
+
+describe("LoreDraftState — edit + import (CE-B1)", () => {
+	it("importLorebook / importEntry upsert a node badged mode:'edit'", async () => {
+		const draft = makeDraft();
+		const bundle = await draft.importLorebook({
+			id: "lb_persisted", name: "Old", description: "d",
+			scopeType: "character", enabled: true, scanDepth: 5, tokenBudget: 500, recursiveScanning: true,
+		});
+		expect(bundle.lorebooks[0]).toMatchObject({ id: "lb_persisted", name: "Old", mode: "edit" });
+		expect(draft.hasLorebook("lb_persisted")).toBe(true);
+
+		const e = await draft.importEntry({
+			id: "le_persisted", lorebookId: "lb_persisted", title: "T", content: "c",
+			keys: ["k"], secondaryKeys: [], constant: true, position: "before_char",
+			depth: 4, logic: "and_all", enabled: true,
+		});
+		expect(e.entries[0]).toMatchObject({ id: "le_persisted", logic: "and_all", mode: "edit" });
+		expect(draft.hasEntry("le_persisted")).toBe(true);
+	});
+
+	it("re-importing the same id replaces the node (idempotent)", async () => {
+		const draft = makeDraft();
+		await draft.importLorebook({ id: "lb_x", name: "A", description: "", scopeType: "character", enabled: true, scanDepth: 10, tokenBudget: 1000, recursiveScanning: false });
+		const bundle = await draft.importLorebook({ id: "lb_x", name: "B", description: "", scopeType: "character", enabled: true, scanDepth: 10, tokenBudget: 1000, recursiveScanning: false });
+		expect(bundle.lorebooks).toHaveLength(1);
+		expect(bundle.lorebooks[0]!.name).toBe("B");
+	});
+
+	it("editLorebook patches only the supplied fields and preserves mode:'create'", async () => {
+		const draft = makeDraft();
+		await draft.createLorebook({ name: "Original" });
+		const snap0 = draft.snapshot();
+		const bundle = await draft.editLorebook({ id: "lorebook_1", name: "Renamed", scanDepth: 7 });
+		expect(bundle.lorebooks[0]).toMatchObject({ id: "lorebook_1", name: "Renamed", scanDepth: 7 });
+		// Untouched fields preserved.
+		expect(bundle.lorebooks[0]!.tokenBudget).toBe(LOREBOOK_DEFAULTS.tokenBudget);
+		// A created node has no mode (omitted = create).
+		expect(bundle.lorebooks[0]!.mode).toBeUndefined();
+		// Immutable replace: the pre-edit snapshot is unaffected.
+		expect(snap0.lorebooks[0]!.name).toBe("Original");
+	});
+
+	it("editLorebook on an imported node preserves mode:'edit'", async () => {
+		const draft = makeDraft();
+		await draft.importLorebook({ id: "lb_p", name: "A", description: "", scopeType: "global", enabled: true, scanDepth: 10, tokenBudget: 1000, recursiveScanning: false });
+		const bundle = await draft.editLorebook({ id: "lb_p", name: "B" });
+		expect(bundle.lorebooks[0]).toMatchObject({ id: "lb_p", name: "B", mode: "edit" });
+	});
+
+	it("editLoreEntry patches title + activation + logic, preserves mode, leaves keys/content untouched", async () => {
+		const draft = makeDraft();
+		await draft.createLorebook({ name: "LB" });
+		await draft.createLoreEntry({ lorebookId: "lorebook_1", title: "Old" });
+		await draft.setLoreEntryContent({ entryId: "lore_entry_1", content: "prose" });
+		await draft.setLoreEntryKeys({ entryId: "lore_entry_1", keys: ["keep"] });
+		const bundle = await draft.editLoreEntry({ id: "lore_entry_1", title: "New", logic: "not_any", constant: true, depth: 9 });
+		const e = bundle.entries[0]!;
+		expect(e).toMatchObject({ id: "lore_entry_1", title: "New", logic: "not_any", constant: true, depth: 9 });
+		// Keys/content are NOT touched by editLoreEntry (delegate-only).
+		expect(e.content).toBe("prose");
+		expect(e.keys).toEqual(["keep"]);
+		expect(e.mode).toBeUndefined();
+	});
+
+	it("editLorebook / editLoreEntry reject a missing id", async () => {
+		const draft = makeDraft();
+		await expect(draft.editLorebook({ id: "ghost" })).rejects.toThrow(/lorebook 'ghost' does not exist/);
+		await expect(draft.editLoreEntry({ id: "ghost" })).rejects.toThrow(/entry 'ghost' does not exist/);
+	});
+
+	it("addLoreEntry creates an entry under a lorebook NOT in the draft (no parent check)", async () => {
+		const draft = makeDraft();
+		// lorebook_persisted is NOT in the draft — addLoreEntry trusts the caller
+		// (the tool layer validated it via the entity lookup).
+		const bundle = await draft.addLoreEntry({ lorebookId: "lorebook_persisted", title: "New entry", logic: "and_all" });
+		expect(bundle.entries).toHaveLength(1);
+		expect(bundle.entries[0]).toMatchObject({ id: "lore_entry_1", lorebookId: "lorebook_persisted", title: "New entry", logic: "and_all" });
+		expect(bundle.entries[0]!.mode).toBeUndefined();
+		// A create-style entry starts as a skeleton (delegate-only content/keys).
+		expect(bundle.entries[0]!.content).toBe("");
+		expect(bundle.entries[0]!.keys).toEqual([]);
+	});
+});

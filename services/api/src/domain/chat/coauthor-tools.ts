@@ -27,6 +27,8 @@ import { parseProfileMd, serializeProfileMd, splitFrontmatter, type VtfProfile }
 import {
   coauthorSectionEditInputSchema,
   coauthorSectionWriteInputSchema,
+  type CoauthorDraftLoreEntry,
+  type CoauthorDraftLorebook,
   type CoauthorLoreBundleOutput,
   type CoauthorTarget,
   type CoauthorToolOutput,
@@ -35,11 +37,26 @@ import { log, LORE_LOGIC } from "@vibe-tavern/domain";
 import { buildReadSkillFileTool } from "../coauthor/skills/skill-read-tool.js";
 import {
   defaultLoreDraftIdGen,
+  type EditLoreEntryInput,
+  type EditLorebookInput,
   LoreDraftState,
   type LoreDraftIdGen,
   type LoreDraftScopeType,
 } from "../coauthor/lore/lore-draft-state.js";
 import type { LoreDelegate, LoreDelegateInput } from "../coauthor/lore/lore-delegate.js";
+
+/**
+ * CE-B1: loads a persisted lore entity's current state as a draft-compatible
+ * node, so the edit tools can import it into the turn draft before patching.
+ * Injected by the runtime (constructed from `LorebookStore`); OPTIONAL — when
+ * absent, edit / re-delegation tools still work for ids drafted earlier in the
+ * SAME turn (no cross-turn edit of persisted entities). Mirrors the
+ * `loreDelegate` injection seam. Returns null when the id does not exist.
+ */
+export interface LoreEntityLookup {
+  lorebook(id: string): Promise<CoauthorDraftLorebook | null>;
+  entry(id: string): Promise<CoauthorDraftLoreEntry | null>;
+}
 
 /** CA-17/CANARY: structured log for every co-author tool call. Without this
  * there is NO observability on the co-author path — tool I/O, the lost-section
@@ -262,8 +279,8 @@ function setSectionField(profile: VtfProfile, field: SectionField, value: string
  * validates and echoes the proposal; the strategy passes this set to the
  * executor (tools propose; the Apply RPC is the sole write path).
  */
-export function buildCoauthorTools(opts: { toolSet?: Record<string, boolean>; profileMd?: string; skillRoots?: readonly string[]; loreIdGen?: LoreDraftIdGen; loreDelegate?: LoreDelegate } = {}) {
-  const { toolSet, skillRoots, loreDelegate } = opts;
+export function buildCoauthorTools(opts: { toolSet?: Record<string, boolean>; profileMd?: string; skillRoots?: readonly string[]; loreIdGen?: LoreDraftIdGen; loreDelegate?: LoreDelegate; loreEntityLookup?: LoreEntityLookup } = {}) {
+  const { toolSet, skillRoots, loreDelegate, loreEntityLookup } = opts;
 
   // ── Turn-local composable profile state (CED-2) ───────────────────────────
   // Every successful profile mutation in one assembled turn — write_profile,
@@ -384,6 +401,46 @@ export function buildCoauthorTools(opts: { toolSet?: Record<string, boolean>; pr
       keyTarget: opts?.keyTarget ?? "both",
       logic: entry.logic ?? LORE_LOGIC.andAny,
     };
+  }
+
+  /**
+   * CE-B1: ensure a lorebook is in the turn draft, importing it from the DB if
+   * it is a persisted entity not yet drafted this turn. A no-op when the id is
+   * already drafted. Throws when the id is neither drafted nor found via the
+   * lookup (or when no lookup is configured for a non-draft id).
+   */
+  async function ensureLorebookInDraft(id: string, toolName: string): Promise<void> {
+    if (loreDraft.hasLorebook(id)) return;
+    if (!loreEntityLookup) {
+      throw new Error(
+        `${toolName}: lorebook '${id}' is not in this turn's draft and no entity lookup is configured (cannot edit a persisted lorebook)`,
+      );
+    }
+    const current = await loreEntityLookup.lorebook(id);
+    if (!current) {
+      throw new Error(`${toolName}: lorebook '${id}' does not exist`);
+    }
+    await loreDraft.importLorebook(current);
+  }
+
+  /**
+   * CE-B1: ensure an entry is in the turn draft (import from DB if persisted).
+   * Used by the edit tools AND the re-delegation tools
+   * (ai_write_lore_entry / ai_generate_lore_keys) so they accept ANY entry id —
+   * drafted this turn or persisted — without each call repeating the import.
+   */
+  async function ensureEntryInDraft(id: string, toolName: string): Promise<void> {
+    if (loreDraft.hasEntry(id)) return;
+    if (!loreEntityLookup) {
+      throw new Error(
+        `${toolName}: entry '${id}' is not in this turn's draft and no entity lookup is configured (cannot edit a persisted entry)`,
+      );
+    }
+    const current = await loreEntityLookup.entry(id);
+    if (!current) {
+      throw new Error(`${toolName}: entry '${id}' does not exist`);
+    }
+    await loreDraft.importEntry(current);
   }
 
   const allTools = {
@@ -632,6 +689,106 @@ export function buildCoauthorTools(opts: { toolSet?: Record<string, boolean>; pr
       },
     }),
 
+    // ── CE-B1: edit tools for authored entities (turn-drafted OR persisted) ───
+    // These target a stable id that may be a node drafted earlier this turn OR
+    // a previously-created (persisted) co-author entity. For persisted ids the
+    // tool imports the entity's current state into the draft (via the injected
+    // LoreEntityLookup) before patching, so Apply's existing upsert UPDATEs the
+    // real row. The draft node is badged mode:"edit" for the review UI. Keys /
+    // content stay delegate-only — edit_lore_entry changes title + activation
+    // params + logic, NOT keys/content.
+    edit_lorebook: tool({
+      description:
+        "Propose editing an EXISTING lorebook — rename it, change its description, or adjust its activation params (scanDepth / tokenBudget / recursiveScanning / scope / enabled). The lorebook can be one drafted earlier this turn OR a previously-created (persisted) one, referenced by its id. Only the fields you supply are changed. Returns the complete cumulative lore draft.",
+      inputSchema: z.object({
+        lorebookId: z.string().describe("The id of the lorebook to edit — a create_lorebook id from this turn, or a persisted lorebook id."),
+        name: z.string().optional().describe("New display name for the lorebook."),
+        description: z.string().optional().describe("New short description."),
+        scopeType: z.enum(["global", "character", "persona", "chat"]).optional().describe("New scope.",),
+        enabled: z.boolean().optional().describe("Whether the lorebook is active."),
+        scanDepth: z.number().int().optional().describe("Activation: how many recent messages to scan for key matches."),
+        tokenBudget: z.number().int().optional().describe("Activation: max tokens this lorebook may inject per turn."),
+        recursiveScanning: z.boolean().optional().describe("Activation: whether a key match can recurse into matched entries' keys."),
+        summary: z.string().max(200).describe("One-line description of this edit, shown above the Apply button."),
+      }),
+      execute: async ({ lorebookId, name, description, scopeType, enabled, scanDepth, tokenBudget, recursiveScanning, summary }): Promise<CoauthorLoreBundleOutput> => {
+        logger.info("edit_lorebook IN id=%s summary=%s", lorebookId, summary);
+        await ensureLorebookInDraft(lorebookId, "edit_lorebook");
+        const patch: EditLorebookInput = { id: lorebookId };
+        if (name !== undefined) patch.name = name;
+        if (description !== undefined) patch.description = description;
+        if (scopeType !== undefined) patch.scopeType = scopeType as LoreDraftScopeType;
+        if (enabled !== undefined) patch.enabled = enabled;
+        if (scanDepth !== undefined) patch.scanDepth = scanDepth;
+        if (tokenBudget !== undefined) patch.tokenBudget = tokenBudget;
+        if (recursiveScanning !== undefined) patch.recursiveScanning = recursiveScanning;
+        const bundle = await loreDraft.editLorebook(patch);
+        return { target: "lore_bundle", bundle, summary };
+      },
+    }),
+
+    edit_lore_entry: tool({
+      description:
+        "Propose editing an EXISTING lore entry's title or activation params (constant / position / depth / logic / enabled). The entry can be one drafted earlier this turn OR a previously-created (persisted) one, referenced by its id. Only the fields you supply are changed. This does NOT change content or keys — delegate those with ai_write_lore_entry / ai_generate_lore_keys. Returns the complete cumulative lore draft.",
+      inputSchema: z.object({
+        entryId: z.string().describe("The id of the entry to edit — a create_lore_entry id from this turn, or a persisted entry id."),
+        title: z.string().optional().describe("New organizational title (not an activation trigger)."),
+        constant: z.boolean().optional().describe("If true the entry activates every turn regardless of key match."),
+        position: z.string().optional().describe("Where the entry injects (e.g. 'before_char')."),
+        depth: z.number().int().optional().describe("Injection depth for depth-aware positions."),
+        logic: z.enum([LORE_LOGIC.andAny, LORE_LOGIC.andAll, LORE_LOGIC.notAny, LORE_LOGIC.notAll] as const).optional().describe("How keys combine for activation: 'and_any' = at least one matches; 'and_all' = all match; 'not_any' = none may match; 'not_all' = not all match."),
+        enabled: z.boolean().optional().describe("Whether the entry is active."),
+        summary: z.string().max(200).describe("One-line description of this edit, shown above the Apply button."),
+      }),
+      execute: async ({ entryId, title, constant, position, depth, logic, enabled, summary }): Promise<CoauthorLoreBundleOutput> => {
+        logger.info("edit_lore_entry IN id=%s logic=%s summary=%s", entryId, logic ?? "(unchanged)", summary);
+        await ensureEntryInDraft(entryId, "edit_lore_entry");
+        const patch: EditLoreEntryInput = { id: entryId };
+        if (title !== undefined) patch.title = title;
+        if (constant !== undefined) patch.constant = constant;
+        if (position !== undefined) patch.position = position;
+        if (depth !== undefined) patch.depth = depth;
+        if (logic !== undefined) patch.logic = logic;
+        if (enabled !== undefined) patch.enabled = enabled;
+        const bundle = await loreDraft.editLoreEntry(patch);
+        return { target: "lore_bundle", bundle, summary };
+      },
+    }),
+
+    add_lore_entry: tool({
+      description:
+        "Propose adding a NEW entry skeleton to an EXISTING lorebook — one drafted this turn OR a previously-created (persisted) one. Use this (not create_lore_entry) when the lorebook already exists. It creates a title + activation params skeleton ONLY; delegate CONTENT via ai_write_lore_entry and KEYS via ai_generate_lore_keys afterward. Returns the complete cumulative lore draft.",
+      inputSchema: z.object({
+        lorebookId: z.string().describe("The id of an EXISTING lorebook (drafted this turn or persisted) to add the entry to."),
+        title: z.string().optional().describe("A short title for the entry (organizational; not an activation trigger)."),
+        constant: z.boolean().optional().describe("If true the entry activates every turn regardless of key match. Defaults to false."),
+        position: z.string().optional().describe("Where the entry injects (e.g. 'before_char'). Defaults to 'before_char'."),
+        depth: z.number().int().optional().describe("Injection depth for depth-aware positions. Defaults to 4."),
+        logic: z.enum([LORE_LOGIC.andAny, LORE_LOGIC.andAll, LORE_LOGIC.notAny, LORE_LOGIC.notAll] as const).optional().describe("How keys combine for activation. 'and_any' (default) = at least one matches."),
+        summary: z.string().max(200).describe("One-line description of this entry, shown above the Apply button."),
+      }),
+      execute: async ({ lorebookId, title, constant, position, depth, logic, summary }): Promise<CoauthorLoreBundleOutput> => {
+        logger.info("add_lore_entry IN lorebookId=%s title=%j summary=%s", lorebookId, title, summary);
+        // Validate the parent exists: if not in the draft, confirm via the
+        // lookup. The parent is NOT imported (it would badge as an edit
+        // confusingly); the new entry references it by id and Apply's
+        // parent check (relaxed in CE-B2) accepts a persisted parent.
+        if (!loreDraft.hasLorebook(lorebookId)) {
+          if (!loreEntityLookup) {
+            throw new Error(
+              `add_lore_entry: lorebook '${lorebookId}' is not in this turn's draft and no entity lookup is configured`,
+            );
+          }
+          const exists = await loreEntityLookup.lorebook(lorebookId);
+          if (!exists) {
+            throw new Error(`add_lore_entry: lorebook '${lorebookId}' does not exist`);
+          }
+        }
+        const bundle = await loreDraft.addLoreEntry({ lorebookId, title, constant, position, depth, logic });
+        return { target: "lore_bundle", bundle, summary };
+      },
+    }),
+
     // ── Wave 4: AI-delegation lore tools (CTX-L2b) ───────────────────────────
     // These delegate content / key generation to the AI-assistant via an
     // isolated one-shot LLM call (a focused, separate model authors the prose
@@ -652,6 +809,9 @@ export function buildCoauthorTools(opts: { toolSet?: Record<string, boolean>; pr
         if (!loreDelegate) {
           throw new Error("ai_write_lore_entry: no provider is configured for AI delegation");
         }
+        // CE-B1: accept ANY entry id — import a persisted entry into the draft
+        // before delegating, so re-writing content works across turns.
+        await ensureEntryInDraft(entryId, "ai_write_lore_entry");
         logger.info("ai_write_lore_entry IN entryId=%s instructionLen=%d summary=%s", entryId, instruction.length, summary);
         const input = buildLoreDelegateInput("write_entry", entryId, instruction, "ai_write_lore_entry");
         const result = await loreDelegate(input);
@@ -681,6 +841,10 @@ export function buildCoauthorTools(opts: { toolSet?: Record<string, boolean>; pr
         if (!loreDelegate) {
           throw new Error("ai_generate_lore_keys: no provider is configured for AI delegation");
         }
+        // CE-B1: accept ANY entry id — import a persisted entry before
+        // delegating, so regenerating keys works across turns. Its existing
+        // keys (loaded from the DB) seed the merge below.
+        await ensureEntryInDraft(entryId, "ai_generate_lore_keys");
         const target = keyTarget ?? "both";
         const augment = appendMode ?? false;
         logger.info("ai_generate_lore_keys IN entryId=%s target=%s augment=%s summary=%s", entryId, target, augment, summary);
