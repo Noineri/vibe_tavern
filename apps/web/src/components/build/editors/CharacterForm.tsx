@@ -540,7 +540,7 @@ export function CharacterForm({
         <div
           className={cn(
             "group relative shrink-0 cursor-pointer rounded-lg border border-dashed border-border2 bg-s2 text-t3 transition-all hover:border-accent hover:text-accent-t",
-            isMobile ? "w-full max-w-[280px]" : "max-w-[180px]"
+            isMobile ? "w-full max-w-[280px]" : "max-w-[180px] self-start"
           )}
           style={isMobile ? { aspectRatio: "auto" } : { maxWidth: 180, maxHeight: 250 }}
           onClick={() => avaInputRef.current?.click()}
