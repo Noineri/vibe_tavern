@@ -333,6 +333,30 @@ export interface Script {
  *
  * `activeBranchId` points to the currently selected conversation branch.
  */
+
+/** CE-C1: the kinds of entities a co-author chat can pin as Level-1 context.
+ *  Mirrors the shared `LinkBindingTargetType` (apps/web) so the picker and the
+ *  persisted shape use one vocabulary. The co-author prompt renders each
+ *  pinned entity's full content as a read-only reference block. */
+export const COAUTHOR_CONTEXT_TARGET_TYPES = [
+  "character",
+  "persona",
+  "lorebook",
+  "script",
+] as const;
+export type CoauthorContextTargetType =
+  (typeof COAUTHOR_CONTEXT_TARGET_TYPES)[number];
+
+/** CE-C1: a single pinned Level-1 context entity (type + id). Generalizes the
+ *  CA-13 lorebook-id-only list so any of the four referenceable kinds can be
+ *  pinned. Persisted as `coauthor_context_links_json` (SQL column retains its
+ *  legacy `coauthor_lorebook_ids_json` name — no migration; legacy rows storing
+ *  a bare `string[]` are lifted to `[{targetType:"lorebook",targetId}]` on read). */
+export interface CoauthorContextLink {
+  targetType: CoauthorContextTargetType;
+  targetId: string;
+}
+
 export interface Chat {
   id: ChatId;
   characterId: CharacterId;
@@ -345,10 +369,12 @@ export interface Chat {
   toolProfileId: ToolProfileId;
   /** @deprecated Greeting selection is now stored as the selected variant on the first assistant message. */
   selectedGreetingIndex: number;
-  /** Co-author mode only (CA-13): lorebook ids the user explicitly bound to
-   *  this chat as read-only editor context (right-panel picker). NOT RP
-   *  keyword activation. Empty for RP chats. */
-  coauthorLorebookIds: string[];
+  /** Co-author mode only (CE-C1): entities the user explicitly pinned to
+   *  this chat as read-only Level-1 editor context (right-panel picker). Any
+   *  of character/persona/lorebook/script; the prompt renders each entity's
+   *  full content as a reference block. NOT RP keyword activation. Empty for
+   *  RP chats. */
+  coauthorContextLinks: CoauthorContextLink[];
   /** Co-author mode only: the active author module ID. */
   coauthorModuleId: string | null;
   createdAt: Timestamp;

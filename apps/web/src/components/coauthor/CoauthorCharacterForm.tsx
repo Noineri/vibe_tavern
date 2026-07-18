@@ -66,8 +66,11 @@ import { useCharacterController } from "../../hooks/use-character-controller.js"
 import { useT } from "../../i18n/context.js";
 import { LinkBindingPopover, type LinkTarget } from "../shared/LinkBindingPopover.js";
 import { listAllLorebooks } from "../../api/lorebook-api.js";
-import type { LorebookRecord } from "../../api/types.js";
-import { setCoauthorLorebooksAction } from "../../stores/api-actions/chat-actions.js";
+import { listAllScripts } from "../../api/script-api.js";
+import { listPersonas } from "../../api/persona-api.js";
+import type { LorebookRecord, ScriptRecord, AppCharacterEntry } from "../../api/types.js";
+import type { PersonaRecord } from "@vibe-tavern/api-contracts";
+import { setCoauthorContextLinksAction } from "../../stores/api-actions/chat-actions.js";
 import { CoauthorLoreReview, type CoauthorLoreReviewLabels } from "./CoauthorLoreReview.js";
 
 /**
@@ -76,7 +79,7 @@ import { CoauthorLoreReview, type CoauthorLoreReviewLabels } from "./CoauthorLor
  * check sees a change → infinite re-render loop ("Maximum update depth").
  */
 const EMPTY_ACTIVITIES: CoauthorToolActivity[] = [];
-const EMPTY_LOREBOOK_IDS: string[] = [];
+const EMPTY_CONTEXT_LINKS: ReadonlyArray<{ targetType: "character" | "persona" | "lorebook" | "script"; targetId: string }> = Object.freeze([]);
 
 export function CoauthorCharacterForm() {
   const character = useSnapshotStore((s) => s.character);
@@ -114,31 +117,66 @@ function CoauthorCharacterFormInner({ character }: CoauthorCharacterFormInnerPro
     (s) => (chatId ? (s.turnsByChat[chatId] ?? EMPTY_ACTIVITIES) : EMPTY_ACTIVITIES),
   );
 
-  // ── CA-13: lorebook context picker. The lorebooks the user explicitly
-  // bound to THIS co-author chat (right-panel picker), expanded read-only into
-  // the editor prompt on the backend. NOT RP keyword activation — the user
-  // curates which books feed the editor (same shape as the AI-assistant
-  // lorebook-writer's context). Persisted on chats.coauthorLorebookIds.
-  const coauthorLorebookIds = useSnapshotStore((s) => s.activeChat?.coauthorLorebookIds ?? EMPTY_LOREBOOK_IDS);
+  // ── CE-C1: pinned Level-1 context picker. The entities the user explicitly
+  // pinned to THIS co-author chat (right-panel picker), expanded read-only into
+  // the editor prompt on the backend — any of character/persona/lorebook/script.
+  // Generalizes CA-13 (lorebook-only). Persisted on chats.coauthorContextLinks.
+  const contextLinks = useSnapshotStore((s) => s.activeChat?.coauthorContextLinks ?? EMPTY_CONTEXT_LINKS);
+  // Characters come from the snapshot (no dedicated list endpoint); personas /
+  // lorebooks / scripts are fetched once on mount (same pattern as the build
+  // panel's bound-resources field). Only enabled lorebooks/scripts hold context.
+  const allCharacters = useSnapshotStore((s) => s.allCharacters);
   const [allLorebooks, setAllLorebooks] = useState<LorebookRecord[]>([]);
+  const [allPersonas, setAllPersonas] = useState<PersonaRecord[]>([]);
+  const [allScripts, setAllScripts] = useState<ScriptRecord[]>([]);
   useEffect(() => {
     let cancelled = false;
-    void listAllLorebooks().then((rows) => { if (!cancelled) setAllLorebooks(rows); });
+    void Promise.all([listAllLorebooks(), listPersonas(), listAllScripts()]).then(([lb, pe, sc]) => {
+      if (cancelled) return;
+      setAllLorebooks(lb);
+      setAllPersonas(pe);
+      setAllScripts(sc);
+    });
     return () => { cancelled = true; };
   }, []);
-  // Only enabled books are pickable (disabled books hold no context).
+  const characterTargets: LinkTarget[] = useMemo(
+    () => allCharacters.map((c) => ({
+      id: c.id,
+      name: c.name,
+      avatarAssetId: c.avatarAssetId,
+      kind: "characters" as const,
+      avatarExt: c.avatarExt,
+      avatarFullExt: c.avatarFullExt,
+      avatarFullAssetId: c.avatarFullAssetId,
+      updatedAt: c.updatedAt,
+    })),
+    [allCharacters],
+  );
+  const personaTargets: LinkTarget[] = useMemo(
+    () => allPersonas.map((p) => ({
+      id: p.id,
+      name: p.name,
+      avatarAssetId: p.avatarAssetId,
+      kind: "personas" as const,
+      avatarExt: p.avatarExt,
+      avatarFullExt: p.avatarFullExt,
+      avatarFullAssetId: p.avatarFullAssetId,
+      updatedAt: p.updatedAt,
+    })),
+    [allPersonas],
+  );
   const lorebookTargets: LinkTarget[] = useMemo(
     () => allLorebooks.filter((lb) => lb.enabled).map((lb) => ({ id: lb.id, name: lb.name, avatarAssetId: null })),
     [allLorebooks],
   );
-  const lorebookLinks = useMemo(
-    () => coauthorLorebookIds.map((id) => ({ targetType: "lorebook" as const, targetId: id })),
-    [coauthorLorebookIds],
+  const scriptTargets: LinkTarget[] = useMemo(
+    () => allScripts.filter((sc) => sc.enabled).map((sc) => ({ id: sc.id, name: sc.name, avatarAssetId: null })),
+    [allScripts],
   );
-  const handleSetLorebookLinks = (next: { targetType: "lorebook"; targetId: string }[]) => {
+  const handleSetContextLinks = (next: { targetType: "character" | "persona" | "lorebook" | "script"; targetId: string }[]) => {
     if (!chatId) return;
-    // Wholesale replace — the ids in the picker are the new bound set.
-    void setCoauthorLorebooksAction(brandId<ChatId>(chatId), next.map((l) => l.targetId));
+    // Wholesale replace — the typed links in the picker are the new pinned set.
+    void setCoauthorContextLinksAction(brandId<ChatId>(chatId), next);
   };
 
   const form = useForm<BuildCharacterDraft>({
@@ -417,22 +455,23 @@ function CoauthorCharacterFormInner({ character }: CoauthorCharacterFormInnerPro
         </button>
       </div>
 
-      {/* CA-13: lorebook context picker. Reuses LinkBindingPopover with ONLY
-          the lorebook section (empty characters/personas/scripts → those
-          sections don't render). The model sees these books' enabled entries as
-          read-only reference in the editor prompt. */}
+      {/* CE-C1: pinned Level-1 context picker. Reuses LinkBindingPopover with
+          all four target kinds (character/persona/lorebook/script); sections
+          with no entries don't render. The model sees each pinned entity's
+          full content as a read-only reference block in the editor prompt. */}
       <div className="flex shrink-0 items-center gap-2 border-b border-border/50 bg-surface px-4 py-2">
-        <span className="font-ui text-[10px] font-semibold uppercase tracking-[0.06em] text-t3">{t("coauthor.lorebooks.label")}</span>
+        <span className="font-ui text-[10px] font-semibold uppercase tracking-[0.06em] text-t3">{t("coauthor.context.label")}</span>
         <LinkBindingPopover
-          links={lorebookLinks}
-          characters={[]}
-          personas={[]}
+          links={[...contextLinks]}
+          characters={characterTargets}
+          personas={personaTargets}
           lorebooks={lorebookTargets}
-          onSetLinks={(next) => handleSetLorebookLinks(next as { targetType: "lorebook"; targetId: string }[])}
+          scripts={scriptTargets}
+          onSetLinks={(next) => handleSetContextLinks(next as { targetType: "character" | "persona" | "lorebook" | "script"; targetId: string }[])}
           t={t}
           isMobile={false}
-          tooltipLabel={t("coauthor.lorebooks.add")}
-          emptyLabel={t("coauthor.lorebooks.empty")}
+          tooltipLabel={t("coauthor.context.add")}
+          emptyLabel={t("coauthor.context.empty")}
         />
       </div>
 

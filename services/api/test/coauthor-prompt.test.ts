@@ -18,6 +18,7 @@ function makeLoaders(overrides?: Partial<{
   profileMd: string;
   messages: DbMessage[];
   loreEntries: Array<{ id: string; title: string; content: string }>;
+  contextItems: Array<{ type: "character" | "persona" | "lorebook" | "script"; id: string; title: string; content: string }>;
   userModules: Array<Omit<import("@vibe-tavern/api-contracts").CoauthorModule, "isBuiltIn">>;
   skillCatalog: import("../src/domain/coauthor/skills/skill-scanner.js").SkillCatalogEntry[];
 }>): ChatModeAssembleLoaders {
@@ -55,7 +56,7 @@ function makeLoaders(overrides?: Partial<{
     getMessages: async () => overrides?.messages ?? [],
     getCharacter: async () => character,
     getProfileMdText: async () => overrides?.profileMd ?? "---\nname: Test\n---\n# PERSONALITY\nA test character.\n",
-    getCoauthorLorebookEntries: async () => overrides?.loreEntries ?? [],
+    getCoauthorContextItems: async () => overrides?.contextItems ?? (overrides?.loreEntries ?? []).map((e) => ({ type: "lorebook" as const, ...e })),
     getChatSummaries: async () => [],
     getCoauthorUserModules: async () => overrides?.userModules ?? [],
     getSkillCatalog: async () => overrides?.skillCatalog ?? DEFAULT_MOCK_CATALOG,
@@ -216,7 +217,7 @@ describe("assembleCoauthorPrompt", () => {
     expect(rpLayers).toEqual([]);
   });
 
-  test("CA-13: bound lorebook entries render as read-only reference in the system message", async () => {
+  test("CA-13/CE-C1: pinned lorebook entries render as read-only reference in the system message", async () => {
     const entryA = {
       id: "lore_a",
       title: "The Shattered Crown",
@@ -233,11 +234,11 @@ describe("assembleCoauthorPrompt", () => {
     const system = (result.prompt.finalPayload as { messages: Array<{ content: string }> }).messages[0].content;
 
     // Lore renders as a read-only reference section after the current card.
-    expect(system).toContain("# Lorebook context (read-only reference");
-    expect(system).toContain("The Shattered Crown");
+    expect(system).toContain("# Pinned context (read-only reference");
+    expect(system).toContain("[Lorebook] The Shattered Crown");
     expect(system).toContain("cold light");
     // An untitled entry falls back to a placeholder header, content still present.
-    expect(system).toContain("(untitled)");
+    expect(system).toContain("[Lorebook] (untitled)");
     expect(system).toContain("A constant world fact.");
 
     // Co-author does NOT run the activation engine — trace lore fields stay
@@ -247,11 +248,36 @@ describe("assembleCoauthorPrompt", () => {
     expect(result.promptTraceDraft.activatedLoreEntries).toEqual([]);
   });
 
-  test("CA-13: with no lorebooks bound the prompt carries no lore section (unchanged)", async () => {
+  test("CE-C1: pinned character/persona/script render as tagged read-only reference blocks", async () => {
+    const loaders = makeLoaders({
+      contextItems: [
+        { type: "character", id: "char_other", title: "Mira", content: "# PERSONALITY\nA stoic ranger." },
+        { type: "persona", id: "persona_1", title: "Wanderer", content: "A curious traveler." },
+        { type: "script", id: "script_1", title: "greeter.js", content: "A friendly greeter.\n\n```js\nreturn hi;\n```" },
+      ],
+    });
+
+    const result = await assembleCoauthorPrompt(makeInput(loaders));
+    const system = (result.prompt.finalPayload as { messages: Array<{ content: string }> }).messages[0].content;
+
+    expect(system).toContain("# Pinned context (read-only reference");
+    expect(system).toContain("[Character] Mira");
+    expect(system).toContain("A stoic ranger.");
+    expect(system).toContain("[Persona] Wanderer");
+    expect(system).toContain("A curious traveler.");
+    expect(system).toContain("[Script] greeter.js");
+    expect(system).toContain("return hi;");
+    // Each pinned item gets its own dedicated layer.
+    const ctxLayer = result.prompt.layers.find((l) => l.id === "pinned_context");
+    expect(ctxLayer).toBeTruthy();
+    expect(ctxLayer!.sourceType).toBe("coauthor_context");
+  });
+
+  test("CA-13/CE-C1: with nothing pinned the prompt carries no context section (unchanged)", async () => {
     const loaders = makeLoaders({ loreEntries: [] });
     const result = await assembleCoauthorPrompt(makeInput(loaders));
     const system = (result.prompt.finalPayload as { messages: Array<{ content: string }> }).messages[0].content;
-    expect(system).not.toContain("Lorebook context");
+    expect(system).not.toContain("Pinned context");
     expect(result.prompt.activatedLoreEntries).toEqual([]);
     expect(result.promptTraceDraft.activatedLoreEntries).toEqual([]);
   });

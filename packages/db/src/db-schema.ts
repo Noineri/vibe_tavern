@@ -168,14 +168,17 @@ export const chats = sqliteTable('chats', {
   // main model, kept current with the active selection. (The obsolete
   // messages.extra.sceneTracker draft this comment used to describe was removed.)
   insightsCurrentSceneJson: text('insights_current_scene_json').notNull().default('{}'),
-  // Co-author mode only (CA-13): lorebook ids the user explicitly bound to
-  // this chat as read-only editor context (the right-panel picker). NOT the
-  // RP keyword-activation set — these expand wholesale into the editor prompt
-  // via the same resolveContext path the AI assistant uses. Stored per-chat
-  // because co-author is a chat mode (a character can have several co-author
-  // chats, each with its own lore context). Folds into coauthor_config_json
-  // when CA-16 lands; narrow column for now.
-  coauthorLorebookIdsJson: text('coauthor_lorebook_ids_json').notNull().default('[]'),
+  // CE-C1: entities the user explicitly pinned to this co-author chat as
+  // read-only Level-1 editor context (the right-panel picker) — a typed
+  // (character/persona/lorebook/script) + id list. NOT the RP keyword-activation
+  // set; the prompt expands each pinned entity's full content into a reference
+  // block. Generalizes the CA-13 lorebook-id-only list; the SQL column name is
+  // kept (`coauthor_lorebook_ids_json`) so no migration is needed — legacy rows
+  // storing a bare `string[]` are lifted to
+  // `[{targetType:"lorebook",targetId}]` on read by `parseContextLinks`.
+  // New writes persist the typed payload. Folds into coauthor_config_json when
+  // CA-16 lands.
+  coauthorContextLinksJson: text('coauthor_lorebook_ids_json').notNull().default('[]'),
   coauthorModuleId: text('coauthor_module_id'),
 }, (table) => ({
   characterIdIdx: index('idx_chats_character_id').on(table.characterId),

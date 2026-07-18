@@ -35,10 +35,19 @@ export const setGreetingIndexSchema = z.object({
   greetingIndex: z.number().int().min(0),
 });
 
-/** CA-13: replace the co-author chat's bound lorebook ids (right-panel picker).
- *  Wholesale replace — empty array clears the context. Strings (lorebook ids). */
-export const setCoauthorLorebookIdsSchema = z.object({
-  lorebookIds: z.array(z.string()),
+/** CE-C1: replace the co-author chat's pinned Level-1 context entities
+ *  (right-panel picker). Wholesale replace — empty array clears the context.
+ *  Each link is a typed target (character/persona/lorebook/script). Generalizes
+ *  the CA-13 lorebook-id-only list; the DB column retains its legacy
+ *  `coauthor_lorebook_ids_json` SQL name with the new typed payload. */
+export const coauthorContextLinkSchema = z.object({
+  targetType: z.enum(["character", "persona", "lorebook", "script"]),
+  targetId: z.string(),
+});
+export type CoauthorContextLinkInput = z.infer<typeof coauthorContextLinkSchema>;
+
+export const setCoauthorContextLinksSchema = z.object({
+  links: z.array(coauthorContextLinkSchema),
 });
 
 export const renameBranchSchema = z.object({

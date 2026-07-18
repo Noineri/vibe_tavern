@@ -49,7 +49,7 @@ import {
   regenerateChatMessage,
   renameChat,
   setGreetingIndex,
-  setCoauthorLorebooks,
+  setCoauthorContextLinks,
   listCoauthorModules,
   setCoauthorModule,
   createCoauthorModule,
@@ -179,8 +179,8 @@ export async function setGreetingIndexAction(chatId: ChatId, greetingIndex: numb
   syncSnapshot(snapshot);
 }
 
-export async function setCoauthorLorebooksAction(chatId: ChatId, lorebookIds: string[]): Promise<void> {
-  const snapshot = await setCoauthorLorebooks(chatId, lorebookIds);
+export async function setCoauthorContextLinksAction(chatId: ChatId, links: Array<{ targetType: "character" | "persona" | "lorebook" | "script"; targetId: string }>): Promise<void> {
+  const snapshot = await setCoauthorContextLinks(chatId, links);
   syncSnapshot(snapshot);
 }
 

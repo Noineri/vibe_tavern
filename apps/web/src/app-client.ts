@@ -62,7 +62,7 @@ export {
   clearChat,
   renameChat,
   setGreetingIndex,
-  setCoauthorLorebooks,
+  setCoauthorContextLinks,
   listCoauthorModules,
   setCoauthorModule,
   createCoauthorModule,

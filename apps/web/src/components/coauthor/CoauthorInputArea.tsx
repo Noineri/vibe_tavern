@@ -136,7 +136,7 @@ function DesktopInput({ data }: { data: ReturnType<typeof useCoauthorInputArea> 
 								{ label: t("coauthor.module.title"), value: buckets.moduleTokens },
 								{ label: t("coauthor.module.skills"), value: buckets.skillTokens },
 								{ label: t("character_profile"), value: buckets.profileTokens },
-								{ label: t("context_lore"), value: buckets.lore },
+								{ label: t("coauthor.context.label"), value: buckets.context },
 								{ label: t("context_memory"), value: buckets.memory },
 							]}
 						/>

@@ -320,9 +320,9 @@ export function createChatRoutes(runtime: ChatRuntimeApi) {
       const body = c.req.valid("json");
       return c.json(await runtime.setGreetingIndex(c.req.param("chatId"), body.greetingIndex));
     })
-    .patch("/api/chats/:chatId/coauthor-lorebooks", zValidator("json", schemas.setCoauthorLorebookIdsSchema), async (c) => {
+    .patch("/api/chats/:chatId/coauthor-context-links", zValidator("json", schemas.setCoauthorContextLinksSchema), async (c) => {
       const body = c.req.valid("json");
-      return c.json(await runtime.setCoauthorLorebookIds(c.req.param("chatId"), body.lorebookIds));
+      return c.json(await runtime.setCoauthorContextLinks(c.req.param("chatId"), body.links));
     })
   ;
 }

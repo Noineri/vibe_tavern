@@ -2,7 +2,7 @@ import { eq, and, desc, asc, lte, count, inArray } from 'drizzle-orm';
 import { chats, chatBranches, characters, messages, messageVariants, promptTraces } from '../db-schema.js';
 import type { AppDb } from '../db-connection.js';
 import { resolveStoreRuntime, type StoreClock, type StoreIdGenerator } from '../persistence.js';
-import { normalizeSceneTrackerConfig, applySceneTrackerConfigPatch, rekeySceneRecordJson, type ChatMode, type SceneTrackerConfigPatch } from '@vibe-tavern/domain';
+import { normalizeSceneTrackerConfig, applySceneTrackerConfigPatch, rekeySceneRecordJson, type ChatMode, type SceneTrackerConfigPatch, type CoauthorContextLink } from '@vibe-tavern/domain';
 
 // ─── Return types ─────────────────────────────────────────────────────────────
 
@@ -30,9 +30,10 @@ export interface Chat {
   promptPresetId: string | null;
   loreActivationState: Record<string, unknown>;
   scriptState: Record<string, Record<string, unknown>>;
-  /** Co-author only (CA-13): lorebook ids explicitly bound to this chat as
-   *  read-only editor context (right-panel picker). NOT RP activation. */
-  coauthorLorebookIds: string[];
+  /** Co-author only (CE-C1): entities pinned to this chat as read-only
+   *  Level-1 editor context (right-panel picker). Typed (character/persona/
+   *  lorebook/script) + id. NOT RP activation. */
+  coauthorContextLinks: CoauthorContextLink[];
   coauthorModuleId: string | null;
   createdAt: string;
   updatedAt: string;
@@ -335,16 +336,18 @@ export class ChatStore {
     return this.mapRow(row);
   }
 
-  /** Co-author only (CA-13): replace the chat's bound lorebook ids (the
-   *  right-panel picker). Wholesale replace, mirroring setSelectedGreetingIndex. */
-  async setCoauthorLorebookIds(id: string, lorebookIds: string[]): Promise<Chat> {
+  /** Co-author only (CE-C1): replace the chat's pinned Level-1 context
+   *  entities (the right-panel picker). Wholesale replace, mirroring
+   *  setSelectedGreetingIndex. Each link is a typed target; the DB column
+   *  retains its legacy `coauthor_lorebook_ids_json` SQL name. */
+  async setCoauthorContextLinks(id: string, links: CoauthorContextLink[]): Promise<Chat> {
     const now = this.clock.now();
     const [row] = await this.db
       .update(chats)
-      .set({ coauthorLorebookIdsJson: JSON.stringify(lorebookIds), updatedAt: now })
+      .set({ coauthorContextLinksJson: JSON.stringify(links), updatedAt: now })
       .where(eq(chats.id, id))
       .returning();
-    if (!row) throw new Error(`Chat '${id}' not found after coauthor lorebook ids update`);
+    if (!row) throw new Error(`Chat '${id}' not found after coauthor context links update`);
     return this.mapRow(row);
   }
 
@@ -823,7 +826,7 @@ export class ChatStore {
       promptPresetId: row.promptPresetId,
       loreActivationState: safeParseJson(row.loreActivationStateJson),
       scriptState: safeParseScriptState(row.scriptStateJson),
-      coauthorLorebookIds: parseStringArray(row.coauthorLorebookIdsJson),
+      coauthorContextLinks: parseContextLinks(row.coauthorContextLinksJson),
       coauthorModuleId: row.coauthorModuleId,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
@@ -852,15 +855,35 @@ function safeParseJson(text: string): Record<string, unknown> {
   }
 }
 
-/** Parse a JSON column that holds a string array, defending against malformed
- *  rows (corruption, manual edit). Never throws — falls back to []. */
-function parseStringArray(text: string): string[] {
+/** Parse the co-author pinned-context column. Never throws — falls back to [].
+ *  CE-C1: the column now stores a typed `CoauthorContextLink[]`, but legacy
+ *  rows (CA-13) hold a bare `string[]` of lorebook ids; lift those to
+ *  `[{targetType:"lorebook",targetId}]` so pre-existing chats keep their
+ *  bound lorebooks without a migration. Malformed entries are dropped. */
+function parseContextLinks(text: string): CoauthorContextLink[] {
+  let parsed: unknown;
   try {
-    const parsed: unknown = JSON.parse(text || '[]');
-    return Array.isArray(parsed) ? parsed.filter((v): v is string => typeof v === 'string') : [];
+    parsed = JSON.parse(text || '[]');
   } catch {
     return [];
   }
+  if (!Array.isArray(parsed)) return [];
+  const out: CoauthorContextLink[] = [];
+  for (const entry of parsed) {
+    // Legacy CA-13 row: bare lorebook id string.
+    if (typeof entry === 'string') {
+      if (entry) out.push({ targetType: 'lorebook', targetId: entry });
+      continue;
+    }
+    // CE-C1 typed link.
+    if (entry && typeof entry === 'object'
+      && (entry.targetType === 'character' || entry.targetType === 'persona'
+        || entry.targetType === 'lorebook' || entry.targetType === 'script')
+      && typeof entry.targetId === 'string') {
+      out.push({ targetType: entry.targetType, targetId: entry.targetId });
+    }
+  }
+  return out;
 }
 
 function safeParseScriptState(text: string): Record<string, Record<string, unknown>> {

@@ -1,4 +1,4 @@
-import type { ChatId, CharacterId, ChatBranchId } from "@vibe-tavern/domain";
+import type { ChatId, CharacterId, ChatBranchId, CoauthorContextTargetType } from "@vibe-tavern/domain";
 import type { StoredProviderProfileRecord } from "@vibe-tavern/domain";
 import type { EventBus } from "@vibe-tavern/domain";
 import type { ChatMode } from "@vibe-tavern/domain";
@@ -41,6 +41,18 @@ export type { ChatMode };
  * Carried on {@link ChatModeAssembleInput} so strategies stay stateless;
  * the caller (SessionRuntime.assemblePrompt) constructs it from its stores.
  */
+/** CE-C1: one resolved Level-1 context entity (or one lorebook entry) for the
+ *  co-author prompt's read-only reference section. Lorebooks expand to N items
+ *  (one per enabled entry); character/persona/script resolve to a single item.
+ *  `type` drives the per-kind block header in `renderContextBlocks`. */
+export interface CoauthorContextItem {
+  type: CoauthorContextTargetType;
+  /** Entity id, or the lore ENTRY id when `type === "lorebook"` (an entry block). */
+  id: string;
+  title: string;
+  content: string;
+}
+
 export interface ChatModeAssembleLoaders {
   /** Active-branch messages for the chat (position-ascending); `limit` takes the last N. */
   getMessages(chatId: ChatId, branchId?: ChatBranchId, limit?: number): Promise<DbMessage[]>;
@@ -51,15 +63,17 @@ export interface ChatModeAssembleLoaders {
   /** Canonical `profile.md` text for the character (the edit target). */
   getProfileMdText(characterId: CharacterId): Promise<string>;
   /**
-   * Co-author lorebook context (CA-13): the entries of the lorebooks the user
-   * EXPLICITLY bound to this chat via the right-panel picker, expanded read-only.
-   * NOT RP keyword activation — co-author is an editor, not a roleplay; the
-   * user curates which lorebooks feed the editor the same way the AI-assistant
-   * lorebook-writer does (resolveContext over an explicit id list). The closure
-   * resolves the chat's bound ids + expands enabled entries from enabled books.
-   * Returns {id,title,content}[] — no activation reason / windows / scan-depth.
+   * Co-author pinned Level-1 context (CE-C1; generalizes CA-13): the entities
+   * the user EXPLICITLY pinned to this chat via the right-panel picker,
+   * resolved to read-only reference blocks — character (profile.md) /
+   * persona (description) / lorebook (enabled entries) / script (description +
+   * code). NOT RP keyword activation — co-author is an editor, not a roleplay.
+   * The closure resolves `chat.coauthorContextLinks` per kind; lorebooks expand
+   * to one item per enabled entry. The active chat's character is skipped
+   * (already rendered as `currentCard`) to avoid 2x-token duplication.
+   * Returns `CoauthorContextItem[]` — no activation reason / windows.
    */
-  getCoauthorLorebookEntries(chatId: ChatId): Promise<Array<{ id: string; title: string; content: string }>>;
+  getCoauthorContextItems(chatId: ChatId): Promise<CoauthorContextItem[]>;
   /** Gets chat summaries bound to this branch. */
   getChatSummaries(chatId: ChatId, branchId: ChatBranchId): Promise<Array<{
     id: string;

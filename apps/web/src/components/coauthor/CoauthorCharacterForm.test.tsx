@@ -49,10 +49,17 @@ vi.mock("../shared/Tooltip.js", () => ({
 	CustomTooltip: ({ children }: { children: React.ReactNode }) => children,
 	TooltipProvider: ({ children }: { children: React.ReactNode }) => children,
 }));
-// The picker fetches the lorebook list on mount; stub it empty so the test
-// never hits the network.
+// The picker fetches the lorebook / persona / script lists on mount; stub
+// them empty so the test never hits the network. CE-C1 generalized the
+// picker from lorebook-only to all four entity kinds.
 vi.mock("../../api/lorebook-api.js", () => ({
 	listAllLorebooks: () => Promise.resolve([]),
+}));
+vi.mock("../../api/persona-api.js", () => ({
+	listPersonas: () => Promise.resolve([]),
+}));
+vi.mock("../../api/script-api.js", () => ({
+	listAllScripts: () => Promise.resolve([]),
 }));
 
 // chat-store: spread the REAL module first (preserves every other export for
@@ -198,6 +205,24 @@ describe("CoauthorCharacterForm", () => {
 		expect(getByText("coauthor.diff.placeholder")).toBeTruthy();
 		// No editor host in the placeholder state.
 		expect(container.querySelector(".vibe-md-editor")).toBeNull();
+	});
+
+	it("CE-C1: renders a pinned character as a pill (typed context link → LinkBindingPopover)", () => {
+		// The generalized picker reads typed coauthorContextLinks and resolves
+		// each link's entity for the pill row. Seed a character + a pinned link
+		// to it; the pill must render (character targets come from the snapshot's
+		// allCharacters, not a list endpoint).
+		useSnapshotStore.setState({
+			character: makeCharacter(),
+			allCharacters: [{
+				id: "char_pinned", name: "Mira", subtitle: "", tags: [],
+				avatarAssetId: null, avatarFullAssetId: null, avatarCropJson: null,
+				avatarExt: null, avatarFullExt: null, updatedAt: "0",
+			}],
+			activeChat: { id: TEST_CHAT, coauthorContextLinks: [{ targetType: "character", targetId: "char_pinned" }] } as never,
+		});
+		const { getByText } = render(<CoauthorCharacterForm />);
+		expect(getByText("Mira")).toBeTruthy();
 	});
 
 	// ── CA-11: reviewing state + Apply/Reject ──────────────────────────────────

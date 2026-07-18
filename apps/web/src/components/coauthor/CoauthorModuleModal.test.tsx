@@ -205,7 +205,7 @@ function setActiveChat(coauthorModuleId: string | null) {
 			characterId: "char_test",
 			mode: "coauthor",
 			coauthorModuleId,
-			coauthorLorebookIds: [],
+			coauthorContextLinks: [],
 		} as never,
 	});
 }

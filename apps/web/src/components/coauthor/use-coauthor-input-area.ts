@@ -79,7 +79,7 @@ export function useCoauthorInputArea() {
 
 	const buckets = useMemo(() => {
 		const layers: PromptLayerDto[] = activePromptTrace?.layers ?? [];
-		let moduleTokens = 0, skillTokens = 0, profileTokens = 0, lore = 0, memory = 0, history = 0;
+		let moduleTokens = 0, skillTokens = 0, profileTokens = 0, context = 0, memory = 0, history = 0;
 		for (const layer of layers) {
 			if (!layer.enabled || layer.position === "hidden_system") continue;
 			const tokens = layer.tokenCount;
@@ -90,17 +90,19 @@ export function useCoauthorInputArea() {
 					case "coauthor_module": moduleTokens += tokens; break;
 					case "coauthor_skill": skillTokens += tokens; break;
 					case "coauthor_profile": profileTokens += tokens; break;
-					case "lore_entry": lore += tokens; break;
+					// CE-C1: pinned Level-1 context (was `lore_entry` under CA-13;
+					// generalized to character/persona/lorebook/script).
+					case "coauthor_context": context += tokens; break;
 					case "summary_memory": memory += tokens; break;
 					default: moduleTokens += tokens; break;
 				}
 			}
 		}
-		return { moduleTokens, skillTokens, profileTokens, lore, memory, history };
+		return { moduleTokens, skillTokens, profileTokens, context, memory, history };
 	}, [activePromptTrace?.layers, TEMPORARY_TYPES]);
 
 	const inputTokens = useTokenCount(draft);
-	const permanent = buckets.moduleTokens + buckets.skillTokens + buckets.profileTokens + buckets.lore + buckets.memory;
+	const permanent = buckets.moduleTokens + buckets.skillTokens + buckets.profileTokens + buckets.context + buckets.memory;
 	const contextSize = provider.activeProviderProfile?.contextBudget ?? 0;
 	const maxTokens = provider.activeProviderProfile?.maxTokens ?? 0;
 	const totalUsed = permanent + buckets.history + inputTokens;

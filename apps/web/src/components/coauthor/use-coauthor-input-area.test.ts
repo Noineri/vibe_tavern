@@ -85,7 +85,7 @@ describe("useModuleSwitch", () => {
 	it("handleSelect fires setCoauthorModuleAction with the active chat id + module id", async () => {
 		// Seed the snapshot store's active chat — that's where handleSelect reads chatId.
 		useSnapshotStore.setState({
-			activeChat: { id: "chat1", characterId: "char1", mode: "coauthor", coauthorModuleId: null, coauthorLorebookIds: [] } as never,
+			activeChat: { id: "chat1", characterId: "char1", mode: "coauthor", coauthorModuleId: null, coauthorContextLinks: [] } as never,
 		});
 		const { result } = renderHook(() => useModuleSwitch());
 		// Wait for the registry list to load so modules/activeLabel are populated.

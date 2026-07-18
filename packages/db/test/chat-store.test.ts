@@ -768,6 +768,60 @@ describe("ChatStore — mode column", () => {
   });
 });
 
+describe("ChatStore — co-author pinned context (CE-C1)", () => {
+  let db: Awaited<ReturnType<typeof createTestDb>>;
+  let store: ChatStore;
+
+  beforeEach(async () => {
+    db = await createTestDb();
+    bootstrap(db);
+    clockTick = 0;
+    idCounters = new Map();
+    store = new ChatStore(db, { clock: testClock, idGenerator: testIdGen });
+  });
+
+  test("setCoauthorContextLinks round-trips a typed character/persona/lorebook/script list", async () => {
+    const chat = await store.createChat({ characterId: "char_1", title: "c", promptPresetId: "preset_1", mode: "coauthor" });
+    const links = [
+      { targetType: "character", targetId: "char_other" },
+      { targetType: "persona", targetId: "persona_1" },
+      { targetType: "lorebook", targetId: "lb_1" },
+      { targetType: "script", targetId: "sc_1" },
+    ] as const;
+    await store.setCoauthorContextLinks(chat.id, [...links]);
+    const reloaded = await store.getById(chat.id);
+    expect(reloaded?.coauthorContextLinks).toEqual([...links]);
+  });
+
+  test("legacy CA-13 rows (bare lorebook-id string[]) are lifted to typed links on read", async () => {
+    // Simulate a pre-CE-C1 row by writing the old payload shape directly into
+    // the reused SQL column. parseContextLinks must lift each string to
+    // {targetType:'lorebook', targetId} so existing chats keep their bindings.
+    const chat = await store.createChat({ characterId: "char_1", title: "legacy", promptPresetId: "preset_1", mode: "coauthor" });
+    db.update(schema.chats).set({ coauthorContextLinksJson: JSON.stringify(["lb_legacy_a", "lb_legacy_b"]) }).where(eq(schema.chats.id, chat.id)).run();
+    const reloaded = await store.getById(chat.id);
+    expect(reloaded?.coauthorContextLinks).toEqual([
+      { targetType: "lorebook", targetId: "lb_legacy_a" },
+      { targetType: "lorebook", targetId: "lb_legacy_b" },
+    ]);
+  });
+
+  test("setCoauthorContextLinks persists the new typed payload (not the legacy string shape)", async () => {
+    const chat = await store.createChat({ characterId: "char_1", title: "c", promptPresetId: "preset_1", mode: "coauthor" });
+    await store.setCoauthorContextLinks(chat.id, [{ targetType: "script", targetId: "sc_1" }]);
+    const row = db.select().from(schema.chats).where(eq(schema.chats.id, chat.id)).get();
+    // Typed object payload, not a bare string array.
+    expect(JSON.parse(row!.coauthorContextLinksJson)).toEqual([{ targetType: "script", targetId: "sc_1" }]);
+  });
+
+  test("malformed context-links JSON falls back to [] (never throws)", async () => {
+    const chat = await store.createChat({ characterId: "char_1", title: "c", promptPresetId: "preset_1", mode: "coauthor" });
+    db.update(schema.chats).set({ coauthorContextLinksJson: "not-json" }).where(eq(schema.chats.id, chat.id)).run();
+    const reloaded = await store.getById(chat.id);
+    expect(reloaded?.coauthorContextLinks).toEqual([]);
+  });
+});
+
 describe("ChatStore — insights config (INS-1b)", () => {
   let db: Awaited<ReturnType<typeof createTestDb>>;
   let store: ChatStore;

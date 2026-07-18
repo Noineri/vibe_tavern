@@ -67,8 +67,8 @@ export async function setGreetingIndex(chatId: ChatId, greetingIndex: number): P
   return normalizeSnapshot(data);
 }
 
-export async function setCoauthorLorebooks(chatId: ChatId, lorebookIds: string[]): Promise<AppSnapshot> {
-  const response = await client.api.chats[":chatId"]["coauthor-lorebooks"].$patch({ param: { chatId }, json: { lorebookIds } });
+export async function setCoauthorContextLinks(chatId: ChatId, links: Array<{ targetType: "character" | "persona" | "lorebook" | "script"; targetId: string }>): Promise<AppSnapshot> {
+  const response = await client.api.chats[":chatId"]["coauthor-context-links"].$patch({ param: { chatId }, json: { links } });
   const data = await unwrapRpc<AppSnapshot>(response);
   return normalizeSnapshot(data);
 }

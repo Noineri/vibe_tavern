@@ -133,7 +133,7 @@ function seedStores() {
 			characterId: "char1",
 			mode: "coauthor",
 			coauthorModuleId: null,
-			coauthorLorebookIds: [],
+			coauthorContextLinks: [],
 		} as never,
 	});
 	// Cache two models on profile p1: gpt-4o advertises tools, gpt-3.5 does not.

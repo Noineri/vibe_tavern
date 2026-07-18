@@ -1,5 +1,5 @@
 import type { ChatRuntimeApi } from "../contract/runtime-api.js";
-import { brandId, parseStoredAttachments, resolveEffectiveSettings, normalizeSceneTrackerConfig, applySceneTrackerConfigPatch, findInvalidXmlKeys, SCENE_PROMPT_FORMAT, type ChatId, type ChatBranchId, type MessageId, type PromptPresetId, type SceneTrackerConfigPatch } from "@vibe-tavern/domain";
+import { brandId, parseStoredAttachments, resolveEffectiveSettings, normalizeSceneTrackerConfig, applySceneTrackerConfigPatch, findInvalidXmlKeys, SCENE_PROMPT_FORMAT, type ChatId, type ChatBranchId, type MessageId, type PromptPresetId, type SceneTrackerConfigPatch, type CoauthorContextLink } from "@vibe-tavern/domain";
 import { rebuildCurrentSceneCache } from "../../domain/insights/scene-cache.js";
 import type { Attachment } from "@vibe-tavern/domain";
 import type { StoreContainer } from "@vibe-tavern/db";
@@ -59,8 +59,8 @@ export class ChatAdapter implements ChatRuntimeApi {
 		return this.sessionRuntime.setGreetingIndex(brandId<ChatId>(chatId), greetingIndex);
 	};
 
-	setCoauthorLorebookIds = async (chatId: string, lorebookIds: string[]): Promise<VariantResponse> => {
-		return this.sessionRuntime.setCoauthorLorebookIds(brandId<ChatId>(chatId), lorebookIds);
+	setCoauthorContextLinks = async (chatId: string, links: CoauthorContextLink[]): Promise<VariantResponse> => {
+		return this.sessionRuntime.setCoauthorContextLinks(brandId<ChatId>(chatId), links);
 	};
 
 	setChatPersona = (chatId: string, personaId: string) =>

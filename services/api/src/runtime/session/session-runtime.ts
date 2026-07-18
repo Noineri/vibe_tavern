@@ -868,33 +868,52 @@ export function pickBootstrapChatId<T extends string>(
 				return char;
 			},
 			getProfileMdText: (characterId) => this.stores.characters.getProfileMdText(characterId),
-			getCoauthorLorebookEntries: async (chatId) => {
-				// CA-13: expand the lorebooks the user EXPLICITLY bound to this chat
-				// (right-panel picker → chats.coauthorLorebookIds) into their enabled
-				// entries. NOT RP keyword activation — mirrors the AI-assistant
-				// lorebook-writer's resolveContext path: the user curates which books
-				// feed the editor. Disabled books / entries are filtered out.
+			getCoauthorContextItems: async (chatId) => {
+				// CE-C1: resolve the entities the user EXPLICITLY pinned to this chat
+				// (right-panel picker → chats.coauthorContextLinks) into read-only
+				// reference blocks. Generalizes CA-13 (lorebook-only) to
+				// character/persona/lorebook/script. NOT RP keyword activation.
 				const chat = await this.stores.chats.getById(chatId);
-				if (!chat || chat.coauthorLorebookIds.length === 0) return [];
-				const expanded = await Promise.all(
-					chat.coauthorLorebookIds.map(async (lbId) => {
-						const lb = await this.stores.lorebooks.getLorebook(lbId);
-						if (!lb?.enabled) return [];
-						const entries = await this.stores.lorebooks.listEntries(lbId);
-						return entries
-							.filter((e) => e.enabled)
-							.map((e) => ({ id: e.id, title: e.title, content: e.content }));
-					}),
-				);
-				// Dedupe by id (a book bound twice shouldn't double-inject).
-				const seen = new Set<string>();
-				const out: Array<{ id: string; title: string; content: string }> = [];
-				for (const e of expanded.flat()) {
-					if (seen.has(e.id)) continue;
-					seen.add(e.id);
-					out.push(e);
+				if (!chat || chat.coauthorContextLinks.length === 0) return [];
+				// The active character is already rendered as `currentCard`; skip a
+				// pinned link to it to avoid 2x-token duplication.
+				const out: import("../../domain/chat/chat-mode-strategy.js").CoauthorContextItem[] = [];
+				for (const link of chat.coauthorContextLinks) {
+					if (link.targetType === 'character') {
+						if (link.targetId === chat.characterId) continue;
+						const c = await this.stores.characters.getById(link.targetId);
+						if (!c) continue;
+						const profile = await this.stores.characters.getProfileMdText(c.id as unknown as import("@vibe-tavern/domain").CharacterId);
+						out.push({ type: 'character', id: c.id, title: c.name, content: profile });
+					} else if (link.targetType === 'persona') {
+						const p = await this.stores.personas.getById(link.targetId);
+						if (!p) continue;
+						out.push({ type: 'persona', id: p.id, title: p.name, content: p.description });
+					} else if (link.targetType === 'lorebook') {
+						const lb = await this.stores.lorebooks.getLorebook(link.targetId);
+						if (!lb?.enabled) continue;
+						const entries = await this.stores.lorebooks.listEntries(link.targetId);
+						for (const e of entries.filter((e) => e.enabled)) {
+							out.push({ type: 'lorebook', id: e.id, title: e.title, content: e.content });
+						}
+					} else {
+						// script
+						const sc = await this.stores.scripts.getById(link.targetId);
+						if (!sc) continue;
+						const body = sc.description.trim()
+							? `${sc.description.trim()}\n\n\`\`\`js\n${sc.code}\n\`\`\``
+							: `\`\`\`js\n${sc.code}\n\`\`\``;
+						out.push({ type: 'script', id: sc.id, title: sc.name, content: body });
+					}
 				}
-				return out;
+				// Dedupe by type+id (a book bound twice shouldn't double-inject).
+				const seen = new Set<string>();
+				return out.filter((it) => {
+					const key = `${it.type}:${it.id}`;
+					if (seen.has(key)) return false;
+					seen.add(key);
+					return true;
+				});
 			},
 			getChatSummaries: async (chatId, branchId) => {
 				return this.stores.chatSummaries.listByChatBranch(chatId, branchId);
@@ -1023,12 +1042,14 @@ export function pickBootstrapChatId<T extends string>(
 		return this.buildVariantResponse(chatId, { activeChat: true });
 	}
 
-	/** CA-13: replace the co-author chat's bound lorebook ids (right-panel
-	 *  picker). Wholesale replace, then return the fresh chat row so the
-	 *  frontend picker reflects the persisted state. No message/variant
-	 *  side-effects — this is a chat-row config update, like setChatPersona. */
-	async setCoauthorLorebookIds(chatId: ChatId, lorebookIds: string[]): Promise<VariantResponse> {
-		await this.stores.chats.setCoauthorLorebookIds(chatId, lorebookIds);
+	/** CE-C1: replace the co-author chat's pinned Level-1 context entities
+	 *  (the right-panel picker). Wholesale replace, then return the fresh chat
+	 *  row so the frontend picker reflects the persisted state. No message/variant
+	 *  side-effects — this is a chat-row config update, like setChatPersona.
+	 *  Generalizes CA-13 (lorebook-id-only) to a typed character/persona/
+	 *  lorebook/script link list. */
+	async setCoauthorContextLinks(chatId: ChatId, links: import("@vibe-tavern/domain").CoauthorContextLink[]): Promise<VariantResponse> {
+		await this.stores.chats.setCoauthorContextLinks(chatId, links);
 		return this.buildVariantResponse(chatId, { activeChat: true });
 	}
 }
