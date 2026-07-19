@@ -7,8 +7,9 @@
  * logic-bearing surfaces so a future regression (dropped trim, wrong payload
  * shape, broken Cmd+Enter, lost pre-fill) fails loudly:
  *
- *   - payload: a single line posts one user message; each non-empty line is its
- *     own message (messageCount contract);
+ *   - payload: every run includes the current unsaved code; a single line
+ *     posts one user message, and each non-empty line is its own message
+ *     (messageCount contract);
  *   - guards: empty/whitespace input and a null scriptId never call testScript;
  *   - shortcut: Cmd/Ctrl+Enter inside the input triggers a run;
  *   - pre-fill: the `characterName` prop seeds the advanced character-name
@@ -60,7 +61,7 @@ vi.mock("../../shared/auto-textarea.js", () => ({
 const mockTestScript = vi.mocked(testScript);
 
 function renderTester(props: Partial<Parameters<typeof ScriptTester>[0]> = {}) {
-	return render(<ScriptTester scriptId="script_1" isMobile={false} {...props} />);
+	return render(<ScriptTester scriptId="script_1" code="draft code" isMobile={false} {...props} />);
 }
 
 describe("ScriptTester (characterization)", () => {
@@ -73,7 +74,7 @@ describe("ScriptTester (characterization)", () => {
 		fireEvent.change(getByPlaceholderText("script_test_input_placeholder"), { target: { value: "hello" } });
 		fireEvent.click(getByText("script_test_run"));
 		await waitFor(() => {
-			expect(mockTestScript).toHaveBeenCalledWith("script_1", { messages: [{ role: "user", content: "hello" }] });
+			expect(mockTestScript).toHaveBeenCalledWith("script_1", { messages: [{ role: "user", content: "hello" }], code: "draft code" });
 		});
 	});
 
@@ -87,6 +88,7 @@ describe("ScriptTester (characterization)", () => {
 					{ role: "user", content: "a" },
 					{ role: "user", content: "b" },
 				],
+				code: "draft code",
 			});
 		});
 	});
@@ -111,7 +113,7 @@ describe("ScriptTester (characterization)", () => {
 		fireEvent.change(input, { target: { value: "go" } });
 		fireEvent.keyDown(input, { key: "Enter", ctrlKey: true });
 		await waitFor(() => {
-			expect(mockTestScript).toHaveBeenCalledWith("script_1", { messages: [{ role: "user", content: "go" }] });
+			expect(mockTestScript).toHaveBeenCalledWith("script_1", { messages: [{ role: "user", content: "go" }], code: "draft code" });
 		});
 	});
 

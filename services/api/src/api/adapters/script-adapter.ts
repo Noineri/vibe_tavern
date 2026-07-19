@@ -25,7 +25,7 @@ export class ScriptAdapter implements ScriptRuntimeApi {
 		await this.stores.scripts.delete(scriptId);
 	};
 
-	testScript = (scriptId: string, body: { messages?: Array<{ role: string; content: string }>; characterName?: string; characterPersonality?: string; characterScenario?: string; personaName?: string; personaDescription?: string; lastMessage?: string }) => {
+	testScript = (scriptId: string, body: { code?: string; messages?: Array<{ role: string; content: string }>; characterName?: string; characterPersonality?: string; characterScenario?: string; personaName?: string; personaDescription?: string; lastMessage?: string }) => {
 		const { personaName, personaDescription, ...rest } = body;
 		const persona = personaName !== undefined ? { name: personaName, description: personaDescription ?? '' } : undefined;
 		return testScript(this.stores, { scriptId, ...rest, persona });

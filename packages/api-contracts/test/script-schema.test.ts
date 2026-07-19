@@ -160,6 +160,16 @@ describe("testScriptSchema", () => {
     expect(result.success).toBe(true);
   });
 
+  it("accepts an optional unsaved-code override without defaulting it", () => {
+    const withOverride = expectData(
+      testScriptSchema.safeParse({ code: "context.character.personality = 'draft';" }),
+    ) as Record<string, unknown>;
+    expect(withOverride.code).toBe("context.character.personality = 'draft';");
+
+    const withoutOverride = expectData(testScriptSchema.safeParse({})) as Record<string, unknown>;
+    expect("code" in withoutOverride).toBe(false);
+  });
+
   it("rejects a message missing the required content", () => {
     expectReject(
       testScriptSchema.safeParse({ messages: [{ role: "user" }] }),

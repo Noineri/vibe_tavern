@@ -3,6 +3,8 @@ import { executeScripts } from "./script-sandbox.js";
 
 export interface ScriptTestInput {
 	scriptId: string;
+	/** Unsaved authoring buffer for this run only; omitted → stored code. */
+	code?: string;
 	messages?: Array<{ role: string; content: string }>;
 	characterName?: string;
 	characterPersonality?: string;
@@ -51,7 +53,7 @@ export async function testScript(
 			{
 				id: script.id,
 				name: script.name,
-				code: script.code,
+				code: input.code ?? script.code,
 				sortOrder: script.sortOrder,
 			},
 		],

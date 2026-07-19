@@ -1,6 +1,5 @@
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useState, useMemo } from "react";
-import { useDebouncedCallback } from "use-debounce";
 import { useKeyDown } from "../../../hooks/use-key-down.js";
 import { useReorderableList } from "../../../hooks/use-reorderable-list.js";
 import { Ic } from "../../shared/icons.js";
@@ -11,6 +10,8 @@ import { AutoTextarea } from "../../shared/auto-textarea.js";
 import { CodeEditor } from "../../shared/CodeEditor.js";
 import { CustomTooltip } from "../../shared/Tooltip.js";
 import { DestructiveConfirmModal } from "../../shared/destructive-confirm-modal.js";
+import { SaveButton } from "../../shared/SaveBar.js";
+import { Toggle } from "../../shared/Toggle.js";
 import { SCRIPT_TEMPLATES } from "./script-templates/index.js";
 import { cn } from "../../../lib/cn.js";
 import { useT } from "../../../i18n/context.js";
@@ -18,6 +19,11 @@ import { AiAssistantModal } from "../../shared/AiAssistantModal.js";
 import { LinkBindingPopover, type LinkTarget } from "../../shared/LinkBindingPopover.js";
 import { useAllCharacters } from "../../../stores/snapshot-store.js";
 import { useBootstrapStore } from "../../../stores/api-actions/bootstrap-actions.js";
+import {
+  isScriptDraftDirty,
+  useScriptDraftStore,
+  type ScriptDraftValues,
+} from "../../../stores/script-draft-store.js";
 import {
   listAllScripts,
   listScripts,
@@ -144,7 +150,39 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
 
   useEffect(() => { void refreshScripts(); }, [refreshScripts]);
 
-  const activeScript = scripts.find(s => s.id === activeScriptId) ?? null;
+  // ── Explicit authoring draft ────────────────────────────
+  // Server records are the loaded base/list cache; editor fields come from a
+  // dedicated Zustand draft that survives Build-panel unmounts and script
+  // switches. Nothing persists until Save/Ctrl+S.
+  const drafts = useScriptDraftStore((s) => s.drafts);
+  const ensureDraft = useScriptDraftStore((s) => s.ensure);
+  const patchDraft = useScriptDraftStore((s) => s.patch);
+  const prepareSave = useScriptDraftStore((s) => s.prepareSave);
+  const completeSave = useScriptDraftStore((s) => s.completeSave);
+  const failSave = useScriptDraftStore((s) => s.failSave);
+  const removeDraft = useScriptDraftStore((s) => s.remove);
+
+  // Refresh clean draft bases from every loaded record while preserving dirty
+  // buffers. This keeps master-list overlays current after a panel remount.
+  useEffect(() => {
+    for (const script of scripts) ensureDraft(script);
+  }, [scripts, ensureDraft]);
+
+  const activeScriptRecord = scripts.find((s) => s.id === activeScriptId) ?? null;
+  const activeDraft = activeScriptId ? drafts[activeScriptId] ?? null : null;
+  const activeScript = activeScriptRecord
+    ? { ...activeScriptRecord, ...(activeDraft?.values ?? {}) }
+    : null;
+  const draftDirty = isScriptDraftDirty(activeDraft);
+  const draftSaveState = activeDraft?.saveState ?? "idle";
+
+  const updateDraft = (patch: Partial<ScriptDraftValues>) => {
+    if (!activeScriptRecord) return;
+    // Selection normally initializes in the effect above; ensure here too so
+    // even an edit in the first painted frame cannot be dropped.
+    ensureDraft(activeScriptRecord);
+    patchDraft(activeScriptRecord.id, patch);
+  };
 
   // ── Link binding (forward direction: bind THIS script to characters/personas).
   // Mirrors LorebookEditor's per-lorebook link state, but a single active script
@@ -176,27 +214,47 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
     setScriptLinksState(updated);
   };
 
-  // ── Mutations (replaced with async handlers) ─────────────
-  const [creatingScript, setCreatingScript] = useState(false);
-  const [updatingScript, setUpdatingScript] = useState(false);
-  const [importingScript, setImportingScript] = useState(false);
+  // ── Mutations ───────────────────────────────────────────
+  // CRUD updates the local list from endpoint return values. PATCH never
+  // refetches the whole list: a server roundtrip must not become editor input.
+  const replaceScriptRecord = useCallback((updated: ScriptRecord) => {
+    setScripts((prev) => prev.map((s) => (s.id === updated.id ? updated : s)));
+  }, []);
 
   const handleCreateScript = async (body: Parameters<typeof createScript>[0]) => {
-    setCreatingScript(true);
-    try {
-      const s = await createScript(body);
-      await refreshScripts();
-      setActiveScriptId(s.id);
-    } finally { setCreatingScript(false); }
+    const created = await createScript(body);
+    setScripts((prev) => [...prev, created]);
+    ensureDraft(created);
+    setActiveScriptId(created.id);
   };
 
-  const handleUpdateScript = async (id: string, body: Parameters<typeof updateScript>[1]) => {
-    setUpdatingScript(true);
-    try {
-      await updateScript(id, body);
-      await refreshScripts();
-    } finally { setUpdatingScript(false); }
+  /** Immediate persistence for non-authoring list metadata (currently DnD
+   *  sortOrder). Editable fields use the explicit Save path below. */
+  const persistScriptPatch = async (id: string, body: Parameters<typeof updateScript>[1]) => {
+    const updated = await updateScript(id, body);
+    replaceScriptRecord(updated);
+    return updated;
   };
+
+  const handleSave = useCallback(async () => {
+    if (!activeScriptId) return;
+    const submitted = prepareSave(activeScriptId);
+    if (!submitted) return;
+    try {
+      const updated = await updateScript(activeScriptId, submitted);
+      completeSave(activeScriptId, submitted, updated);
+      replaceScriptRecord(updated);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      failSave(activeScriptId, message);
+    }
+  }, [activeScriptId, prepareSave, completeSave, replaceScriptRecord, failSave]);
+
+  useKeyDown(["s", "S"], (event) => {
+    if (!event.ctrlKey && !event.metaKey) return;
+    event.preventDefault();
+    void handleSave();
+  }, { enabled: !!activeScriptId && draftDirty && draftSaveState !== "saving" });
 
   const handleDeleteScript = async (id: string) => {
     // Close the confirm modal first (matches the shared-modal convention used
@@ -204,7 +262,8 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
     // background). No disabled flag needed — the confirm button unmounts.
     setConfirmDeleteId(null);
     await deleteScript(id);
-    await refreshScripts();
+    setScripts((prev) => prev.filter((s) => s.id !== id));
+    removeDraft(id);
     if (activeScriptId === id) setActiveScriptIdRaw(null);
     onBackToList?.();
   };
@@ -213,10 +272,8 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
   // Mechanics (sensors, active-drag id, optimistic/reconcile/rollback) live in
   // useReorderableList; this consumer owns only the flat-sortOrder semantics:
   // arrayMove for the optimistic order, sortOrder=index renumber, and the
-  // diff-and-PATCH persist. The hook reconciles (clears optimistic) once the
-  // refreshed `scripts` catch up by id+order — the default itemsEqual covers it
-  // (the old hand-rolled `id:sortOrder` signature matched at the same refresh,
-  // and displayScripts sorts by sortOrder so the rendered view is identical).
+  // diff-and-PATCH persist. Each PATCH response replaces its local record, so
+  // the hook reconciles (clears optimistic) without a whole-list refetch.
   const { displayItems, sensors, activeDragItem: activeDragScript, handleDragStart, handleDragEnd, handleDragCancel } = useReorderableList({
     items: scripts,
     getId: (s) => s.id,
@@ -236,28 +293,31 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
       });
       return {
         optimisticItems: optimistic,
-        persist: () => Promise.all(updates.map(u => handleUpdateScript(u.id, { sortOrder: u.sortOrder })))
-          .then(() => refreshScripts()),
+        persist: () => Promise.all(updates.map((u) => persistScriptPatch(u.id, { sortOrder: u.sortOrder }))),
       };
     },
   });
 
-  // Sort by sortOrder for display; the hook's displayItems already carries the
-  // optimistic override, this keeps the rendered view sortOrder-stable.
+  // Sort by sortOrder and overlay any unsaved authoring fields. The master
+  // list therefore reflects the same draft the editor shows, even after the
+  // World & Lore panel has unmounted/remounted around a server reload.
   const displayScripts = useMemo(
-    () => [...displayItems].sort((a, b) => a.sortOrder - b.sortOrder),
-    [displayItems],
+    () => [...displayItems]
+      .sort((a, b) => a.sortOrder - b.sortOrder)
+      .map((script) => ({ ...script, ...(drafts[script.id]?.values ?? {}) })),
+    [displayItems, drafts],
   );
+  const activeDragDisplay = activeDragScript
+    ? { ...activeDragScript, ...(drafts[activeDragScript.id]?.values ?? {}) }
+    : null;
 
   const handleImportScript = async (code: string) => {
-    setImportingScript(true);
-    try {
-      const s = await importScript({ format: "js", code, scopeType: scope, characterId: scope === "character" ? characterId : undefined, personaId: scope === "persona" ? personaId ?? undefined : undefined, chatId: scope === "chat" ? chatId ?? undefined : undefined });
-      await refreshScripts();
-      setActiveScriptId(s.id);
-      setImportOpen(false);
-      setImportCode("");
-    } finally { setImportingScript(false); }
+    const imported = await importScript({ format: "js", code, scopeType: scope, characterId: scope === "character" ? characterId : undefined, personaId: scope === "persona" ? personaId ?? undefined : undefined, chatId: scope === "chat" ? chatId ?? undefined : undefined });
+    setScripts((prev) => [...prev, imported]);
+    ensureDraft(imported);
+    setActiveScriptId(imported.id);
+    setImportOpen(false);
+    setImportCode("");
   };
 
   // ── Scope-aware body helper ──────────────────────────────
@@ -281,29 +341,10 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
   const handleAddFromTemplate = (key: string) => {
     const tpl = SCRIPT_TEMPLATES[key];
     if (!tpl) return;
-    if (activeScriptId && activeScript) {
-      handleUpdateScript(activeScriptId, { code: activeScript.code ? activeScript.code + "\n\n" + tpl.code : tpl.code });
+    if (activeScript) {
+      updateDraft({ code: activeScript.code ? activeScript.code + "\n\n" + tpl.code : tpl.code });
     } else {
-      handleCreateScript({ name: tpl.name, code: tpl.code, ...scopeBody() } as Parameters<typeof createScript>[0]);
-    }
-  };
-
-  // Debounced save for the code field only (600ms) — the other fields save
-  // immediately. `useDebouncedCallback` owns the timer + unmount cleanup and
-  // exposes `.flush()` so a pending code save fires on unmount instead of
-  // being dropped. (Replaces the codeSaveTimer useRef + clearTimeout pair.)
-  const debouncedSaveCode = useDebouncedCallback(
-    (id: string, code: string) => void handleUpdateScript(id, { code }),
-    600,
-  );
-  useEffect(() => () => debouncedSaveCode.flush(), [debouncedSaveCode]);
-
-  const updateField = (field: string, value: unknown) => {
-    if (!activeScriptId) return;
-    if (field === "code") {
-      debouncedSaveCode(activeScriptId, value as string);
-    } else {
-      void handleUpdateScript(activeScriptId, { [field]: value } as Parameters<typeof updateScript>[1]);
+      void handleCreateScript({ name: tpl.name, code: tpl.code, ...scopeBody() } as Parameters<typeof createScript>[0]);
     }
   };
 
@@ -356,14 +397,8 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
         isOpen={aiHelperOpen}
         onClose={() => setAiHelperOpen(false)}
         existingContent={activeScript?.code ?? ""}
-        onInsert={(text) => {
-          if (!activeScriptId) return;
-          void handleUpdateScript(activeScriptId, { code: text });
-        }}
-        onReplace={(text) => {
-          if (!activeScriptId) return;
-          void handleUpdateScript(activeScriptId, { code: text });
-        }}
+        onInsert={(text) => updateDraft({ code: text })}
+        onReplace={(text) => updateDraft({ code: text })}
         scopeContext={{
           characterId: characterId,
           personaId: personaId ?? undefined,
@@ -411,13 +446,13 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
             </div>
           </SortableContext>
           <DragOverlay dropAnimation={null}>
-            {activeDragScript ? (
-              <div className={cn("rounded-xl border", activeDragScript.id === activeScriptId ? "border-accent bg-accent-dim" : "border-border bg-surface")}>
+            {activeDragDisplay ? (
+              <div className={cn("rounded-xl border", activeDragDisplay.id === activeScriptId ? "border-accent bg-accent-dim" : "border-border bg-surface")}>
                 <div className="flex items-center gap-2 px-4 pt-3 pb-3">
                   <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent-dim text-accent-t"><Ic.terminal /></div>
-                  <span className="flex-1 truncate text-[14px] font-semibold text-t1">{activeDragScript.name}</span>
-                  <div className={cn("shrink-0 rounded-full px-2 py-0.5 font-ui text-[10px] font-medium uppercase", activeDragScript.enabled ? "bg-success-dim text-success-text" : "bg-s3 text-t3")}>
-                    {activeDragScript.enabled ? "ON" : "OFF"}
+                  <span className="flex-1 truncate text-[14px] font-semibold text-t1">{activeDragDisplay.name}</span>
+                  <div className={cn("shrink-0 rounded-full px-2 py-0.5 font-ui text-[10px] font-medium uppercase", activeDragDisplay.enabled ? "bg-success-dim text-success-text" : "bg-s3 text-t3")}>
+                    {activeDragDisplay.enabled ? "ON" : "OFF"}
                   </div>
                 </div>
               </div>
@@ -431,16 +466,26 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
   // ── Script editor panel (for LorebookEditor editor view) ──
   const scriptEditorPanel = activeScript ? (
     <div className={cn("mx-auto max-w-[860px]", isMobile && "pb-[calc(4rem+env(safe-area-inset-bottom,0px))] [&_button]:min-h-[40px] [&_input]:text-base")}>
+      {/* Explicit-save status + action. Ctrl/Cmd+S calls the same handler. */}
+      <div className="mb-4 flex items-center justify-between gap-3 rounded-md border border-border bg-s2 px-3 py-2">
+        <span
+          className={cn("min-w-0 truncate font-ui text-[12px]", draftSaveState === "error" ? "text-danger" : "text-t3")}
+          title={activeDraft?.error ?? undefined}
+        >
+          {draftSaveState === "error" ? t("retry") : draftDirty ? t("unsaved_changes") : t("saved_state")}
+        </span>
+        <SaveButton
+          dirty={draftDirty}
+          saveState={draftSaveState}
+          onClick={() => void handleSave()}
+          label={draftSaveState === "error" ? t("retry") : t("save")}
+        />
+      </div>
+
       {/* Header: name + toggle + delete */}
       <div className="flex items-center gap-3" style={{ marginBottom: 16 }}>
-        <div className="flex-1"><input className="w-full rounded-md border border-border bg-s2 px-2.5 py-1.5 text-[15px] font-semibold text-t1 outline-none focus:border-accent" type="text" value={activeScript.name} onChange={e => updateField("name", e.target.value)} placeholder={t("script_name")} /></div>
-        <div
-          className="shrink-0 cursor-pointer rounded-full transition-all"
-          style={{ width: 36, height: 20, backgroundColor: activeScript.enabled ? "var(--accent)" : "var(--s3)", position: "relative" }}
-          onClick={() => updateField("enabled", !activeScript.enabled)}
-        >
-          <div className="rounded-full transition-all" style={{ position: "absolute", top: 3, left: activeScript.enabled ? 19 : 3, width: 14, height: 14, backgroundColor: activeScript.enabled ? "#fff" : "var(--t3)" }} />
-        </div>
+        <div className="min-w-0 flex-1"><input className="w-full rounded-md border border-border bg-s2 px-2.5 py-1.5 text-[15px] font-semibold text-t1 outline-none focus:border-accent" type="text" value={activeScript.name} onChange={(e) => updateDraft({ name: e.target.value })} placeholder={t("script_name")} /></div>
+        <Toggle checked={activeScript.enabled} onChange={(enabled) => updateDraft({ enabled })} />
         <CustomTooltip content={t("delete_script_confirm")}>
         <div className="flex h-8 w-8 cursor-pointer items-center justify-center rounded text-danger transition-all hover:bg-s2" onClick={() => setConfirmDeleteId(activeScript.id)}><Ic.del /></div>
         </CustomTooltip>
@@ -449,7 +494,7 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
       {/* Description */}
       <div style={{ marginBottom: 16 }}>
         <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("script_desc_label")}</label>
-        <input className="w-full rounded-md border border-border bg-s2 px-2.5 py-1.5 font-ui text-t1 outline-none focus:border-accent" value={activeScript.description ?? ""} onChange={e => updateField("description", e.target.value)} placeholder={t("script_desc_placeholder")} />
+        <input className="w-full rounded-md border border-border bg-s2 px-2.5 py-1.5 font-ui text-t1 outline-none focus:border-accent" value={activeScript.description ?? ""} onChange={(e) => updateDraft({ description: e.target.value })} placeholder={t("script_desc_placeholder")} />
       </div>
 
       {/* Link binding (forward): bind this script to additional characters/personas */}
@@ -546,8 +591,8 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
         <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("script_code_label")}</label>
         <div className="relative rounded-md border border-border bg-bg">
           <CodeEditor
-            value={activeScript.code ?? ""}
-            onChange={v => updateField("code", v)}
+            value={activeScript.code}
+            onChange={(code) => updateDraft({ code })}
             minHeight={isMobile ? "220px" : "300px"}
             scrollMode={isMobile ? "page" : "inner"}
           />
@@ -564,7 +609,7 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
         </div>
       </div>
 
-      <ScriptTester scriptId={activeScriptId} isMobile={isMobile} characterName={scope === "character" ? allCharacters.find(x => x.id === characterId)?.name : undefined} />
+      <ScriptTester scriptId={activeScriptId} code={activeScript.code} isMobile={isMobile} characterName={scope === "character" ? allCharacters.find(x => x.id === characterId)?.name : undefined} />
     </div>
   ) : (
     <div className="flex h-full items-center justify-center text-t3 font-ui text-[13px] italic">

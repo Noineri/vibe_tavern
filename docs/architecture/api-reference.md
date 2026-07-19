@@ -997,12 +997,13 @@ Delete a script.
 
 ### `POST /api/scripts/:scriptId/test`
 
-Test a script with simulated context.
+Test a script with simulated context. The optional `code` field overrides the stored source for this run only, so authoring UIs can execute an unsaved buffer without persisting it.
 
 **Body:** `testScriptSchema`
 
 ```json
 {
+  "code": "context.character.personality += '\nTest draft';",
   "messages": [
     { "role": "user", "content": "Hello!" },
     { "role": "assistant", "content": "Hi there!" }

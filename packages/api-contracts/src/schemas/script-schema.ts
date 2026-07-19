@@ -28,6 +28,8 @@ export const setScriptScopeSchema = z.object({
 });
 
 export const testScriptSchema = z.object({
+  /** Optional unsaved authoring buffer. Test-only override; never persisted. */
+  code: z.string().optional(),
   /** Simulated chat messages for test execution */
   messages: z.array(z.object({
     role: z.string(),
