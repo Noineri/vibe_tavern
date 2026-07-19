@@ -5,3 +5,4 @@
 // Used by the update-check feature to compare the running build against the
 // latest GitHub release.
 declare const __APP_VERSION__: string;
+declare const __UPDATE_API_BASE__: string;

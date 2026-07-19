@@ -11,12 +11,14 @@ const rootPkg = JSON.parse(
 	readFileSync(fileURLToPath(new URL("../../package.json", import.meta.url)), "utf8"),
 ) as { version?: string };
 const APP_VERSION = process.env.VERSION ?? rootPkg.version ?? "0.0.0-dev";
+const UPDATE_API_BASE = (process.env.VT_UPDATE_API_BASE ?? "https://api.github.com/repos/Noineri/vibe_tavern").replace(/\/+$/, "");
 
 export default defineConfig({
 	plugins: [dataComponentPlugin(), react(), tailwindcss()],
 	define: {
 		// Inlined as a string literal in the bundle — no runtime file access.
 		__APP_VERSION__: JSON.stringify(APP_VERSION),
+		__UPDATE_API_BASE__: JSON.stringify(UPDATE_API_BASE),
 	},
 	resolve: {
 		alias: [

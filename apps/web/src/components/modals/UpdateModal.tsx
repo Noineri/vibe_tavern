@@ -83,13 +83,14 @@ export function UpdateModal({ latestVersion, latestTag, releaseUrl, releaseNotes
 	const showReleaseNotes = showConfirm && Boolean(releaseNotes);
 
 	const onClose = () => {
-		if (flow.state.kind === "running") return;
+		// "complete" = server has already process.exit(0)'d; closing would strand the user on a dead page.
+		if (flow.state.kind === "running" || flow.state.kind === "complete") return;
 		setOpen(false);
 	};
 
 	return (
-		<Modal open={open} onClose={onClose} compact title={headerLabel} description={t("update_modal_description")}>
-			<div className="flex max-h-[80vh] w-[min(560px,92vw)] flex-col rounded-lg border border-border2 bg-surface shadow-xl">
+			<Modal open={open} onClose={onClose} title={headerLabel} description={t("update_modal_description")}>
+			<div className="flex max-h-[80vh] w-[min(760px,94vw)] flex-col rounded-lg border border-border2 bg-surface shadow-xl">
 				{/* Header */}
 				<div className="flex items-center justify-between border-b border-border2 px-5 py-3.5">
 					<div className="flex items-center gap-2.5">
@@ -98,7 +99,7 @@ export function UpdateModal({ latestVersion, latestTag, releaseUrl, releaseNotes
 						</span>
 						<h2 className="font-ui text-[calc(var(--ui-fs)+1px)] font-semibold text-t1">{headerLabel}</h2>
 					</div>
-					{flow.state.kind !== "running" && (
+					{flow.state.kind !== "running" && flow.state.kind !== "complete" && (
 						<button type="button" onClick={onClose} className="text-t3 hover:text-t1"><Icons.close /></button>
 					)}
 				</div>
@@ -108,7 +109,7 @@ export function UpdateModal({ latestVersion, latestTag, releaseUrl, releaseNotes
 					{flow.state.kind === "idle" && (
 						<>
 							{showReleaseNotes ? (
-								<div className="md-content-plain max-h-[40vh] overflow-y-auto rounded-md border border-border2 p-3.5 text-[calc(var(--ui-fs)-1px)] leading-relaxed text-t2">
+								<div className="md-content-plain max-h-[40vh] overflow-y-auto break-words rounded-md border border-border2 p-3.5 text-[calc(var(--ui-fs)-1px)] leading-relaxed text-t2">
 									<Markdown text={releaseNotes ?? ""} variant="plain" />
 								</div>
 							) : (
@@ -190,9 +191,10 @@ export function UpdateModal({ latestVersion, latestTag, releaseUrl, releaseNotes
 						<button
 							type="button"
 							className="flex items-center gap-1.5 rounded-md bg-accent px-4 py-1.5 text-[calc(var(--ui-fs)-2px)] font-semibold text-on-accent transition-[filter] hover:brightness-110"
-							onClick={() => setOpen(false)}
+							onClick={() => window.location.reload()}
 						>
-							{t("update_modal_close")}
+							<Icons.regen />
+							{t("update_modal_reload_page")}
 						</button>
 					)}
 

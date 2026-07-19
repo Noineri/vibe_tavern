@@ -17,7 +17,7 @@ concurrency:
 #   1. Cut a release locally:
 #        bun run bump-version 1.0.2 --push
 #      That script bumps all 8 workspace package.json files, syncs bun.lock,
-#      commits with [skip ci], creates an ANNOTATED tag v1.0.2, and pushes
+#      commits, creates an ANNOTATED tag v1.0.2, and pushes
 #      both master and the tag. No force-push anywhere.
 #
 #   2. This workflow triggers on the tag push. The `version` job is a GUARD,
@@ -39,8 +39,8 @@ jobs:
       sha: ${{ github.sha }}
     steps:
       - uses: actions/checkout@v5
-        # No `ref:` — checkout the tagged commit. Do NOT checkout master:
-        # the tag may legitimately live on a release/* hotfix branch.
+        # No `ref:` — checkout the immutable tagged commit. The bump script
+        # only creates release tags from a synchronized master branch.
       - name: Set VERSION from tag
         run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
       - name: Verify package.json version matches tag

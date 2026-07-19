@@ -12,14 +12,15 @@
  *
  * What it does (in order):
  *   1. Validates the target version (semver shape, differs from current)
- *   2. Verifies git tree is clean and on master/main or release/*
- *   3. Rewrites `.version` + all `@vibe-tavern/*` dep entries in the 8
+ *   2. Verifies git tree is clean, on master, and exactly matches origin/master
+ *   3. Verifies the target tag does not already exist locally or on origin
+ *   4. Rewrites `.version` + all `@vibe-tavern/*` dep entries in the 8
  *      workspace package.json files (explicit allowlist — no `find`)
- *   4. Runs `bun install` to sync `bun.lock`
- *   5. Commits with `chore: bump to vX.X.X [skip ci]`
- *   6. Creates an annotated tag `vX.X.X` (annotated, not lightweight —
+ *   5. Runs `bun install` to sync `bun.lock`
+ *   6. Commits with `chore: bump to vX.X.X`
+ *   7. Creates an annotated tag `vX.X.X` (annotated, not lightweight —
  *      gives a signed/dated marker that survives `git fetch --tags`)
- *   7. With `--push`: pushes both the branch and the tag to origin
+ *   8. With `--push`: pushes both master and the tag to origin
  *
  * What it does NOT touch:
  *   - `mobile/android/app/build.gradle.kts` — `versionCode`/`versionName`
@@ -139,6 +140,7 @@ async function main(): Promise<void> {
 
 	const target = parseSemver(targetVersion);
 	if (!target) fail(`could not parse version: "${targetVersion}"`);
+	const tagName = `v${targetVersion}`;
 
 	// --- git preconditions ---
 
@@ -148,10 +150,29 @@ async function main(): Promise<void> {
 	}
 
 	const branch = (await $`git rev-parse --abbrev-ref HEAD`.cwd(ROOT).text()).trim();
-	const isTrunk = branch === "master" || branch === "main";
-	const isReleaseBranch = branch.startsWith("release/");
-	if (!isTrunk && !isReleaseBranch) {
-		fail(`must be on master/main or release/* — currently on "${branch}"`);
+	if (branch !== "master") {
+		fail(`must be on master — currently on "${branch}"`);
+	}
+
+	const fetchResult = await $`git fetch --quiet --no-tags origin master`.cwd(ROOT).nothrow();
+	if (fetchResult.exitCode !== 0) {
+		fail("could not fetch origin/master — verify the origin remote and network connection");
+	}
+
+	const localSha = (await $`git rev-parse HEAD`.cwd(ROOT).text()).trim();
+	const remoteSha = (await $`git rev-parse refs/remotes/origin/master`.cwd(ROOT).text()).trim();
+	if (localSha !== remoteSha) {
+		fail("local master must exactly match origin/master — push or pull master, wait for CI, then retry");
+	}
+
+	const localTag = (await $`git tag --list ${tagName}`.cwd(ROOT).text()).trim();
+	if (localTag) {
+		fail(`tag ${tagName} already exists locally`);
+	}
+
+	const remoteTag = (await $`git ls-remote --tags origin refs/tags/${tagName}`.cwd(ROOT).text()).trim();
+	if (remoteTag) {
+		fail(`tag ${tagName} already exists on origin`);
 	}
 
 	// --- version preconditions ---
@@ -191,7 +212,7 @@ async function main(): Promise<void> {
 
 	// --- commit ---
 
-	const commitMsg = `chore: bump to v${targetVersion} [skip ci]`;
+	const commitMsg = `chore: bump to v${targetVersion}`;
 	const commitPaths = [...PACKAGE_FILES, "bun.lock"];
 	await $`git add ${commitPaths}`.cwd(ROOT);
 	await $`git commit -m ${commitMsg}`.cwd(ROOT);
@@ -200,7 +221,6 @@ async function main(): Promise<void> {
 
 	// --- annotated tag ---
 
-	const tagName = `v${targetVersion}`;
 	await $`git tag -a ${tagName} -m ${tagName}`.cwd(ROOT);
 	console.log(`  tagged     ${tagName} (annotated)`);
 

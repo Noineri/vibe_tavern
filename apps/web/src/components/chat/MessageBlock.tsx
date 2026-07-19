@@ -5,6 +5,7 @@ import { resolveModelLabel } from "../../lib/model-resolve.js";
 import type { MessageMetaContext } from "../../lib/message-meta-registry.js";
 import { resolveEntityAvatarUrl } from "../../lib/avatar.js";
 import { Markdown } from "../../lib/markdown.js";
+import { copyText } from "../../lib/clipboard.js";
 
 import { BottomSheet } from "../shared/BottomSheet.js";
 import * as Select from "@radix-ui/react-select";
@@ -477,7 +478,13 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
       desktopVariantControls={desktopVariantControls}
       mobileVariantControls={mobileVariantControls}
       actions={{
-        onCopy: () => { void navigator.clipboard?.writeText(msg.displayContent); setCopied(true); setTimeout(() => setCopied(false), 1000); },
+        onCopy: async () => {
+          const result = await copyText(msg.displayContent);
+          if (result.ok) {
+            setCopied(true);
+            setTimeout(() => setCopied(false), 1000);
+          }
+        },
         onEdit: () => void handleEditClick(),
         onDelete: () => setDeleteConfirmOpen(true),
         onBranch: () => void chat.handleFork(msg.id),

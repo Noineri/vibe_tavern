@@ -5,6 +5,7 @@ import { normalizeSceneTrackerConfig, synthesizeSceneSample, findInvalidXmlKeys,
 import { sceneTrackerDslSchema } from "@vibe-tavern/api-contracts";
 import { Ic } from "../../shared/icons.js";
 import { cn } from "../../../lib/cn.js";
+import { copyText } from "../../../lib/clipboard.js";
 import { CodeEditor } from "../../shared/CodeEditor.js";
 import { CustomTooltip } from "../../shared/Tooltip.js";
 import { AutoTextarea } from "../../shared/auto-textarea.js";
@@ -249,9 +250,11 @@ export function TrackerConfig({ chatId }: { chatId: ChatId }) {
               <CustomTooltip content={t("copy")}>
                 <button
                   type="button"
-                  onClick={() => {
-                    navigator.clipboard?.writeText(SCENE_DSL_EXAMPLE);
-                    toast.success(t("copied"));
+                  onClick={async () => {
+                    const result = await copyText(SCENE_DSL_EXAMPLE);
+                    if (result.ok) {
+                      toast.success(t("copied"));
+                    }
                   }}
                   className="absolute right-1.5 top-1.5 inline-flex h-6 w-6 items-center justify-center rounded text-t4 hover:bg-s2 hover:text-t2"
                 >

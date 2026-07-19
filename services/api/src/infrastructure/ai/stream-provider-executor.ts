@@ -7,18 +7,16 @@
  */
 
 import { streamText, stepCountIs } from "ai";
-import { ProviderExecutionError } from "./provider-execution-types.js";
 import type { ProviderExecutor, ProviderStreamResult, SentConfigSnapshot } from "./provider-execution-types.js";
 import { resolveModel, toSdkMessages, prepareSdkMessages } from "./provider-executor-utils.js";
 import { buildSamplerConfig } from "./sampler-mapper.js";
 import { normalizeProviderType } from "@vibe-tavern/domain";
 import { log } from "@vibe-tavern/domain";
-import { classifyProviderError, extractProviderErrorStatusCode } from "./provider-error-classifier.js";
-import { extractProviderErrorMessage } from "./provider-error-message.js";
 import { cancelled } from "../../shared/errors.js";
 import { createMappedStream, mapFinish, safeStreamTextPromise, safeReasoningPromise } from "./stream-helpers.js";
 import { describeAttachments } from "./vision-gate.js";
 import type { VisionGateConfig } from "./vision-gate.js";
+import { wrapProviderExecutionError } from "./provider-error-wrapper.js";
 
 /**
  * Streaming-native provider executor.
@@ -149,11 +147,6 @@ export const streamProviderExecutor: ProviderExecutor = async (input) => {
     // Setup error (streamText() failed before iteration began): normalize at the
     // execution boundary into ProviderExecutionError. Iteration errors surface
     // later in LiveChatOrchestrator.drainStream, which classifies inline.
-    throw new ProviderExecutionError(
-      extractProviderErrorMessage(error),
-      classifyProviderError(error),
-      normalizeProviderType(input.profile.providerPreset),
-      { statusCode: extractProviderErrorStatusCode(error), cause: error },
-    );
+    throw wrapProviderExecutionError(error, input.profile.providerPreset);
   }
 };
