@@ -391,6 +391,27 @@ A deliberate remount detail: `MessageList` is keyed by `${chatId}|${branchId}` s
 
 ---
 
+## Provider Modal Fork — RP vs Co-Author Binding
+
+The app has **one shared pool** of provider connection profiles (endpoints, API keys, cached model lists, favorites) but **two independent provider/model bindings**: the RP chat binding and the Co-Author binding. Both consume the same profile rows; neither duplicates connection data.
+
+| Surface | State | Modal | Persists |
+|---|---|---|---|
+| **RP** | `provider_profiles.is_active` + `default_model` | `ProviderModal` | Per-profile `defaultModel`, `isActive`, vision/sampler/per-model overlays |
+| **Co-Author** | `ui_settings.coauthorProviderId` + `coauthorModelName` | `CoauthorProviderModal` (selection-only fork) | One app-wide nullable pair — never touches `defaultModel` or `isActive` |
+
+**Resolution (`resolveCoauthorBinding`)** — a pure resolver in `lib/coauthor-provider-binding.ts`, shared by the hook layer, send gate, and modal: if a valid explicit Co-Author pair exists (provider id present + profile found + model resolves), use it; otherwise fall back to the RP active profile + its default model. The fallback is **advisory only** — it is never persisted implicitly, so a null/dangling binding stays null until the user saves an explicit choice.
+
+**Hook layer (`useCoauthorProviderBinding`)** — composes bootstrap settings + the shared provider-data store + tool-capability model cache + favorites. Exposes `saveBinding(profileId, modelName)` (atomic patch via `patchUiSettingsAction`) and `quickSwitchModel(modelName)` (preserves the bound profile). The top bar pill, input area, and modal all read from here.
+
+**Send gate** — `useChatController` computes `canSendViaActiveProfile` based on chat mode: RP requires the RP active profile + `defaultModel`; Co-Author uses `resolveCoauthorBinding().isReady`, which succeeds with an explicit pair OR the RP fallback.
+
+**`CoauthorProviderModal`** — a `MasterDetailModal` that renders the shared `ProviderProfileList` in `selectionOnly` mode (hides drag/reorder/"+ New"), a tool-capable model picker (cmdk/Command — Co-Author turns require function-calling), and a "Manage connections" action that hands off to the original `ProviderModal` for connection CRUD. Saves atomically via the hook's `saveBinding`.
+
+The original `ProviderModal` has no Co-Author mode flag (the temporary `providerModalMode` was removed). It is RP-only: activation, `defaultModel`, vision, samplers, per-model binding.
+
+---
+
 ## Dev Tooling: ThemeTuner
 
 `ThemeTuner` (`components/dev/ThemeTuner.tsx`) is a live, WYSIWYG theme-color workbench reachable only via the `#theme-tuner` URL hash (wired in `main.tsx`). It does **not** load the real app, so it needs no backend — it renders real markup-driven components plus faithful chrome replicas on the same Tailwind tokens, so what you see is exactly what a tuned theme produces. Intended for iterating on theme palettes, not for end users.
