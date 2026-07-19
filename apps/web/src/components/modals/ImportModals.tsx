@@ -2,13 +2,11 @@ import type React from "react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import type { ChatId } from "@vibe-tavern/domain";
-import { extractPngMetadata, parseCharacterMetadata } from "../../lib/png-reader.js";
 import { cn } from "../../lib/cn.js";
 import { Icons } from "../shared/icons.js";
 import { Modal } from "../shared/Modal.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
 import { useT } from "../../i18n/context.js";
-import { getT } from "../../i18n/locale-helpers.js";
 import { fetchBootstrapAction, fetchPersonasAction } from "../../stores/api-actions/bootstrap-actions.js";
 import { loadPromptPresetsAction } from "../../stores/api-actions/preset-actions.js";
 import { inputCls } from "../build/fields/field-styles.js";
@@ -18,28 +16,19 @@ import {
   importStDirectoryStream,
 } from "../../api/import-api.js";
 import type { StScanResult, StImportResult, StScanError, ImportPhase } from "../../api/import-api.js";
+import {
+  initial,
+  truncate,
+  parseCharacterFile,
+  parseChatFile,
+  type CharacterPreview,
+  type ChatPreview,
+} from "./import/parse-import-file.js";
 
 interface ImportModalCommonProps {
   isImporting: boolean;
   onClose: () => void;
   onImportFiles: (files: File[]) => void;
-}
-
-interface CharacterPreview {
-  file: File;
-  name: string;
-  description: string;
-  tags: string[];
-  avatarUrl: string | null;
-}
-
-interface ChatPreview {
-  file: File;
-  fileName: string;
-  title: string;
-  messageCount: number;
-  characterName: string;
-  messages: Array<{ role: string; name: string; text: string }>;
 }
 
 // ─── ST Folder import sub-component ─────────────────────────────────────
@@ -353,12 +342,7 @@ export function CharacterImportModal(input: ImportModalCommonProps) {
       return null;
     });
     try {
-      const lowerName = file.name.toLowerCase();
-      const raw = lowerName.endsWith(".png") || file.type === "image/png"
-        ? parseCharacterMetadata(await extractPngMetadata(file))
-        : JSON.parse(await file.text());
-      const data = normalizeCharacterPreview(raw, file);
-      setPreview({ ...data, file, avatarUrl: lowerName.endsWith(".png") || file.type === "image/png" ? URL.createObjectURL(file) : null });
+      setPreview(await parseCharacterFile(file));
     } catch (err) {
       toast.error(err instanceof Error ? err.message : t("import_error_read_card"));
     } finally {
@@ -444,9 +428,7 @@ export function ChatImportModal(input: ImportModalCommonProps & { activeChatId: 
     setParsing(true);
     setPreview(null);
     try {
-      const lowerName = file.name.toLowerCase();
-      if (!lowerName.endsWith(".jsonl")) throw new Error(t("import_invalid_format"));
-      setPreview(parseChatPreview(file, await file.text()));
+      setPreview(await parseChatFile(file));
     } catch (err) {
       toast.error(err instanceof Error ? err.message : t("import_error_read_chat"));
     } finally {
@@ -637,60 +619,4 @@ function StImportProgress(props: {
 function ModalFooter(props: { onClose: () => void; onConfirm: () => void; confirmLabel: string; disabled: boolean; busy: boolean }) {
   const { t } = useT();
   return <div className="flex shrink-0 items-center gap-2.5 border-t border-border px-5 py-3.5"><button type="button" className="h-[37px] cursor-pointer rounded-md bg-transparent px-4 font-ui text-[calc(var(--ui-fs)-2px)] text-t3 transition-all hover:text-t1" onClick={props.onClose}>{t("cancel")}</button><button type="button" className="h-[37px] cursor-pointer rounded-md bg-accent px-5 font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-on-accent transition-all hover:brightness-110 disabled:cursor-default disabled:opacity-45" disabled={props.disabled} onClick={props.onConfirm}>{props.busy ? t("importing") : props.confirmLabel}</button></div>;
-}
-
-// ─── Utility functions ─────────────────────────────────────────────────────
-
-function normalizeCharacterPreview(raw: unknown, file: File): Omit<CharacterPreview, "file" | "avatarUrl"> {
-  const obj = asRecord(raw);
-  const data = asRecord(obj.data) ?? obj;
-  const name = stringValue(data.name) || stringValue(obj.name) || stringValue(data.char_name) || stringValue(obj.char_name) || file.name.replace(/\.[^/.]+$/, "");
-  const description = stringValue(data.description) || stringValue(data.personality) || stringValue(data.char_persona) || stringValue(obj.description) || "";
-  const tags = arrayOfStrings(data.tags) ?? arrayOfStrings(obj.tags) ?? [];
-  return { name, description, tags };
-}
-
-function parseChatPreview(file: File, text: string): ChatPreview {
-  const messages: ChatPreview["messages"] = [];
-  let characterName = "Unknown";
-  for (const line of text.split(/\r?\n/)) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-    const parsed = JSON.parse(trimmed) as unknown;
-    const record = asRecord(parsed);
-    const role = stringValue(record.role) || (record.is_user === true ? "user" : "assistant");
-    const name = stringValue(record.name) || stringValue(record.user_name) || (role === "user" ? "User" : stringValue(record.character_name) || "Character");
-    const messageText = stringValue(record.mes) || stringValue(record.text) || stringValue(record.content) || "";
-    if (role !== "user" && name !== "Character") characterName = name;
-    messages.push({ role, name, text: messageText });
-  }
-  if (messages.length === 0) throw new Error(getT()("import_no_messages"));
-  return {
-    file,
-    fileName: file.name,
-    title: file.name.replace(/\.jsonl$/i, ""),
-    messageCount: messages.length,
-    characterName,
-    messages: messages.slice(0, 24),
-  };
-}
-
-function asRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" ? value as Record<string, unknown> : {};
-}
-
-function stringValue(value: unknown): string {
-  return typeof value === "string" ? value.trim() : "";
-}
-
-function arrayOfStrings(value: unknown): string[] | null {
-  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : null;
-}
-
-function truncate(value: string, length: number): string {
-  return value.length > length ? `${value.slice(0, length)}...` : value;
-}
-
-function initial(value: string): string {
-  return value.trim().charAt(0).toUpperCase() || "?";
 }
