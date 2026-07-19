@@ -106,6 +106,11 @@ export async function deleteProviderProfile(providerProfileId: string): Promise<
   return unwrapRpc<{ ok: true }>(response);
 }
 
+export async function reorderProviderProfiles(updates: Array<{ id: string; sortOrder: number }>): Promise<ProviderProfileRecord[]> {
+  const response = await client.api.providers.reorder.$patch({ json: { updates } });
+  return unwrapRpc<ProviderProfileRecord[]>(response);
+}
+
 export async function activateProviderProfile(providerProfileId: string): Promise<ProviderProfileRecord> {
   const response = await client.api.providers[":providerId"].activate.$post({ param: { providerId: providerProfileId } });
   return unwrapRpc<ProviderProfileRecord>(response);

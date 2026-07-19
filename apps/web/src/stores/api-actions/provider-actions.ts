@@ -17,6 +17,7 @@ import {
   testProviderProfile,
   updateProviderProfile,
   upsertProviderModelSettings,
+  reorderProviderProfiles,
   type FavoriteProviderModelRecord,
   type ProviderModelSettingsRecord,
   type ProviderProfileRecord,
@@ -66,6 +67,11 @@ export async function updateProviderProfileAction(
 
 export async function deleteProviderProfileAction(id: string): Promise<void> {
   await deleteProviderProfile(id);
+  void loadProviderProfilesAction();
+}
+
+export async function reorderProviderProfilesAction(updates: Array<{ id: string; sortOrder: number }>): Promise<void> {
+  await reorderProviderProfiles(updates);
   void loadProviderProfilesAction();
 }
 

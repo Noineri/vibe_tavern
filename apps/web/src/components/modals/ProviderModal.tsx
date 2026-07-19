@@ -23,7 +23,7 @@ import { DestructiveConfirmModal } from "../shared/destructive-confirm-modal.js"
 import { useIsMobile } from "../../hooks/use-mobile.js";
 import { useModalStore } from "../../stores/modal-store.js";
 import { useBootstrapStore } from "../../stores/api-actions/bootstrap-actions.js";
-import { getProviderModelSettingsAction } from "../../stores/api-actions/provider-actions.js";
+import { getProviderModelSettingsAction, reorderProviderProfilesAction } from "../../stores/api-actions/provider-actions.js";
 import { MasterDetailModal } from "../shared/MasterDetailModal.js";
 import { filterToolCapableModels } from "../coauthor/useToolCapableModels.js";
 
@@ -636,6 +636,8 @@ export function ProviderModal({
           <ProviderProfileList
             filteredProfiles={filteredProfiles} editingId={editingId}
             activeProviderProfileId={activeProviderProfileId} profileSearch={profileSearch}
+        profiles={providerProfiles}
+        onReorder={reorderProviderProfilesAction}
             onProfileSearchChange={setProfileSearch}
             onSelectProfile={(id) => { handleSelect(id); }}
             onAddProfile={() => { void handleAdd(); }}

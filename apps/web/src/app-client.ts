@@ -210,6 +210,7 @@ export {
   updateProviderProfile,
   deleteProviderProfile,
   activateProviderProfile,
+  reorderProviderProfiles,
   testProviderDraft,
   testProviderProfile,
   fetchProviderProfileModels,
