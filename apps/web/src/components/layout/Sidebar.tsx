@@ -173,6 +173,9 @@ export function Sidebar() {
           activeChatId={activeChatId}
           chat={chat}
           character={character}
+          setConfirmDestroy={setConfirmDestroy}
+          branches={branches}
+          activeBranchId={activeBranchId}
           setFlyoutCharId={setFlyoutCharId}
           flyoutRef={flyoutRef}
           flyoutListRef={flyoutListRef}
