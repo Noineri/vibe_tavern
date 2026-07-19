@@ -18,7 +18,7 @@
  * the imperative-handle API is structurally different from the desktop's
  * mount-on-demand modal.
  */
-import { forwardRef, useCallback, useImperativeHandle, useState } from "react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useT } from "../../../i18n/context.js";
 import { useMobileFilePicker } from "./use-mobile-file-picker.js";
@@ -42,15 +42,30 @@ export const ChatImportMobile = forwardRef<ChatImportMobileHandle, ChatImportMob
   function ChatImportMobile({ isImporting, onImportFiles }, ref) {
     const { t } = useT();
     const [preview, setPreview] = useState<ChatPreview | null>(null);
+    // Monotonic pick generation: only the latest selection may commit its
+    // parse result. `mountedRef` additionally blocks commits after unmount.
+    const pickIdRef = useRef(0);
+    const mountedRef = useRef(true);
+
+    useEffect(() => {
+      mountedRef.current = true;
+      return () => {
+        mountedRef.current = false;
+      };
+    }, []);
 
     const handleFile = useCallback(
       async (file: File) => {
         // Clear any prior preview first. If parsing throws, no new preview is
         // set and no modal opens (per spec).
+        const pickId = ++pickIdRef.current;
         setPreview(null);
         try {
-          setPreview(await parseChatFile(file));
+          const parsed = await parseChatFile(file);
+          if (!mountedRef.current || pickId !== pickIdRef.current) return;
+          setPreview(parsed);
         } catch (err) {
+          if (!mountedRef.current || pickId !== pickIdRef.current) return;
           toast.error(err instanceof Error ? err.message : t("import_error_read_chat"));
         }
       },

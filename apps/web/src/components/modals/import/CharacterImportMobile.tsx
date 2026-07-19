@@ -19,8 +19,13 @@
  *   • unmount — React fires the final cleanup with the current URL.
  * The new URL is never revoked before the preview renders: revocation only
  * fires when the URL transitions away (to null or to a different URL).
+ *
+ * Stale-parse guard: each selection bumps a monotonic pick id; only the
+ * latest pick may commit its parse result. A stale or post-unmount result is
+ * discarded — and its avatar URL revoked immediately, since the effect above
+ * only owns URLs that were actually committed to state.
  */
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useState } from "react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useT } from "../../../i18n/context.js";
 import { useMobileFilePicker } from "./use-mobile-file-picker.js";
@@ -44,6 +49,17 @@ export const CharacterImportMobile = forwardRef<CharacterImportMobileHandle, Cha
   function CharacterImportMobile({ isImporting, onImportFiles }, ref) {
     const { t } = useT();
     const [preview, setPreview] = useState<CharacterPreview | null>(null);
+    // Monotonic pick generation: only the latest selection may commit its
+    // parse result. `mountedRef` additionally blocks commits after unmount.
+    const pickIdRef = useRef(0);
+    const mountedRef = useRef(true);
+
+    useEffect(() => {
+      mountedRef.current = true;
+      return () => {
+        mountedRef.current = false;
+      };
+    }, []);
 
     // Avatar URL lifecycle owner. Re-runs whenever the URL changes; the cleanup
     // of the previous render fires with the old URL, revoking it. Final unmount
@@ -57,10 +73,19 @@ export const CharacterImportMobile = forwardRef<CharacterImportMobileHandle, Cha
         // Clear any prior preview first — the effect cleanup above revokes the
         // old avatar URL when the state transitions to null. If parsing throws,
         // no new preview is set and no modal opens (per spec).
+        const pickId = ++pickIdRef.current;
         setPreview(null);
         try {
-          setPreview(await parseCharacterFile(file));
+          const parsed = await parseCharacterFile(file);
+          if (!mountedRef.current || pickId !== pickIdRef.current) {
+            // Stale or post-unmount result: never committed, so the effect
+            // above never owns this URL — revoke it here to avoid a leak.
+            if (parsed.avatarUrl) URL.revokeObjectURL(parsed.avatarUrl);
+            return;
+          }
+          setPreview(parsed);
         } catch (err) {
+          if (!mountedRef.current || pickId !== pickIdRef.current) return;
           toast.error(err instanceof Error ? err.message : t("import_error_read_card"));
         }
       },
