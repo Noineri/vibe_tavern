@@ -29,6 +29,7 @@ import { useCharacterStore } from "../../stores/character-store.js";
 import { useCharacterController } from "../../hooks/use-character-controller.js";
 import { useChatController } from "../../hooks/use-chat-controller.js";
 import { useBuildPanels } from "../../hooks/use-build-panels.js";
+import { useLastNonNull } from "../../hooks/use-last-non-null.js";
 import type { ChatListItem } from "../../app-client.js";
 
 
@@ -79,6 +80,12 @@ export function Rail({ hidden }: { hidden?: boolean }) {
   const [charMenuId, setCharMenuId] = useState<string | null>(null);
   const [chatMenuId, setChatMenuId] = useState<ChatId | null>(null);
   const [branchMenuId, setBranchMenuId] = useState<{ chatId: ChatId; branchId: ChatBranchId; label: string } | null>(null);
+  // Freeze the menu ids so the closing ActionSheet keeps rendering its last
+  // content during the Base UI exit transition (menuId → null on close;
+  // without this the sheet would empty mid-slide). See use-last-non-null.ts.
+  const frozenCharMenuId = useLastNonNull(charMenuId);
+  const frozenChatMenuId = useLastNonNull(chatMenuId);
+  const frozenBranchMenuId = useLastNonNull(branchMenuId);
 
   // Character list: search + sort + tag-filter (mirrors the desktop Sidebar).
   // Sort mode lives in the navigation store; query + tags are local UI state.
@@ -456,52 +463,39 @@ export function Rail({ hidden }: { hidden?: boolean }) {
       </Drawer.Root>
 
       {/* ═══ BOTTOM SHEETS (context menus) ═══ */}
-      {charMenuId && (
-        <ActionSheet
-          open={true}
-          title={allCharacters.find(c => c.id === charMenuId)?.name ?? ""}
-          items={rowActions.buildCharMenuItems(charMenuId, allCharacters.find(c => c.id === charMenuId)?.name ?? "")}
-          onClose={() => setCharMenuId(null)}
-        />
-      )}
-
-      {chatMenuId && (
-        <ActionSheet
-          open={true}
-          title={sectionChats.find(c => c.id === chatMenuId)?.title ?? ""}
-          items={rowActions.buildChatMenuItems(chatMenuId, sectionChats.find(c => c.id === chatMenuId)?.title ?? "")}
-          onClose={() => setChatMenuId(null)}
-        />
-      )}
-
-      {branchMenuId && (
-        <ActionSheet
-          open={true}
-          title={branchMenuId.label || t("sidebar_unnamed_branch")}
-          items={rowActions.buildBranchMenuItems({
-            chatId: branchMenuId.chatId,
-            branchId: branchMenuId.branchId,
-            label: branchMenuId.label,
-          })}
-          onClose={() => setBranchMenuId(null)}
-        />
-      )}
+      <ActionSheet
+        open={charMenuId !== null}
+        title={frozenCharMenuId ? (allCharacters.find(c => c.id === frozenCharMenuId)?.name ?? "") : ""}
+        items={frozenCharMenuId ? rowActions.buildCharMenuItems(frozenCharMenuId, allCharacters.find(c => c.id === frozenCharMenuId)?.name ?? "") : []}
+        onClose={() => setCharMenuId(null)}
+      />
+      <ActionSheet
+        open={chatMenuId !== null}
+        title={frozenChatMenuId ? (sectionChats.find(c => c.id === frozenChatMenuId)?.title ?? "") : ""}
+        items={frozenChatMenuId ? rowActions.buildChatMenuItems(frozenChatMenuId, sectionChats.find(c => c.id === frozenChatMenuId)?.title ?? "") : []}
+        onClose={() => setChatMenuId(null)}
+      />
+      <ActionSheet
+        open={branchMenuId !== null}
+        title={frozenBranchMenuId ? (frozenBranchMenuId.label || t("sidebar_unnamed_branch")) : ""}
+        items={frozenBranchMenuId ? rowActions.buildBranchMenuItems({ chatId: frozenBranchMenuId.chatId, branchId: frozenBranchMenuId.branchId, label: frozenBranchMenuId.label }) : []}
+        onClose={() => setBranchMenuId(null)}
+      />
 
       {/* ═══ TAG-FILTER BOTTOM SHEET ═══ */}
       {/* Multi-select tag picker — the mobile-native alternative to the desktop
           Sidebar's portaled tag combobox. Stays open while toggling so the user
           can pick several tags; backdrop tap or swipe-down dismisses. */}
-      {tagsSheetOpen && (
-        <TagFilterSheet
-          selectedTags={charSelectedTags}
-          tagPool={charTagPool}
-          filterLabel={t("filter_by_tags")}
-          resetLabel={t("reset")}
-          onToggle={(tag) => setCharSelectedTags(charSelectedTags.includes(tag) ? charSelectedTags.filter((x) => x !== tag) : [...charSelectedTags, tag])}
-          onReset={() => setCharSelectedTags([])}
-          onClose={() => setTagsSheetOpen(false)}
-        />
-      )}
+      <TagFilterSheet
+        open={tagsSheetOpen}
+        selectedTags={charSelectedTags}
+        tagPool={charTagPool}
+        filterLabel={t("filter_by_tags")}
+        resetLabel={t("reset")}
+        onToggle={(tag) => setCharSelectedTags(charSelectedTags.includes(tag) ? charSelectedTags.filter((x) => x !== tag) : [...charSelectedTags, tag])}
+        onReset={() => setCharSelectedTags([])}
+        onClose={() => setTagsSheetOpen(false)}
+      />
 
       {/* ═══ CHARACTER CHATS SHEET (tablet) ═══ */}
       {/* Launched from a collapsed-strip avatar tap — lists the character's chats

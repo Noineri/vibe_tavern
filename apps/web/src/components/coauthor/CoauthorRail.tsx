@@ -28,6 +28,7 @@ import { useNavigationStore, useChatStore, useModalStore } from "../../stores/in
 import { useCharacterStore } from "../../stores/character-store.js";
 import { useCharacterController } from "../../hooks/use-character-controller.js";
 import { useChatController } from "../../hooks/use-chat-controller.js";
+import { useLastNonNull } from "../../hooks/use-last-non-null.js";
 import type { ChatListItem } from "../../app-client.js";
 
 
@@ -54,6 +55,10 @@ export function CoauthorRail({ hidden }: { hidden?: boolean }) {
   // Context menus
   const [charMenuId, setCharMenuId] = useState<string | null>(null);
   const [chatMenuId, setChatMenuId] = useState<ChatId | null>(null);
+  // Freeze the menu ids so the closing ActionSheet keeps rendering its last
+  // content during the Base UI exit transition (menuId → null on close).
+  const frozenCharMenuId = useLastNonNull(charMenuId);
+  const frozenChatMenuId = useLastNonNull(chatMenuId);
 
   // Character list: search + sort + tag-filter (mirrors the desktop Sidebar).
   // Sort mode lives in the navigation store; query + tags are local UI state.
@@ -346,39 +351,33 @@ export function CoauthorRail({ hidden }: { hidden?: boolean }) {
       </Drawer.Root>
 
       {/* ═══ BOTTOM SHEETS (context menus) ═══ */}
-      {charMenuId && (
-        <ActionSheet
-          open={true}
-          title={allCharacters.find(c => c.id === charMenuId)?.name ?? ""}
-          items={rowActions.buildCharMenuItems(charMenuId, allCharacters.find(c => c.id === charMenuId)?.name ?? "")}
-          onClose={() => setCharMenuId(null)}
-        />
-      )}
-
-      {chatMenuId && (
-        <ActionSheet
-          open={true}
-          title={sectionChats.find(c => c.id === chatMenuId)?.title ?? ""}
-          items={rowActions.buildChatMenuItems(chatMenuId, sectionChats.find(c => c.id === chatMenuId)?.title ?? "")}
-          onClose={() => setChatMenuId(null)}
-        />
-      )}
+      <ActionSheet
+        open={charMenuId !== null}
+        title={frozenCharMenuId ? (allCharacters.find(c => c.id === frozenCharMenuId)?.name ?? "") : ""}
+        items={frozenCharMenuId ? rowActions.buildCharMenuItems(frozenCharMenuId, allCharacters.find(c => c.id === frozenCharMenuId)?.name ?? "") : []}
+        onClose={() => setCharMenuId(null)}
+      />
+      <ActionSheet
+        open={chatMenuId !== null}
+        title={frozenChatMenuId ? (sectionChats.find(c => c.id === frozenChatMenuId)?.title ?? "") : ""}
+        items={frozenChatMenuId ? rowActions.buildChatMenuItems(frozenChatMenuId, sectionChats.find(c => c.id === frozenChatMenuId)?.title ?? "") : []}
+        onClose={() => setChatMenuId(null)}
+      />
 
       {/* ═══ TAG-FILTER BOTTOM SHEET ═══ */}
       {/* Multi-select tag picker — the mobile-native alternative to the desktop
           Sidebar's portaled tag combobox. Stays open while toggling so the user
           can pick several tags; backdrop tap or swipe-down dismisses. */}
-      {tagsSheetOpen && (
-        <TagFilterSheet
-          selectedTags={charSelectedTags}
-          tagPool={charTagPool}
-          filterLabel={t("filter_by_tags")}
-          resetLabel={t("reset")}
-          onToggle={(tag) => setCharSelectedTags(charSelectedTags.includes(tag) ? charSelectedTags.filter((x) => x !== tag) : [...charSelectedTags, tag])}
-          onReset={() => setCharSelectedTags([])}
-          onClose={() => setTagsSheetOpen(false)}
-        />
-      )}
+      <TagFilterSheet
+        open={tagsSheetOpen}
+        selectedTags={charSelectedTags}
+        tagPool={charTagPool}
+        filterLabel={t("filter_by_tags")}
+        resetLabel={t("reset")}
+        onToggle={(tag) => setCharSelectedTags(charSelectedTags.includes(tag) ? charSelectedTags.filter((x) => x !== tag) : [...charSelectedTags, tag])}
+        onReset={() => setCharSelectedTags([])}
+        onClose={() => setTagsSheetOpen(false)}
+      />
 
       {/* ═══ CHARACTER CHATS SHEET (tablet) ═══ */}
       {/* Launched from a collapsed-strip avatar tap — lists the character's chats
