@@ -450,6 +450,9 @@ export const messageVariants = sqliteTable('message_variants', {
 export const promptPresets = sqliteTable('prompt_presets', {
   id: text('id').primaryKey(),
   name: text('name').notNull(),
+  // Manual list order (drag-to-reorder). Backfilled to created_at ASC by the
+  // migration that adds this column, so pre-migration order is preserved.
+  sortOrder: integer('sort_order').notNull().default(0),
   // Designated-default marker — exactly one row has is_default = 1 (enforced in
   // app logic: seeded by ensureDefault(), backfilled by migration 0001).
   // Replaces the dead `bind_provider_preset_id` model-binding column.
@@ -481,6 +484,8 @@ export const promptPresets = sqliteTable('prompt_presets', {
 export const providerProfiles = sqliteTable('provider_profiles', {
   id: text('id').primaryKey(),
   name: text('name').notNull(),
+  // Manual list order (drag-to-reorder). Backfilled to created_at ASC.
+  sortOrder: integer('sort_order').notNull().default(0),
   providerPreset: text('provider_preset').notNull(),
   endpoint: text('endpoint').notNull(),
   apiKey: text('api_key'),
