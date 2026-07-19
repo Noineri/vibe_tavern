@@ -52,6 +52,8 @@ interface LinkBindingPopoverProps {
   personaSectionLabel?: string;
   lorebookSectionLabel?: string;
   scriptSectionLabel?: string;
+  /** Disable the trigger button (e.g. while a generation is in flight). */
+  disabled?: boolean;
 }
 
 function resolveTargetAvatarUrl(target: LinkTarget): string | null {
@@ -110,6 +112,7 @@ export function LinkBindingPopover({
   personaSectionLabel,
   lorebookSectionLabel,
   scriptSectionLabel,
+  disabled,
 }: LinkBindingPopoverProps) {
   const [open, setOpen] = useState(false);
 
@@ -211,9 +214,11 @@ export function LinkBindingPopover({
             <button
               type="button"
               aria-label={addLabel}
+              disabled={disabled}
               className={cn(
-                "flex shrink-0 items-center justify-center rounded-full text-t3",
+                "flex shrink-0 items-center justify-center rounded-full text-t3 transition-opacity",
                 isMobile ? "h-11 w-11" : "h-[22px] w-[22px]",
+                disabled && "pointer-events-none opacity-40",
               )}
             >
               <span

@@ -34,7 +34,6 @@
  * `creator`/`character_version` are in `extensions`, absent from the snapshot).
  */
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AnimatePresence } from "framer-motion";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { buildCharacterDraftSchema, type BuildCharacterDraft } from "@vibe-tavern/api-contracts";
@@ -483,6 +482,7 @@ function CoauthorCharacterFormInner({ character }: CoauthorCharacterFormInnerPro
             isMobile={false}
             tooltipLabel={t("coauthor.context.add")}
             emptyLabel={t("coauthor.context.empty")}
+            disabled={locked}
           />
         </div>
         <p className="mt-1 font-ui text-[11px] leading-snug text-t4">{t("coauthor.context.caption_full")}</p>
@@ -520,16 +520,17 @@ function CoauthorCharacterFormInner({ character }: CoauthorCharacterFormInnerPro
         {/* Generating dim scrim — overlaps the editor body with
             pointer-events-auto to intercept clicks to CodeMirror widget
             decorations (greeting add/remove buttons) that bypass the
-            EditorView.editable facet. */}
-        <AnimatePresence>
-          {editorState === "generating" && (
-            <GeneratingScrim
-              variant="dim"
-              label={t("coauthor.editor.locked")}
-              pointerEvents="auto"
-            />
-          )}
-        </AnimatePresence>
+            EditorView.editable facet. No AnimatePresence: the enter fade-in
+            still plays (motion initial→animate), but exit is instant so the
+            scrim stops intercepting clicks the moment the lock lifts (no
+            ~0.2s gap where the editor is editable but clicks are absorbed). */}
+        {editorState === "generating" && (
+          <GeneratingScrim
+            variant="dim"
+            label={t("coauthor.editor.locked")}
+            pointerEvents="auto"
+          />
+        )}
 
         {showReview && (
           <ReviewingOverlay

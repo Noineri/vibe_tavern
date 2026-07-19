@@ -265,6 +265,23 @@ describe("CoauthorCharacterForm", () => {
 		expect(container.querySelector(".vibe-md-editor")).toBeNull();
 	});
 
+	it("CE-C1: picker trigger is disabled while generating (mutation guard)", () => {
+		// During generation the LinkBindingPopover trigger must be visually +
+		// functionally disabled so the user cannot open the picker and silently
+		// fail to persist context-link changes. This complements the handleSetContextLinks
+		// early-return guard (defense in depth).
+		__isSending = true;
+		useSnapshotStore.setState({
+			character: makeCharacter(),
+			activeChat: { id: TEST_CHAT } as never,
+		});
+		const { container } = render(<CoauthorCharacterForm />);
+		// The trigger button is the '+' button inside LinkBindingPopover.
+		const trigger = container.querySelector('button[aria-label]');
+		expect(trigger).toBeTruthy();
+		expect((trigger as HTMLButtonElement).disabled).toBe(true);
+	});
+
 	it("CE-C1: renders a pinned character as a pill (typed context link → LinkBindingPopover)", () => {
 		// The generalized picker reads typed coauthorContextLinks and resolves
 		// each link's entity for the pill row. Seed a character + a pinned link
