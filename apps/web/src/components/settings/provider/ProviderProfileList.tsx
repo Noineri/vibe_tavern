@@ -22,8 +22,10 @@ interface ProviderProfileListProps {
   profileSearch: string;
   onProfileSearchChange: (value: string) => void;
   onSelectProfile: (id: string) => void;
-  onAddProfile: () => void;
-  onReorder: (updates: Array<{ id: string; sortOrder: number }>) => void | Promise<unknown>;
+  /** When selectionOnly, hides the drag handle, reorder, and "+ New" button. */
+  onAddProfile?: () => void;
+  onReorder?: (updates: Array<{ id: string; sortOrder: number }>) => void | Promise<unknown>;
+  selectionOnly?: boolean;
 }
 
 // A single profile row with a dedicated ≡ drag handle (same pattern as
@@ -123,11 +125,12 @@ export function ProviderProfileList({
   onSelectProfile,
   onAddProfile,
   onReorder,
+  selectionOnly = false,
 }: ProviderProfileListProps) {
   const { t } = useT();
   const isMobile = useIsMobile();
   const { openDetail } = useMasterDetail();
-  const dndDisabled = profileSearch.trim().length > 0;
+  const dndDisabled = selectionOnly || profileSearch.trim().length > 0;
 
   const {
     displayItems,
@@ -148,7 +151,7 @@ export function ProviderProfileList({
       const reordered = arrayMove(currentItems, fromIdx, toIdx);
       return {
         optimisticItems: reordered,
-        persist: () => onReorder(reordered.map((p, i) => ({ id: p.id, sortOrder: i }))),
+        persist: () => onReorder?.(reordered.map((p, i) => ({ id: p.id, sortOrder: i }))),
       };
     },
   });
@@ -222,12 +225,14 @@ export function ProviderProfileList({
         </DragOverlay>
       </DndContext>
 
-      <div
-        className="mx-3 mt-3 cursor-pointer rounded-md border border-dashed border-border2 py-2 text-center font-ui text-[12px] font-medium text-t3 transition-colors hover:border-border hover:text-t1 hover:bg-s2"
-        onClick={() => { void onAddProfile(); openDetail(); }}
-      >
-        {t('new_profile_btn')}
-      </div>
+      {!selectionOnly && (
+        <div
+          className="mx-3 mt-3 cursor-pointer rounded-md border border-dashed border-border2 py-2 text-center font-ui text-[12px] font-medium text-t3 transition-colors hover:border-border hover:text-t1 hover:bg-s2"
+          onClick={() => { void onAddProfile?.(); openDetail(); }}
+        >
+          {t('new_profile_btn')}
+        </div>
+      )}
     </div>
   );
 }
