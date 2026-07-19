@@ -17,6 +17,7 @@ import {
 	buildReorderUpdates,
 	getSection,
 	entryOrderSignature,
+	flatOrderBySection,
 	POSITION_SECTIONS,
 	type LoreReorderUpdate,
 } from "./lore-entry-reorder.js";
@@ -164,6 +165,37 @@ describe("buildReorderUpdates — dense global sortOrder invariant", () => {
 		expect(reordered).toEqual(["b", "c", "a", "d"]);
 		// b is still before_char, a is now after_char, c/d unchanged in section.
 		expect(positionMap(updates)).toEqual({ a: "after_char", b: undefined, c: undefined, d: undefined });
+	});
+});
+
+describe("flatOrderBySection", () => {
+	it("groups entries by section in POSITION_SECTIONS order, regardless of input order", () => {
+		// Scrambled: after_char entries first, then before_char.
+		const scrambled = [
+			entry("c", "after_char", 2),
+			entry("a", "before_char", 0),
+			entry("d", "after_char", 3),
+			entry("b", "before_char", 1),
+		];
+		const flat = flatOrderBySection(scrambled);
+		// before_char section renders before after_char, intra-section order kept.
+		expect(flat.map((e) => e.id)).toEqual(["a", "b", "c", "d"]);
+	});
+
+	it("normalizes legacy/unknown positions into their UI section", () => {
+		// before_prompt → before_char (section 0); nonsense → after_char fallback (section 1).
+		const mixed = [entry("z", "nonsense", 0), entry("y", "before_prompt", 1)];
+		const flat = flatOrderBySection(mixed);
+		expect(flat.map((e) => e.id)).toEqual(["y", "z"]);
+	});
+
+	it("preserves intra-section order across a same-section run", () => {
+		const list = [
+			entry("a", "before_char", 0),
+			entry("b", "before_char", 1),
+			entry("c", "before_char", 2),
+		];
+		expect(flatOrderBySection(list).map((e) => e.id)).toEqual(["a", "b", "c"]);
 	});
 });
 

@@ -74,6 +74,25 @@ export function entryOrderSignature(items: LoreEntryRecord[]): string {
 	return items.map((entry) => `${entry.id}:${getSection(entry.position)}`).join("|");
 }
 
+/** Group entries by their position section (in POSITION_SECTIONS order) and
+ *  flatten into the single flat order the drag list renders and that
+ *  `buildReorderUpdates` operates on. Section assignment goes through
+ *  `getSection`, so legacy/unknown positions land in their normalized UI
+ *  section (or the after_char fallback) rather than forming ad-hoc groups.
+ *  This is the canonical section-aware flat order — LoreEntryList's rendered
+ *  list and its onReorder callback both read from here so the drop math always
+ *  sees exactly what the user dragged. */
+export function flatOrderBySection(entries: LoreEntryRecord[]): LoreEntryRecord[] {
+	const grouped = new Map<string, LoreEntryRecord[]>();
+	for (const sec of POSITION_SECTIONS) grouped.set(sec, []);
+	for (const entry of entries) {
+		const key = getSection(entry.position);
+		if (!grouped.has(key)) grouped.set(key, []);
+		grouped.get(key)!.push(entry);
+	}
+	return POSITION_SECTIONS.flatMap((sec) => grouped.get(sec) ?? []);
+}
+
 // ── The reorder contract ─────────────────────────────────────────────────
 
 export interface LoreReorderUpdate {

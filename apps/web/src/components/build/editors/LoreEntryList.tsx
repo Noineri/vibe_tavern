@@ -18,14 +18,12 @@
  * SortableContext over the flat list preserves the global-order semantics.
  */
 
-import { useState, useMemo, useCallback, useEffect, type CSSProperties, type HTMLAttributes } from "react";
-import { useDndSensors } from "../../../hooks/use-dnd-sensors.js";
+import { useMemo, useCallback, type CSSProperties, type HTMLAttributes } from "react";
+import { useReorderableList } from "../../../hooks/use-reorderable-list.js";
 import {
 	DndContext,
 	DragOverlay,
 	closestCenter,
-	type DragStartEvent,
-	type DragEndEvent,
 } from "@dnd-kit/core";
 import {
 	SortableContext,
@@ -45,6 +43,7 @@ import {
 	getSection,
 	entryOrderSignature,
 	buildReorderUpdates,
+	flatOrderBySection,
 } from "./lore-entry-reorder.js";
 
 // ── Entry Card (presentational, drag-agnostic) ──────────────────────────
@@ -301,25 +300,50 @@ export function LoreEntryList({
 	isMobile,
 	t,
 	onEntryClick,
-	onReorder,
+	onReorder: commitReorder,
 	onToggleEnabled,
 	dndDisabled = false,
 }: LoreEntryListProps) {
 	const { tDynamic } = useT();
-	const [activeDragId, setActiveDragId] = useState<string | null>(null);
-	const [optimisticEntries, setOptimisticEntries] = useState<LoreEntryRecord[] | null>(null);
-
-	const sensors = useDndSensors();
-
-	const displayEntries = optimisticEntries ?? entries;
-
-	// Clear the optimistic override once the store-confirmed entries catch up.
-	useEffect(() => {
-		if (!optimisticEntries) return;
-		if (entryOrderSignature(entries) === entryOrderSignature(optimisticEntries)) {
-			setOptimisticEntries(null);
-		}
-	}, [entries, optimisticEntries]);
+	// Mechanics (sensors, active-drag id, optimistic/reconcile/rollback) live in
+	// useReorderableList; this consumer owns only the position-aware semantics:
+	// buildReorderUpdates for the {sortOrder, position} math, entryOrderSignature
+	// as the reconcile equality (position section, not just order — the
+	// optimistic only changes position while the store renumbers sortOrder, so
+	// matching id+order alone could clear before the section move is confirmed).
+	const {
+		displayItems: displayEntries,
+		sensors,
+		activeDragItem: activeEntry,
+		handleDragStart,
+		handleDragEnd,
+		handleDragCancel,
+	} = useReorderableList({
+		items: entries,
+		getId: (e: LoreEntryRecord) => e.id,
+		itemsEqual: (a, b) => entryOrderSignature(a) === entryOrderSignature(b),
+		onReorder: (activeId, overId, currentItems) => {
+			const flatEntries = flatOrderBySection(currentItems);
+			const updates = buildReorderUpdates(flatEntries, activeId, overId);
+			if (!updates) {
+				return { optimisticItems: currentItems, persist: () => {} };
+			}
+			// Optimistic: reflect the drop immediately, before the store responds,
+			// so the dragged card does not snap back to its old slot during the
+			// async round-trip. Cleared by the hook's reconcile once entries catch up.
+			const byId = new Map(currentItems.map((e) => [e.id, e]));
+			const optimistic = updates
+				.map((u) => {
+					const e = byId.get(u.id);
+					return e ? (u.position ? { ...e, position: u.position } : e) : null;
+				})
+				.filter((e): e is LoreEntryRecord => e !== null);
+			return {
+				optimisticItems: optimistic,
+				persist: () => commitReorder(updates),
+			};
+		},
+	});
 
 	// Group entries by position for rendering (memoized).
 	const grouped = useMemo(() => {
@@ -335,50 +359,10 @@ export function LoreEntryList({
 		return map;
 	}, [displayEntries]);
 
-	// The single flat order the SortableContext and the commit logic operate on.
-	const renderedEntries = useMemo(
-		() => POSITION_SECTIONS.flatMap((sec) => grouped.get(sec) ?? []),
-		[grouped],
-	);
-
-	const activeEntry = useMemo(
-		() => displayEntries.find((entry) => entry.id === activeDragId) ?? null,
-		[activeDragId, displayEntries],
-	);
-
-	const handleDragStart = useCallback((event: DragStartEvent) => {
-		setActiveDragId(String(event.active.id));
-	}, []);
-
-	const handleDragEnd = useCallback(
-		(event: DragEndEvent) => {
-			const { active, over } = event;
-			setActiveDragId(null);
-			if (!over || active.id === over.id) return;
-
-			const updates = buildReorderUpdates(renderedEntries, String(active.id), String(over.id));
-			if (!updates) return;
-
-			// Optimistic: reflect the drop immediately, before the store responds,
-			// so the dragged card does not snap back to its old slot during the
-			// async round-trip. Cleared by the effect above once entries catch up.
-			const byId = new Map(displayEntries.map((e) => [e.id, e]));
-			const optimistic = updates
-				.map((u) => {
-					const e = byId.get(u.id);
-					return e ? (u.position ? { ...e, position: u.position } : e) : null;
-				})
-				.filter((e): e is LoreEntryRecord => e !== null);
-			setOptimisticEntries(optimistic);
-
-			void Promise.resolve(onReorder(updates)).catch((error) => {
-				// eslint-disable-next-line no-console
-				console.error("Failed to reorder lore entries", error);
-				setOptimisticEntries(null);
-			});
-		},
-		[renderedEntries, displayEntries, onReorder],
-	);
+	// The single flat order the SortableContext operates on — same definition
+	// the onReorder callback uses (flatOrderBySection), so the drop math always
+	// sees the exact order the user dragged.
+	const renderedEntries = useMemo(() => flatOrderBySection(displayEntries), [displayEntries]);
 
 	return (
 		<DndContext
@@ -386,7 +370,7 @@ export function LoreEntryList({
 			collisionDetection={closestCenter}
 			onDragStart={handleDragStart}
 			onDragEnd={handleDragEnd}
-			onDragCancel={() => setActiveDragId(null)}
+			onDragCancel={handleDragCancel}
 		>
 			<SortableContext items={renderedEntries.map((e) => e.id)} strategy={verticalListSortingStrategy}>
 				{POSITION_SECTIONS.map((sec) => {
