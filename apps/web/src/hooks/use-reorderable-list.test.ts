@@ -49,7 +49,7 @@ describe("useReorderableList", () => {
 		drop(result.current, "b", "c");
 
 		expect(onReorder).toHaveBeenCalledTimes(1);
-		expect(onReorder).toHaveBeenCalledWith("b", "c");
+		expect(onReorder).toHaveBeenCalledWith("b", "c", initial);
 		// Optimistic override active: display IS the optimistic array, not `initial`.
 		expect(result.current.displayItems).toBe(optimisticArr);
 
@@ -129,7 +129,7 @@ describe("useReorderableList", () => {
 		expect(result.current.activeDragItem).toBe(C);
 		drop(result.current, "c", "a");
 		expect(result.current.activeDragItem).toBeNull();
-		expect(onReorder).toHaveBeenCalledWith("c", "a");
+		expect(onReorder).toHaveBeenCalledWith("c", "a", initial);
 	});
 
 	test("the custom itemsEqual gates the reconcile clear (Lore's position-section case)", () => {

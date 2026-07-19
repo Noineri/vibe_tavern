@@ -45,9 +45,11 @@ export interface UseReorderableListOptions<T> {
 	getId: (item: T) => string;
 	/** Compute the optimistic array + commit for dropping `activeId` onto
 	 *  `overId`. Called only for real drops (never active === over). Receives
-	 *  the latest closure via an internal ref, so it may capture the
-	 *  consumer's current derived view (sorted/section-grouped list). */
-	onReorder: (activeId: string, overId: string) => ReorderResult<T>;
+	 *  the current `displayItems` (the hook's `optimistic ?? items`) so the
+	 *  consumer can derive its own view (sorted / section-grouped) without a
+	 *  forward-reference closure — the reorder math must operate on the exact
+	 *  flat order the user just dragged. */
+	onReorder: (activeId: string, overId: string, displayItems: T[]) => ReorderResult<T>;
 	/** Equality used to clear the optimistic override once `items` catches up.
 	 *  Defaults to a signature over `getId` + array order. Override when the
 	 *  reconcile must also match a derived field (Lore matches `position`
@@ -86,6 +88,11 @@ export function useReorderableList<T>({
 	const [optimisticItems, setOptimisticItems] = useState<T[] | null>(null);
 
 	const displayItems = optimisticItems ?? items;
+
+	// Latest displayItems for the stable handleDragEnd (read via ref so the
+	// handler identity never changes yet always sees the current list).
+	const displayItemsRef = useRef(displayItems);
+	displayItemsRef.current = displayItems;
 
 	// Hold the latest callbacks without re-creating the drag handlers (the
 	// useEvent pattern: assign during render, read from the ref inside the
@@ -127,6 +134,7 @@ export function useReorderableList<T>({
 		const { optimisticItems: optimistic, persist } = onReorderRef.current(
 			String(active.id),
 			String(over.id),
+			displayItemsRef.current,
 		);
 		setOptimisticItems(optimistic);
 		Promise.resolve(persist()).catch((error) => {

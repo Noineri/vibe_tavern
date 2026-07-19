@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { useCallback, useEffect, useState, useMemo } from "react";
 import { useDebouncedCallback } from "use-debounce";
 import { useKeyDown } from "../../../hooks/use-key-down.js";
-import { useDndSensors } from "../../../hooks/use-dnd-sensors.js";
+import { useReorderableList } from "../../../hooks/use-reorderable-list.js";
 import { Ic } from "../../shared/icons.js";
 import { AddButton } from "../../shared/add-button.js";
 import { useIsMobile } from "../../../hooks/use-mobile.js";
@@ -42,13 +42,12 @@ import {
 	DndContext,
 	DragOverlay,
 	closestCenter,
-	type DragStartEvent,
-	type DragEndEvent,
 } from "@dnd-kit/core";
 import {
 	SortableContext,
 	useSortable,
 	verticalListSortingStrategy,
+	arrayMove,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 
@@ -211,54 +210,44 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
   };
 
   // ── Drag-reorder (P5b) ────────────────────────────────
-  const sensors = useDndSensors();
-  const [activeDragId, setActiveDragId] = useState<string | null>(null);
-  const [optimisticScripts, setOptimisticScripts] = useState<ScriptRecord[] | null>(null);
-
-  // Sort by sortOrder for display; optimistic override takes precedence during
-  // the async round-trip so the dropped card doesn't snap back.
-  const displayScripts = useMemo(
-    () => [...(optimisticScripts ?? scripts)].sort((a, b) => a.sortOrder - b.sortOrder),
-    [scripts, optimisticScripts],
-  );
-
-  useEffect(() => {
-    if (!optimisticScripts) return;
-    const sig = (arr: ScriptRecord[]) => arr.map(s => `${s.id}:${s.sortOrder}`).join(",");
-    if (sig(scripts) === sig(optimisticScripts)) setOptimisticScripts(null);
-  }, [scripts, optimisticScripts]);
-
-  const activeDragScript = activeDragId ? displayScripts.find(s => s.id === activeDragId) ?? null : null;
-
-  const handleDragStart = useCallback((event: DragStartEvent) => {
-    setActiveDragId(String(event.active.id));
-  }, []);
-
-  const handleDragEnd = useCallback((event: DragEndEvent) => {
-    const { active, over } = event;
-    setActiveDragId(null);
-    if (!over || active.id === over.id) return;
-    const oldIndex = displayScripts.findIndex(s => s.id === active.id);
-    const newIndex = displayScripts.findIndex(s => s.id === over.id);
-    if (oldIndex === -1 || newIndex === -1) return;
-    // Reassign sortOrder = index; collect only changed scripts to persist.
-    const reordered = [...displayScripts];
-    const [moved] = reordered.splice(oldIndex, 1);
-    reordered.splice(newIndex, 0, moved);
-    const updates: Array<{ id: string; sortOrder: number }> = [];
-    const optimistic = reordered.map((s, i) => {
-      if (s.sortOrder !== i) updates.push({ id: s.id, sortOrder: i });
-      return { ...s, sortOrder: i };
-    });
-    setOptimisticScripts(optimistic);
-    void Promise.all(updates.map(u => handleUpdateScript(u.id, { sortOrder: u.sortOrder })))
-      .then(() => refreshScripts())
-      .catch((error) => {
-        // eslint-disable-next-line no-console
-        console.error("Failed to reorder scripts", error);
-        setOptimisticScripts(null);
+  // Mechanics (sensors, active-drag id, optimistic/reconcile/rollback) live in
+  // useReorderableList; this consumer owns only the flat-sortOrder semantics:
+  // arrayMove for the optimistic order, sortOrder=index renumber, and the
+  // diff-and-PATCH persist. The hook reconciles (clears optimistic) once the
+  // refreshed `scripts` catch up by id+order — the default itemsEqual covers it
+  // (the old hand-rolled `id:sortOrder` signature matched at the same refresh,
+  // and displayScripts sorts by sortOrder so the rendered view is identical).
+  const { displayItems, sensors, activeDragItem: activeDragScript, handleDragStart, handleDragEnd, handleDragCancel } = useReorderableList({
+    items: scripts,
+    getId: (s) => s.id,
+    onReorder: (activeId, overId, displayItems) => {
+      const displayScripts = [...displayItems].sort((a, b) => a.sortOrder - b.sortOrder);
+      const oldIndex = displayScripts.findIndex(s => s.id === activeId);
+      const newIndex = displayScripts.findIndex(s => s.id === overId);
+      if (oldIndex === -1 || newIndex === -1) {
+        return { optimisticItems: displayScripts, persist: () => {} };
+      }
+      // Reassign sortOrder = index; collect only changed scripts to persist.
+      const reordered = arrayMove(displayScripts, oldIndex, newIndex);
+      const updates: Array<{ id: string; sortOrder: number }> = [];
+      const optimistic = reordered.map((s, i) => {
+        if (s.sortOrder !== i) updates.push({ id: s.id, sortOrder: i });
+        return { ...s, sortOrder: i };
       });
-  }, [displayScripts]);
+      return {
+        optimisticItems: optimistic,
+        persist: () => Promise.all(updates.map(u => handleUpdateScript(u.id, { sortOrder: u.sortOrder })))
+          .then(() => refreshScripts()),
+      };
+    },
+  });
+
+  // Sort by sortOrder for display; the hook's displayItems already carries the
+  // optimistic override, this keeps the rendered view sortOrder-stable.
+  const displayScripts = useMemo(
+    () => [...displayItems].sort((a, b) => a.sortOrder - b.sortOrder),
+    [displayItems],
+  );
 
   const handleImportScript = async (code: string) => {
     setImportingScript(true);
@@ -404,7 +393,7 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
           collisionDetection={closestCenter}
           onDragStart={handleDragStart}
           onDragEnd={handleDragEnd}
-          onDragCancel={() => setActiveDragId(null)}
+          onDragCancel={handleDragCancel}
         >
           <SortableContext items={displayScripts.map(s => s.id)} strategy={verticalListSortingStrategy}>
             {displayScripts.map(s => (
