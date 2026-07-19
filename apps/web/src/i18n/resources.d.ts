@@ -1036,6 +1036,7 @@ export default interface Resources {
     "scn_edit_remove_item": "Remove item",
     "scn_edit_save": "Save",
     "scn_generate_prompt_label": "Generate prompt override",
+    "scn_hist_all_have_scene": "All assistant messages already have Scene state.",
     "scn_hist_cancel": "Cancel",
     "scn_hist_count_fill": "Up to {n} assistant messages",
     "scn_hist_count_rebuild": "{n} assistant messages",

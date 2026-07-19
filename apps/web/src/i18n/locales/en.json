@@ -93,6 +93,7 @@
   "scn_hist_mode_rebuild": "Rebuild all",
   "scn_hist_mode_rebuild_hint": "Regenerate every assistant message in this branch.",
   "scn_hist_no_messages": "No assistant messages in this branch yet.",
+  "scn_hist_all_have_scene": "All assistant messages already have Scene state.",
   "scn_hist_count_fill": "Up to {n} assistant messages",
   "scn_hist_count_rebuild": "{n} assistant messages",
   "scn_hist_warning": "This will make up to {n} generation calls and may take a while.",

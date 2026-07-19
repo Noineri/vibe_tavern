@@ -25,7 +25,7 @@ const mocks = vi.hoisted(() => {
   const state: {
     activeChat: { insightsConfig: { tracker: SceneTrackerConfig; trackerEnabled: boolean } };
     messageOrder: string[];
-    messagesById: Record<string, { id: string; role: string }>;
+    messagesById: Record<string, { id: string; role: string; sceneTracker?: unknown }>;
   } = {
     activeChat: { insightsConfig: { tracker, trackerEnabled: true } },
     messageOrder: ["m1", "m2", "m3"],
@@ -47,7 +47,7 @@ const mocks = vi.hoisted(() => {
 });
 
 vi.mock("../../../i18n/context.js", () => ({
-  useT: () => ({ t: (k: string) => k, tDynamic: (k: string) => k, locale: "en", setLocale: () => {}, ready: true }),
+  useT: () => ({ t: (k: string, opts?: Record<string, unknown>) => (opts && "n" in opts ? `${k}:${String(opts.n)}` : k), tDynamic: (k: string) => k, locale: "en", setLocale: () => {}, ready: true }),
 }));
 
 vi.mock("../../../stores/snapshot-store.js", () => ({
@@ -120,6 +120,35 @@ describe("SceneHistoryBackfill — idle form", () => {
     } finally {
       mocks.state.messageOrder = ["m1", "m2", "m3"];
       mocks.state.messagesById = { m1: { id: "m1", role: "assistant" }, m2: { id: "m2", role: "user" }, m3: { id: "m3", role: "assistant" } };
+    }
+  });
+
+  it("fill-missing counts only assistant messages without a Scene; rebuild counts all", () => {
+    // Give m1 a Scene so only m3 is missing (1 of 2 assistant messages).
+    mocks.state.messagesById.m1 = { id: "m1", role: "assistant", sceneTracker: { variantId: "m1" } };
+    try {
+      const { getByText } = render(<SceneHistoryBackfill chatId={CHAT} />);
+      // fill-missing is the default mode → effectiveCount = 1 (only m3 missing).
+      expect(getByText("scn_hist_count_fill:1")).toBeTruthy();
+      // Rebuild counts every assistant message (2).
+      fireEvent.click(getByText("scn_hist_mode_rebuild"));
+      expect(getByText("scn_hist_count_rebuild:2")).toBeTruthy();
+    } finally {
+      mocks.state.messagesById.m1 = { id: "m1", role: "assistant" };
+    }
+  });
+
+  it("fill-missing shows the all-have-scene state and disables Start when nothing is missing", () => {
+    mocks.state.messagesById.m1 = { id: "m1", role: "assistant", sceneTracker: { variantId: "m1" } };
+    mocks.state.messagesById.m3 = { id: "m3", role: "assistant", sceneTracker: { variantId: "m3" } };
+    try {
+      const { getByText, getByRole, queryByText } = render(<SceneHistoryBackfill chatId={CHAT} />);
+      expect(getByText("scn_hist_all_have_scene")).toBeTruthy();
+      expect((getByRole("button", { name: "scn_hist_start" }) as HTMLButtonElement).disabled).toBe(true);
+      expect(queryByText(/scn_hist_count_fill/)).toBeNull();
+    } finally {
+      mocks.state.messagesById.m1 = { id: "m1", role: "assistant" };
+      mocks.state.messagesById.m3 = { id: "m3", role: "assistant" };
     }
   });
 });
