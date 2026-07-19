@@ -3,7 +3,7 @@ import type { ChatId, CharacterId } from "@vibe-tavern/domain";
 import type { AppSnapshot } from "../../app-client.js";
 import { useChatStore } from "../chat-store.js";
 import { useSnapshotStore } from "../snapshot-store.js";
-import { syncBootstrapSnapshotForActiveChat } from "./bootstrap-actions.js";
+import { syncBootstrapSnapshotForActiveChat, patchUiSettingsAction, useBootstrapStore } from "./bootstrap-actions.js";
 import { useNavigationStore } from "../navigation-store.js";
 
 const chatId = (id: string) => id as ChatId;
@@ -106,6 +106,7 @@ beforeEach(() => {
   useSnapshotStore.getState().clear();
   useChatStore.getState().setActiveChatId(null);
   useNavigationStore.getState().setMode("play");
+  useBootstrapStore.setState({ data: null });
 });
 
 describe("syncBootstrapSnapshotForActiveChat", () => {
@@ -177,5 +178,96 @@ describe("syncBootstrapSnapshotForActiveChat", () => {
     const state = useSnapshotStore.getState();
     expect(state.activeChat?.id).toBe(chatId("initial-chat"));
     expect(state.persona?.name).toBe("Bootstrap persona");
+  });
+});
+
+describe("patchUiSettingsAction", () => {
+  const baseSettings = {
+    id: "default",
+    theme: "dark",
+    chatFontSize: 15,
+    uiFontSize: 14,
+    messageWidth: 700,
+    language: "en",
+    activePromptPresetId: null,
+    aiAssistantProviderId: null,
+    aiAssistantModelName: null,
+    coauthorProviderId: null,
+    coauthorModelName: null,
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  };
+
+  test("merges a coauthor binding patch into the live bootstrap store", async () => {
+    useBootstrapStore.setState({
+      data: {
+        initialChatId: null,
+        snapshot: null,
+        isFirstRun: false,
+        allCharacters: [],
+        promptPresets: [],
+        uiSettings: { ...baseSettings },
+        isArmServer: false,
+      },
+    });
+
+    const result = await patchUiSettingsAction(
+      { coauthorProviderId: "prov_1", coauthorModelName: "m" },
+      async (input) => ({ ...baseSettings, ...input, updatedAt: "2026-02-02" }),
+    );
+
+    expect(result.coauthorProviderId).toBe("prov_1");
+    const live = useBootstrapStore.getState().data!.uiSettings;
+    expect(live.coauthorProviderId).toBe("prov_1");
+    expect(live.coauthorModelName).toBe("m");
+    expect(live.updatedAt).toBe("2026-02-02");
+  });
+
+  test("explicit null clears a coauthor field in the live store", async () => {
+    useBootstrapStore.setState({
+      data: {
+        initialChatId: null,
+        snapshot: null,
+        isFirstRun: false,
+        allCharacters: [],
+        promptPresets: [],
+        uiSettings: { ...baseSettings, coauthorProviderId: "prov_1", coauthorModelName: "m" },
+        isArmServer: false,
+      },
+    });
+
+    await patchUiSettingsAction(
+      { coauthorProviderId: null, coauthorModelName: null },
+      async (input) => ({ ...baseSettings, ...input }),
+    );
+
+    const live = useBootstrapStore.getState().data!.uiSettings;
+    expect(live.coauthorProviderId).toBeNull();
+    expect(live.coauthorModelName).toBeNull();
+  });
+
+  test("preserves snapshot and other bootstrap payload fields", async () => {
+    const snap = snapshot("initial-chat", "Preserved");
+    useBootstrapStore.setState({
+      data: {
+        initialChatId: chatId("initial-chat"),
+        snapshot: snap,
+        isFirstRun: false,
+        allCharacters: [{ id: "char-1", name: "Char", subtitle: "", tags: [], avatarAssetId: null, avatarFullAssetId: null, avatarCropJson: null, avatarExt: null, avatarFullExt: null, updatedAt: "" }],
+        promptPresets: [],
+        uiSettings: { ...baseSettings },
+        isArmServer: false,
+      },
+    });
+
+    await patchUiSettingsAction(
+      { coauthorProviderId: "prov_2" },
+      async (input) => ({ ...baseSettings, ...input }),
+    );
+
+    const data = useBootstrapStore.getState().data!;
+    // Snapshot and character list survive the settings patch.
+    expect(data.snapshot).toBe(snap);
+    expect(data.allCharacters).toHaveLength(1);
+    expect(data.uiSettings.coauthorProviderId).toBe("prov_2");
   });
 });

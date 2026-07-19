@@ -46,13 +46,15 @@ export async function bootstrapApp(): Promise<{
       activePromptPresetId: null,
       aiAssistantProviderId: null,
       aiAssistantModelName: null,
+      coauthorProviderId: null,
+      coauthorModelName: null,
       updatedAt: "",
     },
     isArmServer: data.isArmServer ?? false,
   };
 }
 
-export async function updateUiSettings(input: Partial<Pick<UiSettingsRecord, "theme" | "chatFontSize" | "uiFontSize" | "messageWidth" | "language" | "activePromptPresetId" | "aiAssistantProviderId" | "aiAssistantModelName">>): Promise<UiSettingsRecord> {
+export async function updateUiSettings(input: Partial<Pick<UiSettingsRecord, "theme" | "chatFontSize" | "uiFontSize" | "messageWidth" | "language" | "activePromptPresetId" | "aiAssistantProviderId" | "aiAssistantModelName" | "coauthorProviderId" | "coauthorModelName">>): Promise<UiSettingsRecord> {
   const response = await client.api.settings.ui.$patch({ json: input });
   return unwrapRpc<UiSettingsRecord>(response);
 }

@@ -333,6 +333,8 @@ export interface UiSettingsRecord {
   activePromptPresetId: string | null;
   aiAssistantProviderId: string | null;
   aiAssistantModelName: string | null;
+  coauthorProviderId: string | null;
+  coauthorModelName: string | null;
   updatedAt: string;
 }
 
