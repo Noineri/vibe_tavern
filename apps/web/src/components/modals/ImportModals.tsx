@@ -23,6 +23,7 @@ import {
   type ChatPreview,
 } from "./import/parse-import-file.js";
 import { CharacterImportPreview, ChatImportPreview } from "./import/ImportPreview.js";
+import { ImportModalFooter } from "./import/ImportModalFooter.js";
 
 interface ImportModalCommonProps {
   isImporting: boolean;
@@ -318,7 +319,6 @@ export function StFolderImport({ onImported }: StFolderImportProps) {
     </div>
   );
 }
-// ─── CharacterImportModal ──────────────────────────────────────────────────
 
 export function CharacterImportModal(input: ImportModalCommonProps) {
   const { t } = useT();
@@ -390,7 +390,7 @@ export function CharacterImportModal(input: ImportModalCommonProps) {
           <CharacterImportPreview preview={preview} />
         )}
       </div>
-      <ModalFooter onClose={input.onClose} confirmLabel={t("add_to_library")} disabled={!preview || input.isImporting} busy={input.isImporting} onConfirm={confirm} />
+      <ImportModalFooter onClose={input.onClose} confirmLabel={t("add_to_library")} disabled={!preview || input.isImporting} busy={input.isImporting} onConfirm={confirm} />
     </ImportModalFrame>
   );
 }
@@ -460,7 +460,7 @@ export function ChatImportModal(input: ImportModalCommonProps & { activeChatId: 
           <ChatImportPreview preview={preview} />
         )}
       </div>
-      <ModalFooter onClose={input.onClose} confirmLabel={t("confirm_import")} disabled={!preview || input.isImporting} busy={input.isImporting} onConfirm={confirm} />
+      <ImportModalFooter onClose={input.onClose} confirmLabel={t("confirm_import")} disabled={!preview || input.isImporting} busy={input.isImporting} onConfirm={confirm} />
     </ImportModalFrame>
   );
 }
@@ -582,7 +582,4 @@ function StImportProgress(props: {
   );
 }
 
-function ModalFooter(props: { onClose: () => void; onConfirm: () => void; confirmLabel: string; disabled: boolean; busy: boolean }) {
-  const { t } = useT();
-  return <div className="flex shrink-0 items-center gap-2.5 border-t border-border px-5 py-3.5"><button type="button" className="h-[37px] cursor-pointer rounded-md bg-transparent px-4 font-ui text-[calc(var(--ui-fs)-2px)] text-t3 transition-all hover:text-t1" onClick={props.onClose}>{t("cancel")}</button><button type="button" className="h-[37px] cursor-pointer rounded-md bg-accent px-5 font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-on-accent transition-all hover:brightness-110 disabled:cursor-default disabled:opacity-45" disabled={props.disabled} onClick={props.onConfirm}>{props.busy ? t("importing") : props.confirmLabel}</button></div>;
-}
+
