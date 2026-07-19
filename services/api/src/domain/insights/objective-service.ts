@@ -53,7 +53,7 @@ type ResolvePrompt = typeof resolveInsightsPrompt;
 type ResolvedProfile = ProviderExecutionInput["profile"];
 
 /** Default recent-message window for the Objective model. */
-export const OBJECTIVE_CONTEXT_WINDOW = 10;
+export const OBJECTIVE_CONTEXT_WINDOW = 5;
 
 function isObjectiveEnabled(insightsConfig: Record<string, unknown>): boolean {
   return insightsConfig?.objectiveEnabled === true;

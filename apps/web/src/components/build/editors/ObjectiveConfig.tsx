@@ -214,7 +214,7 @@ const EMPTY_STATE: ObjectiveState = {
   shortTermGoals: [],
   autoCheckFrequency: 0,
   autoCheckEventCount: 0,
-  contextWindow: 10,
+  contextWindow: 5,
   injectionDepth: 1,
   generatePrompt: "",
   checkPrompt: "",
