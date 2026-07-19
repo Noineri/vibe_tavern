@@ -17,6 +17,7 @@ import { renderHook, waitFor } from "@testing-library/react";
 import type { CoauthorModule } from "@vibe-tavern/api-contracts";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
 import { useProviderDataStore } from "../../stores/provider-data-store.js";
+import { useBootstrapStore } from "../../stores/api-actions/bootstrap-actions.js";
 import {
 	listCoauthorModulesAction,
 	setCoauthorModuleAction,
@@ -75,6 +76,24 @@ vi.mock("../../hooks/use-provider-profiles.js", async (importOriginal) => {
 // its cache path. This pins the COMPOSITION (favorites ∩ tool-capable) the
 // coauthor box actually ships.
 
+// Mock patchUiSettingsAction so quickSwitchModel doesn't hit the network.
+vi.mock("../../stores/api-actions/bootstrap-actions.js", async (importOriginal) => {
+	const real = await importOriginal() as typeof import("../../stores/api-actions/bootstrap-actions.js");
+	return {
+		...real,
+		patchUiSettingsAction: vi.fn(async (_patch: never) => ({}) as never),
+	};
+});
+
+// Mock loadFavoriteModelsAction so the hook doesn't fire a network request.
+vi.mock("../../stores/api-actions/provider-actions.js", async (importOriginal) => {
+	const real = await importOriginal() as typeof import("../../stores/api-actions/provider-actions.js");
+	return {
+		...real,
+		loadFavoriteModelsAction: vi.fn(async (_profileId: string) => {}),
+	};
+});
+
 
 describe("useModuleSwitch", () => {
 	beforeEach(() => {
@@ -111,13 +130,40 @@ describe("useModuleSwitch", () => {
 
 describe("useCoauthorInputArea — tool-filtered favorites", () => {
 	beforeEach(() => {
-		// Seed the provider-data-store cache: gpt-4o advertises tools, gpt-3.5 does
-		// not. The REAL useToolCapableModels hook reads cachedModels.models and keeps
-		// only tool-capable ones — this is the path the coauthor box ships.
+		// Seed the bootstrap store with a Co-Author binding pointing at p1.
+		useBootstrapStore.setState({
+			data: {
+				initialChatId: null,
+				snapshot: null,
+				isFirstRun: false,
+				allCharacters: [],
+				promptPresets: [],
+				uiSettings: {
+					id: "default",
+					theme: "dark",
+					chatFontSize: 15,
+					uiFontSize: 14,
+					messageWidth: 700,
+					language: "en",
+					activePromptPresetId: null,
+					aiAssistantProviderId: null,
+					aiAssistantModelName: null,
+					coauthorProviderId: "p1",
+					coauthorModelName: "gpt-4o",
+					updatedAt: "2026-01-01",
+				},
+				isArmServer: false,
+			} as never,
+		});
+		// Seed the provider-data-store: profile p1 with tool-capable cache + favorites.
 		useProviderDataStore.setState({
 			profiles: [
 				{
 					id: "p1",
+					isActive: false,
+					defaultModel: "gpt-4o",
+					contextBudget: 128000,
+					maxTokens: 4096,
 					cachedModels: {
 						models: [
 							{ id: "gpt-4o", label: "GPT-4o", contextLength: 128000, capabilities: { tools: true } },
@@ -126,6 +172,12 @@ describe("useCoauthorInputArea — tool-filtered favorites", () => {
 					},
 				} as never,
 			],
+			favoritesByProfile: {
+				p1: [
+					{ id: "f1", profileId: "p1", modelId: "gpt-4o", label: "GPT-4o", sortOrder: 0 } as never,
+					{ id: "f2", profileId: "p1", modelId: "gpt-3.5", label: "GPT-3.5 (no tools)", sortOrder: 1 } as never,
+				],
+			},
 		});
 	});
 
@@ -134,5 +186,18 @@ describe("useCoauthorInputArea — tool-filtered favorites", () => {
 		const ids = result.current.toolFilteredFavorites.map((f) => f.modelId);
 		expect(ids).toEqual(["gpt-4o"]);
 		expect(ids).not.toContain("gpt-3.5");
+	});
+
+	it("active model and profile come from the Co-Author binding, not RP active", () => {
+		const { result } = renderHook(() => useCoauthorInputArea());
+		expect(result.current.activeProfileId).toBe("p1");
+		expect(result.current.activeModelId).toBe("gpt-4o");
+	});
+
+	it("handleSelectModel calls quickSwitchModel (updates coauthorModelName, not RP defaultModel)", async () => {
+		const { patchUiSettingsAction } = await import("../../stores/api-actions/bootstrap-actions.js");
+		const { result } = renderHook(() => useCoauthorInputArea());
+		result.current.handleSelectModel("gpt-4o-mini");
+		await waitFor(() => expect(patchUiSettingsAction).toHaveBeenCalledWith({ coauthorModelName: "gpt-4o-mini" }));
 	});
 });
