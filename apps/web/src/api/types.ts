@@ -130,6 +130,15 @@ export interface InsightsCompletionPatchResponse {
   };
 }
 
+/** Branch-scoped live context preview (lazy hydration target). The server echoes
+ *  the immutable { chatId, branchId } so the client can reject a result that no
+ *  longer matches the active branch before caching it. `preview` is null only
+ *  when assembly itself fails. */
+export interface ContextPreviewResponse {
+  target: { chatId: string; branchId: string };
+  preview: AssemblePromptResponse | null;
+}
+
 /** Non-persisting Scene preview (SCN-11): the scene state a DRAFT config would
  *  produce for the target variant, generated but NOT committed. Drives the
  *  config editor's cancellable trial-run preview. */
@@ -306,8 +315,6 @@ export interface AppSnapshot {
   summaries?: Array<{ id: string; kind: string; summary: string }>;
   /** Latest prompt trace for the active branch (null if no traces). Absent → preserve. */
   promptTrace?: PromptTraceRecordDto | null;
-  /** Live context preview (Phase 3.1 decouples this from prompt trace). Absent → preserve. */
-  contextPreview?: AssemblePromptResponse | null;
   /** Active character record. Absent → preserve. */
   character?: AppCharacter;
   /** Active persona record (null if no persona set). Absent → preserve. */

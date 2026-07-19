@@ -130,6 +130,15 @@ export function createChatRoutes(runtime: ChatRuntimeApi) {
       const { messageId, branchId } = c.req.valid("query");
       return c.json(await runtime.listPromptTraces(chatId, { messageId, branchId }));
     })
+    .post("/api/chats/:chatId/branches/:branchId/context-preview", async (c) => {
+      // Live context preview — a standalone branch-scoped query, decoupled
+      // from every navigation/mutation response so switching chats or branches
+      // never blocks on prompt assembly. POST (not GET) because current
+      // assembly persists lore/script activation state. The response echoes
+      // the immutable { chatId, branchId } target so the client can reject a
+      // result that no longer matches the active branch.
+      return c.json(await runtime.getContextPreview(c.req.param("chatId"), c.req.param("branchId")));
+    })
     .post("/api/chats/:chatId/messages/:messageId/branch", async (c) => {
       return c.json(await runtime.branchChat(c.req.param("chatId"), c.req.param("messageId")));
     })

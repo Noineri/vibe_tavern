@@ -247,7 +247,7 @@ function seed(messages: AppMessage[], persona: AppPersona | null = null, objecti
     branches: [],
     messages,
     summaries: [],
-    promptTrace: null, contextPreview: null,
+    promptTrace: null,
     character: makeCharacter("c1"),
     persona,
   } as unknown as AppSnapshot;
@@ -472,7 +472,7 @@ describe("MessageBlock — render isolation invariant", () => {
       } as unknown as AppSnapshot["activeChat"],
       activeBranch: { id: "b1", chatId: "chat-1", label: "main" } as unknown as AppSnapshot["activeBranch"],
       branches: [], messages: [makeSceneMessage("m1"), makeSceneMessage("m2")], summaries: [],
-      promptTrace: null, contextPreview: null, character: makeCharacter("c1"), persona: null,
+      promptTrace: null, character: makeCharacter("c1"), persona: null,
     } as unknown as AppSnapshot);
     chatStore.useChatStore.getState().setActiveChatId(asChatId(CHAT));
 

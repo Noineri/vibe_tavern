@@ -1,6 +1,6 @@
-import type { ChatId, ChatMode, ObjectiveMode, ObjectiveTaskStatus, PromptTraceRecordDto, SceneTrackerConfig } from "@vibe-tavern/domain";
+import type { ChatId, ChatMode, ObjectiveMode, ObjectiveTaskStatus, PromptTraceRecordDto, SceneTrackerConfig, ChatBranchId } from "@vibe-tavern/domain";
 import type { CoauthorApplyRequest, CoauthorCorrection, CoauthorModule, CoauthorModuleCreate, CoauthorModuleUpdate } from "@vibe-tavern/api-contracts";
-import type { AppSnapshot, AppMessage, ChatListItem, ChatSummaryRecord, AutoSummaryConfig, InsightsConfigPatch, InsightsCompletionPatchResponse, InsightsCompletionTarget, ScenePreviewResponse, SceneTargetResponse, SceneStatusResponse, SceneBackfillMode, SceneBackfillStatusResponse } from "./types.js";
+import type { AppSnapshot, AppMessage, ChatListItem, ChatSummaryRecord, AutoSummaryConfig, InsightsConfigPatch, InsightsCompletionPatchResponse, InsightsCompletionTarget, ScenePreviewResponse, SceneTargetResponse, SceneStatusResponse, SceneBackfillMode, SceneBackfillStatusResponse, ContextPreviewResponse } from "./types.js";
 import { client } from "./client.js";
 import { unwrapRpc, unwrapError } from "./unwrap.js";
 import { normalizeMessage, normalizeSnapshot } from "./normalize.js";
@@ -641,6 +641,24 @@ export async function fetchTraceHistory(
     query: { messageId: opts?.messageId, branchId: opts?.branchId },
   });
   return unwrapRpc<PromptTraceRecordDto[]>(response);
+}
+
+/**
+ * Lazy branch-scoped live context preview (decoupled from navigation/
+ * mutation responses so switching chats or branches never blocks on prompt
+ * assembly). The server echoes the immutable { chatId, branchId } target so
+ * the caller can reject a result that no longer matches the active branch.
+ */
+export async function fetchContextPreview(
+  chatId: ChatId,
+  branchId: ChatBranchId,
+  signal?: AbortSignal,
+): Promise<ContextPreviewResponse> {
+  const response = await client.api.chats[":chatId"].branches[":branchId"]["context-preview"].$post(
+    { param: { chatId, branchId } },
+    { init: { signal } },
+  );
+  return unwrapRpc<ContextPreviewResponse>(response);
 }
 
 // ─── Debug ──────────────────────────────────────────────────────────────

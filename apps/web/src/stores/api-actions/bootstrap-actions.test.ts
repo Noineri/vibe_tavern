@@ -54,7 +54,6 @@ function snapshot(id: string, personaName = "Persona"): AppSnapshot {
     messages: [],
     summaries: [],
     promptTrace: null,
-    contextPreview: null,
     character: {
       id: "char-1",
       name: "Character",

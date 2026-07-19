@@ -62,6 +62,7 @@ import {
 } from "../../app-client.js";
 import type { AutoSummaryConfig, ChatSummaryRecord, InsightsConfigPatch, ScenePreviewResponse, SceneTargetResponse, SceneStatusResponse, SceneBackfillMode, SceneBackfillStatusResponse } from "../../app-client.js";
 import { useSnapshotStore } from "../snapshot-store.js";
+import { invalidateActiveContextPreview } from "../context-preview-store.js";
 import { useSceneGenerationStore } from "../scene-generation-store.js";
 import { useChatStore } from "../chat-store.js";
 import { useNavigationStore } from "../navigation-store.js";
@@ -72,6 +73,15 @@ import { startInsightsCompletionRefreshFromSnapshot } from "./insights-completio
 // Single canonical backend snapshot cache.
 function syncSnapshot(snapshot: AppSnapshot) {
   useSnapshotStore.getState().ingestSnapshot(snapshot);
+  // Drop the cached live preview for the now-active (chatId, branchId) so the
+  // lazy hydration refetches after a prompt-affecting mutation (message/variant/
+  // summary/objective/memory/persona-switch edits). This is the action-boundary
+  // seam, not the canonical store — `ingestSnapshot` itself never guesses
+  // derived-query semantics. On branch fork/activate the active branch changed,
+  // so this drops the new branch's (likely absent) entry — a harmless no-op; on
+  // re-visiting a trace-less branch it may trigger one redundant background
+  // refetch, accepted as a minor correct inefficiency.
+  invalidateActiveContextPreview();
 }
 
 function syncSelectedCharacterFromSnapshot(snapshot: AppSnapshot): void {

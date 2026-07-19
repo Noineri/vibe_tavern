@@ -120,7 +120,7 @@ function seed(messages: AppMessage[], trackerEnabled = true): void {
       insightsConfig: { objectiveEnabled: false, trackerEnabled, tracker: { schema: SCHEMA, schemaHash: SCHEMA_HASH, revision: REVISION } as never },
     } as unknown as AppSnapshot["activeChat"],
     activeBranch: { id: "b1", chatId: "chat-1", label: "main" } as unknown as AppSnapshot["activeBranch"],
-    branches: [], messages, summaries: [], promptTrace: null, contextPreview: null,
+    branches: [], messages, summaries: [], promptTrace: null,
     character: null, persona: null,
   } as unknown as AppSnapshot;
   useSnapshotStore.getState().ingestSnapshot(snap);

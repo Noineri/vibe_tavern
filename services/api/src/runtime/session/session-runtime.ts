@@ -252,19 +252,11 @@ export function pickBootstrapChatId<T extends string>(
 	 */
 	async getSnapshot(chatId: ChatId): Promise<SessionSnapshot> {
 		/*
-		 * Monolithic snapshot — returns EVERY field on every call.
-		 *
-		 * Being replaced by per-endpoint response builders (Wave B1,
-		 * CHAT_FRONTEND_REFACTOR_PLAN.md). Until B1.2–B1.5 wire the builders
-		 * into routes, every mutation still returns this full snapshot —
-		 * correct but wasteful (renaming a chat re-computes contextPreview).
-		 *
-		 * `contextPreview` is always live: it reflects the current chat,
-		 * character, persona, and preset state on every call. Traces do NOT
-		 * shadow it — the trace is a historical record of a past assembly,
-		 * while `contextPreview` is the live "what would be sent right now".
-		 * The per-endpoint builders share this invariant (they compute the
-		 * preview via `assembleContextPreview` directly).
+		 * Monolithic snapshot — returns EVERY field on every call, EXCEPT the
+		 * live context preview, which is now a standalone branch-scoped query
+		 * (`getContextPreview` / POST .../context-preview) hydrated lazily by
+		 * the frontend. The latest `promptTrace` still rides the snapshot as
+		 * the cheap fallback for context counters and the Trace panel.
 		 */
 		const { chat, branch, messages: branchMessages } = await this.chatApp.getChatState(chatId);
 		// Only the single latest trace is embedded now (for the post-generation
@@ -296,12 +288,23 @@ export function pickBootstrapChatId<T extends string>(
 			messages: messagesWithVariants,
 			summaries,
 			promptTrace: latestTraces[0] ?? null,
-			contextPreview: await this.assembleContextPreview(chatId, branch.id as ChatBranchId),
 			character,
 			persona,
 		};
 	}
-	private async assembleContextPreview(chatId: ChatId, branchId: ChatBranchId): Promise<import("@vibe-tavern/domain").AssemblePromptResponse | null> {
+	/** Branch-scoped live context preview (lazy hydration target).
+	 *
+	 *  Validates `branchId` belongs to `chatId` explicitly: {@link getChatState}
+	 *  silently falls back to the root branch when given a foreign branchId, so
+	 *  without this check a wrong-branch request would assemble the root's
+	 *  preview instead of surfacing a 404. The ownership check therefore runs
+	 *  OUTSIDE the try/catch so a NotFound propagates to the route; the catch
+	 *  only masks assembly failures (returning null) as before. */
+	async getContextPreview(chatId: ChatId, branchId: ChatBranchId): Promise<import("@vibe-tavern/domain").AssemblePromptResponse | null> {
+		const branches = await this.stores.chats.getBranches(chatId);
+		if (!branches.some((b) => b.id === branchId)) {
+			throw notFound("Branch", `Branch '${branchId}' was not found for chat '${chatId}'.`);
+		}
 		try {
 			const profile = await this.getActiveProviderProfile();
 			const assembled = await this.assemblePrompt(chatId, branchId, {
@@ -327,9 +330,10 @@ export function pickBootstrapChatId<T extends string>(
 	//
 	// Narrowed alternatives to {@link getSnapshot}: each returns ONLY the
 	// fields a given mutation touches, so the frontend re-renders just the
-	// affected region. `contextPreview` is computed via `assembleContextPreview`
-	// directly and is always live. See the field-ownership table in
-	// `CHAT_FRONTEND_REFACTOR_PLAN.md` (Wave B1).
+	// affected region. None of them embed `contextPreview` — the live preview
+	// is a standalone branch-scoped lazy query (see `getContextPreview`), so
+	// navigation and mutations never block on prompt assembly. See the
+	// field-ownership table in `CHAT_FRONTEND_REFACTOR_PLAN.md` (Wave B1).
 	//
 	// B1.1: ADDITIVE ONLY — the builder methods + shared fetch primitives landed
 	// here, behavior-pinned by `session-runtime-builders.test.ts`.
@@ -337,9 +341,8 @@ export function pickBootstrapChatId<T extends string>(
 	// select/deleteMessageVariant, editMessage, deleteMessage, setGreetingIndex now
 	// return these narrowed shapes (not getSnapshot).
 	// B1.3: branch path WIRED — forkBranch, activateBranch, deleteBranch return
-	// BranchResponse; renameBranch returns BranchMetaResponse (no contextPreview —
-	// text unchanged). Remaining paths (navigation / config+summary) still serve
-	// `getSnapshot` until B1.4–B1.5.
+	// BranchResponse; renameBranch returns BranchMetaResponse. Remaining paths
+	// (navigation / config+summary) still serve `getSnapshot` until B1.4–B1.5.
 
 	/** Message-path mutations: send, regenerate, edit, delete, create-variant. */
 	async buildMessageResponse(
@@ -348,15 +351,13 @@ export function pickBootstrapChatId<T extends string>(
 	): Promise<MessageResponse> {
 		const { branch, messages } = await this.chatApp.getChatState(chatId);
 		const branchId = branch.id as ChatBranchId;
-		const [messagesWithVariants, contextPreview, latestTrace] = await Promise.all([
+		const [messagesWithVariants, latestTrace] = await Promise.all([
 			this.buildMessagesWithVariants(messages, branchId),
-			this.assembleContextPreview(chatId, branchId),
 			// Latest single trace only — the full history is lazy-loaded (TRACE_LAZY_LOADING).
 			this.getPromptTraceHistory(chatId, branchId, 1),
 		]);
 		const response: MessageResponse = {
 			messages: messagesWithVariants,
-			contextPreview,
 			promptTrace: latestTrace[0] ?? null,
 		};
 		if (opts?.summaries) {
@@ -374,7 +375,6 @@ export function pickBootstrapChatId<T extends string>(
 		const branchId = branch.id as ChatBranchId;
 		const response: VariantResponse = {
 			messages: await this.buildMessagesWithVariants(messages, branchId),
-			contextPreview: await this.assembleContextPreview(chatId, branchId),
 		};
 		if (opts?.activeChat) {
 			response.activeChat = chat;
@@ -400,11 +400,10 @@ export function pickBootstrapChatId<T extends string>(
 		// `chats` (sidebar list) is included because fork / activate change the
 		// chat's active branch, and each ChatListItem.messageCount is the active
 		// branch's count — the sidebar number must refresh on every branch switch.
-		const [messagesWithVariants, branches, summaries, contextPreview, chats] = await Promise.all([
+		const [messagesWithVariants, branches, summaries, chats] = await Promise.all([
 			measure("messages", () => this.buildMessagesWithVariants(messages, branchId)),
 			measure("branches", () => this.fetchBranchesWithCounts(chatId)),
 			measure("summaries", () => this.fetchSummaries(chatId, branchId)),
-			measure("contextPreview", () => this.assembleContextPreview(chatId, branchId)),
 			measure("chats", () => this.fetchChatList()),
 		]);
 		logger.info("response chat=%s branch=%s messages=%d totalMs=%d timings=%o", chatId, branchId, messages.length, Math.round(performance.now() - startedAt), timings);
@@ -413,12 +412,11 @@ export function pickBootstrapChatId<T extends string>(
 			activeBranch: branch,
 			branches,
 			summaries,
-			contextPreview,
 			chats,
 		};
 	}
 
-	/** Branch-metadata-only op: rename-branch (no text change → no contextPreview). */
+	/** Branch-metadata-only op: rename-branch (text unchanged). */
 	async buildBranchMetaResponse(chatId: ChatId): Promise<BranchMetaResponse> {
 		return { branches: await this.fetchBranchesWithCounts(chatId) };
 	}
@@ -435,11 +433,10 @@ export function pickBootstrapChatId<T extends string>(
 	): Promise<ChatSwitchResponse> {
 		const { chat, branch, messages } = await this.chatApp.getChatState(chatId);
 		const branchId = branch.id as ChatBranchId;
-		const [messagesWithVariants, branches, summaries, contextPreview, character] = await Promise.all([
+		const [messagesWithVariants, branches, summaries, character] = await Promise.all([
 			this.buildMessagesWithVariants(messages, branchId),
 			this.fetchBranchesWithCounts(chatId),
 			this.fetchSummaries(chatId, branchId),
-			this.assembleContextPreview(chatId, branchId),
 			this.resolver.getCharacter(chat.characterId),
 		]);
 		const response: ChatSwitchResponse = {
@@ -448,7 +445,6 @@ export function pickBootstrapChatId<T extends string>(
 			activeBranch: branch,
 			branches,
 			summaries,
-			contextPreview,
 			character,
 		};
 		if (opts?.persona) {
@@ -466,12 +462,11 @@ export function pickBootstrapChatId<T extends string>(
 	async buildChatCreateResponse(chatId: ChatId): Promise<ChatCreateResponse> {
 		const { chat, branch, messages } = await this.chatApp.getChatState(chatId);
 		const branchId = branch.id as ChatBranchId;
-		const [messagesWithVariants, branches, summaries, contextPreview, character, chats] =
+		const [messagesWithVariants, branches, summaries, character, chats] =
 			await Promise.all([
 				this.buildMessagesWithVariants(messages, branchId),
 				this.fetchBranchesWithCounts(chatId),
 				this.fetchSummaries(chatId, branchId),
-				this.assembleContextPreview(chatId, branchId),
 				this.resolver.getCharacter(chat.characterId),
 				this.fetchChatList(),
 			]);
@@ -482,21 +477,19 @@ export function pickBootstrapChatId<T extends string>(
 			activeBranch: branch,
 			branches,
 			summaries,
-			contextPreview,
 			character,
 		};
 	}
 
-	/** Config-patch ops: set-persona, set-preset, character-patch, memory-settings. */
+	/** Config-patch ops: set-persona, set-preset, character-patch, memory-settings.
+	 *  No longer embeds `contextPreview` (lazy branch-scoped query); returns only
+	 *  whichever of persona/character/activeChat the caller touched. */
 	async buildConfigPatchResponse(
 		chatId: ChatId,
 		opts?: { persona?: boolean; character?: boolean; activeChat?: boolean },
 	): Promise<ConfigPatchResponse> {
-		const { chat, branch } = await this.chatApp.getChatState(chatId);
-		const branchId = branch.id as ChatBranchId;
-		const response: ConfigPatchResponse = {
-			contextPreview: await this.assembleContextPreview(chatId, branchId),
-		};
+		const { chat } = await this.chatApp.getChatState(chatId);
+		const response: ConfigPatchResponse = {};
 		if (opts?.persona) {
 			response.persona = await this.resolver.getPersona(
 				chat.personaId ?? await this.persona.resolveDefaultId(),

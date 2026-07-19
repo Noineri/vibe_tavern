@@ -7,7 +7,7 @@ import { resolveEntityAvatarUrl } from "../../lib/avatar.js";
 import { type ThemeMode } from "../../themes/registry.js";
 import { useChatStore, useNavigationStore, useCharacterStore, useProviderStore, useModalStore, useIsSending } from "../../stores/index.js";
 import { saveCharacterAction } from "../../stores/api-actions/character-actions.js";
-import { useActiveTrace } from "../../stores/chat-selectors.js";
+import { useActiveTrace, useLazyContextPreview } from "../../stores/chat-selectors.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
 import { useBootstrapStore, fetchPersonasAction } from "../../stores/api-actions/bootstrap-actions.js";
 import { summarizeChatAction, saveChatSummaryAction } from "../../stores/api-actions/chat-actions.js";
@@ -143,6 +143,10 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
 
   // Prompt trace from normalized store
   const activePromptTrace = useActiveTrace(useChatStore((s) => s.selectedTraceId));
+  // Lazy context-preview hydration: fetches the branch-scoped preview only when
+  // no trace covers the active branch (the context-bar fallback). Mounted once
+  // here so it follows the active (chatId, branchId) across all chat modes.
+  useLazyContextPreview();
   const connection = useProviderStore((s) => s.connection);
   const canUseLiveApi = connection.status === "connected" && Boolean(connection.model);
 

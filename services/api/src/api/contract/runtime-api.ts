@@ -16,6 +16,7 @@ import type {
 	ChatListResponse,
 	ChatListItem,
 	ConfigPatchResponse,
+	ContextPreviewResponse,
 	InsightsCompletionPatchResponse,
 	SceneBackfillStatusResponse,
 	ScenePreviewResponse,
@@ -156,6 +157,12 @@ export interface ChatRuntimeApi {
 
 	// Prompt traces (lazy-loaded history)
 	listPromptTraces: (chatId: string, opts?: { messageId?: string; branchId?: string }) => Promise<PromptTraceRecordDto[]>;
+
+	// Live context preview (lazy branch-scoped hydration target). POST, not GET:
+	// current assembly persists lore/script activation state, so it is not a
+	// side-effect-free read. The branch is a path param so a long-running request
+	// can never silently follow whichever branch is active later.
+	getContextPreview: (chatId: string, branchId: string) => Promise<ContextPreviewResponse>;
 
 	// Summaries & Memory
 	listChatSummaries: (chatId: string) => Promise<ChatSummary[]>;

@@ -6,7 +6,7 @@ import type { StoreContainer } from "@vibe-tavern/db";
 import { validation, notFound } from "../../shared/errors.js";
 import { logSendDebug } from "../../shared/send-debug-log.js";
 import type { SessionRuntime } from "../../runtime/session/session-runtime.js";
-import type { VariantResponse, ChatSwitchResponse, ChatCreateResponse, ChatListResponse, ConfigPatchResponse } from "../contract/session-types.js";
+import type { VariantResponse, ChatSwitchResponse, ChatCreateResponse, ChatListResponse, ConfigPatchResponse, ContextPreviewResponse } from "../contract/session-types.js";
 import type { LiveChatOrchestrator } from "../../domain/chat/live-chat-orchestrator.js";
 import type { ChatSummaryService } from "../../domain/chat/chat-summary-service.js";
 import type { ProviderProfileService } from "../../domain/providers/provider-profile-service.js";
@@ -298,6 +298,13 @@ export class ChatAdapter implements ChatRuntimeApi {
 
 	listPromptTraces = (chatId: string, opts?: { messageId?: string; branchId?: string }) =>
 		this.sessionRuntime.listPromptTraces(brandId<ChatId>(chatId), opts);
+
+	getContextPreview = async (chatId: string, branchId: string): Promise<ContextPreviewResponse> => {
+		const typedChatId = brandId<ChatId>(chatId);
+		const typedBranchId = brandId<ChatBranchId>(branchId);
+		const preview = await this.sessionRuntime.getContextPreview(typedChatId, typedBranchId);
+		return { target: { chatId, branchId }, preview };
+	};
 
 	// ─── Summaries & Memory ─────────────────────────────────────────────
 

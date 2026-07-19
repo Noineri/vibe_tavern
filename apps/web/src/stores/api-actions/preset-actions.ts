@@ -9,6 +9,7 @@ import type { ChatId, PromptPresetDto } from "@vibe-tavern/domain";
 import { useBootstrapStore } from "./bootstrap-actions.js";
 import { waitForPendingVariantSelections } from "./chat-actions.js";
 import { useSnapshotStore } from "../snapshot-store.js";
+import { invalidateActiveContextPreview } from "../context-preview-store.js";
 
 async function refreshPresetsInBootstrap(): Promise<void> {
   const list = await listPromptPresets();
@@ -52,4 +53,7 @@ export async function setChatPromptPresetAction(chatId: ChatId, presetId: string
   await waitForPendingVariantSelections(chatId);
   const snapshot = await setChatPromptPreset(chatId, presetId);
   useSnapshotStore.getState().ingestSnapshot(snapshot);
+  // Preset change rewrites the assembled prompt — drop the cached live preview
+  // so lazy hydration refetches (its ConfigPatchResponse no longer embeds it).
+  invalidateActiveContextPreview();
 }

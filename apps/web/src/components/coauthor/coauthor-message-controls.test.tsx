@@ -74,7 +74,7 @@ function seed(messages: AppMessage[], isCoauthorMode: boolean): AppSnapshot {
     branches: [],
     messages,
     summaries: [],
-    promptTrace: null, contextPreview: null,
+    promptTrace: null,
     character: { id: "c1", name: "Char c1", avatarExt: null, avatarAssetId: null, avatarCropJson: null } as unknown as AppCharacter,
     persona: { id: "p1", name: "Persona", avatarExt: null, avatarAssetId: null, avatarCropJson: null } as unknown as AppPersona,
   } as unknown as AppSnapshot;

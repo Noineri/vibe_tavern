@@ -1,14 +1,14 @@
 /**
- * Wave A — Context preview liveness.
+ * Context preview liveness.
  *
- * `getSnapshot()` historically nulled `contextPreview` whenever any prompt
- * trace existed for the active branch (the trace "shadowed" the live
- * preview). Because chat creation records a trace for the greeting message,
- * this meant `contextPreview` was null for EVERY chat — not just
- * post-generation. The fix removes the ternary in `getSnapshot`; these tests
- * prove the preview is always live and reflects character edits.
- *
- * See PROMPT_TRACE_PAYLOAD_FIX_PLAN.md, Wave A.
+ * The live context preview used to be embedded in `getSnapshot()` and was
+ * historically nulled whenever any prompt trace existed (the trace "shadowed"
+ * the live preview). It is now a standalone branch-scoped lazy query
+ * (`SessionRuntime.getContextPreview` / POST .../context-preview), decoupled
+ * from every navigation/mutation response so switching chats or branches never
+ * blocks on prompt assembly. These tests prove the preview stays live,
+ * reflects character edits, and rejects a branch that does not belong to the
+ * chat — at the same real-runtime + temp-DB boundary as before.
  */
 import { describe, it, expect } from "bun:test";
 import { mkdir, rm } from "node:fs/promises";
@@ -17,7 +17,7 @@ import { tmpdir } from "node:os";
 import { createRuntimeStore } from "../src/runtime/session/session-runtime-store.js";
 import { SessionRuntime } from "../src/runtime/session/session-runtime.js";
 import { brandId } from "@vibe-tavern/domain";
-import type { ChatId, CharacterId } from "@vibe-tavern/domain";
+import type { ChatBranchId, ChatId, CharacterId } from "@vibe-tavern/domain";
 
 /** Spins up a real SessionRuntime against an isolated temp DB and seeds one chat. */
 async function createTestRuntime(): Promise<{
@@ -48,47 +48,66 @@ async function createTestRuntime(): Promise<{
 	};
 }
 
-describe("Wave A — context preview liveness", () => {
-	it("contextPreview is live even when a trace exists", async () => {
+describe("Context preview liveness", () => {
+	it("getContextPreview is live even when a trace exists", async () => {
 		const ctx = await createTestRuntime();
 		try {
 			const { runtime, chatId } = ctx;
 
 			// Chat creation records a trace for the greeting message, so the
-			// branch always has >= 1 trace — the condition that used to null
-			// the preview (the bug).
+		// branch always has >= 1 trace — the condition that used to null the
+		// preview (the bug). The preview is now fetched via the dedicated
+		// branch-scoped method, independent of snapshot/trace state.
 			const snap = await runtime.getSnapshot(chatId);
 			expect(snap.promptTrace).not.toBeNull();
+			expect("contextPreview" in snap).toBe(false); // no longer embedded
 
+			const branchId = snap.activeBranch!.id as ChatBranchId;
+			const preview = await runtime.getContextPreview(chatId, branchId);
 			// Fixed: the preview stays live despite the trace existing.
-			expect(snap.contextPreview).not.toBeNull();
-			expect(snap.contextPreview!.layers.length).toBeGreaterThan(0);
+			expect(preview).not.toBeNull();
+			expect(preview!.layers.length).toBeGreaterThan(0);
 		} finally {
 			await ctx.cleanup();
 		}
 	});
 
-	it("contextPreview reflects character edits (liveness)", async () => {
+	it("getContextPreview reflects character edits (liveness)", async () => {
 		const ctx = await createTestRuntime();
 		try {
 			const { runtime, chatId } = ctx;
 
-			const before = await runtime.getSnapshot(chatId);
-			expect(before.contextPreview).not.toBeNull();
-			const characterId = brandId<CharacterId>(before.character.id);
+			const snap = await runtime.getSnapshot(chatId);
+			const branchId = snap.activeBranch!.id as ChatBranchId;
+			const before = await runtime.getContextPreview(chatId, branchId);
+			expect(before).not.toBeNull();
+			const characterId = brandId<CharacterId>(snap.character.id);
 
 			// Edit the character's description and re-fetch.
 			await runtime.character.update(characterId, {
 				description: "edited description PROBE_MARKER",
 			});
-			const after = await runtime.getSnapshot(chatId);
-			expect(after.contextPreview).not.toBeNull();
+			const after = await runtime.getContextPreview(chatId, branchId);
+			expect(after).not.toBeNull();
 
 			// The assembled prompt must now contain the new description text.
-			const beforeRendered = JSON.stringify(before.contextPreview!.layers);
-			const afterRendered = JSON.stringify(after.contextPreview!.layers);
+			const beforeRendered = JSON.stringify(before!.layers);
+			const afterRendered = JSON.stringify(after!.layers);
 			expect(afterRendered).toContain("edited description PROBE_MARKER");
 			expect(beforeRendered).not.toContain("edited description PROBE_MARKER");
+		} finally {
+			await ctx.cleanup();
+		}
+	});
+
+	it("getContextPreview rejects a branch that does not belong to the chat", async () => {
+		const ctx = await createTestRuntime();
+		try {
+			const { runtime, chatId } = ctx;
+			const foreignBranchId = "brnch_does_not_belong" as ChatBranchId;
+			// A foreign branchId must surface as a NotFound, not silently assemble
+			// the chat's root branch (getChatState's dangling-branch fallback).
+			await expect(runtime.getContextPreview(chatId, foreignBranchId)).rejects.toThrow();
 		} finally {
 			await ctx.cleanup();
 		}

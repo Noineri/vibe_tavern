@@ -73,7 +73,6 @@ function fullSeed(): AppSnapshot {
     messages: [makeMessage("m1"), makeMessage("m2")],
     summaries: [],
     promptTrace: null,
-    contextPreview: null,
     character: makeCharacter("c1"),
     persona: null,
   } as unknown as AppSnapshot;
@@ -130,8 +129,8 @@ describe("ingestSnapshot — absence pipeline (Phase 3.4.1)", () => {
     } as AppSnapshot);
     expect(useSnapshotStore.getState().messageOrder).toEqual(["m1", "m2", "m3"]);
 
-    // A subsequent contextPreview-only response must NOT drop m3.
-    useSnapshotStore.getState().ingestSnapshot({ contextPreview: null } as AppSnapshot);
+    // A subsequent promptTrace-only response must NOT drop m3.
+    useSnapshotStore.getState().ingestSnapshot({ promptTrace: null } as AppSnapshot);
     expect(useSnapshotStore.getState().messageOrder).toEqual(["m1", "m2", "m3"]);
     expect(originalOrder).toEqual(["m1", "m2"]);
   });

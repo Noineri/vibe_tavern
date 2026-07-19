@@ -21,6 +21,7 @@ import {
 } from "../../app-client.js";
 import type { ChatId } from "@vibe-tavern/domain";
 import { useSnapshotStore } from "../snapshot-store.js";
+import { invalidateActiveContextPreview } from "../context-preview-store.js";
 import { useChatStore } from "../chat-store.js";
 import { fetchBootstrapAction } from "./bootstrap-actions.js";
 import { fetchChat } from "../../app-client.js";
@@ -35,6 +36,9 @@ export async function saveCharacterAction(input: {
 }): Promise<void> {
   const snapshot = await updateCharacter(input.characterId, input.patch);
   useSnapshotStore.getState().ingestSnapshot(snapshot);
+  // Character fields feed prompt layers — drop the cached live preview so lazy
+  // hydration refetches (its response no longer embeds it).
+  invalidateActiveContextPreview();
 }
 
 export async function createCharacterAction(
@@ -151,6 +155,9 @@ export async function activateCharacterVersionAction(characterId: string, versio
     const snapshot = await fetchChat(activeChatId);
     if (useChatStore.getState().activeChatId === activeChatId) {
       useSnapshotStore.getState().ingestSnapshot(snapshot);
+      // Version swap rewrote the character's prompt content — drop the cached
+      // live preview so lazy hydration refetches.
+      invalidateActiveContextPreview();
     }
   }
   return version;

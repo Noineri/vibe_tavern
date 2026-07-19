@@ -47,14 +47,14 @@ describe("normalizeSnapshot — absence preservation (Phase 3.4.1)", () => {
   test("absent fields are NOT added to the output object", () => {
     const partial = {
       character: makeCharacter(),
-      contextPreview: null,
+      promptTrace: null,
     } as AppSnapshot;
 
     const out = normalizeSnapshot(partial);
 
     // present fields survive
     expect(out.character?.id).toBe("c1");
-    expect(out.contextPreview).toBeNull();
+    expect(out.promptTrace).toBeNull();
 
     // absent fields stay ABSENT (the fix) — not coerced to [] / null
     expect("messages" in out).toBe(false);
@@ -66,7 +66,6 @@ describe("normalizeSnapshot — absence preservation (Phase 3.4.1)", () => {
     expect("persona" in out).toBe(false);
     expect("activeChat" in out).toBe(false);
     expect("activeBranch" in out).toBe(false);
-    expect("promptTrace" in out).toBe(false);
 
     // and reading them yields undefined (not [])
     expect(out.messages).toBeUndefined();
