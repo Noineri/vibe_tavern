@@ -34,6 +34,7 @@
  * `creator`/`character_version` are in `extensions`, absent from the snapshot).
  */
 import { useEffect, useMemo, useRef, useState } from "react";
+import { AnimatePresence } from "framer-motion";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { buildCharacterDraftSchema, type BuildCharacterDraft } from "@vibe-tavern/api-contracts";
@@ -65,6 +66,7 @@ import type { CoauthorToolActivity } from "../../stores/coauthor-turn-store.js";
 import { useCharacterController } from "../../hooks/use-character-controller.js";
 import { useT } from "../../i18n/context.js";
 import { LinkBindingPopover, type LinkTarget } from "../shared/LinkBindingPopover.js";
+import { GeneratingScrim } from "../shared/generation-feedback.js";
 import { BoundResourcesField } from "../shared/BoundResourcesField.js";
 import { listAllLorebooks } from "../../api/lorebook-api.js";
 import { listAllScripts } from "../../api/script-api.js";
@@ -175,7 +177,7 @@ function CoauthorCharacterFormInner({ character }: CoauthorCharacterFormInnerPro
     [allScripts],
   );
   const handleSetContextLinks = (next: { targetType: "character" | "persona" | "lorebook" | "script"; targetId: string }[]) => {
-    if (!chatId) return;
+    if (!chatId || locked) return;
     // Wholesale replace — the typed links in the picker are the new pinned set.
     void setCoauthorContextLinksAction(brandId<ChatId>(chatId), next);
   };
@@ -209,6 +211,8 @@ function CoauthorCharacterFormInner({ character }: CoauthorCharacterFormInnerPro
       ? "reviewing"
       : "idle";
   const locked = editorState !== "idle";
+  const lockedRef = useRef(locked);
+  lockedRef.current = locked;
 
   // Aggregate the turn into a proposal (proposed body for the diff + Apply
   // request). Recomputed only while reviewing; the form draft is stable during
@@ -274,6 +278,7 @@ function CoauthorCharacterFormInner({ character }: CoauthorCharacterFormInnerPro
     }
   }
   function addGreeting(): void {
+    if (lockedRef.current) return;
     const current = form.getValues().alternateGreetings ?? [];
     setValue("alternateGreetings", [...current, ""], { shouldDirty: true });
     forceEditorFromBody();
@@ -285,6 +290,7 @@ function CoauthorCharacterFormInner({ character }: CoauthorCharacterFormInnerPro
     }
   }
   function removeGreeting(altIndex: number): void {
+    if (lockedRef.current) return;
     const current = form.getValues().alternateGreetings ?? [];
     setValue("alternateGreetings", current.filter((_, i) => i !== altIndex), { shouldDirty: true });
     forceEditorFromBody();
@@ -510,6 +516,20 @@ function CoauthorCharacterFormInner({ character }: CoauthorCharacterFormInnerPro
           />
           <p className="mt-1.5 font-ui text-[11px] text-t4">{t("coauthor.editor.hint")}</p>
         </div>
+
+        {/* Generating dim scrim — overlaps the editor body with
+            pointer-events-auto to intercept clicks to CodeMirror widget
+            decorations (greeting add/remove buttons) that bypass the
+            EditorView.editable facet. */}
+        <AnimatePresence>
+          {editorState === "generating" && (
+            <GeneratingScrim
+              variant="dim"
+              label={t("coauthor.editor.locked")}
+              pointerEvents="auto"
+            />
+          )}
+        </AnimatePresence>
 
         {showReview && (
           <ReviewingOverlay

@@ -185,11 +185,12 @@ describe("CoauthorCharacterForm", () => {
 	it("idle: editor is editable and the header shows the saved subtitle", () => {
 		__isSending = false;
 		useSnapshotStore.setState({ character: makeCharacter() });
-		const { container, getByText } = render(<CoauthorCharacterForm />);
+		const { container, getByText, queryAllByText } = render(<CoauthorCharacterForm />);
 		// Saved subtitle (i18n key returned verbatim by the mock).
 		expect(getByText("saved_state")).toBeTruthy();
 		// Lock affordance is NOT shown while idle.
-		expect(() => getByText("coauthor.editor.locked")).toThrow();
+		const matches = queryAllByText("coauthor.editor.locked");
+		expect(matches.length).toBe(0);
 		// Editable (graceful skip if CM did not mount).
 		const editable = cmEditable(container);
 		if (editable !== null) expect(editable).not.toBe("false");
@@ -198,12 +199,47 @@ describe("CoauthorCharacterForm", () => {
 	it("generating (isSending): editor locks and the 'AI is editing…' affordance shows", () => {
 		__isSending = true;
 		useSnapshotStore.setState({ character: makeCharacter() });
-		const { container, getByText } = render(<CoauthorCharacterForm />);
+		const { container, getAllByText } = render(<CoauthorCharacterForm />);
 		// Lock affordance (i18n key returned verbatim by the mock).
-		expect(getByText("coauthor.editor.locked")).toBeTruthy();
+		// Use getAllByText — the scrim also renders the same key during generation.
+		expect(getAllByText("coauthor.editor.locked").length).toBeGreaterThanOrEqual(1);
 		// Locked (graceful skip if CM did not mount).
 		const editable = cmEditable(container);
 		if (editable !== null) expect(editable).toBe("false");
+	});
+
+	// ── Generation scrim (COAUTHOR_GENERATION_MUTATION_GUARDS) ──────────────
+	// The scrim is a dim overlay with pointer-events-auto that renders over the
+	// editor body while generating. It intercepts clicks to CodeMirror widget
+	// decorations (greeting add/remove buttons) that bypass the EditorView.editable
+	// facet, and provides the visual frozen-surface cue.
+
+	it("generation scrim renders over the editor body while generating", () => {
+		__isSending = true;
+		useSnapshotStore.setState({ character: makeCharacter() });
+		const { container, getAllByText } = render(<CoauthorCharacterForm />);
+		// Scrim label is the same i18n key as the header subtitle.
+		expect(getAllByText("coauthor.editor.locked").length).toBeGreaterThanOrEqual(1);
+		// The scrim must have the dim variant classes and intercept pointers.
+		const scrim = container.querySelector("[class*='pointer-events-auto']");
+		expect(scrim).toBeTruthy();
+		expect((scrim as HTMLElement)?.className ?? "").toContain("bg-surface/55");
+		// Spinner is rendered.
+		expect(container.querySelector(".animate-spin")).toBeTruthy();
+	});
+
+	it("generation scrim is gone when isSending returns to false (lock released)", async () => {
+		__isSending = true;
+		useSnapshotStore.setState({ character: makeCharacter() });
+		const { rerender, queryAllByText } = render(<CoauthorCharacterForm />);
+		expect(queryAllByText("coauthor.editor.locked")).toBeTruthy();
+
+		__isSending = false;
+		rerender(<CoauthorCharacterForm />);
+		// AnimatePresence holds the exiting element briefly; waitFor polls until gone.
+		await waitFor(() => {
+			expect(queryAllByText("coauthor.editor.locked")).toHaveLength(0);
+		});
 	});
 
 	it("locks when a generation starts mid-session (reconfigure effect)", () => {
@@ -211,12 +247,12 @@ describe("CoauthorCharacterForm", () => {
 		// EFFECT (Compartment reconfigure), not just the initial facet value.
 		__isSending = false;
 		useSnapshotStore.setState({ character: makeCharacter() });
-		const { container, rerender, getByText } = render(<CoauthorCharacterForm />);
-		expect(() => getByText("coauthor.editor.locked")).toThrow();
+		const { container, rerender, queryAllByText, getAllByText } = render(<CoauthorCharacterForm />);
+		expect(queryAllByText("coauthor.editor.locked").length).toBe(0);
 
 		__isSending = true;
 		rerender(<CoauthorCharacterForm />);
-		expect(getByText("coauthor.editor.locked")).toBeTruthy();
+		expect(getAllByText("coauthor.editor.locked").length).toBeGreaterThanOrEqual(1);
 		const editable = cmEditable(container);
 		if (editable !== null) expect(editable).toBe("false");
 	});
