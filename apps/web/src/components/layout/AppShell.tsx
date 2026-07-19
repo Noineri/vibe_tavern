@@ -1,5 +1,6 @@
 import { useRef, useState, useEffect } from "react";
 import { Toaster, toast } from "sonner";
+import * as Popover from "@radix-ui/react-popover";
 import { useT } from "../../i18n/context.js";
 import { normalizeLocale } from "../../i18n/registry.js";
 import { Icons } from "../shared/icons.js";
@@ -298,23 +299,38 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
   return (
     <div className="flex text-t1 font-ui" style={{ height: "100dvh", paddingBottom: "env(safe-area-inset-bottom, 0px)", overflow: "hidden" }}>
       {shell.leftChrome}
-      <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
-        {shell.topBar}
-        {shellSurface}
-      </main>
+      {/* One Radix Popover.Root owns the desktop TweaksPanel: the Trigger lives
+          in the mode-specific top bar (TopBar for rp, CoauthorTopBar for
+          co-author — mutually exclusive, so exactly one Trigger renders), and
+          the Content is <TweaksPanel> below. Radix anchors Content to the
+          Trigger, animates open/close, and coordinates outside-click via the
+          DismissableLayer stack (fixes the nested language DropdownSelect:
+          see TweaksPanel.tsx). Mobile uses <MobileSettings> (a BottomSheet)
+          driven by the same tweaksOpen flag — it renders outside this Root. */}
+      <Popover.Root open={tweaksOpen} onOpenChange={setTweaksOpen}>
+        <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
+          {shell.topBar}
+          {shellSurface}
+        </main>
+        {!isMobile && (
+          <TweaksPanel
+            settings={tweaksPanelSettings}
+            setSetting={handleSetTweak}
+            onOpenMobileAccess={async () => {
+              // Ensure a token exists before opening the modal
+              try {
+                const resp = await fetch("/api/settings/mobile-access");
+                if (resp.ok) {
+                  const data = await resp.json();
+                  if (!data.token) await fetch("/api/settings/mobile-access/regenerate", { method: "POST" });
+                }
+              } catch { /* ignore */ }
+              setMobileAccessOpen(true);
+            }}
+          />
+        )}
+      </Popover.Root>
       {shell.rightPanel}
-
-      {tweaksOpen && <TweaksPanel settings={tweaksPanelSettings} setSetting={handleSetTweak} onClose={() => setTweaksOpen(false)} onOpenMobileAccess={async () => {
-          // Ensure a token exists before opening the modal
-          try {
-            const resp = await fetch("/api/settings/mobile-access");
-            if (resp.ok) {
-              const data = await resp.json();
-              if (!data.token) await fetch("/api/settings/mobile-access/regenerate", { method: "POST" });
-            }
-          } catch { /* ignore */ }
-          setMobileAccessOpen(true);
-        }} />}
       {isMobile && <MobileSettings
         open={tweaksOpen}
         onClose={() => setTweaksOpen(false)}

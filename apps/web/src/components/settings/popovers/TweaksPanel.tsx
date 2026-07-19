@@ -1,8 +1,7 @@
-import React, { useEffect, useRef } from 'react';
+import * as Popover from "@radix-ui/react-popover";
 import { useT } from '../../../i18n/context.js';
 import { LOCALES } from '../../../i18n/registry.js';
 import { Icons } from '../../shared/icons.js';
-import { useIsMobile } from '../../../hooks/use-mobile.js';
 import { SegmentedControl } from '../../shared/SegmentedControl.js';
 import { DropdownSelect } from '../../shared/DropdownSelect.js';
 import { THEMES, type ThemeMode } from '../../../themes/registry.js';
@@ -21,32 +20,22 @@ interface TweaksPanelProps {
   onOpenMobileAccess: () => void;
 }
 
-export function TweaksPanel({ settings, setSetting, onOpenMobileAccess, onClose }: TweaksPanelProps & { onClose?: () => void }) {
+// ── Presentational body ────────────────────────────────────────────────
+// Extracted from the Radix shell so the rendered rows (theme radios, font
+// sizes, language DropdownSelect, …) are testable WITHOUT a Popover.Root
+// ancestor and WITHOUT the Radix Portal — which does not mount in happy-dom
+// (getBoundingClientRect reports 0×0, so the Popper never anchors; see the
+// NOTE in LinkBindingPopover.test.tsx). `<TweaksPanel>` below wraps this body
+// in `<Popover.Content>`; the body is what the rows-coverage test renders.
+
+export function TweaksPanelBody({ settings, setSetting, onOpenMobileAccess }: TweaksPanelProps) {
   const { t } = useT();
-  const isMobile = useIsMobile();
-  const panelRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (isMobile) return;
-    function handleClick(e: MouseEvent) {
-      const target = e.target as HTMLElement;
-      if (target.closest('[data-dropdown-select-content="true"]')) return;
-      if (panelRef.current && !panelRef.current.contains(target)) {
-        onClose?.();
-      }
-    }
-    // Delay to avoid the same click that opened the panel
-    const timer = setTimeout(() => document.addEventListener('mousedown', handleClick), 0);
-    return () => { clearTimeout(timer); document.removeEventListener('mousedown', handleClick); };
-  }, [isMobile, onClose]);
-
-  if (isMobile) return null;
 
   // Theme options derive from the registry — a newly added theme appears
   // here automatically (no hardcoded icon list to keep in sync).
-  const themeOptions = THEMES.map((t) => {
-    const Icon = Icons[t.icon];
-    return { value: t.id, label: <Icon /> };
+  const themeOptions = THEMES.map((tm) => {
+    const Icon = Icons[tm.icon];
+    return { value: tm.id, label: <Icon /> };
   });
 
   const fontSizeOptions = [
@@ -70,7 +59,7 @@ export function TweaksPanel({ settings, setSetting, onOpenMobileAccess, onClose 
   const langOptions = LOCALES.map((l) => ({ id: l.id, label: l.label }));
 
   return (
-    <div ref={panelRef} className="glass-blur fixed right-4 top-[68px] z-[300] w-[280px] rounded-lg border border-border2 bg-glass-bg shadow-[0_12px_28px_rgba(0,0,0,0.45)] p-3">
+    <div className="glass-blur w-[280px] rounded-lg border border-border2 bg-glass-bg shadow-[0_12px_28px_rgba(0,0,0,0.45)] p-3">
       <div className="mb-3 font-ui text-[calc(var(--ui-fs)-3px)] font-semibold uppercase tracking-[0.05em] text-t1">{t("tweaks_title")}</div>
 
       {/* Theme */}
@@ -142,5 +131,36 @@ export function TweaksPanel({ settings, setSetting, onOpenMobileAccess, onClose 
         </div>
       </div>
     </div>
+  );
+}
+
+// ── Radix Popover shell ────────────────────────────────────────────────
+// Desktop interface-settings popover. Migrated from a hand-rolled `fixed` div
+// + document `mousedown` listener to the shared Radix Popover primitive every
+// other settings popover already uses (QuickSwitchPopover, TokenCounterPopover,
+// LinkBindingPopover — §9). Radix anchors Content to the Trigger (correct in
+// every mode), plays enter/exit animation via Presence, and — critically for
+// the nested language DropdownSelect — coordinates outside-click via the
+// DismissableLayer stack: opening the inner Popover makes it topmost, so a
+// click on a language option dismisses the inner FIRST and leaves this panel
+// open. The old hand-rolled guard checked a `data-dropdown-select-content`
+// attribute that DropdownSelect never actually emitted (dead guard), so a
+// language click hit the portaled option (outside `panelRef`) and closed this
+// panel before cmdk's `onSelect` could fire — the language could not be
+// switched. Radix removes that race by construction; the guard is gone.
+
+export function TweaksPanel(props: TweaksPanelProps) {
+  return (
+    <Popover.Portal>
+      <Popover.Content
+        side="bottom"
+        align="end"
+        sideOffset={8}
+        collisionPadding={8}
+        className="z-[300] data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95"
+      >
+        <TweaksPanelBody {...props} />
+      </Popover.Content>
+    </Popover.Portal>
   );
 }

@@ -14,6 +14,7 @@
  * module first so other consumers in the process keep getting genuine exports.
  */
 import { describe, it, expect, vi } from "vitest";
+import * as Popover from "@radix-ui/react-popover";
 import { render } from "@testing-library/react";
 import { useModalStore } from "../../stores/index.js";
 
@@ -76,7 +77,7 @@ const { CoauthorTopBar } = await import("./CoauthorTopBar.js");
 describe("CoauthorTopBar", () => {
 
   it("renders the character name, memory badge, and provider pill", () => {
-    const { getByText } = render(<CoauthorTopBar />);
+    const { getByText } = render(<Popover.Root><CoauthorTopBar /></Popover.Root>);
     // Character name (avatar slot).
     expect(getByText("Kira Vex")).toBeDefined();
     // Memory badge — i18n key returned verbatim by the useT mock.
@@ -87,7 +88,7 @@ describe("CoauthorTopBar", () => {
   });
 
   it("does NOT render the prompt-preset switcher", () => {
-    const { queryByText } = render(<CoauthorTopBar />);
+    const { queryByText } = render(<Popover.Root><CoauthorTopBar /></Popover.Root>);
     // These keys are what the shared TopBar's preset dropdown renders; neither
     // may appear in the coauthor bar (presets move to the InputArea in Wave 4).
     expect(queryByText("topbar_prompt_preset")).toBeNull();
@@ -95,7 +96,7 @@ describe("CoauthorTopBar", () => {
   });
 
   it("opens the provider modal in coauthor mode when the pill is clicked", () => {
-    const { getByText } = render(<CoauthorTopBar />);
+    const { getByText } = render(<Popover.Root><CoauthorTopBar /></Popover.Root>);
     // Mode starts at the RP default.
     expect(useModalStore.getState().providerModalMode).toBe("default");
     expect(useModalStore.getState().isProviderModalOpen).toBe(false);

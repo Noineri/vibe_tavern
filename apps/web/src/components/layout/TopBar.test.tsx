@@ -1,5 +1,6 @@
 import { fireEvent, render } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
+import * as Popover from "@radix-ui/react-popover";
 import { TopBar } from "./TopBar.js";
 
 const mocks = vi.hoisted(() => ({
@@ -50,7 +51,7 @@ vi.mock("./UpdateBadge.js", () => ({ UpdateBadge: () => null }));
 
 describe("TopBar mode switch", () => {
   it("uses dedicated mode-switch colors and switches from play to build", () => {
-    const view = render(<TopBar />);
+    const view = render(<Popover.Root><TopBar /></Popover.Root>);
     const button = view.getByText("topbar_build_mode");
 
     expect(button.className).toContain("bg-mode-switch-bg");

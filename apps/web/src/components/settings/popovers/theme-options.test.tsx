@@ -1,7 +1,7 @@
 import { fireEvent, render, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { MobileSettings } from "./MobileSettings.js";
-import { TweaksPanel } from "./TweaksPanel.js";
+import { TweaksPanelBody } from "./TweaksPanel.js";
 
 vi.mock("../../../hooks/use-mobile.js", () => ({
   useIsMobile: () => false,
@@ -25,7 +25,7 @@ describe("theme settings", () => {
   it("offers Mystic Dawn with the outlined sparkle in desktop Tweaks", () => {
     const setSetting = vi.fn();
     const { container } = render(
-      <TweaksPanel
+      <TweaksPanelBody
         settings={baseSettings}
         setSetting={setSetting}
         onOpenMobileAccess={vi.fn()}

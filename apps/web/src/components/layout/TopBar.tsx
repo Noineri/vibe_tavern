@@ -3,6 +3,7 @@ import { useIsMobile } from "../../hooks/use-mobile.js";
 import { MemBadge } from "../settings/popovers/MemBadge.js";
 import { cn } from "../../lib/cn.js";
 import * as Select from "@radix-ui/react-select";
+import * as Popover from "@radix-ui/react-popover";
 import { useT } from "../../i18n/context.js";
 import { useProviderProfiles } from "../../hooks/use-provider-profiles.js";
 import { usePresetController } from "../../hooks/use-preset-controller.js";
@@ -54,7 +55,6 @@ export function TopBar({ railHidden, onShowRail, update }: TopBarProps) {
   const activatedLoreCount = activePromptTrace?.activatedLoreEntries.length ?? 0;
   const retrievedMemoryCount = activePromptTrace?.retrievedMemories.length ?? 0;
   const activePresetName = promptPresets.find((p) => p.id === activePromptPresetId)?.name ?? t("topbar_default");
-  const tweaksOpen = useModalStore((s) => s.tweaksOpen);
 
   const canSwitchPresets = promptPresets.length > 0;
 
@@ -176,11 +176,12 @@ export function TopBar({ railHidden, onShowRail, update }: TopBarProps) {
           </div>
 
           <CustomTooltip content={t("topbar_interface_settings")}>
-            <div className={cn("flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-[5px] text-t3 transition-colors duration-100 hover:bg-s2 hover:text-t1", tweaksOpen && "bg-accent-dim text-accent-t")}
-              tabIndex={0}
-              onClick={() => useModalStore.getState().setTweaksOpen(!tweaksOpen)}>
-              <Icons.sliders />
-            </div>
+            <Popover.Trigger asChild>
+              <div className={cn("flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-[5px] text-t3 transition-colors duration-100 hover:bg-s2 hover:text-t1 data-[state=open]:bg-accent-dim data-[state=open]:text-accent-t")}
+                tabIndex={0}>
+                <Icons.sliders />
+              </div>
+            </Popover.Trigger>
           </CustomTooltip>
         </div>
       </div>

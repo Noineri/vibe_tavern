@@ -1,4 +1,5 @@
 import { Icons } from "../shared/icons.js";
+import * as Popover from "@radix-ui/react-popover";
 import { useIsMobile } from "../../hooks/use-mobile.js";
 import { cn } from "../../lib/cn.js";
 import { useT } from "../../i18n/context.js";
@@ -39,7 +40,6 @@ export function CoauthorTopBar({ railHidden, onShowRail }: { railHidden?: boolea
   const { t } = useT();
   const isMobile = useIsMobile();
 
-  const tweaksOpen = useModalStore((s) => s.tweaksOpen);
   const chatMeta = useChatMeta();
   const provider = useProviderProfiles();
   const connection = useProviderStore((s) => s.connection);
@@ -149,13 +149,14 @@ export function CoauthorTopBar({ railHidden, onShowRail }: { railHidden?: boolea
         </div>
 
         <CustomTooltip content={t("topbar_interface_settings")}>
-          <div
-            className={cn("flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-[5px] text-t3 transition-colors duration-100 hover:bg-s2 hover:text-t1", tweaksOpen && "bg-accent-dim text-accent-t")}
-            tabIndex={0}
-            onClick={() => useModalStore.getState().setTweaksOpen(!tweaksOpen)}
-          >
-            <Icons.sliders />
-          </div>
+          <Popover.Trigger asChild>
+            <div
+              className={cn("flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-[5px] text-t3 transition-colors duration-100 hover:bg-s2 hover:text-t1 data-[state=open]:bg-accent-dim data-[state=open]:text-accent-t")}
+              tabIndex={0}
+            >
+              <Icons.sliders />
+            </div>
+          </Popover.Trigger>
         </CustomTooltip>
       </div>
     </div>
