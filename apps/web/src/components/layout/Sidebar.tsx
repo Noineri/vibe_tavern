@@ -179,7 +179,6 @@ export function Sidebar() {
           flyoutTop={flyout.top}
           flyoutMaxH={flyout.maxH}
           flyoutFlipped={flyout.flipped}
-          emptyTitleKey="sidebar_send_a_message"
           t={t}
         />
         {sidebarCollapsed && mode === 'build' && (

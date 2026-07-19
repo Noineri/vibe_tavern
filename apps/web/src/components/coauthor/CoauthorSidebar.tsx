@@ -29,7 +29,7 @@ import { SidebarHeader } from "../layout/sections/SidebarHeader.js";
 import { SidebarImportModals } from "../layout/sections/SidebarImportModals.js";
 import { CollapsedCharacterStrip } from "../layout/sections/CollapsedCharacterStrip.js";
 import { CharacterListSection } from "../layout/sections/CharacterListSection.js";
-import { SidebarFlyout } from "../layout/sections/SidebarFlyout.js";
+import { CoauthorSidebarFlyout } from "./CoauthorSidebarFlyout.js";
 import { SidebarFooter, type FooterLauncherItem } from "../layout/sections/SidebarFooter.js";
 import { Icons } from "../shared/icons.js";
 import { cn } from "../../lib/cn.js";
@@ -160,7 +160,7 @@ export function CoauthorSidebar() {
           </div>
         )}
 
-        <SidebarFlyout
+        <CoauthorSidebarFlyout
           flyoutCharId={flyoutCharId}
           sidebarCollapsed={sidebarCollapsed}
           characterTabs={characterTabs}

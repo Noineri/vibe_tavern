@@ -1,35 +1,43 @@
 /**
- * SidebarFlyout — the collapsed-sidebar chat-selection flyout for the RP shell
- * (portaled to body). RSF-1 (RP_SIDEBAR_FLYOUT_BRANCHES_PLAN.md Wave 1) forked
- * the former shared component into this RP-only file and a coauthor sibling
- * (`CoauthorSidebarFlyout`); the coauthor surface no longer imports this file.
+ * CoauthorSidebarFlyout — the collapsed-sidebar chat-selection flyout for the
+ * co-author shell (portaled to body). Forked from the shared `SidebarFlyout`
+ * in RSF-1 (RP_SIDEBAR_FLYOUT_BRANCHES_PLAN.md Wave 1) so the RP flyout can
+ * diverge (branch CRUD, Radix Popover) without dragging the coauthor surface
+ * along. This file is a pure rename-and-move of the original shared component
+ * — no logic change in this wave.
  *
- * RP-specific defaults that the old shared component took as mode-parameter
- * props are now hardcoded here:
+ * Mode-parameterized for the two points where the coauthor shell injects its
+ * own values:
  *
- *  - `handleCreateChat` is called without a mode arg → defaults to an RP chat.
- *  - The empty-state heading is `"sidebar_send_a_message"`.
+ *  - `flyoutChats`: the mode-filtered chat list (coauthor pre-filters
+ *    `c.mode === "coauthor"`). Passed in already filtered — the flyout itself
+ *    is mode-agnostic about the filter predicate.
+ *  - `createChatMode`: the mode arg forwarded to `handleCreateChat` (coauthor
+ *    passes `"coauthor"`).
+ *  - `emptyTitleKey`: the i18n key for the empty-state heading (coauthor uses
+ *    `"coauthor.list_empty"`).
  *
- * Everything else (positioning math, search, row layout, animations) is
- * unchanged from the pre-fork implementation. The `createPortal` + manual
- * positioning stays for now; the Radix Popover migration is Wave 3's scope.
+ * Positioning math, search, row layout, and animations match the RP flyout at
+ * fork time. `createPortal` + manual positioning is retained here; the coauthor
+ * flyout stays on this implementation even after the RP flyout migrates to
+ * Radix Popover (that migration is Wave 4's separate scope).
  */
 import { type RefObject } from "react";
 import { createPortal } from "react-dom";
-import type { ChatId } from "@vibe-tavern/domain";
+import type { ChatId, ChatMode } from "@vibe-tavern/domain";
 import type { ChatListItem } from "@vibe-tavern/api-contracts";
-import { formatRelativeTime } from "../sidebar-utils.js";
-import { Icons } from "../../shared/icons.js";
-import { cn } from "../../../lib/cn.js";
-import { CustomTooltip } from "../../shared/Tooltip.js";
-import { OverflowTooltip } from "../../shared/OverflowTooltip.js";
-import type { CharacterControllerActions } from "../../../hooks/use-character-controller.js";
-import type { ChatControllerActions } from "../../../hooks/use-chat-controller.js";
-import { useT } from "../../../i18n/context.js";
-import type { CharacterTab } from "../app-shell-types.js";
-import type { TFn } from "./section-types.js";
+import { formatRelativeTime } from "../layout/sidebar-utils.js";
+import { Icons } from "../shared/icons.js";
+import { cn } from "../../lib/cn.js";
+import { CustomTooltip } from "../shared/Tooltip.js";
+import { OverflowTooltip } from "../shared/OverflowTooltip.js";
+import type { CharacterControllerActions } from "../../hooks/use-character-controller.js";
+import type { ChatControllerActions } from "../../hooks/use-chat-controller.js";
+import { useT } from "../../i18n/context.js";
+import type { CharacterTab } from "../layout/app-shell-types.js";
+import type { TFn } from "../layout/sections/section-types.js";
 
-export function SidebarFlyout({
+export function CoauthorSidebarFlyout({
   flyoutCharId,
   sidebarCollapsed,
   characterTabs,
@@ -45,6 +53,8 @@ export function SidebarFlyout({
   flyoutTop,
   flyoutMaxH,
   flyoutFlipped,
+  createChatMode,
+  emptyTitleKey,
   t,
 }: {
   flyoutCharId: string | null;
@@ -62,6 +72,8 @@ export function SidebarFlyout({
   flyoutTop: number | null;
   flyoutMaxH: number | null;
   flyoutFlipped: boolean;
+  createChatMode?: ChatMode;
+  emptyTitleKey: string;
   t: TFn;
 }) {
   const { tDynamic } = useT();
@@ -89,7 +101,7 @@ export function SidebarFlyout({
         <div className="relative flex items-center gap-1 px-2 py-2">
           <div className="min-w-0 flex-1 truncate px-1 font-ui text-[calc(var(--ui-fs)+0px)] font-medium leading-tight tracking-[-0.01em] text-t1">{tab?.name}</div>
           <CustomTooltip content={t("new_chat")}>
-            <button type="button" className="iBtn size-7 shrink-0" aria-label={t("new_chat")} onClick={() => { void character.handleCreateChat(flyoutCharId); }}><Icons.Plus /></button>
+            <button type="button" className="iBtn size-7 shrink-0" aria-label={t("new_chat")} onClick={() => { void character.handleCreateChat(flyoutCharId, createChatMode); }}><Icons.Plus /></button>
           </CustomTooltip>
           <CustomTooltip content={t("close")}>
             <button type="button" className="iBtn size-7 shrink-0" aria-label={t("close")} onClick={() => setFlyoutCharId(null)}><Icons.Close /></button>
@@ -127,8 +139,8 @@ export function SidebarFlyout({
         {flyoutChats.length === 0 ? (
           <div className="empty-state" style={{ minHeight: 160, padding: "32px 16px" }}>
             <div className="empty-icon" style={{ width: 40, height: 40 }}><Icons.Chat /></div>
-            <div className="empty-title">{tDynamic("sidebar_send_a_message")}</div>
-            <button type="button" className="empty-cta" onClick={() => { void character.handleCreateChat(flyoutCharId); }}>{t("new_chat")}</button>
+            <div className="empty-title">{tDynamic(emptyTitleKey)}</div>
+            <button type="button" className="empty-cta" onClick={() => { void character.handleCreateChat(flyoutCharId, createChatMode); }}>{t("new_chat")}</button>
           </div>
         ) : filtered.length === 0 ? (
           <div className="flex flex-col items-center gap-2 px-4 py-8 text-center">
