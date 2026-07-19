@@ -389,7 +389,7 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
         presets={promptPresets} activePresetId={activePromptPresetId}
         setActivePresetId={preset.handleSetActivePromptPresetId}
         onCreate={preset.handleCreatePromptPreset} onUpdate={preset.handleUpdatePromptPreset}
-        onDelete={preset.handleDeletePromptPreset}
+        onDelete={preset.handleDeletePromptPreset} onReorder={preset.handleReorderPromptPresets}
         providerProfiles={provider.providerProfiles.map(p => ({ id: p.id, name: p.name }))}
         prefillSupported={!['anthropic', 'google', 'koboldcpp'].includes(provider.activeProviderProfile?.providerPreset ?? '')}
         characterFields={activeCharacter ? {
