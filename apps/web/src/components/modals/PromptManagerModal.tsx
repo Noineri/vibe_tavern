@@ -47,6 +47,7 @@ interface PromptManagerModalProps {
     patch: Partial<Omit<PromptPresetDto, "id" | "createdAt" | "updatedAt">>
   ) => Promise<boolean>;
   onDelete: (presetId: string) => Promise<boolean>;
+  onReorder: (updates: Array<{ id: string; sortOrder: number }>) => Promise<boolean>;
   providerProfiles?: Array<{ id: string; name: string }>;
   prefillSupported?: boolean;
   characterFields?: {
@@ -433,6 +434,7 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
             onAdd={handleAdd}
             onRename={handleRename}
             onImportPreset={() => setImportModalOpen(true)}
+            onReorder={input.onReorder}
           />
         )}
         detailContent={

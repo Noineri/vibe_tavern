@@ -6,6 +6,7 @@ import {
   createPromptPresetAction,
   updatePromptPresetAction,
   deletePromptPresetAction,
+  reorderPromptPresetsAction,
   setChatPromptPresetAction,
 } from "../stores/api-actions/preset-actions.js";
 import { useChatStore } from "../stores/index.js";
@@ -17,6 +18,7 @@ export interface PresetControllerActions {
   handleCreatePromptPreset: (input: Partial<Omit<PromptPresetDto, "id" | "createdAt" | "updatedAt">> & { name: string }) => Promise<{ id: string } | null>;
   handleUpdatePromptPreset: (presetId: string, patch: Partial<Omit<PromptPresetDto, "id" | "createdAt" | "updatedAt">>) => Promise<boolean>;
   handleDeletePromptPreset: (presetId: string) => Promise<boolean>;
+  handleReorderPromptPresets: (updates: Array<{ id: string; sortOrder: number }>) => Promise<boolean>;
 }
 
 export function usePresetController(): PresetControllerActions {
@@ -66,11 +68,22 @@ export function usePresetController(): PresetControllerActions {
     }
   }
 
+  async function handleReorderPromptPresets(updates: Array<{ id: string; sortOrder: number }>): Promise<boolean> {
+    try {
+      await reorderPromptPresetsAction(updates);
+      return true;
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : getT()("preset_reorder_failed"));
+      return false;
+    }
+  }
+
   return {
     loadPromptPresets: loadPresetsFromServer,
     handleSetActivePromptPresetId,
     handleCreatePromptPreset,
     handleUpdatePromptPreset,
     handleDeletePromptPreset,
+    handleReorderPromptPresets,
   };
 }

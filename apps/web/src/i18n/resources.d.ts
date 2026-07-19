@@ -826,6 +826,7 @@ export default interface Resources {
     "preset_cat_post": "post",
     "preset_create_failed": "Failed to create preset.",
     "preset_delete_failed": "Failed to delete preset.",
+    "preset_reorder_failed": "Failed to reorder presets.",
     "preset_editor_mode": "Prompt editor mode",
     "preset_endpoint_label": "Preset Endpoint",
     "preset_import_btn": "Import {n} blocks",

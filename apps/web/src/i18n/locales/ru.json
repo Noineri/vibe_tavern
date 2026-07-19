@@ -837,6 +837,7 @@
   "preset_create_failed": "Не удалось создать пресет.",
   "preset_save_failed": "Не удалось сохранить пресет.",
   "preset_delete_failed": "Не удалось удалить пресет.",
+  "preset_reorder_failed": "Не удалось изменить порядок пресетов.",
   "import_unsupported_type": "Неподдерживаемый формат файла. Загрузите PNG карточку персонажа, JSON файл или SillyTavern JSONL чат.",
   "import_character_failed": "Не удалось импортировать персонажа",
   "import_lorebook_title": "Импорт лорбука",

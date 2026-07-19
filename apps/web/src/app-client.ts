@@ -230,6 +230,7 @@ export {
   createPromptPreset,
   updatePromptPreset,
   deletePromptPreset,
+  reorderPromptPresets,
 } from "./api/preset-api.js";
 
 // ─── Asset ──────────────────────────────────────────────────────────────

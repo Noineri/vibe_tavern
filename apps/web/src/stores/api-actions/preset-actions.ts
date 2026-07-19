@@ -4,6 +4,7 @@ import {
   listPromptPresets,
   setChatPromptPreset,
   updatePromptPreset,
+  reorderPromptPresets,
 } from "../../app-client.js";
 import type { ChatId, PromptPresetDto } from "@vibe-tavern/domain";
 import { useBootstrapStore } from "./bootstrap-actions.js";
@@ -46,6 +47,11 @@ export async function updatePromptPresetAction(
 
 export async function deletePromptPresetAction(presetId: string): Promise<void> {
   await deletePromptPreset(presetId);
+  await refreshPresetsInBootstrap();
+}
+
+export async function reorderPromptPresetsAction(updates: Array<{ id: string; sortOrder: number }>): Promise<void> {
+  await reorderPromptPresets(updates);
   await refreshPresetsInBootstrap();
 }
 
