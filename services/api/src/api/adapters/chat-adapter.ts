@@ -1,5 +1,5 @@
 import type { ChatRuntimeApi } from "../contract/runtime-api.js";
-import { brandId, parseStoredAttachments, resolveEffectiveSettings, normalizeSceneTrackerConfig, applySceneTrackerConfigPatch, findInvalidXmlKeys, SCENE_PROMPT_FORMAT, type ChatId, type ChatBranchId, type MessageId, type PromptPresetId, type SceneTrackerConfigPatch, type CoauthorContextLink } from "@vibe-tavern/domain";
+import { brandId, parseStoredAttachments, resolveEffectiveSettings, normalizeSceneTrackerConfig, applySceneTrackerConfigPatch, findInvalidXmlKeys, SCENE_PROMPT_FORMAT, type ChatId, type ChatBranchId, type MessageId, type PromptPresetId, type SceneTrackerConfigPatch, type CoauthorContextLink, type StoredProviderProfileRecord } from "@vibe-tavern/domain";
 import { rebuildCurrentSceneCache } from "../../domain/insights/scene-cache.js";
 import type { Attachment } from "@vibe-tavern/domain";
 import type { StoreContainer } from "@vibe-tavern/db";
@@ -114,7 +114,7 @@ export class ChatAdapter implements ChatRuntimeApi {
 
 	sendMessage = async (chatId: string, body: { content: string; attachments?: Attachment[] }, signal?: AbortSignal) => {
 		logSendDebug("api.runtime.send.start", { chatId, contentLength: body.content?.length ?? 0 });
-		const profile = await this.resolveEffectiveProfileOrThrow();
+		const profile = await this.resolveEffectiveProfileOrThrow({ chatId });
 		logSendDebug("api.runtime.send.profile", {
 			chatId,
 			profileId: profile.id,
@@ -147,7 +147,7 @@ export class ChatAdapter implements ChatRuntimeApi {
 	};
 
 	sendMessageStream = async function* (this: ChatAdapter, chatId: string, body: { content: string; attachments?: Attachment[] }, signal?: AbortSignal) {
-		const profile = await this.resolveEffectiveProfileOrThrow();
+		const profile = await this.resolveEffectiveProfileOrThrow({ chatId });
 		try {
 			yield* this.liveChatOrchestrator.sendMessageStream({
 				chatId,
@@ -173,7 +173,7 @@ export class ChatAdapter implements ChatRuntimeApi {
 	};
 
 	regenerateMessage = async (chatId: string, messageId: string, override?: RegenerateOverride, signal?: AbortSignal) => {
-		const profile = await this.resolveEffectiveProfileOrThrow(override?.model);
+		const profile = await this.resolveEffectiveProfileOrThrow({ chatId, modelOverride: override?.model });
 		const result = await this.liveChatOrchestrator.regenerateMessage({
 			chatId,
 			messageId,
@@ -186,7 +186,7 @@ export class ChatAdapter implements ChatRuntimeApi {
 	};
 
 	regenerateMessageStream = async function* (this: ChatAdapter, chatId: string, messageId: string, override?: RegenerateOverride, signal?: AbortSignal) {
-		const profile = await this.resolveEffectiveProfileOrThrow(override?.model);
+		const profile = await this.resolveEffectiveProfileOrThrow({ chatId, modelOverride: override?.model });
 		yield* this.liveChatOrchestrator.regenerateMessageStream({
 			chatId,
 			messageId,
@@ -198,7 +198,7 @@ export class ChatAdapter implements ChatRuntimeApi {
 	};
 
 	generateReply = async (chatId: string, signal?: AbortSignal) => {
-		const profile = await this.resolveEffectiveProfileOrThrow();
+		const profile = await this.resolveEffectiveProfileOrThrow({ chatId });
 		const result = await this.liveChatOrchestrator.generateReply({
 			chatId,
 			profile,
@@ -209,7 +209,7 @@ export class ChatAdapter implements ChatRuntimeApi {
 	};
 
 	generateReplyStream = async function* (this: ChatAdapter, chatId: string, signal?: AbortSignal) {
-		const profile = await this.resolveEffectiveProfileOrThrow();
+		const profile = await this.resolveEffectiveProfileOrThrow({ chatId });
 		yield* this.liveChatOrchestrator.generateReplyStream({
 			chatId,
 			profile,
@@ -251,7 +251,7 @@ export class ChatAdapter implements ChatRuntimeApi {
 			throw validation("Only image or video attachments can be described.");
 		}
 
-		const profile = await this.resolveEffectiveProfileOrThrow();
+		const profile = await this.resolveEffectiveProfileOrThrow({ chatId });
 		if (!profile.visionModel) {
 			throw validation("No vision model configured in the active provider profile. Set one in Provider settings.");
 		}
@@ -457,43 +457,75 @@ export class ChatAdapter implements ChatRuntimeApi {
 	}
 
 	/**
+	 * Resolve the base profile for a chat's mode. For Co-Author chats with a
+	 * valid persisted binding (both provider id + profile exist), returns the
+	 * bound profile and the stored model name. Otherwise falls back to the RP
+	 * active profile. Never throws for a dangling/incomplete Co-Author binding —
+	 * the caller's validation runs on the final resolved profile.
+	 */
+	private async resolveProfileForMode(chatId?: string): Promise<{
+		profile: StoredProviderProfileRecord & { defaultModel: string };
+		preferredModel: string | null;
+	}> {
+		// Co-Author path: only when a chat is explicitly in coauthor mode AND has
+		// a persisted binding whose profile still exists.
+		if (chatId) {
+			const chat = await this.stores.chats.getById(chatId);
+			if (chat?.mode === "coauthor") {
+				const settings = await this.stores.uiSettings.get();
+				if (settings.coauthorProviderId) {
+					const bound = await this.providerProfileService.getProviderProfile(settings.coauthorProviderId);
+					if (bound) {
+						const preferredModel = settings.coauthorModelName ?? null;
+						const effectiveModel = preferredModel ?? bound.defaultModel;
+						if (effectiveModel) {
+							return { profile: { ...bound, defaultModel: effectiveModel as string }, preferredModel };
+						}
+					}
+				}
+			}
+		}
+		// RP fallback (also reached when the Co-Author binding is null/dangling).
+		return { profile: await this.resolveActiveProfileOrThrow(), preferredModel: null };
+	}
+
+	/**
 	 * Resolve the EFFECTIVE provider profile for generation: the base profile
-	 * merged with the active model's per-model overlay (when binding is ON).
+	 * merged with the final model's per-model overlay (when binding is ON).
 	 *
 	 * This is the single generation-boundary chokepoint. All generation methods
 	 * (send/regenerate/generateReply + their stream variants + vision describe)
-	 * call this instead of {@link resolveActiveProfileOrThrow} so a bound model's
-	 * overlay (temperature, contextBudget, pinContextBudget, ...) actually
-	 * reaches the provider executor. Snapshot/DTO reads stay on the base profile
-	 * (configured view, not generation-derived).
+	 * call this so a bound model's overlay (temperature, contextBudget,
+	 * pinContextBudget, ...) actually reaches the provider executor.
+	 *
+	 * Mode awareness: when `chatId` resolves to a Co-Author chat with a valid
+	 * persisted binding, that binding's profile/model is used instead of the RP
+	 * active profile. Null/dangling Co-Author bindings fall back to RP silently.
+	 *
+	 * Model precedence: explicit request override > persisted coauthorModelName >
+	 * selected profile defaultModel. The overlay is always loaded for the FINAL
+	 * model so per-model binding (samplers/contextBudget/reasoning) applies.
 	 *
 	 * Identity fields (endpoint, apiKey, defaultModel, visionModel) come from the
 	 * base — the overlay cannot rename/rebind, only override sampler/context.
 	 */
-	private async resolveEffectiveProfileOrThrow(modelOverride?: string | null) {
-		const profile = await this.resolveActiveProfileOrThrow();
-		// No override → existing path (byte-identical to pre-Q1a behavior): overlay
-		// loaded for profile.defaultModel, defaultModel re-pinned to the base's.
-		if (!modelOverride) {
-			if (!profile.bindPerModel) return profile;
-			const overlay = await this.providerProfileService.getProviderModelSettings(profile.id, profile.defaultModel);
-			// resolveEffectiveSettings returns StoredProviderProfileRecord (defaultModel:
-			// string | null), but the effective profile's defaultModel IS the base's
-			// (the overlay never touches identity) — already narrowed to `string` by
-			// resolveActiveProfileOrThrow. Re-pin the narrowing so callers keep their
-			// non-null model guarantee.
-			const effective = resolveEffectiveSettings(profile, overlay?.settings ?? null);
-			return { ...effective, defaultModel: profile.defaultModel };
+	private async resolveEffectiveProfileOrThrow(options?: {
+		chatId?: string;
+		modelOverride?: string | null;
+	}) {
+		const modelOverride = options?.modelOverride ?? null;
+		const { profile, preferredModel } = await this.resolveProfileForMode(options?.chatId);
+
+		// Final model: explicit override > mode-preferred (coauthor) > profile default.
+		const finalModel = modelOverride ?? preferredModel ?? profile.defaultModel;
+
+		if (!profile.bindPerModel) {
+			return { ...profile, defaultModel: finalModel };
 		}
-		// Override → load the TARGET model's overlay so its per-model binding
-		// (Waves 0-6: samplers/contextBudget/reasoning/toggles) applies, then
-		// re-pin defaultModel to the override. A naive `override ?? defaultModel`
-		// would bypass the overlay lookup for the override model and silently lose
-		// its settings — the queue feature would collide with per-model binding.
-		const base = profile.bindPerModel
-			? resolveEffectiveSettings(profile, (await this.providerProfileService.getProviderModelSettings(profile.id, modelOverride))?.settings ?? null)
-			: profile;
-		return { ...base, defaultModel: modelOverride };
+
+		const overlay = await this.providerProfileService.getProviderModelSettings(profile.id, finalModel);
+		const effective = resolveEffectiveSettings(profile, overlay?.settings ?? null);
+		return { ...effective, defaultModel: finalModel };
 	}
 }
 
