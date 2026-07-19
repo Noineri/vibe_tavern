@@ -40,6 +40,14 @@ export async function listPromptPresets(deps: PresetModuleDeps): Promise<PromptP
   return presets.map(mapPresetToDto);
 }
 
+export async function reorderPromptPresets(
+  deps: PresetModuleDeps,
+  updates: Array<{ id: string; sortOrder: number }>,
+): Promise<PromptPresetDto[]> {
+  const presets = await deps.presets.reorder(updates);
+  return presets.map(mapPresetToDto);
+}
+
 export async function createPromptPreset(deps: PresetModuleDeps, input: {
   name: string;
   system?: string;

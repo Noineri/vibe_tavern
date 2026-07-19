@@ -1,4 +1,4 @@
-import { eq, sql } from 'drizzle-orm';
+import { asc, eq, sql } from 'drizzle-orm';
 import { Database } from 'bun:sqlite';
 import { promptPresets } from '../db-schema.js';
 import type { AppDb } from '../db-connection.js';
@@ -122,7 +122,7 @@ export class PresetStore {
   }
 
   async listAll(): Promise<PromptPreset[]> {
-    const rows = await this.db.select().from(promptPresets).all();
+    const rows = await this.db.select().from(promptPresets).orderBy(asc(promptPresets.sortOrder), asc(promptPresets.createdAt)).all();
     return rows.map((row) => this.mapRow(row));
   }
 
@@ -132,11 +132,20 @@ export class PresetStore {
     const id = this.idGen.next('preset');
     const now = this.clock.now();
 
+    // Append at the end of the list: sort_order = current max + 1, so a freshly
+    // created preset never jumps above existing ones (the column default is 0).
+    const maxRow = await this.db
+      .select({ maxSort: sql<number>`COALESCE(MAX(${promptPresets.sortOrder}), -1)` })
+      .from(promptPresets)
+      .get();
+    const nextSortOrder = (maxRow?.maxSort ?? -1) + 1;
+
     const [row] = await this.db
       .insert(promptPresets)
       .values({
         id,
         name: data.name,
+        sortOrder: nextSortOrder,
         isDefault: data.isDefault ? 1 : 0,
         systemPrompt: data.systemPrompt ?? '',
         postHistoryInstructions: data.postHistoryInstructions ?? '',
@@ -306,11 +315,19 @@ export class PresetStore {
     const newId = this.idGen.next('preset');
     const now = this.clock.now();
 
+    // Append at the end of the list (see create()).
+    const maxRow = await this.db
+      .select({ maxSort: sql<number>`COALESCE(MAX(${promptPresets.sortOrder}), -1)` })
+      .from(promptPresets)
+      .get();
+    const nextSortOrder = (maxRow?.maxSort ?? -1) + 1;
+
     const [row] = await this.db
       .insert(promptPresets)
       .values({
         id: newId,
         name: `${original.name} (copy)`,
+        sortOrder: nextSortOrder,
         isDefault: 0,
         systemPrompt: original.systemPrompt,
         postHistoryInstructions: original.postHistoryInstructions,
@@ -346,6 +363,20 @@ export class PresetStore {
     }
 
     return preset;
+  }
+
+  async reorder(updates: Array<{ id: string; sortOrder: number }>): Promise<PromptPreset[]> {
+    const now = this.clock.now();
+    await this.db.transaction(async (tx) => {
+      for (const u of updates) {
+        await tx
+          .update(promptPresets)
+          .set({ sortOrder: u.sortOrder, updatedAt: now })
+          .where(eq(promptPresets.id, u.id))
+          .run();
+      }
+    });
+    return this.listAll();
   }
 
   async ensureDefault(): Promise<PromptPreset> {

@@ -322,7 +322,7 @@ export interface ScriptRuntimeApi {
 	updateScript: (scriptId: string, body: { name?: string; description?: string; code?: string; enabled?: boolean; sortOrder?: number }) => Promise<Script>;
 	setScriptScope: (scriptId: string, scopeType: 'global' | 'character' | 'persona' | 'chat', ownerId: string | null) => Promise<Script>;
 	deleteScript: (scriptId: string) => Promise<void>;
-	testScript: (scriptId: string, body: { messages?: Array<{ role: string; content: string }>; characterName?: string; characterPersonality?: string; characterScenario?: string; lastMessage?: string }) => Promise<ScriptTestResult>;
+	testScript: (scriptId: string, body: { code?: string; messages?: Array<{ role: string; content: string }>; characterName?: string; characterPersonality?: string; characterScenario?: string; lastMessage?: string }) => Promise<ScriptTestResult>;
 	importScript: (body: { format: "js" | "json"; code?: string; jsonText?: string; name?: string; scopeType?: string; characterId?: string; personaId?: string; chatId?: string }) => Promise<Script>;
 	getScriptLinks: (scriptId: string) => Promise<ScriptLink[]>;
 	setScriptLinks: (scriptId: string, links: Array<{ targetType: string; targetId: string }>) => Promise<ScriptLink[]>;
@@ -356,6 +356,7 @@ export interface ProviderRuntimeApi {
 
 export interface PresetRuntimeApi {
 	listPromptPresets: () => Promise<PromptPresetDto[]>;
+	reorderPromptPresets: (updates: Array<{ id: string; sortOrder: number }>) => Promise<PromptPresetDto[]>;
 	createPromptPreset: (body: Record<string, unknown> & { name: string }) => Promise<PromptPresetDto>;
 	updatePromptPreset: (presetId: string, body: Record<string, unknown>) => Promise<PromptPresetDto>;
 	deletePromptPreset: (presetId: string) => Promise<void>;

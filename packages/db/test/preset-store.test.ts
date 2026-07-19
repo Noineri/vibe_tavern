@@ -192,3 +192,85 @@ describe("PresetStore — delete() FK diagnostics (PRESET_COPY_DELETE_CORRUPTION
     expect(await store.getById(preset.id)).toBeNull();
   });
 });
+
+// ─── reorder + sort_order (PRESET_PROFILE_DND_PLAN Wave 2) ─────────────────────
+// These pin the drag-to-reorder persistence path: PresetStore.reorder rewrites
+// sort_order for every submitted id in one transaction, listAll orders by it,
+// and create()/duplicate() append at MAX(sort_order)+1 so a new/copied preset
+// never jumps to the top on the column default 0.
+describe("PresetStore — reorder + sort_order", () => {
+  beforeEach(() => {
+    clockTick = 0;
+    idCounters = new Map();
+  });
+
+  test("reorder rewrites sort_order; listAll reflects the submitted order", async () => {
+    const { store } = await createStore();
+    const a = await store.create({ name: "A" });
+    const b = await store.create({ name: "B" });
+    const c = await store.create({ name: "C" });
+    // Creation appends: A(0), B(1), C(2).
+    expect((await store.listAll()).map((p) => p.name)).toEqual(["A", "B", "C"]);
+
+    // Reverse to C, B, A.
+    await store.reorder([
+      { id: c.id, sortOrder: 0 },
+      { id: b.id, sortOrder: 1 },
+      { id: a.id, sortOrder: 2 },
+    ]);
+    expect((await store.listAll()).map((p) => p.name)).toEqual(["C", "B", "A"]);
+  });
+
+  test("reorder accepts non-sequential sort_order values; order is by value", async () => {
+    const { store } = await createStore();
+    const a = await store.create({ name: "A" });
+    const b = await store.create({ name: "B" });
+    // Gappy values — listAll must order by the numeric value, not the row id.
+    await store.reorder([
+      { id: b.id, sortOrder: 10 },
+      { id: a.id, sortOrder: 20 },
+    ]);
+    expect((await store.listAll()).map((p) => p.name)).toEqual(["B", "A"]);
+  });
+
+  test("create() appends at the end even after reorder set a high sort_order", async () => {
+    const { store } = await createStore();
+    const a = await store.create({ name: "A" });
+    const b = await store.create({ name: "B" });
+    // Push B above A with a high sort_order (B=10, A=20) → listAll [B, A].
+    await store.reorder([
+      { id: b.id, sortOrder: 10 },
+      { id: a.id, sortOrder: 20 },
+    ]);
+    // A new preset must get sort_order = max(20)+1 = 21 and land at the END,
+    // not sort_order 0 (the column default) which would jump it to the top.
+    await store.create({ name: "C" });
+    expect((await store.listAll()).map((p) => p.name)).toEqual(["B", "A", "C"]);
+  });
+
+  test("duplicate() appends at the end, not sort_order 0", async () => {
+    const { store } = await createStore();
+    const a = await store.create({ name: "A" });
+    await store.create({ name: "B" });
+    // listAll: [A(0), B(1)]. Duplicate A → must land after B.
+    const dup = await store.duplicate(a.id);
+    expect(dup.name).toBe("A (copy)");
+    expect((await store.listAll()).map((p) => p.name)).toEqual(["A", "B", "A (copy)"]);
+  });
+
+  test("reorder preserves the isDefault marker (orthogonal to sort_order)", async () => {
+    const { store } = await createStore();
+    const a = await store.create({ name: "A", isDefault: true });
+    const b = await store.create({ name: "B" });
+    expect(a.isDefault).toBe(true);
+    // Move B above A.
+    await store.reorder([
+      { id: b.id, sortOrder: 0 },
+      { id: a.id, sortOrder: 1 },
+    ]);
+    const after = await store.listAll();
+    expect(after.map((p) => p.name)).toEqual(["B", "A"]);
+    expect(after.find((p) => p.name === "A")?.isDefault).toBe(true);
+    expect(after.find((p) => p.name === "B")?.isDefault).toBe(false);
+  });
+});

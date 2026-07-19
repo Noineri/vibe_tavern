@@ -12,6 +12,10 @@ export function createPresetRoutes(runtime: PresetRuntimeApi) {
       const body = c.req.valid("json");
       return c.json(await runtime.createPromptPreset(body), 201);
     })
+    .patch("/api/prompt-presets/reorder", zValidator("json", schemas.reorderPromptPresetsSchema), async (c) => {
+      const body = c.req.valid("json");
+      return c.json(await runtime.reorderPromptPresets(body.updates));
+    })
     .patch("/api/prompt-presets/:presetId", zValidator("json", schemas.updatePromptPresetSchema), async (c) => {
       const body = c.req.valid("json");
       return c.json(await runtime.updatePromptPreset(c.req.param("presetId"), body));

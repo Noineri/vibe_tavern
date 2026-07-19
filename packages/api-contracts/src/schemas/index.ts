@@ -57,6 +57,7 @@ export {
   createPromptPresetSchema,
   updatePromptPresetSchema,
   setPromptPresetSchema,
+  reorderPromptPresetsSchema,
 } from "./prompt-preset-schema.js";
 export {
   autoSummaryConfigSchema,

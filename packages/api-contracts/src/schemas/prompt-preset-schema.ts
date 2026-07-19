@@ -34,3 +34,10 @@ export const updatePromptPresetSchema = promptPresetCoreSchema.partial();
 export const setPromptPresetSchema = z.object({
   promptPresetId: z.string(),
 });
+
+export const reorderPromptPresetsSchema = z.object({
+  updates: z.array(z.object({
+    id: z.string(),
+    sortOrder: z.number(),
+  })),
+});
