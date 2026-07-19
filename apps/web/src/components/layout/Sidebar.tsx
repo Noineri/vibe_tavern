@@ -5,7 +5,6 @@ import { initials } from "./app-shell-helpers.js";
 import { tabAvatarSrc } from "./sidebar-utils.js";
 import { useSidebarChats } from "./hooks/use-sidebar-chats.js";
 import { useSidebarCharacters } from "./hooks/use-sidebar-characters.js";
-import { useFlyoutPosition } from "./hooks/use-flyout-position.js";
 import { SidebarHeader } from "./sections/SidebarHeader.js";
 import { SidebarImportModals } from "./sections/SidebarImportModals.js";
 import { CollapsedCharacterStrip } from "./sections/CollapsedCharacterStrip.js";
@@ -109,25 +108,13 @@ export function Sidebar() {
   const [charSwitcherOpen, setCharSwitcherOpen] = useState(false);
   const [flyoutCharId, setFlyoutCharId] = useState<string | null>(null);
   const [chatQuery, setChatQuery] = useState("");
-  const flyoutRef = useRef<HTMLDivElement | null>(null);
-  const flyoutListRef = useRef<HTMLDivElement | null>(null);
   const flyoutAvatarRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const [flyoutAvatarPos, setFlyoutAvatarPos] = useState<{ top: number; bottom: number } | null>(null);
-  const flyout = useFlyoutPosition(flyoutCharId, flyoutAvatarPos, flyoutRef, flyoutListRef);
 
   const flyoutChats = useMemo(
     () => flyoutCharId ? allChats.filter(c => c.characterId === flyoutCharId && c.mode !== "coauthor") : [],
     [allChats, flyoutCharId],
   );
-
-  useEffect(() => {
-    function handleClickOutside(event: MouseEvent): void {
-      const target = event.target as Node;
-      if (flyoutRef.current && !flyoutRef.current.contains(target)) setFlyoutCharId(null);
-    }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
 
   useEffect(() => { if (!flyoutCharId) setChatQuery(""); }, [flyoutCharId]);
 
@@ -177,11 +164,7 @@ export function Sidebar() {
           branches={branches}
           activeBranchId={activeBranchId}
           setFlyoutCharId={setFlyoutCharId}
-          flyoutRef={flyoutRef}
-          flyoutListRef={flyoutListRef}
-          flyoutTop={flyout.top}
-          flyoutMaxH={flyout.maxH}
-          flyoutFlipped={flyout.flipped}
+          flyoutAvatarPos={flyoutAvatarPos}
           t={t}
         />
         {sidebarCollapsed && mode === 'build' && (

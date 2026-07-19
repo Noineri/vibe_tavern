@@ -1,21 +1,31 @@
 /**
- * SidebarFlyout — the collapsed-sidebar chat-selection flyout for the RP shell
- * (portaled to body). RSF-1 (RP_SIDEBAR_FLYOUT_BRANCHES_PLAN.md Wave 1) forked
- * the former shared component into this RP-only file and a coauthor sibling
- * (`CoauthorSidebarFlyout`); the coauthor surface no longer imports this file.
+ * SidebarFlyout — the collapsed-sidebar chat-selection flyout for the RP shell.
+ *
+ * RSF-1 forked the former shared component into this RP-only file and a coauthor
+ * sibling (`CoauthorSidebarFlyout`); the coauthor surface has its own copy.
+ * RSF-2 added the expandable branch counter + full CRUD on the active-chat row.
+ * RSF-3 migrated this flyout from `createPortal` + manual positioning to Radix
+ * Popover with a virtual anchor, retiring the `flyoutTop` / `flyoutMaxH` /
+ * `flyoutFlipped` props and the `flex-col-reverse` flip — Radix's `avoidCollisions`
+ * + `flip` + `shift` + `size` middlewares handle collision, repositioning, and the
+ * available-height clamp (`--radix-popper-available-height`) natively.
  *
  * RP-specific defaults that the old shared component took as mode-parameter
- * props are now hardcoded here:
+ * props are hardcoded here:
  *
  *  - `handleCreateChat` is called without a mode arg → defaults to an RP chat.
  *  - The empty-state heading is `"sidebar_send_a_message"`.
  *
- * Everything else (positioning math, search, row layout, animations) is
- * unchanged from the pre-fork implementation. The `createPortal` + manual
- * positioning stays for now; the Radix Popover migration is Wave 3's scope.
+ * Virtual anchor: a stable ref-shaped object whose `.current` is a `Measurable`
+ * derived from `flyoutAvatarPos` ({ top, bottom } of the clicked avatar). The
+ * rect is a zero-width vertical line at the collapsed strip's right edge (x=54,
+ * matching the former `fixed left-[54px]`), spanning the avatar's [top, bottom].
+ * The ref is rebuilt via `useMemo` on `flyoutAvatarPos` so Radix's `PopperAnchor`
+ * (which compares `virtualRef.current` by identity every render) detects the new
+ * anchor and repositions when the user clicks a different avatar.
  */
-import { type RefObject, useEffect, useState } from "react";
-import { createPortal } from "react-dom";
+import { useEffect, useMemo, useState } from "react";
+import * as Popover from "@radix-ui/react-popover";
 import type { ChatBranch, ChatBranchId, ChatId } from "@vibe-tavern/domain";
 import type { ChatListItem } from "@vibe-tavern/api-contracts";
 import { formatRelativeTime, formatShortDate } from "../sidebar-utils.js";
@@ -23,6 +33,7 @@ import { Icons } from "../../shared/icons.js";
 import { cn } from "../../../lib/cn.js";
 import { CustomTooltip } from "../../shared/Tooltip.js";
 import { OverflowTooltip } from "../../shared/OverflowTooltip.js";
+import { getModalPortal } from "../../shared/modal-helpers.js";
 import type { CharacterControllerActions } from "../../../hooks/use-character-controller.js";
 import type { ChatControllerActions } from "../../../hooks/use-chat-controller.js";
 import type { ConfirmDestroyDialog } from "../../../stores/character-store.js";
@@ -30,6 +41,9 @@ import { useT } from "../../../i18n/context.js";
 import type { CharacterTab } from "../app-shell-types.js";
 import type { TFn } from "./section-types.js";
 import { SidebarBranchRename } from "./SidebarBranchRename.js";
+
+/** Collapsed sidebar strip right edge — the former `fixed left-[54px]` value. */
+const COLLAPSED_STRIP_RIGHT_X = 54;
 
 export function SidebarFlyout({
   flyoutCharId,
@@ -45,11 +59,7 @@ export function SidebarFlyout({
   branches,
   activeBranchId,
   setFlyoutCharId,
-  flyoutRef,
-  flyoutListRef,
-  flyoutTop,
-  flyoutMaxH,
-  flyoutFlipped,
+  flyoutAvatarPos,
   t,
 }: {
   flyoutCharId: string | null;
@@ -66,11 +76,8 @@ export function SidebarFlyout({
   branches: ChatBranch[];
   activeBranchId: ChatBranchId | null;
   setFlyoutCharId: (v: string | null) => void;
-  flyoutRef: RefObject<HTMLDivElement | null>;
-  flyoutListRef: RefObject<HTMLDivElement | null>;
-  flyoutTop: number | null;
-  flyoutMaxH: number | null;
-  flyoutFlipped: boolean;
+  /** Measured viewport { top, bottom } of the clicked avatar; powers the virtual anchor. */
+  flyoutAvatarPos: { top: number; bottom: number } | null;
   t: TFn;
 }) {
   const { tDynamic } = useT();
@@ -79,205 +86,235 @@ export function SidebarFlyout({
     if (!flyoutCharId) setExpandedBranchChatId(null);
   }, [flyoutCharId]);
 
-  if (!flyoutCharId || !sidebarCollapsed) return null;
+  const open = flyoutCharId !== null && sidebarCollapsed;
 
-  const tab = characterTabs.find(tc => tc.id === flyoutCharId);
+  // Virtual anchor ref. Rebuilt when flyoutAvatarPos changes so the new
+  // `.current` identity triggers Radix's PopperAnchor to reposition. A zero-rect
+  // fallback is used before any avatar is clicked — harmless because the content
+  // only mounts while `open` is true, and `open` requires `flyoutCharId`, which
+  // the strip sets only after `flyoutAvatarPos`. Radix's `PopperAnchor` compares
+  // `virtualRef.current` by identity every render, so the memo key is what makes
+  // repositioning fire on a new avatar click.
+  const virtualAnchorRef = useMemo<{ current: { getBoundingClientRect(): DOMRect } }>(() => {
+    const { top, bottom } = flyoutAvatarPos ?? { top: 0, bottom: 0 };
+    const height = Math.max(bottom - top, 0);
+    const rect: DOMRect = {
+      x: COLLAPSED_STRIP_RIGHT_X,
+      y: top,
+      top,
+      bottom,
+      left: COLLAPSED_STRIP_RIGHT_X,
+      right: COLLAPSED_STRIP_RIGHT_X,
+      width: 0,
+      height,
+      toJSON() { /* structural DOMRect stub */ },
+    };
+    return { current: { getBoundingClientRect: () => rect } };
+  }, [flyoutAvatarPos]);
+
+  const tab = flyoutCharId ? characterTabs.find(tc => tc.id === flyoutCharId) : undefined;
   const q = chatQuery.trim().toLowerCase();
   const filtered = q ? flyoutChats.filter(c => c.title.toLowerCase().includes(q)) : flyoutChats;
 
-  return createPortal(
-    <div
-      ref={flyoutRef}
-      className={cn(
-        "glass-blur fixed left-[54px] z-[301] flex w-[300px] max-w-[calc(100vw-70px)] gap-2 overflow-hidden rounded-r-xl border border-border bg-glass-bg shadow-[16px_8px_24px_-8px_rgba(0,0,0,0.4)]",
-        flyoutFlipped ? "flex-col-reverse" : "flex-col",
-      )}
-      style={{ top: flyoutTop ?? 12, maxHeight: flyoutMaxH ?? undefined, animation: "flyoutIn 0.18s ease-out" }}
+  return (
+    <Popover.Root
+      open={open}
+      onOpenChange={(o) => { if (!o) setFlyoutCharId(null); }}
     >
-      {/* ── Header ── */}
-      <div className={cn("relative shrink-0 border-border", flyoutFlipped ? "border-t" : "border-b")}>
-        <div
-          className="pointer-events-none absolute inset-0"
-          style={{ background: "linear-gradient(to bottom, color-mix(in srgb, var(--accent-dim) 50%, transparent), transparent)" }}
-        />
-        <div className="relative flex items-center gap-1 px-2 py-2">
-          <div className="min-w-0 flex-1 truncate px-1 font-ui text-[calc(var(--ui-fs)+0px)] font-medium leading-tight tracking-[-0.01em] text-t1">{tab?.name}</div>
-          <CustomTooltip content={t("new_chat")}>
-            <button type="button" className="iBtn size-7 shrink-0" aria-label={t("new_chat")} onClick={() => { void character.handleCreateChat(flyoutCharId); }}><Icons.Plus /></button>
-          </CustomTooltip>
-          <CustomTooltip content={t("close")}>
-            <button type="button" className="iBtn size-7 shrink-0" aria-label={t("close")} onClick={() => setFlyoutCharId(null)}><Icons.Close /></button>
-          </CustomTooltip>
-        </div>
-      </div>
-
-      {/* ── Search ── */}
-      <div className="shrink-0 px-3">
-        <div className="flex items-center gap-2 rounded-lg border border-border bg-s2 px-2 py-1 transition-colors focus-within:border-accent/60">
-          <Icons.Search className="h-3.5 w-3.5 shrink-0 text-t3" />
-          <input
-            type="text"
-            value={chatQuery}
-            onChange={(e) => setChatQuery(e.target.value)}
-            placeholder={t("chat_search_placeholder")}
-            className="min-w-0 flex-1 bg-transparent font-ui text-[calc(var(--ui-fs)-1px)] text-t1 outline-none placeholder:text-t4"
-          />
-          {chatQuery && (
-            <button type="button" className="flex h-4 w-4 shrink-0 items-center justify-center rounded text-t3 transition-colors hover:bg-s3 hover:text-t1" aria-label={t("chat_search_clear")} onClick={() => setChatQuery("")}>
-              <Icons.Close className="h-3 w-3" />
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* ── Chat list ── */}
-      <div ref={flyoutListRef} className="flex min-h-0 flex-1 flex-col overflow-y-auto px-2 py-1">
-        {q && (
-          <div className="px-2 pb-0.5 pt-1 text-[calc(var(--ui-fs)-3px)] font-medium text-t4">
-            {filtered.length} / {flyoutChats.length} {t("sidebar_chats").toLowerCase()}
+      <Popover.Anchor virtualRef={virtualAnchorRef} />
+      <Popover.Portal container={getModalPortal() ?? undefined}>
+        <Popover.Content
+          side="right"
+          align="start"
+          sideOffset={0}
+          collisionPadding={12}
+          className="glass-blur z-[301] flex w-[300px] max-w-[calc(100vw-70px)] flex-col overflow-hidden rounded-r-xl border border-border bg-glass-bg shadow-[16px_8px_24px_-8px_rgba(0,0,0,0.4)] outline-none data-[state=open]:animate-[flyoutIn_0.18s_ease-out]"
+        >
+          {/* ── Header ── */}
+          <div className="relative shrink-0 border-b border-border">
+            <div
+              className="pointer-events-none absolute inset-0"
+              style={{ background: "linear-gradient(to bottom, color-mix(in srgb, var(--accent-dim) 50%, transparent), transparent)" }}
+            />
+            <div className="relative flex items-center gap-1 px-2 py-2">
+              <div className="min-w-0 flex-1 truncate px-1 font-ui text-[calc(var(--ui-fs)+0px)] font-medium leading-tight tracking-[-0.01em] text-t1">{tab?.name}</div>
+              <CustomTooltip content={t("new_chat")}>
+                <button type="button" className="iBtn size-7 shrink-0" aria-label={t("new_chat")} onClick={() => { if (flyoutCharId) void character.handleCreateChat(flyoutCharId); }}><Icons.Plus /></button>
+              </CustomTooltip>
+              <CustomTooltip content={t("close")}>
+                <button type="button" className="iBtn size-7 shrink-0" aria-label={t("close")} onClick={() => setFlyoutCharId(null)}><Icons.Close /></button>
+              </CustomTooltip>
+            </div>
           </div>
-        )}
 
-        {flyoutChats.length === 0 ? (
-          <div className="empty-state" style={{ minHeight: 160, padding: "32px 16px" }}>
-            <div className="empty-icon" style={{ width: 40, height: 40 }}><Icons.Chat /></div>
-            <div className="empty-title">{tDynamic("sidebar_send_a_message")}</div>
-            <button type="button" className="empty-cta" onClick={() => { void character.handleCreateChat(flyoutCharId); }}>{t("new_chat")}</button>
+          {/* ── Search ── */}
+          <div className="shrink-0 px-3">
+            <div className="flex items-center gap-2 rounded-lg border border-border bg-s2 px-2 py-1 transition-colors focus-within:border-accent/60">
+              <Icons.Search className="h-3.5 w-3.5 shrink-0 text-t3" />
+              <input
+                type="text"
+                value={chatQuery}
+                onChange={(e) => setChatQuery(e.target.value)}
+                placeholder={t("chat_search_placeholder")}
+                className="min-w-0 flex-1 bg-transparent font-ui text-[calc(var(--ui-fs)-1px)] text-t1 outline-none placeholder:text-t4"
+              />
+              {chatQuery && (
+                <button type="button" className="flex h-4 w-4 shrink-0 items-center justify-center rounded text-t3 transition-colors hover:bg-s3 hover:text-t1" aria-label={t("chat_search_clear")} onClick={() => setChatQuery("")}>
+                  <Icons.Close className="h-3 w-3" />
+                </button>
+              )}
+            </div>
           </div>
-        ) : filtered.length === 0 ? (
-          <div className="flex flex-col items-center gap-2 px-4 py-8 text-center">
-            <Icons.Search className="h-5 w-5 text-t4" />
-            <div className="text-[calc(var(--ui-fs)-2px)] leading-relaxed text-t2">{t("chat_search_no_results", { query: chatQuery })}</div>
-            <button type="button" className="text-[calc(var(--ui-fs)-2px)] text-accent-t transition-colors hover:underline" onClick={() => setChatQuery("")}>{t("chat_search_clear")}</button>
-          </div>
-        ) : (
-          filtered.map((chatItem, index) => {
-            const isActive = chatItem.id === activeChatId;
-            const showBranchBadge = isActive && branches.length > 0;
-            const branchExpanded = showBranchBadge && expandedBranchChatId === chatItem.id;
-            return (
-              <div key={chatItem.id} className="relative mx-1 mb-0.5 flex flex-col rounded-lg">
-                <div
-                  role="button"
-                  tabIndex={0}
-                  style={{ animation: "flyoutCardIn 0.22s ease-out backwards", animationDelay: `${Math.min(index, 12) * 26}ms` }}
-                  className={cn(
-                    "relative cursor-pointer rounded-lg px-2.5 py-1.5 outline-none transition-colors duration-150",
-                    isActive ? "bg-accent-dim" : "hover:bg-s2 focus-visible:bg-s2",
-                  )}
-                  onClick={() => { void chat.handleSwitchChat(chatItem.id); }}
-                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); void chat.handleSwitchChat(chatItem.id); } }}
-                >
-                  {isActive && <div className="absolute left-0 top-2.5 bottom-2.5 w-[3px] rounded-full bg-accent" />}
-                  <OverflowTooltip
-                    text={chatItem.title}
-                    className={cn("text-[calc(var(--ui-fs)-1px)]", isActive ? "font-medium text-accent-t" : "text-t1")}
-                  />
-                  <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-[calc(var(--ui-fs)-3px)] text-t3">
-                    <span className="shrink-0 whitespace-nowrap tabular-nums">{formatRelativeTime(chatItem.updatedAt)}</span>
-                    <span className="shrink-0 text-t4">·</span>
-                    <span className="shrink-0 whitespace-nowrap tabular-nums">{chatItem.messageCount} {t("msgs_short")}</span>
-                    {showBranchBadge && (
-                      <CustomTooltip content={t("sidebar_chat_branches")}>
-                        <button
-                          type="button"
-                          className="inline-flex shrink-0 cursor-pointer items-center gap-[3px] rounded px-1 py-px font-ui tabular-nums text-t3 transition-colors duration-100 hover:bg-border hover:text-t1 [&_svg]:h-2.5 [&_svg]:w-2.5"
-                          aria-label={t("sidebar_chat_branches")}
-                          aria-expanded={branchExpanded}
-                          onMouseDown={(e) => e.stopPropagation()}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setExpandedBranchChatId((cur) => (cur === chatItem.id ? null : chatItem.id));
-                          }}
-                        >
-                          <Icons.Stack /> {branches.length}
-                        </button>
-                      </CustomTooltip>
-                    )}
-                  </div>
-                </div>
 
-                {branchExpanded && (
-                  <div
-                    className="mt-1 flex cursor-default flex-col border-t border-dashed border-border2 px-2 pt-1.5"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <div className="mb-1 pl-1 text-[9px] font-medium uppercase tracking-[0.05em] text-t3">
-                      {t("sidebar_timeline_branches")}
-                    </div>
-                    <div className="ml-2 flex flex-col border-l-2 border-border pl-3">
-                      {branches.map((branch) => {
-                        const isActiveBranch = branch.id === activeBranchId;
-                        return (
-                          <div
-                            key={branch.id}
-                            className={cn(
-                              "group/branch relative cursor-pointer rounded py-[5px] pl-1.5 pr-2 transition-colors duration-100",
-                              isActiveBranch ? "bg-accent-dim hover:bg-accent-dim" : "hover:bg-s2/70",
-                            )}
-                            onClick={(e) => { e.stopPropagation(); void chat.handleActivateBranch(branch.id); }}
-                          >
-                            <div className={cn("absolute -left-[14px] top-[14px] h-[2px] w-3", isActiveBranch ? "bg-accent" : "bg-border")} />
-                            <div className="flex items-center gap-1">
-                              <div className={cn(
-                                "min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-[calc(var(--ui-fs)-3px)] font-medium text-t2",
-                                isActiveBranch && "text-accent-t",
-                              )}>{branch.label || t("sidebar_unnamed_branch")}</div>
-                              <SidebarBranchRename branchId={branch.id} initialLabel={branch.label || ""} onRename={(label) => void chat.handleRenameBranch(branch.id, label)} />
-                            </div>
-                            <div className="overflow-hidden text-ellipsis whitespace-nowrap text-[calc(var(--ui-fs)-3px)] text-t3">
-                              {branch.messageCount ?? 0} {t("msgs_short")} · {formatShortDate(branch.createdAt)}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                    <div className="mt-1 flex items-center gap-1 border-t border-border pt-1">
-                      <button
-                        className="inline-flex h-6 flex-1 cursor-pointer items-center justify-center gap-1 rounded px-1.5 text-center text-[calc(var(--ui-fs)-4px)] text-t3 transition-colors duration-150 hover:bg-s2 hover:text-t1 [&_svg]:h-3 [&_svg]:w-3"
-                        type="button"
-                        onClick={(e) => { e.stopPropagation(); void chat.handleFork(undefined); }}
-                      >
-                        <Icons.Branch /> {t("sidebar_fork_short")}
-                      </button>
-                      {(() => {
-                        const rootBranch = branches.find((b) => b.parentBranchId === null);
-                        const activeIsRoot = rootBranch != null && activeBranchId === rootBranch.id;
-                        const canAct = !activeIsRoot && branches.length > 1;
-                        return (
-                          <CustomTooltip content={canAct ? "" : t("sidebar_switch_to_non_main")}>
+          {/* ── Chat list ── */}
+          <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-2 py-1" style={{ maxHeight: "var(--radix-popper-available-height)" }}>
+            {q && (
+              <div className="px-2 pb-0.5 pt-1 text-[calc(var(--ui-fs)-3px)] font-medium text-t4">
+                {filtered.length} / {flyoutChats.length} {t("sidebar_chats").toLowerCase()}
+              </div>
+            )}
+
+            {flyoutChats.length === 0 ? (
+              <div className="empty-state" style={{ minHeight: 160, padding: "32px 16px" }}>
+                <div className="empty-icon" style={{ width: 40, height: 40 }}><Icons.Chat /></div>
+                <div className="empty-title">{tDynamic("sidebar_send_a_message")}</div>
+                <button type="button" className="empty-cta" onClick={() => { if (flyoutCharId) void character.handleCreateChat(flyoutCharId); }}>{t("new_chat")}</button>
+              </div>
+            ) : filtered.length === 0 ? (
+              <div className="flex flex-col items-center gap-2 px-4 py-8 text-center">
+                <Icons.Search className="h-5 w-5 text-t4" />
+                <div className="text-[calc(var(--ui-fs)-2px)] leading-relaxed text-t2">{t("chat_search_no_results", { query: chatQuery })}</div>
+                <button type="button" className="text-[calc(var(--ui-fs)-2px)] text-accent-t transition-colors hover:underline" onClick={() => setChatQuery("")}>{t("chat_search_clear")}</button>
+              </div>
+            ) : (
+              filtered.map((chatItem, index) => {
+                const isActive = chatItem.id === activeChatId;
+                const showBranchBadge = isActive && branches.length > 0;
+                const branchExpanded = showBranchBadge && expandedBranchChatId === chatItem.id;
+                return (
+                  <div key={chatItem.id} className="relative mx-1 mb-0.5 flex flex-col rounded-lg">
+                    <div
+                      role="button"
+                      tabIndex={0}
+                      style={{ animation: "flyoutCardIn 0.22s ease-out backwards", animationDelay: `${Math.min(index, 12) * 26}ms` }}
+                      className={cn(
+                        "relative cursor-pointer rounded-lg px-2.5 py-1.5 outline-none transition-colors duration-150",
+                        isActive ? "bg-accent-dim" : "hover:bg-s2 focus-visible:bg-s2",
+                      )}
+                      onClick={() => { void chat.handleSwitchChat(chatItem.id); }}
+                      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); void chat.handleSwitchChat(chatItem.id); } }}
+                    >
+                      {isActive && <div className="absolute left-0 top-2.5 bottom-2.5 w-[3px] rounded-full bg-accent" />}
+                      <OverflowTooltip
+                        text={chatItem.title}
+                        className={cn("text-[calc(var(--ui-fs)-1px)]", isActive ? "font-medium text-accent-t" : "text-t1")}
+                      />
+                      <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-[calc(var(--ui-fs)-3px)] text-t3">
+                        <span className="shrink-0 whitespace-nowrap tabular-nums">{formatRelativeTime(chatItem.updatedAt)}</span>
+                        <span className="shrink-0 text-t4">·</span>
+                        <span className="shrink-0 whitespace-nowrap tabular-nums">{chatItem.messageCount} {t("msgs_short")}</span>
+                        {showBranchBadge && (
+                          <CustomTooltip content={t("sidebar_chat_branches")}>
                             <button
-                              className={cn(
-                                "inline-flex h-6 flex-1 cursor-pointer items-center justify-center gap-1 rounded px-1.5 text-center text-[calc(var(--ui-fs)-4px)] text-t3 transition-colors duration-150 hover:bg-s2 hover:text-t1 [&_svg]:h-3 [&_svg]:w-3",
-                                !canAct && "cursor-not-allowed opacity-45",
-                              )}
                               type="button"
-                              aria-disabled={!canAct}
+                              className="inline-flex shrink-0 cursor-pointer items-center gap-[3px] rounded px-1 py-px font-ui tabular-nums text-t3 transition-colors duration-100 hover:bg-border hover:text-t1 [&_svg]:h-2.5 [&_svg]:w-2.5"
+                              aria-label={t("sidebar_chat_branches")}
+                              aria-expanded={branchExpanded}
+                              onMouseDown={(e) => e.stopPropagation()}
                               onClick={(e) => {
-                                if (!canAct) return;
                                 e.stopPropagation();
-                                setConfirmDestroy({
-                                  title: t("sidebar_delete_branch"),
-                                  body: t("sidebar_delete_branch_body"),
-                                  confirmLabel: t("sidebar_delete_branch"),
-                                  onConfirm: () => void chat.handleDeleteActiveBranch(),
-                                });
+                                setExpandedBranchChatId((cur) => (cur === chatItem.id ? null : chatItem.id));
                               }}
                             >
-                              <Icons.Trash /> {t("sidebar_delete_branch_short")}
+                              <Icons.Stack /> {branches.length}
                             </button>
                           </CustomTooltip>
-                        );
-                      })()}
+                        )}
+                      </div>
                     </div>
+
+                    {branchExpanded && (
+                      <div
+                        className="mt-1 flex cursor-default flex-col border-t border-dashed border-border2 px-2 pt-1.5"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <div className="mb-1 pl-1 text-[9px] font-medium uppercase tracking-[0.05em] text-t3">
+                          {t("sidebar_timeline_branches")}
+                        </div>
+                        <div className="ml-2 flex flex-col border-l-2 border-border pl-3">
+                          {branches.map((branch) => {
+                            const isActiveBranch = branch.id === activeBranchId;
+                            return (
+                              <div
+                                key={branch.id}
+                                className={cn(
+                                  "group/branch relative cursor-pointer rounded py-[5px] pl-1.5 pr-2 transition-colors duration-100",
+                                  isActiveBranch ? "bg-accent-dim hover:bg-accent-dim" : "hover:bg-s2/70",
+                                )}
+                                onClick={(e) => { e.stopPropagation(); void chat.handleActivateBranch(branch.id); }}
+                              >
+                                <div className={cn("absolute -left-[14px] top-[14px] h-[2px] w-3", isActiveBranch ? "bg-accent" : "bg-border")} />
+                                <div className="flex items-center gap-1">
+                                  <div className={cn(
+                                    "min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-[calc(var(--ui-fs)-3px)] font-medium text-t2",
+                                    isActiveBranch && "text-accent-t",
+                                  )}>{branch.label || t("sidebar_unnamed_branch")}</div>
+                                  <SidebarBranchRename branchId={branch.id} initialLabel={branch.label || ""} onRename={(label) => void chat.handleRenameBranch(branch.id, label)} />
+                                </div>
+                                <div className="overflow-hidden text-ellipsis whitespace-nowrap text-[calc(var(--ui-fs)-3px)] text-t3">
+                                  {branch.messageCount ?? 0} {t("msgs_short")} · {formatShortDate(branch.createdAt)}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                        <div className="mt-1 flex items-center gap-1 border-t border-border pt-1">
+                          <button
+                            className="inline-flex h-6 flex-1 cursor-pointer items-center justify-center gap-1 rounded px-1.5 text-center text-[calc(var(--ui-fs)-4px)] text-t3 transition-colors duration-150 hover:bg-s2 hover:text-t1 [&_svg]:h-3 [&_svg]:w-3"
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); void chat.handleFork(undefined); }}
+                          >
+                            <Icons.Branch /> {t("sidebar_fork_short")}
+                          </button>
+                          {(() => {
+                            const rootBranch = branches.find((b) => b.parentBranchId === null);
+                            const activeIsRoot = rootBranch != null && activeBranchId === rootBranch.id;
+                            const canAct = !activeIsRoot && branches.length > 1;
+                            return (
+                              <CustomTooltip content={canAct ? "" : t("sidebar_switch_to_non_main")}>
+                                <button
+                                  className={cn(
+                                    "inline-flex h-6 flex-1 cursor-pointer items-center justify-center gap-1 rounded px-1.5 text-center text-[calc(var(--ui-fs)-4px)] text-t3 transition-colors duration-150 hover:bg-s2 hover:text-t1 [&_svg]:h-3 [&_svg]:w-3",
+                                    !canAct && "cursor-not-allowed opacity-45",
+                                  )}
+                                  type="button"
+                                  aria-disabled={!canAct}
+                                  onClick={(e) => {
+                                    if (!canAct) return;
+                                    e.stopPropagation();
+                                    setConfirmDestroy({
+                                      title: t("sidebar_delete_branch"),
+                                      body: t("sidebar_delete_branch_body"),
+                                      confirmLabel: t("sidebar_delete_branch"),
+                                      onConfirm: () => void chat.handleDeleteActiveBranch(),
+                                    });
+                                  }}
+                                >
+                                  <Icons.Trash /> {t("sidebar_delete_branch_short")}
+                                </button>
+                              </CustomTooltip>
+                            );
+                          })()}
+                        </div>
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
-            );
-          })
-        )}
-      </div>
-    </div>,
-    document.body,
+                );
+              })
+            )}
+          </div>
+        </Popover.Content>
+      </Popover.Portal>
+    </Popover.Root>
   );
 }
