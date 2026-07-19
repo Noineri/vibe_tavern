@@ -2,12 +2,10 @@ import { create } from "zustand";
 
 export interface ModalState {
   isProviderModalOpen: boolean;
-  /** Which surface opened the provider modal. `"coauthor"` tool-filters the
-   *  model list (co-author turns require function-calling, so non-tool models
-   *  are hidden — see useToolCapableModels); `"default"` shows all models
-   *  (the RP surface). Resets to `"default"` when the modal closes so the RP
-   *  opener never inherits a stale coauthor mode. */
-  providerModalMode: "default" | "coauthor";
+  /** Dedicated Co-Author provider modal — a selection-only fork that writes
+   *  the independent binding (coauthorProviderId + coauthorModelName) without
+   *  touching RP activation or defaultModel. See CoauthorProviderModal. */
+  isCoauthorProviderModalOpen: boolean;
   isPromptManagerOpen: boolean;
   isPersonaModalOpen: boolean;
   isCreateCharacterModalOpen: boolean;
@@ -22,7 +20,7 @@ export interface ModalState {
 
 export interface ModalActions {
   setIsProviderModalOpen: (open: boolean) => void;
-  setProviderModalMode: (mode: "default" | "coauthor") => void;
+  setCoauthorProviderModalOpen: (open: boolean) => void;
   setIsPromptManagerOpen: (open: boolean) => void;
   setIsPersonaModalOpen: (open: boolean) => void;
   setCreateCharacterModalOpen: (open: boolean) => void;
@@ -39,7 +37,7 @@ export type ModalStore = ModalState & ModalActions;
 
 export const useModalStore = create<ModalStore>()((set) => ({
   isProviderModalOpen: false,
-  providerModalMode: "default",
+  isCoauthorProviderModalOpen: false,
   isPromptManagerOpen: false,
   isPersonaModalOpen: false,
   isCreateCharacterModalOpen: false,
@@ -52,7 +50,7 @@ export const useModalStore = create<ModalStore>()((set) => ({
   isUpdateModalOpen: false,
 
   setIsProviderModalOpen: (open) => set({ isProviderModalOpen: open }),
-  setProviderModalMode: (mode) => set({ providerModalMode: mode }),
+  setCoauthorProviderModalOpen: (open) => set({ isCoauthorProviderModalOpen: open }),
   setIsPromptManagerOpen: (open) => set({ isPromptManagerOpen: open }),
   setIsPersonaModalOpen: (open) => set({ isPersonaModalOpen: open }),
   setCreateCharacterModalOpen: (open) => set({ isCreateCharacterModalOpen: open }),

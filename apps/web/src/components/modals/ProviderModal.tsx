@@ -25,7 +25,6 @@ import { useModalStore } from "../../stores/modal-store.js";
 import { useBootstrapStore } from "../../stores/api-actions/bootstrap-actions.js";
 import { getProviderModelSettingsAction, reorderProviderProfilesAction } from "../../stores/api-actions/provider-actions.js";
 import { MasterDetailModal } from "../shared/MasterDetailModal.js";
-import { filterToolCapableModels } from "../coauthor/useToolCapableModels.js";
 
 export interface FormState {
   id: string;
@@ -176,14 +175,9 @@ export function ProviderModal({
 }: ProviderModalProps) {
   const isOpen = useModalStore((s) => s.isProviderModalOpen);
   const setIsOpen = useModalStore((s) => s.setIsProviderModalOpen);
-  const providerModalMode = useModalStore((s) => s.providerModalMode);
-  const setProviderModalMode = useModalStore((s) => s.setProviderModalMode);
   const isArmServer = useBootstrapStore((s) => s.data?.isArmServer ?? false);
   const visiblePresets = getVisibleProviderPresets(isArmServer);
-  // Closing the modal resets the mode to the RP default so the coauthor
-  // tool-filter never leaks into a later RP open (the RP opener doesn't set
-  // the mode, so it would otherwise inherit a stale "coauthor").
-  const onClose = () => { setIsOpen(false); setProviderModalMode("default"); };
+  const onClose = () => { setIsOpen(false); };
   const { t } = useT();
 
   // ── Selection state ──
@@ -589,13 +583,9 @@ export function ProviderModal({
   const filteredProfiles = profileSearch.trim()
     ? providerProfiles.filter((p) => p.name.toLowerCase().includes(profileSearch.toLowerCase()) || p.providerPreset.toLowerCase().includes(profileSearch.toLowerCase()))
     : providerProfiles;
-  // Coauthor mode (opened from CoauthorTopBar) hides non-tool models from the
-  // MAIN selector — co-author turns require function-calling, so a non-tool
-  // pick would silently break the tool loop. The vision selector below is
-  // unaffected (it already filters to capabilities.vision independently).
-  const selectableModels = providerModalMode === "coauthor"
-    ? filterToolCapableModels(models)
-    : models;
+  // Main selector shows all models (RP surface). Co-Author has its own
+  // dedicated modal with tool-capability filtering — no mode flag here.
+  const selectableModels = models;
   const filteredModels = modelSearch.trim()
     ? selectableModels.filter((m) => m.label.toLowerCase().includes(modelSearch.toLowerCase()) || m.id.toLowerCase().includes(modelSearch.toLowerCase()))
     : selectableModels;

@@ -47,13 +47,21 @@ vi.mock("../../stores/chat-selectors.js", async (importOriginal) => {
   };
 });
 
-vi.mock("../../hooks/use-provider-profiles.js", async (importOriginal) => {
-  const realProviderProfiles = await importOriginal() as typeof import("../../hooks/use-provider-profiles.js");
+vi.mock("../../hooks/use-coauthor-provider-binding.js", async (importOriginal) => {
+  const realBinding = await importOriginal() as typeof import("../../hooks/use-coauthor-provider-binding.js");
   return {
-    ...realProviderProfiles,
-    useProviderProfiles: () => ({
-      activeProviderProfile: { id: "p1", name: "OpenAI Pro", defaultModel: "gpt-4o" },
-      providerProfiles: [],
+    ...realBinding,
+    useCoauthorProviderBinding: () => ({
+      profile: { id: "p1", name: "OpenAI Pro" },
+      profileId: "p1",
+      model: "gpt-4o",
+      isExplicit: true,
+      isReady: true,
+      isDangling: false,
+      toolCapableModels: [{ id: "gpt-4o", label: "GPT-4o", contextLength: 128000 }],
+      favorites: [],
+      saveBinding: vi.fn(async () => {}),
+      quickSwitchModel: vi.fn(async () => {}),
     }),
   };
 });
@@ -82,9 +90,9 @@ describe("CoauthorTopBar", () => {
     expect(getByText("Kira Vex")).toBeDefined();
     // Memory badge — i18n key returned verbatim by the useT mock.
     expect(getByText("topbar_memory")).toBeDefined();
-    // Provider pill — name + model from the mocked active profile.
+    // Provider pill — name + model from the Co-Author binding.
     expect(getByText("OpenAI Pro")).toBeDefined();
-    expect(getByText("gpt-4o")).toBeDefined();
+    expect(getByText("GPT-4o")).toBeDefined();
   });
 
   it("does NOT render the prompt-preset switcher", () => {
@@ -95,18 +103,18 @@ describe("CoauthorTopBar", () => {
     expect(queryByText("topbar_default")).toBeNull();
   });
 
-  it("opens the provider modal in coauthor mode when the pill is clicked", () => {
+  it("opens the dedicated Co-Author provider modal when the pill is clicked", () => {
     const { getByText } = render(<Popover.Root><CoauthorTopBar /></Popover.Root>);
-    // Mode starts at the RP default.
-    expect(useModalStore.getState().providerModalMode).toBe("default");
+    // Both modals start closed.
+    expect(useModalStore.getState().isCoauthorProviderModalOpen).toBe(false);
     expect(useModalStore.getState().isProviderModalOpen).toBe(false);
     // The pill is the clickable element wrapping the provider name.
     const pill = getByText("OpenAI Pro").closest("[class*='cursor-pointer']") as HTMLElement;
     expect(pill).not.toBeNull();
     pill.click();
-    // CS-21: the pill must open the modal AND set coauthor mode so the model
-    // list is tool-filtered (co-author turns require function-calling).
-    expect(useModalStore.getState().isProviderModalOpen).toBe(true);
-    expect(useModalStore.getState().providerModalMode).toBe("coauthor");
+    // CS-33: the pill opens the dedicated fork modal, not the shared RP
+    // ProviderModal (which used to be opened via providerModalMode="coauthor").
+    expect(useModalStore.getState().isCoauthorProviderModalOpen).toBe(true);
+    expect(useModalStore.getState().isProviderModalOpen).toBe(false);
   });
 });

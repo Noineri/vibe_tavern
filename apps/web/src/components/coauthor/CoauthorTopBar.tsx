@@ -3,10 +3,10 @@ import * as Popover from "@radix-ui/react-popover";
 import { useIsMobile } from "../../hooks/use-mobile.js";
 import { cn } from "../../lib/cn.js";
 import { useT } from "../../i18n/context.js";
-import { useProviderStore, useModalStore } from "../../stores/index.js";
+import { useModalStore } from "../../stores/index.js";
 import { switchModeAction } from "../../stores/api-actions/chat-actions.js";
 import { useChatMeta } from "../../stores/chat-selectors.js";
-import { useProviderProfiles } from "../../hooks/use-provider-profiles.js";
+import { useCoauthorProviderBinding } from "../../hooks/use-coauthor-provider-binding.js";
 import { resolveEntityAvatarUrl } from "../../lib/avatar.js";
 import { CustomTooltip } from "../shared/Tooltip.js";
 import { MemBadge } from "../settings/popovers/MemBadge.js";
@@ -41,28 +41,23 @@ export function CoauthorTopBar({ railHidden, onShowRail }: { railHidden?: boolea
   const isMobile = useIsMobile();
 
   const chatMeta = useChatMeta();
-  const provider = useProviderProfiles();
-  const connection = useProviderStore((s) => s.connection);
+  const binding = useCoauthorProviderBinding();
 
   const characterName = chatMeta?.character.name ?? "";
   const characterAvatar = chatMeta?.character
     ? resolveEntityAvatarUrl({ kind: "characters", id: chatMeta.character.id, avatarExt: chatMeta.character.avatarExt, avatarAssetId: chatMeta.character.avatarAssetId, updatedAt: chatMeta.character.updatedAt }) ?? undefined
     : undefined;
 
-  // Provider pill — same derivation as TopBar. Opens the shared ProviderModal
-  // for now (CS-21 repoints to the tool-filtered CoauthorProviderModal).
-  const providerConnected = connection.status === "connected";
-  const providerLabel = provider.activeProviderProfile?.name || t("no_provider");
-  const providerModelId = provider.activeProviderProfile?.defaultModel || connection.model || null;
-  const providerModelLabel = (providerModelId && connection.models.find((m) => m.id === providerModelId)?.label) || providerModelId || t("no_model_selected");
+  // Provider pill — reads the Co-Author binding (explicit or RP fallback).
+  // Opens the dedicated fork modal, not the shared RP ProviderModal.
+  const providerLabel = binding.profile?.name || t("no_provider");
+  const modelLabel =
+    binding.toolCapableModels.find((m) => m.id === binding.model)?.label ||
+    binding.model ||
+    t("no_model_selected");
 
-  // Open the provider modal in coauthor mode so its model list is tool-filtered
-  // (co-author turns require function-calling). The mode auto-resets to
-  // "default" when the modal closes (ProviderModal.onClose), so the RP opener
-  // never inherits it.
   const openProviderModal = () => {
-    useModalStore.getState().setProviderModalMode("coauthor");
-    useModalStore.getState().setIsProviderModalOpen(true);
+    useModalStore.getState().setCoauthorProviderModalOpen(true);
   };
   const goBackToEditor = () => { void switchModeAction("build"); };
 
@@ -127,11 +122,11 @@ export function CoauthorTopBar({ railHidden, onShowRail }: { railHidden?: boolea
           >
             <div className={cn(
               "h-1.5 w-1.5 shrink-0 rounded-full transition-colors duration-300",
-              connection.status === "error" ? "bg-danger" : providerConnected ? "bg-success" : "bg-t4",
+              binding.isDangling ? "bg-danger" : binding.isReady ? "bg-success" : "bg-t4",
             )} />
             <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap font-medium text-t1">{providerLabel}</span>
             <span className="text-t3">·</span>
-            <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-t2">{providerModelLabel || "—"}</span>
+            <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-t2">{modelLabel || "—"}</span>
           </div>
         </CustomTooltip>
 

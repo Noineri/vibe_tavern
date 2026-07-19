@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { TooltipProvider } from "../shared/Tooltip.js";
 import { CoauthorProviderModal } from "./CoauthorProviderModal.js";
+import type { ProviderProfileRecord as ClientProviderProfileRecord } from "../../api/types.js";
 import { useProviderDataStore } from "../../stores/provider-data-store.js";
 import { useBootstrapStore } from "../../stores/api-actions/bootstrap-actions.js";
 
@@ -32,13 +33,13 @@ vi.mock("../../i18n/context.js", async (importOriginal) => {
   };
 });
 
-function makeProfile(id: string, name: string, over: Record<string, unknown> = {}) {
+function makeProfile(id: string, name: string, over: Record<string, unknown> = {}): ClientProviderProfileRecord {
   return {
     id, name, providerPreset: "openaiCompat", endpoint: "https://api.test/v1",
     defaultModel: null, isActive: false,
     cachedModels: { models: [{ id: "tool-model", label: "Tool Model", contextLength: 32000, capabilities: { tools: true } }] },
     ...over,
-  };
+  } as ClientProviderProfileRecord;
 }
 
 function setBinding(coauthorProviderId: string | null, coauthorModelName: string | null) {

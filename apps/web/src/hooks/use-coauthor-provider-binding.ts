@@ -81,6 +81,7 @@ export function useCoauthorProviderBinding() {
 
   return {
     ...binding,
+    toolCapableModels,
     favorites: toolFilteredFavorites,
     saveBinding,
     quickSwitchModel,

@@ -25,6 +25,7 @@ import { CreateCharacterModal } from "../modals/CreateCharacterModal.js";
 import { PersonaModal } from "../modals/PersonaModal.js";
 import { PromptManagerModal } from "../modals/PromptManagerModal.js";
 import { ProviderModal } from "../modals/ProviderModal.js";
+import { CoauthorProviderModal } from "../modals/CoauthorProviderModal.js";
 import { SetupWizard } from "../layout/SetupWizard.js";
 import { ShellDestructiveConfirmModal } from "../shared/destructive-confirm-modal.js";
 import { TweaksPanel } from "../settings/popovers/TweaksPanel.js";
@@ -73,6 +74,8 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
   const setContextMemoryOpen = useModalStore((s) => s.setContextMemoryOpen);
   const isProviderModalOpen = useModalStore((s) => s.isProviderModalOpen);
   const setIsProviderModalOpen = useModalStore((s) => s.setIsProviderModalOpen);
+  const isCoauthorProviderModalOpen = useModalStore((s) => s.isCoauthorProviderModalOpen);
+  const setCoauthorProviderModalOpen = useModalStore((s) => s.setCoauthorProviderModalOpen);
   const isPromptManagerOpen = useModalStore((s) => s.isPromptManagerOpen);
   const setIsPromptManagerOpen = useModalStore((s) => s.setIsPromptManagerOpen);
   const isPersonaModalOpen = useModalStore((s) => s.isPersonaModalOpen);
@@ -383,6 +386,12 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
         favoriteModelsByProfile={provider.favoriteModelsByProfile}
         onToggleFavoriteModel={provider.handleToggleFavoriteProviderModel}
         onRefreshProfiles={async () => { await provider.handleRefreshProfiles(); }}
+      />
+
+      <CoauthorProviderModal
+        isOpen={isCoauthorProviderModalOpen}
+        onClose={() => setCoauthorProviderModalOpen(false)}
+        onOpenProviderModal={() => setIsProviderModalOpen(true)}
       />
 
       <PromptManagerModal
