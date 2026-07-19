@@ -612,6 +612,13 @@ export const uiSettings = sqliteTable('ui_settings', {
   activePromptPresetId: text('active_prompt_preset_id').references(() => promptPresets.id, { onDelete: 'set null' }),
   aiAssistantProviderId: text('ai_assistant_provider_id'),
   aiAssistantModelName: text('ai_assistant_model_name'),
+  // Co-Author generation binding — app-wide, independent of RP active profile.
+  // Null (or dangling after profile deletion) falls back to the RP active
+  // profile/default model at the adapter boundary. No DB-level FK: like
+  // aiAssistantProviderId, a deleted profile leaves a dangling id that the
+  // adapter resolves (dangling → fallback) rather than blocking the delete.
+  coauthorProviderId: text('coauthor_provider_id'),
+  coauthorModelName: text('coauthor_model_name'),
   updatedAt: text('updated_at').notNull(),
 });
 

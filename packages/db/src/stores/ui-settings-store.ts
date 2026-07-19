@@ -18,6 +18,8 @@ export interface UiSettings {
   activePromptPresetId: string | null;
   aiAssistantProviderId: string | null;
   aiAssistantModelName: string | null;
+  coauthorProviderId: string | null;
+  coauthorModelName: string | null;
   updatedAt: string;
 }
 
@@ -32,6 +34,8 @@ export interface UiSettingsUpdate {
   activePromptPresetId?: string | null;
   aiAssistantProviderId?: string | null;
   aiAssistantModelName?: string | null;
+  coauthorProviderId?: string | null;
+  coauthorModelName?: string | null;
 }
 
 // ─── Defaults ─────────────────────────────────────────────────────────────────
@@ -46,6 +50,8 @@ const UI_SETTINGS_DEFAULTS: Omit<UiSettings, 'updatedAt'> = {
   activePromptPresetId: null,
   aiAssistantProviderId: null,
   aiAssistantModelName: null,
+  coauthorProviderId: null,
+  coauthorModelName: null,
 };
 
 // ─── Store ────────────────────────────────────────────────────────────────────
@@ -91,6 +97,8 @@ export class UiSettingsStore {
       activePromptPresetId: partial.activePromptPresetId ?? UI_SETTINGS_DEFAULTS.activePromptPresetId,
       aiAssistantProviderId: partial.aiAssistantProviderId ?? UI_SETTINGS_DEFAULTS.aiAssistantProviderId,
       aiAssistantModelName: partial.aiAssistantModelName ?? UI_SETTINGS_DEFAULTS.aiAssistantModelName,
+      coauthorProviderId: partial.coauthorProviderId ?? UI_SETTINGS_DEFAULTS.coauthorProviderId,
+      coauthorModelName: partial.coauthorModelName ?? UI_SETTINGS_DEFAULTS.coauthorModelName,
       updatedAt: this.clock.now(),
     }).returning();
     return this.mapRow(row!);
@@ -112,6 +120,8 @@ export class UiSettingsStore {
       activePromptPresetId: UI_SETTINGS_DEFAULTS.activePromptPresetId,
       aiAssistantProviderId: UI_SETTINGS_DEFAULTS.aiAssistantProviderId,
       aiAssistantModelName: UI_SETTINGS_DEFAULTS.aiAssistantModelName,
+      coauthorProviderId: UI_SETTINGS_DEFAULTS.coauthorProviderId,
+      coauthorModelName: UI_SETTINGS_DEFAULTS.coauthorModelName,
       updatedAt: this.clock.now(),
     }).returning();
 
@@ -131,6 +141,8 @@ export class UiSettingsStore {
       activePromptPresetId: row.activePromptPresetId,
       aiAssistantProviderId: row.aiAssistantProviderId ?? null,
       aiAssistantModelName: row.aiAssistantModelName ?? null,
+      coauthorProviderId: row.coauthorProviderId ?? null,
+      coauthorModelName: row.coauthorModelName ?? null,
       updatedAt: row.updatedAt,
     };
   }
