@@ -192,6 +192,77 @@ export function GenerateCancelButton({
 }
 
 // ---------------------------------------------------------------------------
+// GeneratingScrim — standalone overlay for any generation surface
+// ---------------------------------------------------------------------------
+
+export interface GeneratingScrimProps {
+	/**
+	 * "blur" — avatar-description style: backdrop-blur when there is existing
+	 * content so the locked text reads as frozen.
+	 * "dim" — coauthor style: semi-transparent overlay that softly darkens the
+	 * surface without blurring text (text stays readable, just clearly frozen).
+	 */
+	variant: "blur" | "dim";
+	/** Visible label rendered next to the spinner. */
+	label: string;
+	/**
+	 * Whether the overlay should intercept pointer events (acting as a
+	 * functional guard). DEFAULT: "none" — visual-only. Set "auto" when the
+	 * scrim must block clicks to controls rendered underneath (e.g. widget
+	 * decorations inside a locked CodeMirror editor).
+	 */
+	pointerEvents?: "none" | "auto";
+	/** Extra class on the overlay (e.g. rounded corners to match the host). */
+	className?: string;
+	/**
+	 * When true AND variant="blur", the backdrop-blur is applied so the locked
+	 * text reads as frozen. DEFAULT false.
+	 */
+	hasExistingContent?: boolean;
+}
+
+/**
+ * Centred spinner + label overlay for any generation surface. Decoupled from
+ * `GenerationSurface`'s render-prop contract so it can be dropped into any
+ * relative parent without refactoring the host component.
+ *
+ * - `variant="blur"` + `hasExistingContent` → `backdrop-blur-[4px]` (legacy
+ *   avatar-description look).
+ * - `variant="dim"` → `bg-surface/55` semi-transparent overlay (coauthor
+ *   editor dim). No blur — the user can still read the frozen document.
+ * - `pointerEvents="auto"` → overlay intercepts clicks (functional guard for
+ *   CodeMirror widget decorations that bypass the `EditorView.editable` facet).
+ *   Default "none" keeps the avatar-description path byte-identical.
+ */
+export function GeneratingScrim({
+	variant,
+	label,
+	pointerEvents,
+	className,
+	hasExistingContent,
+}: GeneratingScrimProps) {
+	const blur = variant === "blur" && hasExistingContent;
+	return (
+		<motion.div
+			initial={{ opacity: 0 }}
+			animate={{ opacity: 1 }}
+			exit={{ opacity: 0 }}
+			transition={{ duration: 0.2 }}
+			className={cn(
+				"absolute inset-0 flex items-center justify-center gap-2 rounded-md px-3",
+				pointerEvents === "auto" ? "pointer-events-auto" : "pointer-events-none",
+				blur && "backdrop-blur-[4px]",
+				variant === "dim" && "bg-surface/55",
+				className,
+			)}
+		>
+			<span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-accent/30 border-t-accent" />
+			<span className="font-ui text-[16px] text-t2">{label}</span>
+		</motion.div>
+	);
+}
+
+// ---------------------------------------------------------------------------
 // GenerationSurface
 // ---------------------------------------------------------------------------
 
@@ -204,7 +275,7 @@ export interface GenerationSurfaceProps {
 	/** External disable (e.g. no avatar / form saving). OR-merged with generating. */
 	disabled?: boolean;
 	/**
-	 * Override the backdrop-blur variant. DEFAULT: derived from `value` —
+	 * Override the backdrop-blur trigger. DEFAULT: derived from `value` —
 	 * `value.trim().length > 0`. Consumers that want to gate the blur on a
 	 * different signal (e.g. a committed prop vs a draft) can pass it here.
 	 */
@@ -228,9 +299,9 @@ export interface GenerationSurfaceProps {
  * - Detects empty→non-empty transitions of `value` and surfaces a 1.4s accent
  *   flash so a silently-arrived server value is noticed. Mounting with content
  *   does NOT flash (prevValue ref is seeded from the initial prop).
- * - While generating, an overlay with a spinner + `generatingLabel` appears.
- *   When there is existing content (`hasExistingValue` or non-empty `value`),
- *   a `backdrop-blur-[4px]` is applied so the locked text reads as frozen.
+ * - While generating, a `GeneratingScrim (variant="blur")` overlays the control
+ *   (pointer-events-none — visual-only, consistent with the original avatar-
+ *   description implementation).
  */
 export function GenerationSurface({
 	generating,
@@ -270,22 +341,13 @@ export function GenerationSurface({
 		<div className={cn("relative", className)}>
 			{children({ disabled: childDisabled, controlClassName })}
 
-			{/* Generating overlay — centered spinner + label. */}
 			<AnimatePresence>
 				{generating && (
-					<motion.div
-						initial={{ opacity: 0 }}
-						animate={{ opacity: 1 }}
-						exit={{ opacity: 0 }}
-						transition={{ duration: 0.2 }}
-						className={cn(
-							"pointer-events-none absolute inset-0 flex items-center justify-center gap-2 rounded-md px-3",
-							resolvedHasExisting ? "backdrop-blur-[4px]" : "",
-						)}
-					>
-						<span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-accent/30 border-t-accent" />
-						<span className="font-ui text-[16px] text-t2">{generatingLabel}</span>
-					</motion.div>
+					<GeneratingScrim
+						variant="blur"
+						label={generatingLabel}
+						hasExistingContent={resolvedHasExisting}
+					/>
 				)}
 			</AnimatePresence>
 
