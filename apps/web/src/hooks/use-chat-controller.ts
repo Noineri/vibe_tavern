@@ -18,6 +18,8 @@ import { useProviderStore } from "../stores/provider-store.js";
 import { useProviderDataStore } from "../stores/provider-data-store.js";
 import { StreamingReveal } from "../lib/streaming-reveal.js";
 import { useSnapshotStore } from "../stores/snapshot-store.js";
+import { useBootstrapStore } from "../stores/api-actions/bootstrap-actions.js";
+import { resolveCoauthorBinding } from "../lib/coauthor-provider-binding.js";
 import { useTraceHistoryStore } from "../stores/trace-history-store.js";
 import { useCoauthorTurnStore } from "../stores/coauthor-turn-store.js";
 import { coauthorToolOutputSchema, coauthorSkillReadOutputSchema, coauthorLoreBundleOutputSchema } from "@vibe-tavern/api-contracts";
@@ -132,7 +134,21 @@ export function useChatController(): ChatControllerActions {
     () => providerProfiles.find((p) => p.isActive) ?? null,
     [providerProfiles],
   );
-  const canSendViaActiveProfile = activeProfile !== null && Boolean(activeProfile.defaultModel);
+
+  // Co-Author binding — used for the send gate when the active chat is in
+  // coauthor mode. resolveCoauthorBinding falls back to the RP active profile
+  // when no explicit Co-Author pair is saved, so coauthor readiness covers both.
+  const coauthorProviderId = useBootstrapStore((s) => s.data?.uiSettings?.coauthorProviderId ?? null);
+  const coauthorModelName = useBootstrapStore((s) => s.data?.uiSettings?.coauthorModelName ?? null);
+  const chatMode = useSnapshotStore((s) => s.activeChat?.mode);
+  const coauthorBinding = useMemo(
+    () => resolveCoauthorBinding({ coauthorProviderId, coauthorModelName, profiles: providerProfiles, rpActiveProfile: activeProfile }),
+    [coauthorProviderId, coauthorModelName, providerProfiles, activeProfile],
+  );
+
+  const canSendViaActiveProfile = chatMode === "coauthor"
+    ? coauthorBinding.isReady
+    : activeProfile !== null && Boolean(activeProfile.defaultModel);
   const streamResponse = useProviderStore((s) => s.connection.streamResponse);
 
   // Refs for stable access in async callbacks

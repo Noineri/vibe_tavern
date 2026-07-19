@@ -22,15 +22,16 @@ import type { ChatId } from "@vibe-tavern/domain";
 // `...actual` first so types, logClientSendDebug, and the (unused here) stream
 // functions keep their real bindings; vi.mock is file-scoped (vitest), so this
 // cannot leak into other test files.
-const { regenerateChatMessage, fetchChat, logClientSendDebug } = vi.hoisted(() => ({
+const { regenerateChatMessage, sendChatMessageStream, fetchChat, logClientSendDebug } = vi.hoisted(() => ({
   regenerateChatMessage: vi.fn(),
+  sendChatMessageStream: vi.fn(),
   fetchChat: vi.fn(),
   // fire-and-forget POST to /api/debug/send-log — no server in tests.
   logClientSendDebug: vi.fn(),
 }));
 vi.mock("../app-client.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../app-client.js")>();
-  return { ...actual, regenerateChatMessage, fetchChat, logClientSendDebug };
+  return { ...actual, regenerateChatMessage, sendChatMessageStream, fetchChat, logClientSendDebug };
 });
 
 // getT() without initI18n — translations are irrelevant to state cleanup.
@@ -42,6 +43,8 @@ import { useChatController } from "./use-chat-controller.js";
 import { useChatStore } from "../stores/chat-store.js";
 import { useProviderStore } from "../stores/provider-store.js";
 import { useProviderDataStore } from "../stores/provider-data-store.js";
+import { useSnapshotStore } from "../stores/snapshot-store.js";
+import { useBootstrapStore } from "../stores/api-actions/bootstrap-actions.js";
 
 const CHAT = "chat-1" as ChatId;
 const MSG = "msg-1";
@@ -60,6 +63,7 @@ function rejectOnAbort(_chatId: ChatId, _messageId: string, opts?: { signal?: Ab
 
 beforeEach(() => {
   regenerateChatMessage.mockReset();
+  sendChatMessageStream.mockReset();
   fetchChat.mockReset();
   // ingestSnapshot preserves absent fields, so an empty snapshot is a safe
   // no-op refresh for the post-abort / post-error refetch.
@@ -128,5 +132,44 @@ describe("useChatController — handleRegenerateMessage (non-stream)", () => {
 
     expect(useChatStore.getState().messageActionId).toBeNull();
     expect(useChatStore.getState().generations[CHAT]?.isSending).toBe(false);
+  });
+});
+
+describe("useChatController — Co-Author send gate", () => {
+  beforeEach(() => {
+    // Put the active chat into coauthor mode.
+    useSnapshotStore.setState({ activeChat: { mode: "coauthor" } as never });
+    // Stream mode so handleSend uses the stream path (sendChatMessageStream).
+    useProviderStore.setState((s) => ({ connection: { ...s.connection, streamResponse: true } }));
+  });
+
+  test("passes the gate when an explicit Co-Author binding exists", async () => {
+    useProviderDataStore.setState({
+      profiles: [{ id: "p_co", name: "Co Prof", isActive: false, defaultModel: null } as never],
+    });
+    useBootstrapStore.setState({
+      data: { uiSettings: { coauthorProviderId: "p_co", coauthorModelName: "tool-m" } } as never,
+    });
+    sendChatMessageStream.mockImplementation((_id: unknown, _body: unknown, opts: { onDone?: () => void }) => {
+      opts?.onDone?.();
+      return Promise.resolve();
+    });
+
+    useChatStore.setState({ activeChatId: CHAT, draft: "hello", generations: {}, messageActionId: null });
+    const { result } = renderHook(() => useChatController());
+    await act(async () => { await result.current.handleSend(); });
+
+    expect(sendChatMessageStream).toHaveBeenCalledTimes(1);
+  });
+
+  test("blocks when no explicit binding and no RP fallback profile", async () => {
+    useProviderDataStore.setState({ profiles: [] });
+    useBootstrapStore.setState({ data: { uiSettings: { coauthorProviderId: null, coauthorModelName: null } } as never });
+
+    useChatStore.setState({ activeChatId: CHAT, draft: "hello", generations: {}, messageActionId: null });
+    const { result } = renderHook(() => useChatController());
+    await act(async () => { await result.current.handleSend(); });
+
+    expect(sendChatMessageStream).not.toHaveBeenCalled();
   });
 });
