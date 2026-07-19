@@ -62,7 +62,7 @@ export interface CharacterChatsSheetProps {
 	/** Character controller (rename + the useRowActions surface). */
 	character: CharacterControllerActions;
 	setConfirmDestroy: (dialog: ConfirmDestroyDialog | null) => void;
-	setChatImportOpen: (open: boolean) => void;
+	openChatImport: () => void;
 	onClose: () => void;
 	onSwitchChat: (id: ChatId) => void;
 	onCreateChat: () => void;
@@ -72,7 +72,7 @@ export function CharacterChatsSheet({
 	characterId, characterName, characterAvatarSrc,
 	chats, activeChatId, branches, activeBranchId,
 	withBranches, emptyTitleKey, mode,
-	character, setConfirmDestroy, setChatImportOpen,
+	character, setConfirmDestroy, openChatImport,
 	onClose, onSwitchChat, onCreateChat,
 }: CharacterChatsSheetProps) {
 	const { t, tDynamic } = useT();
@@ -101,7 +101,7 @@ export function CharacterChatsSheet({
 		setRenameDraft,
 		setRenamingBranch,
 		setBranchRenameDraft,
-		setChatImportOpen,
+		openChatImport,
 	});
 
 	if (!characterId) return null;

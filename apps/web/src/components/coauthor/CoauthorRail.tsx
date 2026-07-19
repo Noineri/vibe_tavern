@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { ListSortToggle } from "../shared/ListSortToggle.js";
 import type { ChatId } from "@vibe-tavern/domain";
 import { Ic } from "../shared/icons.js";
@@ -16,7 +16,7 @@ import { getModalPortal } from "../shared/modal-helpers.js";
 import { useSidebarChats } from "../layout/hooks/use-sidebar-chats.js";
 import { useSidebarCharacters } from "../layout/hooks/use-sidebar-characters.js";
 import { useRowActions } from "../layout/hooks/use-row-actions.js";
-import { CharacterImportModal, ChatImportModal } from "../modals/ImportModals.js";
+import { CharacterImportMobile, type CharacterImportMobileHandle } from "../modals/import/CharacterImportMobile.js";
 
 /** Resolve a character list entry's avatar URL (folder avatar when migrated). */
 const charAvatarSrc = (c: { id: string; avatarExt: string | null; avatarAssetId: string | null; updatedAt?: string | null }) =>
@@ -46,8 +46,9 @@ export function CoauthorRail({ hidden }: { hidden?: boolean }) {
   const setConfirmDestroy = useCharacterStore((s) => s.setConfirmDestroy);
 
   const [expanded, setExpanded] = useState(false);
-  const [importOpen, setImportOpen] = useState(false);
-  const [chatImportOpen, setChatImportOpen] = useState(false);
+  const characterImportRef = useRef<CharacterImportMobileHandle>(null);
+  // Co-author mode intentionally does not surface JSONL chat import, so the
+  // `openChatImport` callback passed to useRowActions / CharacterChatsSheet is a no-op.
   // The character whose chats are shown in the CharacterChatsSheet (tablet bottom
   // sheet launched from a collapsed-strip avatar tap). null = closed.
   const [sheetCharId, setSheetCharId] = useState<string | null>(null);
@@ -133,7 +134,7 @@ export function CoauthorRail({ hidden }: { hidden?: boolean }) {
     setRenameDraft,
     setRenamingBranch: () => {},
     setBranchRenameDraft: () => {},
-    setChatImportOpen,
+    openChatImport: () => {},
   });
 
   return (
@@ -163,7 +164,7 @@ export function CoauthorRail({ hidden }: { hidden?: boolean }) {
             importCharShortLabel={t("import_char_short")}
             onCharacterClick={(id) => setSheetCharId(id)}
             onCreateCharacter={() => { useModalStore.getState().setCreateCharacterModalOpen(true); }}
-            onImport={() => { setImportOpen(true); }}
+            onImport={() => { characterImportRef.current?.openPicker(); }}
           />
         </div>
 
@@ -208,7 +209,7 @@ export function CoauthorRail({ hidden }: { hidden?: boolean }) {
                       <Ic.plus /> <span className="truncate">{t("create_manual")}</span>
                     </div>
                     <div className="flex min-h-[44px] cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-border2 bg-s2/50 font-ui text-[calc(var(--ui-fs)-2px)] text-t3 transition-[background-color,transform] duration-150 ease-out active:bg-s3 active:scale-[0.96]"
-                         onClick={() => { setImportOpen(true); close(); }}>
+                         onClick={() => { characterImportRef.current?.openPicker(); close(); }}>
                       <Ic.import /> <span className="truncate">{t("import_char_short")}</span>
                     </div>
                   </div>
@@ -397,29 +398,19 @@ export function CoauthorRail({ hidden }: { hidden?: boolean }) {
           mode="coauthor"
           character={character}
           setConfirmDestroy={setConfirmDestroy}
-          setChatImportOpen={setChatImportOpen}
+          openChatImport={() => {}}
           onClose={() => setSheetCharId(null)}
           onSwitchChat={(id) => { void chat.handleSwitchChat(id); }}
           onCreateChat={() => { void character.handleCreateChat(sheetCharId ?? undefined, "coauthor"); }}
         />
       )}
 
-      {/* ═══ MODALS ═══ */}
-      {importOpen && (
-        <CharacterImportModal
-          isImporting={character.isImporting}
-          onClose={() => setImportOpen(false)}
-          onImportFiles={(files) => { void character.handleImportFiles(files); }}
-        />
-      )}
-      {chatImportOpen && (
-        <ChatImportModal
-          isImporting={character.isImporting}
-          activeChatId={activeChatId}
-          onClose={() => setChatImportOpen(false)}
-          onImportFiles={(files) => { void character.handleImportFiles(files); }}
-        />
-      )}
+      {/* ═══ IMPORT ORCHESTRATOR (mobile; always-mounted) ═══ */}
+      <CharacterImportMobile
+        ref={characterImportRef}
+        isImporting={character.isImporting}
+        onImportFiles={(files) => { void character.handleImportFiles(files); }}
+      />
     </>
   );
 }

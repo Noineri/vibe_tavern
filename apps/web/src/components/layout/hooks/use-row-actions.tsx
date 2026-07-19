@@ -59,7 +59,7 @@ export interface UseRowActionsArgs {
 	readonly setRenamingBranch: (b: { chatId: ChatId; branchId: ChatBranchId } | null) => void;
 	readonly setBranchRenameDraft: (draft: string) => void;
 	/** Opens the chat-import flow from the character menu (RP behavior). */
-	readonly setChatImportOpen: (open: boolean) => void;
+	readonly openChatImport: () => void;
 }
 
 export interface BranchMenuTarget {
@@ -82,7 +82,7 @@ export function useRowActions({
 	setRenameDraft,
 	setRenamingBranch,
 	setBranchRenameDraft,
-	setChatImportOpen,
+	openChatImport,
 }: UseRowActionsArgs): UseRowActionsResult {
 	const { t } = useT();
 
@@ -93,7 +93,7 @@ export function useRowActions({
 		];
 		// JSONL chat import is RP-only — the co-author surface does not surface JSONL chat portability.
 		if (mode === "rp") {
-			items.push({ icon: <Ic.import />, label: t("sidebar_import_chat"), action: () => setChatImportOpen(true) });
+			items.push({ icon: <Ic.import />, label: t("sidebar_import_chat"), action: openChatImport });
 		}
 		items.push({
 			icon: <Ic.del />,

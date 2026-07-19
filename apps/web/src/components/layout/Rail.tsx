@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { ListSortToggle } from "../shared/ListSortToggle.js";
 import type { ChatBranchId, ChatId } from "@vibe-tavern/domain";
 import { Ic } from "../shared/icons.js";
@@ -15,7 +15,8 @@ import { getModalPortal } from "../shared/modal-helpers.js";
 import { useSidebarChats } from "./hooks/use-sidebar-chats.js";
 import { useSidebarCharacters } from "./hooks/use-sidebar-characters.js";
 import { useRowActions } from "./hooks/use-row-actions.js";
-import { CharacterImportModal, ChatImportModal } from "../modals/ImportModals.js";
+import { CharacterImportMobile, type CharacterImportMobileHandle } from "../modals/import/CharacterImportMobile.js";
+import { ChatImportMobile, type ChatImportMobileHandle } from "../modals/import/ChatImportMobile.js";
 
 /** Resolve a character list entry's avatar URL (folder avatar when migrated). */
 const charAvatarSrc = (c: { id: string; avatarExt: string | null; avatarAssetId: string | null; updatedAt?: string | null }) =>
@@ -69,8 +70,10 @@ export function Rail({ hidden }: { hidden?: boolean }) {
   const setConfirmDestroy = useCharacterStore((s) => s.setConfirmDestroy);
 
   const [expanded, setExpanded] = useState(false);
-  const [importOpen, setImportOpen] = useState(false);
-  const [chatImportOpen, setChatImportOpen] = useState(false);
+  // Mobile import orchestrators are always-mounted; rail buttons trigger them
+  // via imperative `openPicker()` refs (see IF-6 of IMPORT_MOBILE_FLOW_PLAN.md).
+  const characterImportRef = useRef<CharacterImportMobileHandle>(null);
+  const chatImportRef = useRef<ChatImportMobileHandle>(null);
   const [branchesOpen, setBranchesOpen] = useState<string | null>(null);
   // The character whose chats are shown in the CharacterChatsSheet (tablet
   // bottom sheet launched from a collapsed-strip avatar tap). null = closed.
@@ -171,7 +174,7 @@ export function Rail({ hidden }: { hidden?: boolean }) {
     setRenameDraft,
     setRenamingBranch,
     setBranchRenameDraft,
-    setChatImportOpen,
+    openChatImport: () => chatImportRef.current?.openPicker(),
   });
   const commitBranchRename = () => {
     const nextLabel = branchRenameDraft.trim();
@@ -213,7 +216,7 @@ export function Rail({ hidden }: { hidden?: boolean }) {
               importCharShortLabel={t("import_char_short")}
               onCharacterClick={(id) => setSheetCharId(id)}
               onCreateCharacter={() => { useModalStore.getState().setCreateCharacterModalOpen(true); }}
-              onImport={() => { setImportOpen(true); }}
+              onImport={() => { characterImportRef.current?.openPicker(); }}
             />
           )}
         </div>
@@ -265,7 +268,7 @@ export function Rail({ hidden }: { hidden?: boolean }) {
                       <Ic.plus /> <span className="truncate">{t("create_manual")}</span>
                     </div>
                     <div className="flex min-h-[44px] cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-border2 bg-s2/50 font-ui text-[calc(var(--ui-fs)-2px)] text-t3 transition-[background-color,transform] duration-150 ease-out active:bg-s3 active:scale-[0.96]"
-                         onClick={() => { setImportOpen(true); close(); }}>
+                         onClick={() => { characterImportRef.current?.openPicker(); close(); }}>
                       <Ic.import /> <span className="truncate">{t("import_char_short")}</span>
                     </div>
                   </div>
@@ -516,29 +519,24 @@ export function Rail({ hidden }: { hidden?: boolean }) {
           mode="rp"
           character={character}
           setConfirmDestroy={setConfirmDestroy}
-          setChatImportOpen={setChatImportOpen}
+          openChatImport={() => chatImportRef.current?.openPicker()}
           onClose={() => setSheetCharId(null)}
           onSwitchChat={(id) => { void chat.handleSwitchChat(id); }}
           onCreateChat={() => { void character.handleCreateChat(sheetCharId ?? undefined); }}
         />
       )}
 
-      {/* ═══ MODALS ═══ */}
-      {importOpen && (
-        <CharacterImportModal
-          isImporting={character.isImporting}
-          onClose={() => setImportOpen(false)}
-          onImportFiles={(files) => { void character.handleImportFiles(files); }}
-        />
-      )}
-      {chatImportOpen && (
-        <ChatImportModal
-          isImporting={character.isImporting}
-          activeChatId={activeChatId}
-          onClose={() => setChatImportOpen(false)}
-          onImportFiles={(files) => { void character.handleImportFiles(files); }}
-        />
-      )}
+      {/* ═══ IMPORT ORCHESTRATORS (mobile; always-mounted) ═══ */}
+      <CharacterImportMobile
+        ref={characterImportRef}
+        isImporting={character.isImporting}
+        onImportFiles={(files) => { void character.handleImportFiles(files); }}
+      />
+      <ChatImportMobile
+        ref={chatImportRef}
+        isImporting={character.isImporting}
+        onImportFiles={(files) => { void character.handleImportFiles(files); }}
+      />
     </>
   );
 }
