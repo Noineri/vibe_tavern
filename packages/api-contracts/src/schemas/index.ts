@@ -52,6 +52,7 @@ export {
   tokenizeSchema,
   modelSettingsOverlaySchema,
   samplerPresetPayloadSchema,
+  reorderProviderProfilesSchema,
 } from "./provider-schema.js";
 export {
   createPromptPresetSchema,

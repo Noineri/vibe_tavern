@@ -1,5 +1,5 @@
 import type { StoredProviderProfileRecord, ModelSettingsOverlay } from '@vibe-tavern/domain';
-import { and, eq } from 'drizzle-orm';
+import { and, asc, eq, sql } from 'drizzle-orm';
 import { providerProfiles, cachedModels, providerModelFavorites, providerModelSettings } from '../db-schema.js';
 import type { AppDb } from '../db-connection.js';
 import { resolveStoreRuntime, type StoreClock, type StoreIdGenerator } from '../persistence.js';
@@ -130,7 +130,7 @@ export class ProviderStore {
   }
 
   async listAll(): Promise<ProviderProfile[]> {
-    const rows = await this.db.select().from(providerProfiles).all();
+    const rows = await this.db.select().from(providerProfiles).orderBy(asc(providerProfiles.sortOrder), asc(providerProfiles.createdAt)).all();
     const result = rows.map((row) => this.mapRow(row));
     for (const p of result) {
       console.log(`[DB] provider.listAll id=${p.id} visionModel=${p.visionModel}`);
@@ -149,11 +149,19 @@ export class ProviderStore {
     const id = this.idGen.next('prov');
     const now = this.clock.now();
 
+    // Append at end: sort_order = current max + 1 (see PromptPresetStore.create).
+    const maxRow = await this.db
+      .select({ maxSort: sql<number>`COALESCE(MAX(${providerProfiles.sortOrder}), -1)` })
+      .from(providerProfiles)
+      .get();
+    const nextSortOrder = (maxRow?.maxSort ?? -1) + 1;
+
     const [row] = await this.db
       .insert(providerProfiles)
       .values({
         id,
         name: data.name,
+        sortOrder: nextSortOrder,
         providerPreset: data.providerPreset,
         endpoint: data.endpoint,
         apiKey: data.apiKey ?? null,
@@ -276,11 +284,19 @@ export class ProviderStore {
     const newId = this.idGen.next('prov');
     const now = this.clock.now();
 
+    // Append at end (see create()).
+    const maxRow = await this.db
+      .select({ maxSort: sql<number>`COALESCE(MAX(${providerProfiles.sortOrder}), -1)` })
+      .from(providerProfiles)
+      .get();
+    const nextSortOrder = (maxRow?.maxSort ?? -1) + 1;
+
     const [row] = await this.db
       .insert(providerProfiles)
       .values({
         id: newId,
         name: `${original.name} (copy)`,
+        sortOrder: nextSortOrder,
         providerPreset: original.providerPreset,
         endpoint: original.endpoint,
         apiKey: original.apiKey,
@@ -324,6 +340,20 @@ export class ProviderStore {
       .returning();
 
     return this.mapRow(row!);
+  }
+
+  async reorder(updates: Array<{ id: string; sortOrder: number }>): Promise<ProviderProfile[]> {
+    const now = this.clock.now();
+    await this.db.transaction(async (tx) => {
+      for (const u of updates) {
+        await tx
+          .update(providerProfiles)
+          .set({ sortOrder: u.sortOrder, updatedAt: now })
+          .where(eq(providerProfiles.id, u.id))
+          .run();
+      }
+    });
+    return this.listAll();
   }
 
   // ─── Cached models ─────────────────────────────────────────────────────────

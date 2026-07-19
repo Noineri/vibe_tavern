@@ -14,6 +14,10 @@ export function createProviderRoutes(runtime: ProviderRuntimeApi) {
       }
       return c.json(profiles);
     })
+    .patch("/api/providers/reorder", zValidator("json", schemas.reorderProviderProfilesSchema), async (c) => {
+      const body = c.req.valid("json");
+      return c.json(await runtime.reorderProviderProfiles(body.updates));
+    })
     .get("/api/providers/:providerId", async (c) => {
       return c.json(await runtime.fetchProviderProfile(c.req.param("providerId")));
     })

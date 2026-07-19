@@ -131,3 +131,10 @@ export const tokenizeSchema = z.object({
   text: z.string().min(1),
   model: z.string().optional(),
 });
+
+export const reorderProviderProfilesSchema = z.object({
+  updates: z.array(z.object({
+    id: z.string(),
+    sortOrder: z.number(),
+  })),
+});

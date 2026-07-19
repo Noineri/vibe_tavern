@@ -332,6 +332,7 @@ export interface ScriptRuntimeApi {
 
 export interface ProviderRuntimeApi {
 	listProviderProfiles: () => Promise<ClientProviderProfileRecord[]>;
+	reorderProviderProfiles: (updates: Array<{ id: string; sortOrder: number }>) => Promise<ClientProviderProfileRecord[]>;
 	fetchProviderProfile: (providerProfileId: string) => Promise<ClientProviderProfileRecord>;
 	activateProviderProfile: (providerProfileId: string) => Promise<ClientProviderProfileRecord>;
 	updateProviderProfile: (providerProfileId: string, body: Record<string, unknown>) => Promise<ClientProviderProfileRecord>;

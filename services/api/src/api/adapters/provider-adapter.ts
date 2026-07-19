@@ -18,6 +18,7 @@ export class ProviderAdapter implements ProviderRuntimeApi {
 	) {}
 
 	listProviderProfiles = () => this.providerProfileService.listProviderProfiles();
+	reorderProviderProfiles = (updates: Array<{ id: string; sortOrder: number }>) => this.providerProfileService.reorderProviderProfiles(updates);
 
 	fetchProviderProfile = async (providerProfileId: string): Promise<ClientProviderProfileRecord> => {
 		const profile = await this.providerProfileService.getProviderProfileForClient(providerProfileId);

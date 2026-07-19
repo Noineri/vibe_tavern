@@ -17,6 +17,7 @@ export interface ProviderProfileService {
   listProviderProfiles(): Promise<ClientProviderProfileRecord[]>;
   saveProviderProfile(profile: Partial<StoredProviderProfileRecord>): Promise<ClientProviderProfileRecord>;
   deleteProviderProfile(id: string): Promise<void>;
+  reorderProviderProfiles(updates: Array<{ id: string; sortOrder: number }>): Promise<ClientProviderProfileRecord[]>;
   activateProviderProfile(id: string): Promise<ClientProviderProfileRecord>;
   resolveActiveProviderProfile(): Promise<StoredProviderProfileRecord | null>;
   updateProviderProfile(
@@ -67,6 +68,12 @@ export function createProviderProfileService(providers: ProviderStore): Provider
   return {
     listProviderProfiles: async () => {
       const profiles = await providers.listAll();
+      const clientProfiles = profiles.map(toClientProviderProfile);
+      return Promise.all(clientProfiles.map((p) => withCachedModels(providers, p)));
+    },
+
+    reorderProviderProfiles: async (updates) => {
+      const profiles = await providers.reorder(updates);
       const clientProfiles = profiles.map(toClientProviderProfile);
       return Promise.all(clientProfiles.map((p) => withCachedModels(providers, p)));
     },
