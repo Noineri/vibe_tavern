@@ -104,7 +104,7 @@ describe("assembleCoauthorPrompt", () => {
 
     // Tools + maxSteps ride out for the executor (CA-5 wiring).
     expect(result.tools).toBeDefined();
-    expect(result.maxSteps).toBe(5);
+    expect(result.maxSteps).toBe(20);
     expect(result.tools).toHaveProperty("write_profile");
     expect(result.tools).toHaveProperty("edit_greeting");
     expect(result.tools).toHaveProperty("add_alt_greeting");

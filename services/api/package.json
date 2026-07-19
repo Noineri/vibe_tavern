@@ -12,21 +12,21 @@
   },
   "dependencies": {
     "@agnai/web-tokenizers": "^0.1.6-pre3",
-    "@ai-sdk/anthropic": "^3",
-    "@ai-sdk/google": "^3",
-    "@ai-sdk/openai-compatible": "^2",
-    "@ai-sdk/provider": "^3",
+    "@ai-sdk/anthropic": "^4",
+    "@ai-sdk/google": "^4",
+    "@ai-sdk/openai-compatible": "^3",
+    "@ai-sdk/provider": "^4",
     "@hono/zod-validator": "^0.4.3",
     "@vibe-tavern/api-contracts": "1.0.1",
     "@vibe-tavern/db": "1.0.1",
     "@vibe-tavern/domain": "1.0.1",
     "@vibe-tavern/import-export": "1.0.1",
     "@vibe-tavern/prompt-pipeline": "1.0.1",
-    "ai": "^6",
+    "ai": "^7",
     "hono": "^4.12",
     "js-tiktoken": "^1.0.21",
     "yaml": "^2.9.0",
-    "zod": "^3.24.4"
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "@types/bun": "^1.2.10"

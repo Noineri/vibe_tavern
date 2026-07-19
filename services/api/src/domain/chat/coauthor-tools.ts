@@ -21,7 +21,7 @@
  * these calls (batching, retain-unchanged-sections, sequential-dependent-calls).
  */
 
-import { tool } from "ai";
+import { tool, type ToolSet } from "ai";
 import { z } from "zod";
 import { parseProfileMd, serializeProfileMd, splitFrontmatter, type VtfProfile } from "@vibe-tavern/db";
 import {
@@ -279,7 +279,7 @@ function setSectionField(profile: VtfProfile, field: SectionField, value: string
  * validates and echoes the proposal; the strategy passes this set to the
  * executor (tools propose; the Apply RPC is the sole write path).
  */
-export function buildCoauthorTools(opts: { toolSet?: Record<string, boolean>; profileMd?: string; skillRoots?: readonly string[]; loreIdGen?: LoreDraftIdGen; loreDelegate?: LoreDelegate; loreEntityLookup?: LoreEntityLookup; contextSearchSession?: import("../context/context-search-service.js").ContextSearchSession } = {}) {
+export function buildCoauthorTools(opts: { toolSet?: Record<string, boolean>; profileMd?: string; skillRoots?: readonly string[]; loreIdGen?: LoreDraftIdGen; loreDelegate?: LoreDelegate; loreEntityLookup?: LoreEntityLookup; contextSearchSession?: import("../context/context-search-service.js").ContextSearchSession } = {}): ToolSet {
   const { toolSet, skillRoots, loreDelegate, loreEntityLookup, contextSearchSession } = opts;
 
   // ── Turn-local composable profile state (CED-2) ───────────────────────────

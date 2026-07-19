@@ -6,7 +6,7 @@
  * their streaming responses correctly (e.g. nanoGPT).
  */
 
-import { generateText, stepCountIs } from "ai";
+import { generateText, isStepCount } from "ai";
 import type { ProviderMetadata } from "ai";
 import type { ExtractedToolCall, ExtractedToolResult, GenerationResult } from "./provider-execution-types.js";
 import type { ProviderExecutionInput } from "./provider-execution-types.js";
@@ -189,9 +189,12 @@ export async function nonstreamingProviderExecute(
       messages: conversationMessages,
       allowSystemInMessages: true,
       abortSignal: input.signal,
+      // v7 excludes response bodies by default; opt back in so the provider-response-trace
+      // (serializeProviderResponseStep) keeps capturing bodies as it did on v6.
+      include: { responseBody: true },
       ...samplerConfig,
       ...(input.tools ? { tools: input.tools } : {}),
-      ...(input.tools && input.maxSteps ? { stopWhen: stepCountIs(input.maxSteps) } : {}),
+      ...(input.tools && input.maxSteps ? { stopWhen: isStepCount(input.maxSteps) } : {}),
     });
 
     logSendDebug("provider.nonstream.result", {

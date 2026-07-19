@@ -9,7 +9,7 @@
  * Extracted from protocol-registry.ts (AD-019).
  */
 
-import { createGoogleGenerativeAI } from "@ai-sdk/google";
+import { createGoogle } from "@ai-sdk/google";
 import { interpretProbeResponse } from "./probe-helpers.js";
 import {
 	PROBE_TIMEOUT_MS,
@@ -203,7 +203,7 @@ export const googleProtocol: ProtocolAdapter = {
 		const googleBaseUrl = (!endpoint || endpoint === defaultGoogleBase)
 			? undefined
 			: endpoint;
-		const provider = createGoogleGenerativeAI({
+		const provider = createGoogle({
 			apiKey: apiKey || "not-needed",
 			baseURL: googleBaseUrl,
 		});

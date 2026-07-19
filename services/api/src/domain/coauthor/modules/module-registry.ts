@@ -56,7 +56,7 @@ const SEED_MODULE_DEFS: readonly SeedModuleDef[] = [
       search_context: true,
       read_context_item: true,
     },
-    maxSteps: 5,
+    maxSteps: 20,
   },
   {
     id: "quick-draft",
@@ -87,7 +87,7 @@ const SEED_MODULE_DEFS: readonly SeedModuleDef[] = [
       search_context: true,
       read_context_item: true,
     },
-    maxSteps: 5,
+    maxSteps: 20,
   },
   {
     id: "profile-editor",
@@ -107,7 +107,7 @@ const SEED_MODULE_DEFS: readonly SeedModuleDef[] = [
       search_context: true,
       read_context_item: true,
     },
-    maxSteps: 3,
+    maxSteps: 20,
   },
   {
     id: "dialogue-writer",
@@ -127,7 +127,7 @@ const SEED_MODULE_DEFS: readonly SeedModuleDef[] = [
       search_context: true,
       read_context_item: true,
     },
-    maxSteps: 3,
+    maxSteps: 20,
   },
 ];
 

@@ -22,7 +22,7 @@
 
 import { lstat } from "node:fs/promises";
 import { isAbsolute, relative, resolve, sep } from "node:path";
-import { tool } from "ai";
+import { tool, type Tool } from "ai";
 import { z } from "zod";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -118,7 +118,7 @@ export async function readSkillFile(
  * universal, read-only skill-access channel and is NOT gated by a module's
  * `toolSet` (which only scopes the mutating profile/greeting tools).
  */
-export function buildReadSkillFileTool(skillRoots: readonly string[]) {
+export function buildReadSkillFileTool(skillRoots: readonly string[]): Tool {
   return tool({
     description:
       "Read one UTF-8 text file from the Co-Author skill library (a SKILL.md manifest, a referenced template, or a reference file). " +

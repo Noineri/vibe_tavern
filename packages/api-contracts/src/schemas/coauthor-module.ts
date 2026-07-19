@@ -56,8 +56,8 @@ export const COAUTHOR_TOOL_KEYS = Object.keys(coauthorToolSetSchema.shape) as (k
  * one place if a flow needs more headroom.
  */
 export const COAUTHOR_MAX_STEPS_MIN = 1;
-export const COAUTHOR_MAX_STEPS_MAX = 20;
-export const COAUTHOR_MAX_STEPS_DEFAULT = 5;
+export const COAUTHOR_MAX_STEPS_MAX = 50;
+export const COAUTHOR_MAX_STEPS_DEFAULT = 20;
 
 /**
  * A resolved Co-Author module as served to the client / consumed by the

@@ -6,7 +6,7 @@
  * (nonstreaming-provider-executor.ts, generateText()).
  */
 
-import { streamText, stepCountIs } from "ai";
+import { streamText, isStepCount } from "ai";
 import type { ProviderExecutor, ProviderStreamResult, SentConfigSnapshot } from "./provider-execution-types.js";
 import { resolveModel, toSdkMessages, prepareSdkMessages } from "./provider-executor-utils.js";
 import { buildSamplerConfig } from "./sampler-mapper.js";
@@ -114,11 +114,11 @@ export const streamProviderExecutor: ProviderExecutor = async (input) => {
       abortSignal: input.signal,
       ...samplerConfig,
       ...(input.tools ? { tools: input.tools } : {}),
-      ...(input.tools && input.maxSteps ? { stopWhen: stepCountIs(input.maxSteps) } : {}),
-      includeRawChunks: true,
+      ...(input.tools && input.maxSteps ? { stopWhen: isStepCount(input.maxSteps) } : {}),
+      include: { rawChunks: true },
     });
 
-    const { stream, state } = createMappedStream(result.fullStream);
+    const { stream, state } = createMappedStream(result.stream);
 
     // Attach catch handlers immediately. On manual cancellation AI SDK v5 can
     // reject these promises later with NoOutputGeneratedError even after our
