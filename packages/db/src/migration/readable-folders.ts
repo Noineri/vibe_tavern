@@ -107,8 +107,13 @@ export async function migrateToReadableFolders(
 			const step = await migrateOne(stores, registry, char.id, char.name, dryRun);
 			steps.push(step);
 			if (archiveLegacyFlat && !dryRun) {
-				const moved = await stores.content.archiveLegacyFlatFile(CHARS, char.id, backupDir);
-				if (moved !== null) archived.push({ characterId: char.id, from: moved, to: join(backupDir, basename(moved)) });
+				// A legacy character may have BOTH `{id}.json` and `{id}.{slug}.json`
+				// flat files; archive every match in one pass (idempotent: a re-run
+				// finds nothing left and archives nothing).
+				let moved: string | null;
+				while ((moved = await stores.content.archiveLegacyFlatFile(CHARS, char.id, backupDir)) !== null) {
+					archived.push({ characterId: char.id, from: moved, to: join(backupDir, basename(moved)) });
+				}
 			}
 		} catch (error) {
 			failures.push({

@@ -85,6 +85,30 @@ describe("HRF-5 migrateToReadableFolders", () => {
 		expect(JSON.parse(backed).name).toBe("Alpha Hero");
 	});
 
+	test("archives BOTH `{id}.json` and `{id}.{slug}.json` flat files for one character in a single pass", async () => {
+		const { dataRoot, stores } = await setup();
+		const id = "char_dual";
+		const dir = join(dataRoot, CHARS, id);
+		await mkdir(dir, { recursive: true });
+		await writeFile(join(dir, "profile.md"), serializeProfileMd({ profile: profileNamed("Dual Flat") }));
+		// Two legacy flat variants side by side.
+		await writeFile(join(dataRoot, CHARS, `${id}.json`), JSON.stringify({ name: "Dual Flat", v: 1 }));
+		await writeFile(join(dataRoot, CHARS, `${id}.Dual-Flat.json`), JSON.stringify({ name: "Dual Flat", v: 2 }));
+		await stores.db.run(sql`INSERT INTO characters (id, name, description, personality_summary, alternate_greetings_json, extensions_json, tags_json, mes_example_mode, mes_example_depth, status, has_file_on_disk, created_at, updated_at)
+			 VALUES (${"char_dual"}, ${"Dual Flat"}, 'desc', NULL, '[]', '{}', '[]', 'always', 4, 'active', 1, '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z')`);
+		const backupDir = join(dataRoot, "backups", "legacy");
+
+		const report = await migrateToReadableFolders(stores, { backupDir });
+
+		expect(report.archived).toHaveLength(2);
+		expect(new Set(report.archived.map((a) => a.characterId))).toEqual(new Set(["char_dual"]));
+		// Both root-level flats gone, both in the backup.
+		const remaining = (await readdir(join(dataRoot, CHARS))).filter((n) => n.endsWith(".json"));
+		expect(remaining).toEqual([]);
+		const backed = new Set((await readdir(backupDir)).sort());
+		expect(backed).toEqual(new Set(["char_dual.Dual-Flat.json", "char_dual.json"]));
+	});
+
 	test("is idempotent: a second run is a full no-op (no stamps, no renames, no archives)", async () => {
 		const { dataRoot, stores } = await setup();
 		await setupLegacyChar(dataRoot, stores.db, "char_oliver", "Oliver", { withFlat: true });
