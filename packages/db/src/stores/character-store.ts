@@ -677,6 +677,23 @@ export class CharacterStore {
     return row?.folderName || id;
   }
 
+  /**
+   * Public async folder resolver for API-layer collaborators (asset-service,
+   * character-runtime, import) that do NOT have the Character row in scope
+   * (HUMAN_READABLE_FOLDERS Phase 3a). Loads `folder_name` and falls back to
+   * the opaque id for legacy/pre-migration rows — the async, DB-reading twin
+   * of the private sync `folderOf`. Every character-folder I/O site outside
+   * the store routes through here so avatars/gallery/imports follow the
+   * content into the renamed folder once Phase 3b flips to slugs.
+   */
+  async resolveFolderName(characterId: string): Promise<string> {
+    const row = await this.db.select({ folderName: characters.folderName })
+      .from(characters)
+      .where(eq(characters.id, characterId))
+      .get();
+    return row?.folderName || characterId;
+  }
+
   // ─── Row mapper ────────────────────────────────────────────────────────────
 
   private mapRow(row: typeof characters.$inferSelect): Character {

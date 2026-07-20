@@ -96,9 +96,10 @@ export async function exportCharacter(
 	};
 
 	// Merge original unknown fields for lossless round-trip
+	const originalFolder = await deps.stores.characters.resolveFolderName(characterId);
 	const original = await deps.stores.content.readEntity<Record<string, unknown>>(
 		STORAGE_FOLDERS.characters,
-		`${characterId}/original`,
+		`${originalFolder}/original`,
 	);
 	if (original) {
 		// Original wins for unknown fields, current data wins for known fields
@@ -319,7 +320,10 @@ export async function importJson(
 				tags: imported.character.tags,
 			});
 			// Save original JSON for lossless round-trip
-			if (parsed) await deps.stores.content.writeEntity(STORAGE_FOLDERS.characters, `${imported.character.id}/original`, parsed);
+			if (parsed) {
+				const of = await deps.stores.characters.resolveFolderName(imported.character.id);
+				await deps.stores.content.writeEntity(STORAGE_FOLDERS.characters, `${of}/original`, parsed);
+			}
 
 			return {
 				activeChatId: chatId as ChatId,
@@ -358,7 +362,10 @@ export async function importJson(
 				tags: imported.character.tags,
 			});
 			// Save original JSON for lossless round-trip
-			if (parsed) await deps.stores.content.writeEntity(STORAGE_FOLDERS.characters, `${characterId}/original`, parsed);
+			if (parsed) {
+				const of = await deps.stores.characters.resolveFolderName(characterId);
+				await deps.stores.content.writeEntity(STORAGE_FOLDERS.characters, `${of}/original`, parsed);
+			}
 			} else {
 			const created = await deps.stores.characters.create({
 				name: imported.character.name,
@@ -382,7 +389,10 @@ export async function importJson(
 			});
 			characterId = created.id;
 			// Save original JSON for lossless round-trip
-			if (parsed) await deps.stores.content.writeEntity(STORAGE_FOLDERS.characters, `${characterId}/original`, parsed);
+			if (parsed) {
+				const of = await deps.stores.characters.resolveFolderName(characterId);
+				await deps.stores.content.writeEntity(STORAGE_FOLDERS.characters, `${of}/original`, parsed);
+			}
 			}
 
 		const chat = await deps.chatApp.createChat({

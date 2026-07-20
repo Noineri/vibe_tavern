@@ -441,20 +441,24 @@ export class CharacterRuntime {
 
     const newCharacterId = character.id as CharacterId;
 
+    // HUMAN_READABLE_FOLDERS: resolve both characters' on-disk folder names so
+    // the avatar copy targets the readable (slug) folders, not raw ids.
+    const sourceFolder = await this.deps.stores.characters.resolveFolderName(source.id);
+    const newFolder = await this.deps.stores.characters.resolveFolderName(newCharacterId);
     // Copy the folder-resident avatar (if any) into the duplicate's own folder
     // — a separate file, not a shared reference. The flat avatarAssetId above
     // is the legacy fallback and stays shared; only the folder avatar is copied.
     if (source.avatarExt) {
-      const buf = await this.deps.stores.content.readBinary(STORAGE_FOLDERS.characters, source.id, `avatar.${source.avatarExt}`);
+      const buf = await this.deps.stores.content.readBinary(STORAGE_FOLDERS.characters, sourceFolder, `avatar.${source.avatarExt}`);
       if (buf) {
-        await this.deps.stores.content.writeBinary(STORAGE_FOLDERS.characters, newCharacterId, `avatar.${source.avatarExt}`, new Uint8Array(buf));
+        await this.deps.stores.content.writeBinary(STORAGE_FOLDERS.characters, newFolder, `avatar.${source.avatarExt}`, new Uint8Array(buf));
       }
     }
     // Copy the folder-resident FULL avatar (if any) into the duplicate's folder.
     if (source.avatarFullExt) {
-      const buf = await this.deps.stores.content.readBinary(STORAGE_FOLDERS.characters, source.id, `avatar-full.${source.avatarFullExt}`);
+      const buf = await this.deps.stores.content.readBinary(STORAGE_FOLDERS.characters, sourceFolder, `avatar-full.${source.avatarFullExt}`);
       if (buf) {
-        await this.deps.stores.content.writeBinary(STORAGE_FOLDERS.characters, newCharacterId, `avatar-full.${source.avatarFullExt}`, new Uint8Array(buf));
+        await this.deps.stores.content.writeBinary(STORAGE_FOLDERS.characters, newFolder, `avatar-full.${source.avatarFullExt}`, new Uint8Array(buf));
       }
     }
 

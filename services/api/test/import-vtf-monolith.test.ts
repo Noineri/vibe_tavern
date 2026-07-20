@@ -70,6 +70,7 @@ function makeDeps() {
           return Promise.resolve({ id: "char_vtf_001" }) as never;
         }),
         update: mock((_id: string, _patch: unknown) => Promise.resolve() as never),
+        resolveFolderName: mock((id: string) => Promise.resolve(id)),
       },
       content: {
         writeEntity: mock((_folder: unknown, id: string, _data: unknown) => {

@@ -403,11 +403,13 @@ export async function importSillyTavernDirectory(
 			// go through content + store directly.
 			if (ext === ".png" && pngBuffer) {
 				try {
+					// HUMAN_READABLE_FOLDERS: write into the character's resolved (slug) folder.
+					const folder = await deps.stores.characters.resolveFolderName(characterId);
 					await deps.stores.content.writeBinary(
-						STORAGE_FOLDERS.characters, characterId, "avatar.png", pngBuffer,
+						STORAGE_FOLDERS.characters, folder, "avatar.png", pngBuffer,
 					);
 					await deps.stores.content.writeBinary(
-						STORAGE_FOLDERS.characters, characterId, "avatar-full.png", pngBuffer,
+						STORAGE_FOLDERS.characters, folder, "avatar-full.png", pngBuffer,
 					);
 					await deps.stores.characters.setFolderAvatar(characterId, "png");
 					await deps.stores.characters.setFolderAvatarFull(characterId, "png");

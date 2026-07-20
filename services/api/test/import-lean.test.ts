@@ -48,6 +48,7 @@ function makeDeps() {
           Promise.resolve({ id: "char_test_123" }) as never,
         ),
         update: mock((_id: string, _patch: unknown) => Promise.resolve() as never),
+        resolveFolderName: mock((id: string) => Promise.resolve(id)),
       },
       content: {
         writeEntity: mock((_folder: unknown, _id: string, _data: unknown) =>

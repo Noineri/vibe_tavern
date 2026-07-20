@@ -1,5 +1,5 @@
 import { asc, and, eq } from 'drizzle-orm';
-import { characterVersions } from '../db-schema.js';
+import { characterVersions, characters } from '../db-schema.js';
 import type { AppDb } from '../db-connection.js';
 import { resolveStoreRuntime, type StoreClock, type StoreIdGenerator } from '../persistence.js';
 import { CharacterFolder } from './character-folder.js';
@@ -52,6 +52,22 @@ export class VersionStore {
       isActive: row.isActive,
       createdAt: row.createdAt,
     };
+  }
+
+  /**
+   * Resolve the on-disk folder name for a character (HUMAN_READABLE_FOLDERS).
+   * VersionStore is a character-folder collaborator but does NOT own the
+   * Character row, so it reads `folder_name` here and falls back to the opaque
+   * id for legacy/pre-migration rows — mirroring CharacterStore.folderOf. All
+   * CharacterFolder calls route through this so snapshot/restore/remove target
+   * the renamed folder, not a stale id-named one.
+   */
+  private async folderOf(characterId: string): Promise<string> {
+    const row = await this.db.select({ folderName: characters.folderName })
+      .from(characters)
+      .where(eq(characters.id, characterId))
+      .get();
+    return row?.folderName || characterId;
   }
 
   /** List all versions for a character in creation order (for ordinal labeling v1, v2…). */
@@ -123,7 +139,7 @@ export class VersionStore {
     const current = await this.ensureBaseVersion(characterId);
     // Preserve the currently-active version as a non-active snapshot. Root is
     // unchanged — the new version starts as an identical copy of `current`.
-    await this.folder.snapshotToVersion(characterId, current.id);
+    await this.folder.snapshotToVersion(await this.folderOf(characterId), current.id);
     const id = this.idGen.next('charver');
     const now = this.clock.now();
     await this.db.transaction(async (tx) => {
@@ -161,9 +177,9 @@ export class VersionStore {
     const current = await this.getActiveVersion(characterId);
     if (current && current.id === target.id) return target;
     if (current) {
-      await this.folder.snapshotToVersion(characterId, current.id);
+      await this.folder.snapshotToVersion(await this.folderOf(characterId), current.id);
     }
-    await this.folder.restoreFromVersion(characterId, versionId);
+    await this.folder.restoreFromVersion(await this.folderOf(characterId), versionId);
     await this.activateOnly(characterId, versionId);
     return target;
   }
@@ -191,7 +207,7 @@ export class VersionStore {
     if (version.isActive) {
       throw new Error('Cannot delete the active version');
     }
-    await this.folder.removeVersionFolder(characterId, versionId);
+    await this.folder.removeVersionFolder(await this.folderOf(characterId), versionId);
     await this.db.delete(characterVersions).where(eq(characterVersions.id, versionId)).run();
   }
 
