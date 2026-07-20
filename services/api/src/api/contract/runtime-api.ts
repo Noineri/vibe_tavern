@@ -366,8 +366,8 @@ export interface PresetRuntimeApi {
 // ─── Import/Export ───────────────────────────────────────────────────
 
 export interface ImportExportRuntimeApi {
-	importJson: (body: { fileName: string; jsonText: string; chatId?: string; skipExisting?: boolean; lean?: boolean }) => Promise<ImportResult>;
-	importJsonBatch: (body: { items: Array<{ fileName: string; jsonText: string; chatId?: string; skipExisting?: boolean }>; lean?: boolean }) => Promise<BatchImportResult>;
+	importJson: (body: { fileName: string; jsonText?: string; monolithText?: string; chatId?: string; skipExisting?: boolean; lean?: boolean }) => Promise<ImportResult>;
+	importJsonBatch: (body: { items: Array<{ fileName: string; jsonText?: string; monolithText?: string; chatId?: string; skipExisting?: boolean }>; lean?: boolean }) => Promise<BatchImportResult>;
 	scanSillyTavernDirectory: (dirPath: string) => Promise<StDirectoryScanResult>;
 	importSillyTavernDirectory: (dirPath: string) => Promise<StDirectoryImportResult>;
 	/** Streaming variant: yields ImportStreamEvent items (phase/progress/done/

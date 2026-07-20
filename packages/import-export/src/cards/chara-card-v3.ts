@@ -258,3 +258,191 @@ export function importCharacterCardV3Json(
     warnings,
   };
 }
+
+// ───────────────────────────────────────────────────────────────────────────
+// VTF monolith → ImportedCharacterCardBundle
+// ───────────────────────────────────────────────────────────────────────────
+
+/**
+ * Structural input for {@link vtfContentToImportedBundle}. Mirrors the
+ * `VtfCharacterContent` field set from `@vibe-tavern/db` field-for-field, but
+ * is declared HERE (in the leaf `import-export` package) so this package never
+ * takes a dependency on `@vibe-tavern/db` — the two are siblings that both
+ * depend only on `@vibe-tavern/domain`. `VtfCharacterContent` satisfies this
+ * interface structurally, so the caller (`services/api`) passes the result of
+ * `unpackMonolith` straight through with no projection.
+ */
+export interface VtfMonolithImportInput {
+  name: string;
+  description: string;
+  personalitySummary: string | null;
+  defaultScenario: string | null;
+  firstMessage: string;
+  mesExample: string | null;
+  mesExampleMode: string;
+  mesExampleDepth: number;
+  alternateGreetings: string[];
+  postHistoryInstructions: string | null;
+  creatorNotes: string | null;
+  depthPrompt: string | null;
+  depthPromptDepth: number | null;
+  depthPromptRole: string | null;
+  systemPrompt: string | null;
+  tags: string[];
+  extensions: Record<string, unknown>;
+}
+
+const CONTROL_CHAR_RE = /[\x00-\x08\x0B\x0C\x0E-\x1F]/g;
+
+/** Strip ASCII control chars from a string (null-safe). */
+function stripControlChars(value: string | null): string {
+  return value === null ? "" : value.replace(CONTROL_CHAR_RE, "");
+}
+
+/**
+ * Build an {@link ImportedCharacterCardBundle} from a parsed VTF monolith so the
+ * native VTF import path reuses the SAME create/update/chat/seed tail as ST JSON
+ * import (the consumer, `services/api`'s `importJson`, branches on the bundle
+ * source but runs one shared tail).
+ *
+ * `character_book` handling mirrors {@link importCharacterCardV3Json}: the VTF
+ * extensions fence may carry a nested `character_book` (the codec's lossless
+ * channel for it — see `packages/db/src/vtf/extensions.ts`); here it is
+ * PROMOTED to the dedicated `character.characterBook` / `normalized.characterBook`
+ * field and STRIPPED from `extensions`, exactly as ST import pulls
+ * `data.character_book` out of `data.extensions`. Without this split the
+ * embedded lorebook would sit unknown inside `extensions` and never activate.
+ *
+ * The id is deterministic over the monolith TEXT (not the field object) so that
+ * re-importing the same `.md` / `vtmd` chunk dedups via the existing
+ * `skipExisting` path. A `vtf:1` tag namespaces the seed away from ST JSON ids.
+ */
+export function vtfContentToImportedBundle(
+  content: VtfMonolithImportInput,
+  monolithText: string,
+  options: ImportCharacterCardOptions = {},
+): ImportedCharacterCardBundle {
+  const name = stripControlChars(content.name).trim();
+  if (!name) {
+    throw new Error("VTF monolith is missing a name.");
+  }
+
+  const rawExtensions = sanitizeRecord(content.extensions);
+  const characterBook = isRecord(rawExtensions.character_book) ? rawExtensions.character_book : null;
+  // Strip character_book from extensions so the in-memory Character matches the
+  // ST-import shape (extensions has no character_book; it lives on its own field).
+  const extensions: Record<string, unknown> = {};
+  for (const key of Object.keys(rawExtensions)) {
+    if (key !== "character_book") extensions[key] = rawExtensions[key];
+  }
+
+  const description = stripControlChars(content.description);
+  const personality = stripControlChars(content.personalitySummary);
+  const scenario = stripControlChars(content.defaultScenario);
+  const firstMessage = stripControlChars(content.firstMessage);
+  const exampleMessages = stripControlChars(content.mesExample);
+  const systemPrompt = stripControlChars(content.systemPrompt);
+  const postHistoryInstructions = stripControlChars(content.postHistoryInstructions);
+  const depthPrompt = stripControlChars(content.depthPrompt);
+  const creatorNotes = stripControlChars(content.creatorNotes);
+  const alternateGreetings = content.alternateGreetings.map((g) => stripControlChars(g));
+  const tags = content.tags.map((t) => stripControlChars(t));
+
+  const importedAt = options.now ?? new Date().toISOString();
+
+  const normalized: CharacterCardV3Normalized = {
+    spec: "chara_card_v3",
+    specVersion: "3.0",
+    name,
+    description,
+    personality,
+    scenario,
+    firstMessage,
+    exampleMessages,
+    creatorNotes,
+    systemPrompt,
+    postHistoryInstructions,
+    characterBook,
+    depthPrompt,
+    depthPromptDepth: content.depthPromptDepth,
+    depthPromptRole: content.depthPromptRole,
+    tags,
+    creator: asOptionalString(rawExtensions.creator),
+    characterVersion: asOptionalString(rawExtensions.character_version),
+    alternateGreetings,
+    groupOnlyGreetings: [],
+    extensions,
+    // The monolith carries no source `create_date`; createdAt stays null (the
+    // Character row still gets `importedAt` as its real creation timestamp).
+    createdAt: null,
+  };
+
+  const warnings: string[] = [];
+  if (!firstMessage) warnings.push("Character card has no first message.");
+  if (!scenario) warnings.push("Character card has no scenario.");
+
+  const slug = slugify(name);
+  const seed = stableJson({ vtf: 1, monolith: monolithText });
+  const characterId: CharacterId = brandId<CharacterId>(
+    makeDeterministicId(ENTITY_ID_NAMESPACE.character, `${slug}:${seed}`),
+  );
+  const versionId: CharacterVersionId = brandId<CharacterVersionId>(
+    makeDeterministicId(ENTITY_ID_NAMESPACE.characterVersion, `${characterId}:${seed}`),
+  );
+
+  const characterVersionLabel =
+    asOptionalString(rawExtensions.character_version) ?? `${name} import`;
+
+  const character: Character = {
+    id: characterId,
+    slug,
+    name,
+    description,
+    personalitySummary: personality || null,
+    defaultScenario: scenario || null,
+    firstMessage: firstMessage || null,
+    mesExample: exampleMessages || null,
+    // VTF-native cards carry mes-example mode/depth in the frontmatter (unlike
+    // ST JSON, which has no such field and hardcodes always/4).
+    mesExampleMode: content.mesExampleMode || "always",
+    mesExampleDepth: Number.isFinite(content.mesExampleDepth) ? content.mesExampleDepth : 4,
+    alternateGreetings,
+    postHistoryInstructions: postHistoryInstructions || null,
+    creatorNotes: creatorNotes || null,
+    characterBook,
+    depthPrompt: depthPrompt || null,
+    depthPromptDepth: content.depthPromptDepth,
+    depthPromptRole: content.depthPromptRole,
+    extensions,
+    systemPrompt: systemPrompt || null,
+    tags,
+    avatarAssetId: null,
+    avatarFullAssetId: null,
+    avatarCropJson: null,
+    avatarExt: null,
+    avatarFullExt: null,
+    avatarSourceAssetId: null,
+    includeGalleryInPrompt: false,
+    includeAvatarInPrompt: false,
+    avatarDescription: null,
+    status: options.characterStatus ?? "active",
+    createdAt: importedAt,
+    updatedAt: importedAt,
+  };
+
+  const version: CharacterVersion = {
+    id: versionId,
+    characterId,
+    title: characterVersionLabel,
+    isActive: true,
+    createdAt: importedAt,
+  };
+
+  return {
+    format: "chara_card_v3_json",
+    normalized,
+    character,
+    version,
+    warnings,
+  };
+}

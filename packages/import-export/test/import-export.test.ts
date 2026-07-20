@@ -1,5 +1,5 @@
 import { describe, it, expect } from "bun:test";
-import { importCharacterCardV3Json, flattenV2CompatFields, V2_TOPLEVEL_FIELDS } from "../src/cards/chara-card-v3.js";
+import { importCharacterCardV3Json, flattenV2CompatFields, V2_TOPLEVEL_FIELDS, vtfContentToImportedBundle, type VtfMonolithImportInput } from "../src/cards/chara-card-v3.js";
 import { parseSillyTavernChat, serializeSillyTavernChat } from "../src/chats/st-chat.js";
 import { importStLorebookJson } from "../src/lorebooks/st-lorebook.js";
 
@@ -610,5 +610,117 @@ describe("flattenV2CompatFields", () => {
     expect(imported.character.name).toBe("Kieran Sullivan");
     expect(imported.character.firstMessage).toBe(bareV3.data.first_mes);
     expect(imported.character.creatorNotes).toBe("Original character.");
+  });
+});
+
+// ─── VTF monolith → ImportedCharacterCardBundle ───────────────────────────
+
+describe("vtfContentToImportedBundle", () => {
+  /** A fully-populated VTF content input (mirrors `unpackMonolith`'s output shape). */
+  function fullContent(): VtfMonolithImportInput {
+    return {
+      name: "Silvius",
+      description: "Silver-haired and watchful.",
+      personalitySummary: "calm",
+      defaultScenario: "A tavern at the forest's edge.",
+      firstMessage: "The door creaks open.",
+      mesExample: "<START>\n{{char}}: Welcome.",
+      mesExampleMode: "depth",
+      mesExampleDepth: 4,
+      alternateGreetings: ["A second opener."],
+      postHistoryInstructions: "Keep it brief.",
+      creatorNotes: "Internal notes.",
+      depthPrompt: "Remember the silver scar.",
+      depthPromptDepth: 4,
+      depthPromptRole: "system",
+      systemPrompt: "Respond in second person.",
+      tags: ["modern", "werewolf"],
+      extensions: {
+        creator: "anonymous",
+        character_version: "1.0",
+        talkativeness: "0.5",
+        // A nested lorebook rides inside the extensions fence (the codec's
+        // lossless channel for it). The adapter must PROMOTE it to the
+        // dedicated characterBook field and STRIP it from extensions.
+        character_book: { entries: [{ keys: ["scar"], content: "a silver scar" }] },
+      },
+    };
+  }
+
+  it("maps every VTF content field onto the bundle", () => {
+    const bundle = vtfContentToImportedBundle(fullContent(), "---\nname: Silvius\n---\n\n# PERSONALITY\nx\n");
+
+    expect(bundle.format).toBe("chara_card_v3_json");
+    expect(bundle.character.name).toBe("Silvius");
+    expect(bundle.character.description).toBe("Silver-haired and watchful.");
+    expect(bundle.character.personalitySummary).toBe("calm");
+    expect(bundle.character.defaultScenario).toBe("A tavern at the forest's edge.");
+    expect(bundle.character.firstMessage).toBe("The door creaks open.");
+    expect(bundle.character.mesExample).toBe("<START>\n{{char}}: Welcome.");
+    // VTF-native mes-example mode/depth flow from the content (unlike ST JSON,
+    // which hardcodes always/4).
+    expect(bundle.character.mesExampleMode).toBe("depth");
+    expect(bundle.character.mesExampleDepth).toBe(4);
+    expect(bundle.character.alternateGreetings).toEqual(["A second opener."]);
+    expect(bundle.character.postHistoryInstructions).toBe("Keep it brief.");
+    expect(bundle.character.creatorNotes).toBe("Internal notes.");
+    expect(bundle.character.depthPrompt).toBe("Remember the silver scar.");
+    expect(bundle.character.depthPromptDepth).toBe(4);
+    expect(bundle.character.depthPromptRole).toBe("system");
+    expect(bundle.character.systemPrompt).toBe("Respond in second person.");
+    expect(bundle.character.tags).toEqual(["modern", "werewolf"]);
+    // The seeded opening mirrors the monolith's greeting set.
+    expect(bundle.normalized.firstMessage).toBe("The door creaks open.");
+    expect(bundle.normalized.alternateGreetings).toEqual(["A second opener."]);
+  });
+
+  it("promotes a nested character_book out of extensions into the dedicated field", () => {
+    const bundle = vtfContentToImportedBundle(fullContent(), "monolith");
+
+    expect(bundle.character.characterBook).toEqual({ entries: [{ keys: ["scar"], content: "a silver scar" }] });
+    expect(bundle.normalized.characterBook).toEqual({ entries: [{ keys: ["scar"], content: "a silver scar" }] });
+    // Stripped from extensions so the in-memory Character matches the ST-import shape.
+    expect("character_book" in bundle.character.extensions).toBe(false);
+    // Frontmatter-owned keys are preserved on the extensions object (the store
+    // re-merges them; they are not the adapter's concern).
+    expect(bundle.character.extensions.talkativeness).toBe("0.5");
+  });
+
+  it("produces a deterministic id that is stable across calls and differs by content", () => {
+    const content = fullContent();
+    const a1 = vtfContentToImportedBundle(content, "MONO-TEXT-A");
+    const a2 = vtfContentToImportedBundle(content, "MONO-TEXT-A");
+    const b = vtfContentToImportedBundle(content, "MONO-TEXT-B");
+
+    expect(a1.character.id).toBe(a2.character.id);
+    expect(a1.character.id).not.toBe(b.character.id);
+  });
+
+  it("strips control characters from string fields", () => {
+    const content = fullContent();
+    content.name = "Silv\x07ius";
+    content.firstMessage = "Door\x0bcreaks";
+    const bundle = vtfContentToImportedBundle(content, "m");
+    expect(bundle.character.name).toBe("Silvius");
+    expect(bundle.character.firstMessage).toBe("Doorcreaks");
+  });
+
+  it("throws when the name is empty", () => {
+    const content = fullContent();
+    content.name = "   ";
+    expect(() => vtfContentToImportedBundle(content, "m")).toThrow("missing a name");
+  });
+
+  it("warns when firstMessage or scenario are empty", () => {
+    const content = fullContent();
+    content.firstMessage = "";
+    content.defaultScenario = null;
+    const bundle = vtfContentToImportedBundle(content, "m");
+    expect(bundle.warnings).toEqual(
+      expect.arrayContaining([
+        "Character card has no first message.",
+        "Character card has no scenario.",
+      ]),
+    );
   });
 });

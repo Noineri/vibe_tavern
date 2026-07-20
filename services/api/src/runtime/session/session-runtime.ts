@@ -612,11 +612,11 @@ export function pickBootstrapChatId<T extends string>(
 		return await importExportModule.mirrorPromptTrace(this.importExportDeps, traceId);
 	}
 
-	async importJson(input: { fileName: string; jsonText: string; chatId?: string; skipExisting?: boolean; lean?: boolean }): Promise<ImportResult> {
+	async importJson(input: { fileName: string; jsonText?: string; monolithText?: string; chatId?: string; skipExisting?: boolean; lean?: boolean }): Promise<ImportResult> {
 		return importExportModule.importJson(this.importExportDeps, input);
 	}
 
-	async importJsonBatch(input: { items: Array<{ fileName: string; jsonText: string; chatId?: string; skipExisting?: boolean }>; lean?: boolean }): Promise<BatchImportResult> {
+	async importJsonBatch(input: { items: Array<{ fileName: string; jsonText?: string; monolithText?: string; chatId?: string; skipExisting?: boolean }>; lean?: boolean }): Promise<BatchImportResult> {
 		return importExportModule.importJsonBatch(this.importExportDeps, input);
 	}
 

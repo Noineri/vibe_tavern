@@ -4,7 +4,17 @@ export const debugSendLogSchema = z.any();
 
 export const importJsonSchema = z.object({
   fileName: z.string(),
-  jsonText: z.string(),
+  // ST V2/V3 card JSON or SillyTavern JSONL chat text. Optional when a native
+  // VTF monolith is supplied via `monolithText` (the two are mutually
+  // exclusive content sources — the backend requires at least one non-empty).
+  jsonText: z.string().optional(),
+  // Native Vibe Tavern Format monolith `.md` text (the canonical lossless
+  // representation VT itself writes into PNG `vtmd` chunks). When present the
+  // backend prefers it over `jsonText`. Sourced from a PNG `vtmd` tEXt chunk
+  // (base64-decoded) or a standalone `.md`/`.vtmd` file. Kept as an opaque
+  // string here rather than a typed object so the browser can forward it
+  // verbatim without a db-codec dependency at the contract layer.
+  monolithText: z.string().optional(),
   chatId: z.string().optional(),
   skipExisting: z.boolean().optional(),
   // When true, the server skips the O(N²) getSnapshot rebuild and returns only
@@ -12,6 +22,12 @@ export const importJsonSchema = z.object({
   // else. Single-card import (no flag) keeps the full snapshot, byte-identical.
   lean: z.boolean().optional(),
 });
+// NOTE: the "at least one of jsonText/monolithText non-empty" guard lives in the
+// backend `importJson` (not a Zod refine here) so this schema stays a plain
+// `z.object` — `importJsonBatchSchema` relies on `.omit({ lean: true })`, which
+// is only available on `ZodObject`, not on the `ZodEffects` a `.refine()` would
+// produce. Both the single and batch paths funnel through `importJson`, so the
+// guard covers every entry point.
 
 // Mass-import batch: the frontend chunks parsed cards into batches (default 50)
 // and sends them here so the server processes them in one request instead of N.
