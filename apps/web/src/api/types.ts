@@ -491,7 +491,7 @@ export interface AiAssistantChunk {
   finishReason?: string;
 }
 
-export type AiAssistantMode = "script" | "lore_entry" | "lore_keys" | "chat_impersonate" | "md_import" | "vision_describe" | "scene_schema" | "scene_rules";
+export type AiAssistantMode = "script" | "lore_entry" | "lore_keys" | "chat_impersonate" | "md_import" | "vision_describe" | "scene_schema" | "scene_rules" | "message_edit" | "message_merge";
 
 export interface AiAssistantRequestBody {
   mode: AiAssistantMode;
@@ -506,6 +506,12 @@ export interface AiAssistantRequestBody {
   lorebookIds?: string[];
   chatId?: string;
   recentMessageCount?: number;
+  /** Message editor modes: canonical target message in the chat's active
+   *  branch (message_edit/message_merge). Mirrors the backend wire type. */
+  targetMessageId?: string;
+  /** Message editor modes: immutable canonical variant IDs selected as editor
+   *  sources (edit: the selected variant; merge: the starred set). */
+  sourceVariantIds?: string[];
   existingKeys?: string[];
   existingSecondaryKeys?: string[];
   logic?: string;
