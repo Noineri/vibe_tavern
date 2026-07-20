@@ -442,6 +442,33 @@ export function assembleInsightsPrompt(
   return finalizeAssembly(context, { ...built, layers }, resolver);
 }
 
+/** Pure message-editor entry point: retain the full RP context and append one
+ * final user instruction before history compaction calculates its budget. */
+export function assembleMessageEditorPrompt(rawContext: PromptAssemblyContext): PromptAssemblyResult {
+  const context = applyMacrosToContext(rawContext);
+  const resolver = createResolver(context.preset);
+  const editorInstruction = joinNonEmpty([
+    context.aiAssistant?.systemPrompt,
+    context.aiAssistant?.existingContent,
+    context.aiAssistant?.instruction,
+  ]).trim();
+  const instructionLayer = editorInstruction ? makeLayer({
+    id: PROMPT_LAYER_ID.aiAssistantInstruction,
+    sourceType: PROMPT_LAYER_SOURCE_TYPE.aiAssistant,
+    sourceId: context.identity.chatId,
+    sourceName: "Message Editor Instruction",
+    position: "in_chat",
+    priority: PROMPT_LAYER_PRIORITY.aiAssistantInstruction,
+    role: "user",
+    reason: "included as the final budgeted message editor instruction",
+    text: editorInstruction,
+  }) : null;
+  if (instructionLayer) instructionLayer.injectionDepth = 0;
+
+  const built = buildLayers(context, resolver, instructionLayer ? [instructionLayer] : []);
+  return { ...finalizeAssembly(context, built, resolver), prefill: null };
+}
+
 /**
  * Stage 2 — create a PromptLayer for every non-empty content source.
  *
@@ -914,13 +941,15 @@ function finalizeAssembly(
     .sort((a, b) => {
       const depthDiff = b.injectionDepth! - a.injectionDepth!;
       if (depthDiff !== 0) return depthDiff;
-      // An insight one-shot has one endpoint-owned depth-zero user layer that
-      // must remain after every history and steering message. Keep this
-      // semantic guarantee explicit rather than relying on incidental numeric
-      // priorities shared with ordinary prompt layers.
-      const aIsInsightsInstruction = a.id === PROMPT_LAYER_ID.insightsInstruction;
-      const bIsInsightsInstruction = b.id === PROMPT_LAYER_ID.insightsInstruction;
-      if (aIsInsightsInstruction !== bIsInsightsInstruction) return aIsInsightsInstruction ? 1 : -1;
+      // Endpoint-owned depth-zero user instructions must remain after every
+      // history and steering message. Keep this semantic guarantee explicit
+      // rather than relying on incidental numeric priorities shared with
+      // ordinary prompt layers.
+      const aIsFinalInstruction =
+        a.id === PROMPT_LAYER_ID.insightsInstruction || a.id === PROMPT_LAYER_ID.aiAssistantInstruction;
+      const bIsFinalInstruction =
+        b.id === PROMPT_LAYER_ID.insightsInstruction || b.id === PROMPT_LAYER_ID.aiAssistantInstruction;
+      if (aIsFinalInstruction !== bIsFinalInstruction) return aIsFinalInstruction ? 1 : -1;
       // Same depth: resolve in ascending canvas (subPosition) order. The
       // splice index below RECOMPUTES as history grows, so a forward sort
       // yields forward payload order. (A prior DESC tiebreaker assumed a

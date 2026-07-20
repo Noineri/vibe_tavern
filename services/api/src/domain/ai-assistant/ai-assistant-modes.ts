@@ -54,6 +54,22 @@ const MODE_CONFIGS: Record<AiAssistantMode, AiAssistantModeConfig> = {
     outputFormat: "text",
     jsonSchemaHint: null,
   },
+  message_edit: {
+    mode: "message_edit",
+    presetKey: "message_edit",
+    defaultPromptFile: "message-edit-ai-prompt.md",
+    stripReasoning: false,
+    outputFormat: "text",
+    jsonSchemaHint: null,
+  },
+  message_merge: {
+    mode: "message_merge",
+    presetKey: "message_merge",
+    defaultPromptFile: "message-merge-ai-prompt.md",
+    stripReasoning: false,
+    outputFormat: "text",
+    jsonSchemaHint: null,
+  },
   lore_keys: {
     mode: "lore_keys",
     presetKey: "lore_keys",

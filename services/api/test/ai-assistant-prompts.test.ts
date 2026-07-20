@@ -8,6 +8,8 @@ import { getDefaultPromptFile } from "../src/domain/ai-assistant/ai-assistant-mo
 // tests pin the format-selection crux of step 4 (option A): the schema is always
 // JSON DSL, but under xml the prompt enforces XML-safe key names.
 
+import { getModeConfig } from "../src/domain/ai-assistant/ai-assistant-modes.ts";
+
 describe("scene_schema prompt — format-aware default selection", () => {
 	it("getDefaultPromptFile selects the xml file under xml and the json file otherwise", () => {
 		expect(getDefaultPromptFile("scene_schema", "json")).toBe("scene-schema-json.md");
@@ -56,4 +58,37 @@ describe("scene_schema prompt — format-aware default selection", () => {
 			expect(result.prompt).toBe("CUSTOM SCHEMA PROMPT — ignore format.");
 		}
 	});
+});
+
+const MESSAGE_EDITOR_MODES = [
+  { mode: "message_edit", asset: "message-edit-ai-prompt.md" },
+  { mode: "message_merge", asset: "message-merge-ai-prompt.md" },
+] as const;
+
+describe("message editor prompt modes", () => {
+  for (const { mode, asset } of MESSAGE_EDITOR_MODES) {
+    it(`uses an independent text-mode configuration when mode is ${mode}`, () => {
+      const config = getModeConfig(mode);
+
+      expect(config.mode).toBe(mode);
+      expect(config.presetKey).toBe(mode);
+      expect(config.defaultPromptFile).toBe(asset);
+      expect(config.outputFormat).toBe("text");
+      expect(config.stripReasoning).toBe(false);
+      expect(getDefaultPromptFile(mode)).toBe(asset);
+    });
+
+    it(`resolves its default asset and only its own preset override when mode is ${mode}`, async () => {
+      const defaultResult = await resolveSystemPrompt(mode, { aiAssistantPrompts: null });
+      const overrideResult = await resolveSystemPrompt(mode, {
+        aiAssistantPrompts: { [mode]: "OVERRIDE_TOKEN" },
+      });
+      const assetPath = await resolvePromptAssetPath(asset);
+
+      expect(defaultResult.source).toBe("default_md");
+      expect((await Bun.file(assetPath).exists())).toBe(true);
+      expect((await getDefaultPromptForMode(mode)).length).toBeGreaterThan(0);
+      expect(overrideResult).toEqual({ prompt: "OVERRIDE_TOKEN", source: "preset_override" });
+    });
+  }
 });
