@@ -11,6 +11,7 @@
  * module never revokes.
  */
 import { extractPngMetadata, parseCharacterMetadata } from "../../../lib/png-reader.js";
+import { unpackMonolith } from "@vibe-tavern/db/codecs";
 import { getT } from "../../../i18n/locale-helpers.js";
 
 export interface CharacterPreview {
@@ -39,14 +40,29 @@ export interface ChatPreview {
 export async function parseCharacterFile(file: File): Promise<CharacterPreview> {
   const lowerName = file.name.toLowerCase();
   const isPng = lowerName.endsWith(".png") || file.type === "image/png";
-  const raw = isPng
-    ? parseCharacterMetadata(await extractPngMetadata(file))
-    : JSON.parse(await file.text());
+  const isMonolith =
+    lowerName.endsWith(".md") ||
+    lowerName.endsWith(".markdown") ||
+    lowerName.endsWith(".vtmd");
+  let raw: unknown;
+  let avatarUrl: string | null = null;
+  if (isPng) {
+    raw = parseCharacterMetadata(await extractPngMetadata(file));
+    avatarUrl = URL.createObjectURL(file);
+  } else if (isMonolith) {
+    // VTF monolith: YAML frontmatter + markdown sections (NOT JSON — the
+    // frontmatter begins with `---`, so JSON.parse would throw). Unpack via the
+    // real codec; normalizeCharacterPreview reads name/description/tags off the
+    // resulting VtfCharacterContent the same way it reads a JSON card.
+    raw = unpackMonolith(await file.text());
+  } else {
+    raw = JSON.parse(await file.text());
+  }
   const data = normalizeCharacterPreview(raw, file);
   return {
     ...data,
     file,
-    avatarUrl: isPng ? URL.createObjectURL(file) : null,
+    avatarUrl,
   };
 }
 

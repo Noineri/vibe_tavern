@@ -363,7 +363,7 @@ export function CharacterImportModal(input: ImportModalCommonProps) {
             <Dropzone
               drag={drag}
               setDrag={setDrag}
-              accept=".png,.json,image/png,application/json"
+              accept=".png,.json,.md,.markdown,.vtmd,image/png,application/json"
               fileRef={fileRef}
               title={t("click_or_drop_file")}
               subtitle={t("st_jsonl_png_supported")}

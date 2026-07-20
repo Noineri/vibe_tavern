@@ -1318,7 +1318,7 @@ export default interface Resources {
     "st_import_personas_btn": "ST Import",
     "st_import_results": "Imported: {personas} personas, {characters} characters, {chats} chats, {presets} presets, {lorebooks} lorebooks",
     "st_importing_backend": "Importing…",
-    "st_jsonl_png_supported": "PNG character cards and JSON are supported",
+    "st_jsonl_png_supported": "PNG character cards, JSON, and VTF Markdown (.md) are supported",
     "st_jsonl_supported": "SillyTavern JSONL is supported",
     "st_no_files": "No supported files found in the selected folder",
     "st_no_personas_found": "No personas found in the selected file or folder.",

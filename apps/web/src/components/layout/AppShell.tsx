@@ -238,7 +238,7 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
             <span className="text-[0.9rem]"><Icons.Import /></span>
             {t('placeholder_import_character')}
           </button>
-          <input ref={fileInputRef} type="file" accept=".png,.json" className="hidden" onChange={handleImportFile} />
+          <input ref={fileInputRef} type="file" accept=".png,.json,.md,.markdown,.vtmd" className="hidden" onChange={handleImportFile} />
 
           {/* Utility row */}
           <div className="grid w-full grid-cols-2 gap-3 border-t border-border/50 pt-5">

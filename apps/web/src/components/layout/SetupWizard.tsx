@@ -807,7 +807,7 @@ function CharacterStep({
       <input
         ref={fileRef}
         type="file"
-        accept=".png,.json,image/png,application/json"
+        accept=".png,.json,.md,.markdown,.vtmd,image/png,application/json"
         className="hidden"
         onChange={(e) => {
           const file = e.target.files?.[0];

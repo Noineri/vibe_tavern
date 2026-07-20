@@ -356,7 +356,7 @@
   "character_import_title": "Импорт персонажа",
   "character_import_sub": "Загрузите PNG карточку персонажа или JSON файл.",
   "click_or_drop_file": "Нажмите или перетащите файл персонажа сюда",
-  "st_jsonl_png_supported": "Поддерживаются PNG карточки персонажей и JSON",
+  "st_jsonl_png_supported": "Поддерживаются PNG карточки персонажей, JSON и VTF Markdown (.md)",
   "or_import_from_st": "Или импортировать из папки SillyTavern →",
   "st_browse": "Выбрать папку",
   "st_select_folder": "Выберите папку данных SillyTavern",

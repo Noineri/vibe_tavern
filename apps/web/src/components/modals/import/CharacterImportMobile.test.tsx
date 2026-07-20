@@ -122,7 +122,7 @@ describe("CharacterImportMobile", () => {
     const { input } = renderWithInput();
     expect(input).not.toBeNull();
     expect(input.className).toBe("hidden");
-    expect(input.accept).toBe(".png,.json,image/png,application/json");
+    expect(input.accept).toBe(".png,.json,.md,.markdown,.vtmd,image/png,application/json");
     expect(document.body.textContent).not.toContain("character_import_title");
   });
 

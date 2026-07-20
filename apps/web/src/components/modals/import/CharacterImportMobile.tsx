@@ -93,7 +93,7 @@ export const CharacterImportMobile = forwardRef<CharacterImportMobileHandle, Cha
     );
 
     const { open, inputElement } = useMobileFilePicker({
-      accept: ".png,.json,image/png,application/json",
+      accept: ".png,.json,.md,.markdown,.vtmd,image/png,application/json",
       onFile: handleFile,
     });
 
