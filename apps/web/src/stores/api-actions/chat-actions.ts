@@ -1,5 +1,6 @@
-import type { ChatBranchId, ChatId, ChatMode, ObjectiveMode, ObjectiveTaskStatus, SceneTrackerConfig } from "@vibe-tavern/domain";
+import type { ChatBranchId, ChatId, ChatMode, MessageVariantId, ObjectiveMode, ObjectiveTaskStatus, SceneTrackerConfig } from "@vibe-tavern/domain";
 import type { AppMode } from "../../components/layout/app-shell-types.js";
+import { createMessageVariant, type CreateMessageVariantInput } from "../../api/chat-api.js";
 import {
   activateBranch,
   createChat,
@@ -234,8 +235,22 @@ export async function regenerateMessageAction(chatId: ChatId, messageId: string,
   syncCommittedCoauthorTurn(chatId);
 }
 
-export async function editMessageAction(chatId: ChatId, messageId: string, content: string): Promise<void> {
-  const snapshot = await editChatMessage(chatId, messageId, content);
+export async function editMessageAction(
+  chatId: ChatId,
+  messageId: string,
+  content: string,
+  expectedVariantId?: MessageVariantId,
+): Promise<void> {
+  const snapshot = await editChatMessage(chatId, messageId, content, expectedVariantId);
+  syncSnapshot(snapshot);
+}
+
+export async function createMessageVariantAction(
+  chatId: ChatId,
+  messageId: string,
+  input: CreateMessageVariantInput,
+): Promise<void> {
+  const snapshot = await createMessageVariant(chatId, messageId, input);
   syncSnapshot(snapshot);
 }
 

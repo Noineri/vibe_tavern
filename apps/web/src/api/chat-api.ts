@@ -1,4 +1,4 @@
-import type { ChatId, ChatMode, ObjectiveMode, ObjectiveTaskStatus, PromptTraceRecordDto, SceneTrackerConfig, ChatBranchId } from "@vibe-tavern/domain";
+import type { ChatId, ChatMode, ObjectiveMode, ObjectiveTaskStatus, PromptTraceRecordDto, SceneTrackerConfig, ChatBranchId, MessageVariantId } from "@vibe-tavern/domain";
 import type { CoauthorApplyRequest, CoauthorCorrection, CoauthorModule, CoauthorModuleCreate, CoauthorModuleUpdate } from "@vibe-tavern/api-contracts";
 import type { AppSnapshot, AppMessage, ChatListItem, ChatSummaryRecord, AutoSummaryConfig, InsightsConfigPatch, InsightsCompletionPatchResponse, InsightsCompletionTarget, ScenePreviewResponse, SceneTargetResponse, SceneStatusResponse, SceneBackfillMode, SceneBackfillStatusResponse, ContextPreviewResponse } from "./types.js";
 import { client } from "./client.js";
@@ -7,6 +7,14 @@ import { normalizeMessage, normalizeSnapshot } from "./normalize.js";
 import { sendStream, regenerateStream, generateReplyStream, type StreamOpts } from "./stream.js";
 import { getGatewayBaseUrl, getMobileToken } from "./client.js";
 import { appendTokenQuery } from "../lib/mobile-token.js";
+
+export type CreateMessageVariantInput = {
+  readonly content: string;
+  readonly sourceVariantIds: readonly MessageVariantId[];
+  readonly modelId?: string;
+  readonly promptPresetId?: string;
+  readonly finishReason?: string;
+};
 
 export async function fetchChat(chatId: ChatId): Promise<AppSnapshot> {
   const response = await client.api.chats[":chatId"].$get({ param: { chatId } });
@@ -153,10 +161,31 @@ export async function generateReply(
   return normalizeSnapshot(data);
 }
 
-export async function editChatMessage(chatId: ChatId, messageId: string, content: string): Promise<AppSnapshot> {
+export async function editChatMessage(
+  chatId: ChatId,
+  messageId: string,
+  content: string,
+  expectedVariantId?: MessageVariantId,
+): Promise<AppSnapshot> {
   const response = await client.api.chats[":chatId"].messages[":messageId"].$patch({
     param: { chatId, messageId },
-    json: { content },
+    json: {
+      content,
+      ...(expectedVariantId === undefined ? {} : { expectedVariantId }),
+    },
+  });
+  const data = await unwrapRpc<AppSnapshot>(response);
+  return normalizeSnapshot(data);
+}
+
+export async function createMessageVariant(
+  chatId: ChatId,
+  messageId: string,
+  input: CreateMessageVariantInput,
+): Promise<AppSnapshot> {
+  const response = await client.api.chats[":chatId"].messages[":messageId"].variants.$post({
+    param: { chatId, messageId },
+    json: { ...input, sourceVariantIds: [...input.sourceVariantIds] },
   });
   const data = await unwrapRpc<AppSnapshot>(response);
   return normalizeSnapshot(data);

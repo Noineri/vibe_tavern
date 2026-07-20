@@ -1,5 +1,5 @@
 import type { ChatRuntimeApi } from "../contract/runtime-api.js";
-import { brandId, parseStoredAttachments, resolveEffectiveSettings, normalizeSceneTrackerConfig, applySceneTrackerConfigPatch, findInvalidXmlKeys, SCENE_PROMPT_FORMAT, type ChatId, type ChatBranchId, type MessageId, type PromptPresetId, type SceneTrackerConfigPatch, type CoauthorContextLink, type StoredProviderProfileRecord } from "@vibe-tavern/domain";
+import { brandId, parseStoredAttachments, resolveEffectiveSettings, normalizeSceneTrackerConfig, applySceneTrackerConfigPatch, findInvalidXmlKeys, SCENE_PROMPT_FORMAT, type ChatId, type ChatBranchId, type MessageId, type MessageVariantId, type PromptPresetId, type SceneTrackerConfigPatch, type CoauthorContextLink, type StoredProviderProfileRecord } from "@vibe-tavern/domain";
 import { rebuildCurrentSceneCache } from "../../domain/insights/scene-cache.js";
 import type { Attachment } from "@vibe-tavern/domain";
 import type { StoreContainer } from "@vibe-tavern/db";
@@ -223,11 +223,27 @@ export class ChatAdapter implements ChatRuntimeApi {
 	selectVariant = (chatId: string, messageId: string, variantIndex: number) =>
 		this.sessionRuntime.chatRuntime.selectMessageVariant(brandId<ChatId>(chatId), brandId<MessageId>(messageId), variantIndex);
 
+	addEditorVariant = (
+		chatId: string,
+		messageId: string,
+		body: {
+			readonly content: string;
+			readonly sourceVariantIds: readonly MessageVariantId[];
+			readonly modelId?: string;
+			readonly promptPresetId?: string;
+			readonly finishReason?: string;
+		},
+	) => this.sessionRuntime.chatRuntime.addEditorVariant(
+		brandId<ChatId>(chatId),
+		brandId<MessageId>(messageId),
+		body,
+	);
+
 	deleteVariant = (chatId: string, messageId: string, variantIndex: number) =>
 		this.sessionRuntime.chatRuntime.deleteMessageVariant(brandId<ChatId>(chatId), brandId<MessageId>(messageId), variantIndex);
 
-	editMessage = (chatId: string, messageId: string, content: string) =>
-		this.sessionRuntime.chatRuntime.editMessage(brandId<ChatId>(chatId), messageId, content);
+	editMessage = (chatId: string, messageId: string, content: string, expectedVariantId?: MessageVariantId) =>
+		this.sessionRuntime.chatRuntime.editMessage(brandId<ChatId>(chatId), messageId, content, expectedVariantId);
 
 	updateAttachmentDescription = async (chatId: string, messageId: string, attachmentId: string, description: string) => {
 		await this.sessionRuntime.chatApp.updateSingleAttachmentDescription(messageId, attachmentId, description);

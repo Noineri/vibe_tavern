@@ -15,6 +15,7 @@ import type { IChatOrder } from "./session-runtime-chat-order.js";
 import type { PromptTraceDraft } from "../../domain/prompt/prompt-assembly-service.js";
 import type { ChatModeAssembleResult } from "../../domain/chat/chat-mode-strategy.js";
 import { logSendDebug } from "../../shared/send-debug-log.js";
+import { notFound } from "../../shared/errors.js";
 
 export interface PreparedLiveTurn {
   prompt: AssemblePromptResponse;
@@ -329,6 +330,27 @@ export class ChatRuntime {
     return await buildMessageResponse(chatId);
   }
 
+
+  async addEditorVariant(
+    chatId: ChatId,
+    messageId: MessageId,
+    input: {
+      readonly content: string;
+      readonly sourceVariantIds: readonly string[];
+      readonly modelId?: string;
+      readonly promptPresetId?: string;
+      readonly finishReason?: string;
+    },
+  ): Promise<MessageResponse> {
+    const targetMessage = await this.deps.messages.getMessageById(messageId);
+    if (!targetMessage || targetMessage.chatId !== chatId) {
+      throw notFound("Message", `Message '${messageId}' was not found in chat '${chatId}'.`);
+    }
+
+    await this.deps.chatApp.addEditorVariant(messageId, input);
+    return await this.deps.buildMessageResponse(chatId);
+  }
+
   async selectMessageVariant(chatId: ChatId, messageId: MessageId, variantIndex: number): Promise<VariantResponse> {
     await this.deps.messages.selectVariant(messageId, variantIndex);
     return await this.deps.buildVariantResponse(chatId);
@@ -339,8 +361,8 @@ export class ChatRuntime {
     return await this.deps.buildMessageResponse(chatId);
   }
 
-  async editMessage(chatId: ChatId, messageId: string, content: string): Promise<MessageResponse> {
-    await this.deps.chatApp.editMessage(messageId, content);
+  async editMessage(chatId: ChatId, messageId: string, content: string, expectedVariantId?: string): Promise<MessageResponse> {
+    await this.deps.chatApp.editMessage(messageId, content, expectedVariantId);
     return await this.deps.buildMessageResponse(chatId);
   }
 

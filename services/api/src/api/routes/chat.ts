@@ -189,6 +189,9 @@ export function createChatRoutes(runtime: ChatRuntimeApi) {
         ),
       );
     })
+    .post("/api/chats/:chatId/messages/:messageId/variants", zValidator("json", schemas.createMessageVariantSchema), async (c) => {
+      return c.json(await runtime.addEditorVariant(c.req.param("chatId"), c.req.param("messageId"), c.req.valid("json")));
+    })
     .delete("/api/chats/:chatId/messages/:messageId/variants/:variantIndex", async (c) => {
       return c.json(
         await runtime.deleteVariant(
@@ -200,7 +203,7 @@ export function createChatRoutes(runtime: ChatRuntimeApi) {
     })
     .patch("/api/chats/:chatId/messages/:messageId", zValidator("json", schemas.editMessageSchema), async (c) => {
       const body = c.req.valid("json");
-      return c.json(await runtime.editMessage(c.req.param("chatId"), c.req.param("messageId"), body.content ?? ""));
+      return c.json(await runtime.editMessage(c.req.param("chatId"), c.req.param("messageId"), body.content ?? "", body.expectedVariantId));
     })
     .patch("/api/chats/:chatId/messages/:messageId/attachments/:attachmentId/description", async (c) => {
       const body = await c.req.json<{ description: string }>().catch(() => ({ description: "" }));

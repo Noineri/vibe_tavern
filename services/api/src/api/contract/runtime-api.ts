@@ -26,7 +26,7 @@ import type {
 	SummaryResponse,
 	CharacterVersionResponse,
 } from "./session-types.js";
-import type { ObjectiveMode, ObjectiveTaskStatus, PromptTraceRecordDto, PromptPresetDto, PronounForms, SceneTrackerConfig, SceneTrackerConfigPatch, CoauthorContextLink } from "@vibe-tavern/domain";
+import type { ObjectiveMode, ObjectiveTaskStatus, PromptTraceRecordDto, PromptPresetDto, PronounForms, SceneTrackerConfig, SceneTrackerConfigPatch, CoauthorContextLink, MessageVariantId } from "@vibe-tavern/domain";
 import type { ChatMode } from "@vibe-tavern/domain";
 import type { SkillCatalogEntryDto } from "@vibe-tavern/api-contracts";
 // Re-export so existing imports from this module (the skill adapter) keep
@@ -144,8 +144,15 @@ export interface ChatRuntimeApi {
 	generateReply: (chatId: string, signal?: AbortSignal) => Promise<MessageResponse>;
 	generateReplyStream: (chatId: string, signal?: AbortSignal) => AsyncIterable<{ event: string; data: string }>;
 	selectVariant: (chatId: string, messageId: string, variantIndex: number) => Promise<VariantResponse>;
+	addEditorVariant: (chatId: string, messageId: string, body: {
+		readonly content: string;
+		readonly sourceVariantIds: readonly MessageVariantId[];
+		readonly modelId?: string;
+		readonly promptPresetId?: string;
+		readonly finishReason?: string;
+	}) => Promise<MessageResponse>;
 	deleteVariant: (chatId: string, messageId: string, variantIndex: number) => Promise<MessageResponse>;
-	editMessage: (chatId: string, messageId: string, content: string) => Promise<MessageResponse>;
+	editMessage: (chatId: string, messageId: string, content: string, expectedVariantId?: MessageVariantId) => Promise<MessageResponse>;
 	deleteMessage: (chatId: string, messageId: string) => Promise<MessageResponse>;
 	updateAttachmentDescription: (chatId: string, messageId: string, attachmentId: string, description: string) => Promise<{ ok: boolean }>;
 	deleteAttachment: (chatId: string, messageId: string, attachmentId: string) => Promise<{ ok: boolean }>;
