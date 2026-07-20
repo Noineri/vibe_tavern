@@ -7,49 +7,41 @@
  *
  *  1. `shared/prompt-asset-loader.ts` — the candidate-path ladder (env override →
  *     standalone artifact → API source assets → cwd source → build output) and
- *     the per-filename cache. The env-override test is the one that pins the
- *     behavioral reconciliation the consolidation report flagged: there is exactly
- *     one canonical candidate order, and env wins.
- *  2. `domain/ai-assistant/ai-assistant-prompts.ts` — after the rewire, resolution
- *     + caching delegate to the shared loader; the mode-keyed public surface
- *     (`resolvePromptPathForMode`, `getDefaultPromptForMode`, `clearPromptCache`)
- *     stays intact, and `resolveSystemPrompt`'s fallback chain (preset_override →
- *     preset_legacy → default_md) is pure logic worth pinning in its own right.
+ *     the no-cache freshness contract: every `loadPromptAsset` call re-reads, so
+ *     an external edit to the resolved file is visible on the next call without a
+ *     restart. The env-override test is the one that pins the behavioral
+ *     reconciliation the consolidation report flagged: there is exactly one
+ *     canonical candidate order, and env wins.
+ *  2. `domain/ai-assistant/ai-assistant-prompts.ts` — after the rewire,
+ *     resolution delegates to the shared loader; the mode-keyed public surface
+ *     (`resolvePromptPathForMode`, `getDefaultPromptForMode`) stays intact, and
+ *     `resolveSystemPrompt`'s fallback chain (preset_override → preset_legacy →
+ *     default_md) is pure logic worth pinning in its own right.
  *
- * Cache isolation note: `_assetCache` in the shared loader is module-global (one
- * Map per process, shared across all test files in a `bun test` run). The
- * `beforeEach(clearPromptAssetCache)` keeps each test's assertions independent of
- * load order; the env-override test additionally clears inside the test right
- * before its read, so a cached bundled-content entry from a prior file cannot
- * mask the override.
+ * No cache → no cross-test isolation work needed: every load reads fresh, so the
+ * old `beforeEach(clear…Cache)` hooks are gone and the freshness tests assert the
+ * live-edit behavior directly.
  */
 
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 
 import type { AiAssistantMode } from "@vibe-tavern/prompt-pipeline";
 
 import { getAllModeConfigs, getModeConfig } from "../src/domain/ai-assistant/ai-assistant-modes.js";
 import {
-	clearPromptCache,
 	getDefaultPromptForMode,
 	resolvePromptPathForMode,
 	resolveSystemPrompt,
 } from "../src/domain/ai-assistant/ai-assistant-prompts.js";
-import {
-	clearPromptAssetCache,
-	loadPromptAsset,
-	resolvePromptAssetPath,
-} from "../src/shared/prompt-asset-loader.js";
+import { loadPromptAsset, resolvePromptAssetPath } from "../src/shared/prompt-asset-loader.js";
 
 // Every mode's prompt file, for parameterized assertions.
 const ALL_MODES = getAllModeConfigs().map((c) => c.mode);
 
 describe("prompt-asset-loader — shared resolver", () => {
-	beforeEach(() => clearPromptAssetCache());
-
 	describe("resolvePromptAssetPath", () => {
 		test("resolves every assistant prompt file to an existing path on disk", async () => {
 			for (const config of getAllModeConfigs()) {
@@ -72,9 +64,7 @@ describe("prompt-asset-loader — shared resolver", () => {
 					const resolved = await resolvePromptAssetPath(filename);
 					expect(resolved).toBe(overridePath);
 
-					// And the content loads from the override location (clear first so a
-					// cached bundled-content entry from a prior test/file cannot mask it).
-					clearPromptAssetCache();
+					// And the content loads from the override location.
 					expect(await loadPromptAsset(filename)).toBe(overrideContent);
 				} finally {
 					if (prev === undefined) delete process.env.RP_PLATFORM_AI_ASSISTANT_PROMPTS_DIR;
@@ -94,20 +84,35 @@ describe("prompt-asset-loader — shared resolver", () => {
 		});
 	});
 
-	describe("loadPromptAsset — caching", () => {
-		test("returns the file content and is stable across calls", async () => {
-			const filename = getModeConfig("script").defaultPromptFile;
-			const first = await loadPromptAsset(filename);
-			const second = await loadPromptAsset(filename);
-			expect(first.length).toBeGreaterThan(0);
-			expect(second).toBe(first);
+	describe("loadPromptAsset — freshness (no process cache)", () => {
+		test("returns the current file content and reflects an external edit on the next call", async () => {
+			const tmp = await mkdtemp(join(tmpdir(), "vt-prompts-"));
+			try {
+				const filename = getModeConfig("script").defaultPromptFile;
+				const overridePath = join(tmp, filename);
+				await Bun.write(overridePath, "# FIRST DRAFT\nmarker-aaa\n");
+
+				const prev = process.env.RP_PLATFORM_AI_ASSISTANT_PROMPTS_DIR;
+				process.env.RP_PLATFORM_AI_ASSISTANT_PROMPTS_DIR = tmp;
+				try {
+					// First read sees the initial content.
+					expect(await loadPromptAsset(filename)).toBe("# FIRST DRAFT\nmarker-aaa\n");
+					// Edit the resolved file in place; the next read must see it with no
+					// restart and no manual cache clear.
+					await Bun.write(overridePath, "# EDITED LIVE\nmarker-bbb\n");
+					expect(await loadPromptAsset(filename)).toBe("# EDITED LIVE\nmarker-bbb\n");
+				} finally {
+					if (prev === undefined) delete process.env.RP_PLATFORM_AI_ASSISTANT_PROMPTS_DIR;
+					else process.env.RP_PLATFORM_AI_ASSISTANT_PROMPTS_DIR = prev;
+				}
+			} finally {
+				await rm(tmp, { recursive: true, force: true });
+			}
 		});
 	});
 });
 
 describe("ai-assistant-prompts — rewire onto shared loader", () => {
-	beforeEach(() => clearPromptCache());
-
 	test("resolvePromptPathForMode resolves every mode to its configured defaultPromptFile on disk", async () => {
 		for (const mode of ALL_MODES) {
 			const config = getModeConfig(mode);
@@ -124,14 +129,28 @@ describe("ai-assistant-prompts — rewire onto shared loader", () => {
 		}
 	});
 
-	test("clearPromptCache delegates to the shared cache (does not corrupt state)", async () => {
-		// Prime the shared cache via the assistant path.
-		const primed = await getDefaultPromptForMode("script");
-		// Clear via the assistant-facing alias.
-		clearPromptCache();
-		// Re-load succeeds and returns the same content (cache was emptied, not broken).
-		const reloaded = await getDefaultPromptForMode("script");
-		expect(reloaded).toBe(primed);
+	test("getDefaultPromptForMode reflects an external edit live (assistant surface shares the loader)", async () => {
+		// Pins the same freshness contract through the mode-keyed public surface,
+		// not just the raw loader: an edit beside the executable is visible on the
+		// next assistant-mode resolution without a restart.
+		const tmp = await mkdtemp(join(tmpdir(), "vt-prompts-"));
+		try {
+			const filename = getModeConfig("script").defaultPromptFile;
+			const overridePath = join(tmp, filename);
+			await Bun.write(overridePath, "# ASSISTANT FIRST\n");
+			const prev = process.env.RP_PLATFORM_AI_ASSISTANT_PROMPTS_DIR;
+			process.env.RP_PLATFORM_AI_ASSISTANT_PROMPTS_DIR = tmp;
+			try {
+				expect(await getDefaultPromptForMode("script")).toBe("# ASSISTANT FIRST\n");
+				await Bun.write(overridePath, "# ASSISTANT EDITED\n");
+				expect(await getDefaultPromptForMode("script")).toBe("# ASSISTANT EDITED\n");
+			} finally {
+				if (prev === undefined) delete process.env.RP_PLATFORM_AI_ASSISTANT_PROMPTS_DIR;
+				else process.env.RP_PLATFORM_AI_ASSISTANT_PROMPTS_DIR = prev;
+			}
+		} finally {
+			await rm(tmp, { recursive: true, force: true });
+		}
 	});
 });
 
@@ -139,9 +158,6 @@ describe("resolveSystemPrompt — fallback chain precedence", () => {
 	// Pure logic for the override/legacy branches; the default_md branch reads the
 	// file (covered by the rewire tests above). These pin the precedence that
 	// determines which prompt actually reaches the model.
-
-	beforeEach(() => clearPromptCache());
-	afterEach(() => clearPromptCache());
 
 	test("preset_override wins when aiAssistantPrompts has the mode's presetKey", async () => {
 		const { prompt, source } = await resolveSystemPrompt("script", {

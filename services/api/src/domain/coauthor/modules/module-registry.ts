@@ -3,8 +3,9 @@ import { loadPromptAsset } from "../../../shared/prompt-asset-loader.js";
 
 /**
  * Seed (built-in) module DEFINITIONS — metadata only, no inline basePrompt.
- * The `.md` asset is loaded lazily on first resolution (cached by
- * `loadPromptAsset`) and materialized into `basePrompt` so the contract has a
+ * The `.md` asset is loaded lazily on each resolution via `loadPromptAsset`
+ * (which re-reads from disk, so an edit beside the executable is live on the
+ * next turn) and materialized into `basePrompt` so the contract has a
  * single inline-text field for both built-in and user modules (CS-24).
  *
  * `openingMessage` is seeded as the chat's first assistant turn on chat birth
@@ -152,8 +153,9 @@ export function isSeedModule(id: string | null | undefined): boolean {
 
 /**
  * Resolve seed defs into full modules by loading each `.md` into `basePrompt`.
- * `loadPromptAsset` caches per filename, so repeated calls are O(defs) Map
- * lookups — cheap to call on every prompt assembly turn.
+ * `loadPromptAsset` re-reads from disk on every call (no process cache), so an
+ * edit beside the executable is picked up on the next prompt-assembly turn;
+ * the per-turn cost is a few small reads, negligible next to an LLM call.
  */
 async function resolveSeedModules(): Promise<CoauthorModule[]> {
   return Promise.all(

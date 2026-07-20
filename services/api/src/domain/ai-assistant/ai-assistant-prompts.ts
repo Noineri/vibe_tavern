@@ -4,18 +4,16 @@
  * Reads `.md` files from the assets directory via the shared prompt-asset
  * loader (`shared/prompt-asset-loader.ts`), which owns the candidate-path
  * ladder (env override → standalone artifact → API source assets → cwd source
- * → build output) and the per-filename cache. This module keeps the mode-keyed
- * public surface (`getDefaultPromptForMode`, `resolveSystemPrompt`, etc.) that
- * callers depend on; resolution + caching are delegated so there is a single
- * source of truth for where prompt `.md` files are loaded from.
+ * → build output) and re-reads on every call (no process cache, so an edit
+ * beside the executable is live on the next model request). This module keeps
+ * the mode-keyed public surface (`getDefaultPromptForMode`,
+ * `resolveSystemPrompt`, etc.) that callers depend on; resolution is delegated
+ * so there is a single source of truth for where prompt `.md` files are loaded
+ * from.
  */
 
 import type { AiAssistantMode } from "@vibe-tavern/prompt-pipeline";
-import {
-	clearPromptAssetCache,
-	loadPromptAsset,
-	resolvePromptAssetPath,
-} from "../../shared/prompt-asset-loader.js";
+import { loadPromptAsset, resolvePromptAssetPath } from "../../shared/prompt-asset-loader.js";
 import { getModeConfig, getDefaultPromptFile } from "./ai-assistant-modes.js";
 
 // ─── Path resolution ─────────────────────────────────────────────────────────
@@ -27,9 +25,8 @@ export async function resolvePromptPathForMode(mode: AiAssistantMode, promptForm
 // ─── Public API ──────────────────────────────────────────────────────────────
 
 /**
- * Load the default system prompt for a given assistant mode.
- * Cached per filename by the shared loader (equivalent to the former mode-keyed
- * cache, since each mode maps to exactly one `defaultPromptFile`).
+ * Load the default system prompt for a given assistant mode. Delegates to the
+ * shared loader, which re-reads from disk on every call.
  */
 export async function getDefaultPromptForMode(mode: AiAssistantMode, promptFormat?: "json" | "xml"): Promise<string> {
   return loadPromptAsset(getDefaultPromptFile(mode, promptFormat));
@@ -72,12 +69,4 @@ export async function resolveSystemPrompt(
   // 3. Default .md file (format-aware for scene_schema)
   const defaultPrompt = await getDefaultPromptForMode(mode, options.promptFormat);
   return { prompt: defaultPrompt, source: "default_md" };
-}
-
-/**
- * Clear the prompt cache (useful for testing). Delegates to the shared loader's
- * cache so both the assistant and Co-Author paths are invalidated together.
- */
-export function clearPromptCache(): void {
-  clearPromptAssetCache();
 }
