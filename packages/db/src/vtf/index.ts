@@ -117,15 +117,22 @@ const EXTENSIONS_FILE = "extensions.json";
  * `personalitySummary` (when non-null) is preserved losslessly by stashing it
  * into `extensions` under a reserved key, so it survives the round-trip even
  * though VTF-native cards put everything in `# PERSONALITY` → `description`.
+ *
+ * `storageId` is the immutable local `CharacterId` (HUMAN_READABLE_FOLDERS):
+ * when supplied it is stamped into `profile.md` as `vt.storage_id` by the codec.
+ * This is the SOLE authoritative source of that field — the store passes the
+ * real id at every root write, so parsed/edited/imported content cannot omit or
+ * forge it. Omit it (e.g. the Co-Author read path) when the plumbing should not
+ * appear in the emitted document.
  */
-export function serializeCharacterFolder(character: VtfCharacterContent): FolderFileEntry[] {
+export function serializeCharacterFolder(character: VtfCharacterContent, storageId?: string | null): FolderFileEntry[] {
   const profile = profileFromCharacter(character);
   const instructions = instructionsFromCharacter(character);
   const greetings = greetingsFromCharacter(character.firstMessage, character.alternateGreetings);
   const extensionsWithLegacy = stashPersonalitySummary(character.extensions, character.personalitySummary);
 
   const entries: FolderFileEntry[] = [];
-  entries.push({ path: PROFILE_FILE, content: serializeProfileMd({ profile }) });
+  entries.push({ path: PROFILE_FILE, content: serializeProfileMd({ profile, storageId }) });
   entries.push({ path: INSTRUCTIONS_FILE, content: writeInstructions(instructions) });
   entries.push({ path: EXTENSIONS_FILE, content: writeExtensions(extensionsWithLegacy) });
   entries.push(...writeGreetingsFolder(greetings));

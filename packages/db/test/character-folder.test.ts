@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { ContentStore } from "../src/content-store.js";
 import { createFileStore, STORAGE_FOLDERS } from "../src/file-store.js";
 import { CharacterFolder } from "../src/stores/character-folder.js";
+import { parseProfileMd } from "../src/vtf/profile-md.js";
 import type { VtfCharacterContent } from "../src/vtf/index.js";
 
 const CHARS = STORAGE_FOLDERS.characters;
@@ -176,5 +177,57 @@ describe("CharacterFolder (isolated, no DB)", () => {
 		await folder.writeVtfFolder(id, SAMPLE);
 		await folder.removeAll(id);
 		await expect(readdir(join(dataRoot, CHARS, id))).rejects.toThrow();
+	});
+
+	// ─── Storage identity (vt.storage_id) ────────────────────────────────
+
+	test("writeVtfFolder stamps storageId into profile.md on disk", async () => {
+		const { dataRoot, folder } = await setup();
+		const id = "char_sid_1";
+		await folder.writeVtfFolder(id, SAMPLE, "char_sid_1");
+		const profileText = await readFile(join(dataRoot, CHARS, id, "profile.md"), "utf8");
+		expect(profileText).toContain("  storage_id: char_sid_1");
+		// Parsed back, the id lands on parsed.storageId (not in unknownVt).
+		const parsed = parseProfileMd(profileText);
+		expect(parsed.storageId).toBe("char_sid_1");
+		expect(parsed.unknownVt).toEqual([]);
+	});
+
+	test("writeVtfFolder omits storage_id when storageId is not supplied", async () => {
+		const { dataRoot, folder } = await setup();
+		const id = "char_sid_2";
+		await folder.writeVtfFolder(id, SAMPLE);
+		const profileText = await readFile(join(dataRoot, CHARS, id, "profile.md"), "utf8");
+		expect(profileText).not.toContain("storage_id");
+	});
+
+	test("writeVtfFolder re-stamps on rewrite: a new id replaces the old one", async () => {
+		const { dataRoot, folder } = await setup();
+		const id = "char_sid_3";
+		await folder.writeVtfFolder(id, SAMPLE, "char_OLD");
+		let profileText = await readFile(join(dataRoot, CHARS, id, "profile.md"), "utf8");
+		expect(profileText).toContain("storage_id: char_OLD");
+		// Rewrite with the real local id — the old source id is gone.
+		await folder.writeVtfFolder(id, SAMPLE, "char_NEW");
+		profileText = await readFile(join(dataRoot, CHARS, id, "profile.md"), "utf8");
+		expect(profileText).toContain("storage_id: char_NEW");
+		expect(profileText).not.toContain("char_OLD");
+	});
+
+	test("snapshotToVersion retains the stamped profile.md byte-faithfully; restoreFromVersion brings it back", async () => {
+		const { dataRoot, folder } = await setup();
+		const id = "char_sid_4";
+		await folder.writeVtfFolder(id, SAMPLE, "char_sid_4");
+		await folder.snapshotToVersion(id, "v1");
+		// The version snapshot's profile.md is a raw-text copy: storage_id is intact.
+		const snapProfile = await readFile(join(dataRoot, CHARS, id, "versions/v1/profile.md"), "utf8");
+		expect(snapProfile).toContain("storage_id: char_sid_4");
+		// Rewrite root WITHOUT storage_id, then restore — the snapshot's stamped
+		// profile (with storage_id) comes back unchanged.
+		await folder.writeVtfFolder(id, { ...SAMPLE, name: "Changed" });
+		expect(await readFile(join(dataRoot, CHARS, id, "profile.md"), "utf8")).not.toContain("storage_id");
+		await folder.restoreFromVersion(id, "v1");
+		const restored = await readFile(join(dataRoot, CHARS, id, "profile.md"), "utf8");
+		expect(restored).toContain("storage_id: char_sid_4");
 	});
 });

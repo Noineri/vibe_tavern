@@ -303,7 +303,7 @@ export class CharacterStore {
 
     // Dual write: persist content to the VTF folder; stamp the combined hash on the DB row.
     if (this.folder) {
-      const hash = await this.folder.writeVtfFolder(this.folderOf(id, row!), this.toVtfContent(char));
+      const hash = await this.folder.writeVtfFolder(this.folderOf(id, row!), this.toVtfContent(char), id);
       await this.db
         .update(characters)
         .set({ contentHash: hash, hasFileOnDisk: 1 })
@@ -363,7 +363,7 @@ export class CharacterStore {
 
     // Dual write: rewrite the VTF folder; stamp the combined hash on the DB row.
     if (this.folder) {
-      const hash = await this.folder.writeVtfFolder(this.folderOf(id, row), this.toVtfContent(updated));
+      const hash = await this.folder.writeVtfFolder(this.folderOf(id, row), this.toVtfContent(updated), id);
       await this.db
         .update(characters)
         .set({ contentHash: hash, hasFileOnDisk: 1 })
@@ -440,7 +440,7 @@ export class CharacterStore {
 
     // Dual write: persist the copy's VTF folder; stamp the combined hash on the DB row.
     if (this.folder) {
-      const hash = await this.folder.writeVtfFolder(this.folderOf(newId, row!), this.toVtfContent(copy));
+      const hash = await this.folder.writeVtfFolder(this.folderOf(newId, row!), this.toVtfContent(copy), newId);
       await this.db
         .update(characters)
         .set({ contentHash: hash, hasFileOnDisk: 1 })
@@ -494,7 +494,7 @@ export class CharacterStore {
     }
     const char = await this.getById(id);
     if (!char) throw new Error(`Character '${id}' not found`);
-    const hash = await this.folder.writeVtfFolder(folderName, this.toVtfContent(char));
+    const hash = await this.folder.writeVtfFolder(folderName, this.toVtfContent(char), id);
     await this.db
       .update(characters)
       .set({ contentHash: hash, hasFileOnDisk: 1 })

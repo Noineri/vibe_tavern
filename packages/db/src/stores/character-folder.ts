@@ -52,9 +52,17 @@ export class CharacterFolder {
    * wholesale: the old `greetings/` subfolder is removed first to garbage-collect
    * stale files left by deleted alternates (rename-free ids mean content edits
    * reuse filenames, but removed alternates must not leave orphans).
+   *
+   * `storageId` is the immutable local `CharacterId` stamped into `profile.md`
+   * as `vt.storage_id` (HUMAN_READABLE_FOLDERS). It is distinct from `id`, which
+   * is the on-disk folder name (today the same opaque id; after HRF-3d the
+   * mutable human-readable name). The store passes the real immutable id here
+   * at every root write so the field is always authoritative; version snapshots
+   * are raw-text copies (`snapshotToVersion`/`restoreFromVersion`) and retain
+   * whatever was stamped at snapshot time unchanged.
    */
-  async writeVtfFolder(id: string, content: VtfCharacterContent): Promise<string> {
-    const entries = serializeCharacterFolder(content);
+  async writeVtfFolder(id: string, content: VtfCharacterContent, storageId?: string | null): Promise<string> {
+    const entries = serializeCharacterFolder(content, storageId);
     await this.content.removeEntitySubfolder(FOLDER, id, 'greetings');
     for (const entry of entries) {
       await this.content.writeEntityTextFile(FOLDER, id, entry.path, entry.content);

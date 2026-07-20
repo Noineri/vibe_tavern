@@ -270,3 +270,60 @@ function entriesToFileMap(entries: { path: string; content: string }[]): Record<
   for (const e of entries) map[e.path] = e.content;
   return map;
 }
+
+// ─── Storage identity (vt.storage_id) ──────────────────────────────────────
+
+describe("monolith: storage identity (vt.storage_id)", () => {
+  it("packMonolith does NOT emit storage_id (cross-install export is identity-free)", () => {
+    // The content model (VtfCharacterContent) carries no id, and a local
+    // storage id is meaningless in another install — so the exchange monolith
+    // is identity-free. The storage write path (serializeCharacterFolder) is
+    // the sole stamper, not the exchange codec.
+    const md = packMonolith(fullCharacter());
+    expect(md).not.toContain("storage_id");
+  });
+
+  it("unpackMonolith drops an incoming vt.storage_id from the content (source identity, not promoted)", () => {
+    // An incoming monolith may carry a source install's storage_id (e.g. a
+    // same-install re-import). unpackMonolith returns VtfCharacterContent
+    // (content fields only); the source id is dropped — exactly as the
+    // monolith drops all document-level unknowns. The import/create path
+    // decides the final local id and the storage write re-stamps it.
+    const md = [
+      "---",
+      "name: Imported",
+      "vt:",
+      "  storage_id: char_IMPORT_SOURCE_77",
+      "  mes_example_mode: always",
+      "  mes_example_depth: 4",
+      "---",
+      "",
+      "# PERSONALITY",
+      "An imported body.",
+    ].join("\n");
+    const back = unpackMonolith(md);
+    // Content fields parse correctly.
+    expect(back.name).toBe("Imported");
+    expect(back.description).toBe("An imported body.");
+    // VtfCharacterContent has no storageId field — the source id is gone,
+    // never trusted as a path or local identity.
+    expect((back as Record<string, unknown>).storageId).toBeUndefined();
+  });
+
+  it("packMonolith(unpackMonolith(md)) drops storage_id (consistent with monolith document-unknown lossiness)", () => {
+    const mdWithSourceId = [
+      "---",
+      "name: X",
+      "vt:",
+      "  storage_id: char_SOURCE",
+      "  mes_example_mode: always",
+      "  mes_example_depth: 4",
+      "---",
+      "",
+      "# PERSONALITY",
+      "desc",
+    ].join("\n");
+    const repacked = packMonolith(unpackMonolith(mdWithSourceId));
+    expect(repacked).not.toContain("storage_id");
+  });
+});
