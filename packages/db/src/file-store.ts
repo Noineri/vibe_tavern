@@ -1,4 +1,4 @@
-import { access, rename, rm } from "node:fs/promises";
+import { access, readdir, rename, rm } from "node:fs/promises";
 import { isAbsolute, join, resolve, sep } from "node:path";
 
 export const STORAGE_FOLDERS = {
@@ -38,8 +38,17 @@ export interface FileStore {
 	readBinary(absolutePath: string): Promise<Buffer>;
 	/** Recursively remove a directory (or a file). No-op if the path is missing. */
 	removeDir(absolutePath: string): Promise<void>;
+	/** Atomically rename/move a file or directory (same filesystem). Throws if the source is missing or the destination exists. */
+	rename(oldPath: string, newPath: string): Promise<void>;
 	/** True if a file or directory exists at the path. */
 	pathExists(absolutePath: string): Promise<boolean>;
+	/**
+	 * List the immediate SUBDIRECTORY names of data/{folder}/ (one level,
+	 * non-recursive). Returns [] when the folder does not exist. Bounded to a
+	 * known {@link StorageFolder} — never accepts an arbitrary path
+	 * (HUMAN_READABLE_FOLDERS registry scan).
+	 */
+	listSubdirs(folder: StorageFolder): Promise<string[]>;
 }
 
 function sortObjectKeys(_key: string, value: unknown): unknown {
@@ -145,12 +154,27 @@ export function createFileStore(dataRoot?: string): FileStore {
 			// force:true makes removal a no-op when the path is missing.
 			await rm(absolutePath, { recursive: true, force: true });
 		},
+		async rename(oldPath: string, newPath: string): Promise<void> {
+			// node:fs/promises rename — atomic on the same filesystem (data/ is one
+			// tree). Throws if the source is missing or the destination exists.
+			await rename(oldPath, newPath);
+		},
 		pathExists(absolutePath: string): Promise<boolean> {
 			// access() resolves both files and directories; its "missing" failure
 			// is the expected negative result, not a swallowed real error.
 			return access(absolutePath)
 				.then(() => true)
 				.catch(() => false);
+		},
+		async listSubdirs(folder: StorageFolder): Promise<string[]> {
+			// One-level, non-recursive, folder-bounded — no arbitrary path surface.
+			const dir = join(root, folder);
+			try {
+				const entries = await readdir(dir, { withFileTypes: true });
+				return entries.filter((e) => e.isDirectory()).map((e) => e.name);
+			} catch {
+				return []; // folder missing on first run → empty
+			}
 		},
 	};
 }

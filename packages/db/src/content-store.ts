@@ -324,6 +324,46 @@ export class ContentStore {
 		return this._fileStore.pathExists(dirPath);
 	}
 
+	/**
+	 * List the immediate subdirectory names of data/{folder}/ (one level,
+	 * non-recursive). Delegates to FileStore; returns [] when the folder is
+	 * missing. Used by the character-directory registry scan.
+	 */
+	async listSubdirs(folder: StorageFolder): Promise<string[]> {
+		return this._fileStore.listSubdirs(folder);
+	}
+
+	/**
+	 * Rename an entity folder data/{folder}/{oldEntityId}/ →
+	 * data/{folder}/{newEntityId}/ (HUMAN_READABLE_FOLDERS — character rename).
+	 * Explicitly REJECTS an occupied destination before touching the filesystem
+	 * (collision safety), and evicts the old-name cache entries only AFTER a
+	 * successful rename (new-name entries repopulate lazily on next access).
+	 * No-op if the source folder is absent (entity never written to disk).
+	 */
+	async renameEntityFolder(folder: StorageFolder, oldEntityId: string, newEntityId: string): Promise<void> {
+		const oldDir = this._fileStore.resolvePath(folder, oldEntityId);
+		if (!(await this._fileStore.pathExists(oldDir))) return; // source absent → no-op
+		const newDir = this._fileStore.resolvePath(folder, newEntityId);
+		if (await this._fileStore.pathExists(newDir)) {
+			throw new Error(`renameEntityFolder: destination already exists (${folder}/${newEntityId})`);
+		}
+		await this._fileStore.rename(oldDir, newDir);
+		// Evict old-name cache entries (best-effort hygiene — the store only
+		// references the new name after a rename, so stale entries are harmless,
+		// but they'd leak across many renames in a long-running server).
+		const oldPrefix = this.cacheKey(folder, oldEntityId);
+		this.cache.delete(oldPrefix);
+		for (const key of [...this.cache.keys()]) {
+			if (key.startsWith(`${oldPrefix}/`)) this.cache.delete(key);
+		}
+		for (const key of [...this.textCache.keys()]) {
+			if (key === oldPrefix || key.startsWith(`${oldPrefix}.`) || key.startsWith(`${oldPrefix}/`)) {
+				this.textCache.delete(key);
+			}
+		}
+	}
+
 	// ─── Legacy flat-file migration helpers ───────────────────────────────
 	// Pre-folder-layout entities live as flat data/{folder}/{id}(.{slug}).json.
 	// These helpers find and copy them into the folder layout WITHOUT deleting

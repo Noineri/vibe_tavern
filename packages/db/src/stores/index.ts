@@ -3,6 +3,8 @@ export type { Character, CreateCharacterData, UpdateCharacterData } from './char
 
 export { CharacterFolder } from './character-folder.js';
 
+export { CharacterDirectoryRegistry, DuplicateStorageIdError } from './character-directory-registry.js';
+
 export { VersionStore } from './version-store.js';
 
 export { CharacterAssetStore } from './character-asset-store.js';
