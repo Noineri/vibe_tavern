@@ -82,7 +82,9 @@ export interface ChatLifecycleRuntimeDeps {
 			model?: string;
 			recentMessageLimit?: number;
 			contextBudget?: number | null;
+			responseReserve?: number;
 			throughMessageId?: import("@vibe-tavern/domain").MessageId;
+			excludeMessageIds?: import("@vibe-tavern/domain").MessageId[];
 		},
 	) => Promise<BuiltPipelineContext>;
 }
@@ -292,7 +294,9 @@ export class ChatLifecycleRuntime {
 		model: string;
 		recentMessageLimit?: number;
 		contextBudget?: number | null;
+		responseReserve?: number;
 		throughMessageId?: import("@vibe-tavern/domain").MessageId;
+		excludeMessageIds?: import("@vibe-tavern/domain").MessageId[];
 	}): Promise<BuiltPipelineContext> {
 		const chat = await this.deps.stores.chats.getById(input.chatId);
 		if (!chat) {
@@ -305,7 +309,9 @@ export class ChatLifecycleRuntime {
 				model: input.model,
 				recentMessageLimit: input.recentMessageLimit,
 				contextBudget: input.contextBudget ?? null,
+				responseReserve: input.responseReserve,
 				...(input.throughMessageId ? { throughMessageId: input.throughMessageId } : {}),
+				...(input.excludeMessageIds ? { excludeMessageIds: input.excludeMessageIds } : {}),
 			},
 		);
 	}

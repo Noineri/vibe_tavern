@@ -79,7 +79,7 @@ export class RuntimeApiAdapter implements RuntimeApi {
 		this.preset = new PresetAdapter(promptPresetService);
 		this.importExport = new ImportExportAdapter(sessionRuntime);
 		this.asset = new AssetAdapter(assetService);
-		this.aiAssistant = new AiAssistantAdapter(stores);
+		this.aiAssistant = new AiAssistantAdapter(stores, sessionRuntime);
 		this.settings = new SettingsAdapter(stores);
 		this.mobileAccess = new MobileAccessAdapter(mobileAccessService);
 		this.insights = new InsightsAdapter(stores, sessionRuntime, objectiveService, trackerService);

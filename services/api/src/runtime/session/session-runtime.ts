@@ -192,7 +192,9 @@ export function pickBootstrapChatId<T extends string>(
 					model: opts?.model ?? "",
 					...(opts?.recentMessageLimit !== undefined ? { recentMessageLimit: opts.recentMessageLimit } : {}),
 					contextBudget: opts?.contextBudget ?? null,
+					responseReserve: opts?.responseReserve,
 					...(opts?.throughMessageId ? { throughMessageId: opts.throughMessageId } : {}),
+					...(opts?.excludeMessageIds ? { excludeMessageIds: opts.excludeMessageIds } : {}),
 				}),
 		});
 		this.character = new CharacterRuntime({
