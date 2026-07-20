@@ -105,12 +105,13 @@ export class CharacterStore {
     const row = await this.db.select().from(characters).where(eq(characters.id, id)).get();
     if (!row) return null;
     const char = this.mapRow(row);
+    const folderName = this.folderOf(id, row);
 
     // Lazy migration: if not yet on disk, copy-forward from a legacy flat
     // file into {id}/card.json when one exists, otherwise write fresh from
     // the DB row. Either way the file lands in the per-entity folder.
     if (this.folder && !row.hasFileOnDisk) {
-      const hash = await this.folder.ensureCardFile(id, this.toFileData(char));
+      const hash = await this.folder.ensureCardFile(folderName, this.toFileData(char));
       await this.db
         .update(characters)
         .set({ contentHash: hash, hasFileOnDisk: 1 })
@@ -126,7 +127,7 @@ export class CharacterStore {
     // skips this block; a mid-flight crash retries safely. Independent of the
     // card block above — runs whenever avatarExt is null and avatarAssetId set.
     if (this.folder && !row.avatarExt && row.avatarAssetId) {
-      const ext = await this.folder.migrateAvatar(id, row.avatarAssetId);
+      const ext = await this.folder.migrateAvatar(folderName, row.avatarAssetId);
       if (ext) {
         await this.db
           .update(characters)
@@ -145,7 +146,7 @@ export class CharacterStore {
     // the large display slots (top-bar preview, editor) when only the crop was
     // migrated into avatar.{ext}. Runs independently of the thumbnail block.
     if (this.folder && !row.avatarFullExt && row.avatarFullAssetId) {
-      const fullExt = await this.folder.migrateAvatarFull(id, row.avatarFullAssetId);
+      const fullExt = await this.folder.migrateAvatarFull(folderName, row.avatarFullAssetId);
       if (fullExt) {
         await this.db
           .update(characters)
@@ -157,7 +158,7 @@ export class CharacterStore {
       }
     }
 
-    return this.applyVtfContentOverride(id, char);
+    return this.applyVtfContentOverride(folderName, char);
   }
 
   /**
@@ -168,9 +169,9 @@ export class CharacterStore {
    * once it exists. Falls back silently to the DB-row content when the folder
    * is absent or unreadable (legacy card.json-only or pre-migration rows).
    */
-  private async applyVtfContentOverride(id: string, char: Character): Promise<Character> {
+  private async applyVtfContentOverride(folderName: string, char: Character): Promise<Character> {
     if (!this.folder) return char;
-    const override = await this.folder.readVtfOverride(id);
+    const override = await this.folder.readVtfOverride(folderName);
     if (override === null) return char;
     return this.mergeVtfContent(char, override);
   }
@@ -302,7 +303,7 @@ export class CharacterStore {
 
     // Dual write: persist content to the VTF folder; stamp the combined hash on the DB row.
     if (this.folder) {
-      const hash = await this.folder.writeVtfFolder(id, this.toVtfContent(char));
+      const hash = await this.folder.writeVtfFolder(this.folderOf(id, row!), this.toVtfContent(char));
       await this.db
         .update(characters)
         .set({ contentHash: hash, hasFileOnDisk: 1 })
@@ -362,7 +363,7 @@ export class CharacterStore {
 
     // Dual write: rewrite the VTF folder; stamp the combined hash on the DB row.
     if (this.folder) {
-      const hash = await this.folder.writeVtfFolder(id, this.toVtfContent(updated));
+      const hash = await this.folder.writeVtfFolder(this.folderOf(id, row), this.toVtfContent(updated));
       await this.db
         .update(characters)
         .set({ contentHash: hash, hasFileOnDisk: 1 })
@@ -374,13 +375,18 @@ export class CharacterStore {
   }
 
   async delete(id: string): Promise<void> {
+    // Load the row first so the on-disk folder resolves by name
+    // (HUMAN_READABLE_FOLDERS): a renamed character's folder is `folder_name`,
+    // not the opaque id. If the row is already gone, folderOf falls back to id
+    // and removeAll is a harmless no-op on a non-existent folder.
+    const row = await this.db.select().from(characters).where(eq(characters.id, id)).get();
     await this.db.delete(characters).where(eq(characters.id, id)).run();
     if (this.folder) {
       // Remove the whole per-entity folder (card.json, original.json,
       // avatar.*, future gallery/). Legacy flat files ({id}.json /
       // {id}.{slug}.json) are intentionally left in place — copy-forward
       // policy; they become harmless orphans.
-      await this.folder.removeAll(id);
+      await this.folder.removeAll(this.folderOf(id, row));
     }
   }
 
@@ -434,7 +440,7 @@ export class CharacterStore {
 
     // Dual write: persist the copy's VTF folder; stamp the combined hash on the DB row.
     if (this.folder) {
-      const hash = await this.folder.writeVtfFolder(newId, this.toVtfContent(copy));
+      const hash = await this.folder.writeVtfFolder(this.folderOf(newId, row!), this.toVtfContent(copy));
       await this.db
         .update(characters)
         .set({ contentHash: hash, hasFileOnDisk: 1 })
@@ -446,7 +452,7 @@ export class CharacterStore {
       // avatarAssetId (shared above) is the legacy fallback and is left shared
       // per the plan (avatarFullAssetId also stays shared).
       if (original.avatarExt) {
-        await this.folder.copyAvatarFile(original.id, newId, original.avatarExt);
+        await this.folder.copyAvatarFile(this.folderOf(original.id, original), this.folderOf(newId, row!), original.avatarExt);
       }
       // Copy the folder-resident full uncropped avatar (if any), mirroring the
       // thumbnail block above. Without this, duplicating a migrated character
@@ -454,7 +460,7 @@ export class CharacterStore {
       // would silently lose the full avatar — the read-time lazy-migration
       // guard (!avatarFullExt && avatarFullAssetId) cannot self-heal it.
       if (original.avatarFullExt) {
-        await this.folder.copyAvatarFullFile(original.id, newId, original.avatarFullExt);
+        await this.folder.copyAvatarFullFile(this.folderOf(original.id, original), this.folderOf(newId, row!), original.avatarFullExt);
       }
     }
 
@@ -473,16 +479,22 @@ export class CharacterStore {
    */
   async migrateToVtf(id: string, opts?: { force?: boolean }): Promise<string | null> {
     if (!this.folder) throw new Error('CharacterFolder required for VTF migration');
+    // Load the row up front so the on-disk folder resolves by name
+    // (HUMAN_READABLE_FOLDERS): hasVtfProfile + writeVtfFolder must target the
+    // `folder_name` folder, not the opaque id, once a character is renamed.
+    const row = await this.db.select().from(characters).where(eq(characters.id, id)).get();
+    if (!row) throw new Error(`Character '${id}' not found`);
+    const folderName = this.folderOf(id, row);
     if (!opts?.force) {
       // Filesystem check (not the text cache, which may be stale if the file
       // was removed out-of-band) — a character is VTF-native iff profile.md
       // physically exists in its folder.
-      const exists = await this.folder.hasVtfProfile(id);
+      const exists = await this.folder.hasVtfProfile(folderName);
       if (exists) return null;
     }
     const char = await this.getById(id);
     if (!char) throw new Error(`Character '${id}' not found`);
-    const hash = await this.folder.writeVtfFolder(id, this.toVtfContent(char));
+    const hash = await this.folder.writeVtfFolder(folderName, this.toVtfContent(char));
     await this.db
       .update(characters)
       .set({ contentHash: hash, hasFileOnDisk: 1 })
@@ -650,6 +662,19 @@ export class CharacterStore {
     let n = 2;
     while (taken.has(`${candidate}-${n}`)) n++;
     return `${candidate}-${n}`;
+  }
+
+  /**
+   * Resolve the on-disk folder name for a character (HUMAN_READABLE_FOLDERS).
+   * Returns the stored `folder_name` slug when set, falling back to the opaque
+   * `id` when it is empty (legacy / pre-migration rows — `folder_name` is
+   * `notNull` default `''`). Every `this.folder.*` call routes through here, so
+   * the store→facade boundary is the single place that turns a DB row into an
+   * on-disk folder name; `CharacterFolder` / `ContentStore` stay path-ignorant
+   * and just receive the resolved name as their `id` arg.
+   */
+  private folderOf(id: string, row?: typeof characters.$inferSelect): string {
+    return row?.folderName || id;
   }
 
   // ─── Row mapper ────────────────────────────────────────────────────────────
