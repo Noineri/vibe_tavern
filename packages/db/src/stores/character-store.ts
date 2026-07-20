@@ -1,4 +1,4 @@
-import { eq, ne, sql } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { characters } from '../db-schema.js';
 import type { AppDb } from '../db-connection.js';
 import { resolveStoreRuntime, type StoreClock, type StoreIdGenerator } from '../persistence.js';
@@ -660,29 +660,7 @@ export class CharacterStore {
     };
   }
 
-  // ─── Folder-name helpers ─────────────────────────────────────────────────
-
-  /**
-   * Resolve a collision-free `folder_name` for a candidate slug. Queries the
-   * existing non-empty `folder_name`s (excluding `excludeId` when renaming so a
-   * character never collides with itself) and appends `-2`, `-3`, … until
-   * unique. Empty folder_names are skipped — legacy fallback rows each fall back
-   * to their distinct id, so they never collide with a real slug.
-   */
-  async ensureUniqueFolderName(candidate: string, excludeId?: string): Promise<string> {
-    const rows = await this.db.select({ folderName: characters.folderName })
-      .from(characters)
-      .where(excludeId ? ne(characters.id, excludeId) : undefined)
-      .all();
-    const taken = new Set<string>();
-    for (const r of rows) {
-      if (r.folderName !== '') taken.add(r.folderName);
-    }
-    if (!taken.has(candidate)) return candidate;
-    let n = 2;
-    while (taken.has(`${candidate}-${n}`)) n++;
-    return `${candidate}-${n}`;
-  }
+  // ─── Directory resolution ────────────────────────────────────────────────
 
   /**
    * Resolve the on-disk directory name for a character via the filesystem
@@ -692,8 +670,7 @@ export class CharacterStore {
    * opaque id by writeVtfFolder). Every internal `this.folder.*` call awaits
    * this, so it is the single place that turns a characterId into an on-disk
    * directory name; `CharacterFolder` / `ContentStore` stay path-ignorant and
-   * receive the resolved name as their `id` arg. The DB `folder_name` column is
-   * no longer consulted at runtime (it is retired in HRF-6).
+   * receive the resolved name as their `id` arg.
    */
   private async resolveDirectory(id: string): Promise<string> {
     if (!this.registry) return id;
@@ -759,15 +736,4 @@ function deriveSlug(name: string): string {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-|-$/g, '');
-}
-
-/**
- * Seed for a character's stored `folder_name` (HUMAN_READABLE_FOLDERS). Same
- * transform as {@link deriveSlug}; kept as a distinct name so the folder-name
- * rule can diverge from the read-time `slug` if ever needed. This is only the
- * SEED — {@link CharacterStore.ensureUniqueFolderName} collision-resolves it
- * (`oliver` → `oliver-2` → `oliver-3`) before storing.
- */
-export function deriveFolderName(name: string): string {
-  return deriveSlug(name);
 }

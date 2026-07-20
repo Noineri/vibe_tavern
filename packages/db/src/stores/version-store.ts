@@ -64,8 +64,8 @@ export class VersionStore {
    * registry — falling back to the opaque id when the registry is absent (unit
    * tests) or the character has no directory yet. All CharacterFolder calls
    * route through this so snapshot/restore/remove target the renamed directory,
-   * not a stale id-named one. The DB folder_name column is no longer consulted
-   * at runtime (retired in HRF-6).
+   * not a stale id-named one. No DB column represents a character directory
+   * name (the transitional folder_name column was removed in HRF-6).
    */
   private async folderOf(characterId: string): Promise<string> {
     if (!this.registry) return characterId;

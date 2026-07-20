@@ -1,17 +1,10 @@
 import { sqliteTable, text, integer, real, index, uniqueIndex, primaryKey } from 'drizzle-orm/sqlite-core';
-import { sql } from 'drizzle-orm';
 
 // ─── characters ────────────────────────────────────────────────────────────────
 
 export const characters = sqliteTable('characters', {
   id: text('id').primaryKey(),
   name: text('name').notNull(),
-  // Human-readable on-disk folder name (slug, e.g. "andrea", "oliver-2"). Stored
-  // + collision-resolved at create/rename time (HUMAN_READABLE_FOLDERS). It is a
-  // mutable LABEL — the immutable PK is `id`, which all FKs reference; renaming
-  // a character only renames this label + the disk folder. Empty string = legacy
-  // fallback (use `id` as the folder name); backfilled by the migration script.
-  folderName: text('folder_name').notNull().default(''),
   description: text('description').notNull().default(''),
   personalitySummary: text('personality_summary'),
   defaultScenario: text('default_scenario'),
@@ -60,13 +53,7 @@ export const characters = sqliteTable('characters', {
   hasFileOnDisk: integer('has_file_on_disk').notNull().default(0),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
-}, (table) => ({
-  // Partial unique index: only non-empty folder_names participate in uniqueness.
-  // Empty string = legacy fallback (each such row falls back to its distinct id
-  // as the folder name), so empty rows must NOT collide with each other — without
-  // this WHERE, 48 pre-migration rows all holding '' would violate the constraint.
-  folderNameUnique: uniqueIndex('idx_characters_folder_name').on(table.folderName).where(sql`${table.folderName} != ''`),
-}));
+});
 
 // ─── character versions ────────────────────────────────────────────────────────
 // VTF Phase 3: branchable folder-snapshot variants. Content lives in FILES

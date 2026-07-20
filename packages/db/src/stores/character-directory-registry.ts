@@ -17,8 +17,9 @@ import { parseProfileMd } from "../vtf/profile-md.js";
  * subdirectories of `data/characters/`, reads each `profile.md`, extracts
  * `vt.storage_id`, and builds `characterId → directoryName`. A directory
  * without `storage_id` is a legacy opaque-id folder (pre-migration): it is
- * mapped by its own name (`dirName → dirName`), preserving today's behavior
- * (`folder_name = ''` → folder == id) until HRF-5 migrates it.
+ * mapped by its own name (`dirName → dirName`), preserving the pre-HRF
+ * behavior (a character with no folder used its id as the folder name) until
+ * it is migrated by the HRF-5 script.
  *
  * Resilience. {@link resolve} verifies the mapped path still exists; if it has
  * disappeared (out-of-band rename/delete) it rescans once and rediscovers the

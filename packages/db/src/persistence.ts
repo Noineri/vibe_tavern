@@ -31,8 +31,9 @@ export async function createStoreContainer(dbPath: string, dataDir?: string): Pr
   // The registry scans data/characters/ once at startup, reading each
   // profile.md's vt.storage_id to build characterId → directory. It is the
   // sole directory locator: CharacterStore and VersionStore resolve every
-  // character-folder I/O through it (HRF-3d), so the DB folder_name column is
-  // no longer consulted at runtime (retired in HRF-6).
+  // character-folder I/O through it (HRF-3d); no DB column represents a
+  // character directory name (the transitional folder_name column was removed
+  // in HRF-6).
   const characterDirectory = new CharacterDirectoryRegistry(content);
   await characterDirectory.init();
   // HRF-4: repair directories left at a stale name by an interrupted/failed
