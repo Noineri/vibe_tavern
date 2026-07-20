@@ -8,7 +8,7 @@ import type {
   SleepBranchRequest,
   SleepBranchResponse,
 } from "./chat-application-types.js";
-import { brandId, parseStoredAttachments } from "@vibe-tavern/domain";
+import { brandId, parseStoredAttachments, ensureActiveObjectiveTarget } from "@vibe-tavern/domain";
 import type {
   Attachment,
   ChatBranchId,
@@ -19,6 +19,32 @@ import type {
 } from "@vibe-tavern/domain";
 import type { ChatStore, MessageStore, Message as DbMessage } from "@vibe-tavern/db";
 import { notFound } from "../../shared/errors.js";
+
+/**
+ * Apply the objective "exactly one active target" display invariant to a chat
+ * before it leaves the service layer as part of a snapshot/activeChat. The
+ * effective injected goal (first `active`, else first `pending`) is promoted to
+ * `active` so the existing UI marks it as current; the DB keeps the stored
+ * statuses (display-only / on-read — the invariant mirrors what
+ * `selectActiveTask` injects into the prompt, applied here at the wire boundary).
+ * See `ensureActiveObjectiveTarget` in @vibe-tavern/domain.
+ */
+function withActiveObjectiveTarget<T extends { insightsObjectiveState: Record<string, unknown> }>(chat: T): T {
+  const raw = chat.insightsObjectiveState;
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return chat;
+  const obj = raw as Record<string, unknown>;
+  const tasks = Array.isArray(obj.tasks) ? ensureActiveObjectiveTarget(obj.tasks as { status: string }[]) : undefined;
+  const shortTermGoals = Array.isArray(obj.shortTermGoals) ? ensureActiveObjectiveTarget(obj.shortTermGoals as { status: string }[]) : undefined;
+  if (tasks === undefined && shortTermGoals === undefined) return chat;
+  return {
+    ...chat,
+    insightsObjectiveState: {
+      ...obj,
+      ...(tasks !== undefined && { tasks }),
+      ...(shortTermGoals !== undefined && { shortTermGoals }),
+    },
+  };
+}
 
 /** Map a DB message row to a domain {@link Message} (brands IDs, narrows enum strings). */
 function mapDbMessage(m: DbMessage): Message {
@@ -88,7 +114,7 @@ export class ChatApplicationService {
     const messages = await this.messageStore.getMessages(branch.id);
 
     return {
-      chat,
+      chat: withActiveObjectiveTarget(chat),
       branch,
       messages,
       summaries: [], // Phase 2: summary snapshots

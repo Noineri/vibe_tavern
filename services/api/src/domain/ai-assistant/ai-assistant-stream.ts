@@ -856,6 +856,14 @@ function buildUserMessage(
       return parts.join("\n");
     }
 
+    case "scene_rules": {
+      const parts: string[] = [request.instruction?.trim() || "Extract scene tracker rules from this character's prompt."];
+      if (request.existingContent?.trim()) {
+        parts.push(`\nCurrent scene tracker rules (refine them, keeping what still fits):\n${request.existingContent.trim()}`);
+      }
+      return parts.join("\n");
+    }
+
     default:
       return request.instruction;
   }

@@ -484,7 +484,7 @@ export interface AiAssistantChunk {
   error?: string;
 }
 
-export type AiAssistantMode = "script" | "lore_entry" | "lore_keys" | "chat_impersonate" | "md_import" | "vision_describe" | "scene_schema";
+export type AiAssistantMode = "script" | "lore_entry" | "lore_keys" | "chat_impersonate" | "md_import" | "vision_describe" | "scene_schema" | "scene_rules";
 
 export interface AiAssistantRequestBody {
   mode: AiAssistantMode;

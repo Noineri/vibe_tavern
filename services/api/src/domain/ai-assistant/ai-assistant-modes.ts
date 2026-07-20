@@ -102,6 +102,14 @@ const MODE_CONFIGS: Record<AiAssistantMode, AiAssistantModeConfig> = {
     jsonSchemaHint:
       '{ "mood": { "$type": "string" }, "tension": { "$type": "number", "min": 0, "max": 10 } }',
   },
+  scene_rules: {
+    mode: "scene_rules",
+    presetKey: "scene_rules",
+    defaultPromptFile: "scene-rules.md",
+    stripReasoning: true,
+    outputFormat: "text",
+    jsonSchemaHint: null,
+  },
 };
 
 /** Resolve the default prompt FILE NAME for a mode, honoring a format-aware

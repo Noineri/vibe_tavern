@@ -87,7 +87,7 @@ vi.mock("../../shared/Tooltip.js", () => ({
 // the onReplace apply-safety can be tested in isolation — without driving the
 // modal's own streaming/context internals (those have their own coverage).
 vi.mock("../../shared/AiAssistantModal.js", () => ({
-  AiAssistantModal: (props: unknown) => { mocks.aiModalProps = props as Record<string, unknown>; return null; },
+  AiAssistantModal: (props: { apiMode?: string }) => { if (props.apiMode === "scene_schema") mocks.aiModalProps = props as Record<string, unknown>; return null; },
 }));
 
 const VALID_DSL = JSON.stringify({ mood: { $type: "string" } });

@@ -1,4 +1,4 @@
-import { brandId, type ChatBranchId, type ChatId, type MessageId, type MessageVariantId, type ObjectiveMode, type ObjectiveState, type ObjectiveTaskStatus, type SceneBackfillMode, type SceneTrackerConfig } from "@vibe-tavern/domain";
+import { brandId, ensureActiveObjectiveTarget, type ChatBranchId, type ChatId, type MessageId, type MessageVariantId, type ObjectiveMode, type ObjectiveState, type ObjectiveTaskStatus, type SceneBackfillMode, type SceneTrackerConfig } from "@vibe-tavern/domain";
 import type { StoreContainer } from "@vibe-tavern/db";
 import type { SessionRuntime } from "../../runtime/session/session-runtime.js";
 import type { ProviderProfileService } from "../../domain/providers/provider-profile-service.js";
@@ -63,7 +63,12 @@ export class InsightsAdapter {
 		]);
 		signal?.throwIfAborted();
 		await this.ensureCompletionTarget(chatId, body.target);
-		const objectiveState = await this.objectiveService.getState(brandId<ChatId>(chatId));
+		const rawState = await this.objectiveService.getState(brandId<ChatId>(chatId));
+		const objectiveState: ObjectiveState = {
+			...rawState,
+			tasks: ensureActiveObjectiveTarget(rawState.tasks),
+			shortTermGoals: ensureActiveObjectiveTarget(rawState.shortTermGoals),
+		};
 		signal?.throwIfAborted();
 		const message = body.target.variantId
 			? await this.buildTargetMessageDto(body.target.messageId)

@@ -706,6 +706,8 @@ export interface SceneTrackerConfig {
   generatePrompt: string;
   /** Custom inject prompt override (empty → default). */
   injectPrompt: string;
+  /** Per-chat scene tracker rules appended to the generate prompt base (empty → none). */
+  rulesPrompt: string;
   /** Pinned provider for Scene generation when `useChatModel` is false. */
   providerProfileId: string | null;
   /** Pinned model for Scene generation when `useChatModel` is false. */

@@ -120,7 +120,6 @@ export function ObjectiveConfig({ chatId }: { chatId: ChatId }) {
     <div className="space-y-4 rounded-lg border border-border bg-s2/50 p-4">
       <SegmentedControl
         value={mode}
-        fill
         compact
         options={[
           { value: "route", label: t("obj_mode_route") },

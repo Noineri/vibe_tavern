@@ -36,7 +36,7 @@ export interface AiAssistantModalProps {
   onClose: () => void;
 
   // --- Full Mode Props ---
-  apiMode?: "script" | "lore_entry" | "md_import" | "scene_schema";
+  apiMode?: "script" | "lore_entry" | "md_import" | "scene_schema" | "scene_rules";
   existingContent?: string;
   onInsert?: (text: string) => void;
   onReplace?: (text: string) => void;
@@ -468,17 +468,18 @@ export function AiAssistantModal({
 
   // i18n dynamic keys
   const isSceneSchema = apiMode === "scene_schema";
-  const promptLabelKey = apiMode === "lore_entry" ? "lore_entry_ai_prompt_label" : isSceneSchema ? "scn_ai_prompt_label" : "script_ai_prompt";
-  const promptPlaceholderKey = apiMode === "lore_entry" ? "lore_entry_ai_prompt_placeholder" : isSceneSchema ? "scn_ai_prompt_placeholder" : "script_ai_prompt";
-  const promptHintKey = apiMode === "lore_entry" ? "lore_entry_ai_prompt_hint" : isSceneSchema ? "scn_ai_prompt_hint" : "script_ai_prompt_hint";
-  const generatedKey = apiMode === "lore_entry" ? "lore_entry_ai_generated" : isSceneSchema ? "scn_ai_generated" : "script_ai_generated";
+  const isSceneRules = apiMode === "scene_rules";
+  const promptLabelKey = apiMode === "lore_entry" ? "lore_entry_ai_prompt_label" : isSceneSchema ? "scn_ai_prompt_label" : isSceneRules ? "scn_ai_rules_prompt_label" : "script_ai_prompt";
+  const promptPlaceholderKey = apiMode === "lore_entry" ? "lore_entry_ai_prompt_placeholder" : isSceneSchema ? "scn_ai_prompt_placeholder" : isSceneRules ? "scn_ai_rules_prompt_placeholder" : "script_ai_prompt";
+  const promptHintKey = apiMode === "lore_entry" ? "lore_entry_ai_prompt_hint" : isSceneSchema ? "scn_ai_prompt_hint" : isSceneRules ? "scn_ai_rules_prompt_hint" : "script_ai_prompt_hint";
+  const generatedKey = apiMode === "lore_entry" ? "lore_entry_ai_generated" : isSceneSchema ? "scn_ai_generated" : isSceneRules ? "scn_ai_rules_generated" : "script_ai_generated";
   const changesKey = apiMode === "lore_entry" ? "lore_entry_ai_changes" : "script_ai_changes";
   const noChangesKey = apiMode === "lore_entry" ? "lore_entry_ai_no_changes" : "script_ai_no_changes";
 
   // Render variables
   const isFull = mode === "full";
   const isMdImport = apiMode === "md_import";
-  const title = isMdImport ? t("import_md_title") : isSceneSchema ? t("scn_ai_title") : isFull ? t("script_ai_helper") : t("ai_quickpill_settings");
+  const title = isMdImport ? t("import_md_title") : isSceneRules ? t("scn_ai_rules_title") : isSceneSchema ? t("scn_ai_title") : isFull ? t("script_ai_helper") : t("ai_quickpill_settings");
   const contentWidth = isMdImport ? "w-[620px]" : isFull ? "w-[560px]" : "w-[380px]";
 
   const contentBody = (

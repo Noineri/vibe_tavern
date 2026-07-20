@@ -325,6 +325,31 @@ export const OBJECTIVE_TASK_STATUS = {
 export type ObjectiveTaskStatus = typeof OBJECTIVE_TASK_STATUS[keyof typeof OBJECTIVE_TASK_STATUS];
 
 /**
+ * Enforce the "exactly one active target" display/injection invariant.
+ *
+ * `selectActiveTask` (services/api) targets the first `active` item, else the
+ * first `pending`, so the model is steered toward that goal even when no item is
+ * explicitly `active`. But the STORED status of that fallback target stays
+ * `pending`, so the UI — which renders status literally — shows it as a regular
+ * pending item, indistinguishable from the rest. This pure helper promotes the
+ * would-be-injected item to `active` so the existing UI marks it as the current
+ * goal. It is a READ/DISPLAY normalization: callers apply it when reading state
+ * for the snapshot / patch response so every consumer agrees on which item is
+ * "current"; they do NOT persist the promotion unless they choose to.
+ *
+ * No-op when an `active` item already exists or when there are no `pending`
+ * items. Generic over the item shape (only `status` is read) so it serves both
+ * route `tasks` and goals-mode `shortTermGoals`.
+ */
+export function ensureActiveObjectiveTarget<T extends { status: string }>(items: readonly T[]): T[] {
+  if (items.length === 0) return [...items];
+  if (items.some((t) => t.status === OBJECTIVE_TASK_STATUS.active)) return [...items];
+  const firstPending = items.findIndex((t) => t.status === OBJECTIVE_TASK_STATUS.pending);
+  if (firstPending === -1) return [...items];
+  return items.map((t, i) => (i === firstPending ? { ...t, status: OBJECTIVE_TASK_STATUS.active } : t));
+}
+
+/**
  * Objective Tracker mode (OGM — OBJECTIVE_GOALS_MODE_PLAN).
  *
  * - `route` — the original mode: one high-level objective broken into an ordered

@@ -9,6 +9,7 @@ export const AI_ASSISTANT_ASSEMBLERS = {
   md_import: DefaultAiAssistantAssembler,
   vision_describe: DefaultAiAssistantAssembler,
   scene_schema: DefaultAiAssistantAssembler,
+  scene_rules: DefaultAiAssistantAssembler,
 } as const satisfies Record<AiAssistantMode, AiAssistantAssembler>;
 
 export function getAiAssistantAssembler(mode: AiAssistantMode): AiAssistantAssembler {
