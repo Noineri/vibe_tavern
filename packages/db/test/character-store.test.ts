@@ -8,7 +8,7 @@ import { createDb } from "../src/db-connection.js";
 import { characters as charactersTable } from "../src/db-schema.js";
 import { ContentStore } from "../src/content-store.js";
 import { createFileStore, STORAGE_FOLDERS } from "../src/file-store.js";
-import { CharacterStore, type Character, type CreateCharacterData } from "../src/stores/character-store.js";
+import { CharacterStore, deriveFolderName, type Character, type CreateCharacterData } from "../src/stores/character-store.js";
 import { CharacterFolder } from "../src/stores/character-folder.js";
 import type { StoreClock, StoreIdGenerator } from "../src/persistence.js";
 
@@ -736,5 +736,60 @@ describe("CharacterStore — field-preservation drift guard (ERA-2)", () => {
 		expectContentFields(updated, UPDATED_CONTENT);
 		const fetched = await store.getById(created.id);
 		expectContentFields(fetched!, UPDATED_CONTENT);
+	});
+});
+
+describe("CharacterStore folder-name helpers (HRF-1)", () => {
+	type Db = Awaited<ReturnType<typeof createDb>>;
+
+	function seedFolderName(db: Db, id: string, folderName: string) {
+		db.insert(charactersTable).values({
+			id,
+			name: id,
+			folderName,
+			createdAt: fixedClock.now(),
+			updatedAt: fixedClock.now(),
+		}).run();
+	}
+
+	test("deriveFolderName slugifies name into a folder-name seed", () => {
+		expect(deriveFolderName("Andrea Smith")).toBe("andrea-smith");
+		expect(deriveFolderName("Oliver!!!")).toBe("oliver");
+		expect(deriveFolderName("Zack Foster")).toBe("zack-foster");
+		expect(deriveFolderName("  leading/trailing  ")).toBe("leading-trailing");
+		// Degenerate: non-alnum-only names collapse to empty (stored as '' → id fallback).
+		expect(deriveFolderName("")).toBe("");
+		expect(deriveFolderName("   ")).toBe("");
+	});
+
+	test("ensureUniqueFolderName returns the candidate unchanged when there is no collision", async () => {
+		const { store } = await setupDbOnly();
+		expect(await store.ensureUniqueFolderName("oliver")).toBe("oliver");
+	});
+
+	test("ensureUniqueFolderName appends -2, -3, … deterministically on collision", async () => {
+		const { db, store } = await setupDbOnly();
+		seedFolderName(db, "char_a", "oliver");
+		expect(await store.ensureUniqueFolderName("oliver")).toBe("oliver-2");
+		seedFolderName(db, "char_b", "oliver-2");
+		expect(await store.ensureUniqueFolderName("oliver")).toBe("oliver-3");
+	});
+
+	test("ensureUniqueFolderName excludes the renaming character from its own collision set", async () => {
+		const { db, store } = await setupDbOnly();
+		seedFolderName(db, "char_a", "oliver");
+		// Renaming char_a itself: its own folder_name must NOT count as a collision.
+		expect(await store.ensureUniqueFolderName("oliver", "char_a")).toBe("oliver");
+		// A different character still collides with char_a's 'oliver'.
+		expect(await store.ensureUniqueFolderName("oliver", "char_b")).toBe("oliver-2");
+	});
+
+	test("ensureUniqueFolderName ignores empty (legacy) folder_names", async () => {
+		const { db, store } = await setupDbOnly();
+		// Pre-migration rows with empty folder_name must not collide with each other
+		// or with a real candidate — each falls back to its distinct id as the folder.
+		seedFolderName(db, "char_a", "");
+		seedFolderName(db, "char_b", "");
+		expect(await store.ensureUniqueFolderName("oliver")).toBe("oliver");
 	});
 });

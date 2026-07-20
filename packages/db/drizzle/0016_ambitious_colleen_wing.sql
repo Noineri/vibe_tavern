@@ -1,0 +1,2 @@
+ALTER TABLE `characters` ADD `folder_name` text DEFAULT '' NOT NULL;--> statement-breakpoint
+CREATE UNIQUE INDEX `idx_characters_folder_name` ON `characters` (`folder_name`) WHERE "characters"."folder_name" != '';
