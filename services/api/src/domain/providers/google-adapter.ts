@@ -76,7 +76,7 @@ export async function testGoogleChat(input: ProviderConnectionInput): Promise<Te
 			headers: { "Content-Type": "application/json" },
 			body: JSON.stringify({
 				contents: [{ parts: [{ text: "Hi" }] }],
-				generationConfig: { maxOutputTokens: 64, temperature: 0.7 },
+				generationConfig: { maxOutputTokens: 64 },
 			}),
 			signal: controller.signal,
 		});

@@ -36,8 +36,19 @@ function mockFetch(url: string | URL | Request, init?: RequestInit): Response {
 	}
 
 	if (urlStr.endsWith("/chat/completions")) {
+		const body = typeof init?.body === "string" ? JSON.parse(init.body) : {};
+		const payload = body.model === "kimi-for-coding"
+			? { choices: [{ message: { content: "", reasoning_content: "I should answer the greeting briefly." } }] }
+			: { choices: [{ message: { content: "hello from local" } }] };
 		return new Response(
-			JSON.stringify({ choices: [{ message: { content: "hello from local" } }] }),
+			JSON.stringify(payload),
+			{ status: 200, headers: { "Content-Type": "application/json" } },
+		);
+	}
+
+	if (urlStr.endsWith("/messages")) {
+		return new Response(
+			JSON.stringify({ content: [{ type: "thinking", thinking: "I should greet the user." }] }),
 			{ status: 200, headers: { "Content-Type": "application/json" } },
 		);
 	}
@@ -144,7 +155,44 @@ describe("provider gateway", () => {
 			const callArgs = (globalThis.fetch as ReturnType<typeof mock>).mock.calls[0];
 			expect(callArgs[0]).toBe("http://localhost:5001/api/v1/generate");
 			const body = JSON.parse(callArgs[1]?.body as string);
-			expect(body).toMatchObject({ prompt: "User: Hi\nAssistant:", max_length: 64, temperature: 0.7, stream: false });
+			expect(body).toMatchObject({ prompt: "User: Hi\nAssistant:", max_length: 64, stream: false });
+		});
+
+		it("sends OpenAI-compat /chat/completions with no temperature (reasoning models reject non-1 temperature)", async () => {
+			const result = await testProviderChat({
+				baseUrl: "https://api.kimi.com/coding/v1",
+				apiKey: "kimi-key",
+				model: "kimi-for-coding",
+				providerType: "openai_compat",
+			});
+
+			expect(result).toEqual({ success: true, reply: "I should answer the greeting briefly." });
+			const callArgs = (globalThis.fetch as ReturnType<typeof mock>).mock.calls[0];
+			expect(callArgs[0]).toBe("https://api.kimi.com/coding/v1/chat/completions");
+			const body = JSON.parse(callArgs[1]?.body as string);
+			expect(body).toMatchObject({
+				model: "kimi-for-coding",
+				messages: [{ role: "user", content: "Hi" }],
+				max_tokens: 64,
+				stream: false,
+			});
+			expect(body).not.toHaveProperty("temperature");
+			expect(body).not.toHaveProperty("top_p");
+		});
+
+		it("returns Anthropic thinking text when visible content is empty", async () => {
+			const result = await testProviderChat({
+				baseUrl: "https://api.anthropic.com/v1",
+				apiKey: "anthropic-key",
+				model: "claude-sonnet-4-6",
+				providerType: "anthropic",
+			});
+
+			expect(result).toEqual({ success: true, reply: "I should greet the user." });
+			const callArgs = (globalThis.fetch as ReturnType<typeof mock>).mock.calls[0];
+			expect(callArgs[0]).toBe("https://api.anthropic.com/v1/messages");
+			const body = JSON.parse(callArgs[1]?.body as string);
+			expect(body).not.toHaveProperty("temperature");
 		});
 	});
 

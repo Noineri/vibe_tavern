@@ -104,14 +104,16 @@ export async function testAnthropicChat(input: ProviderConnectionInput): Promise
 		}
 
 		const payload = (await response.json()) as {
-			content?: Array<{ type?: string; text?: string }>;
+			content?: Array<{ type?: string; text?: string; thinking?: string }>;
 		};
 		const textBlock = payload.content?.find((c) => c.type === "text");
 		const content = textBlock?.text?.trim() ?? "";
-		if (!content && payload.content?.some((c) => c.type === "thinking")) {
-			return { success: true, reply: "(reasoning only, no visible output)" };
-		}
-		return { success: true, reply: content || "(empty response)" };
+		const reasoning = payload.content
+			?.filter((block) => block.type === "thinking")
+			.map((block) => block.thinking ?? block.text ?? "")
+			.join("")
+			.trim() ?? "";
+		return { success: true, reply: content || reasoning || "(empty response)" };
 	} catch (error) {
 		clearTimeout(timer);
 		const msg = error instanceof Error ? error.message : "Unknown error";

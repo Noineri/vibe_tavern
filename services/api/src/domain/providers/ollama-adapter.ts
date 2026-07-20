@@ -427,7 +427,7 @@ export async function testOllamaChat(input: ProviderConnectionInput): Promise<Te
         model: input.model,
         messages: [{ role: "user", content: "Hi" }],
         stream: false,
-        options: { num_predict: 64, temperature: 0.7 },
+        options: { num_predict: 64 },
       }),
       signal: controller.signal,
     });

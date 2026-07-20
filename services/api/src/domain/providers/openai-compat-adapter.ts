@@ -84,7 +84,6 @@ export async function testOpenAiCompatChat(input: ProviderConnectionInput): Prom
 				model: input.model,
 				messages: [{ role: "user", content: "Hi" }],
 				max_tokens: 64,
-				temperature: 0.7,
 				stream: false,
 			}),
 			signal: controller.signal,
@@ -103,10 +102,15 @@ export async function testOpenAiCompatChat(input: ProviderConnectionInput): Prom
 			choices?: Array<{ message?: { content?: string | Array<{ type?: string; text?: string }>; reasoning_content?: string | null } }> };
 		const choice = payload.choices?.[0];
 		const content = extractChoiceContent(choice, { skipReasoning: true });
-		if (!content && choice?.message?.reasoning_content) {
-			return { success: true, reply: "(reasoning only, no visible output)" };
-		}
-		return { success: true, reply: content || "(empty response)" };
+		const reasoning = choice?.message?.reasoning_content?.trim()
+			|| (Array.isArray(choice?.message?.content)
+				? choice.message.content
+					.filter((part) => part.type === "thinking" || part.type === "reasoning")
+					.map((part) => part.text ?? "")
+					.join("")
+					.trim()
+				: "");
+		return { success: true, reply: content || reasoning || "(empty response)" };
 	} catch (error) {
 		clearTimeout(timer);
 		const msg = error instanceof Error ? error.message : "Unknown error";

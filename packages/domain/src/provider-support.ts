@@ -22,6 +22,7 @@ const PRESET_TO_PROVIDER_TYPE: Record<string, ProviderType> = {
   fireworks: PROVIDER_TYPE.openaiCompat,
   perplexity: PROVIDER_TYPE.openaiCompat,
   moonshot: PROVIDER_TYPE.openaiCompat,
+  kimi: PROVIDER_TYPE.openaiCompat,
   ai21: PROVIDER_TYPE.openaiCompat,
   mimo: PROVIDER_TYPE.openaiCompat,
   nanogpt: PROVIDER_TYPE.openaiCompat,
