@@ -72,7 +72,11 @@ async function setup(opts: { visionModel?: string | null; active?: boolean } = {
 	const dataRoot = await mkdtemp(join(tmpdir(), "vt-gallery-desc-"));
 	await mkdir(join(dataRoot, "assets"), { recursive: true });
 	const stores = await createStoreContainer(join(dataRoot, "test.db"), dataRoot);
-	const assetService = new AssetService(join(dataRoot, "assets"), stores.content);
+	const assetService = new AssetService(
+		join(dataRoot, "assets"),
+		stores.content,
+		(id) => stores.characters.resolveFolderName(id),
+	);
 	const providerProfileService = makeProfileService(opts);
 	const characters = new CharacterAdapter(noopSession, stores, assetService, providerProfileService);
 	const personas = new PersonaAdapter(noopSession, stores, assetService, providerProfileService);
@@ -190,7 +194,8 @@ describe("Vision describe (A6)", () => {
 	test("point-update setMediaFields does NOT rewrite profile.md (avatarDescription only)", async () => {
 		const { dataRoot, stores } = await setup();
 		const char = await stores.characters.create({ name: "Aria", description: "original" });
-		const profilePath = join(dataRoot, CHARS, char.id, "profile.md");
+		const dir = await stores.characters.resolveFolderName(char.id);
+		const profilePath = join(dataRoot, CHARS, dir, "profile.md");
 		const { mtimeMsMs } = await import("node:fs/promises").then((fs) => fs.stat(profilePath).then((s) => ({ mtimeMsMs: s.mtimeMs })));
 		await new Promise((r) => setTimeout(r, 30));
 		await stores.characters.setMediaFields(char.id, { avatarDescription: "x", includeAvatarInPrompt: true });

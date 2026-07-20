@@ -35,6 +35,19 @@ export async function createStoreContainer(dbPath: string, dataDir?: string): Pr
   // no longer consulted at runtime (retired in HRF-6).
   const characterDirectory = new CharacterDirectoryRegistry(content);
   await characterDirectory.init();
+  // HRF-4: repair directories left at a stale name by an interrupted/failed
+  // rename (opaque-id dirs are skipped — HRF-5 migrates them). A consistent
+  // tree is a no-op; individual failures never hide data and are retried next
+  // startup, but must be visible to the operator.
+  const directoryRepairs = await characterDirectory.reconcile();
+  for (const repair of directoryRepairs) {
+    if (repair.failed) {
+      console.warn(
+        `[character-directory] reconciliation failed for ${repair.characterId}: ` +
+        `${repair.from} → ${repair.to}: ${repair.error ?? 'unknown filesystem error'}`,
+      );
+    }
+  }
   const chats = new ChatStore(db);
   await chats.migrateGreetingVariants();
   const characters = new CharacterStore(db, { folder: characterFolder, registry: characterDirectory });

@@ -278,6 +278,7 @@ describe("ST directory scanner — PNG card avatar-full wiring + parallelism", (
 		const chars = await env.stores.characters.listAll();
 		const imported = chars.find((c) => c.name === "PngChar");
 		expect(imported).toBeTruthy();
+		const dir = await env.stores.characters.resolveFolderName(imported!.id);
 
 		// avatarExt + avatarFullExt both set — wires the card into the crop-confirm
 		// flow so the user can re-crop the original art later.
@@ -285,8 +286,8 @@ describe("ST directory scanner — PNG card avatar-full wiring + parallelism", (
 		expect(imported!.avatarFullExt).toBe("png");
 
 		// Both files actually land in storage.
-		const avatarBytes = await env.stores.content.readBinary(STORAGE_FOLDERS.characters, imported!.id, "avatar.png");
-		const avatarFullBytes = await env.stores.content.readBinary(STORAGE_FOLDERS.characters, imported!.id, "avatar-full.png");
+		const avatarBytes = await env.stores.content.readBinary(STORAGE_FOLDERS.characters, dir, "avatar.png");
+		const avatarFullBytes = await env.stores.content.readBinary(STORAGE_FOLDERS.characters, dir, "avatar-full.png");
 		expect(avatarBytes).not.toBeNull();
 		expect(avatarFullBytes).not.toBeNull();
 		// ST cards are uncropped, so the two files are byte-identical.
@@ -294,7 +295,7 @@ describe("ST directory scanner — PNG card avatar-full wiring + parallelism", (
 
 		// REGRESSION GUARD: the dead `original.png` artifact (the pre-fix bug)
 		// must NOT be written — nothing reads it.
-		const originalBytes = await env.stores.content.readBinary(STORAGE_FOLDERS.characters, imported!.id, "original.png");
+		const originalBytes = await env.stores.content.readBinary(STORAGE_FOLDERS.characters, dir, "original.png");
 		expect(originalBytes).toBeNull();
 	});
 
@@ -321,7 +322,8 @@ describe("ST directory scanner — PNG card avatar-full wiring + parallelism", (
 			expect(c, `character ${name} should exist`).toBeTruthy();
 			expect(c!.avatarExt).toBe("png");
 			expect(c!.avatarFullExt).toBe("png");
-			const full = await env.stores.content.readBinary(STORAGE_FOLDERS.characters, c!.id, "avatar-full.png");
+			const cdir = await env.stores.characters.resolveFolderName(c!.id);
+			const full = await env.stores.content.readBinary(STORAGE_FOLDERS.characters, cdir, "avatar-full.png");
 			expect(full, `avatar-full.png for ${name}`).not.toBeNull();
 		}
 	});

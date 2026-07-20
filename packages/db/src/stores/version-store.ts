@@ -168,7 +168,11 @@ export class VersionStore {
    * Switch the active version: folder swap (root → versions/{cur}/,
    * versions/{target}/ → root) + flag flip. No-op if target is already active.
    * The swap runs before the DB flip so a crash leaves the root reflecting the
-   * intended active version.
+   * intended active version. A snapshot is allowed to carry a different
+   * character display name; after restore + DB activation, the registry applies
+   * that canonical name as a cosmetic directory rename. Rename happens last so
+   * its failure never rolls back or hides the successfully activated content,
+   * and startup reconciliation can retry from the restored profile.md.
    */
   async setActive(characterId: string, versionId: string): Promise<CharacterVersion> {
     const target = await this.getVersion(versionId);
@@ -178,11 +182,16 @@ export class VersionStore {
     }
     const current = await this.getActiveVersion(characterId);
     if (current && current.id === target.id) return target;
+    const currentDir = await this.folderOf(characterId);
     if (current) {
-      await this.folder.snapshotToVersion(await this.folderOf(characterId), current.id);
+      await this.folder.snapshotToVersion(currentDir, current.id);
     }
-    await this.folder.restoreFromVersion(await this.folderOf(characterId), versionId);
+    await this.folder.restoreFromVersion(currentDir, versionId);
     await this.activateOnly(characterId, versionId);
+    if (this.registry) {
+      const restored = await this.folder.readVtfOverride(currentDir);
+      if (restored) await this.registry.renameForDisplayName(characterId, restored.name);
+    }
     return target;
   }
 

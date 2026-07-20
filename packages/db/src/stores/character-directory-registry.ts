@@ -35,8 +35,12 @@ import { parseProfileMd } from "../vtf/profile-md.js";
  */
 export class CharacterDirectoryRegistry {
   private readonly content: ContentStore;
-  /** characterId → current directory name. Identity-keyed, not name-keyed. */
+  /** characterId → confirmed current ON-DISK directory name. */
   private readonly byId = new Map<string, string>();
+  /** First-write names reserved by create/duplicate but not yet confirmed on disk. */
+  private readonly reservations = new Map<string, string>();
+  /** Non-poisoning single-process queue: every directory mutation runs sequentially. */
+  private mutationTail: Promise<void> = Promise.resolve();
   private scanned = false;
 
   constructor(content: ContentStore) {
@@ -55,7 +59,9 @@ export class CharacterDirectoryRegistry {
    * missing `profile.md`, or absent `storage_id` (legacy fallback).
    */
   async scan(): Promise<void> {
-    const dirs = await this.content.listSubdirs(STORAGE_FOLDERS.characters);
+    // Filesystem readdir order is unspecified; stable basename ordering makes
+    // duplicate diagnostics and reconciliation suffix ownership deterministic.
+    const dirs = (await this.content.listSubdirs(STORAGE_FOLDERS.characters)).sort();
     const identified = new Map<string, string>(); // storage_id → dirName
     const legacyByName = new Map<string, string>(); // dirName → dirName (no storage_id)
     for (const dirName of dirs) {
@@ -77,7 +83,13 @@ export class CharacterDirectoryRegistry {
     // stray old-name folder must not shadow it.
     this.byId.clear();
     for (const [name, dir] of legacyByName) this.byId.set(name, dir);
-    for (const [id, dir] of identified) this.byId.set(id, dir);
+    for (const [id, dir] of identified) {
+      this.byId.set(id, dir);
+      // A successful first write materializes profile.md with storage_id; scan
+      // confirms it and retires the pending reservation. Reservations for other
+      // in-flight writes intentionally survive the rescan.
+      this.reservations.delete(id);
+    }
     this.scanned = true;
   }
 
@@ -111,7 +123,12 @@ export class CharacterDirectoryRegistry {
    * not derive or suffix display names. No-op when old == new.
    */
   async renameDirectory(characterId: string, newDirName: string): Promise<void> {
-    const oldDirName = await this.resolve(characterId);
+    await this.serializeMutation(() => this.renameDirectoryUnlocked(characterId, newDirName));
+  }
+
+  /** The mutation implementation; callers already inside the queue use this to avoid nested-queue deadlock. */
+  private async renameDirectoryUnlocked(characterId: string, newDirName: string, knownOldDir?: string): Promise<void> {
+    const oldDirName = knownOldDir ?? await this.resolve(characterId);
     if (oldDirName === null) {
       throw new Error(`CharacterDirectoryRegistry.renameDirectory: character '${characterId}' has no directory`);
     }
@@ -120,6 +137,155 @@ export class CharacterDirectoryRegistry {
     // entries atomically with the filesystem rename.
     await this.content.renameEntityFolder(STORAGE_FOLDERS.characters, oldDirName, newDirName);
     this.byId.set(characterId, newDirName);
+    this.reservations.delete(characterId);
+  }
+
+  /**
+   * Derive a collision-free directory name for a character from its display
+   * name and commit it to the registry (HRF-4 directory lifecycle — used by
+   * CharacterStore.create/duplicate before their first folder write).
+   *
+   * - Brand-new character (no directory yet): the name is reserved in-memory
+   *   and returned; the caller MUST then create the folder (writeVtfFolder)
+   *   under that name. A degenerate display name (no alphanumerics) falls back
+   *   to the opaque characterId so no empty/invalid directory is ever created.
+   * - Existing character whose derived name DIFFERS from its current directory:
+   *   performs the cache-aware rename and updates the map.
+   * - Derived name equals the current directory: no-op.
+   *
+   * The character's own current directory never counts as a collision, so a
+   * rename to the same name (or a reclaim after a transient off-band change) is
+   * safe. Collision suffixing is deterministic (`-2`, `-3`, …).
+   */
+  async ensureDirectory(characterId: string, displayName: string): Promise<string> {
+    return this.serializeMutation(async () => {
+      const base = sanitizeDirectoryName(displayName) || characterId;
+      const resolved = await this.collisionResolve(base, characterId);
+      const current = this.byId.get(characterId) ?? null;
+      if (current !== null && this.sameDirectoryName(current, resolved)) return current; // existing-directory no-op
+      if (current === null) {
+        // Brand-new character: reserve separately from confirmed disk mappings.
+        // A missing-id resolve() may rescan while the caller writes profile.md;
+        // scan must not forget this in-flight collision claim.
+        this.reservations.set(characterId, resolved);
+        return resolved;
+      }
+      // Backward-compatible existing-character path; update() uses the explicit
+      // write-before-rename method below so failed renames remain recoverable.
+      await this.renameDirectoryUnlocked(characterId, resolved, current);
+      return resolved;
+    });
+  }
+
+  /**
+   * Rename an EXISTING character directory for a new display name. Unlike
+   * ensureDirectory's first-write reservation, this resolves the directory from
+   * disk before deriving the target. CharacterStore calls it only AFTER writing
+   * the canonical new profile into the old/current directory, so a failed
+   * cosmetic rename leaves readable data and startup reconciliation can retry
+   * from the profile's new name.
+   */
+  async renameForDisplayName(characterId: string, displayName: string): Promise<string> {
+    return this.serializeMutation(async () => {
+      const current = await this.resolve(characterId);
+      if (current === null) {
+        throw new Error(`CharacterDirectoryRegistry.renameForDisplayName: character '${characterId}' has no directory`);
+      }
+      const base = sanitizeDirectoryName(displayName) || characterId;
+      const target = await this.collisionResolve(base, characterId);
+      if (this.sameDirectoryName(target, current)) return current;
+      await this.renameDirectoryUnlocked(characterId, target, current);
+      return target;
+    });
+  }
+
+  /**
+   * Return a collision-free directory name for `base`, suffixing `-2`, `-3`, …
+   * against actual on-disk directories AND in-memory reservations owned by
+   * OTHER characters. The owner's own current directory never counts as a
+   * collision. Does not mutate the map. (HRF-4.)
+   */
+  private async collisionResolve(base: string, ownerId: string): Promise<string> {
+    // Windows paths are case-insensitive: an out-of-band `Andrea/` must occupy
+    // the app candidate `andrea`. App-derived candidates are lowercase, but
+    // actual disk entries may not be.
+    const normalize = (name: string): string => name.toLowerCase();
+    const taken = new Set<string>((await this.content.listSubdirs(STORAGE_FOLDERS.characters)).map(normalize));
+    // The owner's own CONFIRMED directory never counts as a collision. A pending
+    // reservation is not removed from actual disk occupancy: if an out-of-band
+    // writer created that path after reservation, suffix rather than overwrite.
+    const ownDir = this.byId.get(ownerId);
+    if (ownDir !== undefined) taken.delete(normalize(ownDir));
+    for (const [id, dir] of this.byId) {
+      if (id !== ownerId) taken.add(normalize(dir));
+    }
+    for (const [id, dir] of this.reservations) {
+      if (id !== ownerId) taken.add(normalize(dir));
+    }
+    if (!taken.has(normalize(base))) return base;
+    let n = 2;
+    while (taken.has(normalize(`${base}-${n}`))) n++;
+    return `${base}-${n}`;
+  }
+
+  /** Serialize mutations without poisoning later work when one operation fails. */
+  private serializeMutation<T>(operation: () => Promise<T>): Promise<T> {
+    const run = this.mutationTail.then(operation, operation);
+    this.mutationTail = run.then(() => undefined, () => undefined);
+    return run;
+  }
+
+  /**
+   * Startup reconciliation (HRF-4): compare each character's directory
+   * basename with the display name derived from its `profile.md` and rename
+   * mismatches left by an interrupted/failed rename. Opaque-id directories
+   * (basename === characterId — pre-HRF-4 / pre-migration) are skipped; HRF-5
+   * migrates them. A directory whose basename IS the derived name or a valid
+   * collision suffix of it is consistent and left alone. Safe to run on every
+   * startup; a consistent tree yields no repairs. Individual rename failures
+   * (e.g. an occupied destination) are reported with `failed: true`, not thrown
+   * — the character stays readable (`storage_id` intact) and is retried next run.
+   */
+  async reconcile(): Promise<DirectoryRepair[]> {
+    if (!this.scanned) await this.scan();
+    const repairs: DirectoryRepair[] = [];
+    // Snapshot the map — reconcile mutates it via renameDirectory.
+    for (const [characterId, dirName] of [...this.byId]) {
+      if (dirName === characterId) continue; // opaque-id dir → HRF-5
+      const profileText = await this.content.readEntityTextFile(STORAGE_FOLDERS.characters, dirName, "profile.md");
+      if (!profileText) continue;
+      const expectedBase = sanitizeDirectoryName(parseProfileMd(profileText).profile.name ?? "");
+      if (!expectedBase) continue; // degenerate name → leave as-is
+      if (this.sameDirectoryName(dirName, expectedBase) || this.isCollisionSuffix(dirName, expectedBase)) continue;
+      const target = await this.collisionResolve(expectedBase, characterId);
+      if (target === dirName) continue; // collision-resolved to the same name
+      try {
+        await this.renameDirectory(characterId, target);
+        repairs.push({ characterId, from: dirName, to: target });
+      } catch (error) {
+        // Occupied destination or filesystem error — surface as a failed
+        // repair; the character remains readable, retried next startup.
+        repairs.push({
+          characterId,
+          from: dirName,
+          to: target,
+          failed: true,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+    return repairs;
+  }
+
+  /** Portable path equality: Windows is case-insensitive, so all platforms honor that stricter identity rule. */
+  private sameDirectoryName(a: string, b: string): boolean {
+    return a.toLowerCase() === b.toLowerCase();
+  }
+
+  /** True when `dirName` is `base` followed by a `-<digits>` collision suffix (e.g. `oliver-2`). */
+  private isCollisionSuffix(dirName: string, base: string): boolean {
+    const m = dirName.toLowerCase().match(/^(.+)-(\d+)$/);
+    return m !== null && m[1] === base.toLowerCase();
   }
 }
 
@@ -142,4 +308,46 @@ export class DuplicateStorageIdError extends Error {
     );
     this.name = "DuplicateStorageIdError";
   }
+}
+
+/** One directory rename performed (or attempted) by {@link CharacterDirectoryRegistry.reconcile}. */
+export interface DirectoryRepair {
+  characterId: string;
+  from: string;
+  to: string;
+  /** Set when the rename failed (occupied destination / filesystem error); the character stays readable and is retried next startup. */
+  failed?: boolean;
+  /** Diagnostic text for a failed repair. */
+  error?: string;
+}
+
+/** Windows-reserved directory names that must never be used verbatim (case-insensitive, checked post-slug). */
+const WINDOWS_RESERVED = new Set([
+  "con", "prn", "aux", "nul",
+  "com1", "com2", "com3", "com4", "com5", "com6", "com7", "com8", "com9",
+  "lpt1", "lpt2", "lpt3", "lpt4", "lpt5", "lpt6", "lpt7", "lpt8", "lpt9",
+]);
+
+/** Maximum directory component length — leaves headroom for a `-NN` collision suffix. */
+const MAX_DIR_NAME = 60;
+
+/**
+ * Derive a filesystem-safe directory name from a character display name
+ * (HUMAN_READABLE_FOLDERS). Lowercases, collapses non-alphanumeric runs to a
+ * single hyphen, trims edge hyphens, caps length, and avoids Windows-reserved
+ * names (CON/PRN/AUX/NUL/COMn/LPTn) by appending a hyphen. Returns "" for a
+ * degenerate name (no alphanumerics); the caller (ensureDirectory) falls back
+ * to the opaque characterId. This is the single derivation rule shared by the
+ * create/duplicate/update lifecycle and startup reconciliation, so a tree
+ * written by the lifecycle is always consistent with reconciliation.
+ */
+export function sanitizeDirectoryName(name: string): string {
+  let s = name
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  if (s.length > MAX_DIR_NAME) s = s.slice(0, MAX_DIR_NAME).replace(/-+$/g, "");
+  if (WINDOWS_RESERVED.has(s)) s += "-";
+  return s;
 }

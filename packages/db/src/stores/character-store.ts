@@ -306,7 +306,13 @@ export class CharacterStore {
 
     // Dual write: persist content to the VTF folder; stamp the combined hash on the DB row.
     if (this.folder) {
-      const hash = await this.folder.writeVtfFolder(await this.resolveDirectory(id), this.toVtfContent(char), id);
+      // HRF-4: choose a collision-safe human-readable directory name derived
+      // from the display name. ensureDirectory reserves it in the registry and
+      // returns it; the name is used DIRECTLY for the write — resolveDirectory
+      // cannot be used here because its path-existence check + rescan-on-miss
+      // would wipe a not-yet-created reservation and fall back to the opaque id.
+      const dirName = this.registry ? await this.registry.ensureDirectory(id, data.name) : id;
+      const hash = await this.folder.writeVtfFolder(dirName, this.toVtfContent(char), id);
       await this.db
         .update(characters)
         .set({ contentHash: hash, hasFileOnDisk: 1 })
@@ -364,14 +370,25 @@ export class CharacterStore {
     }
     const updated = this.mapRow(row);
 
-    // Dual write: rewrite the VTF folder; stamp the combined hash on the DB row.
+    // Dual write: rewrite canonical content in the CURRENT reachable directory
+    // first, then request the cosmetic rename. This order is deliberate: if the
+    // filesystem rename fails, profile.md already contains the new display name
+    // + immutable storage_id, getById remains readable at the old path, and
+    // startup reconciliation can retry the rename from canonical profile data.
     if (this.folder) {
-      const hash = await this.folder.writeVtfFolder(await this.resolveDirectory(id), this.toVtfContent(updated), id);
+      const currentDir = await this.resolveDirectory(id);
+      const hash = await this.folder.writeVtfFolder(currentDir, this.toVtfContent(updated), id);
       await this.db
         .update(characters)
         .set({ contentHash: hash, hasFileOnDisk: 1 })
         .where(eq(characters.id, id))
         .run();
+      // HRF-4: a real name change renames the directory to match the new display
+      // name (no-op when the derived name matches the current directory). Gated
+      // on data.name so a description-only update skips the filesystem check.
+      if (data.name !== undefined && this.registry) {
+        await this.registry.renameForDisplayName(id, data.name);
+      }
     }
 
     return updated;
@@ -441,7 +458,10 @@ export class CharacterStore {
 
     // Dual write: persist the copy's VTF folder; stamp the combined hash on the DB row.
     if (this.folder) {
-      const hash = await this.folder.writeVtfFolder(await this.resolveDirectory(newId), this.toVtfContent(copy), newId);
+      // HRF-4: choose a collision-safe human-readable directory for the copy
+      // (copy.name is "<original> (copy)"). Used directly — see create.
+      const dirName = this.registry ? await this.registry.ensureDirectory(newId, copy.name) : newId;
+      const hash = await this.folder.writeVtfFolder(dirName, this.toVtfContent(copy), newId);
       await this.db
         .update(characters)
         .set({ contentHash: hash, hasFileOnDisk: 1 })
@@ -453,7 +473,7 @@ export class CharacterStore {
       // avatarAssetId (shared above) is the legacy fallback and is left shared
       // per the plan (avatarFullAssetId also stays shared).
       if (original.avatarExt) {
-        await this.folder.copyAvatarFile(await this.resolveDirectory(original.id), await this.resolveDirectory(newId), original.avatarExt);
+        await this.folder.copyAvatarFile(await this.resolveDirectory(original.id), dirName, original.avatarExt);
       }
       // Copy the folder-resident full uncropped avatar (if any), mirroring the
       // thumbnail block above. Without this, duplicating a migrated character
@@ -461,7 +481,7 @@ export class CharacterStore {
       // would silently lose the full avatar — the read-time lazy-migration
       // guard (!avatarFullExt && avatarFullAssetId) cannot self-heal it.
       if (original.avatarFullExt) {
-        await this.folder.copyAvatarFullFile(await this.resolveDirectory(original.id), await this.resolveDirectory(newId), original.avatarFullExt);
+        await this.folder.copyAvatarFullFile(await this.resolveDirectory(original.id), dirName, original.avatarFullExt);
       }
     }
 
