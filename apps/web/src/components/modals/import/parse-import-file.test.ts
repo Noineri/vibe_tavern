@@ -9,9 +9,9 @@
  * (name/description/tags pulled from the monolith) and that PNG/JSON still take
  * their original branches (no regression).
  */
-import { test, expect } from "vitest";
+import { test, expect, describe } from "vitest";
 import { packMonolith, type VtfCharacterContent } from "@vibe-tavern/db/codecs";
-import { parseCharacterFile } from "./parse-import-file.js";
+import { parseCharacterFile, readCardRaw } from "./parse-import-file.js";
 
 function fullContent(over: Partial<VtfCharacterContent> = {}): VtfCharacterContent {
   return {
@@ -73,4 +73,55 @@ test("a JSON card still parses via the JSON branch (no regression)", async () =>
   expect(preview.name).toBe("Json Char");
   expect(preview.tags).toEqual(["t"]);
   expect(preview.avatarUrl).toBeNull();
+});
+
+// ─── readCardRaw (shared by every character-import entry point) ────────────
+
+describe("readCardRaw", () => {
+  test("returns a V3-card-shaped object for a .md monolith (data block with V3 field names)", async () => {
+    const md = packMonolith(fullContent());
+    const file = new File([md], "s.md", { type: "text/markdown" });
+    const raw = (await readCardRaw(file)) as { spec: string; data: Record<string, unknown> };
+    // Card-shape — what parseCardToDraft (Build merge-import) reads.
+    expect(raw.spec).toBe("chara_card_v3");
+    expect(raw.data.name).toBe("Silvius");
+    expect(raw.data.first_mes).toBe("The door creaks.");
+    expect(raw.data.scenario).toBe("A tavern.");
+    expect(raw.data.personality).toBe("calm");
+    expect(raw.data.depth_prompt).toBeNull();
+    expect(raw.data.tags).toEqual(["modern", "werewolf"]);
+  });
+
+  test("accepts .markdown and .vtmd", async () => {
+    const md = packMonolith(fullContent());
+    for (const ext of [".markdown", ".vtmd"]) {
+      const raw = (await readCardRaw(new File([md], `c${ext}`))) as { data: Record<string, unknown> };
+      expect(raw.data.name).toBe("Silvius");
+    }
+  });
+
+  test("passes a JSON card through untouched (JSON branch)", async () => {
+    const card = { spec: "chara_card_v3", data: { name: "X" } };
+    const file = new File([JSON.stringify(card)], "c.json", { type: "application/json" });
+    expect(await readCardRaw(file)).toEqual(card);
+  });
+
+  test("the card-shape output round-trips through a parseCardToDraft-style reader", async () => {
+    // Mirrors CharacterForm.parseCardToDraft: prove the reshape feeds the
+    // Build-editor merge-import without field-name loss.
+    const md = packMonolith(fullContent({ depthPrompt: "Remember the scar.", systemPrompt: "2nd person." }));
+    const raw = (await readCardRaw(new File([md], "s.md"))) as { data: Record<string, unknown> };
+    const d = raw.data;
+    const picked: Record<string, unknown> = {};
+    if (d.name) picked.name = String(d.name);
+    if (d.first_mes) picked.firstMessage = String(d.first_mes);
+    if (d.depth_prompt) picked.depthPrompt = String(d.depth_prompt);
+    if (d.system_prompt) picked.systemPrompt = String(d.system_prompt);
+    expect(picked).toEqual({
+      name: "Silvius",
+      firstMessage: "The door creaks.",
+      depthPrompt: "Remember the scar.",
+      systemPrompt: "2nd person.",
+    });
+  });
 });

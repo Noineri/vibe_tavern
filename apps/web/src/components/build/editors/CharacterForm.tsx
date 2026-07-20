@@ -7,10 +7,10 @@ import { cn } from "../../../lib/cn";
 import { resolveEntityAvatarUrl } from "../../../lib/avatar.js";
 import { AutoTextarea } from "../../shared/auto-textarea.js";
 import { CharacterImportModal } from "../../modals/ImportModals.js";
+import { readCardRaw } from "../../modals/import/parse-import-file.js";
 import { VersionSwitcher } from "../VersionSwitcher.js";
 import { AiAssistantModal } from "../../shared/AiAssistantModal.js";
 import type { MdImportResult } from "../../../lib/md-import-utils.js";
-import { extractPngMetadata, parseCharacterMetadata } from "../../../lib/png-reader";
 import { GalleryAccordion } from "./GalleryAccordion.js";
 import { useTokenCount } from "../../../hooks/use-token-count.js";
 import { useT } from "../../../i18n/context.js";
@@ -216,17 +216,7 @@ export function CharacterForm({
     setImportError("");
     (async () => {
       try {
-        let raw: unknown;
-        const lowerName = file.name.toLowerCase();
-        if (file.type === "image/png" || lowerName.endsWith(".png")) {
-          const metadata = await extractPngMetadata(file);
-          raw = parseCharacterMetadata(metadata);
-        } else if (lowerName.endsWith(".json") || file.type === "application/json") {
-          const text = await file.text();
-          raw = JSON.parse(text);
-        } else {
-          throw new Error(t("unsupported_format_error"));
-        }
+        const raw = await readCardRaw(file);
         const merged = parseCardToDraft(raw);
         if (Object.keys(merged).length === 0) throw new Error(t("import_error_no_data"));
         form.reset({ ...form.getValues(), ...merged } as BuildCharacterDraft);

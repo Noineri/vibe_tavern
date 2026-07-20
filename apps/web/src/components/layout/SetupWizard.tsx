@@ -22,7 +22,7 @@ import type { AvatarCropResult } from "../shared/AvatarCropModal.js";
 import { MobileExpandTextarea } from "../shared/MobileExpandTextarea.js";
 import { updatePersona, createPersona, uploadPersonaAvatar } from "../../app-client.js";
 import { toast } from "sonner";
-import { extractPngMetadata, parseCharacterMetadata } from "../../lib/png-reader.js";
+import { readCardRaw } from "../modals/import/parse-import-file.js";
 
 type WizardPath = "choose" | "a" | "b" | "skip";
 type PathAStep = 1 | 2 | 3;
@@ -673,11 +673,10 @@ function CharacterStep({
     });
     try {
       const lowerName = file.name.toLowerCase();
-      const raw = lowerName.endsWith(".png") || file.type === "image/png"
-        ? parseCharacterMetadata(await extractPngMetadata(file))
-        : JSON.parse(await file.text());
+      const isPng = lowerName.endsWith(".png") || file.type === "image/png";
+      const raw = await readCardRaw(file);
       const data = normalizeWizardCharacterPreview(raw, file);
-      setCardPreview({ ...data, file, avatarUrl: lowerName.endsWith(".png") || file.type === "image/png" ? URL.createObjectURL(file) : null });
+      setCardPreview({ ...data, file, avatarUrl: isPng ? URL.createObjectURL(file) : null });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : t("import_error_read_card"));
     } finally {

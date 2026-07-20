@@ -11,7 +11,7 @@
  * module never revokes.
  */
 import { extractPngMetadata, parseCharacterMetadata } from "../../../lib/png-reader.js";
-import { unpackMonolith } from "@vibe-tavern/db/codecs";
+import { unpackMonolith, type VtfCharacterContent } from "@vibe-tavern/db/codecs";
 import { getT } from "../../../i18n/locale-helpers.js";
 
 export interface CharacterPreview {
@@ -40,29 +40,58 @@ export interface ChatPreview {
 export async function parseCharacterFile(file: File): Promise<CharacterPreview> {
   const lowerName = file.name.toLowerCase();
   const isPng = lowerName.endsWith(".png") || file.type === "image/png";
-  const isMonolith =
-    lowerName.endsWith(".md") ||
-    lowerName.endsWith(".markdown") ||
-    lowerName.endsWith(".vtmd");
-  let raw: unknown;
-  let avatarUrl: string | null = null;
-  if (isPng) {
-    raw = parseCharacterMetadata(await extractPngMetadata(file));
-    avatarUrl = URL.createObjectURL(file);
-  } else if (isMonolith) {
-    // VTF monolith: YAML frontmatter + markdown sections (NOT JSON — the
-    // frontmatter begins with `---`, so JSON.parse would throw). Unpack via the
-    // real codec; normalizeCharacterPreview reads name/description/tags off the
-    // resulting VtfCharacterContent the same way it reads a JSON card.
-    raw = unpackMonolith(await file.text());
-  } else {
-    raw = JSON.parse(await file.text());
-  }
+  const raw = await readCardRaw(file);
   const data = normalizeCharacterPreview(raw, file);
   return {
     ...data,
     file,
-    avatarUrl,
+    avatarUrl: isPng ? URL.createObjectURL(file) : null,
+  };
+}
+
+/**
+ * Read a character-card File into a V3-card-shaped raw object, regardless of
+ * container: PNG (`chara`/`ccv3` tEXt), JSON, or a standalone VTF monolith
+ * (`.md`/`.markdown`/`.vtmd`, unpacked + reshaped to the V3 `data` block so every
+ * downstream consumer — preview normalizers AND `parseCardToDraft` — sees one
+ * uniform shape). Shared by every character-import entry point (modal preview,
+ * setup wizard, build-editor merge) so no path is left unable to read a VTF
+ * monolith. Throws on a malformed file; the caller surfaces the error.
+ */
+export async function readCardRaw(file: File): Promise<unknown> {
+  const lowerName = file.name.toLowerCase();
+  if (lowerName.endsWith(".png") || file.type === "image/png") {
+    return parseCharacterMetadata(await extractPngMetadata(file));
+  }
+  if (lowerName.endsWith(".md") || lowerName.endsWith(".markdown") || lowerName.endsWith(".vtmd")) {
+    return vtfContentToCardRaw(unpackMonolith(await file.text()));
+  }
+  return JSON.parse(await file.text());
+}
+
+/** Reshape a parsed VTF monolith into a V3-card-shaped object (`{ spec, data }`). */
+function vtfContentToCardRaw(content: VtfCharacterContent): Record<string, unknown> {
+  return {
+    spec: "chara_card_v3",
+    spec_version: "3.0",
+    data: {
+      name: content.name,
+      description: content.description,
+      personality: content.personalitySummary,
+      scenario: content.defaultScenario,
+      first_mes: content.firstMessage,
+      mes_example: content.mesExample,
+      mes_example_mode: content.mesExampleMode,
+      mes_example_depth: content.mesExampleDepth,
+      alternate_greetings: content.alternateGreetings,
+      post_history_instructions: content.postHistoryInstructions,
+      creator_notes: content.creatorNotes,
+      depth_prompt: content.depthPrompt,
+      depth_prompt_depth: content.depthPromptDepth,
+      depth_prompt_role: content.depthPromptRole,
+      system_prompt: content.systemPrompt,
+      tags: content.tags,
+    },
   };
 }
 
