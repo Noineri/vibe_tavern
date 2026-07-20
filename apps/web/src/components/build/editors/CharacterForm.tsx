@@ -49,6 +49,7 @@ export interface CharacterFormProps {
   onAvatarUpload: (file: File, originalFile?: File | null) => Promise<void> | void;
   onExportJson: () => void;
   onExportPng: () => void;
+  onExportVtf: () => void;
   onDuplicate: () => void;
   onDelete: () => void;
   hasAvatar: boolean;
@@ -82,7 +83,7 @@ function parseCardToDraft(raw: unknown): Partial<BuildCharacterDraft> {
 export function CharacterForm({
   form, avatarPreview, setAvatarPreview, isDirty, isSaving, avatarUrl, onSave, onReset, onAvatarUpload,
   onAfterImport,
-  onExportJson, onExportPng, onDuplicate, onDelete, hasAvatar, characterId
+  onExportJson, onExportPng, onExportVtf, onDuplicate, onDelete, hasAvatar, characterId
 }: CharacterFormProps) {
   const { t, tDynamic } = useT();
   const { register, formState: { errors }, watch, setValue, handleSubmit } = form;
@@ -363,6 +364,16 @@ export function CharacterForm({
             {Ic.download()}
           </button>
           </CustomTooltip>
+          <CustomTooltip content={t("char_export_vtf")}>
+          <button type="button"
+            className="flex cursor-pointer items-center justify-center rounded-md border border-border bg-s2 text-t2 transition-all hover:border-accent hover:text-accent-t"
+            style={{ height: 28, width: 28 }}
+            onClick={onExportVtf}
+            disabled={isSaving}
+          >
+            <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 2h7l3 3v9a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z"/><path d="M9 2v4h4"/><path d="M5 9h6M5 11.5h6"/></svg>
+          </button>
+          </CustomTooltip>
           {hasAvatar && (
             <CustomTooltip content={t("char_export_png")}>
             <button type="button"
@@ -460,6 +471,13 @@ export function CharacterForm({
             disabled={isSaving}
           >
             {Ic.download()}
+          </button>
+          <button type="button"
+            className="flex min-h-9 min-w-9 cursor-pointer items-center justify-center rounded-md border border-border bg-s2 text-t2 active:bg-s3 [&_svg]:h-5 [&_svg]:w-5"
+            onClick={onExportVtf}
+            disabled={isSaving}
+          >
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><path d="M4 2h6l4 4v8a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z"/><path d="M9 2v4h4"/><path d="M6 10h4"/></svg>
           </button>
           {hasAvatar && (
             <button type="button"

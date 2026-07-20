@@ -104,6 +104,7 @@ export function BuildMode() {
     personaId={chatMeta.persona?.id ?? null}
     onExportJson={() => { void character.handleExportCharacter(charData.id); }}
     onExportPng={() => { void character.handleExportPng(charData.id); }}
+    onExportVtf={() => { void character.handleExportVtf(charData.id); }}
     onDuplicate={() => { void character.handleDuplicateCharacter(charData.id); }}
     onCreateChat={() => character.handleCreateChat(charData.id)}
     onDelete={() => {
@@ -138,13 +139,14 @@ interface BuildModeInnerProps {
   personaId: string | null;
   onExportJson: () => void;
   onExportPng: () => void;
+  onExportVtf: () => void;
   onDuplicate: () => void;
   onDelete: () => void;
   onCreateChat: () => Promise<void>;
   hasAvatar: boolean;
 }
 
-function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptTraceCount, currentTraceIndex, imageAttachmentsCount, setSelectedTraceId, promptTraceHistory, traceFetchStatus, traceFetchError, onRefetchTraceHistory, onSave, onAvatarUpload, characterId, activeChatId, personaId, onExportJson, onExportPng, onDuplicate, onDelete, onCreateChat, hasAvatar }: BuildModeInnerProps) {
+function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptTraceCount, currentTraceIndex, imageAttachmentsCount, setSelectedTraceId, promptTraceHistory, traceFetchStatus, traceFetchError, onRefetchTraceHistory, onSave, onAvatarUpload, characterId, activeChatId, personaId, onExportJson, onExportPng, onExportVtf, onDuplicate, onDelete, onCreateChat, hasAvatar }: BuildModeInnerProps) {
   const { t, locale } = useT();
   const isMobile = useIsMobile();
   const panels = useBuildPanels();
@@ -236,6 +238,7 @@ function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptTrac
             onAvatarUpload={handleAvatarUpload}
             onExportJson={onExportJson}
             onExportPng={onExportPng}
+            onExportVtf={onExportVtf}
             onDuplicate={onDuplicate}
             onDelete={onDelete}
             onAfterImport={async () => { await handleSave(); void onCreateChat(); }}
