@@ -213,6 +213,12 @@ export function CharacterForm({
   function handleImportFiles(files: File[]): void {
     if (files.length === 0) return;
     const file = files[0];
+    // A PNG card carries its avatar in the image body — route it through the
+    // same cropper flow as a manual avatar pick (handleAvatarPick) so it
+    // actually uploads via onAvatarUpload(cropped, original). JSON/.md cards
+    // have no image, so only PNG triggers this. Previously the merge-import
+    // silently dropped the avatar entirely (pre-existing gap, not VTF-related).
+    const isPng = file.type === "image/png" || file.name.toLowerCase().endsWith(".png");
     setImportError("");
     (async () => {
       try {
@@ -223,6 +229,7 @@ export function CharacterForm({
         setImportModalOpen(false);
         // Autosave + create a chat after import
         onAfterImport?.();
+        if (isPng) setPendingAvatar({ file, url: URL.createObjectURL(file) });
       } catch (err) {
         setImportError(err instanceof Error ? err.message : t("import_failed"));
       }
