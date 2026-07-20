@@ -8,7 +8,8 @@ import { getGatewayBaseUrl, getMobileToken } from "./client.js";
 
 export async function importJson(input: {
   fileName: string;
-  jsonText: string;
+  jsonText?: string;
+  monolithText?: string;
   chatId?: ChatId;
   skipExisting?: boolean;
   lean?: boolean;
@@ -34,7 +35,7 @@ export interface BatchImportItemResult {
  * ImportModals Phase 1.
  */
 export async function importJsonBatch(input: {
-  items: Array<{ fileName: string; jsonText: string; chatId?: ChatId; skipExisting?: boolean }>;
+  items: Array<{ fileName: string; jsonText?: string; monolithText?: string; chatId?: ChatId; skipExisting?: boolean }>;
   lean?: boolean;
 }): Promise<{ results: BatchImportItemResult[] }> {
   const response = await client.api.import.batch.$post({ json: input });

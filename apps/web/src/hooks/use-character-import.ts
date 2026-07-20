@@ -1,7 +1,7 @@
 import { useCallback, useState } from "react";
 import type { ChatId } from "@vibe-tavern/domain";
 import { uploadCharacterAvatar } from "../app-client.js";
-import { extractPngMetadata, parseCharacterMetadata } from "../lib/png-reader.js";
+import { extractPngMetadata, parseCharacterMetadata, extractVtmdMonolith } from "../lib/png-reader.js";
 import { getT } from "../i18n/locale-helpers.js";
 import { importCharacterAction } from "../stores/api-actions/character-actions.js";
 import { fetchBootstrapAction } from "../stores/api-actions/bootstrap-actions.js";
@@ -16,29 +16,54 @@ export function useCharacterImport() {
   const importFile = useCallback(async (file: File, options?: CharacterImportOptions) => {
     setIsImporting(true);
     try {
-      let payload: unknown;
       const lowerName = file.name.toLowerCase();
-
       const isPng = file.type === "image/png" || lowerName.endsWith(".png");
+
+      // Build the import payload. A VTF `vtmd` chunk (PNG) or a standalone
+      // `.md`/`.vtmd` monolith is the LOSSLESS native representation and is
+      // passed as `monolithText` (the backend prefers it over the lossy
+      // `chara`/`ccv3` JSON). ST cards / JSONL stay on `jsonText`.
+      let jsonText: string | undefined;
+      let monolithText: string | undefined;
 
       if (isPng) {
         // Extract character JSON from PNG metadata. The PNG is uploaded as
         // the character's folder-resident avatar AFTER the character is
         // created (POST /api/characters/:id/avatar) — see post-import block.
         const metadata = await extractPngMetadata(file);
-        payload = parseCharacterMetadata(metadata);
+        const vtmd = extractVtmdMonolith(metadata);
+        if (vtmd) monolithText = vtmd;
+        // The ST chara/ccv3 JSON is the fallback when no vtmd is present, and
+        // an extra safety net when it is (the backend prefers the monolith).
+        // An external tool that writes only a vtmd chunk has no JSON to parse
+        // — skip it rather than throwing.
+        try {
+          const card = parseCharacterMetadata(metadata);
+          jsonText = typeof card === "string" ? card : JSON.stringify(card);
+        } catch {
+          if (!monolithText) throw new Error(getT()("import_unsupported_type"));
+        }
       } else if (lowerName.endsWith(".jsonl")) {
-        payload = await file.text();
+        jsonText = await file.text();
       } else if (file.type === "application/json" || lowerName.endsWith(".json")) {
-        const text = await file.text();
-        payload = JSON.parse(text);
+        jsonText = JSON.stringify(JSON.parse(await file.text()));
+      } else if (
+        lowerName.endsWith(".md") ||
+        lowerName.endsWith(".markdown") ||
+        lowerName.endsWith(".vtmd")
+      ) {
+        // Standalone VTF monolith: YAML frontmatter + markdown sections — the
+        // lossless native representation, distinct from the AI-Assistant
+        // `.md`/`.txt` prose→formalization modal (different entry point).
+        monolithText = await file.text();
       } else {
         throw new Error(getT()("import_unsupported_type"));
       }
 
       const result = await importCharacterAction({
         fileName: file.name,
-        jsonText: typeof payload === "string" ? payload : JSON.stringify(payload),
+        jsonText,
+        monolithText,
         chatId: options?.chatId,
       });
 

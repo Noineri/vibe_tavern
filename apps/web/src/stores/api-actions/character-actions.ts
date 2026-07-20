@@ -98,7 +98,8 @@ export async function avatarUploadAction(input: {
 
 export async function importCharacterAction(input: {
   fileName: string;
-  jsonText: string;
+  jsonText?: string;
+  monolithText?: string;
   chatId?: ChatId;
 }): Promise<ImportJsonResponse> {
   const result = await importJson(input);
