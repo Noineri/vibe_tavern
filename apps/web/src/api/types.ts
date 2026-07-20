@@ -482,6 +482,13 @@ export interface AiAssistantChunk {
   text?: string;
   json?: Record<string, unknown>;
   error?: string;
+  /** Present only on the `done` chunk for message-editor completions (MAE-22
+   *  wire shape). The backend attaches these as merge provenance; the runner
+   *  hook captures them additively — existing modes emit a bare `{ type: "done" }`
+   *  and these fields stay `undefined`, so no behavior change for them. */
+  modelId?: string;
+  promptPresetId?: string | null;
+  finishReason?: string;
 }
 
 export type AiAssistantMode = "script" | "lore_entry" | "lore_keys" | "chat_impersonate" | "md_import" | "vision_describe" | "scene_schema" | "scene_rules";
