@@ -118,6 +118,18 @@ export interface SceneBackfillRun {
 
 // ─── Store ────────────────────────────────────────────────────────────────────
 
+/** Thrown when a guarded edit targets a variant that is no longer selected. */
+export class SelectedVariantMismatchError extends Error {
+  constructor(
+    readonly messageId: string,
+    readonly expectedVariantId: string,
+    readonly actualVariantId: string | null,
+  ) {
+    super(`Selected variant '${expectedVariantId}' no longer matches message '${messageId}'.`);
+    this.name = "SelectedVariantMismatchError";
+  }
+}
+
 /**
  * Message + variant (swipe) CRUD.
  *
@@ -419,13 +431,30 @@ export class MessageStore {
       .run();
   }
 
-  async editMessage(id: string, content: string): Promise<Message> {
+  async editMessage(id: string, content: string, expectedVariantId?: string): Promise<Message> {
     const now = this.clock.now();
 
     // Extract thinking tags from edited content
     const { mainContent, reasoning: extractedReasoning } = extractThinkingTags(content);
 
     await this.db.transaction(async (tx) => {
+      if (expectedVariantId !== undefined) {
+        const selectedVariant = await tx
+          .select({ id: messageVariants.id })
+          .from(messageVariants)
+          .where(
+            and(
+              eq(messageVariants.messageId, id),
+              eq(messageVariants.isSelected, 1),
+            ),
+          )
+          .get();
+        const actualVariantId = selectedVariant?.id ?? null;
+        if (actualVariantId !== expectedVariantId) {
+          throw new SelectedVariantMismatchError(id, expectedVariantId, actualVariantId);
+        }
+      }
+
       await tx
         .update(messages)
         .set({ content: mainContent, state: 'edited', updatedAt: now })

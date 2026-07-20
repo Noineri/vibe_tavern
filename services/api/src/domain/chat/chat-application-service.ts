@@ -17,8 +17,8 @@ import type {
   MessageId,
   SummaryMemorySnapshot,
 } from "@vibe-tavern/domain";
-import type { ChatStore, MessageStore, Message as DbMessage } from "@vibe-tavern/db";
-import { notFound } from "../../shared/errors.js";
+import type { ChatStore, MessageStore, Message as DbMessage, MessageVariant as DbMessageVariant } from "@vibe-tavern/db";
+import { conflict, notFound } from "../../shared/errors.js";
 
 /**
  * Apply the objective "exactly one active target" display invariant to a chat
@@ -61,6 +61,14 @@ function mapDbMessage(m: DbMessage): Message {
     updatedAt: m.updatedAt,
   };
 }
+
+type AddEditorVariantInput = {
+  readonly content: string;
+  readonly sourceVariantIds: readonly string[];
+  readonly modelId?: string;
+  readonly promptPresetId?: string;
+  readonly finishReason?: string;
+};
 
 export class ChatApplicationService {
   constructor(private readonly chatStore: ChatStore, private readonly messageStore: MessageStore) {}
@@ -183,9 +191,35 @@ export class ChatApplicationService {
     return removed;
   }
 
-  async editMessage(messageId: string, content: string): Promise<Message> {
-    const message = await this.messageStore.editMessage(messageId, content);
-    return mapDbMessage(message);
+  async editMessage(messageId: string, content: string, expectedVariantId?: string): Promise<Message> {
+    try {
+      const message = await this.messageStore.editMessage(messageId, content, expectedVariantId);
+      return mapDbMessage(message);
+    } catch (error) {
+      if (error instanceof Error && error.name === "SelectedVariantMismatchError") {
+        throw conflict("The selected message variant changed before this edit could be applied.");
+      }
+      throw error;
+    }
+  }
+
+  async addEditorVariant(messageId: string, input: AddEditorVariantInput): Promise<DbMessageVariant> {
+    const variants = await this.messageStore.getVariants(messageId);
+    const variantIds = new Set(variants.map((variant) => variant.id));
+    const missingSourceVariantId = input.sourceVariantIds.find((variantId) => !variantIds.has(variantId));
+    if (missingSourceVariantId) {
+      throw notFound("Message variant", `Variant '${missingSourceVariantId}' was not found on message '${messageId}'.`);
+    }
+
+    return this.messageStore.addVariant(
+      messageId,
+      input.content,
+      input.finishReason,
+      undefined,
+      undefined,
+      input.modelId,
+      input.promptPresetId,
+    );
   }
 
   async deleteMessage(messageId: string): Promise<void> {
