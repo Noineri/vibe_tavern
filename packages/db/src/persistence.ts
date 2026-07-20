@@ -30,21 +30,21 @@ export async function createStoreContainer(dbPath: string, dataDir?: string): Pr
   const characterFolder = new CharacterFolder(content);
   // The registry scans data/characters/ once at startup, reading each
   // profile.md's vt.storage_id to build characterId → directory. It is the
-  // sole directory locator after HRF-3d retires the DB folder_name path
-  // model. Constructor injection into CharacterStore/VersionStore happens in
-  // HRF-3d (the consumer wave); HRF-3c only constructs + initializes it.
+  // sole directory locator: CharacterStore and VersionStore resolve every
+  // character-folder I/O through it (HRF-3d), so the DB folder_name column is
+  // no longer consulted at runtime (retired in HRF-6).
   const characterDirectory = new CharacterDirectoryRegistry(content);
   await characterDirectory.init();
   const chats = new ChatStore(db);
   await chats.migrateGreetingVariants();
-  const characters = new CharacterStore(db, { folder: characterFolder });
+  const characters = new CharacterStore(db, { folder: characterFolder, registry: characterDirectory });
 
   return {
     db,
     content,
     characterDirectory,
     characters,
-    versions: new VersionStore(db, { folder: characterFolder }),
+    versions: new VersionStore(db, { folder: characterFolder, registry: characterDirectory }),
     personas: new PersonaStore(db, { content }),
     providers: new ProviderStore(db),
     chats,

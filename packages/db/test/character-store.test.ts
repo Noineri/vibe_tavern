@@ -10,6 +10,7 @@ import { ContentStore } from "../src/content-store.js";
 import { createFileStore, STORAGE_FOLDERS } from "../src/file-store.js";
 import { CharacterStore, deriveFolderName, type Character, type CreateCharacterData } from "../src/stores/character-store.js";
 import { CharacterFolder } from "../src/stores/character-folder.js";
+import { CharacterDirectoryRegistry } from "../src/stores/character-directory-registry.js";
 import type { StoreClock, StoreIdGenerator } from "../src/persistence.js";
 
 const CHARS = STORAGE_FOLDERS.characters;
@@ -791,5 +792,57 @@ describe("CharacterStore folder-name helpers (HRF-1)", () => {
 		seedFolderName(db, "char_a", "");
 		seedFolderName(db, "char_b", "");
 		expect(await store.ensureUniqueFolderName("oliver")).toBe("oliver");
+	});
+});
+
+describe("CharacterStore ↔ CharacterDirectoryRegistry (HUMAN_READABLE_FOLDERS HRF-3d)", () => {
+	async function setupWithRegistry() {
+		const dataRoot = await mkdtemp(join(tmpdir(), "vt-charstore-reg-"));
+		const db = await createDb(join(dataRoot, "test.db"));
+		const content = new ContentStore({ fileStore: createFileStore(dataRoot) });
+		const folder = new CharacterFolder(content);
+		const registry = new CharacterDirectoryRegistry(content);
+		await registry.init();
+		const store = new CharacterStore(db, { folder, registry, clock: fixedClock, idGenerator: idGen });
+		return { dataRoot, db, content, folder, registry, store };
+	}
+
+	test("resolveFolderName delegates to the registry and follows a directory rename", async () => {
+		const { store, registry } = await setupWithRegistry();
+		const char = await store.create({ name: "Andrea", description: "x" });
+
+		// A brand-new character's folder is its opaque id (dir == id); the registry
+		// discovers it via rescan-on-miss.
+		expect(await store.resolveFolderName(char.id)).toBe(char.id);
+
+		// Rename the directory through the registry (the HRF-4 lifecycle path).
+		await registry.renameDirectory(char.id, "Andrea");
+
+		// The store's public resolver now returns the renamed directory.
+		expect(await store.resolveFolderName(char.id)).toBe("Andrea");
+	});
+
+	test("an internal write (update) targets the registry-resolved directory after a rename", async () => {
+		const { store, registry, content } = await setupWithRegistry();
+		const char = await store.create({ name: "Oliver", description: "v1" });
+
+		// Rename the directory, then update content — the write must land in the
+		// renamed directory, proving the INTERNAL resolution path (resolveDirectory)
+		// also uses the registry, not a stale DB folder_name.
+		await registry.renameDirectory(char.id, "Oliver");
+		await store.update(char.id, { description: "v2" });
+
+		// profile.md in the renamed directory reflects the new content.
+		const profile = await content.readEntityTextFile(CHARS, "Oliver", "profile.md");
+		expect(profile).not.toBeNull();
+		expect(profile!).toContain("v2");
+		// The old opaque-id directory is gone (the rename moved it).
+		expect(await content.readEntityTextFile(CHARS, char.id, "profile.md")).toBeNull();
+	});
+
+	test("without a registry wired, resolution falls back to the opaque id (unit-test mode)", async () => {
+		const { store } = await setup(); // no registry
+		const char = await store.create({ name: "Andrea", description: "x" });
+		expect(await store.resolveFolderName(char.id)).toBe(char.id);
 	});
 });

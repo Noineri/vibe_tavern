@@ -1,8 +1,9 @@
 import { asc, and, eq } from 'drizzle-orm';
-import { characterVersions, characters } from '../db-schema.js';
+import { characterVersions } from '../db-schema.js';
 import type { AppDb } from '../db-connection.js';
 import { resolveStoreRuntime, type StoreClock, type StoreIdGenerator } from '../persistence.js';
 import { CharacterFolder } from './character-folder.js';
+import type { CharacterDirectoryRegistry } from './character-directory-registry.js';
 import { brandId, type CharacterVersion, type CharacterVersionId, type CharacterId } from '@vibe-tavern/domain';
 
 /**
@@ -32,16 +33,18 @@ export class VersionStore {
   private readonly clock: StoreClock;
   private readonly idGen: StoreIdGenerator;
   private readonly folder: CharacterFolder;
+  private readonly registry: CharacterDirectoryRegistry | null;
 
   constructor(
     db: AppDb,
-    options: { clock?: StoreClock; idGenerator?: StoreIdGenerator; folder: CharacterFolder },
+    options: { clock?: StoreClock; idGenerator?: StoreIdGenerator; folder: CharacterFolder; registry?: CharacterDirectoryRegistry | null },
   ) {
     this.db = db;
     const runtime = resolveStoreRuntime(options);
     this.clock = runtime.clock;
     this.idGen = runtime.idGenerator;
     this.folder = options.folder;
+    this.registry = options.registry ?? null;
   }
 
   private mapRow(row: typeof characterVersions.$inferSelect): CharacterVersion {
@@ -55,19 +58,18 @@ export class VersionStore {
   }
 
   /**
-   * Resolve the on-disk folder name for a character (HUMAN_READABLE_FOLDERS).
-   * VersionStore is a character-folder collaborator but does NOT own the
-   * Character row, so it reads `folder_name` here and falls back to the opaque
-   * id for legacy/pre-migration rows — mirroring CharacterStore.folderOf. All
-   * CharacterFolder calls route through this so snapshot/restore/remove target
-   * the renamed folder, not a stale id-named one.
+   * Resolve the on-disk directory name for a character via the filesystem
+   * registry (HUMAN_READABLE_FOLDERS). VersionStore is a character-folder
+   * collaborator but does NOT own the Character row, so it delegates to the
+   * registry — falling back to the opaque id when the registry is absent (unit
+   * tests) or the character has no directory yet. All CharacterFolder calls
+   * route through this so snapshot/restore/remove target the renamed directory,
+   * not a stale id-named one. The DB folder_name column is no longer consulted
+   * at runtime (retired in HRF-6).
    */
   private async folderOf(characterId: string): Promise<string> {
-    const row = await this.db.select({ folderName: characters.folderName })
-      .from(characters)
-      .where(eq(characters.id, characterId))
-      .get();
-    return row?.folderName || characterId;
+    if (!this.registry) return characterId;
+    return (await this.registry.resolve(characterId)) ?? characterId;
   }
 
   /** List all versions for a character in creation order (for ordinal labeling v1, v2…). */
