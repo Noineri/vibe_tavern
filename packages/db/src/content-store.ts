@@ -1,5 +1,5 @@
 import { readdir, mkdir } from "node:fs/promises";
-import { join, dirname } from "node:path";
+import { join, dirname, basename } from "node:path";
 import type { FileStore, StorageFolder } from "./file-store.js";
 import { STORAGE_FOLDERS, hashCanonicalJson } from "./file-store.js";
 
@@ -415,6 +415,23 @@ export class ContentStore {
 		await this.writeEntityFile(folder, entityId, targetName, data);
 		// Intentionally do NOT delete legacyPath — copy-forward policy.
 		return true;
+	}
+
+	/**
+	 * HRF-5 cleanliness step: MOVE a legacy root-level flat file
+	 * (`{id}.json` / `{id}.{slug}.json`) into `backupDir`. Unlike the copy-forward
+	 * migration helpers above, this MOVES the source (the backup preserves the
+	 * data-safety invariant) so data/{folder}/ is left flat-free after a
+	 * successful migration. Idempotent: returns null (nothing to move) once the
+	 * flat file is gone. Returns the moved source absolute path, or null.
+	 */
+	async archiveLegacyFlatFile(folder: StorageFolder, entityId: string, backupDir: string): Promise<string | null> {
+		const legacyPath = await this.findLegacyFlatFile(folder, entityId);
+		if (legacyPath === null) return null;
+		await mkdir(backupDir, { recursive: true });
+		const dest = join(backupDir, basename(legacyPath));
+		await this._fileStore.rename(legacyPath, dest);
+		return legacyPath;
 	}
 
 	/**

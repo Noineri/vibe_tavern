@@ -61,3 +61,10 @@ export {
   type VtfGreeting,
 } from './vtf/greetings.js';
 export * from './stores/index.js';
+export {
+  migrateToReadableFolders,
+  type MigrationStep,
+  type ArchivedFlatFile,
+  type ReadableFolderMigrationReport,
+  type ReadableFolderMigrationOptions,
+} from './migration/readable-folders.js';

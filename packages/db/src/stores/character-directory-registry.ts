@@ -200,6 +200,27 @@ export class CharacterDirectoryRegistry {
   }
 
   /**
+   * Read-only preview of {@link renameForDisplayName}: compute the collision-
+   * resolved target name for a display name WITHOUT mutating. Used by the HRF-5
+   * one-shot migration's dry-run and report so it never duplicates the
+   * collision-resolution internals. Returns the current directory, the target,
+   * whether the display name is degenerate (falls back to the opaque id), and
+   * whether a rename would actually occur.
+   */
+  async previewDirectoryTarget(characterId: string, displayName: string): Promise<DirectoryTargetPreview> {
+    const current = await this.resolve(characterId);
+    if (current === null) {
+      return { characterId, current: null, target: "", degenerate: false, wouldRename: false };
+    }
+    const base = sanitizeDirectoryName(displayName);
+    if (!base) {
+      return { characterId, current, target: current, degenerate: true, wouldRename: false };
+    }
+    const target = await this.collisionResolve(base, characterId);
+    return { characterId, current, target, degenerate: false, wouldRename: !this.sameDirectoryName(target, current) };
+  }
+
+  /**
    * Return a collision-free directory name for `base`, suffixing `-2`, `-3`, …
    * against actual on-disk directories AND in-memory reservations owned by
    * OTHER characters. The owner's own current directory never counts as a
@@ -319,6 +340,17 @@ export interface DirectoryRepair {
   failed?: boolean;
   /** Diagnostic text for a failed repair. */
   error?: string;
+}
+
+/** Read-only preview of a display-name-driven rename (HRF-5 migration dry-run/report). */
+export interface DirectoryTargetPreview {
+  characterId: string;
+  current: string | null;
+  target: string;
+  /** True when the display name has no alphanumerics and the directory stays as the opaque id. */
+  degenerate: boolean;
+  /** True if a rename would actually occur (target differs from current). */
+  wouldRename: boolean;
 }
 
 /** Windows-reserved directory names that must never be used verbatim (case-insensitive, checked post-slug). */
