@@ -7,6 +7,7 @@ export {
   sendMessageSchema,
   attachmentSchema,
   editMessageSchema,
+  createMessageVariantSchema,
   renameChatSchema,
   setGreetingIndexSchema,
   setCoauthorContextLinksSchema,

@@ -1,3 +1,4 @@
+import { brandId, type MessageVariantId } from "@vibe-tavern/domain";
 import { z } from "zod";
 
 export const createChatSchema = z.object({
@@ -23,8 +24,19 @@ export const sendMessageSchema = z.object({
   attachments: z.array(attachmentSchema).max(5).optional(),
 });
 
+const messageVariantIdSchema = z.string().min(1).transform((value) => brandId<MessageVariantId>(value));
+
 export const editMessageSchema = z.object({
   content: z.string().optional().default(""),
+  expectedVariantId: messageVariantIdSchema.optional(),
+});
+
+export const createMessageVariantSchema = z.object({
+  content: z.string().min(1),
+  sourceVariantIds: z.array(messageVariantIdSchema).min(2),
+  modelId: z.string().optional(),
+  promptPresetId: z.string().optional(),
+  finishReason: z.string().optional(),
 });
 
 export const renameChatSchema = z.object({
