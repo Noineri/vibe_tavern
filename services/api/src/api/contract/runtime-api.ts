@@ -26,8 +26,10 @@ import type {
 	SummaryResponse,
 	CharacterVersionResponse,
 } from "./session-types.js";
-import type { ObjectiveMode, ObjectiveTaskStatus, PromptTraceRecordDto, PromptPresetDto, PronounForms, SceneTrackerConfig, SceneTrackerConfigPatch, CoauthorContextLink, MessageVariantId } from "@vibe-tavern/domain";
+import type { ObjectiveMode, ObjectiveTaskStatus, PromptTraceRecordDto, PromptPresetDto, PronounForms, SceneTrackerConfig, SceneTrackerConfigPatch, CoauthorContextLink, MessageVariantId, DiceActorType, DiceMode, DiceRollSnapshot } from "@vibe-tavern/domain";
 import type { ChatMode } from "@vibe-tavern/domain";
+import type { DiceDefinitionsResponse } from "../../domain/scripts-engine/dice-script-service.js";
+import type { DicePendingState } from "../../domain/dice/dice-service.js";
 import type { SkillCatalogEntryDto } from "@vibe-tavern/api-contracts";
 // Re-export so existing imports from this module (the skill adapter) keep
 // resolving; the canonical wire type lives in api-contracts (single source).
@@ -485,6 +487,18 @@ export interface InsightsRuntimeApi {
 	retrySceneBackfill: (chatId: string, runId: string) => Promise<SceneBackfillStatusResponse>;
 }
 
+// ─── Dice (DICE_SYSTEM_BACKEND_PLAN, B8) ────────────────────────────────────
+
+export interface DiceRuntimeApi {
+	getDefinitions: (chatId: string) => Promise<{ scripts: DiceDefinitionsResponse["scripts"] }>;
+	getPending: (chatId: string, branchId: string) => Promise<DicePendingState>;
+	roll: (chatId: string, body: { scriptId: string; checkId: string; actorType: DiceActorType; actorId: string; mode: DiceMode; requestId: string }) => Promise<DiceRollSnapshot>;
+	removeRoll: (chatId: string, rollId: string) => Promise<void>;
+	clearLane: (chatId: string, branchId: string) => Promise<void>;
+	setIncluded: (chatId: string, rollId: string, included: boolean) => Promise<void>;
+	chooseFinal: (chatId: string, rollId: string, attemptId: string) => Promise<void>;
+}
+
 export interface RuntimeApi {
 	bootstrap: BootstrapRuntimeApi["bootstrap"];
 	chat: ChatRuntimeApi;
@@ -501,4 +515,5 @@ export interface RuntimeApi {
 	settings: SettingsRuntimeApi;
 	mobileAccess: MobileAccessRuntimeApi;
 	insights: InsightsRuntimeApi;
+	dice: DiceRuntimeApi;
 }

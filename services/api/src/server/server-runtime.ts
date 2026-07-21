@@ -21,6 +21,8 @@ import { SessionRuntime } from "../runtime/session/session-runtime.js";
 import { createAiAssistantFeature } from "../domain/ai-assistant/ai-assistant-feature.js";
 import { createRuntimeStore } from "../runtime/session/session-runtime-store.js";
 import { SkillLibraryService } from "../domain/coauthor/skills/skill-library.js";
+import { DiceService } from "../domain/dice/dice-service.js";
+import type { RandomSource } from "@vibe-tavern/domain";
 import { resolveBuiltinSkillsRoot, resolveUserSkillsRoot } from "../domain/coauthor/skills/skill-scanner.js";
 import { configureLogDir } from "../shared/send-debug-log.js";
 import { createApp } from "./app-factory.js";
@@ -202,6 +204,16 @@ export async function startServerRuntime(config: ServerRuntimeConfig): Promise<v
 		const mobileAccessService = new MobileAccessService(config.dataDir);
 
 		// RuntimeApi adapter
+		// Production randomness source for dice rolls. Uses crypto.getRandomValues
+		// for server-authoritative random numbers. Tests inject deterministic values.
+		const cryptoRng: RandomSource = {
+			intBelow(maxExclusive: number): number {
+				const buf = new Uint32Array(1);
+				crypto.getRandomValues(buf);
+				return buf[0]! % maxExclusive;
+			},
+		};
+		const diceService = new DiceService(stores, cryptoRng);
 		const runtime = new RuntimeApiAdapter(
 			stores,
 			providerProfileService,
@@ -214,6 +226,7 @@ export async function startServerRuntime(config: ServerRuntimeConfig): Promise<v
 			objectiveService,
 			trackerService,
 			skillLibraryService,
+			diceService,
 		);
 
 		features.register(createAiAssistantFeature(runtime.aiAssistant));
