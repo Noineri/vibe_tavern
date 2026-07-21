@@ -21,6 +21,7 @@ import { Modal } from "./Modal.js";
 import { BottomSheet } from "./BottomSheet.js";
 import type { AiQuickSettings } from "./AiQuickPill.js";
 import { AiAssistantConnectionFields } from "./ai-assistant/AiAssistantConnectionFields.js";
+import { AiAssistantShell } from "./ai-assistant/AiAssistantShell.js";
 import { AiGenParamsRow } from "./ai-assistant/AiGenParamsRow.js";
 import { useAiAssistantRunner } from "./ai-assistant/use-ai-assistant-runner.js";
 import { useDebouncedTokenCount } from "./ai-assistant/use-debounced-token-count.js";
@@ -397,22 +398,54 @@ export function AiAssistantModal({
   const title = isMdImport ? t("import_md_title") : isSceneRules ? t("scn_ai_rules_title") : isSceneSchema ? t("scn_ai_title") : isFull ? t("script_ai_helper") : t("ai_quickpill_settings");
   const contentWidth = isMdImport ? "w-[620px]" : isFull ? "w-[560px]" : "w-[380px]";
 
-  const contentBody = (
+  const footerButtons = !isFull ? (
+    <button type="button" className="h-8 cursor-pointer rounded-md border-0 bg-accent px-4 text-[12px] font-medium text-on-accent transition-all hover:opacity-90" onClick={handleQuickpillApply}>
+      {t("done_btn")}
+    </button>
+  ) : isMdImport ? (
     <>
-      {/* Header */}
-        <div className="flex items-center justify-between border-b border-border shrink-0" style={{ padding: "16px 20px" }}>
-          <span className="text-sm font-semibold text-t1">{title}</span>
-          <div className={cn("flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded-[5px] text-t3 transition-all hover:bg-s2 hover:text-t1", streaming && "pointer-events-none opacity-30")} onClick={onClose}>
-            <Ic.close />
-          </div>
-        </div>
+      {Object.keys(parsedFields).length > 0 && !streaming && (
+        <button type="button" className="h-9 cursor-pointer rounded-md border-0 bg-accent px-4 font-ui text-xs font-medium text-on-accent transition-all" onClick={handleMdImportApply} disabled={checkedFields.size === 0}>{t("import_md_apply")}</button>
+      )}
+      {streaming ? (
+        <button type="button" className="h-9 cursor-pointer rounded-md border-0 bg-danger px-4 font-ui text-xs font-medium text-on-danger transition-all" onClick={handleStop}>{t("script_ai_stop")}</button>
+      ) : (
+        <button type="button" className={cn("h-9 cursor-pointer rounded-md border-0 px-4 font-ui text-xs font-medium transition-all", providerId && mdContent.trim() ? "bg-s3 text-t2 hover:bg-border2 hover:text-t1" : "bg-s3 text-t3 cursor-not-allowed")} onClick={handleGenerate} disabled={!providerId || !mdContent.trim()}>{Object.keys(parsedFields).length > 0 ? t("import_md_reparse") : t("import_md_start")}</button>
+      )}
+    </>
+  ) : (
+    <>
+      {streamedOutput && !streaming && (
+        existingContent ? (
+          <>
+            <button type="button" className="h-9 cursor-pointer rounded-md border-0 bg-s3 px-4 font-ui text-xs font-medium text-t2 transition-all hover:bg-border2 hover:text-t1" onClick={handleActionInsert}>{t("script_ai_insert")}</button>
+            <button type="button" className="h-9 cursor-pointer rounded-md border-0 bg-accent px-4 font-ui text-xs font-medium text-on-accent transition-all" onClick={handleActionReplace}>{t("script_ai_apply")}</button>
+          </>
+        ) : (
+          <>
+            <button type="button" className="h-9 cursor-pointer rounded-md border-0 bg-s3 px-4 font-ui text-xs font-medium text-t2 transition-all hover:bg-border2 hover:text-t1" onClick={handleActionInsert}>{t("script_ai_insert")}</button>
+            <button type="button" className="h-9 cursor-pointer rounded-md border-0 bg-accent px-4 font-ui text-xs font-medium text-on-accent transition-all" onClick={handleActionReplace}>{t("script_ai_replace")}</button>
+          </>
+        )
+      )}
+      {streaming ? (
+        <button type="button" className="h-9 cursor-pointer rounded-md border-0 bg-danger px-4 font-ui text-xs font-medium text-on-danger transition-all" onClick={handleStop}>{t("script_ai_stop")}</button>
+      ) : (
+        <button type="button" className={cn("h-9 cursor-pointer rounded-md border-0 px-4 font-ui text-xs font-medium transition-all", providerId && prompt.trim() ? "bg-accent text-on-accent" : "bg-s3 text-t3 cursor-not-allowed")} onClick={handleGenerate} disabled={!providerId || !prompt.trim()}>{t("script_ai_generate")}</button>
+      )}
+    </>
+  );
 
-        {/* Content */}
-        <div className="flex-1 overflow-y-auto" style={{ padding: 20 }}>
-          {providerProfiles.length === 0 ? (
-            <div className="py-6 text-center font-ui text-[13px] text-t3">{t("script_ai_no_providers")}</div>
-          ) : (
-            <>
+  const contentBody = (
+    <AiAssistantShell
+      title={<span className="text-sm font-semibold text-t1">{title}</span>}
+      onClose={onClose}
+      streaming={streaming}
+      providerCount={providerProfiles.length}
+      noProvidersLabel={t("script_ai_no_providers")}
+      footer={providerProfiles.length > 0 ? footerButtons : undefined}
+    >
+      <>
               <AiAssistantConnectionFields
                 providerProfiles={providerProfiles}
                 providerId={providerId}
@@ -704,53 +737,8 @@ export function AiAssistantModal({
                   )}
                 </>
               )}
-            </>
-          )}
-        </div>
-
-        {/* Footer */}
-        {providerProfiles.length > 0 && (
-          <div className="flex justify-end gap-2 border-t border-border shrink-0" style={{ padding: "12px 20px" }}>
-            {!isFull ? (
-              <button type="button" className="h-8 cursor-pointer rounded-md border-0 bg-accent px-4 text-[12px] font-medium text-on-accent transition-all hover:opacity-90" onClick={handleQuickpillApply}>
-                {t("done_btn")}
-              </button>
-            ) : isMdImport ? (
-              <>
-                {Object.keys(parsedFields).length > 0 && !streaming && (
-                  <button type="button" className="h-9 cursor-pointer rounded-md border-0 bg-accent px-4 font-ui text-xs font-medium text-on-accent transition-all" onClick={handleMdImportApply} disabled={checkedFields.size === 0}>{t("import_md_apply")}</button>
-                )}
-                {streaming ? (
-                  <button type="button" className="h-9 cursor-pointer rounded-md border-0 bg-danger px-4 font-ui text-xs font-medium text-on-danger transition-all" onClick={handleStop}>{t("script_ai_stop")}</button>
-                ) : (
-                  <button type="button" className={cn("h-9 cursor-pointer rounded-md border-0 px-4 font-ui text-xs font-medium transition-all", providerId && mdContent.trim() ? "bg-s3 text-t2 hover:bg-border2 hover:text-t1" : "bg-s3 text-t3 cursor-not-allowed")} onClick={handleGenerate} disabled={!providerId || !mdContent.trim()}>{Object.keys(parsedFields).length > 0 ? t("import_md_reparse") : t("import_md_start")}</button>
-                )}
-              </>
-            ) : (
-              <>
-                {streamedOutput && !streaming && (
-                  existingContent ? (
-                    <>
-                      <button type="button" className="h-9 cursor-pointer rounded-md border-0 bg-s3 px-4 font-ui text-xs font-medium text-t2 transition-all hover:bg-border2 hover:text-t1" onClick={handleActionInsert}>{t("script_ai_insert")}</button>
-                      <button type="button" className="h-9 cursor-pointer rounded-md border-0 bg-accent px-4 font-ui text-xs font-medium text-on-accent transition-all" onClick={handleActionReplace}>{t("script_ai_apply")}</button>
-                    </>
-                  ) : (
-                    <>
-                      <button type="button" className="h-9 cursor-pointer rounded-md border-0 bg-s3 px-4 font-ui text-xs font-medium text-t2 transition-all hover:bg-border2 hover:text-t1" onClick={handleActionInsert}>{t("script_ai_insert")}</button>
-                      <button type="button" className="h-9 cursor-pointer rounded-md border-0 bg-accent px-4 font-ui text-xs font-medium text-on-accent transition-all" onClick={handleActionReplace}>{t("script_ai_replace")}</button>
-                    </>
-                  )
-                )}
-                {streaming ? (
-                  <button type="button" className="h-9 cursor-pointer rounded-md border-0 bg-danger px-4 font-ui text-xs font-medium text-on-danger transition-all" onClick={handleStop}>{t("script_ai_stop")}</button>
-                ) : (
-                  <button type="button" className={cn("h-9 cursor-pointer rounded-md border-0 px-4 font-ui text-xs font-medium transition-all", providerId && prompt.trim() ? "bg-accent text-on-accent" : "bg-s3 text-t3 cursor-not-allowed")} onClick={handleGenerate} disabled={!providerId || !prompt.trim()}>{t("script_ai_generate")}</button>
-                )}
-              </>
-            )}
-          </div>
-        )}
       </>
+    </AiAssistantShell>
   );
 
   if (isMobile && !isFull) {

@@ -46,6 +46,7 @@ import { MobileExpandTextarea } from "../shared/MobileExpandTextarea.js";
 import { MessageReasoning } from "./MessageReasoning.js";
 import { TextDiffPreview, buildWordDiff, type TextDiffWordSummary } from "../shared/TextDiffPreview.js";
 import { AiAssistantConnectionFields } from "../shared/ai-assistant/AiAssistantConnectionFields.js";
+import { AiAssistantShell } from "../shared/ai-assistant/AiAssistantShell.js";
 import { AiGenParamsRow } from "../shared/ai-assistant/AiGenParamsRow.js";
 import { TokenCounter } from "../shared/TokenCounter.js";
 import { type AiAssistantRequestBody } from "../../app-client.js";
@@ -393,6 +394,68 @@ export function MessageAiEditorModal() {
     ? "w-full h-full rounded-none"
     : "w-[640px] max-w-[90vw] max-h-[85vh] rounded-xl";
 
+  const footerButtons = (
+    <>
+      <button
+        type="button"
+        className="h-9 cursor-pointer rounded-md border border-border bg-s3 px-4 font-ui text-xs font-medium text-t2 transition-all hover:bg-border2 hover:text-t1"
+        onClick={handleClose}
+        disabled={applying}
+      >
+        {t("cancel_btn")}
+      </button>
+      {!staleTarget && providerProfiles.length > 0 && (
+        <>
+          {runner.streaming ? (
+            <button
+              type="button"
+              className="h-9 cursor-pointer rounded-md border-0 bg-danger px-4 font-ui text-xs font-medium text-on-danger transition-all"
+              onClick={runner.stop}
+            >
+              {t("script_ai_stop")}
+            </button>
+          ) : (
+            <>
+              {showCandidate && !conflict && !staleEditSource && activeMode === "message_edit" && (
+                <button
+                  type="button"
+                  className="h-9 cursor-pointer rounded-md border-0 bg-accent px-4 font-ui text-xs font-medium text-on-accent transition-all hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                  onClick={() => void handleApplyEdit()}
+                  disabled={applying || runner.streaming}
+                >
+                  {applying ? tDynamic("message_ai_editor_applying") : tDynamic("message_ai_editor_apply")}
+                </button>
+              )}
+              {showCandidate && !mergeBelowMinimum && activeMode === "message_merge" && (
+                <button
+                  type="button"
+                  className="h-9 cursor-pointer rounded-md border-0 bg-accent px-4 font-ui text-xs font-medium text-on-accent transition-all hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                  onClick={() => void handleSaveMerge()}
+                  disabled={applying || runner.streaming || mergeBelowMinimum}
+                >
+                  {applying ? tDynamic("message_ai_editor_applying") : tDynamic("message_ai_editor_save_new_variant")}
+                </button>
+              )}
+              <button
+                type="button"
+                className={cn(
+                  "h-9 cursor-pointer rounded-md border-0 px-4 font-ui text-xs font-medium transition-all",
+                  canGenerate
+                    ? "bg-accent text-on-accent hover:opacity-90"
+                    : "bg-s3 text-t3 cursor-not-allowed",
+                )}
+                onClick={handleGenerate}
+                disabled={!canGenerate}
+              >
+                {tDynamic("message_ai_editor_generate")}
+              </button>
+            </>
+          )}
+        </>
+      )}
+    </>
+  );
+
   return (
     <Modal
       open
@@ -406,17 +469,25 @@ export function MessageAiEditorModal() {
           containerCls,
         )}
       >
-        {/* Header */}
-        <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border px-5 py-4">
-          <div className="flex min-w-0 items-center gap-2">
-            <span className="text-accent shrink-0">
-              <Icons.sparkles />
-            </span>
-            <span className="truncate text-sm font-semibold text-t1">
-              {tDynamic("message_ai_editor_title")}
-            </span>
-          </div>
-          {!staleTarget && canMerge && (
+        <AiAssistantShell
+          title={(
+            <div className="flex min-w-0 items-center gap-2">
+              <span className="text-accent shrink-0">
+                <Icons.sparkles />
+              </span>
+              <span className="truncate text-sm font-semibold text-t1">
+                {tDynamic("message_ai_editor_title")}
+              </span>
+            </div>
+          )}
+          onClose={handleClose}
+          streaming={runner.streaming || applying}
+          // A stale target short-circuits the no-providers guard: the stale
+          // panel replaces the whole content area, exactly as the inline
+          // guard did before the shell extraction.
+          providerCount={staleTarget ? 1 : providerProfiles.length}
+          noProvidersLabel={tDynamic("message_ai_editor_no_providers")}
+          headerExtra={!staleTarget && canMerge ? (
             <SegmentedControl
               value={activeMode}
               onChange={(v) => {
@@ -434,22 +505,9 @@ export function MessageAiEditorModal() {
               ]}
               compact
             />
-          )}
-          <button
-            type="button"
-            className={cn(
-              "flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded-[5px] text-t3 transition-all hover:bg-s2 hover:text-t1",
-              (runner.streaming || applying) && "pointer-events-none opacity-30",
-            )}
-            onClick={handleClose}
-            aria-label={t("cancel_btn")}
-          >
-            <Icons.close />
-          </button>
-        </div>
-
-        {/* Body */}
-        <div className="flex-1 overflow-y-auto" style={{ padding: 20 }}>
+          ) : undefined}
+          footer={footerButtons}
+        >
           {staleTarget ? (
             <div className="rounded-md border border-border bg-bg p-4">
               <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.06em] text-t3">
@@ -458,10 +516,6 @@ export function MessageAiEditorModal() {
               <div className="font-ui text-[12px] leading-relaxed text-t3">
                 {tDynamic("message_ai_editor_stale_body")}
               </div>
-            </div>
-          ) : providerProfiles.length === 0 ? (
-            <div className="py-6 text-center font-ui text-[13px] text-t3">
-              {tDynamic("message_ai_editor_no_providers")}
             </div>
           ) : (
             <>
@@ -624,68 +678,7 @@ export function MessageAiEditorModal() {
               )}
             </>
           )}
-        </div>
-
-        {/* Footer */}
-        <div className="flex shrink-0 justify-end gap-2 border-t border-border px-5 py-3">
-          <button
-            type="button"
-            className="h-9 cursor-pointer rounded-md border border-border bg-s3 px-4 font-ui text-xs font-medium text-t2 transition-all hover:bg-border2 hover:text-t1"
-            onClick={handleClose}
-            disabled={applying}
-          >
-            {t("cancel_btn")}
-          </button>
-          {!staleTarget && providerProfiles.length > 0 && (
-            <>
-              {runner.streaming ? (
-                <button
-                  type="button"
-                  className="h-9 cursor-pointer rounded-md border-0 bg-danger px-4 font-ui text-xs font-medium text-on-danger transition-all"
-                  onClick={runner.stop}
-                >
-                  {t("script_ai_stop")}
-                </button>
-              ) : (
-                <>
-                  {showCandidate && !conflict && !staleEditSource && activeMode === "message_edit" && (
-                    <button
-                      type="button"
-                      className="h-9 cursor-pointer rounded-md border-0 bg-accent px-4 font-ui text-xs font-medium text-on-accent transition-all hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
-                      onClick={() => void handleApplyEdit()}
-                      disabled={applying || runner.streaming}
-                    >
-                      {applying ? tDynamic("message_ai_editor_applying") : tDynamic("message_ai_editor_apply")}
-                    </button>
-                  )}
-                  {showCandidate && !mergeBelowMinimum && activeMode === "message_merge" && (
-                    <button
-                      type="button"
-                      className="h-9 cursor-pointer rounded-md border-0 bg-accent px-4 font-ui text-xs font-medium text-on-accent transition-all hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
-                      onClick={() => void handleSaveMerge()}
-                      disabled={applying || runner.streaming || mergeBelowMinimum}
-                    >
-                      {applying ? tDynamic("message_ai_editor_applying") : tDynamic("message_ai_editor_save_new_variant")}
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    className={cn(
-                      "h-9 cursor-pointer rounded-md border-0 px-4 font-ui text-xs font-medium transition-all",
-                      canGenerate
-                        ? "bg-accent text-on-accent hover:opacity-90"
-                        : "bg-s3 text-t3 cursor-not-allowed",
-                    )}
-                    onClick={handleGenerate}
-                    disabled={!canGenerate}
-                  >
-                    {tDynamic("message_ai_editor_generate")}
-                  </button>
-                </>
-              )}
-            </>
-          )}
-        </div>
+        </AiAssistantShell>
       </div>
     </Modal>
   );
