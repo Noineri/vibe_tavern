@@ -2,6 +2,8 @@ import { describe, it, expect } from "bun:test";
 import { assemblePrompt } from "../src/assemble.ts";
 import { getAiAssistantAssembler } from "../src/ai-assistant/ai-assistant-assemblers.ts";
 import { getSummaryStrategy } from "../src/summary/summary-strategies.ts";
+import { setTokenCountFn } from "../src/compaction.ts";
+import { brandId, type DiceRollSnapshot, type DiceRollId, type MessageId } from "@vibe-tavern/domain";
 
 function baseContext(overrides = {}) {
   return {
@@ -434,6 +436,217 @@ describe("assemblePrompt", () => {
       const result = assemblePrompt(baseContext({ chat: { recentMessages: [] } }));
       const hist = result.layers.find((l) => l.id === "recent_history");
       expect(hist).toBeUndefined();
+    });
+  });
+
+  // ─── Wave B5 / DICE-B13: Dice prompt projection ───────────────────
+  //
+  // The pipeline derives effective message content ONCE (macro-resolved prose
+  // + compact Dice block) so Dice text is token-counted before compaction,
+  // trace-visible in the history layer, and present in the final payload
+  // exactly once — without mutating visible prose. Absence (no diceRolls) is
+  // a byte-for-byte no-op.
+  describe("Dice prompt projection (Wave B5 / DICE-B13)", () => {
+    function makeRoll(overrides: Partial<DiceRollSnapshot> = {}): DiceRollSnapshot {
+      return {
+        rollId: brandId<DiceRollId>("roll_1"),
+        requestId: "req_1",
+        actor: { actorType: "character", actorId: "char_1", actorLabel: "Theron" },
+        scriptId: "script_1",
+        scriptLabel: "Combat",
+        scriptRevision: 1,
+        checkId: "check_1",
+        checkLabel: "Stealth Check",
+        notation: "2d6+1",
+        faceShape: "d6",
+        resolution: "strict",
+        mode: "normal",
+        included: true,
+        finalAttemptId: "att_1",
+        attempts: [
+          { attemptId: "att_1", faces: [3, 5], modifier: 1, subtotal: 8, total: 9 },
+        ],
+        final: { total: 9, outcome: "success", degree: "hard", constraint: "must remain unseen" },
+        boundMessageId: brandId<MessageId>("msg_1"),
+        createdAt: "2026-01-01T00:00:00.000Z",
+        ...overrides,
+      };
+    }
+
+    it("absence of diceRolls is byte-for-byte no-op (identical payload)", () => {
+      const noDice = assemblePrompt(baseContext());
+      const emptyDice = assemblePrompt(baseContext({
+        chat: {
+          recentMessages: [
+            { id: "msg_1", role: "user", content: "Hello.", diceRolls: [] },
+            { id: "msg_2", role: "assistant", content: "Hi there." },
+          ],
+        },
+      }));
+      expect(JSON.stringify(emptyDice.finalPayload)).toBe(JSON.stringify(noDice.finalPayload));
+      expect(JSON.stringify(emptyDice.layers)).toBe(JSON.stringify(noDice.layers));
+    });
+
+    it("projects a strict roll block into the user message in the final payload", () => {
+      const result = assemblePrompt(baseContext({
+        chat: {
+          recentMessages: [
+            { id: "msg_1", role: "user", content: "I sneak past the guards.", diceRolls: [makeRoll()] },
+            { id: "msg_2", role: "assistant", content: "..." },
+          ],
+        },
+      }));
+      const userMsg = result.finalPayload.messages.find((m) => m.messageId === "msg_1");
+      expect(userMsg).toBeDefined();
+      expect(userMsg!.content).toContain("I sneak past the guards.");
+      expect(userMsg!.content).toContain("[Dice]");
+      expect(userMsg!.content).toContain("Stealth Check");
+      expect(userMsg!.content).toContain("Adjudication: success (hard).");
+      expect(userMsg!.content).toContain("Binding constraint: must remain unseen.");
+    });
+
+    it("omits adjudication for narrative rolls (mechanical facts only)", () => {
+      const narrativeRoll = makeRoll({
+        checkLabel: "Athletics",
+        notation: "d20",
+        faceShape: "d20",
+        resolution: "narrative",
+        attempts: [{ attemptId: "att_1", faces: [14], modifier: 0, subtotal: 14, total: 14 }],
+        final: undefined,
+      });
+      const result = assemblePrompt(baseContext({
+        chat: {
+          recentMessages: [
+            { id: "msg_1", role: "user", content: "I leap the gap.", diceRolls: [narrativeRoll] },
+            { id: "msg_2", role: "assistant", content: "..." },
+          ],
+        },
+      }));
+      const userMsg = result.finalPayload.messages.find((m) => m.messageId === "msg_1");
+      expect(userMsg!.content).toContain("[Dice]");
+      expect(userMsg!.content).toContain("Athletics");
+      expect(userMsg!.content).toContain("[14] = 14");
+      expect(userMsg!.content).not.toContain("Adjudication");
+      expect(userMsg!.content).not.toContain("Binding constraint");
+    });
+
+    it("projects multiple checks on one message in order", () => {
+      const result = assemblePrompt(baseContext({
+        chat: {
+          recentMessages: [
+            {
+              id: "msg_1",
+              role: "user",
+              content: "I attack and hide.",
+              diceRolls: [
+                makeRoll({ checkLabel: "Attack", notation: "d20+3", attempts: [{ attemptId: "att_1", faces: [12], modifier: 3, subtotal: 12, total: 15 }] }),
+                makeRoll({ checkLabel: "Stealth Check" }),
+              ],
+            },
+            { id: "msg_2", role: "assistant", content: "..." },
+          ],
+        },
+      }));
+      const userMsg = result.finalPayload.messages.find((m) => m.messageId === "msg_1");
+      const content = userMsg!.content;
+      const attackIdx = content.indexOf("Attack");
+      const stealthIdx = content.indexOf("Stealth Check");
+      expect(attackIdx).toBeGreaterThan(-1);
+      expect(stealthIdx).toBeGreaterThan(-1);
+      expect(attackIdx).toBeLessThan(stealthIdx);
+    });
+
+    it("appends the Dice block exactly once (not duplicated in the payload)", () => {
+      const result = assemblePrompt(baseContext({
+        chat: {
+          recentMessages: [
+            { id: "msg_1", role: "user", content: "Sneak.", diceRolls: [makeRoll()] },
+            { id: "msg_2", role: "assistant", content: "..." },
+          ],
+        },
+      }));
+      const payloadStr = JSON.stringify(result.finalPayload);
+      const blockCount = (payloadStr.match(/\[Dice\]/g) ?? []).length;
+      expect(blockCount).toBe(1);
+    });
+
+    it("Dice block participates in the history layer text (trace-visible)", () => {
+      const result = assemblePrompt(baseContext({
+        chat: {
+          recentMessages: [
+            { id: "msg_1", role: "user", content: "Sneak.", diceRolls: [makeRoll()] },
+            { id: "msg_2", role: "assistant", content: "..." },
+          ],
+        },
+      }));
+      const hist = result.layers.find((l) => l.id === "recent_history");
+      expect(hist).toBeTruthy();
+      expect(hist!.text).toContain("[Dice]");
+      expect(hist!.text).toContain("Stealth Check");
+    });
+
+    it("Dice text is fully token-counted before compaction (not undercounted)", () => {
+      // Use char-length token counting so we can reason about budgets precisely.
+      setTokenCountFn((text) => text.length);
+
+      const withoutDice = assemblePrompt(baseContext({
+        chat: {
+          recentMessages: [
+            { id: "msg_1", role: "user", content: "I sneak past the guards." },
+            { id: "msg_2", role: "assistant", content: "..." },
+          ],
+        },
+      }));
+      const withDice = assemblePrompt(baseContext({
+        chat: {
+          recentMessages: [
+            { id: "msg_1", role: "user", content: "I sneak past the guards.", diceRolls: [makeRoll()] },
+            { id: "msg_2", role: "assistant", content: "..." },
+          ],
+        },
+      }));
+
+      // The Dice block adds tokens to the history layer — it must be counted.
+      const histWithout = withoutDice.layers.find((l) => l.id === "recent_history");
+      const histWith = withDice.layers.find((l) => l.id === "recent_history");
+      expect(histWith!.tokenCount).toBeGreaterThan(histWithout!.tokenCount);
+
+      // Reset the global token fn so other tests are unaffected.
+      setTokenCountFn(() => 0);
+    });
+
+    it("low-budget compaction accounts for Dice text (keeps recent pair, drops old)", () => {
+      setTokenCountFn((text) => text.length);
+
+      const messages = [
+        { id: "old_1", role: "user" as const, content: "A".repeat(100) },
+        { id: "old_2", role: "assistant" as const, content: "B".repeat(100) },
+        {
+          id: "msg_3",
+          role: "user" as const,
+          content: "I sneak.",
+          diceRolls: [makeRoll()],
+        },
+        { id: "msg_4", role: "assistant" as const, content: "C" },
+      ];
+
+      // Budget tight enough to trigger compaction. The Dice block on msg_3
+      // adds ~100 chars of text; if it were undercounted, the budget calc
+      // would be wrong. The compaction summary must exist and the recent
+      // pair (msg_3 with Dice + msg_4) must survive.
+      const unbounded = assemblePrompt(baseContext({ chat: { recentMessages: messages } }));
+      const result = assemblePrompt(baseContext({
+        chat: { recentMessages: messages },
+        config: { contextBudget: unbounded.totalTokenEstimate - 50 },
+      }));
+
+      expect(result.compactionSummary).toBeDefined();
+      const hist = result.layers.find((l) => l.id === "recent_history");
+      expect(hist!.text).toContain("[Dice]");
+      expect(hist!.text).toContain("Stealth Check");
+      expect(hist!.text).not.toContain("A".repeat(50));
+
+      setTokenCountFn(() => 0);
     });
   });
 

@@ -8,6 +8,7 @@ import type {
 import { estimateTokens, planHistoryCompaction } from "./compaction.js";
 import { createFullMacroEngine } from "./macro-registry.js";
 import { formatSceneHistory } from "./scene-injection.js";
+import { formatDiceMessageBlock } from "./dice-message-format.js";
 import { buildPromptVariableContext, type PromptVariableContext } from "./prompt-variable-context.js";
 import { DEFAULT_PROMPT_ORDER, tag } from "@vibe-tavern/domain";
 import { createResolver, type PositionResolver } from "./resolvers/position-resolver.js";
@@ -339,10 +340,23 @@ function applyMacrosToContext(context: PromptAssemblyContext): PromptAssemblyCon
     },
     chat: {
       ...context.chat,
-      recentMessages: context.chat.recentMessages.map((msg) => ({
-        ...msg,
-        content: applyMacros(msg.content, variableContext),
-      })),
+      // SINGLE DERIVATION SEAM (Wave B5 / DICE-B13): effective message content
+      // is derived ONCE here — macro-resolved prose plus the compact Dice block
+      // (when the message carries bound rolls). Every downstream consumer
+      // (compaction token-counting via formatRecentMessages, the history layer
+      // text, and the final payload mapping in finalizeAssembly) reads this
+      // same effective content, so Dice text is neither undercounted nor
+      // appended twice. Absent diceRolls → no-op (content unchanged).
+      recentMessages: context.chat.recentMessages.map((msg) => {
+        const baseContent = applyMacros(msg.content, variableContext);
+        const diceBlock = msg.diceRolls?.length
+          ? formatDiceMessageBlock(msg.diceRolls)
+          : "";
+        return {
+          ...msg,
+          content: diceBlock ? `${baseContent}\n${diceBlock}` : baseContent,
+        };
+      }),
       scriptInjections: context.chat.scriptInjections?.map((msg) => ({
         ...msg,
         content: applyMacros(msg.content, variableContext),

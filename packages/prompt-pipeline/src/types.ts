@@ -1,4 +1,4 @@
-import type { PromptLayerPosition, PronounForms } from "@vibe-tavern/domain";
+import type { DiceRollSnapshot, PromptLayerPosition, PronounForms } from "@vibe-tavern/domain";
 
 export type { PromptLayerPosition };
 
@@ -54,6 +54,13 @@ export interface RecentMessage {
   content: string;
   /** File attachments on this message. Currently only user messages have these. */
   attachments?: import("@vibe-tavern/domain").Attachment[];
+  /** Bound immutable Dice result snapshots for this message (Wave B5 prompt
+   *  projection). Present on user messages carrying bound rolls; absent
+   *  otherwise. The pipeline formats these into a compact model-only block
+   *  appended once to the message's effective content — it never executes
+   *  Dice scripts or rolls. These are already-bound snapshots: assembly is
+   *  read-only over them. */
+  diceRolls?: DiceRollSnapshot[];
 }
 
 export interface PromptAssemblyContext {
