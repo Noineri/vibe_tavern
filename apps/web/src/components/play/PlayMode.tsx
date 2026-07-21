@@ -1,6 +1,7 @@
 import { InputArea } from "../chat/InputArea.js";
 import { MessageList } from "../chat/MessageList.js";
 import { QueueManager } from "../chat/QueueManager.js";
+import { MessageAiEditorModal } from "../chat/MessageAiEditorModal.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
 
 export function PlayMode() {
@@ -19,6 +20,11 @@ export function PlayMode() {
         <QueueManager />
         <InputArea />
       </div>
+      {/* One message AI editor instance, mounted OUTSIDE the virtualized
+       *  MessageList so an in-flight generation survives MessageBlock
+       *  unmount on scroll/chat-switch and only one editor can exist.
+       *  The modal's open state is driven by useMessageAiEditorStore. */}
+      <MessageAiEditorModal />
     </>
   );
 }
