@@ -320,6 +320,16 @@ export const scripts = sqliteTable('scripts', {
   description: text('description').notNull().default(''),
   code: text('code').notNull().default(''),
   enabled: integer('enabled').notNull().default(1),
+  // Runtime contract of this script: 'prompt' (default, the original prompt-script
+  // VM) or 'dice' (the dedicated Dice-script VM, Wave B2). Every legacy row and
+  // import defaults to 'prompt' so existing prompt scripts are unchanged; the
+  // two runtimes are isolated by kind at the store-resolver boundary.
+  scriptKind: text('script_kind').notNull().default('prompt'),
+  // Server-idempotent template/custom creation key (nullable + unique): a create
+  // carrying a creationIntentId that already exists returns the existing script
+  // instead of duplicating — process-safe against retries/two tabs/restart. NOT
+  // canonical content: it is omitted from the file payload and never updatable.
+  creationIntentId: text('creation_intent_id').unique(),
   scopeType: text('scope_type').notNull().default('character'),
   sortOrder: integer('sort_order').notNull().default(0),
   characterId: text('character_id').references(() => characters.id, { onDelete: 'cascade' }),
@@ -335,6 +345,7 @@ export const scripts = sqliteTable('scripts', {
   personaIdIdx: index('idx_scripts_persona').on(table.personaId),
   chatIdIdx: index('idx_scripts_chat').on(table.chatId),
   scopeTypeIdx: index('idx_scripts_scope').on(table.scopeType),
+  scriptKindIdx: index('idx_scripts_kind').on(table.scriptKind),
 }));
 
 // ─── scriptLinks ──────────────────────────────────────────────────────────────

@@ -12,6 +12,14 @@ export interface CreateScriptData {
   description?: string;
   code?: string;
   enabled?: boolean;
+  /** Runtime contract: 'prompt' (default) or 'dice'. Set at creation; the two
+   *  runtimes are isolated by kind at the resolver boundary. */
+  scriptKind?: string;
+  /** Server-idempotent creation key. When set and an existing script already
+   *  carries it, `create` returns that script instead of duplicating —
+   *  process-safe against retries/two tabs/restart. NOT content: omitted from
+   *  the file payload and never updatable. */
+  creationIntentId?: string | null;
   scopeType?: string;
   sortOrder?: number;
   characterId?: string | null;
@@ -33,6 +41,9 @@ export interface Script {
   description: string;
   code: string;
   enabled: boolean;
+  scriptKind: string;
+  /** Server-idempotent creation key (nullable; unique when set). Read-only. */
+  creationIntentId: string | null;
   scopeType: string;
   sortOrder: number;
   characterId: string | null;
@@ -154,6 +165,19 @@ export class ScriptStore {
   // ─── Write operations ──────────────────────────────────────────────────────
 
   async create(data: CreateScriptData): Promise<Script> {
+    // Server-idempotent creation: a duplicate creationIntentId returns the
+    // existing script rather than creating a second copy. The DB unique index
+    // is the race safety net; this check handles the common sequential case
+    // (retry / two tabs / restart) without surfacing a constraint error.
+    if (data.creationIntentId) {
+      const existing = await this.db
+        .select()
+        .from(scripts)
+        .where(eq(scripts.creationIntentId, data.creationIntentId))
+        .get();
+      if (existing) return this.mapRow(existing);
+    }
+
     const id = this.idGen.next('script');
     const now = this.clock.now();
     const [row] = await this.db
@@ -164,6 +188,8 @@ export class ScriptStore {
         description: data.description ?? '',
         code: data.code ?? '',
         enabled: (data.enabled ?? true) ? 1 : 0,
+        scriptKind: data.scriptKind ?? 'prompt',
+        creationIntentId: data.creationIntentId ?? null,
         scopeType: data.scopeType ?? 'character',
         sortOrder: data.sortOrder ?? 0,
         characterId: data.characterId ?? null,
@@ -254,11 +280,14 @@ export class ScriptStore {
     await this.db.delete(scripts).where(eq(scripts.id, id)).run();
   }
 
-  // ─── Scope-aware listing (pipeline entry point) ────────────────────────────
+  // ─── Scope-aware listing (pipeline entry point) ─────────────────────────────
 
   /**
-   * Returns all enabled scripts visible to a chat session across all scopes,
-   * sorted by sortOrder.
+   * Returns all enabled PROMPT scripts visible to a chat session across all
+   * scopes, sorted by sortOrder. This is the prompt-assembly resolver: it
+   * excludes dice-kind scripts so the dedicated Dice VM (Wave B2) is the only
+   * path that loads dice scripts. Scope resolution and FK ∪ junction union
+   * are unchanged from the pre-kind behavior; only a kind filter is added.
    *
    * Scope resolution: global → character → persona → chat.
    * Scripts run synchronously in this order — script #2 can read state from script #1.
@@ -267,6 +296,37 @@ export class ScriptStore {
     characterId: string,
     personaId: string | null,
     chatId: string,
+  ): Promise<Script[]> {
+    return this.resolveEnabledScriptsForChat(characterId, personaId, chatId, 'prompt');
+  }
+
+  /**
+   * Returns all enabled DICE scripts visible to a chat session across all
+   * scopes, sorted by sortOrder. This is the Dice-VM resolver (Wave B2): it
+   * excludes prompt-kind scripts. Same FK ∪ junction union + dedup/order as
+   * {@link listAllEnabledForChat}; only the kind filter differs. A dice script
+   * never enters prompt assembly, and a prompt script never reaches the Dice VM.
+   */
+  async listAllEnabledDiceScriptsForChat(
+    characterId: string,
+    personaId: string | null,
+    chatId: string,
+  ): Promise<Script[]> {
+    return this.resolveEnabledScriptsForChat(characterId, personaId, chatId, 'dice');
+  }
+
+  /**
+   * Shared scope-aware enabled-script resolution, filtered by `kind`. Unions
+   * FK-scoped sources (global / character-FK / persona-FK / chat-FK) with
+   * junction-linked sources (character ∪ persona), Set-dedups, and sorts by
+   * sortOrder. The kind filter is applied at BOTH the FK query and the junction
+   * innerJoin so the opposite kind can never leak into a resolver.
+   */
+  private async resolveEnabledScriptsForChat(
+    characterId: string,
+    personaId: string | null,
+    chatId: string,
+    kind: 'prompt' | 'dice',
   ): Promise<Script[]> {
     const ids = new Set<string>();
 
@@ -284,7 +344,7 @@ export class ScriptStore {
     const fkRows = await this.db
       .select({ id: scripts.id })
       .from(scripts)
-      .where(and(or(...fkConditions), eq(scripts.enabled, 1)))
+      .where(and(or(...fkConditions), eq(scripts.enabled, 1), eq(scripts.scriptKind, kind)))
       .all();
     for (const r of fkRows) ids.add(r.id);
 
@@ -298,7 +358,7 @@ export class ScriptStore {
     const charLinkRows = await this.db
       .select({ scriptId: scriptLinks.scriptId })
       .from(scriptLinks)
-      .innerJoin(scripts, and(eq(scriptLinks.scriptId, scripts.id), eq(scripts.enabled, 1)))
+      .innerJoin(scripts, and(eq(scriptLinks.scriptId, scripts.id), eq(scripts.enabled, 1), eq(scripts.scriptKind, kind)))
       .where(and(eq(scriptLinks.targetType, 'character'), eq(scriptLinks.targetId, characterId)))
       .all();
     for (const r of charLinkRows) ids.add(r.scriptId);
@@ -307,7 +367,7 @@ export class ScriptStore {
       const personaLinkRows = await this.db
         .select({ scriptId: scriptLinks.scriptId })
         .from(scriptLinks)
-        .innerJoin(scripts, and(eq(scriptLinks.scriptId, scripts.id), eq(scripts.enabled, 1)))
+        .innerJoin(scripts, and(eq(scriptLinks.scriptId, scripts.id), eq(scripts.enabled, 1), eq(scripts.scriptKind, kind)))
         .where(and(eq(scriptLinks.targetType, 'persona'), eq(scriptLinks.targetId, personaId)))
         .all();
       for (const r of personaLinkRows) ids.add(r.scriptId);
@@ -419,6 +479,7 @@ export class ScriptStore {
       description: row.description,
       code: row.code,
       enabled: row.enabled === 1,
+      scriptKind: row.scriptKind,
       scopeType: row.scopeType,
       sortOrder: row.sortOrder,
       characterId: row.characterId,
@@ -437,6 +498,8 @@ export class ScriptStore {
       description: row.description,
       code: row.code,
       enabled: row.enabled === 1,
+      scriptKind: row.scriptKind,
+      creationIntentId: row.creationIntentId,
       scopeType: row.scopeType,
       sortOrder: row.sortOrder,
       characterId: row.characterId,
