@@ -393,7 +393,7 @@ export interface AssetRuntimeApi {
 
 export interface AiAssistantRuntimeApi {
 	streamAiAssistant: (body: AiAssistantStreamRequest) => AsyncIterable<AiAssistantStreamChunk>;
-	countAiAssistantTokens: (body: AiAssistantStreamRequest) => Promise<{ tokens: number; model: string; layerCount: number; messageCount: number }>;
+	countAiAssistantTokens: (body: AiAssistantStreamRequest) => Promise<{ tokens: number; model: string; layerCount: number; messageCount: number; activatedLoreCount: number }>;
 }
 
 // ─── Settings ────────────────────────────────────────────────────────

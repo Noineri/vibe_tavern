@@ -91,7 +91,17 @@ async function createTestEnvironment(): Promise<TestEnvironment> {
     chatId: created.activeChatId,
     runtime,
     stores,
-    cleanup: () => rm(root, { recursive: true, force: true }),
+    cleanup: async () => {
+      // Windows briefly holds SQLite WAL handles after the runtime drops them,
+      // so `rm` can race with EBUSY/EPERM. The temp dir is disposable (the OS
+      // reaps it); a locked-dir error here must not fail the assertions above.
+      try {
+        await rm(root, { recursive: true, force: true });
+      } catch (err) {
+        const code = (err as NodeJS.ErrnoException).code;
+        if (!(typeof code === "string" && ["EBUSY", "EPERM", "ENOTEMPTY"].includes(code))) throw err;
+      }
+    },
   };
 }
 

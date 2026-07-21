@@ -1548,6 +1548,8 @@
   "message_ai_editor_context_label": "Context",
   "message_ai_editor_context_empty": "No context attached",
   "message_ai_editor_context_summary": "Chat summary",
+  "message_ai_editor_context_lore": "Lore entries",
+  "message_ai_editor_context_layers": "Layers",
   "message_ai_editor_sources_label": "Sources",
   "message_ai_editor_sources_empty": "Star messages to use as merge sources",
   "message_ai_editor_unstar_source": "Remove from sources",

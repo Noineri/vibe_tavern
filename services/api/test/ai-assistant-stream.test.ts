@@ -43,7 +43,19 @@ async function createMessageEditorRuntime() {
   await stores.providers.upsertModelSettings(profile.id, "editor-model", { contextBudget: 600, maxTokens: 17 });
   const chat = await stores.chats.getById(created.activeChatId);
   if (!chat) throw new Error("Test chat was not created.");
-  return { runtime, stores, chat, profile, chatPreset, cleanup: () => rm(tempDir, { recursive: true, force: true }) };
+  const cleanup = async () => {
+    // Windows briefly holds the SQLite WAL handles after the runtime drops
+    // them, so `rm` can race with EBUSY/EPERM. The temp dir is disposable (the
+    // OS reaps it); a locked-dir error here must not fail the assertions that
+    // already ran in the test body above.
+    try {
+      await rm(tempDir, { recursive: true, force: true });
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (!(typeof code === "string" && ["EBUSY", "EPERM", "ENOTEMPTY"].includes(code))) throw err;
+    }
+  };
+  return { runtime, stores, chat, profile, chatPreset, cleanup };
 }
 
 describe("AI assistant stream prompt preparation", () => {
@@ -59,7 +71,7 @@ describe("AI assistant stream prompt preparation", () => {
       return [{ id: "msg_1", role: "user", content: "Hello" }, { id: "msg_2", role: "assistant", content: "Hi" }];
     } }));
     expect(calls).toEqual([["chat_1", 7]]);
-    expect(result).toEqual({ tokens: 65, model: "model_1", layerCount: 3, messageCount: 3 });
+    expect(result).toEqual({ tokens: 65, model: "model_1", layerCount: 3, messageCount: 3, activatedLoreCount: 0 });
   });
 
   it("keeps md_import as a direct two-message path with no resolved context", async () => {
@@ -68,7 +80,7 @@ describe("AI assistant stream prompt preparation", () => {
       mode: "md_import", instruction: "Ignored when content exists.", existingContent: "# Imported card", providerProfileId: "profile_1", enabledLayers: ["character_base", "lore"],
     }, deps({ getCharacterById: async () => { resolvedContext = true; return null; } }));
     expect(resolvedContext).toBeFalse();
-    expect(result).toEqual({ tokens: 36, model: "model_1", layerCount: 2, messageCount: 2 });
+    expect(result).toEqual({ tokens: 36, model: "model_1", layerCount: 2, messageCount: 2, activatedLoreCount: 0 });
   });
 
   it("builds canonical pre-target editor candidates without persistence", async () => {
@@ -144,6 +156,72 @@ describe("AI assistant stream prompt preparation", () => {
       expect([...(await fixture.stores.messages.getVariantsByBranch(fixture.chat.activeBranchId)).values()].flat().map((variant) => variant.id)).toEqual(variantIdsBefore);
       expect((await fixture.stores.traces.getTracesByChat(fixture.chat.id)).map((trace) => trace.id)).toEqual(traceIdsBefore);
       expect(before.id).toBeTruthy();
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it("threads recentMessageCount into the message-editor pipeline context as recentMessageLimit", async () => {
+    const fixture = await createMessageEditorRuntime();
+    try {
+      const target = await fixture.stores.messages.addMessage({ chatId: fixture.chat.id, branchId: fixture.chat.activeBranchId, role: "assistant", authorType: "assistant", content: "swipe-marker", variants: ["source-marker"], selectedVariantIndex: 0 });
+      const [source] = await fixture.stores.messages.getVariants(target.id);
+      if (!source) throw new Error("Source variant was not created.");
+
+      const baseDeps = createAiAssistantDeps(fixture.stores, fixture.runtime);
+      const pipelineInputs: Array<{ recentMessageLimit?: number }> = [];
+      const runtimeDeps: StreamDeps = {
+        ...baseDeps,
+        resolveModel: (_profile, model) => createOllamaModel({ baseURL: "http://ai-assistant.test", modelId: model }),
+        buildMessageEditorPipelineContext: async (input) => {
+          pipelineInputs.push({ recentMessageLimit: input.recentMessageLimit });
+          return baseDeps.buildMessageEditorPipelineContext(input);
+        },
+      };
+      const request = {
+        mode: "message_edit" as const, instruction: "revise the selected source", providerProfileId: fixture.profile.id, model: "editor-model",
+        enabledLayers: [], chatId: fixture.chat.id, targetMessageId: target.id, sourceVariantIds: [source.id],
+        recentMessageCount: 5,
+      };
+      await countAiAssistantTokens(request, runtimeDeps);
+      expect(pipelineInputs).toEqual([{ recentMessageLimit: 5 }]);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it("honors maxOutputTokens for message-editor streams (surfaced as num_predict in the provider body)", async () => {
+    const fixture = await createMessageEditorRuntime();
+    try {
+      const target = await fixture.stores.messages.addMessage({ chatId: fixture.chat.id, branchId: fixture.chat.activeBranchId, role: "assistant", authorType: "assistant", content: "swipe-marker", variants: ["source-marker"], selectedVariantIndex: 0 });
+      const [source] = await fixture.stores.messages.getVariants(target.id);
+      if (!source) throw new Error("Source variant was not created.");
+
+      const baseDeps = createAiAssistantDeps(fixture.stores, fixture.runtime);
+      const runtimeDeps: StreamDeps = {
+        ...baseDeps,
+        resolveModel: (_profile, model) => createOllamaModel({ baseURL: "http://ai-assistant.test", modelId: model }),
+      };
+      const bodies: string[] = [];
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = async (input, init) => {
+        bodies.push(await new Request(input, init).text());
+        return new Response(`${JSON.stringify({ message: { role: "assistant", content: "candidate-only" }, done: false })}\n${JSON.stringify({ message: { role: "assistant", content: "" }, done: true, done_reason: "stop" })}\n`, { headers: { "Content-Type": "application/x-ndjson" } });
+      };
+      try {
+        const baseRequest = {
+          mode: "message_edit" as const, instruction: "revise the selected source", providerProfileId: fixture.profile.id, model: "editor-model",
+          enabledLayers: [], chatId: fixture.chat.id, targetMessageId: target.id, sourceVariantIds: [source.id],
+        };
+        const withCap: typeof baseRequest & { maxOutputTokens: number } = { ...baseRequest, maxOutputTokens: 500 };
+        for await (const chunk of streamAiAssistant(withCap, runtimeDeps)) void chunk;
+        for await (const chunk of streamAiAssistant(baseRequest, runtimeDeps)) void chunk;
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+      expect(bodies.length).toBe(2);
+      expect(bodies[0]).toContain("num_predict");   // maxOutputTokens honored when sent
+      expect(bodies[1]).not.toContain("num_predict"); // omitted (undefined) when not sent
     } finally {
       await fixture.cleanup();
     }

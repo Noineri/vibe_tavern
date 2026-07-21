@@ -122,6 +122,7 @@ export function createAiAssistantDeps(stores: StoreContainer, sessionRuntime: Se
 			responseReserve: number;
 			throughMessageId: string;
 			excludeMessageIds: string[];
+			recentMessageLimit?: number;
 		}) => sessionRuntime.chatLifecycle.buildPipelineContext({
 			chatId: brandId<ChatId>(input.chatId),
 			branchId: brandId<ChatBranchId>(input.branchId),
@@ -130,6 +131,7 @@ export function createAiAssistantDeps(stores: StoreContainer, sessionRuntime: Se
 			responseReserve: input.responseReserve,
 			throughMessageId: brandId<MessageId>(input.throughMessageId),
 			excludeMessageIds: input.excludeMessageIds.map((id) => brandId<MessageId>(id)),
+			...(input.recentMessageLimit !== undefined ? { recentMessageLimit: input.recentMessageLimit } : {}),
 		}),
 	};
 }

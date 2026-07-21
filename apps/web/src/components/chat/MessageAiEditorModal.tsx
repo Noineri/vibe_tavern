@@ -46,6 +46,9 @@ import { MobileExpandTextarea } from "../shared/MobileExpandTextarea.js";
 import { MessageReasoning } from "./MessageReasoning.js";
 import { TextDiffPreview, buildWordDiff, type TextDiffWordSummary } from "../shared/TextDiffPreview.js";
 import { AiAssistantConnectionFields } from "../shared/ai-assistant/AiAssistantConnectionFields.js";
+import { NumberInput } from "../shared/NumberInput.js";
+import { TokenCounter } from "../shared/TokenCounter.js";
+import { countAiAssistantTokens, type AiAssistantRequestBody } from "../../app-client.js";
 import { useAiAssistantRunner } from "../shared/ai-assistant/use-ai-assistant-runner.js";
 import { Icons } from "../shared/icons.js";
 import { cn } from "../../lib/cn.js";
@@ -118,6 +121,14 @@ export function MessageAiEditorModal() {
   const [applyError, setApplyError] = useState<string | null>(null);
   const [applying, setApplying] = useState(false);
 
+  // Generation params — mirror the shared AiAssistantModal "full" path. Local
+  // (non-persisted) per session; recentMessageCount default matches chat_impersonate.
+  const [aiTemperature, setAiTemperature] = useState<number | null>(null);
+  const [aiMaxTokens, setAiMaxTokens] = useState<number | null>(null);
+  const [recentMessageCount, setRecentMessageCount] = useState<number>(20);
+  // Token + assembled-context preview, debounced over the live request body.
+  const [tokenPreview, setTokenPreview] = useState<{ tokens: number; layerCount: number; messageCount: number; activatedLoreCount: number } | null>(null);
+
   // Seed activeMode when a new target opens. Per-plan: closing does NOT clear
   // stars (they survive close + Virtuoso unmount); only the successful merge
   // save or explicit user action clears them. So we only re-seed on a fresh
@@ -129,6 +140,7 @@ export function MessageAiEditorModal() {
       setConflict(false);
       setApplyError(null);
       setApplying(false);
+      setTokenPreview(null);
     }
   }, [target?.targetChatId, target?.targetMessageId, target?.requestedMode]);
 
@@ -204,6 +216,39 @@ export function MessageAiEditorModal() {
   // than offered with an impossible-to-satisfy empty source state.
   const canMerge = (targetMessage?.variants.length ?? 0) > 6;
 
+  // ─── Token + assembled-context preview (debounced over the live body) ───
+  const previewSourceVariantIds: MessageVariantId[] = activeMode === "message_edit"
+    ? (editSourceVariantId ? [editSourceVariantId] : [])
+    : (targetMessageId ? (starredByMessage[targetMessageId] ?? []) : []);
+  const previewSourcesKey = previewSourceVariantIds.join("\u0000");
+  useEffect(() => {
+    if (!isOpen || !targetChatId || !targetMessageId || !runner.providerId || previewSourceVariantIds.length === 0) {
+      setTokenPreview(null);
+      return;
+    }
+    const body: AiAssistantRequestBody = {
+      mode: activeMode,
+      instruction,
+      providerProfileId: runner.providerId,
+      model: runner.modelName || undefined,
+      enabledLayers: [],
+      chatId: targetChatId,
+      targetMessageId,
+      sourceVariantIds: previewSourceVariantIds,
+      temperature: aiTemperature ?? undefined,
+      maxOutputTokens: aiMaxTokens ?? undefined,
+      recentMessageCount,
+    };
+    const ac = new AbortController();
+    const timer = setTimeout(() => {
+      countAiAssistantTokens(body, { signal: ac.signal })
+        .then((r) => setTokenPreview({ tokens: r.tokens, layerCount: r.layerCount, messageCount: r.messageCount, activatedLoreCount: r.activatedLoreCount }))
+        .catch((err: unknown) => { if (!(err instanceof Error && err.name === "AbortError")) setTokenPreview(null); });
+    }, 250);
+    return () => { clearTimeout(timer); ac.abort(); };
+    // previewSourcesKey (the joined IDs) stands in for previewSourceVariantIds identity.
+  }, [isOpen, targetChatId, targetMessageId, runner.providerId, runner.modelName, activeMode, instruction, aiTemperature, aiMaxTokens, recentMessageCount, previewSourcesKey]);
+
   // ─── Request construction ──────────────────────────────────────────
 
   const canGenerate =
@@ -239,6 +284,9 @@ export function MessageAiEditorModal() {
       chatId: targetChatId,
       targetMessageId: targetMessageId,
       sourceVariantIds,
+      temperature: aiTemperature ?? undefined,
+      maxOutputTokens: aiMaxTokens ?? undefined,
+      recentMessageCount,
     });
   }, [
     canGenerate, target, targetMessageId, targetChatId, activeMode,
@@ -430,16 +478,26 @@ export function MessageAiEditorModal() {
             </div>
           ) : (
             <>
-              {/* Automatic context summary — informational, not editable */}
+              {/* Status panel — assembled context (informational) + token estimate */}
               <div className="mb-4 rounded-md border border-border bg-bg p-3">
-                <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.06em] text-t3">
-                  {tDynamic("message_ai_editor_context_label")}
+                <div className="mb-1 flex items-center justify-between gap-2">
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.06em] text-t3">
+                    {tDynamic("message_ai_editor_context_label")}
+                  </div>
+                  {tokenPreview && <TokenCounter text="" count={tokenPreview.tokens} />}
                 </div>
                 <div className="font-ui text-[12px] leading-relaxed text-t2">
                   {contextBits.length > 0
                     ? contextBits.join(" · ")
                     : tDynamic("message_ai_editor_context_empty")}
                 </div>
+                {tokenPreview && (
+                  <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 font-ui text-[calc(var(--ui-fs)-4px)] text-t4">
+                    <span>{tDynamic("ai_quickpill_recent_messages")}: {recentMessageCount}</span>
+                    <span>{tDynamic("message_ai_editor_context_lore")}: {tokenPreview.activatedLoreCount}</span>
+                    <span>{tDynamic("message_ai_editor_context_layers")}: {tokenPreview.layerCount}</span>
+                  </div>
+                )}
               </div>
 
               {/* Sources */}
@@ -485,6 +543,27 @@ export function MessageAiEditorModal() {
                   searchModel: t("script_ai_search_model"),
                 }}
               />
+
+              {/* Generation params — temperature / max tokens / recent messages */}
+              <div className="mb-4 space-y-3">
+                <div>
+                  <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("ai_param_temperature")}</label>
+                  <div className="flex items-center gap-2">
+                    <input type="range" min={0} max={2} step={0.1} value={aiTemperature ?? 0.3} onChange={(e) => setAiTemperature(Number(e.target.value))} className="flex-1 accent-accent" />
+                    <span className="w-8 text-right font-ui text-[11px] tabular-nums text-t3">{(aiTemperature ?? 0.3).toFixed(1)}</span>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("ai_param_max_tokens")}</label>
+                    <NumberInput min={256} max={64000} value={aiMaxTokens ?? 4096} onChange={(v) => setAiMaxTokens(v)} className="w-full" />
+                  </div>
+                  <div>
+                    <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("ai_quickpill_recent_messages")}</label>
+                    <NumberInput min={1} max={100} value={recentMessageCount} onChange={setRecentMessageCount} className="w-full" />
+                  </div>
+                </div>
+              </div>
 
               {/* Instruction */}
               <div className="mb-4">

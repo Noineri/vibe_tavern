@@ -48,6 +48,7 @@ vi.mock("../../app-client.js", async (importOriginal) => {
     updateUiSettings: vi.fn(async (input: Record<string, unknown>) => {
       return { ...baseSettings(), ...(input as Partial<UiSettingsRecord>) } as UiSettingsRecord;
     }),
+    countAiAssistantTokens: vi.fn(async () => ({ tokens: 42, model: "model-a", layerCount: 3, messageCount: 4, activatedLoreCount: 2 })),
   };
 });
 
@@ -274,6 +275,23 @@ describe("MessageAiEditorModal — merge-option variant-count gate", () => {
     renderModal();
     expect(screen.getByText("message_ai_editor_mode_edit")).toBeTruthy();
     expect(screen.getByText("message_ai_editor_mode_merge")).toBeTruthy();
+  });
+});
+
+describe("MessageAiEditorModal — generation params + token estimate", () => {
+  it("renders temperature / max-tokens / recent-messages controls and the token+context estimate", async () => {
+    seedMessage(makeVariants(3));
+    seedBootstrap("prov-1", "model-a");
+    useProviderDataStore.setState({ profiles: [makeProfile("prov-1", "Provider One")] });
+    openEditorForEdit(brandId<MessageVariantId>("var-0"));
+    renderModal();
+    // Generation params mirror the shared AiAssistantModal full path.
+    expect(screen.getByText("ai_param_temperature")).toBeTruthy();
+    expect(screen.getByText("ai_param_max_tokens")).toBeTruthy();
+    expect(screen.getByText("ai_quickpill_recent_messages")).toBeTruthy();
+    // Token + assembled-context estimate resolves from the (mocked) count endpoint.
+    expect(await screen.findByText("message_ai_editor_context_lore: 2")).toBeTruthy();
+    expect(screen.getByText("message_ai_editor_context_layers: 3")).toBeTruthy();
   });
 });
 

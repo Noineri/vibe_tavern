@@ -117,6 +117,9 @@ interface MessageEditorPipelineContextInput {
   readonly responseReserve: number;
   readonly throughMessageId: string;
   readonly excludeMessageIds: string[];
+  /** Optional cap on how many recent messages (before the target) are included.
+   *  Mirrors chat_impersonate's recentMessageCount. Undefined = all up to target. */
+  readonly recentMessageLimit?: number;
 }
 
 export interface StreamDeps extends ContextResolverDeps {
@@ -223,6 +226,7 @@ async function prepareMessageEditorRequest(input: MessageEditorPreparationInput)
     responseReserve: effectiveProfile.maxTokens,
     throughMessageId: target.id,
     excludeMessageIds: [target.id],
+    recentMessageLimit: request.recentMessageCount,
   });
   const task = composeMessageEditorPrompt({
     mode: request.mode,
@@ -388,7 +392,7 @@ async function prepareAiAssistantRequest(
 export async function countAiAssistantTokens(
   request: AiAssistantStreamRequest,
   deps: StreamDeps,
-): Promise<{ tokens: number; model: string; layerCount: number; messageCount: number }> {
+): Promise<{ tokens: number; model: string; layerCount: number; messageCount: number; activatedLoreCount: number }> {
   const prepared = await prepareAiAssistantRequest(request, deps);
   if (prepared.assembly) {
     return {
@@ -396,6 +400,9 @@ export async function countAiAssistantTokens(
       model: prepared.modelName,
       layerCount: prepared.assembly.layers.length,
       messageCount: prepared.messages.length,
+      // activatedLoreEntries is the chat-pipeline activation result for message
+      // modes (buildLayers) and the resolved context set for default modes.
+      activatedLoreCount: prepared.assembly.activatedLoreEntries.length,
     };
   }
 
@@ -406,6 +413,7 @@ export async function countAiAssistantTokens(
     model: prepared.modelName,
     layerCount: prepared.messages.length,
     messageCount: prepared.messages.length,
+    activatedLoreCount: 0,
   };
 }
 
@@ -499,6 +507,7 @@ export async function* streamAiAssistant(
       messages,
       allowSystemInMessages: true,
       temperature: request.temperature ?? 0.3,
+      maxOutputTokens: request.maxOutputTokens ?? undefined,
     });
 
     const splitState: ReasoningSplitState = {

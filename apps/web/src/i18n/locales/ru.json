@@ -1559,6 +1559,8 @@
   "message_ai_editor_context_label": "Контекст",
   "message_ai_editor_context_empty": "Контекст не прикреплён",
   "message_ai_editor_context_summary": "Сводка чата",
+  "message_ai_editor_context_lore": "Записи лорбука",
+  "message_ai_editor_context_layers": "Слои",
   "message_ai_editor_sources_label": "Источники",
   "message_ai_editor_sources_empty": "Отметьте сообщения звёздами, чтобы использовать их как источники для объединения",
   "message_ai_editor_unstar_source": "Убрать из источников",

@@ -688,6 +688,8 @@ export default interface Resources {
     "message_ai_editor_context_empty": "No context attached",
     "message_ai_editor_context_label": "Context",
     "message_ai_editor_context_summary": "Chat summary",
+    "message_ai_editor_context_lore": "Lore entries",
+    "message_ai_editor_context_layers": "Layers",
     "message_ai_editor_description": "Edit or merge message variants with AI",
     "message_ai_editor_diff_too_large": "Diff too large to display",
     "message_ai_editor_generate": "Generate",
