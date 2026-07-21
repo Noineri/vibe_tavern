@@ -199,7 +199,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
   const canRegenerate = !isGreeting && isLastAssistant && !isCoauthorMode;
   const canResend = isLast && msg.role === "user" && !pendingUserMessageContent;
   const canSwitchVariant = isLast && !isCoauthorMode;
-  const canAiEdit = !isCoauthorMode && msg.role === "assistant" && !!selectedVariant;
+  const canAiEdit = !isGreeting && !isCoauthorMode && msg.role === "assistant" && !!selectedVariant;
 
   // Server sets message.content = selected variant's content at load time,
   // but client-side switching only changes selectedVariantIndex.

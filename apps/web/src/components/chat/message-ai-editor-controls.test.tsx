@@ -353,7 +353,7 @@ describe("MAE-52 message AI editor controls", () => {
     expect(sparklesBtn!.disabled, "Sparkles must be disabled while isBusy (chat-wide isSending)").toBe(true);
   });
 
-  test("greeting availability: a committed first assistant message shows the AI editor affordance", async () => {
+  test("greeting gate: AI editor is ABSENT on the first assistant message (greeting) — greetings are not swipes", async () => {
     const { MessageBlock } = await import("./MessageBlock.js");
     useSnapshotStore.getState().ingestSnapshot(seed([makeAssistantMessage("g1")], false));
     useChatStore.getState().setActiveChatId(asChatId(CHAT));
@@ -363,9 +363,9 @@ describe("MAE-52 message AI editor controls", () => {
     );
     await act(async () => { await Promise.resolve(); });
 
-    const sparklesBtn = container.querySelector(`button[aria-label="${TOOLTIP_KEY}"]`) as HTMLButtonElement | null;
-    expect(sparklesBtn, "Greeting (first assistant message) must show the AI editor affordance when committed").not.toBeNull();
-    expect(sparklesBtn!.disabled).toBe(false);
+    // Greetings are not swipes: the AI editor (edit + merge) is hidden on the
+    // first assistant message, mirroring the regenerate button's !isGreeting gate.
+    expect(container.querySelector(`button[aria-label="${TOOLTIP_KEY}"]`)).toBeNull();
   });
 
   test("mobile Action Sheet NEVER exposes an AI editor entry", async () => {

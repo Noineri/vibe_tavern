@@ -198,6 +198,12 @@ export function MessageAiEditorModal() {
   const mergeSourceCount = activeMode === "message_merge" ? sourceRows.length : 0;
   const mergeBelowMinimum = activeMode === "message_merge" && mergeSourceCount < 2;
 
+  // Merge sources are starred in the variant jump browser, which only renders
+  // for messages with more than 6 variants (VariantControls `showJump`). Below
+  // that there is no way to star anything, so the merge option is hidden rather
+  // than offered with an impossible-to-satisfy empty source state.
+  const canMerge = (targetMessage?.variants.length ?? 0) > 6;
+
   // ─── Request construction ──────────────────────────────────────────
 
   const canGenerate =
@@ -375,7 +381,7 @@ export function MessageAiEditorModal() {
               {tDynamic("message_ai_editor_title")}
             </span>
           </div>
-          {!staleTarget && (
+          {!staleTarget && canMerge && (
             <SegmentedControl
               value={activeMode}
               onChange={(v) => {

@@ -172,6 +172,16 @@ function seedMessage(variants: AppMessage["variants"], selectedVariantIndex = 0)
   }));
 }
 
+function makeVariants(n: number): AppMessage["variants"] {
+  return Array.from({ length: n }, (_, i) => ({
+    id: brandId<MessageVariantId>(`var-${i}`),
+    messageId: MID,
+    variantIndex: i,
+    content: `variant ${i}`,
+    isSelected: i === 0,
+  })) as AppMessage["variants"];
+}
+
 function seedBootstrap(providerId: string, modelName: string) {
   useBootstrapStore.setState({
     data: {
@@ -243,6 +253,28 @@ beforeEach(() => {
   } as Partial<SnapshotStore> as SnapshotStore);
   useProviderDataStore.setState({ profiles: [], favoritesByProfile: {} });
   useBootstrapStore.setState({ data: null });
+});
+
+describe("MessageAiEditorModal — merge-option variant-count gate", () => {
+  it("hides the whole mode toggle when the message has ≤6 variants (no jump browser → merge sources cannot be starred)", () => {
+    seedMessage(makeVariants(6));
+    seedBootstrap("prov", "model-a");
+    openEditorForEdit(brandId<MessageVariantId>("var-0"));
+    renderModal();
+    // With ≤6 variants there is no variant jump browser, so there is no way to
+    // star merge sources — the edit/merge SegmentedControl is hidden entirely.
+    expect(screen.queryByText("message_ai_editor_mode_edit")).toBeNull();
+    expect(screen.queryByText("message_ai_editor_mode_merge")).toBeNull();
+  });
+
+  it("shows the edit+merge mode toggle when the message has >6 variants", () => {
+    seedMessage(makeVariants(7));
+    seedBootstrap("prov", "model-a");
+    openEditorForEdit(brandId<MessageVariantId>("var-0"));
+    renderModal();
+    expect(screen.getByText("message_ai_editor_mode_edit")).toBeTruthy();
+    expect(screen.getByText("message_ai_editor_mode_merge")).toBeTruthy();
+  });
 });
 
 describe("MessageAiEditorModal — closed state", () => {
