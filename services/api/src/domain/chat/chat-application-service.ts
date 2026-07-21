@@ -239,14 +239,23 @@ export class ChatApplicationService {
   }
 
   async deleteMessage(messageId: string): Promise<void> {
+    // DICE-B12: delete bound Dice rolls BEFORE the message row. The
+    // bound_message_id FK is onDelete:set-null, so deleting the message first
+    // would orphan the rolls (boundMessageId → null) and the roll delete would
+    // find nothing. This is a compensating write, not transaction-reliant (per
+    // the lifecycle contract) — the two deletes are independent operations.
+    await this.diceRollStore.deleteRollsWithMessage(messageId);
     await this.messageStore.deleteMessage(messageId);
   }
 
   async createBranch(chatId: ChatId, input: CreateBranchRequest): Promise<CreateBranchResponse> {
+    // DICE-B12: clone bound Dice rolls onto the new forked messages inside the
+    // fork transaction (atomic + synchronous — rolls back with the fork).
     const branch = await this.chatStore.forkBranch(
       chatId,
       input.forkedFromMessageId ?? "",
       input.label,
+      (tx, msgIdMap) => this.diceRollStore.forkCopyRollsInTx(tx, msgIdMap),
     );
 
     if (input.activateFork !== false) {

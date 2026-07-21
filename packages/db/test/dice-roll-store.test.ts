@@ -659,6 +659,106 @@ describe("DiceRollStore", () => {
     });
   });
 
+  // ─── forkCopyRollsInTx (tx-scoped batch core, DICE-B12) ─────────────────
+
+  describe("forkCopyRollsInTx", () => {
+    test("batch-copies rolls bound to multiple messages in one tx", async () => {
+      await seedMessage(db, "msg_a");
+      await seedMessage(db, "msg_b");
+      await seedMessage(db, "new_a");
+      await seedMessage(db, "new_b");
+      await store.createRoll({
+        chatId: "chat_1", branchId: "branch_1", mode: "normal",
+        ...makeRoll({ requestId: "req_map1", mode: "normal" }),
+      });
+      await store.createRoll({
+        chatId: "chat_1", branchId: "branch_1", mode: "normal",
+        ...makeRoll({ requestId: "req_map2", mode: "normal", checkId: "check_b" }),
+      });
+      // Two rolls materialized → lane now at revision 2; bind both to msg_a.
+      await store.bindActiveAndReset("chat_1", "branch_1", "normal", 2, "msg_a");
+      await store.createRoll({
+        chatId: "chat_1", branchId: "branch_1", mode: "normal",
+        ...makeRoll({ requestId: "req_map3", mode: "normal" }),
+      });
+      // bind reset the lane, then createRoll bumped it again — read the live rev.
+      const pending = await store.listPending("chat_1", "branch_1");
+      await store.bindActiveAndReset("chat_1", "branch_1", "normal", pending.normal.revision, "msg_b");
+
+      const copied = db.transaction((tx) =>
+        store.forkCopyRollsInTx(tx, new Map([["msg_a", "new_a"], ["msg_b", "new_b"]])),
+      );
+      expect(copied).toBe(3);
+
+      const newARolls = await store.getRollsForMessage("new_a");
+      const newBRolls = await store.getRollsForMessage("new_b");
+      expect(newARolls.length).toBe(2);
+      expect(newBRolls.length).toBe(1);
+    });
+
+    test("preserves the full immutable snapshot with fresh ids + request ids", async () => {
+      await seedMessage(db, "msg_snap");
+      await seedMessage(db, "new_snap");
+      await store.createRoll({
+        chatId: "chat_1", branchId: "branch_1", mode: "normal",
+        ...makeRoll({
+          requestId: "req_snap", mode: "normal",
+          actorLabel: "Hero", scriptLabel: "D20", scriptRevision: 7,
+          checkLabel: "Attack", notation: "1d20+5", faceShape: "d20",
+          resolution: "strict",
+          attemptsJson: JSON.stringify([{ attemptId: "a1", faces: [18], modifier: 5, subtotal: 18, total: 23 }]),
+          finalJson: JSON.stringify({ total: 23, outcome: "hit" }),
+        }),
+      });
+      await store.bindActiveAndReset("chat_1", "branch_1", "normal", 1, "msg_snap");
+      const src = (await store.getRollsForMessage("msg_snap"))[0]!;
+
+      db.transaction((tx) => store.forkCopyRollsInTx(tx, new Map([["msg_snap", "new_snap"]])), );
+      const dst = (await store.getRollsForMessage("new_snap"))[0]!;
+
+      // New independent ids + new idempotency key (never collides with source).
+      expect(dst.id).not.toBe(src.id);
+      expect(dst.requestId).not.toBe(src.requestId);
+      expect(dst.boundMessageId).toBe("new_snap");
+      // Full snapshot preserved verbatim.
+      expect(dst.actorLabel).toBe("Hero");
+      expect(dst.scriptLabel).toBe("D20");
+      expect(dst.scriptRevision).toBe(7);
+      expect(dst.checkLabel).toBe("Attack");
+      expect(dst.notation).toBe("1d20+5");
+      expect(dst.faceShape).toBe("d20");
+      expect(dst.resolution).toBe("strict");
+      expect(dst.attemptsJson).toBe(src.attemptsJson);
+      expect(dst.finalJson).toBe(src.finalJson);
+    });
+
+    test("is a no-op on an empty msgIdMap", () => {
+      const copied = db.transaction((tx) => store.forkCopyRollsInTx(tx, new Map()));
+      expect(copied).toBe(0);
+    });
+
+    test("rolls back with the caller's transaction on throw", async () => {
+      await seedMessage(db, "msg_rb");
+      await seedMessage(db, "new_rb");
+      await store.createRoll({
+        chatId: "chat_1", branchId: "branch_1", mode: "normal",
+        ...makeRoll({ requestId: "req_rb", mode: "normal" }),
+      });
+      await store.bindActiveAndReset("chat_1", "branch_1", "normal", 1, "msg_rb");
+
+      // A synchronous tx that copies the rolls then throws — the copy must roll
+      // back (this is the synchronous-callback invariant the fork path relies on).
+      expect(() =>
+        db.transaction((tx) => {
+          store.forkCopyRollsInTx(tx, new Map([["msg_rb", "new_rb"]]));
+          throw new Error("fork boom");
+        }),
+      ).toThrow("fork boom");
+      const afterThrow = await store.getRollsForMessage("new_rb");
+      expect(afterThrow.length).toBe(0);
+    });
+  });
+
   // ─── No-cascade (script delete keeps rolls) ─────────────────────────────
 
   describe("no-cascade: script delete keeps rolls", () => {

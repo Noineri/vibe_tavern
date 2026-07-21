@@ -1,6 +1,6 @@
 import { eq, and, desc, asc, lte, count, inArray } from 'drizzle-orm';
 import { chats, chatBranches, characters, messages, messageVariants, promptTraces } from '../db-schema.js';
-import type { AppDb } from '../db-connection.js';
+import type { AppDb, DbTransaction } from '../db-connection.js';
 import { resolveStoreRuntime, type StoreClock, type StoreIdGenerator } from '../persistence.js';
 import { normalizeSceneTrackerConfig, applySceneTrackerConfigPatch, rekeySceneRecordJson, type ChatMode, type SceneTrackerConfigPatch, type CoauthorContextLink } from '@vibe-tavern/domain';
 
@@ -410,7 +410,18 @@ export class ChatStore {
     return this.mapRow(row);
   }
 
-  async forkBranch(chatId: string, fromMessageId: string, label?: string): Promise<ChatBranch> {
+  // DICE-B12: an optional closure that copies bound Dice rolls onto the new
+  // message ids during a branch fork, called INSIDE the fork transaction so
+  // the dice copy is atomic with the message/variant/trace copy and rolls back
+  // together with it. The closure is supplied by ChatApplicationService (which
+  // owns the DiceRollStore); ChatStore itself stays decoupled from the Dice
+  // schema. See `DiceRollStore.forkCopyRollsInTx`.
+  async forkBranch(
+    chatId: string,
+    fromMessageId: string,
+    label?: string,
+    diceForkInTx?: (tx: DbTransaction, msgIdMap: Map<string, string>) => void,
+  ): Promise<ChatBranch> {
     const sourceMsg = await this.db.select().from(messages)
       .where(eq(messages.id, fromMessageId)).get();
     if (!sourceMsg) throw new Error(`Message ${fromMessageId} not found`);
@@ -421,21 +432,28 @@ export class ChatStore {
     const branchId = this.idGen.next('brnch');
     const now = this.clock.now();
 
-    // forkBranch copies messages AND their messageVariants into the new branch
-    await this.db.transaction(async (tx) => {
-      await tx.insert(chatBranches).values({
+    // forkBranch copies messages AND their messageVariants into the new branch.
+    // The callback is SYNCHRONOUS (no `async`/`await` inside): drizzle-orm
+    // 0.38.4 + bun:sqlite commits at the end of the callback's synchronous
+    // prefix, so an `async` callback's post-await throws are never rolled back
+    // (see the "Synchronous transaction callbacks" constraint + ASYNC_
+    // TRANSACTION_AUDIT fix-step 2). Keeping it synchronous closes that audit
+    // item AND makes the dice fork-copy atomic with this copy.
+    this.db.transaction((tx) => {
+      tx.insert(chatBranches).values({
         id: branchId, chatId, parentBranchId: sourceMsg.branchId,
         forkedFromMessageId: fromMessageId, label: forkLabel, createdAt: now,
       }).run();
 
-      const msgsToCopy = await tx.select().from(messages)
+      const msgsToCopy = tx.select().from(messages)
         .where(and(eq(messages.branchId, sourceMsg.branchId), lte(messages.position, sourceMsg.position)))
         .orderBy(asc(messages.position)).all();
 
       // Batch: collect all new messages and variants, then insert in two bulk queries
       const newMessages: typeof messages.$inferInsert[] = [];
       const newVariants: typeof messageVariants.$inferInsert[] = [];
-      // oldMsgId → newMsgId map, reused to remap prompt_traces.messageId below.
+      // oldMsgId → newMsgId map, reused to remap prompt_traces.messageId below
+      // and to clone bound Dice rolls onto the new message ids (DICE-B12).
       const msgIdMap = new Map<string, string>();
 
       for (const msg of msgsToCopy) {
@@ -446,7 +464,7 @@ export class ChatStore {
           position: msg.position, content: msg.content, state: msg.state,
           createdAt: now, updatedAt: now,
         });
-        const variants = await tx.select().from(messageVariants)
+        const variants = tx.select().from(messageVariants)
           .where(eq(messageVariants.messageId, msg.id)).all();
         for (const v of variants) {
           // Preserve each variant's Scene record into the fork. The forked
@@ -473,10 +491,10 @@ export class ChatStore {
       }
 
       if (newMessages.length > 0) {
-        await tx.insert(messages).values(newMessages).run();
+        tx.insert(messages).values(newMessages).run();
       }
       if (newVariants.length > 0) {
-        await tx.insert(messageVariants).values(newVariants).run();
+        tx.insert(messageVariants).values(newVariants).run();
       }
 
       // Copy prompt_traces for the forked message range into the new branch.
@@ -488,7 +506,7 @@ export class ChatStore {
       // are assigned to keep rows independent. Fixes the defect where a forked
       // branch started with zero trace history.
       if (msgIdMap.size > 0) {
-        const tracesToCopy = await tx.select().from(promptTraces)
+        const tracesToCopy = tx.select().from(promptTraces)
           .where(and(
             eq(promptTraces.branchId, sourceMsg.branchId),
             inArray(promptTraces.messageId, [...msgIdMap.keys()]),
@@ -525,8 +543,16 @@ export class ChatStore {
             });
           }
           if (newTraces.length > 0) {
-            await tx.insert(promptTraces).values(newTraces).run();
+            tx.insert(promptTraces).values(newTraces).run();
           }
+        }
+
+        // DICE-B12: clone bound Dice rolls onto the corresponding new message
+        // ids, inside this same synchronous transaction so a failure rolls the
+        // dice copy back too. Only bound rolls (user messages) are copied;
+        // pending rolls stay on their owning branch and never move on a fork.
+        if (diceForkInTx) {
+          diceForkInTx(tx, msgIdMap);
         }
       }
     });

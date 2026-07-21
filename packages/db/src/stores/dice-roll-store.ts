@@ -618,48 +618,67 @@ export class DiceRollStore {
 
   /**
    * Copy all rolls from one message to another (branch fork). The copied
-   * rolls get new ids but preserve all snapshot data.
+   * rolls get new ids but preserve all snapshot data. Wraps the synchronous
+   * {@link forkCopyRollsInTx} core in its own transaction; the fork path
+   * calls the core directly inside `ChatStore.forkBranch`'s transaction so
+   * the dice copy is atomic with the message/variant/trace copy.
    */
   async forkCopyRolls(srcMessageId: string, dstMessageId: string): Promise<void> {
-    const sourceRolls = await this.db
+    this.db.transaction((tx) => {
+      this.forkCopyRollsInTx(tx, new Map([[srcMessageId, dstMessageId]]));
+    });
+  }
+
+  /**
+   * Fork-copy core: copy every roll bound to a source message id onto its
+   * corresponding new message id, within the caller's transaction. Used by
+   * `ChatStore.forkBranch` so the dice copy rolls back together with the
+   * message/variant/trace copy (the fork tx is synchronous — see the
+   * "Synchronous transaction callbacks" constraint). One batched read + one
+   * batched insert; rolls with no source match are skipped. Copied rolls get
+   * fresh ids and fresh request ids (new idempotency keys) while preserving
+   * the full immutable snapshot (labels, revision, notation, attempts, final).
+   * Returns the number of rolls copied.
+   */
+  forkCopyRollsInTx(tx: DbTransaction, msgIdMap: Map<string, string>): number {
+    if (msgIdMap.size === 0) return 0;
+
+    const sourceRolls = tx
       .select()
       .from(diceRolls)
-      .where(eq(diceRolls.boundMessageId, srcMessageId))
+      .where(inArray(diceRolls.boundMessageId, [...msgIdMap.keys()]))
       .all();
 
-    if (sourceRolls.length === 0) return;
+    if (sourceRolls.length === 0) return 0;
 
     const now = this.clock.now();
-    for (const src of sourceRolls) {
-      await this.db
-        .insert(diceRolls)
-        .values({
-          id: this.idGen.next('dr'),
-          requestId: this.idGen.next('req'), // new idempotency key for the fork
-          laneId: src.laneId,
-          boundMessageId: dstMessageId,
-          actorType: src.actorType,
-          actorId: src.actorId,
-          actorLabel: src.actorLabel,
-          scriptId: src.scriptId,
-          scriptLabel: src.scriptLabel,
-          scriptRevision: src.scriptRevision,
-          checkId: src.checkId,
-          checkLabel: src.checkLabel,
-          notation: src.notation,
-          faceShape: src.faceShape,
-          resolution: src.resolution,
-          mode: src.mode,
-          included: src.included,
-          finalAttemptId: src.finalAttemptId,
-          attemptsJson: src.attemptsJson,
-          finalJson: src.finalJson,
-          retryReason: src.retryReason,
-          policy: src.policy,
-          createdAt: now,
-        })
-        .run();
-    }
+    const copies: (typeof diceRolls.$inferInsert)[] = sourceRolls.map((src) => ({
+      id: this.idGen.next('dr'),
+      requestId: this.idGen.next('req'), // new idempotency key for the fork
+      laneId: src.laneId,
+      boundMessageId: msgIdMap.get(src.boundMessageId!)!,
+      actorType: src.actorType,
+      actorId: src.actorId,
+      actorLabel: src.actorLabel,
+      scriptId: src.scriptId,
+      scriptLabel: src.scriptLabel,
+      scriptRevision: src.scriptRevision,
+      checkId: src.checkId,
+      checkLabel: src.checkLabel,
+      notation: src.notation,
+      faceShape: src.faceShape,
+      resolution: src.resolution,
+      mode: src.mode,
+      included: src.included,
+      finalAttemptId: src.finalAttemptId,
+      attemptsJson: src.attemptsJson,
+      finalJson: src.finalJson,
+      retryReason: src.retryReason,
+      policy: src.policy,
+      createdAt: now,
+    }));
+    tx.insert(diceRolls).values(copies).run();
+    return copies.length;
   }
 
   // ─── Batch historical reads ──────────────────────────────────────────────
