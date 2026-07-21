@@ -36,12 +36,12 @@ import { AttachmentGrid } from "./AttachmentGrid.js";
 import { MobileVariantCarousel } from "./variants/mobile-variant-carousel.js";
 import { VariantControls } from "./variants/variant-controls.js";
 import { GenerationDots } from "./variants/generation-dots.js";
-import type { SwipeDirection, VariantProvenance } from "./variants/types.js";
+import type { SwipeDirection, VariantPickerItem } from "./variants/types.js";
 import { PendingUserMessage } from "./pending/pending-user-message.js";
 import { PendingAssistantMessage } from "./pending/pending-assistant-message.js";
 
-/** Stable empty array for the variantProvenance fallback (variantCount <= 6). */
-const EMPTY_PROVENANCE: VariantProvenance[] = [];
+/** Stable empty array for the pickerItems fallback (variantCount <= 6). */
+const EMPTY_PICKER_ITEMS: VariantPickerItem[] = [];
 
 type VariantControlsOverlayState = {
   rect: DOMRectReadOnly;
@@ -149,12 +149,16 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
     if (!pid || !promptPresets) return null;
     return promptPresets.find((p) => p.id === pid)?.name ?? null;
   }, [selectedVariant?.presetId, promptPresets]);
-  // Q5: per-variant provenance for the jump dropdown (>6 variants). Resolves
-  // modelLabel + presetName for EVERY variant once; the dropdown rows read from
-  // this. Skipped when variantCount <= 6 (the simple counter stays).
-  const variantProvenance = useMemo(() => {
-    if (variantCount <= 6) return EMPTY_PROVENANCE;
+  // Q5: per-variant picker items for the jump browser (>6 variants). Resolves
+  // variantId + displayIndex + modelLabel + presetName for EVERY variant once;
+  // the dropdown rows read from this. Skipped when variantCount <= 6 (the
+  // simple counter stays). variantId is the immutable message_variants.id —
+  // stars key on it so they survive variant deletion / index compaction.
+  const pickerItems = useMemo(() => {
+    if (variantCount <= 6) return EMPTY_PICKER_ITEMS;
     return variants.map((v) => ({
+      variantId: v.id,
+      displayIndex: v.variantIndex + 1,
       modelLabel: v.modelId ? resolveModelLabel(v.modelId) : "",
       presetName: v.presetId && promptPresets ? promptPresets.find((p) => p.id === v.presetId)?.name ?? null : null,
     }));
@@ -281,9 +285,10 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
       controlsRef={variantControlsRef}
       hidden={!!variantControlsOverlay}
       isBusy={isBusy}
+      messageId={msg.id}
       selectedVariantIndex={selectedVariantIndex}
       variantCount={variantCount}
-      provenance={variantProvenance}
+      items={pickerItems}
       onSelectVariant={handleSelectVariant}
     />
   );
@@ -293,9 +298,10 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
     <VariantControls
       mobile
       isBusy={isBusy}
+      messageId={msg.id}
       selectedVariantIndex={selectedVariantIndex}
       variantCount={variantCount}
-      provenance={variantProvenance}
+      items={pickerItems}
       onSelectVariant={handleSelectVariant}
     />
   );
