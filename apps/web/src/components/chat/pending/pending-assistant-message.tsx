@@ -57,6 +57,7 @@ export function PendingAssistantMessage() {
       canBranch={false}
       canRegenerate={false}
       canResend={false}
+      canAiEdit={false}
       selectedVariantIndex={0}
       variantCount={1}
       canSwitchVariant={false}
@@ -79,6 +80,7 @@ export function PendingAssistantMessage() {
       actions={{
         onCopy: () => {},
         onEdit: () => {},
+        onAiEdit: () => {},
         onDelete: () => {},
         onBranch: () => {},
         onRegenerate: () => {},

@@ -187,6 +187,7 @@ export const CoauthorTurnShell = memo(function CoauthorTurnShell({
       }
     },
     onDelete: () => setDeleteConfirmOpen(true),
+    onAiEdit: () => {},
     onBranch: () => {},
     onRegenerate: () => {},
     onResend: () => void chat.handleResend(),
@@ -217,6 +218,7 @@ export const CoauthorTurnShell = memo(function CoauthorTurnShell({
       canBranch={false}
       canRegenerate={false}
       canResend={false}
+      canAiEdit={false}
       selectedVariantIndex={0}
       variantCount={1}
       canSwitchVariant={false}

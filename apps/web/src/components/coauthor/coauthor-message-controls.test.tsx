@@ -138,4 +138,19 @@ describe("CS-32 Message Controls in Co-author mode", () => {
     expect(container.textContent).toContain("resend");
     expect(container.textContent).not.toContain("branch");
   });
+
+  test("Co-author mode: AI editor (Sparkles) affordance is ABSENT on co-author assistant turns", async () => {
+    useSnapshotStore.getState().ingestSnapshot(seed([makeAssistantMessage("m1")], true));
+    useChatStore.getState().setActiveChatId(asChatId(CHAT));
+
+    const { container } = render(
+      <CoauthorTurnShell turnId="m1" index={0} isLastTurn={true} />
+    );
+    await act(async () => { await Promise.resolve(); });
+
+    expect(container.textContent).not.toContain("branch");
+    expect(container.textContent).not.toContain("regen");
+    expect(container.querySelectorAll('button[aria-label="message_ai_editor_tooltip"]').length).toBe(0);
+    expect(container.querySelectorAll('button[aria-label="message_ai_editor_tooltip"][disabled]').length).toBe(0);
+  });
 });

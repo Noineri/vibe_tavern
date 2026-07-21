@@ -51,6 +51,7 @@ export function PendingUserMessage() {
       canBranch={false}
       canRegenerate={false}
       canResend={false}
+      canAiEdit={false}
       selectedVariantIndex={0}
       variantCount={1}
       canSwitchVariant={false}
@@ -73,6 +74,7 @@ export function PendingUserMessage() {
       actions={{
         onCopy: () => {},
         onEdit: () => {},
+        onAiEdit: () => {},
         onDelete: () => {},
         onBranch: () => {},
         onRegenerate: () => {},

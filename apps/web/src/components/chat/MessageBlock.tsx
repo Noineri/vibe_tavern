@@ -13,6 +13,7 @@ import { useDisplayMessage, useMacroContext, useMessageAuthor, useIsStreamingTar
 import { useChatStore, useIsSending } from "../../stores/index.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
 import { useBootstrapStore } from "../../stores/api-actions/bootstrap-actions.js";
+import { useMessageAiEditorStore } from "../../stores/message-ai-editor-store.js";
 import type { MessageBlockProps } from "../play/play-mode-types.js";
 import { Icons } from "../shared/icons.js";
 import { AutoTextarea } from "../shared/auto-textarea.js";
@@ -194,6 +195,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
   const canRegenerate = !isGreeting && isLastAssistant && !isCoauthorMode;
   const canResend = isLast && msg.role === "user" && !pendingUserMessageContent;
   const canSwitchVariant = isLast && !isCoauthorMode;
+  const canAiEdit = !isCoauthorMode && msg.role === "assistant" && !!selectedVariant;
 
   // Server sets message.content = selected variant's content at load time,
   // but client-side switching only changes selectedVariantIndex.
@@ -424,6 +426,18 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
     chat.handleStartEdit(msg);
   };
 
+  const handleAiEditClick = () => {
+    if (isBusy) return;
+    const variantId = selectedVariant?.id;
+    if (!variantId) return;
+    useMessageAiEditorStore.getState().openEditor({
+      requestedMode: "message_edit",
+      targetChatId: brandId<ChatId>(authorInfo.activeChatId),
+      targetMessageId: msg.id,
+      selectedVariantId: variantId,
+    });
+  };
+
   // ── Message metadata context (variant-scoped provenance) ──
   const metaCtx: MessageMetaContext = {
     chatId: authorInfo.activeChatId,
@@ -466,6 +480,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
       canBranch={canBranch}
       canRegenerate={canRegenerate}
       canResend={canResend}
+      canAiEdit={canAiEdit}
       selectedVariantIndex={selectedVariantIndex}
       variantCount={isCoauthorMode ? 1 : variantCount}
       canSwitchVariant={canSwitchVariant}
@@ -486,6 +501,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
           }
         },
         onEdit: () => void handleEditClick(),
+        onAiEdit: () => handleAiEditClick(),
         onDelete: () => setDeleteConfirmOpen(true),
         onBranch: () => void chat.handleFork(msg.id),
         onRegenerate: () => void chat.handleRegenerateMessage(msg.id),
