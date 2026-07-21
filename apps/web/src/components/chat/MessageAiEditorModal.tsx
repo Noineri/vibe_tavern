@@ -48,8 +48,9 @@ import { TextDiffPreview, buildWordDiff, type TextDiffWordSummary } from "../sha
 import { AiAssistantConnectionFields } from "../shared/ai-assistant/AiAssistantConnectionFields.js";
 import { NumberInput } from "../shared/NumberInput.js";
 import { TokenCounter } from "../shared/TokenCounter.js";
-import { countAiAssistantTokens, type AiAssistantRequestBody } from "../../app-client.js";
+import { type AiAssistantRequestBody } from "../../app-client.js";
 import { useAiAssistantRunner } from "../shared/ai-assistant/use-ai-assistant-runner.js";
+import { useDebouncedTokenCount } from "../shared/ai-assistant/use-debounced-token-count.js";
 import { Icons } from "../shared/icons.js";
 import { cn } from "../../lib/cn.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
@@ -126,8 +127,6 @@ export function MessageAiEditorModal() {
   const [aiTemperature, setAiTemperature] = useState<number | null>(null);
   const [aiMaxTokens, setAiMaxTokens] = useState<number | null>(null);
   const [recentMessageCount, setRecentMessageCount] = useState<number>(20);
-  // Token + assembled-context preview, debounced over the live request body.
-  const [tokenPreview, setTokenPreview] = useState<{ tokens: number; layerCount: number; messageCount: number; activatedLoreCount: number } | null>(null);
 
   // Seed activeMode when a new target opens. Per-plan: closing does NOT clear
   // stars (they survive close + Virtuoso unmount); only the successful merge
@@ -140,7 +139,6 @@ export function MessageAiEditorModal() {
       setConflict(false);
       setApplyError(null);
       setApplying(false);
-      setTokenPreview(null);
     }
   }, [target?.targetChatId, target?.targetMessageId, target?.requestedMode]);
 
@@ -220,34 +218,23 @@ export function MessageAiEditorModal() {
   const previewSourceVariantIds: MessageVariantId[] = activeMode === "message_edit"
     ? (editSourceVariantId ? [editSourceVariantId] : [])
     : (targetMessageId ? (starredByMessage[targetMessageId] ?? []) : []);
-  const previewSourcesKey = previewSourceVariantIds.join("\u0000");
-  useEffect(() => {
-    if (!isOpen || !targetChatId || !targetMessageId || !runner.providerId || previewSourceVariantIds.length === 0) {
-      setTokenPreview(null);
-      return;
-    }
-    const body: AiAssistantRequestBody = {
-      mode: activeMode,
-      instruction,
-      providerProfileId: runner.providerId,
-      model: runner.modelName || undefined,
-      enabledLayers: [],
-      chatId: targetChatId,
-      targetMessageId,
-      sourceVariantIds: previewSourceVariantIds,
-      temperature: aiTemperature ?? undefined,
-      maxOutputTokens: aiMaxTokens ?? undefined,
-      recentMessageCount,
-    };
-    const ac = new AbortController();
-    const timer = setTimeout(() => {
-      countAiAssistantTokens(body, { signal: ac.signal })
-        .then((r) => setTokenPreview({ tokens: r.tokens, layerCount: r.layerCount, messageCount: r.messageCount, activatedLoreCount: r.activatedLoreCount }))
-        .catch((err: unknown) => { if (!(err instanceof Error && err.name === "AbortError")) setTokenPreview(null); });
-    }, 250);
-    return () => { clearTimeout(timer); ac.abort(); };
-    // previewSourcesKey (the joined IDs) stands in for previewSourceVariantIds identity.
-  }, [isOpen, targetChatId, targetMessageId, runner.providerId, runner.modelName, activeMode, instruction, aiTemperature, aiMaxTokens, recentMessageCount, previewSourcesKey]);
+  const previewBody: AiAssistantRequestBody | null =
+    isOpen && targetChatId && targetMessageId && runner.providerId && previewSourceVariantIds.length > 0
+      ? {
+          mode: activeMode,
+          instruction,
+          providerProfileId: runner.providerId,
+          model: runner.modelName || undefined,
+          enabledLayers: [],
+          chatId: targetChatId,
+          targetMessageId,
+          sourceVariantIds: previewSourceVariantIds,
+          temperature: aiTemperature ?? undefined,
+          maxOutputTokens: aiMaxTokens ?? undefined,
+          recentMessageCount,
+        }
+      : null;
+  const tokenPreview = useDebouncedTokenCount(previewBody);
 
   // ─── Request construction ──────────────────────────────────────────
 

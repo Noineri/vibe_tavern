@@ -22,9 +22,9 @@ import { BottomSheet } from "./BottomSheet.js";
 import type { AiQuickSettings } from "./AiQuickPill.js";
 import { AiAssistantConnectionFields } from "./ai-assistant/AiAssistantConnectionFields.js";
 import { useAiAssistantRunner } from "./ai-assistant/use-ai-assistant-runner.js";
+import { useDebouncedTokenCount } from "./ai-assistant/use-debounced-token-count.js";
 import {
   listAllLorebooks,
-  countAiAssistantTokens,
   type AiAssistantRequestBody,
   type LorebookRecord,
 } from "../../app-client.js";
@@ -163,7 +163,6 @@ export function AiAssistantModal({
       : undefined,
   });
 
-  const [promptTokenCount, setPromptTokenCount] = useState<number | null>(null);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -174,7 +173,6 @@ export function AiAssistantModal({
       setRecentMessageCount(settings.recentMessageCount ?? 20);
     } else if (mode === "full") {
       resetStreamState();
-      setPromptTokenCount(null);
       setPrompt("");
       setMdContent("");
       setParsedFields({});
@@ -285,29 +283,9 @@ export function AiAssistantModal({
     };
   }, [apiMode, existingContent, includeCharacter, includePersona, modelName, prompt, providerId, scopeContext?.characterId, scopeContext?.personaId, selectedLorebookIds.join("\u0000"), promptFormat]);
 
-  // --- Token Count Calculation ---
-  useEffect(() => {
-    if (!isOpen || mode !== "full") return;
-    const request = buildAiRequest();
-    if (!request) {
-      setPromptTokenCount(null);
-      return;
-    }
-
-    const ac = new AbortController();
-    const timer = setTimeout(() => {
-      countAiAssistantTokens(request, { signal: ac.signal })
-        .then((result) => setPromptTokenCount(result.tokens))
-        .catch((err: unknown) => {
-          if (!(err instanceof Error && err.name === "AbortError")) setPromptTokenCount(null);
-        });
-    }, 250);
-
-    return () => {
-      clearTimeout(timer);
-      ac.abort();
-    };
-  }, [isOpen, mode, prompt, providerId, modelName, includeCharacter, includePersona, lorebookIds.join("\u0000"), buildAiRequest]);
+  // --- Token Count Calculation (debounced over the live request body) ---
+  const tokenCount = useDebouncedTokenCount(isOpen && mode === "full" ? buildAiRequest() : null);
+  const promptTokenCount = tokenCount?.tokens ?? null;
 
   // --- Generation ---
   const handleGenerate = async () => {
