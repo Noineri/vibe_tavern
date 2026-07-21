@@ -22,6 +22,7 @@ import type {
 } from "@vibe-tavern/domain";
 import type { StoreContainer } from "@vibe-tavern/db";
 import { assemblePrompt, getSummaryStrategy, setModelHint, type PromptAssemblyContext } from "@vibe-tavern/prompt-pipeline";
+import { storeRollToSnapshot } from "../dice/dice-service.js";
 import { isRecordSchemaCompatible } from "../insights/scene-cache.js";
 import { logSendDebug } from "../../shared/send-debug-log.js";
 import { type FileStore, STORAGE_FOLDERS } from "@vibe-tavern/db";
@@ -438,14 +439,29 @@ export class PromptAssemblyService {
       ? [...filteredMessages, lastUserMsg]
       : filteredMessages;
     const messageLimit = input.recentMessageLimit ?? (chat.messageHistoryLimit || Infinity);
-    const recentMessages = ensureLastUser
-      .slice(-(messageLimit === Infinity ? ensureLastUser.length : messageLimit))
-      .map((message) => ({
+    const windowedMessages = ensureLastUser
+      .slice(-(messageLimit === Infinity ? ensureLastUser.length : messageLimit));
+
+    // Batch-load bound Dice rolls for the windowed messages (Wave B5 / DICE-B14).
+    // One batched read (no N+1) over already-bound immutable snapshots —
+    // no Dice-script execution or rerolling on the assembly / preview / summary /
+    // insight read paths. All consumers (generate, contextPreview, summary,
+    // objective/scene one-shots) go through buildPipelineContext, so they all
+    // read identical stored values.
+    const diceRollsByMessage = await this.stores.diceRolls.getRollsForMessages(
+      windowedMessages.map((message) => message.id),
+    );
+
+    const recentMessages = windowedMessages.map((message) => {
+      const rolls = diceRollsByMessage.get(message.id);
+      return {
         id: message.id as MessageId,
         role: message.role as 'system' | 'user' | 'assistant' | 'tool',
         content: message.content,
         ...(message.attachmentsJson ? { attachments: parseStoredAttachments(message.attachmentsJson) ?? [] } : {}),
-      }));
+        ...(rolls?.length ? { diceRolls: rolls.map(storeRollToSnapshot) } : {}),
+      };
+    });
 
     const recentText = recentMessages.map((message) => message.content).join("\n");
     const activeLoreEntries = await this.resolver.listActiveLoreEntries({

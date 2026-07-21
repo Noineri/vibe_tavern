@@ -294,8 +294,10 @@ export class DiceService {
 /**
  * Convert a store DiceRoll (plain strings) to the domain DiceRollSnapshot
  * (branded types). The store is the DB boundary — brands are applied here.
+ * Exported so the prompt-assembly read path (Wave B5 / DICE-B14) can reuse the
+ * same mapping without duplicating the JSON-parse + brand logic.
  */
-function storeRollToSnapshot(roll: DiceRoll): DiceRollSnapshot {
+export function storeRollToSnapshot(roll: DiceRoll): DiceRollSnapshot {
   return {
     rollId: brandId<DiceRollId>(roll.id),
     requestId: roll.requestId,
