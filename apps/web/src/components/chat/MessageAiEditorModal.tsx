@@ -46,7 +46,7 @@ import { MobileExpandTextarea } from "../shared/MobileExpandTextarea.js";
 import { MessageReasoning } from "./MessageReasoning.js";
 import { TextDiffPreview, buildWordDiff, type TextDiffWordSummary } from "../shared/TextDiffPreview.js";
 import { AiAssistantConnectionFields } from "../shared/ai-assistant/AiAssistantConnectionFields.js";
-import { NumberInput } from "../shared/NumberInput.js";
+import { AiGenParamsRow } from "../shared/ai-assistant/AiGenParamsRow.js";
 import { TokenCounter } from "../shared/TokenCounter.js";
 import { type AiAssistantRequestBody } from "../../app-client.js";
 import { useAiAssistantRunner } from "../shared/ai-assistant/use-ai-assistant-runner.js";
@@ -531,26 +531,14 @@ export function MessageAiEditorModal() {
                 }}
               />
 
-              {/* Generation params — temperature / max tokens / recent messages */}
-              <div className="mb-4 space-y-3">
-                <div>
-                  <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("ai_param_temperature")}</label>
-                  <div className="flex items-center gap-2">
-                    <input type="range" min={0} max={2} step={0.1} value={aiTemperature ?? 0.3} onChange={(e) => setAiTemperature(Number(e.target.value))} className="flex-1 accent-accent" />
-                    <span className="w-8 text-right font-ui text-[11px] tabular-nums text-t3">{(aiTemperature ?? 0.3).toFixed(1)}</span>
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("ai_param_max_tokens")}</label>
-                    <NumberInput min={256} max={64000} value={aiMaxTokens ?? 4096} onChange={(v) => setAiMaxTokens(v)} className="w-full" />
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("ai_quickpill_recent_messages")}</label>
-                    <NumberInput min={1} max={100} value={recentMessageCount} onChange={setRecentMessageCount} className="w-full" />
-                  </div>
-                </div>
-              </div>
+              {/* Generation params — temperature / max tokens / recent messages (advanced-settings accordion) */}
+              <AiGenParamsRow
+                temperature={aiTemperature ?? 0.3}
+                onTemperatureChange={setAiTemperature}
+                maxTokens={aiMaxTokens ?? 4096}
+                onMaxTokensChange={setAiMaxTokens}
+                recentMessages={{ value: recentMessageCount, onChange: setRecentMessageCount }}
+              />
 
               {/* Instruction */}
               <div className="mb-4">

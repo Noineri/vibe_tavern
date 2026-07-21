@@ -1204,6 +1204,7 @@
   "import_md_start": "Импорт",
   "import_md_reparse": "Повторить",
   "import_md_parsing": "Распознаю персонажа...",
+  "ai_advanced_settings": "Расширенные настройки",
   "ai_param_temperature": "Температура",
   "ai_param_max_tokens": "Макс. токенов",
   "placeholder_create_character": "Создать персонажа",

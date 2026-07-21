@@ -22,6 +22,7 @@ export default interface Resources {
     "ai_assistant_mode_vision_describe": "Image Description AI",
     "ai_assistant_section": "AI Assistant",
     "ai_assistant_section_desc": "Override default system prompts per mode. Leave empty to use defaults.",
+    "ai_advanced_settings": "Advanced settings",
     "ai_param_max_tokens": "Max Tokens",
     "ai_param_temperature": "Temperature",
     "ai_pill_generate_keys": "Generate keys",

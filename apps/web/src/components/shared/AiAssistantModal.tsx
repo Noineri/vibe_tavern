@@ -21,6 +21,7 @@ import { Modal } from "./Modal.js";
 import { BottomSheet } from "./BottomSheet.js";
 import type { AiQuickSettings } from "./AiQuickPill.js";
 import { AiAssistantConnectionFields } from "./ai-assistant/AiAssistantConnectionFields.js";
+import { AiGenParamsRow } from "./ai-assistant/AiGenParamsRow.js";
 import { useAiAssistantRunner } from "./ai-assistant/use-ai-assistant-runner.js";
 import { useDebouncedTokenCount } from "./ai-assistant/use-debounced-token-count.js";
 import {
@@ -458,21 +459,14 @@ export function AiAssistantModal({
                 </div>
               )}
 
-              {/* Generation params — shared for all full modes */}
+              {/* Generation params — shared for all full modes (advanced-settings accordion) */}
               {isFull && (
-                <div className="grid grid-cols-2 gap-3" style={{ marginBottom: 16 }}>
-                  <div>
-                    <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("ai_param_temperature")}</label>
-                    <div className="flex items-center gap-2">
-                      <input type="range" min={0} max={2} step={0.1} value={aiTemperature ?? (isMdImport ? 0 : 0.3)} onChange={(e) => setAiTemperature(Number(e.target.value))} className="flex-1 accent-accent" />
-                      <span className="w-8 text-right font-ui text-[11px] tabular-nums text-t3">{(aiTemperature ?? (isMdImport ? 0 : 0.3)).toFixed(1)}</span>
-                    </div>
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("ai_param_max_tokens")}</label>
-                    <NumberInput min={256} max={64000} value={aiMaxTokens ?? (isMdImport ? 6000 : 4096)} onChange={(v) => setAiMaxTokens(v)} className="w-full" />
-                  </div>
-                </div>
+                <AiGenParamsRow
+                  temperature={aiTemperature ?? (isMdImport ? 0 : 0.3)}
+                  onTemperatureChange={setAiTemperature}
+                  maxTokens={aiMaxTokens ?? (isMdImport ? 6000 : 4096)}
+                  onMaxTokensChange={setAiMaxTokens}
+                />
               )}
 
               {/* MD IMPORT SPECIFIC */}
