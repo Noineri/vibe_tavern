@@ -325,12 +325,12 @@ export interface ScriptRuntimeApi {
 	listAllScripts: () => Promise<Script[]>;
 	listScripts: (scopeType: string, ownerId?: string) => Promise<Script[]>;
 	getScript: (scriptId: string) => Promise<Script | null>;
-	createScript: (body: { name: string; description?: string; code?: string; scopeType: string; characterId?: string; personaId?: string; chatId?: string; enabled?: boolean; sortOrder?: number }) => Promise<Script>;
+	createScript: (body: { name: string; description?: string; code?: string; scriptKind?: string; creationIntentId?: string; scopeType: string; characterId?: string; personaId?: string; chatId?: string; enabled?: boolean; sortOrder?: number }) => Promise<Script>;
 	updateScript: (scriptId: string, body: { name?: string; description?: string; code?: string; enabled?: boolean; sortOrder?: number }) => Promise<Script>;
 	setScriptScope: (scriptId: string, scopeType: 'global' | 'character' | 'persona' | 'chat', ownerId: string | null) => Promise<Script>;
 	deleteScript: (scriptId: string) => Promise<void>;
 	testScript: (scriptId: string, body: { code?: string; messages?: Array<{ role: string; content: string }>; characterName?: string; characterPersonality?: string; characterScenario?: string; lastMessage?: string }) => Promise<ScriptTestResult>;
-	importScript: (body: { format: "js" | "json"; code?: string; jsonText?: string; name?: string; scopeType?: string; characterId?: string; personaId?: string; chatId?: string }) => Promise<Script>;
+	importScript: (body: { format: "js" | "json"; code?: string; jsonText?: string; name?: string; scriptKind?: string; scopeType?: string; characterId?: string; personaId?: string; chatId?: string }) => Promise<Script>;
 	getScriptLinks: (scriptId: string) => Promise<ScriptLink[]>;
 	setScriptLinks: (scriptId: string, links: Array<{ targetType: string; targetId: string }>) => Promise<ScriptLink[]>;
 }

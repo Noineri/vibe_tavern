@@ -1,9 +1,15 @@
 import { z } from "zod";
+import { scriptKindSchema } from "./dice-schema.js";
 
 export const createScriptSchema = z.object({
   name: z.string().min(1),
   description: z.string().optional().default(""),
   code: z.string().optional().default(""),
+  /** Runtime contract; defaults to `prompt` so legacy creates are unchanged. */
+  scriptKind: scriptKindSchema.optional().default("prompt"),
+  /** Server-idempotent creation key (optional). A duplicate returns the
+   *  existing script. NOT mutable content: absent from updateScriptSchema. */
+  creationIntentId: z.string().min(1).max(500).optional(),
   scopeType: z.string(),
   characterId: z.string().optional(),
   personaId: z.string().optional(),
@@ -54,6 +60,7 @@ export const importScriptSchema = z.discriminatedUnion("format", [
     format: z.literal("js"),
     code: z.string().min(1),
     name: z.string().optional(),
+    scriptKind: scriptKindSchema.optional().default("prompt"),
     scopeType: z.string().optional().default("character"),
     characterId: z.string().optional(),
     personaId: z.string().optional(),
@@ -62,6 +69,7 @@ export const importScriptSchema = z.discriminatedUnion("format", [
   z.object({
     format: z.literal("json"),
     jsonText: z.string().min(1),
+    scriptKind: scriptKindSchema.optional().default("prompt"),
     scopeType: z.string().optional().default("character"),
     characterId: z.string().optional(),
     personaId: z.string().optional(),

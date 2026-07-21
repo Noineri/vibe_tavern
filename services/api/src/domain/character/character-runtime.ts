@@ -508,6 +508,7 @@ export class CharacterRuntime {
         name: sc.name,
         description: sc.description,
         code: sc.code,
+        scriptKind: sc.scriptKind,
         scopeType: "character",
         characterId: newCharacterId,
         enabled: sc.enabled,

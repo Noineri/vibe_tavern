@@ -282,3 +282,109 @@ describe("importScriptSchema", () => {
     // as a js script with missing code.
   });
 });
+
+// ─── DICE-B3: scriptKind + creationIntentId on create/import ────────────────
+//
+// Pins the new contract fields so a silent relaxation (a dropped default, a
+// widened enum, kind leaking onto the update patch) is caught here. scriptKind
+// defaults to "prompt" for legacy creates/imports; creationIntentId is the
+// server-idempotent creation key, accepted on create only (NOT mutable content
+// on update). Mirrors the create-vs-update defaults asymmetry pinned above.
+
+describe("createScriptSchema scriptKind + creationIntentId (DICE-B3)", () => {
+  it("defaults scriptKind to 'prompt' when omitted (legacy create)", () => {
+    const data = expectData(
+      createScriptSchema.safeParse(validCreateScript()),
+    ) as Record<string, unknown>;
+    expect(data.scriptKind).toBe("prompt");
+  });
+
+  it("accepts scriptKind 'dice'", () => {
+    const data = expectData(
+      createScriptSchema.safeParse({ ...validCreateScript(), scriptKind: "dice" }),
+    ) as Record<string, unknown>;
+    expect(data.scriptKind).toBe("dice");
+  });
+
+  it("rejects an unknown scriptKind", () => {
+    expectReject(
+      createScriptSchema.safeParse({ ...validCreateScript(), scriptKind: "fate" }),
+    );
+  });
+
+  it("accepts an optional creationIntentId", () => {
+    const data = expectData(
+      createScriptSchema.safeParse({ ...validCreateScript(), creationIntentId: "intent_1" }),
+    ) as Record<string, unknown>;
+    expect(data.creationIntentId).toBe("intent_1");
+  });
+
+  it("rejects an empty creationIntentId (min(1))", () => {
+    expectReject(
+      createScriptSchema.safeParse({ ...validCreateScript(), creationIntentId: "" }),
+    );
+  });
+
+  it("omits creationIntentId from the parsed data when not supplied", () => {
+    const data = expectData(
+      createScriptSchema.safeParse(validCreateScript()),
+    ) as Record<string, unknown>;
+    expect("creationIntentId" in data).toBe(false);
+  });
+});
+
+describe("importScriptSchema scriptKind (DICE-B3)", () => {
+  it("js branch defaults scriptKind to 'prompt'", () => {
+    const data = expectData(
+      importScriptSchema.safeParse({ format: "js", code: "x" }),
+    ) as Record<string, unknown>;
+    expect(data.scriptKind).toBe("prompt");
+  });
+
+  it("js branch accepts scriptKind 'dice'", () => {
+    const data = expectData(
+      importScriptSchema.safeParse({ format: "js", code: "x", scriptKind: "dice" }),
+    ) as Record<string, unknown>;
+    expect(data.scriptKind).toBe("dice");
+  });
+
+  it("json branch defaults scriptKind to 'prompt'", () => {
+    const data = expectData(
+      importScriptSchema.safeParse({ format: "json", jsonText: "{}" }),
+    ) as Record<string, unknown>;
+    expect(data.scriptKind).toBe("prompt");
+  });
+
+  it("json branch accepts scriptKind 'dice'", () => {
+    const data = expectData(
+      importScriptSchema.safeParse({ format: "json", jsonText: "{}", scriptKind: "dice" }),
+    ) as Record<string, unknown>;
+    expect(data.scriptKind).toBe("dice");
+  });
+
+  it("rejects an unknown scriptKind on either branch", () => {
+    expectReject(importScriptSchema.safeParse({ format: "js", code: "x", scriptKind: "fate" }));
+    expectReject(importScriptSchema.safeParse({ format: "json", jsonText: "{}", scriptKind: "fate" }));
+  });
+});
+
+describe("updateScriptSchema scriptKind is NOT a patch field (DICE-B3)", () => {
+  // kind is set at creation and immutable via update — a PATCH must NOT carry
+  // or reset scriptKind. Zod objects are non-strict, so an unknown key is
+  // stripped (not rejected); this asserts it never reaches the parsed patch
+  // data and therefore never overwrites the stored kind.
+  it("strips a scriptKind key from an update patch (it is not mutable content)", () => {
+    const data = expectData(
+      updateScriptSchema.safeParse({ name: "renamed", scriptKind: "dice" }),
+    ) as Record<string, unknown>;
+    expect("scriptKind" in data).toBe(false);
+    expect(Object.keys(data)).toEqual(["name"]);
+  });
+
+  it("strips a creationIntentId key from an update patch", () => {
+    const data = expectData(
+      updateScriptSchema.safeParse({ creationIntentId: "intent_x" }),
+    ) as Record<string, unknown>;
+    expect("creationIntentId" in data).toBe(false);
+  });
+});
