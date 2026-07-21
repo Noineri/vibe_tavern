@@ -78,7 +78,7 @@ const VALID_POLICIES: ReadonlySet<DiceFinalizationPolicy> = new Set(
  * actors/resolution, or missing resolve). Invalid registrations are dropped
  * during discovery so one bad check does not poison the whole script.
  */
-function validateRegistration(
+export function validateRegistration(
   raw: RawDiceCheckRegistration,
 ): DiceCheckDefinition | null {
   if (typeof raw.id !== "string" || raw.id.trim().length === 0) return null;
@@ -392,7 +392,7 @@ type ResolveValidation =
  * modifier` (defense against script drift / fabricated output). Strict
  * resolution requires `final.outcome`; narrative forbids it.
  */
-function validateResolveOutput(
+export function validateResolveOutput(
   raw: unknown,
   def: DiceCheckDefinition,
 ): ResolveValidation {
