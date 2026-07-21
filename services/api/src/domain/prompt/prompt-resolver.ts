@@ -267,12 +267,18 @@ export class StaticPromptResolver implements PromptAssemblyResolver {
 		const chat = await this.stores.chats.getById(input.chatId);
 		if (!chat) return defaultResult;
 
-		// 1. Load enabled scripts for this chat
-		const scripts = await this.stores.scripts.listAllEnabledForChat(
+		// 1. Load enabled PROMPT scripts for this chat. listAllEnabledForChat is
+		//    already prompt-kind-only (Wave B1 store split), so Dice scripts never
+		//    reach here in production. The filter below is defense-in-depth: even
+		//    if a Dice record somehow crossed the store boundary, it would never
+		//    execute inside the prompt-script VM (script-sandbox.ts). A Dice
+		//    script has its own isolated runtime (dice-script-sandbox.ts) and must
+		//    never mutate prompt fields, inject messages, or run during assembly.
+		const scripts = (await this.stores.scripts.listAllEnabledForChat(
 			chat.characterId,
 			chat.personaId,
 			input.chatId,
-		);
+		)).filter(s => s.scriptKind !== 'dice');
 
 		if (scripts.length === 0) return defaultResult;
 
