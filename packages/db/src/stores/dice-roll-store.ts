@@ -716,11 +716,17 @@ export class DiceRollStore {
 
   // ─── Helpers ─────────────────────────────────────────────────────────────
 
+  /**
+   * Rolls in a lane that are still PENDING — not yet bound to a committed
+   * message (`boundMessageId IS NULL`). Bound rolls are immutable historical
+   * truth read via {@link DiceRollStore.getRollsForMessage}; they must never
+   * appear in the pending view (the next user turn starts from an empty lane).
+   */
   private async getLaneRolls(laneId: string): Promise<DiceRoll[]> {
     const rows = await this.db
       .select()
       .from(diceRolls)
-      .where(eq(diceRolls.laneId, laneId))
+      .where(and(eq(diceRolls.laneId, laneId), isNull(diceRolls.boundMessageId)))
       .orderBy(asc(diceRolls.createdAt))
       .all();
     return rows.map((r) => this.mapRowRoll(r));

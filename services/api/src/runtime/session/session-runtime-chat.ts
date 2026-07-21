@@ -1,8 +1,9 @@
 import type { AssemblePromptResponse, Message, PromptTrace, ProviderResponseTrace } from "@vibe-tavern/domain";
 import { brandId, type ChatBranchId, type ChatId, type MessageId, type PromptPresetId } from "@vibe-tavern/domain";
-import type { ChatStore, MessageStore, PromptTraceStore } from "@vibe-tavern/db";
+import type { ChatStore, MessageStore, PromptTraceStore, DiceRollStore } from "@vibe-tavern/db";
 import type { ToolSet } from "ai";
 import type { ChatApplicationService } from "../../domain/chat/chat-application-service.js";
+import type { SendMessageRequest } from "../../domain/chat/chat-application-types.js";
 import type {
   SessionSnapshot,
   MessageResponse,
@@ -51,6 +52,10 @@ export interface ChatRuntimeDeps {
   messages: MessageStore;
   traces: PromptTraceStore;
   chatApp: ChatApplicationService;
+  /** DICE-B11: dice roll store. Used only by `prepareLiveTurn`'s
+   * assembly-failure cleanup to release rolls bound to a just-inserted user
+   * message (a compensating write — NOT a transaction rollback). */
+  diceRolls: DiceRollStore;
   assemblePrompt: (
     chatId: ChatId,
     branchId?: ChatBranchId,
@@ -89,12 +94,16 @@ export class ChatRuntime {
    * Prepares a live turn: appends user message (if content is non-empty),
    * assembles the prompt, and stores a pending prompt trace.
    *
-   * If `content` is empty, skips user message insertion (used for continue/regenerate).
+   * If `content` is empty AND there are no attachments, skips user message
+   * insertion (the continue/regenerate path). An attachment-only send (no prose
+   * but with attachments) DOES insert — the message carries its attachments and,
+   * when `diceCommit` is present, binds Dice exactly like a prose send (DICE-B11).
    */
-  async prepareLiveTurn(chatId: ChatId, content: string, model: string, responseReserve?: number, attachments?: import("@vibe-tavern/domain").Attachment[]): Promise<PreparedLiveTurn> {
+  async prepareLiveTurn(chatId: ChatId, content: string, model: string, responseReserve?: number, attachments?: import("@vibe-tavern/domain").Attachment[], diceCommit?: SendMessageRequest["diceCommit"]): Promise<PreparedLiveTurn> {
     const { chatApp, assemblePrompt, getSnapshot } = this.deps;
     const trimmed = content.trim();
-    if (!trimmed) {
+    const hasAttachments = !!(attachments && attachments.length > 0);
+    if (!trimmed && !hasAttachments) {
       const assembled = await assemblePrompt(chatId, undefined, { model, responseReserve });
       return {
         prompt: assembled.prompt,
@@ -108,6 +117,7 @@ export class ChatRuntime {
       content: trimmed,
       mode: "reply",
       attachments,
+      diceCommit,
     });
 
     let assembled;
@@ -115,6 +125,15 @@ export class ChatRuntime {
       assembled = await assemblePrompt(chatId, undefined, { model, responseReserve });
     } catch (err) {
       try {
+        // DICE-B11: release any Dice rolls the atomic bind just attached to
+        // this user message, THEN delete the message. This is a COMPENSATING
+        // WRITE (not a tx rollback — the synchronous bind already committed
+        // inside addMessageWithDiceBind). Release FIRST so rolls return to
+        // pending regardless of the subsequent delete; both ops are idempotent
+        // (no-op when no rolls are bound / message already gone). Runs ONLY on
+        // assembly (preparation) failure, BEFORE the provider call — provider
+        // failure after the user-message commit keeps the bound rolls.
+        await this.deps.diceRolls.rollbackRelease(userMessage.id);
         await this.deps.chatApp.deleteMessage(userMessage.id);
       } catch { /* best-effort rollback of the just-inserted user message; the original assemble error is rethrown below */ }
       throw err;

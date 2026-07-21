@@ -112,7 +112,7 @@ export class ChatAdapter implements ChatRuntimeApi {
 
 	// ─── Messages (AI) ──────────────────────────────────────────────────
 
-	sendMessage = async (chatId: string, body: { content: string; attachments?: Attachment[] }, signal?: AbortSignal) => {
+	sendMessage = async (chatId: string, body: { content: string; attachments?: Attachment[]; diceMode?: "normal" | "immersive"; pendingRevision?: number }, signal?: AbortSignal) => {
 		logSendDebug("api.runtime.send.start", { chatId, contentLength: body.content?.length ?? 0 });
 		const profile = await this.resolveEffectiveProfileOrThrow({ chatId });
 		logSendDebug("api.runtime.send.profile", {
@@ -130,6 +130,7 @@ export class ChatAdapter implements ChatRuntimeApi {
 			profile,
 			model: profile.defaultModel,
 			signal,
+			diceCommit: resolveDiceCommit(body),
 			visionAssets: {
 				cachedModels: await resolveCachedModels(this.stores, profile),
 				visionModel: profile.visionModel,
@@ -146,7 +147,7 @@ export class ChatAdapter implements ChatRuntimeApi {
 		return result.snapshot;
 	};
 
-	sendMessageStream = async function* (this: ChatAdapter, chatId: string, body: { content: string; attachments?: Attachment[] }, signal?: AbortSignal) {
+	sendMessageStream = async function* (this: ChatAdapter, chatId: string, body: { content: string; attachments?: Attachment[]; diceMode?: "normal" | "immersive"; pendingRevision?: number }, signal?: AbortSignal) {
 		const profile = await this.resolveEffectiveProfileOrThrow({ chatId });
 		try {
 			yield* this.liveChatOrchestrator.sendMessageStream({
@@ -156,6 +157,7 @@ export class ChatAdapter implements ChatRuntimeApi {
 				profile,
 				model: profile.defaultModel,
 				signal,
+				diceCommit: resolveDiceCommit(body),
 				visionAssets: {
 					cachedModels: await resolveCachedModels(this.stores, profile),
 					visionModel: profile.visionModel,
@@ -545,6 +547,17 @@ export class ChatAdapter implements ChatRuntimeApi {
 		const effective = resolveEffectiveSettings(profile, overlay?.settings ?? null);
 		return { ...effective, defaultModel: finalModel };
 	}
+}
+
+/** Map the validated send body's optional Dice commit intent (the wire shape
+ *  `{diceMode, pendingRevision}`, both-or-neither enforced by the Zod refine)
+ *  to the internal `diceCommit` the orchestrator threads into prepareLiveTurn.
+ *  Absent ⇒ undefined (no-Dice send behavior). DICE-B11. */
+function resolveDiceCommit(body: { diceMode?: "normal" | "immersive"; pendingRevision?: number }): { mode: "normal" | "immersive"; pendingRevision: number } | undefined {
+	if (body.diceMode !== undefined && body.pendingRevision !== undefined) {
+		return { mode: body.diceMode, pendingRevision: body.pendingRevision };
+	}
+	return undefined;
 }
 
 /** Map a stored user-module row to the API `CoauthorModule` shape: drop the

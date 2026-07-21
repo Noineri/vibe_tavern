@@ -47,6 +47,10 @@ export class LiveChatOrchestrator {
     prefill?: string;
     signal?: AbortSignal;
     visionAssets?: { cachedModels: CachedModelEntry[]; visionModel: string | null; assetLoader: (assetId: string) => Promise<Buffer | null>; visionDescribePrompt?: string };
+    /** DICE-B11: optional commit intent threaded into `prepareLiveTurn` so the
+     *  user-message insert and pending-lane bind share one atomic transaction.
+     *  Absent ⇒ no-Dice send behavior (byte-for-byte current path). */
+    diceCommit?: import("./chat-application-types.js").SendMessageRequest["diceCommit"];
   }): Promise<{
     preparedMessageCount: number;
     promptMessageCount: number;
@@ -55,7 +59,7 @@ export class LiveChatOrchestrator {
   }> {
     const provider = await this.resolveProvider(input);
     logSendDebug("live.send.prepare.start", { chatId: input.chatId, model: provider.model });
-    const prepared = await this.chatRuntime.prepareLiveTurn(brandId<ChatId>(input.chatId), input.content, provider.model, provider.profile.maxTokens, input.attachments);
+    const prepared = await this.chatRuntime.prepareLiveTurn(brandId<ChatId>(input.chatId), input.content, provider.model, provider.profile.maxTokens, input.attachments, input.diceCommit);
     this.notifyUserMessageCreated(input.chatId, prepared.userMessage);
     logSendDebug("live.send.prepare.done", {
       chatId: input.chatId,
@@ -297,10 +301,12 @@ export class LiveChatOrchestrator {
     prefill?: string;
     signal?: AbortSignal;
     visionAssets?: { cachedModels: CachedModelEntry[]; visionModel: string | null; assetLoader: (assetId: string) => Promise<Buffer | null>; visionDescribePrompt?: string };
+    /** DICE-B11: optional commit intent threaded into `prepareLiveTurn`. See sendMessage. */
+    diceCommit?: import("./chat-application-types.js").SendMessageRequest["diceCommit"];
   }): AsyncGenerator<{ event: string; data: string }> {
     const provider = await this.resolveProvider(input);
     logSendDebug("live.send-stream.prepare.start", { chatId: input.chatId, model: provider.model });
-    const prepared = await this.chatRuntime.prepareLiveTurn(brandId<ChatId>(input.chatId), input.content, provider.model, provider.profile.maxTokens, input.attachments);
+    const prepared = await this.chatRuntime.prepareLiveTurn(brandId<ChatId>(input.chatId), input.content, provider.model, provider.profile.maxTokens, input.attachments, input.diceCommit);
     this.notifyUserMessageCreated(input.chatId, prepared.userMessage);
     const prefill = prepared.prompt.prefill ?? undefined;
     const onAttachmentDescriptions = (prepared.userMessage && input.attachments?.length)

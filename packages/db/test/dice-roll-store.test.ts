@@ -517,10 +517,13 @@ describe("DiceRollStore", () => {
       const bound = await store.bindActiveAndReset("chat_1", "branch_1", "normal", 1, "msg_1");
       expect(bound).toBe(1);
 
-      // The normal roll should be bound.
-      const nRolls = (await store.listPending("chat_1", "branch_1")).normal.rolls;
-      expect(nRolls.length).toBe(1);
-      expect(nRolls[0]!.boundMessageId).toBe("msg_1");
+      // The normal roll is bound to msg_1 — read via the historical path
+      // (getRollsForMessage). listPending excludes bound rolls by design
+      // (a consumed roll is no longer pending; the next turn starts empty).
+      const boundRolls = await store.getRollsForMessage("msg_1");
+      expect(boundRolls.length).toBe(1);
+      expect(boundRolls[0]!.boundMessageId).toBe("msg_1");
+      expect((await store.listPending("chat_1", "branch_1")).normal.rolls.length).toBe(0);
 
       // Immersive lane's unbound roll should be discarded.
       const iRolls = (await store.listPending("chat_1", "branch_1")).immersive.rolls;
