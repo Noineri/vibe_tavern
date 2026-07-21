@@ -89,6 +89,8 @@ export function PromptFields({ draft, onUpdateField, prefillSupported, hideChatP
     { key: "lore_entry", labelKey: "ai_assistant_mode_lore_entry" },
     { key: "lore_keys", labelKey: "ai_assistant_mode_lore_keys" },
     { key: "chat_impersonate", labelKey: "ai_assistant_mode_chat_impersonate" },
+    { key: "message_edit", labelKey: "ai_assistant_mode_message_edit" },
+    { key: "message_merge", labelKey: "ai_assistant_mode_message_merge" },
     { key: "vision_describe", labelKey: "ai_assistant_mode_vision_describe" },
     { key: "scene_schema", labelKey: "ai_assistant_mode_scene_schema" },
   ] as const;
