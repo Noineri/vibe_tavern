@@ -1,4 +1,5 @@
-import type { ChatBranchId, ChatId, ChatMode, MessageVariantId, ObjectiveMode, ObjectiveTaskStatus, SceneTrackerConfig } from "@vibe-tavern/domain";
+import type { ChatBranchId, ChatId, ChatMode, MessageId, MessageVariantId, ObjectiveMode, ObjectiveTaskStatus, SceneTrackerConfig } from "@vibe-tavern/domain";
+import { brandId } from "@vibe-tavern/domain";
 import type { AppMode } from "../../components/layout/app-shell-types.js";
 import { createMessageVariant, type CreateMessageVariantInput } from "../../api/chat-api.js";
 import {
@@ -63,6 +64,7 @@ import {
 } from "../../app-client.js";
 import type { AutoSummaryConfig, ChatSummaryRecord, InsightsConfigPatch, ScenePreviewResponse, SceneTargetResponse, SceneStatusResponse, SceneBackfillMode, SceneBackfillStatusResponse } from "../../app-client.js";
 import { useSnapshotStore } from "../snapshot-store.js";
+import { useMessageAiEditorStore } from "../message-ai-editor-store.js";
 import { invalidateActiveContextPreview } from "../context-preview-store.js";
 import { useSceneGenerationStore } from "../scene-generation-store.js";
 import { useChatStore } from "../chat-store.js";
@@ -257,11 +259,15 @@ export async function createMessageVariantAction(
 export async function deleteMessageAction(chatId: ChatId, messageId: string): Promise<void> {
   const snapshot = await deleteChatMessage(chatId, messageId);
   syncSnapshot(snapshot);
+  useMessageAiEditorStore.getState().clearStars(brandId<MessageId>(messageId));
 }
 
 export async function deleteVariantAction(chatId: ChatId, messageId: string, variantIndex: number): Promise<void> {
   const snapshot = await deleteMessageVariant(chatId, messageId, variantIndex);
   syncSnapshot(snapshot);
+  // Stars key on immutable variant IDs — prune so compaction can never retarget a star.
+  const surviving = useSnapshotStore.getState().messagesById[messageId]?.variants.map((v) => v.id) ?? [];
+  useMessageAiEditorStore.getState().pruneStaleStars(brandId<MessageId>(messageId), surviving);
 }
 
 export async function switchChatAction(chatId: ChatId): Promise<void> {
