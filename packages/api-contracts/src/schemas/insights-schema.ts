@@ -2,6 +2,7 @@ import {
   OBJECTIVE_MODE,
   OBJECTIVE_TASK_STATUS,
   SCENE_BACKFILL_MODE,
+  DICE_MODE,
 } from "@vibe-tavern/domain";
 import { z } from "zod";
 import { sceneTrackerConfigSchema, updateTrackerConfigSchema } from "./tracker-schema.js";
@@ -20,6 +21,18 @@ import { sceneTrackerConfigSchema, updateTrackerConfigSchema } from "./tracker-s
 export const insightsConfigSchema = z.object({
   objectiveEnabled: z.boolean().default(false),
   trackerEnabled: z.boolean().default(false),
+  /**
+   * Dice feature toggle (DICE_SYSTEM_BACKEND_PLAN B9). OFF by default;
+   * when off, no dice UI or dice prompt projection is injected. Old JSON
+   * without this field normalizes to `false` (no migration needed).
+   */
+  diceEnabled: z.boolean().default(false),
+  /**
+   * Dice turn mode (DICE_SYSTEM_BACKEND_PLAN B9). Default "normal";
+   * determines whether discarded attempts persist and how extra attempts
+   * are granted. Old JSON without this field normalizes to "normal".
+   */
+  diceMode: z.enum([DICE_MODE.normal, DICE_MODE.immersive]).default(DICE_MODE.normal),
   /**
    * Scene Tracker per-chat config (SCENE_TRACKER_PLAN SCN-2). Nested inside the
    * toggles JSON column (`insights_config_json.tracker`); absent on chats stored
@@ -42,6 +55,16 @@ export const updateInsightsConfigSchema = z.object({
   insightsConfig: z.object({
     objectiveEnabled: z.boolean().optional(),
     trackerEnabled: z.boolean().optional(),
+    /**
+     * Dice feature toggle (DICE_SYSTEM_BACKEND_PLAN B9). Optional — absent
+     * on PATCH preserves the stored value (partial-merge semantics).
+     */
+    diceEnabled: z.boolean().optional(),
+    /**
+     * Dice turn mode (DICE_SYSTEM_BACKEND_PLAN B9). Optional — absent on
+     * PATCH preserves the stored value (partial-merge semantics).
+     */
+    diceMode: z.enum([DICE_MODE.normal, DICE_MODE.immersive]).optional(),
     /**
      * Partial Scene config PATCH (default-free, mirrors updateObjectiveConfig):
      * the store deep-merges it field-by-field into the stored `tracker`

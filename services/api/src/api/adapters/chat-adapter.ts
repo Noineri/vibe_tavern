@@ -373,18 +373,20 @@ export class ChatAdapter implements ChatRuntimeApi {
 		return this.sessionRuntime.buildConfigPatchResponse(brandId<ChatId>(chatId), { activeChat: true });
 	};
 
-	updateInsightsConfig = async (chatId: string, body: { insightsConfig?: { objectiveEnabled?: boolean; trackerEnabled?: boolean; tracker?: SceneTrackerConfigPatch } }) => {
+	updateInsightsConfig = async (chatId: string, body: { insightsConfig?: { objectiveEnabled?: boolean; trackerEnabled?: boolean; diceEnabled?: boolean; diceMode?: string; tracker?: SceneTrackerConfigPatch } }) => {
 		const existing = await this.stores.chats.getById(chatId);
 		if (!existing) throw notFound("Chat", `Chat '${chatId}' was not found.`);
 		const patch = body.insightsConfig;
 
 		// Toggle PATCH: shallow-merge onto the current config, preserving the
 		// tracker sub-object and every other key (the store replaces wholesale).
-		if (patch && (patch.objectiveEnabled !== undefined || patch.trackerEnabled !== undefined)) {
+		if (patch && (patch.objectiveEnabled !== undefined || patch.trackerEnabled !== undefined || patch.diceEnabled !== undefined || patch.diceMode !== undefined)) {
 			const merged = {
 				...existing.insightsConfig,
 				...(patch.objectiveEnabled !== undefined ? { objectiveEnabled: patch.objectiveEnabled } : {}),
 				...(patch.trackerEnabled !== undefined ? { trackerEnabled: patch.trackerEnabled } : {}),
+				...(patch.diceEnabled !== undefined ? { diceEnabled: patch.diceEnabled } : {}),
+				...(patch.diceMode !== undefined ? { diceMode: patch.diceMode } : {}),
 			};
 			await this.stores.chats.updateInsightsConfig(chatId, { insightsConfig: merged });
 		}
