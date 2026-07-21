@@ -4,6 +4,7 @@ import type {
   ChatBranchId,
   ChatId,
   ChatSummaryId,
+  DiceRollId,
   LoreEntryId,
   LorebookId,
   MessageId,
@@ -43,6 +44,14 @@ import type {
   ScenePromptFormat,
   SceneTrackerDsl,
 } from "./scene-tracker-constants.js";
+import type {
+  ScriptKind,
+  DiceMode,
+  DiceActorType,
+  DiceResolution,
+  DiceFinalizationPolicy,
+  DiceFaceShape,
+} from "./platform-constants.js";
 
 export type Timestamp = string;
 
@@ -317,6 +326,11 @@ export interface Script {
   name: string;
   description: string;
   code: string;
+  /** Runtime contract of this script (`prompt` or `dice`). Defaults to `prompt`
+   *  for every legacy row/import/request so existing prompt scripts are
+   *  unchanged. Prompt assembly loads only prompt scripts; Dice actions load
+   *  only dice scripts — the two runtimes are isolated by kind (Wave B1). */
+  scriptKind: ScriptKind;
   enabled: boolean;
   scopeType: LoreScopeType;
   sortOrder: number;
@@ -326,6 +340,111 @@ export interface Script {
   extensions: Record<string, unknown>;
   createdAt: Timestamp;
   updatedAt: Timestamp;
+}
+
+// ─── Dice system entities (DICE_SYSTEM_BACKEND_PLAN, Wave B1) ──────────────────
+//
+// The pure notation/rolling/arith-validators live in `dice.ts`; these are the
+// immutable, message-bindable entity shapes the API/DB layers use. A completed
+// pending roll is an immutable rules snapshot: script/check/actor rename,
+// edit, disable, unlink, or delete after the roll never rewrites it — the
+// captured labels + revision + rules stay on the result. (The authoritative
+// roll/service paths arrive in Wave B3; B1 only defines the shapes.)
+
+/**
+ * Frozen actor identity+label captured on a roll. Stored verbatim on the
+ * result so it survives actor rename/edit/delete — historical labels remain.
+ * (The richer frozen actor *state* the Dice VM reads at roll time is a Wave
+ * B2 concern and reuses this identity triple.)
+ */
+export interface DiceActorSnapshot {
+  actorType: DiceActorType;
+  actorId: string;
+  actorLabel: string;
+}
+
+/**
+ * One authorized roll of a check. A Normal check has exactly one attempt;
+ * Immersive may accumulate several inside one result envelope. `faces.length`
+ * matches the dice count in the notation; each value is a validated face in
+ * `[1..sides]`. The server validates `subtotal === sum(faces)` and
+ * `total === subtotal + modifier` before persisting (per-face arithmetic).
+ */
+export interface DiceAttempt {
+  attemptId: string;
+  faces: number[];
+  modifier: number;
+  subtotal: number;
+  total: number;
+  /** Script-provided reason this extra attempt was granted (Immersive only). */
+  grantReason?: string;
+  /** True on the attempt the user/script finalized as the result (choose policy). */
+  chosenFinal?: boolean;
+}
+
+/**
+ * The adjudicated final of a strict check. `outcome` (success/failure/...) is
+ * binding adjudication the model must honor; `degree` and `constraint` qualify
+ * it. Narrative checks never carry a `final` — they persist mechanical facts
+ * (faces/total) without authoritative success/failure.
+ */
+export interface DiceRollFinal {
+  total: number;
+  outcome?: string;
+  degree?: string;
+  constraint?: string;
+}
+
+/**
+ * A resolvable check published by a Dice script for one chat (Wave B2 VM
+ * discovery). `actors` restricts who can roll it; `notation` is the bounded
+ * `[N]dS[+/-M]` / `d%` the script declared; `faceShape` drives per-die
+ * visualization. B1 defines the canonical type; the VM + resolver arrive later.
+ */
+export interface DiceCheckDefinition {
+  id: string;
+  label: string;
+  notation: string;
+  actors: readonly DiceActorType[];
+  resolution: DiceResolution;
+  faceShape: DiceFaceShape;
+}
+
+/**
+ * The immutable, message-bindable Dice result snapshot. One per actor+check
+ * per draft turn. `mode` and `resolution` are orthogonal: mode governs attempt
+ * persistence, resolution governs adjudication. `boundMessageId` is set when
+ * the result binds to a committed user message; null/absent while pending.
+ */
+export interface DiceRollSnapshot {
+  rollId: DiceRollId;
+  /** DB-unique idempotency key: rapid clicks, retries, process recovery, and
+   *  two tabs cannot produce a duplicate authoritative roll. */
+  requestId: string;
+  actor: DiceActorSnapshot;
+  scriptId: string;
+  scriptLabel: string;
+  /** Script revision captured at roll time — a later edit does not invalidate
+   *  this snapshot; new attempts resolve current eligibility/rules. */
+  scriptRevision: number;
+  checkId: string;
+  checkLabel: string;
+  notation: string;
+  faceShape: DiceFaceShape;
+  resolution: DiceResolution;
+  mode: DiceMode;
+  /** Immersive include/exclude-from-binding (server-persisted, with undo). */
+  included: boolean;
+  /** The attempt id chosen as the final result, or null while unchosen. */
+  finalAttemptId: string | null;
+  attempts: DiceAttempt[];
+  /** Present on strict checks; always absent on narrative checks. */
+  final?: DiceRollFinal;
+  /** Script-provided retry reason/policy channel (e.g. "Second chance: Lucky"). */
+  retryReason?: string;
+  policy?: DiceFinalizationPolicy;
+  boundMessageId?: MessageId | null;
+  createdAt: Timestamp;
 }
 
 /**

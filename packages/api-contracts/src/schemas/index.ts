@@ -147,3 +147,26 @@ export type {
   CoauthorModuleCreate,
   CoauthorModuleUpdate,
 } from "./coauthor-module.js";
+
+export {
+  scriptKindSchema,
+  diceModeSchema,
+  diceActorTypeSchema,
+  diceResolutionSchema,
+  diceFinalizationPolicySchema,
+  diceFaceShapeSchema,
+  diceAttemptSchema,
+  diceActorSnapshotSchema,
+  diceRollFinalSchema,
+  diceRollSnapshotSchema,
+  diceRollRequestSchema,
+  diceSetIncludedSchema,
+  diceChooseFinalSchema,
+  diceCheckDescriptorSchema,
+  diceScriptDefinitionsSchema,
+  diceDefinitionsResponseSchema,
+  DICE_SCHEMA_MAX_DICE_COUNT,
+  DICE_SCHEMA_MAX_SIDES,
+  DICE_SCHEMA_MAX_STRING,
+  DICE_SCHEMA_MAX_ATTEMPTS,
+} from "./dice-schema.js";
