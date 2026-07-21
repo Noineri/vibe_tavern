@@ -666,3 +666,77 @@ export const sceneBackfillRuns = sqliteTable('scene_backfill_runs', {
 }, (table) => ({
   chatIdx: index('idx_scene_backfill_runs_chat').on(table.chatId),
 }));
+
+// ─── Dice pending lanes (DICE_SYSTEM_BACKEND_PLAN, Wave B3 / DICE-B7) ────────
+//
+// Durable branch+mode lane rows. A lane owns a monotonic revision even when
+// empty; every pending mutation increments it. The unique constraint on
+// {chat_id, branch_id, mode} ensures exactly one lane per combination.
+// Both lanes are reset (revision++) when a user message commits; the active
+// lane's included/finalized rolls bind to that message, the inactive lane's
+// rolls are discarded.
+export const dicePendingLanes = sqliteTable('dice_pending_lanes', {
+  id: text('id').primaryKey(),
+  chatId: text('chat_id').notNull().references(() => chats.id, { onDelete: 'cascade' }),
+  branchId: text('branch_id').notNull().references(() => chatBranches.id, { onDelete: 'cascade' }),
+  mode: text('mode').notNull(),
+  revision: integer('revision').notNull().default(0),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+}, (table) => ({
+  chatBranchModeUnique: uniqueIndex('idx_dice_lanes_chat_branch_mode').on(table.chatId, table.branchId, table.mode),
+}));
+
+// ─── Dice rolls (DICE_SYSTEM_BACKEND_PLAN, Wave B3 / DICE-B7) ───────────────
+//
+// Immutable, message-bindable Dice result snapshots. DB-unique request_id is
+// the idempotency net (rapid clicks / retries / two tabs / process recovery
+// cannot produce duplicates). Lane FK tracks the pending lane this roll
+// belongs to; bound_message_id is set when the roll binds to a committed
+// user message. All snapshot columns (actor/script/check labels, revision,
+// notation, resolution, etc.) are self-contained — script rename/edit/
+// disable/unlink/delete never invalidates historical rolls (no FK to scripts).
+//
+// No-cascade rule: script_id is plain text with NO FK — the roll carries the
+// full snapshot (labels + revision) so it survives any script lifecycle change.
+export const diceRolls = sqliteTable('dice_rolls', {
+  id: text('id').primaryKey(),
+  requestId: text('request_id').notNull().unique(),
+  laneId: text('lane_id').notNull().references(() => dicePendingLanes.id, { onDelete: 'cascade' }),
+  // Nullable — set when the roll binds to a committed user message.
+  // onDelete set null so rollback can release bindings without deleting rolls.
+  boundMessageId: text('bound_message_id').references(() => messages.id, { onDelete: 'set null' }),
+  // Actor snapshot (frozen at roll time — survives rename/delete).
+  actorType: text('actor_type').notNull(),
+  actorId: text('actor_id').notNull(),
+  actorLabel: text('actor_label').notNull(),
+  // Script snapshot — NO FK (no-cascade rule). The roll owns its own labels + revision.
+  scriptId: text('script_id').notNull(),
+  scriptLabel: text('script_label').notNull(),
+  scriptRevision: integer('script_revision').notNull(),
+  // Check snapshot.
+  checkId: text('check_id').notNull(),
+  checkLabel: text('check_label').notNull(),
+  // Dice notation + face shape.
+  notation: text('notation').notNull(),
+  faceShape: text('face_shape').notNull(),
+  // Adjudication + mode.
+  resolution: text('resolution').notNull(),
+  mode: text('mode').notNull(),
+  // Immersive include/exclude-from-binding (with undo via included=true).
+  included: integer('included', { mode: 'boolean' }).notNull().default(true),
+  // The attempt id chosen as the final result, or null while unchosen.
+  finalAttemptId: text('final_attempt_id'),
+  // Attempts array (JSON). Always non-empty; Normal has exactly 1.
+  attemptsJson: text('attempts_json').notNull(),
+  // Final envelope (JSON, nullable). Present on strict checks; absent on narrative.
+  finalJson: text('final_json'),
+  // Script-provided retry reason (Immersive grants).
+  retryReason: text('retry_reason'),
+  // Finalization policy (Immersive).
+  policy: text('policy'),
+  createdAt: text('created_at').notNull(),
+}, (table) => ({
+  laneIdx: index('idx_dice_rolls_lane').on(table.laneId),
+  messageIdx: index('idx_dice_rolls_message').on(table.boundMessageId),
+}));

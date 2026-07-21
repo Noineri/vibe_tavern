@@ -71,3 +71,11 @@ export type {
   CreateCoauthorModuleData,
   UpdateCoauthorModuleData,
 } from './coauthor-module-store.js';
+
+export { DiceRollStore } from './dice-roll-store.js';
+export type {
+  DicePendingLane,
+  DiceRoll,
+  LaneState,
+} from './dice-roll-store.js';
+export { DiceBindError } from './dice-roll-store.js';
