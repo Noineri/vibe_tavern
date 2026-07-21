@@ -35,6 +35,21 @@ export interface SendMessageRequest {
   content: string;
   mode: "reply" | "continue";
   attachments?: Attachment[];
+  /**
+   * DICE-B10: optional Dice commit intent. When present, the user-message
+   * insert and the Dice pending-lane bind run in ONE atomic transaction — the
+   * active-mode lane's server-included/finalized rolls bind to the new message,
+   * the inactive-mode lane is discarded, and both lanes reset. Omitted/undefined
+   * ⇒ no-Dice send behavior (byte-for-byte current path).
+   *
+   * `pendingRevision` is the client's last-seen active-lane revision; a stale
+   * value fails the whole commit before the message row persists. `mode` selects
+   * which lane is active. Never carries raw rolls or client-selected keys.
+   */
+  diceCommit?: {
+    mode: "normal" | "immersive";
+    pendingRevision: number;
+  };
 }
 
 export interface SendMessageResponse {

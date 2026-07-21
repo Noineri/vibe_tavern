@@ -33,7 +33,7 @@ export type {
 } from './chat-store.js';
 
 export { MessageStore } from './message-store.js';
-export type { Message, MessageVariant } from './message-store.js';
+export type { Message, MessageVariant, AddMessageInput } from './message-store.js';
 
 export { PromptTraceStore } from './prompt-trace-store.js';
 export type { PromptTrace, SaveTraceData } from './prompt-trace-store.js';

@@ -1,6 +1,6 @@
 import { eq, and, inArray, asc, desc, sql, isNull } from 'drizzle-orm';
 import { dicePendingLanes, diceRolls, messages } from '../db-schema.js';
-import type { AppDb } from '../db-connection.js';
+import type { AppDb, DbTransaction } from '../db-connection.js';
 import { resolveStoreRuntime, type StoreClock, type StoreIdGenerator } from '../persistence.js';
 
 // ─── Return types ─────────────────────────────────────────────────────────────
@@ -455,12 +455,19 @@ export class DiceRollStore {
 
   // ─── Atomic bind + reset ─────────────────────────────────────────────────
 
-  /**
+/**
    * Atomic bind: verify revision, bind included/finalized active-mode rows
    * to newMessageId, discard inactive-mode lane, reset BOTH lanes
    * (revision++). All in ONE transaction.
    *
    * Returns the number of rolls bound.
+   *
+   * Implementation note: this wraps {@link bindActiveAndResetInTx} in a
+   * SYNCHRONOUS transaction callback. drizzle-orm 0.38.4 + bun-sqlite commits
+   * the native transaction at the end of the callback's synchronous prefix, so
+   * an `async`/`await` callback would commit before a post-await throw — losing
+   * rollback. The synchronous core here uses sync drizzle calls (`.get/.all/.run`)
+   * so a stale-revision or unresolved-choose throw rolls the whole bind back.
    */
   async bindActiveAndReset(
     chatId: string,
@@ -469,95 +476,118 @@ export class DiceRollStore {
     pendingRevision: number,
     newMessageId: string,
   ): Promise<number> {
+    return this.db.transaction((tx) =>
+      this.bindActiveAndResetInTx(tx, chatId, branchId, mode, pendingRevision, newMessageId),
+    );
+  }
+
+  /**
+   * The synchronous tx-scoped bind core (DICE-B7 bind logic, DICE-B10 atomic
+   * reuse). Runs verify-revision → bind-included-active → discard-inactive →
+   * reset-both-lanes against the GIVEN transaction client `tx`, with no awaits
+   * (all bun-sqlite query methods are synchronous). Throws {@link DiceBindError}
+   * synchronously on stale revision or unresolved `choose` BEFORE any lane
+   * reset write — so a caller that shares this `tx` with a message insert gets a
+   * full rollback of the insert on those failures.
+   *
+   * Called directly by {@link MessageStore.addMessageWithDiceBind} so the user
+   * message insert and the dice bind share ONE bun:sqlite transaction.
+   */
+  bindActiveAndResetInTx(
+    tx: DbTransaction,
+    chatId: string,
+    branchId: string,
+    mode: string,
+    pendingRevision: number,
+    newMessageId: string,
+  ): number {
     const activeMode = mode;
     const inactiveMode = mode === 'normal' ? 'immersive' : 'normal';
 
-    return this.db.transaction(async (tx) => {
-      // Verify the active lane's revision matches.
-      const activeLane = await tx
-        .select()
-        .from(dicePendingLanes)
-        .where(
-          and(
-            eq(dicePendingLanes.chatId, chatId),
-            eq(dicePendingLanes.branchId, branchId),
-            eq(dicePendingLanes.mode, activeMode),
-          ),
-        )
-        .get();
+    // Verify the active lane's revision matches (BEFORE any write).
+    const activeLane = tx
+      .select()
+      .from(dicePendingLanes)
+      .where(
+        and(
+          eq(dicePendingLanes.chatId, chatId),
+          eq(dicePendingLanes.branchId, branchId),
+          eq(dicePendingLanes.mode, activeMode),
+        ),
+      )
+      .get();
 
-      if (!activeLane || activeLane.revision !== pendingRevision) {
-        throw new DiceBindError('stale_revision', `Expected revision ${pendingRevision}, got ${activeLane?.revision ?? 'none'}`);
+    if (!activeLane || activeLane.revision !== pendingRevision) {
+      throw new DiceBindError('stale_revision', `Expected revision ${pendingRevision}, got ${activeLane?.revision ?? 'none'}`);
+    }
+
+    // Bind included UNBOUND rolls in the active lane to the new message.
+    const activeRolls = tx
+      .select()
+      .from(diceRolls)
+      .where(and(
+        eq(diceRolls.laneId, activeLane.id),
+        eq(diceRolls.included, true),
+        isNull(diceRolls.boundMessageId),
+      ))
+      .all();
+
+    let boundCount = 0;
+    for (const roll of activeRolls) {
+      // For choose-policy rolls, require a final choice.
+      if (roll.policy === 'choose' && roll.finalAttemptId === null) {
+        throw new DiceBindError('unresolved_choose', `Roll ${roll.id} has choose policy but no finalAttemptId`);
       }
-
-      // Bind included UNBOUND rolls in the active lane to the new message.
-      const activeRolls = await tx
-        .select()
-        .from(diceRolls)
-        .where(and(
-          eq(diceRolls.laneId, activeLane.id),
-          eq(diceRolls.included, true),
-          isNull(diceRolls.boundMessageId),
-        ))
-        .all();
-
-      let boundCount = 0;
-      for (const roll of activeRolls) {
-        // For choose-policy rolls, require a final choice.
-        if (roll.policy === 'choose' && roll.finalAttemptId === null) {
-          throw new DiceBindError('unresolved_choose', `Roll ${roll.id} has choose policy but no finalAttemptId`);
-        }
-        await tx
-          .update(diceRolls)
-          .set({ boundMessageId: newMessageId })
-          .where(eq(diceRolls.id, roll.id))
-          .run();
-        boundCount++;
-      }
-
-      // Discard inactive lane's unbound rolls.
-      const inactiveLane = await tx
-        .select()
-        .from(dicePendingLanes)
-        .where(
-          and(
-            eq(dicePendingLanes.chatId, chatId),
-            eq(dicePendingLanes.branchId, branchId),
-            eq(dicePendingLanes.mode, inactiveMode),
-          ),
-        )
-        .get();
-
-      if (inactiveLane) {
-        await tx
-          .delete(diceRolls)
-          .where(
-            and(
-              eq(diceRolls.laneId, inactiveLane.id),
-              isNull(diceRolls.boundMessageId),
-            ),
-          )
-          .run();
-      }
-
-      // Reset both lanes (revision++).
-      const now = this.clock.now();
-      await tx
-        .update(dicePendingLanes)
-        .set({ revision: activeLane.revision + 1, updatedAt: now })
-        .where(eq(dicePendingLanes.id, activeLane.id))
+      tx
+        .update(diceRolls)
+        .set({ boundMessageId: newMessageId })
+        .where(eq(diceRolls.id, roll.id))
         .run();
+      boundCount++;
+    }
 
-      if (inactiveLane) {
-        await tx
-          .update(dicePendingLanes)
-          .set({ revision: inactiveLane.revision + 1, updatedAt: now })
-          .where(eq(dicePendingLanes.id, inactiveLane.id))
-          .run();
-      }
+    // Discard inactive lane's unbound rolls.
+    const inactiveLane = tx
+      .select()
+      .from(dicePendingLanes)
+      .where(
+        and(
+          eq(dicePendingLanes.chatId, chatId),
+          eq(dicePendingLanes.branchId, branchId),
+          eq(dicePendingLanes.mode, inactiveMode),
+        ),
+      )
+      .get();
 
-      return boundCount;
-    });
+    if (inactiveLane) {
+      tx
+        .delete(diceRolls)
+        .where(
+          and(
+            eq(diceRolls.laneId, inactiveLane.id),
+            isNull(diceRolls.boundMessageId),
+          ),
+        )
+        .run();
+    }
+
+    // Reset both lanes (revision++).
+    const now = this.clock.now();
+    tx
+      .update(dicePendingLanes)
+      .set({ revision: activeLane.revision + 1, updatedAt: now })
+      .where(eq(dicePendingLanes.id, activeLane.id))
+      .run();
+
+    if (inactiveLane) {
+      tx
+        .update(dicePendingLanes)
+        .set({ revision: inactiveLane.revision + 1, updatedAt: now })
+        .where(eq(dicePendingLanes.id, inactiveLane.id))
+        .run();
+    }
+
+    return boundCount;
   }
 
   /**

@@ -142,7 +142,7 @@ export function pickBootstrapChatId<T extends string>(
 	) {
 		this.stores = stores;
 		this.resolver = new StaticPromptResolver(stores);
-		this.chatApp = new ChatApplicationService(stores.chats, stores.messages);
+		this.chatApp = new ChatApplicationService(stores.chats, stores.messages, stores.diceRolls);
 		this.promptService = new PromptAssemblyService(stores, this.resolver, this.stores.content.fileStore);
 		this.getActiveProviderProfile =
 			options?.getActiveProviderProfile ?? (async () => null);

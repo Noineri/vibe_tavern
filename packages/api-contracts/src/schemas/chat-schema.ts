@@ -22,7 +22,20 @@ export const attachmentSchema = z.object({
 export const sendMessageSchema = z.object({
   content: z.string(),
   attachments: z.array(attachmentSchema).max(5).optional(),
-});
+  /**
+   * DICE-B10: optional Dice commit intent. Omitted ⇒ no-Dice send behavior
+   * (byte-for-byte current path). When present, `diceMode` selects the active
+   * lane and `pendingRevision` is the client's last-seen active-lane revision;
+   * a stale value fails the whole user-turn commit before the message row
+   * persists. Both fields are required together (a half-spec is rejected) and
+   * never carry raw rolls or client-selected keys.
+   */
+  diceMode: z.enum(["normal", "immersive"]).optional(),
+  pendingRevision: z.number().int().nonnegative().optional(),
+}).refine(
+  (data) => (data.diceMode === undefined) === (data.pendingRevision === undefined),
+  { message: "diceMode and pendingRevision must both be present or both absent" },
+);
 
 const messageVariantIdSchema = z.string().min(1).transform((value) => brandId<MessageVariantId>(value));
 

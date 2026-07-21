@@ -1,6 +1,6 @@
 import { eq, and, desc, asc, inArray } from 'drizzle-orm';
 import { messages, messageVariants, sceneBackfillRuns } from '../db-schema.js';
-import type { AppDb } from '../db-connection.js';
+import type { AppDb, DbTransaction } from '../db-connection.js';
 import { resolveStoreRuntime, type StoreClock, type StoreIdGenerator } from '../persistence.js';
 import { extractThinkingTags, type SceneTrackerDsl, type ScenePromptFormat } from '@vibe-tavern/domain';
 
@@ -130,6 +130,30 @@ export class SelectedVariantMismatchError extends Error {
   }
 }
 
+/** Input shape for {@link MessageStore.addMessage} and {@link MessageStore.addMessageWithDiceBind}.
+ *  Extracted so the dice-aware variant shares the exact insert contract (no drift). */
+export interface AddMessageInput {
+  chatId: string;
+  branchId: string;
+  role: string;
+  authorType: string;
+  content: string;
+  reasoning?: string;
+  reasoningDurationMs?: number;
+  modelId?: string | null;
+  /** Prompt preset used for THIS message. Recorded on the selected variant
+   *  (the field the message footer reads) so every reply — send, continue,
+   *  regenerate, queue — carries its preset, not only the queue/variant path. */
+  presetId?: string | null;
+  variants?: string[];
+  selectedVariantIndex?: number;
+  attachmentsJson?: string | null;
+  toolCallsJson?: string | null;
+  toolCallId?: string | null;
+  coauthorModuleId?: string | null;
+  coauthorSkillId?: string | null;
+}
+
 /**
  * Message + variant (swipe) CRUD.
  *
@@ -171,22 +195,7 @@ export class MessageStore {
     return rows.map((row) => this.mapRowMessage(row));
   }
 
-  async addMessage(data: {
-    chatId: string; branchId: string; role: string; authorType: string; content: string;
-    reasoning?: string; reasoningDurationMs?: number;
-    modelId?: string | null;
-    /** Prompt preset used for THIS message. Recorded on the selected variant
-     *  (the field the message footer reads) so every reply — send, continue,
-     *  regenerate, queue — carries its preset, not only the queue/variant path. */
-    presetId?: string | null;
-    variants?: string[];
-    selectedVariantIndex?: number;
-    attachmentsJson?: string | null;
-    toolCallsJson?: string | null;
-    toolCallId?: string | null;
-    coauthorModuleId?: string | null;
-    coauthorSkillId?: string | null;
-  }): Promise<Message> {
+  async addMessage(data: AddMessageInput): Promise<Message> {
     const id = this.idGen.next('msg');
     const now = this.clock.now();
     const lastMsg = await this.db.select({ position: messages.position }).from(messages)
@@ -229,6 +238,82 @@ export class MessageStore {
     // SELECT outside tx is fine — row is committed
     const row = await this.db.select().from(messages).where(eq(messages.id, id)).get();
     return this.mapRowMessage(row!);
+  }
+
+  /**
+   * Atomic user-message insert + Dice pending-lane bind (DICE_SYSTEM_BACKEND_PLAN,
+   * Wave B4 / DICE-B10). Inserts the user message + its initial variant AND binds
+   * the active-mode pending Dice lane to that message in ONE synchronous
+   * bun:sqlite transaction, so a stale revision or unresolved `choose` throws
+   * BEFORE the transaction commits and rolls the message insert back too — no
+   * ghost message, no partial bind.
+   *
+   * `bindInTx` is the synchronous bind closure supplied by the caller (typically
+   * `(tx, messageId) => diceRollStore.bindActiveAndResetInTx(tx, ...)`). It runs
+   * AFTER the message+variant inserts so the rolls' `bound_message_id` FK is
+   * satisfiable; it verifies the lane revision first and throws synchronously on
+   * a mismatch, so the whole transaction (inserts included) rolls back.
+   *
+   * Why synchronous (no `await` inside): drizzle-orm 0.38.4's bun-sqlite driver
+   * wraps the callback in bun:sqlite's native `.transaction()`, which commits at
+   * the end of the callback's synchronous prefix — an `await` inside suspends
+   * past that commit and a post-await throw is never rolled back. All bun-sqlite
+   * drizzle query methods (`.run/.get/.all`) are synchronous, so the entire
+   * insert+bind runs in one real BEGIN/COMMIT/ROLLBACK. This is the load-bearing
+   * reason the bind cannot be a separate awaited `bindActiveAndReset` call.
+   *
+   * Use {@link addMessage} (byte-for-byte unchanged) for the no-Dice path — this
+   * variant is reached ONLY when a send carries the optional dice commit intent.
+   */
+  addMessageWithDiceBind(
+    data: AddMessageInput,
+    bindInTx: (tx: DbTransaction, messageId: string) => number,
+  ): { message: Message; boundCount: number } {
+    const id = this.idGen.next('msg');
+    const now = this.clock.now();
+    const lastMsg = this.db.select({ position: messages.position }).from(messages)
+      .where(eq(messages.branchId, data.branchId))
+      .orderBy(desc(messages.position)).limit(1).get();
+    const nextPosition = (lastMsg?.position ?? -1) + 1;
+
+    const variantContents = data.variants?.length ? data.variants : [data.content];
+    const selectedVariantIndex = Math.min(
+      Math.max(data.selectedVariantIndex ?? 0, 0),
+      variantContents.length - 1,
+    );
+    const selectedContent = variantContents[selectedVariantIndex] ?? data.content;
+
+    const boundCount = this.db.transaction((tx) => {
+      tx.insert(messages).values({
+        id, chatId: data.chatId, branchId: data.branchId,
+        role: data.role, authorType: data.authorType,
+        position: nextPosition, content: selectedContent,
+        state: 'complete', createdAt: now, updatedAt: now,
+        attachmentsJson: data.attachmentsJson ?? null,
+        toolCallsJson: data.toolCallsJson ?? null,
+        toolCallId: data.toolCallId ?? null,
+      }).run();
+      tx.insert(messageVariants).values(variantContents.map((content, variantIndex) => ({
+        id: this.idGen.next('mvar'), messageId: id, variantIndex,
+        content, isSelected: variantIndex === selectedVariantIndex ? 1 : 0, finishReason: null,
+        reasoning: variantIndex === selectedVariantIndex ? data.reasoning ?? null : null,
+        reasoningDurationMs: variantIndex === selectedVariantIndex ? data.reasoningDurationMs ?? null : null,
+        modelId: variantIndex === selectedVariantIndex ? data.modelId ?? null : null,
+        presetId: variantIndex === selectedVariantIndex ? data.presetId ?? null : null,
+        toolCallsJson: variantIndex === selectedVariantIndex ? data.toolCallsJson ?? null : null,
+        toolCallId: variantIndex === selectedVariantIndex ? data.toolCallId ?? null : null,
+        coauthorModuleId: variantIndex === selectedVariantIndex ? data.coauthorModuleId ?? null : null,
+        coauthorSkillId: variantIndex === selectedVariantIndex ? data.coauthorSkillId ?? null : null,
+        createdAt: now,
+      }))).run();
+      // Bind AFTER the message row exists (FK). bindInTx verifies revision FIRST
+      // and throws synchronously on stale/choose — rolling the inserts back.
+      return bindInTx(tx, id);
+    });
+
+    // SELECT outside tx is fine — row is committed (or the tx threw and we never reach here)
+    const row = this.db.select().from(messages).where(eq(messages.id, id)).get();
+    return { message: this.mapRowMessage(row!), boundCount };
   }
 
   /**

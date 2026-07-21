@@ -249,6 +249,38 @@ describe("sendMessageSchema", () => {
   it("rejects null attachments (optional, not nullable)", () => {
     expectReject(sendMessageSchema.safeParse({ content: "hi", attachments: null }));
   });
+
+  // --- DICE-B10: optional dice commit intent {diceMode, pendingRevision} ---
+  // Omitted => no-Dice behavior (current path unchanged).
+  it("accepts a no-dice send (diceMode/pendingRevision absent)", () => {
+    expect(sendMessageSchema.safeParse({ content: "hi" }).success).toBe(true);
+  });
+
+  it("accepts a dice-enabled send with both diceMode and pendingRevision", () => {
+    expect(
+      sendMessageSchema.safeParse({ content: "hi", diceMode: "normal", pendingRevision: 3 }).success,
+    ).toBe(true);
+    expect(
+      sendMessageSchema.safeParse({ content: "hi", diceMode: "immersive", pendingRevision: 0 }).success,
+    ).toBe(true);
+  });
+
+  // Both-or-neither: a half-spec is rejected (no ambiguous commit intent).
+  it("rejects diceMode without pendingRevision", () => {
+    expectReject(sendMessageSchema.safeParse({ content: "hi", diceMode: "normal" }));
+  });
+
+  it("rejects pendingRevision without diceMode", () => {
+    expectReject(sendMessageSchema.safeParse({ content: "hi", pendingRevision: 1 }));
+  });
+
+  it("rejects an invalid diceMode value", () => {
+    expectReject(sendMessageSchema.safeParse({ content: "hi", diceMode: "chaos", pendingRevision: 1 }));
+  });
+
+  it("rejects a negative pendingRevision", () => {
+    expectReject(sendMessageSchema.safeParse({ content: "hi", diceMode: "normal", pendingRevision: -1 }));
+  });
 });
 
 // --- editMessageSchema ------------------------------------------------------

@@ -17,7 +17,7 @@ import type {
   MessageId,
   SummaryMemorySnapshot,
 } from "@vibe-tavern/domain";
-import type { ChatStore, MessageStore, Message as DbMessage, MessageVariant as DbMessageVariant } from "@vibe-tavern/db";
+import type { ChatStore, MessageStore, DiceRollStore, Message as DbMessage, MessageVariant as DbMessageVariant } from "@vibe-tavern/db";
 import { conflict, notFound } from "../../shared/errors.js";
 
 /**
@@ -71,7 +71,7 @@ type AddEditorVariantInput = {
 };
 
 export class ChatApplicationService {
-  constructor(private readonly chatStore: ChatStore, private readonly messageStore: MessageStore) {}
+  constructor(private readonly chatStore: ChatStore, private readonly messageStore: MessageStore, private readonly diceRollStore: DiceRollStore) {}
 
   async createChat(input: CreateChatRequest): Promise<CreateChatResponse> {
     const chat = await this.chatStore.createChat({
@@ -139,15 +139,31 @@ export class ChatApplicationService {
     const chat = await this.requireChat(chatId);
     const targetBranchId = branchId ?? chat.activeBranchId;
 
-    const message = await this.messageStore.addMessage({
+    const baseData = {
       chatId,
       branchId: targetBranchId,
-      role: "user",
-      authorType: "user",
+      role: "user" as const,
+      authorType: "user" as const,
       content: input.content,
       attachmentsJson: input.attachments?.length ? JSON.stringify(input.attachments) : null,
-    });
+    };
 
+    // DICE-B10: when a send carries the optional Dice commit intent, the
+    // user-message insert and the pending-lane bind run in ONE atomic
+    // transaction (MessageStore.addMessageWithDiceBind). A stale revision or
+    // unresolved choose throws before the message row commits. Absent intent ⇒
+    // the unchanged addMessage path (no Dice query, no bind).
+    if (input.diceCommit) {
+      const { mode, pendingRevision } = input.diceCommit;
+      const { message } = this.messageStore.addMessageWithDiceBind(
+        baseData,
+        (tx, messageId) =>
+          this.diceRollStore.bindActiveAndResetInTx(tx, chat.id, targetBranchId, mode, pendingRevision, messageId),
+      );
+      return mapDbMessage(message);
+    }
+
+    const message = await this.messageStore.addMessage(baseData);
     return mapDbMessage(message);
   }
 

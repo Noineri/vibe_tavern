@@ -7,6 +7,22 @@ import * as schema from './db-schema.js';
 
 export type AppDb = ReturnType<typeof drizzle<typeof schema>>;
 
+/**
+ * A drizzle transaction client (the `tx` passed to `db.transaction(cb)`'s
+ * callback). Shared across stores so a single synchronous bun:sqlite
+ * transaction can span message inserts AND dice-lane binds (DICE-B10 atomic
+ * send binding). Derived from {@link AppDb} so it tracks the live schema.
+ *
+ * NOTE: this is the SYNCHRONOUS transaction client. drizzle-orm 0.38.4's
+ * bun-sqlite driver wraps the callback in bun:sqlite's native `.transaction()`,
+ * which commits at the end of the callback's synchronous prefix — so an `await`
+ * inside the callback suspends past the commit and a post-await throw is never
+ * rolled back. Cross-store atomic operations MUST therefore use a synchronous
+ * callback (no `await`; bun-sqlite query methods `.run/.get/.all/.values` are
+ * synchronous) so a synchronous throw rolls the whole transaction back.
+ */
+export type DbTransaction = Parameters<Parameters<AppDb['transaction']>[0]>[0];
+
 /** Type-safe `.message` extraction from a caught value. Returns "" for non-Error
  *  so downstream `.includes()` / `.toLowerCase()` checks behave as before
  *  (the historical code used `err?.message ?? ''`). Used by the migration
