@@ -534,9 +534,13 @@ export async function* streamAiAssistant(
         }
       }
 
-      // Emit the cleaned text result
+      // Emit the cleaned text result. For code-generating modes (dice_script),
+      // strip any stray markdown fences the model added despite instructions.
       if (fullText.trim()) {
-        yield { type: "text", text: fullText };
+        const finalText = request.mode === "dice_script"
+          ? cleanGeneratedCode(fullText)
+          : fullText;
+        yield { type: "text", text: finalText };
       }
     } else {
       // Normal streaming with reasoning split
@@ -614,6 +618,21 @@ function extractMdImportObjectFromText(text: string): Record<string, unknown> | 
   if (labels && hasUsefulMdImportJson(labels)) return labels;
 
   return null;
+}
+
+/**
+ * Clean generated JavaScript code from a model response: strips a single
+ * surrounding markdown code fence (```js ... ``` or ``` ... ```) if the model
+ * added one despite instructions, and trims surrounding whitespace. Used for
+ * `dice_script` mode so the user receives raw executable code.
+ */
+export function cleanGeneratedCode(text: string): string {
+  let cleaned = text.trim();
+  const fenceMatch = cleaned.match(/^```(?:javascript|js)?\s*\n?([\s\S]*?)\n?```\s*$/);
+  if (fenceMatch) {
+    cleaned = fenceMatch[1].trim();
+  }
+  return cleaned;
 }
 
 function mergeMdImportWithSourceSections(
@@ -982,6 +1001,13 @@ function buildUserMessage(
         return `Here is my current script:\n\n${request.existingContent}\n\nModification request:\n${request.instruction}\n\nReturn the complete updated JavaScript script only. Do not return a patch, diff, markdown, or explanation. Preserve unrelated code exactly where possible.`;
       }
       return request.instruction;
+    }
+
+    case "dice_script": {
+      if (request.existingContent) {
+        return `Here is my current Dice script:\n\n${request.existingContent}\n\nModification request:\n${request.instruction}\n\nReturn the complete updated JavaScript Dice script only. Do not return a patch, diff, markdown, or explanation. Preserve unrelated code exactly where possible.`;
+      }
+      return `${request.instruction}\n\nReturn the complete JavaScript Dice script only. Do not return markdown, explanation, or anything other than the script code.`;
     }
 
     case "lore_entry": {

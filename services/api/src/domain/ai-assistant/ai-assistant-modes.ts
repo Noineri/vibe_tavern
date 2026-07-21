@@ -46,6 +46,21 @@ const MODE_CONFIGS: Record<AiAssistantMode, AiAssistantModeConfig> = {
     outputFormat: "text",
     jsonSchemaHint: null,
   },
+  // dice_script generates Dice-script code targeting the dedicated Dice VM
+  // (DICE_SYSTEM_BACKEND_PLAN Wave B2). It is a REAL assistant mode using the
+  // existing assembler — no thinner prompt shape. It has NO legacyColumn: the
+  // generic `script` preset/legacy override stays prompt-only, so a dice-script
+  // generation never falls through to scriptAiSystemPrompt. stripReasoning is
+  // true so the accumulated output is cleaned (markdown fences stripped) before
+  // yielding one final code block.
+  dice_script: {
+    mode: "dice_script",
+    presetKey: "dice_script",
+    defaultPromptFile: "dice-script-ai-prompt.md",
+    stripReasoning: true,
+    outputFormat: "text",
+    jsonSchemaHint: null,
+  },
   lore_entry: {
     mode: "lore_entry",
     presetKey: "lore_entry",
