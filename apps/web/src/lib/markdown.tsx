@@ -1,7 +1,18 @@
 import React, { useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import rehypeRaw from "rehype-raw";
+import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
+import type { PluggableList } from "unified";
 import { copyText } from "./clipboard.js";
+
+const sanitizeSchema = {
+  ...defaultSchema,
+  attributes: {
+    ...defaultSchema.attributes,
+    '*': [...(defaultSchema.attributes?.['*'] || []), 'className', 'style'],
+  }
+};
 
 interface MarkdownProps {
   text: string;
@@ -561,7 +572,14 @@ function extractText(children: React.ReactNode): string {
 export const Markdown: React.FC<MarkdownProps> = ({ text, className, variant = "chat" }) => {
   if (!text) return null;
 
-  const rehypePlugins = variant === "plain" ? [] : [rehypeQuotedText, rehypeSystemBanner];
+  const baseRehypePlugins: PluggableList = [
+    rehypeRaw,
+    [rehypeSanitize, sanitizeSchema]
+  ];
+
+  const rehypePlugins: PluggableList = variant === "plain" 
+    ? baseRehypePlugins 
+    : [...baseRehypePlugins, rehypeQuotedText, rehypeSystemBanner];
 
   return (
     <div className={className || "md-content"}>
