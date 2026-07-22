@@ -14,14 +14,11 @@
  */
 
 import { join, relative, resolve } from "node:path";
-import { copyFile, cp, mkdir, stat } from "node:fs/promises";
+import { copyFile, cp, mkdir } from "node:fs/promises";
 import { parseArgs } from "node:util";
+import { pathExists } from "./_fs.js";
 
 const ROOT = resolve(import.meta.dir, "..");
-
-function exists(path: string): Promise<boolean> {
-  return stat(path).then(() => true, () => false);
-}
 
 async function copyApiRuntimeAssets() {
   const apiOut = join(ROOT, "out", "services", "api");
@@ -36,10 +33,10 @@ async function copyApiRuntimeAssets() {
   if (promptFiles.length === 0) {
     throw new Error(`No .md prompt files found in ${promptDir}`);
   }
-  if (!(await exists(tokenizerSource))) {
+  if (!(await pathExists(tokenizerSource))) {
     throw new Error(`Tokenizer source not found: ${tokenizerSource}`);
   }
-  if (!(await exists(migrationsSource))) {
+  if (!(await pathExists(migrationsSource))) {
     throw new Error(`DB migrations source not found: ${migrationsSource}`);
   }
 
@@ -54,7 +51,7 @@ async function copyApiRuntimeAssets() {
   // flat readdir above skips subdirectories, so copy the whole folder.
   const coauthorSource = join(promptDir, "coauthor");
   const coauthorTarget = join(apiOut, "coauthor");
-  if (await exists(coauthorSource)) {
+  if (await pathExists(coauthorSource)) {
     await cp(coauthorSource, coauthorTarget, { recursive: true });
     promptTargets.push(coauthorTarget);
   }

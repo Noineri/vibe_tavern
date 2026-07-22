@@ -25,6 +25,7 @@
 import { join, resolve } from "node:path";
 import { copyFile, cp, rm, mkdir } from "node:fs/promises";
 import { writeFileSync as writeFileSyncSync } from "node:fs";
+import { pathExists } from "./_fs.js";
 import { VERSION } from "./_version.js";
 import {
 	generateEmbeddedWebManifest,
@@ -37,10 +38,6 @@ const ROOT = resolve(import.meta.dir, "..");
 const STANDALONE_OUT = join(ROOT, "out", "standalone");
 const WEB_SOURCE = join(ROOT, "out", "apps", "web");
 const WEB_TARGET = join(STANDALONE_OUT, "web");
-
-function exists(path: string): Promise<boolean> {
-	try { const { statSync } = require('node:fs'); return Promise.resolve(!!statSync(path)); } catch { return Promise.resolve(false); }
-}
 
 async function step(label: string, fn: () => Promise<void>) {
 	console.log(`\n🔨 ${label}`);
@@ -61,7 +58,7 @@ async function main() {
 	// ── Step 1: Clean previous output ────────────────────────────────────
 
 	await step("Cleaning out/standalone/", async () => {
-		if (await exists(STANDALONE_OUT)) {
+		if (await pathExists(STANDALONE_OUT)) {
 			await rm(STANDALONE_OUT, { recursive: true, force: true });
 		}
 		await mkdir(STANDALONE_OUT, { recursive: true });
@@ -97,7 +94,7 @@ async function main() {
 	await step("Copying tokenizer files to out/standalone/tokenizers/", async () => {
 		const tokenizerSource = join(ROOT, "services", "api", "assets", "tokenizers");
 		const tokenizerTarget = join(STANDALONE_OUT, "tokenizers");
-		if (!(await exists(tokenizerSource))) {
+		if (!(await pathExists(tokenizerSource))) {
 			throw new Error(`Tokenizer source not found: ${tokenizerSource}`);
 		}
 		await cp(tokenizerSource, tokenizerTarget, { recursive: true });
@@ -122,7 +119,7 @@ async function main() {
 		// flat readdir above skips subdirectories, so copy the whole folder.
 		const coauthorSource = join(promptDir, "coauthor");
 		const coauthorTarget = join(STANDALONE_OUT, "prompts", "coauthor");
-		if (await exists(coauthorSource)) {
+		if (await pathExists(coauthorSource)) {
 			await cp(coauthorSource, coauthorTarget, { recursive: true });
 			console.log(`   → ${coauthorTarget}`);
 		}
@@ -133,7 +130,7 @@ async function main() {
 	await step("Copying DB migrations to out/standalone/drizzle/", async () => {
 		const drizzleSource = join(ROOT, "packages", "db", "drizzle");
 		const drizzleTarget = join(STANDALONE_OUT, "drizzle");
-		if (!(await exists(drizzleSource))) {
+		if (!(await pathExists(drizzleSource))) {
 			throw new Error(`DB migrations source not found: ${drizzleSource}`);
 		}
 		await cp(drizzleSource, drizzleTarget, { recursive: true });

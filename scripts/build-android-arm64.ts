@@ -12,9 +12,10 @@
  *   bun run build:android-arm64
  */
 
-import { chmod, copyFile, cp, mkdir, rm, stat } from "node:fs/promises";
+import { chmod, copyFile, cp, mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { pathExists } from "./_fs.js";
 import { VERSION } from "./_version.js";
 
 const ROOT = resolve(import.meta.dir, "..");
@@ -23,10 +24,6 @@ const ANDROID_DIST = join(OUT, "android-arm64");
 const ARCHIVE = join(OUT, "vibe-tavern-android-arm64.tar.gz");
 const WEB_SOURCE = join(ROOT, "out", "apps", "web");
 const WEB_TARGET = join(ANDROID_DIST, "web");
-
-function exists(path: string): Promise<boolean> {
-	return stat(path).then(() => true, () => false);
-}
 
 async function step(label: string, fn: () => Promise<void>) {
 	console.log(`\n🔨 ${label}`);
@@ -52,7 +49,7 @@ async function run(command: string[], cwd = ROOT) {
 }
 
 async function copyRequiredDir(source: string, target: string, label: string) {
-	if (!(await exists(source))) {
+	if (!(await pathExists(source))) {
 		throw new Error(`${label} source not found: ${source}`);
 	}
 	await cp(source, target, { recursive: true });
@@ -108,7 +105,7 @@ async function main() {
 		// flat readdir above skips subdirectories, so copy the whole folder.
 		const coauthorSource = join(promptDir, "coauthor");
 		const coauthorTarget = join(ANDROID_DIST, "prompts", "coauthor");
-		if (await exists(coauthorSource)) {
+		if (await pathExists(coauthorSource)) {
 			await cp(coauthorSource, coauthorTarget, { recursive: true });
 			console.log(`   → ${coauthorTarget}`);
 		}

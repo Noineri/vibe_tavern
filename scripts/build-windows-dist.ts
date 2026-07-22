@@ -17,8 +17,9 @@
  * no source code, no node_modules, no dev tooling.
  */
 
-import { copyFile, cp, mkdir, rm, stat } from "node:fs/promises";
+import { copyFile, cp, mkdir, rm } from "node:fs/promises";
 import { join, resolve } from "node:path";
+import { pathExists } from "./_fs.js";
 import { VERSION } from "./_version.js";
 
 const ROOT = resolve(import.meta.dir, "..");
@@ -27,10 +28,6 @@ const DIST = join(OUT, "windows-dist");
 const ARCHIVE = join(OUT, "vibe-tavern-windows-x64.zip");
 const WEB_SOURCE = join(ROOT, "out", "apps", "web");
 const WEB_TARGET = join(DIST, "web");
-
-function exists(path: string): Promise<boolean> {
-	return stat(path).then(() => true, () => false);
-}
 
 async function step(label: string, fn: () => Promise<void>) {
 	console.log(`\n🔨 ${label}`);
@@ -56,7 +53,7 @@ async function run(command: string[], cwd = ROOT) {
 }
 
 async function copyRequiredDir(source: string, target: string, label: string) {
-	if (!(await exists(source))) {
+	if (!(await pathExists(source))) {
 		throw new Error(`${label} source not found: ${source}`);
 	}
 	await cp(source, target, { recursive: true });
@@ -121,7 +118,7 @@ async function main() {
 		// flat readdir above skips subdirectories, so copy the whole folder.
 		const coauthorSource = join(promptDir, "coauthor");
 		const coauthorTarget = join(DIST, "prompts", "coauthor");
-		if (await exists(coauthorSource)) {
+		if (await pathExists(coauthorSource)) {
 			await cp(coauthorSource, coauthorTarget, { recursive: true });
 			console.log(`   → ${coauthorTarget}`);
 		}

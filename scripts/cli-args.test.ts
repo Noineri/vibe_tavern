@@ -47,6 +47,8 @@ async function copyScript(relativePath: string): Promise<ScriptFixture> {
 	const script = join(root, relativePath);
 	await mkdir(dirname(script), { recursive: true });
 	await copyFile(join(repoRoot, relativePath), script);
+	const helper = join(root, "scripts", "_fs.ts");
+	await copyFile(join(repoRoot, "scripts", "_fs.ts"), helper);
 	return { root, script };
 }
 
