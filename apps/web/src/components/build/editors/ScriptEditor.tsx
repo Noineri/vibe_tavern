@@ -20,6 +20,7 @@ import { AiAssistantModal } from "../../shared/AiAssistantModal.js";
 import { LinkBindingPopover, type LinkTarget } from "../../shared/LinkBindingPopover.js";
 import { useAllCharacters } from "../../../stores/snapshot-store.js";
 import { useBootstrapStore } from "../../../stores/api-actions/bootstrap-actions.js";
+import { useBuildNavigationStore } from "../../../stores/build-navigation-store.js";
 import {
   isScriptDraftDirty,
   useScriptDraftStore,
@@ -340,20 +341,33 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
   };
 
   // ── Handlers ─────────────────────────────────────────────
-  const handleAdd = (kind: "prompt" | "dice" = "prompt") => {
-    const body = { name: "New Script", code: "", scriptKind: kind, ...scopeBody() } as Parameters<typeof createScript>[0];
+  const handleAdd = (kind: "prompt" | "dice" = "prompt", creationIntentId?: string) => {
+    const body = { name: "New Script", code: "", scriptKind: kind, creationIntentId, ...scopeBody() } as Parameters<typeof createScript>[0];
     handleCreateScript(body);
   };
 
-  const handleAddFromTemplate = (key: string) => {
+  const handleAddFromTemplate = (key: string, creationIntentId?: string) => {
     const tpl = SCRIPT_TEMPLATES[key];
     if (!tpl) return;
     if (activeScript) {
       updateDraft({ code: activeScript.code ? activeScript.code + "\n\n" + tpl.code : tpl.code });
     } else {
-      void handleCreateScript({ name: tpl.name, code: tpl.code, scriptKind: tpl.scriptKind || "prompt", ...scopeBody() } as Parameters<typeof createScript>[0]);
+      void handleCreateScript({ name: tpl.name, code: tpl.code, scriptKind: tpl.scriptKind || "prompt", creationIntentId, ...scopeBody() } as Parameters<typeof createScript>[0]);
     }
   };
+
+  useEffect(() => {
+    const state = useBuildNavigationStore.getState();
+    const intent = state.diceCreateIntent;
+    if (intent && intent.scope.type === scope) {
+      state.consumeDiceCreateIntent();
+      if (intent.template === "fate_die") {
+        handleAddFromTemplate("fate_die", intent.createIntentId);
+      } else {
+        handleAdd("dice", intent.createIntentId);
+      }
+    }
+  }, [scope]);
 
   // ── Modals ───────────────────────────────────────────────
   const modals = (

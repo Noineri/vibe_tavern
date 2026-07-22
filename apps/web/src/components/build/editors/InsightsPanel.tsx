@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useState, useEffect, type ReactNode } from "react";
 import { toast } from "sonner";
 import type { ChatId } from "@vibe-tavern/domain";
 import { Ic } from "../../shared/icons.js";
@@ -9,6 +9,11 @@ import { TrackerConfig } from "./TrackerConfig.js";
 import { useT } from "../../../i18n/context.js";
 import { useSnapshotStore } from "../../../stores/snapshot-store.js";
 import { updateInsightsConfigAction } from "../../../stores/api-actions/chat-actions.js";
+import { useNavigationStore } from "../../../stores/navigation-store.js";
+import { useCharacterStore } from "../../../stores/character-store.js";
+import { useBuildNavigationStore } from "../../../stores/build-navigation-store.js";
+import { SegmentedControl } from "../../shared/SegmentedControl.js";
+import { listScripts } from "../../../app-client.js";
 
 /**
  * Insights build panel (INSIGHTS_PLAN INS-2). Two opt-in feature toggles —
@@ -35,8 +40,8 @@ export function InsightsPanel() {
   const activeChat = useSnapshotStore((s) => s.activeChat);
   const [pending, setPending] = useState<{
     chatId: ChatId;
-    which: "objective" | "tracker";
-    patch: { objectiveEnabled?: boolean; trackerEnabled?: boolean };
+    which: "objective" | "tracker" | "dice";
+    patch: { objectiveEnabled?: boolean; trackerEnabled?: boolean; diceEnabled?: boolean; diceMode?: "normal" | "immersive" };
   } | null>(null);
 
   if (!activeChat) {
@@ -67,8 +72,26 @@ export function InsightsPanel() {
   const trackerEnabled = pendingPatch?.trackerEnabled
     ?? activeChat.insightsConfig?.trackerEnabled
     ?? false;
+  const diceEnabled = pendingPatch?.diceEnabled
+    ?? activeChat.insightsConfig?.diceEnabled
+    ?? false;
+  const diceMode = pendingPatch?.diceMode
+    ?? activeChat.insightsConfig?.diceMode
+    ?? "normal";
 
-  async function persist(patch: { objectiveEnabled?: boolean; trackerEnabled?: boolean }, which: "objective" | "tracker") {
+  const [diceScriptsCount, setDiceScriptsCount] = useState<number | null>(null);
+  useEffect(() => {
+    if (!diceEnabled) return;
+    let cancelled = false;
+    listScripts("chat", chatId).then((scripts) => {
+      if (!cancelled) setDiceScriptsCount(scripts.filter(s => s.scriptKind === "dice" && s.enabled).length);
+    }).catch(() => {
+      if (!cancelled) setDiceScriptsCount(0);
+    });
+    return () => { cancelled = true; };
+  }, [chatId, diceEnabled]);
+
+  async function persist(patch: { objectiveEnabled?: boolean; trackerEnabled?: boolean; diceEnabled?: boolean; diceMode?: "normal" | "immersive" }, which: "objective" | "tracker" | "dice") {
     if (pending) return;
     setPending({ chatId, which, patch });
     try {
@@ -100,7 +123,55 @@ export function InsightsPanel() {
         onChange={(v) => void persist({ trackerEnabled: v }, "tracker")}
       />
       {trackerEnabled && <TrackerConfig chatId={chatId} />}
-      {!objectiveEnabled && !trackerEnabled && (
+      <FeatureToggleRow
+        icon={<Ic.dice />}
+        title={t("insights_dice_title")}
+        desc={t("insights_dice_desc")}
+        checked={diceEnabled}
+        disabled={pending !== null}
+        onChange={(v) => void persist({ diceEnabled: v }, "dice")}
+      />
+      {diceEnabled && (
+        <div className="flex flex-col gap-3 rounded-lg border border-border bg-s2 p-4">
+          <div className="flex items-center justify-between">
+            <span className="font-ui text-[13px] text-t3">
+              {diceScriptsCount === null ? "..." : t("insights_dice_eligible", { count: diceScriptsCount })}
+            </span>
+            <SegmentedControl
+              value={diceMode}
+              options={[
+                { value: "normal", label: t("insights_dice_mode_normal"), tooltip: t("insights_dice_mode_normal_tip") },
+                { value: "immersive", label: t("insights_dice_mode_immersive"), tooltip: t("insights_dice_mode_immersive_tip") }
+              ]}
+              onChange={(v) => void persist({ diceMode: v as "normal" | "immersive" }, "dice")}
+              compact
+              disabled={pending !== null}
+            />
+          </div>
+          {diceScriptsCount === 0 && (
+            <div className="mt-2">
+              <EmptyState
+                icon={<Ic.dice />}
+                title={t("insights_dice_empty_title")}
+                sub={t("insights_dice_empty_sub")}
+                cta={t("insights_dice_empty_cta_fate")}
+                onCta={() => {
+                  useBuildNavigationStore.getState().requestDiceCreate({ scope: { type: "chat", id: chatId }, template: "fate_die" });
+                  useNavigationStore.getState().setMode("build");
+                  useCharacterStore.getState().setBuildTab("lorebook");
+                }}
+                secondaryCta={t("insights_dice_empty_cta_custom")}
+                onSecondaryCta={() => {
+                  useBuildNavigationStore.getState().requestDiceCreate({ scope: { type: "chat", id: chatId } });
+                  useNavigationStore.getState().setMode("build");
+                  useCharacterStore.getState().setBuildTab("lorebook");
+                }}
+              />
+            </div>
+          )}
+        </div>
+      )}
+      {!objectiveEnabled && !trackerEnabled && !diceEnabled && (
         <p className="px-1 pt-1 font-ui text-[11px] leading-relaxed text-t4">
           {t("insights_coming_soon_hint")}
         </p>

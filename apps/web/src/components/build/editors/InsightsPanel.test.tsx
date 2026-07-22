@@ -100,9 +100,10 @@ describe("InsightsPanel (INS-2)", () => {
     expect(getByText("insights_objective_title")).toBeTruthy();
     expect(getByText("insights_tracker_title")).toBeTruthy();
     const switches = getAllByRole("switch");
-    expect(switches).toHaveLength(2);
+    expect(switches).toHaveLength(3);
     expect(switches[0].getAttribute("aria-checked")).toBe("false");
     expect(switches[1].getAttribute("aria-checked")).toBe("false");
+    expect(switches[2].getAttribute("aria-checked")).toBe("false");
   });
 
   it("reflects the live config — objective on, tracker off", () => {

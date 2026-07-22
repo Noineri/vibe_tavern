@@ -41,6 +41,7 @@ import {
   writeStickyWorldLoreTab,
   type Tab,
 } from "./use-lorebook-editor-state.js";
+import { useBuildNavigationStore } from "../../../stores/build-navigation-store.js";
 import { useScriptPanel } from "./ScriptEditor.js";
 import { CustomTooltip } from "../../shared/Tooltip.js";
 import { LorebookAccordion } from "./LorebookAccordion.js";
@@ -145,6 +146,20 @@ export function LorebookEditor({
       delete (window as Partial<Window>).__getLorebookView;
     };
   }, [view]);
+
+  // ── Intent navigation hook ──
+  useEffect(() => {
+    const intent = useBuildNavigationStore.getState().diceCreateIntent;
+    if (intent) {
+      if (tab !== "scripts") {
+        setTab("scripts");
+        writeStickyWorldLoreTab("scripts");
+      }
+      if (intent.scope.type !== scope) {
+        setScope(intent.scope.type as Scope);
+      }
+    }
+  }, [tab, scope, setTab, setScope]);
 
   // ── pick → list transition ──
   const handlePick = (target: Tab) => {
