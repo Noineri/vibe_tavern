@@ -261,4 +261,31 @@ describe("AI assistant stream prompt preparation", () => {
       await fixture.cleanup();
     }
   });
+
+  it("keeps an edited message editable: editMessage does not flip state, so the editor reopens (regression: editor unusable after first Apply)", async () => {
+    // Regression: MessageStore.editMessage used to flip `state` to 'edited',
+    // and the editor target check rejected anything but 'complete' — so the
+    // editor could only ever run once per message. The store no longer writes
+    // 'edited' (a content edit leaves the committed state untouched), so a
+    // second invocation must succeed.
+    const fixture = await createMessageEditorRuntime();
+    try {
+      const target = await fixture.stores.messages.addMessage({ chatId: fixture.chat.id, branchId: fixture.chat.activeBranchId, role: "assistant", authorType: "assistant", content: "pre-edit-marker", variants: ["pre-edit-marker"] });
+      const [source] = await fixture.stores.messages.getVariants(target.id);
+      if (!source) throw new Error("Source variant was not created.");
+      // Simulate a prior Apply / manual edit.
+      await fixture.stores.messages.editMessage(target.id, "post-edit-marker", source.id);
+      const refreshed = await fixture.stores.messages.getMessages(fixture.chat.activeBranchId);
+      expect(refreshed.find((message) => message.id === target.id)?.state).toBe("complete");
+
+      const runtimeDeps = createAiAssistantDeps(fixture.stores, fixture.runtime);
+      // A second editor invocation on the same message must NOT throw
+      // "committed assistant messages".
+      await expect(countAiAssistantTokens({
+        mode: "message_edit", instruction: "revise again", providerProfileId: fixture.profile.id, model: "editor-model", enabledLayers: [], chatId: fixture.chat.id, targetMessageId: target.id, sourceVariantIds: [source.id],
+      }, runtimeDeps)).resolves.toEqual(expect.any(Object));
+    } finally {
+      await fixture.cleanup();
+    }
+  });
 });

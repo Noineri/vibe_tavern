@@ -540,9 +540,15 @@ export class MessageStore {
         }
       }
 
+      // NOTE: a content edit does NOT flip `state` to 'edited'. That status
+      // existed only to drive an early Scene-tracker experiment (wipe the
+      // tracker on edit) that shipped, proved awful UX (a typo fix nuked the
+      // scene record), and was removed. With no reader left, setting it just
+      // left a dead marker in the DB that nothing consumes — so the message
+      // stays in whatever committed state it was in (always 'complete' today).
       await tx
         .update(messages)
-        .set({ content: mainContent, state: 'edited', updatedAt: now })
+        .set({ content: mainContent, updatedAt: now })
         .where(eq(messages.id, id))
         .run();
 
