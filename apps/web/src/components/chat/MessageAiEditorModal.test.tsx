@@ -506,6 +506,48 @@ describe("MessageAiEditorModal — edit word-diff preview", () => {
   });
 });
 
+describe("MessageAiEditorModal — edit line-diff fallback (tooLarge)", () => {
+  beforeEach(() => {
+    useProviderDataStore.setState({
+      profiles: [makeProfile("prov-1", "Provider One")],
+      favoritesByProfile: {},
+    });
+    seedBootstrap("prov-1", "model-a");
+  });
+
+  it("edit mode: falls back to a line diff when the word diff is too large (no bare tooLarge wall)", async () => {
+    // A wholesale rewrite past MAX_WORD_DIFF_TOKENS (~4000 combined) bails the
+    // word diff. Before the fix the modal rendered ONLY the bare "diff too
+    // large" notice, leaving the user to Apply blind. Now it must fall back to
+    // a line diff (cheap, O(N) in lines) so the result stays visible.
+    //
+    // One long line per side: ~2500 word-tokens each → combined ~5000 > 4000
+    // (word diff bails), but only 1+1 = 2 lines → well under the 1600-line line
+    // budget, so the line diff renders.
+    const bigSource = "alpha ".repeat(2500).trim();
+    const bigCandidate = "beta ".repeat(2500).trim();
+    seedMessage([
+      { id: VA, messageId: MID, variantIndex: 0, content: bigSource, isSelected: true, finishReason: "stop" },
+    ] as AppMessage["variants"], 0);
+    openEditorForEdit(VA);
+    setChunks([
+      { type: "text", text: bigCandidate },
+      { type: "done" },
+    ]);
+
+    renderModal();
+    await generateWithPrompt("rewrite wholesale");
+
+    // Line-diff fallback rendered: the changes title and the +1/-1 net-delta
+    // badges are present (the tooLarge branch renders neither).
+    await waitFor(() => expect(screen.getByText("message_ai_editor_changes")).toBeTruthy());
+    expect(screen.getByText("+1")).toBeTruthy();
+    expect(screen.getByText("-1")).toBeTruthy();
+    // The bare "diff too large" wall is NOT shown.
+    expect(screen.queryByText("message_ai_editor_diff_too_large")).toBeNull();
+  });
+});
+
 describe("MessageAiEditorModal — merge full preview", () => {
   beforeEach(() => {
     useProviderDataStore.setState({

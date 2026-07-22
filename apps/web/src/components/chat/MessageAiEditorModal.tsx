@@ -44,7 +44,7 @@ import { SegmentedControl } from "../shared/SegmentedControl.js";
 import { AutoTextarea } from "../shared/auto-textarea.js";
 import { MobileExpandTextarea } from "../shared/MobileExpandTextarea.js";
 import { MessageReasoning } from "./MessageReasoning.js";
-import { TextDiffPreview, buildWordDiff, type TextDiffWordSummary } from "../shared/TextDiffPreview.js";
+import { TextDiffPreview, buildWordDiff, buildLineDiff, type TextDiffWordSummary, type TextDiffSummary } from "../shared/TextDiffPreview.js";
 import { AiAssistantConnectionFields } from "../shared/ai-assistant/AiAssistantConnectionFields.js";
 import { AiAssistantShell } from "../shared/ai-assistant/AiAssistantShell.js";
 import { AiGenParamsRow } from "../shared/ai-assistant/AiGenParamsRow.js";
@@ -371,6 +371,27 @@ export function MessageAiEditorModal() {
     return buildWordDiff(editBaselineText, candidateText);
   }, [activeMode, showCandidate, runner.streaming, editBaselineText, candidateText]);
 
+  // Fallback chain for the edit preview. `buildWordDiff` bails past
+  // MAX_WORD_DIFF_TOKENS (~4000 combined) because jsdiff's Myers diff becomes
+  // visibly slow on large RP replies and would block the UI. When it bails we
+  // drop to a LINE diff, which is O(N) in lines (budget 1600 — effectively
+  // never reached for a single message) and still shows real per-line changes,
+  // not a bare "too large" wall. Only if even the line diff bails do we fall
+  // through to a plain candidate block, mirroring the merge view. Without this
+  // chain the editor was unusable on any non-trivial rewrite — you'd Apply
+  // blind because nothing rendered past the tooLarge notice.
+  const editLineDiff: TextDiffSummary | null = useMemo(() => {
+    if (activeMode !== "message_edit") return null;
+    if (!editWordDiff?.tooLarge || editBaselineText === null) return null;
+    return buildLineDiff(editBaselineText, candidateText);
+  }, [activeMode, editWordDiff, editBaselineText, candidateText]);
+
+  // True only when BOTH diffs bailed — the last-resort plain-candidate view.
+  const editShowPlainCandidate =
+    activeMode === "message_edit"
+    && !!editWordDiff?.tooLarge
+    && (editLineDiff == null || editLineDiff.tooLarge);
+
   // ─── Automatic context summary (informational only) ────────────────
 
   const contextBits: string[] = [];
@@ -625,8 +646,10 @@ export function MessageAiEditorModal() {
                 </div>
               )}
 
-              {/* Preview: edit = word diff; merge = full candidate, no diff */}
-              {showCandidate && activeMode === "message_edit" && editWordDiff && !staleEditSource && (
+              {/* Preview: edit = word diff, with a line-diff fallback when the
+                  word diff bails (large rewrites), and a plain-candidate view
+                  as the last resort. Merge = full candidate, no diff. */}
+              {showCandidate && activeMode === "message_edit" && editWordDiff && !editWordDiff.tooLarge && !staleEditSource && (
                 <TextDiffPreview
                   granularity="word"
                   summary={editWordDiff}
@@ -636,6 +659,28 @@ export function MessageAiEditorModal() {
                     noChanges: tDynamic("message_ai_editor_no_changes"),
                   }}
                 />
+              )}
+              {showCandidate && activeMode === "message_edit" && editWordDiff?.tooLarge && editLineDiff && !editLineDiff.tooLarge && !staleEditSource && (
+                <TextDiffPreview
+                  granularity="line"
+                  summary={editLineDiff}
+                  labels={{
+                    title: tDynamic("message_ai_editor_changes"),
+                    tooLarge: tDynamic("message_ai_editor_diff_too_large"),
+                    noChanges: tDynamic("message_ai_editor_no_changes"),
+                  }}
+                />
+              )}
+              {showCandidate && editShowPlainCandidate && !staleEditSource && (
+                <div className="mb-3 rounded-md border border-border bg-bg p-3">
+                  <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.06em] text-t3">
+                    {tDynamic("message_ai_editor_candidate_label")}
+                  </div>
+                  <pre className="max-h-[280px] overflow-auto whitespace-pre-wrap font-mono text-[12px] leading-[1.5] text-t1">
+                    {candidateText}
+                    {runner.streaming && <span className="animate-pulse text-accent">▌</span>}
+                  </pre>
+                </div>
               )}
               {showCandidate && activeMode === "message_merge" && (
                 <div className="mb-3 rounded-md border border-border bg-bg p-3">
