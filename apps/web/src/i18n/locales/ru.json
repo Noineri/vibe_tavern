@@ -1611,5 +1611,10 @@
   "script_test_dice_discovery_error": "Ошибка обнаружения",
   "script_test_dice_checks": "Обнаруженные проверки",
   "script_test_dice_sim": "Пробные броски",
-  "script_test_dice_no_checks": "Проверки костей не обнаружены"
+  "script_test_dice_no_checks": "Проверки костей не обнаружены",
+  "dice_face_showing": "d{shape}: выпало {value}",
+  "dice_faces_enumeration": "{notation}: {faces}",
+  "dice_overflow_more": "+{n} ещё",
+  "dice_die_percentile": "процентный кубик",
+  "dice_loading": "Бросок…"
 }

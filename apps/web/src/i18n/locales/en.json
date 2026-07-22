@@ -1601,5 +1601,10 @@
   "script_test_dice_discovery_error": "Discovery error",
   "script_test_dice_checks": "Discovered checks",
   "script_test_dice_sim": "Sample rolls",
-  "script_test_dice_no_checks": "No dice checks discovered"
+  "script_test_dice_no_checks": "No dice checks discovered",
+  "dice_face_showing": "d{shape} showing {value}",
+  "dice_faces_enumeration": "{notation}: {faces}",
+  "dice_overflow_more": "+{n} more",
+  "dice_die_percentile": "percentile die",
+  "dice_loading": "Rolling…"
 }
