@@ -1,5 +1,9 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { createMobileAccessRoutes } from "../src/api/routes/mobile-access.js";
+import { MobileAccessService } from "../src/domain/mobile-access/mobile-access-service.js";
 import type { MobileAccessRuntimeApi } from "../src/api/contract/runtime-api.js";
 
 // Regression for the "mobile access broken" bug (regression of a993a4b):
@@ -55,4 +59,53 @@ describe("mobile-access routes (no-spread regression)", () => {
 		await app.request("/api/settings/mobile-access", { method: "DELETE" });
 		expect(calls).toEqual(["info", "regen", "revoke"]);
 	});
+});
+
+
+describe("mobile access config-file characterization", () => {
+  let configDir = "";
+
+  beforeEach(async () => {
+    configDir = await mkdtemp(join(tmpdir(), "vt-mobile-access-"));
+  });
+
+  afterEach(async () => {
+    await rm(configDir, { recursive: true, force: true });
+  });
+
+  test("a missing config file initializes with no token", () => {
+    const service = new MobileAccessService(join(configDir, "missing-parent"));
+
+    expect(service.getToken()).toBeNull();
+  });
+
+  test("corrupt JSON initializes with no token instead of propagating a parse error", async () => {
+    await writeFile(join(configDir, "mobile-access.json"), "{not-json");
+
+    const service = new MobileAccessService(configDir);
+
+    expect(service.getToken()).toBeNull();
+  });
+
+  test("a generated token survives a fresh service instance and a persisted revocation", () => {
+    const first = new MobileAccessService(configDir);
+    const generatedToken = first.generateToken();
+
+    const reloaded = new MobileAccessService(configDir);
+    expect(reloaded.getToken()).toBe(generatedToken);
+
+    reloaded.revokeToken();
+    const afterRevocation = new MobileAccessService(configDir);
+    expect(afterRevocation.getToken()).toBeNull();
+  });
+
+  test("a valid JSON config with mixed-case Token does not normalize its key", async () => {
+    await writeFile(join(configDir, "mobile-access.json"), JSON.stringify({ Token: "MiXeD-Token" }));
+
+    const service = new MobileAccessService(configDir);
+
+    // OBSERVED CONFIG-SHAPE GAP: load() trusts JSON.parse() without validating
+    // the key, so getToken() returns undefined despite its string | null type.
+    expect(service.getToken()).toBeUndefined();
+  });
 });

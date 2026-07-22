@@ -22,14 +22,16 @@
  * seed-imported-opening-trace.test.ts). Per AGENTS.md §1 this characterization
  * test was written alongside the gap-closing change.
  */
-import { describe, it, expect, beforeAll, afterAll, mock } from "bun:test";
-import { mkdir, rm, writeFile } from "node:fs/promises";
-import { resolve, join } from "node:path";
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, mock } from "bun:test";
+import { symlinkSync } from "node:fs";
+import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
+import { resolve, join, relative } from "node:path";
 import { tmpdir } from "node:os";
 import { createRuntimeStore } from "../src/runtime/session/session-runtime-store.js";
 import { SessionRuntime } from "../src/runtime/session/session-runtime.js";
 import { setTokenCountFn } from "@vibe-tavern/prompt-pipeline";
 import { STORAGE_FOLDERS } from "@vibe-tavern/db";
+import { scanSillyTavernDirectory } from "../src/shared/st-directory-scanner.js";
 
 /**
  * Build a complete-but-minimal ST data dir. Returns its root path.
@@ -409,5 +411,192 @@ describe("ST directory scanner — streaming progress events", () => {
 		} finally {
 			await env2.cleanup();
 		}
+	});
+});
+
+function scannerCard(name: string): string {
+	return JSON.stringify({
+		spec: "chara_card_v2",
+		spec_version: "2.0",
+		data: { name, description: "scanner fixture", first_mes: "Hello." },
+	});
+}
+
+function scannerChat(name: string): string {
+	return [
+		JSON.stringify({ character_name: name }),
+		JSON.stringify({ name, mes: `Hello from ${name}.` }),
+	].join("\n");
+}
+
+function scannerPreset(name: string): string {
+	return JSON.stringify({
+		name,
+		prompts: [{ identifier: "main", name: "Main", role: "system", content: "System." }],
+	});
+}
+
+describe("ST directory scanner — filesystem characterization", () => {
+	let scanTmp: string | null = null;
+	let scanRoot = "";
+
+	beforeEach(async () => {
+		scanTmp = await mkdtemp(join(tmpdir(), "vt-st-scan-"));
+		scanRoot = join(scanTmp, "st-data");
+		await mkdir(scanRoot);
+	});
+
+	afterEach(async () => {
+		if (scanTmp !== null) {
+			await rm(scanTmp, { recursive: true, force: true });
+		}
+	});
+
+	it("rejects a missing scan root instead of treating it as an empty SillyTavern directory", async () => {
+		await expect(scanSillyTavernDirectory(join(scanRoot, "missing"))).rejects.toThrow("is not a directory");
+	});
+
+	it("includes dot-path entries and mixed-case extensions across every preview surface in raw directory-entry order", async () => {
+		const charactersDir = join(scanRoot, "characters");
+		const chatsDir = join(scanRoot, "chats");
+		const worldsDir = join(scanRoot, "worlds");
+		const presetsDir = join(scanRoot, "OpenAI Settings");
+		await Promise.all([
+			mkdir(charactersDir, { recursive: true }),
+			mkdir(chatsDir, { recursive: true }),
+			mkdir(worldsDir, { recursive: true }),
+			mkdir(presetsDir, { recursive: true }),
+		]);
+
+		await writeFile(join(charactersDir, "zeta.JSON"), scannerCard("Zeta"));
+		await writeFile(join(charactersDir, ".hidden.json"), scannerCard("Hidden Character"));
+		await writeFile(join(charactersDir, "Alpha.json"), scannerCard("Alpha"));
+		await writeFile(join(charactersDir, "Avatar.PNG"), makeCharaPng("Avatar"));
+
+		for (const chatDir of ["zeta-chat", ".hidden-chat", "alpha-chat"]) {
+			await mkdir(join(chatsDir, chatDir));
+			await writeFile(join(chatsDir, chatDir, "Conversation.JSONL"), scannerChat(chatDir));
+		}
+
+		await writeFile(join(worldsDir, "Zeta.JSON"), JSON.stringify({ name: "Zeta World" }));
+		await writeFile(join(worldsDir, ".hidden.json"), JSON.stringify({ name: "Hidden World" }));
+		await writeFile(join(worldsDir, "Alpha.json"), JSON.stringify({ name: "Alpha World" }));
+
+		await writeFile(join(presetsDir, "Zeta.JSON"), scannerPreset("Zeta Preset"));
+		await writeFile(join(presetsDir, ".hidden.json"), scannerPreset("Hidden Preset"));
+		await writeFile(join(presetsDir, "Alpha.json"), scannerPreset("Alpha Preset"));
+		await writeFile(join(presetsDir, "not-a-preset.json"), JSON.stringify({ name: "Not a preset" }));
+		await writeFile(join(scanRoot, "settings.json"), JSON.stringify({
+			power_user: {
+				personas: { "scanner.png": "Scanner Persona" },
+				persona_descriptions: { "scanner.png": { description: "Fixture persona." } },
+			},
+		}));
+
+		const characterEntries = await readdir(charactersDir);
+		const chatEntries = await readdir(chatsDir);
+		const worldEntries = await readdir(worldsDir);
+		const presetEntries = await readdir(presetsDir);
+
+		const scan = await scanSillyTavernDirectory(scanRoot);
+
+		// The current scanner passes through the platform's readdir order; it does
+		// not sort. Compare to the same directory entries so this deliberately pins
+		// that observable ordering instead of assuming a particular filesystem order.
+		expect(scan.characters.map((item) => item.fileName)).toEqual(characterEntries);
+		expect(scan.chats.map((item) => item.characterName)).toEqual(chatEntries);
+		expect(scan.lorebooks.map((item) => item.fileName)).toEqual(worldEntries);
+		expect(scan.presets.map((item) => item.fileName)).toEqual(
+			presetEntries.filter((entry) => entry !== "not-a-preset.json"),
+		);
+		expect(scan.characters.map((item) => item.name)).toEqual(
+			expect.arrayContaining(["Alpha", "Avatar", "Hidden Character", "Zeta"]),
+		);
+		expect(scan.chats).toHaveLength(3);
+		expect(scan.lorebooks.map((item) => item.name)).toEqual(
+			expect.arrayContaining(["Alpha World", "Hidden World", "Zeta World"]),
+		);
+		expect(scan.presets.map((item) => item.name)).toEqual(
+			expect.arrayContaining(["Alpha Preset", "Hidden Preset", "Zeta Preset"]),
+		);
+		expect(scan.persona).toEqual({ count: 1, imported: false });
+		expect(scan.errors).toEqual([]);
+	});
+
+	it("reports malformed character, world, preset, and settings JSON while retaining a malformed chat as a zero-message preview", async () => {
+		const charactersDir = join(scanRoot, "characters");
+		const chatsDir = join(scanRoot, "chats", "broken-chat");
+		const worldsDir = join(scanRoot, "worlds");
+		const presetsDir = join(scanRoot, "OpenAI Settings");
+		await Promise.all([
+			mkdir(charactersDir, { recursive: true }),
+			mkdir(chatsDir, { recursive: true }),
+			mkdir(worldsDir, { recursive: true }),
+			mkdir(presetsDir, { recursive: true }),
+		]);
+		await writeFile(join(charactersDir, "broken.json"), "{not-json");
+		await writeFile(join(chatsDir, "broken.JSONL"), "{not-json");
+		await writeFile(join(worldsDir, "broken.json"), "{not-json");
+		await writeFile(join(presetsDir, "broken.json"), "{not-json");
+		await writeFile(join(scanRoot, "settings.json"), "{not-json");
+
+		const scan = await scanSillyTavernDirectory(scanRoot);
+
+		expect(scan.characters).toEqual([]);
+		expect(scan.chats).toEqual([
+			expect.objectContaining({ characterName: "broken-chat", fileName: "broken.JSONL", messageCount: 0 }),
+		]);
+		expect(scan.lorebooks).toEqual([]);
+		expect(scan.presets).toEqual([]);
+		expect(scan.persona).toBeNull();
+		expect(scan.errors.map((error) => error.file)).toEqual([
+			join(charactersDir, "broken.json"),
+			join(worldsDir, "broken.json"),
+			join(presetsDir, "broken.json"),
+			join(scanRoot, "settings.json"),
+		]);
+		expect(scan.errors.every((error) => error.stage === "parse")).toBe(true);
+	});
+
+	it("follows symlinked directories and files outside the configured root, while dangling links surface as parse errors", async () => {
+		const charactersDir = join(scanRoot, "characters");
+		const chatsDir = join(scanRoot, "chats");
+		if (scanTmp === null) throw new Error("scan fixture root was not created");
+		const outsideDir = join(scanTmp, "outside");
+		const outsideChatsDir = join(outsideDir, "external-chat");
+		await Promise.all([
+			mkdir(charactersDir, { recursive: true }),
+			mkdir(chatsDir, { recursive: true }),
+			mkdir(outsideChatsDir, { recursive: true }),
+		]);
+		const outsideCard = join(outsideDir, "outside-card.json");
+		await writeFile(outsideCard, scannerCard("Outside Character"));
+		await writeFile(join(outsideChatsDir, "outside.JSONL"), scannerChat("Outside Chat"));
+
+		const escapingCardLink = join(charactersDir, "escaping.JSON");
+		const danglingCardLink = join(charactersDir, "dangling.JSON");
+		const escapingChatLink = join(chatsDir, "escaping-chat");
+		const danglingChatLink = join(chatsDir, "dangling-chat");
+		const directoryLinkType = process.platform === "win32" ? "junction" : "dir";
+		// Deliberately uncaught: a runner without symlink permission fails this gate.
+		symlinkSync(outsideCard, escapingCardLink, "file");
+		symlinkSync(join(outsideDir, "missing-card.json"), danglingCardLink, "file");
+		symlinkSync(outsideChatsDir, escapingChatLink, directoryLinkType);
+		symlinkSync(join(outsideDir, "missing-chat"), danglingChatLink, directoryLinkType);
+
+		expect(relative(scanRoot, outsideCard).startsWith("..")).toBe(true);
+		const scan = await scanSillyTavernDirectory(scanRoot);
+
+		// OBSERVED SECURITY DEFECT: current Bun.file().stat/text follows these
+		// escaping links, so content outside scanRoot is surfaced by the scanner.
+		expect(scan.characters).toEqual([
+			expect.objectContaining({ fileName: "escaping.JSON", name: "Outside Character" }),
+		]);
+		expect(scan.chats).toEqual([
+			expect.objectContaining({ characterName: "escaping-chat", fileName: "outside.JSONL", messageCount: 1 }),
+		]);
+		expect(scan.errors).toEqual([
+			expect.objectContaining({ file: danglingCardLink, stage: "parse" }),
+		]);
 	});
 });

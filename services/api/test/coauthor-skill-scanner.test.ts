@@ -1,4 +1,5 @@
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
+import { symlinkSync } from "node:fs";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -427,5 +428,56 @@ describe("buildSkillCatalog — merge + user precedence", () => {
     // shared-card-references dir (no SKILL.md) is NOT a skill.
     expect(entries).toHaveLength(9);
     expect(entries.find((e) => e.id === "janitor-public-bio")?.description).toMatch(/Builds and rewrites public bio/);
+  });
+});
+
+// ─── filesystem entry semantics ──────────────────────────────────────────────
+
+describe("scanSkillRoot — directory-entry characterization", () => {
+  test("considers immediate real directories in localeCompare id order, including ordinary and staging/trash dot directories", async () => {
+    const stagingId = ".~vt-skill-staging-interrupted";
+    const trashId = ".~vt-skill-trash-interrupted";
+    const ids = ["zeta-skill", ".hidden-skill", "alpha-skill", stagingId, trashId];
+    for (const id of ids) {
+      await writeManifest(tmpRoot, id, manifest(id, `Description for ${id}.`));
+    }
+    await mkdir(join(tmpRoot, "nested-only", "child-skill"), { recursive: true });
+    await writeFile(join(tmpRoot, "nested-only", "child-skill", "SKILL.md"), manifest("child-skill", "nested only"));
+    await writeFile(join(tmpRoot, "plain-file.md"), "not a directory");
+
+    const { skills, errors } = await scanSkillRoot({ path: tmpRoot, source: "user" });
+
+    // listSkillDirs sorts with localeCompare; preserve that exact current contract.
+    expect(skills.map((skill) => skill.id)).toEqual([...ids].sort((a, b) => a.localeCompare(b)));
+    expect(errors).toEqual([]);
+    expect(skills.map((skill) => skill.id)).not.toContain("nested-only");
+    // OBSERVED PLAN DIVERGENCE: this scanner does not exclude the library's
+    // staging/trash prefixes or ordinary hidden directory names.
+    expect(skills.map((skill) => skill.id)).toEqual(expect.arrayContaining([".hidden-skill", stagingId, trashId]));
+  });
+
+  test("rejects escaping and dangling manifest links, while silently excluding symlinked skill directories", async () => {
+    const outsideRoot = await makeTmpDir("outside");
+    await writeManifest(tmpRoot, "real-skill", manifest("real-skill", "real"));
+    await writeManifest(outsideRoot, "outside-skill", manifest("outside-skill", "outside"));
+    const linkedSkillDir = join(tmpRoot, "linked-skill");
+    const danglingSkillDir = join(tmpRoot, "dangling-skill");
+    const linkedManifestDir = join(tmpRoot, "linked-manifest");
+    const danglingManifestDir = join(tmpRoot, "dangling-manifest");
+    const directoryLinkType = process.platform === "win32" ? "junction" : "dir";
+    await Promise.all([mkdir(linkedManifestDir), mkdir(danglingManifestDir)]);
+    // Deliberately uncaught: a runner without symlink permission fails this gate.
+    symlinkSync(join(outsideRoot, "outside-skill"), linkedSkillDir, directoryLinkType);
+    symlinkSync(join(outsideRoot, "missing-skill"), danglingSkillDir, directoryLinkType);
+    symlinkSync(join(outsideRoot, "outside-skill", "SKILL.md"), join(linkedManifestDir, "SKILL.md"), "file");
+    symlinkSync(join(outsideRoot, "missing-manifest.md"), join(danglingManifestDir, "SKILL.md"), "file");
+
+    const { skills, errors } = await scanSkillRoot({ path: tmpRoot, source: "user" });
+
+    expect(skills.map((skill) => skill.id)).toEqual(["real-skill"]);
+    expect(errors).toEqual([
+      { source: "user", skillDir: danglingManifestDir, reason: "manifest SKILL.md is a symlink (rejected)" },
+      { source: "user", skillDir: linkedManifestDir, reason: "manifest SKILL.md is a symlink (rejected)" },
+    ]);
   });
 });

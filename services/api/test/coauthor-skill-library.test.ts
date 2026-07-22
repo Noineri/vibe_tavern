@@ -1,4 +1,5 @@
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
+import { symlinkSync } from "node:fs";
 import { mkdtemp, mkdir, rm, writeFile, lstat, readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -335,5 +336,64 @@ describe("SkillLibraryService — catalog + shadow-aware delete", () => {
     const service = new SkillLibraryService(user, builtin);
     await expect(service.deleteSkill("profile-overview")).rejects.toThrow(/cannot delete built-in skill/);
     expect(await Bun.file(join(builtin, "profile-overview", "SKILL.md")).exists()).toBe(true);
+  });
+});
+
+// ─── top-level directory listing + persistence ───────────────────────────────
+
+describe("listTopLevelDirs — filesystem entry characterization", () => {
+  test("a missing root lists as empty", async () => {
+    expect(await listTopLevelDirs(join(userRoot, "missing-root"))).toEqual([]);
+  });
+
+  test("returns only immediate non-symlink directories, excludes staging/trash, and retains ordinary hidden names", async () => {
+    const outsideRoot = await freshRoot();
+    const outsideDir = join(outsideRoot, "outside-dir");
+    const linkedDir = join(userRoot, "linked-dir");
+    const danglingDir = join(userRoot, "dangling-dir");
+    const directoryLinkType = process.platform === "win32" ? "junction" : "dir";
+    await Promise.all([
+      mkdir(join(userRoot, "zeta", "nested"), { recursive: true }),
+      mkdir(join(userRoot, "alpha"), { recursive: true }),
+      mkdir(join(userRoot, ".ordinary-hidden"), { recursive: true }),
+      mkdir(join(userRoot, ".~vt-skill-staging-interrupted"), { recursive: true }),
+      mkdir(join(userRoot, ".~vt-skill-trash-interrupted"), { recursive: true }),
+      mkdir(outsideDir, { recursive: true }),
+      writeFile(join(userRoot, "regular-file.md"), "not a directory"),
+    ]);
+    // Deliberately uncaught: a runner without symlink permission fails this gate.
+    symlinkSync(outsideDir, linkedDir, directoryLinkType);
+    symlinkSync(join(outsideRoot, "missing-dir"), danglingDir, directoryLinkType);
+
+    const entries = await listTopLevelDirs(userRoot);
+
+    expect(entries).toEqual([".ordinary-hidden", "alpha", "zeta"]);
+    // OBSERVED PLAN DIVERGENCE: only the dedicated staging/trash prefixes are
+    // hidden; ordinary dot directories remain visible to listTopLevelDirs.
+    expect(entries).toContain(".ordinary-hidden");
+  });
+});
+
+describe("SkillLibraryService — durable import reload", () => {
+  test("writes through one service instance and a fresh instance rescans the persisted skill", async () => {
+    const builtinRoot = await freshRoot();
+    const persistentUserRoot = await freshRoot();
+    const first = new SkillLibraryService(persistentUserRoot, builtinRoot);
+
+    await first.importSkills([
+      file("durable-skill/SKILL.md", manifest("durable-skill", "survives restart")),
+      file("durable-skill/references/durable.md", "persisted reference"),
+    ]);
+
+    const restarted = new SkillLibraryService(persistentUserRoot, builtinRoot);
+    const { entries, errors } = await restarted.listCatalog();
+
+    expect(errors).toEqual([]);
+    expect(entries).toEqual([
+      expect.objectContaining({ id: "durable-skill", source: "user", description: "survives restart" }),
+    ]);
+    expect(await restarted.readCatalogEntry("durable-skill")).toEqual(
+      expect.objectContaining({ id: "durable-skill", source: "user" }),
+    );
   });
 });
