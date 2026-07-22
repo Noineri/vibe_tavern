@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import type { MessageVariant } from "@vibe-tavern/domain";
+import type { DiceRollSnapshot, MessageVariant } from "@vibe-tavern/domain";
 
 // ────────────────────────────────────────────────────────────────────────────
 // Message Meta Registry
@@ -21,6 +21,13 @@ import type { MessageVariant } from "@vibe-tavern/domain";
 // its own modelId/presetId/reasoningDurationMs/coauthor fields. A message-level
 // fallback is intentionally NOT provided — that would duplicate the source of
 // truth and mask save-path bugs (see reports/MESSAGE_META_REGISTRY.md).
+//
+// EXCEPTION — `diceRolls` is message-owned, not variant provenance: a Dice
+// result binds to the user message itself (not a generation variant), so its
+// immutable snapshots travel on the message. The pending-user shell populates
+// it from the active-generation capture (DICE-F9); committed user messages
+// populate it from the server DTO; assistant/coauthor turns pass an explicit
+// empty array. The descriptor that renders it lands in DICE-F10.
 // ────────────────────────────────────────────────────────────────────────────
 
 /**
@@ -52,6 +59,14 @@ export interface MessageMetaContext {
   tokenCount: number;
   /** Message creation timestamp (ISO string). */
   createdAt: string;
+  /**
+   * Message-owned Dice result snapshots bound to this user message (DICE-F9 /
+   * DICE-F10). Optional in F9 (plumbing); DICE-F10 promotes it to a required
+   * `DiceRollSnapshot[]` (explicit `[]` where absent) and registers the
+   * descriptor that renders it. Immutable — script rename/disable/delete never
+   * changes a historical snapshot.
+   */
+  diceRolls?: DiceRollSnapshot[];
 }
 
 /**

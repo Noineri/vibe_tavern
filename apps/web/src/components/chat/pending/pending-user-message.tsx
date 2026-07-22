@@ -33,6 +33,9 @@ export function PendingUserMessage() {
 
   const content = activeGen.pendingUserMessageContent ?? "";
   const pendingAttachments = activeGen.pendingUserMessageAttachments ?? [];
+  // DICE-F9: the frozen Dice bundle captured at send start. Rendered through
+  // the same meta path (ctx.diceRolls); the descriptor lands in DICE-F10.
+  const pendingDiceRolls = activeGen.pendingDiceRolls ?? [];
   const displayContent = macroContext && !isCoauthorMode ? replaceUiMacros(content, macroContext) : content;
   const author = { name: chatMeta.persona?.name ?? "", avatarAssetId: chatMeta.persona?.avatarAssetId ?? null, avatarCropJson: chatMeta.persona?.avatarCropJson ?? null, avatarSrc: chatMeta.persona ? resolveEntityAvatarUrl({ kind: "personas", id: chatMeta.persona.id, avatarExt: chatMeta.persona.avatarExt, avatarAssetId: chatMeta.persona.avatarAssetId, updatedAt: chatMeta.persona.updatedAt }) : null };
 
@@ -66,6 +69,7 @@ export function PendingUserMessage() {
         presetName: null,
         tokenCount: 0,
         createdAt: Date.now().toString(),
+        diceRolls: pendingDiceRolls,
       } satisfies MessageMetaContext}
       copied={false}
       slotExtras={{}}

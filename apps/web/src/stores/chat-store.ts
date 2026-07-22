@@ -1,6 +1,8 @@
 import { create } from "zustand";
-import type { ChatId, Attachment } from "@vibe-tavern/domain";
+import type { ChatId, Attachment, DiceRollSnapshot } from "@vibe-tavern/domain";
 import type { ChatGenerationStatus } from "../app-client.js";
+import { useSnapshotStore } from "./snapshot-store.js";
+import { useDiceStore } from "./dice-store.js";
 
 // ── Per-chat generation state ──────────────────────────────────────────
 
@@ -26,6 +28,16 @@ export interface ChatGenerationState {
   generationStatus: ChatGenerationStatus;
   pendingUserMessageContent: string | null;
   pendingUserMessageAttachments: Attachment[];
+  /**
+   * Frozen snapshot of the active Dice lane's bindable (included) rolls,
+   * captured at send start so the pending-user shell can render them
+   * independently of later lane refreshes — until the committed user message
+   * lands carrying its own `diceRolls` (DICE-F9). Cleared on finish/abort.
+   * `[]` when Dice is off, no chat/branch is active, or the active lane has no
+   * included rolls (regenerate / no pending). The roll objects are immutable
+   * (immer store), so this filtered array is a stable frozen bundle.
+   */
+  pendingDiceRolls: DiceRollSnapshot[];
   abortController: AbortController | null;
 }
 
@@ -39,8 +51,32 @@ function defaultGenState(): ChatGenerationState {
     generationStatus: "idle" as ChatGenerationStatus,
     pendingUserMessageContent: null,
     pendingUserMessageAttachments: [],
+    pendingDiceRolls: [],
     abortController: null,
   };
+}
+
+/**
+ * Snapshot the active Dice lane's bindable (included) rolls at send start
+ * (DICE-F9). Returns `[]` when Dice is off, `chatId` is not the active chat
+ * (dice context is active-chat-scoped — branchId/mode come from the snapshot
+ * store), no branch is active, or the active lane has no included rolls.
+ * Mirrors the lane selection in `readDiceSendState` (use-chat-controller) but
+ * returns the rolls themselves rather than a commit intent — the pending-user
+ * shell renders them frozen until the committed message's own `diceRolls`
+ * arrives, so the badge neither flickers nor duplicates across the
+ * pending→committed transition.
+ */
+function captureBindableDiceRolls(chatId: string): DiceRollSnapshot[] {
+  const snap = useSnapshotStore.getState();
+  if (snap.activeChat?.id !== chatId) return [];
+  const branchId = snap.activeBranch?.id ?? null;
+  const insights = snap.activeChat?.insightsConfig;
+  if (!insights?.diceEnabled || !branchId) return [];
+  const diceMode = insights.diceMode ?? "normal";
+  const lane = useDiceStore.getState().byScope[`${chatId}|${branchId}`]?.lanes?.[diceMode] ?? null;
+  if (!lane) return [];
+  return lane.rolls.filter((r) => r.included);
 }
 
 // ── UI State (ephemeral, non-persisted) ────────────────────────────────
@@ -83,6 +119,10 @@ export interface ChatActions {
    * `streamingMessageId` (optional) identifies an EXISTING message the stream
    * targets (regenerate path); omit/null for fresh sends that stream into the
    * __pending-assistant singleton. See ChatGenerationState.streamingMessageId.
+   *
+   * DICE-F9: also captures the active Dice lane's included rolls into
+   * `pendingDiceRolls` (frozen for the pending-user shell). Yields `[]` when
+   * Dice is off / no pending rolls, so regenerate & non-Dice sends are inert.
    */
   startGeneration: (chatId: string, pendingUserContent?: string | null, pendingAttachments?: Attachment[], streamingMessageId?: string | null) => AbortController;
 
@@ -150,6 +190,7 @@ export const useChatStore = create<ChatStore>()((set, get) => ({
 
   startGeneration: (chatId, pendingContent, pendingAttachments, streamingMessageId = null) => {
     const controller = new AbortController();
+    const pendingDiceRolls = captureBindableDiceRolls(chatId);
     set((s) => ({
       generations: {
         ...s.generations,
@@ -159,6 +200,7 @@ export const useChatStore = create<ChatStore>()((set, get) => ({
           streamingMessageId,
           pendingUserMessageContent: pendingContent ?? null,
           pendingUserMessageAttachments: pendingAttachments ?? [],
+          pendingDiceRolls,
           abortController: controller,
         },
       },
@@ -229,6 +271,7 @@ export const useChatStore = create<ChatStore>()((set, get) => ({
             streamingReasoningText: "",
             pendingUserMessageContent: null,
             pendingUserMessageAttachments: [],
+            pendingDiceRolls: [],
             abortController: null,
           },
         },
@@ -255,6 +298,7 @@ export const useChatStore = create<ChatStore>()((set, get) => ({
             streamingRevealedText: "",
             streamingReasoningText: "",
             pendingUserMessageContent: null,
+            pendingDiceRolls: [],
             abortController: null,
           },
         },
