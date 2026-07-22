@@ -22,6 +22,17 @@ export {
 } from "./navigation-store.js";
 
 export {
+  useDiceStore,
+  useDiceDefinitions,
+  useDiceLanes,
+  useDiceLastError,
+  useDiceRolling,
+  type DiceScopeState,
+  type DiceActions,
+  type DiceRollIntent,
+} from "./dice-store.js";
+
+export {
   useProviderStore,
   type ProviderStore,
   type ProviderState,
