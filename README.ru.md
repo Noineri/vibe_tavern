@@ -213,7 +213,6 @@ APK-сборка под Termux — автоматизирует большую �
 ```bash
 git clone https://github.com/Noineri/vibe_tavern
 bun install --frozen-lockfile
-bun scripts/install-platform-optionals.ts
 bun run dev
 ```
 

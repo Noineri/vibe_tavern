@@ -207,7 +207,6 @@ If you want to test Vibe Tavern in current development state, you can clone this
 ```bash
 git clone https://github.com/Noineri/vibe_tavern
 bun install --frozen-lockfile
-bun scripts/install-platform-optionals.ts
 bun run dev
 ```
 

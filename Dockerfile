@@ -18,7 +18,6 @@ RUN --mount=type=cache,target=/root/.bun/install/cache \
 
 # Source & build
 COPY . .
-RUN bun scripts/install-platform-optionals.ts
 RUN bun scripts/build.ts prod
 
 # ---- Stage 2: Production runtime ----
