@@ -481,3 +481,28 @@ describe("scanSkillRoot — directory-entry characterization", () => {
     ]);
   });
 });
+
+describe("scanSkillRoot — Bun.Glob rewrite characterization", () => {
+  test("requires dot for hidden immediate skill directories and a recursive pattern for nested manifests", async () => {
+    await writeManifest(tmpRoot, "visible-skill", manifest("visible-skill", "visible"));
+    await writeManifest(tmpRoot, ".hidden-skill", manifest("hidden-skill", "hidden"));
+    await writeManifest(tmpRoot, "nested/deep-skill", manifest("deep-skill", "deep"));
+
+    const immediateWithoutDot: string[] = [];
+    for await (const entry of new Bun.Glob("*/SKILL.md").scan({ cwd: tmpRoot, dot: false })) {
+      immediateWithoutDot.push(entry);
+    }
+    const immediateWithDot: string[] = [];
+    for await (const entry of new Bun.Glob("*/SKILL.md").scan({ cwd: tmpRoot, dot: true })) {
+      immediateWithDot.push(entry);
+    }
+    const recursive: string[] = [];
+    for await (const entry of new Bun.Glob("**/SKILL.md").scan({ cwd: tmpRoot, dot: true })) {
+      recursive.push(entry);
+    }
+
+    expect(immediateWithoutDot).toEqual(["visible-skill/SKILL.md"]);
+    expect(immediateWithDot.sort()).toEqual([".hidden-skill/SKILL.md", "visible-skill/SKILL.md"]);
+    expect(recursive).toContain("nested/deep-skill/SKILL.md");
+  });
+});

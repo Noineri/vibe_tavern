@@ -397,3 +397,31 @@ describe("SkillLibraryService — durable import reload", () => {
     );
   });
 });
+
+describe("listTopLevelDirs — Bun.Glob rewrite characterization", () => {
+  test("returns a symlink directory itself without following its descendants", async () => {
+    const outsideRoot = await freshRoot();
+    const outsideDir = join(outsideRoot, "outside-dir");
+    const linkedDir = join(userRoot, "linked-dir");
+    const directoryLinkType = process.platform === "win32" ? "junction" : "dir";
+    await Promise.all([
+      mkdir(join(userRoot, "real-dir"), { recursive: true }),
+      mkdir(outsideDir, { recursive: true }),
+      Bun.write(join(outsideDir, "escaped.json"), "escaped"),
+    ]);
+    symlinkSync(outsideDir, linkedDir, directoryLinkType);
+
+    const entries: string[] = [];
+    for await (const entry of new Bun.Glob("**/*").scan({
+      cwd: userRoot,
+      dot: true,
+      followSymlinks: false,
+      onlyFiles: false,
+    })) {
+      entries.push(entry);
+    }
+
+    expect(entries).toEqual(expect.arrayContaining(["real-dir", "linked-dir"]));
+    expect(entries).not.toContain("linked-dir/escaped.json");
+  });
+});

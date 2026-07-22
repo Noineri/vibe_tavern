@@ -219,6 +219,43 @@ describe("ST directory scanner — three gaps (STN-1D)", () => {
 	});
 });
 
+describe("ST directory scanner — Bun.Glob rewrite characterization", () => {
+	let globTmp = "";
+
+	beforeEach(async () => {
+		globTmp = await mkdtemp(join(tmpdir(), "vt-st-glob-"));
+	});
+
+	afterEach(async () => {
+		await rm(globTmp, { recursive: true, force: true });
+	});
+
+	it("follows an escaping character-file link only when followSymlinks is enabled", async () => {
+		const root = join(globTmp, "st-data");
+		const charactersDir = join(root, "characters");
+		const outsideCard = join(globTmp, "outside", "escaping.json");
+		await Promise.all([
+			mkdir(charactersDir, { recursive: true }),
+			mkdir(join(globTmp, "outside"), { recursive: true }),
+			Bun.write(outsideCard, scannerCard("Outside Character")),
+		]);
+		symlinkSync(outsideCard, join(charactersDir, "escaping.json"), "file");
+
+		const withoutFollowing: string[] = [];
+		for await (const entry of new Bun.Glob("characters/**/*.json").scan({ cwd: root, followSymlinks: false })) {
+			withoutFollowing.push(entry);
+		}
+		const withFollowing: string[] = [];
+		for await (const entry of new Bun.Glob("characters/**/*.json").scan({ cwd: root, followSymlinks: true })) {
+			withFollowing.push(entry);
+		}
+
+		expect(relative(root, outsideCard).startsWith("..")).toBe(true);
+		expect(withoutFollowing).toEqual([]);
+		expect(withFollowing).toEqual(["characters/escaping.json"]);
+	});
+});
+
 // ── PNG card import: avatar-full wiring + bounded parallelism ──────────────────
 //
 // The avatar fix that closed STN-1D originally wrote a dead `original.png`
