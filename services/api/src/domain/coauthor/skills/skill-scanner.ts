@@ -24,7 +24,7 @@
  * real roots via {@link resolveBuiltinSkillsRoot} / {@link resolveUserSkillsRoot}.
  */
 
-import { lstat, readdir } from "node:fs/promises";
+import { lstat } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { parse as parseYaml } from "yaml";
 import { resolvePromptAssetPath } from "../../../shared/prompt-asset-loader.js";
@@ -157,19 +157,27 @@ function isSafeSkillDirName(name: string): boolean {
  * `[]` — not an error — so a fresh install scans cleanly.
  */
 async function listSkillDirs(rootPath: string): Promise<string[]> {
-  let entries: import("node:fs").Dirent[];
+  const dirNames: string[] = [];
+
   try {
-    entries = await readdir(rootPath, { withFileTypes: true });
+    for await (const entry of new Bun.Glob("*").scan({
+      cwd: rootPath,
+      dot: true,
+      followSymlinks: false,
+      onlyFiles: false,
+    })) {
+      if (!isSafeSkillDirName(entry)) continue;
+
+      const stat = await lstat(join(rootPath, entry));
+      if (stat.isDirectory() && !stat.isSymbolicLink()) dirNames.push(entry);
+    }
   } catch (e) {
     const code = (e as NodeJS.ErrnoException).code;
     if (code === "ENOENT") return [];
     throw e;
   }
-  return entries
-    .filter((e) => e.isDirectory() && !e.isSymbolicLink())
-    .map((e) => e.name)
-    .filter(isSafeSkillDirName)
-    .sort((a, b) => a.localeCompare(b));
+
+  return dirNames.sort((a, b) => a.localeCompare(b));
 }
 
 /**
