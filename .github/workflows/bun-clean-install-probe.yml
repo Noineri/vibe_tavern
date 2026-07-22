@@ -1,0 +1,34 @@
+name: Bun clean-install probe
+
+on:
+  push:
+    branches: [feat/bun-native]
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    name: Clean install (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-24.04-arm]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.14"
+      - shell: bash
+        run: bun --version && bun --revision
+      - shell: bash
+        run: bun install --frozen-lockfile
+      - shell: bash
+        run: bun .github/bun-clean-install-check.ts
+      - shell: bash
+        run: bun run typecheck
+      - shell: bash
+        run: bun run --filter @vibe-tavern/web build
+      - shell: bash
+        run: git diff --exit-code -- bun.lock
