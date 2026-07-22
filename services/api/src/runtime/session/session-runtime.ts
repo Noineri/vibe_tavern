@@ -1,4 +1,4 @@
-import { parseProfileMd, type PromptPreset, type StoreContainer, type UiSettings } from "@vibe-tavern/db";
+import { parseProfileMd, type PromptPreset, type StoreContainer, type UiSettings, type DiceRoll } from "@vibe-tavern/db";
 import type { PromptPresetDto, PromptTraceRecordDto } from "@vibe-tavern/domain";
 import {
 	type CharacterId,
@@ -19,6 +19,7 @@ import {
 } from "../../shared/errors.js";
 import type { CoauthorApplyRequest, CoauthorCorrection } from "@vibe-tavern/api-contracts";
 import { PromptAssemblyService } from "../../domain/prompt/prompt-assembly-service.js";
+import { storeRollToSnapshot } from "../../domain/dice/dice-service.js";
 import { StaticPromptResolver } from "../../domain/prompt/prompt-resolver.js";
 import { createLoreDelegate } from "../../domain/coauthor/lore/lore-delegate.js";
 import { createLoreEntityLookup } from "../../domain/coauthor/lore/lore-entity-lookup.js";
@@ -520,10 +521,27 @@ export function pickBootstrapChatId<T extends string>(
 		messages: import("@vibe-tavern/db").Message[],
 		branchId: ChatBranchId,
 	): Promise<SessionSnapshot["messages"]> {
-		const variantsByMessage = await this.stores.messages.getVariantsByBranch(branchId);
-		return messages.map((message) =>
-			mapMessageDto(message, variantsByMessage.get(message.id) ?? []),
-		);
+		// Batch-load bound Dice rolls for user messages in ONE query (the B7 batch
+		// read already used by prompt assembly). Assistant messages never carry
+		// Dice; user messages without bound rolls get nothing (field absent).
+		const userMessageIds = messages.filter((m) => m.role === "user").map((m) => m.id);
+		const [variantsByMessage, diceRollsByMessage] = await Promise.all([
+			this.stores.messages.getVariantsByBranch(branchId),
+			userMessageIds.length > 0
+				? this.stores.diceRolls.getRollsForMessages(userMessageIds)
+				: Promise.resolve(new Map<string, DiceRoll[]>()),
+		]);
+		return messages.map((message) => {
+			if (message.role !== "user") {
+				return mapMessageDto(message, variantsByMessage.get(message.id) ?? []);
+			}
+			const rolls = diceRollsByMessage.get(message.id);
+			return mapMessageDto(
+				message,
+				variantsByMessage.get(message.id) ?? [],
+				rolls && rolls.length > 0 ? rolls.map(storeRollToSnapshot) : undefined,
+			);
+		});
 	}
 
 	/** All branches for a chat, each annotated with its message count. */

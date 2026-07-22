@@ -509,4 +509,72 @@ describe("Wave B1.1 — per-endpoint response builder shapes", () => {
 		// so the assertion is robust to that normalization.
 		expect(rA.summaries[0]!.summary.trim()).toBe("summary on branch A");
 	});
+
+	// ── DICE Contract stack-audit GAP-1: message read DTO carries bound diceRolls ──
+	//
+	// Pins the FULL read path the frontend fetches: buildChatSwitchResponse →
+	// buildMessagesWithVariants → DiceRollStore.getRollsForMessages (the B7 batch
+	// read) → storeRollToSnapshot → mapMessageDto. This is the boundary GAP-1
+	// identified: B13/B14 attached diceRolls only to the prompt-projection path
+	// (RecentMessage), never to the API read DTO. A regression here means the
+	// frontend's message-meta badge (F10) loses its data on reload / Dice-off /
+	// script-rename, and F9's pending→committed reconcile has no authoritative
+	// source. Seed mirrors dice-lifecycle.test.ts userMessageWithBoundRoll.
+
+	it("buildChatSwitchResponse attaches bound diceRolls to user messages (DICE GAP-1)", async () => {
+		const ctx = await createTestRuntime();
+		try {
+			const { runtime, chatId, stores } = ctx;
+			const branchId = (await runtime.getSnapshot(chatId)).activeBranch!.id as import("@vibe-tavern/domain").ChatBranchId;
+
+			// Seed a normal-lane roll and bind it to a fresh user message in one turn.
+			await stores.diceRolls.createRoll({
+				chatId: chatId as string, branchId: branchId as string, mode: "normal",
+				requestId: "req_snap", actorType: "persona", actorId: "persona_1", actorLabel: "Player",
+				scriptId: "script_1", scriptLabel: "Fate Die", scriptRevision: 1,
+				checkId: "fate_check", checkLabel: "Fate Roll", notation: "4dF", faceShape: "dF",
+				resolution: "narrative",
+				attemptsJson: JSON.stringify([{ attemptId: "a1", faces: [1, 0, -1, 1], modifier: 0, subtotal: 1, total: 1 }]),
+				finalJson: null,
+			});
+			const msg = await runtime.chatApp.appendUserMessage(chatId, {
+				content: "rolling", mode: "reply", diceCommit: { mode: "normal", pendingRevision: 1 },
+			});
+
+			const snap = await runtime.buildChatSwitchResponse(chatId);
+
+			// The user message carries its bound roll as a domain snapshot.
+			const userMsg = snap.messages.find((m) => m.id === msg.id)!;
+			expect(userMsg.role).toBe("user");
+			expect(userMsg.diceRolls).toBeDefined();
+			expect(userMsg.diceRolls).toHaveLength(1);
+			expect(userMsg.diceRolls![0]!.checkLabel).toBe("Fate Roll");
+			expect(userMsg.diceRolls![0]!.boundMessageId).toBe(msg.id);
+			expect(userMsg.diceRolls![0]!.actor.actorLabel).toBe("Player");
+
+			// Assistant messages (the seeded greeting) NEVER carry diceRolls —
+			// the batch-load queries user-message ids only, and mapMessageDto is
+			// called without diceRolls for non-user rows.
+			const greeting = snap.messages.find((m) => m.role === "assistant")!;
+			expect(greeting.diceRolls).toBeUndefined();
+		} finally {
+			await ctx.cleanup();
+		}
+	});
+
+	it("buildChatSwitchResponse omits diceRolls on a no-Dice chat (byte-identical to pre-Dice shape)", async () => {
+		// A chat that never touched Dice must not sprout a `diceRolls` key on any
+		// message — the field absence is what keeps the payload byte-identical to
+		// the pre-Dice shape (the B14 no-op invariant, projected onto the DTO).
+		const ctx = await createTestRuntime();
+		try {
+			const snap = await ctx.runtime.buildChatSwitchResponse(ctx.chatId);
+			for (const m of snap.messages) {
+				expect(m.diceRolls).toBeUndefined();
+				expect("diceRolls" in m).toBe(false);
+			}
+		} finally {
+			await ctx.cleanup();
+		}
+	});
 });

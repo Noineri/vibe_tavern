@@ -1,5 +1,5 @@
 import { brandId, type ChatId, type ChatBranchId, type MessageId, type PromptTraceRecordDto, type ModelSettingsOverlay } from "@vibe-tavern/domain";
-import type { LoreEntry, Message, MessageVariant, Attachment, SceneTrackerRecord } from "@vibe-tavern/domain";
+import type { LoreEntry, Message, MessageVariant, Attachment, SceneTrackerRecord, DiceRollSnapshot } from "@vibe-tavern/domain";
 import { parseStoredAttachments } from "@vibe-tavern/domain";
 import type { PromptTrace as DbPromptTrace, Message as DbMessage, MessageVariant as DbMessageVariant } from "@vibe-tavern/db";
 import type {
@@ -33,6 +33,11 @@ export interface MessageDto extends Message {
   coauthorModuleId?: string | null;
   coauthorSkillId?: string | null;
   attachments?: Attachment[];
+  /** Message-bound Dice results (user messages only; absent on assistant
+   *  messages and on user messages with no bound rolls). The immutable
+   *  snapshot the message-meta badge and historical rendering read — never
+   *  recomputed from the (possibly renamed/deleted) script. (DICE.) */
+  diceRolls?: DiceRollSnapshot[];
 }
 
 export function mapPromptTraceRecord(trace: DbPromptTrace): PromptTraceRecordDto {
@@ -59,9 +64,9 @@ export function mapPromptTraceRecord(trace: DbPromptTrace): PromptTraceRecordDto
   };
 }
 
-export function mapMessageDto(message: Message, variants: MessageVariant[]): MessageDto;
-export function mapMessageDto(message: DbMessage, variants: DbMessageVariant[]): MessageDto;
-export function mapMessageDto(message: Message | DbMessage, variants: MessageVariant[] | DbMessageVariant[]): MessageDto {
+export function mapMessageDto(message: Message, variants: MessageVariant[], diceRolls?: DiceRollSnapshot[]): MessageDto;
+export function mapMessageDto(message: DbMessage, variants: DbMessageVariant[], diceRolls?: DiceRollSnapshot[]): MessageDto;
+export function mapMessageDto(message: Message | DbMessage, variants: MessageVariant[] | DbMessageVariant[], diceRolls?: DiceRollSnapshot[]): MessageDto {
   // Normalize once: store variants (plain-string ids) and domain variants are
   // structurally identical apart from phantom id brands, so a single cast carries
   // the per-variant Scene record through unchanged. Reading the selection off the
@@ -87,6 +92,7 @@ export function mapMessageDto(message: Message | DbMessage, variants: MessageVar
     variants: domainVariants,
     selectedVariantIndex: selectedVariant?.variantIndex ?? null,
     ...(attachments ? { attachments } : {}),
+    ...(diceRolls && diceRolls.length > 0 ? { diceRolls } : {}),
   } satisfies MessageDto;
 }
 

@@ -6,7 +6,7 @@ import {
   resolveStoredApiKey,
 } from "../src/runtime/session/session-runtime-dto.js";
 import type { LoreEntry } from "@vibe-tavern/domain";
-import type { StoredProviderProfileRecord } from "@vibe-tavern/domain";
+import type { StoredProviderProfileRecord, DiceRollSnapshot } from "@vibe-tavern/domain";
 
 // ─── mapMessageDto ───────────────────────────────────────────────────────
 
@@ -77,6 +77,44 @@ describe("mapMessageDto", () => {
     ];
     const result = mapMessageDto(message, variants);
     expect(result.sceneTracker).toBeNull();
+  });
+
+  // ── diceRolls (DICE Contract stack-audit GAP-1: message read DTO) ──
+
+  const diceRoll = {
+    rollId: "roll_1",
+    requestId: "req_1",
+    actor: { actorType: "character", actorId: "char_1", actorLabel: "Theron" },
+    scriptId: "s1", scriptLabel: "Combat", scriptRevision: 1,
+    checkId: "c1", checkLabel: "Stealth Check", notation: "2d6+1",
+    faceShape: "d6", resolution: "strict", mode: "normal",
+    included: true, finalAttemptId: "a1",
+    attempts: [{ attemptId: "a1", faces: [3, 5], modifier: 1, subtotal: 8, total: 9 }],
+    final: { total: 9, outcome: "success", degree: "hard", constraint: "unseen" },
+    createdAt: "2026-01-01T00:00:00.000Z",
+  } as DiceRollSnapshot;
+
+  it("attaches diceRolls when a non-empty array is passed (bound user message)", () => {
+    const message = { id: "m1", role: "user", content: "I roll to hide" };
+    const result = mapMessageDto(message, [], [diceRoll]);
+    expect(result.diceRolls).toEqual([diceRoll]);
+    expect(result.diceRolls).toHaveLength(1);
+    expect(result.diceRolls![0].checkLabel).toBe("Stealth Check");
+  });
+
+  it("omits diceRolls entirely when undefined (assistant message / user without bound rolls)", () => {
+    const message = { id: "m1", role: "assistant", content: "ok" };
+    const result = mapMessageDto(message, []);
+    expect(result.diceRolls).toBeUndefined();
+    // the key is absent, not null — byte-identical to the pre-Dice shape
+    expect("diceRolls" in result).toBe(false);
+  });
+
+  it("omits diceRolls when an empty array is passed (no bound rolls on this user message)", () => {
+    const message = { id: "m1", role: "user", content: "hi" };
+    const result = mapMessageDto(message, [], []);
+    expect(result.diceRolls).toBeUndefined();
+    expect("diceRolls" in result).toBe(false);
   });
 });
 
