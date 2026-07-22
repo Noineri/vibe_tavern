@@ -96,6 +96,24 @@ describe("SegmentedControl — selection", () => {
 		fireEvent.click(getByText("Banana"));
 		expect(onChange).not.toHaveBeenCalled();
 	});
+
+	it("an individually disabled option cannot be selected", () => {
+		const onChange = vi.fn();
+		const { getByRole } = render(
+			<SegmentedControl
+				value="a"
+				options={[
+					{ value: "a", label: "Apple" },
+					{ value: "b", label: "Banana", disabled: true },
+				]}
+				onChange={onChange}
+			/>,
+		);
+		const disabled = getByRole("radio", { name: "Banana" });
+		expect(disabled.getAttribute("data-disabled")).not.toBeNull();
+		fireEvent.click(disabled);
+		expect(onChange).not.toHaveBeenCalled();
+	});
 });
 
 describe("SegmentedControl — option slots (load-bearing for VersionSwitcher)", () => {

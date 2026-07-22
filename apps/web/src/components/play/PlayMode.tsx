@@ -1,6 +1,7 @@
 import { InputArea } from "../chat/InputArea.js";
 import { MessageList } from "../chat/MessageList.js";
 import { QueueManager } from "../chat/QueueManager.js";
+import { DicePanel } from "../chat/DicePanel.js";
 import { MessageAiEditorModal } from "../chat/MessageAiEditorModal.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
 
@@ -18,6 +19,7 @@ export function PlayMode() {
       <MessageList key={activeScope} />
       <div className="relative shrink-0">
         <QueueManager />
+        <DicePanel />
         <InputArea />
       </div>
       {/* One message AI editor instance, mounted OUTSIDE the virtualized

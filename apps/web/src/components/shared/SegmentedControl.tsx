@@ -6,6 +6,8 @@ import { CustomTooltip } from "./Tooltip.js";
 interface SegmentedOption {
   value: string;
   label: ReactNode;
+  /** Disable only this option while leaving the rest of the group interactive. */
+  disabled?: boolean;
   /** Optional tooltip shown on hover/focus over this segment. */
   tooltip?: ReactNode;
   /** Optional trailing action node rendered after the segment (e.g. inline
@@ -95,7 +97,7 @@ export function SegmentedControl({
           const item = (
             <RadioGroup.Item
               value={opt.value}
-              disabled={disabled}
+              disabled={disabled || opt.disabled}
               className={cn(
                 // Only the properties that actually change — `transition-all` watches
                 // every property and causes unexpected color/padding transitions.
@@ -104,6 +106,7 @@ export function SegmentedControl({
                 compact ? "min-h-9 px-2.5 py-1 text-[11px] sm:min-h-0" : "min-h-10 px-3 py-1.5 text-[13px] sm:min-h-0",
                 "text-t2 hover:text-t1",
                 "data-[state=checked]:bg-s2 data-[state=checked]:text-accent data-[state=checked]:shadow-sm data-[state=checked]:font-medium",
+                opt.disabled && "cursor-not-allowed opacity-40",
               )}
             >
               <span className="min-w-0 truncate sm:overflow-visible sm:whitespace-normal sm:text-clip">{opt.label}</span>
