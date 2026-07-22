@@ -34,6 +34,15 @@ vi.mock("../app-client.js", async (importOriginal) => {
   return { ...actual, regenerateChatMessage, sendChatMessageStream, fetchChat, logClientSendDebug };
 });
 
+// sendChatMessageAction (chat-actions) is the non-stream send entry handleSend
+// calls; stubbed separately so the non-stream dice path can be exercised end
+// to end. Spread `...actual` first; vi.mock is file-scoped (vitest).
+const { sendChatMessageAction } = vi.hoisted(() => ({ sendChatMessageAction: vi.fn() }));
+vi.mock("../stores/api-actions/chat-actions.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../stores/api-actions/chat-actions.js")>();
+  return { ...actual, sendChatMessageAction };
+});
+
 // getT() without initI18n — translations are irrelevant to state cleanup.
 vi.mock("../i18n/locale-helpers.js", () => ({
   getT: () => (key: string) => key,
@@ -41,6 +50,7 @@ vi.mock("../i18n/locale-helpers.js", () => ({
 
 import { useChatController, diceSendBlockReason } from "./use-chat-controller.js";
 import { ProviderStreamError } from "../api/provider-stream-error.js";
+import { DiceApiError } from "../api/dice-api.js";
 import { useDiceStore } from "../stores/dice-store.js";
 import type { DiceRollSnapshot } from "../api/types.js";
 import { useChatStore } from "../stores/chat-store.js";
@@ -289,6 +299,7 @@ describe("useChatController — handleSend dice send (DICE-F3, stream path)", ()
 
   beforeEach(() => {
     sendChatMessageStream.mockReset();
+    sendChatMessageAction.mockReset();
     refreshPending.mockClear();
     useProviderStore.setState((s) => ({ connection: { ...s.connection, streamResponse: true } }));
     useProviderDataStore.setState({ profiles: [{ id: "p1", isActive: true, defaultModel: "m" } as never] });
@@ -431,5 +442,70 @@ describe("useChatController — handleSend dice send (DICE-F3, stream path)", ()
     await act(async () => { await result.current.handleSend(); });
 
     expect(refreshPending).not.toHaveBeenCalled();
+  });
+
+  // ── Non-stream path (streamResponse=false) ── handleSend routes through
+  // sendChatMessageAction; a 409 DiceApiError reaches the onError callback,
+  // which must run the SAME dice-conflict recovery (refresh + keep draft).
+
+  test("non-stream: bindable lane ⇒ intent threaded as the diceCommit arg", async () => {
+    useProviderStore.setState((s) => ({ connection: { ...s.connection, streamResponse: false } }));
+    setNormalLane([makeRoll({ included: true })]);
+    sendChatMessageAction.mockResolvedValue({});
+    const { result } = renderHook(() => useChatController());
+
+    await act(async () => { await result.current.handleSend(); });
+
+    expect(sendChatMessageAction).toHaveBeenCalledTimes(1);
+    // (chatId, content, attachments, diceCommit, signal)
+    expect(sendChatMessageAction.mock.calls[0][0]).toBe(CHAT);
+    expect(sendChatMessageAction.mock.calls[0][1]).toBe("hi");
+    expect(sendChatMessageAction.mock.calls[0][3]).toEqual({ diceMode: "normal", pendingRevision: 7 });
+  });
+
+  test("non-stream: Dice OFF ⇒ no diceCommit arg (undefined, byte-identical)", async () => {
+    useProviderStore.setState((s) => ({ connection: { ...s.connection, streamResponse: false } }));
+    useSnapshotStore.setState({
+      activeChat: {
+        id: CHAT, characterId: DICE_CHAR, mode: "rp",
+        insightsConfig: { objectiveEnabled: true, trackerEnabled: true, diceEnabled: false, diceMode: "normal" },
+      } as never,
+      activeBranch: { id: BRANCH } as never,
+      persona: { id: DICE_PER } as never,
+    });
+    sendChatMessageAction.mockResolvedValue({});
+    const { result } = renderHook(() => useChatController());
+
+    await act(async () => { await result.current.handleSend(); });
+
+    expect(sendChatMessageAction).toHaveBeenCalledTimes(1);
+    expect(sendChatMessageAction.mock.calls[0][3]).toBeUndefined();
+  });
+
+  test("non-stream conflict (stale_revision) ⇒ refreshPending + draft KEPT", async () => {
+    useProviderStore.setState((s) => ({ connection: { ...s.connection, streamResponse: false } }));
+    setNormalLane([makeRoll({ included: true })]);
+    sendChatMessageAction.mockRejectedValueOnce(new DiceApiError(409, "stale", "stale_revision"));
+    const { result } = renderHook(() => useChatController());
+
+    await act(async () => { await result.current.handleSend(); });
+
+    expect(sendChatMessageAction).toHaveBeenCalledTimes(1);
+    expect(refreshPending).toHaveBeenCalledWith(CHAT, BRANCH);
+    // handleSend's non-stream arm clears the draft up front (csStore.setDraft(""));
+    // the dice-conflict path must restore it so the user can re-review and resend.
+    expect(useChatStore.getState().draft).toBe("hi");
+  });
+
+  test("non-stream conflict (unresolved_choose) ⇒ refreshPending fires too", async () => {
+    useProviderStore.setState((s) => ({ connection: { ...s.connection, streamResponse: false } }));
+    setNormalLane([makeRoll({ included: true })]);
+    sendChatMessageAction.mockRejectedValueOnce(new DiceApiError(409, "choose", "unresolved_choose"));
+    const { result } = renderHook(() => useChatController());
+
+    await act(async () => { await result.current.handleSend(); });
+
+    expect(refreshPending).toHaveBeenCalledWith(CHAT, BRANCH);
+    expect(useChatStore.getState().draft).toBe("hi");
   });
 });
