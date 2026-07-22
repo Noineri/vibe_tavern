@@ -13,6 +13,6 @@
     "@vibe-tavern/domain": "1.0.1"
   },
   "devDependencies": {
-    "@types/bun": "^1.3.13"
+    "@types/bun": "^1.3.14"
   }
 }
