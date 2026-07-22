@@ -5,6 +5,7 @@ import { z } from "zod";
 import { streamSSE } from "hono/streaming";
 import { logSendDebug } from "../../shared/send-debug-log.js";
 import * as schemas from "@vibe-tavern/api-contracts";
+import { DiceBindError } from "@vibe-tavern/db";
 import { readOptionalJson } from "./helpers.js";
 import { extractProviderErrorMessage } from "../../infrastructure/ai/provider-error-message.js";
 import { classifyProviderError } from "../../infrastructure/ai/provider-error-classifier.js";
@@ -61,9 +62,17 @@ async function writeChatSseEvents(
 
     const message = extractProviderErrorMessage(err);
     const category = classifyProviderError(err);
-    logSendDebug("api.route.sse.error", { message, category });
+    // DICE-B11 send-path gap (stream arm): a dice commit conflict (stale lane
+    // revision / unresolved choose) throws DiceBindError inside the generator
+    // during the for-await above. Streaming headers are already sent (HTTP 200),
+    // so this cannot become a 409 — surface the structured `code` on the SSE
+    // error event instead so the client can tell a retryable dice conflict
+    // (refresh pending + keep the draft) from a provider failure. The non-stream
+    // arm maps the same error to a real 409 in the global onError.
+    const diceCode = err instanceof DiceBindError ? err.code : undefined;
+    logSendDebug("api.route.sse.error", { message, category, ...(diceCode ? { code: diceCode } : {}) });
     try {
-      await stream.writeSSE({ event: "error", data: JSON.stringify({ message, category }) });
+      await stream.writeSSE({ event: "error", data: JSON.stringify({ message, category, ...(diceCode ? { code: diceCode } : {}) }) });
     } catch {
       abortBridge.abort("sse-error-write-failed");
     }

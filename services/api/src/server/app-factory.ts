@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { serveStatic } from "hono/bun";
 import { resolve } from "node:path";
+import { DiceBindError } from "@vibe-tavern/db";
 import { isDomainError, httpStatusForDomainError, domainErrorToJson } from "../shared/errors.js";
 import { ProviderExecutionError } from "../infrastructure/ai/provider-execution-types.js";
 import { logSendDebug } from "../shared/send-debug-log.js";
@@ -83,6 +84,19 @@ export async function createApp(deps: AppDeps): Promise<Hono> {
 			return c.json(
 				{ error: { kind: "Provider" as const, message: err.message, details: { category: err.category } } },
 				502,
+			);
+		}
+		if (err instanceof DiceBindError) {
+			// DICE-B11 send-path gap: bindActiveAndResetInTx throws DiceBindError
+			// (a plain Error, NOT a DomainError) when the send-time dice commit has a
+			// stale lane revision or an unresolved choose. Unmapped it fell through to
+			// the generic 500 below, so the frontend could never distinguish a
+			// retryable dice conflict (refresh pending + keep the draft) from a real
+			// server error. Map it to the 409 Conflict the contract promises, carrying
+			// the structured code the client keys on.
+			return c.json(
+				{ error: { kind: "Conflict" as const, message: err.message, details: { code: err.code } } },
+				409,
 			);
 		}
 		if (isDomainError(err)) {
