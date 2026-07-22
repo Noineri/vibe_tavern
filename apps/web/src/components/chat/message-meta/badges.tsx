@@ -12,10 +12,17 @@
 //
 // The leading timestamp + token-count span are NOT registered here — they are
 // always present and rendered by MessageShell itself (not feature-pluggable).
+//
+// Dice rolls badge (DICE-F10) self-registers in ./dice-rolls.tsx; imported
+// here for its side effect so MessageShell's single side-effect import (this
+// file) triggers every meta-badge registration.
 // ────────────────────────────────────────────────────────────────────────────
 
 import { registerMessageMeta } from "../../../lib/message-meta-registry.js";
 import { resolveModelLabel } from "../../../lib/model-resolve.js";
+
+// Side-effect: register the Dice rolls user-message badge (DICE-F10).
+import "./dice-rolls.js";
 
 // Provenance: model that produced this variant.
 // Visible only for assistant variants that carry a model id.

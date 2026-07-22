@@ -150,6 +150,7 @@ export const CoauthorTurnShell = memo(function CoauthorTurnShell({
     presetName: coauthorPresetName,
     tokenCount: turnTokenCount,
     createdAt: snapshotState.messagesById[turnId]?.createdAt ?? "",
+    diceRolls: [],
   };
 
   const confirmDeleteTurn = async () => {

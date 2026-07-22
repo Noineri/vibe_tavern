@@ -1677,5 +1677,11 @@
   "dice_panel_excluded_pending_other": "Исключено {count} броска",
   "dice_panel_roll": "Бросить",
   "dice_panel_title": "Открыть панель костей",
-  "dice_attempt": "Попытка {n}"
+  "dice_attempt": "Попытка {n}",
+  "dice_meta_checks": "{count} проверок",
+  "dice_meta_checks_one": "{count} проверка",
+  "dice_meta_checks_few": "{count} проверки",
+  "dice_meta_checks_many": "{count} проверок",
+  "dice_meta_checks_other": "{count} проверок",
+  "dice_meta_captured_rev_title": "Зафиксировано в ревизии {revision} скрипта"
 }

@@ -72,6 +72,7 @@ export function PendingAssistantMessage() {
         presetName: null,
         tokenCount: 0,
         createdAt: Date.now().toString(),
+        diceRolls: [],
       } satisfies MessageMetaContext}
       copied={false}
       slotExtras={{ reasoning: reasoningForSlot }}

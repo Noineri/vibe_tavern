@@ -1663,5 +1663,9 @@
   "dice_panel_excluded_pending_other": "{count} excluded rolls",
   "dice_panel_roll": "Roll",
   "dice_panel_title": "Open Dice panel",
-  "dice_attempt": "Attempt {n}"
+  "dice_attempt": "Attempt {n}",
+  "dice_meta_checks": "{count} checks",
+  "dice_meta_checks_one": "{count} check",
+  "dice_meta_checks_other": "{count} checks",
+  "dice_meta_captured_rev_title": "Captured at script revision {revision}"
 }

@@ -27,7 +27,8 @@ import type { DiceRollSnapshot, MessageVariant } from "@vibe-tavern/domain";
 // immutable snapshots travel on the message. The pending-user shell populates
 // it from the active-generation capture (DICE-F9); committed user messages
 // populate it from the server DTO; assistant/coauthor turns pass an explicit
-// empty array. The descriptor that renders it lands in DICE-F10.
+// empty array. The descriptor that renders it is registered in
+// `message-meta/dice-rolls.tsx` (DICE-F10).
 // ────────────────────────────────────────────────────────────────────────────
 
 /**
@@ -61,12 +62,14 @@ export interface MessageMetaContext {
   createdAt: string;
   /**
    * Message-owned Dice result snapshots bound to this user message (DICE-F9 /
-   * DICE-F10). Optional in F9 (plumbing); DICE-F10 promotes it to a required
-   * `DiceRollSnapshot[]` (explicit `[]` where absent) and registers the
-   * descriptor that renders it. Immutable — script rename/disable/delete never
-   * changes a historical snapshot.
+   * DICE-F10). Required: every context constructor passes real rolls or an
+   * explicit `[]` — committed user message (MessageBlock) reads the server DTO;
+   * the pending-user shell reads the active-generation capture; assistant and
+   * coauthor turns pass `[]`. The descriptor that renders it lives in
+   * `message-meta/dice-rolls.tsx`. Immutable — script rename/disable/delete
+   * never changes a historical snapshot.
    */
-  diceRolls?: DiceRollSnapshot[];
+  diceRolls: DiceRollSnapshot[];
 }
 
 /**

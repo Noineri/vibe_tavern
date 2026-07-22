@@ -456,6 +456,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
     presetName,
     tokenCount: msg.tokenCount,
     createdAt: msg.createdAt,
+    diceRolls: msg.diceRolls ?? [],
   };
 
   return (

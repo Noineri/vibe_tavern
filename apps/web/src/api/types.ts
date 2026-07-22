@@ -45,6 +45,13 @@ export interface AppMessage extends Message {
   coauthorModuleId?: string | null;
   coauthorSkillId?: string | null;
   attachments?: { id: string; assetId: string; type: string; name?: string; mimeType?: string; sizeBytes?: number; description?: string | null }[];
+  /** Message-owned Dice result snapshots bound to this user message (DICE-F9 /
+   *  DICE-F10). The backend `MessageDto` populates it for user messages that
+   *  have rolls; `normalizeMessage` spreads the DTO, so the field survives at
+   *  runtime even though the domain `Message` base type doesn't declare it.
+   *  Absent/undefined on assistant/system messages and on user messages with
+   *  no rolls — readers coerce with `?? []`. Immutable historical snapshots. */
+  diceRolls?: DiceRollSnapshot[];
 }
 
 export interface AutoSummaryConfig {
