@@ -493,7 +493,7 @@ describe("ST directory scanner — filesystem characterization", () => {
 		await expect(scanSillyTavernDirectory(join(scanRoot, "missing"))).rejects.toThrow("is not a directory");
 	});
 
-	it("includes dot-path entries and mixed-case extensions across every preview surface in raw directory-entry order", async () => {
+	it("includes dot-path entries and mixed-case extensions across every preview surface in lexicographic order", async () => {
 		const charactersDir = join(scanRoot, "characters");
 		const chatsDir = join(scanRoot, "chats");
 		const worldsDir = join(scanRoot, "worlds");
@@ -537,14 +537,12 @@ describe("ST directory scanner — filesystem characterization", () => {
 
 		const scan = await scanSillyTavernDirectory(scanRoot);
 
-		// The current scanner passes through the platform's readdir order; it does
-		// not sort. Compare to the same directory entries so this deliberately pins
-		// that observable ordering instead of assuming a particular filesystem order.
-		expect(scan.characters.map((item) => item.fileName)).toEqual(characterEntries);
-		expect(scan.chats.map((item) => item.characterName)).toEqual(chatEntries);
-		expect(scan.lorebooks.map((item) => item.fileName)).toEqual(worldEntries);
+		// Bun.Glob results are explicitly sorted lexicographically by the scanner.
+		expect(scan.characters.map((item) => item.fileName)).toEqual([...characterEntries].sort());
+		expect(scan.chats.map((item) => item.characterName)).toEqual([...chatEntries].sort());
+		expect(scan.lorebooks.map((item) => item.fileName)).toEqual([...worldEntries].sort());
 		expect(scan.presets.map((item) => item.fileName)).toEqual(
-			presetEntries.filter((entry) => entry !== "not-a-preset.json"),
+			[...presetEntries].filter((entry) => entry !== "not-a-preset.json").sort(),
 		);
 		expect(scan.characters.map((item) => item.name)).toEqual(
 			expect.arrayContaining(["Alpha", "Avatar", "Hidden Character", "Zeta"]),
@@ -595,7 +593,7 @@ describe("ST directory scanner — filesystem characterization", () => {
 		expect(scan.errors.every((error) => error.stage === "parse")).toBe(true);
 	});
 
-	it("follows symlinked directories and files outside the configured root, while dangling links surface as parse errors", async () => {
+	it("blocks symlinked directories and files outside the configured root (security boundary)", async () => {
 		const charactersDir = join(scanRoot, "characters");
 		const chatsDir = join(scanRoot, "chats");
 		if (scanTmp === null) throw new Error("scan fixture root was not created");
@@ -624,16 +622,10 @@ describe("ST directory scanner — filesystem characterization", () => {
 		expect(relative(scanRoot, outsideCard).startsWith("..")).toBe(true);
 		const scan = await scanSillyTavernDirectory(scanRoot);
 
-		// OBSERVED SECURITY DEFECT: current Bun.file().stat/text follows these
-		// escaping links, so content outside scanRoot is surfaced by the scanner.
-		expect(scan.characters).toEqual([
-			expect.objectContaining({ fileName: "escaping.JSON", name: "Outside Character" }),
-		]);
-		expect(scan.chats).toEqual([
-			expect.objectContaining({ characterName: "escaping-chat", fileName: "outside.JSONL", messageCount: 1 }),
-		]);
-		expect(scan.errors).toEqual([
-			expect.objectContaining({ file: danglingCardLink, stage: "parse" }),
-		]);
+		// SECURITY FIX: Bun.Glob with followSymlinks:false blocks escaping symlinks
+		// — content outside scanRoot is NOT surfaced.
+		expect(scan.characters).toEqual([]);
+		expect(scan.chats).toEqual([]);
+		expect(scan.errors).toEqual([]);
 	});
 });
