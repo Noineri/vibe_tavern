@@ -1,6 +1,6 @@
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { symlinkSync } from "node:fs";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -39,7 +39,7 @@ async function writeManifest(root: string, id: string, text: string): Promise<st
   const skillDir = join(root, id);
   await mkdir(skillDir, { recursive: true });
   const path = join(skillDir, "SKILL.md");
-  await writeFile(path, text, "utf8");
+  await Bun.write(path, text);
   return path;
 }
 
@@ -99,14 +99,14 @@ async function buildNineSkillFixture(root: string): Promise<void> {
   const creatorDir = join(root, "janitor-card-creator");
   await mkdir(join(creatorDir, "assets"), { recursive: true });
   await mkdir(join(creatorDir, "references"), { recursive: true });
-  await writeFile(join(creatorDir, "assets", "character-template.md"), "# Template\n...", "utf8");
-  await writeFile(join(creatorDir, "references", "creation-rules.md"), "# Rules\n...", "utf8");
+  await Bun.write(join(creatorDir, "assets", "character-template.md"), "# Template\n...");
+  await Bun.write(join(creatorDir, "references", "creation-rules.md"), "# Rules\n...");
 
   // Shared sibling references directory with NO SKILL.md — not a skill.
   const sharedDir = join(root, "shared-card-references");
   await mkdir(sharedDir, { recursive: true });
-  await writeFile(join(sharedDir, "evaluation-principles.md"), "# Evaluation principles", "utf8");
-  await writeFile(join(sharedDir, "patterns-personality.md"), "# Personality patterns", "utf8");
+  await Bun.write(join(sharedDir, "evaluation-principles.md"), "# Evaluation principles");
+  await Bun.write(join(sharedDir, "patterns-personality.md"), "# Personality patterns");
 }
 
 // ─── parseSkillManifest (pure) ───────────────────────────────────────────────
@@ -442,8 +442,8 @@ describe("scanSkillRoot — directory-entry characterization", () => {
       await writeManifest(tmpRoot, id, manifest(id, `Description for ${id}.`));
     }
     await mkdir(join(tmpRoot, "nested-only", "child-skill"), { recursive: true });
-    await writeFile(join(tmpRoot, "nested-only", "child-skill", "SKILL.md"), manifest("child-skill", "nested only"));
-    await writeFile(join(tmpRoot, "plain-file.md"), "not a directory");
+    await Bun.write(join(tmpRoot, "nested-only", "child-skill", "SKILL.md"), manifest("child-skill", "nested only"));
+    await Bun.write(join(tmpRoot, "plain-file.md"), "not a directory");
 
     const { skills, errors } = await scanSkillRoot({ path: tmpRoot, source: "user" });
 

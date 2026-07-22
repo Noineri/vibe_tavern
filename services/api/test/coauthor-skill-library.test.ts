@@ -1,6 +1,6 @@
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { symlinkSync } from "node:fs";
-import { mkdtemp, mkdir, rm, writeFile, lstat, readdir } from "node:fs/promises";
+import { mkdtemp, mkdir, rm, lstat, readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -359,7 +359,7 @@ describe("listTopLevelDirs — filesystem entry characterization", () => {
       mkdir(join(userRoot, ".~vt-skill-staging-interrupted"), { recursive: true }),
       mkdir(join(userRoot, ".~vt-skill-trash-interrupted"), { recursive: true }),
       mkdir(outsideDir, { recursive: true }),
-      writeFile(join(userRoot, "regular-file.md"), "not a directory"),
+      Bun.write(join(userRoot, "regular-file.md"), "not a directory"),
     ]);
     // Deliberately uncaught: a runner without symlink permission fails this gate.
     symlinkSync(outsideDir, linkedDir, directoryLinkType);

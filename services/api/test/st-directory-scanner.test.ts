@@ -24,7 +24,7 @@
  */
 import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, mock } from "bun:test";
 import { symlinkSync } from "node:fs";
-import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, rm } from "node:fs/promises";
 import { resolve, join, relative } from "node:path";
 import { tmpdir } from "node:os";
 import { createRuntimeStore } from "../src/runtime/session/session-runtime-store.js";
@@ -42,14 +42,14 @@ import { scanSillyTavernDirectory } from "../src/shared/st-directory-scanner.js"
 async function buildStDir(root: string) {
 	// characters/ — one minimal V2 card (the scanner needs a real card to seed)
 	await mkdir(join(root, "characters"), { recursive: true });
-	await writeFile(
+	await Bun.write(
 		join(root, "characters", "TestChar.json"),
 		JSON.stringify({ spec: "chara_card_v2", spec_version: "2.0", data: { name: "Test Char", description: "probe", first_mes: "Hello." } }),
 	);
 
 	// worlds/ — one ST lorebook with one entry (the gap-1 regression target)
 	await mkdir(join(root, "worlds"), { recursive: true });
-	await writeFile(
+	await Bun.write(
 		join(root, "worlds", "TestWorld.json"),
 		JSON.stringify({
 			name: "Test World",
@@ -74,7 +74,7 @@ async function buildStDir(root: string) {
 	// The scanner derives the preset name from the FILENAME (mirrors the browser
 	// flow), so the stored name will be "TestPreset" — not the JSON's `name`.
 	await mkdir(join(root, "OpenAI Settings"), { recursive: true });
-	await writeFile(
+	await Bun.write(
 		join(root, "OpenAI Settings", "TestPreset.json"),
 		JSON.stringify({
 			name: "Test Preset",
@@ -94,7 +94,7 @@ async function buildStDir(root: string) {
 	// settings.json — one persona (the gap-3 regression target).
 	// parseStPersonas reads personas[key] as the name, so the stored persona
 	// name will be "Test User" (the VALUE in the personas map).
-	await writeFile(
+	await Bun.write(
 		join(root, "settings.json"),
 		JSON.stringify({
 			power_user: {
@@ -257,7 +257,7 @@ function makeCharaPng(cardName: string): Uint8Array {
 async function buildStDirWithPngCards(root: string, names: string[]): Promise<void> {
 	await mkdir(join(root, "characters"), { recursive: true });
 	for (const name of names) {
-		await writeFile(join(root, "characters", `${name}.png`), makeCharaPng(name));
+		await Bun.write(join(root, "characters", `${name}.png`), makeCharaPng(name));
 	}
 	await mkdir(join(root, "chats"), { recursive: true });
 }
@@ -335,18 +335,18 @@ describe("ST directory scanner — PNG card avatar-full wiring + parallelism", (
 async function buildStDirMulti(root: string) {
 	await mkdir(join(root, "characters"), { recursive: true });
 	for (let i = 0; i < 3; i++) {
-		await writeFile(
+		await Bun.write(
 			join(root, "characters", `Char${i}.json`),
 			JSON.stringify({ spec: "chara_card_v2", spec_version: "2.0", data: { name: `Char ${i}`, description: "d", first_mes: "hi" } }),
 		);
 	}
 	await mkdir(join(root, "worlds"), { recursive: true });
 	for (let i = 0; i < 2; i++) {
-		await writeFile(
+		await Bun.write(
 			join(root, "worlds", `World${i}.json`), JSON.stringify({ name: `World ${i}`, entries: {} }));
 	}
 	await mkdir(join(root, "OpenAI Settings"), { recursive: true });
-	await writeFile(
+	await Bun.write(
 			join(root, "OpenAI Settings", "Preset0.json"),
 			JSON.stringify({ chat_start: "", prompts: [{ identifier: "main", name: "main", content: "sys", role: "system" }], prompt_order: { dummy: { order: [{ identifier: "main" }] } } }),
 		);
@@ -468,25 +468,25 @@ describe("ST directory scanner — filesystem characterization", () => {
 			mkdir(presetsDir, { recursive: true }),
 		]);
 
-		await writeFile(join(charactersDir, "zeta.JSON"), scannerCard("Zeta"));
-		await writeFile(join(charactersDir, ".hidden.json"), scannerCard("Hidden Character"));
-		await writeFile(join(charactersDir, "Alpha.json"), scannerCard("Alpha"));
-		await writeFile(join(charactersDir, "Avatar.PNG"), makeCharaPng("Avatar"));
+		await Bun.write(join(charactersDir, "zeta.JSON"), scannerCard("Zeta"));
+		await Bun.write(join(charactersDir, ".hidden.json"), scannerCard("Hidden Character"));
+		await Bun.write(join(charactersDir, "Alpha.json"), scannerCard("Alpha"));
+		await Bun.write(join(charactersDir, "Avatar.PNG"), makeCharaPng("Avatar"));
 
 		for (const chatDir of ["zeta-chat", ".hidden-chat", "alpha-chat"]) {
 			await mkdir(join(chatsDir, chatDir));
-			await writeFile(join(chatsDir, chatDir, "Conversation.JSONL"), scannerChat(chatDir));
+			await Bun.write(join(chatsDir, chatDir, "Conversation.JSONL"), scannerChat(chatDir));
 		}
 
-		await writeFile(join(worldsDir, "Zeta.JSON"), JSON.stringify({ name: "Zeta World" }));
-		await writeFile(join(worldsDir, ".hidden.json"), JSON.stringify({ name: "Hidden World" }));
-		await writeFile(join(worldsDir, "Alpha.json"), JSON.stringify({ name: "Alpha World" }));
+		await Bun.write(join(worldsDir, "Zeta.JSON"), JSON.stringify({ name: "Zeta World" }));
+		await Bun.write(join(worldsDir, ".hidden.json"), JSON.stringify({ name: "Hidden World" }));
+		await Bun.write(join(worldsDir, "Alpha.json"), JSON.stringify({ name: "Alpha World" }));
 
-		await writeFile(join(presetsDir, "Zeta.JSON"), scannerPreset("Zeta Preset"));
-		await writeFile(join(presetsDir, ".hidden.json"), scannerPreset("Hidden Preset"));
-		await writeFile(join(presetsDir, "Alpha.json"), scannerPreset("Alpha Preset"));
-		await writeFile(join(presetsDir, "not-a-preset.json"), JSON.stringify({ name: "Not a preset" }));
-		await writeFile(join(scanRoot, "settings.json"), JSON.stringify({
+		await Bun.write(join(presetsDir, "Zeta.JSON"), scannerPreset("Zeta Preset"));
+		await Bun.write(join(presetsDir, ".hidden.json"), scannerPreset("Hidden Preset"));
+		await Bun.write(join(presetsDir, "Alpha.json"), scannerPreset("Alpha Preset"));
+		await Bun.write(join(presetsDir, "not-a-preset.json"), JSON.stringify({ name: "Not a preset" }));
+		await Bun.write(join(scanRoot, "settings.json"), JSON.stringify({
 			power_user: {
 				personas: { "scanner.png": "Scanner Persona" },
 				persona_descriptions: { "scanner.png": { description: "Fixture persona." } },
@@ -534,11 +534,11 @@ describe("ST directory scanner — filesystem characterization", () => {
 			mkdir(worldsDir, { recursive: true }),
 			mkdir(presetsDir, { recursive: true }),
 		]);
-		await writeFile(join(charactersDir, "broken.json"), "{not-json");
-		await writeFile(join(chatsDir, "broken.JSONL"), "{not-json");
-		await writeFile(join(worldsDir, "broken.json"), "{not-json");
-		await writeFile(join(presetsDir, "broken.json"), "{not-json");
-		await writeFile(join(scanRoot, "settings.json"), "{not-json");
+		await Bun.write(join(charactersDir, "broken.json"), "{not-json");
+		await Bun.write(join(chatsDir, "broken.JSONL"), "{not-json");
+		await Bun.write(join(worldsDir, "broken.json"), "{not-json");
+		await Bun.write(join(presetsDir, "broken.json"), "{not-json");
+		await Bun.write(join(scanRoot, "settings.json"), "{not-json");
 
 		const scan = await scanSillyTavernDirectory(scanRoot);
 
@@ -570,8 +570,8 @@ describe("ST directory scanner — filesystem characterization", () => {
 			mkdir(outsideChatsDir, { recursive: true }),
 		]);
 		const outsideCard = join(outsideDir, "outside-card.json");
-		await writeFile(outsideCard, scannerCard("Outside Character"));
-		await writeFile(join(outsideChatsDir, "outside.JSONL"), scannerChat("Outside Chat"));
+		await Bun.write(outsideCard, scannerCard("Outside Character"));
+		await Bun.write(join(outsideChatsDir, "outside.JSONL"), scannerChat("Outside Chat"));
 
 		const escapingCardLink = join(charactersDir, "escaping.JSON");
 		const danglingCardLink = join(charactersDir, "dangling.JSON");
