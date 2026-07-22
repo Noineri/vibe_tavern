@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { zValidator } from "@hono/zod-validator";
+import { z } from "zod";
 import * as schemas from "@vibe-tavern/api-contracts";
 import type { DiceRuntimeApi } from "../contract/runtime-api.js";
 
@@ -25,12 +26,9 @@ export function createDiceRoutes(runtime: DiceRuntimeApi) {
     })
 
     // GET /pending — both lanes' state
-    .get("/api/chats/:chatId/dice/pending", async (c) => {
+    .get("/api/chats/:chatId/dice/pending", zValidator("query", z.object({ branchId: z.string().min(1) })), async (c) => {
       const chatId = c.req.param("chatId");
-      const branchId = c.req.query("branchId");
-      if (!branchId) {
-        return c.json({ error: "branchId query parameter is required" }, 400);
-      }
+      const { branchId } = c.req.valid("query");
       const result = await runtime.getPending(chatId, branchId);
       return c.json(result);
     })
@@ -52,12 +50,9 @@ export function createDiceRoutes(runtime: DiceRuntimeApi) {
     })
 
     // DELETE /pending — clear the Normal lane
-    .delete("/api/chats/:chatId/dice/pending", async (c) => {
+    .delete("/api/chats/:chatId/dice/pending", zValidator("query", z.object({ branchId: z.string().min(1) })), async (c) => {
       const chatId = c.req.param("chatId");
-      const branchId = c.req.query("branchId");
-      if (!branchId) {
-        return c.json({ error: "branchId query parameter is required" }, 400);
-      }
+      const { branchId } = c.req.valid("query");
       await runtime.clearLane(chatId, branchId);
       return c.json({ ok: true });
     })
