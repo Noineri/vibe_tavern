@@ -639,3 +639,41 @@ Unlike `<CustomTooltip>` (which always shows a tooltip), this one shows it only 
 ## Logo
 
 **File:** `Logo.tsx` — the `vt_sign` open-book-with-three-stars logo mark. Static by default for sidebar/branding placements. Exposes an animated variant (the loading placeholder uses it for the startup splash). Prefer importing `<Logo>` over inlining the SVG so the mark stays consistent and the animation lives in one place.
+
+---
+
+## DiceFaces
+
+**File:** `dice-faces.tsx` — the shared 2D SVG dice renderer for the Dice System. Consumed by `DiceTray`, `DicePanel`, and the `message-meta/dice-rolls.tsx` badge. Exports `DiceFace` (single die), `DiceFaces` (row), and the pure helpers `glyphFor(faceShape)` + `extremityTone(face, sides)`.
+
+```tsx
+<DiceFaces
+  faceShape="d20"
+  attempts={roll.attempts}
+  notation={roll.notation}
+  size="md"
+  maxVisible={4}
+  rollKey={String(roll.rollId)}
+  excluded={!roll.included}
+  onOverflowClick={() => openDetail()}
+/>
+```
+
+| Prop | Type | Description |
+|------|------|-------------|
+| `faceShape` | `DiceFaceShape` | `d4`/`d6`/`d8`/`d10`/`d12`/`d20`/`d%` — selects the glyph silhouette (sides derived from this, never parsed from notation) |
+| `faces` | `number[]?` | Flat per-die values. Mutually exclusive with `attempts`; if neither is set, renders nothing |
+| `attempts` | `DiceAttempt[]?` | Flattens every attempt's `faces` into one row; use this in the tray/badge |
+| `notation` | `string` | The bounded notation (e.g. `3d6+2`); used for the `aria-label` enumeration |
+| `size` | `"xs" \| "sm" \| "md"` | 16 / 20 / 28px |
+| `maxVisible` | `number` | Caps rendered dice; the rest collapse into a `+N more` chip |
+| `rollKey` | `string` | Identity for the once-only settle gate (see below); reuse across re-renders of the SAME roll so the animation never replays |
+| `excluded` | `boolean?` | Dims the whole row (`opacity-40`) — for excluded/unbound rolls |
+| `onOverflowClick` | `() => void?` | When set, the `+N more` chip renders as a `<button>`; otherwise a non-interactive `<span>` |
+| `loading` | `{ count: number }?` | Renders `count` skeleton glyph outlines (pulsing `--t3`) instead of values |
+
+**Color semantics are deterministic from data only:** default `--t2`/`--t1`, the max face (`face === sides`) tints `--success-text` over `--success-dim`, the 1-face tints `--danger-text`/`--danger-dim`. The aggregate outcome is never recolored from `final.outcome`.
+
+**Settle animation is once-per-roll:** a `useRef<Set>` of seen `rollKey`s gates the `dice-settle` class (per-die stagger via `animationDelay`). Re-rendering an existing rollKey drops the class; a fresh rollKey re-animates. Both a CSS `@media (prefers-reduced-motion: reduce)` block and a JS `window.matchMedia` guard snap to the final state under reduced motion with the `aria-live` announcement intact. `DiceFace` exposes a lower-level `tone` (`"default" | "max" | "min"`) if you need to override the auto-derived tint.
+
+**Accessibility:** `role="list"`/`role="listitem"`, an `aria-label` enumerating every face (`dice_faces_enumeration`), and a visually-hidden full enumeration so the `+N more` overflow never hides results from screen readers. The d% glyph additionally renders a mono `%` badge.
