@@ -12,7 +12,7 @@
 | **TypeScript ^6** | Language | Strict mode throughout. Branded IDs (`Brand<"ChatId">`) prevent accidental ID swaps at compile time. All API contracts are Zod schemas that produce TS types. |
 | **Vite 8** | Frontend build, HMR | Fastest dev server available. Native TS/ESM support. Plugin system for React, Tailwind. Bun-level startup speed. |
 
-**Why not Node.js:** Bun provides native SQLite, faster `crypto`, `Bun.file()` as a cleaner fs API, and single-binary compilation. The project still uses `node:vm` (script sandbox), `node:fs/promises` (directory ops with no Bun equivalent), `node:crypto` (where needed for compatibility), `node:os` / `node:path` (platform paths) — but these are isolated cases.
+**Why not Node.js:** Bun provides native SQLite, faster `crypto`, `Bun.file()` as a cleaner fs API, and single-binary compilation. The project still uses `node:vm` for compatible script execution, not as a security boundary, plus `node:fs/promises` (directory ops with no Bun equivalent), `node:crypto` (where needed for compatibility), and `node:os` / `node:path` (platform paths) — but these are isolated cases.
 
 ---
 
@@ -87,6 +87,7 @@ Token counting for context budget management and tokenizer-specific logit-bias t
 - `js-tiktoken` — fast BPE tokenization for OpenAI models (cl100k, o200k, p50k encodings).
 - `@agnai/web-tokenizers` — WASM/JSON tokenizers for Claude, Llama 3, Mistral, Nemo, Qwen2, DeepSeek, Xiaomi MiMo, GLM-4.6/ZAI, and Command R/A. Larger but more accurate for non-GPT models.
 - Default fallback — prompt budgeting can fall back to `cl100k_base`/rough estimates when no tokenizer matches, but logit bias is fail-closed and disabled for unknown tokenizers.
+- Worker offload was evaluated and rejected because warmed production tokenization stayed below both event-loop thresholds; the synchronous architecture is retained (see [AD-025](./decisions.md#ad-025-synchronous-warmed-tokenizers-over-worker-offload)).
 
 ---
 
@@ -240,4 +241,3 @@ vibe-tavern/
 **Why standalone .exe:** The target audience (RP community) includes non-technical users. Download one file, double-click, it opens in browser. No Node.js, no `npm install`, no terminal.
 
 ---
-
