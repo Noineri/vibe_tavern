@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtemp, readFile } from "node:fs/promises";
+import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -20,7 +20,7 @@ describe("ContentStore folder primitives", () => {
 		expect(hash.length).toBeGreaterThan(0);
 
 		// file lands at the expected path
-		const raw = await readFile(join(dir, "characters", "char_1", "card.json"), "utf8");
+		const raw = await Bun.file(join(dir, "characters", "char_1", "card.json")).text();
 		expect(JSON.parse(raw)).toEqual(data);
 
 		const back = await content.readEntityFile<{ name: string }>(CHARS, "char_1", "card");
@@ -141,7 +141,7 @@ describe("ContentStore legacy flat-file helpers", () => {
 		expect(moved).toEqual({ name: "Aria", desc: "x" });
 
 		// source flat file still on disk
-		const source = await readFile(join(dir, CHARS, "char_1.json"), "utf8");
+		const source = await Bun.file(join(dir, CHARS, "char_1.json")).text();
 		expect(JSON.parse(source)).toEqual({ name: "Aria", desc: "x" });
 	});
 

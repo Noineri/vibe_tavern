@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createMobileAccessRoutes } from "../src/api/routes/mobile-access.js";
@@ -80,7 +80,7 @@ describe("mobile access config-file characterization", () => {
   });
 
   test("corrupt JSON initializes with no token instead of propagating a parse error", async () => {
-    await writeFile(join(configDir, "mobile-access.json"), "{not-json");
+    await Bun.write(join(configDir, "mobile-access.json"), "{not-json");
 
     const service = await MobileAccessService.create(configDir);
 
@@ -100,7 +100,7 @@ describe("mobile access config-file characterization", () => {
   });
 
   test("a valid JSON config with mixed-case Token does not normalize its key", async () => {
-    await writeFile(join(configDir, "mobile-access.json"), JSON.stringify({ Token: "MiXeD-Token" }));
+    await Bun.write(join(configDir, "mobile-access.json"), JSON.stringify({ Token: "MiXeD-Token" }));
 
     const service = await MobileAccessService.create(configDir);
 
