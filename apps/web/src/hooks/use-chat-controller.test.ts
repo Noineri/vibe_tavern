@@ -39,7 +39,10 @@ vi.mock("../i18n/locale-helpers.js", () => ({
   getT: () => (key: string) => key,
 }));
 
-import { useChatController } from "./use-chat-controller.js";
+import { useChatController, diceSendBlockReason } from "./use-chat-controller.js";
+import { ProviderStreamError } from "../api/provider-stream-error.js";
+import { useDiceStore } from "../stores/dice-store.js";
+import type { DiceRollSnapshot } from "../api/types.js";
 import { useChatStore } from "../stores/chat-store.js";
 import { useProviderStore } from "../stores/provider-store.js";
 import { useProviderDataStore } from "../stores/provider-data-store.js";
@@ -171,5 +174,262 @@ describe("useChatController — Co-Author send gate", () => {
     await act(async () => { await result.current.handleSend(); });
 
     expect(sendChatMessageStream).not.toHaveBeenCalled();
+  });
+});
+
+// ─── DICE-F3 send gate ─────────────────────────────────────────────────
+//
+// F3 wires Dice into the send path subtractively: when Dice is off, the lane
+// is absent, or no roll is bindable, the send body + canSend are byte-identical
+// to a no-Dice chat. Dice can only ever BLOCK a send (choose/actor gate) or
+// ATTACH a commit intent (`{diceMode, pendingRevision}`) when a bindable roll
+// exists. A server-side commit conflict (stale revision / unresolved choose)
+// must resync the pending lane and KEEP the draft instead of erroring out.
+//
+// Two groups: (1) a pure gate `diceSendBlockReason` covering every null/block
+// case without React; (2) `handleSend` end-to-end on the stream path (the
+// stream mock + store pattern the existing Co-Author tests already use).
+
+const DICE_PER = "per-1";
+const DICE_CHAR = "char-1";
+
+/** Minimal `DiceRollSnapshot` with every field the gate reads; fields the gate
+ *  ignores (faces, resolution, timestamps) get placeholder values. */
+function makeRoll(o: Partial<DiceRollSnapshot> = {}): DiceRollSnapshot {
+  return {
+    rollId: "r1",
+    requestId: "req1",
+    actor: { actorType: "persona", actorId: DICE_PER, actorLabel: "Persona" },
+    scriptId: "s1",
+    scriptLabel: "S",
+    scriptRevision: 1,
+    checkId: "c1",
+    checkLabel: "C",
+    notation: "1d20",
+    faceShape: "d20" as never,
+    resolution: "strict" as never,
+    mode: "normal",
+    included: true,
+    finalAttemptId: null,
+    attempts: [],
+    createdAt: 0 as never,
+    ...o,
+  } as DiceRollSnapshot;
+}
+
+describe("diceSendBlockReason (DICE-F3 pure send gate)", () => {
+  test("null/undefined lane ⇒ null (no-Dice send unaffected)", () => {
+    expect(diceSendBlockReason(null, DICE_PER, DICE_CHAR)).toBeNull();
+    expect(diceSendBlockReason(undefined, DICE_PER, DICE_CHAR)).toBeNull();
+  });
+
+  test("empty lane ⇒ null", () => {
+    expect(diceSendBlockReason({ revision: 0, rolls: [] }, DICE_PER, DICE_CHAR)).toBeNull();
+  });
+
+  test("all-excluded rolls ⇒ null (excluded rolls neither block nor bind)", () => {
+    const lane = { revision: 1, rolls: [makeRoll({ included: false, policy: "choose", finalAttemptId: null })] };
+    expect(diceSendBlockReason(lane, DICE_PER, DICE_CHAR)).toBeNull();
+  });
+
+  test("included narrative roll (no choose policy) ⇒ null", () => {
+    const lane = { revision: 1, rolls: [makeRoll({ policy: undefined })] };
+    expect(diceSendBlockReason(lane, DICE_PER, DICE_CHAR)).toBeNull();
+  });
+
+  test("included choose roll, unresolved ⇒ 'choose'", () => {
+    const lane = { revision: 1, rolls: [makeRoll({ policy: "choose", finalAttemptId: null })] };
+    expect(diceSendBlockReason(lane, DICE_PER, DICE_CHAR)).toBe("choose");
+  });
+
+  test("included choose roll, resolved (finalAttemptId set) ⇒ null", () => {
+    const lane = { revision: 1, rolls: [makeRoll({ policy: "choose", finalAttemptId: "a1" })] };
+    expect(diceSendBlockReason(lane, DICE_PER, DICE_CHAR)).toBeNull();
+  });
+
+  test("included persona roll, actor mismatch ⇒ 'actor_mismatch'", () => {
+    const lane = { revision: 1, rolls: [makeRoll({ actor: { actorType: "persona", actorId: "WRONG", actorLabel: "X" } })] };
+    expect(diceSendBlockReason(lane, DICE_PER, DICE_CHAR)).toBe("actor_mismatch");
+  });
+
+  test("included persona roll, actor matches ⇒ null", () => {
+    const lane = { revision: 1, rolls: [makeRoll({ actor: { actorType: "persona", actorId: DICE_PER, actorLabel: "P" } })] };
+    expect(diceSendBlockReason(lane, DICE_PER, DICE_CHAR)).toBeNull();
+  });
+
+  test("included character roll, actor mismatch ⇒ 'actor_mismatch'", () => {
+    const lane = { revision: 1, rolls: [makeRoll({ actor: { actorType: "character", actorId: "WRONG", actorLabel: "X" } })] };
+    expect(diceSendBlockReason(lane, DICE_PER, DICE_CHAR)).toBe("actor_mismatch");
+  });
+
+  test("included character roll, actor matches ⇒ null", () => {
+    const lane = { revision: 1, rolls: [makeRoll({ actor: { actorType: "character", actorId: DICE_CHAR, actorLabel: "C" } })] };
+    expect(diceSendBlockReason(lane, DICE_PER, DICE_CHAR)).toBeNull();
+  });
+
+  test("excluded persona-mismatch roll ⇒ null (excluded rolls don't block)", () => {
+    const lane = { revision: 1, rolls: [makeRoll({ included: false, actor: { actorType: "persona", actorId: "WRONG", actorLabel: "X" } })] };
+    expect(diceSendBlockReason(lane, DICE_PER, DICE_CHAR)).toBeNull();
+  });
+
+  test("choose takes precedence over actor_mismatch (choose checked first)", () => {
+    const lane = {
+      revision: 1,
+      rolls: [makeRoll({ policy: "choose", finalAttemptId: null, actor: { actorType: "persona", actorId: "WRONG", actorLabel: "X" } })],
+    };
+    expect(diceSendBlockReason(lane, DICE_PER, DICE_CHAR)).toBe("choose");
+  });
+});
+
+describe("useChatController — handleSend dice send (DICE-F3, stream path)", () => {
+  // Stubbed once per file so conflict tests can assert it fired; cleared in
+  // beforeEach. `tryHandleDiceSendConflict` calls it fire-and-forget.
+  const refreshPending = vi.fn();
+  const BRANCH = "br-1";
+
+  beforeEach(() => {
+    sendChatMessageStream.mockReset();
+    refreshPending.mockClear();
+    useProviderStore.setState((s) => ({ connection: { ...s.connection, streamResponse: true } }));
+    useProviderDataStore.setState({ profiles: [{ id: "p1", isActive: true, defaultModel: "m" } as never] });
+    // `readDiceSendState` reads chatId / branchId / insights / persona /
+    // characterId straight from the snapshot, so seed them all here.
+    useSnapshotStore.setState({
+      activeChat: {
+        id: CHAT,
+        characterId: DICE_CHAR,
+        mode: "rp",
+        insightsConfig: { objectiveEnabled: true, trackerEnabled: true, diceEnabled: true, diceMode: "normal" },
+      } as never,
+      activeBranch: { id: BRANCH } as never,
+      persona: { id: DICE_PER } as never,
+    });
+    useChatStore.setState({ activeChatId: CHAT, draft: "hi", generations: {}, messageActionId: null });
+    useDiceStore.setState({ byScope: {}, refreshPending: refreshPending as never });
+  });
+
+  /** Put a normal-mode pending lane into the active scope. */
+  function setNormalLane(rolls: DiceRollSnapshot[], revision = 7): void {
+    useDiceStore.setState({
+      byScope: {
+        [`${CHAT}|${BRANCH}`]: {
+          definitions: null,
+          lanes: { normal: { revision, rolls }, immersive: { revision, rolls: [] } },
+          rollingRequestIds: {},
+          lastError: null,
+        },
+      } as never,
+    });
+  }
+
+  test("bindable lane ⇒ intent {diceMode, pendingRevision} threaded into the stream body", async () => {
+    setNormalLane([makeRoll({ included: true })]);
+    sendChatMessageStream.mockImplementation((_id: unknown, _body: unknown, opts: { onDone?: () => void }) => {
+      opts?.onDone?.();
+      return Promise.resolve();
+    });
+    const { result } = renderHook(() => useChatController());
+
+    await act(async () => { await result.current.handleSend(); });
+
+    expect(sendChatMessageStream).toHaveBeenCalledTimes(1);
+    expect(sendChatMessageStream.mock.calls[0][1]).toEqual(
+      expect.objectContaining({ content: "hi", diceMode: "normal", pendingRevision: 7 }),
+    );
+  });
+
+  test("lane present but NO bindable roll ⇒ byte-identical send body (no dice fields)", async () => {
+    setNormalLane([makeRoll({ included: false })]);
+    sendChatMessageStream.mockImplementation((_id: unknown, _body: unknown, opts: { onDone?: () => void }) => {
+      opts?.onDone?.();
+      return Promise.resolve();
+    });
+    const { result } = renderHook(() => useChatController());
+
+    await act(async () => { await result.current.handleSend(); });
+
+    expect(sendChatMessageStream).toHaveBeenCalledTimes(1);
+    const body = sendChatMessageStream.mock.calls[0][1] as Record<string, unknown>;
+    expect(body.diceMode).toBeUndefined();
+    expect(body.pendingRevision).toBeUndefined();
+    expect(body).toEqual(expect.objectContaining({ content: "hi" }));
+  });
+
+  test("Dice OFF ⇒ byte-identical send body (no dice fields)", async () => {
+    useSnapshotStore.setState({
+      activeChat: {
+        id: CHAT, characterId: DICE_CHAR, mode: "rp",
+        insightsConfig: { objectiveEnabled: true, trackerEnabled: true, diceEnabled: false, diceMode: "normal" },
+      } as never,
+      activeBranch: { id: BRANCH } as never,
+      persona: { id: DICE_PER } as never,
+    });
+    sendChatMessageStream.mockImplementation((_id: unknown, _body: unknown, opts: { onDone?: () => void }) => {
+      opts?.onDone?.();
+      return Promise.resolve();
+    });
+    const { result } = renderHook(() => useChatController());
+
+    await act(async () => { await result.current.handleSend(); });
+
+    expect(sendChatMessageStream).toHaveBeenCalledTimes(1);
+    const body = sendChatMessageStream.mock.calls[0][1] as Record<string, unknown>;
+    expect(body.diceMode).toBeUndefined();
+    expect(body.pendingRevision).toBeUndefined();
+  });
+
+  test("unresolved choose roll ⇒ send blocked (no stream call)", async () => {
+    setNormalLane([makeRoll({ included: true, policy: "choose", finalAttemptId: null })]);
+    const { result } = renderHook(() => useChatController());
+
+    await act(async () => { await result.current.handleSend(); });
+
+    expect(sendChatMessageStream).not.toHaveBeenCalled();
+  });
+
+  test("persona actor mismatch ⇒ send blocked (no stream call)", async () => {
+    setNormalLane([makeRoll({ included: true, actor: { actorType: "persona", actorId: "WRONG", actorLabel: "X" } })]);
+    const { result } = renderHook(() => useChatController());
+
+    await act(async () => { await result.current.handleSend(); });
+
+    expect(sendChatMessageStream).not.toHaveBeenCalled();
+  });
+
+  test("stream conflict (stale_revision) ⇒ refreshPending + draft KEPT", async () => {
+    setNormalLane([makeRoll({ included: true })]);
+    sendChatMessageStream.mockRejectedValueOnce(new ProviderStreamError("stale", "server_error", "stale_revision"));
+    const { result } = renderHook(() => useChatController());
+
+    await act(async () => { await result.current.handleSend(); });
+
+    expect(sendChatMessageStream).toHaveBeenCalledTimes(1);
+    expect(refreshPending).toHaveBeenCalledWith(CHAT, BRANCH);
+    // executeStreamAction clears the draft up front; the dice-conflict path
+    // must restore it so the user can re-review and resend.
+    expect(useChatStore.getState().draft).toBe("hi");
+  });
+
+  test("stream conflict (unresolved_choose) ⇒ refreshPending fires too", async () => {
+    setNormalLane([makeRoll({ included: true })]);
+    sendChatMessageStream.mockRejectedValueOnce(new ProviderStreamError("choose", "server_error", "unresolved_choose"));
+    const { result } = renderHook(() => useChatController());
+
+    await act(async () => { await result.current.handleSend(); });
+
+    expect(refreshPending).toHaveBeenCalledWith(CHAT, BRANCH);
+    expect(useChatStore.getState().draft).toBe("hi");
+  });
+
+  test("non-conflict provider error ⇒ NOT treated as dice (refreshPending not called)", async () => {
+    setNormalLane([makeRoll({ included: true })]);
+    // A plain provider failure with NO structured conflict code must fall through
+    // to the generic provider-error path, never the dice resync.
+    sendChatMessageStream.mockRejectedValueOnce(new ProviderStreamError("boom", "server_error"));
+    const { result } = renderHook(() => useChatController());
+
+    await act(async () => { await result.current.handleSend(); });
+
+    expect(refreshPending).not.toHaveBeenCalled();
   });
 });

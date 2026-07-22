@@ -1,8 +1,9 @@
 import type { ChatId, ChatMode, ObjectiveMode, ObjectiveTaskStatus, PromptTraceRecordDto, SceneTrackerConfig, ChatBranchId, MessageVariantId } from "@vibe-tavern/domain";
 import type { CoauthorApplyRequest, CoauthorCorrection, CoauthorModule, CoauthorModuleCreate, CoauthorModuleUpdate } from "@vibe-tavern/api-contracts";
-import type { AppSnapshot, AppMessage, ChatListItem, ChatSummaryRecord, AutoSummaryConfig, InsightsConfigPatch, InsightsCompletionPatchResponse, InsightsCompletionTarget, ScenePreviewResponse, SceneTargetResponse, SceneStatusResponse, SceneBackfillMode, SceneBackfillStatusResponse, ContextPreviewResponse } from "./types.js";
+import type { AppSnapshot, AppMessage, ChatListItem, ChatSummaryRecord, AutoSummaryConfig, InsightsConfigPatch, InsightsCompletionPatchResponse, InsightsCompletionTarget, ScenePreviewResponse, SceneTargetResponse, SceneStatusResponse, SceneBackfillMode, SceneBackfillStatusResponse, ContextPreviewResponse, DiceMode } from "./types.js";
 import { client } from "./client.js";
-import { unwrapRpc, unwrapError } from "./unwrap.js";
+import { unwrapRpc, unwrapError, type RpcResponse } from "./unwrap.js";
+import { DiceApiError } from "./dice-api.js";
 import { normalizeMessage, normalizeSnapshot } from "./normalize.js";
 import { sendStream, regenerateStream, generateReplyStream, type StreamOpts } from "./stream.js";
 import { getGatewayBaseUrl, getMobileToken } from "./client.js";
@@ -124,7 +125,7 @@ export async function setChatPromptPreset(chatId: ChatId, promptPresetId: string
 
 export async function sendChatMessage(
   chatId: ChatId,
-  input: { content: string; attachments?: { id: string; name: string; type: "image" | "file" | "video"; assetId: string; mimeType: string; sizeBytes: number }[] },
+  input: { content: string; attachments?: { id: string; name: string; type: "image" | "file" | "video"; assetId: string; mimeType: string; sizeBytes: number }[]; diceMode?: DiceMode; pendingRevision?: number },
   options?: { signal?: AbortSignal },
 ): Promise<AppSnapshot> {
   logClientSendDebug("web.client.sendChatMessage.start", { chatId, contentLength: input.content.length });
@@ -132,8 +133,31 @@ export async function sendChatMessage(
     { param: { chatId }, json: input },
     { init: { signal: options?.signal } },
   );
-  const data = await unwrapRpc<AppSnapshot>(response);
+  if (!response.ok) {
+    throw await sendChatMessageError(response);
+  }
+  const data = (await response.json()) as AppSnapshot;
   return normalizeSnapshot(data);
+}
+
+/** Non-stream send error. A dice commit conflict arrives as HTTP 409 with a
+ *  structured `error.details.code` (`stale_revision` / `unresolved_choose`) —
+ *  surface it as a typed {@link DiceApiError} so the send path can refresh
+ *  pending and KEEP the draft instead of erroring out. Every other failure
+ *  delegates to the shared {@link unwrapError} unchanged (the body is consumed
+ *  at most once on either path). DICE-F3. */
+async function sendChatMessageError(response: RpcResponse): Promise<Error> {
+  if (response.status === 409) {
+    const body = (await response.json().catch(() => null)) as
+      | { error?: { message?: string; details?: { code?: string } } }
+      | null;
+    const code = body?.error?.details?.code;
+    if (typeof code === "string") {
+      return new DiceApiError(response.status, body?.error?.message ?? "Dice commit conflict", code);
+    }
+    return new Error(body?.error?.message ?? `Request failed: ${response.status}`);
+  }
+  return unwrapError(response);
 }
 
 export async function regenerateChatMessage(

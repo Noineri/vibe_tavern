@@ -60,6 +60,12 @@ export interface AutoSummaryConfig {
 export interface InsightsConfig {
   objectiveEnabled: boolean;
   trackerEnabled: boolean;
+  /** Dice feature toggle (DICE B9). OFF by default; old chats normalize to
+   *  `false` (the backend schema defaults it). When off, no dice UI/prompt. */
+  diceEnabled?: boolean;
+  /** Dice turn mode (DICE B9): selects the active pending lane. Default
+   *  `"normal"` on old chats (backend schema default). */
+  diceMode?: DiceMode;
   /** Scene Tracker per-chat config; absent on old chats (normalized to defaults at read). */
   tracker?: SceneTrackerConfig;
 }
@@ -68,6 +74,10 @@ export interface InsightsConfig {
 export interface InsightsConfigPatch {
   objectiveEnabled?: boolean;
   trackerEnabled?: boolean;
+  /** Dice toggle / mode (DICE B9) — optional partial patch; the canonical
+   *  `updateInsightsConfigSchema` already accepts both. */
+  diceEnabled?: boolean;
+  diceMode?: DiceMode;
   tracker?: SceneTrackerConfigPatch;
 }
 
