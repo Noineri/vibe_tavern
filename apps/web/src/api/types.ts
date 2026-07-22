@@ -8,6 +8,7 @@
 import type { Chat, ChatBranch, ChatId, CharacterId, Message, MessageVariant } from "@vibe-tavern/domain";
 import type { AssemblePromptResponse, PromptPresetDto, PromptTraceRecordDto } from "@vibe-tavern/domain";
 import type { SceneTrackerConfig, SceneTrackerConfigPatch, SceneTrackerRecord, SceneBackfillErrorEntry, SceneBackfillSummary } from "@vibe-tavern/domain";
+import type { DiceActorType, DiceAttempt, DiceCheckDefinition, DiceMode, DiceRollSnapshot, ScriptKind } from "@vibe-tavern/domain";
 
 // Wire-format output types shared with the backend (single source of truth in
 // @vibe-tavern/api-contracts). Two are imported under local aliases that the
@@ -441,6 +442,8 @@ export interface ScriptRecord {
   name: string;
   description: string;
   code: string;
+  /** Runtime contract (DICE_SYSTEM Wave B1). Defaults to `prompt` on legacy rows. */
+  scriptKind: ScriptKind;
   scopeType: string;
   characterId: string | null;
   personaId: string | null;
@@ -453,6 +456,61 @@ export interface ScriptLinkRecord {
   scriptId: string;
   targetType: "character" | "persona";
   targetId: string;
+}
+
+// ─── Dice ──────────────────────────────────────────────────────────────
+//
+// Wire types for the chat-scoped Dice API (DICE_SYSTEM_FRONTEND_PLAN, Wave F1).
+// The canonical entity shapes (`DiceRollSnapshot`, `DiceAttempt`,
+// `DiceCheckDefinition`, the enum types) live in `@vibe-tavern/domain` and are
+// re-exported here for import stability; only the response/lane envelopes and
+// the thin request shapes are defined locally.
+
+export type { DiceActorType, DiceAttempt, DiceCheckDefinition, DiceMode, DiceRollSnapshot };
+
+/** One pending lane (GET /pending): the server's monotonic revision + its
+ *  unbound rolls. Bound message-owned results are NOT part of the lane. */
+export interface DiceLaneState {
+  revision: number;
+  rolls: DiceRollSnapshot[];
+}
+
+/** GET /pending response — both lanes keyed by mode. */
+export interface DicePendingState {
+  normal: DiceLaneState;
+  immersive: DiceLaneState;
+}
+
+/** One script's resolvable checks (GET /definitions, grouped by script). */
+export interface DiceScriptDefinitions {
+  scriptId: string;
+  scriptLabel: string;
+  scriptRevision: number;
+  checks: DiceCheckDefinition[];
+}
+
+/** GET /definitions response. */
+export interface DiceDefinitionsResponse {
+  scripts: DiceScriptDefinitions[];
+}
+
+/** POST /roll body. The client is server-authoritative: it sends only ids,
+ *  actor, mode, and a DB-unique `requestId` idempotency key — NEVER dice faces
+ *  or totals (the server rolls). */
+export interface DiceRollRequest {
+  scriptId: string;
+  checkId: string;
+  actorType: DiceActorType;
+  actorId: string;
+  mode: DiceMode;
+  requestId: string;
+}
+
+/** Optional send commit intent threaded onto stream/non-stream send bodies
+ *  (Wave F2). Both fields are present or both absent; omitted ⇒ no-Dice send. */
+export interface DiceSendCommitIntent {
+  diceMode: DiceMode;
+  pendingRevision: number;
 }
 
 // ─── Import ────────────────────────────────────────────────────────────

@@ -10,6 +10,7 @@ const script: ScriptRecord = {
   name: "Script",
   description: "",
   code: "stored",
+  scriptKind: "prompt",
   scopeType: "character",
   characterId: "character_1",
   personaId: null,

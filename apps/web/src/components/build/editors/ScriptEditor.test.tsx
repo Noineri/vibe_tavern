@@ -86,6 +86,7 @@ const baseScript: ScriptRecord = {
   name: "Test Script",
   description: "",
   code: "",
+  scriptKind: "prompt",
   scopeType: "character",
   characterId: "c1",
   personaId: null,
