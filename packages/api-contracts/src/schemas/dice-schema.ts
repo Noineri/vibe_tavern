@@ -233,6 +233,9 @@ export const diceCheckDescriptorSchema = z.object({
   actors: z.array(diceActorTypeSchema).min(1),
   resolution: diceResolutionSchema,
   faceShape: diceFaceShapeSchema,
+  /** Optional short rule help shown in the composer tray (F8). Absent when the
+   *  script did not register help; bounded to DICE_SCHEMA_MAX_STRING. */
+  help: boundedLabel.optional(),
 });
 
 /** A script's checks for one chat (GET /definitions, grouped by script). */

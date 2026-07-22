@@ -116,6 +116,29 @@ describe("discoverDiceChecks", () => {
     expect(typeof out.registrations[0].resolve).toBe("function");
   });
 
+  test("collects the optional help field when the script registers it", () => {
+    const code = `
+context.dice.register({
+  id: 'attack',
+  label: 'Attack Roll',
+  notation: '1d20+5',
+  actors: ['persona', 'character'],
+  resolution: 'strict',
+  help: 'Roll and add the modifier; 15+ hits.',
+  resolve() { return {}; }
+});
+`;
+    const out = discoverDiceChecks(code, "help.js");
+    expect(out.error).toBeNull();
+    expect(out.registrations).toHaveLength(1);
+    expect(out.registrations[0].help).toBe("Roll and add the modifier; 15+ hits.");
+  });
+
+  test("help is undefined on the raw registration when the script omits it", () => {
+    const out = discoverDiceChecks(STRICT_ATTACK_SCRIPT, "attack.js");
+    expect(out.registrations[0].help).toBeUndefined();
+  });
+
   test("collects multiple checks in registration order", () => {
     const code = `
 context.dice.register({ id: 'a', label: 'A', notation: '1d6', actors: ['persona'], resolution: 'narrative', resolve() { return {}; } });

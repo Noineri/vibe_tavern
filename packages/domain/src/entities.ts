@@ -408,6 +408,10 @@ export interface DiceCheckDefinition {
   actors: readonly DiceActorType[];
   resolution: DiceResolution;
   faceShape: DiceFaceShape;
+  /** Optional short rule-help string shown in the composer tray (F8). Absent
+   *  when the script did not register help; never recomputed from the
+   *  (possibly edited) script source after registration. */
+  help?: string;
 }
 
 /**

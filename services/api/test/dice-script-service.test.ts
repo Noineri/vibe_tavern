@@ -13,6 +13,7 @@ import type { Script, Persona, Character } from "@vibe-tavern/domain";
 import {
   discoverDiceScripts,
   resolveDiceRoll,
+  validateRegistration,
 } from "../src/domain/scripts-engine/dice-script-service.js";
 
 // ─── Deterministic RNG ───────────────────────────────────────────────────────
@@ -445,5 +446,39 @@ context.dice.register({
     if (result.ok) return;
     expect(result.error.code).toBe("validation_error");
     expect((result.error as { message: string }).message).toContain("strict");
+  });
+});
+
+// ─── validateRegistration: help field (DICE Contract stack-audit GAP-2) ──
+
+describe("validateRegistration — help field", () => {
+  const base = {
+    id: "check_1",
+    label: "Check",
+    notation: "1d20",
+    actors: ["persona"],
+    resolution: "strict",
+    resolve() { return {}; },
+  };
+
+  test("extracts a non-empty help string onto the descriptor", () => {
+    const def = validateRegistration({ ...base, help: "Roll above 10 to succeed" });
+    expect(def).not.toBeNull();
+    expect(def!.help).toBe("Roll above 10 to succeed");
+  });
+
+  test("trims help; empty/whitespace-only help is dropped (absent, not null)", () => {
+    expect(validateRegistration({ ...base, help: "  trimmed help  " })!.help).toBe("trimmed help");
+    expect(validateRegistration({ ...base, help: "" })!.help).toBeUndefined();
+    expect(validateRegistration({ ...base, help: "   " })!.help).toBeUndefined();
+  });
+
+  test("help is optional — absent when the script did not register it", () => {
+    expect(validateRegistration(base)!.help).toBeUndefined();
+  });
+
+  test("non-string help is ignored (absent), not a registration failure", () => {
+    expect(validateRegistration({ ...base, help: 42 })!.help).toBeUndefined();
+    expect(validateRegistration({ ...base, help: null })!.help).toBeUndefined();
   });
 });

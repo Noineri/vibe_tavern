@@ -109,6 +109,11 @@ export function validateRegistration(
   // resolve must be a function (present at roll time).
   if (typeof raw.resolve !== "function") return null;
 
+  // help: optional short rule-help string for the composer tray. Accept any
+  // non-empty trimmed string; length-bounding happens at the schema boundary
+  // (diceCheckDescriptorSchema.help is boundedLabel.optional()).
+  const help = typeof raw.help === "string" && raw.help.trim().length > 0 ? raw.help.trim() : undefined;
+
   return {
     id: raw.id,
     label: raw.label,
@@ -116,6 +121,7 @@ export function validateRegistration(
     actors,
     resolution: raw.resolution as DiceResolution,
     faceShape: notation.faceShape,
+    ...(help ? { help } : {}),
   };
 }
 

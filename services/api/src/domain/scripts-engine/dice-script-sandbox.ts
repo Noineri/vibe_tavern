@@ -65,6 +65,7 @@ export interface RawDiceCheckRegistration {
   actors: unknown;
   resolution: unknown;
   resolve: unknown;
+  help: unknown;
 }
 
 // ─── Roll context (frozen, injected into the roll-phase VM) ──────────────────

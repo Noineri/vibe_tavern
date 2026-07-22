@@ -414,6 +414,30 @@ describe("diceDefinitionsResponseSchema (duplicate check ids)", () => {
       }),
     );
   });
+
+  it("accepts an optional help field on a check descriptor", () => {
+    expect(
+      diceDefinitionsResponseSchema.safeParse({
+        scripts: [
+          { scriptId: "s1", scriptLabel: "Fate", scriptRevision: 1, checks: [
+            { id: "c1", label: "Attack", notation: "3d6+2", actors: ["character"], resolution: "strict", faceShape: "d6", help: "3d6+2 vs defense 12" },
+          ] },
+        ],
+      }).success,
+    ).toBe(true);
+  });
+
+  it("accepts a check descriptor without help (optional)", () => {
+    expect(
+      diceDefinitionsResponseSchema.safeParse({
+        scripts: [
+          { scriptId: "s1", scriptLabel: "Fate", scriptRevision: 1, checks: [
+            { id: "c1", label: "Attack", notation: "3d6+2", actors: ["character"], resolution: "strict", faceShape: "d6" },
+          ] },
+        ],
+      }).success,
+    ).toBe(true);
+  });
 });
 
 // --- round-trip: a full valid snapshot parses to its data -------------------
