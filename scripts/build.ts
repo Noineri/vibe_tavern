@@ -15,6 +15,7 @@
 
 import { join, relative, resolve } from "node:path";
 import { copyFile, cp, mkdir, stat } from "node:fs/promises";
+import { parseArgs } from "node:util";
 
 const ROOT = resolve(import.meta.dir, "..");
 
@@ -171,7 +172,16 @@ async function buildPackage(pkg: PackageConfig) {
 }
 
 async function main() {
-  const target = process.argv[2] || "api-stack";
+  const args = process.argv.slice(2);
+  const { tokens } = parseArgs({
+    args,
+    options: {},
+    strict: false,
+    allowPositionals: true,
+    tokens: true,
+  });
+  const firstArgIndex = tokens[0]?.index;
+  const target = firstArgIndex === undefined ? "api-stack" : (args[firstArgIndex] ?? "api-stack");
   let packages: PackageConfig[];
 
   if (target === "web") {

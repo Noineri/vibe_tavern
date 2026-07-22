@@ -12,6 +12,7 @@
 
 import { rm, stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import { parseArgs } from "node:util";
 import { resolveStandalonePaths } from "./standalone-paths.js";
 import { startServerRuntime } from "./server-runtime.js";
 import { embeddedWebFiles } from "./embedded-web-manifest.js";
@@ -20,9 +21,32 @@ import { checkForUpdate, getCurrentVersion, printVersion, runCheckUpdate, runUpd
 declare const VIBE_TAVERN_VERSION: string | undefined;
 const _version: string = getCurrentVersion();
 
-const argv = process.argv.slice(2);
-const subcommand = argv[0];
-const hasVersionFlag = argv.includes("--version") || argv.includes("-v");
+const rawArgs = process.argv.slice(2);
+const options = {
+	version: { type: "boolean", short: "v" },
+	yes: { type: "boolean", short: "y" },
+} as const;
+const initial = parseArgs({
+	args: rawArgs,
+	options,
+	strict: false,
+	allowPositionals: true,
+	tokens: true,
+});
+const args = [...new Set(initial.tokens.flatMap((token) =>
+	token.kind === "option-terminator" ? [] : [token.index]
+))].flatMap((index) => {
+	const arg = rawArgs[index];
+	return arg === undefined ? [] : [arg];
+});
+const { values, positionals } = parseArgs({
+	args,
+	options,
+	strict: false,
+	allowPositionals: true,
+});
+const subcommand = positionals[0];
+const hasVersionFlag = values.version === true;
 
 if (hasVersionFlag) {
 	printVersion();
@@ -31,7 +55,7 @@ if (hasVersionFlag) {
 if (subcommand === "check-update") {
 	void runCheckUpdate();
 } else if (subcommand === "update") {
-	const yes = argv.includes("--yes") || argv.includes("-y");
+	const yes = values.yes === true;
 	void runUpdate({ yes });
 } else {
 	void main();

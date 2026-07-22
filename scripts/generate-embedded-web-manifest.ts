@@ -28,6 +28,7 @@
 
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { readdir, writeFile } from "node:fs/promises";
+import { parseArgs } from "node:util";
 
 const ROOT = resolve(import.meta.dir, "..");
 const WEB_SOURCE = join(ROOT, "out", "apps", "web");
@@ -127,8 +128,30 @@ export async function writeEmbeddedWebStub(): Promise<void> {
 }
 
 async function main(): Promise<void> {
-	const args = process.argv.slice(2);
-	if (args.includes("--stub")) {
+	const rawArgs = process.argv.slice(2);
+	const options = {
+		stub: { type: "boolean" },
+	} as const;
+	const initial = parseArgs({
+		args: rawArgs,
+		options,
+		strict: false,
+		allowPositionals: true,
+		tokens: true,
+	});
+	const args = [...new Set(initial.tokens.flatMap((token) =>
+		token.kind === "option-terminator" ? [] : [token.index]
+	))].flatMap((index) => {
+		const arg = rawArgs[index];
+		return arg === undefined ? [] : [arg];
+	});
+	const { values } = parseArgs({
+		args,
+		options,
+		strict: false,
+		allowPositionals: true,
+	});
+	if (values.stub === true) {
 		await writeEmbeddedWebStub();
 		return;
 	}

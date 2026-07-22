@@ -2,8 +2,18 @@
 // 40 characters, 2 chats each (5 msgs), 3 lorebooks, 2 presets, 1 persona.
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { parseArgs } from "node:util";
 
-const OUT = process.argv[2] ?? "N:/mock-small";
+const args = process.argv.slice(2);
+const { tokens } = parseArgs({
+	args,
+	options: {},
+	strict: false,
+	allowPositionals: true,
+	tokens: true,
+});
+const firstArgIndex = tokens[0]?.index;
+const OUT = firstArgIndex === undefined ? "N:/mock-small" : (args[firstArgIndex] ?? "N:/mock-small");
 const N = 300;
 
 const PNG_B64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAACklEQVR4nGMAAQAABQABDQottAAAAABJRU5ErkJggg==";

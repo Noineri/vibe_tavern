@@ -24,6 +24,7 @@
  */
 import { Database } from "bun:sqlite";
 import { readFileSync } from "node:fs";
+import { parseArgs } from "node:util";
 
 interface TableSnap {
   count: number;
@@ -139,7 +140,18 @@ function compare(beforePath: string, afterPath: string): void {
   }
 }
 
-const [mode, ...args] = process.argv.slice(2);
+const cliArgs = process.argv.slice(2);
+const { tokens } = parseArgs({
+  args: cliArgs,
+  options: {},
+  strict: false,
+  allowPositionals: true,
+  tokens: true,
+});
+const [mode, ...args] = [...new Set(tokens.map((token) => token.index))].flatMap((index) => {
+  const arg = cliArgs[index];
+  return arg === undefined ? [] : [arg];
+});
 if (import.meta.main) {
   if (mode === "dump" && args[0]) {
     dump(args[0]);
