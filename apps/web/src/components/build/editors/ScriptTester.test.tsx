@@ -126,6 +126,7 @@ describe("ScriptTester (characterization)", () => {
 
 	it("result: renders the personality + scenario blocks when the run returns output", async () => {
 		mockTestScript.mockResolvedValue({
+			kind: "prompt",
 			personality: "calm",
 			scenario: "forest",
 			state: {},
@@ -144,6 +145,7 @@ describe("ScriptTester (characterization)", () => {
 
 	it("result: shows the no-effect warning when the run returns no output", async () => {
 		mockTestScript.mockResolvedValue({
+			kind: "prompt",
 			personality: "",
 			scenario: "",
 			state: {},

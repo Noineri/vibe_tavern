@@ -3,7 +3,7 @@ import type { ScriptRecord } from "../api/types.js";
 
 /** The four fields edited by the Script editor. Scope/order/link mutations are
  * separate immediate operations and never participate in the authoring draft. */
-export type ScriptDraftValues = Pick<ScriptRecord, "name" | "description" | "code" | "enabled">;
+export type ScriptDraftValues = Pick<ScriptRecord, "name" | "description" | "code" | "enabled" | "scriptKind">;
 export type ScriptDraftSaveState = "idle" | "saving" | "saved" | "error";
 
 export interface ScriptDraftEntry {
@@ -53,6 +53,7 @@ export function scriptDraftValues(script: ScriptRecord): ScriptDraftValues {
     description: script.description,
     code: script.code,
     enabled: script.enabled,
+    scriptKind: script.scriptKind,
   };
 }
 
@@ -60,7 +61,8 @@ function valuesEqual(a: ScriptDraftValues, b: ScriptDraftValues): boolean {
   return a.name === b.name
     && a.description === b.description
     && a.code === b.code
-    && a.enabled === b.enabled;
+    && a.enabled === b.enabled
+    && a.scriptKind === b.scriptKind;
 }
 
 export function isScriptDraftDirty(entry: ScriptDraftEntry | null | undefined): boolean {

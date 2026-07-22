@@ -37,7 +37,7 @@ export interface AiAssistantModalProps {
   onClose: () => void;
 
   // --- Full Mode Props ---
-  apiMode?: "script" | "lore_entry" | "md_import" | "scene_schema" | "scene_rules";
+  apiMode?: "script" | "lore_entry" | "md_import" | "scene_schema" | "scene_rules" | "dice_script";
   existingContent?: string;
   onInsert?: (text: string) => void;
   onReplace?: (text: string) => void;
@@ -317,7 +317,7 @@ export function AiAssistantModal({
   };
 
   const cleanedOutput = useMemo(() => {
-    if (apiMode === "script") return cleanAiCode(streamedOutput);
+    if (apiMode === "script" || apiMode === "dice_script") return cleanAiCode(streamedOutput);
     return streamedOutput.trim();
   }, [apiMode, streamedOutput]);
 

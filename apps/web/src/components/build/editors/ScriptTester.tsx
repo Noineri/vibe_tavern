@@ -3,6 +3,7 @@ import { AutoTextarea } from "../../shared/auto-textarea.js";
 import { useT } from "../../../i18n/context.js";
 import { cn } from "../../../lib/cn.js";
 import { testScript } from "../../../app-client.js";
+import type { PromptScriptTestResult } from "@vibe-tavern/api-contracts";
 
 /**
  * Script test panel — extracted from `useScriptPanel`
@@ -22,15 +23,10 @@ import { testScript } from "../../../app-client.js";
  * (it already subscribes to `allCharacters` for link binding).
  */
 
-type TestResult = {
-	personality: string;
-	scenario: string;
-	state: Record<string, unknown>;
-	injectedMessages: Array<{ content: string; role: "system" | "user" | "assistant" }>;
-	console: Array<{ level: "log" | "warn" | "error"; args: string }>;
-	shared: Record<string, unknown>;
-	errors: Array<{ scriptId: string; scriptName: string; error: string; line?: number } | string>;
-};
+// The prompt-script test result is the `kind: "prompt"` branch of the shared
+// `ScriptTestResult` discriminated union (api-contracts). Kept as a local
+// alias so the renderer reads the prompt fields without a narrow on every ref.
+type TestResult = PromptScriptTestResult;
 
 interface ScriptTesterProps {
 	scriptId: string | null;
@@ -79,7 +75,11 @@ export function ScriptTester({ scriptId, code, isMobile, characterName }: Script
 		setTestingScript(true);
 		try {
 			const r = await testScript(scriptId, payload);
-			setTestResult(r);
+			// ScriptTester mounts only for prompt scripts; a dice result here would
+			// be a routing bug — clear rather than mis-render the dice payload as
+			// a prompt result.
+			if (r?.kind === "prompt") setTestResult(r);
+			else setTestResult(null);
 		} finally {
 			setTestingScript(false);
 		}

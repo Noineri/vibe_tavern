@@ -128,6 +128,14 @@ export {
   importScriptSchema,
   scriptLinkSchema,
   setScriptLinksSchema,
+  scriptTestResultSchema,
+  promptScriptTestResultSchema,
+  diceScriptTestResultSchema,
+  diceSampleRollSchema,
+  type ScriptTestResult,
+  type PromptScriptTestResult,
+  type DiceScriptTestResult,
+  type DiceSampleRoll,
 } from "./script-schema.js";
 
 export {

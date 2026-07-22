@@ -20,12 +20,15 @@ import advancedLoreCode from "./advanced-lore.js?raw";
 import hpCode from "./hp.js?raw";
 import diceCode from "./dice.js?raw";
 import randomCode from "./random.js?raw";
+import fateDieCode from "./fate-die.js?raw";
 
 export interface ScriptTemplate {
   /** Fallback label (used when the i18n key `script_template_<key>` is absent). */
   name: string;
   /** Raw JavaScript source — executed as-is in the script sandbox. */
   code: string;
+  /** Optional script kind. Defaults to "prompt". */
+  scriptKind?: "prompt" | "dice";
 }
 
 export const SCRIPT_TEMPLATES: Record<string, ScriptTemplate> = {
@@ -36,5 +39,6 @@ export const SCRIPT_TEMPLATES: Record<string, ScriptTemplate> = {
   advanced_lore: { name: "Advanced Lorebook", code: advancedLoreCode },
   hp: { name: "HP Tracker", code: hpCode },
   dice: { name: "Dice Roller", code: diceCode },
+  fate_die: { name: "Fate Die", code: fateDieCode, scriptKind: "dice" },
   random: { name: "Random Event", code: randomCode },
 };

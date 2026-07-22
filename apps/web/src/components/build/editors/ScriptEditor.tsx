@@ -12,6 +12,7 @@ import { CustomTooltip } from "../../shared/Tooltip.js";
 import { DestructiveConfirmModal } from "../../shared/destructive-confirm-modal.js";
 import { SaveButton } from "../../shared/SaveBar.js";
 import { Toggle } from "../../shared/Toggle.js";
+import { SegmentedControl } from "../../shared/SegmentedControl.js";
 import { SCRIPT_TEMPLATES } from "./script-templates/index.js";
 import { cn } from "../../../lib/cn.js";
 import { useT } from "../../../i18n/context.js";
@@ -40,6 +41,8 @@ import {
 
 import { LoreEntryList } from "./LoreEntryList.js";
 import { ScriptTester } from "./ScriptTester.js";
+import { DiceScriptTester } from "./DiceScriptTester.js";
+import { ScriptApiReference } from "./script-api-reference.js";
 
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -106,6 +109,9 @@ function SortableScriptCard({ script, isActive, isMobile, onClick }: {
 				)}
 				<div className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent-dim text-accent-t"><Ic.terminal /></div>
 				<span className="flex-1 truncate text-[14px] font-semibold text-t1">{script.name}</span>
+				<div className="shrink-0 rounded px-1.5 py-0.5 font-ui text-[10px] uppercase tracking-wide bg-s3 text-t2 mr-1">
+					{script.scriptKind === "dice" ? "DICE" : "PROMPT"}
+				</div>
 				<div className={cn("shrink-0 rounded-full px-2 py-0.5 font-ui text-[10px] font-medium uppercase", script.enabled ? "bg-success-dim text-success-text" : "bg-s3 text-t3")}>
 					{script.enabled ? "ON" : "OFF"}
 				</div>
@@ -125,6 +131,7 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
     if (id && onOpenEditor) onOpenEditor();
   };
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [confirmTypeChange, setConfirmTypeChange] = useState<"prompt" | "dice" | null>(null);
   const [importOpen, setImportOpen] = useState(false);
   const [importCode, setImportCode] = useState("");
   useKeyDown("Escape", () => setConfirmDeleteId(null), { enabled: !!confirmDeleteId });
@@ -333,8 +340,8 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
   };
 
   // ── Handlers ─────────────────────────────────────────────
-  const handleAdd = () => {
-    const body = { name: "New Script", code: "", ...scopeBody() } as Parameters<typeof createScript>[0];
+  const handleAdd = (kind: "prompt" | "dice" = "prompt") => {
+    const body = { name: "New Script", code: "", scriptKind: kind, ...scopeBody() } as Parameters<typeof createScript>[0];
     handleCreateScript(body);
   };
 
@@ -344,7 +351,7 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
     if (activeScript) {
       updateDraft({ code: activeScript.code ? activeScript.code + "\n\n" + tpl.code : tpl.code });
     } else {
-      void handleCreateScript({ name: tpl.name, code: tpl.code, ...scopeBody() } as Parameters<typeof createScript>[0]);
+      void handleCreateScript({ name: tpl.name, code: tpl.code, scriptKind: tpl.scriptKind || "prompt", ...scopeBody() } as Parameters<typeof createScript>[0]);
     }
   };
 
@@ -358,6 +365,18 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
           confirmLabel={t("delete_script_confirm")}
           onConfirm={() => void handleDeleteScript(confirmDeleteId)}
           onCancel={() => setConfirmDeleteId(null)}
+        />
+      )}
+      {confirmTypeChange && (
+        <DestructiveConfirmModal
+          title={tDynamic("script_type_change_confirm_title") || "Change Script Type?"}
+          body={tDynamic("script_type_change_confirm_body") || "Are you sure you want to change the script type? This will not alter your code, but the script will run in a different mode."}
+          confirmLabel={tDynamic("script_type_change_confirm") || "Change Type"}
+          onConfirm={() => {
+            updateDraft({ scriptKind: confirmTypeChange });
+            setConfirmTypeChange(null);
+          }}
+          onCancel={() => setConfirmTypeChange(null)}
         />
       )}
       {importOpen && (
@@ -393,7 +412,7 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
       )}
       <AiAssistantModal
         mode="full"
-        apiMode="script"
+        apiMode={activeScript?.scriptKind === "dice" ? "dice_script" : "script"}
         isOpen={aiHelperOpen}
         onClose={() => setAiHelperOpen(false)}
         existingContent={activeScript?.code ?? ""}
@@ -414,7 +433,7 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
         <div className="py-10 text-center">
           <div className="mb-2 text-[13px] text-t3">{t("script_no_scripts")}</div>
           <div className="flex justify-center gap-2">
-            <AddButton onClick={handleAdd}>
+            <AddButton onClick={() => handleAdd()}>
               <Ic.plus /> {t("new_script")}
             </AddButton>
             <AddButton onClick={() => setImportOpen(true)}>
@@ -441,7 +460,7 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
               />
             ))}
             <div className="mt-2 flex flex-wrap gap-2">
-              <AddButton onClick={handleAdd}><Ic.plus /> {t("new_script")}</AddButton>
+              <AddButton onClick={() => handleAdd()}><Ic.plus /> {t("new_script")}</AddButton>
               <AddButton onClick={() => setImportOpen(true)}><Ic.import /> {t("script_import")}</AddButton>
             </div>
           </SortableContext>
@@ -451,6 +470,9 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
                 <div className="flex items-center gap-2 px-4 pt-3 pb-3">
                   <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent-dim text-accent-t"><Ic.terminal /></div>
                   <span className="flex-1 truncate text-[14px] font-semibold text-t1">{activeDragDisplay.name}</span>
+                  <div className="shrink-0 rounded px-1.5 py-0.5 font-ui text-[10px] uppercase tracking-wide bg-s3 text-t2 mr-1">
+                    {activeDragDisplay.scriptKind === "dice" ? "DICE" : "PROMPT"}
+                  </div>
                   <div className={cn("shrink-0 rounded-full px-2 py-0.5 font-ui text-[10px] font-medium uppercase", activeDragDisplay.enabled ? "bg-success-dim text-success-text" : "bg-s3 text-t3")}>
                     {activeDragDisplay.enabled ? "ON" : "OFF"}
                   </div>
@@ -483,12 +505,28 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
       </div>
 
       {/* Header: name + toggle + delete */}
-      <div className="flex items-center gap-3" style={{ marginBottom: 16 }}>
-        <div className="min-w-0 flex-1"><input className="w-full rounded-md border border-border bg-s2 px-2.5 py-1.5 text-[15px] font-semibold text-t1 outline-none focus:border-accent" type="text" value={activeScript.name} onChange={(e) => updateDraft({ name: e.target.value })} placeholder={t("script_name")} /></div>
-        <Toggle checked={activeScript.enabled} onChange={(enabled) => updateDraft({ enabled })} />
-        <CustomTooltip content={t("delete_script_confirm")}>
-        <div className="flex h-8 w-8 cursor-pointer items-center justify-center rounded text-danger transition-all hover:bg-s2" onClick={() => setConfirmDeleteId(activeScript.id)}><Ic.del /></div>
-        </CustomTooltip>
+      <div className="flex flex-col gap-3" style={{ marginBottom: 16 }}>
+        <div className="flex items-center gap-3">
+          <div className="min-w-0 flex-1"><input className="w-full rounded-md border border-border bg-s2 px-2.5 py-1.5 text-[15px] font-semibold text-t1 outline-none focus:border-accent" type="text" value={activeScript.name} onChange={(e) => updateDraft({ name: e.target.value })} placeholder={t("script_name")} /></div>
+          <Toggle checked={activeScript.enabled} onChange={(enabled) => updateDraft({ enabled })} />
+          <CustomTooltip content={t("delete_script_confirm")}>
+            <div className="flex h-8 w-8 cursor-pointer items-center justify-center rounded text-danger transition-all hover:bg-s2" onClick={() => setConfirmDeleteId(activeScript.id)}><Ic.del /></div>
+          </CustomTooltip>
+        </div>
+        <div className="flex items-center">
+          <SegmentedControl
+            value={activeScript.scriptKind || "prompt"}
+            onChange={(v) => {
+              if (v !== (activeScript.scriptKind || "prompt")) {
+                setConfirmTypeChange(v as "prompt" | "dice");
+              }
+            }}
+            options={[
+              { value: "prompt", label: tDynamic("script_kind_prompt") || "Prompt" },
+              { value: "dice", label: tDynamic("script_kind_dice") || "Dice" },
+            ]}
+          />
+        </div>
       </div>
 
       {/* Description */}
@@ -527,63 +565,7 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
 
       {/* API Reference */}
       {apiRefOpen && (
-        <div className="mb-4 rounded-lg border border-accent/30 bg-accent-dim/30" style={{ padding: 14 }}>
-          <div className="mb-3 text-[12px] font-semibold uppercase tracking-[0.06em] text-accent-t">{t("script_api_context")}</div>
-          <div className="grid gap-3 text-[12px]">
-            <div>
-              <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.05em] text-t2">{t("script_api_chat")}</div>
-              <div className="grid gap-1">
-                <div className="flex items-center gap-2 leading-[1.5]"><code className="shrink-0 rounded bg-bg px-1.5 py-px font-mono text-[11px] leading-[1.4] text-accent-t">context.chat.lastMessage</code><span className="text-t3">— {t("script_api_chat_lastMessage")}</span></div>
-                <div className="flex items-center gap-2 leading-[1.5]"><code className="shrink-0 rounded bg-bg px-1.5 py-px font-mono text-[11px] leading-[1.4] text-accent-t">context.chat.messages</code><span className="text-t3">— {t("script_api_chat_messages")}</span></div>
-                <div className="flex items-center gap-2 leading-[1.5]"><code className="shrink-0 rounded bg-bg px-1.5 py-px font-mono text-[11px] leading-[1.4] text-accent-t">context.chat.messageCount</code><span className="text-t3">— {t("script_api_chat_messageCount")}</span></div>
-                <div className="flex items-center gap-2 leading-[1.5]"><code className="shrink-0 rounded bg-bg px-1.5 py-px font-mono text-[11px] leading-[1.4] text-accent-t">context.chat.injectMessage(content, role?)</code><span className="text-t3">— {t("script_api_chat_injectMessage")}</span></div>
-              </div>
-            </div>
-            <div>
-              <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.05em] text-t2">{t("script_api_character")}</div>
-              <div className="grid gap-1">
-                <div className="flex items-center gap-2 leading-[1.5]"><code className="shrink-0 rounded bg-bg px-1.5 py-px font-mono text-[11px] leading-[1.4] text-accent-t">context.character.name</code><span className="text-t3">— {t("script_api_char_name")}</span></div>
-                <div className="flex items-center gap-2 leading-[1.5]"><code className="shrink-0 rounded bg-bg px-1.5 py-px font-mono text-[11px] leading-[1.4] text-accent-t">context.character.personality</code><span className="text-t3">— {t("script_api_char_personality")}</span></div>
-                <div className="flex items-center gap-2 leading-[1.5]"><code className="shrink-0 rounded bg-bg px-1.5 py-px font-mono text-[11px] leading-[1.4] text-accent-t">context.character.scenario</code><span className="text-t3">— {t("script_api_char_scenario")}</span></div>
-              </div>
-            </div>
-            <div>
-              <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.05em] text-t2">{t("script_api_state")}</div>
-              <div className="grid gap-1">
-                <div className="flex items-center gap-2 leading-[1.5]"><code className="shrink-0 rounded bg-bg px-1.5 py-px font-mono text-[11px] leading-[1.4] text-accent-t">context.state.get(key, default)</code><span className="text-t3">— {t("script_api_state_get")}</span></div>
-                <div className="flex items-center gap-2 leading-[1.5]"><code className="shrink-0 rounded bg-bg px-1.5 py-px font-mono text-[11px] leading-[1.4] text-accent-t">context.state.set(key, value)</code><span className="text-t3">— {t("script_api_state_set")}</span></div>
-                <div className="flex items-center gap-2 leading-[1.5]"><code className="shrink-0 rounded bg-bg px-1.5 py-px font-mono text-[11px] leading-[1.4] text-accent-t">context.state.increment(key, n)</code><span className="text-t3">— {t("script_api_state_increment")}</span></div>
-              </div>
-            </div>
-            <div>
-              <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.05em] text-t2">{t("script_api_lore")}</div>
-              <div className="flex items-center gap-2 leading-[1.5]"><code className="shrink-0 rounded bg-bg px-1.5 py-px font-mono text-[11px] leading-[1.4] text-accent-t">context.lore.activeEntries</code><span className="text-t3">— {t("script_api_lore_entries")}</span></div>
-            </div>
-            <div>
-              <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.05em] text-t2">{t("script_api_persona")}</div>
-              <div className="grid gap-1">
-                <div className="flex items-center gap-2 leading-[1.5]"><code className="shrink-0 rounded bg-bg px-1.5 py-px font-mono text-[11px] leading-[1.4] text-accent-t">context.persona.name</code><span className="text-t3">— {t("script_api_persona_name")}</span></div>
-                <div className="flex items-center gap-2 leading-[1.5]"><code className="shrink-0 rounded bg-bg px-1.5 py-px font-mono text-[11px] leading-[1.4] text-accent-t">context.persona.description</code><span className="text-t3">— {t("script_api_persona_desc")}</span></div>
-              </div>
-            </div>
-            <div>
-              <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.05em] text-t2">{t("script_api_shared")}</div>
-              <div className="grid gap-1">
-                <div className="flex items-center gap-2 leading-[1.5]"><code className="shrink-0 rounded bg-bg px-1.5 py-px font-mono text-[11px] leading-[1.4] text-accent-t">context.shared.get(key, default)</code><span className="text-t3">— {t("script_api_shared_get")}</span></div>
-                <div className="flex items-center gap-2 leading-[1.5]"><code className="shrink-0 rounded bg-bg px-1.5 py-px font-mono text-[11px] leading-[1.4] text-accent-t">context.shared.set(key, value)</code><span className="text-t3">— {t("script_api_shared_set")}</span></div>
-              </div>
-            </div>
-            <div>
-              <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.05em] text-t2">{t("script_api_random")}</div>
-              <div className="grid gap-1">
-                <div className="flex items-center gap-2 leading-[1.5]"><code className="shrink-0 rounded bg-bg px-1.5 py-px font-mono text-[11px] leading-[1.4] text-accent-t">context.random()</code><span className="text-t3">— {t("script_api_random_fn")}</span></div>
-                <div className="flex items-center gap-2 leading-[1.5]"><code className="shrink-0 rounded bg-bg px-1.5 py-px font-mono text-[11px] leading-[1.4] text-accent-t">context.randomInt(min, max)</code><span className="text-t3">— {t("script_api_randomInt")}</span></div>
-                <div className="flex items-center gap-2 leading-[1.5]"><code className="shrink-0 rounded bg-bg px-1.5 py-px font-mono text-[11px] leading-[1.4] text-accent-t">context.pick(arr)</code><span className="text-t3">— {t("script_api_pick")}</span></div>
-                <div className="flex items-center gap-2 leading-[1.5]"><code className="shrink-0 rounded bg-bg px-1.5 py-px font-mono text-[11px] leading-[1.4] text-accent-t">context.weightedPick(items)</code><span className="text-t3">— {t("script_api_weightedPick")}</span></div>
-              </div>
-            </div>
-          </div>
-        </div>
+        <ScriptApiReference kind={activeScript.scriptKind || "prompt"} />
       )}
 
       {/* Code editor */}
@@ -609,7 +591,11 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
         </div>
       </div>
 
-      <ScriptTester scriptId={activeScriptId} code={activeScript.code} isMobile={isMobile} characterName={scope === "character" ? allCharacters.find(x => x.id === characterId)?.name : undefined} />
+      {activeScript.scriptKind === "dice" ? (
+        <DiceScriptTester scriptId={activeScriptId} code={activeScript.code} isMobile={isMobile} characterName={scope === "character" ? allCharacters.find(x => x.id === characterId)?.name : undefined} />
+      ) : (
+        <ScriptTester scriptId={activeScriptId} code={activeScript.code} isMobile={isMobile} characterName={scope === "character" ? allCharacters.find(x => x.id === characterId)?.name : undefined} />
+      )}
     </div>
   ) : (
     <div className="flex h-full items-center justify-center text-t3 font-ui text-[13px] italic">
@@ -617,5 +603,5 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
     </div>
   );
 
-  return { modals, scriptListContent, scriptEditorPanel, activeScriptId, setActiveScriptId, handleAdd, handleImportOpen: () => setImportOpen(true) };
+  return { modals, scriptListContent, scriptEditorPanel, activeScriptId, setActiveScriptId, handleAdd: () => handleAdd(), handleImportOpen: () => setImportOpen(true) };
 }

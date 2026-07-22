@@ -38,6 +38,7 @@ describe("script draft store", () => {
       description: "",
       code: "draft code",
       enabled: true,
+      scriptKind: "prompt",
     });
     expect(useScriptDraftStore.getState().drafts[script.id]?.saveState).toBe("saving");
   });

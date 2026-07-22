@@ -126,6 +126,7 @@ beforeEach(() => {
     return { ...serverScript };
   });
   vi.mocked(testScript).mockResolvedValue({
+    kind: "prompt",
     personality: "",
     scenario: "",
     state: {},
@@ -179,6 +180,7 @@ describe("useScriptPanel explicit save", () => {
         description: "Description",
         code: "context.state.set('x', 1);",
         enabled: false,
+        scriptKind: "prompt",
       });
     });
     expect(vi.mocked(updateScript)).toHaveBeenCalledTimes(1);
