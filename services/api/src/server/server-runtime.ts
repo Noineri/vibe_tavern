@@ -201,7 +201,7 @@ export async function startServerRuntime(config: ServerRuntimeConfig): Promise<v
 		features.register(createInsightsFeature({ objectiveService, trackerService }));
 
 		const assetService = new AssetService(config.assetsDir, stores.content, (id) => stores.characters.resolveFolderName(id));
-		const mobileAccessService = new MobileAccessService(config.dataDir);
+		const mobileAccessService = await MobileAccessService.create(config.dataDir);
 
 		// RuntimeApi adapter
 		// Production randomness source for dice rolls. Uses crypto.getRandomValues

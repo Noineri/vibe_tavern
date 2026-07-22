@@ -11,12 +11,12 @@ export class MobileAccessAdapter implements MobileAccessRuntimeApi {
 	}
 
 	async regenerateMobileAccessToken(): Promise<{ token: string }> {
-		const token = this.mobileAccessService.regenerateToken();
+		const token = await this.mobileAccessService.regenerateToken();
 		return { token };
 	}
 
 	async revokeMobileAccess(): Promise<{ token: null }> {
-		this.mobileAccessService.revokeToken();
+		await this.mobileAccessService.revokeToken();
 		return { token: null };
 	}
 }

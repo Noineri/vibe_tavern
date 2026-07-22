@@ -23,7 +23,7 @@
  * any byte is written, so a partial tree can never be left behind.
  */
 
-import { lstat, mkdir, readdir, rename, rm, writeFile } from "node:fs/promises";
+import { lstat, mkdir, readdir, rename, rm } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { randomUUID } from "node:crypto";
 import { parseSkillManifest, buildSkillCatalog } from "./skill-scanner.js";
@@ -215,7 +215,7 @@ export async function importSkillTree(
     for (const entry of entries.values()) {
       const dest = join(staging, entry.normalizedPath);
       await mkdir(dirname(dest), { recursive: true });
-      await writeFile(dest, entry.bytes);
+      await Bun.write(dest, entry.bytes);
     }
 
     // 2. Swap each top-level directory into place. Atomic per dir: move any

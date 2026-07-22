@@ -27,7 +27,7 @@
  */
 
 import { dirname, join, relative, resolve, sep } from "node:path";
-import { readdir, writeFile } from "node:fs/promises";
+import { readdir } from "node:fs/promises";
 import { parseArgs } from "node:util";
 
 const ROOT = resolve(import.meta.dir, "..");
@@ -114,7 +114,7 @@ ${mapEntries.join("\n")}
 };
 `;
 
-	await writeFile(MANIFEST_PATH, content, "utf-8");
+	await Bun.write(MANIFEST_PATH, content);
 	console.log(
 		`[generate-embedded-web-manifest] Embedded ${files.length} file(s) into services/api/src/server/embedded-web-manifest.ts`,
 	);
@@ -123,7 +123,7 @@ ${mapEntries.join("\n")}
 
 /** Restores the empty stub. Called in build-standalone.ts `finally`. */
 export async function writeEmbeddedWebStub(): Promise<void> {
-	await writeFile(MANIFEST_PATH, STUB_CONTENT, "utf-8");
+	await Bun.write(MANIFEST_PATH, STUB_CONTENT);
 	console.log("[generate-embedded-web-manifest] Restored embedded-web-manifest.ts stub.");
 }
 

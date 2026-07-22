@@ -73,8 +73,8 @@ describe("mobile access config-file characterization", () => {
     await rm(configDir, { recursive: true, force: true });
   });
 
-  test("a missing config file initializes with no token", () => {
-    const service = new MobileAccessService(join(configDir, "missing-parent"));
+  test("a missing config file initializes with no token", async () => {
+    const service = await MobileAccessService.create(join(configDir, "missing-parent"));
 
     expect(service.getToken()).toBeNull();
   });
@@ -82,27 +82,27 @@ describe("mobile access config-file characterization", () => {
   test("corrupt JSON initializes with no token instead of propagating a parse error", async () => {
     await writeFile(join(configDir, "mobile-access.json"), "{not-json");
 
-    const service = new MobileAccessService(configDir);
+    const service = await MobileAccessService.create(configDir);
 
     expect(service.getToken()).toBeNull();
   });
 
-  test("a generated token survives a fresh service instance and a persisted revocation", () => {
-    const first = new MobileAccessService(configDir);
-    const generatedToken = first.generateToken();
+  test("a generated token survives a fresh service instance and a persisted revocation", async () => {
+    const first = await MobileAccessService.create(configDir);
+    const generatedToken = await first.generateToken();
 
-    const reloaded = new MobileAccessService(configDir);
+    const reloaded = await MobileAccessService.create(configDir);
     expect(reloaded.getToken()).toBe(generatedToken);
 
-    reloaded.revokeToken();
-    const afterRevocation = new MobileAccessService(configDir);
+    await reloaded.revokeToken();
+    const afterRevocation = await MobileAccessService.create(configDir);
     expect(afterRevocation.getToken()).toBeNull();
   });
 
   test("a valid JSON config with mixed-case Token does not normalize its key", async () => {
     await writeFile(join(configDir, "mobile-access.json"), JSON.stringify({ Token: "MiXeD-Token" }));
 
-    const service = new MobileAccessService(configDir);
+    const service = await MobileAccessService.create(configDir);
 
     // OBSERVED CONFIG-SHAPE GAP: load() trusts JSON.parse() without validating
     // the key, so getToken() returns undefined despite its string | null type.

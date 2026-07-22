@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
+import { mkdir } from "node:fs/promises";
 import { resolve, dirname } from "node:path";
 import * as os from "os";
 import * as dgram from "dgram";
@@ -96,48 +96,50 @@ export async function getRecommendedIPs(): Promise<IPResult[]> {
 // ── Token Management ────────────────────────────────────────────────────
 
 export class MobileAccessService {
-  private configPath: string;
-  private config: MobileAccessConfig;
+  private readonly configPath: string;
+  private config: MobileAccessConfig = { token: null };
 
   constructor(dataDir: string) {
     this.configPath = resolve(dataDir, "mobile-access.json");
-    this.config = this.load();
   }
 
-  private load(): MobileAccessConfig {
+  static async create(dataDir: string): Promise<MobileAccessService> {
+    const service = new MobileAccessService(dataDir);
+    service.config = await service.load();
+    return service;
+  }
+
+  private async load(): Promise<MobileAccessConfig> {
     try {
-      if (existsSync(this.configPath)) {
-        const raw = readFileSync(this.configPath, "utf-8");
-        return JSON.parse(raw);
-      }
-    } catch { /* ignore */ }
-    return { token: null };
+      return JSON.parse(await Bun.file(this.configPath).text());
+    } catch {
+      return { token: null };
+    }
   }
 
-  private save(): void {
-    const dir = dirname(this.configPath);
-    if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-    writeFileSync(this.configPath, JSON.stringify(this.config, null, 2));
+  private async save(): Promise<void> {
+    await mkdir(dirname(this.configPath), { recursive: true });
+    await Bun.write(this.configPath, JSON.stringify(this.config, null, 2));
   }
 
   getToken(): string | null {
     return this.config.token;
   }
 
-  generateToken(): string {
+  async generateToken(): Promise<string> {
     const token = crypto.randomUUID();
     this.config.token = token;
-    this.save();
+    await this.save();
     return token;
   }
 
-  regenerateToken(): string {
+  async regenerateToken(): Promise<string> {
     return this.generateToken();
   }
 
-  revokeToken(): void {
+  async revokeToken(): Promise<void> {
     this.config.token = null;
-    this.save();
+    await this.save();
   }
 
   async getMobileAccessInfo(port: number, tlsEnabled: boolean): Promise<MobileAccessInfo> {
