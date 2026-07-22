@@ -24,7 +24,7 @@
 
 import { join, resolve } from "node:path";
 import { copyFile, cp, rm, mkdir } from "node:fs/promises";
-import { writeFileSync as writeFileSyncSync } from "node:fs";
+import { statSync, writeFileSync } from "node:fs";
 import { pathExists } from "./_fs.js";
 import { VERSION } from "./_version.js";
 import {
@@ -154,14 +154,20 @@ async function main() {
 	// synchronously in an exit handler so the working tree is never left with
 	// a generated manifest referencing out/apps/web/** (which may be cleaned).
 	process.on("exit", () => {
-		// Heuristic: stub is ~1 KB, generated manifest is much larger. Only
-		// restore if the file is clearly the generated (non-stub) version.
+		// Exit handlers cannot await, so keep metadata and restoration on Node's
+		// synchronous APIs. Registration follows successful generation, so stat the
+		// recovery target and restore the known-good stub without a size heuristic.
 		try {
-			if (Bun.file(MANIFEST_PATH).size > 2000) {
-				writeFileSyncSync(MANIFEST_PATH, STUB_CONTENT, "utf-8");
-				console.log("[build-standalone] Restored embedded-web-manifest.ts stub (exit handler).");
+			if (!statSync(MANIFEST_PATH).isFile()) {
+				console.error("[build-standalone] Cannot restore embedded-web-manifest.ts: recovery target is not a file.");
+				return;
 			}
-		} catch { /* best-effort */ }
+			writeFileSync(MANIFEST_PATH, STUB_CONTENT, "utf-8");
+			console.log("[build-standalone] Restored embedded-web-manifest.ts stub (exit handler).");
+		} catch (error) {
+			const detail = error instanceof Error ? error.message : String(error);
+			console.error(`[build-standalone] Failed to restore embedded-web-manifest.ts stub: ${detail}`);
+		}
 	});
 
 	// ── Step 5: Compile standalone server ────────────────────────
