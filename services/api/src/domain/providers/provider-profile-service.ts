@@ -182,7 +182,15 @@ export function createProviderProfileService(providers: ProviderStore): Provider
     },
 
     activateProviderProfile: async (id) => {
-      await providers.activate(id);
+      try {
+        await providers.activate(id);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (/not found/i.test(message)) {
+          throw notFound("ProviderProfile", message);
+        }
+        throw error;
+      }
       const profile = await providers.getById(id);
       if (!profile) {
         throw notFound("ProviderProfile", `Provider profile '${id}' was not found after activation.`);

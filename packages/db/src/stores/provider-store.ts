@@ -273,9 +273,25 @@ export class ProviderStore {
   }
 
   async activate(id: string): Promise<void> {
-    await this.db.transaction(async (tx) => {
-      await tx.update(providerProfiles).set({ isActive: 0 }).run();
-      await tx.update(providerProfiles).set({ isActive: 1 }).where(eq(providerProfiles.id, id)).run();
+    // Synchronous callback (ASYNC_TRANSACTION_AUDIT step 4): drizzle-orm 0.38.4
+    // + bun:sqlite commits at the end of the callback's synchronous prefix, so
+    // an async callback's post-await throw is never rolled back. Keeping this
+    // synchronous means a throw rolls the whole tx back.
+    //
+    // Validate the target BEFORE clearing the old active flag: a stale id
+    // would otherwise update zero rows on the second statement without
+    // throwing — silently leaving NO provider active (the old flag already
+    // cleared by the first statement). Checking inside the tx means a stale
+    // id throws before any write runs, so the currently-active provider is
+    // preserved. (provider-profile-service converts this throw to a 404.)
+    this.db.transaction((tx) => {
+      const target = tx.select({ id: providerProfiles.id }).from(providerProfiles)
+        .where(eq(providerProfiles.id, id)).get();
+      if (!target) {
+        throw new Error(`ProviderProfile '${id}' not found for activation`);
+      }
+      tx.update(providerProfiles).set({ isActive: 0 }).run();
+      tx.update(providerProfiles).set({ isActive: 1 }).where(eq(providerProfiles.id, id)).run();
     });
   }
 
@@ -349,9 +365,12 @@ export class ProviderStore {
 
   async reorder(updates: Array<{ id: string; sortOrder: number }>): Promise<ProviderProfile[]> {
     const now = this.clock.now();
-    await this.db.transaction(async (tx) => {
+    // Synchronous callback (ASYNC_TRANSACTION_AUDIT step 4): see activate.
+    // A failure partway through the reorder rolls the earlier updates back —
+    // the prior complete order survives.
+    this.db.transaction((tx) => {
       for (const u of updates) {
-        await tx
+        tx
           .update(providerProfiles)
           .set({ sortOrder: u.sortOrder, updatedAt: now })
           .where(eq(providerProfiles.id, u.id))
@@ -364,10 +383,26 @@ export class ProviderStore {
   // ─── Cached models ─────────────────────────────────────────────────────────
 
   async saveCachedModels(providerId: string, models: CachedModelData[]): Promise<void> {
-    await this.db.transaction(async (tx) => {
-      await tx.delete(cachedModels).where(eq(cachedModels.providerProfileId, providerId)).run();
-      if (models.length > 0) {
-        const values = models.map((model) => ({
+    // Dedup by modelSlug BEFORE the delete: cached_models has a unique index
+    // on (provider_profile_id, model_slug), so a duplicate slug in the input
+    // would violate it on the bulk insert — AFTER the old cache was already
+    // deleted, leaving the provider with no cached models. Normalizing first
+    // keeps the replace whole. First occurrence wins.
+    const seen = new Set<string>();
+    const unique: CachedModelData[] = [];
+    for (const m of models) {
+      if (seen.has(m.modelSlug)) continue;
+      seen.add(m.modelSlug);
+      unique.push(m);
+    }
+
+    // Synchronous callback (ASYNC_TRANSACTION_AUDIT step 4): see activate.
+    // A failure on the bulk insert rolls the delete back too — the prior
+    // cached-model set survives instead of being wiped to empty.
+    this.db.transaction((tx) => {
+      tx.delete(cachedModels).where(eq(cachedModels.providerProfileId, providerId)).run();
+      if (unique.length > 0) {
+        const values = unique.map((model) => ({
           id: this.idGen.next('cmod'),
           providerProfileId: providerId,
           modelSlug: model.modelSlug,
@@ -376,7 +411,7 @@ export class ProviderStore {
           capabilitiesJson: JSON.stringify(model.capabilities ?? {}),
           fetchedAt: this.clock.now(),
         }));
-        await tx.insert(cachedModels).values(values).run();
+        tx.insert(cachedModels).values(values).run();
       }
     });
   }
