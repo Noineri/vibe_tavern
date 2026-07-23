@@ -2,7 +2,9 @@ import type { ProviderRuntimeApi } from "../contract/runtime-api.js";
 import type { ClientProviderProfileRecord } from "../../runtime/session/session-runtime-dto.js";
 import { notFound } from "../../shared/errors.js";
 import type { StoreContainer } from "@vibe-tavern/db";
-import type { ModelFavoriteScope, ModelSettingsOverlay } from "@vibe-tavern/domain";
+import { COAUTHOR_TRANSPORT, type CoauthorTransport, type ModelFavoriteScope, type ModelSettingsOverlay } from "@vibe-tavern/domain";
+import { generateText } from "ai";
+import { resolveModel } from "../../infrastructure/ai/provider-executor-utils.js";
 import type { ProviderProfileService } from "../../domain/providers/provider-profile-service.js";
 import {
 	probeProviderConnection,
@@ -120,14 +122,26 @@ export class ProviderAdapter implements ProviderRuntimeApi {
 		providerType?: string;
 	}) => testProviderChat(opts);
 
-	testProviderChatByProfile = async (providerProfileId: string, model: string) => {
+	testProviderChatByProfile = async (providerProfileId: string, model: string, transport?: CoauthorTransport) => {
 		const profile = await this.getRequiredProviderProfile(providerProfileId);
-		return testProviderChat({
-			baseUrl: profile.endpoint,
-			apiKey: profile.apiKey ?? "",
-			model,
-			providerType: profile.providerPreset,
-		});
+		if (transport !== COAUTHOR_TRANSPORT.responses) {
+			return testProviderChat({
+				baseUrl: profile.endpoint,
+				apiKey: profile.apiKey ?? "",
+				model,
+				providerType: profile.providerPreset,
+			});
+		}
+		try {
+			const result = await generateText({
+				model: resolveModel(profile, model, COAUTHOR_TRANSPORT.responses),
+				prompt: "Hi",
+				maxOutputTokens: 64,
+			});
+			return { success: true, reply: result.text || "(empty response)" };
+		} catch (error) {
+			return { success: false, error: error instanceof Error ? error.message : String(error) };
+		}
 	};
 
 	private async getRequiredProviderProfile(providerProfileId: string) {

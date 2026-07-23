@@ -7,7 +7,7 @@
  */
 
 import type { LanguageModel, ModelMessage, ToolCallPart, ToolContent, AssistantContent } from "ai";
-import { normalizeProviderType, type ProviderType, log, COAUTHOR_TRANSPORT, isCoauthorTransportAllowed } from "@vibe-tavern/domain";
+import { COAUTHOR_TRANSPORT, PROVIDER_TYPE, normalizeProviderType, type CoauthorTransport, type ProviderType, log } from "@vibe-tavern/domain";
 import { resolveProtocol } from "../../domain/providers/protocol-registry.js";
 import { createOpenAI } from "@ai-sdk/openai";
 import type { VisionGateConfig } from "./vision-gate.js";
@@ -66,32 +66,26 @@ function resolveResponsesModel(
 }
 
 /**
- * Resolve a Vercel AI SDK language model from a stored provider profile.
+ * Resolve a Vercel AI SDK language model for an explicit execution transport.
  *
- * For Co-Author chats with `coauthorTransport === "responses"`, resolves via
- * the OpenAI Responses API (`createOpenAI().responses()`). All other paths
- * delegate to the canonical protocol registry (chat completions or native).
- *
- * Falls back to chat completions with a warning when Responses transport is
- * requested but the preset does not support it.
+ * The default remains the existing protocol adapter so RP, summaries, vision,
+ * AI assistants, and provider tests cannot inherit a profile's Co-Author-only
+ * preference by accident. Only a caller that explicitly threads `responses`
+ * reaches the Responses resolver.
  */
 export function resolveModel(
-  profile: { providerPreset: string; endpoint: string; apiKey: string | null; coauthorTransport?: string },
+  profile: { providerPreset: string; endpoint: string; apiKey: string | null },
   model: string,
+  transport: CoauthorTransport = COAUTHOR_TRANSPORT.chatCompletions,
 ): LanguageModel {
-  if (profile.coauthorTransport === COAUTHOR_TRANSPORT.responses) {
-    // Use raw providerPreset (user-facing preset ID like "openai"), NOT the
-    // normalized ProviderType ("openai_compat") — transport capabilities are
-    // keyed by preset ID, not internal type enum.
-    if (isCoauthorTransportAllowed(profile.providerPreset, COAUTHOR_TRANSPORT.responses)) {
-      return resolveResponsesModel(profile, model);
+  const providerType = normalizeProviderType(profile.providerPreset);
+  if (transport === COAUTHOR_TRANSPORT.responses) {
+    if (providerType !== PROVIDER_TYPE.openaiCompat) {
+      throw new Error(`Responses transport is available only for OpenAI-compatible providers; '${profile.providerPreset}' uses '${providerType}'.`);
     }
-    log.tag("resolve-model").warn(
-      "Responses transport requested for preset %s but not allowed — falling back to chat completions",
-      profile.providerPreset,
-    );
+    return resolveResponsesModel(profile, model);
   }
-  return resolveProtocol(normalizeProviderType(profile.providerPreset)).resolveModel(profile, model);
+  return resolveProtocol(providerType).resolveModel(profile, model);
 }
 
 // ---------------------------------------------------------------------------

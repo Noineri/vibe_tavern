@@ -42,7 +42,7 @@ import type {
 	ScriptLink,
 	UiSettings,
 } from "@vibe-tavern/db";
-import type { ModelFavoriteScope, ModelSettingsOverlay } from "@vibe-tavern/domain";
+import type { CoauthorTransport, ModelFavoriteScope, ModelSettingsOverlay } from "@vibe-tavern/domain";
 import type { LorebookRow, LoreEntryRow, ScriptRow } from "@vibe-tavern/db";
 import type { RegenerateOverride, CoauthorApplyRequest } from "@vibe-tavern/api-contracts";
 import type { ProviderProbeResult, ProviderModelOption, TestChatResult } from "../../domain/providers/provider-gateway.js";
@@ -359,7 +359,7 @@ export interface ProviderRuntimeApi {
 	deleteProviderModelSettings: (providerProfileId: string, modelId: string) => Promise<void>;
 	fetchModelsByEndpoint: (baseUrl: string, apiKey?: string, providerType?: string) => Promise<ProviderModelOption[]>;
 	testProviderChatByEndpoint: (opts: { baseUrl: string; apiKey: string; model: string; providerType?: string }) => Promise<TestChatResult>;
-	testProviderChatByProfile: (providerProfileId: string, model: string) => Promise<TestChatResult>;
+	testProviderChatByProfile: (providerProfileId: string, model: string, transport?: CoauthorTransport) => Promise<TestChatResult>;
 }
 
 // ─── Preset ──────────────────────────────────────────────────────────

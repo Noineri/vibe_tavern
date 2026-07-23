@@ -367,6 +367,9 @@ export interface UiSettingsRecord {
   aiAssistantModelName: string | null;
   coauthorProviderId: string | null;
   coauthorModelName: string | null;
+  /** Optional for compatibility with bootstrap snapshots predating token overrides. */
+  coauthorMaxTokens?: number | null;
+  coauthorContextBudget?: number | null;
   updatedAt: string;
 }
 

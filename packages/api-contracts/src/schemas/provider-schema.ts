@@ -133,6 +133,7 @@ export const testChatSchema = z.object({
 
 export const testChatProfileSchema = z.object({
   model: z.string(),
+  transport: z.enum(["chat_completions", "responses"]).optional(),
 });
 
 export const tokenizeSchema = z.object({

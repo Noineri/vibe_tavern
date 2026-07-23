@@ -5,6 +5,7 @@ import {
   COAUTHOR_TRANSPORT_CAVEAT,
   PROVIDER_PRESET_ID,
   RESPONSES_SUPPORT,
+  canUseCoauthorResponsesTransport,
   getCoauthorTransportCapability,
 } from "../src/index.js";
 
@@ -14,7 +15,7 @@ describe("Co-Author transport capability map", () => {
   });
 
   test("records supported cloud and local Responses presets", () => {
-    for (const id of ["openai", "openrouter", "groq", "xai", "fireworks", "perplexity", "togetherai", "mimo", "nanogpt", "ollama", "llamacpp", "koboldcpp", "unsloth"] as const) {
+    for (const id of ["openai", "openrouter", "groq", "xai", "fireworks", "perplexity", "togetherai", "mimo", "nanogpt", "kimi", "ollama", "llamacpp", "koboldcpp", "unsloth"] as const) {
       expect(COAUTHOR_TRANSPORT_CAPABILITIES[id]).toEqual({ responsesSupport: RESPONSES_SUPPORT.supported, toolPath: COAUTHOR_TOOL_PATH.responses });
     }
   });
@@ -37,7 +38,10 @@ describe("Co-Author transport capability map", () => {
     });
   });
 
-  test("does not infer unknown presets", () => {
+  test("keeps the support map informational while allowing explicit OpenAI-compatible attempts", () => {
     expect(getCoauthorTransportCapability("custom-openai-compatible")).toBeNull();
+    expect(canUseCoauthorResponsesTransport("deepseek")).toBe(true);
+    expect(canUseCoauthorResponsesTransport("tabby")).toBe(true);
+    expect(canUseCoauthorResponsesTransport("google")).toBe(false);
   });
 });

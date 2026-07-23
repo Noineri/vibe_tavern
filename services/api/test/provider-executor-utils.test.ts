@@ -7,9 +7,8 @@ import {
 } from "../src/infrastructure/ai/provider-executor-utils.js";
 import type { SdkMessage } from "../src/infrastructure/ai/provider-executor-utils.js";
 
-// Capture real modules before any mock overrides (safe mock pattern).
+// Capture real modules before any mock overrides (safe mock pattern — see AGENTS gotcha).
 const realAiSdkOpenai = await import("@ai-sdk/openai");
-const realProtocolRegistry = await import("../src/domain/providers/protocol-registry.js");
 
 afterEach(() => {
   mock.restore();
@@ -279,82 +278,45 @@ describe("resolveModel", () => {
     providerPreset: "openai",
     endpoint: "https://api.openai.com/v1",
     apiKey: "sk-test",
+    coauthorTransport: COAUTHOR_TRANSPORT.responses,
   };
 
-  // ─── Chat completions (default) ───────────────────────────────────────
-
-  it("delegates to protocol registry when coauthorTransport is undefined", () => {
-    // Legacy profiles without the field should still work.
+  it("defaults to the existing chat resolver even when the stored Co-Author preference is Responses", () => {
     const model = resolveModel(baseProfile, "gpt-4o");
-    expect(model).toBeDefined();
-    expect(typeof (model as any).modelId).toBe("string");
+    expect(model.provider).toBe("openai_compat.chat");
+    expect(model.modelId).toBe("gpt-4o");
   });
 
-  it("delegates to protocol registry when coauthorTransport is chat_completions", () => {
-    const model = resolveModel(
-      { ...baseProfile, coauthorTransport: COAUTHOR_TRANSPORT.chatCompletions },
-      "gpt-4o",
-    );
-    expect(model).toBeDefined();
-    expect(typeof (model as any).modelId).toBe("string");
+  it("uses the Responses resolver only when execution metadata explicitly opts in", () => {
+    const model = resolveModel(baseProfile, "gpt-5.2", COAUTHOR_TRANSPORT.responses);
+    expect(model.provider).toBe("openai.responses");
+    expect(model.modelId).toBe("gpt-5.2");
   });
 
-  // ─── Responses transport ──────────────────────────────────────────────
-
-  it("resolves via createOpenAI().responses() when preset supports Responses", () => {
-    // Safe mock: capture real module, override only createOpenAI.
-    const responsesSpy = mock((modelId: string) => ({ __responsesModel: true, modelId }));
-    const createOpenAISpy = mock((_options: unknown) => ({
-      responses: responsesSpy,
-    }));
-
-    mock.module("@ai-sdk/openai", () => ({
-      ...realAiSdkOpenai,
-      createOpenAI: createOpenAISpy,
-    }));
-
-    const model = resolveModel(
-      { ...baseProfile, coauthorTransport: COAUTHOR_TRANSPORT.responses },
-      "gpt-5.2",
-    );
-
-    expect(createOpenAISpy).toHaveBeenCalledTimes(1);
-    expect(responsesSpy).toHaveBeenCalledTimes(1);
-    expect(responsesSpy).toHaveBeenCalledWith("gpt-5.2");
-    expect((model as any).__responsesModel).toBe(true);
-    expect((model as any).modelId).toBe("gpt-5.2");
+  it("allows an explicit Responses attempt for any OpenAI-compatible preset", () => {
+    const model = resolveModel({
+      ...baseProfile,
+      providerPreset: "deepseek",
+      endpoint: "https://custom-compatible.example/v1",
+    }, "custom-model", COAUTHOR_TRANSPORT.responses);
+    expect(model.provider).toBe("openai.responses");
+    expect(model.modelId).toBe("custom-model");
   });
 
-  it("falls back to chat completions when preset does NOT support Responses", () => {
-    // deepseek supports only chat_completions per COAUTHOR_TRANSPORT_CAPABILITIES.
-    // Mock createOpenAI so that if the code DOES call it (bug), we catch it.
-    const createOpenAISpy = mock((_options: unknown) => ({
-      responses: mock(() => ({ __responsesModel: true })),
-    }));
-
-    mock.module("@ai-sdk/openai", () => ({
-      ...realAiSdkOpenai,
-      createOpenAI: createOpenAISpy,
-    }));
-
-    const model = resolveModel(
-      {
-        providerPreset: "deepseek",
-        endpoint: "https://api.deepseek.com/v1",
-        apiKey: "sk-test",
-        coauthorTransport: COAUTHOR_TRANSPORT.responses,
-      },
-      "deepseek-chat",
-    );
-
-    // Should NOT have called createOpenAI — fell back to protocol registry.
-    expect(createOpenAISpy).toHaveBeenCalledTimes(0);
-    // Should still return a valid model via protocol registry.
-    expect(model).toBeDefined();
-    expect(typeof (model as any).modelId).toBe("string");
+  it("rejects Responses for native provider protocols instead of silently falling back", () => {
+    expect(() => resolveModel({
+      ...baseProfile,
+      providerPreset: "google",
+      endpoint: "https://generativelanguage.googleapis.com",
+    }, "gemini-test", COAUTHOR_TRANSPORT.responses)).toThrow("OpenAI-compatible");
   });
 
-  it("passes custom endpoint and apiKey to createOpenAI for Responses", () => {
+  // Boundary check: the Co-Author Responses feature only matters because it
+  // points ARBITRARY OpenAI-compatible endpoints (proxies, aggregators, local)
+  // at /responses. That requires the profile's endpoint + apiKey to reach
+  // createOpenAI verbatim. Asserting model.provider alone proves routing but
+  // not the endpoint/key wiring — pinned here via the safe mock pattern.
+  it("threads the profile endpoint and apiKey into createOpenAI for the Responses resolver", () => {
     const responsesSpy = mock((modelId: string) => ({ __responsesModel: true, modelId }));
     const createOpenAISpy = mock((_options: unknown) => ({
       responses: responsesSpy,
@@ -373,11 +335,13 @@ describe("resolveModel", () => {
         coauthorTransport: COAUTHOR_TRANSPORT.responses,
       },
       "gpt-5.2",
+      COAUTHOR_TRANSPORT.responses,
     );
 
     expect(createOpenAISpy).toHaveBeenCalledTimes(1);
     const callArgs = createOpenAISpy.mock.calls[0][0] as Record<string, unknown>;
     expect(callArgs.baseURL).toBe("https://custom-proxy.example.com/v1");
     expect(callArgs.apiKey).toBe("sk-custom");
+    expect(responsesSpy).toHaveBeenCalledWith("gpt-5.2");
   });
 });

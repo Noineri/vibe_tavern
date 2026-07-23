@@ -184,7 +184,7 @@ export async function testProviderChat(baseUrl: string, apiKey: string, model: s
   return unwrapRpc<TestChatResponse>(response);
 }
 
-export async function testProfileChat(providerProfileId: string, model: string): Promise<TestChatResponse> {
-  const response = await client.api.providers[":providerId"]["test-chat"].$post({ param: { providerId: providerProfileId }, json: { model } });
+export async function testProfileChat(providerProfileId: string, model: string, transport?: CoauthorTransport): Promise<TestChatResponse> {
+  const response = await client.api.providers[":providerId"]["test-chat"].$post({ param: { providerId: providerProfileId }, json: { model, transport } });
   return unwrapRpc<TestChatResponse>(response);
 }

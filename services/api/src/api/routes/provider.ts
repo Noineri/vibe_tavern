@@ -111,7 +111,7 @@ export function createProviderRoutes(runtime: ProviderRuntimeApi) {
       if (!model) {
         return c.json({ error: "model is required." }, 400);
       }
-      return c.json(await runtime.testProviderChatByProfile(c.req.param("providerId"), model));
+      return c.json(await runtime.testProviderChatByProfile(c.req.param("providerId"), model, body.transport));
     })
     // ── Tokenize ──
     .post("/api/tokenize", zValidator("json", schemas.tokenizeSchema), async (c) => {

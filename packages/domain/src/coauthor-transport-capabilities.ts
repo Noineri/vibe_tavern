@@ -1,3 +1,6 @@
+import { PROVIDER_TYPE } from "./platform-constants.js";
+import { normalizeProviderType } from "./provider-support.js";
+
 export const PROVIDER_PRESET_ID = {
   openai: "openai",
   openrouter: "openrouter",
@@ -101,7 +104,7 @@ export const COAUTHOR_TRANSPORT_CAPABILITIES = {
   fireworks: responses,
   perplexity: responses,
   moonshot: chatCompletions,
-  kimi: chatCompletions,
+  kimi: responses,
   ai21: chatCompletions,
   mimo: responses,
   nanogpt: responses,
@@ -147,4 +150,15 @@ export function isCoauthorTransportAllowed(presetId: string, transport: Coauthor
   const capability = getCoauthorTransportCapability(presetId);
   return capability?.responsesSupport === RESPONSES_SUPPORT.supported
     || capability?.responsesSupport === RESPONSES_SUPPORT.versionDependent;
+}
+
+/**
+ * Whether the Co-Author UI may offer an explicit Responses attempt.
+ *
+ * The capability map remains informational: custom or undocumented
+ * OpenAI-compatible endpoints may implement `/responses`. Native transports
+ * (Anthropic, Google, Ollama, etc.) cannot be wrapped by the OpenAI provider.
+ */
+export function canUseCoauthorResponsesTransport(presetId: string): boolean {
+  return normalizeProviderType(presetId) === PROVIDER_TYPE.openaiCompat;
 }

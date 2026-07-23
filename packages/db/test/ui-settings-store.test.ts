@@ -97,10 +97,23 @@ describe("UiSettingsStore — coauthor binding fields", () => {
 		expect(after.coauthorModelName).toBe("x");
 	});
 
+	test("persists optional Co-Author token overrides independently from the binding", async () => {
+		const { settings } = await mkSettingsStore();
+		const updated = await settings.update({ coauthorMaxTokens: 2_400, coauthorContextBudget: 32_000 });
+		expect(updated.coauthorMaxTokens).toBe(2_400);
+		expect(updated.coauthorContextBudget).toBe(32_000);
+
+		const cleared = await settings.update({ coauthorMaxTokens: null, coauthorContextBudget: null });
+		expect(cleared.coauthorMaxTokens).toBeNull();
+		expect(cleared.coauthorContextBudget).toBeNull();
+	});
+
 	test("ensureDefaults seeds both coauthor fields as null", async () => {
 		const { settings } = await mkSettingsStore();
 		const seeded = await settings.ensureDefaults();
 		expect(seeded.coauthorProviderId).toBeNull();
 		expect(seeded.coauthorModelName).toBeNull();
+		expect(seeded.coauthorMaxTokens).toBeNull();
+		expect(seeded.coauthorContextBudget).toBeNull();
 	});
 });

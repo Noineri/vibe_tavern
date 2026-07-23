@@ -121,14 +121,25 @@ describe("CoauthorProviderModal", () => {
     await waitFor(() => expect(vi.mocked(updateProviderProfileAction)).toHaveBeenCalledWith("prof_1", { coauthorTransport: "responses" }));
   });
 
-  it("shows fixed native and unsupported paths without hiding profiles", () => {
+  it("hides Responses for native profiles but permits an explicit attempt for every OpenAI-compatible profile", () => {
     setBinding("native", "tool-model");
     useProviderDataStore.setState({ profiles: [makeProfile("native", "Claude", { providerPreset: "anthropic" }), makeProfile("tabby", "Tabby", { providerPreset: "tabby" })], favoritesByProfile: {} });
     render(<TooltipProvider><CoauthorProviderModal isOpen={true} onClose={() => {}} onOpenProviderModal={() => {}} /></TooltipProvider>);
     expect(screen.getByText("coauthor.provider.transport_native")).toBeTruthy();
     expect(screen.queryByText("coauthor.provider.transport_responses")).toBeNull();
     fireEvent.pointerDown(screen.getByText("Tabby"));
-    expect(screen.getByText("coauthor.provider.transport_tabby_warning")).toBeTruthy();
+    expect(screen.getByText("coauthor.provider.transport_responses")).toBeTruthy();
+    expect(screen.getByText("coauthor.provider.transport_may_not_be_supported")).toBeTruthy();
+  });
+
+  it("shows independent Co-Author token limits and a fixed-height scrolling model list", () => {
+    setBinding("prof_1", "tool-model");
+    useProviderDataStore.setState({ profiles: [makeProfile("prof_1", "Alpha", { maxTokens: 2_000, contextBudget: 32_000 })], favoritesByProfile: {} });
+    render(<TooltipProvider><CoauthorProviderModal isOpen={true} onClose={() => {}} onOpenProviderModal={() => {}} /></TooltipProvider>);
+    expect(screen.getByText("coauthor.provider.tokens_label")).toBeTruthy();
+    expect(screen.getByText("coauthor.provider.max_tokens")).toBeTruthy();
+    expect(screen.getByText("coauthor.provider.context_budget")).toBeTruthy();
+    expect(screen.getByTestId("coauthor-model-list").className).toContain("h-[250px]");
   });
 
   it("save button is disabled when a profile is selected but no model chosen", () => {

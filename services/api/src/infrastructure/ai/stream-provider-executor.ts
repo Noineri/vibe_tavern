@@ -10,7 +10,7 @@ import { streamText, isStepCount } from "ai";
 import type { ProviderExecutor, ProviderStreamResult, SentConfigSnapshot } from "./provider-execution-types.js";
 import { resolveModel, toSdkMessages, prepareSdkMessages } from "./provider-executor-utils.js";
 import { buildSamplerConfig } from "./sampler-mapper.js";
-import { normalizeProviderType } from "@vibe-tavern/domain";
+import { COAUTHOR_TRANSPORT, normalizeProviderType } from "@vibe-tavern/domain";
 import { log } from "@vibe-tavern/domain";
 import { cancelled } from "../../shared/errors.js";
 import { createMappedStream, mapFinish, safeStreamTextPromise, safeReasoningPromise } from "./stream-helpers.js";
@@ -26,7 +26,7 @@ import { wrapProviderExecutionError } from "./provider-error-wrapper.js";
  */
 export const streamProviderExecutor: ProviderExecutor = async (input) => {
   try {
-    const model = resolveModel(input.profile, input.model);
+    const model = resolveModel(input.profile, input.model, input.transport);
     let messages = toSdkMessages(input.prompt);
 
     // --- Vision attachment handling ---
@@ -98,7 +98,11 @@ export const streamProviderExecutor: ProviderExecutor = async (input) => {
       logger.debug("  [msg] role=%s len=%d", m.role, contentLen(m));
     }
 
-    const samplerConfig = buildSamplerConfig(input.profile);
+    // Responses rejects OpenAI-compatible advanced sampler/provider options.
+    // Co-Author keeps only its explicit output-token limit on this transport.
+    const samplerConfig = input.transport === COAUTHOR_TRANSPORT.responses
+      ? { maxOutputTokens: input.profile.maxTokens }
+      : buildSamplerConfig(input.profile);
     const sentConfig: SentConfigSnapshot = {
       systemRole: hasSystemMessages ? "system" : undefined,
       samplerConfig: samplerConfig as Record<string, unknown>,

@@ -19,12 +19,14 @@ describe("provider profile Co-Author transport validation", () => {
     expect(profile.coauthorTransport).toBe(COAUTHOR_TRANSPORT.chatCompletions);
   });
 
-  test("persists Responses only for explicitly classified presets", async () => {
+  test("permits explicit Responses attempts for every OpenAI-compatible preset but rejects native transports", async () => {
     const service = await makeService();
     const supported = await service.saveProviderProfile({ name: "OpenAI", providerPreset: "openai", endpoint: "https://api.openai.com/v1", coauthorTransport: COAUTHOR_TRANSPORT.responses });
     expect(supported.coauthorTransport).toBe(COAUTHOR_TRANSPORT.responses);
 
-    await expect(service.saveProviderProfile({ name: "DeepSeek", providerPreset: "deepseek", endpoint: "https://api.deepseek.com", coauthorTransport: COAUTHOR_TRANSPORT.responses })).rejects.toMatchObject({ kind: "Validation" });
-    await expect(service.updateProviderProfile(supported.id, { providerPreset: "deepseek" })).rejects.toMatchObject({ kind: "Validation" });
+    const customCompatible = await service.saveProviderProfile({ name: "DeepSeek", providerPreset: "deepseek", endpoint: "https://api.deepseek.com", coauthorTransport: COAUTHOR_TRANSPORT.responses });
+    expect(customCompatible.coauthorTransport).toBe(COAUTHOR_TRANSPORT.responses);
+
+    await expect(service.updateProviderProfile(supported.id, { providerPreset: "google" })).rejects.toMatchObject({ kind: "Validation" });
   });
 });

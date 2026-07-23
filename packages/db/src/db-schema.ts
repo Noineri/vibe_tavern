@@ -633,6 +633,10 @@ export const uiSettings = sqliteTable('ui_settings', {
   // adapter resolves (dangling → fallback) rather than blocking the delete.
   coauthorProviderId: text('coauthor_provider_id'),
   coauthorModelName: text('coauthor_model_name'),
+  // Optional Co-Author-only token overrides. Null inherits the selected
+  // profile/model effective values so RP configuration remains untouched.
+  coauthorMaxTokens: integer('coauthor_max_tokens'),
+  coauthorContextBudget: integer('coauthor_context_budget'),
   updatedAt: text('updated_at').notNull(),
 });
 

@@ -1,5 +1,5 @@
 import type { ProviderStore } from "@vibe-tavern/db";
-import { COAUTHOR_TRANSPORT, isCoauthorTransportAllowed, type StoredProviderProfileRecord, type ModelFavoriteScope, type ModelSettingsOverlay } from "@vibe-tavern/domain";
+import { COAUTHOR_TRANSPORT, canUseCoauthorResponsesTransport, type StoredProviderProfileRecord, type ModelFavoriteScope, type ModelSettingsOverlay } from "@vibe-tavern/domain";
 import {
   toClientProviderProfile,
   resolveStoredApiKey,
@@ -85,8 +85,8 @@ export function createProviderProfileService(providers: ProviderStore): Provider
 
       const providerPreset = profile.providerPreset ?? existing?.providerPreset ?? "openai";
       const coauthorTransport = profile.coauthorTransport ?? existing?.coauthorTransport ?? COAUTHOR_TRANSPORT.chatCompletions;
-      if (!isCoauthorTransportAllowed(providerPreset, coauthorTransport)) {
-        throw validation(`Co-Author Responses transport is not supported by provider preset '${providerPreset}'.`, { providerPreset, coauthorTransport });
+      if (coauthorTransport === COAUTHOR_TRANSPORT.responses && !canUseCoauthorResponsesTransport(providerPreset)) {
+        throw validation(`Co-Author Responses transport is available only for OpenAI-compatible provider presets; '${providerPreset}' uses a native transport.`, { providerPreset, coauthorTransport });
       }
 
       const hasApiKeyInput = Object.prototype.hasOwnProperty.call(profile, "apiKey");
@@ -213,8 +213,8 @@ export function createProviderProfileService(providers: ProviderStore): Provider
       }
       const providerPreset = patch.providerPreset ?? existing.providerPreset;
       const coauthorTransport = patch.coauthorTransport ?? existing.coauthorTransport;
-      if (!isCoauthorTransportAllowed(providerPreset, coauthorTransport)) {
-        throw validation(`Co-Author Responses transport is not supported by provider preset '${providerPreset}'.`, { providerPreset, coauthorTransport });
+      if (coauthorTransport === COAUTHOR_TRANSPORT.responses && !canUseCoauthorResponsesTransport(providerPreset)) {
+        throw validation(`Co-Author Responses transport is available only for OpenAI-compatible provider presets; '${providerPreset}' uses a native transport.`, { providerPreset, coauthorTransport });
       }
       const hasApiKeyInput = Object.prototype.hasOwnProperty.call(patch, "apiKey");
       const apiKey = hasApiKeyInput
