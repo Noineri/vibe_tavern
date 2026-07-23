@@ -38,8 +38,8 @@ describe("ProviderModelList", () => {
 
   test("offers a custom slug while the fetched list is populated", async () => {
     const user = userEvent.setup();
-    const { getByText, onUseCustomSlug } = renderList({ search: "custom/model" });
-    await user.click(getByText("Use “custom/model”"));
+    const { getByTestId, onUseCustomSlug } = renderList({ search: "custom/model" });
+    await user.click(getByTestId("use-custom-model"));
     expect(onUseCustomSlug).toHaveBeenCalledWith("custom/model");
   });
 });

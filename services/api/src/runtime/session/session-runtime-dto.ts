@@ -136,6 +136,7 @@ export function toClientProviderProfile(profile: import("@vibe-tavern/domain").S
     id: profile.id,
     name: profile.name,
     providerPreset: profile.providerPreset,
+    coauthorTransport: profile.coauthorTransport,
     endpoint: profile.endpoint,
     defaultModel: profile.defaultModel,
     visionModel: profile.visionModel,

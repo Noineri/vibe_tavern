@@ -1,5 +1,5 @@
 import type { ProviderStore } from "@vibe-tavern/db";
-import type { StoredProviderProfileRecord, ModelFavoriteScope, ModelSettingsOverlay } from "@vibe-tavern/domain";
+import { COAUTHOR_TRANSPORT, isCoauthorTransportAllowed, type StoredProviderProfileRecord, type ModelFavoriteScope, type ModelSettingsOverlay } from "@vibe-tavern/domain";
 import {
   toClientProviderProfile,
   resolveStoredApiKey,
@@ -8,7 +8,7 @@ import {
   type FavoriteProviderModelRecord,
   type ProviderModelSettingsRecord,
 } from "../../runtime/session/session-runtime-dto.js";
-import { notFound } from "../../shared/errors.js";
+import { notFound, validation } from "../../shared/errors.js";
 import { logSendDebug } from "../../shared/send-debug-log.js";
 
 // ─── Public contract (duck-typed — consumers import this as `type`) ──────
@@ -83,6 +83,12 @@ export function createProviderProfileService(providers: ProviderStore): Provider
         ? await providers.getById(profile.id)
         : null;
 
+      const providerPreset = profile.providerPreset ?? existing?.providerPreset ?? "openai";
+      const coauthorTransport = profile.coauthorTransport ?? existing?.coauthorTransport ?? COAUTHOR_TRANSPORT.chatCompletions;
+      if (!isCoauthorTransportAllowed(providerPreset, coauthorTransport)) {
+        throw validation(`Co-Author Responses transport is not supported by provider preset '${providerPreset}'.`, { providerPreset, coauthorTransport });
+      }
+
       const hasApiKeyInput = Object.prototype.hasOwnProperty.call(profile, "apiKey");
       const apiKey = hasApiKeyInput
         ? resolveStoredApiKey(profile.apiKey, existing?.apiKey ?? null)
@@ -121,7 +127,8 @@ export function createProviderProfileService(providers: ProviderStore): Provider
       });
       const created = await providers.create({
         name: profile.name ?? "New Provider",
-        providerPreset: profile.providerPreset ?? "openai",
+        providerPreset,
+        coauthorTransport,
         endpoint: profile.endpoint ?? "",
         apiKey,
         defaultModel: profile.defaultModel,
@@ -203,6 +210,11 @@ export function createProviderProfileService(providers: ProviderStore): Provider
       const existing = await providers.getById(id);
       if (!existing) {
         throw notFound("ProviderProfile", `Provider profile '${id}' was not found.`);
+      }
+      const providerPreset = patch.providerPreset ?? existing.providerPreset;
+      const coauthorTransport = patch.coauthorTransport ?? existing.coauthorTransport;
+      if (!isCoauthorTransportAllowed(providerPreset, coauthorTransport)) {
+        throw validation(`Co-Author Responses transport is not supported by provider preset '${providerPreset}'.`, { providerPreset, coauthorTransport });
       }
       const hasApiKeyInput = Object.prototype.hasOwnProperty.call(patch, "apiKey");
       const apiKey = hasApiKeyInput

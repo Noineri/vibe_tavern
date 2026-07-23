@@ -1,3 +1,5 @@
+import type { CoauthorTransport } from "./coauthor-transport-capabilities.js";
+
 /**
  * Canonical provider profile type — single source of truth.
  *
@@ -19,6 +21,8 @@ export interface StoredProviderProfileRecord {
   id: string;
   name: string;
   providerPreset: string;
+  /** Co-Author-only OpenAI-compatible transport preference; RP ignores this field. */
+  coauthorTransport: CoauthorTransport;
   endpoint: string;
   apiKey: string | null;
   defaultModel: string | null;

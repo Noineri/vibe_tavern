@@ -19,6 +19,7 @@ interface ProviderModelListProps {
   toolFilter?: ToolSupport;
   showContextLength?: boolean;
   showPricing?: boolean;
+  listClassName?: string;
 }
 
 export function ProviderModelList({
@@ -32,6 +33,7 @@ export function ProviderModelList({
   toolFilter,
   showContextLength = true,
   showPricing = true,
+  listClassName,
 }: ProviderModelListProps) {
   const { t } = useT();
   const favoriteIds = new Set(favorites.map((model) => model.modelId));
@@ -56,7 +58,7 @@ export function ProviderModelList({
   );
 
   return (
-    <Command.List className="max-h-[200px] overflow-y-auto bg-surface p-1">
+    <Command.List className={cn("max-h-[200px] overflow-y-auto bg-surface p-1", listClassName)}>
       {visible.map((model) => {
         const favorite = favoriteIds.has(model.id);
         return (
@@ -105,8 +107,8 @@ export function ProviderModelList({
         );
       })}
       {customSlug && !hasExactMatch && (
-        <Command.Item value={`use-${customSlug}`} onSelect={() => onUseCustomSlug(customSlug)} className="cursor-pointer rounded px-2.5 py-1.5 font-ui text-[12px] text-accent-t data-[selected=true]:bg-s2">
-          Use “{customSlug}”
+        <Command.Item data-testid="use-custom-model" value={`use-${customSlug}`} onSelect={() => onUseCustomSlug(customSlug)} className="cursor-pointer rounded px-2.5 py-1.5 font-ui text-[12px] text-accent-t data-[selected=true]:bg-s2">
+          {t("use_custom_model_id", { id: customSlug })}
         </Command.Item>
       )}
       {visible.length === 0 && !customSlug && <div className="px-2.5 py-1.5 text-center font-ui text-[11px] text-t4">{t("no_models_found")}</div>}

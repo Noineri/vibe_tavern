@@ -1,4 +1,4 @@
-import type { StoredProviderProfileRecord, ModelFavoriteScope, ModelSettingsOverlay } from '@vibe-tavern/domain';
+import { COAUTHOR_TRANSPORT, type CoauthorTransport, type StoredProviderProfileRecord, type ModelFavoriteScope, type ModelSettingsOverlay } from '@vibe-tavern/domain';
 import { and, asc, eq, sql } from 'drizzle-orm';
 import { providerProfiles, cachedModels, providerModelFavorites, providerModelSettings } from '../db-schema.js';
 import type { AppDb } from '../db-connection.js';
@@ -55,6 +55,7 @@ export interface ProviderModelSettings {
 export interface CreateProviderData {
   name: string;
   providerPreset: string;
+  coauthorTransport?: CoauthorTransport;
   endpoint: string;
   apiKey?: string | null;
   defaultModel?: string | null;
@@ -164,6 +165,7 @@ export class ProviderStore {
         name: data.name,
         sortOrder: nextSortOrder,
         providerPreset: data.providerPreset,
+        coauthorTransport: data.coauthorTransport ?? COAUTHOR_TRANSPORT.chatCompletions,
         endpoint: data.endpoint,
         apiKey: data.apiKey ?? null,
         defaultModel: data.defaultModel ?? null,
@@ -215,6 +217,7 @@ export class ProviderStore {
 
     if (data.name !== undefined) values.name = data.name;
     if (data.providerPreset !== undefined) values.providerPreset = data.providerPreset;
+    if (data.coauthorTransport !== undefined) values.coauthorTransport = data.coauthorTransport;
     if (data.endpoint !== undefined) values.endpoint = data.endpoint;
     if (data.apiKey !== undefined) values.apiKey = data.apiKey;
     if (data.defaultModel !== undefined) values.defaultModel = data.defaultModel;
@@ -299,6 +302,7 @@ export class ProviderStore {
         name: `${original.name} (copy)`,
         sortOrder: nextSortOrder,
         providerPreset: original.providerPreset,
+        coauthorTransport: original.coauthorTransport,
         endpoint: original.endpoint,
         apiKey: original.apiKey,
         defaultModel: original.defaultModel,
@@ -550,6 +554,7 @@ export class ProviderStore {
       id: row.id,
       name: row.name,
       providerPreset: row.providerPreset,
+      coauthorTransport: row.coauthorTransport,
       endpoint: row.endpoint,
       apiKey: row.apiKey,
       defaultModel: row.defaultModel,

@@ -33,6 +33,13 @@ export const PROVIDER_PRESET_ID = {
 
 export type ProviderPresetId = typeof PROVIDER_PRESET_ID[keyof typeof PROVIDER_PRESET_ID];
 
+export const COAUTHOR_TRANSPORT = {
+  chatCompletions: "chat_completions",
+  responses: "responses",
+} as const;
+
+export type CoauthorTransport = typeof COAUTHOR_TRANSPORT[keyof typeof COAUTHOR_TRANSPORT];
+
 export const RESPONSES_SUPPORT = {
   supported: "supported",
   versionDependent: "version_dependent",
@@ -133,4 +140,11 @@ export function getCoauthorTransportCapability(presetId: string): CoauthorTransp
   return Object.hasOwn(COAUTHOR_TRANSPORT_CAPABILITIES, presetId)
     ? COAUTHOR_TRANSPORT_CAPABILITIES[presetId as ProviderPresetId]
     : null;
+}
+
+export function isCoauthorTransportAllowed(presetId: string, transport: CoauthorTransport): boolean {
+  if (transport === COAUTHOR_TRANSPORT.chatCompletions) return true;
+  const capability = getCoauthorTransportCapability(presetId);
+  return capability?.responsesSupport === RESPONSES_SUPPORT.supported
+    || capability?.responsesSupport === RESPONSES_SUPPORT.versionDependent;
 }

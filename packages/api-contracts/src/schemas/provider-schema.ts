@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { MODEL_FAVORITE_SCOPE, type SamplerFieldId } from "@vibe-tavern/domain";
+import { COAUTHOR_TRANSPORT, MODEL_FAVORITE_SCOPE, type SamplerFieldId } from "@vibe-tavern/domain";
 
 /**
  * Per-sampler-field zod schema — the single source of the sampler wire surface.
@@ -59,6 +59,7 @@ export const testProviderDraftSchema = z.object({
 const providerCoreSchema = z.object({
   name: z.string().min(1),
   providerPreset: z.string(),
+  coauthorTransport: z.enum([COAUTHOR_TRANSPORT.chatCompletions, COAUTHOR_TRANSPORT.responses]).optional(),
   endpoint: z.string(),
   apiKey: z.string().nullable().optional(),
   defaultModel: z.string().nullable().optional(),

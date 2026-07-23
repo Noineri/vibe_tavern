@@ -1,3 +1,4 @@
+import type { CoauthorTransport } from '@vibe-tavern/domain';
 import { sqliteTable, text, integer, real, index, uniqueIndex, primaryKey } from 'drizzle-orm/sqlite-core';
 
 // ─── characters ────────────────────────────────────────────────────────────────
@@ -498,6 +499,7 @@ export const providerProfiles = sqliteTable('provider_profiles', {
   // Manual list order (drag-to-reorder). Backfilled to created_at ASC.
   sortOrder: integer('sort_order').notNull().default(0),
   providerPreset: text('provider_preset').notNull(),
+  coauthorTransport: text('coauthor_transport').$type<CoauthorTransport>().notNull().default('chat_completions'),
   endpoint: text('endpoint').notNull(),
   apiKey: text('api_key'),
   defaultModel: text('default_model'),

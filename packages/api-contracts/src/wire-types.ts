@@ -25,7 +25,7 @@
  * row types stay backend-side and import these types back.
  */
 
-import type { CharacterId, ChatId, ChatMode, ModelFavoriteScope, ModelSettingsOverlay, PronounForms } from "@vibe-tavern/domain";
+import type { CharacterId, ChatId, ChatMode, CoauthorTransport, ModelFavoriteScope, ModelSettingsOverlay, PronounForms } from "@vibe-tavern/domain";
 
 // ─── Provider ──────────────────────────────────────────────────────────
 
@@ -42,6 +42,7 @@ export interface ClientProviderProfileRecord {
 	id: string;
 	name: string;
 	providerPreset: string;
+	coauthorTransport: CoauthorTransport;
 	endpoint: string;
 	defaultModel: string | null;
 	visionModel: string | null;

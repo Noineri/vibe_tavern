@@ -1,5 +1,5 @@
 import type { ProviderProfileRecord, FavoriteProviderModelRecord, ProviderModelSettingsRecord, ProviderModelOption, TestChatResponse } from "./types.js";
-import type { ModelFavoriteScope, ProviderProbeResponse, ModelSettingsOverlay } from "@vibe-tavern/domain";
+import type { CoauthorTransport, ModelFavoriteScope, ProviderProbeResponse, ModelSettingsOverlay } from "@vibe-tavern/domain";
 import { client } from "./client.js";
 import { unwrapRpc } from "./unwrap.js";
 
@@ -17,6 +17,7 @@ export async function saveProviderProfile(input: {
   id?: string;
   name: string;
   providerPreset: string;
+  coauthorTransport?: CoauthorTransport;
   endpoint: string;
   apiKey?: string | null;
   defaultModel?: string | null;
@@ -61,6 +62,7 @@ export async function updateProviderProfile(
   patch: {
     name?: string;
     providerPreset?: string;
+    coauthorTransport?: CoauthorTransport;
     endpoint?: string;
     apiKey?: string | null;
     defaultModel?: string | null;
