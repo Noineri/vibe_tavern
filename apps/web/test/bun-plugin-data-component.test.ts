@@ -1,67 +1,51 @@
 /**
- * Characterization tests for the data-component Vite plugin transform.
+ * Characterization tests for the data-component transform.
  *
  * These tests pin the observable behavior of the JSX transform that injects
  * `data-component="Name"` attributes into dev-mode JSX, so Wave 5's Bun-native
  * port can be verified against the same contract.
  *
- * The transform is tested as a unit: we call the plugin's transform hook
- * directly after enabling it via configResolved({ command: "serve" }).
- * No Vite server is spun up.
+ * The transform is tested as a pure function: we call `transformDataComponent`
+ * directly with `enabled = true` (dev) or `enabled = false` (prod).
+ * No plugin framework (Vite or Bun) is spun up — the test is framework-agnostic.
  */
 import { describe, test, expect } from "bun:test";
-import type { ResolvedConfig } from "vite";
-import { dataComponentPlugin } from "../vite-plugin-data-component.js";
+import {
+	transformDataComponent,
+	bunDataComponentPlugin,
+} from "../bun-plugin-data-component.js";
 
 const FILE = "/src/component.tsx";
 
 /**
- * Build a dev-mode (serve) transform callable. The plugin enables itself
- * when configResolved sees command === "serve".
+ * Build a dev-mode transform callable. In dev mode (`enabled = true`),
+ * the transform applies all guards and injections.
  */
 function devTransform(): (code: string, id: string) => string | null {
-	const plugin = dataComponentPlugin();
-	if (plugin.configResolved) {
-		plugin.configResolved({ command: "serve" } as ResolvedConfig);
-	}
-	return (code: string, id: string): string | null => {
-		const transform = plugin.transform;
-		if (typeof transform !== "function") return null;
-		const out = transform.call(plugin, code, id);
-		return typeof out === "string" ? out : null;
-	};
+	return (code: string, id: string): string | null =>
+		transformDataComponent(code, id, true);
 }
 
 /**
- * Build a production-mode (build) transform callable. The plugin stays
- * disabled and should always return null.
+ * Build a production-mode transform callable. In prod mode (`enabled = false`),
+ * the transform always returns null (no-op).
  */
 function prodTransform(): (code: string, id: string) => string | null {
-	const plugin = dataComponentPlugin();
-	if (plugin.configResolved) {
-		plugin.configResolved({ command: "build" } as ResolvedConfig);
-	}
-	return (code: string, id: string): string | null => {
-		const transform = plugin.transform;
-		if (typeof transform !== "function") return null;
-		const out = transform.call(plugin, code, id);
-		return typeof out === "string" ? out : null;
-	};
+	return (code: string, id: string): string | null =>
+		transformDataComponent(code, id, false);
 }
 
 // ─── Plugin metadata ───
 
 describe("data-component plugin — identity", () => {
-	test("plugin has the correct name and enforce value", () => {
-		const plugin = dataComponentPlugin();
-		expect(plugin.name).toBe("vite-plugin-data-component");
-		expect(plugin.enforce).toBe("pre");
+	test("bun plugin has the correct name", () => {
+		const plugin = bunDataComponentPlugin();
+		expect(plugin.name).toBe("bun-plugin-data-component");
 	});
 
-	test("exposes configResolved and transform hooks", () => {
-		const plugin = dataComponentPlugin();
-		expect(typeof plugin.configResolved).toBe("function");
-		expect(typeof plugin.transform).toBe("function");
+	test("bun plugin exposes a setup hook", () => {
+		const plugin = bunDataComponentPlugin();
+		expect(typeof plugin.setup).toBe("function");
 	});
 });
 
