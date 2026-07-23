@@ -88,7 +88,7 @@ export interface CachedProviderModelsRecord {
 		id: string;
 		label: string;
 		contextLength?: number;
-		capabilities?: { thinking?: boolean; tools?: boolean; vision?: boolean };
+		capabilities?: { reasoning?: boolean; tools?: boolean; vision?: boolean };
 	}>;
 	cachedAt: string;
 }

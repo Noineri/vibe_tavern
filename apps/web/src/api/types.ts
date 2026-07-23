@@ -396,7 +396,6 @@ export interface ProviderModelOption {
   label: string;
   contextLength?: number;
   capabilities?: { vision?: boolean; reasoning?: boolean; tools?: boolean; webSearch?: boolean; premium?: boolean };
-  supportsTools: boolean;
   pricing?: { input?: number; output?: number };
   description?: string;
 }

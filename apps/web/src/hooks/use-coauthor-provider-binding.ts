@@ -15,7 +15,7 @@ import { resolveCoauthorBinding, filterToolCapableFavorites } from "../lib/coaut
 import { useBootstrapStore, patchUiSettingsAction } from "../stores/api-actions/bootstrap-actions.js";
 import { useProviderDataStore } from "../stores/provider-data-store.js";
 import { loadFavoriteModelsAction } from "../stores/api-actions/provider-actions.js";
-import { useToolCapableModels } from "../components/coauthor/useToolCapableModels.js";
+import { useProviderModels } from "./use-provider-models.js";
 import type { FavoriteProviderModelRecord } from "../api/types.js";
 
 export function useCoauthorProviderBinding() {
@@ -38,12 +38,12 @@ export function useCoauthorProviderBinding() {
 
   // Load favorites for the resolved profile (bound or RP fallback).
   const favoritesProfileId = binding.profileId;
-  // useToolCapableModels already subscribes to the model cache; calling it
-  // unconditionally keeps the hook's rules-of-hooks count stable.
-  const { models: toolCapableModels } = useToolCapableModels(favoritesProfileId);
+  // Calling the neutral cache-first loader unconditionally keeps the hook's
+  // rules-of-hooks count stable.
+  const { models: toolCapableModels } = useProviderModels(favoritesProfileId);
 
   const toolCapableIds = useMemo(
-    () => new Set(toolCapableModels.map((m) => m.id)),
+    () => new Set(toolCapableModels.filter((model) => model.toolSupport === "supported").map((model) => model.id)),
     [toolCapableModels],
   );
 

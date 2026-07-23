@@ -20,7 +20,7 @@ import { useT } from "../../i18n/context.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
 import { useProviderDataStore } from "../../stores/provider-data-store.js";
 import { useCoauthorProviderBinding } from "../../hooks/use-coauthor-provider-binding.js";
-import { useToolCapableModels } from "../coauthor/useToolCapableModels.js";
+import { useProviderModels } from "../../hooks/use-provider-models.js";
 import { MasterDetailModal } from "../shared/MasterDetailModal.js";
 import { ProviderProfileList } from "../settings/provider/ProviderProfileList.js";
 import { Icons } from "../shared/icons.js";
@@ -64,7 +64,7 @@ export function CoauthorProviderModal({ isOpen, onClose, onOpenProviderModal }: 
   );
 
   // Tool-capable models for the selected profile (cache-first, live-fetch fallback).
-  const { models: toolModels, loading: modelsLoading, error: modelsError } = useToolCapableModels(selectedProfileId);
+  const { models: toolModels, loading: modelsLoading, error: modelsError } = useProviderModels(selectedProfileId);
 
   const filteredModels = useMemo(() => {
     const q = modelSearch.trim().toLowerCase();

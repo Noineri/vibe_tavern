@@ -30,7 +30,7 @@ export class ProviderOrchestrator {
         label: model.label ?? model.id,
         ...(model.contextLength != null ? { contextLength: model.contextLength } : {}),
         ...(model.capabilities ? { capabilities: {
-          thinking: model.capabilities.reasoning,
+          reasoning: model.capabilities.reasoning,
           tools: model.capabilities.tools,
           vision: model.capabilities.vision,
         } } : {}),

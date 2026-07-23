@@ -1,45 +1,33 @@
-import React from 'react';
-import * as Popover from '@radix-ui/react-popover';
-import { Command } from 'cmdk';
-import { useT } from '../../../i18n/context.js';
-import { useIsMobile } from '../../../hooks/use-mobile.js';
-import type { FormState } from '../../modals/ProviderModal.js';
-import { Icons } from '../../shared/icons.js';
-import { cn } from '../../../lib/cn.js';
-import { CustomTooltip } from '../../shared/Tooltip.js';
-import { getModalPortal } from '../../shared/modal-helpers.js';
+import React from "react";
+import * as Popover from "@radix-ui/react-popover";
+import { Command } from "cmdk";
+import { useT } from "../../../i18n/context.js";
+import { useIsMobile } from "../../../hooks/use-mobile.js";
+import type { FormState } from "../../modals/ProviderModal.js";
+import { Icons } from "../../shared/icons.js";
+import { cn } from "../../../lib/cn.js";
+import { getModalPortal } from "../../shared/modal-helpers.js";
+import { ProviderModelList, type ProviderModelListOption } from "./ProviderModelList.js";
 
-const labelCls =
-  'block text-[calc(var(--ui-fs)-3px)] font-medium tracking-[0.06em] uppercase text-t3';
-const inputCls =
-  'w-full h-[38px] bg-s2 border border-border rounded-[6px] font-ui text-[calc(var(--ui-fs)-1px)] text-t1 outline-none transition-[border-color] duration-150 focus:border-accent px-[13px]';
-
-interface ModelOption {
-  id: string;
-  label: string;
-  contextLength?: number;
-  capabilities?: { vision?: boolean; reasoning?: boolean; tools?: boolean; webSearch?: boolean; premium?: boolean };
-  pricing?: { input?: number; output?: number };
-  description?: string;
-}
-interface FavoriteModelOption { modelId: string; label: string | null; contextLength: number | null; }
+const labelCls = "block text-[calc(var(--ui-fs)-3px)] font-medium tracking-[0.06em] uppercase text-t3";
+const inputCls = "w-full h-[38px] bg-s2 border border-border rounded-[6px] font-ui text-[calc(var(--ui-fs)-1px)] text-t1 outline-none transition-[border-color] duration-150 focus:border-accent px-[13px]";
 
 type LocalConnectionStatus = "unknown" | "checking" | "online" | "offline";
 
 interface ProviderModelSelectorProps {
   form: FormState;
-  models: ModelOption[];
-  filteredModels: ModelOption[];
+  models: ProviderModelListOption[];
+  filteredModels: ProviderModelListOption[];
   fetching: boolean;
   fetchError: string | null;
   modelSearch: string;
   modelListOpen: boolean;
-  favoriteModels: FavoriteModelOption[];
-  updateForm: <K extends keyof FormState>(k: K, v: FormState[K]) => void;
+  favoriteModels: Array<{ modelId: string; label: string | null; contextLength: number | null }>;
+  updateForm: <K extends keyof FormState>(key: K, value: FormState[K]) => void;
   onFetchModels: () => void;
-  setModelSearch: (v: string) => void;
+  setModelSearch: (value: string) => void;
   setModelListOpen: React.Dispatch<React.SetStateAction<boolean>>;
-  onToggleFavoriteModel: (model: ModelOption) => void;
+  onToggleFavoriteModel: (model: ProviderModelListOption) => void;
   requiresAuthForModels?: boolean;
   isLocalProvider?: boolean;
   localEndpoint?: string;
@@ -52,300 +40,62 @@ interface ProviderModelSelectorProps {
   syncContextBudget?: boolean;
 }
 
-// Built on cmdk (Command) + Radix Popover — same combobox primitive as
-// DropdownSelect. The previous implementation hand-rolled the dropdown
-// (createPortal + getBoundingClientRect + manual outside-click in the parent +
-// scroll-close), and its <div onClick> items had NO keyboard navigation: no
-// ArrowUp/Down, no Enter, no type-ahead. cmdk gives all of it; the rich item
-// content (favorite star, capability badges, pricing, context length) renders
-// unchanged inside Command.Item — cmdk accepts arbitrary children. The favorite
-// star keeps stopPropagation so clicking it does not trigger item onSelect.
+/** FormState/Popover adapter around the shared, controlled ProviderModelList. */
 export function ProviderModelSelector({
-  form,
-  models,
-  filteredModels,
-  fetching,
-  fetchError,
-  modelSearch,
-  modelListOpen,
-  favoriteModels,
-  updateForm,
-  onFetchModels,
-  setModelSearch,
-  setModelListOpen,
-  onToggleFavoriteModel,
-  requiresAuthForModels,
-  isLocalProvider = false,
-  localEndpoint = "",
-  localConnectionStatus = "unknown",
-  modelKey = "model" as keyof FormState,
-  labelOverride,
-  placeholderOverride,
-  showRefreshButton = true,
-  showContextLength = true,
+  form, models, filteredModels, fetching, fetchError, modelSearch, modelListOpen,
+  favoriteModels, updateForm, onFetchModels, setModelSearch, setModelListOpen,
+  onToggleFavoriteModel, requiresAuthForModels, isLocalProvider = false, localEndpoint = "",
+  localConnectionStatus = "unknown", modelKey = "model" as keyof FormState,
+  labelOverride, placeholderOverride, showRefreshButton = true, showContextLength = true,
   syncContextBudget = true,
 }: ProviderModelSelectorProps) {
   const { t } = useT();
   const isMobile = useIsMobile();
-  const favoriteIds = new Set(favoriteModels.map((model) => model.modelId));
-  const currentVal = (form[modelKey] as string) || "";
-  const selectedModel = models.find((model) => model.id === currentVal);
-  const formatContext = (contextLength?: number) => {
-    if (contextLength == null || !Number.isFinite(contextLength)) return null;
-    if (contextLength >= 1000) return `${(contextLength / 1000).toFixed(contextLength % 1000 === 0 ? 0 : 1)}k ctx`;
-    return `${contextLength} ctx`;
-  };
-  const formatPrice = (pricing?: { input?: number; output?: number }) => {
-    if (!pricing || pricing.input === undefined || pricing.output === undefined) return null;
-    return `$${pricing.input}/$${pricing.output} in/out Mtok`;
-  };
-  const statusMeta: Record<LocalConnectionStatus, { label: string; className: string; dotClassName: string }> = {
+  const currentValue = (form[modelKey] as string) || "";
+  const selectedModel = models.find((model) => model.id === currentValue);
+  const listModels = selectedModel || !currentValue
+    ? filteredModels
+    : [{ id: currentValue, label: currentValue, toolSupport: "unknown" as const }, ...filteredModels];
+  const portalContainer = getModalPortal() ?? undefined;
+  const localStatus = {
     unknown: { label: t("local_connection_unknown"), className: "border-border2 bg-s2 text-t3", dotClassName: "bg-t4" },
     checking: { label: t("local_connection_checking"), className: "border-accent/30 bg-accent/10 text-accent-t", dotClassName: "bg-accent animate-pulse" },
     online: { label: t("local_connection_online"), className: "border-success/30 bg-success/10 text-success", dotClassName: "bg-success" },
     offline: { label: t("local_connection_offline"), className: "border-danger/30 bg-danger/10 text-danger", dotClassName: "bg-danger" },
+  }[localConnectionStatus];
+
+  const formatContext = (contextLength?: number) => {
+    if (contextLength == null || !Number.isFinite(contextLength)) return null;
+    return contextLength >= 1000
+      ? `${(contextLength / 1000).toFixed(contextLength % 1000 === 0 ? 0 : 1)}k ctx`
+      : `${contextLength} ctx`;
   };
-  const localStatus = statusMeta[localConnectionStatus];
-
-  const sortedModels = [...filteredModels].sort((a, b) => {
-    const aFav = favoriteIds.has(a.id);
-    const bFav = favoriteIds.has(b.id);
-    if (aFav !== bFav) return aFav ? -1 : 1;
-    return a.label.localeCompare(b.label);
-  });
-
-  function handleSelectModel(m: ModelOption) {
-    updateForm(modelKey, m.id);
-    if (syncContextBudget && modelKey === 'model' && !form.pinContextBudget) {
-      if (m.contextLength != null && m.contextLength > 0) {
-        updateForm('contextBudget', m.contextLength);
-      } else {
-        updateForm('contextBudget', 16000);
-      }
+  const selectModel = (model: ProviderModelListOption) => {
+    updateForm(modelKey, model.id as FormState[typeof modelKey]);
+    if (syncContextBudget && modelKey === "model" && !form.pinContextBudget) {
+      updateForm("contextBudget", (model.contextLength != null && model.contextLength > 0 ? model.contextLength : 16_000) as FormState["contextBudget"]);
     }
     setModelListOpen(false);
-    setModelSearch('');
-  }
-
-  // When inside a Modal, portal into the Modal's anchor element so the content
-  // stays within Dialog's focus trap. When outside a Modal, portal to body.
-  const portalContainer = getModalPortal() ?? undefined;
+    setModelSearch("");
+  };
+  const useCustomSlug = (slug: string) => {
+    updateForm(modelKey, slug as FormState[typeof modelKey]);
+    setModelListOpen(false);
+    setModelSearch("");
+  };
 
   return (
     <div className="my-4">
-      <div
-        className="mb-3 border-b border-border2 pb-2 font-ui text-[14px] font-semibold text-t1"
-      >
-        {labelOverride || t("model_label")}
-      </div>
-      {isLocalProvider && (
-        <div className={cn("mb-2.5 flex flex-col gap-1.5 rounded-md border px-3 py-2 font-ui text-[12px] sm:flex-row sm:items-center sm:justify-between", localStatus.className)}>
-          <span className="inline-flex min-w-0 items-center gap-2">
-            <span className={cn("h-2 w-2 shrink-0 rounded-full", localStatus.dotClassName)} />
-            <span className="shrink-0 font-medium">{localStatus.label}</span>
-            {localEndpoint && (
-              <span className="min-w-0 truncate text-t3">
-                {t("local_connection_endpoint", { url: localEndpoint })}
-              </span>
-            )}
-          </span>
-          {showRefreshButton && (
-            <button type="button" onClick={() => void onFetchModels()} disabled={fetching} className="self-start rounded border border-current/20 px-2 py-0.5 font-ui text-[11px] font-medium opacity-80 transition-opacity hover:opacity-100 disabled:opacity-50 sm:self-auto">
-              {fetching ? t("testing") : t("refresh_models")}
-            </button>
-          )}
-        </div>
-      )}
-      <div className="flex items-end gap-3">
-        <div className="flex-1">
-          <label className={labelCls + " mb-[6px]"}>{t("selected_model_label")}</label>
-          {models.length > 0 ? (
-            <div className="relative">
-              <Popover.Root open={modelListOpen} onOpenChange={setModelListOpen}>
-                <Popover.Trigger asChild>
-                  <button type="button"
-                    className="flex w-full items-center justify-between rounded-md border border-border bg-s2 px-3 py-[6px] font-ui text-[13px] text-t1 transition-colors hover:border-accent"
-                  >
-                    <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-left">
-                      {selectedModel?.label || currentVal || placeholderOverride || t("select_model")}
-                      {showContextLength && formatContext(selectedModel?.contextLength) && (
-                        <span className="ml-2 text-[11px] font-medium text-t2">{formatContext(selectedModel?.contextLength)}</span>
-                      )}
-                    </span>
-                    <span className="text-t3">
-                      <Icons.Caret direction="d" />
-                    </span>
-                  </button>
-                </Popover.Trigger>
-                <Popover.Portal container={portalContainer}>
-                  <Popover.Content
-                    sideOffset={4}
-                    align="start"
-                    onCloseAutoFocus={(e) => e.preventDefault()}
-                    className="glass-blur z-[600] overflow-hidden rounded-md border border-border bg-surface shadow-[0_8px_30px_rgba(0,0,0,0.6)] data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95"
-                    style={{ width: "var(--radix-popover-trigger-width)", maxHeight: 260 }}
-                  >
-                    <Command shouldFilter={false} loop className="flex flex-col outline-none">
-                      <div className="border-b border-border2 bg-s2 p-2">
-                        <Command.Input
-                          placeholder={t("search_models")}
-                          value={modelSearch}
-                          onValueChange={setModelSearch}
-                          className="w-full rounded border border-border bg-surface px-2 py-[5px] font-ui text-[12px] text-t1 outline-none focus:border-accent"
-                        />
-                      </div>
-                      <Command.List className="max-h-[200px] overflow-y-auto bg-surface p-1">
-                        {sortedModels.map((m) => {
-                          const isFavorite = favoriteIds.has(m.id);
-                          return (
-                            <Command.Item
-                              key={m.id}
-                              value={m.id}
-                              onSelect={() => handleSelectModel(m)}
-                              className={cn(
-                                'flex cursor-pointer items-center gap-2 rounded px-2.5 py-1.5 font-ui text-[12px] outline-none transition-colors',
-                                // cmdk sets data-selected="true"|"false" on every item — pin the value
-                                // (=true) so the active highlight is visible; bare data-[selected] matches both.
-                                m.id === currentVal
-                                  ? 'bg-accent-dim font-medium text-accent-t'
-                                  : 'text-t2 hover:bg-s2 hover:text-t1 data-[selected=true]:bg-s2 data-[selected=true]:text-t1'
-                              )}
-                            >
-                              <CustomTooltip content={isFavorite ? t("remove_from_favorites") : t("add_to_favorites")}>
-                              <button type="button"
-                                className={cn('flex h-5 w-5 shrink-0 items-center justify-center rounded text-t4 transition-colors hover:bg-s3 hover:text-warning-text', isFavorite && 'text-warning-text')}
-                                onPointerDown={(e) => e.stopPropagation()}
-                                onPointerUp={(e) => e.stopPropagation()}
-                                onClick={(event) => {
-                                  event.stopPropagation();
-                                  onToggleFavoriteModel(m);
-                                }}
-                              >
-                                {isFavorite ? <Icons.StarFilled /> : <Icons.Star />}
-                              </button>
-                              </CustomTooltip>
-                              <div className="min-w-0 flex-1">
-                                <div className="flex min-w-0 items-center gap-2">
-                                  <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-t1">
-                                    {m.label || m.id}
-                                  </span>
-                                  {m.capabilities?.vision && (
-                                    <CustomTooltip content={t('cap_vision')}>
-                                    <span className="shrink-0 text-t3">
-                                      <Icons.Eye />
-                                    </span>
-                                    </CustomTooltip>
-                                  )}
-                                  {m.capabilities?.premium && (
-                                    <CustomTooltip content={t('cap_premium')}>
-                                    <span className="shrink-0 text-t3">
-                                      <Icons.Crown />
-                                    </span>
-                                    </CustomTooltip>
-                                  )}
-                                  {m.capabilities?.reasoning && (
-                                    <CustomTooltip content={t('cap_reasoning')}>
-                                    <span className="shrink-0 text-t3">
-                                      <Icons.Brain />
-                                    </span>
-                                    </CustomTooltip>
-                                  )}
-                                  {m.capabilities?.tools && (
-                                    <CustomTooltip content={t('cap_tools')}>
-                                    <span className="shrink-0 text-t3">
-                                      <Icons.Wrench />
-                                    </span>
-                                    </CustomTooltip>
-                                  )}
-                                  {showContextLength && formatContext(m.contextLength) && (
-                                    <span className="shrink-0 rounded bg-s2 px-1.5 py-0.5 text-[10px] font-medium text-t2">
-                                      {formatContext(m.contextLength)}
-                                    </span>
-                                  )}
-                                </div>
-                                {((m.label && m.label !== m.id) || formatPrice(m.pricing)) && (
-                                  <div className="mt-0.5 flex min-w-0 items-center gap-2 text-[10px] text-t4">
-                                    {m.label && m.label !== m.id && (
-                                      <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">
-                                        {m.id}
-                                      </span>
-                                    )}
-                                    {formatPrice(m.pricing) && (
-                                      <span className="shrink-0 rounded bg-surface px-1.5 py-0.5 font-medium text-t4">
-                                        {formatPrice(m.pricing)}
-                                      </span>
-                                    )}
-                                  </div>
-                                )}
-                              </div>
-                            </Command.Item>
-                          );
-                        })}
-                        {sortedModels.length === 0 && (
-                          <div className="px-2.5 py-1.5 text-center font-ui text-[11px] text-t4">
-                            {t("no_models_found")}
-                          </div>
-                        )}
-                      </Command.List>
-                    </Command>
-                  </Popover.Content>
-                </Popover.Portal>
-              </Popover.Root>
-              {!models.find((m) => m.id === currentVal) && currentVal && (
-                <div className="mt-2 font-ui text-[12px] font-medium text-accent">
-                  {t("custom_model", { name: currentVal })}
-                </div>
-              )}
-            </div>
-          ) : (
-            <input
-              type="text"
-              value={currentVal}
-              onChange={(e) => updateForm(modelKey, e.target.value)}
-              placeholder={t("custom_model_id_placeholder")}
-              className={inputCls}
-            />
-          )}
-        </div>
-        {showRefreshButton && (
-          <button type="button"
-            onClick={() => void onFetchModels()}
-            disabled={fetching}
-            className={cn(
-              "shrink-0 items-center gap-2 rounded-md border border-border bg-s2 transition-colors hover:border-border2 hover:text-t1 disabled:opacity-50",
-              isMobile ? "flex w-[34px] justify-center px-0 py-[6px]" : "flex px-4 py-[6px] font-ui text-[13px] font-medium text-t2"
-            )}
-            title={t("refresh_models")}
-          >
-            {fetching ? (
-              <span className="inline-flex items-center gap-[3px] ml-[3px] align-middle">
-                <span className="h-1 w-1 rounded-full bg-accent animate-genp" />
-                <span className="h-1 w-1 rounded-full bg-accent animate-genp [animation-delay:0.18s]" />
-                <span className="h-1 w-1 rounded-full bg-accent animate-genp [animation-delay:0.36s]" />
-              </span>
-            ) : (
-              <Icons.Regen />
-            )}
-            {!isMobile && <> {t("refresh_models")}</>}
-          </button>
-        )}
-      </div>
-      {fetchError && (
-        <div className="mt-3">
-          <span className="inline-flex items-center gap-1.5 rounded bg-danger/10 px-2.5 py-1 font-ui text-[12px] text-danger">
-            <Icons.Close />
-            {fetchError}
-          </span>
-        </div>
-      )}
-      {!fetchError && requiresAuthForModels && models.length === 0 && !fetching && (
-        <div className="mt-3">
-          <span className="inline-flex items-center gap-1.5 rounded bg-danger/10 px-2.5 py-1 font-ui text-[12px] text-danger">
-            <Icons.Close />
-            {t("enter_api_key_for_models")}
-          </span>
-        </div>
-      )}
+      <div className="mb-3 border-b border-border2 pb-2 font-ui text-[14px] font-semibold text-t1">{labelOverride || t("model_label")}</div>
+      {isLocalProvider && <div className={cn("mb-2.5 flex flex-col gap-1.5 rounded-md border px-3 py-2 font-ui text-[12px] sm:flex-row sm:items-center sm:justify-between", localStatus.className)}>
+        <span className="inline-flex min-w-0 items-center gap-2"><span className={cn("h-2 w-2 shrink-0 rounded-full", localStatus.dotClassName)} /><span className="shrink-0 font-medium">{localStatus.label}</span>{localEndpoint && <span className="min-w-0 truncate text-t3">{t("local_connection_endpoint", { url: localEndpoint })}</span>}</span>
+        {showRefreshButton && <button type="button" onClick={() => void onFetchModels()} disabled={fetching} className="self-start rounded border border-current/20 px-2 py-0.5 font-ui text-[11px] font-medium opacity-80 transition-opacity hover:opacity-100 disabled:opacity-50 sm:self-auto">{fetching ? t("testing") : t("refresh_models")}</button>}
+      </div>}
+      <div className="flex items-end gap-3"><div className="flex-1"><label className={`${labelCls} mb-[6px]`}>{t("selected_model_label")}</label>
+        {models.length > 0 ? <div className="relative"><Popover.Root open={modelListOpen} onOpenChange={setModelListOpen}><Popover.Trigger asChild><button type="button" className="flex w-full items-center justify-between rounded-md border border-border bg-s2 px-3 py-[6px] font-ui text-[13px] text-t1 transition-colors hover:border-accent"><span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-left">{selectedModel?.label || currentValue || placeholderOverride || t("select_model")}{showContextLength && formatContext(selectedModel?.contextLength) && <span className="ml-2 text-[11px] font-medium text-t2">{formatContext(selectedModel?.contextLength)}</span>}</span><span className="text-t3"><Icons.Caret direction="d" /></span></button></Popover.Trigger><Popover.Portal container={portalContainer}><Popover.Content sideOffset={4} align="start" onCloseAutoFocus={(event) => event.preventDefault()} className="glass-blur z-[600] overflow-hidden rounded-md border border-border bg-surface shadow-[0_8px_30px_rgba(0,0,0,0.6)]" style={{ width: "var(--radix-popover-trigger-width)", maxHeight: 260 }}><Command shouldFilter={false} loop className="flex flex-col outline-none"><div className="border-b border-border2 bg-s2 p-2"><Command.Input placeholder={t("search_models")} value={modelSearch} onValueChange={setModelSearch} className="w-full rounded border border-border bg-surface px-2 py-[5px] font-ui text-[12px] text-t1 outline-none focus:border-accent" /></div><ProviderModelList models={listModels} selectedId={currentValue} search={modelSearch} favorites={favoriteModels} onSelect={selectModel} onToggleFavorite={onToggleFavoriteModel} onUseCustomSlug={useCustomSlug} showContextLength={showContextLength} /></Command></Popover.Content></Popover.Portal></Popover.Root>{!selectedModel && currentValue && <div className="mt-2 font-ui text-[12px] font-medium text-accent">{t("custom_model", { name: currentValue })}</div>}</div> : <input type="text" value={currentValue} onChange={(event) => updateForm(modelKey, event.target.value as FormState[typeof modelKey])} placeholder={t("custom_model_id_placeholder")} className={inputCls} />}
+      </div>{showRefreshButton && <button type="button" onClick={() => void onFetchModels()} disabled={fetching} className={cn("shrink-0 items-center gap-2 rounded-md border border-border bg-s2 transition-colors hover:border-border2 hover:text-t1 disabled:opacity-50", isMobile ? "flex w-[34px] justify-center px-0 py-[6px]" : "flex px-4 py-[6px] font-ui text-[13px] font-medium text-t2")} title={t("refresh_models")}>{fetching ? <span className="inline-flex items-center gap-[3px] ml-[3px] align-middle"><span className="h-1 w-1 rounded-full bg-accent animate-genp" /><span className="h-1 w-1 rounded-full bg-accent animate-genp [animation-delay:0.18s]" /><span className="h-1 w-1 rounded-full bg-accent animate-genp [animation-delay:0.36s]" /></span> : <Icons.Regen />}{!isMobile && <> {t("refresh_models")}</>}</button>}</div>
+      {fetchError && <div className="mt-3"><span className="inline-flex items-center gap-1.5 rounded bg-danger/10 px-2.5 py-1 font-ui text-[12px] text-danger"><Icons.Close />{fetchError}</span></div>}
+      {!fetchError && requiresAuthForModels && models.length === 0 && !fetching && <div className="mt-3"><span className="inline-flex items-center gap-1.5 rounded bg-danger/10 px-2.5 py-1 font-ui text-[12px] text-danger"><Icons.Close />{t("enter_api_key_for_models")}</span></div>}
     </div>
   );
 }

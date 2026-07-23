@@ -29,7 +29,7 @@ export interface ProviderProfileService {
   getCachedProviderModels(providerProfileId: string): Promise<CachedProviderModelsRecord | null>;
   setCachedProviderModels(
     providerProfileId: string,
-    models: Array<{ id: string; label: string; contextLength?: number; capabilities?: { thinking?: boolean; tools?: boolean; vision?: boolean } }>,
+    models: Array<{ id: string; label: string; contextLength?: number; capabilities?: { reasoning?: boolean; tools?: boolean; vision?: boolean } }>,
   ): Promise<CachedProviderModelsRecord>;
   listFavoriteProviderModels(providerProfileId: string, scope: ModelFavoriteScope): Promise<FavoriteProviderModelRecord[]>;
   addFavoriteProviderModel(

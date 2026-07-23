@@ -25,7 +25,7 @@ export interface CachedModel {
   modelSlug: string;
   modelName: string;
   contextLength: number | null;
-  capabilities: { thinking?: boolean; tools?: boolean; vision?: boolean; reasoning?: boolean };
+  capabilities: { reasoning?: boolean; tools?: boolean; vision?: boolean };
   fetchedAt: string;
 }
 
@@ -100,7 +100,7 @@ export interface CachedModelData {
   modelSlug: string;
   modelName: string;
   contextLength?: number | null;
-  capabilities?: { thinking?: boolean; tools?: boolean; vision?: boolean; reasoning?: boolean };
+  capabilities?: { reasoning?: boolean; tools?: boolean; vision?: boolean };
 }
 
 export interface FavoriteModelData {
@@ -592,13 +592,18 @@ export class ProviderStore {
   }
 
   private mapCachedModelRow(row: typeof cachedModels.$inferSelect): CachedModel {
+    const parsed = JSON.parse(row.capabilitiesJson) as { thinking?: boolean; reasoning?: boolean; tools?: boolean; vision?: boolean };
     return {
       id: row.id,
       providerProfileId: row.providerProfileId,
       modelSlug: row.modelSlug,
       modelName: row.modelName,
       contextLength: row.contextLength,
-      capabilities: JSON.parse(row.capabilitiesJson),
+      capabilities: {
+        ...(parsed.reasoning !== undefined ? { reasoning: parsed.reasoning } : parsed.thinking !== undefined ? { reasoning: parsed.thinking } : {}),
+        ...(parsed.tools !== undefined ? { tools: parsed.tools } : {}),
+        ...(parsed.vision !== undefined ? { vision: parsed.vision } : {}),
+      },
       fetchedAt: row.fetchedAt,
     };
   }

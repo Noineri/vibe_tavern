@@ -69,7 +69,7 @@ export class ProviderAdapter implements ProviderRuntimeApi {
 			id: m.id,
 			label: m.label ?? m.id,
 			...(m.contextLength != null ? { contextLength: m.contextLength } : {}),
-			...(m.capabilities ? { capabilities: { thinking: m.capabilities.reasoning, tools: m.capabilities.tools, vision: m.capabilities.vision } } : {}),
+			...(m.capabilities ? { capabilities: { reasoning: m.capabilities.reasoning, tools: m.capabilities.tools, vision: m.capabilities.vision } } : {}),
 		}));
 		await this.providerProfileService.setCachedProviderModels(providerProfileId, normalized);
 
