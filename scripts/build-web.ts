@@ -20,18 +20,6 @@ const UPDATE_API_BASE = (
 	"https://api.github.com/repos/Noineri/vibe_tavern"
 ).replace(/\/+$/, "");
 
-const VITE_ENV_JSON = JSON.stringify({
-	...Object.fromEntries(
-		Object.entries(process.env).filter(
-			([name, value]) => name.startsWith("VITE_") && value !== undefined,
-		),
-	),
-	MODE: "production",
-	DEV: false,
-	PROD: true,
-	BASE_URL: "/",
-});
-
 const PUBLIC_ASSET_PATHS = [
 	"logo-256.png",
 	"logo.ico",
@@ -122,7 +110,20 @@ async function main(): Promise<void> {
 		define: {
 			__APP_VERSION__: JSON.stringify(APP_VERSION),
 			__UPDATE_API_BASE__: JSON.stringify(UPDATE_API_BASE),
-			"import.meta.env": VITE_ENV_JSON,
+			"process.env.NODE_ENV": JSON.stringify("production"),
+			"process.env.RP_WEB_API_URL": JSON.stringify(process.env.RP_WEB_API_URL ?? ""),
+			"process.env.RP_WEB_DEFAULT_PROVIDER_LABEL": JSON.stringify(
+				process.env.RP_WEB_DEFAULT_PROVIDER_LABEL ?? "",
+			),
+			"process.env.RP_WEB_DEFAULT_BASE_URL": JSON.stringify(
+				process.env.RP_WEB_DEFAULT_BASE_URL ?? "",
+			),
+			"process.env.RP_WEB_DEFAULT_MODEL": JSON.stringify(
+				process.env.RP_WEB_DEFAULT_MODEL ?? "",
+			),
+			"process.env.RP_WEB_FORCE_FIRST_RUN": JSON.stringify(
+				process.env.RP_WEB_FORCE_FIRST_RUN ?? "",
+			),
 		},
 		plugins: [bunDataComponentPlugin(), webBuildPlugin],
 		throw: false,

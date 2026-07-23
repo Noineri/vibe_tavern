@@ -14,8 +14,8 @@
  *      that Vite uses to import file contents as a string.
  *   3. HTML path rewriting — rewrites root-relative paths in index.html
  *      (/src/main.tsx → ./src/main.tsx) so Bun's bundler resolves them.
- *   4. Source transforms — define injection (__APP_VERSION__, __UPDATE_API_BASE__),
- *      import.meta.env shim, and data-component attribute injection (dev only).
+ *   4. Source transforms — build configuration define injection and
+ *      data-component attribute injection (dev only).
  *
  * bun-plugin-tailwind's setup is called first so its CSS handlers take
  * precedence; our handlers run only when Tailwind returns undefined.
@@ -35,7 +35,7 @@ const WEB_DIR = __dirname;
 const REPO_ROOT = path.resolve(WEB_DIR, "..", "..");
 const PUBLIC_DIR = path.join(WEB_DIR, "public");
 
-// ─── Version defines (mirrors vite.config.ts) ────────────────────────────────
+// ─── Build configuration defines ─────────────────────────────────────────────
 
 const rootPkg = JSON.parse(
 	readFileSync(path.join(REPO_ROOT, "package.json"), "utf8"),
@@ -46,23 +46,24 @@ const UPDATE_API_BASE = (
 	"https://api.github.com/repos/Noineri/vibe_tavern"
 ).replace(/\/+$/, "");
 
-// ─── Vite import.meta.env shim ──────────────────────────────────────────────
-//
-// Vite provides import.meta.env with MODE/DEV/PROD/BASE_URL and all VITE_*
-// env vars. Bun doesn't have this. We inject a compatible object via define.
-
-const viteEnvEntries: Record<string, string | boolean> = {
-	MODE: "development",
-	DEV: true,
-	PROD: false,
-	BASE_URL: "/",
-};
-for (const [key, value] of Object.entries(process.env)) {
-	if (key.startsWith("VITE_") && value !== undefined) {
-		viteEnvEntries[key] = value;
-	}
-}
-const VITE_ENV_JSON = JSON.stringify(viteEnvEntries);
+const DEV_DEFINES = {
+	__APP_VERSION__: JSON.stringify(APP_VERSION),
+	__UPDATE_API_BASE__: JSON.stringify(UPDATE_API_BASE),
+	"process.env.NODE_ENV": JSON.stringify("development"),
+	"process.env.RP_WEB_API_URL": JSON.stringify(process.env.RP_WEB_API_URL ?? ""),
+	"process.env.RP_WEB_DEFAULT_PROVIDER_LABEL": JSON.stringify(
+		process.env.RP_WEB_DEFAULT_PROVIDER_LABEL ?? "",
+	),
+	"process.env.RP_WEB_DEFAULT_BASE_URL": JSON.stringify(
+		process.env.RP_WEB_DEFAULT_BASE_URL ?? "",
+	),
+	"process.env.RP_WEB_DEFAULT_MODEL": JSON.stringify(
+		process.env.RP_WEB_DEFAULT_MODEL ?? "",
+	),
+	"process.env.RP_WEB_FORCE_FIRST_RUN": JSON.stringify(
+		process.env.RP_WEB_FORCE_FIRST_RUN ?? "",
+	),
+} as const;
 
 // ─── Combined plugin ─────────────────────────────────────────────────────────
 
@@ -145,20 +146,10 @@ const vtDevPlugin: BunPlugin = {
 				}
 			}
 
-			// 2. Define injection (__APP_VERSION__, __UPDATE_API_BASE__)
-			if (
-				code.includes("__APP_VERSION__") ||
-				code.includes("__UPDATE_API_BASE__")
-			) {
-				code = code
-					.replace(/__APP_VERSION__/g, JSON.stringify(APP_VERSION))
-					.replace(/__UPDATE_API_BASE__/g, JSON.stringify(UPDATE_API_BASE));
-				modified = true;
-			}
-
-			// 3. Vite import.meta.env shim
-			if (code.includes("import.meta.env")) {
-				code = code.replace(/import\.meta\.env/g, `(${VITE_ENV_JSON})`);
+			// 2. Build configuration define injection
+			for (const [identifier, value] of Object.entries(DEV_DEFINES)) {
+				if (!code.includes(identifier)) continue;
+				code = code.split(identifier).join(value);
 				modified = true;
 			}
 

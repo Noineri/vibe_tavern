@@ -1,6 +1,7 @@
 import { useRef, useState, useEffect } from "react";
 import { Toaster, toast } from "sonner";
 import * as Popover from "@radix-ui/react-popover";
+import * as buildConfig from "../../build-config.js";
 import { useT } from "../../i18n/context.js";
 import { normalizeLocale } from "../../i18n/registry.js";
 import { Icons } from "../shared/icons.js";
@@ -95,7 +96,7 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
   const character = useCharacterController();
   const provider = useProviderProfiles();
   const preset = usePresetController();
-  const updateCheck = useUpdateCheck(__APP_VERSION__);
+  const updateCheck = useUpdateCheck(buildConfig.APP_VERSION);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const handleImportFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files?.length) character.handleImportFiles(e.target.files);
@@ -134,7 +135,7 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
 
   const promptPresets = bootstrapData?.promptPresets ?? [];
   const [wizardVisible, setWizardVisible] = useState(false);
-  const isFirstRun = (bootstrapData?.isFirstRun ?? false) || import.meta.env.VITE_FORCE_FIRST_RUN === 'true';
+  const isFirstRun = (bootstrapData?.isFirstRun ?? false) || buildConfig.FORCE_FIRST_RUN;
   const hasAnyCharacters = (bootstrapData?.allCharacters?.length ?? 0) > 0;
 
   const hasActiveSnapshot = Boolean(
