@@ -92,6 +92,54 @@ describe("ChatLifecycleRuntime summary assembly", () => {
   });
 });
 
+// ─── SUMMARY_PRIOR_CONTEXT_PLAN W1 (SPC-1) ─────────────────────────
+//
+// Forward-looking absent pins: ranged and full summary assembly today pass NO
+// prior-summaries context to `assemblePrompt`. W3 will add `priorSummaries`
+// (ranged only) behind the `includePriorSummaries` toggle — at that point the
+// ranged pin must be retargeted to assert presence (toggle ON), while the full
+// `summarizeChat` pin must stay asserting absence (the full path is out of scope
+// and never loads priors).
+describe("ChatLifecycleRuntime prior-context characterization (SPC-1)", () => {
+  it("assembleRangedSummaryPrompt does not pass priorSummaries today", async () => {
+    const calls: Array<Parameters<ChatLifecycleRuntimeDeps["assemblePrompt"]>> = [];
+    const lifecycle = makeLifecycle(async (...args) => {
+      calls.push(args);
+      return assembled();
+    }, [
+      { id: "msg_1", position: 0 },
+      { id: "msg_2", position: 1 },
+    ]);
+
+    await lifecycle.assembleRangedSummaryPrompt({
+      chatId: "chat_1" as ChatId,
+      model: "summary-model",
+      summarizedFrom: 1,
+      summarizedTo: 2,
+      contextBudget: 2048,
+    });
+
+    expect(calls[0][2].priorSummaries).toBeUndefined();
+  });
+
+  it("assembleSummaryPrompt (full) does not pass priorSummaries today", async () => {
+    const calls: Array<Parameters<ChatLifecycleRuntimeDeps["assemblePrompt"]>> = [];
+    const lifecycle = makeLifecycle(async (...args) => {
+      calls.push(args);
+      return assembled();
+    });
+
+    await lifecycle.assembleSummaryPrompt({
+      chatId: "chat_1" as ChatId,
+      model: "summary-model",
+      recentMessageLimit: 24,
+      contextBudget: 4096,
+    });
+
+    expect(calls[0][2].priorSummaries).toBeUndefined();
+  });
+});
+
 const summaryPrompt: AssemblePromptResponse = {
   layers: [
     { id: "character_base", text: "Character context" },

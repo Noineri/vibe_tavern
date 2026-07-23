@@ -3,6 +3,7 @@ import { assemblePrompt } from "../src/assemble.ts";
 import { getAiAssistantAssembler } from "../src/ai-assistant/ai-assistant-assemblers.ts";
 import { getSummaryStrategy } from "../src/summary/summary-strategies.ts";
 import { setTokenCountFn } from "../src/compaction.ts";
+import type { PromptAssemblyContext } from "../src/types.ts";
 import { brandId, type DiceRollSnapshot, type DiceRollId, type MessageId } from "@vibe-tavern/domain";
 
 function baseContext(overrides = {}) {
@@ -928,6 +929,98 @@ describe("assemblePrompt", () => {
       expect(jailbreak).toBeTruthy();
       // Override branch is unchanged: labeled with the character's name.
       expect(jailbreak!.sourceName).toBe("Aria (Post-History Override)");
+    });
+  });
+
+  // ─── SUMMARY_PRIOR_CONTEXT_PLAN W1 (SPC-1) ─────────────────────────
+  //
+  // Characterization net for the summary path. Pins the CURRENT set of layer
+  // ids that survive `assembleSummaryPrompt`'s `SUMMARY_LAYER_IDS` filter, so
+  // W2's addition of `prior_summaries_context` shows up as a visible, intentional
+  // delta (this manifest must be updated alongside it). Also forward-guards that
+  // no prior-context layer exists today, and documents that the summary filter
+  // is strict (drops jailbreak / authorsNote) where the chat-turn path keeps them.
+  describe("summary layer membership characterization (SPC-1)", () => {
+    function richSummaryContext(): PromptAssemblyContext {
+      return {
+        identity: { chatId: "chat_spc" },
+        character: {
+          id: "char_spc",
+          name: "Nora",
+          description: "Detective.",
+          scenario: "The tower burns.",
+          systemPrompt: "You are Nora.",
+          personality: "Stoic.",
+          mesExample: "<START>\n{{user}}: hi\n{{char}}: hello",
+          mesExampleMode: "always",
+          avatarDescription: "Raven hair, grey coat.",
+          includeAvatarInPrompt: true,
+          gallery: [{ caption: "badge", description: "A brass badge." }],
+          includeGalleryInPrompt: true,
+          postHistoryInstructions: "Stay in character.",
+        },
+        persona: {
+          id: "persona_spc",
+          name: "Alex",
+          description: "Journalist.",
+          pronouns: "they/them",
+          avatarDescription: "Trench coat.",
+          includeAvatarInPrompt: true,
+        },
+        preset: {
+          id: "preset_spc",
+          text: "Global sys.",
+          summary: "Summarize the case.",
+          jailbreak: "JB.",
+          authorsNote: "Note.",
+          authorsNotePosition: "in_prompt",
+        },
+        chat: {
+          recentMessages: [
+            { id: "m1", role: "user", content: "Where is the file?" },
+            { id: "m2", role: "assistant", content: "In the drawer." },
+          ],
+        },
+      };
+    }
+
+    // The exact membership of SUMMARY_LAYER_IDS. When W2 adds
+    // `prior_summaries_context` to this set, update this manifest in the same
+    // change — that is the intended, visible delta this pin exists to force.
+    const SUMMARY_LAYER_MANIFEST = new Set([
+      "prompt_preset_summary",
+      "character_system_prompt",
+      "character_base",
+      "character_scenario",
+      "character_personality",
+      "character_avatar",
+      "character_gallery",
+      "persona",
+      "persona_avatar",
+      "mes_example",
+      "recent_history",
+    ]);
+
+    it("survives exactly the SUMMARY_LAYER_IDS manifest (no extras, no omissions)", () => {
+      const result = getSummaryStrategy().assemble(richSummaryContext());
+      expect(new Set(result.layers.map((l) => l.id))).toEqual(SUMMARY_LAYER_MANIFEST);
+    });
+
+    it("does not emit a prior_summaries_context layer today (forward guard for SPC-2)", () => {
+      const result = getSummaryStrategy().assemble(richSummaryContext());
+      expect(result.layers.find((l) => l.id === "prior_summaries_context")).toBeUndefined();
+    });
+
+    it("filters out jailbreak and authorsNote from the summary path", () => {
+      const result = getSummaryStrategy().assemble(richSummaryContext());
+      expect(result.layers.find((l) => l.id === "prompt_preset_jailbreak")).toBeUndefined();
+      expect(result.layers.find((l) => l.id === "prompt_preset_authors_note")).toBeUndefined();
+    });
+
+    it("keeps jailbreak and authorsNote on the chat-turn path (summary filter is summary-only)", () => {
+      const result = assemblePrompt(richSummaryContext());
+      expect(result.layers.find((l) => l.id === "prompt_preset_jailbreak")).toBeTruthy();
+      expect(result.layers.find((l) => l.id === "prompt_preset_authors_note")).toBeTruthy();
     });
   });
 });
