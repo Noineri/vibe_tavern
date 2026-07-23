@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { render } from "@testing-library/react";
+import { render, fireEvent } from "@testing-library/react";
 import { DiceFace, DiceFaces, glyphFor, extremityTone } from "./dice-faces.js";
 import React from "react";
 
@@ -187,26 +187,41 @@ describe("DiceFace — d% percentile", () => {
   });
 });
 
-describe("DiceFaces — settle animation is once-only", () => {
-  it("adds dice-settle on first render of a new rollKey, omits it on re-render", () => {
-    const { container, rerender } = render(
+describe("DiceFaces — settle animation is once-only and survives rerenders", () => {
+  it("adds dice-settle on first render of a new rollKey", () => {
+    const { container } = render(
       <DiceFaces faceShape="d20" faces={[10]} notation="1d20" size="sm" maxVisible={6} rollKey="anim1" />,
     );
-    // First render: the wrapper div around the die carries dice-settle.
     const firstWrapper = container.querySelector("[role='list'] > div");
     expect(firstWrapper?.className).toContain("dice-settle");
-    // Re-render with the SAME rollKey: the roll is now 'seen', no class.
-    rerender(
-      <DiceFaces faceShape="d20" faces={[10]} notation="1d20" size="sm" maxVisible={6} rollKey="anim1" />,
-    );
-    const seenWrapper = container.querySelector("[role='list'] > div");
-    expect(seenWrapper?.className ?? "").not.toContain("dice-settle");
   });
 
-  it("a fresh rollKey animates again after a previous one was seen", () => {
+  it("keeps the class across an unrelated rerender mid-animation (regression: lane refresh used to strip it)", () => {
+    const props = { faceShape: "d20" as const, faces: [10], notation: "1d20", size: "sm" as const, maxVisible: 6, rollKey: "anim1" };
+    const { container, rerender } = render(<DiceFaces {...props} />);
+    expect(container.querySelector("[role='list'] > div")?.className).toContain("dice-settle");
+    // A lane refresh rerenders the same roll BEFORE animationend fires — the
+    // class must stay, otherwise the user never sees the settle motion.
+    rerender(<DiceFaces {...props} faces={[10]} />);
+    expect(container.querySelector("[role='list'] > div")?.className).toContain("dice-settle");
+  });
+
+  it("drops the class after animationend fires", () => {
+    const { container } = render(
+      <DiceFaces faceShape="d20" faces={[10]} notation="1d20" size="sm" maxVisible={6} rollKey="anim1" />,
+    );
+    const wrapper = container.querySelector("[role='list'] > div")!;
+    expect(wrapper.className).toContain("dice-settle");
+    fireEvent.animationEnd(wrapper);
+    expect(container.querySelector("[role='list'] > div")?.className ?? "").not.toContain("dice-settle");
+  });
+
+  it("a fresh rollKey animates again after a previous one settled", () => {
     const { container, rerender } = render(
       <DiceFaces faceShape="d20" faces={[5]} notation="1d20" size="sm" maxVisible={6} rollKey="anim2a" />,
     );
+    const firstWrapper = container.querySelector("[role='list'] > div")!;
+    fireEvent.animationEnd(firstWrapper);
     rerender(
       <DiceFaces faceShape="d20" faces={[8]} notation="1d20" size="sm" maxVisible={6} rollKey="anim2b" />,
     );

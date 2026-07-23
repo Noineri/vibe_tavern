@@ -733,6 +733,24 @@ export class DiceRollStore {
     return row ? this.mapRowRoll(row) : null;
   }
 
+  /**
+   * Resolve a roll together with its owning lane's chatId, WITHOUT creating a
+   * lane row. Used for chat-scoped ownership checks (e.g. removeRoll must
+   * verify the roll belongs to the path's chatId) — the previous path called
+   * `getOrCreateLane(chatId, "", mode)` which failed the branch_id FK.
+   * Returns null when the roll (or its lane) does not exist.
+   */
+  async getRollWithChat(rollId: string): Promise<{ roll: DiceRoll; chatId: string } | null> {
+    const row = await this.db
+      .select({ roll: diceRolls, chatId: dicePendingLanes.chatId })
+      .from(diceRolls)
+      .innerJoin(dicePendingLanes, eq(diceRolls.laneId, dicePendingLanes.id))
+      .where(eq(diceRolls.id, rollId))
+      .get();
+    if (!row) return null;
+    return { roll: this.mapRowRoll(row.roll), chatId: row.chatId };
+  }
+
   // ─── Helpers ─────────────────────────────────────────────────────────────
 
   /**

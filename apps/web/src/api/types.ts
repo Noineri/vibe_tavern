@@ -73,6 +73,14 @@ export interface InsightsConfig {
   /** Dice turn mode (DICE B9): selects the active pending lane. Default
    *  `"normal"` on old chats (backend schema default). */
   diceMode?: DiceMode;
+  /** Chat-local Dice script override (DICE_ASSIGNMENT_AND_TRAY_UX_REPORT fix 1).
+   *  `null`/absent = inherit (resolver union); an array = use exactly those ids
+   *  for this chat. The backend filters disabled/deleted/non-dice ids. */
+  diceScriptIds?: string[] | null;
+  /** Chat-local per-script actor distribution (Rework R1). `null`/absent = each
+   *  check uses its declared actors; a record overrides per script with full
+   *  freedom (expand or narrow beyond the script's declared check.actors). */
+  diceActorBindings?: Record<string, DiceActorType[]> | null;
   /** Scene Tracker per-chat config; absent on old chats (normalized to defaults at read). */
   tracker?: SceneTrackerConfig;
 }
@@ -85,6 +93,12 @@ export interface InsightsConfigPatch {
    *  `updateInsightsConfigSchema` already accepts both. */
   diceEnabled?: boolean;
   diceMode?: DiceMode;
+  /** Chat-local Dice script override patch (fix 1): absent preserves stored;
+   *  `null` returns to inherit; an array sets the explicit chat-local set. */
+  diceScriptIds?: string[] | null;
+  /** Chat-local actor-distribution patch (Rework R1): absent preserves stored;
+   *  `null` clears; a record sets the per-script binding. */
+  diceActorBindings?: Record<string, DiceActorType[]> | null;
   tracker?: SceneTrackerConfigPatch;
 }
 

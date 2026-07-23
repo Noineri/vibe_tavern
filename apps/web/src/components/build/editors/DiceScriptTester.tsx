@@ -47,12 +47,12 @@ export function DiceScriptTester({ scriptId, code, isMobile, characterName }: Di
 
 	return (
 		<div className="rounded-lg border border-border bg-s2" style={{ padding: 16 }}>
-			<div className="mb-3 flex items-center justify-between text-[12px] font-semibold uppercase tracking-[0.06em] text-accent-t">
-				{t("script_test_panel")}
+			<div className="mb-3 flex items-center gap-2 text-[12px] font-semibold uppercase tracking-[0.06em] text-accent-t">
+				<span>{t("script_test_panel")}</span>
 				<span className="rounded bg-accent px-1.5 py-0.5 font-ui text-[10px] text-on-accent">DICE</span>
 			</div>
 
-			<div className={cn("flex gap-2.5", isMobile && "flex-col")}>
+			<div className={cn("flex items-end gap-2.5", isMobile && "flex-col items-stretch")}>
 				<div className="flex-1 space-y-2">
 					<div>
 						<label className={cn(lblCls, "mb-1")}>{t("script_test_character_name")}</label>

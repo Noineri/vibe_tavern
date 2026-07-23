@@ -1,4 +1,4 @@
-import { useRef, useEffect } from "react";
+import { useRef, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { ReactNode } from "react";
 import type { DiceFaceShape, DiceAttempt } from "@vibe-tavern/domain";
@@ -67,12 +67,13 @@ const SIZE_MAP = {
   xs: 16,
   sm: 20,
   md: 28,
+  lg: 40,
 };
 
 export interface DiceFaceProps {
   faceShape: DiceFaceShape;
   value: number;
-  size: "xs" | "sm" | "md";
+  size: "xs" | "sm" | "md" | "lg";
   tone?: "default" | "max" | "min";
 }
 
@@ -157,7 +158,7 @@ export interface DiceFacesProps {
   faces?: number[];
   attempts?: DiceAttempt[];
   notation: string;
-  size: "xs" | "sm" | "md";
+  size: "xs" | "sm" | "md" | "lg";
   maxVisible: number;
   rollKey: string;
   excluded?: boolean;
@@ -179,7 +180,13 @@ export function DiceFaces({
 }: DiceFacesProps) {
   const { t } = useTranslation();
   const seenIds = useRef<Set<string>>(new Set());
-  
+  // Track rollKeys currently animating. The class STAYS until animationend
+  // fires, not just until the first render commit — otherwise a lane refresh
+  // (loading→result) that lands during the 420ms window strips the class and
+  // the user never sees motion. `useState` forces a re-render when the set
+  // changes so the class actually toggles in the DOM.
+  const [animating, setAnimating] = useState<Set<string>>(() => new Set());
+
   // Extract face values
   const allFaces = faces ?? (attempts ? attempts.flatMap((a) => a.faces) : []);
   const visibleFaces = allFaces.slice(0, maxVisible);
@@ -187,14 +194,29 @@ export function DiceFaces({
 
   // Animation check
   const isReducedMotion = window?.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches ?? false;
-  const isNew = !seenIds.current.has(rollKey);
-  const animateClass = isNew && !isReducedMotion ? "dice-settle" : "";
+  const shouldAnimate = !isReducedMotion && rollKey !== "" && !seenIds.current.has(rollKey);
 
   useEffect(() => {
-    if (isNew) {
-      seenIds.current.add(rollKey);
-    }
-  }, [isNew, rollKey]);
+    if (!shouldAnimate) return;
+    seenIds.current.add(rollKey);
+    setAnimating((prev) => {
+      if (prev.has(rollKey)) return prev;
+      const next = new Set(prev);
+      next.add(rollKey);
+      return next;
+    });
+  }, [shouldAnimate, rollKey]);
+
+  const finishAnimation = () => {
+    setAnimating((prev) => {
+      if (!prev.has(rollKey)) return prev;
+      const next = new Set(prev);
+      next.delete(rollKey);
+      return next;
+    });
+  };
+
+  const isAnimatingRow = animating.has(rollKey);
 
   const enumeration = `${notation}: ${allFaces.join(", ")}`;
   
@@ -234,10 +256,11 @@ export function DiceFaces({
     <div className={rowClasses} role="list" aria-label={t("dice_faces_enumeration", { notation, faces: allFaces.join(", ") })}>
       <span className="sr-only">{t("dice_faces_enumeration", { notation, faces: allFaces.join(", ") })}</span>
       {visibleFaces.map((faceValue, i) => (
-        <div 
-          key={i} 
-          className={animateClass} 
-          style={animateClass ? { animationDelay: `${i * 55}ms` } : undefined}
+        <div
+          key={`${rollKey}:${i}`}
+          onAnimationEnd={isAnimatingRow ? finishAnimation : undefined}
+          className={isAnimatingRow ? "dice-settle" : ""}
+          style={isAnimatingRow ? { animationDelay: `${i * 55}ms` } : undefined}
         >
           <DiceFace faceShape={faceShape} value={faceValue} size={size} />
         </div>

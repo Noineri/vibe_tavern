@@ -61,6 +61,7 @@ export function DicePanel(): ReactNode {
       lane={lane}
       character={character ? { id: character.id, name: character.name } : null}
       persona={persona ? { id: persona.id, name: persona.name } : null}
+      diceActorBindings={activeChat?.insightsConfig?.diceActorBindings ?? null}
       showTitle={!isMobile}
     />
   );
@@ -90,7 +91,7 @@ export function DicePanel(): ReactNode {
               side="top"
               align="center"
               sideOffset={4}
-              className="glass-blur z-[220] w-[22rem] max-w-[calc(100vw-2rem)] overflow-hidden rounded-lg border border-border2 bg-glass-bg shadow-[0_12px_28px_rgba(0,0,0,0.45)] outline-none data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95"
+              className="glass-blur z-[220] w-[42rem] max-w-[calc(100vw-2rem)] overflow-hidden rounded-lg border border-border2 bg-glass-bg shadow-[0_12px_28px_rgba(0,0,0,0.45)] outline-none data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95"
             >
               {tray}
             </Popover.Content>

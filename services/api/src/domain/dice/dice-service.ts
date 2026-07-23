@@ -83,6 +83,7 @@ export class DiceService {
       characterId: ctx.data.characterId,
       personaId: ctx.data.personaId,
       chatId,
+      diceScriptIds: ctx.data.diceScriptIds,
     });
 
     return { ok: true, data: defs };
@@ -135,6 +136,8 @@ export class DiceService {
       characterId: ctx.data.characterId,
       personaId: ctx.data.personaId,
       chatId,
+      diceScriptIds: ctx.data.diceScriptIds,
+      diceActorBindings: ctx.data.diceActorBindings,
       rng: this.rng,
     });
 
@@ -214,17 +217,16 @@ export class DiceService {
   // ─── Remove / clear ─────────────────────────────────────────────────────
 
   /**
-   * Remove a single Normal pending roll.
+   * Remove a single pending roll. Verifies the roll exists AND belongs to the
+   * chat in the path (via the roll→lane join) before deleting — never creates
+   * a lane row (the prior `getOrCreateLane(chatId, "", mode)` path failed the
+   * branch_id FK constraint).
    */
   async removeRoll(chatId: string, rollId: string): Promise<DiceResult<void>> {
-    const roll = await this.diceRolls.getRollById(rollId);
-    if (!roll) return { ok: false, error: { status: 404, code: "roll_not_found", message: `Roll '${rollId}' not found` } };
-
-    // Verify the roll belongs to this chat (through lane → chat relationship).
-    const lane = await this.diceRolls.getOrCreateLane(chatId, "", roll.mode); // We need to verify ownership differently
-    // Actually, let's just verify the roll exists and remove it. The route
-    // already scopes by chatId in the path. The roll's lane_id could be
-    // cross-referenced but for now the chat-scoped endpoint is sufficient.
+    const owned = await this.diceRolls.getRollWithChat(rollId);
+    if (!owned || owned.chatId !== chatId) {
+      return { ok: false, error: { status: 404, code: "roll_not_found", message: `Roll '${rollId}' not found` } };
+    }
     await this.diceRolls.removeRoll(rollId);
     return { ok: true, data: undefined };
   }
@@ -273,17 +275,43 @@ export class DiceService {
   // ─── Chat context resolution ────────────────────────────────────────────
 
   private async resolveChatContext(chatId: string): Promise<
-    | { ok: true; data: { characterId: string; personaId: string | null; branchId: string } }
+    | { ok: true; data: { characterId: string; personaId: string | null; branchId: string; diceScriptIds: string[] | null; diceActorBindings: Record<string, ("persona" | "character")[]> | null } }
     | { ok: false; error: DiceApiError }
   > {
     const chat = await this.stores.chats.getById(chatId);
     if (!chat) return { ok: false, error: { status: 404, code: "chat_not_found", message: `Chat '${chatId}' not found` } };
+    // Normalize the chat-local Dice override from the freeform Insights JSON:
+    // an array is the explicit set; anything else (null / absent / legacy) is
+    // inherit. The column is raw JSON, so guard the type rather than trusting it.
+    const rawIds = chat.insightsConfig?.diceScriptIds;
+    const diceScriptIds: string[] | null = Array.isArray(rawIds)
+      ? rawIds.filter((id): id is string => typeof id === "string")
+      : null;
+    // Normalize the chat-local per-script actor distribution (Rework R1). The
+    // column is raw JSON, so guard shape + actor values. Empty/invalid entries
+    // are dropped (an empty binding ≡ absent ≡ fall back to declared actors).
+    const rawBindings = chat.insightsConfig?.diceActorBindings;
+    const validActors = new Set<string>(["persona", "character"]);
+    let diceActorBindings: Record<string, ("persona" | "character")[]> | null = null;
+    if (rawBindings && typeof rawBindings === "object" && !Array.isArray(rawBindings)) {
+      const out: Record<string, ("persona" | "character")[]> = {};
+      for (const [k, v] of Object.entries(rawBindings as Record<string, unknown>)) {
+        if (typeof k !== "string" || k.length === 0 || !Array.isArray(v)) continue;
+        const actors = v.filter(
+          (a): a is "persona" | "character" => typeof a === "string" && validActors.has(a),
+        );
+        if (actors.length > 0) out[k] = actors;
+      }
+      diceActorBindings = out;
+    }
     return {
       ok: true,
       data: {
         characterId: chat.characterId,
         personaId: chat.personaId,
         branchId: chat.activeBranchId,
+        diceScriptIds,
+        diceActorBindings,
       },
     };
   }

@@ -54,6 +54,13 @@ interface LinkBindingPopoverProps {
   scriptSectionLabel?: string;
   /** Disable the trigger button (e.g. while a generation is in flight). */
   disabled?: boolean;
+  /** Render the bound pills inline (default true). Pass false when the caller
+   *  renders the bound list itself and only needs the add trigger + popover
+   *  (e.g. the Dice assignment row list). */
+  showPills?: boolean;
+  /** Text label on the add trigger — renders a labeled dashed button instead
+   *  of the bare "+" circle (and drops the now-redundant tooltip). */
+  triggerLabel?: string;
 }
 
 function resolveTargetAvatarUrl(target: LinkTarget): string | null {
@@ -113,6 +120,8 @@ export function LinkBindingPopover({
   lorebookSectionLabel,
   scriptSectionLabel,
   disabled,
+  showPills = true,
+  triggerLabel,
 }: LinkBindingPopoverProps) {
   const [open, setOpen] = useState(false);
 
@@ -192,46 +201,67 @@ export function LinkBindingPopover({
 
   return (
     <div data-testid="resource-row" className="flex w-full flex-wrap items-center gap-1.5">
-      {charLinks.map((l) => {
-        const c = charMap.get(l.targetId);
-        return c ? pill(c, "character") : null;
-      })}
-        {personaLinks.map((l) => {
-          const p = personaMap.get(l.targetId);
-          return p ? pill(p, "persona") : null;
-        })}
-        {lorebookLinks.map((l) => {
-          const lb = lorebookMap.get(l.targetId);
-          return lb ? pill(lb, "lorebook") : null;
-        })}
-        {scriptLinks.map((l) => {
-          const sc = scriptMap.get(l.targetId);
-          return sc ? pill(sc, "script") : null;
-        })}
+      {showPills && (
+        <>
+          {charLinks.map((l) => {
+            const c = charMap.get(l.targetId);
+            return c ? pill(c, "character") : null;
+          })}
+          {personaLinks.map((l) => {
+            const p = personaMap.get(l.targetId);
+            return p ? pill(p, "persona") : null;
+          })}
+          {lorebookLinks.map((l) => {
+            const lb = lorebookMap.get(l.targetId);
+            return lb ? pill(lb, "lorebook") : null;
+          })}
+          {scriptLinks.map((l) => {
+            const sc = scriptMap.get(l.targetId);
+            return sc ? pill(sc, "script") : null;
+          })}
+        </>
+      )}
       <Popover.Root open={open} onOpenChange={setOpen}>
-        <CustomTooltip content={addLabel}>
+        {triggerLabel ? (
           <Popover.Trigger asChild>
             <button
               type="button"
               aria-label={addLabel}
               disabled={disabled}
               className={cn(
-                "flex shrink-0 items-center justify-center rounded-full text-t3 transition-opacity",
-                isMobile ? "h-11 w-11" : "h-[22px] w-[22px]",
+                "flex items-center gap-1.5 rounded-md border border-dashed border-border2 px-2.5 py-1.5 font-ui text-[12px] text-t2 transition-colors hover:border-accent hover:text-accent-t",
                 disabled && "pointer-events-none opacity-40",
               )}
             >
-              <span
-                className={cn(
-                  "flex items-center justify-center rounded-full border border-dashed border-border2 leading-none transition-colors hover:border-accent hover:text-accent-t",
-                  isMobile ? "h-7 w-7 text-[12px]" : "h-[22px] w-[22px] text-[12px]",
-                )}
-              >
-                +
-              </span>
+              <span className="leading-none">+</span>
+              {triggerLabel}
             </button>
           </Popover.Trigger>
-        </CustomTooltip>
+        ) : (
+          <CustomTooltip content={addLabel}>
+            <Popover.Trigger asChild>
+              <button
+                type="button"
+                aria-label={addLabel}
+                disabled={disabled}
+                className={cn(
+                  "flex shrink-0 items-center justify-center rounded-full text-t3 transition-opacity",
+                  isMobile ? "h-11 w-11" : "h-[22px] w-[22px]",
+                  disabled && "pointer-events-none opacity-40",
+                )}
+              >
+                <span
+                  className={cn(
+                    "flex items-center justify-center rounded-full border border-dashed border-border2 leading-none transition-colors hover:border-accent hover:text-accent-t",
+                    isMobile ? "h-7 w-7 text-[12px]" : "h-[22px] w-[22px] text-[12px]",
+                  )}
+                >
+                  +
+                </span>
+              </button>
+            </Popover.Trigger>
+          </CustomTooltip>
+        )}
         <Popover.Portal container={getModalPortal() ?? undefined}>
           <Popover.Content
             side="bottom"

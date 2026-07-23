@@ -264,8 +264,8 @@ html,body{height:100%;background:var(--page-bg, var(--bg));color:var(--t1);overf
 
 /* ── Keyframes ── */
 @keyframes genp{0%,60%,100%{opacity:.25;transform:scale(.75)}30%{opacity:1;transform:scale(1)}}
-@keyframes diceSettle{from{transform:translateY(-5px) rotate(-9deg);opacity:.35}60%{transform:translateY(1px) rotate(2.5deg)}to{transform:none;opacity:1}}
-.dice-settle{animation:diceSettle 420ms cubic-bezier(.2,.9,.3,1.15) both}
+@keyframes diceSettle{from{transform:translateY(-11px) rotate(-18deg);opacity:.25}55%{transform:translateY(2px) rotate(5deg)}to{transform:none;opacity:1}}
+.dice-settle{animation:diceSettle 480ms cubic-bezier(.2,.85,.3,1.3) both}
 @media (prefers-reduced-motion:reduce){.dice-settle{animation:none}}
 
 /* ── Avatar crop zoom slider ── */
