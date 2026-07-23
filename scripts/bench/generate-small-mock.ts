@@ -1,9 +1,10 @@
 // Small ST-shaped mock folder for visual progress-bar smoke tests.
 // 40 characters, 2 chats each (5 msgs), 3 lorebooks, 2 presets, 1 persona.
 import { mkdir, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-const OUT = process.argv[2] ?? "N:/mock-small";
+const OUT = process.argv[2] ?? join(tmpdir(), "vt-mock-small");
 const N = 300;
 
 const PNG_B64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAACklEQVR4nGMAAQAABQABDQottAAAAABJRU5ErkJggg==";
