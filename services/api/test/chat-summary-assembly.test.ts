@@ -7,6 +7,7 @@ import { ChatLifecycleRuntime, type ChatLifecycleRuntimeDeps } from "../src/runt
 import { SessionRuntime } from "../src/runtime/session/session-runtime.js";
 import type { nonstreamingProviderExecute } from "../src/infrastructure/ai/nonstreaming-provider-executor.js";
 import { ChatSummaryService, withSummaryPromptAsFinalUserMessage } from "../src/domain/chat/chat-summary-service.js";
+import { resolveSummaryPrompt } from "../src/domain/prompt/summary-prompt.js";
 
 let capturedPrompt: AssemblePromptResponse | null = null;
 
@@ -419,5 +420,38 @@ describe("ChatSummaryService summary prompt reshape", () => {
         { role: "user", content: "Summarize the case.", layerId: "prompt_preset_summary" },
       ],
     });
+  });
+});
+
+// ─── SUMMARY_PRIOR_CONTEXT_PLAN W4 (SPC-4): default summary prompt ────
+//
+// resolveSummaryPrompt returns the trimmed preset text byte-for-byte when the
+// preset carries one, and falls back to the bundled summary-ai-prompt.md asset
+// otherwise — so an empty `preset.summary` no longer produces an instruction-less
+// summary call.
+describe("Summary prompt fallback (SPC-4)", () => {
+  it("returns the trimmed preset text byte-for-byte when present", async () => {
+    const out = await resolveSummaryPrompt("  my dream summary prompt  ");
+    expect(out).toBe("my dream summary prompt");
+  });
+
+  it("falls back to the bundled default asset when preset is empty/whitespace", async () => {
+    const out = await resolveSummaryPrompt("   ");
+    expect(out.trim().length).toBeGreaterThan(0);
+    expect(out).toContain("continuity engine");
+  });
+
+  it("falls back to the bundled default asset when preset is null/undefined", async () => {
+    const fromNull = await resolveSummaryPrompt(null);
+    const fromUndefined = await resolveSummaryPrompt(undefined);
+    expect(fromNull.trim().length).toBeGreaterThan(0);
+    expect(fromNull).toBe(fromUndefined);
+  });
+
+  it("the default asset is authored for the prior-context strategy", async () => {
+    const out = await resolveSummaryPrompt(null);
+    // read-only continuity framing, no re-summarize, language-neutral.
+    expect(out).toContain("Prior summaries");
+    expect(out.toLowerCase()).toContain("do not repeat");
   });
 });

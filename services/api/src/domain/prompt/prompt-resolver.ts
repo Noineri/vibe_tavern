@@ -16,6 +16,7 @@ import {
 	type CharacterRecord,
 	toCharacterRecord,
 } from "../character/character-runtime.js";
+import { resolveSummaryPrompt } from "./summary-prompt.js";
 import type { PersonaRecord } from "../persona/persona-runtime.js";
 import {
 	type PromptAssemblyResolver,
@@ -69,7 +70,7 @@ export class StaticPromptResolver implements PromptAssemblyResolver {
 			name: preset.name,
 			text: preset.systemPrompt,
 			jailbreak: preset.postHistoryInstructions,
-			summary: preset.summaryPrompt,
+			summary: await resolveSummaryPrompt(preset.summaryPrompt),
 			tools: preset.toolsPrompt,
 			prefill: preset.assistantPrefix,
 			authorsNote: preset.authorsNote,
