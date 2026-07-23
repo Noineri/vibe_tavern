@@ -65,6 +65,7 @@ export interface ChatLifecycleRuntimeDeps {
 			summary?: boolean;
 			contextBudget?: number | null;
 			responseReserve?: number;
+			priorSummaries?: Array<{ id: string; label?: string; content: string }>;
 		},
 	) => Promise<{
 		branchId: ChatBranchId;
@@ -256,6 +257,12 @@ export class ChatLifecycleRuntime {
 		summarizedFrom: number;
 		summarizedTo: number;
 		contextBudget?: number | null;
+		/** SUMMARY_PRIOR_CONTEXT_PLAN (SPC-3): load preceding chat-summaries
+		 *  (summarizedTo < from) as read-only continuity. Default true. */
+		includePriorSummaries?: boolean;
+		/** How many most-recent preceding summaries to include (0 = none).
+		 *  Undefined → default 10. */
+		maxPriorSummaries?: number;
 	}) {
 		const chat = await this.deps.stores.chats.getById(input.chatId);
 		if (!chat) {
@@ -271,12 +278,41 @@ export class ChatLifecycleRuntime {
 				return oneBasedPosition < from || oneBasedPosition > to;
 			})
 			.map((message) => brandId<import("@vibe-tavern/domain").MessageId>(message.id));
+
+		// SPC-3: build the preceding-chain prior-summaries payload. Count-capped
+		// to the N most-recent summaries whose range ends strictly before `from`
+		// (no overlap with the range being summarized), then reversed to
+		// oldest→newest for readability. `includePriorSummaries === false` or
+		// `maxPriorSummaries <= 0` → no payload (layer absent, byte-equivalent).
+		let priorSummaries: Array<{ id: string; label?: string; content: string }> | undefined;
+		if (input.includePriorSummaries !== false) {
+			const limit = input.maxPriorSummaries != null && Number.isFinite(input.maxPriorSummaries)
+				? Math.max(0, Math.floor(input.maxPriorSummaries))
+				: 10;
+			if (limit > 0) {
+				const all = await this.deps.stores.chatSummaries.listByChatBranch(input.chatId, branchId);
+				const preceding = all
+					.filter((summary) => summary.summarizedTo < from && summary.content.trim())
+					.sort((a, b) => b.summarizedTo - a.summarizedTo)
+					.slice(0, limit)
+					.reverse();
+				if (preceding.length > 0) {
+					priorSummaries = preceding.map((summary) => ({
+						id: summary.id,
+						label: summary.label?.trim() || `T${summary.summarizedFrom}–T${summary.summarizedTo}`,
+						content: summary.content.trim(),
+					}));
+				}
+			}
+		}
+
 		return this.deps.assemblePrompt(input.chatId, branchId, {
 			model: input.model,
 			recentMessageLimit: messages.length,
 			excludeMessageIds,
 			contextBudget: input.contextBudget ?? null,
 			summary: true,
+			...(priorSummaries ? { priorSummaries } : {}),
 		});
 	}
 

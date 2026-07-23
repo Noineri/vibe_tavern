@@ -28,6 +28,11 @@ export interface GenerateChatSummaryInput {
   includeInContext?: boolean;
   excludeSummarized?: boolean;
   source?: 'manual' | 'auto';
+  // SUMMARY_PRIOR_CONTEXT_PLAN (SPC-3): prior-context controls threaded through
+  // to assembleRangedSummaryPrompt. Auto fills both from autoSummaryConfig;
+  // manual ranged omits maxPriorSummaries → lifecycle defaults to 10.
+  includePriorSummaries?: boolean;
+  maxPriorSummaries?: number;
   signal?: AbortSignal;
 }
 
@@ -157,6 +162,8 @@ export class ChatSummaryService {
       summarizedFrom: from,
       summarizedTo: to,
       contextBudget: effectiveProfile.contextBudget ?? null,
+      includePriorSummaries: input.includePriorSummaries,
+      maxPriorSummaries: input.maxPriorSummaries,
     });
     const prompt = withSummaryPromptAsFinalUserMessage(assembled.prompt);
     const startedAt = Date.now();
@@ -249,6 +256,8 @@ export class ChatSummaryService {
           includeInContext: true,
           excludeSummarized: config.excludeSummarized,
           source: 'auto',
+          includePriorSummaries: config.includePriorSummaries,
+          maxPriorSummaries: config.maxPriorSummaries,
         });
       },
       (err) => logSendDebug("summary.auto.error", {
@@ -297,17 +306,25 @@ function normalizeAutoSummaryConfig(raw: Record<string, unknown>): {
   everyN: number;
   useChatModel: boolean;
   excludeSummarized: boolean;
+  includePriorSummaries: boolean;
+  maxPriorSummaries: number;
   providerProfileId?: string;
   model?: string;
 } {
   const everyN = typeof raw.everyN === "number" && Number.isFinite(raw.everyN)
     ? Math.max(1, Math.floor(raw.everyN))
     : 20;
+  const maxPriorSummaries = typeof raw.maxPriorSummaries === "number" && Number.isFinite(raw.maxPriorSummaries)
+    ? Math.max(0, Math.min(100, Math.floor(raw.maxPriorSummaries)))
+    : 10;
   return {
     enabled: raw.enabled === true,
     everyN,
     useChatModel: raw.useChatModel !== false,
     excludeSummarized: raw.excludeSummarized !== false,
+    // SUMMARY_PRIOR_CONTEXT_PLAN (SPC-3): default ON + 10 most-recent priors.
+    includePriorSummaries: raw.includePriorSummaries !== false,
+    maxPriorSummaries,
     providerProfileId: typeof raw.providerProfileId === "string" ? raw.providerProfileId : undefined,
     model: typeof raw.model === "string" ? raw.model : undefined,
   };

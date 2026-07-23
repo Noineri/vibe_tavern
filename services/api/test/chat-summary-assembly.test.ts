@@ -25,11 +25,15 @@ function assembled(prompt: AssemblePromptResponse = {
 function makeLifecycle(
   assemblePrompt: ChatLifecycleRuntimeDeps["assemblePrompt"],
   messages: Array<{ id: string; position: number }> = [],
+  summaries: Array<{ id: string; label?: string; content: string; summarizedFrom: number; summarizedTo: number }> = [],
 ) {
   const deps = {
     stores: {
       chats: { getById: async () => chat },
       messages: { getMessages: async () => messages },
+      // SPC-3: assembleRangedSummaryPrompt now loads the preceding chain via
+      // listByChatBranch. Default empty → no priors (byte-equivalent).
+      chatSummaries: { listByChatBranch: async () => summaries },
     },
     assemblePrompt,
   } as unknown as ChatLifecycleRuntimeDeps;
@@ -94,14 +98,12 @@ describe("ChatLifecycleRuntime summary assembly", () => {
 
 // ─── SUMMARY_PRIOR_CONTEXT_PLAN W1 (SPC-1) ─────────────────────────
 //
-// Forward-looking absent pins: ranged and full summary assembly today pass NO
-// prior-summaries context to `assemblePrompt`. W3 will add `priorSummaries`
-// (ranged only) behind the `includePriorSummaries` toggle — at that point the
-// ranged pin must be retargeted to assert presence (toggle ON), while the full
-// `summarizeChat` pin must stay asserting absence (the full path is out of scope
-// and never loads priors).
+// Ranged and full summary assembly today pass NO prior-summaries context
+// when there are no preceding summaries. (W3 added prior-loading to ranged;
+// with an empty chain the ranged options stay byte-equivalent — pinned here.)
+// The full `summarizeChat` path never loads priors at all (out of scope).
 describe("ChatLifecycleRuntime prior-context characterization (SPC-1)", () => {
-  it("assembleRangedSummaryPrompt does not pass priorSummaries today", async () => {
+  it("assembleRangedSummaryPrompt omits priorSummaries when no preceding summaries exist", async () => {
     const calls: Array<Parameters<ChatLifecycleRuntimeDeps["assemblePrompt"]>> = [];
     const lifecycle = makeLifecycle(async (...args) => {
       calls.push(args);
@@ -122,7 +124,7 @@ describe("ChatLifecycleRuntime prior-context characterization (SPC-1)", () => {
     expect(calls[0][2].priorSummaries).toBeUndefined();
   });
 
-  it("assembleSummaryPrompt (full) does not pass priorSummaries today", async () => {
+  it("assembleSummaryPrompt (full) does not pass priorSummaries (out of scope)", async () => {
     const calls: Array<Parameters<ChatLifecycleRuntimeDeps["assemblePrompt"]>> = [];
     const lifecycle = makeLifecycle(async (...args) => {
       calls.push(args);
@@ -137,6 +139,102 @@ describe("ChatLifecycleRuntime prior-context characterization (SPC-1)", () => {
     });
 
     expect(calls[0][2].priorSummaries).toBeUndefined();
+  });
+});
+
+// ─── SUMMARY_PRIOR_CONTEXT_PLAN W3 (SPC-3): ranged prior-chain loading ────
+//
+// assembleRangedSummaryPrompt loads preceding summaries (summarizedTo < from),
+// count-capped to maxPriorSummaries most-recent, reversed to oldest→newest,
+// and passes them as priorSummaries. Toggle off / max=0 / no priors → omitted.
+describe("ChatLifecycleRuntime prior-chain loading (SPC-3)", () => {
+  const chain = [
+    { id: "s1", label: "Ch1", content: "first chapter", summarizedFrom: 1, summarizedTo: 10 },
+    { id: "s2", label: "Ch2", content: "second chapter", summarizedFrom: 11, summarizedTo: 20 },
+    { id: "s3", label: "Ch3", content: "third chapter", summarizedFrom: 21, summarizedTo: 30 },
+    { id: "s4", label: "Ch4", content: "fourth chapter", summarizedFrom: 31, summarizedTo: 40 },
+    { id: "s5", label: "Ch5", content: "fifth chapter", summarizedFrom: 41, summarizedTo: 50 },
+  ];
+
+  async function runRanged(opts: {
+    from: number;
+    to: number;
+    includePriorSummaries?: boolean;
+    maxPriorSummaries?: number;
+  }) {
+    const calls: Array<Parameters<ChatLifecycleRuntimeDeps["assemblePrompt"]>> = [];
+    const lifecycle = makeLifecycle(async (...args) => {
+      calls.push(args);
+      return assembled();
+    }, [], chain);
+    await lifecycle.assembleRangedSummaryPrompt({
+      chatId: "chat_1" as ChatId,
+      model: "summary-model",
+      summarizedFrom: opts.from,
+      summarizedTo: opts.to,
+      contextBudget: 8192,
+      ...(opts.includePriorSummaries !== undefined ? { includePriorSummaries: opts.includePriorSummaries } : {}),
+      ...(opts.maxPriorSummaries !== undefined ? { maxPriorSummaries: opts.maxPriorSummaries } : {}),
+    });
+    return calls[0][2];
+  }
+
+  it("passes preceding summaries (summarizedTo < from) as priorSummaries oldest→newest", async () => {
+    // ranged [61..70] → all 5 (summarizedTo <= 50 < 61) qualify, default cap 10.
+    const options = await runRanged({ from: 61, to: 70 });
+    expect(options.priorSummaries).toEqual([
+      { id: "s1", label: "Ch1", content: "first chapter" },
+      { id: "s2", label: "Ch2", content: "second chapter" },
+      { id: "s3", label: "Ch3", content: "third chapter" },
+      { id: "s4", label: "Ch4", content: "fourth chapter" },
+      { id: "s5", label: "Ch5", content: "fifth chapter" },
+    ]);
+    expect(options.summary).toBe(true);
+  });
+
+  it("caps to maxPriorSummaries most-recent and reverses to oldest→newest", async () => {
+    // ranged [61..70], cap 2 → most-recent [s5,s4] → reversed oldest-first [s4,s5].
+    const options = await runRanged({ from: 61, to: 70, maxPriorSummaries: 2 });
+    expect(options.priorSummaries).toEqual([
+      { id: "s4", label: "Ch4", content: "fourth chapter" },
+      { id: "s5", label: "Ch5", content: "fifth chapter" },
+    ]);
+  });
+
+  it("excludes summaries whose range does not end strictly before from (no overlap)", async () => {
+    // ranged [25..30]: s1(≤10), s2(≤20) qualify; s3(≤30) does NOT (30 >= 25).
+    const options = await runRanged({ from: 25, to: 30 });
+    expect(options.priorSummaries?.map((s) => s.id)).toEqual(["s1", "s2"]);
+  });
+
+  it("omits priorSummaries when includePriorSummaries is false", async () => {
+    const options = await runRanged({ from: 61, to: 70, includePriorSummaries: false });
+    expect(options.priorSummaries).toBeUndefined();
+  });
+
+  it("omits priorSummaries when maxPriorSummaries is 0", async () => {
+    const options = await runRanged({ from: 61, to: 70, maxPriorSummaries: 0 });
+    expect(options.priorSummaries).toBeUndefined();
+  });
+
+  it("falls back to a Trange label when the summary has none", async () => {
+    const calls: Array<Parameters<ChatLifecycleRuntimeDeps["assemblePrompt"]>> = [];
+    const lifecycle = makeLifecycle(async (...args) => {
+      calls.push(args);
+      return assembled();
+    }, [], [
+      { id: "sX", content: "no label body", summarizedFrom: 1, summarizedTo: 5 },
+    ]);
+    await lifecycle.assembleRangedSummaryPrompt({
+      chatId: "chat_1" as ChatId,
+      model: "summary-model",
+      summarizedFrom: 6,
+      summarizedTo: 10,
+      contextBudget: 2048,
+    });
+    expect(calls[0][2].priorSummaries).toEqual([
+      { id: "sX", label: "T1–T5", content: "no label body" },
+    ]);
   });
 });
 
@@ -177,6 +275,9 @@ describe("SessionRuntime summary assembly", () => {
       contextBudget: 4096,
       responseReserve: 512,
       presetId: "preset_1",
+      // SPC-3: priorSummaries threads through SessionRuntime.assemblePrompt →
+      // strategy.assemble → assembleForChat (so the pipeline layer receives it).
+      priorSummaries: [{ id: "prior_1", label: "Ch1", content: "earlier chapter" }],
     };
     await Reflect.apply(assemblePrompt, runtime, ["chat_1", "branch_1", options]);
 
