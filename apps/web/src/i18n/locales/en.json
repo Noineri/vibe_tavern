@@ -800,6 +800,8 @@
   "select_provider_error": "Select a provider profile.",
   "summarization_failed": "Summarization failed.",
   "summary_save_failed": "Summary save failed.",
+  "summary_generated_toast": "Memory updated — {label}",
+  "summary_review": "Review",
   "enabled": "Enabled",
   "disabled": "Disabled",
   "position_label": "Position",

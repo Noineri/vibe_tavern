@@ -20,6 +20,7 @@ import { usePresetController } from "../../hooks/use-preset-controller.js";
 import { useUpdateCheck } from "../../hooks/use-update-check.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
 import { useShellSurface } from "../../hooks/use-shell-surface.js";
+import { useChatEvents } from "../../hooks/use-chat-events.js";
 import { ContextMemoryModal } from "../modals/ContextMemoryModal.js";
 import { CreateCharacterModal } from "../modals/CreateCharacterModal.js";
 import { PersonaModal } from "../modals/PersonaModal.js";
@@ -91,6 +92,9 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
   useEffect(() => { void fetchPersonasAction(); }, []);
 
   const chat = useChatController();
+  // W7: subscribe to the per-chat SSE channel for background notifications
+  // (auto-summary). No-op when no chat is active.
+  useChatEvents(activeChatId);
   // Register the queue pump's runner (Q3) once runRegenerateJob is available.
   useGenerationQueue(chat.runRegenerateJob);
   const character = useCharacterController();

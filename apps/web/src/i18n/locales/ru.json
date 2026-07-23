@@ -802,6 +802,8 @@
   "select_provider_error": "Выберите профиль провайдера.",
   "summarization_failed": "Ошибка создания сводки.",
   "summary_save_failed": "Ошибка сохранения сводки.",
+  "summary_generated_toast": "Память обновлена — {label}",
+  "summary_review": "Открыть",
   "enabled": "Включена",
   "disabled": "Отключена",
   "position_label": "Позиция",

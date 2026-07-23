@@ -57,3 +57,8 @@ export {
   useMacroContext,
   type DisplayMessage,
 } from "./chat-selectors.js";
+
+export {
+  useChatNotifications,
+  type SummaryPulse,
+} from "./chat-notifications-store.js";
