@@ -303,6 +303,42 @@ describe("ScriptStore kind-split resolvers (DICE-B2)", () => {
 	});
 });
 
+// ─── Chat-local Dice override resolver (fix 1) ─────────────────────────────
+//
+// listDiceScriptsByIds backs the chat-local override: an explicit id set
+// replaces the inherited union for one chat. It must keep ONLY enabled dice
+// rows, drop disabled / deleted / non-dice / duplicate ids silently, and order
+// by sortOrder (deterministic, matching the inherit resolver — NOT the input
+// array order).
+
+describe("ScriptStore.listDiceScriptsByIds (chat-local override, fix 1)", () => {
+	test("returns exactly the matching enabled dice scripts, ordered by sortOrder", async () => {
+		const { store } = await setup();
+		const a = await store.create({ name: "A", scopeType: "global", enabled: true, scriptKind: "dice", sortOrder: 30 });
+		const b = await store.create({ name: "B", scopeType: "global", enabled: true, scriptKind: "dice", sortOrder: 10 });
+		const c = await store.create({ name: "C", scopeType: "global", enabled: true, scriptKind: "dice", sortOrder: 20 });
+		// Input order is [A, C, B]; output must be sorted by sortOrder → [B, C, A].
+		const resolved = await store.listDiceScriptsByIds([a.id, c.id, b.id]);
+		expect(resolved.map((s) => s.name)).toEqual(["B", "C", "A"]);
+	});
+
+	test("drops disabled, non-dice, and unknown ids silently", async () => {
+		const { store } = await setup();
+		const keep = await store.create({ name: "keep", scopeType: "global", enabled: true, scriptKind: "dice" });
+		await store.create({ name: "disabled", scopeType: "global", enabled: false, scriptKind: "dice" });
+		await store.create({ name: "prompt", scopeType: "global", enabled: true, scriptKind: "prompt" });
+		const resolved = await store.listDiceScriptsByIds([keep.id, "disabled", "prompt", "does-not-exist"]);
+		expect(resolved.map((s) => s.name)).toEqual(["keep"]);
+	});
+
+	test("deduplicates repeated ids and returns empty for an empty set", async () => {
+		const { store } = await setup();
+		const a = await store.create({ name: "A", scopeType: "global", enabled: true, scriptKind: "dice" });
+		expect((await store.listDiceScriptsByIds([a.id, a.id, a.id])).map((s) => s.name)).toEqual(["A"]);
+		expect(await store.listDiceScriptsByIds([])).toEqual([]);
+	});
+});
+
 // ─── DICE-B2: file-payload parity ───────────────────────────────────────────
 //
 // scriptKind IS canonical content (it round-trips through the file so a re-

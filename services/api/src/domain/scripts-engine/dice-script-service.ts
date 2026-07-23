@@ -125,6 +125,23 @@ export function validateRegistration(
   };
 }
 
+// ─── Effective actors (chat-local distribution) ───────────────────────────────
+
+/**
+ * Effective actors for one check under the chat-local per-script actor
+ * distribution (DICE_ASSIGNMENT_AND_TRAY_UX_REPORT Rework R1). An explicit
+ * binding for the script REPLACES the check's declared actors (full freedom —
+ * may expand beyond what the script declares, or narrow); with no binding the
+ * check's own declared `actors` are authoritative. The tray mirrors this rule
+ * client-side (declared actors from discovery, binding overlay from config).
+ */
+export function resolveEffectiveActors(
+  declared: readonly DiceActorType[],
+  binding: readonly DiceActorType[] | undefined,
+): readonly DiceActorType[] {
+  return binding ?? declared;
+}
+
 // ─── Discovery result ────────────────────────────────────────────────────────
 
 /** One script's validated checks for a chat (GET /definitions, grouped). */
@@ -196,15 +213,35 @@ export type DiceRollServiceResult =
  * schema validation (`diceDefinitionsResponseSchema`); this function returns
  * them as-is and lets the schema boundary enforce global uniqueness.
  */
-export async function discoverDiceScripts(
+
+/**
+ * Resolve the effective enabled Dice scripts for a chat, applying the
+ * chat-local override (DICE_ASSIGNMENT_AND_TRAY_UX_REPORT fix 1) when present.
+ * `diceScriptIds` is an array (including `[]`) → OVERRIDE: use exactly those
+ * ids, filtered to enabled + dice-kind (disabled/deleted/non-dice drop
+ * silently), ordered by `sortOrder`. `null`/`undefined` → INHERIT: the usual
+ * global/character/persona/chat-home ∪ char/persona link union. Actor
+ * restrictions declared by each check remain authoritative AFTER selection.
+ */
+async function resolveEffectiveDiceScripts(
   stores: StoreContainer,
-  input: { characterId: string; personaId: string | null; chatId: string },
-): Promise<DiceDefinitionsResponse> {
-  const scripts = await stores.scripts.listAllEnabledDiceScriptsForChat(
+  input: { characterId: string; personaId: string | null; chatId: string; diceScriptIds?: string[] | null },
+) {
+  if (Array.isArray(input.diceScriptIds)) {
+    return stores.scripts.listDiceScriptsByIds(input.diceScriptIds);
+  }
+  return stores.scripts.listAllEnabledDiceScriptsForChat(
     input.characterId,
     input.personaId,
     input.chatId,
   );
+}
+
+export async function discoverDiceScripts(
+  stores: StoreContainer,
+  input: { characterId: string; personaId: string | null; chatId: string; diceScriptIds?: string[] | null },
+): Promise<DiceDefinitionsResponse> {
+  const scripts = await resolveEffectiveDiceScripts(stores, input);
 
   const out: DiceScriptDefinitions[] = [];
   for (const script of scripts) {
@@ -250,6 +287,13 @@ export async function resolveDiceRoll(
     characterId: string;
     personaId: string | null;
     chatId: string;
+    /** Chat-local Dice override (fix 1): array = use exactly those ids;
+     *  null/undefined = inherit the resolver union. */
+    diceScriptIds?: string[] | null;
+    /** Chat-local per-script actor distribution (Rework R1): a record overrides
+     *  each script's declared check.actors for ALL of its checks (full freedom —
+     *  expand or narrow); null/undefined = use each check's declared actors. */
+    diceActorBindings?: Record<string, DiceActorType[]> | null;
     /** Prior authorized attempts for this check (Immersive retry context). */
     priorAttempts?: DiceAttempt[];
     /** The injected randomness source (crypto in prod, deterministic in tests). */
@@ -262,14 +306,17 @@ export async function resolveDiceRoll(
   if (script.scriptKind !== "dice") return err({ code: "script_not_dice" });
   if (!script.enabled) return err({ code: "script_disabled" });
 
-  // 2. Home/link eligibility: the script must be enabled for THIS chat. We
-  //    resolve the chat's enabled dice script set and verify membership rather
-  //    than trusting the caller's scriptId blindly.
-  const enabled = await stores.scripts.listAllEnabledDiceScriptsForChat(
-    input.characterId,
-    input.personaId,
-    input.chatId,
-  );
+  // 2. Home/link eligibility: the script must be enabled for THIS chat. When
+  //    a chat-local override is set (`diceScriptIds` is an array), eligibility
+  //    is the override set, NOT the inherited union — so a script the user
+  //    explicitly removed from this chat is rejected here even if it is still
+  //    inherited globally/character/persona.
+  const enabled = await resolveEffectiveDiceScripts(stores, {
+    characterId: input.characterId,
+    personaId: input.personaId,
+    chatId: input.chatId,
+    diceScriptIds: input.diceScriptIds,
+  });
   if (!enabled.some((s) => s.id === input.scriptId)) {
     return err({ code: "script_not_enabled_for_chat" });
   }
@@ -283,11 +330,18 @@ export async function resolveDiceRoll(
 
   const def = validateRegistration(targetReg);
   if (!def) return err({ code: "check_not_found", checkId: input.checkId });
-  if (!def.actors.includes(input.actorType)) {
+  // Apply the chat-local per-script actor distribution (Rework R1): an explicit
+  // binding replaces the check's declared actors (full freedom); without one
+  // the declared actors are authoritative. The tray mirrors this rule.
+  const effectiveActors = resolveEffectiveActors(
+    def.actors,
+    input.diceActorBindings?.[input.scriptId],
+  );
+  if (!effectiveActors.includes(input.actorType)) {
     return err({
       code: "actor_ineligible",
       actorType: input.actorType,
-      allowed: [...def.actors],
+      allowed: [...effectiveActors],
     });
   }
 

@@ -148,15 +148,16 @@ export function LorebookEditor({
   }, [view]);
 
   // ── Intent navigation hook ──
+  // Create intent: peek (ScriptEditor consumes it once its scope prop lands).
   useEffect(() => {
-    const intent = useBuildNavigationStore.getState().diceCreateIntent;
-    if (intent) {
+    const create = useBuildNavigationStore.getState().diceCreateIntent;
+    if (create) {
       if (tab !== "scripts") {
         setTab("scripts");
         writeStickyWorldLoreTab("scripts");
       }
-      if (intent.scope.type !== scope) {
-        setScope(intent.scope.type as Scope);
+      if (create.scope.type !== scope) {
+        setScope(create.scope.type as Scope);
       }
     }
   }, [tab, scope, setTab, setScope]);

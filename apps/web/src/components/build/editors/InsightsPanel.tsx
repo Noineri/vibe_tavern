@@ -1,19 +1,15 @@
-import { useState, useEffect, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { toast } from "sonner";
-import type { ChatId } from "@vibe-tavern/domain";
+import type { ChatId, DiceActorType } from "@vibe-tavern/domain";
 import { Ic } from "../../shared/icons.js";
 import { Toggle } from "../../shared/Toggle.js";
 import { EmptyState } from "../../shared/empty-state.js";
 import { ObjectiveConfig } from "./ObjectiveConfig.js";
 import { TrackerConfig } from "./TrackerConfig.js";
+import { DiceAssignment } from "./DiceAssignment.js";
 import { useT } from "../../../i18n/context.js";
 import { useSnapshotStore } from "../../../stores/snapshot-store.js";
 import { updateInsightsConfigAction } from "../../../stores/api-actions/chat-actions.js";
-import { useNavigationStore } from "../../../stores/navigation-store.js";
-import { useCharacterStore } from "../../../stores/character-store.js";
-import { useBuildNavigationStore } from "../../../stores/build-navigation-store.js";
-import { SegmentedControl } from "../../shared/SegmentedControl.js";
-import { listScripts } from "../../../app-client.js";
 
 /**
  * Insights build panel (INSIGHTS_PLAN INS-2). Two opt-in feature toggles —
@@ -41,7 +37,7 @@ export function InsightsPanel() {
   const [pending, setPending] = useState<{
     chatId: ChatId;
     which: "objective" | "tracker" | "dice";
-    patch: { objectiveEnabled?: boolean; trackerEnabled?: boolean; diceEnabled?: boolean; diceMode?: "normal" | "immersive" };
+    patch: { objectiveEnabled?: boolean; trackerEnabled?: boolean; diceEnabled?: boolean; diceMode?: "normal" | "immersive"; diceScriptIds?: string[] | null; diceActorBindings?: Record<string, DiceActorType[]> | null };
   } | null>(null);
 
   if (!activeChat) {
@@ -78,20 +74,17 @@ export function InsightsPanel() {
   const diceMode = pendingPatch?.diceMode
     ?? activeChat.insightsConfig?.diceMode
     ?? "normal";
+  // null/absent = inherit (resolver union); an array = explicit chat-local override.
+  const diceScriptIds = pendingPatch?.diceScriptIds
+    ?? activeChat.insightsConfig?.diceScriptIds
+    ?? null;
+  // null/absent = each check uses its declared actors; a record = explicit
+  // per-script actor distribution (Rework R1). Only meaningful in override mode.
+  const diceActorBindings = pendingPatch?.diceActorBindings
+    ?? activeChat.insightsConfig?.diceActorBindings
+    ?? null;
 
-  const [diceScriptsCount, setDiceScriptsCount] = useState<number | null>(null);
-  useEffect(() => {
-    if (!diceEnabled) return;
-    let cancelled = false;
-    listScripts("chat", chatId).then((scripts) => {
-      if (!cancelled) setDiceScriptsCount(scripts.filter(s => s.scriptKind === "dice" && s.enabled).length);
-    }).catch(() => {
-      if (!cancelled) setDiceScriptsCount(0);
-    });
-    return () => { cancelled = true; };
-  }, [chatId, diceEnabled]);
-
-  async function persist(patch: { objectiveEnabled?: boolean; trackerEnabled?: boolean; diceEnabled?: boolean; diceMode?: "normal" | "immersive" }, which: "objective" | "tracker" | "dice") {
+  async function persist(patch: { objectiveEnabled?: boolean; trackerEnabled?: boolean; diceEnabled?: boolean; diceMode?: "normal" | "immersive"; diceScriptIds?: string[] | null; diceActorBindings?: Record<string, DiceActorType[]> | null }, which: "objective" | "tracker" | "dice") {
     if (pending) return;
     setPending({ chatId, which, patch });
     try {
@@ -132,44 +125,14 @@ export function InsightsPanel() {
         onChange={(v) => void persist({ diceEnabled: v }, "dice")}
       />
       {diceEnabled && (
-        <div className="flex flex-col gap-3 rounded-lg border border-border bg-s2 p-4">
-          <div className="flex items-center justify-between">
-            <span className="font-ui text-[13px] text-t3">
-              {diceScriptsCount === null ? "..." : t("insights_dice_eligible", { count: diceScriptsCount })}
-            </span>
-            <SegmentedControl
-              value={diceMode}
-              options={[
-                { value: "normal", label: t("insights_dice_mode_normal"), tooltip: t("insights_dice_mode_normal_tip") },
-                { value: "immersive", label: t("insights_dice_mode_immersive"), tooltip: t("insights_dice_mode_immersive_tip") }
-              ]}
-              onChange={(v) => void persist({ diceMode: v as "normal" | "immersive" }, "dice")}
-              compact
-              disabled={pending !== null}
-            />
-          </div>
-          {diceScriptsCount === 0 && (
-            <div className="mt-2">
-              <EmptyState
-                icon={<Ic.dice />}
-                title={t("insights_dice_empty_title")}
-                sub={t("insights_dice_empty_sub")}
-                cta={t("insights_dice_empty_cta_fate")}
-                onCta={() => {
-                  useBuildNavigationStore.getState().requestDiceCreate({ scope: { type: "chat", id: chatId }, template: "fate_die" });
-                  useNavigationStore.getState().setMode("build");
-                  useCharacterStore.getState().setBuildTab("lorebook");
-                }}
-                secondaryCta={t("insights_dice_empty_cta_custom")}
-                onSecondaryCta={() => {
-                  useBuildNavigationStore.getState().requestDiceCreate({ scope: { type: "chat", id: chatId } });
-                  useNavigationStore.getState().setMode("build");
-                  useCharacterStore.getState().setBuildTab("lorebook");
-                }}
-              />
-            </div>
-          )}
-        </div>
+        <DiceAssignment
+          chatId={chatId}
+          diceMode={diceMode}
+          diceScriptIds={diceScriptIds}
+          diceActorBindings={diceActorBindings}
+          onPatch={(p) => void persist(p, "dice")}
+          pending={pending !== null}
+        />
       )}
       {!objectiveEnabled && !trackerEnabled && !diceEnabled && (
         <p className="px-1 pt-1 font-ui text-[11px] leading-relaxed text-t4">

@@ -214,9 +214,9 @@ describe("DicePanel", () => {
 });
 
 describe("DiceTray", () => {
-  it("disables a missing persona actor and rolls for the character", async () => {
+  it("hides the persona button when no persona is loaded and rolls for character", async () => {
     mocks.persona = null;
-    const { getByRole } = render(
+    const { queryByTestId, getByTestId } = render(
       <DiceTray
         chatId="chat_1"
         branchId="branch_1"
@@ -225,11 +225,12 @@ describe("DiceTray", () => {
         lane={lanes().normal}
         character={mocks.character}
         persona={null}
+        diceActorBindings={null}
       />,
     );
-
-    expect(getByRole("radio", { name: "dice_actor_persona" }).getAttribute("data-disabled")).not.toBeNull();
-    fireEvent.click(getByRole("button", { name: "dice_roll_check:Fate check" }));
+    // No persona loaded → no persona roll button; the character button remains.
+    expect(queryByTestId("roll-btn-persona-fate")).toBeNull();
+    fireEvent.click(getByTestId("roll-btn-character-fate"));
     await waitFor(() => expect(mocks.actions.roll).toHaveBeenCalledWith("chat_1", "branch_1", {
       scriptId: "script_1",
       checkId: "fate",
@@ -250,6 +251,7 @@ describe("DiceTray", () => {
         lane={lanes([roll]).normal}
         character={mocks.character}
         persona={mocks.persona}
+        diceActorBindings={null}
       />,
     );
 
@@ -273,17 +275,17 @@ describe("DiceTray", () => {
       ],
       final: undefined,
     });
-    const { getAllByRole, getByRole, rerender } = render(
-      <DiceTray
-        chatId="chat_1"
-        branchId="branch_1"
-        mode="immersive"
-        definitions={definitions}
-        lane={lanes([], [roll]).immersive}
-        character={mocks.character}
-        persona={mocks.persona}
-      />,
-    );
+    const props = {
+      chatId: "chat_1",
+      branchId: "branch_1",
+      mode: "immersive" as const,
+      definitions,
+      lane: lanes([], [roll]).immersive,
+      character: mocks.character,
+      persona: mocks.persona,
+      diceActorBindings: null as Record<string, ("persona" | "character")[]> | null,
+    };
+    const { getAllByRole, getByRole, rerender } = render(<DiceTray {...props} />);
 
     fireEvent.click(getAllByRole("button", { name: "dice_choose_attempt" })[1]);
     fireEvent.click(getByRole("button", { name: "dice_exclude_roll" }));
@@ -292,17 +294,7 @@ describe("DiceTray", () => {
       expect(mocks.actions.setIncluded).toHaveBeenCalledWith("chat_1", "branch_1", roll.rollId, false);
     });
 
-    rerender(
-      <DiceTray
-        chatId="chat_1"
-        branchId="branch_1"
-        mode="immersive"
-        definitions={definitions}
-        lane={lanes([], [{ ...roll, included: false }]).immersive}
-        character={mocks.character}
-        persona={mocks.persona}
-      />,
-    );
+    rerender(<DiceTray {...props} lane={lanes([], [{ ...roll, included: false }]).immersive} />);
     fireEvent.click(getByRole("button", { name: "dice_include_roll" }));
     await waitFor(() => expect(mocks.actions.setIncluded).toHaveBeenLastCalledWith("chat_1", "branch_1", roll.rollId, true));
   });
@@ -323,6 +315,7 @@ describe("DiceTray", () => {
         lane={lanes([], immersiveRolls).immersive}
         character={mocks.character}
         persona={mocks.persona}
+        diceActorBindings={null}
       />,
     );
     expect(getByText("dice_policy_replace")).toBeTruthy();
@@ -348,12 +341,138 @@ describe("DiceTray", () => {
         lane={lanes([], [stale]).immersive}
         character={mocks.character}
         persona={null}
+        diceActorBindings={null}
       />,
     );
     expect(getByText("dice_no_actor_title")).toBeTruthy();
     expect(getByText("dice_stale_actor_group")).toBeTruthy();
     fireEvent.click(getByRole("button", { name: "dice_remove_roll" }));
     await waitFor(() => expect(mocks.actions.removeRoll).toHaveBeenCalledWith("chat_1", "branch_1", stale.rollId));
+  });
+
+  // ── Per-check dual buttons + actor binding (Rework R3) ─────────────────────
+
+  const twoCheckDefinitions: DiceDefinitionsResponse = {
+    scripts: [
+      {
+        scriptId: "script_1",
+        scriptLabel: "Fate",
+        scriptRevision: 2,
+        checks: [
+          { id: "fate", label: "Fate check", notation: "1d20", actors: ["persona", "character"], resolution: "strict", faceShape: "d20", help: "Uncertain outcome." },
+          { id: "stealth", label: "Stealth check", notation: "1d20", actors: ["persona", "character"], resolution: "strict", faceShape: "d20", help: "Sneaking." },
+        ],
+      },
+    ],
+  };
+
+  it("renders an independent roll button per check (no shared selector) and rolls the targeted one", async () => {
+    const { getByTestId } = render(
+      <DiceTray
+        chatId="chat_1"
+        branchId="branch_1"
+        mode="normal"
+        definitions={twoCheckDefinitions}
+        lane={lanes().normal}
+        character={mocks.character}
+        persona={null}
+        diceActorBindings={null}
+      />,
+    );
+    // Each check exposes its own character roll button — no actor selector,
+    // no persistent single-check selection.
+    expect(getByTestId("roll-btn-character-fate")).toBeTruthy();
+    expect(getByTestId("roll-btn-character-stealth")).toBeTruthy();
+    fireEvent.click(getByTestId("roll-btn-character-stealth"));
+    await waitFor(() => expect(mocks.actions.roll).toHaveBeenCalledWith("chat_1", "branch_1", {
+      scriptId: "script_1",
+      checkId: "stealth",
+      actorType: "character",
+      actorId: "char_1",
+      mode: "normal",
+    }));
+  });
+
+  it("reflects per-check roll state on each actor button (idle vs reroll)", () => {
+    const rolled = makeRoll({ checkId: "fate", checkLabel: "Fate check" });
+    const { getByTestId } = render(
+      <DiceTray
+        chatId="chat_1"
+        branchId="branch_1"
+        mode="normal"
+        definitions={twoCheckDefinitions}
+        lane={lanes([rolled]).normal}
+        character={mocks.character}
+        persona={null}
+        diceActorBindings={null}
+      />,
+    );
+    // The rolled check's button is in reroll state; the other is idle.
+    expect(getByTestId("roll-btn-character-fate").getAttribute("aria-label")).toContain("dice_reroll");
+    expect(getByTestId("roll-btn-character-stealth").getAttribute("aria-label")).toContain("dice_roll");
+  });
+
+  it("hides the character button when the chat binding narrows the script to persona", () => {
+    // The check declares BOTH actors, but the chat binding removes character.
+    const { queryByTestId, getByTestId } = render(
+      <DiceTray
+        chatId="chat_1"
+        branchId="branch_1"
+        mode="normal"
+        definitions={definitions}
+        lane={lanes().normal}
+        character={mocks.character}
+        persona={mocks.persona}
+        diceActorBindings={{ script_1: ["persona"] }}
+      />,
+    );
+    expect(getByTestId("roll-btn-persona-fate")).toBeTruthy();
+    expect(queryByTestId("roll-btn-character-fate")).toBeNull();
+  });
+
+  it("shows the character button when the chat binding expands a persona-only check", () => {
+    const personaOnlyDefinitions: DiceDefinitionsResponse = {
+      scripts: [{ ...definitions.scripts[0], checks: [{ ...definitions.scripts[0].checks[0], actors: ["persona"] }] }],
+    };
+    // Declared persona-only, but the chat binding adds character (full freedom).
+    const { getByTestId } = render(
+      <DiceTray
+        chatId="chat_1"
+        branchId="branch_1"
+        mode="normal"
+        definitions={personaOnlyDefinitions}
+        lane={lanes().normal}
+        character={mocks.character}
+        persona={mocks.persona}
+        diceActorBindings={{ script_1: ["persona", "character"] }}
+      />,
+    );
+    expect(getByTestId("roll-btn-character-fate")).toBeTruthy();
+  });
+
+  it("uses the wide two-region layout on desktop and the stacked layout on mobile", () => {
+    const props = {
+      chatId: "chat_1",
+      branchId: "branch_1",
+      mode: "normal" as const,
+      definitions: twoCheckDefinitions,
+      lane: lanes().normal,
+      character: mocks.character,
+      persona: null as { id: string; name: string } | null,
+      diceActorBindings: null as Record<string, ("persona" | "character")[]> | null,
+    };
+    // Desktop: checks (left) + persona|character results (right).
+    mocks.mobile = false;
+    const { container, rerender } = render(<DiceTray {...props} />);
+    expect(container.querySelector('[data-dice-layout="wide"]')).toBeTruthy();
+    expect(container.querySelector('[data-dice-layout="narrow"]')).toBeNull();
+
+    // Mobile: checks sticky on top, results scroll underneath.
+    mocks.mobile = true;
+    rerender(<DiceTray {...props} />);
+    expect(container.querySelector('[data-dice-layout="narrow"]')).toBeTruthy();
+    expect(container.querySelector('[data-dice-layout="wide"]')).toBeNull();
+    mocks.mobile = false;
   });
 
   it("does not replay a roll animation when the same lane snapshot rerenders", () => {
@@ -366,9 +485,15 @@ describe("DiceTray", () => {
       lane: lanes([roll]).normal,
       character: mocks.character,
       persona: mocks.persona,
+      diceActorBindings: null as Record<string, ("persona" | "character")[]> | null,
     };
     const { container, rerender } = render(<DiceTray {...props} />);
     expect(container.querySelectorAll(".dice-settle").length).toBeGreaterThan(0);
+    // The class survives a mid-animation lane rerender (regression: it used to
+    // be stripped, so the user never saw motion). After the animation ends, a
+    // further rerender with the same rollKey must not re-add it (no replay).
+    const wrapper = container.querySelector(".dice-settle")!;
+    fireEvent.animationEnd(wrapper);
     rerender(<DiceTray {...props} lane={{ ...props.lane }} />);
     expect(container.querySelectorAll(".dice-settle")).toHaveLength(0);
   });

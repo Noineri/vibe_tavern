@@ -216,6 +216,20 @@ describe("useScriptPanel explicit save", () => {
     expect(vi.mocked(updateScript)).not.toHaveBeenCalled();
   });
 
+  it("keeps the Dice badge beside the test-panel title and bottom-aligns the run button", async () => {
+    serverScript = { ...baseScript, scriptKind: "dice" };
+    const { container } = render(<Harness />);
+    await openEditor(container);
+
+    const title = screen.getByText("script_test_panel");
+    const badge = screen.getByText("DICE");
+    expect(title.parentElement).toBe(badge.parentElement);
+    expect(title.parentElement?.getAttribute("class")).toContain("gap-2");
+
+    const runButton = screen.getByRole("button", { name: "script_test_run" });
+    expect(runButton.parentElement?.getAttribute("class")).toContain("items-end");
+  });
+
   it("appends a template to the draft without saving it", async () => {
     const { container } = render(<Harness />);
     const view = await openEditor(container);

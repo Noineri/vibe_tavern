@@ -3,6 +3,7 @@ import {
   OBJECTIVE_TASK_STATUS,
   SCENE_BACKFILL_MODE,
   DICE_MODE,
+  DICE_ACTOR_TYPE,
 } from "@vibe-tavern/domain";
 import { z } from "zod";
 import { sceneTrackerConfigSchema, updateTrackerConfigSchema } from "./tracker-schema.js";
@@ -33,6 +34,32 @@ export const insightsConfigSchema = z.object({
    * are granted. Old JSON without this field normalizes to "normal".
    */
   diceMode: z.enum([DICE_MODE.normal, DICE_MODE.immersive]).default(DICE_MODE.normal),
+  /**
+   * Chat-local Dice script override set (DICE_ASSIGNMENT_AND_TRAY_UX_REPORT
+   * fix 1). `null`/absent means INHERIT — discovery resolves the usual
+   * global/character/persona/chat-home ∪ char/persona link union. An array
+   * (including `[]`) means OVERRIDE — discovery uses EXACTLY those script ids
+   * for this chat, filtered to enabled + dice-kind (disabled/deleted/non-dice
+   * ids drop silently), ignoring inherited eligibility. Actor restrictions
+   * declared by each check remain authoritative after selection. Old JSON
+   * without this field normalizes to `null` (inherit) — no migration needed.
+   */
+  diceScriptIds: z.array(z.string().trim().min(1)).nullable().default(null),
+  /**
+   * Chat-local per-script actor distribution (DICE_ASSIGNMENT_AND_TRAY_UX_REPORT
+   * Rework R1 / Level 2). `null`/absent = no actor override — each check uses
+   * its own declared `actors`. A record maps a script id to the actors it is
+   * bound to IN THIS CHAT, replacing that script's declared `check.actors` for
+   * ALL of its checks (roll eligibility + tray button visibility). Full freedom:
+   * the user may add an actor the script did not declare (expand) or remove one
+   * (narrow); `check.actors` is only the default starting point, not a ceiling.
+   * Scripts in the override set but absent from this map fall back to their
+   * declared actors. Old JSON without this field normalizes to `null`.
+   */
+  diceActorBindings: z.record(
+    z.string().trim().min(1),
+    z.array(z.enum([DICE_ACTOR_TYPE.persona, DICE_ACTOR_TYPE.character])),
+  ).nullable().default(null),
   /**
    * Scene Tracker per-chat config (SCENE_TRACKER_PLAN SCN-2). Nested inside the
    * toggles JSON column (`insights_config_json.tracker`); absent on chats stored
@@ -65,6 +92,23 @@ export const updateInsightsConfigSchema = z.object({
      * PATCH preserves the stored value (partial-merge semantics).
      */
     diceMode: z.enum([DICE_MODE.normal, DICE_MODE.immersive]).optional(),
+    /**
+     * Chat-local Dice script override PATCH (DICE_ASSIGNMENT_AND_TRAY_UX_REPORT
+     * fix 1). Absent preserves the stored value; `null` returns to inherit;
+     * an array sets the explicit chat-local set. Default-free for partial-merge
+     * semantics (a default would silently reset an unmentioned override).
+     */
+    diceScriptIds: z.array(z.string().trim().min(1)).nullable().optional(),
+    /**
+     * Chat-local actor-distribution PATCH (Rework R1). Absent preserves stored;
+     * `null` clears the override (each check uses its declared actors); a record
+     * sets the explicit per-script binding. Default-free for partial-merge
+     * semantics (a default would silently reset an unmentioned binding).
+     */
+    diceActorBindings: z.record(
+      z.string().trim().min(1),
+      z.array(z.enum([DICE_ACTOR_TYPE.persona, DICE_ACTOR_TYPE.character])),
+    ).nullable().optional(),
     /**
      * Partial Scene config PATCH (default-free, mirrors updateObjectiveConfig):
      * the store deep-merges it field-by-field into the stored `tracker`

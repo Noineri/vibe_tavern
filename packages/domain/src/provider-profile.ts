@@ -8,6 +8,13 @@
  * Client-facing code should derive via:
  *   ClientProviderProfile = Omit<StoredProviderProfileRecord, 'apiKey'> & { hasStoredApiKey: boolean }
  */
+export const MODEL_FAVORITE_SCOPE = {
+  rp: "rp",
+  coauthor: "coauthor",
+} as const;
+
+export type ModelFavoriteScope = typeof MODEL_FAVORITE_SCOPE[keyof typeof MODEL_FAVORITE_SCOPE];
+
 export interface StoredProviderProfileRecord {
   id: string;
   name: string;

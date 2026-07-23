@@ -42,7 +42,7 @@ import type {
 	ScriptLink,
 	UiSettings,
 } from "@vibe-tavern/db";
-import type { ModelSettingsOverlay } from "@vibe-tavern/domain";
+import type { ModelFavoriteScope, ModelSettingsOverlay } from "@vibe-tavern/domain";
 import type { LorebookRow, LoreEntryRow, ScriptRow } from "@vibe-tavern/db";
 import type { RegenerateOverride, CoauthorApplyRequest } from "@vibe-tavern/api-contracts";
 import type { ProviderProbeResult, ProviderModelOption, TestChatResult } from "../../domain/providers/provider-gateway.js";
@@ -350,9 +350,9 @@ export interface ProviderRuntimeApi {
 	testProviderDraft: (body: { endpoint?: string; apiKey?: string; providerType?: string } | null) => Promise<ProviderProbeResult>;
 	testProviderProfile: (providerProfileId: string) => Promise<ProviderProbeResult>;
 	fetchProviderModels: (providerProfileId: string) => Promise<{ models: ProviderModelOption[] }>;
-	listFavoriteProviderModels: (providerProfileId: string) => Promise<FavoriteModel[]>;
-	addFavoriteProviderModel: (providerProfileId: string, body: { modelId: string; label?: string | null; contextLength?: number | null }) => Promise<FavoriteModel>;
-	removeFavoriteProviderModel: (providerProfileId: string, modelId: string) => Promise<void>;
+	listFavoriteProviderModels: (providerProfileId: string, scope: ModelFavoriteScope) => Promise<FavoriteModel[]>;
+	addFavoriteProviderModel: (providerProfileId: string, body: { modelId: string; label?: string | null; contextLength?: number | null; scope: ModelFavoriteScope }) => Promise<FavoriteModel>;
+	removeFavoriteProviderModel: (providerProfileId: string, body: { modelId: string; scope: ModelFavoriteScope }) => Promise<void>;
 	listProviderModelSettings: (providerProfileId: string) => Promise<ProviderModelSettings[]>;
 	getProviderModelSettings: (providerProfileId: string, modelId: string) => Promise<ProviderModelSettings | null>;
 	upsertProviderModelSettings: (providerProfileId: string, modelId: string, settings: ModelSettingsOverlay) => Promise<ProviderModelSettings>;

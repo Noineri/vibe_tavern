@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { type SamplerFieldId } from "@vibe-tavern/domain";
+import { MODEL_FAVORITE_SCOPE, type SamplerFieldId } from "@vibe-tavern/domain";
 
 /**
  * Per-sampler-field zod schema — the single source of the sampler wire surface.
@@ -81,10 +81,17 @@ export const saveProviderDraftSchema = providerCoreSchema.extend({
 
 export const updateProviderProfileSchema = providerCoreSchema.partial();
 
+export const modelFavoriteScopeSchema = z.enum([MODEL_FAVORITE_SCOPE.rp, MODEL_FAVORITE_SCOPE.coauthor]);
+
+export const favoriteProviderModelQuerySchema = z.object({
+  scope: modelFavoriteScopeSchema.default(MODEL_FAVORITE_SCOPE.rp),
+});
+
 export const favoriteProviderModelSchema = z.object({
   modelId: z.string().min(1),
   label: z.string().nullable().optional(),
   contextLength: z.number().int().nullable().optional(),
+  scope: modelFavoriteScopeSchema.default(MODEL_FAVORITE_SCOPE.rp),
 });
 
 /**

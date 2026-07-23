@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import type { ProviderProbeResponse } from "@vibe-tavern/domain";
-import { PROVIDER_TYPE, tag } from "@vibe-tavern/domain";
+import { MODEL_FAVORITE_SCOPE, PROVIDER_TYPE, tag } from "@vibe-tavern/domain";
 import { getT } from "../i18n/locale-helpers.js";
 import { computeHydration } from "./hydrate-provider.js";
 import { computeSavePatch, computeOverlayPatch, connectionToSavePatch, validateSavePatch, buildFavoriteModelSwitchPatch } from "./save-provider-patch.js";
@@ -48,7 +48,7 @@ export function useProviderProfiles() {
   
   useEffect(() => {
     if (favoritesProfileId) {
-      void loadFavoriteModelsAction(favoritesProfileId);
+      void loadFavoriteModelsAction(favoritesProfileId, MODEL_FAVORITE_SCOPE.rp);
     }
   }, [favoritesProfileId]);
 
@@ -413,7 +413,7 @@ export function useProviderProfiles() {
   }, []);
 
   async function handleLoadFavoriteProviderModels(providerProfileId: string): Promise<FavoriteProviderModelRecord[]> {
-    await loadFavoriteModelsAction(providerProfileId);
+    await loadFavoriteModelsAction(providerProfileId, MODEL_FAVORITE_SCOPE.rp);
     return useProviderDataStore.getState().favoritesByProfile[providerProfileId] ?? [];
   }
 
@@ -428,7 +428,8 @@ export function useProviderProfiles() {
       model.id,
       model.label,
       model.contextLength,
-      isFavorite
+      isFavorite,
+      MODEL_FAVORITE_SCOPE.rp,
     );
   }
 

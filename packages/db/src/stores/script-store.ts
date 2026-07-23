@@ -386,6 +386,27 @@ export class ScriptStore {
       .sort((a, b) => a.sortOrder - b.sortOrder);
   }
 
+  // ─── Chat-local Dice override resolution ─────────────────────────────
+
+  /**
+   * Resolve an explicit set of script ids for a chat-local Dice override
+   * (DICE_ASSIGNMENT_AND_TRAY_UX_REPORT fix 1). Fetches by id, then keeps ONLY
+   * enabled dice-kind rows — disabled / deleted / non-dice / duplicate ids drop
+   * silently (the override is a best-effort selection, not a hard constraint).
+   * Ordered by `sortOrder` so the override list is deterministic and matches
+   * the inherit resolver's ordering rather than the array's input order.
+   */
+  async listDiceScriptsByIds(ids: string[]): Promise<Script[]> {
+    const unique = [...new Set(ids)].filter((id) => id.length > 0);
+    if (unique.length === 0) return [];
+    const rows = await this.db
+      .select()
+      .from(scripts)
+      .where(and(inArray(scripts.id, unique), eq(scripts.enabled, 1), eq(scripts.scriptKind, 'dice')))
+      .all();
+    return rows.map((r) => this.mapRow(r)).sort((a, b) => a.sortOrder - b.sortOrder);
+  }
+
   // ─── Link management (mirrors LorebookStore link methods) ─────────────────
 
   /**

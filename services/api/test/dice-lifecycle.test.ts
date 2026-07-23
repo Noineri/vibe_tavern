@@ -5,9 +5,10 @@ import { tmpdir } from "node:os";
 
 import { createRuntimeStore } from "../src/runtime/session/session-runtime-store.js";
 import { SessionRuntime } from "../src/runtime/session/session-runtime.js";
+import { DiceService } from "../src/domain/dice/dice-service.js";
 import type { ChatApplicationService } from "../src/domain/chat/chat-application-service.js";
 import type { ChatId, MessageId, ChatBranchId } from "@vibe-tavern/domain";
-import type { DiceRollStore, MessageStore, ChatStore } from "@vibe-tavern/db";
+import type { StoreContainer, DiceRollStore, MessageStore, ChatStore } from "@vibe-tavern/db";
 
 // DICE-B12 (Wave B4 unit 3) — service-level lifecycle boundary. The db-level
 // tests (packages/db/test/dice-roll-store.test.ts + chat-store-fork-dice.test.ts)
@@ -22,6 +23,7 @@ import type { DiceRollStore, MessageStore, ChatStore } from "@vibe-tavern/db";
 const tmpDirs: string[] = [];
 
 interface Setup {
+  stores: StoreContainer;
   chatApp: ChatApplicationService;
   diceRolls: DiceRollStore;
   messages: MessageStore;
@@ -49,7 +51,7 @@ async function setup(): Promise<Setup> {
   const chatId = created.activeChatId;
   const chat = await stores.chats.getById(chatId);
   const branchId = chat!.activeBranchId;
-  return { chatApp: runtime.chatApp, diceRolls: stores.diceRolls, messages: stores.messages, chats: stores.chats, chatId, branchId };
+  return { stores, chatApp: runtime.chatApp, diceRolls: stores.diceRolls, messages: stores.messages, chats: stores.chats, chatId, branchId };
 }
 
 function rollInput(overrides: Record<string, unknown> = {}) {
@@ -90,6 +92,96 @@ async function userMessageWithBoundRoll(s: Setup, content: string, reqId: string
 
 afterAll(async () => {
   await Promise.all(tmpDirs.map((d) => rm(d, { recursive: true, force: true }).catch(() => {})));
+});
+
+describe("DiceService.removeRoll — ownership check (no fake-lane FK crash)", () => {
+  // Regression: removeRoll used to call getOrCreateLane(chatId, "", roll.mode)
+  // to verify ownership, which INSERTed a lane row with an empty branch_id and
+  // tripped the branch_id FOREIGN KEY (SQLITE_CONSTRAINT_FOREIGNKEY) before the
+  // roll was ever deleted. The fix verifies ownership via a roll→lane join and
+  // never creates a lane.
+  it("deletes a character roll without a FOREIGN KEY error and 404s on a foreign chat", async () => {
+    const s = await setup();
+    const diceService = new DiceService(s.stores, { next: () => 0 });
+
+    // A roll for the character actor — exactly the path the user reported.
+    const created = await s.diceRolls.createRoll({
+      chatId: s.chatId as string, branchId: s.branchId, mode: "normal",
+      ...rollInput({
+        requestId: "req_remove_char",
+        actorType: "character",
+        actorId: (await s.chats.getById(s.chatId))!.characterId,
+        actorLabel: "Hero",
+      }),
+    });
+
+    const ok = await diceService.removeRoll(s.chatId as string, created.id);
+    expect(ok.ok).toBe(true);
+    expect(await s.diceRolls.getRollById(created.id)).toBeNull();
+
+    // A second roll: removing it via a WRONG chatId must 404, not delete.
+    const other = await s.diceRolls.createRoll({
+      chatId: s.chatId as string, branchId: s.branchId, mode: "normal",
+      ...rollInput({ requestId: "req_remove_2" }),
+    });
+    const foreign = await diceService.removeRoll("chat_does_not_exist", other.id);
+    expect(foreign.ok).toBe(false);
+    if (!foreign.ok) expect(foreign.error.status).toBe(404);
+    expect(await s.diceRolls.getRollById(other.id)).not.toBeNull();
+  });
+});
+
+describe("DiceService.listDefinitions — reads chat-local override from config (fix 1)", () => {
+  // Pins the config→resolver threading: resolveChatContext must read
+  // insightsConfig.diceScriptIds and pass it to discoverDiceScripts. Without
+  // this, an override set in Insights silently has no effect on discovery.
+  const OVERRIDE_CODE_A = `
+context.dice.register({
+  id: 'a', label: 'A', notation: '1d20', actors: ['persona','character'],
+  resolution: 'narrative',
+  resolve() { var r = context.dice.roll('1d20'); return { faces: r.faces, modifier: 0, subtotal: r.subtotal, total: r.total }; }
+});`;
+  const OVERRIDE_CODE_B = `
+context.dice.register({
+  id: 'b', label: 'B', notation: '1d20', actors: ['persona','character'],
+  resolution: 'narrative',
+  resolve() { var r = context.dice.roll('1d20'); return { faces: r.faces, modifier: 0, subtotal: r.subtotal, total: r.total }; }
+});`;
+
+  it("override in chat config narrows discovery to the explicit set; null inherits all", async () => {
+    const s = await setup();
+    const diceService = new DiceService(s.stores, { next: () => 0 });
+
+    // Two chat-scoped dice scripts — both inherit-eligible for this chat.
+    const a = await s.stores.scripts.create({
+      name: "A", scopeType: "chat", chatId: s.chatId as string,
+      enabled: true, scriptKind: "dice", code: OVERRIDE_CODE_A,
+    });
+    const b = await s.stores.scripts.create({
+      name: "B", scopeType: "chat", chatId: s.chatId as string,
+      enabled: true, scriptKind: "dice", code: OVERRIDE_CODE_B,
+    });
+
+    // Enable dice + set an override selecting ONLY A.
+    await s.chats.updateInsightsConfig(s.chatId as string, {
+      insightsConfig: { diceEnabled: true, diceScriptIds: [a.id] },
+    });
+    const narrowed = await diceService.listDefinitions(s.chatId as string);
+    expect(narrowed.ok).toBe(true);
+    if (narrowed.ok) {
+      expect(narrowed.data.scripts.map((sc) => sc.scriptId)).toEqual([a.id]);
+    }
+
+    // Return to inherit (null) → both scripts visible again.
+    await s.chats.updateInsightsConfig(s.chatId as string, {
+      insightsConfig: { diceScriptIds: null },
+    });
+    const inherited = await diceService.listDefinitions(s.chatId as string);
+    expect(inherited.ok).toBe(true);
+    if (inherited.ok) {
+      expect(inherited.data.scripts.map((sc) => sc.scriptId).sort()).toEqual([a.id, b.id].sort());
+    }
+  });
 });
 
 describe("DICE-B12 lifecycle — fork / delete / edit / variants", () => {

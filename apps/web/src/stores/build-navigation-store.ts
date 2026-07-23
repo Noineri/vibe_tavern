@@ -1,11 +1,17 @@
 import { create } from "zustand";
 
+export type DiceScope =
+  | { type: "chat"; id: string }
+  | { type: "global" }
+  | { type: "character"; id: string }
+  | { type: "persona"; id: string };
+
 export interface DiceCreateIntent {
   panel: "lorebook";
   tab: "scripts";
   action: "create";
   scriptKind: "dice";
-  scope: { type: "chat"; id: string } | { type: "global" } | { type: "character"; id: string } | { type: "persona"; id: string };
+  scope: DiceScope;
   template?: "fate_die";
   createIntentId: string;
 }
