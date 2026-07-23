@@ -631,8 +631,11 @@ export function useSummaryTab({
             min={1}
             max={500}
             value={autoConfig.everyN}
-            onChange={(v) => setAutoConfig({ ...autoConfig, everyN: v })}
-            onBlur={() => void commitMemorySettings()}
+            onChange={(v) => {
+              const next = { ...autoConfig, everyN: v };
+              setAutoConfig(next);
+              void commitMemorySettings({ autoConfig: next });
+            }}
           />
           <span>{t("summary_auto_messages")}</span>
         </div>
@@ -661,8 +664,11 @@ export function useSummaryTab({
               min={0}
               max={100}
               value={autoConfig.maxPriorSummaries}
-              onChange={(v) => setAutoConfig({ ...autoConfig, maxPriorSummaries: v })}
-              onBlur={() => void commitMemorySettings()}
+              onChange={(v) => {
+                const next = { ...autoConfig, maxPriorSummaries: v };
+                setAutoConfig(next);
+                void commitMemorySettings({ autoConfig: next });
+              }}
             />
           </div>
         )}
@@ -678,8 +684,8 @@ export function useSummaryTab({
               type="range" min={0} max={Math.max(1, messageCount)}
               value={Math.min(historyLimit, Math.max(1, messageCount))}
               onChange={(e) => setHistoryLimit(Number(e.target.value))}
-              onMouseUp={() => void commitMemorySettings()}
-              onTouchEnd={() => void commitMemorySettings()}
+              onMouseUp={(e) => void commitMemorySettings({ historyLimit: Number((e.target as HTMLInputElement).value) })}
+              onTouchEnd={(e) => void commitMemorySettings({ historyLimit: Number((e.target as HTMLInputElement).value) })}
             />
             <NumberInput
               className="w-[80px] shrink-0"
@@ -688,8 +694,10 @@ export function useSummaryTab({
               min={0}
               max={Math.max(1, messageCount)}
               value={historyLimit}
-              onChange={(v) => setHistoryLimit(v)}
-              onBlur={() => void commitMemorySettings()}
+              onChange={(v) => {
+                setHistoryLimit(v);
+                void commitMemorySettings({ historyLimit: v });
+              }}
             />
           </div>
         </section>
@@ -716,8 +724,8 @@ export function useSummaryTab({
             type="range" min={0} max={Math.max(1, messageCount)}
             value={Math.min(historyLimit, Math.max(1, messageCount))}
             onChange={(e) => setHistoryLimit(Number(e.target.value))}
-            onMouseUp={() => void commitMemorySettings()}
-            onTouchEnd={() => void commitMemorySettings()}
+            onMouseUp={(e) => void commitMemorySettings({ historyLimit: Number((e.target as HTMLInputElement).value) })}
+            onTouchEnd={(e) => void commitMemorySettings({ historyLimit: Number((e.target as HTMLInputElement).value) })}
           />
           <NumberInput
             className="w-[80px] shrink-0"
@@ -726,8 +734,10 @@ export function useSummaryTab({
             min={0}
             max={Math.max(1, messageCount)}
             value={historyLimit}
-            onChange={(v) => setHistoryLimit(v)}
-            onBlur={() => void commitMemorySettings()}
+            onChange={(v) => {
+              setHistoryLimit(v);
+              void commitMemorySettings({ historyLimit: v });
+            }}
           />
         </div>
       )}
