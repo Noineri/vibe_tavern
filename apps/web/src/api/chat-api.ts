@@ -387,6 +387,10 @@ export async function generateChatSummary(
     label?: string;
     includeInContext?: boolean;
     excludeSummarized?: boolean;
+    /** SUMMARY_PRIOR_CONTEXT_PLAN: include preceding summaries as continuity. */
+    includePriorSummaries?: boolean;
+    /** SUMMARY_PRIOR_CONTEXT_PLAN: cap on how many preceding summaries to include. */
+    maxPriorSummaries?: number;
   },
   options?: { signal?: AbortSignal },
 ): Promise<{ summary: string; chatSummary: ChatSummaryRecord; snapshot: AppSnapshot }> {

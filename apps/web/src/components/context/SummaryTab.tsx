@@ -33,6 +33,8 @@ const DEFAULT_AUTO_CONFIG: AutoSummaryConfig = {
   everyN: 20,
   useChatModel: true,
   excludeSummarized: true,
+  includePriorSummaries: true,
+  maxPriorSummaries: 10,
 };
 
 export interface ContextMemoryModalProps {
@@ -104,6 +106,10 @@ export function useSummaryTab({
   const [rangeTo, setRangeTo] = useState(Math.max(1, messageCount));
   const [includeInContext, setIncludeInContext] = useState(true);
   const [excludeSummarized, setExcludeSummarized] = useState(true);
+  // SUMMARY_PRIOR_CONTEXT_PLAN W5: manual-ranged prior-context controls
+  // (default true/10, mirroring the auto config; passed into generateChatSummary).
+  const [rangedIncludePrior, setRangedIncludePrior] = useState(true);
+  const [rangedMaxPrior, setRangedMaxPrior] = useState(10);
   const [dirty, setDirty] = useState(false);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -355,6 +361,8 @@ export function useSummaryTab({
         label: draftLabel.trim() || `T${rangeFrom}\u2013T${rangeTo}`,
         includeInContext,
         excludeSummarized,
+        includePriorSummaries: rangedIncludePrior,
+        maxPriorSummaries: rangedIncludePrior ? rangedMaxPrior : 0,
       }, abort.signal);
       setSummaries((prev) => upsertSummary(prev, generated));
       selectSummary(generated);
@@ -478,6 +486,27 @@ export function useSummaryTab({
         <Toggle checked={excludeSummarized} onChange={(v) => { setExcludeSummarized(v); setDirty(true); }} />
         {t("summary_exclude_toggle")}
       </label>
+
+      {/* ── Prior-summaries context (ranged generate) ── SUMMARY_PRIOR_CONTEXT_PLAN W5 */}
+      <label className="mt-2 flex items-center gap-2 font-ui text-[13px] text-t2">
+        <Toggle checked={rangedIncludePrior} onChange={setRangedIncludePrior} disabled={generating} />
+        {t("summary_prior_toggle")}
+      </label>
+      {rangedIncludePrior && (
+        <div className="mt-1.5 flex items-center gap-2 pl-6 font-ui text-[12px] text-t3">
+          <span>{t("summary_prior_max")}</span>
+          <NumberInput
+            className="w-[80px] shrink-0"
+            inputClassName="text-center"
+            hideControls
+            min={0}
+            max={100}
+            value={rangedMaxPrior}
+            onChange={setRangedMaxPrior}
+            disabled={generating}
+          />
+        </div>
+      )}
 
       {/* ── Summary text ── */}
       <section className="mt-4">
@@ -614,6 +643,29 @@ export function useSummaryTab({
           />
           {t("summary_auto_exclude_toggle")}
         </label>
+        {/* ── Prior-summaries context (auto) ── SUMMARY_PRIOR_CONTEXT_PLAN W5 */}
+        <label className="mt-3 flex items-center gap-2 font-ui text-[13px] text-t2">
+          <Toggle
+            checked={autoConfig.includePriorSummaries}
+            onChange={(v) => void commitMemorySettings({ autoConfig: { ...autoConfig, includePriorSummaries: v } })}
+          />
+          {t("summary_prior_toggle")}
+        </label>
+        {autoConfig.includePriorSummaries && (
+          <div className="mt-1.5 flex items-center gap-2 pl-6 font-ui text-[12px] text-t3">
+            <span>{t("summary_prior_max")}</span>
+            <NumberInput
+              className="w-[80px] shrink-0"
+              inputClassName="text-center"
+              hideControls
+              min={0}
+              max={100}
+              value={autoConfig.maxPriorSummaries}
+              onChange={(v) => setAutoConfig({ ...autoConfig, maxPriorSummaries: v })}
+              onBlur={() => void commitMemorySettings()}
+            />
+          </div>
+        )}
       </section>
 
       {/* ── Messages in prompt (mobile: moved here from footer) ── */}

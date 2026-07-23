@@ -781,6 +781,8 @@
   "summary_auto_every": "Каждые",
   "summary_auto_messages": "сообщений вызывает пересказ",
   "summary_auto_exclude_toggle": "Исключать сведённые сообщения из контекста",
+  "summary_prior_toggle": "Включать предыдущие саммари как контекст",
+  "summary_prior_max": "Макс. саммари",
   "summary_messages_in_prompt": "Сообщений в промпте",
   "summary_source_auto": "авто",
   "summary_source_manual": "вручную",

@@ -59,6 +59,12 @@ export interface AutoSummaryConfig {
   everyN: number;
   useChatModel: boolean;
   excludeSummarized: boolean;
+  /** SUMMARY_PRIOR_CONTEXT_PLAN: include preceding summaries as read-only
+   *  continuity context so auto-generated summaries are continuation-aware. */
+  includePriorSummaries: boolean;
+  /** SUMMARY_PRIOR_CONTEXT_PLAN: how many of the most-recent preceding summaries
+   *  to include when `includePriorSummaries` is on (count-based user control). */
+  maxPriorSummaries: number;
   providerProfileId?: string;
   model?: string;
 }

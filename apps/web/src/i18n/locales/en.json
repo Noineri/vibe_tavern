@@ -779,6 +779,8 @@
   "summary_auto_every": "Every",
   "summary_auto_messages": "messages triggers a recap",
   "summary_auto_exclude_toggle": "Exclude summarized messages from context",
+  "summary_prior_toggle": "Include prior summaries as context",
+  "summary_prior_max": "Max prior",
   "summary_messages_in_prompt": "Messages in prompt",
   "summary_source_auto": "auto",
   "summary_source_manual": "manual",
