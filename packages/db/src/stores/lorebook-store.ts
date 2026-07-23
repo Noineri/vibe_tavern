@@ -620,11 +620,16 @@ export class LorebookStore {
    */
   async reorderEntries(lorebookId: string, updates: Array<{ id: string; sortOrder: number; position?: string }>): Promise<LoreEntry[]> {
     const now = this.clock.now();
-    await this.db.transaction(async (tx) => {
+    // Synchronous callback (ASYNC_TRANSACTION_AUDIT step 3): drizzle-orm 0.38.4
+    // + bun:sqlite commits at the end of the callback's synchronous prefix, so
+    // an async callback's post-await throw is never rolled back. Keeping this
+    // synchronous means a failure partway through the reorder rolls the earlier
+    // updates back — the prior complete order survives.
+    this.db.transaction((tx) => {
       for (const u of updates) {
         const values: Partial<typeof loreEntries.$inferInsert> = { sortOrder: u.sortOrder, updatedAt: now };
         if (u.position !== undefined) values.position = u.position;
-        await tx
+        tx
           .update(loreEntries)
           .set(values)
           .where(and(eq(loreEntries.id, u.id), eq(loreEntries.lorebookId, lorebookId)))
@@ -742,10 +747,13 @@ export class LorebookStore {
     const lorebookIds: string[] = [];
     const entryIds: string[] = [];
 
-    await this.db.transaction(async (tx) => {
+    // Synchronous callback (ASYNC_TRANSACTION_AUDIT step 3): see reorderEntries.
+    // syncFile runs AFTER this transaction commits (below), so it stays outside
+    // the DB callback — only synchronous bun:sqlite work happens here.
+    this.db.transaction((tx) => {
       for (const lb of bundle.lorebooks) {
         const charScoped = lb.scopeType === 'character';
-        await tx
+        tx
           .insert(lorebooks)
           .values({
             id: lb.id,
@@ -792,7 +800,7 @@ export class LorebookStore {
         // by the activation engine (FK ∪ junction) without the user binding it
         // manually. Non-character scopes do not create a character link.
         if (charScoped) {
-          await tx
+          tx
             .insert(lorebookLinks)
             .values({ lorebookId: lb.id, targetType: 'character', targetId: characterId })
             .onConflictDoNothing()
@@ -812,7 +820,7 @@ export class LorebookStore {
           logic: e.logic,
           enabled: e.enabled,
         });
-        await tx
+        tx
           .insert(loreEntries)
           .values({ id: e.id, lorebookId: e.lorebookId, createdAt: now, updatedAt: now, ...fields })
           .onConflictDoUpdate({
@@ -968,10 +976,26 @@ export class LorebookStore {
    * Replace all links for a lorebook. Deletes existing and inserts new ones in a transaction.
    */
   async setLinks(lorebookId: string, links: Array<{ targetType: string; targetId: string }>): Promise<LorebookLink[]> {
-    await this.db.transaction(async (tx) => {
-      await tx.delete(lorebookLinks).where(eq(lorebookLinks.lorebookId, lorebookId)).run();
-      for (const link of links) {
-        await tx.insert(lorebookLinks).values({
+    // Dedup by (targetType, targetId) BEFORE the delete: the junction table
+    // has a composite PK on those columns, so a duplicate tuple in the input
+    // would violate the PK on the second insert — AFTER the old set is already
+    // deleted, leaving the graph empty. Normalizing first keeps the replace whole.
+    const seen = new Set<string>();
+    const unique: Array<{ targetType: string; targetId: string }> = [];
+    for (const link of links) {
+      const key = JSON.stringify([link.targetType, link.targetId]);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      unique.push(link);
+    }
+
+    // Synchronous callback (ASYNC_TRANSACTION_AUDIT step 3): see reorderEntries.
+    // A failure on a later link insert rolls the delete back too — the prior
+    // complete graph survives instead of being wiped to empty.
+    this.db.transaction((tx) => {
+      tx.delete(lorebookLinks).where(eq(lorebookLinks.lorebookId, lorebookId)).run();
+      for (const link of unique) {
+        tx.insert(lorebookLinks).values({
           lorebookId,
           targetType: link.targetType,
           targetId: link.targetId,
