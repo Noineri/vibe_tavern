@@ -317,7 +317,7 @@ function makeSummaryService() {
     capturedPrompt = prompt;
     return { text: "A concise summary." } as Awaited<ReturnType<typeof nonstreamingProviderExecute>>;
   };
-  return new ChatSummaryService(stores, runtime, profiles as never, execute);
+  return new ChatSummaryService(stores, runtime, profiles as never, null, execute);
 }
 
 describe("PromptAssemblyService summary preparation", () => {

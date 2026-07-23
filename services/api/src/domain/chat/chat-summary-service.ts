@@ -1,4 +1,4 @@
-import { brandId, normalizeProviderType, resolveEffectiveSettings, PROVIDER_TYPE, type ChatId } from "@vibe-tavern/domain";
+import { brandId, normalizeProviderType, resolveEffectiveSettings, PROVIDER_TYPE, type ChatId, type EventBus } from "@vibe-tavern/domain";
 import type { StoreContainer } from "@vibe-tavern/db";
 import type { SessionRuntime } from "../../runtime/session/session-runtime.js";
 import type { ConfigPatchResponse, SummaryResponse } from "../../api/contract/session-types.js";
@@ -54,6 +54,8 @@ export class ChatSummaryService {
     private readonly stores: StoreContainer,
     private readonly sessionRuntime: SessionRuntime,
     private readonly providerProfiles: ProviderProfileService,
+    /** Typed bus for background notifications (W7). Optional so non-runtime callers (tests) need not supply one. */
+    private readonly events: EventBus | null = null,
     private readonly execute: typeof nonstreamingProviderExecute = nonstreamingProviderExecute,
   ) {}
 
@@ -246,19 +248,31 @@ export class ChatSummaryService {
           return;
         }
 
-        await this.generateChatSummary({
+        const label = `T${lastCovered + 1}–T${currentLast}`;
+        const result = await this.generateChatSummary({
           chatId: chat.id,
           providerProfileId: profile.id,
           model,
           summarizedFrom: lastCovered + 1,
           summarizedTo: currentLast,
-          label: `T${lastCovered + 1}–T${currentLast}`,
+          label,
           includeInContext: true,
           excludeSummarized: config.excludeSummarized,
           source: 'auto',
           includePriorSummaries: config.includePriorSummaries,
           maxPriorSummaries: config.maxPriorSummaries,
         });
+        // W7: notify any open per-chat SSE channel that a background summary landed.
+        // Skip/error paths above stay on logSendDebug (no notification) by design.
+        // `chatSummary` is the just-created record; the null guard is for the type only.
+        if (result.chatSummary) {
+          this.events?.emit("chat.notification", {
+            chatId: chat.id,
+            kind: "summary.generated",
+            summaryId: result.chatSummary.id,
+            label,
+          });
+        }
       },
       (err) => logSendDebug("summary.auto.error", {
         chatId: chat.id,
