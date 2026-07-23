@@ -4,7 +4,7 @@ import { TooltipProvider } from "../shared/Tooltip.js";
 import { CoauthorProviderModal } from "./CoauthorProviderModal.js";
 import type { ProviderProfileRecord as ClientProviderProfileRecord } from "../../api/types.js";
 import { useProviderDataStore } from "../../stores/provider-data-store.js";
-import { useBootstrapStore } from "../../stores/api-actions/bootstrap-actions.js";
+import { useBootstrapStore, patchUiSettingsAction } from "../../stores/api-actions/bootstrap-actions.js";
 import { updateProviderProfileAction } from "../../stores/api-actions/provider-actions.js";
 
 // Mock patchUiSettingsAction so saveBinding doesn't hit the network.
@@ -132,14 +132,55 @@ describe("CoauthorProviderModal", () => {
     expect(screen.getByText("coauthor.provider.transport_may_not_be_supported")).toBeTruthy();
   });
 
-  it("shows independent Co-Author token limits and a fixed-height scrolling model list", () => {
+  it("renders a fixed-height model viewport that scrolls internally, with a stable footer", () => {
     setBinding("prof_1", "tool-model");
     useProviderDataStore.setState({ profiles: [makeProfile("prof_1", "Alpha", { maxTokens: 2_000, contextBudget: 32_000 })], favoritesByProfile: {} });
     render(<TooltipProvider><CoauthorProviderModal isOpen={true} onClose={() => {}} onOpenProviderModal={() => {}} /></TooltipProvider>);
     expect(screen.getByText("coauthor.provider.tokens_label")).toBeTruthy();
     expect(screen.getByText("coauthor.provider.max_tokens")).toBeTruthy();
     expect(screen.getByText("coauthor.provider.context_budget")).toBeTruthy();
-    expect(screen.getByTestId("coauthor-model-list").className).toContain("h-[250px]");
+    // The model viewport is a FIXED height (~250px, ~5 rows) and must NEVER grow
+    // with model count, so the Hi button sits immediately below it regardless of
+    // how many models load. Scrolling is delegated inside (overflow-hidden box).
+    const list = screen.getByTestId("coauthor-model-list");
+    expect(list.className).toContain("h-[250px]");
+    expect(list.className).toContain("shrink-0");
+    expect(list.className).toContain("overflow-hidden");
+    expect(list.className).not.toContain("flex-1");
+    // The wrapping model section must not grow either — flex-1 on the section
+    // would shove the Hi button to the bottom and tie content height to count.
+    const modelSection = list.parentElement;
+    expect(modelSection?.className).not.toContain("flex-1");
+    // Stable footer: Cancel/Use live in the MasterDetailModal footer slot, which
+    // renders OUTSIDE the scrollable detail pane, so they never overlay content
+    // or scroll away. The footer is a sibling of the scroll region, not inside it.
+    const footer = screen.getByTestId("coauthor-modal-footer");
+    expect(footer.textContent).toContain("cancel");
+    expect(footer.textContent).toContain("coauthor.provider.use_for_coauthor");
+    let scrollPane: Element | null = list.parentElement;
+    while (scrollPane && !scrollPane.className.includes("overflow-y-auto")) {
+      scrollPane = scrollPane.parentElement;
+    }
+    expect(scrollPane).not.toBeNull();
+    expect(scrollPane!.contains(footer)).toBe(false);
+  });
+
+  it("renders the inherited -1 (unlimited) max-output sentinel as \u221e, never as -1", () => {
+    setBinding("prof_1", "tool-model");
+    useProviderDataStore.setState({ profiles: [makeProfile("prof_1", "Alpha", { maxTokens: -1 })], favoritesByProfile: {} });
+    render(<TooltipProvider><CoauthorProviderModal isOpen={true} onClose={() => {}} onOpenProviderModal={() => {}} /></TooltipProvider>);
+    // The internal -1 sentinel must not leak as a raw numeric value into the editor.
+    expect(screen.getByText("∞")).toBeTruthy();
+    const leakingSentinel = screen.queryAllByRole("textbox").some((el) => (el as HTMLInputElement).value === "-1");
+    expect(leakingSentinel).toBe(false);
+  });
+
+  it("converts an inherited unlimited max-output into a concrete override on demand", async () => {
+    setBinding("prof_1", "tool-model");
+    useProviderDataStore.setState({ profiles: [makeProfile("prof_1", "Alpha", { maxTokens: -1 })], favoritesByProfile: {} });
+    render(<TooltipProvider><CoauthorProviderModal isOpen={true} onClose={() => {}} onOpenProviderModal={() => {}} /></TooltipProvider>);
+    fireEvent.click(screen.getByText("∞"));
+    await waitFor(() => expect(vi.mocked(patchUiSettingsAction)).toHaveBeenCalledWith({ coauthorMaxTokens: 2_000 }));
   });
 
   it("save button is disabled when a profile is selected but no model chosen", () => {
