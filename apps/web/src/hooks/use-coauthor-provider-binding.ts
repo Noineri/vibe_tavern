@@ -10,6 +10,7 @@
  */
 
 import { useCallback, useEffect, useMemo } from "react";
+import { MODEL_FAVORITE_SCOPE } from "@vibe-tavern/domain";
 import { resolveCoauthorBinding, filterToolCapableFavorites } from "../lib/coauthor-provider-binding.js";
 import { useBootstrapStore, patchUiSettingsAction } from "../stores/api-actions/bootstrap-actions.js";
 import { useProviderDataStore } from "../stores/provider-data-store.js";
@@ -99,7 +100,7 @@ function useFavoritesLoader(profileId: string | null): void {
   const favoritesByProfile = useProviderDataStore((s) => s.favoritesByProfile);
   useEffect(() => {
     if (profileId && !favoritesByProfile[profileId]) {
-      void loadFavoriteModelsAction(profileId);
+      void loadFavoriteModelsAction(profileId, MODEL_FAVORITE_SCOPE.rp);
     }
   }, [profileId, favoritesByProfile]);
 }

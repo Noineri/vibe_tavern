@@ -560,11 +560,12 @@ export const providerModelFavorites = sqliteTable('provider_model_favorites', {
   id: text('id').primaryKey(),
   providerProfileId: text('provider_profile_id').notNull().references(() => providerProfiles.id, { onDelete: 'cascade' }),
   modelId: text('model_id').notNull(),
+  scope: text('scope').notNull().default('rp'),
   label: text('label'),
   contextLength: integer('context_length'),
   createdAt: text('created_at').notNull(),
 }, (table) => ({
-  providerModelUnique: uniqueIndex('idx_provider_model_favorites_unique').on(table.providerProfileId, table.modelId),
+  providerModelUnique: uniqueIndex('idx_provider_model_favorites_unique').on(table.providerProfileId, table.modelId, table.scope),
 }));
 
 // ─── providerModelSettings ─────────────────────────────────────────────────────

@@ -2,7 +2,7 @@ import type { ProviderRuntimeApi } from "../contract/runtime-api.js";
 import type { ClientProviderProfileRecord } from "../../runtime/session/session-runtime-dto.js";
 import { notFound } from "../../shared/errors.js";
 import type { StoreContainer } from "@vibe-tavern/db";
-import type { ModelSettingsOverlay } from "@vibe-tavern/domain";
+import type { ModelFavoriteScope, ModelSettingsOverlay } from "@vibe-tavern/domain";
 import type { ProviderProfileService } from "../../domain/providers/provider-profile-service.js";
 import {
 	probeProviderConnection,
@@ -76,16 +76,16 @@ export class ProviderAdapter implements ProviderRuntimeApi {
 		return { models };
 	};
 
-	listFavoriteProviderModels = (providerProfileId: string) =>
-		this.providerProfileService.listFavoriteProviderModels(providerProfileId);
+	listFavoriteProviderModels = (providerProfileId: string, scope: ModelFavoriteScope) =>
+		this.providerProfileService.listFavoriteProviderModels(providerProfileId, scope);
 
 	addFavoriteProviderModel = (
 		providerProfileId: string,
-		body: { modelId: string; label?: string | null; contextLength?: number | null },
+		body: { modelId: string; label?: string | null; contextLength?: number | null; scope: ModelFavoriteScope },
 	) => this.providerProfileService.addFavoriteProviderModel(providerProfileId, body);
 
-	removeFavoriteProviderModel = (providerProfileId: string, modelId: string) =>
-		this.providerProfileService.removeFavoriteProviderModel(providerProfileId, modelId);
+	removeFavoriteProviderModel = (providerProfileId: string, body: { modelId: string; scope: ModelFavoriteScope }) =>
+		this.providerProfileService.removeFavoriteProviderModel(providerProfileId, body);
 
 	listProviderModelSettings = (providerProfileId: string) =>
 		this.providerProfileService.listProviderModelSettings(providerProfileId);

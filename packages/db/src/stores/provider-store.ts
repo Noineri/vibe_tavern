@@ -1,4 +1,4 @@
-import type { StoredProviderProfileRecord, ModelSettingsOverlay } from '@vibe-tavern/domain';
+import type { StoredProviderProfileRecord, ModelFavoriteScope, ModelSettingsOverlay } from '@vibe-tavern/domain';
 import { and, asc, eq, sql } from 'drizzle-orm';
 import { providerProfiles, cachedModels, providerModelFavorites, providerModelSettings } from '../db-schema.js';
 import type { AppDb } from '../db-connection.js';
@@ -33,6 +33,7 @@ export interface FavoriteModel {
   id: string;
   providerProfileId: string;
   modelId: string;
+  scope: ModelFavoriteScope;
   label: string | null;
   contextLength: number | null;
   createdAt: string;
@@ -387,16 +388,19 @@ export class ProviderStore {
 
   // ─── Favorite models ───────────────────────────────────────────────────────
 
-  async listFavoriteModels(providerId: string): Promise<FavoriteModel[]> {
+  async listFavoriteModels(providerId: string, scope: ModelFavoriteScope): Promise<FavoriteModel[]> {
     const rows = await this.db
       .select()
       .from(providerModelFavorites)
-      .where(eq(providerModelFavorites.providerProfileId, providerId))
+      .where(and(
+        eq(providerModelFavorites.providerProfileId, providerId),
+        eq(providerModelFavorites.scope, scope),
+      ))
       .all();
     return rows.map((row) => this.mapFavoriteModelRow(row));
   }
 
-  async addFavoriteModel(providerId: string, model: FavoriteModelData): Promise<FavoriteModel> {
+  async addFavoriteModel(providerId: string, scope: ModelFavoriteScope, model: FavoriteModelData): Promise<FavoriteModel> {
     const now = this.clock.now();
     const existing = await this.db
       .select()
@@ -404,6 +408,7 @@ export class ProviderStore {
       .where(and(
         eq(providerModelFavorites.providerProfileId, providerId),
         eq(providerModelFavorites.modelId, model.modelId),
+        eq(providerModelFavorites.scope, scope),
       ))
       .get();
 
@@ -425,6 +430,7 @@ export class ProviderStore {
         id: this.idGen.next('fm'),
         providerProfileId: providerId,
         modelId: model.modelId,
+        scope,
         label: model.label ?? null,
         contextLength: model.contextLength ?? null,
         createdAt: now,
@@ -433,12 +439,13 @@ export class ProviderStore {
     return this.mapFavoriteModelRow(row!);
   }
 
-  async removeFavoriteModel(providerId: string, modelId: string): Promise<void> {
+  async removeFavoriteModel(providerId: string, scope: ModelFavoriteScope, modelId: string): Promise<void> {
     await this.db
       .delete(providerModelFavorites)
       .where(and(
         eq(providerModelFavorites.providerProfileId, providerId),
         eq(providerModelFavorites.modelId, modelId),
+        eq(providerModelFavorites.scope, scope),
       ))
       .run();
   }
@@ -601,6 +608,7 @@ export class ProviderStore {
       id: row.id,
       providerProfileId: row.providerProfileId,
       modelId: row.modelId,
+      scope: row.scope as ModelFavoriteScope,
       label: row.label,
       contextLength: row.contextLength,
       createdAt: row.createdAt,

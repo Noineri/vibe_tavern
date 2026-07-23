@@ -47,6 +47,8 @@ export {
   saveProviderDraftSchema,
   updateProviderProfileSchema,
   favoriteProviderModelSchema,
+  favoriteProviderModelQuerySchema,
+  modelFavoriteScopeSchema,
   fetchModelsSchema,
   testChatSchema,
   testChatProfileSchema,
