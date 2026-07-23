@@ -7,9 +7,12 @@ import { useChatNotifications, useModalStore } from "../stores/index.js";
 // useChatEvents — per-chat SSE subscription (W7 / SPC-7b)
 // ────────────────────────────────────────────────────────────────────────────
 // Opens an EventSource on the reusable `GET /api/chats/:chatId/events` channel
-// for the active chat and dispatches typed notifications to UI state:
-//   • `summary.generated` → pulses the memory badge (chat-notifications store)
-//     + shows a sonner toast with a "review" action that opens ContextMemory.
+// for the active chat and dispatches typed notifications to UI state. The
+// auto-summary lifecycle drives the memory badge:
+//   • `summary.started`   → badge flips to the spinner (generating)
+//   • `summary.generated` → badge flips to the checkmark (ready) + a sonner
+//     toast with a "review" action that opens the ContextMemory modal
+//   • `summary.failed`    → badge back to idle + an error toast
 //
 // Mounted once at the app-shell level (always mounted while a chat is active),
 // so there is exactly one subscription per active chat. On chat change the
@@ -32,10 +35,12 @@ export function useChatEvents(activeChatId: string | null): void {
     if (!activeChatId) return;
 
     const eventSource = new EventSource(`/api/chats/${activeChatId}/events`);
-    const triggerSummaryPulse = useChatNotifications.getState().triggerSummaryPulse;
+    const { setGenerating, setReady, setIdle } = useChatNotifications.getState();
     const setContextMemoryOpen = useModalStore.getState().setContextMemoryOpen;
 
-    const onSummaryGenerated = (event: MessageEvent) => {
+    const onStarted = () => setGenerating();
+
+    const onGenerated = (event: MessageEvent) => {
       let payload: SummaryGeneratedPayload;
       try {
         payload = JSON.parse(event.data) as SummaryGeneratedPayload;
@@ -43,7 +48,7 @@ export function useChatEvents(activeChatId: string | null): void {
         return;
       }
       if (!payload.summaryId) return;
-      triggerSummaryPulse(payload.summaryId, payload.label ?? "");
+      setReady(payload.summaryId, payload.label ?? "");
       toast.success(t("summary_generated_toast", { label: payload.label ?? "" }), {
         action: {
           label: t("summary_review"),
@@ -52,7 +57,14 @@ export function useChatEvents(activeChatId: string | null): void {
       });
     };
 
-    eventSource.addEventListener("summary.generated", onSummaryGenerated as EventListener);
+    const onFailed = () => {
+      setIdle();
+      toast.error(t("summary_failed_toast"));
+    };
+
+    eventSource.addEventListener("summary.started", onStarted as EventListener);
+    eventSource.addEventListener("summary.generated", onGenerated as EventListener);
+    eventSource.addEventListener("summary.failed", onFailed as EventListener);
 
     return () => {
       eventSource.close();

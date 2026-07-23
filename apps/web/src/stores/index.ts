@@ -60,5 +60,6 @@ export {
 
 export {
   useChatNotifications,
-  type SummaryPulse,
+  type SummaryBadgeStatus,
+  type SummaryReady,
 } from "./chat-notifications-store.js";

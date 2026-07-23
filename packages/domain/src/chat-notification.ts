@@ -20,18 +20,16 @@
  * reusable SSE event channel. Each variant carries `chatId` so the route can
  * filter per-subscriber without unpacking the payload.
  *
- * `summary.skipped` is intentionally NOT a variant yet — the only candidate
- * (a disabled auto-summary config) is a deliberate user state, not an
- * in-the-moment surprise worth notifying. Add it when a genuinely
- * user-actionable skip reason exists.
+ * The auto-summary lifecycle the badge mirrors: `summary.started` when
+ * generation actually begins (after the enabled / provider / model / enough-
+ * messages checks pass), `summary.generated` on success, `summary.failed` if
+ * the generation throws. Skip paths (disabled config, no provider, too few
+ * messages) emit nothing — there is nothing for the user to see.
  */
-export type ChatNotification = {
-  readonly chatId: string;
-  readonly kind: "summary.generated";
-  readonly summaryId: string;
-  /** Human label of the summarized range, e.g. "T12–T30" (pre-formatted). */
-  readonly label: string;
-};
+export type ChatNotification =
+  | { readonly chatId: string; readonly kind: "summary.started" }
+  | { readonly chatId: string; readonly kind: "summary.generated"; readonly summaryId: string; readonly label: string }
+  | { readonly chatId: string; readonly kind: "summary.failed" };
 
 /**
  * Augment the core EventMap with the notification event. Relative module path

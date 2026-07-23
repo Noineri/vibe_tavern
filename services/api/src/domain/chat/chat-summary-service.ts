@@ -248,30 +248,41 @@ export class ChatSummaryService {
           return;
         }
 
+        // W7: emit "started" so the badge can show a spinner for the duration of
+        // the generation. Emitted only AFTER the enabled/provider/model/enough-
+        // messages checks pass — skip paths above stay silent (nothing to see).
+        this.events?.emit("chat.notification", { chatId: chat.id, kind: "summary.started" });
         const label = `T${lastCovered + 1}–T${currentLast}`;
-        const result = await this.generateChatSummary({
-          chatId: chat.id,
-          providerProfileId: profile.id,
-          model,
-          summarizedFrom: lastCovered + 1,
-          summarizedTo: currentLast,
-          label,
-          includeInContext: true,
-          excludeSummarized: config.excludeSummarized,
-          source: 'auto',
-          includePriorSummaries: config.includePriorSummaries,
-          maxPriorSummaries: config.maxPriorSummaries,
-        });
-        // W7: notify any open per-chat SSE channel that a background summary landed.
-        // Skip/error paths above stay on logSendDebug (no notification) by design.
-        // `chatSummary` is the just-created record; the null guard is for the type only.
-        if (result.chatSummary) {
-          this.events?.emit("chat.notification", {
+        try {
+          const result = await this.generateChatSummary({
             chatId: chat.id,
-            kind: "summary.generated",
-            summaryId: result.chatSummary.id,
+            providerProfileId: profile.id,
+            model,
+            summarizedFrom: lastCovered + 1,
+            summarizedTo: currentLast,
             label,
+            includeInContext: true,
+            excludeSummarized: config.excludeSummarized,
+            source: 'auto',
+            includePriorSummaries: config.includePriorSummaries,
+            maxPriorSummaries: config.maxPriorSummaries,
           });
+          // W7: notify any open per-chat SSE channel that a background summary landed.
+          // `chatSummary` is the just-created record; the null guard is for the type only.
+          if (result.chatSummary) {
+            this.events?.emit("chat.notification", {
+              chatId: chat.id,
+              kind: "summary.generated",
+              summaryId: result.chatSummary.id,
+              label,
+            });
+          }
+        } catch (err) {
+          // Surface the failure so the badge stops spinning and the user gets an
+          // error toast; re-throw so runExclusive's error handler still logs it
+          // (summary.auto.error) as before.
+          this.events?.emit("chat.notification", { chatId: chat.id, kind: "summary.failed" });
+          throw err;
         }
       },
       (err) => logSendDebug("summary.auto.error", {

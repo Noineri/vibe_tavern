@@ -3,38 +3,45 @@ import { create } from "zustand";
 // ────────────────────────────────────────────────────────────────────────────
 // Chat notifications store — UI state for background server→browser events (W7)
 // ────────────────────────────────────────────────────────────────────────────
-// Fed by `useChatEvents` (the per-chat SSE subscription). The only producer
-// today is the auto-summary `summary.generated` notification, but the store is
-// generic enough to carry future background-event UI flags (insights-done,
-// scene-ready…) by extension, not rewrite.
+// Fed by `useChatEvents` (the per-chat SSE subscription). The memory badge
+// mirrors the auto-summary lifecycle as a three-state indicator:
+//   idle       → green dot (nothing happening)
+//   generating → spinner (a summary is being generated right now)
+//   ready      → checkmark (a summary just landed; auto-reverts to idle)
 //
 // Plain (non-immer) zustand — this is ephemeral UI state, not canonical data.
 // ────────────────────────────────────────────────────────────────────────────
 
-/** A pulse waiting to be consumed by the memory badge / a toast. */
-export interface SummaryPulse {
+export type SummaryBadgeStatus = "idle" | "generating" | "ready";
+
+export interface SummaryReady {
   readonly summaryId: string;
   readonly label: string;
   /**
-   * Monotonic counter so two pulses with the same summaryId (or two pulses in
-   * quick succession) each re-trigger the badge animation. Components key off
-   * `seq`, not the id.
+   * Monotonic counter so two summaries landing in quick succession each
+   * re-trigger the ready animation. Components key off `seq`, not the id.
    */
   readonly seq: number;
 }
 
 interface ChatNotificationsState {
-  /** The most recent unconsumed summary pulse, or null. */
-  pulse: SummaryPulse | null;
-  /** Record a fresh auto-summary landing. */
-  triggerSummaryPulse: (summaryId: string, label: string) => void;
-  /** Clear the pulse (called by the badge on click or after the animation). */
-  clearSummaryPulse: () => void;
+  /** The current badge indicator state. */
+  status: SummaryBadgeStatus;
+  /** Set when status flips to "ready" — drives the toast + the checkmark auto-revert. */
+  ready: SummaryReady | null;
+  /** A summary generation has started — show the spinner. */
+  setGenerating: () => void;
+  /** A summary has landed — show the checkmark + carry the payload for the toast. */
+  setReady: (summaryId: string, label: string) => void;
+  /** Back to idle (ready dismissed, or a failure interrupted the spinner). */
+  setIdle: () => void;
 }
 
 export const useChatNotifications = create<ChatNotificationsState>((set) => ({
-  pulse: null,
-  triggerSummaryPulse: (summaryId, label) =>
-    set((s) => ({ pulse: { summaryId, label, seq: (s.pulse?.seq ?? 0) + 1 } })),
-  clearSummaryPulse: () => set({ pulse: null }),
+  status: "idle",
+  ready: null,
+  setGenerating: () => set({ status: "generating", ready: null }),
+  setReady: (summaryId, label) =>
+    set((s) => ({ status: "ready", ready: { summaryId, label, seq: (s.ready?.seq ?? 0) + 1 } })),
+  setIdle: () => set({ status: "idle", ready: null }),
 }));

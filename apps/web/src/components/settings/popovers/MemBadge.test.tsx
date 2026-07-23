@@ -1,11 +1,13 @@
 /**
- * Contracts for `MemBadge` pulse — the W7 / SPC-7b visual feedback.
+ * Contracts for `MemBadge` — the W7 auto-summary lifecycle indicator.
  *
- * The badge is idle by default; when the chat-notifications store records a
- * `summary.generated` pulse it gains the `mem-badge-pulse` class (the CSS
- * keyframe animation); a click consumes the pulse and clears it.
+ * Three states mirror the backend notifications:
+ *   idle       → green dot
+ *   generating → spinner (CSS animate-spin)
+ *   ready      → checkmark (Icons.checkCircle), auto-reverts to idle after 2 s
  *
- * The store is driven via `getState()` directly — no vi.mock needed.
+ * The store is driven via `getState()` directly — no vi.mock needed. CustomTooltip
+ * is mocked out to isolate from radix.
  */
 import { describe, it, expect, vi } from "vitest";
 import "@testing-library/jest-dom/vitest";
@@ -20,31 +22,36 @@ import { MemBadge } from "./MemBadge.js";
 import { useChatNotifications } from "../../../stores/index.js";
 
 const flush = async () => {
-  // External store updates (zustand getState().set…) schedule a React re-render
-  // outside React's own event handler; flush it so the DOM reflects the new state.
   await act(async () => {
     await Promise.resolve();
   });
 };
 
-describe("MemBadge — SPC-7b pulse", () => {
-  it("is idle by default", () => {
-    const { getByRole } = render(<MemBadge label="Memory" onClick={() => {}} />);
-    const badge = getByRole("status");
-    expect(badge).not.toHaveClass("mem-badge-pulse");
+describe("MemBadge — W7 lifecycle indicator", () => {
+  it("shows the idle dot by default", () => {
+    const { container } = render(<MemBadge label="Memory" onClick={() => {}} />);
+    expect(container.querySelector(".animate-spin")).toBeNull();
+    expect(container.querySelector("polyline")).toBeNull();
+    expect(container.querySelector(".bg-success")).not.toBeNull();
   });
 
-  it("pulses when a summary notification lands and clears on click", async () => {
-    const { getByRole } = render(<MemBadge label="Memory" onClick={() => {}} />);
-    const badge = getByRole("status");
-
-    useChatNotifications.getState().triggerSummaryPulse("s-1", "T1–T10");
+  it("shows a spinner while generating", async () => {
+    const { container } = render(<MemBadge label="Memory" onClick={() => {}} />);
+    useChatNotifications.getState().setGenerating();
     await flush();
-    expect(badge).toHaveClass("mem-badge-pulse");
-    expect(badge).toHaveAttribute("aria-label", "Memory — new");
+    expect(container.querySelector(".animate-spin")).not.toBeNull();
+    expect(container.querySelector("polyline")).toBeNull();
+  });
 
-    fireEvent.click(badge);
+  it("shows a checkmark on ready, then reverts to idle on click", async () => {
+    const { container, getByRole } = render(<MemBadge label="Memory" onClick={() => {}} />);
+    useChatNotifications.getState().setReady("s-1", "T1–T10");
     await flush();
-    expect(badge).not.toHaveClass("mem-badge-pulse");
+    expect(container.querySelector("polyline")).not.toBeNull();
+
+    fireEvent.click(getByRole("status"));
+    await flush();
+    expect(container.querySelector("polyline")).toBeNull();
+    expect(container.querySelector(".bg-success")).not.toBeNull();
   });
 });

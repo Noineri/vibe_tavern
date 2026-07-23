@@ -76,4 +76,20 @@ describe("chat-events feature (SSE) — SPC-7a", () => {
 
     await cleanup();
   });
+
+  test("forwards the started / failed lifecycle kinds", async () => {
+    const { events, decode, cleanup } = await mountChannel("chat-1");
+
+    await decode(); // ready
+
+    events.emit("chat.notification", { chatId: "chat-1", kind: "summary.started" });
+    let chunk = await decode();
+    expect(chunk).toContain("summary.started");
+
+    events.emit("chat.notification", { chatId: "chat-1", kind: "summary.failed" });
+    chunk = await decode();
+    expect(chunk).toContain("summary.failed");
+
+    await cleanup();
+  });
 });

@@ -47,10 +47,10 @@ describe("useChatEvents — SPC-7b", () => {
 
     expect(MockEventSource.instances).toHaveLength(1);
     expect(MockEventSource.instances[0]!.url).toContain("/api/chats/chat-1/events");
-    expect(MockEventSource.instances[0]!.addEventListener).toHaveBeenCalledWith(
-      "summary.generated",
-      expect.any(Function),
-    );
+    // The three auto-summary lifecycle listeners are registered.
+    for (const kind of ["summary.started", "summary.generated", "summary.failed"]) {
+      expect(MockEventSource.instances[0]!.addEventListener).toHaveBeenCalledWith(kind, expect.any(Function));
+    }
 
     unmount();
     expect(MockEventSource.instances[0]!.closed).toBe(true);
