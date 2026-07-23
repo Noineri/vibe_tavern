@@ -7,8 +7,9 @@
  */
 
 import type { LanguageModel, ModelMessage, ToolCallPart, ToolContent, AssistantContent } from "ai";
-import { normalizeProviderType, type ProviderType, log } from "@vibe-tavern/domain";
+import { normalizeProviderType, type ProviderType, log, COAUTHOR_TRANSPORT, isCoauthorTransportAllowed } from "@vibe-tavern/domain";
 import { resolveProtocol } from "../../domain/providers/protocol-registry.js";
+import { createOpenAI } from "@ai-sdk/openai";
 import type { VisionGateConfig } from "./vision-gate.js";
 import { resolveMultimodalContent } from "./vision-gate.js";
 
@@ -44,13 +45,52 @@ export interface PreparedMessages {
 // ---------------------------------------------------------------------------
 
 /**
- * Resolve a Vercel AI SDK language model from a stored provider profile.
- * Delegates to the canonical protocol registry.
+ * Resolve a Vercel AI SDK Responses model for the Co-Author Responses transport.
+ *
+ * Uses `@ai-sdk/openai` directly (not `@ai-sdk/openai-compatible`) because
+ * `responses()` is only available on the OpenAI-specific provider. The base URL
+ * and API key come from the stored provider profile so aggregator/3rd-party
+ * endpoints that proxy the Responses API work too.
  */
-export function resolveModel(
-  profile: { providerPreset: string; endpoint: string; apiKey: string | null },
+function resolveResponsesModel(
+  profile: { endpoint: string; apiKey: string | null },
   model: string,
 ): LanguageModel {
+  const endpoint = (profile.endpoint || "").replace(/\/+$/, "");
+  const apiKey = profile.apiKey ?? "";
+  const provider = createOpenAI({
+    apiKey: apiKey || "not-needed",
+    baseURL: endpoint || "https://api.openai.com/v1",
+  });
+  return provider.responses(model);
+}
+
+/**
+ * Resolve a Vercel AI SDK language model from a stored provider profile.
+ *
+ * For Co-Author chats with `coauthorTransport === "responses"`, resolves via
+ * the OpenAI Responses API (`createOpenAI().responses()`). All other paths
+ * delegate to the canonical protocol registry (chat completions or native).
+ *
+ * Falls back to chat completions with a warning when Responses transport is
+ * requested but the preset does not support it.
+ */
+export function resolveModel(
+  profile: { providerPreset: string; endpoint: string; apiKey: string | null; coauthorTransport?: string },
+  model: string,
+): LanguageModel {
+  if (profile.coauthorTransport === COAUTHOR_TRANSPORT.responses) {
+    // Use raw providerPreset (user-facing preset ID like "openai"), NOT the
+    // normalized ProviderType ("openai_compat") — transport capabilities are
+    // keyed by preset ID, not internal type enum.
+    if (isCoauthorTransportAllowed(profile.providerPreset, COAUTHOR_TRANSPORT.responses)) {
+      return resolveResponsesModel(profile, model);
+    }
+    log.tag("resolve-model").warn(
+      "Responses transport requested for preset %s but not allowed — falling back to chat completions",
+      profile.providerPreset,
+    );
+  }
   return resolveProtocol(normalizeProviderType(profile.providerPreset)).resolveModel(profile, model);
 }
 

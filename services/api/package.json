@@ -14,6 +14,7 @@
     "@agnai/web-tokenizers": "^0.1.6-pre3",
     "@ai-sdk/anthropic": "^4",
     "@ai-sdk/google": "^4",
+    "@ai-sdk/openai": "^4.0.18",
     "@ai-sdk/openai-compatible": "^3",
     "@ai-sdk/provider": "^4",
     "@hono/zod-validator": "^0.4.3",

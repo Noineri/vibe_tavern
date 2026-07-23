@@ -1,9 +1,19 @@
-import { describe, it, expect } from "bun:test";
+import { describe, it, expect, mock, afterEach } from "bun:test";
+import { COAUTHOR_TRANSPORT } from "@vibe-tavern/domain";
 import {
+  resolveModel,
   toSdkMessages,
   prepareSdkMessages,
 } from "../src/infrastructure/ai/provider-executor-utils.js";
 import type { SdkMessage } from "../src/infrastructure/ai/provider-executor-utils.js";
+
+// Capture real modules before any mock overrides (safe mock pattern).
+const realAiSdkOpenai = await import("@ai-sdk/openai");
+const realProtocolRegistry = await import("../src/domain/providers/protocol-registry.js");
+
+afterEach(() => {
+  mock.restore();
+});
 
 // ═══════════════════════════════════════════════════════════════════════════
 // toSdkMessages
@@ -257,5 +267,117 @@ describe("prepareSdkMessages", () => {
       { role: "system", content: "Answer in English." },
       { role: "assistant", content: "Sure:" },
     ]);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// resolveModel — transport routing (CAP-42)
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe("resolveModel", () => {
+  const baseProfile = {
+    providerPreset: "openai",
+    endpoint: "https://api.openai.com/v1",
+    apiKey: "sk-test",
+  };
+
+  // ─── Chat completions (default) ───────────────────────────────────────
+
+  it("delegates to protocol registry when coauthorTransport is undefined", () => {
+    // Legacy profiles without the field should still work.
+    const model = resolveModel(baseProfile, "gpt-4o");
+    expect(model).toBeDefined();
+    expect(typeof (model as any).modelId).toBe("string");
+  });
+
+  it("delegates to protocol registry when coauthorTransport is chat_completions", () => {
+    const model = resolveModel(
+      { ...baseProfile, coauthorTransport: COAUTHOR_TRANSPORT.chatCompletions },
+      "gpt-4o",
+    );
+    expect(model).toBeDefined();
+    expect(typeof (model as any).modelId).toBe("string");
+  });
+
+  // ─── Responses transport ──────────────────────────────────────────────
+
+  it("resolves via createOpenAI().responses() when preset supports Responses", () => {
+    // Safe mock: capture real module, override only createOpenAI.
+    const responsesSpy = mock((modelId: string) => ({ __responsesModel: true, modelId }));
+    const createOpenAISpy = mock((_options: unknown) => ({
+      responses: responsesSpy,
+    }));
+
+    mock.module("@ai-sdk/openai", () => ({
+      ...realAiSdkOpenai,
+      createOpenAI: createOpenAISpy,
+    }));
+
+    const model = resolveModel(
+      { ...baseProfile, coauthorTransport: COAUTHOR_TRANSPORT.responses },
+      "gpt-5.2",
+    );
+
+    expect(createOpenAISpy).toHaveBeenCalledTimes(1);
+    expect(responsesSpy).toHaveBeenCalledTimes(1);
+    expect(responsesSpy).toHaveBeenCalledWith("gpt-5.2");
+    expect((model as any).__responsesModel).toBe(true);
+    expect((model as any).modelId).toBe("gpt-5.2");
+  });
+
+  it("falls back to chat completions when preset does NOT support Responses", () => {
+    // deepseek supports only chat_completions per COAUTHOR_TRANSPORT_CAPABILITIES.
+    // Mock createOpenAI so that if the code DOES call it (bug), we catch it.
+    const createOpenAISpy = mock((_options: unknown) => ({
+      responses: mock(() => ({ __responsesModel: true })),
+    }));
+
+    mock.module("@ai-sdk/openai", () => ({
+      ...realAiSdkOpenai,
+      createOpenAI: createOpenAISpy,
+    }));
+
+    const model = resolveModel(
+      {
+        providerPreset: "deepseek",
+        endpoint: "https://api.deepseek.com/v1",
+        apiKey: "sk-test",
+        coauthorTransport: COAUTHOR_TRANSPORT.responses,
+      },
+      "deepseek-chat",
+    );
+
+    // Should NOT have called createOpenAI — fell back to protocol registry.
+    expect(createOpenAISpy).toHaveBeenCalledTimes(0);
+    // Should still return a valid model via protocol registry.
+    expect(model).toBeDefined();
+    expect(typeof (model as any).modelId).toBe("string");
+  });
+
+  it("passes custom endpoint and apiKey to createOpenAI for Responses", () => {
+    const responsesSpy = mock((modelId: string) => ({ __responsesModel: true, modelId }));
+    const createOpenAISpy = mock((_options: unknown) => ({
+      responses: responsesSpy,
+    }));
+
+    mock.module("@ai-sdk/openai", () => ({
+      ...realAiSdkOpenai,
+      createOpenAI: createOpenAISpy,
+    }));
+
+    resolveModel(
+      {
+        providerPreset: "openai",
+        endpoint: "https://custom-proxy.example.com/v1",
+        apiKey: "sk-custom",
+        coauthorTransport: COAUTHOR_TRANSPORT.responses,
+      },
+      "gpt-5.2",
+    );
+
+    expect(createOpenAISpy).toHaveBeenCalledTimes(1);
+    const callArgs = createOpenAISpy.mock.calls[0][0] as Record<string, unknown>;
+    expect(callArgs.baseURL).toBe("https://custom-proxy.example.com/v1");
+    expect(callArgs.apiKey).toBe("sk-custom");
   });
 });

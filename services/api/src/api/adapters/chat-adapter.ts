@@ -1,5 +1,5 @@
 import type { ChatRuntimeApi } from "../contract/runtime-api.js";
-import { brandId, parseStoredAttachments, resolveEffectiveSettings, normalizeSceneTrackerConfig, applySceneTrackerConfigPatch, findInvalidXmlKeys, SCENE_PROMPT_FORMAT, type ChatId, type ChatBranchId, type MessageId, type MessageVariantId, type PromptPresetId, type SceneTrackerConfigPatch, type CoauthorContextLink, type StoredProviderProfileRecord } from "@vibe-tavern/domain";
+import { brandId, parseStoredAttachments, resolveEffectiveSettings, normalizeSceneTrackerConfig, applySceneTrackerConfigPatch, findInvalidXmlKeys, SCENE_PROMPT_FORMAT, COAUTHOR_TRANSPORT, type ChatId, type ChatBranchId, type MessageId, type MessageVariantId, type PromptPresetId, type SceneTrackerConfigPatch, type CoauthorContextLink, type StoredProviderProfileRecord } from "@vibe-tavern/domain";
 import { rebuildCurrentSceneCache } from "../../domain/insights/scene-cache.js";
 import type { Attachment } from "@vibe-tavern/domain";
 import type { StoreContainer } from "@vibe-tavern/db";
@@ -512,7 +512,12 @@ export class ChatAdapter implements ChatRuntimeApi {
 			}
 		}
 		// RP fallback (also reached when the Co-Author binding is null/dangling).
-		return { profile: await this.resolveActiveProfileOrThrow(), preferredModel: null };
+		// Force chat_completions — Responses transport only applies to Co-Author.
+		const rpProfile = await this.resolveActiveProfileOrThrow();
+		return {
+			profile: { ...rpProfile, coauthorTransport: COAUTHOR_TRANSPORT.chatCompletions },
+			preferredModel: null,
+		};
 	}
 
 	/**
