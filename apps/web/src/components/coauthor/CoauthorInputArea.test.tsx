@@ -8,7 +8,7 @@
  *
  * The two BEHAVIOURAL contracts — "selecting a module calls the action" and
  * "only tool-capable favorites are offered" — live in use-coauthor-input-area.test.ts,
- * pinned at the hook level (useModuleSwitch.handleSelect + toolFilteredFavorites).
+ * pinned at the hook level (useModuleSwitch.handleSelect + decorated favorites).
  * They were formerly driven here through the Select UI, but Radix Select.Content
  * does not mount under happy-dom (no layout → Presence/Portal never appears; the
  * same limitation for which shared/DropdownSelect.test is `.skip`'d). The Select

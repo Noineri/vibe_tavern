@@ -174,10 +174,12 @@ export function ProviderModal({
   favoriteModelsByProfile, onToggleFavoriteModel, onRefreshProfiles,
 }: ProviderModalProps) {
   const isOpen = useModalStore((s) => s.isProviderModalOpen);
-  const setIsOpen = useModalStore((s) => s.setIsProviderModalOpen);
+  const providerModalOrigin = useModalStore((s) => s.providerModalOrigin);
+  const closeProviderModalOrigin = useModalStore((s) => s.closeProviderModalOrigin);
+  const returnToCoauthorProviderModal = useModalStore((s) => s.returnToCoauthorProviderModal);
   const isArmServer = useBootstrapStore((s) => s.data?.isArmServer ?? false);
   const visiblePresets = getVisibleProviderPresets(isArmServer);
-  const onClose = () => { setIsOpen(false); };
+  const onClose = () => { closeProviderModalOrigin(); };
   const { t } = useT();
 
   // ── Selection state ──
@@ -195,10 +197,12 @@ export function ProviderModal({
   const [visionModelSearch, setVisionModelSearch] = useState("");
   const [visionModelListOpen, setVisionModelListOpen] = useState(false);
   const [confirmClose, setConfirmClose] = useState(false);
+  const [closeTarget, setCloseTarget] = useState<"close" | "return">("close");
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [profileSearch, setProfileSearch] = useState("");
   const [dirty, setDirty] = useState(false);
   const [headerSaving, setHeaderSaving] = useState(false);
+  const [coauthorCreatedProfileId, setCoauthorCreatedProfileId] = useState<string | null>(null);
   const isMobile = useIsMobile();
 
   // ── Header mode: edit vs view ──
@@ -365,14 +369,14 @@ export function ProviderModal({
   // ── Add new profile ──
   const handleAdd = async () => {
     const c = await onCreateProfile();
-    if (c) { setEditingId(c.id); setForm(profileToForm(c)); setModels([]); setTestOk(null); setIsNew(true); setHeaderMode("edit"); setDirty(false); }
+    if (c) { setEditingId(c.id); setForm(profileToForm(c)); setModels([]); setTestOk(null); setIsNew(true); setHeaderMode("edit"); setDirty(false); if (providerModalOrigin === "coauthor") setCoauthorCreatedProfileId(c.id); }
   };
 
   // ── Duplicate ──
   const handleDuplicate = async () => {
     if (!editingId) return;
     const d = await onDuplicateProfile(editingId);
-    if (d) { setEditingId(d.id); setForm(profileToForm(d)); setModels([]); setTestOk(null); setIsNew(true); setHeaderMode("edit"); setDirty(false); }
+    if (d) { setEditingId(d.id); setForm(profileToForm(d)); setModels([]); setTestOk(null); setIsNew(true); setHeaderMode("edit"); setDirty(false); if (providerModalOrigin === "coauthor") setCoauthorCreatedProfileId(d.id); }
   };
 
   // ── Delete ──
@@ -381,6 +385,7 @@ export function ProviderModal({
   const confirmDeleteAction = async () => {
     if (!editingId) return;
     await onDeleteProfile(editingId);
+    if (coauthorCreatedProfileId === editingId) setCoauthorCreatedProfileId(null);
     const next = providerProfiles.find((p) => p.id !== editingId);
     if (next) { setEditingId(next.id); setForm(profileToForm(next)); }
     setConfirmDelete(false); setHeaderMode("view"); setIsNew(false); setDirty(false);
@@ -416,10 +421,18 @@ export function ProviderModal({
   };
 
   // ── Close ──
-  const handleClose = () => {
-    flushLazyAutoSave();
-    dirty ? setConfirmClose(true) : onClose();
+  const completeClose = (target: "close" | "return") => {
+    if (target === "return" && providerModalOrigin === "coauthor") returnToCoauthorProviderModal(coauthorCreatedProfileId);
+    else onClose();
   };
+  const requestClose = (target: "close" | "return") => {
+    flushLazyAutoSave();
+    if (dirty) {
+      setCloseTarget(target);
+      setConfirmClose(true);
+    } else completeClose(target);
+  };
+  const handleClose = () => requestClose("close");
 
   // ── Per-model binding: re-hydrate form when the user picks a model to edit ──
   // Fetch the model's overlay and merge it over the PERSISTED base profile, so
@@ -600,7 +613,7 @@ export function ProviderModal({
 
   return (
     <>
-      {confirmClose && <ConfirmCloseModal onCancel={() => setConfirmClose(false)} onConfirm={() => { setConfirmClose(false); setDirty(false); onClose(); }} />}
+      {confirmClose && <ConfirmCloseModal onCancel={() => setConfirmClose(false)} onConfirm={() => { setConfirmClose(false); setDirty(false); completeClose(closeTarget); }} />}
       {confirmDelete && (
         <DestructiveConfirmModal
           title={t("delete_provider_title")}
@@ -622,6 +635,7 @@ export function ProviderModal({
         masterClassName="flex w-[220px] shrink-0 flex-col border-r border-border"
         detailClassName={isMobile ? "p-4" : "p-5"}
         headerClassName={isMobile ? "px-3 py-2.5" : "px-6 pt-5 pb-4"}
+        headerActions={providerModalOrigin === "coauthor" ? <button type="button" className="font-ui text-[12px] font-medium text-t3 transition-colors hover:text-t1" onClick={() => requestClose("return")}>{t("back")}</button> : undefined}
         masterContent={() => (
           <ProviderProfileList
             filteredProfiles={filteredProfiles} editingId={editingId}

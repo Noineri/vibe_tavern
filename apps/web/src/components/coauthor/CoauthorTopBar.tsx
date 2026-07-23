@@ -52,7 +52,7 @@ export function CoauthorTopBar({ railHidden, onShowRail }: { railHidden?: boolea
   // Opens the dedicated fork modal, not the shared RP ProviderModal.
   const providerLabel = binding.profile?.name || t("no_provider");
   const modelLabel =
-    binding.toolCapableModels.find((m) => m.id === binding.model)?.label ||
+    binding.models.find((m) => m.id === binding.model)?.label ||
     binding.model ||
     t("no_model_selected");
 

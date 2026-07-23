@@ -76,6 +76,7 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
   const setIsProviderModalOpen = useModalStore((s) => s.setIsProviderModalOpen);
   const isCoauthorProviderModalOpen = useModalStore((s) => s.isCoauthorProviderModalOpen);
   const setCoauthorProviderModalOpen = useModalStore((s) => s.setCoauthorProviderModalOpen);
+  const openProviderModalFromCoauthor = useModalStore((s) => s.openProviderModalFromCoauthor);
   const isPromptManagerOpen = useModalStore((s) => s.isPromptManagerOpen);
   const setIsPromptManagerOpen = useModalStore((s) => s.setIsPromptManagerOpen);
   const isPersonaModalOpen = useModalStore((s) => s.isPersonaModalOpen);
@@ -391,7 +392,7 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
       <CoauthorProviderModal
         isOpen={isCoauthorProviderModalOpen}
         onClose={() => setCoauthorProviderModalOpen(false)}
-        onOpenProviderModal={() => setIsProviderModalOpen(true)}
+        onOpenProviderModal={openProviderModalFromCoauthor}
       />
 
       <PromptManagerModal

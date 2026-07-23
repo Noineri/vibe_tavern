@@ -19,7 +19,7 @@ export function CoauthorMobileInputArea({ data }: { data: CoauthorInputAreaData 
 	const {
 		t, chat,
 		draft, setDraft, isSending, activeChatId, canSend,
-		activeModelId, toolFilteredFavorites, handleSelectModel,
+		activeModelId, favorites, handleSelectModel,
 	} = data;
 
 	const moduleSwitch = useModuleSwitch();
@@ -97,7 +97,7 @@ export function CoauthorMobileInputArea({ data }: { data: CoauthorInputAreaData 
 						mobile
 						title={t("starred_models")}
 						emptyText={t("coauthor.input.no_tool_favorites")}
-						items={toolFilteredFavorites.map((m) => ({ value: m.modelId, label: m.label || m.modelId }))}
+						items={favorites.map((m) => ({ value: m.modelId, label: m.label || m.modelId, ...(m.toolSupport === "unsupported" ? { leading: <span className="font-bold text-warning-text">!</span> } : {}) }))}
 						value={activeModelId}
 						onSelect={handleSelectModel}
 						itemTestId={(v) => `coauthor-fav-model-${v}`}

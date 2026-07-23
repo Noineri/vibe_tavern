@@ -78,7 +78,7 @@ describe("CoauthorProviderModal", () => {
       ],
       favoritesByProfile: {},
     });
-    render(<CoauthorProviderModal isOpen={true} onClose={() => {}} onOpenProviderModal={() => {}} />);
+    render(<TooltipProvider><CoauthorProviderModal isOpen={true} onClose={() => {}} onOpenProviderModal={() => {}} /></TooltipProvider>);
     // Both profiles render in the master list
     expect(screen.getByText("Bound Profile")).toBeTruthy();
     expect(screen.getByText("Other Profile")).toBeTruthy();
@@ -91,11 +91,11 @@ describe("CoauthorProviderModal", () => {
     let providerOpened = false;
     let closed = false;
     render(
-      <CoauthorProviderModal
+      <TooltipProvider><CoauthorProviderModal
         isOpen={true}
         onClose={() => { closed = true; }}
         onOpenProviderModal={() => { providerOpened = true; }}
-      />,
+      /></TooltipProvider>,
     );
     fireEvent.click(screen.getByText("coauthor.provider.manage_connections"));
     expect(providerOpened).toBe(true);
