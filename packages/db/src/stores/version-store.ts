@@ -144,13 +144,19 @@ export class VersionStore {
     await this.folder.snapshotToVersion(await this.folderOf(characterId), current.id);
     const id = this.idGen.next('charver');
     const now = this.clock.now();
-    await this.db.transaction(async (tx) => {
-      await tx
+    // Synchronous callback (ASYNC_TRANSACTION_AUDIT step 5): drizzle-orm +
+    // bun:sqlite commits at the end of the callback's synchronous prefix, so an
+    // async callback's post-await throw is never rolled back. Keeping this
+    // synchronous means a failure on the insert rolls the clear back too — the
+    // prior active version survives. (FS snapshot above is already outside the
+    // DB transaction, as required.)
+    this.db.transaction((tx) => {
+      tx
         .update(characterVersions)
         .set({ isActive: false })
         .where(eq(characterVersions.characterId, characterId))
         .run();
-      await tx
+      tx
         .insert(characterVersions)
         .values({ id, characterId, title, isActive: true, createdAt: now })
         .run();
@@ -224,13 +230,20 @@ export class VersionStore {
 
   /** Flip exactly one version active for a character (single-active invariant). */
   private async activateOnly(characterId: string, versionId: string): Promise<void> {
-    await this.db.transaction(async (tx) => {
-      await tx
+    // Synchronous callback (ASYNC_TRANSACTION_AUDIT step 5): see createVersion.
+    // Both callers already guarantee `versionId` exists and belongs to
+    // `characterId` — `setActive` validates via getVersion() up front, and
+    // `ensureBaseVersion` passes a `first.id` taken straight from listVersions()
+    // — so the clear-then-set-stale pattern is unreachable here. No target
+    // validation is added because it would duplicate those upstream guards; a
+    // failure on the second update rolls the clear back regardless.
+    this.db.transaction((tx) => {
+      tx
         .update(characterVersions)
         .set({ isActive: false })
         .where(eq(characterVersions.characterId, characterId))
         .run();
-      await tx
+      tx
         .update(characterVersions)
         .set({ isActive: true })
         .where(eq(characterVersions.id, versionId))
