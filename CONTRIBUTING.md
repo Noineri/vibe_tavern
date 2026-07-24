@@ -36,10 +36,10 @@ For UI work where you want Vite's instant refresh, run the API and the Vite dev 
 bun run dev:api
 
 # terminal 2 — Vite on :4173, pointed at the API
-VITE_RP_API_URL=http://127.0.0.1:8787 bun run dev:web
+RP_WEB_API_URL=http://127.0.0.1:8787 bun run dev:web
 ```
 
-The frontend resolves the API base URL via `getGatewayBaseUrl()` ([`apps/web/src/gateway-client.ts`](./apps/web/src/gateway-client.ts)): it prefers `window.location.origin`, so without `VITE_RP_API_URL` the Vite server (4173) would call itself and get no API. Setting the env var is what wires 4173 → 8787. Open **http://127.0.0.1:4173**.
+The frontend resolves the API base URL via `getGatewayBaseUrl()` ([`apps/web/src/gateway-client.ts`](./apps/web/src/gateway-client.ts)): it prefers `window.location.origin`, so without `RP_WEB_API_URL` the Vite server (4173) would call itself and get no API. Setting the env var is what wires 4173 → 8787. Open **http://127.0.0.1:4173**.
 
 > Port note: the API defaults to `8787` (override with `RP_PLATFORM_PORT`). The two dev servers must run on different ports — `server-runtime.ts` frees its target port before binding, so it will never collide with another instance, but pick a free port if you run more than one.
 

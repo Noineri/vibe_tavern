@@ -19,9 +19,6 @@ disable = false
 
 # Bun HTML-import dev server plugin. Loaded lazily by Bun.serve when
 # routes are bundled (i.e. only when the dev server is running). The single
-# plugin file integrates bun-plugin-tailwind (for CSS compilation) alongside
-# HTML path rewriting, ?raw imports, root-relative asset resolution, define
-# injection, data-component, and import.meta.env shim.
 # See: apps/web/dev-server.ts
 [serve.static]
-plugins = ["./apps/web/dev-plugins.ts"]
+plugins = ["bun-plugin-tailwind", "./apps/web/bun-plugin-data-component.ts", "./apps/web/bun-plugin-build-config.ts", "./apps/web/bun-plugin-web-assets.ts"]

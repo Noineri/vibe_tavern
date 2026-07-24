@@ -655,7 +655,7 @@ Token-based authentication with optional TLS for LAN/Tailscale/mobile clients.
 - Token regeneration/revocation is dynamic and invalidates old tokens immediately without server restart
 - TLS via self-signed certs is optional (user accepts warning once)
 
-**API base URL:** `apps/web/src/gateway-client.ts` prefers `window.location.origin` when the web app is opened from a non-loopback host but `VITE_RP_API_URL` points at `localhost`/`127.0.0.1`. This prevents LAN/Tailscale clients from trying to call their own loopback address.
+**API base URL:** `apps/web/src/gateway-client.ts` prefers `window.location.origin` when the web app is opened from a non-loopback host but `RP_WEB_API_URL` points at `localhost`/`127.0.0.1`. This prevents LAN/Tailscale clients from trying to call their own loopback address.
 
 ---
 

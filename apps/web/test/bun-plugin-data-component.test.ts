@@ -11,9 +11,9 @@
  */
 import { describe, test, expect } from "bun:test";
 import {
-	transformDataComponent,
 	bunDataComponentPlugin,
 } from "../bun-plugin-data-component.js";
+import { transformDataComponent } from "../data-component-transform.js";
 
 const FILE = "/src/component.tsx";
 

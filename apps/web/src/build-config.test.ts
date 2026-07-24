@@ -1,6 +1,9 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 
 const WEB_ENV_KEYS = [
+	"RP_WEB_APP_VERSION",
+	"RP_WEB_UPDATE_API_BASE",
+	"RP_WEB_MODE",
 	"RP_WEB_API_URL",
 	"RP_WEB_DEFAULT_PROVIDER_LABEL",
 	"RP_WEB_DEFAULT_BASE_URL",
@@ -23,6 +26,12 @@ describe("build configuration", () => {
 
 		// Then
 		expect(buildConfig.API_URL).toBeNull();
+		expect(buildConfig.APP_VERSION).toBe("0.0.0-dev");
+		expect(buildConfig.UPDATE_API_BASE).toBe(
+			"https://api.github.com/repos/Noineri/vibe_tavern",
+		);
+		expect(buildConfig.isDev).toBe(false);
+		expect(buildConfig.isProd).toBe(false);
 		expect(buildConfig.DEFAULT_PROVIDER_LABEL).toBe("OpenAI-compatible");
 		expect(buildConfig.DEFAULT_BASE_URL).toBe("");
 		expect(buildConfig.DEFAULT_MODEL).toBe("");
@@ -32,6 +41,9 @@ describe("build configuration", () => {
 	test("reads configured web build variables at module initialization", async () => {
 		// Given
 		vi.stubEnv("RP_WEB_API_URL", "https://api.example.test");
+		vi.stubEnv("RP_WEB_APP_VERSION", "9.8.7");
+		vi.stubEnv("RP_WEB_UPDATE_API_BASE", "https://updates.example.test/");
+		vi.stubEnv("RP_WEB_MODE", "development");
 		vi.stubEnv("RP_WEB_DEFAULT_PROVIDER_LABEL", "Local provider");
 		vi.stubEnv("RP_WEB_DEFAULT_BASE_URL", "https://models.example.test/v1");
 		vi.stubEnv("RP_WEB_DEFAULT_MODEL", "example-model");
@@ -42,6 +54,10 @@ describe("build configuration", () => {
 
 		// Then
 		expect(buildConfig.API_URL).toBe("https://api.example.test");
+		expect(buildConfig.APP_VERSION).toBe("9.8.7");
+		expect(buildConfig.UPDATE_API_BASE).toBe("https://updates.example.test");
+		expect(buildConfig.isDev).toBe(true);
+		expect(buildConfig.isProd).toBe(false);
 		expect(buildConfig.DEFAULT_PROVIDER_LABEL).toBe("Local provider");
 		expect(buildConfig.DEFAULT_BASE_URL).toBe("https://models.example.test/v1");
 		expect(buildConfig.DEFAULT_MODEL).toBe("example-model");

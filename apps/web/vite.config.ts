@@ -13,12 +13,17 @@ const rootPkg = JSON.parse(
 const APP_VERSION = process.env.VERSION ?? rootPkg.version ?? "0.0.0-dev";
 const UPDATE_API_BASE = (process.env.VT_UPDATE_API_BASE ?? "https://api.github.com/repos/Noineri/vibe_tavern").replace(/\/+$/, "");
 
-export default defineConfig({
+export default defineConfig(({ command }) => ({
 	plugins: [dataComponentPlugin(), react(), tailwindcss()],
 	define: {
-		// Inlined as a string literal in the bundle — no runtime file access.
-		__APP_VERSION__: JSON.stringify(APP_VERSION),
-		__UPDATE_API_BASE__: JSON.stringify(UPDATE_API_BASE),
+		"process.env.RP_WEB_APP_VERSION": JSON.stringify(APP_VERSION),
+		"process.env.RP_WEB_UPDATE_API_BASE": JSON.stringify(UPDATE_API_BASE),
+		"process.env.RP_WEB_MODE": JSON.stringify(command === "serve" ? "development" : "production"),
+		"process.env.RP_WEB_API_URL": JSON.stringify(process.env.RP_WEB_API_URL ?? ""),
+		"process.env.RP_WEB_DEFAULT_PROVIDER_LABEL": JSON.stringify(process.env.RP_WEB_DEFAULT_PROVIDER_LABEL ?? ""),
+		"process.env.RP_WEB_DEFAULT_BASE_URL": JSON.stringify(process.env.RP_WEB_DEFAULT_BASE_URL ?? ""),
+		"process.env.RP_WEB_DEFAULT_MODEL": JSON.stringify(process.env.RP_WEB_DEFAULT_MODEL ?? ""),
+		"process.env.RP_WEB_FORCE_FIRST_RUN": JSON.stringify(process.env.RP_WEB_FORCE_FIRST_RUN ?? ""),
 	},
 	resolve: {
 		alias: [
@@ -42,4 +47,4 @@ export default defineConfig({
 	server: {
 		port: 4173,
 	},
-});
+}));

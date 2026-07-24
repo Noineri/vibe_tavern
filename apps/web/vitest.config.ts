@@ -5,7 +5,7 @@ import viteConfig from "./vite.config.ts";
  * Vitest config for @vibe-tavern/web.
  *
  * Reuses the Vite config (plugins: react, tailwind, data-component; the
- * `@vibe-tavern/*` path aliases; `__APP_VERSION__` define) so tests transform
+ * `@vibe-tavern/*` path aliases; `RP_WEB_*` defines) so tests transform
  * through the same pipeline as the build — no second source of truth for how
  * `.ts`/`.tsx` + Tailwind + aliases resolve.
  *
@@ -18,16 +18,18 @@ import viteConfig from "./vite.config.ts";
  * Runner scope: this file covers apps/web only. `packages/*` and `services/api`
  * stay on `bun:test` (pure-logic tests where bun:test is faster and sufficient).
  */
-export default mergeConfig(
-  viteConfig,
-  defineConfig({
-    test: {
-      environment: "happy-dom",
-      include: ["src/**/*.test.ts", "src/**/*.test.tsx"],
-      setupFiles: ["./test/vitest-setup.ts"],
-      // Tests import `@vibe-tavern/*` (aliased above) and relative `.js`
-      // extensions on `.ts` source — same ESM resolution Vite uses for the app.
-      pool: "forks",
-    },
-  }),
+export default defineConfig((env) =>
+  mergeConfig(
+    viteConfig(env),
+    defineConfig({
+      test: {
+        environment: "happy-dom",
+        include: ["src/**/*.test.ts", "src/**/*.test.tsx"],
+        setupFiles: ["./test/vitest-setup.ts"],
+        // Tests import `@vibe-tavern/*` (aliased above) and relative `.js`
+        // extensions on `.ts` source — same ESM resolution Vite uses for the app.
+        pool: "forks",
+      },
+    }),
+  ),
 );

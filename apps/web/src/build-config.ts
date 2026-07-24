@@ -1,8 +1,12 @@
-export const APP_VERSION: string = __APP_VERSION__;
-export const UPDATE_API_BASE: string = __UPDATE_API_BASE__;
+export const APP_VERSION: string =
+	process.env.RP_WEB_APP_VERSION || "0.0.0-dev";
+export const UPDATE_API_BASE: string = (
+	process.env.RP_WEB_UPDATE_API_BASE ||
+	"https://api.github.com/repos/Noineri/vibe_tavern"
+).replace(/\/+$/, "");
 
-export const isDev: boolean = process.env.NODE_ENV === "development";
-export const isProd: boolean = process.env.NODE_ENV === "production";
+export const isDev: boolean = process.env.RP_WEB_MODE === "development";
+export const isProd: boolean = process.env.RP_WEB_MODE === "production";
 
 export const API_URL: string | null = process.env.RP_WEB_API_URL || null;
 export const DEFAULT_PROVIDER_LABEL: string =

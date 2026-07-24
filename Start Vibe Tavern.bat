@@ -18,7 +18,7 @@ if not defined RP_PLATFORM_PORT set "RP_PLATFORM_PORT=8787"
 
 rem The frontend resolves its API base to window.location.origin at runtime
 rem (apps/web/src/gateway-client.ts), so the prod server (frontend + API on one
-rem origin) does NOT need VITE_RP_API_URL pinned. Leaving it unset keeps the
+rem origin) does NOT need RP_WEB_API_URL pinned. Leaving it unset keeps the
 rem built out/ port-agnostic, so two instances on different ports can share
 rem the same build output without one breaking the other's API calls.
 
@@ -27,11 +27,11 @@ if exist "..\mcp\.env" (
         set "KEY=%%A"
         set "VALUE=%%B"
         if not "!KEY!"=="" if /i not "!KEY:~0,1!"=="#" (
-            if /i "!KEY!"=="NANO_GPT_BASE_URL" set "VITE_RP_DEFAULT_BASE_URL=!VALUE!"
-            if /i "!KEY!"=="NANO_GPT_MODEL" set "VITE_RP_DEFAULT_MODEL=!VALUE!"
+            if /i "!KEY!"=="NANO_GPT_BASE_URL" set "RP_WEB_DEFAULT_BASE_URL=!VALUE!"
+            if /i "!KEY!"=="NANO_GPT_MODEL" set "RP_WEB_DEFAULT_MODEL=!VALUE!"
         )
     )
-    set "VITE_RP_DEFAULT_PROVIDER_LABEL=NanoGPT"
+    set "RP_WEB_DEFAULT_PROVIDER_LABEL=NanoGPT"
 )
 
 echo ============================================
