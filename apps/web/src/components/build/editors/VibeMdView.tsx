@@ -50,6 +50,7 @@ import { vibeMdBundle } from "./vibe-md-theme.js";
 import { lockedHeadings } from "./vibe-md-locked-headings.js";
 import { greetingsUi } from "./vibe-md-greetings.js";
 import { vibeMdFolding } from "./vibe-md-folding.js";
+import { macroAutocomplete } from "./vibe-md-macros.js";
 import { applyBodyToDraft, draftToBody } from "./vibe-md-sync.js";
 
 import { cn } from "../../../lib/cn.js";
@@ -219,6 +220,7 @@ export function VibeMdView({ form, characterId, isSaving }: VibeMdViewProps) {
         doc: initialBody,
         extensions: [
           ...vibeMdBundle(),
+          ...macroAutocomplete(),
           ...lockedHeadings(),
           ...greetingsUi({ onAdd: addGreeting, onRemove: removeGreeting }),
           ...vibeMdFolding(),
