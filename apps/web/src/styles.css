@@ -395,6 +395,17 @@ select option{padding:2px 6px}
    behind the page). transform: translateZ(0) forces the compositor to resolve
    the mask + backdrop-filter together (works around WebKit's historical
    mask+backdrop-filter bugs). */
+/* Vibe MD editor surface — the CodeMirror host (Build authoring surface +
+   Co-Author editor). MUST be opaque: on glass/lava themes the body background
+   is an animated gradient, and a transparent editor would (a) show the drifting
+   lava through the prose and (b) force the compositor to re-blend the editor
+   with the moving body every frame → typing jank. An opaque `--input-bg` (the
+   recessed-field token, solid on every theme) fully occludes the body in the
+   editor region, so keystrokes repaint only the editor layer, independent of
+   the background animation. The CM6 theme keeps `& { background: transparent }`
+   and lets this host show through. */
+.vibe-md-editor { background: var(--input-bg); }
+
 .glass-bar {
   position: sticky; /* ensure a positioning context for the absolute ::before */
   isolation: isolate;

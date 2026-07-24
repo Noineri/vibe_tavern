@@ -66,7 +66,7 @@ export function macroCompletions(cx: CompletionContext): CompletionResult | null
 /** Style the native autocomplete tooltip to match the app's dark surface. */
 const tooltipTheme = EditorView.baseTheme({
   ".cm-tooltip.cm-tooltip-autocomplete": {
-    backgroundColor: "var(--surface)",
+    backgroundColor: "var(--input-bg)",
     border: "1px solid var(--border)",
     borderRadius: "6px",
     boxShadow: "0 8px 30px rgba(0,0,0,0.6)",
