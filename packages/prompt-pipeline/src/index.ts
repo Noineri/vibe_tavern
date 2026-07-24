@@ -6,7 +6,7 @@ export type { AiAssistantAssembler } from "./ai-assistant/ai-assistant-assembler
 export type { InsightsAssembler, InsightsKind } from "./insights/insights-assembler.js";
 export type { SummaryStrategy } from "./summary/summary-strategy.js";
 export { activateLoreEntries, type ActivatableLoreEntry } from "./lore-activation.js";
-export { createPhaseOneMacroEngine, createFullMacroEngine, getMacroCatalog } from "./macro-registry.js";
+export { createPhaseOneMacroEngine, createFullMacroEngine, getMacroCatalog, extractMacroNames } from "./macro-registry.js";
 export type { MacroCatalogEntry, MacroCategory } from "./macro-registry.js";
 export { PRESET_PRONOUN_FORMS, resolvePronounForms } from "./pronoun-forms.js";
 export { buildPromptVariableContext } from "./prompt-variable-context.js";

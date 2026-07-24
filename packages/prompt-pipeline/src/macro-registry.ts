@@ -216,6 +216,22 @@ function tokenize(input: string): Token[] {
 }
 
 /**
+ * Extract the distinct macro names appearing in `input`, reusing the canonical
+ * tokenizer so the result matches what the engine would actually resolve.
+ * Returns only "macro" tokens (named resolvers) — the tokenizer already skips
+ * comments (`{{// ...}}`) and control-flow (`if`/`else`/`/if`) is emitted as
+ * separate token types, so neither appears here. Used by the Co-Author apply
+ * path (B5) to flag macros the model emitted outside the safe reusable subset.
+ */
+export function extractMacroNames(input: string): string[] {
+  const names = new Set<string>();
+  for (const t of tokenize(input)) {
+    if (t.type === "macro") names.add(t.value);
+  }
+  return [...names];
+}
+
+/**
  * Split macro inner text by :: separator.
  * "setvar::x::hello world" → ["setvar", "x", "hello world"]
  * Also handles single : for legacy syntax: "random:a,b,c" → ["random", "a,b,c"]
