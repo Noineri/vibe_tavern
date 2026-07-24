@@ -35,9 +35,17 @@ export function deriveOwner(model: Pick<ProviderModelOption, "id" | "label">): s
  * render, never persisted as a tag (OpenRouter rotates temporarily-free models,
  * so a stored tag would go stale). A model is free when both input and output
  * pricing are exactly 0; missing pricing is treated as NOT free (unknown cost).
+ *
+ * Coerces with Number() because aggregators (OpenRouter, Chutes) stringify
+ * pricing in their JSON ("0" for free models), and the openai-compat adapter
+ * historically stored those raw strings despite ProviderModelPricing being
+ * typed `number`. A strict `=== 0` would miss a string "0" and cut every free
+ * OpenRouter model. The `!= null` guard also avoids Number(null)===0.
  */
-export function isFreeModel(model: Pick<ProviderModelOption, "pricing">): boolean {
-  return model.pricing?.input === 0 && model.pricing?.output === 0;
+export function isFreeModel(model: { pricing?: { input?: number | string | null; output?: number | string | null } }): boolean {
+  const { pricing } = model;
+  if (!pricing || pricing.input == null || pricing.output == null) return false;
+  return Number(pricing.input) === 0 && Number(pricing.output) === 0;
 }
 
 type CachedCapabilityShape = {

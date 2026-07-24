@@ -192,12 +192,17 @@ export async function listOpenAiCompatModels(input: ListModelsInput): Promise<Pr
 
 			if (record.description) opt.description = record.description;
 
-			// Pricing
+			// Pricing — vendors (OpenRouter, Chutes) stringify the numbers in their JSON
+			// (e.g. "0" for free models). Coerce to Number so ProviderModelPricing's
+			// `number` contract holds downstream (strict === comparisons, sorting, etc.).
 			if (record.pricing) {
-				const inputPrice = record.pricing.input ?? record.pricing.prompt;
-				const outputPrice = record.pricing.output ?? record.pricing.completion;
-				if (inputPrice !== undefined || outputPrice !== undefined) {
-					opt.pricing = { input: inputPrice, output: outputPrice };
+				const inputRaw = record.pricing.input ?? record.pricing.prompt;
+				const outputRaw = record.pricing.output ?? record.pricing.completion;
+				if (inputRaw != null || outputRaw != null) {
+					opt.pricing = {
+						input: inputRaw != null ? Number(inputRaw) : undefined,
+						output: outputRaw != null ? Number(outputRaw) : undefined,
+					};
 				}
 			}
 

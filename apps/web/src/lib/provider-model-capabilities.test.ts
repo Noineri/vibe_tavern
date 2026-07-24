@@ -62,6 +62,18 @@ describe("isFreeModel", () => {
     expect(isFreeModel({ pricing: { input: 0, output: 0 } })).toBe(true);
   });
 
+  test("free when pricing is stringified (OpenRouter/Chutes return \"0\")", () => {
+    // Regression: aggregators stringify pricing in JSON; a strict `=== 0` on the
+    // raw value missed string "0" and cut every free OpenRouter model.
+    expect(isFreeModel({ pricing: { input: "0", output: "0" } })).toBe(true);
+    expect(isFreeModel({ pricing: { input: "0.000003", output: "0" } })).toBe(false);
+  });
+
+  test("null pricing values are NOT free (avoid the Number(null)===0 trap)", () => {
+    expect(isFreeModel({ pricing: { input: 0, output: null } })).toBe(false);
+    expect(isFreeModel({ pricing: { input: null, output: 0 } })).toBe(false);
+  });
+
   test("not free when either price is non-zero", () => {
     expect(isFreeModel({ pricing: { input: 0, output: 1 } })).toBe(false);
     expect(isFreeModel({ pricing: { input: 5, output: 0 } })).toBe(false);
