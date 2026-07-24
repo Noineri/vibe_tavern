@@ -42,4 +42,30 @@ describe("ProviderModelList", () => {
     await user.click(getByTestId("use-custom-model"));
     expect(onUseCustomSlug).toHaveBeenCalledWith("custom/model");
   });
+
+  test("groups rows under owner headers when groupByOwner is on (multiple owners)", () => {
+    const groupedModels = [
+      { id: "anthropic/claude", label: "Claude" },
+      { id: "openai/gpt-4o", label: "GPT-4o" },
+      { id: "anthropic/haiku", label: "Haiku" },
+    ];
+    const { getByText } = renderList({ models: groupedModels, groupByOwner: true });
+    // Two distinct owners → two headers rendered.
+    expect(getByText("anthropic")).toBeTruthy();
+    expect(getByText("openai")).toBeTruthy();
+    // Model labels still render inside their groups.
+    expect(getByText("Claude")).toBeTruthy();
+    expect(getByText("Haiku")).toBeTruthy();
+  });
+
+  test("collapses to flat (no owner header) when only one owner exists", () => {
+    // Neither id has a slash/colon/dash → both derive to "Other" (single owner).
+    const singleOwnerModels = [
+      { id: "gpt4", label: "GPT4" },
+      { id: "claude3", label: "Claude3" },
+    ];
+    const { queryByText, getByText } = renderList({ models: singleOwnerModels, groupByOwner: true });
+    expect(queryByText("Other")).toBeNull();
+    expect(getByText("GPT4")).toBeTruthy();
+  });
 });

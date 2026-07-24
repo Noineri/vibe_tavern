@@ -49,6 +49,9 @@ export interface ClientProviderProfileRecord {
 	contextBudget: number | null;
 	pinContextBudget: boolean;
 	bindPerModel: boolean;
+	/** Model-list display prefs (MODEL_LIST_FILTERS) — pure UI, round-trip like bindPerModel. */
+	modelFreeOnly: boolean;
+	modelGroupByOwner: boolean;
 	maxTokens: number;
 	temperature: number;
 	topP: number;

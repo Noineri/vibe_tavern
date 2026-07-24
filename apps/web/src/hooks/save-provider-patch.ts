@@ -32,6 +32,8 @@ export interface ProviderSavePatch {
   contextBudget: number | null;
   pinContextBudget: boolean;
   bindPerModel: boolean;
+  modelFreeOnly: boolean;
+  modelGroupByOwner: boolean;
   temperature: number;
   topP: number;
   minP: number;
@@ -82,6 +84,8 @@ export function computeSavePatch(form: FormState): ProviderSavePatch {
     contextBudget: form.contextBudget || null,
     pinContextBudget: form.pinContextBudget,
     bindPerModel: form.bindPerModel,
+    modelFreeOnly: form.modelFreeOnly,
+    modelGroupByOwner: form.modelGroupByOwner,
     temperature: form.temperature,
     topP: form.topP,
     minP: form.minP,
@@ -208,6 +212,8 @@ export function connectionToSavePatch(conn: ConnectionState): ProviderSavePatch 
     contextBudget: conn.maxTokens || null,
     pinContextBudget: false,  // not in ConnectionState yet
     bindPerModel: false,  // not in ConnectionState yet
+    modelFreeOnly: false,  // not in ConnectionState yet
+    modelGroupByOwner: false,  // not in ConnectionState yet
     temperature: conn.temperature,
     topP: conn.topP,
     minP: conn.minP,

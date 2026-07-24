@@ -91,6 +91,9 @@ export interface CreateProviderData {
   pinContextBudget?: boolean;
   /** Per-model binding toggle — when true, sampler/context edits route to a per-model overlay. */
   bindPerModel?: boolean;
+  /** Model-list display prefs (MODEL_LIST_FILTERS) — pure UI, no backend logic. */
+  modelFreeOnly?: boolean;
+  modelGroupByOwner?: boolean;
   /** Optional vision model for image description fallback. */
   visionModel?: string | null;
 }
@@ -200,6 +203,8 @@ export class ProviderStore {
         customSamplers: data.customSamplers ? 1 : 0,
         pinContextBudget: data.pinContextBudget ?? false,
         bindPerModel: data.bindPerModel ?? false,
+        modelFreeOnly: data.modelFreeOnly ?? false,
+        modelGroupByOwner: data.modelGroupByOwner ?? false,
         visionModel: data.visionModel ?? null,
         isActive: 0,
         createdAt: now,
@@ -252,6 +257,8 @@ export class ProviderStore {
     if (data.customSamplers !== undefined) values.customSamplers = data.customSamplers ? 1 : 0;
     if (data.pinContextBudget !== undefined) values.pinContextBudget = data.pinContextBudget;
     if (data.bindPerModel !== undefined) values.bindPerModel = data.bindPerModel;
+    if (data.modelFreeOnly !== undefined) values.modelFreeOnly = data.modelFreeOnly;
+    if (data.modelGroupByOwner !== undefined) values.modelGroupByOwner = data.modelGroupByOwner;
     if (data.visionModel !== undefined) values.visionModel = data.visionModel ?? null;
 
     console.log(`[DB] provider.update id=${id} visionModel_in=${data.visionModel} visionModel_set=${values.visionModel} fields=${Object.keys(values).join(',')}`);
@@ -353,6 +360,8 @@ export class ProviderStore {
         customSamplers: original.customSamplers,
         pinContextBudget: original.pinContextBudget,
         bindPerModel: original.bindPerModel,
+        modelFreeOnly: original.modelFreeOnly,
+        modelGroupByOwner: original.modelGroupByOwner,
         visionModel: original.visionModel,
         isActive: 0,
         createdAt: now,
@@ -596,6 +605,8 @@ export class ProviderStore {
       contextBudget: row.contextBudget,
       pinContextBudget: row.pinContextBudget,
       bindPerModel: row.bindPerModel,
+      modelFreeOnly: row.modelFreeOnly,
+      modelGroupByOwner: row.modelGroupByOwner,
       maxTokens: row.maxTokens,
       temperature: row.temperature,
       topP: row.topP,

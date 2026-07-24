@@ -67,6 +67,8 @@ const providerCoreSchema = z.object({
   pinContextBudget: z.boolean().optional(),
   /** When true, sampler/context edits route to a per-model overlay (see modelSettingsOverlaySchema). */
   bindPerModel: z.boolean().optional(),
+  modelFreeOnly: z.boolean().optional(),
+  modelGroupByOwner: z.boolean().optional(),
   maxTokens: z.number().optional(),
   // ── Sampler fields: derived from `samplerFieldSchemas` (bound to SamplerFieldId) ──
   ...samplerFieldSchemas,

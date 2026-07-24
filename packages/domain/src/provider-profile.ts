@@ -33,6 +33,9 @@ export interface StoredProviderProfileRecord {
    *  model's overlay merges over the base at generation time via
    *  {@link resolveEffectiveSettings}. */
   bindPerModel: boolean;
+  /** Model-list display prefs (MODEL_LIST_FILTERS) — pure UI, no backend logic. */
+  modelFreeOnly: boolean;
+  modelGroupByOwner: boolean;
   maxTokens: number;
   temperature: number;
   topP: number;

@@ -533,6 +533,8 @@ export default interface Resources {
     "failed_to_set_default_persona": "Failed to set default persona.",
     "file_too_large": "File too large. Maximum size is 20 MB.",
     "filter_by_tags": "Filter by tags",
+    "filter_free_only": "Free only",
+    "filter_group_by_owner": "Group by owner",
     "first_message_greeting": "First Message (Greeting)",
     "first_message_label": "First Message",
     "first_message_placeholder": "Character's first message...",

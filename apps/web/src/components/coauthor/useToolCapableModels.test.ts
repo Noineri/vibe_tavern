@@ -40,6 +40,8 @@ function makeProfile(overrides: Partial<ProviderProfileRecord> & { id: string })
     contextBudget: null,
     pinContextBudget: false,
     bindPerModel: false,
+    modelFreeOnly: false,
+    modelGroupByOwner: false,
     maxTokens: 0,
     temperature: 1,
     topP: 1,

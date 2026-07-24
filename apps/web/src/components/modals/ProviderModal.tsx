@@ -62,6 +62,9 @@ export interface FormState {
    *  and saves route sampler writes to the selected model's overlay instead of
    *  the profile base. Persisted on the profile (Wave 1 column). */
   bindPerModel: boolean;
+  /** Model-list display prefs (MODEL_LIST_FILTERS) — persisted on the profile. */
+  modelFreeOnly: boolean;
+  modelGroupByOwner: boolean;
   /** The model currently selected in the binding dropdown, or null when no
    *  model is picked (or binding is OFF). Drives overlay save routing + the
    *  "Editing: <model>" badge. Not persisted on the profile — UI-only state. */
@@ -130,6 +133,8 @@ function profileToForm(p: ProviderProfileRecord): FormState {
     repetitionPenalty: p.repetitionPenalty,
     maxTokens: p.maxTokens, contextBudget: p.contextBudget ?? 16000, pinContextBudget: p.pinContextBudget ?? false,
     bindPerModel: p.bindPerModel ?? false,
+    modelFreeOnly: p.modelFreeOnly ?? false,
+    modelGroupByOwner: p.modelGroupByOwner ?? false,
     editingModelId: null,
     stopSequences: p.stopSequences,
     logitBias: p.logitBias ?? [],

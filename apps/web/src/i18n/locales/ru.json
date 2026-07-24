@@ -493,6 +493,8 @@
   "enter_api_key_for_models": "Введите API ключ для загрузки списка моделей",
   "remove_from_favorites": "Убрать из избранного",
   "add_to_favorites": "Добавить в избранное",
+  "filter_free_only": "Только бесплатные",
+  "filter_group_by_owner": "Группировать по владельцу",
   "search_profiles": "Поиск профилей...",
   "new_profile_btn": "+ Новый профиль",
   "save_settings_btn": "Сохранить настройки",

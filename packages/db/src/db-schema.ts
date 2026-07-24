@@ -508,6 +508,10 @@ export const providerProfiles = sqliteTable('provider_profiles', {
   /** When true, sampler/context edits in the modal write to a per-model overlay
    *  (providerModelSettings) instead of the profile base. See resolveEffectiveSettings. */
   bindPerModel: integer('bind_per_model', { mode: 'boolean' }).notNull().default(false),
+  // Model-list display prefs (MODEL_LIST_FILTERS). Pure UI — no backend logic reads these;
+  // they round-trip to the selectors via the profile record.
+  modelFreeOnly: integer('model_free_only', { mode: 'boolean' }).notNull().default(false),
+  modelGroupByOwner: integer('model_group_by_owner', { mode: 'boolean' }).notNull().default(false),
   maxTokens: integer('max_tokens').notNull().default(2000),
   temperature: real('temperature').notNull().default(1.0),
   topP: real('top_p').notNull().default(1.0),
