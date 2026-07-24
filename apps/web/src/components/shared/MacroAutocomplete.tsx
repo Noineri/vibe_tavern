@@ -4,10 +4,12 @@ import type { MacroCatalogEntry } from "@vibe-tavern/prompt-pipeline";
 import { macroCategoryLabel } from "./macro-autocomplete-store.js";
 import { cn } from "../../lib/cn.js";
 
-/** Estimated popup height used for the below/above flip decision. */
-const POPUP_MAX_HEIGHT = 240;
 const POPUP_MAX_WIDTH = 380;
 const EDGE_GAP = 8;
+/** Gap between the textarea edge and the popup edge. */
+const ANCHOR_GAP = 4;
+/** Hard cap on popup height (~8–10 rows); the list scrolls internally beyond this. */
+const CONTENT_CAP = 240;
 
 export interface MacroAutocompleteProps {
   /** Already ordered + filtered entries to render. */
@@ -24,10 +26,10 @@ export interface MacroAutocompleteProps {
   query: string;
 }
 
-interface Position {
-  left: number;
-  top: number;
-  width: number;
+interface Placement {
+  style: React.CSSProperties;
+  /** Which side of the textarea the popup sits on — drives the enter animation. */
+  side: "below" | "above";
 }
 
 /**
@@ -53,22 +55,32 @@ export function MacroAutocomplete({
 }: MacroAutocompleteProps) {
   const listRef = useRef<HTMLDivElement | null>(null);
   const itemRefs = useRef<Array<HTMLDivElement | null>>([]);
-  const [position, setPosition] = useState<Position>({ left: 0, top: 0, width: POPUP_MAX_WIDTH });
+  const [placement, setPlacement] = useState<Placement>({
+    style: { left: 0, top: 0, width: POPUP_MAX_WIDTH },
+    side: "below",
+  });
 
   // Compute placement from the anchor rect; recompute on scroll/resize so the
   // popup tracks the textarea across page scroll and viewport changes.
+  // Prefer the side with more room. When ABOVE, anchor the popup's BOTTOM edge
+  // to just above the textarea (CSS `bottom`) and let it grow upward — so a
+  // short list sits flush against the input instead of floating high with a
+  // gap. When BELOW, anchor the top edge (`top`) and grow down. `maxHeight` is
+  // the available space on the chosen side so the list scrolls internally
+  // rather than overflowing the viewport.
   useLayoutEffect(() => {
     if (!anchorEl) return;
     const place = () => {
       const rect = anchorEl.getBoundingClientRect();
       const width = Math.min(rect.width, POPUP_MAX_WIDTH);
       const left = Math.max(EDGE_GAP, Math.min(rect.left, window.innerWidth - width - EDGE_GAP));
-      const spaceBelow = window.innerHeight - rect.bottom;
-      const placeBelow = spaceBelow >= POPUP_MAX_HEIGHT + EDGE_GAP || spaceBelow >= rect.top;
-      const top = placeBelow
-        ? rect.bottom + 4
-        : Math.max(EDGE_GAP, rect.top - POPUP_MAX_HEIGHT - 4);
-      setPosition({ left, top, width });
+      const spaceBelow = window.innerHeight - rect.bottom - ANCHOR_GAP - EDGE_GAP;
+      const spaceAbove = rect.top - ANCHOR_GAP - EDGE_GAP;
+      const placeBelow = spaceBelow >= spaceAbove;
+      const style: React.CSSProperties = placeBelow
+        ? { left, width, top: rect.bottom + ANCHOR_GAP, maxHeight: Math.min(CONTENT_CAP, Math.max(0, spaceBelow)) }
+        : { left, width, bottom: window.innerHeight - rect.top + ANCHOR_GAP, maxHeight: Math.min(CONTENT_CAP, Math.max(0, spaceAbove)) };
+      setPlacement({ style, side: placeBelow ? "below" : "above" });
     };
     place();
     window.addEventListener("scroll", place, true);
@@ -89,12 +101,12 @@ export function MacroAutocomplete({
     <AnimatePresence>
       <motion.div
         key="macro-autocomplete"
-        initial={{ opacity: 0, scale: 0.98 }}
-        animate={{ opacity: 1, scale: 1 }}
+        initial={{ opacity: 0, y: placement.side === "below" ? -4 : 4, scale: 0.98 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
         exit={{ opacity: 0, scale: 0.98 }}
         transition={{ duration: 0.12, ease: "easeOut" }}
-        style={{ position: "fixed", left: position.left, top: position.top, width: position.width, zIndex: 650 }}
-        className="glass-blur overflow-hidden rounded-md border border-border bg-surface shadow-[0_8px_30px_rgba(0,0,0,0.6)]"
+        style={{ position: "fixed", zIndex: 650, ...placement.style }}
+        className="glass-blur flex flex-col overflow-hidden rounded-md border border-border bg-surface shadow-[0_8px_30px_rgba(0,0,0,0.6)]"
         // Prevent mousedown inside the popup from stealing focus from the textarea.
         onMouseDown={(e) => e.preventDefault()}
         role="listbox"
@@ -105,7 +117,7 @@ export function MacroAutocomplete({
             {query ? <>No macro matches “{query}”.</> : "No macros available."}
           </div>
         ) : (
-          <div ref={listRef} className="max-h-[240px] overflow-y-auto p-1">
+          <div ref={listRef} className="min-h-0 flex-1 overflow-y-auto p-1">
             {items.map((entry, index) => {
               const isActive = index === activeIndex;
               return (
