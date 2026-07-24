@@ -4,6 +4,7 @@ import { registerMessageSlot, type MessageSlotContext } from "../../lib/message-
 import { useCoauthorTurnStore, extractPersistedCoauthorActivities, type CoauthorToolActivity } from "../../stores/coauthor-turn-store.js";
 import { coauthorSectionEditInputSchema, coauthorSectionWriteInputSchema } from "@vibe-tavern/api-contracts";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
+import { useChatStore } from "../../stores/index.js";
 import type { AppMessage } from "../../app-client.js";
 import { Icons } from "../shared/icons.js";
 import { useT } from "../../i18n/context.js";
@@ -43,6 +44,10 @@ function CoauthorToolActivitySlot({
   isStreaming: boolean;
 }) {
   const activeActivities = useCoauthorTurnStore(useShallow((s) => s.turnsByChat[chatId] ?? EMPTY));
+  // True while the co-author generation is in progress — used to prevent
+  // isLastAssistant from claiming streaming tool activities on the wrong
+  // (previous) committed assistant bubble.
+  const isGenerating = useChatStore((s) => s.generations[chatId] != null);
   // Primitive signature, not an ordered-message array subscription: each
   // MessageBlock must remain isolated from unrelated message/variant updates.
   // Zustand compares this string with Object.is, so a mutation on message B
@@ -116,7 +121,11 @@ function CoauthorToolActivitySlot({
     const map = new Map<string, CoauthorToolActivity>();
     for (const a of persistedActivities) map.set(a.toolCallId, a);
     
-    if (isStreaming || isLastAssistant) {
+    // During generation active activities render ONLY on the streaming
+    // pending-assistant (isStreaming). After generation ends and the
+    // assistant is committed, isLastAssistant takes over for review.
+    const canRenderActive = isStreaming || (!isGenerating && isLastAssistant);
+    if (canRenderActive) {
       for (const a of activeActivities) {
         // During generation the active store is the only source and belongs on
         // the streaming assistant. After commit, however, each persisted call
@@ -413,7 +422,14 @@ registerMessageSlot({
   visible: (ctx: MessageSlotContext) => {
     if (ctx.messageRole !== "assistant") return false;
     const mode = useSnapshotStore.getState().activeChat?.mode;
-    return mode !== "coauthor";
+    // In co-author mode the slot is disabled for committed messages
+    // (CoauthorTurnPart renders tool cards inline). Enable it ONLY for the
+    // pending-assistant singleton — the one streaming bubble that has no
+    // CoauthorTurnPart. Gating on isStreaming alone is wrong: the last turn's
+    // MessageShell also passes isGenerating=true during generation, which would
+    // re-enable the slot at the turn-shell level and glue tool cards to the
+    // previous turn's first assistant.
+    return mode !== "coauthor" || ctx.messageId === "__pending-assistant";
   },
   render: (ctx) => (
     <CoauthorToolActivitySlot chatId={ctx.chatId} messageId={ctx.messageId} isStreaming={ctx.isStreaming} />
