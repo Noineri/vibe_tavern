@@ -176,6 +176,12 @@ export async function nonstreamingProviderExecute(
     if (input.overrideMaxTokens != null) {
       samplerConfig.maxOutputTokens = input.overrideMaxTokens;
     }
+    // See stream-provider-executor.ts: stateless multi-step on the Responses
+    // transport requires `store: false` so the SDK serializes each complete
+    // function_call + function_call_output pair into every follow-up request.
+    // Default store:true assumes previousResponseId chaining we don't do.
+    const responsesProviderOptions =
+      input.transport === COAUTHOR_TRANSPORT.responses ? { openai: { store: false } } : undefined;
     logSendDebug("provider.nonstream.samplerConfig", {
       providerType: input.profile.providerPreset,
       samplerConfig,
@@ -197,6 +203,7 @@ export async function nonstreamingProviderExecute(
       // (serializeProviderResponseStep) keeps capturing bodies as it did on v6.
       include: { responseBody: true },
       ...samplerConfig,
+      ...(responsesProviderOptions ? { providerOptions: responsesProviderOptions } : {}),
       ...(input.tools ? { tools: input.tools } : {}),
       ...(input.tools && input.maxSteps ? { stopWhen: isStepCount(input.maxSteps) } : {}),
     });
