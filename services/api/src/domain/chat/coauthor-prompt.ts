@@ -61,18 +61,23 @@ function asToolProviderOptions(value: unknown): ToolCallPart["providerOptions"] 
  * (the section is omitted entirely so the prompt is unchanged for a fresh
  * install with no built-ins).
  */
-function renderSkillCatalog(entries: readonly SkillCatalogEntry[]): string {
+function renderSkillCatalog(entries: readonly SkillCatalogEntry[], primarySkillIds?: readonly string[]): string {
   if (entries.length === 0) return "";
   const lines = [
     "# Available skills (Agent Skills flow)",
     "Skills are loaded on demand, IDE/CLI-style. To use one: pick the skill whose description matches the user's request, call `read_skill_file` with its manifest `path` to read its `SKILL.md`, obey that workflow, and read only the referenced assets/references the current task actually needs. Do NOT read a skill you do not need.",
+  ];
+  if (primarySkillIds && primarySkillIds.length > 0) {
+    lines.push("", `Primary skill for this mode: ${primarySkillIds.map((id) => `**${id}**`).join(", ")}`);
+  }
+  lines.push(
     "",
     ...entries.map((e) => {
       const shadow = e.shadowsBuiltin ? " (user override of built-in)" : "";
       const desc = e.description.trim() || "(no description)";
       return `- **${e.id}**${shadow} — ${desc}  → read \`${e.rootRelativeManifestPath}\``;
     }),
-  ];
+  );
   return lines.join("\n");
 }
 
@@ -245,8 +250,8 @@ export async function assembleCoauthorPrompt(input: ChatModeAssembleInput): Prom
     loaders.getCoauthorBoundResources(character.id as unknown as import("@vibe-tavern/domain").CharacterId),
   ]);
   const basePrompt = module.basePrompt;
-  // Shared editor preamble (Role + tool mechanics + editing discipline) loaded
-  // from coauthor/base.md. This is the universal co-author framing; the module's
+  // Shared editor preamble (Role + tool mechanics + scope + macros) loaded from
+  // coauthor/base.md. This is the universal co-author framing; the module's
   // basePrompt specializes it with mode-specific behavior. Prepending it here
   // keeps the tool mechanics in one place (DRY) and ensures every module — seed
   // or user, original or duplicated (M3) — carries the editing contract.
@@ -255,7 +260,7 @@ export async function assembleCoauthorPrompt(input: ChatModeAssembleInput): Prom
   const contextBlock = renderContextBlocks(contextItems);
   const boundLorebooksBlock = renderBoundLorebooksAwareness(boundResources.lorebooks);
   const boundScriptsBlock = renderBoundScriptsAwareness(boundResources.scripts);
-  const skillCatalogBlock = renderSkillCatalog(skillCatalog);
+  const skillCatalogBlock = renderSkillCatalog(skillCatalog, module.skillIds);
   // Derive the skill roots (user + built-in) from the catalog entries' skill
   // dirs so read_skill_file resolves paths against the same roots the catalog
   // was built from. Empty when no skills are available (reads then reject).
