@@ -427,3 +427,16 @@ select option{padding:2px 6px}
 .scrollbar-hide::-webkit-scrollbar {
   display: none;
 }
+
+/* ── CodeMirror widget buffer (Firefox-only bug fix) ──
+   CodeMirror 6 inserts <img class="cm-widgetBuffer"> (no src) next to inline
+   widgets to anchor the caret — used by the Vibe MD editor's lock badge and
+   fold chevron on every H1, and by other editors' inline widgets. The base
+   theme sets width:0; Chromium renders a 0-width invisible placeholder.
+   Firefox instead renders a broken-image placeholder (a thin vertical bar)
+   that ignores width:0, showing as visible `|` artifacts bracketing each H1.
+   visibility:hidden keeps the buffer's layout role intact across both engines
+   while suppressing the Firefox placeholder. */
+img.cm-widgetBuffer {
+  visibility: hidden;
+}
