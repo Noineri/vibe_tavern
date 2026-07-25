@@ -75,7 +75,7 @@ async function main() {
 
 	// ── Step 2: Build frontend ─────────────────────────────────────────────
 
-	await step("Building frontend (vite build)", async () => {
+	await step("Building frontend (Bun build)", async () => {
 		await run(["bun", "run", "--filter", "@vibe-tavern/web", "build"]);
 	});
 

@@ -18,6 +18,7 @@
   },
   "scripts": {
     "build": "bun run build:api-stack && bun run --filter @vibe-tavern/web build",
+    "build:web": "bun scripts/build-web.ts",
     "build:api-stack": "bun scripts/build.ts api-stack",
     "build:prod": "bun scripts/build.ts api-stack",
     "build:standalone": "bun scripts/build-standalone.ts",

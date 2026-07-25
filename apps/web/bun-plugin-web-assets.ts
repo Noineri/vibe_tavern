@@ -24,7 +24,26 @@ async function resolvePublicAsset(args: OnResolveArgs): Promise<string | null> {
 		: null;
 }
 
-export function webAssetsPlugin(): BunPlugin {
+type PluginMode = "build" | "dev";
+
+// In "dev" the Bun.serve HTML bundler resolves <link href>/<script src> itself
+// before onResolve runs, absolutizing a leading-slash public path against the
+// process cwd (repo root) and failing the build. rewriteIndexHtml turns those
+// paths relative so the bundler resolves them from apps/web/public/ instead.
+// The <script src="/src/…"> rewrite is needed in BOTH modes (Bun.build emits a
+// relative bundle path); the public-asset rewrite is dev-only, because in
+// "build" mode onResolve fires first and its { external: true } result keeps the
+// original "/logo-256.png" href — matching the Vite baseline exactly.
+function rewriteIndexHtml(html: string, mode: PluginMode): string {
+	const withScript = html.replace(/src="\/src\//g, 'src="./src/');
+	if (mode === "build") return withScript;
+	return withScript.replace(
+		/(href|src)="\/(logo[^"]*|favicon[^"]*)"/g,
+		'$1="./public/$2"',
+	);
+}
+
+export function webAssetsPlugin(mode: PluginMode = "build"): BunPlugin {
 	return {
 		name: "vibe-tavern-web-assets",
 		setup(builder) {
@@ -43,14 +62,11 @@ export function webAssetsPlugin(): BunPlugin {
 			}));
 
 			builder.onLoad({ filter: /index\.html$/ }, async (args) => ({
-				contents: (await Bun.file(args.path).text()).replace(
-					/src="\/src\//g,
-					'src="./src/',
-				),
+				contents: rewriteIndexHtml(await Bun.file(args.path).text(), mode),
 				loader: "html",
 			}));
 		},
 	};
 }
 
-export default webAssetsPlugin();
+export default webAssetsPlugin("dev");

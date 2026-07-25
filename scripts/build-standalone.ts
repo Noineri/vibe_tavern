@@ -66,7 +66,7 @@ async function main() {
 
 	// ── Step 2: Build frontend ───────────────────────────────────────────
 
-	await step("Building frontend (vite build)", async () => {
+	await step("Building frontend (Bun build)", async () => {
 		const proc = Bun.spawn(["bun", "run", "--filter", "@vibe-tavern/web", "build"], {
 			cwd: ROOT,
 			stdout: "inherit",

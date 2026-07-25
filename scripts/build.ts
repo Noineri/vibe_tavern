@@ -182,8 +182,8 @@ async function main() {
   let packages: PackageConfig[];
 
   if (target === "web") {
-    // Build frontend via Vite
-    console.log("📦 Building frontend (vite build)...\n");
+    // Build frontend via Bun
+    console.log("📦 Building frontend (Bun build)...\n");
     const proc = Bun.spawn(["bun", "run", "--filter", "@vibe-tavern/web", "build"], {
       cwd: ROOT,
       stdout: "inherit",
@@ -214,7 +214,7 @@ async function main() {
     }
 
     // 2. Frontend
-    console.log("📦 Building frontend (vite build)...\n");
+    console.log("📦 Building frontend (Bun build)...\n");
     const proc = Bun.spawn(["bun", "run", "--filter", "@vibe-tavern/web", "build"], {
       cwd: ROOT,
       stdout: "inherit",
