@@ -97,7 +97,7 @@ const activeHeadingPlugin = ViewPlugin.fromClass(
       this.decorations = buildActiveHeadingDecoration(view);
     }
     update(update: ViewUpdate): void {
-      if (update.docChanged || update.selectionSet || update.viewportChanged) {
+      if (update.docChanged || update.selectionSet) {
         this.decorations = buildActiveHeadingDecoration(update.view);
       }
     }

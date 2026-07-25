@@ -308,7 +308,7 @@ const headingPlugin = ViewPlugin.fromClass(
       this.decorations = buildHeadingDecorations(view);
     }
     update(update: ViewUpdate): void {
-      if (update.docChanged || update.viewportChanged || update.transactions.some((t: { selection: unknown }) => t.selection)) {
+      if (update.docChanged || update.viewportChanged) {
         this.decorations = buildHeadingDecorations(update.view);
       }
     }

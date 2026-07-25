@@ -157,9 +157,8 @@ const foldTogglePlugin = ViewPlugin.fromClass(
       this.decorations = buildFoldDecorations(view);
     }
     update(update: ViewUpdate): void {
-      const docOrViewport = update.docChanged || update.viewportChanged;
       const foldsChanged = update.startState.field(foldState) !== update.state.field(foldState);
-      if (docOrViewport || foldsChanged) {
+      if (update.docChanged || foldsChanged) {
         this.decorations = buildFoldDecorations(update.view);
       }
     }
