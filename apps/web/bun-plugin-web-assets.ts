@@ -24,26 +24,22 @@ async function resolvePublicAsset(args: OnResolveArgs): Promise<string | null> {
 		: null;
 }
 
-type PluginMode = "build" | "dev";
-
-// In "dev" the Bun.serve HTML bundler resolves <link href>/<script src> itself
-// before onResolve runs, absolutizing a leading-slash public path against the
-// process cwd (repo root) and failing the build. rewriteIndexHtml turns those
-// paths relative so the bundler resolves them from apps/web/public/ instead.
-// The <script src="/src/…"> rewrite is needed in BOTH modes (Bun.build emits a
-// relative bundle path); the public-asset rewrite is dev-only, because in
-// "build" mode onResolve fires first and its { external: true } result keeps the
-// original "/logo-256.png" href — matching the Vite baseline exactly.
-function rewriteIndexHtml(html: string, mode: PluginMode): string {
-	const withScript = html.replace(/src="\/src\//g, 'src="./src/');
-	if (mode === "build") return withScript;
-	return withScript.replace(
-		/(href|src)="\/(logo[^"]*|favicon[^"]*)"/g,
-		'$1="./public/$2"',
-	);
+// Bun's HTML bundler resolves <link href>/<script src> BEFORE our onResolve hook
+// runs. A leading-slash path like "/logo-256.png" is absolutized against the
+// process cwd: on POSIX it still reaches onResolve (marked external, kept
+// verbatim), but on Windows it becomes a drive-rooted path that misses the
+// /^\// filter, so default resolution runs and the build fails with
+// `Could not resolve: "/logo-256.png"`. Relativizing the hrefs sidesteps the
+// race entirely — Bun resolves them from apps/web/ and bundles+hashes the icons
+// natively on every platform. The <script src="/src/…"> rewrite is required for
+// the same reason (the emitted bundle path is relative).
+export function rewriteIndexHtml(html: string): string {
+	return html
+		.replace(/src="\/src\//g, 'src="./src/')
+		.replace(/(href|src)="\/(logo[^"]*|favicon[^"]*)"/g, '$1="./public/$2"');
 }
 
-export function webAssetsPlugin(mode: PluginMode = "build"): BunPlugin {
+export function webAssetsPlugin(): BunPlugin {
 	return {
 		name: "vibe-tavern-web-assets",
 		setup(builder) {
@@ -62,11 +58,11 @@ export function webAssetsPlugin(mode: PluginMode = "build"): BunPlugin {
 			}));
 
 			builder.onLoad({ filter: /index\.html$/ }, async (args) => ({
-				contents: rewriteIndexHtml(await Bun.file(args.path).text(), mode),
+				contents: rewriteIndexHtml(await Bun.file(args.path).text()),
 				loader: "html",
 			}));
 		},
 	};
 }
 
-export default webAssetsPlugin("dev");
+export default webAssetsPlugin();
