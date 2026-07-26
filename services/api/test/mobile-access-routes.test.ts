@@ -108,4 +108,35 @@ describe("mobile access config-file characterization", () => {
     // the key, so getToken() returns undefined despite its string | null type.
     expect(service.getToken()).toBeUndefined();
   });
+
+  test("concurrent generate/revoke mutations stay ordered and leave disk consistent with memory", async () => {
+    const service = await MobileAccessService.create(configDir);
+    const configPath = join(configDir, "mobile-access.json");
+    // Delay the first config write and start the second mutation only after
+    // the first has computed its payload: without mutation serialization the
+    // stale write lands last and persists a token memory believes was revoked.
+    const originalWrite = Bun.write;
+    let intercepted = 0;
+    Bun.write = (async (...args: Parameters<typeof Bun.write>) => {
+      const [destination] = args;
+      if (destination === configPath) {
+        intercepted += 1;
+        if (intercepted === 1) await Bun.sleep(50);
+      }
+      return originalWrite(...args);
+    }) as typeof Bun.write;
+
+    try {
+      const generation = service.generateToken();
+      while (intercepted === 0) await Bun.sleep(1);
+      const revocation = service.revokeToken();
+      await Promise.all([generation, revocation]);
+    } finally {
+      Bun.write = originalWrite;
+    }
+
+    expect(service.getToken()).toBeNull();
+    const persisted = JSON.parse(await Bun.file(configPath).text());
+    expect(persisted.token).toBeNull();
+  });
 });

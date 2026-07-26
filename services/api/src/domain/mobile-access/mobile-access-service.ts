@@ -96,12 +96,16 @@ export async function getRecommendedIPs(): Promise<IPResult[]> {
 // ── Token Management ────────────────────────────────────────────────────
 
 export class MobileAccessService {
-  private readonly configPath: string;
-  private config: MobileAccessConfig = { token: null };
+	private readonly configPath: string;
+	private config: MobileAccessConfig = { token: null };
+	// Serializes token mutations: concurrent generate/revoke calls interleave
+	// their Bun.write() completions out of order, leaving disk and memory
+	// diverged (e.g. a revoked token resurrecting after restart).
+	private mutationQueue: Promise<void> = Promise.resolve();
 
-  constructor(dataDir: string) {
-    this.configPath = resolve(dataDir, "mobile-access.json");
-  }
+	constructor(dataDir: string) {
+		this.configPath = resolve(dataDir, "mobile-access.json");
+	}
 
   static async create(dataDir: string): Promise<MobileAccessService> {
     const service = new MobileAccessService(dataDir);
@@ -117,7 +121,7 @@ export class MobileAccessService {
     }
   }
 
-  private async save(): Promise<void> {
+	private async save(): Promise<void> {
     await mkdir(dirname(this.configPath), { recursive: true });
     await Bun.write(this.configPath, JSON.stringify(this.config, null, 2));
   }
@@ -126,21 +130,34 @@ export class MobileAccessService {
     return this.config.token;
   }
 
-  async generateToken(): Promise<string> {
-    const token = crypto.randomUUID();
-    this.config.token = token;
-    await this.save();
-    return token;
-  }
+	async generateToken(): Promise<string> {
+		return this.enqueueMutation(async () => {
+			const token = crypto.randomUUID();
+			this.config.token = token;
+			await this.save();
+			return token;
+		});
+	}
 
-  async regenerateToken(): Promise<string> {
-    return this.generateToken();
-  }
+	async regenerateToken(): Promise<string> {
+		return this.generateToken();
+	}
 
-  async revokeToken(): Promise<void> {
-    this.config.token = null;
-    await this.save();
-  }
+	async revokeToken(): Promise<void> {
+		return this.enqueueMutation(async () => {
+			this.config.token = null;
+			await this.save();
+		});
+	}
+
+	private enqueueMutation<T>(mutation: () => Promise<T>): Promise<T> {
+		const run = this.mutationQueue.then(mutation);
+		this.mutationQueue = run.then(
+			() => undefined,
+			() => undefined,
+		);
+		return run;
+	}
 
   async getMobileAccessInfo(port: number, tlsEnabled: boolean): Promise<MobileAccessInfo> {
     const ips = await getRecommendedIPs();
