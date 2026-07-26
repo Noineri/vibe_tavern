@@ -164,13 +164,20 @@ describe("Bun.Glob semantics on Bun 1.3.14-canary.1", () => {
     if (process.platform === "win32") expectedFollowing.unshift("broken.json");
     expect(withFollowing.sort()).toEqual(expectedFollowing);
     expect(lenientEntries).toContain("broken.json");
-    await expect(scanGlob("**/*", {
+    const strictScan = scanGlob("**/*", {
       cwd: root,
       dot: true,
       followSymlinks: true,
       throwErrorOnBrokenSymlink: true,
       onlyFiles: false,
-    })).rejects.toThrow("ENOENT");
+    });
+    if (process.platform === "win32") {
+      // win32 yields the dangling link without stat'ing its target, so the
+      // strict flag has nothing to throw on.
+      await expect(strictScan).resolves.toContain("broken.json");
+    } else {
+      await expect(strictScan).rejects.toThrow("ENOENT");
+    }
   });
 
   test("rejects a circular symlink chain with ELOOP when following links", async () => {
