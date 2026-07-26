@@ -17,6 +17,12 @@ async function scanGlob(pattern: string, options: GlobScanOptions): Promise<stri
   return entries;
 }
 
+// Bun.Glob returns platform-native separators in scan results (\ on win32,
+// / elsewhere) — g() builds expectations in the platform's shape.
+function g(path: string): string {
+  return process.platform === "win32" ? path.replaceAll("/", "\\") : path;
+}
+
 async function buildPatternFixture(root: string): Promise<void> {
   await Promise.all([
     mkdir(join(root, ".hidden-dir"), { recursive: true }),
@@ -54,16 +60,16 @@ describe("Bun.Glob semantics on Bun 1.3.14-canary.1", () => {
     const withDot = await scanGlob("**/*.json", { cwd: tempRoot, dot: true });
 
     expect(withoutDot.sort()).toEqual([
-      "nested/inside.json",
-      "visible-dir/visible-child.json",
+      g("nested/inside.json"),
+      g("visible-dir/visible-child.json"),
       "visible.json",
     ]);
     expect(withDot.sort()).toEqual([
-      ".hidden-dir/hidden-dir.json",
+      g(".hidden-dir/hidden-dir.json"),
       ".hidden.json",
-      "nested/inside.json",
-      "visible-dir/.hidden-child.json",
-      "visible-dir/visible-child.json",
+      g("nested/inside.json"),
+      g("visible-dir/.hidden-child.json"),
+      g("visible-dir/visible-child.json"),
       "visible.json",
     ]);
   });
@@ -77,7 +83,7 @@ describe("Bun.Glob semantics on Bun 1.3.14-canary.1", () => {
 
     expect(defaultEntries).toEqual(files);
     expect(files).not.toContain("nested");
-    expect(entries).toEqual(expect.arrayContaining(["nested", "nested/deep-skill", "nested/inside.json"]));
+    expect(entries).toEqual(expect.arrayContaining(["nested", g("nested/deep-skill"), g("nested/inside.json")]));
   });
 
   test("distinguishes immediate and nested patterns", async () => {
@@ -88,16 +94,16 @@ describe("Bun.Glob semantics on Bun 1.3.14-canary.1", () => {
     const immediate = await scanGlob("*", { cwd: tempRoot, dot: true, onlyFiles: false });
     const recursive = await scanGlob("**/*", { cwd: tempRoot, dot: true, onlyFiles: false });
 
-    expect(json).toContain("nested/inside.json");
-    expect(immediateSkill).toEqual(["top-skill/SKILL.md"]);
-    expect(immediate.every((entry) => !entry.includes("/"))).toBe(true);
-    expect(recursive).toEqual(expect.arrayContaining(["nested/inside.json", "nested/deep-skill/SKILL.md"]));
+    expect(json).toContain(g("nested/inside.json"));
+    expect(immediateSkill).toEqual([g("top-skill/SKILL.md")]);
+    expect(immediate.every((entry) => !entry.includes("/") && !entry.includes("\\"))).toBe(true);
+    expect(recursive).toEqual(expect.arrayContaining([g("nested/inside.json"), g("nested/deep-skill/SKILL.md")]));
   });
 
   test("matches with forward-slash separators and not with backslash separators", async () => {
     await buildPatternFixture(tempRoot);
 
-    expect(await scanGlob("nested/*.json", { cwd: tempRoot })).toEqual(["nested/inside.json"]);
+    expect(await scanGlob("nested/*.json", { cwd: tempRoot })).toEqual([g("nested/inside.json")]);
     expect(await scanGlob("nested\\*.json", { cwd: tempRoot })).toEqual([]);
   });
 
@@ -142,12 +148,12 @@ describe("Bun.Glob semantics on Bun 1.3.14-canary.1", () => {
       onlyFiles: false,
     });
 
-    expect(withoutFollowing).toEqual(["inside/inside.json"]);
+    expect(withoutFollowing).toEqual([g("inside/inside.json")]);
     expect(withFollowing.sort()).toEqual([
       "escaping.json",
-      "inside/inside.json",
-      "linked-inside/inside.json",
-      "linked-outside/escaped.json",
+      g("inside/inside.json"),
+      g("linked-inside/inside.json"),
+      g("linked-outside/escaped.json"),
     ]);
     expect(lenientEntries).toContain("broken.json");
     await expect(scanGlob("**/*", {

@@ -13,6 +13,12 @@ import {
   type ScanRoot,
 } from "../src/domain/coauthor/skills/skill-scanner.js";
 
+// Bun.Glob returns platform-native separators in scan results (\ on win32,
+// / elsewhere) — g() builds expectations in the platform's shape.
+function g(path: string): string {
+  return process.platform === "win32" ? path.replaceAll("/", "\\") : path;
+}
+
 /**
  * CTX-S1 — Filesystem skill scanner contract. Pins the discovery rules the
  * COAUTHOR_TOOLSET_EXPANSION_PLAN Wave 1 exit gate requires: the nine-skill
@@ -501,8 +507,8 @@ describe("scanSkillRoot — Bun.Glob rewrite characterization", () => {
       recursive.push(entry);
     }
 
-    expect(immediateWithoutDot).toEqual(["visible-skill/SKILL.md"]);
-    expect(immediateWithDot.sort()).toEqual([".hidden-skill/SKILL.md", "visible-skill/SKILL.md"]);
-    expect(recursive).toContain("nested/deep-skill/SKILL.md");
+    expect(immediateWithoutDot).toEqual([g("visible-skill/SKILL.md")]);
+    expect(immediateWithDot.sort()).toEqual([g(".hidden-skill/SKILL.md"), g("visible-skill/SKILL.md")]);
+    expect(recursive).toContain(g("nested/deep-skill/SKILL.md"));
   });
 });

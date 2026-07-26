@@ -33,6 +33,12 @@ import { setTokenCountFn } from "@vibe-tavern/prompt-pipeline";
 import { STORAGE_FOLDERS } from "@vibe-tavern/db";
 import { scanSillyTavernDirectory } from "../src/shared/st-directory-scanner.js";
 
+// Bun.Glob returns platform-native separators in scan results (\ on win32,
+// / elsewhere) — g() builds expectations in the platform's shape.
+function g(path: string): string {
+	return process.platform === "win32" ? path.replaceAll("/", "\\") : path;
+}
+
 /**
  * Build a complete-but-minimal ST data dir. Returns its root path.
  * Fixture names use distinctive strings so assertions can find them by name
@@ -252,7 +258,7 @@ describe("ST directory scanner — Bun.Glob rewrite characterization", () => {
 
 		expect(relative(root, outsideCard).startsWith("..")).toBe(true);
 		expect(withoutFollowing).toEqual([]);
-		expect(withFollowing).toEqual(["characters/escaping.json"]);
+		expect(withFollowing).toEqual([g("characters/escaping.json")]);
 	});
 });
 
