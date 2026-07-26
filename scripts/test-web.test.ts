@@ -5,8 +5,9 @@ import { dirname, join } from "node:path";
 import { discoverWebTestFiles, runWebTestCli } from "./test-web.js";
 
 interface CliResult {
-	readonly exitCode: number;
+readonly exitCode: number;
 	readonly output: string;
+	readonly errors: string;
 }
 
 const temporaryDirectories: string[] = [];
@@ -32,8 +33,14 @@ async function writeFixture(root: string, relativePath: string, body = "expect(t
 
 async function runCli(root: string, args: readonly string[]): Promise<CliResult> {
 	const output: string[] = [];
-	const exitCode = await runWebTestCli(args, root, (message) => output.push(message));
-	return { exitCode, output: output.join("\n") };
+	const errors: string[] = [];
+	const exitCode = await runWebTestCli(
+		args,
+		root,
+		(message) => output.push(message),
+		(message) => errors.push(message),
+	);
+	return { exitCode, output: output.join("\n"), errors: errors.join("\n") };
 }
 
 test("discovers normalized source tests in lexical order and appends the harness canary", async () => {
@@ -99,6 +106,8 @@ test("propagates a failing fixture as a nonzero result", async () => {
 	// Then
 	expect(result.exitCode).toBe(1);
 	expect(result.output).toContain("FAIL apps/web/test/failing.test.ts");
+	expect(result.errors).toContain("Failing web test files (1)");
+	expect(result.errors).toContain("apps/web/test/failing.test.ts (exit 1)");
 });
 
 test("aggregates subprocess output by sorted file order rather than completion order", async () => {

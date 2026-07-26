@@ -159,6 +159,7 @@ export async function runWebTestCli(
 	args: readonly string[],
 	root: string = ROOT,
 	write: OutputWriter = console.log,
+	errorWrite: OutputWriter = console.error,
 ): Promise<number> {
 	const parsed = parseCli(args);
 	if (typeof parsed === "string") {
@@ -202,6 +203,14 @@ export async function runWebTestCli(
 		return 1;
 	}
 	const passed = writeResults(results, write);
+	if (!passed) {
+		const failures = results.filter((result) => result.exitCode !== 0 || result.testCount === 0);
+		const lines = failures.map((result) => {
+			const reason = result.testCount === 0 ? "zero tests" : `exit ${result.exitCode ?? "spawn error"}`;
+			return `${result.file} (${reason})`;
+		});
+		errorWrite(`Failing web test files (${failures.length}):\n${lines.join("\n")}`);
+	}
 	write(`\nWeb tests: ${passed ? "PASS" : "FAIL"} (${results.length} files)`);
 	return passed ? 0 : 1;
 }
