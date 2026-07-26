@@ -10,7 +10,7 @@
  * fails loudly. The encoder here mirrors png-writer's `utf8ToBase64` exactly
  * (TextEncoder → btoa), so the test exercises the real on-the-wire encoding.
  */
-import { test, expect } from "vitest";
+import { test, expect } from "bun:test";
 import { extractVtmdMonolith, type PngMetadata } from "./png-reader.js";
 
 /** Mirrors png-writer's internal `utf8ToBase64` (UTF-8 aware). */

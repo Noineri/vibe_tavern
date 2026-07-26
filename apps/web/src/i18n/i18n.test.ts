@@ -15,9 +15,9 @@
  * The literal `{{user}}` / `{{char}}` macros (SillyTavern syntax hints) are intentionally kept
  * double-braced — they must stay literal, which is exactly what the single-brace config does.
  *
- * Runner: vitest (apps/web).
+ * Runner: bun:test.
  */
-import { describe, it, expect } from "vitest";
+import { describe, it, expect } from "bun:test";
 import i18next from "i18next";
 import en from "./locales/en.json";
 import ru from "./locales/ru.json";
@@ -31,14 +31,16 @@ interface DoubleBrace {
 	inner: string;
 }
 
+type LocaleValue = string | number | boolean | null | readonly LocaleValue[] | { readonly [key: string]: LocaleValue };
+
 /** Recursively collect every `{{...}}` occurrence in a locale object's string values. */
-function collectDoubleBraces(data: unknown, locale: string, key = "<root>", out: DoubleBrace[] = []): DoubleBrace[] {
+function collectDoubleBraces(data: LocaleValue, locale: string, key = "<root>", out: DoubleBrace[] = []): DoubleBrace[] {
 	if (typeof data === "string") {
 		const re = /\{\{([^}]+)\}\}/g;
 		let m: RegExpExecArray | null;
 		while ((m = re.exec(data)) !== null) out.push({ locale, key, inner: m[1]! });
 	} else if (data !== null && typeof data === "object") {
-		for (const [k, v] of Object.entries(data as Record<string, unknown>)) {
+		for (const [k, v] of Object.entries(data)) {
 			collectDoubleBraces(v, locale, key === "<root>" ? k : `${key}.${k}`, out);
 		}
 	}
@@ -61,9 +63,9 @@ describe("i18n interpolation delimiter hygiene", () => {
 			resources: { en: { translation: en } },
 			interpolation: { prefix: "{", suffix: "}" },
 		});
-		expect(inst.t("scn_hist_count_fill", { n: 5 })).toBe("Up to 5 assistant messages");
-		expect(inst.t("scn_hist_estimate", { cost: "0.42" })).toBe("≈ $0.42 estimated output cost");
-		expect(inst.t("scn_hist_progress", { processed: 2, total: 5 })).toBe("2 / 5");
+		expect(String(inst.t("scn_hist_count_fill", { n: 5 }))).toBe("Up to 5 assistant messages");
+		expect(String(inst.t("scn_hist_estimate", { cost: "0.42" }))).toBe("≈ $0.42 estimated output cost");
+		expect(String(inst.t("scn_hist_progress", { processed: 2, total: 5 }))).toBe("2 / 5");
 	});
 
 	it("{{user}} / {{char}} stay literal (ST-macro hints, not interpolation)", async () => {
@@ -73,6 +75,6 @@ describe("i18n interpolation delimiter hygiene", () => {
 			resources: { en: { translation: en } },
 			interpolation: { prefix: "{", suffix: "}" },
 		});
-		expect(inst.t("dialog_examples_placeholder", { user: "Bob" })).toBe("{{user}}: Hi!");
+		expect(String(inst.t("dialog_examples_placeholder", { user: "Bob" }))).toBe("{{user}}: Hi!");
 	});
 });

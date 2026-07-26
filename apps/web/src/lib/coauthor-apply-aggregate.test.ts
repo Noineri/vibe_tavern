@@ -14,7 +14,7 @@
  * streaming/error placeholders, and args-neutrality (operation input is
  * display-only, never read by aggregation).
  */
-import { describe, it, expect } from "vitest";
+import { describe, it, expect } from "bun:test";
 import type { BuildCharacterDraft, CoauthorLoreBundle } from "@vibe-tavern/api-contracts";
 import { parseProfileMd } from "@vibe-tavern/db/codecs";
 import { aggregateCoauthorProposal, buildPartialApplyRequest } from "./coauthor-apply-aggregate.js";

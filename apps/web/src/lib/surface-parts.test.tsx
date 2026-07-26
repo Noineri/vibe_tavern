@@ -1,3 +1,6 @@
+import { useDomEnv } from "../../test/dom-env.js";
+
+useDomEnv();
 /**
  * Catalog contracts for `surface-parts.tsx` — the ONLY file that maps the
  * registry's named parts to concrete components. Two invariants are pinned:
@@ -12,7 +15,7 @@
  *
  * See SURFACE_REGISTRY_REPORT.md fix-step 1b.
  */
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "bun:test";
 import { CHAT_MODE_PACKAGES } from "./chat-mode-registry.js";
 import { SURFACE_LEFT_CHROME, SURFACE_RIGHT_PANELS, SURFACE_SURFACES, SURFACE_TOP_BARS } from "./surface-parts.js";
 import { PlayMode } from "../components/play/PlayMode.js";

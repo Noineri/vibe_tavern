@@ -14,9 +14,12 @@
  * (callers in AiAssistantModal and CoauthorCharacterForm exercise this path);
  * do not change them without updating callers in wave 5.
  */
-import { describe, it, expect } from "vitest";
+import { describe, it, expect } from "bun:test";
 import { render } from "@testing-library/react";
+import { useDomEnv } from "../../../test/dom-env.js";
 import { buildLineDiff, buildWordDiff, TextDiffPreview } from "./TextDiffPreview.js";
+
+useDomEnv();
 
 const LABELS = { title: "Changes", tooLarge: "Diff too large", noChanges: "No changes" };
 

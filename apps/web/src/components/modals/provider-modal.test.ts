@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "bun:test";
 import type { SamplerFieldId } from "@vibe-tavern/domain";
 import type { FormState } from "./ProviderModal.js";
 
@@ -23,7 +23,7 @@ const _formStateCoversSamplers: _FormStateCoversSamplers = true;
 describe("ProviderModal FormState ↔ canonical sampler set (ERA-1)", () => {
   it("FormState keys cover every SamplerFieldId (compile-time assertion above)", () => {
     // The real assertion is the type-level line above; this runtime test keeps
-    // vitest from reporting an empty file and pins the invariant at run time too.
+    // Keeps Bun from reporting an empty file and pins the invariant at run time.
     expect(_formStateCoversSamplers).toBe(true);
   });
 });

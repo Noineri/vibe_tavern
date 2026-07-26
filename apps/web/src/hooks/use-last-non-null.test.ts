@@ -1,6 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "bun:test";
 import { renderHook } from "@testing-library/react";
+import { useDomEnv } from "../../test/dom-env.js";
 import { useLastNonNull } from "./use-last-non-null.js";
+
+useDomEnv();
 
 describe("useLastNonNull", () => {
   it("returns null before any non-null value has been seen", () => {

@@ -21,7 +21,7 @@
  * These moved with the Summary body from ContextMemoryModal into SummaryTab
  * (components/context/); the test moved with them.
  */
-import { describe, expect, test } from "vitest";
+import { describe, expect, test } from "bun:test";
 import { computeRangeAfterChange, upsertSummary } from "./SummaryTab.js";
 import type { ChatSummaryRecord } from "../../app-client.js";
 

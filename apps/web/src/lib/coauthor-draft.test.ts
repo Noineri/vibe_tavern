@@ -13,7 +13,8 @@
  * clearTurn) drive persistence end-to-end — the wiring that makes a reload
  * rehydrate the in-review diff.
  */
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach } from "bun:test";
+import { useDomEnv } from "../../test/dom-env.js";
 import {
 	finalizeForPersistence,
 	serializeDraft,
@@ -26,6 +27,8 @@ import {
 } from "./coauthor-draft.js";
 import { useCoauthorTurnStore } from "../stores/coauthor-turn-store.js";
 import type { CoauthorToolActivity } from "../stores/coauthor-turn-store.js";
+
+useDomEnv();
 
 function profileActivity(toolCallId: string, proposed: string, summary = "Made personality assertive."): CoauthorToolActivity {
 	return { toolCallId, toolName: "write_profile", status: "done", target: "profile", proposed, summary };

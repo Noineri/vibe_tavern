@@ -13,9 +13,12 @@
  *  - on desktop, or when a proposal is already pending on mount, no
  *    auto-switch happens (no jarring jump on chat open).
  */
-import { describe, it, expect } from "vitest";
+import { describe, it, expect } from "bun:test";
 import { renderHook, act } from "@testing-library/react";
+import { useDomEnv } from "../../../test/dom-env.js";
 import { useCoauthorMobileTab } from "./CoauthorMode.js";
+
+useDomEnv();
 
 describe("useCoauthorMobileTab", () => {
 	it("defaults to the Chat tab", () => {

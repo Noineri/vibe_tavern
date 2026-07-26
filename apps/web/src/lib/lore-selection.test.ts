@@ -5,7 +5,7 @@
  * AND its parent lorebook are selected, so a turn can never apply an entry
  * whose book was rejected.
  */
-import { describe, it, expect } from "vitest";
+import { describe, it, expect } from "bun:test";
 import type { CoauthorLoreBundle } from "@vibe-tavern/api-contracts";
 import {
 	selectLoreBundle,

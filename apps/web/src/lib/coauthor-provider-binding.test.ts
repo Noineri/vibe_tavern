@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect } from "bun:test";
 import { resolveCoauthorBinding, filterToolCapableFavorites } from "./coauthor-provider-binding.js";
 import type { ProviderProfileRecord, FavoriteProviderModelRecord } from "../api/types.js";
 
