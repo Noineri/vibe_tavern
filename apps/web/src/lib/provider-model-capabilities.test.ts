@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, test } from "bun:test";
 import { deriveOwner, getToolSupport, isFreeModel, normalizeProviderModel } from "./provider-model-capabilities.js";
 
 describe("provider model capabilities", () => {

@@ -20,16 +20,22 @@
  * `confirmLabel` and `title` / `subtitle` / preview text are passed through
  * untranslated, exactly as the production component uses them.
  *
- * Runner: vitest (apps/web) under happy-dom.
+ * Runner: bun:test (apps/web) with scoped happy-dom.
  */
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, mock, beforeAll, beforeEach } from "bun:test";
 import type { ReactNode } from "react";
-import { render, fireEvent, cleanup } from "@testing-library/react";
+import { render, fireEvent, waitFor, within } from "@testing-library/react";
+import { useDomEnv } from "../../../../test/dom-env.js";
+import type { ImportPreviewModalProps } from "./ImportPreviewModal.js";
+
+useDomEnv();
 
 // useT must return a stable t() — the modal builds labels off it. Mocking at
 // the module level keeps the test locale-independent and avoids pulling the
 // real i18next resource bundle.
-vi.mock("../../../i18n/context.js", () => ({
+const realI18nContext = await import("../../../i18n/context.js");
+mock.module("../../../i18n/context.js", () => ({
+  ...realI18nContext,
   useT: () => ({
     t: (key: string) => key,
     tDynamic: (key: string) => key,
@@ -39,10 +45,13 @@ vi.mock("../../../i18n/context.js", () => ({
   }),
 }));
 
-import { ImportPreviewModal, type ImportPreviewModalProps } from "./ImportPreviewModal.js";
+let ImportPreviewModal: typeof import("./ImportPreviewModal.js").ImportPreviewModal;
+beforeAll(async () => {
+	({ ImportPreviewModal } = await import("./ImportPreviewModal.js"));
+});
 
-const onClose = vi.fn();
-const onConfirm = vi.fn();
+const onClose = mock();
+const onConfirm = mock();
 
 const STATIC_PROPS = {
   title: "Preview title",
@@ -64,64 +73,65 @@ function renderModal(overrides: Partial<ImportPreviewModalProps> = {}): ReturnTy
 }
 
 beforeEach(() => {
-  // Module-level vi.fn instances — clear call state between tests so each
+	// Module-level mock instances — clear call state between tests so each
   // assertion sees only this test's calls.
   onClose.mockClear();
   onConfirm.mockClear();
 });
 
 describe("ImportPreviewModal", () => {
-  it("renders title, subtitle, preview content, and the caller's confirm label", () => {
-    const view = renderModal();
+	it("renders title, subtitle, preview content, and the caller's confirm label", async () => {
+		const view = renderModal();
+		await waitFor(() => expect(view.baseElement.textContent).toContain("Preview title"));
+		const modal = within(view.baseElement);
     // Title and subtitle appear twice each: once in the visible header, once
     // in the sr-only <Dialog.Title>/<Dialog.Description> that Modal renders
     // from its title/description props for screen-reader announcements.
-    expect(view.getAllByText("Preview title").length).toBe(2);
-    expect(view.getAllByText("Preview subtitle").length).toBe(2);
-    expect(view.getByText("PREVIEW_BODY")).toBeTruthy();
-    expect(view.getByText("Add to library")).toBeTruthy();
-    expect(view.getByText("cancel")).toBeTruthy();
-    cleanup();
+		expect(modal.getAllByText("Preview title").length).toBe(2);
+		expect(modal.getAllByText("Preview subtitle").length).toBe(2);
+		expect(modal.getByText("PREVIEW_BODY")).toBeTruthy();
+		expect(modal.getByText("Add to library")).toBeTruthy();
+		expect(modal.getByText("cancel")).toBeTruthy();
   });
 
   it("does not render its content when open is false", () => {
     const view = renderModal({ open: false });
     expect(view.queryByText("Preview title")).toBeNull();
     expect(view.queryByText("PREVIEW_BODY")).toBeNull();
-    cleanup();
   });
 
-  it("fires onClose when the header close button is clicked", () => {
-    const view = renderModal();
-    fireEvent.click(view.getByLabelText("close"));
+	it("fires onClose when the header close button is clicked", async () => {
+		const view = renderModal();
+		await waitFor(() => expect(view.baseElement.textContent).toContain("Preview title"));
+		fireEvent.click(within(view.baseElement).getByLabelText("close"));
     expect(onClose).toHaveBeenCalledTimes(1);
     expect(onConfirm).not.toHaveBeenCalled();
-    cleanup();
   });
 
-  it("fires onClose when the cancel button is clicked", () => {
-    const view = renderModal();
-    fireEvent.click(view.getByText("cancel"));
+	it("fires onClose when the cancel button is clicked", async () => {
+		const view = renderModal();
+		await waitFor(() => expect(view.baseElement.textContent).toContain("Preview title"));
+		fireEvent.click(within(view.baseElement).getByText("cancel"));
     expect(onClose).toHaveBeenCalledTimes(1);
     expect(onConfirm).not.toHaveBeenCalled();
-    cleanup();
   });
 
-  it("fires onConfirm when the confirm button is clicked", () => {
-    const view = renderModal();
-    fireEvent.click(view.getByText("Add to library"));
+	it("fires onConfirm when the confirm button is clicked", async () => {
+		const view = renderModal();
+		await waitFor(() => expect(view.baseElement.textContent).toContain("Preview title"));
+		fireEvent.click(within(view.baseElement).getByText("Add to library"));
     expect(onConfirm).toHaveBeenCalledTimes(1);
     expect(onClose).not.toHaveBeenCalled();
-    cleanup();
   });
 
-  it("disables the confirm button and swaps its label to t('importing') when isImporting is true", () => {
-    const view = renderModal({ isImporting: true });
-    const confirmBtn = view.getByText("importing") as HTMLButtonElement;
-    expect(confirmBtn.disabled).toBe(true);
-    expect(view.queryByText("Add to library")).toBeNull();
-    fireEvent.click(view.getByText("cancel"));
+	it("disables the confirm button and swaps its label to t('importing') when isImporting is true", async () => {
+		const view = renderModal({ isImporting: true });
+		await waitFor(() => expect(view.baseElement.textContent).toContain("importing"));
+		const modal = within(view.baseElement);
+		const confirmBtn = modal.getByText("importing") as HTMLButtonElement;
+		expect(confirmBtn.disabled).toBe(true);
+		expect(modal.queryByText("Add to library")).toBeNull();
+		fireEvent.click(modal.getByText("cancel"));
     expect(onClose).toHaveBeenCalledTimes(1);
-    cleanup();
   });
 });

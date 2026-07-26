@@ -20,13 +20,16 @@ import { Tokenizer as WebTokenizer } from "@agnai/web-tokenizers";
 
 export async function resolveTokenizerDir(): Promise<string> {
 	const candidates = [
-		process.env.RP_PLATFORM_TOKENIZER_DIR,
+		process.env.VIBE_TAVERN_TOKENIZER_DIR,
 		// Standalone artifact: tokenizers next to executable.
 		join(resolve(process.execPath, ".."), "tokenizers"),
 		// API artifacts: Bun.build flat output or tsc module output.
 		join(import.meta.dir, "tokenizers"),
 		join(import.meta.dir, "..", "tokenizers"),
-		// Source/dev mode still uses the canonical copied runtime assets in out/.
+		// Source tree (dev mode — no copy step required).
+		resolve(import.meta.dir, "..", "..", "..", "assets", "tokenizers"),
+		join(process.cwd(), "services", "api", "assets", "tokenizers"),
+		// Copied runtime assets in build output.
 		resolve(import.meta.dir, "..", "..", "..", "..", "out", "services", "api", "tokenizers"),
 		join(process.cwd(), "out", "services", "api", "tokenizers"),
 	].filter(Boolean) as string[];

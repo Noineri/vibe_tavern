@@ -31,8 +31,8 @@ import { join, resolve } from "node:path";
 export async function resolvePromptAssetPath(filename: string): Promise<string> {
   const candidates = [
     // Environment override.
-    process.env.RP_PLATFORM_AI_ASSISTANT_PROMPTS_DIR
-      ? join(process.env.RP_PLATFORM_AI_ASSISTANT_PROMPTS_DIR, filename)
+    process.env.VIBE_TAVERN_AI_ASSISTANT_PROMPTS_DIR
+      ? join(process.env.VIBE_TAVERN_AI_ASSISTANT_PROMPTS_DIR, filename)
       : null,
     // Standalone artifact: prompt next to executable, in prompts/ subdir.
     join(resolve(process.execPath, ".."), "prompts", filename),

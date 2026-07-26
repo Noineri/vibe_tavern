@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
+import { mkdir } from "node:fs/promises";
 import { resolve, dirname } from "node:path";
 import * as os from "os";
 import * as dgram from "dgram";
@@ -96,49 +96,68 @@ export async function getRecommendedIPs(): Promise<IPResult[]> {
 // ── Token Management ────────────────────────────────────────────────────
 
 export class MobileAccessService {
-  private configPath: string;
-  private config: MobileAccessConfig;
+	private readonly configPath: string;
+	private config: MobileAccessConfig = { token: null };
+	// Serializes token mutations: concurrent generate/revoke calls interleave
+	// their Bun.write() completions out of order, leaving disk and memory
+	// diverged (e.g. a revoked token resurrecting after restart).
+	private mutationQueue: Promise<void> = Promise.resolve();
 
-  constructor(dataDir: string) {
-    this.configPath = resolve(dataDir, "mobile-access.json");
-    this.config = this.load();
+	constructor(dataDir: string) {
+		this.configPath = resolve(dataDir, "mobile-access.json");
+	}
+
+  static async create(dataDir: string): Promise<MobileAccessService> {
+    const service = new MobileAccessService(dataDir);
+    service.config = await service.load();
+    return service;
   }
 
-  private load(): MobileAccessConfig {
+  private async load(): Promise<MobileAccessConfig> {
     try {
-      if (existsSync(this.configPath)) {
-        const raw = readFileSync(this.configPath, "utf-8");
-        return JSON.parse(raw);
-      }
-    } catch { /* ignore */ }
-    return { token: null };
+      return JSON.parse(await Bun.file(this.configPath).text());
+    } catch {
+      return { token: null };
+    }
   }
 
-  private save(): void {
-    const dir = dirname(this.configPath);
-    if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-    writeFileSync(this.configPath, JSON.stringify(this.config, null, 2));
+	private async save(): Promise<void> {
+    await mkdir(dirname(this.configPath), { recursive: true });
+    await Bun.write(this.configPath, JSON.stringify(this.config, null, 2));
   }
 
   getToken(): string | null {
     return this.config.token;
   }
 
-  generateToken(): string {
-    const token = crypto.randomUUID();
-    this.config.token = token;
-    this.save();
-    return token;
-  }
+	async generateToken(): Promise<string> {
+		return this.enqueueMutation(async () => {
+			const token = crypto.randomUUID();
+			this.config.token = token;
+			await this.save();
+			return token;
+		});
+	}
 
-  regenerateToken(): string {
-    return this.generateToken();
-  }
+	async regenerateToken(): Promise<string> {
+		return this.generateToken();
+	}
 
-  revokeToken(): void {
-    this.config.token = null;
-    this.save();
-  }
+	async revokeToken(): Promise<void> {
+		return this.enqueueMutation(async () => {
+			this.config.token = null;
+			await this.save();
+		});
+	}
+
+	private enqueueMutation<T>(mutation: () => Promise<T>): Promise<T> {
+		const run = this.mutationQueue.then(mutation);
+		this.mutationQueue = run.then(
+			() => undefined,
+			() => undefined,
+		);
+		return run;
+	}
 
   async getMobileAccessInfo(port: number, tlsEnabled: boolean): Promise<MobileAccessInfo> {
     const ips = await getRecommendedIPs();

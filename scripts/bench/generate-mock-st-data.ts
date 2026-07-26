@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { embedCharaMetadata } from "../../apps/web/src/lib/png-writer.ts";
@@ -55,7 +55,7 @@ async function generateMockData() {
 
     // Embed into PNG instead of saving as JSON
     const finalPng = embedCharaMetadata(basePngBytes, JSON.stringify(cardData));
-    await writeFile(join(charsDir, `${charName}.png`), finalPng);
+    await Bun.write(join(charsDir, `${charName}.png`), finalPng);
 
     const charChatsDir = join(chatsDir, charName);
     await mkdir(charChatsDir, { recursive: true });
@@ -90,7 +90,7 @@ async function generateMockData() {
         timestamp += 60000;
       }
 
-      await writeFile(join(charChatsDir, `${chatId}.jsonl`), lines.join("\n"), "utf8");
+      await Bun.write(join(charChatsDir, `${chatId}.jsonl`), lines.join("\n"));
     }
 
     if (i % 100 === 0) console.log(`Generated ${i}/${NUM_CHARACTERS} characters...`);
@@ -111,7 +111,7 @@ async function generateMockData() {
         }
       }
     };
-    await writeFile(join(worldsDir, `Mock_Lorebook_${i}.json`), JSON.stringify(lore, null, 2), "utf8");
+    await Bun.write(join(worldsDir, `Mock_Lorebook_${i}.json`), JSON.stringify(lore, null, 2));
   }
   console.log(`Generated ${NUM_LOREBOOKS} lorebooks.`);
 
@@ -124,7 +124,7 @@ async function generateMockData() {
         { identifier: "main", name: "Main", content: "You are a mock AI.", role: "system" }
       ]
     };
-    await writeFile(join(presetsDir, `Mock_Preset_${i}.json`), JSON.stringify(preset, null, 2), "utf8");
+    await Bun.write(join(presetsDir, `Mock_Preset_${i}.json`), JSON.stringify(preset, null, 2));
   }
   console.log(`Generated ${NUM_PRESETS} presets.`);
 
@@ -138,11 +138,7 @@ async function generateMockData() {
       description: `Description for persona ${i}`,
     };
   }
-  await writeFile(
-    join(OUT_DIR, "settings.json"),
-    JSON.stringify({ personas: personasData, persona_descriptions: personasDescs }, null, 2),
-    "utf8"
-  );
+  await Bun.write(join(OUT_DIR, "settings.json"), JSON.stringify({ personas: personasData, persona_descriptions: personasDescs }, null, 2));
   console.log(`Generated ${NUM_PERSONAS} personas.`);
 
   console.log("Done! Mock data generated.");

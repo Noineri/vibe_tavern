@@ -78,8 +78,8 @@ async function createFixture(): Promise<GitFixture> {
 	return { root, remote };
 }
 
-async function runBump(root: string): Promise<CommandResult> {
-	return run(["bun", "scripts/bump-version.ts", "1.1.0"], root);
+async function runBump(root: string, args: readonly string[] = ["1.1.0"]): Promise<CommandResult> {
+	return run(["bun", "scripts/bump-version.ts", ...args], root);
 }
 
 describe("bump-version release preconditions", () => {
@@ -143,5 +143,57 @@ describe("bump-version release preconditions", () => {
 		expect(result.exitCode).toBe(0);
 		expect((await git(fixture.root, "log", "-1", "--format=%s")).stdout.trim()).toBe("chore: bump to v1.1.0");
 		expect((await git(fixture.root, "cat-file", "-t", "v1.1.0")).stdout.trim()).toBe("tag");
+	});
+
+	test("rejects missing required versions before inspecting the disposable repository", async () => {
+		// Given
+		const fixture = await createFixture();
+		const before = (await git(fixture.root, "rev-parse", "HEAD")).stdout.trim();
+
+		// When
+		const result = await runBump(fixture.root, []);
+
+		// Then
+		expect(result.exitCode).toBe(1);
+		expect(result.stderr).toContain("Usage: bun run bump-version <version> [--push]");
+		expect((await git(fixture.root, "rev-parse", "HEAD")).stdout.trim()).toBe(before);
+	});
+
+	test("does not provide a short push alias", async () => {
+		// Given
+		const fixture = await createFixture();
+
+		// When: observed parser only excludes values starting with two dashes.
+		const result = await runBump(fixture.root, ["-p"]);
+
+		// Then
+		expect(result.exitCode).toBe(1);
+		expect(result.stderr).toContain('invalid semver: "-p"');
+	});
+
+	test("silently ignores unknown long options while accepting the first non-option positional", async () => {
+		// Given
+		const fixture = await createFixture();
+
+		// When
+		const result = await runBump(fixture.root, ["--not-a-real-option", "1.1.0"]);
+
+		// Then
+		expect(result.exitCode).toBe(0);
+		expect(result.stdout).toContain("Done locally.");
+		expect((await git(fixture.root, "tag", "--list", "v1.1.0")).stdout.trim()).toBe("v1.1.0");
+	});
+
+	test("recognises --push after Bun's separator", async () => {
+		// Given
+		const fixture = await createFixture();
+
+		// When: Bun consumes `--`, so the script receives `1.1.0 --push`.
+		const result = await runBump(fixture.root, ["1.1.0", "--", "--push"]);
+
+		// Then
+		expect(result.exitCode).toBe(0);
+		expect(result.stdout).toContain("Pushing to origin...");
+		expect((await git(fixture.remote, "show-ref", "--verify", "refs/tags/v1.1.0")).exitCode).toBe(0);
 	});
 });

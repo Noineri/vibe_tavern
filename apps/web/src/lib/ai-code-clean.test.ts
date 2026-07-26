@@ -1,4 +1,4 @@
-import { test, expect } from "vitest";
+import { test, expect } from "bun:test";
 import { cleanAiCode } from "./ai-code-clean.js";
 
 // Characterization tests — pin the behavior of the two byte-identical inline

@@ -92,9 +92,9 @@ describe("DELETE /api/coauthor/skills/:id", () => {
 
   test("built-in id → 400 (built-in immutability)", async () => {
     // Seed a built-in skill id by writing into the (temp) builtin root.
-    const { writeFile, mkdir } = await import("node:fs/promises");
+    const { mkdir } = await import("node:fs/promises");
     await mkdir(join(builtinRoot, "profile-overview"), { recursive: true });
-    await writeFile(join(builtinRoot, "profile-overview", "SKILL.md"), manifest("profile-overview"), "utf8");
+    await Bun.write(join(builtinRoot, "profile-overview", "SKILL.md"), manifest("profile-overview"));
 
     const app = makeApp();
     const res = await app.request("/api/coauthor/skills/profile-overview", { method: "DELETE" });
@@ -115,13 +115,13 @@ describe("DELETE /api/coauthor/skills/:id", () => {
 describe("GET /api/coauthor/skills — catalog", () => {
   test("list returns the merged metadata-only catalog (built-in + user, user precedence)", async () => {
     // Seed a built-in and a user skill that shadows it, plus a user-only skill.
-    const { writeFile, mkdir } = await import("node:fs/promises");
+    const { mkdir } = await import("node:fs/promises");
     await mkdir(join(builtinRoot, "profile-overview"), { recursive: true });
-    await writeFile(join(builtinRoot, "profile-overview", "SKILL.md"), manifest("profile-overview", "built-in"), "utf8");
+    await Bun.write(join(builtinRoot, "profile-overview", "SKILL.md"), manifest("profile-overview", "built-in"));
     await mkdir(join(userRoot, "profile-overview"), { recursive: true });
-    await writeFile(join(userRoot, "profile-overview", "SKILL.md"), manifest("profile-overview", "user shadow"), "utf8");
+    await Bun.write(join(userRoot, "profile-overview", "SKILL.md"), manifest("profile-overview", "user shadow"));
     await mkdir(join(userRoot, "my-skill"), { recursive: true });
-    await writeFile(join(userRoot, "my-skill", "SKILL.md"), manifest("my-skill", "mine"), "utf8");
+    await Bun.write(join(userRoot, "my-skill", "SKILL.md"), manifest("my-skill", "mine"));
 
     const app = makeApp();
     const res = await app.request("/api/coauthor/skills");
@@ -141,9 +141,9 @@ describe("GET /api/coauthor/skills — catalog", () => {
   });
 
   test("read by id → 200 with the entry; missing id → 404", async () => {
-    const { writeFile, mkdir } = await import("node:fs/promises");
+    const { mkdir } = await import("node:fs/promises");
     await mkdir(join(userRoot, "my-skill"), { recursive: true });
-    await writeFile(join(userRoot, "my-skill", "SKILL.md"), manifest("my-skill", "hello"), "utf8");
+    await Bun.write(join(userRoot, "my-skill", "SKILL.md"), manifest("my-skill", "hello"));
 
     const app = makeApp();
     const ok = await app.request("/api/coauthor/skills/my-skill");

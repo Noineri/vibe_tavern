@@ -10,12 +10,24 @@
  *   • the input value is cleared after each change so the same file can be
  *     reselected.
  *
- * Runner: vitest (apps/web) under happy-dom.
+ * Runner: bun:test with the scoped happy-dom harness.
  */
-import { describe, it, expect, vi } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, jest, mock, spyOn } from "bun:test";
+import { useDomEnv } from "../../../../test/dom-env.js";
 import { createElement, type ReactNode } from "react";
-import { render, fireEvent, cleanup } from "@testing-library/react";
-import { useMobileFilePicker } from "./use-mobile-file-picker.js";
+
+useDomEnv();
+const { render, fireEvent } = await import("@testing-library/react");
+
+let useMobileFilePicker: typeof import("./use-mobile-file-picker.js").useMobileFilePicker;
+
+beforeAll(async () => {
+  ({ useMobileFilePicker } = await import("./use-mobile-file-picker.js"));
+});
+
+afterEach(() => {
+  jest.restoreAllMocks();
+});
 
 function Harness({ accept, onFile }: { accept: string; onFile: (file: File) => void }) {
   const { open, inputElement } = useMobileFilePicker({ accept, onFile });
@@ -40,34 +52,31 @@ describe("useMobileFilePicker", () => {
     expect(input).not.toBeNull();
     expect(input.className).toBe("hidden");
     expect(input.accept).toBe(".png,.json");
-    cleanup();
   });
 
   it("open() triggers the native picker via input.click() click-through", () => {
     const { container } = render(createElement(Harness, { accept: ".jsonl", onFile: () => {} }));
     const input = container.querySelector('input[type="file"]') as HTMLInputElement;
     const button = container.querySelector("button") as HTMLButtonElement;
-    const clickSpy = vi.spyOn(input, "click");
+    const clickSpy = spyOn(input, "click");
     fireEvent.click(button);
-    expect(clickSpy).toHaveBeenCalledOnce();
-    cleanup();
+    expect(clickSpy).toHaveBeenCalledTimes(1);
   });
 
   it("forwards the picked file to onFile and clears the input value", () => {
-    const onFile = vi.fn();
+    const onFile = mock();
     const { container } = render(createElement(Harness, { accept: ".png", onFile }));
     const input = container.querySelector('input[type="file"]') as HTMLInputElement;
     const file = new File(["x"], "card.png", { type: "image/png" });
     setFiles(input, [file]);
     fireEvent.change(input);
-    expect(onFile).toHaveBeenCalledOnce();
+    expect(onFile).toHaveBeenCalledTimes(1);
     expect(onFile).toHaveBeenCalledWith(file);
     expect(input.value).toBe("");
-    cleanup();
   });
 
   it("does not call onFile when the picker is dismissed without a selection", () => {
-    const onFile = vi.fn();
+    const onFile = mock();
     const { container } = render(createElement(Harness, { accept: ".png", onFile }));
     const input = container.querySelector('input[type="file"]') as HTMLInputElement;
     setFiles(input, []);
@@ -75,21 +84,19 @@ describe("useMobileFilePicker", () => {
     expect(onFile).not.toHaveBeenCalled();
     // Value reset is still a no-op-safe (no selection to leak).
     expect(input.value).toBe("");
-    cleanup();
   });
 
   it("allows reselecting the same file after a prior change", () => {
-    const onFile = vi.fn();
+    const onFile = mock();
     const { container } = render(createElement(Harness, { accept: ".png", onFile }));
     const input = container.querySelector('input[type="file"]') as HTMLInputElement;
     const file = new File(["x"], "card.png", { type: "image/png" });
     setFiles(input, [file]);
     fireEvent.change(input);
-    expect(onFile).toHaveBeenCalledOnce();
+    expect(onFile).toHaveBeenCalledTimes(1);
     // Reselect the same file — second change still fires because value was cleared.
     setFiles(input, [file]);
     fireEvent.change(input);
     expect(onFile).toHaveBeenCalledTimes(2);
-    cleanup();
   });
 });

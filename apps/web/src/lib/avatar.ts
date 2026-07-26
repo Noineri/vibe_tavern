@@ -1,3 +1,4 @@
+import * as buildConfig from "../build-config.js";
 import { getGatewayBaseUrl } from "../gateway-client.js";
 import { appendTokenQuery } from "./mobile-token.js";
 
@@ -61,7 +62,7 @@ export function resolveEntityAvatarUrl(args: {
 			// pinned behind the 1-year cache. The backend always provides updatedAt
 			// (CharacterRecord.updatedAt), so this branch is unreachable in normal
 			// operation — a dev warning surfaces any future DTO that drops it.
-			if (import.meta.env.DEV) {
+			if (buildConfig.isDev) {
 				console.warn(
 					"[avatar] resolveEntityAvatarUrl: missing/invalid updatedAt for",
 					kind,

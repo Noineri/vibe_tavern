@@ -16,17 +16,24 @@
  *  - REGRESSION: existing service-prompt fields (script, summary) still render
  *    and edit through the same boundary.
  *
- * Runner: vitest (apps/web uses vitest, NOT bun:test). DOM via happy-dom.
+ * Runner: bun:test + happy-dom.
  */
-import { describe, it, expect, vi } from "vitest";
-import type { ReactNode } from "react";
-import { render, fireEvent, screen } from "@testing-library/react";
-import { PromptFields } from "./PromptFields.js";
+import { beforeAll, describe, it, expect, mock } from "bun:test";
+import { useState, type ReactNode } from "react";
+import { render, fireEvent, within } from "@testing-library/react";
+import { useDomEnv } from "../../../../test/dom-env.js";
+
+useDomEnv();
 
 // Identity i18n — assertion strings match keys verbatim. Covers useT in every
 // component in the module graph (PromptFields + TokenCounter + AutoTextarea +
 // MobileExpandTextarea + PrefillField + Tooltip + DropdownSelect + NumberInput).
-vi.mock("../../../i18n/context.js", () => ({
+const realI18nContext = await import("../../../i18n/context.js");
+const realTokenizer = await import("../../../utils/tokenizer.js");
+const realTooltip = await import("../../shared/Tooltip.js");
+const realUseMobile = await import("../../../hooks/use-mobile.js");
+mock.module("../../../i18n/context.js", () => ({
+  ...realI18nContext,
   useT: () => ({
     t: (k: string) => k,
     tDynamic: (k: string) => k,
@@ -38,17 +45,25 @@ vi.mock("../../../i18n/context.js", () => ({
 
 // countTokens loads a real tiktoken encoding (cl100k_base) — heavy and
 // irrelevant to service-prompt field behavior. Stub it to keep the test fast.
-vi.mock("../../../utils/tokenizer.js", () => ({ countTokens: () => 0 }));
+mock.module("../../../utils/tokenizer.js", () => ({ ...realTokenizer, countTokens: () => 0 }));
 
 // CustomTooltip (Radix) needs a TooltipProvider context irrelevant to field
 // behavior; passthrough so toggle/delete buttons render unwrapped.
-vi.mock("../../shared/Tooltip.js", () => ({
+mock.module("../../shared/Tooltip.js", () => ({
+  ...realTooltip,
   CustomTooltip: ({ children }: { children: ReactNode }) => children,
 }));
 
 // useIsMobile reads window.matchMedia, which happy-dom does not reliably
 // implement. Force desktop; the mobile fork is not the test target.
-vi.mock("../../../hooks/use-mobile.js", () => ({ useIsMobile: () => false }));
+mock.module("../../../hooks/use-mobile.js", () => ({ ...realUseMobile, useIsMobile: () => false }));
+
+let PromptFields: typeof import("./PromptFields.js").PromptFields;
+let userEvent: typeof import("@testing-library/user-event").default;
+beforeAll(async () => {
+	({ PromptFields } = await import("./PromptFields.js"));
+	({ default: userEvent } = await import("@testing-library/user-event"));
+});
 
 // ── Fixture ────────────────────────────────────────────────────────────
 
@@ -74,33 +89,66 @@ function baseDraft(overrides: Partial<NonNullable<DraftData>> = {}): NonNullable
 function baseProps(overrides: Partial<Parameters<typeof PromptFields>[0]> = {}) {
   return {
     draft: baseDraft(),
-    onUpdateField: vi.fn(),
+    onUpdateField: mock(),
     ...overrides,
   };
 }
 
+function ControlledPromptFields(props: ReturnType<typeof baseProps>) {
+  const [draft, setDraft] = useState<NonNullable<DraftData>>(props.draft ?? baseDraft());
+  return (
+    <PromptFields
+      {...props}
+      draft={draft}
+      onUpdateField={(field, value) => {
+        props.onUpdateField(field, value);
+        if (field === "aiAssistantPrompts" && typeof value === "object") {
+          setDraft((current) => ({ ...current, aiAssistantPrompts: value }));
+        } else if (field === "summary" && typeof value === "string") {
+          setDraft((current) => ({ ...current, summary: value }));
+        }
+      }}
+    />
+  );
+}
+
+let renderedBase: HTMLElement;
+
+function queries() {
+  return within(renderedBase);
+}
+
 /** Open the collapsible "Service Prompts" section and return the container. */
 function openServiceSection() {
-  const header = screen.getByText("prompt_section_service");
+  const header = queries().getByText("prompt_section_service");
   fireEvent.click(header);
 }
 
 /** Find the textarea whose current value matches `value`. */
 function findTextareaByValue(value: string): HTMLTextAreaElement {
-  const textareas = screen.getAllByRole("textbox") as HTMLTextAreaElement[];
+  const textareas = queries().getAllByRole("textbox") as HTMLTextAreaElement[];
   const match = textareas.find((t) => t.value === value);
   if (!match) throw new Error(`No textarea found with value "${value}"`);
   return match;
+}
+
+async function replaceTextareaValue(textarea: HTMLTextAreaElement, value: string): Promise<void> {
+  const user = userEvent.setup();
+  textarea.focus();
+  textarea.setSelectionRange(0, textarea.value.length);
+  if (value) await user.type(textarea, value, { skipClick: true });
+  else await user.keyboard("{Backspace}");
 }
 
 // ── Tests ──────────────────────────────────────────────────────────────
 
 describe("PromptFields — message_edit and message_merge service prompts", () => {
   it("renders both new mode labels in the service section", () => {
-    render(<PromptFields {...baseProps()} />);
-    openServiceSection();
-    expect(screen.getByText("ai_assistant_mode_message_edit")).toBeTruthy();
-    expect(screen.getByText("ai_assistant_mode_message_merge")).toBeTruthy();
+		const view = render(<PromptFields {...baseProps()} />);
+		renderedBase = view.baseElement;
+		openServiceSection();
+		expect(queries().getByText("ai_assistant_mode_message_edit")).toBeTruthy();
+		expect(queries().getByText("ai_assistant_mode_message_merge")).toBeTruthy();
   });
 
   it("loads preset overrides for message_edit and message_merge from aiAssistantPrompts", () => {
@@ -110,7 +158,8 @@ describe("PromptFields — message_edit and message_merge service prompts", () =
         message_merge: "custom merge prompt",
       },
     });
-    render(<PromptFields {...baseProps({ draft })} />);
+		const view = render(<PromptFields {...baseProps({ draft })} />);
+		renderedBase = view.baseElement;
     openServiceSection();
     const editTextarea = findTextareaByValue("custom edit prompt");
     const mergeTextarea = findTextareaByValue("custom merge prompt");
@@ -118,64 +167,68 @@ describe("PromptFields — message_edit and message_merge service prompts", () =
     expect(mergeTextarea).toBeTruthy();
   });
 
-  it("edits message_edit override via onUpdateField with updated aiAssistantPrompts", () => {
-    const onUpdateField = vi.fn();
+	it("edits message_edit override via onUpdateField with updated aiAssistantPrompts", async () => {
+		const onUpdateField = mock();
     const draft = baseDraft({
       aiAssistantPrompts: { message_edit: "old edit prompt" },
     });
-    render(<PromptFields {...baseProps({ draft, onUpdateField })} />);
+		const view = render(<ControlledPromptFields {...baseProps({ draft, onUpdateField })} />);
+		renderedBase = view.baseElement;
     openServiceSection();
     const textarea = findTextareaByValue("old edit prompt");
-    fireEvent.change(textarea, { target: { value: "new edit prompt" } });
+		await replaceTextareaValue(textarea, "new edit prompt");
     expect(onUpdateField).toHaveBeenCalledWith("aiAssistantPrompts", {
       message_edit: "new edit prompt",
     });
   });
 
-  it("edits message_merge override via onUpdateField with updated aiAssistantPrompts", () => {
-    const onUpdateField = vi.fn();
+	it("edits message_merge override via onUpdateField with updated aiAssistantPrompts", async () => {
+		const onUpdateField = mock();
     const draft = baseDraft({
       aiAssistantPrompts: { message_merge: "old merge prompt" },
     });
-    render(<PromptFields {...baseProps({ draft, onUpdateField })} />);
+		const view = render(<ControlledPromptFields {...baseProps({ draft, onUpdateField })} />);
+		renderedBase = view.baseElement;
     openServiceSection();
     const textarea = findTextareaByValue("old merge prompt");
-    fireEvent.change(textarea, { target: { value: "new merge prompt" } });
+		await replaceTextareaValue(textarea, "new merge prompt");
     expect(onUpdateField).toHaveBeenCalledWith("aiAssistantPrompts", {
       message_merge: "new merge prompt",
     });
   });
 
-  it("removes the message_edit key from aiAssistantPrompts when cleared to whitespace", () => {
-    const onUpdateField = vi.fn();
+	it("removes the message_edit key from aiAssistantPrompts when cleared to whitespace", async () => {
+		const onUpdateField = mock();
     const draft = baseDraft({
       aiAssistantPrompts: { message_edit: "to be cleared", message_merge: "keep" },
     });
-    render(<PromptFields {...baseProps({ draft, onUpdateField })} />);
+		const view = render(<ControlledPromptFields {...baseProps({ draft, onUpdateField })} />);
+		renderedBase = view.baseElement;
     openServiceSection();
     const textarea = findTextareaByValue("to be cleared");
-    fireEvent.change(textarea, { target: { value: "   " } });
+		await replaceTextareaValue(textarea, "   ");
     expect(onUpdateField).toHaveBeenCalledWith("aiAssistantPrompts", {
       message_merge: "keep",
     });
   });
 
-  it("removes the message_merge key from aiAssistantPrompts when cleared to empty", () => {
-    const onUpdateField = vi.fn();
+	it("removes the message_merge key from aiAssistantPrompts when cleared to empty", async () => {
+		const onUpdateField = mock();
     const draft = baseDraft({
       aiAssistantPrompts: { message_edit: "keep", message_merge: "to be cleared" },
     });
-    render(<PromptFields {...baseProps({ draft, onUpdateField })} />);
+		const view = render(<ControlledPromptFields {...baseProps({ draft, onUpdateField })} />);
+		renderedBase = view.baseElement;
     openServiceSection();
     const textarea = findTextareaByValue("to be cleared");
-    fireEvent.change(textarea, { target: { value: "" } });
+		await replaceTextareaValue(textarea, "");
     expect(onUpdateField).toHaveBeenCalledWith("aiAssistantPrompts", {
       message_edit: "keep",
     });
   });
 
-  it("preserves other aiAssistantPrompts keys when editing one mode", () => {
-    const onUpdateField = vi.fn();
+	it("preserves other aiAssistantPrompts keys when editing one mode", async () => {
+		const onUpdateField = mock();
     const draft = baseDraft({
       aiAssistantPrompts: {
         message_edit: "edit prompt",
@@ -183,10 +236,11 @@ describe("PromptFields — message_edit and message_merge service prompts", () =
         lore_entry: "lore prompt",
       },
     });
-    render(<PromptFields {...baseProps({ draft, onUpdateField })} />);
+		const view = render(<ControlledPromptFields {...baseProps({ draft, onUpdateField })} />);
+		renderedBase = view.baseElement;
     openServiceSection();
     const textarea = findTextareaByValue("edit prompt");
-    fireEvent.change(textarea, { target: { value: "updated edit" } });
+		await replaceTextareaValue(textarea, "updated edit");
     expect(onUpdateField).toHaveBeenCalledWith("aiAssistantPrompts", {
       message_edit: "updated edit",
       message_merge: "merge prompt",
@@ -196,29 +250,31 @@ describe("PromptFields — message_edit and message_merge service prompts", () =
 });
 
 describe("PromptFields — existing service prompts regression", () => {
-  it("still renders and edits the script mode (legacy fallback to scriptAiSystemPrompt)", () => {
-    const onUpdateField = vi.fn();
+	it("still renders and edits the script mode (legacy fallback to scriptAiSystemPrompt)", async () => {
+		const onUpdateField = mock();
     const draft = baseDraft({
       scriptAiSystemPrompt: "legacy script prompt",
       aiAssistantPrompts: {},
     });
-    render(<PromptFields {...baseProps({ draft, onUpdateField })} />);
-    openServiceSection();
-    expect(screen.getByText("ai_assistant_mode_script")).toBeTruthy();
+		const view = render(<ControlledPromptFields {...baseProps({ draft, onUpdateField })} />);
+		renderedBase = view.baseElement;
+		openServiceSection();
+		expect(queries().getByText("ai_assistant_mode_script")).toBeTruthy();
     const textarea = findTextareaByValue("legacy script prompt");
-    fireEvent.change(textarea, { target: { value: "new script" } });
+		await replaceTextareaValue(textarea, "new script");
     expect(onUpdateField).toHaveBeenCalledWith("aiAssistantPrompts", {
       script: "new script",
     });
   });
 
-  it("still renders and edits the summary field", () => {
-    const onUpdateField = vi.fn();
+	it("still renders and edits the summary field", async () => {
+		const onUpdateField = mock();
     const draft = baseDraft({ summary: "old summary" });
-    render(<PromptFields {...baseProps({ draft, onUpdateField })} />);
+		const view = render(<ControlledPromptFields {...baseProps({ draft, onUpdateField })} />);
+		renderedBase = view.baseElement;
     openServiceSection();
     const textarea = findTextareaByValue("old summary");
-    fireEvent.change(textarea, { target: { value: "new summary" } });
+		await replaceTextareaValue(textarea, "new summary");
     expect(onUpdateField).toHaveBeenCalledWith("summary", "new summary");
   });
 });

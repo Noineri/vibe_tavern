@@ -10,9 +10,9 @@
 |--------|------|-----|
 | **Bun** | Runtime, bundler, test runner, SQLite driver, file I/O | Single binary handles everything Node does plus native SQLite (`bun:sqlite`), built-in test runner, `Bun.file()` API, `Bun.write()`, crypto via `Bun.CryptoHasher`. Enables `bun build --compile` → single `.exe` distribution. No Node.js installation required for end users. |
 | **TypeScript ^6** | Language | Strict mode throughout. Branded IDs (`Brand<"ChatId">`) prevent accidental ID swaps at compile time. All API contracts are Zod schemas that produce TS types. |
-| **Vite 8** | Frontend build, HMR | Fastest dev server available. Native TS/ESM support. Plugin system for React, Tailwind. Bun-level startup speed. |
+| **Bun.build + Bun HTML imports** | Frontend build, dev server, HMR | The same runtime bundles the SPA (`scripts/build-web.ts`, HTML entry) and serves it in dev (`apps/web/dev-server.ts` with HMR). Tailwind 4 via `bun-plugin-tailwind`; dev-only `data-component` injection, build-time constants, and `?raw` raw-string loading via local Bun plugins. No separate frontend toolchain. |
 
-**Why not Node.js:** Bun provides native SQLite, faster `crypto`, `Bun.file()` as a cleaner fs API, and single-binary compilation. The project still uses `node:vm` (script sandbox), `node:fs/promises` (directory ops with no Bun equivalent), `node:crypto` (where needed for compatibility), `node:os` / `node:path` (platform paths) — but these are isolated cases.
+**Why not Node.js:** Bun provides native SQLite, faster `crypto`, `Bun.file()` as a cleaner fs API, and single-binary compilation. The project still uses `node:vm` for compatible script execution, not as a security boundary, plus `node:fs/promises` (directory ops with no Bun equivalent), `node:crypto` (where needed for compatibility), and `node:os` / `node:path` (platform paths) — but these are isolated cases.
 
 ---
 
@@ -87,6 +87,7 @@ Token counting for context budget management and tokenizer-specific logit-bias t
 - `js-tiktoken` — fast BPE tokenization for OpenAI models (cl100k, o200k, p50k encodings).
 - `@agnai/web-tokenizers` — WASM/JSON tokenizers for Claude, Llama 3, Mistral, Nemo, Qwen2, DeepSeek, Xiaomi MiMo, GLM-4.6/ZAI, and Command R/A. Larger but more accurate for non-GPT models.
 - Default fallback — prompt budgeting can fall back to `cl100k_base`/rough estimates when no tokenizer matches, but logit bias is fail-closed and disabled for unknown tokenizers.
+- Worker offload was evaluated and rejected because warmed production tokenization stayed below both event-loop thresholds; the synchronous architecture is retained (see [AD-025](./decisions.md#ad-025-synchronous-warmed-tokenizers-over-worker-offload)).
 
 ---
 
@@ -227,10 +228,11 @@ vibe-tavern/
 
 | Target | Method | Output |
 |--------|--------|--------|
-| **Dev (frontend)** | `bun run dev:web` — Vite dev server with HMR | Vite-served SPA |
-| **Dev (backend)** | `bun run dev:api` — Bun API server with watch | `services/api/src/` |
-| **Dev (full stack)** | `bun run dev` — builds the API stack then starts the production-style server | `out/services/api/` + `data/` |
-| **Production bundle** | `bun run build` — builds the API stack + Vite frontend | `out/services/api/`, `out/apps/web/` |
+| **Dev (full stack)** | `bun run dev` — single process on :4173 (`apps/web/dev-server.ts`): HMR frontend + API mounted in-process | `data/` (API runs from source) |
+| **Dev (frontend)** | `bun run dev:web` — standalone HMR frontend on :4173 (`--no-api`); point at a backend with `VIBE_TAVERN_WEB_API_URL` | Bun-served SPA |
+| **Dev (backend)** | `bun run dev:api` — API only on :8787 (`prod-server.ts --api-only`) | `services/api/src/` |
+| **Prod** | `bun run prod` — full build, then the API serves the static bundle on :8787 | `out/services/api/`, `out/apps/web/` |
+| **Production bundle** | `bun run build` — builds the API stack + Bun.build frontend (`scripts/build-web.ts`) | `out/services/api/`, `out/apps/web/` |
 | **Docker** | `docker-compose up` — Bun runtime + built frontend in single container | Uses production bundle |
 | **Standalone .exe** | `bun run build:standalone` — single binary with embedded frontend + assets | `out/standalone/vibe-tavern.exe` |
 | **Windows installer** | `bun run build:installer` — Inno Setup wrapper around the standalone exe | `out/installer/vibe-tavern-setup.exe` |
@@ -240,4 +242,3 @@ vibe-tavern/
 **Why standalone .exe:** The target audience (RP community) includes non-technical users. Download one file, double-click, it opens in browser. No Node.js, no `npm install`, no terminal.
 
 ---
-

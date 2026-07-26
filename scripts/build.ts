@@ -14,13 +14,11 @@
  */
 
 import { join, relative, resolve } from "node:path";
-import { copyFile, cp, mkdir, stat } from "node:fs/promises";
+import { copyFile, cp, mkdir } from "node:fs/promises";
+import { parseArgs } from "node:util";
+import { pathExists } from "./_fs.js";
 
 const ROOT = resolve(import.meta.dir, "..");
-
-function exists(path: string): Promise<boolean> {
-  return stat(path).then(() => true, () => false);
-}
 
 async function copyApiRuntimeAssets() {
   const apiOut = join(ROOT, "out", "services", "api");
@@ -35,10 +33,10 @@ async function copyApiRuntimeAssets() {
   if (promptFiles.length === 0) {
     throw new Error(`No .md prompt files found in ${promptDir}`);
   }
-  if (!(await exists(tokenizerSource))) {
+  if (!(await pathExists(tokenizerSource))) {
     throw new Error(`Tokenizer source not found: ${tokenizerSource}`);
   }
-  if (!(await exists(migrationsSource))) {
+  if (!(await pathExists(migrationsSource))) {
     throw new Error(`DB migrations source not found: ${migrationsSource}`);
   }
 
@@ -53,7 +51,7 @@ async function copyApiRuntimeAssets() {
   // flat readdir above skips subdirectories, so copy the whole folder.
   const coauthorSource = join(promptDir, "coauthor");
   const coauthorTarget = join(apiOut, "coauthor");
-  if (await exists(coauthorSource)) {
+  if (await pathExists(coauthorSource)) {
     await cp(coauthorSource, coauthorTarget, { recursive: true });
     promptTargets.push(coauthorTarget);
   }
@@ -171,12 +169,21 @@ async function buildPackage(pkg: PackageConfig) {
 }
 
 async function main() {
-  const target = process.argv[2] || "api-stack";
+  const args = process.argv.slice(2);
+  const { tokens } = parseArgs({
+    args,
+    options: {},
+    strict: false,
+    allowPositionals: true,
+    tokens: true,
+  });
+  const firstArgIndex = tokens[0]?.index;
+  const target = firstArgIndex === undefined ? "api-stack" : (args[firstArgIndex] ?? "api-stack");
   let packages: PackageConfig[];
 
   if (target === "web") {
-    // Build frontend via Vite
-    console.log("📦 Building frontend (vite build)...\n");
+    // Build frontend via Bun
+    console.log("📦 Building frontend (Bun build)...\n");
     const proc = Bun.spawn(["bun", "run", "--filter", "@vibe-tavern/web", "build"], {
       cwd: ROOT,
       stdout: "inherit",
@@ -207,7 +214,7 @@ async function main() {
     }
 
     // 2. Frontend
-    console.log("📦 Building frontend (vite build)...\n");
+    console.log("📦 Building frontend (Bun build)...\n");
     const proc = Bun.spawn(["bun", "run", "--filter", "@vibe-tavern/web", "build"], {
       cwd: ROOT,
       stdout: "inherit",

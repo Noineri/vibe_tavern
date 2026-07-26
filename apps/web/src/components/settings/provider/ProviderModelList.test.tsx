@@ -1,10 +1,21 @@
 import type { ComponentProps } from "react";
-import { describe, expect, test, vi } from "vitest";
-import { render } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
-import { Command } from "cmdk";
-import * as Tooltip from "@radix-ui/react-tooltip";
-import { ProviderModelList } from "./ProviderModelList.js";
+import { beforeAll, describe, expect, mock, test } from "bun:test";
+import { useDomEnv } from "../../../../test/dom-env.js";
+
+useDomEnv();
+
+let render: typeof import("@testing-library/react").render;
+let userEvent: typeof import("@testing-library/user-event").default;
+let Command: typeof import("cmdk").Command;
+let Tooltip: typeof import("@radix-ui/react-tooltip");
+let ProviderModelList: typeof import("./ProviderModelList.js").ProviderModelList;
+beforeAll(async () => {
+	({ render } = await import("@testing-library/react"));
+	({ default: userEvent } = await import("@testing-library/user-event"));
+	({ Command } = await import("cmdk"));
+	Tooltip = await import("@radix-ui/react-tooltip");
+	({ ProviderModelList } = await import("./ProviderModelList.js"));
+});
 
 const models = [
   { id: "supported", label: "Supported", toolSupport: "supported" as const },
@@ -13,9 +24,9 @@ const models = [
 ];
 
 function renderList(overrides: Partial<ComponentProps<typeof ProviderModelList>> = {}) {
-  const onSelect = vi.fn();
-  const onToggleFavorite = vi.fn();
-  const onUseCustomSlug = vi.fn();
+  const onSelect = mock();
+  const onToggleFavorite = mock();
+  const onUseCustomSlug = mock();
   const view = render(<Tooltip.Provider><Command><ProviderModelList models={models} selectedId="" search="" favorites={[]} onSelect={onSelect} onToggleFavorite={onToggleFavorite} onUseCustomSlug={onUseCustomSlug} {...overrides} /></Command></Tooltip.Provider>);
   return { ...view, onSelect, onToggleFavorite, onUseCustomSlug };
 }

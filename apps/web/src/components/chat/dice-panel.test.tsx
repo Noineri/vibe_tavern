@@ -1,12 +1,15 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
+import { beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import type { ReactNode } from "react";
+import { useDomEnv } from "../../../test/dom-env.js";
 import type { DiceDefinitionsResponse, DiceLaneState, DiceRollSnapshot } from "../../api/types.js";
-import { DicePanel } from "./DicePanel.js";
-import { DiceTray } from "./DiceTray.js";
-import { PlayMode } from "../play/PlayMode.js";
 
-const mocks = vi.hoisted(() => ({
+useDomEnv();
+
+let fireEvent: typeof import("@testing-library/react").fireEvent;
+let render: typeof import("@testing-library/react").render;
+let waitFor: typeof import("@testing-library/react").waitFor;
+
+const mocks = {
   activeChat: null as null | {
     id: string;
     characterId: string;
@@ -21,16 +24,27 @@ const mocks = vi.hoisted(() => ({
   lastError: null as string | null,
   mobile: false,
   actions: {
-    setScope: vi.fn(),
-    roll: vi.fn().mockResolvedValue("request_1"),
-    removeRoll: vi.fn().mockResolvedValue(undefined),
-    clearLane: vi.fn().mockResolvedValue(undefined),
-    setIncluded: vi.fn().mockResolvedValue(undefined),
-    chooseAttempt: vi.fn().mockResolvedValue(undefined),
+    setScope: mock(),
+    roll: mock(async () => "request_1"),
+    removeRoll: mock(async () => undefined),
+    clearLane: mock(async () => undefined),
+    setIncluded: mock(async () => undefined),
+    chooseAttempt: mock(async () => undefined),
   },
-}));
+};
+const realI18nContext = await import("../../i18n/context.js");
+const realMobileHook = await import("../../hooks/use-mobile.js");
+const realSnapshotStore = await import("../../stores/snapshot-store.js");
+const realDiceStore = await import("../../stores/dice-store.js");
+const realTooltip = await import("../shared/Tooltip.js");
+const realBottomSheet = await import("../shared/BottomSheet.js");
+const realQueueManager = await import("./QueueManager.js");
+const realInputArea = await import("./InputArea.js");
+const realMessageList = await import("./MessageList.js");
+const realMessageAiEditorModal = await import("./MessageAiEditorModal.js");
 
-vi.mock("../../i18n/context.js", () => ({
+mock.module("../../i18n/context.js", () => ({
+  ...realI18nContext,
   useT: () => ({
     t: (key: string, vars?: Record<string, unknown>) => {
       if (vars?.count != null) return `${key}:${String(vars.count)}`;
@@ -47,11 +61,13 @@ vi.mock("../../i18n/context.js", () => ({
   }),
 }));
 
-vi.mock("../../hooks/use-mobile.js", () => ({
+mock.module("../../hooks/use-mobile.js", () => ({
+  ...realMobileHook,
   useIsMobile: () => mocks.mobile,
 }));
 
-vi.mock("../../stores/snapshot-store.js", () => ({
+mock.module("../../stores/snapshot-store.js", () => ({
+  ...realSnapshotStore,
   useSnapshotStore: (selector: (state: {
     activeChat: typeof mocks.activeChat;
     activeBranch: typeof mocks.activeBranch;
@@ -65,7 +81,7 @@ vi.mock("../../stores/snapshot-store.js", () => ({
   }),
 }));
 
-vi.mock("../../stores/dice-store.js", () => {
+mock.module("../../stores/dice-store.js", () => {
   const useDiceStore = (selector: (state: typeof mocks.actions) => unknown) => selector(mocks.actions);
   useDiceStore.getState = () => mocks.actions;
   return {
@@ -77,20 +93,32 @@ vi.mock("../../stores/dice-store.js", () => {
   };
 });
 
-vi.mock("../shared/Tooltip.js", () => ({
+mock.module("../shared/Tooltip.js", () => ({
+  ...realTooltip,
   CustomTooltip: ({ children }: { children: ReactNode }) => children,
   TooltipProvider: ({ children }: { children: ReactNode }) => children,
 }));
 
-vi.mock("../shared/BottomSheet.js", () => ({
+mock.module("../shared/BottomSheet.js", () => ({
+  ...realBottomSheet,
   BottomSheet: ({ open, title, children }: { open: boolean; title?: ReactNode; children: ReactNode }) =>
     open ? <div data-testid="bottom-sheet">{title}{children}</div> : null,
 }));
 
-vi.mock("./QueueManager.js", () => ({ QueueManager: () => <div data-testid="queue-manager" /> }));
-vi.mock("./InputArea.js", () => ({ InputArea: () => <div data-testid="input-area" /> }));
-vi.mock("./MessageList.js", () => ({ MessageList: () => <div data-testid="message-list" /> }));
-vi.mock("./MessageAiEditorModal.js", () => ({ MessageAiEditorModal: () => null }));
+mock.module("./QueueManager.js", () => ({ ...realQueueManager, QueueManager: () => <div data-testid="queue-manager" /> }));
+mock.module("./InputArea.js", () => ({ ...realInputArea, InputArea: () => <div data-testid="input-area" /> }));
+mock.module("./MessageList.js", () => ({ ...realMessageList, MessageList: () => <div data-testid="message-list" /> }));
+mock.module("./MessageAiEditorModal.js", () => ({ ...realMessageAiEditorModal, MessageAiEditorModal: () => null }));
+
+let DicePanel: typeof import("./DicePanel.js").DicePanel;
+let DiceTray: typeof import("./DiceTray.js").DiceTray;
+let PlayMode: typeof import("../play/PlayMode.js").PlayMode;
+beforeAll(async () => {
+  ({ fireEvent, render, waitFor } = await import("@testing-library/react"));
+  ({ DicePanel } = await import("./DicePanel.js"));
+  ({ DiceTray } = await import("./DiceTray.js"));
+  ({ PlayMode } = await import("../play/PlayMode.js"));
+});
 
 const definitions: DiceDefinitionsResponse = {
   scripts: [
@@ -158,10 +186,6 @@ beforeEach(() => {
   mocks.lastError = null;
   mocks.mobile = false;
   for (const action of Object.values(mocks.actions)) action.mockClear();
-});
-
-afterEach(() => {
-  cleanup();
 });
 
 describe("DicePanel", () => {
@@ -492,7 +516,8 @@ describe("DiceTray", () => {
     // The class survives a mid-animation lane rerender (regression: it used to
     // be stripped, so the user never saw motion). After the animation ends, a
     // further rerender with the same rollKey must not re-add it (no replay).
-    const wrapper = container.querySelector(".dice-settle")!;
+    const wrapper = container.querySelector(".dice-settle");
+    if (wrapper === null) throw new Error("Expected DiceTray to render a settle marker");
     fireEvent.animationEnd(wrapper);
     rerender(<DiceTray {...props} lane={{ ...props.lane }} />);
     expect(container.querySelectorAll(".dice-settle")).toHaveLength(0);
@@ -501,13 +526,18 @@ describe("DiceTray", () => {
 
 describe("PlayMode composer stack", () => {
   it("mounts DicePanel as a centered sibling between QueueManager and InputArea", () => {
-    const { getByTestId, getByRole } = render(<PlayMode />);
-    const wrapper = getByTestId("queue-manager").parentElement;
-    expect(wrapper).not.toBeNull();
-    expect(Array.from(wrapper?.children ?? [])).toEqual([
-      getByTestId("queue-manager"),
-      getByRole("button", { name: "dice_panel_title" }).parentElement,
-      getByTestId("input-area"),
-    ]);
+	const { getByTestId, getByRole } = render(<PlayMode />);
+	const wrapper = getByTestId("queue-manager").parentElement;
+	const dicePanel = getByRole("button", { name: "dice_panel_title" }).parentElement;
+	if (wrapper === null || dicePanel === null) {
+		expect(wrapper).not.toBeNull();
+		expect(dicePanel).not.toBeNull();
+		return;
+	}
+	expect(Array.from(wrapper.children)).toEqual([
+		getByTestId("queue-manager"),
+		dicePanel,
+		getByTestId("input-area"),
+	]);
   });
 });

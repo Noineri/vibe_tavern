@@ -9,9 +9,12 @@
  * (name/description/tags pulled from the monolith) and that PNG/JSON still take
  * their original branches (no regression).
  */
-import { test, expect, describe } from "vitest";
+import { test, expect, describe } from "bun:test";
 import { packMonolith, type VtfCharacterContent } from "@vibe-tavern/db/codecs";
+import { useDomEnv } from "../../../../test/dom-env.js";
 import { parseCharacterFile, readCardRaw } from "./parse-import-file.js";
+
+useDomEnv();
 
 function fullContent(over: Partial<VtfCharacterContent> = {}): VtfCharacterContent {
   return {

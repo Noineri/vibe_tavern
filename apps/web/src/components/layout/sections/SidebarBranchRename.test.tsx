@@ -16,14 +16,23 @@
  * useT is mocked at the module boundary (the control calls useT but never
  * renders its output — same passthrough pattern as ActionSheet/VibeMdView).
  */
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, beforeAll, mock } from "bun:test";
 import { render, fireEvent } from "@testing-library/react";
+import { useDomEnv } from "../../../../test/dom-env.js";
 
-vi.mock("../../../i18n/context.js", () => ({
+useDomEnv();
+
+const realI18nContext = await import("../../../i18n/context.js");
+mock.module("../../../i18n/context.js", () => ({
+  ...realI18nContext,
   useT: () => ({ t: (key: string) => key, tDynamic: (key: string) => key, locale: "en", setLocale: () => {}, ready: true }),
 }));
 
-import { SidebarBranchRename } from "./SidebarBranchRename.js";
+const { SidebarBranchRename } = await import("./SidebarBranchRename.js");
+let userEvent: typeof import("@testing-library/user-event").default;
+beforeAll(async () => {
+	({ default: userEvent } = await import("@testing-library/user-event"));
+});
 
 describe("SidebarBranchRename", () => {
   it("renders an edit-trigger button (not an input) by default", () => {
@@ -45,15 +54,19 @@ describe("SidebarBranchRename", () => {
     expect(document.activeElement).toBe(input);
   });
 
-  it("blur with a changed value commits onRename with the trimmed value", () => {
-    const onRename = vi.fn();
+	it("blur with a changed value commits onRename with the trimmed value", async () => {
+		const onRename = mock();
     const { getByRole, getByDisplayValue, queryByRole } = render(
       <SidebarBranchRename branchId="br1" initialLabel="main" onRename={onRename} />,
-    );
-    fireEvent.click(getByRole("button"));
-    const input = getByDisplayValue("main");
-    fireEvent.change(input, { target: { value: "  renamed  " } });
-    fireEvent.blur(input);
+		);
+		fireEvent.click(getByRole("button"));
+		const input = getByDisplayValue("main");
+		if (!(input instanceof HTMLInputElement)) throw new Error("Expected a branch-label input");
+		const user = userEvent.setup();
+		await user.clear(input);
+		await user.type(input, "  renamed  ");
+		expect(input.value).toBe("  renamed  ");
+		await user.tab();
     expect(onRename).toHaveBeenCalledTimes(1);
     expect(onRename).toHaveBeenLastCalledWith("renamed");
     // committed → input unmounts, button returns
@@ -61,7 +74,7 @@ describe("SidebarBranchRename", () => {
   });
 
   it("blur with an UNCHANGED value does NOT call onRename", () => {
-    const onRename = vi.fn();
+		const onRename = mock();
     const { getByRole, getByDisplayValue, queryByRole } = render(
       <SidebarBranchRename branchId="br1" initialLabel="main" onRename={onRename} />,
     );
@@ -73,7 +86,7 @@ describe("SidebarBranchRename", () => {
   });
 
   it("blur with an empty / whitespace-only value aborts (no onRename)", () => {
-    const onRename = vi.fn();
+		const onRename = mock();
     const { getByRole, getByDisplayValue } = render(
       <SidebarBranchRename branchId="br1" initialLabel="main" onRename={onRename} />,
     );
@@ -85,7 +98,7 @@ describe("SidebarBranchRename", () => {
   });
 
   it("Escape cancels without calling onRename and returns to the button", () => {
-    const onRename = vi.fn();
+		const onRename = mock();
     const { getByRole, getByDisplayValue, queryByRole } = render(
       <SidebarBranchRename branchId="br1" initialLabel="main" onRename={onRename} />,
     );
@@ -97,15 +110,19 @@ describe("SidebarBranchRename", () => {
     expect(queryByRole("textbox")).toBeNull();
   });
 
-  it("Enter delegates to blur → commits onRename with the trimmed value", () => {
-    const onRename = vi.fn();
+	it("Enter delegates to blur → commits onRename with the trimmed value", async () => {
+		const onRename = mock();
     const { getByRole, getByDisplayValue } = render(
       <SidebarBranchRename branchId="br1" initialLabel="main" onRename={onRename} />,
-    );
-    fireEvent.click(getByRole("button"));
-    const input = getByDisplayValue("main");
-    fireEvent.change(input, { target: { value: "renamed" } });
-    fireEvent.keyDown(input, { key: "Enter" });
+		);
+		fireEvent.click(getByRole("button"));
+		const input = getByDisplayValue("main");
+		if (!(input instanceof HTMLInputElement)) throw new Error("Expected a branch-label input");
+		const user = userEvent.setup();
+		await user.clear(input);
+		await user.type(input, "renamed");
+		expect(input.value).toBe("renamed");
+		await user.keyboard("{Enter}");
     expect(onRename).toHaveBeenCalledTimes(1);
     expect(onRename).toHaveBeenLastCalledWith("renamed");
   });

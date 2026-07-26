@@ -1,4 +1,4 @@
-import { describe, test, expect } from "vitest";
+import { describe, test, expect } from "bun:test";
 import { buildLineDiff } from "../components/shared/TextDiffPreview.js";
 import { groupHunks, mergeSelectedBody, allHunkIds } from "./coauthor-hunk-merge.js";
 

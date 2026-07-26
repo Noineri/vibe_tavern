@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { resolve } from "node:path";
 import {
 	runTestCli,
 	runTestSuites,
@@ -6,6 +7,21 @@ import {
 } from "./test.js";
 
 const cwd = import.meta.dir;
+const root = resolve(import.meta.dir, "..");
+
+async function runTestScript(args: readonly string[]) {
+	const child = Bun.spawn(["bun", "scripts/test.ts", ...args], {
+		cwd: root,
+		stdout: "pipe",
+		stderr: "pipe",
+	});
+	const [exitCode, stdout, stderr] = await Promise.all([
+		child.exited,
+		new Response(child.stdout).text(),
+		new Response(child.stderr).text(),
+	]);
+	return { exitCode, stdout, stderr };
+}
 
 describe("test suite orchestration", () => {
 	test("continues after a failed suite and captures every result", async () => {
@@ -93,6 +109,51 @@ describe("test suite orchestration", () => {
 		expect(exitCode).toBe(0);
 		expect(output.join("\n")).toContain("[1/1] selected-pass");
 		expect(output.join("\n")).not.toContain("unselected-failure");
+	});
+
+	test("selects every suite in declaration order when invoked without positionals", async () => {
+		// Given
+		const suites = [
+			{ name: "first", cwd, command: [process.execPath, "-e", 'console.log("first")'] },
+			{ name: "second", cwd, command: [process.execPath, "-e", 'console.log("second")'] },
+		] as const satisfies readonly TestSuite[];
+		const output: string[] = [];
+
+		// When
+		const exitCode = await runTestCli(suites, [], (message) => output.push(message));
+
+		// Then
+		expect(exitCode).toBe(0);
+		expect(output).toContain("Running 2 isolated test suites...");
+		expect(output).toContain("[1/2] first");
+		expect(output).toContain("[2/2] second");
+	});
+
+	test("treats unrecognised option-looking arguments as invalid suite positionals", async () => {
+		// Given
+		const suites = [{ name: "scripts", cwd, command: [process.execPath, "-e", "process.exit(0)"] }] as const satisfies readonly TestSuite[];
+		const output: string[] = [];
+
+		// When
+		const exitCode = await runTestCli(suites, ["--only-failures"], (message) => output.push(message));
+
+		// Then
+		expect(exitCode).toBe(1);
+		expect(output.join("\n")).toContain("Unknown test suite: --only-failures");
+		expect(output.join("\n")).not.toContain("[1/1] scripts");
+	});
+
+	test("forwards values after Bun's separator as suite positionals instead of bun test flags", async () => {
+		// Given: no valid suite is selected, so this cannot recurse into the scripts suite.
+
+		// When
+		const result = await runTestScript(["--", "not-a-suite"]);
+
+		// Then: Bun consumes `--`; the script receives only the following positional.
+		expect(result.exitCode).toBe(1);
+		expect(result.stdout).toContain("Unknown test suite: not-a-suite");
+		expect(result.stdout).not.toContain("Unknown test suite: --");
+		expect(result.stderr).toBe("");
 	});
 
 });

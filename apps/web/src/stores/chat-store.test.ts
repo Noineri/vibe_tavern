@@ -13,7 +13,7 @@
  * capture is `pendingContent`-independent (it always reads the active lane),
  * which is what makes attachment-only sends bind Dice exactly like prose.
  */
-import { beforeEach, describe, expect, test } from "vitest";
+import { beforeEach, describe, expect, test } from "bun:test";
 import { brandId, type DiceRollId, type DiceRollSnapshot } from "@vibe-tavern/domain";
 import type { AppSnapshot } from "../api/types.js";
 import { useChatStore } from "./chat-store.js";

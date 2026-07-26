@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -27,7 +27,7 @@ describe("AssetService folder-resident avatars (B3)", () => {
 		const file = new File([PNG_BYTES], "ava.png", { type: "image/png" });
 		const { ext } = await service.writeCharacterAvatar("char_1", file);
 		expect(ext).toBe("png");
-		const onDisk = await readFile(join(dataRoot, CHARS, "char_1", "avatar.png"));
+		const onDisk = Buffer.from(await Bun.file(join(dataRoot, CHARS, "char_1", "avatar.png")).arrayBuffer());
 		expect(onDisk).toEqual(Buffer.from(PNG_BYTES));
 	});
 
@@ -35,7 +35,7 @@ describe("AssetService folder-resident avatars (B3)", () => {
 		const { dataRoot, service } = await setup();
 		const { ext } = await service.writePersonaAvatar("pers_1", new File([WEBP_BYTES], "a.webp", { type: "image/webp" }));
 		expect(ext).toBe("webp");
-		const onDisk = await readFile(join(dataRoot, PERSONAS, "pers_1", "avatar.webp"));
+		const onDisk = Buffer.from(await Bun.file(join(dataRoot, PERSONAS, "pers_1", "avatar.webp")).arrayBuffer());
 		expect(onDisk).toEqual(Buffer.from(WEBP_BYTES));
 	});
 
@@ -74,17 +74,17 @@ describe("AssetService folder-resident avatars (B3)", () => {
 		const { dataRoot, assetsDir, service } = await setup();
 		// Simulate a legacy flat asset uploaded via the old /api/assets path.
 		const assetId = "asset_abc123";
-		await writeFile(join(assetsDir, `${assetId}.png`), PNG_BYTES);
+		await Bun.write(join(assetsDir, `${assetId}.png`), PNG_BYTES);
 
 		const result = await service.migrateFlatAvatarToFolder({ kind: "character", id: "char_1" }, assetId);
 		expect(result).toEqual({ ext: "png" });
 
 		// Copied into the folder
-		const copied = await readFile(join(dataRoot, CHARS, "char_1", "avatar.png"));
+		const copied = Buffer.from(await Bun.file(join(dataRoot, CHARS, "char_1", "avatar.png")).arrayBuffer());
 		expect(copied).toEqual(Buffer.from(PNG_BYTES));
 
 		// Flat source preserved (copy-forward)
-		const source = await readFile(join(assetsDir, `${assetId}.png`));
+		const source = Buffer.from(await Bun.file(join(assetsDir, `${assetId}.png`)).arrayBuffer());
 		expect(source).toEqual(Buffer.from(PNG_BYTES));
 	});
 
@@ -125,12 +125,12 @@ describe("AssetService full-avatar overwrite (Bug #2 characterization)", () => {
 	test("writeCharacterAvatarFull overwrites the prior full on a second write", async () => {
 		const { dataRoot, service } = await setup();
 		await service.writeCharacterAvatarFull("char_1", new File([FULL_A], "a.png", { type: "image/png" }));
-		let onDisk = await readFile(join(dataRoot, CHARS, "char_1", "avatar-full.png"));
+		let onDisk = Buffer.from(await Bun.file(join(dataRoot, CHARS, "char_1", "avatar-full.png")).arrayBuffer());
 		expect(onDisk).toEqual(Buffer.from(FULL_A));
 
 		// Second write with different bytes + different length — must overwrite, not append/no-op.
 		await service.writeCharacterAvatarFull("char_1", new File([FULL_B], "b.png", { type: "image/png" }));
-		onDisk = await readFile(join(dataRoot, CHARS, "char_1", "avatar-full.png"));
+		onDisk = Buffer.from(await Bun.file(join(dataRoot, CHARS, "char_1", "avatar-full.png")).arrayBuffer());
 		expect(onDisk).toEqual(Buffer.from(FULL_B));
 		expect(onDisk.length).toBe(FULL_B.length);
 	});
@@ -149,8 +149,8 @@ describe("AssetService full-avatar overwrite (Bug #2 characterization)", () => {
 		const { dataRoot, service } = await setup();
 		await service.writeCharacterAvatar("char_1", new File([PNG_BYTES], "crop.png", { type: "image/png" }));
 		await service.writeCharacterAvatarFull("char_1", new File([FULL_B], "full.png", { type: "image/png" }));
-		const crop = await readFile(join(dataRoot, CHARS, "char_1", "avatar.png"));
-		const full = await readFile(join(dataRoot, CHARS, "char_1", "avatar-full.png"));
+		const crop = Buffer.from(await Bun.file(join(dataRoot, CHARS, "char_1", "avatar.png")).arrayBuffer());
+		const full = Buffer.from(await Bun.file(join(dataRoot, CHARS, "char_1", "avatar-full.png")).arrayBuffer());
 		expect(crop).toEqual(Buffer.from(PNG_BYTES));
 		expect(full).toEqual(Buffer.from(FULL_B));
 	});
@@ -161,7 +161,7 @@ describe("AssetService character media gallery (A4)", () => {
 		const { dataRoot, service } = await setup();
 		const result = await service.writeGalleryImage("char_1", "row_7", new File([PNG_BYTES], "p.png", { type: "image/png" }));
 		expect(result).toEqual({ ext: "png", mimeType: "image/png" });
-		const onDisk = await readFile(join(dataRoot, CHARS, "char_1", "gallery", "row_7.png"));
+		const onDisk = Buffer.from(await Bun.file(join(dataRoot, CHARS, "char_1", "gallery", "row_7.png")).arrayBuffer());
 		expect(onDisk).toEqual(Buffer.from(PNG_BYTES));
 	});
 
@@ -204,9 +204,9 @@ describe("AssetService character media gallery (A4)", () => {
 		await service.deleteGalleryImage("char_1", "row_1", "png");
 
 		// targeted leaf gone
-		await expect(readFile(join(dataRoot, CHARS, "char_1", "gallery", "row_1.png"))).rejects.toThrow();
+		await expect(Bun.file(join(dataRoot, CHARS, "char_1", "gallery", "row_1.png")).arrayBuffer()).rejects.toThrow();
 		// sibling untouched
-		const sibling = await readFile(join(dataRoot, CHARS, "char_1", "gallery", "row_2.webp"));
+		const sibling = Buffer.from(await Bun.file(join(dataRoot, CHARS, "char_1", "gallery", "row_2.webp")).arrayBuffer());
 		expect(sibling).toEqual(Buffer.from(WEBP_BYTES));
 
 		// no-op when already missing

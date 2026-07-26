@@ -23,62 +23,49 @@
  * and the `mock.module` cross-file-leak gotcha (reals are captured and spread
  * first, only the specific fns are overridden).
  */
-import { test, expect, beforeEach, vi } from "vitest";
+import { test, expect, beforeEach, mock } from "bun:test";
 import { renderHook, act } from "@testing-library/react";
+import { useDomEnv } from "../../test/dom-env.js";
+
+useDomEnv();
 
 
 // ─── Mock fns (captured real modules are spread in to avoid cross-file leak) ─
 
-// vi.hoisted: vi.mock (below) is hoisted above these consts, so the factory
-// would close over uninitialized bindings. Hoisting the fns alongside the mock
-// keeps the vi.mock factory and all test-body assertions unchanged.
-const {
-  uploadCharacterAvatar,
-  uploadAsset,
-  updateCharacterAvatar,
-  fetchBootstrapAction,
-  importCharacterAction,
-} = vi.hoisted(() => ({
-  uploadCharacterAvatar: vi.fn((_id: string, _file: File, _full?: File) =>
-    Promise.resolve({ avatarExt: ".png", avatarFullExt: ".png" })),
-  // Legacy fns that must NEVER be called by the migrated hook.
-  uploadAsset: vi.fn((_f: File) => Promise.resolve({ assetId: "asset-legacy" })),
-  updateCharacterAvatar: vi.fn((_cid: string, _chatId: unknown, _aid: string) =>
-    Promise.resolve({} as never)),
-  fetchBootstrapAction: vi.fn((_opts?: { silent?: boolean; skipSnapshotSync?: boolean }) =>
-    Promise.resolve()),
-  importCharacterAction: vi.fn((_input: { fileName: string; jsonText: string }) =>
-    Promise.resolve({
-      activeChatId: "chat-1",
-      snapshot: { character: { id: "char-imported", name: "Test", avatarExt: null } },
-      imported: { kind: "character", name: "Test", fileName: "card.png", warningCount: 0, warnings: [] },
-    } as never)),
-}));
+const uploadCharacterAvatar = mock((_id: string, _file: File, _full?: File) =>
+	Promise.resolve({ avatarExt: ".png", avatarFullExt: ".png" }));
+const uploadAsset = mock((_f: File) => Promise.resolve({ assetId: "asset-legacy" }));
+const updateCharacterAvatar = mock((_cid: string, _chatId: unknown, _aid: string) =>
+	Promise.resolve({} as never));
+const fetchBootstrapAction = mock((_opts?: { silent?: boolean; skipSnapshotSync?: boolean }) =>
+	Promise.resolve());
+const importCharacterAction = mock((_input: { fileName: string; jsonText: string }) =>
+	Promise.resolve({
+		activeChatId: "chat-1",
+		snapshot: { character: { id: "char-imported", name: "Test", avatarExt: null } },
+		imported: { kind: "character", name: "Test", fileName: "card.png", warningCount: 0, warnings: [] },
+	} as never));
 
-// vitest: vi.mock is hoisted above top-level `await import`, so capturing real
-// modules up top would resolve to the MOCKED module. Each factory reads the
-// real module via `importOriginal` instead. (The `await` on vi.mock was a
-// bun:test-ism; vitest hoists vi.mock regardless and returns synchronously.)
-vi.mock("../app-client.js", async (importOriginal) => {
-  const realAppClient = await importOriginal() as typeof import("../app-client.js");
-  return {
-    ...realAppClient,
-    uploadCharacterAvatar,
+const realAppClient = await import("../app-client.js");
+const realCharacterActions = await import("../stores/api-actions/character-actions.js");
+const realBootstrapActions = await import("../stores/api-actions/bootstrap-actions.js");
+mock.module("../app-client.js", () => {
+	return {
+		...realAppClient,
+		uploadCharacterAvatar,
     uploadAsset,
     updateCharacterAvatar,
-  };
+	};
 });
-vi.mock("../stores/api-actions/character-actions.js", async (importOriginal) => {
-  const realCharacterActions = await importOriginal() as typeof import("../stores/api-actions/character-actions.js");
-  return {
-    ...realCharacterActions,
-    importCharacterAction,
-  };
+mock.module("../stores/api-actions/character-actions.js", () => {
+	return {
+		...realCharacterActions,
+		importCharacterAction,
+	};
 });
-vi.mock("../stores/api-actions/bootstrap-actions.js", async (importOriginal) => {
-  const realBootstrapActions = await importOriginal() as typeof import("../stores/api-actions/bootstrap-actions.js");
-  return {
-    ...realBootstrapActions,
+mock.module("../stores/api-actions/bootstrap-actions.js", () => {
+	return {
+		...realBootstrapActions,
     fetchBootstrapAction,
   };
 });

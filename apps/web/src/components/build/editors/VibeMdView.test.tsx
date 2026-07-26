@@ -15,29 +15,46 @@
  * The CodeMirror surface mounts inside the DOM (happy-dom); assertions that read
  * `.cm-content` degrade gracefully if CM fails to mount in the test env.
  */
-import { describe, it, expect, vi } from "vitest";
-import { useEffect } from "react";
-import { render, fireEvent, waitFor } from "@testing-library/react";
+import { describe, it, expect, beforeAll, mock } from "bun:test";
+import { useEffect, type ReactNode } from "react";
 import { useForm } from "react-hook-form";
 import { EditorView } from "@codemirror/view";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { buildCharacterDraftSchema, type BuildCharacterDraft } from "@vibe-tavern/api-contracts";
-import { VibeMdView } from "./VibeMdView.js";
+import { useDomEnv } from "../../../../test/dom-env.js";
+
+useDomEnv();
+
+const realI18nContext = await import("../../../i18n/context.js");
+const realMobileHook = await import("../../../hooks/use-mobile.js");
+const realTooltip = await import("../../shared/Tooltip.js");
 
 // Mock useT at the module boundary — the editor imports i18n for labels.
-vi.mock("../../../i18n/context.js", () => ({
+mock.module("../../../i18n/context.js", () => ({
+	...realI18nContext,
 	useT: () => ({ t: (key: string) => key, tDynamic: (key: string) => key, locale: "en", setLocale: () => {}, ready: true }),
 }));
 // Mock useIsMobile so the desktop path renders deterministically.
-vi.mock("../../../hooks/use-mobile.js", () => ({
+mock.module("../../../hooks/use-mobile.js", () => ({
+	...realMobileHook,
 	useIsMobile: () => false,
 }));
 // Mock CustomTooltip to a passthrough — the real one needs a TooltipProvider
 // context (Radix) that is irrelevant to the editor's field interactions.
-vi.mock("../../shared/Tooltip.js", () => ({
-	CustomTooltip: ({ children }: { children: React.ReactNode }) => children,
-	TooltipProvider: ({ children }: { children: React.ReactNode }) => children,
+mock.module("../../shared/Tooltip.js", () => ({
+	...realTooltip,
+	CustomTooltip: ({ children }: { children: ReactNode }) => children,
+	TooltipProvider: ({ children }: { children: ReactNode }) => children,
 }));
+
+let VibeMdView: typeof import("./VibeMdView.js").VibeMdView;
+let render: typeof import("@testing-library/react").render;
+let fireEvent: typeof import("@testing-library/react").fireEvent;
+let waitFor: typeof import("@testing-library/react").waitFor;
+beforeAll(async () => {
+	({ render, fireEvent, waitFor } = await import("@testing-library/react"));
+	({ VibeMdView } = await import("./VibeMdView.js"));
+});
 
 function makeDraft(overrides: Partial<BuildCharacterDraft> = {}): BuildCharacterDraft {
 	return {

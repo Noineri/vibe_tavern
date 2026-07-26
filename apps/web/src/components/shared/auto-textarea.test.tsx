@@ -1,31 +1,31 @@
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "bun:test";
 import { fireEvent, render } from "@testing-library/react";
-import { useState } from "react";
-import { AutoTextarea } from "./auto-textarea.js";
+import { useDomEnv } from "../../../test/dom-env.js";
 
-/** The native value setter — same technique the component uses to insert a
- *  macro, so the test mirrors production. Setting `.value` directly on a
- *  React-controlled textarea then firing `change` makes the handler observe the
- *  new value + caret (RTL's `fireEvent.change` init does not set selectionStart
- *  reliably, so we set both on the node first). */
-const nativeValueSetter = Object.getOwnPropertyDescriptor(
-  window.HTMLTextAreaElement.prototype,
-  "value",
-)!.set!;
+useDomEnv();
 
+// The component reads `window.HTMLTextAreaElement` at module scope, so it must
+// be imported only after useDomEnv() has registered happy-dom.
+let AutoTextarea: typeof import("./auto-textarea.js").AutoTextarea;
+beforeAll(async () => {
+	({ AutoTextarea } = await import("./auto-textarea.js"));
+});
+
+/** RTL's `change` fires React's onChange (the native-setter trick does not
+ *  reach React under happy-dom); caret is then moved explicitly and surfaced
+ *  through the `select` event, which the component listens to for its
+ *  autocomplete recompute. */
 function typeInto(el: HTMLTextAreaElement, text: string, caret = text.length) {
-  nativeValueSetter.call(el, text);
-  el.setSelectionRange(caret, caret);
-  fireEvent.change(el);
+	fireEvent.change(el, { target: { value: text } });
+	el.setSelectionRange(caret, caret);
+	fireEvent.select(el);
 }
 
 function Controlled({ disabled }: { disabled?: boolean }) {
-  const [v, setV] = useState("");
   return (
     <AutoTextarea
       className="test"
-      value={v}
-      onChange={(e) => setV(e.target.value)}
+      defaultValue=""
       macroAutocomplete={!disabled}
     />
   );

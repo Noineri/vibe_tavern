@@ -12,31 +12,50 @@
  * the reveal pins the container to its bottom, and the dirty-gate (PR-11 rev 2)
  * stops re-pinning once the user is editing.
  */
-import { beforeEach, describe, expect, test, vi } from "vitest";
-import { renderHook } from "@testing-library/react";
-import { useRevealOnCreate } from "./use-reveal-on-create.js";
+import { afterEach, beforeAll, beforeEach, describe, expect, mock, test } from "bun:test";
+import { useDomEnv } from "../../test/dom-env.js";
+
+useDomEnv();
+
+let renderHook: typeof import("@testing-library/react").renderHook;
+
+let useRevealOnCreate: typeof import("./use-reveal-on-create.js").useRevealOnCreate;
+let originalResizeObserver: typeof ResizeObserver;
+
+beforeAll(async () => {
+  ({ renderHook } = await import("@testing-library/react"));
+  ({ useRevealOnCreate } = await import("./use-reveal-on-create.js"));
+  originalResizeObserver = globalThis.ResizeObserver;
+});
 
 // Captured ResizeObserver callback — the mock stores it here on `observe`.
 let fireResize: null | (() => void) = null;
 
+class ResizeObserverStub implements ResizeObserver {
+  constructor(callback: ResizeObserverCallback) {
+    fireResize = () => callback([], this);
+  }
+
+  disconnect(): void {}
+  observe(_target: Element, _options?: ResizeObserverOptions): void {}
+  unobserve(_target: Element): void {}
+}
+
 beforeEach(() => {
   fireResize = null;
-  (globalThis as { ResizeObserver?: unknown }).ResizeObserver = class {
-    constructor(cb: () => void) {
-      fireResize = cb;
-    }
-    observe() {}
-    unobserve() {}
-    disconnect() {}
-  };
+  globalThis.ResizeObserver = ResizeObserverStub;
+});
+
+afterEach(() => {
+  globalThis.ResizeObserver = originalResizeObserver;
 });
 
 /** Build a fake scroll container: a real <div> with a controllable scrollHeight
  *  and a spied scrollTo (plain DOM props won't report layout under happy-dom). */
-function makeBody(scrollHeight: number): { body: HTMLDivElement; scrollTo: ReturnType<typeof vi.fn> } {
+function makeBody(scrollHeight: number): { body: HTMLDivElement; scrollTo: ReturnType<typeof mock> } {
   const body = document.createElement("div");
   Object.defineProperty(body, "scrollHeight", { configurable: true, get: () => scrollHeight });
-  const scrollTo = vi.fn();
+  const scrollTo = mock();
   body.scrollTo = scrollTo;
   return { body, scrollTo };
 }

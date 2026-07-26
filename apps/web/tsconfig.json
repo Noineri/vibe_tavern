@@ -10,8 +10,7 @@
       "DOM.Iterable"
     ],
     "types": [
-      "bun",
-      "vite/client"
+      "bun"
     ],
     "composite": true,
     "tsBuildInfoFile": "../../out/tsbuildinfo/web.tsbuildinfo",
@@ -24,6 +23,9 @@
       ],
       "@vibe-tavern/db": [
         "../../packages/db/src/index.ts"
+      ],
+      "@vibe-tavern/db/codecs": [
+        "../../packages/db/src/codecs.ts"
       ],
       "@vibe-tavern/domain": [
         "../../packages/domain/src/index.ts"

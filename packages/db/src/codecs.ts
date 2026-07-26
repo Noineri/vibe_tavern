@@ -5,8 +5,7 @@
  * (`createDb`, the entity stores, `persistence`, `file-store`, `content-store`)
  * alongside these leaf VTF codecs. Any graph that imports the root barrel —
  * including the web bundle — therefore walks into `bun:sqlite` / `node:fs` /
- * `node:path` and drizzle-orm, which Vite then flags as
- * "externalized for browser compatibility".
+ * `node:path` and drizzle-orm, none of which can ship in a browser bundle.
  *
  * This sub-path exposes ONLY the leaf VTF codecs (`profile-md` / `greetings` /
  * `instructions` / the folder facade in `vtf/index`), which have zero

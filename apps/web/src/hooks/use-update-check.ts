@@ -30,7 +30,7 @@ const IDLE: UpdateCheckState = {
  * The hook is silent by design: any network / parse / rate-limit failure
  * leaves the state at `{ hasUpdate: false }` and renders nothing.
  *
- * @param currentVersion The running build's version (typically `__APP_VERSION__`).
+ * @param currentVersion The version exposed by the typed build configuration.
  */
 export function useUpdateCheck(currentVersion: string): UpdateCheckState {
 	const [state, setState] = useState<UpdateCheckState>(IDLE);

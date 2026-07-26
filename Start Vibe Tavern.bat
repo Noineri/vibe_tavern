@@ -11,14 +11,14 @@ if errorlevel 1 (
 )
 
 rem ── Server port ──
-rem Default 8787; override by setting RP_PLATFORM_PORT before launching.
+rem Default 8787; override by setting VIBE_TAVERN_PORT before launching.
 rem The Dev bat sets 8788 so a dev/playtest server never collides with
 rem (and can't be killed by) another instance on the default port.
-if not defined RP_PLATFORM_PORT set "RP_PLATFORM_PORT=8787"
+if not defined VIBE_TAVERN_PORT set "VIBE_TAVERN_PORT=8787"
 
 rem The frontend resolves its API base to window.location.origin at runtime
 rem (apps/web/src/gateway-client.ts), so the prod server (frontend + API on one
-rem origin) does NOT need VITE_RP_API_URL pinned. Leaving it unset keeps the
+rem origin) does NOT need VIBE_TAVERN_WEB_API_URL pinned. Leaving it unset keeps the
 rem built out/ port-agnostic, so two instances on different ports can share
 rem the same build output without one breaking the other's API calls.
 
@@ -27,25 +27,26 @@ if exist "..\mcp\.env" (
         set "KEY=%%A"
         set "VALUE=%%B"
         if not "!KEY!"=="" if /i not "!KEY:~0,1!"=="#" (
-            if /i "!KEY!"=="NANO_GPT_BASE_URL" set "VITE_RP_DEFAULT_BASE_URL=!VALUE!"
-            if /i "!KEY!"=="NANO_GPT_MODEL" set "VITE_RP_DEFAULT_MODEL=!VALUE!"
+            if /i "!KEY!"=="NANO_GPT_BASE_URL" set "VIBE_TAVERN_WEB_DEFAULT_BASE_URL=!VALUE!"
+            if /i "!KEY!"=="NANO_GPT_MODEL" set "VIBE_TAVERN_WEB_DEFAULT_MODEL=!VALUE!"
         )
     )
-    set "VITE_RP_DEFAULT_PROVIDER_LABEL=NanoGPT"
+    set "VIBE_TAVERN_WEB_DEFAULT_PROVIDER_LABEL=NanoGPT"
 )
 
 echo ============================================
 echo  Vibe Tavern
 echo ============================================
 echo.
-echo Server: http://127.0.0.1:%RP_PLATFORM_PORT%
+echo Server: http://127.0.0.1:%VIBE_TAVERN_PORT%
 if /i "%LOG_LEVEL%"=="debug" echo Log level: debug
 echo.
 
 rem Reconcile node_modules against bun.lock on every launch. `bun install`
 rem is a no-op (~30ms) when already in sync and self-heals when a dep was
 rem added/removed since the last launch — unlike the old sentinel check
-rem (node_modules\hono / \vite), which silently missed newly added packages.
+rem (a fixed list of package directories), which silently missed newly
+rem added packages.
 echo Checking dependencies against bun.lock...
 call %BUN_EXE% install
 if errorlevel 1 (
@@ -72,9 +73,9 @@ echo Starting server...
 echo Press Ctrl+C to stop.
 echo.
 
-powershell.exe -NoProfile -Command "$conn = Get-NetTCPConnection -LocalPort %RP_PLATFORM_PORT% -ErrorAction SilentlyContinue; if ($conn) { $pid = $conn[0].OwningProcess; Write-Host ''; Write-Host 'Port %RP_PLATFORM_PORT% is already in use by PID' $pid; exit 10 } else { exit 0 }"
+powershell.exe -NoProfile -Command "$conn = Get-NetTCPConnection -LocalPort %VIBE_TAVERN_PORT% -ErrorAction SilentlyContinue; if ($conn) { $pid = $conn[0].OwningProcess; Write-Host ''; Write-Host 'Port %VIBE_TAVERN_PORT% is already in use by PID' $pid; exit 10 } else { exit 0 }"
 if %ERRORLEVEL%==10 (
-    powershell.exe -NoProfile -Command "$pid = (Get-NetTCPConnection -LocalPort %RP_PLATFORM_PORT% -ErrorAction SilentlyContinue)[0].OwningProcess; Write-Host 'Kill PID' $pid '? [Y/n]'; $a = Read-Host; if ($a -eq '' -or $a -eq 'Y' -or $a -eq 'y') { Stop-Process -Id $pid -Force; Write-Host 'Killed.'; exit 0 } else { Write-Host 'Cancelled.'; exit 1 }"
+    powershell.exe -NoProfile -Command "$pid = (Get-NetTCPConnection -LocalPort %VIBE_TAVERN_PORT% -ErrorAction SilentlyContinue)[0].OwningProcess; Write-Host 'Kill PID' $pid '? [Y/n]'; $a = Read-Host; if ($a -eq '' -or $a -eq 'Y' -or $a -eq 'y') { Stop-Process -Id $pid -Force; Write-Host 'Killed.'; exit 0 } else { Write-Host 'Cancelled.'; exit 1 }"
     if errorlevel 1 (
         pause
         exit /b 1

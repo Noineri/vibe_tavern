@@ -10,32 +10,38 @@
  * file's header for why).
  *
  * OUT OF REACH HERE (Radix limitation): the context menu is a Radix
- * `DropdownMenu` whose `Content` does not mount under happy-dom (re-verified
- * under vitest — same limitation documented in DropdownSelect.test.tsx's skip
- * note). So the menu-triggered actions (rename entry, export-JSONL, clear/delete
+ * `DropdownMenu` whose `Content` does not mount under happy-dom (same
+ * limitation documented in DropdownSelect.test.tsx's skip note). So the
+ * menu-triggered actions (rename entry, export-JSONL, clear/delete
  * chat confirm) are NOT unit-tested here; they are covered by the slice
  * typecheck gate + the end-of-slice live visual check.
  */
-import { describe, it, expect, vi } from "vitest";
-import { render, fireEvent, type RenderResult } from "@testing-library/react";
+import { describe, it, expect, mock } from "bun:test";
+import { render, fireEvent } from "@testing-library/react";
+import { useDomEnv } from "../../../../test/dom-env.js";
 import type { ReactNode } from "react";
 
-vi.mock("../../../i18n/context.js", () => ({
+useDomEnv();
+
+const realI18nContext = await import("../../../i18n/context.js");
+const realTooltip = await import("../../shared/Tooltip.js");
+mock.module("../../../i18n/context.js", () => ({
+  ...realI18nContext,
   useT: () => ({ t: (key: string) => key, tDynamic: (key: string) => key, locale: "en", setLocale: () => {}, ready: true }),
 }));
 
-vi.mock("../../shared/Tooltip.js", () => ({
+mock.module("../../shared/Tooltip.js", () => ({
+  ...realTooltip,
   CustomTooltip: ({ children }: { children: ReactNode }) => children,
   TooltipProvider: ({ children }: { children: ReactNode }) => children,
 }));
 
-import { RichChatRow } from "./RichChatRow.js";
 import type { ChatListItem } from "@vibe-tavern/api-contracts";
 import type { ChatControllerActions } from "../../../hooks/use-chat-controller.js";
 import type { CharacterControllerActions } from "../../../hooks/use-character-controller.js";
 import type { ChatBranch, ChatBranchId } from "@vibe-tavern/domain";
 
-const NOOP = () => {};
+const { RichChatRow } = await import("./RichChatRow.js");
 
 const chatItem = {
   id: "chat-1",
@@ -66,27 +72,21 @@ const TWO_BRANCHES = [
   makeBranch("br-2", "alt", "br-1", 2),
 ];
 
-interface RowHarness extends RenderResult {
-  chat: Record<string, ReturnType<typeof vi.fn>>;
-  character: Record<string, ReturnType<typeof vi.fn>>;
-  setConfirmDestroy: ReturnType<typeof vi.fn>;
-}
-
-function renderRow(opts: { isActive?: boolean; activeBranchId?: string; branches?: ChatBranch[]; removalMode?: "keep" | "clear" } = {}): RowHarness {
+function renderRow(opts: { isActive?: boolean; activeBranchId?: string; branches?: ChatBranch[]; removalMode?: "keep" | "clear" } = {}) {
   const chat = {
-    handleSwitchChat: vi.fn(),
-    handleActivateBranch: vi.fn(),
-    handleRenameBranch: vi.fn(),
-    handleFork: vi.fn(),
-    handleDeleteActiveBranch: vi.fn(),
+    handleSwitchChat: mock(),
+    handleActivateBranch: mock(),
+    handleRenameBranch: mock(),
+    handleFork: mock(),
+    handleDeleteActiveBranch: mock(),
   };
   const character = {
-    getChatRemovalMode: vi.fn(() => opts.removalMode ?? "keep"),
-    handleRenameChat: vi.fn(),
-    handleExportChatJsonl: vi.fn(),
-    handleRemoveChat: vi.fn(),
+    getChatRemovalMode: mock(() => opts.removalMode ?? "keep"),
+    handleRenameChat: mock(),
+    handleExportChatJsonl: mock(),
+    handleRemoveChat: mock(),
   };
-  const setConfirmDestroy = vi.fn();
+  const setConfirmDestroy = mock();
   const result = render(
     <RichChatRow
       chatItem={chatItem}
@@ -203,6 +203,3 @@ describe("RichChatRow", () => {
     expect(container.textContent).not.toContain("sidebar_timeline_branches");
   });
 });
-
-// Touch NOOP so the unused import alias is not flagged by tooling that scans for it.
-void NOOP;

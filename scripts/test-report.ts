@@ -9,9 +9,6 @@ export interface TestSuiteResult {
 const ANSI_ESCAPE_PATTERN = /\u001B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g;
 const BUN_FAILURE_PATTERN = /^\(fail\)/;
 const BUN_TEST_FILE_PATTERN = /^\S.*\.test\.[cm]?[jt]sx?:$/;
-const VITEST_FAILURE_PATTERN = /^\s*FAIL\s+/;
-const VITEST_FAILURE_MARKER = "Failed Tests";
-const MAX_VITEST_FAILURE_DETAILS = 3;
 const MAX_FALLBACK_LINES = 120;
 
 function formatDuration(durationMs: number): string {
@@ -54,30 +51,10 @@ function extractBunFailure(stderr: string): string | null {
 	return sections.filter((section) => section !== "").join("\n\n");
 }
 
-function extractVitestFailure(stdout: string, stderr: string): string | null {
-	const lines = stderr.split("\n");
-	const markerIndex = lines.findIndex((line) => line.includes(VITEST_FAILURE_MARKER));
-	if (markerIndex === -1) return null;
-
-	const detailLines = lines.slice(markerIndex + 1);
-	const failureIndexes = detailLines.flatMap((line, index) => VITEST_FAILURE_PATTERN.test(line) ? [index] : []);
-	const details = failureIndexes.slice(0, MAX_VITEST_FAILURE_DETAILS).map((start, index) => {
-		const end = failureIndexes[index + 1] ?? detailLines.length;
-		return detailLines.slice(start, end).join("\n").trim();
-	});
-	if (failureIndexes.length > MAX_VITEST_FAILURE_DETAILS) {
-		details.push(
-			`... ${failureIndexes.length - MAX_VITEST_FAILURE_DETAILS} additional failure details omitted; all names are listed above.`,
-		);
-	}
-
-	return [stdout.trim(), ...details].filter((section) => section !== "").join("\n\n");
-}
-
 function formatFailure(result: TestSuiteResult): string {
 	const stdout = stripAnsi(result.stdout);
 	const stderr = stripAnsi(result.stderr);
-	const actionable = extractVitestFailure(stdout, stderr) ?? extractBunFailure(stderr);
+	const actionable = extractBunFailure(stderr);
 	if (actionable !== null) return `--- ${result.name} ---\n\n${actionable}`;
 
 	const output = [

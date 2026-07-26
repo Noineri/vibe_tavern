@@ -1,12 +1,10 @@
-import { describe, test, expect, beforeAll, afterAll, afterEach, beforeEach, vi } from "vitest";
-import { render, cleanup, act } from "@testing-library/react";
-import { MessageBlock } from "../chat/MessageBlock.js";
-import { CoauthorMessageBlock } from "./CoauthorMessageBlock.js";
-import { useSnapshotStore } from "../../stores/snapshot-store.js";
-import { useChatStore } from "../../stores/chat-store.js";
+import { describe, test, expect, beforeEach, mock } from "bun:test";
+import { render, act } from "@testing-library/react";
+import { useDomEnv } from "../../../test/dom-env.js";
 import type { AppCharacter, AppMessage, AppSnapshot, AppPersona } from "../../app-client.js";
 import type { ChatId } from "@vibe-tavern/domain";
-import { CoauthorTurnShell } from "./CoauthorTurnShell.js";
+
+useDomEnv();
 
 const asChatId = (id: string): ChatId => id as ChatId;
 
@@ -31,23 +29,23 @@ const STABLE_CONTROLLER = {
   handleRenameBranch: NOOP_ASYNC,
 };
 
-vi.mock("../../hooks/use-chat-controller.js", () => ({
+const realChatController = await import("../../hooks/use-chat-controller.js");
+const realI18nContext = await import("../../i18n/context.js");
+mock.module("../../hooks/use-chat-controller.js", () => ({
+  ...realChatController,
   useChatController: () => STABLE_CONTROLLER,
 }));
 
-vi.mock("../../i18n/context.js", () => ({
+mock.module("../../i18n/context.js", () => ({
+  ...realI18nContext,
   useT: () => ({ t: (key: string) => key, tDynamic: (key: string) => key, locale: "en", setLocale: NOOP, ready: true }),
 }));
 
-beforeAll(() => {
-});
-
-afterAll(() => {
-});
-
-afterEach(() => {
-  cleanup();
-});
+const { useSnapshotStore } = await import("../../stores/snapshot-store.js");
+const { useChatStore } = await import("../../stores/chat-store.js");
+const { MessageBlock } = await import("../chat/MessageBlock.js");
+const { CoauthorMessageBlock } = await import("./CoauthorMessageBlock.js");
+const { CoauthorTurnShell } = await import("./CoauthorTurnShell.js");
 
 function makeAssistantMessage(id: string, content = "msg"): AppMessage {
   return {

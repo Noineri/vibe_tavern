@@ -16,11 +16,12 @@
  * surfaces are mocked at the module boundary so the assertions describe
  * observable behavior, not implementation.
  */
-import { describe, it, expect, beforeEach, vi } from "vitest";
-import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
+import { beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
+import { useDomEnv } from "../../../test/dom-env.js";
+
+useDomEnv();
+const { act, fireEvent, render, screen, waitFor } = await import("@testing-library/react");
 import { brandId, type ChatId, type MessageId, type MessageVariantId } from "@vibe-tavern/domain";
-import { MessageAiEditorModal } from "./MessageAiEditorModal.js";
-import { TooltipProvider } from "../shared/Tooltip.js";
 import type { AiAssistantChunk, AiAssistantRequestBody, AppMessage, ProviderProfileRecord, UiSettingsRecord } from "../../api/types.js";
 import type { SnapshotStore } from "../../stores/snapshot-store.js";
 import { useProviderDataStore } from "../../stores/provider-data-store.js";
@@ -29,43 +30,48 @@ import { useSnapshotStore } from "../../stores/snapshot-store.js";
 import { useMessageAiEditorStore } from "../../stores/message-ai-editor-store.js";
 
 // ─── Hoisted mock state (factories read this) ──────────────────────────
-const mockState = vi.hoisted(() => ({
+const mockState = {
   chunks: [] as AiAssistantChunk[],
   requests: [] as AiAssistantRequestBody[],
   shouldThrow: false as boolean,
-}));
+};
+
+async function* streamAiAssistant(body: AiAssistantRequestBody): AsyncGenerator<AiAssistantChunk> {
+  mockState.requests.push(body);
+  if (mockState.shouldThrow) throw new Error("network-down");
+  for (const chunk of mockState.chunks) yield chunk;
+}
+
+const updateUiSettings = async (input: Record<string, unknown>) => ({
+  ...baseSettings(),
+  ...(input as Partial<UiSettingsRecord>),
+}) as UiSettingsRecord;
+const countAiAssistantTokens = async () => ({ tokens: 42, model: "model-a", layerCount: 3, messageCount: 4, activatedLoreCount: 2 });
+const fetchProviderModelsAction = async () => ({ models: [{ id: "model-a", label: "Model A" }] });
+const editMock = { fn: mock(async () => undefined) };
+const createVariantMock = { fn: mock(async () => undefined) };
+const realAppClient = await import("../../app-client.js");
+const realProviderActions = await import("../../stores/api-actions/provider-actions.js");
+const realI18nContext = await import("../../i18n/context.js");
+const realMobileHook = await import("../../hooks/use-mobile.js");
+const realChatActions = await import("../../stores/api-actions/chat-actions.js");
+const realTooltip = await import("../shared/Tooltip.js");
 
 // Capture emitted request bodies + control the stream.
-vi.mock("../../app-client.js", async (importOriginal) => {
-  const real = await importOriginal() as typeof import("../../app-client.js");
-  return {
-    ...real,
-    streamAiAssistant: vi.fn(async function* (body: AiAssistantRequestBody): AsyncGenerator<AiAssistantChunk> {
-      mockState.requests.push(body);
-      if (mockState.shouldThrow) throw new Error("network-down");
-      for (const chunk of mockState.chunks) yield chunk;
-    }),
-    updateUiSettings: vi.fn(async (input: Record<string, unknown>) => {
-      return { ...baseSettings(), ...(input as Partial<UiSettingsRecord>) } as UiSettingsRecord;
-    }),
-    countAiAssistantTokens: vi.fn(async () => ({ tokens: 42, model: "model-a", layerCount: 3, messageCount: 4, activatedLoreCount: 2 })),
-  };
-});
+mock.module("../../app-client.js", () => ({
+  ...realAppClient,
+  streamAiAssistant,
+  updateUiSettings,
+  countAiAssistantTokens,
+}));
 
-vi.mock("../../stores/api-actions/provider-actions.js", async (importOriginal) => {
-  const real = await importOriginal() as typeof import("../../stores/api-actions/provider-actions.js");
-  return {
-    ...real,
-    fetchProviderModelsAction: vi.fn(async () => ({
-      models: [{ id: "model-a", label: "Model A" }],
-    })),
-  };
-});
+mock.module("../../stores/api-actions/provider-actions.js", () => ({
+  ...realProviderActions,
+  fetchProviderModelsAction,
+}));
 
-vi.mock("../../i18n/context.js", async (importOriginal) => {
-  const real = await importOriginal() as typeof import("../../i18n/context.js");
-  return {
-    ...real,
+mock.module("../../i18n/context.js", () => ({
+    ...realI18nContext,
     useT: () => ({
       t: (key: string) => key,
       tDynamic: (key: string) => key,
@@ -73,25 +79,26 @@ vi.mock("../../i18n/context.js", async (importOriginal) => {
       setLocale: () => {},
       ready: true,
     }),
-  };
-});
+}));
 
-vi.mock("../../hooks/use-mobile.js", () => ({
+mock.module("../../hooks/use-mobile.js", () => ({
+  ...realMobileHook,
   useIsMobile: () => false,
 }));
 
 // Mock the two actions the modal calls so we can assert call args + control
 // resolution (success vs conflict vs error) without going to the wire.
-const editMock = vi.hoisted(() => ({ fn: vi.fn(async () => {}) }));
-const createVariantMock = vi.hoisted(() => ({ fn: vi.fn(async () => {}) }));
-
-vi.mock("../../stores/api-actions/chat-actions.js", async (importOriginal) => {
-  const real = await importOriginal() as typeof import("../../stores/api-actions/chat-actions.js");
-  return {
-    ...real,
+mock.module("../../stores/api-actions/chat-actions.js", () => ({
+    ...realChatActions,
     editMessageAction: editMock.fn,
     createMessageVariantAction: createVariantMock.fn,
-  };
+}));
+
+let MessageAiEditorModal: typeof import("./MessageAiEditorModal.js").MessageAiEditorModal;
+let TooltipProvider: typeof import("../shared/Tooltip.js").TooltipProvider;
+beforeAll(async () => {
+  ({ MessageAiEditorModal } = await import("./MessageAiEditorModal.js"));
+  ({ TooltipProvider } = await import("../shared/Tooltip.js"));
 });
 
 // ─── Fixtures ──────────────────────────────────────────────────────────
@@ -237,7 +244,8 @@ function renderModal() {
 // ─── Tests ─────────────────────────────────────────────────────────────
 
 beforeEach(() => {
-  vi.clearAllMocks();
+  editMock.fn.mockClear();
+  createVariantMock.fn.mockClear();
   mockState.requests = [];
   mockState.chunks = [];
   mockState.shouldThrow = false;

@@ -1,15 +1,38 @@
-// @vitest-environment happy-dom
-import { describe, expect, test, vi, beforeEach, afterEach } from "vitest";
-import { copyText } from "./clipboard.js";
+import { afterEach, beforeAll, beforeEach, describe, expect, mock, test } from "bun:test";
+import { GlobalRegistrator } from "@happy-dom/global-registrator";
+
+GlobalRegistrator.register();
+const { useDomEnv } = await import("../../test/dom-env.js");
+GlobalRegistrator.unregister();
+
+useDomEnv();
+
+let copyText: typeof import("./clipboard.js").copyText;
+let originalNavigator: PropertyDescriptor | undefined;
+let originalIsSecureContext: PropertyDescriptor | undefined;
+let originalExecCommand: PropertyDescriptor | undefined;
+
+beforeAll(async () => {
+  ({ copyText } = await import("./clipboard.js"));
+  originalNavigator = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+  originalIsSecureContext = Object.getOwnPropertyDescriptor(globalThis, "isSecureContext");
+  originalExecCommand = Object.getOwnPropertyDescriptor(document, "execCommand");
+});
+
+function restoreProperty(target: object, key: PropertyKey, descriptor: PropertyDescriptor | undefined): void {
+  if (descriptor) Object.defineProperty(target, key, descriptor);
+  else Reflect.deleteProperty(target, key);
+}
 
 describe("copyText", () => {
-  const originalClipboard = globalThis.navigator.clipboard;
-  const originalIsSecureContext = (globalThis as typeof globalThis & { isSecureContext?: boolean }).isSecureContext;
-
   beforeEach(() => {
-    vi.stubGlobal("navigator", {
+    Object.defineProperty(globalThis, "navigator", {
+      configurable: true,
+      writable: true,
+      value: {
       ...globalThis.navigator,
       clipboard: undefined,
+      },
     });
     Object.defineProperty(globalThis, "isSecureContext", {
       value: undefined,
@@ -19,20 +42,18 @@ describe("copyText", () => {
   });
 
   afterEach(() => {
-    vi.unstubAllGlobals();
-    Object.defineProperty(globalThis, "isSecureContext", {
-      value: originalIsSecureContext,
-      configurable: true,
-      writable: true,
-    });
+    restoreProperty(globalThis, "navigator", originalNavigator);
+    restoreProperty(globalThis, "isSecureContext", originalIsSecureContext);
+    restoreProperty(document, "execCommand", originalExecCommand);
   });
 
   test("secure context + clipboard API succeeds → ok", async () => {
-    (globalThis as typeof globalThis & { isSecureContext: boolean }).isSecureContext = true;
-    const writeText = vi.fn().mockResolvedValue(undefined);
-    vi.stubGlobal("navigator", {
-      ...globalThis.navigator,
-      clipboard: { writeText },
+    Object.defineProperty(globalThis, "isSecureContext", { value: true, configurable: true, writable: true });
+    const writeText = mock(() => Promise.resolve());
+    Object.defineProperty(globalThis, "navigator", {
+      value: { ...globalThis.navigator, clipboard: { writeText } },
+      configurable: true,
+      writable: true,
     });
 
     const result = await copyText("hello");
@@ -42,11 +63,12 @@ describe("copyText", () => {
   });
 
   test("secure context + clipboard API rejects → error: rejected", async () => {
-    (globalThis as typeof globalThis & { isSecureContext: boolean }).isSecureContext = true;
-    const writeText = vi.fn().mockRejectedValue(new Error("denied"));
-    vi.stubGlobal("navigator", {
-      ...globalThis.navigator,
-      clipboard: { writeText },
+    Object.defineProperty(globalThis, "isSecureContext", { value: true, configurable: true, writable: true });
+    const writeText = mock(() => Promise.reject(new Error("denied")));
+    Object.defineProperty(globalThis, "navigator", {
+      value: { ...globalThis.navigator, clipboard: { writeText } },
+      configurable: true,
+      writable: true,
     });
 
     const result = await copyText("hello");
@@ -55,9 +77,9 @@ describe("copyText", () => {
   });
 
   test("non-secure context falls back to execCommand('copy')", async () => {
-    (globalThis as typeof globalThis & { isSecureContext: boolean }).isSecureContext = false;
-    const execCommand = vi.fn().mockReturnValue(true);
-    document.execCommand = execCommand;
+    Object.defineProperty(globalThis, "isSecureContext", { value: false, configurable: true, writable: true });
+    const execCommand = mock(() => true);
+    Object.defineProperty(document, "execCommand", { value: execCommand, configurable: true, writable: true });
 
     const result = await copyText("fallback text");
 
@@ -66,9 +88,9 @@ describe("copyText", () => {
   });
 
   test("non-secure context + failed execCommand → error: unsupported", async () => {
-    (globalThis as typeof globalThis & { isSecureContext: boolean }).isSecureContext = false;
-    const execCommand = vi.fn().mockReturnValue(false);
-    document.execCommand = execCommand;
+    Object.defineProperty(globalThis, "isSecureContext", { value: false, configurable: true, writable: true });
+    const execCommand = mock(() => false);
+    Object.defineProperty(document, "execCommand", { value: execCommand, configurable: true, writable: true });
 
     const result = await copyText("fallback text");
 

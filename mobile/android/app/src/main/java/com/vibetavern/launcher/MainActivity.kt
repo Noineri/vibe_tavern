@@ -176,11 +176,11 @@ class MainActivity : AppCompatActivity() {
             cat > "${'$'}HOME/start-vibe-tavern.sh" <<'START_SCRIPT'
             #!/usr/bin/env bash
             set -euo pipefail
-            export RP_PLATFORM_OPEN_BROWSER=0
-            export RP_PLATFORM_HOST=127.0.0.1
-            export RP_PLATFORM_PORT=8787
-            export RP_PLATFORM_DATA_DIR="${'$'}HOME/.local/share/vibe-tavern"
-            export RP_PLATFORM_WEB_DIR="${'$'}HOME/vibe-tavern/web"
+            export VIBE_TAVERN_OPEN_BROWSER=0
+            export VIBE_TAVERN_HOST=127.0.0.1
+            export VIBE_TAVERN_PORT=8787
+            export VIBE_TAVERN_DATA_DIR="${'$'}HOME/.local/share/vibe-tavern"
+            export VIBE_TAVERN_WEB_DIR="${'$'}HOME/vibe-tavern/web"
             cd "${'$'}HOME/vibe-tavern"
             exec ./vibe-tavern
             START_SCRIPT
@@ -262,11 +262,11 @@ class MainActivity : AppCompatActivity() {
           if [ -x "${'$'}HOME/start-vibe-tavern.sh" ]; then
             bash -x "${'$'}HOME/start-vibe-tavern.sh"
           elif [ -x "${'$'}HOME/vibe-tavern/vibe-tavern" ]; then
-            export RP_PLATFORM_OPEN_BROWSER=0
-            export RP_PLATFORM_HOST=127.0.0.1
-            export RP_PLATFORM_PORT=8787
-            export RP_PLATFORM_DATA_DIR="${'$'}HOME/.local/share/vibe-tavern"
-            export RP_PLATFORM_WEB_DIR="${'$'}HOME/vibe-tavern/web"
+            export VIBE_TAVERN_OPEN_BROWSER=0
+            export VIBE_TAVERN_HOST=127.0.0.1
+            export VIBE_TAVERN_PORT=8787
+            export VIBE_TAVERN_DATA_DIR="${'$'}HOME/.local/share/vibe-tavern"
+            export VIBE_TAVERN_WEB_DIR="${'$'}HOME/vibe-tavern/web"
             cd "${'$'}HOME/vibe-tavern"
             exec ./vibe-tavern
           else

@@ -4,6 +4,7 @@
  *   Path B: "Migrate from SillyTavern" (ST bulk import → provider)
  */
 import { useState, useCallback, useEffect, useRef } from "react";
+import * as buildConfig from "../../build-config.js";
 import { useT } from "../../i18n/context.js";
 import { cn } from "../../lib/cn.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
@@ -882,7 +883,7 @@ export function SetupWizard({ onVisibilityChange }: { onVisibilityChange?: (v: b
   const { t } = useT();
   const isMobile = useIsMobile();
   const bootstrapData = useBootstrapStore((s) => s.data);
-  const bootstrapFirstRun = (bootstrapData?.isFirstRun ?? false) || import.meta.env.VITE_FORCE_FIRST_RUN === "true";
+  const bootstrapFirstRun = (bootstrapData?.isFirstRun ?? false) || buildConfig.FORCE_FIRST_RUN;
   const [dismissed, setDismissed] = useState(false);
   const isFirstRun = bootstrapFirstRun && !dismissed;
 

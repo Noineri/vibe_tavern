@@ -9,14 +9,16 @@
  * the persisted runId, and wires cancel/retry/new-run. Store + actions are
  * mocked; `t` returns keys verbatim. Mirrors TrackerConfig.test's harness.
  *
- * Runner: vitest (apps/web — vi.mock is file-scoped, no cross-file leak).
+ * Runner: bun:test + happy-dom.
  */
-import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
-import { render, fireEvent, cleanup, waitFor } from "@testing-library/react";
-import { SceneHistoryBackfill } from "./SceneHistoryBackfill.js";
+import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
+import { render, fireEvent, waitFor } from "@testing-library/react";
 import { brandId, type ChatId, type SceneTrackerConfig } from "@vibe-tavern/domain";
+import { useDomEnv } from "../../../../test/dom-env.js";
 
-const mocks = vi.hoisted(() => {
+useDomEnv();
+
+const mocks = (() => {
   const tracker: SceneTrackerConfig = {
     schema: {}, autoMode: "assistant", contextWindow: 6, continuityLastN: 3,
     injectionDepth: 1, injectLastN: 1, promptFormat: "json", useChatModel: true,
@@ -37,29 +39,39 @@ const mocks = vi.hoisted(() => {
   };
   return {
     state,
-    start: vi.fn(),
-    getStatus: vi.fn(),
-    cancel: vi.fn(),
-    retry: vi.fn(),
-    fetchChat: vi.fn(),
-    fetchModels: vi.fn(),
+    start: mock(),
+    getStatus: mock(),
+    cancel: mock(),
+    retry: mock(),
+    fetchChat: mock(),
+    fetchModels: mock(),
   };
-});
+})();
 
-vi.mock("../../../i18n/context.js", () => ({
+const realI18nContext = await import("../../../i18n/context.js");
+const realSnapshotStore = await import("../../../stores/snapshot-store.js");
+const realProviderDataStore = await import("../../../stores/provider-data-store.js");
+const realChatActions = await import("../../../stores/api-actions/chat-actions.js");
+const realProviderActions = await import("../../../stores/api-actions/provider-actions.js");
+
+mock.module("../../../i18n/context.js", () => ({
+  ...realI18nContext,
   useT: () => ({ t: (k: string, opts?: Record<string, unknown>) => (opts && "n" in opts ? `${k}:${String(opts.n)}` : k), tDynamic: (k: string) => k, locale: "en", setLocale: () => {}, ready: true }),
 }));
 
-vi.mock("../../../stores/snapshot-store.js", () => ({
+mock.module("../../../stores/snapshot-store.js", () => ({
+  ...realSnapshotStore,
   useSnapshotStore: (selector: (s: typeof mocks.state) => unknown) => selector(mocks.state),
 }));
 
-vi.mock("../../../stores/provider-data-store.js", () => ({
+mock.module("../../../stores/provider-data-store.js", () => ({
+  ...realProviderDataStore,
   useProviderDataStore: (selector: (s: { profiles: Array<{ id: string; name: string; defaultModel: string | null; isActive: boolean }> }) => unknown) =>
     selector({ profiles: [{ id: "prof_1", name: "Active", defaultModel: "gpt-x", isActive: true }] }),
 }));
 
-vi.mock("../../../stores/api-actions/chat-actions.js", () => ({
+mock.module("../../../stores/api-actions/chat-actions.js", () => ({
+  ...realChatActions,
   startSceneBackfillAction: mocks.start,
   getSceneBackfillStatusAction: mocks.getStatus,
   cancelSceneBackfillAction: mocks.cancel,
@@ -67,9 +79,12 @@ vi.mock("../../../stores/api-actions/chat-actions.js", () => ({
   fetchChatAction: mocks.fetchChat,
 }));
 
-vi.mock("../../../stores/api-actions/provider-actions.js", () => ({
-  fetchProviderModelsAction: mocks.fetchModels.mockResolvedValue({ models: [{ id: "gpt-x", label: "GPT X" }] }),
+mock.module("../../../stores/api-actions/provider-actions.js", () => ({
+  ...realProviderActions,
+  fetchProviderModelsAction: mocks.fetchModels,
 }));
+
+const { SceneHistoryBackfill } = await import("./SceneHistoryBackfill.js");
 
 const CHAT: ChatId = brandId<ChatId>("chat_1");
 const KEY = "vt:scene-backfill:chat_1";
@@ -88,11 +103,15 @@ function terminalStatus(overrides: Partial<{ status: "completed" | "cancelled" |
 }
 
 beforeEach(() => {
-  vi.clearAllMocks();
+  mocks.start.mockClear();
+  mocks.getStatus.mockClear();
+  mocks.cancel.mockClear();
+  mocks.retry.mockClear();
+  mocks.fetchChat.mockClear();
+  mocks.fetchModels.mockClear();
   mocks.fetchModels.mockResolvedValue({ models: [{ id: "gpt-x", label: "GPT X" }] });
   localStorage.clear();
 });
-afterEach(() => { cleanup(); });
 
 describe("SceneHistoryBackfill — idle form", () => {
   it("renders mode buttons + Start; hides estimate when pricing is unknown", () => {

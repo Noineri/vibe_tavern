@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtemp, readFile } from "node:fs/promises";
+import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -83,7 +83,7 @@ describe("CharacterAssetStore (DB-only)", () => {
 		// Simulate the adapter having written the gallery file.
 		const leaf = `gallery/${a.id}.png`;
 		await content.writeBinary(CHARS, charId, leaf, new Uint8Array([1, 2, 3]));
-		const fileBefore = await readFile(join(dataRoot, CHARS, charId, "gallery", `${a.id}.png`));
+		const fileBefore = Buffer.from(await Bun.file(join(dataRoot, CHARS, charId, "gallery", `${a.id}.png`)).arrayBuffer());
 		expect(Array.from(fileBefore)).toEqual([1, 2, 3]);
 
 		const result = await store.delete(a.id);
@@ -92,7 +92,7 @@ describe("CharacterAssetStore (DB-only)", () => {
 		// Row is gone.
 		expect(await store.getById(a.id)).toBeNull();
 		// File is STILL there — the store is DB-only; the adapter owns file cleanup.
-		const fileAfter = await readFile(join(dataRoot, CHARS, charId, "gallery", `${a.id}.png`));
+		const fileAfter = Buffer.from(await Bun.file(join(dataRoot, CHARS, charId, "gallery", `${a.id}.png`)).arrayBuffer());
 		expect(Array.from(fileAfter)).toEqual([1, 2, 3]);
 	});
 
@@ -138,7 +138,7 @@ describe("CharacterAssetStore (DB-only)", () => {
 		await content.deleteBinary(CHARS, charId, leaf);
 
 		// The targeted leaf is gone.
-		await expect(readFile(join(dataRoot, CHARS, charId, "gallery", `${a.id}.png`))).rejects.toThrow();
+		await expect(Bun.file(join(dataRoot, CHARS, charId, "gallery", `${a.id}.png`)).arrayBuffer()).rejects.toThrow();
 	});
 
 	test("is a no-op when the file is missing", async () => {

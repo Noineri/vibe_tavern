@@ -1,11 +1,17 @@
 import { fireEvent, render, within } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
-import { MobileSettings } from "./MobileSettings.js";
-import { TweaksPanelBody } from "./TweaksPanel.js";
+import { describe, expect, it, mock } from "bun:test";
+import { useDomEnv } from "../../../../test/dom-env.js";
 
-vi.mock("../../../hooks/use-mobile.js", () => ({
+useDomEnv();
+
+const realUseMobile = await import("../../../hooks/use-mobile.js");
+mock.module("../../../hooks/use-mobile.js", () => ({
+  ...realUseMobile,
   useIsMobile: () => false,
 }));
+
+const { MobileSettings } = await import("./MobileSettings.js");
+const { TweaksPanelBody } = await import("./TweaksPanel.js");
 
 const baseSettings = {
   theme: "coffee" as const,
@@ -24,12 +30,12 @@ function themeRadios(container: HTMLElement): HTMLElement[] {
 
 describe("theme settings", () => {
   it("offers Mystic Dawn with the outlined sparkle in desktop Tweaks", () => {
-    const setSetting = vi.fn();
+		const setSetting = mock();
     const { container } = render(
       <TweaksPanelBody
         settings={baseSettings}
         setSetting={setSetting}
-        onOpenMobileAccess={vi.fn()}
+			onOpenMobileAccess={mock()}
       />,
     );
 
@@ -42,14 +48,14 @@ describe("theme settings", () => {
   });
 
   it("offers Mystic Dawn in mobile settings", () => {
-    const setSetting = vi.fn();
+		const setSetting = mock();
     const { container } = render(
       <MobileSettings
         open
-        onClose={vi.fn()}
+			onClose={mock()}
         settings={{ ...baseSettings, showRail: true }}
         setSetting={setSetting}
-        onOpenMobileAccess={vi.fn()}
+			onOpenMobileAccess={mock()}
       />,
     );
 

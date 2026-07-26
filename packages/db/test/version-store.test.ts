@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtemp, readFile, readdir } from "node:fs/promises";
+import { mkdtemp, readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -48,14 +48,14 @@ async function setupWithRegistry() {
 
 async function readProfile(dataRoot: string, charId: string, versionId?: string): Promise<string> {
   const rel = versionId ? join(charId, "versions", versionId, "profile.md") : join(charId, "profile.md");
-  return readFile(join(dataRoot, CHARS, rel), "utf8");
+  return Bun.file(join(dataRoot, CHARS, rel)).text();
 }
 
 async function readInstructions(dataRoot: string, charId: string, versionId?: string): Promise<string> {
   const rel = versionId
     ? join(charId, "versions", versionId, "instructions.json")
     : join(charId, "instructions.json");
-  return readFile(join(dataRoot, CHARS, rel), "utf8");
+  return Bun.file(join(dataRoot, CHARS, rel)).text();
 }
 
 async function folderExists(_dataRoot: string, _charId: string, _versionId: string): Promise<boolean> {

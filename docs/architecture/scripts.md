@@ -110,7 +110,19 @@ The script's only handle on the world. Built per-script from the input. All chan
 
 ### Sandbox globals (allowlist)
 
-The VM context exposes only: `Math`, `JSON`, `Date`, `parseInt`, `parseFloat`, `isNaN`, `isFinite`, `Array`, `Object`, `String`, `Number`, `Boolean`, `RegExp`, `Map`, `Set`, `Error`, and a **captured** `console` (`log`/`warn`/`error` push `{ level, args }` entries into a per-script buffer, surfaced in the test panel's Console channel and in the trace's Script Runs accordion). **`process`, `require`, `globalThis`, `fetch`, and the filesystem are NOT exposed** — scripts cannot exfiltrate data or touch the host. See [Engine Invariants](#engine-invariants).
+The VM context directly exposes only: `Math`, `JSON`, `Date`, `parseInt`, `parseFloat`, `isNaN`, `isFinite`, `Array`, `Object`, `String`, `Number`, `Boolean`, `RegExp`, `Map`, `Set`, `Error`, and a **captured** `console` (`log`/`warn`/`error` push `{ level, args }` entries into a per-script buffer, surfaced in the test panel's Console channel and in the trace's Script Runs accordion). Direct references to host capabilities such as `process`, `Bun`, `fetch`, and `WebSocket` are absent, but the allowlist is not a confinement boundary.
+
+### Confinement posture
+
+`node:vm` is retained as a runtime-isolation and compatibility tool because Bun preserves the engine's synchronous timeout, exception propagation, mutation transfer, console capture, and dynamic-import rejection behavior.
+
+`node:vm` is explicitly not a security or confinement boundary, so scripts must be treated as trusted user-authored code.
+
+Injected host-realm objects expose host constructors: chains such as `Object.constructor("return typeof process")()` and `context.constructor.constructor(...)` can reach a host-realm `Function`, then access `process`, `Bun`, `fetch`, and `WebSocket` even though those globals are absent from direct lookup.
+
+The 5-second VM timeout bounds synchronous CPU execution only; Promise continuations can run after `executeScripts` returns and therefore outside the timeout window.
+
+This posture applies to both `script-sandbox.ts` and `dice-script-sandbox.ts`, which use the same `runInNewContext` API.
 
 ---
 
@@ -144,9 +156,9 @@ Each script gets its own bucket from `scriptState[script.id]`. Script A's `state
 
 A throwing/syntax-erroring/timing-out script is captured to `errors[]` and the loop continues to the next script. One bad script cannot break prompt assembly for everyone. Pinned in `executeScripts — error handling`.
 
-### 6. The 5s VM timeout is the only runaway-code defence
+### 6. The 5s VM timeout bounds synchronous runaway code
 
-`runInNewContext(..., { timeout: 5000 })` kills infinite loops. There is no instruction-count limit; the wall-clock timeout is the sole backstop. Pinned in `executeScripts — error handling > an infinite loop is killed by the 5s VM timeout`.
+`runInNewContext(..., { timeout: 5000 })` kills synchronous infinite loops. There is no instruction-count limit, and Promise continuations that run after `executeScripts` returns are outside the timeout window. Pinned in `executeScripts — error handling > an infinite loop is killed by the 5s VM timeout`; see [Confinement posture](#confinement-posture) for the boundary limits.
 
 ### 7. RNG is seeded per turn (deterministic regeneration)
 
@@ -224,7 +236,7 @@ Editor tabs (`listByScope`) also union FK ∪ junction for character/persona sco
 
 ### Templates (`script-templates/*.js`)
 
-Eight shipped templates, each a standalone `.js` file loaded as a raw string via Vite `?raw` imports in `script-templates/index.ts`. Keys mirror the i18n keys `script_template_<key>` in `apps/web/src/i18n/locales/*.json`.
+Eight shipped templates, each a standalone `.js` file loaded as a raw string via `?raw` imports in `script-templates/index.ts` (resolved by the raw-string loader in `apps/web/bun-plugin-web-assets.ts`, typed by the `*?raw` ambient declaration in `apps/web/src/bun-env.d.ts`). Keys mirror the i18n keys `script_template_<key>` in `apps/web/src/i18n/locales/*.json`.
 
 | Key | Purpose |
 |------|---------|
@@ -271,7 +283,7 @@ Where a user expects to run an ST extension script unmodified in VT: it will not
   - `apps/web/src/components/shared/LinkBindingPopover.tsx` + `BoundResourcesField.tsx` — binding UI (shared with lorebooks)
 
 - **Tests**
-  - `services/api/test/script-sandbox.test.ts` — engine characterization (37 tests, the 6 invariants)
+  - `services/api/test/script-sandbox.test.ts` — engine compatibility, confinement-posture, and invariant characterization
   - `services/api/test/script-templates.test.ts` — template coverage (23 tests, 2 REGRESSION)
   - `packages/db/test/script-store.test.ts` — store CRUD + link management + FK∪junction resolution
 

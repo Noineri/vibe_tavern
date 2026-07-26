@@ -11,7 +11,7 @@
  * survives the codec (the codec's own character_book round-trip is pinned in
  * packages/db; this test pins the projection that feeds it).
  */
-import { test, expect } from "vitest";
+import { test, expect } from "bun:test";
 import { packMonolith, unpackMonolith } from "@vibe-tavern/db/codecs";
 import type { AppCharacter } from "../app-client.js";
 import { appCharacterToVtfContent } from "./vtf-content.js";

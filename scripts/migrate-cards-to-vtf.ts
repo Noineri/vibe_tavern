@@ -17,11 +17,34 @@
  * leaves card.json as a backup, but a pre-run snapshot is still required.
  */
 import { resolve, dirname } from "node:path";
+import { parseArgs } from "node:util";
 import { createStoreContainer, STORAGE_FOLDERS } from "../packages/db/src/index.js";
 
-const args = process.argv.slice(2);
-const dryRun = args.includes("--dry-run");
-const dbPath = resolve(args.find((a) => !a.startsWith("-")) ?? "data/vibe-tavern.db");
+const rawArgs = process.argv.slice(2);
+const options = {
+  "dry-run": { type: "boolean" },
+} as const;
+const initial = parseArgs({
+  args: rawArgs,
+  options,
+  strict: false,
+  allowPositionals: true,
+  tokens: true,
+});
+const args = [...new Set(initial.tokens.flatMap((token) =>
+  token.kind === "option-terminator" ? [] : [token.index]
+))].flatMap((index) => {
+  const arg = rawArgs[index];
+  return arg === undefined ? [] : [arg];
+});
+const { values, positionals } = parseArgs({
+  args,
+  options,
+  strict: false,
+  allowPositionals: true,
+});
+const dryRun = values["dry-run"] === true;
+const dbPath = resolve(positionals[0] ?? "data/vibe-tavern.db");
 const dataDir = dirname(dbPath);
 
 console.log(dryRun ? "=== VTF migration [DRY RUN] (no writes) ===" : "=== VTF migration ===");

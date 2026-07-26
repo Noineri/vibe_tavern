@@ -12,7 +12,7 @@
  * (0..N-1) and only the dragged entry may get a new `position` (if it crossed
  * sections).
  */
-import { describe, it, expect } from "vitest";
+import { describe, it, expect } from "bun:test";
 import {
 	buildReorderUpdates,
 	getSection,

@@ -10,21 +10,30 @@
  *
  * See PROMPT_TRACE_PAYLOAD_FIX_PLAN.md, Wave C.
  */
-import { describe, it, expect, vi } from "vitest";
-import { render, fireEvent } from "@testing-library/react";
-import {
-	groupPayloadForTrace,
-	TracePayloadView,
-	type PayloadMessage,
-} from "./trace-payload-view.js";
+import { beforeAll, describe, it, expect, mock } from "bun:test";
+import type { PayloadMessage } from "./trace-payload-view.js";
 import type { PromptLayerDto } from "@vibe-tavern/domain";
+import { useDomEnv } from "../../../test/dom-env.js";
+
+useDomEnv();
 
 const NOOP = () => {};
+const realI18nContext = await import("../../i18n/context.js");
 
 // Mock useT at the module boundary (same relative path the component uses).
-vi.mock("../../i18n/context.js", () => ({
+mock.module("../../i18n/context.js", () => ({
+	...realI18nContext,
 	useT: () => ({ t: (key: string) => key, tDynamic: (key: string) => key, locale: "en", setLocale: NOOP, ready: true }),
 }));
+
+let groupPayloadForTrace: typeof import("./trace-payload-view.js").groupPayloadForTrace;
+let TracePayloadView: typeof import("./trace-payload-view.js").TracePayloadView;
+let render: typeof import("@testing-library/react").render;
+let fireEvent: typeof import("@testing-library/react").fireEvent;
+beforeAll(async () => {
+	({ render, fireEvent } = await import("@testing-library/react"));
+	({ groupPayloadForTrace, TracePayloadView } = await import("./trace-payload-view.js"));
+});
 
 const formatTokens = (n: number) => `${n} tok`;
 

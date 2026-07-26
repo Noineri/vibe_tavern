@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, test } from "bun:test";
 import { samplerPresetPayloadSchema } from "@vibe-tavern/api-contracts";
 import { computeOverlayPatch } from "../hooks/save-provider-patch.js";
 import { applySamplerPresetFields, type FormUpdater } from "./sampler-clipboard.js";

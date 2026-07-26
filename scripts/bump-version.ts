@@ -34,6 +34,7 @@
 
 import { $, file } from "bun";
 import { join, resolve } from "node:path";
+import { parseArgs } from "node:util";
 
 const ROOT = resolve(import.meta.dir, "..");
 
@@ -124,9 +125,36 @@ function fail(msg: string): never {
 }
 
 async function main(): Promise<void> {
-	const args = process.argv.slice(2);
-	const shouldPush = args.includes("--push");
-	const targetVersion = args.find((a) => !a.startsWith("--"));
+	const rawArgs = process.argv.slice(2);
+	const options = {
+		push: { type: "boolean" },
+	} as const;
+	const initial = parseArgs({
+		args: rawArgs,
+		options,
+		strict: false,
+		allowPositionals: true,
+		tokens: true,
+	});
+	const args = [...new Set(initial.tokens.flatMap((token) =>
+		token.kind === "option-terminator" ? [] : [token.index]
+	))].flatMap((index) => {
+		const arg = rawArgs[index];
+		return arg === undefined ? [] : [arg];
+	});
+	const { values, tokens } = parseArgs({
+		args,
+		options,
+		strict: false,
+		allowPositionals: true,
+		tokens: true,
+	});
+	const shouldPush = values.push === true;
+	const targetToken = tokens.find((token) =>
+		token.kind === "positional"
+		|| (token.kind === "option" && token.name !== "push" && /^-[^-]/.test(token.rawName))
+	);
+	const targetVersion = targetToken === undefined ? undefined : args[targetToken.index];
 
 	if (!targetVersion) {
 		console.error("Usage: bun run bump-version <version> [--push]");

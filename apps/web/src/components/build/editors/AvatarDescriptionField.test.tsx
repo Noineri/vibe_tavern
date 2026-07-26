@@ -14,14 +14,19 @@
  *   - include-in-prompt toggle → onPatch({ includeAvatarInPrompt })
  *   - no avatar → textarea + button disabled, hint copy visible
  *
- * Runner: vitest (apps/web — vi.mock is file-scoped + hoisted). Mirrors the
+ * Runner: bun:test with scoped happy-dom. Mirrors the
  * LoreEntryEditor.test.tsx harness shape.
  */
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, fireEvent, waitFor } from "@testing-library/react";
-import { AvatarDescriptionField } from "./AvatarDescriptionField.js";
+import { describe, it, expect, mock, beforeAll, beforeEach } from "bun:test";
+import { useDomEnv } from "../../../../test/dom-env.js";
 
-vi.mock("../../../i18n/context.js", () => ({
+useDomEnv();
+
+const toastError = mock();
+const realI18nContext = await import("../../../i18n/context.js");
+const realSonner = await import("sonner");
+mock.module("../../../i18n/context.js", () => ({
+	...realI18nContext,
 	useT: () => ({
 		t: (k: string) => k,
 		tDynamic: (k: string) => k,
@@ -30,23 +35,29 @@ vi.mock("../../../i18n/context.js", () => ({
 		ready: true,
 	}),
 }));
-
-vi.mock("sonner", () => ({
-	toast: { error: vi.fn() },
+mock.module("sonner", () => ({
+	...realSonner,
+	toast: { ...realSonner.toast, error: toastError },
 }));
 
-// Imported AFTER the sonner mock so tests receive the mocked fn.
-import { toast } from "sonner";
+let AvatarDescriptionField: typeof import("./AvatarDescriptionField.js").AvatarDescriptionField;
+let render: typeof import("@testing-library/react").render;
+let fireEvent: typeof import("@testing-library/react").fireEvent;
+let waitFor: typeof import("@testing-library/react").waitFor;
+let userEvent: typeof import("@testing-library/user-event").default;
+beforeAll(async () => {
+	({ render, fireEvent, waitFor } = await import("@testing-library/react"));
+	({ default: userEvent } = await import("@testing-library/user-event"));
+	({ AvatarDescriptionField } = await import("./AvatarDescriptionField.js"));
+});
 
 /** Deferred promise — lets the test park the component mid-generation. */
 function deferred<T = void>() {
-	let resolve!: (v: T | PromiseLike<T>) => void;
-	let reject!: (e: unknown) => void;
-	const promise = new Promise<T>((res, rej) => {
+	let resolve: (v: T | PromiseLike<T>) => void = () => {};
+	const promise = new Promise<T>((res) => {
 		resolve = res;
-		reject = rej;
 	});
-	return { promise, resolve, reject };
+	return { promise, resolve };
 }
 
 function renderField(overrides: Partial<Parameters<typeof AvatarDescriptionField>[0]> = {}) {
@@ -55,15 +66,15 @@ function renderField(overrides: Partial<Parameters<typeof AvatarDescriptionField
 		includeAvatarInPrompt: false,
 		avatarDescription: null as string | null,
 		hasAvatar: true,
-		onPatch: vi.fn(),
-		onDescribe: vi.fn(),
+		onPatch: mock(),
+		onDescribe: mock(() => Promise.resolve()),
 		...overrides,
 	};
 	return render(<AvatarDescriptionField {...props} />);
 }
 
 beforeEach(() => {
-	vi.clearAllMocks();
+	toastError.mockClear();
 });
 
 describe("AvatarDescriptionField (characterization)", () => {
@@ -79,14 +90,15 @@ describe("AvatarDescriptionField (characterization)", () => {
 
 	it("(c) click generate → onDescribe(AbortSignal), textarea disabled, overlay shows avatar_describing, button becomes avatar_describe_cancel", async () => {
 		const { promise } = deferred();
-		const onDescribe = vi.fn<(signal: AbortSignal) => Promise<void>>(() => promise);
+		const onDescribe = mock((_signal: AbortSignal) => promise);
 		const { getByText, container } = renderField({ onDescribe });
 
 		fireEvent.click(getByText("avatar_describe_via_vision"));
 		await waitFor(() => expect(onDescribe).toHaveBeenCalledTimes(1));
 
-		const signal = onDescribe.mock.calls[0]![0];
+		const signal = onDescribe.mock.calls[0]?.[0];
 		expect(signal).toBeInstanceOf(AbortSignal);
+		if (!signal) throw new Error("onDescribe did not receive an AbortSignal");
 
 		await waitFor(() => expect(getByText("avatar_describing")).not.toBeNull());
 		expect(getByText("avatar_describe_cancel")).not.toBeNull();
@@ -97,38 +109,39 @@ describe("AvatarDescriptionField (characterization)", () => {
 
 	it("(d) click cancel → signal aborted, toast.error NOT called", async () => {
 		const { promise } = deferred();
-		const onDescribe = vi.fn<(signal: AbortSignal) => Promise<void>>(() => promise);
+		const onDescribe = mock((_signal: AbortSignal) => promise);
 		const { getByText } = renderField({ onDescribe });
 
 		fireEvent.click(getByText("avatar_describe_via_vision"));
 		await waitFor(() => expect(onDescribe).toHaveBeenCalledTimes(1));
-		const signal = onDescribe.mock.calls[0]![0];
+		const signal = onDescribe.mock.calls[0]?.[0];
+		if (!signal) throw new Error("onDescribe did not receive an AbortSignal");
 
 		fireEvent.click(getByText("avatar_describe_cancel"));
 		expect(signal.aborted).toBe(true);
-		expect(toast.error).not.toHaveBeenCalled();
+		expect(toastError).not.toHaveBeenCalled();
 	});
 
 	it("(e) onDescribe rejects (non-abort) → toast.error called with the message", async () => {
-		const onDescribe = vi.fn<() => Promise<void>>(() => Promise.reject(new Error("boom")));
+		const onDescribe = mock(() => Promise.reject(new Error("boom")));
 		const { getByText } = renderField({ onDescribe });
 
 		fireEvent.click(getByText("avatar_describe_via_vision"));
-		await waitFor(() => expect(toast.error).toHaveBeenCalledWith("boom"));
+		await waitFor(() => expect(toastError).toHaveBeenCalledWith("boom"));
 	});
 
-	it("(f) blur after typing → onPatch({ avatarDescription: trimmed })", () => {
-		const onPatch = vi.fn();
+	it("(f) blur after typing → onPatch({ avatarDescription: trimmed })", async () => {
+		const onPatch = mock();
 		const { container } = renderField({ avatarDescription: null, onPatch });
 		const textarea = container.querySelector("textarea")!;
 
-		fireEvent.change(textarea, { target: { value: "  hello  " } });
+		await userEvent.setup().type(textarea, "  hello  ");
 		fireEvent.blur(textarea);
 		expect(onPatch).toHaveBeenCalledWith({ avatarDescription: "hello" });
 	});
 
 	it("(g) blur with unchanged draft → no onPatch", () => {
-		const onPatch = vi.fn();
+		const onPatch = mock();
 		const { container } = renderField({ avatarDescription: "same", onPatch });
 		const textarea = container.querySelector("textarea")!;
 
@@ -138,7 +151,7 @@ describe("AvatarDescriptionField (characterization)", () => {
 	});
 
 	it("(h) toggle click → onPatch({ includeAvatarInPrompt: true })", () => {
-		const onPatch = vi.fn();
+		const onPatch = mock();
 		const { getByRole } = renderField({ includeAvatarInPrompt: false, onPatch });
 		// Radix Switch = role="switch".
 		fireEvent.click(getByRole("switch"));

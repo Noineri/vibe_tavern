@@ -27,8 +27,8 @@ The Android app launches commands through Termux `RUN_COMMAND`.
 The server runs inside `proot-distro` Ubuntu and listens on:
 
 ```text
-RP_PLATFORM_HOST=127.0.0.1
-RP_PLATFORM_PORT=8787
+VIBE_TAVERN_HOST=127.0.0.1
+VIBE_TAVERN_PORT=8787
 ```
 
 The APK opens the user-facing UI through a normal Android browser intent:

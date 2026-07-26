@@ -1,3 +1,5 @@
+import * as buildConfig from "./build-config.js";
+
 function normalizeBaseUrl(value: string): string {
   return value.trim().replace(/\/+$/, "");
 }
@@ -7,13 +9,13 @@ function isLoopbackHost(hostname: string): boolean {
 }
 
 export function getGatewayBaseUrl(): string {
-  const configured = import.meta.env.VITE_RP_API_URL;
+  const configured = buildConfig.API_URL;
   const hasWindow = typeof window !== "undefined";
 
-  if (typeof configured === "string" && configured.trim()) {
+  if (configured?.trim()) {
     const normalized = normalizeBaseUrl(configured);
 
-    // Production/mobile builds may accidentally carry a loopback VITE_RP_API_URL.
+    // Production/mobile builds may accidentally carry a loopback VIBE_TAVERN_WEB_API_URL.
     // On a phone, 127.0.0.1/localhost means the phone itself, not the desktop server,
     // so prefer the page origin when the app was opened from a LAN/Tailscale address.
     if (hasWindow) {

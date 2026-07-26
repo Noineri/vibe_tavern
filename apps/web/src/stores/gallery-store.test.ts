@@ -7,7 +7,7 @@
  *  - mutations apply optimistically,
  *  - a server failure rolls the list back AND toasts.
  */
-import { test, expect, beforeEach, vi } from "vitest";
+import { test, expect, beforeEach, mock } from "bun:test";
 import type { CharacterAsset } from "@vibe-tavern/domain";
 
 // ─── Mocked gallery-api ──────────────────────────────────────────────────
@@ -15,46 +15,44 @@ import type { CharacterAsset } from "@vibe-tavern/domain";
 // Each function is a bun:test mock we can reprogram per-test. `mockModule`
 // swaps the real module before the store imports it.
 
-// vi.hoisted: vi.mock (below) is hoisted above these consts, so its factory
-// would close over uninitialized bindings. Hoisting the fns alongside the mock
-// keeps every beforeEach mockReset/mockImplementation call site unchanged.
-const {
-  listCharacterAssets,
-  uploadCharacterAsset,
-  updateCharacterAsset,
-  reorderCharacterAssets,
-  deleteCharacterAsset,
-  describeCharacterAssets,
-} = vi.hoisted(() => ({
-  listCharacterAssets: vi.fn((_cid: string) => Promise.resolve<CharacterAsset[]>([])),
-  uploadCharacterAsset: vi.fn((_cid: string, _f: File) => Promise.resolve<CharacterAsset>(undefined as never)),
-  updateCharacterAsset: vi.fn(
-    (_cid: string, _rowId: string, _patch: { caption?: string; description?: string | null }) =>
-      Promise.resolve<CharacterAsset>(undefined as never),
-  ),
-  reorderCharacterAssets: vi.fn((_cid: string, _ids: string[]) => Promise.resolve()),
-  deleteCharacterAsset: vi.fn((_cid: string, _rowId: string) => Promise.resolve()),
-  describeCharacterAssets: vi.fn(
-    (_cid: string, _ids?: string[], _signal?: AbortSignal) =>
-      Promise.resolve({ updated: [] as string[], failed: [] as string[] }),
-  ),
-}));
-
-vi.mock("../api/gallery-api.js", () => ({
-  serveCharacterAssetUrl: () => "",
-  listCharacterAssets,
-  uploadCharacterAsset,
-  updateCharacterAsset,
-  reorderCharacterAssets,
-  deleteCharacterAsset,
-  describeCharacterAssets,
-  describeCharacterAvatar: vi.fn(() => Promise.resolve({ description: "" })),
-  describePersonaAvatar: vi.fn(() => Promise.resolve({ description: "" })),
-}));
+const serveCharacterAssetUrl = mock(() => "");
+const listCharacterAssets = mock((_cid: string) => Promise.resolve<CharacterAsset[]>([]));
+const uploadCharacterAsset = mock((_cid: string, _f: File) => Promise.resolve<CharacterAsset>(undefined as never));
+const updateCharacterAsset = mock(
+	(_cid: string, _rowId: string, _patch: { caption?: string; description?: string | null }) =>
+		Promise.resolve<CharacterAsset>(undefined as never),
+);
+const reorderCharacterAssets = mock((_cid: string, _ids: string[]) => Promise.resolve());
+const deleteCharacterAsset = mock((_cid: string, _rowId: string) => Promise.resolve());
+const describeCharacterAssets = mock(
+	(_cid: string, _ids?: string[], _signal?: AbortSignal) =>
+		Promise.resolve({ updated: [] as string[], failed: [] as string[] }),
+);
+const describeCharacterAvatar = mock(() => Promise.resolve({ description: "" }));
+const describePersonaAvatar = mock(() => Promise.resolve({ description: "" }));
 
 // ─── Mocked sonner toast ────────────────────────────────────────────────
-const { toastError } = vi.hoisted(() => ({ toastError: vi.fn((_msg: string) => {}) }));
-vi.mock("sonner", () => ({ toast: { error: toastError, success: vi.fn(() => {}) } }));
+const toastError = mock((_msg: string) => {});
+const toastSuccess = mock(() => {});
+
+const realGalleryApi = await import("../api/gallery-api.js");
+const realSonner = await import("sonner");
+mock.module("../api/gallery-api.js", () => ({
+	...realGalleryApi,
+	serveCharacterAssetUrl,
+	listCharacterAssets,
+	uploadCharacterAsset,
+	updateCharacterAsset,
+	reorderCharacterAssets,
+	deleteCharacterAsset,
+	describeCharacterAssets,
+	describeCharacterAvatar,
+	describePersonaAvatar,
+}));
+mock.module("sonner", () => ({
+	...realSonner,
+	toast: { ...realSonner.toast, error: toastError, success: toastSuccess },
+}));
 
 const { useGalleryStore } = await import("./gallery-store.js");
 
