@@ -58,7 +58,7 @@ vi.mock("../../hooks/use-coauthor-provider-binding.js", async (importOriginal) =
       isExplicit: true,
       isReady: true,
       isDangling: false,
-      toolCapableModels: [{ id: "gpt-4o", label: "GPT-4o", contextLength: 128000 }],
+      models: [{ id: "gpt-4o", label: "GPT-4o", contextLength: 128000, toolSupport: "supported" }],
       favorites: [],
       saveBinding: vi.fn(async () => {}),
       quickSwitchModel: vi.fn(async () => {}),

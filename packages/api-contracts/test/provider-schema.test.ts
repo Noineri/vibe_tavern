@@ -12,7 +12,7 @@ import {
   modelSettingsOverlaySchema,
   samplerPresetPayloadSchema,
 } from "../src/schemas/provider-schema.js";
-import { SAMPLER_FIELDS, type SamplerFieldId } from "@vibe-tavern/domain";
+import { COAUTHOR_TRANSPORT, SAMPLER_FIELDS, type SamplerFieldId } from "@vibe-tavern/domain";
 
 /**
  * Characterization tests for the provider schemas.
@@ -90,6 +90,13 @@ describe("saveProviderDraftSchema", () => {
   it("accepts the factory plus an optional id", () => {
     const payload = { ...validSaveDraft(), id: "prov_1" };
     expect(saveProviderDraftSchema.safeParse(payload).success).toBe(true);
+  });
+
+  it("accepts only the closed Co-Author transport values", () => {
+    const base = validSaveDraft();
+    expect(saveProviderDraftSchema.safeParse({ ...base, coauthorTransport: COAUTHOR_TRANSPORT.chatCompletions }).success).toBe(true);
+    expect(saveProviderDraftSchema.safeParse({ ...base, coauthorTransport: COAUTHOR_TRANSPORT.responses }).success).toBe(true);
+    expectReject(saveProviderDraftSchema.safeParse({ ...base, coauthorTransport: "auto" }));
   });
 
   it("rejects an empty payload (missing required name/providerPreset/endpoint)", () => {

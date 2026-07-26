@@ -114,13 +114,28 @@ function mergeCapabilities(
 ): ProviderModelCapabilities | undefined {
 	if (!primary) return fallback;
 	if (!fallback) return primary;
-	return {
+	const capabilities = {
 		vision: primary.vision ?? fallback.vision,
 		reasoning: primary.reasoning ?? fallback.reasoning,
 		tools: primary.tools ?? fallback.tools,
 		webSearch: primary.webSearch ?? fallback.webSearch,
 		premium: primary.premium ?? fallback.premium,
 	};
+	return {
+		...(capabilities.vision !== undefined ? { vision: capabilities.vision } : {}),
+		...(capabilities.reasoning !== undefined ? { reasoning: capabilities.reasoning } : {}),
+		...(capabilities.tools !== undefined ? { tools: capabilities.tools } : {}),
+		...(capabilities.webSearch !== undefined ? { webSearch: capabilities.webSearch } : {}),
+		...(capabilities.premium !== undefined ? { premium: capabilities.premium } : {}),
+	};
+}
+
+function firstDefined(...values: Array<boolean | undefined>): boolean | undefined {
+	return values.find((value) => value !== undefined);
+}
+
+function includesWhenPresent(values: string[] | undefined, value: string): boolean | undefined {
+	return values === undefined ? undefined : values.includes(value);
 }
 
 /**
@@ -128,39 +143,14 @@ function mergeCapabilities(
  * field location across all aggregators. Returns undefined if nothing is set.
  */
 export function inferCapabilities(record: OpenAiModelRecord): ProviderModelCapabilities | undefined {
-	const capabilities = {
-		vision: record.metadata?.vision
-			|| record.architecture?.modality?.includes("image")
-			|| record.capabilities?.vision
-			|| record.supports_vision
-			|| record.input_modalities?.includes("image")
-			|| record.modality?.includes("image"),
-		reasoning: record.metadata?.reasoning
-			|| record.capabilities?.reasoning
-			|| record.supports_reasoning
-			|| record.supported_parameters?.includes("reasoning"),
-		tools: record.metadata?.function_call
-			|| record.capabilities?.tools
-			|| record.capabilities?.tool_calling
-			|| record.capabilities?.tool_use
-			|| record.capabilities?.function_calling
-			|| record.supports_tools
-			|| record.supported_parameters?.includes("tools")
-			|| record.supported_parameters?.includes("tool_use")
-			|| record.supported_parameters?.includes("tool_calling")
-			|| record.supported_parameters?.includes("function_calling"),
-		webSearch: record.metadata?.web_search || record.capabilities?.web_search,
+	const capabilities: ProviderModelCapabilities = {
+		vision: firstDefined(record.metadata?.vision, record.architecture?.modality?.includes("image"), record.capabilities?.vision, record.supports_vision, record.input_modalities?.includes("image"), record.modality?.includes("image")),
+		reasoning: firstDefined(record.metadata?.reasoning, record.capabilities?.reasoning, record.supports_reasoning, includesWhenPresent(record.supported_parameters, "reasoning")),
+		tools: firstDefined(record.metadata?.function_call, record.capabilities?.tools, record.capabilities?.tool_calling, record.capabilities?.tool_use, record.capabilities?.function_calling, record.supports_tools, includesWhenPresent(record.supported_parameters, "tools"), includesWhenPresent(record.supported_parameters, "tool_use"), includesWhenPresent(record.supported_parameters, "tool_calling"), includesWhenPresent(record.supported_parameters, "function_calling")),
+		webSearch: firstDefined(record.metadata?.web_search, record.capabilities?.web_search),
 		premium: record.premium_model,
 	};
-	return Object.values(capabilities).some((value) => value !== undefined && value !== false)
-		? {
-			vision: capabilities.vision || undefined,
-			reasoning: capabilities.reasoning || undefined,
-			tools: capabilities.tools || undefined,
-			webSearch: capabilities.webSearch || undefined,
-			premium: capabilities.premium || undefined,
-		}
-		: undefined;
+	return Object.values(capabilities).some((value) => value !== undefined) ? capabilities : undefined;
 }
 
 // ─── Registry ───────────────────────────────────────────────────────
@@ -213,11 +203,11 @@ const electronhubVendor: VendorAdapter = {
 		const inferred = inferCapabilities(record);
 		if (!record.metadata && record.premium_model === undefined) return inferred;
 		return mergeCapabilities({
-			vision: record.metadata?.vision || undefined,
-			reasoning: record.metadata?.reasoning || undefined,
-			tools: record.metadata?.function_call || undefined,
-			webSearch: record.metadata?.web_search || undefined,
-			premium: record.premium_model || undefined,
+			vision: record.metadata?.vision,
+			reasoning: record.metadata?.reasoning,
+			tools: record.metadata?.function_call,
+			webSearch: record.metadata?.web_search,
+			premium: record.premium_model,
 		}, inferred);
 	},
 };
@@ -226,9 +216,9 @@ const openrouterVendor: VendorAdapter = {
 	id: "openrouter",
 	match: /openrouter\.ai/,
 	extractCapabilities: (record) => mergeCapabilities({
-		vision: record.architecture?.modality?.includes("image") || undefined,
-		reasoning: record.supported_parameters?.includes("reasoning") || undefined,
-		tools: record.supported_parameters?.includes("tools") || undefined,
+		vision: record.architecture?.modality?.includes("image"),
+		reasoning: includesWhenPresent(record.supported_parameters, "reasoning"),
+		tools: includesWhenPresent(record.supported_parameters, "tools"),
 	}, inferCapabilities(record)),
 };
 
@@ -238,9 +228,9 @@ const nanogptVendor: VendorAdapter = {
 	buildModelsUrl: (baseUrl) => `${baseUrl.replace(/\/v1$/, "")}/subscription/v1/models?detailed=true`,
 	extractCapabilities: (record) => mergeCapabilities(
 		record.capabilities ? {
-			vision: record.capabilities.vision || undefined,
-			reasoning: record.capabilities.reasoning || undefined,
-			tools: record.capabilities.tool_calling || undefined,
+			vision: record.capabilities.vision,
+			reasoning: record.capabilities.reasoning,
+			tools: record.capabilities.tool_calling,
 		} : undefined,
 		inferCapabilities(record),
 	),
@@ -251,10 +241,10 @@ const togetherVendor: VendorAdapter = {
 	match: /together\.xyz/,
 	extractCapabilities: (record) => mergeCapabilities(
 		record.capabilities ? {
-			vision: record.capabilities.vision || undefined,
-			reasoning: record.capabilities.reasoning || undefined,
+			vision: record.capabilities.vision,
+			reasoning: record.capabilities.reasoning,
 			tools: record.capabilities.tool_use ?? record.capabilities.function_calling,
-			webSearch: record.capabilities.web_search || undefined,
+			webSearch: record.capabilities.web_search,
 		} : undefined,
 		inferCapabilities(record),
 	),
@@ -266,9 +256,9 @@ const deepinfraVendor: VendorAdapter = {
 	buildModelsUrl: (baseUrl) => `${baseUrl}/models?filter=with_meta`,
 	extractCapabilities: (record) => mergeCapabilities(
 		(record.capabilities || record.modality) ? {
-			vision: record.capabilities?.vision ?? (record.modality?.includes("image") || undefined),
-			reasoning: record.capabilities?.reasoning || undefined,
-			tools: record.capabilities?.tool_calling || undefined,
+			vision: record.capabilities?.vision ?? record.modality?.includes("image"),
+			reasoning: record.capabilities?.reasoning,
+			tools: record.capabilities?.tool_calling,
 		} : undefined,
 		inferCapabilities(record),
 	),
@@ -279,9 +269,9 @@ const fireworksVendor: VendorAdapter = {
 	match: /fireworks\.ai/,
 	extractCapabilities: (record) => mergeCapabilities(
 		(record.supports_vision !== undefined || record.supports_tools !== undefined || record.supports_reasoning !== undefined) ? {
-			vision: record.supports_vision || undefined,
-			reasoning: record.supports_reasoning || undefined,
-			tools: record.supports_tools || undefined,
+			vision: record.supports_vision,
+			reasoning: record.supports_reasoning,
+			tools: record.supports_tools,
 		} : undefined,
 		inferCapabilities(record),
 	),
@@ -292,9 +282,9 @@ const chutesVendor: VendorAdapter = {
 	match: /chutes\.ai/,
 	extractCapabilities: (record) => mergeCapabilities(
 		(record.capabilities || record.input_modalities) ? {
-			vision: record.capabilities?.vision ?? (record.input_modalities?.includes("image") || undefined),
-			reasoning: record.capabilities?.reasoning || undefined,
-			tools: record.capabilities?.tools || undefined,
+			vision: record.capabilities?.vision ?? record.input_modalities?.includes("image"),
+			reasoning: record.capabilities?.reasoning,
+			tools: record.capabilities?.tools,
 		} : undefined,
 		inferCapabilities(record),
 	),
@@ -308,7 +298,7 @@ const xaiVendor: VendorAdapter = {
 	extractRecords: (payload) => (Array.isArray(payload.models) ? payload.models : []),
 	extractCapabilities: (record) => mergeCapabilities(
 		record.input_modalities ? {
-			vision: record.input_modalities.includes("image") || undefined,
+			vision: record.input_modalities.includes("image"),
 			tools: true,
 		} : undefined,
 		inferCapabilities(record),

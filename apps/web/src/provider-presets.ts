@@ -1,8 +1,8 @@
 import { PROVIDER_PRESET_GROUP, PROVIDER_TYPE } from "@vibe-tavern/domain";
-import type { ProviderPresetGroup } from "@vibe-tavern/domain";
+import type { ProviderPresetGroup, ProviderPresetId } from "@vibe-tavern/domain";
 
 export interface ProviderPreset {
-  id: string;
+  id: ProviderPresetId;
   label: string;
   type: string;
   baseUrl: string;

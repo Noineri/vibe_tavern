@@ -141,9 +141,14 @@ export class ChatSummaryStore {
 
   async reorder(chatId: string, branchId: string, orderedIds: string[]): Promise<void> {
     const now = this.clock.now();
-    await this.db.transaction(async (tx) => {
+    // Synchronous callback (ASYNC_TRANSACTION_AUDIT step 6): drizzle-orm +
+    // bun:sqlite commits at the end of the callback's synchronous prefix, so an
+    // async callback's post-await throw is never rolled back. Keeping this
+    // synchronous means a mid-reorder failure rolls the earlier updates back —
+    // the prior complete order survives.
+    this.db.transaction((tx) => {
       for (const [index, id] of orderedIds.entries()) {
-        await tx
+        tx
           .update(chatSummaries)
           .set({ sortOrder: index, updatedAt: now })
           .where(and(eq(chatSummaries.id, id), eq(chatSummaries.chatId, chatId), eq(chatSummaries.branchId, branchId)))

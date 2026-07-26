@@ -10,7 +10,7 @@ import { streamText, isStepCount } from "ai";
 import type { ProviderExecutor, ProviderStreamResult, SentConfigSnapshot } from "./provider-execution-types.js";
 import { resolveModel, toSdkMessages, prepareSdkMessages } from "./provider-executor-utils.js";
 import { buildSamplerConfig } from "./sampler-mapper.js";
-import { normalizeProviderType } from "@vibe-tavern/domain";
+import { COAUTHOR_TRANSPORT, normalizeProviderType } from "@vibe-tavern/domain";
 import { log } from "@vibe-tavern/domain";
 import { cancelled } from "../../shared/errors.js";
 import { createMappedStream, mapFinish, safeStreamTextPromise, safeReasoningPromise } from "./stream-helpers.js";
@@ -26,7 +26,7 @@ import { wrapProviderExecutionError } from "./provider-error-wrapper.js";
  */
 export const streamProviderExecutor: ProviderExecutor = async (input) => {
   try {
-    const model = resolveModel(input.profile, input.model);
+    const model = resolveModel(input.profile, input.model, input.transport);
     let messages = toSdkMessages(input.prompt);
 
     // --- Vision attachment handling ---
@@ -98,7 +98,21 @@ export const streamProviderExecutor: ProviderExecutor = async (input) => {
       logger.debug("  [msg] role=%s len=%d", m.role, contentLen(m));
     }
 
-    const samplerConfig = buildSamplerConfig(input.profile);
+    // Responses rejects OpenAI-compatible advanced sampler/provider options.
+    // Co-Author keeps only its explicit output-token limit on this transport.
+    const samplerConfig = input.transport === COAUTHOR_TRANSPORT.responses
+      ? { maxOutputTokens: input.profile.maxTokens }
+      : buildSamplerConfig(input.profile);
+    // Responses API multi-step tool calling: the SDK defaults `store` to true,
+    // which assumes stateful continuation via `previousResponseId`. We send
+    // full history each turn with NO previousResponseId, so force `store:
+    // false` — the SDK then serializes the complete function_call +
+    // function_call_output pair into each follow-up request (stateless
+    // multi-step). Without this the server cannot resolve a tool result to its
+    // call_id → 400 "function_call_output references unknown call_id" on the
+    // second tool step.
+    const responsesProviderOptions =
+      input.transport === COAUTHOR_TRANSPORT.responses ? { openai: { store: false } } : undefined;
     const sentConfig: SentConfigSnapshot = {
       systemRole: hasSystemMessages ? "system" : undefined,
       samplerConfig: samplerConfig as Record<string, unknown>,
@@ -113,6 +127,7 @@ export const streamProviderExecutor: ProviderExecutor = async (input) => {
       allowSystemInMessages: true,
       abortSignal: input.signal,
       ...samplerConfig,
+      ...(responsesProviderOptions ? { providerOptions: responsesProviderOptions } : {}),
       ...(input.tools ? { tools: input.tools } : {}),
       ...(input.tools && input.maxSteps ? { stopWhen: isStepCount(input.maxSteps) } : {}),
       include: { rawChunks: true },

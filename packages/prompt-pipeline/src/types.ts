@@ -200,6 +200,16 @@ export interface PromptAssemblyContext {
     injectionDepth: number;
     injectPrompt: string;
   } | null;
+  /** SUMMARY_PRIOR_CONTEXT_PLAN (SPC-2): preceding chat-summaries (the
+   *  `summarizedTo < from` chain, token-capped, oldest→newest) fed into the
+   *  summary prompt as read-only continuity context. Absent / empty = no layer.
+   *  The pipeline renders a single `prior_summaries_context` layer (in_prompt)
+   *  ONLY under `config.summary` with non-empty priors — never on a chat turn.
+   *  Loading + token-capping happens in `services/api`; this field is the pure
+   *  hand-off from the lifecycle method. Read-only framing: the model must fold
+   *  prior implications into a coherent continuation, NOT repeat or re-summarize
+   *  the block (compounding drift guard lives in the default summary prompt). */
+  priorSummaries?: Array<{ id: string; label?: string; content: string }>;
   config?: {
     contextBudget?: number | null;
     /** Tokens reserved for the model's response. Subtracted from contextBudget during compaction. */

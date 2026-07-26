@@ -7,8 +7,9 @@
  */
 
 import type { LanguageModel, ModelMessage, ToolCallPart, ToolContent, AssistantContent } from "ai";
-import { normalizeProviderType, type ProviderType, log } from "@vibe-tavern/domain";
+import { COAUTHOR_TRANSPORT, PROVIDER_TYPE, normalizeProviderType, type CoauthorTransport, type ProviderType, log } from "@vibe-tavern/domain";
 import { resolveProtocol } from "../../domain/providers/protocol-registry.js";
+import { createOpenAI } from "@ai-sdk/openai";
 import type { VisionGateConfig } from "./vision-gate.js";
 import { resolveMultimodalContent } from "./vision-gate.js";
 
@@ -44,14 +45,47 @@ export interface PreparedMessages {
 // ---------------------------------------------------------------------------
 
 /**
- * Resolve a Vercel AI SDK language model from a stored provider profile.
- * Delegates to the canonical protocol registry.
+ * Resolve a Vercel AI SDK Responses model for the Co-Author Responses transport.
+ *
+ * Uses `@ai-sdk/openai` directly (not `@ai-sdk/openai-compatible`) because
+ * `responses()` is only available on the OpenAI-specific provider. The base URL
+ * and API key come from the stored provider profile so aggregator/3rd-party
+ * endpoints that proxy the Responses API work too.
+ */
+function resolveResponsesModel(
+  profile: { endpoint: string; apiKey: string | null },
+  model: string,
+): LanguageModel {
+  const endpoint = (profile.endpoint || "").replace(/\/+$/, "");
+  const apiKey = profile.apiKey ?? "";
+  const provider = createOpenAI({
+    apiKey: apiKey || "not-needed",
+    baseURL: endpoint || "https://api.openai.com/v1",
+  });
+  return provider.responses(model);
+}
+
+/**
+ * Resolve a Vercel AI SDK language model for an explicit execution transport.
+ *
+ * The default remains the existing protocol adapter so RP, summaries, vision,
+ * AI assistants, and provider tests cannot inherit a profile's Co-Author-only
+ * preference by accident. Only a caller that explicitly threads `responses`
+ * reaches the Responses resolver.
  */
 export function resolveModel(
   profile: { providerPreset: string; endpoint: string; apiKey: string | null },
   model: string,
+  transport: CoauthorTransport = COAUTHOR_TRANSPORT.chatCompletions,
 ): LanguageModel {
-  return resolveProtocol(normalizeProviderType(profile.providerPreset)).resolveModel(profile, model);
+  const providerType = normalizeProviderType(profile.providerPreset);
+  if (transport === COAUTHOR_TRANSPORT.responses) {
+    if (providerType !== PROVIDER_TYPE.openaiCompat) {
+      throw new Error(`Responses transport is available only for OpenAI-compatible providers; '${profile.providerPreset}' uses '${providerType}'.`);
+    }
+    return resolveResponsesModel(profile, model);
+  }
+  return resolveProtocol(providerType).resolveModel(profile, model);
 }
 
 // ---------------------------------------------------------------------------

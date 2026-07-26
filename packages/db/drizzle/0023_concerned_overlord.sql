@@ -1,0 +1,1 @@
+ALTER TABLE `provider_profiles` ADD `coauthor_transport` text DEFAULT 'chat_completions' NOT NULL;

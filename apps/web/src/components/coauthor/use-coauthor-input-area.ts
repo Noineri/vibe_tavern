@@ -44,9 +44,9 @@ export function useCoauthorInputArea() {
 	const canUseLiveApi = binding.isReady;
 	const canSend = Boolean(draft.trim()) && !isSending && canUseLiveApi;
 
-	// --- Favorites, tool-filtered (from the Co-Author binding, not RP) ---
+	// --- Co-Author-scoped favorites, including supported/unknown/unsupported rows ---
 	const activeProfileId = binding.profileId;
-	const toolFilteredFavorites = binding.favorites;
+	const favorites = binding.favorites;
 	const activeModelId = binding.model;
 
 	const handleSelectModel = (modelId: string) => {
@@ -108,7 +108,7 @@ export function useCoauthorInputArea() {
 		t,
 		chat,
 		draft, setDraft, isSending, activeChatId, canUseLiveApi, canSend,
-		activeProfileId, toolFilteredFavorites, activeModelId, handleSelectModel,
+		activeProfileId, favorites, activeModelId, handleSelectModel,
 		sendLabel, sendButtonText,
 		buckets, inputTokens, permanent, contextSize, maxTokens, availableBudget, tokenState,
 	};

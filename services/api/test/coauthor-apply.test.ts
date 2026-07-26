@@ -168,6 +168,41 @@ describe("Co-Author Apply RPC (CA-7)", () => {
 		expect(res.corrections).toEqual([]);
 	});
 
+	it("flags macros outside the safe subset on apply, preserving prose (B5)", async () => {
+		// The model emitted two safe macros ({{user}}, {{char}}) alongside two
+		// unsafe ones — an invented name and {{persona}} (valid but excluded from
+		// the reusable subset). Apply must NOT strip anything; it surfaces each
+		// unsafe macro as a correction so the user can decide.
+		const proposedMd = serializeProfileMd({
+			profile: {
+				name: "MacroProbe",
+				tags: [],
+				creator: null,
+				characterVersion: null,
+				creatorNotes: null,
+				mesExampleMode: "depth",
+				mesExampleDepth: 4,
+				description: "Meets {{user}} and {{char}}; wields {{bogus_macro}} and {{persona}}.",
+				scenario: null,
+				mesExample: null,
+			},
+		});
+
+		const res = await env.runtime.applyCoauthorDraft(env.coauthorChatId, { profileMd: proposedMd });
+
+		// Prose preserved verbatim — nothing stripped; the user decides.
+		expect(res.character!.description).toBe(
+			"Meets {{user}} and {{char}}; wields {{bogus_macro}} and {{persona}}.",
+		);
+		// Exactly the two unsafe macros are flagged (user/char are in the safe set).
+		const warned = res.corrections.filter((c) => c.action === "warned");
+		expect(warned).toHaveLength(2);
+		expect(warned.every((c) => c.field === "description")).toBe(true);
+		const reasons = warned.map((c) => c.reason).sort();
+		expect(reasons[0]).toContain("{{bogus_macro}}");
+		expect(reasons[1]).toContain("{{persona}}");
+	});
+
 	it("throws NotFound for an unknown chat", async () => {
 		await expect(
 			env.runtime.applyCoauthorDraft("nonexistent-chat" as ChatId, {

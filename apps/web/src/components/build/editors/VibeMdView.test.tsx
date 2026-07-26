@@ -16,8 +16,10 @@
  * `.cm-content` degrade gracefully if CM fails to mount in the test env.
  */
 import { describe, it, expect, vi } from "vitest";
-import { render, fireEvent } from "@testing-library/react";
+import { useEffect } from "react";
+import { render, fireEvent, waitFor } from "@testing-library/react";
 import { useForm } from "react-hook-form";
+import { EditorView } from "@codemirror/view";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { buildCharacterDraftSchema, type BuildCharacterDraft } from "@vibe-tavern/api-contracts";
 import { VibeMdView } from "./VibeMdView.js";
@@ -65,6 +67,16 @@ function Harness({ draft }: { draft: BuildCharacterDraft }) {
 		resolver: zodResolver(buildCharacterDraftSchema),
 		defaultValues: draft,
 	});
+	return <VibeMdView form={form} characterId="char_test" isSaving={false} />;
+}
+
+/** Like Harness, but exposes the form instance so tests can assert sync timing. */
+function HarnessWithFormCapture({ draft, onForm }: { draft: BuildCharacterDraft; onForm: (f: ReturnType<typeof useForm<BuildCharacterDraft>>) => void }) {
+	const form = useForm<BuildCharacterDraft>({
+		resolver: zodResolver(buildCharacterDraftSchema),
+		defaultValues: draft,
+	});
+	useEffect(() => { onForm(form); }, [form, onForm]);
 	return <VibeMdView form={form} characterId="char_test" isSaving={false} />;
 }
 
@@ -149,5 +161,37 @@ describe("VibeMdView (rework)", () => {
 		const text = container.querySelector(".cm-content")!.textContent ?? "";
 		// makeDraft starts with one alternate greeting → one `=== ALT` marker.
 		expect((text.match(/=== ALT/g) || []).length).toBe(1);
+	});
+});
+
+describe("VibeMdView editor→form sync is debounced", () => {
+	// Perf pin: typing must NOT synchronously parse the full body + write 5 form
+	// fields + re-render CharacterForm's whole tree per keystroke. The sync is
+	// coalesced into one write after a short pause; save is still race-free
+	// because blur flushes before the Save button's onClick fires.
+	it("does not write to the form synchronously on edit; flushes after a pause", async () => {
+		let formRef: ReturnType<typeof useForm<BuildCharacterDraft>> | null = null;
+		const onForm = (f: typeof formRef) => { formRef = f; };
+		const { container } = render(<HarnessWithFormCapture draft={makeDraft({ description: "orig" })} onForm={onForm} />);
+		await waitFor(() => { expect(formRef).toBeTruthy(); });
+		const cmEl = container.querySelector(".cm-editor") as HTMLElement | null;
+		if (!cmEl) return; // CM did not mount in this test env — skip gracefully.
+		const view = EditorView.findFromDOM(cmEl);
+		if (!view) return;
+
+		// Insert text right after `# PERSONALITY\n` so it lands in `description`.
+		const docText = view.state.doc.toString();
+		const insertAt = docText.indexOf("# PERSONALITY\n") + "# PERSONALITY\n".length;
+		view.dispatch({ changes: { from: insertAt, insert: "XYZ" } });
+
+		// Immediately after dispatch the form is still stale (debounced) — this is
+		// the whole point: the expensive parse + 5× setValue + parent re-render
+		// do not run per keystroke.
+		expect(formRef!.getValues().description).toBe("orig");
+
+		// After the debounce window the edit reaches the form.
+		await waitFor(() => {
+			expect(formRef!.getValues().description).toContain("XYZ");
+		});
 	});
 });

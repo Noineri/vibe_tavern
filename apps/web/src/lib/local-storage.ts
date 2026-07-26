@@ -13,10 +13,11 @@ export interface TweaksSettings {
   messageWidth: "narrow" | "medium" | "wide";
   lang: string;
   showRail: boolean;
+  lavaBlobs: boolean;
 }
 
 export const MESSAGE_WIDTH_MAP: Record<string, string> = { narrow: "680px", medium: "820px", wide: "960px" };
-export const DEFAULT_TWEAKS: TweaksSettings = { fontSize: 17, uiFontSize: 17, messageWidth: "medium", lang: DEFAULT_LOCALE, showRail: false };
+export const DEFAULT_TWEAKS: TweaksSettings = { fontSize: 17, uiFontSize: 17, messageWidth: "medium", lang: DEFAULT_LOCALE, showRail: false, lavaBlobs: true };
 
 export function readSavedTheme(): ThemeMode {
   try {

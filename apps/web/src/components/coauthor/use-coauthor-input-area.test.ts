@@ -5,7 +5,7 @@
  * CoauthorInputArea.test.tsx — "selecting a module calls the action" and
  * "only tool-capable favorites are offered" — are pinned at the layer that
  * actually owns them. The Select/BottomSheet is plumbing; the contracts live
- * in `useModuleSwitch.handleSelect` and the hook's `toolFilteredFavorites`.
+ * in `useModuleSwitch.handleSelect` and the hook's decorated Co-Author favorites.
  *
  * Rendering the Select open/select interaction under happy-dom is a documented
  * Radix limitation (Select.Content does not mount without layout — same root
@@ -172,7 +172,7 @@ describe("useCoauthorInputArea — tool-filtered favorites", () => {
 					},
 				} as never,
 			],
-			favoritesByProfile: {
+			coauthorFavoritesByProfile: {
 				p1: [
 					{ id: "f1", profileId: "p1", modelId: "gpt-4o", label: "GPT-4o", sortOrder: 0 } as never,
 					{ id: "f2", profileId: "p1", modelId: "gpt-3.5", label: "GPT-3.5 (no tools)", sortOrder: 1 } as never,
@@ -181,11 +181,11 @@ describe("useCoauthorInputArea — tool-filtered favorites", () => {
 		});
 	});
 
-	it("offers only tool-capable favorites (drops the non-tool model)", () => {
+	it("offers every Co-Author favorite and marks only explicit unsupported models", () => {
 		const { result } = renderHook(() => useCoauthorInputArea());
-		const ids = result.current.toolFilteredFavorites.map((f) => f.modelId);
-		expect(ids).toEqual(["gpt-4o"]);
-		expect(ids).not.toContain("gpt-3.5");
+		const favorites = result.current.favorites;
+		expect(favorites.map((favorite) => favorite.modelId)).toEqual(["gpt-4o", "gpt-3.5"]);
+		expect(favorites.map((favorite) => favorite.toolSupport)).toEqual(["supported", "unsupported"]);
 	});
 
 	it("active model and profile come from the Co-Author binding, not RP active", () => {

@@ -1,5 +1,5 @@
 import type { ChatRuntimeApi } from "../contract/runtime-api.js";
-import { brandId, parseStoredAttachments, resolveEffectiveSettings, normalizeSceneTrackerConfig, applySceneTrackerConfigPatch, findInvalidXmlKeys, SCENE_PROMPT_FORMAT, type ChatId, type ChatBranchId, type MessageId, type MessageVariantId, type PromptPresetId, type SceneTrackerConfigPatch, type CoauthorContextLink, type StoredProviderProfileRecord } from "@vibe-tavern/domain";
+import { brandId, parseStoredAttachments, resolveEffectiveSettings, normalizeSceneTrackerConfig, applySceneTrackerConfigPatch, findInvalidXmlKeys, SCENE_PROMPT_FORMAT, COAUTHOR_TRANSPORT, type ChatId, type ChatBranchId, type MessageId, type MessageVariantId, type PromptPresetId, type SceneTrackerConfigPatch, type CoauthorContextLink, type CoauthorTransport, type StoredProviderProfileRecord } from "@vibe-tavern/domain";
 import { rebuildCurrentSceneCache } from "../../domain/insights/scene-cache.js";
 import type { Attachment } from "@vibe-tavern/domain";
 import type { StoreContainer } from "@vibe-tavern/db";
@@ -114,7 +114,7 @@ export class ChatAdapter implements ChatRuntimeApi {
 
 	sendMessage = async (chatId: string, body: { content: string; attachments?: Attachment[]; diceMode?: "normal" | "immersive"; pendingRevision?: number }, signal?: AbortSignal) => {
 		logSendDebug("api.runtime.send.start", { chatId, contentLength: body.content?.length ?? 0 });
-		const profile = await this.resolveEffectiveProfileOrThrow({ chatId });
+		const { profile, transport } = await this.resolveEffectiveProfileOrThrow({ chatId });
 		logSendDebug("api.runtime.send.profile", {
 			chatId,
 			profileId: profile.id,
@@ -129,6 +129,7 @@ export class ChatAdapter implements ChatRuntimeApi {
 			attachments: body.attachments,
 			profile,
 			model: profile.defaultModel,
+			transport,
 			signal,
 			diceCommit: resolveDiceCommit(body),
 			visionAssets: {
@@ -148,7 +149,7 @@ export class ChatAdapter implements ChatRuntimeApi {
 	};
 
 	sendMessageStream = async function* (this: ChatAdapter, chatId: string, body: { content: string; attachments?: Attachment[]; diceMode?: "normal" | "immersive"; pendingRevision?: number }, signal?: AbortSignal) {
-		const profile = await this.resolveEffectiveProfileOrThrow({ chatId });
+		const { profile, transport } = await this.resolveEffectiveProfileOrThrow({ chatId });
 		try {
 			yield* this.liveChatOrchestrator.sendMessageStream({
 				chatId,
@@ -156,6 +157,7 @@ export class ChatAdapter implements ChatRuntimeApi {
 				attachments: body.attachments,
 				profile,
 				model: profile.defaultModel,
+				transport,
 				signal,
 				diceCommit: resolveDiceCommit(body),
 				visionAssets: {
@@ -175,12 +177,13 @@ export class ChatAdapter implements ChatRuntimeApi {
 	};
 
 	regenerateMessage = async (chatId: string, messageId: string, override?: RegenerateOverride, signal?: AbortSignal) => {
-		const profile = await this.resolveEffectiveProfileOrThrow({ chatId, modelOverride: override?.model });
+		const { profile, transport } = await this.resolveEffectiveProfileOrThrow({ chatId, modelOverride: override?.model });
 		const result = await this.liveChatOrchestrator.regenerateMessage({
 			chatId,
 			messageId,
 			profile,
 			model: profile.defaultModel,
+			transport,
 			presetId: override?.promptPresetId ? brandId<PromptPresetId>(override.promptPresetId) : undefined,
 			signal,
 		});
@@ -188,34 +191,37 @@ export class ChatAdapter implements ChatRuntimeApi {
 	};
 
 	regenerateMessageStream = async function* (this: ChatAdapter, chatId: string, messageId: string, override?: RegenerateOverride, signal?: AbortSignal) {
-		const profile = await this.resolveEffectiveProfileOrThrow({ chatId, modelOverride: override?.model });
+		const { profile, transport } = await this.resolveEffectiveProfileOrThrow({ chatId, modelOverride: override?.model });
 		yield* this.liveChatOrchestrator.regenerateMessageStream({
 			chatId,
 			messageId,
 			profile,
 			model: profile.defaultModel,
+			transport,
 			presetId: override?.promptPresetId ? brandId<PromptPresetId>(override.promptPresetId) : undefined,
 			signal,
 		});
 	};
 
 	generateReply = async (chatId: string, signal?: AbortSignal) => {
-		const profile = await this.resolveEffectiveProfileOrThrow({ chatId });
+		const { profile, transport } = await this.resolveEffectiveProfileOrThrow({ chatId });
 		const result = await this.liveChatOrchestrator.generateReply({
 			chatId,
 			profile,
 			model: profile.defaultModel,
+			transport,
 			signal,
 		});
 		return result.snapshot;
 	};
 
 	generateReplyStream = async function* (this: ChatAdapter, chatId: string, signal?: AbortSignal) {
-		const profile = await this.resolveEffectiveProfileOrThrow({ chatId });
+		const { profile, transport } = await this.resolveEffectiveProfileOrThrow({ chatId });
 		yield* this.liveChatOrchestrator.generateReplyStream({
 			chatId,
 			profile,
 			model: profile.defaultModel,
+			transport,
 			signal,
 		});
 	};
@@ -269,7 +275,7 @@ export class ChatAdapter implements ChatRuntimeApi {
 			throw validation("Only image or video attachments can be described.");
 		}
 
-		const profile = await this.resolveEffectiveProfileOrThrow({ chatId });
+		const { profile } = await this.resolveEffectiveProfileOrThrow({ chatId });
 		if (!profile.visionModel) {
 			throw validation("No vision model configured in the active provider profile. Set one in Provider settings.");
 		}
@@ -492,6 +498,8 @@ export class ChatAdapter implements ChatRuntimeApi {
 	private async resolveProfileForMode(chatId?: string): Promise<{
 		profile: StoredProviderProfileRecord & { defaultModel: string };
 		preferredModel: string | null;
+		transport: CoauthorTransport;
+		coauthorTokenOverrides: { maxTokens: number | null; contextBudget: number | null } | null;
 	}> {
 		// Co-Author path: only when a chat is explicitly in coauthor mode AND has
 		// a persisted binding whose profile still exists.
@@ -505,14 +513,24 @@ export class ChatAdapter implements ChatRuntimeApi {
 						const preferredModel = settings.coauthorModelName ?? null;
 						const effectiveModel = preferredModel ?? bound.defaultModel;
 						if (effectiveModel) {
-							return { profile: { ...bound, defaultModel: effectiveModel as string }, preferredModel };
+							return {
+								profile: { ...bound, defaultModel: effectiveModel as string },
+								preferredModel,
+								transport: bound.coauthorTransport,
+								coauthorTokenOverrides: { maxTokens: settings.coauthorMaxTokens, contextBudget: settings.coauthorContextBudget },
+							};
 						}
 					}
 				}
 			}
 		}
 		// RP fallback (also reached when the Co-Author binding is null/dangling).
-		return { profile: await this.resolveActiveProfileOrThrow(), preferredModel: null };
+		return {
+			profile: await this.resolveActiveProfileOrThrow(),
+			preferredModel: null,
+			transport: COAUTHOR_TRANSPORT.chatCompletions,
+			coauthorTokenOverrides: null,
+		};
 	}
 
 	/**
@@ -540,18 +558,22 @@ export class ChatAdapter implements ChatRuntimeApi {
 		modelOverride?: string | null;
 	}) {
 		const modelOverride = options?.modelOverride ?? null;
-		const { profile, preferredModel } = await this.resolveProfileForMode(options?.chatId);
+		const { profile, preferredModel, transport, coauthorTokenOverrides } = await this.resolveProfileForMode(options?.chatId);
 
 		// Final model: explicit override > mode-preferred (coauthor) > profile default.
 		const finalModel = modelOverride ?? preferredModel ?? profile.defaultModel;
 
-		if (!profile.bindPerModel) {
-			return { ...profile, defaultModel: finalModel };
-		}
-
-		const overlay = await this.providerProfileService.getProviderModelSettings(profile.id, finalModel);
-		const effective = resolveEffectiveSettings(profile, overlay?.settings ?? null);
-		return { ...effective, defaultModel: finalModel };
+		const effective = !profile.bindPerModel
+			? { ...profile, defaultModel: finalModel }
+			: { ...resolveEffectiveSettings(profile, (await this.providerProfileService.getProviderModelSettings(profile.id, finalModel))?.settings ?? null), defaultModel: finalModel };
+		return {
+			profile: {
+				...effective,
+				...(coauthorTokenOverrides?.maxTokens != null ? { maxTokens: coauthorTokenOverrides.maxTokens } : {}),
+				...(coauthorTokenOverrides?.contextBudget != null ? { contextBudget: coauthorTokenOverrides.contextBudget } : {}),
+			},
+			transport,
+		};
 	}
 }
 

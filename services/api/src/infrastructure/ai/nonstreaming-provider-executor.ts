@@ -12,7 +12,7 @@ import type { ExtractedToolCall, ExtractedToolResult, GenerationResult } from ".
 import type { ProviderExecutionInput } from "./provider-execution-types.js";
 import { resolveModel, toSdkMessages, prepareSdkMessages } from "./provider-executor-utils.js";
 import { buildSamplerConfig } from "./sampler-mapper.js";
-import { normalizeProviderType } from "@vibe-tavern/domain";
+import { COAUTHOR_TRANSPORT, normalizeProviderType } from "@vibe-tavern/domain";
 import { wrapProviderExecutionError } from "./provider-error-wrapper.js";
 import { serializeProviderResponseTrace } from "./provider-response-trace.js";
 import { cancelled } from "../../shared/errors.js";
@@ -107,7 +107,7 @@ export async function nonstreamingProviderExecute(
   input: ProviderExecutionInput,
 ): Promise<GenerationResult> {
   try {
-    const model = resolveModel(input.profile, input.model);
+    const model = resolveModel(input.profile, input.model, input.transport);
     let messages = toSdkMessages(input.prompt);
     const activeModel = input.cachedModels?.find((m) => m.modelSlug === input.model);
     const hasVision = activeModel?.capabilities?.vision ?? false;
@@ -168,10 +168,20 @@ export async function nonstreamingProviderExecute(
       ...(hasAttachments ? { visionGate, assetLoader: input.assetLoader } : {}),
     });
 
-    const samplerConfig = buildSamplerConfig(input.profile);
+    // Responses rejects OpenAI-compatible advanced sampler/provider options.
+    // Co-Author keeps only its explicit output-token limit on this transport.
+    const samplerConfig = input.transport === COAUTHOR_TRANSPORT.responses
+      ? { maxOutputTokens: input.profile.maxTokens }
+      : buildSamplerConfig(input.profile);
     if (input.overrideMaxTokens != null) {
       samplerConfig.maxOutputTokens = input.overrideMaxTokens;
     }
+    // See stream-provider-executor.ts: stateless multi-step on the Responses
+    // transport requires `store: false` so the SDK serializes each complete
+    // function_call + function_call_output pair into every follow-up request.
+    // Default store:true assumes previousResponseId chaining we don't do.
+    const responsesProviderOptions =
+      input.transport === COAUTHOR_TRANSPORT.responses ? { openai: { store: false } } : undefined;
     logSendDebug("provider.nonstream.samplerConfig", {
       providerType: input.profile.providerPreset,
       samplerConfig,
@@ -193,6 +203,7 @@ export async function nonstreamingProviderExecute(
       // (serializeProviderResponseStep) keeps capturing bodies as it did on v6.
       include: { responseBody: true },
       ...samplerConfig,
+      ...(responsesProviderOptions ? { providerOptions: responsesProviderOptions } : {}),
       ...(input.tools ? { tools: input.tools } : {}),
       ...(input.tools && input.maxSteps ? { stopWhen: isStepCount(input.maxSteps) } : {}),
     });

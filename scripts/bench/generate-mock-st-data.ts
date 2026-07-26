@@ -1,8 +1,9 @@
 import { mkdir, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { embedCharaMetadata } from "../../apps/web/src/lib/png-writer.ts";
 
-const OUT_DIR = "N:/mock-user";
+const OUT_DIR = process.argv[2] ?? join(tmpdir(), "vt-mock-user");
 const NUM_CHARACTERS = 1000;
 const CHATS_PER_CHAR = 10;
 const MESSAGES_PER_CHAT = 100;

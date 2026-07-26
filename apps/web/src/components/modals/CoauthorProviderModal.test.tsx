@@ -1,10 +1,11 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { TooltipProvider } from "../shared/Tooltip.js";
 import { CoauthorProviderModal } from "./CoauthorProviderModal.js";
 import type { ProviderProfileRecord as ClientProviderProfileRecord } from "../../api/types.js";
 import { useProviderDataStore } from "../../stores/provider-data-store.js";
-import { useBootstrapStore } from "../../stores/api-actions/bootstrap-actions.js";
+import { useBootstrapStore, patchUiSettingsAction } from "../../stores/api-actions/bootstrap-actions.js";
+import { updateProviderProfileAction } from "../../stores/api-actions/provider-actions.js";
 
 // Mock patchUiSettingsAction so saveBinding doesn't hit the network.
 vi.mock("../../stores/api-actions/bootstrap-actions.js", async (importOriginal) => {
@@ -21,6 +22,7 @@ vi.mock("../../stores/api-actions/provider-actions.js", async (importOriginal) =
   return {
     ...real,
     loadFavoriteModelsAction: vi.fn(async (_profileId: string) => {}),
+    updateProviderProfileAction: vi.fn(async (_profileId: string, patch: { coauthorTransport?: "chat_completions" | "responses" }) => ({ coauthorTransport: patch.coauthorTransport ?? "chat_completions" }) as never),
   };
 });
 
@@ -35,7 +37,7 @@ vi.mock("../../i18n/context.js", async (importOriginal) => {
 
 function makeProfile(id: string, name: string, over: Record<string, unknown> = {}): ClientProviderProfileRecord {
   return {
-    id, name, providerPreset: "openaiCompat", endpoint: "https://api.test/v1",
+    id, name, providerPreset: "openai", coauthorTransport: "chat_completions", endpoint: "https://api.test/v1",
     defaultModel: null, isActive: false,
     cachedModels: { models: [{ id: "tool-model", label: "Tool Model", contextLength: 32000, capabilities: { tools: true } }] },
     ...over,
@@ -58,6 +60,7 @@ function setBinding(coauthorProviderId: string | null, coauthorModelName: string
 
 describe("CoauthorProviderModal", () => {
   beforeEach(() => {
+    vi.clearAllMocks();
     useProviderDataStore.setState({ profiles: [], favoritesByProfile: {} });
     useBootstrapStore.setState({ data: null });
   });
@@ -78,7 +81,7 @@ describe("CoauthorProviderModal", () => {
       ],
       favoritesByProfile: {},
     });
-    render(<CoauthorProviderModal isOpen={true} onClose={() => {}} onOpenProviderModal={() => {}} />);
+    render(<TooltipProvider><CoauthorProviderModal isOpen={true} onClose={() => {}} onOpenProviderModal={() => {}} /></TooltipProvider>);
     // Both profiles render in the master list
     expect(screen.getByText("Bound Profile")).toBeTruthy();
     expect(screen.getByText("Other Profile")).toBeTruthy();
@@ -91,15 +94,93 @@ describe("CoauthorProviderModal", () => {
     let providerOpened = false;
     let closed = false;
     render(
-      <CoauthorProviderModal
+      <TooltipProvider><CoauthorProviderModal
         isOpen={true}
         onClose={() => { closed = true; }}
         onOpenProviderModal={() => { providerOpened = true; }}
-      />,
+      /></TooltipProvider>,
     );
     fireEvent.click(screen.getByText("coauthor.provider.manage_connections"));
     expect(providerOpened).toBe(true);
     expect(closed).toBe(true);
+  });
+
+  it("shows custom-ID guidance and an explicit model refresh action", () => {
+    setBinding("prof_1", "tool-model");
+    useProviderDataStore.setState({ profiles: [makeProfile("prof_1", "Alpha")], favoritesByProfile: {} });
+    render(<TooltipProvider><CoauthorProviderModal isOpen={true} onClose={() => {}} onOpenProviderModal={() => {}} /></TooltipProvider>);
+    expect(screen.getByPlaceholderText("coauthor.provider.model_search")).toBeTruthy();
+    expect(screen.getByText("refresh_models")).toBeTruthy();
+  });
+
+  it("persists a permitted Responses selection without changing the binding", async () => {
+    setBinding("prof_1", "tool-model");
+    useProviderDataStore.setState({ profiles: [makeProfile("prof_1", "OpenAI")], favoritesByProfile: {} });
+    render(<TooltipProvider><CoauthorProviderModal isOpen={true} onClose={() => {}} onOpenProviderModal={() => {}} /></TooltipProvider>);
+    fireEvent.click(screen.getByText("coauthor.provider.transport_responses"));
+    await waitFor(() => expect(vi.mocked(updateProviderProfileAction)).toHaveBeenCalledWith("prof_1", { coauthorTransport: "responses" }));
+  });
+
+  it("hides Responses for native profiles but permits an explicit attempt for every OpenAI-compatible profile", () => {
+    setBinding("native", "tool-model");
+    useProviderDataStore.setState({ profiles: [makeProfile("native", "Claude", { providerPreset: "anthropic" }), makeProfile("tabby", "Tabby", { providerPreset: "tabby" })], favoritesByProfile: {} });
+    render(<TooltipProvider><CoauthorProviderModal isOpen={true} onClose={() => {}} onOpenProviderModal={() => {}} /></TooltipProvider>);
+    expect(screen.getByText("coauthor.provider.transport_native")).toBeTruthy();
+    expect(screen.queryByText("coauthor.provider.transport_responses")).toBeNull();
+    fireEvent.pointerDown(screen.getByText("Tabby"));
+    expect(screen.getByText("coauthor.provider.transport_responses")).toBeTruthy();
+    expect(screen.getByText("coauthor.provider.transport_may_not_be_supported")).toBeTruthy();
+  });
+
+  it("renders a fixed-height model viewport that scrolls internally, with a stable footer", () => {
+    setBinding("prof_1", "tool-model");
+    useProviderDataStore.setState({ profiles: [makeProfile("prof_1", "Alpha", { maxTokens: 2_000, contextBudget: 32_000 })], favoritesByProfile: {} });
+    render(<TooltipProvider><CoauthorProviderModal isOpen={true} onClose={() => {}} onOpenProviderModal={() => {}} /></TooltipProvider>);
+    expect(screen.getByText("coauthor.provider.tokens_label")).toBeTruthy();
+    expect(screen.getByText("coauthor.provider.max_tokens")).toBeTruthy();
+    expect(screen.getByText("coauthor.provider.context_budget")).toBeTruthy();
+    // The model viewport is a FIXED height (~250px, ~5 rows) and must NEVER grow
+    // with model count, so the Hi button sits immediately below it regardless of
+    // how many models load. Scrolling is delegated inside (overflow-hidden box).
+    const list = screen.getByTestId("coauthor-model-list");
+    expect(list.className).toContain("h-[250px]");
+    expect(list.className).toContain("shrink-0");
+    expect(list.className).toContain("overflow-hidden");
+    expect(list.className).not.toContain("flex-1");
+    // The wrapping model section must not grow either — flex-1 on the section
+    // would shove the Hi button to the bottom and tie content height to count.
+    const modelSection = list.parentElement;
+    expect(modelSection?.className).not.toContain("flex-1");
+    // Stable footer: Cancel/Use live in the MasterDetailModal footer slot, which
+    // renders OUTSIDE the scrollable detail pane, so they never overlay content
+    // or scroll away. The footer is a sibling of the scroll region, not inside it.
+    const footer = screen.getByTestId("coauthor-modal-footer");
+    expect(footer.textContent).toContain("cancel");
+    expect(footer.textContent).toContain("coauthor.provider.use_for_coauthor");
+    let scrollPane: Element | null = list.parentElement;
+    while (scrollPane && !scrollPane.className.includes("overflow-y-auto")) {
+      scrollPane = scrollPane.parentElement;
+    }
+    expect(scrollPane).not.toBeNull();
+    expect(scrollPane!.contains(footer)).toBe(false);
+  });
+
+  it("renders the inherited -1 (unlimited) max-output sentinel as \u221e, never as -1", () => {
+    setBinding("prof_1", "tool-model");
+    useProviderDataStore.setState({ profiles: [makeProfile("prof_1", "Alpha", { maxTokens: -1 })], favoritesByProfile: {} });
+    render(<TooltipProvider><CoauthorProviderModal isOpen={true} onClose={() => {}} onOpenProviderModal={() => {}} /></TooltipProvider>);
+    // The internal -1 sentinel must not leak as a raw numeric value into the editor.
+    expect(screen.getByText("∞")).toBeTruthy();
+    const leakingSentinel = screen.queryAllByRole("textbox").some((el) => (el as HTMLInputElement).value === "-1");
+    expect(leakingSentinel).toBe(false);
+  });
+
+  it("converts an inherited unlimited max-output into a concrete override on demand", async () => {
+    setBinding("prof_1", "tool-model");
+    useProviderDataStore.setState({ profiles: [makeProfile("prof_1", "Alpha", { maxTokens: -1 })], favoritesByProfile: {} });
+    render(<TooltipProvider><CoauthorProviderModal isOpen={true} onClose={() => {}} onOpenProviderModal={() => {}} /></TooltipProvider>);
+    fireEvent.click(screen.getByText("∞"));
+    await waitFor(() => expect(vi.mocked(patchUiSettingsAction)).toHaveBeenCalledWith({ coauthorMaxTokens: 2_000 }));
   });
 
   it("save button is disabled when a profile is selected but no model chosen", () => {
