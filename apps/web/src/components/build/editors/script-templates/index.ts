@@ -3,10 +3,10 @@
  *
  * Each template's body lives in its own `.js` file (editor support: syntax
  * highlighting, linting, formatting — none of which exist for code embedded in
- * TS template strings). Vite's `?raw` suffix imports the file content as a
- * plain string at build time; `vite/client` (in tsconfig types) declares the
- * module shape so the import typechecks. Precedent: `ThemeTuner.tsx` imports
- * theme CSS the same way.
+ * TS template strings). The `?raw` suffix imports the file content as a
+ * plain string at build time; the ambient `*?raw` declaration in
+ * `src/bun-env.d.ts` declares the module shape so the import typechecks.
+ * Precedent: `ThemeTuner.tsx` imports theme CSS the same way.
  *
  * Keys mirror the i18n keys (`script_template_<key>` in
  * `apps/web/src/i18n/locales/*.json`); the UI renders the localized name and

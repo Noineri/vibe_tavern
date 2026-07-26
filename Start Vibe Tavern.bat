@@ -45,7 +45,8 @@ echo.
 rem Reconcile node_modules against bun.lock on every launch. `bun install`
 rem is a no-op (~30ms) when already in sync and self-heals when a dep was
 rem added/removed since the last launch — unlike the old sentinel check
-rem (node_modules\hono / \vite), which silently missed newly added packages.
+rem (a fixed list of package directories), which silently missed newly
+rem added packages.
 echo Checking dependencies against bun.lock...
 call %BUN_EXE% install
 if errorlevel 1 (

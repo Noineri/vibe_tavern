@@ -10,7 +10,7 @@
 |--------|------|-----|
 | **Bun** | Runtime, bundler, test runner, SQLite driver, file I/O | Single binary handles everything Node does plus native SQLite (`bun:sqlite`), built-in test runner, `Bun.file()` API, `Bun.write()`, crypto via `Bun.CryptoHasher`. Enables `bun build --compile` → single `.exe` distribution. No Node.js installation required for end users. |
 | **TypeScript ^6** | Language | Strict mode throughout. Branded IDs (`Brand<"ChatId">`) prevent accidental ID swaps at compile time. All API contracts are Zod schemas that produce TS types. |
-| **Vite 8** | Frontend build, HMR | Fastest dev server available. Native TS/ESM support. Plugin system for React, Tailwind. Bun-level startup speed. |
+| **Bun.build + Bun HTML imports** | Frontend build, dev server, HMR | The same runtime bundles the SPA (`scripts/build-web.ts`, HTML entry) and serves it in dev (`apps/web/dev-server.ts` with HMR). Tailwind 4 via `bun-plugin-tailwind`; dev-only `data-component` injection, build-time constants, and `?raw` raw-string loading via local Bun plugins. No separate frontend toolchain. |
 
 **Why not Node.js:** Bun provides native SQLite, faster `crypto`, `Bun.file()` as a cleaner fs API, and single-binary compilation. The project still uses `node:vm` for compatible script execution, not as a security boundary, plus `node:fs/promises` (directory ops with no Bun equivalent), `node:crypto` (where needed for compatibility), and `node:os` / `node:path` (platform paths) — but these are isolated cases.
 
@@ -228,10 +228,11 @@ vibe-tavern/
 
 | Target | Method | Output |
 |--------|--------|--------|
-| **Dev (frontend)** | `bun run dev:web` — Vite dev server with HMR | Vite-served SPA |
+| **Dev (frontend)** | `bun run dev:web` — Bun HTML dev server with HMR (`apps/web/dev-server.ts`); `bun run dev:web:debug` also proxies `/api` + `/assets` to :8787 | Bun-served SPA |
 | **Dev (backend)** | `bun run dev:api` — Bun API server with watch | `services/api/src/` |
-| **Dev (full stack)** | `bun run dev` — builds the API stack then starts the production-style server | `out/services/api/` + `data/` |
-| **Production bundle** | `bun run build` — builds the API stack + Vite frontend | `out/services/api/`, `out/apps/web/` |
+| **Dev (full stack)** | `bun run dev` — `scripts/dev.ts` orchestrator: API on :8787 + web HMR on :4173 (proxies `/api` + `/assets`) | `data/` (API runs from source) |
+| **Preview (prod-style)** | `bun run preview` — full build, then the API serves the static bundle on :8787 | `out/services/api/`, `out/apps/web/` |
+| **Production bundle** | `bun run build` — builds the API stack + Bun.build frontend (`scripts/build-web.ts`) | `out/services/api/`, `out/apps/web/` |
 | **Docker** | `docker-compose up` — Bun runtime + built frontend in single container | Uses production bundle |
 | **Standalone .exe** | `bun run build:standalone` — single binary with embedded frontend + assets | `out/standalone/vibe-tavern.exe` |
 | **Windows installer** | `bun run build:installer` — Inno Setup wrapper around the standalone exe | `out/installer/vibe-tavern-setup.exe` |

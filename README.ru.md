@@ -224,7 +224,7 @@ Vibe Tavern — это однопроцессный монолит: React 19 SPA
 
 ```
 vibe_tavern/
-├── apps/web/                 # React 19 SPA (Vite)
+├── apps/web/                 # React 19 SPA (Bun-native сборка)
 ├── services/api/             # Hono-бэкенд (Bun.serve)
 ├── packages/domain/          # Фундамент без зависимостей: типы, брендированные ID, константы
 ├── packages/api-contracts/   # Zod-схемы, общие для фронта и бэка

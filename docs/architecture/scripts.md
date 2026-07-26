@@ -236,7 +236,7 @@ Editor tabs (`listByScope`) also union FK ∪ junction for character/persona sco
 
 ### Templates (`script-templates/*.js`)
 
-Eight shipped templates, each a standalone `.js` file loaded as a raw string via Vite `?raw` imports in `script-templates/index.ts`. Keys mirror the i18n keys `script_template_<key>` in `apps/web/src/i18n/locales/*.json`.
+Eight shipped templates, each a standalone `.js` file loaded as a raw string via `?raw` imports in `script-templates/index.ts` (resolved by the raw-string loader in `apps/web/bun-plugin-web-assets.ts`, typed by the `*?raw` ambient declaration in `apps/web/src/bun-env.d.ts`). Keys mirror the i18n keys `script_template_<key>` in `apps/web/src/i18n/locales/*.json`.
 
 | Key | Purpose |
 |------|---------|

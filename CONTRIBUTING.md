@@ -25,21 +25,21 @@ bun install
 bun run dev
 ```
 
-`bun run dev` builds the API stack and starts the production-style server, which serves the frontend as static files. Open **http://127.0.0.1:8787** once it prints `Listening on …`. This is the simplest way to get a fully working app (frontend + API + SQLite in `data/`) in one process.
+`bun run dev` ([`scripts/dev.ts`](./scripts/dev.ts)) starts two tied processes: the API server on **:8787** and the Bun HTML dev server ([`apps/web/dev-server.ts`](./apps/web/dev-server.ts)) with HMR on **:4173**, which proxies `/api` and `/assets` to the API. Open **http://127.0.0.1:4173** — that's the hot-reloading UI you edit against. If you want the production-style single process instead (full build, static bundle served by the API), run `bun run preview` and open **http://127.0.0.1:8787**.
 
 ### Frontend development with Hot Module Replacement (HMR)
 
-For UI work where you want Vite's instant refresh, run the API and the Vite dev server separately:
+`bun run dev` already gives you HMR out of the box. Run the two sides separately only when you need independent control (e.g. restarting the API without losing the web session):
 
 ```bash
 # terminal 1 — API on :8787
 bun run dev:api
 
-# terminal 2 — Vite on :4173, pointed at the API
-RP_WEB_API_URL=http://127.0.0.1:8787 bun run dev:web
+# terminal 2 — web dev server on :4173, proxying /api and /assets to the API
+bun run dev:web:debug
 ```
 
-The frontend resolves the API base URL via `getGatewayBaseUrl()` ([`apps/web/src/gateway-client.ts`](./apps/web/src/gateway-client.ts)): it prefers `window.location.origin`, so without `RP_WEB_API_URL` the Vite server (4173) would call itself and get no API. Setting the env var is what wires 4173 → 8787. Open **http://127.0.0.1:4173**.
+Plain `bun run dev:web` serves the frontend standalone on :4173 with no proxy; the `:debug` variant is what wires 4173 → 8787. An alternative to the debug proxy is setting `RP_WEB_API_URL=http://127.0.0.1:8787` before `bun run dev:web`: the frontend resolves its API base URL via `getGatewayBaseUrl()` ([`apps/web/src/gateway-client.ts`](./apps/web/src/gateway-client.ts)), which prefers the configured `RP_WEB_API_URL` and otherwise falls back to `window.location.origin` (which would call the dev server itself and find no API).
 
 > Port note: the API defaults to `8787` (override with `RP_PLATFORM_PORT`). The two dev servers must run on different ports — `server-runtime.ts` frees its target port before binding, so it will never collide with another instance, but pick a free port if you run more than one.
 
@@ -56,7 +56,7 @@ packages/db               Drizzle ORM (SQLite WAL) + entity stores
 packages/prompt-pipeline  pure prompt assembly + macro engine (no I/O)
 packages/import-export    SillyTavern V2/V3 card/chat/lorebook parsers
 services/api              Hono backend (Bun.serve) — the app
-apps/web                  React 19 SPA (Vite, no router)
+apps/web                  React 19 SPA (Bun-native build, no router)
 ```
 
 Before changing architecture, read the relevant doc — each one explains *why* the code is shaped the way it is, including the ADRs ([`docs/architecture/decisions.md`](./docs/architecture/decisions.md)) behind anything that looks unusual (bottom-pinned message lists, the protocol registry, bind-first server bootstrap, progressive disclosure, …).

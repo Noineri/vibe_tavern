@@ -1,11 +1,11 @@
 @echo off
 rem ─────────────────────────────────────────────────────────────────────
 rem  Theme Tuner launcher.
-rem  Starts the Vite dev server (frontend only — no backend needed for the
+rem  Starts the web dev server (frontend only — no backend needed for the
 rem  tuner) and opens the browser at the #theme-tuner hash. Double-click to
 rem  use; close the "Theme Tuner — dev server" window to stop the server.
 rem
-rem  Port is 4173 (apps/web/vite.config.ts -> server.port).
+rem  Port is 4173 (apps/web/dev-server.ts -> RP_WEB_DEV_PORT default).
 rem ─────────────────────────────────────────────────────────────────────
 setlocal
 cd /d "%~dp0"
@@ -16,7 +16,7 @@ title Theme Tuner - dev server
 rem Launch dev:web in its own window so it keeps running after this script exits.
 start "Theme Tuner - dev server" cmd /k "bun run dev:web"
 
-rem Give Vite time to boot before opening the browser.
+rem Give the dev server time to boot before opening the browser.
 timeout /t 5 /nobreak >nul
 
 echo Opening browser at http://localhost:4173/#theme-tuner

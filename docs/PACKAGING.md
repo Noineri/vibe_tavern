@@ -181,7 +181,7 @@ Edit `installer/vibe-tavern.iss` to change:
 
 | Mode | Entry point | Data paths | Frontend |
 |------|------------|-----------|----------|
-| Dev | `services/api/src/server/prod-server.ts` (via `bun run dev`) | `data/` relative to project root | Vite dev server |
+| Dev | `scripts/dev.ts` → `prod-server.ts` + `apps/web/dev-server.ts` (via `bun run dev`) | `data/` relative to project root | Bun dev server with HMR (:4173, proxies `/api` → :8787) |
 | Prod | `out/services/api/prod-server.js` | `data/` + env vars | `out/apps/web/` |
 | Standalone | `out/standalone/vibe-tavern.exe` | OS convention (`%LOCALAPPDATA%\VibeTavern`) | `web/` next to exe |
 

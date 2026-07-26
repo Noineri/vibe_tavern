@@ -7,7 +7,7 @@
  *
  * The transform is tested as a pure function: we call `transformDataComponent`
  * directly with `enabled = true` (dev) or `enabled = false` (prod).
- * No plugin framework (Vite or Bun) is spun up — the test is framework-agnostic.
+ * No bundler or plugin runtime is spun up — the test is framework-agnostic.
  */
 import { describe, test, expect } from "bun:test";
 import {

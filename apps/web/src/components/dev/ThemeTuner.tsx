@@ -8,8 +8,9 @@
  * see is exactly what a tuned theme produces.
  *
  * Two modes:
- *   - "edit": load a registered theme's CSS (imported via Vite `?raw`), tweak
- *     any color, export a surgically-patched copy (comments preserved).
+ *   - "edit": load a registered theme's CSS (imported as a raw string via
+ *     `?raw`), tweak any color, export a surgically-patched copy (comments
+ *     preserved).
  *   - "scratch": start from a neutral grayscale ramp and build a brand-new theme.
  *
  * The tool's own chrome uses a fixed dark palette (`.tt-*` classes) so it stays
