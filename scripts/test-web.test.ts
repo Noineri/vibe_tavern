@@ -48,8 +48,10 @@ test("discovers normalized source tests in lexical order and appends the harness
 	const root = await makeRoot();
 	await writeFixture(root, "apps/web/src/zeta.test.ts");
 	await writeFixture(root, "apps/web/src/nested/alpha.test.tsx");
+	await writeFixture(root, "apps/web/test/bun-plugin-data-component.test.ts");
 	await writeFixture(root, "apps/web/test/harness.smoke.test.tsx");
 	await Bun.write(join(root, "apps/web/src/nested/not-a-test.ts"), "export {};\n");
+	await Bun.write(join(root, "apps/web/test/dom-env.ts"), "export {};\n");
 
 	// When
 	const files = await discoverWebTestFiles(root);
@@ -58,6 +60,7 @@ test("discovers normalized source tests in lexical order and appends the harness
 	expect(files).toEqual([
 		"apps/web/src/nested/alpha.test.tsx",
 		"apps/web/src/zeta.test.ts",
+		"apps/web/test/bun-plugin-data-component.test.ts",
 		"apps/web/test/harness.smoke.test.tsx",
 	]);
 });

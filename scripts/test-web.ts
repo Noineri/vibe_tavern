@@ -20,6 +20,7 @@ type OutputWriter = (message: string) => void;
 
 const ROOT = resolve(import.meta.dir, "..");
 const SOURCE_PATTERN = "apps/web/src/**/*.test.{ts,tsx}";
+const TOOLING_PATTERN = "apps/web/test/*.test.{ts,tsx}";
 const HARNESS_FILE = "apps/web/test/harness.smoke.test.tsx";
 const CONCURRENCY = 8;
 const MAX_FAILURE_STDERR_LINES = 40;
@@ -53,21 +54,19 @@ function parseCli(args: readonly string[]): ParsedCli | string {
 	}
 }
 
-async function discoverSourceTestFiles(root: string): Promise<readonly string[]> {
-	const files: string[] = [];
-	for await (const path of new Bun.Glob(SOURCE_PATTERN).scan({
-		cwd: root,
-		onlyFiles: true,
-		followSymlinks: false,
-	})) {
-		const normalized = normalizePath(root, path);
-		if (normalized !== null) files.push(normalized);
-	}
-	return files.sort();
-}
-
 export async function discoverWebTestFiles(root: string): Promise<readonly string[]> {
-	return [...(await discoverSourceTestFiles(root)), HARNESS_FILE];
+	const files: string[] = [];
+	for (const pattern of [SOURCE_PATTERN, TOOLING_PATTERN]) {
+		for await (const path of new Bun.Glob(pattern).scan({
+			cwd: root,
+			onlyFiles: true,
+			followSymlinks: false,
+		})) {
+			const normalized = normalizePath(root, path);
+			if (normalized !== null && normalized !== HARNESS_FILE) files.push(normalized);
+		}
+	}
+	return [...files.sort(), HARNESS_FILE];
 }
 
 async function validateFiles(root: string, files: readonly string[], write: OutputWriter): Promise<boolean> {
@@ -182,12 +181,12 @@ export async function runWebTestCli(
 		files = normalized.sort();
 	} else {
 		try {
-			const sourceFiles = await discoverSourceTestFiles(root);
-			if (sourceFiles.length === 0) {
-				write(`No web source test files discovered by ${SOURCE_PATTERN}`);
+			const discovered = await discoverWebTestFiles(root);
+			if (discovered.length <= 1) {
+				write(`No web source test files discovered by ${SOURCE_PATTERN} or ${TOOLING_PATTERN}`);
 				return 1;
 			}
-			files = [...sourceFiles, HARNESS_FILE];
+			files = discovered;
 		} catch (error) {
 			write(`Web test discovery failed: ${error instanceof Error ? error.message : String(error)}`);
 			return 1;
