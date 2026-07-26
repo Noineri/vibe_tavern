@@ -22,6 +22,7 @@ const ROOT = resolve(import.meta.dir, "..");
 const SOURCE_PATTERN = "apps/web/src/**/*.test.{ts,tsx}";
 const HARNESS_FILE = "apps/web/test/harness.smoke.test.tsx";
 const CONCURRENCY = 8;
+const MAX_FAILURE_STDERR_LINES = 40;
 
 function normalizePath(root: string, input: string): string | null {
 	const path = relative(root, resolve(root, input));
@@ -207,7 +208,8 @@ export async function runWebTestCli(
 		const failures = results.filter((result) => result.exitCode !== 0 || result.testCount === 0);
 		const lines = failures.map((result) => {
 			const reason = result.testCount === 0 ? "zero tests" : `exit ${result.exitCode ?? "spawn error"}`;
-			return `${result.file} (${reason})`;
+			const stderrTail = result.stderr.trim().split("\n").slice(-MAX_FAILURE_STDERR_LINES).join("\n");
+			return stderrTail === "" ? `${result.file} (${reason})` : `${result.file} (${reason})\n${stderrTail}`;
 		});
 		errorWrite(`Failing web test files (${failures.length}):\n${lines.join("\n")}`);
 	}

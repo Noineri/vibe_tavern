@@ -108,6 +108,7 @@ test("propagates a failing fixture as a nonzero result", async () => {
 	expect(result.output).toContain("FAIL apps/web/test/failing.test.ts");
 	expect(result.errors).toContain("Failing web test files (1)");
 	expect(result.errors).toContain("apps/web/test/failing.test.ts (exit 1)");
+	expect(result.errors).toContain("(fail)");
 });
 
 test("aggregates subprocess output by sorted file order rather than completion order", async () => {
