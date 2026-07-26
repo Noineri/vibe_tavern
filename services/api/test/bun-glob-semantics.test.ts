@@ -104,7 +104,11 @@ describe("Bun.Glob semantics on Bun 1.3.14-canary.1", () => {
     await buildPatternFixture(tempRoot);
 
     expect(await scanGlob("nested/*.json", { cwd: tempRoot })).toEqual([g("nested/inside.json")]);
-    expect(await scanGlob("nested\\*.json", { cwd: tempRoot })).toEqual([]);
+    // On win32, Bun.Glob also accepts \ as a pattern separator; on POSIX it
+    // is an escape character, so the backslash pattern matches nothing.
+    expect(await scanGlob("nested\\*.json", { cwd: tempRoot })).toEqual(
+      process.platform === "win32" ? [g("nested/inside.json")] : [],
+    );
   });
 
   // Backslashes are legal in POSIX filenames but illegal on win32, so the
@@ -149,12 +153,16 @@ describe("Bun.Glob semantics on Bun 1.3.14-canary.1", () => {
     });
 
     expect(withoutFollowing).toEqual([g("inside/inside.json")]);
-    expect(withFollowing.sort()).toEqual([
+    // win32 yields the dangling link itself when following symlinks; POSIX
+    // drops it because the target cannot be stat'ed.
+    const expectedFollowing = [
       "escaping.json",
       g("inside/inside.json"),
       g("linked-inside/inside.json"),
       g("linked-outside/escaped.json"),
-    ]);
+    ];
+    if (process.platform === "win32") expectedFollowing.unshift("broken.json");
+    expect(withFollowing.sort()).toEqual(expectedFollowing);
     expect(lenientEntries).toContain("broken.json");
     await expect(scanGlob("**/*", {
       cwd: root,
