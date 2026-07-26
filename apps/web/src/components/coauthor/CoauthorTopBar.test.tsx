@@ -57,7 +57,7 @@ mock.module("../../hooks/use-coauthor-provider-binding.js", () => {
       isExplicit: true,
       isReady: true,
       isDangling: false,
-      toolCapableModels: [{ id: "gpt-4o", label: "GPT-4o", contextLength: 128000 }],
+      models: [{ id: "gpt-4o", label: "GPT-4o", contextLength: 128000, toolSupport: "supported" }],
       favorites: [],
       saveBinding: mock(async () => {}),
       quickSwitchModel: mock(async () => {}),

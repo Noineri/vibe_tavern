@@ -17,5 +17,12 @@ export class SettingsAdapter implements SettingsRuntimeApi {
 		...(typeof body.aiAssistantModelName === "string" || body.aiAssistantModelName === null ? { aiAssistantModelName: body.aiAssistantModelName } : {}),
 		...(typeof body.coauthorProviderId === "string" || body.coauthorProviderId === null ? { coauthorProviderId: body.coauthorProviderId } : {}),
 		...(typeof body.coauthorModelName === "string" || body.coauthorModelName === null ? { coauthorModelName: body.coauthorModelName } : {}),
+		...(isPositiveIntegerOrNull(body.coauthorMaxTokens) ? { coauthorMaxTokens: body.coauthorMaxTokens } : {}),
+		...(isPositiveIntegerOrNull(body.coauthorContextBudget) ? { coauthorContextBudget: body.coauthorContextBudget } : {}),
 	});
 }
+
+function isPositiveIntegerOrNull(value: unknown): value is number | null {
+	return value === null || (typeof value === "number" && Number.isInteger(value) && value > 0);
+}
+

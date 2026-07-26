@@ -32,6 +32,7 @@ import { ChatAdapter } from "../src/api/adapters/chat-adapter.js";
 function makeBase(over: Partial<StoredProviderProfileRecord> = {}): StoredProviderProfileRecord {
   return {
     id: "prof_1", name: "base", providerPreset: "openaiCompat",
+    coauthorTransport: "chat_completions",
     endpoint: "http://localhost", apiKey: "sk-test",
     defaultModel: "gpt-4o",
     contextBudget: 16000, pinContextBudget: false, bindPerModel: true,
@@ -71,7 +72,7 @@ function makeProfileService(opts: {
 
 /** Typed accessor for the private generation-boundary method (test-only). */
 type AdapterInternals = {
-  resolveEffectiveProfileOrThrow(options?: { chatId?: string; modelOverride?: string | null }): Promise<StoredProviderProfileRecord>;
+  resolveEffectiveProfileOrThrow(options?: { chatId?: string; modelOverride?: string | null }): Promise<{ profile: StoredProviderProfileRecord; transport: import("@vibe-tavern/domain").CoauthorTransport }>;
 };
 
 function makeAdapter(service: ProviderProfileService, stores?: Partial<Pick<StoreContainer, "uiSettings" | "chats">>): AdapterInternals {
@@ -93,7 +94,7 @@ describe("Q1a: resolveEffectiveProfileOrThrow(modelOverride?)", () => {
     });
     const adapter = makeAdapter(service);
 
-    const effective = await adapter.resolveEffectiveProfileOrThrow();
+    const { profile: effective } = await adapter.resolveEffectiveProfileOrThrow();
 
     expect(requestedFor).toEqual(["gpt-4o"]);
     expect(effective.defaultModel).toBe("gpt-4o");
@@ -109,7 +110,7 @@ describe("Q1a: resolveEffectiveProfileOrThrow(modelOverride?)", () => {
     });
     const adapter = makeAdapter(service);
 
-    const effective = await adapter.resolveEffectiveProfileOrThrow({ modelOverride: "claude-sonnet" });
+    const { profile: effective } = await adapter.resolveEffectiveProfileOrThrow({ modelOverride: "claude-sonnet" });
 
     expect(requestedFor).toEqual(["claude-sonnet"]); // NOT "gpt-4o" — the critical invariant
     expect(effective.defaultModel).toBe("claude-sonnet"); // override becomes the target model
@@ -124,7 +125,7 @@ describe("Q1a: resolveEffectiveProfileOrThrow(modelOverride?)", () => {
     });
     const adapter = makeAdapter(service);
 
-    const effective = await adapter.resolveEffectiveProfileOrThrow({ modelOverride: "some-unbound-model" });
+    const { profile: effective } = await adapter.resolveEffectiveProfileOrThrow({ modelOverride: "some-unbound-model" });
 
     expect(requestedFor).toEqual(["some-unbound-model"]);
     expect(effective.defaultModel).toBe("some-unbound-model");
@@ -137,7 +138,7 @@ describe("Q1a: resolveEffectiveProfileOrThrow(modelOverride?)", () => {
     });
     const adapter = makeAdapter(service);
 
-    const effective = await adapter.resolveEffectiveProfileOrThrow({ modelOverride: "llama-3" });
+    const { profile: effective } = await adapter.resolveEffectiveProfileOrThrow({ modelOverride: "llama-3" });
 
     expect(requestedFor).toEqual([]); // bindPerModel off → skip overlay entirely
     expect(effective.defaultModel).toBe("llama-3");
@@ -153,7 +154,7 @@ describe("Q1a: resolveEffectiveProfileOrThrow(modelOverride?)", () => {
     const { service, requestedFor } = makeProfileService({ base });
     const adapter = makeAdapter(service);
 
-    const effective = await adapter.resolveEffectiveProfileOrThrow();
+    const { profile: effective } = await adapter.resolveEffectiveProfileOrThrow();
 
     expect(requestedFor).toEqual([]); // no overlay work
     expect(effective.defaultModel).toBe("gpt-4o");
@@ -184,6 +185,8 @@ function makeStores(opts: {
   mode?: string;
   coauthorProviderId?: string | null;
   coauthorModelName?: string | null;
+  coauthorMaxTokens?: number | null;
+  coauthorContextBudget?: number | null;
 }): { uiSettings: { get: () => Promise<object> }; chats: { getById: (id: string) => Promise<object | null> } } {
   return {
     uiSettings: {
@@ -199,6 +202,8 @@ function makeStores(opts: {
         aiAssistantModelName: null,
         coauthorProviderId: opts.coauthorProviderId ?? null,
         coauthorModelName: opts.coauthorModelName ?? null,
+        coauthorMaxTokens: opts.coauthorMaxTokens ?? null,
+        coauthorContextBudget: opts.coauthorContextBudget ?? null,
         updatedAt: "2026-01-01",
       }),
     },
@@ -231,7 +236,7 @@ describe("CAP-21: Co-Author binding resolution", () => {
     const stores = makeStores({ mode: "coauthor", coauthorProviderId: "prof_coauthor", coauthorModelName: "coauthor-model" });
     const adapter = makeAdapter(service, stores);
 
-    const effective = await adapter.resolveEffectiveProfileOrThrow({ chatId: "chat_1" });
+    const { profile: effective } = await adapter.resolveEffectiveProfileOrThrow({ chatId: "chat_1" });
 
     expect(effective.id).toBe("prof_coauthor"); // NOT the RP active profile
     expect(effective.defaultModel).toBe("coauthor-model"); // stored model, not profile default
@@ -244,7 +249,7 @@ describe("CAP-21: Co-Author binding resolution", () => {
     const stores = makeStores({ mode: "coauthor", coauthorProviderId: null, coauthorModelName: null });
     const adapter = makeAdapter(service, stores);
 
-    const effective = await adapter.resolveEffectiveProfileOrThrow({ chatId: "chat_1" });
+    const { profile: effective } = await adapter.resolveEffectiveProfileOrThrow({ chatId: "chat_1" });
 
     expect(effective.id).toBe("prof_1"); // RP active
     expect(effective.defaultModel).toBe("gpt-4o");
@@ -255,7 +260,7 @@ describe("CAP-21: Co-Author binding resolution", () => {
     const stores = makeStores({ mode: "coauthor", coauthorProviderId: "prof_coauthor", coauthorModelName: "x" });
     const adapter = makeAdapter(service, stores);
 
-    const effective = await adapter.resolveEffectiveProfileOrThrow({ chatId: "chat_1" });
+    const { profile: effective } = await adapter.resolveEffectiveProfileOrThrow({ chatId: "chat_1" });
 
     expect(effective.id).toBe("prof_1"); // RP fallback
   });
@@ -269,10 +274,36 @@ describe("CAP-21: Co-Author binding resolution", () => {
     const stores = makeStores({ mode: "coauthor", coauthorProviderId: "prof_coauthor", coauthorModelName: "coauthor-model" });
     const adapter = makeAdapter(service, stores);
 
-    const effective = await adapter.resolveEffectiveProfileOrThrow({ chatId: "chat_1", modelOverride: "override-model" });
+    const { profile: effective } = await adapter.resolveEffectiveProfileOrThrow({ chatId: "chat_1", modelOverride: "override-model" });
 
     expect(effective.defaultModel).toBe("override-model"); // override wins over coauthorModelName
     expect(requestedFor).toEqual(["override-model"]);
+  });
+
+  it("applies Co-Author token overrides after the per-model overlay without changing RP", async () => {
+    const { service } = makeProfileService({
+      base: rpProfile,
+      profilesById: { prof_coauthor: coauthorProfile },
+      overlays: { "coauthor-model": { maxTokens: 4_000, contextBudget: 64_000 } },
+    });
+    const coauthorStores = makeStores({
+      mode: "coauthor",
+      coauthorProviderId: "prof_coauthor",
+      coauthorModelName: "coauthor-model",
+      coauthorMaxTokens: 1_200,
+      coauthorContextBudget: 24_000,
+    });
+    const adapter = makeAdapter(service, coauthorStores);
+
+    const { profile: coauthorEffective, transport } = await adapter.resolveEffectiveProfileOrThrow({ chatId: "chat_1" });
+    expect(coauthorEffective.maxTokens).toBe(1_200);
+    expect(coauthorEffective.contextBudget).toBe(24_000);
+    expect(transport).toBe("chat_completions");
+
+    const { profile: rpEffective, transport: rpTransport } = await adapter.resolveEffectiveProfileOrThrow();
+    expect(rpEffective.maxTokens).toBe(rpProfile.maxTokens);
+    expect(rpEffective.contextBudget).toBe(rpProfile.contextBudget);
+    expect(rpTransport).toBe("chat_completions");
   });
 
   it("coauthor path falls back to profile defaultModel when coauthorModelName is null", async () => {
@@ -284,7 +315,7 @@ describe("CAP-21: Co-Author binding resolution", () => {
     const stores = makeStores({ mode: "coauthor", coauthorProviderId: "prof_coauthor", coauthorModelName: null });
     const adapter = makeAdapter(service, stores);
 
-    const effective = await adapter.resolveEffectiveProfileOrThrow({ chatId: "chat_1" });
+    const { profile: effective } = await adapter.resolveEffectiveProfileOrThrow({ chatId: "chat_1" });
 
     expect(effective.id).toBe("prof_coauthor");
     expect(effective.defaultModel).toBe("coauthor-default"); // profile default used
@@ -299,7 +330,7 @@ describe("CAP-21: Co-Author binding resolution", () => {
     const stores = makeStores({ mode: "rp", coauthorProviderId: "prof_coauthor", coauthorModelName: "coauthor-model" });
     const adapter = makeAdapter(service, stores);
 
-    const effective = await adapter.resolveEffectiveProfileOrThrow({ chatId: "chat_1" });
+    const { profile: effective } = await adapter.resolveEffectiveProfileOrThrow({ chatId: "chat_1" });
 
     expect(effective.id).toBe("prof_1"); // RP active, even though a coauthor binding exists
   });

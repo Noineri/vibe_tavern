@@ -204,8 +204,8 @@ describe("provider gateway", () => {
 	it("defaults to openai_compat when providerType is undefined", async () => {
 		const models = await listProviderModels(baseInput);
 		expect(models).toEqual([
-			{ id: "gpt-4o", label: "gpt-4o", supportsTools: false },
-			{ id: "gpt-4o-mini", label: "gpt-4o-mini", supportsTools: false },
+			{ id: "gpt-4o", label: "gpt-4o" },
+			{ id: "gpt-4o-mini", label: "gpt-4o-mini" },
 		]);
 	});
 
@@ -221,8 +221,8 @@ describe("provider gateway", () => {
 			const models = await listProviderModels({ ...baseInput, providerType: "openai_compat" });
 
 			expect(models).toEqual([
-				{ id: "gpt-4o", label: "gpt-4o", supportsTools: false },
-				{ id: "gpt-4o-mini", label: "gpt-4o-mini", supportsTools: false },
+				{ id: "gpt-4o", label: "gpt-4o" },
+				{ id: "gpt-4o-mini", label: "gpt-4o-mini" },
 			]);
 
 			const callArgs = (globalThis.fetch as ReturnType<typeof mock>).mock.calls[0];
@@ -345,7 +345,7 @@ describe("provider gateway", () => {
 			const callArgs = (globalThis.fetch as ReturnType<typeof mock>).mock.calls[0];
 			expect(callArgs[0]).toBe("http://localhost:5001/api/v1/model");
 			expect(models).toEqual([
-				{ id: "koboldcpp/qwen2.5-3b-instruct-q4_k_m", label: "koboldcpp/qwen2.5-3b-instruct-q4_k_m", supportsTools: false },
+				{ id: "koboldcpp/qwen2.5-3b-instruct-q4_k_m", label: "koboldcpp/qwen2.5-3b-instruct-q4_k_m" },
 			]);
 		});
 
@@ -373,8 +373,8 @@ describe("provider gateway", () => {
 			expect(headers["Authorization"]).toBeUndefined();
 
 			expect(models).toEqual([
-				{ id: "llama3:8b", label: "llama3:8b", supportsTools: false },
-				{ id: "mistral:7b", label: "mistral:7b", supportsTools: false },
+				{ id: "llama3:8b", label: "llama3:8b" },
+				{ id: "mistral:7b", label: "mistral:7b" },
 			]);
 		});
 
@@ -424,7 +424,6 @@ describe("provider gateway", () => {
 					contextLength: 131072,
 					description: "4.3B · Q4_K_M · gemma3 · gguf",
 					capabilities: { vision: true },
-					supportsTools: false,
 				},
 			]);
 			const showCall = (globalThis.fetch as ReturnType<typeof mock>).mock.calls[1];

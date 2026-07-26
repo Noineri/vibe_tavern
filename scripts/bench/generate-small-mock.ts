@@ -1,9 +1,11 @@
 // Small ST-shaped mock folder for visual progress-bar smoke tests.
 // 40 characters, 2 chats each (5 msgs), 3 lorebooks, 2 presets, 1 persona.
 import { mkdir } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
 
+const DEFAULT_OUT = join(tmpdir(), "vt-mock-small");
 const args = process.argv.slice(2);
 const { tokens } = parseArgs({
 	args,
@@ -13,7 +15,7 @@ const { tokens } = parseArgs({
 	tokens: true,
 });
 const firstArgIndex = tokens[0]?.index;
-const OUT = firstArgIndex === undefined ? "N:/mock-small" : (args[firstArgIndex] ?? "N:/mock-small");
+const OUT = firstArgIndex === undefined ? DEFAULT_OUT : (args[firstArgIndex] ?? DEFAULT_OUT);
 const N = 300;
 
 const PNG_B64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAACklEQVR4nGMAAQAABQABDQottAAAAABJRU5ErkJggg==";

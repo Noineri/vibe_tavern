@@ -238,10 +238,11 @@ await import(${JSON.stringify(join(repoRoot, "scripts", "serve-static.ts"))});
 	expect(positionalResult.stdout).toContain("Serving public on http://0.0.0.0:NaN");
 });
 
-test("generate-small-mock defaults to its Windows-shaped relative output and accepts a first positional", async () => {
+test("generate-small-mock defaults to a tmpdir output and accepts a first positional", async () => {
 	// Given
 	const root = await tempRoot("vibe-tavern-small-mock-");
 	const custom = "--custom-mock";
+	const defaultOut = join(tmpdir(), "vt-mock-small");
 
 	// When
 	const [defaultResult, positionalResult] = await Promise.all([
@@ -251,8 +252,8 @@ test("generate-small-mock defaults to its Windows-shaped relative output and acc
 
 	// Then
 	expect(defaultResult.exitCode).toBe(0);
-	expect(defaultResult.stdout).toContain("Small mock generated at N:/mock-small");
-	expect(await Bun.file(join(root, "N:", "mock-small", "characters", "Mock1.json")).exists()).toBe(true);
+	expect(defaultResult.stdout).toContain(`Small mock generated at ${defaultOut}`);
+	expect(await Bun.file(join(defaultOut, "characters", "Mock1.json")).exists()).toBe(true);
 	expect(positionalResult.exitCode).toBe(0);
 	expect(positionalResult.stdout).toContain(`Small mock generated at ${custom}`);
 	expect(await Bun.file(join(root, custom, "settings.json")).exists()).toBe(true);

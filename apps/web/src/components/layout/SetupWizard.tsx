@@ -122,6 +122,8 @@ function ProviderStep({
     contextBudget: existingProfile?.contextBudget ?? 16000,
     pinContextBudget: existingProfile?.pinContextBudget ?? false,
     bindPerModel: existingProfile?.bindPerModel ?? false,
+    modelFreeOnly: existingProfile?.modelFreeOnly ?? false,
+    modelGroupByOwner: existingProfile?.modelGroupByOwner ?? false,
     editingModelId: null,
     stopSequences: existingProfile?.stopSequences ?? [],
     logitBias: existingProfile?.logitBias ?? [],

@@ -1,5 +1,5 @@
 import type { ProviderProfileRecord, FavoriteProviderModelRecord, ProviderModelSettingsRecord, ProviderModelOption, TestChatResponse } from "./types.js";
-import type { ModelFavoriteScope, ProviderProbeResponse, ModelSettingsOverlay } from "@vibe-tavern/domain";
+import type { CoauthorTransport, ModelFavoriteScope, ProviderProbeResponse, ModelSettingsOverlay } from "@vibe-tavern/domain";
 import { client } from "./client.js";
 import { unwrapRpc } from "./unwrap.js";
 
@@ -17,6 +17,7 @@ export async function saveProviderProfile(input: {
   id?: string;
   name: string;
   providerPreset: string;
+  coauthorTransport?: CoauthorTransport;
   endpoint: string;
   apiKey?: string | null;
   defaultModel?: string | null;
@@ -61,6 +62,7 @@ export async function updateProviderProfile(
   patch: {
     name?: string;
     providerPreset?: string;
+    coauthorTransport?: CoauthorTransport;
     endpoint?: string;
     apiKey?: string | null;
     defaultModel?: string | null;
@@ -182,7 +184,7 @@ export async function testProviderChat(baseUrl: string, apiKey: string, model: s
   return unwrapRpc<TestChatResponse>(response);
 }
 
-export async function testProfileChat(providerProfileId: string, model: string): Promise<TestChatResponse> {
-  const response = await client.api.providers[":providerId"]["test-chat"].$post({ param: { providerId: providerProfileId }, json: { model } });
+export async function testProfileChat(providerProfileId: string, model: string, transport?: CoauthorTransport): Promise<TestChatResponse> {
+  const response = await client.api.providers[":providerId"]["test-chat"].$post({ param: { providerId: providerProfileId }, json: { model, transport } });
   return unwrapRpc<TestChatResponse>(response);
 }

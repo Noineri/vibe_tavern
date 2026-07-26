@@ -23,7 +23,7 @@ import {
   type ProviderProfileRecord,
   type TestChatResponse,
 } from "../../app-client.js";
-import type { ModelFavoriteScope, ModelSettingsOverlay, ProviderProbeResponse } from "@vibe-tavern/domain";
+import type { CoauthorTransport, ModelFavoriteScope, ModelSettingsOverlay, ProviderProbeResponse } from "@vibe-tavern/domain";
 import { useProviderDataStore } from "../provider-data-store.js";
 
 // ---------------------------------------------------------------------------
@@ -141,9 +141,10 @@ export async function testProviderDraftAction(
 
 export async function testProfileChatAction(
   profileId: string,
-  model: string
+  model: string,
+  transport?: CoauthorTransport,
 ): Promise<TestChatResponse> {
-  return await testProfileChat(profileId, model);
+  return await testProfileChat(profileId, model, transport);
 }
 
 export async function testProviderChatAction(

@@ -1,3 +1,4 @@
+import type { CoauthorTransport } from '@vibe-tavern/domain';
 import { sqliteTable, text, integer, real, index, uniqueIndex, primaryKey } from 'drizzle-orm/sqlite-core';
 
 // ─── characters ────────────────────────────────────────────────────────────────
@@ -498,6 +499,7 @@ export const providerProfiles = sqliteTable('provider_profiles', {
   // Manual list order (drag-to-reorder). Backfilled to created_at ASC.
   sortOrder: integer('sort_order').notNull().default(0),
   providerPreset: text('provider_preset').notNull(),
+  coauthorTransport: text('coauthor_transport').$type<CoauthorTransport>().notNull().default('chat_completions'),
   endpoint: text('endpoint').notNull(),
   apiKey: text('api_key'),
   defaultModel: text('default_model'),
@@ -506,6 +508,10 @@ export const providerProfiles = sqliteTable('provider_profiles', {
   /** When true, sampler/context edits in the modal write to a per-model overlay
    *  (providerModelSettings) instead of the profile base. See resolveEffectiveSettings. */
   bindPerModel: integer('bind_per_model', { mode: 'boolean' }).notNull().default(false),
+  // Model-list display prefs (MODEL_LIST_FILTERS). Pure UI — no backend logic reads these;
+  // they round-trip to the selectors via the profile record.
+  modelFreeOnly: integer('model_free_only', { mode: 'boolean' }).notNull().default(false),
+  modelGroupByOwner: integer('model_group_by_owner', { mode: 'boolean' }).notNull().default(false),
   maxTokens: integer('max_tokens').notNull().default(2000),
   temperature: real('temperature').notNull().default(1.0),
   topP: real('top_p').notNull().default(1.0),
@@ -631,6 +637,10 @@ export const uiSettings = sqliteTable('ui_settings', {
   // adapter resolves (dangling → fallback) rather than blocking the delete.
   coauthorProviderId: text('coauthor_provider_id'),
   coauthorModelName: text('coauthor_model_name'),
+  // Optional Co-Author-only token overrides. Null inherits the selected
+  // profile/model effective values so RP configuration remains untouched.
+  coauthorMaxTokens: integer('coauthor_max_tokens'),
+  coauthorContextBudget: integer('coauthor_context_budget'),
   updatedAt: text('updated_at').notNull(),
 });
 

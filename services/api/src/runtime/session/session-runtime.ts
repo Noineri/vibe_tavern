@@ -23,6 +23,7 @@ import { storeRollToSnapshot } from "../../domain/dice/dice-service.js";
 import { StaticPromptResolver } from "../../domain/prompt/prompt-resolver.js";
 import { createLoreDelegate } from "../../domain/coauthor/lore/lore-delegate.js";
 import { createLoreEntityLookup } from "../../domain/coauthor/lore/lore-entity-lookup.js";
+import { findUnsafeMacros } from "../../domain/coauthor/macro-subset.js";
 import { createContextSearchSession } from "../../domain/context/context-search-service.js";
 import { nonstreamingProviderExecute } from "../../infrastructure/ai/nonstreaming-provider-executor.js";
 import {
@@ -785,6 +786,36 @@ export function pickBootstrapChatId<T extends string>(
 			updateInput.alternateGreetings = body.alternateGreetings;
 		}
 
+		// B5: flag macros the model emitted outside the safe reusable subset
+		// (identity + pronouns). The prose is preserved as-is — these are warnings,
+		// not silent edits; the user decides whether to keep each token. One
+		// correction per (field, distinct macro) so the toast names exactly what
+		// to review and where.
+		const proseFields: Array<[string, string | string[] | null | undefined]> = [
+			["name", updateInput.name],
+			["description", updateInput.description],
+			["scenario", updateInput.scenario],
+			["mesExample", updateInput.mesExample],
+			["creatorNotes", updateInput.creatorNotes],
+			["firstMessage", updateInput.firstMessage],
+			["alternateGreetings", updateInput.alternateGreetings],
+		];
+		for (const [field, value] of proseFields) {
+			if (value === null || value === undefined) continue;
+			const texts = Array.isArray(value) ? value : [value];
+			const unsafe = new Set<string>();
+			for (const text of texts) {
+				for (const name of findUnsafeMacros(text)) unsafe.add(name);
+			}
+			for (const name of unsafe) {
+				corrections.push({
+					field,
+					action: "warned",
+					reason: `Model used {{${name}}}, which is outside the reusable macro set ({{user}}, {{char}}, pronouns) and may not resolve as intended; left as-is for review.`,
+				});
+			}
+		}
+
 		const patch = await this.character.update(characterId, updateInput, {
 			rebuildChatOrder: () => this.rebuildChatOrder(),
 		});
@@ -814,7 +845,7 @@ export function pickBootstrapChatId<T extends string>(
 	private async assemblePrompt(
 		chatId: ChatId,
 		branchId?: ChatBranchId,
-		options?: { excludeMessageIds?: MessageId[]; model?: string; recentMessageLimit?: number; summary?: boolean; contextBudget?: number | null; responseReserve?: number; presetId?: PromptPresetId },
+		options?: { excludeMessageIds?: MessageId[]; model?: string; recentMessageLimit?: number; summary?: boolean; contextBudget?: number | null; responseReserve?: number; presetId?: PromptPresetId; priorSummaries?: Array<{ id: string; label?: string; content: string }> },
 	) {
 		void await this.getActiveProviderProfile();
 		const strategy = await this.resolveChatModeStrategy(chatId);
@@ -856,6 +887,7 @@ export function pickBootstrapChatId<T extends string>(
 			contextBudget: options?.contextBudget ?? null,
 			responseReserve: options?.responseReserve,
 			presetId: options?.presetId,
+			priorSummaries: options?.priorSummaries,
 		});
 	}
 

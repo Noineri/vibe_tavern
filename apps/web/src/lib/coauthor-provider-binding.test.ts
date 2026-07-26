@@ -1,5 +1,5 @@
 import { describe, it, expect } from "bun:test";
-import { resolveCoauthorBinding, filterToolCapableFavorites } from "./coauthor-provider-binding.js";
+import { decorateCoauthorFavorites, resolveCoauthorBinding } from "./coauthor-provider-binding.js";
 import type { ProviderProfileRecord, FavoriteProviderModelRecord } from "../api/types.js";
 
 function makeProfile(over: Partial<ProviderProfileRecord> = {}): ProviderProfileRecord {
@@ -167,18 +167,17 @@ describe("resolveCoauthorBinding", () => {
   });
 });
 
-describe("filterToolCapableFavorites", () => {
-  it("filters to only tool-capable models", () => {
-    const favs = [makeFavorite("tool-1"), makeFavorite("no-tools"), makeFavorite("tool-2")];
-    const toolIds = new Set(["tool-1", "tool-2"]);
-    const result = filterToolCapableFavorites(favs, toolIds, null);
-    expect(result.map((f) => f.modelId)).toEqual(["tool-1", "tool-2"]);
-  });
-
-  it("keeps the bound model even if it is not in the tool-capable cache (stale/absent metadata)", () => {
-    const favs = [makeFavorite("tool-1"), makeFavorite("stale-bound")];
-    const toolIds = new Set(["tool-1"]); // stale-bound not in cache
-    const result = filterToolCapableFavorites(favs, toolIds, "stale-bound");
-    expect(result.map((f) => f.modelId)).toEqual(["tool-1", "stale-bound"]);
+describe("decorateCoauthorFavorites", () => {
+  it("retains every favorite and decorates each known capability state", () => {
+    const favs = [makeFavorite("supported"), makeFavorite("unknown"), makeFavorite("unsupported")];
+    const result = decorateCoauthorFavorites(favs, [
+      { id: "supported", label: "Supported", toolSupport: "supported" },
+      { id: "unsupported", label: "Unsupported", toolSupport: "unsupported" },
+    ]);
+    expect(result.map((favorite) => [favorite.modelId, favorite.toolSupport])).toEqual([
+      ["supported", "supported"],
+      ["unknown", "unknown"],
+      ["unsupported", "unsupported"],
+    ]);
   });
 });

@@ -2,10 +2,10 @@ import { create } from "zustand";
 
 export interface ModalState {
   isProviderModalOpen: boolean;
-  /** Dedicated Co-Author provider modal — a selection-only fork that writes
-   *  the independent binding (coauthorProviderId + coauthorModelName) without
-   *  touching RP activation or defaultModel. See CoauthorProviderModal. */
   isCoauthorProviderModalOpen: boolean;
+  /** Origin is set only by the atomic Co-Author → connections transition. */
+  providerModalOrigin: "coauthor" | null;
+  coauthorResumeProfileId: string | null;
   isPromptManagerOpen: boolean;
   isPersonaModalOpen: boolean;
   isCreateCharacterModalOpen: boolean;
@@ -21,6 +21,10 @@ export interface ModalState {
 export interface ModalActions {
   setIsProviderModalOpen: (open: boolean) => void;
   setCoauthorProviderModalOpen: (open: boolean) => void;
+  openProviderModalFromCoauthor: () => void;
+  returnToCoauthorProviderModal: (profileId?: string | null) => void;
+  closeProviderModalOrigin: () => void;
+  consumeCoauthorResumeProfileId: () => string | null;
   setIsPromptManagerOpen: (open: boolean) => void;
   setIsPersonaModalOpen: (open: boolean) => void;
   setCreateCharacterModalOpen: (open: boolean) => void;
@@ -35,9 +39,11 @@ export interface ModalActions {
 
 export type ModalStore = ModalState & ModalActions;
 
-export const useModalStore = create<ModalStore>()((set) => ({
+export const useModalStore = create<ModalStore>()((set, get) => ({
   isProviderModalOpen: false,
   isCoauthorProviderModalOpen: false,
+  providerModalOrigin: null,
+  coauthorResumeProfileId: null,
   isPromptManagerOpen: false,
   isPersonaModalOpen: false,
   isCreateCharacterModalOpen: false,
@@ -48,9 +54,16 @@ export const useModalStore = create<ModalStore>()((set) => ({
   avatarOpen: false,
   mobileAccessOpen: false,
   isUpdateModalOpen: false,
-
-  setIsProviderModalOpen: (open) => set({ isProviderModalOpen: open }),
+  setIsProviderModalOpen: (open) => set(open ? { isProviderModalOpen: true, providerModalOrigin: null } : { isProviderModalOpen: false, providerModalOrigin: null }),
   setCoauthorProviderModalOpen: (open) => set({ isCoauthorProviderModalOpen: open }),
+  openProviderModalFromCoauthor: () => set({ isCoauthorProviderModalOpen: false, isProviderModalOpen: true, providerModalOrigin: "coauthor" }),
+  returnToCoauthorProviderModal: (profileId = null) => set({ isProviderModalOpen: false, isCoauthorProviderModalOpen: true, providerModalOrigin: null, coauthorResumeProfileId: profileId }),
+  closeProviderModalOrigin: () => set({ isProviderModalOpen: false, providerModalOrigin: null, coauthorResumeProfileId: null }),
+  consumeCoauthorResumeProfileId: () => {
+    const profileId = get().coauthorResumeProfileId;
+    set({ coauthorResumeProfileId: null });
+    return profileId;
+  },
   setIsPromptManagerOpen: (open) => set({ isPromptManagerOpen: open }),
   setIsPersonaModalOpen: (open) => set({ isPersonaModalOpen: open }),
   setCreateCharacterModalOpen: (open) => set({ isCreateCharacterModalOpen: open }),

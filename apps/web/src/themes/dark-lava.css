@@ -15,6 +15,18 @@
     radial-gradient(circle at 50% 50%, oklch(0.47 0.145 14.3 / 36%), transparent 50%),  /* светлый жёлтый */
     var(--bg);
 
+  /* ─── WebGL lava-lamp palette (consumed by LavaBackground.tsx) ─── */
+  /* Hex RGB read by the shader and uploaded as uniforms. Values mirror the
+     standalone prototype's "purple glass + yellow→red wax" palette (her real
+     lamp). The legacy --page-bg gradient above stays as the fallback for
+     narrow screens / no-WebGL / reduced-motion; these tokens only drive the
+     WebGL overlay. */
+  --lamp-glass:    #0f051c;  /* tinted vessel medium (dark purple) */
+  --lamp-wax-thin: #faba00;   /* bright translucent wax (thin/small blobs + rims) */
+  --lamp-wax-mid:  #ff1200;   /* mid wax */
+  --lamp-wax-orange:#ff7a00;  /* orange stop (between mid and thin) */
+  --lamp-wax-thick:#f00030;   /* dense wax (thick blob cores, absorbed light) */
+
   /* ─── Surfaces (Black panels with slight translucency) ─── */
   --surface:   oklch(0.13 0.06 212 / 68%);  /* тёмный приглушённый аметистовый */
   --s2:        oklch(0.16 0 0 / 85%);    
@@ -144,6 +156,20 @@
 
 @media (prefers-reduced-motion: reduce) {
   :root.dark-lava body { animation: none; }
+}
+
+/* When the WebGL lava lamp is active (see LavaBackground.tsx), stop the
+   per-frame `background-position` repaint — that repaint is the actual perf
+   cost (the canvas itself runs on the GPU compositor, separate from the
+   raster/decode pipeline). The gradient itself stays as a STATIC fallback
+   layer beneath the opaque canvas (canvas z-index:0, #root z-index:1 — see
+   styles.css), so if the canvas ever fails to paint it degrades to a still
+   lava gradient, not black. Do NOT set body to a solid --bg here: <body>'s own
+   background paints ABOVE a negative-z canvas and would hide the lamp.
+   `lava-webgl-active` is added to <html> only while the canvas is painting;
+   remove it (unmount / context loss / narrow screen) and drift resumes. */
+:root.dark-lava.lava-webgl-active body {
+  animation: none;
 }
 
 @keyframes dark-lava-drift {

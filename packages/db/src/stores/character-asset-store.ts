@@ -146,9 +146,11 @@ export class CharacterAssetStore {
     const valid = new Set(validRows.map((r) => r.id));
     const ordered = orderedIds.filter((id) => valid.has(id));
 
-    await this.db.transaction(async (tx) => {
+    // Synchronous callback (ASYNC_TRANSACTION_AUDIT step 6): see chat-summary
+    // reorder. A mid-reorder failure rolls the earlier updates back.
+    this.db.transaction((tx) => {
       for (let i = 0; i < ordered.length; i++) {
-        await tx
+        tx
           .update(characterAssets)
           .set({ order: i })
           .where(eq(characterAssets.id, ordered[i]!))

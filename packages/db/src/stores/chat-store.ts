@@ -80,8 +80,14 @@ export class ChatStore {
     const branchId = this.idGen.next('brnch');
     const now = this.clock.now();
 
-    await this.db.transaction(async (tx) => {
-      await tx
+    // Synchronous callback (ASYNC_TRANSACTION_AUDIT step 2): drizzle-orm
+    // 0.38.4 + bun:sqlite commits at the end of the callback's synchronous
+    // prefix, so an `async` callback's post-await throw is never rolled back.
+    // Keeping this synchronous means a failure on the root-branch insert rolls
+    // the chat insert back too (no orphan chat row). See forkBranch for the
+    // load-bearing reference + db-connection.ts DbTransaction note.
+    this.db.transaction((tx) => {
+      tx
         .insert(chats)
         .values({
           id: chatId,
@@ -100,7 +106,7 @@ export class ChatStore {
         })
         .run();
 
-      await tx
+      tx
         .insert(chatBranches)
         .values({
           id: branchId,
@@ -593,13 +599,16 @@ export class ChatStore {
 
     const chat = await this.db.select().from(chats).where(eq(chats.id, branch.chatId)).get();
 
-    await this.db.transaction(async (tx) => {
-      await tx.delete(chatBranches).where(eq(chatBranches.id, branchId)).run();
+    // Synchronous callback (ASYNC_TRANSACTION_AUDIT step 2): see createChat.
+    // A failure during active-branch reassignment rolls the branch delete back
+    // too, so the chat never ends up pointing at a branch that still exists.
+    this.db.transaction((tx) => {
+      tx.delete(chatBranches).where(eq(chatBranches.id, branchId)).run();
 
       // If the deleted branch was the active one, reassign to the root branch
       // (or any remaining branch if root was somehow deleted)
       if (chat && chat.activeBranchId === branchId) {
-        const remaining = await tx
+        const remaining = tx
           .select()
           .from(chatBranches)
           .where(eq(chatBranches.chatId, branch.chatId))
@@ -607,7 +616,7 @@ export class ChatStore {
         const fallback = remaining.find((b) => b.parentBranchId === null) ?? remaining[0];
         if (fallback) {
           const now = this.clock.now();
-          await tx
+          tx
             .update(chats)
             .set({ activeBranchId: fallback.id, updatedAt: now })
             .where(eq(chats.id, branch.chatId))
@@ -678,11 +687,15 @@ export class ChatStore {
           .all();
 
         let changed = false;
-        await this.db.transaction(async (tx) => {
+        // Synchronous callback (ASYNC_TRANSACTION_AUDIT step 2): see
+        // createChat/forkBranch. A failure partway through the backfill (e.g.
+        // on the selection-sync UPDATE) rolls the inserted variants back too,
+        // so a retry starts from the pre-migration state instead of a partial mix.
+        this.db.transaction((tx) => {
           let currentVariants = existing;
 
           if (currentVariants.length === 0) {
-            await tx.insert(messageVariants).values({
+            tx.insert(messageVariants).values({
               id: this.idGen.next('mvar'),
               messageId: firstAssistant.id,
               variantIndex: 0,
@@ -733,7 +746,7 @@ export class ChatStore {
                 : content,
             );
 
-            await tx.insert(messageVariants).values(migratedAlternates.map((content, index) => ({
+            tx.insert(messageVariants).values(migratedAlternates.map((content, index) => ({
               id: this.idGen.next('mvar'),
               messageId: firstAssistant.id,
               variantIndex: index + 1,
@@ -778,14 +791,14 @@ export class ChatStore {
           if (chat.selectedGreetingIndex > 0) {
             const target = currentVariants.find((variant) => variant.variantIndex === chat.selectedGreetingIndex);
             if (target) {
-              await tx.update(messageVariants).set({ isSelected: 0 })
+              tx.update(messageVariants).set({ isSelected: 0 })
                 .where(eq(messageVariants.messageId, firstAssistant.id)).run();
-              await tx.update(messageVariants).set({ isSelected: 1 })
+              tx.update(messageVariants).set({ isSelected: 1 })
                 .where(and(
                   eq(messageVariants.messageId, firstAssistant.id),
                   eq(messageVariants.variantIndex, chat.selectedGreetingIndex),
                 )).run();
-              await tx.update(messages).set({ content: target.content, updatedAt: this.clock.now() })
+              tx.update(messages).set({ content: target.content, updatedAt: this.clock.now() })
                 .where(eq(messages.id, firstAssistant.id)).run();
               changed = true;
             }

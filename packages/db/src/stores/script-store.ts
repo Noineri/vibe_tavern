@@ -431,10 +431,28 @@ export class ScriptStore {
    * transaction.
    */
   async setLinks(scriptId: string, links: Array<{ targetType: string; targetId: string }>): Promise<ScriptLink[]> {
-    await this.db.transaction(async (tx) => {
-      await tx.delete(scriptLinks).where(eq(scriptLinks.scriptId, scriptId)).run();
-      for (const link of links) {
-        await tx.insert(scriptLinks).values({
+    // Dedup by (targetType, targetId) BEFORE the delete: the junction table
+    // has a composite PK on those columns, so a duplicate tuple in the input
+    // would violate the PK on the second insert — AFTER the old set is already
+    // deleted, leaving the graph empty. Normalizing first keeps the replace whole.
+    const seen = new Set<string>();
+    const unique: Array<{ targetType: string; targetId: string }> = [];
+    for (const link of links) {
+      const key = JSON.stringify([link.targetType, link.targetId]);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      unique.push(link);
+    }
+
+    // Synchronous callback (ASYNC_TRANSACTION_AUDIT step 3): drizzle-orm 0.38.4
+    // + bun:sqlite commits at the end of the callback's synchronous prefix, so
+    // an async callback's post-await throw is never rolled back. Keeping this
+    // synchronous means a failure on a later link insert rolls the delete back
+    // too — the prior complete graph survives instead of being wiped to empty.
+    this.db.transaction((tx) => {
+      tx.delete(scriptLinks).where(eq(scriptLinks.scriptId, scriptId)).run();
+      for (const link of unique) {
+        tx.insert(scriptLinks).values({
           scriptId,
           targetType: link.targetType,
           targetId: link.targetId,

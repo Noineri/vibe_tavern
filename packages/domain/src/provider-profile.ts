@@ -1,3 +1,5 @@
+import type { CoauthorTransport } from "./coauthor-transport-capabilities.js";
+
 /**
  * Canonical provider profile type — single source of truth.
  *
@@ -19,6 +21,8 @@ export interface StoredProviderProfileRecord {
   id: string;
   name: string;
   providerPreset: string;
+  /** Co-Author-only OpenAI-compatible transport preference; RP ignores this field. */
+  coauthorTransport: CoauthorTransport;
   endpoint: string;
   apiKey: string | null;
   defaultModel: string | null;
@@ -29,6 +33,9 @@ export interface StoredProviderProfileRecord {
    *  model's overlay merges over the base at generation time via
    *  {@link resolveEffectiveSettings}. */
   bindPerModel: boolean;
+  /** Model-list display prefs (MODEL_LIST_FILTERS) — pure UI, no backend logic. */
+  modelFreeOnly: boolean;
+  modelGroupByOwner: boolean;
   maxTokens: number;
   temperature: number;
   topP: number;

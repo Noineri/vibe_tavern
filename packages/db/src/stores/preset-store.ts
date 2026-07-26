@@ -367,9 +367,12 @@ export class PresetStore {
 
   async reorder(updates: Array<{ id: string; sortOrder: number }>): Promise<PromptPreset[]> {
     const now = this.clock.now();
-    await this.db.transaction(async (tx) => {
+    // Synchronous callback (ASYNC_TRANSACTION_AUDIT step 6): see chat-summary
+    // reorder. A mid-reorder failure rolls the earlier updates back — the
+    // prior complete order survives.
+    this.db.transaction((tx) => {
       for (const u of updates) {
-        await tx
+        tx
           .update(promptPresets)
           .set({ sortOrder: u.sortOrder, updatedAt: now })
           .where(eq(promptPresets.id, u.id))

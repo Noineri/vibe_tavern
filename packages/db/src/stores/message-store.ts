@@ -210,8 +210,14 @@ export class MessageStore {
     );
     const selectedContent = variantContents[selectedVariantIndex] ?? data.content;
 
-    await this.db.transaction(async (tx) => {
-      await tx.insert(messages).values({
+    // Synchronous callback (ASYNC_TRANSACTION_AUDIT step 1): drizzle-orm
+    // 0.38.4 + bun:sqlite commits at the end of the callback's synchronous
+    // prefix, so an `async` callback's post-await throw is never rolled back.
+    // bun-sqlite query methods are synchronous, so a real throw (e.g. a
+    // constraint/trigger failure on the variant insert) rolls the message
+    // insert back too.
+    this.db.transaction((tx) => {
+      tx.insert(messages).values({
         id, chatId: data.chatId, branchId: data.branchId,
         role: data.role, authorType: data.authorType,
         position: nextPosition, content: selectedContent,
@@ -220,7 +226,7 @@ export class MessageStore {
         toolCallsJson: data.toolCallsJson ?? null,
         toolCallId: data.toolCallId ?? null,
       }).run();
-      await tx.insert(messageVariants).values(variantContents.map((content, variantIndex) => ({
+      tx.insert(messageVariants).values(variantContents.map((content, variantIndex) => ({
         id: this.idGen.next('mvar'), messageId: id, variantIndex,
         content, isSelected: variantIndex === selectedVariantIndex ? 1 : 0, finishReason: null,
         reasoning: variantIndex === selectedVariantIndex ? data.reasoning ?? null : null,
@@ -416,15 +422,16 @@ export class MessageStore {
       }
     }
 
-    await this.db.transaction(async (tx) => {
+    // Synchronous callback (ASYNC_TRANSACTION_AUDIT step 1): see addMessage.
+    this.db.transaction((tx) => {
       // Chunk to respect SQLite's host-parameter limit. messages has 12 cols
       // (chunk at 80 → 960 params, safe even for the legacy 999 limit),
       // messageVariants has 16 cols (chunk at 60 → 960 params).
       for (let i = 0; i < messageRows.length; i += 80) {
-        await tx.insert(messages).values(messageRows.slice(i, i + 80)).run();
+        tx.insert(messages).values(messageRows.slice(i, i + 80)).run();
       }
       for (let i = 0; i < variantRows.length; i += 60) {
-        await tx.insert(messageVariants).values(variantRows.slice(i, i + 60)).run();
+        tx.insert(messageVariants).values(variantRows.slice(i, i + 60)).run();
       }
     });
   }
@@ -471,22 +478,23 @@ export class MessageStore {
   async completeStreamingMessage(id: string, content: string, reasoning?: string, reasoningDurationMs?: number): Promise<Message> {
     const now = this.clock.now();
 
-    await this.db.transaction(async (tx) => {
-      await tx
+    // Synchronous callback (ASYNC_TRANSACTION_AUDIT step 1): see addMessage.
+    this.db.transaction((tx) => {
+      tx
         .update(messages)
         .set({ content, state: 'complete', updatedAt: now })
         .where(eq(messages.id, id))
         .run();
 
       // Create initial variant if none exists
-      const existingVariants = await tx
+      const existingVariants = tx
         .select()
         .from(messageVariants)
         .where(eq(messageVariants.messageId, id))
         .all();
 
       if (existingVariants.length === 0) {
-        await tx
+        tx
           .insert(messageVariants)
           .values({
             id: this.idGen.next('mvar'),
@@ -522,9 +530,10 @@ export class MessageStore {
     // Extract thinking tags from edited content
     const { mainContent, reasoning: extractedReasoning } = extractThinkingTags(content);
 
-    await this.db.transaction(async (tx) => {
+    // Synchronous callback (ASYNC_TRANSACTION_AUDIT step 1): see addMessage.
+    this.db.transaction((tx) => {
       if (expectedVariantId !== undefined) {
-        const selectedVariant = await tx
+        const selectedVariant = tx
           .select({ id: messageVariants.id })
           .from(messageVariants)
           .where(
@@ -546,7 +555,7 @@ export class MessageStore {
       // scene record), and was removed. With no reader left, setting it just
       // left a dead marker in the DB that nothing consumes — so the message
       // stays in whatever committed state it was in (always 'complete' today).
-      await tx
+      tx
         .update(messages)
         .set({ content: mainContent, updatedAt: now })
         .where(eq(messages.id, id))
@@ -564,7 +573,7 @@ export class MessageStore {
       if (extractedReasoning !== undefined) {
         variantUpdate.reasoning = extractedReasoning;
       }
-      await tx
+      tx
         .update(messageVariants)
         .set(variantUpdate)
         .where(
@@ -622,14 +631,15 @@ export class MessageStore {
 
     // Transaction: deselect all existing variants, insert new as selected,
     // and sync messages.content so reads are consistent.
-    await this.db.transaction(async (tx) => {
-      await tx
+    // Synchronous callback (ASYNC_TRANSACTION_AUDIT step 1): see addMessage.
+    this.db.transaction((tx) => {
+      tx
         .update(messageVariants)
         .set({ isSelected: 0 })
         .where(eq(messageVariants.messageId, messageId))
         .run();
 
-      await tx
+      tx
         .insert(messageVariants)
         .values({
           id,
@@ -651,7 +661,7 @@ export class MessageStore {
         .run();
 
       // Keep messages.content in sync with the active variant
-      await tx
+      tx
         .update(messages)
         .set({ content, updatedAt: now })
         .where(eq(messages.id, messageId))
@@ -673,16 +683,17 @@ export class MessageStore {
       .get();
     if (!target) return;
 
-    await this.db.transaction(async (tx) => {
+    // Synchronous callback (ASYNC_TRANSACTION_AUDIT step 1): see addMessage.
+    this.db.transaction((tx) => {
       // Clear all selections for this message
-      await tx.update(messageVariants).set({ isSelected: 0 })
+      tx.update(messageVariants).set({ isSelected: 0 })
         .where(eq(messageVariants.messageId, messageId)).run();
       // Select target variant
-      await tx.update(messageVariants).set({ isSelected: 1 })
+      tx.update(messageVariants).set({ isSelected: 1 })
         .where(and(eq(messageVariants.messageId, messageId), eq(messageVariants.variantIndex, variantIndex)))
         .run();
       // Sync messages.content with selected variant content (invariant)
-      await tx.update(messages).set({ content: target.content, updatedAt: this.clock.now() })
+      tx.update(messages).set({ content: target.content, updatedAt: this.clock.now() })
         .where(eq(messages.id, messageId)).run();
     });
   }
@@ -754,8 +765,9 @@ export class MessageStore {
           : remaining[0] ?? null;
     const now = this.clock.now();
 
-    await this.db.transaction(async (tx) => {
-      await tx
+    // Synchronous callback (ASYNC_TRANSACTION_AUDIT step 1): see addMessage.
+    this.db.transaction((tx) => {
+      tx
         .delete(messageVariants)
         .where(
           and(
@@ -770,7 +782,7 @@ export class MessageStore {
       // "6/5" and wrong swipes after a snapshot refresh.
       for (let nextIndex = 0; nextIndex < remaining.length; nextIndex++) {
         const variant = remaining[nextIndex];
-        await tx
+        tx
           .update(messageVariants)
           .set({
             variantIndex: nextIndex,
@@ -781,7 +793,7 @@ export class MessageStore {
       }
 
       if (selectedAfterDelete) {
-        await tx
+        tx
           .update(messages)
           .set({ content: selectedAfterDelete.content, updatedAt: now })
           .where(eq(messages.id, messageId))

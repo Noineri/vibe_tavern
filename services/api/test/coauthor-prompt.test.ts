@@ -523,11 +523,12 @@ describe("assembleCoauthorPrompt", () => {
       expect(system).toContain("edit_personality");
       expect(system).toContain("write_personality");
       expect(system).toContain("write_profile");
-      // write_profile is taught as first-profile-change-only.
-      expect(system).toMatch(/first profile change/);
+      // write_profile is taught as first-profile-change-only ("**first** profile change" in the prompt).
+      expect(system).toMatch(/first.{0,5}profile change/);
       // edit_* takes exact search/replace pairs, not a full section content.
-      expect(system).toContain("search");
-      expect(system).toContain("replace");
+      // This contract lives in the edit tool description (moved out of base in the
+      // prompt-layering pass), so pin it on the tool, not the system prompt.
+      expect((result.tools.edit_personality as { description: string }).description).toMatch(/search\/?replace/i);
     });
   });
 
@@ -583,7 +584,7 @@ describe("assembleCoauthorPrompt — Wave-3 module prompt contracts (CTX-M2)", (
   test("Character Workshop (default) is discussion-first: develops the premise before mutating", async () => {
     const system = await assembleForModule("default");
     // The discussion-before-mutation policy is present.
-    expect(system).toContain("Discuss before you mutate");
+    expect(system).toContain("Discuss before you draft");
     // And it frames itself as collaborative development, not immediate tool use.
     expect(system.toLowerCase()).toContain("develop");
   });
@@ -592,7 +593,7 @@ describe("assembleCoauthorPrompt — Wave-3 module prompt contracts (CTX-M2)", (
     const system = await assembleForModule("quick-draft");
     // The workflow tells the model to read_skill_file its SKILL + template first.
     expect(system).toContain("read_skill_file");
-    expect(system).toContain("card-template");
+    expect(system).toContain("card template");
     // And to produce a complete draft (speed mode), while flagging it as a draft.
     expect(system.toLowerCase()).toContain("draft");
   });
@@ -651,7 +652,7 @@ describe("assembleCoauthorPrompt — Wave-3 module prompt contracts (CTX-M2)", (
   test("CE-E2: base prompt teaches the 3-level context model and the binding boundary", async () => {
     // Every module inherits base, so the shared context model lives there once.
     const system = await assembleForModule("default");
-    expect(system).toContain("Context you can reach");
+    expect(system).toContain("Three context layers");
     expect(system).toContain("search_context");
     expect(system).toContain("read_context_item");
     // Binding is the author's action, not the model's.

@@ -6,6 +6,7 @@ import { setTokenCountFn } from "@vibe-tavern/prompt-pipeline";
 import { countTokens, warmupTokenizers } from "../infrastructure/ai/tokenizer-service.js";
 import { AssetService } from "../domain/asset/asset-service.js";
 import { createChatSummaryFeature } from "../domain/chat/chat-summary-feature.js";
+import { createChatEventsFeature } from "../domain/chat/chat-events-feature.js";
 import { ChatSummaryService } from "../domain/chat/chat-summary-service.js";
 import { ObjectiveService } from "../domain/insights/objective-service.js";
 import { SceneTrackerService } from "../domain/insights/tracker-service.js";
@@ -140,7 +141,8 @@ export async function createRuntimeApp(config: RuntimeAppConfig): Promise<Hono> 
 
 	// Feature registry — features subscribe to events and mount routes
 	const features = new FeatureRegistry();
-	features.register(createChatSummaryFeature({ stores, sessionRuntime, providerProfileService }));
+	features.register(createChatSummaryFeature({ stores, sessionRuntime, providerProfileService, events }));
+	features.register(createChatEventsFeature());
 	features.register(createInsightsFeature({ objectiveService, trackerService }));
 
 	const assetService = new AssetService(config.assetsDir, stores.content, (id) => stores.characters.resolveFolderName(id));

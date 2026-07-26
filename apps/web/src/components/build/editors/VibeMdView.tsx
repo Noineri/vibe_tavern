@@ -50,6 +50,7 @@ import { vibeMdBundle } from "./vibe-md-theme.js";
 import { lockedHeadings } from "./vibe-md-locked-headings.js";
 import { greetingsUi } from "./vibe-md-greetings.js";
 import { vibeMdFolding } from "./vibe-md-folding.js";
+import { macroAutocomplete } from "./vibe-md-macros.js";
 import { applyBodyToDraft, draftToBody } from "./vibe-md-sync.js";
 
 import { cn } from "../../../lib/cn.js";
@@ -175,6 +176,18 @@ export function VibeMdView({ form, characterId, isSaving }: VibeMdViewProps) {
   const editorBodyRef = useRef<string>("");
   /** True while a form change originated from the editor (breaks the loop). */
   const editorOriginatedRef = useRef(false);
+  /** Debounce timer + pending body for the editor→form sync. Typing coalesces
+   *  into one parse + 5-field write after a short pause, so the editor stays
+   *  responsive (CodeMirror owns its own DOM) instead of re-rendering
+   *  CharacterForm's whole tree on every keystroke — the parent watches 13
+   *  fields at top level, and applyBodyToDraft parses the full body each call.
+   *  flush() drains pending immediately on blur / greeting-widget action so save
+   *  never reads stale values (the Save button blurs the editor before its
+   *  onClick fires). The timer is only CLEARED on unmount (not flushed) to avoid
+   *  writing a stale body into a freshly-reset form on character switch; blur
+   *  has already flushed by then anyway. */
+  const syncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingBodyRef = useRef<string | null>(null);
 
   // ── Greetings widget handlers (draft-backed; the form→editor subscription
   // re-emits the canonical body after each change, so markers never drift). ──
@@ -192,6 +205,7 @@ export function VibeMdView({ form, characterId, isSaving }: VibeMdViewProps) {
     }
   }
   function addGreeting(): void {
+    flushEditorToForm();
     const current = form.getValues().alternateGreetings ?? [];
     setValue("alternateGreetings", [...current, ""], { shouldDirty: true });
     forceEditorFromBody();
@@ -204,6 +218,7 @@ export function VibeMdView({ form, characterId, isSaving }: VibeMdViewProps) {
     }
   }
   function removeGreeting(altIndex: number): void {
+    flushEditorToForm();
     const current = form.getValues().alternateGreetings ?? [];
     setValue("alternateGreetings", current.filter((_, i) => i !== altIndex), { shouldDirty: true });
     forceEditorFromBody();
@@ -219,12 +234,19 @@ export function VibeMdView({ form, characterId, isSaving }: VibeMdViewProps) {
         doc: initialBody,
         extensions: [
           ...vibeMdBundle(),
+          ...macroAutocomplete(),
           ...lockedHeadings(),
           ...greetingsUi({ onAdd: addGreeting, onRemove: removeGreeting }),
           ...vibeMdFolding(),
           EditorView.updateListener.of((update) => {
             if (update.docChanged) {
               syncEditorToForm(update.state.doc.toString());
+            }
+            // Flush on blur so save (the Save button blurs the editor before
+            // onClick) and any focus-leaving action read fresh form values
+            // instead of a pending debounce window.
+            if (update.focusChanged && !update.view.hasFocus) {
+              flushEditorToForm();
             }
           }),
         ],
@@ -233,6 +255,10 @@ export function VibeMdView({ form, characterId, isSaving }: VibeMdViewProps) {
     });
     viewRef.current = view;
     return () => {
+      // Clear (do NOT flush) the pending debounce: blur has already flushed if
+      // the user focus-left, and flushing here could write a stale body into a
+      // freshly-reset form on character switch.
+      if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
       view.destroy();
       viewRef.current = null;
     };
@@ -242,7 +268,15 @@ export function VibeMdView({ form, characterId, isSaving }: VibeMdViewProps) {
   }, [characterId]);
 
   // ── Editor → form: parse the body and write the prose + greetings fields ───
-  function syncEditorToForm(body: string): void {
+  // Debounced via syncEditorToForm; flushEditorToForm is the immediate drain.
+  function flushEditorToForm(): void {
+    if (syncTimerRef.current) {
+      clearTimeout(syncTimerRef.current);
+      syncTimerRef.current = null;
+    }
+    const body = pendingBodyRef.current;
+    if (body == null) return;
+    pendingBodyRef.current = null;
     editorOriginatedRef.current = true;
     editorBodyRef.current = body;
     const updated = applyBodyToDraft(body, form.getValues());
@@ -251,6 +285,12 @@ export function VibeMdView({ form, characterId, isSaving }: VibeMdViewProps) {
     setValue("mesExample", updated.mesExample, { shouldDirty: true });
     setValue("firstMessage", updated.firstMessage, { shouldDirty: true });
     setValue("alternateGreetings", updated.alternateGreetings, { shouldDirty: true });
+  }
+
+  function syncEditorToForm(body: string): void {
+    pendingBodyRef.current = body;
+    if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
+    syncTimerRef.current = setTimeout(flushEditorToForm, 150);
   }
 
   // ── Form → editor: external changes (Reset / switch) update the body ───────

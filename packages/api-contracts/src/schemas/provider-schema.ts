@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { MODEL_FAVORITE_SCOPE, type SamplerFieldId } from "@vibe-tavern/domain";
+import { COAUTHOR_TRANSPORT, MODEL_FAVORITE_SCOPE, type SamplerFieldId } from "@vibe-tavern/domain";
 
 /**
  * Per-sampler-field zod schema — the single source of the sampler wire surface.
@@ -59,6 +59,7 @@ export const testProviderDraftSchema = z.object({
 const providerCoreSchema = z.object({
   name: z.string().min(1),
   providerPreset: z.string(),
+  coauthorTransport: z.enum([COAUTHOR_TRANSPORT.chatCompletions, COAUTHOR_TRANSPORT.responses]).optional(),
   endpoint: z.string(),
   apiKey: z.string().nullable().optional(),
   defaultModel: z.string().nullable().optional(),
@@ -66,6 +67,8 @@ const providerCoreSchema = z.object({
   pinContextBudget: z.boolean().optional(),
   /** When true, sampler/context edits route to a per-model overlay (see modelSettingsOverlaySchema). */
   bindPerModel: z.boolean().optional(),
+  modelFreeOnly: z.boolean().optional(),
+  modelGroupByOwner: z.boolean().optional(),
   maxTokens: z.number().optional(),
   // ── Sampler fields: derived from `samplerFieldSchemas` (bound to SamplerFieldId) ──
   ...samplerFieldSchemas,
@@ -132,6 +135,7 @@ export const testChatSchema = z.object({
 
 export const testChatProfileSchema = z.object({
   model: z.string(),
+  transport: z.enum(["chat_completions", "responses"]).optional(),
 });
 
 export const tokenizeSchema = z.object({

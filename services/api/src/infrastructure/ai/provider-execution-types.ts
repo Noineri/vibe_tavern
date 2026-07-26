@@ -7,7 +7,7 @@
  * unchanged until FW-AI2 swaps it.
  */
 
-import type { AssemblePromptResponse, ProviderResponseTrace } from "@vibe-tavern/domain";
+import type { AssemblePromptResponse, CoauthorTransport, ProviderResponseTrace } from "@vibe-tavern/domain";
 import type { ProviderType } from "@vibe-tavern/domain";
 import type { StoredProviderProfileRecord } from "@vibe-tavern/domain";
 import type { ProviderErrorCategory } from "@vibe-tavern/api-contracts";
@@ -184,6 +184,8 @@ export interface ProviderStreamResult {
 export interface ProviderExecutionInput {
   profile: StoredProviderProfileRecord;
   model: string;
+  /** Explicit per-call transport. Omitted callers stay on their protocol adapter. */
+  transport?: CoauthorTransport;
   prompt: AssemblePromptResponse;
   signal?: AbortSignal;
   prefill?: string;

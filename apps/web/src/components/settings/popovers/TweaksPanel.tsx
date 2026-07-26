@@ -4,6 +4,7 @@ import { LOCALES } from '../../../i18n/registry.js';
 import { Icons } from '../../shared/icons.js';
 import { SegmentedControl } from '../../shared/SegmentedControl.js';
 import { DropdownSelect } from '../../shared/DropdownSelect.js';
+import { Toggle } from '../../shared/Toggle.js';
 import { THEMES, type ThemeMode } from '../../../themes/registry.js';
 
 interface TweaksSettings {
@@ -12,6 +13,7 @@ interface TweaksSettings {
   uiFontSize: number;
   messageWidth: 'narrow' | 'medium' | 'wide';
   lang: string;
+  lavaBlobs: boolean;
 }
 
 interface TweaksPanelProps {
@@ -72,6 +74,14 @@ export function TweaksPanelBody({ settings, setSetting, onOpenMobileAccess }: Tw
           compact
         />
       </div>
+
+      {/* Lava blobs — only relevant on the dark-lava theme (the WebGL lamp). */}
+      {settings.theme === 'dark-lava' && (
+        <div className="flex items-center justify-between gap-3 py-2">
+          <span className="text-[calc(var(--ui-fs)-2px)] text-t2">{t("tweaks_lava_blobs")}</span>
+          <Toggle checked={settings.lavaBlobs} onChange={(v) => setSetting('lavaBlobs', v)} />
+        </div>
+      )}
 
       {/* Message font size */}
       <div className="flex items-center justify-between gap-3 py-2">

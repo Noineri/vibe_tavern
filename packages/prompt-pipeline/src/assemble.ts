@@ -37,6 +37,7 @@ const logger = tag("assemble");
 
 const SUMMARY_LAYER_IDS: Set<string> = new Set([
   PROMPT_LAYER_ID.promptPresetSummary,
+  PROMPT_LAYER_ID.priorSummariesContext,
   PROMPT_LAYER_ID.characterSystemPrompt,
   PROMPT_LAYER_ID.characterBase,
   PROMPT_LAYER_ID.characterScenario,
@@ -584,6 +585,36 @@ function buildLayers(
         sourceName: "Summary Prompt",
         priority: PROMPT_LAYER_PRIORITY.promptPresetSummary,
         text: context.preset.summary,
+      }),
+    );
+  }
+
+  // SUMMARY_PRIOR_CONTEXT_PLAN (SPC-2): preceding chat-summaries fed into the
+  // summary prompt as read-only continuity. Emitted ONLY under `config.summary`
+  // with non-empty priors — the chat-turn path never sets `priorSummaries`, so
+  // this layer is absent outside summary generation. The caller (lifecycle
+  // method) is responsible for chain selection (`summarizedTo < from`),
+  // token-capping, and oldest→newest ordering; here we only frame and render.
+  // Position is resolver-independent (`in_prompt` via makeLayer default): this is
+  // summarizer framing, not a prompt-order slot. Priority 490 places it just
+  // below active summary memory and above the `prompt_preset_summary` (350)
+  // instruction, so the model reads prior continuity BEFORE the task.
+  if (context.config?.summary && context.priorSummaries?.length) {
+    const priorBlock = context.priorSummaries
+      .map((prior) => {
+        const head = prior.label?.trim() ? prior.label.trim() : "Prior summary";
+        return `${head}:\n${prior.content.trim()}`;
+      })
+      .join("\n\n");
+    layers.push(
+      makeLayer({
+        id: PROMPT_LAYER_ID.priorSummariesContext,
+        sourceType: PROMPT_LAYER_SOURCE_TYPE.priorSummaries,
+        sourceId: context.identity.chatId,
+        sourceName: "Prior Summaries",
+        priority: PROMPT_LAYER_PRIORITY.priorSummariesContext,
+        reason: "included as read-only continuity for summary generation",
+        text: `[Prior summaries — read-only continuity. Do NOT repeat or re-summarize this block; fold its implications into a coherent continuation of the range being summarized.]\n${priorBlock}`,
       }),
     );
   }

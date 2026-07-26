@@ -13,6 +13,8 @@
 import { beforeAll, describe, it, expect, mock, afterEach } from "bun:test";
 import { useCoauthorTurnStore, type CoauthorToolActivity } from "../../stores/coauthor-turn-store.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
+import { useChatStore } from "../../stores/index.js";
+import type { ChatGenerationState } from "../../stores/chat-store.js";
 import type { AppMessage } from "../../api/types.js";
 import { brandId, type ChatBranchId, type ChatId, type MessageId, type MessageVariantId } from "@vibe-tavern/domain";
 import { useDomEnv } from "../../../test/dom-env.js";
@@ -56,6 +58,23 @@ function activity(over: Partial<CoauthorToolActivity>): CoauthorToolActivity {
 afterEach(() => {
 	useSnapshotStore.getState().clear();
 	useCoauthorTurnStore.setState({ turnsByChat: {} });
+	useChatStore.setState({ generations: {} });
+});
+
+/** Minimal in-progress generation entry — only existence matters for the
+ * `s.generations[chatId] != null` (isGenerating) selector in the slot. */
+const genState = (over: Partial<ChatGenerationState> = {}): ChatGenerationState => ({
+	isSending: true,
+	streamingMessageId: null,
+	streamingText: "",
+	streamingRevealedText: "",
+	streamingReasoningText: "",
+	generationStatus: "streaming" as ChatGenerationState["generationStatus"],
+	pendingUserMessageContent: null,
+	pendingUserMessageAttachments: [],
+	pendingDiceRolls: [],
+	abortController: null,
+	...over,
 });
 
 describe("CoauthorToolActivitySlot — persisted carrier + final response", () => {
@@ -153,6 +172,84 @@ describe("CoauthorToolActivitySlot — persisted carrier + final response", () =
 		expect(getByText("old trait")).toBeDefined();
 		expect(getByText("new trait")).toBeDefined();
 		expect(queryByText("coauthor_tool_op_unavailable")).toBeNull();
+	});
+});
+
+describe("CoauthorToolActivitySlot — streaming activities stay off the committed last assistant during generation", () => {
+	it("does NOT render an active activity on the committed last assistant while a generation is in progress", () => {
+		const chatId = brandId<ChatId>("chat_gen");
+		const branchId = brandId<ChatBranchId>("branch_gen");
+		const assistantId = brandId<MessageId>("assistant_prev");
+		const createdAt = "2026-07-24T00:00:00.000Z";
+		const assistant: AppMessage = {
+			chatId,
+			branchId,
+			id: assistantId,
+			modelId: null,
+			sceneTracker: null,
+			state: "complete",
+			createdAt,
+			updatedAt: createdAt,
+			role: "assistant",
+			authorType: "assistant",
+			position: 0,
+			content: "Earlier turn text.",
+			variants: [],
+			selectedVariantIndex: null,
+		};
+		useSnapshotStore.setState({
+			messageOrder: [assistantId],
+			messagesById: { [assistantId]: assistant },
+		});
+		useCoauthorTurnStore.setState({
+			turnsByChat: { [chatId]: [activity({ toolCallId: "call_stream", status: "streaming", summary: "ACTIVE_EDIT" })] },
+		});
+		// Generation in progress for this chat → isGenerating = true.
+		useChatStore.setState({ generations: { [chatId]: genState() } });
+
+		const { queryByText } = render(
+			<CoauthorToolActivitySlot chatId={chatId} messageId={assistantId} isStreaming={false} />,
+		);
+		// The active (streaming) activity must NOT glom onto the committed last
+		// assistant while generation is in progress — it belongs on the streaming
+		// pending-assistant bubble. Regression: tool calls glued to the previous
+		// message until the stream finished.
+		expect(queryByText("ACTIVE_EDIT")).toBeNull();
+	});
+
+	it("renders the active activity on the committed last assistant once generation ends (review)", () => {
+		const chatId = brandId<ChatId>("chat_review");
+		const branchId = brandId<ChatBranchId>("branch_review");
+		const assistantId = brandId<MessageId>("assistant_last");
+		const createdAt = "2026-07-24T00:00:00.000Z";
+		const assistant: AppMessage = {
+			chatId,
+			branchId,
+			id: assistantId,
+			modelId: null,
+			sceneTracker: null,
+			state: "complete",
+			createdAt,
+			updatedAt: createdAt,
+			role: "assistant",
+			authorType: "assistant",
+			position: 0,
+			content: "Final turn text.",
+			variants: [],
+			selectedVariantIndex: null,
+		};
+		useSnapshotStore.setState({
+			messageOrder: [assistantId],
+			messagesById: { [assistantId]: assistant },
+		});
+		useCoauthorTurnStore.setState({
+			turnsByChat: { [chatId]: [activity({ toolCallId: "call_done", status: "done", summary: "REVIEW_EDIT" })] },
+		});
+		// No generation entry → isGenerating = false → review path renders it.
+		const { getByText } = render(
+			<CoauthorToolActivitySlot chatId={chatId} messageId={assistantId} isStreaming={false} />,
+		);
+		expect(getByText("REVIEW_EDIT")).toBeDefined();
 	});
 });
 

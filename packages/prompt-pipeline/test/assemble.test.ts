@@ -3,6 +3,7 @@ import { assemblePrompt } from "../src/assemble.ts";
 import { getAiAssistantAssembler } from "../src/ai-assistant/ai-assistant-assemblers.ts";
 import { getSummaryStrategy } from "../src/summary/summary-strategies.ts";
 import { setTokenCountFn } from "../src/compaction.ts";
+import type { PromptAssemblyContext } from "../src/types.ts";
 import { brandId, type DiceRollSnapshot, type DiceRollId, type MessageId } from "@vibe-tavern/domain";
 
 function baseContext(overrides = {}) {
@@ -928,6 +929,178 @@ describe("assemblePrompt", () => {
       expect(jailbreak).toBeTruthy();
       // Override branch is unchanged: labeled with the character's name.
       expect(jailbreak!.sourceName).toBe("Aria (Post-History Override)");
+    });
+  });
+
+  // ─── SUMMARY_PRIOR_CONTEXT_PLAN W1 (SPC-1) ─────────────────────────
+  //
+  // Characterization net for the summary path WITHOUT priorSummaries. The
+  // `prior_summaries_context` layer (added in SPC-2) is gated on non-empty
+  // priors, so a summary context that omits them still emits exactly the 11
+  // pre-SPC-2 layer ids. This manifest is the regression net for "no priors →
+  // no prior-context layer", and also documents that the summary filter is
+  // strict (drops jailbreak / authorsNote) where the chat-turn path keeps them.
+  describe("summary layer membership characterization (SPC-1)", () => {
+    function richSummaryContext(): PromptAssemblyContext {
+      return {
+        identity: { chatId: "chat_spc" },
+        character: {
+          id: "char_spc",
+          name: "Nora",
+          description: "Detective.",
+          scenario: "The tower burns.",
+          systemPrompt: "You are Nora.",
+          personality: "Stoic.",
+          mesExample: "<START>\n{{user}}: hi\n{{char}}: hello",
+          mesExampleMode: "always",
+          avatarDescription: "Raven hair, grey coat.",
+          includeAvatarInPrompt: true,
+          gallery: [{ caption: "badge", description: "A brass badge." }],
+          includeGalleryInPrompt: true,
+          postHistoryInstructions: "Stay in character.",
+        },
+        persona: {
+          id: "persona_spc",
+          name: "Alex",
+          description: "Journalist.",
+          pronouns: "they/them",
+          avatarDescription: "Trench coat.",
+          includeAvatarInPrompt: true,
+        },
+        preset: {
+          id: "preset_spc",
+          text: "Global sys.",
+          summary: "Summarize the case.",
+          jailbreak: "JB.",
+          authorsNote: "Note.",
+          authorsNotePosition: "in_prompt",
+        },
+        chat: {
+          recentMessages: [
+            { id: "m1", role: "user", content: "Where is the file?" },
+            { id: "m2", role: "assistant", content: "In the drawer." },
+          ],
+        },
+      };
+    }
+
+    // The exact membership of SUMMARY_LAYER_IDS. When W2 adds
+    // `prior_summaries_context` to this set, update this manifest in the same
+    // change — that is the intended, visible delta this pin exists to force.
+    const SUMMARY_LAYER_MANIFEST = new Set([
+      "prompt_preset_summary",
+      "character_system_prompt",
+      "character_base",
+      "character_scenario",
+      "character_personality",
+      "character_avatar",
+      "character_gallery",
+      "persona",
+      "persona_avatar",
+      "mes_example",
+      "recent_history",
+    ]);
+
+    it("emits exactly the 11 pre-SPC-2 summary layers when priorSummaries is absent", () => {
+      const result = getSummaryStrategy().assemble(richSummaryContext());
+      expect(new Set(result.layers.map((l) => l.id))).toEqual(SUMMARY_LAYER_MANIFEST);
+    });
+
+    it("does not emit prior_summaries_context when priorSummaries is absent", () => {
+      const result = getSummaryStrategy().assemble(richSummaryContext());
+      expect(result.layers.find((l) => l.id === "prior_summaries_context")).toBeUndefined();
+    });
+
+    it("filters out jailbreak and authorsNote from the summary path", () => {
+      const result = getSummaryStrategy().assemble(richSummaryContext());
+      expect(result.layers.find((l) => l.id === "prompt_preset_jailbreak")).toBeUndefined();
+      expect(result.layers.find((l) => l.id === "prompt_preset_authors_note")).toBeUndefined();
+    });
+
+    it("keeps jailbreak and authorsNote on the chat-turn path (summary filter is summary-only)", () => {
+      const result = assemblePrompt(richSummaryContext());
+      expect(result.layers.find((l) => l.id === "prompt_preset_jailbreak")).toBeTruthy();
+      expect(result.layers.find((l) => l.id === "prompt_preset_authors_note")).toBeTruthy();
+    });
+  });
+
+  // ─── SUMMARY_PRIOR_CONTEXT_PLAN W2 (SPC-2): prior_summaries_context layer ──
+  //
+  // Isolated pins for the new read-only continuity layer. It is emitted ONLY
+  // under `config.summary` (the summary path) with non-empty `priorSummaries`.
+  // The chat-turn path is immune even if a caller accidentally sets priors,
+  // because the gate checks `config.summary` (assemblePrompt never sets it).
+  describe("prior_summaries_context layer (SPC-2)", () => {
+    function contextWithPriors(overrides: Partial<PromptAssemblyContext> = {}): PromptAssemblyContext {
+      return {
+        identity: { chatId: "chat_spc2" },
+        character: { id: "char_spc2", name: "Aria", description: "A mage." },
+        preset: { id: "preset_spc2", text: "", summary: "Summarize the case." },
+        chat: {
+          recentMessages: [
+            { id: "m1", role: "user", content: "Hi." },
+            { id: "m2", role: "assistant", content: "Hello." },
+          ],
+        },
+        config: { summary: true },
+        priorSummaries: [
+          { id: "prior_1", label: "Chapter 1", content: "They met at the inn." },
+          { id: "prior_2", label: "Chapter 2", content: "They fought the boss." },
+        ],
+        ...overrides,
+      };
+    }
+
+    it("emits a prior_summaries_context layer when config.summary is on and priors are present", () => {
+      const result = getSummaryStrategy().assemble(contextWithPriors());
+      const layer = result.layers.find((l) => l.id === "prior_summaries_context");
+      expect(layer).toBeTruthy();
+      expect(layer!.position).toBe("in_prompt");
+      expect(layer!.sourceType).toBe("prior_summaries");
+    });
+
+    it("frames the block as read-only continuity (no re-summarize) and lists priors oldest→newest with labels", () => {
+      const result = getSummaryStrategy().assemble(contextWithPriors());
+      const layer = result.layers.find((l) => l.id === "prior_summaries_context")!;
+      expect(layer.text).toContain("[Prior summaries — read-only continuity");
+      expect(layer.text).toContain("Do NOT repeat or re-summarize");
+      // oldest→newest order preserved (caller hands them in that order)
+      const ch1 = layer.text.indexOf("Chapter 1");
+      const ch2 = layer.text.indexOf("Chapter 2");
+      expect(ch1).toBeGreaterThan(-1);
+      expect(ch1).toBeLessThan(ch2);
+      expect(layer.text).toContain("They met at the inn.");
+      expect(layer.text).toContain("They fought the boss.");
+    });
+
+    it("includes prior_summaries_context alongside the other summary layers", () => {
+      const result = getSummaryStrategy().assemble(contextWithPriors());
+      expect(new Set(result.layers.map((l) => l.id))).toEqual(new Set([
+        "character_base",
+        "recent_history",
+        "prompt_preset_summary",
+        "prior_summaries_context",
+      ]));
+    });
+
+    it("does NOT emit the layer on the chat-turn path even if priorSummaries is set (config.summary gate)", () => {
+      // assemblePrompt does not force config.summary=true (only assembleSummaryPrompt does),
+      // so the gate is false and the layer is absent regardless of priorSummaries.
+      const result = assemblePrompt(contextWithPriors({ config: { summary: false } }));
+      expect(result.layers.find((l) => l.id === "prior_summaries_context")).toBeUndefined();
+    });
+
+    it("does NOT emit the layer when priorSummaries is empty", () => {
+      const result = getSummaryStrategy().assemble(contextWithPriors({ priorSummaries: [] }));
+      expect(result.layers.find((l) => l.id === "prior_summaries_context")).toBeUndefined();
+    });
+
+    it("falls back to 'Prior summary' label when label is absent", () => {
+      const result = getSummaryStrategy().assemble(contextWithPriors({
+        priorSummaries: [{ id: "p", content: "No label body." }],
+      }));
+      const layer = result.layers.find((l) => l.id === "prior_summaries_context")!;
+      expect(layer.text).toContain("Prior summary:\nNo label body.");
     });
   });
 });

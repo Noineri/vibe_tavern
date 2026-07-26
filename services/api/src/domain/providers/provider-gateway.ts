@@ -76,9 +76,5 @@ export async function listProviderModels(
 	}
 
 	const type = normalizeProviderType(input.providerType ?? "openai_compat");
-	const models = await resolveProtocol(type).listModels(input);
-	return models.map((m) => ({
-		...m,
-		supportsTools: m.capabilities?.tools ?? false,
-	}));
+	return resolveProtocol(type).listModels(input);
 }

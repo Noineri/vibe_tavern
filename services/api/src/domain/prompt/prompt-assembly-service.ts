@@ -143,6 +143,11 @@ export interface AssemblePromptForChatInput {
   responseReserve?: number;
   /** Summary preparation is source-loading policy, not a pipeline mode. */
   summary?: boolean;
+  /** SUMMARY_PRIOR_CONTEXT_PLAN (SPC-3): preceding chat-summaries
+   *  (`summarizedTo < from` chain, count-capped, oldest→newest) fed into the
+   *  summary prompt as read-only continuity. Threaded into pipelineContext
+   *  only when `summary` is true; absent on chat turns. */
+  priorSummaries?: Array<{ id: string; label?: string; content: string }>;
   /**
    * Optional per-request prompt preset override (Wave Q1b). When set, the
    * assembled prompt uses this preset instead of the chat's `promptPresetId`,
@@ -606,6 +611,12 @@ export class PromptAssemblyService {
         model: input.model,
         summary: input.summary,
       },
+      // SPC-3: hand the preceding-chain priors to the pipeline ONLY on the
+      // summary path. The pipeline emits `prior_summaries_context` from this;
+      // absent or empty → no layer (byte-equivalent to the chat turn).
+      ...(input.summary && input.priorSummaries?.length
+        ? { priorSummaries: input.priorSummaries }
+        : {}),
     };
 
     return {

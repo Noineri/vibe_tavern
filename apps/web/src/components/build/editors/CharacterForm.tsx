@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from "react";
-import type { UseFormReturn } from "react-hook-form";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { useWatch, type Control, type UseFormReturn } from "react-hook-form";
 import type { BuildCharacterDraft } from "@vibe-tavern/api-contracts";
 import { Ic } from "../../shared/icons";
 
@@ -80,15 +80,267 @@ function parseCardToDraft(raw: unknown): Partial<BuildCharacterDraft> {
   return result;
 }
 
+/** Character name title — isolated leaf. Reads `name` via `useWatch`
+ *  (custom-hook-level subscription) so a name-field edit re-renders only this
+ *  span, not the whole `CharacterForm`. This is part of the editor-performance
+ *  fix: the root `CharacterForm` no longer holds any `watch()` subscription, so
+ *  an MD-body flush (which writes the shared prose fields) cannot invalidate
+ *  the root and trigger a broad commit + `react-textarea-autosize` remeasure
+ *  storm. See reports/EDITOR_PERFORMANCE.md (Chrome trace 105143). */
+function CharacterTitle({ control }: { control: Control<BuildCharacterDraft> }) {
+  const { t } = useT();
+  const name = useWatch({ control, name: "name" });
+  return (
+    <div className="font-body text-[22px] font-medium text-t1 min-w-0 truncate">
+      {name || t("unnamed")}
+    </div>
+  );
+}
+
+/** Save button — isolated leaf. `canSave` derives from the name field via
+ *  `useWatch`; `isDirty` arrives from the parent (BuildMode reads
+ *  `form.formState.isDirty` once and passes it down). Isolating the name read
+ *  keeps a name edit from re-rendering the whole form. */
+function SaveButton({ control, isSaving, isDirty, onSave, className, style }: {
+  control: Control<BuildCharacterDraft>;
+  isSaving: boolean;
+  isDirty: boolean;
+  onSave: () => void;
+  className: string;
+  style?: CSSProperties;
+}) {
+  const { t } = useT();
+  const name = useWatch({ control, name: "name" });
+  const canSave = !isSaving && (name || "").trim();
+  return (
+    <button type="button" className={className} style={style} disabled={!canSave || !isDirty} onClick={onSave}>
+      {isSaving ? t("saving") : t("save")}
+    </button>
+  );
+}
+
+/** Permanent + greeting token summary — isolated leaf. Subscribes via
+ *  `useWatch` to only the fields that feed the two counts, so an MD-body flush
+ *  re-renders just this span. The tokenization (`useTokenCount`) now runs only
+ *  here, not on every root render. */
+function TokenSummary({ control }: { control: Control<BuildCharacterDraft> }) {
+  const { t } = useT();
+  const [description, scenario, personalitySummary, mesExample, postHistoryInstructions, creatorNotes, systemPrompt, depthPrompt, firstMessage] = useWatch({
+    control,
+    name: ["description", "scenario", "personalitySummary", "mesExample", "postHistoryInstructions", "creatorNotes", "systemPrompt", "depthPrompt", "firstMessage"],
+  });
+  const permanentTokens = useTokenCount([
+    description, scenario, personalitySummary, mesExample,
+    postHistoryInstructions, creatorNotes, systemPrompt, depthPrompt,
+  ].filter(Boolean).join("\n"));
+  const greetingTokens = useTokenCount(firstMessage || "");
+  return (
+    <span className="font-ui text-[11px] tabular-nums text-t3">
+      {permanentTokens.toLocaleString()}<span className="text-t4">+</span>{greetingTokens.toLocaleString()} {t("tokens_label")}
+    </span>
+  );
+}
+
+/** The classic (form-mode) field surface. Mounted ONLY when
+ *  `mdViewMode === "form"`, so its `useWatch` subscriptions are inert in MD
+ *  mode — an MD-body flush cannot invalidate these fields because they are
+ *  unmounted. All field values are read via isolated `useWatch` here, so
+ *  editing one classic field re-renders only this component (and the field's
+ *  own registered input), not the whole `CharacterForm`. The `altGreetIdx`
+ *  local state lives here too — it is irrelevant to MD mode. */
+function ClassicCharacterFields({ form, isSaving }: { form: UseFormReturn<BuildCharacterDraft>; isSaving: boolean }) {
+  const { t, tDynamic } = useT();
+  const isMobile = useIsMobile();
+  const mInput = isMobile ? " text-base" : "";
+  const { register, setValue } = form;
+  const [altGreetIdx, setAltGreetIdx] = useState(0);
+  const [description, firstMessage, mesExample, mesExampleMode, mesExampleDepth, scenario, personalitySummary, altGreetingsRaw] = useWatch({
+    control: form.control,
+    name: ["description", "firstMessage", "mesExample", "mesExampleMode", "mesExampleDepth", "scenario", "personalitySummary", "alternateGreetings"],
+  });
+  const alternateGreetings = altGreetingsRaw || [];
+  return (
+    <>
+      {/* Description */}
+      <div className="mb-5">
+        <label className={lblCls + " mb-1.5 block"}>{t("char_desc_label")}</label>
+        <MobileExpandTextarea value={description || ""} onChange={(v) => setValue("description", v)} label={t("char_desc_label")}>
+          <AutoTextarea className={inputCls + mInput} style={{ ...inputPad }} disabled={isSaving} register={register("description")} minRows={5} />
+        </MobileExpandTextarea>
+        <TokenCounter text={description || ""} />
+      </div>
+
+      {/* First Message */}
+      <div className="mb-5">
+        <label className={lblCls + " mb-1.5 block"}>{t("first_message_greeting")}</label>
+        <MobileExpandTextarea value={firstMessage || ""} onChange={(v) => setValue("firstMessage", v)} label={t("first_message_label")}>
+          <AutoTextarea className={inputCls + mInput} style={{ ...inputPad }} disabled={isSaving} placeholder={t("first_message_placeholder")} register={register("firstMessage")} minRows={6} />
+        </MobileExpandTextarea>
+        <TokenCounter text={firstMessage || ""} />
+      </div>
+
+      {/* Alternate Greetings */}
+      <div className="mb-5">
+        <label className={lblCls + " mb-1.5 block"}>{t("alternate_greetings")}</label>
+        <div className="mb-2 flex flex-wrap gap-1">
+          {alternateGreetings.map((_: string, idx: number) => (
+            <span
+              key={idx}
+              className={cn(
+                "inline-flex items-center gap-1 rounded border border-border bg-s2 px-2.5 py-[2px] font-ui text-xs text-t2 cursor-pointer transition-all",
+                idx === altGreetIdx && "border-accent bg-accent-dim text-accent-t",
+                isMobile && "min-h-9 px-3 py-1",
+              )}
+              onClick={() => setAltGreetIdx(idx)}
+            >
+              Alt {idx + 1}
+              <span className="ml-0.5 cursor-pointer text-[10px]" onClick={(e) => {
+                e.stopPropagation();
+                const next = [...alternateGreetings]; next.splice(idx, 1);
+                setValue("alternateGreetings", next, { shouldDirty: true });
+                if (altGreetIdx >= next.length) setAltGreetIdx(Math.max(0, next.length - 1));
+              }}>✕</span>
+            </span>
+          ))}
+          <span
+            className="inline-flex items-center justify-center rounded border border-dashed border-border bg-transparent px-2.5 py-[2px] font-ui text-xs text-t3 cursor-pointer"
+            onClick={() => {
+              const next = [...alternateGreetings, ""];
+              setValue("alternateGreetings", next, { shouldDirty: true });
+              setAltGreetIdx(next.length - 1);
+            }}
+          >+</span>
+        </div>
+        {alternateGreetings.length > 0 && (
+          <div>
+            <MobileExpandTextarea value={alternateGreetings[altGreetIdx] || ""} onChange={(v) => {
+              const next = [...alternateGreetings]; next[altGreetIdx] = v;
+              setValue("alternateGreetings", next, { shouldDirty: true });
+            }} label={t("alternate_greeting_placeholder")}>
+              <AutoTextarea className={inputCls + mInput} style={{ ...inputPad }} minRows={6} disabled={isSaving} value={alternateGreetings[altGreetIdx] || ""} onChange={(e) => {
+                const next = [...alternateGreetings]; next[altGreetIdx] = e.target.value;
+                setValue("alternateGreetings", next, { shouldDirty: true });
+              }} placeholder={t("alternate_greeting_placeholder")} />
+            </MobileExpandTextarea>
+            <TokenCounter text={alternateGreetings[altGreetIdx] || ""} />
+          </div>
+        )}
+      </div>
+
+      {/* Message Examples */}
+      <div className="mb-5">
+        <div className="mb-1.5 flex flex-col items-stretch gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <label className={lblCls}>{t("dialog_examples")}</label>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <div className="flex min-w-0 items-center gap-1 sm:min-w-fit">
+              <CustomTooltip content={tDynamic(`mes_example_mode_tooltip_${mesExampleMode || "always"}`)}>
+              <SegmentedControl
+                value={mesExampleMode || "always"}
+                options={[
+                  { value: "always", label: t("activation_always") },
+                  { value: "once", label: t("activation_once") },
+                  { value: "depth", label: t("activation_depth") },
+                  { value: "disabled", label: t("activation_disabled") },
+                ]}
+                onChange={(v) => setValue("mesExampleMode", v as "always" | "once" | "depth" | "disabled", { shouldDirty: true })}
+                disabled={isSaving}
+                compact
+                mobileFill
+              />
+              </CustomTooltip>
+            </div>
+            <div className={"flex min-h-8 items-center justify-between gap-2 sm:justify-start" + ((mesExampleMode || "always") !== "depth" ? " opacity-30 pointer-events-none" : "")}>
+              <span className="font-ui text-[10px] uppercase tracking-[0.06em] text-t3">{t("depth")}</span>
+              <NumberInput
+                className="h-8 w-[100px] sm:h-6 sm:w-[90px]"
+                min={0}
+                max={999}
+                disabled={isSaving || (mesExampleMode || "always") !== "depth"}
+                value={mesExampleDepth ?? 4}
+                onChange={(v) => setValue("mesExampleDepth", v, { shouldDirty: true })}
+              />
+            </div>
+          </div>
+        </div>
+        <MobileExpandTextarea value={mesExample || ""} onChange={(v) => setValue("mesExample", v)} label={t("char_mes_example_label")}>
+          <AutoTextarea className={monoCls + mInput} style={{ ...inputPad }} disabled={isSaving} placeholder="<START>..." register={register("mesExample")} minRows={6} />
+        </MobileExpandTextarea>
+        <TokenCounter text={mesExample || ""} />
+      </div>
+
+      {/* Scenario */}
+      <div className="mb-5">
+        <label className={lblCls + " mb-1.5 block"}>{t("scenario")}</label>
+        <MobileExpandTextarea value={scenario || ""} onChange={(v) => setValue("scenario", v)} label={t("char_scenario_label")}>
+          <AutoTextarea className={inputCls + mInput} style={{ ...inputPad }} disabled={isSaving} register={register("scenario")} minRows={5} />
+        </MobileExpandTextarea>
+        <TokenCounter text={scenario || ""} />
+      </div>
+
+      {/* Personality Summary */}
+      <div className="mb-5">
+        <label className={lblCls + " mb-1.5 block"}>{t("char_personality_label")}</label>
+        <MobileExpandTextarea value={personalitySummary || ""} onChange={(v) => setValue("personalitySummary", v)} label={t("char_personality_summary_label")}>
+          <AutoTextarea className={inputCls + mInput} style={{ ...inputPad }} disabled={isSaving} register={register("personalitySummary")} minRows={3} />
+        </MobileExpandTextarea>
+        <TokenCounter text={personalitySummary || ""} />
+      </div>
+
+      {/* Advanced separator */}
+      <div className="border-b border-border font-ui text-[calc(var(--ui-fs)-3px)] font-semibold uppercase tracking-[0.05em] text-t3 mt-6 mb-3 pb-1.5">
+        {t("advanced_fields_v3")}
+      </div>
+
+      {/* Post-History Instructions */}
+      <TextAreaField
+        form={form}
+        field="postHistoryInstructions"
+        label={t("post_history_instructions")}
+        mobileExpandLabel={t("post_history_label")}
+        minRows={3}
+        mono
+        placeholder={t("post_history_placeholder")}
+        isSaving={isSaving}
+      />
+
+      {/* Creator Notes */}
+      <TextAreaField
+        form={form}
+        field="creatorNotes"
+        label={t("creator_notes")}
+        mobileExpandLabel={t("creator_notes_label")}
+        minRows={3}
+        placeholder={t("creator_notes_placeholder")}
+        isSaving={isSaving}
+      />
+
+      {/* Depth Prompt */}
+      <DepthPromptField form={form} isSaving={isSaving} />
+
+      {/* System Prompt Override */}
+      <TextAreaField
+        form={form}
+        field="systemPrompt"
+        label={t("system_prompt_override")}
+        mobileExpandLabel={t("system_prompt_label")}
+        minRows={4}
+        mono
+        placeholder={t("system_prompt_override_placeholder")}
+        isSaving={isSaving}
+      />
+    </>
+  );
+}
+
 export function CharacterForm({
   form, avatarPreview, setAvatarPreview, isDirty, isSaving, avatarUrl, onSave, onReset, onAvatarUpload,
   onAfterImport,
   onExportJson, onExportPng, onExportVtf, onDuplicate, onDelete, hasAvatar, characterId
 }: CharacterFormProps) {
   const { t, tDynamic } = useT();
-  const { register, formState: { errors }, watch, setValue, handleSubmit } = form;
+  const { register, formState: { errors } } = form;
+  const control = form.control;
 
-  const [altGreetIdx, setAltGreetIdx] = useState(0);
   const [importError, setImportError] = useState("");
   const [importModalOpen, setImportModalOpen] = useState(false);
   const [mdImportOpen, setMdImportOpen] = useState(false);
@@ -126,21 +378,6 @@ export function CharacterForm({
   };
 
 
-  const name = watch("name");
-  const description = watch("description");
-  const firstMessage = watch("firstMessage");
-  const mesExample = watch("mesExample");
-  const mesExampleMode = watch("mesExampleMode");
-  const mesExampleDepth = watch("mesExampleDepth");
-  const scenario = watch("scenario");
-  const personalitySummary = watch("personalitySummary");
-  const systemPrompt = watch("systemPrompt");
-  const alternateGreetings = watch("alternateGreetings") || [];
-  const postHistoryInstructions = watch("postHistoryInstructions");
-  const creatorNotes = watch("creatorNotes");
-  const depthPrompt = watch("depthPrompt");
-
-  const canSave = !isSaving && (name || "").trim();
   const isMobile = useIsMobile();
   const mInput = isMobile ? " text-base" : "";
 
@@ -265,13 +502,6 @@ export function CharacterForm({
     img.src = displayAvatar;
   }, [displayAvatar, avatarOrientation]);
 
-  // Token breakdown: permanent (all fields except greeting) + greeting
-  const permanentTokens = useTokenCount([
-    description, scenario, personalitySummary, mesExample,
-    postHistoryInstructions, creatorNotes, systemPrompt, depthPrompt,
-  ].filter(Boolean).join("\n"));
-  const greetingTokens = useTokenCount(firstMessage || "");
-
   return (
     <div>
       {/* Action bar — sticky flush under the Build tabs header (the build
@@ -319,27 +549,17 @@ export function CharacterForm({
           toolbar (GAP A). On desktop the toolbar is inline in this same row, so a
           bottom margin would just dangle an empty tail under the bar. */}
       <div className={cn("flex items-center justify-between gap-2", isMobile && "mb-3")}>
-        <div className="font-body text-[22px] font-medium text-t1 min-w-0 truncate">
-          {name || t("unnamed")}
-        </div>
+        <CharacterTitle control={control} />
         {isMobile ? (
           <div className="flex shrink-0 items-center gap-2">
-            <span className="font-ui text-[11px] tabular-nums text-t3">
-              {permanentTokens.toLocaleString()}<span className="text-t4">+</span>{greetingTokens.toLocaleString()} {t("tokens_label")}
-            </span>
-            <button type="button"
+            <TokenSummary control={control} />
+            <SaveButton control={control} isSaving={isSaving} isDirty={isDirty} onSave={onSave}
               className="min-h-9 cursor-pointer rounded-md border-0 bg-accent px-3 font-ui text-[calc(var(--ui-fs)-3px)] font-semibold text-on-accent transition-all disabled:opacity-40"
-              disabled={!canSave || !isDirty}
-              onClick={onSave}
-            >
-              {isSaving ? t("saving") : t("save")}
-            </button>
+            />
           </div>
         ) : (
         <div className="flex items-center gap-2">
-          <span className="font-ui text-[11px] tabular-nums text-t3">
-            {permanentTokens.toLocaleString()}<span className="text-t4">+</span>{greetingTokens.toLocaleString()} {t("tokens_label")}
-          </span>
+          <TokenSummary control={control} />
           <CustomTooltip content={mdViewMode === "form" ? t("char_switch_to_md") : t("char_switch_to_form")}>
           <button type="button"
             className="flex cursor-pointer items-center justify-center rounded-md border border-border bg-s2 font-ui text-[calc(var(--ui-fs)-3px)] font-medium text-t2 transition-all hover:border-accent hover:text-accent-t disabled:opacity-40"
@@ -423,14 +643,10 @@ export function CharacterForm({
             <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><path d="M4 2h6l4 4v8a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z"/><path d="M9 2v4h4"/><path d="M6 10h4"/></svg>
           </button>
           </CustomTooltip>
-          <button type="button"
+          <SaveButton control={control} isSaving={isSaving} isDirty={isDirty} onSave={onSave}
             className="cursor-pointer rounded-md border-0 bg-accent font-ui text-[calc(var(--ui-fs)-2px)] font-semibold text-on-accent transition-all disabled:cursor-default disabled:opacity-40"
             style={{ height: 28, padding: "0 14px" }}
-            disabled={!canSave || !isDirty}
-            onClick={onSave}
-          >
-            {isSaving ? t("saving") : t("save")}
-          </button>
+          />
         </div>
         )}
       </div>
@@ -623,175 +839,7 @@ export function CharacterForm({
       {mdViewMode === "md" ? (
         <VibeMdView form={form} characterId={characterId} isSaving={isSaving} />
       ) : (
-      <>
-      {/* Description */}
-      <div className="mb-5">
-        <label className={lblCls + " mb-1.5 block"}>{t("char_desc_label")}</label>
-        <MobileExpandTextarea value={description || ""} onChange={(v) => setValue("description", v)} label={t("char_desc_label")}>
-          <AutoTextarea className={inputCls + mInput} style={{ ...inputPad }} disabled={isSaving} register={register("description")} minRows={5} />
-        </MobileExpandTextarea>
-        <TokenCounter text={description || ""} />
-      </div>
-
-      {/* First Message */}
-      <div className="mb-5">
-        <label className={lblCls + " mb-1.5 block"}>{t("first_message_greeting")}</label>
-        <MobileExpandTextarea value={firstMessage || ""} onChange={(v) => setValue("firstMessage", v)} label={t("first_message_label")}>
-          <AutoTextarea className={inputCls + mInput} style={{ ...inputPad }} disabled={isSaving} placeholder={t("first_message_placeholder")} register={register("firstMessage")} minRows={6} />
-        </MobileExpandTextarea>
-        <TokenCounter text={firstMessage || ""} />
-      </div>
-
-      {/* Alternate Greetings */}
-      <div className="mb-5">
-        <label className={lblCls + " mb-1.5 block"}>{t("alternate_greetings")}</label>
-        <div className="mb-2 flex flex-wrap gap-1">
-          {alternateGreetings.map((_: string, idx: number) => (
-            <span
-              key={idx}
-              className={cn(
-                "inline-flex items-center gap-1 rounded border border-border bg-s2 px-2.5 py-[2px] font-ui text-xs text-t2 cursor-pointer transition-all",
-                idx === altGreetIdx && "border-accent bg-accent-dim text-accent-t",
-                isMobile && "min-h-9 px-3 py-1",
-              )}
-              onClick={() => setAltGreetIdx(idx)}
-            >
-              Alt {idx + 1}
-              <span className="ml-0.5 cursor-pointer text-[10px]" onClick={(e) => {
-                e.stopPropagation();
-                const next = [...alternateGreetings]; next.splice(idx, 1);
-                setValue("alternateGreetings", next, { shouldDirty: true });
-                if (altGreetIdx >= next.length) setAltGreetIdx(Math.max(0, next.length - 1));
-              }}>✕</span>
-            </span>
-          ))}
-          <span
-            className="inline-flex items-center justify-center rounded border border-dashed border-border bg-transparent px-2.5 py-[2px] font-ui text-xs text-t3 cursor-pointer"
-            onClick={() => {
-              const next = [...alternateGreetings, ""];
-              setValue("alternateGreetings", next, { shouldDirty: true });
-              setAltGreetIdx(next.length - 1);
-            }}
-          >+</span>
-        </div>
-        {alternateGreetings.length > 0 && (
-          <div>
-            <MobileExpandTextarea value={alternateGreetings[altGreetIdx] || ""} onChange={(v) => {
-              const next = [...alternateGreetings]; next[altGreetIdx] = v;
-              setValue("alternateGreetings", next, { shouldDirty: true });
-            }} label={t("alternate_greeting_placeholder")}>
-              <AutoTextarea className={inputCls + mInput} style={{ ...inputPad }} minRows={6} disabled={isSaving} value={alternateGreetings[altGreetIdx] || ""} onChange={(e) => {
-                const next = [...alternateGreetings]; next[altGreetIdx] = e.target.value;
-                setValue("alternateGreetings", next, { shouldDirty: true });
-              }} placeholder={t("alternate_greeting_placeholder")} />
-            </MobileExpandTextarea>
-            <TokenCounter text={alternateGreetings[altGreetIdx] || ""} />
-          </div>
-        )}
-      </div>
-
-      {/* Message Examples */}
-      <div className="mb-5">
-        <div className="mb-1.5 flex flex-col items-stretch gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <label className={lblCls}>{t("dialog_examples")}</label>
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-            <div className="flex min-w-0 items-center gap-1 sm:min-w-fit">
-              <CustomTooltip content={tDynamic(`mes_example_mode_tooltip_${mesExampleMode || "always"}`)}>
-              <SegmentedControl
-                value={mesExampleMode || "always"}
-                options={[
-                  { value: "always", label: t("activation_always") },
-                  { value: "once", label: t("activation_once") },
-                  { value: "depth", label: t("activation_depth") },
-                  { value: "disabled", label: t("activation_disabled") },
-                ]}
-                onChange={(v) => setValue("mesExampleMode", v as "always" | "once" | "depth" | "disabled", { shouldDirty: true })}
-                disabled={isSaving}
-                compact
-                mobileFill
-              />
-              </CustomTooltip>
-            </div>
-            <div className={"flex min-h-8 items-center justify-between gap-2 sm:justify-start" + ((mesExampleMode || "always") !== "depth" ? " opacity-30 pointer-events-none" : "")}>
-              <span className="font-ui text-[10px] uppercase tracking-[0.06em] text-t3">{t("depth")}</span>
-              <NumberInput
-                className="h-8 w-[100px] sm:h-6 sm:w-[90px]"
-                min={0}
-                max={999}
-                disabled={isSaving || (mesExampleMode || "always") !== "depth"}
-                value={mesExampleDepth ?? 4}
-                onChange={(v) => setValue("mesExampleDepth", v, { shouldDirty: true })}
-              />
-            </div>
-          </div>
-        </div>
-        <MobileExpandTextarea value={mesExample || ""} onChange={(v) => setValue("mesExample", v)} label={t("char_mes_example_label")}>
-          <AutoTextarea className={monoCls + mInput} style={{ ...inputPad }} disabled={isSaving} placeholder="<START>..." register={register("mesExample")} minRows={6} />
-        </MobileExpandTextarea>
-        <TokenCounter text={mesExample || ""} />
-      </div>
-
-      {/* Scenario */}
-      <div className="mb-5">
-        <label className={lblCls + " mb-1.5 block"}>{t("scenario")}</label>
-        <MobileExpandTextarea value={scenario || ""} onChange={(v) => setValue("scenario", v)} label={t("char_scenario_label")}>
-          <AutoTextarea className={inputCls + mInput} style={{ ...inputPad }} disabled={isSaving} register={register("scenario")} minRows={5} />
-        </MobileExpandTextarea>
-        <TokenCounter text={scenario || ""} />
-      </div>
-
-      {/* Personality Summary */}
-      <div className="mb-5">
-        <label className={lblCls + " mb-1.5 block"}>{t("char_personality_label")}</label>
-        <MobileExpandTextarea value={personalitySummary || ""} onChange={(v) => setValue("personalitySummary", v)} label={t("char_personality_summary_label")}>
-          <AutoTextarea className={inputCls + mInput} style={{ ...inputPad }} disabled={isSaving} register={register("personalitySummary")} minRows={3} />
-        </MobileExpandTextarea>
-        <TokenCounter text={personalitySummary || ""} />
-      </div>
-
-      {/* Advanced separator */}
-      <div className="border-b border-border font-ui text-[calc(var(--ui-fs)-3px)] font-semibold uppercase tracking-[0.05em] text-t3 mt-6 mb-3 pb-1.5">
-        {t("advanced_fields_v3")}
-      </div>
-
-      {/* Post-History Instructions */}
-      <TextAreaField
-        form={form}
-        field="postHistoryInstructions"
-        label={t("post_history_instructions")}
-        mobileExpandLabel={t("post_history_label")}
-        minRows={3}
-        mono
-        placeholder={t("post_history_placeholder")}
-        isSaving={isSaving}
-      />
-
-      {/* Creator Notes */}
-      <TextAreaField
-        form={form}
-        field="creatorNotes"
-        label={t("creator_notes")}
-        mobileExpandLabel={t("creator_notes_label")}
-        minRows={3}
-        placeholder={t("creator_notes_placeholder")}
-        isSaving={isSaving}
-      />
-
-      {/* Depth Prompt */}
-      <DepthPromptField form={form} isSaving={isSaving} />
-
-      {/* System Prompt Override */}
-      <TextAreaField
-        form={form}
-        field="systemPrompt"
-        label={t("system_prompt_override")}
-        mobileExpandLabel={t("system_prompt_label")}
-        minRows={4}
-        mono
-        placeholder={t("system_prompt_override_placeholder")}
-        isSaving={isSaving}
-      />
-      </>
+        <ClassicCharacterFields form={form} isSaving={isSaving} />
       )}
 
       {/* Footer */}
