@@ -1630,6 +1630,7 @@ export default interface Resources {
     "trace_turn": "Turn {n}",
     "tweaks_font_size": "Message font size",
     "tweaks_language": "Language",
+    "tweaks_lava_blobs": "Animated blobs",
     "tweaks_message_width": "Message width",
     "tweaks_theme": "Theme",
     "tweaks_title": "Settings",

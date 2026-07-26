@@ -13,6 +13,7 @@ const baseSettings = {
   uiFontSize: 16,
   messageWidth: "medium" as const,
   lang: "en",
+  lavaBlobs: true,
 };
 
 function themeRadios(container: HTMLElement): HTMLElement[] {

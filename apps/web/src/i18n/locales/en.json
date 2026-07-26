@@ -921,6 +921,7 @@
   "tweaks_font_size": "Message font size",
   "tweaks_ui_font_size": "UI font size",
   "tweaks_message_width": "Message width",
+  "tweaks_lava_blobs": "Animated blobs",
   "mobile_access": "Mobile Access",
   "mobile_access_scan_qr": "Scan this QR code with your phone",
   "mobile_access_or_enter": "Or enter in browser:",

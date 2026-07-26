@@ -28,6 +28,7 @@ import { PromptManagerModal } from "../modals/PromptManagerModal.js";
 import { ProviderModal } from "../modals/ProviderModal.js";
 import { CoauthorProviderModal } from "../modals/CoauthorProviderModal.js";
 import { SetupWizard } from "../layout/SetupWizard.js";
+import { LavaBackground, useLavaBackgroundActive } from "./LavaBackground.js";
 import { ShellDestructiveConfirmModal } from "../shared/destructive-confirm-modal.js";
 import { TweaksPanel } from "../settings/popovers/TweaksPanel.js";
 import { MobileSettings } from "../settings/popovers/MobileSettings.js";
@@ -51,6 +52,10 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
   const showRail = tweaksSettings.showRail;
   const theme = useNavigationStore((s) => s.theme);
   const setTheme = useNavigationStore((s) => s.setTheme);
+  // WebGL lava-lamp overlay (progressive enhancement over the <body> gradient).
+  // Only active for lava themes on wide screens with WebGL + motion allowed;
+  // otherwise it renders nothing and the legacy CSS gradient shows through.
+  const lavaActive = useLavaBackgroundActive(theme, tweaksSettings.lavaBlobs);
   const activeChatId = useChatStore((s) => s.activeChatId);
   const activeChat = useSnapshotStore((s) => s.activeChat);
   const activeCharacter = useSnapshotStore((s) => s.character);
@@ -289,11 +294,13 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
     messageWidth: tweaksSettings.messageWidth,
     lang: tweaksSettings.lang,
     showRail: tweaksSettings.showRail,
+    lavaBlobs: tweaksSettings.lavaBlobs,
   };
 
   const handleSetTweak = (key: string, value: unknown) => {
     if (key === 'theme') setTheme(value as ThemeMode);
     else if (key === 'showRail') updateTweak(key, value as boolean);
+    else if (key === 'lavaBlobs') updateTweak(key, value as boolean);
     else if (key === 'fontSize' || key === 'uiFontSize') updateTweak(key, value as number);
     else if (key === 'messageWidth') updateTweak(key, value as 'narrow' | 'medium' | 'wide');
     else if (key === 'lang') { updateTweak(key, value as string); setLocale(normalizeLocale(value as string)); }
@@ -306,6 +313,9 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
   // bg-bg here — it masks --page-bg (see docs/guides/adding-a-theme.md).
   return (
     <div className="flex text-t1 font-ui" style={{ height: "100dvh", paddingBottom: "env(safe-area-inset-bottom, 0px)", overflow: "hidden" }}>
+      {/* Portals a fixed full-screen <canvas> to <body> behind all content.
+          No-op (renders null) unless lavaActive. See LavaBackground.tsx. */}
+      <LavaBackground active={lavaActive} messageWidth={tweaksSettings.messageWidth} />
       {shell.leftChrome}
       {/* One Radix Popover.Root owns the desktop TweaksPanel: the Trigger lives
           in the mode-specific top bar (TopBar for rp, CoauthorTopBar for
