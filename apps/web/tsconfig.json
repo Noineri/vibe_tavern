@@ -10,8 +10,7 @@
       "DOM.Iterable"
     ],
     "types": [
-      "bun",
-      "vite/client"
+      "bun"
     ],
     "composite": true,
     "tsBuildInfoFile": "../../out/tsbuildinfo/web.tsbuildinfo",

@@ -1,9 +1,15 @@
 import { isAbsolute, join, relative } from "node:path";
+import { parseArgs } from "node:util";
 import indexHtml from "./index.html";
 
 const PUBLIC_DIR = join(import.meta.dir, "public");
-const isDebug =
-	process.argv.includes("--debug") || process.env.VT_DEV_DEBUG === "1";
+const { values: cli } = parseArgs({
+	args: process.argv.slice(2),
+	options: { debug: { type: "boolean" } },
+	strict: false,
+	allowPositionals: true,
+});
+const isDebug = cli.debug === true || process.env.VT_DEV_DEBUG === "1";
 const PORT = Number(process.env.RP_WEB_DEV_PORT ?? "4173");
 if (!Number.isInteger(PORT) || PORT < 1 || PORT > 65_535) {
 	throw new RangeError("RP_WEB_DEV_PORT must be an integer from 1 to 65535");

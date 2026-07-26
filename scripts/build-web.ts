@@ -27,6 +27,9 @@ async function main(): Promise<void> {
 		target: "browser",
 		tsconfig: join(WEB_DIR, "tsconfig.json"),
 		minify: true,
+		// Without this define the React CJS entry folds its NODE_ENV check to the
+		// development branch at bundle time (dev warnings, larger bundle).
+		define: { "process.env.NODE_ENV": JSON.stringify("production") },
 		sourcemap: "external",
 		splitting: true,
 		naming: {

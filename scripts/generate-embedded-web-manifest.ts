@@ -27,7 +27,6 @@
  */
 
 import { dirname, join, relative, resolve, sep } from "node:path";
-import { readdir } from "node:fs/promises";
 import { parseArgs } from "node:util";
 
 const ROOT = resolve(import.meta.dir, "..");
@@ -56,15 +55,19 @@ export const STUB_CONTENT = `// AUTO-GENERATED stub. Replaced by scripts/generat
 export const embeddedWebFiles: Record<string, string> = {};
 `;
 
+// Real files only, matching the legacy recursive readdir walk: dotfiles
+// included, symlinks neither traversed nor listed (out/ never contains any).
 async function scanFiles(dir: string): Promise<string[]> {
+	const glob = new Bun.Glob("**/*");
 	const out: string[] = [];
-	for (const entry of await readdir(dir, { withFileTypes: true })) {
-		const full = join(dir, entry.name);
-		if (entry.isDirectory()) {
-			out.push(...await scanFiles(full));
-		} else if (entry.isFile()) {
-			out.push(full);
-		}
+	for await (const path of glob.scan({
+		cwd: dir,
+		absolute: true,
+		dot: true,
+		followSymlinks: false,
+		onlyFiles: true,
+	})) {
+		out.push(path);
 	}
 	return out;
 }

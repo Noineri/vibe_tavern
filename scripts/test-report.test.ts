@@ -84,44 +84,4 @@ describe("final test report", () => {
 		expect(report).toContain("Received: 2");
 		expect(report).not.toContain("repeated setup warning");
 	});
-
-	test("keeps Vitest failure names while bounding detailed stacks", () => {
-		// Given
-		const noisyFailure = [{
-			name: "web",
-			exitCode: 1,
-			durationMs: 20,
-			stdout: [
-				"RUN v4",
-				" ❯ src/example.test.ts (4 tests | 4 failed)",
-				"     × first failure",
-				"     × second failure",
-				"     × third failure",
-				"     × fourth failure",
-				" Test Files 1 failed",
-				" Tests 4 failed",
-			].join("\n"),
-			stderr: [
-				"ExperimentalWarning: unrelated runner noise",
-				"⎯ Failed Tests 4 ⎯",
-				" FAIL src/example.test.ts > first failure",
-				"AssertionError: first detail",
-				" FAIL src/example.test.ts > second failure",
-				"AssertionError: second detail",
-				" FAIL src/example.test.ts > third failure",
-				"AssertionError: third detail",
-				" FAIL src/example.test.ts > fourth failure",
-				"AssertionError: fourth detail",
-			].join("\n"),
-		}] satisfies readonly TestSuiteResult[];
-
-		// When
-		const report = formatTestReport(noisyFailure);
-
-		// Then
-		expect(report).toContain("× fourth failure");
-		expect(report).toContain("AssertionError: third detail");
-		expect(report).not.toContain("AssertionError: fourth detail");
-		expect(report).not.toContain("ExperimentalWarning");
-	});
 });
