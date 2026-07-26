@@ -376,7 +376,10 @@ describe("LorebookEditor (characterization)", () => {
     // Navigate into the entry editor (handleEntryClick → view "editor").
     fireEvent.click(getByTestId("entry-click"));
     // Entries load → activeEntry resolves → stubbed editor renders.
-    await waitFor(() => expect(getByTestId("entry-field")).toBeTruthy());
+    // Entries load → activeEntry resolves → form.reset settles — wait for the
+    // loaded title, not just the stub mount (under CPU contention a late reset
+    // can still land after a bare-mount wait and wipe the edit we're about to make).
+    await waitFor(() => expect(getByTestId("active-title").textContent).toBe("Goblin"));
 
     // The autosave indicator reflects savingState / form.formState.isDirty
     // via a data-state attr (idle | pending | saving | saved | error).
@@ -431,7 +434,9 @@ describe("LorebookEditor (characterization)", () => {
     );
     const { getByTestId, queryByTestId } = await renderAtList();
     fireEvent.click(getByTestId("entry-click")); // load entry-1
-    await waitFor(() => expect(getByTestId("active-title")).toBeTruthy());
+    // Same load-settle wait as the autosave test: bare active-title existence
+    // passes before the late form.reset lands under load, wiping the edit.
+    await waitFor(() => expect(getByTestId("active-title").textContent).toBe("Goblin"));
     // Edit the source entry (arms the 1s debounce).
     fireEvent.change(getByTestId("entry-field"), { target: { value: "Hobgoblin" } });
     // Duplicate — flushes entry-1's edit, refetches (entry-2 now in entries),
