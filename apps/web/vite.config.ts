@@ -2,7 +2,7 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { fileURLToPath, URL } from "node:url";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { dataComponentPlugin } from "./vite-plugin-data-component.js";
 
 // Mirrors scripts/_version.ts: VERSION env (set by release workflow) wins,
@@ -12,6 +12,23 @@ const rootPkg = JSON.parse(
 ) as { version?: string };
 const APP_VERSION = process.env.VERSION ?? rootPkg.version ?? "0.0.0-dev";
 const UPDATE_API_BASE = (process.env.VT_UPDATE_API_BASE ?? "https://api.github.com/repos/Noineri/vibe_tavern").replace(/\/+$/, "");
+
+const BUN_NATIVE_CANARY_TESTS = (() => {
+	const root = fileURLToPath(new URL("./src", import.meta.url));
+	const tests: string[] = [];
+	const visit = (dir: string): void => {
+		for (const entry of readdirSync(dir, { withFileTypes: true })) {
+			const path = `${dir}/${entry.name}`;
+			if (entry.isDirectory()) {
+				visit(path);
+			} else if (/\.test\.(ts|tsx)$/.test(entry.name) && readFileSync(path, "utf8").includes('from "bun:test"')) {
+				tests.push(`src/${path.slice(root.length + 1).replaceAll("\\", "/")}`);
+			}
+		}
+	};
+	visit(root);
+	return tests;
+})();
 
 export default defineConfig(({ command }) => ({
 	plugins: [dataComponentPlugin(), react(), tailwindcss()],
@@ -47,4 +64,5 @@ export default defineConfig(({ command }) => ({
 	server: {
 		port: 4173,
 	},
+	...(process.env.VITEST === "true" ? { test: { exclude: BUN_NATIVE_CANARY_TESTS } } : {}),
 }));
