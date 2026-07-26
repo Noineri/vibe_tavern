@@ -1,26 +1,23 @@
-import { describe, test, expect, vi } from "vitest";
+import { describe, test, expect, mock } from "bun:test";
 import { renderHook, waitFor } from "@testing-library/react";
-import {
-  filterToolCapableModels,
-  useToolCapableModels,
-  type ToolCapableModel,
-} from "./useToolCapableModels.js";
-import { useProviderDataStore } from "../../stores/provider-data-store.js";
+import { useDomEnv } from "../../../test/dom-env.js";
+import type { ToolCapableModel } from "./useToolCapableModels.js";
 import type { ProviderProfileRecord } from "../../api/types.js";
-import { fetchProviderProfileModels } from "../../api/provider-api.js";
 
-// vi.mock is hoisted to module top regardless of lexical position, so the
-// per-test vi.mock that used to live inside the "live fetch" case below is
-// impossible under vitest (it would warn "not at top level" and apply
-// globally anyway with an uninitialized spy). Mock the module once at the top
-// with a vi.fn, and drive the live-fetch case via vi.mocked(...).mockReturnValue.
+useDomEnv();
+
+// Register the module mock once before importing the subject, then program its
+// bound mock function in the live-fetch case below.
 // The pure-predicate and cached tests never call fetchProviderProfileModels, so
 // the global mock is inert for them.
-vi.mock("../../api/provider-api.js", async (importOriginal) => {
-  const real = await importOriginal() as typeof import("../../api/provider-api.js");
-  return { ...real, fetchProviderProfileModels: vi.fn() };
+const fetchProviderProfileModels = mock();
+const realProviderApi = await import("../../api/provider-api.js");
+mock.module("../../api/provider-api.js", () => {
+  return { ...realProviderApi, fetchProviderProfileModels };
 });
 
+const { useProviderDataStore } = await import("../../stores/provider-data-store.js");
+const { filterToolCapableModels, useToolCapableModels } = await import("./useToolCapableModels.js");
 
 /**
  * Inline factory for a complete ClientProviderProfileRecord. The wire type has
@@ -181,9 +178,8 @@ describe("useToolCapableModels (hook)", () => {
 
   test("falls back to a live fetch and filters when the cache is empty", async () => {
     // Empty cache → the hook must call fetchProviderProfileModels and filter.
-    // The module is mocked once at file top (vi.mock is hoisted, so a per-test
-    // vi.mock is impossible); program the fn for this case and assert on it.
-    vi.mocked(fetchProviderProfileModels).mockReturnValue(
+    // Program the file-level mock for this case and assert against that binding.
+    fetchProviderProfileModels.mockReturnValue(
       Promise.resolve({
         models: [
           { id: "live-tool", label: "Live Tool", supportsTools: true },

@@ -34,9 +34,20 @@
  * have been caught. Under vaul the gesture moves out of reach of happy-dom, so
  * those two assertions retire to the skipped block.
  */
-import { describe, it, expect, vi } from "vitest";
-import { render, fireEvent } from "@testing-library/react";
-import { BottomSheet } from "./BottomSheet.js";
+import { beforeAll, describe, it, expect, mock } from "bun:test";
+import { useDomEnv } from "../../../test/dom-env.js";
+
+useDomEnv();
+
+let render: typeof import("@testing-library/react").render;
+let fireEvent: typeof import("@testing-library/react").fireEvent;
+
+let BottomSheet: typeof import("./BottomSheet.js").BottomSheet;
+
+beforeAll(async () => {
+	({ render, fireEvent } = await import("@testing-library/react"));
+	({ BottomSheet } = await import("./BottomSheet.js"));
+});
 
 /** Scrim overlay — `.inset-0` (full-screen fixed) is unique to the scrim; the
  *  sheet uses `inset-x-0 bottom-0`. Carried over verbatim to Drawer.Overlay. */
@@ -86,14 +97,14 @@ describe("BottomSheet", () => {
 		// are sibling elements pre-vaul, so a click on the sheet cannot reach
 		// the scrim's onClick. The vaul wrapper preserves this (Drawer.Content
 		// stops the dismissal that Drawer.Overlay would trigger).
-		const onClose = vi.fn(() => {});
+		const onClose = mock(() => {});
 		render(<BottomSheet open={true} onClose={onClose}><span>x</span></BottomSheet>);
 		fireEvent.click(sheetEl(document));
 		expect(onClose).not.toHaveBeenCalled();
 	});
 
 	it("a short downward swipe does NOT fire onClose", () => {
-		const onClose = vi.fn(() => {});
+		const onClose = mock(() => {});
 		render(<BottomSheet open={true} onClose={onClose}><span>x</span></BottomSheet>);
 		const sheet = sheetEl(document);
 		fireEvent.touchStart(sheet, { touches: [{ clientY: 500 }] });
@@ -103,7 +114,7 @@ describe("BottomSheet", () => {
 	});
 
 	it("an upward swipe does NOT fire onClose", () => {
-		const onClose = vi.fn(() => {});
+		const onClose = mock(() => {});
 		render(<BottomSheet open={true} onClose={onClose}><span>x</span></BottomSheet>);
 		const sheet = sheetEl(document);
 		fireEvent.touchStart(sheet, { touches: [{ clientY: 500 }] });
@@ -115,14 +126,14 @@ describe("BottomSheet", () => {
 
 describe.skip("BottomSheet positive-dismissal gestures (manual — see header)", () => {
 	it("tapping the scrim fires onClose", () => {
-		const onClose = vi.fn(() => {});
+		const onClose = mock(() => {});
 		render(<BottomSheet open={true} onClose={onClose}><span>x</span></BottomSheet>);
 		fireEvent.click(scrimEl(document));
 		expect(onClose).toHaveBeenCalledTimes(1);
 	});
 
 	it("swiping down past the ~80px threshold fires onClose", () => {
-		const onClose = vi.fn(() => {});
+		const onClose = mock(() => {});
 		render(<BottomSheet open={true} onClose={onClose}><span>x</span></BottomSheet>);
 		const sheet = sheetEl(document);
 		fireEvent.touchStart(sheet, { touches: [{ clientY: 500 }] });

@@ -12,16 +12,12 @@
  * cause for which DropdownSelect.test is `.skip`'d; see overlay-primitive-audit
  * execution log). The hook path is environment-agnostic.
  */
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, mock } from "bun:test";
 import { renderHook, waitFor } from "@testing-library/react";
+import { useDomEnv } from "../../../test/dom-env.js";
 import type { CoauthorModule } from "@vibe-tavern/api-contracts";
-import { useSnapshotStore } from "../../stores/snapshot-store.js";
-import { useProviderDataStore } from "../../stores/provider-data-store.js";
-import { useBootstrapStore } from "../../stores/api-actions/bootstrap-actions.js";
-import {
-	listCoauthorModulesAction,
-	setCoauthorModuleAction,
-} from "../../stores/api-actions/chat-actions.js";
+
+useDomEnv();
 
 // Mock the two chat-actions the switch calls. `listCoauthorModulesAction` is
 // read by useModuleSwitch on mount; `setCoauthorModuleAction` is what
@@ -31,28 +27,34 @@ const MODULES: CoauthorModule[] = [
 	{ id: "profile-editor", name: "Profile Editor", description: "", basePrompt: "p", openingMessage: "", skillIds: [], toolSet: {}, maxSteps: 3, isBuiltIn: true },
 ];
 
-vi.mock("../../stores/api-actions/chat-actions.js", () => ({
-	listCoauthorModulesAction: vi.fn(() => Promise.resolve(MODULES)),
-	setCoauthorModuleAction: vi.fn(async (_chatId: string, _moduleId: string | null) => {}),
+const listCoauthorModulesAction = mock(() => Promise.resolve(MODULES));
+const setCoauthorModuleAction = mock(async (_chatId: string, _moduleId: string | null) => {});
+const patchUiSettingsAction = mock(async (_patch: never) => ({}) as never);
+const loadFavoriteModelsAction = mock(async (_profileId: string) => {});
+const realChatActions = await import("../../stores/api-actions/chat-actions.js");
+const realI18n = await import("../../i18n/context.js");
+const realProviderProfiles = await import("../../hooks/use-provider-profiles.js");
+const realBootstrapActions = await import("../../stores/api-actions/bootstrap-actions.js");
+const realProviderActions = await import("../../stores/api-actions/provider-actions.js");
+mock.module("../../stores/api-actions/chat-actions.js", () => ({
+  ...realChatActions,
+  listCoauthorModulesAction,
+  setCoauthorModuleAction,
 }));
 
 // useT must return a stable t(); the hook builds labels off it.
-vi.mock("../../i18n/context.js", async (importOriginal) => {
-	const realI18n = await importOriginal() as typeof import("../../i18n/context.js");
+mock.module("../../i18n/context.js", () => {
 	return {
 		...realI18n,
 		useT: () => ({ t: (key: string) => key, tDynamic: (key: string) => key, locale: "en", setLocale: () => {}, ready: true }),
 	};
 });
 
-const { useModuleSwitch, useCoauthorInputArea } = await import("./use-coauthor-input-area.js");
-
 // The favorites/tool-filter path goes through two hooks the data hook composes.
 // Stub them to deterministic inputs so the test pins the COMPOSITION (favorite
 // ∩ tool-capable), not the hooks' own internals (covered in
 // useToolCapableModels.test.ts).
-vi.mock("../../hooks/use-provider-profiles.js", async (importOriginal) => {
-	const realProviderProfiles = await importOriginal() as typeof import("../../hooks/use-provider-profiles.js");
+mock.module("../../hooks/use-provider-profiles.js", () => {
 	return {
 		...realProviderProfiles,
 		useProviderProfiles: () => ({
@@ -64,7 +66,7 @@ vi.mock("../../hooks/use-provider-profiles.js", async (importOriginal) => {
 					{ modelId: "gpt-3.5", label: "GPT-3.5 (no tools)", contextLength: 16000 },
 				],
 			},
-			handleSelectFavoriteProviderModel: vi.fn(async (_profileId: string, _modelId: string) => {}),
+        handleSelectFavoriteProviderModel: mock(async (_profileId: string, _modelId: string) => {}),
 		}),
 	};
 });
@@ -77,28 +79,31 @@ vi.mock("../../hooks/use-provider-profiles.js", async (importOriginal) => {
 // coauthor box actually ships.
 
 // Mock patchUiSettingsAction so quickSwitchModel doesn't hit the network.
-vi.mock("../../stores/api-actions/bootstrap-actions.js", async (importOriginal) => {
-	const real = await importOriginal() as typeof import("../../stores/api-actions/bootstrap-actions.js");
-	return {
-		...real,
-		patchUiSettingsAction: vi.fn(async (_patch: never) => ({}) as never),
+mock.module("../../stores/api-actions/bootstrap-actions.js", () => {
+  return {
+    ...realBootstrapActions,
+    patchUiSettingsAction,
 	};
 });
 
 // Mock loadFavoriteModelsAction so the hook doesn't fire a network request.
-vi.mock("../../stores/api-actions/provider-actions.js", async (importOriginal) => {
-	const real = await importOriginal() as typeof import("../../stores/api-actions/provider-actions.js");
-	return {
-		...real,
-		loadFavoriteModelsAction: vi.fn(async (_profileId: string) => {}),
-	};
+mock.module("../../stores/api-actions/provider-actions.js", () => {
+  return {
+    ...realProviderActions,
+    loadFavoriteModelsAction,
+  };
 });
+
+const { useSnapshotStore } = await import("../../stores/snapshot-store.js");
+const { useProviderDataStore } = await import("../../stores/provider-data-store.js");
+const { useBootstrapStore } = await import("../../stores/api-actions/bootstrap-actions.js");
+const { useModuleSwitch, useCoauthorInputArea } = await import("./use-coauthor-input-area.js");
 
 
 describe("useModuleSwitch", () => {
 	beforeEach(() => {
-		(listCoauthorModulesAction as ReturnType<typeof vi.fn>).mockReturnValue(Promise.resolve(MODULES));
-		(setCoauthorModuleAction as ReturnType<typeof vi.fn>).mockClear();
+		listCoauthorModulesAction.mockReturnValue(Promise.resolve(MODULES));
+		setCoauthorModuleAction.mockClear();
 	});
 
 	it("handleSelect fires setCoauthorModuleAction with the active chat id + module id", async () => {
@@ -113,7 +118,7 @@ describe("useModuleSwitch", () => {
 		await result.current.handleSelect("profile-editor");
 
 		await waitFor(() => expect(setCoauthorModuleAction).toHaveBeenCalledTimes(1));
-		const [chatId, moduleId] = (setCoauthorModuleAction as ReturnType<typeof vi.fn>).mock.calls[0];
+		const [chatId, moduleId] = setCoauthorModuleAction.mock.calls[0];
 		expect(moduleId).toBe("profile-editor");
 		expect(chatId).toBe("chat1");
 	});
@@ -195,7 +200,6 @@ describe("useCoauthorInputArea — tool-filtered favorites", () => {
 	});
 
 	it("handleSelectModel calls quickSwitchModel (updates coauthorModelName, not RP defaultModel)", async () => {
-		const { patchUiSettingsAction } = await import("../../stores/api-actions/bootstrap-actions.js");
 		const { result } = renderHook(() => useCoauthorInputArea());
 		result.current.handleSelectModel("gpt-4o-mini");
 		await waitFor(() => expect(patchUiSettingsAction).toHaveBeenCalledWith({ coauthorModelName: "gpt-4o-mini" }));

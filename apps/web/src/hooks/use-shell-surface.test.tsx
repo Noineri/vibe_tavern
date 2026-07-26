@@ -14,25 +14,39 @@
  *
  * Platform is controlled by mocking `use-mobile` (it reads matchMedia, which
  * happy-dom does not implement); the two stores are driven via `setState()`
- * directly — no vi.mock needed for them. Asserting against the catalog entries
+ * directly — no module mock needed for them. Asserting against the catalog entries
  * (not bare component imports) keeps these tests robust to component-file
  * moves; surface-parts.test.tsx independently pins catalog→component identity.
  *
  * See SURFACE_REGISTRY_REPORT.md fix-step 1b.
  */
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import { renderHook } from "@testing-library/react";
+import { useDomEnv } from "../../test/dom-env.js";
+import { mocked } from "../../test/mock-utils.js";
 import type { AppSnapshot } from "../api/types.js";
-import { useNavigationStore } from "../stores/index.js";
-import { useSnapshotStore } from "../stores/snapshot-store.js";
 
-vi.mock("./use-mobile.js", () => ({
-	useIsMobile: vi.fn(() => false),
+useDomEnv();
+
+const useIsMobile = mock(() => false);
+const realUseMobile = await import("./use-mobile.js");
+mock.module("./use-mobile.js", () => ({
+	...realUseMobile,
+	useIsMobile,
 }));
 
-import { useIsMobile } from "./use-mobile.js";
-import { useShellSurface, type ShellSurfaceProps } from "./use-shell-surface.js";
-import { SURFACE_LEFT_CHROME, SURFACE_RIGHT_PANELS, SURFACE_SURFACES, SURFACE_TOP_BARS } from "../lib/surface-parts.js";
+const { useNavigationStore } = await import("../stores/index.js");
+const { useSnapshotStore } = await import("../stores/snapshot-store.js");
+let useShellSurface: typeof import("./use-shell-surface.js").useShellSurface;
+let SURFACE_LEFT_CHROME: typeof import("../lib/surface-parts.js").SURFACE_LEFT_CHROME;
+let SURFACE_RIGHT_PANELS: typeof import("../lib/surface-parts.js").SURFACE_RIGHT_PANELS;
+let SURFACE_SURFACES: typeof import("../lib/surface-parts.js").SURFACE_SURFACES;
+let SURFACE_TOP_BARS: typeof import("../lib/surface-parts.js").SURFACE_TOP_BARS;
+type ShellSurfaceProps = import("./use-shell-surface.js").ShellSurfaceProps;
+beforeAll(async () => {
+	({ useShellSurface } = await import("./use-shell-surface.js"));
+	({ SURFACE_LEFT_CHROME, SURFACE_RIGHT_PANELS, SURFACE_SURFACES, SURFACE_TOP_BARS } = await import("../lib/surface-parts.js"));
+});
 
 const setActiveChat = (mode: "rp" | "coauthor") =>
 	useSnapshotStore.setState({
@@ -41,14 +55,14 @@ const setActiveChat = (mode: "rp" | "coauthor") =>
 
 const baseProps: ShellSurfaceProps = {
 	showRail: false,
-	onShowRail: vi.fn(),
+	onShowRail: mock(),
 	update: null,
 };
 
 beforeEach(() => {
 	useSnapshotStore.setState({ activeChat: null });
 	useNavigationStore.setState({ mode: "play" });
-	vi.mocked(useIsMobile).mockReturnValue(false);
+	mocked(useIsMobile).mockReturnValue(false);
 });
 
 describe("useShellSurface", () => {
@@ -95,7 +109,7 @@ describe("useShellSurface", () => {
 		});
 
 		it("mobile → NO right panel (side column is desktop-only; mobile swap is in-surface)", () => {
-			vi.mocked(useIsMobile).mockReturnValue(true);
+			mocked(useIsMobile).mockReturnValue(true);
 			setActiveChat("coauthor");
 			const { result } = renderHook(() => useShellSurface(baseProps));
 			expect(result.current.platform).toBe("mobile");
@@ -113,7 +127,7 @@ describe("useShellSurface", () => {
 
 	describe("mobile chrome", () => {
 		it("mobile resolves the rail variant and sets hidden = !showRail", () => {
-			vi.mocked(useIsMobile).mockReturnValue(true);
+			mocked(useIsMobile).mockReturnValue(true);
 			setActiveChat("rp");
 			const { result } = renderHook(() => useShellSurface(baseProps));
 			expect(result.current.platform).toBe("mobile");
@@ -122,7 +136,7 @@ describe("useShellSurface", () => {
 		});
 
 		it("showRail=true on mobile clears hidden + railHidden", () => {
-			vi.mocked(useIsMobile).mockReturnValue(true);
+			mocked(useIsMobile).mockReturnValue(true);
 			setActiveChat("rp");
 			const { result } = renderHook(() => useShellSurface({ ...baseProps, showRail: true }));
 			expect(result.current.leftChrome.props.hidden).toBe(false);
@@ -145,7 +159,7 @@ describe("useShellSurface", () => {
 	describe("top bar prop pass-through", () => {
 		it("update + onShowRail are forwarded verbatim", () => {
 			setActiveChat("rp");
-			const onShowRail = vi.fn();
+			const onShowRail = mock();
 			const update = { latestVersion: "1.2.3", releaseUrl: "https://example.com" };
 			const { result } = renderHook(() =>
 				useShellSurface({ showRail: false, onShowRail, update }),

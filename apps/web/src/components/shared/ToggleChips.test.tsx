@@ -13,9 +13,20 @@
  *
  * Sole consumer today: LoreEntryEditor character-filter picker.
  */
-import { describe, it, expect, vi } from "vitest";
-import { render, fireEvent, getAllByRole } from "@testing-library/react";
-import { ToggleChips } from "./ToggleChips.js";
+import { beforeAll, describe, it, expect, mock } from "bun:test";
+import { useDomEnv } from "../../../test/dom-env.js";
+
+useDomEnv();
+
+let render: typeof import("@testing-library/react").render;
+let fireEvent: typeof import("@testing-library/react").fireEvent;
+
+let ToggleChips: typeof import("./ToggleChips.js").ToggleChips;
+
+beforeAll(async () => {
+	({ render, fireEvent } = await import("@testing-library/react"));
+	({ ToggleChips } = await import("./ToggleChips.js"));
+});
 
 
 const opts = [
@@ -35,7 +46,7 @@ describe("ToggleChips", () => {
 	});
 
 	it("clicking an inactive chip adds it to the selection", () => {
-		const onChange = vi.fn();
+		const onChange = mock();
 		const { getByText } = render(
 			<ToggleChips selected={[]} options={opts} onChange={onChange} />,
 		);
@@ -45,7 +56,7 @@ describe("ToggleChips", () => {
 	});
 
 	it("clicking an active chip removes it from the selection", () => {
-		const onChange = vi.fn();
+		const onChange = mock();
 		const { getByText } = render(
 			<ToggleChips selected={["a", "b"]} options={opts} onChange={onChange} />,
 		);
@@ -55,7 +66,7 @@ describe("ToggleChips", () => {
 	});
 
 	it("is multi-select: selecting a third chip keeps the existing two", () => {
-		const onChange = vi.fn();
+		const onChange = mock();
 		const { getByText } = render(
 			<ToggleChips selected={["a", "b"]} options={opts} onChange={onChange} />,
 		);
@@ -64,7 +75,7 @@ describe("ToggleChips", () => {
 	});
 
 	it("disabled blocks every chip", () => {
-		const onChange = vi.fn();
+		const onChange = mock();
 		const { getByText } = render(
 			<ToggleChips selected={[]} options={opts} onChange={onChange} disabled />,
 		);
@@ -73,7 +84,7 @@ describe("ToggleChips", () => {
 	});
 
 	it("preserves order independence: removing the first chip keeps the rest", () => {
-		const onChange = vi.fn();
+		const onChange = mock();
 		const { getByText } = render(
 			<ToggleChips selected={["a", "b", "c"]} options={opts} onChange={onChange} />,
 		);

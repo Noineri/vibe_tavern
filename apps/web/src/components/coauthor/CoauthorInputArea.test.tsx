@@ -25,31 +25,39 @@
  * (collides with VibeMdView.test process-globally; happy-dom's desktop viewport
  * already yields useIsMobile()=false, exercising the desktop branch).
  */
-import { describe, it, expect, beforeEach, vi } from "vitest";
-import { render, act } from "@testing-library/react";
+import { beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
+import { useDomEnv } from "../../../test/dom-env.js";
+
+useDomEnv();
+
+let act: typeof import("@testing-library/react").act;
+let render: typeof import("@testing-library/react").render;
 import type { CoauthorModule } from "@vibe-tavern/api-contracts";
 import { useChatStore } from "../../stores/chat-store.js";
 import { useProviderStore } from "../../stores/provider-store.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
 import { useProviderDataStore } from "../../stores/provider-data-store.js";
 
-// vitest: vi.mock is hoisted above top-level `await import`, so capturing real
-// modules up top would resolve to the MOCKED module. Each factory below reads
-// the real module via `importOriginal` instead.
+// Capture the real modules before registering the process-global mock.module
+// factories.
 
-vi.mock("../../i18n/context.js", async (importOriginal) => {
-	const realI18n = await importOriginal() as typeof import("../../i18n/context.js");
-	return {
+const handleSelectFavoriteProviderModel = mock(async (_profileId: string, _modelId: string) => undefined);
+const handleSend = mock(async () => undefined);
+const handleCancelGeneration = mock();
+const realI18n = await import("../../i18n/context.js");
+const realProviderProfiles = await import("../../hooks/use-provider-profiles.js");
+const realChatController = await import("../../hooks/use-chat-controller.js");
+const realTooltip = await import("../shared/Tooltip.js");
+const realChatActions = await import("../../stores/api-actions/chat-actions.js");
+
+mock.module("../../i18n/context.js", () => ({
 		...realI18n,
 		useT: () => ({ t: (key: string) => key, tDynamic: (key: string) => key, locale: "en", setLocale: () => {}, ready: true }),
-	};
-});
+}));
 
 // Provider profiles: one active profile with two favorites — one tool-capable,
 // one not. The tool-only filtering is what the test pins.
-vi.mock("../../hooks/use-provider-profiles.js", async (importOriginal) => {
-	const realProviderProfiles = await importOriginal() as typeof import("../../hooks/use-provider-profiles.js");
-	return {
+mock.module("../../hooks/use-provider-profiles.js", () => ({
 		...realProviderProfiles,
 		useProviderProfiles: () => ({
 			activeProviderProfile: { id: "p1", name: "OpenAI Pro", defaultModel: "gpt-4o" },
@@ -60,10 +68,9 @@ vi.mock("../../hooks/use-provider-profiles.js", async (importOriginal) => {
 					{ modelId: "gpt-3.5", label: "GPT-3.5 (no tools)", contextLength: 16000 },
 				],
 			},
-			handleSelectFavoriteProviderModel: vi.fn(async (_profileId: string, _modelId: string) => {}),
+			handleSelectFavoriteProviderModel,
 		}),
-	};
-});
+}));
 
 // useToolCapableModels is NOT mocked — it is exercised for real against a
 // seeded provider-data-store cache (see seedStores). Mocking the hook leaks
@@ -73,27 +80,21 @@ vi.mock("../../hooks/use-provider-profiles.js", async (importOriginal) => {
 
 // Send/cancel: the co-author box reuses the chat pipeline, but we don't want a
 // real send here — stub the two methods the component calls.
-vi.mock("../../hooks/use-chat-controller.js", async (importOriginal) => {
-	const realChatController = await importOriginal() as typeof import("../../hooks/use-chat-controller.js");
-	return {
+mock.module("../../hooks/use-chat-controller.js", () => ({
 		...realChatController,
 		useChatController: () => ({
-			handleSend: vi.fn(async () => {}),
-			handleCancelGeneration: vi.fn(() => {}),
+			handleSend,
+			handleCancelGeneration,
 		}),
-	};
-});
+}));
 
 // CustomTooltip (Radix) needs a TooltipProvider ancestor the isolated render
 // lacks; passthrough keeps the box's children under test. Same pattern as
 // CoauthorTopBar.test.
-vi.mock("../shared/Tooltip.js", async (importOriginal) => {
-	const realTooltip = await importOriginal() as typeof import("../shared/Tooltip.js");
-	return {
+mock.module("../shared/Tooltip.js", () => ({
 		...realTooltip,
 		CustomTooltip: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-	};
-});
+}));
 
 // Chat-actions: only the two the module switch calls are needed. List returns
 // two seed modules so the switch dropdown has rows to render + select.
@@ -101,23 +102,21 @@ const MODULES: CoauthorModule[] = [
 	{ id: "default", name: "Default Co-Author", description: "", basePrompt: "p", openingMessage: "", skillIds: [], toolSet: {}, maxSteps: 5, isBuiltIn: true },
 	{ id: "profile-editor", name: "Profile Editor", description: "", basePrompt: "p", openingMessage: "", skillIds: [], toolSet: {}, maxSteps: 3, isBuiltIn: true },
 ];
-// vi.hoisted: vi.mock below is hoisted above these consts, so the factory would
-// close over uninitialized bindings. Hoisting the fns alongside the mock keeps
-// the factory and all test-body call sites unchanged. MODULES is declared above
-// so TS sees it before this destructure; its closure in the impl is lazy.
-const {
-	listCoauthorModulesAction,
-	setCoauthorModuleAction,
-} = vi.hoisted(() => ({
-	listCoauthorModulesAction: vi.fn(() => Promise.resolve(MODULES)),
-	setCoauthorModuleAction: vi.fn(async (_chatId: string, _moduleId: string | null) => {}),
-}));
-vi.mock("../../stores/api-actions/chat-actions.js", () => ({
+// Keep the bindings above the later mock.module registration. MODULES is
+// declared above so TS sees it before this destructure.
+const listCoauthorModulesAction = mock(() => Promise.resolve(MODULES));
+const setCoauthorModuleAction = mock(async (_chatId: string, _moduleId: string | null) => undefined);
+mock.module("../../stores/api-actions/chat-actions.js", () => ({
+	...realChatActions,
 	listCoauthorModulesAction,
 	setCoauthorModuleAction,
 }));
 
-const { CoauthorInputArea } = await import("./CoauthorInputArea.js");
+let CoauthorInputArea: typeof import("./CoauthorInputArea.js").CoauthorInputArea;
+beforeAll(async () => {
+	({ act, render } = await import("@testing-library/react"));
+	({ CoauthorInputArea } = await import("./CoauthorInputArea.js"));
+});
 
 /** Seed the real stores so the box sees a connected provider + an active chat.
  * The provider-data-store cache carries the two test models (gpt-4o tool-capable,

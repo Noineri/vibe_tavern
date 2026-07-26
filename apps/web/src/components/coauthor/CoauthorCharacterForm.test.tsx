@@ -17,48 +17,63 @@
  * mounting in happy-dom is graceful-skip (mirrors VibeMdView.test.tsx); the
  * header affordance text is the always-present primary assertion.
  */
-import { describe, it, expect, afterEach, beforeEach, vi } from "vitest";
-import { render, fireEvent, waitFor } from "@testing-library/react";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
+import { useDomEnv } from "../../../test/dom-env.js";
+
+useDomEnv();
+const { fireEvent, render, waitFor } = await import("@testing-library/react");
 import type { AppCharacter } from "../../app-client.js";
 import type { CoauthorToolActivity } from "../../stores/coauthor-turn-store.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
 import { useCoauthorTurnStore } from "../../stores/coauthor-turn-store.js";
-import { CoauthorCharacterForm } from "./CoauthorCharacterForm.js";
 import { coauthorToolOutputSchema } from "@vibe-tavern/api-contracts";
 import { toast } from "sonner";
 
 // Mock useT at the module boundary — returns keys verbatim so assertions match.
-vi.mock("../../i18n/context.js", () => ({
+const handleSaveCharacter = mock(async () => undefined);
+const realI18nContext = await import("../../i18n/context.js");
+const realCharacterController = await import("../../hooks/use-character-controller.js");
+const realTooltip = await import("../shared/Tooltip.js");
+const realLorebookApi = await import("../../api/lorebook-api.js");
+const realPersonaApi = await import("../../api/persona-api.js");
+const realScriptApi = await import("../../api/script-api.js");
+const realAppClient = await import("../../app-client.js");
+const realChatStore = await import("../../stores/chat-store.js");
+
+mock.module("../../i18n/context.js", () => ({
+  ...realI18nContext,
 	useT: () => ({ t: (key: string) => key, tDynamic: (key: string) => key, locale: "en", setLocale: () => {}, ready: true }),
 }));
 
 // useCharacterController is not consumed by any other test file → safe to mock
 // fully. Stub the save write-path so the test never hits the network.
-// vi.hoisted: vi.mock is hoisted above this line, so a plain outer const would
-// be uninitialized when the factory runs. Hoisting the binding alongside the
-// mock keeps every test-body call site (`handleSaveCharacter`) identical.
-const { handleSaveCharacter } = vi.hoisted(() => ({ handleSaveCharacter: vi.fn(() => Promise.resolve()) }));
-vi.mock("../../hooks/use-character-controller.js", () => ({
+// Keep the binding above the later mock.module registration.
+mock.module("../../hooks/use-character-controller.js", () => ({
+	...realCharacterController,
 	useCharacterController: () => ({ handleSaveCharacter, isSavingCharacter: false }),
 }));
 
 // CA-13: the lorebook picker (LinkBindingPopover) pulls in CustomTooltip,
 // which needs a Radix TooltipProvider context irrelevant to the form's
 // behaviours. Passthrough it, mirroring VibeMdView.test.tsx.
-vi.mock("../shared/Tooltip.js", () => ({
+mock.module("../shared/Tooltip.js", () => ({
+	...realTooltip,
 	CustomTooltip: ({ children }: { children: React.ReactNode }) => children,
 	TooltipProvider: ({ children }: { children: React.ReactNode }) => children,
 }));
 // The picker fetches the lorebook / persona / script lists on mount; stub
 // them empty so the test never hits the network. CE-C1 generalized the
 // picker from lorebook-only to all four entity kinds.
-vi.mock("../../api/lorebook-api.js", () => ({
+mock.module("../../api/lorebook-api.js", () => ({
+	...realLorebookApi,
 	listAllLorebooks: () => Promise.resolve([]),
 }));
-vi.mock("../../api/persona-api.js", () => ({
+mock.module("../../api/persona-api.js", () => ({
+	...realPersonaApi,
 	listPersonas: () => Promise.resolve([]),
 }));
-vi.mock("../../api/script-api.js", () => ({
+mock.module("../../api/script-api.js", () => ({
+	...realScriptApi,
 	listAllScripts: () => Promise.resolve([]),
 }));
 
@@ -67,9 +82,7 @@ vi.mock("../../api/script-api.js", () => ({
 // functions to empty/no-op so the field renders without hitting the network.
 // Spread the real module first (preserves every other app-client export,
 // including the AppCharacter TYPE the form itself imports).
-vi.mock("../../app-client.js", async (importOriginal) => {
-	const realAppClient = await importOriginal() as typeof import("../../app-client.js");
-	return {
+mock.module("../../app-client.js", () => ({
 		...realAppClient,
 		listAllLorebooks: () => Promise.resolve([]),
 		listCharacterLorebooks: () => Promise.resolve([]),
@@ -81,25 +94,24 @@ vi.mock("../../app-client.js", async (importOriginal) => {
 		listPersonaScripts: () => Promise.resolve([]),
 		getScriptLinks: () => Promise.resolve([]),
 		setScriptLinks: () => Promise.resolve([]),
-	};
-});
+}));
 
 // chat-store: spread the REAL module first (preserves every other export for
 // any co-running test file), override ONLY useIsSending with a controllable
-// value. See AGENTS.md mock.module gotcha. Under vitest `vi.mock` is hoisted
-// above `await import`, so `realChatStore` would resolve to the MOCKED module
-// (useless); `importOriginal` bypasses the mock to read the real exports.
+// value.
 // `__isSending` is a plain `let` declared above the (lexically lower) mock so
 // its closure binding is initialized by the time the lazily-invoked factory
 // runs; tests mutate it directly and the `useIsSending` closure reads the
 // live value on every render.
 let __isSending = false;
-vi.mock("../../stores/chat-store.js", async (importOriginal) => {
-	const realChatStore = await importOriginal() as typeof import("../../stores/chat-store.js");
-	return {
+mock.module("../../stores/chat-store.js", () => ({
 		...realChatStore,
 		useIsSending: () => __isSending,
-	};
+}));
+
+let CoauthorCharacterForm: typeof import("./CoauthorCharacterForm.js").CoauthorCharacterForm;
+beforeAll(async () => {
+	({ CoauthorCharacterForm } = await import("./CoauthorCharacterForm.js"));
 });
 
 function makeCharacter(over: Partial<AppCharacter> = {}): AppCharacter {
@@ -388,7 +400,7 @@ describe("CoauthorCharacterForm", () => {
 		seedReviewing({ description: "A reserved arachnid weaver." });
 		useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, makeProfileActivity("t1", "Bold and direct."));
 
-		const fetchMock = vi.fn((_url: unknown, _init: unknown) =>
+		const fetchMock = mock((_url: unknown, _init: unknown) =>
 			Promise.resolve({
 				ok: true,
 				status: 200,
@@ -429,10 +441,10 @@ describe("CoauthorCharacterForm", () => {
 		seedReviewing();
 		useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, makeProfileActivity("t1", "Bold."));
 
-		const warningSpy = vi.fn(() => {});
+		const warningSpy = mock(() => {});
 		toast.warning = warningSpy as never;
 
-		globalThis.fetch = vi.fn((_u: unknown, _i: unknown) =>
+		globalThis.fetch = mock((_u: unknown, _i: unknown) =>
 			Promise.resolve({
 				ok: true,
 				status: 200,
@@ -462,7 +474,7 @@ describe("CoauthorCharacterForm", () => {
 		seedReviewing();
 		useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, makeProfileActivity("t1", "Bold."));
 
-		const fetchMock = vi.fn(() => Promise.resolve({ ok: true, status: 200, json: async () => ({}), text: async () => "" }));
+		const fetchMock = mock(() => Promise.resolve({ ok: true, status: 200, json: async () => ({}), text: async () => "" }));
 		globalThis.fetch = fetchMock as never;
 
 		const { getByText } = render(<CoauthorCharacterForm />);
@@ -504,7 +516,7 @@ describe("CoauthorCharacterForm", () => {
 		seedReviewing();
 		useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, makeLoreActivity());
 
-		const fetchMock = vi.fn((_u: unknown, _i: unknown) =>
+		const fetchMock = mock((_u: unknown, _i: unknown) =>
 			Promise.resolve({ ok: true, status: 200, json: async () => ({ character: makeCharacter(), corrections: [] }), text: async () => "" }),
 		);
 		globalThis.fetch = fetchMock as never;
@@ -535,7 +547,7 @@ describe("CoauthorCharacterForm", () => {
 		seedReviewing();
 		useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, makeLoreActivity());
 
-		const fetchMock = vi.fn((_u: unknown, _i: unknown) =>
+		const fetchMock = mock((_u: unknown, _i: unknown) =>
 			Promise.resolve({ ok: true, status: 200, json: async () => ({ character: makeCharacter(), corrections: [] }), text: async () => "" }),
 		);
 		globalThis.fetch = fetchMock as never;
@@ -562,7 +574,7 @@ describe("CoauthorCharacterForm", () => {
 		seedReviewing();
 		useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, makeLoreActivity());
 
-		const fetchMock = vi.fn(() => Promise.resolve({ ok: true, status: 200, json: async () => ({}), text: async () => "" }));
+		const fetchMock = mock(() => Promise.resolve({ ok: true, status: 200, json: async () => ({}), text: async () => "" }));
 		globalThis.fetch = fetchMock as never;
 
 		const { getByText } = render(<CoauthorCharacterForm />);
@@ -605,7 +617,7 @@ describe("CoauthorCharacterForm", () => {
 		seedReviewing();
 		useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, twoHunkProfileActivity());
 
-		const fetchMock = vi.fn((_u: unknown, _i: unknown) =>
+		const fetchMock = mock((_u: unknown, _i: unknown) =>
 			Promise.resolve({
 				ok: true,
 				status: 200,
@@ -646,7 +658,7 @@ describe("CoauthorCharacterForm", () => {
 		seedReviewing();
 		useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, twoHunkProfileActivity());
 
-		const fetchMock = vi.fn((_u: unknown, _i: unknown) =>
+		const fetchMock = mock((_u: unknown, _i: unknown) =>
 			Promise.resolve({ ok: true, status: 200, json: async () => ({ character: makeCharacter(), corrections: [] }), text: async () => "" }),
 		);
 		globalThis.fetch = fetchMock as never;
@@ -688,7 +700,7 @@ describe("CoauthorCharacterForm", () => {
 			args: { edits: [{ search: "A reserved arachnid weaver.", replace: "Bold and direct." }], summary: "sharpen personality" },
 		});
 
-		const fetchMock = vi.fn((_u: unknown, _i: unknown) =>
+		const fetchMock = mock((_u: unknown, _i: unknown) =>
 			Promise.resolve({ ok: true, status: 200, json: async () => ({ character: makeCharacter({ description: "Bold and direct." }), corrections: [] }), text: async () => "" }),
 		);
 		globalThis.fetch = fetchMock as never;
@@ -718,7 +730,7 @@ describe("CoauthorCharacterForm", () => {
 		seedReviewing();
 		useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, twoHunkProfileActivity());
 
-		const fetchMock = vi.fn((_u: unknown, _i: unknown) =>
+		const fetchMock = mock((_u: unknown, _i: unknown) =>
 			Promise.resolve({ ok: true, status: 200, json: async () => ({ character: makeCharacter(), corrections: [] }), text: async () => "" }),
 		);
 		globalThis.fetch = fetchMock as never;
@@ -793,7 +805,7 @@ describe("CoauthorCharacterForm", () => {
 	// already equals the proposal (description NEW) → diff should be EMPTY
 	// (0 hunks). BUG: the form still holds v1 → the stale diff shows 1 hunk.
 
-	it.fails("version folder-swap: reviewing canonical refreshes when character changes without remount", () => {
+	it.failing("version folder-swap: reviewing canonical refreshes when character changes without remount", () => {
 		__isSending = false;
 		// v1 — canonical when reviewing begins.
 		const v1 = seedReviewing({ description: "OLD personality." });

@@ -20,9 +20,20 @@
  * resolved at runtime via a small helper so the behavioral assertions below
  * stay valid across both implementations.
  */
-import { describe, it, expect, vi } from "vitest";
-import { render, fireEvent } from "@testing-library/react";
-import { Toggle } from "./Toggle.js";
+import { beforeAll, describe, it, expect, mock } from "bun:test";
+import { useDomEnv } from "../../../test/dom-env.js";
+
+useDomEnv();
+
+let render: typeof import("@testing-library/react").render;
+let fireEvent: typeof import("@testing-library/react").fireEvent;
+
+let Toggle: typeof import("./Toggle.js").Toggle;
+
+beforeAll(async () => {
+	({ render, fireEvent } = await import("@testing-library/react"));
+	({ Toggle } = await import("./Toggle.js"));
+});
 
 
 /** Resolves the interactive control — `input[type=checkbox]` today,
@@ -53,7 +64,7 @@ describe("Toggle", () => {
 	});
 
 	it("clicking an unchecked toggle fires onChange(true)", () => {
-		const onChange = vi.fn();
+		const onChange = mock();
 		const { container } = render(<Toggle checked={false} onChange={onChange} />);
 		fireEvent.click(control(container));
 		expect(onChange).toHaveBeenCalledTimes(1);
@@ -61,7 +72,7 @@ describe("Toggle", () => {
 	});
 
 	it("clicking a checked toggle fires onChange(false)", () => {
-		const onChange = vi.fn();
+		const onChange = mock();
 		const { container } = render(<Toggle checked={true} onChange={onChange} />);
 		fireEvent.click(control(container));
 		expect(onChange).toHaveBeenCalledTimes(1);
@@ -69,7 +80,7 @@ describe("Toggle", () => {
 	});
 
 	it("disabled blocks onChange", () => {
-		const onChange = vi.fn();
+		const onChange = mock();
 		const { container } = render(<Toggle checked={false} onChange={onChange} disabled />);
 		fireEvent.click(control(container));
 		expect(onChange).not.toHaveBeenCalled();
@@ -78,7 +89,7 @@ describe("Toggle", () => {
 	it("id associates the control with a sibling <label htmlFor>", () => {
 		// Every Toggle call site that wraps it in a text label relies on this —
 		// clicking the text label must toggle the control.
-		const onChange = vi.fn();
+		const onChange = mock();
 		const { container } = render(
 			<div>
 				<label htmlFor="my-toggle">Enable feature</label>

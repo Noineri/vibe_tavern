@@ -10,26 +10,24 @@
  * override pattern so the rest of chat-api stays genuine (see AGENTS gotcha on
  * mock.module being process-global).
  */
-import { describe, test, expect, beforeEach, vi } from "vitest";
+import { describe, test, expect, beforeEach, mock } from "bun:test";
 import type { PromptTraceRecordDto } from "@vibe-tavern/domain";
-import { useTraceHistoryStore } from "./trace-history-store.js";
 
-// vitest: vi.mock is hoisted above top-level `await import`, so `real` would
-// resolve to the MOCKED module (useless); `importOriginal` bypasses the mock.
-// `mockFetch` is a plain `let` declared above the (lexically lower) mock so its
-// closure binding is initialized by the time the lazily-invoked factory runs;
-// tests mutate it directly and the fetchTraceHistory closure reads the live
-// value on every call.
+// Capture the real module before registering the mock, then spread it so every
+// unrelated export remains genuine. `mockFetch` is a plain `let`; tests mutate
+// it directly and the replacement reads its live value on every call.
 type FetchImpl = (chatId: string, opts?: { messageId?: string; branchId?: string }) => Promise<PromptTraceRecordDto[]>;
 let mockFetch: FetchImpl | null = null;
-vi.mock("../api/chat-api.js", async (importOriginal) => {
-  const real = await importOriginal() as typeof import("../api/chat-api.js");
+const realChatApi = await import("../api/chat-api.js");
+mock.module("../api/chat-api.js", () => {
   return {
-    ...real,
+    ...realChatApi,
     fetchTraceHistory: ((chatId: string, opts?: { messageId?: string; branchId?: string }) =>
-      mockFetch ? mockFetch(chatId, opts) : real.fetchTraceHistory(chatId as never, opts)) as FetchImpl,
+      mockFetch ? mockFetch(chatId, opts) : realChatApi.fetchTraceHistory(chatId as never, opts)) as FetchImpl,
   };
 });
+
+const { useTraceHistoryStore } = await import("./trace-history-store.js");
 
 function makeTrace(id: string, branchId: string): PromptTraceRecordDto {
   return {

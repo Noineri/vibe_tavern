@@ -18,17 +18,19 @@
  *
  * The mock surface mirrors coauthor-message-controls.test.tsx: STABLE_CONTROLLER
  * for useChatController, useT returning the key string, and useIsMobile as a
- * per-test flippable vi.fn. MessageBlock is mounted for real so its `canAiEdit`
+ * per-test flippable mock. MessageBlock is mounted for real so its `canAiEdit`
  * gate and action-bar wiring are the code under test.
  */
-import { describe, test, expect, beforeAll, afterAll, afterEach, beforeEach, vi } from "vitest";
-import { render, cleanup, act } from "@testing-library/react";
+import { describe, test, expect, beforeAll, afterEach, beforeEach, mock } from "bun:test";
 import type { ReactNode } from "react";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
 import { useChatStore } from "../../stores/chat-store.js";
 import { useMessageAiEditorStore } from "../../stores/message-ai-editor-store.js";
 import type { AppCharacter, AppMessage, AppSnapshot, AppPersona } from "../../app-client.js";
-import type { ChatId, MessageVariantId } from "@vibe-tavern/domain";
+import { brandId, type ChatId, type MessageId, type MessageVariantId } from "@vibe-tavern/domain";
+import { useDomEnv } from "../../../test/dom-env.js";
+
+useDomEnv();
 
 const asChatId = (id: string): ChatId => id as ChatId;
 
@@ -53,11 +55,18 @@ const STABLE_CONTROLLER = {
   handleRenameBranch: NOOP_ASYNC,
 };
 
-vi.mock("../../hooks/use-chat-controller.js", () => ({
+const useIsMobile = mock(() => false);
+const realChatController = await import("../../hooks/use-chat-controller.js");
+const realI18nContext = await import("../../i18n/context.js");
+const realMobileHook = await import("../../hooks/use-mobile.js");
+const realTooltip = await import("../shared/Tooltip.js");
+mock.module("../../hooks/use-chat-controller.js", () => ({
+	...realChatController,
   useChatController: () => STABLE_CONTROLLER,
 }));
 
-vi.mock("../../i18n/context.js", () => ({
+mock.module("../../i18n/context.js", () => ({
+	...realI18nContext,
   useT: () => ({
     t: (key: string) => key,
     tDynamic: (key: string) => key,
@@ -67,16 +76,20 @@ vi.mock("../../i18n/context.js", () => ({
   }),
 }));
 
-vi.mock("../../hooks/use-mobile.js", () => ({
-  useIsMobile: vi.fn(() => false),
+mock.module("../../hooks/use-mobile.js", () => ({
+	...realMobileHook,
+  useIsMobile,
 }));
 
-vi.mock("../shared/Tooltip.js", () => ({
+mock.module("../shared/Tooltip.js", () => ({
+	...realTooltip,
   CustomTooltip: ({ children }: { children: ReactNode }) => children,
   TooltipProvider: ({ children }: { children: ReactNode }) => children,
 }));
 
-beforeAll(() => {
+let render: typeof import("@testing-library/react").render;
+let act: typeof import("@testing-library/react").act;
+beforeAll(async () => {
   if (typeof window !== "undefined") {
     if (!window.matchMedia) {
       window.matchMedia = (q: string) => ({
@@ -94,12 +107,7 @@ beforeAll(() => {
       (window as { ResizeObserver?: unknown }).ResizeObserver = (globalThis as { ResizeObserver?: unknown }).ResizeObserver;
     }
   }
-});
-
-afterAll(() => {});
-
-afterEach(() => {
-  cleanup();
+  ({ render, act } = await import("@testing-library/react"));
 });
 
 function makeAssistantMessage(id: string, content = "msg"): AppMessage {
@@ -160,6 +168,8 @@ const CHAT = "chat-1";
 const TOOLTIP_KEY = "message_ai_editor_tooltip";
 
 beforeEach(() => {
+	useIsMobile.mockReset();
+	useIsMobile.mockReturnValue(false);
   useSnapshotStore.getState().clear();
   useChatStore.setState({
     activeChatId: null,
@@ -223,14 +233,14 @@ describe("MAE-52 message AI editor controls", () => {
     await act(async () => { sparklesBtn.click(); });
     const target = useMessageAiEditorStore.getState().target;
     expect(target, "openEditor must populate the store target").not.toBeNull();
-    expect(target!.requestedMode).toBe("message_edit");
-    expect(target!.targetMessageId).toBe("m1");
-    expect(target!.selectedSourceVariantId).toBe("m1-v0");
+    if (!target) throw new Error("openEditor did not populate the store target");
+    expect(target.requestedMode).toBe("message_edit");
+    expect(target.targetMessageId).toBe(brandId<MessageId>("m1"));
+    expect(target.selectedSourceVariantId).toBe(brandId<MessageVariantId>("m1-v0"));
   });
 
   test("mobile: Sparkles sits immediately LEFT of Regenerate as a 44px button in a content-sized right track", async () => {
-    const { useIsMobile } = await import("../../hooks/use-mobile.js");
-    vi.mocked(useIsMobile).mockReturnValue(true);
+    useIsMobile.mockReturnValue(true);
 
     const { MessageBlock } = await import("./MessageBlock.js");
     useSnapshotStore.getState().ingestSnapshot(seed([makeAssistantMessage("m1")], false));
@@ -369,8 +379,7 @@ describe("MAE-52 message AI editor controls", () => {
   });
 
   test("mobile Action Sheet NEVER exposes an AI editor entry", async () => {
-    const { useIsMobile } = await import("../../hooks/use-mobile.js");
-    vi.mocked(useIsMobile).mockReturnValue(true);
+    useIsMobile.mockReturnValue(true);
 
     const { MessageBlock } = await import("./MessageBlock.js");
     useSnapshotStore.getState().ingestSnapshot(seed([makeAssistantMessage("m1")], false));

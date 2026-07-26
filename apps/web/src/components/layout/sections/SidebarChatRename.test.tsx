@@ -13,9 +13,17 @@
  *   - Escape → onCancel, onCommit NOT called;
  *   - Enter with a changed value → onCommit(trimmed).
  */
-import { describe, it, expect, vi } from "vitest";
-import { render, fireEvent } from "@testing-library/react";
-import { SidebarChatRename } from "./SidebarChatRename.js";
+import { beforeAll, describe, it, expect, mock } from "bun:test";
+import { useDomEnv } from "../../../../test/dom-env.js";
+
+useDomEnv();
+const { render, fireEvent } = await import("@testing-library/react");
+
+let SidebarChatRename: typeof import("./SidebarChatRename.js").SidebarChatRename;
+
+beforeAll(async () => {
+	({ SidebarChatRename } = await import("./SidebarChatRename.js"));
+});
 
 const CLASS = "rename-input";
 
@@ -30,13 +38,13 @@ describe("SidebarChatRename", () => {
   });
 
   it("blur with a changed value commits onCommit with the trimmed value", () => {
-    const onCommit = vi.fn();
-    const onCancel = vi.fn();
+		const onCommit = mock();
+		const onCancel = mock();
     const { getByDisplayValue } = render(
       <SidebarChatRename initialValue="My Chat" onCommit={onCommit} onCancel={onCancel} className={CLASS} />,
     );
     const input = getByDisplayValue("My Chat");
-    fireEvent.change(input, { target: { value: "  Renamed  " } });
+	    fireEvent.change(input, { target: { value: "  Renamed  " } });
     fireEvent.blur(input);
     expect(onCommit).toHaveBeenCalledTimes(1);
     expect(onCommit).toHaveBeenLastCalledWith("Renamed");
@@ -44,8 +52,8 @@ describe("SidebarChatRename", () => {
   });
 
   it("blur with an UNCHANGED value aborts via onCancel (no onCommit)", () => {
-    const onCommit = vi.fn();
-    const onCancel = vi.fn();
+		const onCommit = mock();
+		const onCancel = mock();
     const { getByDisplayValue } = render(
       <SidebarChatRename initialValue="My Chat" onCommit={onCommit} onCancel={onCancel} className={CLASS} />,
     );
@@ -55,39 +63,39 @@ describe("SidebarChatRename", () => {
   });
 
   it("blur with an empty / whitespace-only value aborts via onCancel (no onCommit)", () => {
-    const onCommit = vi.fn();
-    const onCancel = vi.fn();
+		const onCommit = mock();
+		const onCancel = mock();
     const { getByDisplayValue } = render(
       <SidebarChatRename initialValue="My Chat" onCommit={onCommit} onCancel={onCancel} className={CLASS} />,
     );
     const input = getByDisplayValue("My Chat");
-    fireEvent.change(input, { target: { value: "   " } });
+	    fireEvent.change(input, { target: { value: "   " } });
     fireEvent.blur(input);
     expect(onCommit).not.toHaveBeenCalled();
     expect(onCancel).toHaveBeenCalledTimes(1);
   });
 
   it("Escape cancels via onCancel (no onCommit)", () => {
-    const onCommit = vi.fn();
-    const onCancel = vi.fn();
+		const onCommit = mock();
+		const onCancel = mock();
     const { getByDisplayValue } = render(
       <SidebarChatRename initialValue="My Chat" onCommit={onCommit} onCancel={onCancel} className={CLASS} />,
     );
     const input = getByDisplayValue("My Chat");
-    fireEvent.change(input, { target: { value: "Renamed" } });
+	    fireEvent.change(input, { target: { value: "Renamed" } });
     fireEvent.keyDown(input, { key: "Escape" });
     expect(onCommit).not.toHaveBeenCalled();
     expect(onCancel).toHaveBeenCalledTimes(1);
   });
 
   it("Enter with a changed value commits onCommit with the trimmed value", () => {
-    const onCommit = vi.fn();
-    const onCancel = vi.fn();
+		const onCommit = mock();
+		const onCancel = mock();
     const { getByDisplayValue } = render(
       <SidebarChatRename initialValue="My Chat" onCommit={onCommit} onCancel={onCancel} className={CLASS} />,
     );
     const input = getByDisplayValue("My Chat");
-    fireEvent.change(input, { target: { value: "Renamed" } });
+	    fireEvent.change(input, { target: { value: "Renamed" } });
     fireEvent.keyDown(input, { key: "Enter" });
     expect(onCommit).toHaveBeenCalledTimes(1);
     expect(onCommit).toHaveBeenLastCalledWith("Renamed");

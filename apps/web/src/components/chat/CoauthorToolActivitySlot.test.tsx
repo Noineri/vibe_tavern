@@ -10,19 +10,32 @@
  * `write_profile`. Historical rows without input show their summary but must
  * not fall back to printing the full proposed snapshot.
  */
-import { describe, it, expect, vi, afterEach } from "vitest";
-import { render, fireEvent } from "@testing-library/react";
-import { CoauthorToolActivitySlot, ToolActivityCard } from "./CoauthorToolActivitySlot.js";
+import { beforeAll, describe, it, expect, mock, afterEach } from "bun:test";
 import { useCoauthorTurnStore, type CoauthorToolActivity } from "../../stores/coauthor-turn-store.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
 import type { AppMessage } from "../../api/types.js";
 import { brandId, type ChatBranchId, type ChatId, type MessageId, type MessageVariantId } from "@vibe-tavern/domain";
+import { useDomEnv } from "../../../test/dom-env.js";
+
+useDomEnv();
+
+const realI18nContext = await import("../../i18n/context.js");
 
 // Mock useT at the module boundary — the card imports i18n for labels.
 // Returns the key verbatim so assertions can match on stable key strings.
-vi.mock("../../i18n/context.js", () => ({
+mock.module("../../i18n/context.js", () => ({
+	...realI18nContext,
 	useT: () => ({ t: (key: string) => key, tDynamic: (key: string) => key, locale: "en", setLocale: () => {}, ready: true }),
 }));
+
+let CoauthorToolActivitySlot: typeof import("./CoauthorToolActivitySlot.js").CoauthorToolActivitySlot;
+let ToolActivityCard: typeof import("./CoauthorToolActivitySlot.js").ToolActivityCard;
+let render: typeof import("@testing-library/react").render;
+let fireEvent: typeof import("@testing-library/react").fireEvent;
+beforeAll(async () => {
+	({ render, fireEvent } = await import("@testing-library/react"));
+	({ CoauthorToolActivitySlot, ToolActivityCard } = await import("./CoauthorToolActivitySlot.js"));
+});
 
 // A full cumulative profile.md (what `proposed` carries for profile-target ops).
 // Section ops must NOT render this verbatim — only write_profile may.

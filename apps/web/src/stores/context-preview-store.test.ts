@@ -9,23 +9,22 @@
  * keeps fork/activate/delete correct without explicit invalidation.
  *
  * `fetchContextPreview` (the network call) is mocked via the spread-real-then-
- * override pattern so the rest of chat-api stays genuine (see AGENTS gotcha on
- * vi.mock being hoisted — `importOriginal` bypasses it).
+ * override pattern so the rest of chat-api stays genuine.
  */
-import { describe, test, expect, beforeEach, vi } from "vitest";
+import { describe, test, expect, beforeEach, mock } from "bun:test";
 import type { AssemblePromptResponse } from "@vibe-tavern/domain";
-import { useContextPreviewStore } from "./context-preview-store.js";
 
 type FetchImpl = (chatId: string, branchId: string, signal?: AbortSignal) => Promise<{ target: { chatId: string; branchId: string }; preview: AssemblePromptResponse | null }>;
 let mockFetch: FetchImpl | null = null;
-vi.mock("../api/chat-api.js", async (importOriginal) => {
-  const real = await importOriginal() as typeof import("../api/chat-api.js");
-  return {
-    ...real,
-    fetchContextPreview: ((chatId: string, branchId: string, signal?: AbortSignal) =>
-      mockFetch ? mockFetch(chatId, branchId, signal) : real.fetchContextPreview(chatId as never, branchId as never, signal)) as FetchImpl,
-  };
+const realChatApi = await import("../api/chat-api.js");
+mock.module("../api/chat-api.js", () => {
+	return {
+		...realChatApi,
+		fetchContextPreview: ((chatId: string, branchId: string, signal?: AbortSignal) =>
+			mockFetch ? mockFetch(chatId, branchId, signal) : realChatApi.fetchContextPreview(chatId as never, branchId as never, signal)) as FetchImpl,
+	};
 });
+const { useContextPreviewStore } = await import("./context-preview-store.js");
 
 function makePreview(total: number): AssemblePromptResponse {
   return { layers: [], tokenAccounting: { total } } as unknown as AssemblePromptResponse;

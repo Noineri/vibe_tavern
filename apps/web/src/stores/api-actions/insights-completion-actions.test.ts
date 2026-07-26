@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, mock, test } from "bun:test";
 import type { ChatId } from "@vibe-tavern/domain";
 import type {
   AppMessage,
@@ -9,25 +9,25 @@ import type {
 } from "../../app-client.js";
 import { useSnapshotStore } from "../snapshot-store.js";
 import { useSceneGenerationStore } from "../scene-generation-store.js";
-import {
-  cancelInsightsCompletionRefresh,
-  findInsightsCompletionTarget,
-  refreshInsightsCompletionAction,
-  startInsightsCompletionRefreshFromSnapshot,
-} from "./insights-completion-actions.js";
 
-const mocks = vi.hoisted(() => ({
-  refreshInsightsCompletion: vi.fn(),
-  logClientSendDebug: vi.fn(),
+const mocks = {
+  refreshInsightsCompletion: mock(),
+  logClientSendDebug: mock(),
+};
+
+const realAppClient = await import("../../app-client.js");
+mock.module("../../app-client.js", () => ({
+  ...realAppClient,
+  refreshInsightsCompletion: mocks.refreshInsightsCompletion,
+  logClientSendDebug: mocks.logClientSendDebug,
 }));
 
-vi.mock("../../app-client.js", async (importOriginal) => {
-  const actual = await importOriginal() as typeof import("../../app-client.js");
-  return {
-    ...actual,
-    refreshInsightsCompletion: mocks.refreshInsightsCompletion,
-    logClientSendDebug: mocks.logClientSendDebug,
-  };
+let cancelInsightsCompletionRefresh: typeof import("./insights-completion-actions.js").cancelInsightsCompletionRefresh;
+let findInsightsCompletionTarget: typeof import("./insights-completion-actions.js").findInsightsCompletionTarget;
+let refreshInsightsCompletionAction: typeof import("./insights-completion-actions.js").refreshInsightsCompletionAction;
+let startInsightsCompletionRefreshFromSnapshot: typeof import("./insights-completion-actions.js").startInsightsCompletionRefreshFromSnapshot;
+beforeAll(async () => {
+  ({ cancelInsightsCompletionRefresh, findInsightsCompletionTarget, refreshInsightsCompletionAction, startInsightsCompletionRefreshFromSnapshot } = await import("./insights-completion-actions.js"));
 });
 
 const chatId = "chat_1" as ChatId;
@@ -206,11 +206,11 @@ describe("committed assistant target discovery", () => {
 
     startInsightsCompletionRefreshFromSnapshot(chatId, { messages: [message(TARGET_A)] });
 
-    await vi.waitFor(() => expect(mocks.refreshInsightsCompletion).toHaveBeenCalledWith(
+    expect(mocks.refreshInsightsCompletion).toHaveBeenCalledWith(
       chatId,
       TARGET_A,
       expect.objectContaining({ signal: expect.any(AbortSignal) }),
-    ));
+    );
   });
 
   test("after stream abort, refreshes only when the committed snapshot contains a new assistant target", async () => {
@@ -226,11 +226,11 @@ describe("committed assistant target discovery", () => {
       TARGET_A,
     );
 
-    await vi.waitFor(() => expect(mocks.refreshInsightsCompletion).toHaveBeenCalledWith(
+    expect(mocks.refreshInsightsCompletion).toHaveBeenCalledWith(
       chatId,
       TARGET_B,
       expect.objectContaining({ signal: expect.any(AbortSignal) }),
-    ));
+    );
   });
 
   test("starts no refresh when the response has no matching assistant or both insights are disabled", () => {

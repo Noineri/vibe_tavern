@@ -1,5 +1,7 @@
-import { describe, test, expect, beforeAll, afterAll, afterEach, beforeEach, vi } from "vitest";
-import { render, cleanup, act } from "@testing-library/react";
+import { describe, test, expect, beforeAll, beforeEach, mock } from "bun:test";
+import { useDomEnv } from "../../../test/dom-env.js";
+
+useDomEnv();
 
 /**
  * Variant-carousel gating invariant for the mobile message actions row.
@@ -53,11 +55,15 @@ const STABLE_CONTROLLER = {
   handleRenameBranch: NOOP_ASYNC,
 };
 
-vi.mock("../../hooks/use-chat-controller.js", () => ({
+const realChatController = await import("../../hooks/use-chat-controller.js");
+const realI18nContext = await import("../../i18n/context.js");
+mock.module("../../hooks/use-chat-controller.js", () => ({
+	...realChatController,
   useChatController: () => STABLE_CONTROLLER,
 }));
 
-vi.mock("../../i18n/context.js", () => ({
+mock.module("../../i18n/context.js", () => ({
+	...realI18nContext,
   useT: () => ({ t: (key: string) => key, tDynamic: (key: string) => key, locale: "en", setLocale: NOOP, ready: true }),
 }));
 
@@ -65,7 +71,12 @@ vi.mock("../../i18n/context.js", () => ({
 // Scoped happy-dom + matchMedia mocked to MOBILE (so useIsMobile() === true).
 // ---------------------------------------------------------------------------
 
-beforeAll(() => {
+let render: typeof import("@testing-library/react").render;
+let act: typeof import("@testing-library/react").act;
+let MessageBlockModule: typeof import("./MessageBlock.js");
+let SnapshotStoreModule: typeof import("../../stores/snapshot-store.js");
+let ChatStoreModule: typeof import("../../stores/chat-store.js");
+beforeAll(async () => {
   if (typeof window !== "undefined") {
     // Mobile viewport: the (max-width: 768px) query must match.
     window.matchMedia = (q: string) => ({
@@ -83,30 +94,22 @@ beforeAll(() => {
       (window as { ResizeObserver?: unknown }).ResizeObserver = (globalThis as { ResizeObserver?: unknown }).ResizeObserver;
     }
   }
-});
-
-afterAll(() => {
-});
-
-afterEach(() => {
-  cleanup();
+  ({ render, act } = await import("@testing-library/react"));
+  MessageBlockModule = await import("./MessageBlock.js");
+  SnapshotStoreModule = await import("../../stores/snapshot-store.js");
+  ChatStoreModule = await import("../../stores/chat-store.js");
 });
 
 // ---------------------------------------------------------------------------
 // Dynamic imports AFTER mocks.
 // ---------------------------------------------------------------------------
 
-const MessageBlockModule = import("./MessageBlock.js");
-const SnapshotStoreModule = import("../../stores/snapshot-store.js");
-const ChatStoreModule = import("../../stores/chat-store.js");
-
 async function loadModules() {
-  const [{ MessageBlock }, snapshotStore, chatStore] = await Promise.all([
-    MessageBlockModule as Promise<{ MessageBlock: React.ComponentType<{ messageId: string; index: number; isFirstAssistant: boolean; isLast: boolean; prevRole: string | null }> }>,
-    SnapshotStoreModule as Promise<typeof import("../../stores/snapshot-store.js")>,
-    ChatStoreModule as Promise<typeof import("../../stores/chat-store.js")>,
-  ]);
-  return { MessageBlock, snapshotStore, chatStore };
+  return {
+    MessageBlock: MessageBlockModule.MessageBlock,
+    snapshotStore: SnapshotStoreModule,
+    chatStore: ChatStoreModule,
+  };
 }
 
 // ---------------------------------------------------------------------------

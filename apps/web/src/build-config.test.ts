@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test, vi } from "vitest";
+import { afterEach, describe, expect, test } from "bun:test";
 
 const WEB_ENV_KEYS = [
 	"RP_WEB_APP_VERSION",
@@ -11,18 +11,33 @@ const WEB_ENV_KEYS = [
 	"RP_WEB_FORCE_FIRST_RUN",
 ] as const;
 
+const originalEnv = new Map(WEB_ENV_KEYS.map((key) => [key, process.env[key]]));
+let importVersion = 0;
+
+function setEnv(key: typeof WEB_ENV_KEYS[number], value: string): void {
+	Object.defineProperty(process.env, key, { configurable: true, value, writable: true });
+}
+
+function importBuildConfig() {
+	importVersion += 1;
+	return import(`./build-config.js?wave6=${importVersion}`);
+}
+
 afterEach(() => {
-	vi.unstubAllEnvs();
-	vi.resetModules();
+	for (const key of WEB_ENV_KEYS) {
+		const value = originalEnv.get(key);
+		if (value === undefined) delete process.env[key];
+		else setEnv(key, value);
+	}
 });
 
 describe("build configuration", () => {
 	test("uses browser-safe defaults when web build variables are empty", async () => {
 		// Given
-		for (const key of WEB_ENV_KEYS) vi.stubEnv(key, "");
+		for (const key of WEB_ENV_KEYS) setEnv(key, "");
 
 		// When
-		const buildConfig = await import("./build-config.js");
+		const buildConfig = await importBuildConfig();
 
 		// Then
 		expect(buildConfig.API_URL).toBeNull();
@@ -40,17 +55,17 @@ describe("build configuration", () => {
 
 	test("reads configured web build variables at module initialization", async () => {
 		// Given
-		vi.stubEnv("RP_WEB_API_URL", "https://api.example.test");
-		vi.stubEnv("RP_WEB_APP_VERSION", "9.8.7");
-		vi.stubEnv("RP_WEB_UPDATE_API_BASE", "https://updates.example.test/");
-		vi.stubEnv("RP_WEB_MODE", "development");
-		vi.stubEnv("RP_WEB_DEFAULT_PROVIDER_LABEL", "Local provider");
-		vi.stubEnv("RP_WEB_DEFAULT_BASE_URL", "https://models.example.test/v1");
-		vi.stubEnv("RP_WEB_DEFAULT_MODEL", "example-model");
-		vi.stubEnv("RP_WEB_FORCE_FIRST_RUN", "true");
+		setEnv("RP_WEB_API_URL", "https://api.example.test");
+		setEnv("RP_WEB_APP_VERSION", "9.8.7");
+		setEnv("RP_WEB_UPDATE_API_BASE", "https://updates.example.test/");
+		setEnv("RP_WEB_MODE", "development");
+		setEnv("RP_WEB_DEFAULT_PROVIDER_LABEL", "Local provider");
+		setEnv("RP_WEB_DEFAULT_BASE_URL", "https://models.example.test/v1");
+		setEnv("RP_WEB_DEFAULT_MODEL", "example-model");
+		setEnv("RP_WEB_FORCE_FIRST_RUN", "true");
 
 		// When
-		const buildConfig = await import("./build-config.js");
+		const buildConfig = await importBuildConfig();
 
 		// Then
 		expect(buildConfig.API_URL).toBe("https://api.example.test");
@@ -66,10 +81,10 @@ describe("build configuration", () => {
 
 	test("only enables forced first run for the literal true value", async () => {
 		// Given
-		vi.stubEnv("RP_WEB_FORCE_FIRST_RUN", "TRUE");
+		setEnv("RP_WEB_FORCE_FIRST_RUN", "TRUE");
 
 		// When
-		const buildConfig = await import("./build-config.js");
+		const buildConfig = await importBuildConfig();
 
 		// Then
 		expect(buildConfig.FORCE_FIRST_RUN).toBe(false);

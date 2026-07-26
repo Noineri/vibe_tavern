@@ -16,9 +16,8 @@ import { useState } from "react";
  * (SIDEBAR_GOD_OBJECT_AUDIT step 3c) so the commit/abort logic is unit-testable
  * in isolation — the context menu that triggers rename is a Radix
  * `DropdownMenu` whose `Content` does not mount under happy-dom (see
- * `DropdownSelect.test.tsx`'s skip note, re-verified to still hold under vitest),
- * so the only way to pin the rename contract in a unit test is to lift the input
- * into its own component.
+ * `DropdownSelect.test.tsx`'s skip note), so the only way to pin the rename
+ * contract in a unit test is to lift the input into its own component.
  */
 export function SidebarChatRename({
   initialValue,

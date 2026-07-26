@@ -9,7 +9,7 @@
  * Option B (per SURFACE_REGISTRY_REPORT fix-step 1): returns DRESSED ELEMENTS
  * rather than bare component types, so AppShell is a pure single-lookup
  * consumer with zero per-component prop knowledge. Reads the stores directly;
- * tests set store state via `getState()` (no vi.mock needed).
+ * tests set store state via `getState()`.
  *
  * This file is `.tsx` (the report draft first had `.ts`) because option B
  * returns JSX elements — a direct consequence of choosing dressed elements.

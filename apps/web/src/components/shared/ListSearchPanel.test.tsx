@@ -8,13 +8,17 @@
  * routinely exceeds 12. The scrollable Popover.Content (max-h-[180px]
  * overflow-y-auto) bounds the height; a slice was pure harm.
  *
- * Runner: vitest. DOM via happy-dom.
+ * Runner: bun:test with scoped happy-dom.
  */
-import { describe, it, expect, vi } from "vitest";
-import { render, fireEvent, screen } from "@testing-library/react";
-import { ListSearchPanel } from "./ListSearchPanel.js";
+import { beforeAll, describe, it, expect, mock } from "bun:test";
+import { render, fireEvent, within } from "@testing-library/react";
+import { useDomEnv } from "../../../test/dom-env.js";
 
-vi.mock("../../i18n/context.js", () => ({
+useDomEnv();
+
+const realI18nContext = await import("../../i18n/context.js");
+mock.module("../../i18n/context.js", () => ({
+  ...realI18nContext,
   useT: () => ({
     t: (k: string) => k,
     tDynamic: (k: string) => k,
@@ -24,13 +28,20 @@ vi.mock("../../i18n/context.js", () => ({
   }),
 }));
 
+let ListSearchPanel: typeof import("./ListSearchPanel.js").ListSearchPanel;
+let userEvent: typeof import("@testing-library/user-event").default;
+beforeAll(async () => {
+  ({ ListSearchPanel } = await import("./ListSearchPanel.js"));
+  ({ default: userEvent } = await import("@testing-library/user-event"));
+});
+
 function makeTags(n: number, prefix = "tag"): string[] {
   return Array.from({ length: n }, (_, i) => `${prefix}${i}`);
 }
 
 describe("ListSearchPanel suggestions", () => {
   it("renders ALL available tags — no artificial cap", async () => {
-    render(
+		const view = render(
       <ListSearchPanel
         query=""
         onQueryChange={() => {}}
@@ -39,14 +50,15 @@ describe("ListSearchPanel suggestions", () => {
         availableTags={makeTags(20)}
       />,
     );
-    fireEvent.focus(screen.getByPlaceholderText("search_tags_placeholder"));
-    // 20 tags, none selected, empty query → all 20 must appear.
-    const buttons = await screen.findAllByRole("button");
+		const panel = within(view.baseElement);
+		await userEvent.setup().click(panel.getByPlaceholderText("search_tags_placeholder"));
+		// 20 tags, none selected, empty query → all 20 must appear.
+		const buttons = await panel.findAllByRole("button");
     expect(buttons).toHaveLength(20);
   });
 
   it("narrows the pool by substring as you type", async () => {
-    render(
+		const view = render(
       <ListSearchPanel
         query=""
         onQueryChange={() => {}}
@@ -55,15 +67,17 @@ describe("ListSearchPanel suggestions", () => {
         availableTags={["apple", "apricot", "banana", "cherry"]}
       />,
     );
-    const input = screen.getByPlaceholderText("search_tags_placeholder");
-    fireEvent.focus(input);
-    fireEvent.change(input, { target: { value: "ap" } });
-    const buttons = await screen.findAllByRole("button");
+		const panel = within(view.baseElement);
+		const input = panel.getByPlaceholderText("search_tags_placeholder");
+		const user = userEvent.setup();
+		await user.click(input);
+		await user.type(input, "ap");
+		const buttons = await panel.findAllByRole("button");
     expect(buttons).toHaveLength(2); // apple + apricot
   });
 
   it("renders a distinct secondary combobox with its own placeholder", () => {
-    render(
+		const view = render(
       <ListSearchPanel
         query=""
         onQueryChange={() => {}}
@@ -79,9 +93,10 @@ describe("ListSearchPanel suggestions", () => {
     );
     // Both comboxes render with their own (custom) placeholders → the caller
     // can relabel "tags" to "keys" and run a second, independent pool.
-    expect(screen.getByPlaceholderText("Primary")).toBeTruthy();
-    expect(screen.getByPlaceholderText("Secondary")).toBeTruthy();
+		const panel = within(view.baseElement);
+		expect(panel.getByPlaceholderText("Primary")).toBeTruthy();
+		expect(panel.getByPlaceholderText("Secondary")).toBeTruthy();
     // The sidebar default is not leaked when a custom placeholder is set.
-    expect(screen.queryByPlaceholderText("search_tags_placeholder")).toBeNull();
+		expect(panel.queryByPlaceholderText("search_tags_placeholder")).toBeNull();
   });
 });

@@ -8,14 +8,20 @@
  * disabled and script-lifecycle invariants are covered structurally: the badge
  * reads ONLY ctx.diceRolls (no dice-store / diceEnabled / live-script reads).
  */
-import { describe, it, expect, vi } from "vitest";
-import { render } from "@testing-library/react";
+import { beforeAll, describe, it, expect, mock } from "bun:test";
 import React from "react";
 import { brandId, type DiceRollId, type DiceRollSnapshot } from "@vibe-tavern/domain";
-import { DiceRollsBadge, DiceRollDetailContent, diceRollsMetaDescriptor } from "./dice-rolls.js";
+import { useDomEnv } from "../../../../test/dom-env.js";
+
+useDomEnv();
+
+const realReactI18next = await import("react-i18next");
+const realI18nContext = await import("../../../i18n/context.js");
+const realMobileHook = await import("../../../hooks/use-mobile.js");
 
 // DiceFaces uses react-i18next directly; mock it (mirror dice-faces.test.tsx).
-vi.mock("react-i18next", () => ({
+mock.module("react-i18next", () => ({
+	...realReactI18next,
   useTranslation: () => ({
     t: (key: string, options?: Record<string, unknown>) => {
       if (key === "dice_faces_enumeration") return `${options?.notation}: ${options?.faces}`;
@@ -27,7 +33,8 @@ vi.mock("react-i18next", () => ({
 }));
 
 // dice-rolls.tsx uses useT from i18n/context.
-vi.mock("../../../i18n/context.js", () => ({
+mock.module("../../../i18n/context.js", () => ({
+	...realI18nContext,
   useT: () => ({
     t: (key: string, options?: Record<string, unknown>) => {
       if (key === "dice_meta_checks") return `${options?.count} checks`;
@@ -43,7 +50,16 @@ vi.mock("../../../i18n/context.js", () => ({
   }),
 }));
 
-vi.mock("../../../hooks/use-mobile.js", () => ({ useIsMobile: () => false }));
+mock.module("../../../hooks/use-mobile.js", () => ({ ...realMobileHook, useIsMobile: () => false }));
+
+let DiceRollsBadge: typeof import("./dice-rolls.js").DiceRollsBadge;
+let DiceRollDetailContent: typeof import("./dice-rolls.js").DiceRollDetailContent;
+let diceRollsMetaDescriptor: typeof import("./dice-rolls.js").diceRollsMetaDescriptor;
+let render: typeof import("@testing-library/react").render;
+beforeAll(async () => {
+	({ render } = await import("@testing-library/react"));
+	({ DiceRollsBadge, DiceRollDetailContent, diceRollsMetaDescriptor } = await import("./dice-rolls.js"));
+});
 
 let n = 0;
 function makeRoll(overrides: Partial<DiceRollSnapshot> = {}): DiceRollSnapshot {

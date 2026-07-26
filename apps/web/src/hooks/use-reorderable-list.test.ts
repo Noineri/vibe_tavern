@@ -11,10 +11,21 @@
  * consumer returned; once the committed `items` catch up and the equality
  * check passes, `displayItems` becomes the `items` prop again.
  */
-import { describe, expect, test, vi } from "vitest";
-import { act, renderHook } from "@testing-library/react";
+import { beforeAll, describe, expect, mock, test } from "bun:test";
 import type { DragEndEvent, DragStartEvent } from "@dnd-kit/core";
-import { useReorderableList } from "./use-reorderable-list.js";
+import { useDomEnv } from "../../test/dom-env.js";
+
+useDomEnv();
+
+let act: typeof import("@testing-library/react").act;
+let renderHook: typeof import("@testing-library/react").renderHook;
+
+let useReorderableList: typeof import("./use-reorderable-list.js").useReorderableList;
+
+beforeAll(async () => {
+	({ act, renderHook } = await import("@testing-library/react"));
+	({ useReorderableList } = await import("./use-reorderable-list.js"));
+});
 
 interface Item {
 	id: string;
@@ -32,7 +43,7 @@ function drop(result: { handleDragEnd: (e: DragEndEvent) => void }, activeId: st
 describe("useReorderableList", () => {
 	test("sets the optimistic array on drop, then clears once items catch up", () => {
 		const optimisticArr = [A, C, B];
-		const onReorder = vi.fn(() => ({
+		const onReorder = mock(() => ({
 			optimisticItems: optimisticArr,
 			persist: () => Promise.resolve(),
 		}));
@@ -63,7 +74,7 @@ describe("useReorderableList", () => {
 
 	test("rolls back the optimistic override when persist rejects", async () => {
 		const optimisticArr = [A, C, B];
-		const onReorder = vi.fn(() => ({
+		const onReorder = mock(() => ({
 			optimisticItems: optimisticArr,
 			persist: () => Promise.reject(new Error("boom")),
 		}));
@@ -88,8 +99,8 @@ describe("useReorderableList", () => {
 	});
 
 	test("no-op drop (active === over) calls neither onReorder nor persist", () => {
-		const persist = vi.fn(() => Promise.resolve());
-		const onReorder = vi.fn(() => ({ optimisticItems: [A, C, B], persist }));
+		const persist = mock(() => Promise.resolve());
+		const onReorder = mock(() => ({ optimisticItems: [A, C, B], persist }));
 		const initial = [A, B, C];
 		const { result } = renderHook(
 			({ items }) => useReorderableList({ items, getId: (i) => i.id, onReorder }),
@@ -104,7 +115,7 @@ describe("useReorderableList", () => {
 	});
 
 	test("dragStart exposes the dragged item as activeDragItem; dragEnd/cancel clear it", () => {
-		const onReorder = vi.fn(() => ({ optimisticItems: [A, C, B], persist: () => Promise.resolve() }));
+		const onReorder = mock(() => ({ optimisticItems: [A, C, B], persist: () => Promise.resolve() }));
 		const initial = [A, B, C];
 		const { result } = renderHook(
 			({ items }) => useReorderableList({ items, getId: (i) => i.id, onReorder }),
@@ -134,13 +145,13 @@ describe("useReorderableList", () => {
 
 	test("the custom itemsEqual gates the reconcile clear (Lore's position-section case)", () => {
 		const optimisticArr = [A, C, B];
-		const onReorder = vi.fn(() => ({
+		const onReorder = mock(() => ({
 			optimisticItems: optimisticArr,
 			persist: () => Promise.resolve(),
 		}));
 		// Custom equal that refuses to match — models a semantic (e.g. position
 		// section) that the caught-up order alone does not satisfy.
-		const itemsEqual = vi.fn(() => false);
+		const itemsEqual = mock(() => false);
 		const initial = [A, B, C];
 		const { result, rerender } = renderHook(
 			({ items }) => useReorderableList({ items, getId: (i) => i.id, onReorder, itemsEqual }),

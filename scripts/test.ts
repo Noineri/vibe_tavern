@@ -55,7 +55,7 @@ const TEST_SUITES = [
 	{
 		name: "web",
 		cwd: join(ROOT, "apps", "web"),
-		command: [BUN, "run", "test", "--", "--reporter=minimal"],
+		command: [BUN, "run", "test"],
 	},
 ] as const satisfies readonly TestSuite[];
 

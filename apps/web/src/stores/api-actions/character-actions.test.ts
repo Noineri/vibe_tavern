@@ -1,23 +1,29 @@
-import { beforeEach, describe, expect, test, vi } from "vitest";
+import { beforeAll, beforeEach, describe, expect, mock, test } from "bun:test";
 import type { ChatId } from "@vibe-tavern/domain";
 import type { AppSnapshot } from "../../app-client.js";
 import { useChatStore } from "../chat-store.js";
 import { useSnapshotStore } from "../snapshot-store.js";
-import { createCharacterAction } from "./character-actions.js";
 
 // Mock only `createCharacter` (the RPC); every other app-client export stays
 // real (spread) so unrelated actions in this module are unaffected.
-const { createCharacterMock } = vi.hoisted(() => ({
-	createCharacterMock: vi.fn(),
+const createCharacterMock = mock();
+const fetchBootstrapMock = mock(async () => undefined);
+const realAppClient = await import("../../app-client.js");
+const realBootstrapActions = await import("./bootstrap-actions.js");
+
+mock.module("../../app-client.js", () => ({
+	...realAppClient,
+	createCharacter: createCharacterMock,
 }));
-vi.mock("../../app-client.js", async (importOriginal) => {
-	const actual = await importOriginal() as typeof import("../../app-client.js");
-	return { ...actual, createCharacter: createCharacterMock };
-});
 // Stub the fire-and-forget bootstrap so it can't race the assertions.
-vi.mock("./bootstrap-actions.js", async (importOriginal) => {
-	const actual = await importOriginal() as typeof import("./bootstrap-actions.js");
-	return { ...actual, fetchBootstrapAction: vi.fn().mockResolvedValue(undefined) };
+mock.module("./bootstrap-actions.js", () => ({
+	...realBootstrapActions,
+	fetchBootstrapAction: fetchBootstrapMock,
+}));
+
+let createCharacterAction: typeof import("./character-actions.js").createCharacterAction;
+beforeAll(async () => {
+	({ createCharacterAction } = await import("./character-actions.js"));
 });
 
 const chatId = (id: string) => id as ChatId;

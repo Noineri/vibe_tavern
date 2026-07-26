@@ -20,19 +20,27 @@
  *   - the layout props (`fill`, `compact`, `wrap`, `mobileFill`) apply their
  *     container classes so call sites' layouts does not regress
  */
-import { describe, it, expect, vi } from "vitest";
-import { render, fireEvent, getAllByRole } from "@testing-library/react";
+import { beforeAll, describe, it, expect, mock } from "bun:test";
+import { render, fireEvent } from "@testing-library/react";
+import { useDomEnv } from "../../../test/dom-env.js";
+
+useDomEnv();
 
 // CustomTooltip (Radix Tooltip) needs a TooltipProvider ancestor that the
 // isolated render here doesn't mount. The app mounts one globally; tests mock
 // it to a passthrough (same pattern as VibeMdView.test.tsx /
 // CoauthorInputArea.test.tsx). This test cares that SegmentedControl correctly
 // delegates the segment into the tooltip slot — not about tooltip behavior.
-vi.mock("./Tooltip.js", () => ({
+const realTooltip = await import("./Tooltip.js");
+mock.module("./Tooltip.js", () => ({
+	...realTooltip,
 	CustomTooltip: ({ children }: { children: React.ReactNode }) => children,
 }));
 
-import { SegmentedControl } from "./SegmentedControl.js";
+let SegmentedControl: typeof import("./SegmentedControl.js").SegmentedControl;
+beforeAll(async () => {
+	({ SegmentedControl } = await import("./SegmentedControl.js"));
+});
 
 
 const opts = [
@@ -63,7 +71,7 @@ describe("SegmentedControl — structure", () => {
 
 describe("SegmentedControl — selection", () => {
 	it("clicking an inactive segment fires onChange with its value", () => {
-		const onChange = vi.fn();
+		const onChange = mock();
 		const { getByText } = render(
 			<SegmentedControl value="a" options={opts} onChange={onChange} />,
 		);
@@ -76,7 +84,7 @@ describe("SegmentedControl — selection", () => {
 		// The radio invariant. Today the component fires onChange(sameValue) on
 		// re-click; under RadioGroup the click is a no-op. Both are acceptable
 		// so long as onChange is NEVER called with "" / null / undefined.
-		const onChange = vi.fn();
+		const onChange = mock();
 		const { getByText } = render(
 			<SegmentedControl value="b" options={opts} onChange={onChange} />,
 		);
@@ -89,7 +97,7 @@ describe("SegmentedControl — selection", () => {
 	});
 
 	it("disabled blocks every segment", () => {
-		const onChange = vi.fn();
+		const onChange = mock();
 		const { getByText } = render(
 			<SegmentedControl value="a" options={opts} onChange={onChange} disabled />,
 		);
@@ -98,7 +106,7 @@ describe("SegmentedControl — selection", () => {
 	});
 
 	it("an individually disabled option cannot be selected", () => {
-		const onChange = vi.fn();
+		const onChange = mock();
 		const { getByRole } = render(
 			<SegmentedControl
 				value="a"
@@ -150,7 +158,7 @@ describe("SegmentedControl — option slots (load-bearing for VersionSwitcher)",
 	});
 
 	it("clicking a trailing action does not change the segment selection", () => {
-		const onChange = vi.fn();
+		const onChange = mock();
 		const { getByLabelText } = render(
 			<SegmentedControl
 				value="a"
@@ -177,7 +185,7 @@ describe("SegmentedControl — option slots (load-bearing for VersionSwitcher)",
 		// CustomTooltip wraps the segment; we only assert the segment still
 		// renders and is interactive. Tooltip-hover behavior is CustomTooltip's
 		// own concern, tested separately if at all.
-		const onChange = vi.fn();
+		const onChange = mock();
 		const { getAllByRole, getByText } = render(
 			<SegmentedControl
 				value="a"

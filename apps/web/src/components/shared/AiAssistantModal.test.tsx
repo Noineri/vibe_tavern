@@ -13,64 +13,71 @@
  * for provider/model persistence and done-metadata capture live next to the
  * extracted hook under `ai-assistant/use-ai-assistant-runner.test.tsx`.
  */
-import { describe, it, expect, beforeEach, vi } from "vitest";
-import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
-import { AiAssistantModal } from "./AiAssistantModal.js";
-import { TooltipProvider } from "./Tooltip.js";
+import { beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
+import { useDomEnv } from "../../../test/dom-env.js";
 import type { AiAssistantChunk, AiAssistantRequestBody, ProviderProfileRecord, UiSettingsRecord } from "../../api/types.js";
-import { useProviderDataStore } from "../../stores/provider-data-store.js";
-import { useBootstrapStore } from "../../stores/api-actions/bootstrap-actions.js";
 
-// ── Module-level mock state (hoisted so the vi.mock factories can read it) ──
-const mockState = vi.hoisted(() => ({
+useDomEnv();
+const { act, fireEvent, render, screen, waitFor } = await import("@testing-library/react");
+
+const mockState = {
   /** Chunks the stream mock will yield on the next call. */
   chunks: [] as AiAssistantChunk[],
   /** Every request body passed to streamAiAssistant, in call order. */
   requests: [] as AiAssistantRequestBody[],
   /** Whether streamAiAssistant should throw on the next call. */
   shouldThrow: false as boolean,
-}));
+};
+const realAppClient = await import("../../app-client.js");
+const realProviderActions = await import("../../stores/api-actions/provider-actions.js");
+const realI18nContext = await import("../../i18n/context.js");
+const realMobileHook = await import("../../hooks/use-mobile.js");
 
 // Mock the app-client barrel: capture request bodies + control the stream.
-vi.mock("../../app-client.js", async (importOriginal) => {
-  const real = await importOriginal() as typeof import("../../app-client.js");
+mock.module("../../app-client.js", () => {
   return {
-    ...real,
-    streamAiAssistant: vi.fn(async function* (body: AiAssistantRequestBody): AsyncGenerator<AiAssistantChunk> {
+    ...realAppClient,
+    streamAiAssistant: mock(async function* (body: AiAssistantRequestBody): AsyncGenerator<AiAssistantChunk> {
       mockState.requests.push(body);
       if (mockState.shouldThrow) throw new Error("network-down");
       for (const chunk of mockState.chunks) yield chunk;
     }),
-    updateUiSettings: vi.fn(async (input: Record<string, unknown>) => {
-      return { ...baseSettings(), ...(input as Partial<UiSettingsRecord>) } as UiSettingsRecord;
-    }),
-    countAiAssistantTokens: vi.fn(async () => ({ tokens: 42, model: "test-model", layerCount: 1, messageCount: 1 })),
-    listAllLorebooks: vi.fn(async () => []),
+    updateUiSettings: mock(async (input: Partial<UiSettingsRecord>) => baseSettings(input)),
+    countAiAssistantTokens: mock(async () => ({ tokens: 42, model: "test-model", layerCount: 1, messageCount: 1 })),
+    listAllLorebooks: mock(async () => []),
   };
 });
 
 // fetchProviderModelsAction must not hit the network.
-vi.mock("../../stores/api-actions/provider-actions.js", async (importOriginal) => {
-  const real = await importOriginal() as typeof import("../../stores/api-actions/provider-actions.js");
+mock.module("../../stores/api-actions/provider-actions.js", () => {
   return {
-    ...real,
-    fetchProviderModelsAction: vi.fn(async () => ({ models: [{ id: "model-a", label: "Model A" }, { id: "model-b", label: "Model B" }] })),
+    ...realProviderActions,
+    fetchProviderModelsAction: mock(async () => ({ models: [{ id: "model-a", label: "Model A" }, { id: "model-b", label: "Model B" }] })),
   };
 });
 
 // useT must return a stable identity t() — the modal builds labels off it.
-vi.mock("../../i18n/context.js", async (importOriginal) => {
-  const real = await importOriginal() as typeof import("../../i18n/context.js");
+mock.module("../../i18n/context.js", () => {
   return {
-    ...real,
+    ...realI18nContext,
     useT: () => ({ t: (key: string) => key, tDynamic: (key: string) => key, locale: "en", setLocale: () => {}, ready: true }),
   };
 });
 
 // Force desktop layout so the Modal (not BottomSheet) path renders.
-vi.mock("../../hooks/use-mobile.js", () => ({
-  useIsMobile: () => false,
-}));
+mock.module("../../hooks/use-mobile.js", () => ({ ...realMobileHook, useIsMobile: () => false }));
+
+let AiAssistantModal: typeof import("./AiAssistantModal.js").AiAssistantModal;
+let TooltipProvider: typeof import("./Tooltip.js").TooltipProvider;
+let useProviderDataStore: typeof import("../../stores/provider-data-store.js").useProviderDataStore;
+let useBootstrapStore: typeof import("../../stores/api-actions/bootstrap-actions.js").useBootstrapStore;
+
+beforeAll(async () => {
+  ({ AiAssistantModal } = await import("./AiAssistantModal.js"));
+  ({ TooltipProvider } = await import("./Tooltip.js"));
+  ({ useProviderDataStore } = await import("../../stores/provider-data-store.js"));
+  ({ useBootstrapStore } = await import("../../stores/api-actions/bootstrap-actions.js"));
+});
 
 // ── Fixtures ──────────────────────────────────────────────────────────────
 
@@ -158,13 +165,12 @@ function setChunks(chunks: AiAssistantChunk[]) {
   mockState.chunks = chunks;
 }
 
-/** Resolve the module mocks so `vi.mocked(...)` can configure them per-test. */
 async function mocks() {
   const m = await import("../../app-client.js");
   return {
-    streamAiAssistant: vi.mocked(m.streamAiAssistant),
-    updateUiSettings: vi.mocked(m.updateUiSettings),
-    fetchProviderModels: vi.mocked((await import("../../stores/api-actions/provider-actions.js")).fetchProviderModelsAction),
+    streamAiAssistant: m.streamAiAssistant,
+    updateUiSettings: m.updateUiSettings,
+    fetchProviderModels: (await import("../../stores/api-actions/provider-actions.js")).fetchProviderModelsAction,
   };
 }
 
@@ -188,7 +194,7 @@ async function generateWithPrompt(prompt: string) {
 // ── Tests ─────────────────────────────────────────────────────────────────
 
 // Reset mock call history between tests (keeps factory implementations).
-beforeEach(() => { vi.clearAllMocks(); });
+beforeEach(() => { mock.clearAllMocks(); });
 
 describe("AiAssistantModal — request construction", () => {
   beforeEach(() => {
@@ -223,7 +229,8 @@ describe("AiAssistantModal — request construction", () => {
     await generateWithPrompt("add a comment");
 
     await waitFor(() => expect(mockState.requests).toHaveLength(1));
-    const body = mockState.requests[0]!;
+    const body = mockState.requests[0];
+    if (body === undefined) throw new Error("Expected the script request to be captured");
     expect(body).toMatchObject({
       mode: "script",
       instruction: "add a comment",
@@ -257,7 +264,8 @@ describe("AiAssistantModal — request construction", () => {
     await generateWithPrompt("rewrite this");
 
     await waitFor(() => expect(mockState.requests).toHaveLength(1));
-    const body = mockState.requests[0]!;
+    const body = mockState.requests[0];
+    if (body === undefined) throw new Error("Expected the lore entry request to be captured");
     expect(body.mode).toBe("lore_entry");
     expect(body.instruction).toBe("rewrite this");
     expect(body.existingContent).toBe("existing entry");
@@ -289,7 +297,8 @@ describe("AiAssistantModal — request construction", () => {
     await act(async () => { fireEvent.click(startBtn); });
 
     await waitFor(() => expect(mockState.requests).toHaveLength(1));
-    const body = mockState.requests[0]!;
+    const body = mockState.requests[0];
+    if (body === undefined) throw new Error("Expected the Markdown import request to be captured");
     expect(body).toMatchObject({
       mode: "md_import",
       instruction: "",
@@ -431,7 +440,7 @@ describe("AiAssistantModal — insert / replace callbacks", () => {
 
   it("insert: appends cleaned output to existing content", async () => {
     setChunks([{ type: "text", text: "new code" }, { type: "done" }]);
-    const onInsert = vi.fn();
+    const onInsert = mock();
 
     renderModal(
       <AiAssistantModal
@@ -458,7 +467,7 @@ describe("AiAssistantModal — insert / replace callbacks", () => {
 
   it("replace: sends only the cleaned output", async () => {
     setChunks([{ type: "text", text: "replacement" }, { type: "done" }]);
-    const onReplace = vi.fn();
+    const onReplace = mock();
 
     renderModal(
       <AiAssistantModal
@@ -535,8 +544,8 @@ describe("AiAssistantModal — quickpill settings sync", () => {
   });
 
   it("apply: calls onSettingsChange with current provider/model + closes", async () => {
-    const onSettingsChange = vi.fn();
-    const onClose = vi.fn();
+    const onSettingsChange = mock();
+    const onClose = mock();
 
     renderModal(
       <AiAssistantModal

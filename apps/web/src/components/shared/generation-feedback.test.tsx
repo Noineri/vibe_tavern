@@ -11,15 +11,20 @@
  * Strings arrive as props. The test harness composes the hook + button +
  * surface directly so each concern is exercised independently.
  *
- * Runner: vitest (apps/web — see vitest.config.ts).
+ * Runner: bun:test with the scoped happy-dom harness.
  */
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, jest, mock, beforeAll, beforeEach, afterEach } from "bun:test";
 import { render, fireEvent, waitFor, act } from "@testing-library/react";
-import {
-	useGenerationTask,
-	GenerateCancelButton,
-	GenerationSurface,
-} from "./generation-feedback.js";
+import { useDomEnv } from "../../../test/dom-env.js";
+
+useDomEnv();
+
+let useGenerationTask: typeof import("./generation-feedback.js").useGenerationTask;
+let GenerateCancelButton: typeof import("./generation-feedback.js").GenerateCancelButton;
+let GenerationSurface: typeof import("./generation-feedback.js").GenerationSurface;
+beforeAll(async () => {
+	({ useGenerationTask, GenerateCancelButton, GenerationSurface } = await import("./generation-feedback.js"));
+});
 
 /** Deferred promise — parks the hook mid-generation so cancel/abort paths
  *  can be observed deterministically without resolving the underlying work. */
@@ -34,7 +39,7 @@ function deferred<T = void>() {
 }
 
 beforeEach(() => {
-	vi.clearAllMocks();
+	mock.clearAllMocks();
 });
 
 // ---------------------------------------------------------------------------
@@ -63,8 +68,8 @@ function TaskHarness({
 describe("useGenerationTask", () => {
 	it("idle → generating → cancel: signal is aborted; onError NOT called", async () => {
 		const { promise } = deferred();
-		const onGenerate = vi.fn<(signal: AbortSignal) => Promise<void>>(() => promise);
-		const onError = vi.fn();
+		const onGenerate = mock<(signal: AbortSignal) => Promise<void>>(() => promise);
+		const onError = mock();
 		const { getByText, getByTestId } = render(
 			<TaskHarness onGenerate={onGenerate} onError={onError} />,
 		);
@@ -83,8 +88,8 @@ describe("useGenerationTask", () => {
 	});
 
 	it("onGenerate rejects (non-abort) → onError called with the error", async () => {
-		const onGenerate = vi.fn<() => Promise<void>>(() => Promise.reject(new Error("boom")));
-		const onError = vi.fn();
+		const onGenerate = mock<() => Promise<void>>(() => Promise.reject(new Error("boom")));
+		const onError = mock();
 		const { getByText } = render(<TaskHarness onGenerate={onGenerate} onError={onError} />);
 
 		fireEvent.click(getByText("start"));
@@ -93,7 +98,7 @@ describe("useGenerationTask", () => {
 
 	it("re-entry guard: a second start() while generating does NOT call onGenerate again", async () => {
 		const { promise } = deferred();
-		const onGenerate = vi.fn<(signal: AbortSignal) => Promise<void>>(() => promise);
+		const onGenerate = mock<(signal: AbortSignal) => Promise<void>>(() => promise);
 		const { getByText } = render(<TaskHarness onGenerate={onGenerate} />);
 
 		fireEvent.click(getByText("start"));
@@ -106,7 +111,7 @@ describe("useGenerationTask", () => {
 	});
 
 	it("cancel() is a no-op when idle (no controller to abort)", () => {
-		const onGenerate = vi.fn();
+		const onGenerate = mock();
 		const { getByText } = render(<TaskHarness onGenerate={onGenerate} />);
 		// Should not throw.
 		expect(() => fireEvent.click(getByText("cancel"))).not.toThrow();
@@ -127,8 +132,8 @@ describe("GenerateCancelButton", () => {
 				generating={false}
 				hasValue={false}
 				labels={labels}
-				onGenerate={vi.fn()}
-				onCancel={vi.fn()}
+				onGenerate={mock()}
+				onCancel={mock()}
 			/>,
 		);
 		expect(getByText("GEN")).not.toBeNull();
@@ -141,8 +146,8 @@ describe("GenerateCancelButton", () => {
 				generating={false}
 				hasValue={true}
 				labels={labels}
-				onGenerate={vi.fn()}
-				onCancel={vi.fn()}
+				onGenerate={mock()}
+				onCancel={mock()}
 			/>,
 		);
 		expect(getByText("REGEN")).not.toBeNull();
@@ -155,8 +160,8 @@ describe("GenerateCancelButton", () => {
 				generating={true}
 				hasValue={false}
 				labels={labels}
-				onGenerate={vi.fn()}
-				onCancel={vi.fn()}
+				onGenerate={mock()}
+				onCancel={mock()}
 			/>,
 		);
 		expect(getByText("CANCEL")).not.toBeNull();
@@ -164,8 +169,8 @@ describe("GenerateCancelButton", () => {
 	});
 
 	it("clicking generate fires onGenerate; clicking cancel fires onCancel", () => {
-		const onGenerate = vi.fn();
-		const onCancel = vi.fn();
+		const onGenerate = mock();
+		const onCancel = mock();
 		const { getByText, rerender } = render(
 			<GenerateCancelButton
 				generating={false}
@@ -197,8 +202,8 @@ describe("GenerateCancelButton", () => {
 				generating={false}
 				hasValue={false}
 				labels={labels}
-				onGenerate={vi.fn()}
-				onCancel={vi.fn()}
+				onGenerate={mock()}
+				onCancel={mock()}
 				disabled={true}
 			/>,
 		);
@@ -255,8 +260,8 @@ describe("GenerationSurface", () => {
 		expect(container.querySelector('[class*="bg-accent/10"]')).toBeNull();
 	});
 
-	it("empty → non-empty value transition while idle triggers the bg-accent/10 flash overlay, then clears", () => {
-		vi.useFakeTimers();
+	it("empty → non-empty value transition while idle triggers the bg-accent/10 flash overlay, then clears", async () => {
+		jest.useFakeTimers();
 		try {
 			const { rerender, container } = render(<SurfaceHarness value="" />);
 			expect(container.querySelector('[class*="bg-accent/10"]')).toBeNull();
@@ -265,11 +270,11 @@ describe("GenerationSurface", () => {
 			expect(container.querySelector('[class*="bg-accent/10"]')).not.toBeNull();
 
 			act(() => {
-				vi.advanceTimersByTime(1500);
+				jest.advanceTimersByTime(1500);
 			});
 			expect(container.querySelector('[class*="bg-accent/10"]')).toBeNull();
 		} finally {
-			vi.useRealTimers();
+			jest.useRealTimers();
 		}
 	});
 
@@ -322,8 +327,8 @@ describe("GenerationSurface", () => {
 		expect((getByTestId("ctrl") as HTMLTextAreaElement).disabled).toBe(true);
 	});
 
-	it("controlClassName carries the transition token (and flash ring when flashing)", () => {
-		vi.useFakeTimers();
+	it("controlClassName carries the transition token (and flash ring when flashing)", async () => {
+		jest.useFakeTimers();
 		try {
 			const { container, rerender } = render(<SurfaceHarness value="" />);
 			const ctrl = container.querySelector<HTMLTextAreaElement>('[data-testid="ctrl"]')!;
@@ -335,13 +340,13 @@ describe("GenerationSurface", () => {
 			expect(ctrl2.className).toContain("border-accent/60");
 			expect(ctrl2.className).toContain("shadow-[0_0_0_2px_var(--accent-dim)]");
 
-			act(() => {
-				vi.advanceTimersByTime(1500);
+			await act(async () => {
+				jest.advanceTimersByTime(1500);
 			});
 			const ctrl3 = container.querySelector<HTMLTextAreaElement>('[data-testid="ctrl"]')!;
 			expect(ctrl3.className).not.toContain("border-accent/60");
 		} finally {
-			vi.useRealTimers();
+			jest.useRealTimers();
 		}
 	});
 });

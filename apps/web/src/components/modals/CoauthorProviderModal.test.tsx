@@ -1,36 +1,46 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
-import { TooltipProvider } from "../shared/Tooltip.js";
-import { CoauthorProviderModal } from "./CoauthorProviderModal.js";
+import { describe, it, expect, beforeAll, beforeEach, mock } from "bun:test";
+import { render, fireEvent, waitFor, within } from "@testing-library/react";
+import { useDomEnv } from "../../../test/dom-env.js";
 import type { ProviderProfileRecord as ClientProviderProfileRecord } from "../../api/types.js";
-import { useProviderDataStore } from "../../stores/provider-data-store.js";
-import { useBootstrapStore } from "../../stores/api-actions/bootstrap-actions.js";
+
+useDomEnv();
 
 // Mock patchUiSettingsAction so saveBinding doesn't hit the network.
-vi.mock("../../stores/api-actions/bootstrap-actions.js", async (importOriginal) => {
-  const real = await importOriginal() as typeof import("../../stores/api-actions/bootstrap-actions.js");
+const patchUiSettingsAction = mock(async (_patch: never) => ({}) as never);
+const loadFavoriteModelsAction = mock(async (_profileId: string) => {});
+const realBootstrapActions = await import("../../stores/api-actions/bootstrap-actions.js");
+const realProviderActions = await import("../../stores/api-actions/provider-actions.js");
+const realI18n = await import("../../i18n/context.js");
+mock.module("../../stores/api-actions/bootstrap-actions.js", () => {
   return {
-    ...real,
-    patchUiSettingsAction: vi.fn(async (_patch: never) => ({}) as never),
+    ...realBootstrapActions,
+    patchUiSettingsAction,
   };
 });
 
 // Mock loadFavoriteModelsAction so the binding hook doesn't fire network calls.
-vi.mock("../../stores/api-actions/provider-actions.js", async (importOriginal) => {
-  const real = await importOriginal() as typeof import("../../stores/api-actions/provider-actions.js");
+mock.module("../../stores/api-actions/provider-actions.js", () => {
   return {
-    ...real,
-    loadFavoriteModelsAction: vi.fn(async (_profileId: string) => {}),
+    ...realProviderActions,
+    loadFavoriteModelsAction,
   };
 });
 
 // useT must return a stable t() — the modal builds labels off it.
-vi.mock("../../i18n/context.js", async (importOriginal) => {
-  const realI18n = await importOriginal() as typeof import("../../i18n/context.js");
+mock.module("../../i18n/context.js", () => {
   return {
     ...realI18n,
     useT: () => ({ t: (key: string) => key, tDynamic: (key: string) => key, locale: "en", setLocale: () => {}, ready: true }),
   };
+});
+
+const { useProviderDataStore } = await import("../../stores/provider-data-store.js");
+const { useBootstrapStore } = await import("../../stores/api-actions/bootstrap-actions.js");
+let TooltipProvider: typeof import("../shared/Tooltip.js").TooltipProvider;
+let CoauthorProviderModal: typeof import("./CoauthorProviderModal.js").CoauthorProviderModal;
+beforeAll(async () => {
+	({ TooltipProvider } = await import("../shared/Tooltip.js"));
+	({ CoauthorProviderModal } = await import("./CoauthorProviderModal.js"));
 });
 
 function makeProfile(id: string, name: string, over: Record<string, unknown> = {}): ClientProviderProfileRecord {
@@ -62,14 +72,16 @@ describe("CoauthorProviderModal", () => {
     useBootstrapStore.setState({ data: null });
   });
 
-  it("renders the fork title + manage-connections action", () => {
-    setBinding(null, null);
-    render(<CoauthorProviderModal isOpen={true} onClose={() => {}} onOpenProviderModal={() => {}} />);
-    expect(screen.getByText("coauthor.provider.title")).toBeTruthy();
-    expect(screen.getByText("coauthor.provider.manage_connections")).toBeTruthy();
+	it("renders the fork title + manage-connections action", async () => {
+		setBinding(null, null);
+		const view = render(<CoauthorProviderModal isOpen={true} onClose={() => {}} onOpenProviderModal={() => {}} />);
+		await waitFor(() => expect(view.baseElement.textContent).toContain("coauthor.provider.title"));
+		const { getByText } = within(view.baseElement);
+		expect(getByText("coauthor.provider.title")).toBeTruthy();
+		expect(getByText("coauthor.provider.manage_connections")).toBeTruthy();
   });
 
-  it("shows the selection-only profile list with the bound profile marked active", () => {
+	it("shows the selection-only profile list with the bound profile marked active", async () => {
     setBinding("prof_coauthor", "model-a");
     useProviderDataStore.setState({
       profiles: [
@@ -78,40 +90,46 @@ describe("CoauthorProviderModal", () => {
       ],
       favoritesByProfile: {},
     });
-    render(<CoauthorProviderModal isOpen={true} onClose={() => {}} onOpenProviderModal={() => {}} />);
-    // Both profiles render in the master list
-    expect(screen.getByText("Bound Profile")).toBeTruthy();
-    expect(screen.getByText("Other Profile")).toBeTruthy();
-    // No "+ New" button (selectionOnly)
-    expect(screen.queryByText("new_profile_btn")).toBeNull();
+		const view = render(<CoauthorProviderModal isOpen={true} onClose={() => {}} onOpenProviderModal={() => {}} />);
+		await waitFor(() => expect(view.baseElement.textContent).toContain("Bound Profile"));
+		const { getByText, queryByText } = within(view.baseElement);
+		// Both profiles render in the master list
+		expect(getByText("Bound Profile")).toBeTruthy();
+		expect(getByText("Other Profile")).toBeTruthy();
+		// No "+ New" button (selectionOnly)
+		expect(queryByText("new_profile_btn")).toBeNull();
   });
 
-  it("manage-connections calls onOpenProviderModal + onClose", () => {
+	it("manage-connections calls onOpenProviderModal + onClose", async () => {
     setBinding(null, null);
     let providerOpened = false;
     let closed = false;
-    render(
+		const view = render(
       <CoauthorProviderModal
         isOpen={true}
         onClose={() => { closed = true; }}
         onOpenProviderModal={() => { providerOpened = true; }}
-      />,
-    );
-    fireEvent.click(screen.getByText("coauthor.provider.manage_connections"));
+			/>,
+		);
+		await waitFor(() => expect(view.baseElement.textContent).toContain("coauthor.provider.manage_connections"));
+		const { getByText } = within(view.baseElement);
+		fireEvent.click(getByText("coauthor.provider.manage_connections"));
     expect(providerOpened).toBe(true);
     expect(closed).toBe(true);
   });
 
-  it("save button is disabled when a profile is selected but no model chosen", () => {
+	it("save button is disabled when a profile is selected but no model chosen", async () => {
     setBinding(null, null);
     useProviderDataStore.setState({
       profiles: [makeProfile("prof_1", "Alpha")],
       favoritesByProfile: {},
     });
-    render(<TooltipProvider><CoauthorProviderModal isOpen={true} onClose={() => {}} onOpenProviderModal={() => {}} /></TooltipProvider>);
-    // Select a profile first — the save button only renders in the detail pane.
-    fireEvent.pointerDown(screen.getByText("Alpha"));
-    const saveBtn = screen.getByText("coauthor.provider.use_for_coauthor");
+		const view = render(<TooltipProvider><CoauthorProviderModal isOpen={true} onClose={() => {}} onOpenProviderModal={() => {}} /></TooltipProvider>);
+		await waitFor(() => expect(view.baseElement.textContent).toContain("Alpha"));
+		const { getByText } = within(view.baseElement);
+		// Select a profile first — the save button only renders in the detail pane.
+		fireEvent.pointerDown(getByText("Alpha"));
+		const saveBtn = getByText("coauthor.provider.use_for_coauthor");
     expect((saveBtn as HTMLButtonElement).disabled).toBe(true);
   });
 });

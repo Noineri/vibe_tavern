@@ -12,43 +12,49 @@
  * AssistantContextHeader.test.tsx + message-block-isolation.test.tsx (both run
  * green with this zone registered). This file covers the zone's OWN contract.
  *
- * Runner: vitest (apps/web). The snapshot store + header-zone-expansion store
- * are exercised for real (seeded/reset per test); `useT` + the objective action
+ * Runner: bun:test + happy-dom. The snapshot store + header-zone-expansion
+ * store are exercised for real (seeded/reset per test); `useT` + the objective
  * actions are mocked.
  */
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
+import { useDomEnv } from "../../../../test/dom-env.js";
 import { type ReactNode } from "react";
-import { render, fireEvent, cleanup, waitFor, act } from "@testing-library/react";
-import { AssistantContextHeader } from "../AssistantContextHeader.js";
-import { ObjectiveZone } from "./objective-zone.js";
+
+useDomEnv();
+const { act, fireEvent, render, waitFor } = await import("@testing-library/react");
 import { useSnapshotStore } from "../../../stores/snapshot-store.js";
 import { useHeaderZoneExpansionStore } from "../../../stores/header-zone-expansion.js";
 import type { InsightsCompletionPatchResponse, ObjectiveState } from "../../../api/types.js";
-import { cancelInsightsCompletionRefresh, startInsightsCompletionRefresh } from "../../../stores/api-actions/insights-completion-actions.js";
 
-const mocks = vi.hoisted(() => ({
-  updateObjectiveTaskAction: vi.fn(),
-  updateObjectiveLongTermGoalAction: vi.fn(),
-  updateObjectiveShortTermGoalAction: vi.fn(),
-  selectObjectiveShortTermGoalAction: vi.fn(),
-  generateObjectiveTasksAction: vi.fn(),
-  checkObjectiveCompletionAction: vi.fn(),
-  refreshInsightsCompletion: vi.fn(),
-  toastError: vi.fn(),
-}));
+const mocks = {
+  updateObjectiveTaskAction: mock(),
+  updateObjectiveLongTermGoalAction: mock(),
+  updateObjectiveShortTermGoalAction: mock(),
+  selectObjectiveShortTermGoalAction: mock(),
+  generateObjectiveTasksAction: mock(),
+  checkObjectiveCompletionAction: mock(),
+  refreshInsightsCompletion: mock(),
+  toastError: mock(),
+};
+const realI18nContext = await import("../../../i18n/context.js");
+const realAppClient = await import("../../../app-client.js");
+const realChatActions = await import("../../../stores/api-actions/chat-actions.js");
+const realTooltip = await import("../../shared/Tooltip.js");
 
-vi.mock("sonner", () => ({ toast: { error: mocks.toastError } }));
+mock.module("sonner", () => ({ toast: { error: mocks.toastError } }));
 
-vi.mock("../../../i18n/context.js", () => ({
+mock.module("../../../i18n/context.js", () => ({
+  ...realI18nContext,
   useT: () => ({ t: (k: string) => k, tDynamic: (k: string) => k, locale: "en", setLocale: () => {}, ready: true }),
 }));
 
-vi.mock("../../../app-client.js", async (importOriginal) => {
-  const actual = await importOriginal() as typeof import("../../../app-client.js");
-  return { ...actual, refreshInsightsCompletion: mocks.refreshInsightsCompletion };
-});
+mock.module("../../../app-client.js", () => ({
+  ...realAppClient,
+  refreshInsightsCompletion: mocks.refreshInsightsCompletion,
+}));
 
-vi.mock("../../../stores/api-actions/chat-actions.js", () => ({
+mock.module("../../../stores/api-actions/chat-actions.js", () => ({
+  ...realChatActions,
   updateObjectiveTaskAction: mocks.updateObjectiveTaskAction,
   updateObjectiveLongTermGoalAction: mocks.updateObjectiveLongTermGoalAction,
   updateObjectiveShortTermGoalAction: mocks.updateObjectiveShortTermGoalAction,
@@ -59,13 +65,23 @@ vi.mock("../../../stores/api-actions/chat-actions.js", () => ({
 
 // CustomTooltip is presentational; these tests verify zone button behavior, not
 // tooltip rendering. Passthrough children so no Radix TooltipProvider is needed.
-vi.mock("../../shared/Tooltip.js", () => ({
+mock.module("../../shared/Tooltip.js", () => ({
+  ...realTooltip,
   CustomTooltip: ({ children }: { children: ReactNode }) => children,
   TooltipProvider: ({ children }: { children: ReactNode }) => children,
 }));
 
+let AssistantContextHeader: typeof import("../AssistantContextHeader.js").AssistantContextHeader;
+let ObjectiveZone: typeof import("./objective-zone.js").ObjectiveZone;
+let cancelInsightsCompletionRefresh: typeof import("../../../stores/api-actions/insights-completion-actions.js").cancelInsightsCompletionRefresh;
+let startInsightsCompletionRefresh: typeof import("../../../stores/api-actions/insights-completion-actions.js").startInsightsCompletionRefresh;
+beforeAll(async () => {
+  ({ AssistantContextHeader } = await import("../AssistantContextHeader.js"));
+  ({ ObjectiveZone } = await import("./objective-zone.js"));
+  ({ cancelInsightsCompletionRefresh, startInsightsCompletionRefresh } = await import("../../../stores/api-actions/insights-completion-actions.js"));
+});
+
 afterEach(() => {
-  cleanup();
   useSnapshotStore.setState({ activeChat: null });
   useHeaderZoneExpansionStore.setState({ open: {} });
   mocks.updateObjectiveTaskAction.mockReset();

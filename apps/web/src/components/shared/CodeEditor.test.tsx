@@ -9,14 +9,23 @@
  * EXTERNAL text — which in ScriptEditor scheduled an autosave of stale code
  * over the user's fresher pending input (the "eaten characters" race).
  *
- * Runner: vitest (apps/web) + happy-dom; CodeMirror 6 mounts headless here.
+ * Runner: bun:test with the scoped happy-dom harness; CodeMirror 6 mounts headless here.
  */
-import { describe, it, expect, vi } from "vitest";
-import { act, render } from "@testing-library/react";
-import { EditorView } from "@codemirror/view";
-import { CodeEditor } from "./CodeEditor.js";
+import { beforeAll, describe, it, expect, mock } from "bun:test";
+import { useDomEnv } from "../../../test/dom-env.js";
 
-function getView(container: HTMLElement): EditorView {
+useDomEnv();
+const { act, render } = await import("@testing-library/react");
+
+let EditorView: typeof import("@codemirror/view").EditorView;
+let CodeEditor: typeof import("./CodeEditor.js").CodeEditor;
+
+beforeAll(async () => {
+	({ EditorView } = await import("@codemirror/view"));
+	({ CodeEditor } = await import("./CodeEditor.js"));
+});
+
+function getView(container: HTMLElement): import("@codemirror/view").EditorView {
   const dom = container.querySelector(".cm-editor");
   if (!(dom instanceof HTMLElement)) throw new Error("cm-editor not mounted");
   const view = EditorView.findFromDOM(dom);
@@ -26,7 +35,7 @@ function getView(container: HTMLElement): EditorView {
 
 describe("CodeEditor", () => {
   it("emits onChange for user edits", () => {
-    const onChange = vi.fn();
+		const onChange = mock();
     const { container } = render(<CodeEditor value="" onChange={onChange} />);
     const view = getView(container);
 
@@ -38,7 +47,7 @@ describe("CodeEditor", () => {
   });
 
   it("syncs an external value change into the document WITHOUT emitting onChange", () => {
-    const onChange = vi.fn();
+		const onChange = mock();
     const { container, rerender } = render(<CodeEditor value="hello" onChange={onChange} />);
     const view = getView(container);
     onChange.mockClear();

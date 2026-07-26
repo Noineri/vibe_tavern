@@ -9,28 +9,39 @@
  *     pipe — `{ insightsConfig: { objectiveEnabled } }` / `{ trackerEnabled }` —
  *     so the adapter-side merge preserves the other toggle.
  *
- * Runner: vitest (apps/web — see vitest.config.ts; vi.mock is file-scoped).
+ * Runner: bun:test + happy-dom.
  * The snapshot store + the action are mocked; the real Toggle (Radix Switch) is
  * exercised end-to-end so the click → onCheckedChange → onChange → persist path
  * is covered, not stubbed.
  */
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, fireEvent, cleanup, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
+import { render, fireEvent, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
-import { InsightsPanel } from "./InsightsPanel.js";
+import { useDomEnv } from "../../../../test/dom-env.js";
 
-// Hoisted mock state — vi.mock factories are hoisted above imports, so the
-// shared objects they close over must be created with vi.hoisted too.
-const mocks = vi.hoisted(() => ({
+useDomEnv();
+
+// Shared mock state is defined before the module registrations.
+const mocks = {
   activeChat: null as
     | null
     | { id: string; insightsConfig: { objectiveEnabled: boolean; trackerEnabled: boolean; diceEnabled?: boolean; diceMode?: "normal" | "immersive"; diceScriptIds?: string[] | null; diceActorBindings?: Record<string, ("persona" | "character")[]> | null } },
-  updateInsightsConfigAction: vi.fn(),
-  getDiceDefinitions: vi.fn(),
-  listAllScripts: vi.fn(),
-}));
+  updateInsightsConfigAction: mock(),
+  getDiceDefinitions: mock(),
+  listAllScripts: mock(),
+};
 
-vi.mock("../../../i18n/context.js", () => ({
+const realI18nContext = await import("../../../i18n/context.js");
+const realSnapshotStore = await import("../../../stores/snapshot-store.js");
+const realChatActions = await import("../../../stores/api-actions/chat-actions.js");
+const realDiceApi = await import("../../../api/dice-api.js");
+const realScriptApi = await import("../../../api/script-api.js");
+const realUseMobile = await import("../../../hooks/use-mobile.js");
+const realTooltip = await import("../../shared/Tooltip.js");
+const realAiAssistantModal = await import("../../shared/AiAssistantModal.js");
+
+mock.module("../../../i18n/context.js", () => ({
+  ...realI18nContext,
   useT: () => ({
     // Return the key verbatim — assertions check for key strings.
     t: (k: string) => k,
@@ -41,7 +52,8 @@ vi.mock("../../../i18n/context.js", () => ({
   }),
 }));
 
-vi.mock("../../../stores/snapshot-store.js", () => ({
+mock.module("../../../stores/snapshot-store.js", () => ({
+  ...realSnapshotStore,
   // The component subscribes with a selector; invoke it against a stub state.
   useSnapshotStore: (selector: (s: { activeChat: typeof mocks.activeChat; messageOrder: string[]; messagesById: Record<string, { role?: string }> }) => unknown) =>
     selector({ activeChat: mocks.activeChat, messageOrder: [], messagesById: {} }),
@@ -50,45 +62,52 @@ vi.mock("../../../stores/snapshot-store.js", () => ({
   useActivePersona: () => ({ id: "persona_1", name: "User" }),
 }));
 
-vi.mock("../../../stores/api-actions/chat-actions.js", () => ({
+mock.module("../../../stores/api-actions/chat-actions.js", () => ({
+  ...realChatActions,
   updateInsightsConfigAction: mocks.updateInsightsConfigAction,
 }));
 
-vi.mock("../../../api/dice-api.js", () => ({
+mock.module("../../../api/dice-api.js", () => ({
+  ...realDiceApi,
   getDiceDefinitions: mocks.getDiceDefinitions,
 }));
 
-vi.mock("../../../api/script-api.js", () => ({
+mock.module("../../../api/script-api.js", () => ({
+  ...realScriptApi,
   listAllScripts: mocks.listAllScripts,
 }));
 
 // DiceAssignment calls useIsMobile(); happy-dom has no matchMedia, so stub it.
-vi.mock("../../../hooks/use-mobile.js", () => ({
+mock.module("../../../hooks/use-mobile.js", () => ({
+  ...realUseMobile,
   useIsMobile: () => false,
 }));
 
 // ObjectiveConfig is a separate boundary (covered by its own test file). Stub
 // it so the PANEL test stays focused on the toggle behavior and does not drag
 // in the config editor's provider/model dependencies.
-vi.mock("./ObjectiveConfig.js", () => ({
+mock.module("./ObjectiveConfig.js", () => ({
   ObjectiveConfig: () => <div data-testid="objective-config" />,
 }));
 
 // TrackerConfig renders CustomTooltip (icon buttons); presentational here —
 // passthrough so no Radix TooltipProvider is needed.
-vi.mock("../../shared/Tooltip.js", () => ({
+mock.module("../../shared/Tooltip.js", () => ({
+  ...realTooltip,
   CustomTooltip: ({ children }: { children: ReactNode }) => children,
   TooltipProvider: ({ children }: { children: ReactNode }) => children,
 }));
 
 // TrackerConfig renders the shared AiAssistantModal (scene_schema generator).
 // Stub it so this panel-level test doesn't pull the modal's snapshot/app-client deps.
-vi.mock("../../shared/AiAssistantModal.js", () => ({
+mock.module("../../shared/AiAssistantModal.js", () => ({
+  ...realAiAssistantModal,
   AiAssistantModal: () => null,
 }));
 
+const { InsightsPanel } = await import("./InsightsPanel.js");
+
 afterEach(() => {
-  cleanup();
   mocks.activeChat = null;
   mocks.updateInsightsConfigAction.mockReset();
   mocks.getDiceDefinitions.mockReset();

@@ -1,13 +1,24 @@
-import { describe, expect, test, vi } from "vitest";
+import { describe, expect, mock, test } from "bun:test";
 import { promoteSourceAsFull } from "./thumbnail-crop.js";
+
+type FetchImplementation = (
+	input: Parameters<typeof fetch>[0],
+	init?: Parameters<typeof fetch>[1],
+) => ReturnType<typeof fetch>;
+
+function mockFetch(implementation: FetchImplementation): typeof fetch {
+	return Object.assign(mock<FetchImplementation>(implementation), {
+		preconnect: globalThis.fetch.preconnect,
+	});
+}
 
 describe("promoteSourceAsFull", () => {
 	test("returns undefined when a separate full already exists (no promotion needed)", async () => {
-		const fetchImpl = vi.fn(() => Promise.resolve(new Response("x")));
+		const fetchImpl = mockFetch(() => Promise.resolve(new Response("x")));
 		const result = await promoteSourceAsFull({
 			sourceUrl: "http://x/api/characters/c/avatar/full?v=1",
 			hasSeparateFull: true,
-			fetchImpl: fetchImpl as unknown as typeof fetch,
+			fetchImpl,
 		});
 		expect(result).toBeUndefined();
 		// Must not fetch when a full exists — the source is already preserved server-side.
@@ -15,21 +26,21 @@ describe("promoteSourceAsFull", () => {
 	});
 
 	test("returns undefined when sourceUrl is null", async () => {
-		const fetchImpl = vi.fn(() => Promise.resolve(new Response("x")));
-		const result = await promoteSourceAsFull({ sourceUrl: null, hasSeparateFull: false, fetchImpl: fetchImpl as unknown as typeof fetch });
+		const fetchImpl = mockFetch(() => Promise.resolve(new Response("x")));
+		const result = await promoteSourceAsFull({ sourceUrl: null, hasSeparateFull: false, fetchImpl });
 		expect(result).toBeUndefined();
 		expect(fetchImpl).not.toHaveBeenCalled();
 	});
 
 	test("promotes the source as a File when no separate full exists (single-image character)", async () => {
 		const pngBytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3]);
-		const fetchImpl = vi.fn(() =>
+		const fetchImpl = mockFetch(() =>
 			Promise.resolve(new Response(pngBytes, { headers: { "Content-Type": "image/png" } })),
 		);
 		const result = await promoteSourceAsFull({
 			sourceUrl: "http://x/api/characters/c/avatar/full?v=1",
 			hasSeparateFull: false,
-			fetchImpl: fetchImpl as unknown as typeof fetch,
+			fetchImpl,
 		});
 		expect(result).toBeInstanceOf(File);
 		expect(result!.type).toBe("image/png");
@@ -40,33 +51,33 @@ describe("promoteSourceAsFull", () => {
 	});
 
 	test("returns undefined when the fetch fails (network) — degrades to crop-only", async () => {
-		const fetchImpl = vi.fn(() => Promise.reject(new Error("network")));
+		const fetchImpl = mockFetch(() => Promise.reject(new Error("network")));
 		const result = await promoteSourceAsFull({
 			sourceUrl: "http://x/api/characters/c/avatar/full?v=1",
 			hasSeparateFull: false,
-			fetchImpl: fetchImpl as unknown as typeof fetch,
+			fetchImpl,
 		});
 		expect(result).toBeUndefined();
 	});
 
 	test("returns undefined on non-OK response", async () => {
-		const fetchImpl = vi.fn(() => Promise.resolve(new Response("nope", { status: 404 })));
+		const fetchImpl = mockFetch(() => Promise.resolve(new Response("nope", { status: 404 })));
 		const result = await promoteSourceAsFull({
 			sourceUrl: "http://x/api/characters/c/avatar/full?v=1",
 			hasSeparateFull: false,
-			fetchImpl: fetchImpl as unknown as typeof fetch,
+			fetchImpl,
 		});
 		expect(result).toBeUndefined();
 	});
 
 	test("returns undefined when the served content is not an image", async () => {
-		const fetchImpl = vi.fn(() =>
+		const fetchImpl = mockFetch(() =>
 			Promise.resolve(new Response("plain", { headers: { "Content-Type": "text/plain" } })),
 		);
 		const result = await promoteSourceAsFull({
 			sourceUrl: "http://x/api/characters/c/avatar/full?v=1",
 			hasSeparateFull: false,
-			fetchImpl: fetchImpl as unknown as typeof fetch,
+			fetchImpl,
 		});
 		expect(result).toBeUndefined();
 	});
