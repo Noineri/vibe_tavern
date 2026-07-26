@@ -26,7 +26,10 @@ export async function resolveTokenizerDir(): Promise<string> {
 		// API artifacts: Bun.build flat output or tsc module output.
 		join(import.meta.dir, "tokenizers"),
 		join(import.meta.dir, "..", "tokenizers"),
-		// Source/dev mode still uses the canonical copied runtime assets in out/.
+		// Source tree (dev mode — no copy step required).
+		resolve(import.meta.dir, "..", "..", "..", "assets", "tokenizers"),
+		join(process.cwd(), "services", "api", "assets", "tokenizers"),
+		// Copied runtime assets in build output.
 		resolve(import.meta.dir, "..", "..", "..", "..", "out", "services", "api", "tokenizers"),
 		join(process.cwd(), "out", "services", "api", "tokenizers"),
 	].filter(Boolean) as string[];

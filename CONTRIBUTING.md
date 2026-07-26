@@ -25,23 +25,23 @@ bun install
 bun run dev
 ```
 
-`bun run dev` ([`scripts/dev.ts`](./scripts/dev.ts)) starts two tied processes: the API server on **:8787** and the Bun HTML dev server ([`apps/web/dev-server.ts`](./apps/web/dev-server.ts)) with HMR on **:4173**, which proxies `/api` and `/assets` to the API. Open **http://127.0.0.1:4173** — that's the hot-reloading UI you edit against. If you want the production-style single process instead (full build, static bundle served by the API), run `bun run preview` and open **http://127.0.0.1:8787**.
+`bun run dev` starts a single dev process ([`apps/web/dev-server.ts`](./apps/web/dev-server.ts)) on **http://127.0.0.1:4173**: Bun's HTML dev server with HMR for the frontend, plus the full API mounted **in-process** — `/api`, `/assets` and `/health` are handled directly by the Hono app. No proxy, no second port, no static prod bundle. While the backend initializes (DB, tokenizers, services) API calls get a structured 503, then start answering automatically. If you want the production-style process instead (full build, static bundle served by the API on **:8787**), run `bun run prod`.
 
 ### Frontend development with Hot Module Replacement (HMR)
 
 `bun run dev` already gives you HMR out of the box. Run the two sides separately only when you need independent control (e.g. restarting the API without losing the web session):
 
 ```bash
-# terminal 1 — API on :8787
+# terminal 1 — API only, on :8787
 bun run dev:api
 
-# terminal 2 — web dev server on :4173, proxying /api and /assets to the API
-bun run dev:web:debug
+# terminal 2 — standalone frontend on :4173, pointed at that API
+VIBE_TAVERN_WEB_API_URL=http://127.0.0.1:8787 bun run dev:web
 ```
 
-Plain `bun run dev:web` serves the frontend standalone on :4173 with no proxy; the `:debug` variant is what wires 4173 → 8787. An alternative to the debug proxy is setting `VIBE_TAVERN_WEB_API_URL=http://127.0.0.1:8787` before `bun run dev:web`: the frontend resolves its API base URL via `getGatewayBaseUrl()` ([`apps/web/src/gateway-client.ts`](./apps/web/src/gateway-client.ts)), which prefers the configured `VIBE_TAVERN_WEB_API_URL` and otherwise falls back to `window.location.origin` (which would call the dev server itself and find no API).
+`bun run dev:web` serves the frontend standalone on :4173 with no backend mounted (`--no-api`). Point it at a real backend with `VIBE_TAVERN_WEB_API_URL`: the frontend resolves its API base URL via `getGatewayBaseUrl()` ([`apps/web/src/gateway-client.ts`](./apps/web/src/gateway-client.ts)), which prefers the configured URL and otherwise falls back to `window.location.origin`.
 
-> Port note: the API defaults to `8787` (override with `VIBE_TAVERN_PORT`). The two dev servers must run on different ports — `server-runtime.ts` frees its target port before binding, so it will never collide with another instance, but pick a free port if you run more than one.
+> Port note: the dev server defaults to `4173` (override with `VIBE_TAVERN_WEB_DEV_PORT`), the API to `8787` (override with `VIBE_TAVERN_PORT`). `server-runtime.ts` frees its target port before binding, so it will never collide with another instance, but pick a free port if you run more than one.
 
 ---
 

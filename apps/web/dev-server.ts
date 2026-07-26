@@ -1,44 +1,75 @@
-import { isAbsolute, join, relative } from "node:path";
+/**
+ * Dev server — the everyday `bun run dev`.
+ *
+ * One process, one port (default :4173): Bun's HTML dev server with HMR for
+ * the frontend, plus the full API mounted IN-PROCESS via createRuntimeApp().
+ * No proxy, no second server, no static prod bundle — requests to /api,
+ * /assets and /health are handed straight to the Hono app, everything else
+ * is the hot-reloading frontend. API initialization (DB, tokenizers,
+ * services) runs in the background; API calls get a structured 503 until it
+ * completes, exactly like the prod bind-first bootstrap.
+ *
+ * Flags:
+ *   --no-api   Standalone frontend, no backend mounted — for pure-UI
+ *              surfaces like the theme tuner (`bun run dev:web`).
+ *
+ * Environment:
+ *   VIBE_TAVERN_WEB_DEV_PORT   — listen port (default: 4173)
+ *   VIBE_TAVERN_OPEN_BROWSER=0 — don't auto-open the browser
+ */
+import { isAbsolute, join, relative, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import indexHtml from "./index.html";
+import { createRuntimeApp, apiNotReadyResponse } from "@vibe-tavern/api/server-runtime";
 
 const PUBLIC_DIR = join(import.meta.dir, "public");
+const ROOT = resolve(import.meta.dir, "..", "..");
+
 const { values: cli } = parseArgs({
 	args: process.argv.slice(2),
-	options: { debug: { type: "boolean" } },
-	strict: false,
-	allowPositionals: true,
+	options: { "no-api": { type: "boolean" } },
+	strict: true,
 });
-const isDebug = cli.debug === true || process.env.VT_DEV_DEBUG === "1";
+const apiEnabled = cli["no-api"] !== true;
+
 const PORT = Number(process.env.VIBE_TAVERN_WEB_DEV_PORT ?? "4173");
 if (!Number.isInteger(PORT) || PORT < 1 || PORT > 65_535) {
 	throw new RangeError("VIBE_TAVERN_WEB_DEV_PORT must be an integer from 1 to 65535");
 }
 
-async function proxyToApi(req: Request, pathname: string): Promise<Response> {
-	const url = new URL(req.url);
-	const targetUrl = `http://localhost:8787${pathname}${url.search}`;
-	const headers = new Headers(req.headers);
-	headers.set("host", "localhost:8787");
+type ApiHandler = (req: Request, server: Bun.Server<undefined>) => Response | Promise<Response>;
 
-	try {
-		return await fetch(targetUrl, {
-			method: req.method,
-			headers,
-			body: req.body ?? undefined,
-			redirect: "manual",
-		});
-	} catch (err) {
-		const message = err instanceof Error ? err.message : String(err);
-		return new Response(
-			`Debug proxy error — API server not reachable on :8787.\n${message}\n\n` +
-				`Start the API server: VIBE_TAVERN_PORT=8787 bun run dev`,
-			{
-				status: 502,
-				headers: { "Content-Type": "text/plain" },
-			},
-		);
-	}
+let apiHandler: ApiHandler = () => apiNotReadyResponse();
+
+if (apiEnabled) {
+	createRuntimeApp({
+		mode: "dev",
+		rootDir: ROOT,
+		dataDir: resolve(ROOT, "data"),
+		assetsDir: resolve(ROOT, "data", "assets"),
+	}).then(
+		(app) => {
+			apiHandler = (req, server) => app.fetch(req, server);
+		},
+		(err: unknown) => {
+			console.error("[dev] API initialization failed:", err);
+			const message = err instanceof Error ? err.message : String(err);
+			apiHandler = () =>
+				new Response(`API initialization failed: ${message}`, {
+					status: 500,
+					headers: { "Content-Type": "text/plain; charset=utf-8" },
+				});
+		},
+	);
+}
+
+function isApiPath(pathname: string): boolean {
+	return (
+		pathname === "/api" ||
+		pathname.startsWith("/api/") ||
+		pathname.startsWith("/assets/") ||
+		pathname === "/health"
+	);
 }
 
 const server = Bun.serve({
@@ -54,17 +85,12 @@ const server = Bun.serve({
 		console: true,
 	},
 
-	async fetch(req) {
+	async fetch(req, serverInstance) {
 		const url = new URL(req.url);
 		const pathname = url.pathname;
 
-		if (
-			isDebug &&
-			(pathname.startsWith("/api/") ||
-				pathname === "/api" ||
-				pathname.startsWith("/assets/"))
-		) {
-			return proxyToApi(req, pathname);
+		if (apiEnabled && isApiPath(pathname)) {
+			return apiHandler(req, serverInstance);
 		}
 
 		const publicPath = join(PUBLIC_DIR, pathname);
@@ -96,21 +122,18 @@ const server = Bun.serve({
 });
 
 console.log("");
-console.log("  \x1b[1mVibe Tavern — Bun Dev Server\x1b[0m");
+console.log("  \x1b[1mVibe Tavern — Dev Server\x1b[0m");
 console.log("  ────────────────────────────────────────────");
 console.log(`  \x1b[36mLocal:\x1b[0m    http://localhost:${server.port}`);
-console.log(
-	`  \x1b[36mMode:\x1b[0m     ${isDebug ? "\x1b[33mDEBUG\x1b[0m (proxy → :8787)" : "normal (standalone)"}`,
-);
+console.log(`  \x1b[36mAPI:\x1b[0m      ${apiEnabled ? "in-process (503 until ready)" : "\x1b[33mdisabled\x1b[0m (--no-api)"}`);
 console.log("  \x1b[36mHMR:\x1b[0m      enabled");
-console.log("  \x1b[36mPlugins:\x1b[0m  data-component, tailwind, build-config");
 console.log("");
-if (isDebug) {
-	console.log(
-		"  \x1b[33m⚠ Debug mode:\x1b[0m /api and /assets proxy to localhost:8787",
-	);
-	console.log(
-		"    Make sure the API server is running: VIBE_TAVERN_PORT=8787 bun run dev",
-	);
-	console.log("");
+
+if (process.env.VIBE_TAVERN_OPEN_BROWSER !== "0") {
+	const url = `http://localhost:${server.port}`;
+	const args =
+		process.platform === "win32" ? ["cmd", "/c", "start", "", url]
+		: process.platform === "darwin" ? ["open", url]
+		: ["xdg-open", url];
+	Bun.spawn(args, { stdout: "ignore", stderr: "ignore", stdin: "ignore", detached: true });
 }

@@ -228,10 +228,10 @@ vibe-tavern/
 
 | Target | Method | Output |
 |--------|--------|--------|
-| **Dev (frontend)** | `bun run dev:web` — Bun HTML dev server with HMR (`apps/web/dev-server.ts`); `bun run dev:web:debug` also proxies `/api` + `/assets` to :8787 | Bun-served SPA |
-| **Dev (backend)** | `bun run dev:api` — Bun API server with watch | `services/api/src/` |
-| **Dev (full stack)** | `bun run dev` — `scripts/dev.ts` orchestrator: API on :8787 + web HMR on :4173 (proxies `/api` + `/assets`) | `data/` (API runs from source) |
-| **Preview (prod-style)** | `bun run preview` — full build, then the API serves the static bundle on :8787 | `out/services/api/`, `out/apps/web/` |
+| **Dev (full stack)** | `bun run dev` — single process on :4173 (`apps/web/dev-server.ts`): HMR frontend + API mounted in-process | `data/` (API runs from source) |
+| **Dev (frontend)** | `bun run dev:web` — standalone HMR frontend on :4173 (`--no-api`); point at a backend with `VIBE_TAVERN_WEB_API_URL` | Bun-served SPA |
+| **Dev (backend)** | `bun run dev:api` — API only on :8787 (`prod-server.ts --api-only`) | `services/api/src/` |
+| **Prod** | `bun run prod` — full build, then the API serves the static bundle on :8787 | `out/services/api/`, `out/apps/web/` |
 | **Production bundle** | `bun run build` — builds the API stack + Bun.build frontend (`scripts/build-web.ts`) | `out/services/api/`, `out/apps/web/` |
 | **Docker** | `docker-compose up` — Bun runtime + built frontend in single container | Uses production bundle |
 | **Standalone .exe** | `bun run build:standalone` — single binary with embedded frontend + assets | `out/standalone/vibe-tavern.exe` |
