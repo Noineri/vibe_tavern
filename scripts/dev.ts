@@ -39,13 +39,13 @@ if (copyCode !== 0) process.exit(copyCode);
 
 const procs = [
 	// API from repo root so cwd-relative path resolution is correct.
-	// RP_PLATFORM_OPEN_BROWSER=0: the prod server otherwise auto-opens a
+	// VIBE_TAVERN_OPEN_BROWSER=0: the prod server otherwise auto-opens a
 	// browser at :8787 — the STATIC bundle, which has NO HMR. That trains you
 	// to edit against the wrong port and see nothing change. In dev the live
 	// surface is the HMR server on :4173 (opened below), so suppress :8787.
 	Bun.spawn([BUN, "services/api/src/server/prod-server.ts"], {
 		cwd: ROOT,
-		env: { ...process.env, RP_PLATFORM_OPEN_BROWSER: "0" },
+		env: { ...process.env, VIBE_TAVERN_OPEN_BROWSER: "0" },
 		stdio: ["inherit", "inherit", "inherit"],
 	}),
 	// Web HMR server (proxies /api + /assets → :8787). Spawn the dev-server
@@ -60,9 +60,9 @@ const procs = [
 
 // Open the HMR surface (:4173), not the API's static bundle (:8787), once the
 // web server answers. Matches the old auto-open habit but points at the port
-// that actually hot-reloads. Opt out with RP_PLATFORM_OPEN_BROWSER=0.
+// that actually hot-reloads. Opt out with VIBE_TAVERN_OPEN_BROWSER=0.
 const WEB_URL = "http://localhost:4173";
-if (process.env.RP_PLATFORM_OPEN_BROWSER !== "0") {
+if (process.env.VIBE_TAVERN_OPEN_BROWSER !== "0") {
 	void (async () => {
 		for (let i = 0; i < 60; i++) {
 			try {

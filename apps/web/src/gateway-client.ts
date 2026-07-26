@@ -15,7 +15,7 @@ export function getGatewayBaseUrl(): string {
   if (configured?.trim()) {
     const normalized = normalizeBaseUrl(configured);
 
-    // Production/mobile builds may accidentally carry a loopback RP_WEB_API_URL.
+    // Production/mobile builds may accidentally carry a loopback VIBE_TAVERN_WEB_API_URL.
     // On a phone, 127.0.0.1/localhost means the phone itself, not the desktop server,
     // so prefer the page origin when the app was opened from a LAN/Tailscale address.
     if (hasWindow) {

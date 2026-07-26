@@ -65,7 +65,7 @@ function createInitialConnectionState(): ConnectionState {
  *   useChatController, useCharacterController, useProviderProfiles, usePresetController
  * Components import sub-hooks directly — not through this hook.
  */
-export function useRpPlatformApp() {
+export function useVibeTavernApp() {
   const [loadError, setLoadError] = useState("");
 
   const isLoading = useBootstrapStore((s) => s.isLoading);

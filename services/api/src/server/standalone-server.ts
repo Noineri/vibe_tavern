@@ -63,7 +63,7 @@ if (subcommand === "check-update") {
 
 async function main() {
 	const paths = await resolveStandalonePaths();
-	const host = process.env.RP_PLATFORM_HOST ?? "0.0.0.0";
+	const host = process.env.VIBE_TAVERN_HOST ?? "0.0.0.0";
 
 	console.log(`[standalone] Vibe Tavern v${_version}`);
 

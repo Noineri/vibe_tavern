@@ -50,7 +50,7 @@ describe("prompt-asset-loader — shared resolver", () => {
 			}
 		});
 
-		test("env override (RP_PLATFORM_AI_ASSISTANT_PROMPTS_DIR) wins over bundled assets", async () => {
+		test("env override (VIBE_TAVERN_AI_ASSISTANT_PROMPTS_DIR) wins over bundled assets", async () => {
 			const tmp = await mkdtemp(join(tmpdir(), "vt-prompts-"));
 			try {
 				const filename = getModeConfig("script").defaultPromptFile;
@@ -58,8 +58,8 @@ describe("prompt-asset-loader — shared resolver", () => {
 				const overrideContent = "# OVERRIDE FROM ENV DIR\nunique-marker-9f3c\n";
 				await Bun.write(overridePath, overrideContent);
 
-				const prev = process.env.RP_PLATFORM_AI_ASSISTANT_PROMPTS_DIR;
-				process.env.RP_PLATFORM_AI_ASSISTANT_PROMPTS_DIR = tmp;
+				const prev = process.env.VIBE_TAVERN_AI_ASSISTANT_PROMPTS_DIR;
+				process.env.VIBE_TAVERN_AI_ASSISTANT_PROMPTS_DIR = tmp;
 				try {
 					const resolved = await resolvePromptAssetPath(filename);
 					expect(resolved).toBe(overridePath);
@@ -67,8 +67,8 @@ describe("prompt-asset-loader — shared resolver", () => {
 					// And the content loads from the override location.
 					expect(await loadPromptAsset(filename)).toBe(overrideContent);
 				} finally {
-					if (prev === undefined) delete process.env.RP_PLATFORM_AI_ASSISTANT_PROMPTS_DIR;
-					else process.env.RP_PLATFORM_AI_ASSISTANT_PROMPTS_DIR = prev;
+					if (prev === undefined) delete process.env.VIBE_TAVERN_AI_ASSISTANT_PROMPTS_DIR;
+					else process.env.VIBE_TAVERN_AI_ASSISTANT_PROMPTS_DIR = prev;
 				}
 			} finally {
 				await rm(tmp, { recursive: true, force: true });
@@ -92,8 +92,8 @@ describe("prompt-asset-loader — shared resolver", () => {
 				const overridePath = join(tmp, filename);
 				await Bun.write(overridePath, "# FIRST DRAFT\nmarker-aaa\n");
 
-				const prev = process.env.RP_PLATFORM_AI_ASSISTANT_PROMPTS_DIR;
-				process.env.RP_PLATFORM_AI_ASSISTANT_PROMPTS_DIR = tmp;
+				const prev = process.env.VIBE_TAVERN_AI_ASSISTANT_PROMPTS_DIR;
+				process.env.VIBE_TAVERN_AI_ASSISTANT_PROMPTS_DIR = tmp;
 				try {
 					// First read sees the initial content.
 					expect(await loadPromptAsset(filename)).toBe("# FIRST DRAFT\nmarker-aaa\n");
@@ -102,8 +102,8 @@ describe("prompt-asset-loader — shared resolver", () => {
 					await Bun.write(overridePath, "# EDITED LIVE\nmarker-bbb\n");
 					expect(await loadPromptAsset(filename)).toBe("# EDITED LIVE\nmarker-bbb\n");
 				} finally {
-					if (prev === undefined) delete process.env.RP_PLATFORM_AI_ASSISTANT_PROMPTS_DIR;
-					else process.env.RP_PLATFORM_AI_ASSISTANT_PROMPTS_DIR = prev;
+					if (prev === undefined) delete process.env.VIBE_TAVERN_AI_ASSISTANT_PROMPTS_DIR;
+					else process.env.VIBE_TAVERN_AI_ASSISTANT_PROMPTS_DIR = prev;
 				}
 			} finally {
 				await rm(tmp, { recursive: true, force: true });
@@ -138,15 +138,15 @@ describe("ai-assistant-prompts — rewire onto shared loader", () => {
 			const filename = getModeConfig("script").defaultPromptFile;
 			const overridePath = join(tmp, filename);
 			await Bun.write(overridePath, "# ASSISTANT FIRST\n");
-			const prev = process.env.RP_PLATFORM_AI_ASSISTANT_PROMPTS_DIR;
-			process.env.RP_PLATFORM_AI_ASSISTANT_PROMPTS_DIR = tmp;
+			const prev = process.env.VIBE_TAVERN_AI_ASSISTANT_PROMPTS_DIR;
+			process.env.VIBE_TAVERN_AI_ASSISTANT_PROMPTS_DIR = tmp;
 			try {
 				expect(await getDefaultPromptForMode("script")).toBe("# ASSISTANT FIRST\n");
 				await Bun.write(overridePath, "# ASSISTANT EDITED\n");
 				expect(await getDefaultPromptForMode("script")).toBe("# ASSISTANT EDITED\n");
 			} finally {
-				if (prev === undefined) delete process.env.RP_PLATFORM_AI_ASSISTANT_PROMPTS_DIR;
-				else process.env.RP_PLATFORM_AI_ASSISTANT_PROMPTS_DIR = prev;
+				if (prev === undefined) delete process.env.VIBE_TAVERN_AI_ASSISTANT_PROMPTS_DIR;
+				else process.env.VIBE_TAVERN_AI_ASSISTANT_PROMPTS_DIR = prev;
 			}
 		} finally {
 			await rm(tmp, { recursive: true, force: true });

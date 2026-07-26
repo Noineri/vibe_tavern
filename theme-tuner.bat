@@ -5,7 +5,7 @@ rem  Starts the web dev server (frontend only — no backend needed for the
 rem  tuner) and opens the browser at the #theme-tuner hash. Double-click to
 rem  use; close the "Theme Tuner — dev server" window to stop the server.
 rem
-rem  Port is 4173 (apps/web/dev-server.ts -> RP_WEB_DEV_PORT default).
+rem  Port is 4173 (apps/web/dev-server.ts -> VIBE_TAVERN_WEB_DEV_PORT default).
 rem ─────────────────────────────────────────────────────────────────────
 setlocal
 cd /d "%~dp0"

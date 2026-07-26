@@ -168,11 +168,11 @@ async function main() {
 	console.log("\n✅ Android ARM64 artifact build complete!");
 	console.log(`   Archive: ${ARCHIVE}`);
 	console.log("   Runtime env expected on Android/proot:");
-	console.log("     RP_PLATFORM_OPEN_BROWSER=0");
-	console.log("     RP_PLATFORM_HOST=127.0.0.1");
-	console.log("     RP_PLATFORM_PORT=8787");
-	console.log("     RP_PLATFORM_DATA_DIR=$HOME/.local/share/vibe-tavern");
-	console.log("     RP_PLATFORM_WEB_DIR=$HOME/vibe-tavern/web");
+	console.log("     VIBE_TAVERN_OPEN_BROWSER=0");
+	console.log("     VIBE_TAVERN_HOST=127.0.0.1");
+	console.log("     VIBE_TAVERN_PORT=8787");
+	console.log("     VIBE_TAVERN_DATA_DIR=$HOME/.local/share/vibe-tavern");
+	console.log("     VIBE_TAVERN_WEB_DIR=$HOME/vibe-tavern/web");
 }
 
 main();

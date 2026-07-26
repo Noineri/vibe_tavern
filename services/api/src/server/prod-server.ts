@@ -10,18 +10,18 @@
  *   bun out/services/api/prod-server.js
  *
  * Environment:
- *   RP_PLATFORM_ROOT_DIR   — project root (default: cwd)
- *   RP_PLATFORM_DATA_DIR   — user data dir (default: <root>/data)
- *   RP_PLATFORM_HOST       — listen host (default: 0.0.0.0)
- *   RP_PLATFORM_PORT       — listen port (default: 8787)
+ *   VIBE_TAVERN_ROOT_DIR   — project root (default: cwd)
+ *   VIBE_TAVERN_DATA_DIR   — user data dir (default: <root>/data)
+ *   VIBE_TAVERN_HOST       — listen host (default: 0.0.0.0)
+ *   VIBE_TAVERN_PORT       — listen port (default: 8787)
  */
 
 import { resolve } from "node:path";
 import { startServerRuntime } from "./server-runtime.js";
 
-const rootDir = resolve(process.env.RP_PLATFORM_ROOT_DIR ?? process.cwd());
+const rootDir = resolve(process.env.VIBE_TAVERN_ROOT_DIR ?? process.cwd());
 const staticDir = resolve(rootDir, "out", "apps", "web");
-const dataDir = resolve(process.env.RP_PLATFORM_DATA_DIR ?? resolve(rootDir, "data"));
+const dataDir = resolve(process.env.VIBE_TAVERN_DATA_DIR ?? resolve(rootDir, "data"));
 const assetsDir = resolve(dataDir, "assets");
 const staticEnabled = await Bun.file(resolve(staticDir, "index.html")).exists();
 
@@ -32,8 +32,8 @@ startServerRuntime({
 	assetsDir,
 	staticDir,
 	staticEnabled,
-	host: process.env.RP_PLATFORM_HOST ?? "0.0.0.0",
-	port: Number(process.env.RP_PLATFORM_PORT ?? "8787"),
+	host: process.env.VIBE_TAVERN_HOST ?? "0.0.0.0",
+	port: Number(process.env.VIBE_TAVERN_PORT ?? "8787"),
 	checkPortBeforeListen: true,
 	shutdownSignals: ["SIGINT", "SIGTERM"],
 	missingFrontendMessage: 'Frontend not built. Run "bun run build:web" first, or use dev mode.',

@@ -20,7 +20,7 @@ import { Tokenizer as WebTokenizer } from "@agnai/web-tokenizers";
 
 export async function resolveTokenizerDir(): Promise<string> {
 	const candidates = [
-		process.env.RP_PLATFORM_TOKENIZER_DIR,
+		process.env.VIBE_TAVERN_TOKENIZER_DIR,
 		// Standalone artifact: tokenizers next to executable.
 		join(resolve(process.execPath, ".."), "tokenizers"),
 		// API artifacts: Bun.build flat output or tsc module output.

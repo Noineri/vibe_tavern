@@ -39,9 +39,9 @@ bun run dev:api
 bun run dev:web:debug
 ```
 
-Plain `bun run dev:web` serves the frontend standalone on :4173 with no proxy; the `:debug` variant is what wires 4173 → 8787. An alternative to the debug proxy is setting `RP_WEB_API_URL=http://127.0.0.1:8787` before `bun run dev:web`: the frontend resolves its API base URL via `getGatewayBaseUrl()` ([`apps/web/src/gateway-client.ts`](./apps/web/src/gateway-client.ts)), which prefers the configured `RP_WEB_API_URL` and otherwise falls back to `window.location.origin` (which would call the dev server itself and find no API).
+Plain `bun run dev:web` serves the frontend standalone on :4173 with no proxy; the `:debug` variant is what wires 4173 → 8787. An alternative to the debug proxy is setting `VIBE_TAVERN_WEB_API_URL=http://127.0.0.1:8787` before `bun run dev:web`: the frontend resolves its API base URL via `getGatewayBaseUrl()` ([`apps/web/src/gateway-client.ts`](./apps/web/src/gateway-client.ts)), which prefers the configured `VIBE_TAVERN_WEB_API_URL` and otherwise falls back to `window.location.origin` (which would call the dev server itself and find no API).
 
-> Port note: the API defaults to `8787` (override with `RP_PLATFORM_PORT`). The two dev servers must run on different ports — `server-runtime.ts` frees its target port before binding, so it will never collide with another instance, but pick a free port if you run more than one.
+> Port note: the API defaults to `8787` (override with `VIBE_TAVERN_PORT`). The two dev servers must run on different ports — `server-runtime.ts` frees its target port before binding, so it will never collide with another instance, but pick a free port if you run more than one.
 
 ---
 

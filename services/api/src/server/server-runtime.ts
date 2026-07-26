@@ -392,7 +392,7 @@ function openBrowserOrPrintMessage(options: {
 	readonly missingFrontendMessage: string;
 }): void {
 	const tag = `[${options.mode}]`;
-	if (options.staticEnabled && process.env.RP_PLATFORM_OPEN_BROWSER !== "0") {
+	if (options.staticEnabled && process.env.VIBE_TAVERN_OPEN_BROWSER !== "0") {
 		const browserUrl = `http://127.0.0.1:${options.port}`;
 		console.log(`${tag} Opening browser at ${browserUrl}`);
 		const args =

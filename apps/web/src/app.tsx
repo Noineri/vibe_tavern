@@ -1,4 +1,4 @@
-import { useRpPlatformApp } from "./hooks/use-vibe-tavern-app.js";
+import { useVibeTavernApp } from "./hooks/use-vibe-tavern-app.js";
 import { useT } from "./i18n/context.js";
 import { AppShell } from "./components/layout/AppShell.js";
 import { TooltipProvider } from "./components/shared/Tooltip.js";
@@ -12,7 +12,7 @@ rehydrateCoauthorDrafts();
 
 export function App() {
   const { t } = useT();
-  const { isLoading, loadError, retryLoad, tweaksSettings, setTweaksSettings } = useRpPlatformApp();
+  const { isLoading, loadError, retryLoad, tweaksSettings, setTweaksSettings } = useVibeTavernApp();
   const sessionRevoked = useSessionStore((s) => s.revoked);
   const resetSession = useSessionStore((s) => s.reset);
 

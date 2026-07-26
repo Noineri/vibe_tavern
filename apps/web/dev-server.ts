@@ -10,9 +10,9 @@ const { values: cli } = parseArgs({
 	allowPositionals: true,
 });
 const isDebug = cli.debug === true || process.env.VT_DEV_DEBUG === "1";
-const PORT = Number(process.env.RP_WEB_DEV_PORT ?? "4173");
+const PORT = Number(process.env.VIBE_TAVERN_WEB_DEV_PORT ?? "4173");
 if (!Number.isInteger(PORT) || PORT < 1 || PORT > 65_535) {
-	throw new RangeError("RP_WEB_DEV_PORT must be an integer from 1 to 65535");
+	throw new RangeError("VIBE_TAVERN_WEB_DEV_PORT must be an integer from 1 to 65535");
 }
 
 async function proxyToApi(req: Request, pathname: string): Promise<Response> {
@@ -32,7 +32,7 @@ async function proxyToApi(req: Request, pathname: string): Promise<Response> {
 		const message = err instanceof Error ? err.message : String(err);
 		return new Response(
 			`Debug proxy error — API server not reachable on :8787.\n${message}\n\n` +
-				`Start the API server: RP_PLATFORM_PORT=8787 bun run dev`,
+				`Start the API server: VIBE_TAVERN_PORT=8787 bun run dev`,
 			{
 				status: 502,
 				headers: { "Content-Type": "text/plain" },
@@ -110,7 +110,7 @@ if (isDebug) {
 		"  \x1b[33m⚠ Debug mode:\x1b[0m /api and /assets proxy to localhost:8787",
 	);
 	console.log(
-		"    Make sure the API server is running: RP_PLATFORM_PORT=8787 bun run dev",
+		"    Make sure the API server is running: VIBE_TAVERN_PORT=8787 bun run dev",
 	);
 	console.log("");
 }

@@ -1,14 +1,14 @@
 import { afterEach, describe, expect, test } from "bun:test";
 
 const WEB_ENV_KEYS = [
-	"RP_WEB_APP_VERSION",
-	"RP_WEB_UPDATE_API_BASE",
-	"RP_WEB_MODE",
-	"RP_WEB_API_URL",
-	"RP_WEB_DEFAULT_PROVIDER_LABEL",
-	"RP_WEB_DEFAULT_BASE_URL",
-	"RP_WEB_DEFAULT_MODEL",
-	"RP_WEB_FORCE_FIRST_RUN",
+	"VIBE_TAVERN_WEB_APP_VERSION",
+	"VIBE_TAVERN_WEB_UPDATE_API_BASE",
+	"VIBE_TAVERN_WEB_MODE",
+	"VIBE_TAVERN_WEB_API_URL",
+	"VIBE_TAVERN_WEB_DEFAULT_PROVIDER_LABEL",
+	"VIBE_TAVERN_WEB_DEFAULT_BASE_URL",
+	"VIBE_TAVERN_WEB_DEFAULT_MODEL",
+	"VIBE_TAVERN_WEB_FORCE_FIRST_RUN",
 ] as const;
 
 const originalEnv = new Map(WEB_ENV_KEYS.map((key) => [key, process.env[key]]));
@@ -55,14 +55,14 @@ describe("build configuration", () => {
 
 	test("reads configured web build variables at module initialization", async () => {
 		// Given
-		setEnv("RP_WEB_API_URL", "https://api.example.test");
-		setEnv("RP_WEB_APP_VERSION", "9.8.7");
-		setEnv("RP_WEB_UPDATE_API_BASE", "https://updates.example.test/");
-		setEnv("RP_WEB_MODE", "development");
-		setEnv("RP_WEB_DEFAULT_PROVIDER_LABEL", "Local provider");
-		setEnv("RP_WEB_DEFAULT_BASE_URL", "https://models.example.test/v1");
-		setEnv("RP_WEB_DEFAULT_MODEL", "example-model");
-		setEnv("RP_WEB_FORCE_FIRST_RUN", "true");
+		setEnv("VIBE_TAVERN_WEB_API_URL", "https://api.example.test");
+		setEnv("VIBE_TAVERN_WEB_APP_VERSION", "9.8.7");
+		setEnv("VIBE_TAVERN_WEB_UPDATE_API_BASE", "https://updates.example.test/");
+		setEnv("VIBE_TAVERN_WEB_MODE", "development");
+		setEnv("VIBE_TAVERN_WEB_DEFAULT_PROVIDER_LABEL", "Local provider");
+		setEnv("VIBE_TAVERN_WEB_DEFAULT_BASE_URL", "https://models.example.test/v1");
+		setEnv("VIBE_TAVERN_WEB_DEFAULT_MODEL", "example-model");
+		setEnv("VIBE_TAVERN_WEB_FORCE_FIRST_RUN", "true");
 
 		// When
 		const buildConfig = await importBuildConfig();
@@ -81,7 +81,7 @@ describe("build configuration", () => {
 
 	test("only enables forced first run for the literal true value", async () => {
 		// Given
-		setEnv("RP_WEB_FORCE_FIRST_RUN", "TRUE");
+		setEnv("VIBE_TAVERN_WEB_FORCE_FIRST_RUN", "TRUE");
 
 		// When
 		const buildConfig = await importBuildConfig();
