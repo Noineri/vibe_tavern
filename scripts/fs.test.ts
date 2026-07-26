@@ -83,7 +83,11 @@ describe("pathExists", () => {
 		expect(result).toBe(false);
 	});
 
-	test("returns false when stat hits a permission error", async () => {
+	// chmod(0o000) is a no-op on Windows (no POSIX mode bits), so the
+	// permission-error path can only be exercised on POSIX platforms.
+	const posixOnlyTest = process.platform === "win32" ? test.skip : test;
+
+	posixOnlyTest("returns false when stat hits a permission error", async () => {
 		// Given
 		const root = await makeRoot();
 		const lockedDir = join(root, "locked");

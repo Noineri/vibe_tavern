@@ -17,8 +17,7 @@ async function scanGlob(pattern: string, options: GlobScanOptions): Promise<stri
   return entries;
 }
 
-async function buildPatternFixture(root: string): Promise<string> {
-  const backslash = String.fromCharCode(92);
+async function buildPatternFixture(root: string): Promise<void> {
   await Promise.all([
     mkdir(join(root, ".hidden-dir"), { recursive: true }),
     mkdir(join(root, "visible-dir"), { recursive: true }),
@@ -34,9 +33,7 @@ async function buildPatternFixture(root: string): Promise<string> {
     Bun.write(join(root, "top-skill", "SKILL.md"), "top"),
     Bun.write(join(root, "nested", "deep-skill", "SKILL.md"), "deep"),
     Bun.write(join(root, "nested", "inside.json"), "inside"),
-    Bun.write(join(root, `literal${backslash}name.json`), "literal"),
   ]);
-  return backslash;
 }
 
 describe("Bun.Glob semantics on Bun 1.3.14-canary.1", () => {
@@ -57,7 +54,6 @@ describe("Bun.Glob semantics on Bun 1.3.14-canary.1", () => {
     const withDot = await scanGlob("**/*.json", { cwd: tempRoot, dot: true });
 
     expect(withoutDot.sort()).toEqual([
-      "literal\\name.json",
       "nested/inside.json",
       "visible-dir/visible-child.json",
       "visible.json",
@@ -65,7 +61,6 @@ describe("Bun.Glob semantics on Bun 1.3.14-canary.1", () => {
     expect(withDot.sort()).toEqual([
       ".hidden-dir/hidden-dir.json",
       ".hidden.json",
-      "literal\\name.json",
       "nested/inside.json",
       "visible-dir/.hidden-child.json",
       "visible-dir/visible-child.json",
@@ -99,11 +94,19 @@ describe("Bun.Glob semantics on Bun 1.3.14-canary.1", () => {
     expect(recursive).toEqual(expect.arrayContaining(["nested/inside.json", "nested/deep-skill/SKILL.md"]));
   });
 
-  test("uses forward slashes as separators on POSIX and preserves literal backslashes in names", async () => {
-    const backslash = await buildPatternFixture(tempRoot);
+  test("matches with forward-slash separators and not with backslash separators", async () => {
+    await buildPatternFixture(tempRoot);
 
     expect(await scanGlob("nested/*.json", { cwd: tempRoot })).toEqual(["nested/inside.json"]);
-    expect(await scanGlob(`nested${backslash}*.json`, { cwd: tempRoot })).toEqual([]);
+    expect(await scanGlob("nested\\*.json", { cwd: tempRoot })).toEqual([]);
+  });
+
+  // Backslashes are legal in POSIX filenames but illegal on win32, so the
+  // literal-backslash fixture can only exist on POSIX.
+  (process.platform === "win32" ? test.skip : test)("preserves literal backslashes in file names", async () => {
+    const backslash = String.fromCharCode(92);
+    await Bun.write(join(tempRoot, `literal${backslash}name.json`), "literal");
+
     expect(await scanGlob(`literal${backslash}name.json`, { cwd: tempRoot })).toEqual([`literal${backslash}name.json`]);
   });
 
@@ -182,6 +185,10 @@ describe("Bun.Glob semantics on Bun 1.3.14-canary.1", () => {
 
     expect(first).toEqual(second);
     expect(sync).toEqual(first);
-    expect(first).not.toEqual([...first].sort());
+    // The non-lexical claim is an empirical POSIX filesystem
+    // characterization; NTFS enumeration is often alphabetical.
+    if (process.platform !== "win32") {
+      expect(first).not.toEqual([...first].sort());
+    }
   });
 });
