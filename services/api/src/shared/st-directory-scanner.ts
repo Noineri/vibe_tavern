@@ -616,11 +616,17 @@ export async function importSillyTavernDirectory(
 			const { blocks, promptOrder } = stPreset;
 			const mainBlock = blocks.find((b) => b.identifier === "main");
 			const jailbreakBlock = blocks.find((b) => b.identifier === "jailbreak");
+			const nsfwBlock = blocks.find((b) => b.identifier === "nsfw");
+			const enhanceBlock = blocks.find((b) => b.identifier === "enhanceDefinitions");
+			const authorsNoteBlock = blocks.find((b) => b.identifier === "authorsNote");
 
-			// Built-in identifiers whose content goes into named preset fields
-			// (not custom injections). Matches the browser exclusion set exactly.
+			// Built-in identifiers whose content maps onto named preset fields, NOT
+			// custom injections. authorsNote joins this set so its content/role/
+			// position land on the native authorsNote fields instead of a standalone
+			// injection — mirrors the browser Phase 3 mapping
+			// (PromptManagerModal.handleImportPreset).
 			const excluded = new Set([
-				"main", "jailbreak", "nsfw", "enhanceDefinitions",
+				"main", "jailbreak", "nsfw", "enhanceDefinitions", "authorsNote",
 				"worldInfoBefore", "worldInfoAfter",
 			]);
 			const customBlocks = blocks.filter((b) => !excluded.has(b.identifier) && b.content.trim());
@@ -642,6 +648,29 @@ export async function importSillyTavernDirectory(
 				}
 			}
 
+			// Authors Note position/depth — reverse-map from the ST block. ST
+			// injection_position 1 = absolute in-chat depth injection; 0 = a
+			// prompt-order block placed before/after chat (promptOrderPlacement).
+			// Mirrors VT→ST export (slotToStFields + resolveAuthorsNoteSlot), so the
+			// round-trip is stable. NOTE: VT's AuthorsNotePosition uses "in_prompt"
+			// (not "before_chat") for the pre-chat case.
+			let authorsNote: string | undefined;
+			let authorsNotePosition: "in_prompt" | "in_chat" | "after_chat" | undefined;
+			let authorsNoteDepth: number | undefined;
+			let authorsNoteRole: "system" | "user" | "assistant" | undefined;
+			if (authorsNoteBlock?.content.trim()) {
+				authorsNote = authorsNoteBlock.content;
+				authorsNoteRole = authorsNoteBlock.role;
+				if (authorsNoteBlock.injectionPosition === 1) {
+					authorsNotePosition = "in_chat";
+					authorsNoteDepth = authorsNoteBlock.injectionDepth || 4;
+				} else if (authorsNoteBlock.promptOrderPlacement === "after_chat") {
+					authorsNotePosition = "after_chat";
+				} else {
+					authorsNotePosition = "in_prompt";
+				}
+			}
+
 			await createPromptPreset(
 				{ presets: deps.stores.presets, chats: deps.stores.chats },
 				{
@@ -649,6 +678,12 @@ export async function importSillyTavernDirectory(
 					system: mainBlock?.content || "",
 					jailbreak: jailbreakBlock?.content || "",
 					prefill: "",
+					nsfw: nsfwBlock?.content || "",
+					enhanceDefinitions: enhanceBlock?.content || "",
+					authorsNote,
+					authorsNotePosition,
+					authorsNoteDepth,
+					authorsNoteRole,
 					customInjections: customInjections.length > 0 ? customInjections : undefined,
 					promptOrder: canvas.length > 0 ? canvas : undefined,
 				},
