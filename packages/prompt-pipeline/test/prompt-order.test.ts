@@ -238,3 +238,95 @@ describe("Prompt pipeline: preset promptOrder toggles", () => {
     expect(ids).not.toContain("preset_injection_custom_dropped");
   });
 });
+
+// ── Toggle matrix: every standard slot × {on, off} ──────────────────────────
+// APC-1. Verifies the advanced-mode resolver honours `enabled` for EVERY
+// built-in identifier (nsfw/enhanceDefinitions were previously untested). Each
+// case builds a maximal context (all content sources populated) and toggles
+// exactly one identifier: the corresponding layer MUST be present when enabled
+// and absent when disabled. chatHistory is always-enabled by design; assistantPrefill
+// is not a layer (it surfaces as `result.prefill`). worldInfoBefore/After gate
+// lore entries (position before_char/after_char), so they assert on the lore layer.
+describe("Prompt pipeline: promptOrder toggle matrix (every standard slot)", () => {
+  function ctxWith(toggle: { identifier: string; enabled: boolean }) {
+    return {
+      identity: { chatId: "chat_1" },
+      chat: { recentMessages: [{ id: "m1", role: "user", content: "hello" }] },
+      character: {
+        id: "char_1",
+        name: "Aria",
+        description: "A mage.",
+        scenario: "The tower burns.",
+        personality: "Careful.",
+        mesExample: "<START>\n{{user}}: hi\n{{char}}: hello",
+        mesExampleMode: "always",
+        avatarDescription: "pale skin, silver eyes",
+        includeAvatarInPrompt: true,
+        gallery: [{ caption: "ref", description: "a cloak" }],
+      },
+      persona: {
+        id: "persona_1",
+        name: "Olya",
+        description: "A scholar.",
+        avatarDescription: "dark hair",
+        includeAvatarInPrompt: true,
+      },
+      lore: [
+        { id: "Lbefore", title: "Before", content: "before-lore body", priority: 100, position: "before_char" },
+        { id: "Lafter", title: "After", content: "after-lore body", priority: 100, position: "after_char" },
+      ],
+      preset: {
+        id: "preset_1",
+        text: "system prompt",
+        jailbreak: "post history",
+        authorsNote: "author note",
+        nsfw: "nsfw block",
+        enhanceDefinitions: "enhance block",
+        prefill: "prefill text",
+        advancedMode: true,
+        promptOrder: [toggle],
+      },
+    };
+  }
+
+  const cases: Array<{ identifier: string; layerId: string }> = [
+    { identifier: "main", layerId: "prompt_preset_system" },
+    { identifier: "jailbreak", layerId: "prompt_preset_jailbreak" },
+    { identifier: "authorsNote", layerId: "prompt_preset_authors_note" },
+    { identifier: "enhanceDefinitions", layerId: "prompt_preset_enhance_definitions" },
+    { identifier: "nsfw", layerId: "prompt_preset_nsfw" },
+    { identifier: "charDescription", layerId: "character_base" },
+    { identifier: "charPersonality", layerId: "character_personality" },
+    { identifier: "scenario", layerId: "character_scenario" },
+    { identifier: "characterAvatar", layerId: "character_avatar" },
+    { identifier: "characterGallery", layerId: "character_gallery" },
+    { identifier: "personaDescription", layerId: "persona" },
+    { identifier: "personaAvatar", layerId: "persona_avatar" },
+    { identifier: "dialogueExamples", layerId: "mes_example" },
+    { identifier: "worldInfoBefore", layerId: "lore_Lbefore" },
+    { identifier: "worldInfoAfter", layerId: "lore_Lafter" },
+  ];
+
+  for (const { identifier, layerId } of cases) {
+    it(`toggles ${identifier}: layer present when enabled, absent when disabled`, () => {
+      const enabled = assemblePrompt(ctxWith({ identifier, enabled: true }));
+      const disabled = assemblePrompt(ctxWith({ identifier, enabled: false }));
+      const enabledIds = enabled.layers.map((l) => l.id);
+      const disabledIds = disabled.layers.map((l) => l.id);
+      expect(enabledIds).toContain(layerId);
+      expect(disabledIds).not.toContain(layerId);
+    });
+  }
+
+  it("chatHistory cannot be disabled (always enabled — carries depth markup)", () => {
+    const disabled = assemblePrompt(ctxWith({ identifier: "chatHistory", enabled: false }));
+    expect(disabled.layers.map((l) => l.id)).toContain("recent_history");
+  });
+
+  it("assistantPrefill toggle controls result.prefill (not a layer)", () => {
+    const enabled = assemblePrompt(ctxWith({ identifier: "assistantPrefill", enabled: true }));
+    const disabled = assemblePrompt(ctxWith({ identifier: "assistantPrefill", enabled: false }));
+    expect(enabled.prefill).toBe("prefill text");
+    expect(disabled.prefill).toBeNull();
+  });
+});
