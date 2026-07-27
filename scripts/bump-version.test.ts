@@ -83,13 +83,15 @@ async function createFixture(): Promise<GitFixture> {
 	// Mirrors the real repo's .gitignore.
 	await Bun.write(join(root, ".gitignore"), "node_modules/\n**/node_modules/\n");
 
-	// `--lockfile-only` writes bun.lock and nothing else — the script verifies
-	// the lockfile, it never needs the packages installed. No node_modules is
-	// created anywhere, so no platform's install layout can leave a stray file
-	// for the guard to trip on.
-	const install = await run(["bun", "install", "--lockfile-only"], root);
+	// A full `bun install` on purpose, NOT `--lockfile-only`: on Windows the
+	// lockfile that `--lockfile-only` writes is one that `--frozen-lockfile`
+	// then rejects ("lockfile had changes"), so the fixture would fail the
+	// script's verification for a reason that has nothing to do with the
+	// behaviour under test. Only a real install produces a lockfile bun agrees
+	// with on every platform.
+	const install = await run(["bun", "install"], root);
 	if (install.exitCode !== 0) {
-		throw new Error(`fixture setup: bun install --lockfile-only failed:\n${install.stderr}`);
+		throw new Error(`fixture setup: bun install failed:\n${install.stderr}`);
 	}
 
 	await git(root, "init", "-b", "master");

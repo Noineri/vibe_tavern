@@ -279,11 +279,18 @@ async function main(): Promise<void> {
 		process.exit(1);
 	}
 
-	// --- verify the lockfile describes the tree we are about to release ---
+	// --- validate the manifests, then the lockfile that describes them ---
 	//
-	// Runs BEFORE the bump, against the exact committed state that CI verified,
-	// so it is a pure validation with nothing in flight.
+	// Both run BEFORE the bump, against the exact committed state that CI
+	// verified, so they are pure validations with nothing in flight.
 	//
+	// Manifest structure is checked first: it is a cheap, self-contained read,
+	// and its failure ("an internal dep is pinned by version") is a statement
+	// about the manifests alone. Checking the lockfile first would report a
+	// lockfile mismatch for what is really a manifest problem.
+	const manifests = await loadManifests();
+	assertWorkspaceDeps(manifests);
+
 	// `--frozen-lockfile --dry-run` is the whole point: it answers "does this
 	// lockfile still satisfy these manifests" and writes NOTHING — no
 	// node_modules, no lockfile rewrite. A plain `bun install` would be actively
@@ -291,6 +298,10 @@ async function main(): Promise<void> {
 	// to re-resolve every other range, silently dragging unrelated dependency
 	// upgrades into the release commit. Verification must not mutate the tree it
 	// is about to tag.
+	//
+	// It must also run before the version rewrite: on Windows bun counts the
+	// workspace `version` fields recorded in bun.lock as part of the frozen
+	// check, so verifying after the bump fails there (but not on Linux).
 
 	console.log("Verifying bun.lock...");
 	const verify = await $`bun install --frozen-lockfile --dry-run`.cwd(ROOT).nothrow().quiet();
@@ -306,11 +317,10 @@ async function main(): Promise<void> {
 	console.log(`Bumping v${currentVersion} → v${targetVersion} on ${branch}\n`);
 
 	// --- bump files ---
-
-	// Load and validate every manifest BEFORE writing any of them — a failure
-	// halfway through the list would otherwise leave a half-bumped tree behind.
-	const manifests = await loadManifests();
-	assertWorkspaceDeps(manifests);
+	//
+	// Every manifest was loaded and validated above, so nothing is written until
+	// all of them passed — a failure halfway through would otherwise leave a
+	// half-bumped tree behind.
 
 	for (const { relPath, absPath, pkg } of manifests) {
 		pkg.version = targetVersion;
