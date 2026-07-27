@@ -255,11 +255,12 @@ describe("modal open/close lifecycle", () => {
   });
 });
 
-describe("successful-save clearing semantics", () => {
-  test("clearStars is the post-merge-save call: it empties exactly the saved message's stars", () => {
-    // The Wave 5 modal calls clearStars(targetMessageId) after the
-    // append-new-variant mutation succeeds — and only then. Closing the modal
-    // (even after a save) never clears implicitly.
+describe("clearStars action (explicit user clear)", () => {
+  test("clearStars empties exactly the targeted message's stars", () => {
+    // clearStars is an explicit user action only — the merge-save path no
+    // longer calls it (stars persist so the user can generate several merged
+    // variants from the same sources). Closing the modal never clears
+    // implicitly.
     const { toggleStar, openEditor, closeEditor, clearStars } = useMessageAiEditorStore.getState();
     toggleStar(msg("m-1"), variant("v-a"));
     toggleStar(msg("m-1"), variant("v-b"));
@@ -270,7 +271,7 @@ describe("successful-save clearing semantics", () => {
       targetMessageId: msg("m-1"),
     });
 
-    // Merge save succeeds → modal clears the merged message's stars, then closes.
+    // Explicit user clear → empties the targeted message's stars only.
     clearStars(msg("m-1"));
     closeEditor();
 

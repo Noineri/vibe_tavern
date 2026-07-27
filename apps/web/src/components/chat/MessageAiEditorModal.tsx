@@ -96,7 +96,6 @@ export function MessageAiEditorModal() {
   const starredByMessage = useMessageAiEditorStore((s) => s.starredVariantIdsByMessage);
   const closeEditor = useMessageAiEditorStore((s) => s.closeEditor);
   const toggleStar = useMessageAiEditorStore((s) => s.toggleStar);
-  const clearStars = useMessageAiEditorStore((s) => s.clearStars);
 
   const messagesById = useSnapshotStore((s) => s.messagesById);
   const activeChat = useSnapshotStore((s) => s.activeChat);
@@ -336,10 +335,11 @@ export function MessageAiEditorModal() {
         promptPresetId: runner.doneMetadata?.promptPresetId ?? undefined,
         finishReason: runner.doneMetadata?.finishReason ?? undefined,
       });
-      // Success — clear this message's stars (the merge consumed them) and
-      // close. createMessageVariantAction already syncSnapshot'd the
+      // Success — close. Stars are PRESERVED so the user can reopen the
+      // merge editor and generate several variants from the same sources
+      // (merge appends a new variant; it never consumes/deletes the starred
+      // sources). createMessageVariantAction already syncSnapshot'd the
       // appended-and-selected variant.
-      clearStars(targetMessageId);
       closeEditor();
     } catch (err: unknown) {
       setApplyError(err instanceof Error ? err.message : String(err));
@@ -349,7 +349,7 @@ export function MessageAiEditorModal() {
   }, [
     target, targetMessageId, targetChatId, mergeBelowMinimum,
     runner.streamedOutput, runner.streaming, applying, runner.doneMetadata,
-    starredByMessage, clearStars, closeEditor,
+    starredByMessage, closeEditor,
   ]);
 
   // ─── Close (cancel) — never mutates canonical state ────────────────

@@ -5,8 +5,10 @@
  * component: the open editor's target and the per-message starred variant
  * selections. The store lives at module level (NOT in component state), so
  * stars survive Virtuoso unmount/remount of message rows and `closeEditor`
- * alike — a star is cleared ONLY by an explicit user action or by the
- * successful merge-save path, both of which call `clearStars`.
+ * alike — a star is cleared ONLY by an explicit user action (toggle-off /
+ * `clearStars`). The merge-save path intentionally KEEPS stars so the user
+ * can reopen the merge editor and generate several variants from the same
+ * sources.
  *
  * EPHEMERAL ONLY: no SQLite, no localStorage/persist middleware, no canonical
  * snapshot state. A page reload loses every star; that is intentional.
@@ -65,9 +67,10 @@ export interface MessageAiEditorActions {
   /** Closes the editor and KEEPS all stars — closing is never a clear. */
   closeEditor: () => void;
   toggleStar: (messageId: MessageId, variantId: MessageVariantId) => void;
-  /** The single clearing call: explicit user clearing AND the successful
-   *  merge-save path (the Wave 5 modal calls this after the append-new-variant
-   *  mutation succeeds). No-op when the message has no stars. */
+  /** The single clearing call: explicit user clearing only. The merge-save
+   *  path no longer calls this — stars persist after a merge so the user can
+   *  generate several merged variants from the same sources. No-op when the
+   *  message has no stars. */
   clearStars: (messageId: MessageId) => void;
   /** Drops starred IDs absent from `validVariantIds` (call after variant
    *  deletion/index compaction). Pure filtering: preserves the surviving

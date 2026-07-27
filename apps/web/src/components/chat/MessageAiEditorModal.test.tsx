@@ -704,7 +704,7 @@ describe("MessageAiEditorModal — merge Save success clears stars and closes", 
     seedBootstrap("prov-1", "model-a");
   });
 
-  it("merge Save success: clearStars(messageId) + close; provenance captured from done metadata", async () => {
+  it("merge Save success: preserves stars + close; provenance captured from done metadata", async () => {
     seedMessage([
       { id: VA, messageId: MID, variantIndex: 0, content: "alpha", isSelected: true, finishReason: "stop" },
       { id: VB, messageId: MID, variantIndex: 1, content: "beta", isSelected: false, finishReason: "stop" },
@@ -726,7 +726,9 @@ describe("MessageAiEditorModal — merge Save success clears stars and closes", 
     await act(async () => { fireEvent.click(screen.getByText("message_ai_editor_save_new_variant")); });
 
     await waitFor(() => expect(useMessageAiEditorStore.getState().target).toBeNull());
-    expect(useMessageAiEditorStore.getState().starredVariantIdsByMessage[MID]).toBeUndefined();
+    // Stars are PRESERVED after merge-save so the user can reopen and
+    // generate more variants from the same sources.
+    expect(useMessageAiEditorStore.getState().starredVariantIdsByMessage[MID]).toEqual([VA, VB]);
     expect(createVariantMock.fn).toHaveBeenCalledTimes(1);
     expect(createVariantMock.fn).toHaveBeenCalledWith(CID, MID, {
       content: "merged candidate text",
