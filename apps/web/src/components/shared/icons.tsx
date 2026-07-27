@@ -101,6 +101,18 @@ export const Ic = {
   checkCircle:()=><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="8" cy="8" r="6"/><polyline points="5 8 7 10 11 6"/></svg>,
   // Dice / Fate Die (DICE-F6) — D20 hexagon outline with an inner triangle facet.
   dice:()=><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M8 1.33 L13.67 4.67 L13.67 11.33 L8 14.67 L2.33 11.33 L2.33 4.67 Z"/><path d="M8 5 L11 10 L5 10 Z" strokeOpacity="0.45"/></svg>,
+  // Plus inside a rectangular frame — the "custom injection" slot-category
+  // icon (APC-3a). Distinguishes user-added prompt blocks from built-ins.
+  plusInFrame:()=><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><rect x="2.25" y="2.25" width="11.5" height="11.5" rx="1.5"/><line x1="8" y1="5.5" x2="8" y2="10.5"/><line x1="5.5" y1="8" x2="10.5" y2="8"/></svg>,
+  // User bust inside a ring — the "persona" slot-category icon (APC-3a).
+  // Distinct from the plain `user` glyph (character category): the ring marks
+  // the user-persona context, not the character.
+  circleUser:()=><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><circle cx="8" cy="8" r="6.5"/><circle cx="8" cy="6.3" r="1.9"/><path d="M4.3 12.6c.6-1.7 2-2.7 3.7-2.7s3.1 1 3.7 2.7"/></svg>,
+  // Book + anchor composite glyph — the "lorebook anchor" slot-category icon
+  // (APC-3a): a bound lorebook (book) pinned at a canvas position (anchor).
+  // Single SVG (book left, anchor right) rather than two overlaid glyphs so it
+  // stays crisp at 13px without absolute-positioned badges.
+  loreAnchor:()=><svg width="14" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><path d="M2 3h4a1 1 0 0 1 1 1v9a1 1 0 0 0-1-1H2.5A.5.5 0 0 1 2 10.5V3.5A.5.5 0 0 1 2.5 3z"/><path d="M7 4v9"/><circle cx="11.5" cy="4.5" r="1.2"/><line x1="11.5" y1="5.7" x2="11.5" y2="13"/><path d="M9 10.2a2.5 2.5 0 0 0 5 0"/><line x1="10" y1="7.8" x2="13" y2="7.8"/></svg>,
 };
 
 // Icon props actually used at call sites: `className` (any icon) and `direction`
