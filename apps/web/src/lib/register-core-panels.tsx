@@ -32,16 +32,6 @@ registerBuildPanel({
 });
 
 registerBuildPanel({
-  id: "trace",
-  icon: <Icons.Trace />,
-  labelKey: "sidebar_build_trace",
-  render() {
-    // Trace panel is complex — handled via BuildModeInner wrapper
-    return null;
-  },
-});
-
-registerBuildPanel({
   id: "insights",
   icon: <Icons.Target />,
   labelKey: "sidebar_build_insights",
@@ -50,5 +40,15 @@ registerBuildPanel({
     // directly, so it needs nothing from the BuildPanelContext (it shows an
     // empty state when no chat is active).
     return <InsightsPanel />;
+  },
+});
+
+registerBuildPanel({
+  id: "trace",
+  icon: <Icons.Trace />,
+  labelKey: "sidebar_build_trace",
+  render() {
+    // Trace panel is complex — handled via BuildModeInner wrapper
+    return null;
   },
 });
