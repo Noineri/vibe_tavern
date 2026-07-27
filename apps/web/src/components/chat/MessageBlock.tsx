@@ -451,7 +451,10 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
     isCoauthorTurn: false,
     presetName,
     tokenCount: msg.tokenCount,
-    createdAt: msg.createdAt,
+    // Per-variant timestamp: show the SELECTED variant's real creation time
+    // (each variant is its own generation with its own `createdAt`), not the
+    // message's — otherwise swiping always shows the first variant's time.
+    createdAt: selectedVariant?.createdAt ?? msg.createdAt,
     diceRolls: msg.diceRolls ?? [],
   };
 
