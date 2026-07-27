@@ -440,7 +440,15 @@ export const messageVariants = sqliteTable('message_variants', {
   reasoning: text('reasoning'),
   reasoningDurationMs: integer('reasoning_duration_ms'),
   modelId: text('model_id'),
-  presetId: text('preset_id').references(() => promptPresets.id, { onDelete: 'set null' }),
+  // Baked-at-generation-time preset NAME snapshot (no FK). Historically this was
+  // a `preset_id` FK to prompt_presets (ON DELETE SET NULL), but that coupled
+  // message metadata to the lifetime of a preset row: deleting a preset would
+  // either block (stale NO-ACTION FK in old-build DBs — PRESET_COPY_DELETE_
+  // CORRUPTION bug 2) or silently null out the historical record (SET NULL).
+  // Since the value is purely display metadata ("which preset generated this"),
+  // it is baked as an immutable text string — survives preset delete/rename,
+  // consistent with model_id (also a plain text column, no FK).
+  presetName: text('preset_name'),
   toolCallsJson: text('tool_calls_json'),
   toolCallId: text('tool_call_id'),
   coauthorModuleId: text('coauthor_module_id'),

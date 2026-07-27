@@ -201,7 +201,11 @@ describe("assembleCoauthorPrompt", () => {
   test("promptTraceDraft carries coauthor preset name and no RP-pipeline layers", async () => {
     const loaders = makeLoaders();
     const result = await assembleCoauthorPrompt(makeInput(loaders, { branchId: "br_1" as never }));
-    expect(result.promptTraceDraft.presetName).toBe("(coauthor)");
+    // The chat has no module set (coauthorModuleId: null) → resolves to the
+    // default seed module ("Character Workshop"); its NAME is baked as the
+    // draft's presetName so the message-meta badge shows the module, not a
+    // preset (a coauthor variant has no preset).
+    expect(result.promptTraceDraft.presetName).toBe("Character Workshop");
     expect(result.promptTraceDraft.presetId).toBeNull();
     expect(result.promptTraceDraft.activatedLoreEntries).toEqual([]);
     expect(result.promptTraceDraft.branchId).toBe("br_1");

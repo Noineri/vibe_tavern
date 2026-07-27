@@ -24,12 +24,10 @@ export type MessageEditorPromptSource = Readonly<Pick<
   | "finishReason"
   | "reasoning"
   | "modelId"
-  | "presetId"
+  | "presetName"
   | "createdAt"
   | "sceneTracker"
->> & {
-  readonly presetName: string | null;
-};
+>>;
 
 export interface ComposeMessageEditorPromptInput {
   readonly mode: MessageEditorPromptMode;
@@ -85,7 +83,6 @@ function formatSource(source: MessageEditorPromptSource): string {
     `variant-id="${escapeXml(source.id)}"`,
     `display-number="${source.variantIndex + 1}"`,
     `model-id="${metadataValue(source.modelId)}"`,
-    `preset-id="${metadataValue(source.presetId)}"`,
     `preset-name="${metadataValue(source.presetName)}"`,
     `finish-reason="${metadataValue(source.finishReason)}"`,
     `created-at="${escapeXml(source.createdAt)}"`,

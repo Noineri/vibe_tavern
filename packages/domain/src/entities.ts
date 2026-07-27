@@ -579,7 +579,7 @@ export interface MessageVariant {
   reasoning?: string;
   reasoningDurationMs?: number;
   modelId?: string | null;
-  presetId?: string | null;
+  presetName?: string | null;
   toolCalls?: ToolCall[];
   toolCallId?: string | null;
   coauthorModuleId?: string | null;

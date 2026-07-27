@@ -19,7 +19,7 @@ function ctx(overrides: Partial<MessageMetaContext> = {}): MessageMetaContext {
       isSelected: true,
       finishReason: null,
       modelId: "anthropic/claude-sonnet-4",
-      presetId: "preset-1",
+      presetName: "Default",
       coauthorModuleId: null,
       coauthorSkillId: null,
       createdAt: "2026-07-08T00:00:00.000Z" as never,

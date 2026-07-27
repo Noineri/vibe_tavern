@@ -157,10 +157,16 @@ export interface AssemblePromptForChatInput {
   presetId?: PromptPresetId;
 }
 
-export type PromptTraceDraft = Omit<PromptTrace, "id" | "messageId" | "createdAt"> & {
+export type PromptTraceDraft = Omit<PromptTrace, "id" | "messageId" | "createdAt" | "presetName"> & {
   /** Resolved prompt preset id (override → chat → global default), exported
    *  by assembly so the message-meta path records the preset each reply used. */
   presetId: string | null;
+  /** Resolved prompt preset NAME (clean: the preset's name, or null when none
+   *  was resolved). The prompt_traces column is NOT NULL, so the trace-save
+   *  path applies its own `?? "(none)"` display fallback; this field stays
+   *  clean so the message-meta path can bake a real name (or null) onto each
+   *  variant without inheriting the trace's display sentinel. */
+  presetName: string | null;
 };
 
 export interface AssemblePromptForChatResult {
@@ -307,12 +313,12 @@ export class PromptAssemblyService {
         chatId: built.chatId,
         branchId: built.branchId,
         model: input.model,
-        presetName: built.promptPresetName ?? built.chatPromptPresetId ?? "(none)",
+        presetName: built.promptPresetName,
         // The fully-resolved preset id (override → chat → global default; see
-        // the cascade above). Carried out of assembly so the message-meta path
-        // can record on each reply the preset that was ACTUALLY used — not just
-        // presetName for the trace. Read by ChatRuntime.appendAssistantReply /
-        // appendMessageVariant to populate messages/variants.presetId.
+        // the cascade above) and clean preset name. Carried out of assembly so
+        // the message-meta path can bake onto each variant the preset that was
+        // ACTUALLY used (name as an immutable string, no FK). Read by
+        // ChatRuntime.appendAssistantReply / appendMessageVariant.
         presetId: built.promptPresetId ?? null,
         assembledLayers: result.layers.map((layer) => mapPromptLayerDto(layer)),
         tokenAccounting: {

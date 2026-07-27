@@ -39,7 +39,7 @@ export interface MessageVariant {
   reasoning: string | null;
   reasoningDurationMs: number | null;
   modelId: string | null;
-  presetId: string | null;
+  presetName: string | null;
   createdAt: string;
   coauthorModuleId?: string | null;
   coauthorSkillId?: string | null;
@@ -144,7 +144,7 @@ export interface AddMessageInput {
   /** Prompt preset used for THIS message. Recorded on the selected variant
    *  (the field the message footer reads) so every reply — send, continue,
    *  regenerate, queue — carries its preset, not only the queue/variant path. */
-  presetId?: string | null;
+  presetName?: string | null;
   variants?: string[];
   selectedVariantIndex?: number;
   attachmentsJson?: string | null;
@@ -232,7 +232,7 @@ export class MessageStore {
         reasoning: variantIndex === selectedVariantIndex ? data.reasoning ?? null : null,
         reasoningDurationMs: variantIndex === selectedVariantIndex ? data.reasoningDurationMs ?? null : null,
         modelId: variantIndex === selectedVariantIndex ? data.modelId ?? null : null,
-        presetId: variantIndex === selectedVariantIndex ? data.presetId ?? null : null,
+        presetName: variantIndex === selectedVariantIndex ? data.presetName ?? null : null,
         toolCallsJson: variantIndex === selectedVariantIndex ? data.toolCallsJson ?? null : null,
         toolCallId: variantIndex === selectedVariantIndex ? data.toolCallId ?? null : null,
         coauthorModuleId: variantIndex === selectedVariantIndex ? data.coauthorModuleId ?? null : null,
@@ -305,7 +305,7 @@ export class MessageStore {
         reasoning: variantIndex === selectedVariantIndex ? data.reasoning ?? null : null,
         reasoningDurationMs: variantIndex === selectedVariantIndex ? data.reasoningDurationMs ?? null : null,
         modelId: variantIndex === selectedVariantIndex ? data.modelId ?? null : null,
-        presetId: variantIndex === selectedVariantIndex ? data.presetId ?? null : null,
+        presetName: variantIndex === selectedVariantIndex ? data.presetName ?? null : null,
         toolCallsJson: variantIndex === selectedVariantIndex ? data.toolCallsJson ?? null : null,
         toolCallId: variantIndex === selectedVariantIndex ? data.toolCallId ?? null : null,
         coauthorModuleId: variantIndex === selectedVariantIndex ? data.coauthorModuleId ?? null : null,
@@ -411,7 +411,7 @@ export class MessageStore {
             reasoning: v.reasoning ?? null,
             reasoningDurationMs: null,
             modelId: null,
-            presetId: null,
+            presetName: null,
             toolCallsJson: null,
             toolCallId: null,
             coauthorModuleId: null,
@@ -610,7 +610,7 @@ export class MessageStore {
     reasoning?: string,
     reasoningDurationMs?: number,
     modelId?: string | null,
-    presetId?: string | null,
+    presetName?: string | null,
     toolCallsJson?: string | null,
     toolCallId?: string | null,
     coauthorModuleId?: string | null,
@@ -651,7 +651,7 @@ export class MessageStore {
           reasoning: reasoning ?? null,
           reasoningDurationMs: reasoningDurationMs ?? null,
           modelId: modelId ?? null,
-          presetId: presetId ?? null,
+          presetName: presetName ?? null,
           toolCallsJson: toolCallsJson ?? null,
           toolCallId: toolCallId ?? null,
           coauthorModuleId: coauthorModuleId ?? null,
@@ -999,7 +999,7 @@ export class MessageStore {
       reasoning: row.reasoning,
       reasoningDurationMs: row.reasoningDurationMs,
       modelId: row.modelId,
-      presetId: row.presetId,
+      presetName: row.presetName,
       coauthorModuleId: row.coauthorModuleId,
       coauthorSkillId: row.coauthorSkillId,
       toolCalls: row.toolCallsJson ? JSON.parse(row.toolCallsJson) : null,

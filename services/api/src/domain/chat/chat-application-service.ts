@@ -66,7 +66,9 @@ type AddEditorVariantInput = {
   readonly content: string;
   readonly sourceVariantIds: readonly string[];
   readonly modelId?: string;
-  readonly promptPresetId?: string;
+  /** Baked preset name (immutable text, no FK to a preset row) — sourced from
+   *  the resolved pending prompt-trace draft by the chat-runtime wrapper. */
+  readonly presetName?: string | null;
   readonly finishReason?: string;
 };
 
@@ -234,7 +236,7 @@ export class ChatApplicationService {
       undefined,
       undefined,
       input.modelId,
-      input.promptPresetId,
+      input.presetName,
     );
   }
 

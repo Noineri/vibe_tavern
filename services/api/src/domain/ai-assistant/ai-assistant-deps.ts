@@ -113,7 +113,6 @@ export function createAiAssistantDeps(stores: StoreContainer, sessionRuntime: Se
 		getMessageEditorChat: (chatId: string) => stores.chats.getById(chatId),
 		getMessageEditorMessages: (branchId: string) => stores.messages.getMessages(branchId),
 		getMessageEditorVariantsByBranch: (branchId: string) => stores.messages.getVariantsByBranch(branchId),
-		getPromptPresetName: async (presetId: string) => (await stores.presets.getById(presetId))?.name ?? null,
 		buildMessageEditorPipelineContext: (input: {
 			chatId: string;
 			branchId: string;

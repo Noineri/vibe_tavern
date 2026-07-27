@@ -22,7 +22,6 @@ function deps(overrides: Partial<StreamDeps> = {}): StreamDeps {
     getMessageEditorChat: async () => null,
     getMessageEditorMessages: async () => [],
     getMessageEditorVariantsByBranch: async () => new Map(),
-    getPromptPresetName: async () => null,
     buildMessageEditorPipelineContext: async () => { throw new Error("message editor context is not configured"); },
     ...overrides,
   };

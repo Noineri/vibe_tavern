@@ -201,7 +201,7 @@ export class ChatRuntime {
         authorType: "assistant",
         content: "",
         modelId: pending?.draft.model ?? null,
-        presetId: pending?.draft.presetId ?? null,
+        presetName: pending?.draft.presetName ?? null,
         reasoning: reasoningData.reasoning,
         reasoningDurationMs: reasoningData.reasoningDurationMs,
         toolCallsJson: JSON.stringify(reasoningData.toolCalls.map(tc => ({
@@ -232,7 +232,7 @@ export class ChatRuntime {
         authorType: "assistant",
         content,
         modelId: pending?.draft.model ?? null,
-        presetId: pending?.draft.presetId ?? null,
+        presetName: pending?.draft.presetName ?? null,
         coauthorModuleId: pending?.coauthorModuleId ?? null,
         coauthorSkillId: pending?.coauthorSkillId ?? null,
       });
@@ -244,7 +244,7 @@ export class ChatRuntime {
         authorType: "assistant",
         content,
         modelId: pending?.draft.model ?? null,
-        presetId: pending?.draft.presetId ?? null,
+        presetName: pending?.draft.presetName ?? null,
         coauthorModuleId: pending?.coauthorModuleId ?? null,
         coauthorSkillId: pending?.coauthorSkillId ?? null,
         reasoning: reasoningData?.reasoning,
@@ -258,7 +258,7 @@ export class ChatRuntime {
         branchId: pending.branchId,
         messageId: assistantMessage.id,
         model: pending.draft.model,
-        presetName: pending.draft.presetName,
+        presetName: pending.draft.presetName ?? "(none)",
         assembledLayers: pending.draft.assembledLayers,
         tokenAccounting: pending.draft.tokenAccounting,
         finalPayload: pending.draft.finalPayload,
@@ -297,7 +297,6 @@ export class ChatRuntime {
       latencyMs: number;
       reasoning?: string;
       reasoningDurationMs?: number;
-      presetId?: PromptPresetId | null;
       toolCalls?: import("../../infrastructure/ai/provider-execution-types.js").ExtractedToolCall[];
       toolResults?: import("../../infrastructure/ai/provider-execution-types.js").ExtractedToolResult[];
     },
@@ -318,7 +317,11 @@ export class ChatRuntime {
       input.reasoning,
       input.reasoningDurationMs,
       pending?.draft.model ?? null,
-      input.presetId ?? pending?.draft.presetId ?? null,
+      // Preset is baked as a NAME snapshot (no FK) — sourced from the resolved
+      // draft, which already reflects the override/chat/default cascade used
+      // for THIS turn (see buildPipelineContext). Null when no preset resolved
+      // or there is no pending trace.
+      pending?.draft?.presetName ?? null,
       input.toolCalls && input.toolCalls.length > 0 ? JSON.stringify(input.toolCalls.map(tc => ({ id: tc.toolCallId, name: tc.toolName, args: tc.args }))) : null,
       null,
       pending?.coauthorModuleId ?? null,
@@ -331,7 +334,7 @@ export class ChatRuntime {
         branchId: pending.branchId,
         messageId,
         model: pending.draft.model,
-        presetName: pending.draft.presetName,
+        presetName: pending.draft.presetName ?? "(none)",
         assembledLayers: pending.draft.assembledLayers,
         tokenAccounting: pending.draft.tokenAccounting,
         finalPayload: pending.draft.finalPayload,
@@ -366,7 +369,19 @@ export class ChatRuntime {
       throw notFound("Message", `Message '${messageId}' was not found in chat '${chatId}'.`);
     }
 
-    await this.deps.chatApp.addEditorVariant(messageId, input);
+    // Bake the preset NAME from the resolved pending draft (set by the
+    // assemblePromptPreview that precedes every editor commit). The draft
+    // already reflects the override/chat/default cascade, so this is the
+    // preset the editor turn actually used. Peek (not consume) — a subsequent
+    // generated variant on the same trace still needs the draft.
+    const presetName = this.peekPendingPresetName(chatId);
+    await this.deps.chatApp.addEditorVariant(messageId, {
+      content: input.content,
+      sourceVariantIds: input.sourceVariantIds,
+      modelId: input.modelId,
+      presetName,
+      finishReason: input.finishReason,
+    });
     return await this.deps.buildMessageResponse(chatId);
   }
 
@@ -493,5 +508,13 @@ export class ChatRuntime {
 
     this.pendingPromptTraceByChat.delete(chatId);
     return pending;
+  }
+
+  /** Peek (read without consuming) the resolved preset NAME on the pending
+   *  draft for a chat. Used by the editor-variant path, which must NOT consume
+   *  the draft — a subsequent generated variant on the same trace still needs
+   *  it. Null when there is no pending trace or no preset was resolved. */
+  private peekPendingPresetName(chatId: ChatId): string | null {
+    return this.pendingPromptTraceByChat.get(chatId)?.draft.presetName ?? null;
   }
 }

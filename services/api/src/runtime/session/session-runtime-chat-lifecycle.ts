@@ -447,6 +447,7 @@ export class ChatLifecycleRuntime {
 			const assembled = await this.deps.assemblePrompt(chatId, chat.activeBranchId as ChatBranchId);
 			await this.deps.stores.traces.saveTrace({
 				...assembled.promptTraceDraft,
+				presetName: assembled.promptTraceDraft.presetName ?? "(none)",
 				messageId: message.id,
 			});
 		}

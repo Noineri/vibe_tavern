@@ -12,7 +12,6 @@ import * as Select from "@radix-ui/react-select";
 import { useDisplayMessage, useMacroContext, useMessageAuthor, useIsStreamingTarget, useStreamingRevealedFor } from "../../stores/chat-selectors.js";
 import { useChatStore, useIsSending } from "../../stores/index.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
-import { useBootstrapStore } from "../../stores/api-actions/bootstrap-actions.js";
 import { useMessageAiEditorStore } from "../../stores/message-ai-editor-store.js";
 import type { MessageBlockProps } from "../play/play-mode-types.js";
 import { Icons } from "../shared/icons.js";
@@ -142,13 +141,10 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
   // MessageBlock. If we early-return before finishing the hook list, React
   // detects fewer hooks than the previous render → React error #300 → blank page.
   const isMobile = useIsMobile();
-  const promptPresets = useBootstrapStore((s) => s.data?.promptPresets ?? null);
   const selectedVariant = variants[selectedVariantIndex] ?? variants[0];
-  const presetName = useMemo(() => {
-    const pid = selectedVariant?.presetId ?? null;
-    if (!pid || !promptPresets) return null;
-    return promptPresets.find((p) => p.id === pid)?.name ?? null;
-  }, [selectedVariant?.presetId, promptPresets]);
+  // Preset name is baked on the variant at generation time (immutable text, no
+  // FK to a preset row) — read directly instead of resolving id → name.
+  const presetName = selectedVariant?.presetName ?? null;
   // Q5: per-variant picker items for the jump browser (>6 variants). Resolves
   // variantId + displayIndex + modelLabel + presetName for EVERY variant once;
   // the dropdown rows read from this. Skipped when variantCount <= 6 (the
@@ -160,9 +156,9 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
       variantId: v.id,
       displayIndex: v.variantIndex + 1,
       modelLabel: v.modelId ? resolveModelLabel(v.modelId) : "",
-      presetName: v.presetId && promptPresets ? promptPresets.find((p) => p.id === v.presetId)?.name ?? null : null,
+      presetName: v.presetName ?? null,
     }));
-  }, [variants, variantCount, promptPresets]);
+  }, [variants, variantCount]);
 
 
   if (input.messageId === "__pending-user") {

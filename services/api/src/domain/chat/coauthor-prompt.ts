@@ -499,13 +499,13 @@ export async function assembleCoauthorPrompt(input: ChatModeAssembleInput): Prom
   };
 
   return {
-    branchId: input.branchId ?? ("" as ChatBranchId),
+    branchId: input.branchId ?? (chat.activeBranchId as ChatBranchId),
     prompt,
     promptTraceDraft: {
       chatId: chatId,
-      branchId: (input.branchId ?? ("" as ChatBranchId)),
+      branchId: (input.branchId ?? (chat.activeBranchId as ChatBranchId)),
       model,
-      presetName: "(coauthor)",
+      presetName: module.name,
       presetId: null,
       assembledLayers: layers,
       tokenAccounting: {

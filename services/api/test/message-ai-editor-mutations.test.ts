@@ -214,6 +214,11 @@ describe("Message AI editor guarded mutations (MAE-32)", () => {
     const { message, first, second } = await seedTwoVariants(env);
     const promptPresetId = (await env.runtime.getSnapshot(env.chatId)).activeChat.promptPresetId;
     if (!promptPresetId) throw new Error("expected seeded prompt preset");
+    const expectedPresetName = (await env.stores.presets.getById(promptPresetId as string))?.name;
+    // The editor commit is always preceded by an assemble (it builds the
+    // editor prompt); that sets the pending draft whose baked preset name the
+    // editor variant records.
+    await env.runtime.chatRuntime.assemblePromptPreview(env.chatId, { excludeMessageId: message.id, model: "editor-model" });
 
     // When
     const response = await postVariant(env.app, {
@@ -234,7 +239,7 @@ describe("Message AI editor guarded mutations (MAE-32)", () => {
     const variants = await env.stores.messages.getVariants(message.id);
     expect(variants.map((variant) => variant.content)).toEqual(["Hello", "alternate source", "accepted merge candidate"]);
     expect(variants.map((variant) => variant.isSelected)).toEqual([false, false, true]);
-    expect(variants[2]).toMatchObject({ modelId: "editor-model", presetId: promptPresetId, finishReason: "stop" });
+    expect(variants[2]).toMatchObject({ modelId: "editor-model", presetName: expectedPresetName, finishReason: "stop" });
   });
 
   test("leaves a pending generation trace available for the subsequent generated variant", async () => {
@@ -242,6 +247,7 @@ describe("Message AI editor guarded mutations (MAE-32)", () => {
     const { message, first, second } = await seedTwoVariants(env);
     const promptPresetId = (await env.runtime.getSnapshot(env.chatId)).activeChat.promptPresetId;
     if (!promptPresetId) throw new Error("expected seeded prompt preset");
+    const expectedPresetName = (await env.stores.presets.getById(promptPresetId as string))?.name;
     await env.runtime.chatRuntime.assemblePromptPreview(env.chatId, {
       excludeMessageId: message.id,
       model: "pending-generation-model",
@@ -263,7 +269,7 @@ describe("Message AI editor guarded mutations (MAE-32)", () => {
 
     // Then
     const variants = await env.stores.messages.getVariants(message.id);
-    expect(variants[2]).toMatchObject({ modelId: "editor-model", presetId: promptPresetId, finishReason: "stop" });
+    expect(variants[2]).toMatchObject({ modelId: "editor-model", presetName: expectedPresetName, finishReason: "stop" });
     expect(variants[3]).toMatchObject({ modelId: "pending-generation-model", finishReason: "length" });
   });
 });

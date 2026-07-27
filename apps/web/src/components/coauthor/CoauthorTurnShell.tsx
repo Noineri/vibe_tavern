@@ -14,7 +14,6 @@ import { AutoTextarea } from "../shared/auto-textarea.js";
 import { MobileExpandTextarea } from "../shared/MobileExpandTextarea.js";
 import { useT } from "../../i18n/context.js";
 import { resolveEntityAvatarUrl } from "../../lib/avatar.js";
-import { useBootstrapStore } from "../../stores/api-actions/bootstrap-actions.js";
 import { countTokens } from "../../utils/tokenizer.js";
 import { useChatController } from "../../hooks/use-chat-controller.js";
 import { useShallow } from "zustand/react/shallow";
@@ -59,7 +58,6 @@ export const CoauthorTurnShell = memo(function CoauthorTurnShell({
   const [copied, setCopied] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const messageActionId = useChatStore(s => s.messageActionId);
-  const promptPresets = useBootstrapStore((s) => s.data?.promptPresets ?? null);
 
   const assistantMessageIds = turnMessageIds.filter(id => {
     const role = useSnapshotStore.getState().messagesById[id]?.role;
@@ -130,10 +128,8 @@ export const CoauthorTurnShell = memo(function CoauthorTurnShell({
   // not per CoauthorTurnPart.
   const lastAssistantVariant =
     lastAssistantMsg?.variants?.[lastAssistantMsg.selectedVariantIndex ?? 0] ?? null;
-  const coauthorPresetName =
-    lastAssistantVariant?.presetId && promptPresets
-      ? promptPresets.find((p) => p.id === lastAssistantVariant.presetId)?.name ?? null
-      : null;
+  // Preset name is baked on the variant (immutable text, no FK) — direct read.
+  const coauthorPresetName = lastAssistantVariant?.presetName ?? null;
   const snapshotState = useSnapshotStore.getState();
   const turnTokenCount = assistantMessageIds.reduce(
     (sum, id) => sum + countTokens(snapshotState.messagesById[id]?.content ?? ""),

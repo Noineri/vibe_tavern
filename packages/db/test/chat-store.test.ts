@@ -419,7 +419,7 @@ describe("MessageStore — variant (swipe) semantics", () => {
     // dropped before, causing forked branches to lose the metadata bar's
     // model/preset segments.
     expect(selectedInFork!.modelId).toBe("anthropic/claude-sonnet-4");
-    expect(selectedInFork!.presetId).toBe("preset_1");
+    expect(selectedInFork!.presetName).toBe("preset_1");
   });
 
   test("addVariant does not duplicate content — regression for sentence cloning bug", async () => {
@@ -620,7 +620,7 @@ describe("MessageStore — variant (swipe) semantics", () => {
   });
 });
 
-describe("MessageStore — variant preset_id (Q2)", () => {
+describe("MessageStore — variant preset_name (Q2)", () => {
   let db: Awaited<ReturnType<typeof createTestDb>>;
   let messageStore: MessageStore;
 
@@ -632,71 +632,70 @@ describe("MessageStore — variant preset_id (Q2)", () => {
     messageStore = new MessageStore(db, { clock: testClock, idGenerator: testIdGen });
   });
 
-  test("addMessage with presetId → recorded on the selected variant (send/continue path)", async () => {
-    // Characterization for the message-meta preset bug. addMessage already
-    // wrote modelId to the selected variant but NOT presetId (only addVariant
-    // did). So ordinary sends / continues recorded the model in per-message
-    // meta but never the prompt preset, and the footer
-    // (time · tokens · model · preset) showed no preset for non-queue replies
-    // — only the queue (addVariant) path recorded it. addMessage must now
-    // record presetId on the selected variant just like it records modelId.
+  test("addMessage with presetName → baked on the selected variant (send/continue path)", async () => {
+    // Characterization for the message-meta preset field. The preset is stored
+    // as a baked NAME string (no FK to prompt_presets) — addMessage must record
+    // it on the selected variant just like it records modelId, so ordinary
+    // sends / continues show the preset in per-message meta. (Previously the
+    // field was a preset_id FK and addMessage omitted it; now it is a name and
+    // the send path stamps it — see PRESET_COPY_DELETE_CORRUPTION bug 2 fix.)
     const msg = await messageStore.addMessage({
       chatId: "chat_1", branchId: "brnch_1",
       role: "assistant", authorType: "assistant",
       content: "First reply",
       modelId: "gpt-4o",
-      presetId: "preset_1",
+      presetName: "My Preset",
     });
 
     const rows = await messageStore.getVariants(msg.id);
     const selected = rows.find((r) => r.variantIndex === 0)!;
     expect(selected.modelId).toBe("gpt-4o");
-    expect(selected.presetId).toBe("preset_1");
+    expect(selected.presetName).toBe("My Preset");
   });
 
-  test("addVariant without presetId → variant.presetId is null (backward compat)", async () => {
+  test("addVariant without presetName → variant.presetName is null (backward compat)", async () => {
     const msg = await messageStore.addMessage({
       chatId: "chat_1", branchId: "brnch_1", role: "assistant", authorType: "assistant", content: "V0",
     });
     const v = await messageStore.addVariant(msg.id, "V1");
-    expect(v.presetId).toBeNull();
+    expect(v.presetName).toBeNull();
 
     // Round-trips through getVariants.
     const rows = await messageStore.getVariants(msg.id);
-    expect(rows.find((r) => r.variantIndex === v.variantIndex)?.presetId).toBeNull();
+    expect(rows.find((r) => r.variantIndex === v.variantIndex)?.presetName).toBeNull();
   });
 
-  test("addVariant with presetId → persisted and round-trips", async () => {
+  test("addVariant with presetName → persisted and round-trips", async () => {
     const msg = await messageStore.addMessage({
       chatId: "chat_1", branchId: "brnch_1", role: "assistant", authorType: "assistant", content: "V0",
     });
-    // preset_1 is bootstrapped into prompt_presets, so the FK resolves.
+    // The name is plain text — no FK to resolve, no prompt_presets row needed.
     const v = await messageStore.addVariant(
-      msg.id, "Queued reply", undefined, undefined, undefined, "gpt-4o", "preset_1",
+      msg.id, "Queued reply", undefined, undefined, undefined, "gpt-4o", "My Preset",
     );
     expect(v.modelId).toBe("gpt-4o");
-    expect(v.presetId).toBe("preset_1");
+    expect(v.presetName).toBe("My Preset");
 
     const rows = await messageStore.getVariants(msg.id);
     const queued = rows.find((r) => r.variantIndex === v.variantIndex)!;
     expect(queued.modelId).toBe("gpt-4o");
-    expect(queued.presetId).toBe("preset_1");
+    expect(queued.presetName).toBe("My Preset");
   });
 
-  test("mixed variants — only the override-tagged one carries presetId", async () => {
+  test("mixed variants — only the override-tagged one carries presetName", async () => {
     const msg = await messageStore.addMessage({
       chatId: "chat_1", branchId: "brnch_1", role: "assistant", authorType: "assistant", content: "V0",
     });
     await messageStore.addVariant(msg.id, "standalone regen"); // no preset
     const queued = await messageStore.addVariant(
-      msg.id, "queued job", undefined, undefined, undefined, "claude", "preset_1",
+      msg.id, "queued job", undefined, undefined, undefined, "claude", "My Preset",
     );
 
     const rows = await messageStore.getVariants(msg.id);
-    const presets = rows.map((r) => r.presetId);
-    // Exactly one variant carries the preset; the others are null.
-    expect(presets.filter((p) => p === "preset_1")).toEqual(["preset_1"]);
-    expect(rows.find((r) => r.variantIndex === queued.variantIndex)!.presetId).toBe("preset_1");
+    const presets = rows.map((r) => r.presetName);
+    // Exactly one variant carries the preset name; the others are null.
+    expect(presets.filter((p) => p === "My Preset")).toEqual(["My Preset"]);
+    expect(rows.find((r) => r.variantIndex === queued.variantIndex)!.presetName).toBe("My Preset");
   });
 });
 

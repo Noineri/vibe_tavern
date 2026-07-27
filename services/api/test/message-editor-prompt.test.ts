@@ -19,7 +19,6 @@ function makeSource(overrides: Partial<MessageEditorPromptSource> = {}): Message
     finishReason: "stop",
     reasoning: "PRIVATE_REASONING_MARKER",
     modelId: "model-0",
-    presetId: "preset-0",
     createdAt: "2026-07-21T12:00:00.000Z",
     sceneTracker: null,
     presetName: "Preset Zero",
@@ -88,7 +87,6 @@ describe("composeMessageEditorPrompt", () => {
           variantIndex: 0,
           content: "VISIBLE_ONE",
           modelId: "model-one",
-          presetId: "preset-one",
           presetName: "Preset One",
           finishReason: "stop",
           createdAt: "2026-07-20T01:02:03.000Z",
@@ -98,7 +96,6 @@ describe("composeMessageEditorPrompt", () => {
           variantIndex: 1,
           content: "VISIBLE_TWO",
           modelId: "model-two",
-          presetId: "preset-two",
           presetName: "Preset Two",
           finishReason: "length",
           createdAt: "2026-07-21T04:05:06.000Z",
@@ -110,8 +107,8 @@ describe("composeMessageEditorPrompt", () => {
     const prompt = composeMessageEditorPrompt(input);
 
     // Then
-    expect(prompt).toContain('<message-editor-source variant-id="variant-one" display-number="1" model-id="model-one" preset-id="preset-one" preset-name="Preset One" finish-reason="stop" created-at="2026-07-20T01:02:03.000Z">');
-    expect(prompt).toContain('<message-editor-source variant-id="variant-two" display-number="2" model-id="model-two" preset-id="preset-two" preset-name="Preset Two" finish-reason="length" created-at="2026-07-21T04:05:06.000Z">');
+    expect(prompt).toContain('<message-editor-source variant-id="variant-one" display-number="1" model-id="model-one" preset-name="Preset One" finish-reason="stop" created-at="2026-07-20T01:02:03.000Z">');
+    expect(prompt).toContain('<message-editor-source variant-id="variant-two" display-number="2" model-id="model-two" preset-name="Preset Two" finish-reason="length" created-at="2026-07-21T04:05:06.000Z">');
     expect(prompt).toContain("VISIBLE_ONE");
     expect(prompt).toContain("VISIBLE_TWO");
   });

@@ -282,7 +282,6 @@ export class LiveChatOrchestrator {
       content: reply,
       latencyMs,
       reasoning,
-      presetId: input.presetId,
       toolCalls,
       toolResults,
     });
@@ -483,7 +482,6 @@ export class LiveChatOrchestrator {
             latencyMs,
             reasoning: reasoning || undefined,
             reasoningDurationMs,
-            presetId: input.presetId,
           });
         }
       },
@@ -493,7 +491,6 @@ export class LiveChatOrchestrator {
           latencyMs,
           reasoning,
           reasoningDurationMs,
-          presetId: input.presetId,
           toolCalls,
           toolResults,
         });

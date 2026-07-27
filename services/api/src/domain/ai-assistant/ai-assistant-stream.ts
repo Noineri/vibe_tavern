@@ -136,7 +136,6 @@ export interface StreamDeps extends ContextResolverDeps {
   readonly getMessageEditorChat: (chatId: string) => Promise<{ id: string; activeBranchId: string } | null>;
   readonly getMessageEditorMessages: (branchId: string) => Promise<Message[]>;
   readonly getMessageEditorVariantsByBranch: (branchId: string) => Promise<Map<string, MessageVariant[]>>;
-  readonly getPromptPresetName: (presetId: string) => Promise<string | null>;
   readonly buildMessageEditorPipelineContext: (input: MessageEditorPipelineContextInput) => Promise<BuiltPipelineContext>;
   /** Optional debug logger. */
   readonly logDebug?: (event: string, data: Record<string, unknown>) => void;
@@ -205,10 +204,7 @@ async function prepareMessageEditorRequest(input: MessageEditorPreparationInput)
       }
       throw notFound("MessageVariant", `Message editor source variant '${variantId}' was not found on the active branch.`);
     }
-    sources.push({
-      ...source,
-      presetName: source.presetId ? await deps.getPromptPresetName(source.presetId) : null,
-    });
+    sources.push(source);
   }
 
   const presetData = await deps.getPresetPromptData(chat.id);

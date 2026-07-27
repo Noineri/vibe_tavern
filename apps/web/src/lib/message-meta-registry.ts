@@ -44,7 +44,7 @@ export interface MessageMetaContext {
   messageRole: "user" | "assistant" | "system" | "tool";
   /**
    * The currently selected variant — the unit of generation. Provenance fields
-   * (modelId, presetId, reasoningDurationMs, coauthorModuleId, coauthorSkillId,
+   * (modelId, presetName, reasoningDurationMs, coauthorModuleId, coauthorSkillId,
    * finishReason) live here. Null only when the message has no variants yet.
    */
   variant: MessageVariant | null;
@@ -54,7 +54,7 @@ export interface MessageMetaContext {
   isStreaming: boolean;
   /** Whether this is rendered inside a coauthor turn shell (turn-level aggregation). */
   isCoauthorTurn: boolean;
-  /** Resolved preset name for the selected variant (variant.presetId → name). Null when none. */
+  /** Preset name baked on the selected variant at generation time. Null when none. */
   presetName: string | null;
   /** Message token count (not variant-derived; comes from the token counter). */
   tokenCount: number;
