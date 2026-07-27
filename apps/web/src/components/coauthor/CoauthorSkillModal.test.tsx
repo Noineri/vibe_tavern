@@ -11,44 +11,52 @@
  * Mirrors the CoauthorModuleModal.test.tsx mock topology: MasterDetailModal +
  * DestructiveConfirmModal are passthroughs (children rendered flat), api-actions
  * + skill-api are mocked, and `...real` spreads keep the mocks leak-safe
- * (vitest vi.mock is file-scoped, but the spread is kept for parity).
+ * (Bun's process-global mock.module still benefits from the spread for parity).
  */
-import { describe, it, expect, beforeEach, vi } from "vitest";
-import { render, fireEvent, waitFor } from "@testing-library/react";
+import { beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
+import { useDomEnv } from "../../../test/dom-env.js";
+
+useDomEnv();
+
+let fireEvent: typeof import("@testing-library/react").fireEvent;
+let render: typeof import("@testing-library/react").render;
+let waitFor: typeof import("@testing-library/react").waitFor;
 import type { SkillCatalog } from "@vibe-tavern/api-contracts";
 
-vi.mock("../../i18n/context.js", async (importOriginal) => {
-	const i18nReal = await importOriginal() as typeof import("../../i18n/context.js");
-	return {
-		...i18nReal,
+const realI18nContext = await import("../../i18n/context.js");
+const realSkillApi = await import("../../api/skill-api.js");
+const realChatActions = await import("../../stores/api-actions/chat-actions.js");
+const realMasterDetailModal = await import("../shared/MasterDetailModal.js");
+const realDestructiveConfirmModal = await import("../shared/destructive-confirm-modal.js");
+
+mock.module("../../i18n/context.js", () => ({
+		...realI18nContext,
 		useT: () => ({ t: (key: string) => key, tDynamic: (key: string) => key, locale: "en", setLocale: () => {}, ready: true }),
-	};
-});
+}));
 
 // ─── skill-api mock: the catalog the store loads + the delete/import fns ──
-const { listSkillsMock, deleteSkillMock, importSkillsMock } = vi.hoisted(() => ({
-	listSkillsMock: vi.fn(),
-	deleteSkillMock: vi.fn(),
-	importSkillsMock: vi.fn(),
-}));
-vi.mock("../../api/skill-api.js", () => ({
+const listSkillsMock = mock();
+const deleteSkillMock = mock();
+const importSkillsMock = mock();
+mock.module("../../api/skill-api.js", () => ({
+	...realSkillApi,
 	listCoauthorSkills: listSkillsMock,
-	readCoauthorSkill: vi.fn(),
+	readCoauthorSkill: mock(),
 	deleteCoauthorSkill: deleteSkillMock,
 	importCoauthorSkills: importSkillsMock,
 }));
 
 // ─── api-actions mock: the module list the reference guard consults ──────
-const { listModulesMock } = vi.hoisted(() => ({ listModulesMock: vi.fn() }));
-vi.mock("../../stores/api-actions/chat-actions.js", () => ({
+const listModulesMock = mock();
+mock.module("../../stores/api-actions/chat-actions.js", () => ({
+	...realChatActions,
 	listCoauthorModulesAction: listModulesMock,
 }));
 
 // ─── MasterDetailModal passthrough (children flat) ──────────────────────
-vi.mock("../shared/MasterDetailModal.js", async (importOriginal) => {
-	const mdmReal = await importOriginal() as typeof import("../shared/MasterDetailModal.js");
-	return {
-		...mdmReal,
+
+mock.module("../shared/MasterDetailModal.js", () => ({
+		...realMasterDetailModal,
 		MasterDetailModal: ({ isOpen, onClose, masterContent, detailContent, footer, headerActions }: {
 			isOpen: boolean;
 			onClose: () => void;
@@ -71,14 +79,12 @@ vi.mock("../shared/MasterDetailModal.js", async (importOriginal) => {
 		},
 		MasterDetailMobileDrillDown: () => null,
 		useMasterDetail: () => ({ isMobile: false, isDetailOpen: true, openDetail: () => {}, closeDetail: () => {} }),
-	};
-});
+}));
 
 // ─── DestructiveConfirmModal passthrough (renders title + buttons) ───────
-vi.mock("../shared/destructive-confirm-modal.js", async (importOriginal) => {
-	const dcmReal = await importOriginal() as typeof import("../shared/destructive-confirm-modal.js");
-	return {
-		...dcmReal,
+
+mock.module("../shared/destructive-confirm-modal.js", () => ({
+		...realDestructiveConfirmModal,
 		DestructiveConfirmModal: ({ title, body, confirmLabel, onConfirm, onCancel }: {
 			title: string; body: React.ReactNode; confirmLabel: string;
 			onConfirm: () => void; onCancel: () => void;
@@ -90,10 +96,13 @@ vi.mock("../shared/destructive-confirm-modal.js", async (importOriginal) => {
 				<button type="button" data-testid="confirm-ok" onClick={onConfirm}>{confirmLabel}</button>
 			</div>
 		),
-	};
-});
+}));
 
-const { CoauthorSkillModal } = await import("./CoauthorSkillModal.js");
+let CoauthorSkillModal: typeof import("./CoauthorSkillModal.js").CoauthorSkillModal;
+beforeAll(async () => {
+	({ fireEvent, render, waitFor } = await import("@testing-library/react"));
+	({ CoauthorSkillModal } = await import("./CoauthorSkillModal.js"));
+});
 const { useCoauthorSkillStore } = await import("../../stores/coauthor-skill-store.js");
 const { useModalStore } = await import("../../stores/modal-store.js");
 

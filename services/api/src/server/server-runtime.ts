@@ -1,5 +1,6 @@
 import { mkdir } from "node:fs/promises";
 import { resolve } from "node:path";
+import { Hono } from "hono";
 import { EventBus } from "@vibe-tavern/domain";
 import { setTokenCountFn } from "@vibe-tavern/prompt-pipeline";
 import { countTokens, warmupTokenizers } from "../infrastructure/ai/tokenizer-service.js";
@@ -28,7 +29,32 @@ import { resolveBuiltinSkillsRoot, resolveUserSkillsRoot } from "../domain/coaut
 import { configureLogDir } from "../shared/send-debug-log.js";
 import { createApp } from "./app-factory.js";
 import { createLoadingHandler } from "./loading-placeholder.js";
+
+export { apiNotReadyResponse } from "./loading-placeholder.js";
 import { runStartupFileChecks } from "./startup-checks.js";
+
+/**
+ * Everything needed to build the live Hono application: data dirs, startup
+ * file checks, stores, seed, tokenizers, domain services, feature registry.
+ * Shared by the network-facing servers (prod/standalone, which wrap it in
+ * `startServerRuntime`'s bind-first bootstrap) and the web dev server, which
+ * mounts the returned app in-process next to the HMR frontend.
+ */
+export interface RuntimeAppConfig {
+	readonly mode: "prod" | "standalone" | "dev";
+	readonly rootDir?: string;
+	readonly dataDir: string;
+	readonly assetsDir: string;
+	/** Built frontend directory to serve. Omit for API-only mode (dev server,
+	 *  `prod-server --api-only`) — the web-bundle startup checks are skipped. */
+	readonly staticDir?: string;
+	readonly logsDir?: string;
+	readonly extraDataDirs?: readonly string[];
+	/** Embedded frontend files baked into the standalone .exe. When non-empty,
+	 *  the SPA is served from the binary itself; no on-disk web/ folder is
+	 *  required. Sourced from embedded-web-manifest.ts. */
+	readonly embeddedWebFiles?: Record<string, string>;
+}
 
 export interface ServerRuntimeConfig {
 	readonly mode: "prod" | "standalone";
@@ -44,10 +70,123 @@ export interface ServerRuntimeConfig {
 	readonly checkPortBeforeListen?: boolean;
 	readonly shutdownSignals?: readonly NodeJS.Signals[];
 	readonly missingFrontendMessage: string;
-	/** Embedded frontend files baked into the standalone .exe. When non-empty,
-	 *  the SPA is served from the binary itself; no on-disk web/ folder is
-	 *  required. Sourced from embedded-web-manifest.ts. */
 	readonly embeddedWebFiles?: Record<string, string>;
+}
+
+export async function createRuntimeApp(config: RuntimeAppConfig): Promise<Hono> {
+	const tag = `[${config.mode}]`;
+
+	await mkdir(config.dataDir, { recursive: true });
+	await mkdir(config.assetsDir, { recursive: true });
+	for (const dir of config.extraDataDirs ?? []) {
+		await mkdir(dir, { recursive: true });
+	}
+	if (config.logsDir) {
+		await mkdir(config.logsDir, { recursive: true });
+		configureLogDir(config.logsDir);
+	}
+
+	await runStartupFileChecks({
+		mode: config.mode,
+		rootDir: config.rootDir,
+		dataDir: config.dataDir,
+		staticDir: config.staticDir,
+		embeddedWebFiles: config.embeddedWebFiles,
+	});
+
+	// Stores
+	const stores = await createRuntimeStore(config.dataDir);
+
+	// Seed
+	await Promise.all([
+		stores.personas.ensureDefault(),
+		stores.presets.ensureDefault(),
+		stores.uiSettings.ensureDefaults(),
+	]);
+	console.log(`${tag} Seed data ensured.`);
+
+	// Tokenizers
+	await warmupTokenizers();
+	setTokenCountFn(countTokens);
+	console.log(`${tag} Tokenizers ready.`);
+
+	// Services
+	const providerProfileService = createProviderProfileService(stores.providers);
+	const promptPresetService = new PromptPresetService(stores.presets, stores.chats);
+	// Skill library is constructed before SessionRuntime so the catalog can be
+	// injected (CTX-S4): the co-author prompt shows a metadata-only catalog
+	// and the model reads skill files on demand via read_skill_file.
+	const skillLibraryService = new SkillLibraryService(
+		resolveUserSkillsRoot(config.dataDir),
+		await resolveBuiltinSkillsRoot(),
+	);
+	const sessionRuntime = new SessionRuntime(stores, {
+		getActiveProviderProfile: () => providerProfileService.resolveActiveProviderProfile(),
+		dataDir: config.dataDir,
+		getSkillCatalog: async () => (await skillLibraryService.listCatalog()).entries,
+	});
+	const providerOrchestrator = new ProviderOrchestrator(providerProfileService);
+	const events = new EventBus();
+	const chatSummaryService = new ChatSummaryService(stores, sessionRuntime, providerProfileService);
+	const objectiveService = new ObjectiveService(stores, sessionRuntime, providerProfileService);
+	const trackerService = new SceneTrackerService(stores, sessionRuntime, providerProfileService);
+	const liveChatOrchestrator = new LiveChatOrchestrator(
+		sessionRuntime.chatRuntime,
+		sessionRuntime.chatApp,
+		providerOrchestrator,
+		events,
+		(chatId: string) => sessionRuntime.resolveChatModeStrategy(chatId as never),
+		composeForwardStateWait(objectiveService, trackerService),
+	);
+
+	// Feature registry — features subscribe to events and mount routes
+	const features = new FeatureRegistry();
+	features.register(createChatSummaryFeature({ stores, sessionRuntime, providerProfileService, events }));
+	features.register(createChatEventsFeature());
+	features.register(createInsightsFeature({ objectiveService, trackerService }));
+
+	const assetService = new AssetService(config.assetsDir, stores.content, (id) => stores.characters.resolveFolderName(id));
+	const mobileAccessService = await MobileAccessService.create(config.dataDir);
+
+	// RuntimeApi adapter
+	// Production randomness source for dice rolls. Uses crypto.getRandomValues
+	// for server-authoritative random numbers. Tests inject deterministic values.
+	const cryptoRng: RandomSource = {
+		intBelow(maxExclusive: number): number {
+			const buf = new Uint32Array(1);
+			crypto.getRandomValues(buf);
+			return buf[0]! % maxExclusive;
+		},
+	};
+	const diceService = new DiceService(stores, cryptoRng);
+	const runtime = new RuntimeApiAdapter(
+		stores,
+		providerProfileService,
+		liveChatOrchestrator,
+		chatSummaryService,
+		sessionRuntime,
+		promptPresetService,
+		assetService,
+		mobileAccessService,
+		objectiveService,
+		trackerService,
+		skillLibraryService,
+		diceService,
+	);
+
+	features.register(createAiAssistantFeature(runtime.aiAssistant));
+
+	const app = await createApp({
+		runtime,
+		staticDir: config.staticDir,
+		embeddedWebFiles: config.embeddedWebFiles,
+		mobileAccessToken: () => mobileAccessService.getToken(),
+		enforceMobileAuth: true,
+		configureFeatures: (router) => features.activateAll({ events, router }),
+	});
+
+	console.log(`${tag} Application ready.`);
+	return app;
 }
 
 export async function startServerRuntime(config: ServerRuntimeConfig): Promise<void> {
@@ -133,119 +272,19 @@ export async function startServerRuntime(config: ServerRuntimeConfig): Promise<v
 	// All heavy init runs AFTER the port is bound. The placeholder handler
 	// serves loading HTML + 503 for API routes until this completes.
 	try {
-		await mkdir(config.dataDir, { recursive: true });
-		await mkdir(config.assetsDir, { recursive: true });
-		for (const dir of config.extraDataDirs ?? []) {
-			await mkdir(dir, { recursive: true });
-		}
-		if (config.logsDir) {
-			await mkdir(config.logsDir, { recursive: true });
-			configureLogDir(config.logsDir);
-		}
-
-		await runStartupFileChecks({
+		const app = await createRuntimeApp({
 			mode: config.mode,
 			rootDir: config.rootDir,
 			dataDir: config.dataDir,
-			staticDir: config.staticDir,
-			embeddedWebFiles: config.embeddedWebFiles,
-		});
-
-		// Stores
-		const stores = await createRuntimeStore(config.dataDir);
-
-		// Seed
-		await Promise.all([
-			stores.personas.ensureDefault(),
-			stores.presets.ensureDefault(),
-			stores.uiSettings.ensureDefaults(),
-		]);
-		console.log(`${tag} Seed data ensured.`);
-
-		// Tokenizers
-		await warmupTokenizers();
-		setTokenCountFn(countTokens);
-		console.log(`${tag} Tokenizers ready.`);
-
-		// Services
-		const providerProfileService = createProviderProfileService(stores.providers);
-		const promptPresetService = new PromptPresetService(stores.presets, stores.chats);
-		// Skill library is constructed before SessionRuntime so the catalog can be
-		// injected (CTX-S4): the co-author prompt shows a metadata-only catalog
-		// and the model reads skill files on demand via read_skill_file.
-		const skillLibraryService = new SkillLibraryService(
-			resolveUserSkillsRoot(config.dataDir),
-			await resolveBuiltinSkillsRoot(),
-		);
-		const sessionRuntime = new SessionRuntime(stores, {
-			getActiveProviderProfile: () => providerProfileService.resolveActiveProviderProfile(),
-			dataDir: config.dataDir,
-			getSkillCatalog: async () => (await skillLibraryService.listCatalog()).entries,
-		});
-		const providerOrchestrator = new ProviderOrchestrator(providerProfileService);
-		const events = new EventBus();
-		const chatSummaryService = new ChatSummaryService(stores, sessionRuntime, providerProfileService);
-		const objectiveService = new ObjectiveService(stores, sessionRuntime, providerProfileService);
-		const trackerService = new SceneTrackerService(stores, sessionRuntime, providerProfileService);
-		const liveChatOrchestrator = new LiveChatOrchestrator(
-			sessionRuntime.chatRuntime,
-			sessionRuntime.chatApp,
-			providerOrchestrator,
-			events,
-			(chatId: string) => sessionRuntime.resolveChatModeStrategy(chatId as never),
-			composeForwardStateWait(objectiveService, trackerService),
-		);
-
-		// Feature registry — features subscribe to events and mount routes
-		const features = new FeatureRegistry();
-		features.register(createChatSummaryFeature({ stores, sessionRuntime, providerProfileService, events }));
-		features.register(createChatEventsFeature());
-		features.register(createInsightsFeature({ objectiveService, trackerService }));
-
-		const assetService = new AssetService(config.assetsDir, stores.content, (id) => stores.characters.resolveFolderName(id));
-		const mobileAccessService = new MobileAccessService(config.dataDir);
-
-		// RuntimeApi adapter
-		// Production randomness source for dice rolls. Uses crypto.getRandomValues
-		// for server-authoritative random numbers. Tests inject deterministic values.
-		const cryptoRng: RandomSource = {
-			intBelow(maxExclusive: number): number {
-				const buf = new Uint32Array(1);
-				crypto.getRandomValues(buf);
-				return buf[0]! % maxExclusive;
-			},
-		};
-		const diceService = new DiceService(stores, cryptoRng);
-		const runtime = new RuntimeApiAdapter(
-			stores,
-			providerProfileService,
-			liveChatOrchestrator,
-			chatSummaryService,
-			sessionRuntime,
-			promptPresetService,
-			assetService,
-			mobileAccessService,
-			objectiveService,
-			trackerService,
-			skillLibraryService,
-			diceService,
-		);
-
-		features.register(createAiAssistantFeature(runtime.aiAssistant));
-
-		// Hono app — with static frontend if available (on disk or embedded)
-		const app = await createApp({
-			runtime,
+			assetsDir: config.assetsDir,
 			staticDir: config.staticEnabled ? config.staticDir : undefined,
+			logsDir: config.logsDir,
+			extraDataDirs: config.extraDataDirs,
 			embeddedWebFiles: config.embeddedWebFiles,
-			mobileAccessToken: () => mobileAccessService.getToken(),
-			enforceMobileAuth: true,
-			configureFeatures: (router) => features.activateAll({ events, router }),
 		});
 
 		// ─── Swap handler — real app is now serving all requests ───────
 		fetchHandler = (req, s) => app.fetch(req, s);
-		console.log(`${tag} Application ready.`);
 	} catch (err) {
 		console.error(`${tag} Initialization failed:`, err);
 		// Serve a static error page instead of hanging on the loading
@@ -394,7 +433,7 @@ function openBrowserOrPrintMessage(options: {
 	readonly missingFrontendMessage: string;
 }): void {
 	const tag = `[${options.mode}]`;
-	if (options.staticEnabled && process.env.RP_PLATFORM_OPEN_BROWSER !== "0") {
+	if (options.staticEnabled && process.env.VIBE_TAVERN_OPEN_BROWSER !== "0") {
 		const browserUrl = `http://127.0.0.1:${options.port}`;
 		console.log(`${tag} Opening browser at ${browserUrl}`);
 		const args =

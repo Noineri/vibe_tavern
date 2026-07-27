@@ -10,7 +10,7 @@
  * The branch-scoping is structural (cache key), not a client-side filter.
  * These tests pin the selection predicate against all three sources.
  */
-import { beforeEach, describe, expect, test } from "vitest";
+import { beforeEach, describe, expect, test } from "bun:test";
 import type { ChatBranchId, ChatId, PromptTraceRecordDto, AssemblePromptResponse } from "@vibe-tavern/domain";
 import { useSnapshotStore } from "./snapshot-store.js";
 import { useTraceHistoryStore, type TraceHistoryEntry } from "./trace-history-store.js";

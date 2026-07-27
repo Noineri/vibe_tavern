@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtemp, mkdir, readFile } from "node:fs/promises";
+import { mkdtemp, mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -72,7 +72,7 @@ async function makeAttachment(assetService: AssetService, bytes: Uint8Array, n: 
 }
 
 const assetOnDisk = async (dataRoot: string, assetId: string): Promise<boolean> => {
-	try { await readFile(join(dataRoot, "assets", `${assetId}.png`)); return true; } catch { return false; }
+	try { Buffer.from(await Bun.file(join(dataRoot, "assets", `${assetId}.png`)).arrayBuffer()); return true; } catch { return false; }
 };
 
 /** AssetService.cleanup() is intentionally fire-and-forget (async unlink,

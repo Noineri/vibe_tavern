@@ -1,5 +1,4 @@
-// @vitest-environment node
-import { describe, expect, test } from "vitest";
+import { describe, expect, test } from "bun:test";
 import { resolveEntityAvatarUrl } from "./avatar.js";
 
 /**

@@ -1,9 +1,12 @@
-import { describe, expect, it, beforeEach } from "vitest";
+import { describe, expect, it, beforeEach } from "bun:test";
 import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { CompletionContext, type Completion } from "@codemirror/autocomplete";
 import { macroAutocomplete, macroCompletions } from "./vibe-md-macros.js";
 import { useMacroAutocompleteStore } from "../../shared/macro-autocomplete-store.js";
+import { useDomEnv } from "../../../../test/dom-env.js";
+
+useDomEnv();
 
 function ctxFor(doc: string, pos = doc.length, explicit = false): CompletionContext {
   const state = EditorState.create({ doc });

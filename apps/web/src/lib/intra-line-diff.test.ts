@@ -1,4 +1,4 @@
-import { describe, test, expect } from "vitest";
+import { describe, test, expect } from "bun:test";
 import { diffIntraLine, annotateHunkLines } from "./intra-line-diff.js";
 import type { TextDiffLine } from "../components/shared/TextDiffPreview.js";
 

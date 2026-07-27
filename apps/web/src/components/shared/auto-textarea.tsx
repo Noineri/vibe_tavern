@@ -49,11 +49,15 @@ export interface AutoTextareaProps extends AutoTextareaPassthrough {
 
 /** The native `value` setter on HTMLTextAreaElement, used to programmatically
  *  update a React-controlled textarea and then dispatch the `input` event so
- *  React's onChange (and react-hook-form's register.onChange) fire. */
-const textareaValueSetter = Object.getOwnPropertyDescriptor(
-  window.HTMLTextAreaElement.prototype,
-  "value",
-)?.set as ((this: HTMLTextAreaElement, value: string) => void) | undefined;
+ *  React's onChange (and react-hook-form's register.onChange) fire.
+ *  Guarded for DOM-less module graphs (bun:test loads DOM-averse suites
+ *  without a window; insertMacro no-ops on undefined). */
+const textareaValueSetter = typeof window === "undefined"
+	? undefined
+	: (Object.getOwnPropertyDescriptor(
+		window.HTMLTextAreaElement.prototype,
+		"value",
+	)?.set as ((this: HTMLTextAreaElement, value: string) => void) | undefined);
 
 /**
  * Auto-resizing textarea backed by `react-textarea-autosize`, with a built-in

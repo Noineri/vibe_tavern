@@ -6,10 +6,10 @@
  * confirm-or-rollback, stale-revision resync, two-scope isolation, requestId
  * reuse across an in-flight retry (idempotency), and the no-bound-data cache
  * rule. The seven network calls in `dice-api.js` are mocked via the
- * spread-real-then-override pattern (vitest `importOriginal`), keeping the
- * genuine `DiceApiError` class for the stale-revision path.
+ * spread-real-then-override pattern, keeping the genuine `DiceApiError`
+ * class for the stale-revision path.
  */
-import { beforeEach, describe, expect, test, vi } from "vitest";
+import { beforeEach, describe, expect, test, mock } from "bun:test";
 import { brandId, type DiceRollId, type MessageId } from "@vibe-tavern/domain";
 import type {
   DiceDefinitionsResponse,
@@ -18,8 +18,7 @@ import type {
   DiceRollRequest,
   DiceRollSnapshot,
 } from "../api/types.js";
-import { DiceApiError } from "../api/dice-api.js";
-import { useDiceStore, type DiceRollIntent } from "./dice-store.js";
+import type { DiceRollIntent } from "./dice-store.js";
 
 // ── Mock the dice-api network layer (spread real, override the 7 calls) ──────
 
@@ -36,10 +35,10 @@ interface Impl {
 let impl: Impl;
 const rollCalls: Array<{ chatId: string; body: DiceRollRequest }> = [];
 
-vi.mock("../api/dice-api.js", async (importOriginal) => {
-  const real = await importOriginal() as typeof import("../api/dice-api.js");
+const realDiceApi = await import("../api/dice-api.js");
+mock.module("../api/dice-api.js", () => {
   return {
-    ...real,
+    ...realDiceApi,
     getDiceDefinitions: (chatId: string) => impl.getDiceDefinitions(chatId),
     getDicePending: (chatId: string, branchId: string) => impl.getDicePending(chatId, branchId),
     rollDice: (chatId: string, body: DiceRollRequest) => {
@@ -52,6 +51,9 @@ vi.mock("../api/dice-api.js", async (importOriginal) => {
     chooseDiceAttempt: (chatId: string, rollId: string, attemptId: string) => impl.chooseDiceAttempt(chatId, rollId, attemptId),
   };
 });
+
+const { DiceApiError } = await import("../api/dice-api.js");
+const { useDiceStore } = await import("./dice-store.js");
 
 // ── Fixtures ─────────────────────────────────────────────────────────────────
 

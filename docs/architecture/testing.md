@@ -9,13 +9,17 @@ Vibe Tavern uses **`bun:test`**, Bun's built-in test runner. There is no Jest, V
 ## Commands
 
 ```bash
-bun run test           # all workspaces
-bun test <path>        # one file or directory
+bun run test           # all workspaces (scripts + packages + api + web)
+bun run test web       # just the web suite
+bun test <path>        # one file or directory (packages/services/scripts)
+cd apps/web && bun run test apps/web/src/lib/avatar.test.ts   # one web file (path is repo-root-relative), via the web orchestrator
 bun test -t "name"     # filter by test name
 bun run check          # typecheck + test + i18n:check (the full local gate)
 ```
 
-CI runs `build` but **not** `test` or `typecheck` — the local `bun run check` is the gate that matters. See [CONTRIBUTING.md → Running the gates](../../CONTRIBUTING.md#running-the-gates) for the typecheck caveat (always `bun run typecheck` from the repo root; bare `tsc` from `apps/web/` emits ~80 false errors).
+The web suite is orchestrated by [`scripts/test-web.ts`](../../scripts/test-web.ts): it discovers `apps/web/src/**/*.test.{ts,tsx}` plus the `apps/web/test/harness.smoke.test.tsx` canary and runs **each file in its own `bun test` subprocess** (per-file isolation, 8 concurrent workers). `--reverse` runs the same files in reverse order — the cheap way to surface hidden file-order dependencies.
+
+CI runs `typecheck` as the sole blocking gate plus an advisory `test` job (`continue-on-error`) — green CI ≠ tested; the local `bun run check` is the gate that matters. See [CONTRIBUTING.md → Running the gates](../../CONTRIBUTING.md#running-the-gates) for the typecheck caveat (always `bun run typecheck` from the repo root; bare `tsc` from `apps/web/` emits ~80 false errors).
 
 ---
 
@@ -29,7 +33,7 @@ CI runs `build` but **not** `test` or `typecheck` — the local `bun run check` 
 
 **Rule:** web tests must be colocated under `apps/web/src/` if they need to be part of the typecheck gate. `apps/web/tsconfig.json` has `rootDir:"src"` + `include:["src/**"]`, so anything under `apps/web/test/` is invisible to `tsc`. (The one helper there, [`apps/web/test/dom-env.ts`](../../apps/web/test/dom-env.ts), is fine — it's imported by colocated tests, which pulls it into the type graph.)
 
-Current suite size: ~96 test files, spread across `services/api` (~39), `packages/db` (~18), `apps/web/src` (~22), `packages/api-contracts` (~9), `packages/prompt-pipeline` (~7), `packages/domain` (~4), `packages/import-export` (~2).
+The suite spans every workspace; the bulk lives in `services/api/test/`, `packages/db/test/`, and colocated under `apps/web/src/`. File counts drift constantly — count them (`rg --files -g '*.test.ts*' | wc -l`) rather than trusting any number written here.
 
 ---
 
@@ -55,7 +59,9 @@ For tests that exercise code calling `fetch`. Assign in `beforeEach`, restore in
 
 ### `mock.module()` — whole-module replacement (⚠️ process-global)
 
-**This is the dangerous one.** A mock registered with `mock.module(specifier, factory)` persists for the **entire process** across every test file in the same `bun test` run, not just the file that registered it. If the factory returns only a few exports, every *other* export of that module becomes `undefined` for all subsequent files — a silent cross-file leak.
+**This is the dangerous one.** A mock registered with `mock.module(specifier, factory)` persists for the **entire process** across every test file that shares it, not just the file that registered it. If the factory returns only a few exports, every *other* export of that module becomes `undefined` for all subsequent files — a silent cross-file leak.
+
+Blast radius differs by suite: the web orchestrator ([`scripts/test-web.ts`](../../scripts/test-web.ts)) gives every file its own subprocess, so a web leak is contained to that one file (and `--reverse` exists precisely to smoke out order dependence). The packages/services/scripts suites share one process per `bun test` invocation, so there the leak crosses files and the safe pattern below is mandatory.
 
 The safe pattern: import the real module **before** registering the mock to capture genuine references, then in the factory spread `...real` first and override only the specific function(s):
 
@@ -74,6 +80,10 @@ await mock.module("../src/infrastructure/ai/vision-gate.js", () => ({
 ```
 
 The canonical example is [`services/api/test/gallery-describe.test.ts`](../../services/api/test/gallery-describe.test.ts), which overrides two functions of `vision-gate.js` but spreads the real module so `vision-gate.test.ts` (a different file that exercises the un-mocked `resolveMultimodalContent` directly) still works. **Diagnose suspected leaks by binary-searching test-file pairs** (`bun test A.test.ts B.test.ts`) — if B passes alone but fails after A, A's `mock.module` is shadowing an export B needs.
+
+### Fake timers — `jest.*` compat from `bun:test`
+
+`jest.useFakeTimers()` and `jest.advanceTimersByTime()` (imported from `bun:test`) work and are the sanctioned way to control `setTimeout`/`setInterval` in tests. **`jest.setSystemTime()` is inert on the pinned Bun build** — it neither throws nor changes the clock, so tests must not rely on faking `Date.now()` through it; inject the clock or seed the time-dependent value instead.
 
 ---
 

@@ -1,6 +1,7 @@
-import { describe, test, expect, beforeAll, afterAll, beforeEach } from "vitest";
+import { describe, test, expect, beforeEach } from "bun:test";
 import { Profiler, type ProfilerOnRenderCallback } from "react";
-import { render, cleanup, act } from "@testing-library/react";
+import { render, act } from "@testing-library/react";
+import { useDomEnv } from "../../test/dom-env.js";
 import {
   useGenerationQueueStore,
   useQueueCount,
@@ -8,6 +9,8 @@ import {
   useQueueJobStatus,
   useHasActiveQueue,
 } from "./generation-queue-store.js";
+
+useDomEnv();
 
 /**
  * State-machine + narrow-selector tests for the generation queue store (Q3).
@@ -136,7 +139,6 @@ function StatusSubscriber({ jobId }: { jobId: string }) {
 describe("Q3 store: narrow selectors do not over-render", () => {
   beforeEach(() => {
     resetStore();
-    cleanup();
   });
 
   test("useQueueCount subscriber does NOT re-render when a job's error changes", () => {

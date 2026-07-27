@@ -207,7 +207,6 @@ If you want to test Vibe Tavern in current development state, you can clone this
 ```bash
 git clone https://github.com/Noineri/vibe_tavern
 bun install --frozen-lockfile
-bun scripts/install-platform-optionals.ts
 bun run dev
 ```
 
@@ -219,7 +218,7 @@ Vibe Tavern is a single-process monolith: React 19 SPA + Hono API + SQLite (WAL 
 
 ```
 vibe_tavern/
-├── apps/web/                 # React 19 SPA (Vite)
+├── apps/web/                 # React 19 SPA (Bun-native build)
 ├── services/api/             # Hono backend (Bun.serve)
 ├── packages/domain/          # Zero-dep foundation: types, branded IDs, constants
 ├── packages/api-contracts/   # Zod schemas shared between frontend and backend

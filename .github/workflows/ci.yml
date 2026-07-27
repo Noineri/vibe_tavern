@@ -29,10 +29,10 @@ concurrency:
 # ever cut. This replaces the old separate dry-run.yml (deleted).
 #
 # Gating model:
-#   - typecheck is the SOLE gate. If it fails, every downstream build is skipped.
-#   - test runs in parallel but is advisory only (continue-on-error) — it never
-#     blocks builds and never fails the run.
-#   - The 4 platform builds fan out only after typecheck passes.
+#   - typecheck, test-linux, and test-windows are all blocking. The full
+#     `bun run test` suite runs on both platforms because the repo ships a
+#     Windows installer and the filesystem/Glob semantics are platform-sensitive.
+#   - The 4 platform builds fan out after typecheck passes.
 # Nothing is published; the docker job only loads locally to prove the image builds.
 # Build artifacts are intentionally NOT uploaded — CI verifies compilation only,
 # not distribution. release.yml re-builds from the tag when cutting a real release;
@@ -47,20 +47,26 @@ jobs:
         with:
           bun-version: "1.3.14"
       - run: bun install --frozen-lockfile
-      - run: bun scripts/install-platform-optionals.ts
       - run: bun run typecheck
 
-  # Advisory only — never gates builds and never fails the run (continue-on-error).
-  test:
+  test-linux:
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v5
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: "1.3.14"
       - run: bun install --frozen-lockfile
-      - run: bun scripts/install-platform-optionals.ts
+      - run: bun run test
+
+  test-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.14"
+      - run: bun install --frozen-lockfile
       - run: bun run test
 
   build-linux:
@@ -72,7 +78,6 @@ jobs:
         with:
           bun-version: "1.3.14"
       - run: bun install --frozen-lockfile
-      - run: bun scripts/install-platform-optionals.ts
       - run: bun scripts/build-linux-dist.ts
 
   build-android:
@@ -84,7 +89,6 @@ jobs:
         with:
           bun-version: "1.3.14"
       - run: bun install --frozen-lockfile
-      - run: bun scripts/install-platform-optionals.ts
       - run: bun scripts/build-android-arm64.ts
       - name: Stage tarball in Android assets
         run: |
@@ -109,7 +113,6 @@ jobs:
         with:
           bun-version: "1.3.14"
       - run: bun install --frozen-lockfile
-      - run: bun scripts/install-platform-optionals.ts
       - name: Install Inno Setup
         run: choco install innosetup --no-progress --yes
       - run: bun scripts/build-installer.ts

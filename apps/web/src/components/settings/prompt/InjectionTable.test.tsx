@@ -23,18 +23,26 @@
  * the commit's OUTPUT (zone placement derived from promptOrder). findZoneAndIndex
  * becomes a literal ZONE_ID_TO_KEY lookup map in step 2, verified structurally.
  *
- * Runner: vitest (apps/web uses vitest, NOT bun:test). DOM via happy-dom.
+ * Runner: bun:test + happy-dom.
  */
-import { describe, it, expect, vi } from "vitest";
+import { beforeAll, describe, it, expect, mock } from "bun:test";
 import type { ReactElement, ReactNode } from "react";
-import { render, fireEvent, within, screen } from "@testing-library/react";
+import { render, fireEvent, within } from "@testing-library/react";
+import { useDomEnv } from "../../../../test/dom-env.js";
 import type { CustomInjection, PromptOrderEntry } from "@vibe-tavern/domain";
-import { InjectionTable, type CharacterCanvasDraft } from "./InjectionTable.js";
+import type { CharacterCanvasDraft } from "./InjectionTable.js";
+
+useDomEnv();
 
 // Identity i18n — assertion strings match keys verbatim. Covers useT in every
 // component in the module graph (InjectionTable + all row components + shared
-// Tooltip/TokenCounter), since vi.mock keys by resolved module path.
-vi.mock("../../../i18n/context.js", () => ({
+// Tooltip/TokenCounter), since the module mock is keyed by resolved module path.
+const realI18nContext = await import("../../../i18n/context.js");
+const realTokenizer = await import("../../../utils/tokenizer.js");
+const realTooltip = await import("../../shared/Tooltip.js");
+const realUseMobile = await import("../../../hooks/use-mobile.js");
+mock.module("../../../i18n/context.js", () => ({
+  ...realI18nContext,
   useT: () => ({
     t: (k: string) => k,
     tDynamic: (k: string) => k,
@@ -46,19 +54,25 @@ vi.mock("../../../i18n/context.js", () => ({
 
 // countTokens loads a real tiktoken encoding (cl100k_base) — heavy and
 // irrelevant to canvas routing. Stub it to keep the test fast + isolated.
-vi.mock("../../../utils/tokenizer.js", () => ({ countTokens: () => 0 }));
+mock.module("../../../utils/tokenizer.js", () => ({ ...realTokenizer, countTokens: () => 0 }));
 
 // CustomTooltip (Radix) needs a TooltipProvider context irrelevant to canvas
 // routing; passthrough so toggle/delete buttons render unwrapped. Matches the
 // convention in LorebookAccordion.test.tsx / LoreEntryEditor.test.tsx.
-vi.mock("../../shared/Tooltip.js", () => ({
+mock.module("../../shared/Tooltip.js", () => ({
+  ...realTooltip,
   CustomTooltip: ({ children }: { children: ReactNode }) => children,
   TooltipProvider: ({ children }: { children: ReactNode }) => children,
 }));
 
 // useIsMobile reads window.matchMedia, which happy-dom does not reliably
 // implement. Force desktop; the mobile fork is not the test target.
-vi.mock("../../../hooks/use-mobile.js", () => ({ useIsMobile: () => false }));
+mock.module("../../../hooks/use-mobile.js", () => ({ ...realUseMobile, useIsMobile: () => false }));
+
+let InjectionTable: typeof import("./InjectionTable.js").InjectionTable;
+beforeAll(async () => {
+  ({ InjectionTable } = await import("./InjectionTable.js"));
+});
 
 // ── Fixture ────────────────────────────────────────────────────────────
 
@@ -86,10 +100,10 @@ const characterDraft: CharacterCanvasDraft = {
 
 function makeSpies() {
   return {
-    onChange: vi.fn(),
-    onPromptOrderChange: vi.fn(),
-    onUpdateField: vi.fn(),
-    onCharacterFieldUpdate: vi.fn(),
+    onChange: mock(),
+    onPromptOrderChange: mock(),
+    onUpdateField: mock(),
+    onCharacterFieldUpdate: mock(),
   };
 }
 
@@ -113,10 +127,18 @@ function canvasEl(props: CanvasProps & { spies: Spies }): ReactElement {
 function renderCanvas(props: CanvasProps & { spies?: Spies } = {}) {
   const spies = props.spies ?? makeSpies();
   const { spies: _omit, ...canvasProps } = props;
-  return { ...render(canvasEl({ ...canvasProps, spies })), spies };
+  const view = render(canvasEl({ ...canvasProps, spies }));
+  renderedBase = view.baseElement;
+  return { ...view, spies };
 }
 
 // ── DOM helpers ────────────────────────────────────────────────────────
+
+let renderedBase: HTMLElement;
+
+function queries() {
+  return within(renderedBase);
+}
 
 /** Assert `labels` appear in `text` in the given order (ascending document order). */
 function expectOrdered(text: string, labels: string[]) {
@@ -133,7 +155,7 @@ function expectOrdered(text: string, labels: string[]) {
  *  Walks up from the label text to the row header that owns the dot button —
  *  robust to the label being nested inside a CustomTooltip trigger span. */
 function clickDotToggle(label: string) {
-  const labelEl = screen.getByText(label);
+  const labelEl = queries().getByText(label);
   let node: HTMLElement | null = labelEl;
   while (node) {
     const dot = within(node)
@@ -152,7 +174,7 @@ function clickDotToggle(label: string) {
  *  header button with empty text and no aria-label (drag handle = "⋮⋮" text;
  *  toggle = "●"/"○"; edit-name button carries an aria-label; delete is SVG-only). */
 function clickDelete(rowName: string) {
-  const nameEl = screen.getByText(rowName);
+  const nameEl = queries().getByText(rowName);
   let node: HTMLElement | null = nameEl;
   while (node) {
     const del = within(node)
@@ -195,9 +217,9 @@ describe("PromptOrderCanvas — characterization", () => {
     expect(text).toContain("prefill_assistant");
 
     // character V3 fields absent without characterDraft
-    expect(screen.queryByText("character_system_prompt")).toBeNull();
-    expect(screen.queryByText("character_post_history")).toBeNull();
-    expect(screen.queryByText("character_depth_prompt")).toBeNull();
+		expect(queries().queryByText("character_system_prompt")).toBeNull();
+		expect(queries().queryByText("character_post_history")).toBeNull();
+		expect(queries().queryByText("character_depth_prompt")).toBeNull();
 
     // whole-canvas order: before items → jailbreak → prefill
     expectOrdered(text, [...beforeLabels, "post_history_instructions", "prefill_assistant"]);
@@ -205,12 +227,12 @@ describe("PromptOrderCanvas — characterization", () => {
 
   it("renders character V3 fields only when characterDraft is provided", () => {
     const { rerender, spies } = renderCanvas();
-    expect(screen.queryByText("character_system_prompt")).toBeNull();
+		expect(queries().queryByText("character_system_prompt")).toBeNull();
 
-    rerender(canvasEl({ spies, characterDraft }));
-    expect(screen.getByText("character_system_prompt")).toBeTruthy();
-    expect(screen.getByText("character_post_history")).toBeTruthy();
-    expect(screen.getByText("character_depth_prompt")).toBeTruthy();
+		rerender(canvasEl({ spies, characterDraft }));
+		expect(queries().getByText("character_system_prompt")).toBeTruthy();
+		expect(queries().getByText("character_post_history")).toBeTruthy();
+		expect(queries().getByText("character_depth_prompt")).toBeTruthy();
   });
 
   it("orders before_chat items by ascending default order", () => {
@@ -242,7 +264,7 @@ describe("PromptOrderCanvas — characterization", () => {
     });
 
     // Open the chat-history accordion so the depth tiers render.
-    fireEvent.click(screen.getByRole("button", { name: /prompt_slot_chat_history/ }));
+		fireEvent.click(queries().getByRole("button", { name: /prompt_slot_chat_history/ }));
 
     // depth 4 → inside the depth4 tier (after its label, before the depth3 tier label)
     let text = container.textContent!;
@@ -276,7 +298,7 @@ describe("PromptOrderCanvas — characterization", () => {
 
     clickDotToggle("system_prompt");
 
-    expect(spies.onPromptOrderChange).toHaveBeenCalledOnce();
+		expect(spies.onPromptOrderChange).toHaveBeenCalledTimes(1);
     expect(spies.onPromptOrderChange).toHaveBeenCalledWith([
       { identifier: "main", enabled: false, order: 0, zone: "before_chat", depth: null, kind: "built_in" },
     ]);
@@ -297,9 +319,9 @@ describe("PromptOrderCanvas — characterization", () => {
     const spies = makeSpies();
     renderCanvas({ spies, injections: [], promptOrder: [] });
 
-    fireEvent.click(screen.getByRole("button", { name: /preset_injection_add/ }));
+		fireEvent.click(queries().getByRole("button", { name: /preset_injection_add/ }));
 
-    expect(spies.onChange).toHaveBeenCalledOnce();
+		expect(spies.onChange).toHaveBeenCalledTimes(1);
     const newInjs = spies.onChange.mock.calls[0][0] as CustomInjection[];
     expect(newInjs).toHaveLength(1);
     expect(newInjs[0].identifier).toMatch(/^custom_/);
@@ -307,7 +329,7 @@ describe("PromptOrderCanvas — characterization", () => {
     expect(newInjs[0].content).toBe("");
     expect(newInjs[0].role).toBe("system");
 
-    expect(spies.onPromptOrderChange).toHaveBeenCalledOnce();
+		expect(spies.onPromptOrderChange).toHaveBeenCalledTimes(1);
     const newOrder = spies.onPromptOrderChange.mock.calls[0][0] as PromptOrderEntry[];
     expect(newOrder).toHaveLength(1);
     expect(newOrder[0].identifier).toBe(newInjs[0].identifier);

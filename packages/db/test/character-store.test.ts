@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtemp, mkdir, readFile, readdir, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { sql, eq } from "drizzle-orm";
@@ -37,7 +37,7 @@ async function listCharFiles(dataRoot: string, id: string): Promise<string[]> {
 }
 
 async function readProfileMd(dataRoot: string, id: string): Promise<string> {
-	return readFile(join(dataRoot, CHARS, id, "profile.md"), "utf8");
+	return Bun.file(join(dataRoot, CHARS, id, "profile.md")).text();
 }
 
 async function listCharFolder(dataRoot: string, id: string): Promise<string[]> {
@@ -144,11 +144,11 @@ describe("CharacterStore folder storage (B1)", () => {
 		expect(fetched?.name).toBe("Legacy Hero");
 
 		// {id}/card.json now exists
-		const cardRaw = JSON.parse(await readFile(join(dataRoot, CHARS, id, "card.json"), "utf8"));
+		const cardRaw = JSON.parse(await Bun.file(join(dataRoot, CHARS, id, "card.json")).text());
 		expect(cardRaw.data.name).toBe("Legacy Hero");
 
 		// legacy flat file STILL on disk (copy-forward)
-		const legacyStillThere = await readFile(legacyPath, "utf8").then(() => true).catch(() => false);
+		const legacyStillThere = await Bun.file(legacyPath).text().then(() => true).catch(() => false);
 		expect(legacyStillThere).toBe(true);
 
 		// DB row stamped
@@ -169,7 +169,7 @@ describe("CharacterStore folder storage (B1)", () => {
 		// no file on disk at all
 		const fetched = await store.getById(id);
 		expect(fetched?.name).toBe("Orphan Hero");
-		const raw = JSON.parse(await readFile(join(dataRoot, CHARS, id, "card.json"), "utf8"));
+		const raw = JSON.parse(await Bun.file(join(dataRoot, CHARS, id, "card.json")).text());
 		expect(raw.data.name).toBe("Orphan Hero");
 	});
 
@@ -201,11 +201,11 @@ describe("CharacterStore folder storage (B1)", () => {
 		const copy = await store.duplicate(original.id);
 		expect(copy.avatarExt).toBe("png");
 		// copy has its OWN avatar file (separate bytes, not a shared reference)
-		const copyAvatar = await readFile(join(dataRoot, CHARS, copy.id, "avatar.png"));
+		const copyAvatar = Buffer.from(await Bun.file(join(dataRoot, CHARS, copy.id, "avatar.png")).arrayBuffer());
 		expect(copyAvatar).toEqual(Buffer.from([1, 2, 3]));
 		// mutate the copy's avatar; original is untouched (separate file)
 		await content.writeBinary(CHARS, copy.id, "avatar.png", new Uint8Array([9, 9]));
-		const originalAvatar = await readFile(join(dataRoot, CHARS, original.id, "avatar.png"));
+		const originalAvatar = Buffer.from(await Bun.file(join(dataRoot, CHARS, original.id, "avatar.png")).arrayBuffer());
 		expect(originalAvatar).toEqual(Buffer.from([1, 2, 3]));
 	});
 
@@ -223,11 +223,11 @@ describe("CharacterStore folder storage (B1)", () => {
 		// full uncropped avatar: column must survive duplicate
 		expect(copy.avatarFullExt).toBe("webp");
 		// copy has its OWN avatar-full file (separate bytes, not a shared reference)
-		const copyFull = await readFile(join(dataRoot, CHARS, copy.id, "avatar-full.webp"));
+		const copyFull = Buffer.from(await Bun.file(join(dataRoot, CHARS, copy.id, "avatar-full.webp")).arrayBuffer());
 		expect(copyFull).toEqual(Buffer.from([4, 5, 6]));
 		// mutate the copy's full avatar; original is untouched (separate file)
 		await content.writeBinary(CHARS, copy.id, "avatar-full.webp", new Uint8Array([9, 9]));
-		const originalFull = await readFile(join(dataRoot, CHARS, original.id, "avatar-full.webp"));
+		const originalFull = Buffer.from(await Bun.file(join(dataRoot, CHARS, original.id, "avatar-full.webp")).arrayBuffer());
 		expect(originalFull).toEqual(Buffer.from([4, 5, 6]));
 	});
 
@@ -250,11 +250,11 @@ describe("CharacterStore folder storage (B1)", () => {
 		expect(fetched?.avatarAssetId).toBeNull();
 
 		// avatar copied into the entity folder
-		const copied = await readFile(join(dataRoot, CHARS, id, "avatar.png"));
+		const copied = Buffer.from(await Bun.file(join(dataRoot, CHARS, id, "avatar.png")).arrayBuffer());
 		expect(new Uint8Array(copied)).toEqual(bytes);
 
 		// legacy flat asset still on disk (copy-forward)
-		const legacy = await readFile(join(dataRoot, "assets", `${assetId}.png`));
+		const legacy = Buffer.from(await Bun.file(join(dataRoot, "assets", `${assetId}.png`)).arrayBuffer());
 		expect(new Uint8Array(legacy)).toEqual(bytes);
 
 		// DB stamped
@@ -474,7 +474,7 @@ describe("CharacterStore — characterization (refactor safety net + coverage)",
 		expect(fetched?.avatarFullExt).toBe("png");
 		expect(fetched?.avatarFullAssetId).toBeNull();
 
-		const copied = await readFile(join(dataRoot, CHARS, id, "avatar-full.png"));
+		const copied = Buffer.from(await Bun.file(join(dataRoot, CHARS, id, "avatar-full.png")).arrayBuffer());
 		expect(new Uint8Array(copied)).toEqual(bytes);
 
 		const row = db.select({ ext: charactersTable.avatarFullExt, aid: charactersTable.avatarFullAssetId }).from(charactersTable).where(eq(charactersTable.id, id)).get();

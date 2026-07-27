@@ -1,15 +1,19 @@
-import { beforeEach, describe, expect, test, vi } from "vitest";
+import { beforeAll, beforeEach, describe, expect, mock, test } from "bun:test";
 import { MODEL_FAVORITE_SCOPE, type ModelFavoriteScope } from "@vibe-tavern/domain";
 import type { FavoriteProviderModelRecord } from "../../app-client.js";
 import { useProviderDataStore } from "../provider-data-store.js";
-import { loadFavoriteModelsAction } from "./provider-actions.js";
 
-const { listFavoriteProviderModelsMock } = vi.hoisted(() => ({
-  listFavoriteProviderModelsMock: vi.fn(),
+const listFavoriteProviderModelsMock = mock();
+const realAppClient = await import("../../app-client.js");
+
+mock.module("../../app-client.js", () => ({
+	...realAppClient,
+	listFavoriteProviderModels: listFavoriteProviderModelsMock,
 }));
-vi.mock("../../app-client.js", async (importOriginal) => {
-  const actual = await importOriginal() as typeof import("../../app-client.js");
-  return { ...actual, listFavoriteProviderModels: listFavoriteProviderModelsMock };
+
+let loadFavoriteModelsAction: typeof import("./provider-actions.js").loadFavoriteModelsAction;
+beforeAll(async () => {
+	({ loadFavoriteModelsAction } = await import("./provider-actions.js"));
 });
 
 function favorite(scope: ModelFavoriteScope): FavoriteProviderModelRecord {

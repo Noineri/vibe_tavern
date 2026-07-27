@@ -9,10 +9,22 @@
  * enforcement in selectLoreBundle. The component is prop-driven and pure (no
  * store, no i18n import — labels arrive as props), so no mocking is needed.
  */
-import { describe, it, expect, vi } from "vitest";
-import { render, fireEvent } from "@testing-library/react";
-import { CoauthorLoreReview, type CoauthorLoreReviewLabels } from "./CoauthorLoreReview.js";
+import { beforeAll, describe, it, expect, mock } from "bun:test";
+import { useDomEnv } from "../../../test/dom-env.js";
+import type { CoauthorLoreReviewLabels } from "./CoauthorLoreReview.js";
 import type { CoauthorLoreBundle } from "@vibe-tavern/api-contracts";
+
+useDomEnv();
+
+let render: typeof import("@testing-library/react").render;
+let fireEvent: typeof import("@testing-library/react").fireEvent;
+
+let CoauthorLoreReview: typeof import("./CoauthorLoreReview.js").CoauthorLoreReview;
+
+beforeAll(async () => {
+	({ render, fireEvent } = await import("@testing-library/react"));
+	({ CoauthorLoreReview } = await import("./CoauthorLoreReview.js"));
+});
 
 const labels: CoauthorLoreReviewLabels = {
 	title: "Proposed lore",
@@ -54,8 +66,8 @@ function allSelected(b: CoauthorLoreBundle) {
 
 function renderReview(overrides: Partial<Parameters<typeof CoauthorLoreReview>[0]> = {}) {
 	const b = bundle();
-	const onToggleLorebook = vi.fn();
-	const onToggleEntry = vi.fn();
+	const onToggleLorebook = mock();
+	const onToggleEntry = mock();
 	const props = {
 		bundle: b,
 		...allSelected(b),

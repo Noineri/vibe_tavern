@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, mock } from "bun:test";
 import { parseSSEStream } from "./sse-parser.js";
 import { ProviderStreamError } from "../api/provider-stream-error.js";
 
@@ -23,8 +23,8 @@ function sseResponse(parts: string[]): Response {
 
 function opts() {
 	return {
-		onStatus: vi.fn((_: string) => {}),
-		onChunk: vi.fn((_: string) => {}),
+		onStatus: mock((_: string) => {}),
+		onChunk: mock((_: string) => {}),
 	};
 }
 
@@ -102,7 +102,7 @@ describe("parseSSEStream", () => {
 
 	it("forwards a co-author tool-call event to onToolCall", async () => {
 		const o = opts();
-		const onToolCall = vi.fn((_: { toolCallId: string; toolName: string; args: unknown }) => {});
+		const onToolCall = mock((_: { toolCallId: string; toolName: string; args: unknown }) => {});
 		await parseSSEStream({
 			response: sseResponse([
 				"event: tool-call\n",
@@ -122,7 +122,7 @@ describe("parseSSEStream", () => {
 
 	it("forwards tool-input-delta chunks to onToolInputDelta", async () => {
 		const o = opts();
-		const onToolInputDelta = vi.fn((_: { toolCallId: string; delta: string }) => {});
+		const onToolInputDelta = mock((_: { toolCallId: string; delta: string }) => {});
 		await parseSSEStream({
 			response: sseResponse([
 				"event: tool-input-delta\n",
@@ -141,7 +141,7 @@ describe("parseSSEStream", () => {
 
 	it("forwards a tool-result event (with isError flag) to onToolResult", async () => {
 		const o = opts();
-		const onToolResult = vi.fn(
+		const onToolResult = mock(
 			(_: { toolCallId: string; toolName: string; output: unknown; isError: boolean }) => {},
 		);
 		await parseSSEStream({
@@ -164,7 +164,7 @@ describe("parseSSEStream", () => {
 
 	it("defaults isError to false when the server omits it on a tool-result", async () => {
 		const o = opts();
-		const onToolResult = vi.fn(
+		const onToolResult = mock(
 			(_: { toolCallId: string; toolName: string; output: unknown; isError: boolean }) => {},
 		);
 		await parseSSEStream({

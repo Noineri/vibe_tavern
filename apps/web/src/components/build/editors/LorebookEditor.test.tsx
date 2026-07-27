@@ -15,9 +15,8 @@
  *   - autosave: editing a field debounces (1s) a single updateLoreEntry with
  *     exactly the dirty field, then clears dirty (form.formState.dirtyFields / isDirty).
  *
- * Runner: vitest (apps/web uses vitest, NOT bun:test — see vitest.config.ts;
- * the mock.module/bunfig gotchas in AGENTS.md don't apply here; vi.mock is
- * file-scoped and hoisted). DOM via happy-dom (per-file, configured globally).
+ * Runner: bun:test with scoped happy-dom cleanup. Module mocks preserve every
+ * unmodified real export because they are process-global within the test process.
  *
  * Heavy subtrees (LoreEntryEditor, LorebookAccordion, LorebookImportModal,
  * useScriptPanel) are stubbed to lightweight components that fire the parent's
@@ -27,26 +26,42 @@
  * `onEntryClick`, so the autosave + entry-loading contracts exercise the
  * genuine code paths.
  */
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
+import { useDomEnv } from "../../../../test/dom-env.js";
 import type { ReactNode } from "react";
-import { render, fireEvent, waitFor } from "@testing-library/react";
-import {
-  listAllLorebooks,
-  listLorebooks,
-  listLoreEntries,
-  getLorebookLinks,
-  updateLoreEntry,
-  createLoreEntry,
-  type LoreEntryRecord,
-  type LorebookRecord,
-} from "../../../app-client.js";
-import { LorebookEditor } from "./LorebookEditor.js";
-import { toast } from "sonner";
+import { mocked } from "../../../../test/mock-utils.js";
+import type { LoreEntryRecord, LorebookRecord } from "../../../app-client.js";
 
-// ── Module-boundary mocks (hoisted above the import of LorebookEditor) ─────
+useDomEnv();
+const { fireEvent, render, waitFor } = await import("@testing-library/react");
+
+// ── Module-boundary mocks ─────────────────────────────────────────────────
+
+const realI18nContext = await import("../../../i18n/context.js");
+const realSonner = await import("sonner");
+const realTooltip = await import("../../shared/Tooltip.js");
+const realLorebookImportModal = await import("./LorebookImportModal.js");
+const realScriptEditor = await import("./ScriptEditor.js");
+const realReactHookForm = await import("react-hook-form");
+const realLoreEntryEditor = await import("./LoreEntryEditor.js");
+const realLorebookAccordion = await import("./LorebookAccordion.js");
+const realSnapshotStore = await import("../../../stores/snapshot-store.js");
+const realBootstrapActions = await import("../../../stores/api-actions/bootstrap-actions.js");
+const realAppClient = await import("../../../app-client.js");
+
+const toastSuccess = mock();
+const toastError = mock();
+const toastInfo = mock();
+const listAllLorebooks = mock(realAppClient.listAllLorebooks);
+const listLorebooks = mock(realAppClient.listLorebooks);
+const listLoreEntries = mock(realAppClient.listLoreEntries);
+const getLorebookLinks = mock(realAppClient.getLorebookLinks);
+const updateLoreEntry = mock(realAppClient.updateLoreEntry);
+const createLoreEntry = mock(realAppClient.createLoreEntry);
 
 // Identity i18n — assertion strings match the i18n keys verbatim.
-vi.mock("../../../i18n/context.js", () => ({
+mock.module("../../../i18n/context.js", () => ({
+  ...realI18nContext,
   useT: () => ({
     t: (k: string) => k,
     tDynamic: (k: string) => k,
@@ -58,25 +73,34 @@ vi.mock("../../../i18n/context.js", () => ({
 
 // sonner toasts — stubbed so the duplicate test can assert success feedback
 // fires (the whole point of the toast: the duplicate must not be silent).
-vi.mock("sonner", () => ({
-  toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() },
+mock.module("sonner", () => ({
+  ...realSonner,
+  toast: {
+    ...realSonner.toast,
+    success: toastSuccess,
+    error: toastError,
+    info: toastInfo,
+  },
 }));
 
 // CustomTooltip needs a Radix TooltipProvider context irrelevant here;
 // passthrough children, drop the `content` prop (labels not needed via tooltip).
-vi.mock("../../shared/Tooltip.js", () => ({
+mock.module("../../shared/Tooltip.js", () => ({
+  ...realTooltip,
   CustomTooltip: ({ children }: { children: ReactNode }) => children,
   TooltipProvider: ({ children }: { children: ReactNode }) => children,
 }));
 
 // Heavy modal — irrelevant to the parent's state; render nothing.
-vi.mock("./LorebookImportModal.js", () => ({
+mock.module("./LorebookImportModal.js", () => ({
+  ...realLorebookImportModal,
   LorebookImportModal: () => null,
 }));
 
 // Script panel — isolate from the scripts concern entirely. Provides every
 // member LorebookEditor reads off `scriptPanel`.
-vi.mock("./ScriptEditor.js", () => ({
+mock.module("./ScriptEditor.js", () => ({
+  ...realScriptEditor,
   useScriptPanel: () => ({
     modals: null,
     scriptListContent: null,
@@ -92,12 +116,12 @@ vi.mock("./ScriptEditor.js", () => ({
 // ControlledField, so the stub mimics that by writing directly to the form it
 // receives through <FormProvider>). The real LoreEntryEditor pulls Radix
 // popovers / TokenCounter / AiAssistantModal — irrelevant to the parent's
-// dirty+debounce logic and too heavy for happy-dom. The factory imports
-// useFormContext via vi.importActual because vi.mock is hoisted above the
-// file's own imports (top-level imports are not initialized when the factory runs).
-vi.mock("./LoreEntryEditor.js", async () => {
-  const { useFormContext } = await vi.importActual<typeof import("react-hook-form")>("react-hook-form");
+// dirty+debounce logic and too heavy for happy-dom. The factory closes over
+// the real React Hook Form export captured before module registration.
+mock.module("./LoreEntryEditor.js", () => {
+  const { useFormContext } = realReactHookForm;
   return {
+    ...realLoreEntryEditor,
     LoreEntryEditor: (props: { onDuplicate: () => void }) => {
       const form = useFormContext();
       // Reactive title — lets the duplicate test assert the editor stayed
@@ -126,7 +150,8 @@ vi.mock("./LoreEntryEditor.js", async () => {
 // + editor-view logic is exercised for real. NOTE: LorebookEditor binds
 // onEntryClick={(entryId) => handleEntryClick(lb.id, entryId)} — the lorebook
 // id is CLOSED OVER in the parent; the callback takes ONLY entryId.
-vi.mock("./LorebookAccordion.js", () => ({
+mock.module("./LorebookAccordion.js", () => ({
+  ...realLorebookAccordion,
   LorebookAccordion: (props: {
     lorebook: { id: string; name: string };
     onEntryClick: (entryId: string) => void;
@@ -141,31 +166,32 @@ vi.mock("./LorebookAccordion.js", () => ({
   ),
 }));
 
-vi.mock("../../../stores/snapshot-store.js", async (importOriginal) => {
-  const real = await importOriginal() as typeof import("../../../stores/snapshot-store.js");
-  return { ...real, useAllCharacters: () => [] };
-});
+mock.module("../../../stores/snapshot-store.js", () => ({
+  ...realSnapshotStore,
+  useAllCharacters: () => [],
+}));
 
-vi.mock("../../../stores/api-actions/bootstrap-actions.js", async (importOriginal) => {
-  const real = await importOriginal() as typeof import("../../../stores/api-actions/bootstrap-actions.js");
-  return { ...real, useBootstrapStore: () => [] };
-});
+mock.module("../../../stores/api-actions/bootstrap-actions.js", () => ({
+  ...realBootstrapActions,
+  useBootstrapStore: () => [],
+}));
 
 // app-client (barrel) — override the lorebook/entry functions the parent calls;
 // spread the real module so every other re-export stays intact for any
-// transitive consumer. The hoisted-import trick: the named imports below
-// resolve to these vi.fn() instances (vi.mock is hoisted above the import).
-vi.mock("../../../app-client.js", async (importOriginal) => {
-  const real = await importOriginal() as typeof import("../../../app-client.js");
-  return {
-    ...real,
-    listAllLorebooks: vi.fn(),
-    listLorebooks: vi.fn(),
-    listLoreEntries: vi.fn(),
-    getLorebookLinks: vi.fn(),
-    updateLoreEntry: vi.fn(),
-    createLoreEntry: vi.fn(),
-  };
+// transitive consumer. Tests bind the concrete native mocks directly.
+mock.module("../../../app-client.js", () => ({
+  ...realAppClient,
+  listAllLorebooks,
+  listLorebooks,
+  listLoreEntries,
+  getLorebookLinks,
+  updateLoreEntry,
+  createLoreEntry,
+}));
+
+let LorebookEditor: typeof import("./LorebookEditor.js").LorebookEditor;
+beforeAll(async () => {
+  ({ LorebookEditor } = await import("./LorebookEditor.js"));
 });
 
 // ── Fixtures ───────────────────────────────────────────────────────────
@@ -241,16 +267,14 @@ function setViewport(width: number): void {
 }
 
 /**
- * Ensure sessionStorage is functional. vitest-setup shims only localStorage
- * (Node 24.6+ native-webstorage can leave both Storage globals as undefined
- * getters); LorebookEditor reads/writes sessionStorage for the sticky tab, so
- * guard it here. No-op when happy-dom already provides a working one.
+ * Ensure sessionStorage is functional. Native web storage can leave both
+ * Storage globals as undefined getters; LorebookEditor reads/writes
+ * sessionStorage for the sticky tab, so guard it here.
  */
 function ensureSessionStorage(): void {
-  const w = window as unknown as { sessionStorage?: Storage };
-  if (w.sessionStorage && typeof w.sessionStorage.getItem === "function") return;
+  if (typeof window.sessionStorage?.getItem === "function") return;
   const store = new Map<string, string>();
-  Object.defineProperty(w, "sessionStorage", {
+  Object.defineProperty(window, "sessionStorage", {
     configurable: true,
     value: {
       getItem: (k: string) => store.get(k) ?? null,
@@ -287,16 +311,16 @@ async function renderAtList(props?: { characterId?: string; chatId?: string | nu
 
 describe("LorebookEditor (characterization)", () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    mock.clearAllMocks();
     ensureSessionStorage();
     sessionStorage.clear();
     setViewport(1024); // desktop by default
 
-    vi.mocked(listAllLorebooks).mockResolvedValue([makeLorebook()]);
-    vi.mocked(listLorebooks).mockResolvedValue([makeLorebook()]);
-    vi.mocked(listLoreEntries).mockResolvedValue([makeEntry()]);
-    vi.mocked(getLorebookLinks).mockResolvedValue([]);
-    vi.mocked(updateLoreEntry).mockResolvedValue(makeEntry());
+    mocked(listAllLorebooks).mockResolvedValue([makeLorebook()]);
+    mocked(listLorebooks).mockResolvedValue([makeLorebook()]);
+    mocked(listLoreEntries).mockResolvedValue([makeEntry()]);
+    mocked(getLorebookLinks).mockResolvedValue([]);
+    mocked(updateLoreEntry).mockResolvedValue(makeEntry());
   });
 
   it("view-transition: pick view is the default — renders both cards, no list", () => {
@@ -352,7 +376,10 @@ describe("LorebookEditor (characterization)", () => {
     // Navigate into the entry editor (handleEntryClick → view "editor").
     fireEvent.click(getByTestId("entry-click"));
     // Entries load → activeEntry resolves → stubbed editor renders.
-    await waitFor(() => expect(getByTestId("entry-field")).toBeTruthy());
+    // Entries load → activeEntry resolves → form.reset settles — wait for the
+    // loaded title, not just the stub mount (under CPU contention a late reset
+    // can still land after a bare-mount wait and wipe the edit we're about to make).
+    await waitFor(() => expect(getByTestId("active-title").textContent).toBe("Goblin"));
 
     // The autosave indicator reflects savingState / form.formState.isDirty
     // via a data-state attr (idle | pending | saving | saved | error).
@@ -393,21 +420,23 @@ describe("LorebookEditor (characterization)", () => {
     // panel (a blank screen until a full page reload) — which the active-title
     // assertion at the end catches.
     let created = false;
-    vi.mocked(createLoreEntry).mockImplementation(async (_lb, fields) => {
+    mocked(createLoreEntry).mockImplementation(async (_lb, fields) => {
       created = true;
       return makeEntry({ id: "entry-2", ...(fields as Partial<LoreEntryRecord>) });
     });
-    vi.mocked(listLoreEntries).mockImplementation(async () =>
+    mocked(listLoreEntries).mockImplementation(async () =>
       created
         ? [makeEntry(), makeEntry({ id: "entry-2", title: "Hobgoblin" })]
         : [makeEntry()],
     );
-    vi.mocked(updateLoreEntry).mockImplementation(async (_lb, entryId, patch) =>
+    mocked(updateLoreEntry).mockImplementation(async (_lb, entryId, patch) =>
       makeEntry({ id: entryId, ...(patch as Partial<LoreEntryRecord>) }),
     );
     const { getByTestId, queryByTestId } = await renderAtList();
     fireEvent.click(getByTestId("entry-click")); // load entry-1
-    await waitFor(() => expect(getByTestId("active-title")).toBeTruthy());
+    // Same load-settle wait as the autosave test: bare active-title existence
+    // passes before the late form.reset lands under load, wiping the edit.
+    await waitFor(() => expect(getByTestId("active-title").textContent).toBe("Goblin"));
     // Edit the source entry (arms the 1s debounce).
     fireEvent.change(getByTestId("entry-field"), { target: { value: "Hobgoblin" } });
     // Duplicate — flushes entry-1's edit, refetches (entry-2 now in entries),
@@ -415,7 +444,9 @@ describe("LorebookEditor (characterization)", () => {
     fireEvent.click(getByTestId("duplicate-btn"));
     // The copy is created from the current (edited) state, minus identity fields.
     await waitFor(() => expect(createLoreEntry).toHaveBeenCalledTimes(1));
-    const [, fields] = vi.mocked(createLoreEntry).mock.calls[0]!;
+    const createCall = mocked(createLoreEntry).mock.calls[0];
+    if (createCall === undefined) throw new Error("Expected the duplicate to create an entry");
+    const [, fields] = createCall;
     expect(fields.title).toBe("Hobgoblin");
     expect(fields).not.toHaveProperty("id");
     expect(fields).not.toHaveProperty("sortOrder");
@@ -432,6 +463,6 @@ describe("LorebookEditor (characterization)", () => {
     // Success toast fires — the duplicate is NOT silent (the copy looks
     // identical to the source, so without explicit feedback the user can't
     // tell they're on the copy).
-    expect(toast.success).toHaveBeenCalledWith("lore_entry_duplicated");
+    expect(toastSuccess).toHaveBeenCalledWith("lore_entry_duplicated");
   });
 });

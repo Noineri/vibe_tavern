@@ -1,7 +1,18 @@
-import { beforeAll, afterAll, afterEach, expect } from "bun:test";
+import { afterAll, afterEach, expect } from "bun:test";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
-import { cleanup } from "@testing-library/react";
 import * as matchers from "@testing-library/jest-dom/matchers";
+
+let registeredByDomEnv = false;
+
+function ensureDomEnvRegistration(): void {
+  if (typeof globalThis.window === "undefined") {
+    GlobalRegistrator.register();
+    registeredByDomEnv = true;
+  }
+}
+
+ensureDomEnvRegistration();
+const { cleanup } = await import("@testing-library/react");
 
 /**
  * Drain the React 19 scheduler's macrotask queue.
@@ -32,7 +43,7 @@ async function flushSchedulerQueue(): Promise<void> {
  *
  * Call `useDomEnv()` once at the top of any test file that renders React via
  * @testing-library/react. It registers a global happy-dom `window` for the
- * duration of THAT file only (register in beforeAll, unregister in afterAll),
+ * duration of THAT file only (register at module load, unregister in afterAll),
  * extends `expect` with jest-dom matchers, and runs RTL cleanup after each test.
  *
  * WHY THIS IS SCOPED (not a bunfig preload)
@@ -50,9 +61,7 @@ async function flushSchedulerQueue(): Promise<void> {
 expect.extend(matchers);
 
 export function useDomEnv(): void {
-  beforeAll(() => {
-    GlobalRegistrator.register();
-  });
+  ensureDomEnvRegistration();
 
   afterEach(() => {
     cleanup();
@@ -63,6 +72,6 @@ export function useDomEnv(): void {
     // `window` — otherwise a deferred `flushPassiveEffects` reads `window.event`
     // after unregister and throws (see flushSchedulerQueue above).
     await flushSchedulerQueue();
-    GlobalRegistrator.unregister();
+    if (registeredByDomEnv) GlobalRegistrator.unregister();
   });
 }

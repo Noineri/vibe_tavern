@@ -1,5 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "bun:test";
+import { useDomEnv } from "../../test/dom-env.js";
 import { THEMES, applyThemeClass, isValidTheme, normalizeTheme, themeClassName } from "./registry.js";
+
+useDomEnv();
 
 describe("theme registry", () => {
   it("exposes the complete ordered theme list and light/dark icon variants", () => {

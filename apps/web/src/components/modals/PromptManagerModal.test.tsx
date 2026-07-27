@@ -1,3 +1,6 @@
+import { useDomEnv } from "../../../test/dom-env.js";
+
+useDomEnv();
 /**
  * buildDuplicatePayload — deep-copy characterization.
  *
@@ -8,7 +11,7 @@
  * to the copy leak back into the source's in-memory state. The pure helper is
  * exported precisely so this invariant has a direct unit test (no RTL render).
  */
-import { describe, expect, test } from "vitest";
+import { describe, expect, test } from "bun:test";
 import type { CustomInjection, PromptOrderEntry } from "@vibe-tavern/domain";
 import { buildDuplicatePayload, type DraftData } from "./PromptManagerModal.js";
 

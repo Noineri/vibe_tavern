@@ -18,15 +18,17 @@
  *
  * ## Release-build context
  *
- * The running version (`__APP_VERSION__`) is baked into the SPA bundle at
- * build time by `vite.config.ts`. The release workflow bumps `package.json`
+ * The running version is exposed by the typed build configuration and baked
+ * into the SPA bundle by Bun. The release workflow bumps `package.json`
  * before building, so shipped binaries always report their tagged version
  * here. The browser then asks GitHub for the latest release on the user's
  * behalf — works identically for `.exe`, Linux binary, APK, Docker, and
  * `bun run dev`.
  */
 
-const GITHUB_RELEASES_URL = `${__UPDATE_API_BASE__}/releases/latest`;
+import * as buildConfig from "../build-config.js";
+
+const GITHUB_RELEASES_URL = `${buildConfig.UPDATE_API_BASE}/releases/latest`;
 const CACHE_KEY = "vibe-tavern.update-check.v3";
 const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
 const FETCH_TIMEOUT_MS = 8000;

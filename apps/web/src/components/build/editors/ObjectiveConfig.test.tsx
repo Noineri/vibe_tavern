@@ -8,41 +8,60 @@
  * (enable objective → generate → tree appears → edit a task → saved) without
  * pulling in the RPC/snapshot round-trip (covered by the action + backend tests).
  *
- * Runner: vitest (apps/web — vi.mock is file-scoped, no cross-file leak).
+ * Runner: bun:test + happy-dom.
  */
-import { describe, it, expect, vi, afterEach } from "vitest";
-import { render, fireEvent, cleanup, waitFor } from "@testing-library/react";
-import { ObjectiveConfig } from "./ObjectiveConfig.js";
+import { afterEach, beforeAll, describe, expect, it, mock } from "bun:test";
+import { useDomEnv } from "../../../../test/dom-env.js";
 import type { ObjectiveState } from "../../../api/types.js";
 
-const mocks = vi.hoisted(() => ({
-  activeChat: null as null | { id: string; insightsObjectiveState: ObjectiveState },
-  generateObjectiveTasksAction: vi.fn(),
-  checkObjectiveCompletionAction: vi.fn(),
-  addObjectiveTaskAction: vi.fn(),
-  updateObjectiveTaskAction: vi.fn(),
-  reorderObjectiveTasksAction: vi.fn(),
-  deleteObjectiveTaskAction: vi.fn(),
-  setObjectiveDescriptionAction: vi.fn(),
-  setObjectiveModeAction: vi.fn(),
-  updateObjectiveLongTermGoalAction: vi.fn(),
-  addObjectiveShortTermGoalAction: vi.fn(),
-  updateObjectiveShortTermGoalAction: vi.fn(),
-  deleteObjectiveShortTermGoalAction: vi.fn(),
-  selectObjectiveShortTermGoalAction: vi.fn(),
-  updateObjectiveConfigAction: vi.fn(),
-}));
+useDomEnv();
+const { render, fireEvent, waitFor } = await import("@testing-library/react");
 
-vi.mock("../../../i18n/context.js", () => ({
+const mocks = {
+  activeChat: null as null | { id: string; insightsObjectiveState: ObjectiveState },
+  generateObjectiveTasksAction: mock(),
+  checkObjectiveCompletionAction: mock(),
+  addObjectiveTaskAction: mock(),
+  updateObjectiveTaskAction: mock(),
+  reorderObjectiveTasksAction: mock(),
+  deleteObjectiveTaskAction: mock(),
+  setObjectiveDescriptionAction: mock(),
+  setObjectiveModeAction: mock(),
+  updateObjectiveLongTermGoalAction: mock(),
+  addObjectiveShortTermGoalAction: mock(),
+  updateObjectiveShortTermGoalAction: mock(),
+  deleteObjectiveShortTermGoalAction: mock(),
+  selectObjectiveShortTermGoalAction: mock(),
+  updateObjectiveConfigAction: mock(),
+};
+async function fetchProviderModelsAction() {
+  return {
+    models: [
+      { id: "gpt-active", label: "GPT Active" },
+      { id: "gpt-mini", label: "GPT Mini" },
+    ],
+  };
+}
+
+const realI18nContext = await import("../../../i18n/context.js");
+const realSnapshotStore = await import("../../../stores/snapshot-store.js");
+const realChatActions = await import("../../../stores/api-actions/chat-actions.js");
+const realProviderDataStore = await import("../../../stores/provider-data-store.js");
+const realProviderActions = await import("../../../stores/api-actions/provider-actions.js");
+
+mock.module("../../../i18n/context.js", () => ({
+  ...realI18nContext,
   useT: () => ({ t: (k: string) => k, tDynamic: (k: string) => k, locale: "en", setLocale: () => {}, ready: true }),
 }));
 
-vi.mock("../../../stores/snapshot-store.js", () => ({
+mock.module("../../../stores/snapshot-store.js", () => ({
+  ...realSnapshotStore,
   useSnapshotStore: (selector: (s: { activeChat: typeof mocks.activeChat }) => unknown) =>
     selector({ activeChat: mocks.activeChat }),
 }));
 
-vi.mock("../../../stores/api-actions/chat-actions.js", () => ({
+mock.module("../../../stores/api-actions/chat-actions.js", () => ({
+  ...realChatActions,
   generateObjectiveTasksAction: mocks.generateObjectiveTasksAction,
   checkObjectiveCompletionAction: mocks.checkObjectiveCompletionAction,
   addObjectiveTaskAction: mocks.addObjectiveTaskAction,
@@ -59,7 +78,8 @@ vi.mock("../../../stores/api-actions/chat-actions.js", () => ({
   updateObjectiveConfigAction: mocks.updateObjectiveConfigAction,
 }));
 
-vi.mock("../../../stores/provider-data-store.js", () => ({
+mock.module("../../../stores/provider-data-store.js", () => ({
+  ...realProviderDataStore,
   // Two profiles, the first active — mirrors the real store shape ModelSelector reads.
   useProviderDataStore: (selector: (s: { profiles: Array<{ id: string; name: string; defaultModel: string | null; isActive: boolean }> }) => unknown) =>
     selector({
@@ -70,12 +90,17 @@ vi.mock("../../../stores/provider-data-store.js", () => ({
     }),
 }));
 
-vi.mock("../../../stores/api-actions/provider-actions.js", () => ({
-  fetchProviderModelsAction: vi.fn().mockResolvedValue({ models: [{ id: "gpt-active", label: "GPT Active" }, { id: "gpt-mini", label: "GPT Mini" }] }),
+mock.module("../../../stores/api-actions/provider-actions.js", () => ({
+  ...realProviderActions,
+  fetchProviderModelsAction,
 }));
 
+let ObjectiveConfig: typeof import("./ObjectiveConfig.js").ObjectiveConfig;
+beforeAll(async () => {
+  ({ ObjectiveConfig } = await import("./ObjectiveConfig.js"));
+});
+
 afterEach(() => {
-  cleanup();
   mocks.activeChat = null;
   mocks.generateObjectiveTasksAction.mockReset();
   mocks.checkObjectiveCompletionAction.mockReset();

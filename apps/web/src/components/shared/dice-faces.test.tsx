@@ -1,10 +1,14 @@
-import { describe, it, expect, vi } from "vitest";
+import { beforeAll, describe, it, expect, mock } from "bun:test";
 import { render, fireEvent } from "@testing-library/react";
-import { DiceFace, DiceFaces, glyphFor, extremityTone } from "./dice-faces.js";
 import React from "react";
+import { useDomEnv } from "../../../test/dom-env.js";
+
+useDomEnv();
 
 // Mock react-i18next
-vi.mock("react-i18next", () => ({
+const realReactI18next = await import("react-i18next");
+mock.module("react-i18next", () => ({
+  ...realReactI18next,
   useTranslation: () => ({
     t: (key: string, options?: Record<string, unknown>) => {
       if (key === "dice_faces_enumeration") return `${options?.notation}: ${options?.faces}`;
@@ -14,6 +18,14 @@ vi.mock("react-i18next", () => ({
     },
   }),
 }));
+
+let DiceFace: typeof import("./dice-faces.js").DiceFace;
+let DiceFaces: typeof import("./dice-faces.js").DiceFaces;
+let glyphFor: typeof import("./dice-faces.js").glyphFor;
+let extremityTone: typeof import("./dice-faces.js").extremityTone;
+beforeAll(async () => {
+  ({ DiceFace, DiceFaces, glyphFor, extremityTone } = await import("./dice-faces.js"));
+});
 
 describe("DiceFace — glyph", () => {
   it("glyphFor returns right paths for d4", () => {
@@ -141,7 +153,7 @@ describe("DiceFaces — excluded (Immersive dim)", () => {
 
 describe("DiceFaces — overflow action", () => {
   it("renders a <button> chip when onOverflowClick is provided", () => {
-    const onClick = vi.fn();
+    const onClick = mock();
     const { container } = render(
       <DiceFaces faceShape="d6" faces={[1, 2, 3, 4, 5]} notation="5d6" size="sm" maxVisible={3} rollKey="of1" onOverflowClick={onClick} />,
     );
@@ -158,7 +170,7 @@ describe("DiceFaces — overflow action", () => {
   });
 
   it("clicking the overflow button fires onOverflowClick", () => {
-    const onClick = vi.fn();
+    const onClick = mock();
     const { container } = render(
       <DiceFaces faceShape="d6" faces={[1, 2, 3, 4, 5]} notation="5d6" size="sm" maxVisible={3} rollKey="of3" onOverflowClick={onClick} />,
     );

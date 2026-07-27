@@ -12,52 +12,50 @@
  * store cleanup) with `regenerateChatMessage` stubbed to settle on demand, so
  * the abort/error/success boundaries are observable without a server.
  */
-import { describe, test, expect, beforeEach, vi } from "vitest";
+import { describe, test, expect, beforeEach, mock } from "bun:test";
 import { act, renderHook } from "@testing-library/react";
 import type { ChatId } from "@vibe-tavern/domain";
+import { useDomEnv } from "../../test/dom-env.js";
+
+useDomEnv();
 
 // --- app-client stubs (only the two functions the non-stream path crosses) ---
-// vi.hoisted runs before the hoisted vi.mock factory so the stubs exist at
-// mock-registration time (vi.mock is hoisted above every const). Spread
-// `...actual` first so types, logClientSendDebug, and the (unused here) stream
-// functions keep their real bindings; vi.mock is file-scoped (vitest), so this
-// cannot leak into other test files.
-const { regenerateChatMessage, sendChatMessageStream, fetchChat, logClientSendDebug } = vi.hoisted(() => ({
-  regenerateChatMessage: vi.fn(),
-  sendChatMessageStream: vi.fn(),
-  fetchChat: vi.fn(),
-  // fire-and-forget POST to /api/debug/send-log — no server in tests.
-  logClientSendDebug: vi.fn(),
-}));
-vi.mock("../app-client.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../app-client.js")>();
-  return { ...actual, regenerateChatMessage, sendChatMessageStream, fetchChat, logClientSendDebug };
+const regenerateChatMessage = mock();
+const sendChatMessageStream = mock();
+const fetchChat = mock();
+const logClientSendDebug = mock();
+const sendChatMessageAction = mock();
+
+const realAppClient = await import("../app-client.js");
+const realChatActions = await import("../stores/api-actions/chat-actions.js");
+const realLocaleHelpers = await import("../i18n/locale-helpers.js");
+mock.module("../app-client.js", () => {
+	return { ...realAppClient, regenerateChatMessage, sendChatMessageStream, fetchChat, logClientSendDebug };
 });
 
 // sendChatMessageAction (chat-actions) is the non-stream send entry handleSend
 // calls; stubbed separately so the non-stream dice path can be exercised end
-// to end. Spread `...actual` first; vi.mock is file-scoped (vitest).
-const { sendChatMessageAction } = vi.hoisted(() => ({ sendChatMessageAction: vi.fn() }));
-vi.mock("../stores/api-actions/chat-actions.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../stores/api-actions/chat-actions.js")>();
-  return { ...actual, sendChatMessageAction };
+// to end while all unrelated exports remain real.
+mock.module("../stores/api-actions/chat-actions.js", () => {
+	return { ...realChatActions, sendChatMessageAction };
 });
 
 // getT() without initI18n — translations are irrelevant to state cleanup.
-vi.mock("../i18n/locale-helpers.js", () => ({
-  getT: () => (key: string) => key,
+mock.module("../i18n/locale-helpers.js", () => ({
+	...realLocaleHelpers,
+	getT: () => (key: string) => key,
 }));
 
-import { useChatController, diceSendBlockReason } from "./use-chat-controller.js";
-import { ProviderStreamError } from "../api/provider-stream-error.js";
-import { DiceApiError } from "../api/dice-api.js";
-import { useDiceStore } from "../stores/dice-store.js";
 import type { DiceRollSnapshot } from "../api/types.js";
-import { useChatStore } from "../stores/chat-store.js";
-import { useProviderStore } from "../stores/provider-store.js";
-import { useProviderDataStore } from "../stores/provider-data-store.js";
-import { useSnapshotStore } from "../stores/snapshot-store.js";
-import { useBootstrapStore } from "../stores/api-actions/bootstrap-actions.js";
+const { useChatController, diceSendBlockReason } = await import("./use-chat-controller.js");
+const { ProviderStreamError } = await import("../api/provider-stream-error.js");
+const { DiceApiError } = await import("../api/dice-api.js");
+const { useDiceStore } = await import("../stores/dice-store.js");
+const { useChatStore } = await import("../stores/chat-store.js");
+const { useProviderStore } = await import("../stores/provider-store.js");
+const { useProviderDataStore } = await import("../stores/provider-data-store.js");
+const { useSnapshotStore } = await import("../stores/snapshot-store.js");
+const { useBootstrapStore } = await import("../stores/api-actions/bootstrap-actions.js");
 
 const CHAT = "chat-1" as ChatId;
 const MSG = "msg-1";
@@ -294,7 +292,7 @@ describe("diceSendBlockReason (DICE-F3 pure send gate)", () => {
 describe("useChatController — handleSend dice send (DICE-F3, stream path)", () => {
   // Stubbed once per file so conflict tests can assert it fired; cleared in
   // beforeEach. `tryHandleDiceSendConflict` calls it fire-and-forget.
-  const refreshPending = vi.fn();
+  const refreshPending = mock();
   const BRANCH = "br-1";
 
   beforeEach(() => {

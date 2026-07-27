@@ -5,10 +5,10 @@
  * Priority: environment variable → OS convention → throw.
  *
  * Environment variables:
- *   RP_PLATFORM_DATA_DIR  — all user data (DB, assets, traces, logs)
- *   RP_PLATFORM_WEB_DIR   — built frontend static files
- *   RP_PLATFORM_HOST      — listen host (default: 127.0.0.1)
- *   RP_PLATFORM_PORT      — listen port (default: 8787)
+ *   VIBE_TAVERN_DATA_DIR  — all user data (DB, assets, traces, logs)
+ *   VIBE_TAVERN_WEB_DIR   — built frontend static files
+ *   VIBE_TAVERN_HOST      — listen host (default: 127.0.0.1)
+ *   VIBE_TAVERN_PORT      — listen port (default: 8787)
  *
  * OS convention defaults:
  *   Windows: %LOCALAPPDATA%\VibeTavern
@@ -74,12 +74,12 @@ async function defaultWebDir(): Promise<string> {
 }
 
 export async function resolveStandalonePaths(): Promise<StandalonePaths> {
-	const dataDir = process.env.RP_PLATFORM_DATA_DIR
-		? resolve(process.env.RP_PLATFORM_DATA_DIR)
+	const dataDir = process.env.VIBE_TAVERN_DATA_DIR
+		? resolve(process.env.VIBE_TAVERN_DATA_DIR)
 		: defaultDataDir();
 
-	const webDir = process.env.RP_PLATFORM_WEB_DIR
-		? resolve(process.env.RP_PLATFORM_WEB_DIR)
+	const webDir = process.env.VIBE_TAVERN_WEB_DIR
+		? resolve(process.env.VIBE_TAVERN_WEB_DIR)
 		: await defaultWebDir();
 
 	const webEnabled = await Bun.file(resolve(webDir, "index.html")).exists();
@@ -92,7 +92,7 @@ export async function resolveStandalonePaths(): Promise<StandalonePaths> {
 		logsDir: resolve(dataDir, "logs"),
 		webDir,
 		webEnabled,
-		host: process.env.RP_PLATFORM_HOST ?? "127.0.0.1",
-		port: Number(process.env.RP_PLATFORM_PORT ?? "8787"),
+		host: process.env.VIBE_TAVERN_HOST ?? "127.0.0.1",
+		port: Number(process.env.VIBE_TAVERN_PORT ?? "8787"),
 	};
 }

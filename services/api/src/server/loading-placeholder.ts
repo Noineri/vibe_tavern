@@ -19,6 +19,30 @@ export interface LoadingHandlerOptions {
 
 const ALEGREYA_FONT_PATH = '/fonts/Alegreya-VariableFont_wght.ttf';
 
+/**
+ * 503 response for API clients and health probes while the runtime
+ * initializes. Structured JSON + Retry-After so pollers retry instead of
+ * erroring out. Shared by the loading placeholder (prod bootstrap) and the
+ * dev server (API mounts in-process once init completes).
+ */
+export function apiNotReadyResponse(): Response {
+	return new Response(
+		JSON.stringify({
+			ok: false,
+			service: 'vibe-tavern-api',
+			error: 'Server is still starting up',
+		}),
+		{
+			status: 503,
+			headers: {
+				'Content-Type': 'application/json',
+				'Retry-After': '2',
+				'Cache-Control': 'no-store',
+			},
+		},
+	);
+}
+
 export function createLoadingHandler(
 	options: LoadingHandlerOptions = {},
 ): (req: Request, server: Bun.Server<undefined>) => Response | Promise<Response> {
@@ -35,26 +59,11 @@ export function createLoadingHandler(
 			});
 		}
 
-		// API clients and health probes get a structured 503 so they retry.
 		const isHealth = req.method === 'GET' && path === '/health';
 		const isApi = path.startsWith('/api/');
 		if (isHealth || isApi) {
-      return new Response(
-        JSON.stringify({
-          ok: false,
-          service: 'vibe-tavern-api',
-          error: 'Server is still starting up',
-        }),
-        {
-          status: 503,
-          headers: {
-            'Content-Type': 'application/json',
-            'Retry-After': '2',
-            'Cache-Control': 'no-store',
-          },
-        },
-      );
-    }
+			return apiNotReadyResponse();
+		}
 
     // Everything else gets the branded loading page.
     return new Response(LOADING_HTML, {

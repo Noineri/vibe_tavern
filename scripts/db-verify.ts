@@ -23,7 +23,7 @@
  * in a pure schema squash; if it does, drill in with --rows).
  */
 import { Database } from "bun:sqlite";
-import { readFileSync } from "node:fs";
+import { parseArgs } from "node:util";
 
 interface TableSnap {
   count: number;
@@ -89,9 +89,9 @@ function dump(dbPath: string): void {
   );
 }
 
-function compare(beforePath: string, afterPath: string): void {
-  const before = JSON.parse(readFileSync(beforePath, "utf8")) as Snapshot;
-  const after = JSON.parse(readFileSync(afterPath, "utf8")) as Snapshot;
+async function compare(beforePath: string, afterPath: string): Promise<void> {
+  const before = JSON.parse(await Bun.file(beforePath).text()) as Snapshot;
+  const after = JSON.parse(await Bun.file(afterPath).text()) as Snapshot;
 
   const allTables = new Set([...Object.keys(before.tables), ...Object.keys(after.tables)]);
   const report: string[] = [];
@@ -139,12 +139,23 @@ function compare(beforePath: string, afterPath: string): void {
   }
 }
 
-const [mode, ...args] = process.argv.slice(2);
+const cliArgs = process.argv.slice(2);
+const { tokens } = parseArgs({
+  args: cliArgs,
+  options: {},
+  strict: false,
+  allowPositionals: true,
+  tokens: true,
+});
+const [mode, ...args] = [...new Set(tokens.map((token) => token.index))].flatMap((index) => {
+  const arg = cliArgs[index];
+  return arg === undefined ? [] : [arg];
+});
 if (import.meta.main) {
   if (mode === "dump" && args[0]) {
     dump(args[0]);
   } else if (mode === "compare" && args[0] && args[1]) {
-    compare(args[0], args[1]);
+    await compare(args[0], args[1]);
   } else {
     console.error(
       "Usage:\n  bun run scripts/db-verify.ts dump <dbPath>\n  bun run scripts/db-verify.ts compare <before.json> <after.json>",

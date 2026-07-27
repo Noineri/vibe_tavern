@@ -9,7 +9,7 @@
  * numeric defaults with ?? fallbacks, mode enum coercion, and pass-through
  * (non-null) fields preserved verbatim.
  */
-import { describe, it, expect } from "vitest";
+import { describe, it, expect } from "bun:test";
 import { buildCharacterDraftSchema } from "@vibe-tavern/api-contracts";
 import type { BuildCharacterDraft } from "@vibe-tavern/api-contracts";
 import type { AppCharacter } from "../app-client.js";

@@ -10,11 +10,21 @@
  *
  * Consumer-level coverage lives in CoauthorCharacterForm.test.tsx.
  */
-import { describe, it, expect, vi } from "vitest";
+import { beforeAll, describe, it, expect, mock } from "bun:test";
+import { useDomEnv } from "../../../test/dom-env.js";
 import type { ComponentProps, ReactNode } from "react";
-import { render, fireEvent, within } from "@testing-library/react";
-import { LinkBindingPopover, type LinkTarget } from "./LinkBindingPopover.js";
-import { TooltipProvider } from "./Tooltip.js";
+import type { LinkTarget } from "./LinkBindingPopover.js";
+
+useDomEnv();
+const { render, fireEvent, within } = await import("@testing-library/react");
+
+let LinkBindingPopover: typeof import("./LinkBindingPopover.js").LinkBindingPopover;
+let TooltipProvider: typeof import("./Tooltip.js").TooltipProvider;
+
+beforeAll(async () => {
+	({ LinkBindingPopover } = await import("./LinkBindingPopover.js"));
+	({ TooltipProvider } = await import("./Tooltip.js"));
+});
 
 const t = (k: string) => k;
 
@@ -95,7 +105,7 @@ describe("LinkBindingPopover — responsive resource row", () => {
 	});
 
 	it("clicking a bound pill unlinks it (toggle-off)", () => {
-		const onSetLinks = vi.fn();
+		const onSetLinks = mock();
 		const { getByText } = renderRow({
 			...baseProps,
 			links: [{ targetType: "lorebook", targetId: "lb1" }],
@@ -161,7 +171,7 @@ describe("LinkBindingPopover — responsive resource row", () => {
 		expect(trigger.className).toContain("w-11");
 	});
 
-	// NOTE: skipped under vitest + happy-dom. Radix Popover.Content is mounted
+		// NOTE: skipped under bun:test + happy-dom. Radix Popover.Content is mounted
 	// via a Popper that anchors through getBoundingClientRect; in happy-dom every
 	// element reports a 0x0 box, so the content never anchors and never mounts, so
 	// the chip never renders and the toggle-on (add) path cannot be asserted
@@ -171,7 +181,7 @@ describe("LinkBindingPopover — responsive resource row", () => {
 	// path is covered by manual browser verification (open the popover, click a
 	// chip, the binding is added). Kept as living documentation of the contract.
 	it.skip("opening the popover and clicking a chip toggles it on (add)", async () => {
-		const onSetLinks = vi.fn();
+		const onSetLinks = mock();
 		const { getByRole } = renderRow({
 			...baseProps,
 			links: [],

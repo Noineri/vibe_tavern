@@ -1,4 +1,5 @@
 import { join, resolve } from "node:path";
+import { parseArgs } from "node:util";
 import { formatTestReport, type TestSuiteResult } from "./test-report.js";
 
 export { formatTestReport, type TestSuiteResult } from "./test-report.js";
@@ -54,7 +55,7 @@ const TEST_SUITES = [
 	{
 		name: "web",
 		cwd: join(ROOT, "apps", "web"),
-		command: [BUN, "run", "test", "--", "--reporter=minimal"],
+		command: [BUN, "run", "test"],
 	},
 ] as const satisfies readonly TestSuite[];
 
@@ -164,7 +165,19 @@ export async function runTestCli(
 }
 
 async function main(): Promise<void> {
-	process.exitCode = await runTestCli(TEST_SUITES, process.argv.slice(2), console.log);
+	const args = process.argv.slice(2);
+	const { tokens } = parseArgs({
+		args,
+		options: {},
+		strict: false,
+		allowPositionals: true,
+		tokens: true,
+	});
+	const parsedArgs = [...new Set(tokens.map((token) => token.index))].flatMap((index) => {
+		const arg = args[index];
+		return arg === undefined ? [] : [arg];
+	});
+	process.exitCode = await runTestCli(TEST_SUITES, parsedArgs, console.log);
 }
 
 if (import.meta.main) {

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtemp, mkdir, readFile, stat } from "node:fs/promises";
+import { mkdtemp, mkdir, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -53,7 +53,7 @@ describe("Character gallery adapter (A5)", () => {
 		const b = await characters.uploadCharacterAsset(char.id, new File([WEBP], "b.webp", { type: "image/webp" }));
 
 		// file on disk at the resolved folder
-		const fileA = await readFile(join(dataRoot, CHARS, dir, "gallery", `${a.id}.png`));
+		const fileA = await Bun.file(join(dataRoot, CHARS, dir, "gallery", `${a.id}.png`)).arrayBuffer();
 		expect(new Uint8Array(fileA)).toEqual(PNG);
 
 		// row ext/mimeType/order

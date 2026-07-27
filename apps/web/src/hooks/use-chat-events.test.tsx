@@ -11,65 +11,70 @@
  * constructor surface for this); i18n's `useT` is mocked so the hook does not
  * need a provider.
  */
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, mock } from "bun:test";
 import { renderHook } from "@testing-library/react";
+import { useDomEnv } from "../../test/dom-env.js";
 
-vi.mock("../i18n/context.js", () => ({
-  useT: () => ({ t: (k: string) => k, setLocale: () => {} }),
+useDomEnv();
+
+const realI18n = await import("../i18n/context.js");
+mock.module("../i18n/context.js", () => ({
+	...realI18n,
+	useT: () => ({ t: (k: string) => k, setLocale: () => {} }),
 }));
 
 class MockEventSource {
-  static instances: MockEventSource[] = [];
-  url: string;
-  closed = false;
-  addEventListener = vi.fn();
-  constructor(url: string) {
-    this.url = url;
-    MockEventSource.instances.push(this);
-  }
-  close() {
-    this.closed = true;
-  }
+	static instances: MockEventSource[] = [];
+	url: string;
+	closed = false;
+	addEventListener = mock();
+	constructor(url: string) {
+		this.url = url;
+		MockEventSource.instances.push(this);
+	}
+	close() {
+		this.closed = true;
+	}
 }
 
 beforeEach(() => {
-  MockEventSource.instances = [];
-  vi.stubGlobal("EventSource", MockEventSource);
+	MockEventSource.instances = [];
+	globalThis.EventSource = MockEventSource as unknown as typeof EventSource;
 });
 
-import { useChatEvents } from "./use-chat-events.js";
+const { useChatEvents } = await import("./use-chat-events.js");
 
 describe("useChatEvents — SPC-7b", () => {
-  it("opens an EventSource for the active chat and closes it on unmount", () => {
-    const { unmount } = renderHook(({ id }) => useChatEvents(id), {
-      initialProps: { id: "chat-1" },
-    });
+	it("opens an EventSource for the active chat and closes it on unmount", () => {
+		const { unmount } = renderHook(({ id }) => useChatEvents(id), {
+			initialProps: { id: "chat-1" as string | null },
+		});
 
-    expect(MockEventSource.instances).toHaveLength(1);
-    expect(MockEventSource.instances[0]!.url).toContain("/api/chats/chat-1/events");
-    // The three auto-summary lifecycle listeners are registered.
-    for (const kind of ["summary.started", "summary.generated", "summary.failed"]) {
-      expect(MockEventSource.instances[0]!.addEventListener).toHaveBeenCalledWith(kind, expect.any(Function));
-    }
+		expect(MockEventSource.instances).toHaveLength(1);
+		expect(MockEventSource.instances[0]!.url).toContain("/api/chats/chat-1/events");
+		// The three auto-summary lifecycle listeners are registered.
+		for (const kind of ["summary.started", "summary.generated", "summary.failed"]) {
+			expect(MockEventSource.instances[0]!.addEventListener).toHaveBeenCalledWith(kind, expect.any(Function));
+		}
 
-    unmount();
-    expect(MockEventSource.instances[0]!.closed).toBe(true);
-  });
+		unmount();
+		expect(MockEventSource.instances[0]!.closed).toBe(true);
+	});
 
-  it("closes the previous source and opens a new one when chatId changes", () => {
-    const { rerender } = renderHook(({ id }) => useChatEvents(id), {
-      initialProps: { id: "chat-1" },
-    });
-    expect(MockEventSource.instances).toHaveLength(1);
+	it("closes the previous source and opens a new one when chatId changes", () => {
+		const { rerender } = renderHook(({ id }) => useChatEvents(id), {
+			initialProps: { id: "chat-1" as string | null },
+		});
+		expect(MockEventSource.instances).toHaveLength(1);
 
-    rerender({ id: "chat-2" });
-    expect(MockEventSource.instances).toHaveLength(2);
-    expect(MockEventSource.instances[0]!.closed).toBe(true);
-    expect(MockEventSource.instances[1]!.url).toContain("/api/chats/chat-2/events");
-  });
+		rerender({ id: "chat-2" });
+		expect(MockEventSource.instances).toHaveLength(2);
+		expect(MockEventSource.instances[0]!.closed).toBe(true);
+		expect(MockEventSource.instances[1]!.url).toContain("/api/chats/chat-2/events");
+	});
 
-  it("opens nothing when activeChatId is null", () => {
-    renderHook(() => useChatEvents(null));
-    expect(MockEventSource.instances).toHaveLength(0);
-  });
+	it("opens nothing when activeChatId is null", () => {
+		renderHook(() => useChatEvents(null));
+		expect(MockEventSource.instances).toHaveLength(0);
+	});
 });

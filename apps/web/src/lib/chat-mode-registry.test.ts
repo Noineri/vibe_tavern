@@ -7,7 +7,7 @@
  *
  * See SURFACE_REGISTRY_REPORT.md fix-step 1b.
  */
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "bun:test";
 import {
 	CHAT_MODE_PACKAGES,
 	getChatModePackage,

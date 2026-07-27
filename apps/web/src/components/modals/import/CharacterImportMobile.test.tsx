@@ -18,20 +18,35 @@
  *     result's avatar URL is revoked immediately;
  *   • a parse resolving after unmount commits nothing and revokes its URL.
  *
- * `parseCharacterFile` is mocked per-test (via `vi.importActual` spread so
+ * `parseCharacterFile` is mocked per-test with real exports spread so
  * `initial` / `truncate` / types stay intact for `<CharacterImportPreview>`).
  * `useT` is mocked to `(key) => key` for locale-independent assertions (same
  * pattern as `ImportPreviewModal.test.tsx`). `sonner`'s `toast` is mocked so
  * parse-error assertions don't depend on the real toast renderer.
  *
- * Runner: vitest (apps/web) under happy-dom. DOM cleanup between tests is the
- * global `afterEach` in `test/vitest-setup.ts` — no per-test `cleanup()`.
+ * Runner: bun:test with scoped happy-dom cleanup.
  */
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { beforeAll, beforeEach, describe, expect, it, mock, spyOn } from "bun:test";
 import { createRef } from "react";
 import { render, fireEvent, waitFor, act } from "@testing-library/react";
+import { useDomEnv } from "../../../../test/dom-env.js";
+import { mocked } from "../../../../test/mock-utils.js";
+import type { CharacterImportMobileHandle } from "./CharacterImportMobile.js";
+import type { CharacterPreview } from "./parse-import-file.js";
 
-vi.mock("../../../i18n/context.js", () => ({
+useDomEnv();
+
+const toastError = mock();
+const toastSuccess = mock();
+const toastWarning = mock();
+const toastInfo = mock();
+const realI18nContext = await import("../../../i18n/context.js");
+const realSonner = await import("sonner");
+const realParseImportFile = await import("./parse-import-file.js");
+const parseCharacterFile = mock(realParseImportFile.parseCharacterFile);
+
+mock.module("../../../i18n/context.js", () => ({
+  ...realI18nContext,
   useT: () => ({
     t: (key: string) => key,
     tDynamic: (key: string) => key,
@@ -41,22 +56,30 @@ vi.mock("../../../i18n/context.js", () => ({
   }),
 }));
 
-vi.mock("sonner", () => ({
-  toast: { error: vi.fn(), success: vi.fn(), warning: vi.fn(), info: vi.fn() },
+mock.module("sonner", () => ({
+  ...realSonner,
+  toast: {
+    ...realSonner.toast,
+    error: toastError,
+    success: toastSuccess,
+    warning: toastWarning,
+    info: toastInfo,
+  },
 }));
 
-vi.mock("./parse-import-file.js", async () => {
-  const actual = await vi.importActual<typeof import("./parse-import-file.js")>("./parse-import-file.js");
-  return { ...actual, parseCharacterFile: vi.fn() };
+mock.module("./parse-import-file.js", () => ({
+  ...realParseImportFile,
+  parseCharacterFile,
+}));
+
+let CharacterImportMobile: typeof import("./CharacterImportMobile.js").CharacterImportMobile;
+beforeAll(async () => {
+  ({ CharacterImportMobile } = await import("./CharacterImportMobile.js"));
 });
 
-import { CharacterImportMobile, type CharacterImportMobileHandle } from "./CharacterImportMobile.js";
-import { parseCharacterFile, type CharacterPreview } from "./parse-import-file.js";
-import { toast } from "sonner";
-
-const onImportFiles = vi.fn();
-const mockParse = vi.mocked(parseCharacterFile);
-const mockToastError = vi.mocked(toast.error);
+const onImportFiles = mock();
+const mockParse = mocked(parseCharacterFile);
+const mockToastError = mocked(toastError);
 
 const PNG_FILE = new File(["x"], "card.png", { type: "image/png" });
 const MOCK_AVATAR_URL = "blob:mock-avatar-url";
@@ -128,9 +151,9 @@ describe("CharacterImportMobile", () => {
 
   it("openPicker triggers the native picker via input.click() click-through", () => {
     const { ref, input } = renderWithInput();
-    const clickSpy = vi.spyOn(input, "click");
+    const clickSpy = spyOn(input, "click");
     ref.current?.openPicker();
-    expect(clickSpy).toHaveBeenCalledOnce();
+    expect(clickSpy).toHaveBeenCalledTimes(1);
   });
 
   it("mounts the preview modal with title, subtitle, and confirm label after a successful parse", async () => {
@@ -152,7 +175,7 @@ describe("CharacterImportMobile", () => {
       expect(document.body.textContent).toContain("add_to_library");
     });
     fireEvent.click(getByText("add_to_library"));
-    expect(onImportFiles).toHaveBeenCalledOnce();
+    expect(onImportFiles).toHaveBeenCalledTimes(1);
     expect(onImportFiles).toHaveBeenCalledWith([PNG_FILE]);
     await waitFor(() => {
       expect(document.body.textContent).not.toContain("character_import_title");
@@ -193,7 +216,7 @@ describe("CharacterImportMobile", () => {
 
   it("revokes the avatar object URL when the modal is closed", async () => {
     mockParse.mockResolvedValue(mockPreview(MOCK_AVATAR_URL));
-    const revokeSpy = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
+    const revokeSpy = spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
     const { getByText, input } = renderWithInput();
     pickFile(input, PNG_FILE);
     await waitFor(() => {
@@ -208,7 +231,7 @@ describe("CharacterImportMobile", () => {
 
   it("revokes the avatar object URL when the user confirms", async () => {
     mockParse.mockResolvedValue(mockPreview(MOCK_AVATAR_URL));
-    const revokeSpy = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
+    const revokeSpy = spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
     const { getByText, input } = renderWithInput();
     pickFile(input, PNG_FILE);
     await waitFor(() => {
@@ -223,7 +246,7 @@ describe("CharacterImportMobile", () => {
 
   it("revokes the avatar object URL on unmount", async () => {
     mockParse.mockResolvedValue(mockPreview(MOCK_AVATAR_URL));
-    const revokeSpy = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
+    const revokeSpy = spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
     const { unmount, input } = renderWithInput();
     pickFile(input, PNG_FILE);
     await waitFor(() => {
@@ -243,13 +266,13 @@ describe("CharacterImportMobile", () => {
     expect(document.body.textContent).toContain("Second Character");
     expect(document.body.textContent).not.toContain("First Character");
     fireEvent.click(getByText("add_to_library"));
-    expect(onImportFiles).toHaveBeenCalledOnce();
+    expect(onImportFiles).toHaveBeenCalledTimes(1);
     expect(onImportFiles).toHaveBeenCalledWith([fileB]);
   });
 
   it("revokes the avatar URL of a stale parse result immediately and never renders it", async () => {
     const { fileA, fileB, parseA, parseB } = setupOverlap();
-    const revokeSpy = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
+    const revokeSpy = spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
     await act(async () => parseB.resolve(previewFor(fileB, "Second Character", "blob:fresh")));
     await act(async () => parseA.resolve(previewFor(fileA, "First Character", "blob:stale")));
     expect(revokeSpy).toHaveBeenCalledWith("blob:stale");
@@ -262,7 +285,7 @@ describe("CharacterImportMobile", () => {
   it("revokes the avatar URL and commits nothing when the parse resolves after unmount", async () => {
     const parseA = deferred<CharacterPreview>();
     mockParse.mockReturnValue(parseA.promise);
-    const revokeSpy = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
+    const revokeSpy = spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
     const { unmount, input } = renderWithInput();
     pickFile(input, PNG_FILE);
     unmount();

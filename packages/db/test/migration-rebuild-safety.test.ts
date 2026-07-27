@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtemp, mkdir, writeFile, copyFile, readFileSync } from "node:fs/promises";
+import { mkdtemp, mkdir, copyFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { Database } from "bun:sqlite";
@@ -66,7 +66,7 @@ async function buildSyntheticMigrations(): Promise<{ folder: string; rebuildHash
     'CREATE INDEX `idx_lorebooks_chat` ON `lorebooks` (`chat_id`);',
     'CREATE INDEX `idx_lorebooks_scope` ON `lorebooks` (`scope_type`);',
   ].join("\n--> statement-breakpoint\n");
-  await writeFile(join(folder, "0001_rebuild_lorebooks.sql"), rebuildSql);
+  await Bun.write(join(folder, "0001_rebuild_lorebooks.sql"), rebuildSql);
   const rebuildHash = new Bun.CryptoHasher("sha256").update(rebuildSql).digest("hex");
   const rebuildWhen = baselineWhen + 1_000;
 
@@ -78,7 +78,7 @@ async function buildSyntheticMigrations(): Promise<{ folder: string; rebuildHash
       { idx: 1, version: "6", when: rebuildWhen, tag: "0001_rebuild_lorebooks", breakpoints: true },
     ],
   };
-  await writeFile(join(meta, "_journal.json"), JSON.stringify(journal));
+  await Bun.write(join(meta, "_journal.json"), JSON.stringify(journal));
 
   return { folder, rebuildHash };
 }

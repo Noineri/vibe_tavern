@@ -1,12 +1,22 @@
-import { describe, expect, it, vi } from "vitest";
-import { render } from "@testing-library/react";
-import { TraceJsonDownloads } from "./trace-json-downloads.js";
+import { beforeAll, describe, expect, it, mock } from "bun:test";
+import { useDomEnv } from "../../../test/dom-env.js";
+
+useDomEnv();
 
 const NOOP = () => {};
+const realI18nContext = await import("../../i18n/context.js");
 
-vi.mock("../../i18n/context.js", () => ({
+mock.module("../../i18n/context.js", () => ({
+	...realI18nContext,
   useT: () => ({ t: (key: string) => key, tDynamic: (key: string) => key, locale: "en", setLocale: NOOP, ready: true }),
 }));
+
+let TraceJsonDownloads: typeof import("./trace-json-downloads.js").TraceJsonDownloads;
+let render: typeof import("@testing-library/react").render;
+beforeAll(async () => {
+	({ render } = await import("@testing-library/react"));
+	({ TraceJsonDownloads } = await import("./trace-json-downloads.js"));
+});
 
 describe("TraceJsonDownloads", () => {
   it("offers separate request and response JSON downloads when a provider response exists", () => {

@@ -13,25 +13,25 @@
  * process-globally (AGENTS.md `mock.module` gotcha). Each mock spreads the real
  * module first so other consumers in the process keep getting genuine exports.
  */
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, mock } from "bun:test";
 import * as Popover from "@radix-ui/react-popover";
 import { render } from "@testing-library/react";
-import { useModalStore } from "../../stores/index.js";
+import { useDomEnv } from "../../../test/dom-env.js";
 
-// vitest: vi.mock is hoisted above top-level `await import`, so capturing real
-// modules up top would resolve to the MOCKED module. Each factory below reads
-// the real module via `importOriginal` instead.
+useDomEnv();
 
-vi.mock("../../i18n/context.js", async (importOriginal) => {
-  const realI18n = await importOriginal() as typeof import("../../i18n/context.js");
+const realI18n = await import("../../i18n/context.js");
+const realChatSelectors = await import("../../stores/chat-selectors.js");
+const realBinding = await import("../../hooks/use-coauthor-provider-binding.js");
+const realTooltip = await import("../shared/Tooltip.js");
+mock.module("../../i18n/context.js", () => {
   return {
     ...realI18n,
     useT: () => ({ t: (key: string) => key, tDynamic: (key: string) => key, locale: "en", setLocale: () => {}, ready: true }),
   };
 });
 
-vi.mock("../../stores/chat-selectors.js", async (importOriginal) => {
-  const realChatSelectors = await importOriginal() as typeof import("../../stores/chat-selectors.js");
+mock.module("../../stores/chat-selectors.js", () => {
   return {
     ...realChatSelectors,
     useChatMeta: () => ({
@@ -47,8 +47,7 @@ vi.mock("../../stores/chat-selectors.js", async (importOriginal) => {
   };
 });
 
-vi.mock("../../hooks/use-coauthor-provider-binding.js", async (importOriginal) => {
-  const realBinding = await importOriginal() as typeof import("../../hooks/use-coauthor-provider-binding.js");
+mock.module("../../hooks/use-coauthor-provider-binding.js", () => {
   return {
     ...realBinding,
     useCoauthorProviderBinding: () => ({
@@ -60,8 +59,8 @@ vi.mock("../../hooks/use-coauthor-provider-binding.js", async (importOriginal) =
       isDangling: false,
       models: [{ id: "gpt-4o", label: "GPT-4o", contextLength: 128000, toolSupport: "supported" }],
       favorites: [],
-      saveBinding: vi.fn(async () => {}),
-      quickSwitchModel: vi.fn(async () => {}),
+      saveBinding: mock(async () => {}),
+      quickSwitchModel: mock(async () => {}),
     }),
   };
 });
@@ -72,14 +71,14 @@ vi.mock("../../hooks/use-coauthor-provider-binding.js", async (importOriginal) =
 // as VibeMdView.test / CoauthorCharacterForm.test. `use-mobile` is deliberately
 // NOT mocked — happy-dom's desktop viewport already yields useIsMobile()=false,
 // and mocking it collides with VibeMdView.test process-globally.
-vi.mock("../shared/Tooltip.js", async (importOriginal) => {
-  const realTooltip = await importOriginal() as typeof import("../shared/Tooltip.js");
+mock.module("../shared/Tooltip.js", () => {
   return {
     ...realTooltip,
     CustomTooltip: ({ children }: { children: React.ReactNode }) => children,
   };
 });
 
+const { useModalStore } = await import("../../stores/index.js");
 const { CoauthorTopBar } = await import("./CoauthorTopBar.js");
 
 describe("CoauthorTopBar", () => {

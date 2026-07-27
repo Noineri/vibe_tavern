@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtemp, mkdir, readFile } from "node:fs/promises";
+import { mkdtemp, mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -53,8 +53,8 @@ async function addGalleryImage(
 	return rowId;
 }
 
-const diskFull = async (dataRoot: string, charId: string) => readFile(join(dataRoot, CHARS, charId, "avatar-full.png"));
-const diskThumb = async (dataRoot: string, charId: string) => readFile(join(dataRoot, CHARS, charId, "avatar.png"));
+const diskFull = async (dataRoot: string, charId: string) => Bun.file(join(dataRoot, CHARS, charId, "avatar-full.png")).arrayBuffer();
+const diskThumb = async (dataRoot: string, charId: string) => Bun.file(join(dataRoot, CHARS, charId, "avatar.png")).arrayBuffer();
 
 describe("Bug #2/#3 adapter-level repro: gallery avatar swap + direct upload", () => {
 	test("gallery A→B: each swap writes the NEW full to disk, bumps updatedAt, serves new bytes", async () => {

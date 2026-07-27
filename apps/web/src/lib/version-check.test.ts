@@ -1,4 +1,4 @@
-import { test, expect, describe } from "vitest";
+import { test, expect, describe } from "bun:test";
 import { cleanReleaseNotes, parseSemver, compareSemver } from "./version-check.js";
 
 describe("cleanReleaseNotes", () => {

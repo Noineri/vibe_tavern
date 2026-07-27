@@ -498,3 +498,215 @@ describe("executeScripts — sandbox isolation", () => {
     expect(r.character.personality).toBe('2{"x":1}truetrue');
   });
 });
+
+
+describe("executeScripts — Bun node:vm compatibility probes", () => {
+  test("a CPU-bound loop is terminated by the configured timeout near five seconds", () => {
+    const startedAt = performance.now();
+    const r = run(`while (true) {}`);
+    const elapsedMs = performance.now() - startedAt;
+
+    // Bun 1.3.14-canary.1 observed 5.02s and the same thrown-error contract
+    // Node documents for runInNewContext({ timeout }).
+    expect(r.scriptRuns[0].status).toBe("errored");
+    expect(r.scriptRuns[0].error).toBe("Script execution timed out after 5000ms");
+    expect(elapsedMs).toBeGreaterThanOrEqual(4_500);
+    expect(elapsedMs).toBeLessThan(10_000);
+  }, 12_000);
+
+  test("non-Error exceptions are recorded and later scripts still execute", () => {
+    const r = run([
+      { code: `throw "string-value";`, id: "string", name: "String throw", sortOrder: 0 },
+      { code: `throw { reason: "object-value" };`, id: "object", name: "Object throw", sortOrder: 1 },
+      { code: `context.character.personality = "continued";`, id: "after", name: "After", sortOrder: 2 },
+    ]);
+
+    expect(r.scriptRuns.map((scriptRun) => scriptRun.status)).toEqual(["errored", "errored", "ran"]);
+    expect(r.scriptRuns.map((scriptRun) => scriptRun.error)).toEqual(["string-value", "[object Object]", undefined]);
+    expect(r.errors.map((error) => error.error)).toEqual(["string-value", "[object Object]"]);
+    expect(r.character.personality).toBe("continued");
+  });
+
+  test("character mutations transfer to the result and following scripts", () => {
+    const r = run([
+      {
+        code: `context.character.personality = "X"; context.character.scenario = "Y";`,
+        id: "writer",
+        sortOrder: 0,
+      },
+      {
+        code: `
+          context.shared.set("personalitySeen", context.character.personality);
+          context.shared.set("scenarioSeen", context.character.scenario);
+        `,
+        id: "reader",
+        sortOrder: 1,
+      },
+    ]);
+
+    expect(r.character).toEqual({ personality: "X", scenario: "Y" });
+    expect(r.shared).toEqual({ personalitySeen: "X", scenarioSeen: "Y" });
+  });
+
+  test("console capture preserves levels and stringifies mixed arguments", () => {
+    const r = run(`
+      console.log("object", { a: 1 }, [2, 3], null, undefined);
+      console.warn(true);
+      console.error(new Error("boom"));
+    `);
+
+    expect(r.scriptRuns[0].console).toEqual([
+      { level: "log", args: `object {"a":1} [2,3] null undefined` },
+      { level: "warn", args: "true" },
+      { level: "error", args: "{}" },
+    ]);
+  });
+
+  test("top-level static import syntax is rejected as script code", () => {
+    const r = run(`import fs from "node:fs";`);
+
+    // Bun observed a parse-time error, as expected for vm script grammar;
+    // its wording ("import call expects one or two arguments") is Bun-specific.
+    expect(r.scriptRuns[0].status).toBe("errored");
+    expect(r.scriptRuns[0].error).toContain("import call expects one or two arguments");
+  });
+
+  test("dynamic import rejects asynchronously without a loader callback", async () => {
+    const r = run(`
+      import("node:fs").then(
+        () => context.shared.set("dynamicImport", "resolved"),
+        (error) => context.shared.set(
+          "dynamicImport",
+          "rejected:" + String(error.code) + ":" + String(error.message),
+        ),
+      );
+    `);
+
+    expect(r.scriptRuns[0].status).toBe("ran");
+    expect(r.shared.dynamicImport).toBeUndefined();
+    await Bun.sleep(20);
+    // Bun observed Node's documented behavior: import() compiles, then rejects
+    // because executeScripts supplies no importModuleDynamically callback.
+    expect(r.shared.dynamicImport).toBe(
+      "rejected:ERR_VM_DYNAMIC_IMPORT_CALLBACK_MISSING:A dynamic import callback was not specified.",
+    );
+  });
+
+  test("timer and explicit microtask scheduling globals are absent", () => {
+    const r = run(`
+      context.shared.set("timers", [
+        typeof setTimeout,
+        typeof setInterval,
+        typeof queueMicrotask,
+        typeof Promise,
+      ].join(","));
+    `);
+
+    // Bun observed the allowlist expectation: timers/queueMicrotask are absent,
+    // while the context's intrinsic Promise constructor remains available.
+    expect(r.shared.timers).toBe("undefined,undefined,undefined,function");
+  });
+
+  test("Promise callbacks continue after executeScripts returns in the sandbox realm", async () => {
+    const r = run(`
+      Promise.resolve().then(() => {
+        context.shared.set("continued", typeof process);
+      });
+    `);
+
+    expect(r.shared.continued).toBeUndefined();
+    await Promise.resolve();
+    // Bun observed Node's default microtask behavior: without microtaskMode,
+    // the callback runs after runInNewContext returns and outside its timeout;
+    // expected sandbox lookup still applies, so direct process remains absent.
+    expect(r.shared.continued).toBe("undefined");
+  });
+});
+
+describe("executeScripts — Bun node:vm security probes", () => {
+  test("direct Node and CommonJS globals remain absent", () => {
+    const r = run(`
+      context.shared.set("nodeGlobals", [
+        typeof process,
+        typeof require,
+        typeof global,
+        typeof globalThis.process,
+        typeof __dirname,
+      ].join(","));
+    `);
+
+    expect(r.shared.nodeGlobals).toBe("undefined,undefined,undefined,undefined,undefined");
+  });
+
+  test("direct runtime and browser host capabilities remain absent", () => {
+    const r = run(`
+      context.shared.set("hostCapabilities", [
+        typeof fetch,
+        typeof Bun,
+        typeof Deno,
+        typeof WebSocket,
+        typeof XMLHttpRequest,
+        typeof localStorage,
+      ].join(","));
+    `);
+
+    expect(r.shared.hostCapabilities).toBe("undefined,undefined,undefined,undefined,undefined,undefined");
+  });
+
+  test("host constructors and prototypes escape to the host realm", () => {
+    const r = run(`
+      function probe(key, callback) {
+        try {
+          context.shared.set(key, callback());
+        } catch (error) {
+          context.shared.set(key, "threw:" + String(error));
+        }
+      }
+      probe("thisConstructor", () => this.constructor.constructor("return typeof process")());
+      probe("literalConstructor", () => ({}).constructor.constructor("return typeof process")());
+      probe("contextConstructor", () => context.constructor.constructor("return typeof process")());
+      probe(
+        "contextPrototypeConstructor",
+        () => Object.getPrototypeOf(context).constructor.constructor("return typeof process")(),
+      );
+      probe("exposedObjectConstructor", () => Object.constructor("return typeof process")());
+    `);
+
+    // SECURITY DIVERGENCE: Bun observed host process through `this`, the
+    // host-created context object/prototype, and explicitly injected Object.
+    // The sandbox's intended allowlist posture expects every result to be
+    // "undefined"; only the object-literal constructor stays context-local.
+    expect(r.shared).toEqual({
+      thisConstructor: "object",
+      literalConstructor: "undefined",
+      contextConstructor: "object",
+      contextPrototypeConstructor: "object",
+      exposedObjectConstructor: "object",
+    });
+  });
+
+  test("an escaped host constructor exposes Bun, fetch, and WebSocket", () => {
+    const r = run(`
+      context.shared.set("escapedProcess", Object.constructor("return typeof process")());
+      context.shared.set("escapedBun", Object.constructor("return typeof Bun")());
+      context.shared.set("escapedFetch", Object.constructor("return typeof fetch")());
+      context.shared.set("escapedDeno", Object.constructor("return typeof Deno")());
+      context.shared.set("escapedWebSocket", Object.constructor("return typeof WebSocket")());
+      context.shared.set("escapedXmlHttpRequest", Object.constructor("return typeof XMLHttpRequest")());
+      context.shared.set("escapedLocalStorage", Object.constructor("return typeof localStorage")());
+    `);
+
+    // SECURITY DIVERGENCE: direct probes are absent, but the injected host
+    // Object's Function constructor reaches host process/Bun/network globals.
+    // A confined allowlist would keep all seven values "undefined".
+    expect(r.shared).toEqual({
+      escapedProcess: "object",
+      escapedBun: "object",
+      escapedFetch: "function",
+      escapedDeno: "undefined",
+      escapedWebSocket: "function",
+      escapedXmlHttpRequest: "undefined",
+      escapedLocalStorage: "undefined",
+    });
+  });
+});

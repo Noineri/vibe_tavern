@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { Database } from "bun:sqlite";
@@ -47,10 +47,7 @@ interface JournalEntry {
 async function writeJournal(folder: string, entries: JournalEntry[]): Promise<void> {
 	const meta = resolve(folder, "meta");
 	await mkdir(meta, { recursive: true });
-	await writeFile(
-		resolve(meta, "_journal.json"),
-		JSON.stringify({ version: "7", dialect: "sqlite", entries }),
-	);
+	await Bun.write(resolve(meta, "_journal.json"), JSON.stringify({ version: "7", dialect: "sqlite", entries }));
 }
 
 async function writeFolder(folder: string, withDrop: boolean): Promise<void> {
@@ -60,11 +57,11 @@ async function writeFolder(folder: string, withDrop: boolean): Promise<void> {
 		{ idx: 0, version: "6", when: 1700000000000, tag: "0000_init", breakpoints: true },
 		{ idx: 1, version: "6", when: 1700000001000, tag: "0001_add_column", breakpoints: true },
 	];
-	await writeFile(resolve(folder, "0000_init.sql"), INIT_SQL);
-	await writeFile(resolve(folder, "0001_add_column.sql"), ADD_COLUMN_SQL);
+	await Bun.write(resolve(folder, "0000_init.sql"), INIT_SQL);
+	await Bun.write(resolve(folder, "0001_add_column.sql"), ADD_COLUMN_SQL);
 	if (withDrop) {
 		entries.push({ idx: 2, version: "6", when: 1700000002000, tag: "0002_drop_column", breakpoints: true });
-		await writeFile(resolve(folder, "0002_drop_column.sql"), DROP_COLUMN_SQL);
+		await Bun.write(resolve(folder, "0002_drop_column.sql"), DROP_COLUMN_SQL);
 	}
 	await writeJournal(folder, entries);
 }

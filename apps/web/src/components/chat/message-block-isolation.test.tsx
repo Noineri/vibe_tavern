@@ -1,6 +1,9 @@
-import { describe, test, expect, beforeEach, beforeAll, vi } from "vitest";
+import { beforeEach, beforeAll, describe, expect, mock, test } from "bun:test";
+import { useDomEnv } from "../../../test/dom-env.js";
 import { Profiler, type ProfilerOnRenderCallback, type ReactNode } from "react";
-import { render, act } from "@testing-library/react";
+
+useDomEnv();
+const { act, render } = await import("@testing-library/react");
 
 /**
  * Render-isolation invariant for MessageBlock.
@@ -46,36 +49,37 @@ import { render, act } from "@testing-library/react";
 // relevant to the isolation graph under test.
 // ---------------------------------------------------------------------------
 
-const { STABLE_CONTROLLER, NOOP } = vi.hoisted(() => {
-  const NOOP = () => {};
-  const NOOP_ASYNC = async () => {};
-  return {
-    NOOP,
-    STABLE_CONTROLLER: {
-      handleSend: NOOP_ASYNC,
-      handleCancelGeneration: NOOP,
-      handleSwitchChat: NOOP_ASYNC,
-      handleStartEdit: NOOP,
-      handleCancelEdit: NOOP,
-      handleSaveMessageEdit: NOOP_ASYNC,
-      handleDeleteMessage: NOOP_ASYNC,
-      handleDeleteVariant: NOOP_ASYNC,
-      handleRegenerateMessage: NOOP_ASYNC,
-      handleSelectMessageVariant: NOOP_ASYNC,
-      handleResend: NOOP_ASYNC,
-      handleFork: NOOP_ASYNC,
-      handleActivateBranch: NOOP_ASYNC,
-      handleDeleteActiveBranch: NOOP_ASYNC,
-      handleRenameBranch: NOOP_ASYNC,
-    },
-  };
-});
+const NOOP = () => {};
+const NOOP_ASYNC = async () => {};
+const STABLE_CONTROLLER = {
+  handleSend: NOOP_ASYNC,
+  handleCancelGeneration: NOOP,
+  handleSwitchChat: NOOP_ASYNC,
+  handleStartEdit: NOOP,
+  handleCancelEdit: NOOP,
+  handleSaveMessageEdit: NOOP_ASYNC,
+  handleDeleteMessage: NOOP_ASYNC,
+  handleDeleteVariant: NOOP_ASYNC,
+  handleRegenerateMessage: NOOP_ASYNC,
+  handleSelectMessageVariant: NOOP_ASYNC,
+  handleResend: NOOP_ASYNC,
+  handleFork: NOOP_ASYNC,
+  handleActivateBranch: NOOP_ASYNC,
+  handleDeleteActiveBranch: NOOP_ASYNC,
+  handleRenameBranch: NOOP_ASYNC,
+};
+const realChatController = await import("../../hooks/use-chat-controller.js");
+const realI18nContext = await import("../../i18n/context.js");
+const realChatActions = await import("../../stores/api-actions/chat-actions.js");
+const realTooltip = await import("../shared/Tooltip.js");
 
-vi.mock("../../hooks/use-chat-controller.js", () => ({
+mock.module("../../hooks/use-chat-controller.js", () => ({
+  ...realChatController,
   useChatController: () => STABLE_CONTROLLER,
 }));
 
-vi.mock("../../i18n/context.js", () => ({
+mock.module("../../i18n/context.js", () => ({
+  ...realI18nContext,
   useT: () => ({ t: (key: string) => key, tDynamic: (key: string) => key, locale: "en", setLocale: NOOP, ready: true }),
 }));
 
@@ -83,42 +87,39 @@ vi.mock("../../i18n/context.js", () => ({
 // hermetic — the real getSceneStatusAction would hit the network. Spreading
 // `...actual` keeps every other chat-action intact; only the 5 Scene funcs are
 // stubbed so the scene zone mounts cleanly under MessageBlock.
-vi.mock("../../stores/api-actions/chat-actions.js", async (importOriginal) => {
-  const actual = await importOriginal() as Record<string, unknown>;
-  return {
-    ...actual,
+mock.module("../../stores/api-actions/chat-actions.js", () => ({
+    ...realChatActions,
     getSceneStatusAction: () => Promise.resolve({ generating: false, record: null }),
     generateSceneAction: () => Promise.resolve({}),
     editSceneAction: () => Promise.resolve({}),
     deleteSceneAction: () => Promise.resolve({}),
     cancelSceneAction: () => Promise.resolve(),
     previewSceneAction: () => Promise.resolve({}),
-  };
-});
+}));
 
 // Scene/Objective zones render CustomTooltip (icon buttons); presentational here —
 // passthrough so no Radix TooltipProvider is needed.
-vi.mock("../shared/Tooltip.js", () => ({
+mock.module("../shared/Tooltip.js", () => ({
+  ...realTooltip,
   CustomTooltip: ({ children }: { children: ReactNode }) => children,
   TooltipProvider: ({ children }: { children: ReactNode }) => children,
 }));
 
 // ---------------------------------------------------------------------------
-// SCOPED happy-dom registration + jsdom shims.
+// Scoped happy-dom shims.
 //
-// WHY SCOPED (not a bunfig preload): this test file registers the global DOM
-// in beforeAll and UNREGISTERS it in afterAll. The repo has DOM-averse tests
+// WHY SCOPED (not global): this test file registers the global DOM in
+// beforeAll and UNREGISTERS it in afterAll. The repo has DOM-averse tests
 // (avatar.test.ts, gateway-client) that rely on `typeof window === "undefined"`
-// so e.g. getGatewayBaseUrl() returns its SSR fallback. A permanent preload
-// would inject a window into their environment and break them. Scoping keeps
-// both worlds working: this file gets a window while it runs; pure-logic files
-// never see one.
+// so e.g. getGatewayBaseUrl() returns its SSR fallback. A permanent global
+// registration would inject a window into their environment and break them.
+// Scoping keeps both worlds working: this file gets a window while it runs;
+// pure-logic files never see one.
 // ---------------------------------------------------------------------------
 
 beforeAll(() => {
-  // vitest's happy-dom environment provides `window` per file (no
-  // GlobalRegistrator needed); these shims stay as belt-and-suspenders for any
-  // API happy-dom hasn't implemented.
+  // useDomEnv() provides `window` per file; these shims stay
+  // as belt-and-suspenders for any API happy-dom hasn't implemented.
   if (typeof window !== "undefined") {
     if (!window.matchMedia) {
       window.matchMedia = (q: string) => ({
@@ -137,8 +138,6 @@ beforeAll(() => {
     }
   }
 });
-
-
 
 // ---------------------------------------------------------------------------
 // Dynamic import AFTER mocks are registered.

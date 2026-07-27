@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
-import { mkdtemp, mkdir, writeFile, symlink, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, symlink, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -39,13 +39,9 @@ afterEach(async () => {
 async function seedSkill(root: string, id: string, description: string): Promise<void> {
   await mkdir(join(root, id, "assets"), { recursive: true });
   await mkdir(join(root, id, "references"), { recursive: true });
-  await writeFile(
-    join(root, id, "SKILL.md"),
-    `---\nname: ${id}\ndescription: ${description}\n---\n\n# ${id}\nRead [template](assets/template.md) or [shared](../../shared-references/rules.md).\n`,
-    "utf8",
-  );
-  await writeFile(join(root, id, "assets", "template.md"), "# Template\n...", "utf8");
-  await writeFile(join(root, id, "references", "rules.md"), "# Rules\n...", "utf8");
+  await Bun.write(join(root, id, "SKILL.md"), `---\nname: ${id}\ndescription: ${description}\n---\n\n# ${id}\nRead [template](assets/template.md) or [shared](../../shared-references/rules.md).\n`);
+  await Bun.write(join(root, id, "assets", "template.md"), "# Template\n...");
+  await Bun.write(join(root, id, "references", "rules.md"), "# Rules\n...");
 }
 
 describe("readSkillFile — valid reads", () => {
@@ -65,14 +61,14 @@ describe("readSkillFile — valid reads", () => {
   test("reads a shared sibling references directory at the root", async () => {
     await seedSkill(builtinRoot, "janitor-card-creator", "Creates cards.");
     await mkdir(join(builtinRoot, "shared-references"), { recursive: true });
-    await writeFile(join(builtinRoot, "shared-references", "rules.md"), "# Shared rules\n", "utf8");
+    await Bun.write(join(builtinRoot, "shared-references", "rules.md"), "# Shared rules\n");
     expect((await readSkillFile("shared-references/rules.md", [builtinRoot])).content).toContain("Shared rules");
   });
 
   test("internal '..' that stays inside the root resolves (root-relative link form)", async () => {
     await seedSkill(builtinRoot, "janitor-card-creator", "Creates cards.");
     await mkdir(join(builtinRoot, "shared-references"), { recursive: true });
-    await writeFile(join(builtinRoot, "shared-references", "rules.md"), "# Shared rules\n", "utf8");
+    await Bun.write(join(builtinRoot, "shared-references", "rules.md"), "# Shared rules\n");
     // A path written relative to the skill dir, re-rooted by the model with a
     // leading skill dir + '..' — must resolve to the shared dir, not be rejected.
     const res = await readSkillFile("janitor-card-creator/../shared-references/rules.md", [builtinRoot]);
@@ -98,7 +94,7 @@ describe("readSkillFile — rejections", () => {
     await seedSkill(builtinRoot, "x", "x");
     // Place a sensitive file outside the root to PROVE it is never read.
     const outside = join(builtinRoot, "..", "vt-skill-read-escape-target.txt");
-    await writeFile(outside, "SECRET", "utf8");
+    await Bun.write(outside, "SECRET");
     await expect(readSkillFile("../vt-skill-read-escape-target.txt", [builtinRoot])).rejects.toThrow(SkillReadError);
     await expect(readSkillFile("../../etc/passwd", [builtinRoot, userRoot])).rejects.toThrow(SkillReadError);
     await rm(outside, { force: true });
@@ -126,7 +122,7 @@ describe("readSkillFile — rejections", () => {
 
   test("binary file (NUL byte) → reject", async () => {
     await mkdir(join(builtinRoot, "bin"), { recursive: true });
-    await writeFile(join(builtinRoot, "bin", "image.bin"), Uint8Array.from([1, 2, 3, 0, 4, 5]), "utf8");
+    await Bun.write(join(builtinRoot, "bin", "image.bin"), Uint8Array.from([1, 2, 3, 0, 4, 5]));
     await expect(readSkillFile("bin/image.bin", [builtinRoot])).rejects.toThrow(/binary/i);
   });
 

@@ -13,7 +13,7 @@
  * The tests assert the store-side half of that contract: operations on one
  * message's stars never touch another message's, even across chats.
  */
-import { describe, test, expect, beforeEach } from "vitest";
+import { describe, test, expect, beforeEach } from "bun:test";
 import { brandId, type ChatId, type MessageId, type MessageVariantId } from "@vibe-tavern/domain";
 import { useMessageAiEditorStore } from "./message-ai-editor-store.js";
 

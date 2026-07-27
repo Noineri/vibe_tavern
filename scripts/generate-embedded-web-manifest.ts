@@ -27,7 +27,7 @@
  */
 
 import { dirname, join, relative, resolve, sep } from "node:path";
-import { readdir, writeFile } from "node:fs/promises";
+import { parseArgs } from "node:util";
 
 const ROOT = resolve(import.meta.dir, "..");
 const WEB_SOURCE = join(ROOT, "out", "apps", "web");
@@ -55,15 +55,19 @@ export const STUB_CONTENT = `// AUTO-GENERATED stub. Replaced by scripts/generat
 export const embeddedWebFiles: Record<string, string> = {};
 `;
 
+// Real files only, matching the legacy recursive readdir walk: dotfiles
+// included, symlinks neither traversed nor listed (out/ never contains any).
 async function scanFiles(dir: string): Promise<string[]> {
+	const glob = new Bun.Glob("**/*");
 	const out: string[] = [];
-	for (const entry of await readdir(dir, { withFileTypes: true })) {
-		const full = join(dir, entry.name);
-		if (entry.isDirectory()) {
-			out.push(...await scanFiles(full));
-		} else if (entry.isFile()) {
-			out.push(full);
-		}
+	for await (const path of glob.scan({
+		cwd: dir,
+		absolute: true,
+		dot: true,
+		followSymlinks: false,
+		onlyFiles: true,
+	})) {
+		out.push(path);
 	}
 	return out;
 }
@@ -113,7 +117,7 @@ ${mapEntries.join("\n")}
 };
 `;
 
-	await writeFile(MANIFEST_PATH, content, "utf-8");
+	await Bun.write(MANIFEST_PATH, content);
 	console.log(
 		`[generate-embedded-web-manifest] Embedded ${files.length} file(s) into services/api/src/server/embedded-web-manifest.ts`,
 	);
@@ -122,13 +126,35 @@ ${mapEntries.join("\n")}
 
 /** Restores the empty stub. Called in build-standalone.ts `finally`. */
 export async function writeEmbeddedWebStub(): Promise<void> {
-	await writeFile(MANIFEST_PATH, STUB_CONTENT, "utf-8");
+	await Bun.write(MANIFEST_PATH, STUB_CONTENT);
 	console.log("[generate-embedded-web-manifest] Restored embedded-web-manifest.ts stub.");
 }
 
 async function main(): Promise<void> {
-	const args = process.argv.slice(2);
-	if (args.includes("--stub")) {
+	const rawArgs = process.argv.slice(2);
+	const options = {
+		stub: { type: "boolean" },
+	} as const;
+	const initial = parseArgs({
+		args: rawArgs,
+		options,
+		strict: false,
+		allowPositionals: true,
+		tokens: true,
+	});
+	const args = [...new Set(initial.tokens.flatMap((token) =>
+		token.kind === "option-terminator" ? [] : [token.index]
+	))].flatMap((index) => {
+		const arg = rawArgs[index];
+		return arg === undefined ? [] : [arg];
+	});
+	const { values } = parseArgs({
+		args,
+		options,
+		strict: false,
+		allowPositionals: true,
+	});
+	if (values.stub === true) {
 		await writeEmbeddedWebStub();
 		return;
 	}

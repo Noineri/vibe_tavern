@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useState } from "react";
+import * as buildConfig from "../build-config.js";
 import { PROVIDER_TYPE } from "@vibe-tavern/domain";
 import { getT } from "../i18n/locale-helpers.js";
 import type { ConnectionState } from "../components/layout/app-shell-types.js";
@@ -19,9 +20,9 @@ import { extractTokenFromHash, saveMobileToken, clearMobileToken } from "../lib/
 
 function createInitialConnectionState(): ConnectionState {
   const envDefaults = {
-    providerLabel: import.meta.env.VITE_RP_DEFAULT_PROVIDER_LABEL || "OpenAI-compatible",
-    baseUrl: import.meta.env.VITE_RP_DEFAULT_BASE_URL || "",
-    model: import.meta.env.VITE_RP_DEFAULT_MODEL || "",
+    providerLabel: buildConfig.DEFAULT_PROVIDER_LABEL,
+    baseUrl: buildConfig.DEFAULT_BASE_URL,
+    model: buildConfig.DEFAULT_MODEL,
   };
   const normalizedBaseUrl = normalizeOpenAiCompatibleBaseUrl(envDefaults.baseUrl);
 
@@ -64,7 +65,7 @@ function createInitialConnectionState(): ConnectionState {
  *   useChatController, useCharacterController, useProviderProfiles, usePresetController
  * Components import sub-hooks directly — not through this hook.
  */
-export function useRpPlatformApp() {
+export function useVibeTavernApp() {
   const [loadError, setLoadError] = useState("");
 
   const isLoading = useBootstrapStore((s) => s.isLoading);

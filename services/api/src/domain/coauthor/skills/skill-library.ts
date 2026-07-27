@@ -23,7 +23,7 @@
  * any byte is written, so a partial tree can never be left behind.
  */
 
-import { lstat, mkdir, readdir, rename, rm, writeFile } from "node:fs/promises";
+import { lstat, mkdir, rename, rm } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { randomUUID } from "node:crypto";
 import { parseSkillManifest, buildSkillCatalog } from "./skill-scanner.js";
@@ -215,7 +215,7 @@ export async function importSkillTree(
     for (const entry of entries.values()) {
       const dest = join(staging, entry.normalizedPath);
       await mkdir(dirname(dest), { recursive: true });
-      await writeFile(dest, entry.bytes);
+      await Bun.write(dest, entry.bytes);
     }
 
     // 2. Swap each top-level directory into place. Atomic per dir: move any
@@ -315,12 +315,22 @@ async function pathExists(p: string): Promise<boolean> {
 
 /** Test/help: list immediate top-level directory names under a root (non-recursive, no symlink dirs). */
 export async function listTopLevelDirs(rootDir: string): Promise<string[]> {
+  const dirNames: string[] = [];
+
   try {
-    const entries = await readdir(rootDir, { withFileTypes: true });
-    return entries
-      .filter((e) => e.isDirectory() && !e.isSymbolicLink() && !e.name.startsWith(STAGING_PREFIX) && !e.name.startsWith(TRASH_PREFIX))
-      .map((e) => e.name)
-      .sort();
+    for await (const entry of new Bun.Glob("*").scan({
+      cwd: rootDir,
+      dot: true,
+      followSymlinks: false,
+      onlyFiles: false,
+    })) {
+      const stat = await lstat(join(rootDir, entry));
+      if (!stat.isDirectory() || stat.isSymbolicLink()) continue;
+      if (entry.startsWith(STAGING_PREFIX) || entry.startsWith(TRASH_PREFIX)) continue;
+      dirNames.push(entry);
+    }
+
+    return dirNames.sort();
   } catch {
     return [];
   }

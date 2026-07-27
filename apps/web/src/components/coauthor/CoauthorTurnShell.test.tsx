@@ -1,8 +1,12 @@
 import type { ReactNode } from "react";
-import { render } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeAll, describe, expect, it, mock } from "bun:test";
+import { useDomEnv } from "../../../test/dom-env.js";
 
-const fixtures = vi.hoisted(() => {
+useDomEnv();
+
+let render: typeof import("@testing-library/react").render;
+
+const fixtures = (() => {
   const message = {
     id: "msg_assistant",
     role: "assistant",
@@ -31,20 +35,20 @@ const fixtures = vi.hoisted(() => {
     editingMessageId: null,
     editingDraft: "",
     messageActionId: null,
-    setEditingDraft: vi.fn(),
+    setEditingDraft: mock(),
   };
   return { message, snapshotState, chatState };
-});
+})();
 
-vi.mock("../../stores/index.js", () => {
+mock.module("../../stores/index.js", () => {
   const useChatStore = Object.assign(
-    (selector: (state: typeof fixtures.chatState) => unknown) => selector(fixtures.chatState),
+    (selector: (state: typeof fixtures.chatState) => unknown = (state) => state) => selector(fixtures.chatState),
     { getState: () => fixtures.chatState },
   );
   return { useChatStore, useIsSending: () => false };
 });
 
-vi.mock("../../stores/snapshot-store.js", () => {
+mock.module("../../stores/snapshot-store.js", () => {
   const useSnapshotStore = Object.assign(
     (selector: (state: typeof fixtures.snapshotState) => unknown) => selector(fixtures.snapshotState),
     { getState: () => fixtures.snapshotState },
@@ -52,7 +56,7 @@ vi.mock("../../stores/snapshot-store.js", () => {
   return { useSnapshotStore };
 });
 
-vi.mock("../../stores/chat-selectors.js", () => ({
+mock.module("../../stores/chat-selectors.js", () => ({
   useDisplayMessage: () => fixtures.message,
   useMessageAuthor: () => ({
     activeChatId: "chat_1",
@@ -69,40 +73,44 @@ vi.mock("../../stores/chat-selectors.js", () => ({
   useStreamingRevealedFor: () => ({ streamingText: "", revealedText: "", reasoningText: "" }),
 }));
 
-vi.mock("../../stores/api-actions/bootstrap-actions.js", () => ({
+mock.module("../../stores/api-actions/bootstrap-actions.js", () => ({
   useBootstrapStore: (selector: (state: { data: null }) => unknown) => selector({ data: null }),
 }));
-vi.mock("../../hooks/use-chat-controller.js", () => ({
+mock.module("../../hooks/use-chat-controller.js", () => ({
   useChatController: () => ({
-    handleDeleteMessage: vi.fn(),
-    handleStartEdit: vi.fn(),
-    handleCancelEdit: vi.fn(),
-    handleSaveMessageEdit: vi.fn(),
-    handleResend: vi.fn(),
+    handleDeleteMessage: mock(),
+    handleStartEdit: mock(),
+    handleCancelEdit: mock(),
+    handleSaveMessageEdit: mock(),
+    handleResend: mock(),
   }),
 }));
-vi.mock("../../i18n/context.js", () => ({ useT: () => ({ t: (key: string) => key }) }));
-vi.mock("../../lib/avatar.js", () => ({ resolveEntityAvatarUrl: () => null }));
-vi.mock("../../utils/tokenizer.js", () => ({ countTokens: () => 2 }));
-vi.mock("../chat/MessageShell.js", () => ({
+mock.module("../../i18n/context.js", () => ({ useT: () => ({ t: (key: string) => key }) }));
+mock.module("../../lib/avatar.js", () => ({ resolveEntityAvatarUrl: () => null }));
+mock.module("../../utils/tokenizer.js", () => ({ countTokens: () => 2 }));
+mock.module("../chat/MessageShell.js", () => ({
   MessageShell: ({ children }: { children: ReactNode }) => <div>{children}</div>,
 }));
-vi.mock("../chat/MessageReasoning.js", () => ({
+mock.module("../chat/MessageReasoning.js", () => ({
   MessageReasoning: () => <div data-layer="reasoning" />,
 }));
-vi.mock("../chat/CoauthorToolActivitySlot.js", () => ({
+mock.module("../chat/CoauthorToolActivitySlot.js", () => ({
   CoauthorToolActivitySlot: () => <div data-layer="tools" />,
 }));
-vi.mock("../../lib/markdown.js", () => ({
+mock.module("../../lib/markdown.js", () => ({
   Markdown: () => <div data-layer="text" />,
 }));
-vi.mock("../chat/StreamingMarkdown.js", () => ({ StreamingMarkdown: () => null }));
-vi.mock("../shared/Logo.js", () => ({ Logo: () => null }));
-vi.mock("../shared/auto-textarea.js", () => ({ AutoTextarea: () => null }));
-vi.mock("../shared/MobileExpandTextarea.js", () => ({ MobileExpandTextarea: ({ children }: { children: ReactNode }) => children }));
-vi.mock("../shared/destructive-confirm-modal.js", () => ({ DestructiveConfirmModal: () => null }));
+mock.module("../chat/StreamingMarkdown.js", () => ({ StreamingMarkdown: () => null }));
+mock.module("../shared/Logo.js", () => ({ Logo: () => null }));
+mock.module("../shared/auto-textarea.js", () => ({ AutoTextarea: () => null }));
+mock.module("../shared/MobileExpandTextarea.js", () => ({ MobileExpandTextarea: ({ children }: { children: ReactNode }) => children }));
+mock.module("../shared/destructive-confirm-modal.js", () => ({ DestructiveConfirmModal: () => null }));
 
-import { CoauthorTurnShell } from "./CoauthorTurnShell.js";
+let CoauthorTurnShell: typeof import("./CoauthorTurnShell.js").CoauthorTurnShell;
+beforeAll(async () => {
+  ({ render } = await import("@testing-library/react"));
+  ({ CoauthorTurnShell } = await import("./CoauthorTurnShell.js"));
+});
 
 describe("CoauthorTurnShell assistant part layout", () => {
   it("renders tool activity immediately below reasoning and before final text", () => {

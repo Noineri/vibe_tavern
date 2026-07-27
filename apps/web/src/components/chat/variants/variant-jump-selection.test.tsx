@@ -24,16 +24,18 @@
  * pruneStaleStars behavior is exercised end-to-end, not mocked. Only useT is
  * mocked (returns the raw key string) so aria-labels assert against stable keys.
  */
-import { describe, test, expect, beforeAll, afterEach, beforeEach, vi } from "vitest";
-import { render, cleanup, fireEvent, act } from "@testing-library/react";
+import { describe, test, expect, beforeAll, afterEach, beforeEach, mock } from "bun:test";
 import { brandId, type MessageId, type MessageVariantId } from "@vibe-tavern/domain";
 import { useMessageAiEditorStore } from "../../../stores/message-ai-editor-store.js";
-import { VariantControls } from "./variant-controls.js";
-import { VariantJump } from "./variant-jump.js";
+import { useDomEnv } from "../../../../test/dom-env.js";
+
+useDomEnv();
 
 const NOOP = () => {};
 
-vi.mock("../../../i18n/context.js", () => ({
+const realI18nContext = await import("../../../i18n/context.js");
+mock.module("../../../i18n/context.js", () => ({
+	...realI18nContext,
   useT: () => ({
     t: (key: string) => key,
     tDynamic: (key: string) => key,
@@ -43,7 +45,12 @@ vi.mock("../../../i18n/context.js", () => ({
   }),
 }));
 
-beforeAll(() => {
+let VariantControls: typeof import("./variant-controls.js").VariantControls;
+let VariantJump: typeof import("./variant-jump.js").VariantJump;
+let render: typeof import("@testing-library/react").render;
+let fireEvent: typeof import("@testing-library/react").fireEvent;
+let act: typeof import("@testing-library/react").act;
+beforeAll(async () => {
   if (typeof window !== "undefined") {
     if (!window.matchMedia) {
       window.matchMedia = (q: string) => ({
@@ -61,6 +68,9 @@ beforeAll(() => {
       (window as { ResizeObserver?: unknown }).ResizeObserver = (globalThis as { ResizeObserver?: unknown }).ResizeObserver;
     }
   }
+  ({ render, fireEvent, act } = await import("@testing-library/react"));
+  ({ VariantControls } = await import("./variant-controls.js"));
+  ({ VariantJump } = await import("./variant-jump.js"));
 });
 
 const MESSAGE_ID_RAW = "msg-1";
@@ -91,7 +101,6 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  cleanup();
   useMessageAiEditorStore.setState({ target: null, starredVariantIdsByMessage: {} });
 });
 
@@ -132,7 +141,7 @@ describe("MAE-53 variant jump browser — > 6 gate (unchanged)", () => {
 describe("MAE-53 desktop Popover — row select jumps; star toggle is independent", () => {
   test("row click fires onSelect(index) and closes the popover", async () => {
     const items = buildItems(7);
-    const onSelect = vi.fn();
+    const onSelect = mock();
     const { container } = render(
       <VariantJump
         items={items}
@@ -155,7 +164,7 @@ describe("MAE-53 desktop Popover — row select jumps; star toggle is independen
 
   test("star click fires toggleStar and does NOT fire onSelect; popover stays open", async () => {
     const items = buildItems(7);
-    const onSelect = vi.fn();
+    const onSelect = mock();
     const { container } = render(
       <VariantJump
         items={items}
@@ -245,7 +254,7 @@ describe("MAE-53 desktop Popover — row select jumps; star toggle is independen
 describe("MAE-53 mobile BottomSheet — row tap jumps; star tap is independent", () => {
   test("row tap fires onSelect(index) and closes the sheet", async () => {
     const items = buildItems(7);
-    const onSelect = vi.fn();
+    const onSelect = mock();
     const { container } = render(
       <VariantJump
         mobile
@@ -268,7 +277,7 @@ describe("MAE-53 mobile BottomSheet — row tap jumps; star tap is independent",
 
   test("star tap fires toggleStar and does NOT fire onSelect; sheet stays open", async () => {
     const items = buildItems(7);
-    const onSelect = vi.fn();
+    const onSelect = mock();
     const { container } = render(
       <VariantJump
         mobile

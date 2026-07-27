@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, readdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { sql } from "drizzle-orm";
@@ -43,11 +43,11 @@ async function setupLegacyChar(
 	if (!opts.noProfile) {
 		// profile.md WITHOUT vt.storage_id (pre-stamp state).
 		const text = serializeProfileMd({ profile: profileNamed(name) });
-		await writeFile(join(dir, "profile.md"), text);
+		await Bun.write(join(dir, "profile.md"), text);
 	}
 	if (opts.withFlat) {
 		// Root-level legacy flat card (pre-folder-layout).
-		await writeFile(join(dataRoot, CHARS, `${id}.json`), JSON.stringify({ name, description: "legacy flat" }));
+		await Bun.write(join(dataRoot, CHARS, `${id}.json`), JSON.stringify({ name, description: "legacy flat" }));
 	}
 	await db.run(sql`INSERT INTO characters (id, name, description, personality_summary, alternate_greetings_json, extensions_json, tags_json, mes_example_mode, mes_example_depth, status, has_file_on_disk, created_at, updated_at)
 		 VALUES (${id}, ${name}, 'desc', NULL, '[]', '{}', '[]', 'always', 4, 'active', 1, '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z')`);
@@ -81,7 +81,7 @@ describe("HRF-5 migrateToReadableFolders", () => {
 		// The legacy flat file is gone from data/characters/ and lives in the backup.
 		const remaining = await readdir(join(dataRoot, CHARS));
 		expect(remaining.some((n) => n.endsWith(".json"))).toBe(false);
-		const backed = await readFile(join(dataRoot, "backups", "legacy", "char_alpha.json"), "utf8");
+		const backed = await Bun.file(join(dataRoot, "backups", "legacy", "char_alpha.json")).text();
 		expect(JSON.parse(backed).name).toBe("Alpha Hero");
 	});
 
@@ -90,10 +90,10 @@ describe("HRF-5 migrateToReadableFolders", () => {
 		const id = "char_dual";
 		const dir = join(dataRoot, CHARS, id);
 		await mkdir(dir, { recursive: true });
-		await writeFile(join(dir, "profile.md"), serializeProfileMd({ profile: profileNamed("Dual Flat") }));
+		await Bun.write(join(dir, "profile.md"), serializeProfileMd({ profile: profileNamed("Dual Flat") }));
 		// Two legacy flat variants side by side.
-		await writeFile(join(dataRoot, CHARS, `${id}.json`), JSON.stringify({ name: "Dual Flat", v: 1 }));
-		await writeFile(join(dataRoot, CHARS, `${id}.Dual-Flat.json`), JSON.stringify({ name: "Dual Flat", v: 2 }));
+		await Bun.write(join(dataRoot, CHARS, `${id}.json`), JSON.stringify({ name: "Dual Flat", v: 1 }));
+		await Bun.write(join(dataRoot, CHARS, `${id}.Dual-Flat.json`), JSON.stringify({ name: "Dual Flat", v: 2 }));
 		await stores.db.run(sql`INSERT INTO characters (id, name, description, personality_summary, alternate_greetings_json, extensions_json, tags_json, mes_example_mode, mes_example_depth, status, has_file_on_disk, created_at, updated_at)
 			 VALUES (${"char_dual"}, ${"Dual Flat"}, 'desc', NULL, '[]', '{}', '[]', 'always', 4, 'active', 1, '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z')`);
 		const backupDir = join(dataRoot, "backups", "legacy");
@@ -243,7 +243,7 @@ describe("HRF-5 migrateToReadableFolders", () => {
 			"custom body",
 			"",
 		].join("\n");
-		await writeFile(join(dir, "profile.md"), authored);
+		await Bun.write(join(dir, "profile.md"), authored);
 		await stores.db.run(sql`INSERT INTO characters (id, name, description, personality_summary, alternate_greetings_json, extensions_json, tags_json, mes_example_mode, mes_example_depth, status, has_file_on_disk, created_at, updated_at)
 			 VALUES (${"char_custom"}, ${"Custom"}, 'desc', NULL, '[]', '{}', '[]', 'always', 4, 'active', 1, '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z')`);
 

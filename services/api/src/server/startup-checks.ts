@@ -68,7 +68,7 @@ async function countFiles(path: string, predicate: (name: string) => boolean): P
 }
 
 export async function runStartupFileChecks(options: StartupFileCheckOptions): Promise<void> {
-	const rootDir = resolve(options.rootDir ?? process.env.RP_PLATFORM_ROOT_DIR ?? process.cwd());
+	const rootDir = resolve(options.rootDir ?? process.env.VIBE_TAVERN_ROOT_DIR ?? process.cwd());
 	const storePaths = resolveRuntimeStorePaths(options.dataDir);
 	const dataDir = storePaths.dataDir;
 

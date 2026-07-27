@@ -6,13 +6,19 @@
 backend = "hardlink"
 
 # Do install optionalDependencies.
-# Required since the Vite 8 / rolldown upgrade: rolldown ships its native
-# binding as platform-specific optionalDependencies (standard napi-rs
-# pattern). napi-rs deps carry os/cpu filters, so bun still installs only the
-# one binding matching the host platform — the size saving from `optional = false`
-# was marginal and no longer worth the breakage.
+# Some dependencies ship their native bindings as platform-specific
+# optionalDependencies (standard napi-rs pattern). napi-rs deps carry os/cpu
+# filters, so bun still installs only the one binding matching the host
+# platform — the size saving from `optional = false` was marginal and no
+# longer worth the breakage.
 optional = true
 
 [install.cache]
 # Enable Bun's global package cache (default). Prevents re-downloading.
 disable = false
+
+# Bun HTML-import dev server plugin. Loaded lazily by Bun.serve when
+# routes are bundled (i.e. only when the dev server is running). The single
+# See: apps/web/dev-server.ts
+[serve.static]
+plugins = ["bun-plugin-tailwind", "./apps/web/bun-plugin-data-component.ts", "./apps/web/bun-plugin-build-config.ts", "./apps/web/bun-plugin-web-assets.ts"]

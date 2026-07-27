@@ -40,10 +40,10 @@ function errorMessage(err: unknown): string {
  *  3. Standalone exe — import.meta.dir = exe directory, drizzle/ copied next to it
  *
  * Strategy: walk up from this file's directory looking for drizzle/meta/_journal.json.
- * Falls back to explicit RP_PLATFORM_MIGRATIONS_DIR env var.
+ * Falls back to explicit VIBE_TAVERN_MIGRATIONS_DIR env var.
  */
 export async function resolveMigrationsFolder(): Promise<string> {
-  const envDir = process.env.RP_PLATFORM_MIGRATIONS_DIR;
+  const envDir = process.env.VIBE_TAVERN_MIGRATIONS_DIR;
   if (envDir) return envDir;
 
   const exeDir = resolve(process.execPath, '..');

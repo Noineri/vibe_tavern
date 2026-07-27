@@ -538,3 +538,61 @@ The **mapper functions stay backend-side.** They depend on `@vibe-tavern/db` (an
 **Scope:** Six interfaces moved: `ClientProviderProfileRecord`, `CachedProviderModelsRecord`, `FavoriteProviderModelRecord`, `ProviderModelSettingsRecord`, `PersonaRecord`, `ChatListItem`. The mapper functions (`toClientProviderProfile`, `mapMessageDto`, etc.) are intentionally NOT in `api-contracts`.
 
 **Related:** AD-006 (Monorepo with Strict Package Boundaries) — the package this lives in. AD-009 (Hono RPC Client) — type-safe routing for the paths this doesn't cover. The `bindPerModel` bug this prevents is pinned by a regression test in `services/api/test/session-runtime-dto.test.ts`.
+
+---
+
+## AD-024: Retain `node:vm` for Compatible Script Execution
+
+**Context:** The Bun-native migration required deciding whether to retain `node:vm` or replace it with a Bun-native or stronger-isolation architecture for synchronous user-authored scripts.
+
+Wave 4.1 characterized `runInNewContext` on Bun and confirmed functional compatibility: the 5-second synchronous timeout fires, exceptions propagate to the engine's error path, mutations transfer to the result and following scripts, console output is captured, and dynamic imports reject when no callback is configured.
+
+The decision applies to both `services/api/src/domain/scripts-engine/script-sandbox.ts` and `services/api/src/domain/scripts-engine/dice-script-sandbox.ts:41`, which use the same `runInNewContext` API.
+
+**Alternatives considered:**
+
+| Approach | Result | Reason |
+|----------|--------|--------|
+| **Retain `node:vm`** | Selected | Preserves the synchronous execution contract, timeout, exception behavior, mutation transfer, and console capture already used by both sandboxes under Bun. |
+| **`worker_threads`** | Rejected | Moving synchronous code to a worker does not by itself deny host capabilities or improve the confinement boundary, and it adds lifecycle, IPC, serialization, and failure-recovery complexity. |
+| **`ShadowRealm`** | Rejected | It is not available in Bun and does not provide the required synchronous timeout or existing result-transfer semantics. |
+| **Bun-native prototype** | Rejected | Bun provides no API that combines a synchronous timeout, mutation/result transfer, and a stronger confinement boundary. |
+
+**Decision:** Retain `node:vm` under Bun as a runtime-isolation and compatibility tool, not as a security or confinement boundary.
+
+**Rationale:** The existing API is functionally compatible under Bun, while none of the tested alternatives preserves the current synchronous contract and also supplies a stronger security boundary with less complexity.
+
+**Risks:**
+- Direct host globals are absent, but injected host-realm objects expose constructor chains such as `Object.constructor(...)` and `context.constructor.constructor(...)` that reach a host-realm `Function`, allowing scripts to access `process`, `Bun`, `fetch`, and `WebSocket`.
+- The 5-second timeout bounds synchronous CPU execution only; Promise continuations can run after the sandbox call returns and outside the timeout window.
+- Scripts are user-authored and currently trusted, so the UI and documentation must not advertise script execution as confined or safe for untrusted code.
+
+**Trade-off:** Retaining `node:vm` preserves behavior without replacement complexity, but it accepts that script execution shares host capabilities when constructor chains are used.
+
+**Related:** AD-005's synchronous-execution decision remains in force, but this ADR supersedes its claim that `node:vm` prevents filesystem, network, and process access. The complete operational posture is documented in [Scripts — Confinement posture](./scripts.md#confinement-posture).
+
+---
+
+## AD-025: Synchronous Warmed Tokenizers over Worker Offload
+
+**Context:** The Bun-native migration required a decision on whether tokenizer work should move to a Worker thread to avoid blocking the event loop during prompt budgeting and lore activation.
+
+**Decision:** Do not introduce a tokenizer Worker; retain the current synchronous warmed-tokenizer architecture because neither migration threshold was crossed.
+
+The production caller path remains `warmupTokenizers()` at startup → `setTokenCountFn(countTokens)` → prompt-pipeline `estimateTokens()` / `estimateMessageArrayTokens()`, with `StaticPromptResolver.listActiveLoreEntries()` passing `countTokens` into lore activation and context-budget resolution.
+
+**Evidence:** Wave 4.3 measured the real production tokenizer exports after startup warmup and discarded 50 direct calls per scenario before collecting 100 measured repetitions.
+
+| Scenario | Representative work | p95 event-loop delay | Margin below 50 ms | Maximum CPU segment | Margin below 100 ms |
+|----------|---------------------|---------------------:|-------------------:|--------------------:|--------------------:|
+| `many-small-gpt4o` | 1,000 calls on a 205-token message | 2.357 ms | 47.643 ms | 1.573 ms | 98.427 ms |
+| `large-chat-gpt4o` | 100 calls on an 8,863-token chat | 20.334 ms | 29.666 ms | 19.390 ms | 80.610 ms |
+| `large-chat-claude` | 100 calls on a 10,123-token chat | 34.718 ms | 15.282 ms | 38.320 ms | 61.680 ms |
+
+The decision rule was GO only if realistic production work produced a p95 event-loop delay above 50 ms or a single synchronous CPU segment above 100 ms.
+
+**Rationale:** Tokenization is synchronous but cached after warmup, and the realistic worst-case 10,123-token Claude workload remained within both event-loop budgets with clear margins.
+
+**Trade-off:** Tokenization continues to occupy the main thread for each synchronous call, but the measured cost does not justify Worker lifecycle, messaging, and architecture complexity.
+
+**Revisit trigger:** Re-run the worker-need benchmark if supported model context windows grow substantially or a heavier tokenizer family is added.

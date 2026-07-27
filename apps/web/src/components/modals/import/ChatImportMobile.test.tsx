@@ -13,43 +13,63 @@
  *   • dismissing the native picker opens no modal;
  *   • overlapping selections commit only the newest parse result.
  *
- * `parseChatFile` is mocked per-test (via `vi.importActual` spread so
- * `truncate` stays intact for `<ChatImportPreview>`). `useT` and `sonner`'s
+ * `parseChatFile` is mocked per-test with real exports spread so `truncate`
+ * stays intact for `<ChatImportPreview>`. `useT` and `sonner`'s
  * `toast` are mocked the same way as the character test.
  *
- * Runner: vitest (apps/web) under happy-dom. DOM cleanup between tests is the
- * global `afterEach` in `test/vitest-setup.ts` — no per-test `cleanup()`.
+ * Runner: bun:test with scoped happy-dom cleanup.
  */
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, mock, spyOn, beforeAll, beforeEach } from "bun:test";
 import { createRef } from "react";
 import { render, fireEvent, waitFor, act } from "@testing-library/react";
+import { useDomEnv } from "../../../../test/dom-env.js";
+import { mocked } from "../../../../test/mock-utils.js";
+import type { ChatImportMobileHandle } from "./ChatImportMobile.js";
+import type { ChatPreview } from "./parse-import-file.js";
 
-vi.mock("../../../i18n/context.js", () => ({
-  useT: () => ({
-    t: (key: string) => key,
-    tDynamic: (key: string) => key,
-    locale: "en",
-    setLocale: () => {},
-    ready: true,
-  }),
+useDomEnv();
+
+const toastError = mock();
+const toastSuccess = mock();
+const toastWarning = mock();
+const toastInfo = mock();
+const realI18nContext = await import("../../../i18n/context.js");
+const realSonner = await import("sonner");
+const realParseImportFile = await import("./parse-import-file.js");
+const parseChatFile = mock(realParseImportFile.parseChatFile);
+
+mock.module("../../../i18n/context.js", () => ({
+	...realI18nContext,
+	useT: () => ({
+		t: (key: string) => key,
+		tDynamic: (key: string) => key,
+		locale: "en",
+		setLocale: () => {},
+		ready: true,
+	}),
+}));
+mock.module("sonner", () => ({
+	...realSonner,
+	toast: {
+		...realSonner.toast,
+		error: toastError,
+		success: toastSuccess,
+		warning: toastWarning,
+		info: toastInfo,
+	},
+}));
+mock.module("./parse-import-file.js", () => ({
+	...realParseImportFile,
+	parseChatFile,
 }));
 
-vi.mock("sonner", () => ({
-  toast: { error: vi.fn(), success: vi.fn(), warning: vi.fn(), info: vi.fn() },
-}));
-
-vi.mock("./parse-import-file.js", async () => {
-  const actual = await vi.importActual<typeof import("./parse-import-file.js")>("./parse-import-file.js");
-  return { ...actual, parseChatFile: vi.fn() };
+let ChatImportMobile: typeof import("./ChatImportMobile.js").ChatImportMobile;
+beforeAll(async () => {
+	({ ChatImportMobile } = await import("./ChatImportMobile.js"));
 });
-
-import { ChatImportMobile, type ChatImportMobileHandle } from "./ChatImportMobile.js";
-import { parseChatFile, type ChatPreview } from "./parse-import-file.js";
-import { toast } from "sonner";
-
-const onImportFiles = vi.fn();
-const mockParse = vi.mocked(parseChatFile);
-const mockToastError = vi.mocked(toast.error);
+const onImportFiles = mock();
+const mockParse = mocked(parseChatFile);
+const mockToastError = mocked(toastError);
 
 const JSONL_FILE = new File(["x"], "chat.jsonl", { type: "application/jsonl" });
 
@@ -120,9 +140,9 @@ describe("ChatImportMobile", () => {
   it("openPicker triggers the native picker via input.click() click-through", () => {
     const { container, ref } = renderOrchestrator();
     const input = container.querySelector('input[type="file"]') as HTMLInputElement;
-    const clickSpy = vi.spyOn(input, "click");
+	const clickSpy = spyOn(input, "click");
     ref.current?.openPicker();
-    expect(clickSpy).toHaveBeenCalledOnce();
+		expect(clickSpy).toHaveBeenCalledTimes(1);
   });
 
   it("mounts the preview modal with title, subtitle, and confirm label after a successful parse", async () => {
@@ -146,7 +166,7 @@ describe("ChatImportMobile", () => {
       expect(document.body.textContent).toContain("confirm_import");
     });
     fireEvent.click(getByText("confirm_import"));
-    expect(onImportFiles).toHaveBeenCalledOnce();
+		expect(onImportFiles).toHaveBeenCalledTimes(1);
     expect(onImportFiles).toHaveBeenCalledWith([JSONL_FILE]);
     await waitFor(() => {
       expect(document.body.textContent).not.toContain("chat_import_title");
@@ -205,7 +225,7 @@ describe("ChatImportMobile", () => {
     expect(document.body.textContent).toContain("b.jsonl");
     expect(document.body.textContent).not.toContain("a.jsonl");
     fireEvent.click(getByText("confirm_import"));
-    expect(onImportFiles).toHaveBeenCalledOnce();
+		expect(onImportFiles).toHaveBeenCalledTimes(1);
     expect(onImportFiles).toHaveBeenCalledWith([fileB]);
   });
 });

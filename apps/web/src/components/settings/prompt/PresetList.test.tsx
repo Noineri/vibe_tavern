@@ -1,9 +1,26 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, within } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
-import { PresetList } from "./PresetList.js";
+import { beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
+import { useDomEnv } from "../../../../test/dom-env.js";
 
-vi.mock("../../../i18n/context.js", () => ({
+useDomEnv();
+const { render, screen, within } = await import("@testing-library/react");
+const { default: userEvent } = await import("@testing-library/user-event");
+const realI18nContext = await import("../../../i18n/context.js");
+const realMasterDetailModal = await import("../../shared/MasterDetailModal.js");
+const realTooltip = await import("../../shared/Tooltip.js");
+const realSortable = await import("@dnd-kit/sortable");
+
+const useSortable = mock(() => ({
+  attributes: {},
+  listeners: {},
+  setNodeRef: mock(),
+  setActivatorNodeRef: mock(),
+  transform: null,
+  transition: undefined,
+  isDragging: false,
+}));
+
+mock.module("../../../i18n/context.js", () => ({
+  ...realI18nContext,
   useT: () => ({
     t: (k: string) => k,
     tDynamic: (k: string) => k,
@@ -15,40 +32,32 @@ vi.mock("../../../i18n/context.js", () => ({
 
 // PresetList uses useMasterDetail (mobile drill-down) — stub the context so
 // the component can render outside a full MasterDetailModal shell.
-vi.mock("../../shared/MasterDetailModal.js", async () => {
-  const actual = await vi.importActual("../../shared/MasterDetailModal.js");
-  return {
-    ...actual,
+mock.module("../../shared/MasterDetailModal.js", () => ({
+    ...realMasterDetailModal,
     useMasterDetail: () => ({ activeId: null, openDetail: () => {}, closeDetail: () => {} }),
     MasterDetailMobileDrillDown: ({ onSelect, className }: { onSelect: () => void; className?: string }) => (
       <button onClick={onSelect} className={className}>drill</button>
     ),
-  };
-});
+}));
 
 // CustomTooltip wraps Radix's Tooltip (needs TooltipProvider). Replace with a
 // bare wrapper so tests don't need the full provider shell.
-vi.mock("../../shared/Tooltip.js", () => ({
+mock.module("../../shared/Tooltip.js", () => ({
+  ...realTooltip,
   CustomTooltip: ({ content, children }: { content?: string; children: React.ReactNode }) => <>{children}</>,
 }));
 
 // Stub useSortable so dnd-kit's sortable context works without a real DOM
 // sensor setup (happy-dom can't drive PointerEvent chains). The overlay
 // transform/transition are no-ops; the consumer only tests render output.
-vi.mock("@dnd-kit/sortable", async () => {
-  const actual = await vi.importActual("@dnd-kit/sortable");
-  return {
-    ...actual,
-    useSortable: vi.fn(() => ({
-      attributes: {},
-      listeners: {},
-      setNodeRef: vi.fn(),
-      setActivatorNodeRef: vi.fn(),
-      transform: null,
-      transition: undefined,
-      isDragging: false,
-    })),
-  };
+mock.module("@dnd-kit/sortable", () => ({
+  ...realSortable,
+  useSortable,
+}));
+
+let PresetList: typeof import("./PresetList.js").PresetList;
+beforeAll(async () => {
+  ({ PresetList } = await import("./PresetList.js"));
 });
 
 const basePresets = [
@@ -61,17 +70,17 @@ function baseProps(overrides: Partial<Parameters<typeof PresetList>[0]> = {}) {
   return {
     presets: basePresets,
     activePresetId: "p2",
-    onSelect: vi.fn(),
-    onAdd: vi.fn(),
-    onRename: vi.fn(),
-    onReorder: vi.fn(),
+    onSelect: mock(),
+    onAdd: mock(),
+    onRename: mock(),
+    onReorder: mock(),
     ...overrides,
   };
 }
 
 describe("PresetList", () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    mock.clearAllMocks();
   });
 
   it("renders presets with names and a drag handle on each row", () => {
@@ -107,7 +116,7 @@ describe("PresetList", () => {
   });
 
   it("calls onAdd with the entered name when creating a new preset", async () => {
-    const onAdd = vi.fn();
+    const onAdd = mock();
     const user = userEvent.setup();
     render(<PresetList {...baseProps({ onAdd })} />);
     await user.click(screen.getByText("new_preset_btn"));
@@ -117,7 +126,7 @@ describe("PresetList", () => {
   });
 
   it("enters rename mode on edit button click and calls onRename on save", async () => {
-    const onRename = vi.fn();
+    const onRename = mock();
     const user = userEvent.setup();
     render(<PresetList {...baseProps({ onRename })} />);
     // Find the edit button inside Alpha's row. The row has two edit buttons
@@ -143,7 +152,7 @@ describe("PresetList", () => {
   });
 
   it("renders an import button when onImportPreset is provided", async () => {
-    const onImportPreset = vi.fn();
+    const onImportPreset = mock();
     const user = userEvent.setup();
     render(<PresetList {...baseProps({ onImportPreset })} />);
     const importBtn = screen.getByText("import_preset_btn");

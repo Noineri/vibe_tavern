@@ -7,7 +7,7 @@
  * divide-by-zero on an empty selected range; no negative savings when the
  * summary exceeds the range.
  */
-import { describe, expect, test } from "vitest";
+import { describe, expect, test } from "bun:test";
 import { computeTokenEstimate } from "./TokenEstimate.js";
 import { countTokens } from "../../utils/tokenizer.js";
 

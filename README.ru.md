@@ -213,7 +213,6 @@ APK-сборка под Termux — автоматизирует большую �
 ```bash
 git clone https://github.com/Noineri/vibe_tavern
 bun install --frozen-lockfile
-bun scripts/install-platform-optionals.ts
 bun run dev
 ```
 
@@ -225,7 +224,7 @@ Vibe Tavern — это однопроцессный монолит: React 19 SPA
 
 ```
 vibe_tavern/
-├── apps/web/                 # React 19 SPA (Vite)
+├── apps/web/                 # React 19 SPA (Bun-native сборка)
 ├── services/api/             # Hono-бэкенд (Bun.serve)
 ├── packages/domain/          # Фундамент без зависимостей: типы, брендированные ID, константы
 ├── packages/api-contracts/   # Zod-схемы, общие для фронта и бэка
