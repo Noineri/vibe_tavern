@@ -330,3 +330,77 @@ describe("Prompt pipeline: promptOrder toggle matrix (every standard slot)", () 
     expect(disabled.prefill).toBeNull();
   });
 });
+
+// ── Canvas entry role overrides built-in layer role (APC-2c) ────────────────
+// A `role` on a built-in canvas entry overrides the layer's hardcoded default
+// (most built-ins → system). Absent role keeps the default (backward compat).
+// The override is advanced-mode only: simple resolver's entryFor() is always
+// undefined, so simple mode is unaffected (canvas is not authoritative).
+describe("Prompt pipeline: canvas entry role overrides built-in layer role", () => {
+  it("main with role:user → system-prompt message role is user", () => {
+    const result = assemblePrompt({
+      identity: { chatId: "chat_1" },
+      chat: { recentMessages: [] },
+      character: { id: "char_1", name: "Aria" },
+      preset: {
+        id: "preset_1",
+        text: "system prompt",
+        advancedMode: true,
+        promptOrder: [{ identifier: "main", enabled: true, role: "user" }],
+      },
+    });
+    const sysMsg = result.finalPayload.messages.find((m) => m.layerId === "prompt_preset_system");
+    expect(sysMsg).toBeTruthy();
+    expect(sysMsg!.role).toBe("user");
+  });
+
+  it("main without role → defaults to system (backward compat)", () => {
+    const result = assemblePrompt({
+      identity: { chatId: "chat_1" },
+      chat: { recentMessages: [] },
+      character: { id: "char_1", name: "Aria" },
+      preset: {
+        id: "preset_1",
+        text: "system prompt",
+        advancedMode: true,
+        promptOrder: [{ identifier: "main", enabled: true }],
+      },
+    });
+    const sysMsg = result.finalPayload.messages.find((m) => m.layerId === "prompt_preset_system");
+    expect(sysMsg!.role).toBe("system");
+  });
+
+  it("jailbreak with role:assistant → post-history message role is assistant", () => {
+    const result = assemblePrompt({
+      identity: { chatId: "chat_1" },
+      chat: { recentMessages: [] },
+      character: { id: "char_1", name: "Aria" },
+      preset: {
+        id: "preset_1",
+        jailbreak: "post history",
+        advancedMode: true,
+        promptOrder: [{ identifier: "jailbreak", enabled: true, role: "assistant" }],
+      },
+    });
+    const jbMsg = result.finalPayload.messages.find((m) => m.layerId === "prompt_preset_jailbreak");
+    expect(jbMsg!.role).toBe("assistant");
+  });
+
+  it("role override is ignored in simple mode (canvas not authoritative)", () => {
+    // SimpleResolver.entryFor() is always undefined → built-in layers use their
+    // hardcoded defaults even if an entry carries role:user.
+    const result = assemblePrompt({
+      identity: { chatId: "chat_1" },
+      chat: { recentMessages: [] },
+      character: { id: "char_1", name: "Aria" },
+      preset: {
+        id: "preset_1",
+        text: "system prompt",
+        advancedMode: false, // simple mode — canvas ignored
+        promptOrder: [{ identifier: "main", enabled: true, role: "user" }],
+      },
+    });
+    const sysMsg = result.finalPayload.messages.find((m) => m.layerId === "prompt_preset_system");
+    expect(sysMsg!.role).toBe("system");
+  });
+});

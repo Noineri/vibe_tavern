@@ -69,5 +69,9 @@ export function createAdvancedResolver(entries: ResolverPromptOrderEntry[]): Pos
 
     // Hand the raw canvas entry to the lore block so it can place the WI layer.
     worldInfoEntry: (identifier) => entryFor(identifier),
+
+    // Expose the raw canvas entry so built-in layer builders can read an
+    // entry-level `role` override (advanced mode only).
+    entryFor,
   };
 }

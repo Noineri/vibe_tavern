@@ -46,6 +46,8 @@ interface LegacyOrderEntry {
   zone?: PromptZone;
   depth?: number | null;
   kind?: "built_in" | "custom";
+  /** Defensive read of `role` on stored/future canvas entries (validated on output). */
+  role?: string;
 }
 
 const BUILTIN_IDENTIFIERS = new Set(Object.keys(DEFAULT_PROMPT_ORDER));
@@ -239,6 +241,11 @@ export function normalizePresetCanvas(
       zone: entry.zone!,
       depth: entry.depth ?? null,
       kind: entry.kind!,
+      // Preserve a valid role as-is; an absent/invalid role is dropped so the
+      // resolver applies the slot's hardcoded default (prefill→assistant, else system).
+      ...(entry.role === "system" || entry.role === "user" || entry.role === "assistant"
+        ? { role: entry.role }
+        : {}),
     }));
 
   return { customInjections: cleanInjections, promptOrder: cleanOrder };

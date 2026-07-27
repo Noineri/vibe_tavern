@@ -302,6 +302,21 @@ test("round-trip — VT→VT via _vibe_tavern is lossless for every DTO field", 
   expect(ext.promptOrder).toEqual(dto.promptOrder);
 });
 
+test("round-trip — promptOrder entry role survives VT→serialize→parse", () => {
+  // APC-2b. The entry-level `role` (distinct from a custom injection's content
+  // role) must round-trip through the _vibe_tavern extension untouched. The
+  // injection's own role is "system" while the entry carries "user" to prove the
+  // two are independent fields that both survive.
+  const dto = makeDto({
+    customInjections: [{ identifier: "r", name: "R", content: "c", role: "system" }],
+    promptOrder: [makeOrderEntry({ identifier: "r", zone: "in_chat", depth: 5, order: 0, kind: "custom", role: "user" })],
+    advancedMode: true,
+  });
+  const reparsed = parseStPreset(serializeStPreset(dto));
+  const entry = reparsed.vibeTavern!.promptOrder[0]!;
+  expect(entry.role).toBe("user");
+});
+
 test("round-trip — ST projection recovers named-slot content (lossy on VT-only fields)", () => {
   const dto = makeDto();
   const reparsed = parseStPreset(serializeStPreset(dto));

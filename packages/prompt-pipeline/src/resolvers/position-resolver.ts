@@ -29,6 +29,7 @@ export type ResolverPromptOrderEntry = {
   kind?: "built_in" | "custom";
   zone?: "before_chat" | "in_chat" | "after_chat";
   depth?: number | null;
+  role?: "system" | "user" | "assistant";
 };
 
 export interface PositionResolver {
@@ -56,6 +57,13 @@ export interface PositionResolver {
    * the caller falls through to default inference.
    */
   worldInfoEntry(identifier: string): ResolverPromptOrderEntry | undefined;
+  /**
+   * Canvas entry for any built-in identifier. Layer builders read the
+   * entry-level `role` here, falling back to the slot's hardcoded default when
+   * the entry (or its `role`) is absent — and always in simple mode, where the
+   * canvas is not authoritative. Thus returns `undefined` in simple mode.
+   */
+  entryFor(identifier: string): ResolverPromptOrderEntry | undefined;
 }
 
 /**

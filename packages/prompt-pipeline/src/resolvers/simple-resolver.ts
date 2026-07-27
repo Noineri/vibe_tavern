@@ -54,5 +54,8 @@ export function createSimpleResolver(): PositionResolver {
     // Canvas is not authoritative; the lore block falls through to default
     // world-info inference (worldInfoBefore/After default position).
     worldInfoEntry: () => undefined,
+
+    // No canvas in simple mode — built-in layers use their hardcoded defaults.
+    entryFor: () => undefined,
   };
 }

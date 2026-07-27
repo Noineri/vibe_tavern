@@ -103,7 +103,13 @@ function buildAuthorsNoteLayer(
 ): PromptLayer | null {
   if (!preset.authorsNote?.trim() || !resolver.enabled("authorsNote")) return null;
 
-  const role = preset.authorsNoteRole ?? "system";
+  // Advanced mode: the canvas entry's `role` wins (falling back to the flat
+  // authorsNoteRole for presets authored before per-slot role). Simple mode keeps
+  // the flat authorsNoteRole field authoritative (no canvas in simple mode).
+  const fallbackRole = preset.authorsNoteRole ?? "system";
+  const role = preset.advancedMode
+    ? (resolver.entryFor("authorsNote")?.role ?? fallbackRole)
+    : fallbackRole;
   const subPosition = resolver.rank("authorsNote", DEFAULT_PROMPT_ORDER.authorsNote);
   if (preset.advancedMode) {
     return resolver.position(makeLayer({
@@ -194,6 +200,7 @@ function buildMesExample(
     sourceId: context.character.id,
     sourceName: `${context.character.name} — Examples`,
     priority: PROMPT_LAYER_PRIORITY.mesExample,
+    role: resolver.entryFor("dialogueExamples")?.role,
     reason: isDepthMode ? `included (depth mode, depth=${context.character.mesExampleDepth ?? 4})` : isFirstTurn ? "included" : "included (always mode)",
     text: PROMPT_FORMAT.exampleMessages(context.character.mesExample),
   });
@@ -518,6 +525,7 @@ function buildLayers(
         sourceId: isOverride ? context.character.id : context.preset!.id,
         sourceName: isOverride ? `${context.character.name} (System Override)` : (context.preset?.name ?? "System Prompt"),
         priority: PROMPT_LAYER_PRIORITY.promptPresetSystem,
+        role: resolver.entryFor("main")?.role,
         text: effectiveSystemPrompt,
       }), "main"),
     );
@@ -535,6 +543,7 @@ function buildLayers(
       sourceName: isOverride ? `${context.character.name} (Post-History Override)` : "Post-History Instructions",
       position: "in_chat",
       priority: PROMPT_LAYER_PRIORITY.promptPresetJailbreak,
+      role: resolver.entryFor("jailbreak")?.role,
       text: effectiveJailbreak,
     }), "jailbreak");
     if (layer.position === "in_chat" && layer.injectionDepth == null) layer.injectionDepth = 0;
@@ -552,6 +561,7 @@ function buildLayers(
       sourceId: context.preset.id,
       sourceName: "Enhance Definitions",
       priority: PROMPT_LAYER_PRIORITY.presetEnhanceDefinitions,
+      role: resolver.entryFor("enhanceDefinitions")?.role,
       text: context.preset.enhanceDefinitions,
     }), "enhanceDefinitions");
     layers.push(layer);
@@ -565,6 +575,7 @@ function buildLayers(
       sourceId: context.preset.id,
       sourceName: "NSFW",
       priority: PROMPT_LAYER_PRIORITY.presetNsfw,
+      role: resolver.entryFor("nsfw")?.role,
       text: context.preset.nsfw,
     }), "nsfw");
     layers.push(layer);
@@ -631,6 +642,7 @@ function buildLayers(
         sourceId: context.character.id,
         sourceName: context.character.name,
         priority: PROMPT_LAYER_PRIORITY.characterBase,
+        role: resolver.entryFor("charDescription")?.role,
         subPosition: resolver.rank("charDescription", IN_PROMPT_SUB_POSITION.charDesc),
         text: characterBase,
       }), "charDescription"),
@@ -645,6 +657,7 @@ function buildLayers(
         sourceId: context.character.id,
         sourceName: `${context.character.name} — Scenario`,
         priority: PROMPT_LAYER_PRIORITY.characterScenario,
+        role: resolver.entryFor("scenario")?.role,
         subPosition: resolver.rank("scenario", IN_PROMPT_SUB_POSITION.charDesc),
         text: PROMPT_FORMAT.scenarioHeader(context.character.scenario),
       }), "scenario"),
@@ -659,6 +672,7 @@ function buildLayers(
         sourceId: context.character.id,
         sourceName: context.character.name,
         priority: PROMPT_LAYER_PRIORITY.characterPersonality,
+        role: resolver.entryFor("charPersonality")?.role,
         subPosition: resolver.rank("charPersonality", IN_PROMPT_SUB_POSITION.charDesc),
         text: context.character.personality,
       }), "charPersonality"),
@@ -677,6 +691,7 @@ function buildLayers(
         sourceId: context.character.id,
         sourceName: `${context.character.name} — Appearance`,
         priority: PROMPT_LAYER_PRIORITY.characterAvatar,
+        role: resolver.entryFor("characterAvatar")?.role,
         subPosition: resolver.rank("characterAvatar", DEFAULT_PROMPT_ORDER.characterAvatar),
         text: `[Character appearance: ${context.character.avatarDescription.trim()}]`,
       }), "characterAvatar"),
@@ -696,6 +711,7 @@ function buildLayers(
         sourceId: context.character.id,
         sourceName: `${context.character.name} — Reference Images`,
         priority: PROMPT_LAYER_PRIORITY.characterGallery,
+        role: resolver.entryFor("characterGallery")?.role,
         subPosition: resolver.rank("characterGallery", DEFAULT_PROMPT_ORDER.characterGallery),
         text: `[Character references:\n${galleryText}]`,
       }), "characterGallery"),
@@ -710,6 +726,7 @@ function buildLayers(
         sourceId: context.persona.id,
         sourceName: context.persona.name,
         priority: PROMPT_LAYER_PRIORITY.persona,
+        role: resolver.entryFor("personaDescription")?.role,
         subPosition: resolver.rank("personaDescription", DEFAULT_PROMPT_ORDER.personaDescription),
         text: PROMPT_FORMAT.personaBlock(context.persona.name, context.persona.description, context.persona.pronouns),
       }), "personaDescription"),
@@ -727,6 +744,7 @@ function buildLayers(
         sourceId: context.persona.id,
         sourceName: `${context.persona.name} — Appearance`,
         priority: PROMPT_LAYER_PRIORITY.personaAvatar,
+        role: resolver.entryFor("personaAvatar")?.role,
         subPosition: resolver.rank("personaAvatar", DEFAULT_PROMPT_ORDER.personaAvatar),
         text: `[Persona appearance: ${context.persona.avatarDescription.trim()}]`,
       }), "personaAvatar"),
