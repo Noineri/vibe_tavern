@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { copyFile, mkdir, mkdtemp, rm } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, realpath, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 
@@ -56,8 +56,15 @@ async function git(cwd: string, ...args: string[]): Promise<CommandResult> {
  * `origin/dev` that is already merged into master.
  */
 async function createFixture(): Promise<GitFixture> {
-	const root = await mkdtemp(join(tmpdir(), "vibe-tavern-bump-version-"));
-	const remote = await mkdtemp(join(tmpdir(), "vibe-tavern-bump-version-remote-"));
+	// `realpath` is load-bearing, not tidiness. `tmpdir()` hands back a path
+	// that is not the canonical one — an 8.3 short name on Windows CI
+	// (`RUNNER~1` for `runneradmin`), `/var` for `/private/var` on macOS. bun
+	// canonicalises it while resolving workspaces, then records each member as
+	// a path relative to the non-canonical root, producing garbage like
+	// `..\..\..\..\..\runneradmin\...` that it cannot symlink. Resolving the
+	// path up front keeps every later path computation on one spelling.
+	const root = await realpath(await mkdtemp(join(tmpdir(), "vibe-tavern-bump-version-")));
+	const remote = await realpath(await mkdtemp(join(tmpdir(), "vibe-tavern-bump-version-remote-")));
 	temporaryDirectories.push(root, remote);
 
 	await mkdir(join(root, "scripts"), { recursive: true });
