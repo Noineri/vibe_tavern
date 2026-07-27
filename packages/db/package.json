@@ -22,7 +22,7 @@
     "db:push": "drizzle-kit push"
   },
   "dependencies": {
-    "@vibe-tavern/domain": "1.0.1",
+    "@vibe-tavern/domain": "workspace:*",
     "drizzle-orm": "^0.38"
   },
   "devDependencies": {

@@ -10,7 +10,7 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@vibe-tavern/domain": "1.0.1"
+    "@vibe-tavern/domain": "workspace:*"
   },
   "devDependencies": {
     "@types/bun": "^1.3.14"

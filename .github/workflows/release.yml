@@ -12,22 +12,33 @@ concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 
-# Release pipeline (tag-driven, immutable):
+# Release pipeline (tag-driven, immutable, human-published):
 #
 #   1. Cut a release locally:
 #        bun run bump-version 1.0.2 --push
-#      That script bumps all 8 workspace package.json files, syncs bun.lock,
-#      commits, creates an ANNOTATED tag v1.0.2, and pushes
-#      both master and the tag. No force-push anywhere.
+#      That script bumps the 8 workspace package.json files, commits with
+#      `[skip ci]`, creates an ANNOTATED tag v1.0.2, and pushes master and the
+#      tag atomically. No force-push anywhere.
 #
-#   2. This workflow triggers on the tag push. The `version` job is a GUARD,
-#      not a mutator: it verifies package.json .version == tag version and
-#      fails fast with a clear message if they diverge. It does NOT commit,
-#      does NOT push, does NOT rewrite the tag.
+#   2. This workflow triggers on the tag push.
+#      - `version` is a GUARD, not a mutator: it verifies the tag shape and
+#        that package.json .version == tag version. It does NOT commit, does
+#        NOT push, does NOT rewrite the tag.
+#      - `verify-*` re-run the full gate ON THE TAGGED COMMIT. The bump commit
+#        carries `[skip ci]`, so ci.yml never sees it — this is the only
+#        verification that commit gets, which is why it is not optional.
 #
 #   3. Build jobs checkout the tagged commit (immutable) and run on it.
 #
-#   4. `publish` is gated by the full needs: chain — atomic release creation.
+#   4. `publish` creates the release as a DRAFT with all assets attached.
+#      Nothing reaches users until a human presses "Publish release" in the
+#      GitHub UI. That click is the release gate: it is also when release
+#      notes get edited, and it is what moves the Docker `latest` tag (see
+#      release-latest.yml).
+#
+#      This matters because the in-app updater
+#      (services/api/src/server/updater.ts) polls /releases/latest — publishing
+#      is what prompts every installed user to update.
 #
 # Tag immutability is enforced: this workflow never force-pushes tags or
 # master. If a build fails, fix forward on master and cut a new tag.
@@ -37,33 +48,83 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       sha: ${{ github.sha }}
+      version: ${{ steps.resolve.outputs.version }}
     steps:
       - uses: actions/checkout@v5
         # No `ref:` — checkout the immutable tagged commit. The bump script
         # only creates release tags from a synchronized master branch.
-      - name: Set VERSION from tag
-        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
-      - name: Verify package.json version matches tag
+      - name: Resolve and verify version
+        id: resolve
         run: |
           set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#v}"
+
+          # Release tags are strict X.Y.Z. bump-version.ts refuses to create
+          # anything else; this catches a hand-pushed tag. Prereleases are
+          # rejected on purpose: the in-app updater and the Docker `latest`
+          # tag both track "the newest release", so a prerelease would ship
+          # itself to every user.
+          if ! printf '%s' "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::Tag ${GITHUB_REF_NAME} is not a X.Y.Z release tag."
+            echo "::error::Prerelease and non-semver tags are not supported."
+            exit 1
+          fi
+
           PKG_VERSION=$(jq -r '.version' package.json)
           if [ "$PKG_VERSION" != "$VERSION" ]; then
             echo "::error::Tag is v${VERSION} but package.json is v${PKG_VERSION}."
             echo "::error::Run: bun run bump-version ${VERSION} --push"
             exit 1
           fi
+
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           echo "OK: tag v${VERSION} matches package.json v${PKG_VERSION}"
           echo "Building commit: $(git rev-parse HEAD)"
 
-  build-linux:
+  # The tagged commit carries [skip ci], so ci.yml does not run on it. These
+  # two jobs are the gate. Windows is included because the repo ships a
+  # Windows installer and the filesystem/Glob semantics are platform-sensitive
+  # — the same reason ci.yml runs the suite on both platforms.
+  verify-linux:
     needs: version
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
         with:
           ref: ${{ needs.version.outputs.sha }}
-      - name: Set VERSION from tag
-        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.14"
+      - run: bun install --frozen-lockfile
+      - run: bun run typecheck
+      - run: bun run test
+
+  verify-windows:
+    needs: version
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.version.outputs.sha }}
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.14"
+      - run: bun install --frozen-lockfile
+      - run: bun run test
+
+  build-linux:
+    needs: [version, verify-linux, verify-windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.version.outputs.sha }}
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: "1.3.14"
@@ -73,6 +134,9 @@ jobs:
         run: |
           mv out/vibe-tavern-linux-x64.tar.gz \
              out/Vibe-Tavern-v${VERSION}-linux.tar.gz
+      - uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: out/Vibe-Tavern-v${{ env.VERSION }}-linux.tar.gz
       - uses: actions/upload-artifact@v4
         with:
           name: artifact-linux-tarball
@@ -81,16 +145,23 @@ jobs:
           retention-days: 7
 
   build-android:
-    needs: version
+    needs: [version, verify-linux, verify-windows]
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
     steps:
       - uses: actions/checkout@v5
         with:
           ref: ${{ needs.version.outputs.sha }}
-      - name: Set VERSION from tag
-        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
       - name: Set Android versionCode/versionName
         run: |
+          set -euo pipefail
+          # VERSION is guaranteed X.Y.Z by the `version` job, so this split is
+          # total — no prerelease suffix can leak into the arithmetic.
           IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION"
           # Room for 999 minor and 999 patch before any collision.
           # Old formula (MAJOR*10000 + MINOR*100 + PATCH) broke at MINOR=100.
@@ -121,6 +192,9 @@ jobs:
         run: |
           mv mobile/android/app/build/outputs/apk/release/app-release.apk \
              out/Vibe-Tavern-v${VERSION}-android.apk
+      - uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: out/Vibe-Tavern-v${{ env.VERSION }}-android.apk
       - uses: actions/upload-artifact@v4
         with:
           name: artifact-android-apk
@@ -129,15 +203,18 @@ jobs:
           retention-days: 7
 
   build-windows:
-    needs: version
+    needs: [version, verify-linux, verify-windows]
     runs-on: windows-latest
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
     steps:
       - uses: actions/checkout@v5
         with:
           ref: ${{ needs.version.outputs.sha }}
-      - name: Set VERSION from tag
-        shell: bash
-        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: "1.3.14"
@@ -155,6 +232,11 @@ jobs:
                      out/Vibe-Tavern-v${{ env.VERSION }}-windows-setup.exe -Force
           Move-Item out/vibe-tavern-windows-x64.zip `
                      out/Vibe-Tavern-v${{ env.VERSION }}-windows.zip -Force
+      - uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            out/Vibe-Tavern-v${{ env.VERSION }}-windows-setup.exe
+            out/Vibe-Tavern-v${{ env.VERSION }}-windows.zip
       - uses: actions/upload-artifact@v4
         with:
           name: artifact-windows-installer
@@ -169,17 +251,19 @@ jobs:
           retention-days: 7
 
   build-docker:
-    needs: version
+    needs: [version, verify-linux, verify-windows]
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
+      id-token: write
+      attestations: write
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
     steps:
       - uses: actions/checkout@v5
         with:
           ref: ${{ needs.version.outputs.sha }}
-      - name: Set VERSION from tag
-        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
       - uses: docker/setup-buildx-action@v3
       - name: Set lowercase image name (GHCR requires lowercase)
         run: echo "IMAGE_NAME=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_ENV"
@@ -192,10 +276,13 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ghcr.io/${{ env.IMAGE_NAME }}
+          # Version tag only. `latest` is moved by release-latest.yml when a
+          # human publishes the draft — otherwise `latest` would point at a
+          # release nobody has approved yet.
           tags: |
             type=semver,pattern={{version}}
-            type=raw,value=latest
-      - uses: docker/build-push-action@v6
+      - id: build
+        uses: docker/build-push-action@v6
         with:
           context: .
           push: true
@@ -203,18 +290,23 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+      - uses: actions/attest-build-provenance@v2
+        with:
+          subject-name: ghcr.io/${{ env.IMAGE_NAME }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
 
   publish:
     needs: [version, build-linux, build-android, build-windows, build-docker]
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
     steps:
       - uses: actions/checkout@v5
         with:
           ref: ${{ needs.version.outputs.sha }}
-      - name: Set VERSION from tag
-        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
@@ -222,16 +314,24 @@ jobs:
           path: release-assets/
           merge-multiple: true
       - name: Generate SHA256SUMS
+        working-directory: release-assets
         run: |
-          cd release-assets/
+          set -euo pipefail
           sha256sum * > SHA256SUMS.txt
           cat SHA256SUMS.txt
-      - name: Create GitHub Release
+      - name: Create draft GitHub Release
         uses: softprops/action-gh-release@v3
         with:
           files: |
             release-assets/*
           generate_release_notes: true
           fail_on_unmatched_files: true
-          draft: false
+          # Draft: assets land complete-or-nothing, and no user is prompted to
+          # update until a human reviews the notes and presses Publish.
+          draft: true
           name: v${{ env.VERSION }}
+      - name: Next step
+        run: |
+          echo "::notice::Draft release v${VERSION} is ready with all assets."
+          echo "::notice::Review it at ${{ github.server_url }}/${{ github.repository }}/releases"
+          echo "::notice::Edit the notes, then press 'Publish release' to ship it."
