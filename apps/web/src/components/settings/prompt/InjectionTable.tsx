@@ -26,6 +26,7 @@ import { DragHandleContext } from "./drag-handle.js";
 import { buildFixedItems } from "./build-fixed-items.js";
 import type { CanvasItem, CharacterCanvasDraft, PromptCanvasDraft } from "./canvas-shared.js";
 import { InjectionRowView } from "./rows/InjectionRowView.js";
+import { CanvasLegend } from "./CanvasLegend.js";
 
 // NOTE (CANVAS_SINGLE_SOURCE_PLAN Wave 4): injection rows are content-only
 // `CustomInjection` ({identifier, name, content, role}). ALL positional state
@@ -436,6 +437,8 @@ export function PromptOrderCanvas({ injections, onChange, draft, onUpdateField, 
           + {t("preset_injection_add")}
         </button>
       </div>
+
+      <CanvasLegend />
 
       <DndContext
         sensors={sensors}
