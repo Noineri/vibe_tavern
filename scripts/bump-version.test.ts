@@ -79,10 +79,18 @@ async function createFixture(): Promise<GitFixture> {
 		await Bun.write(path, `${JSON.stringify(packageJson, null, 2)}\n`);
 	}
 
-	// Without this, `bun install` leaves an untracked node_modules/ that the
-	// script's allowlist guard would (correctly) refuse to tag around.
-	await Bun.write(join(root, ".gitignore"), "node_modules/\n");
-	await run(["bun", "install"], root);
+	// Belt and braces against the allowlist guard tripping on install output.
+	// Mirrors the real repo's .gitignore.
+	await Bun.write(join(root, ".gitignore"), "node_modules/\n**/node_modules/\n");
+
+	// `--lockfile-only` writes bun.lock and nothing else — the script verifies
+	// the lockfile, it never needs the packages installed. No node_modules is
+	// created anywhere, so no platform's install layout can leave a stray file
+	// for the guard to trip on.
+	const install = await run(["bun", "install", "--lockfile-only"], root);
+	if (install.exitCode !== 0) {
+		throw new Error(`fixture setup: bun install --lockfile-only failed:\n${install.stderr}`);
+	}
 
 	await git(root, "init", "-b", "master");
 	await git(root, "config", "user.name", "Release Test");
@@ -110,6 +118,21 @@ async function advanceRemoteDev(root: string): Promise<void> {
 
 async function runBump(root: string, args: readonly string[] = ["1.1.0"]): Promise<CommandResult> {
 	return run(["bun", "scripts/bump-version.ts", ...args], root);
+}
+
+/**
+ * Assert a clean run, surfacing the script's own output when it is not.
+ * A bare `expect(exitCode).toBe(0)` reports "expected 0, received 1" and hides
+ * which guard fired — useless when the only failing platform is a CI runner.
+ */
+function expectSuccess(result: CommandResult): void {
+	if (result.exitCode !== 0) {
+		throw new Error(
+			`bump-version exited ${result.exitCode}\n`
+			+ `--- stdout ---\n${result.stdout}\n`
+			+ `--- stderr ---\n${result.stderr}`,
+		);
+	}
 }
 
 describe("bump-version release preconditions", () => {
@@ -170,7 +193,7 @@ describe("bump-version release preconditions", () => {
 		const result = await runBump(fixture.root);
 
 		// Then
-		expect(result.exitCode).toBe(0);
+		expectSuccess(result);
 		// [skip ci] keeps ci.yml off the bump commit — release.yml re-runs the
 		// full gate on the tagged commit instead of racing it.
 		expect((await git(fixture.root, "log", "-1", "--format=%s")).stdout.trim())
@@ -186,7 +209,7 @@ describe("bump-version release preconditions", () => {
 		const result = await runBump(fixture.root);
 
 		// Then
-		expect(result.exitCode).toBe(0);
+		expectSuccess(result);
 		const changed = (await git(fixture.root, "show", "--name-only", "--format=", "HEAD")).stdout
 			.split("\n")
 			.map((line) => line.trim())
@@ -294,7 +317,7 @@ describe("bump-version release preconditions", () => {
 		const result = await runBump(fixture.root, ["--not-a-real-option", "1.1.0"]);
 
 		// Then
-		expect(result.exitCode).toBe(0);
+		expectSuccess(result);
 		expect(result.stdout).toContain("Done locally.");
 		expect((await git(fixture.root, "tag", "--list", "v1.1.0")).stdout.trim()).toBe("v1.1.0");
 	});
@@ -307,7 +330,7 @@ describe("bump-version release preconditions", () => {
 		const result = await runBump(fixture.root, ["1.1.0", "--", "--push"]);
 
 		// Then
-		expect(result.exitCode).toBe(0);
+		expectSuccess(result);
 		expect(result.stdout).toContain("Pushing to origin...");
 		expect((await git(fixture.remote, "show-ref", "--verify", "refs/tags/v1.1.0")).exitCode).toBe(0);
 	});

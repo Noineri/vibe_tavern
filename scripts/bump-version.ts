@@ -279,6 +279,30 @@ async function main(): Promise<void> {
 		process.exit(1);
 	}
 
+	// --- verify the lockfile describes the tree we are about to release ---
+	//
+	// Runs BEFORE the bump, against the exact committed state that CI verified,
+	// so it is a pure validation with nothing in flight.
+	//
+	// `--frozen-lockfile --dry-run` is the whole point: it answers "does this
+	// lockfile still satisfy these manifests" and writes NOTHING — no
+	// node_modules, no lockfile rewrite. A plain `bun install` would be actively
+	// harmful: it does not sync a workspace version bump anyway, but it IS free
+	// to re-resolve every other range, silently dragging unrelated dependency
+	// upgrades into the release commit. Verification must not mutate the tree it
+	// is about to tag.
+
+	console.log("Verifying bun.lock...");
+	const verify = await $`bun install --frozen-lockfile --dry-run`.cwd(ROOT).nothrow().quiet();
+	if (verify.exitCode !== 0) {
+		fail(
+			"bun.lock does not satisfy the committed manifests:\n"
+			+ verify.stderr.toString().trim()
+			+ "\nCommit a synchronized lockfile on master first.",
+		);
+	}
+	console.log("  verified  bun.lock\n");
+
 	console.log(`Bumping v${currentVersion} → v${targetVersion} on ${branch}\n`);
 
 	// --- bump files ---
@@ -295,40 +319,28 @@ async function main(): Promise<void> {
 		console.log(`  bumped  ${relPath}`);
 	}
 
-	// --- verify the lockfile still describes these manifests ---
-	//
-	// A plain `bun install` here would be worse than useless: bun does not
-	// rewrite bun.lock for a workspace version bump (so it syncs nothing), but
-	// it IS free to re-resolve every other range, which silently drags
-	// unrelated dependency upgrades into the release commit. `--frozen-lockfile`
-	// asserts the lockfile is valid for the bumped manifests and changes nothing.
-
-	console.log("\nVerifying bun.lock...");
-	const install = await $`bun install --frozen-lockfile`.cwd(ROOT).nothrow().quiet();
-	if (install.exitCode !== 0) {
-		fail(
-			"bun.lock does not satisfy the bumped manifests:\n"
-			+ install.stderr.toString().trim()
-			+ "\nCommit a synchronized lockfile on master first.",
-		);
-	}
-	console.log("  verified  bun.lock");
-
 	// The bump must touch the allowlist and nothing else. This catches a stray
 	// lockfile rewrite, a generated file, or an editor artifact riding along
 	// into a commit that is about to become an immutable release tag.
+	//
+	// `-z` gives NUL-separated, unquoted, newline-agnostic records — porcelain
+	// v1 quotes paths containing spaces and is line-ending sensitive, which
+	// makes text parsing of it wrong on some platforms.
 	const allowedPaths = new Set<string>(PACKAGE_FILES);
-	const dirty = (await $`git status --porcelain`.cwd(ROOT).text())
-		.split("\n")
-		// porcelain v1 lines are `XY <path>`; the status columns are fixed-width.
-		.map((line) => line.slice(3).trim())
-		.filter((path) => path.length > 0);
+	const rawStatus = await $`git status --porcelain -z`.cwd(ROOT).text();
+	const dirty = rawStatus
+		.split("\0")
+		.filter((record) => record.length > 3)
+		// Each record is `XY <path>`; the two status columns are fixed-width.
+		.map((record) => record.slice(3));
 	const unexpected = dirty.filter((path) => !allowedPaths.has(path));
 	if (unexpected.length > 0) {
+		const changed = await $`git diff --stat -- ${unexpected}`.cwd(ROOT).nothrow().quiet();
 		fail(
 			"the bump changed files outside the allowlist:\n"
 			+ unexpected.map((path) => `  ${path}`).join("\n")
-			+ "\nRefusing to tag a release commit with unrelated changes.",
+			+ "\n\ngit diff --stat:\n" + changed.stdout.toString().trim()
+			+ "\n\nRefusing to tag a release commit with unrelated changes.",
 		);
 	}
 
