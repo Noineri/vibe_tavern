@@ -40,6 +40,7 @@ export type DraftData = {
   customInjections: CustomInjection[];
   promptOrder: PromptOrderEntry[];
   advancedMode: boolean;
+  mergeConsecutiveRoles: boolean;
 };
 
 interface PromptManagerModalProps {
@@ -95,6 +96,7 @@ const emptyDraft: DraftData = {
   customInjections: [],
   promptOrder: [],
   advancedMode: false,
+  mergeConsecutiveRoles: false,
 };
 
 /**
@@ -246,6 +248,7 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
         customInjections: (activePreset as PromptPresetDto).customInjections ?? [],
         promptOrder: activePreset.promptOrder ?? [],
         advancedMode: activePreset.advancedMode ?? false,
+        mergeConsecutiveRoles: activePreset.mergeConsecutiveRoles ?? false,
       });
     } else {
       setDraft({ ...emptyDraft });
@@ -348,6 +351,7 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
       scriptAiSystemPrompt: "",
       promptOrder: [],
       advancedMode: false,
+      mergeConsecutiveRoles: false,
     }).then((created) => {
       if (created?.id) input.setActivePresetId(created.id);
     });
@@ -412,6 +416,7 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
           customInjections: ext.customInjections,
           promptOrder: ext.promptOrder,
           advancedMode: ext.advancedMode,
+          mergeConsecutiveRoles: ext.mergeConsecutiveRoles ?? false,
         });
         setDirty(true);
         setSaveState("idle");

@@ -677,6 +677,8 @@
   "preset_advanced_mode_hint": "Add custom prompt injections with depth control",
   "preset_prompt_order_canvas_title": "Prompt order canvas",
   "preset_prompt_order_canvas_hint": "ST-like prompt order with built-in slots, custom cards, and chat markers",
+  "merge_consecutive_roles": "Merge same-role messages",
+  "merge_consecutive_roles_hint": "Join adjacent text messages with the same role before sending them to the model.",
   "prompt_slot_world_info_before": "World Info (before)",
   "prompt_slot_world_info_before_hint": "Slot for lorebooks with the \"Before Char\" position.",
   "prompt_slot_character_description": "Character Description",

@@ -44,11 +44,21 @@ async function buildPreBakeFolder(): Promise<string> {
   const meta = join(folder, "meta");
   await mkdir(meta, { recursive: true });
   await cp(REAL_DRIZZLE, folder, { recursive: true });
-  await rm(join(folder, "0026_message_variant_preset_name.sql"), { force: true });
-  await rm(join(meta, "0026_snapshot.json"), { force: true });
   const journalPath = join(meta, "_journal.json");
   const journal = JSON.parse(await readFile(journalPath, "utf8")) as { entries: Array<{ tag: string }> };
-  journal.entries = journal.entries.filter((e) => e.tag !== "0026_message_variant_preset_name");
+  const bakeIndex = journal.entries.findIndex((entry) => entry.tag === "0026_message_variant_preset_name");
+  if (bakeIndex === -1) throw new Error("0026_message_variant_preset_name is missing from the real migration journal");
+
+  // A pre-0026 fixture must exclude 0026 AND every later migration. Removing
+  // only 0026 became temporally impossible once 0027 existed: Drizzle saw the
+  // later timestamp stamped and correctly skipped the older 0026 migration.
+  const postBakeEntries = journal.entries.slice(bakeIndex);
+  for (const entry of postBakeEntries) {
+    const prefix = entry.tag.slice(0, 4);
+    await rm(join(folder, `${entry.tag}.sql`), { force: true });
+    await rm(join(meta, `${prefix}_snapshot.json`), { force: true });
+  }
+  journal.entries = journal.entries.slice(0, bakeIndex);
   await writeFile(journalPath, JSON.stringify(journal, null, 2));
   return folder;
 }

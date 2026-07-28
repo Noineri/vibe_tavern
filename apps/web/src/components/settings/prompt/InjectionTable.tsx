@@ -26,6 +26,7 @@ import type { CanvasLoreEntrySummary } from "../../../lib/prompt-canvas-lore.js"
 import { buildFixedItems } from "./build-fixed-items.js";
 import type { CanvasItem, CanvasRole, CharacterCanvasDraft, PromptCanvasDraft } from "./canvas-shared.js";
 import type { LoreAnchorLoadState } from "./LoreAnchorList.js";
+import { Checkbox } from "../../shared/Checkbox.js";
 import { CanvasCard } from "./rows/CanvasCard.js";
 import { CanvasLegend } from "./CanvasLegend.js";
 
@@ -43,7 +44,7 @@ interface InjectionTableProps {
   injections: CustomInjection[];
   onChange: (injections: CustomInjection[]) => void;
   draft?: PromptCanvasDraft | null;
-  onUpdateField?: (key: keyof PromptCanvasDraft, value: string | number) => void;
+  onUpdateField?: (key: keyof PromptCanvasDraft, value: string | number | boolean) => void;
   characterDraft?: CharacterCanvasDraft | null;
   onCharacterFieldUpdate?: (key: keyof CharacterCanvasDraft, value: string | number) => void;
   personaDescription?: string | null;
@@ -499,12 +500,21 @@ export function PromptOrderCanvas({
           <div className="font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-t2">{t("preset_prompt_order_canvas_title")}</div>
           <div className="mt-0.5 font-ui text-[11px] text-t4">{t("preset_prompt_order_canvas_hint")}</div>
         </div>
-        <button type="button"
-          className="flex shrink-0 cursor-pointer items-center gap-1 rounded border border-border bg-surface px-2.5 py-1 font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-all hover:border-accent hover:text-accent-t"
-          onClick={add}
-        >
-          + {t("preset_injection_add")}
-        </button>
+        <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+          <Checkbox
+            checked={draft?.mergeConsecutiveRoles ?? false}
+            disabled={!draft || !onUpdateField}
+            onChange={(checked) => onUpdateField?.("mergeConsecutiveRoles", checked)}
+            title={t("merge_consecutive_roles_hint")}
+            label={<span className="font-ui text-[11px]">{t("merge_consecutive_roles")}</span>}
+          />
+          <button type="button"
+            className="flex shrink-0 cursor-pointer items-center gap-1 rounded border border-border bg-surface px-2.5 py-1 font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-all hover:border-accent hover:text-accent-t"
+            onClick={add}
+          >
+            + {t("preset_injection_add")}
+          </button>
+        </div>
       </div>
 
       <CanvasLegend />

@@ -24,6 +24,7 @@ const promptPresetCoreSchema = z.object({
     role: z.enum(["system", "user", "assistant"]).optional(),
   })).optional(),
   advancedMode: z.boolean().optional(),
+  mergeConsecutiveRoles: z.boolean().optional(),
   scriptAiSystemPrompt: z.string().optional(),
   aiAssistantPrompts: z.string().optional(),
 });

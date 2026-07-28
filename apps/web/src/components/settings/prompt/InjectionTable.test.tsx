@@ -90,6 +90,7 @@ const baseDraft = {
   authorsNoteRole: "system",
   nsfw: "nsfw",
   enhanceDefinitions: "enh",
+  mergeConsecutiveRoles: false,
 };
 
 const characterDraft: CharacterCanvasDraft = {
@@ -363,6 +364,14 @@ describe("PromptOrderCanvas — characterization", () => {
     text = container.textContent!;
     expectOrdered(text, ["depth_zone_2", "TestInj"]);
     expect(text.indexOf("TestInj")).toBeLessThan(text.indexOf("depth_zone_1"));
+  });
+
+  it("writes the consecutive-role merge flag from the canvas header checkbox", () => {
+    const spies = makeSpies();
+    renderCanvas({ spies });
+
+    fireEvent.click(queries().getByRole("checkbox", { name: "merge_consecutive_roles" }));
+    expect(spies.onUpdateField).toHaveBeenCalledWith("mergeConsecutiveRoles", true);
   });
 
   it("renders a custom injection through CanvasCard with icon, token counter, and working role control", () => {

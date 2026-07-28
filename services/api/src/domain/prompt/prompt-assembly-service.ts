@@ -80,6 +80,7 @@ export interface PromptAssemblyResolver {
       enhanceDefinitions: string;
       /** Whether this preset is in advanced (canvas) mode. */
       advancedMode: boolean;
+      mergeConsecutiveRoles: boolean;
       customInjections: CustomInjection[];
       promptOrder: PromptOrderEntry[];
     } | null>;
@@ -576,6 +577,7 @@ export class PromptAssemblyService {
             nsfw: promptPreset.nsfw,
             enhanceDefinitions: promptPreset.enhanceDefinitions,
             advancedMode: promptPreset.advancedMode,
+            mergeConsecutiveRoles: promptPreset.mergeConsecutiveRoles,
             customInjections: promptPreset.customInjections,
             promptOrder: promptPreset.promptOrder,
           }

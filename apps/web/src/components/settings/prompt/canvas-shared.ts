@@ -40,6 +40,7 @@ export type PromptCanvasDraft = {
   authorsNoteRole: string;
   nsfw: string;
   enhanceDefinitions: string;
+  mergeConsecutiveRoles: boolean;
 };
 
 /** Editable active-character fields the advanced canvas binds to. Canvas-key

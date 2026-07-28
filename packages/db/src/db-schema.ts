@@ -493,6 +493,7 @@ export const promptPresets = sqliteTable('prompt_presets', {
   customInjectionsJson: text('custom_injections_json').notNull().default('[]'),
   promptOrderJson: text('prompt_order_json').notNull().default('[]'),
   advancedMode: integer('advanced_mode').notNull().default(0),
+  mergeConsecutiveRoles: integer('merge_consecutive_roles').notNull().default(0),
   contentHash: text('content_hash'),
   hasFileOnDisk: integer('has_file_on_disk').notNull().default(0),
   createdAt: text('created_at').notNull(),

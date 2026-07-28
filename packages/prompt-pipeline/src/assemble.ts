@@ -1048,6 +1048,72 @@ function buildLayers(
   return { layers, droppedLayers, compactionSummary, recentMessagesForHistory };
 }
 
+type FinalAssemblyMessage = {
+  role: "system" | "user" | "assistant" | "tool";
+  content: string;
+  messageId?: string;
+  layerId?: string;
+  attachments?: RecentMessage["attachments"];
+  toolCalls?: unknown[];
+  mergedFrom?: Array<{ messageId?: string; layerId?: string }>;
+};
+
+function traceRef(message: FinalAssemblyMessage): { messageId?: string; layerId?: string } | null {
+  if (!message.messageId && !message.layerId) return null;
+  return {
+    ...(message.messageId ? { messageId: message.messageId } : {}),
+    ...(message.layerId ? { layerId: message.layerId } : {}),
+  };
+}
+
+function hasStructuredBoundary(message: FinalAssemblyMessage): boolean {
+  return Boolean(message.attachments?.length || message.toolCalls?.length);
+}
+
+/** ST-parity same-role squash over the final payload shape. Tool messages and
+ * structured/multimodal messages are hard boundaries: merging across either
+ * would destroy provider protocol structure or attachment ownership. */
+function mergeConsecutiveRoleMessages(messages: FinalAssemblyMessage[]): FinalAssemblyMessage[] {
+  const merged: FinalAssemblyMessage[] = [];
+
+  for (const message of messages) {
+    const isEmptyTextOnly =
+      message.role !== "tool"
+      && !message.content.trim()
+      && !hasStructuredBoundary(message);
+    if (isEmptyTextOnly) continue;
+
+    const current: FinalAssemblyMessage = {
+      ...message,
+      ...(message.mergedFrom ? { mergedFrom: [...message.mergedFrom] } : {}),
+    };
+    const previous = merged.at(-1);
+    const canMerge =
+      previous
+      && previous.role === current.role
+      && current.role !== "tool"
+      && !hasStructuredBoundary(previous)
+      && !hasStructuredBoundary(current);
+
+    if (!canMerge) {
+      merged.push(current);
+      continue;
+    }
+
+    previous.content = `${previous.content}\n\n${current.content}`;
+    const currentRef = traceRef(current);
+    const absorbed = [
+      ...(currentRef ? [currentRef] : []),
+      ...(current.mergedFrom ?? []),
+    ];
+    if (absorbed.length > 0) {
+      previous.mergedFrom = [...(previous.mergedFrom ?? []), ...absorbed];
+    }
+  }
+
+  return merged;
+}
+
 /**
  * Stages 3–5 — sort and compaction-aware messages assembly.
  *
@@ -1143,7 +1209,7 @@ function finalizeAssembly(
   }
 
   // Build final messages array
-  const messages = [
+  const messages: FinalAssemblyMessage[] = [
     ...beforePrompt.map((layer) => ({
       role: layer.role ?? ("system" as const),
       content: layer.text,
@@ -1161,6 +1227,9 @@ function finalizeAssembly(
     })),
     ...historyMessages,
   ];
+  const finalMessages = context.preset?.mergeConsecutiveRoles
+    ? mergeConsecutiveRoleMessages(messages)
+    : messages;
 
   return {
     layers: orderedLayers,
@@ -1171,7 +1240,7 @@ function finalizeAssembly(
       ...(context.memory?.retrieval ?? []).map((entry) => entry.id),
     ],
     droppedLayers,
-    finalPayload: { messages },
+    finalPayload: { messages: finalMessages },
     prefill: (context.preset?.prefill && resolver.enabled("assistantPrefill")) ? context.preset.prefill : null,
     compactionSummary: compactionSummary ?? null,
   };

@@ -161,6 +161,7 @@ function makeDto(over: Partial<PromptPresetDto> = {}): PromptPresetDto {
     customInjections: [],
     promptOrder: [],
     advancedMode: false,
+    mergeConsecutiveRoles: false,
     createdAt: "2026-01-01T00:00:00Z",
     updatedAt: "2026-01-02T00:00:00Z",
     ...over,
@@ -279,6 +280,7 @@ test("round-trip — VT→VT via _vibe_tavern is lossless for every DTO field", 
     customInjections: [{ identifier: "r", name: "R", content: "c", role: "user" }],
     promptOrder: [makeOrderEntry({ identifier: "r", zone: "in_chat", depth: 5, order: 0, kind: "custom" })],
     advancedMode: true,
+    mergeConsecutiveRoles: true,
   });
   const reparsed = parseStPreset(serializeStPreset(dto));
   expect(reparsed.vibeTavern).toBeDefined();
@@ -298,6 +300,7 @@ test("round-trip — VT→VT via _vibe_tavern is lossless for every DTO field", 
   expect(ext.scriptAiSystemPrompt).toBe(dto.scriptAiSystemPrompt);
   expect(ext.aiAssistantPrompts).toBe(dto.aiAssistantPrompts);
   expect(ext.advancedMode).toBe(dto.advancedMode);
+  expect(ext.mergeConsecutiveRoles).toBe(dto.mergeConsecutiveRoles);
   expect(ext.customInjections).toEqual(dto.customInjections);
   expect(ext.promptOrder).toEqual(dto.promptOrder);
 });

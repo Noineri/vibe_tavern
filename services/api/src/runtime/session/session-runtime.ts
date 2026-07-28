@@ -1099,6 +1099,7 @@ export function pickBootstrapChatId<T extends string>(
 			customInjections: preset.customInjections,
 			promptOrder: preset.promptOrder,
 			advancedMode: preset.advancedMode,
+			mergeConsecutiveRoles: preset.mergeConsecutiveRoles,
 			scriptAiSystemPrompt: preset.scriptAiSystemPrompt ?? "",
 			aiAssistantPrompts: (preset as { aiAssistantPrompts?: string }).aiAssistantPrompts ?? "{}",
 			createdAt: preset.createdAt,

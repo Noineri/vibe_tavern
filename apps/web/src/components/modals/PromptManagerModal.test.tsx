@@ -80,6 +80,7 @@ function baseDraft(): DraftData {
     customInjections: [{ identifier: "inj_1", name: "Inj", content: "c", role: "system" }],
     promptOrder: [{ identifier: "main", enabled: true, order: 0, zone: "before_chat", depth: null, kind: "built_in" }],
     advancedMode: false,
+    mergeConsecutiveRoles: false,
   };
 }
 
@@ -137,6 +138,33 @@ describe("PromptManagerModal — character save boundary", () => {
     await waitFor(() => {
       expect(onUpdate).toHaveBeenCalledTimes(1);
       expect(onCharacterFieldUpdate).toHaveBeenCalledWith("charSystemPrompt", "new character system");
+    });
+  });
+
+  test("persists the consecutive-role merge checkbox through the preset update patch", async () => {
+    const onUpdate = mock(async () => true);
+    useModalStore.setState({ isPromptManagerOpen: true });
+
+    const view = render(
+      <PromptManagerModal
+        presets={[advancedPreset()]}
+        activePresetId="preset-1"
+        setActivePresetId={mock()}
+        onCreate={mock(async () => null)}
+        onUpdate={onUpdate}
+        onDelete={mock(async () => true)}
+        onReorder={mock(async () => true)}
+      />,
+    );
+
+    fireEvent.click(within(view.baseElement).getByRole("checkbox", { name: "merge_consecutive_roles" }));
+    fireEvent.click(within(view.baseElement).getByRole("button", { name: "save" }));
+
+    await waitFor(() => {
+      expect(onUpdate).toHaveBeenCalledWith(
+        "preset-1",
+        expect.objectContaining({ mergeConsecutiveRoles: true }),
+      );
     });
   });
 

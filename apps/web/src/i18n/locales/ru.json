@@ -679,6 +679,8 @@
   "preset_advanced_mode_hint": "Добавить кастомные инъекции с контролем глубины",
   "preset_prompt_order_canvas_title": "Канва порядка промпта",
   "preset_prompt_order_canvas_hint": "ST-подобный порядок: встроенные слоты, кастомные карточки и маркеры чата",
+  "merge_consecutive_roles": "Объединять сообщения одной роли",
+  "merge_consecutive_roles_hint": "Объединять соседние текстовые сообщения с одинаковой ролью перед отправкой модели.",
   "prompt_slot_world_info_before": "World Info (до)",
   "prompt_slot_world_info_before_hint": "Слот для лорбуков с позицией \"перед персонажем\".",
   "prompt_slot_character_description": "Описание персонажа",

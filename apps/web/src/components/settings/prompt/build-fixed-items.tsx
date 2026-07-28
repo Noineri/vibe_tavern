@@ -26,7 +26,7 @@ import { CanvasCard } from "./rows/CanvasCard.js";
 export interface FixedItemCtx {
   t: TFunc;
   draft?: PromptCanvasDraft | null;
-  onUpdateField?: (key: keyof PromptCanvasDraft, value: string | number) => void;
+  onUpdateField?: (key: keyof PromptCanvasDraft, value: string | number | boolean) => void;
   characterDraft?: CharacterCanvasDraft | null;
   onCharacterFieldUpdate?: (key: keyof CharacterCanvasDraft, value: string | number) => void;
   personaDescription?: string | null;

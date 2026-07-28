@@ -133,6 +133,8 @@ export interface PromptAssemblyContext {
     enhanceDefinitions?: string | null;
     /** Whether this preset is in advanced (canvas-driven) mode. `false`/`undefined` = simple mode (4 preset fields, no custom injections, `DEFAULT_PROMPT_ORDER` ordering). Mirrors `PromptPresetDto.advancedMode`. */
     advancedMode?: boolean | null;
+    /** ST-parity final-payload transform: merge adjacent same-role text messages. */
+    mergeConsecutiveRoles?: boolean | null;
     /** Custom injection blocks (advanced mode only — ignored when `advancedMode` is falsy). Content-only — positional state (zone/depth/order/enabled) lives on the matching `promptOrder` entry. */
     customInjections?: Array<{
       identifier?: string;

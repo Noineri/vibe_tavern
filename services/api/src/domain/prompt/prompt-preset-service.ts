@@ -43,6 +43,7 @@ export class PromptPresetService {
     customInjections?: CustomInjection[];
     promptOrder?: PromptOrderEntry[];
     advancedMode?: boolean;
+    mergeConsecutiveRoles?: boolean;
     scriptAiSystemPrompt?: string;
   }): Promise<PromptPresetDto> {
     return createPromptPreset(this.deps, input);
@@ -64,6 +65,7 @@ export class PromptPresetService {
     customInjections?: CustomInjection[];
     promptOrder?: PromptOrderEntry[];
     advancedMode?: boolean;
+    mergeConsecutiveRoles?: boolean;
     scriptAiSystemPrompt?: string;
   }): Promise<PromptPresetDto> {
     return updatePromptPreset(this.deps, presetId, patch);

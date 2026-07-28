@@ -77,6 +77,12 @@ describe("createPromptPresetSchema", () => {
     expectReject(createPromptPresetSchema.safeParse({ ...base, authorsNoteRole: "tool" }));
   });
 
+  it("accepts a boolean mergeConsecutiveRoles flag and rejects non-booleans", () => {
+    expect(createPromptPresetSchema.safeParse({ ...validCreatePreset(), mergeConsecutiveRoles: true }).success).toBe(true);
+    expect(createPromptPresetSchema.safeParse({ ...validCreatePreset(), mergeConsecutiveRoles: false }).success).toBe(true);
+    expectReject(createPromptPresetSchema.safeParse({ ...validCreatePreset(), mergeConsecutiveRoles: "yes" }));
+  });
+
   // --- promptOrder array-of-objects ----------------------------------------
 
   it("accepts a minimal promptOrder entry (identifier + enabled only)", () => {

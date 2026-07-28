@@ -97,6 +97,7 @@ export interface PromptPresetDto {
   customInjections: CustomInjection[];
   promptOrder: PromptOrderEntry[];
   advancedMode: boolean;
+  mergeConsecutiveRoles: boolean;
   scriptAiSystemPrompt: string;
   aiAssistantPrompts: string;
   createdAt: string;
