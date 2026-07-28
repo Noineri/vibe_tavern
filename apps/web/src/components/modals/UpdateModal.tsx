@@ -18,13 +18,12 @@ interface UpdateModalProps {
 const PHASE_I18N_KEYS: Record<RuntimeUpdatePhase, keyof Resources["en"]> = {
 	idle: "update_modal_phase_idle",
 	checking: "update_modal_phase_checking",
+	preflight: "update_modal_phase_preflight",
 	"downloading-archive": "update_modal_phase_downloading_archive",
 	"downloading-sums": "update_modal_phase_downloading_sums",
 	verifying: "update_modal_phase_verifying",
 	extracting: "update_modal_phase_extracting",
 	swapping: "update_modal_phase_swapping",
-	"spawning-restart": "update_modal_phase_spawning_restart",
-	exiting: "update_modal_phase_exiting",
 	done: "update_modal_phase_done",
 	error: "update_modal_phase_error",
 };
@@ -83,7 +82,12 @@ export function UpdateModal({ latestVersion, latestTag, releaseUrl, releaseNotes
 	const showReleaseNotes = showConfirm && Boolean(releaseNotes);
 
 	const onClose = () => {
-		// "complete" = server has already process.exit(0)'d; closing would strand the user on a dead page.
+		// "running" — the swap is in flight; closing would hide a live process
+		// that is rewriting the install directory.
+		//
+		// "complete" — the server has exited for good and does not come back on
+		// its own. There is no working page behind this modal to return to, so
+		// it stays up with the restart instruction and cannot be dismissed.
 		if (flow.state.kind === "running" || flow.state.kind === "complete") return;
 		setOpen(false);
 	};
@@ -187,16 +191,9 @@ export function UpdateModal({ latestVersion, latestTag, releaseUrl, releaseNotes
 						</>
 					)}
 
-					{flow.state.kind === "complete" && (
-						<button
-							type="button"
-							className="flex items-center gap-1.5 rounded-md bg-accent px-4 py-1.5 text-[calc(var(--ui-fs)-2px)] font-semibold text-on-accent transition-[filter] hover:brightness-110"
-							onClick={() => window.location.reload()}
-						>
-							<Icons.regen />
-							{t("update_modal_reload_page")}
-						</button>
-					)}
+					{/* "complete" gets no action at all: the server is gone, so
+					    every button here would either reload into a refused
+					    connection or dismiss the one instruction that matters. */}
 
 					{flow.state.kind === "error" && (
 						<>

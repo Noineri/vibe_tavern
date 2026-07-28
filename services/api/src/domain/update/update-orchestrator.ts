@@ -7,8 +7,9 @@
  *   - Soft vs fatal failure distinction (install-untouched vs corrupted-state)
  *
  * After a successful swap the orchestrator sets phase to "done", holds the
- * process alive briefly so the SPA can poll the final status, then exits
- * cleanly via process.exit(0). The user restarts Vibe Tavern manually.
+ * process alive briefly so the SPA can poll that status, then stops serving
+ * and exits for good. It does NOT relaunch itself — see shutdownAfterUpdate
+ * for why the previous detached respawn was withdrawn.
  */
 
 import { existsSync } from "node:fs";
@@ -24,13 +25,14 @@ import {
 	SoftUpdateError,
 	type UpdatePhase,
 } from "../../server/updater.js";
+import { resolveStandalonePaths } from "../../server/standalone-paths.js";
+import { stopRuntimeServer } from "../../server/runtime-shutdown.js";
+import { snapshotDatabase } from "./update-db-snapshot.js";
 
 export type UpdateOrchestratorPhase =
 	| "idle"
 	| "checking"
 	| UpdatePhase
-	| "spawning-restart"
-	| "exiting"
 	| "done"
 	| "error";
 
@@ -62,12 +64,59 @@ const INITIAL_STATUS: UpdateStatus = {
 	error: null,
 };
 
+/**
+ * How long the process stays alive after the swap so the SPA can poll the
+ * final "done" status. The SPA polls every 500 ms.
+ */
+const EXIT_GRACE_MS = 1_500;
+
+/**
+ * Terminal step of a successful update: stop serving, then exit for good.
+ *
+ * The process deliberately does NOT relaunch itself. An earlier revision
+ * spawned the replaced binary with `detached: true`; on POSIX that is setsid(),
+ * so the new process left the shell's foreground process group and lost the
+ * controlling terminal — Ctrl+C in the launching console no longer stopped Vibe
+ * Tavern and the user needed `pkill` to find and kill an invisible orphan.
+ * Windows `DETACHED_PROCESS` produces the same orphan without a console.
+ *
+ * Exiting is the one ending that behaves identically on both platforms and
+ * leaves nothing behind. The modal tells the user to start Vibe Tavern again
+ * and refuses to be dismissed, so the instruction cannot be missed.
+ *
+ * Exported for testing: `process.exit` cannot be exercised in-process.
+ */
+export function shutdownAfterUpdate(
+	stopServer: () => boolean,
+	exit: (code: number) => void,
+): void {
+	try {
+		if (!stopServer()) {
+			console.warn("[update-orchestrator] no server was registered to stop.");
+		}
+	} catch (err) {
+		// A server that refuses to stop must not keep the old build alive.
+		console.error(
+			"[update-orchestrator] could not stop the server cleanly:",
+			err instanceof Error ? err.message : String(err),
+		);
+	}
+	console.log("[update-orchestrator] update complete — start Vibe Tavern again to run the new version.");
+	exit(0);
+}
+
 class UpdateOrchestrator {
 	private status: UpdateStatus = INITIAL_STATUS;
 	private running = false;
+	/** Where this run's pre-update database snapshot landed, for the UI/logs. */
+	private dbSnapshotPath: string | null = null;
 
 	getStatus(): UpdateStatus {
 		return this.status;
+	}
+
+	getDbSnapshotPath(): string | null {
+		return this.dbSnapshotPath;
 	}
 
 	triggerUpdate(): { accepted: boolean; reason?: string } {
@@ -115,6 +164,18 @@ class UpdateOrchestrator {
 				this.fail("soft", "Could not fetch the release asset list from GitHub.", "checking", null);
 				return;
 			}
+
+			// Recovery point before anything touches the install. Failing to take
+			// one aborts rather than proceeding: an update with no way back is
+			// exactly what this plan exists to prevent.
+			const paths = await resolveStandalonePaths();
+			const snapshot = await snapshotDatabase(paths.dbPath, paths.dataDir, check.latestVersion);
+			if (!snapshot.ok) {
+				this.fail("soft", snapshot.message ?? "Could not create a pre-update database backup.", "checking", null);
+				return;
+			}
+			this.dbSnapshotPath = snapshot.path;
+			console.log(`[update-orchestrator] pre-update database snapshot: ${snapshot.path}`);
 
 			const newVersion = await downloadAndSwap(release, installDir, {
 				onPhase: (phase) => {
@@ -190,10 +251,17 @@ class UpdateOrchestrator {
 		if (errObj?.stack) console.error(errObj.stack);
 	}
 
+	/**
+	 * Let the SPA observe the terminal "done" status, then shut down.
+	 *
+	 * The grace period is longer than the SPA's 500 ms status poll so the happy
+	 * path is deterministic rather than a race. Missing it is still safe: the
+	 * SPA treats a dropped connection after "swapping" as a completed update.
+	 */
 	private finishAndExit(): void {
 		setTimeout(() => {
-			process.exit(0);
-		}, 500);
+			shutdownAfterUpdate(stopRuntimeServer, (code) => process.exit(code));
+		}, EXIT_GRACE_MS);
 	}
 
 	reset(): void {
