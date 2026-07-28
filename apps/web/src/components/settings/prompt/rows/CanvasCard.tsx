@@ -7,8 +7,8 @@
  *
  * Layout (header always rendered; body optional + collapsible):
  *
- *   [DragHandle] [toggle] [category-icon] label … [TokenCounter] [role] [slot] [badge] [▶] [remove]
- *                                                                                 └ expand
+ *   [DragHandle] [toggle] [category-icon] label … [TokenCounter] [role] [slot] [badge] [remove] [▶]
+ *                                                                                          └ expand
  *   body:  [depth-input?] [role SegmentedControl?] [expandedLeading?] [AutoTextarea | readonly]
  *
  * Variants the props express:
@@ -162,7 +162,7 @@ export function CanvasCard({
             </button>
           </CustomTooltip>
         )}
-        <span className="flex h-[13px] w-[13px] shrink-0 items-center justify-center text-t3" aria-hidden="true">
+        <span className="flex h-4 w-4 shrink-0 items-center justify-center text-t3" aria-hidden="true">
           <CategoryIcon />
         </span>
         {editableName ? (
@@ -215,9 +215,6 @@ export function CanvasCard({
           </span>
         )}
         {badge && <span className="shrink-0 rounded bg-black/10 px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.04em] opacity-70">{badge}</span>}
-        {expandable && (
-          <span className={cn("shrink-0 text-[11px] text-t4 transition-transform", expanded && "rotate-90")} aria-hidden="true">▶</span>
-        )}
         {onRemove && (
           <CustomTooltip content={t("cc_remove")}>
             <button
@@ -226,9 +223,12 @@ export function CanvasCard({
               onClick={(e) => { e.stopPropagation(); onRemove(); }}
               aria-label={t("cc_remove")}
             >
-              ✕
+              <Ic.del />
             </button>
           </CustomTooltip>
+        )}
+        {expandable && (
+          <span className={cn("shrink-0 text-[11px] text-t4 transition-transform", expanded && "rotate-90")} aria-hidden="true">▶</span>
         )}
       </div>
       {expandable && expanded && (

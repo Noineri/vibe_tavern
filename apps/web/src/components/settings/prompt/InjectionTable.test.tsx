@@ -185,8 +185,8 @@ function clickDotToggle(label: string) {
 }
 
 /** Click the trash delete button of a custom-injection row. The CanvasCard
- *  remove button carries aria-label `cc_remove` (the `✕` glyph); identified by
- *  that aria-label while walking up from the row's visible name. */
+ *  remove button carries aria-label `cc_remove`; identified by that aria-label
+ *  while walking up from the row's visible name. */
 function clickDelete(rowName: string) {
   const nameEl = queries().getByText(rowName);
   let node: HTMLElement | null = nameEl;
@@ -235,6 +235,11 @@ describe("PromptOrderCanvas — characterization", () => {
 		expect(queries().queryByText("character_post_history")).toBeNull();
 		expect(queries().queryByText("character_depth_prompt")).toBeNull();
 
+    // Category icons now carry the editable/character distinction; the former
+    // repetitive source badges are intentionally absent.
+    expect(text).not.toContain("editable_badge");
+    expect(text).not.toContain("char_badge");
+
     // whole-canvas order: before items → jailbreak → prefill
     expectOrdered(text, [...beforeLabels, "post_history_instructions", "prefill_assistant"]);
   });
@@ -260,7 +265,7 @@ describe("PromptOrderCanvas — characterization", () => {
 
     const characterCard = container.querySelector<HTMLElement>('[data-canvas-identifier="charDescription"]');
     expect(characterCard).toBeTruthy();
-    expect(characterCard!.textContent).toContain("char_badge");
+    expect(characterCard!.textContent).not.toContain("char_badge");
     expect(characterCard!.textContent).not.toContain("cc_read_only");
     fireEvent.click(within(characterCard!).getByText("prompt_slot_character_description"));
     const characterTextarea = within(characterCard!).getByRole("textbox") as HTMLTextAreaElement;
@@ -368,11 +373,17 @@ describe("PromptOrderCanvas — characterization", () => {
     expect(text.indexOf("TestInj")).toBeLessThan(text.indexOf("depth_zone_1"));
   });
 
-  it("writes the consecutive-role merge flag from the canvas header checkbox", () => {
+  it("stacks the canvas header on mobile and uses the shared tooltip for the merge checkbox", () => {
     const spies = makeSpies();
     renderCanvas({ spies });
 
-    fireEvent.click(queries().getByRole("checkbox", { name: "merge_consecutive_roles" }));
+    const header = queries().getByTestId("prompt-canvas-header");
+    expect(header.className).toContain("flex-col");
+    expect(header.className).toContain("sm:flex-row");
+
+    const checkbox = queries().getByRole("checkbox", { name: "merge_consecutive_roles" });
+    expect(checkbox.getAttribute("title")).toBeNull();
+    fireEvent.click(checkbox);
     expect(spies.onUpdateField).toHaveBeenCalledWith("mergeConsecutiveRoles", true);
   });
 
@@ -390,6 +401,12 @@ describe("PromptOrderCanvas — characterization", () => {
     const card = container.querySelector('[data-canvas-identifier="custom_t"]') as HTMLElement;
     expect(card).toBeTruthy();
     expect(card.querySelector('span[aria-hidden="true"] svg')).toBeTruthy();
+    const removeButton = within(card).getByRole("button", { name: "cc_remove" });
+    expect(removeButton.querySelector("svg")).toBeTruthy();
+    const headerChildren = Array.from(card.firstElementChild?.children ?? []);
+    const chevron = headerChildren.find((child) => child.textContent === "▶");
+    expect(chevron).toBeTruthy();
+    expect(headerChildren.indexOf(removeButton)).toBeLessThan(headerChildren.indexOf(chevron!));
     expect(card.textContent).toContain("0 tokens_label");
     expect(card.textContent).toContain("system");
 

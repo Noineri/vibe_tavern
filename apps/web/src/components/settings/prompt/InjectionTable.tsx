@@ -29,6 +29,7 @@ import type { LoreAnchorLoadState } from "./LoreAnchorList.js";
 import { Checkbox } from "../../shared/Checkbox.js";
 import { CanvasCard } from "./rows/CanvasCard.js";
 import { CanvasLegend } from "./CanvasLegend.js";
+import { CustomTooltip } from "../../shared/Tooltip.js";
 
 // NOTE (CANVAS_SINGLE_SOURCE_PLAN Wave 4): injection rows are content-only
 // `CustomInjection` ({identifier, name, content, role}). ALL positional state
@@ -502,19 +503,20 @@ export function PromptOrderCanvas({
 
   return (
     <div>
-      <div className="mb-3 flex items-start justify-between gap-3">
-        <div>
+      <div data-testid="prompt-canvas-header" className="mb-3 flex flex-col items-stretch gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
           <div className="font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-t2">{t("preset_prompt_order_canvas_title")}</div>
           <div className="mt-0.5 font-ui text-[11px] text-t4">{t("preset_prompt_order_canvas_hint")}</div>
         </div>
-        <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
-          <Checkbox
-            checked={draft?.mergeConsecutiveRoles ?? false}
-            disabled={!draft || !onUpdateField}
-            onChange={(checked) => onUpdateField?.("mergeConsecutiveRoles", checked)}
-            title={t("merge_consecutive_roles_hint")}
-            label={<span className="font-ui text-[11px]">{t("merge_consecutive_roles")}</span>}
-          />
+        <div className="flex w-full flex-wrap items-center justify-between gap-2 sm:w-auto sm:shrink-0 sm:justify-end">
+          <CustomTooltip content={t("merge_consecutive_roles_hint")}>
+            <Checkbox
+              checked={draft?.mergeConsecutiveRoles ?? false}
+              disabled={!draft || !onUpdateField}
+              onChange={(checked) => onUpdateField?.("mergeConsecutiveRoles", checked)}
+              label={<span className="font-ui text-[11px]">{t("merge_consecutive_roles")}</span>}
+            />
+          </CustomTooltip>
           <button type="button"
             className="flex shrink-0 cursor-pointer items-center gap-1 rounded border border-border bg-surface px-2.5 py-1 font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-all hover:border-accent hover:text-accent-t"
             onClick={add}

@@ -40,10 +40,10 @@ export function CanvasLegend() {
 						return (
 							<div key={cat} className="min-w-0">
 								<div className="flex items-center gap-2">
-									<span className="flex h-[13px] w-[13px] shrink-0 items-center justify-center text-t3" aria-hidden="true"><Icon /></span>
+									<span className="flex h-4 w-4 shrink-0 items-center justify-center text-t3" aria-hidden="true"><Icon /></span>
 									<span className="font-ui text-[11px] font-medium text-t2">{tDynamic(`cc_legend_${cat}`)}</span>
 								</div>
-								<span className="mt-0.5 block pl-[21px] font-ui text-[10px] leading-tight text-t4">{tDynamic(`cc_legend_${cat}_desc`)}</span>
+								<span className="mt-0.5 block pl-6 font-ui text-[10px] leading-tight text-t4">{tDynamic(`cc_legend_${cat}_desc`)}</span>
 							</div>
 						);
 					})}

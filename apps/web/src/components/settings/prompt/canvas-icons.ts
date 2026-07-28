@@ -1,7 +1,7 @@
 /**
  * Slot-category iconography for the prompt-order canvas (APC-3a).
  *
- * Every canvas row belongs to one of five categories. The category drives the
+ * Every canvas row belongs to one of seven categories. The category drives the
  * header icon (so a glance at the canvas shows what *kind* of context each row
  * injects) and the legend at the top of the canvas (APC-3c). The mapping is
  * purely visual metadata — it does not affect assembly or ordering.

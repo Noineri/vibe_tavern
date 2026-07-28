@@ -1,5 +1,5 @@
 import React from 'react';
-import { Globe, Brain, Crop, FileText, Flame, Images, Send, Sparkles, Star } from 'lucide-react';
+import { Anchor, Globe, Brain, Crop, FileText, Flame, Images, Send, Sparkles, Star } from 'lucide-react';
 
 // Props forwarded so call sites passing `className` (e.g. "h-5 w-5 text-t3")
 // actually apply — the previous `() => <svg/>` no-arg shape silently dropped
@@ -108,11 +108,9 @@ export const Ic = {
   // Distinct from the plain `user` glyph (character category): the ring marks
   // the user-persona context, not the character.
   circleUser:()=><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><circle cx="8" cy="8" r="6.5"/><circle cx="8" cy="6.3" r="1.9"/><path d="M4.3 12.6c.6-1.7 2-2.7 3.7-2.7s3.1 1 3.7 2.7"/></svg>,
-  // Anchor inside a square frame — the "lorebook anchor" slot-category icon
-  // (APC-3a): a pinned injection point. Redrawn from the book+anchor composite
-  // (which read muddy at 13px) to a single anchor inset in a frame, matching
-  // the plus-in-frame convention of the custom-injection icon.
-  loreAnchor:()=><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="2" width="12" height="12" rx="1.5"/><circle cx="8" cy="6" r="1.3"/><line x1="8" y1="7.3" x2="8" y2="11.5"/><path d="M5.5 10a2.5 2.5 0 0 0 5 0"/><line x1="6.5" y1="8.2" x2="9.5" y2="8.2"/></svg>,
+  // Unframed Lucide anchor at 16px — the former 13px anchor-inside-frame lost
+  // too much detail at mobile density and read as an indistinct square.
+  loreAnchor:()=><Anchor size={16} strokeWidth={2.2} />,
   // Message bubble — the "chat dynamic prompt" slot-category icon (Wave 6).
   // A speech bubble outline distinguishing per-chat content from preset fields.
   messageBubble:()=><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><path d="M2 3.5h12a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1H5.5L3 14V4.5a1 1 0 0 1 1-1z"/></svg>,

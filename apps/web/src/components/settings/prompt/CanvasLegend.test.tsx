@@ -46,6 +46,11 @@ describe("CanvasLegend — collapsible render contract", () => {
 		// seven category icons (one svg per category) render — guards that every
 		// SLOT_CATEGORY_ICON entry resolves to a real glyph, not undefined
 		expect(container.querySelectorAll("svg").length).toBeGreaterThanOrEqual(7);
+		// The lore anchor is deliberately larger than the 13px legacy glyph so its
+		// hook and crossbar remain legible at mobile density.
+		const anchorLabel = getByText("cc_legend_anchor");
+		const anchorIcon = anchorLabel.previousElementSibling?.querySelector("svg");
+		expect(anchorIcon?.getAttribute("width")).toBe("16");
 	});
 
 	it("toggling twice collapses again", () => {
