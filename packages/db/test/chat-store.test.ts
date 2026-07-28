@@ -124,6 +124,7 @@ CREATE TABLE chats (
   summary text DEFAULT '' NOT NULL,
   message_history_limit integer DEFAULT 0 NOT NULL,
   status text DEFAULT 'active' NOT NULL,
+  dynamic_prompt text DEFAULT '' NOT NULL,
   created_at text NOT NULL,
   updated_at text NOT NULL,
   FOREIGN KEY (character_id) REFERENCES characters(id) ON DELETE cascade,
@@ -1000,5 +1001,55 @@ describe("ChatStore — objective state (INS-3)", () => {
     await store.updateInsightsObjectiveState(chat.id, { insightsObjectiveState: { objectiveDescription: "B", tasks: [], autoCheckFrequency: 5, autoCheckEventCount: 1, injectionDepth: 2, generatePrompt: "g", checkPrompt: "c", injectPrompt: "i" } });
     const reloaded = await store.getById(chat.id);
     expect(reloaded?.insightsObjectiveState).toEqual({ objectiveDescription: "B", tasks: [], autoCheckFrequency: 5, autoCheckEventCount: 1, injectionDepth: 2, generatePrompt: "g", checkPrompt: "c", injectPrompt: "i" });
+  });
+});
+
+// ─── ChatStore — dynamicPrompt (Wave 6) ────────────────────────────────────
+
+describe("ChatStore — dynamicPrompt (Wave 6)", () => {
+  let db: Awaited<ReturnType<typeof createTestDb>>;
+  let store: ChatStore;
+
+  beforeEach(async () => {
+    db = await createTestDb();
+    bootstrap(db);
+    clockTick = 0;
+    idCounters = new Map();
+    store = new ChatStore(db, { clock: testClock, idGenerator: testIdGen });
+  });
+
+  test("a new chat defaults dynamicPrompt to empty string", async () => {
+    const chat = await store.createChat({ characterId: "char_1", title: "c", promptPresetId: "preset_1" });
+    expect(chat.dynamicPrompt).toBe("");
+  });
+
+  test("the bootstrap-inserted chat (chat_1) reads dynamicPrompt as empty string (DB default)", async () => {
+    const chat = await store.getById("chat_1");
+    expect(chat?.dynamicPrompt).toBe("");
+  });
+
+  test("updateDynamicPrompt persists and round-trips through getById", async () => {
+    const updated = await store.updateDynamicPrompt("chat_1", "per-chat dynamic content");
+    expect(updated.dynamicPrompt).toBe("per-chat dynamic content");
+    // Reload from DB — not just in-memory return value.
+    const reloaded = await store.getById("chat_1");
+    expect(reloaded?.dynamicPrompt).toBe("per-chat dynamic content");
+  });
+
+  test("updateDynamicPrompt with empty string clears the content", async () => {
+    await store.updateDynamicPrompt("chat_1", "temporary");
+    const cleared = await store.updateDynamicPrompt("chat_1", "");
+    expect(cleared.dynamicPrompt).toBe("");
+  });
+
+  test("updateDynamicPrompt does not alter unrelated chat fields", async () => {
+    await store.updateDynamicPrompt("chat_1", "new prompt");
+    const chat = await store.getById("chat_1");
+    // Verify unrelated fields are untouched.
+    expect(chat?.title).toBe("Test chat");
+    expect(chat?.mode).toBe("rp");
+    expect(chat?.characterId).toBe("char_1");
+    expect(chat?.summary).toBe("");
+    expect(chat?.coauthorContextLinks).toEqual([]);
   });
 });

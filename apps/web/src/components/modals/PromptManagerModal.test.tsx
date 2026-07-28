@@ -307,3 +307,182 @@ describe("buildDuplicatePayload — deep-copy (PRESET_COPY_DELETE_CORRUPTION bug
     expect([_inj.identifier, _po.identifier]).toEqual(["x", "x"]);
   });
 });
+
+describe("PromptManagerModal — chatDynamicPrompt save (Wave 6)", () => {
+  test("does NOT call onChatDynamicPromptUpdate when chatDynamicPrompt is unchanged", async () => {
+    const onUpdate = mock(async () => true);
+    const onChatDynamicPromptUpdate = mock(async () => {});
+    useModalStore.setState({ isPromptManagerOpen: true });
+
+    const view = render(
+      <PromptManagerModal
+        presets={[advancedPreset()]}
+        activePresetId="preset-1"
+        setActivePresetId={mock()}
+        onCreate={mock(async () => null)}
+        onUpdate={onUpdate}
+        onDelete={mock(async () => true)}
+        onReorder={mock(async () => true)}
+        chatDynamicPrompt="existing"
+        onChatDynamicPromptUpdate={onChatDynamicPromptUpdate}
+      />,
+    );
+
+    // Toggle the consecutive-role merge checkbox to trigger dirty
+    // (so the save button is enabled), but keep chatDynamicPrompt unchanged.
+    fireEvent.click(within(view.baseElement).getByRole("checkbox", { name: "merge_consecutive_roles" }));
+
+    fireEvent.click(within(view.baseElement).getByRole("button", { name: "save" }));
+
+    await waitFor(() => {
+      expect(onUpdate).toHaveBeenCalled();
+    });
+    // chatDynamicPromptDraft (initialised to "existing") === input.chatDynamicPrompt ("existing") → no call.
+    expect(onChatDynamicPromptUpdate).not.toHaveBeenCalled();
+  });
+
+  test("waits for a successful preset save before updating the chat dynamic prompt", async () => {
+    let resolvePresetSave: ((ok: boolean) => void) | undefined;
+    const onUpdate = mock(() => new Promise<boolean>((resolve) => { resolvePresetSave = resolve; }));
+    const onChatDynamicPromptUpdate = mock(async () => {});
+    useModalStore.setState({ isPromptManagerOpen: true });
+
+    const view = render(
+      <PromptManagerModal
+        presets={[advancedPreset()]}
+        activePresetId="preset-1"
+        setActivePresetId={mock()}
+        onCreate={mock(async () => null)}
+        onUpdate={onUpdate}
+        onDelete={mock(async () => true)}
+        onReorder={mock(async () => true)}
+        chatDynamicPrompt="old"
+        onChatDynamicPromptUpdate={onChatDynamicPromptUpdate}
+      />,
+    );
+
+    const card = view.baseElement.querySelector<HTMLElement>('[data-canvas-identifier="chatDynamicPrompt"]');
+    expect(card).toBeTruthy();
+    if (!card) return;
+    fireEvent.click(within(card).getByText("prompt_slot_chat_dynamic"));
+    fireEvent.change(within(card).getByRole("textbox"), { target: { value: "new content" } });
+    fireEvent.click(within(view.baseElement).getByRole("button", { name: "save" }));
+
+    expect(onUpdate).toHaveBeenCalled();
+    expect(onChatDynamicPromptUpdate).not.toHaveBeenCalled();
+    expect(resolvePresetSave).toBeDefined();
+    resolvePresetSave?.(true);
+
+    await waitFor(() => {
+      expect(onChatDynamicPromptUpdate).toHaveBeenCalledWith("new content");
+    });
+  });
+
+  test("does not update the chat dynamic prompt when the preset save fails", async () => {
+    const onChatDynamicPromptUpdate = mock(async () => {});
+    useModalStore.setState({ isPromptManagerOpen: true });
+    const view = render(
+      <PromptManagerModal
+        presets={[advancedPreset()]}
+        activePresetId="preset-1"
+        setActivePresetId={mock()}
+        onCreate={mock(async () => null)}
+        onUpdate={mock(async () => false)}
+        onDelete={mock(async () => true)}
+        onReorder={mock(async () => true)}
+        chatDynamicPrompt="old"
+        onChatDynamicPromptUpdate={onChatDynamicPromptUpdate}
+      />,
+    );
+
+    const card = view.baseElement.querySelector<HTMLElement>('[data-canvas-identifier="chatDynamicPrompt"]');
+    expect(card).toBeTruthy();
+    if (!card) return;
+    fireEvent.click(within(card).getByText("prompt_slot_chat_dynamic"));
+    fireEvent.change(within(card).getByRole("textbox"), { target: { value: "new content" } });
+    fireEvent.click(within(view.baseElement).getByRole("button", { name: "save" }));
+
+    await waitFor(() => {
+      expect(onChatDynamicPromptUpdate).not.toHaveBeenCalled();
+      const retry = within(view.baseElement).getByRole("button", { name: "save" }) as HTMLButtonElement;
+      expect(retry.disabled).toBe(false);
+    });
+  });
+
+  test("rejected onChatDynamicPromptUpdate is caught and does not crash the save flow", async () => {
+    // The save handler uses try/catch around the awaited onChatDynamicPromptUpdate.
+    // Even when the update rejects, the handler itself must not throw — it should
+    // catch, set error state, and return without calling setDirty(false).
+    const onUpdate = mock(async () => true);
+    let rejected = false;
+    const onChatDynamicPromptUpdate = mock(async () => {
+      rejected = true;
+      throw new Error("offline");
+    });
+    useModalStore.setState({ isPromptManagerOpen: true });
+
+    const view = render(
+      <PromptManagerModal
+        presets={[advancedPreset()]}
+        activePresetId="preset-1"
+        setActivePresetId={mock()}
+        onCreate={mock(async () => null)}
+        onUpdate={onUpdate}
+        onDelete={mock(async () => true)}
+        onReorder={mock(async () => true)}
+        chatDynamicPrompt="old"
+        onChatDynamicPromptUpdate={onChatDynamicPromptUpdate}
+      />,
+    );
+
+    const card = view.baseElement.querySelector<HTMLElement>('[data-canvas-identifier="chatDynamicPrompt"]');
+    fireEvent.click(within(card!).getByText("prompt_slot_chat_dynamic"));
+    fireEvent.change(within(card!).getByRole("textbox"), { target: { value: "changed" } });
+
+    fireEvent.click(within(view.baseElement).getByRole("button", { name: "save" }));
+
+    await waitFor(() => {
+      expect(onUpdate).toHaveBeenCalled();
+      expect(onChatDynamicPromptUpdate).toHaveBeenCalled();
+    });
+    // The rejection was caught, the draft remains dirty, and Save is available
+    // for retry rather than falsely changing to the "saved" state.
+    expect(rejected).toBe(true);
+    await waitFor(() => {
+      const retry = within(view.baseElement).getByRole("button", { name: "save" }) as HTMLButtonElement;
+      expect(retry.disabled).toBe(false);
+      expect(within(view.baseElement).queryByRole("button", { name: "saved" })).toBeNull();
+    });
+  });
+
+  test("null onChatDynamicPromptUpdate is handled gracefully (no-op)", async () => {
+    const onUpdate = mock(async () => true);
+    useModalStore.setState({ isPromptManagerOpen: true });
+
+    const view = render(
+      <PromptManagerModal
+        presets={[advancedPreset()]}
+        activePresetId="preset-1"
+        setActivePresetId={mock()}
+        onCreate={mock(async () => null)}
+        onUpdate={onUpdate}
+        onDelete={mock(async () => true)}
+        onReorder={mock(async () => true)}
+        chatDynamicPrompt="old"
+        // onChatDynamicPromptUpdate intentionally omitted (undefined)
+      />,
+    );
+
+    // Edit to trigger a change.
+    const card = view.baseElement.querySelector<HTMLElement>('[data-canvas-identifier="chatDynamicPrompt"]');
+    fireEvent.click(within(card!).getByText("prompt_slot_chat_dynamic"));
+    fireEvent.change(within(card!).getByRole("textbox"), { target: { value: "changed" } });
+
+    // Save should not crash — the optional ?.call handles the undefined case.
+    fireEvent.click(within(view.baseElement).getByRole("button", { name: "save" }));
+
+    await waitFor(() => {
+      expect(onUpdate).toHaveBeenCalled();
+    });
+  });
+});

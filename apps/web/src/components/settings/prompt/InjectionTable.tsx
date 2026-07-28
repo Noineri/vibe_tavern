@@ -49,6 +49,9 @@ interface InjectionTableProps {
   onCharacterFieldUpdate?: (key: keyof CharacterCanvasDraft, value: string | number) => void;
   personaDescription?: string | null;
   onPersonaDescriptionUpdate?: (value: string) => void;
+  /** Per-chat dynamic prompt — content edited via the canvas card. */
+  chatDynamicPrompt?: string | null;
+  onChatDynamicPromptUpdate?: (value: string) => void;
   loreAnchorEntries?: CanvasLoreEntrySummary[];
   loreAnchorLoadState?: LoreAnchorLoadState;
   promptOrder?: PromptOrderEntry[];
@@ -146,6 +149,8 @@ export function PromptOrderCanvas({
   onUpdateField,
   characterDraft,
   onCharacterFieldUpdate,
+  chatDynamicPrompt,
+  onChatDynamicPromptUpdate,
   personaDescription,
   onPersonaDescriptionUpdate,
   loreAnchorEntries,
@@ -284,6 +289,8 @@ export function PromptOrderCanvas({
     onCharacterFieldUpdate,
     personaDescription,
     onPersonaDescriptionUpdate,
+    chatDynamicPrompt,
+    onChatDynamicPromptUpdate,
     loreAnchorEntries,
     loreAnchorLoadState,
     slotEnabled,

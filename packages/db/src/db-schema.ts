@@ -181,6 +181,7 @@ export const chats = sqliteTable('chats', {
   // CA-16 lands.
   coauthorContextLinksJson: text('coauthor_lorebook_ids_json').notNull().default('[]'),
   coauthorModuleId: text('coauthor_module_id'),
+  dynamicPrompt: text('dynamic_prompt').notNull().default(''),
 }, (table) => ({
   characterIdIdx: index('idx_chats_character_id').on(table.characterId),
   modeIdx: index('idx_chats_mode').on(table.mode),

@@ -35,6 +35,8 @@ export interface Chat {
    *  lorebook/script) + id. NOT RP activation. */
   coauthorContextLinks: CoauthorContextLink[];
   coauthorModuleId: string | null;
+  /** Per-chat dynamic prompt — incremental text the chat carries, editable via the advanced prompt canvas. */
+  dynamicPrompt: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -366,6 +368,18 @@ export class ChatStore {
       .where(eq(chats.id, id))
       .returning();
     if (!row) throw new Error(`Chat '${id}' not found after coauthor module update`);
+    return this.mapRow(row);
+  }
+
+  /** Per-chat dynamic prompt — content edited via the advanced prompt canvas. */
+  async updateDynamicPrompt(id: string, content: string): Promise<Chat> {
+    const now = this.clock.now();
+    const [row] = await this.db
+      .update(chats)
+      .set({ dynamicPrompt: content, updatedAt: now })
+      .where(eq(chats.id, id))
+      .returning();
+    if (!row) throw new Error(`Chat '${id}' not found after dynamicPrompt update`);
     return this.mapRow(row);
   }
 
@@ -867,6 +881,7 @@ export class ChatStore {
       scriptState: safeParseScriptState(row.scriptStateJson),
       coauthorContextLinks: parseContextLinks(row.coauthorContextLinksJson),
       coauthorModuleId: row.coauthorModuleId,
+      dynamicPrompt: row.dynamicPrompt,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
     };

@@ -70,6 +70,9 @@ interface PromptManagerModalProps {
   onCharacterFieldUpdate?: (key: keyof CharacterCanvasDraft, value: string | number) => void;
   personaDescription?: string | null;
   onPersonaDescriptionUpdate?: (value: string) => void;
+  /** Per-chat dynamic prompt — content edited via the canvas card. */
+  chatDynamicPrompt?: string | null;
+  onChatDynamicPromptUpdate?: (value: string) => Promise<void>;
   loreContext?: PromptCanvasLoreContext | null;
 }
 
@@ -156,6 +159,9 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
   const [personaDescriptionDraft, setPersonaDescriptionDraft] = useState<string | null>(
     () => input.personaDescription ?? null,
   );
+  const [chatDynamicPromptDraft, setChatDynamicPromptDraft] = useState<string>(
+    () => input.chatDynamicPrompt ?? "",
+  );
   const [loreAnchorEntries, setLoreAnchorEntries] = useState<CanvasLoreEntrySummary[]>([]);
   const [loreAnchorLoadState, setLoreAnchorLoadState] = useState<"idle" | "loading" | "ready" | "error">("idle");
 
@@ -176,6 +182,9 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
   useEffect(() => {
     setPersonaDescriptionDraft(input.personaDescription ?? null);
   }, [input.personaDescription]);
+  useEffect(() => {
+    setChatDynamicPromptDraft(input.chatDynamicPrompt ?? "");
+  }, [input.chatDynamicPrompt]);
 
   useEffect(() => {
     const context = input.loreContext;
@@ -280,12 +289,12 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
       ...draft,
       aiAssistantPrompts: JSON.stringify(draft.aiAssistantPrompts),
     };
-    void input.onUpdate(input.activePresetId, patch).then((ok) => {
+    void input.onUpdate(input.activePresetId, patch).then(async (ok) => {
       if (!ok) {
         setSaveState("error");
         return;
       }
-      // Persist character field changes via API
+      // Persist character field changes via API (fire-and-forget — existing behavior preserved).
       if (characterDraft && input.onCharacterFieldUpdate) {
         const orig = input.characterFields;
         if (orig) {
@@ -306,6 +315,16 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
         && personaDescriptionDraft !== input.personaDescription
       ) {
         input.onPersonaDescriptionUpdate?.(personaDescriptionDraft);
+      }
+      // Persist chat dynamic prompt via API — awaited so a rejected PATCH
+      // does not leave dirty cleared or show a false "saved" state.
+      if (chatDynamicPromptDraft !== (input.chatDynamicPrompt ?? "")) {
+        try {
+          await input.onChatDynamicPromptUpdate?.(chatDynamicPromptDraft);
+        } catch {
+          setSaveState("error");
+          return;
+        }
       }
       setDirty(false);
       setSaveState("saved");
@@ -578,6 +597,8 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
                   onCharacterFieldUpdate={updateCharacterDraft}
                   personaDescription={personaDescriptionDraft}
                   onPersonaDescriptionUpdate={updatePersonaDescriptionDraft}
+                  chatDynamicPrompt={chatDynamicPromptDraft}
+                  onChatDynamicPromptUpdate={(v) => { setChatDynamicPromptDraft(v); setDirty(true); setSaveState("idle"); }}
                   loreAnchorEntries={loreAnchorEntries}
                   loreAnchorLoadState={loreAnchorLoadState}
                 />

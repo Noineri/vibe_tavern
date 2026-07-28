@@ -345,5 +345,9 @@ export function createChatRoutes(runtime: ChatRuntimeApi) {
       const body = c.req.valid("json");
       return c.json(await runtime.setCoauthorContextLinks(c.req.param("chatId"), body.links));
     })
+    .patch("/api/chats/:chatId/dynamic-prompt", zValidator("json", schemas.updateDynamicPromptSchema), async (c) => {
+      const body = c.req.valid("json");
+      return c.json(await runtime.updateDynamicPrompt(c.req.param("chatId"), body));
+    })
   ;
 }

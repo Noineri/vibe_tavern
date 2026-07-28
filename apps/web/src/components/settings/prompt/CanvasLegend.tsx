@@ -2,7 +2,7 @@
  * Collapsible slot-category legend for the prompt-order canvas (APC-3c).
  *
  * Rendered once at the top of the canvas (below the title, above the zones) so a
- * glance at the five header icons (APC-3a registry) maps to what each row
+ * glance at the category icons (APC-3a registry) maps to what each row
  * injects. Collapsed by default — a `?` toggle reveals a compact grid. The
  * legend reads category → icon from the SAME registry the cards do, so the two
  * can never drift apart.
@@ -13,8 +13,8 @@ import { cn } from "../../../lib/cn.js";
 import { Ic } from "../../shared/icons.js";
 import { SLOT_CATEGORY_ICON, type SlotCategory } from "./canvas-icons.js";
 
-/** Display order (most-authored → least): standard, character, persona, anchor, custom. */
-const LEGEND_ORDER: readonly SlotCategory[] = ["standard", "character", "persona", "anchor", "custom"];
+/** Display order (most-authored → least): standard, character, persona, anchor, chatDynamic, summary, custom. */
+const LEGEND_ORDER: readonly SlotCategory[] = ["standard", "character", "persona", "anchor", "chatDynamic", "summary", "custom"];
 
 export function CanvasLegend() {
 	const { t, tDynamic } = useT();

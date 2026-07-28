@@ -128,6 +128,8 @@ function canvasEl(props: CanvasProps & { spies: Spies }): ReactElement {
       onCharacterFieldUpdate={props.onCharacterFieldUpdate ?? props.spies.onCharacterFieldUpdate}
       personaDescription={props.personaDescription ?? null}
       onPersonaDescriptionUpdate={props.onPersonaDescriptionUpdate ?? props.spies.onPersonaDescriptionUpdate}
+      chatDynamicPrompt={props.chatDynamicPrompt ?? null}
+      onChatDynamicPromptUpdate={props.onChatDynamicPromptUpdate}
       loreAnchorEntries={props.loreAnchorEntries ?? []}
       loreAnchorLoadState={props.loreAnchorLoadState ?? "idle"}
       promptOrder={props.promptOrder ?? []}
@@ -477,5 +479,116 @@ describe("PromptOrderCanvas — characterization", () => {
 
     expect(spies.onChange).toHaveBeenCalledWith([]);
     expect(spies.onPromptOrderChange).toHaveBeenCalledWith([]);
+  });
+
+  // ── Wave 6: chatDynamicPrompt canvas card ────────────────────────────
+
+  it("renders chatDynamicPrompt CanvasCard with editable content and default system role", () => {
+    const spies = makeSpies();
+    const onChatDynamicPromptUpdate = mock();
+    const { container } = renderCanvas({
+      spies,
+      chatDynamicPrompt: "per-chat prompt",
+      onChatDynamicPromptUpdate,
+    });
+
+    const card = container.querySelector<HTMLElement>('[data-canvas-identifier="chatDynamicPrompt"]');
+    expect(card).toBeTruthy();
+    // Should display the content.
+    expect(card!.textContent).toContain("prompt_slot_chat_dynamic");
+    // Default role is system.
+    expect(card!.textContent).toContain("system");
+    // Should be editable (has the textarea, not read-only badge).
+    fireEvent.click(within(card!).getByText("prompt_slot_chat_dynamic"));
+    const textarea = within(card!).getByRole("textbox") as HTMLTextAreaElement;
+    expect(textarea.value).toBe("per-chat prompt");
+    fireEvent.change(textarea, { target: { value: "updated" } });
+    expect(onChatDynamicPromptUpdate).toHaveBeenCalledWith("updated");
+  });
+
+  it("chatDynamicPrompt CanvasCard toggle creates semantic PromptOrderEntry", () => {
+    const spies = makeSpies();
+    renderCanvas({
+      spies,
+      chatDynamicPrompt: "content",
+      onChatDynamicPromptUpdate: mock(),
+      promptOrder: [],
+    });
+
+    clickDotToggle("prompt_slot_chat_dynamic");
+
+    expect(spies.onPromptOrderChange).toHaveBeenCalledWith([
+      { identifier: "chatDynamicPrompt", enabled: false, kind: "built_in", zone: "before_chat", depth: null, order: 62 },
+    ]);
+  });
+
+  it("chatDynamicPrompt CanvasCard role change creates semantic PromptOrderEntry", () => {
+    const spies = makeSpies();
+    renderCanvas({
+      spies,
+      chatDynamicPrompt: "content",
+      onChatDynamicPromptUpdate: mock(),
+      promptOrder: [],
+    });
+
+    fireEvent.click(queries().getByText("prompt_slot_chat_dynamic"));
+    fireEvent.click(queries().getByRole("radio", { name: "user" }));
+
+    expect(spies.onPromptOrderChange).toHaveBeenCalledWith([
+      { identifier: "chatDynamicPrompt", enabled: true, kind: "built_in", zone: "before_chat", depth: null, order: 62, role: "user" },
+    ]);
+  });
+
+  // ── Wave 6: chatSummary canvas card ──────────────────────────────────
+
+  it("renders chatSummary CanvasCard as read-only with default system role", () => {
+    const spies = makeSpies();
+    const { container } = renderCanvas({ spies });
+
+    const card = container.querySelector<HTMLElement>('[data-canvas-identifier="chatSummary"]');
+    expect(card).toBeTruthy();
+    expect(card!.textContent).toContain("prompt_slot_chat_summary");
+    // Read-only badge.
+    expect(card!.textContent).toContain("cc_read_only");
+    // Summary category — system role default.
+    expect(card!.textContent).toContain("system");
+  });
+
+  it("chatSummary CanvasCard toggle creates semantic PromptOrderEntry", () => {
+    const spies = makeSpies();
+    renderCanvas({ spies, promptOrder: [] });
+
+    clickDotToggle("prompt_slot_chat_summary");
+
+    expect(spies.onPromptOrderChange).toHaveBeenCalledWith([
+      { identifier: "chatSummary", enabled: false, kind: "built_in", zone: "before_chat", depth: null, order: 57 },
+    ]);
+  });
+
+  it("chatSummary CanvasCard exposes editable depth when routed in-chat", () => {
+    const spies = makeSpies();
+    const { container } = renderCanvas({
+      spies,
+      promptOrder: [
+        { identifier: "chatSummary", enabled: true, kind: "built_in", zone: "in_chat", depth: 4, order: 57 },
+      ],
+    });
+
+    // In-chat items live inside the collapsed chat-history accordion.
+    fireEvent.click(queries().getByRole("button", { name: /prompt_slot_chat_history/ }));
+    const card = container.querySelector<HTMLElement>('[data-canvas-identifier="chatSummary"]');
+    expect(card).toBeTruthy();
+    if (!card) return;
+    const header = card.firstElementChild as HTMLElement | null;
+    expect(header).toBeTruthy();
+    if (!header) return;
+    fireEvent.click(header);
+    const depthInput = within(card).getByRole("textbox") as HTMLInputElement;
+    fireEvent.change(depthInput, { target: { value: "6" } });
+    fireEvent.blur(depthInput);
+
+    expect(spies.onPromptOrderChange).toHaveBeenCalledWith([
+      { identifier: "chatSummary", enabled: true, kind: "built_in", zone: "in_chat", depth: 6, order: 57 },
+    ]);
   });
 });

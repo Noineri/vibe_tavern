@@ -31,6 +31,9 @@ export interface FixedItemCtx {
   onCharacterFieldUpdate?: (key: keyof CharacterCanvasDraft, value: string | number) => void;
   personaDescription?: string | null;
   onPersonaDescriptionUpdate?: (value: string) => void;
+  /** Per-chat dynamic prompt content — edited via the canvas card. */
+  chatDynamicPrompt?: string | null;
+  onChatDynamicPromptUpdate?: (value: string) => void;
   loreAnchorEntries?: CanvasLoreEntrySummary[];
   loreAnchorLoadState?: LoreAnchorLoadState;
   slotEnabled: (identifier: string) => boolean;
@@ -66,6 +69,8 @@ export function buildFixedItems(ctx: FixedItemCtx): CanvasItem[] {
     onCharacterFieldUpdate,
     personaDescription,
     onPersonaDescriptionUpdate,
+    chatDynamicPrompt,
+    onChatDynamicPromptUpdate,
     loreAnchorEntries = [],
     loreAnchorLoadState = "idle",
   } = ctx;
@@ -117,12 +122,27 @@ export function buildFixedItems(ctx: FixedItemCtx): CanvasItem[] {
         value={characterDraft?.scenario ?? ""} placeholder={t("prompt_slot_scenario_placeholder")}
         disabled={characterDisabled} onChange={(v) => onCharacterFieldUpdate?.("scenario", v)} badge={t("char_badge")} />
     ) },
+    { key: "slot:chatSummary", identifier: "chatSummary", kind: "slot", defaultOrder: 57, render: () => (
+      <CanvasCard identifier="chatSummary" category="summary" label={t("prompt_slot_chat_summary")}
+        labelTooltip={t("prompt_slot_chat_summary_hint")}
+        {...toggleFor("chatSummary", ctx)} {...slotFor("chatSummary", ctx)}
+        role={ctx.slotRoleFor("chatSummary", "system")} onRoleChange={(r) => ctx.updateSlotRole("chatSummary", r)}
+        badge={t("cc_read_only")} />
+    ) },
     { key: "field:authorsNote", identifier: "authorsNote", kind: "field", defaultOrder: 60, render: () => (
       <CanvasCard identifier="authorsNote" category="standard" label={t("authors_note_label")}
         {...toggleFor("authorsNote", ctx)} {...slotFor("authorsNote", ctx)}
         role={ctx.slotRoleFor("authorsNote", coerceRole(draft?.authorsNoteRole))} onRoleChange={(r) => ctx.updateSlotRole("authorsNote", r)}
         value={draft?.authorsNote ?? ""} placeholder={t("authors_note_placeholder")}
         disabled={disabled} onChange={(v) => onUpdateField?.("authorsNote", v)} badge={t("editable_badge")} />
+    ) },
+    { key: "field:chatDynamicPrompt", identifier: "chatDynamicPrompt", kind: "field", defaultOrder: 62, render: () => (
+      <CanvasCard identifier="chatDynamicPrompt" category="chatDynamic" label={t("prompt_slot_chat_dynamic")}
+        labelTooltip={t("prompt_slot_chat_dynamic_hint")}
+        {...toggleFor("chatDynamicPrompt", ctx)} {...slotFor("chatDynamicPrompt", ctx)}
+        role={ctx.slotRoleFor("chatDynamicPrompt", "system")} onRoleChange={(r) => ctx.updateSlotRole("chatDynamicPrompt", r)}
+        value={chatDynamicPrompt ?? ""} placeholder={t("prompt_slot_chat_dynamic_placeholder")}
+        disabled={!onChatDynamicPromptUpdate} onChange={(v) => onChatDynamicPromptUpdate?.(v)} badge={t("editable_badge")} />
     ) },
     { key: "field:enhanceDefinitions", identifier: "enhanceDefinitions", kind: "field", defaultOrder: 70, render: () => (
       <CanvasCard identifier="enhanceDefinitions" category="standard" label={t("enhance_definitions")}

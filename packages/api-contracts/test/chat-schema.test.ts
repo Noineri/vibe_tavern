@@ -9,6 +9,7 @@ import {
   renameChatSchema,
   sendMessageSchema,
   setGreetingIndexSchema,
+  updateDynamicPromptSchema,
 } from "../src/schemas/chat-schema.js";
 
 /**
@@ -352,6 +353,34 @@ describe("setGreetingIndexSchema", () => {
 
   it("rejects a payload missing greetingIndex", () => {
     expectReject(setGreetingIndexSchema.safeParse({}));
+  });
+});
+
+// --- updateDynamicPromptSchema ----------------------------------------------
+
+describe("updateDynamicPromptSchema", () => {
+  it("accepts a non-empty content string", () => {
+    expect(updateDynamicPromptSchema.safeParse({ content: "hello" }).success).toBe(true);
+  });
+
+  it("accepts an empty content string", () => {
+    expect(updateDynamicPromptSchema.safeParse({ content: "" }).success).toBe(true);
+  });
+
+  it("rejects a payload missing content", () => {
+    expectReject(updateDynamicPromptSchema.safeParse({}));
+  });
+
+  it("rejects non-string content", () => {
+    expectReject(updateDynamicPromptSchema.safeParse({ content: 123 }));
+  });
+
+  it("rejects null content (not nullable)", () => {
+    expectReject(updateDynamicPromptSchema.safeParse({ content: null }));
+  });
+
+  it("accepts unknown keys (non-strict — stripped, not rejected)", () => {
+    expect(updateDynamicPromptSchema.safeParse({ content: "ok", extra: 1 }).success).toBe(true);
   });
 });
 

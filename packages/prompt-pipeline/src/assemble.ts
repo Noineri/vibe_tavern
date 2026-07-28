@@ -651,6 +651,23 @@ function buildLayers(
     layers.push(layer);
   }
 
+  // Chat dynamic prompt — per-chat content controlled by the preset's
+  // `chatDynamicPrompt` canvas entry. Gated by the resolver in advanced mode;
+  // in simple mode the resolver always returns enabled(true) and positions at
+  // the DEFAULT_PROMPT_ORDER slot (before_chat, order 62).
+  if (context.chat.dynamicPrompt?.trim() && resolver.enabled("chatDynamicPrompt")) {
+    const layer = resolver.position(makeLayer({
+      id: PROMPT_LAYER_ID.chatDynamicPrompt,
+      sourceType: PROMPT_LAYER_SOURCE_TYPE.chat,
+      sourceId: context.identity.chatId,
+      sourceName: "Chat Dynamic Prompt",
+      priority: PROMPT_LAYER_PRIORITY.promptPresetSystem - 5, // just below system prompt
+      role: resolver.entryFor("chatDynamicPrompt")?.role ?? "system",
+      text: context.chat.dynamicPrompt,
+    }), "chatDynamicPrompt");
+    layers.push(layer);
+  }
+
   // Custom injections: advanced mode ONLY. In simple mode the preset still
   // STORES them (preset is a 2-in-1 container), but they do not participate in
   // assembly — the user cannot author them in simple mode and they would
@@ -825,21 +842,34 @@ function buildLayers(
   layers.push(...loreResult.layers);
   droppedLayers.push(...loreResult.droppedLayers);
 
-  for (const memory of context.memory?.summary ?? []) {
-    if (!memory.summary.trim()) {
-      droppedLayers.push({ id: memory.id, reason: PROMPT_LAYER_REASON.emptySummaryMemory });
-      continue;
-    }
-    layers.push(
-      makeLayer({
+  // Chat summary memory blocks — gated behind the `chatSummary` canvas anchor
+  // in advanced mode. In simple mode, the resolver always returns enabled(true)
+  // and positions at the DEFAULT_PROMPT_ORDER slot (before_chat, order 57).
+  // The anchor controls placement/role/depth of summary memory; the blocks
+  // themselves are read-only content from the chat-summaries store.
+  if (resolver.enabled("chatSummary")) {
+    for (const memory of context.memory?.summary ?? []) {
+      if (!memory.summary.trim()) {
+        droppedLayers.push({ id: memory.id, reason: PROMPT_LAYER_REASON.emptySummaryMemory });
+        continue;
+      }
+      const layer = resolver.position(makeLayer({
         id: createSummaryMemoryLayerId(memory.id),
         sourceType: PROMPT_LAYER_SOURCE_TYPE.summaryMemory,
         sourceId: memory.id,
         sourceName: memory.kind || "Summary",
         priority: PROMPT_LAYER_PRIORITY.summaryMemory,
+        role: resolver.entryFor("chatSummary")?.role ?? "system",
         text: PROMPT_FORMAT.summaryMemory(memory.kind, memory.summary),
-      }),
-    );
+      }), "chatSummary");
+      layers.push(layer);
+    }
+  } else {
+    // When disabled in advanced mode, still record dropped layers for trace.
+    for (const memory of context.memory?.summary ?? []) {
+      if (!memory.summary.trim()) continue;
+      droppedLayers.push({ id: memory.id, reason: PROMPT_LAYER_REASON.chatSummaryDisabled });
+    }
   }
 
   // Insights — Objective Tracker (INSIGHTS_PLAN): inject the active task as an

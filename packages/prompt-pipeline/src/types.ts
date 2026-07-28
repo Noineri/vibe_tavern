@@ -187,6 +187,10 @@ export interface PromptAssemblyContext {
     recentMessages: RecentMessage[];
     /** Messages injected by scripts via context.chat.injectMessage() */
     scriptInjections?: Array<{ content: string; role: 'system' | 'user' | 'assistant' }>;
+    /** Per-chat dynamic prompt — content edited via the advanced prompt canvas
+     *  `chatDynamicPrompt` slot. Position/role/depth controlled by the preset's
+     *  `PromptOrderEntry`. */
+    dynamicPrompt?: string | null;
   };
   instructions?: {
     toolInstructions?: string | null;

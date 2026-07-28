@@ -12,7 +12,7 @@ import { saveCharacterAction } from "../../stores/api-actions/character-actions.
 import { useActiveTrace, useLazyContextPreview } from "../../stores/chat-selectors.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
 import { useBootstrapStore, fetchPersonasAction } from "../../stores/api-actions/bootstrap-actions.js";
-import { summarizeChatAction, saveChatSummaryAction } from "../../stores/api-actions/chat-actions.js";
+import { summarizeChatAction, saveChatSummaryAction, updateChatDynamicPromptAction } from "../../stores/api-actions/chat-actions.js";
 import { useChatController } from "../../hooks/use-chat-controller.js";
 import { useGenerationQueue } from "../../hooks/use-generation-queue.js";
 import { useCharacterController } from "../../hooks/use-character-controller.js";
@@ -460,6 +460,11 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
             avatarFullAssetId: activePersona.avatarFullAssetId,
             avatarCropJson: activePersona.avatarCropJson,
           });
+        }}
+        chatDynamicPrompt={activeChat?.dynamicPrompt ?? null}
+        onChatDynamicPromptUpdate={(content) => {
+          if (!activeChat) return Promise.resolve();
+          return updateChatDynamicPromptAction(activeChat.id, content);
         }}
         loreContext={activeChat && activeCharacter ? {
           chatId: activeChat.id,

@@ -1,0 +1,1 @@
+ALTER TABLE `chats` ADD `dynamic_prompt` text DEFAULT '' NOT NULL;

@@ -532,3 +532,237 @@ describe("Prompt pipeline: advanced character fields are independent canvas slot
     expect(depthLayer?.injectionDepth).toBe(3);
   });
 });
+
+describe("Prompt pipeline: chatDynamicPrompt layer (Wave 6)", () => {
+  const baseCtx = {
+    identity: { chatId: "chat_1" },
+    chat: {
+      recentMessages: [{ id: "m1", role: "user" as const, content: "hello" }],
+      dynamicPrompt: "per-chat dynamic content",
+    },
+    character: { id: "char_1", name: "Aria", description: "A mage." },
+    preset: {
+      id: "preset_1",
+      text: "system prompt",
+    },
+  };
+
+  it("emits chatDynamicPrompt layer when content is present and slot is enabled (simple mode defaults to enabled)", () => {
+    const result = assemblePrompt(baseCtx);
+    const layer = result.layers.find((l) => l.id === "chat_dynamic_prompt");
+    expect(layer).toBeDefined();
+    if (!layer) return;
+    expect(layer.text).toBe("per-chat dynamic content");
+    // Default position is in_prompt (order 62 < chatHistory 100 → before_chat zone → in_prompt position)
+    expect(layer.position).toBe("in_prompt");
+    // Default role is system
+    expect(layer.role).toBe("system");
+  });
+
+  it("does NOT emit chatDynamicPrompt when content is empty", () => {
+    const result = assemblePrompt({
+      ...baseCtx,
+      chat: { ...baseCtx.chat, dynamicPrompt: "" },
+    });
+    expect(result.layers.some((l) => l.id === "chat_dynamic_prompt")).toBe(false);
+  });
+
+  it("respects enabled:false in advanced mode", () => {
+    const result = assemblePrompt({
+      ...baseCtx,
+      preset: {
+        ...baseCtx.preset,
+        advancedMode: true,
+        promptOrder: [{ identifier: "chatDynamicPrompt", enabled: false }],
+      },
+    });
+    expect(result.layers.some((l) => l.id === "chat_dynamic_prompt")).toBe(false);
+  });
+
+  it("respects role from canvas entry in advanced mode", () => {
+    const result = assemblePrompt({
+      ...baseCtx,
+      preset: {
+        ...baseCtx.preset,
+        advancedMode: true,
+        promptOrder: [{ identifier: "chatDynamicPrompt", role: "user" }],
+      },
+    });
+    const layer = result.layers.find((l) => l.id === "chat_dynamic_prompt");
+    expect(layer).toBeDefined();
+    if (!layer) return;
+    expect(layer.role).toBe("user");
+  });
+
+  it("appears in finalPayload messages in the in_prompt block", () => {
+    const result = assemblePrompt(baseCtx);
+    const messages = result.finalPayload.messages as Array<{ role: string; content: string; layerId?: string }>;
+    const cdpMsg = messages.find((m) => m.layerId === "chat_dynamic_prompt");
+    expect(cdpMsg).toBeDefined();
+    if (!cdpMsg) return;
+    expect(cdpMsg.role).toBe("system");
+    expect(cdpMsg.content).toBe("per-chat dynamic content");
+  });
+
+  it("routes to in_chat with depth > 0 when canvas entry specifies in_chat zone", () => {
+    const result = assemblePrompt({
+      ...baseCtx,
+      preset: {
+        ...baseCtx.preset,
+        advancedMode: true,
+        promptOrder: [{ identifier: "chatDynamicPrompt", zone: "in_chat", depth: 3, role: "assistant" }],
+      },
+    });
+    const layer = result.layers.find((l) => l.id === "chat_dynamic_prompt");
+    expect(layer).toBeDefined();
+    if (!layer) return;
+    expect(layer.position).toBe("in_chat");
+    expect(layer.injectionDepth).toBe(3);
+    expect(layer.role).toBe("assistant");
+    // Verify finalPayload has the layer at the correct role.
+    const messages = result.finalPayload.messages as Array<{ role: string; layerId?: string }>;
+    const cdpMsg = messages.find((m) => m.layerId === "chat_dynamic_prompt");
+    expect(cdpMsg).toBeDefined();
+    if (!cdpMsg) return;
+    expect(cdpMsg.role).toBe("assistant");
+  });
+
+  it("does not duplicate chatDynamicPrompt in finalPayload", () => {
+    const result = assemblePrompt(baseCtx);
+    const messages = result.finalPayload.messages as Array<{ layerId?: string }>;
+    const matches = messages.filter((m) => m.layerId === "chat_dynamic_prompt");
+    expect(matches.length).toBe(1);
+  });
+});
+
+describe("Prompt pipeline: chatSummary slot gates summary memory (Wave 6)", () => {
+  it("emits summary memory layers in simple mode (default enabled)", () => {
+    const result = assemblePrompt({
+      identity: { chatId: "chat_1" },
+      chat: { recentMessages: [] },
+      character: { id: "char_1", name: "Aria", description: "A mage." },
+      memory: {
+        summary: [{ id: "s1", kind: "chat", summary: "summarized text" }],
+      },
+      preset: { id: "preset_1", text: "system prompt" },
+    });
+    const summaryLayers = result.layers.filter((l) => l.id.startsWith("summary_"));
+    expect(summaryLayers.length).toBe(1);
+    expect(summaryLayers[0].text).toContain("summarized text");
+  });
+
+  it("respects enabled:false on chatSummary slot in advanced mode", () => {
+    const result = assemblePrompt({
+      identity: { chatId: "chat_1" },
+      chat: { recentMessages: [] },
+      character: { id: "char_1", name: "Aria", description: "A mage." },
+      memory: {
+        summary: [{ id: "s1", kind: "chat", summary: "summarized text" }],
+      },
+      preset: {
+        id: "preset_1",
+        text: "system prompt",
+        advancedMode: true,
+        promptOrder: [{ identifier: "chatSummary", enabled: false }],
+      },
+    });
+    const summaryLayers = result.layers.filter((l) => l.id.startsWith("summary_"));
+    expect(summaryLayers.length).toBe(0);
+    // Dropped layer recorded in trace
+    expect(result.droppedLayers.some((d) => d.id === "s1")).toBe(true);
+  });
+
+  it("positions summary memory via canvas entry in advanced mode", () => {
+    const result = assemblePrompt({
+      identity: { chatId: "chat_1" },
+      chat: { recentMessages: [] },
+      character: { id: "char_1", name: "Aria", description: "A mage." },
+      memory: {
+        summary: [{ id: "s1", kind: "chat", summary: "summarized text" }],
+      },
+      preset: {
+        id: "preset_1",
+        text: "system prompt",
+        advancedMode: true,
+        promptOrder: [{ identifier: "chatSummary", zone: "after_chat", role: "user" }],
+      },
+    });
+    const summaryLayers = result.layers.filter((l) => l.id.startsWith("summary_"));
+    expect(summaryLayers.length).toBe(1);
+    expect(summaryLayers[0].role).toBe("user");
+    // after_chat zone → in_chat position at depth 0
+    expect(summaryLayers[0].position).toBe("in_chat");
+    expect(summaryLayers[0].injectionDepth).toBe(0);
+  });
+
+  it("does NOT duplicate summary emission — no summary layers when chatSummary disabled", () => {
+    // Confirm that disabling chatSummary fully removes summary from both layers and finalPayload
+    const result = assemblePrompt({
+      identity: { chatId: "chat_1" },
+      chat: { recentMessages: [{ id: "m1", role: "user", content: "hello" }] },
+      character: { id: "char_1", name: "Aria", description: "A mage." },
+      memory: {
+        summary: [
+          { id: "s1", kind: "chat", summary: "summarized A" },
+          { id: "s2", kind: "chat", summary: "summarized B" },
+        ],
+      },
+      preset: {
+        id: "preset_1",
+        text: "system prompt",
+        advancedMode: true,
+        promptOrder: [{ identifier: "chatSummary", enabled: false }],
+      },
+    });
+    // No summary layers
+    expect(result.layers.some((l) => l.id.startsWith("summary_"))).toBe(false);
+    // No summary content in finalPayload
+    const messages = result.finalPayload.messages as Array<{ content: string }>;
+    expect(messages.some((m) => m.content.includes("summarized"))).toBe(false);
+  });
+
+  it("routes summary memory to in_chat depth > 0 when canvas entry specifies depth", () => {
+    const result = assemblePrompt({
+      identity: { chatId: "chat_1" },
+      chat: { recentMessages: [{ id: "m1", role: "user", content: "hello" }] },
+      character: { id: "char_1", name: "Aria", description: "A mage." },
+      memory: {
+        summary: [{ id: "s1", kind: "chat", summary: "deep summary" }],
+      },
+      preset: {
+        id: "preset_1",
+        text: "system prompt",
+        advancedMode: true,
+        promptOrder: [{ identifier: "chatSummary", zone: "in_chat", depth: 2, role: "assistant" }],
+      },
+    });
+    const summaryLayer = result.layers.find((l) => l.id.startsWith("summary_"));
+    expect(summaryLayer).toBeDefined();
+    if (!summaryLayer) return;
+    expect(summaryLayer.position).toBe("in_chat");
+    expect(summaryLayer.injectionDepth).toBe(2);
+    expect(summaryLayer.role).toBe("assistant");
+    // Verify finalPayload carries the layer.
+    const messages = result.finalPayload.messages as Array<{ layerId?: string; role: string }>;
+    const sumMsg = messages.find((m) => m.layerId?.startsWith("summary_"));
+    expect(sumMsg).toBeDefined();
+    if (!sumMsg) return;
+    expect(sumMsg.role).toBe("assistant");
+  });
+
+  it("simple-mode summary memory defaults to system role (explicit fallback)", () => {
+    const result = assemblePrompt({
+      identity: { chatId: "chat_1" },
+      chat: { recentMessages: [] },
+      character: { id: "char_1", name: "Aria", description: "A mage." },
+      memory: {
+        summary: [{ id: "s1", kind: "chat", summary: "simple summary" }],
+      },
+      preset: { id: "preset_1", text: "system prompt" },
+    });
+    const summaryLayer = result.layers.find((l) => l.id.startsWith("summary_"));
+    expect(summaryLayer).toBeDefined();
+    if (!summaryLayer) return;
+    expect(summaryLayer.role).toBe("system");
+  });
+});

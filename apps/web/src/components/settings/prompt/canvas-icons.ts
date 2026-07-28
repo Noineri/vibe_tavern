@@ -19,7 +19,7 @@
 import type { ReactNode } from "react";
 import { Ic } from "../../shared/icons.js";
 
-export type SlotCategory = "custom" | "standard" | "character" | "anchor" | "persona";
+export type SlotCategory = "custom" | "standard" | "character" | "anchor" | "persona" | "chatDynamic" | "summary";
 
 /** Category → icon renderer. Each entry is a zero-arg `Ic` glyph. */
 export const SLOT_CATEGORY_ICON: Record<SlotCategory, () => ReactNode> = {
@@ -28,6 +28,8 @@ export const SLOT_CATEGORY_ICON: Record<SlotCategory, () => ReactNode> = {
   character: Ic.user,
   anchor: Ic.loreAnchor,
   persona: Ic.circleUser,
+  chatDynamic: Ic.messageBubble,
+  summary: Ic.documentList,
 };
 
 /** Identifiers whose content originates from the character card. */
@@ -57,6 +59,12 @@ const STANDARD_IDS = new Set([
   "assistantPrefill",
 ]);
 
+/** Per-chat dynamic prompt (Wave 6) — content lives on the Chat row, not the preset. */
+const CHAT_DYNAMIC_IDS = new Set(["chatDynamicPrompt"]);
+
+/** Summary memory anchor (Wave 6) — read-only blocks from chat-summaries. */
+const SUMMARY_IDS = new Set(["chatSummary"]);
+
 /**
  * Resolve a canvas row's category from its identifier. Any identifier not in
  * the built-in sets is a custom injection (the `custom` category) — this is the
@@ -66,6 +74,8 @@ export function slotCategoryFor(identifier: string): SlotCategory {
   if (ANCHOR_IDS.has(identifier)) return "anchor";
   if (PERSONA_IDS.has(identifier)) return "persona";
   if (CHARACTER_IDS.has(identifier)) return "character";
+  if (CHAT_DYNAMIC_IDS.has(identifier)) return "chatDynamic";
+  if (SUMMARY_IDS.has(identifier)) return "summary";
   if (STANDARD_IDS.has(identifier)) return "standard";
   return "custom";
 }

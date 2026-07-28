@@ -609,6 +609,7 @@ export class PromptAssemblyService {
       chat: {
         recentMessages,
         scriptInjections: scriptResult.injectedMessages,
+        dynamicPrompt: chat.dynamicPrompt?.trim() || null,
       },
       instructions: {
         toolInstructions: [promptPreset?.tools, this.resolver.getToolInstructions()].filter(Boolean).join("\n") || null,

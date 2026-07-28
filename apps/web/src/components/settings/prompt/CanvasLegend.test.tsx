@@ -2,7 +2,7 @@
  * CanvasLegend — render characterization (APC-3c).
  *
  * Pins the legend's collapsible contract: collapsed by default (toggle button
- * only, no category rows), expands on click to show all five categories with
+ * only, no category rows), expands on click to show all seven categories with
  * their registry icon + label. The icon set comes from the SAME
  * SLOT_CATEGORY_ICON registry the cards use, so this also guards that every
  * category resolves to a renderable glyph (no `undefined` icon).
@@ -35,17 +35,17 @@ describe("CanvasLegend — collapsible render contract", () => {
 		expect(container.textContent).not.toContain("cc_legend_standard");
 	});
 
-	it("expanding reveals all five categories, each with an icon", () => {
+	it("expanding reveals all seven categories (including Wave 6 chatDynamic + summary), each with an icon", () => {
 		const { getByText, container } = render(<CanvasLegend />);
 		fireEvent.click(getByText("cc_legend_toggle"));
 		// every category's label + description key renders
-		for (const cat of ["standard", "character", "persona", "anchor", "custom"] as const) {
+		for (const cat of ["standard", "character", "persona", "anchor", "chatDynamic", "summary", "custom"] as const) {
 			expect(container.textContent).toContain(`cc_legend_${cat}`);
 			expect(container.textContent).toContain(`cc_legend_${cat}_desc`);
 		}
-		// five category icons (one svg per category) render — guards that every
+		// seven category icons (one svg per category) render — guards that every
 		// SLOT_CATEGORY_ICON entry resolves to a real glyph, not undefined
-		expect(container.querySelectorAll("svg").length).toBeGreaterThanOrEqual(5);
+		expect(container.querySelectorAll("svg").length).toBeGreaterThanOrEqual(7);
 	});
 
 	it("toggling twice collapses again", () => {

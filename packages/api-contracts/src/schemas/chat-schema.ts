@@ -60,6 +60,10 @@ export const setGreetingIndexSchema = z.object({
   greetingIndex: z.number().int().min(0),
 });
 
+export const updateDynamicPromptSchema = z.object({
+  content: z.string(),
+});
+
 /** CE-C1: replace the co-author chat's pinned Level-1 context entities
  *  (right-panel picker). Wholesale replace — empty array clears the context.
  *  Each link is a typed target (character/persona/lorebook/script). Generalizes
