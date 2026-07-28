@@ -22,8 +22,10 @@ import { useT } from "../../../i18n/context.js";
 import { cn } from "../../../lib/cn.js";
 import { useDndSensors } from "../../../hooks/use-dnd-sensors.js";
 import { DragHandleContext } from "./drag-handle.js";
+import type { CanvasLoreEntrySummary } from "../../../lib/prompt-canvas-lore.js";
 import { buildFixedItems } from "./build-fixed-items.js";
 import type { CanvasItem, CanvasRole, CharacterCanvasDraft, PromptCanvasDraft } from "./canvas-shared.js";
+import type { LoreAnchorLoadState } from "./LoreAnchorList.js";
 import { CanvasCard } from "./rows/CanvasCard.js";
 import { CanvasLegend } from "./CanvasLegend.js";
 
@@ -46,6 +48,8 @@ interface InjectionTableProps {
   onCharacterFieldUpdate?: (key: keyof CharacterCanvasDraft, value: string | number) => void;
   personaDescription?: string | null;
   onPersonaDescriptionUpdate?: (value: string) => void;
+  loreAnchorEntries?: CanvasLoreEntrySummary[];
+  loreAnchorLoadState?: LoreAnchorLoadState;
   promptOrder?: PromptOrderEntry[];
   onPromptOrderChange?: (promptOrder: PromptOrderEntry[]) => void;
 }
@@ -143,6 +147,8 @@ export function PromptOrderCanvas({
   onCharacterFieldUpdate,
   personaDescription,
   onPersonaDescriptionUpdate,
+  loreAnchorEntries,
+  loreAnchorLoadState,
   promptOrder = [],
   onPromptOrderChange,
 }: InjectionTableProps) {
@@ -277,6 +283,8 @@ export function PromptOrderCanvas({
     onCharacterFieldUpdate,
     personaDescription,
     onPersonaDescriptionUpdate,
+    loreAnchorEntries,
+    loreAnchorLoadState,
     slotEnabled,
     togglePromptSlot,
     slotLabelFor,

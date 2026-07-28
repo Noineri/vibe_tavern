@@ -29,6 +29,7 @@ import { beforeAll, describe, it, expect, mock } from "bun:test";
 import type { ReactElement, ReactNode } from "react";
 import { useDomEnv } from "../../../../test/dom-env.js";
 import type { CustomInjection, PromptOrderEntry } from "@vibe-tavern/domain";
+import type { CanvasLoreEntrySummary } from "../../../lib/prompt-canvas-lore.js";
 import type { CharacterCanvasDraft } from "./InjectionTable.js";
 
 useDomEnv();
@@ -126,6 +127,8 @@ function canvasEl(props: CanvasProps & { spies: Spies }): ReactElement {
       onCharacterFieldUpdate={props.onCharacterFieldUpdate ?? props.spies.onCharacterFieldUpdate}
       personaDescription={props.personaDescription ?? null}
       onPersonaDescriptionUpdate={props.onPersonaDescriptionUpdate ?? props.spies.onPersonaDescriptionUpdate}
+      loreAnchorEntries={props.loreAnchorEntries ?? []}
+      loreAnchorLoadState={props.loreAnchorLoadState ?? "idle"}
       promptOrder={props.promptOrder ?? []}
       onPromptOrderChange={props.onPromptOrderChange ?? props.spies.onPromptOrderChange}
     />
@@ -270,6 +273,44 @@ describe("PromptOrderCanvas — characterization", () => {
     expect(personaTextarea.value).toBe("A wandering scholar");
     fireEvent.change(personaTextarea, { target: { value: "A retired navigator" } });
     expect(spies.onPersonaDescriptionUpdate).toHaveBeenCalledWith("A retired navigator");
+  });
+
+  it("expands lore anchors into position-filtered linked-entry lists", () => {
+    const loreAnchorEntries: CanvasLoreEntrySummary[] = [
+      {
+        id: "before-1",
+        lorebookId: "book-1",
+        lorebookName: "Character Lore",
+        title: "Before Entry",
+        position: "before_char",
+        priority: 10,
+        sortOrder: 0,
+      },
+      {
+        id: "after-1",
+        lorebookId: "book-2",
+        lorebookName: "Global Lore",
+        title: "After Entry",
+        position: "after_char",
+        priority: 20,
+        sortOrder: 0,
+      },
+    ];
+    const { container } = renderCanvas({ loreAnchorEntries, loreAnchorLoadState: "ready" });
+
+    const beforeCard = container.querySelector<HTMLElement>('[data-canvas-identifier="worldInfoBefore"]');
+    expect(beforeCard).toBeTruthy();
+    fireEvent.click(within(beforeCard!).getByText("prompt_slot_world_info_before"));
+    expect(within(beforeCard!).getByText("Before Entry")).toBeTruthy();
+    expect(within(beforeCard!).getByText("Character Lore")).toBeTruthy();
+    expect(within(beforeCard!).queryByText("After Entry")).toBeNull();
+
+    const afterCard = container.querySelector<HTMLElement>('[data-canvas-identifier="worldInfoAfter"]');
+    expect(afterCard).toBeTruthy();
+    fireEvent.click(within(afterCard!).getByText("prompt_slot_world_info_after"));
+    expect(within(afterCard!).getByText("After Entry")).toBeTruthy();
+    expect(within(afterCard!).getByText("Global Lore")).toBeTruthy();
+    expect(within(afterCard!).queryByText("Before Entry")).toBeNull();
   });
 
   it("orders before_chat items by ascending default order", () => {

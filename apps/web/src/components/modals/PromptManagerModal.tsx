@@ -14,6 +14,11 @@ import { serializeStPreset, type VibeTavernPresetExtension } from "@vibe-tavern/
 import { CustomTooltip } from "../shared/Tooltip.js";
 import { MasterDetailModal } from "../shared/MasterDetailModal.js";
 import { ConfirmCloseModal } from "../shared/confirm-close-modal.js";
+import {
+  loadPromptCanvasLoreEntries,
+  type CanvasLoreEntrySummary,
+  type PromptCanvasLoreContext,
+} from "../../lib/prompt-canvas-lore.js";
 
 type SaveState = "idle" | "saving" | "saved" | "error";
 
@@ -64,6 +69,7 @@ interface PromptManagerModalProps {
   onCharacterFieldUpdate?: (key: keyof CharacterCanvasDraft, value: string | number) => void;
   personaDescription?: string | null;
   onPersonaDescriptionUpdate?: (value: string) => void;
+  loreContext?: PromptCanvasLoreContext | null;
 }
 
 function toCharacterCanvasDraft(
@@ -148,6 +154,8 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
   const [personaDescriptionDraft, setPersonaDescriptionDraft] = useState<string | null>(
     () => input.personaDescription ?? null,
   );
+  const [loreAnchorEntries, setLoreAnchorEntries] = useState<CanvasLoreEntrySummary[]>([]);
+  const [loreAnchorLoadState, setLoreAnchorLoadState] = useState<"idle" | "loading" | "ready" | "error">("idle");
 
   // Sync entity drafts when the active character/persona snapshot changes.
   useEffect(() => {
@@ -166,6 +174,39 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
   useEffect(() => {
     setPersonaDescriptionDraft(input.personaDescription ?? null);
   }, [input.personaDescription]);
+
+  useEffect(() => {
+    const context = input.loreContext;
+    if (!isOpen || !context) {
+      setLoreAnchorEntries([]);
+      setLoreAnchorLoadState("idle");
+      return;
+    }
+
+    let cancelled = false;
+    setLoreAnchorEntries([]);
+    setLoreAnchorLoadState("loading");
+    void loadPromptCanvasLoreEntries(context)
+      .then((entries) => {
+        if (cancelled) return;
+        setLoreAnchorEntries(entries);
+        setLoreAnchorLoadState("ready");
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setLoreAnchorEntries([]);
+        setLoreAnchorLoadState("error");
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    isOpen,
+    input.loreContext?.chatId,
+    input.loreContext?.characterId,
+    input.loreContext?.personaId,
+  ]);
 
   function updateCharacterDraft(key: keyof CharacterCanvasDraft, value: string | number) {
     setCharacterDraft((prev) => {
@@ -532,6 +573,8 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
                   onCharacterFieldUpdate={updateCharacterDraft}
                   personaDescription={personaDescriptionDraft}
                   onPersonaDescriptionUpdate={updatePersonaDescriptionDraft}
+                  loreAnchorEntries={loreAnchorEntries}
+                  loreAnchorLoadState={loreAnchorLoadState}
                 />
               </div>
             )}

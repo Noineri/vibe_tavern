@@ -461,6 +461,11 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
             avatarCropJson: activePersona.avatarCropJson,
           });
         }}
+        loreContext={activeChat && activeCharacter ? {
+          chatId: activeChat.id,
+          characterId: activeCharacter.id,
+          personaId: activeChat.personaId,
+        } : null}
       />
 
       <PersonaModal

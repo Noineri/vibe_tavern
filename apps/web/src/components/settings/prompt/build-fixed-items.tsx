@@ -15,8 +15,10 @@
  * per-identifier.
  */
 import type { TFunc } from "../../../i18n/context.js";
+import type { CanvasLoreEntrySummary } from "../../../lib/prompt-canvas-lore.js";
 import type { CanvasItem, CanvasRole, CharacterCanvasDraft, PromptCanvasDraft } from "./canvas-shared.js";
 import { coerceRole } from "./canvas-shared.js";
+import { LoreAnchorList, type LoreAnchorLoadState } from "./LoreAnchorList.js";
 import { CanvasCard } from "./rows/CanvasCard.js";
 
 /** Dependencies the fixed-items list closes over. Grouped into one object so
@@ -29,6 +31,8 @@ export interface FixedItemCtx {
   onCharacterFieldUpdate?: (key: keyof CharacterCanvasDraft, value: string | number) => void;
   personaDescription?: string | null;
   onPersonaDescriptionUpdate?: (value: string) => void;
+  loreAnchorEntries?: CanvasLoreEntrySummary[];
+  loreAnchorLoadState?: LoreAnchorLoadState;
   slotEnabled: (identifier: string) => boolean;
   togglePromptSlot: (identifier: string) => void;
   slotLabelFor: (identifier: string) => string | null;
@@ -62,6 +66,8 @@ export function buildFixedItems(ctx: FixedItemCtx): CanvasItem[] {
     onCharacterFieldUpdate,
     personaDescription,
     onPersonaDescriptionUpdate,
+    loreAnchorEntries = [],
+    loreAnchorLoadState = "idle",
   } = ctx;
   const disabled = !draft || !onUpdateField;
   const characterDisabled = !characterDraft || !onCharacterFieldUpdate;
@@ -79,7 +85,8 @@ export function buildFixedItems(ctx: FixedItemCtx): CanvasItem[] {
       <CanvasCard identifier="worldInfoBefore" category="anchor" label={t("prompt_slot_world_info_before")}
         labelTooltip={t("prompt_slot_world_info_before_hint")} {...toggleFor("worldInfoBefore", ctx)}
         slotLabel={ctx.slotLabelFor("worldInfoBefore")} slotDepth={ctx.slotDepthFor("worldInfoBefore")}
-        badge={t("cc_read_only")} nonExpandable />
+        badge={t("cc_read_only")}
+        expandedLeading={<LoreAnchorList entries={loreAnchorEntries} position="before_char" loadState={loreAnchorLoadState} />} />
     ) },
     { key: "slot:personaDescription", identifier: "personaDescription", kind: "slot", defaultOrder: 20, render: () => (
       <CanvasCard identifier="personaDescription" category="persona" label={t("prompt_slot_persona")}
@@ -135,7 +142,8 @@ export function buildFixedItems(ctx: FixedItemCtx): CanvasItem[] {
       <CanvasCard identifier="worldInfoAfter" category="anchor" label={t("prompt_slot_world_info_after")}
         labelTooltip={t("prompt_slot_world_info_after_hint")} {...toggleFor("worldInfoAfter", ctx)}
         slotLabel={ctx.slotLabelFor("worldInfoAfter")} slotDepth={ctx.slotDepthFor("worldInfoAfter")}
-        badge={t("cc_read_only")} nonExpandable />
+        badge={t("cc_read_only")}
+        expandedLeading={<LoreAnchorList entries={loreAnchorEntries} position="after_char" loadState={loreAnchorLoadState} />} />
     ) },
     { key: "slot:dialogueExamples", identifier: "dialogueExamples", kind: "slot", defaultOrder: 90, render: () => (
       <CanvasCard identifier="dialogueExamples" category="character" label={t("prompt_slot_dialogue_examples")}

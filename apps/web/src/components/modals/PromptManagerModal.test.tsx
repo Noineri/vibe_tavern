@@ -21,6 +21,8 @@ const realI18nContext = await import("../../i18n/context.js");
 const realTokenizer = await import("../../utils/tokenizer.js");
 const realTooltip = await import("../shared/Tooltip.js");
 const realUseMobile = await import("../../hooks/use-mobile.js");
+const realPromptCanvasLore = await import("../../lib/prompt-canvas-lore.js");
+const loadPromptCanvasLoreEntries = mock(realPromptCanvasLore.loadPromptCanvasLoreEntries);
 
 mock.module("../../i18n/context.js", () => ({
   ...realI18nContext,
@@ -39,6 +41,10 @@ mock.module("../shared/Tooltip.js", () => ({
   TooltipProvider: ({ children }: { children: ReactNode }) => children,
 }));
 mock.module("../../hooks/use-mobile.js", () => ({ ...realUseMobile, useIsMobile: () => false }));
+mock.module("../../lib/prompt-canvas-lore.js", () => ({
+  ...realPromptCanvasLore,
+  loadPromptCanvasLoreEntries,
+}));
 
 const { cleanup, fireEvent, render, waitFor, within } = await import("@testing-library/react");
 
@@ -51,6 +57,7 @@ beforeAll(async () => {
 
 afterEach(() => {
   cleanup();
+  loadPromptCanvasLoreEntries.mockReset();
   useModalStore.setState({ isPromptManagerOpen: false });
 });
 
@@ -130,6 +137,47 @@ describe("PromptManagerModal — character save boundary", () => {
     await waitFor(() => {
       expect(onUpdate).toHaveBeenCalledTimes(1);
       expect(onCharacterFieldUpdate).toHaveBeenCalledWith("charSystemPrompt", "new character system");
+    });
+  });
+
+  test("loads active-chat lore summaries into the expandable anchor card", async () => {
+    loadPromptCanvasLoreEntries.mockResolvedValueOnce([{
+      id: "entry-1",
+      lorebookId: "book-1",
+      lorebookName: "Character Lore",
+      title: "Before Entry",
+      position: "before_char",
+      priority: 10,
+      sortOrder: 0,
+    }]);
+    useModalStore.setState({ isPromptManagerOpen: true });
+
+    const view = render(
+      <PromptManagerModal
+        presets={[advancedPreset()]}
+        activePresetId="preset-1"
+        setActivePresetId={mock()}
+        onCreate={mock(async () => null)}
+        onUpdate={mock(async () => true)}
+        onDelete={mock(async () => true)}
+        onReorder={mock(async () => true)}
+        loreContext={{ chatId: "chat-1", characterId: "char-1", personaId: "persona-1" }}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(loadPromptCanvasLoreEntries).toHaveBeenCalledWith({
+        chatId: "chat-1",
+        characterId: "char-1",
+        personaId: "persona-1",
+      });
+    });
+    const anchor = view.baseElement.querySelector<HTMLElement>('[data-canvas-identifier="worldInfoBefore"]');
+    expect(anchor).toBeTruthy();
+    fireEvent.click(within(anchor!).getByText("prompt_slot_world_info_before"));
+    await waitFor(() => {
+      expect(within(anchor!).getByText("Before Entry")).toBeTruthy();
+      expect(within(anchor!).getByText("Character Lore")).toBeTruthy();
     });
   });
 
