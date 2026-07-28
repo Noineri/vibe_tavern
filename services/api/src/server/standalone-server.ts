@@ -10,13 +10,12 @@
  *   bun services/api/src/server/standalone-server.ts
  */
 
-import { rm, stat } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { dirname } from "node:path";
 import { parseArgs } from "node:util";
 import { resolveStandalonePaths } from "./standalone-paths.js";
 import { startServerRuntime } from "./server-runtime.js";
 import { embeddedWebFiles } from "./embedded-web-manifest.js";
-import { checkForUpdate, getCurrentVersion, printVersion, runCheckUpdate, runUpdate } from "./updater.js";
+import { cleanupOldInstall, getCurrentVersion, printVersion, runCheckUpdate, runUpdate } from "./updater.js";
 
 declare const VIBE_TAVERN_VERSION: string | undefined;
 const _version: string = getCurrentVersion();
@@ -67,15 +66,10 @@ async function main() {
 
 	console.log(`[standalone] Vibe Tavern v${_version}`);
 
-	// Clear leftover .old/ from a previous self-update. Best-effort: Windows
-	// may briefly hold .exe handles, in which case this no-ops and retries
-	// next launch.
-	const installDir = dirname(process.execPath);
-	const oldDir = join(installDir, ".old");
-	await stat(oldDir).then(
-		() => rm(oldDir, { recursive: true, force: true }).catch(() => undefined),
-		() => undefined,
-	);
+	// Clear update backups left by a previous self-update — the legacy `.old/`
+	// and every timestamped `.old-<epoch>/`. Best-effort: Windows may briefly
+	// hold .exe handles, in which case this no-ops and retries next launch.
+	await cleanupOldInstall(dirname(process.execPath));
 
 	await startServerRuntime({
 		mode: "standalone",

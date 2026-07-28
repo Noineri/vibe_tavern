@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, mock } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
 import { createOllamaModel, fetchOllamaModels } from "../src/domain/providers/ollama-adapter.js";
 
 const originalFetch = globalThis.fetch;
@@ -21,6 +21,13 @@ function mockNdjson(lines: unknown[], status = 200) {
 }
 
 beforeEach(() => {
+  globalThis.fetch = originalFetch;
+});
+
+// Restoring only in beforeEach leaves the LAST test's mock installed on
+// globalThis for the rest of the process. api tests share one process, so every
+// later file that makes a real request silently got this file's canned JSON.
+afterEach(() => {
   globalThis.fetch = originalFetch;
 });
 

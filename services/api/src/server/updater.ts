@@ -43,15 +43,63 @@ const DEFAULT_HTML_URL = `https://github.com/${REPO_OWNER}/${REPO_NAME}/releases
 // static server) so we can verify the full update flow against a build that
 // contains the very code under test. VT_UPDATE_HTML_URL likewise overrides
 // the "release page" URL used in error messages. Both default to GitHub.
-const API_BASE = process.env.VT_UPDATE_API_BASE ?? DEFAULT_API_BASE;
-const REPO_API_URL = `${API_BASE}/releases/latest`;
-const REPO_HTML_URL = process.env.VT_UPDATE_HTML_URL ?? DEFAULT_HTML_URL;
+// Resolved per call rather than captured at module load: tests need to point
+// the updater at a local mock server after import, and Wave 7 gates these
+// overrides on IS_COMPILED in one place.
+function resolveApiBase(): string {
+	return process.env.VT_UPDATE_API_BASE ?? DEFAULT_API_BASE;
+}
+
+function resolveHtmlUrl(): string {
+	return process.env.VT_UPDATE_HTML_URL ?? DEFAULT_HTML_URL;
+}
 
 const ARCHIVE_SUFFIX = IS_WINDOWS ? "-windows.zip" : "-linux.tar.gz";
 const SUMS_ASSET_NAME = "SHA256SUMS.txt";
 
 /** Names that must never be touched during a swap. */
 const PROTECTED_NAMES = new Set([".old", ".next", "data", "logs"]);
+
+/**
+ * Every swap attempt backs up into its OWN `.old-<epoch>/` directory.
+ *
+ * The previous design reused a single `.old/`, which meant a backup left
+ * undeletable by an earlier update (a Windows lock on the old .exe is the
+ * common case) either aborted the next update outright or, worse, let it
+ * rename into a directory that was not empty. A fresh directory per attempt
+ * cannot collide with anything.
+ */
+const OLD_BACKUP_PREFIX = ".old-";
+
+/** True for `.old`, every `.old-<epoch>` backup, and the other reserved names. */
+function isProtectedName(name: string): boolean {
+	return PROTECTED_NAMES.has(name) || name.startsWith(OLD_BACKUP_PREFIX);
+}
+
+/** Allocate an unused `installDir/.old-<epoch>/` and create it. */
+async function createBackupDir(installDir: string): Promise<string> {
+	const stamp = Date.now();
+	for (let attempt = 0; ; attempt++) {
+		const name = attempt === 0
+			? `${OLD_BACKUP_PREFIX}${stamp}`
+			: `${OLD_BACKUP_PREFIX}${stamp}-${attempt}`;
+		const candidate = join(installDir, name);
+		if (await pathExists(candidate)) continue;
+		await mkdir(candidate, { recursive: true });
+		return candidate;
+	}
+}
+
+/** Newest-first list of backup directories sitting next to the executable. */
+export async function listBackupDirs(installDir: string): Promise<string[]> {
+	const entries = await readdir(installDir, { withFileTypes: true }).catch(() => []);
+	return entries
+		.filter((e) => e.isDirectory() && e.name.startsWith(OLD_BACKUP_PREFIX))
+		.map((e) => e.name)
+		.sort()
+		.reverse()
+		.map((name) => join(installDir, name));
+}
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -103,7 +151,7 @@ export function getCurrentVersion(): string {
 export async function checkForUpdate(): Promise<UpdateCheckResult | null> {
 	let response: Response;
 	try {
-		response = await fetch(REPO_API_URL, {
+		response = await fetch(`${resolveApiBase()}/releases/latest`, {
 			headers: { "User-Agent": "vibe-tavern-updater", Accept: "application/vnd.github+json" },
 			signal: AbortSignal.timeout(10_000),
 		});
@@ -112,7 +160,7 @@ export async function checkForUpdate(): Promise<UpdateCheckResult | null> {
 	}
 	if (!response.ok) return null;
 
-	const parsed = parseRelease(await response.json());
+	const parsed = await parseReleaseBody(response);
 	if (!parsed) return null;
 
 	const updateAvailable = compareVersions(CURRENT_VERSION, parsed.version) < 0;
@@ -139,7 +187,7 @@ export async function runCheckUpdate(): Promise<never> {
 	const result = await checkForUpdate();
 	if (!result) {
 		console.log("Could not check for updates (offline or GitHub API unavailable).");
-		console.log(`  ${REPO_HTML_URL}`);
+		console.log(`  ${resolveHtmlUrl()}`);
 		process.exit(0);
 	}
 	if (!result.updateAvailable) {
@@ -150,7 +198,7 @@ export async function runCheckUpdate(): Promise<never> {
 	console.log("↑ Update available");
 	console.log(`  Current:   v${result.currentVersion}`);
 	console.log(`  Latest:    v${result.latestVersion}`);
-	console.log(`  Release:   ${REPO_HTML_URL}`);
+	console.log(`  Release:   ${resolveHtmlUrl()}`);
 	process.exit(0);
 }
 
@@ -170,6 +218,22 @@ export async function runUpdate(options: UpdateOptions = {}): Promise<never> {
 		process.exit(0);
 	}
 
+	// Imported lazily: update-orchestrator.ts imports this module, so a static
+	// import here would form a cycle and evaluate its module body (which reads
+	// CURRENT_VERSION) before this module's own body has run.
+	const { detectInstallKind } = await import("../domain/update/update-orchestrator.js");
+	const installKind = detectInstallKind();
+	if (installKind !== "standalone") {
+		console.error(`update: not supported for this installation type (${installKind}).`);
+		console.error(
+			installKind === "inno-setup"
+				? "  Re-run the Windows installer from the release page to update:"
+				: "  Update the image or package you installed from:",
+		);
+		console.error(`  ${resolveHtmlUrl()}`);
+		process.exit(0);
+	}
+
 	const installDir = resolveInstallDir();
 	if (!installDir) {
 		console.error("update: could not resolve install directory.");
@@ -183,7 +247,7 @@ export async function runUpdate(options: UpdateOptions = {}): Promise<never> {
 	const check = await checkForUpdate();
 	if (!check) {
 		console.log("Could not check for updates (offline or GitHub API unavailable).");
-		console.log(`  ${REPO_HTML_URL}`);
+		console.log(`  ${resolveHtmlUrl()}`);
 		process.exit(0);
 	}
 
@@ -196,10 +260,17 @@ export async function runUpdate(options: UpdateOptions = {}): Promise<never> {
 	console.log("↑ Update available");
 	console.log(`  Current:   v${check.currentVersion}`);
 	console.log(`  Latest:    v${check.latestVersion}`);
-	console.log(`  Release:   ${REPO_HTML_URL}`);
+	console.log(`  Release:   ${resolveHtmlUrl()}`);
 	console.log("");
 
 	if (!options.yes) {
+		// Without a terminal there is nobody to answer the prompt, and
+		// process.stdin.once("data") would simply never fire — the launcher
+		// would hang forever instead of starting the server.
+		if (!process.stdin.isTTY) {
+			console.log("Not running interactively — re-run with --yes to install without prompting.");
+			process.exit(0);
+		}
 		const answer = await promptUser("Download and install? [Y/n]: ");
 		if (answer.toLowerCase() !== "y" && answer !== "") {
 			console.log("Skipping update.");
@@ -226,7 +297,7 @@ export async function runUpdate(options: UpdateOptions = {}): Promise<never> {
 		}
 		console.error("Update FAILED during install swap. Installation may be corrupted.");
 		console.error("Error:", err instanceof Error ? err.message : String(err));
-		console.error(`Manual recovery: see ${REPO_HTML_URL} to re-download.`);
+		console.error(`Manual recovery: see ${resolveHtmlUrl()} to re-download.`);
 		process.exit(1);
 	}
 }
@@ -258,7 +329,7 @@ interface GithubAssetShape {
 }
 
 /** Narrow the untyped JSON into our domain shape, or return null on mismatch. */
-function parseRelease(data: unknown): ParsedRelease | null {
+export function parseRelease(data: unknown): ParsedRelease | null {
 	if (typeof data !== "object" || data === null) return null;
 	const root = data as GithubReleaseShape;
 	if (typeof root.tag_name !== "string") return null;
@@ -287,7 +358,7 @@ function parseRelease(data: unknown): ParsedRelease | null {
  * Dotted-numeric version compare. Returns negative if a < b, positive if a > b,
  * 0 if equal. Non-numeric segments are coerced to 0.
  */
-function compareVersions(a: string, b: string): number {
+export function compareVersions(a: string, b: string): number {
 	const pa = a.replace(/^v/, "").split(".").map((s) => Number.parseInt(s, 10) || 0);
 	const pb = b.replace(/^v/, "").split(".").map((s) => Number.parseInt(s, 10) || 0);
 	const len = Math.max(pa.length, pb.length);
@@ -314,19 +385,41 @@ async function downloadToPath(url: string, destPath: string): Promise<void> {
 	await downloadToPathWithProgress(url, destPath);
 }
 
+/**
+ * Look up an archive's expected digest in SHA256SUMS.txt contents.
+ *
+ * The filename is matched by EXACT equality on the line's filename column, not
+ * by `endsWith` on the whole line: our own release ships
+ * `Vibe-Tavern-v1.0.0-windows.zip` alongside `Vibe-Tavern-v1.0.0-windows-setup.exe`,
+ * and any asset whose name is a suffix of another would otherwise cross-match
+ * and verify the wrong file's digest.
+ *
+ * Accepts the `sha256sum` output format: `<hash>  <name>` (text mode) and
+ * `<hash> *<name>` (binary mode).
+ */
+function findExpectedHash(sumsContent: string, archiveName: string): string | null {
+	for (const raw of sumsContent.split("\n")) {
+		const line = raw.trim();
+		if (line.length === 0) continue;
+		const parts = line.split(/\s+/);
+		const hash = parts[0];
+		if (hash === undefined || parts.length < 2) continue;
+		// Re-join so filenames containing spaces still compare correctly, and
+		// drop the binary-mode marker.
+		const name = parts.slice(1).join(" ").replace(/^\*/, "");
+		if (name !== archiveName) continue;
+		return hash.toLowerCase();
+	}
+	return null;
+}
+
 /** Verify a downloaded archive against SHA256SUMS.txt contents. */
-async function verifyChecksum(archivePath: string, archiveName: string, sumsContent: string): Promise<void> {
-	const expectedLine = sumsContent
-	 .split("\n")
-	 .map((l) => l.trim())
-	 .find((l) => l.length > 0 && l.endsWith(archiveName));
-	if (!expectedLine) {
+export async function verifyChecksum(archivePath: string, archiveName: string, sumsContent: string): Promise<void> {
+	const expectedHash = findExpectedHash(sumsContent, archiveName);
+	if (expectedHash === null) {
 		throw new Error(`No checksum entry for ${archiveName} in SHA256SUMS.txt`);
 	}
-	// Format: "<hexhash>  <filename>" or "<hexhash> <filename>" (one or two spaces)
-	const parts = expectedLine.split(/\s+/);
-	const expectedHash = parts[0]?.toLowerCase();
-	if (!expectedHash || !/^[0-9a-f]{64}$/.test(expectedHash)) {
+	if (!/^[0-9a-f]{64}$/.test(expectedHash)) {
 		throw new Error(`Malformed checksum line for ${archiveName}`);
 	}
 
@@ -372,17 +465,22 @@ async function pathExists(p: string): Promise<boolean> {
 }
 
 /**
- * Best-effort removal of `.old/` left over from a previous update.
- * On Windows, individual files inside .old/ may still be locked briefly
+ * Best-effort removal of update backups left over from previous updates —
+ * the legacy single `.old/` and every timestamped `.old-<epoch>/`.
+ *
+ * On Windows, individual files inside a backup may still be locked briefly
  * after the previous process exited; we ignore those failures and they'll
- * be retried on the next launch.
+ * be retried on the next launch. One locked backup must never stop the
+ * others from being swept.
  */
 export async function cleanupOldInstall(installDir: string): Promise<void> {
-	const oldDir = join(installDir, ".old");
-	if (!(await pathExists(oldDir))) return;
-	await rm(oldDir, { recursive: true, force: true }).catch(() => {
-		/* Some files still locked — try again next launch. */
-	});
+	const targets = [join(installDir, ".old"), ...(await listBackupDirs(installDir))];
+	for (const dir of targets) {
+		if (!(await pathExists(dir))) continue;
+		await rm(dir, { recursive: true, force: true }).catch(() => {
+			/* Some files still locked — try again next launch. */
+		});
+	}
 }
 
 interface SwapPlan {
@@ -390,6 +488,17 @@ interface SwapPlan {
 	readonly toInstall: string;
 	readonly backupInOld: string;
 }
+
+/**
+ * Reports whether the install directory currently differs from its pre-swap
+ * state. Called with `true` the moment the first rename lands, and with `false`
+ * again if a rollback afterwards restores every entry successfully.
+ *
+ * This is what separates a soft failure from a fatal one: `fatal` must mean
+ * "files on disk are in a mixed old/new state", never merely "something went
+ * wrong during the swap phase".
+ */
+export type InstallModifiedListener = (modified: boolean) => void;
 
 /**
  * Move each top-level entry from `stagingDir` into `installDir`, backing up
@@ -401,19 +510,21 @@ interface SwapPlan {
  * alive) and Windows (MoveFile on running .exe is permitted; only DeleteFile
  * is blocked).
  */
-async function performSwap(installDir: string, stagingDir: string): Promise<void> {
-	const oldDir = join(installDir, ".old");
-
-	// 1. Reset .old/ from any prior (failed) attempt.
-	await rm(oldDir, { recursive: true, force: true }).catch(() => undefined);
-	await mkdir(oldDir, { recursive: true });
+export async function performSwap(
+	installDir: string,
+	stagingDir: string,
+	onInstallModified?: InstallModifiedListener,
+): Promise<string> {
+	// 1. Allocate a backup dir unique to this attempt. Never reuse or delete an
+	//    older one here — a leftover backup may be the user's only way back.
+	const oldDir = await createBackupDir(installDir);
 
 	// 2. Plan: one SwapPlan per top-level entry in staging, excluding protected names.
 	const stagingEntries = await readdir(stagingDir, { withFileTypes: true });
 	const plan: SwapPlan[] = [];
 	for (const entry of stagingEntries) {
 		const name = entry.name;
-		if (PROTECTED_NAMES.has(name)) continue;
+		if (isProtectedName(name)) continue;
 		plan.push({
 			fromStaging: join(stagingDir, name),
 			toInstall: join(installDir, name),
@@ -423,26 +534,48 @@ async function performSwap(installDir: string, stagingDir: string): Promise<void
 
 	// 3. Execute with rollback.
 	const completed: SwapPlan[] = [];
+	let modified = false;
+	const noteModified = (): void => {
+		if (modified) return;
+		modified = true;
+		onInstallModified?.(true);
+	};
+
+	// An entry whose backup landed but whose replacement did NOT is the one
+	// case the install can end up simply missing a file: it never reaches
+	// `completed`, so the reverse-order loop below would skip it.
+	let orphanedBackup: SwapPlan | null = null;
+
 	try {
 		for (const swap of plan) {
+			orphanedBackup = null;
 			// Backup existing entry (skip if absent — new file in this release).
 			try {
 				await rename(swap.toInstall, swap.backupInOld);
+				// The install directory now differs from its pre-swap state:
+				// everything from here on is potentially-fatal territory.
+				noteModified();
+				orphanedBackup = swap;
 			} catch (err) {
 				if (!isNotFound(err)) throw err;
 			}
 			// Move new entry into place.
 			await rename(swap.fromStaging, swap.toInstall);
+			noteModified();
+			orphanedBackup = null;
 			completed.push(swap);
 		}
+		return oldDir;
 	} catch (err) {
 		// Rollback all completed swaps in reverse order.
 		console.error("Swap failed mid-flight, rolling back...");
-		for (const done of [...completed].reverse()) {
+		let fullyRestored = true;
+		const restore = async (done: SwapPlan): Promise<void> => {
 			try {
 				await rm(done.toInstall, { recursive: true, force: true });
 				await rename(done.backupInOld, done.toInstall);
 			} catch (rollbackErr) {
+				fullyRestored = false;
 				console.error(
 					"Rollback failed for",
 					basename(done.toInstall),
@@ -450,6 +583,18 @@ async function performSwap(installDir: string, stagingDir: string): Promise<void
 					rollbackErr instanceof Error ? rollbackErr.message : String(rollbackErr),
 				);
 			}
+		};
+
+		// Put the half-swapped entry back first — it is the newest mutation.
+		if (orphanedBackup) await restore(orphanedBackup);
+		for (const done of [...completed].reverse()) {
+			await restore(done);
+		}
+		// A rollback that restored every completed move puts the install back
+		// exactly where it started, so the caller must not call this fatal.
+		if (modified && fullyRestored) {
+			modified = false;
+			onInstallModified?.(false);
 		}
 		throw err;
 	}
@@ -490,7 +635,10 @@ export async function downloadAndSwap(
 	await rm(stagingDir, { recursive: true, force: true }).catch(() => undefined);
 	await mkdir(stagingDir, { recursive: true });
 
-	let swapStarted = false;
+	// Set only once a rename has actually landed on disk (and cleared again if
+	// a rollback fully undoes it). Anything that fails while this is false left
+	// the install byte-for-byte untouched and is therefore retryable.
+	let installModified = false;
 
 	try {
 		console.log("· Downloading release archive...");
@@ -511,8 +659,9 @@ export async function downloadAndSwap(
 
 		console.log("· Verifying checksum...");
 		callbacks?.onPhase?.("verifying");
-		const archiveName = basename(release.archiveAsset.browser_download_url);
-		await verifyChecksum(archivePath, archiveName, sumsContent);
+		// The asset's own `name` — NOT basename(browser_download_url), which a
+		// redirect or a query string can silently reshape.
+		await verifyChecksum(archivePath, release.archiveAsset.name, sumsContent);
 
 		console.log("· Extracting...");
 		callbacks?.onPhase?.("extracting");
@@ -521,18 +670,20 @@ export async function downloadAndSwap(
 
 		console.log("· Installing...");
 		callbacks?.onPhase?.("swapping");
-		swapStarted = true;
-		await performSwap(installDir, extractDir);
+		await performSwap(installDir, extractDir, (modified) => {
+			installModified = modified;
+		});
 
 		return release.version;
 	} catch (err) {
-		if (swapStarted) {
-			// Swap failure is fatal — install may be in a mixed old/new state.
+		if (installModified) {
+			// A rename landed and was not fully rolled back: the install may be
+			// in a mixed old/new state. This is the only genuinely fatal case.
 			throw err;
 		}
-		// Pre-swap failures (download/verify/extract) are non-fatal — the
-		// install is untouched. Re-throw as a soft error for the caller to
-		// catch and exit 0.
+		// Everything else — download, checksum, extraction, and any swap
+		// failure that rolled back cleanly — left the install untouched.
+		// Re-throw as a soft error so the caller can offer Retry.
 		throw new SoftUpdateError(err);
 	} finally {
 		await rm(stagingDir, { recursive: true, force: true }).catch(() => undefined);
@@ -558,13 +709,32 @@ export async function fetchReleaseAssets(tag: string): Promise<ParsedRelease | n
 	// Hit the tag-specific endpoint for stability (the /releases/latest route
 	// could in theory return a different release if a newer one ships between
 	// the initial check and this call).
-	const url = `${API_BASE}/releases/tags/${encodeURIComponent(tag)}`;
-	const response = await fetch(url, {
-		headers: { "User-Agent": "vibe-tavern-updater", Accept: "application/vnd.github+json" },
-		signal: AbortSignal.timeout(10_000),
-	});
+	const url = `${resolveApiBase()}/releases/tags/${encodeURIComponent(tag)}`;
+	let response: Response;
+	try {
+		response = await fetch(url, {
+			headers: { "User-Agent": "vibe-tavern-updater", Accept: "application/vnd.github+json" },
+			signal: AbortSignal.timeout(10_000),
+		});
+	} catch (err) {
+		// DNS failure, connection reset, timeout. Returning null keeps this a
+		// SOFT failure at the call site; letting it throw would escape
+		// downloadAndSwap's try and be reported as a corrupted install.
+		console.error("[updater] release asset lookup failed:", err instanceof Error ? err.message : String(err));
+		return null;
+	}
 	if (!response.ok) return null;
-	return parseRelease(await response.json());
+	return parseReleaseBody(response);
+}
+
+/** Parse a GitHub release response, treating a malformed body as "no release". */
+async function parseReleaseBody(response: Response): Promise<ParsedRelease | null> {
+	try {
+		return parseRelease(await response.json());
+	} catch (err) {
+		console.error("[updater] malformed release JSON:", err instanceof Error ? err.message : String(err));
+		return null;
+	}
 }
 
 /**

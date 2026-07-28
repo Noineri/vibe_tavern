@@ -51,6 +51,7 @@ export function getCurrentVersion(): string { return "fixture-version"; }
 export function printVersion(): void { console.log("stub:version"); }
 export async function runCheckUpdate(): Promise<void> { console.log("stub:check-update"); }
 export async function runUpdate(options: { readonly yes: boolean }): Promise<void> { console.log(\`stub:update yes=\${options.yes}\`); }
+export async function cleanupOldInstall(installDir: string): Promise<void> { console.log("stub:cleanup-old-install"); }
 `);
 	return { root, script };
 }
@@ -126,5 +127,7 @@ test("default, help, and unknown arguments all start the standalone runtime", as
 		expect(result.exitCode).toBe(0);
 		expect(result.stdout).toContain("stub:resolve-paths");
 		expect(result.stdout).toContain("stub:runtime standalone 0.0.0.0:9999");
+		// Update backups from a previous self-update are swept on every boot.
+		expect(result.stdout).toContain("stub:cleanup-old-install");
 	}
 });
