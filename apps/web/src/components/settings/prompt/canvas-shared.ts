@@ -16,6 +16,19 @@ import type { ReactNode } from "react";
 /** Message-role options offered by the editable row cards' role SegmentedControl. */
 export const roleOptions = ["system", "user", "assistant"] as const;
 
+/** The three canvas roles (mirrors the DB-backed string columns, narrowed). */
+export type CanvasRole = (typeof roleOptions)[number];
+
+const CANVAS_ROLE_SET = new Set<string>(roleOptions);
+
+/** Narrow a DB/entity-backed role string to `CanvasRole` with a safe fallback.
+ *  Used at the boundary where preset/character draft fields (typed `string`
+ *  because they originate from SQLite text columns) meet the strictly-typed
+ *  `CanvasCard.role` prop. Runtime-checked — not a blind cast. */
+export function coerceRole(value: string | null | undefined, fallback: CanvasRole = "system"): CanvasRole {
+  return value && CANVAS_ROLE_SET.has(value) ? (value as CanvasRole) : fallback;
+}
+
 /** The editable preset fields the prompt-order canvas binds to (the modal's draft). */
 export type PromptCanvasDraft = {
   system: string;

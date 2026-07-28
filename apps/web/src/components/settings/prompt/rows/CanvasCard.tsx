@@ -1,11 +1,11 @@
 /**
  * Unified prompt-canvas row card (APC-3b).
  *
- * A single props-driven template that every canvas slot renders through once
- * Wave 4 migrates the per-type cards onto it (EditablePromptCard /
- * EditableAuthorNoteCard / CharacterFieldCard / InjectionRowView /
- * PromptOrderMarker). Today it is purely additive — nothing renders it yet —
- * so the migration is a slot-by-slot swap rather than a big-bang rewrite.
+ * A single props-driven template that every canvas slot renders through
+ * (APC-4b folded the field cards into it; PromptOrderMarker migrates in 4c,
+ * InjectionRowView in 4d). The migration is a slot-by-slot swap rather than a
+ * big-bang rewrite — `PromptOrderMarker` and `InjectionRowView` still render
+ * directly until 4c/4d.
  *
  * Layout (header always rendered; body optional + collapsible):
  *
@@ -19,8 +19,8 @@
  *   • custom   — + `onRoleChange` + `onRemove`         → injection editor (role control in body)
  *
  * Visual source: the header chrome (toggle, badges, chevron, spacing) mirrors
- * EditablePromptCard / InjectionRowView so the migration is pixel-stable; the
- * category-icon (APC-3a) is the one new element.
+ * the former EditablePromptCard / InjectionRowView so the migration is
+ * pixel-stable; the category-icon (APC-3a) is the one new element.
  */
 import { useState } from "react";
 import type { ReactNode } from "react";
@@ -71,9 +71,12 @@ export interface CanvasCardProps {
 
   /** Slot-position badge text (e.g. "after", "in-chat"). */
   slotLabel?: string | null;
-  /** In-chat insertion depth (rendered as a `←N` badge +, when ≥4, a body input). */
+  /** In-chat insertion depth (rendered as a `←N` badge +, when ≥depthMin, a body input). */
   slotDepth?: number | null;
   onSlotDepthChange?: (depth: number) => void;
+  /** Minimum depth at which the depth input renders (default 4 — prompt injections).
+   *  Character depth-prompt overrides use 1 (ST depth_prompt semantics). */
+  depthMin?: number;
 
   /** Trailing source/category badge (e.g. "editable", "read-only"). */
   badge?: ReactNode;
@@ -110,6 +113,7 @@ export function CanvasCard({
   slotLabel,
   slotDepth,
   onSlotDepthChange,
+  depthMin = 4,
   badge,
   onRemove,
   nonExpandable = false,
@@ -126,7 +130,7 @@ export function CanvasCard({
   const expandable = !nonExpandable && (hasValue || showBodyControls);
   const slotDepthNum = slotDepth ?? 0;
   const showDepthBadge = slotLabel != null;
-  const showDepthInput = !!onSlotDepthChange && slotLabel != null && slotDepthNum >= 4;
+  const showDepthInput = !!onSlotDepthChange && slotLabel != null && slotDepthNum >= depthMin;
 
   const CategoryIcon = SLOT_CATEGORY_ICON[category];
   const onClickHeader = expandable ? () => setExpanded((v) => !v) : undefined;
@@ -201,7 +205,7 @@ export function CanvasCard({
                     <span className="sr-only">{t("insert_depth_label")}</span>
                     <NumberInput
                       className="h-[30px] w-[90px]"
-                      min={4} max={99}
+                      min={depthMin} max={99}
                       value={slotDepthNum}
                       onChange={(v) => onSlotDepthChange?.(v)}
                       disabled={disabled}
