@@ -12,7 +12,7 @@ import { saveCharacterAction } from "../../stores/api-actions/character-actions.
 import { useActiveTrace, useLazyContextPreview } from "../../stores/chat-selectors.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
 import { useBootstrapStore, fetchPersonasAction } from "../../stores/api-actions/bootstrap-actions.js";
-import { summarizeChatAction, saveChatSummaryAction } from "../../stores/api-actions/chat-actions.js";
+import { summarizeChatAction, saveChatSummaryAction, updateChatDynamicPromptAction } from "../../stores/api-actions/chat-actions.js";
 import { useChatController } from "../../hooks/use-chat-controller.js";
 import { useGenerationQueue } from "../../hooks/use-generation-queue.js";
 import { useCharacterController } from "../../hooks/use-character-controller.js";
@@ -423,6 +423,10 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
           depthPrompt: activeCharacter.depthPrompt ?? null,
           depthPromptDepth: activeCharacter.depthPromptDepth ?? null,
           depthPromptRole: activeCharacter.depthPromptRole ?? null,
+          description: activeCharacter.description,
+          personalitySummary: activeCharacter.personalitySummary,
+          scenario: activeCharacter.scenario,
+          mesExample: activeCharacter.mesExample,
         } : null}
         onCharacterFieldUpdate={(key, value) => {
           if (!activeCharacter) return;
@@ -432,6 +436,10 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
             charDepthPrompt: "depthPrompt",
             charDepthPromptDepth: "depthPromptDepth",
             charDepthPromptRole: "depthPromptRole",
+            charDescription: "description",
+            charPersonality: "personalitySummary",
+            scenario: "scenario",
+            dialogueExamples: "mesExample",
           };
           const apiField = apiFieldMap[key];
           if (!apiField) return;
@@ -440,6 +448,31 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
             patch: { chatId: useChatStore.getState().activeChatId ?? undefined, [apiField]: value },
           });
         }}
+        personaDescription={activePersona?.description ?? null}
+        onPersonaDescriptionUpdate={(description) => {
+          if (!activePersona) return;
+          void character.handleSavePersona(activePersona.id, {
+            name: activePersona.name,
+            description,
+            pronouns: activePersona.pronouns,
+            pronounForms: activePersona.pronounForms,
+            avatarAssetId: activePersona.avatarAssetId,
+            avatarFullAssetId: activePersona.avatarFullAssetId,
+            avatarCropJson: activePersona.avatarCropJson,
+          });
+        }}
+        chatDynamicPrompt={activeChat?.dynamicPrompt ?? null}
+        onChatDynamicPromptUpdate={(content) => {
+          if (!activeChat) return Promise.resolve();
+          return updateChatDynamicPromptAction(activeChat.id, content);
+        }}
+        loreContext={activeChat && activeCharacter ? {
+          chatId: activeChat.id,
+          characterId: activeCharacter.id,
+          personaId: activeChat.personaId,
+        } : null}
+        chatBranchId={activeChat?.activeBranchId ?? null}
+        legacyChatSummary={activeChat?.summary ?? null}
       />
 
       <PersonaModal

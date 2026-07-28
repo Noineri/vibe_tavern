@@ -51,6 +51,7 @@ export interface CreatePresetData {
   customInjections?: CustomInjection[];
   promptOrder?: PromptOrderEntry[];
   advancedMode?: boolean;
+  mergeConsecutiveRoles?: boolean;
 }
 
 export type UpdatePresetData = Partial<CreatePresetData>;
@@ -80,6 +81,7 @@ export interface PromptPreset {
   customInjections: CustomInjection[];
   promptOrder: PromptOrderEntry[];
   advancedMode: boolean;
+  mergeConsecutiveRoles: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -163,6 +165,7 @@ export class PresetStore {
         customInjectionsJson: JSON.stringify(data.customInjections ?? []),
         promptOrderJson: JSON.stringify(data.promptOrder ?? []),
         advancedMode: data.advancedMode ? 1 : 0,
+        mergeConsecutiveRoles: data.mergeConsecutiveRoles ? 1 : 0,
         createdAt: now,
         updatedAt: now,
       })
@@ -206,6 +209,7 @@ export class PresetStore {
     if (data.customInjections !== undefined) values.customInjectionsJson = JSON.stringify(data.customInjections);
     if (data.promptOrder !== undefined) values.promptOrderJson = JSON.stringify(data.promptOrder);
     if (data.advancedMode !== undefined) values.advancedMode = data.advancedMode ? 1 : 0;
+    if (data.mergeConsecutiveRoles !== undefined) values.mergeConsecutiveRoles = data.mergeConsecutiveRoles ? 1 : 0;
 
     const [row] = await this.db
       .update(promptPresets)
@@ -345,6 +349,7 @@ export class PresetStore {
         customInjectionsJson: original.customInjectionsJson,
         promptOrderJson: original.promptOrderJson,
         advancedMode: original.advancedMode,
+        mergeConsecutiveRoles: original.mergeConsecutiveRoles,
         createdAt: now,
         updatedAt: now,
       })
@@ -415,6 +420,7 @@ export class PresetStore {
       customInjections: [],
       promptOrder: [],
       advancedMode: false,
+      mergeConsecutiveRoles: false,
       isDefault: true,
     });
   }
@@ -440,6 +446,7 @@ export class PresetStore {
       customInjections: preset.customInjections,
       promptOrder: preset.promptOrder,
       advancedMode: preset.advancedMode,
+      mergeConsecutiveRoles: preset.mergeConsecutiveRoles,
     };
   }
 
@@ -471,6 +478,7 @@ export class PresetStore {
       customInjections,
       promptOrder,
       advancedMode: Boolean(row.advancedMode),
+      mergeConsecutiveRoles: Boolean(row.mergeConsecutiveRoles),
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
     };

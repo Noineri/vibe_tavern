@@ -119,6 +119,8 @@ export const PROMPT_LAYER_ID = {
   sceneState: "scene_state",
   insightsInstruction: "insights_instruction",
   postHistoryInstructions: "post_history_instructions",
+  // Wave 6 — per-chat dynamic prompt (canvas slot chatDynamicPrompt).
+  chatDynamicPrompt: "chat_dynamic_prompt",
   // AI assistant layers
   aiAssistantSystem: "ai_assistant_system",
   aiAssistantContext: "ai_assistant_context",
@@ -140,6 +142,8 @@ export const PROMPT_LAYER_SOURCE_TYPE = {
   summaryMemory: "summary_memory",
   priorSummaries: "prior_summaries",
   retrievalMemory: "retrieval_memory",
+  // Wave 6 — per-chat dynamic prompt sourced from Chat.dynamicPrompt.
+  chat: "chat",
   objectiveTask: "objective_task",
   objectiveLongTerm: "objective_long_term",
   sceneState: "scene_state",
@@ -228,5 +232,7 @@ export const PROMPT_LAYER_REASON = {
   emptySummaryMemory: "empty summary memory",
   emptyRetrievalMemory: "empty retrieval memory",
   preflightCompaction: (droppedCount: number) => `preflight_compaction_dropped_${droppedCount}`,
+  /** Wave 6 — summary memory disabled via chatSummary canvas slot (advanced mode). */
+  chatSummaryDisabled: "disabled via prompt canvas",
 } as const;
 

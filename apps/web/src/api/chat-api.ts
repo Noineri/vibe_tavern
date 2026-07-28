@@ -337,6 +337,15 @@ export async function saveChatSummary(chatId: ChatId, summary: string): Promise<
   return { summary: data.summary, snapshot: normalizeSnapshot(data.snapshot) };
 }
 
+export async function updateChatDynamicPrompt(chatId: ChatId, content: string): Promise<AppSnapshot> {
+  // The route PATCH /api/chats/:chatId/dynamic-prompt is defined in
+  // services/api/src/api/routes/chat.ts; hc<AppType> infers it from the
+  // hono route tree. The $patch verb is a Hono RPC convention.
+  const response = await client.api.chats[":chatId"]["dynamic-prompt"].$patch({ param: { chatId }, json: { content } });
+  const data = await unwrapRpc<AppSnapshot>(response);
+  return normalizeSnapshot(data);
+}
+
 export async function listChatSummaries(chatId: ChatId): Promise<ChatSummaryRecord[]> {
   const response = await client.api.chats[":chatId"].summaries.$get({ param: { chatId } });
   return unwrapRpc<ChatSummaryRecord[]>(response);

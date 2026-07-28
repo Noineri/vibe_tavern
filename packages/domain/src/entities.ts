@@ -500,6 +500,10 @@ export interface Chat {
   coauthorContextLinks: CoauthorContextLink[];
   /** Co-author mode only: the active author module ID. */
   coauthorModuleId: string | null;
+  /** Per-chat dynamic prompt — content editable via the advanced prompt canvas
+   *  `chatDynamicPrompt` slot. Position/role/depth are controlled by the preset's
+   *  `PromptOrderEntry`. Persisted as a chat-row column. */
+  dynamicPrompt: string;
   createdAt: Timestamp;
   updatedAt: Timestamp;
 }

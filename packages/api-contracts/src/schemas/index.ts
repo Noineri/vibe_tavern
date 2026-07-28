@@ -10,6 +10,7 @@ export {
   createMessageVariantSchema,
   renameChatSchema,
   setGreetingIndexSchema,
+  updateDynamicPromptSchema,
   setCoauthorContextLinksSchema,
   renameBranchSchema,
   coauthorApplySchema,

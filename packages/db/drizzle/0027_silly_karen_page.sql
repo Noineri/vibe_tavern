@@ -1,0 +1,1 @@
+ALTER TABLE `prompt_presets` ADD `merge_consecutive_roles` integer DEFAULT 0 NOT NULL;

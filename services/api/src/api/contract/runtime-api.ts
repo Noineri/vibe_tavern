@@ -183,6 +183,7 @@ export interface ChatRuntimeApi {
 	updateInsightsConfig: (chatId: string, body: { insightsConfig?: { objectiveEnabled?: boolean; trackerEnabled?: boolean; diceEnabled?: boolean; diceMode?: string; tracker?: SceneTrackerConfigPatch } }) => Promise<ConfigPatchResponse>;
 	summarizeChat: (chatId: string, body: { providerProfileId: string; model?: string; maxMessages: number }, signal?: AbortSignal) => Promise<SummarizeChatResult>;
 	saveChatSummary: (chatId: string, body: { summary: string }) => Promise<SummarizeChatResult>;
+	updateDynamicPrompt: (chatId: string, body: { content: string }) => Promise<ConfigPatchResponse>;
 }
 
 // ─── Character ───────────────────────────────────────────────────────

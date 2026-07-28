@@ -5,7 +5,7 @@ import { validation, notFound, conflict, isDomainError } from "../../shared/erro
 type AuthorsNotePosition = "in_prompt" | "in_chat" | "after_chat";
 type AuthorsNoteRole = "system" | "user" | "assistant";
 
-function mapPresetToDto(p: { id: string; name: string; isDefault: boolean; systemPrompt: string; postHistoryInstructions: string; assistantPrefix: string; authorsNote: string; authorsNoteDepth: number; authorsNotePosition: string; authorsNoteRole: string; summaryPrompt: string; toolsPrompt: string; nsfwPrompt: string; enhanceDefinitionsPrompt: string; customInjections: CustomInjection[]; promptOrder: PromptOrderEntry[]; advancedMode?: boolean | number | null; scriptAiSystemPrompt: string | null; aiAssistantPrompts?: string | null; createdAt: string; updatedAt: string; }): PromptPresetDto {
+function mapPresetToDto(p: { id: string; name: string; isDefault: boolean; systemPrompt: string; postHistoryInstructions: string; assistantPrefix: string; authorsNote: string; authorsNoteDepth: number; authorsNotePosition: string; authorsNoteRole: string; summaryPrompt: string; toolsPrompt: string; nsfwPrompt: string; enhanceDefinitionsPrompt: string; customInjections: CustomInjection[]; promptOrder: PromptOrderEntry[]; advancedMode?: boolean | number | null; mergeConsecutiveRoles?: boolean | number | null; scriptAiSystemPrompt: string | null; aiAssistantPrompts?: string | null; createdAt: string; updatedAt: string; }): PromptPresetDto {
   return {
     id: p.id,
     name: p.name,
@@ -23,6 +23,7 @@ function mapPresetToDto(p: { id: string; name: string; isDefault: boolean; syste
     customInjections: p.customInjections,
     promptOrder: p.promptOrder,
     advancedMode: Boolean(p.advancedMode),
+    mergeConsecutiveRoles: Boolean(p.mergeConsecutiveRoles),
     scriptAiSystemPrompt: p.scriptAiSystemPrompt ?? "",
     aiAssistantPrompts: p.aiAssistantPrompts ?? "{}",
     createdAt: p.createdAt,
@@ -64,6 +65,7 @@ export async function createPromptPreset(deps: PresetModuleDeps, input: {
   customInjections?: CustomInjection[];
   promptOrder?: PromptOrderEntry[];
   advancedMode?: boolean;
+  mergeConsecutiveRoles?: boolean;
   scriptAiSystemPrompt?: string;
   aiAssistantPrompts?: string;
 }): Promise<PromptPresetDto> {
@@ -87,6 +89,7 @@ export async function createPromptPreset(deps: PresetModuleDeps, input: {
     customInjections: input.customInjections,
     promptOrder: input.promptOrder,
     advancedMode: input.advancedMode ?? false,
+    mergeConsecutiveRoles: input.mergeConsecutiveRoles ?? false,
     scriptAiSystemPrompt: input.scriptAiSystemPrompt ?? "",
     aiAssistantPrompts: input.aiAssistantPrompts ?? "{}",
   });
@@ -109,6 +112,7 @@ export async function updatePromptPreset(deps: PresetModuleDeps, presetId: strin
   customInjections?: CustomInjection[];
   promptOrder?: PromptOrderEntry[];
   advancedMode?: boolean;
+  mergeConsecutiveRoles?: boolean;
   scriptAiSystemPrompt?: string;
   aiAssistantPrompts?: string;
 }): Promise<PromptPresetDto> {
@@ -129,6 +133,7 @@ export async function updatePromptPreset(deps: PresetModuleDeps, presetId: strin
       customInjections: patch.customInjections,
       promptOrder: patch.promptOrder,
       advancedMode: patch.advancedMode,
+      mergeConsecutiveRoles: patch.mergeConsecutiveRoles,
       scriptAiSystemPrompt: patch.scriptAiSystemPrompt,
       aiAssistantPrompts: patch.aiAssistantPrompts,
     });

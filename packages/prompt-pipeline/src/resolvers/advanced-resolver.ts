@@ -12,7 +12,7 @@
  * disabling history, which we intentionally reject).
  */
 
-import { DEFAULT_PROMPT_ORDER, inferSlot } from "@vibe-tavern/domain";
+import { DEFAULT_PROMPT_ORDER, inferDefaultPromptSlot } from "@vibe-tavern/domain";
 import type { PromptZone } from "@vibe-tavern/domain";
 import type { PromptLayer } from "../types.js";
 import type { PositionResolver, ResolverPromptOrderEntry } from "./position-resolver.js";
@@ -27,10 +27,10 @@ function applyCanvasPosition(
   entry: ResolverPromptOrderEntry | undefined,
   identifier: string,
 ): PromptLayer {
-  const zone: PromptZone | undefined =
-    entry?.zone ?? inferSlot({ defaultOrder: DEFAULT_PROMPT_ORDER[identifier] }).zone;
-  const order = entry?.order ?? DEFAULT_PROMPT_ORDER[identifier] ?? 10_000;
-  const depth = entry?.depth ?? undefined;
+  const defaultSlot = inferDefaultPromptSlot(identifier);
+  const zone: PromptZone = entry?.zone ?? defaultSlot.zone;
+  const order = entry?.order ?? defaultSlot.order;
+  const depth = entry?.depth ?? defaultSlot.depth ?? undefined;
 
   layer.subPosition = order;
   if (zone === "after_chat") {
@@ -51,6 +51,8 @@ export function createAdvancedResolver(entries: ResolverPromptOrderEntry[]): Pos
   const entryFor = (identifier: string) => entries.find((e) => e.identifier === identifier);
 
   return {
+    canvasAuthoritative: true,
+
     // chatHistory is always enabled (depth markup); every other built-in slot
     // honors its canvas `enabled` flag, defaulting to enabled when absent.
     enabled: (identifier) =>
@@ -69,5 +71,9 @@ export function createAdvancedResolver(entries: ResolverPromptOrderEntry[]): Pos
 
     // Hand the raw canvas entry to the lore block so it can place the WI layer.
     worldInfoEntry: (identifier) => entryFor(identifier),
+
+    // Expose the raw canvas entry so built-in layer builders can read an
+    // entry-level `role` override (advanced mode only).
+    entryFor,
   };
 }

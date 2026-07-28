@@ -717,6 +717,93 @@ describe("assemblePrompt", () => {
         }
       }
     });
+
+    describe("mergeConsecutiveRoles", () => {
+      function mergeResult(recentMessages: Array<Record<string, unknown>>, enabled = true) {
+        return assemblePrompt(baseContext({
+          preset: { id: "preset_merge", text: "", mergeConsecutiveRoles: enabled },
+          chat: { recentMessages },
+        })).finalPayload.messages;
+      }
+
+      it("preserves consecutive messages when the flag is off", () => {
+        const messages = mergeResult([
+          { id: "m1", role: "user", content: "First" },
+          { id: "m2", role: "user", content: "Second" },
+        ], false).filter((message) => message.role === "user");
+        expect(messages.map((message) => message.content)).toEqual(["First", "Second"]);
+      });
+
+      it("joins adjacent same-role text with a blank line and keeps first-message identity", () => {
+        const messages = mergeResult([
+          { id: "m1", role: "user", content: "First" },
+          { id: "m2", role: "user", content: "Second" },
+        ]).filter((message) => message.role === "user");
+        expect(messages).toHaveLength(1);
+        expect(messages[0]).toMatchObject({
+          role: "user",
+          content: "First\n\nSecond",
+          messageId: "m1",
+          mergedFrom: [{ messageId: "m2" }],
+        });
+      });
+
+      it("does not cross a role or tool-message boundary", () => {
+        const roleBoundary = mergeResult([
+          { id: "m1", role: "user", content: "User" },
+          { id: "m2", role: "assistant", content: "Assistant" },
+        ]).filter((message) => message.messageId);
+        expect(roleBoundary).toHaveLength(2);
+
+        const toolBoundary = mergeResult([
+          { id: "m1", role: "user", content: "Before" },
+          { id: "m2", role: "tool", content: "Tool result" },
+          { id: "m3", role: "user", content: "After" },
+        ]).filter((message) => message.messageId);
+        expect(toolBoundary.map((message) => message.messageId)).toEqual(["m1", "m2", "m3"]);
+      });
+
+      it("drops empty text-only messages but preserves empty multimodal messages as boundaries", () => {
+        const emptyDropped = mergeResult([
+          { id: "m1", role: "user", content: "Before" },
+          { id: "m2", role: "user", content: "" },
+          { id: "m3", role: "user", content: "After" },
+        ]).filter((message) => message.role === "user");
+        expect(emptyDropped).toHaveLength(1);
+        expect(emptyDropped[0].content).toBe("Before\n\nAfter");
+
+        const attachment = { id: "a1", kind: "image", url: "asset://a1" };
+        const multimodalBoundary = mergeResult([
+          { id: "m1", role: "user", content: "", attachments: [attachment] },
+          { id: "m2", role: "user", content: "Text after image" },
+        ]).filter((message) => message.role === "user");
+        expect(multimodalBoundary).toHaveLength(2);
+        expect(multimodalBoundary[0].attachments).toEqual([attachment]);
+      });
+
+      it("merges a canvas layer with adjacent history while retaining absorbed trace identity", () => {
+        const messages = assemblePrompt(baseContext({
+          character: { id: "char_1", name: "Aria", description: "" },
+          preset: {
+            id: "preset_merge",
+            text: "",
+            advancedMode: true,
+            mergeConsecutiveRoles: true,
+            customInjections: [{ identifier: "custom_user", name: "Custom", content: "Layer text", role: "user" }],
+            promptOrder: [{ identifier: "custom_user", enabled: true, order: 0, kind: "custom", zone: "after_chat", depth: null }],
+          },
+          chat: { recentMessages: [{ id: "m1", role: "user", content: "History text" }] },
+        })).finalPayload.messages;
+
+        const merged = messages.find((message) => message.messageId === "m1");
+        expect(merged).toMatchObject({
+          role: "user",
+          content: "History text\n\nLayer text",
+          messageId: "m1",
+          mergedFrom: [{ layerId: "preset_injection_custom_user" }],
+        });
+      });
+    });
   });
 
   describe("result metadata", () => {

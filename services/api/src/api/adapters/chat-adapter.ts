@@ -456,6 +456,13 @@ export class ChatAdapter implements ChatRuntimeApi {
 	saveChatSummary = (chatId: string, body: { summary: string }) =>
 		this.chatSummaryService.saveChatSummary({ chatId, summary: body.summary });
 
+	updateDynamicPrompt = async (chatId: string, body: { content: string }) => {
+		const chat = await this.stores.chats.getById(chatId);
+		if (!chat) throw notFound("Chat", `Chat '${chatId}' was not found.`);
+		await this.stores.chats.updateDynamicPrompt(chatId, body.content);
+		return this.sessionRuntime.buildConfigPatchResponse(brandId<ChatId>(chatId), { activeChat: true });
+	};
+
 	// ─── Private helpers ────────────────────────────────────────────────
 
 	private async resolveVisionDescribePromptFromPreset(): Promise<string> {

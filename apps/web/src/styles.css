@@ -247,6 +247,15 @@ html,body{height:100%;background:var(--page-bg, var(--bg));color:var(--t1);overf
 .build-tag{font-size:11px;background:var(--s3);color:var(--t2);border-radius:4px;padding:3px 9px;cursor:pointer;transition:background .1s}
 .build-tag:hover{background:var(--border2);color:var(--t1)}
 .build-tag.on{background:var(--accent-dim);color:var(--accent-t)}
+
+/* Prompt-canvas categories reuse each theme's curated syntax hues. Mixing only
+   10% into surface keeps the grouping pale and consistent across light/dark. */
+.canvas-card--standard{background-color:color-mix(in oklab,var(--surface) 90%,var(--syn-comment) 10%)}
+.canvas-card--entity{background-color:color-mix(in oklab,var(--surface) 90%,var(--syn-keyword) 10%)}
+.canvas-card--lore{background-color:color-mix(in oklab,var(--surface) 90%,var(--syn-string) 10%)}
+.canvas-card--chat{background-color:color-mix(in oklab,var(--surface) 90%,var(--syn-function) 10%)}
+.canvas-card--custom{background-color:color-mix(in oklab,var(--surface) 90%,var(--syn-property) 10%)}
+
 .build-section-title{font-family:var(--font-body);font-size:22px;font-weight:500;color:var(--t1);margin-bottom:6px}
 .build-section-sub{font-size:13px;color:var(--t2);margin-bottom:28px;line-height:1.55}
 

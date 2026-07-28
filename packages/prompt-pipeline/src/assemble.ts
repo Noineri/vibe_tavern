@@ -103,7 +103,13 @@ function buildAuthorsNoteLayer(
 ): PromptLayer | null {
   if (!preset.authorsNote?.trim() || !resolver.enabled("authorsNote")) return null;
 
-  const role = preset.authorsNoteRole ?? "system";
+  // Advanced mode: the canvas entry's `role` wins (falling back to the flat
+  // authorsNoteRole for presets authored before per-slot role). Simple mode keeps
+  // the flat authorsNoteRole field authoritative (no canvas in simple mode).
+  const fallbackRole = preset.authorsNoteRole ?? "system";
+  const role = preset.advancedMode
+    ? (resolver.entryFor("authorsNote")?.role ?? fallbackRole)
+    : fallbackRole;
   const subPosition = resolver.rank("authorsNote", DEFAULT_PROMPT_ORDER.authorsNote);
   if (preset.advancedMode) {
     return resolver.position(makeLayer({
@@ -194,6 +200,7 @@ function buildMesExample(
     sourceId: context.character.id,
     sourceName: `${context.character.name} — Examples`,
     priority: PROMPT_LAYER_PRIORITY.mesExample,
+    role: resolver.entryFor("dialogueExamples")?.role,
     reason: isDepthMode ? `included (depth mode, depth=${context.character.mesExampleDepth ?? 4})` : isFirstTurn ? "included" : "included (always mode)",
     text: PROMPT_FORMAT.exampleMessages(context.character.mesExample),
   });
@@ -507,38 +514,110 @@ function buildLayers(
   const layers: PromptLayer[] = [...initialLayers];
   const droppedLayers: Array<{ id: string; reason: string }> = [];
 
-  // System prompt: character override takes priority over preset
-  const effectiveSystemPrompt = context.character.systemPrompt?.trim() || context.preset?.text?.trim();
-  if (effectiveSystemPrompt && resolver.enabled("main")) {
-    const isOverride = !!context.character.systemPrompt?.trim();
-    layers.push(
-      resolver.position(makeLayer({
-        id: isOverride ? PROMPT_LAYER_ID.characterSystemPrompt : PROMPT_LAYER_ID.promptPresetSystem,
-        sourceType: isOverride ? PROMPT_LAYER_SOURCE_TYPE.characterSystemPrompt : PROMPT_LAYER_SOURCE_TYPE.promptPreset,
-        sourceId: isOverride ? context.character.id : context.preset!.id,
-        sourceName: isOverride ? `${context.character.name} (System Override)` : (context.preset?.name ?? "System Prompt"),
-        priority: PROMPT_LAYER_PRIORITY.promptPresetSystem,
-        text: effectiveSystemPrompt,
-      }), "main"),
-    );
+  if (resolver.canvasAuthoritative) {
+    // Advanced canvas: preset main and character system prompt are independent
+    // WYSIWYG slots. Neither content source replaces the other.
+    const presetSystemPrompt = context.preset?.text?.trim();
+    if (presetSystemPrompt && resolver.enabled("main")) {
+      layers.push(
+        resolver.position(makeLayer({
+          id: PROMPT_LAYER_ID.promptPresetSystem,
+          sourceType: PROMPT_LAYER_SOURCE_TYPE.promptPreset,
+          sourceId: context.preset!.id,
+          sourceName: context.preset?.name ?? "System Prompt",
+          priority: PROMPT_LAYER_PRIORITY.promptPresetSystem,
+          role: resolver.entryFor("main")?.role,
+          text: presetSystemPrompt,
+        }), "main"),
+      );
+    }
+
+    const characterSystemPrompt = context.character.systemPrompt?.trim();
+    if (characterSystemPrompt && resolver.enabled("charSystemPrompt")) {
+      layers.push(
+        resolver.position(makeLayer({
+          id: PROMPT_LAYER_ID.characterSystemPrompt,
+          sourceType: PROMPT_LAYER_SOURCE_TYPE.characterSystemPrompt,
+          sourceId: context.character.id,
+          sourceName: `${context.character.name} (System Prompt)`,
+          priority: PROMPT_LAYER_PRIORITY.characterSystemPrompt,
+          role: resolver.entryFor("charSystemPrompt")?.role,
+          text: characterSystemPrompt,
+        }), "charSystemPrompt"),
+      );
+    }
+  } else {
+    // Simple mode preserves legacy override semantics: character system prompt
+    // replaces preset main, and canvas entries remain irrelevant.
+    const effectiveSystemPrompt = context.character.systemPrompt?.trim() || context.preset?.text?.trim();
+    if (effectiveSystemPrompt && resolver.enabled("main")) {
+      const isOverride = !!context.character.systemPrompt?.trim();
+      layers.push(
+        resolver.position(makeLayer({
+          id: isOverride ? PROMPT_LAYER_ID.characterSystemPrompt : PROMPT_LAYER_ID.promptPresetSystem,
+          sourceType: isOverride ? PROMPT_LAYER_SOURCE_TYPE.characterSystemPrompt : PROMPT_LAYER_SOURCE_TYPE.promptPreset,
+          sourceId: isOverride ? context.character.id : context.preset!.id,
+          sourceName: isOverride ? `${context.character.name} (System Override)` : (context.preset?.name ?? "System Prompt"),
+          priority: PROMPT_LAYER_PRIORITY.promptPresetSystem,
+          role: resolver.entryFor("main")?.role,
+          text: effectiveSystemPrompt,
+        }), "main"),
+      );
+    }
   }
 
-  // Jailbreak / Post-History Instructions: placed after chat history (depth=0)
-  // Character postHistoryInstructions overrides preset jailbreak
-  const effectiveJailbreak = context.character.postHistoryInstructions?.trim() || context.preset?.jailbreak?.trim();
-  if (effectiveJailbreak && resolver.enabled("jailbreak")) {
-    const isOverride = !!context.character.postHistoryInstructions?.trim();
-    const layer = resolver.position(makeLayer({
-      id: PROMPT_LAYER_ID.promptPresetJailbreak,
-      sourceType: isOverride ? PROMPT_LAYER_SOURCE_TYPE.character : PROMPT_LAYER_SOURCE_TYPE.promptPreset,
-      sourceId: isOverride ? context.character.id : context.preset!.id,
-      sourceName: isOverride ? `${context.character.name} (Post-History Override)` : "Post-History Instructions",
-      position: "in_chat",
-      priority: PROMPT_LAYER_PRIORITY.promptPresetJailbreak,
-      text: effectiveJailbreak,
-    }), "jailbreak");
-    if (layer.position === "in_chat" && layer.injectionDepth == null) layer.injectionDepth = 0;
-    layers.push(layer);
+  if (resolver.canvasAuthoritative) {
+    // Advanced canvas: preset jailbreak and character post-history instructions
+    // are independent slots with independent position/role/toggle state.
+    const presetJailbreak = context.preset?.jailbreak?.trim();
+    if (presetJailbreak && resolver.enabled("jailbreak")) {
+      const layer = resolver.position(makeLayer({
+        id: PROMPT_LAYER_ID.promptPresetJailbreak,
+        sourceType: PROMPT_LAYER_SOURCE_TYPE.promptPreset,
+        sourceId: context.preset!.id,
+        sourceName: "Post-History Instructions",
+        position: "in_chat",
+        priority: PROMPT_LAYER_PRIORITY.promptPresetJailbreak,
+        role: resolver.entryFor("jailbreak")?.role,
+        text: presetJailbreak,
+      }), "jailbreak");
+      if (layer.position === "in_chat" && layer.injectionDepth == null) layer.injectionDepth = 0;
+      layers.push(layer);
+    }
+
+    const characterPostHistory = context.character.postHistoryInstructions?.trim();
+    if (characterPostHistory && resolver.enabled("charPostHistory")) {
+      const layer = resolver.position(makeLayer({
+        id: PROMPT_LAYER_ID.postHistoryInstructions,
+        sourceType: PROMPT_LAYER_SOURCE_TYPE.character,
+        sourceId: context.character.id,
+        sourceName: `${context.character.name} (Post-History Instructions)`,
+        position: "in_chat",
+        priority: PROMPT_LAYER_PRIORITY.postHistoryInstructions,
+        role: resolver.entryFor("charPostHistory")?.role,
+        text: characterPostHistory,
+      }), "charPostHistory");
+      if (layer.position === "in_chat" && layer.injectionDepth == null) layer.injectionDepth = 0;
+      layers.push(layer);
+    }
+  } else {
+    // Simple mode preserves legacy override semantics.
+    const effectiveJailbreak = context.character.postHistoryInstructions?.trim() || context.preset?.jailbreak?.trim();
+    if (effectiveJailbreak && resolver.enabled("jailbreak")) {
+      const isOverride = !!context.character.postHistoryInstructions?.trim();
+      const layer = resolver.position(makeLayer({
+        id: PROMPT_LAYER_ID.promptPresetJailbreak,
+        sourceType: isOverride ? PROMPT_LAYER_SOURCE_TYPE.character : PROMPT_LAYER_SOURCE_TYPE.promptPreset,
+        sourceId: isOverride ? context.character.id : context.preset!.id,
+        sourceName: isOverride ? `${context.character.name} (Post-History Override)` : "Post-History Instructions",
+        position: "in_chat",
+        priority: PROMPT_LAYER_PRIORITY.promptPresetJailbreak,
+        role: resolver.entryFor("jailbreak")?.role,
+        text: effectiveJailbreak,
+      }), "jailbreak");
+      if (layer.position === "in_chat" && layer.injectionDepth == null) layer.injectionDepth = 0;
+      layers.push(layer);
+    }
   }
 
   const authorsNoteLayer = context.preset ? buildAuthorsNoteLayer(context.preset, resolver) : null;
@@ -552,6 +631,7 @@ function buildLayers(
       sourceId: context.preset.id,
       sourceName: "Enhance Definitions",
       priority: PROMPT_LAYER_PRIORITY.presetEnhanceDefinitions,
+      role: resolver.entryFor("enhanceDefinitions")?.role,
       text: context.preset.enhanceDefinitions,
     }), "enhanceDefinitions");
     layers.push(layer);
@@ -565,8 +645,26 @@ function buildLayers(
       sourceId: context.preset.id,
       sourceName: "NSFW",
       priority: PROMPT_LAYER_PRIORITY.presetNsfw,
+      role: resolver.entryFor("nsfw")?.role,
       text: context.preset.nsfw,
     }), "nsfw");
+    layers.push(layer);
+  }
+
+  // Chat dynamic prompt — per-chat content controlled by the preset's
+  // `chatDynamicPrompt` canvas entry. Gated by the resolver in advanced mode;
+  // in simple mode the resolver always returns enabled(true) and positions at
+  // the DEFAULT_PROMPT_ORDER slot (before_chat, order 62).
+  if (context.chat.dynamicPrompt?.trim() && resolver.enabled("chatDynamicPrompt")) {
+    const layer = resolver.position(makeLayer({
+      id: PROMPT_LAYER_ID.chatDynamicPrompt,
+      sourceType: PROMPT_LAYER_SOURCE_TYPE.chat,
+      sourceId: context.identity.chatId,
+      sourceName: "Chat Dynamic Prompt",
+      priority: PROMPT_LAYER_PRIORITY.promptPresetSystem - 5, // just below system prompt
+      role: resolver.entryFor("chatDynamicPrompt")?.role ?? "system",
+      text: context.chat.dynamicPrompt,
+    }), "chatDynamicPrompt");
     layers.push(layer);
   }
 
@@ -631,6 +729,7 @@ function buildLayers(
         sourceId: context.character.id,
         sourceName: context.character.name,
         priority: PROMPT_LAYER_PRIORITY.characterBase,
+        role: resolver.entryFor("charDescription")?.role,
         subPosition: resolver.rank("charDescription", IN_PROMPT_SUB_POSITION.charDesc),
         text: characterBase,
       }), "charDescription"),
@@ -645,6 +744,7 @@ function buildLayers(
         sourceId: context.character.id,
         sourceName: `${context.character.name} — Scenario`,
         priority: PROMPT_LAYER_PRIORITY.characterScenario,
+        role: resolver.entryFor("scenario")?.role,
         subPosition: resolver.rank("scenario", IN_PROMPT_SUB_POSITION.charDesc),
         text: PROMPT_FORMAT.scenarioHeader(context.character.scenario),
       }), "scenario"),
@@ -659,6 +759,7 @@ function buildLayers(
         sourceId: context.character.id,
         sourceName: context.character.name,
         priority: PROMPT_LAYER_PRIORITY.characterPersonality,
+        role: resolver.entryFor("charPersonality")?.role,
         subPosition: resolver.rank("charPersonality", IN_PROMPT_SUB_POSITION.charDesc),
         text: context.character.personality,
       }), "charPersonality"),
@@ -677,6 +778,7 @@ function buildLayers(
         sourceId: context.character.id,
         sourceName: `${context.character.name} — Appearance`,
         priority: PROMPT_LAYER_PRIORITY.characterAvatar,
+        role: resolver.entryFor("characterAvatar")?.role,
         subPosition: resolver.rank("characterAvatar", DEFAULT_PROMPT_ORDER.characterAvatar),
         text: `[Character appearance: ${context.character.avatarDescription.trim()}]`,
       }), "characterAvatar"),
@@ -696,6 +798,7 @@ function buildLayers(
         sourceId: context.character.id,
         sourceName: `${context.character.name} — Reference Images`,
         priority: PROMPT_LAYER_PRIORITY.characterGallery,
+        role: resolver.entryFor("characterGallery")?.role,
         subPosition: resolver.rank("characterGallery", DEFAULT_PROMPT_ORDER.characterGallery),
         text: `[Character references:\n${galleryText}]`,
       }), "characterGallery"),
@@ -710,6 +813,7 @@ function buildLayers(
         sourceId: context.persona.id,
         sourceName: context.persona.name,
         priority: PROMPT_LAYER_PRIORITY.persona,
+        role: resolver.entryFor("personaDescription")?.role,
         subPosition: resolver.rank("personaDescription", DEFAULT_PROMPT_ORDER.personaDescription),
         text: PROMPT_FORMAT.personaBlock(context.persona.name, context.persona.description, context.persona.pronouns),
       }), "personaDescription"),
@@ -727,6 +831,7 @@ function buildLayers(
         sourceId: context.persona.id,
         sourceName: `${context.persona.name} — Appearance`,
         priority: PROMPT_LAYER_PRIORITY.personaAvatar,
+        role: resolver.entryFor("personaAvatar")?.role,
         subPosition: resolver.rank("personaAvatar", DEFAULT_PROMPT_ORDER.personaAvatar),
         text: `[Persona appearance: ${context.persona.avatarDescription.trim()}]`,
       }), "personaAvatar"),
@@ -737,21 +842,34 @@ function buildLayers(
   layers.push(...loreResult.layers);
   droppedLayers.push(...loreResult.droppedLayers);
 
-  for (const memory of context.memory?.summary ?? []) {
-    if (!memory.summary.trim()) {
-      droppedLayers.push({ id: memory.id, reason: PROMPT_LAYER_REASON.emptySummaryMemory });
-      continue;
-    }
-    layers.push(
-      makeLayer({
+  // Chat summary memory blocks — gated behind the `chatSummary` canvas anchor
+  // in advanced mode. In simple mode, the resolver always returns enabled(true)
+  // and positions at the DEFAULT_PROMPT_ORDER slot (before_chat, order 57).
+  // The anchor controls placement/role/depth of summary memory; the blocks
+  // themselves are read-only content from the chat-summaries store.
+  if (resolver.enabled("chatSummary")) {
+    for (const memory of context.memory?.summary ?? []) {
+      if (!memory.summary.trim()) {
+        droppedLayers.push({ id: memory.id, reason: PROMPT_LAYER_REASON.emptySummaryMemory });
+        continue;
+      }
+      const layer = resolver.position(makeLayer({
         id: createSummaryMemoryLayerId(memory.id),
         sourceType: PROMPT_LAYER_SOURCE_TYPE.summaryMemory,
         sourceId: memory.id,
         sourceName: memory.kind || "Summary",
         priority: PROMPT_LAYER_PRIORITY.summaryMemory,
+        role: resolver.entryFor("chatSummary")?.role ?? "system",
         text: PROMPT_FORMAT.summaryMemory(memory.kind, memory.summary),
-      }),
-    );
+      }), "chatSummary");
+      layers.push(layer);
+    }
+  } else {
+    // When disabled in advanced mode, still record dropped layers for trace.
+    for (const memory of context.memory?.summary ?? []) {
+      if (!memory.summary.trim()) continue;
+      droppedLayers.push({ id: memory.id, reason: PROMPT_LAYER_REASON.chatSummaryDisabled });
+    }
   }
 
   // Insights — Objective Tracker (INSIGHTS_PLAN): inject the active task as an
@@ -865,22 +983,41 @@ function buildLayers(
   // (character.postHistoryInstructions replaces preset.jailbreak when present)
 
   // --- Character Depth Prompt ---
-  // Character-level depth injection (equivalent to ST depth_prompt)
+  // Advanced: independent canvas slot (toggle/role/zone/depth/order are entry-
+  // authoritative). Simple: legacy character flat role/depth remain authoritative.
   if (context.character.depthPrompt?.trim()) {
-    const depth = context.character.depthPromptDepth ?? 4;
-    const role = context.character.depthPromptRole ?? "system";
-    const layer = makeLayer({
-      id: PROMPT_LAYER_ID.characterDepthPrompt,
-      sourceType: PROMPT_LAYER_SOURCE_TYPE.character,
-      sourceId: context.character.id,
-      sourceName: `${context.character.name} (Depth)`,
-      position: "in_chat",
-      priority: PROMPT_LAYER_PRIORITY.characterDepthPrompt,
-      role: role as "system" | "user" | "assistant",
-      text: context.character.depthPrompt,
-    });
-    layer.injectionDepth = depth;
-    layers.push(layer);
+    const characterRole =
+      context.character.depthPromptRole === "user" || context.character.depthPromptRole === "assistant"
+        ? context.character.depthPromptRole
+        : "system";
+    if (resolver.canvasAuthoritative) {
+      if (resolver.enabled("charDepthPrompt")) {
+        const layer = makeLayer({
+          id: PROMPT_LAYER_ID.characterDepthPrompt,
+          sourceType: PROMPT_LAYER_SOURCE_TYPE.character,
+          sourceId: context.character.id,
+          sourceName: `${context.character.name} (Depth)`,
+          position: "in_chat",
+          priority: PROMPT_LAYER_PRIORITY.characterDepthPrompt,
+          role: resolver.entryFor("charDepthPrompt")?.role ?? characterRole,
+          text: context.character.depthPrompt,
+        });
+        layers.push(resolver.position(layer, "charDepthPrompt"));
+      }
+    } else {
+      const layer = makeLayer({
+        id: PROMPT_LAYER_ID.characterDepthPrompt,
+        sourceType: PROMPT_LAYER_SOURCE_TYPE.character,
+        sourceId: context.character.id,
+        sourceName: `${context.character.name} (Depth)`,
+        position: "in_chat",
+        priority: PROMPT_LAYER_PRIORITY.characterDepthPrompt,
+        role: characterRole,
+        text: context.character.depthPrompt,
+      });
+      layer.injectionDepth = context.character.depthPromptDepth ?? 4;
+      layers.push(layer);
+    }
   }
 
   // --- Script-injected messages (context.chat.injectMessage) ---
@@ -939,6 +1076,72 @@ function buildLayers(
   }
 
   return { layers, droppedLayers, compactionSummary, recentMessagesForHistory };
+}
+
+type FinalAssemblyMessage = {
+  role: "system" | "user" | "assistant" | "tool";
+  content: string;
+  messageId?: string;
+  layerId?: string;
+  attachments?: RecentMessage["attachments"];
+  toolCalls?: unknown[];
+  mergedFrom?: Array<{ messageId?: string; layerId?: string }>;
+};
+
+function traceRef(message: FinalAssemblyMessage): { messageId?: string; layerId?: string } | null {
+  if (!message.messageId && !message.layerId) return null;
+  return {
+    ...(message.messageId ? { messageId: message.messageId } : {}),
+    ...(message.layerId ? { layerId: message.layerId } : {}),
+  };
+}
+
+function hasStructuredBoundary(message: FinalAssemblyMessage): boolean {
+  return Boolean(message.attachments?.length || message.toolCalls?.length);
+}
+
+/** ST-parity same-role squash over the final payload shape. Tool messages and
+ * structured/multimodal messages are hard boundaries: merging across either
+ * would destroy provider protocol structure or attachment ownership. */
+function mergeConsecutiveRoleMessages(messages: FinalAssemblyMessage[]): FinalAssemblyMessage[] {
+  const merged: FinalAssemblyMessage[] = [];
+
+  for (const message of messages) {
+    const isEmptyTextOnly =
+      message.role !== "tool"
+      && !message.content.trim()
+      && !hasStructuredBoundary(message);
+    if (isEmptyTextOnly) continue;
+
+    const current: FinalAssemblyMessage = {
+      ...message,
+      ...(message.mergedFrom ? { mergedFrom: [...message.mergedFrom] } : {}),
+    };
+    const previous = merged.at(-1);
+    const canMerge =
+      previous
+      && previous.role === current.role
+      && current.role !== "tool"
+      && !hasStructuredBoundary(previous)
+      && !hasStructuredBoundary(current);
+
+    if (!canMerge) {
+      merged.push(current);
+      continue;
+    }
+
+    previous.content = `${previous.content}\n\n${current.content}`;
+    const currentRef = traceRef(current);
+    const absorbed = [
+      ...(currentRef ? [currentRef] : []),
+      ...(current.mergedFrom ?? []),
+    ];
+    if (absorbed.length > 0) {
+      previous.mergedFrom = [...(previous.mergedFrom ?? []), ...absorbed];
+    }
+  }
+
+  return merged;
 }
 
 /**
@@ -1036,7 +1239,7 @@ function finalizeAssembly(
   }
 
   // Build final messages array
-  const messages = [
+  const messages: FinalAssemblyMessage[] = [
     ...beforePrompt.map((layer) => ({
       role: layer.role ?? ("system" as const),
       content: layer.text,
@@ -1054,6 +1257,9 @@ function finalizeAssembly(
     })),
     ...historyMessages,
   ];
+  const finalMessages = context.preset?.mergeConsecutiveRoles
+    ? mergeConsecutiveRoleMessages(messages)
+    : messages;
 
   return {
     layers: orderedLayers,
@@ -1064,7 +1270,7 @@ function finalizeAssembly(
       ...(context.memory?.retrieval ?? []).map((entry) => entry.id),
     ],
     droppedLayers,
-    finalPayload: { messages },
+    finalPayload: { messages: finalMessages },
     prefill: (context.preset?.prefill && resolver.enabled("assistantPrefill")) ? context.preset.prefill : null,
     compactionSummary: compactionSummary ?? null,
   };

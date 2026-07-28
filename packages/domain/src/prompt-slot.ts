@@ -4,6 +4,7 @@ import type { CustomInjection, PromptSlot, PromptZone } from "./api-types.js";
 
 export const DEFAULT_PROMPT_ORDER: Record<string, number> = {
   main: 0,
+  charSystemPrompt: 1,
   worldInfoBefore: 10,
   personaDescription: 20,
   charDescription: 30,
@@ -15,13 +16,18 @@ export const DEFAULT_PROMPT_ORDER: Record<string, number> = {
   characterAvatar: 52,
   characterGallery: 54,
   personaAvatar: 56,
+  chatSummary: 57,
   authorsNote: 60,
+  chatDynamicPrompt: 62,
+  charDepthPrompt: 65,
   enhanceDefinitions: 70,
   nsfw: 75,
   worldInfoAfter: 80,
   dialogueExamples: 90,
   chatHistory: 100,
   jailbreak: 110,
+  charPostHistory: 115,
+  assistantPrefill: 999,
 };
 
 /**
@@ -71,6 +77,18 @@ export function inferSlot(args: {
   }
 
   return { zone, depth, order: args.order ?? 0 };
+}
+
+/**
+ * Default slot for a built-in canvas identifier. Most built-ins are relative
+ * to chatHistory and derive their zone from `DEFAULT_PROMPT_ORDER`.
+ * `charDepthPrompt` is the one semantic exception: it is an ST-style absolute
+ * depth injection, so its advanced-canvas default is in_chat depth 4.
+ */
+export function inferDefaultPromptSlot(identifier: string, fallbackOrder?: number): PromptSlot {
+  const order = fallbackOrder ?? DEFAULT_PROMPT_ORDER[identifier] ?? 10_000;
+  if (identifier === "charDepthPrompt") return { zone: "in_chat", depth: 4, order };
+  return inferSlot({ defaultOrder: order, order });
 }
 
 // ─── CustomInjection migration ────────────────────────────────────────────

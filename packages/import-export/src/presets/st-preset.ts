@@ -28,6 +28,14 @@ export interface StPromptOrderBlock {
   kind: "built_in" | "custom";
   zone?: "before_chat" | "after_chat" | "in_chat";
   depth?: number;
+  /**
+   * Role resolved from the matching ST content block (`prompts[].role`), for
+   * built-in entries only. ST stores role on the content block — not on the
+   * prompt_order entry — so it is merged in here to round-trip onto
+   * `PromptOrderEntry.role`. Absent for custom entries (their role is content
+   * metadata on the injection) and when the block role is the default "system".
+   */
+  role?: "system" | "user" | "assistant";
 }
 
 export function stBlockToCanvasEntry(block: StPromptOrderBlock): PromptOrderEntry {
@@ -39,6 +47,7 @@ export function stBlockToCanvasEntry(block: StPromptOrderBlock): PromptOrderEntr
       kind: block.kind,
       zone: block.zone,
       depth: block.depth ?? null,
+      ...(block.role ? { role: block.role } : {}),
     };
   }
   const slot = inferSlot({ order: block.order });
@@ -49,6 +58,7 @@ export function stBlockToCanvasEntry(block: StPromptOrderBlock): PromptOrderEntr
     kind: block.kind,
     zone: slot.zone,
     depth: slot.depth,
+    ...(block.role ? { role: block.role } : {}),
   };
 }
 
@@ -135,11 +145,12 @@ export function parseStPreset(jsonText: string): ParsedStPreset {
   const name = data.name || "Unnamed preset";
 
   // Build block metadata lookup before resolving order (needed for zone inference)
-  const blockMeta = new Map<string, { injectionPosition: number; injectionDepth: number }>();
+  const blockMeta = new Map<string, { injectionPosition: number; injectionDepth: number; role?: string }>();
   for (const b of data.prompts) {
     if (b.identifier) blockMeta.set(b.identifier, {
       injectionPosition: b.injection_position ?? 1,
       injectionDepth: b.injection_depth ?? 0,
+      role: b.role,
     });
   }
 
@@ -261,7 +272,7 @@ const BUILT_IN_PROMPT_IDENTIFIERS = new Set([
 
 function resolvePromptOrder(
   promptOrder: StPromptOrderSet[] | undefined,
-  blockMeta: Map<string, { injectionPosition: number; injectionDepth: number }>,
+  blockMeta: Map<string, { injectionPosition: number; injectionDepth: number; role?: string }>,
 ): { map: Map<string, StOrderInfo>; entries: StPromptOrderBlock[] } | null {
   if (!Array.isArray(promptOrder) || promptOrder.length === 0) return null;
 
@@ -305,6 +316,12 @@ function resolvePromptOrder(
       }
     }
 
+    // Built-in entries carry the ST content block's role when it is a non-default
+    // override (user/assistant); "system" is the implicit default and is omitted
+    // to keep the canvas clean. Custom entries never carry a slot role — their
+    // role is content metadata on the injection itself.
+    const rawBlockRole = blockMeta.get(item.identifier)?.role;
+    const entryRole = isBuiltIn && (rawBlockRole === "user" || rawBlockRole === "assistant") ? rawBlockRole : undefined;
     entries.push({
       identifier: item.identifier,
       enabled: item.enabled,
@@ -312,6 +329,7 @@ function resolvePromptOrder(
       kind: isBuiltIn ? "built_in" : "custom",
       zone,
       depth,
+      ...(entryRole ? { role: entryRole } : {}),
     });
   });
 
@@ -489,19 +507,19 @@ export function serializeStPreset(dto: PromptPresetDto): string {
   // enabled state is conveyed via prompt_order, not prompts[].
   const prompts: StPromptEntryOut[] = [];
   if (dto.system.trim()) {
-    prompts.push(buildContentBlock("main", dto.system, "system", resolveSlot("main", canvasMap), canvasMap.get("main")?.enabled ?? true));
+    prompts.push(buildContentBlock("main", dto.system, canvasMap.get("main")?.role ?? "system", resolveSlot("main", canvasMap), canvasMap.get("main")?.enabled ?? true));
   }
   if (dto.jailbreak.trim()) {
-    prompts.push(buildContentBlock("jailbreak", dto.jailbreak, "system", resolveSlot("jailbreak", canvasMap), canvasMap.get("jailbreak")?.enabled ?? true));
+    prompts.push(buildContentBlock("jailbreak", dto.jailbreak, canvasMap.get("jailbreak")?.role ?? "system", resolveSlot("jailbreak", canvasMap), canvasMap.get("jailbreak")?.enabled ?? true));
   }
   if (dto.nsfw.trim()) {
-    prompts.push(buildContentBlock("nsfw", dto.nsfw, "system", resolveSlot("nsfw", canvasMap), canvasMap.get("nsfw")?.enabled ?? true));
+    prompts.push(buildContentBlock("nsfw", dto.nsfw, canvasMap.get("nsfw")?.role ?? "system", resolveSlot("nsfw", canvasMap), canvasMap.get("nsfw")?.enabled ?? true));
   }
   if (dto.enhanceDefinitions.trim()) {
-    prompts.push(buildContentBlock("enhanceDefinitions", dto.enhanceDefinitions, "system", resolveSlot("enhanceDefinitions", canvasMap), canvasMap.get("enhanceDefinitions")?.enabled ?? true));
+    prompts.push(buildContentBlock("enhanceDefinitions", dto.enhanceDefinitions, canvasMap.get("enhanceDefinitions")?.role ?? "system", resolveSlot("enhanceDefinitions", canvasMap), canvasMap.get("enhanceDefinitions")?.enabled ?? true));
   }
   if (dto.authorsNote.trim()) {
-    prompts.push(buildContentBlock("authorsNote", dto.authorsNote, dto.authorsNoteRole, resolveAuthorsNoteSlot(dto, canvasMap), canvasMap.get("authorsNote")?.enabled ?? true));
+    prompts.push(buildContentBlock("authorsNote", dto.authorsNote, canvasMap.get("authorsNote")?.role ?? dto.authorsNoteRole, resolveAuthorsNoteSlot(dto, canvasMap), canvasMap.get("authorsNote")?.enabled ?? true));
   }
   for (const inj of dto.customInjections) {
     if (!inj.content.trim()) continue;

@@ -88,6 +88,9 @@ async function buildStDir(root: string) {
 				{ identifier: "main", name: "Main Prompt", role: "system", content: "You are a test.", injection_position: 0, injection_depth: 0, injection_order: 0, enabled: true },
 				{ identifier: "jailbreak", name: "Jailbreak", role: "system", content: "Continue.", injection_position: 0, injection_depth: 0, injection_order: 1, enabled: true },
 				{ identifier: "customInject", name: "My Injection", role: "system", content: "Custom block.", injection_position: 1, injection_depth: 4, injection_order: 100, enabled: true },
+				{ identifier: "nsfw", name: "NSFW", role: "system", content: "NSFW rules apply.", injection_position: 0, injection_depth: 0, injection_order: 50, enabled: true },
+				{ identifier: "enhanceDefinitions", name: "Enhance", role: "system", content: "Detail expansions.", injection_position: 0, injection_depth: 0, injection_order: 60, enabled: true },
+				{ identifier: "authorsNote", name: "Author's Note", role: "user", content: "Keep tone tense.", injection_position: 1, injection_depth: 3, injection_order: 70, enabled: true },
 			],
 			prompt_order: [{ character_id: 100001, order: [
 				{ identifier: "main", enabled: true, order: 0 },
@@ -215,6 +218,19 @@ describe("ST directory scanner — three gaps (STN-1D)", () => {
 		expect(importedPreset!.systemPrompt).toContain("You are a test.");
 		expect(importedPreset!.postHistoryInstructions).toContain("Continue.");
 		expect(importedPreset!.customInjections.some((c) => c.identifier === "customInject" && c.content === "Custom block.")).toBe(true);
+		// nsfw / enhanceDefinitions / authorsNote content maps onto native preset
+		// fields (not custom injections). authorsNote position/depth/role reverse-map
+		// from the ST block (injection_position 1 → in_chat depth 3, role user).
+		expect(importedPreset!.nsfwPrompt).toContain("NSFW rules apply.");
+		expect(importedPreset!.enhanceDefinitionsPrompt).toContain("Detail expansions.");
+		expect(importedPreset!.authorsNote).toContain("Keep tone tense.");
+		expect(importedPreset!.authorsNotePosition).toBe("in_chat");
+		expect(importedPreset!.authorsNoteDepth).toBe(3);
+		expect(importedPreset!.authorsNoteRole).toBe("user");
+		// built-in named slots must NOT leak into customInjections
+		expect(importedPreset!.customInjections.some((c) => c.identifier === "nsfw")).toBe(false);
+		expect(importedPreset!.customInjections.some((c) => c.identifier === "enhanceDefinitions")).toBe(false);
+		expect(importedPreset!.customInjections.some((c) => c.identifier === "authorsNote")).toBe(false);
 
 		// ── gap-3: persona row landed ──
 		const personaAfter = await env.stores.personas.listAll();

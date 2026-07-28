@@ -11,9 +11,55 @@ useDomEnv();
  * to the copy leak back into the source's in-memory state. The pure helper is
  * exported precisely so this invariant has a direct unit test (no RTL render).
  */
-import { describe, expect, test } from "bun:test";
-import type { CustomInjection, PromptOrderEntry } from "@vibe-tavern/domain";
-import { buildDuplicatePayload, type DraftData } from "./PromptManagerModal.js";
+import { afterEach, beforeAll, describe, expect, mock, test } from "bun:test";
+import type { ReactNode } from "react";
+import type { CustomInjection, PromptOrderEntry, PromptPresetDto } from "@vibe-tavern/domain";
+import type { DraftData } from "./PromptManagerModal.js";
+import { useModalStore } from "../../stores/modal-store.js";
+
+const realI18nContext = await import("../../i18n/context.js");
+const realTokenizer = await import("../../utils/tokenizer.js");
+const realTooltip = await import("../shared/Tooltip.js");
+const realUseMobile = await import("../../hooks/use-mobile.js");
+const realPromptCanvasLore = await import("../../lib/prompt-canvas-lore.js");
+const loadPromptCanvasLoreEntries = mock(realPromptCanvasLore.loadPromptCanvasLoreEntries);
+
+mock.module("../../i18n/context.js", () => ({
+  ...realI18nContext,
+  useT: () => ({
+    t: (key: string) => key,
+    tDynamic: (key: string) => key,
+    locale: "en",
+    setLocale: () => {},
+    ready: true,
+  }),
+}));
+mock.module("../../utils/tokenizer.js", () => ({ ...realTokenizer, countTokens: () => 0 }));
+mock.module("../shared/Tooltip.js", () => ({
+  ...realTooltip,
+  CustomTooltip: ({ children }: { children: ReactNode }) => children,
+  TooltipProvider: ({ children }: { children: ReactNode }) => children,
+}));
+mock.module("../../hooks/use-mobile.js", () => ({ ...realUseMobile, useIsMobile: () => false }));
+mock.module("../../lib/prompt-canvas-lore.js", () => ({
+  ...realPromptCanvasLore,
+  loadPromptCanvasLoreEntries,
+}));
+
+const { cleanup, fireEvent, render, waitFor, within } = await import("@testing-library/react");
+
+let PromptManagerModal: typeof import("./PromptManagerModal.js").PromptManagerModal;
+let buildDuplicatePayload: typeof import("./PromptManagerModal.js").buildDuplicatePayload;
+
+beforeAll(async () => {
+  ({ PromptManagerModal, buildDuplicatePayload } = await import("./PromptManagerModal.js"));
+});
+
+afterEach(() => {
+  cleanup();
+  loadPromptCanvasLoreEntries.mockReset();
+  useModalStore.setState({ isPromptManagerOpen: false });
+});
 
 function baseDraft(): DraftData {
   return {
@@ -34,8 +80,190 @@ function baseDraft(): DraftData {
     customInjections: [{ identifier: "inj_1", name: "Inj", content: "c", role: "system" }],
     promptOrder: [{ identifier: "main", enabled: true, order: 0, zone: "before_chat", depth: null, kind: "built_in" }],
     advancedMode: false,
+    mergeConsecutiveRoles: false,
   };
 }
+
+function advancedPreset(): PromptPresetDto {
+  const draft = baseDraft();
+  return {
+    ...draft,
+    id: "preset-1",
+    advancedMode: true,
+    aiAssistantPrompts: JSON.stringify(draft.aiAssistantPrompts),
+    createdAt: "2025-01-01T00:00:00.000Z",
+    updatedAt: "2025-01-01T00:00:00.000Z",
+  };
+}
+
+describe("PromptManagerModal — character save boundary", () => {
+  test("persists an edited character V3 canvas field only after preset save succeeds", async () => {
+    const onUpdate = mock(async () => true);
+    const onCharacterFieldUpdate = mock();
+    useModalStore.setState({ isPromptManagerOpen: true });
+
+    const view = render(
+      <PromptManagerModal
+        presets={[advancedPreset()]}
+        activePresetId="preset-1"
+        setActivePresetId={mock()}
+        onCreate={mock(async () => null)}
+        onUpdate={onUpdate}
+        onDelete={mock(async () => true)}
+        onReorder={mock(async () => true)}
+        characterFields={{
+          systemPrompt: "old character system",
+          postHistoryInstructions: "",
+          depthPrompt: "",
+          depthPromptDepth: 4,
+          depthPromptRole: "system",
+          description: "old description",
+          personalitySummary: "old personality",
+          scenario: "old scenario",
+          mesExample: "old examples",
+        }}
+        onCharacterFieldUpdate={onCharacterFieldUpdate}
+      />,
+    );
+
+    const card = view.baseElement.querySelector<HTMLElement>('[data-canvas-identifier="charSystemPrompt"]');
+    expect(card).toBeTruthy();
+    fireEvent.click(within(card!).getByText("character_system_prompt"));
+    const textarea = within(card!).getByRole("textbox");
+    fireEvent.input(textarea, { target: { value: "new character system" } });
+    const saveButton = within(view.baseElement).getByRole("button", { name: "save" });
+    await waitFor(() => expect(saveButton.hasAttribute("disabled")).toBe(false));
+    fireEvent.click(saveButton);
+
+    await waitFor(() => {
+      expect(onUpdate).toHaveBeenCalledTimes(1);
+      expect(onCharacterFieldUpdate).toHaveBeenCalledWith("charSystemPrompt", "new character system");
+    });
+  });
+
+  test("persists the consecutive-role merge checkbox through the preset update patch", async () => {
+    const onUpdate = mock(async () => true);
+    useModalStore.setState({ isPromptManagerOpen: true });
+
+    const view = render(
+      <PromptManagerModal
+        presets={[advancedPreset()]}
+        activePresetId="preset-1"
+        setActivePresetId={mock()}
+        onCreate={mock(async () => null)}
+        onUpdate={onUpdate}
+        onDelete={mock(async () => true)}
+        onReorder={mock(async () => true)}
+      />,
+    );
+
+    fireEvent.click(within(view.baseElement).getByRole("checkbox", { name: "merge_consecutive_roles" }));
+    fireEvent.click(within(view.baseElement).getByRole("button", { name: "save" }));
+
+    await waitFor(() => {
+      expect(onUpdate).toHaveBeenCalledWith(
+        "preset-1",
+        expect.objectContaining({ mergeConsecutiveRoles: true }),
+      );
+    });
+  });
+
+  test("loads active-chat lore summaries into the expandable anchor card", async () => {
+    loadPromptCanvasLoreEntries.mockResolvedValueOnce([{
+      id: "entry-1",
+      lorebookId: "book-1",
+      lorebookName: "Character Lore",
+      title: "Before Entry",
+      position: "before_char",
+      priority: 10,
+      sortOrder: 0,
+    }]);
+    useModalStore.setState({ isPromptManagerOpen: true });
+
+    const view = render(
+      <PromptManagerModal
+        presets={[advancedPreset()]}
+        activePresetId="preset-1"
+        setActivePresetId={mock()}
+        onCreate={mock(async () => null)}
+        onUpdate={mock(async () => true)}
+        onDelete={mock(async () => true)}
+        onReorder={mock(async () => true)}
+        loreContext={{ chatId: "chat-1", characterId: "char-1", personaId: "persona-1" }}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(loadPromptCanvasLoreEntries).toHaveBeenCalledWith({
+        chatId: "chat-1",
+        characterId: "char-1",
+        personaId: "persona-1",
+      });
+    });
+    const anchor = view.baseElement.querySelector<HTMLElement>('[data-canvas-identifier="worldInfoBefore"]');
+    expect(anchor).toBeTruthy();
+    fireEvent.click(within(anchor!).getByText("prompt_slot_world_info_before"));
+    await waitFor(() => {
+      expect(within(anchor!).getByText("Before Entry")).toBeTruthy();
+      expect(within(anchor!).getByText("Character Lore")).toBeTruthy();
+    });
+  });
+
+  test("routes edited character content and persona description after preset save", async () => {
+    const onUpdate = mock(async () => true);
+    const onCharacterFieldUpdate = mock();
+    const onPersonaDescriptionUpdate = mock();
+    useModalStore.setState({ isPromptManagerOpen: true });
+
+    const view = render(
+      <PromptManagerModal
+        presets={[advancedPreset()]}
+        activePresetId="preset-1"
+        setActivePresetId={mock()}
+        onCreate={mock(async () => null)}
+        onUpdate={onUpdate}
+        onDelete={mock(async () => true)}
+        onReorder={mock(async () => true)}
+        characterFields={{
+          systemPrompt: "",
+          postHistoryInstructions: "",
+          depthPrompt: "",
+          depthPromptDepth: 4,
+          depthPromptRole: "system",
+          description: "old description",
+          personalitySummary: "old personality",
+          scenario: "old scenario",
+          mesExample: "old examples",
+        }}
+        onCharacterFieldUpdate={onCharacterFieldUpdate}
+        personaDescription="old persona"
+        onPersonaDescriptionUpdate={onPersonaDescriptionUpdate}
+      />,
+    );
+
+    const characterCard = view.baseElement.querySelector<HTMLElement>('[data-canvas-identifier="charDescription"]');
+    expect(characterCard).toBeTruthy();
+    fireEvent.click(within(characterCard!).getByText("prompt_slot_character_description"));
+    fireEvent.change(within(characterCard!).getByRole("textbox"), {
+      target: { value: "new description" },
+    });
+
+    const personaCard = view.baseElement.querySelector<HTMLElement>('[data-canvas-identifier="personaDescription"]');
+    expect(personaCard).toBeTruthy();
+    fireEvent.click(within(personaCard!).getByText("prompt_slot_persona"));
+    fireEvent.change(within(personaCard!).getByRole("textbox"), {
+      target: { value: "new persona" },
+    });
+
+    fireEvent.click(within(view.baseElement).getByRole("button", { name: "save" }));
+
+    await waitFor(() => {
+      expect(onUpdate).toHaveBeenCalledTimes(1);
+      expect(onCharacterFieldUpdate).toHaveBeenCalledWith("charDescription", "new description");
+      expect(onPersonaDescriptionUpdate).toHaveBeenCalledWith("new persona");
+    });
+  });
+});
 
 describe("buildDuplicatePayload — deep-copy (PRESET_COPY_DELETE_CORRUPTION bug 1)", () => {
   test("payload does not share mutable array/object refs with the source draft", () => {
@@ -77,5 +305,184 @@ describe("buildDuplicatePayload — deep-copy (PRESET_COPY_DELETE_CORRUPTION bug
     const _inj: CustomInjection = { identifier: "x", name: "y", content: "z", role: "assistant" };
     const _po: PromptOrderEntry = { identifier: "x", enabled: true, order: 0, zone: "in_chat", depth: 1, kind: "custom" };
     expect([_inj.identifier, _po.identifier]).toEqual(["x", "x"]);
+  });
+});
+
+describe("PromptManagerModal — chatDynamicPrompt save (Wave 6)", () => {
+  test("does NOT call onChatDynamicPromptUpdate when chatDynamicPrompt is unchanged", async () => {
+    const onUpdate = mock(async () => true);
+    const onChatDynamicPromptUpdate = mock(async () => {});
+    useModalStore.setState({ isPromptManagerOpen: true });
+
+    const view = render(
+      <PromptManagerModal
+        presets={[advancedPreset()]}
+        activePresetId="preset-1"
+        setActivePresetId={mock()}
+        onCreate={mock(async () => null)}
+        onUpdate={onUpdate}
+        onDelete={mock(async () => true)}
+        onReorder={mock(async () => true)}
+        chatDynamicPrompt="existing"
+        onChatDynamicPromptUpdate={onChatDynamicPromptUpdate}
+      />,
+    );
+
+    // Toggle the consecutive-role merge checkbox to trigger dirty
+    // (so the save button is enabled), but keep chatDynamicPrompt unchanged.
+    fireEvent.click(within(view.baseElement).getByRole("checkbox", { name: "merge_consecutive_roles" }));
+
+    fireEvent.click(within(view.baseElement).getByRole("button", { name: "save" }));
+
+    await waitFor(() => {
+      expect(onUpdate).toHaveBeenCalled();
+    });
+    // chatDynamicPromptDraft (initialised to "existing") === input.chatDynamicPrompt ("existing") → no call.
+    expect(onChatDynamicPromptUpdate).not.toHaveBeenCalled();
+  });
+
+  test("waits for a successful preset save before updating the chat dynamic prompt", async () => {
+    let resolvePresetSave: ((ok: boolean) => void) | undefined;
+    const onUpdate = mock(() => new Promise<boolean>((resolve) => { resolvePresetSave = resolve; }));
+    const onChatDynamicPromptUpdate = mock(async () => {});
+    useModalStore.setState({ isPromptManagerOpen: true });
+
+    const view = render(
+      <PromptManagerModal
+        presets={[advancedPreset()]}
+        activePresetId="preset-1"
+        setActivePresetId={mock()}
+        onCreate={mock(async () => null)}
+        onUpdate={onUpdate}
+        onDelete={mock(async () => true)}
+        onReorder={mock(async () => true)}
+        chatDynamicPrompt="old"
+        onChatDynamicPromptUpdate={onChatDynamicPromptUpdate}
+      />,
+    );
+
+    const card = view.baseElement.querySelector<HTMLElement>('[data-canvas-identifier="chatDynamicPrompt"]');
+    expect(card).toBeTruthy();
+    if (!card) return;
+    fireEvent.click(within(card).getByText("prompt_slot_chat_dynamic"));
+    fireEvent.change(within(card).getByRole("textbox"), { target: { value: "new content" } });
+    fireEvent.click(within(view.baseElement).getByRole("button", { name: "save" }));
+
+    expect(onUpdate).toHaveBeenCalled();
+    expect(onChatDynamicPromptUpdate).not.toHaveBeenCalled();
+    expect(resolvePresetSave).toBeDefined();
+    resolvePresetSave?.(true);
+
+    await waitFor(() => {
+      expect(onChatDynamicPromptUpdate).toHaveBeenCalledWith("new content");
+    });
+  });
+
+  test("does not update the chat dynamic prompt when the preset save fails", async () => {
+    const onChatDynamicPromptUpdate = mock(async () => {});
+    useModalStore.setState({ isPromptManagerOpen: true });
+    const view = render(
+      <PromptManagerModal
+        presets={[advancedPreset()]}
+        activePresetId="preset-1"
+        setActivePresetId={mock()}
+        onCreate={mock(async () => null)}
+        onUpdate={mock(async () => false)}
+        onDelete={mock(async () => true)}
+        onReorder={mock(async () => true)}
+        chatDynamicPrompt="old"
+        onChatDynamicPromptUpdate={onChatDynamicPromptUpdate}
+      />,
+    );
+
+    const card = view.baseElement.querySelector<HTMLElement>('[data-canvas-identifier="chatDynamicPrompt"]');
+    expect(card).toBeTruthy();
+    if (!card) return;
+    fireEvent.click(within(card).getByText("prompt_slot_chat_dynamic"));
+    fireEvent.change(within(card).getByRole("textbox"), { target: { value: "new content" } });
+    fireEvent.click(within(view.baseElement).getByRole("button", { name: "save" }));
+
+    await waitFor(() => {
+      expect(onChatDynamicPromptUpdate).not.toHaveBeenCalled();
+      const retry = within(view.baseElement).getByRole("button", { name: "save" }) as HTMLButtonElement;
+      expect(retry.disabled).toBe(false);
+    });
+  });
+
+  test("rejected onChatDynamicPromptUpdate is caught and does not crash the save flow", async () => {
+    // The save handler uses try/catch around the awaited onChatDynamicPromptUpdate.
+    // Even when the update rejects, the handler itself must not throw — it should
+    // catch, set error state, and return without calling setDirty(false).
+    const onUpdate = mock(async () => true);
+    let rejected = false;
+    const onChatDynamicPromptUpdate = mock(async () => {
+      rejected = true;
+      throw new Error("offline");
+    });
+    useModalStore.setState({ isPromptManagerOpen: true });
+
+    const view = render(
+      <PromptManagerModal
+        presets={[advancedPreset()]}
+        activePresetId="preset-1"
+        setActivePresetId={mock()}
+        onCreate={mock(async () => null)}
+        onUpdate={onUpdate}
+        onDelete={mock(async () => true)}
+        onReorder={mock(async () => true)}
+        chatDynamicPrompt="old"
+        onChatDynamicPromptUpdate={onChatDynamicPromptUpdate}
+      />,
+    );
+
+    const card = view.baseElement.querySelector<HTMLElement>('[data-canvas-identifier="chatDynamicPrompt"]');
+    fireEvent.click(within(card!).getByText("prompt_slot_chat_dynamic"));
+    fireEvent.change(within(card!).getByRole("textbox"), { target: { value: "changed" } });
+
+    fireEvent.click(within(view.baseElement).getByRole("button", { name: "save" }));
+
+    await waitFor(() => {
+      expect(onUpdate).toHaveBeenCalled();
+      expect(onChatDynamicPromptUpdate).toHaveBeenCalled();
+    });
+    // The rejection was caught, the draft remains dirty, and Save is available
+    // for retry rather than falsely changing to the "saved" state.
+    expect(rejected).toBe(true);
+    await waitFor(() => {
+      const retry = within(view.baseElement).getByRole("button", { name: "save" }) as HTMLButtonElement;
+      expect(retry.disabled).toBe(false);
+      expect(within(view.baseElement).queryByRole("button", { name: "saved" })).toBeNull();
+    });
+  });
+
+  test("null onChatDynamicPromptUpdate is handled gracefully (no-op)", async () => {
+    const onUpdate = mock(async () => true);
+    useModalStore.setState({ isPromptManagerOpen: true });
+
+    const view = render(
+      <PromptManagerModal
+        presets={[advancedPreset()]}
+        activePresetId="preset-1"
+        setActivePresetId={mock()}
+        onCreate={mock(async () => null)}
+        onUpdate={onUpdate}
+        onDelete={mock(async () => true)}
+        onReorder={mock(async () => true)}
+        chatDynamicPrompt="old"
+        // onChatDynamicPromptUpdate intentionally omitted (undefined)
+      />,
+    );
+
+    // Edit to trigger a change.
+    const card = view.baseElement.querySelector<HTMLElement>('[data-canvas-identifier="chatDynamicPrompt"]');
+    fireEvent.click(within(card!).getByText("prompt_slot_chat_dynamic"));
+    fireEvent.change(within(card!).getByRole("textbox"), { target: { value: "changed" } });
+
+    // Save should not crash — the optional ?.call handles the undefined case.
+    fireEvent.click(within(view.baseElement).getByRole("button", { name: "save" }));
+
+    await waitFor(() => {
+      expect(onUpdate).toHaveBeenCalled();
+    });
   });
 });

@@ -21,8 +21,10 @@ const promptPresetCoreSchema = z.object({
     kind: z.enum(["built_in", "custom"]).optional(),
     zone: z.enum(["before_chat", "in_chat", "after_chat"]).optional(),
     depth: z.number().nullable().optional(),
+    role: z.enum(["system", "user", "assistant"]).optional(),
   })).optional(),
   advancedMode: z.boolean().optional(),
+  mergeConsecutiveRoles: z.boolean().optional(),
   scriptAiSystemPrompt: z.string().optional(),
   aiAssistantPrompts: z.string().optional(),
 });

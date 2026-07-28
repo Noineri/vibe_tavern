@@ -1,7 +1,7 @@
 import type { ChatBranchId, ChatId, ChatMode, MessageId, MessageVariantId, ObjectiveMode, ObjectiveTaskStatus, SceneTrackerConfig } from "@vibe-tavern/domain";
 import { brandId } from "@vibe-tavern/domain";
 import type { AppMode } from "../../components/layout/app-shell-types.js";
-import { createMessageVariant, type CreateMessageVariantInput } from "../../api/chat-api.js";
+import { createMessageVariant, updateChatDynamicPrompt, type CreateMessageVariantInput } from "../../api/chat-api.js";
 import type { DiceSendCommitIntent } from "../../api/types.js";
 import {
   activateBranch,
@@ -643,6 +643,11 @@ export async function deleteObjectiveShortTermGoalAction(chatId: ChatId, goalId:
 
 export async function selectObjectiveShortTermGoalAction(chatId: ChatId, goalId: string): Promise<void> {
   const snapshot = await selectObjectiveShortTermGoal(chatId, goalId);
+  syncSnapshot(snapshot);
+}
+
+export async function updateChatDynamicPromptAction(chatId: ChatId, content: string): Promise<void> {
+  const snapshot = await updateChatDynamicPrompt(chatId, content);
   syncSnapshot(snapshot);
 }
 

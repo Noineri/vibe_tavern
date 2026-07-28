@@ -60,6 +60,7 @@ export class StaticPromptResolver implements PromptAssemblyResolver {
 		enhanceDefinitions: string;
 		/** Whether this preset is in advanced (canvas) mode. */
 		advancedMode: boolean;
+		mergeConsecutiveRoles: boolean;
 		customInjections: CustomInjection[];
 		promptOrder: PromptOrderEntry[];
 	} | null> {
@@ -80,6 +81,7 @@ export class StaticPromptResolver implements PromptAssemblyResolver {
 			nsfw: preset.nsfwPrompt,
 			enhanceDefinitions: preset.enhanceDefinitionsPrompt,
 			advancedMode: preset.advancedMode,
+			mergeConsecutiveRoles: preset.mergeConsecutiveRoles,
 			customInjections: preset.customInjections,
 			promptOrder: preset.promptOrder,
 		};

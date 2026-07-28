@@ -27,9 +27,10 @@
  */
 import { beforeAll, describe, it, expect, mock } from "bun:test";
 import type { ReactElement, ReactNode } from "react";
-import { render, fireEvent, within } from "@testing-library/react";
 import { useDomEnv } from "../../../../test/dom-env.js";
 import type { CustomInjection, PromptOrderEntry } from "@vibe-tavern/domain";
+import type { CanvasLoreEntrySummary } from "../../../lib/prompt-canvas-lore.js";
+import type { CanvasSummaryEntry } from "../../../lib/prompt-canvas-summary.js";
 import type { CharacterCanvasDraft } from "./InjectionTable.js";
 
 useDomEnv();
@@ -69,6 +70,8 @@ mock.module("../../shared/Tooltip.js", () => ({
 // implement. Force desktop; the mobile fork is not the test target.
 mock.module("../../../hooks/use-mobile.js", () => ({ ...realUseMobile, useIsMobile: () => false }));
 
+const { render, fireEvent, within } = await import("@testing-library/react");
+
 let InjectionTable: typeof import("./InjectionTable.js").InjectionTable;
 beforeAll(async () => {
   ({ InjectionTable } = await import("./InjectionTable.js"));
@@ -88,6 +91,7 @@ const baseDraft = {
   authorsNoteRole: "system",
   nsfw: "nsfw",
   enhanceDefinitions: "enh",
+  mergeConsecutiveRoles: false,
 };
 
 const characterDraft: CharacterCanvasDraft = {
@@ -96,6 +100,10 @@ const characterDraft: CharacterCanvasDraft = {
   charDepthPrompt: "cdp",
   charDepthPromptDepth: 4,
   charDepthPromptRole: "system",
+  charDescription: "A northern warrior",
+  charPersonality: "Brave and loyal",
+  scenario: "A tavern at sunset",
+  dialogueExamples: "{{char}}: Greetings!",
 };
 
 function makeSpies() {
@@ -104,6 +112,7 @@ function makeSpies() {
     onPromptOrderChange: mock(),
     onUpdateField: mock(),
     onCharacterFieldUpdate: mock(),
+    onPersonaDescriptionUpdate: mock(),
   };
 }
 
@@ -118,6 +127,14 @@ function canvasEl(props: CanvasProps & { spies: Spies }): ReactElement {
       onUpdateField={props.onUpdateField ?? props.spies.onUpdateField}
       characterDraft={props.characterDraft ?? null}
       onCharacterFieldUpdate={props.onCharacterFieldUpdate ?? props.spies.onCharacterFieldUpdate}
+      personaDescription={props.personaDescription ?? null}
+      onPersonaDescriptionUpdate={props.onPersonaDescriptionUpdate ?? props.spies.onPersonaDescriptionUpdate}
+      chatDynamicPrompt={props.chatDynamicPrompt ?? null}
+      onChatDynamicPromptUpdate={props.onChatDynamicPromptUpdate}
+      loreAnchorEntries={props.loreAnchorEntries ?? []}
+      loreAnchorLoadState={props.loreAnchorLoadState ?? "idle"}
+      summaryEntries={props.summaryEntries}
+      summaryLoadState={props.summaryLoadState}
       promptOrder={props.promptOrder ?? []}
       onPromptOrderChange={props.onPromptOrderChange ?? props.spies.onPromptOrderChange}
     />
@@ -170,16 +187,16 @@ function clickDotToggle(label: string) {
   throw new Error(`no ●/○ toggle found walking up from label "${label}"`);
 }
 
-/** Click the trash delete button of a custom-injection row. Identified as the
- *  header button with empty text and no aria-label (drag handle = "⋮⋮" text;
- *  toggle = "●"/"○"; edit-name button carries an aria-label; delete is SVG-only). */
+/** Click the trash delete button of a custom-injection row. The CanvasCard
+ *  remove button carries aria-label `cc_remove`; identified by that aria-label
+ *  while walking up from the row's visible name. */
 function clickDelete(rowName: string) {
   const nameEl = queries().getByText(rowName);
   let node: HTMLElement | null = nameEl;
   while (node) {
     const del = within(node)
       .queryAllByRole("button")
-      .find((b) => b.textContent?.trim() === "" && !b.getAttribute("aria-label"));
+      .find((b) => b.getAttribute("aria-label") === "cc_remove");
     if (del) {
       fireEvent.click(del);
       return;
@@ -221,6 +238,11 @@ describe("PromptOrderCanvas — characterization", () => {
 		expect(queries().queryByText("character_post_history")).toBeNull();
 		expect(queries().queryByText("character_depth_prompt")).toBeNull();
 
+    // Pale category fills replace both source badges and the old icon legend.
+    expect(text).not.toContain("editable_badge");
+    expect(text).not.toContain("char_badge");
+    expect(text).not.toContain("cc_legend_toggle");
+
     // whole-canvas order: before items → jailbreak → prefill
     expectOrdered(text, [...beforeLabels, "post_history_instructions", "prefill_assistant"]);
   });
@@ -232,7 +254,76 @@ describe("PromptOrderCanvas — characterization", () => {
 		rerender(canvasEl({ spies, characterDraft }));
 		expect(queries().getByText("character_system_prompt")).toBeTruthy();
 		expect(queries().getByText("character_post_history")).toBeTruthy();
+    // charDepthPrompt's semantic advanced default is in_chat depth 4, so it
+    // lives inside the collapsed chat-history accordion rather than before_chat.
+    fireEvent.click(queries().getByRole("button", { name: /prompt_slot_chat_history/ }));
 		expect(queries().getByText("character_depth_prompt")).toBeTruthy();
+  });
+
+  it("binds character and persona source content to editable CanvasCards", () => {
+    const { container, spies } = renderCanvas({
+      characterDraft,
+      personaDescription: "A wandering scholar",
+    });
+
+    const characterCard = container.querySelector<HTMLElement>('[data-canvas-identifier="charDescription"]');
+    expect(characterCard).toBeTruthy();
+    expect(characterCard!.textContent).not.toContain("char_badge");
+    expect(characterCard!.textContent).not.toContain("cc_read_only");
+    expect(characterCard!.classList.contains("canvas-card--entity")).toBe(true);
+    fireEvent.click(within(characterCard!).getByText("prompt_slot_character_description"));
+    const characterTextarea = within(characterCard!).getByRole("textbox") as HTMLTextAreaElement;
+    expect(characterTextarea.value).toBe("A northern warrior");
+    fireEvent.change(characterTextarea, { target: { value: "An eastern mage" } });
+    expect(spies.onCharacterFieldUpdate).toHaveBeenCalledWith("charDescription", "An eastern mage");
+
+    const personaCard = container.querySelector<HTMLElement>('[data-canvas-identifier="personaDescription"]');
+    expect(personaCard).toBeTruthy();
+    expect(personaCard!.textContent).not.toContain("persona_badge");
+    expect(personaCard!.classList.contains("canvas-card--entity")).toBe(true);
+    fireEvent.click(within(personaCard!).getByText("prompt_slot_persona"));
+    const personaTextarea = within(personaCard!).getByRole("textbox") as HTMLTextAreaElement;
+    expect(personaTextarea.value).toBe("A wandering scholar");
+    fireEvent.change(personaTextarea, { target: { value: "A retired navigator" } });
+    expect(spies.onPersonaDescriptionUpdate).toHaveBeenCalledWith("A retired navigator");
+  });
+
+  it("expands lore anchors into position-filtered linked-entry lists", () => {
+    const loreAnchorEntries: CanvasLoreEntrySummary[] = [
+      {
+        id: "before-1",
+        lorebookId: "book-1",
+        lorebookName: "Character Lore",
+        title: "Before Entry",
+        position: "before_char",
+        priority: 10,
+        sortOrder: 0,
+      },
+      {
+        id: "after-1",
+        lorebookId: "book-2",
+        lorebookName: "Global Lore",
+        title: "After Entry",
+        position: "after_char",
+        priority: 20,
+        sortOrder: 0,
+      },
+    ];
+    const { container } = renderCanvas({ loreAnchorEntries, loreAnchorLoadState: "ready" });
+
+    const beforeCard = container.querySelector<HTMLElement>('[data-canvas-identifier="worldInfoBefore"]');
+    expect(beforeCard).toBeTruthy();
+    fireEvent.click(within(beforeCard!).getByText("prompt_slot_world_info_before"));
+    expect(within(beforeCard!).getByText("Before Entry")).toBeTruthy();
+    expect(within(beforeCard!).getByText("Character Lore")).toBeTruthy();
+    expect(within(beforeCard!).queryByText("After Entry")).toBeNull();
+
+    const afterCard = container.querySelector<HTMLElement>('[data-canvas-identifier="worldInfoAfter"]');
+    expect(afterCard).toBeTruthy();
+    fireEvent.click(within(afterCard!).getByText("prompt_slot_world_info_after"));
+    expect(within(afterCard!).getByText("After Entry")).toBeTruthy();
+    expect(within(afterCard!).getByText("Global Lore")).toBeTruthy();
+    expect(within(afterCard!).queryByText("Before Entry")).toBeNull();
   });
 
   it("orders before_chat items by ascending default order", () => {
@@ -287,6 +378,48 @@ describe("PromptOrderCanvas — characterization", () => {
     expect(text.indexOf("TestInj")).toBeLessThan(text.indexOf("depth_zone_1"));
   });
 
+  it("stacks the canvas header on mobile and uses the shared tooltip for the merge checkbox", () => {
+    const spies = makeSpies();
+    renderCanvas({ spies });
+
+    const header = queries().getByTestId("prompt-canvas-header");
+    expect(header.className).toContain("flex-col");
+    expect(header.className).toContain("sm:flex-row");
+
+    const checkbox = queries().getByRole("checkbox", { name: "merge_consecutive_roles" });
+    expect(checkbox.getAttribute("title")).toBeNull();
+    fireEvent.click(checkbox);
+    expect(spies.onUpdateField).toHaveBeenCalledWith("mergeConsecutiveRoles", true);
+  });
+
+  it("renders a custom injection through a syntax-palette-tinted CanvasCard with token counter and working role control", () => {
+    const spies = makeSpies();
+    const injection: CustomInjection = { identifier: "custom_t", name: "TestInj", content: "x", role: "system" };
+    const { container } = renderCanvas({
+      spies,
+      injections: [injection],
+      promptOrder: [
+        { identifier: "custom_t", enabled: true, order: 0, zone: "before_chat", depth: null, kind: "custom" },
+      ],
+    });
+
+    const card = container.querySelector('[data-canvas-identifier="custom_t"]') as HTMLElement;
+    expect(card).toBeTruthy();
+    expect(card.classList.contains("canvas-card--custom")).toBe(true);
+    const removeButton = within(card).getByRole("button", { name: "cc_remove" });
+    expect(removeButton.querySelector("svg")).toBeTruthy();
+    const headerChildren = Array.from(card.firstElementChild?.children ?? []);
+    const chevron = headerChildren.find((child) => child.textContent === "▶");
+    expect(chevron).toBeTruthy();
+    expect(headerChildren.indexOf(removeButton)).toBeLessThan(headerChildren.indexOf(chevron!));
+    expect(card.textContent).toContain("0 tokens_label");
+    expect(card.textContent).toContain("system");
+
+    fireEvent.click(within(card).getByText("TestInj"));
+    fireEvent.click(within(card).getByRole("radio", { name: "assistant" }));
+    expect(spies.onChange).toHaveBeenCalledWith([{ ...injection, role: "assistant" }]);
+  });
+
   it("toggling a built-in slot with an existing canvas entry flips enabled", () => {
     const spies = makeSpies();
     renderCanvas({
@@ -304,14 +437,26 @@ describe("PromptOrderCanvas — characterization", () => {
     ]);
   });
 
-  it("toggling a built-in slot with no canvas entry creates an enabled:false entry", () => {
+  it("toggling a built-in slot with no canvas entry creates an enabled:false entry at its semantic default", () => {
     const spies = makeSpies();
     renderCanvas({ spies, promptOrder: [] });
 
     clickDotToggle("prompt_slot_world_info_before"); // worldInfoBefore marker, no entry
 
     expect(spies.onPromptOrderChange).toHaveBeenCalledWith([
-      { identifier: "worldInfoBefore", enabled: false, kind: "built_in", zone: "before_chat", depth: null, order: 999 },
+      { identifier: "worldInfoBefore", enabled: false, kind: "built_in", zone: "before_chat", depth: null, order: 10 },
+    ]);
+  });
+
+  it("changing a built-in field role with no entry creates a semantic PromptOrderEntry", () => {
+    const spies = makeSpies();
+    renderCanvas({ spies, promptOrder: [] });
+
+    fireEvent.click(queries().getByText("system_prompt"));
+    fireEvent.click(queries().getByRole("radio", { name: "user" }));
+
+    expect(spies.onPromptOrderChange).toHaveBeenCalledWith([
+      { identifier: "main", enabled: true, kind: "built_in", zone: "before_chat", depth: null, order: 0, role: "user" },
     ]);
   });
 
@@ -356,5 +501,171 @@ describe("PromptOrderCanvas — characterization", () => {
 
     expect(spies.onChange).toHaveBeenCalledWith([]);
     expect(spies.onPromptOrderChange).toHaveBeenCalledWith([]);
+  });
+
+  // ── Wave 6: chatDynamicPrompt canvas card ────────────────────────────
+
+  it("renders chatDynamicPrompt CanvasCard with editable content and default system role", () => {
+    const spies = makeSpies();
+    const onChatDynamicPromptUpdate = mock();
+    const { container } = renderCanvas({
+      spies,
+      chatDynamicPrompt: "per-chat prompt",
+      onChatDynamicPromptUpdate,
+    });
+
+    const card = container.querySelector<HTMLElement>('[data-canvas-identifier="chatDynamicPrompt"]');
+    expect(card).toBeTruthy();
+    // Should display the content.
+    expect(card!.textContent).toContain("prompt_slot_chat_dynamic");
+    // Default role is system.
+    expect(card!.textContent).toContain("system");
+    // Should be editable (has the textarea, not read-only badge).
+    fireEvent.click(within(card!).getByText("prompt_slot_chat_dynamic"));
+    const textarea = within(card!).getByRole("textbox") as HTMLTextAreaElement;
+    expect(textarea.value).toBe("per-chat prompt");
+    fireEvent.change(textarea, { target: { value: "updated" } });
+    expect(onChatDynamicPromptUpdate).toHaveBeenCalledWith("updated");
+  });
+
+  it("chatDynamicPrompt CanvasCard toggle creates semantic PromptOrderEntry", () => {
+    const spies = makeSpies();
+    renderCanvas({
+      spies,
+      chatDynamicPrompt: "content",
+      onChatDynamicPromptUpdate: mock(),
+      promptOrder: [],
+    });
+
+    clickDotToggle("prompt_slot_chat_dynamic");
+
+    expect(spies.onPromptOrderChange).toHaveBeenCalledWith([
+      { identifier: "chatDynamicPrompt", enabled: false, kind: "built_in", zone: "before_chat", depth: null, order: 62 },
+    ]);
+  });
+
+  it("chatDynamicPrompt CanvasCard role change creates semantic PromptOrderEntry", () => {
+    const spies = makeSpies();
+    renderCanvas({
+      spies,
+      chatDynamicPrompt: "content",
+      onChatDynamicPromptUpdate: mock(),
+      promptOrder: [],
+    });
+
+    fireEvent.click(queries().getByText("prompt_slot_chat_dynamic"));
+    fireEvent.click(queries().getByRole("radio", { name: "user" }));
+
+    expect(spies.onPromptOrderChange).toHaveBeenCalledWith([
+      { identifier: "chatDynamicPrompt", enabled: true, kind: "built_in", zone: "before_chat", depth: null, order: 62, role: "user" },
+    ]);
+  });
+
+  // ── Wave 6: chatSummary canvas card ──────────────────────────────────
+
+  it("renders chatSummary CanvasCard as read-only with default system role", () => {
+    const spies = makeSpies();
+    const { container } = renderCanvas({ spies });
+
+    const card = container.querySelector<HTMLElement>('[data-canvas-identifier="chatSummary"]');
+    expect(card).toBeTruthy();
+    expect(card!.textContent).toContain("prompt_slot_chat_summary");
+    // Read-only badge.
+    expect(card!.textContent).toContain("cc_read_only");
+    // Summary category — system role default.
+    expect(card!.textContent).toContain("system");
+  });
+
+  it("chatSummary CanvasCard toggle creates semantic PromptOrderEntry", () => {
+    const spies = makeSpies();
+    renderCanvas({ spies, promptOrder: [] });
+
+    clickDotToggle("prompt_slot_chat_summary");
+
+    expect(spies.onPromptOrderChange).toHaveBeenCalledWith([
+      { identifier: "chatSummary", enabled: false, kind: "built_in", zone: "before_chat", depth: null, order: 57 },
+    ]);
+  });
+
+  it("chatSummary CanvasCard exposes editable depth when routed in-chat", () => {
+    const spies = makeSpies();
+    const { container } = renderCanvas({
+      spies,
+      promptOrder: [
+        { identifier: "chatSummary", enabled: true, kind: "built_in", zone: "in_chat", depth: 4, order: 57 },
+      ],
+    });
+
+    // In-chat items live inside the collapsed chat-history accordion.
+    fireEvent.click(queries().getByRole("button", { name: /prompt_slot_chat_history/ }));
+    const card = container.querySelector<HTMLElement>('[data-canvas-identifier="chatSummary"]');
+    expect(card).toBeTruthy();
+    if (!card) return;
+    const header = card.firstElementChild as HTMLElement | null;
+    expect(header).toBeTruthy();
+    if (!header) return;
+    fireEvent.click(header);
+    const depthInput = within(card).getByRole("textbox") as HTMLInputElement;
+    fireEvent.change(depthInput, { target: { value: "6" } });
+    fireEvent.blur(depthInput);
+
+    expect(spies.onPromptOrderChange).toHaveBeenCalledWith([
+      { identifier: "chatSummary", enabled: true, kind: "built_in", zone: "in_chat", depth: 6, order: 57 },
+    ]);
+  });
+
+  it("expands chatSummary to reveal loaded summary memory blocks", () => {
+    const spies = makeSpies();
+    const { container } = renderCanvas({
+      spies,
+      summaryEntries: [
+        { id: "s1", label: "Arc 1", content: "The heroes reached the gate.", source: "manual", summarizedFrom: 0, summarizedTo: 12, includeInContext: true },
+      ],
+      summaryLoadState: "ready",
+    });
+
+    const card = container.querySelector<HTMLElement>('[data-canvas-identifier="chatSummary"]');
+    expect(card).toBeTruthy();
+    // Collapsed: the content is hidden (not rendered until the row itself opens).
+    expect(card!.textContent).not.toContain("The heroes reached the gate.");
+    // Open the card body.
+    fireEvent.click(within(card!).getByText("prompt_slot_chat_summary"));
+    // The summary row label is visible.
+    expect(within(card!).getByText("Arc 1")).toBeTruthy();
+    // Open the summary row to reveal the content.
+    fireEvent.click(within(card!).getByRole("button", { name: /Arc 1/ }));
+    expect(within(card!).getByText("The heroes reached the gate.")).toBeTruthy();
+  });
+
+  it("expands a lore anchor entry to reveal content + activation keys", () => {
+    const loreAnchorEntries: CanvasLoreEntrySummary[] = [
+      {
+        id: "before-1",
+        lorebookId: "book-1",
+        lorebookName: "Character Lore",
+        title: "The Rose Gate",
+        position: "before_char",
+        priority: 10,
+        sortOrder: 0,
+        content: "A gate wreathed in roses.",
+        keys: ["rose", "gate"],
+        secondaryKeys: ["thorn"],
+        logic: "AND(any)",
+        constant: false,
+        probability: 100,
+        role: "system",
+      },
+    ];
+    const { container } = renderCanvas({ loreAnchorEntries, loreAnchorLoadState: "ready" });
+
+    const beforeCard = container.querySelector<HTMLElement>('[data-canvas-identifier="worldInfoBefore"]');
+    fireEvent.click(within(beforeCard!).getByText("prompt_slot_world_info_before"));
+    // Collapsed row hides content.
+    expect(beforeCard!.textContent).not.toContain("A gate wreathed in roses.");
+    // Expand the entry row.
+    fireEvent.click(within(beforeCard!).getByRole("button", { name: /The Rose Gate/ }));
+    expect(within(beforeCard!).getByText("A gate wreathed in roses.")).toBeTruthy();
+    expect(within(beforeCard!).getByText("rose, gate")).toBeTruthy();
+    expect(within(beforeCard!).getByText("thorn")).toBeTruthy();
   });
 });

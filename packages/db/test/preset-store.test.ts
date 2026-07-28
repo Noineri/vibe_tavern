@@ -108,6 +108,22 @@ describe("PresetStore — isDefault designated-default marker", () => {
     expect(created.isDefault).toBe(false);
   });
 
+  test("mergeConsecutiveRoles defaults false and survives create, update, and duplicate", async () => {
+    const { store } = await createStore();
+    const defaulted = await store.create({ name: "Defaulted" });
+    expect(defaulted.mergeConsecutiveRoles).toBe(false);
+
+    const enabled = await store.create({ name: "Enabled", mergeConsecutiveRoles: true });
+    expect(enabled.mergeConsecutiveRoles).toBe(true);
+    expect((await store.getById(enabled.id))?.mergeConsecutiveRoles).toBe(true);
+
+    const copy = await store.duplicate(enabled.id);
+    expect(copy.mergeConsecutiveRoles).toBe(true);
+
+    const disabled = await store.update(enabled.id, { mergeConsecutiveRoles: false });
+    expect(disabled.mergeConsecutiveRoles).toBe(false);
+  });
+
   test("duplicate() never marks the copy as default, even when the original is the default", async () => {
     const { store } = await createStore();
     const def = await store.ensureDefault();

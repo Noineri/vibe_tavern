@@ -14,6 +14,15 @@ import { serializeStPreset, type VibeTavernPresetExtension } from "@vibe-tavern/
 import { CustomTooltip } from "../shared/Tooltip.js";
 import { MasterDetailModal } from "../shared/MasterDetailModal.js";
 import { ConfirmCloseModal } from "../shared/confirm-close-modal.js";
+import {
+  loadPromptCanvasLoreEntries,
+  type CanvasLoreEntrySummary,
+  type PromptCanvasLoreContext,
+} from "../../lib/prompt-canvas-lore.js";
+import {
+  loadPromptCanvasSummaries,
+  type CanvasSummaryEntry,
+} from "../../lib/prompt-canvas-summary.js";
 
 type SaveState = "idle" | "saving" | "saved" | "error";
 
@@ -35,6 +44,7 @@ export type DraftData = {
   customInjections: CustomInjection[];
   promptOrder: PromptOrderEntry[];
   advancedMode: boolean;
+  mergeConsecutiveRoles: boolean;
 };
 
 interface PromptManagerModalProps {
@@ -56,8 +66,39 @@ interface PromptManagerModalProps {
     depthPrompt: string | null;
     depthPromptDepth: number | null;
     depthPromptRole: string | null;
+    description: string;
+    personalitySummary: string | null;
+    scenario: string;
+    mesExample: string | null;
   } | null;
-  onCharacterFieldUpdate?: (key: string, value: string | number) => void;
+  onCharacterFieldUpdate?: (key: keyof CharacterCanvasDraft, value: string | number) => void;
+  personaDescription?: string | null;
+  onPersonaDescriptionUpdate?: (value: string) => void;
+  /** Per-chat dynamic prompt — content edited via the canvas card. */
+  chatDynamicPrompt?: string | null;
+  onChatDynamicPromptUpdate?: (value: string) => Promise<void>;
+  loreContext?: PromptCanvasLoreContext | null;
+  /** Active chat branch — summaries are branch-scoped. */
+  chatBranchId?: string | null;
+  /** Legacy flat `chat.summary` field — canvas fallback when no summary
+   *  memory records exist (mirrors the prompt pipeline). */
+  legacyChatSummary?: string | null;
+}
+
+function toCharacterCanvasDraft(
+  fields: PromptManagerModalProps["characterFields"],
+): CharacterCanvasDraft | null {
+  return fields ? {
+    charSystemPrompt: fields.systemPrompt ?? "",
+    charPostHistory: fields.postHistoryInstructions ?? "",
+    charDepthPrompt: fields.depthPrompt ?? "",
+    charDepthPromptDepth: fields.depthPromptDepth ?? 4,
+    charDepthPromptRole: fields.depthPromptRole ?? "system",
+    charDescription: fields.description,
+    charPersonality: fields.personalitySummary ?? "",
+    scenario: fields.scenario,
+    dialogueExamples: fields.mesExample ?? "",
+  } : null;
 }
 
 const emptyDraft: DraftData = {
@@ -67,6 +108,7 @@ const emptyDraft: DraftData = {
   customInjections: [],
   promptOrder: [],
   advancedMode: false,
+  mergeConsecutiveRoles: false,
 };
 
 /**
@@ -119,33 +161,126 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
   const [dirty, setDirty] = useState(false);
   const [saveState, setSaveState] = useState<SaveState>("idle");
 
-  // Character V3 fields → canvas draft (mutable state)
+  // Active-character fields → one canvas draft (mutable state).
   const [characterDraft, setCharacterDraft] = useState<CharacterCanvasDraft | null>(() =>
-    input.characterFields ? {
-      charSystemPrompt: input.characterFields.systemPrompt ?? "",
-      charPostHistory: input.characterFields.postHistoryInstructions ?? "",
-      charDepthPrompt: input.characterFields.depthPrompt ?? "",
-      charDepthPromptDepth: input.characterFields.depthPromptDepth ?? 4,
-      charDepthPromptRole: input.characterFields.depthPromptRole ?? "system",
-    } : null
+    toCharacterCanvasDraft(input.characterFields)
   );
+  const [personaDescriptionDraft, setPersonaDescriptionDraft] = useState<string | null>(
+    () => input.personaDescription ?? null,
+  );
+  const [chatDynamicPromptDraft, setChatDynamicPromptDraft] = useState<string>(
+    () => input.chatDynamicPrompt ?? "",
+  );
+  const [loreAnchorEntries, setLoreAnchorEntries] = useState<CanvasLoreEntrySummary[]>([]);
+  const [loreAnchorLoadState, setLoreAnchorLoadState] = useState<"idle" | "loading" | "ready" | "error">("idle");
+  const [summaryEntries, setSummaryEntries] = useState<CanvasSummaryEntry[]>([]);
+  const [summaryLoadState, setSummaryLoadState] = useState<"idle" | "loading" | "ready" | "error">("idle");
 
-  // Sync character draft when characterFields prop changes (different character selected)
+  // Sync entity drafts when the active character/persona snapshot changes.
   useEffect(() => {
-    setCharacterDraft(input.characterFields ? {
-      charSystemPrompt: input.characterFields.systemPrompt ?? "",
-      charPostHistory: input.characterFields.postHistoryInstructions ?? "",
-      charDepthPrompt: input.characterFields.depthPrompt ?? "",
-      charDepthPromptDepth: input.characterFields.depthPromptDepth ?? 4,
-      charDepthPromptRole: input.characterFields.depthPromptRole ?? "system",
-    } : null);
-  }, [input.characterFields?.systemPrompt, input.characterFields?.postHistoryInstructions, input.characterFields?.depthPrompt, input.characterFields?.depthPromptDepth, input.characterFields?.depthPromptRole]);
+    setCharacterDraft(toCharacterCanvasDraft(input.characterFields));
+  }, [
+    input.characterFields?.systemPrompt,
+    input.characterFields?.postHistoryInstructions,
+    input.characterFields?.depthPrompt,
+    input.characterFields?.depthPromptDepth,
+    input.characterFields?.depthPromptRole,
+    input.characterFields?.description,
+    input.characterFields?.personalitySummary,
+    input.characterFields?.scenario,
+    input.characterFields?.mesExample,
+  ]);
+  useEffect(() => {
+    setPersonaDescriptionDraft(input.personaDescription ?? null);
+  }, [input.personaDescription]);
+  useEffect(() => {
+    setChatDynamicPromptDraft(input.chatDynamicPrompt ?? "");
+  }, [input.chatDynamicPrompt]);
 
-  function updateCharacterDraft(key: string, value: string | number) {
+  useEffect(() => {
+    const context = input.loreContext;
+    if (!isOpen || !context) {
+      setLoreAnchorEntries([]);
+      setLoreAnchorLoadState("idle");
+      return;
+    }
+
+    let cancelled = false;
+    setLoreAnchorEntries([]);
+    setLoreAnchorLoadState("loading");
+    void loadPromptCanvasLoreEntries(context)
+      .then((entries) => {
+        if (cancelled) return;
+        setLoreAnchorEntries(entries);
+        setLoreAnchorLoadState("ready");
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setLoreAnchorEntries([]);
+        setLoreAnchorLoadState("error");
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    isOpen,
+    input.loreContext?.chatId,
+    input.loreContext?.characterId,
+    input.loreContext?.personaId,
+  ]);
+
+  // Load the chat-summary memory blocks for the active chat branch. Mirrors
+  // the pipeline: includable branch-scoped records, falling back to the legacy
+  // `chat.summary` field. Reloads on chat/branch change while the modal is open.
+  useEffect(() => {
+    const chatId = input.loreContext?.chatId;
+    if (!isOpen || !chatId) {
+      setSummaryEntries([]);
+      setSummaryLoadState("idle");
+      return;
+    }
+
+    let cancelled = false;
+    setSummaryEntries([]);
+    setSummaryLoadState("loading");
+    void loadPromptCanvasSummaries({
+      chatId,
+      branchId: input.chatBranchId ?? null,
+      legacySummary: input.legacyChatSummary ?? null,
+    })
+      .then((entries) => {
+        if (cancelled) return;
+        setSummaryEntries(entries);
+        setSummaryLoadState("ready");
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setSummaryEntries([]);
+        setSummaryLoadState("error");
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    isOpen,
+    input.loreContext?.chatId,
+    input.chatBranchId,
+    input.legacyChatSummary,
+  ]);
+
+  function updateCharacterDraft(key: keyof CharacterCanvasDraft, value: string | number) {
     setCharacterDraft((prev) => {
       if (!prev) return prev;
       return { ...prev, [key]: value };
     });
+    setDirty(true);
+    setSaveState("idle");
+  }
+
+  function updatePersonaDescriptionDraft(value: string) {
+    setPersonaDescriptionDraft((prev) => prev == null ? prev : value);
     setDirty(true);
     setSaveState("idle");
   }
@@ -173,6 +308,7 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
         customInjections: (activePreset as PromptPresetDto).customInjections ?? [],
         promptOrder: activePreset.promptOrder ?? [],
         advancedMode: activePreset.advancedMode ?? false,
+        mergeConsecutiveRoles: activePreset.mergeConsecutiveRoles ?? false,
       });
     } else {
       setDraft({ ...emptyDraft });
@@ -204,12 +340,12 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
       ...draft,
       aiAssistantPrompts: JSON.stringify(draft.aiAssistantPrompts),
     };
-    void input.onUpdate(input.activePresetId, patch).then((ok) => {
+    void input.onUpdate(input.activePresetId, patch).then(async (ok) => {
       if (!ok) {
         setSaveState("error");
         return;
       }
-      // Persist character field changes via API
+      // Persist character field changes via API (fire-and-forget — existing behavior preserved).
       if (characterDraft && input.onCharacterFieldUpdate) {
         const orig = input.characterFields;
         if (orig) {
@@ -218,6 +354,27 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
           if (characterDraft.charDepthPrompt !== (orig.depthPrompt ?? "")) input.onCharacterFieldUpdate("charDepthPrompt", characterDraft.charDepthPrompt);
           if (characterDraft.charDepthPromptDepth !== (orig.depthPromptDepth ?? 4)) input.onCharacterFieldUpdate("charDepthPromptDepth", characterDraft.charDepthPromptDepth);
           if (characterDraft.charDepthPromptRole !== (orig.depthPromptRole ?? "system")) input.onCharacterFieldUpdate("charDepthPromptRole", characterDraft.charDepthPromptRole);
+          if (characterDraft.charDescription !== orig.description) input.onCharacterFieldUpdate("charDescription", characterDraft.charDescription);
+          if (characterDraft.charPersonality !== (orig.personalitySummary ?? "")) input.onCharacterFieldUpdate("charPersonality", characterDraft.charPersonality);
+          if (characterDraft.scenario !== orig.scenario) input.onCharacterFieldUpdate("scenario", characterDraft.scenario);
+          if (characterDraft.dialogueExamples !== (orig.mesExample ?? "")) input.onCharacterFieldUpdate("dialogueExamples", characterDraft.dialogueExamples);
+        }
+      }
+      if (
+        personaDescriptionDraft != null
+        && input.personaDescription != null
+        && personaDescriptionDraft !== input.personaDescription
+      ) {
+        input.onPersonaDescriptionUpdate?.(personaDescriptionDraft);
+      }
+      // Persist chat dynamic prompt via API — awaited so a rejected PATCH
+      // does not leave dirty cleared or show a false "saved" state.
+      if (chatDynamicPromptDraft !== (input.chatDynamicPrompt ?? "")) {
+        try {
+          await input.onChatDynamicPromptUpdate?.(chatDynamicPromptDraft);
+        } catch {
+          setSaveState("error");
+          return;
         }
       }
       setDirty(false);
@@ -264,6 +421,7 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
       scriptAiSystemPrompt: "",
       promptOrder: [],
       advancedMode: false,
+      mergeConsecutiveRoles: false,
     }).then((created) => {
       if (created?.id) input.setActivePresetId(created.id);
     });
@@ -328,6 +486,7 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
           customInjections: ext.customInjections,
           promptOrder: ext.promptOrder,
           advancedMode: ext.advancedMode,
+          mergeConsecutiveRoles: ext.mergeConsecutiveRoles ?? false,
         });
         setDirty(true);
         setSaveState("idle");
@@ -486,7 +645,15 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
                   draft={activePreset ? draft : null}
                   onUpdateField={(key, value) => updateDraft(key, value as never)}
                   characterDraft={characterDraft}
-                  onCharacterFieldUpdate={(key, value) => updateCharacterDraft(key, value)}
+                  onCharacterFieldUpdate={updateCharacterDraft}
+                  personaDescription={personaDescriptionDraft}
+                  onPersonaDescriptionUpdate={updatePersonaDescriptionDraft}
+                  chatDynamicPrompt={chatDynamicPromptDraft}
+                  onChatDynamicPromptUpdate={(v) => { setChatDynamicPromptDraft(v); setDirty(true); setSaveState("idle"); }}
+                  loreAnchorEntries={loreAnchorEntries}
+                  loreAnchorLoadState={loreAnchorLoadState}
+                  summaryEntries={summaryEntries}
+                  summaryLoadState={summaryLoadState}
                 />
               </div>
             )}
