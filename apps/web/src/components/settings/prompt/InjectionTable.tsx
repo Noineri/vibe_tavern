@@ -28,7 +28,6 @@ import type { CanvasItem, CanvasRole, CharacterCanvasDraft, PromptCanvasDraft } 
 import type { LoreAnchorLoadState } from "./LoreAnchorList.js";
 import { Checkbox } from "../../shared/Checkbox.js";
 import { CanvasCard } from "./rows/CanvasCard.js";
-import { CanvasLegend } from "./CanvasLegend.js";
 import { CustomTooltip } from "../../shared/Tooltip.js";
 
 // NOTE (CANVAS_SINGLE_SOURCE_PLAN Wave 4): injection rows are content-only
@@ -525,8 +524,6 @@ export function PromptOrderCanvas({
           </button>
         </div>
       </div>
-
-      <CanvasLegend />
 
       <DndContext
         sensors={sensors}

@@ -1,35 +1,23 @@
 /**
- * Slot-category iconography for the prompt-order canvas (APC-3a).
+ * Visual category metadata for the prompt-order canvas.
  *
- * Every canvas row belongs to one of seven categories. The category drives the
- * header icon (so a glance at the canvas shows what *kind* of context each row
- * injects) and the legend at the top of the canvas (APC-3c). The mapping is
- * purely visual metadata — it does not affect assembly or ordering.
- *
- *   custom    — user-added prompt block (injection)            → plus-in-frame
- *   standard  — built-in editable prompt field                  → terminal
- *   character — a character-card field (description/persona/etc)→ user
- *   anchor    — a lorebook anchor (worldInfo before/after)      → book + anchor
- *   persona   — the user-persona description                     → circle-user
- *
- * The registry is intentionally a separate module from `CanvasCard.tsx`
- * (APC-3b) and `build-fixed-items.tsx` so both can import it without a cycle,
- * and so the legend (APC-3c) can render every category from one source.
+ * Categories use the existing theme semantic background tokens rather than
+ * fixed hues: character/persona → accent, lore anchors → success, chat-owned
+ * context → info, custom injections → warning, and preset fields → surface.
+ * No category icons or legend are rendered; labels remain the textual source
+ * of truth while the pale fill provides fast visual grouping.
  */
-import type { ReactNode } from "react";
-import { Ic } from "../../shared/icons.js";
-
 export type SlotCategory = "custom" | "standard" | "character" | "anchor" | "persona" | "chatDynamic" | "summary";
 
-/** Category → icon renderer. Each entry is a zero-arg `Ic` glyph. */
-export const SLOT_CATEGORY_ICON: Record<SlotCategory, () => ReactNode> = {
-  custom: Ic.plusInFrame,
-  standard: Ic.terminal,
-  character: Ic.user,
-  anchor: Ic.loreAnchor,
-  persona: Ic.circleUser,
-  chatDynamic: Ic.messageBubble,
-  summary: Ic.documentList,
+/** Category → existing theme-aware background utility. */
+export const SLOT_CATEGORY_BACKGROUND: Record<SlotCategory, string> = {
+  custom: "bg-warning-dim",
+  standard: "bg-surface",
+  character: "bg-accent-dim",
+  anchor: "bg-success-dim",
+  persona: "bg-accent-dim",
+  chatDynamic: "bg-info-dim",
+  summary: "bg-info-dim",
 };
 
 /** Identifiers whose content originates from the character card. */
@@ -78,9 +66,4 @@ export function slotCategoryFor(identifier: string): SlotCategory {
   if (SUMMARY_IDS.has(identifier)) return "summary";
   if (STANDARD_IDS.has(identifier)) return "standard";
   return "custom";
-}
-
-/** Convenience: identifier → icon renderer (category lookup + registry). */
-export function slotCategoryIcon(identifier: string): () => ReactNode {
-  return SLOT_CATEGORY_ICON[slotCategoryFor(identifier)];
 }

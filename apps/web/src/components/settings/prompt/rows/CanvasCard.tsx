@@ -7,7 +7,7 @@
  *
  * Layout (header always rendered; body optional + collapsible):
  *
- *   [DragHandle] [toggle] [category-icon] label … [TokenCounter] [role] [slot] [badge] [remove] [▶]
+ *   [DragHandle] [toggle] label … [TokenCounter] [role] [slot] [badge] [remove] [▶]
  *                                                                                          └ expand
  *   body:  [depth-input?] [role SegmentedControl?] [expandedLeading?] [AutoTextarea | readonly]
  *
@@ -17,7 +17,7 @@
  *   • custom   — + `onRoleChange` + `onRemove`         → injection editor (role control in body)
  *
  * Visual source: the header chrome (toggle, badges, chevron, spacing) mirrors
- * the former per-type cards; the category-icon (APC-3a) is the one new element.
+ * the former per-type cards; a theme-aware pale fill groups cards by category.
  */
 import { useState } from "react";
 import type { ReactNode } from "react";
@@ -31,12 +31,12 @@ import { AutoTextarea } from "../../../shared/auto-textarea.js";
 import { SegmentedControl } from "../../../shared/SegmentedControl.js";
 import { DragHandle } from "../drag-handle.js";
 import { roleOptions } from "../canvas-shared.js";
-import { SLOT_CATEGORY_ICON, type SlotCategory } from "../canvas-icons.js";
+import { SLOT_CATEGORY_BACKGROUND, type SlotCategory } from "../canvas-category.js";
 
 export interface CanvasCardProps {
   /** Canvas entry identifier. */
   identifier: string;
-  /** Slot category → header icon (APC-3a registry). */
+  /** Slot category → theme-aware pale card background. */
   category: SlotCategory;
   /** Header label. */
   label: ReactNode;
@@ -136,11 +136,10 @@ export function CanvasCard({
   const showDepthBadge = slotLabel != null;
   const showDepthInput = !!onSlotDepthChange && slotLabel != null && slotDepthNum >= depthMin;
 
-  const CategoryIcon = SLOT_CATEGORY_ICON[category];
   const onClickHeader = expandable ? () => setExpanded((v) => !v) : undefined;
 
   return (
-    <div data-canvas-identifier={identifier} className={cn("rounded-md border border-border bg-surface transition-colors", !enabled && "opacity-55", className)}>
+    <div data-canvas-identifier={identifier} className={cn("rounded-md border border-border transition-colors", SLOT_CATEGORY_BACKGROUND[category], !enabled && "opacity-55", className)}>
       <div
         className={cn("flex min-w-0 select-none items-center gap-2 px-3 py-2 sm:gap-2.5", onClickHeader && "cursor-pointer")}
         onClick={onClickHeader}
@@ -162,9 +161,6 @@ export function CanvasCard({
             </button>
           </CustomTooltip>
         )}
-        <span className="flex h-4 w-4 shrink-0 items-center justify-center text-t3" aria-hidden="true">
-          <CategoryIcon />
-        </span>
         {editableName ? (
           <div className="group flex min-w-[80px] flex-1 items-center gap-1.5 overflow-hidden">
             {editingName ? (

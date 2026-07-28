@@ -5,7 +5,7 @@
  * cards (EditablePromptCard / EditableAuthorNoteCard / CharacterFieldCard /
  * InjectionRowView / PromptOrderMarker) onto it:
  *
- *   • collapsed — header always shows the category icon + label; the body
+ *   • collapsed — header shows the label without category-icon noise; the body
  *     editor (AutoTextarea) does NOT render until expanded.
  *   • expanded — the AutoTextarea binds to `value` and forwards `onChange`.
  *   • editableName — custom injections keep inline rename in the unified card.
@@ -43,15 +43,36 @@ function renderCard(node: React.ReactElement) {
 }
 
 describe("CanvasCard — structural characterization", () => {
-	it("collapsed: renders header (category icon + label) but NOT the body editor", () => {
+	it("collapsed: renders a clean tinted header without a category icon or body editor", () => {
 		const { container, getByText } = renderCard(
 			<CanvasCard identifier="main" category="standard" label="System Prompt" value="You are X" role="system" badge="editable" />,
 		);
 		expect(getByText("System Prompt")).toBeTruthy();
-		// category icon is an inline svg in the header
-		expect(container.querySelector("svg")).toBeTruthy();
-		// the editor body is absent while collapsed
+		const card = container.querySelector('[data-canvas-identifier="main"]') as HTMLElement;
+		expect(card.classList.contains("bg-surface")).toBe(true);
+		expect(card.querySelector("svg")).toBeNull();
 		expect(container.querySelector("textarea")).toBeNull();
+	});
+
+	it("maps categories to existing semantic theme background tokens", () => {
+		const cases = [
+			["standard", "bg-surface"],
+			["character", "bg-accent-dim"],
+			["persona", "bg-accent-dim"],
+			["anchor", "bg-success-dim"],
+			["chatDynamic", "bg-info-dim"],
+			["summary", "bg-info-dim"],
+			["custom", "bg-warning-dim"],
+		] as const;
+
+		for (const [category, background] of cases) {
+			const { container, unmount } = renderCard(
+				<CanvasCard identifier={category} category={category} label={category} nonExpandable />,
+			);
+			const card = container.querySelector(`[data-canvas-identifier="${category}"]`) as HTMLElement;
+			expect(card.classList.contains(background)).toBe(true);
+			unmount();
+		}
 	});
 
 	it("expanding renders the AutoTextarea bound to `value` and forwards onChange", () => {

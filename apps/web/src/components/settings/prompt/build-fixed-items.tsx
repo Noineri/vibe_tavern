@@ -99,7 +99,7 @@ export function buildFixedItems(ctx: FixedItemCtx): CanvasItem[] {
         role={ctx.slotRoleFor("personaDescription", "system")} onRoleChange={(r) => ctx.updateSlotRole("personaDescription", r)}
         value={personaDescription ?? ""} placeholder={t("prompt_slot_persona_placeholder")}
         disabled={personaDisabled} onChange={(v) => onPersonaDescriptionUpdate?.(v)}
-        badge={personaDescription == null ? t("cc_read_only") : t("persona_badge")} />
+        badge={personaDescription == null ? t("cc_read_only") : undefined} />
     ) },
     { key: "slot:charDescription", identifier: "charDescription", kind: "slot", defaultOrder: 30, render: () => (
       <CanvasCard identifier="charDescription" category="character" label={t("prompt_slot_character_description")}

@@ -235,10 +235,10 @@ describe("PromptOrderCanvas — characterization", () => {
 		expect(queries().queryByText("character_post_history")).toBeNull();
 		expect(queries().queryByText("character_depth_prompt")).toBeNull();
 
-    // Category icons now carry the editable/character distinction; the former
-    // repetitive source badges are intentionally absent.
+    // Pale category fills replace both source badges and the old icon legend.
     expect(text).not.toContain("editable_badge");
     expect(text).not.toContain("char_badge");
+    expect(text).not.toContain("cc_legend_toggle");
 
     // whole-canvas order: before items → jailbreak → prefill
     expectOrdered(text, [...beforeLabels, "post_history_instructions", "prefill_assistant"]);
@@ -267,6 +267,7 @@ describe("PromptOrderCanvas — characterization", () => {
     expect(characterCard).toBeTruthy();
     expect(characterCard!.textContent).not.toContain("char_badge");
     expect(characterCard!.textContent).not.toContain("cc_read_only");
+    expect(characterCard!.classList.contains("bg-accent-dim")).toBe(true);
     fireEvent.click(within(characterCard!).getByText("prompt_slot_character_description"));
     const characterTextarea = within(characterCard!).getByRole("textbox") as HTMLTextAreaElement;
     expect(characterTextarea.value).toBe("A northern warrior");
@@ -275,7 +276,8 @@ describe("PromptOrderCanvas — characterization", () => {
 
     const personaCard = container.querySelector<HTMLElement>('[data-canvas-identifier="personaDescription"]');
     expect(personaCard).toBeTruthy();
-    expect(personaCard!.textContent).toContain("persona_badge");
+    expect(personaCard!.textContent).not.toContain("persona_badge");
+    expect(personaCard!.classList.contains("bg-accent-dim")).toBe(true);
     fireEvent.click(within(personaCard!).getByText("prompt_slot_persona"));
     const personaTextarea = within(personaCard!).getByRole("textbox") as HTMLTextAreaElement;
     expect(personaTextarea.value).toBe("A wandering scholar");
@@ -387,7 +389,7 @@ describe("PromptOrderCanvas — characterization", () => {
     expect(spies.onUpdateField).toHaveBeenCalledWith("mergeConsecutiveRoles", true);
   });
 
-  it("renders a custom injection through CanvasCard with icon, token counter, and working role control", () => {
+  it("renders a custom injection through a warning-tinted CanvasCard with token counter and working role control", () => {
     const spies = makeSpies();
     const injection: CustomInjection = { identifier: "custom_t", name: "TestInj", content: "x", role: "system" };
     const { container } = renderCanvas({
@@ -400,7 +402,7 @@ describe("PromptOrderCanvas — characterization", () => {
 
     const card = container.querySelector('[data-canvas-identifier="custom_t"]') as HTMLElement;
     expect(card).toBeTruthy();
-    expect(card.querySelector('span[aria-hidden="true"] svg')).toBeTruthy();
+    expect(card.classList.contains("bg-warning-dim")).toBe(true);
     const removeButton = within(card).getByRole("button", { name: "cc_remove" });
     expect(removeButton.querySelector("svg")).toBeTruthy();
     const headerChildren = Array.from(card.firstElementChild?.children ?? []);

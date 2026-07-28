@@ -1,5 +1,5 @@
 import React from 'react';
-import { Anchor, Globe, Brain, Crop, FileText, Flame, Images, Send, Sparkles, Star } from 'lucide-react';
+import { Globe, Brain, Crop, FileText, Flame, Images, Send, Sparkles, Star } from 'lucide-react';
 
 // Props forwarded so call sites passing `className` (e.g. "h-5 w-5 text-t3")
 // actually apply — the previous `() => <svg/>` no-arg shape silently dropped
@@ -101,22 +101,6 @@ export const Ic = {
   checkCircle:()=><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="8" cy="8" r="6"/><polyline points="5 8 7 10 11 6"/></svg>,
   // Dice / Fate Die (DICE-F6) — D20 hexagon outline with an inner triangle facet.
   dice:()=><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M8 1.33 L13.67 4.67 L13.67 11.33 L8 14.67 L2.33 11.33 L2.33 4.67 Z"/><path d="M8 5 L11 10 L5 10 Z" strokeOpacity="0.45"/></svg>,
-  // Plus inside a rectangular frame — the "custom injection" slot-category
-  // icon (APC-3a). Distinguishes user-added prompt blocks from built-ins.
-  plusInFrame:()=><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><rect x="2.25" y="2.25" width="11.5" height="11.5" rx="1.5"/><line x1="8" y1="5.5" x2="8" y2="10.5"/><line x1="5.5" y1="8" x2="10.5" y2="8"/></svg>,
-  // User bust inside a ring — the "persona" slot-category icon (APC-3a).
-  // Distinct from the plain `user` glyph (character category): the ring marks
-  // the user-persona context, not the character.
-  circleUser:()=><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><circle cx="8" cy="8" r="6.5"/><circle cx="8" cy="6.3" r="1.9"/><path d="M4.3 12.6c.6-1.7 2-2.7 3.7-2.7s3.1 1 3.7 2.7"/></svg>,
-  // Unframed Lucide anchor at 16px — the former 13px anchor-inside-frame lost
-  // too much detail at mobile density and read as an indistinct square.
-  loreAnchor:()=><Anchor size={16} strokeWidth={2.2} />,
-  // Message bubble — the "chat dynamic prompt" slot-category icon (Wave 6).
-  // A speech bubble outline distinguishing per-chat content from preset fields.
-  messageBubble:()=><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><path d="M2 3.5h12a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1H5.5L3 14V4.5a1 1 0 0 1 1-1z"/></svg>,
-  // Document/list — the "chat summary" slot-category icon (Wave 6).
-  // A document outline with horizontal text lines.
-  documentList:()=><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><path d="M3 2h7l4 4v8a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z"/><path d="M10 2v4h4"/><line x1="5" y1="9" x2="11" y2="9"/><line x1="5" y1="11" x2="9" y2="11"/></svg>,
 };
 
 // Icon props actually used at call sites: `className` (any icon) and `direction`
