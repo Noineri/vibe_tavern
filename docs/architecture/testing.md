@@ -87,6 +87,46 @@ The canonical example is [`services/api/test/gallery-describe.test.ts`](../../se
 
 ---
 
+## Cross-platform: the suite runs on Windows too
+
+CI runs the full suite on both `ubuntu-latest` (`test-linux`) and `windows-latest` (`test-windows`), and **both are blocking**. Development happens almost entirely on Linux, so `test-windows` is where portability mistakes surface — every red `test-windows` to date has been a test written against Linux semantics rather than a product bug. The job stays blocking anyway: the code it covers (self-updater, installer, archive extraction, path handling) is precisely where Windows behaves differently, and that is also where most users are.
+
+Four rules, each one a real failure that has already cost a red build:
+
+**Never spell a path as a literal in an assertion.** `resolveEntryPath("/tmp/x", "web/a.js")` returns `/tmp/x/web/a.js` on Linux and `D:\tmp\x\web\a.js` on Windows — both correct. Build the expectation the same way the code does, with `join()`/`resolve()`, so the pin is the *nesting* an entry maps to rather than the separator character.
+
+**Never inject a failure with POSIX mode bits.** `chmod(dir, 0o555)` is the obvious way to make a rename or an unlink fail on Linux; on Windows the read-only attribute does not block either, so the injection silently does nothing, the operation succeeds, and a test expecting `rejects.toThrow()` goes red. This failure mode is dangerous because it **fails open** — an assertion that passes under a Windows-inert injection is telling you the injection did nothing, not that the code handled the failure.
+
+**Never assert on an RSS or an mtime delta.** Windows reports the process working set, which includes file-cache pages: a correctly-streaming 128 MB download measured +302 MB there against +17 MB on Linux. NTFS likewise bumps mtime even for a read-only SQLite open. Pin the property you actually care about instead — the schema is unchanged, the digest matches, the file on disk is the right size.
+
+**Never shell out to a tool that is not on every runner.** `zip` is not installed on `windows-latest` (`tar` is). Prefer an in-process library; if the point of the test is specifically to consume a *foreign* artifact, branch to the platform's native tool — `Compress-Archive` on Windows — rather than dropping the case.
+
+### Gating: use the smallest scope that stays honest
+
+When behaviour genuinely has no Windows counterpart, skip explicitly and say why:
+
+```ts
+const IS_WINDOWS = process.platform === "win32";
+
+// setuid is a POSIX-only escalation vector — there is no Windows bit to strip.
+it.skipIf(IS_WINDOWS)("strips setuid/setgid bits rather than honoring them", async () => { … });
+```
+
+When only one *assertion* is unportable, keep the test running on both platforms and guard that line — the portable half still has value:
+
+```ts
+expect(await read("vibe-tavern")).toBe("#!/bin/sh\necho hi\n");   // runs everywhere
+if (!IS_WINDOWS) {
+	expect(((await stat(bin)).mode & 0o777).toString(8)).toBe("755");   // POSIX-only
+}
+```
+
+Never leave a test green on Windows when the behaviour in its name is not being exercised there. A vacuous pass is worse than a skip: it reports coverage that does not exist.
+
+**Known gap:** `performSwap`'s rollback path and `cleanupOldInstall`'s locked-generation sweep have no Windows coverage — their failure injection is mode-bit based and inert there, so those cases are skipped. Closing this needs a real injection seam in the updater rather than another filesystem trick.
+
+---
+
 ## DOM tests (React components)
 
 Component tests use **`@testing-library/react`** + **happy-dom**. The one rule that matters: **the DOM environment is scoped per file, never a global preload.**

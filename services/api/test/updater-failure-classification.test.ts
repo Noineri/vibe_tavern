@@ -19,6 +19,14 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { fetchReleaseAssets, performSwap } from "../src/server/updater.js";
 
+/**
+ * Every case that needs a FAILING swap injects it with POSIX mode bits, which
+ * Windows ignores for rename and delete — the injection silently does nothing
+ * there and the swap succeeds. See updater-swap.test.ts's header; those cases
+ * are skipped on Windows rather than asserted into a false green.
+ */
+const IS_WINDOWS = process.platform === "win32";
+
 let root = "";
 let installDir = "";
 let stagingDir = "";
@@ -55,7 +63,7 @@ async function sabotage(name: string): Promise<void> {
 }
 
 describe("performSwap install-modified signal", () => {
-	it("never reports modified when the very first backup fails", async () => {
+	it.skipIf(IS_WINDOWS)("never reports modified when the very first backup fails", async () => {
 		await write(installDir, "solo/file", "OLD");
 		await write(stagingDir, "solo/file", "NEW");
 		await sabotage("solo");
@@ -70,7 +78,7 @@ describe("performSwap install-modified signal", () => {
 		expect(await readFile(join(installDir, "solo", "file"), "utf8")).toBe("OLD");
 	});
 
-	it("reports modified=true then modified=false when a mid-flight failure rolls back cleanly", async () => {
+	it.skipIf(IS_WINDOWS)("reports modified=true then modified=false when a mid-flight failure rolls back cleanly", async () => {
 		const names = ["alpha", "bravo", "charlie", "delta"];
 		for (const n of names) {
 			await write(installDir, `${n}/file`, `OLD ${n}`);
@@ -109,7 +117,7 @@ describe("performSwap install-modified signal", () => {
 });
 
 describe("performSwap — half-swapped entry is restored", () => {
-	it("puts back an entry whose backup landed but whose replacement did not", async () => {
+	it.skipIf(IS_WINDOWS)("puts back an entry whose backup landed but whose replacement did not", async () => {
 		// The staging replacement is removed after planning, so the backup
 		// rename succeeds and the move rename fails with ENOENT. Before the
 		// Wave 1 fix this entry was never restored — the install simply lost it.

@@ -158,10 +158,34 @@ describe("snapshotDatabase", () => {
 	});
 
 	it("does not run the migration stack — the source is opened read-only", async () => {
+		// Pinned on the source's schema rather than its mtime: running the
+		// migration stack would add drizzle's bookkeeping table and the whole
+		// application schema alongside `chats`, which is directly observable.
+		// mtime is not — NTFS updates it even for a read-only SQLite open, so
+		// that spelling of this pin only ever held on Linux.
+		interface SchemaRow {
+			readonly type: string;
+			readonly name: string;
+			readonly sql: string | null;
+		}
+
 		const { dbPath, dataDir } = await makeWalDb(5);
-		const before = (await stat(dbPath)).mtimeMs;
+		const schemaOf = (): SchemaRow[] => {
+			const db = new Database(dbPath, { readonly: true });
+			try {
+				return db.query("SELECT type, name, sql FROM sqlite_master ORDER BY name").all() as SchemaRow[];
+			} finally {
+				db.close();
+			}
+		};
+
+		const before = schemaOf();
 		await snapshotDatabase(dbPath, dataDir, "3.0.0");
-		const after = (await stat(dbPath)).mtimeMs;
-		expect(after).toBe(before);
+
+		expect(schemaOf()).toEqual(before);
+		// Guard the guard: the comparison above is only meaningful if the
+		// baseline actually described the fixture's schema.
+		expect(before.map((r) => r.name)).toContain("chats");
+		expect(schemaOf().map((r) => r.name)).not.toContain("__drizzle_migrations");
 	});
 });
