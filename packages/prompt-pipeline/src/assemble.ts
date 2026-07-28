@@ -514,40 +514,110 @@ function buildLayers(
   const layers: PromptLayer[] = [...initialLayers];
   const droppedLayers: Array<{ id: string; reason: string }> = [];
 
-  // System prompt: character override takes priority over preset
-  const effectiveSystemPrompt = context.character.systemPrompt?.trim() || context.preset?.text?.trim();
-  if (effectiveSystemPrompt && resolver.enabled("main")) {
-    const isOverride = !!context.character.systemPrompt?.trim();
-    layers.push(
-      resolver.position(makeLayer({
-        id: isOverride ? PROMPT_LAYER_ID.characterSystemPrompt : PROMPT_LAYER_ID.promptPresetSystem,
-        sourceType: isOverride ? PROMPT_LAYER_SOURCE_TYPE.characterSystemPrompt : PROMPT_LAYER_SOURCE_TYPE.promptPreset,
-        sourceId: isOverride ? context.character.id : context.preset!.id,
-        sourceName: isOverride ? `${context.character.name} (System Override)` : (context.preset?.name ?? "System Prompt"),
-        priority: PROMPT_LAYER_PRIORITY.promptPresetSystem,
-        role: resolver.entryFor("main")?.role,
-        text: effectiveSystemPrompt,
-      }), "main"),
-    );
+  if (resolver.canvasAuthoritative) {
+    // Advanced canvas: preset main and character system prompt are independent
+    // WYSIWYG slots. Neither content source replaces the other.
+    const presetSystemPrompt = context.preset?.text?.trim();
+    if (presetSystemPrompt && resolver.enabled("main")) {
+      layers.push(
+        resolver.position(makeLayer({
+          id: PROMPT_LAYER_ID.promptPresetSystem,
+          sourceType: PROMPT_LAYER_SOURCE_TYPE.promptPreset,
+          sourceId: context.preset!.id,
+          sourceName: context.preset?.name ?? "System Prompt",
+          priority: PROMPT_LAYER_PRIORITY.promptPresetSystem,
+          role: resolver.entryFor("main")?.role,
+          text: presetSystemPrompt,
+        }), "main"),
+      );
+    }
+
+    const characterSystemPrompt = context.character.systemPrompt?.trim();
+    if (characterSystemPrompt && resolver.enabled("charSystemPrompt")) {
+      layers.push(
+        resolver.position(makeLayer({
+          id: PROMPT_LAYER_ID.characterSystemPrompt,
+          sourceType: PROMPT_LAYER_SOURCE_TYPE.characterSystemPrompt,
+          sourceId: context.character.id,
+          sourceName: `${context.character.name} (System Prompt)`,
+          priority: PROMPT_LAYER_PRIORITY.characterSystemPrompt,
+          role: resolver.entryFor("charSystemPrompt")?.role,
+          text: characterSystemPrompt,
+        }), "charSystemPrompt"),
+      );
+    }
+  } else {
+    // Simple mode preserves legacy override semantics: character system prompt
+    // replaces preset main, and canvas entries remain irrelevant.
+    const effectiveSystemPrompt = context.character.systemPrompt?.trim() || context.preset?.text?.trim();
+    if (effectiveSystemPrompt && resolver.enabled("main")) {
+      const isOverride = !!context.character.systemPrompt?.trim();
+      layers.push(
+        resolver.position(makeLayer({
+          id: isOverride ? PROMPT_LAYER_ID.characterSystemPrompt : PROMPT_LAYER_ID.promptPresetSystem,
+          sourceType: isOverride ? PROMPT_LAYER_SOURCE_TYPE.characterSystemPrompt : PROMPT_LAYER_SOURCE_TYPE.promptPreset,
+          sourceId: isOverride ? context.character.id : context.preset!.id,
+          sourceName: isOverride ? `${context.character.name} (System Override)` : (context.preset?.name ?? "System Prompt"),
+          priority: PROMPT_LAYER_PRIORITY.promptPresetSystem,
+          role: resolver.entryFor("main")?.role,
+          text: effectiveSystemPrompt,
+        }), "main"),
+      );
+    }
   }
 
-  // Jailbreak / Post-History Instructions: placed after chat history (depth=0)
-  // Character postHistoryInstructions overrides preset jailbreak
-  const effectiveJailbreak = context.character.postHistoryInstructions?.trim() || context.preset?.jailbreak?.trim();
-  if (effectiveJailbreak && resolver.enabled("jailbreak")) {
-    const isOverride = !!context.character.postHistoryInstructions?.trim();
-    const layer = resolver.position(makeLayer({
-      id: PROMPT_LAYER_ID.promptPresetJailbreak,
-      sourceType: isOverride ? PROMPT_LAYER_SOURCE_TYPE.character : PROMPT_LAYER_SOURCE_TYPE.promptPreset,
-      sourceId: isOverride ? context.character.id : context.preset!.id,
-      sourceName: isOverride ? `${context.character.name} (Post-History Override)` : "Post-History Instructions",
-      position: "in_chat",
-      priority: PROMPT_LAYER_PRIORITY.promptPresetJailbreak,
-      role: resolver.entryFor("jailbreak")?.role,
-      text: effectiveJailbreak,
-    }), "jailbreak");
-    if (layer.position === "in_chat" && layer.injectionDepth == null) layer.injectionDepth = 0;
-    layers.push(layer);
+  if (resolver.canvasAuthoritative) {
+    // Advanced canvas: preset jailbreak and character post-history instructions
+    // are independent slots with independent position/role/toggle state.
+    const presetJailbreak = context.preset?.jailbreak?.trim();
+    if (presetJailbreak && resolver.enabled("jailbreak")) {
+      const layer = resolver.position(makeLayer({
+        id: PROMPT_LAYER_ID.promptPresetJailbreak,
+        sourceType: PROMPT_LAYER_SOURCE_TYPE.promptPreset,
+        sourceId: context.preset!.id,
+        sourceName: "Post-History Instructions",
+        position: "in_chat",
+        priority: PROMPT_LAYER_PRIORITY.promptPresetJailbreak,
+        role: resolver.entryFor("jailbreak")?.role,
+        text: presetJailbreak,
+      }), "jailbreak");
+      if (layer.position === "in_chat" && layer.injectionDepth == null) layer.injectionDepth = 0;
+      layers.push(layer);
+    }
+
+    const characterPostHistory = context.character.postHistoryInstructions?.trim();
+    if (characterPostHistory && resolver.enabled("charPostHistory")) {
+      const layer = resolver.position(makeLayer({
+        id: PROMPT_LAYER_ID.postHistoryInstructions,
+        sourceType: PROMPT_LAYER_SOURCE_TYPE.character,
+        sourceId: context.character.id,
+        sourceName: `${context.character.name} (Post-History Instructions)`,
+        position: "in_chat",
+        priority: PROMPT_LAYER_PRIORITY.postHistoryInstructions,
+        role: resolver.entryFor("charPostHistory")?.role,
+        text: characterPostHistory,
+      }), "charPostHistory");
+      if (layer.position === "in_chat" && layer.injectionDepth == null) layer.injectionDepth = 0;
+      layers.push(layer);
+    }
+  } else {
+    // Simple mode preserves legacy override semantics.
+    const effectiveJailbreak = context.character.postHistoryInstructions?.trim() || context.preset?.jailbreak?.trim();
+    if (effectiveJailbreak && resolver.enabled("jailbreak")) {
+      const isOverride = !!context.character.postHistoryInstructions?.trim();
+      const layer = resolver.position(makeLayer({
+        id: PROMPT_LAYER_ID.promptPresetJailbreak,
+        sourceType: isOverride ? PROMPT_LAYER_SOURCE_TYPE.character : PROMPT_LAYER_SOURCE_TYPE.promptPreset,
+        sourceId: isOverride ? context.character.id : context.preset!.id,
+        sourceName: isOverride ? `${context.character.name} (Post-History Override)` : "Post-History Instructions",
+        position: "in_chat",
+        priority: PROMPT_LAYER_PRIORITY.promptPresetJailbreak,
+        role: resolver.entryFor("jailbreak")?.role,
+        text: effectiveJailbreak,
+      }), "jailbreak");
+      if (layer.position === "in_chat" && layer.injectionDepth == null) layer.injectionDepth = 0;
+      layers.push(layer);
+    }
   }
 
   const authorsNoteLayer = context.preset ? buildAuthorsNoteLayer(context.preset, resolver) : null;
@@ -883,22 +953,41 @@ function buildLayers(
   // (character.postHistoryInstructions replaces preset.jailbreak when present)
 
   // --- Character Depth Prompt ---
-  // Character-level depth injection (equivalent to ST depth_prompt)
+  // Advanced: independent canvas slot (toggle/role/zone/depth/order are entry-
+  // authoritative). Simple: legacy character flat role/depth remain authoritative.
   if (context.character.depthPrompt?.trim()) {
-    const depth = context.character.depthPromptDepth ?? 4;
-    const role = context.character.depthPromptRole ?? "system";
-    const layer = makeLayer({
-      id: PROMPT_LAYER_ID.characterDepthPrompt,
-      sourceType: PROMPT_LAYER_SOURCE_TYPE.character,
-      sourceId: context.character.id,
-      sourceName: `${context.character.name} (Depth)`,
-      position: "in_chat",
-      priority: PROMPT_LAYER_PRIORITY.characterDepthPrompt,
-      role: role as "system" | "user" | "assistant",
-      text: context.character.depthPrompt,
-    });
-    layer.injectionDepth = depth;
-    layers.push(layer);
+    const characterRole =
+      context.character.depthPromptRole === "user" || context.character.depthPromptRole === "assistant"
+        ? context.character.depthPromptRole
+        : "system";
+    if (resolver.canvasAuthoritative) {
+      if (resolver.enabled("charDepthPrompt")) {
+        const layer = makeLayer({
+          id: PROMPT_LAYER_ID.characterDepthPrompt,
+          sourceType: PROMPT_LAYER_SOURCE_TYPE.character,
+          sourceId: context.character.id,
+          sourceName: `${context.character.name} (Depth)`,
+          position: "in_chat",
+          priority: PROMPT_LAYER_PRIORITY.characterDepthPrompt,
+          role: resolver.entryFor("charDepthPrompt")?.role ?? characterRole,
+          text: context.character.depthPrompt,
+        });
+        layers.push(resolver.position(layer, "charDepthPrompt"));
+      }
+    } else {
+      const layer = makeLayer({
+        id: PROMPT_LAYER_ID.characterDepthPrompt,
+        sourceType: PROMPT_LAYER_SOURCE_TYPE.character,
+        sourceId: context.character.id,
+        sourceName: `${context.character.name} (Depth)`,
+        position: "in_chat",
+        priority: PROMPT_LAYER_PRIORITY.characterDepthPrompt,
+        role: characterRole,
+        text: context.character.depthPrompt,
+      });
+      layer.injectionDepth = context.character.depthPromptDepth ?? 4;
+      layers.push(layer);
+    }
   }
 
   // --- Script-injected messages (context.chat.injectMessage) ---

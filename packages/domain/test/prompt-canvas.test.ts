@@ -59,6 +59,23 @@ test("I4 — keeps orphan kind:built_in entries (markers have no injection)", ()
   expect(promptOrder.find((e) => e.identifier === "worldInfoAfter")).toBeDefined();
 });
 
+test("character override identifiers infer built-in kind and semantic default slots", () => {
+  const { promptOrder } = normalizePresetCanvas([], [
+    { identifier: "charSystemPrompt", enabled: true },
+    { identifier: "charDepthPrompt", enabled: true },
+    { identifier: "charPostHistory", enabled: true },
+  ]);
+  expect(promptOrder.find((e) => e.identifier === "charSystemPrompt")).toMatchObject({
+    kind: "built_in", zone: "before_chat", depth: null,
+  });
+  expect(promptOrder.find((e) => e.identifier === "charDepthPrompt")).toMatchObject({
+    kind: "built_in", zone: "in_chat", depth: 4,
+  });
+  expect(promptOrder.find((e) => e.identifier === "charPostHistory")).toMatchObject({
+    kind: "built_in", zone: "after_chat", depth: 0,
+  });
+});
+
 test("I5 — synthesizes identifier for injections missing one", () => {
   const { customInjections, promptOrder } = normalizePresetCanvas(
     [{ name: "anon", content: "c", role: "user" }],

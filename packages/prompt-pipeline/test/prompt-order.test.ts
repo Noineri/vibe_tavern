@@ -404,3 +404,131 @@ describe("Prompt pipeline: canvas entry role overrides built-in layer role", () 
     expect(sysMsg!.role).toBe("system");
   });
 });
+
+// ── Character override fields are independent advanced-canvas slots ────────
+// Simple mode preserves legacy override semantics. Advanced mode is WYSIWYG:
+// preset + character content are separate rows and therefore separate layers,
+// each controlled by its own PromptOrderEntry.
+describe("Prompt pipeline: advanced character fields are independent canvas slots", () => {
+  it("assembles preset main and charSystemPrompt separately with independent role/order", () => {
+    const result = assemblePrompt({
+      identity: { chatId: "chat_1" },
+      chat: { recentMessages: [] },
+      character: { id: "char_1", name: "Aria", systemPrompt: "CHAR_SYSTEM" },
+      preset: {
+        id: "preset_1",
+        text: "PRESET_SYSTEM",
+        advancedMode: true,
+        promptOrder: [
+          { identifier: "main", enabled: true, order: 10, zone: "before_chat", role: "user" },
+          { identifier: "charSystemPrompt", enabled: true, order: 20, zone: "before_chat", role: "assistant" },
+        ],
+      },
+    });
+
+    const presetLayer = result.layers.find((l) => l.id === "prompt_preset_system");
+    const characterLayer = result.layers.find((l) => l.id === "character_system_prompt");
+    expect(presetLayer?.text).toBe("PRESET_SYSTEM");
+    expect(presetLayer?.role).toBe("user");
+    expect(characterLayer?.text).toBe("CHAR_SYSTEM");
+    expect(characterLayer?.role).toBe("assistant");
+    const order = result.finalPayload.messages
+      .map((m) => m.layerId)
+      .filter((id) => id === "prompt_preset_system" || id === "character_system_prompt");
+    expect(order).toEqual(["prompt_preset_system", "character_system_prompt"]);
+  });
+
+  it("assembles jailbreak and charPostHistory separately with independent role/order", () => {
+    const result = assemblePrompt({
+      identity: { chatId: "chat_1" },
+      chat: { recentMessages: [] },
+      character: { id: "char_1", name: "Aria", postHistoryInstructions: "CHAR_POST" },
+      preset: {
+        id: "preset_1",
+        jailbreak: "PRESET_JAILBREAK",
+        advancedMode: true,
+        promptOrder: [
+          { identifier: "jailbreak", enabled: true, order: 110, zone: "after_chat", role: "user" },
+          { identifier: "charPostHistory", enabled: true, order: 115, zone: "after_chat", role: "assistant" },
+        ],
+      },
+    });
+
+    const presetLayer = result.layers.find((l) => l.id === "prompt_preset_jailbreak");
+    const characterLayer = result.layers.find((l) => l.id === "post_history_instructions");
+    expect(presetLayer?.text).toBe("PRESET_JAILBREAK");
+    expect(presetLayer?.role).toBe("user");
+    expect(characterLayer?.text).toBe("CHAR_POST");
+    expect(characterLayer?.role).toBe("assistant");
+    const order = result.finalPayload.messages
+      .map((m) => m.layerId)
+      .filter((id) => id === "prompt_preset_jailbreak" || id === "post_history_instructions");
+    expect(order).toEqual(["prompt_preset_jailbreak", "post_history_instructions"]);
+  });
+
+  it("routes charDepthPrompt through its own enabled/role/depth canvas entry", () => {
+    const enabled = assemblePrompt({
+      identity: { chatId: "chat_1" },
+      chat: { recentMessages: [] },
+      character: {
+        id: "char_1", name: "Aria", depthPrompt: "CHAR_DEPTH",
+        depthPromptDepth: 4, depthPromptRole: "system",
+      },
+      preset: {
+        id: "preset_1",
+        advancedMode: true,
+        promptOrder: [
+          { identifier: "charDepthPrompt", enabled: true, order: 65, zone: "in_chat", depth: 2, role: "assistant" },
+        ],
+      },
+    });
+    const depthLayer = enabled.layers.find((l) => l.id === "character_depth_prompt");
+    expect(depthLayer?.role).toBe("assistant");
+    expect(depthLayer?.position).toBe("in_chat");
+    expect(depthLayer?.injectionDepth).toBe(2);
+    expect(depthLayer?.subPosition).toBe(65);
+
+    const disabled = assemblePrompt({
+      identity: { chatId: "chat_1" },
+      chat: { recentMessages: [] },
+      character: { id: "char_1", name: "Aria", depthPrompt: "CHAR_DEPTH", depthPromptDepth: 4, depthPromptRole: "system" },
+      preset: {
+        id: "preset_1",
+        advancedMode: true,
+        promptOrder: [{ identifier: "charDepthPrompt", enabled: false, order: 65, zone: "in_chat", depth: 2 }],
+      },
+    });
+    expect(disabled.layers.some((l) => l.id === "character_depth_prompt")).toBe(false);
+  });
+
+  it("preserves legacy character-override semantics in simple mode", () => {
+    const result = assemblePrompt({
+      identity: { chatId: "chat_1" },
+      chat: { recentMessages: [] },
+      character: {
+        id: "char_1", name: "Aria", systemPrompt: "CHAR_SYSTEM",
+        postHistoryInstructions: "CHAR_POST", depthPrompt: "CHAR_DEPTH",
+        depthPromptDepth: 3, depthPromptRole: "user",
+      },
+      preset: {
+        id: "preset_1",
+        text: "PRESET_SYSTEM",
+        jailbreak: "PRESET_JAILBREAK",
+        advancedMode: false,
+        promptOrder: [
+          { identifier: "charSystemPrompt", enabled: false, role: "assistant" },
+          { identifier: "charPostHistory", enabled: false, role: "assistant" },
+          { identifier: "charDepthPrompt", enabled: false, zone: "in_chat", depth: 1, role: "assistant" },
+        ],
+      },
+    });
+
+    expect(result.layers.some((l) => l.id === "prompt_preset_system")).toBe(false);
+    expect(result.layers.find((l) => l.id === "character_system_prompt")?.text).toBe("CHAR_SYSTEM");
+    expect(result.layers.find((l) => l.id === "prompt_preset_jailbreak")?.text).toBe("CHAR_POST");
+    expect(result.layers.some((l) => l.id === "post_history_instructions")).toBe(false);
+    const depthLayer = result.layers.find((l) => l.id === "character_depth_prompt");
+    expect(depthLayer?.role).toBe("user");
+    expect(depthLayer?.injectionDepth).toBe(3);
+  });
+});

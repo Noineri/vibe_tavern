@@ -17,7 +17,7 @@ import type {
   PromptSlot,
   PromptZone,
 } from "./api-types.js";
-import { DEFAULT_PROMPT_ORDER, inferSlot } from "./prompt-slot.js";
+import { DEFAULT_PROMPT_ORDER, inferDefaultPromptSlot, inferSlot } from "./prompt-slot.js";
 
 // ─── Legacy shapes (defensive reads of pre-refactor stored data) ─────────────
 // `CustomInjection` was narrowed to content-only in Wave 1; these interfaces
@@ -184,17 +184,19 @@ export function normalizePresetCanvas(
 
   // ── I3 + D1: fill missing zone/depth/order/enabled; enforce depth rules ───
   for (const entry of entries) {
+    const defaultSlot = inferDefaultPromptSlot(entry.identifier);
     if (entry.zone == null) {
-      const defaultOrder = DEFAULT_PROMPT_ORDER[entry.identifier];
-      entry.zone = inferSlot({ defaultOrder }).zone;
+      entry.zone = defaultSlot.zone;
+      if (entry.depth == null) entry.depth = defaultSlot.depth;
     }
     if (entry.zone === "before_chat") {
       entry.depth = null;
     } else if (entry.zone === "after_chat") {
       entry.depth = 0;
     } else {
-      // in_chat — MUST be ≥ 1 (D1) so it never collides with after_chat (depth 0)
-      const d = typeof entry.depth === "number" ? entry.depth : 0;
+      // in_chat — MUST be ≥ 1 (D1) so it never collides with after_chat (depth 0).
+      // charDepthPrompt's semantic default is depth 4, not the generic floor 1.
+      const d = typeof entry.depth === "number" ? entry.depth : (defaultSlot.depth ?? 0);
       entry.depth = d < 1 ? 1 : d;
     }
     if (typeof entry.order !== "number") {
