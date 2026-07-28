@@ -267,7 +267,7 @@ describe("PromptOrderCanvas — characterization", () => {
     expect(characterCard).toBeTruthy();
     expect(characterCard!.textContent).not.toContain("char_badge");
     expect(characterCard!.textContent).not.toContain("cc_read_only");
-    expect(characterCard!.classList.contains("bg-accent-dim")).toBe(true);
+    expect(characterCard!.classList.contains("canvas-card--entity")).toBe(true);
     fireEvent.click(within(characterCard!).getByText("prompt_slot_character_description"));
     const characterTextarea = within(characterCard!).getByRole("textbox") as HTMLTextAreaElement;
     expect(characterTextarea.value).toBe("A northern warrior");
@@ -277,7 +277,7 @@ describe("PromptOrderCanvas — characterization", () => {
     const personaCard = container.querySelector<HTMLElement>('[data-canvas-identifier="personaDescription"]');
     expect(personaCard).toBeTruthy();
     expect(personaCard!.textContent).not.toContain("persona_badge");
-    expect(personaCard!.classList.contains("bg-accent-dim")).toBe(true);
+    expect(personaCard!.classList.contains("canvas-card--entity")).toBe(true);
     fireEvent.click(within(personaCard!).getByText("prompt_slot_persona"));
     const personaTextarea = within(personaCard!).getByRole("textbox") as HTMLTextAreaElement;
     expect(personaTextarea.value).toBe("A wandering scholar");
@@ -389,7 +389,7 @@ describe("PromptOrderCanvas — characterization", () => {
     expect(spies.onUpdateField).toHaveBeenCalledWith("mergeConsecutiveRoles", true);
   });
 
-  it("renders a custom injection through a warning-tinted CanvasCard with token counter and working role control", () => {
+  it("renders a custom injection through a syntax-palette-tinted CanvasCard with token counter and working role control", () => {
     const spies = makeSpies();
     const injection: CustomInjection = { identifier: "custom_t", name: "TestInj", content: "x", role: "system" };
     const { container } = renderCanvas({
@@ -402,7 +402,7 @@ describe("PromptOrderCanvas — characterization", () => {
 
     const card = container.querySelector('[data-canvas-identifier="custom_t"]') as HTMLElement;
     expect(card).toBeTruthy();
-    expect(card.classList.contains("bg-warning-dim")).toBe(true);
+    expect(card.classList.contains("canvas-card--custom")).toBe(true);
     const removeButton = within(card).getByRole("button", { name: "cc_remove" });
     expect(removeButton.querySelector("svg")).toBeTruthy();
     const headerChildren = Array.from(card.firstElementChild?.children ?? []);

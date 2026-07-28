@@ -1,23 +1,23 @@
 /**
  * Visual category metadata for the prompt-order canvas.
  *
- * Categories use the existing theme semantic background tokens rather than
- * fixed hues: character/persona → accent, lore anchors → success, chat-owned
- * context → info, custom injections → warning, and preset fields → surface.
+ * Categories derive pale backgrounds from each theme's existing syntax-text
+ * palette. The CSS classes mix those curated hues into `surface` at 10% in
+ * OKLab, keeping light/dark intensity consistent without new theme colors.
  * No category icons or legend are rendered; labels remain the textual source
  * of truth while the pale fill provides fast visual grouping.
  */
 export type SlotCategory = "custom" | "standard" | "character" | "anchor" | "persona" | "chatDynamic" | "summary";
 
-/** Category → existing theme-aware background utility. */
+/** Category → theme-aware canvas tint class defined in styles.css. */
 export const SLOT_CATEGORY_BACKGROUND: Record<SlotCategory, string> = {
-  custom: "bg-warning-dim",
-  standard: "bg-surface",
-  character: "bg-accent-dim",
-  anchor: "bg-success-dim",
-  persona: "bg-accent-dim",
-  chatDynamic: "bg-info-dim",
-  summary: "bg-info-dim",
+  custom: "canvas-card--custom",
+  standard: "canvas-card--standard",
+  character: "canvas-card--entity",
+  anchor: "canvas-card--lore",
+  persona: "canvas-card--entity",
+  chatDynamic: "canvas-card--chat",
+  summary: "canvas-card--chat",
 };
 
 /** Identifiers whose content originates from the character card. */

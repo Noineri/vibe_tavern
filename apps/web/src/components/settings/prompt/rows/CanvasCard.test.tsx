@@ -49,20 +49,20 @@ describe("CanvasCard — structural characterization", () => {
 		);
 		expect(getByText("System Prompt")).toBeTruthy();
 		const card = container.querySelector('[data-canvas-identifier="main"]') as HTMLElement;
-		expect(card.classList.contains("bg-surface")).toBe(true);
+		expect(card.classList.contains("canvas-card--standard")).toBe(true);
 		expect(card.querySelector("svg")).toBeNull();
 		expect(container.querySelector("textarea")).toBeNull();
 	});
 
-	it("maps categories to existing semantic theme background tokens", () => {
+	it("maps categories to the theme syntax-palette tint classes", () => {
 		const cases = [
-			["standard", "bg-surface"],
-			["character", "bg-accent-dim"],
-			["persona", "bg-accent-dim"],
-			["anchor", "bg-success-dim"],
-			["chatDynamic", "bg-info-dim"],
-			["summary", "bg-info-dim"],
-			["custom", "bg-warning-dim"],
+			["standard", "canvas-card--standard"],
+			["character", "canvas-card--entity"],
+			["persona", "canvas-card--entity"],
+			["anchor", "canvas-card--lore"],
+			["chatDynamic", "canvas-card--chat"],
+			["summary", "canvas-card--chat"],
+			["custom", "canvas-card--custom"],
 		] as const;
 
 		for (const [category, background] of cases) {
