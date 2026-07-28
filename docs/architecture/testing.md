@@ -101,6 +101,18 @@ Four rules, each one a real failure that has already cost a red build:
 
 **Never shell out to a tool that is not on every runner.** `zip` is not installed on `windows-latest` (`tar` is). Prefer an in-process library; if the point of the test is specifically to consume a *foreign* artifact, branch to the platform's native tool — `Compress-Archive` on Windows — rather than dropping the case.
 
+**Always close every `Database` handle before the temp dir is removed.** Windows locks an open SQLite file, so `rm(root, { recursive: true, force: true })` in `afterEach` fails with `EBUSY`, the directory survives, and later tests in the file inherit it until something as unrelated as `VACUUM INTO` reports "unable to open database". POSIX unlinks a file with open handles happily, so this leak is invisible on Linux and silently fatal on Windows. If a fixture must keep a connection open *during* the test — snapshotting a live uncheckpointed WAL database, say — collect the handles and close them in `afterEach`:
+
+```ts
+const openDatabases: Database[] = [];
+afterEach(async () => {
+	for (const db of openDatabases.splice(0)) db.close();
+	await rm(root, { recursive: true, force: true });
+});
+```
+
+The same applies to any OS handle a test holds — file descriptors, servers, watchers. On Windows the cleanup step is where the leak surfaces, usually blamed on whichever test ran next.
+
 ### Gating: use the smallest scope that stays honest
 
 When behaviour genuinely has no Windows counterpart, skip explicitly and say why:

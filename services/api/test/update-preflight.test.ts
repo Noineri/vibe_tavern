@@ -16,11 +16,25 @@ import { snapshotDatabase, snapshotPathFor } from "../src/domain/update/update-d
 
 let root = "";
 
+/**
+ * Every Database this file opens, so cleanup can close them.
+ *
+ * `makeWalDb` deliberately leaves its connection open for the duration of a
+ * test — the whole point is to snapshot a live, uncheckpointed WAL database,
+ * exactly as a running server would have it. Leaving it open past the test is
+ * not part of that intent, and on Windows an open SQLite handle locks the file:
+ * `rm(root)` then fails with EBUSY, the temp dir survives, and later tests
+ * inherit the mess until `VACUUM INTO` cannot even open its destination. On
+ * Linux the unlink succeeds regardless, which is why the leak stayed invisible.
+ */
+const openDatabases: Database[] = [];
+
 beforeEach(async () => {
 	root = await mkdtemp(join(tmpdir(), "vt-preflight-"));
 });
 
 afterEach(async () => {
+	for (const db of openDatabases.splice(0)) db.close();
 	await rm(root, { recursive: true, force: true });
 });
 
@@ -73,17 +87,19 @@ describe("checkFreeSpace", () => {
 });
 
 describe("snapshotDatabase", () => {
-	async function makeWalDb(rows: number): Promise<{ dbPath: string; dataDir: string }> {
+	async function makeWalDb(rows: number): Promise<{ dbPath: string; dataDir: string; db: Database }> {
 		const dataDir = join(root, "data");
 		await mkdir(dataDir, { recursive: true });
 		const dbPath = join(dataDir, "vibe-tavern.db");
 		const db = new Database(dbPath, { create: true });
+		openDatabases.push(db);
 		db.exec("PRAGMA journal_mode = WAL;");
 		db.exec("CREATE TABLE chats (id TEXT PRIMARY KEY, body TEXT);");
 		for (let i = 0; i < rows; i++) db.run("INSERT INTO chats VALUES (?, ?)", [`c${i}`, `body ${i}`]);
-		// Deliberately left open and un-checkpointed, exactly as a running
-		// server would have it when an update starts.
-		return { dbPath, dataDir };
+		// Deliberately left open and un-checkpointed for the duration of the
+		// test, exactly as a running server would have it when an update starts.
+		// afterEach closes it; see openDatabases.
+		return { dbPath, dataDir, db };
 	}
 
 	it("produces a snapshot that opens and holds the same rows, WAL included", async () => {
@@ -169,15 +185,12 @@ describe("snapshotDatabase", () => {
 			readonly sql: string | null;
 		}
 
-		const { dbPath, dataDir } = await makeWalDb(5);
-		const schemaOf = (): SchemaRow[] => {
-			const db = new Database(dbPath, { readonly: true });
-			try {
-				return db.query("SELECT type, name, sql FROM sqlite_master ORDER BY name").all() as SchemaRow[];
-			} finally {
-				db.close();
-			}
-		};
+		const { dbPath, dataDir, db } = await makeWalDb(5);
+		// Read through the connection the fixture already holds: opening more
+		// handles to a WAL database is exactly the contention that makes this
+		// file unreliable on Windows.
+		const schemaOf = (): SchemaRow[] =>
+			db.query("SELECT type, name, sql FROM sqlite_master ORDER BY name").all() as SchemaRow[];
 
 		const before = schemaOf();
 		await snapshotDatabase(dbPath, dataDir, "3.0.0");
