@@ -18,6 +18,7 @@ interface UpdateModalProps {
 const PHASE_I18N_KEYS: Record<RuntimeUpdatePhase, keyof Resources["en"]> = {
 	idle: "update_modal_phase_idle",
 	checking: "update_modal_phase_checking",
+	preflight: "update_modal_phase_preflight",
 	"downloading-archive": "update_modal_phase_downloading_archive",
 	"downloading-sums": "update_modal_phase_downloading_sums",
 	verifying: "update_modal_phase_verifying",

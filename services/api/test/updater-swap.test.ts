@@ -25,7 +25,13 @@ import { chmod, mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from "n
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { cleanupOldInstall, performSwap } from "../src/server/updater.js";
+import {
+	cleanupOldInstall,
+	finalizeUpdatePending,
+	isUpdatePending,
+	listBackupDirs,
+	performSwap,
+} from "../src/server/updater.js";
 
 let root = "";
 let installDir = "";
@@ -222,6 +228,89 @@ describe("performSwap — backup isolation", () => {
 		await performSwap(installDir, stagingDir);
 
 		expect(await exists(join(installDir, ".old-1700000000002", "evil"))).toBe(false);
+	});
+});
+
+describe("rollback via performSwap", () => {
+	it("restores the previous tree byte-for-byte when replayed from a backup", async () => {
+		// `vibe-tavern rollback` is performSwap run with the newest backup as
+		// the source, so this pins the operation the subcommand performs.
+		await write(installDir, "vibe-tavern", "v1 BINARY");
+		await write(installDir, "web/index.html", "<html>v1</html>");
+		await write(installDir, "data/vibe-tavern.db", "USER DATA");
+		await write(stagingDir, "vibe-tavern", "v2 BINARY");
+		await write(stagingDir, "web/index.html", "<html>v2</html>");
+
+		const backup = await performSwap(installDir, stagingDir);
+		expect(await read(installDir, "vibe-tavern")).toBe("v2 BINARY");
+
+		// Roll back: the backup becomes the source.
+		const backupOfV2 = await performSwap(installDir, backup);
+
+		expect(await read(installDir, "vibe-tavern")).toBe("v1 BINARY");
+		expect(await read(installDir, "web/index.html")).toBe("<html>v1</html>");
+		// The version rolled back FROM is itself preserved, so it is not a
+		// one-way door.
+		expect(await read(backupOfV2, "vibe-tavern")).toBe("v2 BINARY");
+		// User data was never in scope on either leg.
+		expect(await read(installDir, "data/vibe-tavern.db")).toBe("USER DATA");
+	});
+
+	it("picks the newest backup generation", async () => {
+		await write(installDir, ".old-1700000000000/vibe-tavern", "OLDEST");
+		await write(installDir, ".old-1700000000002/vibe-tavern", "NEWEST");
+		await write(installDir, ".old-1700000000001/vibe-tavern", "MIDDLE");
+
+		const [newest] = await listBackupDirs(installDir);
+
+		expect(newest).toBe(join(installDir, ".old-1700000000002"));
+	});
+
+	it("lists nothing when no backup exists", async () => {
+		expect(await listBackupDirs(installDir)).toEqual([]);
+	});
+});
+
+describe("update-pending marker", () => {
+	it("is absent on a clean install and present after a swap", async () => {
+		await write(installDir, "vibe-tavern", "OLD");
+		await write(stagingDir, "vibe-tavern", "NEW");
+
+		expect(await isUpdatePending(installDir)).toBe(false);
+		await performSwap(installDir, stagingDir);
+		// performSwap itself does not mark; downloadAndSwap does, so that a
+		// rollback (which also uses performSwap) does not re-arm the marker.
+		expect(await isUpdatePending(installDir)).toBe(false);
+	});
+
+	it("protects backups from the sweep while set, and releases them when finalized", async () => {
+		await write(installDir, ".old-1700000000000/vibe-tavern", "PREVIOUS");
+		await writeFile(join(installDir, ".update-pending"), "{}");
+
+		expect(await isUpdatePending(installDir)).toBe(true);
+
+		await finalizeUpdatePending(installDir);
+
+		expect(await isUpdatePending(installDir)).toBe(false);
+		expect(await exists(join(installDir, ".old-1700000000000"))).toBe(false);
+	});
+
+	it("finalizing is a no-op when no update is pending", async () => {
+		await write(installDir, ".old-1700000000000/vibe-tavern", "PREVIOUS");
+		await finalizeUpdatePending(installDir);
+		// Without the marker there is nothing to release, so the sweep that the
+		// normal boot path performs is left to that path.
+		expect(await exists(join(installDir, ".old-1700000000000"))).toBe(true);
+	});
+
+	it("is never installed from a release archive", async () => {
+		await write(installDir, "vibe-tavern", "OLD");
+		await write(stagingDir, "vibe-tavern", "NEW");
+		await write(stagingDir, ".update-pending", "EVIL");
+
+		await performSwap(installDir, stagingDir);
+
+		expect(await isUpdatePending(installDir)).toBe(false);
 	});
 });
 

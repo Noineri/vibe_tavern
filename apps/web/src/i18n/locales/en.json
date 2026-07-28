@@ -1573,6 +1573,7 @@
   "update_modal_description": "Vibe Tavern self-update",
   "update_modal_phase_idle": "Idle",
   "update_modal_phase_checking": "Checking for update",
+  "update_modal_phase_preflight": "Checking free space",
   "update_modal_phase_downloading_archive": "Downloading release archive",
   "update_modal_phase_downloading_sums": "Downloading checksums",
   "update_modal_phase_verifying": "Verifying checksum",

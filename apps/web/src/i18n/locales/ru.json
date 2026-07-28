@@ -1575,6 +1575,7 @@
   "update_modal_description": "Обновление Vibe Tavern",
   "update_modal_phase_idle": "Ожидание",
   "update_modal_phase_checking": "Проверка обновлений",
+  "update_modal_phase_preflight": "Проверка свободного места",
   "update_modal_phase_downloading_archive": "Загрузка архива релиза",
   "update_modal_phase_downloading_sums": "Загрузка контрольных сумм",
   "update_modal_phase_verifying": "Проверка контрольной суммы",

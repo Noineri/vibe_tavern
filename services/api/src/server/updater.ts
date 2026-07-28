@@ -28,6 +28,7 @@ import { createHash } from "node:crypto";
 import { mkdir, readdir, rename, rm, stat } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { extractArchive } from "./archive-extract.js";
+import { checkFreeSpace } from "./update-preflight.js";
 
 declare const VIBE_TAVERN_VERSION: string | undefined;
 
@@ -75,9 +76,46 @@ const PROTECTED_NAMES = new Set([".old", ".next", "data", "logs"]);
  */
 const OLD_BACKUP_PREFIX = ".old-";
 
+/**
+ * Written into the install dir the moment a swap completes, and removed only
+ * once the NEW build has answered a request. While it exists, the startup sweep
+ * leaves backups alone — otherwise the first boot after an update would delete
+ * the only way back at exactly the moment it might be needed.
+ */
+const UPDATE_PENDING_MARKER = ".update-pending";
+
 /** True for `.old`, every `.old-<epoch>` backup, and the other reserved names. */
 function isProtectedName(name: string): boolean {
-	return PROTECTED_NAMES.has(name) || name.startsWith(OLD_BACKUP_PREFIX);
+	return PROTECTED_NAMES.has(name)
+		|| name === UPDATE_PENDING_MARKER
+		|| name.startsWith(OLD_BACKUP_PREFIX);
+}
+
+/** Record that a swap landed and its backup must be retained for now. */
+async function markUpdatePending(installDir: string, backupDir: string): Promise<void> {
+	const payload = JSON.stringify({ backupDir: basename(backupDir), at: new Date().toISOString() });
+	await Bun.write(join(installDir, UPDATE_PENDING_MARKER), payload).catch((err: unknown) => {
+		// Not fatal: worst case the backups are swept a boot earlier than ideal.
+		console.error(
+			"[updater] could not write the update marker:",
+			err instanceof Error ? err.message : String(err),
+		);
+	});
+}
+
+/** True while an update is waiting for its first successful boot. */
+export async function isUpdatePending(installDir: string): Promise<boolean> {
+	return pathExists(join(installDir, UPDATE_PENDING_MARKER));
+}
+
+/**
+ * Called once the updated build is confirmed to be serving: drop the marker and
+ * sweep the backups it was protecting.
+ */
+export async function finalizeUpdatePending(installDir: string): Promise<void> {
+	if (!(await isUpdatePending(installDir))) return;
+	await rm(join(installDir, UPDATE_PENDING_MARKER), { force: true }).catch(() => undefined);
+	await cleanupOldInstall(installDir);
 }
 
 /** Allocate an unused `installDir/.old-<epoch>/` and create it. */
@@ -110,6 +148,8 @@ export async function listBackupDirs(installDir: string): Promise<string[]> {
 interface GithubAsset {
 	readonly name: string;
 	readonly browser_download_url: string;
+	/** Bytes, as GitHub reports them. 0 when the field was absent or unusable. */
+	readonly size: number;
 }
 
 interface ParsedRelease {
@@ -306,6 +346,68 @@ export async function runUpdate(options: UpdateOptions = {}): Promise<never> {
 	}
 }
 
+/**
+ * Restore the most recent update backup over the current install.
+ *
+ * This is the manual escape hatch for "the new version is broken": the newest
+ * `.old-<epoch>/` holds the exact tree the last successful swap replaced, so
+ * swapping it back is the same operation in reverse, journal and all.
+ *
+ * Exits 0 when there is nothing to roll back — that is an ordinary answer to a
+ * reasonable question, not an error.
+ */
+export async function runRollback(): Promise<never> {
+	const installDir = resolveInstallDir();
+	if (!installDir) {
+		console.error("rollback: could not resolve install directory.");
+		process.exit(0);
+	}
+
+	const backups = await listBackupDirs(installDir);
+	const newest = backups[0];
+	if (newest === undefined) {
+		console.log("Nothing to roll back — no previous version is stored next to this install.");
+		console.log("Update backups are kept only until the updated build has started successfully.");
+		process.exit(0);
+	}
+
+	console.log(`Rolling back to the version saved in ${basename(newest)}...`);
+	try {
+		// performSwap treats `newest` exactly as it would a freshly extracted
+		// release: back up what is there now, then move the old tree into place.
+		const backupOfCurrent = await performSwap(installDir, newest);
+		console.log("✓ Previous version restored.");
+		console.log(`  The version you rolled back FROM is now in ${basename(backupOfCurrent)}.`);
+	} catch (err) {
+		console.error("Rollback FAILED:", err instanceof Error ? err.message : String(err));
+		console.error(`Manual recovery: see ${resolveHtmlUrl()} to re-download.`);
+		process.exit(1);
+	}
+
+	// The database is never rolled back automatically — a newer schema may have
+	// migrated it, and silently reverting a user's data is not ours to decide.
+	const snapshots = await listDbSnapshots();
+	if (snapshots.length > 0) {
+		console.log("");
+		console.log("Pre-update database backups (restore manually if needed):");
+		for (const s of snapshots) console.log(`  ${s}`);
+	}
+	process.exit(0);
+}
+
+/** Newest-first pre-update database snapshots, or [] if none/unreadable. */
+async function listDbSnapshots(): Promise<string[]> {
+	const { resolveStandalonePaths } = await import("./standalone-paths.js");
+	const paths = await resolveStandalonePaths();
+	const backupsDir = join(paths.dataDir, "backups");
+	const entries = await readdir(backupsDir).catch(() => []);
+	return entries
+		.filter((n) => n.startsWith("pre-update-") && n.endsWith(".db"))
+		.sort()
+		.reverse()
+		.map((n) => join(backupsDir, n));
+}
+
 // ─── Internals ──────────────────────────────────────────────────────────────
 
 /**
@@ -330,6 +432,7 @@ interface GithubReleaseShape {
 interface GithubAssetShape {
 	readonly name?: unknown;
 	readonly browser_download_url?: unknown;
+	readonly size?: unknown;
 }
 
 /** Narrow the untyped JSON into our domain shape, or return null on mismatch. */
@@ -346,7 +449,8 @@ export function parseRelease(data: unknown): ParsedRelease | null {
 		if (typeof raw !== "object" || raw === null) continue;
 		const a = raw as GithubAssetShape;
 		if (typeof a.name !== "string" || typeof a.browser_download_url !== "string") continue;
-		assets.push({ name: a.name, browser_download_url: a.browser_download_url });
+		const size = typeof a.size === "number" && Number.isFinite(a.size) && a.size > 0 ? a.size : 0;
+		assets.push({ name: a.name, browser_download_url: a.browser_download_url, size });
 	}
 
 	const archiveAsset = assets.find((a) => a.name.endsWith(ARCHIVE_SUFFIX)) ?? null;
@@ -617,6 +721,16 @@ export async function downloadAndSwap(
 	let installModified = false;
 
 	try {
+		// Refuse before spending the download if the volume cannot hold the
+		// result. This is inside the try so it becomes a SoftUpdateError like
+		// every other pre-swap failure.
+		console.log("· Checking free space...");
+		callbacks?.onPhase?.("preflight");
+		const space = await checkFreeSpace(installDir, release.archiveAsset.size);
+		if (!space.ok && space.message !== null) {
+			throw new Error(space.message);
+		}
+
 		console.log("· Downloading release archive...");
 		callbacks?.onPhase?.("downloading-archive");
 		const archiveDownload = await downloadToPathWithProgress(
@@ -648,9 +762,11 @@ export async function downloadAndSwap(
 
 		console.log("· Installing...");
 		callbacks?.onPhase?.("swapping");
-		await performSwap(installDir, extractDir, (modified) => {
+		const backupDir = await performSwap(installDir, extractDir, (modified) => {
 			installModified = modified;
 		});
+		// Protect this backup until the new build proves it can start.
+		await markUpdatePending(installDir, backupDir);
 
 		return release.version;
 	} catch (err) {
@@ -727,6 +843,7 @@ export interface UpdateProgressCallbacks {
 
 /** Coarse-grained phases the orchestrator surfaces to the UI. */
 export type UpdatePhase =
+	| "preflight"
 	| "downloading-archive"
 	| "downloading-sums"
 	| "verifying"

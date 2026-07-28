@@ -212,6 +212,7 @@ export interface RuntimeInfo {
 export type RuntimeUpdatePhase =
 	| "idle"
 	| "checking"
+	| "preflight"
 	| "downloading-archive"
 	| "downloading-sums"
 	| "verifying"

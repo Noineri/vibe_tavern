@@ -24,6 +24,8 @@ import {
 	SoftUpdateError,
 	type UpdatePhase,
 } from "../../server/updater.js";
+import { resolveStandalonePaths } from "../../server/standalone-paths.js";
+import { snapshotDatabase } from "./update-db-snapshot.js";
 
 export type UpdateOrchestratorPhase =
 	| "idle"
@@ -65,9 +67,15 @@ const INITIAL_STATUS: UpdateStatus = {
 class UpdateOrchestrator {
 	private status: UpdateStatus = INITIAL_STATUS;
 	private running = false;
+	/** Where this run's pre-update database snapshot landed, for the UI/logs. */
+	private dbSnapshotPath: string | null = null;
 
 	getStatus(): UpdateStatus {
 		return this.status;
+	}
+
+	getDbSnapshotPath(): string | null {
+		return this.dbSnapshotPath;
 	}
 
 	triggerUpdate(): { accepted: boolean; reason?: string } {
@@ -115,6 +123,18 @@ class UpdateOrchestrator {
 				this.fail("soft", "Could not fetch the release asset list from GitHub.", "checking", null);
 				return;
 			}
+
+			// Recovery point before anything touches the install. Failing to take
+			// one aborts rather than proceeding: an update with no way back is
+			// exactly what this plan exists to prevent.
+			const paths = await resolveStandalonePaths();
+			const snapshot = await snapshotDatabase(paths.dbPath, paths.dataDir, check.latestVersion);
+			if (!snapshot.ok) {
+				this.fail("soft", snapshot.message ?? "Could not create a pre-update database backup.", "checking", null);
+				return;
+			}
+			this.dbSnapshotPath = snapshot.path;
+			console.log(`[update-orchestrator] pre-update database snapshot: ${snapshot.path}`);
 
 			const newVersion = await downloadAndSwap(release, installDir, {
 				onPhase: (phase) => {

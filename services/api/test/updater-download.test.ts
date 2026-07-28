@@ -128,8 +128,16 @@ async function serveRelease(
 			tag: `v${version}`,
 			version,
 			releaseNotes: "notes",
-			archiveAsset: { name: archiveName, browser_download_url: `${base}/${archiveName}` },
-			sumsAsset: { name: "SHA256SUMS.txt", browser_download_url: `${base}/SHA256SUMS.txt` },
+			archiveAsset: {
+				name: archiveName,
+				browser_download_url: `${base}/${archiveName}`,
+				size: bytes.length,
+			},
+			sumsAsset: {
+				name: "SHA256SUMS.txt",
+				browser_download_url: `${base}/SHA256SUMS.txt`,
+				size: sums.length,
+			},
 		},
 	};
 }
@@ -277,6 +285,7 @@ describe("downloadAndSwap against a mock release server", () => {
 		expect(await stat(join(installDir, ".next")).then(() => true, () => false)).toBe(false);
 
 		expect(phases).toEqual([
+			"preflight",
 			"downloading-archive",
 			"downloading-sums",
 			"verifying",
@@ -335,13 +344,38 @@ describe("downloadAndSwap against a mock release server", () => {
 		expect((await readdir(installDir)).filter((n) => n.startsWith(".old-"))).toHaveLength(0);
 	});
 
+	it("refuses before downloading anything when the volume cannot hold the update", async () => {
+		await seedInstall();
+		const { release } = await serveRelease("1.6.0");
+		// Claim an absurd asset size so the preflight cannot possibly pass.
+		const huge: ParsedRelease = {
+			...release,
+			archiveAsset: { ...release.archiveAsset, size: 1024 ** 5 },
+		};
+
+		const phases: UpdatePhase[] = [];
+		const err = await downloadAndSwap(huge, installDir, {
+			onPhase: (p) => phases.push(p),
+		}).then(() => null, (e: unknown) => e);
+
+		expect(err).toBeInstanceOf(SoftUpdateError);
+		expect(err instanceof Error ? err.message : "").toMatch(/Not enough free space/);
+		// It named both numbers, and it never started downloading.
+		expect(err instanceof Error ? err.message : "").toMatch(/Need about .*available/s);
+		expect(phases).toEqual(["preflight"]);
+		expect(await readFile(join(installDir, binaryName), "utf8")).toBe("BINARY v1.0.0");
+	});
+
 	it("fails SOFT when the sums file does not list the archive", async () => {
 		await seedInstall();
 		const { release } = await serveRelease("1.5.0");
 		// Point the archive at a name the sums file does not mention.
 		const renamed: ParsedRelease = {
 			...release,
-			archiveAsset: { ...release.archiveAsset, name: `Vibe-Tavern-v9.9.9${ARCHIVE_SUFFIX}` },
+			archiveAsset: {
+				...release.archiveAsset,
+				name: `Vibe-Tavern-v9.9.9${ARCHIVE_SUFFIX}`,
+			},
 		};
 
 		const err = await downloadAndSwap(renamed, installDir).then(() => null, (e: unknown) => e);

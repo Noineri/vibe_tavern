@@ -51,7 +51,10 @@ export function getCurrentVersion(): string { return "fixture-version"; }
 export function printVersion(): void { console.log("stub:version"); }
 export async function runCheckUpdate(): Promise<void> { console.log("stub:check-update"); }
 export async function runUpdate(options: { readonly yes: boolean }): Promise<void> { console.log(\`stub:update yes=\${options.yes}\`); }
+export async function runRollback(): Promise<void> { console.log("stub:rollback"); }
 export async function cleanupOldInstall(installDir: string): Promise<void> { console.log("stub:cleanup-old-install"); }
+export async function isUpdatePending(installDir: string): Promise<boolean> { return false; }
+export async function finalizeUpdatePending(installDir: string): Promise<void> { console.log("stub:finalize-update"); }
 `);
 	return { root, script };
 }
@@ -109,6 +112,20 @@ test("check-update and update consume only their documented subcommand arguments
 	expect(longYesResult.stdout).toContain("stub:update yes=true");
 	expect(aliasYesResult.stdout).toContain("stub:update yes=true");
 	expect(unknownResult.stdout).toContain("stub:update yes=false");
+});
+
+test("rollback dispatches without resolving paths or starting the runtime", async () => {
+	// Given
+	const fixture = await createFixture();
+
+	// When
+	const result = await run(["bun", fixture.script, "rollback"], fixture.root);
+
+	// Then
+	expect(result.exitCode).toBe(0);
+	expect(result.stdout).toContain("stub:rollback");
+	expect(result.stdout).not.toContain("stub:runtime");
+	expect(result.stdout).not.toContain("stub:resolve-paths");
 });
 
 test("default, help, and unknown arguments all start the standalone runtime", async () => {
