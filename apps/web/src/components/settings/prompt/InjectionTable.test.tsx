@@ -170,16 +170,16 @@ function clickDotToggle(label: string) {
   throw new Error(`no ●/○ toggle found walking up from label "${label}"`);
 }
 
-/** Click the trash delete button of a custom-injection row. Identified as the
- *  header button with empty text and no aria-label (drag handle = "⋮⋮" text;
- *  toggle = "●"/"○"; edit-name button carries an aria-label; delete is SVG-only). */
+/** Click the trash delete button of a custom-injection row. The CanvasCard
+ *  remove button carries aria-label `cc_remove` (the `✕` glyph); identified by
+ *  that aria-label while walking up from the row's visible name. */
 function clickDelete(rowName: string) {
   const nameEl = queries().getByText(rowName);
   let node: HTMLElement | null = nameEl;
   while (node) {
     const del = within(node)
       .queryAllByRole("button")
-      .find((b) => b.textContent?.trim() === "" && !b.getAttribute("aria-label"));
+      .find((b) => b.getAttribute("aria-label") === "cc_remove");
     if (del) {
       fireEvent.click(del);
       return;
@@ -232,6 +232,9 @@ describe("PromptOrderCanvas — characterization", () => {
 		rerender(canvasEl({ spies, characterDraft }));
 		expect(queries().getByText("character_system_prompt")).toBeTruthy();
 		expect(queries().getByText("character_post_history")).toBeTruthy();
+    // charDepthPrompt's semantic advanced default is in_chat depth 4, so it
+    // lives inside the collapsed chat-history accordion rather than before_chat.
+    fireEvent.click(queries().getByRole("button", { name: /prompt_slot_chat_history/ }));
 		expect(queries().getByText("character_depth_prompt")).toBeTruthy();
   });
 
@@ -287,6 +290,28 @@ describe("PromptOrderCanvas — characterization", () => {
     expect(text.indexOf("TestInj")).toBeLessThan(text.indexOf("depth_zone_1"));
   });
 
+  it("renders a custom injection through CanvasCard with icon, token counter, and working role control", () => {
+    const spies = makeSpies();
+    const injection: CustomInjection = { identifier: "custom_t", name: "TestInj", content: "x", role: "system" };
+    const { container } = renderCanvas({
+      spies,
+      injections: [injection],
+      promptOrder: [
+        { identifier: "custom_t", enabled: true, order: 0, zone: "before_chat", depth: null, kind: "custom" },
+      ],
+    });
+
+    const card = container.querySelector('[data-canvas-identifier="custom_t"]') as HTMLElement;
+    expect(card).toBeTruthy();
+    expect(card.querySelector('span[aria-hidden="true"] svg')).toBeTruthy();
+    expect(card.textContent).toContain("0 tokens_label");
+    expect(card.textContent).toContain("system");
+
+    fireEvent.click(within(card).getByText("TestInj"));
+    fireEvent.click(within(card).getByRole("radio", { name: "assistant" }));
+    expect(spies.onChange).toHaveBeenCalledWith([{ ...injection, role: "assistant" }]);
+  });
+
   it("toggling a built-in slot with an existing canvas entry flips enabled", () => {
     const spies = makeSpies();
     renderCanvas({
@@ -304,14 +329,26 @@ describe("PromptOrderCanvas — characterization", () => {
     ]);
   });
 
-  it("toggling a built-in slot with no canvas entry creates an enabled:false entry", () => {
+  it("toggling a built-in slot with no canvas entry creates an enabled:false entry at its semantic default", () => {
     const spies = makeSpies();
     renderCanvas({ spies, promptOrder: [] });
 
     clickDotToggle("prompt_slot_world_info_before"); // worldInfoBefore marker, no entry
 
     expect(spies.onPromptOrderChange).toHaveBeenCalledWith([
-      { identifier: "worldInfoBefore", enabled: false, kind: "built_in", zone: "before_chat", depth: null, order: 999 },
+      { identifier: "worldInfoBefore", enabled: false, kind: "built_in", zone: "before_chat", depth: null, order: 10 },
+    ]);
+  });
+
+  it("changing a built-in field role with no entry creates a semantic PromptOrderEntry", () => {
+    const spies = makeSpies();
+    renderCanvas({ spies, promptOrder: [] });
+
+    fireEvent.click(queries().getByText("system_prompt"));
+    fireEvent.click(queries().getByRole("radio", { name: "user" }));
+
+    expect(spies.onPromptOrderChange).toHaveBeenCalledWith([
+      { identifier: "main", enabled: true, kind: "built_in", zone: "before_chat", depth: null, order: 0, role: "user" },
     ]);
   });
 

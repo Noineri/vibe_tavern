@@ -1,7 +1,6 @@
 /**
  * DragHandle + DragHandleContext — the dnd-kit drag activator used by every
- * canvas row card (CanvasCard, PromptOrderMarker, InjectionRowView) and provided
- * by `SortableCanvasItem`
+ * `CanvasCard` row and provided by `SortableCanvasItem`
  * (still in `InjectionTable.tsx`).
  *
  * Extracted to its own module so the row components (under `rows/`) can import

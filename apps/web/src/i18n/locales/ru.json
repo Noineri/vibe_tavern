@@ -1511,6 +1511,7 @@
   "cc_enabled": "Включено",
   "cc_disabled": "Выключено",
   "cc_remove": "Удалить",
+  "cc_read_only": "только чтение",
   "cc_legend_toggle": "Легенда иконок",
   "cc_legend_standard": "Стандартный",
   "cc_legend_standard_desc": "Встроенный промпт-блок (system, jailbreak, nsfw и т.д.)",

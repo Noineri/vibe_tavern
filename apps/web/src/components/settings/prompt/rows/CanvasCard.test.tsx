@@ -8,8 +8,8 @@
  *   • collapsed — header always shows the category icon + label; the body
  *     editor (AutoTextarea) does NOT render until expanded.
  *   • expanded — the AutoTextarea binds to `value` and forwards `onChange`.
- *   • onRoleChange — the role SegmentedControl renders in the body (the custom-
- *     injection parity control the field cards lack).
+ *   • editableName — custom injections keep inline rename in the unified card.
+ *   • onRoleChange — the role SegmentedControl renders and forwards role changes.
  *   • nonExpandable — a marker row never opens a body (PromptOrderMarker parity).
  *   • onToggle — fires from the enable button without expanding the body.
  *
@@ -68,16 +68,37 @@ describe("CanvasCard — structural characterization", () => {
 		expect(onChange).toHaveBeenCalledWith("new rules");
 	});
 
-	it("onRoleChange renders the role SegmentedControl (system/user/assistant) in the body", () => {
+	it("editableName preserves custom-injection inline rename", () => {
+		const onRename = mock();
+		const { getByRole, getByText } = renderCard(
+			<CanvasCard
+				identifier="custom1"
+				category="custom"
+				label="My Injection"
+				value="c"
+				editableName={{ value: "My Injection", placeholder: "Injection name", onRename }}
+			/>,
+		);
+		expect(getByText("My Injection")).toBeTruthy();
+		fireEvent.click(getByRole("button", { name: "Injection name" }));
+		const input = getByRole("textbox") as HTMLInputElement;
+		expect(input.value).toBe("My Injection");
+		fireEvent.change(input, { target: { value: "Renamed" } });
+		expect(onRename).toHaveBeenCalledWith("Renamed");
+	});
+
+	it("onRoleChange renders the role control and forwards a new role", () => {
 		const onRoleChange = mock();
-		const { container, getByText } = renderCard(
+		const { container, getByRole, getByText } = renderCard(
 			<CanvasCard identifier="custom1" category="custom" label="My Injection" value="c" role="user" onRoleChange={onRoleChange} />,
 		);
 		fireEvent.click(getByText("My Injection"));
-		// the three role options render as radio labels in the body
+		// the three role options render as radios in the body
 		expect(container.textContent).toContain("system");
 		expect(container.textContent).toContain("user");
 		expect(container.textContent).toContain("assistant");
+		fireEvent.click(getByRole("radio", { name: "assistant" }));
+		expect(onRoleChange).toHaveBeenCalledWith("assistant");
 	});
 
 	it("nonExpandable marker row never opens a body (PromptOrderMarker parity)", () => {

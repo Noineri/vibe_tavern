@@ -1509,6 +1509,7 @@
   "cc_enabled": "Enabled",
   "cc_disabled": "Disabled",
   "cc_remove": "Remove",
+  "cc_read_only": "read-only",
   "cc_legend_toggle": "Icon legend",
   "cc_legend_standard": "Standard",
   "cc_legend_standard_desc": "Built-in prompt block (system, jailbreak, nsfw, etc.)",

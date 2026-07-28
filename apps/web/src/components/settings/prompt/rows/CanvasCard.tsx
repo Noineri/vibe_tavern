@@ -1,11 +1,9 @@
 /**
  * Unified prompt-canvas row card (APC-3b).
  *
- * A single props-driven template that every canvas slot renders through
- * (APC-4b folded the field cards into it; PromptOrderMarker migrates in 4c,
- * InjectionRowView in 4d). The migration is a slot-by-slot swap rather than a
- * big-bang rewrite — `PromptOrderMarker` and `InjectionRowView` still render
- * directly until 4c/4d.
+ * A single props-driven template that every canvas row renders through.
+ * APC-4b folded the field cards into it; APC-4c/4d folded the former
+ * PromptOrderMarker and InjectionRowView paths into the same template.
  *
  * Layout (header always rendered; body optional + collapsible):
  *
@@ -19,13 +17,13 @@
  *   • custom   — + `onRoleChange` + `onRemove`         → injection editor (role control in body)
  *
  * Visual source: the header chrome (toggle, badges, chevron, spacing) mirrors
- * the former EditablePromptCard / InjectionRowView so the migration is
- * pixel-stable; the category-icon (APC-3a) is the one new element.
+ * the former per-type cards; the category-icon (APC-3a) is the one new element.
  */
 import { useState } from "react";
 import type { ReactNode } from "react";
 import { useT } from "../../../../i18n/context.js";
 import { cn } from "../../../../lib/cn.js";
+import { Ic } from "../../../shared/icons.js";
 import { CustomTooltip } from "../../../shared/Tooltip.js";
 import { TokenCounter } from "../../../shared/TokenCounter.js";
 import { NumberInput } from "../../../shared/NumberInput.js";
@@ -44,6 +42,10 @@ export interface CanvasCardProps {
   label: ReactNode;
   /** When set, the label renders with a dotted underline + hover tooltip. */
   labelTooltip?: string;
+  /** Editable inline label (custom injections have a renameable name). When
+   *  set, the label area becomes an edit-on-click name field; otherwise the
+   *  static `label` ReactNode is shown. */
+  editableName?: { value: string; placeholder: string; onRename: (name: string) => void };
 
   /** Enabled flag (default true). */
   enabled?: boolean;
@@ -119,10 +121,12 @@ export function CanvasCard({
   nonExpandable = false,
   defaultExpanded = false,
   expandedLeading,
+  editableName,
   className,
 }: CanvasCardProps) {
   const { t } = useT();
   const [expanded, setExpanded] = useState(defaultExpanded);
+  const [editingName, setEditingName] = useState(false);
 
   const hasValue = value !== undefined;
   const isEditable = editable ?? hasValue;
@@ -136,7 +140,7 @@ export function CanvasCard({
   const onClickHeader = expandable ? () => setExpanded((v) => !v) : undefined;
 
   return (
-    <div className={cn("rounded-md border border-border bg-surface transition-colors", !enabled && "opacity-55", className)}>
+    <div data-canvas-identifier={identifier} className={cn("rounded-md border border-border bg-surface transition-colors", !enabled && "opacity-55", className)}>
       <div
         className={cn("flex min-w-0 select-none items-center gap-2 px-3 py-2 sm:gap-2.5", onClickHeader && "cursor-pointer")}
         onClick={onClickHeader}
@@ -161,15 +165,48 @@ export function CanvasCard({
         <span className="flex h-[13px] w-[13px] shrink-0 items-center justify-center text-t3" aria-hidden="true">
           <CategoryIcon />
         </span>
-        <span className="min-w-[120px] flex-1 truncate font-ui text-[12px] text-t1 sm:overflow-visible sm:whitespace-normal sm:text-clip">
-          {labelTooltip ? (
-            <CustomTooltip content={labelTooltip}>
-              <span className="cursor-help border-b border-dotted border-current pb-0.5">{label}</span>
-            </CustomTooltip>
-          ) : (
-            label
-          )}
-        </span>
+        {editableName ? (
+          <div className="group flex min-w-[80px] flex-1 items-center gap-1.5 overflow-hidden">
+            {editingName ? (
+              <input
+                autoFocus
+                className={cn("min-w-0 flex-1 rounded border border-border bg-s2 px-1.5 py-0.5 font-ui text-[12px] outline-none focus:border-accent placeholder:text-t4", enabled ? "text-t1" : "text-t3")}
+                value={editableName.value}
+                placeholder={editableName.placeholder}
+                onChange={(e) => editableName.onRename(e.target.value)}
+                onClick={(e) => e.stopPropagation()}
+                onBlur={() => setEditingName(false)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === "Escape") { e.preventDefault(); setEditingName(false); }
+                }}
+              />
+            ) : (
+              <>
+                <span className={cn("min-w-0 flex-1 truncate font-ui text-[12px]", enabled ? "text-t1" : "text-t3", !editableName.value && "text-t4")}>
+                  {editableName.value || editableName.placeholder}
+                </span>
+                <button
+                  type="button"
+                  className="flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center rounded text-t4 opacity-100 transition-all hover:bg-s2 hover:text-accent focus:bg-s2 focus:text-accent sm:opacity-0 sm:group-hover:opacity-100 sm:focus:opacity-100"
+                  onClick={(e) => { e.stopPropagation(); setEditingName(true); }}
+                  aria-label={editableName.placeholder}
+                >
+                  {Ic.edit()}
+                </button>
+              </>
+            )}
+          </div>
+        ) : (
+          <span className="min-w-[120px] flex-1 truncate font-ui text-[12px] text-t1 sm:overflow-visible sm:whitespace-normal sm:text-clip">
+            {labelTooltip ? (
+              <CustomTooltip content={labelTooltip}>
+                <span className="cursor-help border-b border-dotted border-current pb-0.5">{label}</span>
+              </CustomTooltip>
+            ) : (
+              label
+            )}
+          </span>
+        )}
         {hasValue && <TokenCounter text={value} />}
         {role && <span className="shrink-0 rounded bg-s2 px-1.5 py-0.5 font-mono text-[10px] text-t4">{role}</span>}
         {showDepthBadge && (
@@ -214,7 +251,7 @@ export function CanvasCard({
                 </CustomTooltip>
               )}
               {onRoleChange && role && (
-                <label className="flex min-w-0 flex-wrap items-center gap-1.5 font-ui text-[11px] text-t4">
+                <div className="flex min-w-0 flex-wrap items-center gap-1.5 font-ui text-[11px] text-t4">
                   <span>{t("role")}</span>
                   <SegmentedControl
                     value={role}
@@ -222,7 +259,7 @@ export function CanvasCard({
                     onChange={(v) => onRoleChange(v as "system" | "user" | "assistant")}
                     compact
                   />
-                </label>
+                </div>
               )}
             </div>
           )}

@@ -125,6 +125,7 @@ export default interface Resources {
     "cc_legend_standard": "Standard",
     "cc_legend_standard_desc": "Built-in prompt block (system, jailbreak, nsfw, etc.)",
     "cc_legend_toggle": "Icon legend",
+    "cc_read_only": "read-only",
     "cc_remove": "Remove",
     "change_avatar": "Change avatar",
     "char_avatar_save_failed": "Could not save character avatar.",
