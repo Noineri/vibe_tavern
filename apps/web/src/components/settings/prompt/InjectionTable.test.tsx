@@ -27,7 +27,6 @@
  */
 import { beforeAll, describe, it, expect, mock } from "bun:test";
 import type { ReactElement, ReactNode } from "react";
-import { render, fireEvent, within } from "@testing-library/react";
 import { useDomEnv } from "../../../../test/dom-env.js";
 import type { CustomInjection, PromptOrderEntry } from "@vibe-tavern/domain";
 import type { CharacterCanvasDraft } from "./InjectionTable.js";
@@ -69,6 +68,8 @@ mock.module("../../shared/Tooltip.js", () => ({
 // implement. Force desktop; the mobile fork is not the test target.
 mock.module("../../../hooks/use-mobile.js", () => ({ ...realUseMobile, useIsMobile: () => false }));
 
+const { render, fireEvent, within } = await import("@testing-library/react");
+
 let InjectionTable: typeof import("./InjectionTable.js").InjectionTable;
 beforeAll(async () => {
   ({ InjectionTable } = await import("./InjectionTable.js"));
@@ -96,6 +97,10 @@ const characterDraft: CharacterCanvasDraft = {
   charDepthPrompt: "cdp",
   charDepthPromptDepth: 4,
   charDepthPromptRole: "system",
+  charDescription: "A northern warrior",
+  charPersonality: "Brave and loyal",
+  scenario: "A tavern at sunset",
+  dialogueExamples: "{{char}}: Greetings!",
 };
 
 function makeSpies() {
@@ -104,6 +109,7 @@ function makeSpies() {
     onPromptOrderChange: mock(),
     onUpdateField: mock(),
     onCharacterFieldUpdate: mock(),
+    onPersonaDescriptionUpdate: mock(),
   };
 }
 
@@ -118,6 +124,8 @@ function canvasEl(props: CanvasProps & { spies: Spies }): ReactElement {
       onUpdateField={props.onUpdateField ?? props.spies.onUpdateField}
       characterDraft={props.characterDraft ?? null}
       onCharacterFieldUpdate={props.onCharacterFieldUpdate ?? props.spies.onCharacterFieldUpdate}
+      personaDescription={props.personaDescription ?? null}
+      onPersonaDescriptionUpdate={props.onPersonaDescriptionUpdate ?? props.spies.onPersonaDescriptionUpdate}
       promptOrder={props.promptOrder ?? []}
       onPromptOrderChange={props.onPromptOrderChange ?? props.spies.onPromptOrderChange}
     />
@@ -236,6 +244,32 @@ describe("PromptOrderCanvas — characterization", () => {
     // lives inside the collapsed chat-history accordion rather than before_chat.
     fireEvent.click(queries().getByRole("button", { name: /prompt_slot_chat_history/ }));
 		expect(queries().getByText("character_depth_prompt")).toBeTruthy();
+  });
+
+  it("binds character and persona source content to editable CanvasCards", () => {
+    const { container, spies } = renderCanvas({
+      characterDraft,
+      personaDescription: "A wandering scholar",
+    });
+
+    const characterCard = container.querySelector<HTMLElement>('[data-canvas-identifier="charDescription"]');
+    expect(characterCard).toBeTruthy();
+    expect(characterCard!.textContent).toContain("char_badge");
+    expect(characterCard!.textContent).not.toContain("cc_read_only");
+    fireEvent.click(within(characterCard!).getByText("prompt_slot_character_description"));
+    const characterTextarea = within(characterCard!).getByRole("textbox") as HTMLTextAreaElement;
+    expect(characterTextarea.value).toBe("A northern warrior");
+    fireEvent.change(characterTextarea, { target: { value: "An eastern mage" } });
+    expect(spies.onCharacterFieldUpdate).toHaveBeenCalledWith("charDescription", "An eastern mage");
+
+    const personaCard = container.querySelector<HTMLElement>('[data-canvas-identifier="personaDescription"]');
+    expect(personaCard).toBeTruthy();
+    expect(personaCard!.textContent).toContain("persona_badge");
+    fireEvent.click(within(personaCard!).getByText("prompt_slot_persona"));
+    const personaTextarea = within(personaCard!).getByRole("textbox") as HTMLTextAreaElement;
+    expect(personaTextarea.value).toBe("A wandering scholar");
+    fireEvent.change(personaTextarea, { target: { value: "A retired navigator" } });
+    expect(spies.onPersonaDescriptionUpdate).toHaveBeenCalledWith("A retired navigator");
   });
 
   it("orders before_chat items by ascending default order", () => {

@@ -56,8 +56,30 @@ interface PromptManagerModalProps {
     depthPrompt: string | null;
     depthPromptDepth: number | null;
     depthPromptRole: string | null;
+    description: string;
+    personalitySummary: string | null;
+    scenario: string;
+    mesExample: string | null;
   } | null;
-  onCharacterFieldUpdate?: (key: string, value: string | number) => void;
+  onCharacterFieldUpdate?: (key: keyof CharacterCanvasDraft, value: string | number) => void;
+  personaDescription?: string | null;
+  onPersonaDescriptionUpdate?: (value: string) => void;
+}
+
+function toCharacterCanvasDraft(
+  fields: PromptManagerModalProps["characterFields"],
+): CharacterCanvasDraft | null {
+  return fields ? {
+    charSystemPrompt: fields.systemPrompt ?? "",
+    charPostHistory: fields.postHistoryInstructions ?? "",
+    charDepthPrompt: fields.depthPrompt ?? "",
+    charDepthPromptDepth: fields.depthPromptDepth ?? 4,
+    charDepthPromptRole: fields.depthPromptRole ?? "system",
+    charDescription: fields.description,
+    charPersonality: fields.personalitySummary ?? "",
+    scenario: fields.scenario,
+    dialogueExamples: fields.mesExample ?? "",
+  } : null;
 }
 
 const emptyDraft: DraftData = {
@@ -119,33 +141,43 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
   const [dirty, setDirty] = useState(false);
   const [saveState, setSaveState] = useState<SaveState>("idle");
 
-  // Character V3 fields → canvas draft (mutable state)
+  // Active-character fields → one canvas draft (mutable state).
   const [characterDraft, setCharacterDraft] = useState<CharacterCanvasDraft | null>(() =>
-    input.characterFields ? {
-      charSystemPrompt: input.characterFields.systemPrompt ?? "",
-      charPostHistory: input.characterFields.postHistoryInstructions ?? "",
-      charDepthPrompt: input.characterFields.depthPrompt ?? "",
-      charDepthPromptDepth: input.characterFields.depthPromptDepth ?? 4,
-      charDepthPromptRole: input.characterFields.depthPromptRole ?? "system",
-    } : null
+    toCharacterCanvasDraft(input.characterFields)
+  );
+  const [personaDescriptionDraft, setPersonaDescriptionDraft] = useState<string | null>(
+    () => input.personaDescription ?? null,
   );
 
-  // Sync character draft when characterFields prop changes (different character selected)
+  // Sync entity drafts when the active character/persona snapshot changes.
   useEffect(() => {
-    setCharacterDraft(input.characterFields ? {
-      charSystemPrompt: input.characterFields.systemPrompt ?? "",
-      charPostHistory: input.characterFields.postHistoryInstructions ?? "",
-      charDepthPrompt: input.characterFields.depthPrompt ?? "",
-      charDepthPromptDepth: input.characterFields.depthPromptDepth ?? 4,
-      charDepthPromptRole: input.characterFields.depthPromptRole ?? "system",
-    } : null);
-  }, [input.characterFields?.systemPrompt, input.characterFields?.postHistoryInstructions, input.characterFields?.depthPrompt, input.characterFields?.depthPromptDepth, input.characterFields?.depthPromptRole]);
+    setCharacterDraft(toCharacterCanvasDraft(input.characterFields));
+  }, [
+    input.characterFields?.systemPrompt,
+    input.characterFields?.postHistoryInstructions,
+    input.characterFields?.depthPrompt,
+    input.characterFields?.depthPromptDepth,
+    input.characterFields?.depthPromptRole,
+    input.characterFields?.description,
+    input.characterFields?.personalitySummary,
+    input.characterFields?.scenario,
+    input.characterFields?.mesExample,
+  ]);
+  useEffect(() => {
+    setPersonaDescriptionDraft(input.personaDescription ?? null);
+  }, [input.personaDescription]);
 
-  function updateCharacterDraft(key: string, value: string | number) {
+  function updateCharacterDraft(key: keyof CharacterCanvasDraft, value: string | number) {
     setCharacterDraft((prev) => {
       if (!prev) return prev;
       return { ...prev, [key]: value };
     });
+    setDirty(true);
+    setSaveState("idle");
+  }
+
+  function updatePersonaDescriptionDraft(value: string) {
+    setPersonaDescriptionDraft((prev) => prev == null ? prev : value);
     setDirty(true);
     setSaveState("idle");
   }
@@ -218,7 +250,18 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
           if (characterDraft.charDepthPrompt !== (orig.depthPrompt ?? "")) input.onCharacterFieldUpdate("charDepthPrompt", characterDraft.charDepthPrompt);
           if (characterDraft.charDepthPromptDepth !== (orig.depthPromptDepth ?? 4)) input.onCharacterFieldUpdate("charDepthPromptDepth", characterDraft.charDepthPromptDepth);
           if (characterDraft.charDepthPromptRole !== (orig.depthPromptRole ?? "system")) input.onCharacterFieldUpdate("charDepthPromptRole", characterDraft.charDepthPromptRole);
+          if (characterDraft.charDescription !== orig.description) input.onCharacterFieldUpdate("charDescription", characterDraft.charDescription);
+          if (characterDraft.charPersonality !== (orig.personalitySummary ?? "")) input.onCharacterFieldUpdate("charPersonality", characterDraft.charPersonality);
+          if (characterDraft.scenario !== orig.scenario) input.onCharacterFieldUpdate("scenario", characterDraft.scenario);
+          if (characterDraft.dialogueExamples !== (orig.mesExample ?? "")) input.onCharacterFieldUpdate("dialogueExamples", characterDraft.dialogueExamples);
         }
+      }
+      if (
+        personaDescriptionDraft != null
+        && input.personaDescription != null
+        && personaDescriptionDraft !== input.personaDescription
+      ) {
+        input.onPersonaDescriptionUpdate?.(personaDescriptionDraft);
       }
       setDirty(false);
       setSaveState("saved");
@@ -486,7 +529,9 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
                   draft={activePreset ? draft : null}
                   onUpdateField={(key, value) => updateDraft(key, value as never)}
                   characterDraft={characterDraft}
-                  onCharacterFieldUpdate={(key, value) => updateCharacterDraft(key, value)}
+                  onCharacterFieldUpdate={updateCharacterDraft}
+                  personaDescription={personaDescriptionDraft}
+                  onPersonaDescriptionUpdate={updatePersonaDescriptionDraft}
                 />
               </div>
             )}

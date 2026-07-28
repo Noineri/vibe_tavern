@@ -42,13 +42,18 @@ export type PromptCanvasDraft = {
   enhanceDefinitions: string;
 };
 
-/** Character-V3 override fields the canvas binds to (only shown when present). */
+/** Editable active-character fields the advanced canvas binds to. Canvas-key
+ *  names keep `build-fixed-items` and the modal save dispatcher aligned. */
 export type CharacterCanvasDraft = {
   charSystemPrompt: string;
   charPostHistory: string;
   charDepthPrompt: string;
   charDepthPromptDepth: number;
   charDepthPromptRole: string;
+  charDescription: string;
+  charPersonality: string;
+  scenario: string;
+  dialogueExamples: string;
 };
 
 /** A single row in the prompt-order canvas. `custom` rows carry their injection

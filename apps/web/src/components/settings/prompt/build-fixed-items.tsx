@@ -27,6 +27,8 @@ export interface FixedItemCtx {
   onUpdateField?: (key: keyof PromptCanvasDraft, value: string | number) => void;
   characterDraft?: CharacterCanvasDraft | null;
   onCharacterFieldUpdate?: (key: keyof CharacterCanvasDraft, value: string | number) => void;
+  personaDescription?: string | null;
+  onPersonaDescriptionUpdate?: (value: string) => void;
   slotEnabled: (identifier: string) => boolean;
   togglePromptSlot: (identifier: string) => void;
   slotLabelFor: (identifier: string) => string | null;
@@ -52,8 +54,18 @@ function slotFor(id: string, ctx: FixedItemCtx) {
 }
 
 export function buildFixedItems(ctx: FixedItemCtx): CanvasItem[] {
-  const { t, draft, onUpdateField, characterDraft, onCharacterFieldUpdate } = ctx;
+  const {
+    t,
+    draft,
+    onUpdateField,
+    characterDraft,
+    onCharacterFieldUpdate,
+    personaDescription,
+    onPersonaDescriptionUpdate,
+  } = ctx;
   const disabled = !draft || !onUpdateField;
+  const characterDisabled = !characterDraft || !onCharacterFieldUpdate;
+  const personaDisabled = personaDescription == null || !onPersonaDescriptionUpdate;
 
   return [
     { key: "field:main", identifier: "main", kind: "field", defaultOrder: 0, render: () => (
@@ -73,25 +85,30 @@ export function buildFixedItems(ctx: FixedItemCtx): CanvasItem[] {
       <CanvasCard identifier="personaDescription" category="persona" label={t("prompt_slot_persona")}
         {...toggleFor("personaDescription", ctx)} {...slotFor("personaDescription", ctx)}
         role={ctx.slotRoleFor("personaDescription", "system")} onRoleChange={(r) => ctx.updateSlotRole("personaDescription", r)}
-        badge={t("cc_read_only")} />
+        value={personaDescription ?? ""} placeholder={t("prompt_slot_persona_placeholder")}
+        disabled={personaDisabled} onChange={(v) => onPersonaDescriptionUpdate?.(v)}
+        badge={personaDescription == null ? t("cc_read_only") : t("persona_badge")} />
     ) },
     { key: "slot:charDescription", identifier: "charDescription", kind: "slot", defaultOrder: 30, render: () => (
       <CanvasCard identifier="charDescription" category="character" label={t("prompt_slot_character_description")}
         {...toggleFor("charDescription", ctx)} {...slotFor("charDescription", ctx)}
         role={ctx.slotRoleFor("charDescription", "system")} onRoleChange={(r) => ctx.updateSlotRole("charDescription", r)}
-        badge={t("cc_read_only")} />
+        value={characterDraft?.charDescription ?? ""} placeholder={t("prompt_slot_character_description_placeholder")}
+        disabled={characterDisabled} onChange={(v) => onCharacterFieldUpdate?.("charDescription", v)} badge={t("char_badge")} />
     ) },
     { key: "slot:charPersonality", identifier: "charPersonality", kind: "slot", defaultOrder: 40, render: () => (
       <CanvasCard identifier="charPersonality" category="character" label={t("prompt_slot_character_personality")}
         {...toggleFor("charPersonality", ctx)} {...slotFor("charPersonality", ctx)}
         role={ctx.slotRoleFor("charPersonality", "system")} onRoleChange={(r) => ctx.updateSlotRole("charPersonality", r)}
-        badge={t("cc_read_only")} />
+        value={characterDraft?.charPersonality ?? ""} placeholder={t("prompt_slot_character_personality_placeholder")}
+        disabled={characterDisabled} onChange={(v) => onCharacterFieldUpdate?.("charPersonality", v)} badge={t("char_badge")} />
     ) },
     { key: "slot:scenario", identifier: "scenario", kind: "slot", defaultOrder: 50, render: () => (
       <CanvasCard identifier="scenario" category="character" label={t("scenario")}
         {...toggleFor("scenario", ctx)} {...slotFor("scenario", ctx)}
         role={ctx.slotRoleFor("scenario", "system")} onRoleChange={(r) => ctx.updateSlotRole("scenario", r)}
-        badge={t("cc_read_only")} />
+        value={characterDraft?.scenario ?? ""} placeholder={t("prompt_slot_scenario_placeholder")}
+        disabled={characterDisabled} onChange={(v) => onCharacterFieldUpdate?.("scenario", v)} badge={t("char_badge")} />
     ) },
     { key: "field:authorsNote", identifier: "authorsNote", kind: "field", defaultOrder: 60, render: () => (
       <CanvasCard identifier="authorsNote" category="standard" label={t("authors_note_label")}
@@ -124,7 +141,8 @@ export function buildFixedItems(ctx: FixedItemCtx): CanvasItem[] {
       <CanvasCard identifier="dialogueExamples" category="character" label={t("prompt_slot_dialogue_examples")}
         {...toggleFor("dialogueExamples", ctx)} {...slotFor("dialogueExamples", ctx)}
         role={ctx.slotRoleFor("dialogueExamples", "system")} onRoleChange={(r) => ctx.updateSlotRole("dialogueExamples", r)}
-        badge={t("cc_read_only")} />
+        value={characterDraft?.dialogueExamples ?? ""} placeholder={t("dialog_examples_placeholder")}
+        disabled={characterDisabled} onChange={(v) => onCharacterFieldUpdate?.("dialogueExamples", v)} badge={t("char_badge")} />
     ) },
     { key: "field:jailbreak", identifier: "jailbreak", kind: "field", defaultOrder: 110, render: () => (
       <CanvasCard identifier="jailbreak" category="standard" label={t("post_history_instructions")}

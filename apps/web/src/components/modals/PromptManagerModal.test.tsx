@@ -11,9 +11,48 @@ useDomEnv();
  * to the copy leak back into the source's in-memory state. The pure helper is
  * exported precisely so this invariant has a direct unit test (no RTL render).
  */
-import { describe, expect, test } from "bun:test";
-import type { CustomInjection, PromptOrderEntry } from "@vibe-tavern/domain";
-import { buildDuplicatePayload, type DraftData } from "./PromptManagerModal.js";
+import { afterEach, beforeAll, describe, expect, mock, test } from "bun:test";
+import type { ReactNode } from "react";
+import type { CustomInjection, PromptOrderEntry, PromptPresetDto } from "@vibe-tavern/domain";
+import type { DraftData } from "./PromptManagerModal.js";
+import { useModalStore } from "../../stores/modal-store.js";
+
+const realI18nContext = await import("../../i18n/context.js");
+const realTokenizer = await import("../../utils/tokenizer.js");
+const realTooltip = await import("../shared/Tooltip.js");
+const realUseMobile = await import("../../hooks/use-mobile.js");
+
+mock.module("../../i18n/context.js", () => ({
+  ...realI18nContext,
+  useT: () => ({
+    t: (key: string) => key,
+    tDynamic: (key: string) => key,
+    locale: "en",
+    setLocale: () => {},
+    ready: true,
+  }),
+}));
+mock.module("../../utils/tokenizer.js", () => ({ ...realTokenizer, countTokens: () => 0 }));
+mock.module("../shared/Tooltip.js", () => ({
+  ...realTooltip,
+  CustomTooltip: ({ children }: { children: ReactNode }) => children,
+  TooltipProvider: ({ children }: { children: ReactNode }) => children,
+}));
+mock.module("../../hooks/use-mobile.js", () => ({ ...realUseMobile, useIsMobile: () => false }));
+
+const { cleanup, fireEvent, render, waitFor, within } = await import("@testing-library/react");
+
+let PromptManagerModal: typeof import("./PromptManagerModal.js").PromptManagerModal;
+let buildDuplicatePayload: typeof import("./PromptManagerModal.js").buildDuplicatePayload;
+
+beforeAll(async () => {
+  ({ PromptManagerModal, buildDuplicatePayload } = await import("./PromptManagerModal.js"));
+});
+
+afterEach(() => {
+  cleanup();
+  useModalStore.setState({ isPromptManagerOpen: false });
+});
 
 function baseDraft(): DraftData {
   return {
@@ -36,6 +75,119 @@ function baseDraft(): DraftData {
     advancedMode: false,
   };
 }
+
+function advancedPreset(): PromptPresetDto {
+  const draft = baseDraft();
+  return {
+    ...draft,
+    id: "preset-1",
+    advancedMode: true,
+    aiAssistantPrompts: JSON.stringify(draft.aiAssistantPrompts),
+    createdAt: "2025-01-01T00:00:00.000Z",
+    updatedAt: "2025-01-01T00:00:00.000Z",
+  };
+}
+
+describe("PromptManagerModal — character save boundary", () => {
+  test("persists an edited character V3 canvas field only after preset save succeeds", async () => {
+    const onUpdate = mock(async () => true);
+    const onCharacterFieldUpdate = mock();
+    useModalStore.setState({ isPromptManagerOpen: true });
+
+    const view = render(
+      <PromptManagerModal
+        presets={[advancedPreset()]}
+        activePresetId="preset-1"
+        setActivePresetId={mock()}
+        onCreate={mock(async () => null)}
+        onUpdate={onUpdate}
+        onDelete={mock(async () => true)}
+        onReorder={mock(async () => true)}
+        characterFields={{
+          systemPrompt: "old character system",
+          postHistoryInstructions: "",
+          depthPrompt: "",
+          depthPromptDepth: 4,
+          depthPromptRole: "system",
+          description: "old description",
+          personalitySummary: "old personality",
+          scenario: "old scenario",
+          mesExample: "old examples",
+        }}
+        onCharacterFieldUpdate={onCharacterFieldUpdate}
+      />,
+    );
+
+    const card = view.baseElement.querySelector<HTMLElement>('[data-canvas-identifier="charSystemPrompt"]');
+    expect(card).toBeTruthy();
+    fireEvent.click(within(card!).getByText("character_system_prompt"));
+    const textarea = within(card!).getByRole("textbox");
+    fireEvent.input(textarea, { target: { value: "new character system" } });
+    const saveButton = within(view.baseElement).getByRole("button", { name: "save" });
+    await waitFor(() => expect(saveButton.hasAttribute("disabled")).toBe(false));
+    fireEvent.click(saveButton);
+
+    await waitFor(() => {
+      expect(onUpdate).toHaveBeenCalledTimes(1);
+      expect(onCharacterFieldUpdate).toHaveBeenCalledWith("charSystemPrompt", "new character system");
+    });
+  });
+
+  test("routes edited character content and persona description after preset save", async () => {
+    const onUpdate = mock(async () => true);
+    const onCharacterFieldUpdate = mock();
+    const onPersonaDescriptionUpdate = mock();
+    useModalStore.setState({ isPromptManagerOpen: true });
+
+    const view = render(
+      <PromptManagerModal
+        presets={[advancedPreset()]}
+        activePresetId="preset-1"
+        setActivePresetId={mock()}
+        onCreate={mock(async () => null)}
+        onUpdate={onUpdate}
+        onDelete={mock(async () => true)}
+        onReorder={mock(async () => true)}
+        characterFields={{
+          systemPrompt: "",
+          postHistoryInstructions: "",
+          depthPrompt: "",
+          depthPromptDepth: 4,
+          depthPromptRole: "system",
+          description: "old description",
+          personalitySummary: "old personality",
+          scenario: "old scenario",
+          mesExample: "old examples",
+        }}
+        onCharacterFieldUpdate={onCharacterFieldUpdate}
+        personaDescription="old persona"
+        onPersonaDescriptionUpdate={onPersonaDescriptionUpdate}
+      />,
+    );
+
+    const characterCard = view.baseElement.querySelector<HTMLElement>('[data-canvas-identifier="charDescription"]');
+    expect(characterCard).toBeTruthy();
+    fireEvent.click(within(characterCard!).getByText("prompt_slot_character_description"));
+    fireEvent.change(within(characterCard!).getByRole("textbox"), {
+      target: { value: "new description" },
+    });
+
+    const personaCard = view.baseElement.querySelector<HTMLElement>('[data-canvas-identifier="personaDescription"]');
+    expect(personaCard).toBeTruthy();
+    fireEvent.click(within(personaCard!).getByText("prompt_slot_persona"));
+    fireEvent.change(within(personaCard!).getByRole("textbox"), {
+      target: { value: "new persona" },
+    });
+
+    fireEvent.click(within(view.baseElement).getByRole("button", { name: "save" }));
+
+    await waitFor(() => {
+      expect(onUpdate).toHaveBeenCalledTimes(1);
+      expect(onCharacterFieldUpdate).toHaveBeenCalledWith("charDescription", "new description");
+      expect(onPersonaDescriptionUpdate).toHaveBeenCalledWith("new persona");
+    });
+  });
+});
 
 describe("buildDuplicatePayload — deep-copy (PRESET_COPY_DELETE_CORRUPTION bug 1)", () => {
   test("payload does not share mutable array/object refs with the source draft", () => {

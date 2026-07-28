@@ -423,6 +423,10 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
           depthPrompt: activeCharacter.depthPrompt ?? null,
           depthPromptDepth: activeCharacter.depthPromptDepth ?? null,
           depthPromptRole: activeCharacter.depthPromptRole ?? null,
+          description: activeCharacter.description,
+          personalitySummary: activeCharacter.personalitySummary,
+          scenario: activeCharacter.scenario,
+          mesExample: activeCharacter.mesExample,
         } : null}
         onCharacterFieldUpdate={(key, value) => {
           if (!activeCharacter) return;
@@ -432,12 +436,29 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
             charDepthPrompt: "depthPrompt",
             charDepthPromptDepth: "depthPromptDepth",
             charDepthPromptRole: "depthPromptRole",
+            charDescription: "description",
+            charPersonality: "personalitySummary",
+            scenario: "scenario",
+            dialogueExamples: "mesExample",
           };
           const apiField = apiFieldMap[key];
           if (!apiField) return;
           void saveCharacterAction({
             characterId: activeCharacter.id,
             patch: { chatId: useChatStore.getState().activeChatId ?? undefined, [apiField]: value },
+          });
+        }}
+        personaDescription={activePersona?.description ?? null}
+        onPersonaDescriptionUpdate={(description) => {
+          if (!activePersona) return;
+          void character.handleSavePersona(activePersona.id, {
+            name: activePersona.name,
+            description,
+            pronouns: activePersona.pronouns,
+            pronounForms: activePersona.pronounForms,
+            avatarAssetId: activePersona.avatarAssetId,
+            avatarFullAssetId: activePersona.avatarFullAssetId,
+            avatarCropJson: activePersona.avatarCropJson,
           });
         }}
       />

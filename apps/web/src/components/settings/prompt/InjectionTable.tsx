@@ -44,6 +44,8 @@ interface InjectionTableProps {
   onUpdateField?: (key: keyof PromptCanvasDraft, value: string | number) => void;
   characterDraft?: CharacterCanvasDraft | null;
   onCharacterFieldUpdate?: (key: keyof CharacterCanvasDraft, value: string | number) => void;
+  personaDescription?: string | null;
+  onPersonaDescriptionUpdate?: (value: string) => void;
   promptOrder?: PromptOrderEntry[];
   onPromptOrderChange?: (promptOrder: PromptOrderEntry[]) => void;
 }
@@ -132,7 +134,18 @@ function SortableZone({ id, label, depth, items, activeDragKey }: {
  *    compute placeholder spaces on the fly.
  * 4. Finally, `onDragEnd` applies the sorted `activeZones` back into the parent `promptOrder` and `injections` props.
  */
-export function PromptOrderCanvas({ injections, onChange, draft, onUpdateField, characterDraft, onCharacterFieldUpdate, promptOrder = [], onPromptOrderChange }: InjectionTableProps) {
+export function PromptOrderCanvas({
+  injections,
+  onChange,
+  draft,
+  onUpdateField,
+  characterDraft,
+  onCharacterFieldUpdate,
+  personaDescription,
+  onPersonaDescriptionUpdate,
+  promptOrder = [],
+  onPromptOrderChange,
+}: InjectionTableProps) {
   const { t } = useT();
   const [activeDragKey, setActiveDragKey] = useState<string | null>(null);
   const [accordionOpen, setAccordionOpen] = useState(false);
@@ -256,7 +269,22 @@ export function PromptOrderCanvas({ injections, onChange, draft, onUpdateField, 
     return inferDefaultPromptSlot(item.identifier, existingOrder?.order ?? item.defaultOrder);
   }
 
-  const fixedItems = buildFixedItems({ t, draft, onUpdateField, characterDraft, onCharacterFieldUpdate, slotEnabled, togglePromptSlot, slotLabelFor, slotDepthFor, slotRoleFor, updateSlotDepth, updateSlotRole });
+  const fixedItems = buildFixedItems({
+    t,
+    draft,
+    onUpdateField,
+    characterDraft,
+    onCharacterFieldUpdate,
+    personaDescription,
+    onPersonaDescriptionUpdate,
+    slotEnabled,
+    togglePromptSlot,
+    slotLabelFor,
+    slotDepthFor,
+    slotRoleFor,
+    updateSlotDepth,
+    updateSlotRole,
+  });
 
   // Prefill is special: always last, not draggable
   const prefillItem = fixedItems.find(i => i.identifier === "assistantPrefill");
