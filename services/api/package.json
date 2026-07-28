@@ -28,12 +28,15 @@
     "@vibe-tavern/import-export": "workspace:*",
     "@vibe-tavern/prompt-pipeline": "workspace:*",
     "ai": "^7",
+    "fflate": "^0.8.3",
     "hono": "^4.12",
     "js-tiktoken": "^1.0.21",
+    "tar-stream": "^3.2.0",
     "yaml": "^2.9.0",
     "zod": "^3.25.76"
   },
   "devDependencies": {
-    "@types/bun": "^1.3.14"
+    "@types/bun": "^1.3.14",
+    "@types/tar-stream": "^3.1.4"
   }
 }

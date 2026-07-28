@@ -6,24 +6,28 @@
  *   - runCheckUpdate()      — `vibe-tavern check-update`
  *   - runUpdate()           — `vibe-tavern update`
  *
- * The launcher scripts (`scripts/dist-{linux,windows}/Vibe_Tavern.{sh,bat}`)
- * are now thin wrappers that invoke `vibe-tavern update` then `exec vibe-tavern`.
+ * Archive extraction is done in-process by archive-extract.ts. Nothing in the
+ * update path spawns an external tool: the updater cannot assume anything is
+ * installed on the user's machine.
  *
  * Atomic swap strategy (works on Linux AND Windows, including the running
  * binary itself):
  *   1. Extract new release to a temp staging dir
  *   2. For each top-level entry in staging:
- *      a. Rename current entry → installDir/.old/<name>
+ *      a. Rename current entry → installDir/.old-<epoch>/<name>
  *         (Windows permits renaming the running .exe; only deletion is blocked)
  *      b. Rename staging/<name> → installDir/<name>
- *   3. .old/ is cleaned up best-effort on the next launch
+ *   3. Backup directories are swept best-effort on the next launch
  *
- * On any failure mid-swap, completed renames are rolled back from .old/.
+ * On any failure mid-swap, completed renames are rolled back from the backup
+ * directory. A rollback that restores everything is reported as a SOFT failure:
+ * "fatal" is reserved for an install left in a mixed old/new state.
  */
 
 import { createHash } from "node:crypto";
 import { mkdir, readdir, rename, rm, stat } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
+import { extractArchive } from "./archive-extract.js";
 
 declare const VIBE_TAVERN_VERSION: string | undefined;
 
@@ -429,34 +433,6 @@ export async function verifyChecksum(archivePath: string, archiveName: string, s
 		throw new Error(
 			`Checksum mismatch for ${archiveName}\n  expected: ${expectedHash}\n  actual:   ${actualHash}`,
 		);
-	}
-}
-
-/**
- * Extract the release archive using the platform's native tool.
- *
- * Linux/macOS: `tar -xzf` for the .tar.gz archive.
- * Windows: PowerShell `Expand-Archive` for the .zip archive. PowerShell is
- * universally available on Windows (ships since Windows 7), whereas `tar.exe`
- * is only present on Windows 10 17063+ and is sometimes stripped from managed
- * systems — using it broke Windows installs in the wild.
- */
-async function extractArchive(archivePath: string, destDir: string): Promise<void> {
-	// Windows 10+ ships bsdtar as System32\tar.exe — it handles .zip, .tar.gz,
-	// and other formats. It's dramatically faster than PowerShell's
-	// Expand-Archive for archives with many small files (which ours has:
-	// hundreds of web assets + tokenizer JSONs). On Linux/macOS, tar is
-	// universally available. We auto-detect compression via -x (no -z/-j flag),
-	// which works for both .zip and .tar.gz.
-	const cmd = ["tar", "-xf", archivePath, "-C", destDir];
-
-	const proc = Bun.spawn(cmd, {
-		stdout: "inherit",
-		stderr: "inherit",
-	});
-	const exitCode = await proc.exited;
-	if (exitCode !== 0) {
-		throw new Error(`Extraction failed (tar exited with code ${exitCode}).`);
 	}
 }
 
