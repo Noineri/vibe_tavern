@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+	fetchRuntimeVersion,
 	fetchUpdateStatus,
 	resetUpdate,
 	triggerUpdate,
@@ -12,25 +13,35 @@ export type UpdateModalState =
 	| { kind: "idle" }
 	| { kind: "confirming" }
 	| { kind: "running"; phase: RuntimeUpdatePhase; progress: { receivedBytes: number; totalBytes: number | null } | null; targetVersion: string | null }
-	| { kind: "complete"; newVersion: string }
+	| { kind: "reconnecting"; newVersion: string }
+	| { kind: "complete"; newVersion: string; reconnected: boolean }
 	| { kind: "error"; failureKind: "soft" | "fatal"; message: string; phase: RuntimeUpdatePhase; stack: string | null; raw: string | null };
 
 const INITIAL: UpdateModalState = { kind: "idle" };
 
 const STATUS_POLL_INTERVAL_MS = 500;
 
+/** How long to wait for the relaunched build to answer before giving up. */
+const RECONNECT_TIMEOUT_MS = 45_000;
+const RECONNECT_POLL_INTERVAL_MS = 750;
+
+function sleep(ms: number): Promise<void> {
+	return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 /**
  * Drives the modal state machine.
  *
- * `expectedVersion` is the version we EXPECT to see after the update — sourced
- * from the GitHub release info (version-check.ts) and threaded through the
- * orchestrator's targetVersion. We display this as the "Updated to X.X.X"
- * text without fetching /api/runtime/version post-restart, because the parent
- * process exits after the swap and there is no server to query.
+ * `expectedVersion` is the version we EXPECT to see after the update, threaded
+ * through the orchestrator's targetVersion and shown as the "Updated to X.X.X"
+ * text.
  *
- * After the swap completes the orchestrator sets phase="done", holds for 500ms
- * so we can poll the final status, then calls process.exit(0). The user
- * restarts Vibe Tavern manually.
+ * Once the swap succeeds the server stops serving and relaunches the new build,
+ * so the connection drops BY DESIGN. That is not an error: the flow moves to
+ * "reconnecting" and polls /api/runtime/version until the new build answers.
+ * Reaching "complete" with reconnected=true means a reload will land on a
+ * working page; reconnected=false means the update succeeded but the app has to
+ * be started by hand.
  */
 export function useUpdateFlow(expectedVersion: string | null) {
 	const { t } = useT();
@@ -49,6 +60,40 @@ export function useUpdateFlow(expectedVersion: string | null) {
 		setState(INITIAL);
 	}, []);
 
+	/**
+	 * Wait for the relaunched server to come back.
+	 *
+	 * The old build exits on purpose right after the swap, so connection errors
+	 * here are expected and are not a failure — they are what "restarting"
+	 * looks like from the browser. Only the timeout is a real answer, and even
+	 * then the update itself succeeded; the user just has to start the app
+	 * themselves.
+	 */
+	const awaitReconnect = useCallback(async (newVersion: string) => {
+		setState({ kind: "reconnecting", newVersion });
+		const deadline = Date.now() + RECONNECT_TIMEOUT_MS;
+
+		while (Date.now() < deadline) {
+			if (stopFlagRef.current) return;
+			await sleep(RECONNECT_POLL_INTERVAL_MS);
+			if (stopFlagRef.current) return;
+			try {
+				const info = await fetchRuntimeVersion();
+				// Any answer means a server is serving again. Prefer to confirm
+				// it is the NEW one, but do not hang on a version string that
+				// might legitimately differ (e.g. a dev build).
+				if (!newVersion || info.version === newVersion) {
+					setState({ kind: "complete", newVersion: info.version || newVersion, reconnected: true });
+					return;
+				}
+			} catch {
+				// Server still down — that is the normal case while it restarts.
+			}
+		}
+
+		setState({ kind: "complete", newVersion, reconnected: false });
+	}, []);
+
 	const watchStatus = useCallback(
 		(targetVersion: string | null) => {
 			stopFlagRef.current = false;
@@ -64,8 +109,11 @@ export function useUpdateFlow(expectedVersion: string | null) {
 					// because it exited on purpose. If we were still in an
 					// early phase, something unexpected happened.
 					const last = lastPhaseRef.current;
-					if (last === "swapping" || last === "done") {
-						setState({ kind: "complete", newVersion: resolvedTarget() ?? "" });
+					if (last === "swapping" || last === "done" || last === "spawning-restart" || last === "exiting") {
+						// Expected: the old build stopped serving so the new one
+						// could take the port. Wait for it rather than declaring
+						// the flow over.
+						void awaitReconnect(resolvedTarget() ?? "");
 					} else {
 					setState({
 						kind: "error",
@@ -81,8 +129,10 @@ export function useUpdateFlow(expectedVersion: string | null) {
 				if (stopFlagRef.current) return;
 				lastPhaseRef.current = status.phase;
 
-				if (status.phase === "done") {
-					setState({ kind: "complete", newVersion: status.targetVersion ?? resolvedTarget() ?? "" });
+				if (status.phase === "done" || status.phase === "spawning-restart" || status.phase === "exiting") {
+					// The swap succeeded. The server is about to hand over to the
+					// new build, so start waiting for it to answer.
+					void awaitReconnect(status.targetVersion ?? resolvedTarget() ?? "");
 					return;
 				}
 
@@ -120,7 +170,7 @@ export function useUpdateFlow(expectedVersion: string | null) {
 			};
 			void poll();
 		},
-		[expectedVersion, t],
+		[expectedVersion, t, awaitReconnect],
 	);
 
 	const start = useCallback(async () => {

@@ -69,7 +69,7 @@ export function UpdateModal({ latestVersion, latestTag, releaseUrl, releaseNotes
 	}, [open]);
 
 	useEffect(() => {
-		if (!open && flow.state.kind !== "idle" && flow.state.kind !== "complete") {
+		if (!open && flow.state.kind !== "idle" && flow.state.kind !== "reconnecting" && flow.state.kind !== "complete") {
 			void flow.reset();
 		}
 	}, [open, flow]);
@@ -84,8 +84,15 @@ export function UpdateModal({ latestVersion, latestTag, releaseUrl, releaseNotes
 	const showReleaseNotes = showConfirm && Boolean(releaseNotes);
 
 	const onClose = () => {
-		// "complete" = server has already process.exit(0)'d; closing would strand the user on a dead page.
-		if (flow.state.kind === "running" || flow.state.kind === "complete") return;
+		// The swap is in flight ("running"), or the old server has already
+		// handed over and we are waiting for the new one ("reconnecting") —
+		// closing either would strand the user on a dead page.
+		//
+		// Once "complete" AND reconnected, closing is fine: there is a live
+		// server behind this modal again. Complete-but-not-reconnected still
+		// has to be dismissed explicitly via its own button.
+		if (flow.state.kind === "running" || flow.state.kind === "reconnecting") return;
+		if (flow.state.kind === "complete" && !flow.state.reconnected) return;
 		setOpen(false);
 	};
 
@@ -100,7 +107,7 @@ export function UpdateModal({ latestVersion, latestTag, releaseUrl, releaseNotes
 						</span>
 						<h2 className="font-ui text-[calc(var(--ui-fs)+1px)] font-semibold text-t1">{headerLabel}</h2>
 					</div>
-					{flow.state.kind !== "running" && flow.state.kind !== "complete" && (
+					{flow.state.kind !== "running" && flow.state.kind !== "reconnecting" && flow.state.kind !== "complete" && (
 						<button type="button" onClick={onClose} className="text-t3 hover:text-t1"><Icons.close /></button>
 					)}
 				</div>
@@ -131,6 +138,20 @@ export function UpdateModal({ latestVersion, latestTag, releaseUrl, releaseNotes
 					/>
 				)}
 
+					{flow.state.kind === "reconnecting" && (
+						<div className="flex flex-col items-center gap-3 py-4 text-center">
+							<span className="flex h-10 w-10 items-center justify-center rounded-full bg-success-dim text-success-text">
+								<Icons.check />
+							</span>
+							<p className="text-[calc(var(--ui-fs)+0px)] font-medium text-t1">
+								{t("update_modal_complete", { version: flow.state.newVersion })}
+							</p>
+							<p className="max-w-[420px] text-[calc(var(--ui-fs)-2px)] text-t3">
+								{t("update_modal_reconnecting")}
+							</p>
+						</div>
+					)}
+
 					{flow.state.kind === "complete" && (
 						<div className="flex flex-col items-center gap-3 py-4 text-center">
 							<span className="flex h-10 w-10 items-center justify-center rounded-full bg-success-dim text-success-text">
@@ -140,7 +161,9 @@ export function UpdateModal({ latestVersion, latestTag, releaseUrl, releaseNotes
 								{t("update_modal_complete", { version: flow.state.newVersion })}
 							</p>
 							<p className="max-w-[420px] text-[calc(var(--ui-fs)-2px)] text-t3">
-								{t("update_modal_restart_instructions")}
+								{flow.state.reconnected
+									? t("update_modal_reconnected")
+									: t("update_modal_restart_instructions")}
 							</p>
 						</div>
 					)}
@@ -188,7 +211,10 @@ export function UpdateModal({ latestVersion, latestTag, releaseUrl, releaseNotes
 						</>
 					)}
 
-					{flow.state.kind === "complete" && (
+					{/* Only offer a reload once the new server has actually
+					    answered — the previous unconditional button reloaded
+					    into a refused connection. */}
+					{flow.state.kind === "complete" && flow.state.reconnected && (
 						<button
 							type="button"
 							className="flex items-center gap-1.5 rounded-md bg-accent px-4 py-1.5 text-[calc(var(--ui-fs)-2px)] font-semibold text-on-accent transition-[filter] hover:brightness-110"
@@ -196,6 +222,16 @@ export function UpdateModal({ latestVersion, latestTag, releaseUrl, releaseNotes
 						>
 							<Icons.regen />
 							{t("update_modal_reload_page")}
+						</button>
+					)}
+
+					{flow.state.kind === "complete" && !flow.state.reconnected && (
+						<button
+							type="button"
+							className="rounded px-3 py-1.5 text-[calc(var(--ui-fs)-2px)] text-t2 hover:bg-s2 hover:text-t1"
+							onClick={onClose}
+						>
+							{t("update_modal_dismiss")}
 						</button>
 					)}
 

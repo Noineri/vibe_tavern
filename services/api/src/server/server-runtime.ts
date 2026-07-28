@@ -28,6 +28,7 @@ import type { RandomSource } from "@vibe-tavern/domain";
 import { resolveBuiltinSkillsRoot, resolveUserSkillsRoot } from "../domain/coauthor/skills/skill-scanner.js";
 import { configureLogDir } from "../shared/send-debug-log.js";
 import { createApp } from "./app-factory.js";
+import { setRuntimeShutdownHook } from "./runtime-shutdown.js";
 import { createLoadingHandler } from "./loading-placeholder.js";
 
 export { apiNotReadyResponse } from "./loading-placeholder.js";
@@ -258,6 +259,9 @@ export async function startServerRuntime(config: ServerRuntimeConfig): Promise<v
 		port: config.port,
 		missingFrontendMessage: config.missingFrontendMessage,
 	});
+
+	// Let the updater release the port without reaching into runtime internals.
+	setRuntimeShutdownHook(() => server.stop(true));
 
 	// Register shutdown handlers early so Ctrl+C works even during init.
 	for (const signal of config.shutdownSignals ?? ["SIGINT", "SIGTERM"]) {

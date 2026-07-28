@@ -7,8 +7,10 @@
  *   - Soft vs fatal failure distinction (install-untouched vs corrupted-state)
  *
  * After a successful swap the orchestrator sets phase to "done", holds the
- * process alive briefly so the SPA can poll the final status, then exits
- * cleanly via process.exit(0). The user restarts Vibe Tavern manually.
+ * process alive briefly so the SPA can poll that status, then stops serving,
+ * relaunches the replaced executable detached, and exits. If the relaunch
+ * throws it degrades to the previous behavior — exit and let the user start
+ * Vibe Tavern again — because a failed respawn is not a failed update.
  */
 
 import { existsSync } from "node:fs";
@@ -25,6 +27,7 @@ import {
 	type UpdatePhase,
 } from "../../server/updater.js";
 import { resolveStandalonePaths } from "../../server/standalone-paths.js";
+import { stopRuntimeServer } from "../../server/runtime-shutdown.js";
 import { snapshotDatabase } from "./update-db-snapshot.js";
 
 export type UpdateOrchestratorPhase =
@@ -161,7 +164,7 @@ class UpdateOrchestrator {
 				targetVersion: newVersion,
 			};
 
-			this.finishAndExit();
+			this.finishAndExit(installDir);
 		} catch (err) {
 			const phase = this.status.phase;
 			if (err instanceof SoftUpdateError) {
@@ -210,9 +213,44 @@ class UpdateOrchestrator {
 		if (errObj?.stack) console.error(errObj.stack);
 	}
 
-	private finishAndExit(): void {
+	/**
+	 * Hand over to the new build: stop serving, relaunch the replaced
+	 * executable detached, then exit.
+	 *
+	 * The delay before exiting exists so the SPA can poll one last status and
+	 * see "spawning-restart" rather than a dropped connection it has to guess
+	 * about.
+	 *
+	 * A failed respawn is NOT a failed update — the swap already succeeded, so
+	 * the fallback is the old behavior: exit and let the user relaunch.
+	 */
+	private finishAndExit(installDir: string): void {
 		setTimeout(() => {
-			process.exit(0);
+			this.status = { ...this.status, phase: "spawning-restart" };
+
+			let respawned = false;
+			try {
+				// Release the port first, or the new process races us for it
+				// and loses.
+				if (!stopRuntimeServer()) {
+					console.warn("[update-orchestrator] no server to stop; continuing to respawn.");
+				}
+				Bun.spawn([process.execPath], {
+					cwd: installDir,
+					detached: true,
+					stdio: ["ignore", "ignore", "ignore"],
+				}).unref();
+				respawned = true;
+			} catch (err) {
+				console.error(
+					"[update-orchestrator] could not relaunch after update:",
+					err instanceof Error ? err.message : String(err),
+				);
+				console.error("[update-orchestrator] the update itself succeeded — start Vibe Tavern manually.");
+			}
+
+			this.status = { ...this.status, phase: respawned ? "exiting" : "done" };
+			setTimeout(() => process.exit(0), respawned ? 250 : 500);
 		}, 500);
 	}
 

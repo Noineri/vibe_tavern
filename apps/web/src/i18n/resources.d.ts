@@ -1666,6 +1666,8 @@ export default interface Resources {
     "update_modal_phase_spawning_restart": "Preparing to restart",
     "update_modal_phase_swapping": "Installing",
     "update_modal_phase_verifying": "Verifying checksum",
+    "update_modal_reconnected": "Vibe Tavern has restarted and is ready.",
+    "update_modal_reconnecting": "Restarting Vibe Tavern and waiting for it to come back...",
     "update_modal_redownload": "Re-download from GitHub",
     "update_modal_release_header": "Release {tag}",
     "update_modal_reload_page": "Reload page",

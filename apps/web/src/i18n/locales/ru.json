@@ -1566,6 +1566,8 @@
   "update_modal_retry": "Повторить",
   "update_modal_complete": "Обновлено до {version}",
   "update_modal_restart_instructions": "Пожалуйста, перезапустите Vibe Tavern вручную, чтобы применить изменения.",
+  "update_modal_reconnecting": "Перезапускаем Vibe Tavern и ждём, пока он снова заработает...",
+  "update_modal_reconnected": "Vibe Tavern перезапустился и готов к работе.",
   "update_modal_close": "Закрыть",
   "update_modal_reload_page": "Перезагрузить страницу",
   "update_modal_error_soft_title": "Обновление не удалось завершить",

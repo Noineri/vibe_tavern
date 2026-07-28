@@ -1564,6 +1564,8 @@
   "update_modal_retry": "Retry",
   "update_modal_complete": "Updated to {version}",
   "update_modal_restart_instructions": "Please restart Vibe Tavern manually to apply the changes.",
+  "update_modal_reconnecting": "Restarting Vibe Tavern and waiting for it to come back...",
+  "update_modal_reconnected": "Vibe Tavern has restarted and is ready.",
   "update_modal_close": "Close",
   "update_modal_reload_page": "Reload page",
   "update_modal_error_soft_title": "Update could not complete",
