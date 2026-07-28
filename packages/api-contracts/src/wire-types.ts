@@ -243,8 +243,6 @@ export type RuntimeUpdatePhase =
 	| "verifying"
 	| "extracting"
 	| "swapping"
-	| "spawning-restart"
-	| "exiting"
 	| "done"
 	| "error";
 

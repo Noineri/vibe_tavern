@@ -24,8 +24,6 @@ const PHASE_I18N_KEYS: Record<RuntimeUpdatePhase, keyof Resources["en"]> = {
 	verifying: "update_modal_phase_verifying",
 	extracting: "update_modal_phase_extracting",
 	swapping: "update_modal_phase_swapping",
-	"spawning-restart": "update_modal_phase_spawning_restart",
-	exiting: "update_modal_phase_exiting",
 	done: "update_modal_phase_done",
 	error: "update_modal_phase_error",
 };
@@ -69,7 +67,7 @@ export function UpdateModal({ latestVersion, latestTag, releaseUrl, releaseNotes
 	}, [open]);
 
 	useEffect(() => {
-		if (!open && flow.state.kind !== "idle" && flow.state.kind !== "reconnecting" && flow.state.kind !== "complete") {
+		if (!open && flow.state.kind !== "idle" && flow.state.kind !== "complete") {
 			void flow.reset();
 		}
 	}, [open, flow]);
@@ -84,15 +82,13 @@ export function UpdateModal({ latestVersion, latestTag, releaseUrl, releaseNotes
 	const showReleaseNotes = showConfirm && Boolean(releaseNotes);
 
 	const onClose = () => {
-		// The swap is in flight ("running"), or the old server has already
-		// handed over and we are waiting for the new one ("reconnecting") —
-		// closing either would strand the user on a dead page.
+		// "running" — the swap is in flight; closing would hide a live process
+		// that is rewriting the install directory.
 		//
-		// Once "complete" AND reconnected, closing is fine: there is a live
-		// server behind this modal again. Complete-but-not-reconnected still
-		// has to be dismissed explicitly via its own button.
-		if (flow.state.kind === "running" || flow.state.kind === "reconnecting") return;
-		if (flow.state.kind === "complete" && !flow.state.reconnected) return;
+		// "complete" — the server has exited for good and does not come back on
+		// its own. There is no working page behind this modal to return to, so
+		// it stays up with the restart instruction and cannot be dismissed.
+		if (flow.state.kind === "running" || flow.state.kind === "complete") return;
 		setOpen(false);
 	};
 
@@ -107,7 +103,7 @@ export function UpdateModal({ latestVersion, latestTag, releaseUrl, releaseNotes
 						</span>
 						<h2 className="font-ui text-[calc(var(--ui-fs)+1px)] font-semibold text-t1">{headerLabel}</h2>
 					</div>
-					{flow.state.kind !== "running" && flow.state.kind !== "reconnecting" && flow.state.kind !== "complete" && (
+					{flow.state.kind !== "running" && flow.state.kind !== "complete" && (
 						<button type="button" onClick={onClose} className="text-t3 hover:text-t1"><Icons.close /></button>
 					)}
 				</div>
@@ -138,20 +134,6 @@ export function UpdateModal({ latestVersion, latestTag, releaseUrl, releaseNotes
 					/>
 				)}
 
-					{flow.state.kind === "reconnecting" && (
-						<div className="flex flex-col items-center gap-3 py-4 text-center">
-							<span className="flex h-10 w-10 items-center justify-center rounded-full bg-success-dim text-success-text">
-								<Icons.check />
-							</span>
-							<p className="text-[calc(var(--ui-fs)+0px)] font-medium text-t1">
-								{t("update_modal_complete", { version: flow.state.newVersion })}
-							</p>
-							<p className="max-w-[420px] text-[calc(var(--ui-fs)-2px)] text-t3">
-								{t("update_modal_reconnecting")}
-							</p>
-						</div>
-					)}
-
 					{flow.state.kind === "complete" && (
 						<div className="flex flex-col items-center gap-3 py-4 text-center">
 							<span className="flex h-10 w-10 items-center justify-center rounded-full bg-success-dim text-success-text">
@@ -161,9 +143,7 @@ export function UpdateModal({ latestVersion, latestTag, releaseUrl, releaseNotes
 								{t("update_modal_complete", { version: flow.state.newVersion })}
 							</p>
 							<p className="max-w-[420px] text-[calc(var(--ui-fs)-2px)] text-t3">
-								{flow.state.reconnected
-									? t("update_modal_reconnected")
-									: t("update_modal_restart_instructions")}
+								{t("update_modal_restart_instructions")}
 							</p>
 						</div>
 					)}
@@ -211,29 +191,9 @@ export function UpdateModal({ latestVersion, latestTag, releaseUrl, releaseNotes
 						</>
 					)}
 
-					{/* Only offer a reload once the new server has actually
-					    answered — the previous unconditional button reloaded
-					    into a refused connection. */}
-					{flow.state.kind === "complete" && flow.state.reconnected && (
-						<button
-							type="button"
-							className="flex items-center gap-1.5 rounded-md bg-accent px-4 py-1.5 text-[calc(var(--ui-fs)-2px)] font-semibold text-on-accent transition-[filter] hover:brightness-110"
-							onClick={() => window.location.reload()}
-						>
-							<Icons.regen />
-							{t("update_modal_reload_page")}
-						</button>
-					)}
-
-					{flow.state.kind === "complete" && !flow.state.reconnected && (
-						<button
-							type="button"
-							className="rounded px-3 py-1.5 text-[calc(var(--ui-fs)-2px)] text-t2 hover:bg-s2 hover:text-t1"
-							onClick={onClose}
-						>
-							{t("update_modal_dismiss")}
-						</button>
-					)}
+					{/* "complete" gets no action at all: the server is gone, so
+					    every button here would either reload into a refused
+					    connection or dismiss the one instruction that matters. */}
 
 					{flow.state.kind === "error" && (
 						<>
