@@ -11,7 +11,13 @@
 
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "bun:test";
-import { compareVersions, parseRelease, verifyChecksum } from "../src/server/updater.js";
+import {
+	compareVersions,
+	parseRelease,
+	resolveArchiveSuffix,
+	resolveRelease,
+	verifyChecksum,
+} from "../src/server/updater.js";
 
 const ARCHIVE_SUFFIX = process.platform === "win32" ? "-windows.zip" : "-linux.tar.gz";
 
@@ -122,6 +128,89 @@ describe("parseRelease", () => {
 				releaseJson("v1.0.0", { assets: [asset(`Vibe-Tavern-v1.0.0${ARCHIVE_SUFFIX}`)] }),
 			),
 		).toBeNull();
+	});
+});
+
+describe("resolveArchiveSuffix", () => {
+	it("admits exactly linux+x64 and win32+x64", () => {
+		expect(resolveArchiveSuffix("linux", "x64")).toEqual({ kind: "supported", suffix: "-linux.tar.gz" });
+		expect(resolveArchiveSuffix("win32", "x64")).toEqual({ kind: "supported", suffix: "-windows.zip" });
+	});
+
+	it("refuses every non-x64 architecture, whatever the platform", () => {
+		// One rule covering arm64 VPSes, Raspberry Pis, Apple-silicon-shaped
+		// environments, and the proot-Android install — without naming any of
+		// them, and without consulting classifyInstallKind.
+		for (const arch of ["arm64", "arm", "ia32", "riscv64", "ppc64"]) {
+			expect(resolveArchiveSuffix("linux", arch).kind).toBe("no-asset-for-platform");
+			expect(resolveArchiveSuffix("win32", arch).kind).toBe("no-asset-for-platform");
+			expect(resolveArchiveSuffix("darwin", arch).kind).toBe("no-asset-for-platform");
+		}
+	});
+
+	it("refuses platforms the release does not build for, even on x64", () => {
+		expect(resolveArchiveSuffix("darwin", "x64").kind).toBe("no-asset-for-platform");
+		expect(resolveArchiveSuffix("freebsd", "x64").kind).toBe("no-asset-for-platform");
+		expect(resolveArchiveSuffix("android", "x64").kind).toBe("no-asset-for-platform");
+	});
+});
+
+describe("resolveRelease — architecture guard", () => {
+	const realRelease = releaseJson("v1.4.2");
+
+	it("resolves the tarball for linux+x64", () => {
+		const result = resolveRelease(realRelease, resolveArchiveSuffix("linux", "x64"));
+		expect(result.kind).toBe("ok");
+		if (result.kind !== "ok") return;
+		expect(result.release.archiveAsset.name).toBe("Vibe-Tavern-v1.4.2-linux.tar.gz");
+	});
+
+	it("resolves the zip for win32+x64", () => {
+		const result = resolveRelease(realRelease, resolveArchiveSuffix("win32", "x64"));
+		expect(result.kind).toBe("ok");
+		if (result.kind !== "ok") return;
+		expect(result.release.archiveAsset.name).toBe("Vibe-Tavern-v1.4.2-windows.zip");
+	});
+
+	it("reports no-asset-for-platform for arm64 linux against a real x64-only release", () => {
+		// The release genuinely contains a linux tarball — it is simply x64.
+		// Matching on platform alone would install a binary this machine cannot
+		// execute, which is the bug this guard exists to prevent.
+		expect(resolveRelease(realRelease, resolveArchiveSuffix("linux", "arm64")).kind)
+			.toBe("no-asset-for-platform");
+	});
+
+	it("reports no-asset-for-platform for darwin, distinct from a parse failure", () => {
+		expect(resolveRelease(realRelease, resolveArchiveSuffix("darwin", "x64")).kind)
+			.toBe("no-asset-for-platform");
+		expect(resolveRelease("not a release", resolveArchiveSuffix("darwin", "x64")).kind)
+			.toBe("unparseable");
+	});
+
+	it("never selects the .apk or the -setup.exe, on any platform/arch combination", () => {
+		for (const platform of ["linux", "win32", "darwin", "android"]) {
+			for (const arch of ["x64", "arm64"]) {
+				const result = resolveRelease(realRelease, resolveArchiveSuffix(platform, arch));
+				if (result.kind !== "ok") continue;
+				expect(result.release.archiveAsset.name.endsWith(".apk")).toBe(false);
+				expect(result.release.archiveAsset.name.endsWith("-setup.exe")).toBe(false);
+			}
+		}
+	});
+
+	it("reports no-asset-for-platform when the matching archive is missing entirely", () => {
+		const zipOnly = releaseJson("v1.0.0", {
+			assets: [asset("Vibe-Tavern-v1.0.0-windows.zip"), asset("SHA256SUMS.txt")],
+		});
+		expect(resolveRelease(zipOnly, resolveArchiveSuffix("linux", "x64")).kind)
+			.toBe("no-asset-for-platform");
+	});
+
+	it("still reports unparseable when SHA256SUMS.txt is missing", () => {
+		const noSums = releaseJson("v1.0.0", {
+			assets: [asset("Vibe-Tavern-v1.0.0-linux.tar.gz")],
+		});
+		expect(resolveRelease(noSums, resolveArchiveSuffix("linux", "x64")).kind).toBe("unparseable");
 	});
 });
 

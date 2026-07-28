@@ -59,8 +59,57 @@ function resolveHtmlUrl(): string {
 	return process.env.VT_UPDATE_HTML_URL ?? DEFAULT_HTML_URL;
 }
 
-const ARCHIVE_SUFFIX = IS_WINDOWS ? "-windows.zip" : "-linux.tar.gz";
+/** The human-facing releases page, for UI fallbacks and error messages. */
+export function releasePageUrl(): string {
+	return resolveHtmlUrl();
+}
+
 const SUMS_ASSET_NAME = "SHA256SUMS.txt";
+
+/**
+ * Which release archive, if any, this machine can install.
+ *
+ * The release publishes exactly `Vibe-Tavern-v<V>-linux.tar.gz` and
+ * `Vibe-Tavern-v<V>-windows.zip`, and BOTH are x64-only — no architecture
+ * appears anywhere in the filenames. The old `ARCHIVE_SUFFIX` keyed on
+ * platform alone, so an arm64 Linux box (a VPS, a Raspberry Pi, the
+ * proot-Android install) matched the x64 tarball and would happily download,
+ * verify, extract and install a binary it cannot execute.
+ *
+ * The guard lives here, in asset selection, rather than in
+ * classifyInstallKind: this rule covers every non-x64 environment without
+ * naming any of them, and it keeps install-kind detection (owned by the
+ * Android branch) untouched.
+ *
+ * `Vibe-Tavern-v<V>-android.apk` and `-windows-setup.exe` are never updater
+ * archives and can never be selected — neither suffix is reachable from here.
+ */
+export type ArchiveSuffixResolution =
+	| { readonly kind: "supported"; readonly suffix: string }
+	| { readonly kind: "no-asset-for-platform" };
+
+export function resolveArchiveSuffix(platform: string, arch: string): ArchiveSuffixResolution {
+	if (arch !== "x64") return { kind: "no-asset-for-platform" };
+	if (platform === "linux") return { kind: "supported", suffix: "-linux.tar.gz" };
+	if (platform === "win32") return { kind: "supported", suffix: "-windows.zip" };
+	return { kind: "no-asset-for-platform" };
+}
+
+/** The resolution for the machine this process is running on. */
+export function currentArchiveSuffix(): ArchiveSuffixResolution {
+	return resolveArchiveSuffix(process.platform, process.arch);
+}
+
+/** The archive extension of an asset name, for naming the staged download. */
+function archiveExtension(assetName: string): string {
+	const lower = assetName.toLowerCase();
+	if (lower.endsWith(".tar.gz")) return ".tar.gz";
+	if (lower.endsWith(".zip")) return ".zip";
+	if (lower.endsWith(".tgz")) return ".tgz";
+	// Unreachable for a release that passed asset resolution; keeping the raw
+	// suffix means extraction fails loudly instead of silently mis-dispatching.
+	return assetName.slice(assetName.lastIndexOf("."));
+}
 
 /** Names that must never be touched during a swap. */
 const PROTECTED_NAMES = new Set([".old", ".next", "data", "logs"]);
@@ -193,6 +242,29 @@ export function getCurrentVersion(): string {
  * server with the current version.
  */
 export async function checkForUpdate(): Promise<UpdateCheckResult | null> {
+	const detailed = await checkForUpdateDetailed();
+	return detailed.kind === "ok" ? detailed.result : null;
+}
+
+/**
+ * The same check, but reporting WHY it could not produce a result.
+ *
+ * `no-asset-for-platform` still carries the version information: a machine with
+ * no matching archive should be told "1.5.0 is out, but there is no build for
+ * your architecture" — not that the network is down, and not nothing at all.
+ */
+export type UpdateCheckOutcome =
+	| { readonly kind: "ok"; readonly result: UpdateCheckResult }
+	| {
+		readonly kind: "no-asset-for-platform";
+		readonly latestVersion: string | null;
+		readonly latestTag: string | null;
+		readonly releaseNotes: string;
+		readonly updateAvailable: boolean;
+	}
+	| { readonly kind: "offline" };
+
+export async function checkForUpdateDetailed(): Promise<UpdateCheckOutcome> {
 	let response: Response;
 	try {
 		response = await fetch(`${resolveApiBase()}/releases/latest`, {
@@ -200,20 +272,46 @@ export async function checkForUpdate(): Promise<UpdateCheckResult | null> {
 			signal: AbortSignal.timeout(10_000),
 		});
 	} catch {
-		return null;
+		return { kind: "offline" };
 	}
-	if (!response.ok) return null;
+	if (!response.ok) return { kind: "offline" };
 
-	const parsed = await parseReleaseBody(response);
-	if (!parsed) return null;
+	let body: unknown;
+	try {
+		body = await response.json();
+	} catch (err) {
+		console.error("[updater] malformed release JSON:", err instanceof Error ? err.message : String(err));
+		return { kind: "offline" };
+	}
 
-	const updateAvailable = compareVersions(CURRENT_VERSION, parsed.version) < 0;
+	const resolved = resolveRelease(body);
+	if (resolved.kind === "unparseable") return { kind: "offline" };
+
+	if (resolved.kind === "no-asset-for-platform") {
+		// Re-read the tag directly: there is no ParsedRelease to take it from,
+		// but the user still deserves to know a release exists.
+		const root = typeof body === "object" && body !== null ? (body as GithubReleaseShape) : null;
+		const tag = typeof root?.tag_name === "string" ? root.tag_name : null;
+		const version = tag === null ? null : tag.replace(/^v/, "");
+		return {
+			kind: "no-asset-for-platform",
+			latestVersion: version,
+			latestTag: tag,
+			releaseNotes: typeof root?.body === "string" ? root.body : "",
+			updateAvailable: version !== null && compareVersions(CURRENT_VERSION, version) < 0,
+		};
+	}
+
+	const parsed = resolved.release;
 	return {
-		currentVersion: CURRENT_VERSION,
-		latestVersion: parsed.version,
-		latestTag: parsed.tag,
-		releaseNotes: parsed.releaseNotes,
-		updateAvailable,
+		kind: "ok",
+		result: {
+			currentVersion: CURRENT_VERSION,
+			latestVersion: parsed.version,
+			latestTag: parsed.tag,
+			releaseNotes: parsed.releaseNotes,
+			updateAvailable: compareVersions(CURRENT_VERSION, parsed.version) < 0,
+		},
 	};
 }
 
@@ -435,14 +533,32 @@ interface GithubAssetShape {
 	readonly size?: unknown;
 }
 
-/** Narrow the untyped JSON into our domain shape, or return null on mismatch. */
-export function parseRelease(data: unknown): ParsedRelease | null {
-	if (typeof data !== "object" || data === null) return null;
+/**
+ * Why a release could not be turned into something installable.
+ *
+ * "no-asset-for-platform" is deliberately distinct from "unparseable": telling
+ * an arm64 user that GitHub is unreachable, or that the release is malformed,
+ * sends them looking for a problem that does not exist.
+ */
+export type ReleaseResolution =
+	| { readonly kind: "ok"; readonly release: ParsedRelease }
+	| { readonly kind: "no-asset-for-platform" }
+	| { readonly kind: "unparseable" };
+
+/**
+ * Narrow the untyped JSON into our domain shape, reporting WHY when it fails.
+ * `suffix` defaults to this machine's resolution.
+ */
+export function resolveRelease(
+	data: unknown,
+	resolution: ArchiveSuffixResolution = currentArchiveSuffix(),
+): ReleaseResolution {
+	if (typeof data !== "object" || data === null) return { kind: "unparseable" };
 	const root = data as GithubReleaseShape;
-	if (typeof root.tag_name !== "string") return null;
+	if (typeof root.tag_name !== "string") return { kind: "unparseable" };
 
 	const body = typeof root.body === "string" ? root.body : "";
-	if (!Array.isArray(root.assets)) return null;
+	if (!Array.isArray(root.assets)) return { kind: "unparseable" };
 
 	const assets: GithubAsset[] = [];
 	for (const raw of root.assets) {
@@ -453,13 +569,28 @@ export function parseRelease(data: unknown): ParsedRelease | null {
 		assets.push({ name: a.name, browser_download_url: a.browser_download_url, size });
 	}
 
-	const archiveAsset = assets.find((a) => a.name.endsWith(ARCHIVE_SUFFIX)) ?? null;
 	const sumsAsset = assets.find((a) => a.name === SUMS_ASSET_NAME) ?? null;
-	if (!archiveAsset || !sumsAsset) return null;
+	if (!sumsAsset) return { kind: "unparseable" };
+
+	// The architecture guard: a machine with no matching archive gets a
+	// specific answer, not a generic failure.
+	if (resolution.kind === "no-asset-for-platform") return { kind: "no-asset-for-platform" };
+
+	const archiveAsset = assets.find((a) => a.name.endsWith(resolution.suffix)) ?? null;
+	if (!archiveAsset) return { kind: "no-asset-for-platform" };
 
 	const tag = root.tag_name;
 	const version = tag.replace(/^v/, "");
-	return { tag, version, releaseNotes: body, archiveAsset, sumsAsset };
+	return { kind: "ok", release: { tag, version, releaseNotes: body, archiveAsset, sumsAsset } };
+}
+
+/**
+ * Narrow the untyped JSON into our domain shape, or return null on mismatch.
+ * Thin wrapper over resolveRelease for callers that only need "did it work".
+ */
+export function parseRelease(data: unknown): ParsedRelease | null {
+	const resolved = resolveRelease(data);
+	return resolved.kind === "ok" ? resolved.release : null;
 }
 
 /**
@@ -707,7 +838,9 @@ export async function downloadAndSwap(
 	callbacks?: UpdateProgressCallbacks,
 ): Promise<string> {
 	const stagingDir = join(installDir, ".next");
-	const archivePath = join(stagingDir, `archive${ARCHIVE_SUFFIX}`);
+	// Name the staged file after the asset so archive-extract dispatches on the
+	// release's real extension rather than on an assumption about this platform.
+	const archivePath = join(stagingDir, `archive${archiveExtension(release.archiveAsset.name)}`);
 	const sumsPath = join(stagingDir, SUMS_ASSET_NAME);
 	const extractDir = join(stagingDir, "extract");
 
