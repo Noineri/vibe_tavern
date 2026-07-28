@@ -385,10 +385,6 @@ async function promptUser(message: string): Promise<string> {
 	});
 }
 
-async function downloadToPath(url: string, destPath: string): Promise<void> {
-	await downloadToPathWithProgress(url, destPath);
-}
-
 /**
  * Look up an archive's expected digest in SHA256SUMS.txt contents.
  *
@@ -417,8 +413,13 @@ function findExpectedHash(sumsContent: string, archiveName: string): string | nu
 	return null;
 }
 
-/** Verify a downloaded archive against SHA256SUMS.txt contents. */
-export async function verifyChecksum(archivePath: string, archiveName: string, sumsContent: string): Promise<void> {
+/**
+ * Verify a downloaded archive against SHA256SUMS.txt contents.
+ *
+ * `actualHash` is produced during the download itself, so the archive is never
+ * read back off disk to be hashed.
+ */
+export function verifyChecksum(actualHash: string, archiveName: string, sumsContent: string): void {
 	const expectedHash = findExpectedHash(sumsContent, archiveName);
 	if (expectedHash === null) {
 		throw new Error(`No checksum entry for ${archiveName} in SHA256SUMS.txt`);
@@ -427,11 +428,10 @@ export async function verifyChecksum(archivePath: string, archiveName: string, s
 		throw new Error(`Malformed checksum line for ${archiveName}`);
 	}
 
-	const fileBytes = await Bun.file(archivePath).arrayBuffer();
-	const actualHash = createHash("sha256").update(Buffer.from(fileBytes)).digest("hex").toLowerCase();
-	if (actualHash !== expectedHash) {
+	const actual = actualHash.toLowerCase();
+	if (actual !== expectedHash) {
 		throw new Error(
-			`Checksum mismatch for ${archiveName}\n  expected: ${expectedHash}\n  actual:   ${actualHash}`,
+			`Checksum mismatch for ${archiveName}\n  expected: ${expectedHash}\n  actual:   ${actual}`,
 		);
 	}
 }
@@ -619,7 +619,7 @@ export async function downloadAndSwap(
 	try {
 		console.log("· Downloading release archive...");
 		callbacks?.onPhase?.("downloading-archive");
-		await downloadToPathWithProgress(
+		const archiveDownload = await downloadToPathWithProgress(
 			release.archiveAsset.browser_download_url,
 			archivePath,
 			(received, total) => callbacks?.onDownloadProgress?.(release.archiveAsset.browser_download_url, received, total),
@@ -635,9 +635,11 @@ export async function downloadAndSwap(
 
 		console.log("· Verifying checksum...");
 		callbacks?.onPhase?.("verifying");
-		// The asset's own `name` — NOT basename(browser_download_url), which a
-		// redirect or a query string can silently reshape.
-		await verifyChecksum(archivePath, release.archiveAsset.name, sumsContent);
+		// The digest came from the download pass, so the archive is not read
+		// back off disk. The asset's own `name` is used — NOT
+		// basename(browser_download_url), which a redirect or a query string
+		// can silently reshape.
+		verifyChecksum(archiveDownload.sha256, release.archiveAsset.name, sumsContent);
 
 		console.log("· Extracting...");
 		callbacks?.onPhase?.("extracting");
@@ -731,15 +733,30 @@ export type UpdatePhase =
 	| "extracting"
 	| "swapping";
 
+/** What a completed download produced, so nothing has to re-read the file. */
+export interface DownloadOutcome {
+	/** Lowercase hex SHA-256 of everything written, computed during the download. */
+	readonly sha256: string;
+	readonly bytes: number;
+}
+
 /**
- * Download a URL to a local file path with optional progress reporting.
+ * Download a URL to a local file path with optional progress reporting,
+ * hashing the bytes in the same pass.
+ *
+ * Each chunk goes straight to a FileSink and into the digest, so peak memory
+ * is one chunk regardless of archive size. The previous implementation
+ * accumulated every chunk in an array, allocated a second full-size copy to
+ * concatenate them for `Bun.write`, and then `verifyChecksum` read the whole
+ * file back a third time — roughly 3× a 63–76 MB artifact resident at once.
+ *
  * Throws on non-2xx or network error.
  */
-async function downloadToPathWithProgress(
+export async function downloadToPathWithProgress(
 	url: string,
 	destPath: string,
 	onProgress?: (receivedBytes: number | undefined, totalBytes: number | undefined) => void,
-): Promise<void> {
+): Promise<DownloadOutcome> {
 	const response = await fetch(url, {
 		headers: { "User-Agent": "vibe-tavern-updater" },
 		signal: AbortSignal.timeout(300_000),
@@ -747,32 +764,43 @@ async function downloadToPathWithProgress(
 	if (!response.ok || !response.body) {
 		throw new Error(`Download failed: HTTP ${response.status} ${response.statusText}`);
 	}
+	// Absent on chunked responses, and not guaranteed to be a number when
+	// present — a NaN here would reach the UI's progress bar as a NaN width.
 	const contentLengthHeader = response.headers.get("content-length");
-	const total = contentLengthHeader ? Number.parseInt(contentLengthHeader, 10) : undefined;
+	const parsedLength = contentLengthHeader === null ? Number.NaN : Number.parseInt(contentLengthHeader, 10);
+	const total = Number.isFinite(parsedLength) && parsedLength >= 0 ? parsedLength : undefined;
 
-	// Stream the response body to disk so we can report incremental progress
-	// without buffering the whole archive into memory.
+	const hash = createHash("sha256");
+	const sink = Bun.file(destPath).writer();
 	const reader = response.body.getReader();
-	const chunks: Uint8Array[] = [];
 	let received = 0;
-	for (;;) {
-		const { done, value } = await reader.read();
-		if (done) break;
-		if (value) {
-			chunks.push(value);
+
+	try {
+		for (;;) {
+			const { done, value } = await reader.read();
+			if (done) break;
+			if (!value || value.byteLength === 0) continue;
+			hash.update(value);
+			sink.write(value);
+			// Await the flush so the sink's buffer cannot grow without bound if
+			// the network outruns the disk.
+			await sink.flush();
 			received += value.byteLength;
 			onProgress?.(received, total);
 		}
+		await sink.end();
+	} catch (err) {
+		// Discard whatever landed; the caller nukes the staging dir anyway, but
+		// leaving the sink open would keep the fd around until GC. FileSink.end()
+		// returns number | Promise<number>, so normalize before catching.
+		await Promise.resolve(sink.end()).catch((endErr: unknown) => {
+			console.error(
+				"[updater] closing the partial download failed:",
+				endErr instanceof Error ? endErr.message : String(endErr),
+			);
+		});
+		throw err;
 	}
-	// Concat into a single buffer for Bun.write (matches the original behavior
-	// of writing the full payload atomically).
-	let totalBytes = 0;
-	for (const c of chunks) totalBytes += c.byteLength;
-	const buf = new Uint8Array(totalBytes);
-	let offset = 0;
-	for (const c of chunks) {
-		buf.set(c, offset);
-		offset += c.byteLength;
-	}
-	await Bun.write(destPath, buf);
+
+	return { sha256: hash.digest("hex").toLowerCase(), bytes: received };
 }

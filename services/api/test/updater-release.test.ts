@@ -10,10 +10,7 @@
  */
 
 import { createHash } from "node:crypto";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { describe, expect, it } from "bun:test";
 import { compareVersions, parseRelease, verifyChecksum } from "../src/server/updater.js";
 
 const ARCHIVE_SUFFIX = process.platform === "win32" ? "-windows.zip" : "-linux.tar.gz";
@@ -169,40 +166,32 @@ describe("compareVersions", () => {
 });
 
 describe("verifyChecksum", () => {
-	let dir = "";
-	let archivePath = "";
+	// Wave 3 moved hashing into the download pass, so this is now a pure
+	// comparison against a digest the caller already has. The boundary it pins
+	// is unchanged — parse SHA256SUMS.txt, find this archive's line, compare —
+	// and every case below is the same case it was before the signature moved.
 	const contents = "vibe-tavern release archive bytes";
 	const digest = createHash("sha256").update(contents).digest("hex");
 
-	beforeEach(async () => {
-		dir = await mkdtemp(join(tmpdir(), "vt-sums-"));
-		archivePath = join(dir, "archive.tar.gz");
-		await writeFile(archivePath, contents);
-	});
-
-	afterEach(async () => {
-		await rm(dir, { recursive: true, force: true });
-	});
-
-	it("accepts a matching sha256sum-format entry (two spaces, binary marker)", async () => {
+	it("accepts a matching sha256sum-format entry (two spaces)", () => {
 		const sums = [
 			`${"0".repeat(64)}  SHA256SUMS-decoy.txt`,
 			`${digest}  Vibe-Tavern-v1.0.0-linux.tar.gz`,
 		].join("\n");
-		await verifyChecksum(archivePath, "Vibe-Tavern-v1.0.0-linux.tar.gz", sums);
+		verifyChecksum(digest, "Vibe-Tavern-v1.0.0-linux.tar.gz", sums);
 	});
 
-	it("accepts an uppercase expected hash (comparison is case-insensitive)", async () => {
-		const sums = `${digest.toUpperCase()}  Vibe-Tavern-v1.0.0-linux.tar.gz`;
-		await verifyChecksum(archivePath, "Vibe-Tavern-v1.0.0-linux.tar.gz", sums);
+	it("accepts an uppercase hash on either side (comparison is case-insensitive)", () => {
+		verifyChecksum(digest, "a.tar.gz", `${digest.toUpperCase()}  a.tar.gz`);
+		verifyChecksum(digest.toUpperCase(), "a.tar.gz", `${digest}  a.tar.gz`);
 	});
 
-	it("tolerates blank lines and surrounding whitespace", async () => {
+	it("tolerates blank lines and surrounding whitespace", () => {
 		const sums = `\n\n   ${digest}  Vibe-Tavern-v1.0.0-linux.tar.gz   \n\n`;
-		await verifyChecksum(archivePath, "Vibe-Tavern-v1.0.0-linux.tar.gz", sums);
+		verifyChecksum(digest, "Vibe-Tavern-v1.0.0-linux.tar.gz", sums);
 	});
 
-	it("matches the filename column exactly — a name that is a suffix of another must not cross-match", async () => {
+	it("matches the filename column exactly — a name that is a suffix of another must not cross-match", () => {
 		// This is the real shape of our own SHA256SUMS.txt: the zip's name is a
 		// suffix of nothing, but `-windows.zip` IS a suffix of a line ending in
 		// `Vibe-Tavern-v1.0.0-windows.zip` while `...-setup.exe` lines share the
@@ -216,40 +205,39 @@ describe("verifyChecksum", () => {
 
 		// The decoy line is listed first and the old `endsWith` scan would have
 		// stopped there and compared against the wrong digest.
-		await verifyChecksum(archivePath, "Vibe-Tavern-v1.0.0-linux.tar.gz", sums);
+		verifyChecksum(digest, "Vibe-Tavern-v1.0.0-linux.tar.gz", sums);
 	});
 
-	it("does not match a longer filename when only a shorter one is present", async () => {
+	it("does not match a longer filename when only a shorter one is present", () => {
 		const sums = `${digest}  Vibe-Tavern-v1.0.0-windows.zip`;
-		await expect(
-			verifyChecksum(archivePath, "Vibe-Tavern-v1.0.0-windows-setup.exe", sums),
-		).rejects.toThrow("No checksum entry for Vibe-Tavern-v1.0.0-windows-setup.exe");
+		expect(() =>
+			verifyChecksum(digest, "Vibe-Tavern-v1.0.0-windows-setup.exe", sums),
+		).toThrow("No checksum entry for Vibe-Tavern-v1.0.0-windows-setup.exe");
 	});
 
-	it("accepts the binary-mode marker sha256sum writes as `<hash> *<name>`", async () => {
-		const sums = `${digest} *Vibe-Tavern-v1.0.0-linux.tar.gz`;
-		await verifyChecksum(archivePath, "Vibe-Tavern-v1.0.0-linux.tar.gz", sums);
+	it("accepts the binary-mode marker sha256sum writes as `<hash> *<name>`", () => {
+		verifyChecksum(digest, "a.tar.gz", `${digest} *a.tar.gz`);
 	});
 
-	it("throws when no entry names the archive", async () => {
+	it("throws when no entry names the archive", () => {
 		const sums = `${digest}  some-other-file.zip`;
-		await expect(
-			verifyChecksum(archivePath, "Vibe-Tavern-v1.0.0-linux.tar.gz", sums),
-		).rejects.toThrow("No checksum entry for Vibe-Tavern-v1.0.0-linux.tar.gz");
+		expect(() =>
+			verifyChecksum(digest, "Vibe-Tavern-v1.0.0-linux.tar.gz", sums),
+		).toThrow("No checksum entry for Vibe-Tavern-v1.0.0-linux.tar.gz");
 	});
 
-	it("throws when the hash column is not a 64-char hex digest", async () => {
+	it("throws when the hash column is not a 64-char hex digest", () => {
 		const sums = `notahash  Vibe-Tavern-v1.0.0-linux.tar.gz`;
-		await expect(
-			verifyChecksum(archivePath, "Vibe-Tavern-v1.0.0-linux.tar.gz", sums),
-		).rejects.toThrow("Malformed checksum line");
+		expect(() =>
+			verifyChecksum(digest, "Vibe-Tavern-v1.0.0-linux.tar.gz", sums),
+		).toThrow("Malformed checksum line");
 	});
 
-	it("throws with both digests when the file does not match", async () => {
+	it("throws with both digests when the archive does not match", () => {
 		const wrong = "1".repeat(64);
 		const sums = `${wrong}  Vibe-Tavern-v1.0.0-linux.tar.gz`;
-		await expect(
-			verifyChecksum(archivePath, "Vibe-Tavern-v1.0.0-linux.tar.gz", sums),
-		).rejects.toThrow(/Checksum mismatch[\s\S]*expected: 1{64}[\s\S]*actual:\s+[0-9a-f]{64}/);
+		expect(() =>
+			verifyChecksum(digest, "Vibe-Tavern-v1.0.0-linux.tar.gz", sums),
+		).toThrow(/Checksum mismatch[\s\S]*expected: 1{64}[\s\S]*actual:\s+[0-9a-f]{64}/);
 	});
 });
