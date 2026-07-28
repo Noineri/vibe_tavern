@@ -30,6 +30,7 @@ import type { ReactElement, ReactNode } from "react";
 import { useDomEnv } from "../../../../test/dom-env.js";
 import type { CustomInjection, PromptOrderEntry } from "@vibe-tavern/domain";
 import type { CanvasLoreEntrySummary } from "../../../lib/prompt-canvas-lore.js";
+import type { CanvasSummaryEntry } from "../../../lib/prompt-canvas-summary.js";
 import type { CharacterCanvasDraft } from "./InjectionTable.js";
 
 useDomEnv();
@@ -132,6 +133,8 @@ function canvasEl(props: CanvasProps & { spies: Spies }): ReactElement {
       onChatDynamicPromptUpdate={props.onChatDynamicPromptUpdate}
       loreAnchorEntries={props.loreAnchorEntries ?? []}
       loreAnchorLoadState={props.loreAnchorLoadState ?? "idle"}
+      summaryEntries={props.summaryEntries}
+      summaryLoadState={props.summaryLoadState}
       promptOrder={props.promptOrder ?? []}
       onPromptOrderChange={props.onPromptOrderChange ?? props.spies.onPromptOrderChange}
     />
@@ -609,5 +612,60 @@ describe("PromptOrderCanvas — characterization", () => {
     expect(spies.onPromptOrderChange).toHaveBeenCalledWith([
       { identifier: "chatSummary", enabled: true, kind: "built_in", zone: "in_chat", depth: 6, order: 57 },
     ]);
+  });
+
+  it("expands chatSummary to reveal loaded summary memory blocks", () => {
+    const spies = makeSpies();
+    const { container } = renderCanvas({
+      spies,
+      summaryEntries: [
+        { id: "s1", label: "Arc 1", content: "The heroes reached the gate.", source: "manual", summarizedFrom: 0, summarizedTo: 12, includeInContext: true },
+      ],
+      summaryLoadState: "ready",
+    });
+
+    const card = container.querySelector<HTMLElement>('[data-canvas-identifier="chatSummary"]');
+    expect(card).toBeTruthy();
+    // Collapsed: the content is hidden (not rendered until the row itself opens).
+    expect(card!.textContent).not.toContain("The heroes reached the gate.");
+    // Open the card body.
+    fireEvent.click(within(card!).getByText("prompt_slot_chat_summary"));
+    // The summary row label is visible.
+    expect(within(card!).getByText("Arc 1")).toBeTruthy();
+    // Open the summary row to reveal the content.
+    fireEvent.click(within(card!).getByRole("button", { name: /Arc 1/ }));
+    expect(within(card!).getByText("The heroes reached the gate.")).toBeTruthy();
+  });
+
+  it("expands a lore anchor entry to reveal content + activation keys", () => {
+    const loreAnchorEntries: CanvasLoreEntrySummary[] = [
+      {
+        id: "before-1",
+        lorebookId: "book-1",
+        lorebookName: "Character Lore",
+        title: "The Rose Gate",
+        position: "before_char",
+        priority: 10,
+        sortOrder: 0,
+        content: "A gate wreathed in roses.",
+        keys: ["rose", "gate"],
+        secondaryKeys: ["thorn"],
+        logic: "AND(any)",
+        constant: false,
+        probability: 100,
+        role: "system",
+      },
+    ];
+    const { container } = renderCanvas({ loreAnchorEntries, loreAnchorLoadState: "ready" });
+
+    const beforeCard = container.querySelector<HTMLElement>('[data-canvas-identifier="worldInfoBefore"]');
+    fireEvent.click(within(beforeCard!).getByText("prompt_slot_world_info_before"));
+    // Collapsed row hides content.
+    expect(beforeCard!.textContent).not.toContain("A gate wreathed in roses.");
+    // Expand the entry row.
+    fireEvent.click(within(beforeCard!).getByRole("button", { name: /The Rose Gate/ }));
+    expect(within(beforeCard!).getByText("A gate wreathed in roses.")).toBeTruthy();
+    expect(within(beforeCard!).getByText("rose, gate")).toBeTruthy();
+    expect(within(beforeCard!).getByText("thorn")).toBeTruthy();
   });
 });

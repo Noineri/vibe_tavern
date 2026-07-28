@@ -19,6 +19,10 @@ import {
   type CanvasLoreEntrySummary,
   type PromptCanvasLoreContext,
 } from "../../lib/prompt-canvas-lore.js";
+import {
+  loadPromptCanvasSummaries,
+  type CanvasSummaryEntry,
+} from "../../lib/prompt-canvas-summary.js";
 
 type SaveState = "idle" | "saving" | "saved" | "error";
 
@@ -74,6 +78,11 @@ interface PromptManagerModalProps {
   chatDynamicPrompt?: string | null;
   onChatDynamicPromptUpdate?: (value: string) => Promise<void>;
   loreContext?: PromptCanvasLoreContext | null;
+  /** Active chat branch — summaries are branch-scoped. */
+  chatBranchId?: string | null;
+  /** Legacy flat `chat.summary` field — canvas fallback when no summary
+   *  memory records exist (mirrors the prompt pipeline). */
+  legacyChatSummary?: string | null;
 }
 
 function toCharacterCanvasDraft(
@@ -164,6 +173,8 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
   );
   const [loreAnchorEntries, setLoreAnchorEntries] = useState<CanvasLoreEntrySummary[]>([]);
   const [loreAnchorLoadState, setLoreAnchorLoadState] = useState<"idle" | "loading" | "ready" | "error">("idle");
+  const [summaryEntries, setSummaryEntries] = useState<CanvasSummaryEntry[]>([]);
+  const [summaryLoadState, setSummaryLoadState] = useState<"idle" | "loading" | "ready" | "error">("idle");
 
   // Sync entity drafts when the active character/persona snapshot changes.
   useEffect(() => {
@@ -217,6 +228,46 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
     input.loreContext?.chatId,
     input.loreContext?.characterId,
     input.loreContext?.personaId,
+  ]);
+
+  // Load the chat-summary memory blocks for the active chat branch. Mirrors
+  // the pipeline: includable branch-scoped records, falling back to the legacy
+  // `chat.summary` field. Reloads on chat/branch change while the modal is open.
+  useEffect(() => {
+    const chatId = input.loreContext?.chatId;
+    if (!isOpen || !chatId) {
+      setSummaryEntries([]);
+      setSummaryLoadState("idle");
+      return;
+    }
+
+    let cancelled = false;
+    setSummaryEntries([]);
+    setSummaryLoadState("loading");
+    void loadPromptCanvasSummaries({
+      chatId,
+      branchId: input.chatBranchId ?? null,
+      legacySummary: input.legacyChatSummary ?? null,
+    })
+      .then((entries) => {
+        if (cancelled) return;
+        setSummaryEntries(entries);
+        setSummaryLoadState("ready");
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setSummaryEntries([]);
+        setSummaryLoadState("error");
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    isOpen,
+    input.loreContext?.chatId,
+    input.chatBranchId,
+    input.legacyChatSummary,
   ]);
 
   function updateCharacterDraft(key: keyof CharacterCanvasDraft, value: string | number) {
@@ -601,6 +652,8 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
                   onChatDynamicPromptUpdate={(v) => { setChatDynamicPromptDraft(v); setDirty(true); setSaveState("idle"); }}
                   loreAnchorEntries={loreAnchorEntries}
                   loreAnchorLoadState={loreAnchorLoadState}
+                  summaryEntries={summaryEntries}
+                  summaryLoadState={summaryLoadState}
                 />
               </div>
             )}

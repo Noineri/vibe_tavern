@@ -471,6 +471,8 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
           characterId: activeCharacter.id,
           personaId: activeChat.personaId,
         } : null}
+        chatBranchId={activeChat?.activeBranchId ?? null}
+        legacyChatSummary={activeChat?.summary ?? null}
       />
 
       <PersonaModal

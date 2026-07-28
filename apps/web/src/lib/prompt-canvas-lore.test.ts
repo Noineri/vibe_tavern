@@ -33,6 +33,13 @@ function deps(): PromptCanvasLoreLoadDeps {
         enabled: true,
         priority: 10,
         sortOrder: 0,
+        content: "before content",
+        keys: ["rose", "thorn"],
+        secondaryKeys: ["petal"],
+        logic: "AND(any)",
+        constant: false,
+        probability: 100,
+        role: "system",
       },
       {
         id: `${lorebookId}-after`,
@@ -42,6 +49,13 @@ function deps(): PromptCanvasLoreLoadDeps {
         enabled: true,
         priority: 20,
         sortOrder: 1,
+        content: "after content",
+        keys: ["moon"],
+        secondaryKeys: [],
+        logic: "AND(any)",
+        constant: true,
+        probability: 80,
+        role: "system",
       },
       {
         id: `${lorebookId}-disabled`,
@@ -92,6 +106,13 @@ describe("loadPromptCanvasLoreEntries", () => {
       position: "before_char",
       priority: 10,
       sortOrder: 0,
+      content: "before content",
+      keys: ["rose", "thorn"],
+      secondaryKeys: ["petal"],
+      logic: "AND(any)",
+      constant: false,
+      probability: 100,
+      role: "system",
     });
     expect(result.some((entry) => entry.title === "disabled entry")).toBe(false);
     expect(result.some((entry) => entry.title === "depth entry")).toBe(false);

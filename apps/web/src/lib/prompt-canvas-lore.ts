@@ -10,6 +10,22 @@ export interface CanvasLoreEntrySummary {
   position: CanvasLoreAnchorPosition;
   priority: number;
   sortOrder: number;
+  /** Read-only entry content, shown when the row is expanded. Populated by
+   *  the default loader from the full `LoreEntryRecord`; optional so older
+   *  callers / fixtures can omit it (the row then renders collapsed-only). */
+  content?: string;
+  /** Primary activation keys. */
+  keys?: string[];
+  /** Secondary (additional) activation keys. */
+  secondaryKeys?: string[];
+  /** Activation logic expression (e.g. "AND(any)"). */
+  logic?: string;
+  /** Constantly-included (no keyword activation required). */
+  constant?: boolean;
+  /** Activation probability (0–100). */
+  probability?: number;
+  /** Per-entry injection role. */
+  role?: string;
 }
 
 export interface PromptCanvasLoreContext {
@@ -32,6 +48,13 @@ type LoreEntrySummarySource = {
   enabled: boolean;
   priority: number;
   sortOrder: number;
+  content?: string;
+  keys?: string[];
+  secondaryKeys?: string[];
+  logic?: string;
+  constant?: boolean;
+  probability?: number;
+  role?: string;
 };
 
 export interface PromptCanvasLoreLoadDeps {
@@ -96,6 +119,13 @@ export async function loadPromptCanvasLoreEntries(
         position: entry.position,
         priority: entry.priority,
         sortOrder: entry.sortOrder,
+        content: entry.content,
+        keys: entry.keys,
+        secondaryKeys: entry.secondaryKeys,
+        logic: entry.logic,
+        constant: entry.constant,
+        probability: entry.probability,
+        role: entry.role,
       })),
   );
 }

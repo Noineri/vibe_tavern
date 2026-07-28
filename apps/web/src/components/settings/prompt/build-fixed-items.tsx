@@ -16,9 +16,11 @@
  */
 import type { TFunc } from "../../../i18n/context.js";
 import type { CanvasLoreEntrySummary } from "../../../lib/prompt-canvas-lore.js";
+import type { CanvasSummaryEntry } from "../../../lib/prompt-canvas-summary.js";
 import type { CanvasItem, CanvasRole, CharacterCanvasDraft, PromptCanvasDraft } from "./canvas-shared.js";
 import { coerceRole } from "./canvas-shared.js";
 import { LoreAnchorList, type LoreAnchorLoadState } from "./LoreAnchorList.js";
+import { SummaryList, type SummaryLoadState } from "./SummaryList.js";
 import { CanvasCard } from "./rows/CanvasCard.js";
 
 /** Dependencies the fixed-items list closes over. Grouped into one object so
@@ -36,6 +38,9 @@ export interface FixedItemCtx {
   onChatDynamicPromptUpdate?: (value: string) => void;
   loreAnchorEntries?: CanvasLoreEntrySummary[];
   loreAnchorLoadState?: LoreAnchorLoadState;
+  /** Chat-summary memory blocks injected at the `chatSummary` anchor. */
+  summaryEntries?: CanvasSummaryEntry[];
+  summaryLoadState?: SummaryLoadState;
   slotEnabled: (identifier: string) => boolean;
   togglePromptSlot: (identifier: string) => void;
   slotLabelFor: (identifier: string) => string | null;
@@ -73,6 +78,8 @@ export function buildFixedItems(ctx: FixedItemCtx): CanvasItem[] {
     onChatDynamicPromptUpdate,
     loreAnchorEntries = [],
     loreAnchorLoadState = "idle",
+    summaryEntries = [],
+    summaryLoadState = "idle",
   } = ctx;
   const disabled = !draft || !onUpdateField;
   const characterDisabled = !characterDraft || !onCharacterFieldUpdate;
@@ -127,7 +134,8 @@ export function buildFixedItems(ctx: FixedItemCtx): CanvasItem[] {
         labelTooltip={t("prompt_slot_chat_summary_hint")}
         {...toggleFor("chatSummary", ctx)} {...slotFor("chatSummary", ctx)}
         role={ctx.slotRoleFor("chatSummary", "system")} onRoleChange={(r) => ctx.updateSlotRole("chatSummary", r)}
-        badge={t("cc_read_only")} />
+        badge={t("cc_read_only")}
+        expandedLeading={<SummaryList entries={summaryEntries} loadState={summaryLoadState} />} />
     ) },
     { key: "field:authorsNote", identifier: "authorsNote", kind: "field", defaultOrder: 60, render: () => (
       <CanvasCard identifier="authorsNote" category="standard" label={t("authors_note_label")}

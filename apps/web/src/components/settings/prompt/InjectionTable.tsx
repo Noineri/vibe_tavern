@@ -23,9 +23,11 @@ import { cn } from "../../../lib/cn.js";
 import { useDndSensors } from "../../../hooks/use-dnd-sensors.js";
 import { DragHandleContext } from "./drag-handle.js";
 import type { CanvasLoreEntrySummary } from "../../../lib/prompt-canvas-lore.js";
+import type { CanvasSummaryEntry } from "../../../lib/prompt-canvas-summary.js";
 import { buildFixedItems } from "./build-fixed-items.js";
 import type { CanvasItem, CanvasRole, CharacterCanvasDraft, PromptCanvasDraft } from "./canvas-shared.js";
 import type { LoreAnchorLoadState } from "./LoreAnchorList.js";
+import type { SummaryLoadState } from "./SummaryList.js";
 import { Checkbox } from "../../shared/Checkbox.js";
 import { CanvasCard } from "./rows/CanvasCard.js";
 import { CustomTooltip } from "../../shared/Tooltip.js";
@@ -54,6 +56,9 @@ interface InjectionTableProps {
   onChatDynamicPromptUpdate?: (value: string) => void;
   loreAnchorEntries?: CanvasLoreEntrySummary[];
   loreAnchorLoadState?: LoreAnchorLoadState;
+  /** Chat-summary memory blocks injected at the `chatSummary` anchor. */
+  summaryEntries?: CanvasSummaryEntry[];
+  summaryLoadState?: SummaryLoadState;
   promptOrder?: PromptOrderEntry[];
   onPromptOrderChange?: (promptOrder: PromptOrderEntry[]) => void;
 }
@@ -155,6 +160,8 @@ export function PromptOrderCanvas({
   onPersonaDescriptionUpdate,
   loreAnchorEntries,
   loreAnchorLoadState,
+  summaryEntries,
+  summaryLoadState,
   promptOrder = [],
   onPromptOrderChange,
 }: InjectionTableProps) {
@@ -293,6 +300,8 @@ export function PromptOrderCanvas({
     onChatDynamicPromptUpdate,
     loreAnchorEntries,
     loreAnchorLoadState,
+    summaryEntries,
+    summaryLoadState,
     slotEnabled,
     togglePromptSlot,
     slotLabelFor,
