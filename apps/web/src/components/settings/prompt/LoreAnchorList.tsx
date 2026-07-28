@@ -58,11 +58,6 @@ function LoreEntryRow({ entry }: { entry: CanvasLoreEntrySummary }) {
       </button>
       {open && hasDetail && (
         <div className="flex flex-col gap-2 border-t border-border2 px-2.5 py-2">
-          {entry.content !== undefined && (
-            <p className="whitespace-pre-wrap break-words rounded bg-s2/60 px-2 py-1.5 font-mono text-[11px] leading-[1.55] text-t2">
-              {entry.content.trim() || t("cc_lore_empty_content")}
-            </p>
-          )}
           <div className="grid grid-cols-2 gap-x-3 gap-y-1.5">
             {entry.keys !== undefined && (
               <Fact label={t("cc_lore_keys")} value={entry.keys.length ? entry.keys.join(", ") : "—"} />
@@ -83,6 +78,11 @@ function LoreEntryRow({ entry }: { entry: CanvasLoreEntrySummary }) {
               <Fact label={t("cc_lore_probability")} value={`${entry.probability}%`} />
             )}
           </div>
+          {entry.content !== undefined && (
+            <p className="whitespace-pre-wrap break-words rounded bg-s2/60 px-2 py-1.5 font-mono text-[11px] leading-[1.55] text-t2">
+              {entry.content.trim() || t("cc_lore_empty_content")}
+            </p>
+          )}
         </div>
       )}
     </li>
