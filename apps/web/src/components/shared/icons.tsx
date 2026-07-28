@@ -108,11 +108,11 @@ export const Ic = {
   // Distinct from the plain `user` glyph (character category): the ring marks
   // the user-persona context, not the character.
   circleUser:()=><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><circle cx="8" cy="8" r="6.5"/><circle cx="8" cy="6.3" r="1.9"/><path d="M4.3 12.6c.6-1.7 2-2.7 3.7-2.7s3.1 1 3.7 2.7"/></svg>,
-  // Book + anchor composite glyph — the "lorebook anchor" slot-category icon
-  // (APC-3a): a bound lorebook (book) pinned at a canvas position (anchor).
-  // Single SVG (book left, anchor right) rather than two overlaid glyphs so it
-  // stays crisp at 13px without absolute-positioned badges.
-  loreAnchor:()=><svg width="14" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><path d="M2 3h4a1 1 0 0 1 1 1v9a1 1 0 0 0-1-1H2.5A.5.5 0 0 1 2 10.5V3.5A.5.5 0 0 1 2.5 3z"/><path d="M7 4v9"/><circle cx="11.5" cy="4.5" r="1.2"/><line x1="11.5" y1="5.7" x2="11.5" y2="13"/><path d="M9 10.2a2.5 2.5 0 0 0 5 0"/><line x1="10" y1="7.8" x2="13" y2="7.8"/></svg>,
+  // Anchor inside a square frame — the "lorebook anchor" slot-category icon
+  // (APC-3a): a pinned injection point. Redrawn from the book+anchor composite
+  // (which read muddy at 13px) to a single anchor inset in a frame, matching
+  // the plus-in-frame convention of the custom-injection icon.
+  loreAnchor:()=><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="2" width="12" height="12" rx="1.5"/><circle cx="8" cy="6" r="1.3"/><line x1="8" y1="7.3" x2="8" y2="11.5"/><path d="M5.5 10a2.5 2.5 0 0 0 5 0"/><line x1="6.5" y1="8.2" x2="9.5" y2="8.2"/></svg>,
 };
 
 // Icon props actually used at call sites: `className` (any icon) and `direction`

@@ -38,12 +38,12 @@ export function CanvasLegend() {
 					{LEGEND_ORDER.map((cat) => {
 						const Icon = SLOT_CATEGORY_ICON[cat];
 						return (
-							<div key={cat} className="flex items-start gap-2">
-								<span className="mt-[2px] flex h-[13px] w-[13px] shrink-0 items-center justify-center text-t3" aria-hidden="true"><Icon /></span>
-								<div className="min-w-0">
+							<div key={cat} className="min-w-0">
+								<div className="flex items-center gap-2">
+									<span className="flex h-[13px] w-[13px] shrink-0 items-center justify-center text-t3" aria-hidden="true"><Icon /></span>
 									<span className="font-ui text-[11px] font-medium text-t2">{tDynamic(`cc_legend_${cat}`)}</span>
-									<span className="block font-ui text-[10px] leading-tight text-t4">{tDynamic(`cc_legend_${cat}_desc`)}</span>
 								</div>
+								<span className="mt-0.5 block pl-[21px] font-ui text-[10px] leading-tight text-t4">{tDynamic(`cc_legend_${cat}_desc`)}</span>
 							</div>
 						);
 					})}
