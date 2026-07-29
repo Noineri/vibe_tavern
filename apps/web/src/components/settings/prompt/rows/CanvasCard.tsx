@@ -12,8 +12,9 @@
  * desktop keeps the single row, prompt ordering and slot semantics unchanged.
  *
  *   desktop:  [controls: drag·toggle] [title] [meta: tokens·role·slot] [actions: lock·remove·▶]
- *   narrow:   … title … actions
- *             controls … meta …
+ *   narrow (with metadata):   title … actions          (title spans the full width; no wasted controls column)
+ *                              controls … meta          (one coherent left-aligned row)
+ *   narrow (no metadata):      controls … title … actions   (compact single row — driven by absence of value/role/slot, never by anchor name)
  *   body:  [depth-input?] [role SegmentedControl(dense)?] [expandedLeading?] [AutoTextarea | readonly]
  *
  * Variants the props express:
@@ -140,13 +141,18 @@ export function CanvasCard({
   const slotDepthNum = slotDepth ?? 0;
   const showDepthBadge = slotLabel != null;
   const showDepthInput = !!onSlotDepthChange && slotLabel != null && slotDepthNum >= depthMin;
+  // A card with no token/role/slot metadata collapses the narrow header to one
+  // compact row (controls + title + actions) instead of reserving a second
+  // row for content that does not exist. Driven by the absence of metadata,
+  // never by hardcoded anchor names (MOBILE_PROMPT_CANVAS_UX_REPORT.md step 5).
+  const hasMeta = hasValue || !!role || showDepthBadge;
 
   const onClickHeader = expandable ? () => setExpanded((v) => !v) : undefined;
 
   return (
-    <div data-canvas-identifier={identifier} className={cn("canvas-card rounded-md border border-border transition-colors", SLOT_CATEGORY_BACKGROUND[category], !enabled && "opacity-55", className)}>
+    <div data-canvas-identifier={identifier} className={cn("canvas-card rounded-md border border-border transition-colors", SLOT_CATEGORY_BACKGROUND[category], !enabled && "opacity-65", className)}>
       <div
-        className={cn("canvas-card-header min-w-0 select-none", onClickHeader && "cursor-pointer")}
+        className={cn("canvas-card-header min-w-0 select-none", !hasMeta && "canvas-card-header--no-meta", onClickHeader && "cursor-pointer")}
         onClick={onClickHeader}
       >
         <div className="canvas-card-controls flex min-w-0 items-center gap-0.5 sm:gap-2.5">
@@ -218,12 +224,12 @@ export function CanvasCard({
           {hasValue && (
             <TokenCounter
               text={value}
-              className="canvas-card-token flex shrink-0 justify-end whitespace-nowrap font-ui text-[11px] tabular-nums text-t3"
+              className="canvas-card-token flex shrink-0 justify-end whitespace-nowrap font-ui text-[11px] tabular-nums text-t2"
             />
           )}
-          {role && <span className="canvas-card-role shrink-0 rounded bg-s2 px-1.5 py-0.5 font-mono text-[10px] text-t4">{role}</span>}
+          {role && <span className="canvas-card-role shrink-0 rounded bg-s2 px-1.5 py-0.5 font-mono text-[10px] text-t3">{role}</span>}
           {showDepthBadge && (
-            <span className="canvas-card-slot shrink-0 rounded bg-s2 px-1.5 py-0.5 font-mono text-[10px] text-t3 tabular-nums">
+            <span className="canvas-card-slot shrink-0 rounded bg-s2 px-1.5 py-0.5 font-mono text-[10px] text-t2 tabular-nums">
               {slotLabel === "in-chat" || /^\d+$/.test(String(slotLabel)) ? `←${slotDepthNum}` : slotLabel}
             </span>
           )}

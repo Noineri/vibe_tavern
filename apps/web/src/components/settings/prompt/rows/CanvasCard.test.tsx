@@ -68,6 +68,31 @@ describe("CanvasCard — structural characterization", () => {
 		expect(header.querySelector(".min-w-\\[120px\\]")).toBeNull();
 	});
 
+	it("no-metadata card uses the compact single-row header; a metadata-bearing card does not", () => {
+		// Cards with no value/role/slot badge (read-only anchors such as World
+		// Info Before) render a compact single-row narrow header instead of
+		// reserving a second row for metadata that does not exist. The modifier
+		// is driven by the absence of metadata, never by a hardcoded anchor name
+		// (MOBILE_PROMPT_CANVAS_UX_REPORT.md step 5).
+		const noMeta = renderCard(
+			<CanvasCard identifier="worldInfoBefore" category="anchor" label="World Info Before" nonExpandable readOnly />,
+		);
+		const noMetaHeader = noMeta.container.querySelector('[data-canvas-identifier="worldInfoBefore"] .canvas-card-header') as HTMLElement;
+		expect(noMetaHeader.getAttribute("class")?.includes("canvas-card-header--no-meta")).toBe(true);
+		// still one of each semantic region, just reflowed onto one row
+		expect(noMetaHeader.querySelectorAll(".canvas-card-controls")).toHaveLength(1);
+		expect(noMetaHeader.querySelectorAll(".canvas-card-title")).toHaveLength(1);
+		expect(noMetaHeader.querySelectorAll(".canvas-card-meta")).toHaveLength(1);
+		expect(noMetaHeader.querySelectorAll(".canvas-card-actions")).toHaveLength(1);
+		noMeta.unmount();
+
+		const withMeta = renderCard(
+			<CanvasCard identifier="custom1" category="custom" label="Injection" value="body" role="user" onToggle={() => {}} onRemove={() => {}} />,
+		);
+		const withMetaHeader = withMeta.container.querySelector('[data-canvas-identifier="custom1"] .canvas-card-header') as HTMLElement;
+		expect(withMetaHeader.getAttribute("class")?.includes("canvas-card-header--no-meta")).toBe(false);
+	});
+
 	it("readOnly renders a compact semantic lock affordance (with tooltip) instead of a text badge", () => {
 		// The generic production text badge became a semantic boolean + small lock
 		// glyph + tooltip. Same boundary (read-only affordance on rows whose

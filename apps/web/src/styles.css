@@ -258,10 +258,11 @@ html,body{height:100%;background:var(--page-bg, var(--bg));color:var(--t1);overf
 
 /* Prompt-canvas card header — one DOM, width-responsive via container query.
    Desktop keeps the single [controls title meta actions] row; a narrow card
-   (≤24rem) reflows to two rows (title+actions over controls+meta) so role
-   badges, token counters and the caret no longer escape a ~260px phone card.
-   The card's own width — not the device label — drives the reflow
-   (MOBILE_PROMPT_CANVAS_UX_REPORT.md). */
+   (≤24rem) reflows so role badges, token counters and the caret no longer
+   escape a ~260px phone card. The card's own width — not the device label —
+   drives the reflow (MOBILE_PROMPT_CANVAS_UX_REPORT.md). With metadata the
+   title spans the full width (no wasted controls column) over a single
+   coherent controls+meta row; without metadata the header is one compact row. */
 .canvas-card{container-type:inline-size}
 .canvas-card-header{
   display:grid;
@@ -284,12 +285,23 @@ html,body{height:100%;background:var(--page-bg, var(--bg));color:var(--t1);overf
    lore/summary disclosure metadata wraps below the title instead of forcing
    the title to vanish or the row to overflow. Desktop is untouched. */
 @container (max-width:24rem){
+  /* Metadata-bearing narrow card: title+actions fill the top row (title gets
+     the full width — no reserved controls column), then controls and metadata
+     share a single left-aligned bottom row so drag/toggle/role/slot/tokens sit
+     on one coherent axis instead of drifting on unrelated tracks. */
   .canvas-card-header{
     grid-template-areas:
-      ". title actions"
+      "title title actions"
       "controls meta meta";
     grid-template-columns:auto minmax(0,1fr) auto;
     gap:0.25rem 0.5rem;
+  }
+  /* No-metadata narrow card (read-only anchors with no role/token/slot badge):
+     one compact row — controls, title, actions — so a second row is not
+     reserved for content that does not exist. */
+  .canvas-card-header--no-meta{
+    grid-template-areas:"controls title actions";
+    grid-template-columns:auto minmax(0,1fr) auto;
   }
   .canvas-card-role{order:1}
   .canvas-card-slot{order:2}
