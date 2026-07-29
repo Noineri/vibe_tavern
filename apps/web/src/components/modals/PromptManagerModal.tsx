@@ -584,6 +584,7 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
         containerClassName="max-h-[calc(100vh-32px)] max-w-[calc(100vw-32px)] w-[920px] h-[880px] rounded-xl border border-border2 shadow-[0_24px_60px_rgba(0,0,0,.5)]"
         masterClassName="flex w-[240px] shrink-0 flex-col border-r border-border"
         detailClassName="p-0"
+        mobileDetailClassName="p-2 scrollbar-hide"
         headerClassName={isMobile ? "px-4 pt-4 pb-3" : "px-5 pt-[18px] pb-[14px]"}
         masterContent={() => (
           <PresetList
@@ -607,7 +608,7 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
                   {advancedMode ? t("preset_advanced_mode_hint") : t("preset_simple_mode_hint")}
                 </div>
               </div>
-              <div className="inline-flex shrink-0 gap-0 rounded-md border border-border bg-s3 p-0.5" role="radiogroup" aria-label={t("preset_editor_mode")}>
+              <div className={cn("inline-flex shrink-0 gap-0 rounded-md border border-border bg-s3 p-0.5", isMobile && "self-start")} role="radiogroup" aria-label={t("preset_editor_mode")}>
                 <button
                   type="button"
                   role="radio"
@@ -636,7 +637,7 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
             </div>
 
             {advancedMode && (
-              <div className={cn("mt-3 rounded-md border border-border2 py-3", isMobile ? "px-2" : "mx-5 px-4")}>
+              <div className={cn("mt-3 rounded-md border border-border2 py-3", isMobile ? "px-0" : "mx-5 px-4")}>
                 <PromptOrderCanvas
                   injections={draft.customInjections}
                   onChange={(injections) => { setDraft((d) => ({ ...d, customInjections: injections })); setDirty(true); setSaveState("idle"); }}

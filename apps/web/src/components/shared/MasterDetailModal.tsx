@@ -72,6 +72,8 @@ export interface MasterDetailModalProps {
   masterClassName?: string;
   /** CSS classes for the detail (right) column wrapper on desktop. */
   detailClassName?: string;
+  /** CSS classes for the detail column wrapper on mobile. Defaults to "p-4". */
+  mobileDetailClassName?: string;
   /** CSS classes for the desktop header wrapper. */
   headerClassName?: string;
 }
@@ -92,6 +94,7 @@ export function MasterDetailModal({
   containerClassName = "max-h-[calc(100vh-60px)] max-w-[calc(100vw-32px)] h-[680px] w-[860px] rounded-xl border border-border2 shadow-[0_24px_60px_rgba(0,0,0,.5)]",
   masterClassName = "flex w-[220px] shrink-0 flex-col border-r border-border",
   detailClassName = "p-6",
+  mobileDetailClassName = "p-4",
   headerClassName,
 }: MasterDetailModalProps) {
   const isMobile = useIsMobile();
@@ -200,7 +203,7 @@ export function MasterDetailModal({
               </div>
             )}
             {(!isMobile || isDetailOpen) && (
-              <div className={cn("min-w-0 flex-1 overflow-y-auto", isMobile ? "p-4" : detailClassName)}>
+              <div className={cn("min-w-0 flex-1 overflow-y-auto", isMobile ? mobileDetailClassName : detailClassName)}>
                 {typeof detailContent === "function" ? detailContent({ closeDetail: () => setIsDetailOpen(false) }) : detailContent}
               </div>
             )}

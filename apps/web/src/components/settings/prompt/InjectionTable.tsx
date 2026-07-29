@@ -73,7 +73,7 @@ function DroppableDepthContainer({ id, depth, children, label, className }: { id
     <div
       ref={setNodeRef}
       className={cn(
-        "rounded-md border border-transparent p-1 transition-colors min-h-[40px] flex flex-col gap-1.5",
+        "rounded-md border border-transparent p-1.5 transition-colors min-h-[40px] flex flex-col gap-1.5",
         className
       )}
     >
