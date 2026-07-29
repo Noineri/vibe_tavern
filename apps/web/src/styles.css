@@ -303,6 +303,8 @@ html,body{height:100%;background:var(--page-bg, var(--bg));color:var(--t1);overf
   .canvas-card-role{order:1}
   .canvas-card-slot{order:2}
   .canvas-card-token{order:3}
+  .canvas-card-body{padding:0.375rem 0.375rem 0.5rem}
+  .canvas-card-editor{min-height:10rem}
   .canvas-lore-facts{grid-template-columns:1fr}
   .canvas-disclosure-btn{flex-wrap:wrap;row-gap:0.25rem}
 }

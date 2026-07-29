@@ -268,7 +268,7 @@ export function CanvasCard({
         </div>
       </div>
       {expandable && expanded && (
-        <div className="border-t border-border2 px-3 pb-3 pt-2">
+        <div className="canvas-card-body border-t border-border2 px-3 pb-3 pt-2">
           {(showDepthInput || onRoleChange) && (
             <div className="mb-2 flex flex-wrap items-center gap-2">
               {showDepthInput && (
@@ -307,7 +307,7 @@ export function CanvasCard({
               label={editableName?.value || (typeof label === "string" ? label : undefined)}
             >
               <AutoTextarea
-                className="w-full resize-none rounded-md border border-border bg-s2 px-2.5 py-2 font-mono text-[12px] leading-[1.6] text-t1 outline-none focus:border-accent disabled:opacity-60"
+                className="canvas-card-editor w-full resize-none rounded-md border border-border bg-s2 px-2.5 py-2 font-mono text-[12px] leading-[1.6] text-t1 outline-none focus:border-accent disabled:opacity-60"
                 style={{}}
                 minRows={5}
                 value={value ?? ""}

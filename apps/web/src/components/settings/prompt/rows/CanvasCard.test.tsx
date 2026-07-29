@@ -139,6 +139,8 @@ describe("CanvasCard — structural characterization", () => {
 		fireEvent.click(getByText("NSFW"));
 		const ta = container.querySelector("textarea") as HTMLTextAreaElement;
 		expect(ta).toBeTruthy();
+		expect(ta.classList.contains("canvas-card-editor")).toBe(true);
+		expect(ta.closest(".canvas-card-body")).toBeTruthy();
 		expect(ta.value).toBe("rules");
 		fireEvent.change(ta, { target: { value: "new rules" } });
 		expect(onChange).toHaveBeenCalledWith("new rules");
