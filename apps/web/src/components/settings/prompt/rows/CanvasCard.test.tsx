@@ -155,8 +155,12 @@ describe("CanvasCard — structural characterization", () => {
 				editableName={{ value: "My Injection", placeholder: "Injection name", onRename }}
 			/>,
 		);
-		expect(getByText("My Injection")).toBeTruthy();
-		fireEvent.click(getByRole("button", { name: "Injection name" }));
+		const label = getByText("My Injection");
+		const editButton = getByRole("button", { name: "Injection name" });
+		expect(label.classList.contains("flex-1")).toBe(false);
+		expect(editButton.classList.contains("h-5")).toBe(true);
+		expect(editButton.classList.contains("h-9")).toBe(false);
+		fireEvent.click(editButton);
 		const input = getByRole("textbox") as HTMLInputElement;
 		expect(input.value).toBe("My Injection");
 		fireEvent.change(input, { target: { value: "Renamed" } });

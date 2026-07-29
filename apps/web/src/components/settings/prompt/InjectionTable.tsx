@@ -511,7 +511,7 @@ export function PromptOrderCanvas({
 
   return (
     <div>
-      <div data-testid="prompt-canvas-header" className="mb-3 flex flex-col items-stretch gap-3 sm:flex-row sm:items-start sm:justify-between">
+      <div data-testid="prompt-canvas-header" className="mb-3 flex flex-col items-stretch gap-3 px-1.5 sm:flex-row sm:items-start sm:justify-between sm:px-0">
         <div className="min-w-0">
           <div className="font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-t2">{t("preset_prompt_order_canvas_title")}</div>
           <div className="mt-0.5 font-ui text-[11px] text-t4">{t("preset_prompt_order_canvas_hint")}</div>
@@ -546,14 +546,14 @@ export function PromptOrderCanvas({
               action sits next to its result. before_chat zone, order 999, and
               the 1:1 injection↔canvas-entry DnD invariant are all unchanged. */}
           <button type="button"
-            className="flex min-h-10 w-full items-center justify-center gap-1 rounded-md border border-dashed border-border py-1.5 font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-all hover:border-accent hover:text-accent-t sm:min-h-0"
+            className="mx-1.5 flex min-h-10 items-center justify-center gap-1 rounded-md border border-dashed border-border py-1.5 font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-all hover:border-accent hover:text-accent-t sm:mx-0 sm:min-h-0"
             onClick={add}
           >
             + {t("preset_injection_add")}
           </button>
 
           {/* ZONE 2: CHAT HISTORY ACCORDION */}
-          <div className="rounded-md border border-accent/35 bg-accent/10">
+          <div className="mx-1.5 rounded-md border border-accent/35 bg-accent/10 sm:mx-0">
             <button
               type="button"
               className="flex w-full items-center justify-between gap-2 px-3 py-2 font-ui text-[12px] font-medium text-accent-t hover:bg-accent/20 transition-colors rounded-t-md"

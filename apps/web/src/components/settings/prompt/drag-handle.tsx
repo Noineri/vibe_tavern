@@ -30,7 +30,7 @@ export function DragHandle({ disabled }: { disabled?: boolean }) {
       ref={disabled ? undefined : ctx.setActivatorNodeRef}
       type="button"
       className={cn(
-        "flex h-8 w-8 shrink-0 select-none items-center justify-center rounded transition-colors sm:h-auto sm:w-5 [&_svg]:h-4 [&_svg]:w-4 sm:[&_svg]:h-[13px] sm:[&_svg]:w-[13px]",
+        "flex h-8 w-7 shrink-0 select-none items-center justify-center rounded transition-colors sm:h-auto sm:w-5 [&_svg]:h-[18px] [&_svg]:w-[18px] sm:[&_svg]:h-[13px] sm:[&_svg]:w-[13px]",
         disabled
           ? "opacity-30 cursor-not-allowed text-t4"
           : "cursor-grab touch-none text-t4 hover:bg-s2 hover:text-t2 active:cursor-grabbing"
@@ -39,7 +39,7 @@ export function DragHandle({ disabled }: { disabled?: boolean }) {
       {...(disabled ? {} : ctx.attributes)}
       {...(disabled ? {} : ctx.listeners)}
     >
-      {Ic.gripVertical()}
+      {Ic.grip()}
     </button>
   );
 }

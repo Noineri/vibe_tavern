@@ -67,8 +67,10 @@ mock.module("../../shared/Tooltip.js", () => ({
 }));
 
 // useIsMobile reads window.matchMedia, which happy-dom does not reliably
-// implement. Force desktop; the mobile fork is not the test target.
-mock.module("../../../hooks/use-mobile.js", () => ({ ...realUseMobile, useIsMobile: () => false }));
+// implement. Default to desktop; one focused test opts into the mobile
+// MobileExpandTextarea boundary.
+let isMobile = false;
+mock.module("../../../hooks/use-mobile.js", () => ({ ...realUseMobile, useIsMobile: () => isMobile }));
 
 const { render, fireEvent, within } = await import("@testing-library/react");
 
@@ -505,9 +507,16 @@ describe("PromptOrderCanvas — characterization", () => {
     // card (last in before_chat at order 999): between the before_chat zone and
     // the Chat History header. The header (merge checkbox) and DnD semantics
     // are unchanged — only the button's location moved.
-    renderCanvas();
+    const { container } = renderCanvas();
     const text = renderedBase.textContent!;
+    const header = container.querySelector('[data-testid="prompt-canvas-header"]') as HTMLElement;
+    const addButton = queries().getByRole("button", { name: /preset_injection_add/ });
+    const chatHistory = queries().getByRole("button", { name: /prompt_slot_chat_history/ }).parentElement as HTMLElement;
     expectOrdered(text, ["system_prompt", "preset_injection_add", "prompt_slot_chat_history"]);
+    expect(header.classList.contains("px-1.5")).toBe(true);
+    expect(addButton.classList.contains("mx-1.5")).toBe(true);
+    expect(addButton.classList.contains("w-full")).toBe(false);
+    expect(chatHistory.classList.contains("mx-1.5")).toBe(true);
   });
 
   it("removing a custom injection drops the injection and its canvas entry (1:1 invariant)", () => {
@@ -527,6 +536,35 @@ describe("PromptOrderCanvas — characterization", () => {
   });
 
   // ── Wave 6: chatDynamicPrompt canvas card ────────────────────────────
+
+  it("mobile custom injection opens the shared fullscreen textarea and commits through the canvas update path", () => {
+    const spies = makeSpies();
+    isMobile = true;
+    const view = renderCanvas({
+      spies,
+      injections: [{ identifier: "custom_mobile", name: "Mobile injection", content: "old content", role: "system" }],
+      promptOrder: [
+        { identifier: "custom_mobile", enabled: true, order: 0, zone: "before_chat", depth: null, kind: "custom" },
+      ],
+    });
+
+    try {
+      const card = view.container.querySelector('[data-canvas-identifier="custom_mobile"]') as HTMLElement;
+      fireEvent.click(within(card).getByText("Mobile injection"));
+      fireEvent.click(within(card).getByTitle("expand_fullscreen"));
+      const overlay = view.baseElement.querySelector(".fixed.inset-0") as HTMLElement;
+      const fullscreenEditor = overlay.querySelector("textarea") as HTMLTextAreaElement;
+      expect(fullscreenEditor.value).toBe("old content");
+      fireEvent.change(fullscreenEditor, { target: { value: "fullscreen content" } });
+      fireEvent.click(within(overlay).getByText("done_btn"));
+      expect(spies.onChange).toHaveBeenCalledWith([
+        { identifier: "custom_mobile", name: "Mobile injection", content: "fullscreen content", role: "system" },
+      ]);
+    } finally {
+      isMobile = false;
+      view.unmount();
+    }
+  });
 
   it("renders chatDynamicPrompt CanvasCard with editable content and default system role", () => {
     const spies = makeSpies();

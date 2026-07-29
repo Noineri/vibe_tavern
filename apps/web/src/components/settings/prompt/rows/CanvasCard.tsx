@@ -34,6 +34,7 @@ import { CustomTooltip } from "../../../shared/Tooltip.js";
 import { TokenCounter } from "../../../shared/TokenCounter.js";
 import { NumberInput } from "../../../shared/NumberInput.js";
 import { AutoTextarea } from "../../../shared/auto-textarea.js";
+import { MobileExpandTextarea } from "../../../shared/MobileExpandTextarea.js";
 import { SegmentedControl } from "../../../shared/SegmentedControl.js";
 import { DragHandle } from "../drag-handle.js";
 import { roleOptions } from "../canvas-shared.js";
@@ -162,7 +163,7 @@ export function CanvasCard({
               <button
                 type="button"
                 className={cn(
-                  "flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded transition-colors sm:h-[18px] sm:w-[18px]",
+                  "flex h-8 w-7 shrink-0 cursor-pointer items-center justify-center rounded transition-colors sm:h-[18px] sm:w-[18px]",
                   enabled ? "text-accent hover:bg-accent/10" : "text-t4 hover:text-t2"
                 )}
                 onClick={(e) => { e.stopPropagation(); onToggle(); }}
@@ -199,12 +200,12 @@ export function CanvasCard({
                 />
               ) : (
                 <>
-                  <span className={cn("min-w-0 flex-1 truncate font-ui text-[12px]", enabled ? "text-t1" : "text-t3", !editableName.value && "text-t4")}>
+                  <span className={cn("min-w-0 truncate font-ui text-[12px] sm:flex-1", enabled ? "text-t1" : "text-t3", !editableName.value && "text-t4")}>
                     {editableName.value || editableName.placeholder}
                   </span>
                   <button
                     type="button"
-                    className="flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded text-t4 opacity-100 transition-all hover:bg-s2 hover:text-accent focus:bg-s2 focus:text-accent sm:h-5 sm:w-5 sm:opacity-0 sm:group-hover:opacity-100 sm:focus:opacity-100"
+                    className="flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center rounded text-t4 opacity-100 transition-all hover:bg-s2 hover:text-accent focus:bg-s2 focus:text-accent sm:opacity-0 sm:group-hover:opacity-100 sm:focus:opacity-100"
                     onClick={(e) => { e.stopPropagation(); setEditingName(true); }}
                     aria-label={editableName.placeholder}
                   >
@@ -300,16 +301,22 @@ export function CanvasCard({
           )}
           {expandedLeading}
           {isEditable && (
-            <AutoTextarea
-              className="w-full resize-none rounded-md border border-border bg-s2 px-2.5 py-2 font-mono text-[12px] leading-[1.6] text-t1 outline-none focus:border-accent disabled:opacity-60"
-              style={{}}
-              minRows={5}
+            <MobileExpandTextarea
               value={value ?? ""}
-              placeholder={placeholder}
-              disabled={disabled}
-              maxRows={20}
-              onChange={(e) => onChange?.(e.target.value)}
-            />
+              onChange={(nextValue) => onChange?.(nextValue)}
+              label={editableName?.value || (typeof label === "string" ? label : undefined)}
+            >
+              <AutoTextarea
+                className="w-full resize-none rounded-md border border-border bg-s2 px-2.5 py-2 font-mono text-[12px] leading-[1.6] text-t1 outline-none focus:border-accent disabled:opacity-60"
+                style={{}}
+                minRows={5}
+                value={value ?? ""}
+                placeholder={placeholder}
+                disabled={disabled}
+                maxRows={20}
+                onChange={(e) => onChange?.(e.target.value)}
+              />
+            </MobileExpandTextarea>
           )}
         </div>
       )}

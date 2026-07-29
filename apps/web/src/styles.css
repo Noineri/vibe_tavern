@@ -292,7 +292,7 @@ html,body{height:100%;background:var(--page-bg, var(--bg));color:var(--t1);overf
       "controls meta actions";
     grid-template-columns:auto minmax(0,1fr) auto;
     gap:0.125rem 0.375rem;
-    padding:0.25rem 0.5rem;
+    padding:0.25rem 0.5rem 0.25rem 0.25rem;
   }
   .canvas-card-controls,.canvas-card-actions{align-self:center}
   /* No-metadata anchors use the same geometry without reserving a second row. */
