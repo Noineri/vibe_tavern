@@ -1,5 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import {
+  FRAGMENT_SHADER,
+  MAX_LAMP_BALLS,
+  MAX_LAMP_WAX_COLORS,
+  VERTEX_SHADER,
+  readLampPalette,
+} from "./lava-shader.js";
 
 /**
  * LavaBackground — a WebGL lava-lamp rendered behind the app as progressive
@@ -14,7 +21,7 @@ import { createPortal } from "react-dom";
  * looks better (metaball wax, backlit, physically shaded).
  *
  * Gating (hybrid progressive enhancement):
- *   - only for lava themes (dark-lava for now; light-lava keeps its CSS gradient),
+ *   - only for lava themes (dark-lava + light-lava),
  *   - only when the viewport is wide enough ({@link LAMP_MIN_VIEWPORT}px — there
  *     must be room for the lamp to breathe; narrow/mobile falls back),
  *   - only when WebGL is available,
@@ -34,10 +41,19 @@ import { createPortal } from "react-dom";
  * ranges, and a soft mask clips any wax bleed across the column boundary — so
  * the text area shows only the calm glass medium, not crawling wax.
  *
+ * Two mount modes share the shader/palette in {@link ./lava-shader.ts}:
+ *   - production (default): the canvas portals to document.body, is
+ *     viewport-fixed, confines wax to chat gutters, and toggles the
+ *     `lava-webgl-active` class to stop the body repaint.
+ *   - scoped (`scopeEl` prop): the canvas portals INTO that element (absolute,
+ *     full-size), paints full-bleed wax (no gutter confinement — so the whole
+ *     frame is lamp), and never touches the `<html>` class. The Theme Tuner
+ *     uses this to render a live, WYSIWYG lamp inside its preview window.
+ *
  * The shader is adapted from the standalone prototype
- * (N:/janitor_characters/lava-prototype/index.html). Palette comes from theme
- * tokens (--lamp-glass / --lamp-wax-thin|mid|thick); absent tokens fall back to
- * the prototype's "purple glass + yellow wax" defaults.
+ * (N:/janitor_characters/lava-prototype/index.html). Palette + tunable scalars
+ * come from theme tokens (see lava-shader.ts); absent tokens fall back to the
+ * prototype's "purple glass + yellow wax" defaults.
  */
 
 // ── Viewport gate ────────────────────────────────────────────────────────
@@ -45,150 +61,10 @@ import { createPortal } from "react-dom";
  * CSS gradient is used (cheaper on small screens, no room for blobs). Tune. */
 const LAMP_MIN_VIEWPORT = 1500;
 
-/** Themes that opt into the WebGL lamp. light-lava is intentionally excluded
- * for now — a light glass breaks the backlit-wax physical model; revisit later. */
-const LAMP_THEMES = new Set(["dark-lava"]);
-
-// ── Default palette (prototype "purple": her real lamp) ──────────────────
-const DEFAULT_GLASS: readonly [number, number, number] = [0.06, 0.02, 0.11];
-const DEFAULT_THIN: readonly [number, number, number] = [0.98, 0.73, 0.0];
-const DEFAULT_MID: readonly [number, number, number] = [1.0, 0.07, 0.0];
-const DEFAULT_ORANGE: readonly [number, number, number] = [1.0, 0.478, 0.0];
-const DEFAULT_THICK: readonly [number, number, number] = [0.94, 0.0, 0.19];
-
-// ── GLSL ─────────────────────────────────────────────────────────────────
-const VERTEX_SHADER = `attribute vec2 a_pos;
-varying vec2 v_uv;
-void main() {
-  v_uv = a_pos * 0.5 + 0.5;
-  gl_Position = vec4(a_pos, 0.0, 1.0);
-}`;
-
-const FRAGMENT_SHADER = `precision highp float;
-varying vec2 v_uv;
-uniform float u_time;
-uniform vec2  u_resolution;
-// Two safe horizontal gutters as viewport-x fractions in [0,1]:
-//   x = leftLo..leftHi  (between the sidebar and the chat column)
-//   z = rightLo..rightHi (between the chat column and the right edge)
-uniform vec4  u_gutters;
-uniform vec3  u_glass;
-uniform vec3  u_waxThin;
-uniform vec3  u_waxMid;
-uniform vec3  u_waxOrange;
-uniform vec3  u_waxThick;
-
-float hash(vec2 p) {
-  p = fract(p * vec2(123.34, 456.21));
-  p += dot(p, p + 45.32);
-  return fract(p.x * p.y);
-}
-
-// Fraction -> aspect-corrected uv-x (uv.x spans [-aspect, +aspect]).
-float fracToUv(float f, float aspect) {
-  return aspect * (2.0 * f - 1.0);
-}
-
-// 2D Gaussian Metaball Field — blobs confined to the two gutters.
-float getField(vec2 uv) {
-    float t = u_time * 0.4;
-    float aspect = u_resolution.x / u_resolution.y;
-
-    float leftLo  = fracToUv(u_gutters.x, aspect);
-    float leftHi  = fracToUv(u_gutters.y, aspect);
-    float rightLo = fracToUv(u_gutters.z, aspect);
-    float rightHi = fracToUv(u_gutters.w, aspect);
-    float leftW = leftHi - leftLo;
-    float rightW = rightHi - rightLo;
-
-    float field = 0.0;
-
-    // 8 moving metaballs. Per-blob base size varies (mix of small and big);
-    // PHYSICS: small blobs move faster than big ones (v ~ 1/r), like real wax.
-    for (int i = 0; i < 8; i++) {
-        float fi = float(i);
-        float ph  = fi * 2.399963;
-
-        float baseR = 0.10 + 0.08 * fract(sin(fi * 43.13) * 78.77);
-        float r = baseR + 0.015 * sin(t * 0.5 + ph);
-        float v  = 0.40 * (0.10 / baseR);   // small -> fast, big -> slow
-        float tt = t * v + ph;
-
-        // Pick a gutter per blob; if the chosen one is too thin, collapse to
-        // the other so no blob is stranded off-screen.
-        bool goRight = fract(sin(fi * 7.7) * 43.3) > 0.5;
-        if (leftW < 0.05 && !goRight) goRight = true;
-        if (rightW < 0.05 && goRight) goRight = false;
-        float lo = goRight ? rightLo : leftLo;
-        float hi = goRight ? rightHi : leftHi;
-        float within = fract(sin(fi * 12.99) * 78.33);   // position inside [lo,hi]
-        float x = mix(lo, hi, within) + 0.10 * sin(tt * 0.8 + ph * 1.3);
-        float y = 0.55 * sin(tt + ph);                   // calm vertical rise/fall
-
-        float d = dot(uv - vec2(x, y), uv - vec2(x, y));
-        field += 0.35 * exp(-d / (r * r * 1.2));
-    }
-
-    return field;
-}
-
-void main() {
-    vec2 uv = (v_uv - 0.5) * 2.0;
-    float aspect = u_resolution.x / u_resolution.y;
-    uv.x *= aspect;
-
-    float field = getField(uv);
-
-    // Gutter confinement for the WAX. The glass medium still fills the whole
-    // screen; only crawling wax is clipped to the gutters so the chat column
-    // stays clean. Soft edges straddle the column boundary (~within the
-    // column's internal padding, so text is never touched).
-    float leftHi  = fracToUv(u_gutters.y, aspect);
-    float rightLo = fracToUv(u_gutters.z, aspect);
-    float soft = 0.04 * aspect;
-    float gLeft  = 1.0 - smoothstep(leftHi - soft, leftHi + soft, uv.x);
-    float gRight = smoothstep(rightLo - soft, rightLo + soft, uv.x);
-    float gutter = max(gLeft, gRight);
-
-    // Background — tinted glass, brighter near the bottom bulb.
-    float bgLight = exp(-max(0.0, uv.y + 1.0) * 1.5);
-    vec3 col = u_glass * (0.4 + bgLight * 1.5);
-
-    float waxMask = smoothstep(0.2, 0.22, field) * gutter;
-    if (waxMask > 0.001) {
-        // Fake 3D normal from the field gradient (finite differences).
-        vec2 e = vec2(0.02, 0.0);
-        float dx = getField(uv + e.xy) - getField(uv - e.xy);
-        float dy = getField(uv + e.yx) - getField(uv - e.yx);
-        vec3 n = normalize(vec3(-dx * 15.0, -dy * 15.0, 1.0));
-
-        vec3 lightDir = normalize(vec3(0.0, -1.0, 0.2));
-        float wrap = dot(lightDir, n) * 0.5 + 0.5;
-        float sss = smoothstep(0.0, 0.9, wrap);
-        // 4-stop wax ramp: dense core (red) -> mid -> orange -> bright rim (yellow).
-        vec3 wax = mix(u_waxThick, u_waxMid, smoothstep(0.0, 0.33, sss));
-        wax = mix(wax, u_waxOrange, smoothstep(0.33, 0.66, sss));
-        wax = mix(wax, u_waxThin, smoothstep(0.66, 1.0, sss));
-
-        float thickness = smoothstep(0.2, 0.6, field);
-        wax = mix(wax, u_waxThick, thickness * 0.6);
-
-        float distToBulb = length(vec2(0.0, -1.8) - uv);
-        float atten = 1.0 / (1.0 + 0.3 * distToBulb * distToBulb);
-        wax *= atten * 1.8;
-
-        float rim = 1.0 - max(n.z, 0.0);
-        rim = smoothstep(0.5, 1.0, rim);
-        wax += u_waxThin * rim * 0.4 * atten;
-
-        col = mix(col, wax, waxMask);
-    }
-
-    // Dither to kill banding.
-    col += (hash(gl_FragCoord.xy) - 0.5) / 255.0;
-
-    gl_FragColor = vec4(col, 1.0);
-}`;
+/** Themes that opt into the WebGL lamp. Each theme supplies its own
+ * --lamp-* palette tokens in its theme file; absent tokens fall back to
+ * the prototype's "purple glass + yellow wax" defaults. */
+const LAMP_THEMES = new Set(["dark-lava", "light-lava"]);
 
 // ── WebGL availability probe (memoised) ──────────────────────────────────
 let _hasWebGL: boolean | null = null;
@@ -202,27 +78,6 @@ function webglAvailable(): boolean {
     _hasWebGL = false;
   }
   return _hasWebGL;
-}
-
-// ── Palette helpers ──────────────────────────────────────────────────────
-function hexToRgb01(hex: string, fallback: readonly [number, number, number]): [number, number, number] {
-  const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
-  if (!m) return [fallback[0], fallback[1], fallback[2]];
-  const n = parseInt(m[1], 16);
-  return [((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255];
-}
-
-function readPalette() {
-  const cs = getComputedStyle(document.documentElement);
-  const pick = (varName: string, fb: readonly [number, number, number]): [number, number, number] =>
-    hexToRgb01(cs.getPropertyValue(varName), fb);
-  return {
-    glass: pick("--lamp-glass", DEFAULT_GLASS),
-    thin: pick("--lamp-wax-thin", DEFAULT_THIN),
-    mid: pick("--lamp-wax-mid", DEFAULT_MID),
-    orange: pick("--lamp-wax-orange", DEFAULT_ORANGE),
-    thick: pick("--lamp-wax-thick", DEFAULT_THICK),
-  };
 }
 
 const clamp01 = (x: number): number => (x < 0 ? 0 : x > 1 ? 1 : x);
@@ -260,11 +115,17 @@ export function useLavaBackgroundActive(theme: string | undefined, enabled: bool
 export function LavaBackground({
   active,
   messageWidth,
+  scopeEl,
 }: {
   active: boolean;
   /** Current chat-column width setting — when it changes the gutter geometry is
-   * recomputed (the column max-width derives from --mw, which this selects). */
-  messageWidth: string;
+   * recomputed (the column max-width derives from --mw, which this selects).
+   * Unused in scoped mode. */
+  messageWidth?: string;
+  /** Scoped mount target (Theme Tuner preview). When set, the canvas portals
+   * into this element (absolute, full-size), wax paints full-bleed, and the
+   * `<html>` class / viewport gate are bypassed. */
+  scopeEl?: HTMLElement | null;
 }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   // Flips false if the canvas's own WebGL context can't be created (paranoid
@@ -274,11 +135,15 @@ export function LavaBackground({
   // Latest gutter-update fn from the init effect; invoked when messageWidth
   // changes (without re-initialising WebGL).
   const updateGuttersRef = useRef<() => void>(() => {});
+  // Latest palette-upload fn from the init effect; invoked when <html>'s theme
+  // class changes while the canvas stays mounted (see MutationObserver below).
+  const updatePaletteRef = useRef<() => void>(() => {});
 
   useEffect(() => {
     if (!active) return;
     const canvas = canvasRef.current;
     if (!canvas) return;
+    const scoped = !!scopeEl;
 
     const gl = (canvas.getContext("webgl", { antialias: false, alpha: false, depth: false, stencil: false })
       || canvas.getContext("experimental-webgl")) as WebGLRenderingContext | null;
@@ -333,23 +198,73 @@ export function LavaBackground({
     const uRes = gl.getUniformLocation(prog, "u_resolution");
     const uGutters = gl.getUniformLocation(prog, "u_gutters");
     const uGlass = gl.getUniformLocation(prog, "u_glass");
-    const uThin = gl.getUniformLocation(prog, "u_waxThin");
-    const uMid = gl.getUniformLocation(prog, "u_waxMid");
-    const uOrange = gl.getUniformLocation(prog, "u_waxOrange");
-    const uThick = gl.getUniformLocation(prog, "u_waxThick");
+    const uWaxColors = gl.getUniformLocation(prog, "u_waxColors[0]");
+    const uWaxColorCount = gl.getUniformLocation(prog, "u_waxColorCount");
+    const uBallCount = gl.getUniformLocation(prog, "u_ballCount");
+    const uCustomBalls = gl.getUniformLocation(prog, "u_customBalls");
+    const uBallSizes = gl.getUniformLocation(prog, "u_ballSizes[0]");
+    const uBallSpeeds = gl.getUniformLocation(prog, "u_ballSpeeds[0]");
+    const uLight = gl.getUniformLocation(prog, "u_light");
+    const uTint = gl.getUniformLocation(prog, "u_tint");
+    const uEdge = gl.getUniformLocation(prog, "u_edge");
+    const uCore = gl.getUniformLocation(prog, "u_core");
+    const uRamp = gl.getUniformLocation(prog, "u_ramp");
+    const uSpeed = gl.getUniformLocation(prog, "u_speed");
+    const uBulb = gl.getUniformLocation(prog, "u_bulb");
+    const uFalloff = gl.getUniformLocation(prog, "u_falloff");
 
-    const pal = readPalette();
-    if (uGlass) gl.uniform3fv(uGlass, pal.glass);
-    if (uThin) gl.uniform3fv(uThin, pal.thin);
-    if (uMid) gl.uniform3fv(uMid, pal.mid);
-    if (uOrange) gl.uniform3fv(uOrange, pal.orange);
-    if (uThick) gl.uniform3fv(uThick, pal.thick);
+    // Upload the lamp palette + tunable scalars from theme tokens. Re-run when
+    // the theme class on <html> changes (a theme switch while `active` stays
+    // true — the gate does not flip, so this init effect does not otherwise
+    // re-run, and the uniform colours would stay from the previous theme), and
+    // — in scoped (tuner) mode — when inline --lamp-* styles change too. Wired
+    // to a MutationObserver below, independent of React effect ordering.
+    function updatePalette() {
+      const p = readLampPalette();
+      const lastWax = p.waxColors[p.waxColors.length - 1] ?? [1, 1, 1];
+      const waxData = new Float32Array(MAX_LAMP_WAX_COLORS * 3);
+      for (let i = 0; i < MAX_LAMP_WAX_COLORS; i++) {
+        const color = p.waxColors[i] ?? lastWax;
+        waxData.set(color, i * 3);
+      }
+      const lastBall = p.balls[p.balls.length - 1] ?? { size: 0.1, speed: 1 };
+      const ballSizes = new Float32Array(MAX_LAMP_BALLS);
+      const ballSpeeds = new Float32Array(MAX_LAMP_BALLS);
+      for (let i = 0; i < MAX_LAMP_BALLS; i++) {
+        const ball = p.balls[i] ?? lastBall;
+        ballSizes[i] = ball.size;
+        ballSpeeds[i] = ball.speed;
+      }
+
+      if (uGlass) gl!.uniform3fv(uGlass, p.glass);
+      if (uWaxColors) gl!.uniform3fv(uWaxColors, waxData);
+      if (uWaxColorCount) gl!.uniform1f(uWaxColorCount, p.waxColors.length);
+      if (uBallCount) gl!.uniform1f(uBallCount, p.balls.length);
+      if (uCustomBalls) gl!.uniform1f(uCustomBalls, p.customBalls);
+      if (uBallSizes) gl!.uniform1fv(uBallSizes, ballSizes);
+      if (uBallSpeeds) gl!.uniform1fv(uBallSpeeds, ballSpeeds);
+      if (uLight) gl!.uniform1f(uLight, p.light);
+      if (uTint) gl!.uniform1f(uTint, p.tint);
+      if (uEdge) gl!.uniform1f(uEdge, p.edge);
+      if (uCore) gl!.uniform1f(uCore, p.core);
+      if (uRamp) gl!.uniform1f(uRamp, p.ramp);
+      if (uSpeed) gl!.uniform1f(uSpeed, p.speed);
+      if (uBulb) gl!.uniform1f(uBulb, p.bulb);
+      if (uFalloff) gl!.uniform1f(uFalloff, p.falloff);
+    }
+    updatePaletteRef.current = updatePalette;
+    updatePalette();
 
     // Measure the chat column and upload the two safe gutters (viewport-x
-    // fractions). The column is centred in <main> with max-width --mw + 160px,
-    // so measuring <main>'s rect tracks sidebar collapse, rail mode, and
-    // viewport resize; --mw tracks the user's message-width setting.
+    // fractions). Scoped mode paints full-bleed (no <main>, no confinement) so
+    // the tuner shows the whole lamp. Production measures <main> (centred with
+    // max-width --mw + 160px) so the gutters track sidebar collapse, rail mode,
+    // viewport resize, and the user's message-width setting.
     function updateGutters() {
+      if (scoped) {
+        if (uGutters) gl!.uniform4f(uGutters, 0, 1, 1, 1);
+        return;
+      }
       const vw = window.innerWidth || 1;
       let leftLo = 0;
       let leftHi = 0;
@@ -376,8 +291,10 @@ export function LavaBackground({
 
     function resize() {
       const dpr = Math.min(window.devicePixelRatio || 1, 2);
-      const w = Math.max(1, Math.floor(window.innerWidth * dpr));
-      const h = Math.max(1, Math.floor(window.innerHeight * dpr));
+      const cw = scopeEl ? scopeEl.clientWidth : window.innerWidth;
+      const ch = scopeEl ? scopeEl.clientHeight : window.innerHeight;
+      const w = Math.max(1, Math.floor(cw * dpr));
+      const h = Math.max(1, Math.floor(ch * dpr));
       if (canvas!.width !== w || canvas!.height !== h) {
         canvas!.width = w;
         canvas!.height = h;
@@ -388,16 +305,39 @@ export function LavaBackground({
     resize();
     window.addEventListener("resize", resize);
 
-    // Sidebar collapse / rail toggle / layout shifts resize <main> without a
-    // window resize — observe it and refresh the gutters.
-    const mainEl = document.querySelector("main");
+    // Sidebar collapse / rail toggle (production) or scopeEl size changes
+    // (tuner) happen without a window resize — observe the relevant element.
+    const observedEl = scopeEl ?? document.querySelector("main");
     let ro: ResizeObserver | null = null;
-    if (mainEl && typeof ResizeObserver !== "undefined") {
-      ro = new ResizeObserver(() => updateGutters());
-      ro.observe(mainEl);
+    if (observedEl && typeof ResizeObserver !== "undefined") {
+      ro = new ResizeObserver(() => resize());
+      ro.observe(observedEl);
     }
 
-    document.documentElement.classList.add("lava-webgl-active");
+    // React to theme/token changes on <html>:
+    //  - `class` (both modes): applyThemeClass swaps theme classes here on a
+    //    theme switch while `active` stays true — re-upload so blob/glass
+    //    colours match the now-active theme.
+    //  - `style` (scoped only): the Theme Tuner writes --lamp-* overrides as
+    //    inline styles here while tuning — re-upload so the preview is live.
+    // Throttled to one read per animation frame so a slider drag storm does
+    // not thrash getComputedStyle. (Also fires when this component toggles
+    // `lava-webgl-active` in production; harmless no-op.)
+    let paletteRaf = 0;
+    const schedulePalette = () => {
+      if (paletteRaf) return;
+      paletteRaf = requestAnimationFrame(() => {
+        paletteRaf = 0;
+        updatePaletteRef.current();
+      });
+    };
+    const themeObserver = new MutationObserver(schedulePalette);
+    themeObserver.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: scoped ? ["class", "style"] : ["class"],
+    });
+
+    if (!scoped) document.documentElement.classList.add("lava-webgl-active");
 
     let raf = 0;
     let tAccum = 0;
@@ -413,7 +353,7 @@ export function LavaBackground({
       if (!running) return;
       const dt = (now - last) / 1000;
       last = now;
-      tAccum += dt; // speed fixed at 1.0 (no keyboard control in-app)
+      tAccum += dt; // drift speed is driven by the u_speed uniform (no JS knob)
       frame(tAccum);
       raf = requestAnimationFrame(loop);
     }
@@ -434,7 +374,7 @@ export function LavaBackground({
       e.preventDefault();
       running = false;
       cancelAnimationFrame(raf);
-      document.documentElement.classList.remove("lava-webgl-active");
+      if (!scoped) document.documentElement.classList.remove("lava-webgl-active");
     };
     canvas.addEventListener("webglcontextlost", onContextLost);
 
@@ -443,19 +383,33 @@ export function LavaBackground({
 
     return () => {
       cancelAnimationFrame(raf);
+      cancelAnimationFrame(paletteRaf);
       running = false;
       window.removeEventListener("resize", resize);
       document.removeEventListener("visibilitychange", onVisibility);
       canvas.removeEventListener("webglcontextlost", onContextLost);
       ro?.disconnect();
-      document.documentElement.classList.remove("lava-webgl-active");
+      themeObserver.disconnect();
+      if (!scoped) document.documentElement.classList.remove("lava-webgl-active");
       updateGuttersRef.current = () => {};
+      updatePaletteRef.current = () => {};
+      // React StrictMode replays passive effects in development as
+      // setup → cleanup → setup while keeping the SAME canvas connected. A
+      // synchronous loseContext() here permanently kills that canvas before
+      // the real setup runs, so the Theme Tuner drops into contextFailed and
+      // removes its preview canvas. Defer the destructive release until after
+      // React has committed DOM removal; a replayed/updated effect keeps the
+      // canvas connected and must be allowed to initialise a fresh program.
       const lose = gl.getExtension("WEBGL_lose_context");
-      if (lose) lose.loseContext();
+      if (lose) {
+        setTimeout(() => {
+          if (!canvas.isConnected) lose.loseContext();
+        }, 0);
+      }
       if (buf) gl.deleteBuffer(buf);
       if (prog) gl.deleteProgram(prog);
     };
-  }, [active]);
+  }, [active, scopeEl]);
 
   // Recompute gutters when the user changes chat-column width (no WebGL re-init).
   useEffect(() => {
@@ -464,23 +418,22 @@ export function LavaBackground({
 
   if (!active || contextFailed) return null;
 
+  const target = scopeEl ?? document.body;
   return createPortal(
-    // z-index:0 sits the canvas above <body>'s own background and below #root
-    // (positioned z-index:1 — see styles.css) so app content shines over the
-    // lamp. Opaque (alpha:false) so it fully covers the static legacy gradient.
+    // Production: z-index:0 sits the canvas above <body>'s own background and
+    // below #root (positioned z-index:1 — see styles.css) so app content shines
+    // over the lamp; opaque (alpha:false) so it fully covers the static legacy
+    // gradient. Scoped: absolute, fills the host element; the host's content
+    // stacks above via its own z-index:1 (see ThemeTuner TT_CSS).
     <canvas
       ref={canvasRef}
       aria-hidden="true"
-      style={{
-        position: "fixed",
-        inset: "0",
-        width: "100vw",
-        height: "100vh",
-        zIndex: 0,
-        pointerEvents: "none",
-        display: "block",
-      }}
+      style={
+        scopeEl
+          ? { position: "absolute", inset: "0", width: "100%", height: "100%", zIndex: 0, pointerEvents: "none", display: "block" }
+          : { position: "fixed", inset: "0", width: "100vw", height: "100vh", zIndex: 0, pointerEvents: "none", display: "block" }
+      }
     />,
-    document.body,
+    target,
   );
 }

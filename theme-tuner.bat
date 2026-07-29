@@ -13,6 +13,15 @@ cd /d "%~dp0"
 echo Starting Vibe Tavern dev server (this takes a few seconds)...
 title Theme Tuner - dev server
 
+rem Free port 4173 if a stale tuner dev-server still holds it. Closing the
+rem dev-server window does NOT reliably kill bun's child server process on
+rem Windows (the close signal doesn't propagate to the detached Bun.serve
+rem process), so a previous run can orphan and keep the port. Kill it here so
+rem every launch is self-healing.
+for /f "tokens=5" %%P in ('netstat -ano ^| findstr ":4173.*LISTENING"') do (
+  taskkill /PID %%P /F >nul 2>&1
+)
+
 rem Launch dev:web in its own window so it keeps running after this script exits.
 start "Theme Tuner - dev server" cmd /k "bun run dev:web"
 

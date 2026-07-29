@@ -75,8 +75,8 @@ export function TweaksPanelBody({ settings, setSetting, onOpenMobileAccess }: Tw
         />
       </div>
 
-      {/* Lava blobs — only relevant on the dark-lava theme (the WebGL lamp). */}
-      {settings.theme === 'dark-lava' && (
+      {/* Lava blobs — relevant on lava themes (the WebGL lamp). */}
+      {(settings.theme === 'dark-lava' || settings.theme === 'light-lava') && (
         <div className="flex items-center justify-between gap-3 py-2">
           <span className="text-[calc(var(--ui-fs)-2px)] text-t2">{t("tweaks_lava_blobs")}</span>
           <Toggle checked={settings.lavaBlobs} onChange={(v) => setSetting('lavaBlobs', v)} />

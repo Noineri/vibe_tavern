@@ -379,6 +379,27 @@ export function upsertPageBgInCss(raw: string, newValue: string): string {
   return raw.replace(/(:root[\w.-]*\s*\{)/, `$1${inserted}`);
 }
 
+/** Insert tokens that are absent from the theme CSS (e.g. --lamp-tint and the
+ *  other lamp scalars the Theme Tuner exposes), right after the last existing
+ *  `--lamp-*` declaration — or after `--bg` if the theme has no lamp block.
+ *  Tokens already present are left to {@link applyOverridesToCss}. The caller
+ *  should pass only non-default values so the export stays clean. */
+export function upsertTokensInCss(raw: string, tokens: Array<{ name: string; value: string }>): string {
+  const missing = tokens.filter((t) => !new RegExp(`${escapeRe(t.name)}\\s*:`).test(raw));
+  if (missing.length === 0) return raw;
+  const block = missing.map((t) => `  ${t.name}: ${t.value};`).join("\n");
+  const lampDecls = raw.match(/--lamp-[\w-]+\s*:\s*[^;]+;[ \t]*(?:\/\*[\s\S]*?\*\/)?/g);
+  if (lampDecls && lampDecls.length > 0) {
+    const last = lampDecls[lampDecls.length - 1];
+    const idx = raw.lastIndexOf(last);
+    if (idx >= 0) return raw.slice(0, idx + last.length) + "\n" + block + raw.slice(idx + last.length);
+  }
+  if (/(--bg\s*:\s*[^;]+;)/.test(raw)) {
+    return raw.replace(/(--bg\s*:\s*[^;]+;)/, `$1\n${block}`);
+  }
+  return raw.replace(/(:root[\w.-]*\s*\{)/, `$1\n${block}`);
+}
+
 /** Parse an entire theme CSS source into an ordered list of tokens. */
 export function parseThemeCss(raw: string): ParsedToken[] {
   // Group 3 captures an inline /* comment */ that trails the declaration
