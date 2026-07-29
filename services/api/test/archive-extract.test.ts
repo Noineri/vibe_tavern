@@ -10,13 +10,22 @@
 import { chmod, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { createWriteStream } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { pipeline } from "node:stream/promises";
 import { createGzip } from "node:zlib";
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { zipSync } from "fflate";
 import { pack } from "tar-stream";
 import { extractArchive, resolveEntryPath } from "../src/server/archive-extract.js";
+
+/**
+ * POSIX permission bits have no Windows counterpart: `chmod` there only toggles
+ * the read-only attribute, and every extracted file reports mode 0o666. A test
+ * whose SUBJECT is a mode bit therefore pins nothing on Windows — it is skipped
+ * rather than weakened, and tests that merely happen to check a mode alongside
+ * something portable keep the portable half running everywhere.
+ */
+const IS_WINDOWS = process.platform === "win32";
 
 let root = "";
 let dest = "";
@@ -77,34 +86,42 @@ async function exists(rel: string): Promise<boolean> {
 }
 
 describe("resolveEntryPath", () => {
+	// The function returns a resolved absolute path, so the expectation has to be
+	// built the same way rather than spelled as a POSIX literal — on Windows
+	// `resolve("/tmp/x")` is `D:\tmp\x` and the separator is a backslash. What is
+	// being pinned is the NESTING an entry name maps to under the destination,
+	// which is what `join` expresses portably.
+	const BASE = "/tmp/x";
+	const inBase = (...parts: readonly string[]): string => join(resolve(BASE), ...parts);
+
 	it("accepts ordinary relative entries", () => {
-		expect(resolveEntryPath("/tmp/x", "web/index.html")).toBe("/tmp/x/web/index.html");
-		expect(resolveEntryPath("/tmp/x", "./vibe-tavern")).toBe("/tmp/x/vibe-tavern");
+		expect(resolveEntryPath(BASE, "web/index.html")).toBe(inBase("web", "index.html"));
+		expect(resolveEntryPath(BASE, "./vibe-tavern")).toBe(inBase("vibe-tavern"));
 	});
 
 	it("normalizes backslash separators into real nesting", () => {
-		expect(resolveEntryPath("/tmp/x", "web\\assets\\app.js")).toBe("/tmp/x/web/assets/app.js");
+		expect(resolveEntryPath(BASE, "web\\assets\\app.js")).toBe(inBase("web", "assets", "app.js"));
 	});
 
 	it("rejects parent traversal, including the backslash spelling", () => {
-		expect(resolveEntryPath("/tmp/x", "../escaped")).toBeNull();
-		expect(resolveEntryPath("/tmp/x", "web/../../escaped")).toBeNull();
-		expect(resolveEntryPath("/tmp/x", "..\\..\\escaped")).toBeNull();
+		expect(resolveEntryPath(BASE, "../escaped")).toBeNull();
+		expect(resolveEntryPath(BASE, "web/../../escaped")).toBeNull();
+		expect(resolveEntryPath(BASE, "..\\..\\escaped")).toBeNull();
 	});
 
 	it("rejects absolute paths", () => {
-		expect(resolveEntryPath("/tmp/x", "/etc/passwd")).toBeNull();
-		expect(resolveEntryPath("/tmp/x", "C:\\Windows\\System32\\evil.dll")).toBeNull();
-		expect(resolveEntryPath("/tmp/x", "\\\\server\\share\\evil")).toBeNull();
+		expect(resolveEntryPath(BASE, "/etc/passwd")).toBeNull();
+		expect(resolveEntryPath(BASE, "C:\\Windows\\System32\\evil.dll")).toBeNull();
+		expect(resolveEntryPath(BASE, "\\\\server\\share\\evil")).toBeNull();
 	});
 
 	it("rejects an empty name", () => {
-		expect(resolveEntryPath("/tmp/x", "")).toBeNull();
-		expect(resolveEntryPath("/tmp/x", "   ")).toBeNull();
+		expect(resolveEntryPath(BASE, "")).toBeNull();
+		expect(resolveEntryPath(BASE, "   ")).toBeNull();
 	});
 
 	it("does not treat a sibling directory with a shared prefix as inside", () => {
-		expect(resolveEntryPath("/tmp/x", "../x-evil/f")).toBeNull();
+		expect(resolveEntryPath(BASE, "../x-evil/f")).toBeNull();
 	});
 });
 
@@ -124,7 +141,7 @@ describe("extractArchive — .tar.gz", () => {
 		expect(await read("web/assets/app.js")).toBe("console.log(1)");
 	});
 
-	it("preserves the executable bit from the archive's mode, not from the filename", async () => {
+	it.skipIf(IS_WINDOWS)("preserves the executable bit from the archive's mode, not from the filename", async () => {
 		const archive = await makeTarGz("b.tar.gz", [
 			{ name: "vibe-tavern", content: "binary", mode: 0o755 },
 			{ name: "notes.txt", content: "text", mode: 0o644 },
@@ -136,7 +153,9 @@ describe("extractArchive — .tar.gz", () => {
 		expect(((await stat(join(dest, "notes.txt"))).mode & 0o777).toString(8)).toBe("644");
 	});
 
-	it("strips setuid/setgid bits rather than honoring them", async () => {
+	// setuid/setgid are a POSIX-only escalation vector, so this is where the pin
+	// belongs; Windows has no bit for the extractor to strip.
+	it.skipIf(IS_WINDOWS)("strips setuid/setgid bits rather than honoring them", async () => {
 		const archive = await makeTarGz("suid.tar.gz", [
 			{ name: "sneaky", content: "x", mode: 0o4755 },
 		]);
@@ -187,7 +206,11 @@ describe("extractArchive — .tar.gz", () => {
 
 		expect(await read("vibe-tavern")).toBe("#!/bin/sh\necho hi\n");
 		expect(await read("web/index.html")).toBe("<html/>");
-		expect(((await stat(join(dest, "vibe-tavern"))).mode & 0o777).toString(8)).toBe("755");
+		// Reading what the release workflow's tar produces is the portable half
+		// and runs everywhere; only the mode carried through it is POSIX-only.
+		if (!IS_WINDOWS) {
+			expect(((await stat(join(dest, "vibe-tavern"))).mode & 0o777).toString(8)).toBe("755");
+		}
 	});
 
 	it("handles an archive with many small files without dropping any", async () => {
@@ -304,7 +327,27 @@ describe("extractArchive — .zip", () => {
 		await writeFile(join(src, "vibe-tavern.exe"), "MZ");
 		await writeFile(join(src, "web", "index.html"), "<html/>");
 		const archive = join(root, "sys.zip");
-		await Bun.$`zip -q -r ${archive} .`.cwd(src).quiet();
+
+		// The point is to read a zip this process did NOT write, so the fixture
+		// has to come from whatever zipper the host actually has. `zip` is not
+		// installed on Windows runners; there the native tool is Compress-Archive
+		// — which is also the one that emits backslash separators, so this is the
+		// stronger fixture on that platform, not a substitute for a weaker one.
+		if (IS_WINDOWS) {
+			const proc = Bun.spawn([
+				"powershell",
+				"-NoProfile",
+				"-NonInteractive",
+				"-Command",
+				`Compress-Archive -Path '${join(src, "*")}' -DestinationPath '${archive}' -Force`,
+			], { stdout: "pipe", stderr: "pipe" });
+			const code = await proc.exited;
+			if (code !== 0) {
+				throw new Error(`Compress-Archive failed (${code}): ${await new Response(proc.stderr).text()}`);
+			}
+		} else {
+			await Bun.$`zip -q -r ${archive} .`.cwd(src).quiet();
+		}
 
 		await extractArchive(archive, dest);
 

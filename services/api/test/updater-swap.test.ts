@@ -18,6 +18,15 @@
  *     EACCES while every sibling entry swaps normally. readdir order is not
  *     guaranteed, so the target is whichever name the loop visits last.
  *
+ * That last mechanism is POSIX-only, and it fails OPEN rather than closed:
+ * Windows ignores the read-only attribute when renaming or deleting a
+ * directory, so the "sabotaged" rename simply succeeds and the test that
+ * expected a rejection sees a resolved promise. Those cases are skipped on
+ * Windows instead of being weakened, because a passing assertion there would
+ * mean the injection did nothing — not that rollback works. Windows rollback
+ * consequently has NO coverage; closing that needs a real injection seam in
+ * performSwap rather than another filesystem trick.
+ *
  * Everything runs against a real temp dir; nothing here touches a real install.
  */
 
@@ -32,6 +41,9 @@ import {
 	listBackupDirs,
 	performSwap,
 } from "../src/server/updater.js";
+
+/** Mode-bit failure injection is inert here — see the header. */
+const IS_WINDOWS = process.platform === "win32";
 
 let root = "";
 let installDir = "";
@@ -159,7 +171,7 @@ describe("performSwap — protected names", () => {
 });
 
 describe("performSwap — rollback", () => {
-	it("restores every already-completed move when a later move fails, and rethrows", async () => {
+	it.skipIf(IS_WINDOWS)("restores every already-completed move when a later move fails, and rethrows", async () => {
 		const names = ["alpha", "bravo", "charlie", "delta"];
 		for (const n of names) {
 			await write(installDir, `${n}/file`, `OLD ${n}`);
@@ -176,7 +188,7 @@ describe("performSwap — rollback", () => {
 		}
 	});
 
-	it("leaves the install untouched when the very first backup fails (nothing to roll back)", async () => {
+	it.skipIf(IS_WINDOWS)("leaves the install untouched when the very first backup fails (nothing to roll back)", async () => {
 		// This is the shape that downloadAndSwap currently mis-classifies as
 		// fatal: no rename ever landed, so the install is provably intact.
 		await write(installDir, "solo/file", "OLD solo");
@@ -206,7 +218,10 @@ describe("performSwap — backup isolation", () => {
 		expect(await read(installDir, "vibe-tavern")).toBe("NEW");
 	});
 
-	it("is unaffected by a leftover backup whose contents cannot be deleted", async () => {
+	// Passes vacuously on Windows — the chmod does not make the leftover
+	// undeletable there, so it would assert the plain happy path under a name
+	// that promises otherwise.
+	it.skipIf(IS_WINDOWS)("is unaffected by a leftover backup whose contents cannot be deleted", async () => {
 		const locked = join(installDir, ".old-1700000000001");
 		await mkdir(locked, { recursive: true });
 		await writeFile(join(locked, "vibe-tavern"), "LOCKED");
@@ -333,7 +348,7 @@ describe("cleanupOldInstall", () => {
 		expect(await exists(join(installDir, ".old"))).toBe(false);
 	});
 
-	it("keeps sweeping the other generations when one is locked", async () => {
+	it.skipIf(IS_WINDOWS)("keeps sweeping the other generations when one is locked", async () => {
 		const locked = join(installDir, ".old-1700000000000");
 		await mkdir(locked, { recursive: true });
 		await writeFile(join(locked, "vibe-tavern"), "LOCKED");
