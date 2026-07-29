@@ -7,6 +7,7 @@ import { useSnapshotStore } from "../../stores/snapshot-store.js";
 import { useChatStore } from "../../stores/index.js";
 import type { AppMessage } from "../../app-client.js";
 import { Icons } from "../shared/icons.js";
+import { AnimatedDisclosure } from "../shared/AnimatedDisclosure.js";
 import { useT } from "../../i18n/context.js";
 
 /**
@@ -399,11 +400,11 @@ function ToolActivityCard({ activity }: { activity: CoauthorToolActivity }) {
       {errored && (
         <div className="px-3 py-1.5 font-ui text-[11px] text-danger-text">{t("coauthor_tool_error")}</div>
       )}
-      {!streaming && !isRead && open && (
-        <div className="max-h-48 overflow-auto px-3 py-2 border-l-2 border-border/50 ml-2 mt-1">
+      <AnimatedDisclosure open={!streaming && !isRead && open}>
+        <div className="ml-2 mt-1 max-h-48 overflow-auto border-l-2 border-border/50 px-3 py-2">
           <OperationPreview op={parseOperation(activity.toolName, activity.args)} proposed={activity.proposed} />
         </div>
-      )}
+      </AnimatedDisclosure>
     </div>
   );
 }

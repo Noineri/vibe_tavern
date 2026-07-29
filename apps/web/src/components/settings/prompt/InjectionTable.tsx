@@ -31,6 +31,7 @@ import type { SummaryLoadState } from "./SummaryList.js";
 import { Checkbox } from "../../shared/Checkbox.js";
 import { CanvasCard } from "./rows/CanvasCard.js";
 import { CustomTooltip } from "../../shared/Tooltip.js";
+import { AnimatedDisclosure } from "../../shared/AnimatedDisclosure.js";
 
 // NOTE (CANVAS_SINGLE_SOURCE_PLAN Wave 4): injection rows are content-only
 // `CustomInjection` ({identifier, name, content, role}). ALL positional state
@@ -571,23 +572,24 @@ export function PromptOrderCanvas({
               </span>
             </button>
             
-            {accordionOpen && (
-              <div className="flex flex-col gap-1 p-2 border-t border-accent/20 bg-surface rounded-b-md">
-                <SortableZone id="depth-4" label={t("depth_zone_4plus")} depth={4} items={zonesToRender.depth4} activeDragKey={activeDragKey} />
+            <AnimatedDisclosure
+              open={accordionOpen}
+              className="flex flex-col gap-1 p-2 border-t border-accent/20 bg-surface rounded-b-md"
+            >
+              <SortableZone id="depth-4" label={t("depth_zone_4plus")} depth={4} items={zonesToRender.depth4} activeDragKey={activeDragKey} />
 
-                <div className="mx-2 h-px bg-border/60" />
+              <div className="mx-2 h-px bg-border/60" />
 
-                <SortableZone id="depth-3" label={t("depth_zone_3")} depth={3} items={zonesToRender.depth3} activeDragKey={activeDragKey} />
+              <SortableZone id="depth-3" label={t("depth_zone_3")} depth={3} items={zonesToRender.depth3} activeDragKey={activeDragKey} />
 
-                <div className="mx-2 h-px bg-border/60" />
+              <div className="mx-2 h-px bg-border/60" />
 
-                <SortableZone id="depth-2" label={t("depth_zone_2")} depth={2} items={zonesToRender.depth2} activeDragKey={activeDragKey} />
+              <SortableZone id="depth-2" label={t("depth_zone_2")} depth={2} items={zonesToRender.depth2} activeDragKey={activeDragKey} />
 
-                <div className="mx-2 h-px bg-border/60" />
+              <div className="mx-2 h-px bg-border/60" />
 
-                <SortableZone id="depth-1" label={t("depth_zone_1")} depth={1} items={zonesToRender.depth1} activeDragKey={activeDragKey} />
-              </div>
-            )}
+              <SortableZone id="depth-1" label={t("depth_zone_1")} depth={1} items={zonesToRender.depth1} activeDragKey={activeDragKey} />
+            </AnimatedDisclosure>
           </div>
 
           {/* ZONE 3: AFTER CHAT */}

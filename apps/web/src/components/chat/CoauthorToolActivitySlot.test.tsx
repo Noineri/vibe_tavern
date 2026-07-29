@@ -265,9 +265,16 @@ describe("ToolActivityCard — operation previews (CED-6)", () => {
 			/>,
 		);
 		fireEvent.click(getByText("sharpen"));
-		// The scoped search + replace content is shown.
-		expect(getByText("Bold and direct.")).toBeDefined();
+		// The scoped search + replace content is shown inside the original
+		// max-height scrolling preview. AnimatedDisclosure owns clipping on its
+		// outer motion wrapper; scrolling must remain on this inner content box.
+		const searchText = getByText("Bold and direct.");
+		expect(searchText).toBeDefined();
 		expect(getByText("Bold, direct, and a little cruel.")).toBeDefined();
+		const scrollBody = searchText.closest(".overflow-auto") as HTMLElement | null;
+		expect(scrollBody).toBeTruthy();
+		expect(scrollBody?.classList.contains("max-h-48")).toBe(true);
+		expect(scrollBody?.parentElement?.style.overflow).toBe("hidden");
 		// A section the edit did NOT touch must NOT leak → we are not printing the full profile.
 		expect(queryByText("A quiet bar.")).toBeNull();
 		expect(queryByText(/# EXAMPLES/)).toBeNull();

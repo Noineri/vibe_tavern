@@ -30,8 +30,9 @@ let groupPayloadForTrace: typeof import("./trace-payload-view.js").groupPayloadF
 let TracePayloadView: typeof import("./trace-payload-view.js").TracePayloadView;
 let render: typeof import("@testing-library/react").render;
 let fireEvent: typeof import("@testing-library/react").fireEvent;
+let waitFor: typeof import("@testing-library/react").waitFor;
 beforeAll(async () => {
-	({ render, fireEvent } = await import("@testing-library/react"));
+	({ render, fireEvent, waitFor } = await import("@testing-library/react"));
 	({ groupPayloadForTrace, TracePayloadView } = await import("./trace-payload-view.js"));
 });
 
@@ -173,7 +174,7 @@ describe("TracePayloadView (DOM)", () => {
 		expect(container.textContent).not.toContain("hi there");
 	});
 
-	it("an inject expands to reveal its injected text", () => {
+	it("an inject expands to reveal its injected text", async () => {
 		const { getByText, queryByText, container } = render(
 			<TracePayloadView trace={traceFixture() as never} searchQuery="" formatTokens={formatTokens} />,
 		);
@@ -184,10 +185,14 @@ describe("TracePayloadView (DOM)", () => {
 		fireEvent.click(getByText("Post-History Instructions"));
 		expect(container.textContent).toContain("NOTE_TEXT");
 
-		// Collapsing the inject hides the body again.
+		// Collapsing the inject hides the body again. The body lingers in the
+		// DOM for the duration of the exit animation (250ms) before the
+		// AnimatePresence finishes unmounting it — wait for that to complete.
+		// Under contention the animation can take longer than the 1s default
+		// waitFor timeout, so use a 5s window.
 		fireEvent.click(getByText("Post-History Instructions"));
-		expect(queryByText("NOTE_TEXT")).toBeNull();
-	});
+		await waitFor(() => expect(queryByText("NOTE_TEXT")).toBeNull(), { timeout: 5000 });
+	}, { timeout: 15000 });
 
 	it("a search query force-expands history, shows matching groups, and filters out non-matching injects", () => {
 		const { getByText, queryByText, container } = render(

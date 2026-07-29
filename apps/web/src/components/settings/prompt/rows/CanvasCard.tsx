@@ -36,6 +36,7 @@ import { NumberInput } from "../../../shared/NumberInput.js";
 import { AutoTextarea } from "../../../shared/auto-textarea.js";
 import { MobileExpandTextarea } from "../../../shared/MobileExpandTextarea.js";
 import { SegmentedControl } from "../../../shared/SegmentedControl.js";
+import { AnimatedDisclosure } from "../../../shared/AnimatedDisclosure.js";
 import { DragHandle } from "../drag-handle.js";
 import { roleOptions } from "../canvas-shared.js";
 import { SLOT_CATEGORY_BACKGROUND, type SlotCategory } from "../canvas-category.js";
@@ -267,8 +268,8 @@ export function CanvasCard({
           )}
         </div>
       </div>
-      {expandable && expanded && (
-        <div className="canvas-card-body border-t border-border2 px-3 pb-3 pt-2">
+      {expandable && (
+        <AnimatedDisclosure open={expanded} className="canvas-card-body border-t border-border2 px-3 pb-3 pt-2">
           {(showDepthInput || onRoleChange) && (
             <div className="mb-2 flex flex-wrap items-center gap-2">
               {showDepthInput && (
@@ -318,7 +319,7 @@ export function CanvasCard({
               />
             </MobileExpandTextarea>
           )}
-        </div>
+        </AnimatedDisclosure>
       )}
     </div>
   );

@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { useT } from "../../../i18n/context.js";
 import { cn } from "../../../lib/cn.js";
 import type { CanvasSummaryEntry } from "../../../lib/prompt-canvas-summary.js";
+import { AnimatedDisclosure } from "../../shared/AnimatedDisclosure.js";
 
 export type SummaryLoadState = "idle" | "loading" | "ready" | "error";
 
@@ -69,13 +70,14 @@ function SummaryRow({ entry }: { entry: CanvasSummaryEntry }) {
           <span className={cn("text-[10px] text-t4 transition-transform", open && "rotate-90")} aria-hidden="true">▶</span>
         </span>
       </button>
-      {open && (
-        <div className="border-t border-border2 px-2.5 py-2">
-          <p className="whitespace-pre-wrap break-words rounded bg-s2/60 px-2 py-1.5 font-mono text-[11px] leading-[1.55] text-t2">
-            {entry.content.trim() || t("cc_lore_empty_content")}
-          </p>
-        </div>
-      )}
+      <AnimatedDisclosure
+        open={open}
+        className="border-t border-border2 px-2.5 py-2"
+      >
+        <p className="whitespace-pre-wrap break-words rounded bg-s2/60 px-2 py-1.5 font-mono text-[11px] leading-[1.55] text-t2">
+          {entry.content.trim() || t("cc_lore_empty_content")}
+        </p>
+      </AnimatedDisclosure>
     </li>
   );
 }

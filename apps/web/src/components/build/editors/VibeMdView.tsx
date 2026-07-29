@@ -58,6 +58,7 @@ import { useT } from "../../../i18n/context.js";
 import { useIsMobile } from "../../../hooks/use-mobile.js";
 import { usePersistedBoolean } from "../../../hooks/use-persisted-boolean.js";
 import { Icons } from "../../shared/icons.js";
+import { AnimatedDisclosure } from "../../shared/AnimatedDisclosure.js";
 import { popoverMaxHeight } from "../../shared/popover-constants.js";
 import { SegmentedControl } from "../../shared/SegmentedControl.js";
 import { NumberInput } from "../../shared/NumberInput.js";
@@ -567,9 +568,9 @@ function Accordion({ title, storageKey, defaultOpen, children }: AccordionProps)
         <span>{title}</span>
         <Icons.Caret direction={isOpen ? "d" : "l"} className="h-5 w-5 text-t3" />
       </button>
-      <div className={cn("px-4", !isOpen && "hidden")}>
+      <AnimatedDisclosure open={isOpen} keepMounted className="px-4">
         <div className="py-4">{children}</div>
-      </div>
+      </AnimatedDisclosure>
     </div>
   );
 }

@@ -5,6 +5,7 @@ import type {
   CanvasLoreAnchorPosition,
   CanvasLoreEntrySummary,
 } from "../../../lib/prompt-canvas-lore.js";
+import { AnimatedDisclosure } from "../../shared/AnimatedDisclosure.js";
 
 export type LoreAnchorLoadState = "idle" | "loading" | "ready" | "error";
 
@@ -56,35 +57,36 @@ function LoreEntryRow({ entry }: { entry: CanvasLoreEntrySummary }) {
           )}
         </span>
       </button>
-      {open && hasDetail && (
-        <div className="flex flex-col gap-2 border-t border-border2 px-2.5 py-2">
-          <div className="canvas-lore-facts">
-            {entry.keys !== undefined && (
-              <Fact label={t("cc_lore_keys")} value={entry.keys.length ? entry.keys.join(", ") : "—"} />
-            )}
-            {entry.secondaryKeys !== undefined && (
-              <Fact label={t("cc_lore_secondary_keys")} value={entry.secondaryKeys.length ? entry.secondaryKeys.join(", ") : "—"} />
-            )}
-            {entry.logic !== undefined && (
-              <Fact label={t("cc_lore_logic")} value={entry.logic || "—"} />
-            )}
-            {entry.role !== undefined && (
-              <Fact label={t("role")} value={entry.role} />
-            )}
-            {entry.constant !== undefined && (
-              <Fact label={t("cc_lore_constant")} value={entry.constant ? t("cc_lore_constant_on") : t("cc_lore_constant_off")} />
-            )}
-            {entry.probability !== undefined && (
-              <Fact label={t("cc_lore_probability")} value={`${entry.probability}%`} />
-            )}
-          </div>
-          {entry.content !== undefined && (
-            <p className="whitespace-pre-wrap break-words rounded bg-s2/60 px-2 py-1.5 font-mono text-[11px] leading-[1.55] text-t2">
-              {entry.content.trim() || t("cc_lore_empty_content")}
-            </p>
+      <AnimatedDisclosure
+        open={open && hasDetail}
+        className="flex flex-col gap-2 border-t border-border2 px-2.5 py-2"
+      >
+        <div className="canvas-lore-facts">
+          {entry.keys !== undefined && (
+            <Fact label={t("cc_lore_keys")} value={entry.keys.length ? entry.keys.join(", ") : "—"} />
+          )}
+          {entry.secondaryKeys !== undefined && (
+            <Fact label={t("cc_lore_secondary_keys")} value={entry.secondaryKeys.length ? entry.secondaryKeys.join(", ") : "—"} />
+          )}
+          {entry.logic !== undefined && (
+            <Fact label={t("cc_lore_logic")} value={entry.logic || "—"} />
+          )}
+          {entry.role !== undefined && (
+            <Fact label={t("role")} value={entry.role} />
+          )}
+          {entry.constant !== undefined && (
+            <Fact label={t("cc_lore_constant")} value={entry.constant ? t("cc_lore_constant_on") : t("cc_lore_constant_off")} />
+          )}
+          {entry.probability !== undefined && (
+            <Fact label={t("cc_lore_probability")} value={`${entry.probability}%`} />
           )}
         </div>
-      )}
+        {entry.content !== undefined && (
+          <p className="whitespace-pre-wrap break-words rounded bg-s2/60 px-2 py-1.5 font-mono text-[11px] leading-[1.55] text-t2">
+            {entry.content.trim() || t("cc_lore_empty_content")}
+          </p>
+        )}
+      </AnimatedDisclosure>
     </li>
   );
 }

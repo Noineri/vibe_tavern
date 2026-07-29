@@ -1,6 +1,6 @@
 import { Icons } from "../icons.js";
 import { NumberInput } from "../NumberInput.js";
-import { cn } from "../../../lib/cn.js";
+import { AnimatedDisclosure } from "../AnimatedDisclosure.js";
 import { usePersistedBoolean } from "../../../hooks/use-persisted-boolean.js";
 import { useT } from "../../../i18n/context.js";
 
@@ -28,8 +28,7 @@ export interface AiGenParamsRowProps {
  * KEPT MOUNTED and toggled via a `hidden` class (NOT conditional unmount) —
  * slider/field state survives collapse and the existing label assertions in
  * `MessageAiEditorModal.test.tsx` keep passing. Open state persists globally
- * (both modals share it) via `usePersistedBoolean`; no height animation,
- * matching both existing accordions.
+ * (both modals share it) via `usePersistedBoolean`.
  *
  * AI_ASSISTANT_SHELL_REFACTOR_REPORT Step 2 + AI_ASSISTANT_MODAL_REDESIGN_REPORT
  * (landed as one component, one commit, per the redesign report's convergence).
@@ -55,7 +54,7 @@ export function AiGenParamsRow({
         <span>{t("ai_advanced_settings")}</span>
         <Icons.Caret direction={isOpen ? "d" : "l"} />
       </button>
-      <div className={cn("px-4", !isOpen && "hidden")}>
+      <AnimatedDisclosure open={isOpen} keepMounted className="px-4">
         <div className="space-y-3 py-4">
           {/* Temperature — hybrid: slider for nudging + typable field for exact values */}
           <div>
@@ -95,7 +94,7 @@ export function AiGenParamsRow({
             )}
           </div>
         </div>
-      </div>
+      </AnimatedDisclosure>
     </div>
   );
 }
