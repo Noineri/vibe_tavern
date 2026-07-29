@@ -263,6 +263,21 @@ describe("SegmentedControl — layout props", () => {
 		expect(group.className).toMatch(/gap-0(?!\.)/);
 	});
 
+	it("dense applies a shorter mobile min-height than compact (desktop sizing preserved)", () => {
+		const { container } = render(
+			<SegmentedControl value="a" options={opts} onChange={() => {}} dense />,
+		);
+		const item = container.querySelector('[role="radio"]')!;
+		// Shorter mobile touch height than compact (min-h-7 28px vs min-h-9 36px).
+		expect(item.className).toMatch(/min-h-7/);
+		expect(item.className).not.toMatch(/min-h-9/);
+		// Desktop sizing unchanged (sm:min-h-0 natural height, same px/py as compact).
+		expect(item.className).toMatch(/sm:min-h-0/);
+		// dense shares compact's gap-0.
+		const group = container.querySelector('[role="radiogroup"]')!;
+		expect(group.className).toMatch(/gap-0(?!\.)/);
+	});
+
 	it("wrap enables flex-wrap on the group", () => {
 		const { container } = render(
 			<SegmentedControl value="a" options={opts} onChange={() => {}} wrap />,

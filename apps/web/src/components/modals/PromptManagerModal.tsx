@@ -598,7 +598,7 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
         )}
         detailContent={
           <>
-            <div className={cn("mt-4 flex shrink-0 items-center justify-between gap-3", isMobile ? "mx-3" : "mx-5")}>
+            <div className={cn("mt-4 flex shrink-0 gap-3", isMobile ? "flex-col" : "mx-5 flex-row items-center justify-between")}>
               <div>
                 <div className="font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-t2">
                   {advancedMode ? t("preset_advanced_mode") : t("preset_simple_mode")}
@@ -636,7 +636,7 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
             </div>
 
             {advancedMode && (
-              <div className={cn("mt-3 rounded-md border border-border2 py-3", isMobile ? "mx-3 px-2.5" : "mx-5 px-4")}>
+              <div className={cn("mt-3 rounded-md border border-border2 py-3", isMobile ? "px-2" : "mx-5 px-4")}>
                 <PromptOrderCanvas
                   injections={draft.customInjections}
                   onChange={(injections) => { setDraft((d) => ({ ...d, customInjections: injections })); setDirty(true); setSaveState("idle"); }}

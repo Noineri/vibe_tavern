@@ -37,7 +37,7 @@ function LoreEntryRow({ entry }: { entry: CanvasLoreEntrySummary }) {
       <button
         type="button"
         className={cn(
-          "flex min-w-0 w-full items-baseline justify-between gap-3 px-2.5 py-2 text-left transition-colors",
+          "canvas-disclosure-btn flex min-w-0 w-full items-baseline justify-between gap-3 px-2.5 py-2 text-left transition-colors",
           hasDetail && "cursor-pointer hover:bg-s2",
         )}
         aria-expanded={open}
@@ -58,7 +58,7 @@ function LoreEntryRow({ entry }: { entry: CanvasLoreEntrySummary }) {
       </button>
       {open && hasDetail && (
         <div className="flex flex-col gap-2 border-t border-border2 px-2.5 py-2">
-          <div className="grid grid-cols-2 gap-x-3 gap-y-1.5">
+          <div className="canvas-lore-facts">
             {entry.keys !== undefined && (
               <Fact label={t("cc_lore_keys")} value={entry.keys.length ? entry.keys.join(", ") : "—"} />
             )}

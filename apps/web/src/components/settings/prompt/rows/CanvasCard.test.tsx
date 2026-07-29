@@ -45,13 +45,43 @@ function renderCard(node: React.ReactElement) {
 describe("CanvasCard — structural characterization", () => {
 	it("collapsed: renders a clean tinted header without a category icon or body editor", () => {
 		const { container, getByText } = renderCard(
-			<CanvasCard identifier="main" category="standard" label="System Prompt" value="You are X" role="system" badge="editable" />,
+			<CanvasCard identifier="main" category="standard" label="System Prompt" value="You are X" role="system" />,
 		);
 		expect(getByText("System Prompt")).toBeTruthy();
 		const card = container.querySelector('[data-canvas-identifier="main"]') as HTMLElement;
 		expect(card.classList.contains("canvas-card--standard")).toBe(true);
 		expect(card.querySelector("svg")).toBeNull();
 		expect(container.querySelector("textarea")).toBeNull();
+	});
+
+	it("groups one header DOM into responsive controls, title, meta, and actions regions", () => {
+		const { container } = renderCard(
+			<CanvasCard identifier="custom1" category="custom" label="Injection" value="body" role="user" onToggle={() => {}} onRemove={() => {}} />,
+		);
+		const card = container.querySelector('[data-canvas-identifier="custom1"]') as HTMLElement;
+		const header = card.querySelector(".canvas-card-header") as HTMLElement;
+		expect(header).toBeTruthy();
+		expect(header.querySelectorAll(".canvas-card-controls")).toHaveLength(1);
+		expect(header.querySelectorAll(".canvas-card-title")).toHaveLength(1);
+		expect(header.querySelectorAll(".canvas-card-meta")).toHaveLength(1);
+		expect(header.querySelectorAll(".canvas-card-actions")).toHaveLength(1);
+		expect(header.querySelector(".min-w-\\[120px\\]")).toBeNull();
+	});
+
+	it("readOnly renders a compact semantic lock affordance (with tooltip) instead of a text badge", () => {
+		// The generic production text badge became a semantic boolean + small lock
+		// glyph + tooltip. Same boundary (read-only affordance on rows whose
+		// content is sourced elsewhere), updated assertion shape.
+		const { container } = renderCard(
+			<CanvasCard identifier="chatSummary" category="summary" label="Summary" value="s" role="system" readOnly />,
+		);
+		const card = container.querySelector('[data-canvas-identifier="chatSummary"]') as HTMLElement;
+		const lock = card.querySelector('[aria-label="cc_read_only"]') as HTMLElement;
+		expect(lock).toBeTruthy();
+		expect(lock.getAttribute("role")).toBe("img");
+		expect(lock.querySelector("svg")).toBeTruthy();
+		// The legacy uppercase text badge no longer leaks into the header.
+		expect(card.textContent).not.toMatch(/read-only/i);
 	});
 
 	it("maps categories to the theme syntax-palette tint classes", () => {
@@ -124,7 +154,7 @@ describe("CanvasCard — structural characterization", () => {
 
 	it("nonExpandable marker row never opens a body (PromptOrderMarker parity)", () => {
 		const { container, getByText } = renderCard(
-			<CanvasCard identifier="worldInfoBefore" category="anchor" label="World Info Before" nonExpandable badge="read-only" />,
+			<CanvasCard identifier="worldInfoBefore" category="anchor" label="World Info Before" nonExpandable readOnly />,
 		);
 		expect(getByText("World Info Before")).toBeTruthy();
 		fireEvent.click(getByText("World Info Before"));

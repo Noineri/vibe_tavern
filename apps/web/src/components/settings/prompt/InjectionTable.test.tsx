@@ -487,6 +487,16 @@ describe("PromptOrderCanvas — characterization", () => {
     });
   });
 
+  it("places Add-injection after the before_chat cards and before Chat History", () => {
+    // The action moved out of the top toolbar to where add() inserts the new
+    // card (last in before_chat at order 999): between the before_chat zone and
+    // the Chat History header. The header (merge checkbox) and DnD semantics
+    // are unchanged — only the button's location moved.
+    renderCanvas();
+    const text = renderedBase.textContent!;
+    expectOrdered(text, ["system_prompt", "preset_injection_add", "prompt_slot_chat_history"]);
+  });
+
   it("removing a custom injection drops the injection and its canvas entry (1:1 invariant)", () => {
     const spies = makeSpies();
     renderCanvas({
@@ -570,8 +580,8 @@ describe("PromptOrderCanvas — characterization", () => {
     const card = container.querySelector<HTMLElement>('[data-canvas-identifier="chatSummary"]');
     expect(card).toBeTruthy();
     expect(card!.textContent).toContain("prompt_slot_chat_summary");
-    // Read-only badge.
-    expect(card!.textContent).toContain("cc_read_only");
+    // Semantic read-only lock affordance (lock glyph + tooltip), not a text badge.
+    expect(card!.querySelector('[aria-label="cc_read_only"]')).toBeTruthy();
     // Summary category — system role default.
     expect(card!.textContent).toContain("system");
   });

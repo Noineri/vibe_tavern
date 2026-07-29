@@ -29,7 +29,7 @@ export function DragHandle({ disabled }: { disabled?: boolean }) {
       ref={disabled ? undefined : ctx.setActivatorNodeRef}
       type="button"
       className={cn(
-        "flex h-5 w-5 shrink-0 select-none items-center justify-center rounded font-mono text-[13px] transition-colors sm:h-auto sm:w-5",
+        "flex h-9 w-9 shrink-0 select-none items-center justify-center rounded font-mono text-[13px] transition-colors sm:h-auto sm:w-5",
         disabled
           ? "opacity-30 cursor-not-allowed text-t4"
           : "cursor-grab touch-none text-t4 hover:bg-s2 hover:text-t2 active:cursor-grabbing"

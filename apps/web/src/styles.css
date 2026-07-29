@@ -256,6 +256,48 @@ html,body{height:100%;background:var(--page-bg, var(--bg));color:var(--t1);overf
 .canvas-card--chat{background-color:color-mix(in oklab,var(--surface) 90%,var(--syn-function) 10%)}
 .canvas-card--custom{background-color:color-mix(in oklab,var(--surface) 90%,var(--syn-property) 10%)}
 
+/* Prompt-canvas card header — one DOM, width-responsive via container query.
+   Desktop keeps the single [controls title meta actions] row; a narrow card
+   (≤24rem) reflows to two rows (title+actions over controls+meta) so role
+   badges, token counters and the caret no longer escape a ~260px phone card.
+   The card's own width — not the device label — drives the reflow
+   (MOBILE_PROMPT_CANVAS_UX_REPORT.md). */
+.canvas-card{container-type:inline-size}
+.canvas-card-header{
+  display:grid;
+  align-items:center;
+  gap:0.625rem;
+  padding:0.5rem 0.75rem;
+  grid-template-areas:"controls title meta actions";
+  grid-template-columns:auto minmax(0,1fr) auto auto;
+}
+.canvas-card-controls{grid-area:controls}
+.canvas-card-title{grid-area:title}
+.canvas-card-meta{grid-area:meta}
+.canvas-card-actions{grid-area:actions}
+
+/* Lore activation facts: two columns on a wide card, one column on a narrow
+   card (the card is the container, so this is width-driven too). */
+.canvas-lore-facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));column-gap:0.75rem;row-gap:0.375rem}
+
+/* Narrow card (≤24rem): two-row header, single-column lore facts, and
+   lore/summary disclosure metadata wraps below the title instead of forcing
+   the title to vanish or the row to overflow. Desktop is untouched. */
+@container (max-width:24rem){
+  .canvas-card-header{
+    grid-template-areas:
+      ". title actions"
+      "controls meta meta";
+    grid-template-columns:auto minmax(0,1fr) auto;
+    gap:0.25rem 0.5rem;
+  }
+  .canvas-card-role{order:1}
+  .canvas-card-slot{order:2}
+  .canvas-card-token{order:3}
+  .canvas-lore-facts{grid-template-columns:1fr}
+  .canvas-disclosure-btn{flex-wrap:wrap;row-gap:0.25rem}
+}
+
 .build-section-title{font-family:var(--font-body);font-size:22px;font-weight:500;color:var(--t1);margin-bottom:6px}
 .build-section-sub{font-size:13px;color:var(--t2);margin-bottom:28px;line-height:1.55}
 

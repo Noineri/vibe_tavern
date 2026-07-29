@@ -516,7 +516,7 @@ export function PromptOrderCanvas({
           <div className="font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-t2">{t("preset_prompt_order_canvas_title")}</div>
           <div className="mt-0.5 font-ui text-[11px] text-t4">{t("preset_prompt_order_canvas_hint")}</div>
         </div>
-        <div className="flex w-full flex-wrap items-center justify-between gap-2 sm:w-auto sm:shrink-0 sm:justify-end">
+        <div className="flex w-full flex-wrap items-center justify-end gap-2 sm:w-auto sm:shrink-0">
           <CustomTooltip content={t("merge_consecutive_roles_hint")}>
             <Checkbox
               checked={draft?.mergeConsecutiveRoles ?? false}
@@ -525,12 +525,6 @@ export function PromptOrderCanvas({
               label={<span className="font-ui text-[11px]">{t("merge_consecutive_roles")}</span>}
             />
           </CustomTooltip>
-          <button type="button"
-            className="flex shrink-0 cursor-pointer items-center gap-1 rounded border border-border bg-surface px-2.5 py-1 font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-all hover:border-accent hover:text-accent-t"
-            onClick={add}
-          >
-            + {t("preset_injection_add")}
-          </button>
         </div>
       </div>
 
@@ -547,24 +541,34 @@ export function PromptOrderCanvas({
           {/* ZONE 1: BEFORE CHAT */}
           <SortableZone id="zone-before_chat" label={t("prompt_zone_before_chat")} depth="before" items={zonesToRender.before_chat} activeDragKey={activeDragKey} />
 
+          {/* Add injection — placed where `add()` inserts the new card (last in
+              before_chat at order 999), immediately above Chat History, so the
+              action sits next to its result. before_chat zone, order 999, and
+              the 1:1 injection↔canvas-entry DnD invariant are all unchanged. */}
+          <button type="button"
+            className="flex min-h-10 w-full items-center justify-center gap-1 rounded-md border border-dashed border-border py-1.5 font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-all hover:border-accent hover:text-accent-t sm:min-h-0"
+            onClick={add}
+          >
+            + {t("preset_injection_add")}
+          </button>
+
           {/* ZONE 2: CHAT HISTORY ACCORDION */}
           <div className="rounded-md border border-accent/35 bg-accent/10">
             <button
               type="button"
-              className="relative flex w-full items-center justify-center px-3 py-2 font-ui text-[12px] font-medium text-accent-t hover:bg-accent/20 transition-colors rounded-t-md"
+              className="flex w-full items-center justify-between gap-2 px-3 py-2 font-ui text-[12px] font-medium text-accent-t hover:bg-accent/20 transition-colors rounded-t-md"
               onClick={() => setAccordionOpen(!accordionOpen)}
             >
-              <span>{t("prompt_slot_chat_history")}</span>
-              
-              <div className="absolute right-3 flex items-center gap-3">
+              <span className="min-w-0">{t("prompt_slot_chat_history")}</span>
 
+              <span className="flex shrink-0 items-center gap-2">
                 <span className="rounded bg-background/40 px-1.5 py-0.5 font-mono text-[10px] text-accent-t">
                   {zonesToRender.depth4.length + zonesToRender.depth3.length + zonesToRender.depth2.length + zonesToRender.depth1.length} {t("injection_items_label")}
                 </span>
-                <span className={cn("shrink-0 text-[11px] text-accent-t/70 transition-transform", accordionOpen && "rotate-90")}>
+                <span className={cn("shrink-0 text-[11px] text-accent-t/70 transition-transform", accordionOpen && "rotate-90")} aria-hidden="true">
                   ▶
                 </span>
-              </div>
+              </span>
             </button>
             
             {accordionOpen && (

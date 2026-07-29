@@ -28,6 +28,11 @@ interface SegmentedControlProps {
   disabled?: boolean;
   /** Render as a more compact variant for tight spaces */
   compact?: boolean;
+  /** Even shorter on mobile than `compact` (28px vs 36px touch height), with
+   *  identical desktop sizing. Narrowly scoped: intended only for in-card
+   *  controls like the canvas role selector, where `compact` is too tall on a
+   *  phone. Does not affect other callers (opt-in, defaults off). */
+  dense?: boolean;
   /** Stretch full width with equal segment sizing */
   fill?: boolean;
   /** Stretch full width only on mobile; desktop keeps natural inline sizing */
@@ -64,6 +69,7 @@ export function SegmentedControl({
   className,
   disabled,
   compact,
+  dense,
   fill,
   mobileFill,
   wrap,
@@ -80,7 +86,7 @@ export function SegmentedControl({
           "rounded-md border border-border bg-s3 p-0.5",
           fill ? "flex w-full" : mobileFill ? "flex w-full sm:inline-flex sm:w-auto" : "inline-flex",
           wrap && "flex-wrap",
-          compact ? "gap-0" : "gap-0.5",
+          (dense || compact) ? "gap-0" : "gap-0.5",
           disabled && "pointer-events-none opacity-40",
           className,
         )}
@@ -103,7 +109,7 @@ export function SegmentedControl({
                 // every property and causes unexpected color/padding transitions.
                 "cursor-pointer rounded-[5px] font-ui transition-[background-color,color,box-shadow,transform] duration-150 ease-out select-none active:scale-[0.96]",
                 opt.tooltip ? "w-full" : flexCls,
-                compact ? "min-h-9 px-2.5 py-1 text-[11px] sm:min-h-0" : "min-h-10 px-3 py-1.5 text-[13px] sm:min-h-0",
+                dense ? "min-h-7 px-2.5 py-1 text-[11px] sm:min-h-0" : compact ? "min-h-9 px-2.5 py-1 text-[11px] sm:min-h-0" : "min-h-10 px-3 py-1.5 text-[13px] sm:min-h-0",
                 "text-t2 hover:text-t1",
                 "data-[state=checked]:bg-s2 data-[state=checked]:text-accent data-[state=checked]:shadow-sm data-[state=checked]:font-medium",
                 opt.disabled && "cursor-not-allowed opacity-40",

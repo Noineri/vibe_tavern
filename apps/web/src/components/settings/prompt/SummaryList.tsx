@@ -54,7 +54,7 @@ function SummaryRow({ entry }: { entry: CanvasSummaryEntry }) {
     <li className="overflow-hidden rounded border border-border bg-surface">
       <button
         type="button"
-        className="flex min-w-0 w-full items-baseline justify-between gap-3 px-2.5 py-2 text-left cursor-pointer transition-colors hover:bg-s2"
+        className="canvas-disclosure-btn flex min-w-0 w-full items-baseline justify-between gap-3 px-2.5 py-2 text-left cursor-pointer transition-colors hover:bg-s2"
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
       >
