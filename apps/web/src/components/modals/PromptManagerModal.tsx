@@ -599,7 +599,7 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
         )}
         detailContent={
           <>
-            <div className={cn("mt-4 flex shrink-0 gap-3", isMobile ? "flex-col" : "mx-5 flex-row items-center justify-between")}>
+            <div className={cn("mt-4 flex shrink-0 gap-3", isMobile ? "flex-col px-2" : "mx-5 flex-row items-center justify-between")}>
               <div>
                 <div className="font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-t2">
                   {advancedMode ? t("preset_advanced_mode") : t("preset_simple_mode")}

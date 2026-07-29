@@ -281,28 +281,25 @@ html,body{height:100%;background:var(--page-bg, var(--bg));color:var(--t1);overf
    card (the card is the container, so this is width-driven too). */
 .canvas-lore-facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));column-gap:0.75rem;row-gap:0.375rem}
 
-/* Narrow card (≤24rem): two-row header, single-column lore facts, and
-   lore/summary disclosure metadata wraps below the title instead of forcing
-   the title to vanish or the row to overflow. Desktop is untouched. */
+/* Narrow card (≤24rem): controls keep the desktop drag→toggle order while
+   spanning the title/metadata content stack. Actions span the same rows on the
+   right. This makes the header one compact list row instead of two unrelated
+   horizontal bands. Lore/summary details reflow independently below it. */
 @container (max-width:24rem){
-  /* Metadata-bearing narrow card: title+actions fill the top row (title gets
-     the full width — no reserved controls column), then controls and metadata
-     share a single left-aligned bottom row so drag/toggle/role/slot/tokens sit
-     on one coherent axis instead of drifting on unrelated tracks. */
   .canvas-card-header{
     grid-template-areas:
-      "title title actions"
-      "controls meta meta";
+      "controls title actions"
+      "controls meta actions";
     grid-template-columns:auto minmax(0,1fr) auto;
-    gap:0.25rem 0.5rem;
+    gap:0.125rem 0.375rem;
+    padding:0.25rem 0.5rem;
   }
-  /* No-metadata narrow card (read-only anchors with no role/token/slot badge):
-     one compact row — controls, title, actions — so a second row is not
-     reserved for content that does not exist. */
+  .canvas-card-controls,.canvas-card-actions{align-self:center}
+  /* No-metadata anchors use the same geometry without reserving a second row. */
   .canvas-card-header--no-meta{
     grid-template-areas:"controls title actions";
-    grid-template-columns:auto minmax(0,1fr) auto;
   }
+  .canvas-card-header--no-meta .canvas-card-meta{display:none}
   .canvas-card-role{order:1}
   .canvas-card-slot{order:2}
   .canvas-card-token{order:3}

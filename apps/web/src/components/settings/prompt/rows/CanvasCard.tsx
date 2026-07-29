@@ -12,9 +12,9 @@
  * desktop keeps the single row, prompt ordering and slot semantics unchanged.
  *
  *   desktop:  [controls: drag·toggle] [title] [meta: tokens·role·slot] [actions: lock·remove·▶]
- *   narrow (with metadata):   title … actions          (title spans the full width; no wasted controls column)
- *                              controls … meta          (one coherent left-aligned row)
- *   narrow (no metadata):      controls … title … actions   (compact single row — driven by absence of value/role/slot, never by anchor name)
+ *   narrow (with metadata):   controls | title | actions
+ *                              controls | meta  | actions   (controls/actions center across the content stack)
+ *   narrow (no metadata):      controls | title | actions   (compact single row — driven by absence of value/role/slot, never by anchor name)
  *   body:  [depth-input?] [role SegmentedControl(dense)?] [expandedLeading?] [AutoTextarea | readonly]
  *
  * Variants the props express:
@@ -155,21 +155,27 @@ export function CanvasCard({
         className={cn("canvas-card-header min-w-0 select-none", !hasMeta && "canvas-card-header--no-meta", onClickHeader && "cursor-pointer")}
         onClick={onClickHeader}
       >
-        <div className="canvas-card-controls flex min-w-0 items-center gap-0.5 sm:gap-2.5">
+        <div className="canvas-card-controls flex min-w-0 items-center gap-0 sm:gap-2.5">
           {draggable && <DragHandle disabled={expanded} />}
           {onToggle && (
             <CustomTooltip content={enabled ? t("cc_enabled") : t("cc_disabled")}>
               <button
                 type="button"
                 className={cn(
-                  "flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded text-[13px] transition-colors sm:h-[18px] sm:w-[18px]",
+                  "flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded transition-colors sm:h-[18px] sm:w-[18px]",
                   enabled ? "text-accent hover:bg-accent/10" : "text-t4 hover:text-t2"
                 )}
                 onClick={(e) => { e.stopPropagation(); onToggle(); }}
                 aria-label={enabled ? t("cc_enabled") : t("cc_disabled")}
                 aria-pressed={enabled}
               >
-                {enabled ? "●" : "○"}
+                <span
+                  aria-hidden="true"
+                  className={cn(
+                    "canvas-card-toggle-glyph block h-3 w-3 rounded-full sm:h-2.5 sm:w-2.5",
+                    enabled ? "bg-current" : "border-2 border-current sm:border-[1.5px]",
+                  )}
+                />
               </button>
             </CustomTooltip>
           )}

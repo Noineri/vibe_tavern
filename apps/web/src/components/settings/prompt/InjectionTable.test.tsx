@@ -168,23 +168,25 @@ function expectOrdered(text: string, labels: string[]) {
   }
 }
 
-/** Click the ●/○ enable/disable toggle of the card whose visible label is `label`.
- *  Walks up from the label text to the row header that owns the dot button —
- *  robust to the label being nested inside a CustomTooltip trigger span. */
+/** Click the accessible enable/disable toggle owned by the card with `label`.
+ *  The control is located by semantic state rather than its visual glyph. */
 function clickDotToggle(label: string) {
   const labelEl = queries().getByText(label);
   let node: HTMLElement | null = labelEl;
   while (node) {
-    const dot = within(node)
+    const toggle = within(node)
       .queryAllByRole("button")
-      .find((b) => b.textContent === "●" || b.textContent === "○");
-    if (dot) {
-      fireEvent.click(dot);
+      .find((button) => {
+        const ariaLabel = button.getAttribute("aria-label");
+        return ariaLabel === "cc_enabled" || ariaLabel === "cc_disabled";
+      });
+    if (toggle) {
+      fireEvent.click(toggle);
       return;
     }
     node = node.parentElement;
   }
-  throw new Error(`no ●/○ toggle found walking up from label "${label}"`);
+  throw new Error(`no enable/disable toggle found walking up from label "${label}"`);
 }
 
 /** Click the trash delete button of a custom-injection row. The CanvasCard
@@ -209,6 +211,17 @@ function clickDelete(rowName: string) {
 // ── Tests ──────────────────────────────────────────────────────────────
 
 describe("PromptOrderCanvas — characterization", () => {
+  it("uses geometric drag and toggle indicators without font-glyph coupling", () => {
+    const { container } = renderCanvas();
+    const card = container.querySelector('[data-canvas-identifier="main"]') as HTMLElement;
+    const drag = within(card).getByRole("button", { name: "drag_prompt_item_aria" });
+    const toggle = within(card).getByRole("button", { name: "cc_enabled" });
+
+    expect(drag.querySelector("svg")).toBeTruthy();
+    expect(toggle.querySelector(".canvas-card-toggle-glyph")).toBeTruthy();
+    expect(toggle.textContent).toBe("");
+  });
+
   it("routes built-ins to before_chat/after_chat by default order, pins prefill, hides char fields without characterDraft", () => {
     const { container } = renderCanvas();
     const text = container.textContent!;
