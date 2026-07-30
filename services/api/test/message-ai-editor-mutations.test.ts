@@ -1,4 +1,4 @@
-import { afterEach, beforeAll, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeAll, beforeEach, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
@@ -18,6 +18,11 @@ import { SkillLibraryService } from "../src/domain/coauthor/skills/skill-library
 import { SessionRuntime } from "../src/runtime/session/session-runtime.js";
 import { createRuntimeStore } from "../src/runtime/session/session-runtime-store.js";
 import { createApp } from "../src/server/app-factory.js";
+
+// These are full HTTP/runtime/SQLite boundary tests, and every case provisions
+// a fresh application. Windows CI can exceed Bun's 5-second per-test default
+// under parallel runner load without the guarded mutation itself being stuck.
+setDefaultTimeout(30_000);
 
 type TestEnvironment = {
   readonly app: Awaited<ReturnType<typeof createApp>>;
