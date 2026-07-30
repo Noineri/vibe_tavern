@@ -11,6 +11,7 @@ class MobilePackagingTest {
     @Test
     fun `release APK bundles a cross-compiled ARM archive`() {
         val workflow = File(repoRoot, ".github/workflows/release.yml").readText()
+        val ciWorkflow = File(repoRoot, ".github/workflows/ci.yml").readText()
         val gradle = File(repoRoot, "mobile/android/app/build.gradle.kts").readText()
         val armBuilder = File(repoRoot, "scripts/build-android-arm64.ts").readText()
         val activity = File(
@@ -30,6 +31,8 @@ class MobilePackagingTest {
         assertTrue(workflow.contains("ANDROID_KEY_PASSWORD"))
         assertTrue(workflow.contains("apksigner"))
         assertTrue(workflow.contains("testDebugUnitTest assembleRelease"))
+        assertTrue(ciWorkflow.contains("testDebugUnitTest assembleDebug"))
+        assertFalse(ciWorkflow.contains("./gradlew assembleRelease"))
         assertTrue(workflow.contains("out/Vibe-Tavern-v\${VERSION}-android.apk"))
         assertTrue(workflow.contains("out/Vibe-Tavern-v\${{ env.VERSION }}-android.apk"))
         assertTrue(workflow.contains("unzip -p \"\$APK\" assets/vibe-tavern-android-arm64.tgz"))
