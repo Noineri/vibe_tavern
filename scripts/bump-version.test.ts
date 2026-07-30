@@ -1,7 +1,12 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { copyFile, mkdir, mkdtemp, realpath, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
+
+// Every case exercises the real process/filesystem boundary: it installs a
+// disposable workspace, creates two git repositories, and runs the release
+// script. Windows CI can legitimately exceed Bun's 5-second per-test default.
+setDefaultTimeout(30_000);
 
 const PACKAGE_FILES = [
 	"package.json",

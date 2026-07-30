@@ -200,7 +200,9 @@ describe("extractArchive — .tar.gz", () => {
 		await chmod(join(src, "vibe-tavern"), 0o755);
 		await writeFile(join(src, "web", "index.html"), "<html/>");
 		const archive = join(root, "sys.tar.gz");
-		await Bun.$`tar -czf ${archive} -C ${src} .`.quiet();
+		// Keep tar operands relative to its cwd: GNU tar treats a Windows drive
+		// letter in the archive argument (`C:\\...`) as remote-host syntax.
+		await Bun.$`tar -czf sys.tar.gz -C src .`.cwd(root).quiet();
 
 		await extractArchive(archive, dest);
 
