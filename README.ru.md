@@ -1,13 +1,3 @@
----
-type: reference
-status: draft
-tags: [readme, release, docs]
-created: 2026-07-14
-updated: 2026-07-14
----
-
-<!-- DRAFT: подготовлено для релиза после завершения Scene Tracker и Dice System; перед переносом в основной репозиторий удалить frontmatter и этот комментарий, переименовать файл в README.ru.md, вернуть ссылку на README.md, обновить скриншоты и проверить release artifacts. -->
-
 <div align="center">
 
 <img src="apps/web/public/logo-256.png" width="160" alt="Vibe Tavern" />
