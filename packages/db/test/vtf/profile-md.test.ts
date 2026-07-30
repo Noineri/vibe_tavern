@@ -371,3 +371,98 @@ describe("profile-md: Andrea-derived fixture (real V3 prose surface)", () => {
     expect(serializeProfileMd(parseProfileMd(md))).toBe(md);
   });
 });
+
+// ─── Storage identity (vt.storage_id) ─────────────────────────────────────
+
+describe("profile-md: storage identity (vt.storage_id)", () => {
+  it("parses vt.storage_id into parsed.storageId, NOT into unknownVt", () => {
+    const md = [
+      "---",
+      "name: X",
+      "vt:",
+      "  storage_id: char_abc_123",
+      "  mes_example_mode: always",
+      "  mes_example_depth: 4",
+      "---",
+      "",
+      "# PERSONALITY",
+      "desc",
+    ].join("\n");
+    const parsed = parseProfileMd(md);
+    expect(parsed.storageId).toBe("char_abc_123");
+    // It must NOT also leak into unknownVt (would cause duplicate emission).
+    expect(parsed.unknownVt).toEqual([]);
+  });
+
+  it("emits storage_id first in the vt: block when set", () => {
+    const md = serializeProfileMd({ ...minimalProfile(), storageId: "char_xyz_9" });
+    expect(md).toContain("  storage_id: char_xyz_9");
+    // storage_id precedes the example-config keys (identity before config).
+    const storageIdx = md.indexOf("storage_id:");
+    const modeIdx = md.indexOf("mes_example_mode:");
+    expect(storageIdx).toBeGreaterThan(-1);
+    expect(storageIdx).toBeLessThan(modeIdx);
+  });
+
+  it("omits storage_id entirely when not set (null/undefined/empty)", () => {
+    const md = serializeProfileMd(fullProfile());
+    expect(md).not.toContain("storage_id");
+    const mdNull = serializeProfileMd({ ...fullProfile(), storageId: null });
+    expect(mdNull).not.toContain("storage_id");
+    const mdEmpty = serializeProfileMd({ ...fullProfile(), storageId: "   " });
+    expect(mdEmpty).not.toContain("storage_id");
+  });
+
+  it("parses to null when storage_id is absent", () => {
+    const md = serializeProfileMd(fullProfile());
+    expect(parseProfileMd(md).storageId).toBeNull();
+  });
+
+  it("round-trips storage_id through parse → serialize losslessly", () => {
+    const md = serializeProfileMd({ ...fullProfile(), storageId: "char_rt_42" });
+    // MD → Form → MD is stable (storage_id survives because ParsedProfile
+    // carries it and serializeProfileMd reads input.storageId).
+    expect(serializeProfileMd(parseProfileMd(md))).toBe(md);
+  });
+
+  it("treats storage_id as a known key: coexists with unknown vt: keys without conflict", () => {
+    // A profile carrying both storage_id and an unknown vt key must split them:
+    // storage_id → parsed.storageId, the other → parsed.unknownVt. No duplication.
+    const md = [
+      "---",
+      "name: X",
+      "vt:",
+      "  storage_id: char_1",
+      "  mes_example_mode: always",
+      "  mes_example_depth: 4",
+      "  future_skill: 7",
+      "---",
+      "",
+      "# PERSONALITY",
+      "desc",
+    ].join("\n");
+    const parsed = parseProfileMd(md);
+    expect(parsed.storageId).toBe("char_1");
+    expect(parsed.unknownVt).toEqual([{ key: "future_skill", value: "7", block: false }]);
+  });
+
+  it("an explicit storageId on the serialize input overrides any parsed value", () => {
+    // The storage write path is authoritative: it passes the real local id,
+    // ignoring whatever storage_id a parsed/edited profile carried.
+    const parsed = parseProfileMd([
+      "---",
+      "name: X",
+      "vt:",
+      "  storage_id: char_IMPORT_SOURCE",
+      "  mes_example_mode: always",
+      "  mes_example_depth: 4",
+      "---",
+      "",
+      "# PERSONALITY",
+      "desc",
+    ].join("\n"));
+    const reSerialized = serializeProfileMd({ ...parsed, storageId: "char_LOCAL_99" });
+    expect(reSerialized).toContain("storage_id: char_LOCAL_99");
+    expect(reSerialized).not.toContain("char_IMPORT_SOURCE");
+  });
+});

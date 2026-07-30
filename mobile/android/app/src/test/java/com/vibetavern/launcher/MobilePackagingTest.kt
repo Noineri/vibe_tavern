@@ -118,7 +118,7 @@ class MobilePackagingTest {
         assertTrue(activity.contains("startLauncherDownload(release)"))
         assertTrue(activity.contains("apkUpdateManager.enqueue(release)"))
         assertTrue(starter.contains("proot-distro login \"\${DISTRO}\""))
-        assertTrue(starter.contains("RP_PLATFORM_DATA_DIR=\"\$HOME/.local/share/vibe-tavern\""))
+        assertTrue(starter.contains("VIBE_TAVERN_DATA_DIR=\"\$HOME/.local/share/vibe-tavern\""))
         assertTrue(installer.contains("cat > \"\$HOME/start-vibe-tavern.sh\""))
         assertTrue(installer.contains("exec ./vibe-tavern"))
     }

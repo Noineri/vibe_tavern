@@ -1,5 +1,5 @@
 import React from 'react';
-import { Globe, Brain, Crop, FileText, Flame, Images, Send, Sparkles, Star } from 'lucide-react';
+import { Globe, Brain, Crop, FileText, Flame, Grip, Images, Send, Sparkles, Star } from 'lucide-react';
 
 // Props forwarded so call sites passing `className` (e.g. "h-5 w-5 text-t3")
 // actually apply — the previous `() => <svg/>` no-arg shape silently dropped
@@ -20,6 +20,8 @@ export const Ic = {
   coffeeFilled:()=><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M6.67 1.33v1.33"/><path d="M9.33 1.33v1.33"/><path d="M4 1.33v1.33"/><path fill="currentColor" fillRule="evenodd" stroke="none" d="M10.67 5.33a0.67 0.67 0 0 1 0.67 0.67v5.33a2.67 2.67 0 0 1-2.67 2.67H4.67a2.67 2.67 0 0 1-2.67-2.67V6a0.67 0.67 0 0 1 0.67-0.67h9.33a2.67 2.67 0 1 1 0 5.33h-0.67ZM12.8 6a1.1 2 0 1 0 0 4a1.1 2 0 1 0 0-4"/></svg>,
   copy:()=><svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M11 5V3a1.5 1.5 0 0 0-1.5-1.5H3A1.5 1.5 0 0 0 1.5 3v6.5A1.5 1.5 0 0 0 3 11h2"/></svg>,
   edit:()=><svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M11.5 2.5l2 2L5 13l-2.5.5L3 11z"/></svg>,
+  lock:()=><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="7" width="10" height="7" rx="1.5"/><path d="M5.25 7V4.75a2.75 2.75 0 0 1 5.5 0V7"/></svg>,
+  grip: (props?: { className?: string }) => <Grip size={18} strokeWidth={2.25} {...props} />,
   branch:()=><svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="4" cy="4" r="2"/><circle cx="12" cy="4" r="2"/><circle cx="4" cy="12" r="2"/><path d="M4 6v4"/><path d="M12 6v2.5A1.5 1.5 0 0 1 10.5 10H4"/></svg>,
   regen:()=><svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M13.5 8A5.5 5.5 0 1 1 10 3H13.5"/><polyline points="10,3 13.5,3 13.5,6.5"/></svg>,
   caret:(d:string)=><svg width="9" height="9" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.9" style={{transform:d==='l'?'rotate(180deg)':d==='d'?'rotate(90deg)':d==='u'?'rotate(270deg)':undefined}}><polyline points="6 3 11 8 6 13"/></svg>,
@@ -99,6 +101,8 @@ export const Ic = {
   clipboard:()=><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="5" y="1.5" width="6" height="2.5" rx="0.5"/><path d="M10.5 2.5h2v12h-9v-12h2"/><path d="M5.5 8h5M5.5 11h3"/></svg>,
   // Checkmark in a circle — the Objective Tracker section icon (INS-2).
   checkCircle:()=><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="8" cy="8" r="6"/><polyline points="5 8 7 10 11 6"/></svg>,
+  // Dice / Fate Die (DICE-F6) — D20 hexagon outline with an inner triangle facet.
+  dice:()=><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M8 1.33 L13.67 4.67 L13.67 11.33 L8 14.67 L2.33 11.33 L2.33 4.67 Z"/><path d="M8 5 L11 10 L5 10 Z" strokeOpacity="0.45"/></svg>,
 };
 
 // Icon props actually used at call sites: `className` (any icon) and `direction`

@@ -21,6 +21,7 @@ import { Ic } from "../../shared/icons.js";
 import { BottomSheet } from "../../shared/BottomSheet.js";
 
 export function TagFilterSheet({
+  open,
   selectedTags,
   tagPool,
   filterLabel,
@@ -29,6 +30,7 @@ export function TagFilterSheet({
   onReset,
   onClose,
 }: {
+  open: boolean;
   selectedTags: string[];
   tagPool: readonly string[];
   filterLabel: string;
@@ -38,7 +40,7 @@ export function TagFilterSheet({
   onClose: () => void;
 }) {
   return (
-    <BottomSheet open={true} onClose={onClose}>
+    <BottomSheet open={open} onClose={onClose}>
       <div className="flex max-h-[65vh] flex-col">
         <div className="flex items-center justify-between px-5 pb-2 pt-1">
           <span className="font-ui text-[calc(var(--ui-fs)-1px)] font-semibold text-t1">{filterLabel}</span>

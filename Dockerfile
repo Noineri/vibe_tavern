@@ -18,7 +18,6 @@ RUN --mount=type=cache,target=/root/.bun/install/cache \
 
 # Source & build
 COPY . .
-RUN bun scripts/install-platform-optionals.ts
 RUN bun scripts/build.ts prod
 
 # ---- Stage 2: Production runtime ----
@@ -31,11 +30,11 @@ COPY --from=builder /app/out/apps/web ./out/apps/web
 
 RUN mkdir -p /app/data && chown -R bun:bun /app
 
-ENV RP_PLATFORM_HOST=0.0.0.0
-ENV RP_PLATFORM_PORT=8787
-ENV RP_PLATFORM_ROOT_DIR=/app
+ENV VIBE_TAVERN_HOST=0.0.0.0
+ENV VIBE_TAVERN_PORT=8787
+ENV VIBE_TAVERN_ROOT_DIR=/app
 ENV VIBE_TAVERN_DB_PATH=/app/data/vibe-tavern.db
-ENV RP_PLATFORM_OPEN_BROWSER=0
+ENV VIBE_TAVERN_OPEN_BROWSER=0
 ENV VIBE_TAVERN_EXTERNAL_HOST=
 ENV VIBE_TAVERN_DOCKER=1
 

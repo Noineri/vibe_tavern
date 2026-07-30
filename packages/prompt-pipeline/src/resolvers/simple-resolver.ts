@@ -36,6 +36,8 @@ function applyDefaultPosition(layer: PromptLayer, defaultOrder: number): PromptL
 
 export function createSimpleResolver(): PositionResolver {
   return {
+    canvasAuthoritative: false,
+
     // No canvas toggles for built-in slots in simple mode; presence of non-empty
     // content is checked at the call site. (chatHistory is always-enabled in
     // both modes, handled identically by the advanced resolver too.)
@@ -54,5 +56,8 @@ export function createSimpleResolver(): PositionResolver {
     // Canvas is not authoritative; the lore block falls through to default
     // world-info inference (worldInfoBefore/After default position).
     worldInfoEntry: () => undefined,
+
+    // No canvas in simple mode — built-in layers use their hardcoded defaults.
+    entryFor: () => undefined,
   };
 }

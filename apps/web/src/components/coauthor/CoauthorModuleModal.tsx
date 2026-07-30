@@ -7,6 +7,7 @@ import { Icons } from "../shared/icons.js";
 import { inputCls, monoCls, inputPad, lblCls } from "../build/fields/field-styles.js";
 import { useModalStore } from "../../stores/modal-store.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
+import { useCoauthorSkillStore } from "../../stores/coauthor-skill-store.js";
 import {
 	listCoauthorModulesAction,
 	setCoauthorModuleAction,
@@ -17,38 +18,21 @@ import {
 import { useT, type TFunc } from "../../i18n/context.js";
 import { toast } from "sonner";
 import { cn } from "../../lib/cn.js";
-import type { CoauthorModule, CoauthorModuleCreate, CoauthorToolSet } from "@vibe-tavern/api-contracts";
+import { type CoauthorModule, type CoauthorModuleCreate, type CoauthorToolSet, type SkillCatalogEntryDto, COAUTHOR_TOOL_KEYS, COAUTHOR_MAX_STEPS_MIN, COAUTHOR_MAX_STEPS_MAX, COAUTHOR_MAX_STEPS_DEFAULT } from "@vibe-tavern/api-contracts";
+
+// The toggleable tool list is derived from `COAUTHOR_TOOL_KEYS` (the wire
+// contract in api-contracts) so adding a tool to `coauthorToolSetSchema`
+// surfaces it in the editor + read-only view automatically — no parallel
+// hardcoded array to drift out of sync.
 
 /**
- * Tool options keyed by CoauthorToolSet field. Rendered as checkboxes in the
- * editor so the user can toggle which edits a module is allowed to propose.
- * Order is fixed for a stable layout. Mirrors the backend tool registry.
+ * The skill picker is CATALOG-DRIVEN (CTX-S7): it renders every entry of the
+ * merged skill catalog (`useCoauthorSkillStore`) plus any orphan bindings
+ * (skillIds the module already holds but that no longer exist in the catalog —
+ * e.g. a user skill that was deleted while still referenced). There is no
+ * hardcoded skill list anymore; built-in and user-imported skills are treated
+ * uniformly.
  */
-const TOOL_OPTIONS: Array<{ key: keyof CoauthorToolSet; label: string }> = [
-	{ key: "write_profile", label: "write_profile" },
-	{ key: "edit_personality", label: "edit_personality" },
-	{ key: "write_personality", label: "write_personality" },
-	{ key: "edit_scenario", label: "edit_scenario" },
-	{ key: "write_scenario", label: "write_scenario" },
-	{ key: "edit_examples", label: "edit_examples" },
-	{ key: "write_examples", label: "write_examples" },
-	{ key: "edit_greeting", label: "edit_greeting" },
-	{ key: "add_alt_greeting", label: "add_alt_greeting" },
-	{ key: "edit_alt_greeting", label: "edit_alt_greeting" },
-];
-
-/**
- * Skill IDs backed by `services/api/assets/coauthor/skills/<id>.md`. Each
- * toggle controls whether the module allows that skill's prompt overlay to be
- * autodetected and injected during assembly.
- */
-const SKILL_OPTIONS = [
-	"general-writing",
-	"profile-analysis",
-	"profile-overview",
-	"personality-deepen",
-	"dialogue-generation",
-] as const;
 
 const DEFAULT_MODULE_ID = "default";
 const EMPTY_DRAFT: ModuleDraft = {
@@ -58,7 +42,7 @@ const EMPTY_DRAFT: ModuleDraft = {
 	openingMessage: "",
 	skillIds: [],
 	toolSet: {},
-	maxSteps: 5,
+	maxSteps: COAUTHOR_MAX_STEPS_DEFAULT,
 };
 
 interface ModuleDraft {
@@ -127,6 +111,12 @@ export function CoauthorModuleModal() {
 	const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 	const [confirmDiscardOpen, setConfirmDiscardOpen] = useState(false);
 
+	// CTX-S7: catalog-driven skill picker. The merged catalog is shared with the
+	// skill manager modal; loading it here keeps the picker in sync after an
+	// import or delete in the other surface.
+	const skillEntries = useCoauthorSkillStore((s) => s.entries);
+	const loadSkills = useCoauthorSkillStore((s) => s.load);
+
 	const loadModules = async () => {
 		setIsLoading(true);
 		try {
@@ -141,7 +131,10 @@ export function CoauthorModuleModal() {
 	};
 
 	useEffect(() => {
-		if (isOpen) void loadModules();
+		if (isOpen) {
+			void loadModules();
+			void loadSkills();
+		}
 		// Reset editor state when the modal closes so reopening starts fresh.
 		if (!isOpen) {
 			setDetailMode("view");
@@ -184,6 +177,22 @@ export function CoauthorModuleModal() {
 		setDraft(moduleToDraft(module));
 		setSelectedId(module.id);
 		setDetailMode("edit");
+		openDetail?.();
+	};
+
+	// CTX-M3: Duplicate a built-in (read-only) module into an editable user copy.
+	// The draft is seeded from the module's RESOLVED fields — basePrompt is the
+	// inline text the API already materialized for seeds (a snapshot), plus
+	// openingMessage / skillIds / toolSet / maxSteps. Later seed changes never
+	// mutate the copy: it is persisted as a user module with its own text.
+	const handleDuplicate = (module: CoauthorModule, openDetail?: () => void) => {
+		if (dirty) {
+			setConfirmDiscardOpen(true);
+			return;
+		}
+		setDraft({ ...moduleToDraft(module), name: module.name + t("coauthor.module.duplicate_suffix") });
+		setDetailMode("create");
+		setSelectedId(null);
 		openDetail?.();
 	};
 
@@ -324,6 +333,7 @@ export function CoauthorModuleModal() {
 					isEditing ? (
 						<ModuleEditor
 							draft={draft}
+							skills={skillEntries}
 							t={t}
 							onUpdate={updateDraft}
 							onToggleSkill={toggleSkill}
@@ -335,6 +345,7 @@ export function CoauthorModuleModal() {
 							t={t}
 							isSelectedActive={isSelectedActive}
 							onEdit={() => handleEdit(selected)}
+							onDuplicate={() => handleDuplicate(selected)}
 							onDelete={() => setConfirmDeleteId(selected.id)}
 							closeDetail={closeDetail}
 						/>
@@ -507,12 +518,13 @@ interface ModuleViewProps {
 	t: TFunc;
 	isSelectedActive: boolean;
 	onEdit: () => void;
+	onDuplicate: () => void;
 	onDelete: () => void;
 	closeDetail?: () => void;
 }
 
-function ModuleView({ module, t, onEdit, onDelete }: ModuleViewProps) {
-	const enabledTools = TOOL_OPTIONS.filter(({ key }) => module.toolSet[key] === true);
+function ModuleView({ module, t, onEdit, onDuplicate, onDelete }: ModuleViewProps) {
+	const enabledTools = COAUTHOR_TOOL_KEYS.filter((key) => module.toolSet[key] === true);
 	return (
 		<div className="flex flex-col gap-5">
 			<div>
@@ -527,7 +539,19 @@ function ModuleView({ module, t, onEdit, onDelete }: ModuleViewProps) {
 				<p className="mt-1 font-ui text-[13px] leading-relaxed text-t2">{module.description}</p>
 			</div>
 
-			{!module.isBuiltIn && (
+			{module.isBuiltIn ? (
+				<div className="flex gap-2">
+					<button
+						type="button"
+						data-testid="module-view-duplicate-btn"
+						className="flex cursor-pointer items-center gap-1.5 rounded-md border border-border bg-transparent px-3 py-1.5 font-ui text-[12px] text-t2 transition-colors hover:text-t1"
+						onClick={onDuplicate}
+					>
+						<Icons.Copy className="h-3 w-3" />
+						{t("coauthor.module.duplicate")}
+					</button>
+				</div>
+			) : (
 				<div className="flex gap-2">
 					<button
 						type="button"
@@ -552,7 +576,7 @@ function ModuleView({ module, t, onEdit, onDelete }: ModuleViewProps) {
 
 			<dl className="flex flex-col gap-3">
 				<PreviewRow label={t("coauthor.module.base_prompt")}>
-					<pre className="max-h-32 overflow-auto whitespace-pre-wrap break-words rounded bg-s2 p-2 font-mono text-[11px] leading-relaxed text-t2">{module.basePrompt}</pre>
+					<pre className="whitespace-pre-wrap break-words rounded bg-s2 p-2 font-mono text-[11px] leading-relaxed text-t2">{module.basePrompt}</pre>
 				</PreviewRow>
 
 				{module.openingMessage && (
@@ -580,8 +604,8 @@ function ModuleView({ module, t, onEdit, onDelete }: ModuleViewProps) {
 				<PreviewRow label={t("coauthor.module.tools")}>
 					{enabledTools.length > 0 ? (
 						<div className="flex flex-wrap gap-1.5">
-							{enabledTools.map(({ key, label }) => (
-								<span key={key} className="rounded-full border border-border px-2 py-0.5 font-mono text-[11px] text-t2">{label}</span>
+							{enabledTools.map((key) => (
+								<span key={key} className="rounded-full border border-border px-2 py-0.5 font-mono text-[11px] text-t2">{key}</span>
 							))}
 						</div>
 					) : (
@@ -597,13 +621,16 @@ function ModuleView({ module, t, onEdit, onDelete }: ModuleViewProps) {
 
 interface ModuleEditorProps {
 	draft: ModuleDraft;
+	/** Merged skill catalog (built-in + user). Drives the skill toggles; any
+	 *  `draft.skillIds` not present here render as orphan (broken) bindings. */
+	skills: SkillCatalogEntryDto[];
 	t: TFunc;
 	onUpdate: <K extends keyof ModuleDraft>(key: K, value: ModuleDraft[K]) => void;
 	onToggleSkill: (skillId: string) => void;
 	onToggleTool: (key: keyof CoauthorToolSet) => void;
 }
 
-function ModuleEditor({ draft, t, onUpdate, onToggleSkill, onToggleTool }: ModuleEditorProps) {
+function ModuleEditor({ draft, skills, t, onUpdate, onToggleSkill, onToggleTool }: ModuleEditorProps) {
 	return (
 		<div className="flex flex-col gap-4" data-testid="module-editor">
 			<div className="flex flex-col gap-1">
@@ -656,30 +683,52 @@ function ModuleEditor({ draft, t, onUpdate, onToggleSkill, onToggleTool }: Modul
 				<p className="font-ui text-[10px] leading-relaxed text-t3">{t("coauthor.module.opening_message_hint")}</p>
 			</div>
 
-			<Field label={t("coauthor.module.skills")}>
-				<div className="flex flex-wrap gap-1.5">
-					{SKILL_OPTIONS.map((skillId) => {
-						const active = draft.skillIds.includes(skillId);
-						return (
-							<button
-								key={skillId}
-								type="button"
-								className={cn(
-									"cursor-pointer rounded-full border px-2.5 py-0.5 font-mono text-[11px] transition-colors",
-									active ? "border-accent bg-accent-dim text-accent-t" : "border-border text-t3 hover:text-t1",
-								)}
-								onClick={() => onToggleSkill(skillId)}
-							>
-								{skillId}
-							</button>
-						);
-					})}
-				</div>
+			<Field label={t("coauthor.module.skills")} hint={t("coauthor.module.skills_hint")}>
+				{skills.length === 0 && draft.skillIds.length === 0 ? (
+					<span className="font-ui text-[12px] text-t3">{t("coauthor.module.no_skills")}</span>
+				) : (
+					<div className="flex flex-wrap gap-1.5">
+						{skills.map((skill) => {
+							const active = draft.skillIds.includes(skill.id);
+							return (
+								<button
+									key={skill.id}
+									type="button"
+									title={skill.description}
+									className={cn(
+										"cursor-pointer rounded-full border px-2.5 py-0.5 font-mono text-[11px] transition-colors",
+										active ? "border-accent bg-accent-dim text-accent-t" : "border-border text-t3 hover:text-t1",
+									)}
+									onClick={() => onToggleSkill(skill.id)}
+								>
+									{skill.name}
+								</button>
+							);
+						})}
+						{/* Orphan bindings: skillIds the module holds that are no longer in the
+						 * catalog (e.g. a user skill deleted while still referenced). Rendered
+						 * distinctly so the user can see and unbind them — never silently kept. */}
+						{draft.skillIds
+							.filter((id) => !skills.some((s) => s.id === id))
+							.map((orphanId) => (
+								<button
+									key={`orphan:${orphanId}`}
+									type="button"
+									data-testid={`module-skill-orphan-${orphanId}`}
+									title={t("coauthor.module.skill_orphan_title")}
+									className="cursor-pointer rounded-full border border-dashed border-danger/50 px-2.5 py-0.5 font-mono text-[11px] text-danger-text line-through transition-colors hover:bg-danger-dim"
+									onClick={() => onToggleSkill(orphanId)}
+								>
+									{orphanId}
+								</button>
+							))}
+					</div>
+				)}
 			</Field>
 
 			<Field label={t("coauthor.module.tools")}>
 				<div className="flex flex-wrap gap-1.5">
-					{TOOL_OPTIONS.map(({ key, label }) => {
+					{COAUTHOR_TOOL_KEYS.map((key) => {
 						const active = draft.toolSet[key] === true;
 						return (
 							<button
@@ -691,7 +740,7 @@ function ModuleEditor({ draft, t, onUpdate, onToggleSkill, onToggleTool }: Modul
 								)}
 								onClick={() => onToggleTool(key)}
 							>
-								{label}
+								{key}
 							</button>
 						);
 					})}
@@ -701,11 +750,11 @@ function ModuleEditor({ draft, t, onUpdate, onToggleSkill, onToggleTool }: Modul
 			<Field label={t("coauthor.module.max_steps")} hint={t("coauthor.module.max_steps_hint")}>
 				<input
 					type="number"
-					min={1}
-					max={20}
+					min={COAUTHOR_MAX_STEPS_MIN}
+					max={COAUTHOR_MAX_STEPS_MAX}
 					className="w-20 rounded border border-border bg-bg px-2 py-1.5 font-mono text-[13px] text-t1 outline-none focus:border-accent"
 					value={draft.maxSteps}
-					onChange={(e) => onUpdate("maxSteps", Math.max(1, Math.min(20, Number(e.target.value) || 1)))}
+					onChange={(e) => onUpdate("maxSteps", Math.max(COAUTHOR_MAX_STEPS_MIN, Math.min(COAUTHOR_MAX_STEPS_MAX, Number(e.target.value) || COAUTHOR_MAX_STEPS_MIN)))}
 				/>
 			</Field>
 		</div>

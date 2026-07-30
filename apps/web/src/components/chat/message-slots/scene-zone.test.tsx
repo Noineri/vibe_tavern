@@ -13,40 +13,49 @@
  * and preserves cross-message isolation (a mutation for message A yields 0
  * commits for message B).
  *
- * Runner: vitest (apps/web — vi.mock is file-scoped, no cross-file leak). The
- * snapshot store + generation store are REAL (seeded via ingestSnapshot); the
- * Scene actions + i18n + mobile hook + Modal/BottomSheet chrome are mocked.
+ * Runner: bun:test + happy-dom. The snapshot store + generation store are REAL
+ * (seeded via ingestSnapshot); the Scene actions + i18n + mobile hook +
+ * Modal/BottomSheet chrome are mocked.
  */
-import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
+import { useDomEnv } from "../../../../test/dom-env.js";
 import { createElement, type ReactNode } from "react";
-import { render, fireEvent, cleanup } from "@testing-library/react";
+
+useDomEnv();
+const { fireEvent, render, waitFor } = await import("@testing-library/react");
 import { useSnapshotStore } from "../../../stores/snapshot-store.js";
 import { useSceneGenerationStore } from "../../../stores/scene-generation-store.js";
 import { useHeaderZoneExpansionStore } from "../../../stores/header-zone-expansion.js";
 import { useSceneRenderStore } from "../../../stores/scene-render-store.js";
 import { resolveMessageSlots, type MessageSlotContext } from "../../../lib/message-slot-registry.js";
-// Side-effect import: registers the scene descriptor at module load.
-import "./scene-zone.js";
-import { SceneZone } from "./scene-zone.js";
 import type { AppMessage, AppSnapshot } from "../../../app-client.js";
 import type { SceneTrackerRecord } from "@vibe-tavern/domain";
 
-const mocks = vi.hoisted(() => ({
-  generateSceneAction: vi.fn(),
-  editSceneAction: vi.fn(),
-  deleteSceneAction: vi.fn(),
-  cancelSceneAction: vi.fn(),
-  getSceneStatusAction: vi.fn().mockResolvedValue({ generating: false, record: null }),
-  startInsightsCompletionRefresh: vi.fn(),
-}));
+const mocks = {
+  generateSceneAction: mock(),
+  editSceneAction: mock(),
+  deleteSceneAction: mock(),
+  cancelSceneAction: mock(),
+  getSceneStatusAction: mock(async () => ({ generating: false, record: null })),
+  startInsightsCompletionRefresh: mock(),
+};
+const realI18nContext = await import("../../../i18n/context.js");
+const realMobileHook = await import("../../../hooks/use-mobile.js");
+const realChatActions = await import("../../../stores/api-actions/chat-actions.js");
+const realCompletionActions = await import("../../../stores/api-actions/insights-completion-actions.js");
+const realModal = await import("../../shared/Modal.js");
+const realBottomSheet = await import("../../shared/BottomSheet.js");
+const realTooltip = await import("../../shared/Tooltip.js");
 
-vi.mock("../../../i18n/context.js", () => ({
+mock.module("../../../i18n/context.js", () => ({
+  ...realI18nContext,
   useT: () => ({ t: (k: string) => k, tDynamic: (k: string) => k, locale: "en", setLocale: () => {}, ready: true }),
 }));
 
-vi.mock("../../../hooks/use-mobile.js", () => ({ useIsMobile: () => false }));
+mock.module("../../../hooks/use-mobile.js", () => ({ ...realMobileHook, useIsMobile: () => false }));
 
-vi.mock("../../../stores/api-actions/chat-actions.js", () => ({
+mock.module("../../../stores/api-actions/chat-actions.js", () => ({
+  ...realChatActions,
   generateSceneAction: mocks.generateSceneAction,
   editSceneAction: mocks.editSceneAction,
   deleteSceneAction: mocks.deleteSceneAction,
@@ -54,27 +63,36 @@ vi.mock("../../../stores/api-actions/chat-actions.js", () => ({
   getSceneStatusAction: mocks.getSceneStatusAction,
 }));
 
-vi.mock("../../../stores/api-actions/insights-completion-actions.js", () => ({
+mock.module("../../../stores/api-actions/insights-completion-actions.js", () => ({
+  ...realCompletionActions,
   startInsightsCompletionRefresh: mocks.startInsightsCompletionRefresh,
 }));
 
 // Stub Modal + BottomSheet chrome (Radix Dialog is heavy in happy-dom); both
 // just render their children so the editor body is drivable.
-vi.mock("../../shared/Modal.js", () => ({
+mock.module("../../shared/Modal.js", () => ({
+  ...realModal,
   Modal: ({ children, open }: { children: React.ReactNode; open: boolean }) =>
     open ? createElement("div", { "data-testid": "modal" }, children) : null,
 }));
-vi.mock("../../shared/BottomSheet.js", () => ({
+mock.module("../../shared/BottomSheet.js", () => ({
+  ...realBottomSheet,
   BottomSheet: ({ children, open }: { children: React.ReactNode; open: boolean }) =>
     open ? createElement("div", { "data-testid": "sheet" }, children) : null,
 }));
 
 // CustomTooltip is presentational; these tests verify zone button behavior, not
 // tooltip rendering. Passthrough children so no Radix TooltipProvider is needed.
-vi.mock("../../shared/Tooltip.js", () => ({
+mock.module("../../shared/Tooltip.js", () => ({
+  ...realTooltip,
   CustomTooltip: ({ children }: { children: ReactNode }) => children,
   TooltipProvider: ({ children }: { children: ReactNode }) => children,
 }));
+
+let SceneZone: typeof import("./scene-zone.js").SceneZone;
+beforeAll(async () => {
+  ({ SceneZone } = await import("./scene-zone.js"));
+});
 
 // ── Fixtures ──────────────────────────────────────────────────────────────
 
@@ -120,7 +138,7 @@ function seed(messages: AppMessage[], trackerEnabled = true): void {
       insightsConfig: { objectiveEnabled: false, trackerEnabled, tracker: { schema: SCHEMA, schemaHash: SCHEMA_HASH, revision: REVISION } as never },
     } as unknown as AppSnapshot["activeChat"],
     activeBranch: { id: "b1", chatId: "chat-1", label: "main" } as unknown as AppSnapshot["activeBranch"],
-    branches: [], messages, summaries: [], promptTrace: null, contextPreview: null,
+    branches: [], messages, summaries: [], promptTrace: null,
     character: null, persona: null,
   } as unknown as AppSnapshot;
   useSnapshotStore.getState().ingestSnapshot(snap);
@@ -147,7 +165,6 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  cleanup();
   useSnapshotStore.getState().clear();
   mocks.generateSceneAction.mockReset();
   mocks.editSceneAction.mockReset();
@@ -258,7 +275,7 @@ describe("Scene zone component (SCN-12)", () => {
     const { getByText, getByLabelText, container } = render(createElement(SceneZone, { chatId: "chat-1", messageId: "m1" }));
     fireEvent.click(getByLabelText("scn_zone_expand"));
     fireEvent.click(getByLabelText("scn_zone_generate"));
-    await vi.waitFor(() => expect(mocks.generateSceneAction).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(mocks.generateSceneAction).toHaveBeenCalledTimes(1));
     const [, target] = mocks.generateSceneAction.mock.calls[0];
     expect(target).toEqual({ branchId: "b1", messageId: "m1", variantId: "v1" });
   });
@@ -269,7 +286,7 @@ describe("Scene zone component (SCN-12)", () => {
     const { getByText, getByLabelText, container } = render(createElement(SceneZone, { chatId: "chat-1", messageId: "m1" }));
     fireEvent.click(getByLabelText("scn_zone_expand"));
     fireEvent.click(getByLabelText("scn_zone_cancel"));
-    await vi.waitFor(() => expect(mocks.cancelSceneAction).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(mocks.cancelSceneAction).toHaveBeenCalledTimes(1));
   });
 
   it("Delete opens a confirm, then fires deleteSceneAction", async () => {
@@ -280,7 +297,7 @@ describe("Scene zone component (SCN-12)", () => {
     fireEvent.click(getByLabelText("scn_zone_delete"));
     // Confirm dialog appears.
     fireEvent.click(container.querySelector("button.bg-danger")!);
-    await vi.waitFor(() => expect(mocks.deleteSceneAction).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(mocks.deleteSceneAction).toHaveBeenCalledTimes(1));
   });
 
   it("Edit opens the structured editor and Save fires editSceneAction", async () => {
@@ -293,7 +310,7 @@ describe("Scene zone component (SCN-12)", () => {
     const saveBtn = Array.from(container.querySelectorAll("button")).find((b) => b.textContent === "scn_edit_save")!;
     expect(saveBtn).toBeTruthy();
     fireEvent.click(saveBtn);
-    await vi.waitFor(() => expect(mocks.editSceneAction).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(mocks.editSceneAction).toHaveBeenCalledTimes(1));
     const [, , sceneState] = mocks.editSceneAction.mock.calls[0];
     expect(sceneState).toEqual({ mood: "tense", tension: 7 });
   });
@@ -305,10 +322,10 @@ describe("Scene zone component (SCN-12)", () => {
     // The zone calls the status endpoint on mount for the latest message only.
     // The store-marking is the action's own logic (mocked here); this pins the
     // zone's hydration BOUNDARY: it asks the server, for the latest variant.
-    await vi.waitFor(() => expect(mocks.getSceneStatusAction).toHaveBeenCalledWith("chat-1", expect.objectContaining({ variantId: "v2" })));
+    await waitFor(() => expect(mocks.getSceneStatusAction).toHaveBeenCalledWith("chat-1", expect.objectContaining({ variantId: "v2" })));
     // A positive hydration (server-owned job in flight) joins the completion-refresh
     // so the generation flag clears when the job settles (step 6).
-    await vi.waitFor(() => expect(mocks.startInsightsCompletionRefresh).toHaveBeenCalledWith("chat-1", expect.objectContaining({ variantId: "v2" })));
+    await waitFor(() => expect(mocks.startInsightsCompletionRefresh).toHaveBeenCalledWith("chat-1", expect.objectContaining({ variantId: "v2" })));
   });
 
   it("does NOT hydrate status for an older message", () => {

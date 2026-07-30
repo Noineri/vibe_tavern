@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, test } from "bun:test";
 import {
   registerMessageMeta,
   resolveMessageMeta,
@@ -19,7 +19,7 @@ function ctx(overrides: Partial<MessageMetaContext> = {}): MessageMetaContext {
       isSelected: true,
       finishReason: null,
       modelId: "anthropic/claude-sonnet-4",
-      presetId: "preset-1",
+      presetName: "Default",
       coauthorModuleId: null,
       coauthorSkillId: null,
       createdAt: "2026-07-08T00:00:00.000Z" as never,
@@ -30,6 +30,7 @@ function ctx(overrides: Partial<MessageMetaContext> = {}): MessageMetaContext {
     presetName: null,
     tokenCount: 0,
     createdAt: "2026-07-08T00:00:00.000Z",
+    diceRolls: [],
     ...overrides,
   };
 }
@@ -78,13 +79,13 @@ describe("message-meta-registry", () => {
   });
 
   test("visible predicate can read ctx.variant (variant-scoped provenance)", () => {
-    let seenModelId: string | null | undefined = undefined;
+    const seen = { modelId: undefined as string | null | undefined };
     const cleanup = registerMessageMeta({
       id: "test-meta-provenance-probe",
       roles: ["assistant"],
       visible: (c) => !!c.variant?.modelId,
       render: (c) => {
-        seenModelId = c.variant?.modelId;
+        seen.modelId = c.variant?.modelId;
         return null;
       },
     });
@@ -95,7 +96,7 @@ describe("message-meta-registry", () => {
       expect(metas.map((m) => m.id)).toContain("test-meta-provenance-probe");
       // trigger render by re-resolving (render is called by the shell, not resolve)
       metas.find((m) => m.id === "test-meta-provenance-probe")!.render(ctx());
-      expect(seenModelId).toBe("anthropic/claude-sonnet-4");
+      expect(seen.modelId).toBe("anthropic/claude-sonnet-4");
 
       // variant without modelId → filtered out
       metas = resolveMessageMeta(ctx({

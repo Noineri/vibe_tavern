@@ -6,7 +6,12 @@
  * the exact key set of every builder so a future wiring step (B1.2–B1.5)
  * cannot silently drift a field in or out. They also characterization-pin
  * `getSnapshot` (its internals were refactored onto shared fetch primitives;
- * its full 11-key shape must be unchanged).
+ * its full 10-key shape must be unchanged).
+ *
+ * The live context preview is no longer embedded in any builder/snapshot —
+ * it is a standalone branch-scoped lazy query (`getContextPreview` / POST
+ * .../context-preview). So no builder key set below contains `contextPreview`,
+ * which is itself the pin that navigation/mutations never block on assembly.
  *
  * B1.1 is ADDITIVE: nothing is wired to the builders yet, so these are the
  * only exercise of the new code paths.
@@ -79,7 +84,7 @@ describe("Wave B1.1 — per-endpoint response builder shapes", () => {
 
 	// ─── getSnapshot characterization (internals refactored; shape unchanged) ───
 
-	it("getSnapshot still returns the full 11-key shape", async () => {
+	it("getSnapshot still returns the full 10-key shape (no contextPreview)", async () => {
 		const snap = await runtime.getSnapshot(chatId);
 		expect(sortedKeys(snap)).toEqual([
 			"activeBranch",
@@ -88,7 +93,6 @@ describe("Wave B1.1 — per-endpoint response builder shapes", () => {
 			"branches",
 			"character",
 			"chats",
-			"contextPreview",
 			"messages",
 			"persona",
 			"promptTrace",
@@ -98,35 +102,35 @@ describe("Wave B1.1 — per-endpoint response builder shapes", () => {
 
 	// ─── Message path ───────────────────────────────────────────────────
 
-	it("buildMessageResponse: edit-shape = {messages, contextPreview, promptTrace}", async () => {
+	it("buildMessageResponse: edit-shape = {messages, promptTrace}", async () => {
 		const r = await runtime.buildMessageResponse(chatId);
-		expect(sortedKeys(r)).toEqual(["contextPreview", "messages", "promptTrace"]);
+		expect(sortedKeys(r)).toEqual(["messages", "promptTrace"]);
 		expect(r.messages.length).toBeGreaterThan(0);
 	});
 
 	it("buildMessageResponse: send/delete-shape adds summaries", async () => {
 		const r = await runtime.buildMessageResponse(chatId, { summaries: true });
-		expect(sortedKeys(r)).toEqual(["contextPreview", "messages", "promptTrace", "summaries"]);
+		expect(sortedKeys(r)).toEqual(["messages", "promptTrace", "summaries"]);
 	});
 
 	// ─── Variant path ───────────────────────────────────────────────────
 
-	it("buildVariantResponse: variant-shape = {messages, contextPreview}", async () => {
+	it("buildVariantResponse: variant-shape = {messages}", async () => {
 		const r = await runtime.buildVariantResponse(chatId);
-		expect(sortedKeys(r)).toEqual(["contextPreview", "messages"]);
+		expect(sortedKeys(r)).toEqual(["messages"]);
 	});
 
 	it("buildVariantResponse: set-greeting-shape adds activeChat", async () => {
 		const r = await runtime.buildVariantResponse(chatId, { activeChat: true });
-		expect(sortedKeys(r)).toEqual(["activeChat", "contextPreview", "messages"]);
+		expect(sortedKeys(r)).toEqual(["activeChat", "messages"]);
 	});
 
 	// ─── Branch path ────────────────────────────────────────────────────
 
-	it("buildBranchResponse: fork/activate/delete-shape", async () => {
+	it("buildBranchResponse: fork/activate/delete-shape (no contextPreview)", async () => {
 		const r = await runtime.buildBranchResponse(chatId);
 		expect(sortedKeys(r)).toEqual([
-			"activeBranch", "branches", "chats", "contextPreview", "messages", "summaries",
+			"activeBranch", "branches", "chats", "messages", "summaries",
 		]);
 	});
 
@@ -166,7 +170,7 @@ describe("Wave B1.1 — per-endpoint response builder shapes", () => {
 		const r = await runtime.buildChatSwitchResponse(chatId);
 		expect(sortedKeys(r)).toEqual([
 			"activeBranch", "activeChat", "branches", "character",
-			"contextPreview", "messages", "summaries",
+			"messages", "summaries",
 		]);
 	});
 
@@ -181,22 +185,22 @@ describe("Wave B1.1 — per-endpoint response builder shapes", () => {
 		const r = await runtime.buildChatCreateResponse(chatId);
 		expect(sortedKeys(r)).toEqual([
 			"activeBranch", "activeChat", "branches", "character",
-			"chats", "contextPreview", "messages", "summaries",
+			"chats", "messages", "summaries",
 		]);
 	});
 
 	// ─── Config patch + summary ─────────────────────────────────────────
 
-	it("buildConfigPatchResponse: set-preset-shape = {contextPreview}", async () => {
+	it("buildConfigPatchResponse: set-preset-shape = {} (preview no longer embedded)", async () => {
 		const r = await runtime.buildConfigPatchResponse(chatId);
-		expect(sortedKeys(r)).toEqual(["contextPreview"]);
+		expect(sortedKeys(r)).toEqual([]);
 	});
 
 	it("buildConfigPatchResponse: patches add persona/character/activeChat", async () => {
 		const r = await runtime.buildConfigPatchResponse(chatId, {
 			persona: true, character: true, activeChat: true,
 		});
-		expect(sortedKeys(r)).toEqual(["activeChat", "character", "contextPreview", "persona"]);
+		expect(sortedKeys(r)).toEqual(["activeChat", "character", "persona"]);
 	});
 
 	it("buildSummaryResponse: summary-CRUD-shape = {summaries}", async () => {
@@ -204,15 +208,25 @@ describe("Wave B1.1 — per-endpoint response builder shapes", () => {
 		expect(sortedKeys(r)).toEqual(["summaries"]);
 	});
 
-	// ─── contextPreview is computed, not trace-gated (structural decoupling) ───
+	// ─── Live preview is a standalone branch-scoped query (getContextPreview) ───
 
-	it("buildMessageResponse includes contextPreview (decoupled from trace presence)", async () => {
-		// assembleContextPreview does not call an LLM (it assembles prompt context
-		// from DB), so it returns a non-null preview even without a provider.
-		// getSnapshot would null this when a trace exists; the builder must not.
-		const r = await runtime.buildMessageResponse(chatId);
-		expect(r.contextPreview).not.toBeNull();
-		expect(r.contextPreview?.layers).toBeDefined();
+	it("getContextPreview returns a non-null preview with layers (decoupled from snapshot)", async () => {
+		// getContextPreview does not call an LLM (it assembles prompt context from
+		// the DB), so it returns a non-null preview even without a provider. The
+		// preview is no longer on getSnapshot/buildMessageResponse — this is the
+		// single lazy-hydration source.
+		const snap = await runtime.getSnapshot(chatId);
+		const branchId = snap.activeBranch!.id as import("@vibe-tavern/domain").ChatBranchId;
+		const preview = await runtime.getContextPreview(chatId, branchId);
+		expect(preview).not.toBeNull();
+		expect(preview?.layers).toBeDefined();
+	});
+
+	it("getContextPreview rejects a branch that does not belong to the chat", async () => {
+		// A foreign branchId must surface as a NotFound (404 at the route), not
+		// silently assemble the chat's root branch (getChatState's fallback).
+		const foreignBranchId = "brnch_does_not_exist" as import("@vibe-tavern/domain").ChatBranchId;
+		expect(runtime.getContextPreview(chatId, foreignBranchId)).rejects.toThrow();
 	});
 
 	// ─── Wave B1.2 wiring: mutation methods return the narrowed shapes ───
@@ -224,19 +238,19 @@ describe("Wave B1.1 — per-endpoint response builder shapes", () => {
 	it("B1.2: editMessage returns MessageResponse (not SessionSnapshot)", async () => {
 		const msg = (await runtime.getSnapshot(chatId)).messages[0];
 		const r = await runtime.chatRuntime.editMessage(chatId, msg.id, "edited content");
-		expect(sortedKeys(r)).toEqual(["contextPreview", "messages", "promptTrace"]);
+		expect(sortedKeys(r)).toEqual(["messages", "promptTrace"]);
 	});
 
 	it("B1.2: selectMessageVariant returns VariantResponse (not SessionSnapshot)", async () => {
 		const msg = (await runtime.getSnapshot(chatId)).messages[0];
 		// index 0 is always safe (the seeded greeting lands as variant 0).
 		const r = await runtime.chatRuntime.selectMessageVariant(chatId, msg.id as MessageId, 0);
-		expect(sortedKeys(r)).toEqual(["contextPreview", "messages"]);
+		expect(sortedKeys(r)).toEqual(["messages"]);
 	});
 
 	it("B1.2: setGreetingIndex returns VariantResponse with activeChat", async () => {
 		const r = await runtime.setGreetingIndex(chatId, 0);
-		expect(sortedKeys(r)).toEqual(["activeChat", "contextPreview", "messages"]);
+		expect(sortedKeys(r)).toEqual(["activeChat", "messages"]);
 	});
 
 	// ─── Wave B1.3 wiring: branch mutation methods return narrowed shapes ───
@@ -248,10 +262,10 @@ describe("Wave B1.1 — per-endpoint response builder shapes", () => {
 		expect(sortedKeys(r)).toEqual(["branches"]);
 	});
 
-	it("B1.3: forkBranch returns BranchResponse (messages + branches + activeBranch + summaries + contextPreview + chats)", async () => {
+	it("B1.3: forkBranch returns BranchResponse (messages + branches + activeBranch + summaries + chats; no contextPreview)", async () => {
 		const r = await runtime.chatRuntime.forkBranch(chatId);
 		expect(sortedKeys(r)).toEqual([
-			"activeBranch", "branches", "chats", "contextPreview", "messages", "summaries",
+			"activeBranch", "branches", "chats", "messages", "summaries",
 		]);
 		expect(r.branches.length).toBeGreaterThanOrEqual(2);
 		// chats (sidebar list) refresh on branch switch because the chat's active
@@ -265,7 +279,7 @@ describe("Wave B1.1 — per-endpoint response builder shapes", () => {
 		const r = await runtime.chatLifecycle.switchChat(chatId);
 		expect(sortedKeys(r)).toEqual([
 			"activeBranch", "activeChat", "branches", "character",
-			"contextPreview", "messages", "persona", "summaries",
+			"messages", "persona", "summaries",
 		]);
 		// persona is the switched-to chat's persona (switch loads it with the view).
 		expect(r.persona).toBeTruthy();
@@ -297,7 +311,7 @@ describe("Wave B1.1 — per-endpoint response builder shapes", () => {
 		const r = await runtime.chatLifecycle.createChatForCharacter(characterId);
 		expect(sortedKeys(r)).toEqual([
 			"activeBranch", "activeChat", "branches", "character",
-			"chats", "contextPreview", "messages", "summaries",
+			"chats", "messages", "summaries",
 		]);
 		// The new chat is added at the front of the list (chatOrder.unshift);
 		// createChatAction (frontend) reads snapshot.chats[0].id as the new chat.
@@ -326,7 +340,7 @@ describe("Wave B1.1 — per-endpoint response builder shapes", () => {
 		const r = await runtime.chatLifecycle.clearChat(chatId);
 		expect(sortedKeys(r)).toEqual([
 			"activeBranch", "activeChat", "branches", "character",
-			"chats", "contextPreview", "messages", "summaries",
+			"chats", "messages", "summaries",
 		]);
 		// clearChat deletes the old chat and creates a fresh one — the new
 		// activeChat must NOT be the cleared chatId.
@@ -361,14 +375,14 @@ describe("Wave B1.1 — per-endpoint response builder shapes", () => {
 	// is stale. Seeding per-test also keeps the B1.5 cases independent of
 	// execution order.
 
-	it("B1.5: setChatPersona returns ConfigPatchResponse = {contextPreview, persona}", async () => {
+	it("B1.5: setChatPersona returns ConfigPatchResponse = {persona}", async () => {
 		const fresh = await runtime.character.createFromScratch({
 			name: "PersonaBot", description: "d", firstMessage: "hi",
 		});
 		const snap = await runtime.getSnapshot(fresh.activeChatId);
 		const personaId = snap.persona!.id;
 		const r = await runtime.persona.setChatPersona(fresh.activeChatId, personaId);
-		expect(sortedKeys(r)).toEqual(["contextPreview", "persona"]);
+		expect(sortedKeys(r)).toEqual(["persona"]);
 		expect(r.persona?.id).toBe(personaId);
 	});
 
@@ -379,7 +393,7 @@ describe("Wave B1.1 — per-endpoint response builder shapes", () => {
 		const snap = await runtime.getSnapshot(fresh.activeChatId);
 		const personaId = snap.persona!.id;
 		const r = await runtime.persona.update(personaId, { chatId: fresh.activeChatId, name: "Renamed User" });
-		expect(sortedKeys(r)).toEqual(["contextPreview", "persona"]);
+		expect(sortedKeys(r)).toEqual(["persona"]);
 		expect(r.persona?.name).toBe("Renamed User");
 	});
 
@@ -392,7 +406,7 @@ describe("Wave B1.1 — per-endpoint response builder shapes", () => {
 			{ chatId: fresh.activeChatId, description: "updated description" },
 			{ rebuildChatOrder: () => runtime.rebuildChatOrder() },
 		);
-		expect(sortedKeys(r)).toEqual(["character", "contextPreview"]);
+		expect(sortedKeys(r)).toEqual(["character"]);
 		expect(r.character?.id).toBe(characterId);
 	});
 
@@ -407,7 +421,7 @@ describe("Wave B1.1 — per-endpoint response builder shapes", () => {
 		const snap = await runtime.getSnapshot(fresh.activeChatId);
 		const presetId = snap.activeChat!.promptPresetId!;
 		const r = await runtime.chatLifecycle.setChatPromptPreset(fresh.activeChatId, presetId);
-		expect(sortedKeys(r)).toEqual(["activeChat", "contextPreview"]);
+		expect(sortedKeys(r)).toEqual(["activeChat"]);
 		expect(r.activeChat?.promptPresetId).toBe(presetId);
 	});
 
@@ -420,7 +434,7 @@ describe("Wave B1.1 — per-endpoint response builder shapes", () => {
 			name: "SummaryBot", description: "d", firstMessage: "hi",
 		});
 		const r = await runtime.chatLifecycle.updateChatSummary(fresh.activeChatId, "A tldr of the chat");
-		expect(sortedKeys(r)).toEqual(["activeChat", "contextPreview"]);
+		expect(sortedKeys(r)).toEqual(["activeChat"]);
 		expect(r.activeChat?.summary).toBe("A tldr of the chat");
 	});
 
@@ -444,7 +458,7 @@ describe("Wave B1.1 — per-endpoint response builder shapes", () => {
 			messageHistoryLimit: 42,
 			autoSummaryConfig: { enabled: true, everyN: 5 },
 		});
-		expect(sortedKeys(r)).toEqual(["activeChat", "contextPreview"]);
+		expect(sortedKeys(r)).toEqual(["activeChat"]);
 		expect(r.activeChat?.messageHistoryLimit).toBe(42);
 		expect(r.activeChat?.autoSummaryConfig?.enabled).toBe(true);
 		expect(r.activeChat?.autoSummaryConfig?.everyN).toBe(5);
@@ -494,5 +508,73 @@ describe("Wave B1.1 — per-endpoint response builder shapes", () => {
 		// The store normalizes content with a trailing newline; compare trimmed
 		// so the assertion is robust to that normalization.
 		expect(rA.summaries[0]!.summary.trim()).toBe("summary on branch A");
+	});
+
+	// ── DICE Contract stack-audit GAP-1: message read DTO carries bound diceRolls ──
+	//
+	// Pins the FULL read path the frontend fetches: buildChatSwitchResponse →
+	// buildMessagesWithVariants → DiceRollStore.getRollsForMessages (the B7 batch
+	// read) → storeRollToSnapshot → mapMessageDto. This is the boundary GAP-1
+	// identified: B13/B14 attached diceRolls only to the prompt-projection path
+	// (RecentMessage), never to the API read DTO. A regression here means the
+	// frontend's message-meta badge (F10) loses its data on reload / Dice-off /
+	// script-rename, and F9's pending→committed reconcile has no authoritative
+	// source. Seed mirrors dice-lifecycle.test.ts userMessageWithBoundRoll.
+
+	it("buildChatSwitchResponse attaches bound diceRolls to user messages (DICE GAP-1)", async () => {
+		const ctx = await createTestRuntime();
+		try {
+			const { runtime, chatId, stores } = ctx;
+			const branchId = (await runtime.getSnapshot(chatId)).activeBranch!.id as import("@vibe-tavern/domain").ChatBranchId;
+
+			// Seed a normal-lane roll and bind it to a fresh user message in one turn.
+			await stores.diceRolls.createRoll({
+				chatId: chatId as string, branchId: branchId as string, mode: "normal",
+				requestId: "req_snap", actorType: "persona", actorId: "persona_1", actorLabel: "Player",
+				scriptId: "script_1", scriptLabel: "Fate Die", scriptRevision: 1,
+				checkId: "fate_check", checkLabel: "Fate Roll", notation: "4dF", faceShape: "dF",
+				resolution: "narrative",
+				attemptsJson: JSON.stringify([{ attemptId: "a1", faces: [1, 0, -1, 1], modifier: 0, subtotal: 1, total: 1 }]),
+				finalJson: null,
+			});
+			const msg = await runtime.chatApp.appendUserMessage(chatId, {
+				content: "rolling", mode: "reply", diceCommit: { mode: "normal", pendingRevision: 1 },
+			});
+
+			const snap = await runtime.buildChatSwitchResponse(chatId);
+
+			// The user message carries its bound roll as a domain snapshot.
+			const userMsg = snap.messages.find((m) => m.id === msg.id)!;
+			expect(userMsg.role).toBe("user");
+			expect(userMsg.diceRolls).toBeDefined();
+			expect(userMsg.diceRolls).toHaveLength(1);
+			expect(userMsg.diceRolls![0]!.checkLabel).toBe("Fate Roll");
+			expect(userMsg.diceRolls![0]!.boundMessageId).toBe(msg.id);
+			expect(userMsg.diceRolls![0]!.actor.actorLabel).toBe("Player");
+
+			// Assistant messages (the seeded greeting) NEVER carry diceRolls —
+			// the batch-load queries user-message ids only, and mapMessageDto is
+			// called without diceRolls for non-user rows.
+			const greeting = snap.messages.find((m) => m.role === "assistant")!;
+			expect(greeting.diceRolls).toBeUndefined();
+		} finally {
+			await ctx.cleanup();
+		}
+	});
+
+	it("buildChatSwitchResponse omits diceRolls on a no-Dice chat (byte-identical to pre-Dice shape)", async () => {
+		// A chat that never touched Dice must not sprout a `diceRolls` key on any
+		// message — the field absence is what keeps the payload byte-identical to
+		// the pre-Dice shape (the B14 no-op invariant, projected onto the DTO).
+		const ctx = await createTestRuntime();
+		try {
+			const snap = await ctx.runtime.buildChatSwitchResponse(ctx.chatId);
+			for (const m of snap.messages) {
+				expect(m.diceRolls).toBeUndefined();
+				expect("diceRolls" in m).toBe(false);
+			}
+		} finally {
+			await ctx.cleanup();
+		}
 	});
 });

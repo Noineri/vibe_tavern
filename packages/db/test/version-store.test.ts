@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtemp, readFile, readdir } from "node:fs/promises";
+import { mkdtemp, readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -8,6 +8,7 @@ import { ContentStore } from "../src/content-store.js";
 import { createFileStore, STORAGE_FOLDERS } from "../src/file-store.js";
 import { CharacterStore } from "../src/stores/character-store.js";
 import { CharacterFolder } from "../src/stores/character-folder.js";
+import { CharacterDirectoryRegistry } from "../src/stores/character-directory-registry.js";
 import { VersionStore } from "../src/stores/version-store.js";
 import { brandId, type CharacterId } from "@vibe-tavern/domain";
 
@@ -33,16 +34,28 @@ async function setup() {
   return { dataRoot, db, content, characters, versions };
 }
 
+async function setupWithRegistry() {
+  const dataRoot = await mkdtemp(join(tmpdir(), "vt-versionstore-hrf4-test-"));
+  const db = await createDb(join(dataRoot, "test.db"));
+  const content = new ContentStore({ fileStore: createFileStore(dataRoot) });
+  const characterFolder = new CharacterFolder(content);
+  const registry = new CharacterDirectoryRegistry(content);
+  await registry.init();
+  const characters = new CharacterStore(db, { folder: characterFolder, registry, clock, idGenerator: idGen });
+  const versions = new VersionStore(db, { clock, idGenerator: idGen, folder: characterFolder, registry });
+  return { dataRoot, db, content, registry, characters, versions };
+}
+
 async function readProfile(dataRoot: string, charId: string, versionId?: string): Promise<string> {
   const rel = versionId ? join(charId, "versions", versionId, "profile.md") : join(charId, "profile.md");
-  return readFile(join(dataRoot, CHARS, rel), "utf8");
+  return Bun.file(join(dataRoot, CHARS, rel)).text();
 }
 
 async function readInstructions(dataRoot: string, charId: string, versionId?: string): Promise<string> {
   const rel = versionId
     ? join(charId, "versions", versionId, "instructions.json")
     : join(charId, "instructions.json");
-  return readFile(join(dataRoot, CHARS, rel), "utf8");
+  return Bun.file(join(dataRoot, CHARS, rel)).text();
 }
 
 async function folderExists(_dataRoot: string, _charId: string, _versionId: string): Promise<boolean> {
@@ -216,5 +229,41 @@ describe("VersionStore (VTF Phase 3)", () => {
 
     // v2 id is a branded CharacterVersionId (sanity on the domain type).
     expect(v2.characterId).toEqual(brandId<CharacterId>(char.id));
+  });
+
+  test("version snapshots remain reachable and basename follows the restored version name", async () => {
+    const { dataRoot, content, registry, characters, versions } = await setupWithRegistry();
+    const char = await characters.create({
+      name: "Silvius",
+      description: "base body",
+      firstMessage: "Greetings",
+    });
+    const base = await versions.ensureBaseVersion(char.id);
+    const aggressive = await versions.createVersion(char.id, "Aggressive");
+
+    // The active branch changes both authored content and the display name.
+    await characters.update(char.id, {
+      name: "Silvius Aggressive",
+      description: "aggressive body",
+    });
+    expect(await registry.resolve(char.id)).toBe("silvius-aggressive");
+
+    // Activating Base restores profile.name="Silvius", so VersionStore must
+    // move the ENTIRE directory (including the aggressive snapshot) accordingly.
+    await versions.setActive(char.id, base.id);
+    expect(await registry.resolve(char.id)).toBe("silvius");
+    expect(await content.entityFolderExists(CHARS, "silvius-aggressive")).toBe(false);
+    expect((await characters.getById(char.id))?.name).toBe("Silvius");
+    expect((await characters.getById(char.id))?.description).toBe("base body");
+    expect(await readProfile(dataRoot, "silvius", aggressive.id)).toContain("aggressive body");
+
+    // Switching back restores the branch's changed name, renames the directory
+    // again, and preserves the Base snapshot under the moved tree.
+    await versions.setActive(char.id, aggressive.id);
+    expect(await registry.resolve(char.id)).toBe("silvius-aggressive");
+    expect(await content.entityFolderExists(CHARS, "silvius")).toBe(false);
+    expect((await characters.getById(char.id))?.name).toBe("Silvius Aggressive");
+    expect((await characters.getById(char.id))?.description).toBe("aggressive body");
+    expect(await readProfile(dataRoot, "silvius-aggressive", base.id)).toContain("base body");
   });
 });

@@ -1,6 +1,6 @@
 import { eq, and, desc, asc, inArray } from 'drizzle-orm';
 import { messages, messageVariants, sceneBackfillRuns } from '../db-schema.js';
-import type { AppDb } from '../db-connection.js';
+import type { AppDb, DbTransaction } from '../db-connection.js';
 import { resolveStoreRuntime, type StoreClock, type StoreIdGenerator } from '../persistence.js';
 import { extractThinkingTags, type SceneTrackerDsl, type ScenePromptFormat } from '@vibe-tavern/domain';
 
@@ -39,7 +39,7 @@ export interface MessageVariant {
   reasoning: string | null;
   reasoningDurationMs: number | null;
   modelId: string | null;
-  presetId: string | null;
+  presetName: string | null;
   createdAt: string;
   coauthorModuleId?: string | null;
   coauthorSkillId?: string | null;
@@ -118,6 +118,42 @@ export interface SceneBackfillRun {
 
 // ─── Store ────────────────────────────────────────────────────────────────────
 
+/** Thrown when a guarded edit targets a variant that is no longer selected. */
+export class SelectedVariantMismatchError extends Error {
+  constructor(
+    readonly messageId: string,
+    readonly expectedVariantId: string,
+    readonly actualVariantId: string | null,
+  ) {
+    super(`Selected variant '${expectedVariantId}' no longer matches message '${messageId}'.`);
+    this.name = "SelectedVariantMismatchError";
+  }
+}
+
+/** Input shape for {@link MessageStore.addMessage} and {@link MessageStore.addMessageWithDiceBind}.
+ *  Extracted so the dice-aware variant shares the exact insert contract (no drift). */
+export interface AddMessageInput {
+  chatId: string;
+  branchId: string;
+  role: string;
+  authorType: string;
+  content: string;
+  reasoning?: string;
+  reasoningDurationMs?: number;
+  modelId?: string | null;
+  /** Prompt preset used for THIS message. Recorded on the selected variant
+   *  (the field the message footer reads) so every reply — send, continue,
+   *  regenerate, queue — carries its preset, not only the queue/variant path. */
+  presetName?: string | null;
+  variants?: string[];
+  selectedVariantIndex?: number;
+  attachmentsJson?: string | null;
+  toolCallsJson?: string | null;
+  toolCallId?: string | null;
+  coauthorModuleId?: string | null;
+  coauthorSkillId?: string | null;
+}
+
 /**
  * Message + variant (swipe) CRUD.
  *
@@ -159,22 +195,7 @@ export class MessageStore {
     return rows.map((row) => this.mapRowMessage(row));
   }
 
-  async addMessage(data: {
-    chatId: string; branchId: string; role: string; authorType: string; content: string;
-    reasoning?: string; reasoningDurationMs?: number;
-    modelId?: string | null;
-    /** Prompt preset used for THIS message. Recorded on the selected variant
-     *  (the field the message footer reads) so every reply — send, continue,
-     *  regenerate, queue — carries its preset, not only the queue/variant path. */
-    presetId?: string | null;
-    variants?: string[];
-    selectedVariantIndex?: number;
-    attachmentsJson?: string | null;
-    toolCallsJson?: string | null;
-    toolCallId?: string | null;
-    coauthorModuleId?: string | null;
-    coauthorSkillId?: string | null;
-  }): Promise<Message> {
+  async addMessage(data: AddMessageInput): Promise<Message> {
     const id = this.idGen.next('msg');
     const now = this.clock.now();
     const lastMsg = await this.db.select({ position: messages.position }).from(messages)
@@ -189,8 +210,14 @@ export class MessageStore {
     );
     const selectedContent = variantContents[selectedVariantIndex] ?? data.content;
 
-    await this.db.transaction(async (tx) => {
-      await tx.insert(messages).values({
+    // Synchronous callback (ASYNC_TRANSACTION_AUDIT step 1): drizzle-orm
+    // 0.38.4 + bun:sqlite commits at the end of the callback's synchronous
+    // prefix, so an `async` callback's post-await throw is never rolled back.
+    // bun-sqlite query methods are synchronous, so a real throw (e.g. a
+    // constraint/trigger failure on the variant insert) rolls the message
+    // insert back too.
+    this.db.transaction((tx) => {
+      tx.insert(messages).values({
         id, chatId: data.chatId, branchId: data.branchId,
         role: data.role, authorType: data.authorType,
         position: nextPosition, content: selectedContent,
@@ -199,13 +226,13 @@ export class MessageStore {
         toolCallsJson: data.toolCallsJson ?? null,
         toolCallId: data.toolCallId ?? null,
       }).run();
-      await tx.insert(messageVariants).values(variantContents.map((content, variantIndex) => ({
+      tx.insert(messageVariants).values(variantContents.map((content, variantIndex) => ({
         id: this.idGen.next('mvar'), messageId: id, variantIndex,
         content, isSelected: variantIndex === selectedVariantIndex ? 1 : 0, finishReason: null,
         reasoning: variantIndex === selectedVariantIndex ? data.reasoning ?? null : null,
         reasoningDurationMs: variantIndex === selectedVariantIndex ? data.reasoningDurationMs ?? null : null,
         modelId: variantIndex === selectedVariantIndex ? data.modelId ?? null : null,
-        presetId: variantIndex === selectedVariantIndex ? data.presetId ?? null : null,
+        presetName: variantIndex === selectedVariantIndex ? data.presetName ?? null : null,
         toolCallsJson: variantIndex === selectedVariantIndex ? data.toolCallsJson ?? null : null,
         toolCallId: variantIndex === selectedVariantIndex ? data.toolCallId ?? null : null,
         coauthorModuleId: variantIndex === selectedVariantIndex ? data.coauthorModuleId ?? null : null,
@@ -217,6 +244,82 @@ export class MessageStore {
     // SELECT outside tx is fine — row is committed
     const row = await this.db.select().from(messages).where(eq(messages.id, id)).get();
     return this.mapRowMessage(row!);
+  }
+
+  /**
+   * Atomic user-message insert + Dice pending-lane bind (DICE_SYSTEM_BACKEND_PLAN,
+   * Wave B4 / DICE-B10). Inserts the user message + its initial variant AND binds
+   * the active-mode pending Dice lane to that message in ONE synchronous
+   * bun:sqlite transaction, so a stale revision or unresolved `choose` throws
+   * BEFORE the transaction commits and rolls the message insert back too — no
+   * ghost message, no partial bind.
+   *
+   * `bindInTx` is the synchronous bind closure supplied by the caller (typically
+   * `(tx, messageId) => diceRollStore.bindActiveAndResetInTx(tx, ...)`). It runs
+   * AFTER the message+variant inserts so the rolls' `bound_message_id` FK is
+   * satisfiable; it verifies the lane revision first and throws synchronously on
+   * a mismatch, so the whole transaction (inserts included) rolls back.
+   *
+   * Why synchronous (no `await` inside): drizzle-orm 0.38.4's bun-sqlite driver
+   * wraps the callback in bun:sqlite's native `.transaction()`, which commits at
+   * the end of the callback's synchronous prefix — an `await` inside suspends
+   * past that commit and a post-await throw is never rolled back. All bun-sqlite
+   * drizzle query methods (`.run/.get/.all`) are synchronous, so the entire
+   * insert+bind runs in one real BEGIN/COMMIT/ROLLBACK. This is the load-bearing
+   * reason the bind cannot be a separate awaited `bindActiveAndReset` call.
+   *
+   * Use {@link addMessage} (byte-for-byte unchanged) for the no-Dice path — this
+   * variant is reached ONLY when a send carries the optional dice commit intent.
+   */
+  addMessageWithDiceBind(
+    data: AddMessageInput,
+    bindInTx: (tx: DbTransaction, messageId: string) => number,
+  ): { message: Message; boundCount: number } {
+    const id = this.idGen.next('msg');
+    const now = this.clock.now();
+    const lastMsg = this.db.select({ position: messages.position }).from(messages)
+      .where(eq(messages.branchId, data.branchId))
+      .orderBy(desc(messages.position)).limit(1).get();
+    const nextPosition = (lastMsg?.position ?? -1) + 1;
+
+    const variantContents = data.variants?.length ? data.variants : [data.content];
+    const selectedVariantIndex = Math.min(
+      Math.max(data.selectedVariantIndex ?? 0, 0),
+      variantContents.length - 1,
+    );
+    const selectedContent = variantContents[selectedVariantIndex] ?? data.content;
+
+    const boundCount = this.db.transaction((tx) => {
+      tx.insert(messages).values({
+        id, chatId: data.chatId, branchId: data.branchId,
+        role: data.role, authorType: data.authorType,
+        position: nextPosition, content: selectedContent,
+        state: 'complete', createdAt: now, updatedAt: now,
+        attachmentsJson: data.attachmentsJson ?? null,
+        toolCallsJson: data.toolCallsJson ?? null,
+        toolCallId: data.toolCallId ?? null,
+      }).run();
+      tx.insert(messageVariants).values(variantContents.map((content, variantIndex) => ({
+        id: this.idGen.next('mvar'), messageId: id, variantIndex,
+        content, isSelected: variantIndex === selectedVariantIndex ? 1 : 0, finishReason: null,
+        reasoning: variantIndex === selectedVariantIndex ? data.reasoning ?? null : null,
+        reasoningDurationMs: variantIndex === selectedVariantIndex ? data.reasoningDurationMs ?? null : null,
+        modelId: variantIndex === selectedVariantIndex ? data.modelId ?? null : null,
+        presetName: variantIndex === selectedVariantIndex ? data.presetName ?? null : null,
+        toolCallsJson: variantIndex === selectedVariantIndex ? data.toolCallsJson ?? null : null,
+        toolCallId: variantIndex === selectedVariantIndex ? data.toolCallId ?? null : null,
+        coauthorModuleId: variantIndex === selectedVariantIndex ? data.coauthorModuleId ?? null : null,
+        coauthorSkillId: variantIndex === selectedVariantIndex ? data.coauthorSkillId ?? null : null,
+        createdAt: now,
+      }))).run();
+      // Bind AFTER the message row exists (FK). bindInTx verifies revision FIRST
+      // and throws synchronously on stale/choose — rolling the inserts back.
+      return bindInTx(tx, id);
+    });
+
+    // SELECT outside tx is fine — row is committed (or the tx threw and we never reach here)
+    const row = this.db.select().from(messages).where(eq(messages.id, id)).get();
+    return { message: this.mapRowMessage(row!), boundCount };
   }
 
   /**
@@ -308,7 +411,7 @@ export class MessageStore {
             reasoning: v.reasoning ?? null,
             reasoningDurationMs: null,
             modelId: null,
-            presetId: null,
+            presetName: null,
             toolCallsJson: null,
             toolCallId: null,
             coauthorModuleId: null,
@@ -319,15 +422,16 @@ export class MessageStore {
       }
     }
 
-    await this.db.transaction(async (tx) => {
+    // Synchronous callback (ASYNC_TRANSACTION_AUDIT step 1): see addMessage.
+    this.db.transaction((tx) => {
       // Chunk to respect SQLite's host-parameter limit. messages has 12 cols
       // (chunk at 80 → 960 params, safe even for the legacy 999 limit),
       // messageVariants has 16 cols (chunk at 60 → 960 params).
       for (let i = 0; i < messageRows.length; i += 80) {
-        await tx.insert(messages).values(messageRows.slice(i, i + 80)).run();
+        tx.insert(messages).values(messageRows.slice(i, i + 80)).run();
       }
       for (let i = 0; i < variantRows.length; i += 60) {
-        await tx.insert(messageVariants).values(variantRows.slice(i, i + 60)).run();
+        tx.insert(messageVariants).values(variantRows.slice(i, i + 60)).run();
       }
     });
   }
@@ -374,22 +478,23 @@ export class MessageStore {
   async completeStreamingMessage(id: string, content: string, reasoning?: string, reasoningDurationMs?: number): Promise<Message> {
     const now = this.clock.now();
 
-    await this.db.transaction(async (tx) => {
-      await tx
+    // Synchronous callback (ASYNC_TRANSACTION_AUDIT step 1): see addMessage.
+    this.db.transaction((tx) => {
+      tx
         .update(messages)
         .set({ content, state: 'complete', updatedAt: now })
         .where(eq(messages.id, id))
         .run();
 
       // Create initial variant if none exists
-      const existingVariants = await tx
+      const existingVariants = tx
         .select()
         .from(messageVariants)
         .where(eq(messageVariants.messageId, id))
         .all();
 
       if (existingVariants.length === 0) {
-        await tx
+        tx
           .insert(messageVariants)
           .values({
             id: this.idGen.next('mvar'),
@@ -419,16 +524,40 @@ export class MessageStore {
       .run();
   }
 
-  async editMessage(id: string, content: string): Promise<Message> {
+  async editMessage(id: string, content: string, expectedVariantId?: string): Promise<Message> {
     const now = this.clock.now();
 
     // Extract thinking tags from edited content
     const { mainContent, reasoning: extractedReasoning } = extractThinkingTags(content);
 
-    await this.db.transaction(async (tx) => {
-      await tx
+    // Synchronous callback (ASYNC_TRANSACTION_AUDIT step 1): see addMessage.
+    this.db.transaction((tx) => {
+      if (expectedVariantId !== undefined) {
+        const selectedVariant = tx
+          .select({ id: messageVariants.id })
+          .from(messageVariants)
+          .where(
+            and(
+              eq(messageVariants.messageId, id),
+              eq(messageVariants.isSelected, 1),
+            ),
+          )
+          .get();
+        const actualVariantId = selectedVariant?.id ?? null;
+        if (actualVariantId !== expectedVariantId) {
+          throw new SelectedVariantMismatchError(id, expectedVariantId, actualVariantId);
+        }
+      }
+
+      // NOTE: a content edit does NOT flip `state` to 'edited'. That status
+      // existed only to drive an early Scene-tracker experiment (wipe the
+      // tracker on edit) that shipped, proved awful UX (a typo fix nuked the
+      // scene record), and was removed. With no reader left, setting it just
+      // left a dead marker in the DB that nothing consumes — so the message
+      // stays in whatever committed state it was in (always 'complete' today).
+      tx
         .update(messages)
-        .set({ content: mainContent, state: 'edited', updatedAt: now })
+        .set({ content: mainContent, updatedAt: now })
         .where(eq(messages.id, id))
         .run();
 
@@ -444,7 +573,7 @@ export class MessageStore {
       if (extractedReasoning !== undefined) {
         variantUpdate.reasoning = extractedReasoning;
       }
-      await tx
+      tx
         .update(messageVariants)
         .set(variantUpdate)
         .where(
@@ -481,7 +610,7 @@ export class MessageStore {
     reasoning?: string,
     reasoningDurationMs?: number,
     modelId?: string | null,
-    presetId?: string | null,
+    presetName?: string | null,
     toolCallsJson?: string | null,
     toolCallId?: string | null,
     coauthorModuleId?: string | null,
@@ -502,14 +631,15 @@ export class MessageStore {
 
     // Transaction: deselect all existing variants, insert new as selected,
     // and sync messages.content so reads are consistent.
-    await this.db.transaction(async (tx) => {
-      await tx
+    // Synchronous callback (ASYNC_TRANSACTION_AUDIT step 1): see addMessage.
+    this.db.transaction((tx) => {
+      tx
         .update(messageVariants)
         .set({ isSelected: 0 })
         .where(eq(messageVariants.messageId, messageId))
         .run();
 
-      await tx
+      tx
         .insert(messageVariants)
         .values({
           id,
@@ -521,7 +651,7 @@ export class MessageStore {
           reasoning: reasoning ?? null,
           reasoningDurationMs: reasoningDurationMs ?? null,
           modelId: modelId ?? null,
-          presetId: presetId ?? null,
+          presetName: presetName ?? null,
           toolCallsJson: toolCallsJson ?? null,
           toolCallId: toolCallId ?? null,
           coauthorModuleId: coauthorModuleId ?? null,
@@ -531,7 +661,7 @@ export class MessageStore {
         .run();
 
       // Keep messages.content in sync with the active variant
-      await tx
+      tx
         .update(messages)
         .set({ content, updatedAt: now })
         .where(eq(messages.id, messageId))
@@ -553,16 +683,17 @@ export class MessageStore {
       .get();
     if (!target) return;
 
-    await this.db.transaction(async (tx) => {
+    // Synchronous callback (ASYNC_TRANSACTION_AUDIT step 1): see addMessage.
+    this.db.transaction((tx) => {
       // Clear all selections for this message
-      await tx.update(messageVariants).set({ isSelected: 0 })
+      tx.update(messageVariants).set({ isSelected: 0 })
         .where(eq(messageVariants.messageId, messageId)).run();
       // Select target variant
-      await tx.update(messageVariants).set({ isSelected: 1 })
+      tx.update(messageVariants).set({ isSelected: 1 })
         .where(and(eq(messageVariants.messageId, messageId), eq(messageVariants.variantIndex, variantIndex)))
         .run();
       // Sync messages.content with selected variant content (invariant)
-      await tx.update(messages).set({ content: target.content, updatedAt: this.clock.now() })
+      tx.update(messages).set({ content: target.content, updatedAt: this.clock.now() })
         .where(eq(messages.id, messageId)).run();
     });
   }
@@ -634,8 +765,9 @@ export class MessageStore {
           : remaining[0] ?? null;
     const now = this.clock.now();
 
-    await this.db.transaction(async (tx) => {
-      await tx
+    // Synchronous callback (ASYNC_TRANSACTION_AUDIT step 1): see addMessage.
+    this.db.transaction((tx) => {
+      tx
         .delete(messageVariants)
         .where(
           and(
@@ -650,7 +782,7 @@ export class MessageStore {
       // "6/5" and wrong swipes after a snapshot refresh.
       for (let nextIndex = 0; nextIndex < remaining.length; nextIndex++) {
         const variant = remaining[nextIndex];
-        await tx
+        tx
           .update(messageVariants)
           .set({
             variantIndex: nextIndex,
@@ -661,7 +793,7 @@ export class MessageStore {
       }
 
       if (selectedAfterDelete) {
-        await tx
+        tx
           .update(messages)
           .set({ content: selectedAfterDelete.content, updatedAt: now })
           .where(eq(messages.id, messageId))
@@ -867,7 +999,7 @@ export class MessageStore {
       reasoning: row.reasoning,
       reasoningDurationMs: row.reasoningDurationMs,
       modelId: row.modelId,
-      presetId: row.presetId,
+      presetName: row.presetName,
       coauthorModuleId: row.coauthorModuleId,
       coauthorSkillId: row.coauthorSkillId,
       toolCalls: row.toolCallsJson ? JSON.parse(row.toolCallsJson) : null,

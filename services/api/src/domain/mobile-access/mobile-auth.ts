@@ -24,14 +24,14 @@ function resolveToken(source: MobileAccessTokenSource): string | undefined {
  * treated as local. A sibling on the same WiFi is the exact threat this
  * feature exists for.
  *
- * Escape hatch: set `RP_PLATFORM_TRUST_PRIVATE=1` to restore the old
+ * Escape hatch: set `VIBE_TAVERN_TRUST_PRIVATE=1` to restore the old
  * "all RFC 1918 = trusted" behavior. This is needed when the app runs inside
  * Docker and the host browser connects through the Docker bridge NAT
  * (typically 172.17.x.x or 172.18.x.x) — the request is functionally local
  * but no longer loopback. Prefer binding the container to 127.0.0.1 when
  * possible; only enable this when you actually need LAN passwordless access.
  */
-const TRUST_PRIVATE_IPS = process.env.RP_PLATFORM_TRUST_PRIVATE === "1";
+const TRUST_PRIVATE_IPS = process.env.VIBE_TAVERN_TRUST_PRIVATE === "1";
 
 function isTrustedClient(remoteIp: unknown): boolean {
 	if (typeof remoteIp !== "string") return false;
@@ -40,7 +40,7 @@ function isTrustedClient(remoteIp: unknown): boolean {
 
 	if (!TRUST_PRIVATE_IPS) return false;
 
-	// RFC 1918 private subnets — opt-in via RP_PLATFORM_TRUST_PRIVATE=1.
+	// RFC 1918 private subnets — opt-in via VIBE_TAVERN_TRUST_PRIVATE=1.
 	// Parse IPv4 (strip IPv6-mapped prefix if present).
 	const v4 = remoteIp.replace(/^::ffff:/, "");
 	const parts = v4.split(".");
@@ -119,8 +119,8 @@ export interface TlsConfig {
 
 /** Resolves TLS config from env variables. Returns undefined if not configured. */
 export function resolveTlsConfig(): TlsConfig | undefined {
-	const keyPath = process.env.RP_PLATFORM_TLS_KEY;
-	const certPath = process.env.RP_PLATFORM_TLS_CERT;
+	const keyPath = process.env.VIBE_TAVERN_TLS_KEY;
+	const certPath = process.env.VIBE_TAVERN_TLS_CERT;
 
 	if (!keyPath || !certPath) return undefined;
 	if (!existsSync(keyPath) || !existsSync(certPath)) {

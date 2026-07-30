@@ -112,20 +112,20 @@ All paths can be overridden via environment variables:
 | Variable | Default | Purpose |
 |----------|---------|---------|
 | `VIBE_TAVERN_DB_PATH` | `{dataDir}/vibe-tavern.db` | SQLite database file path |
-| `RP_PLATFORM_DATA_DIR` | OS convention (see above) | Root directory for all user data |
-| `RP_PLATFORM_ROOT_DIR` | `process.cwd()` | Root directory for resolving relative paths |
-| `RP_PLATFORM_WEB_DIR` | `web/` next to executable | Frontend static files directory |
-| `RP_PLATFORM_HOST` | `127.0.0.1` | Listen host |
-| `RP_PLATFORM_PORT` | `8787` | Listen port |
-| `RP_PLATFORM_OPEN_BROWSER` | `1` | Set to `0` to suppress auto-open |
+| `VIBE_TAVERN_DATA_DIR` | OS convention (see above) | Root directory for all user data |
+| `VIBE_TAVERN_ROOT_DIR` | `process.cwd()` | Root directory for resolving relative paths |
+| `VIBE_TAVERN_WEB_DIR` | `web/` next to executable | Frontend static files directory |
+| `VIBE_TAVERN_HOST` | `127.0.0.1` | Listen host |
+| `VIBE_TAVERN_PORT` | `8787` | Listen port |
+| `VIBE_TAVERN_OPEN_BROWSER` | `1` | Set to `0` to suppress auto-open |
 
 ## Mobile/LAN Access in Standalone Builds
 
 By default the standalone app listens on `127.0.0.1`, which is only reachable from the same machine. To use **Mobile Access** from another device on the LAN or through Tailscale/VPN, run the server on a reachable host, for example:
 
 ```powershell
-$env:RP_PLATFORM_HOST = "0.0.0.0"
-$env:RP_PLATFORM_PORT = "8787"
+$env:VIBE_TAVERN_HOST = "0.0.0.0"
+$env:VIBE_TAVERN_PORT = "8787"
 .\vibe-tavern.exe
 ```
 
@@ -139,7 +139,7 @@ Security behavior:
 - Regenerate/revoke takes effect immediately without restarting the executable.
 - `GET`/`HEAD /api/assets/*` are public for image rendering; uploads and API mutations require auth.
 
-If the page loads but mobile requests fail, check that the OS firewall allows inbound TCP traffic on `RP_PLATFORM_PORT` and that the phone can reach the selected LAN/Tailscale IP.
+If the page loads but mobile requests fail, check that the OS firewall allows inbound TCP traffic on `VIBE_TAVERN_PORT` and that the phone can reach the selected LAN/Tailscale IP.
 
 ## Inno Setup Installer
 
@@ -181,7 +181,7 @@ Edit `installer/vibe-tavern.iss` to change:
 
 | Mode | Entry point | Data paths | Frontend |
 |------|------------|-----------|----------|
-| Dev | `services/api/src/server/prod-server.ts` (via `bun run dev`) | `data/` relative to project root | Vite dev server |
+| Dev | `apps/web/dev-server.ts` (via `bun run dev`) — HMR frontend + API in-process | `data/` relative to project root | Bun dev server with HMR (:4173) |
 | Prod | `out/services/api/prod-server.js` | `data/` + env vars | `out/apps/web/` |
 | Standalone | `out/standalone/vibe-tavern.exe` | OS convention (`%LOCALAPPDATA%\VibeTavern`) | `web/` next to exe |
 
@@ -226,18 +226,18 @@ The checks are advisory — missing files produce warnings in the log. If a late
 ### Exe starts but frontend not found
 
 - Ensure `web/` directory exists next to `vibe-tavern.exe`
-- Check `RP_PLATFORM_WEB_DIR` env var if overriding
+- Check `VIBE_TAVERN_WEB_DIR` env var if overriding
 - The server prints `[startup-check] ⚠️ web bundle: missing` if `index.html` is not found
 
 ### Database not created
 
 - Check that the data directory is writable
 - On Windows: ensure `%LOCALAPPDATA%` resolves correctly (run `echo %LOCALAPPDATA%` in cmd)
-- Set `RP_PLATFORM_DATA_DIR` to a known writable path for testing
+- Set `VIBE_TAVERN_DATA_DIR` to a known writable path for testing
 
 ### Port already in use
 
-- Set `RP_PLATFORM_PORT` to a different port
+- Set `VIBE_TAVERN_PORT` to a different port
 - Or kill the existing process: `netstat -ano | findstr :8787`
 
 ### Inno Setup not found

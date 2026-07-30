@@ -1,8 +1,9 @@
 import { useState, type ChangeEvent, type DragEvent } from "react";
 import type { ChatId, ChatMode, PronounForms } from "@vibe-tavern/domain";
-import type { VtfCharacterContent } from "@vibe-tavern/db/codecs";
+import { packMonolith } from "@vibe-tavern/db/codecs";
 import { toast } from "sonner";
 import { getT } from "../i18n/locale-helpers.js";
+import { appCharacterToVtfContent } from "../lib/vtf-content.js";
 import {
   uploadCharacterAvatar,
   type AppSnapshot,
@@ -78,6 +79,7 @@ export interface CharacterControllerActions {
   handleCreateCharacter: (input: { name: string; description?: string; firstMessage?: string; scenario?: string; personalitySummary?: string; mesExample?: string; alternateGreetings?: string[]; postHistoryInstructions?: string; creatorNotes?: string; systemPrompt?: string; depthPrompt?: string; depthPromptDepth?: number; depthPromptRole?: string; tags?: string[] }, avatarFile?: File | null, avatarOriginalFile?: File | null) => Promise<{ characterId: string; chatId: string } | null>;
   handleExportCharacter: (characterId: string) => Promise<void>;
   handleExportPng: (characterId: string) => Promise<void>;
+  handleExportVtf: (characterId: string) => Promise<void>;
   handleExportChatJsonl: (chatId: ChatId) => Promise<void>;
   handleExportPromptTrace: (traceId: string) => Promise<void>;
   isSavingCharacter: boolean;
@@ -138,7 +140,6 @@ export function useCharacterController(): CharacterControllerActions {
         .filter((chat): chat is ChatListItem => Boolean(chat)),
       allCharacters: state.allCharacters,
       promptTrace: state.promptTrace,
-      contextPreview: state.contextPreview,
     } as StoreSnapshot;
   }
 
@@ -507,6 +508,21 @@ export function useCharacterController(): CharacterControllerActions {
     }
   }
 
+  async function handleExportVtf(characterId: string): Promise<void> {
+    try {
+      const char = getSnapshot()?.character;
+      if (!char) throw new Error(getT()("failed_to_export_vtf"));
+      const data = await exportCharacterAction(characterId);
+      const safeName = char.name.replace(/[^a-zA-Z0-9_-]/g, "_");
+      // No avatar required — a VTF monolith is pure text. Requires the
+      // character to be present in the active snapshot (always true from the
+      // Build editor, which is the only caller).
+      downloadTextFile(`${safeName}.md`, packMonolith(appCharacterToVtfContent(char, data)), "text/markdown");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : getT()("failed_to_export_vtf"));
+    }
+  }
+
   async function handleExportChatJsonl(chatId: ChatId): Promise<void> {
     try {
       const text = await exportChatJsonlAction(chatId);
@@ -554,46 +570,10 @@ export function useCharacterController(): CharacterControllerActions {
     handleCreateCharacter,
     handleExportCharacter,
     handleExportPng,
+    handleExportVtf,
     handleExportChatJsonl,
     handleExportPromptTrace,
     isSavingCharacter,
     isImporting,
-  };
-}
-
-/**
- * Map an `AppCharacter` (frontend snapshot type) + the V3 export JSON to a
- * `VtfCharacterContent` (the db storage/exchange type `packMonolith` consumes).
- * Used by PNG export to embed the lossless `vtmd` monolith chunk alongside the
- * ST-compatible `chara`/`ccv3` chunks. `scenario` → `defaultScenario` is the one
- * field rename; `extensions` is lifted out of the V3 `data.extensions` block.
- * Tolerant: a missing/malformed extensions block yields `{}` rather than throwing.
- */
-function appCharacterToVtfContent(char: AppCharacter, v3Export: Record<string, unknown>): VtfCharacterContent {
-  const dataBlock = v3Export.data;
-  const ext = dataBlock && typeof dataBlock === "object" && !Array.isArray(dataBlock)
-    ? (dataBlock as Record<string, unknown>).extensions
-    : undefined;
-  const extensions = ext && typeof ext === "object" && !Array.isArray(ext)
-    ? (ext as Record<string, unknown>)
-    : {};
-  return {
-    name: char.name,
-    description: char.description,
-    personalitySummary: char.personalitySummary,
-    defaultScenario: char.scenario ?? null,
-    firstMessage: char.firstMessage ?? "",
-    mesExample: char.mesExample,
-    mesExampleMode: char.mesExampleMode,
-    mesExampleDepth: char.mesExampleDepth,
-    alternateGreetings: char.alternateGreetings,
-    postHistoryInstructions: char.postHistoryInstructions,
-    creatorNotes: char.creatorNotes,
-    depthPrompt: char.depthPrompt,
-    depthPromptDepth: char.depthPromptDepth,
-    depthPromptRole: char.depthPromptRole,
-    systemPrompt: char.systemPrompt,
-    tags: char.tags,
-    extensions,
   };
 }

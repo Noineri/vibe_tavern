@@ -5,13 +5,14 @@ import { resolveModelLabel } from "../../lib/model-resolve.js";
 import type { MessageMetaContext } from "../../lib/message-meta-registry.js";
 import { resolveEntityAvatarUrl } from "../../lib/avatar.js";
 import { Markdown } from "../../lib/markdown.js";
+import { copyText } from "../../lib/clipboard.js";
 
 import { BottomSheet } from "../shared/BottomSheet.js";
 import * as Select from "@radix-ui/react-select";
 import { useDisplayMessage, useMacroContext, useMessageAuthor, useIsStreamingTarget, useStreamingRevealedFor } from "../../stores/chat-selectors.js";
 import { useChatStore, useIsSending } from "../../stores/index.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
-import { useBootstrapStore } from "../../stores/api-actions/bootstrap-actions.js";
+import { useMessageAiEditorStore } from "../../stores/message-ai-editor-store.js";
 import type { MessageBlockProps } from "../play/play-mode-types.js";
 import { Icons } from "../shared/icons.js";
 import { AutoTextarea } from "../shared/auto-textarea.js";
@@ -34,12 +35,12 @@ import { AttachmentGrid } from "./AttachmentGrid.js";
 import { MobileVariantCarousel } from "./variants/mobile-variant-carousel.js";
 import { VariantControls } from "./variants/variant-controls.js";
 import { GenerationDots } from "./variants/generation-dots.js";
-import type { SwipeDirection, VariantProvenance } from "./variants/types.js";
+import type { SwipeDirection, VariantPickerItem } from "./variants/types.js";
 import { PendingUserMessage } from "./pending/pending-user-message.js";
 import { PendingAssistantMessage } from "./pending/pending-assistant-message.js";
 
-/** Stable empty array for the variantProvenance fallback (variantCount <= 6). */
-const EMPTY_PROVENANCE: VariantProvenance[] = [];
+/** Stable empty array for the pickerItems fallback (variantCount <= 6). */
+const EMPTY_PICKER_ITEMS: VariantPickerItem[] = [];
 
 type VariantControlsOverlayState = {
   rect: DOMRectReadOnly;
@@ -140,23 +141,24 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
   // MessageBlock. If we early-return before finishing the hook list, React
   // detects fewer hooks than the previous render → React error #300 → blank page.
   const isMobile = useIsMobile();
-  const promptPresets = useBootstrapStore((s) => s.data?.promptPresets ?? null);
   const selectedVariant = variants[selectedVariantIndex] ?? variants[0];
-  const presetName = useMemo(() => {
-    const pid = selectedVariant?.presetId ?? null;
-    if (!pid || !promptPresets) return null;
-    return promptPresets.find((p) => p.id === pid)?.name ?? null;
-  }, [selectedVariant?.presetId, promptPresets]);
-  // Q5: per-variant provenance for the jump dropdown (>6 variants). Resolves
-  // modelLabel + presetName for EVERY variant once; the dropdown rows read from
-  // this. Skipped when variantCount <= 6 (the simple counter stays).
-  const variantProvenance = useMemo(() => {
-    if (variantCount <= 6) return EMPTY_PROVENANCE;
+  // Preset name is baked on the variant at generation time (immutable text, no
+  // FK to a preset row) — read directly instead of resolving id → name.
+  const presetName = selectedVariant?.presetName ?? null;
+  // Q5: per-variant picker items for the jump browser (>6 variants). Resolves
+  // variantId + displayIndex + modelLabel + presetName for EVERY variant once;
+  // the dropdown rows read from this. Skipped when variantCount <= 6 (the
+  // simple counter stays). variantId is the immutable message_variants.id —
+  // stars key on it so they survive variant deletion / index compaction.
+  const pickerItems = useMemo(() => {
+    if (variantCount <= 6) return EMPTY_PICKER_ITEMS;
     return variants.map((v) => ({
+      variantId: v.id,
+      displayIndex: v.variantIndex + 1,
       modelLabel: v.modelId ? resolveModelLabel(v.modelId) : "",
-      presetName: v.presetId && promptPresets ? promptPresets.find((p) => p.id === v.presetId)?.name ?? null : null,
+      presetName: v.presetName ?? null,
     }));
-  }, [variants, variantCount, promptPresets]);
+  }, [variants, variantCount]);
 
 
   if (input.messageId === "__pending-user") {
@@ -193,6 +195,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
   const canRegenerate = !isGreeting && isLastAssistant && !isCoauthorMode;
   const canResend = isLast && msg.role === "user" && !pendingUserMessageContent;
   const canSwitchVariant = isLast && !isCoauthorMode;
+  const canAiEdit = !isGreeting && !isCoauthorMode && msg.role === "assistant" && !!selectedVariant;
 
   // Server sets message.content = selected variant's content at load time,
   // but client-side switching only changes selectedVariantIndex.
@@ -278,9 +281,10 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
       controlsRef={variantControlsRef}
       hidden={!!variantControlsOverlay}
       isBusy={isBusy}
+      messageId={msg.id}
       selectedVariantIndex={selectedVariantIndex}
       variantCount={variantCount}
-      provenance={variantProvenance}
+      items={pickerItems}
       onSelectVariant={handleSelectVariant}
     />
   );
@@ -290,9 +294,10 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
     <VariantControls
       mobile
       isBusy={isBusy}
+      messageId={msg.id}
       selectedVariantIndex={selectedVariantIndex}
       variantCount={variantCount}
-      provenance={variantProvenance}
+      items={pickerItems}
       onSelectVariant={handleSelectVariant}
     />
   );
@@ -423,6 +428,18 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
     chat.handleStartEdit(msg);
   };
 
+  const handleAiEditClick = () => {
+    if (isBusy) return;
+    const variantId = selectedVariant?.id;
+    if (!variantId) return;
+    useMessageAiEditorStore.getState().openEditor({
+      requestedMode: "message_edit",
+      targetChatId: brandId<ChatId>(authorInfo.activeChatId),
+      targetMessageId: msg.id,
+      selectedVariantId: variantId,
+    });
+  };
+
   // ── Message metadata context (variant-scoped provenance) ──
   const metaCtx: MessageMetaContext = {
     chatId: authorInfo.activeChatId,
@@ -434,7 +451,11 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
     isCoauthorTurn: false,
     presetName,
     tokenCount: msg.tokenCount,
-    createdAt: msg.createdAt,
+    // Per-variant timestamp: show the SELECTED variant's real creation time
+    // (each variant is its own generation with its own `createdAt`), not the
+    // message's — otherwise swiping always shows the first variant's time.
+    createdAt: selectedVariant?.createdAt ?? msg.createdAt,
+    diceRolls: msg.diceRolls ?? [],
   };
 
   return (
@@ -465,6 +486,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
       canBranch={canBranch}
       canRegenerate={canRegenerate}
       canResend={canResend}
+      canAiEdit={canAiEdit}
       selectedVariantIndex={selectedVariantIndex}
       variantCount={isCoauthorMode ? 1 : variantCount}
       canSwitchVariant={canSwitchVariant}
@@ -477,8 +499,15 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
       desktopVariantControls={desktopVariantControls}
       mobileVariantControls={mobileVariantControls}
       actions={{
-        onCopy: () => { void navigator.clipboard?.writeText(msg.displayContent); setCopied(true); setTimeout(() => setCopied(false), 1000); },
+        onCopy: async () => {
+          const result = await copyText(msg.displayContent);
+          if (result.ok) {
+            setCopied(true);
+            setTimeout(() => setCopied(false), 1000);
+          }
+        },
         onEdit: () => void handleEditClick(),
+        onAiEdit: () => handleAiEditClick(),
         onDelete: () => setDeleteConfirmOpen(true),
         onBranch: () => void chat.handleFork(msg.id),
         onRegenerate: () => void chat.handleRegenerateMessage(msg.id),

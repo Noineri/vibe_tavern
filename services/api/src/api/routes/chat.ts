@@ -5,6 +5,7 @@ import { z } from "zod";
 import { streamSSE } from "hono/streaming";
 import { logSendDebug } from "../../shared/send-debug-log.js";
 import * as schemas from "@vibe-tavern/api-contracts";
+import { DiceBindError } from "@vibe-tavern/db";
 import { readOptionalJson } from "./helpers.js";
 import { extractProviderErrorMessage } from "../../infrastructure/ai/provider-error-message.js";
 import { classifyProviderError } from "../../infrastructure/ai/provider-error-classifier.js";
@@ -61,9 +62,17 @@ async function writeChatSseEvents(
 
     const message = extractProviderErrorMessage(err);
     const category = classifyProviderError(err);
-    logSendDebug("api.route.sse.error", { message, category });
+    // DICE-B11 send-path gap (stream arm): a dice commit conflict (stale lane
+    // revision / unresolved choose) throws DiceBindError inside the generator
+    // during the for-await above. Streaming headers are already sent (HTTP 200),
+    // so this cannot become a 409 — surface the structured `code` on the SSE
+    // error event instead so the client can tell a retryable dice conflict
+    // (refresh pending + keep the draft) from a provider failure. The non-stream
+    // arm maps the same error to a real 409 in the global onError.
+    const diceCode = err instanceof DiceBindError ? err.code : undefined;
+    logSendDebug("api.route.sse.error", { message, category, ...(diceCode ? { code: diceCode } : {}) });
     try {
-      await stream.writeSSE({ event: "error", data: JSON.stringify({ message, category }) });
+      await stream.writeSSE({ event: "error", data: JSON.stringify({ message, category, ...(diceCode ? { code: diceCode } : {}) }) });
     } catch {
       abortBridge.abort("sse-error-write-failed");
     }
@@ -130,6 +139,15 @@ export function createChatRoutes(runtime: ChatRuntimeApi) {
       const { messageId, branchId } = c.req.valid("query");
       return c.json(await runtime.listPromptTraces(chatId, { messageId, branchId }));
     })
+    .post("/api/chats/:chatId/branches/:branchId/context-preview", async (c) => {
+      // Live context preview — a standalone branch-scoped query, decoupled
+      // from every navigation/mutation response so switching chats or branches
+      // never blocks on prompt assembly. POST (not GET) because current
+      // assembly persists lore/script activation state. The response echoes
+      // the immutable { chatId, branchId } target so the client can reject a
+      // result that no longer matches the active branch.
+      return c.json(await runtime.getContextPreview(c.req.param("chatId"), c.req.param("branchId")));
+    })
     .post("/api/chats/:chatId/messages/:messageId/branch", async (c) => {
       return c.json(await runtime.branchChat(c.req.param("chatId"), c.req.param("messageId")));
     })
@@ -180,6 +198,9 @@ export function createChatRoutes(runtime: ChatRuntimeApi) {
         ),
       );
     })
+    .post("/api/chats/:chatId/messages/:messageId/variants", zValidator("json", schemas.createMessageVariantSchema), async (c) => {
+      return c.json(await runtime.addEditorVariant(c.req.param("chatId"), c.req.param("messageId"), c.req.valid("json")));
+    })
     .delete("/api/chats/:chatId/messages/:messageId/variants/:variantIndex", async (c) => {
       return c.json(
         await runtime.deleteVariant(
@@ -191,7 +212,7 @@ export function createChatRoutes(runtime: ChatRuntimeApi) {
     })
     .patch("/api/chats/:chatId/messages/:messageId", zValidator("json", schemas.editMessageSchema), async (c) => {
       const body = c.req.valid("json");
-      return c.json(await runtime.editMessage(c.req.param("chatId"), c.req.param("messageId"), body.content ?? ""));
+      return c.json(await runtime.editMessage(c.req.param("chatId"), c.req.param("messageId"), body.content ?? "", body.expectedVariantId));
     })
     .patch("/api/chats/:chatId/messages/:messageId/attachments/:attachmentId/description", async (c) => {
       const body = await c.req.json<{ description: string }>().catch(() => ({ description: "" }));
@@ -320,9 +341,13 @@ export function createChatRoutes(runtime: ChatRuntimeApi) {
       const body = c.req.valid("json");
       return c.json(await runtime.setGreetingIndex(c.req.param("chatId"), body.greetingIndex));
     })
-    .patch("/api/chats/:chatId/coauthor-lorebooks", zValidator("json", schemas.setCoauthorLorebookIdsSchema), async (c) => {
+    .patch("/api/chats/:chatId/coauthor-context-links", zValidator("json", schemas.setCoauthorContextLinksSchema), async (c) => {
       const body = c.req.valid("json");
-      return c.json(await runtime.setCoauthorLorebookIds(c.req.param("chatId"), body.lorebookIds));
+      return c.json(await runtime.setCoauthorContextLinks(c.req.param("chatId"), body.links));
+    })
+    .patch("/api/chats/:chatId/dynamic-prompt", zValidator("json", schemas.updateDynamicPromptSchema), async (c) => {
+      const body = c.req.valid("json");
+      return c.json(await runtime.updateDynamicPrompt(c.req.param("chatId"), body));
     })
   ;
 }

@@ -1,27 +1,29 @@
 /**
- * useActiveTrace — branch-scoped trace selection (TL-B2).
+ * useActiveTrace — branch-scoped trace selection.
  *
- * After the lazy-loading refactor, trace history lives in a branch-scoped
- * cache (`useTraceHistoryStore`, keyed by `${chatId}::${branchId}`) rather
- * than in a `promptTraceHistory` field on the snapshot store. `useActiveTrace`
- * reads the cache entry for the active (chatId, branchId) plus the snapshot's
- * single `promptTrace` (latest) + `contextPreview`.
+ * Trace history lives in a branch-scoped cache (`useTraceHistoryStore`,
+ * keyed by `${chatId}::${branchId}`). The live context preview now lives in a
+ * separate branch-scoped cache (`useContextPreviewStore`) — it is no longer a
+ * field on the snapshot store. `useActiveTrace` reads: trace-history cache →
+ * the snapshot's single latest `promptTrace` → the preview cache.
  *
- * The branch-scoping is now structural (cache key), not a client-side filter.
- * These tests pin the selection predicate against both stores.
+ * The branch-scoping is structural (cache key), not a client-side filter.
+ * These tests pin the selection predicate against all three sources.
  */
-import { beforeEach, describe, expect, test } from "vitest";
+import { beforeEach, describe, expect, test } from "bun:test";
 import type { ChatBranchId, ChatId, PromptTraceRecordDto, AssemblePromptResponse } from "@vibe-tavern/domain";
 import { useSnapshotStore } from "./snapshot-store.js";
 import { useTraceHistoryStore, type TraceHistoryEntry } from "./trace-history-store.js";
+import { useContextPreviewStore, type ContextPreviewEntry } from "./context-preview-store.js";
 
-// `useActiveTrace` reads two stores via hooks. To exercise the pure selection
-// logic without a DOM harness, we reproduce the predicate here, feeding it the
-// same slices the hook reads. Keep in sync with `useActiveTrace` in
-// chat-selectors.ts when editing.
+// `useActiveTrace` reads three sources via hooks. To exercise the pure
+// selection logic without a DOM harness, we reproduce the predicate here,
+// feeding it the same slices the hook reads. Keep in sync with `useActiveTrace`
+// in chat-selectors.ts when editing.
 function selectActiveTrace(
 	snapshot: ReturnType<typeof useSnapshotStore.getState>,
 	cachedTraces: PromptTraceRecordDto[],
+	preview: AssemblePromptResponse | null,
 	selectedTraceId: string | null,
 ): PromptTraceRecordDto | AssemblePromptResponse | null {
 	const activeBranchId = snapshot.activeBranch?.id ?? null;
@@ -35,7 +37,7 @@ function selectActiveTrace(
 		latestForBranch ??
 		historyForBranch[0];
 	if (fromHistory) return fromHistory;
-	if (snapshot.contextPreview) return snapshot.contextPreview;
+	if (preview) return preview;
 	return null;
 }
 
@@ -67,12 +69,28 @@ const previewA = { layers: [], tokenAccounting: { total: 50 } } as unknown as As
 const previewB = { layers: [], tokenAccounting: { total: 10 } } as unknown as AssemblePromptResponse;
 
 /** Seed the trace-history cache with a success entry for (chatId, branchId). */
-function seedCache(branchId: ChatBranchId, traces: PromptTraceRecordDto[]): TraceHistoryEntry {
+function seedTraceCache(branchId: ChatBranchId, traces: PromptTraceRecordDto[]): TraceHistoryEntry {
 	const entry: TraceHistoryEntry = { status: "success", traces, error: null };
 	useTraceHistoryStore.setState((s) => ({
 		entries: { ...s.entries, [`${chatId}::${branchId}`]: entry },
 	}));
 	return entry;
+}
+
+/** Seed the context-preview cache with a success entry for (chatId, branchId). */
+function seedPreviewCache(branchId: ChatBranchId, preview: AssemblePromptResponse | null): ContextPreviewEntry {
+	const entry: ContextPreviewEntry = { status: "success", preview, error: null };
+	useContextPreviewStore.setState((s) => ({
+		entries: { ...s.entries, [`${chatId}::${branchId}`]: entry },
+	}));
+	return entry;
+}
+
+/** Read the cached preview for the active branch (null if not cached). */
+function activePreview(snapshot: ReturnType<typeof useSnapshotStore.getState>): AssemblePromptResponse | null {
+	const branchId = snapshot.activeBranch?.id ?? null;
+	if (!branchId) return null;
+	return useContextPreviewStore.getState().entries[`${chatId}::${branchId}`]?.preview ?? null;
 }
 
 describe("useActiveTrace — branch-scoped selection (lazy cache)", () => {
@@ -82,31 +100,31 @@ describe("useActiveTrace — branch-scoped selection (lazy cache)", () => {
 			activeChat: { id: chatId } as never,
 			activeBranch: { id: branchA } as never,
 			promptTrace: null,
-			contextPreview: null,
 		});
 		useTraceHistoryStore.setState({ entries: {} });
+		useContextPreviewStore.setState({ entries: {} });
 	});
 
 	test("returns the selected trace when it is in the active branch's cached history", () => {
 		const traceOnA = makeTrace("t1", branchA, 100);
-		seedCache(branchA, [traceOnA]);
-		useSnapshotStore.setState({ contextPreview: previewA });
-		const selected = selectActiveTrace(useSnapshotStore.getState(), [traceOnA], "t1");
+		seedTraceCache(branchA, [traceOnA]);
+		seedPreviewCache(branchA, previewA);
+		const selected = selectActiveTrace(useSnapshotStore.getState(), [traceOnA], activePreview(useSnapshotStore.getState()), "t1");
 		expect(selected).toBe(traceOnA);
 	});
 
-	test("falls back to contextPreview when the active branch has no cached traces (post-fork)", () => {
-		// After forking to branchB, the cache for branchB is empty (not yet
-		// fetched). promptTrace is stale (belongs to branchA), so it must be
-		// ignored. The hook falls back to branchB's fresh contextPreview.
+	test("falls back to the branch's cached preview when the active branch has no traces (post-fork)", () => {
+		// After forking to branchB, the trace cache for branchB is empty and
+		// promptTrace is stale (belongs to branchA), so it must be ignored.
+		// The hook falls back to branchB's cached live preview.
 		const traceOnA = makeTrace("t1", branchA, 6800);
 		useSnapshotStore.setState({
 			activeBranch: { id: branchB } as never,
-			promptTrace: traceOnA,        // stale: belongs to branchA
-			contextPreview: previewB,     // fresh: 10 tokens for branchB
+			promptTrace: traceOnA, // stale: belongs to branchA
 		});
-		// branchB cache is empty (the realistic post-fork state).
-		const selected = selectActiveTrace(useSnapshotStore.getState(), [], null);
+		seedPreviewCache(branchB, previewB); // fresh: 10 tokens for branchB
+		// branchB trace cache is empty (the realistic post-fork state).
+		const selected = selectActiveTrace(useSnapshotStore.getState(), [], activePreview(useSnapshotStore.getState()), null);
 		expect(selected).toBe(previewB);
 		expect((selected as AssemblePromptResponse).tokenAccounting.total).toBe(10);
 	});
@@ -116,39 +134,40 @@ describe("useActiveTrace — branch-scoped selection (lazy cache)", () => {
 		// only holds branchB's trace → the stale id is not found, and the latest
 		// branchB trace (promptTrace) wins instead.
 		const traceOnB = makeTrace("t-on-b", branchB, 20);
-		seedCache(branchB, [traceOnB]);
+		seedTraceCache(branchB, [traceOnB]);
+		seedPreviewCache(branchB, previewB);
 		useSnapshotStore.setState({
 			activeBranch: { id: branchB } as never,
 			promptTrace: traceOnB,
-			contextPreview: previewB,
 		});
-		const selected = selectActiveTrace(useSnapshotStore.getState(), [traceOnB], "t-on-a");
+		const selected = selectActiveTrace(useSnapshotStore.getState(), [traceOnB], activePreview(useSnapshotStore.getState()), "t-on-a");
 		expect(selected).toBe(traceOnB);
 		expect((selected as PromptTraceRecordDto).id).toBe("t-on-b");
 	});
 
-	test("returns null when no cached traces, no promptTrace, and no contextPreview", () => {
-		expect(selectActiveTrace(useSnapshotStore.getState(), [], null)).toBeNull();
+	test("returns null when no cached traces, no promptTrace, and no cached preview", () => {
+		expect(selectActiveTrace(useSnapshotStore.getState(), [], activePreview(useSnapshotStore.getState()), null)).toBeNull();
 	});
 
 	test("prefers the latest promptTrace when it belongs to the active branch", () => {
 		const latest = makeTrace("latest", branchA, 300);
 		const older = makeTrace("older", branchA, 100);
-		seedCache(branchA, [older]); // cache holds an older trace
-		useSnapshotStore.setState({ promptTrace: latest, contextPreview: previewA });
+		seedTraceCache(branchA, [older]); // cache holds an older trace
+		seedPreviewCache(branchA, previewA);
+		useSnapshotStore.setState({ promptTrace: latest });
 		// No selectedTraceId → latestForBranch (promptTrace) wins over cache[0].
-		const selected = selectActiveTrace(useSnapshotStore.getState(), [older], null);
+		const selected = selectActiveTrace(useSnapshotStore.getState(), [older], activePreview(useSnapshotStore.getState()), null);
 		expect(selected).toBe(latest);
 	});
 
 	test("resolves selectedTraceId from the cache even when promptTrace differs", () => {
 		const latest = makeTrace("latest", branchA, 300);
 		const older = makeTrace("older", branchA, 100);
-		seedCache(branchA, [latest, older]);
-		useSnapshotStore.setState({ promptTrace: latest, contextPreview: previewA });
+		seedTraceCache(branchA, [latest, older]);
+		seedPreviewCache(branchA, previewA);
+		useSnapshotStore.setState({ promptTrace: latest });
 		// User navigated to the older trace → it must be resolved from the cache.
-		const selected = selectActiveTrace(useSnapshotStore.getState(), [latest, older], "older");
+		const selected = selectActiveTrace(useSnapshotStore.getState(), [latest, older], activePreview(useSnapshotStore.getState()), "older");
 		expect(selected).toBe(older);
 	});
 });
-

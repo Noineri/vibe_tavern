@@ -132,7 +132,7 @@ function greetingsDecorations(handlers: GreetingsUiHandlers): Extension {
         this.decorations = buildGreetingsDecorations(view, handlers);
       }
       update(update: ViewUpdate): void {
-        if (update.docChanged || update.viewportChanged) {
+        if (update.docChanged) {
           this.decorations = buildGreetingsDecorations(update.view, handlers);
         }
       }

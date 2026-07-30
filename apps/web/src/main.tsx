@@ -14,7 +14,7 @@ import "./styles.css";
 
 // Extract the mobile token from the URL hash BEFORE React mounts. Child
 // components (AppShell → providers/personas fetches) fire useEffects before
-// the parent App's useEffect, so saving the token inside useRpPlatformApp's
+// the parent App's useEffect, so saving the token inside useVibeTavernApp's
 // load() is too late — those early calls go out without a token and 401,
 // which the wrapper below turns into a false "session revoked".
 if (typeof window !== "undefined") {

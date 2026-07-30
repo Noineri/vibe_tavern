@@ -1,5 +1,19 @@
-const dir = process.argv[2] ?? "dist";
-const port = Number(process.argv[3] ?? "3000");
+import { parseArgs } from "node:util";
+
+const args = process.argv.slice(2);
+const { tokens } = parseArgs({
+  args,
+  options: {},
+  strict: false,
+  allowPositionals: true,
+  tokens: true,
+});
+const parsedArgs = [...new Set(tokens.map((token) => token.index))].flatMap((index) => {
+  const arg = args[index];
+  return arg === undefined ? [] : [arg];
+});
+const dir = parsedArgs[0] ?? "dist";
+const port = Number(parsedArgs[1] ?? "3000");
 
 Bun.serve({
   port,

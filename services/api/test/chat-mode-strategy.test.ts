@@ -74,7 +74,8 @@ describe("CoauthorModeStrategy.assemble", () => {
         getMessages: async () => [],
         getCharacter: async () => ({ id: "char_test", firstMessage: "x", alternateGreetings: [] } as never),
         getProfileMdText: async () => "---\nname: Test\n---\n# PERSONALITY\nx\n",
-        getCoauthorLorebookEntries: async () => [],
+        getCoauthorContextItems: async () => [],
+        getCoauthorBoundResources: async () => ({ lorebooks: [], scripts: [] }),
         getChatSummaries: async () => [],
         getCoauthorUserModules: async () => [],
         getSkillCatalog: async () => [],
@@ -86,7 +87,7 @@ describe("CoauthorModeStrategy.assemble", () => {
     expect(out.tools).toHaveProperty("write_profile");
     // CTX-S4: read_skill_file is always available (catalog-driven skill access).
     expect(out.tools).toHaveProperty("read_skill_file");
-    expect(out.maxSteps).toBe(5);
+    expect(out.maxSteps).toBe(20);
   });
 
   test("resolveProvider is a passthrough (mirrors RP)", async () => {

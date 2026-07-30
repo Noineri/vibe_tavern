@@ -84,7 +84,6 @@ export async function testOpenAiCompatChat(input: ProviderConnectionInput): Prom
 				model: input.model,
 				messages: [{ role: "user", content: "Hi" }],
 				max_tokens: 64,
-				temperature: 0.7,
 				stream: false,
 			}),
 			signal: controller.signal,
@@ -103,10 +102,15 @@ export async function testOpenAiCompatChat(input: ProviderConnectionInput): Prom
 			choices?: Array<{ message?: { content?: string | Array<{ type?: string; text?: string }>; reasoning_content?: string | null } }> };
 		const choice = payload.choices?.[0];
 		const content = extractChoiceContent(choice, { skipReasoning: true });
-		if (!content && choice?.message?.reasoning_content) {
-			return { success: true, reply: "(reasoning only, no visible output)" };
-		}
-		return { success: true, reply: content || "(empty response)" };
+		const reasoning = choice?.message?.reasoning_content?.trim()
+			|| (Array.isArray(choice?.message?.content)
+				? choice.message.content
+					.filter((part) => part.type === "thinking" || part.type === "reasoning")
+					.map((part) => part.text ?? "")
+					.join("")
+					.trim()
+				: "");
+		return { success: true, reply: content || reasoning || "(empty response)" };
 	} catch (error) {
 		clearTimeout(timer);
 		const msg = error instanceof Error ? error.message : "Unknown error";
@@ -188,12 +192,17 @@ export async function listOpenAiCompatModels(input: ListModelsInput): Promise<Pr
 
 			if (record.description) opt.description = record.description;
 
-			// Pricing
+			// Pricing — vendors (OpenRouter, Chutes) stringify the numbers in their JSON
+			// (e.g. "0" for free models). Coerce to Number so ProviderModelPricing's
+			// `number` contract holds downstream (strict === comparisons, sorting, etc.).
 			if (record.pricing) {
-				const inputPrice = record.pricing.input ?? record.pricing.prompt;
-				const outputPrice = record.pricing.output ?? record.pricing.completion;
-				if (inputPrice !== undefined || outputPrice !== undefined) {
-					opt.pricing = { input: inputPrice, output: outputPrice };
+				const inputRaw = record.pricing.input ?? record.pricing.prompt;
+				const outputRaw = record.pricing.output ?? record.pricing.completion;
+				if (inputRaw != null || outputRaw != null) {
+					opt.pricing = {
+						input: inputRaw != null ? Number(inputRaw) : undefined,
+						output: outputRaw != null ? Number(outputRaw) : undefined,
+					};
 				}
 			}
 

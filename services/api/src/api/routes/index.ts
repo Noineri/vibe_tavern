@@ -16,6 +16,7 @@ import { createInsightsRoutes } from "./insights.js";
 import { createRuntimeRoutes } from "./runtime.js";
 import { createFsRoutes } from "./fs.js";
 import { createCoauthorSkillRoutes } from "./coauthor-skill.js";
+import { createDiceRoutes } from "./dice.js";
 
 export type { RuntimeApi } from "../contract/runtime-api.js";
 
@@ -34,6 +35,7 @@ export function createApiRouter(runtime: RuntimeApi) {
     .route("/", createSettingsRoutes(runtime.settings))
     .route("/", createMobileAccessRoutes(runtime.mobileAccess))
     .route("/", createInsightsRoutes(runtime.insights))
+    .route("/", createDiceRoutes(runtime.dice))
     .route("/", createRuntimeRoutes())
     .route("/", createFsRoutes())
     .route("/", createCoauthorSkillRoutes(runtime.coauthorSkills))

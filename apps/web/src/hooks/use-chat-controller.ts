@@ -18,9 +18,11 @@ import { useProviderStore } from "../stores/provider-store.js";
 import { useProviderDataStore } from "../stores/provider-data-store.js";
 import { StreamingReveal } from "../lib/streaming-reveal.js";
 import { useSnapshotStore } from "../stores/snapshot-store.js";
+import { useBootstrapStore } from "../stores/api-actions/bootstrap-actions.js";
+import { resolveCoauthorBinding } from "../lib/coauthor-provider-binding.js";
 import { useTraceHistoryStore } from "../stores/trace-history-store.js";
 import { useCoauthorTurnStore } from "../stores/coauthor-turn-store.js";
-import { coauthorToolOutputSchema, coauthorSkillReadOutputSchema } from "@vibe-tavern/api-contracts";
+import { coauthorToolOutputSchema, coauthorSkillReadOutputSchema, coauthorLoreBundleOutputSchema } from "@vibe-tavern/api-contracts";
 import {
   fetchChatAction,
   sendChatMessageAction,
@@ -36,6 +38,9 @@ import {
   deleteBranchAction,
   renameBranchAction,
 } from "../stores/api-actions/chat-actions.js";
+import { useDiceStore } from "../stores/dice-store.js";
+import { DiceApiError } from "../api/dice-api.js";
+import type { DiceLaneState, DiceSendCommitIntent } from "../api/types.js";
 import { findCurrentInsightsCompletionTarget, startInsightsCompletionRefreshFromSnapshot } from "../stores/api-actions/insights-completion-actions.js";
 import { ProviderStreamError } from "../api/provider-stream-error.js";
 
@@ -55,6 +60,89 @@ function restoreDraftAfterSendError(content?: string | null, attachments?: Attac
 // Categories where the failure is likely transient (retry after a short wait) —
 // the message alone is enough; we just add a "try again" hint.
 const TRANSIENT_PROVIDER_CATEGORIES = new Set(["rate_limit", "timeout", "network", "server_error"]);
+
+// ─── Dice send gate (DICE-F3) ───────────────────────────────────────────
+// Subtractive-only: when Dice is disabled, the lane is absent/empty, or there
+// is nothing bindable, every helper below collapses to "no Dice" so a no-Dice
+// send stays byte-identical to before. Dice can only ever BLOCK a send, never
+// make an otherwise-unsendable draft sendable.
+
+/** Why a send is Dice-blocked. */
+export type DiceSendBlock = "choose" | "actor_mismatch";
+
+const DICE_CONFLICT_CODES = new Set(["stale_revision", "unresolved_choose"]);
+
+/** Extract the dice commit-conflict code from either send-mode error: non-stream
+ *  throws {@link DiceApiError} (HTTP 409 body `error.details.code`), stream
+ *  throws {@link ProviderStreamError} (SSE error event `code`). */
+function diceConflictCode(error: unknown): string | undefined {
+  const code = error instanceof DiceApiError || error instanceof ProviderStreamError ? error.code : undefined;
+  return code !== undefined && DICE_CONFLICT_CODES.has(code) ? code : undefined;
+}
+
+/** Pure send-gate: the reason the active pending lane blocks a send, or null.
+ *  Mirrors the backend bind gate (`bindActiveAndResetInTx`), which rejects an
+ *  unresolved `choose` only among INCLUDED unbound rolls (the store already
+ *  drops bound rolls) — so excluded rolls neither block nor bind. The actor
+ *  check is frontend-only (the backend does not validate actor): a pending roll
+ *  captured for an actor that no longer matches the current persona/character
+ *  must not bind silently. Exported for the reactive `canSend` in
+ *  use-input-area. */
+export function diceSendBlockReason(
+  lane: DiceLaneState | null | undefined,
+  personaId: string | null,
+  characterId: string | null,
+): DiceSendBlock | null {
+  if (!lane) return null;
+  const bindable = lane.rolls.filter((roll) => roll.included);
+  if (bindable.some((roll) => roll.policy === "choose" && roll.finalAttemptId === null)) return "choose";
+  if (
+    bindable.some((roll) =>
+      roll.actor.actorType === "persona" ? roll.actor.actorId !== personaId : roll.actor.actorId !== characterId,
+    )
+  ) {
+    return "actor_mismatch";
+  }
+  return null;
+}
+
+/** Imperative read (at send time) of the dice commit intent + any block, for the
+ *  CURRENT `{chatId, branchId}` and the chat's configured `diceMode`. The intent
+ *  is captured ONLY when the active lane has a bindable (included) roll —
+ *  otherwise it is undefined and the send body is byte-identical to a no-Dice
+ *  send. */
+function readDiceSendState(): { commitIntent: DiceSendCommitIntent | undefined; blockReason: DiceSendBlock | null } {
+  const snapshot = useSnapshotStore.getState();
+  const chatId = snapshot.activeChat?.id ?? null;
+  const branchId = snapshot.activeBranch?.id ?? null;
+  const insights = snapshot.activeChat?.insightsConfig;
+  if (!insights?.diceEnabled || !chatId || !branchId) return { commitIntent: undefined, blockReason: null };
+  const diceMode = insights.diceMode ?? "normal";
+  const lane = useDiceStore.getState().byScope[`${chatId}|${branchId}`]?.lanes?.[diceMode] ?? null;
+  const blockReason = diceSendBlockReason(lane, snapshot.persona?.id ?? null, snapshot.activeChat?.characterId ?? null);
+  if (blockReason) return { commitIntent: undefined, blockReason };
+  const hasBindable = lane !== null && lane.rolls.some((roll) => roll.included);
+  const commitIntent = lane && hasBindable ? { diceMode, pendingRevision: lane.revision } : undefined;
+  return { commitIntent, blockReason: null };
+}
+
+/** A send that failed with a dice commit conflict (stale lane revision /
+ *  unresolved choose) is NOT a provider error — the lane moved under us. Resync
+ *  the pending lane and KEEP the draft so the user can re-review and resend.
+ *  Returns true when the error was a dice conflict (caller must skip the generic
+ *  provider-error path). */
+function tryHandleDiceSendConflict(
+  error: unknown,
+  chatId: ChatId,
+  pendingUserContent: string | null | undefined,
+  pendingAttachments: Attachment[] | undefined,
+): boolean {
+  if (diceConflictCode(error) === undefined) return false;
+  restoreDraftAfterSendError(pendingUserContent, pendingAttachments);
+  const branchId = useSnapshotStore.getState().activeBranch?.id ?? null;
+  if (branchId) void useDiceStore.getState().refreshPending(chatId, branchId);
+  return true;
+}
 
 /**
  * Shows a category-aware toast for a provider/LLM generation failure. Reads the
@@ -132,7 +220,21 @@ export function useChatController(): ChatControllerActions {
     () => providerProfiles.find((p) => p.isActive) ?? null,
     [providerProfiles],
   );
-  const canSendViaActiveProfile = activeProfile !== null && Boolean(activeProfile.defaultModel);
+
+  // Co-Author binding — used for the send gate when the active chat is in
+  // coauthor mode. resolveCoauthorBinding falls back to the RP active profile
+  // when no explicit Co-Author pair is saved, so coauthor readiness covers both.
+  const coauthorProviderId = useBootstrapStore((s) => s.data?.uiSettings?.coauthorProviderId ?? null);
+  const coauthorModelName = useBootstrapStore((s) => s.data?.uiSettings?.coauthorModelName ?? null);
+  const chatMode = useSnapshotStore((s) => s.activeChat?.mode);
+  const coauthorBinding = useMemo(
+    () => resolveCoauthorBinding({ coauthorProviderId, coauthorModelName, profiles: providerProfiles, rpActiveProfile: activeProfile }),
+    [coauthorProviderId, coauthorModelName, providerProfiles, activeProfile],
+  );
+
+  const canSendViaActiveProfile = chatMode === "coauthor"
+    ? coauthorBinding.isReady
+    : activeProfile !== null && Boolean(activeProfile.defaultModel);
   const streamResponse = useProviderStore((s) => s.connection.streamResponse);
 
   // Refs for stable access in async callbacks
@@ -266,6 +368,24 @@ export function useChatController(): ChatControllerActions {
             });
             return;
           }
+          // CTX-L3: a lore_bundle result is a distinct PROPOSAL arm (the
+          // cumulative lore draft). Recognize it before the profile/greeting
+          // parse (which would otherwise flag it an error). The five lore tools
+          // all return {target:"lore_bundle", bundle, summary}.
+          if (
+            info.toolName === "create_lorebook" || info.toolName === "create_lore_entry"
+            || info.toolName === "set_lore_activation" || info.toolName === "ai_write_lore_entry"
+            || info.toolName === "ai_generate_lore_keys"
+          ) {
+            const lore = coauthorLoreBundleOutputSchema.safeParse(info.output);
+            useCoauthorTurnStore.getState().upsertActivity(chatId, {
+              toolCallId: info.toolCallId,
+              toolName: info.toolName,
+              status: info.isError || !lore.success ? "error" : "done",
+              ...(lore.success ? { loreBundle: lore.data.bundle, summary: lore.data.summary } : {}),
+            });
+            return;
+          }
           // Narrow the opaque `output` to the CoauthorToolOutput wire contract; a
           // malformed payload (or an explicit tool error) marks the card as error.
           const parsed = coauthorToolOutputSchema.safeParse(info.output);
@@ -307,6 +427,12 @@ export function useChatController(): ChatControllerActions {
         toast.info(getT()("generation_cancelled"));
         return "cancelled";
       }
+      // DICE-F3: a dice commit conflict (stale revision / unresolved choose)
+      // resyncs the lane and keeps the draft — not a provider error.
+      if (tryHandleDiceSendConflict(error, chatId, pendingUserContent, pendingAttachments)) {
+        useChatStore.getState().setGenerationStatus(chatId, "failed");
+        return "failed";
+      }
       void logClientSendDebug("web.hook.stream.error", {
         chatId,
         message: error instanceof Error ? error.message : String(error),
@@ -330,6 +456,80 @@ export function useChatController(): ChatControllerActions {
       useChatStore.getState().finishGeneration(chatId);
       reveal.clear();
       streamingRevealRef.current = null;
+    }
+  }
+
+  // --- Non-streaming helper ---
+
+  /**
+   * Execute a non-streaming action (send / regenerate / generateReply) with the
+   * SAME lifecycle contract as {@link executeStreamAction}: it owns
+   * startGeneration/finishGeneration, treats a signal abort as a settled
+   * "cancelled" outcome (refreshAfterAbort + toast), and NEVER throws — so
+   * callers can bracket message-level flags (messageActionId) with plain
+   * set/clear around the await without an early `return` leaking the clear.
+   *
+   * Why this exists: the non-stream path used to hand-roll startGeneration →
+   * try/catch(signal.aborted)/finally/finishGeneration in four call sites,
+   * each with slightly different cleanup. One of those clones (the abort
+   * branch of handleRegenerateMessage) early-returned before its
+   * `setMessageActionId(null)` and left the regenerated message permanently
+   * busy (`MessageBlock.isBusy`/`isBranching` key off messageActionId).
+   * Centralizing the lifecycle here makes that class of leak unreachable.
+   *
+   * Post-success trace hydration (selectedTraceId + branch-scoped cache
+   * upsert) is folded in because all four call sites do it identically.
+   * Non-abort error recovery is caller-owned via {@link opts.onError} (toast,
+   * draft restore, snapshot refresh) — the helper does not second-guess it and
+   * resolves as "failed". generationStatus is intentionally NOT touched:
+   * nothing reads it for non-stream paths today (only executeStreamAction
+   * sets "failed" there, and only for debug consumption).
+   */
+  async function executeNonStreamAction(
+    chatId: ChatId,
+    fn: (signal: AbortSignal) => Promise<unknown>,
+    opts: {
+      pendingUserContent?: string | null;
+      pendingAttachments?: Attachment[];
+      streamingMessageId?: string | null;
+      /** Suppress the default "generation cancelled" toast — the queue path
+       *  (runRegenerateJob) owns its own job-row affordances and stays silent. */
+      suppressCancelToast?: boolean;
+      /** Caller-specific non-abort error recovery (toast / draft restore /
+       *  snapshot refresh). Abort is handled uniformly by the helper. */
+      onError?: (error: unknown) => void | Promise<void>;
+      /** When set, the helper emits `${label}.success/.cancelled/.error` debug
+       *  logs — uniformizing what call sites previously logged inconsistently. */
+      debugLabel?: string;
+    } = {},
+  ): Promise<StreamOutcome> {
+    const controller = useChatStore.getState().startGeneration(
+      chatId,
+      opts.pendingUserContent ?? null,
+      opts.pendingAttachments,
+      opts.streamingMessageId ?? null,
+    );
+    try {
+      await fn(controller.signal);
+      const snapshot = useSnapshotStore.getState();
+      useChatStore.getState().setSelectedTraceId(snapshot.promptTrace?.id ?? null);
+      if (snapshot.promptTrace && snapshot.activeBranch?.id) {
+        useTraceHistoryStore.getState().upsertLatest(chatId, snapshot.activeBranch.id, snapshot.promptTrace);
+      }
+      if (opts.debugLabel) void logClientSendDebug(`${opts.debugLabel}.success`, { chatId });
+      return "done";
+    } catch (error) {
+      if (controller.signal.aborted) {
+        if (opts.debugLabel) void logClientSendDebug(`${opts.debugLabel}.cancelled`, { chatId });
+        await refreshAfterAbort(chatId);
+        if (!opts.suppressCancelToast) toast.info(getT()("generation_cancelled"));
+        return "cancelled";
+      }
+      if (opts.debugLabel) void logClientSendDebug(`${opts.debugLabel}.error`, { chatId, error: String(error) });
+      await opts.onError?.(error);
+      return "failed";
+    } finally {
+      useChatStore.getState().finishGeneration(chatId);
     }
   }
 
@@ -374,6 +574,16 @@ export function useChatController(): ChatControllerActions {
       return;
     }
 
+    // DICE-F3: capture the commit intent (only when the active lane has a
+    // bindable roll) and enforce the subtractive send gate. The button/Enter
+    // path already gates on `canSend` (use-input-area); this is the
+    // defense-in-depth backstop for any direct handleSend call.
+    const dice = readDiceSendState();
+    if (dice.blockReason) {
+      void logClientSendDebug("web.hook.handleSend.blocked.dice", { activeChatId, reason: dice.blockReason });
+      return;
+    }
+
     if (streamResponseRef.current) {
       void logClientSendDebug("web.hook.handleSend.stream-request", {
         activeChatId,
@@ -383,7 +593,7 @@ export function useChatController(): ChatControllerActions {
       csStore.clearDraftAttachments();
       await executeStreamAction(
         activeChatId,
-        (opts) => sendChatMessageStream(activeChatId, { content: trimmed, attachments: attachments.length > 0 ? attachments : undefined }, opts),
+        (opts) => sendChatMessageStream(activeChatId, { content: trimmed, attachments: attachments.length > 0 ? attachments : undefined, ...dice.commitIntent }, opts),
         draft,
         currentAttachments,
       );
@@ -391,42 +601,38 @@ export function useChatController(): ChatControllerActions {
       void logClientSendDebug("web.hook.handleSend.request", { activeChatId });
       const currentAttachments = [...csStore.draftAttachments];
       csStore.clearDraftAttachments();
-      const controller = csStore.startGeneration(activeChatId, draft, currentAttachments);
       csStore.setDraft("");
-      try {
-        await sendChatMessageAction(activeChatId, trimmed, attachments.length > 0 ? attachments : undefined, controller.signal);
-        const snapshot = useSnapshotStore.getState();
-        csStore.setSelectedTraceId(snapshot.promptTrace?.id ?? null);
-        // Optimistically add the fresh trace to the branch-scoped cache so the
-        // Trace tab (if open) shows it without a refetch (TL-B2).
-        if (snapshot.promptTrace && snapshot.activeBranch?.id) {
-          useTraceHistoryStore.getState().upsertLatest(activeChatId, snapshot.activeBranch.id, snapshot.promptTrace);
-        }
-        void logClientSendDebug("web.hook.handleSend.success", { activeChatId });
-      } catch (error) {
-        if (controller.signal.aborted) {
-          void logClientSendDebug("web.hook.handleSend.cancelled", { activeChatId });
-          await refreshAfterAbort(activeChatId);
-          toast.info(getT()("generation_cancelled"));
-          return;
-        }
-        logClientSendDebug("web.hook.handleSend.error", { chatId: activeChatId, error: String(error) });
-        if (error instanceof Error && error.message === "VISION_NOT_SUPPORTED") {
-          toast.error(getT()("vision_not_supported"), {
-            description: getT()("vision_not_supported_desc"),
-            action: {
-              label: getT()("open_provider_settings"),
-              onClick: () => useModalStore.getState().setIsProviderModalOpen(true),
-            },
-          });
-          restoreDraftAfterSendError(draft, currentAttachments);
-        } else {
-          restoreDraftAfterSendError(draft, currentAttachments);
-          showProviderErrorToast(error, getT());
-        }
-      } finally {
-        useChatStore.getState().finishGeneration(activeChatId);
-      }
+      // Draft restore is caller-specific (and only on non-abort errors — an
+      // abort is an explicit user cancel, the message is already gone from
+      // the draft by design). executeNonStreamAction owns the lifecycle and
+      // treats abort as a settled "cancelled" outcome without invoking onError.
+      await executeNonStreamAction(
+        activeChatId,
+        (signal) => sendChatMessageAction(activeChatId, trimmed, attachments.length > 0 ? attachments : undefined, dice.commitIntent, signal),
+        {
+          pendingUserContent: draft,
+          pendingAttachments: currentAttachments,
+          debugLabel: "web.hook.handleSend",
+          onError: (error) => {
+            // DICE-F3: a dice commit conflict resyncs the lane and keeps the
+            // draft — it is not a provider failure.
+            if (tryHandleDiceSendConflict(error, activeChatId, draft, currentAttachments)) return;
+            if (error instanceof Error && error.message === "VISION_NOT_SUPPORTED") {
+              toast.error(getT()("vision_not_supported"), {
+                description: getT()("vision_not_supported_desc"),
+                action: {
+                  label: getT()("open_provider_settings"),
+                  onClick: () => useModalStore.getState().setIsProviderModalOpen(true),
+                },
+              });
+              restoreDraftAfterSendError(draft, currentAttachments);
+            } else {
+              restoreDraftAfterSendError(draft, currentAttachments);
+              showProviderErrorToast(error, getT());
+            }
+          },
+        },
+      );
     }
   }, []);
 
@@ -449,27 +655,17 @@ export function useChatController(): ChatControllerActions {
         (opts) => generateReplyStream(activeChatId, opts),
       );
     } else {
-      const controller = useChatStore.getState().startGeneration(activeChatId);
-      try {
-        await generateReplyAction(activeChatId, controller.signal);
-        const snapshot = useSnapshotStore.getState();
-        useChatStore.getState().setSelectedTraceId(snapshot.promptTrace?.id ?? null);
-        if (snapshot.promptTrace && snapshot.activeBranch?.id) {
-          useTraceHistoryStore.getState().upsertLatest(activeChatId, snapshot.activeBranch.id, snapshot.promptTrace);
-        }
-        void logClientSendDebug("web.hook.handleResend.success", { activeChatId });
-      } catch (error) {
-        if (controller.signal.aborted) {
-          void logClientSendDebug("web.hook.handleResend.cancelled", { activeChatId });
-          await refreshAfterAbort(activeChatId);
-          toast.info(getT()("generation_cancelled"));
-          return;
-        }
-        await refreshChatSnapshotCache(activeChatId);
-        showProviderErrorToast(error, getT(), "resend_failed");
-      } finally {
-        useChatStore.getState().finishGeneration(activeChatId);
-      }
+      await executeNonStreamAction(
+        activeChatId,
+        (signal) => generateReplyAction(activeChatId, signal),
+        {
+          debugLabel: "web.hook.handleResend",
+          onError: async (error) => {
+            await refreshChatSnapshotCache(activeChatId);
+            showProviderErrorToast(error, getT(), "resend_failed");
+          },
+        },
+      );
     }
   }, []);
 
@@ -554,44 +750,41 @@ export function useChatController(): ChatControllerActions {
       return;
     }
 
+    // Bracket messageActionId with try/finally so EVERY settle path clears it:
+    // success, abort, provider error, or a throw out of refreshAfterAbort. The
+    // prior non-stream branch early-returned on abort and skipped this clear,
+    // leaving the message permanently busy (MessageBlock.isBusy/isBranching).
     useChatStore.getState().setMessageActionId(messageId);
-
-    if (streamResponseRef.current) {
-      void logClientSendDebug("web.hook.handleRegenerate.stream-request", {
-        activeChatId, messageId,
-        generationStatus: getGenerationStatus(activeChatId),
-      });
-      await executeStreamAction(
-        activeChatId,
-        (opts) => regenerateChatMessageStream(activeChatId, messageId, opts),
-        undefined,
-        undefined,
-        messageId,
-      );
-    } else {
-      const controller = useChatStore.getState().startGeneration(activeChatId, undefined, undefined, messageId);
-      try {
-        await regenerateMessageAction(activeChatId, messageId, controller.signal);
-        const snapshot = useSnapshotStore.getState();
-        useChatStore.getState().setSelectedTraceId(snapshot.promptTrace?.id ?? null);
-        if (snapshot.promptTrace && snapshot.activeBranch?.id) {
-          useTraceHistoryStore.getState().upsertLatest(activeChatId, snapshot.activeBranch.id, snapshot.promptTrace);
-        }
-      } catch (error) {
-        if (controller.signal.aborted) {
-          void logClientSendDebug("web.hook.handleRegenerate.cancelled", { activeChatId, messageId });
-          await refreshAfterAbort(activeChatId);
-          toast.info(getT()("generation_cancelled"));
-          return;
-        }
-        await refreshChatSnapshotCache(activeChatId);
-        toast.error(error instanceof Error ? error.message : getT()("regen_failed"));
-      } finally {
-        useChatStore.getState().finishGeneration(activeChatId);
+    try {
+      if (streamResponseRef.current) {
+        void logClientSendDebug("web.hook.handleRegenerate.stream-request", {
+          activeChatId, messageId,
+          generationStatus: getGenerationStatus(activeChatId),
+        });
+        await executeStreamAction(
+          activeChatId,
+          (opts) => regenerateChatMessageStream(activeChatId, messageId, opts),
+          undefined,
+          undefined,
+          messageId,
+        );
+      } else {
+        await executeNonStreamAction(
+          activeChatId,
+          (signal) => regenerateMessageAction(activeChatId, messageId, signal),
+          {
+            streamingMessageId: messageId,
+            debugLabel: "web.hook.handleRegenerate",
+            onError: async (error) => {
+              await refreshChatSnapshotCache(activeChatId);
+              toast.error(error instanceof Error ? error.message : getT()("regen_failed"));
+            },
+          },
+        );
       }
+    } finally {
+      useChatStore.getState().setMessageActionId(null);
     }
-
-    useChatStore.getState().setMessageActionId(null);
   }
 
   async function handleSelectMessageVariant(messageId: string, variantIndex: number): Promise<void> {
@@ -676,26 +869,20 @@ export function useChatController(): ChatControllerActions {
             messageId,
           );
         }
-        // Non-stream path: mirror handleRegenerateMessage's branch, threading override.
-        const controller = useChatStore.getState().startGeneration(chatId, undefined, undefined, messageId);
-        try {
-          await regenerateMessageAction(chatId, messageId, controller.signal, override);
-          const snapshot = useSnapshotStore.getState();
-          useChatStore.getState().setSelectedTraceId(snapshot.promptTrace?.id ?? null);
-          if (snapshot.promptTrace && snapshot.activeBranch?.id) {
-            useTraceHistoryStore.getState().upsertLatest(chatId, snapshot.activeBranch.id, snapshot.promptTrace);
-          }
-          return "done";
-        } catch (error) {
-          if (controller.signal.aborted) {
-            await refreshAfterAbort(chatId);
-            return "cancelled";
-          }
-          await refreshChatSnapshotCache(chatId);
-          return "failed";
-        } finally {
-          useChatStore.getState().finishGeneration(chatId);
-        }
+        // Non-stream path: same lifecycle contract via executeNonStreamAction.
+        // suppressCancelToast — the queue manager owns job-row affordances and
+        // stays silent on cancel/error (mirrors the prior behavior).
+        return await executeNonStreamAction(
+          chatId,
+          (signal) => regenerateMessageAction(chatId, messageId, signal, override),
+          {
+            streamingMessageId: messageId,
+            suppressCancelToast: true,
+            onError: async () => {
+              await refreshChatSnapshotCache(chatId);
+            },
+          },
+        );
       } finally {
         useChatStore.getState().setMessageActionId(null);
       }

@@ -9,7 +9,7 @@
  * Extracted from protocol-registry.ts (AD-019).
  */
 
-import { createGoogleGenerativeAI } from "@ai-sdk/google";
+import { createGoogle } from "@ai-sdk/google";
 import { interpretProbeResponse } from "./probe-helpers.js";
 import {
 	PROBE_TIMEOUT_MS,
@@ -76,7 +76,7 @@ export async function testGoogleChat(input: ProviderConnectionInput): Promise<Te
 			headers: { "Content-Type": "application/json" },
 			body: JSON.stringify({
 				contents: [{ parts: [{ text: "Hi" }] }],
-				generationConfig: { maxOutputTokens: 64, temperature: 0.7 },
+				generationConfig: { maxOutputTokens: 64 },
 			}),
 			signal: controller.signal,
 		});
@@ -203,7 +203,7 @@ export const googleProtocol: ProtocolAdapter = {
 		const googleBaseUrl = (!endpoint || endpoint === defaultGoogleBase)
 			? undefined
 			: endpoint;
-		const provider = createGoogleGenerativeAI({
+		const provider = createGoogle({
 			apiKey: apiKey || "not-needed",
 			baseURL: googleBaseUrl,
 		});

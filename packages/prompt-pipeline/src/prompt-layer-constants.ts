@@ -67,6 +67,11 @@ export const PROMPT_LAYER_PRIORITY = {
   presetEnhanceDefinitions: 830,
   presetNsfw: 820,
   summaryMemory: 500,
+  // SUMMARY_PRIOR_CONTEXT_PLAN (SPC-2): read-only preceding-summary context
+  // for the summarizer. Sits just below active summary memory and above the
+  // prompt_preset_summary instruction (350) so the model reads prior continuity
+  // BEFORE the summarize instruction. Summary path only (gated in buildLayers).
+  priorSummariesContext: 490,
   retrievalMemory: 400,
   promptPresetSummary: 350,
   toolInstructions: 300,
@@ -91,6 +96,7 @@ export const PROMPT_LAYER_ID = {
   promptPresetSystem: "prompt_preset_system",
   promptPresetJailbreak: "prompt_preset_jailbreak",
   promptPresetSummary: "prompt_preset_summary",
+  priorSummariesContext: "prior_summaries_context",
   promptPresetAuthorsNote: "prompt_preset_authors_note",
   promptPresetNsfw: "prompt_preset_nsfw",
   promptPresetEnhanceDefinitions: "prompt_preset_enhance_definitions",
@@ -113,6 +119,8 @@ export const PROMPT_LAYER_ID = {
   sceneState: "scene_state",
   insightsInstruction: "insights_instruction",
   postHistoryInstructions: "post_history_instructions",
+  // Wave 6 — per-chat dynamic prompt (canvas slot chatDynamicPrompt).
+  chatDynamicPrompt: "chat_dynamic_prompt",
   // AI assistant layers
   aiAssistantSystem: "ai_assistant_system",
   aiAssistantContext: "ai_assistant_context",
@@ -132,7 +140,10 @@ export const PROMPT_LAYER_SOURCE_TYPE = {
   persona: "persona",
   loreEntry: "lore_entry",
   summaryMemory: "summary_memory",
+  priorSummaries: "prior_summaries",
   retrievalMemory: "retrieval_memory",
+  // Wave 6 — per-chat dynamic prompt sourced from Chat.dynamicPrompt.
+  chat: "chat",
   objectiveTask: "objective_task",
   objectiveLongTerm: "objective_long_term",
   sceneState: "scene_state",
@@ -221,5 +232,7 @@ export const PROMPT_LAYER_REASON = {
   emptySummaryMemory: "empty summary memory",
   emptyRetrievalMemory: "empty retrieval memory",
   preflightCompaction: (droppedCount: number) => `preflight_compaction_dropped_${droppedCount}`,
+  /** Wave 6 — summary memory disabled via chatSummary canvas slot (advanced mode). */
+  chatSummaryDisabled: "disabled via prompt canvas",
 } as const;
 

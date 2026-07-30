@@ -2,6 +2,7 @@ import type { PresetStore } from "@vibe-tavern/db";
 import type { CustomInjection, PromptOrderEntry, PromptPresetDto } from "@vibe-tavern/domain";
 import {
   listPromptPresets,
+  reorderPromptPresets,
   createPromptPreset,
   updatePromptPreset,
   deletePromptPreset,
@@ -22,6 +23,10 @@ export class PromptPresetService {
     return listPromptPresets(this.deps);
   }
 
+  async reorderPromptPresets(updates: Array<{ id: string; sortOrder: number }>): Promise<PromptPresetDto[]> {
+    return reorderPromptPresets(this.deps, updates);
+  }
+
   async createPromptPreset(input: {
     name: string;
     system?: string;
@@ -38,6 +43,7 @@ export class PromptPresetService {
     customInjections?: CustomInjection[];
     promptOrder?: PromptOrderEntry[];
     advancedMode?: boolean;
+    mergeConsecutiveRoles?: boolean;
     scriptAiSystemPrompt?: string;
   }): Promise<PromptPresetDto> {
     return createPromptPreset(this.deps, input);
@@ -59,6 +65,7 @@ export class PromptPresetService {
     customInjections?: CustomInjection[];
     promptOrder?: PromptOrderEntry[];
     advancedMode?: boolean;
+    mergeConsecutiveRoles?: boolean;
     scriptAiSystemPrompt?: string;
   }): Promise<PromptPresetDto> {
     return updatePromptPreset(this.deps, presetId, patch);

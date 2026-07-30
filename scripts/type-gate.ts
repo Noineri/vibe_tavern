@@ -71,6 +71,7 @@ import {
 import type { Node, SourceFile, Block } from "typescript/unstable/ast";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { parseArgs } from "node:util";
 
 // ─── Config ────────────────────────────────────────────────────────────────
 
@@ -265,10 +266,10 @@ async function collectAllViolations(): Promise<Violation[]> {
 
 const toKey = (v: Violation): string => `${v.file}:${v.line}:${v.col}:${v.category}`;
 
-function loadBaseline(): Set<string> {
+async function loadBaseline(): Promise<Set<string>> {
   if (!fs.existsSync(BASELINE_PATH)) return new Set();
   try {
-    const data = JSON.parse(fs.readFileSync(BASELINE_PATH, "utf8"));
+    const data = JSON.parse(await Bun.file(BASELINE_PATH).text());
     if (!Array.isArray(data)) throw new Error("baseline root is not an array");
     return new Set(data as string[]);
   } catch (err) {
@@ -278,20 +279,55 @@ function loadBaseline(): Set<string> {
   }
 }
 
-function writeBaseline(keys: string[]): void {
+async function writeBaseline(keys: string[]): Promise<void> {
   const sorted = Array.from(new Set(keys)).sort();
-  fs.writeFileSync(BASELINE_PATH, JSON.stringify(sorted, null, 2) + "\n", "utf8");
+  await Bun.write(BASELINE_PATH, JSON.stringify(sorted, null, 2) + "\n");
 }
 
 // ─── Main ──────────────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
-  const argv = process.argv.slice(2);
-  const update = argv.includes("--update-baseline");
-  const quiet = argv.includes("--quiet");
-  const unknown = argv.filter((a) => a !== "--update-baseline" && a !== "--quiet");
-  if (unknown.length) {
-    console.error(`type-gate: unknown argument(s): ${unknown.join(" ")}`);
+  const args = process.argv.slice(2);
+  const options = {
+    "update-baseline": { type: "boolean" },
+    quiet: { type: "boolean" },
+  } as const;
+  let update = false;
+  let quiet = false;
+  try {
+    const parsed = parseArgs({
+      args,
+      options,
+      strict: true,
+      allowPositionals: false,
+    });
+    update = parsed.values["update-baseline"] === true;
+    quiet = parsed.values.quiet === true;
+  } catch (error) {
+    if (!(error instanceof TypeError)) throw error;
+    const { tokens } = parseArgs({
+      args,
+      options,
+      strict: false,
+      allowPositionals: true,
+      tokens: true,
+    });
+    const invalidIndexes = tokens.flatMap((token) => {
+      if (token.kind === "option-terminator") return [];
+      if (
+        token.kind === "option"
+        && token.value === undefined
+        && (token.name === "update-baseline" || token.name === "quiet")
+      ) {
+        return [];
+      }
+      return [token.index];
+    });
+    const invalidArgs = [...new Set(invalidIndexes)].flatMap((index) => {
+      const arg = args[index];
+      return arg === undefined ? [] : [arg];
+    });
+    console.error(`type-gate: unknown argument(s): ${invalidArgs.join(" ")}`);
     console.error("usage: bun scripts/type-gate.ts [--update-baseline] [--quiet]");
     process.exit(2);
   }
@@ -300,7 +336,7 @@ async function main(): Promise<void> {
   const currentKeys = new Set(violations.map(toKey));
 
   if (update) {
-    writeBaseline(violations.map(toKey));
+    await writeBaseline(violations.map(toKey));
     const byCat = countByCategory(violations);
     console.log(`type-gate: baseline rewritten → ${violations.length} violation(s) across ${Object.keys(byCat).length} category(ies).`);
     for (const [cat, n] of Object.entries(byCat)) console.log(`  ${cat.padEnd(14)} ${n}`);
@@ -316,7 +352,7 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  const baseline = loadBaseline();
+  const baseline = await loadBaseline();
 
   // New = present now, absent from baseline.
   const fresh = violations.filter((v) => !baseline.has(toKey(v)));

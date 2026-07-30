@@ -10,21 +10,31 @@
  *
  * See PROMPT_TRACE_PAYLOAD_FIX_PLAN.md, Wave C.
  */
-import { describe, it, expect, vi } from "vitest";
-import { render, fireEvent } from "@testing-library/react";
-import {
-	groupPayloadForTrace,
-	TracePayloadView,
-	type PayloadMessage,
-} from "./trace-payload-view.js";
+import { beforeAll, describe, it, expect, mock } from "bun:test";
+import type { PayloadMessage } from "./trace-payload-view.js";
 import type { PromptLayerDto } from "@vibe-tavern/domain";
+import { useDomEnv } from "../../../test/dom-env.js";
+
+useDomEnv();
 
 const NOOP = () => {};
+const realI18nContext = await import("../../i18n/context.js");
 
 // Mock useT at the module boundary (same relative path the component uses).
-vi.mock("../../i18n/context.js", () => ({
+mock.module("../../i18n/context.js", () => ({
+	...realI18nContext,
 	useT: () => ({ t: (key: string) => key, tDynamic: (key: string) => key, locale: "en", setLocale: NOOP, ready: true }),
 }));
+
+let groupPayloadForTrace: typeof import("./trace-payload-view.js").groupPayloadForTrace;
+let TracePayloadView: typeof import("./trace-payload-view.js").TracePayloadView;
+let render: typeof import("@testing-library/react").render;
+let fireEvent: typeof import("@testing-library/react").fireEvent;
+let waitFor: typeof import("@testing-library/react").waitFor;
+beforeAll(async () => {
+	({ render, fireEvent, waitFor } = await import("@testing-library/react"));
+	({ groupPayloadForTrace, TracePayloadView } = await import("./trace-payload-view.js"));
+});
 
 const formatTokens = (n: number) => `${n} tok`;
 
@@ -164,7 +174,7 @@ describe("TracePayloadView (DOM)", () => {
 		expect(container.textContent).not.toContain("hi there");
 	});
 
-	it("an inject expands to reveal its injected text", () => {
+	it("an inject expands to reveal its injected text", async () => {
 		const { getByText, queryByText, container } = render(
 			<TracePayloadView trace={traceFixture() as never} searchQuery="" formatTokens={formatTokens} />,
 		);
@@ -175,10 +185,16 @@ describe("TracePayloadView (DOM)", () => {
 		fireEvent.click(getByText("Post-History Instructions"));
 		expect(container.textContent).toContain("NOTE_TEXT");
 
-		// Collapsing the inject hides the body again.
+		// Collapsing the inject hides the body again. The body lingers in the
+		// DOM for the duration of the exit animation (250ms) before the
+		// AnimatePresence finishes unmounting it — wait for that to complete.
+		// The window is generous only to absorb a slow CI frameloop; the retry
+		// itself is cheap because dom-env.ts gives happy-dom nodes a custom
+		// inspector (without it, each failed poll serialized the node for
+		// ~270ms and starved the frames driving the animation).
 		fireEvent.click(getByText("Post-History Instructions"));
-		expect(queryByText("NOTE_TEXT")).toBeNull();
-	});
+		await waitFor(() => expect(queryByText("NOTE_TEXT")).toBeNull(), { timeout: 5000 });
+	}, { timeout: 15000 });
 
 	it("a search query force-expands history, shows matching groups, and filters out non-matching injects", () => {
 		const { getByText, queryByText, container } = render(

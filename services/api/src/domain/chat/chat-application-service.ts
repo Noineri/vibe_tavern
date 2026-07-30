@@ -8,7 +8,7 @@ import type {
   SleepBranchRequest,
   SleepBranchResponse,
 } from "./chat-application-types.js";
-import { brandId, parseStoredAttachments } from "@vibe-tavern/domain";
+import { brandId, parseStoredAttachments, ensureActiveObjectiveTarget } from "@vibe-tavern/domain";
 import type {
   Attachment,
   ChatBranchId,
@@ -17,8 +17,34 @@ import type {
   MessageId,
   SummaryMemorySnapshot,
 } from "@vibe-tavern/domain";
-import type { ChatStore, MessageStore, Message as DbMessage } from "@vibe-tavern/db";
-import { notFound } from "../../shared/errors.js";
+import type { ChatStore, MessageStore, DiceRollStore, Message as DbMessage, MessageVariant as DbMessageVariant } from "@vibe-tavern/db";
+import { conflict, notFound } from "../../shared/errors.js";
+
+/**
+ * Apply the objective "exactly one active target" display invariant to a chat
+ * before it leaves the service layer as part of a snapshot/activeChat. The
+ * effective injected goal (first `active`, else first `pending`) is promoted to
+ * `active` so the existing UI marks it as current; the DB keeps the stored
+ * statuses (display-only / on-read — the invariant mirrors what
+ * `selectActiveTask` injects into the prompt, applied here at the wire boundary).
+ * See `ensureActiveObjectiveTarget` in @vibe-tavern/domain.
+ */
+function withActiveObjectiveTarget<T extends { insightsObjectiveState: Record<string, unknown> }>(chat: T): T {
+  const raw = chat.insightsObjectiveState;
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return chat;
+  const obj = raw as Record<string, unknown>;
+  const tasks = Array.isArray(obj.tasks) ? ensureActiveObjectiveTarget(obj.tasks as { status: string }[]) : undefined;
+  const shortTermGoals = Array.isArray(obj.shortTermGoals) ? ensureActiveObjectiveTarget(obj.shortTermGoals as { status: string }[]) : undefined;
+  if (tasks === undefined && shortTermGoals === undefined) return chat;
+  return {
+    ...chat,
+    insightsObjectiveState: {
+      ...obj,
+      ...(tasks !== undefined && { tasks }),
+      ...(shortTermGoals !== undefined && { shortTermGoals }),
+    },
+  };
+}
 
 /** Map a DB message row to a domain {@link Message} (brands IDs, narrows enum strings). */
 function mapDbMessage(m: DbMessage): Message {
@@ -36,8 +62,18 @@ function mapDbMessage(m: DbMessage): Message {
   };
 }
 
+type AddEditorVariantInput = {
+  readonly content: string;
+  readonly sourceVariantIds: readonly string[];
+  readonly modelId?: string;
+  /** Baked preset name (immutable text, no FK to a preset row) — sourced from
+   *  the resolved pending prompt-trace draft by the chat-runtime wrapper. */
+  readonly presetName?: string | null;
+  readonly finishReason?: string;
+};
+
 export class ChatApplicationService {
-  constructor(private readonly chatStore: ChatStore, private readonly messageStore: MessageStore) {}
+  constructor(private readonly chatStore: ChatStore, private readonly messageStore: MessageStore, private readonly diceRollStore: DiceRollStore) {}
 
   async createChat(input: CreateChatRequest): Promise<CreateChatResponse> {
     const chat = await this.chatStore.createChat({
@@ -88,7 +124,7 @@ export class ChatApplicationService {
     const messages = await this.messageStore.getMessages(branch.id);
 
     return {
-      chat,
+      chat: withActiveObjectiveTarget(chat),
       branch,
       messages,
       summaries: [], // Phase 2: summary snapshots
@@ -105,15 +141,31 @@ export class ChatApplicationService {
     const chat = await this.requireChat(chatId);
     const targetBranchId = branchId ?? chat.activeBranchId;
 
-    const message = await this.messageStore.addMessage({
+    const baseData = {
       chatId,
       branchId: targetBranchId,
-      role: "user",
-      authorType: "user",
+      role: "user" as const,
+      authorType: "user" as const,
       content: input.content,
       attachmentsJson: input.attachments?.length ? JSON.stringify(input.attachments) : null,
-    });
+    };
 
+    // DICE-B10: when a send carries the optional Dice commit intent, the
+    // user-message insert and the pending-lane bind run in ONE atomic
+    // transaction (MessageStore.addMessageWithDiceBind). A stale revision or
+    // unresolved choose throws before the message row commits. Absent intent ⇒
+    // the unchanged addMessage path (no Dice query, no bind).
+    if (input.diceCommit) {
+      const { mode, pendingRevision } = input.diceCommit;
+      const { message } = this.messageStore.addMessageWithDiceBind(
+        baseData,
+        (tx, messageId) =>
+          this.diceRollStore.bindActiveAndResetInTx(tx, chat.id, targetBranchId, mode, pendingRevision, messageId),
+      );
+      return mapDbMessage(message);
+    }
+
+    const message = await this.messageStore.addMessage(baseData);
     return mapDbMessage(message);
   }
 
@@ -157,20 +209,55 @@ export class ChatApplicationService {
     return removed;
   }
 
-  async editMessage(messageId: string, content: string): Promise<Message> {
-    const message = await this.messageStore.editMessage(messageId, content);
-    return mapDbMessage(message);
+  async editMessage(messageId: string, content: string, expectedVariantId?: string): Promise<Message> {
+    try {
+      const message = await this.messageStore.editMessage(messageId, content, expectedVariantId);
+      return mapDbMessage(message);
+    } catch (error) {
+      if (error instanceof Error && error.name === "SelectedVariantMismatchError") {
+        throw conflict("The selected message variant changed before this edit could be applied.");
+      }
+      throw error;
+    }
+  }
+
+  async addEditorVariant(messageId: string, input: AddEditorVariantInput): Promise<DbMessageVariant> {
+    const variants = await this.messageStore.getVariants(messageId);
+    const variantIds = new Set(variants.map((variant) => variant.id));
+    const missingSourceVariantId = input.sourceVariantIds.find((variantId) => !variantIds.has(variantId));
+    if (missingSourceVariantId) {
+      throw notFound("Message variant", `Variant '${missingSourceVariantId}' was not found on message '${messageId}'.`);
+    }
+
+    return this.messageStore.addVariant(
+      messageId,
+      input.content,
+      input.finishReason,
+      undefined,
+      undefined,
+      input.modelId,
+      input.presetName,
+    );
   }
 
   async deleteMessage(messageId: string): Promise<void> {
+    // DICE-B12: delete bound Dice rolls BEFORE the message row. The
+    // bound_message_id FK is onDelete:set-null, so deleting the message first
+    // would orphan the rolls (boundMessageId → null) and the roll delete would
+    // find nothing. This is a compensating write, not transaction-reliant (per
+    // the lifecycle contract) — the two deletes are independent operations.
+    await this.diceRollStore.deleteRollsWithMessage(messageId);
     await this.messageStore.deleteMessage(messageId);
   }
 
   async createBranch(chatId: ChatId, input: CreateBranchRequest): Promise<CreateBranchResponse> {
+    // DICE-B12: clone bound Dice rolls onto the new forked messages inside the
+    // fork transaction (atomic + synchronous — rolls back with the fork).
     const branch = await this.chatStore.forkBranch(
       chatId,
       input.forkedFromMessageId ?? "",
       input.label,
+      (tx, msgIdMap) => this.diceRollStore.forkCopyRollsInTx(tx, msgIdMap),
     );
 
     if (input.activateFork !== false) {

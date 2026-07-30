@@ -1,3 +1,4 @@
+import type { CoauthorTransport } from '@vibe-tavern/domain';
 import { sqliteTable, text, integer, real, index, uniqueIndex, primaryKey } from 'drizzle-orm/sqlite-core';
 
 // ─── characters ────────────────────────────────────────────────────────────────
@@ -168,15 +169,19 @@ export const chats = sqliteTable('chats', {
   // main model, kept current with the active selection. (The obsolete
   // messages.extra.sceneTracker draft this comment used to describe was removed.)
   insightsCurrentSceneJson: text('insights_current_scene_json').notNull().default('{}'),
-  // Co-author mode only (CA-13): lorebook ids the user explicitly bound to
-  // this chat as read-only editor context (the right-panel picker). NOT the
-  // RP keyword-activation set — these expand wholesale into the editor prompt
-  // via the same resolveContext path the AI assistant uses. Stored per-chat
-  // because co-author is a chat mode (a character can have several co-author
-  // chats, each with its own lore context). Folds into coauthor_config_json
-  // when CA-16 lands; narrow column for now.
-  coauthorLorebookIdsJson: text('coauthor_lorebook_ids_json').notNull().default('[]'),
+  // CE-C1: entities the user explicitly pinned to this co-author chat as
+  // read-only Level-1 editor context (the right-panel picker) — a typed
+  // (character/persona/lorebook/script) + id list. NOT the RP keyword-activation
+  // set; the prompt expands each pinned entity's full content into a reference
+  // block. Generalizes the CA-13 lorebook-id-only list; the SQL column name is
+  // kept (`coauthor_lorebook_ids_json`) so no migration is needed — legacy rows
+  // storing a bare `string[]` are lifted to
+  // `[{targetType:"lorebook",targetId}]` on read by `parseContextLinks`.
+  // New writes persist the typed payload. Folds into coauthor_config_json when
+  // CA-16 lands.
+  coauthorContextLinksJson: text('coauthor_lorebook_ids_json').notNull().default('[]'),
   coauthorModuleId: text('coauthor_module_id'),
+  dynamicPrompt: text('dynamic_prompt').notNull().default(''),
 }, (table) => ({
   characterIdIdx: index('idx_chats_character_id').on(table.characterId),
   modeIdx: index('idx_chats_mode').on(table.mode),
@@ -317,6 +322,16 @@ export const scripts = sqliteTable('scripts', {
   description: text('description').notNull().default(''),
   code: text('code').notNull().default(''),
   enabled: integer('enabled').notNull().default(1),
+  // Runtime contract of this script: 'prompt' (default, the original prompt-script
+  // VM) or 'dice' (the dedicated Dice-script VM, Wave B2). Every legacy row and
+  // import defaults to 'prompt' so existing prompt scripts are unchanged; the
+  // two runtimes are isolated by kind at the store-resolver boundary.
+  scriptKind: text('script_kind').notNull().default('prompt'),
+  // Server-idempotent template/custom creation key (nullable + unique): a create
+  // carrying a creationIntentId that already exists returns the existing script
+  // instead of duplicating — process-safe against retries/two tabs/restart. NOT
+  // canonical content: it is omitted from the file payload and never updatable.
+  creationIntentId: text('creation_intent_id').unique(),
   scopeType: text('scope_type').notNull().default('character'),
   sortOrder: integer('sort_order').notNull().default(0),
   characterId: text('character_id').references(() => characters.id, { onDelete: 'cascade' }),
@@ -332,6 +347,7 @@ export const scripts = sqliteTable('scripts', {
   personaIdIdx: index('idx_scripts_persona').on(table.personaId),
   chatIdIdx: index('idx_scripts_chat').on(table.chatId),
   scopeTypeIdx: index('idx_scripts_scope').on(table.scopeType),
+  scriptKindIdx: index('idx_scripts_kind').on(table.scriptKind),
 }));
 
 // ─── scriptLinks ──────────────────────────────────────────────────────────────
@@ -425,7 +441,15 @@ export const messageVariants = sqliteTable('message_variants', {
   reasoning: text('reasoning'),
   reasoningDurationMs: integer('reasoning_duration_ms'),
   modelId: text('model_id'),
-  presetId: text('preset_id').references(() => promptPresets.id, { onDelete: 'set null' }),
+  // Baked-at-generation-time preset NAME snapshot (no FK). Historically this was
+  // a `preset_id` FK to prompt_presets (ON DELETE SET NULL), but that coupled
+  // message metadata to the lifetime of a preset row: deleting a preset would
+  // either block (stale NO-ACTION FK in old-build DBs — PRESET_COPY_DELETE_
+  // CORRUPTION bug 2) or silently null out the historical record (SET NULL).
+  // Since the value is purely display metadata ("which preset generated this"),
+  // it is baked as an immutable text string — survives preset delete/rename,
+  // consistent with model_id (also a plain text column, no FK).
+  presetName: text('preset_name'),
   toolCallsJson: text('tool_calls_json'),
   toolCallId: text('tool_call_id'),
   coauthorModuleId: text('coauthor_module_id'),
@@ -447,6 +471,9 @@ export const messageVariants = sqliteTable('message_variants', {
 export const promptPresets = sqliteTable('prompt_presets', {
   id: text('id').primaryKey(),
   name: text('name').notNull(),
+  // Manual list order (drag-to-reorder). Backfilled to created_at ASC by the
+  // migration that adds this column, so pre-migration order is preserved.
+  sortOrder: integer('sort_order').notNull().default(0),
   // Designated-default marker — exactly one row has is_default = 1 (enforced in
   // app logic: seeded by ensureDefault(), backfilled by migration 0001).
   // Replaces the dead `bind_provider_preset_id` model-binding column.
@@ -467,6 +494,7 @@ export const promptPresets = sqliteTable('prompt_presets', {
   customInjectionsJson: text('custom_injections_json').notNull().default('[]'),
   promptOrderJson: text('prompt_order_json').notNull().default('[]'),
   advancedMode: integer('advanced_mode').notNull().default(0),
+  mergeConsecutiveRoles: integer('merge_consecutive_roles').notNull().default(0),
   contentHash: text('content_hash'),
   hasFileOnDisk: integer('has_file_on_disk').notNull().default(0),
   createdAt: text('created_at').notNull(),
@@ -478,7 +506,10 @@ export const promptPresets = sqliteTable('prompt_presets', {
 export const providerProfiles = sqliteTable('provider_profiles', {
   id: text('id').primaryKey(),
   name: text('name').notNull(),
+  // Manual list order (drag-to-reorder). Backfilled to created_at ASC.
+  sortOrder: integer('sort_order').notNull().default(0),
   providerPreset: text('provider_preset').notNull(),
+  coauthorTransport: text('coauthor_transport').$type<CoauthorTransport>().notNull().default('chat_completions'),
   endpoint: text('endpoint').notNull(),
   apiKey: text('api_key'),
   defaultModel: text('default_model'),
@@ -487,6 +518,10 @@ export const providerProfiles = sqliteTable('provider_profiles', {
   /** When true, sampler/context edits in the modal write to a per-model overlay
    *  (providerModelSettings) instead of the profile base. See resolveEffectiveSettings. */
   bindPerModel: integer('bind_per_model', { mode: 'boolean' }).notNull().default(false),
+  // Model-list display prefs (MODEL_LIST_FILTERS). Pure UI — no backend logic reads these;
+  // they round-trip to the selectors via the profile record.
+  modelFreeOnly: integer('model_free_only', { mode: 'boolean' }).notNull().default(false),
+  modelGroupByOwner: integer('model_group_by_owner', { mode: 'boolean' }).notNull().default(false),
   maxTokens: integer('max_tokens').notNull().default(2000),
   temperature: real('temperature').notNull().default(1.0),
   topP: real('top_p').notNull().default(1.0),
@@ -541,11 +576,12 @@ export const providerModelFavorites = sqliteTable('provider_model_favorites', {
   id: text('id').primaryKey(),
   providerProfileId: text('provider_profile_id').notNull().references(() => providerProfiles.id, { onDelete: 'cascade' }),
   modelId: text('model_id').notNull(),
+  scope: text('scope').notNull().default('rp'),
   label: text('label'),
   contextLength: integer('context_length'),
   createdAt: text('created_at').notNull(),
 }, (table) => ({
-  providerModelUnique: uniqueIndex('idx_provider_model_favorites_unique').on(table.providerProfileId, table.modelId),
+  providerModelUnique: uniqueIndex('idx_provider_model_favorites_unique').on(table.providerProfileId, table.modelId, table.scope),
 }));
 
 // ─── providerModelSettings ─────────────────────────────────────────────────────
@@ -604,6 +640,17 @@ export const uiSettings = sqliteTable('ui_settings', {
   activePromptPresetId: text('active_prompt_preset_id').references(() => promptPresets.id, { onDelete: 'set null' }),
   aiAssistantProviderId: text('ai_assistant_provider_id'),
   aiAssistantModelName: text('ai_assistant_model_name'),
+  // Co-Author generation binding — app-wide, independent of RP active profile.
+  // Null (or dangling after profile deletion) falls back to the RP active
+  // profile/default model at the adapter boundary. No DB-level FK: like
+  // aiAssistantProviderId, a deleted profile leaves a dangling id that the
+  // adapter resolves (dangling → fallback) rather than blocking the delete.
+  coauthorProviderId: text('coauthor_provider_id'),
+  coauthorModelName: text('coauthor_model_name'),
+  // Optional Co-Author-only token overrides. Null inherits the selected
+  // profile/model effective values so RP configuration remains untouched.
+  coauthorMaxTokens: integer('coauthor_max_tokens'),
+  coauthorContextBudget: integer('coauthor_context_budget'),
   updatedAt: text('updated_at').notNull(),
 });
 
@@ -639,4 +686,78 @@ export const sceneBackfillRuns = sqliteTable('scene_backfill_runs', {
   updatedAt: text('updated_at').notNull(),
 }, (table) => ({
   chatIdx: index('idx_scene_backfill_runs_chat').on(table.chatId),
+}));
+
+// ─── Dice pending lanes (DICE_SYSTEM_BACKEND_PLAN, Wave B3 / DICE-B7) ────────
+//
+// Durable branch+mode lane rows. A lane owns a monotonic revision even when
+// empty; every pending mutation increments it. The unique constraint on
+// {chat_id, branch_id, mode} ensures exactly one lane per combination.
+// Both lanes are reset (revision++) when a user message commits; the active
+// lane's included/finalized rolls bind to that message, the inactive lane's
+// rolls are discarded.
+export const dicePendingLanes = sqliteTable('dice_pending_lanes', {
+  id: text('id').primaryKey(),
+  chatId: text('chat_id').notNull().references(() => chats.id, { onDelete: 'cascade' }),
+  branchId: text('branch_id').notNull().references(() => chatBranches.id, { onDelete: 'cascade' }),
+  mode: text('mode').notNull(),
+  revision: integer('revision').notNull().default(0),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+}, (table) => ({
+  chatBranchModeUnique: uniqueIndex('idx_dice_lanes_chat_branch_mode').on(table.chatId, table.branchId, table.mode),
+}));
+
+// ─── Dice rolls (DICE_SYSTEM_BACKEND_PLAN, Wave B3 / DICE-B7) ───────────────
+//
+// Immutable, message-bindable Dice result snapshots. DB-unique request_id is
+// the idempotency net (rapid clicks / retries / two tabs / process recovery
+// cannot produce duplicates). Lane FK tracks the pending lane this roll
+// belongs to; bound_message_id is set when the roll binds to a committed
+// user message. All snapshot columns (actor/script/check labels, revision,
+// notation, resolution, etc.) are self-contained — script rename/edit/
+// disable/unlink/delete never invalidates historical rolls (no FK to scripts).
+//
+// No-cascade rule: script_id is plain text with NO FK — the roll carries the
+// full snapshot (labels + revision) so it survives any script lifecycle change.
+export const diceRolls = sqliteTable('dice_rolls', {
+  id: text('id').primaryKey(),
+  requestId: text('request_id').notNull().unique(),
+  laneId: text('lane_id').notNull().references(() => dicePendingLanes.id, { onDelete: 'cascade' }),
+  // Nullable — set when the roll binds to a committed user message.
+  // onDelete set null so rollback can release bindings without deleting rolls.
+  boundMessageId: text('bound_message_id').references(() => messages.id, { onDelete: 'set null' }),
+  // Actor snapshot (frozen at roll time — survives rename/delete).
+  actorType: text('actor_type').notNull(),
+  actorId: text('actor_id').notNull(),
+  actorLabel: text('actor_label').notNull(),
+  // Script snapshot — NO FK (no-cascade rule). The roll owns its own labels + revision.
+  scriptId: text('script_id').notNull(),
+  scriptLabel: text('script_label').notNull(),
+  scriptRevision: integer('script_revision').notNull(),
+  // Check snapshot.
+  checkId: text('check_id').notNull(),
+  checkLabel: text('check_label').notNull(),
+  // Dice notation + face shape.
+  notation: text('notation').notNull(),
+  faceShape: text('face_shape').notNull(),
+  // Adjudication + mode.
+  resolution: text('resolution').notNull(),
+  mode: text('mode').notNull(),
+  // Immersive include/exclude-from-binding (with undo via included=true).
+  included: integer('included', { mode: 'boolean' }).notNull().default(true),
+  // The attempt id chosen as the final result, or null while unchosen.
+  finalAttemptId: text('final_attempt_id'),
+  // Attempts array (JSON). Always non-empty; Normal has exactly 1.
+  attemptsJson: text('attempts_json').notNull(),
+  // Final envelope (JSON, nullable). Present on strict checks; absent on narrative.
+  finalJson: text('final_json'),
+  // Script-provided retry reason (Immersive grants).
+  retryReason: text('retry_reason'),
+  // Finalization policy (Immersive).
+  policy: text('policy'),
+  createdAt: text('created_at').notNull(),
+}, (table) => ({
+  laneIdx: index('idx_dice_rolls_lane').on(table.laneId),
+  messageIdx: index('idx_dice_rolls_message').on(table.boundMessageId),
 }));

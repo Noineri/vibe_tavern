@@ -11,6 +11,7 @@
 
 import { streamText } from "ai";
 import type { LanguageModel } from "ai";
+import type { Message, MessageVariant } from "@vibe-tavern/db";
 import {
   getAiAssistantAssembler,
   estimateMessageArrayTokens,
@@ -30,6 +31,13 @@ import {
   type ReasoningSplitState,
   type AiAssistantStreamChunk,
 } from "./reasoning-split.js";
+import type { BuiltPipelineContext } from "../prompt/prompt-assembly-service.js";
+import { notFound, validation } from "../../shared/errors.js";
+import {
+  composeMessageEditorPrompt,
+  type MessageEditorPromptMode,
+  type MessageEditorPromptSource,
+} from "./message-editor-prompt.js";
 
 // ─── Request / response types ────────────────────────────────────────────────
 
@@ -63,6 +71,12 @@ export interface AiAssistantStreamRequest {
   /** How many recent messages to include (chat_impersonate). Default: 20. */
   recentMessageCount?: number;
 
+  // Message editor mode extras
+  /** Canonical target message in the chat's active branch. */
+  targetMessageId?: string;
+  /** Immutable canonical variants selected as editor sources. */
+  sourceVariantIds?: string[];
+
   // Lore keys mode extras
   /** Existing primary keys on the entry (for de-duplication). */
   existingKeys?: string[];
@@ -85,37 +99,184 @@ export interface AiAssistantStreamRequest {
   promptFormat?: "json" | "xml";
 }
 
+interface AiAssistantProviderProfile {
+  readonly id: string;
+  readonly providerPreset: string;
+  readonly endpoint: string;
+  readonly apiKey: string | null;
+  readonly defaultModel: string | null;
+  readonly contextBudget: number | null;
+  readonly maxTokens: number;
+}
+
+interface MessageEditorPipelineContextInput {
+  readonly chatId: string;
+  readonly branchId: string;
+  readonly model: string;
+  readonly contextBudget: number | null;
+  readonly responseReserve: number;
+  readonly throughMessageId: string;
+  readonly excludeMessageIds: string[];
+  /** Optional cap on how many recent messages (before the target) are included.
+   *  Mirrors chat_impersonate's recentMessageCount. Undefined = all up to target. */
+  readonly recentMessageLimit?: number;
+}
+
 export interface StreamDeps extends ContextResolverDeps {
-  resolveModel: (profile: { providerPreset: string; endpoint: string; apiKey: string | null }, model: string) => LanguageModel;
-  getProviderProfile: (id: string) => Promise<{
-    id: string;
-    providerPreset: string;
-    endpoint: string;
-    apiKey: string | null;
-    defaultModel: string | null;
-  } | null>;
+  readonly resolveModel: (profile: { providerPreset: string; endpoint: string; apiKey: string | null }, model: string) => LanguageModel;
+  readonly getProviderProfile: (id: string) => Promise<AiAssistantProviderProfile | null>;
+  readonly getEffectiveProviderProfile: (id: string, model: string) => Promise<AiAssistantProviderProfile>;
   /** Resolve the active preset's aiAssistantPrompts + legacy column. */
-  getPresetPromptData: () => Promise<{
+  readonly getPresetPromptData: (chatId?: string) => Promise<{
     aiAssistantPrompts: Record<string, string> | null;
     scriptAiSystemPrompt: string | null;
   }>;
   /** Resolve chat messages for chat_impersonate mode. */
-  getChatMessages: (chatId: string, count: number) => Promise<Array<{ id: string; role: string; content: string }>>;
+  readonly getChatMessages: (chatId: string, count: number) => Promise<Array<{ id: string; role: string; content: string }>>;
+  readonly getMessageEditorChat: (chatId: string) => Promise<{ id: string; activeBranchId: string } | null>;
+  readonly getMessageEditorMessages: (branchId: string) => Promise<Message[]>;
+  readonly getMessageEditorVariantsByBranch: (branchId: string) => Promise<Map<string, MessageVariant[]>>;
+  readonly buildMessageEditorPipelineContext: (input: MessageEditorPipelineContextInput) => Promise<BuiltPipelineContext>;
   /** Optional debug logger. */
-  logDebug?: (event: string, data: Record<string, unknown>) => void;
+  readonly logDebug?: (event: string, data: Record<string, unknown>) => void;
 }
 
 // ─── Assembly / token preview ────────────────────────────────────────────────
 
 interface PreparedAiAssistantRequest {
   config: ReturnType<typeof getModeConfig>;
-  profile: NonNullable<Awaited<ReturnType<StreamDeps["getProviderProfile"]>>>;
+  profile: AiAssistantProviderProfile;
   modelName: string;
   assembly: PromptAssemblyResult | null;
   messages: Array<{
     role: "system" | "user" | "assistant";
     content: string;
   }>;
+  doneMetadata: { modelId: string; promptPresetId: string | null } | null;
+}
+
+interface MessageEditorPreparationInput {
+  readonly request: AiAssistantStreamRequest & { readonly mode: MessageEditorPromptMode };
+  readonly deps: StreamDeps;
+  readonly config: ReturnType<typeof getModeConfig>;
+  readonly profile: AiAssistantProviderProfile;
+  readonly modelName: string;
+}
+
+async function prepareMessageEditorRequest(input: MessageEditorPreparationInput): Promise<PreparedAiAssistantRequest> {
+  const { request, deps, config, profile, modelName } = input;
+  if (!request.chatId) {
+    throw validation("A chat is required for message editor generation.");
+  }
+  if (!request.targetMessageId) {
+    throw validation("A target message is required for message editor generation.");
+  }
+  if (!request.sourceVariantIds?.length) {
+    throw validation("Select at least one canonical message variant.");
+  }
+
+  const chat = await deps.getMessageEditorChat(request.chatId);
+  if (!chat) {
+    throw notFound("Chat", `Chat '${request.chatId}' was not found.`);
+  }
+  const messages = await deps.getMessageEditorMessages(chat.activeBranchId);
+  const target = messages.find((message) => message.id === request.targetMessageId);
+  if (!target) {
+    throw notFound("Message", `Message '${request.targetMessageId}' was not found on the active branch.`);
+  }
+  if (target.role !== "assistant" || target.state !== "complete") {
+    throw validation("Message editor targets must be committed assistant messages.");
+  }
+
+  const variantsByMessage = await deps.getMessageEditorVariantsByBranch(chat.activeBranchId);
+  const targetVariants = new Map((variantsByMessage.get(target.id) ?? []).map((variant) => [variant.id, variant]));
+  const branchVariantOwners = new Map<string, string>();
+  for (const [messageId, variants] of variantsByMessage) {
+    for (const variant of variants) branchVariantOwners.set(variant.id, messageId);
+  }
+  const sources: MessageEditorPromptSource[] = [];
+  for (const variantId of request.sourceVariantIds) {
+    const source = targetVariants.get(variantId);
+    if (!source) {
+      const ownerMessageId = branchVariantOwners.get(variantId);
+      if (ownerMessageId) {
+        throw validation(`Message editor source variant '${variantId}' does not belong to target message '${target.id}'.`);
+      }
+      throw notFound("MessageVariant", `Message editor source variant '${variantId}' was not found on the active branch.`);
+    }
+    sources.push(source);
+  }
+
+  const presetData = await deps.getPresetPromptData(chat.id);
+  const { prompt: systemPrompt, source } = await resolveSystemPrompt(request.mode, {
+    aiAssistantPrompts: presetData.aiAssistantPrompts,
+    scriptAiSystemPrompt: presetData.scriptAiSystemPrompt,
+    promptFormat: request.promptFormat,
+  });
+  const effectiveProfile = await deps.getEffectiveProviderProfile(profile.id, modelName);
+  const built = await deps.buildMessageEditorPipelineContext({
+    chatId: chat.id,
+    branchId: chat.activeBranchId,
+    model: modelName,
+    contextBudget: effectiveProfile.contextBudget,
+    responseReserve: effectiveProfile.maxTokens,
+    throughMessageId: target.id,
+    excludeMessageIds: [target.id],
+    recentMessageLimit: request.recentMessageCount,
+  });
+  const task = composeMessageEditorPrompt({
+    mode: request.mode,
+    targetMessageId: target.id,
+    resolvedModePrompt: systemPrompt,
+    sources,
+    userInstruction: request.instruction,
+  });
+  const pipelineContext: PromptAssemblyContext = {
+    ...built.context,
+    aiAssistant: {
+      mode: request.mode,
+      enabledLayers: request.enabledLayers,
+      instruction: task,
+      systemPrompt: "",
+    },
+  };
+
+  deps.logDebug?.("api.ai-assistant.prompt-resolved", {
+    mode: request.mode,
+    source,
+    systemPromptLength: systemPrompt.length,
+    systemPromptPreview: systemPrompt.slice(0, 120),
+    model: modelName,
+    providerProfileId: request.providerProfileId,
+  });
+  setModelHint(modelName);
+  const assembly = getAiAssistantAssembler(request.mode).assemble(pipelineContext);
+  const messagesForModel = assembly.finalPayload.messages as Array<{
+    role: "system" | "user" | "assistant";
+    content: string;
+  }>;
+  deps.logDebug?.("api.ai-assistant.assembly-complete", {
+    mode: request.mode,
+    layerCount: assembly.layers.length,
+    totalTokenEstimate: assembly.totalTokenEstimate,
+    messageCount: messagesForModel.length,
+    droppedLayers: assembly.droppedLayers.length,
+  });
+
+  return {
+    config,
+    profile: effectiveProfile,
+    modelName,
+    assembly,
+    messages: messagesForModel,
+    doneMetadata: { modelId: modelName, promptPresetId: built.promptPresetId },
+  };
+}
+
+function isMessageEditorRequest(
+  request: AiAssistantStreamRequest,
+): request is AiAssistantStreamRequest & { readonly mode: MessageEditorPromptMode } {
+  return request.mode === "message_edit" || request.mode === "message_merge";
 }
 
 async function prepareAiAssistantRequest(
@@ -130,6 +291,10 @@ async function prepareAiAssistantRequest(
     throw new Error(`Provider profile not found: ${request.providerProfileId}`);
   }
   const modelName = request.model ?? profile.defaultModel ?? "gpt-4o-mini";
+
+  if (isMessageEditorRequest(request)) {
+    return prepareMessageEditorRequest({ request, deps, config, profile, modelName });
+  }
 
   // 2. Resolve system prompt via fallback chain
   const presetData = await deps.getPresetPromptData();
@@ -160,6 +325,7 @@ async function prepareAiAssistantRequest(
         { role: "system" as const, content: systemPrompt },
         { role: "user" as const, content: userContent },
       ],
+      doneMetadata: null,
     };
   }
 
@@ -216,13 +382,13 @@ async function prepareAiAssistantRequest(
     droppedLayers: assembly.droppedLayers.length,
   });
 
-  return { config, profile, modelName, assembly, messages };
+  return { config, profile, modelName, assembly, messages, doneMetadata: null };
 }
 
 export async function countAiAssistantTokens(
   request: AiAssistantStreamRequest,
   deps: StreamDeps,
-): Promise<{ tokens: number; model: string; layerCount: number; messageCount: number }> {
+): Promise<{ tokens: number; model: string; layerCount: number; messageCount: number; activatedLoreCount: number }> {
   const prepared = await prepareAiAssistantRequest(request, deps);
   if (prepared.assembly) {
     return {
@@ -230,6 +396,9 @@ export async function countAiAssistantTokens(
       model: prepared.modelName,
       layerCount: prepared.assembly.layers.length,
       messageCount: prepared.messages.length,
+      // activatedLoreEntries is the chat-pipeline activation result for message
+      // modes (buildLayers) and the resolved context set for default modes.
+      activatedLoreCount: prepared.assembly.activatedLoreEntries.length,
     };
   }
 
@@ -240,6 +409,7 @@ export async function countAiAssistantTokens(
     model: prepared.modelName,
     layerCount: prepared.messages.length,
     messageCount: prepared.messages.length,
+    activatedLoreCount: 0,
   };
 }
 
@@ -250,7 +420,8 @@ export async function* streamAiAssistant(
   deps: StreamDeps,
 ): AsyncGenerator<AiAssistantStreamChunk> {
   try {
-    const { config, profile, modelName, messages } = await prepareAiAssistantRequest(request, deps);
+    const prepared = await prepareAiAssistantRequest(request, deps);
+    const { config, profile, modelName, messages } = prepared;
     const aiModel = deps.resolveModel(profile, modelName);
 
     // md_import intentionally uses plain streamText instead of streamObject.
@@ -332,6 +503,7 @@ export async function* streamAiAssistant(
       messages,
       allowSystemInMessages: true,
       temperature: request.temperature ?? 0.3,
+      maxOutputTokens: request.maxOutputTokens ?? undefined,
     });
 
     const splitState: ReasoningSplitState = {
@@ -358,11 +530,14 @@ export async function* streamAiAssistant(
         }
       }
 
-      // Emit the cleaned text result
+      // Emit the cleaned text result. For code-generating modes (dice_script),
+      // strip any stray markdown fences the model added despite instructions.
       if (fullText.trim()) {
-        yield { type: "text", text: fullText };
+        const finalText = request.mode === "dice_script"
+          ? cleanGeneratedCode(fullText)
+          : fullText;
+        yield { type: "text", text: finalText };
       }
-      yield { type: "done" };
     } else {
       // Normal streaming with reasoning split
       for await (const chunk of result.textStream) {
@@ -373,6 +548,14 @@ export async function* streamAiAssistant(
       for (const parsed of splitReasoningFromText(splitState, "", { flush: true })) {
         yield parsed;
       }
+    }
+    if (prepared.doneMetadata) {
+      yield {
+        type: "done",
+        ...prepared.doneMetadata,
+        finishReason: await result.finishReason,
+      };
+    } else {
       yield { type: "done" };
     }
   } catch (err) {
@@ -431,6 +614,21 @@ function extractMdImportObjectFromText(text: string): Record<string, unknown> | 
   if (labels && hasUsefulMdImportJson(labels)) return labels;
 
   return null;
+}
+
+/**
+ * Clean generated JavaScript code from a model response: strips a single
+ * surrounding markdown code fence (```js ... ``` or ``` ... ```) if the model
+ * added one despite instructions, and trims surrounding whitespace. Used for
+ * `dice_script` mode so the user receives raw executable code.
+ */
+export function cleanGeneratedCode(text: string): string {
+  let cleaned = text.trim();
+  const fenceMatch = cleaned.match(/^```(?:javascript|js)?\s*\n?([\s\S]*?)\n?```\s*$/);
+  if (fenceMatch) {
+    cleaned = fenceMatch[1].trim();
+  }
+  return cleaned;
 }
 
 function mergeMdImportWithSourceSections(
@@ -801,6 +999,13 @@ function buildUserMessage(
       return request.instruction;
     }
 
+    case "dice_script": {
+      if (request.existingContent) {
+        return `Here is my current Dice script:\n\n${request.existingContent}\n\nModification request:\n${request.instruction}\n\nReturn the complete updated JavaScript Dice script only. Do not return a patch, diff, markdown, or explanation. Preserve unrelated code exactly where possible.`;
+      }
+      return `${request.instruction}\n\nReturn the complete JavaScript Dice script only. Do not return markdown, explanation, or anything other than the script code.`;
+    }
+
     case "lore_entry": {
       if (request.existingContent) {
         return `Here is my current lorebook entry content:\n\n${request.existingContent}\n\nModification request:\n${request.instruction}\n\nReturn the complete updated lorebook entry content only. Do not include a title, keys, JSON, markdown, or explanation.`;
@@ -852,6 +1057,14 @@ function buildUserMessage(
       const parts: string[] = [request.instruction?.trim() || "Design a Scene Tracker schema."];
       if (request.existingContent?.trim()) {
         parts.push(`\nCurrent schema (refine it, keeping what still fits):\n${request.existingContent.trim()}`);
+      }
+      return parts.join("\n");
+    }
+
+    case "scene_rules": {
+      const parts: string[] = [request.instruction?.trim() || "Extract scene tracker rules from this character's prompt."];
+      if (request.existingContent?.trim()) {
+        parts.push(`\nCurrent scene tracker rules (refine them, keeping what still fits):\n${request.existingContent.trim()}`);
       }
       return parts.join("\n");
     }

@@ -312,6 +312,7 @@ export class PersonaRuntime {
 				name: sc.name,
 				description: sc.description,
 				code: sc.code,
+				scriptKind: sc.scriptKind,
 				scopeType: "persona",
 				personaId: persona.id,
 				enabled: sc.enabled,

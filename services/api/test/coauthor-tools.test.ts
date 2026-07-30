@@ -1,6 +1,7 @@
 import { describe, test, expect } from "bun:test";
 import { serializeProfileMd } from "@vibe-tavern/db";
 import { buildCoauthorTools } from "../src/domain/chat/coauthor-tools.js";
+import type { LoreDelegate, LoreDelegateInput } from "../src/domain/coauthor/lore/lore-delegate.js";
 
 /**
  * Co-Author tools propose edits; they never write. These tests pin the
@@ -574,5 +575,367 @@ describe("coauthor-tools: toolSet filtering", () => {
     expect(tools.write_scenario).toBeUndefined();
     expect(tools.write_profile).toBeUndefined();
     expect(tools.edit_personality).toBeUndefined();
+  });
+});
+
+describe("coauthor-tools: Wave 4 lore tools (CTX-L1)", () => {
+  /** Deterministic id generator so assertions can name lorebook_1 / lore_entry_1. */
+  function deterministicIdGen(): (prefix: "lorebook" | "lore_entry") => string {
+    const counters = new Map<string, number>();
+    return (prefix) => {
+      const n = (counters.get(prefix) ?? 0) + 1;
+      counters.set(prefix, n);
+      return `${prefix}_${n}`;
+    };
+  }
+
+  test("create_lorebook returns a lore_bundle output carrying the cumulative bundle", async () => {
+    const tools = buildCoauthorTools({ loreIdGen: deterministicIdGen() });
+    const out = await tools.create_lorebook.execute(
+      { name: "World Lore", summary: "Add a world lorebook." },
+      ctx,
+    );
+    expect(out.target).toBe("lore_bundle");
+    expect(out.bundle.lorebooks).toHaveLength(1);
+    expect(out.bundle.lorebooks[0]).toMatchObject({ id: "lorebook_1", name: "World Lore", scopeType: "character" });
+    expect(out.bundle.entries).toEqual([]);
+    expect(out.summary).toBe("Add a world lorebook.");
+  });
+
+  test("create_lore_entry depends on a prior create_lorebook and composes into the bundle", async () => {
+    const tools = buildCoauthorTools({ loreIdGen: deterministicIdGen() });
+    await tools.create_lorebook.execute({ name: "Book", summary: "s" }, ctx);
+    const out = await tools.create_lore_entry.execute(
+      { lorebookId: "lorebook_1", title: "Castle", summary: "Add castle entry." },
+      ctx,
+    );
+    expect(out.target).toBe("lore_bundle");
+    expect(out.bundle.lorebooks).toHaveLength(1);
+    expect(out.bundle.entries).toHaveLength(1);
+    // CE-A2: skeleton — keys start empty (filled later by ai_generate_lore_keys); logic defaults to and_any.
+    expect(out.bundle.entries[0]).toMatchObject({ id: "lore_entry_1", lorebookId: "lorebook_1", keys: [], logic: "and_any" });
+  });
+
+  test("create_lore_entry rejects a missing parent with a tool error", async () => {
+    const tools = buildCoauthorTools({ loreIdGen: deterministicIdGen() });
+    await expect(
+      tools.create_lore_entry.execute({ lorebookId: "ghost", summary: "s" }, ctx),
+    ).rejects.toThrow(/parent lorebook 'ghost' does not exist/);
+  });
+
+  test("set_lore_activation flips constant and returns the cumulative bundle", async () => {
+    const tools = buildCoauthorTools({ loreIdGen: deterministicIdGen() });
+    await tools.create_lorebook.execute({ name: "Book", summary: "s" }, ctx);
+    await tools.create_lore_entry.execute({ lorebookId: "lorebook_1", summary: "s" }, ctx);
+    const out = await tools.set_lore_activation.execute(
+      { entryId: "lore_entry_1", constant: true, summary: "Make constant." },
+      ctx,
+    );
+    expect(out.bundle.entries[0].constant).toBe(true);
+  });
+
+  test("lore tools are gated by toolSet like profile/greeting tools", () => {
+    const on = buildCoauthorTools({ toolSet: { create_lorebook: true, create_lore_entry: true } }) as unknown as Record<string, unknown>;
+    expect(on.create_lorebook).toBeDefined();
+    expect(on.create_lore_entry).toBeDefined();
+    expect(on.set_lore_activation).toBeUndefined();
+    expect(on.write_profile).toBeUndefined();
+  });
+
+  test("without a toolSet, all lore tools are available alongside profile/greeting tools", () => {
+    const tools = buildCoauthorTools() as unknown as Record<string, unknown>;
+    expect(tools.create_lorebook).toBeDefined();
+    expect(tools.create_lore_entry).toBeDefined();
+    expect(tools.set_lore_activation).toBeDefined();
+    expect(tools.read_skill_file).toBeDefined();
+  });
+
+  // CE-D2: search_context / read_context_item are gated by toolSet exactly like
+  // the lore / profile / greeting tools (they are NOT always-on like
+  // read_skill_file). All four seed modules enable them, but a user-created
+  // module that omits them must have them excluded.
+  test("search_context / read_context_item are gated by toolSet", () => {
+    const on = buildCoauthorTools({ toolSet: { search_context: true, read_context_item: true } }) as unknown as Record<string, unknown>;
+    expect(on.search_context).toBeDefined();
+    expect(on.read_context_item).toBeDefined();
+    expect(on.write_profile).toBeUndefined();
+
+    const off = buildCoauthorTools({ toolSet: { write_profile: true } }) as unknown as Record<string, unknown>;
+    expect(off.search_context).toBeUndefined();
+    expect(off.read_context_item).toBeUndefined();
+    expect(off.write_profile).toBeDefined();
+  });
+});
+
+describe("coauthor-tools: AI-delegation lore tools (CTX-L2b)", () => {
+  function deterministicIdGen(): (prefix: "lorebook" | "lore_entry") => string {
+    const counters = new Map<string, number>();
+    return (prefix) => {
+      const n = (counters.get(prefix) ?? 0) + 1;
+      counters.set(prefix, n);
+      return `${prefix}_${n}`;
+    };
+  }
+
+  /** A mock delegate that records its input and returns canned results. */
+  function mockDelegate(capture: { input: LoreDelegateInput | null }): LoreDelegate {
+    return async (input) => {
+      capture.input = input;
+      if (input.kind === "write_entry") return { content: "AI-authored lore prose." };
+      return { keys: ["Vex", "commander"], secondaryKeys: ["fleet"] };
+    };
+  }
+
+  test("ai_write_lore_entry delegates to the assistant, grounds on the live profile, and writes the draft content", async () => {
+    const captured = { input: null as LoreDelegateInput | null };
+    const tools = buildCoauthorTools({
+      profileMd: "# PERSONALITY\nVex is a commander.",
+      loreIdGen: deterministicIdGen(),
+      loreDelegate: mockDelegate(captured),
+    });
+    await tools.create_lorebook.execute({ name: "Bridge Crew", description: "Officers.", summary: "s" }, ctx);
+    await tools.create_lore_entry.execute({ lorebookId: "lorebook_1", title: "Vex", summary: "s" }, ctx);
+
+    const out = await tools.ai_write_lore_entry.execute(
+      { entryId: "lore_entry_1", instruction: "Her command style.", summary: "Wrote Vex content." },
+      ctx,
+    );
+    expect(out.target).toBe("lore_bundle");
+    expect(out.bundle.entries[0]!.content).toBe("AI-authored lore prose.");
+    expect(out.summary).toBe("Wrote Vex content.");
+    // The delegate was grounded on the lorebook + live working profile.
+    expect(captured.input!.kind).toBe("write_entry");
+    expect(captured.input!.lorebookName).toBe("Bridge Crew");
+    expect(captured.input!.entryTitle).toBe("Vex");
+    expect(captured.input!.characterProfileMd).toContain("Vex is a commander.");
+    expect(captured.input!.instruction).toBe("Her command style.");
+  });
+
+  test("ai_generate_lore_keys delegates and writes primary + secondary keys", async () => {
+    const captured = { input: null as LoreDelegateInput | null };
+    const tools = buildCoauthorTools({
+      loreIdGen: deterministicIdGen(),
+      loreDelegate: mockDelegate(captured),
+    });
+    await tools.create_lorebook.execute({ name: "LB", summary: "s" }, ctx);
+    await tools.create_lore_entry.execute({ lorebookId: "lorebook_1", title: "T", summary: "s" }, ctx);
+    // CE-A2: content is delegate-only — establish it via ai_write_lore_entry first.
+    await tools.ai_write_lore_entry.execute({ entryId: "lore_entry_1", instruction: "write it", summary: "s" }, ctx);
+
+    const out = await tools.ai_generate_lore_keys.execute(
+      { entryId: "lore_entry_1", summary: "Generated keys." },
+      ctx,
+    );
+    expect(out.bundle.entries[0]!.keys).toEqual(["Vex", "commander"]);
+    expect(out.bundle.entries[0]!.secondaryKeys).toEqual(["fleet"]);
+    expect(captured.input!.kind).toBe("generate_keys");
+    expect(captured.input!.entryContent).toBe("AI-authored lore prose.");
+  });
+
+  test("ai_generate_lore_keys: keyTarget=primary replaces ONLY primary; secondary stays empty even if the delegate returns one", async () => {
+    const captured = { input: null as LoreDelegateInput | null };
+    const tools = buildCoauthorTools({
+      loreIdGen: deterministicIdGen(),
+      loreDelegate: async (input) => { captured.input = input; return { keys: ["Vex", "commander"], secondaryKeys: ["fleet"] }; },
+    });
+    await tools.create_lorebook.execute({ name: "LB", summary: "s" }, ctx);
+    await tools.create_lore_entry.execute({ lorebookId: "lorebook_1", title: "T", summary: "s" }, ctx);
+
+    const out = await tools.ai_generate_lore_keys.execute(
+      { entryId: "lore_entry_1", keyTarget: "primary", summary: "primary only" },
+      ctx,
+    );
+    // Primary replaced with the generated set; secondary NOT populated (target gate).
+    expect(out.bundle.entries[0]!.keys).toEqual(["Vex", "commander"]);
+    expect(out.bundle.entries[0]!.secondaryKeys).toEqual([]);
+    // The chosen target reached the delegate prompt input.
+    expect(captured.input!.keyTarget).toBe("primary");
+  });
+
+  test("ai_generate_lore_keys: keyTarget=secondary replaces ONLY secondary; primary stays untouched", async () => {
+    const tools = buildCoauthorTools({
+      loreIdGen: deterministicIdGen(),
+      loreDelegate: async () => ({ keys: ["Vex", "commander"], secondaryKeys: ["fleet"] }),
+    });
+    await tools.create_lorebook.execute({ name: "LB", summary: "s" }, ctx);
+    await tools.create_lore_entry.execute({ lorebookId: "lorebook_1", title: "T", summary: "s" }, ctx);
+    // CE-A2: seed existing primary keys via the delegate (keys are delegate-only now).
+    await tools.ai_generate_lore_keys.execute({ entryId: "lore_entry_1", keyTarget: "primary", summary: "seed" }, ctx);
+
+    const out = await tools.ai_generate_lore_keys.execute(
+      { entryId: "lore_entry_1", keyTarget: "secondary", summary: "secondary only" },
+      ctx,
+    );
+    expect(out.bundle.entries[0]!.keys).toEqual(["Vex", "commander"]); // untouched (seeded via delegate)
+    expect(out.bundle.entries[0]!.secondaryKeys).toEqual(["fleet"]); // replaced
+  });
+
+  test("ai_generate_lore_keys: appendMode=true augments — keeps existing keys and dedupes the generated ones", async () => {
+    const tools = buildCoauthorTools({
+      loreIdGen: deterministicIdGen(),
+      loreDelegate: async () => ({ keys: ["Vex", "commander"], secondaryKeys: ["fleet"] }),
+    });
+    await tools.create_lorebook.execute({ name: "LB", summary: "s" }, ctx);
+    // Seed an existing primary key overlapping a generated one ('Vex') to prove dedup.
+    await tools.create_lore_entry.execute({ lorebookId: "lorebook_1", title: "T", summary: "s" }, ctx);
+    // CE-A2: seed existing primary keys via the delegate (keys are delegate-only now),
+    // then augment to prove dedup against the generated set.
+    await tools.ai_generate_lore_keys.execute({ entryId: "lore_entry_1", keyTarget: "primary", summary: "seed" }, ctx);
+
+    const out = await tools.ai_generate_lore_keys.execute(
+      { entryId: "lore_entry_1", appendMode: true, summary: "augment" },
+      ctx,
+    );
+    // Existing [Vex, commander] augmented with the same generated set — deduped, no duplicates.
+    expect(out.bundle.entries[0]!.keys).toEqual(["Vex", "commander"]);
+    expect(out.bundle.entries[0]!.secondaryKeys).toEqual(["fleet"]);
+  });
+
+  test("delegation tools reject a missing entry", async () => {
+    // CE-B1: production always supplies a loreEntityLookup; a missing entry
+    // resolves to null and the tool throws the clear "does not exist" error.
+    const nullLookup = { lorebook: async () => null, entry: async () => null };
+    const tools = buildCoauthorTools({ loreDelegate: mockDelegate({ input: null }), loreEntityLookup: nullLookup });
+    await expect(
+      tools.ai_write_lore_entry.execute({ entryId: "ghost", instruction: "x", summary: "s" }, ctx),
+    ).rejects.toThrow(/entry 'ghost' does not exist/);
+    await expect(
+      tools.ai_generate_lore_keys.execute({ entryId: "ghost", summary: "s" }, ctx),
+    ).rejects.toThrow(/entry 'ghost' does not exist/);
+  });
+
+  test("CE-B1: delegation tools reject a non-draft id when no entity lookup is configured", async () => {
+    // No loreEntityLookup injected (test context without a store): a
+    // persisted id that is not in the turn draft cannot be resolved.
+    const tools = buildCoauthorTools({ loreDelegate: mockDelegate({ input: null }) });
+    await expect(
+      tools.ai_write_lore_entry.execute({ entryId: "persisted_entry", instruction: "x", summary: "s" }, ctx),
+    ).rejects.toThrow(/no entity lookup is configured/);
+  });
+
+  test("delegation tools throw a clear error when no provider/delegate is configured", async () => {
+    // No loreDelegate injected (the runtime omits it when no provider is set).
+    const tools = buildCoauthorTools({ loreIdGen: deterministicIdGen() });
+    await tools.create_lorebook.execute({ name: "LB", summary: "s" }, ctx);
+    await tools.create_lore_entry.execute({ lorebookId: "lorebook_1", summary: "s" }, ctx);
+    await expect(
+      tools.ai_write_lore_entry.execute({ entryId: "lore_entry_1", instruction: "x", summary: "s" }, ctx),
+    ).rejects.toThrow(/no provider is configured/);
+    await expect(
+      tools.ai_generate_lore_keys.execute({ entryId: "lore_entry_1", summary: "s" }, ctx),
+    ).rejects.toThrow(/no provider is configured/);
+  });
+
+  test("delegation tools are gated by toolSet alongside the other lore tools", () => {
+    const on = buildCoauthorTools({
+      toolSet: { create_lorebook: true, create_lore_entry: true, ai_write_lore_entry: true, ai_generate_lore_keys: true },
+    }) as unknown as Record<string, unknown>;
+    expect(on.ai_write_lore_entry).toBeDefined();
+    expect(on.ai_generate_lore_keys).toBeDefined();
+    // set_lore_activation not enabled → absent; delegation tools only when toggled.
+    expect(on.set_lore_activation).toBeUndefined();
+  });
+});
+
+describe("coauthor-tools: edit + add lore tools (CE-B1)", () => {
+  /** Deterministic id gen for assertions (scoped to this block). */
+  function deterministicIdGen() {
+    const counters = new Map<string, number>();
+    return (prefix: "lorebook" | "lore_entry") => {
+      const n = (counters.get(prefix) ?? 0) + 1;
+      counters.set(prefix, n);
+      return `${prefix}_${n}`;
+    };
+  }
+  /** A canned persisted lorebook draft node returned by the lookup mock. */
+  const persistedBook = {
+    id: "lb_p", name: "Old Book", description: "d",
+    scopeType: "character" as const, enabled: true,
+    scanDepth: 10, tokenBudget: 1000, recursiveScanning: false,
+  };
+  /** A canned persisted entry draft node. */
+  const persistedEntry = {
+    id: "le_p", lorebookId: "lb_p", title: "Old", content: "kept prose",
+    keys: ["kept"], secondaryKeys: [], constant: false, position: "before_char",
+    depth: 4, logic: "and_any", enabled: true,
+  };
+  /** Lookup mock: resolves the two canned ids, null otherwise. */
+  const lookup = {
+    lorebook: async (id: string) => (id === "lb_p" ? persistedBook : null),
+    entry: async (id: string) => (id === "le_p" ? persistedEntry : null),
+  };
+
+  test("edit_lore_entry on a turn-drafted entry patches fields, stays mode:create", async () => {
+    const tools = buildCoauthorTools({ loreIdGen: deterministicIdGen() });
+    await tools.create_lorebook.execute({ name: "LB", summary: "s" }, ctx);
+    await tools.create_lore_entry.execute({ lorebookId: "lorebook_1", title: "T", summary: "s" }, ctx);
+    const out = await tools.edit_lore_entry.execute({ entryId: "lore_entry_1", title: "T2", logic: "and_all", summary: "s" }, ctx);
+    expect(out.bundle.entries[0]).toMatchObject({ id: "lore_entry_1", title: "T2", logic: "and_all" });
+    expect(out.bundle.entries[0]!.mode).toBeUndefined();
+  });
+
+  test("edit_lore_entry on a persisted entry imports it (mode:edit) and patches, preserving content/keys", async () => {
+    const tools = buildCoauthorTools({ loreEntityLookup: lookup });
+    const out = await tools.edit_lore_entry.execute({ entryId: "le_p", title: "New", logic: "not_any", summary: "s" }, ctx);
+    const e = out.bundle.entries[0]!;
+    expect(e).toMatchObject({ id: "le_p", title: "New", logic: "not_any", mode: "edit", parentMode: "persisted" });
+    // Content + keys came from the import (edit_lore_entry does not touch them).
+    expect(e.content).toBe("kept prose");
+    expect(e.keys).toEqual(["kept"]);
+  });
+
+  test("edit_lorebook on a persisted lorebook imports it and patches activation params", async () => {
+    const tools = buildCoauthorTools({ loreEntityLookup: lookup });
+    const out = await tools.edit_lorebook.execute({ lorebookId: "lb_p", name: "Renamed", scanDepth: 3, summary: "s" }, ctx);
+    expect(out.bundle.lorebooks[0]).toMatchObject({ id: "lb_p", name: "Renamed", scanDepth: 3, mode: "edit" });
+  });
+
+  test("add_lore_entry to a turn-drafted lorebook creates a skeleton entry", async () => {
+    const tools = buildCoauthorTools({ loreIdGen: deterministicIdGen() });
+    await tools.create_lorebook.execute({ name: "LB", summary: "s" }, ctx);
+    const out = await tools.add_lore_entry.execute({ lorebookId: "lorebook_1", title: "New", summary: "s" }, ctx);
+    expect(out.bundle.entries[0]).toMatchObject({ id: "lore_entry_1", lorebookId: "lorebook_1", title: "New" });
+    expect(out.bundle.entries[0]!.mode).toBeUndefined();
+    expect(out.bundle.entries[0]!.content).toBe("");
+  });
+
+  test("add_lore_entry to a persisted lorebook validates the parent via the lookup", async () => {
+    const tools = buildCoauthorTools({ loreIdGen: deterministicIdGen(), loreEntityLookup: lookup });
+    const out = await tools.add_lore_entry.execute({ lorebookId: "lb_p", title: "Extra", summary: "s" }, ctx);
+    expect(out.bundle.entries[0]).toMatchObject({ id: "lore_entry_1", lorebookId: "lb_p", title: "Extra" });
+    // A create-style entry; the persisted parent is NOT imported (no edit badge)
+    // and is explicitly marked as a verified external parent for review/apply.
+    expect(out.bundle.entries[0]!.mode).toBeUndefined();
+    expect(out.bundle.entries[0]!.parentMode).toBe("persisted");
+    expect(out.bundle.lorebooks.find((lb) => lb.id === "lb_p")).toBeUndefined();
+  });
+
+  test("add_lore_entry rejects an unknown parent", async () => {
+    const tools = buildCoauthorTools({ loreEntityLookup: lookup });
+    await expect(tools.add_lore_entry.execute({ lorebookId: "ghost", summary: "s" }, ctx)).rejects.toThrow(
+      /lorebook 'ghost' does not exist/,
+    );
+  });
+
+  test("re-delegation (ai_generate_lore_keys) imports a persisted entry before generating", async () => {
+    const tools = buildCoauthorTools({
+      loreIdGen: deterministicIdGen(),
+      loreEntityLookup: lookup,
+      loreDelegate: async () => ({ keys: ["Vex"], secondaryKeys: [] }),
+    });
+    const out = await tools.ai_generate_lore_keys.execute({ entryId: "le_p", summary: "s" }, ctx);
+    // The persisted entry was imported (mode:edit) then keys regenerated (replace).
+    expect(out.bundle.entries[0]).toMatchObject({ id: "le_p", mode: "edit", parentMode: "persisted" });
+    expect(out.bundle.entries[0]!.keys).toEqual(["Vex"]);
+  });
+
+  test("edit tools are gated by toolSet like the other lore tools", () => {
+    const on = buildCoauthorTools({ toolSet: { edit_lorebook: true, edit_lore_entry: true, add_lore_entry: true } }) as unknown as Record<string, unknown>;
+    expect(on.edit_lorebook).toBeDefined();
+    expect(on.edit_lore_entry).toBeDefined();
+    expect(on.add_lore_entry).toBeDefined();
+    const off = buildCoauthorTools({ toolSet: { create_lorebook: true } }) as unknown as Record<string, unknown>;
+    expect(off.edit_lorebook).toBeUndefined();
+    expect(off.add_lore_entry).toBeUndefined();
   });
 });

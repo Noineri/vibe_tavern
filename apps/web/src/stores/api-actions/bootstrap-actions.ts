@@ -1,4 +1,4 @@
-import { bootstrapApp, fetchChat, listPersonas } from "../../app-client.js";
+import { bootstrapApp, fetchChat, listPersonas, updateUiSettings } from "../../app-client.js";
 import type { AppSnapshot, AppCharacterEntry, PersonaRecord, UiSettingsRecord } from "../../app-client.js";
 import type { ChatId, PromptPresetDto } from "@vibe-tavern/domain";
 import { useChatStore } from "../chat-store.js";
@@ -91,4 +91,22 @@ export async function fetchBootstrapAction(options?: { silent?: boolean; skipSna
 export async function fetchPersonasAction(): Promise<void> {
   const personas = await listPersonas();
   useBootstrapStore.setState({ personas });
+}
+
+/**
+ * Patch one or more UI settings fields on the server and atomically merge the
+ * returned record into the live bootstrap store, so modal/top-bar/input
+ * subscribers update immediately without a full bootstrap refetch. Accepts
+ * explicit null to clear a field (e.g. coauthor binding reset).
+ */
+export async function patchUiSettingsAction(
+  patch: Partial<Pick<UiSettingsRecord, "theme" | "chatFontSize" | "uiFontSize" | "messageWidth" | "language" | "activePromptPresetId" | "aiAssistantProviderId" | "aiAssistantModelName" | "coauthorProviderId" | "coauthorModelName" | "coauthorMaxTokens" | "coauthorContextBudget">>,
+  updateFn: (input: typeof patch) => Promise<UiSettingsRecord> = updateUiSettings,
+): Promise<UiSettingsRecord> {
+  const updated = await updateFn(patch);
+  const current = useBootstrapStore.getState().data;
+  if (current) {
+    useBootstrapStore.setState({ data: { ...current, uiSettings: updated } });
+  }
+  return updated;
 }

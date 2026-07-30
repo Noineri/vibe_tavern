@@ -7,6 +7,22 @@ import * as schema from './db-schema.js';
 
 export type AppDb = ReturnType<typeof drizzle<typeof schema>>;
 
+/**
+ * A drizzle transaction client (the `tx` passed to `db.transaction(cb)`'s
+ * callback). Shared across stores so a single synchronous bun:sqlite
+ * transaction can span message inserts AND dice-lane binds (DICE-B10 atomic
+ * send binding). Derived from {@link AppDb} so it tracks the live schema.
+ *
+ * NOTE: this is the SYNCHRONOUS transaction client. drizzle-orm 0.38.4's
+ * bun-sqlite driver wraps the callback in bun:sqlite's native `.transaction()`,
+ * which commits at the end of the callback's synchronous prefix — so an `await`
+ * inside the callback suspends past the commit and a post-await throw is never
+ * rolled back. Cross-store atomic operations MUST therefore use a synchronous
+ * callback (no `await`; bun-sqlite query methods `.run/.get/.all/.values` are
+ * synchronous) so a synchronous throw rolls the whole transaction back.
+ */
+export type DbTransaction = Parameters<Parameters<AppDb['transaction']>[0]>[0];
+
 /** Type-safe `.message` extraction from a caught value. Returns "" for non-Error
  *  so downstream `.includes()` / `.toLowerCase()` checks behave as before
  *  (the historical code used `err?.message ?? ''`). Used by the migration
@@ -112,10 +128,10 @@ function quoteSqlIdentifier(identifier: string): string {
  *  3. Standalone exe — import.meta.dir = exe directory, drizzle/ copied next to it
  *
  * Strategy: walk up from this file's directory looking for drizzle/meta/_journal.json.
- * Falls back to explicit RP_PLATFORM_MIGRATIONS_DIR env var.
+ * Falls back to explicit VIBE_TAVERN_MIGRATIONS_DIR env var.
  */
 export async function resolveMigrationsFolder(): Promise<string> {
-  const envDir = process.env.RP_PLATFORM_MIGRATIONS_DIR;
+  const envDir = process.env.VIBE_TAVERN_MIGRATIONS_DIR;
   if (envDir) return envDir;
 
   const exeDir = resolve(process.execPath, '..');
@@ -278,6 +294,45 @@ async function baselineLegacyDb(sqlite: Database, migrationsFolder: string): Pro
   return true;
 }
 
+interface MigrationJournal {
+  entries: { tag: string; when: number }[];
+}
+
+function migrationColumnKey(table: string, column: string): string {
+  return `${table.toLowerCase()}.${column.toLowerCase()}`;
+}
+
+/**
+ * Compute columns whose FINAL state in the ordered migration journal is absent.
+ *
+ * The additive repair paths below inspect historical `ADD COLUMN` statements.
+ * Without DROP awareness they undo a later intentional removal: HRF-6's 0017
+ * drops `characters.folder_name`, then repair sees 0016's ADD as "missing" and
+ * re-adds it. Process ADD/DROP operations in journal + statement order so a
+ * future DROP→ADD sequence correctly ends present rather than being skipped.
+ */
+async function collectFinallyDroppedColumns(
+  journal: MigrationJournal,
+  migrationsFolder: string,
+): Promise<Set<string>> {
+  const finalOperation = new Map<string, "add" | "drop">();
+  for (const entry of journal.entries) {
+    const sqlPath = resolve(migrationsFolder, `${entry.tag}.sql`);
+    const sqlContent = await Bun.file(sqlPath).text();
+    for (const match of sqlContent.matchAll(
+      /ALTER\s+TABLE\s+[`"']?(\w+)[`"']?\s+(ADD|DROP)\s+(?:COLUMN\s+)?[`"']?(\w+)/gmi,
+    )) {
+      const operation = match[2].toLowerCase() === "drop" ? "drop" : "add";
+      finalOperation.set(migrationColumnKey(match[1], match[3]), operation);
+    }
+  }
+  return new Set(
+    [...finalOperation.entries()]
+      .filter(([, operation]) => operation === "drop")
+      .map(([key]) => key),
+  );
+}
+
 /**
  * Post-migration repair: if older builds incorrectly stamped migrations
  * as applied (baselineLegacyDb bug), new tables/columns won't exist. This function
@@ -307,7 +362,8 @@ async function repairMissingTables(sqlite: Database, migrationsFolder: string): 
 
   const journalPath = resolve(migrationsFolder, 'meta', '_journal.json');
   if (!await Bun.file(journalPath).exists()) return;
-  const journal = JSON.parse(await Bun.file(journalPath).text());
+  const journal = JSON.parse(await Bun.file(journalPath).text()) as MigrationJournal;
+  const finallyDroppedColumns = await collectFinallyDroppedColumns(journal, migrationsFolder);
 
   let repaired = 0;
   for (const entry of journal.entries) {
@@ -325,8 +381,13 @@ async function repairMissingTables(sqlite: Database, migrationsFolder: string): 
 
     // Check if any table from this migration is missing
     const missingTables = createdTables.filter(t => !existing.has(t.toLowerCase()));
-    // Check if any ALTER TABLE column is missing
-    const missingCols = alterCols.filter(({ table, column }) => existing.has(table.toLowerCase()) && !hasColumn(table, column));
+    // Check if any ALTER TABLE column is missing. A column whose FINAL journal
+    // operation is DROP is intentionally absent — never repair an older ADD.
+    const missingCols = alterCols.filter(({ table, column }) =>
+      !finallyDroppedColumns.has(migrationColumnKey(table, column))
+      && existing.has(table.toLowerCase())
+      && !hasColumn(table, column)
+    );
 
     if (missingTables.length === 0 && missingCols.length === 0) continue;
 
@@ -339,6 +400,12 @@ async function repairMissingTables(sqlite: Database, migrationsFolder: string): 
       // (e.g. ALTER TABLE column already exists but CREATE TABLE is missing)
       const statements = splitMigrationStatements(sqlContent);
       for (const stmt of statements) {
+        const addedColumn = stmt.match(
+          /ALTER\s+TABLE\s+[`"']?(\w+)[`"']?\s+ADD\s+(?:COLUMN\s+)?[`"']?(\w+)/i,
+        );
+        if (addedColumn && finallyDroppedColumns.has(migrationColumnKey(addedColumn[1], addedColumn[2]))) {
+          continue;
+        }
         try {
           sqlite.exec(stmt);
         } catch (stmtErr: unknown) {
@@ -479,7 +546,8 @@ async function ensureFinalSchemaColumns(sqlite: Database, migrationsFolder: stri
 async function ensureAlterColumns(sqlite: Database, migrationsFolder: string): Promise<void> {
   const journalPath = resolve(migrationsFolder, 'meta', '_journal.json');
   if (!await Bun.file(journalPath).exists()) return;
-  const journal = JSON.parse(await Bun.file(journalPath).text());
+  const journal = JSON.parse(await Bun.file(journalPath).text()) as MigrationJournal;
+  const finallyDroppedColumns = await collectFinallyDroppedColumns(journal, migrationsFolder);
 
   // Cache column info per table
   const columnCache = new Map<string, Set<string>>();
@@ -506,6 +574,7 @@ async function ensureAlterColumns(sqlite: Database, migrationsFolder: string): P
       .map(m => ({ table: m[1], column: m[2] }));
 
     for (const { table, column } of alterCols) {
+      if (finallyDroppedColumns.has(migrationColumnKey(table, column))) continue;
       if (hasColumn(table, column)) continue;
       // Derive column type + optional default/not-null from the SQL
       const typeMatch = sqlContent.match(new RegExp(`ALTER\\s+TABLE\\s+[\`"']?${table}[\`"']?\\s+ADD\\s+(?:COLUMN\\s+)?[\`"']?${column}[\`"']?\\s+([^;\n]+)`, 'i'));

@@ -11,12 +11,23 @@
  * end-to-end wiring (form.watch() feeding `current`, baselineRef set on reset)
  * is exercised by the render path; the logic contract is what's guarded here.
  */
-import { createElement } from "react";
-import { act, render } from "@testing-library/react";
-import { afterEach, describe, expect, test } from "vitest";
-import { useModalStore } from "../../stores/modal-store.js";
-import { TooltipProvider } from "../shared/Tooltip.js";
-import { computePersonaIsDirty, PersonaModal } from "./PersonaModal.js";
+import { afterEach, describe, expect, test } from "bun:test";
+import { useDomEnv } from "../../../test/dom-env.js";
+
+useDomEnv();
+const [
+	{ createElement },
+	{ act, render },
+	{ useModalStore },
+	{ TooltipProvider },
+	{ computePersonaIsDirty, PersonaModal },
+] = await Promise.all([
+	import("react"),
+	import("@testing-library/react"),
+	import("../../stores/modal-store.js"),
+	import("../shared/Tooltip.js"),
+	import("./PersonaModal.js"),
+]);
 
 const baseline = {
 	name: "Noi",
@@ -40,18 +51,19 @@ afterEach(() => {
 describe("PersonaModal render lifecycle", () => {
 	test("opens after being mounted closed without changing its hook order", () => {
 		useModalStore.setState({ isPersonaModalOpen: false });
+		const props = {
+			personas: [],
+			activePersonaId: null,
+			isSaving: false,
+			onSaveEdit: () => {},
+			onSetActive: () => {},
+			onCreatePersona: async () => null,
+			onDuplicatePersona: async () => {},
+			onDeletePersona: async () => ({ ok: true }),
+			onSetDefaultPersona: async () => {},
+		};
 		const view = render(createElement(TooltipProvider, null,
-			createElement(PersonaModal, {
-				personas: [],
-				activePersonaId: null,
-				isSaving: false,
-				onSaveEdit: () => {},
-				onSetActive: () => {},
-				onCreatePersona: async () => null,
-				onDuplicatePersona: async () => {},
-				onDeletePersona: async () => ({ ok: true }),
-				onSetDefaultPersona: async () => {},
-			}),
+			createElement(PersonaModal, props),
 		));
 
 		expect(view.queryByText("persona_manager_title")).toBeNull();

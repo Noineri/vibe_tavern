@@ -33,6 +33,8 @@ const DEFAULT_AUTO_CONFIG: AutoSummaryConfig = {
   everyN: 20,
   useChatModel: true,
   excludeSummarized: true,
+  includePriorSummaries: true,
+  maxPriorSummaries: 10,
 };
 
 export interface ContextMemoryModalProps {
@@ -104,6 +106,10 @@ export function useSummaryTab({
   const [rangeTo, setRangeTo] = useState(Math.max(1, messageCount));
   const [includeInContext, setIncludeInContext] = useState(true);
   const [excludeSummarized, setExcludeSummarized] = useState(true);
+  // SUMMARY_PRIOR_CONTEXT_PLAN W5: manual-ranged prior-context controls
+  // (default true/10, mirroring the auto config; passed into generateChatSummary).
+  const [rangedIncludePrior, setRangedIncludePrior] = useState(true);
+  const [rangedMaxPrior, setRangedMaxPrior] = useState(10);
   const [dirty, setDirty] = useState(false);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -355,6 +361,8 @@ export function useSummaryTab({
         label: draftLabel.trim() || `T${rangeFrom}\u2013T${rangeTo}`,
         includeInContext,
         excludeSummarized,
+        includePriorSummaries: rangedIncludePrior,
+        maxPriorSummaries: rangedIncludePrior ? rangedMaxPrior : 0,
       }, abort.signal);
       setSummaries((prev) => upsertSummary(prev, generated));
       selectSummary(generated);
@@ -479,6 +487,27 @@ export function useSummaryTab({
         {t("summary_exclude_toggle")}
       </label>
 
+      {/* ── Prior-summaries context (ranged generate) ── SUMMARY_PRIOR_CONTEXT_PLAN W5 */}
+      <label className="mt-2 flex items-center gap-2 font-ui text-[13px] text-t2">
+        <Toggle checked={rangedIncludePrior} onChange={setRangedIncludePrior} disabled={generating} />
+        {t("summary_prior_toggle")}
+      </label>
+      {rangedIncludePrior && (
+        <div className="mt-1.5 flex items-center gap-2 pl-6 font-ui text-[12px] text-t3">
+          <span>{t("summary_prior_max")}</span>
+          <NumberInput
+            className="w-[80px] shrink-0"
+            inputClassName="text-center"
+            hideControls
+            min={0}
+            max={100}
+            value={rangedMaxPrior}
+            onChange={setRangedMaxPrior}
+            disabled={generating}
+          />
+        </div>
+      )}
+
       {/* ── Summary text ── */}
       <section className="mt-4">
         <div className="mb-2 flex items-center justify-between gap-3">
@@ -602,8 +631,11 @@ export function useSummaryTab({
             min={1}
             max={500}
             value={autoConfig.everyN}
-            onChange={(v) => setAutoConfig({ ...autoConfig, everyN: v })}
-            onBlur={() => void commitMemorySettings()}
+            onChange={(v) => {
+              const next = { ...autoConfig, everyN: v };
+              setAutoConfig(next);
+              void commitMemorySettings({ autoConfig: next });
+            }}
           />
           <span>{t("summary_auto_messages")}</span>
         </div>
@@ -614,6 +646,32 @@ export function useSummaryTab({
           />
           {t("summary_auto_exclude_toggle")}
         </label>
+        {/* ── Prior-summaries context (auto) ── SUMMARY_PRIOR_CONTEXT_PLAN W5 */}
+        <label className="mt-3 flex items-center gap-2 font-ui text-[13px] text-t2">
+          <Toggle
+            checked={autoConfig.includePriorSummaries}
+            onChange={(v) => void commitMemorySettings({ autoConfig: { ...autoConfig, includePriorSummaries: v } })}
+          />
+          {t("summary_prior_toggle")}
+        </label>
+        {autoConfig.includePriorSummaries && (
+          <div className="mt-1.5 flex items-center gap-2 pl-6 font-ui text-[12px] text-t3">
+            <span>{t("summary_prior_max")}</span>
+            <NumberInput
+              className="w-[80px] shrink-0"
+              inputClassName="text-center"
+              hideControls
+              min={0}
+              max={100}
+              value={autoConfig.maxPriorSummaries}
+              onChange={(v) => {
+                const next = { ...autoConfig, maxPriorSummaries: v };
+                setAutoConfig(next);
+                void commitMemorySettings({ autoConfig: next });
+              }}
+            />
+          </div>
+        )}
       </section>
 
       {/* ── Messages in prompt (mobile: moved here from footer) ── */}
@@ -626,8 +684,8 @@ export function useSummaryTab({
               type="range" min={0} max={Math.max(1, messageCount)}
               value={Math.min(historyLimit, Math.max(1, messageCount))}
               onChange={(e) => setHistoryLimit(Number(e.target.value))}
-              onMouseUp={() => void commitMemorySettings()}
-              onTouchEnd={() => void commitMemorySettings()}
+              onMouseUp={(e) => void commitMemorySettings({ historyLimit: Number((e.target as HTMLInputElement).value) })}
+              onTouchEnd={(e) => void commitMemorySettings({ historyLimit: Number((e.target as HTMLInputElement).value) })}
             />
             <NumberInput
               className="w-[80px] shrink-0"
@@ -636,8 +694,10 @@ export function useSummaryTab({
               min={0}
               max={Math.max(1, messageCount)}
               value={historyLimit}
-              onChange={(v) => setHistoryLimit(v)}
-              onBlur={() => void commitMemorySettings()}
+              onChange={(v) => {
+                setHistoryLimit(v);
+                void commitMemorySettings({ historyLimit: v });
+              }}
             />
           </div>
         </section>
@@ -664,8 +724,8 @@ export function useSummaryTab({
             type="range" min={0} max={Math.max(1, messageCount)}
             value={Math.min(historyLimit, Math.max(1, messageCount))}
             onChange={(e) => setHistoryLimit(Number(e.target.value))}
-            onMouseUp={() => void commitMemorySettings()}
-            onTouchEnd={() => void commitMemorySettings()}
+            onMouseUp={(e) => void commitMemorySettings({ historyLimit: Number((e.target as HTMLInputElement).value) })}
+            onTouchEnd={(e) => void commitMemorySettings({ historyLimit: Number((e.target as HTMLInputElement).value) })}
           />
           <NumberInput
             className="w-[80px] shrink-0"
@@ -674,8 +734,10 @@ export function useSummaryTab({
             min={0}
             max={Math.max(1, messageCount)}
             value={historyLimit}
-            onChange={(v) => setHistoryLimit(v)}
-            onBlur={() => void commitMemorySettings()}
+            onChange={(v) => {
+              setHistoryLimit(v);
+              void commitMemorySettings({ historyLimit: v });
+            }}
           />
         </div>
       )}

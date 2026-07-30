@@ -8,11 +8,13 @@
  * `fill-missing` (default — skip variants that already carry a current record)
  * or `rebuild` (regenerate all).
  *
- * Before starting the client shows a bounded call count (assistant messages in
- * the active branch — the worst-case maximum; fill-missing may do fewer), a
- * warning when the count is large, and a conditional monetary estimate shown
- * ONLY when the resolved model carries pricing metadata (output $/Mtok × an
- * upper-bound token budget). No pricing → count only.
+ * Before starting the client shows the call count for the chosen mode: rebuild
+ * bills every assistant message in the active branch; fill-missing bills only
+ * those whose selected variant has no Scene record yet
+ * (AppMessage.sceneTracker === null). Plus a warning when the count is large,
+ * and a conditional monetary estimate shown ONLY when the resolved model
+ * carries pricing metadata (output $/Mtok × the count × a per-call token
+ * budget). No pricing → count only.
  *
  * Reload reattachment: the active runId is persisted to localStorage keyed by
  * chat; on mount the component re-polls it (reattaching a same-client reload,
@@ -67,6 +69,16 @@ export function SceneHistoryBackfill({ chatId }: { chatId: ChatId }) {
 	const assistantCount = useSnapshotStore((s) =>
 		s.messageOrder.reduce((n, id) => n + (s.messagesById[id]?.role === "assistant" ? 1 : 0), 0),
 	);
+	// Assistant messages whose selected variant has no Scene record — the exact
+	// set fill-missing will (re)generate. AppMessage.sceneTracker mirrors the
+	// selected variant's record (null when absent); rebuild regenerates all, so
+	// it stays on assistantCount.
+	const missingSceneCount = useSnapshotStore((s) =>
+		s.messageOrder.reduce(
+			(n, id) => n + (s.messagesById[id]?.role === "assistant" && !s.messagesById[id]?.sceneTracker ? 1 : 0),
+			0,
+		),
+	);
 	const profiles = useProviderDataStore((s) => s.profiles);
 
 	const [mode, setMode] = useState<SceneBackfillMode>(SCENE_BACKFILL_MODE.fillMissing);
@@ -95,10 +107,15 @@ export function SceneHistoryBackfill({ chatId }: { chatId: ChatId }) {
 		return () => { cancelled = true; };
 	}, [profileId, modelId]);
 
+	// Mode-aware call count: fill-missing bills only messages that lack a Scene;
+	// rebuild bills every assistant message.
+	const effectiveCount = mode === SCENE_BACKFILL_MODE.fillMissing ? missingSceneCount : assistantCount;
+	const nothingToDo = effectiveCount === 0;
+	const emptyState = assistantCount === 0;
 	const estimate = useMemo(() => {
-		if (!pricing?.output || !assistantCount) return null;
-		return (assistantCount * OUTPUT_BUDGET_TOKENS / 1e6) * pricing.output;
-	}, [pricing, assistantCount]);
+		if (!pricing?.output || !effectiveCount) return null;
+		return (effectiveCount * OUTPUT_BUDGET_TOKENS / 1e6) * pricing.output;
+	}, [pricing, effectiveCount]);
 
 	const running = !!status && (status.status === "pending" || status.status === "running");
 
@@ -203,7 +220,6 @@ export function SceneHistoryBackfill({ chatId }: { chatId: ChatId }) {
 
 	// ── Idle: the start form (mode + count + warning + estimate + Start). ──
 	if (!status) {
-		const noMessages = assistantCount === 0;
 		return (
 			<div className="space-y-3">
 				<div>
@@ -228,17 +244,19 @@ export function SceneHistoryBackfill({ chatId }: { chatId: ChatId }) {
 					</p>
 				</div>
 
-				{noMessages ? (
-					<p className="font-ui text-[11px] text-t4">{t("scn_hist_no_messages")}</p>
+				{nothingToDo ? (
+					<p className="font-ui text-[11px] text-t4">
+						{t(emptyState ? "scn_hist_no_messages" : "scn_hist_all_have_scene")}
+					</p>
 				) : (
 					<>
 						<p className="font-ui text-[11px] text-t3">
-							{t(mode === SCENE_BACKFILL_MODE.fillMissing ? "scn_hist_count_fill" : "scn_hist_count_rebuild", { n: assistantCount })}
+							{t(mode === SCENE_BACKFILL_MODE.fillMissing ? "scn_hist_count_fill" : "scn_hist_count_rebuild", { n: effectiveCount })}
 						</p>
-						{assistantCount > WARN_THRESHOLD && (
+						{effectiveCount > WARN_THRESHOLD && (
 							<p className="flex items-start gap-1.5 font-ui text-[11px] leading-relaxed text-warning-text">
 								<span className="mt-px shrink-0"><Ic.alert /></span>
-								<span>{t("scn_hist_warning", { n: assistantCount })}</span>
+								<span>{t("scn_hist_warning", { n: effectiveCount })}</span>
 							</p>
 						)}
 						{estimate !== null && (
@@ -252,7 +270,7 @@ export function SceneHistoryBackfill({ chatId }: { chatId: ChatId }) {
 				<button
 					type="button"
 					onClick={() => void start()}
-					disabled={noMessages || busy}
+					disabled={nothingToDo || busy}
 					className={cn(
 						"inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 font-ui text-[12px] font-medium transition-opacity disabled:opacity-40",
 						"bg-accent text-on-accent hover:opacity-90",

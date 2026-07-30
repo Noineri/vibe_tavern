@@ -1,6 +1,18 @@
 import React, { useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import rehypeRaw from "rehype-raw";
+import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
+import type { PluggableList } from "unified";
+import { copyText } from "./clipboard.js";
+
+const sanitizeSchema = {
+  ...defaultSchema,
+  attributes: {
+    ...defaultSchema.attributes,
+    '*': [...(defaultSchema.attributes?.['*'] || []), 'className', 'style'],
+  }
+};
 
 interface MarkdownProps {
   text: string;
@@ -372,12 +384,13 @@ function CodeBlock({ children }: { children?: React.ReactNode }) {
 
   const isWrap = WRAP_LANGS.has(lang);
 
-  function handleCopy() {
+  async function handleCopy() {
     const text = extractText(children);
-    navigator.clipboard.writeText(text).then(() => {
+    const result = await copyText(text);
+    if (result.ok) {
       setCopied(true);
       setTimeout(() => setCopied(false), 1800);
-    }).catch(() => {/* silent — clipboard unavailable */});
+    }
   }
 
   return (
@@ -559,7 +572,14 @@ function extractText(children: React.ReactNode): string {
 export const Markdown: React.FC<MarkdownProps> = ({ text, className, variant = "chat" }) => {
   if (!text) return null;
 
-  const rehypePlugins = variant === "plain" ? [] : [rehypeQuotedText, rehypeSystemBanner];
+  const baseRehypePlugins: PluggableList = [
+    rehypeRaw,
+    [rehypeSanitize, sanitizeSchema]
+  ];
+
+  const rehypePlugins: PluggableList = variant === "plain" 
+    ? baseRehypePlugins 
+    : [...baseRehypePlugins, rehypeQuotedText, rehypeSystemBanner];
 
   return (
     <div className={className || "md-content"}>

@@ -39,6 +39,7 @@ import { activateBranchAction, renameBranchAction } from "../../../stores/api-ac
 import { useRowActions } from "../hooks/use-row-actions.js";
 import { useT } from "../../../i18n/context.js";
 import type { CharacterControllerActions } from "../../../hooks/use-character-controller.js";
+import { useLastNonNull } from "../../../hooks/use-last-non-null.js";
 import type { ConfirmDestroyDialog } from "../../../stores/character-store.js";
 
 export interface CharacterChatsSheetProps {
@@ -61,7 +62,7 @@ export interface CharacterChatsSheetProps {
 	/** Character controller (rename + the useRowActions surface). */
 	character: CharacterControllerActions;
 	setConfirmDestroy: (dialog: ConfirmDestroyDialog | null) => void;
-	setChatImportOpen: (open: boolean) => void;
+	openChatImport: () => void;
 	onClose: () => void;
 	onSwitchChat: (id: ChatId) => void;
 	onCreateChat: () => void;
@@ -71,7 +72,7 @@ export function CharacterChatsSheet({
 	characterId, characterName, characterAvatarSrc,
 	chats, activeChatId, branches, activeBranchId,
 	withBranches, emptyTitleKey, mode,
-	character, setConfirmDestroy, setChatImportOpen,
+	character, setConfirmDestroy, openChatImport,
 	onClose, onSwitchChat, onCreateChat,
 }: CharacterChatsSheetProps) {
 	const { t, tDynamic } = useT();
@@ -80,6 +81,10 @@ export function CharacterChatsSheet({
 	const [chatQuery, setChatQuery] = useState("");
 	const [chatMenuId, setChatMenuId] = useState<ChatId | null>(null);
 	const [branchMenuId, setBranchMenuId] = useState<{ chatId: ChatId; branchId: ChatBranchId; label: string } | null>(null);
+	// Freeze the menu ids so the closing nested ActionSheet keeps rendering its
+	// last content during the Base UI exit transition (menuId → null on close).
+	const frozenChatMenuId = useLastNonNull(chatMenuId);
+	const frozenBranchMenuId = useLastNonNull(branchMenuId);
 	const [renamingChatId, setRenamingChatId] = useState<ChatId | null>(null);
 	const [renameDraft, setRenameDraft] = useState("");
 	const [renamingBranch, setRenamingBranch] = useState<{ chatId: ChatId; branchId: ChatBranchId } | null>(null);
@@ -96,7 +101,7 @@ export function CharacterChatsSheet({
 		setRenameDraft,
 		setRenamingBranch,
 		setBranchRenameDraft,
-		setChatImportOpen,
+		openChatImport,
 	});
 
 	if (!characterId) return null;
@@ -275,22 +280,18 @@ export function CharacterChatsSheet({
 			</div>
 
 			{/* ═══ Context-menu bottom sheets (nested drawers — Base UI stacks them) ═══ */}
-			{chatMenuId && (
-				<ActionSheet
-					open={true}
-					title={chats.find((c) => c.id === chatMenuId)?.title ?? ""}
-					items={chatMenuItems(chatMenuId, chats.find((c) => c.id === chatMenuId)?.title ?? "")}
-					onClose={() => setChatMenuId(null)}
-				/>
-			)}
-			{branchMenuId && (
-				<ActionSheet
-					open={true}
-					title={branchMenuId.label || t("sidebar_unnamed_branch")}
-					items={branchMenuItems(branchMenuId)}
-					onClose={() => setBranchMenuId(null)}
-				/>
-			)}
+			<ActionSheet
+				open={chatMenuId !== null}
+				title={frozenChatMenuId ? (chats.find((c) => c.id === frozenChatMenuId)?.title ?? "") : ""}
+				items={frozenChatMenuId ? chatMenuItems(frozenChatMenuId, chats.find((c) => c.id === frozenChatMenuId)?.title ?? "") : []}
+				onClose={() => setChatMenuId(null)}
+			/>
+			<ActionSheet
+				open={branchMenuId !== null}
+				title={frozenBranchMenuId ? (frozenBranchMenuId.label || t("sidebar_unnamed_branch")) : ""}
+				items={frozenBranchMenuId ? branchMenuItems(frozenBranchMenuId) : []}
+				onClose={() => setBranchMenuId(null)}
+			/>
 		</BottomSheet>
 	);
 }

@@ -352,6 +352,7 @@ export const sceneTrackerConfigSchema = z
     useChatModel: z.boolean().default(true),
     generatePrompt: z.string().default(""),
     injectPrompt: z.string().default(""),
+    rulesPrompt: z.string().default(""),
     providerProfileId: z.string().nullable().default(null),
     model: z.string().nullable().default(null),
     revision: z.number().int().min(0).default(0),
@@ -406,6 +407,7 @@ export const updateTrackerConfigSchema = z
     useChatModel: z.boolean().optional(),
     generatePrompt: z.string().optional(),
     injectPrompt: z.string().optional(),
+    rulesPrompt: z.string().optional(),
     providerProfileId: z.string().nullable().optional(),
     model: z.string().nullable().optional(),
   })

@@ -8,8 +8,9 @@
  * see is exactly what a tuned theme produces.
  *
  * Two modes:
- *   - "edit": load a registered theme's CSS (imported via Vite `?raw`), tweak
- *     any color, export a surgically-patched copy (comments preserved).
+ *   - "edit": load a registered theme's CSS (imported as a raw string via
+ *     `?raw`), tweak any color, export a surgically-patched copy (comments
+ *     preserved).
  *   - "scratch": start from a neutral grayscale ramp and build a brand-new theme.
  *
  * The tool's own chrome uses a fixed dark palette (`.tt-*` classes) so it stays
@@ -30,6 +31,7 @@ import {
   GROUPS,
   SCRATCH_VALUES,
   parseThemeCss,
+  parseColor,
   parsePageBgBlobs,
   parsePageGradient,
   extractTokenValue,
@@ -42,10 +44,27 @@ import {
   hexToOklch,
   applyOverridesToCss,
   buildScratchCss,
+  upsertTokensInCss,
   type OkColor,
   type Blob,
   type PageGradient,
 } from "./color-math.js";
+import { LavaBackground } from "../layout/LavaBackground.js";
+import {
+  DEFAULT_LAMP_BALLS,
+  LAMP_BALL_SIZE_MAX,
+  LAMP_BALL_SIZE_MIN,
+  LAMP_BALL_SPEED_MAX,
+  LAMP_BALL_SPEED_MIN,
+  LAMP_DEFAULTS,
+  LAMP_LIGHT_DEFAULTS,
+  MAX_LAMP_BALLS,
+  MAX_LAMP_WAX_COLORS,
+  MIN_LAMP_WAX_COLORS,
+  parseLampBalls,
+  splitCssList,
+  type LampBallConfig,
+} from "../layout/lava-shader.js";
 
 const THEME_RAW: Record<ThemeId, string> = {
   coffee: coffeeRaw,
@@ -93,9 +112,89 @@ const TOKEN_HINTS: Record<string, string> = {
   "--success-strong": "Добавленный фрагмент в diff",
   "--on-accent": "Текст на акценте",
   "--on-danger": "Текст на danger",
+  "--lamp-glass": "Стекло лампы (среда сосуда)",
+  "--lamp-wax-thick": "Густой воск (ядра больших шаров)",
+  "--lamp-wax-mid": "Средний воск",
+  "--lamp-wax-orange": "Промежуточный воск (между средним и краем)",
+  "--lamp-wax-thin": "Светлый воск (края / мелкие шары)",
 };
 
 type Mode = "edit" | "scratch";
+type LavaPreviewMode = "css" | "webgl";
+
+/** Tunable non-color lamp params exposed by the LavaParams panel. `light` is
+ *  0 (dark vessel) or 1 (light tinted field); the rest are shader uniforms. */
+interface LampScalars {
+  light: number;
+  tint: number;
+  edge: number;
+  core: number;
+  ramp: number;
+  speed: number;
+  bulb: number;
+  falloff: number;
+}
+
+/** Glass-field sliders (rendered under the "Стекло" sub-header, beside the
+ *  Тёмный/Светлый mode buttons). `bulb` and `falloff` have light-mode-aware
+ *  defaults, so their slider seed depends on the active glass mode. */
+const LAMP_GLASS_FIELDS = [
+  { name: "--lamp-tint", key: "tint", label: "Tint стекла (светл. режим)", min: 0, max: 2, step: 0.05 },
+  { name: "--lamp-bulb", key: "bulb", label: "Лампочка (источник тепла)", min: 0, max: 1, step: 0.02 },
+  { name: "--lamp-falloff", key: "falloff", label: "Затемнение воска (спад)", min: 0, max: 0.6, step: 0.01 },
+] as const;
+
+/** Ball-shape sliders (rendered under the "Общие параметры" sub-header). */
+const LAMP_SHAPE_FIELDS = [
+  { name: "--lamp-edge", key: "edge", label: "Размытие края шара", min: 0, max: 0.2, step: 0.005 },
+  { name: "--lamp-core", key: "core", label: "Ширина затемнения ядра", min: 0.05, max: 1, step: 0.05 },
+  { name: "--lamp-ramp", key: "ramp", label: "Границы цвета (разброс)", min: 0, max: 2, step: 0.05 },
+  { name: "--lamp-speed", key: "speed", label: "Скорость дрейфа", min: 0, max: 3, step: 0.05 },
+] as const;
+
+/** Parse a numeric CSS token from theme source, defaulting when absent. */
+function numToken(raw: string, name: string, dflt: number): number {
+  const v = extractTokenValue(raw, name);
+  if (!v) return dflt;
+  const n = parseFloat(v);
+  return Number.isFinite(n) ? n : dflt;
+}
+
+const LEGACY_WAX_TOKENS = [
+  "--lamp-wax-thick",
+  "--lamp-wax-mid",
+  "--lamp-wax-orange",
+  "--lamp-wax-thin",
+] as const;
+
+const cloneBalls = (balls: readonly LampBallConfig[]): LampBallConfig[] =>
+  balls.map((ball) => ({ ...ball }));
+const cloneColors = (colors: readonly OkColor[]): OkColor[] =>
+  colors.map((color) => ({ ...color }));
+
+function serializeLampBalls(balls: readonly LampBallConfig[]): string {
+  return balls.map((ball) => `${Number(ball.size.toFixed(3))} ${Number(ball.speed.toFixed(2))}`).join(", ");
+}
+
+function serializeWaxColors(colors: readonly OkColor[]): string {
+  return colors.map(serialize).join(", ");
+}
+
+function loadWaxColors(raw: string, values: ReadonlyMap<string, OkColor>): OkColor[] {
+  const legacy = LEGACY_WAX_TOKENS.flatMap((token) => {
+    const color = values.get(token);
+    return color ? [{ ...color }] : [];
+  });
+  const customRaw = extractTokenValue(raw, "--lamp-wax-colors");
+  if (!customRaw) return legacy;
+  const parsed: OkColor[] = [];
+  for (const item of splitCssList(customRaw).slice(0, MAX_LAMP_WAX_COLORS)) {
+    const color = parseColor(item);
+    if (!color) return legacy;
+    parsed.push(color);
+  }
+  return parsed.length >= MIN_LAMP_WAX_COLORS ? parsed : legacy;
+}
 
 // ─── Sample content (drives the live preview) ───────────────────────────
 
@@ -131,7 +230,24 @@ export function ThemeTuner() {
   const [tokenCommentOriginals, setTokenCommentOriginals] = useState<Map<string, string>>(() => new Map());
   const [drifting, setDrifting] = useState(true);
   const [showHoverStates, setShowHoverStates] = useState(false);
+  const [lavaPreviewMode, setLavaPreviewMode] = useState<LavaPreviewMode>("css");
   const [exportText, setExportText] = useState<string | null>(null);
+  const [lamp, setLamp] = useState<LampScalars>({
+    light: LAMP_DEFAULTS.light,
+    tint: LAMP_DEFAULTS.tint,
+    edge: LAMP_DEFAULTS.edge,
+    core: LAMP_DEFAULTS.core,
+    ramp: LAMP_DEFAULTS.ramp,
+    speed: LAMP_DEFAULTS.speed,
+    bulb: LAMP_DEFAULTS.bulb,
+    falloff: LAMP_DEFAULTS.falloff,
+  });
+  const [lampBalls, setLampBalls] = useState<LampBallConfig[]>(() => cloneBalls(DEFAULT_LAMP_BALLS));
+  const [lampBallOriginals, setLampBallOriginals] = useState<LampBallConfig[]>(() => cloneBalls(DEFAULT_LAMP_BALLS));
+  const [waxColors, setWaxColors] = useState<OkColor[]>([]);
+  const [waxColorOriginals, setWaxColorOriginals] = useState<OkColor[]>([]);
+  const [selectedLampBall, setSelectedLampBall] = useState<number | null>(null);
+  const [selectedWaxColor, setSelectedWaxColor] = useState<number | null>(null);
 
   // Initialize values and the complete page-background stack when mode/theme changes.
   useEffect(() => {
@@ -146,6 +262,11 @@ export function ThemeTuner() {
       setBlobOriginals([]);
       setPageGradient(null);
       setGradientOriginal(null);
+      setLamp({ light: LAMP_DEFAULTS.light, tint: LAMP_DEFAULTS.tint, edge: LAMP_DEFAULTS.edge, core: LAMP_DEFAULTS.core, ramp: LAMP_DEFAULTS.ramp, speed: LAMP_DEFAULTS.speed, bulb: LAMP_DEFAULTS.bulb, falloff: LAMP_DEFAULTS.falloff });
+      setLampBalls(cloneBalls(DEFAULT_LAMP_BALLS));
+      setLampBallOriginals(cloneBalls(DEFAULT_LAMP_BALLS));
+      setWaxColors([]);
+      setWaxColorOriginals([]);
     } else {
       const tokens = parseThemeCss(THEME_RAW[editId]);
       const v = new Map<string, OkColor>();
@@ -173,9 +294,30 @@ export function ThemeTuner() {
       setBlobOriginals(parsedBlobs.map((b) => ({ ...b, color: { ...b.color } })));
       setPageGradient(parsedGradient);
       setGradientOriginal(parsedGradient ? structuredClone(parsedGradient) : null);
+      const llRaw = extractTokenValue(THEME_RAW[editId], "--lamp-light");
+      const lightMode = llRaw && parseFloat(llRaw) >= 0.5 ? 1 : 0;
+      setLamp({
+        light: lightMode,
+        tint: numToken(THEME_RAW[editId], "--lamp-tint", LAMP_DEFAULTS.tint),
+        edge: numToken(THEME_RAW[editId], "--lamp-edge", LAMP_DEFAULTS.edge),
+        core: numToken(THEME_RAW[editId], "--lamp-core", LAMP_DEFAULTS.core),
+        ramp: numToken(THEME_RAW[editId], "--lamp-ramp", LAMP_DEFAULTS.ramp),
+        speed: numToken(THEME_RAW[editId], "--lamp-speed", LAMP_DEFAULTS.speed),
+        bulb: numToken(THEME_RAW[editId], "--lamp-bulb", lightMode ? LAMP_LIGHT_DEFAULTS.bulb : LAMP_DEFAULTS.bulb),
+        falloff: numToken(THEME_RAW[editId], "--lamp-falloff", lightMode ? LAMP_LIGHT_DEFAULTS.falloff : LAMP_DEFAULTS.falloff),
+      });
+      const parsedBalls = parseLampBalls(extractTokenValue(THEME_RAW[editId], "--lamp-balls") ?? "")
+        ?? cloneBalls(DEFAULT_LAMP_BALLS);
+      const parsedWaxColors = loadWaxColors(THEME_RAW[editId], v);
+      setLampBalls(cloneBalls(parsedBalls));
+      setLampBallOriginals(cloneBalls(parsedBalls));
+      setWaxColors(cloneColors(parsedWaxColors));
+      setWaxColorOriginals(cloneColors(parsedWaxColors));
     }
     setSelected(null);
     setSelectedBlob(null);
+    setSelectedLampBall(null);
+    setSelectedWaxColor(null);
     setEditingPageBase(false);
   }, [mode, editId]);
 
@@ -204,7 +346,52 @@ export function ThemeTuner() {
     };
   }, [blobs, pageGradient]);
 
+  // Push all editable lamp values to <html> so the scoped LavaBackground
+  // re-reads them live via its style MutationObserver. Glass still flows
+  // through the generic color-token effect; balls and wax colors use dynamic
+  // comma-list tokens because their counts are user-editable.
+  useEffect(() => {
+    const root = document.documentElement;
+    root.style.setProperty("--lamp-light", String(lamp.light));
+    root.style.setProperty("--lamp-tint", String(lamp.tint));
+    root.style.setProperty("--lamp-edge", String(lamp.edge));
+    root.style.setProperty("--lamp-core", String(lamp.core));
+    root.style.setProperty("--lamp-ramp", String(lamp.ramp));
+    root.style.setProperty("--lamp-speed", String(lamp.speed));
+    root.style.setProperty("--lamp-bulb", String(lamp.bulb));
+    root.style.setProperty("--lamp-falloff", String(lamp.falloff));
+    if (lampBalls.length > 0) root.style.setProperty("--lamp-balls", serializeLampBalls(lampBalls));
+    if (waxColors.length >= MIN_LAMP_WAX_COLORS) {
+      root.style.setProperty("--lamp-wax-colors", serializeWaxColors(waxColors));
+    }
+    return () => {
+      root.style.removeProperty("--lamp-light");
+      root.style.removeProperty("--lamp-tint");
+      root.style.removeProperty("--lamp-edge");
+      root.style.removeProperty("--lamp-core");
+      root.style.removeProperty("--lamp-ramp");
+      root.style.removeProperty("--lamp-speed");
+      root.style.removeProperty("--lamp-bulb");
+      root.style.removeProperty("--lamp-falloff");
+      root.style.removeProperty("--lamp-balls");
+      root.style.removeProperty("--lamp-wax-colors");
+    };
+  }, [lamp, lampBalls, waxColors]);
+
   const selectedCol = selected ? values.get(selected) ?? null : null;
+  // The WebGL lamp preview is shown only when editing a lava theme (never in
+  // scratch mode). Production viewport/reduced-motion gating is bypassed in
+  // the tuner so the lamp is always visible while tuning.
+  const isLavaTheme = mode === "edit" && (editId === "dark-lava" || editId === "light-lava");
+
+  function switchLavaPreviewMode(next: LavaPreviewMode) {
+    setLavaPreviewMode(next);
+    setSelected(null);
+    setSelectedBlob(null);
+    setSelectedLampBall(null);
+    setSelectedWaxColor(null);
+    setEditingPageBase(false);
+  }
 
   function updateSelected(patch: Partial<OkColor>) {
     if (!selected || !selectedCol) return;
@@ -297,6 +484,8 @@ export function ThemeTuner() {
     setBlobs(next);
     setSelectedBlob(next.length - 1);
     setSelected(null);
+    setSelectedLampBall(null);
+    setSelectedWaxColor(null);
     setEditingPageBase(false);
   }
 
@@ -309,6 +498,90 @@ export function ThemeTuner() {
       if (cur === i) return blobs.length > 1 ? Math.max(0, i - 1) : null;
       return cur > i ? cur - 1 : cur;
     });
+  }
+
+  /** Switch the glass field mode and snap the heat-source position + wax
+   *  falloff to that mode's tuned defaults, so flipping Тёмный/Светлый gives
+   *  the correct lamp look immediately. The user can still deviate with the
+   *  sliders afterwards; this only fires on a real mode change. */
+  function setGlassMode(mode: 0 | 1) {
+    if (lamp.light === mode) return;
+    setLamp((prev) => ({
+      ...prev,
+      light: mode,
+      bulb: mode ? LAMP_LIGHT_DEFAULTS.bulb : LAMP_DEFAULTS.bulb,
+      falloff: mode ? LAMP_LIGHT_DEFAULTS.falloff : LAMP_DEFAULTS.falloff,
+    }));
+  }
+
+  function addLampBall() {
+    if (lampBalls.length >= MAX_LAMP_BALLS) return;
+    const source = lampBalls[lampBalls.length - 1] ?? { size: 0.14, speed: 1 };
+    const next = [...lampBalls, { ...source }];
+    setLampBalls(next);
+    setSelectedLampBall(next.length - 1);
+    setSelectedWaxColor(null);
+    setSelected(null);
+  }
+
+  function removeLampBall(index: number) {
+    if (lampBalls.length <= 1) return;
+    const next = lampBalls.filter((_, current) => current !== index);
+    setLampBalls(next);
+    setSelectedLampBall((current) => {
+      if (current == null) return null;
+      if (current === index) return Math.min(index, next.length - 1);
+      return current > index ? current - 1 : current;
+    });
+  }
+
+  function updateLampBall(patch: Partial<LampBallConfig>) {
+    if (selectedLampBall == null) return;
+    setLampBalls((current) => current.map((ball, index) =>
+      index === selectedLampBall ? { ...ball, ...patch } : ball,
+    ));
+  }
+
+  function resetLampBall() {
+    if (selectedLampBall == null) return;
+    const original = lampBallOriginals[selectedLampBall];
+    if (!original) return;
+    updateLampBall(original);
+  }
+
+  function addWaxColor() {
+    if (waxColors.length >= MAX_LAMP_WAX_COLORS) return;
+    const source = waxColors[waxColors.length - 1] ?? { l: 0.8, c: 0.12, h: 60, a: null };
+    const next = [...waxColors, { ...source }];
+    setWaxColors(next);
+    setSelectedWaxColor(next.length - 1);
+    setSelectedLampBall(null);
+    setSelected(null);
+  }
+
+  function removeWaxColor(index: number) {
+    if (waxColors.length <= MIN_LAMP_WAX_COLORS) return;
+    const next = waxColors.filter((_, current) => current !== index);
+    setWaxColors(next);
+    setSelectedWaxColor((current) => {
+      if (current == null) return null;
+      if (current === index) return Math.min(index, next.length - 1);
+      return current > index ? current - 1 : current;
+    });
+  }
+
+  function updateWaxColor(patch: Partial<OkColor>) {
+    if (selectedWaxColor == null) return;
+    setWaxColors((current) => current.map((color, index) =>
+      index === selectedWaxColor ? { ...color, ...patch } : color,
+    ));
+  }
+
+  function resetWaxColor() {
+    if (selectedWaxColor == null) return;
+    const original = waxColorOriginals[selectedWaxColor];
+    if (!original) return;
+    updateWaxColor(original);
   }
 
   function handleExport() {
@@ -334,6 +607,48 @@ export function ThemeTuner() {
       const orig = tokenCommentOriginals.get(name) ?? "";
       if (cur !== orig) comments.set(name, cur);
     }
+    // Lamp scalar changes: tokens already authored in this theme are patched
+    // by applyOverridesToCss (added to `overrides`); tokens absent from it are
+    // inserted by upsertTokensInCss after. Only values the user actually
+    // changed are exported, so a theme left at defaults stays clean. `bulb`
+    // and `falloff` have glass-mode-aware defaults (the heat source flips and
+    // the falloff softens on the light field), so their comparison baseline is
+    // taken from the theme's own --lamp-light.
+    const llSrcRaw = extractTokenValue(THEME_RAW[editId], "--lamp-light");
+    const lightSrc = llSrcRaw && parseFloat(llSrcRaw) >= 0.5 ? 1 : 0;
+    const bulbSrcDefault = lightSrc ? LAMP_LIGHT_DEFAULTS.bulb : LAMP_DEFAULTS.bulb;
+    const falloffSrcDefault = lightSrc ? LAMP_LIGHT_DEFAULTS.falloff : LAMP_DEFAULTS.falloff;
+    const lampDefaultsList: Array<[string, number]> = [
+      ["--lamp-light", LAMP_DEFAULTS.light], ["--lamp-tint", LAMP_DEFAULTS.tint],
+      ["--lamp-edge", LAMP_DEFAULTS.edge], ["--lamp-core", LAMP_DEFAULTS.core],
+      ["--lamp-ramp", LAMP_DEFAULTS.ramp], ["--lamp-speed", LAMP_DEFAULTS.speed],
+      ["--lamp-bulb", bulbSrcDefault], ["--lamp-falloff", falloffSrcDefault],
+    ];
+    const lampCurrentList: Array<[string, number]> = [
+      ["--lamp-light", lamp.light], ["--lamp-tint", lamp.tint],
+      ["--lamp-edge", lamp.edge], ["--lamp-core", lamp.core],
+      ["--lamp-ramp", lamp.ramp], ["--lamp-speed", lamp.speed],
+      ["--lamp-bulb", lamp.bulb], ["--lamp-falloff", lamp.falloff],
+    ];
+    const lampInserts: Array<{ name: string; value: string }> = [];
+    for (let i = 0; i < lampCurrentList.length; i++) {
+      const [name, cur] = lampCurrentList[i];
+      const src = numToken(THEME_RAW[editId], name, lampDefaultsList[i][1]);
+      if (Math.abs(cur - src) > 1e-6) {
+        if (extractTokenValue(THEME_RAW[editId], name) !== null) overrides.set(name, String(cur));
+        else lampInserts.push({ name, value: String(cur) });
+      }
+    }
+    const dynamicLampValues: Array<[string, string, string]> = [
+      ["--lamp-balls", serializeLampBalls(lampBalls), serializeLampBalls(lampBallOriginals)],
+      ["--lamp-wax-colors", serializeWaxColors(waxColors), serializeWaxColors(waxColorOriginals)],
+    ];
+    for (const [name, current, original] of dynamicLampValues) {
+      if (current === original) continue;
+      if (extractTokenValue(THEME_RAW[editId], name) !== null) overrides.set(name, current);
+      else lampInserts.push({ name, value: current });
+    }
+
     let css = applyOverridesToCss(THEME_RAW[editId], overrides, comments);
     // Export the complete stack, including deletion of every blob or switching
     // a fixed gradient back to the linked solid --bg fallback.
@@ -342,6 +657,7 @@ export function ThemeTuner() {
     if (currentPageBg !== originalPageBg) {
       css = upsertPageBgInCss(css, currentPageBg);
     }
+    if (lampInserts.length > 0) css = upsertTokensInCss(css, lampInserts);
     setExportText(css);
   }
 
@@ -394,39 +710,85 @@ export function ThemeTuner() {
         )}
 
         <div className="tt-scroll">
-          <div className="tt-group">
-            <div className="tt-group-title">Фон страницы (--page-bg)</div>
-            <div className="tt-layer-label">Основа</div>
-            <PageBaseRow
-              gradient={pageGradient}
-              active={editingPageBase}
-              onClick={() => {
-                setEditingPageBase(true);
-                setSelectedBlob(null);
-                setSelected(null);
-              }}
-            />
-            <div className="tt-layer-head">
-              <span className="tt-layer-label">Плавающие пятна поверх основы</span>
-              <button type="button" className="tt-layer-add" onClick={addBlob}>+ Добавить</button>
+          {(!isLavaTheme || lavaPreviewMode === "css") && (
+            <div className="tt-group">
+              <div className="tt-group-title">{isLavaTheme ? "CSS-блобы (--page-bg)" : "Фон страницы (--page-bg)"}</div>
+              <div className="tt-layer-label">Основа</div>
+              <PageBaseRow
+                gradient={pageGradient}
+                active={editingPageBase}
+                onClick={() => {
+                  setEditingPageBase(true);
+                  setSelectedBlob(null);
+                  setSelectedLampBall(null);
+                  setSelectedWaxColor(null);
+                  setSelected(null);
+                }}
+              />
+              <div className="tt-layer-head">
+                <span className="tt-layer-label">Плавающие пятна поверх основы</span>
+                <button type="button" className="tt-layer-add" onClick={addBlob}>+ Добавить</button>
+              </div>
+              {blobs.length === 0 ? (
+                <div className="tt-blob-empty">Пятен пока нет — их можно добавить к любой теме.</div>
+              ) : (
+                blobs.map((b, i) => (
+                  <BlobRow
+                    key={i}
+                    index={i}
+                    color={b.color}
+                    x={b.x}
+                    y={b.y}
+                    active={selectedBlob === i}
+                    onClick={() => {
+                      setSelectedBlob(i);
+                      setSelectedLampBall(null);
+                      setSelectedWaxColor(null);
+                      setSelected(null);
+                      setEditingPageBase(false);
+                    }}
+                    onRemove={() => removeBlob(i)}
+                  />
+                ))
+              )}
             </div>
-            {blobs.length === 0 ? (
-              <div className="tt-blob-empty">Пятен пока нет — их можно добавить к любой теме.</div>
-            ) : (
-              blobs.map((b, i) => (
-                <BlobRow
-                  key={i}
-                  index={i}
-                  color={b.color}
-                  x={b.x}
-                  y={b.y}
-                  active={selectedBlob === i}
-                  onClick={() => { setSelectedBlob(i); setSelected(null); setEditingPageBase(false); }}
-                  onRemove={() => removeBlob(i)}
-                />
-              ))
-            )}
-          </div>
+          )}
+          {isLavaTheme && lavaPreviewMode === "webgl" && (
+            <LavaWebGlControls
+              glassColor={values.get("--lamp-glass") ?? null}
+              glassSelected={selected === "--lamp-glass"}
+              balls={lampBalls}
+              selectedBall={selectedLampBall}
+              waxColors={waxColors}
+              selectedWaxColor={selectedWaxColor}
+              lamp={lamp}
+              onSelectGlass={() => {
+                setSelected("--lamp-glass");
+                setSelectedBlob(null);
+                setSelectedLampBall(null);
+                setSelectedWaxColor(null);
+                setEditingPageBase(false);
+              }}
+              onSelectBall={(index) => {
+                setSelectedLampBall(index);
+                setSelectedWaxColor(null);
+                setSelected(null);
+                setEditingPageBase(false);
+              }}
+              onAddBall={addLampBall}
+              onRemoveBall={removeLampBall}
+              onSelectWaxColor={(index) => {
+                setSelectedWaxColor(index);
+                setSelectedLampBall(null);
+                setSelected(null);
+                setEditingPageBase(false);
+              }}
+              onAddWaxColor={addWaxColor}
+              onRemoveWaxColor={removeWaxColor}
+              onLampChange={(patch) => setLamp((prev) => ({ ...prev, ...patch }))}
+              onGlassMode={setGlassMode}
+            />
+          )}
           {GROUPS.map((g) => {
             const present = g.tokens.filter((t) => values.has(t));
             if (present.length === 0) return null;
@@ -439,7 +801,13 @@ export function ThemeTuner() {
                     name={tok}
                     color={values.get(tok)!}
                     active={selected === tok}
-                    onClick={() => { setSelected(tok); setSelectedBlob(null); setEditingPageBase(false); }}
+                    onClick={() => {
+                      setSelected(tok);
+                      setSelectedBlob(null);
+                      setSelectedLampBall(null);
+                      setSelectedWaxColor(null);
+                      setEditingPageBase(false);
+                    }}
                   />
                 ))}
               </div>
@@ -459,6 +827,12 @@ export function ThemeTuner() {
         <div className="tt-stage-label">
           <span>ПРЕВЬЮ {mode === "edit" ? `— ${editId}.css` : `— с нуля («${scratchName || "my-theme"}»)`}</span>
           <div className="tt-stage-actions">
+            {isLavaTheme && (
+              <div className="tt-lava-preview-modes" aria-label="Режим lava-превью">
+                <button type="button" className={lavaPreviewMode === "css" ? "active" : ""} onClick={() => switchLavaPreviewMode("css")}>CSS-блобы</button>
+                <button type="button" className={lavaPreviewMode === "webgl" ? "active" : ""} onClick={() => switchLavaPreviewMode("webgl")}>WebGL-шары</button>
+              </div>
+            )}
             <button
               type="button"
               className={showHoverStates ? "tt-drift-toggle active" : "tt-drift-toggle"}
@@ -467,18 +841,24 @@ export function ThemeTuner() {
             >
               {showHoverStates ? "◆ Hover показан" : "◇ Показать hover"}
             </button>
-            <button
-              type="button"
-              className="tt-drift-toggle"
-              disabled={blobs.length === 0}
-              onClick={() => setDrifting((d) => !d)}
-              title={drifting ? "Остановить дрейф пятен" : "Запустить дрейф пятен"}
-            >
-              {drifting ? "⏸ Стоп" : "▶ Дрейф"}
-            </button>
+            {(!isLavaTheme || lavaPreviewMode === "css") && (
+              <button
+                type="button"
+                className="tt-drift-toggle"
+                disabled={blobs.length === 0}
+                onClick={() => setDrifting((d) => !d)}
+                title={drifting ? "Остановить дрейф пятен" : "Запустить дрейф пятен"}
+              >
+                {drifting ? "⏸ Стоп" : "▶ Дрейф"}
+              </button>
+            )}
           </div>
         </div>
-        <Preview drifting={drifting && blobs.length > 0} showHoverStates={showHoverStates} />
+        <Preview
+          drifting={drifting && blobs.length > 0 && (!isLavaTheme || lavaPreviewMode === "css")}
+          showHoverStates={showHoverStates}
+          lampActive={isLavaTheme && lavaPreviewMode === "webgl"}
+        />
 
         <div className="tt-demos-label">ДОПОЛНИТЕЛЬНО: код, семантика, матовое стекло</div>
         <DemoStrip />
@@ -508,6 +888,28 @@ export function ThemeTuner() {
             onPosChange={updateBlobPos}
             onCommentChange={updateBlobComment}
             onReset={resetBlob}
+          />
+        ) : selectedLampBall != null && lampBalls[selectedLampBall] ? (
+          <LampBallEditor
+            index={selectedLampBall}
+            ball={lampBalls[selectedLampBall]}
+            canReset={
+              lampBallOriginals[selectedLampBall] != null &&
+              serializeLampBalls([lampBalls[selectedLampBall]]) !== serializeLampBalls([lampBallOriginals[selectedLampBall]])
+            }
+            onChange={updateLampBall}
+            onReset={resetLampBall}
+          />
+        ) : selectedWaxColor != null && waxColors[selectedWaxColor] ? (
+          <WaxColorEditor
+            index={selectedWaxColor}
+            color={waxColors[selectedWaxColor]}
+            canReset={
+              waxColorOriginals[selectedWaxColor] != null &&
+              serialize(waxColors[selectedWaxColor]) !== serialize(waxColorOriginals[selectedWaxColor])
+            }
+            onChange={updateWaxColor}
+            onReset={resetWaxColor}
           />
         ) : selectedCol ? (
           <Editor
@@ -747,6 +1149,52 @@ function BlobEditor({
   );
 }
 
+function LampBallEditor({
+  index, ball, canReset, onChange, onReset,
+}: {
+  index: number;
+  ball: LampBallConfig;
+  canReset: boolean;
+  onChange: (patch: Partial<LampBallConfig>) => void;
+  onReset: () => void;
+}) {
+  const track = "linear-gradient(to right, var(--border), var(--accent))";
+  return (
+    <div className="tt-editor-inner">
+      <div className="tt-ed-name">WebGL-шар {index + 1}</div>
+      <div className="tt-ed-hint">Индивидуальные размер и скорость. Общая скорость дрейфа ниже в левой панели умножает скорость всех шаров.</div>
+      <Slider label="Размер" min={LAMP_BALL_SIZE_MIN} max={LAMP_BALL_SIZE_MAX} step={0.005}
+        value={ball.size} track={track} onChange={(size) => onChange({ size })} />
+      <Slider label="Скорость шара" min={LAMP_BALL_SPEED_MIN} max={LAMP_BALL_SPEED_MAX} step={0.05}
+        value={ball.speed} track={track} onChange={(speed) => onChange({ speed })} />
+      {canReset && (
+        <button type="button" className="tt-ed-reset" onClick={onReset}>Сбросить к оригиналу</button>
+      )}
+    </div>
+  );
+}
+
+function WaxColorEditor({
+  index, color, canReset, onChange, onReset,
+}: {
+  index: number;
+  color: OkColor;
+  canReset: boolean;
+  onChange: (patch: Partial<OkColor>) => void;
+  onReset: () => void;
+}) {
+  return (
+    <div className="tt-editor-inner">
+      <div className="tt-ed-name">Цвет воска {index + 1}</div>
+      <div className="tt-ed-hint">Общий gradient stop для всех WebGL-шаров: от плотного ядра к светлому краю.</div>
+      <ColorFields color={color} onChange={onChange} />
+      {canReset && (
+        <button type="button" className="tt-ed-reset" onClick={onReset}>Сбросить к оригиналу</button>
+      )}
+    </div>
+  );
+}
+
 function PageGradientEditor({
   gradient, canReset, onKindChange, onChange, onReset,
 }: {
@@ -912,16 +1360,138 @@ function CommentField({
   );
 }
 
+// ─── WebGL lava controls (palette + scalar knobs; lava themes only) ─────
+
+/** Dynamic WebGL configuration. Ball count/config and wax gradient colors
+ * are independent lists; glass and global shader scalars remain single values. */
+function LavaWebGlControls({
+  glassColor, glassSelected,
+  balls, selectedBall,
+  waxColors, selectedWaxColor,
+  lamp,
+  onSelectGlass,
+  onSelectBall, onAddBall, onRemoveBall,
+  onSelectWaxColor, onAddWaxColor, onRemoveWaxColor,
+  onLampChange, onGlassMode,
+}: {
+  glassColor: OkColor | null;
+  glassSelected: boolean;
+  balls: readonly LampBallConfig[];
+  selectedBall: number | null;
+  waxColors: readonly OkColor[];
+  selectedWaxColor: number | null;
+  lamp: LampScalars;
+  onSelectGlass: () => void;
+  onSelectBall: (index: number) => void;
+  onAddBall: () => void;
+  onRemoveBall: (index: number) => void;
+  onSelectWaxColor: (index: number) => void;
+  onAddWaxColor: () => void;
+  onRemoveWaxColor: (index: number) => void;
+  onLampChange: (patch: Partial<LampScalars>) => void;
+  onGlassMode: (mode: 0 | 1) => void;
+}) {
+  const posTrack = "linear-gradient(to right, var(--border), var(--accent))";
+  return (
+    <div className="tt-group">
+      <div className="tt-group-title">WebGL-лава</div>
+
+      <div className="tt-layer-label">Стекло</div>
+      {glassColor && (
+        <SwatchRow name="--lamp-glass" color={glassColor} active={glassSelected} onClick={onSelectGlass} />
+      )}
+
+      <div className="tt-layer-head">
+        <span className="tt-layer-label">Шары ({balls.length}/{MAX_LAMP_BALLS})</span>
+        <button type="button" className="tt-layer-add" disabled={balls.length >= MAX_LAMP_BALLS} onClick={onAddBall}>+ Шар</button>
+      </div>
+      {balls.map((ball, index) => (
+        <div key={index} className={selectedBall === index ? "tt-swatch-row active" : "tt-swatch-row"}>
+          <button type="button" className="tt-swatch-row-main" onClick={() => onSelectBall(index)}>
+            <span className="tt-ball-marker">{index + 1}</span>
+            <span className="tt-swatch-name">Шар {index + 1}</span>
+            <span className="tt-swatch-val">r {ball.size.toFixed(3)} · ×{ball.speed.toFixed(2)}</span>
+          </button>
+          <button type="button" className="tt-swatch-del" disabled={balls.length <= 1}
+            onClick={() => onRemoveBall(index)} aria-label={`Удалить WebGL-шар ${index + 1}`}>×</button>
+        </div>
+      ))}
+
+      <div className="tt-layer-head">
+        <span className="tt-layer-label">Цвета воска ({waxColors.length}/{MAX_LAMP_WAX_COLORS})</span>
+        <button type="button" className="tt-layer-add" disabled={waxColors.length >= MAX_LAMP_WAX_COLORS} onClick={onAddWaxColor}>+ Цвет</button>
+      </div>
+      {waxColors.map((color, index) => (
+        <div key={index} className={selectedWaxColor === index ? "tt-swatch-row active" : "tt-swatch-row"}>
+          <button type="button" className="tt-swatch-row-main" onClick={() => onSelectWaxColor(index)}>
+            <span className="tt-swatch" style={{ background: serialize(color) }} />
+            <span className="tt-swatch-name">Цвет {index + 1}</span>
+            <span className="tt-swatch-val">{serialize(color)}</span>
+          </button>
+          <button type="button" className="tt-swatch-del" disabled={waxColors.length <= MIN_LAMP_WAX_COLORS}
+            onClick={() => onRemoveWaxColor(index)} aria-label={`Удалить цвет воска ${index + 1}`}>×</button>
+        </div>
+      ))}
+
+      <div className="tt-layer-head">
+        <span className="tt-layer-label">Общие параметры</span>
+      </div>
+      <div className="tt-lamp-light">
+        <span className="tt-layer-label" style={{ margin: 0 }}>Режим стекла</span>
+        <div className="tt-gradient-kinds">
+          <button type="button" className={lamp.light < 0.5 ? "active" : ""} onClick={() => onGlassMode(0)}>Тёмный</button>
+          <button type="button" className={lamp.light >= 0.5 ? "active" : ""} onClick={() => onGlassMode(1)}>Светлый</button>
+        </div>
+      </div>
+      {LAMP_GLASS_FIELDS.map((field) => (
+        <Slider
+          key={field.key}
+          label={field.label}
+          min={field.min}
+          max={field.max}
+          step={field.step}
+          value={lamp[field.key]}
+          track={posTrack}
+          onChange={(value) => onLampChange({ [field.key]: value } as Partial<LampScalars>)}
+        />
+      ))}
+      <div className="tt-layer-head">
+        <span className="tt-layer-label">Общие параметры шаров</span>
+      </div>
+      {LAMP_SHAPE_FIELDS.map((field) => (
+        <Slider
+          key={field.key}
+          label={field.label}
+          min={field.min}
+          max={field.max}
+          step={field.step}
+          value={lamp[field.key]}
+          track={posTrack}
+          onChange={(value) => onLampChange({ [field.key]: value } as Partial<LampScalars>)}
+        />
+      ))}
+    </div>
+  );
+}
+
 // ─── Preview (real components + chrome replica) ─────────────────────────
 
-function Preview({ drifting, showHoverStates }: { drifting: boolean; showHoverStates: boolean }) {
+function Preview({
+  drifting, showHoverStates, lampActive,
+}: { drifting: boolean; showHoverStates: boolean; lampActive: boolean }) {
+  // Capture the preview window element so the scoped LavaBackground can portal
+  // its canvas into it (absolute, full-bleed) for a live WYSIWYG lamp.
+  const [winEl, setWinEl] = useState<HTMLElement | null>(null);
   const windowClass = [
     "tt-window",
-    drifting ? "tt-window-drift" : "",
+    // The opaque lamp canvas covers the CSS background, so the drift animation
+    // is pointless (and wastes paint) while the lamp is painting.
+    drifting && !lampActive ? "tt-window-drift" : "",
     showHoverStates ? "tt-window-show-states" : "",
   ].filter(Boolean).join(" ");
   return (
-    <div className={windowClass}>
+    <div className={windowClass} ref={setWinEl}>
+      {lampActive && winEl && <LavaBackground active scopeEl={winEl} />}
       {/* Sidebar replica */}
       <div className="tt-win-sidebar">
         <div className="tt-win-brand">
@@ -1162,15 +1732,18 @@ const TT_CSS = `
 .tt-layer-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:10px;padding-top:8px;border-top:1px solid #2a2620}
 .tt-layer-head .tt-layer-label{margin:0 4px}
 .tt-layer-add{background:#25221c;border:1px solid #4a443c;color:#c8bca8;border-radius:5px;font-size:10.5px;line-height:1;padding:5px 8px;cursor:pointer;font-family:inherit;white-space:nowrap;transition:all .12s}
-.tt-layer-add:hover{background:#b8763e;color:#1a1712;border-color:#b8763e}
+.tt-layer-add:hover:not(:disabled){background:#b8763e;color:#1a1712;border-color:#b8763e}
+.tt-layer-add:disabled{opacity:.35;cursor:default}
 .tt-blob-empty{font-size:11px;color:#5e544a;padding:7px 4px 3px;font-style:italic;line-height:1.45}
 .tt-swatch-row{display:flex;align-items:center;gap:4px;width:100%;padding:5px 4px 5px 6px;border-radius:6px;background:transparent;border:1px solid transparent;text-align:left;font-family:inherit}
 .tt-swatch-row-main{display:flex;align-items:center;gap:9px;flex:1;min-width:0;background:transparent;border:none;cursor:pointer;font-family:inherit;text-align:left;padding:0}
 .tt-swatch-del{flex-shrink:0;background:transparent;border:none;color:#5e544a;font-size:15px;line-height:1;cursor:pointer;padding:2px 4px;border-radius:4px;font-family:inherit}
-.tt-swatch-del:hover{color:#c84545;background:#3a2018}
+.tt-swatch-del:hover:not(:disabled){color:#c84545;background:#3a2018}
+.tt-swatch-del:disabled{opacity:.25;cursor:default}
 .tt-swatch-row:hover{background:#25221c}
 .tt-swatch-row.active{background:#2a2620;border-color:#4a443c}
 .tt-swatch{width:22px;height:22px;border-radius:5px;border:1px solid #00000040;flex-shrink:0;box-shadow:inset 0 0 0 1px #ffffff14}
+.tt-ball-marker{width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;background:#33281f;border:1px solid #5a4432;color:#c99055;font-size:10px;font-weight:700}
 .tt-base-swatch{border-radius:50%}
 .tt-swatch-name{flex:1;min-width:0;font-size:12px;color:#c8bca8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .tt-swatch-val{font-size:9.5px;font-family:'JetBrains Mono',monospace;color:#5e544a;white-space:nowrap}
@@ -1187,20 +1760,23 @@ const TT_CSS = `
 .tt-stage-label,.tt-demos-label{font-size:10px;color:#4a4038;letter-spacing:.08em;text-transform:uppercase;margin-bottom:10px}
 .tt-stage-label{display:flex;align-items:center;justify-content:space-between;gap:10px}
 .tt-stage-actions{display:flex;align-items:center;gap:6px}
+.tt-lava-preview-modes{display:flex;align-items:center;padding:2px;background:#1e1c18;border:1px solid #3a352e;border-radius:6px}
+.tt-lava-preview-modes button{background:transparent;border:0;color:#8a7e70;border-radius:4px;padding:3px 9px;font-size:11px;cursor:pointer;font-family:inherit;white-space:nowrap}
+.tt-lava-preview-modes button.active{background:#b8763e;color:#1a1712;font-weight:600}
 .tt-drift-toggle{background:#25221c;border:1px solid #3a352e;color:#c8bca8;border-radius:5px;padding:4px 11px;font-size:11px;letter-spacing:0;text-transform:none;cursor:pointer;font-family:inherit;transition:all .12s}
 .tt-drift-toggle:hover:not(:disabled),.tt-drift-toggle.active{border-color:#b8763e;color:#e2d6c2;background:#3a2a1d}
 .tt-drift-toggle:disabled{opacity:.4;cursor:default}
 .tt-demos-label{margin-top:26px}
 
 /* preview window (themed by tokens) */
-.tt-window{display:flex;height:760px;border-radius:10px;overflow:hidden;border:1px solid var(--border);box-shadow:0 24px 60px #00000066;background:var(--page-bg, var(--bg))}
+.tt-window{--tt-message-width:820px;display:flex;height:clamp(600px,86vh,1080px);position:relative;border-radius:10px;overflow:hidden;border:1px solid var(--border);box-shadow:0 24px 60px #00000066;background:var(--page-bg, var(--bg))}
 /* Drift replicates the live lava animation: oversized background (180%) panned
    via background-position, so the blobs appear to float. Faithful to the
    theme's own @keyframes (*-lava-drift on body) but applied to the preview
    element with a generic name so it works for any theme that has blobs. */
 .tt-window-drift{background-size:180% 180%;animation:tt-drift 20s ease-in-out infinite}
 @keyframes tt-drift{0%,100%{background-position:0% 0%,100% 100%,50% 50%}50%{background-position:100% 50%,0% 50%,50% 0%}}
-.tt-win-sidebar{width:188px;min-width:188px;background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
+.tt-win-sidebar{width:188px;min-width:188px;background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);position:relative;z-index:1}
 .tt-win-brand{display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--border)}
 .tt-win-logo{width:22px;height:22px;border-radius:5px;background:var(--accent);color:var(--on-accent);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700}
 .tt-win-logo-name{font-size:13px;font-weight:600;color:var(--t1)}
@@ -1217,7 +1793,7 @@ const TT_CSS = `
 .tt-win-persona{padding:9px 12px;border-top:1px solid var(--border);display:flex;align-items:center;gap:7px}
 .tt-win-persona-label{font-size:11px;color:var(--t3)}
 
-.tt-win-main{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0}
+.tt-win-main{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0;position:relative;z-index:1}
 .tt-win-topbar{display:flex;height:60px;align-items:center;gap:9px;padding:0 14px;background:var(--surface);border-bottom:1px solid var(--border)}
 .tt-win-top-avatar{width:44px;height:44px;border-radius:50%;background:var(--s3);color:var(--t2);display:flex;align-items:center;justify-content:center;font-size:12px;font-family:var(--font-body);font-style:italic;flex-shrink:0;border:1.5px solid transparent}
 .tt-win-name{font-size:var(--ui-fs);font-weight:500;color:var(--t1);white-space:nowrap}
@@ -1230,8 +1806,12 @@ const TT_CSS = `
 .tt-win-mode-switch{margin-left:auto;border:0;border-radius:999px;background:var(--mode-switch-bg,var(--accent-dim));color:var(--mode-switch-text,var(--accent-t));padding:4px 12px;font-size:13px;font-weight:500;cursor:pointer;transition:background-color .15s,color .15s}
 .tt-win-mode-switch:hover,.tt-window-show-states .tt-win-mode-switch.preview-hover{background:var(--mode-switch-hover-bg,var(--accent-hover));color:var(--mode-switch-hover-text,var(--accent-t))}
 
-.tt-win-messages{flex:1;overflow-y:auto;padding:20px 24px;display:flex;flex-direction:column;gap:18px}
-.tt-msg{position:relative;padding:10px 0}
+.tt-win-messages{flex:1;overflow-y:auto;padding:20px 0;display:flex;flex-direction:column;gap:18px}
+/* Match production MessageShell: the scroller stays full-width, but every
+   message gets a centred max-width frame with 32px outer gutters and 28px
+   inner padding. ThemeTuner does not mount the settings hook that normally
+   writes --mw, so use its production-default medium width (820px) locally. */
+.tt-msg{position:relative;width:100%;max-width:min(calc(var(--tt-message-width) + 160px),calc(100% - 64px));margin-inline:auto;padding:10px 28px}
 .tt-msg-head{display:flex;align-items:center;gap:10px;margin-bottom:12px;color:var(--accent-t);opacity:.85}
 .tt-msg-avatar{width:44px;height:44px;border-radius:50%;background:var(--s3);color:var(--t3);display:flex;align-items:center;justify-content:center;font-family:var(--font-body);font-style:italic;font-size:calc(var(--ui-fs) + 1px);flex-shrink:0}
 .tt-msg-author{font-size:calc(var(--ui-fs) - 2px);font-weight:600;letter-spacing:.04em;color:inherit}
@@ -1304,6 +1884,8 @@ const TT_CSS = `
 .tt-gradient-kinds button,.tt-gradient-stops button{background:#25221c;border:1px solid #3a352e;color:#8a7e70;border-radius:5px;padding:7px 5px;font-size:11px;cursor:pointer;font-family:inherit}
 .tt-gradient-kinds button.active,.tt-gradient-stops button.active{background:#3a2a1d;border-color:#b8763e;color:#e2d6c2}
 .tt-gradient-stops{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-bottom:14px}
+.tt-lamp-light{margin:4px 4px 10px}
+.tt-lamp-light .tt-gradient-kinds{margin:6px 0 0}
 .tt-gradient-stops button{display:flex;align-items:center;justify-content:center;gap:6px}
 .tt-gradient-stops button span{width:14px;height:14px;border-radius:4px;border:1px solid #00000040}
 .tt-gradient-solid-note{padding:12px;background:#25221c;border:1px solid #34302a;border-radius:6px;color:#8a7e70;font-size:12px;line-height:1.55}

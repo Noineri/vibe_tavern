@@ -1,4 +1,6 @@
 import type { ScriptRecord, ScriptLinkRecord } from "./types.js";
+import type { ScriptKind } from "@vibe-tavern/domain";
+import type { ScriptTestResult } from "@vibe-tavern/api-contracts";
 import { client } from "./client.js";
 import { unwrapRpc, unwrapError } from "./unwrap.js";
 
@@ -12,7 +14,7 @@ export async function listAllScripts(): Promise<ScriptRecord[]> {
   return unwrapRpc<ScriptRecord[]>(response);
 }
 
-export async function createScript(body: { name: string; description?: string; code?: string; scopeType: string; characterId?: string; personaId?: string; chatId?: string; enabled?: boolean; sortOrder?: number }): Promise<ScriptRecord> {
+export async function createScript(body: { name: string; description?: string; code?: string; scriptKind?: ScriptKind; creationIntentId?: string; scopeType: string; characterId?: string; personaId?: string; chatId?: string; enabled?: boolean; sortOrder?: number }): Promise<ScriptRecord> {
   const response = await client.api.scripts.$post({ json: body });
   return unwrapRpc<ScriptRecord>(response);
 }
@@ -33,12 +35,12 @@ export async function deleteScript(scriptId: string): Promise<void> {
   if (!response.ok) throw await unwrapError(response);
 }
 
-export async function testScript(scriptId: string, body: { messages?: Array<{ role: string; content: string }>; characterName?: string; characterPersonality?: string; characterScenario?: string; personaName?: string; personaDescription?: string; lastMessage?: string }): Promise<{ personality: string; scenario: string; state: Record<string, unknown>; injectedMessages: Array<{ content: string; role: 'system' | 'user' | 'assistant' }>; console: Array<{ level: 'log' | 'warn' | 'error'; args: string }>; shared: Record<string, unknown>; errors: Array<{ scriptId: string; scriptName: string; error: string; line?: number }> | string[] }> {
+export async function testScript(scriptId: string, body: { code?: string; messages?: Array<{ role: string; content: string }>; characterName?: string; characterPersonality?: string; characterScenario?: string; personaName?: string; personaDescription?: string; lastMessage?: string }): Promise<ScriptTestResult> {
   const response = await client.api.scripts[":scriptId"].test.$post({ param: { scriptId }, json: body });
-  return unwrapRpc<{ personality: string; scenario: string; state: Record<string, unknown>; injectedMessages: Array<{ content: string; role: 'system' | 'user' | 'assistant' }>; console: Array<{ level: 'log' | 'warn' | 'error'; args: string }>; shared: Record<string, unknown>; errors: Array<{ scriptId: string; scriptName: string; error: string; line?: number }> | string[] }>(response);
+  return unwrapRpc<ScriptTestResult>(response);
 }
 
-export async function importScript(body: { format: "js"; code: string; name?: string; scopeType?: string; characterId?: string; personaId?: string; chatId?: string } | { format: "json"; jsonText: string; name?: string; scopeType?: string; characterId?: string; personaId?: string; chatId?: string }): Promise<ScriptRecord> {
+export async function importScript(body: { format: "js"; code: string; name?: string; scriptKind?: ScriptKind; scopeType?: string; characterId?: string; personaId?: string; chatId?: string } | { format: "json"; jsonText: string; name?: string; scriptKind?: ScriptKind; scopeType?: string; characterId?: string; personaId?: string; chatId?: string }): Promise<ScriptRecord> {
   const response = await client.api.scripts.import.$post({ json: body });
   return unwrapRpc<ScriptRecord>(response);
 }

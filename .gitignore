@@ -83,5 +83,7 @@ mobile/android/**/build/
 
 # Agentic slop
 AGENTS.md
+CLAUDE.md
 .codegraph
 .playwright-mcp
+.omc/

@@ -1,8 +1,7 @@
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useState, useMemo } from "react";
-import { useDebouncedCallback } from "use-debounce";
 import { useKeyDown } from "../../../hooks/use-key-down.js";
-import { useDndSensors } from "../../../hooks/use-dnd-sensors.js";
+import { useReorderableList } from "../../../hooks/use-reorderable-list.js";
 import { Ic } from "../../shared/icons.js";
 import { AddButton } from "../../shared/add-button.js";
 import { useIsMobile } from "../../../hooks/use-mobile.js";
@@ -11,6 +10,9 @@ import { AutoTextarea } from "../../shared/auto-textarea.js";
 import { CodeEditor } from "../../shared/CodeEditor.js";
 import { CustomTooltip } from "../../shared/Tooltip.js";
 import { DestructiveConfirmModal } from "../../shared/destructive-confirm-modal.js";
+import { SaveButton } from "../../shared/SaveBar.js";
+import { Toggle } from "../../shared/Toggle.js";
+import { SegmentedControl } from "../../shared/SegmentedControl.js";
 import { SCRIPT_TEMPLATES } from "./script-templates/index.js";
 import { cn } from "../../../lib/cn.js";
 import { useT } from "../../../i18n/context.js";
@@ -18,6 +20,12 @@ import { AiAssistantModal } from "../../shared/AiAssistantModal.js";
 import { LinkBindingPopover, type LinkTarget } from "../../shared/LinkBindingPopover.js";
 import { useAllCharacters } from "../../../stores/snapshot-store.js";
 import { useBootstrapStore } from "../../../stores/api-actions/bootstrap-actions.js";
+import { useBuildNavigationStore } from "../../../stores/build-navigation-store.js";
+import {
+  isScriptDraftDirty,
+  useScriptDraftStore,
+  type ScriptDraftValues,
+} from "../../../stores/script-draft-store.js";
 import {
   listAllScripts,
   listScripts,
@@ -34,6 +42,8 @@ import {
 
 import { LoreEntryList } from "./LoreEntryList.js";
 import { ScriptTester } from "./ScriptTester.js";
+import { DiceScriptTester } from "./DiceScriptTester.js";
+import { ScriptApiReference } from "./script-api-reference.js";
 
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -42,13 +52,12 @@ import {
 	DndContext,
 	DragOverlay,
 	closestCenter,
-	type DragStartEvent,
-	type DragEndEvent,
 } from "@dnd-kit/core";
 import {
 	SortableContext,
 	useSortable,
 	verticalListSortingStrategy,
+	arrayMove,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 
@@ -101,6 +110,9 @@ function SortableScriptCard({ script, isActive, isMobile, onClick }: {
 				)}
 				<div className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent-dim text-accent-t"><Ic.terminal /></div>
 				<span className="flex-1 truncate text-[14px] font-semibold text-t1">{script.name}</span>
+				<div className="shrink-0 rounded px-1.5 py-0.5 font-ui text-[10px] uppercase tracking-wide bg-s3 text-t2 mr-1">
+					{script.scriptKind === "dice" ? "DICE" : "PROMPT"}
+				</div>
 				<div className={cn("shrink-0 rounded-full px-2 py-0.5 font-ui text-[10px] font-medium uppercase", script.enabled ? "bg-success-dim text-success-text" : "bg-s3 text-t3")}>
 					{script.enabled ? "ON" : "OFF"}
 				</div>
@@ -120,6 +132,7 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
     if (id && onOpenEditor) onOpenEditor();
   };
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [confirmTypeChange, setConfirmTypeChange] = useState<"prompt" | "dice" | null>(null);
   const [importOpen, setImportOpen] = useState(false);
   const [importCode, setImportCode] = useState("");
   useKeyDown("Escape", () => setConfirmDeleteId(null), { enabled: !!confirmDeleteId });
@@ -145,7 +158,39 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
 
   useEffect(() => { void refreshScripts(); }, [refreshScripts]);
 
-  const activeScript = scripts.find(s => s.id === activeScriptId) ?? null;
+  // ── Explicit authoring draft ────────────────────────────
+  // Server records are the loaded base/list cache; editor fields come from a
+  // dedicated Zustand draft that survives Build-panel unmounts and script
+  // switches. Nothing persists until Save/Ctrl+S.
+  const drafts = useScriptDraftStore((s) => s.drafts);
+  const ensureDraft = useScriptDraftStore((s) => s.ensure);
+  const patchDraft = useScriptDraftStore((s) => s.patch);
+  const prepareSave = useScriptDraftStore((s) => s.prepareSave);
+  const completeSave = useScriptDraftStore((s) => s.completeSave);
+  const failSave = useScriptDraftStore((s) => s.failSave);
+  const removeDraft = useScriptDraftStore((s) => s.remove);
+
+  // Refresh clean draft bases from every loaded record while preserving dirty
+  // buffers. This keeps master-list overlays current after a panel remount.
+  useEffect(() => {
+    for (const script of scripts) ensureDraft(script);
+  }, [scripts, ensureDraft]);
+
+  const activeScriptRecord = scripts.find((s) => s.id === activeScriptId) ?? null;
+  const activeDraft = activeScriptId ? drafts[activeScriptId] ?? null : null;
+  const activeScript = activeScriptRecord
+    ? { ...activeScriptRecord, ...(activeDraft?.values ?? {}) }
+    : null;
+  const draftDirty = isScriptDraftDirty(activeDraft);
+  const draftSaveState = activeDraft?.saveState ?? "idle";
+
+  const updateDraft = (patch: Partial<ScriptDraftValues>) => {
+    if (!activeScriptRecord) return;
+    // Selection normally initializes in the effect above; ensure here too so
+    // even an edit in the first painted frame cannot be dropped.
+    ensureDraft(activeScriptRecord);
+    patchDraft(activeScriptRecord.id, patch);
+  };
 
   // ── Link binding (forward direction: bind THIS script to characters/personas).
   // Mirrors LorebookEditor's per-lorebook link state, but a single active script
@@ -177,27 +222,47 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
     setScriptLinksState(updated);
   };
 
-  // ── Mutations (replaced with async handlers) ─────────────
-  const [creatingScript, setCreatingScript] = useState(false);
-  const [updatingScript, setUpdatingScript] = useState(false);
-  const [importingScript, setImportingScript] = useState(false);
+  // ── Mutations ───────────────────────────────────────────
+  // CRUD updates the local list from endpoint return values. PATCH never
+  // refetches the whole list: a server roundtrip must not become editor input.
+  const replaceScriptRecord = useCallback((updated: ScriptRecord) => {
+    setScripts((prev) => prev.map((s) => (s.id === updated.id ? updated : s)));
+  }, []);
 
   const handleCreateScript = async (body: Parameters<typeof createScript>[0]) => {
-    setCreatingScript(true);
-    try {
-      const s = await createScript(body);
-      await refreshScripts();
-      setActiveScriptId(s.id);
-    } finally { setCreatingScript(false); }
+    const created = await createScript(body);
+    setScripts((prev) => [...prev, created]);
+    ensureDraft(created);
+    setActiveScriptId(created.id);
   };
 
-  const handleUpdateScript = async (id: string, body: Parameters<typeof updateScript>[1]) => {
-    setUpdatingScript(true);
-    try {
-      await updateScript(id, body);
-      await refreshScripts();
-    } finally { setUpdatingScript(false); }
+  /** Immediate persistence for non-authoring list metadata (currently DnD
+   *  sortOrder). Editable fields use the explicit Save path below. */
+  const persistScriptPatch = async (id: string, body: Parameters<typeof updateScript>[1]) => {
+    const updated = await updateScript(id, body);
+    replaceScriptRecord(updated);
+    return updated;
   };
+
+  const handleSave = useCallback(async () => {
+    if (!activeScriptId) return;
+    const submitted = prepareSave(activeScriptId);
+    if (!submitted) return;
+    try {
+      const updated = await updateScript(activeScriptId, submitted);
+      completeSave(activeScriptId, submitted, updated);
+      replaceScriptRecord(updated);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      failSave(activeScriptId, message);
+    }
+  }, [activeScriptId, prepareSave, completeSave, replaceScriptRecord, failSave]);
+
+  useKeyDown(["s", "S"], (event) => {
+    if (!event.ctrlKey && !event.metaKey) return;
+    event.preventDefault();
+    void handleSave();
+  }, { enabled: !!activeScriptId && draftDirty && draftSaveState !== "saving" });
 
   const handleDeleteScript = async (id: string) => {
     // Close the confirm modal first (matches the shared-modal convention used
@@ -205,70 +270,62 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
     // background). No disabled flag needed — the confirm button unmounts.
     setConfirmDeleteId(null);
     await deleteScript(id);
-    await refreshScripts();
+    setScripts((prev) => prev.filter((s) => s.id !== id));
+    removeDraft(id);
     if (activeScriptId === id) setActiveScriptIdRaw(null);
     onBackToList?.();
   };
 
   // ── Drag-reorder (P5b) ────────────────────────────────
-  const sensors = useDndSensors();
-  const [activeDragId, setActiveDragId] = useState<string | null>(null);
-  const [optimisticScripts, setOptimisticScripts] = useState<ScriptRecord[] | null>(null);
-
-  // Sort by sortOrder for display; optimistic override takes precedence during
-  // the async round-trip so the dropped card doesn't snap back.
-  const displayScripts = useMemo(
-    () => [...(optimisticScripts ?? scripts)].sort((a, b) => a.sortOrder - b.sortOrder),
-    [scripts, optimisticScripts],
-  );
-
-  useEffect(() => {
-    if (!optimisticScripts) return;
-    const sig = (arr: ScriptRecord[]) => arr.map(s => `${s.id}:${s.sortOrder}`).join(",");
-    if (sig(scripts) === sig(optimisticScripts)) setOptimisticScripts(null);
-  }, [scripts, optimisticScripts]);
-
-  const activeDragScript = activeDragId ? displayScripts.find(s => s.id === activeDragId) ?? null : null;
-
-  const handleDragStart = useCallback((event: DragStartEvent) => {
-    setActiveDragId(String(event.active.id));
-  }, []);
-
-  const handleDragEnd = useCallback((event: DragEndEvent) => {
-    const { active, over } = event;
-    setActiveDragId(null);
-    if (!over || active.id === over.id) return;
-    const oldIndex = displayScripts.findIndex(s => s.id === active.id);
-    const newIndex = displayScripts.findIndex(s => s.id === over.id);
-    if (oldIndex === -1 || newIndex === -1) return;
-    // Reassign sortOrder = index; collect only changed scripts to persist.
-    const reordered = [...displayScripts];
-    const [moved] = reordered.splice(oldIndex, 1);
-    reordered.splice(newIndex, 0, moved);
-    const updates: Array<{ id: string; sortOrder: number }> = [];
-    const optimistic = reordered.map((s, i) => {
-      if (s.sortOrder !== i) updates.push({ id: s.id, sortOrder: i });
-      return { ...s, sortOrder: i };
-    });
-    setOptimisticScripts(optimistic);
-    void Promise.all(updates.map(u => handleUpdateScript(u.id, { sortOrder: u.sortOrder })))
-      .then(() => refreshScripts())
-      .catch((error) => {
-        // eslint-disable-next-line no-console
-        console.error("Failed to reorder scripts", error);
-        setOptimisticScripts(null);
+  // Mechanics (sensors, active-drag id, optimistic/reconcile/rollback) live in
+  // useReorderableList; this consumer owns only the flat-sortOrder semantics:
+  // arrayMove for the optimistic order, sortOrder=index renumber, and the
+  // diff-and-PATCH persist. Each PATCH response replaces its local record, so
+  // the hook reconciles (clears optimistic) without a whole-list refetch.
+  const { displayItems, sensors, activeDragItem: activeDragScript, handleDragStart, handleDragEnd, handleDragCancel } = useReorderableList({
+    items: scripts,
+    getId: (s) => s.id,
+    onReorder: (activeId, overId, displayItems) => {
+      const displayScripts = [...displayItems].sort((a, b) => a.sortOrder - b.sortOrder);
+      const oldIndex = displayScripts.findIndex(s => s.id === activeId);
+      const newIndex = displayScripts.findIndex(s => s.id === overId);
+      if (oldIndex === -1 || newIndex === -1) {
+        return { optimisticItems: displayScripts, persist: () => {} };
+      }
+      // Reassign sortOrder = index; collect only changed scripts to persist.
+      const reordered = arrayMove(displayScripts, oldIndex, newIndex);
+      const updates: Array<{ id: string; sortOrder: number }> = [];
+      const optimistic = reordered.map((s, i) => {
+        if (s.sortOrder !== i) updates.push({ id: s.id, sortOrder: i });
+        return { ...s, sortOrder: i };
       });
-  }, [displayScripts]);
+      return {
+        optimisticItems: optimistic,
+        persist: () => Promise.all(updates.map((u) => persistScriptPatch(u.id, { sortOrder: u.sortOrder }))),
+      };
+    },
+  });
+
+  // Sort by sortOrder and overlay any unsaved authoring fields. The master
+  // list therefore reflects the same draft the editor shows, even after the
+  // World & Lore panel has unmounted/remounted around a server reload.
+  const displayScripts = useMemo(
+    () => [...displayItems]
+      .sort((a, b) => a.sortOrder - b.sortOrder)
+      .map((script) => ({ ...script, ...(drafts[script.id]?.values ?? {}) })),
+    [displayItems, drafts],
+  );
+  const activeDragDisplay = activeDragScript
+    ? { ...activeDragScript, ...(drafts[activeDragScript.id]?.values ?? {}) }
+    : null;
 
   const handleImportScript = async (code: string) => {
-    setImportingScript(true);
-    try {
-      const s = await importScript({ format: "js", code, scopeType: scope, characterId: scope === "character" ? characterId : undefined, personaId: scope === "persona" ? personaId ?? undefined : undefined, chatId: scope === "chat" ? chatId ?? undefined : undefined });
-      await refreshScripts();
-      setActiveScriptId(s.id);
-      setImportOpen(false);
-      setImportCode("");
-    } finally { setImportingScript(false); }
+    const imported = await importScript({ format: "js", code, scopeType: scope, characterId: scope === "character" ? characterId : undefined, personaId: scope === "persona" ? personaId ?? undefined : undefined, chatId: scope === "chat" ? chatId ?? undefined : undefined });
+    setScripts((prev) => [...prev, imported]);
+    ensureDraft(imported);
+    setActiveScriptId(imported.id);
+    setImportOpen(false);
+    setImportCode("");
   };
 
   // ── Scope-aware body helper ──────────────────────────────
@@ -284,39 +341,33 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
   };
 
   // ── Handlers ─────────────────────────────────────────────
-  const handleAdd = () => {
-    const body = { name: "New Script", code: "", ...scopeBody() } as Parameters<typeof createScript>[0];
+  const handleAdd = (kind: "prompt" | "dice" = "prompt", creationIntentId?: string) => {
+    const body = { name: "New Script", code: "", scriptKind: kind, creationIntentId, ...scopeBody() } as Parameters<typeof createScript>[0];
     handleCreateScript(body);
   };
 
-  const handleAddFromTemplate = (key: string) => {
+  const handleAddFromTemplate = (key: string, creationIntentId?: string) => {
     const tpl = SCRIPT_TEMPLATES[key];
     if (!tpl) return;
-    if (activeScriptId && activeScript) {
-      handleUpdateScript(activeScriptId, { code: activeScript.code ? activeScript.code + "\n\n" + tpl.code : tpl.code });
+    if (activeScript) {
+      updateDraft({ code: activeScript.code ? activeScript.code + "\n\n" + tpl.code : tpl.code });
     } else {
-      handleCreateScript({ name: tpl.name, code: tpl.code, ...scopeBody() } as Parameters<typeof createScript>[0]);
+      void handleCreateScript({ name: tpl.name, code: tpl.code, scriptKind: tpl.scriptKind || "prompt", creationIntentId, ...scopeBody() } as Parameters<typeof createScript>[0]);
     }
   };
 
-  // Debounced save for the code field only (600ms) — the other fields save
-  // immediately. `useDebouncedCallback` owns the timer + unmount cleanup and
-  // exposes `.flush()` so a pending code save fires on unmount instead of
-  // being dropped. (Replaces the codeSaveTimer useRef + clearTimeout pair.)
-  const debouncedSaveCode = useDebouncedCallback(
-    (id: string, code: string) => void handleUpdateScript(id, { code }),
-    600,
-  );
-  useEffect(() => () => debouncedSaveCode.flush(), [debouncedSaveCode]);
-
-  const updateField = (field: string, value: unknown) => {
-    if (!activeScriptId) return;
-    if (field === "code") {
-      debouncedSaveCode(activeScriptId, value as string);
-    } else {
-      void handleUpdateScript(activeScriptId, { [field]: value } as Parameters<typeof updateScript>[1]);
+  useEffect(() => {
+    const state = useBuildNavigationStore.getState();
+    const intent = state.diceCreateIntent;
+    if (intent && intent.scope.type === scope) {
+      state.consumeDiceCreateIntent();
+      if (intent.template === "fate_die") {
+        handleAddFromTemplate("fate_die", intent.createIntentId);
+      } else {
+        handleAdd("dice", intent.createIntentId);
+      }
     }
-  };
+  }, [scope]);
 
   // ── Modals ───────────────────────────────────────────────
   const modals = (
@@ -328,6 +379,18 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
           confirmLabel={t("delete_script_confirm")}
           onConfirm={() => void handleDeleteScript(confirmDeleteId)}
           onCancel={() => setConfirmDeleteId(null)}
+        />
+      )}
+      {confirmTypeChange && (
+        <DestructiveConfirmModal
+          title={tDynamic("script_type_change_confirm_title") || "Change Script Type?"}
+          body={tDynamic("script_type_change_confirm_body") || "Are you sure you want to change the script type? This will not alter your code, but the script will run in a different mode."}
+          confirmLabel={tDynamic("script_type_change_confirm") || "Change Type"}
+          onConfirm={() => {
+            updateDraft({ scriptKind: confirmTypeChange });
+            setConfirmTypeChange(null);
+          }}
+          onCancel={() => setConfirmTypeChange(null)}
         />
       )}
       {importOpen && (
@@ -363,18 +426,12 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
       )}
       <AiAssistantModal
         mode="full"
-        apiMode="script"
+        apiMode={activeScript?.scriptKind === "dice" ? "dice_script" : "script"}
         isOpen={aiHelperOpen}
         onClose={() => setAiHelperOpen(false)}
         existingContent={activeScript?.code ?? ""}
-        onInsert={(text) => {
-          if (!activeScriptId) return;
-          void handleUpdateScript(activeScriptId, { code: text });
-        }}
-        onReplace={(text) => {
-          if (!activeScriptId) return;
-          void handleUpdateScript(activeScriptId, { code: text });
-        }}
+        onInsert={(text) => updateDraft({ code: text })}
+        onReplace={(text) => updateDraft({ code: text })}
         scopeContext={{
           characterId: characterId,
           personaId: personaId ?? undefined,
@@ -390,7 +447,7 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
         <div className="py-10 text-center">
           <div className="mb-2 text-[13px] text-t3">{t("script_no_scripts")}</div>
           <div className="flex justify-center gap-2">
-            <AddButton onClick={handleAdd}>
+            <AddButton onClick={() => handleAdd()}>
               <Ic.plus /> {t("new_script")}
             </AddButton>
             <AddButton onClick={() => setImportOpen(true)}>
@@ -404,7 +461,7 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
           collisionDetection={closestCenter}
           onDragStart={handleDragStart}
           onDragEnd={handleDragEnd}
-          onDragCancel={() => setActiveDragId(null)}
+          onDragCancel={handleDragCancel}
         >
           <SortableContext items={displayScripts.map(s => s.id)} strategy={verticalListSortingStrategy}>
             {displayScripts.map(s => (
@@ -417,18 +474,21 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
               />
             ))}
             <div className="mt-2 flex flex-wrap gap-2">
-              <AddButton onClick={handleAdd}><Ic.plus /> {t("new_script")}</AddButton>
+              <AddButton onClick={() => handleAdd()}><Ic.plus /> {t("new_script")}</AddButton>
               <AddButton onClick={() => setImportOpen(true)}><Ic.import /> {t("script_import")}</AddButton>
             </div>
           </SortableContext>
           <DragOverlay dropAnimation={null}>
-            {activeDragScript ? (
-              <div className={cn("rounded-xl border", activeDragScript.id === activeScriptId ? "border-accent bg-accent-dim" : "border-border bg-surface")}>
+            {activeDragDisplay ? (
+              <div className={cn("rounded-xl border", activeDragDisplay.id === activeScriptId ? "border-accent bg-accent-dim" : "border-border bg-surface")}>
                 <div className="flex items-center gap-2 px-4 pt-3 pb-3">
                   <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent-dim text-accent-t"><Ic.terminal /></div>
-                  <span className="flex-1 truncate text-[14px] font-semibold text-t1">{activeDragScript.name}</span>
-                  <div className={cn("shrink-0 rounded-full px-2 py-0.5 font-ui text-[10px] font-medium uppercase", activeDragScript.enabled ? "bg-success-dim text-success-text" : "bg-s3 text-t3")}>
-                    {activeDragScript.enabled ? "ON" : "OFF"}
+                  <span className="flex-1 truncate text-[14px] font-semibold text-t1">{activeDragDisplay.name}</span>
+                  <div className="shrink-0 rounded px-1.5 py-0.5 font-ui text-[10px] uppercase tracking-wide bg-s3 text-t2 mr-1">
+                    {activeDragDisplay.scriptKind === "dice" ? "DICE" : "PROMPT"}
+                  </div>
+                  <div className={cn("shrink-0 rounded-full px-2 py-0.5 font-ui text-[10px] font-medium uppercase", activeDragDisplay.enabled ? "bg-success-dim text-success-text" : "bg-s3 text-t3")}>
+                    {activeDragDisplay.enabled ? "ON" : "OFF"}
                   </div>
                 </div>
               </div>
@@ -442,25 +502,51 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
   // ── Script editor panel (for LorebookEditor editor view) ──
   const scriptEditorPanel = activeScript ? (
     <div className={cn("mx-auto max-w-[860px]", isMobile && "pb-[calc(4rem+env(safe-area-inset-bottom,0px))] [&_button]:min-h-[40px] [&_input]:text-base")}>
-      {/* Header: name + toggle + delete */}
-      <div className="flex items-center gap-3" style={{ marginBottom: 16 }}>
-        <div className="flex-1"><input className="w-full rounded-md border border-border bg-s2 px-2.5 py-1.5 text-[15px] font-semibold text-t1 outline-none focus:border-accent" type="text" value={activeScript.name} onChange={e => updateField("name", e.target.value)} placeholder={t("script_name")} /></div>
-        <div
-          className="shrink-0 cursor-pointer rounded-full transition-all"
-          style={{ width: 36, height: 20, backgroundColor: activeScript.enabled ? "var(--accent)" : "var(--s3)", position: "relative" }}
-          onClick={() => updateField("enabled", !activeScript.enabled)}
+      {/* Explicit-save status + action. Ctrl/Cmd+S calls the same handler. */}
+      <div className="mb-4 flex items-center justify-between gap-3 rounded-md border border-border bg-s2 px-3 py-2">
+        <span
+          className={cn("min-w-0 truncate font-ui text-[12px]", draftSaveState === "error" ? "text-danger" : "text-t3")}
+          title={activeDraft?.error ?? undefined}
         >
-          <div className="rounded-full transition-all" style={{ position: "absolute", top: 3, left: activeScript.enabled ? 19 : 3, width: 14, height: 14, backgroundColor: activeScript.enabled ? "#fff" : "var(--t3)" }} />
+          {draftSaveState === "error" ? t("retry") : draftDirty ? t("unsaved_changes") : t("saved_state")}
+        </span>
+        <SaveButton
+          dirty={draftDirty}
+          saveState={draftSaveState}
+          onClick={() => void handleSave()}
+          label={draftSaveState === "error" ? t("retry") : t("save")}
+        />
+      </div>
+
+      {/* Header: name + toggle + delete */}
+      <div className="flex flex-col gap-3" style={{ marginBottom: 16 }}>
+        <div className="flex items-center gap-3">
+          <div className="min-w-0 flex-1"><input className="w-full rounded-md border border-border bg-s2 px-2.5 py-1.5 text-[15px] font-semibold text-t1 outline-none focus:border-accent" type="text" value={activeScript.name} onChange={(e) => updateDraft({ name: e.target.value })} placeholder={t("script_name")} /></div>
+          <Toggle checked={activeScript.enabled} onChange={(enabled) => updateDraft({ enabled })} />
+          <CustomTooltip content={t("delete_script_confirm")}>
+            <div className="flex h-8 w-8 cursor-pointer items-center justify-center rounded text-danger transition-all hover:bg-s2" onClick={() => setConfirmDeleteId(activeScript.id)}><Ic.del /></div>
+          </CustomTooltip>
         </div>
-        <CustomTooltip content={t("delete_script_confirm")}>
-        <div className="flex h-8 w-8 cursor-pointer items-center justify-center rounded text-danger transition-all hover:bg-s2" onClick={() => setConfirmDeleteId(activeScript.id)}><Ic.del /></div>
-        </CustomTooltip>
+        <div className="flex items-center">
+          <SegmentedControl
+            value={activeScript.scriptKind || "prompt"}
+            onChange={(v) => {
+              if (v !== (activeScript.scriptKind || "prompt")) {
+                setConfirmTypeChange(v as "prompt" | "dice");
+              }
+            }}
+            options={[
+              { value: "prompt", label: tDynamic("script_kind_prompt") || "Prompt" },
+              { value: "dice", label: tDynamic("script_kind_dice") || "Dice" },
+            ]}
+          />
+        </div>
       </div>
 
       {/* Description */}
       <div style={{ marginBottom: 16 }}>
         <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("script_desc_label")}</label>
-        <input className="w-full rounded-md border border-border bg-s2 px-2.5 py-1.5 font-ui text-t1 outline-none focus:border-accent" value={activeScript.description ?? ""} onChange={e => updateField("description", e.target.value)} placeholder={t("script_desc_placeholder")} />
+        <input className="w-full rounded-md border border-border bg-s2 px-2.5 py-1.5 font-ui text-t1 outline-none focus:border-accent" value={activeScript.description ?? ""} onChange={(e) => updateDraft({ description: e.target.value })} placeholder={t("script_desc_placeholder")} />
       </div>
 
       {/* Link binding (forward): bind this script to additional characters/personas */}
@@ -493,63 +579,7 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
 
       {/* API Reference */}
       {apiRefOpen && (
-        <div className="mb-4 rounded-lg border border-accent/30 bg-accent-dim/30" style={{ padding: 14 }}>
-          <div className="mb-3 text-[12px] font-semibold uppercase tracking-[0.06em] text-accent-t">{t("script_api_context")}</div>
-          <div className="grid gap-3 text-[12px]">
-            <div>
-              <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.05em] text-t2">{t("script_api_chat")}</div>
-              <div className="grid gap-1">
-                <div className="flex items-center gap-2 leading-[1.5]"><code className="shrink-0 rounded bg-bg px-1.5 py-px font-mono text-[11px] leading-[1.4] text-accent-t">context.chat.lastMessage</code><span className="text-t3">— {t("script_api_chat_lastMessage")}</span></div>
-                <div className="flex items-center gap-2 leading-[1.5]"><code className="shrink-0 rounded bg-bg px-1.5 py-px font-mono text-[11px] leading-[1.4] text-accent-t">context.chat.messages</code><span className="text-t3">— {t("script_api_chat_messages")}</span></div>
-                <div className="flex items-center gap-2 leading-[1.5]"><code className="shrink-0 rounded bg-bg px-1.5 py-px font-mono text-[11px] leading-[1.4] text-accent-t">context.chat.messageCount</code><span className="text-t3">— {t("script_api_chat_messageCount")}</span></div>
-                <div className="flex items-center gap-2 leading-[1.5]"><code className="shrink-0 rounded bg-bg px-1.5 py-px font-mono text-[11px] leading-[1.4] text-accent-t">context.chat.injectMessage(content, role?)</code><span className="text-t3">— {t("script_api_chat_injectMessage")}</span></div>
-              </div>
-            </div>
-            <div>
-              <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.05em] text-t2">{t("script_api_character")}</div>
-              <div className="grid gap-1">
-                <div className="flex items-center gap-2 leading-[1.5]"><code className="shrink-0 rounded bg-bg px-1.5 py-px font-mono text-[11px] leading-[1.4] text-accent-t">context.character.name</code><span className="text-t3">— {t("script_api_char_name")}</span></div>
-                <div className="flex items-center gap-2 leading-[1.5]"><code className="shrink-0 rounded bg-bg px-1.5 py-px font-mono text-[11px] leading-[1.4] text-accent-t">context.character.personality</code><span className="text-t3">— {t("script_api_char_personality")}</span></div>
-                <div className="flex items-center gap-2 leading-[1.5]"><code className="shrink-0 rounded bg-bg px-1.5 py-px font-mono text-[11px] leading-[1.4] text-accent-t">context.character.scenario</code><span className="text-t3">— {t("script_api_char_scenario")}</span></div>
-              </div>
-            </div>
-            <div>
-              <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.05em] text-t2">{t("script_api_state")}</div>
-              <div className="grid gap-1">
-                <div className="flex items-center gap-2 leading-[1.5]"><code className="shrink-0 rounded bg-bg px-1.5 py-px font-mono text-[11px] leading-[1.4] text-accent-t">context.state.get(key, default)</code><span className="text-t3">— {t("script_api_state_get")}</span></div>
-                <div className="flex items-center gap-2 leading-[1.5]"><code className="shrink-0 rounded bg-bg px-1.5 py-px font-mono text-[11px] leading-[1.4] text-accent-t">context.state.set(key, value)</code><span className="text-t3">— {t("script_api_state_set")}</span></div>
-                <div className="flex items-center gap-2 leading-[1.5]"><code className="shrink-0 rounded bg-bg px-1.5 py-px font-mono text-[11px] leading-[1.4] text-accent-t">context.state.increment(key, n)</code><span className="text-t3">— {t("script_api_state_increment")}</span></div>
-              </div>
-            </div>
-            <div>
-              <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.05em] text-t2">{t("script_api_lore")}</div>
-              <div className="flex items-center gap-2 leading-[1.5]"><code className="shrink-0 rounded bg-bg px-1.5 py-px font-mono text-[11px] leading-[1.4] text-accent-t">context.lore.activeEntries</code><span className="text-t3">— {t("script_api_lore_entries")}</span></div>
-            </div>
-            <div>
-              <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.05em] text-t2">{t("script_api_persona")}</div>
-              <div className="grid gap-1">
-                <div className="flex items-center gap-2 leading-[1.5]"><code className="shrink-0 rounded bg-bg px-1.5 py-px font-mono text-[11px] leading-[1.4] text-accent-t">context.persona.name</code><span className="text-t3">— {t("script_api_persona_name")}</span></div>
-                <div className="flex items-center gap-2 leading-[1.5]"><code className="shrink-0 rounded bg-bg px-1.5 py-px font-mono text-[11px] leading-[1.4] text-accent-t">context.persona.description</code><span className="text-t3">— {t("script_api_persona_desc")}</span></div>
-              </div>
-            </div>
-            <div>
-              <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.05em] text-t2">{t("script_api_shared")}</div>
-              <div className="grid gap-1">
-                <div className="flex items-center gap-2 leading-[1.5]"><code className="shrink-0 rounded bg-bg px-1.5 py-px font-mono text-[11px] leading-[1.4] text-accent-t">context.shared.get(key, default)</code><span className="text-t3">— {t("script_api_shared_get")}</span></div>
-                <div className="flex items-center gap-2 leading-[1.5]"><code className="shrink-0 rounded bg-bg px-1.5 py-px font-mono text-[11px] leading-[1.4] text-accent-t">context.shared.set(key, value)</code><span className="text-t3">— {t("script_api_shared_set")}</span></div>
-              </div>
-            </div>
-            <div>
-              <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.05em] text-t2">{t("script_api_random")}</div>
-              <div className="grid gap-1">
-                <div className="flex items-center gap-2 leading-[1.5]"><code className="shrink-0 rounded bg-bg px-1.5 py-px font-mono text-[11px] leading-[1.4] text-accent-t">context.random()</code><span className="text-t3">— {t("script_api_random_fn")}</span></div>
-                <div className="flex items-center gap-2 leading-[1.5]"><code className="shrink-0 rounded bg-bg px-1.5 py-px font-mono text-[11px] leading-[1.4] text-accent-t">context.randomInt(min, max)</code><span className="text-t3">— {t("script_api_randomInt")}</span></div>
-                <div className="flex items-center gap-2 leading-[1.5]"><code className="shrink-0 rounded bg-bg px-1.5 py-px font-mono text-[11px] leading-[1.4] text-accent-t">context.pick(arr)</code><span className="text-t3">— {t("script_api_pick")}</span></div>
-                <div className="flex items-center gap-2 leading-[1.5]"><code className="shrink-0 rounded bg-bg px-1.5 py-px font-mono text-[11px] leading-[1.4] text-accent-t">context.weightedPick(items)</code><span className="text-t3">— {t("script_api_weightedPick")}</span></div>
-              </div>
-            </div>
-          </div>
-        </div>
+        <ScriptApiReference kind={activeScript.scriptKind || "prompt"} />
       )}
 
       {/* Code editor */}
@@ -557,8 +587,8 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
         <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("script_code_label")}</label>
         <div className="relative rounded-md border border-border bg-bg">
           <CodeEditor
-            value={activeScript.code ?? ""}
-            onChange={v => updateField("code", v)}
+            value={activeScript.code}
+            onChange={(code) => updateDraft({ code })}
             minHeight={isMobile ? "220px" : "300px"}
             scrollMode={isMobile ? "page" : "inner"}
           />
@@ -575,7 +605,11 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
         </div>
       </div>
 
-      <ScriptTester scriptId={activeScriptId} isMobile={isMobile} characterName={scope === "character" ? allCharacters.find(x => x.id === characterId)?.name : undefined} />
+      {activeScript.scriptKind === "dice" ? (
+        <DiceScriptTester scriptId={activeScriptId} code={activeScript.code} isMobile={isMobile} characterName={scope === "character" ? allCharacters.find(x => x.id === characterId)?.name : undefined} />
+      ) : (
+        <ScriptTester scriptId={activeScriptId} code={activeScript.code} isMobile={isMobile} characterName={scope === "character" ? allCharacters.find(x => x.id === characterId)?.name : undefined} />
+      )}
     </div>
   ) : (
     <div className="flex h-full items-center justify-center text-t3 font-ui text-[13px] italic">
@@ -583,5 +617,5 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
     </div>
   );
 
-  return { modals, scriptListContent, scriptEditorPanel, activeScriptId, setActiveScriptId, handleAdd, handleImportOpen: () => setImportOpen(true) };
+  return { modals, scriptListContent, scriptEditorPanel, activeScriptId, setActiveScriptId, handleAdd: () => handleAdd(), handleImportOpen: () => setImportOpen(true) };
 }

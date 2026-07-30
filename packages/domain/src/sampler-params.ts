@@ -358,6 +358,7 @@ const PRESET_SAMPLER_SET_MAP: Record<string, SamplerSetId> = {
   togetherai: "extended_cloud",
   siliconflow: "extended_cloud",
   moonshot: "extended_cloud",
+  kimi: "extended_cloud",
   // Group G — topK limited
   perplexity: "topk_limited",
   electronhub: "topk_limited",

@@ -2,17 +2,16 @@ import { create } from "zustand";
 
 export interface ModalState {
   isProviderModalOpen: boolean;
-  /** Which surface opened the provider modal. `"coauthor"` tool-filters the
-   *  model list (co-author turns require function-calling, so non-tool models
-   *  are hidden — see useToolCapableModels); `"default"` shows all models
-   *  (the RP surface). Resets to `"default"` when the modal closes so the RP
-   *  opener never inherits a stale coauthor mode. */
-  providerModalMode: "default" | "coauthor";
+  isCoauthorProviderModalOpen: boolean;
+  /** Origin is set only by the atomic Co-Author → connections transition. */
+  providerModalOrigin: "coauthor" | null;
+  coauthorResumeProfileId: string | null;
   isPromptManagerOpen: boolean;
   isPersonaModalOpen: boolean;
   isCreateCharacterModalOpen: boolean;
   isContextMemoryOpen: boolean;
   isCoauthorModuleModalOpen: boolean;
+  isCoauthorSkillModalOpen: boolean;
   tweaksOpen: boolean;
   avatarOpen: boolean;
   mobileAccessOpen: boolean;
@@ -21,12 +20,17 @@ export interface ModalState {
 
 export interface ModalActions {
   setIsProviderModalOpen: (open: boolean) => void;
-  setProviderModalMode: (mode: "default" | "coauthor") => void;
+  setCoauthorProviderModalOpen: (open: boolean) => void;
+  openProviderModalFromCoauthor: () => void;
+  returnToCoauthorProviderModal: (profileId?: string | null) => void;
+  closeProviderModalOrigin: () => void;
+  consumeCoauthorResumeProfileId: () => string | null;
   setIsPromptManagerOpen: (open: boolean) => void;
   setIsPersonaModalOpen: (open: boolean) => void;
   setCreateCharacterModalOpen: (open: boolean) => void;
   setContextMemoryOpen: (open: boolean) => void;
   setCoauthorModuleModalOpen: (open: boolean) => void;
+  setCoauthorSkillModalOpen: (open: boolean) => void;
   setTweaksOpen: (open: boolean) => void;
   setAvatarOpen: (open: boolean) => void;
   setMobileAccessOpen: (open: boolean) => void;
@@ -35,26 +39,37 @@ export interface ModalActions {
 
 export type ModalStore = ModalState & ModalActions;
 
-export const useModalStore = create<ModalStore>()((set) => ({
+export const useModalStore = create<ModalStore>()((set, get) => ({
   isProviderModalOpen: false,
-  providerModalMode: "default",
+  isCoauthorProviderModalOpen: false,
+  providerModalOrigin: null,
+  coauthorResumeProfileId: null,
   isPromptManagerOpen: false,
   isPersonaModalOpen: false,
   isCreateCharacterModalOpen: false,
   isContextMemoryOpen: false,
   isCoauthorModuleModalOpen: false,
+  isCoauthorSkillModalOpen: false,
   tweaksOpen: false,
   avatarOpen: false,
   mobileAccessOpen: false,
   isUpdateModalOpen: false,
-
-  setIsProviderModalOpen: (open) => set({ isProviderModalOpen: open }),
-  setProviderModalMode: (mode) => set({ providerModalMode: mode }),
+  setIsProviderModalOpen: (open) => set(open ? { isProviderModalOpen: true, providerModalOrigin: null } : { isProviderModalOpen: false, providerModalOrigin: null }),
+  setCoauthorProviderModalOpen: (open) => set({ isCoauthorProviderModalOpen: open }),
+  openProviderModalFromCoauthor: () => set({ isCoauthorProviderModalOpen: false, isProviderModalOpen: true, providerModalOrigin: "coauthor" }),
+  returnToCoauthorProviderModal: (profileId = null) => set({ isProviderModalOpen: false, isCoauthorProviderModalOpen: true, providerModalOrigin: null, coauthorResumeProfileId: profileId }),
+  closeProviderModalOrigin: () => set({ isProviderModalOpen: false, providerModalOrigin: null, coauthorResumeProfileId: null }),
+  consumeCoauthorResumeProfileId: () => {
+    const profileId = get().coauthorResumeProfileId;
+    set({ coauthorResumeProfileId: null });
+    return profileId;
+  },
   setIsPromptManagerOpen: (open) => set({ isPromptManagerOpen: open }),
   setIsPersonaModalOpen: (open) => set({ isPersonaModalOpen: open }),
   setCreateCharacterModalOpen: (open) => set({ isCreateCharacterModalOpen: open }),
   setContextMemoryOpen: (open) => set({ isContextMemoryOpen: open }),
   setCoauthorModuleModalOpen: (open) => set({ isCoauthorModuleModalOpen: open }),
+  setCoauthorSkillModalOpen: (open) => set({ isCoauthorSkillModalOpen: open }),
   setTweaksOpen: (open) => set({ tweaksOpen: open }),
   setAvatarOpen: (open) => set({ avatarOpen: open }),
   setMobileAccessOpen: (open) => set({ mobileAccessOpen: open }),

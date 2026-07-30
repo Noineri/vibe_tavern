@@ -24,13 +24,15 @@ import type { SceneTrackerService } from "../../domain/insights/tracker-service.
 import { SettingsAdapter } from "./settings-adapter.js";
 import { MobileAccessAdapter } from "./mobile-access-adapter.js";
 import { CoauthorSkillAdapter } from "./coauthor-skill-adapter.js";
+import { DiceAdapter } from "./dice-adapter.js";
 import type { SkillLibraryService } from "../../domain/coauthor/skills/skill-library.js";
+import type { DiceService } from "../../domain/dice/dice-service.js";
 
 /**
  * Thin composite that wires domain adapters into the RuntimeApi contract.
  * No business logic lives here — every method is owned by a sub-adapter.
  *
- * This is the composition root for the adapter layer: it instantiates the 13
+ * This is the composition root for the adapter layer: it instantiates the 14
  * domain adapters and exposes them as the flat `RuntimeApi` shape that routes
  * consume. Each adapter is independently testable and owns its own store/service
  * dependencies. To add a new domain, create an adapter and wire it here.
@@ -51,6 +53,7 @@ export class RuntimeApiAdapter implements RuntimeApi {
 	readonly mobileAccess: MobileAccessAdapter;
 	readonly insights: InsightsAdapter;
 	readonly coauthorSkills: CoauthorSkillAdapter;
+	readonly dice: DiceAdapter;
 
 	constructor(
 		stores: StoreContainer,
@@ -64,6 +67,7 @@ export class RuntimeApiAdapter implements RuntimeApi {
 		objectiveService: ObjectiveService,
 		trackerService: SceneTrackerService,
 		skillLibraryService: SkillLibraryService,
+		diceService: DiceService,
 	) {
 		const bootstrapAdapter = new BootstrapAdapter(sessionRuntime);
 		this.bootstrap = bootstrapAdapter.bootstrap;
@@ -79,10 +83,11 @@ export class RuntimeApiAdapter implements RuntimeApi {
 		this.preset = new PresetAdapter(promptPresetService);
 		this.importExport = new ImportExportAdapter(sessionRuntime);
 		this.asset = new AssetAdapter(assetService);
-		this.aiAssistant = new AiAssistantAdapter(stores);
+		this.aiAssistant = new AiAssistantAdapter(stores, sessionRuntime);
 		this.settings = new SettingsAdapter(stores);
 		this.mobileAccess = new MobileAccessAdapter(mobileAccessService);
 		this.insights = new InsightsAdapter(stores, sessionRuntime, objectiveService, trackerService);
 		this.coauthorSkills = new CoauthorSkillAdapter(skillLibraryService);
+		this.dice = new DiceAdapter(diceService);
 	}
 }

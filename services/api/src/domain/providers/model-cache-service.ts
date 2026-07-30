@@ -5,7 +5,7 @@ export interface CachedModel {
 	modelSlug: string;
 	modelName: string;
 	contextLength: number | null;
-	capabilities?: { thinking?: boolean; tools?: boolean; vision?: boolean };
+	capabilities?: { reasoning?: boolean; tools?: boolean; vision?: boolean };
 }
 
 /**
@@ -43,7 +43,7 @@ export async function resolveCachedModels(
 			modelName: m.label ?? m.id,
 			contextLength: m.contextLength ?? null,
 			capabilities: m.capabilities
-				? { thinking: m.capabilities.reasoning, tools: m.capabilities.tools, vision: m.capabilities.vision }
+				? { reasoning: m.capabilities.reasoning, tools: m.capabilities.tools, vision: m.capabilities.vision }
 				: undefined,
 		}));
 		await stores.providers.saveCachedModels(profile.id, normalized);

@@ -21,61 +21,76 @@
  * (the mobile Edit affordance): a disabled row renders a native disabled button
  * (non-interactive, removed from tab order, announced unavailable).
  *
- * Runner: vitest (apps/web). The real MessageBlock is mounted (its subscription
- * graph is the subject under test); chat-controller / chat-actions / i18n /
- * sonner / mobile hook are mocked at the module boundary. The snapshot +
- * scene-generation stores are real and seeded directly.
+ * Runner: bun:test + happy-dom. The real MessageBlock is mounted (its
+ * subscription graph is the subject under test); chat-controller /
+ * chat-actions / i18n / sonner / mobile hook are mocked at the module
+ * boundary. The snapshot + scene-generation stores are real and seeded
+ * directly.
  */
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
+import { useDomEnv } from "../../../test/dom-env.js";
 import { createElement, type ReactNode } from "react";
-import { render, fireEvent, cleanup, waitFor, act } from "@testing-library/react";
+
+useDomEnv();
+const { act, fireEvent, render, waitFor } = await import("@testing-library/react");
 import type { AppMessage, AppSnapshot, AppCharacter } from "../../app-client.js";
 import type { SceneTrackerRecord } from "@vibe-tavern/domain";
 
 // ── Hoisted spies ──────────────────────────────────────────────────────────
 
-const mocks = vi.hoisted(() => ({
-  startEdit: vi.fn(),
-  deleteMessage: vi.fn().mockResolvedValue(undefined),
-  deleteVariant: vi.fn().mockResolvedValue(undefined),
-  getSceneStatus: vi.fn().mockResolvedValue({ generating: false, record: null }),
-  cancelScene: vi.fn().mockResolvedValue(undefined),
-  toastWarning: vi.fn(),
-}));
+const mocks = {
+  startEdit: mock(),
+  deleteMessage: mock(async () => undefined),
+  deleteVariant: mock(async () => undefined),
+  getSceneStatus: mock(async () => ({ generating: false, record: null })),
+  cancelScene: mock(async () => undefined),
+  toastWarning: mock(),
+};
+const noop = mock();
+const noopAsync = mock(async () => undefined);
+const realChatController = await import("../../hooks/use-chat-controller.js");
+const realI18nContext = await import("../../i18n/context.js");
+const realMobileHook = await import("../../hooks/use-mobile.js");
+const realTooltip = await import("../shared/Tooltip.js");
+const realBottomSheet = await import("../shared/BottomSheet.js");
+const realChatActions = await import("../../stores/api-actions/chat-actions.js");
 
-vi.mock("../../hooks/use-chat-controller.js", () => ({
+mock.module("../../hooks/use-chat-controller.js", () => ({
+  ...realChatController,
   useChatController: () => ({
     handleStartEdit: mocks.startEdit,
-    handleSaveMessageEdit: vi.fn(),
-    handleCancelEdit: vi.fn(),
+    handleSaveMessageEdit: noopAsync,
+    handleCancelEdit: noop,
     handleDeleteMessage: mocks.deleteMessage,
     handleDeleteVariant: mocks.deleteVariant,
-    handleFork: vi.fn(),
-    handleRegenerateMessage: vi.fn(),
-    handleResend: vi.fn(),
-    handleSelectMessageVariant: vi.fn(),
-    handleSend: vi.fn(),
-    handleCancelGeneration: vi.fn(),
-    handleSwitchChat: vi.fn(),
-    handleActivateBranch: vi.fn(),
-    handleDeleteActiveBranch: vi.fn(),
-    handleRenameBranch: vi.fn(),
+    handleFork: noopAsync,
+    handleRegenerateMessage: noopAsync,
+    handleResend: noopAsync,
+    handleSelectMessageVariant: noopAsync,
+    handleSend: noopAsync,
+    handleCancelGeneration: noop,
+    handleSwitchChat: noopAsync,
+    handleActivateBranch: noopAsync,
+    handleDeleteActiveBranch: noopAsync,
+    handleRenameBranch: noopAsync,
   }),
 }));
 
-vi.mock("sonner", () => ({
-  toast: { warning: mocks.toastWarning, error: vi.fn(), success: vi.fn(), info: vi.fn() },
+mock.module("sonner", () => ({
+  toast: { warning: mocks.toastWarning, error: noop, success: noop, info: noop },
 }));
 
-vi.mock("../../i18n/context.js", () => ({
+mock.module("../../i18n/context.js", () => ({
+  ...realI18nContext,
   useT: () => ({ t: (k: string) => k, tDynamic: (k: string) => k, locale: "en", setLocale: () => {}, ready: true }),
 }));
 
-vi.mock("../../hooks/use-mobile.js", () => ({ useIsMobile: () => false }));
+mock.module("../../hooks/use-mobile.js", () => ({ ...realMobileHook, useIsMobile: () => false }));
 
 // Scene/Objective zones render CustomTooltip (icon buttons); presentational here —
 // passthrough so no Radix TooltipProvider is needed.
-vi.mock("../shared/Tooltip.js", () => ({
+mock.module("../shared/Tooltip.js", () => ({
+  ...realTooltip,
   CustomTooltip: ({ children }: { children: ReactNode }) => children,
   TooltipProvider: ({ children }: { children: ReactNode }) => children,
 }));
@@ -83,7 +98,8 @@ vi.mock("../shared/Tooltip.js", () => ({
 // ActionSheet renders into the shared BottomSheet; stub it to render children so
 // the item→button mapping (the `disabled` flag under test) is drivable without
 // the BottomSheet's portal/swipe chrome (which doesn't mount in happy-dom).
-vi.mock("../shared/BottomSheet.js", () => ({
+mock.module("../shared/BottomSheet.js", () => ({
+  ...realBottomSheet,
   BottomSheet: ({ children, open }: { children: React.ReactNode; open: boolean }) =>
     open ? createElement("div", { "data-testid": "sheet" }, children) : null,
 }));
@@ -92,14 +108,11 @@ vi.mock("../shared/BottomSheet.js", () => ({
 // (the render graph imports more than the two Scene funcs), override only the
 // two MessageBlock touches — getSceneStatusAction (preflight) + cancelSceneAction
 // (delete-cancel) — so no network call escapes the test.
-vi.mock("../../stores/api-actions/chat-actions.js", async (importOriginal) => {
-  const actual = await importOriginal() as Record<string, unknown>;
-  return {
-    ...actual,
+mock.module("../../stores/api-actions/chat-actions.js", () => ({
+    ...realChatActions,
     getSceneStatusAction: mocks.getSceneStatus,
     cancelSceneAction: mocks.cancelScene,
-  };
-});
+}));
 
 // ── Dynamic import (after mocks register) ──────────────────────────────────
 
@@ -194,15 +207,14 @@ function seed(messages: AppMessage[], trackerEnabled = true): void {
       insightsConfig: { objectiveEnabled: false, trackerEnabled, tracker: { schema: SCHEMA, schemaHash: SCHEMA_HASH, revision: REVISION } as never },
     } as unknown as AppSnapshot["activeChat"],
     activeBranch: { id: "b1", chatId: "chat-1", label: "main" } as unknown as AppSnapshot["activeBranch"],
-    branches: [], messages: msgs, summaries: [], promptTrace: null, contextPreview: null,
+    branches: [], messages: msgs, summaries: [], promptTrace: null,
     character: makeCharacter(), persona: null,
   } as unknown as AppSnapshot;
   useSnapshotStore.getState().ingestSnapshot(snap);
 }
 
-// useSnapshotStore is imported at the top of the file via the mock boundary; but
-// we need the REAL store. Import it directly (vitest hoists vi.mock, so the real
-// module is what loads — the mock above is for chat-actions only).
+// useSnapshotStore is imported after the mock registrations so the REAL store
+// loads here; the mock above is for chat-actions only.
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
 import { useSceneGenerationStore } from "../../stores/scene-generation-store.js";
 
@@ -223,10 +235,6 @@ beforeEach(async () => {
   mocks.cancelScene.mockReset();
   mocks.cancelScene.mockResolvedValue(undefined);
   mocks.toastWarning.mockClear();
-});
-
-afterEach(() => {
-  cleanup();
 });
 
 /** Mount MessageBlock (desktop, not-last so the scene zone's mount status
@@ -340,7 +348,7 @@ describe("SCN-13 — ActionSheet disabled item (mobile Edit affordance)", () => 
   it("a disabled item renders a native disabled button (non-interactive, announced)", async () => {
     const { actionSheet } = await load();
     const { ActionSheet } = actionSheet;
-    const action = vi.fn();
+    const action = mock();
     const { container } = render(
       createElement(
         ActionSheet,

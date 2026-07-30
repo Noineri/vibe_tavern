@@ -8,20 +8,29 @@
  * is unsafe — buildReorderUpdates is index-based). LoreEntryList is stubbed so
  * the assertions target the accordion's filter logic, not dnd-kit rendering.
  *
- * Runner: vitest (apps/web uses vitest, NOT bun:test). DOM via happy-dom.
+ * Runner: bun:test with scoped happy-dom.
  */
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeAll, beforeEach, mock } from "bun:test";
 import type { ReactNode } from "react";
-import { render, fireEvent, waitFor } from "@testing-library/react";
 import {
-  listLoreEntries,
   type LoreEntryRecord,
   type LorebookRecord,
 } from "../../../app-client.js";
-import { LorebookAccordion } from "./LorebookAccordion.js";
+import { useDomEnv } from "../../../../test/dom-env.js";
+
+useDomEnv();
+
+const listLoreEntries = mock((_lorebookId: string) => Promise.resolve<LoreEntryRecord[]>([]));
+const realI18nContext = await import("../../../i18n/context.js");
+const realAppClient = await import("../../../app-client.js");
+const realLoreEntryList = await import("./LoreEntryList.js");
+const realLinkBindingPopover = await import("../../shared/LinkBindingPopover.js");
+const realTooltip = await import("../../shared/Tooltip.js");
+const realTokenizer = await import("../../../utils/tokenizer.js");
 
 // Identity i18n — assertion strings match keys verbatim.
-vi.mock("../../../i18n/context.js", () => ({
+mock.module("../../../i18n/context.js", () => ({
+	...realI18nContext,
   useT: () => ({
     t: (k: string) => k,
     tDynamic: (k: string) => k,
@@ -33,14 +42,16 @@ vi.mock("../../../i18n/context.js", () => ({
 
 // app-client — only listLoreEntries is called by the accordion; types are
 // erased at runtime.
-vi.mock("../../../app-client.js", () => ({
-  listLoreEntries: vi.fn(),
+mock.module("../../../app-client.js", () => ({
+	...realAppClient,
+  listLoreEntries,
 }));
 
 // Stub LoreEntryList → flat row list exposing the filtered entries + the
 // dndDisabled flag. Isolates the accordion's filter logic (the test target)
 // from dnd-kit rendering.
-vi.mock("./LoreEntryList.js", () => ({
+mock.module("./LoreEntryList.js", () => ({
+	...realLoreEntryList,
   LoreEntryList: (props: {
     entries: LoreEntryRecord[];
     dndDisabled?: boolean;
@@ -59,19 +70,32 @@ vi.mock("./LoreEntryList.js", () => ({
 }));
 
 // LinkBindingPopover pulls character/persona pickers irrelevant to filtering.
-vi.mock("../../shared/LinkBindingPopover.js", () => ({
+mock.module("../../shared/LinkBindingPopover.js", () => ({
+	...realLinkBindingPopover,
   LinkBindingPopover: () => <div data-testid="link-binding-stub" />,
 }));
 
 // CustomTooltip needs a Radix TooltipProvider context irrelevant here;
 // passthrough children, drop the `content` prop.
-vi.mock("../../shared/Tooltip.js", () => ({
+mock.module("../../shared/Tooltip.js", () => ({
+	...realTooltip,
   CustomTooltip: ({ children }: { children: ReactNode }) => children,
   TooltipProvider: ({ children }: { children: ReactNode }) => children,
 }));
 
 // countTokens is irrelevant to filtering; stub it to keep the test fast + isolated.
-vi.mock("../../../utils/tokenizer.js", () => ({ countTokens: () => 0 }));
+mock.module("../../../utils/tokenizer.js", () => ({ ...realTokenizer, countTokens: () => 0 }));
+
+let LorebookAccordion: typeof import("./LorebookAccordion.js").LorebookAccordion;
+let render: typeof import("@testing-library/react").render;
+let fireEvent: typeof import("@testing-library/react").fireEvent;
+let waitFor: typeof import("@testing-library/react").waitFor;
+let userEvent: typeof import("@testing-library/user-event").default;
+beforeAll(async () => {
+	({ render, fireEvent, waitFor } = await import("@testing-library/react"));
+	({ default: userEvent } = await import("@testing-library/user-event"));
+	({ LorebookAccordion } = await import("./LorebookAccordion.js"));
+});
 
 // ── Fixtures ────────────────────────────────────────────────────────────
 
@@ -178,8 +202,8 @@ function renderAccordion() {
 
 describe("LorebookAccordion search", () => {
   beforeEach(() => {
-    vi.clearAllMocks();
-    vi.mocked(listLoreEntries).mockResolvedValue(ENTRIES);
+    listLoreEntries.mockClear();
+    listLoreEntries.mockResolvedValue(ENTRIES);
   });
 
   it("renders all entries unfiltered; DnD enabled", async () => {
@@ -190,48 +214,49 @@ describe("LorebookAccordion search", () => {
 
   it("text query filters by title OR content, case-insensitive", async () => {
     const { findAllByTestId, getByPlaceholderText } = renderAccordion();
+    const user = userEvent.setup();
     await findAllByTestId("entry-row"); // wait for load
     const search = getByPlaceholderText("search_name_placeholder");
     // "fire" → e1 (content "breathes fire") + e3 (title "Fire Sprite")
-    fireEvent.change(search, { target: { value: "fire" } });
+    await user.type(search, "fire");
     expect(await findAllByTestId("entry-row")).toHaveLength(2);
     // "stone" → e2 only (content)
-    fireEvent.change(search, { target: { value: "stone" } });
+    await user.click(search);
+    await user.keyboard("{Control>}a{/Control}{Backspace}");
+    await user.type(search, "stone");
     expect(await findAllByTestId("entry-row")).toHaveLength(1);
     // case-insensitive
-    fireEvent.change(search, { target: { value: "FIRE" } });
+    await user.clear(search);
+    await user.type(search, "FIRE");
     expect(await findAllByTestId("entry-row")).toHaveLength(2);
   });
 
   it("activation-key chips combine with AND; clears with the query", async () => {
     const { findAllByTestId, getByPlaceholderText } = renderAccordion();
+    const user = userEvent.setup();
     await findAllByTestId("entry-row");
     const tagInput = getByPlaceholderText("lore_search_keys_placeholder");
     // key "fire" → e1 + e3 (both have it)
-    fireEvent.change(tagInput, { target: { value: "fire" } });
-    fireEvent.keyDown(tagInput, { key: "Enter" });
+    await user.type(tagInput, "fire{Enter}");
     expect(await findAllByTestId("entry-row")).toHaveLength(2);
     // add key "boss" (AND) → only e1 has both [boss, fire]
-    fireEvent.change(tagInput, { target: { value: "boss" } });
-    fireEvent.keyDown(tagInput, { key: "Enter" });
+    await user.type(tagInput, "boss{Enter}");
     expect(await findAllByTestId("entry-row")).toHaveLength(1);
   });
 
   it("secondary-key combobox is a distinct input filtering on secondaryKeys", async () => {
     const { findAllByTestId, queryAllByTestId, getByPlaceholderText } = renderAccordion();
+    const user = userEvent.setup();
     await findAllByTestId("entry-row");
     // The secondary combobox has its own placeholder (distinct from primary).
     const secInput = getByPlaceholderText("lore_search_secondary_keys_placeholder");
     // secondary "lair" → e1 + e3 (both have it in secondaryKeys)
-    fireEvent.change(secInput, { target: { value: "lair" } });
-    fireEvent.keyDown(secInput, { key: "Enter" });
+    await user.type(secInput, "lair{Enter}");
     expect(await findAllByTestId("entry-row")).toHaveLength(2);
     // primary "fire" (e1+e3) AND secondary "moat" (e2 only) → no overlap → 0
     const primInput = getByPlaceholderText("lore_search_keys_placeholder");
-    fireEvent.change(primInput, { target: { value: "fire" } });
-    fireEvent.keyDown(primInput, { key: "Enter" });
-    fireEvent.change(secInput, { target: { value: "moat" } });
-    fireEvent.keyDown(secInput, { key: "Enter" });
+    await user.type(primInput, "fire{Enter}");
+    await user.type(secInput, "moat{Enter}");
     // queryAll (not findAll) — findAllByTestId throws when zero match.
     await waitFor(() =>
       expect(queryAllByTestId("entry-row")).toHaveLength(0),
@@ -240,22 +265,20 @@ describe("LorebookAccordion search", () => {
 
   it("DnD is disabled while a filter is active, re-enabled when clear", async () => {
     const { findAllByTestId, getByPlaceholderText, getByTestId } = renderAccordion();
+    const user = userEvent.setup();
     await findAllByTestId("entry-row");
     expect(getByTestId("entry-list").getAttribute("data-dnd-disabled")).toBe("false");
     // text filter arms the disable
-    fireEvent.change(getByPlaceholderText("search_name_placeholder"), {
-      target: { value: "fire" },
-    });
+    const search = getByPlaceholderText("search_name_placeholder");
+    await user.type(search, "fire");
     expect(getByTestId("entry-list").getAttribute("data-dnd-disabled")).toBe("true");
     // clearing re-enables
-    fireEvent.change(getByPlaceholderText("search_name_placeholder"), {
-      target: { value: "" },
-    });
-    expect(getByTestId("entry-list").getAttribute("data-dnd-disabled")).toBe("false");
+    await user.click(search);
+    await user.keyboard("{Control>}a{/Control}{Backspace}");
+    await waitFor(() => expect(getByTestId("entry-list").getAttribute("data-dnd-disabled")).toBe("false"));
     // tag filter arms it too
     const tagInput = getByPlaceholderText("lore_search_keys_placeholder");
-    fireEvent.change(tagInput, { target: { value: "stone" } });
-    fireEvent.keyDown(tagInput, { key: "Enter" });
+    await user.type(tagInput, "stone{Enter}");
     expect(getByTestId("entry-list").getAttribute("data-dnd-disabled")).toBe("true");
   });
 });

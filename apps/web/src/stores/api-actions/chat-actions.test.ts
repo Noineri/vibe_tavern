@@ -1,41 +1,60 @@
-import { beforeEach, describe, expect, test, vi } from "vitest";
+import { beforeAll, beforeEach, describe, expect, mock, test } from "bun:test";
 import type { ChatId, CharacterId } from "@vibe-tavern/domain";
 import type { AppSnapshot, ChatListItem } from "../../app-client.js";
 import { useChatStore } from "../chat-store.js";
 import { useSnapshotStore } from "../snapshot-store.js";
 import { useNavigationStore } from "../navigation-store.js";
 import { useCoauthorTurnStore } from "../coauthor-turn-store.js";
-import { deleteChatAction, forkBranchAction, generateObjectiveTasksAction, generateReplyAction, sendChatMessageAction, switchModeAction } from "./chat-actions.js";
+import { useContextPreviewStore } from "../context-preview-store.js";
 
 // Mocks for the deleteChatAction tests below. `deleteChat` returns the
 // backend's ChatListResponse ({ chats }); the fire-and-forget bootstrap is
 // stubbed so it can't race the assertion. Other app-client exports stay real
 // (spread), so the switchModeAction tests in this file are unaffected.
-const { deleteChatMock, forkBranchMock, generateObjectiveTasksMock, generateReplyMock, sendChatMessageMock, startCompletionRefreshMock } = vi.hoisted(() => ({
-  deleteChatMock: vi.fn(),
-  forkBranchMock: vi.fn(),
-  generateObjectiveTasksMock: vi.fn(),
-  generateReplyMock: vi.fn(),
-  sendChatMessageMock: vi.fn(),
-  startCompletionRefreshMock: vi.fn(),
-}));
-vi.mock("../../app-client.js", async (importOriginal) => {
-  const actual = await importOriginal() as typeof import("../../app-client.js");
-  return {
-    ...actual,
+const deleteChatMock = mock();
+const forkBranchMock = mock();
+const generateObjectiveTasksMock = mock();
+const generateReplyMock = mock();
+const sendChatMessageMock = mock();
+const startCompletionRefreshMock = mock();
+const fetchBootstrapMock = mock(async () => undefined);
+const realAppClient = await import("../../app-client.js");
+const realInsightsCompletionActions = await import("./insights-completion-actions.js");
+const realBootstrapActions = await import("./bootstrap-actions.js");
+const realChatApi = await import("../../api/chat-api.js");
+
+const updateChatDynamicPromptMock = mock();
+
+mock.module("../../app-client.js", () => ({
+  ...realAppClient,
     deleteChat: deleteChatMock,
     forkBranch: forkBranchMock,
     generateObjectiveTasks: generateObjectiveTasksMock,
     generateReply: generateReplyMock,
     sendChatMessage: sendChatMessageMock,
-  };
-});
-vi.mock("./insights-completion-actions.js", () => ({
+}));
+mock.module("./insights-completion-actions.js", () => ({
+  ...realInsightsCompletionActions,
   startInsightsCompletionRefreshFromSnapshot: startCompletionRefreshMock,
 }));
-vi.mock("./bootstrap-actions.js", async (importOriginal) => {
-  const actual = await importOriginal() as typeof import("./bootstrap-actions.js");
-  return { ...actual, fetchBootstrapAction: vi.fn().mockResolvedValue(undefined) };
+mock.module("./bootstrap-actions.js", () => ({
+  ...realBootstrapActions,
+  fetchBootstrapAction: fetchBootstrapMock,
+}));
+mock.module("../../api/chat-api.js", () => ({
+  ...realChatApi,
+  updateChatDynamicPrompt: updateChatDynamicPromptMock,
+}));
+
+let deleteChatAction: typeof import("./chat-actions.js").deleteChatAction;
+let forkBranchAction: typeof import("./chat-actions.js").forkBranchAction;
+let generateObjectiveTasksAction: typeof import("./chat-actions.js").generateObjectiveTasksAction;
+let generateReplyAction: typeof import("./chat-actions.js").generateReplyAction;
+let sendChatMessageAction: typeof import("./chat-actions.js").sendChatMessageAction;
+let switchModeAction: typeof import("./chat-actions.js").switchModeAction;
+let updateChatDynamicPromptAction: typeof import("./chat-actions.js").updateChatDynamicPromptAction;
+beforeAll(async () => {
+  ({ deleteChatAction, forkBranchAction, generateObjectiveTasksAction, generateReplyAction, sendChatMessageAction, switchModeAction, updateChatDynamicPromptAction } = await import("./chat-actions.js"));
 });
 
 const chatId = (id: string) => id as ChatId;
@@ -82,7 +101,9 @@ beforeEach(() => {
   generateReplyMock.mockReset();
   sendChatMessageMock.mockReset();
   startCompletionRefreshMock.mockReset();
+  updateChatDynamicPromptMock.mockReset();
   useSnapshotStore.getState().clear();
+  useContextPreviewStore.setState({ entries: {} });
   useCoauthorTurnStore.setState({ turnsByChat: {} });
   useChatStore.getState().setActiveChatId(null);
   useChatStore.getState().setSelectedCharacterId(null);
@@ -321,5 +342,31 @@ describe("deleteChatAction", () => {
     expect(state.chatsById["c1"]).toBeUndefined();       // deleted chat is gone (no ghost)
     expect(state.chatIds).toEqual([chatId("c2")]);         // sibling remains
     expect(useChatStore.getState().activeChatId).toBeNull(); // active cleared
+  });
+});
+
+describe("updateChatDynamicPromptAction", () => {
+  test("ingests the snapshot and invalidates the active context preview through syncSnapshot", async () => {
+    const snapshot = {
+      activeChat: { id: chatId("chat-1"), characterId: characterId("char-1"), mode: "rp", dynamicPrompt: "per-chat content" },
+      activeBranch: { id: "branch-1", chatId: chatId("chat-1") },
+    } as unknown as AppSnapshot;
+    updateChatDynamicPromptMock.mockResolvedValueOnce(snapshot);
+    useContextPreviewStore.setState({
+      entries: {
+        "chat-1::branch-1": { status: "success", preview: null, error: null },
+      },
+    });
+
+    await updateChatDynamicPromptAction(chatId("chat-1"), "per-chat content");
+
+    expect(updateChatDynamicPromptMock).toHaveBeenCalledWith(chatId("chat-1"), "per-chat content");
+    expect(useSnapshotStore.getState().activeChat?.dynamicPrompt).toBe("per-chat content");
+    expect(useContextPreviewStore.getState().entries["chat-1::branch-1"]).toBeUndefined();
+  });
+
+  test("rejected PATCH propagates the error (caller handles it)", async () => {
+    updateChatDynamicPromptMock.mockRejectedValueOnce(new Error("offline"));
+    await expect(updateChatDynamicPromptAction(chatId("chat-1"), "content")).rejects.toThrow("offline");
   });
 });

@@ -74,12 +74,29 @@ describe("importJsonSchema", () => {
     expect(result.success).toBe(true);
   });
 
-  it("rejects an empty payload (fileName + jsonText required)", () => {
+  it("rejects an empty payload (fileName required)", () => {
     expectReject(importJsonSchema.safeParse({}));
   });
 
-  it("rejects a payload missing jsonText", () => {
-    expectReject(importJsonSchema.safeParse({ fileName: "f.json" }));
+  // jsonText and monolithText are BOTH optional: a PNG may carry a vtmd chunk
+  // (monolithText) with no lossy chara/ccv3 JSON, or vice versa. The "one
+  // non-empty" rule is enforced in the backend (importJson), NOT the schema — a
+  // Zod refine would break importJsonBatchSchema's .omit(). Pin that the schema
+  // deliberately accepts a fileName-only payload (backend rejects it at runtime).
+  it("accepts a monolith-only payload (vtmd path, no jsonText)", () => {
+    const result = importJsonSchema.safeParse({ fileName: "f.md", monolithText: "---\nname: X\n---\n" });
+    expect(result.success).toBe(true);
+  });
+
+  it("accepts a fileName-only payload (one-of rule deferred to backend)", () => {
+    expect(importJsonSchema.safeParse({ fileName: "f.json" }).success).toBe(true);
+  });
+
+  it("treats monolithText as optional-string (absent or string ok, null rejected)", () => {
+    expect(importJsonSchema.safeParse({ fileName: "f.json", jsonText: "{}", monolithText: "x" }).success).toBe(true);
+    expect(importJsonSchema.safeParse({ fileName: "f.json", jsonText: "{}" }).success).toBe(true);
+    expectReject(importJsonSchema.safeParse({ fileName: "f.json", jsonText: "{}", monolithText: null }));
+    expectReject(importJsonSchema.safeParse({ fileName: "f.json", jsonText: "{}", monolithText: 7 }));
   });
 
   it("rejects a payload missing fileName", () => {
@@ -90,10 +107,9 @@ describe("importJsonSchema", () => {
     expectReject(importJsonSchema.safeParse({ fileName: 123, jsonText: "{}" }));
   });
 
-  // jsonText is a plain required z.string() — NOT nullable. Pin this so a
-  // future ".nullable()" slip is caught rather than silently accepting null
-  // JSON to import.
-  it("rejects null for jsonText (required string, not nullable)", () => {
+  // jsonText is an optional z.string() — absent is fine (monolith-only path),
+  // but null is NOT accepted. Pin this so a future ".nullable()" slip is caught.
+  it("rejects null for jsonText (optional string, not nullable)", () => {
     expectReject(importJsonSchema.safeParse({ fileName: "f.json", jsonText: null }));
   });
 

@@ -1,5 +1,5 @@
 import type { ProviderProfileRecord, FavoriteProviderModelRecord, ProviderModelSettingsRecord, ProviderModelOption, TestChatResponse } from "./types.js";
-import type { ProviderProbeResponse, ModelSettingsOverlay } from "@vibe-tavern/domain";
+import type { CoauthorTransport, ModelFavoriteScope, ProviderProbeResponse, ModelSettingsOverlay } from "@vibe-tavern/domain";
 import { client } from "./client.js";
 import { unwrapRpc } from "./unwrap.js";
 
@@ -17,6 +17,7 @@ export async function saveProviderProfile(input: {
   id?: string;
   name: string;
   providerPreset: string;
+  coauthorTransport?: CoauthorTransport;
   endpoint: string;
   apiKey?: string | null;
   defaultModel?: string | null;
@@ -61,6 +62,7 @@ export async function updateProviderProfile(
   patch: {
     name?: string;
     providerPreset?: string;
+    coauthorTransport?: CoauthorTransport;
     endpoint?: string;
     apiKey?: string | null;
     defaultModel?: string | null;
@@ -106,6 +108,11 @@ export async function deleteProviderProfile(providerProfileId: string): Promise<
   return unwrapRpc<{ ok: true }>(response);
 }
 
+export async function reorderProviderProfiles(updates: Array<{ id: string; sortOrder: number }>): Promise<ProviderProfileRecord[]> {
+  const response = await client.api.providers.reorder.$patch({ json: { updates } });
+  return unwrapRpc<ProviderProfileRecord[]>(response);
+}
+
 export async function activateProviderProfile(providerProfileId: string): Promise<ProviderProfileRecord> {
   const response = await client.api.providers[":providerId"].activate.$post({ param: { providerId: providerProfileId } });
   return unwrapRpc<ProviderProfileRecord>(response);
@@ -126,21 +133,27 @@ export async function fetchProviderProfileModels(providerProfileId: string): Pro
   return unwrapRpc<{ models: ProviderModelOption[] }>(response);
 }
 
-export async function listFavoriteProviderModels(providerProfileId: string): Promise<FavoriteProviderModelRecord[]> {
-  const response = await client.api.providers[":providerId"]["model-favorites"].$get({ param: { providerId: providerProfileId } });
+export async function listFavoriteProviderModels(providerProfileId: string, scope: ModelFavoriteScope): Promise<FavoriteProviderModelRecord[]> {
+  const response = await client.api.providers[":providerId"]["model-favorites"].$get({
+    param: { providerId: providerProfileId },
+    query: { scope },
+  });
   return unwrapRpc<FavoriteProviderModelRecord[]>(response);
 }
 
 export async function addFavoriteProviderModel(
   providerProfileId: string,
-  model: { modelId: string; label?: string | null; contextLength?: number | null },
+  model: { modelId: string; label?: string | null; contextLength?: number | null; scope: ModelFavoriteScope },
 ): Promise<FavoriteProviderModelRecord> {
   const response = await client.api.providers[":providerId"]["model-favorites"].$post({ param: { providerId: providerProfileId }, json: model });
   return unwrapRpc<FavoriteProviderModelRecord>(response);
 }
 
-export async function removeFavoriteProviderModel(providerProfileId: string, modelId: string): Promise<{ ok: true }> {
-  const response = await client.api.providers[":providerId"]["model-favorites"].$delete({ param: { providerId: providerProfileId }, json: { modelId } });
+export async function removeFavoriteProviderModel(providerProfileId: string, modelId: string, scope: ModelFavoriteScope): Promise<{ ok: true }> {
+  const response = await client.api.providers[":providerId"]["model-favorites"].$delete({
+    param: { providerId: providerProfileId },
+    json: { modelId, scope },
+  });
   return unwrapRpc<{ ok: true }>(response);
 }
 
@@ -171,7 +184,7 @@ export async function testProviderChat(baseUrl: string, apiKey: string, model: s
   return unwrapRpc<TestChatResponse>(response);
 }
 
-export async function testProfileChat(providerProfileId: string, model: string): Promise<TestChatResponse> {
-  const response = await client.api.providers[":providerId"]["test-chat"].$post({ param: { providerId: providerProfileId }, json: { model } });
+export async function testProfileChat(providerProfileId: string, model: string, transport?: CoauthorTransport): Promise<TestChatResponse> {
+  const response = await client.api.providers[":providerId"]["test-chat"].$post({ param: { providerId: providerProfileId }, json: { model, transport } });
   return unwrapRpc<TestChatResponse>(response);
 }

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { ListSortToggle } from "../shared/ListSortToggle.js";
 import type { ChatId } from "@vibe-tavern/domain";
 import { Ic } from "../shared/icons.js";
@@ -16,7 +16,7 @@ import { getModalPortal } from "../shared/modal-helpers.js";
 import { useSidebarChats } from "../layout/hooks/use-sidebar-chats.js";
 import { useSidebarCharacters } from "../layout/hooks/use-sidebar-characters.js";
 import { useRowActions } from "../layout/hooks/use-row-actions.js";
-import { CharacterImportModal, ChatImportModal } from "../modals/ImportModals.js";
+import { CharacterImportMobile, type CharacterImportMobileHandle } from "../modals/import/CharacterImportMobile.js";
 
 /** Resolve a character list entry's avatar URL (folder avatar when migrated). */
 const charAvatarSrc = (c: { id: string; avatarExt: string | null; avatarAssetId: string | null; updatedAt?: string | null }) =>
@@ -28,6 +28,7 @@ import { useNavigationStore, useChatStore, useModalStore } from "../../stores/in
 import { useCharacterStore } from "../../stores/character-store.js";
 import { useCharacterController } from "../../hooks/use-character-controller.js";
 import { useChatController } from "../../hooks/use-chat-controller.js";
+import { useLastNonNull } from "../../hooks/use-last-non-null.js";
 import type { ChatListItem } from "../../app-client.js";
 
 
@@ -45,8 +46,9 @@ export function CoauthorRail({ hidden }: { hidden?: boolean }) {
   const setConfirmDestroy = useCharacterStore((s) => s.setConfirmDestroy);
 
   const [expanded, setExpanded] = useState(false);
-  const [importOpen, setImportOpen] = useState(false);
-  const [chatImportOpen, setChatImportOpen] = useState(false);
+  const characterImportRef = useRef<CharacterImportMobileHandle>(null);
+  // Co-author mode intentionally does not surface JSONL chat import, so the
+  // `openChatImport` callback passed to useRowActions / CharacterChatsSheet is a no-op.
   // The character whose chats are shown in the CharacterChatsSheet (tablet bottom
   // sheet launched from a collapsed-strip avatar tap). null = closed.
   const [sheetCharId, setSheetCharId] = useState<string | null>(null);
@@ -54,6 +56,10 @@ export function CoauthorRail({ hidden }: { hidden?: boolean }) {
   // Context menus
   const [charMenuId, setCharMenuId] = useState<string | null>(null);
   const [chatMenuId, setChatMenuId] = useState<ChatId | null>(null);
+  // Freeze the menu ids so the closing ActionSheet keeps rendering its last
+  // content during the Base UI exit transition (menuId → null on close).
+  const frozenCharMenuId = useLastNonNull(charMenuId);
+  const frozenChatMenuId = useLastNonNull(chatMenuId);
 
   // Character list: search + sort + tag-filter (mirrors the desktop Sidebar).
   // Sort mode lives in the navigation store; query + tags are local UI state.
@@ -128,7 +134,7 @@ export function CoauthorRail({ hidden }: { hidden?: boolean }) {
     setRenameDraft,
     setRenamingBranch: () => {},
     setBranchRenameDraft: () => {},
-    setChatImportOpen,
+    openChatImport: () => {},
   });
 
   return (
@@ -158,13 +164,14 @@ export function CoauthorRail({ hidden }: { hidden?: boolean }) {
             importCharShortLabel={t("import_char_short")}
             onCharacterClick={(id) => setSheetCharId(id)}
             onCreateCharacter={() => { useModalStore.getState().setCreateCharacterModalOpen(true); }}
-            onImport={() => { setImportOpen(true); }}
+            onImport={() => { characterImportRef.current?.openPicker(); }}
           />
         </div>
 
         {/* Bottom quick actions */}
         <div className="flex shrink-0 flex-col items-center gap-1 border-t border-border py-2">
           <Ico icon={<Ic.tool />} onClick={() => useModalStore.getState().setCoauthorModuleModalOpen(true)} title={t("coauthor.sidebar.modules")} />
+          <Ico icon={<Ic.book />} onClick={() => useModalStore.getState().setCoauthorSkillModalOpen(true)} title={t("coauthor.sidebar.skills")} />
           <Ico icon={<Ic.plug />} onClick={() => useModalStore.getState().setIsProviderModalOpen(true)} title={t("provider_settings_tooltip")} />
           <Ico icon={<Ic.sliders />} onClick={() => useModalStore.getState().setTweaksOpen(true)} title={t("interface_settings_tooltip")} />
         </div>
@@ -202,7 +209,7 @@ export function CoauthorRail({ hidden }: { hidden?: boolean }) {
                       <Ic.plus /> <span className="truncate">{t("create_manual")}</span>
                     </div>
                     <div className="flex min-h-[44px] cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-border2 bg-s2/50 font-ui text-[calc(var(--ui-fs)-2px)] text-t3 transition-[background-color,transform] duration-150 ease-out active:bg-s3 active:scale-[0.96]"
-                         onClick={() => { setImportOpen(true); close(); }}>
+                         onClick={() => { characterImportRef.current?.openPicker(); close(); }}>
                       <Ic.import /> <span className="truncate">{t("import_char_short")}</span>
                     </div>
                   </div>
@@ -335,6 +342,7 @@ export function CoauthorRail({ hidden }: { hidden?: boolean }) {
             {/* Bottom quick actions */}
             <div className="flex shrink-0 flex-col gap-0.5 border-t border-border bg-s2/30 px-2 py-3">
               <NavRow icon={<Ic.tool />} label={t("coauthor.sidebar.modules")} onClick={() => { useModalStore.getState().setCoauthorModuleModalOpen(true); close(); }} />
+              <NavRow icon={<Ic.book />} label={t("coauthor.sidebar.skills")} onClick={() => { useModalStore.getState().setCoauthorSkillModalOpen(true); close(); }} />
               <NavRow icon={<Ic.plug />} label={t("provider_settings_tooltip")} onClick={() => { useModalStore.getState().setIsProviderModalOpen(true); close(); }} />
               <NavRow icon={<Ic.sliders />} label={t("interface_settings_tooltip")} onClick={() => { useModalStore.getState().setTweaksOpen(true); close(); }} />
             </div>
@@ -344,39 +352,33 @@ export function CoauthorRail({ hidden }: { hidden?: boolean }) {
       </Drawer.Root>
 
       {/* ═══ BOTTOM SHEETS (context menus) ═══ */}
-      {charMenuId && (
-        <ActionSheet
-          open={true}
-          title={allCharacters.find(c => c.id === charMenuId)?.name ?? ""}
-          items={rowActions.buildCharMenuItems(charMenuId, allCharacters.find(c => c.id === charMenuId)?.name ?? "")}
-          onClose={() => setCharMenuId(null)}
-        />
-      )}
-
-      {chatMenuId && (
-        <ActionSheet
-          open={true}
-          title={sectionChats.find(c => c.id === chatMenuId)?.title ?? ""}
-          items={rowActions.buildChatMenuItems(chatMenuId, sectionChats.find(c => c.id === chatMenuId)?.title ?? "")}
-          onClose={() => setChatMenuId(null)}
-        />
-      )}
+      <ActionSheet
+        open={charMenuId !== null}
+        title={frozenCharMenuId ? (allCharacters.find(c => c.id === frozenCharMenuId)?.name ?? "") : ""}
+        items={frozenCharMenuId ? rowActions.buildCharMenuItems(frozenCharMenuId, allCharacters.find(c => c.id === frozenCharMenuId)?.name ?? "") : []}
+        onClose={() => setCharMenuId(null)}
+      />
+      <ActionSheet
+        open={chatMenuId !== null}
+        title={frozenChatMenuId ? (sectionChats.find(c => c.id === frozenChatMenuId)?.title ?? "") : ""}
+        items={frozenChatMenuId ? rowActions.buildChatMenuItems(frozenChatMenuId, sectionChats.find(c => c.id === frozenChatMenuId)?.title ?? "") : []}
+        onClose={() => setChatMenuId(null)}
+      />
 
       {/* ═══ TAG-FILTER BOTTOM SHEET ═══ */}
       {/* Multi-select tag picker — the mobile-native alternative to the desktop
           Sidebar's portaled tag combobox. Stays open while toggling so the user
           can pick several tags; backdrop tap or swipe-down dismisses. */}
-      {tagsSheetOpen && (
-        <TagFilterSheet
-          selectedTags={charSelectedTags}
-          tagPool={charTagPool}
-          filterLabel={t("filter_by_tags")}
-          resetLabel={t("reset")}
-          onToggle={(tag) => setCharSelectedTags(charSelectedTags.includes(tag) ? charSelectedTags.filter((x) => x !== tag) : [...charSelectedTags, tag])}
-          onReset={() => setCharSelectedTags([])}
-          onClose={() => setTagsSheetOpen(false)}
-        />
-      )}
+      <TagFilterSheet
+        open={tagsSheetOpen}
+        selectedTags={charSelectedTags}
+        tagPool={charTagPool}
+        filterLabel={t("filter_by_tags")}
+        resetLabel={t("reset")}
+        onToggle={(tag) => setCharSelectedTags(charSelectedTags.includes(tag) ? charSelectedTags.filter((x) => x !== tag) : [...charSelectedTags, tag])}
+        onReset={() => setCharSelectedTags([])}
+        onClose={() => setTagsSheetOpen(false)}
+      />
 
       {/* ═══ CHARACTER CHATS SHEET (tablet) ═══ */}
       {/* Launched from a collapsed-strip avatar tap — lists the character's chats
@@ -396,29 +398,19 @@ export function CoauthorRail({ hidden }: { hidden?: boolean }) {
           mode="coauthor"
           character={character}
           setConfirmDestroy={setConfirmDestroy}
-          setChatImportOpen={setChatImportOpen}
+          openChatImport={() => {}}
           onClose={() => setSheetCharId(null)}
           onSwitchChat={(id) => { void chat.handleSwitchChat(id); }}
           onCreateChat={() => { void character.handleCreateChat(sheetCharId ?? undefined, "coauthor"); }}
         />
       )}
 
-      {/* ═══ MODALS ═══ */}
-      {importOpen && (
-        <CharacterImportModal
-          isImporting={character.isImporting}
-          onClose={() => setImportOpen(false)}
-          onImportFiles={(files) => { void character.handleImportFiles(files); }}
-        />
-      )}
-      {chatImportOpen && (
-        <ChatImportModal
-          isImporting={character.isImporting}
-          activeChatId={activeChatId}
-          onClose={() => setChatImportOpen(false)}
-          onImportFiles={(files) => { void character.handleImportFiles(files); }}
-        />
-      )}
+      {/* ═══ IMPORT ORCHESTRATOR (mobile; always-mounted) ═══ */}
+      <CharacterImportMobile
+        ref={characterImportRef}
+        isImporting={character.isImporting}
+        onImportFiles={(files) => { void character.handleImportFiles(files); }}
+      />
     </>
   );
 }

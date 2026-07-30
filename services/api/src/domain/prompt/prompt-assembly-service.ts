@@ -22,6 +22,7 @@ import type {
 } from "@vibe-tavern/domain";
 import type { StoreContainer } from "@vibe-tavern/db";
 import { assemblePrompt, getSummaryStrategy, setModelHint, type PromptAssemblyContext } from "@vibe-tavern/prompt-pipeline";
+import { storeRollToSnapshot } from "../dice/dice-service.js";
 import { isRecordSchemaCompatible } from "../insights/scene-cache.js";
 import { logSendDebug } from "../../shared/send-debug-log.js";
 import { type FileStore, STORAGE_FOLDERS } from "@vibe-tavern/db";
@@ -79,6 +80,7 @@ export interface PromptAssemblyResolver {
       enhanceDefinitions: string;
       /** Whether this preset is in advanced (canvas) mode. */
       advancedMode: boolean;
+      mergeConsecutiveRoles: boolean;
       customInjections: CustomInjection[];
       promptOrder: PromptOrderEntry[];
     } | null>;
@@ -142,6 +144,11 @@ export interface AssemblePromptForChatInput {
   responseReserve?: number;
   /** Summary preparation is source-loading policy, not a pipeline mode. */
   summary?: boolean;
+  /** SUMMARY_PRIOR_CONTEXT_PLAN (SPC-3): preceding chat-summaries
+   *  (`summarizedTo < from` chain, count-capped, oldest→newest) fed into the
+   *  summary prompt as read-only continuity. Threaded into pipelineContext
+   *  only when `summary` is true; absent on chat turns. */
+  priorSummaries?: Array<{ id: string; label?: string; content: string }>;
   /**
    * Optional per-request prompt preset override (Wave Q1b). When set, the
    * assembled prompt uses this preset instead of the chat's `promptPresetId`,
@@ -151,10 +158,16 @@ export interface AssemblePromptForChatInput {
   presetId?: PromptPresetId;
 }
 
-export type PromptTraceDraft = Omit<PromptTrace, "id" | "messageId" | "createdAt"> & {
+export type PromptTraceDraft = Omit<PromptTrace, "id" | "messageId" | "createdAt" | "presetName"> & {
   /** Resolved prompt preset id (override → chat → global default), exported
    *  by assembly so the message-meta path records the preset each reply used. */
   presetId: string | null;
+  /** Resolved prompt preset NAME (clean: the preset's name, or null when none
+   *  was resolved). The prompt_traces column is NOT NULL, so the trace-save
+   *  path applies its own `?? "(none)"` display fallback; this field stays
+   *  clean so the message-meta path can bake a real name (or null) onto each
+   *  variant without inheriting the trace's display sentinel. */
+  presetName: string | null;
 };
 
 export interface AssemblePromptForChatResult {
@@ -301,12 +314,12 @@ export class PromptAssemblyService {
         chatId: built.chatId,
         branchId: built.branchId,
         model: input.model,
-        presetName: built.promptPresetName ?? built.chatPromptPresetId ?? "(none)",
+        presetName: built.promptPresetName,
         // The fully-resolved preset id (override → chat → global default; see
-        // the cascade above). Carried out of assembly so the message-meta path
-        // can record on each reply the preset that was ACTUALLY used — not just
-        // presetName for the trace. Read by ChatRuntime.appendAssistantReply /
-        // appendMessageVariant to populate messages/variants.presetId.
+        // the cascade above) and clean preset name. Carried out of assembly so
+        // the message-meta path can bake onto each variant the preset that was
+        // ACTUALLY used (name as an immutable string, no FK). Read by
+        // ChatRuntime.appendAssistantReply / appendMessageVariant.
         presetId: built.promptPresetId ?? null,
         assembledLayers: result.layers.map((layer) => mapPromptLayerDto(layer)),
         tokenAccounting: {
@@ -438,14 +451,29 @@ export class PromptAssemblyService {
       ? [...filteredMessages, lastUserMsg]
       : filteredMessages;
     const messageLimit = input.recentMessageLimit ?? (chat.messageHistoryLimit || Infinity);
-    const recentMessages = ensureLastUser
-      .slice(-(messageLimit === Infinity ? ensureLastUser.length : messageLimit))
-      .map((message) => ({
+    const windowedMessages = ensureLastUser
+      .slice(-(messageLimit === Infinity ? ensureLastUser.length : messageLimit));
+
+    // Batch-load bound Dice rolls for the windowed messages (Wave B5 / DICE-B14).
+    // One batched read (no N+1) over already-bound immutable snapshots —
+    // no Dice-script execution or rerolling on the assembly / preview / summary /
+    // insight read paths. All consumers (generate, contextPreview, summary,
+    // objective/scene one-shots) go through buildPipelineContext, so they all
+    // read identical stored values.
+    const diceRollsByMessage = await this.stores.diceRolls.getRollsForMessages(
+      windowedMessages.map((message) => message.id),
+    );
+
+    const recentMessages = windowedMessages.map((message) => {
+      const rolls = diceRollsByMessage.get(message.id);
+      return {
         id: message.id as MessageId,
         role: message.role as 'system' | 'user' | 'assistant' | 'tool',
         content: message.content,
         ...(message.attachmentsJson ? { attachments: parseStoredAttachments(message.attachmentsJson) ?? [] } : {}),
-      }));
+        ...(rolls?.length ? { diceRolls: rolls.map(storeRollToSnapshot) } : {}),
+      };
+    });
 
     const recentText = recentMessages.map((message) => message.content).join("\n");
     const activeLoreEntries = await this.resolver.listActiveLoreEntries({
@@ -549,6 +577,7 @@ export class PromptAssemblyService {
             nsfw: promptPreset.nsfw,
             enhanceDefinitions: promptPreset.enhanceDefinitions,
             advancedMode: promptPreset.advancedMode,
+            mergeConsecutiveRoles: promptPreset.mergeConsecutiveRoles,
             customInjections: promptPreset.customInjections,
             promptOrder: promptPreset.promptOrder,
           }
@@ -580,6 +609,7 @@ export class PromptAssemblyService {
       chat: {
         recentMessages,
         scriptInjections: scriptResult.injectedMessages,
+        dynamicPrompt: chat.dynamicPrompt?.trim() || null,
       },
       instructions: {
         toolInstructions: [promptPreset?.tools, this.resolver.getToolInstructions()].filter(Boolean).join("\n") || null,
@@ -590,6 +620,12 @@ export class PromptAssemblyService {
         model: input.model,
         summary: input.summary,
       },
+      // SPC-3: hand the preceding-chain priors to the pipeline ONLY on the
+      // summary path. The pipeline emits `prior_summaries_context` from this;
+      // absent or empty → no layer (byte-equivalent to the chat turn).
+      ...(input.summary && input.priorSummaries?.length
+        ? { priorSummaries: input.priorSummaries }
+        : {}),
     };
 
     return {

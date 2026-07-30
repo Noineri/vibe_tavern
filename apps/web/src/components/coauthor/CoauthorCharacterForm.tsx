@@ -55,6 +55,7 @@ import { groupHunks, mergeSelectedBody, allHunkIds } from "../../lib/coauthor-hu
 import { lblCls } from "../build/fields/field-styles.js";
 import { characterDefaults } from "../../lib/character-draft.js";
 import { aggregateCoauthorProposal, buildPartialApplyRequest } from "../../lib/coauthor-apply-aggregate.js";
+import { selectLoreBundle, allLorebookIds, allEntryIds } from "../../lib/lore-selection.js";
 import { applyCoauthorDraft } from "../../api/chat-api.js";
 import type { AppCharacter } from "../../app-client.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
@@ -64,9 +65,15 @@ import type { CoauthorToolActivity } from "../../stores/coauthor-turn-store.js";
 import { useCharacterController } from "../../hooks/use-character-controller.js";
 import { useT } from "../../i18n/context.js";
 import { LinkBindingPopover, type LinkTarget } from "../shared/LinkBindingPopover.js";
+import { GeneratingScrim } from "../shared/generation-feedback.js";
+import { BoundResourcesField } from "../shared/BoundResourcesField.js";
 import { listAllLorebooks } from "../../api/lorebook-api.js";
-import type { LorebookRecord } from "../../api/types.js";
-import { setCoauthorLorebooksAction } from "../../stores/api-actions/chat-actions.js";
+import { listAllScripts } from "../../api/script-api.js";
+import { listPersonas } from "../../api/persona-api.js";
+import type { LorebookRecord, ScriptRecord, AppCharacterEntry } from "../../api/types.js";
+import type { PersonaRecord } from "@vibe-tavern/api-contracts";
+import { setCoauthorContextLinksAction } from "../../stores/api-actions/chat-actions.js";
+import { CoauthorLoreReview, type CoauthorLoreReviewLabels } from "./CoauthorLoreReview.js";
 
 /**
  * Stable empty array for the turn-store selector fallback. Returning a fresh
@@ -74,7 +81,7 @@ import { setCoauthorLorebooksAction } from "../../stores/api-actions/chat-action
  * check sees a change → infinite re-render loop ("Maximum update depth").
  */
 const EMPTY_ACTIVITIES: CoauthorToolActivity[] = [];
-const EMPTY_LOREBOOK_IDS: string[] = [];
+const EMPTY_CONTEXT_LINKS: ReadonlyArray<{ targetType: "character" | "persona" | "lorebook" | "script"; targetId: string }> = Object.freeze([]);
 
 export function CoauthorCharacterForm() {
   const character = useSnapshotStore((s) => s.character);
@@ -112,31 +119,66 @@ function CoauthorCharacterFormInner({ character }: CoauthorCharacterFormInnerPro
     (s) => (chatId ? (s.turnsByChat[chatId] ?? EMPTY_ACTIVITIES) : EMPTY_ACTIVITIES),
   );
 
-  // ── CA-13: lorebook context picker. The lorebooks the user explicitly
-  // bound to THIS co-author chat (right-panel picker), expanded read-only into
-  // the editor prompt on the backend. NOT RP keyword activation — the user
-  // curates which books feed the editor (same shape as the AI-assistant
-  // lorebook-writer's context). Persisted on chats.coauthorLorebookIds.
-  const coauthorLorebookIds = useSnapshotStore((s) => s.activeChat?.coauthorLorebookIds ?? EMPTY_LOREBOOK_IDS);
+  // ── CE-C1: pinned Level-1 context picker. The entities the user explicitly
+  // pinned to THIS co-author chat (right-panel picker), expanded read-only into
+  // the editor prompt on the backend — any of character/persona/lorebook/script.
+  // Generalizes CA-13 (lorebook-only). Persisted on chats.coauthorContextLinks.
+  const contextLinks = useSnapshotStore((s) => s.activeChat?.coauthorContextLinks ?? EMPTY_CONTEXT_LINKS);
+  // Characters come from the snapshot (no dedicated list endpoint); personas /
+  // lorebooks / scripts are fetched once on mount (same pattern as the build
+  // panel's bound-resources field). Only enabled lorebooks/scripts hold context.
+  const allCharacters = useSnapshotStore((s) => s.allCharacters);
   const [allLorebooks, setAllLorebooks] = useState<LorebookRecord[]>([]);
+  const [allPersonas, setAllPersonas] = useState<PersonaRecord[]>([]);
+  const [allScripts, setAllScripts] = useState<ScriptRecord[]>([]);
   useEffect(() => {
     let cancelled = false;
-    void listAllLorebooks().then((rows) => { if (!cancelled) setAllLorebooks(rows); });
+    void Promise.all([listAllLorebooks(), listPersonas(), listAllScripts()]).then(([lb, pe, sc]) => {
+      if (cancelled) return;
+      setAllLorebooks(lb);
+      setAllPersonas(pe);
+      setAllScripts(sc);
+    });
     return () => { cancelled = true; };
   }, []);
-  // Only enabled books are pickable (disabled books hold no context).
+  const characterTargets: LinkTarget[] = useMemo(
+    () => allCharacters.map((c) => ({
+      id: c.id,
+      name: c.name,
+      avatarAssetId: c.avatarAssetId,
+      kind: "characters" as const,
+      avatarExt: c.avatarExt,
+      avatarFullExt: c.avatarFullExt,
+      avatarFullAssetId: c.avatarFullAssetId,
+      updatedAt: c.updatedAt,
+    })),
+    [allCharacters],
+  );
+  const personaTargets: LinkTarget[] = useMemo(
+    () => allPersonas.map((p) => ({
+      id: p.id,
+      name: p.name,
+      avatarAssetId: p.avatarAssetId,
+      kind: "personas" as const,
+      avatarExt: p.avatarExt,
+      avatarFullExt: p.avatarFullExt,
+      avatarFullAssetId: p.avatarFullAssetId,
+      updatedAt: p.updatedAt,
+    })),
+    [allPersonas],
+  );
   const lorebookTargets: LinkTarget[] = useMemo(
     () => allLorebooks.filter((lb) => lb.enabled).map((lb) => ({ id: lb.id, name: lb.name, avatarAssetId: null })),
     [allLorebooks],
   );
-  const lorebookLinks = useMemo(
-    () => coauthorLorebookIds.map((id) => ({ targetType: "lorebook" as const, targetId: id })),
-    [coauthorLorebookIds],
+  const scriptTargets: LinkTarget[] = useMemo(
+    () => allScripts.filter((sc) => sc.enabled).map((sc) => ({ id: sc.id, name: sc.name, avatarAssetId: null })),
+    [allScripts],
   );
-  const handleSetLorebookLinks = (next: { targetType: "lorebook"; targetId: string }[]) => {
-    if (!chatId) return;
-    // Wholesale replace — the ids in the picker are the new bound set.
-    void setCoauthorLorebooksAction(brandId<ChatId>(chatId), next.map((l) => l.targetId));
+  const handleSetContextLinks = (next: { targetType: "character" | "persona" | "lorebook" | "script"; targetId: string }[]) => {
+    if (!chatId || locked) return;
+    // Wholesale replace — the typed links in the picker are the new pinned set.
+    void setCoauthorContextLinksAction(brandId<ChatId>(chatId), next);
   };
 
   const form = useForm<BuildCharacterDraft>({
@@ -161,13 +203,15 @@ function CoauthorCharacterFormInner({ character }: CoauthorCharacterFormInnerPro
   // diff overlay + Apply/Reject (rendered below). hasProposal is a cheap guard
   // so we don't aggregate on every render; the full aggregation is memoized.
   const hasProposal =
-    !isSending && activities.some((a) => a.status === "done" && !!a.proposed && !!a.target);
+    !isSending && activities.some((a) => a.status === "done" && ((!!a.proposed && !!a.target) || !!a.loreBundle));
   const editorState: "idle" | "generating" | "reviewing" = isSending
     ? "generating"
     : hasProposal
       ? "reviewing"
       : "idle";
   const locked = editorState !== "idle";
+  const lockedRef = useRef(locked);
+  lockedRef.current = locked;
 
   // Aggregate the turn into a proposal (proposed body for the diff + Apply
   // request). Recomputed only while reviewing; the form draft is stable during
@@ -198,16 +242,30 @@ function CoauthorCharacterFormInner({ character }: CoauthorCharacterFormInnerPro
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reviewing, proposal]);
   // Single source of truth for the reviewing UI: hide the editor surface AND
-  // mount the overlay only when we actually have a diff to show. The editor
+  // mount the overlay only when we actually have something to show — a body
+  // diff (profile/greeting) AND/OR a proposed lore bundle (CTX-L3). The editor
   // container stays in the DOM (display:none) so its CM6 lifecycle is never
   // torn down between states — it just leaves flow so it can't be scrolled to.
-  const showReview = reviewing && !!diff;
+  const showReview = reviewing && (!!diff || !!proposal?.loreBundle);
   const hunks = useMemo(() => (diff ? groupHunks(diff) : []), [diff]);
   const [selectedHunkIds, setSelectedHunkIds] = useState<Set<number>>(new Set());
   useEffect(() => {
     // New proposal → start from "apply everything" (wholesale default).
     setSelectedHunkIds(allHunkIds(hunks));
   }, [hunks]);
+
+  // ── CTX-L3: lore per-item selection (parent-dependency enforced at render +
+  //    Apply). Defaults to ALL (wholesale), reset on each new lore bundle. ─
+  const loreBundle = proposal?.loreBundle;
+  const [selectedLorebookIds, setSelectedLorebookIds] = useState<Set<string>>(new Set());
+  const [selectedEntryIds, setSelectedEntryIds] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    // New lore proposal → start from "accept everything".
+    if (loreBundle) {
+      setSelectedLorebookIds(allLorebookIds(loreBundle));
+      setSelectedEntryIds(allEntryIds(loreBundle));
+    }
+  }, [loreBundle]);
 
   // ── Greetings widget handlers (draft-backed; same rationale as VibeMdView). ──
   function forceEditorFromBody(): void {
@@ -219,6 +277,7 @@ function CoauthorCharacterFormInner({ character }: CoauthorCharacterFormInnerPro
     }
   }
   function addGreeting(): void {
+    if (lockedRef.current) return;
     const current = form.getValues().alternateGreetings ?? [];
     setValue("alternateGreetings", [...current, ""], { shouldDirty: true });
     forceEditorFromBody();
@@ -230,6 +289,7 @@ function CoauthorCharacterFormInner({ character }: CoauthorCharacterFormInnerPro
     }
   }
   function removeGreeting(altIndex: number): void {
+    if (lockedRef.current) return;
     const current = form.getValues().alternateGreetings ?? [];
     setValue("alternateGreetings", current.filter((_, i) => i !== altIndex), { shouldDirty: true });
     forceEditorFromBody();
@@ -325,7 +385,19 @@ function CoauthorCharacterFormInner({ character }: CoauthorCharacterFormInnerPro
       // profileMd with proposed frontmatter + merged prose, + merged greetings).
       const request = diff
         ? buildPartialApplyRequest(mergeSelectedBody(diff, selectedHunkIds), proposal)
-        : proposal.applyRequest;
+        : { ...proposal.applyRequest };
+      // CTX-L3: narrow the lore bundle by the user's per-item selection
+      // (parent-dependency enforced — an entry whose book was rejected is
+      // dropped). A fully-deselected bundle yields an empty graph; omit it so
+      // Apply leaves lore untouched (consistent with omitted profile/greeting).
+      if (proposal.loreBundle) {
+        const selected = selectLoreBundle(proposal.loreBundle, selectedLorebookIds, selectedEntryIds);
+        if (selected.lorebooks.length > 0) {
+          request.loreBundle = selected;
+        } else {
+          delete request.loreBundle;
+        }
+      }
       const { snapshot, corrections } = await applyCoauthorDraft(
         brandId<ChatId>(chatId),
         request,
@@ -389,23 +461,44 @@ function CoauthorCharacterFormInner({ character }: CoauthorCharacterFormInnerPro
         </button>
       </div>
 
-      {/* CA-13: lorebook context picker. Reuses LinkBindingPopover with ONLY
-          the lorebook section (empty characters/personas/scripts → those
-          sections don't render). The model sees these books' enabled entries as
-          read-only reference in the editor prompt. */}
-      <div className="flex shrink-0 items-center gap-2 border-b border-border/50 bg-surface px-4 py-2">
-        <span className="font-ui text-[10px] font-semibold uppercase tracking-[0.06em] text-t3">{t("coauthor.lorebooks.label")}</span>
-        <LinkBindingPopover
-          links={lorebookLinks}
-          characters={[]}
-          personas={[]}
-          lorebooks={lorebookTargets}
-          onSetLinks={(next) => handleSetLorebookLinks(next as { targetType: "lorebook"; targetId: string }[])}
-          t={t}
-          isMobile={false}
-          tooltipLabel={t("coauthor.lorebooks.add")}
-          emptyLabel={t("coauthor.lorebooks.empty")}
-        />
+      {/* CE-C1/C2/C3: the three context LEVELS, grouped so their distinction
+          is obvious. Each level has a caption stating what the model actually
+          sees — L1 full content vs L2/L3 awareness-only (names/titles). L1
+          persists on the chat (coauthorContextLinks); L2/L3 bind to the
+          character (lorebook_links / script_links via BoundResourcesField, the
+          same shared primitive the card editor uses). */}
+      <div className="shrink-0 border-b border-border/50 bg-surface px-4 py-2">
+        {/* Level 1 — pinned, full content. */}
+        <div className="flex items-center gap-2">
+          <span className="font-ui text-[10px] font-semibold uppercase tracking-[0.06em] text-t3">{t("coauthor.context.label")}</span>
+          <LinkBindingPopover
+            links={[...contextLinks]}
+            characters={characterTargets}
+            personas={personaTargets}
+            lorebooks={lorebookTargets}
+            scripts={scriptTargets}
+            onSetLinks={(next) => handleSetContextLinks(next as { targetType: "character" | "persona" | "lorebook" | "script"; targetId: string }[])}
+            t={t}
+            isMobile={false}
+            tooltipLabel={t("coauthor.context.add")}
+            emptyLabel={t("coauthor.context.empty")}
+            disabled={locked}
+          />
+        </div>
+        <p className="mt-1 font-ui text-[11px] leading-snug text-t4">{t("coauthor.context.caption_full")}</p>
+        {/* Level 2/3 — bound lorebooks & scripts, awareness only. Skipped when
+            the character has no persisted id (unsaved draft has no bindings). */}
+        {character.id && (
+          <div className="mt-1">
+            <BoundResourcesField
+              entityKind="character"
+              entityId={character.id}
+              isMobile={false}
+              lorebookCaption={t("coauthor.context.bound_lorebooks_caption")}
+              scriptCaption={t("coauthor.context.bound_scripts_caption")}
+            />
+          </div>
+        )}
       </div>
 
       {/* Body: editor surface OR the reviewing overlay (CA-11/CA-12). The editor
@@ -423,6 +516,21 @@ function CoauthorCharacterFormInner({ character }: CoauthorCharacterFormInnerPro
           />
           <p className="mt-1.5 font-ui text-[11px] text-t4">{t("coauthor.editor.hint")}</p>
         </div>
+
+        {/* Generating dim scrim — overlaps the editor body with
+            pointer-events-auto to intercept clicks to CodeMirror widget
+            decorations (greeting add/remove buttons) that bypass the
+            EditorView.editable facet. No AnimatePresence: the enter fade-in
+            still plays (motion initial→animate), but exit is instant so the
+            scrim stops intercepting clicks the moment the lock lifts (no
+            ~0.2s gap where the editor is editable but clicks are absorbed). */}
+        {editorState === "generating" && (
+          <GeneratingScrim
+            variant="dim"
+            label={t("coauthor.editor.locked")}
+            pointerEvents="auto"
+          />
+        )}
 
         {showReview && (
           <ReviewingOverlay
@@ -442,6 +550,40 @@ function CoauthorCharacterFormInner({ character }: CoauthorCharacterFormInnerPro
             applying={applying}
             onApply={() => { void handleApply(); }}
             onReject={handleReject}
+            loreBundle={proposal.loreBundle}
+            selectedLorebookIds={selectedLorebookIds}
+            selectedEntryIds={selectedEntryIds}
+            onToggleLorebook={(id) =>
+              setSelectedLorebookIds((prev) => {
+                const next = new Set(prev);
+                if (next.has(id)) next.delete(id); else next.add(id);
+                return next;
+              })
+            }
+            onToggleEntry={(id) =>
+              setSelectedEntryIds((prev) => {
+                const next = new Set(prev);
+                if (next.has(id)) next.delete(id); else next.add(id);
+                return next;
+              })
+            }
+            loreLabels={{
+              title: t("coauthor.lore.review.title"),
+              lorebook: t("coauthor.lore.review.lorebook"),
+              keys: t("coauthor.lore.review.keys"),
+              secondaryKeys: t("coauthor.lore.review.secondary_keys"),
+              constant: t("coauthor.lore.review.constant"),
+              editing: t("coauthor.lore.review.editing"),
+              existingLorebook: t("coauthor.lore.review.existing_lorebook"),
+              entriesOne: t("coauthor.lore.review.entries_one"),
+              entriesFew: t("coauthor.lore.review.entries_few"),
+              entriesMany: t("coauthor.lore.review.entries_many"),
+              scopeCharacter: t("coauthor.lore.review.scope_character"),
+              scopePersona: t("coauthor.lore.review.scope_persona"),
+              scopeGlobal: t("coauthor.lore.review.scope_global"),
+              scopeChat: t("coauthor.lore.review.scope_chat"),
+              noContent: t("coauthor.lore.review.no_content"),
+            }}
             labels={{
               title: t("coauthor.review.title"),
               tooLarge: t("coauthor.review.too_large"),
@@ -479,10 +621,16 @@ function ReviewingOverlay({
   applying,
   onApply,
   onReject,
+  loreBundle,
+  selectedLorebookIds,
+  selectedEntryIds,
+  onToggleLorebook,
+  onToggleEntry,
+  loreLabels,
   labels,
 }: {
   summary: string;
-  diff: ReturnType<typeof buildLineDiff>;
+  diff: ReturnType<typeof buildLineDiff> | null;
   hunks: ReturnType<typeof groupHunks>;
   selectedHunkIds: Set<number>;
   onToggleHunk: (id: number) => void;
@@ -491,6 +639,13 @@ function ReviewingOverlay({
   applying: boolean;
   onApply: () => void;
   onReject: () => void;
+  /** CTX-L3: the proposed lore bundle (absent on profile/greeting-only turns). */
+  loreBundle?: import("@vibe-tavern/api-contracts").CoauthorLoreBundle;
+  selectedLorebookIds: ReadonlySet<string>;
+  selectedEntryIds: ReadonlySet<string>;
+  onToggleLorebook: (id: string) => void;
+  onToggleEntry: (id: string) => void;
+  loreLabels: CoauthorLoreReviewLabels;
   labels: {
     title: string;
     tooLarge: string;
@@ -505,6 +660,13 @@ function ReviewingOverlay({
     skipped: string;
   };
 }) {
+  // The diff section only fills the column when it actually has selectable
+  // hunks. When the diff is empty / too-large it renders a one-line message
+  // (no flex-1 inside HunkSelectionDiff) — if THIS wrapper still took flex-1,
+  // that message would sit at the top with a dead gap below it, and a mixed
+  // turn (empty diff + lore) would split the column 50/50 against empty space.
+  // shrink-0 lets the message take natural height and gives the rest to lore.
+  const hasDiffContent = !!diff && !diff.tooLarge && hunks.length > 0;
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-surface">
       {/* Summary — pinned top, frosted (.glass-blur) so it doesn't see-through
@@ -515,28 +677,45 @@ function ReviewingOverlay({
           <div className="font-ui text-[12px] font-medium text-t2">{summary}</div>
         </div>
       </div>
-      {/* Diff — fills the remaining space; HunkSelectionDiff stretches and its
-          <pre> scrolls internally. */}
-      <div className="flex min-h-0 flex-1 flex-col px-1 py-2">
-        <HunkSelectionDiff
-          diff={diff}
-          hunks={hunks}
-          selectedIds={selectedHunkIds}
-          onToggleHunk={onToggleHunk}
-          onSelectAll={onSelectAll}
-          onSelectNone={onSelectNone}
-          labels={{
-            title: labels.title,
-            tooLarge: labels.tooLarge,
-            noChanges: labels.noChanges,
-            selectAll: labels.selectAll,
-            selectNone: labels.selectNone,
-            applyingCount: labels.applyingCount,
-            hunkN: labels.hunkN,
-            skipped: labels.skipped,
-          }}
-        />
-      </div>
+      {/* Body diff (profile/greeting) — shown iff proposed. Each section takes
+          flex-1 so a mixed turn (diff + lore) splits the space 50/50 and each
+          scrolls internally; a single-section turn fills the whole area. */}
+      {diff && (
+        <div className={"flex flex-col px-1 py-2 " + (hasDiffContent ? "min-h-0 flex-1 " : "shrink-0 ")}>
+          <HunkSelectionDiff
+            diff={diff}
+            hunks={hunks}
+            selectedIds={selectedHunkIds}
+            onToggleHunk={onToggleHunk}
+            onSelectAll={onSelectAll}
+            onSelectNone={onSelectNone}
+            labels={{
+              title: labels.title,
+              tooLarge: labels.tooLarge,
+              noChanges: labels.noChanges,
+              selectAll: labels.selectAll,
+              selectNone: labels.selectNone,
+              applyingCount: labels.applyingCount,
+              hunkN: labels.hunkN,
+              skipped: labels.skipped,
+            }}
+          />
+        </div>
+      )}
+      {/* CTX-L3: structured lore review (lorebooks + entries). Shown iff proposed. */}
+      {loreBundle && (
+        <div className="flex min-h-0 flex-1 flex-col">
+          <CoauthorLoreReview
+            bundle={loreBundle}
+            selectedLorebookIds={selectedLorebookIds}
+            selectedEntryIds={selectedEntryIds}
+            onToggleLorebook={onToggleLorebook}
+            onToggleEntry={onToggleEntry}
+            applying={applying}
+            labels={loreLabels}
+          />
+        </div>
+      )}
       <div className="flex shrink-0 items-center justify-end gap-2 border-t border-border/50 bg-surface px-4 py-2.5">
         <button
           type="button"

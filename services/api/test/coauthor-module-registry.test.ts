@@ -61,26 +61,46 @@ describe("Coauthor Module Registry — CED-2 paired write_* tool scopes", () => 
   test("write_* tools are scoped per seed module (only where the matching edit_* is allowed)", () => {
     const byId = new Map(getSeedModuleDefs().map((m) => [m.id, m.toolSet]));
 
-    // Default Co-Author: all three write_* tools (it can edit everything).
+    // Character Workshop (default): all three write_* tools (it can edit everything).
     const def = byId.get("default")!;
     expect(def.write_personality).toBe(true);
     expect(def.write_scenario).toBe(true);
     expect(def.write_examples).toBe(true);
 
-    // Profile Editor: PERSONALITY/SCENARIO writes only (mirrors its edit_*
-    // scope); must NOT reach EXAMPLES.
+    // Revision Workshop (profile-editor): PERSONALITY/SCENARIO writes only (mirrors
+    // its edit_* scope); must NOT reach EXAMPLES.
     const editor = byId.get("profile-editor")!;
     expect(editor.write_personality).toBe(true);
     expect(editor.write_scenario).toBe(true);
     expect(editor.write_examples).toBeUndefined();
     expect(editor.edit_examples).toBeUndefined();
 
-    // Dialogue Writer: EXAMPLES write only; must NOT reach PERSONALITY/SCENARIO.
+    // Dialogue Studio (dialogue-writer): EXAMPLES write only; must NOT reach PERSONALITY/SCENARIO.
     const dialogue = byId.get("dialogue-writer")!;
     expect(dialogue.write_examples).toBe(true);
     expect(dialogue.write_personality).toBeUndefined();
     expect(dialogue.write_scenario).toBeUndefined();
     expect(dialogue.edit_personality).toBeUndefined();
+  });
+
+  test("quick-draft seed (CTX-M2) carries the full card-building toolSet + greeting tools", () => {
+    // Quick Draft builds a complete card from scratch: it needs write_profile for
+    // the ground-up build plus the greeting tools for the opener. It is additive
+    // (new seed id); the three original seed ids are preserved.
+    const byId = new Map(getSeedModuleDefs().map((m) => [m.id, m.toolSet]));
+    const qd = byId.get("quick-draft")!;
+    expect(qd).toBeDefined();
+    expect(qd.write_profile).toBe(true);
+    expect(qd.write_personality).toBe(true);
+    expect(qd.write_scenario).toBe(true);
+    expect(qd.write_examples).toBe(true);
+    expect(qd.edit_greeting).toBe(true);
+    expect(qd.add_alt_greeting).toBe(true);
+    // The three original seed ids survive (existing chats need no migration).
+    expect(isSeedModule("default")).toBe(true);
+    expect(isSeedModule("profile-editor")).toBe(true);
+    expect(isSeedModule("dialogue-writer")).toBe(true);
+    expect(isSeedModule("quick-draft")).toBe(true);
   });
 });
 

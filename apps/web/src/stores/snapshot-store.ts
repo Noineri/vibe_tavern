@@ -11,7 +11,7 @@ import type {
   InsightsCompletionPatchResponse,
   SceneTargetResponse,
 } from "../app-client.js";
-import type { ChatBranch, PromptTraceRecordDto, AssemblePromptResponse, PronounForms } from "@vibe-tavern/domain";
+import type { ChatBranch, PromptTraceRecordDto, PronounForms } from "@vibe-tavern/domain";
 
 // ── Macro context (derived from character + persona) ──────────────────
 
@@ -53,8 +53,6 @@ interface SnapshotState {
 
   /** Prompt trace from last generation. */
   promptTrace: PromptTraceRecordDto | null;
-  /** Context preview (shown when no traces exist). */
-  contextPreview: AssemblePromptResponse | null;
 
   /** Swipe direction for variant animation (1 = forward, -1 = back). */
   swipeDirection: 1 | -1;
@@ -134,7 +132,6 @@ const initialState: SnapshotState = {
   branches: [],
   summaries: [],
   promptTrace: null,
-  contextPreview: null,
   swipeDirection: 1 as const,
   allCharacters: [],
 };
@@ -292,14 +289,10 @@ export const useSnapshotStore = create<SnapshotStore>()(
           if (!deepEqual(draft.summaries, snapshot.summaries)) draft.summaries = snapshot.summaries;
         }
 
-        // ── Traces / preview ──
+        // ── Traces ──
         if ("promptTrace" in snapshot) {
           const next = snapshot.promptTrace ?? null;
           if (!deepEqual(draft.promptTrace, next)) draft.promptTrace = next;
-        }
-        if ("contextPreview" in snapshot) {
-          const next = snapshot.contextPreview ?? null;
-          if (!deepEqual(draft.contextPreview, next)) draft.contextPreview = next;
         }
 
         // ── All characters (global list) ──
@@ -504,7 +497,6 @@ export function usePromptTrace() {
   return useSnapshotStore(
     useShallow((s) => ({
       promptTrace: s.promptTrace,
-      contextPreview: s.contextPreview,
     })),
   );
 }

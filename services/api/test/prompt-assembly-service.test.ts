@@ -32,6 +32,7 @@ function createMockStores(overrides?: Partial<StoreContainer["chats"]>): StoreCo
     personas: {
       listAll: async () => [{ id: "persona_1", name: "User", description: "A user.", defaultForNewChats: true }],
     },
+    diceRolls: { getRollsForMessages: async () => new Map() },
   } as unknown as StoreContainer;
 }
 
@@ -304,6 +305,7 @@ function makeFilterService(
           createdAt: "2025-01-01T00:00:00Z",
         })),
     },
+    diceRolls: { getRollsForMessages: async () => new Map() },
   } as unknown as StoreContainer;
 
   const resolver: PromptAssemblyResolver = {

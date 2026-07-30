@@ -25,18 +25,25 @@
  * gotcha) so the process-global mock does not leak undefined exports into other
  * test files that import LocaleProvider etc.
  */
-import { describe, it, expect, vi } from "vitest";
+import { beforeAll, describe, it, expect, mock } from "bun:test";
 import { render, fireEvent } from "@testing-library/react";
+import { useDomEnv } from "../../../test/dom-env.js";
+import type { ActionSheetItem } from "./ActionSheet.js";
 
-vi.mock("../../i18n/context.js", async (importOriginal) => {
-	const real = await importOriginal() as typeof import("../../i18n/context.js");
+useDomEnv();
+
+const realI18nContext = await import("../../i18n/context.js");
+mock.module("../../i18n/context.js", () => {
 	return {
-		...real,
+		...realI18nContext,
 		useT: () => ({ t: (key: string) => key, tDynamic: (key: string) => key, locale: "en", setLocale: () => {}, ready: true }),
 	};
 });
 
-import { ActionSheet, type ActionSheetItem } from "./ActionSheet.js";
+let ActionSheet: typeof import("./ActionSheet.js").ActionSheet;
+beforeAll(async () => {
+	({ ActionSheet } = await import("./ActionSheet.js"));
+});
 
 function item(overrides: Partial<ActionSheetItem> & { label: string }): ActionSheetItem {
 	return {
@@ -49,8 +56,8 @@ function item(overrides: Partial<ActionSheetItem> & { label: string }): ActionSh
 /** Find the first <button> whose accessible text contains `label`. Rows and the
  *  Cancel button are all <button>s, so this is how callers (and users) reach
  *  them. */
-function buttonByLabel(doc: Document, label: string): HTMLButtonElement {
-	const btn = [...doc.querySelectorAll<HTMLButtonElement>("button")]
+function buttonByLabel(root: HTMLElement, label: string): HTMLButtonElement {
+	const btn = [...root.querySelectorAll<HTMLButtonElement>("button")]
 		.find((b) => (b.textContent ?? "").includes(label));
 	if (!btn) throw new Error(`no <button> containing "${label}"`);
 	return btn;
@@ -58,50 +65,50 @@ function buttonByLabel(doc: Document, label: string): HTMLButtonElement {
 
 describe("ActionSheet", () => {
 	it("open=false renders nothing", () => {
-		render(<ActionSheet open={false} title="t" items={[item({ label: "Hidden" })]} onClose={() => {}} />);
-		expect(document.body.textContent).not.toContain("Hidden");
+		const view = render(<ActionSheet open={false} title="t" items={[item({ label: "Hidden" })]} onClose={() => {}} />);
+		expect(view.baseElement.textContent).not.toContain("Hidden");
 	});
 
 	it("renders one row per item, labelled by item.label, under the title", () => {
-		render(
+		const view = render(
 			<ActionSheet open={true} title="My Title"
 				items={[item({ label: "Alpha" }), item({ label: "Beta" })]}
 				onClose={() => {}} />,
 		);
-		expect(document.body.textContent).toContain("My Title");
-		expect(document.body.textContent).toContain("Alpha");
-		expect(document.body.textContent).toContain("Beta");
-		expect(buttonByLabel(document, "Alpha")).toBeTruthy();
-		expect(buttonByLabel(document, "Beta")).toBeTruthy();
+		expect(view.baseElement.textContent).toContain("My Title");
+		expect(view.baseElement.textContent).toContain("Alpha");
+		expect(view.baseElement.textContent).toContain("Beta");
+		expect(buttonByLabel(view.baseElement, "Alpha")).toBeTruthy();
+		expect(buttonByLabel(view.baseElement, "Beta")).toBeTruthy();
 	});
 
 	it("tapping a row fires onClose THEN item.action (in that order)", () => {
 		// close-before-action is load-bearing: callers open a modal from the
 		// action and must not have it stacked on top of the still-open sheet.
 		const calls: string[] = [];
-		render(
+		const view = render(
 			<ActionSheet open={true} title="t"
 				items={[item({ label: "Run me", action: () => calls.push("action") })]}
 				onClose={() => calls.push("close")} />,
 		);
-		fireEvent.click(buttonByLabel(document, "Run me"));
+		fireEvent.click(buttonByLabel(view.baseElement, "Run me"));
 		expect(calls).toEqual(["close", "action"]);
 	});
 
 	it("the Cancel button fires onClose but no item action", () => {
 		const calls: string[] = [];
-		render(
+		const view = render(
 			<ActionSheet open={true} title="t"
 				items={[item({ label: "X", action: () => calls.push("action") })]}
 				onClose={() => calls.push("close")} />,
 		);
-		fireEvent.click(buttonByLabel(document, "cancel"));
+		fireEvent.click(buttonByLabel(view.baseElement, "cancel"));
 		expect(calls).toEqual(["close"]);
 	});
 
 	it("trailing sub-actions render with aria-label and fire onClose then sub.action", () => {
 		const calls: string[] = [];
-		render(
+		const view = render(
 			<ActionSheet open={true} title="t"
 				items={[item({
 					label: "Parent",
@@ -112,7 +119,7 @@ describe("ActionSheet", () => {
 				})]}
 				onClose={() => calls.push("close")} />,
 		);
-		const rename = document.querySelector<HTMLElement>('[aria-label="Rename"]');
+		const rename = view.baseElement.querySelector<HTMLElement>('[aria-label="Rename"]');
 		if (!rename) throw new Error("trailing Rename button (aria-label) not rendered");
 		fireEvent.click(rename);
 		expect(calls).toEqual(["close", "rename"]);
@@ -120,7 +127,7 @@ describe("ActionSheet", () => {
 
 	it("tapping the parent row fires the parent action, NOT a trailing action", () => {
 		const calls: string[] = [];
-		render(
+		const view = render(
 			<ActionSheet open={true} title="t"
 				items={[item({
 					label: "Parent",
@@ -131,12 +138,12 @@ describe("ActionSheet", () => {
 				})]}
 				onClose={() => calls.push("close")} />,
 		);
-		fireEvent.click(buttonByLabel(document, "Parent"));
+		fireEvent.click(buttonByLabel(view.baseElement, "Parent"));
 		expect(calls).toEqual(["close", "parent"]);
 	});
 
 	it("renders a danger item distinctly from a normal one", () => {
-		render(
+		const view = render(
 			<ActionSheet open={true} title="t"
 				items={[
 					item({ label: "Safe" }),
@@ -144,8 +151,8 @@ describe("ActionSheet", () => {
 				]}
 				onClose={() => {}} />,
 		);
-		const safe = buttonByLabel(document, "Safe");
-		const danger = buttonByLabel(document, "Nuke");
+		const safe = buttonByLabel(view.baseElement, "Safe");
+		const danger = buttonByLabel(view.baseElement, "Nuke");
 		expect(safe.className).not.toContain("danger");
 		expect(danger.className).toContain("danger");
 	});

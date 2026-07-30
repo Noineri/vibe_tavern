@@ -20,6 +20,8 @@ export const ENTITY_ID_NAMESPACE = {
   providerProfile: "provider",
   promptPreset: "prompt_preset",
   script: "script",
+  diceRoll: "dice_roll",
+  dicePendingLane: "dice_pending_lane",
 } as const;
 
 export type EntityIdNamespace = typeof ENTITY_ID_NAMESPACE[keyof typeof ENTITY_ID_NAMESPACE];
@@ -325,6 +327,31 @@ export const OBJECTIVE_TASK_STATUS = {
 export type ObjectiveTaskStatus = typeof OBJECTIVE_TASK_STATUS[keyof typeof OBJECTIVE_TASK_STATUS];
 
 /**
+ * Enforce the "exactly one active target" display/injection invariant.
+ *
+ * `selectActiveTask` (services/api) targets the first `active` item, else the
+ * first `pending`, so the model is steered toward that goal even when no item is
+ * explicitly `active`. But the STORED status of that fallback target stays
+ * `pending`, so the UI — which renders status literally — shows it as a regular
+ * pending item, indistinguishable from the rest. This pure helper promotes the
+ * would-be-injected item to `active` so the existing UI marks it as the current
+ * goal. It is a READ/DISPLAY normalization: callers apply it when reading state
+ * for the snapshot / patch response so every consumer agrees on which item is
+ * "current"; they do NOT persist the promotion unless they choose to.
+ *
+ * No-op when an `active` item already exists or when there are no `pending`
+ * items. Generic over the item shape (only `status` is read) so it serves both
+ * route `tasks` and goals-mode `shortTermGoals`.
+ */
+export function ensureActiveObjectiveTarget<T extends { status: string }>(items: readonly T[]): T[] {
+  if (items.length === 0) return [...items];
+  if (items.some((t) => t.status === OBJECTIVE_TASK_STATUS.active)) return [...items];
+  const firstPending = items.findIndex((t) => t.status === OBJECTIVE_TASK_STATUS.pending);
+  if (firstPending === -1) return [...items];
+  return items.map((t, i) => (i === firstPending ? { ...t, status: OBJECTIVE_TASK_STATUS.active } : t));
+}
+
+/**
  * Objective Tracker mode (OGM — OBJECTIVE_GOALS_MODE_PLAN).
  *
  * - `route` — the original mode: one high-level objective broken into an ordered
@@ -344,3 +371,117 @@ export const OBJECTIVE_MODE = {
 } as const;
 
 export type ObjectiveMode = typeof OBJECTIVE_MODE[keyof typeof OBJECTIVE_MODE];
+
+// ─── Dice system (DICE_SYSTEM_BACKEND_PLAN, Wave B1) ───────────────────────────
+//
+// The per-chat opt-in Dice feature is server-authoritative and manual-only
+// in V1. These constants are the canonical vocabulary shared by the domain
+// entities, the pure roller (dice.ts), the Zod request/result schemas
+// (api-contracts/dice-schema.ts), the Dice-script VM (Wave B2), and the
+// pending-lane storage + API (Wave B3). Add a value here first; everything
+// else keys off these literals.
+
+/**
+ * Runtime contract of a script.
+ *
+ * - `prompt` — the original prompt-script VM: mutates character/scenario
+ *   fields as a side effect of `assemblePrompt()`. Every legacy row, import,
+ *   and request defaults to this.
+ * - `dice` — the dedicated Dice-script VM (Wave B2): registers checks, reads
+ *   a frozen actor snapshot, and calls a bounded server roller. A dice script
+ *   never mutates prompt fields, injects messages, or runs during assembly.
+ *
+ * Prompt assembly loads only `prompt` scripts; Dice actions load only `dice`
+ * scripts. The two runtimes are isolated by kind at the store boundary.
+ */
+export const SCRIPT_KIND = {
+  prompt: "prompt",
+  dice: "dice",
+} as const;
+
+export type ScriptKind = typeof SCRIPT_KIND[keyof typeof SCRIPT_KIND];
+
+/**
+ * Dice turn mode — whether discarded attempts persist and how extra attempts
+ * are granted. Orthogonal to {@link DiceResolution} (strict/narrative).
+ *
+ * - `normal` — repeating the same actor+check replaces its pending result;
+ *   discarded attempts never persist as history. One result per actor+check.
+ * - `immersive` — each actor+check gets one initial attempt per draft turn;
+ *   further attempts exist only when the Dice script grants them. Multiple
+ *   authorized attempts stay inside one result envelope's `attempts[]`.
+ */
+export const DICE_MODE = {
+  normal: "normal",
+  immersive: "immersive",
+} as const;
+
+export type DiceMode = typeof DICE_MODE[keyof typeof DICE_MODE];
+
+/**
+ * Who a check is rolled for. Both actor types can roll multiple distinct
+ * checks before one user message; each is a separate pending result.
+ *
+ * - `persona` — the user's persona.
+ * - `character` — the chat's character.
+ */
+export const DICE_ACTOR_TYPE = {
+  persona: "persona",
+  character: "character",
+} as const;
+
+export type DiceActorType = typeof DICE_ACTOR_TYPE[keyof typeof DICE_ACTOR_TYPE];
+
+/**
+ * How a check's outcome is adjudicated, per-check and orthogonal to mode.
+ *
+ * - `strict` — persists a validated outcome (and optional degree/constraint);
+ *   the model receives these as binding adjudication.
+ * - `narrative` — persists mechanical facts (faces/total) but NO authoritative
+ *   success/failure; the model is not forced to adjudicate.
+ */
+export const DICE_RESOLUTION = {
+  strict: "strict",
+  narrative: "narrative",
+} as const;
+
+export type DiceResolution = typeof DICE_RESOLUTION[keyof typeof DICE_RESOLUTION];
+
+/**
+ * Finalization policy a Dice script declares for an Immersive check's extra
+ * attempts. Drives how the active attempt is chosen and whether send blocks.
+ *
+ * - `replace` — the latest authorized attempt replaces the previous one.
+ * - `keep_best` — auto-marks the highest-total attempt as the final result.
+ * - `keep_worst` — auto-marks the lowest-total attempt as the final result.
+ * - `choose` — the user must select one attempt; send is blocked at the API
+ *   layer until a choice exists.
+ */
+export const DICE_FINALIZATION_POLICY = {
+  replace: "replace",
+  keepBest: "keep_best",
+  keepWorst: "keep_worst",
+  choose: "choose",
+} as const;
+
+export type DiceFinalizationPolicy =
+  typeof DICE_FINALIZATION_POLICY[keyof typeof DICE_FINALIZATION_POLICY];
+
+/**
+ * Face-shape hint for per-die visualization. The bounded roller supports the
+ * standard polyhedral set plus the percentile (`d%`, sides 100). This is the
+ * ONLY set the core notation accepts; advanced mechanics (pools, explode,
+ * keep-high/low, advantage) are implemented by the Dice script through
+ * repeated bounded roller calls, never by growing the notation grammar.
+ */
+export const DICE_FACE_SHAPE = {
+  d4: "d4",
+  d6: "d6",
+  d8: "d8",
+  d10: "d10",
+  d12: "d12",
+  d20: "d20",
+  dPercent: "d%",
+} as const;
+
+export type DiceFaceShape = typeof DICE_FACE_SHAPE[keyof typeof DICE_FACE_SHAPE];

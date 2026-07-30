@@ -5,6 +5,10 @@ export interface AiAssistantStreamChunk {
   text?: string;
   json?: Record<string, unknown>;
   error?: string;
+  /** Present only for message editor completions; consumed later as merge provenance. */
+  modelId?: string;
+  promptPresetId?: string | null;
+  finishReason?: string;
 }
 
 export interface ReasoningSplitState {

@@ -62,7 +62,7 @@ export {
   clearChat,
   renameChat,
   setGreetingIndex,
-  setCoauthorLorebooks,
+  setCoauthorContextLinks,
   listCoauthorModules,
   setCoauthorModule,
   createCoauthorModule,
@@ -125,6 +125,14 @@ export {
   selectObjectiveShortTermGoal,
   updateObjectiveConfig,
 } from "./api/chat-api.js";
+
+// ─── Co-Author skills (CTX-S7) ───────────────────────────────────────────
+export {
+  listCoauthorSkills,
+  readCoauthorSkill,
+  importCoauthorSkills,
+  deleteCoauthorSkill,
+} from "./api/skill-api.js";
 
 // ─── Character ──────────────────────────────────────────────────────────
 export {
@@ -202,6 +210,7 @@ export {
   updateProviderProfile,
   deleteProviderProfile,
   activateProviderProfile,
+  reorderProviderProfiles,
   testProviderDraft,
   testProviderProfile,
   fetchProviderProfileModels,
@@ -222,6 +231,7 @@ export {
   createPromptPreset,
   updatePromptPreset,
   deletePromptPreset,
+  reorderPromptPresets,
 } from "./api/preset-api.js";
 
 // ─── Asset ──────────────────────────────────────────────────────────────

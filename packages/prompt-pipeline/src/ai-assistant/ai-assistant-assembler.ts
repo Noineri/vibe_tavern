@@ -1,5 +1,5 @@
 import type { PromptAssemblyContext, PromptAssemblyResult, PromptLayer } from "../types.js";
-import { joinNonEmpty, makeLayer, sortLayers } from "../assemble.js";
+import { assembleMessageEditorPrompt, joinNonEmpty, makeLayer, sortLayers } from "../assemble.js";
 import {
   PROMPT_FORMAT,
   PROMPT_LAYER_ID,
@@ -152,4 +152,9 @@ export function assembleAiAssistant(context: PromptAssemblyContext): PromptAssem
 
 export const DefaultAiAssistantAssembler: AiAssistantAssembler = {
   assemble: assembleAiAssistant,
+};
+
+/** Full RP-context assembler for one-shot message edit and merge requests. */
+export const MessageAiAssistantAssembler: AiAssistantAssembler = {
+  assemble: assembleMessageEditorPrompt,
 };

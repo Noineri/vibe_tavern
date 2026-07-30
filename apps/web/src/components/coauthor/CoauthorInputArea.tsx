@@ -51,7 +51,7 @@ function DesktopInput({ data }: { data: ReturnType<typeof useCoauthorInputArea> 
 	const {
 		t, chat,
 		draft, setDraft, isSending, activeChatId, canSend,
-		activeModelId, toolFilteredFavorites, handleSelectModel,
+		activeModelId, favorites, handleSelectModel,
 		sendLabel, sendButtonText,
 		buckets, inputTokens, permanent, contextSize, maxTokens, availableBudget, tokenState,
 	} = data;
@@ -136,7 +136,7 @@ function DesktopInput({ data }: { data: ReturnType<typeof useCoauthorInputArea> 
 								{ label: t("coauthor.module.title"), value: buckets.moduleTokens },
 								{ label: t("coauthor.module.skills"), value: buckets.skillTokens },
 								{ label: t("character_profile"), value: buckets.profileTokens },
-								{ label: t("context_lore"), value: buckets.lore },
+								{ label: t("coauthor.context.label"), value: buckets.context },
 								{ label: t("context_memory"), value: buckets.memory },
 							]}
 						/>
@@ -148,7 +148,7 @@ function DesktopInput({ data }: { data: ReturnType<typeof useCoauthorInputArea> 
 							triggerTooltip={t("starred_models")}
 							contentWidth={260}
 							emptyText={t("coauthor.input.no_tool_favorites")}
-							items={toolFilteredFavorites.map((m) => ({ value: m.modelId, label: m.label || m.modelId }))}
+							items={favorites.map((m) => ({ value: m.modelId, label: m.label || m.modelId, ...(m.toolSupport === "unsupported" ? { leading: <span className="font-bold text-warning-text">!</span> } : {}) }))}
 							value={activeModelId}
 							onSelect={handleSelectModel}
 							itemTestId={(v) => `coauthor-fav-model-${v}`}

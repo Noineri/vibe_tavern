@@ -3,6 +3,7 @@ import { registerMessageSlot, type MessageSlotContext } from "../../lib/message-
 import { Icons } from "../shared/icons.js";
 import { useT } from "../../i18n/context.js";
 import { Markdown } from "../../lib/markdown.js";
+import { AnimatedDisclosure } from "../shared/AnimatedDisclosure.js";
 
 /**
  * Visual preset for {@link MessageReasoning}. Controls the header chrome and
@@ -31,8 +32,10 @@ interface VariantStyle {
 	showDuration: boolean;
 	/** Show the expand/collapse caret on the trailing edge. */
 	showCaret: boolean;
-	/** Body wrapper classes. */
-	body: string;
+	/** Body wrapper classes (AnimatedDisclosure root). */
+	bodyWrapper: string;
+	/** Body typography classes (applied to the inner content). */
+	bodyText: string;
 	/** How to render the body text. */
 	bodyAs: "markdown" | "mono";
 }
@@ -44,7 +47,8 @@ const VARIANT_STYLES: Record<ReasoningVariant, VariantStyle> = {
 		showIcon: true,
 		showDuration: true,
 		showCaret: true,
-		body: "border-t border-border px-3 py-2.5 font-body text-[calc(var(--mfs)-2px)] leading-[1.6] text-msg-t2",
+		bodyWrapper: "border-t border-border px-3 py-2.5",
+		bodyText: "font-body text-[calc(var(--mfs)-2px)] leading-[1.6] text-msg-t2",
 		bodyAs: "markdown",
 	},
 	minimal: {
@@ -53,7 +57,8 @@ const VARIANT_STYLES: Record<ReasoningVariant, VariantStyle> = {
 		showIcon: false,
 		showDuration: false,
 		showCaret: false,
-		body: "border-t border-border px-3 py-2 font-mono text-[11px] text-t3 whitespace-pre-wrap",
+		bodyWrapper: "border-t border-border px-3 py-2",
+		bodyText: "font-mono text-[11px] text-t3 whitespace-pre-wrap",
 		bodyAs: "mono",
 	},
 };
@@ -151,17 +156,17 @@ export function MessageReasoning({
 					<span className="ml-auto">{open ? <Icons.Caret direction="u" /> : <Icons.Caret direction="d" />}</span>
 				)}
 			</button>
-			{open && (
-				s.bodyAs === "markdown" ? (
-					<div translate="yes" className={s.body}>
+			<AnimatedDisclosure open={open} className={s.bodyWrapper}>
+				{s.bodyAs === "markdown" ? (
+					<div translate="yes" className={s.bodyText}>
 						{hasContent ? <Markdown text={reasoning} /> : t("reasoning_redacted")}
 					</div>
 				) : (
-					<pre translate="yes" className={s.body}>
+					<pre translate="yes" className={s.bodyText}>
 						{hasContent ? reasoning : t("reasoning_redacted")}
 					</pre>
-				)
-			)}
+				)}
+			</AnimatedDisclosure>
 		</div>
 	);
 }

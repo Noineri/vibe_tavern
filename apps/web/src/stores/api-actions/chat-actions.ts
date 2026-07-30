@@ -1,5 +1,8 @@
-import type { ChatBranchId, ChatId, ChatMode, ObjectiveMode, ObjectiveTaskStatus, SceneTrackerConfig } from "@vibe-tavern/domain";
+import type { ChatBranchId, ChatId, ChatMode, MessageId, MessageVariantId, ObjectiveMode, ObjectiveTaskStatus, SceneTrackerConfig } from "@vibe-tavern/domain";
+import { brandId } from "@vibe-tavern/domain";
 import type { AppMode } from "../../components/layout/app-shell-types.js";
+import { createMessageVariant, updateChatDynamicPrompt, type CreateMessageVariantInput } from "../../api/chat-api.js";
+import type { DiceSendCommitIntent } from "../../api/types.js";
 import {
   activateBranch,
   createChat,
@@ -49,7 +52,7 @@ import {
   regenerateChatMessage,
   renameChat,
   setGreetingIndex,
-  setCoauthorLorebooks,
+  setCoauthorContextLinks,
   listCoauthorModules,
   setCoauthorModule,
   createCoauthorModule,
@@ -62,6 +65,8 @@ import {
 } from "../../app-client.js";
 import type { AutoSummaryConfig, ChatSummaryRecord, InsightsConfigPatch, ScenePreviewResponse, SceneTargetResponse, SceneStatusResponse, SceneBackfillMode, SceneBackfillStatusResponse } from "../../app-client.js";
 import { useSnapshotStore } from "../snapshot-store.js";
+import { useMessageAiEditorStore } from "../message-ai-editor-store.js";
+import { invalidateActiveContextPreview } from "../context-preview-store.js";
 import { useSceneGenerationStore } from "../scene-generation-store.js";
 import { useChatStore } from "../chat-store.js";
 import { useNavigationStore } from "../navigation-store.js";
@@ -72,6 +77,15 @@ import { startInsightsCompletionRefreshFromSnapshot } from "./insights-completio
 // Single canonical backend snapshot cache.
 function syncSnapshot(snapshot: AppSnapshot) {
   useSnapshotStore.getState().ingestSnapshot(snapshot);
+  // Drop the cached live preview for the now-active (chatId, branchId) so the
+  // lazy hydration refetches after a prompt-affecting mutation (message/variant/
+  // summary/objective/memory/persona-switch edits). This is the action-boundary
+  // seam, not the canonical store — `ingestSnapshot` itself never guesses
+  // derived-query semantics. On branch fork/activate the active branch changed,
+  // so this drops the new branch's (likely absent) entry — a harmless no-op; on
+  // re-visiting a trace-less branch it may trigger one redundant background
+  // refetch, accepted as a minor correct inefficiency.
+  invalidateActiveContextPreview();
 }
 
 function syncSelectedCharacterFromSnapshot(snapshot: AppSnapshot): void {
@@ -179,8 +193,8 @@ export async function setGreetingIndexAction(chatId: ChatId, greetingIndex: numb
   syncSnapshot(snapshot);
 }
 
-export async function setCoauthorLorebooksAction(chatId: ChatId, lorebookIds: string[]): Promise<void> {
-  const snapshot = await setCoauthorLorebooks(chatId, lorebookIds);
+export async function setCoauthorContextLinksAction(chatId: ChatId, links: Array<{ targetType: "character" | "persona" | "lorebook" | "script"; targetId: string }>): Promise<void> {
+  const snapshot = await setCoauthorContextLinks(chatId, links);
   syncSnapshot(snapshot);
 }
 
@@ -210,9 +224,11 @@ export async function setCoauthorModuleAction(chatId: ChatId, moduleId: string |
   syncSnapshot(snapshot);
 }
 
-export async function sendChatMessageAction(chatId: ChatId, content: string, attachments?: { id: string; name: string; type: "image" | "file" | "video"; assetId: string; mimeType: string; sizeBytes: number; }[], signal?: AbortSignal): Promise<void> {
+export async function sendChatMessageAction(chatId: ChatId, content: string, attachments?: { id: string; name: string; type: "image" | "file" | "video"; assetId: string; mimeType: string; sizeBytes: number; }[], diceCommit?: DiceSendCommitIntent, signal?: AbortSignal): Promise<void> {
   useCoauthorTurnStore.getState().clearTurn(chatId);
-  const snapshot = await sendChatMessage(chatId, { content, attachments }, { signal });
+  // Spread the optional dice commit intent (`{diceMode, pendingRevision}`) into
+  // the wire body; absent ⇒ a no-Dice send, byte-identical to before. DICE-F3.
+  const snapshot = await sendChatMessage(chatId, { content, attachments, ...diceCommit }, { signal });
   syncSnapshot(snapshot);
   syncCommittedCoauthorTurn(chatId);
   startInsightsCompletionRefreshFromSnapshot(chatId, snapshot);
@@ -224,19 +240,37 @@ export async function regenerateMessageAction(chatId: ChatId, messageId: string,
   syncCommittedCoauthorTurn(chatId);
 }
 
-export async function editMessageAction(chatId: ChatId, messageId: string, content: string): Promise<void> {
-  const snapshot = await editChatMessage(chatId, messageId, content);
+export async function editMessageAction(
+  chatId: ChatId,
+  messageId: string,
+  content: string,
+  expectedVariantId?: MessageVariantId,
+): Promise<void> {
+  const snapshot = await editChatMessage(chatId, messageId, content, expectedVariantId);
+  syncSnapshot(snapshot);
+}
+
+export async function createMessageVariantAction(
+  chatId: ChatId,
+  messageId: string,
+  input: CreateMessageVariantInput,
+): Promise<void> {
+  const snapshot = await createMessageVariant(chatId, messageId, input);
   syncSnapshot(snapshot);
 }
 
 export async function deleteMessageAction(chatId: ChatId, messageId: string): Promise<void> {
   const snapshot = await deleteChatMessage(chatId, messageId);
   syncSnapshot(snapshot);
+  useMessageAiEditorStore.getState().clearStars(brandId<MessageId>(messageId));
 }
 
 export async function deleteVariantAction(chatId: ChatId, messageId: string, variantIndex: number): Promise<void> {
   const snapshot = await deleteMessageVariant(chatId, messageId, variantIndex);
   syncSnapshot(snapshot);
+  // Stars key on immutable variant IDs — prune so compaction can never retarget a star.
+  const surviving = useSnapshotStore.getState().messagesById[messageId]?.variants.map((v) => v.id) ?? [];
+  useMessageAiEditorStore.getState().pruneStaleStars(brandId<MessageId>(messageId), surviving);
 }
 
 export async function switchChatAction(chatId: ChatId): Promise<void> {
@@ -609,6 +643,11 @@ export async function deleteObjectiveShortTermGoalAction(chatId: ChatId, goalId:
 
 export async function selectObjectiveShortTermGoalAction(chatId: ChatId, goalId: string): Promise<void> {
   const snapshot = await selectObjectiveShortTermGoal(chatId, goalId);
+  syncSnapshot(snapshot);
+}
+
+export async function updateChatDynamicPromptAction(chatId: ChatId, content: string): Promise<void> {
+  const snapshot = await updateChatDynamicPrompt(chatId, content);
   syncSnapshot(snapshot);
 }
 

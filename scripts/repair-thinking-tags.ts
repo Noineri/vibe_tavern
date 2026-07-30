@@ -8,8 +8,18 @@
  * Usage: bun run scripts/repair-thinking-tags.ts [path-to-db]
  */
 import { Database } from "bun:sqlite";
+import { parseArgs } from "node:util";
 
-const DB_PATH = process.argv[2] || "data/vibe-tavern.db";
+const args = process.argv.slice(2);
+const { tokens } = parseArgs({
+  args,
+  options: {},
+  strict: false,
+  allowPositionals: true,
+  tokens: true,
+});
+const firstArgIndex = tokens[0]?.index;
+const DB_PATH = firstArgIndex === undefined ? "data/vibe-tavern.db" : (args[firstArgIndex] ?? "data/vibe-tavern.db");
 
 const db = new Database(DB_PATH);
 db.exec("PRAGMA journal_mode = WAL");

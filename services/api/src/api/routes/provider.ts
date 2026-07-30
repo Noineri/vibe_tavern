@@ -14,6 +14,10 @@ export function createProviderRoutes(runtime: ProviderRuntimeApi) {
       }
       return c.json(profiles);
     })
+    .patch("/api/providers/reorder", zValidator("json", schemas.reorderProviderProfilesSchema), async (c) => {
+      const body = c.req.valid("json");
+      return c.json(await runtime.reorderProviderProfiles(body.updates));
+    })
     .get("/api/providers/:providerId", async (c) => {
       return c.json(await runtime.fetchProviderProfile(c.req.param("providerId")));
     })
@@ -72,14 +76,14 @@ export function createProviderRoutes(runtime: ProviderRuntimeApi) {
         throw providerError(err instanceof Error ? err.message : "Failed to fetch provider models.");
       }
     })
-    .get("/api/providers/:providerId/model-favorites", async (c) => {
-      return c.json(await runtime.listFavoriteProviderModels(c.req.param("providerId")));
+    .get("/api/providers/:providerId/model-favorites", zValidator("query", schemas.favoriteProviderModelQuerySchema), async (c) => {
+      return c.json(await runtime.listFavoriteProviderModels(c.req.param("providerId"), c.req.valid("query").scope));
     })
     .post("/api/providers/:providerId/model-favorites", zValidator("json", schemas.favoriteProviderModelSchema), async (c) => {
       return c.json(await runtime.addFavoriteProviderModel(c.req.param("providerId"), c.req.valid("json")), 201);
     })
-    .delete("/api/providers/:providerId/model-favorites", zValidator("json", schemas.favoriteProviderModelSchema.pick({ modelId: true })), async (c) => {
-      await runtime.removeFavoriteProviderModel(c.req.param("providerId"), c.req.valid("json").modelId);
+    .delete("/api/providers/:providerId/model-favorites", zValidator("json", schemas.favoriteProviderModelSchema.pick({ modelId: true, scope: true })), async (c) => {
+      await runtime.removeFavoriteProviderModel(c.req.param("providerId"), c.req.valid("json"));
       return c.json({ ok: true });
     })
     // ── Per-model settings overlay (binding) ──
@@ -107,7 +111,7 @@ export function createProviderRoutes(runtime: ProviderRuntimeApi) {
       if (!model) {
         return c.json({ error: "model is required." }, 400);
       }
-      return c.json(await runtime.testProviderChatByProfile(c.req.param("providerId"), model));
+      return c.json(await runtime.testProviderChatByProfile(c.req.param("providerId"), model, body.transport));
     })
     // ── Tokenize ──
     .post("/api/tokenize", zValidator("json", schemas.tokenizeSchema), async (c) => {

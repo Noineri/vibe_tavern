@@ -22,6 +22,17 @@ export {
 } from "./navigation-store.js";
 
 export {
+  useDiceStore,
+  useDiceDefinitions,
+  useDiceLanes,
+  useDiceLastError,
+  useDiceRolling,
+  type DiceScopeState,
+  type DiceActions,
+  type DiceRollIntent,
+} from "./dice-store.js";
+
+export {
   useProviderStore,
   type ProviderStore,
   type ProviderState,
@@ -46,3 +57,9 @@ export {
   useMacroContext,
   type DisplayMessage,
 } from "./chat-selectors.js";
+
+export {
+  useChatNotifications,
+  type SummaryBadgeStatus,
+  type SummaryReady,
+} from "./chat-notifications-store.js";

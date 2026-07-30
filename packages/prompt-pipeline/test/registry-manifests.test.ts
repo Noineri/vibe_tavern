@@ -8,9 +8,13 @@ describe("prompt assembly registries", () => {
   it("registers an assembler for every AI assistant mode", () => {
     expect(Object.keys(AI_ASSISTANT_ASSEMBLERS).sort()).toEqual([
       "chat_impersonate",
+      "dice_script",
       "lore_entry",
       "lore_keys",
       "md_import",
+      "message_edit",
+      "message_merge",
+      "scene_rules",
       "scene_schema",
       "script",
       "vision_describe",

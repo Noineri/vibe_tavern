@@ -4,10 +4,10 @@ import type { SessionRuntime } from "../../runtime/session/session-runtime.js";
 export class ImportExportAdapter implements ImportExportRuntimeApi {
 	constructor(private readonly sessionRuntime: SessionRuntime) {}
 
-	importJson = (body: { fileName: string; jsonText: string; chatId?: string; skipExisting?: boolean; lean?: boolean }) =>
+	importJson = (body: { fileName: string; jsonText?: string; monolithText?: string; chatId?: string; skipExisting?: boolean; lean?: boolean }) =>
 		this.sessionRuntime.importJson(body);
 
-	importJsonBatch = (body: { items: Array<{ fileName: string; jsonText: string; chatId?: string; skipExisting?: boolean }>; lean?: boolean }) =>
+	importJsonBatch = (body: { items: Array<{ fileName: string; jsonText?: string; monolithText?: string; chatId?: string; skipExisting?: boolean }>; lean?: boolean }) =>
 		this.sessionRuntime.importJsonBatch(body);
 
 	scanSillyTavernDirectory = (dirPath: string) =>

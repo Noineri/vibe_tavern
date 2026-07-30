@@ -5,6 +5,7 @@ import { resolveStoreRuntime, type StoreClock, type StoreIdGenerator } from '../
 import type { ContentStore } from '../content-store.js';
 import { STORAGE_FOLDERS } from '../file-store.js';
 import type { CharacterFilterEntry } from '@vibe-tavern/domain';
+import { LOREBOOK_DEFAULTS } from '@vibe-tavern/domain';
 
 /**
  * Parse a raw `characterFilterJson` value into the canonical `CharacterFilterEntry[]`
@@ -96,6 +97,55 @@ export interface CreateLoreEntryData {
 }
 
 export type UpdateLoreEntryData = Partial<CreateLoreEntryData>;
+
+// ─── Co-Author lore draft Apply (CTX-L2, Wave 4) ──────────────────────────────
+
+/**
+ * The co-author lore draft bundle persisted by Apply. Structurally identical
+ * to the api-contracts `CoauthorLoreBundle` — the store (packages/db) cannot
+ * import api-contracts (dependency graph: db ← domain only), so the shape is
+ * re-declared here and the caller passes the contract bundle verbatim (TS
+ * structural typing accepts it without a forbidden import).
+ *
+ * `id`s are PREALLOCATED in the request-local draft engine and become the DB
+ * primary keys; Apply is idempotent (re-Apply upserts the same rows). The
+ * scopeType→owner mapping mirrors `createLorebook`: a 'character'-scoped draft
+ * book is written with `characterId` set so the activation engine (FK ∪
+ * junction) finds it.
+ */
+export interface CoauthorLoreDraftBundle {
+  lorebooks: Array<{
+    id: string;
+    name: string;
+    description: string;
+    scopeType: 'global' | 'character' | 'persona' | 'chat';
+    enabled: boolean;
+    /** CE-A1: activation overrides authored by the co-author. Apply falls back to `LOREBOOK_DEFAULTS` when absent. */
+    scanDepth?: number;
+    tokenBudget?: number;
+    recursiveScanning?: boolean;
+    /** CE-B1 review metadata; Apply already routes create/edit via PK upsert. */
+    mode?: 'create' | 'edit';
+  }>;
+  entries: Array<{
+    id: string;
+    lorebookId: string;
+    title: string;
+    content: string;
+    keys: string[];
+    secondaryKeys: string[];
+    constant: boolean;
+    position: string;
+    depth: number;
+    /** CE-A2: activation logic / match mode (LORE_LOGIC); falls back to 'and_any' when absent. */
+    logic?: string;
+    enabled: boolean;
+    /** CE-B1 review metadata; Apply already routes create/edit via PK upsert. */
+    mode?: 'create' | 'edit';
+    /** CE-B2: verified persisted parent absent from this proposal bundle. */
+    parentMode?: 'persisted';
+  }>;
+}
 
 // ─── Return types ─────────────────────────────────────────────────────────────
 
@@ -570,11 +620,16 @@ export class LorebookStore {
    */
   async reorderEntries(lorebookId: string, updates: Array<{ id: string; sortOrder: number; position?: string }>): Promise<LoreEntry[]> {
     const now = this.clock.now();
-    await this.db.transaction(async (tx) => {
+    // Synchronous callback (ASYNC_TRANSACTION_AUDIT step 3): drizzle-orm 0.38.4
+    // + bun:sqlite commits at the end of the callback's synchronous prefix, so
+    // an async callback's post-await throw is never rolled back. Keeping this
+    // synchronous means a failure partway through the reorder rolls the earlier
+    // updates back — the prior complete order survives.
+    this.db.transaction((tx) => {
       for (const u of updates) {
         const values: Partial<typeof loreEntries.$inferInsert> = { sortOrder: u.sortOrder, updatedAt: now };
         if (u.position !== undefined) values.position = u.position;
-        await tx
+        tx
           .update(loreEntries)
           .set(values)
           .where(and(eq(loreEntries.id, u.id), eq(loreEntries.lorebookId, lorebookId)))
@@ -650,6 +705,143 @@ export class LorebookStore {
     if (this.content && lorebookId) {
       await this.syncFile(lorebookId);
     }
+  }
+
+  /**
+   * CTX-L2: persist a co-author lore draft bundle as character-scoped lorebooks
+   * + entries using the PREALLOCATED draft ids, IDEMPOTENTLY. This is the sole
+   * persistence boundary for lore proposals — tool execution only mutates the
+   * request-local draft state; nothing reaches SQLite until Apply. Re-Apply
+   * (same ids) upserts the same rows rather than creating duplicates; a first
+   * Apply inserts. Runs in ONE transaction so a partial failure rolls back the
+   * whole graph. Dependency validation: every entry's parent lorebook must be
+   * present in the bundle (the draft engine enforces this, but Apply re-checks
+   * defensively). The scopeType→owner mapping mirrors `createLorebook` (a
+   * 'character'-scoped book sets `characterId`), so the activation engine (FK ∪
+   * junction) discovers the new book.
+   */
+  async applyCoauthorLoreDraft(
+    characterId: string,
+    bundle: CoauthorLoreDraftBundle,
+  ): Promise<{ lorebookIds: string[]; entryIds: string[] }> {
+    const bookIds = new Set(bundle.lorebooks.map((lb) => lb.id));
+    // CE-B2: an entry may reference a persisted parent lorebook NOT in the
+    // bundle (edit_lore_entry on a persisted entry, or add_lore_entry to an
+    // existing book). Accept a parent that exists in the DB in addition to one
+    // drafted in this bundle; only reject a parent that is neither.
+    const externalParentIds = [...new Set(
+      bundle.entries.map((e) => e.lorebookId).filter((id) => !bookIds.has(id)),
+    )];
+    const externalParentSet = externalParentIds.length
+      ? new Set((await this.db.select({ id: lorebooks.id }).from(lorebooks).where(inArray(lorebooks.id, externalParentIds))).map((r) => r.id))
+      : new Set<string>();
+    for (const entry of bundle.entries) {
+      if (!bookIds.has(entry.lorebookId) && !externalParentSet.has(entry.lorebookId)) {
+        throw new Error(
+          `applyCoauthorLoreDraft: entry '${entry.id}' references unknown parent lorebook '${entry.lorebookId}'`,
+        );
+      }
+    }
+
+    const now = this.clock.now();
+    const lorebookIds: string[] = [];
+    const entryIds: string[] = [];
+
+    // Synchronous callback (ASYNC_TRANSACTION_AUDIT step 3): see reorderEntries.
+    // syncFile runs AFTER this transaction commits (below), so it stays outside
+    // the DB callback — only synchronous bun:sqlite work happens here.
+    this.db.transaction((tx) => {
+      for (const lb of bundle.lorebooks) {
+        const charScoped = lb.scopeType === 'character';
+        tx
+          .insert(lorebooks)
+          .values({
+            id: lb.id,
+            name: lb.name,
+            description: lb.description,
+            scopeType: lb.scopeType,
+            scanDepth: lb.scanDepth ?? LOREBOOK_DEFAULTS.scanDepth,
+            tokenBudget: lb.tokenBudget ?? LOREBOOK_DEFAULTS.tokenBudget,
+            tokenBudgetPercent: null,
+            recursiveScanning: (lb.recursiveScanning ?? LOREBOOK_DEFAULTS.recursiveScanning) ? 1 : 0,
+            maxRecursionSteps: 5,
+            includeNames: 0,
+            minActivations: 0,
+            minActivationsDepthMax: 0,
+            overflowAlert: 0,
+            characterStrategy: 0,
+            sortOrder: 0,
+            enabled: lb.enabled ? 1 : 0,
+            characterId: charScoped ? characterId : null,
+            personaId: null,
+            chatId: null,
+            extensionsJson: '{}',
+            createdAt: now,
+            updatedAt: now,
+          })
+          .onConflictDoUpdate({
+            target: lorebooks.id,
+            // Re-Apply updates mutable fields (incl. CE-A1 activation params) but preserves createdAt + id.
+            set: {
+              name: lb.name,
+              description: lb.description,
+              scopeType: lb.scopeType,
+              scanDepth: lb.scanDepth ?? LOREBOOK_DEFAULTS.scanDepth,
+              tokenBudget: lb.tokenBudget ?? LOREBOOK_DEFAULTS.tokenBudget,
+              recursiveScanning: (lb.recursiveScanning ?? LOREBOOK_DEFAULTS.recursiveScanning) ? 1 : 0,
+              enabled: lb.enabled ? 1 : 0,
+              characterId: charScoped ? characterId : null,
+              updatedAt: now,
+            },
+          })
+          .run();
+        // CE-A1: a character-scoped lorebook is bound to its character via
+        // lorebook_links (idempotent), so the co-author's book is discoverable
+        // by the activation engine (FK ∪ junction) without the user binding it
+        // manually. Non-character scopes do not create a character link.
+        if (charScoped) {
+          tx
+            .insert(lorebookLinks)
+            .values({ lorebookId: lb.id, targetType: 'character', targetId: characterId })
+            .onConflictDoNothing()
+            .run();
+        }
+        lorebookIds.push(lb.id);
+      }
+      for (const e of bundle.entries) {
+        const fields = buildEntryInsert({
+          title: e.title,
+          content: e.content,
+          keys: e.keys,
+          secondaryKeys: e.secondaryKeys,
+          constant: e.constant,
+          position: e.position,
+          depth: e.depth,
+          logic: e.logic,
+          enabled: e.enabled,
+        });
+        tx
+          .insert(loreEntries)
+          .values({ id: e.id, lorebookId: e.lorebookId, createdAt: now, updatedAt: now, ...fields })
+          .onConflictDoUpdate({
+            target: loreEntries.id,
+            set: { lorebookId: e.lorebookId, updatedAt: now, ...buildEntryPatch({
+              title: e.title, content: e.content, keys: e.keys, secondaryKeys: e.secondaryKeys,
+              constant: e.constant, position: e.position, depth: e.depth, logic: e.logic, enabled: e.enabled,
+            }) },
+          })
+          .run();
+        entryIds.push(e.id);
+      }
+    });
+
+    // Dual-write canonical JSON files after the transaction commits (mirrors
+    // createLorebook/createEntry's syncFile calls).
+    for (const id of lorebookIds) {
+      await this.syncFile(id);
+    }
+
+    return { lorebookIds, entryIds };
   }
 
   // ─── Scope-aware listing (pipeline entry point) ────────────────────────────
@@ -784,10 +976,26 @@ export class LorebookStore {
    * Replace all links for a lorebook. Deletes existing and inserts new ones in a transaction.
    */
   async setLinks(lorebookId: string, links: Array<{ targetType: string; targetId: string }>): Promise<LorebookLink[]> {
-    await this.db.transaction(async (tx) => {
-      await tx.delete(lorebookLinks).where(eq(lorebookLinks.lorebookId, lorebookId)).run();
-      for (const link of links) {
-        await tx.insert(lorebookLinks).values({
+    // Dedup by (targetType, targetId) BEFORE the delete: the junction table
+    // has a composite PK on those columns, so a duplicate tuple in the input
+    // would violate the PK on the second insert — AFTER the old set is already
+    // deleted, leaving the graph empty. Normalizing first keeps the replace whole.
+    const seen = new Set<string>();
+    const unique: Array<{ targetType: string; targetId: string }> = [];
+    for (const link of links) {
+      const key = JSON.stringify([link.targetType, link.targetId]);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      unique.push(link);
+    }
+
+    // Synchronous callback (ASYNC_TRANSACTION_AUDIT step 3): see reorderEntries.
+    // A failure on a later link insert rolls the delete back too — the prior
+    // complete graph survives instead of being wiped to empty.
+    this.db.transaction((tx) => {
+      tx.delete(lorebookLinks).where(eq(lorebookLinks.lorebookId, lorebookId)).run();
+      for (const link of unique) {
+        tx.insert(lorebookLinks).values({
           lorebookId,
           targetType: link.targetType,
           targetId: link.targetId,

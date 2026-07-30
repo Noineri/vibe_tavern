@@ -2,19 +2,17 @@ import { createStoreContainer, type StoreContainer } from '@vibe-tavern/db';
 import { resolve } from 'node:path';
 
 function resolveRootDir(): string {
-  return resolve(process.env.RP_PLATFORM_ROOT_DIR ?? process.cwd());
+  return resolve(process.env.VIBE_TAVERN_ROOT_DIR ?? process.cwd());
 }
 
 function resolveDataDir(rootDir: string, dataDir?: string): string {
   if (dataDir) return resolve(dataDir);
-  if (process.env.RP_PLATFORM_DATA_DIR) return resolve(process.env.RP_PLATFORM_DATA_DIR);
+  if (process.env.VIBE_TAVERN_DATA_DIR) return resolve(process.env.VIBE_TAVERN_DATA_DIR);
   return resolve(rootDir, 'data');
 }
 
 function resolveDbPath(rootDir: string, resolvedDataDir: string): string {
-  // VIBE_TAVERN_DB_PATH is the current app-specific env var. Keep
-  // RP_PLATFORM_DB_PATH as a backward-compatible alias for older setups.
-  const configuredDbPath = process.env.VIBE_TAVERN_DB_PATH ?? process.env.RP_PLATFORM_DB_PATH;
+  const configuredDbPath = process.env.VIBE_TAVERN_DB_PATH;
   if (configuredDbPath) return resolve(rootDir, configuredDbPath);
   return resolve(resolvedDataDir, 'vibe-tavern.db');
 }

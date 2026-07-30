@@ -21,23 +21,30 @@
  * behavior is verified via Playwright instead. What IS tested: every button →
  * handler → RPC wiring, validation gating, and mode transitions.
  */
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { render, fireEvent, waitFor } from "@testing-library/react";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
+import { useDomEnv } from "../../../test/dom-env.js";
+
+useDomEnv();
+const { fireEvent, render, waitFor } = await import("@testing-library/react");
 import { useModalStore } from "../../stores/modal-store.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
-import type { CoauthorModule } from "@vibe-tavern/api-contracts";
+import { useCoauthorSkillStore } from "../../stores/coauthor-skill-store.js";
+import type { CoauthorModule, CoauthorModuleCreate, CoauthorModuleUpdate } from "@vibe-tavern/api-contracts";
 
 // Mock useT at the module boundary — returns keys verbatim so assertions match.
 // Use `...real` spread (AGENTS.md mock.module gotcha): the mock persists
 // process-globally, so every OTHER export of context.js must survive for
 // subsequent test files that import LocaleProvider etc.
-vi.mock("../../i18n/context.js", async (importOriginal) => {
-	const i18nReal = await importOriginal() as typeof import("../../i18n/context.js");
-	return {
-		...i18nReal,
+const realI18nContext = await import("../../i18n/context.js");
+const realChatActions = await import("../../stores/api-actions/chat-actions.js");
+const realSkillApi = await import("../../api/skill-api.js");
+const realMasterDetailModal = await import("../shared/MasterDetailModal.js");
+const realDestructiveConfirmModal = await import("../shared/destructive-confirm-modal.js");
+
+mock.module("../../i18n/context.js", () => ({
+		...realI18nContext,
 		useT: () => ({ t: (key: string) => key, tDynamic: (key: string) => key, locale: "en", setLocale: () => {}, ready: true }),
-	};
-});
+}));
 
 const SEED_MODULES: CoauthorModule[] = [
 	{
@@ -78,42 +85,51 @@ const USER_MODULE: CoauthorModule = {
 
 const ALL_MODULES = [...SEED_MODULES, USER_MODULE];
 
-// vi.hoisted: vi.mock (below) is hoisted above these consts, so its factory
-// would close over uninitialized bindings. Hoisting the fns alongside the
-// mock keeps the vi.mock factory and all test-body call sites unchanged.
+// Keep the bindings above the later mock.module registration.
 // `listCoauthorModulesAction`'s impl closes over ALL_MODULES lazily (invoked
 // at test runtime, by which point ALL_MODULES is initialized); ALL_MODULES is
 // declared above so TypeScript sees it before this destructure.
-const {
+const listCoauthorModulesAction = mock(() => Promise.resolve(ALL_MODULES));
+const setCoauthorModuleAction = mock(async (_chatId: string, _moduleId: string | null) => undefined);
+const createCoauthorModuleAction = mock(async (_input: CoauthorModuleCreate) => USER_MODULE);
+const updateCoauthorModuleAction = mock(async (_moduleId: string, _input: CoauthorModuleUpdate) => USER_MODULE);
+const deleteCoauthorModuleAction = mock(async (_moduleId: string) => undefined);
+
+mock.module("../../stores/api-actions/chat-actions.js", () => ({
+	...realChatActions,
 	listCoauthorModulesAction,
 	setCoauthorModuleAction,
 	createCoauthorModuleAction,
 	updateCoauthorModuleAction,
 	deleteCoauthorModuleAction,
-} = vi.hoisted(() => ({
-	listCoauthorModulesAction: vi.fn(() => Promise.resolve(ALL_MODULES)),
-	setCoauthorModuleAction: vi.fn<(chatId: string, moduleId: string | null) => Promise<void>>(async () => {}),
-	createCoauthorModuleAction: vi.fn(async () => ({}) as CoauthorModule),
-	updateCoauthorModuleAction: vi.fn(async (_id: string, _input: unknown) => ({}) as CoauthorModule),
-	deleteCoauthorModuleAction: vi.fn(async (_id: string) => {}),
 }));
 
-vi.mock("../../stores/api-actions/chat-actions.js", () => ({
-	listCoauthorModulesAction,
-	setCoauthorModuleAction,
-	createCoauthorModuleAction,
-	updateCoauthorModuleAction,
-	deleteCoauthorModuleAction,
+// CTX-S7: skill catalog the module editor's skill picker renders. Mocked so the
+// modal's `loadSkills()` on open resolves cleanly (no real fetch) and the
+// picker is exercised against a known catalog.
+const SKILL_CATALOG = {
+	entries: [
+		{ id: "general-writing", source: "builtin" as const, name: "General Writing", description: "Vivid prose.", manifestPath: "general-writing/SKILL.md", shadowsBuiltin: false },
+		{ id: "dialogue-generation", source: "builtin" as const, name: "Dialogue Generation", description: "Voice/dialogue.", manifestPath: "dialogue-generation/SKILL.md", shadowsBuiltin: false },
+	],
+	errors: [],
+};
+const listSkillsMock = mock(() => Promise.resolve(SKILL_CATALOG));
+mock.module("../../api/skill-api.js", () => ({
+	...realSkillApi,
+	listCoauthorSkills: listSkillsMock,
+	readCoauthorSkill: mock(),
+	importCoauthorSkills: mock(),
+	deleteCoauthorSkill: mock(),
 }));
 
 // MasterDetailModal passthrough: render master + detail + footer + headerActions
 // flat. Supports both node and render-prop children.
 // `...real` spread preserves MasterDetailMobileDrillDown + other exports for
 // subsequent test files (mock.module is process-global — AGENTS.md gotcha).
-vi.mock("../shared/MasterDetailModal.js", async (importOriginal) => {
-	const mdmReal = await importOriginal() as typeof import("../shared/MasterDetailModal.js");
-	return {
-		...mdmReal,
+
+mock.module("../shared/MasterDetailModal.js", () => ({
+		...realMasterDetailModal,
 		MasterDetailModal: ({ isOpen, onClose, masterContent, detailContent, footer, headerActions }: {
 		isOpen: boolean;
 		onClose: () => void;
@@ -136,14 +152,12 @@ vi.mock("../shared/MasterDetailModal.js", async (importOriginal) => {
 	},
 	MasterDetailMobileDrillDown: () => null,
 	useMasterDetail: () => ({ isMobile: false, isDetailOpen: true, openDetail: () => {}, closeDetail: () => {} }),
-	};
-});
+}));
 
 // DestructiveConfirmModal passthrough (also uses `...real` spread).
-vi.mock("../shared/destructive-confirm-modal.js", async (importOriginal) => {
-	const dcmReal = await importOriginal() as typeof import("../shared/destructive-confirm-modal.js");
-	return {
-		...dcmReal,
+
+mock.module("../shared/destructive-confirm-modal.js", () => ({
+		...realDestructiveConfirmModal,
 		DestructiveConfirmModal: ({ title, confirmLabel, onConfirm, onCancel }: {
 		title: string; body: React.ReactNode; confirmLabel: string;
 		onConfirm: () => void; onCancel: () => void;
@@ -154,14 +168,16 @@ vi.mock("../shared/destructive-confirm-modal.js", async (importOriginal) => {
 			<button type="button" data-testid="confirm-ok" onClick={onConfirm}>{confirmLabel}</button>
 		</div>
 	),
-	};
+}));
+
+let CoauthorModuleModal: typeof import("./CoauthorModuleModal.js").CoauthorModuleModal;
+beforeAll(async () => {
+	({ CoauthorModuleModal } = await import("./CoauthorModuleModal.js"));
 });
-
-const { CoauthorModuleModal } = await import("./CoauthorModuleModal.js");
-
 
 beforeEach(() => {
 	listCoauthorModulesAction.mockReturnValue(Promise.resolve(ALL_MODULES));
+	listSkillsMock.mockReturnValue(Promise.resolve(SKILL_CATALOG));
 	setCoauthorModuleAction.mockClear();
 	createCoauthorModuleAction.mockClear();
 	updateCoauthorModuleAction.mockClear();
@@ -171,6 +187,7 @@ beforeEach(() => {
 afterEach(() => {
 	useModalStore.setState({ isCoauthorModuleModalOpen: false });
 	useSnapshotStore.setState({ activeChat: null });
+	useCoauthorSkillStore.setState({ entries: [], errors: [], isLoading: false, hasLoaded: false });
 });
 
 function openModal() {
@@ -184,7 +201,7 @@ function setActiveChat(coauthorModuleId: string | null) {
 			characterId: "char_test",
 			mode: "coauthor",
 			coauthorModuleId,
-			coauthorLorebookIds: [],
+			coauthorContextLinks: [],
 		} as never,
 	});
 }
@@ -293,6 +310,22 @@ describe("CoauthorModuleModal (CS-25 manager)", () => {
 		expect(getByRole("button", { name: "write_examples" })).toBeTruthy();
 	});
 
+	it("surfaces lore tools as toggle pills (derived from the schema, not hardcoded)", async () => {
+		// Wave 4 lore tools must appear alongside the profile/greeting tools. The
+		// list is derived from COAUTHOR_TOOL_KEYS (= coauthorToolSetSchema), so this
+		// also pins that a newly-added schema key surfaces here automatically.
+		setActiveChat(null);
+		openModal();
+		const { getByTestId, getByRole } = render(<CoauthorModuleModal />);
+		await waitFor(() => expect(getByTestId("module-edit-btn-cmod_1")).toBeTruthy());
+		fireEvent.click(getByTestId("module-edit-btn-cmod_1"));
+		await waitFor(() => expect(getByRole("button", { name: "create_lorebook" })).toBeTruthy());
+		expect(getByRole("button", { name: "create_lore_entry" })).toBeTruthy();
+		expect(getByRole("button", { name: "set_lore_activation" })).toBeTruthy();
+		expect(getByRole("button", { name: "ai_write_lore_entry" })).toBeTruthy();
+		expect(getByRole("button", { name: "ai_generate_lore_keys" })).toBeTruthy();
+	});
+
 	it("toggling a write tool persists on save without disabling its edit sibling", async () => {
 		// USER_MODULE ships toolSet { edit_examples: true } — write_examples is off.
 		setActiveChat(null);
@@ -324,5 +357,90 @@ describe("CoauthorModuleModal (CS-25 manager)", () => {
 		await waitFor(() => expect(updateCoauthorModuleAction).toHaveBeenCalledTimes(1));
 		const input = updateCoauthorModuleAction.mock.calls[0][1] as { toolSet: Record<string, boolean> };
 		expect(input.toolSet).toStrictEqual({ edit_examples: true, edit_personality: true });
+	});
+});
+
+describe("CoauthorModuleModal — catalog-driven skill picker (CTX-S7)", () => {
+	it("renders the merged skill catalog as toggle chips (not a hardcoded list)", async () => {
+		setActiveChat(null);
+		openModal();
+		const { getByTestId, getByRole } = render(<CoauthorModuleModal />);
+		await waitFor(() => expect(getByTestId("module-edit-btn-cmod_1")).toBeTruthy());
+		fireEvent.click(getByTestId("module-edit-btn-cmod_1"));
+		// Catalog-driven: chips are the skill NAMES from the catalog, not the old
+		// hardcoded id list. Both catalog skills appear; the one this module
+		// binds (dialogue-generation) is active.
+		await waitFor(() => expect(getByRole("button", { name: "General Writing" })).toBeTruthy());
+		expect(getByRole("button", { name: "Dialogue Generation" })).toBeTruthy();
+		const bound = getByRole("button", { name: "Dialogue Generation" });
+		expect(bound.className).toContain("accent");
+	});
+
+	it("renders an orphan binding (skill no longer in the catalog) distinctly so it can be unbound", async () => {
+		// Empty catalog → the module's `dialogue-generation` binding is now orphaned.
+		listSkillsMock.mockReturnValue(Promise.resolve({ entries: [], errors: [] }));
+		setActiveChat(null);
+		openModal();
+		const { getByTestId } = render(<CoauthorModuleModal />);
+		await waitFor(() => expect(getByTestId("module-edit-btn-cmod_1")).toBeTruthy());
+		fireEvent.click(getByTestId("module-edit-btn-cmod_1"));
+		// The orphan chip is present (struck-through, danger) and unbinds on click.
+		const orphan = await waitFor(() => getByTestId("module-skill-orphan-dialogue-generation"));
+		expect(orphan.className).toContain("line-through");
+		fireEvent.click(orphan);
+		fireEvent.click(getByTestId("module-save-btn"));
+		await waitFor(() => expect(updateCoauthorModuleAction).toHaveBeenCalledTimes(1));
+		const input = updateCoauthorModuleAction.mock.calls[0][1] as { skillIds: string[] };
+		expect(input.skillIds).toEqual([]);
+	});
+});
+
+describe("CoauthorModuleModal — built-in Duplicate (CTX-M3)", () => {
+	it("built-in detail view shows a Duplicate button and stays read-only (no edit/delete)", async () => {
+		setActiveChat(null);
+		openModal();
+		const { getByTestId, queryByTestId } = render(<CoauthorModuleModal />);
+		await waitFor(() => expect(getByTestId("module-view-duplicate-btn")).toBeTruthy());
+		expect(queryByTestId("module-view-edit-btn")).toBeNull();
+		expect(queryByTestId("module-view-delete-btn")).toBeNull();
+	});
+
+	it("Duplicate seeds the editor with the resolved prompt + skills + tools + budget, and Save creates a user copy", async () => {
+		setActiveChat(null);
+		openModal();
+		const { getByTestId } = render(<CoauthorModuleModal />);
+		await waitFor(() => expect(getByTestId("module-view-duplicate-btn")).toBeTruthy());
+		fireEvent.click(getByTestId("module-view-duplicate-btn"));
+		const nameInput = await waitFor(() => getByTestId("module-name-input") as HTMLInputElement);
+		// Name carries the copy-suffix key appended (the useT mock returns keys
+		// verbatim, per the file convention; the real " (copy)" value is pinned
+		// by i18n:check). Proves the built-in name is the seed of the new draft.
+		expect(nameInput.value).toBe("Default Co-Author" + "coauthor.module.duplicate_suffix");
+		fireEvent.click(getByTestId("module-save-btn"));
+		await waitFor(() => expect(createCoauthorModuleAction).toHaveBeenCalledTimes(1));
+		// The created user copy carries the built-in's RESOLVED fields verbatim —
+		// later seed changes never mutate it (it is persisted with its own text).
+		const created = createCoauthorModuleAction.mock.calls[0][0] as {
+			name: string; basePrompt: string; skillIds: string[];
+			toolSet: Record<string, boolean>; maxSteps: number;
+		};
+		expect(created.name).toBe("Default Co-Author" + "coauthor.module.duplicate_suffix");
+		expect(created.basePrompt).toBe("You are a co-author assistant. ...");
+		expect(created.skillIds).toEqual(["general-writing"]);
+		expect(created.toolSet.write_profile).toBe(true);
+		expect(created.toolSet.edit_personality).toBe(true);
+		expect(created.maxSteps).toBe(5);
+	});
+
+	it("Duplicate then clearing the name blocks Save with the validation toast (no RPC)", async () => {
+		setActiveChat(null);
+		openModal();
+		const { getByTestId } = render(<CoauthorModuleModal />);
+		await waitFor(() => expect(getByTestId("module-view-duplicate-btn")).toBeTruthy());
+		fireEvent.click(getByTestId("module-view-duplicate-btn"));
+		const nameInput = await waitFor(() => getByTestId("module-name-input") as HTMLInputElement);
+		fireEvent.change(nameInput, { target: { value: "" } });
+		fireEvent.click(getByTestId("module-save-btn"));
+		await waitFor(() => expect(createCoauthorModuleAction).not.toHaveBeenCalled());
 	});
 });

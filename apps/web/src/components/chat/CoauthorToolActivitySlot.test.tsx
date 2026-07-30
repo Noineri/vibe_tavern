@@ -10,19 +10,34 @@
  * `write_profile`. Historical rows without input show their summary but must
  * not fall back to printing the full proposed snapshot.
  */
-import { describe, it, expect, vi, afterEach } from "vitest";
-import { render, fireEvent } from "@testing-library/react";
-import { CoauthorToolActivitySlot, ToolActivityCard } from "./CoauthorToolActivitySlot.js";
+import { beforeAll, describe, it, expect, mock, afterEach } from "bun:test";
 import { useCoauthorTurnStore, type CoauthorToolActivity } from "../../stores/coauthor-turn-store.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
+import { useChatStore } from "../../stores/index.js";
+import type { ChatGenerationState } from "../../stores/chat-store.js";
 import type { AppMessage } from "../../api/types.js";
 import { brandId, type ChatBranchId, type ChatId, type MessageId, type MessageVariantId } from "@vibe-tavern/domain";
+import { useDomEnv } from "../../../test/dom-env.js";
+
+useDomEnv();
+
+const realI18nContext = await import("../../i18n/context.js");
 
 // Mock useT at the module boundary — the card imports i18n for labels.
 // Returns the key verbatim so assertions can match on stable key strings.
-vi.mock("../../i18n/context.js", () => ({
+mock.module("../../i18n/context.js", () => ({
+	...realI18nContext,
 	useT: () => ({ t: (key: string) => key, tDynamic: (key: string) => key, locale: "en", setLocale: () => {}, ready: true }),
 }));
+
+let CoauthorToolActivitySlot: typeof import("./CoauthorToolActivitySlot.js").CoauthorToolActivitySlot;
+let ToolActivityCard: typeof import("./CoauthorToolActivitySlot.js").ToolActivityCard;
+let render: typeof import("@testing-library/react").render;
+let fireEvent: typeof import("@testing-library/react").fireEvent;
+beforeAll(async () => {
+	({ render, fireEvent } = await import("@testing-library/react"));
+	({ CoauthorToolActivitySlot, ToolActivityCard } = await import("./CoauthorToolActivitySlot.js"));
+});
 
 // A full cumulative profile.md (what `proposed` carries for profile-target ops).
 // Section ops must NOT render this verbatim — only write_profile may.
@@ -43,6 +58,23 @@ function activity(over: Partial<CoauthorToolActivity>): CoauthorToolActivity {
 afterEach(() => {
 	useSnapshotStore.getState().clear();
 	useCoauthorTurnStore.setState({ turnsByChat: {} });
+	useChatStore.setState({ generations: {} });
+});
+
+/** Minimal in-progress generation entry — only existence matters for the
+ * `s.generations[chatId] != null` (isGenerating) selector in the slot. */
+const genState = (over: Partial<ChatGenerationState> = {}): ChatGenerationState => ({
+	isSending: true,
+	streamingMessageId: null,
+	streamingText: "",
+	streamingRevealedText: "",
+	streamingReasoningText: "",
+	generationStatus: "streaming" as ChatGenerationState["generationStatus"],
+	pendingUserMessageContent: null,
+	pendingUserMessageAttachments: [],
+	pendingDiceRolls: [],
+	abortController: null,
+	...over,
 });
 
 describe("CoauthorToolActivitySlot — persisted carrier + final response", () => {
@@ -143,6 +175,84 @@ describe("CoauthorToolActivitySlot — persisted carrier + final response", () =
 	});
 });
 
+describe("CoauthorToolActivitySlot — streaming activities stay off the committed last assistant during generation", () => {
+	it("does NOT render an active activity on the committed last assistant while a generation is in progress", () => {
+		const chatId = brandId<ChatId>("chat_gen");
+		const branchId = brandId<ChatBranchId>("branch_gen");
+		const assistantId = brandId<MessageId>("assistant_prev");
+		const createdAt = "2026-07-24T00:00:00.000Z";
+		const assistant: AppMessage = {
+			chatId,
+			branchId,
+			id: assistantId,
+			modelId: null,
+			sceneTracker: null,
+			state: "complete",
+			createdAt,
+			updatedAt: createdAt,
+			role: "assistant",
+			authorType: "assistant",
+			position: 0,
+			content: "Earlier turn text.",
+			variants: [],
+			selectedVariantIndex: null,
+		};
+		useSnapshotStore.setState({
+			messageOrder: [assistantId],
+			messagesById: { [assistantId]: assistant },
+		});
+		useCoauthorTurnStore.setState({
+			turnsByChat: { [chatId]: [activity({ toolCallId: "call_stream", status: "streaming", summary: "ACTIVE_EDIT" })] },
+		});
+		// Generation in progress for this chat → isGenerating = true.
+		useChatStore.setState({ generations: { [chatId]: genState() } });
+
+		const { queryByText } = render(
+			<CoauthorToolActivitySlot chatId={chatId} messageId={assistantId} isStreaming={false} />,
+		);
+		// The active (streaming) activity must NOT glom onto the committed last
+		// assistant while generation is in progress — it belongs on the streaming
+		// pending-assistant bubble. Regression: tool calls glued to the previous
+		// message until the stream finished.
+		expect(queryByText("ACTIVE_EDIT")).toBeNull();
+	});
+
+	it("renders the active activity on the committed last assistant once generation ends (review)", () => {
+		const chatId = brandId<ChatId>("chat_review");
+		const branchId = brandId<ChatBranchId>("branch_review");
+		const assistantId = brandId<MessageId>("assistant_last");
+		const createdAt = "2026-07-24T00:00:00.000Z";
+		const assistant: AppMessage = {
+			chatId,
+			branchId,
+			id: assistantId,
+			modelId: null,
+			sceneTracker: null,
+			state: "complete",
+			createdAt,
+			updatedAt: createdAt,
+			role: "assistant",
+			authorType: "assistant",
+			position: 0,
+			content: "Final turn text.",
+			variants: [],
+			selectedVariantIndex: null,
+		};
+		useSnapshotStore.setState({
+			messageOrder: [assistantId],
+			messagesById: { [assistantId]: assistant },
+		});
+		useCoauthorTurnStore.setState({
+			turnsByChat: { [chatId]: [activity({ toolCallId: "call_done", status: "done", summary: "REVIEW_EDIT" })] },
+		});
+		// No generation entry → isGenerating = false → review path renders it.
+		const { getByText } = render(
+			<CoauthorToolActivitySlot chatId={chatId} messageId={assistantId} isStreaming={false} />,
+		);
+		expect(getByText("REVIEW_EDIT")).toBeDefined();
+	});
+});
+
 describe("ToolActivityCard — operation previews (CED-6)", () => {
 	it("an exact-edit card shows only the SEARCH/REPLACE deltas, never the full profile", () => {
 		const { getByText, queryByText } = render(
@@ -155,9 +265,16 @@ describe("ToolActivityCard — operation previews (CED-6)", () => {
 			/>,
 		);
 		fireEvent.click(getByText("sharpen"));
-		// The scoped search + replace content is shown.
-		expect(getByText("Bold and direct.")).toBeDefined();
+		// The scoped search + replace content is shown inside the original
+		// max-height scrolling preview. AnimatedDisclosure owns clipping on its
+		// outer motion wrapper; scrolling must remain on this inner content box.
+		const searchText = getByText("Bold and direct.");
+		expect(searchText).toBeDefined();
 		expect(getByText("Bold, direct, and a little cruel.")).toBeDefined();
+		const scrollBody = searchText.closest(".overflow-auto") as HTMLElement | null;
+		expect(scrollBody).toBeTruthy();
+		expect(scrollBody?.classList.contains("max-h-48")).toBe(true);
+		expect(scrollBody?.parentElement?.style.overflow).toBe("hidden");
 		// A section the edit did NOT touch must NOT leak → we are not printing the full profile.
 		expect(queryByText("A quiet bar.")).toBeNull();
 		expect(queryByText(/# EXAMPLES/)).toBeNull();
@@ -235,6 +352,92 @@ describe("ToolActivityCard — operation previews (CED-6)", () => {
 		// The full cumulative profile must NOT be printed as a fallback.
 		expect(queryByText("A quiet bar.")).toBeNull();
 		expect(queryByText(/# EXAMPLES/)).toBeNull();
+	});
+});
+
+describe("ToolActivityCard — lore tool previews (CTX-L3)", () => {
+	it("create_lorebook shows the book name + description instead of 'unavailable'", () => {
+		const { getByText, queryByText } = render(
+			<ToolActivityCard activity={activity({
+				toolName: "create_lorebook",
+				summary: "Drafted a new lorebook.",
+				args: { name: "Castle Anvil", description: "Seat of the crown.", summary: "Drafted a new lorebook." },
+			})} />,
+		);
+		fireEvent.click(getByText("Drafted a new lorebook."));
+		expect(getByText("coauthor_tool_op_lore_book")).toBeDefined();
+		expect(getByText(/Castle Anvil/)).toBeDefined();
+		expect(getByText(/Seat of the crown\./)).toBeDefined();
+		expect(queryByText("coauthor_tool_op_unavailable")).toBeNull();
+	});
+
+	it("create_lore_entry shows activation keys as chips + the entry content", () => {
+		const { getByText } = render(
+			<ToolActivityCard activity={activity({
+				toolName: "create_lore_entry",
+				summary: "Added the Castle entry.",
+				args: { lorebookId: "lb1", title: "Castle", content: "An ancient stronghold.", keys: ["castle", "fortress"], summary: "Added the Castle entry." },
+			})} />,
+		);
+		fireEvent.click(getByText("Added the Castle entry."));
+		expect(getByText("coauthor_tool_op_lore_entry")).toBeDefined();
+		expect(getByText("castle")).toBeDefined();
+		expect(getByText("fortress")).toBeDefined();
+		expect(getByText("An ancient stronghold.")).toBeDefined();
+	});
+
+	it("ai_write_lore_entry shows the delegated instruction brief", () => {
+		const { getByText } = render(
+			<ToolActivityCard activity={activity({
+				toolName: "ai_write_lore_entry",
+				summary: "Wrote the backstory.",
+				args: { entryId: "e1", instruction: "Cover the originating incident and the sensory trigger.", summary: "Wrote the backstory." },
+			})} />,
+		);
+		fireEvent.click(getByText("Wrote the backstory."));
+		expect(getByText("coauthor_tool_op_lore_write")).toBeDefined();
+		expect(getByText("Cover the originating incident and the sensory trigger.")).toBeDefined();
+	});
+
+	it("ai_generate_lore_keys shows keyTarget + mode params (default both / replace)", () => {
+		const { getByText } = render(
+			<ToolActivityCard activity={activity({
+				toolName: "ai_generate_lore_keys",
+				summary: "Generated activation keys.",
+				args: { entryId: "e1", summary: "Generated activation keys." },
+			})} />,
+		);
+		fireEvent.click(getByText("Generated activation keys."));
+		expect(getByText("coauthor_tool_op_lore_keys")).toBeDefined();
+		expect(getByText("ai_quickpill_key_target_both")).toBeDefined();
+		expect(getByText("coauthor_tool_op_replace")).toBeDefined();
+	});
+
+	it("ai_generate_lore_keys reflects keyTarget=primary + appendMode (augment)", () => {
+		const { getByText, queryByText } = render(
+			<ToolActivityCard activity={activity({
+				toolName: "ai_generate_lore_keys",
+				summary: "Added primary triggers.",
+				args: { entryId: "e1", keyTarget: "primary", appendMode: true, summary: "Added primary triggers." },
+			})} />,
+		);
+		fireEvent.click(getByText("Added primary triggers."));
+		expect(getByText("ai_quickpill_key_target_primary")).toBeDefined();
+		expect(getByText("ai_quickpill_append")).toBeDefined();
+		expect(queryByText("ai_quickpill_key_target_secondary")).toBeNull();
+	});
+
+	it("set_lore_activation shows the constant toggle", () => {
+		const { getByText } = render(
+			<ToolActivityCard activity={activity({
+				toolName: "set_lore_activation",
+				summary: "Made the entry constant.",
+				args: { entryId: "e1", constant: true, summary: "Made the entry constant." },
+			})} />,
+		);
+		fireEvent.click(getByText("Made the entry constant."));
+		expect(getByText("coauthor_tool_op_lore_activation")).toBeDefined();
+		expect(getByText("coauthor_tool_op_lore_constant")).toBeDefined();
 	});
 });
 

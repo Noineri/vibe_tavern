@@ -77,6 +77,12 @@ describe("createPromptPresetSchema", () => {
     expectReject(createPromptPresetSchema.safeParse({ ...base, authorsNoteRole: "tool" }));
   });
 
+  it("accepts a boolean mergeConsecutiveRoles flag and rejects non-booleans", () => {
+    expect(createPromptPresetSchema.safeParse({ ...validCreatePreset(), mergeConsecutiveRoles: true }).success).toBe(true);
+    expect(createPromptPresetSchema.safeParse({ ...validCreatePreset(), mergeConsecutiveRoles: false }).success).toBe(true);
+    expectReject(createPromptPresetSchema.safeParse({ ...validCreatePreset(), mergeConsecutiveRoles: "yes" }));
+  });
+
   // --- promptOrder array-of-objects ----------------------------------------
 
   it("accepts a minimal promptOrder entry (identifier + enabled only)", () => {
@@ -118,6 +124,7 @@ describe("createPromptPresetSchema", () => {
         kind: "built_in",
         zone: "before_chat",
         depth: 4,
+        role: "user",
       }],
     });
     expect(result.success).toBe(true);
@@ -162,6 +169,21 @@ describe("createPromptPresetSchema", () => {
     expect(withDepth(undefined).success).toBe(true);
     expect(withDepth(5).success).toBe(true);
     expectReject(withDepth("5"));
+  });
+
+  // role is `.enum(["system","user","assistant"]).optional()` — APC-2b.
+  it("accepts each promptOrder role enum member and rejects an unknown one", () => {
+    const base = validCreatePreset();
+    for (const role of ["system", "user", "assistant"]) {
+      expect(createPromptPresetSchema.safeParse({
+        ...base,
+        promptOrder: [{ identifier: "x", enabled: true, role }],
+      }).success).toBe(true);
+    }
+    expectReject(createPromptPresetSchema.safeParse({
+      ...base,
+      promptOrder: [{ identifier: "x", enabled: true, role: "tool" }],
+    }));
   });
 
   it("accepts a non-empty and empty customInjections array (array of unknown)", () => {

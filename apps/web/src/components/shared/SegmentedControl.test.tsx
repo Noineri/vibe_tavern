@@ -20,19 +20,27 @@
  *   - the layout props (`fill`, `compact`, `wrap`, `mobileFill`) apply their
  *     container classes so call sites' layouts does not regress
  */
-import { describe, it, expect, vi } from "vitest";
-import { render, fireEvent, getAllByRole } from "@testing-library/react";
+import { beforeAll, describe, it, expect, mock } from "bun:test";
+import { render, fireEvent } from "@testing-library/react";
+import { useDomEnv } from "../../../test/dom-env.js";
+
+useDomEnv();
 
 // CustomTooltip (Radix Tooltip) needs a TooltipProvider ancestor that the
 // isolated render here doesn't mount. The app mounts one globally; tests mock
 // it to a passthrough (same pattern as VibeMdView.test.tsx /
 // CoauthorInputArea.test.tsx). This test cares that SegmentedControl correctly
 // delegates the segment into the tooltip slot — not about tooltip behavior.
-vi.mock("./Tooltip.js", () => ({
+const realTooltip = await import("./Tooltip.js");
+mock.module("./Tooltip.js", () => ({
+	...realTooltip,
 	CustomTooltip: ({ children }: { children: React.ReactNode }) => children,
 }));
 
-import { SegmentedControl } from "./SegmentedControl.js";
+let SegmentedControl: typeof import("./SegmentedControl.js").SegmentedControl;
+beforeAll(async () => {
+	({ SegmentedControl } = await import("./SegmentedControl.js"));
+});
 
 
 const opts = [
@@ -63,7 +71,7 @@ describe("SegmentedControl — structure", () => {
 
 describe("SegmentedControl — selection", () => {
 	it("clicking an inactive segment fires onChange with its value", () => {
-		const onChange = vi.fn();
+		const onChange = mock();
 		const { getByText } = render(
 			<SegmentedControl value="a" options={opts} onChange={onChange} />,
 		);
@@ -76,7 +84,7 @@ describe("SegmentedControl — selection", () => {
 		// The radio invariant. Today the component fires onChange(sameValue) on
 		// re-click; under RadioGroup the click is a no-op. Both are acceptable
 		// so long as onChange is NEVER called with "" / null / undefined.
-		const onChange = vi.fn();
+		const onChange = mock();
 		const { getByText } = render(
 			<SegmentedControl value="b" options={opts} onChange={onChange} />,
 		);
@@ -89,11 +97,29 @@ describe("SegmentedControl — selection", () => {
 	});
 
 	it("disabled blocks every segment", () => {
-		const onChange = vi.fn();
+		const onChange = mock();
 		const { getByText } = render(
 			<SegmentedControl value="a" options={opts} onChange={onChange} disabled />,
 		);
 		fireEvent.click(getByText("Banana"));
+		expect(onChange).not.toHaveBeenCalled();
+	});
+
+	it("an individually disabled option cannot be selected", () => {
+		const onChange = mock();
+		const { getByRole } = render(
+			<SegmentedControl
+				value="a"
+				options={[
+					{ value: "a", label: "Apple" },
+					{ value: "b", label: "Banana", disabled: true },
+				]}
+				onChange={onChange}
+			/>,
+		);
+		const disabled = getByRole("radio", { name: "Banana" });
+		expect(disabled.getAttribute("data-disabled")).not.toBeNull();
+		fireEvent.click(disabled);
 		expect(onChange).not.toHaveBeenCalled();
 	});
 });
@@ -132,7 +158,7 @@ describe("SegmentedControl — option slots (load-bearing for VersionSwitcher)",
 	});
 
 	it("clicking a trailing action does not change the segment selection", () => {
-		const onChange = vi.fn();
+		const onChange = mock();
 		const { getByLabelText } = render(
 			<SegmentedControl
 				value="a"
@@ -159,7 +185,7 @@ describe("SegmentedControl — option slots (load-bearing for VersionSwitcher)",
 		// CustomTooltip wraps the segment; we only assert the segment still
 		// renders and is interactive. Tooltip-hover behavior is CustomTooltip's
 		// own concern, tested separately if at all.
-		const onChange = vi.fn();
+		const onChange = mock();
 		const { getAllByRole, getByText } = render(
 			<SegmentedControl
 				value="a"
@@ -233,6 +259,21 @@ describe("SegmentedControl — layout props", () => {
 		const { container } = render(
 			<SegmentedControl value="a" options={opts} onChange={() => {}} compact />,
 		);
+		const group = container.querySelector('[role="radiogroup"]')!;
+		expect(group.className).toMatch(/gap-0(?!\.)/);
+	});
+
+	it("dense applies a shorter mobile min-height than compact (desktop sizing preserved)", () => {
+		const { container } = render(
+			<SegmentedControl value="a" options={opts} onChange={() => {}} dense />,
+		);
+		const item = container.querySelector('[role="radio"]')!;
+		// Shorter mobile touch height than compact (min-h-7 28px vs min-h-9 36px).
+		expect(item.className).toMatch(/min-h-7/);
+		expect(item.className).not.toMatch(/min-h-9/);
+		// Desktop sizing unchanged (sm:min-h-0 natural height, same px/py as compact).
+		expect(item.className).toMatch(/sm:min-h-0/);
+		// dense shares compact's gap-0.
 		const group = container.querySelector('[role="radiogroup"]')!;
 		expect(group.className).toMatch(/gap-0(?!\.)/);
 	});

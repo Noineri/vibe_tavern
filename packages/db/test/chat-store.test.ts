@@ -124,6 +124,7 @@ CREATE TABLE chats (
   summary text DEFAULT '' NOT NULL,
   message_history_limit integer DEFAULT 0 NOT NULL,
   status text DEFAULT 'active' NOT NULL,
+  dynamic_prompt text DEFAULT '' NOT NULL,
   created_at text NOT NULL,
   updated_at text NOT NULL,
   FOREIGN KEY (character_id) REFERENCES characters(id) ON DELETE cascade,
@@ -419,7 +420,7 @@ describe("MessageStore — variant (swipe) semantics", () => {
     // dropped before, causing forked branches to lose the metadata bar's
     // model/preset segments.
     expect(selectedInFork!.modelId).toBe("anthropic/claude-sonnet-4");
-    expect(selectedInFork!.presetId).toBe("preset_1");
+    expect(selectedInFork!.presetName).toBe("preset_1");
   });
 
   test("addVariant does not duplicate content — regression for sentence cloning bug", async () => {
@@ -620,7 +621,7 @@ describe("MessageStore — variant (swipe) semantics", () => {
   });
 });
 
-describe("MessageStore — variant preset_id (Q2)", () => {
+describe("MessageStore — variant preset_name (Q2)", () => {
   let db: Awaited<ReturnType<typeof createTestDb>>;
   let messageStore: MessageStore;
 
@@ -632,71 +633,70 @@ describe("MessageStore — variant preset_id (Q2)", () => {
     messageStore = new MessageStore(db, { clock: testClock, idGenerator: testIdGen });
   });
 
-  test("addMessage with presetId → recorded on the selected variant (send/continue path)", async () => {
-    // Characterization for the message-meta preset bug. addMessage already
-    // wrote modelId to the selected variant but NOT presetId (only addVariant
-    // did). So ordinary sends / continues recorded the model in per-message
-    // meta but never the prompt preset, and the footer
-    // (time · tokens · model · preset) showed no preset for non-queue replies
-    // — only the queue (addVariant) path recorded it. addMessage must now
-    // record presetId on the selected variant just like it records modelId.
+  test("addMessage with presetName → baked on the selected variant (send/continue path)", async () => {
+    // Characterization for the message-meta preset field. The preset is stored
+    // as a baked NAME string (no FK to prompt_presets) — addMessage must record
+    // it on the selected variant just like it records modelId, so ordinary
+    // sends / continues show the preset in per-message meta. (Previously the
+    // field was a preset_id FK and addMessage omitted it; now it is a name and
+    // the send path stamps it — see PRESET_COPY_DELETE_CORRUPTION bug 2 fix.)
     const msg = await messageStore.addMessage({
       chatId: "chat_1", branchId: "brnch_1",
       role: "assistant", authorType: "assistant",
       content: "First reply",
       modelId: "gpt-4o",
-      presetId: "preset_1",
+      presetName: "My Preset",
     });
 
     const rows = await messageStore.getVariants(msg.id);
     const selected = rows.find((r) => r.variantIndex === 0)!;
     expect(selected.modelId).toBe("gpt-4o");
-    expect(selected.presetId).toBe("preset_1");
+    expect(selected.presetName).toBe("My Preset");
   });
 
-  test("addVariant without presetId → variant.presetId is null (backward compat)", async () => {
+  test("addVariant without presetName → variant.presetName is null (backward compat)", async () => {
     const msg = await messageStore.addMessage({
       chatId: "chat_1", branchId: "brnch_1", role: "assistant", authorType: "assistant", content: "V0",
     });
     const v = await messageStore.addVariant(msg.id, "V1");
-    expect(v.presetId).toBeNull();
+    expect(v.presetName).toBeNull();
 
     // Round-trips through getVariants.
     const rows = await messageStore.getVariants(msg.id);
-    expect(rows.find((r) => r.variantIndex === v.variantIndex)?.presetId).toBeNull();
+    expect(rows.find((r) => r.variantIndex === v.variantIndex)?.presetName).toBeNull();
   });
 
-  test("addVariant with presetId → persisted and round-trips", async () => {
+  test("addVariant with presetName → persisted and round-trips", async () => {
     const msg = await messageStore.addMessage({
       chatId: "chat_1", branchId: "brnch_1", role: "assistant", authorType: "assistant", content: "V0",
     });
-    // preset_1 is bootstrapped into prompt_presets, so the FK resolves.
+    // The name is plain text — no FK to resolve, no prompt_presets row needed.
     const v = await messageStore.addVariant(
-      msg.id, "Queued reply", undefined, undefined, undefined, "gpt-4o", "preset_1",
+      msg.id, "Queued reply", undefined, undefined, undefined, "gpt-4o", "My Preset",
     );
     expect(v.modelId).toBe("gpt-4o");
-    expect(v.presetId).toBe("preset_1");
+    expect(v.presetName).toBe("My Preset");
 
     const rows = await messageStore.getVariants(msg.id);
     const queued = rows.find((r) => r.variantIndex === v.variantIndex)!;
     expect(queued.modelId).toBe("gpt-4o");
-    expect(queued.presetId).toBe("preset_1");
+    expect(queued.presetName).toBe("My Preset");
   });
 
-  test("mixed variants — only the override-tagged one carries presetId", async () => {
+  test("mixed variants — only the override-tagged one carries presetName", async () => {
     const msg = await messageStore.addMessage({
       chatId: "chat_1", branchId: "brnch_1", role: "assistant", authorType: "assistant", content: "V0",
     });
     await messageStore.addVariant(msg.id, "standalone regen"); // no preset
     const queued = await messageStore.addVariant(
-      msg.id, "queued job", undefined, undefined, undefined, "claude", "preset_1",
+      msg.id, "queued job", undefined, undefined, undefined, "claude", "My Preset",
     );
 
     const rows = await messageStore.getVariants(msg.id);
-    const presets = rows.map((r) => r.presetId);
-    // Exactly one variant carries the preset; the others are null.
-    expect(presets.filter((p) => p === "preset_1")).toEqual(["preset_1"]);
-    expect(rows.find((r) => r.variantIndex === queued.variantIndex)!.presetId).toBe("preset_1");
+    const presets = rows.map((r) => r.presetName);
+    // Exactly one variant carries the preset name; the others are null.
+    expect(presets.filter((p) => p === "My Preset")).toEqual(["My Preset"]);
+    expect(rows.find((r) => r.variantIndex === queued.variantIndex)!.presetName).toBe("My Preset");
   });
 });
 
@@ -765,6 +765,60 @@ describe("ChatStore — mode column", () => {
     expect(forChar1.every((c) => c.characterId === "char_1")).toBe(true);
     expect(forChar2.every((c) => c.characterId === "char_2")).toBe(true);
     expect(forChar2).toHaveLength(1);
+  });
+});
+
+describe("ChatStore — co-author pinned context (CE-C1)", () => {
+  let db: Awaited<ReturnType<typeof createTestDb>>;
+  let store: ChatStore;
+
+  beforeEach(async () => {
+    db = await createTestDb();
+    bootstrap(db);
+    clockTick = 0;
+    idCounters = new Map();
+    store = new ChatStore(db, { clock: testClock, idGenerator: testIdGen });
+  });
+
+  test("setCoauthorContextLinks round-trips a typed character/persona/lorebook/script list", async () => {
+    const chat = await store.createChat({ characterId: "char_1", title: "c", promptPresetId: "preset_1", mode: "coauthor" });
+    const links = [
+      { targetType: "character", targetId: "char_other" },
+      { targetType: "persona", targetId: "persona_1" },
+      { targetType: "lorebook", targetId: "lb_1" },
+      { targetType: "script", targetId: "sc_1" },
+    ] as const;
+    await store.setCoauthorContextLinks(chat.id, [...links]);
+    const reloaded = await store.getById(chat.id);
+    expect(reloaded?.coauthorContextLinks).toEqual([...links]);
+  });
+
+  test("legacy CA-13 rows (bare lorebook-id string[]) are lifted to typed links on read", async () => {
+    // Simulate a pre-CE-C1 row by writing the old payload shape directly into
+    // the reused SQL column. parseContextLinks must lift each string to
+    // {targetType:'lorebook', targetId} so existing chats keep their bindings.
+    const chat = await store.createChat({ characterId: "char_1", title: "legacy", promptPresetId: "preset_1", mode: "coauthor" });
+    db.update(schema.chats).set({ coauthorContextLinksJson: JSON.stringify(["lb_legacy_a", "lb_legacy_b"]) }).where(eq(schema.chats.id, chat.id)).run();
+    const reloaded = await store.getById(chat.id);
+    expect(reloaded?.coauthorContextLinks).toEqual([
+      { targetType: "lorebook", targetId: "lb_legacy_a" },
+      { targetType: "lorebook", targetId: "lb_legacy_b" },
+    ]);
+  });
+
+  test("setCoauthorContextLinks persists the new typed payload (not the legacy string shape)", async () => {
+    const chat = await store.createChat({ characterId: "char_1", title: "c", promptPresetId: "preset_1", mode: "coauthor" });
+    await store.setCoauthorContextLinks(chat.id, [{ targetType: "script", targetId: "sc_1" }]);
+    const row = db.select().from(schema.chats).where(eq(schema.chats.id, chat.id)).get();
+    // Typed object payload, not a bare string array.
+    expect(JSON.parse(row!.coauthorContextLinksJson)).toEqual([{ targetType: "script", targetId: "sc_1" }]);
+  });
+
+  test("malformed context-links JSON falls back to [] (never throws)", async () => {
+    const chat = await store.createChat({ characterId: "char_1", title: "c", promptPresetId: "preset_1", mode: "coauthor" });
+    db.update(schema.chats).set({ coauthorContextLinksJson: "not-json" }).where(eq(schema.chats.id, chat.id)).run();
+    const reloaded = await store.getById(chat.id);
+    expect(reloaded?.coauthorContextLinks).toEqual([]);
   });
 });
 
@@ -947,5 +1001,55 @@ describe("ChatStore — objective state (INS-3)", () => {
     await store.updateInsightsObjectiveState(chat.id, { insightsObjectiveState: { objectiveDescription: "B", tasks: [], autoCheckFrequency: 5, autoCheckEventCount: 1, injectionDepth: 2, generatePrompt: "g", checkPrompt: "c", injectPrompt: "i" } });
     const reloaded = await store.getById(chat.id);
     expect(reloaded?.insightsObjectiveState).toEqual({ objectiveDescription: "B", tasks: [], autoCheckFrequency: 5, autoCheckEventCount: 1, injectionDepth: 2, generatePrompt: "g", checkPrompt: "c", injectPrompt: "i" });
+  });
+});
+
+// ─── ChatStore — dynamicPrompt (Wave 6) ────────────────────────────────────
+
+describe("ChatStore — dynamicPrompt (Wave 6)", () => {
+  let db: Awaited<ReturnType<typeof createTestDb>>;
+  let store: ChatStore;
+
+  beforeEach(async () => {
+    db = await createTestDb();
+    bootstrap(db);
+    clockTick = 0;
+    idCounters = new Map();
+    store = new ChatStore(db, { clock: testClock, idGenerator: testIdGen });
+  });
+
+  test("a new chat defaults dynamicPrompt to empty string", async () => {
+    const chat = await store.createChat({ characterId: "char_1", title: "c", promptPresetId: "preset_1" });
+    expect(chat.dynamicPrompt).toBe("");
+  });
+
+  test("the bootstrap-inserted chat (chat_1) reads dynamicPrompt as empty string (DB default)", async () => {
+    const chat = await store.getById("chat_1");
+    expect(chat?.dynamicPrompt).toBe("");
+  });
+
+  test("updateDynamicPrompt persists and round-trips through getById", async () => {
+    const updated = await store.updateDynamicPrompt("chat_1", "per-chat dynamic content");
+    expect(updated.dynamicPrompt).toBe("per-chat dynamic content");
+    // Reload from DB — not just in-memory return value.
+    const reloaded = await store.getById("chat_1");
+    expect(reloaded?.dynamicPrompt).toBe("per-chat dynamic content");
+  });
+
+  test("updateDynamicPrompt with empty string clears the content", async () => {
+    await store.updateDynamicPrompt("chat_1", "temporary");
+    const cleared = await store.updateDynamicPrompt("chat_1", "");
+    expect(cleared.dynamicPrompt).toBe("");
+  });
+
+  test("updateDynamicPrompt does not alter unrelated chat fields", async () => {
+    await store.updateDynamicPrompt("chat_1", "new prompt");
+    const chat = await store.getById("chat_1");
+    // Verify unrelated fields are untouched.
+    expect(chat?.title).toBe("Test chat");
+    expect(chat?.mode).toBe("rp");
+    expect(chat?.characterId).toBe("char_1");
+    expect(chat?.summary).toBe("");
+    expect(chat?.coauthorContextLinks).toEqual([]);
   });
 });

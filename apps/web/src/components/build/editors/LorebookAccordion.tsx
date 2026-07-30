@@ -11,7 +11,7 @@ import { useState, useEffect, useMemo } from "react";
 import type { ReactNode } from "react";
 import { ActionSheet } from "../../shared/ActionSheet.js";
 
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatedDisclosure } from "../../shared/AnimatedDisclosure.js";
 import { Ic, Icons } from "../../shared/icons.js";
 import { AddButton } from "../../shared/add-button.js";
 import { cn } from "../../../lib/cn.js";
@@ -459,16 +459,11 @@ export function LorebookAccordion({
       </div>
 
       {/* ── Expanded content: settings + entry list ── */}
-      <AnimatePresence initial={false}>
-      {expanded && !editing && (
-        <motion.div
-          className="flex flex-col gap-3 border-t border-border"
-          style={{ padding: "10px 12px", overflow: "hidden" }}
-          initial={{ height: 0, opacity: 0 }}
-          animate={{ height: "auto", opacity: 1 }}
-          exit={{ height: 0, opacity: 0 }}
-          transition={{ duration: 0.25, ease: "easeOut" }}
-        >
+      <AnimatedDisclosure
+        open={expanded && !editing}
+        className="flex flex-col gap-3 border-t border-border"
+        style={{ padding: "10px 12px" }}
+      >
           {/* Lorebook settings: token budget, scan depth, recursive scanning, links */}
           <div
             className={cn(
@@ -597,9 +592,7 @@ export function LorebookAccordion({
             </svg>
             {t("lore_add_entry")}
           </AddButton>
-        </motion.div>
-      )}
-      </AnimatePresence>
+      </AnimatedDisclosure>
     </div>
   );
 }

@@ -405,7 +405,6 @@ export async function testKoboldCppChat(input: ProviderConnectionInput): Promise
       body: JSON.stringify({
         prompt: "User: Hi\nAssistant:",
         max_length: 64,
-        temperature: 0.7,
         stream: false,
       }),
       signal: controller.signal,

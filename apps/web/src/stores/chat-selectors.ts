@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { useShallow } from "zustand/react/shallow";
 import type { AppCharacter, AppMessage, AppPersona } from "../app-client.js";
 import { replaceUiMacros } from "../lib/macros.js";
@@ -7,6 +7,7 @@ import type { MacroContext } from "./snapshot-store.js";
 import { useChatList, useSnapshotStore } from "./snapshot-store.js";
 import { useChatStore } from "./chat-store.js";
 import { useTraceHistoryEntry } from "./trace-history-store.js";
+import { useContextPreviewEntry, useContextPreviewStore } from "./context-preview-store.js";
 
 // ---------------------------------------------------------------------------
 // Backward-compatible selectors — now delegate to snapshot-store
@@ -80,14 +81,20 @@ export function useMacroContext(): MacroContext | null {
 
 /**
  * Subscribe to the active prompt trace.
- * Derives from snapshot-store (latest trace + context preview) and the
- * branch-scoped trace-history cache (TL-B2).
+ * Derives from the snapshot store (latest trace) + the branch-scoped
+ * trace-history cache (TL-B2) + the branch-scoped live context-preview cache.
+ *
+ * Resolution order (unchanged): selected trace from active-branch history →
+ * latest branch-matched promptTrace → first cached trace → live context
+ * preview. The live preview is hydrated lazily from its branch-scoped cache
+ * ONLY when the trace path produces nothing — so established branches (which
+ * carry traces) never trigger a preview fetch, and navigation commits before
+ * any prompt assembly runs.
  */
 export function useActiveTrace(
   selectedTraceId: string | null,
 ): import("@vibe-tavern/domain").PromptTraceRecordDto | import("@vibe-tavern/domain").AssemblePromptResponse | null {
   const promptTrace = useSnapshotStore((s) => s.promptTrace);
-  const contextPreview = useSnapshotStore((s) => s.contextPreview);
   const activeBranchId = useSnapshotStore((s) => s.activeBranch?.id ?? null);
   const activeChatId = useSnapshotStore((s) => s.activeChat?.id ?? null);
   // Branch-scoped history from the lazy cache (already filtered to the
@@ -95,6 +102,8 @@ export function useActiveTrace(
   // fetch — in that case we fall through to `promptTrace` (latest), which is
   // the correct value for the context bar (TopBar/InputArea/AppShell).
   const cachedHistory = useTraceHistoryEntry(activeChatId, activeBranchId);
+  const cachedPreview = useContextPreviewEntry(activeChatId, activeBranchId);
+  const fetchPreview = useContextPreviewStore((s) => s.fetch);
   return useMemo(() => {
     const historyForBranch = cachedHistory?.traces ?? [];
     const latestForBranch =
@@ -104,9 +113,35 @@ export function useActiveTrace(
       latestForBranch ??
       historyForBranch[0];
     if (fromHistory) return fromHistory;
-    if (contextPreview) return contextPreview;
+    if (cachedPreview?.preview) return cachedPreview.preview;
     return null;
-  }, [cachedHistory, promptTrace, activeBranchId, contextPreview, selectedTraceId]);
+  }, [cachedHistory, promptTrace, activeBranchId, cachedPreview, selectedTraceId]);
+}
+
+/**
+ * Lazy-preview hydration companion to {@link useActiveTrace}. Fire a preview
+ * fetch only when the trace resolution has nothing for the active branch (no
+ * branch-matched latest trace AND empty trace history) — that is the only case
+ * where the context bar's fallback is the live preview. Established branches
+ * that carry traces never trigger it, so navigation/render stays off the
+ * prompt-assembly critical path.
+ */
+export function useLazyContextPreview(): void {
+  const promptTrace = useSnapshotStore((s) => s.promptTrace);
+  const activeChatId = useSnapshotStore((s) => s.activeChat?.id ?? null);
+  const activeBranchId = useSnapshotStore((s) => s.activeBranch?.id ?? null);
+  const cachedHistory = useTraceHistoryEntry(activeChatId, activeBranchId);
+  const entry = useContextPreviewEntry(activeChatId, activeBranchId);
+  const fetch = useContextPreviewStore((s) => s.fetch);
+  useEffect(() => {
+    if (!activeChatId || !activeBranchId) return;
+    const latestForBranch =
+      promptTrace && promptTrace.branchId === activeBranchId ? promptTrace : null;
+    if (latestForBranch) return; // a trace covers the active branch — preview not needed
+    if ((cachedHistory?.traces.length ?? 0) > 0) return; // history covers it
+    if (entry?.status === "loading" || entry?.status === "success") return;
+    void fetch(activeChatId, activeBranchId);
+  }, [activeChatId, activeBranchId, promptTrace, cachedHistory, entry, fetch]);
 }
 
 // ---------------------------------------------------------------------------

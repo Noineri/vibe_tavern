@@ -126,6 +126,12 @@ export function CodeEditor({
       EditorView.updateListener.of((update) => {
         if (update.docChanged) {
           const doc = update.state.doc.toString();
+          // Echo guard: skip dispatches caused by the external-value sync
+          // effect below (it sets externalValueRef before dispatching).
+          // Without this, a programmatic doc replace reports the EXTERNAL
+          // text as a user edit — e.g. ScriptEditor's autosave-refresh used
+          // to schedule a save of stale code over fresher pending input.
+          if (doc === externalValueRef.current) return;
           externalValueRef.current = doc;
           onChangeRef.current(doc);
         }

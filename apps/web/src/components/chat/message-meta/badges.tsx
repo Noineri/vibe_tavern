@@ -12,10 +12,17 @@
 //
 // The leading timestamp + token-count span are NOT registered here — they are
 // always present and rendered by MessageShell itself (not feature-pluggable).
+//
+// Dice rolls badge (DICE-F10) self-registers in ./dice-rolls.tsx; imported
+// here for its side effect so MessageShell's single side-effect import (this
+// file) triggers every meta-badge registration.
 // ────────────────────────────────────────────────────────────────────────────
 
 import { registerMessageMeta } from "../../../lib/message-meta-registry.js";
 import { resolveModelLabel } from "../../../lib/model-resolve.js";
+
+// Side-effect: register the Dice rolls user-message badge (DICE-F10).
+import "./dice-rolls.js";
 
 // Provenance: model that produced this variant.
 // Visible only for assistant variants that carry a model id.
@@ -28,22 +35,29 @@ registerMessageMeta({
 });
 
 // Provenance: preset used to assemble the prompt for this variant.
-// presetName is pre-resolved by the caller (variant.presetId → name).
+// presetName is baked on the variant at generation time (immutable text, no FK).
+// Hidden for coauthor turns — those carry a module name (also baked as
+// presetName) shown by the coauthor-module badge below; a coauthor variant
+// has no preset, so the preset badge would otherwise duplicate the name.
 registerMessageMeta({
   id: "provenance-preset",
   order: 20,
   roles: ["assistant"],
-  visible: (ctx) => !!ctx.presetName,
+  visible: (ctx) => !!ctx.presetName && !ctx.variant?.coauthorModuleId,
   render: (ctx) => <span>{ctx.presetName}</span>,
 });
 
 // Coauthor provenance: module that produced this variant.
+// The module NAME is baked on the variant as presetName at generation time
+// (same field the preset badge uses, since a coauthor variant has no preset).
+// Fall back to the raw module id for variants created before the name was
+// baked (historical data) — never blank.
 registerMessageMeta({
   id: "coauthor-module",
   order: 30,
   roles: ["assistant"],
   visible: (ctx) => !!ctx.variant?.coauthorModuleId,
-  render: (ctx) => <span>{ctx.variant?.coauthorModuleId}</span>,
+  render: (ctx) => <span>{ctx.presetName ?? ctx.variant?.coauthorModuleId}</span>,
 });
 
 // Coauthor provenance: skill that produced this variant.

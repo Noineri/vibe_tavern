@@ -1,5 +1,5 @@
 import type { ProviderStore } from "@vibe-tavern/db";
-import type { StoredProviderProfileRecord, ModelSettingsOverlay } from "@vibe-tavern/domain";
+import { COAUTHOR_TRANSPORT, canUseCoauthorResponsesTransport, type StoredProviderProfileRecord, type ModelFavoriteScope, type ModelSettingsOverlay } from "@vibe-tavern/domain";
 import {
   toClientProviderProfile,
   resolveStoredApiKey,
@@ -8,7 +8,7 @@ import {
   type FavoriteProviderModelRecord,
   type ProviderModelSettingsRecord,
 } from "../../runtime/session/session-runtime-dto.js";
-import { notFound } from "../../shared/errors.js";
+import { notFound, validation } from "../../shared/errors.js";
 import { logSendDebug } from "../../shared/send-debug-log.js";
 
 // ─── Public contract (duck-typed — consumers import this as `type`) ──────
@@ -17,6 +17,7 @@ export interface ProviderProfileService {
   listProviderProfiles(): Promise<ClientProviderProfileRecord[]>;
   saveProviderProfile(profile: Partial<StoredProviderProfileRecord>): Promise<ClientProviderProfileRecord>;
   deleteProviderProfile(id: string): Promise<void>;
+  reorderProviderProfiles(updates: Array<{ id: string; sortOrder: number }>): Promise<ClientProviderProfileRecord[]>;
   activateProviderProfile(id: string): Promise<ClientProviderProfileRecord>;
   resolveActiveProviderProfile(): Promise<StoredProviderProfileRecord | null>;
   updateProviderProfile(
@@ -28,14 +29,14 @@ export interface ProviderProfileService {
   getCachedProviderModels(providerProfileId: string): Promise<CachedProviderModelsRecord | null>;
   setCachedProviderModels(
     providerProfileId: string,
-    models: Array<{ id: string; label: string; contextLength?: number; capabilities?: { thinking?: boolean; tools?: boolean; vision?: boolean } }>,
+    models: Array<{ id: string; label: string; contextLength?: number; capabilities?: { reasoning?: boolean; tools?: boolean; vision?: boolean } }>,
   ): Promise<CachedProviderModelsRecord>;
-  listFavoriteProviderModels(providerProfileId: string): Promise<FavoriteProviderModelRecord[]>;
+  listFavoriteProviderModels(providerProfileId: string, scope: ModelFavoriteScope): Promise<FavoriteProviderModelRecord[]>;
   addFavoriteProviderModel(
     providerProfileId: string,
-    model: { modelId: string; label?: string | null; contextLength?: number | null },
+    model: { modelId: string; label?: string | null; contextLength?: number | null; scope: ModelFavoriteScope },
   ): Promise<FavoriteProviderModelRecord>;
-  removeFavoriteProviderModel(providerProfileId: string, modelId: string): Promise<void>;
+  removeFavoriteProviderModel(providerProfileId: string, body: { modelId: string; scope: ModelFavoriteScope }): Promise<void>;
   listProviderModelSettings(providerProfileId: string): Promise<ProviderModelSettingsRecord[]>;
   getProviderModelSettings(providerProfileId: string, modelId: string): Promise<ProviderModelSettingsRecord | null>;
   upsertProviderModelSettings(providerProfileId: string, modelId: string, settings: ModelSettingsOverlay): Promise<ProviderModelSettingsRecord>;
@@ -71,10 +72,22 @@ export function createProviderProfileService(providers: ProviderStore): Provider
       return Promise.all(clientProfiles.map((p) => withCachedModels(providers, p)));
     },
 
+    reorderProviderProfiles: async (updates) => {
+      const profiles = await providers.reorder(updates);
+      const clientProfiles = profiles.map(toClientProviderProfile);
+      return Promise.all(clientProfiles.map((p) => withCachedModels(providers, p)));
+    },
+
     saveProviderProfile: async (profile) => {
       const existing = profile.id
         ? await providers.getById(profile.id)
         : null;
+
+      const providerPreset = profile.providerPreset ?? existing?.providerPreset ?? "openai";
+      const coauthorTransport = profile.coauthorTransport ?? existing?.coauthorTransport ?? COAUTHOR_TRANSPORT.chatCompletions;
+      if (coauthorTransport === COAUTHOR_TRANSPORT.responses && !canUseCoauthorResponsesTransport(providerPreset)) {
+        throw validation(`Co-Author Responses transport is available only for OpenAI-compatible provider presets; '${providerPreset}' uses a native transport.`, { providerPreset, coauthorTransport });
+      }
 
       const hasApiKeyInput = Object.prototype.hasOwnProperty.call(profile, "apiKey");
       const apiKey = hasApiKeyInput
@@ -114,7 +127,8 @@ export function createProviderProfileService(providers: ProviderStore): Provider
       });
       const created = await providers.create({
         name: profile.name ?? "New Provider",
-        providerPreset: profile.providerPreset ?? "openai",
+        providerPreset,
+        coauthorTransport,
         endpoint: profile.endpoint ?? "",
         apiKey,
         defaultModel: profile.defaultModel,
@@ -168,7 +182,15 @@ export function createProviderProfileService(providers: ProviderStore): Provider
     },
 
     activateProviderProfile: async (id) => {
-      await providers.activate(id);
+      try {
+        await providers.activate(id);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (/not found/i.test(message)) {
+          throw notFound("ProviderProfile", message);
+        }
+        throw error;
+      }
       const profile = await providers.getById(id);
       if (!profile) {
         throw notFound("ProviderProfile", `Provider profile '${id}' was not found after activation.`);
@@ -196,6 +218,11 @@ export function createProviderProfileService(providers: ProviderStore): Provider
       const existing = await providers.getById(id);
       if (!existing) {
         throw notFound("ProviderProfile", `Provider profile '${id}' was not found.`);
+      }
+      const providerPreset = patch.providerPreset ?? existing.providerPreset;
+      const coauthorTransport = patch.coauthorTransport ?? existing.coauthorTransport;
+      if (coauthorTransport === COAUTHOR_TRANSPORT.responses && !canUseCoauthorResponsesTransport(providerPreset)) {
+        throw validation(`Co-Author Responses transport is available only for OpenAI-compatible provider presets; '${providerPreset}' uses a native transport.`, { providerPreset, coauthorTransport });
       }
       const hasApiKeyInput = Object.prototype.hasOwnProperty.call(patch, "apiKey");
       const apiKey = hasApiKeyInput
@@ -271,20 +298,13 @@ export function createProviderProfileService(providers: ProviderStore): Provider
       };
     },
 
-    listFavoriteProviderModels: async (providerProfileId) => {
+    listFavoriteProviderModels: async (providerProfileId, scope) => {
       const profile = await providers.getById(providerProfileId);
       if (!profile) {
         throw notFound("ProviderProfile", `Provider profile '${providerProfileId}' was not found.`);
       }
-      const favorites = await providers.listFavoriteModels(providerProfileId);
-      return favorites.map((favorite) => ({
-        id: favorite.id,
-        providerProfileId: favorite.providerProfileId,
-        modelId: favorite.modelId,
-        label: favorite.label,
-        contextLength: favorite.contextLength,
-        createdAt: favorite.createdAt,
-      }));
+      const favorites = await providers.listFavoriteModels(providerProfileId, scope);
+      return favorites.map(toFavoriteProviderModelRecord);
     },
 
     addFavoriteProviderModel: async (providerProfileId, model) => {
@@ -292,23 +312,16 @@ export function createProviderProfileService(providers: ProviderStore): Provider
       if (!profile) {
         throw notFound("ProviderProfile", `Provider profile '${providerProfileId}' was not found.`);
       }
-      const saved = await providers.addFavoriteModel(providerProfileId, model);
-      return {
-        id: saved.id,
-        providerProfileId: saved.providerProfileId,
-        modelId: saved.modelId,
-        label: saved.label,
-        contextLength: saved.contextLength,
-        createdAt: saved.createdAt,
-      };
+      const saved = await providers.addFavoriteModel(providerProfileId, model.scope, model);
+      return toFavoriteProviderModelRecord(saved);
     },
 
-    removeFavoriteProviderModel: async (providerProfileId, modelId) => {
+    removeFavoriteProviderModel: async (providerProfileId, body) => {
       const profile = await providers.getById(providerProfileId);
       if (!profile) {
         throw notFound("ProviderProfile", `Provider profile '${providerProfileId}' was not found.`);
       }
-      await providers.removeFavoriteModel(providerProfileId, modelId);
+      await providers.removeFavoriteModel(providerProfileId, body.scope, body.modelId);
     },
 
     listProviderModelSettings: async (providerProfileId) => {
@@ -345,6 +358,27 @@ export function createProviderProfileService(providers: ProviderStore): Provider
       }
       await providers.deleteModelSettings(providerProfileId, modelId);
     },
+  };
+}
+
+/** Map a store favorite row to its wire DTO. */
+function toFavoriteProviderModelRecord(row: {
+  id: string;
+  providerProfileId: string;
+  modelId: string;
+  scope: ModelFavoriteScope;
+  label: string | null;
+  contextLength: number | null;
+  createdAt: string;
+}): FavoriteProviderModelRecord {
+  return {
+    id: row.id,
+    providerProfileId: row.providerProfileId,
+    modelId: row.modelId,
+    scope: row.scope,
+    label: row.label,
+    contextLength: row.contextLength,
+    createdAt: row.createdAt,
   };
 }
 

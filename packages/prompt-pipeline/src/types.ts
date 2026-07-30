@@ -1,4 +1,4 @@
-import type { PromptLayerPosition, PronounForms } from "@vibe-tavern/domain";
+import type { DiceRollSnapshot, PromptLayerPosition, PronounForms } from "@vibe-tavern/domain";
 
 export type { PromptLayerPosition };
 
@@ -8,7 +8,7 @@ export type { PromptLayerPosition };
  * Each mode determines the system prompt, user message format, output parsing,
  * and which context layers are available.
  */
-export type AiAssistantMode = "script" | "lore_entry" | "lore_keys" | "chat_impersonate" | "md_import" | "vision_describe" | "scene_schema";
+export type AiAssistantMode = "script" | "dice_script" | "lore_entry" | "lore_keys" | "chat_impersonate" | "md_import" | "vision_describe" | "scene_schema" | "scene_rules" | "message_edit" | "message_merge";
 
 export interface PromptLayer {
   id: string;
@@ -54,6 +54,13 @@ export interface RecentMessage {
   content: string;
   /** File attachments on this message. Currently only user messages have these. */
   attachments?: import("@vibe-tavern/domain").Attachment[];
+  /** Bound immutable Dice result snapshots for this message (Wave B5 prompt
+   *  projection). Present on user messages carrying bound rolls; absent
+   *  otherwise. The pipeline formats these into a compact model-only block
+   *  appended once to the message's effective content — it never executes
+   *  Dice scripts or rolls. These are already-bound snapshots: assembly is
+   *  read-only over them. */
+  diceRolls?: DiceRollSnapshot[];
 }
 
 export interface PromptAssemblyContext {
@@ -126,6 +133,8 @@ export interface PromptAssemblyContext {
     enhanceDefinitions?: string | null;
     /** Whether this preset is in advanced (canvas-driven) mode. `false`/`undefined` = simple mode (4 preset fields, no custom injections, `DEFAULT_PROMPT_ORDER` ordering). Mirrors `PromptPresetDto.advancedMode`. */
     advancedMode?: boolean | null;
+    /** ST-parity final-payload transform: merge adjacent same-role text messages. */
+    mergeConsecutiveRoles?: boolean | null;
     /** Custom injection blocks (advanced mode only — ignored when `advancedMode` is falsy). Content-only — positional state (zone/depth/order/enabled) lives on the matching `promptOrder` entry. */
     customInjections?: Array<{
       identifier?: string;
@@ -178,6 +187,10 @@ export interface PromptAssemblyContext {
     recentMessages: RecentMessage[];
     /** Messages injected by scripts via context.chat.injectMessage() */
     scriptInjections?: Array<{ content: string; role: 'system' | 'user' | 'assistant' }>;
+    /** Per-chat dynamic prompt — content edited via the advanced prompt canvas
+     *  `chatDynamicPrompt` slot. Position/role/depth controlled by the preset's
+     *  `PromptOrderEntry`. */
+    dynamicPrompt?: string | null;
   };
   instructions?: {
     toolInstructions?: string | null;
@@ -193,6 +206,16 @@ export interface PromptAssemblyContext {
     injectionDepth: number;
     injectPrompt: string;
   } | null;
+  /** SUMMARY_PRIOR_CONTEXT_PLAN (SPC-2): preceding chat-summaries (the
+   *  `summarizedTo < from` chain, token-capped, oldest→newest) fed into the
+   *  summary prompt as read-only continuity context. Absent / empty = no layer.
+   *  The pipeline renders a single `prior_summaries_context` layer (in_prompt)
+   *  ONLY under `config.summary` with non-empty priors — never on a chat turn.
+   *  Loading + token-capping happens in `services/api`; this field is the pure
+   *  hand-off from the lifecycle method. Read-only framing: the model must fold
+   *  prior implications into a coherent continuation, NOT repeat or re-summarize
+   *  the block (compounding drift guard lives in the default summary prompt). */
+  priorSummaries?: Array<{ id: string; label?: string; content: string }>;
   config?: {
     contextBudget?: number | null;
     /** Tokens reserved for the model's response. Subtracted from contextBudget during compaction. */

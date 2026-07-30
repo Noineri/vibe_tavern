@@ -1,4 +1,4 @@
-import type { ChatId, CharacterId, ChatBranchId } from "@vibe-tavern/domain";
+import type { ChatId, CharacterId, ChatBranchId, CoauthorContextTargetType } from "@vibe-tavern/domain";
 import type { StoredProviderProfileRecord } from "@vibe-tavern/domain";
 import type { EventBus } from "@vibe-tavern/domain";
 import type { ChatMode } from "@vibe-tavern/domain";
@@ -41,6 +41,51 @@ export type { ChatMode };
  * Carried on {@link ChatModeAssembleInput} so strategies stay stateless;
  * the caller (SessionRuntime.assemblePrompt) constructs it from its stores.
  */
+/** CE-C1: one resolved Level-1 context entity (or one lorebook entry) for the
+ *  co-author prompt's read-only reference section. Lorebooks expand to N items
+ *  (one per enabled entry); character/persona/script resolve to a single item.
+ *  `type` drives the per-kind block header in `renderContextBlocks`. */
+export interface CoauthorContextItem {
+  type: CoauthorContextTargetType;
+  /** Entity id, or the lore ENTRY id when `type === "lorebook"` (an entry block). */
+  id: string;
+  title: string;
+  content: string;
+}
+
+/** CE-C2: one enabled entry in bound-lorebook awareness. The stable id is
+ * intentionally paired with its title: cross-turn edit/re-delegation tools
+ * require `entryId`, while awareness stays content-free (Level 2). */
+export interface CoauthorBoundLoreEntry {
+  id: string;
+  title: string;
+}
+
+/** CE-C2: a lorebook M:N-bound to the character, surfaced to the co-author
+ * model as AWARENESS ONLY — the book's name plus enabled-entry titles and
+ * stable ids (a table of contents), NOT entry content. Full content is Level 1
+ * (`getCoauthorContextItems`) when the user explicitly pins the book. */
+export interface CoauthorBoundLorebook {
+  id: string;
+  name: string;
+  entries: CoauthorBoundLoreEntry[];
+}
+
+/** CE-C3: a script M:N-bound to the character, surfaced as AWARENESS ONLY —
+ *  name + description (summary). The script's CODE is not injected; if the
+ *  model needs the code, the user pins it as Level-1 context. */
+export interface CoauthorBoundScript {
+  id: string;
+  name: string;
+  summary: string;
+}
+
+/** CE-C2/C3: the character's bound lorebooks + scripts as awareness metadata. */
+export interface CoauthorBoundResources {
+  lorebooks: CoauthorBoundLorebook[];
+  scripts: CoauthorBoundScript[];
+}
+
 export interface ChatModeAssembleLoaders {
   /** Active-branch messages for the chat (position-ascending); `limit` takes the last N. */
   getMessages(chatId: ChatId, branchId?: ChatBranchId, limit?: number): Promise<DbMessage[]>;
@@ -51,15 +96,28 @@ export interface ChatModeAssembleLoaders {
   /** Canonical `profile.md` text for the character (the edit target). */
   getProfileMdText(characterId: CharacterId): Promise<string>;
   /**
-   * Co-author lorebook context (CA-13): the entries of the lorebooks the user
-   * EXPLICITLY bound to this chat via the right-panel picker, expanded read-only.
-   * NOT RP keyword activation — co-author is an editor, not a roleplay; the
-   * user curates which lorebooks feed the editor the same way the AI-assistant
-   * lorebook-writer does (resolveContext over an explicit id list). The closure
-   * resolves the chat's bound ids + expands enabled entries from enabled books.
-   * Returns {id,title,content}[] — no activation reason / windows / scan-depth.
+   * Co-author pinned Level-1 context (CE-C1; generalizes CA-13): the entities
+   * the user EXPLICITLY pinned to this chat via the right-panel picker,
+   * resolved to read-only reference blocks — character (profile.md) /
+   * persona (description) / lorebook (enabled entries) / script (description +
+   * code). NOT RP keyword activation — co-author is an editor, not a roleplay.
+   * The closure resolves `chat.coauthorContextLinks` per kind; lorebooks expand
+   * to one item per enabled entry. The active chat's character is skipped
+   * (already rendered as `currentCard`) to avoid 2x-token duplication.
+   * Returns `CoauthorContextItem[]` — no activation reason / windows.
    */
-  getCoauthorLorebookEntries(chatId: ChatId): Promise<Array<{ id: string; title: string; content: string }>>;
+  getCoauthorContextItems(chatId: ChatId): Promise<CoauthorContextItem[]>;
+  /**
+   * Co-author bound Level-2/3 awareness (CE-C2/C3): the lorebooks + scripts
+   * M:N-linked to the character (via `lorebook_links` / `script_links`),
+   * surfaced to the model as a compact table of contents — lorebook NAME +
+   * enabled entry TITLES, script NAME + description. NOT full content (that is
+   * Level 1 when pinned) and NOT RP keyword activation. Lets the model know
+   * these resources exist and reference them by name without spending the
+   * tokens their full content would cost. Returns empty arrays when the
+   * character has no bound resources.
+   */
+  getCoauthorBoundResources(characterId: CharacterId): Promise<CoauthorBoundResources>;
   /** Gets chat summaries bound to this branch. */
   getChatSummaries(chatId: ChatId, branchId: ChatBranchId): Promise<Array<{
     id: string;
@@ -100,6 +158,32 @@ export interface ChatModeAssembleLoaders {
 export interface ChatModeAssembleInput extends AssemblePromptForChatInput {
   promptService: PromptAssemblyService;
   loaders: ChatModeAssembleLoaders;
+  /**
+   * Optional AI-delegation callback for lore tools (CTX-L2b). When present,
+   * the co-author strategy injects it into `buildCoauthorTools` so the
+   * `ai_write_lore_entry` / `ai_generate_lore_keys` tools can fire an isolated
+   * one-shot LLM call. Absent when no provider profile is resolved (the
+   * delegation tools then throw a clear error if invoked). RP mode ignores it.
+   */
+  loreDelegate?: import("../coauthor/lore/lore-delegate.js").LoreDelegate;
+  /**
+   * CE-B1: optional lookup that loads a persisted lore entity's current state
+   * as a draft node, so the edit tools (edit_lorebook / edit_lore_entry /
+   * add_lore_entry) and the re-delegation tools (ai_write_lore_entry /
+   * ai_generate_lore_keys) can target previously-created entities across
+   * turns, not just ones drafted this turn. The co-author strategy injects it
+   * into `buildCoauthorTools`. Absent only in test contexts without a store;
+   * production always supplies it.
+   */
+  loreEntityLookup?: import("../chat/coauthor-tools.js").LoreEntityLookup;
+  /**
+   * CE-D2: optional context-search session for indexed entity discovery.
+   * Lazily projects canonical entities into FTS5 on first search; read
+   * returns canonical full content. Absent when stores are not wired
+   * (test contexts); search_context/read_context_item then throw a clear
+   * error if invoked.
+   */
+  contextSearchSession?: import("../context/context-search-service.js").ContextSearchSession;
 }
 
 /** Re-exported so callers don't reach into the prompt service module. */

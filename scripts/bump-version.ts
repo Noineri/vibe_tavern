@@ -11,17 +11,36 @@
  *   bun run bump-version 1.0.2 --push   # also push branch + tag to origin
  *
  * What it does (in order):
- *   1. Validates the target version (semver shape, differs from current)
- *   2. Verifies git tree is clean and on master/main or release/*
- *   3. Rewrites `.version` + all `@vibe-tavern/*` dep entries in the 8
- *      workspace package.json files (explicit allowlist — no `find`)
- *   4. Runs `bun install` to sync `bun.lock`
- *   5. Commits with `chore: bump to vX.X.X [skip ci]`
- *   6. Creates an annotated tag `vX.X.X` (annotated, not lightweight —
+ *   1. Validates the target version (strict X.Y.Z, differs from current)
+ *   2. Verifies git tree is clean, on master, exactly matches origin/master,
+ *      and that origin/dev has actually been merged in
+ *   3. Verifies the target tag does not already exist locally or on origin
+ *   4. Rewrites `.version` in the 8 workspace package.json files
+ *      (explicit allowlist — no `find`)
+ *   5. Verifies `bun.lock` still satisfies the bumped manifests, and that the
+ *      bump touched nothing outside the allowlist
+ *   6. Commits with `chore: bump to vX.X.X [skip ci]`
+ *   7. Creates an annotated tag `vX.X.X` (annotated, not lightweight —
  *      gives a signed/dated marker that survives `git fetch --tags`)
- *   7. With `--push`: pushes both the branch and the tag to origin
+ *   8. With `--push`: pushes master and the tag to origin atomically
+ *
+ * Why no prereleases: the in-app updater (services/api/src/server/updater.ts)
+ * polls /releases/latest and the Docker `latest` tag tracks the newest
+ * release, so a `1.1.0-beta.1` tag would ship itself to every installed user.
+ * `release.yml` rejects non-X.Y.Z tags too, in case one is pushed by hand.
+ *
+ * Why `[skip ci]`: ci.yml already verified the parent commit. The bump commit
+ * only changes version strings, and release.yml re-runs the full gate
+ * (typecheck + tests on Linux AND Windows) on the tagged commit before any
+ * artifact is built — so letting ci.yml race the release run only duplicates
+ * the same work.
+ *
+ * Why internal deps are not rewritten: workspace packages depend on each other
+ * through `workspace:*`, which carries no version number. Nothing to sync.
  *
  * What it does NOT touch:
+ *   - `bun.lock` — bun does not record a workspace's own version in a way
+ *     that a version bump invalidates; the lockfile is verified, not rewritten.
  *   - `mobile/android/app/build.gradle.kts` — `versionCode`/`versionName`
  *     are injected at BUILD TIME by `release.yml` (`sed` inline) and the
  *     committed file intentionally keeps defaults (`1` / `"0.0.0"`).
@@ -33,6 +52,7 @@
 
 import { $, file } from "bun";
 import { join, resolve } from "node:path";
+import { parseArgs } from "node:util";
 
 const ROOT = resolve(import.meta.dir, "..");
 
@@ -49,40 +69,33 @@ const PACKAGE_FILES = [
 	"services/api/package.json",
 ] as const;
 
-const SEMVER_RE = /^\d+\.\d+\.\d+(?:-[\w.]+)?$/;
+// Strict X.Y.Z — no prerelease suffix. See the header for why.
+const SEMVER_RE = /^\d+\.\d+\.\d+$/;
 
 interface ParsedSemver {
 	major: number;
 	minor: number;
 	patch: number;
-	prerelease: string | null;
 }
 
 function parseSemver(v: string): ParsedSemver | null {
-	const m = v.match(/^(\d+)\.(\d+)\.(\d+)(?:-([\w.]+))?$/);
+	const m = v.match(/^(\d+)\.(\d+)\.(\d+)$/);
 	if (!m) return null;
 	return {
 		major: parseInt(m[1], 10),
 		minor: parseInt(m[2], 10),
 		patch: parseInt(m[3], 10),
-		prerelease: m[4] ?? null,
 	};
 }
 
 function compareSemver(a: ParsedSemver, b: ParsedSemver): number {
 	if (a.major !== b.major) return a.major - b.major;
 	if (a.minor !== b.minor) return a.minor - b.minor;
-	if (a.patch !== b.patch) return a.patch - b.patch;
-	// Release > prerelease (per semver spec).
-	if (a.prerelease === null && b.prerelease !== null) return 1;
-	if (a.prerelease !== null && b.prerelease === null) return -1;
-	if (a.prerelease && b.prerelease) {
-		return a.prerelease < b.prerelease ? -1 : a.prerelease > b.prerelease ? 1 : 0;
-	}
-	return 0;
+	return a.patch - b.patch;
 }
 
 interface PackageJson {
+	name?: string;
 	version?: string;
 	dependencies?: Record<string, string>;
 	devDependencies?: Record<string, string>;
@@ -90,31 +103,59 @@ interface PackageJson {
 	[key: string]: unknown;
 }
 
-async function bumpPackageFile(relPath: string, version: string): Promise<void> {
-	const absPath = join(ROOT, relPath);
-	const pkgFile = file(absPath);
-	if (!(await pkgFile.exists())) {
-		throw new Error(`Package file not found: ${relPath}`);
+interface LoadedManifest {
+	readonly relPath: string;
+	readonly absPath: string;
+	readonly pkg: PackageJson;
+}
+
+/** Read every allowlisted manifest up front so nothing is written until all of them validate. */
+async function loadManifests(): Promise<LoadedManifest[]> {
+	const loaded: LoadedManifest[] = [];
+	for (const relPath of PACKAGE_FILES) {
+		const absPath = join(ROOT, relPath);
+		const pkgFile = file(absPath);
+		if (!(await pkgFile.exists())) {
+			fail(`package file not found: ${relPath} — the allowlist is out of sync with the workspace layout`);
+		}
+		loaded.push({ relPath, absPath, pkg: (await pkgFile.json()) as PackageJson });
 	}
-	const pkg = (await pkgFile.json()) as PackageJson;
+	return loaded;
+}
 
-	pkg.version = version;
+/**
+ * Internal packages must reference each other through `workspace:*`, never a
+ * version number. A numeric range only resolves to the local package while
+ * every manifest agrees; the moment one drifts, bun stops resolving locally
+ * and reaches for the public npm registry — where these names do not exist.
+ * Fail the release rather than let that reach a build.
+ *
+ * The set of internal names comes from the manifests themselves rather than a
+ * hardcoded scope, so renaming or adding a scope cannot silently disable this.
+ */
+function assertWorkspaceDeps(manifests: readonly LoadedManifest[]): void {
+	const internalNames = new Set(
+		manifests.flatMap(({ pkg }) => (pkg.name === undefined ? [] : [pkg.name])),
+	);
 
-	const bumpDeps = (deps: Record<string, string> | undefined): void => {
-		if (!deps) return;
-		for (const key of Object.keys(deps)) {
-			if (key.startsWith("@vibe-tavern/")) {
-				deps[key] = version;
+	for (const { relPath, pkg } of manifests) {
+		const groups: readonly (readonly [string, Record<string, string> | undefined])[] = [
+			["dependencies", pkg.dependencies],
+			["devDependencies", pkg.devDependencies],
+			["peerDependencies", pkg.peerDependencies],
+		];
+		for (const [groupName, deps] of groups) {
+			if (!deps) continue;
+			for (const [name, range] of Object.entries(deps)) {
+				if (internalNames.has(name) && range !== "workspace:*") {
+					fail(
+						`${relPath} → ${groupName}.${name} is "${range}", expected "workspace:*".\n`
+						+ "Internal packages must not be pinned by version.",
+					);
+				}
 			}
 		}
-	};
-
-	bumpDeps(pkg.dependencies);
-	bumpDeps(pkg.devDependencies);
-	bumpDeps(pkg.peerDependencies);
-
-	// 2-space indent + trailing newline matches the existing file style.
-	await Bun.write(absPath, JSON.stringify(pkg, null, 2) + "\n");
+	}
 }
 
 function fail(msg: string): never {
@@ -123,9 +164,36 @@ function fail(msg: string): never {
 }
 
 async function main(): Promise<void> {
-	const args = process.argv.slice(2);
-	const shouldPush = args.includes("--push");
-	const targetVersion = args.find((a) => !a.startsWith("--"));
+	const rawArgs = process.argv.slice(2);
+	const options = {
+		push: { type: "boolean" },
+	} as const;
+	const initial = parseArgs({
+		args: rawArgs,
+		options,
+		strict: false,
+		allowPositionals: true,
+		tokens: true,
+	});
+	const args = [...new Set(initial.tokens.flatMap((token) =>
+		token.kind === "option-terminator" ? [] : [token.index]
+	))].flatMap((index) => {
+		const arg = rawArgs[index];
+		return arg === undefined ? [] : [arg];
+	});
+	const { values, tokens } = parseArgs({
+		args,
+		options,
+		strict: false,
+		allowPositionals: true,
+		tokens: true,
+	});
+	const shouldPush = values.push === true;
+	const targetToken = tokens.find((token) =>
+		token.kind === "positional"
+		|| (token.kind === "option" && token.name !== "push" && /^-[^-]/.test(token.rawName))
+	);
+	const targetVersion = targetToken === undefined ? undefined : args[targetToken.index];
 
 	if (!targetVersion) {
 		console.error("Usage: bun run bump-version <version> [--push]");
@@ -134,11 +202,17 @@ async function main(): Promise<void> {
 	}
 
 	if (!SEMVER_RE.test(targetVersion)) {
-		fail(`invalid semver: "${targetVersion}". Expected X.Y.Z or X.Y.Z-prerelease`);
+		fail(
+			`invalid release version: "${targetVersion}". Expected X.Y.Z.\n`
+			+ "Prereleases are not supported — the in-app updater and the Docker\n"
+			+ "`latest` tag both track the newest release, so a prerelease would\n"
+			+ "ship itself to every installed user.",
+		);
 	}
 
 	const target = parseSemver(targetVersion);
 	if (!target) fail(`could not parse version: "${targetVersion}"`);
+	const tagName = `v${targetVersion}`;
 
 	// --- git preconditions ---
 
@@ -148,10 +222,41 @@ async function main(): Promise<void> {
 	}
 
 	const branch = (await $`git rev-parse --abbrev-ref HEAD`.cwd(ROOT).text()).trim();
-	const isTrunk = branch === "master" || branch === "main";
-	const isReleaseBranch = branch.startsWith("release/");
-	if (!isTrunk && !isReleaseBranch) {
-		fail(`must be on master/main or release/* — currently on "${branch}"`);
+	if (branch !== "master") {
+		fail(`must be on master — currently on "${branch}"`);
+	}
+
+	const fetchResult = await $`git fetch --quiet --no-tags origin master dev`.cwd(ROOT).nothrow();
+	if (fetchResult.exitCode !== 0) {
+		fail("could not fetch origin master/dev — verify the origin remote and network connection");
+	}
+
+	const localSha = (await $`git rev-parse HEAD`.cwd(ROOT).text()).trim();
+	const remoteSha = (await $`git rev-parse refs/remotes/origin/master`.cwd(ROOT).text()).trim();
+	if (localSha !== remoteSha) {
+		fail("local master must exactly match origin/master — push or pull master, wait for CI, then retry");
+	}
+
+	// Releases are cut from master, but development happens on dev. If the
+	// merge was forgotten, master is a stale snapshot and the release would
+	// ship last release's code under a new version number.
+	const devMerged = await $`git merge-base --is-ancestor refs/remotes/origin/dev HEAD`.cwd(ROOT).nothrow();
+	if (devMerged.exitCode !== 0) {
+		const behind = (await $`git rev-list --count HEAD..refs/remotes/origin/dev`.cwd(ROOT).text()).trim();
+		fail(
+			`master is missing ${behind} commit(s) from origin/dev — merge dev into master first:\n`
+			+ "  git merge --no-ff origin/dev",
+		);
+	}
+
+	const localTag = (await $`git tag --list ${tagName}`.cwd(ROOT).text()).trim();
+	if (localTag) {
+		fail(`tag ${tagName} already exists locally`);
+	}
+
+	const remoteTag = (await $`git ls-remote --tags origin refs/tags/${tagName}`.cwd(ROOT).text()).trim();
+	if (remoteTag) {
+		fail(`tag ${tagName} already exists on origin`);
 	}
 
 	// --- version preconditions ---
@@ -174,33 +279,91 @@ async function main(): Promise<void> {
 		process.exit(1);
 	}
 
+	// --- validate the manifests, then the lockfile that describes them ---
+	//
+	// Both run BEFORE the bump, against the exact committed state that CI
+	// verified, so they are pure validations with nothing in flight.
+	//
+	// Manifest structure is checked first: it is a cheap, self-contained read,
+	// and its failure ("an internal dep is pinned by version") is a statement
+	// about the manifests alone. Checking the lockfile first would report a
+	// lockfile mismatch for what is really a manifest problem.
+	const manifests = await loadManifests();
+	assertWorkspaceDeps(manifests);
+
+	// `--frozen-lockfile --dry-run` is the whole point: it answers "does this
+	// lockfile still satisfy these manifests" and writes NOTHING — no
+	// node_modules, no lockfile rewrite. A plain `bun install` would be actively
+	// harmful: it does not sync a workspace version bump anyway, but it IS free
+	// to re-resolve every other range, silently dragging unrelated dependency
+	// upgrades into the release commit. Verification must not mutate the tree it
+	// is about to tag.
+	//
+	// It must also run before the version rewrite: on Windows bun counts the
+	// workspace `version` fields recorded in bun.lock as part of the frozen
+	// check, so verifying after the bump fails there (but not on Linux).
+
+	console.log("Verifying bun.lock...");
+	const verify = await $`bun install --frozen-lockfile --dry-run`.cwd(ROOT).nothrow().quiet();
+	if (verify.exitCode !== 0) {
+		fail(
+			"bun.lock does not satisfy the committed manifests:\n"
+			+ verify.stderr.toString().trim()
+			+ "\nCommit a synchronized lockfile on master first.",
+		);
+	}
+	console.log("  verified  bun.lock\n");
+
 	console.log(`Bumping v${currentVersion} → v${targetVersion} on ${branch}\n`);
 
 	// --- bump files ---
+	//
+	// Every manifest was loaded and validated above, so nothing is written until
+	// all of them passed — a failure halfway through would otherwise leave a
+	// half-bumped tree behind.
 
-	for (const relPath of PACKAGE_FILES) {
-		await bumpPackageFile(relPath, targetVersion);
+	for (const { relPath, absPath, pkg } of manifests) {
+		pkg.version = targetVersion;
+		// 2-space indent + trailing newline matches the existing file style.
+		await Bun.write(absPath, JSON.stringify(pkg, null, 2) + "\n");
 		console.log(`  bumped  ${relPath}`);
 	}
 
-	// --- sync lockfile ---
-
-	console.log("\nSyncing bun.lock...");
-	await $`bun install`.cwd(ROOT);
-	console.log("  synced  bun.lock");
+	// The bump must touch the allowlist and nothing else. This catches a stray
+	// lockfile rewrite, a generated file, or an editor artifact riding along
+	// into a commit that is about to become an immutable release tag.
+	//
+	// `-z` gives NUL-separated, unquoted, newline-agnostic records — porcelain
+	// v1 quotes paths containing spaces and is line-ending sensitive, which
+	// makes text parsing of it wrong on some platforms.
+	const allowedPaths = new Set<string>(PACKAGE_FILES);
+	const rawStatus = await $`git status --porcelain -z`.cwd(ROOT).text();
+	const dirty = rawStatus
+		.split("\0")
+		.filter((record) => record.length > 3)
+		// Each record is `XY <path>`; the two status columns are fixed-width.
+		.map((record) => record.slice(3));
+	const unexpected = dirty.filter((path) => !allowedPaths.has(path));
+	if (unexpected.length > 0) {
+		const changed = await $`git diff --stat -- ${unexpected}`.cwd(ROOT).nothrow().quiet();
+		fail(
+			"the bump changed files outside the allowlist:\n"
+			+ unexpected.map((path) => `  ${path}`).join("\n")
+			+ "\n\ngit diff --stat:\n" + changed.stdout.toString().trim()
+			+ "\n\nRefusing to tag a release commit with unrelated changes.",
+		);
+	}
 
 	// --- commit ---
 
 	const commitMsg = `chore: bump to v${targetVersion} [skip ci]`;
-	const commitPaths = [...PACKAGE_FILES, "bun.lock"];
-	await $`git add ${commitPaths}`.cwd(ROOT);
+	await $`git add ${PACKAGE_FILES}`.cwd(ROOT);
 	await $`git commit -m ${commitMsg}`.cwd(ROOT);
 	const newSha = (await $`git rev-parse HEAD`.cwd(ROOT).text()).trim();
 	console.log(`\n  committed  ${newSha.slice(0, 8)}  ${commitMsg}`);
 
 	// --- annotated tag ---
 
-	const tagName = `v${targetVersion}`;
 	await $`git tag -a ${tagName} -m ${tagName}`.cwd(ROOT);
 	console.log(`  tagged     ${tagName} (annotated)`);
 
@@ -208,12 +371,16 @@ async function main(): Promise<void> {
 
 	if (shouldPush) {
 		console.log("\nPushing to origin...");
-		await $`git push origin ${branch}`.cwd(ROOT);
-		await $`git push origin ${tagName}`.cwd(ROOT);
+		// --atomic: branch and tag land together or not at all. Two separate
+		// pushes can interleave with someone else's push and leave the tag
+		// pointing at a commit that is not on master.
+		await $`git push --atomic origin ${branch} ${tagName}`.cwd(ROOT);
 		console.log(`\nDone. ${tagName} pushed — release workflow will trigger.`);
+		console.log("It builds and attaches every artifact, then leaves a DRAFT release.");
+		console.log("Review the notes and press 'Publish release' to ship it to users.");
 	} else {
 		console.log(`\nDone locally. To publish:`);
-		console.log(`  git push origin ${branch} && git push origin ${tagName}`);
+		console.log(`  git push --atomic origin ${branch} ${tagName}`);
 		console.log(`\nOr re-run with --push to do it automatically next time.`);
 	}
 }

@@ -1,0 +1,63 @@
+name: Promote release to latest
+
+# release.yml builds and pushes ghcr.io/<repo>:X.Y.Z, but deliberately does NOT
+# tag it `latest` — at that point the GitHub Release is still a draft that
+# nobody has approved.
+#
+# This workflow closes that gap: when a human presses "Publish release", the
+# `released` event fires and `latest` moves to the image built from that exact
+# tag. So a single human click promotes BOTH artifact channels at once:
+#   - GitHub Release  → visible to users, drives the in-app updater
+#   - Docker `latest` → drives `docker pull ghcr.io/<repo>`
+#
+# `released` (not `published`) is used on purpose: `published` also fires for
+# prereleases, `released` does not. Prereleases are unsupported here anyway,
+# but this keeps the guarantee at the event level rather than in a condition.
+#
+# Retagging is done with `buildx imagetools create`, which adds a tag to the
+# EXISTING manifest by digest. Nothing is rebuilt, so the promoted image is
+# bit-for-bit the one that was verified and attested during the release run.
+
+on:
+  release:
+    types: [released]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-latest
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+    steps:
+      - name: Resolve version from release tag
+        run: |
+          set -euo pipefail
+          VERSION="${TAG#v}"
+          if ! printf '%s' "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::Release tag ${TAG} is not a X.Y.Z release tag — refusing to move latest."
+            exit 1
+          fi
+          echo "VERSION=${VERSION}" >> "$GITHUB_ENV"
+          echo "IMAGE_NAME=$(echo "$REPOSITORY" | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_ENV"
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+          REPOSITORY: ${{ github.repository }}
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Point latest at the published version
+        run: |
+          set -euo pipefail
+          docker buildx imagetools create \
+            --tag "ghcr.io/${IMAGE_NAME}:latest" \
+            "ghcr.io/${IMAGE_NAME}:${VERSION}"
+          echo "::notice::ghcr.io/${IMAGE_NAME}:latest now points at ${VERSION}"

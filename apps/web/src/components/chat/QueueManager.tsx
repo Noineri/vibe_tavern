@@ -3,10 +3,11 @@ import * as Popover from "@radix-ui/react-popover";
 import { cn } from "../../lib/cn.js";
 import { resolveModelLabel } from "../../lib/model-resolve.js";
 import { Icons } from "../shared/icons.js";
+import { CustomTooltip } from "../shared/Tooltip.js";
 import { BottomSheet } from "../shared/BottomSheet.js";
 import { getModalPortal } from "../shared/modal-helpers.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
-import { useT, type TFunc } from "../../i18n/context.js";
+import { useT } from "../../i18n/context.js";
 import { useChatStore } from "../../stores/chat-store.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
 import { useProviderStore } from "../../stores/provider-store.js";
@@ -51,15 +52,19 @@ export function QueueManager(): ReactNode {
   const [expanded, setExpanded] = useState(false);
   const { t } = useT();
 
-  // Empty queue (job #0 not tracked) → render nothing. The pill appears on the
-  // first "Generate more" click, which is exactly when the user has signaled
-  // intent to queue ≥ 1 additional variant.
-  if (jobs.length < 1) return null;
+  // Empty queue (job #0 not tracked) → render nothing, UNLESS the popover is
+  // already open (e.g. the user just cleared the last pending job): then keep
+  // the panel mounted so it can show a brief "queue empty" frame instead of
+  // vanishing mid-interaction. The pill appears on the first "Generate more"
+  // click, which is exactly when the user has signaled intent to queue ≥ 1.
+  if (jobs.length < 1 && !expanded) return null;
 
   const done = jobs.filter((j) => j.status === "done").length;
-  const pillLabel = isActive
-    ? `${done}/${total} ${t("queue_generating")}`
-    : `${done}/${total}`;
+  // Counter-only label: the spinning regen icon conveys "generating", so a
+  // trailing noun is redundant — and a noun after a Russian counter ("0/6
+  // генерация…") is grammatically wrong without plural-form logic. Keeping
+  // the pill locale-agnostic (done/total only) sidesteps both issues.
+  const pillLabel = jobs.length < 1 ? "" : `${done}/${total}`;
 
   return (
     <div className="absolute bottom-full left-1.5 z-20 mb-1 flex items-center gap-1.5">
@@ -68,14 +73,13 @@ export function QueueManager(): ReactNode {
           <button
             type="button"
             className={cn(
-              "glass-blur flex items-center gap-1.5 rounded-full bg-glass-bg px-2.5 py-1 font-ui text-[calc(var(--ui-fs)-3px)] font-medium text-t2 transition-colors hover:bg-s3 hover:text-t1",
-              isActive && "text-accent-t",
+              "glass-blur flex items-center gap-1.5 rounded-full border border-border2 bg-glass-bg px-2.5 py-1 font-ui text-[calc(var(--ui-fs)-3px)] font-medium text-t2 shadow-sm transition-colors hover:bg-s3 hover:text-t1",
             )}
             aria-expanded={expanded}
             aria-label={t("queue_title")}
           >
             <Icons.regen className={cn(isActive && "animate-spin-slow")} />
-            <span className={cn(isActive && "animate-pulse")}>{pillLabel}</span>
+            {pillLabel && <span className={cn(isActive && "text-accent-t")}>{pillLabel}</span>}
             <Icons.Caret direction={expanded ? "d" : "u"} />
           </button>
         </Popover.Trigger>
@@ -104,38 +108,57 @@ function usePresetName(presetId: string | null): string | null {
   }, [presetId, presets]);
 }
 
-function statusLabel(status: QueueJob["status"], t: TFunc): string {
-  switch (status) {
-    case "pending": return t("queue_queued");
-    case "running": return t("queue_running");
-    case "done": return "✓";
-    case "failed": return t("queue_failed");
-    case "cancelled": return "✕";
+/** Status indicator for a single job row. Pending rows stay quiet (a muted
+ *  dot) instead of repeating the word "queued"; running shows the spinning
+ *  regen glyph; failed wraps its ✕ in a tooltip carrying the job's error.
+ *  Visual state is paired with an aria-label so screen readers still announce
+ *  it — the dots/icons/✓/✕ alone are not descriptive enough. */
+function JobStatus({ job }: { job: QueueJob }): ReactNode {
+  const { t } = useT();
+  switch (job.status) {
+    case "pending":
+      return <span aria-label={t("queue_queued")} className="text-t4">·</span>;
+    case "running":
+      return (
+        <span aria-label={t("queue_running")} className="text-accent-t">
+          <Icons.regen className="animate-spin-slow" />
+        </span>
+      );
+    case "done":
+      return <span aria-label={t("queue_done")} className="text-success-text">✓</span>;
+    case "failed":
+      return (
+        <CustomTooltip content={job.error ?? ""} side="top">
+          <span aria-label={job.error ? `${t("queue_failed")}: ${job.error}` : t("queue_failed")} className="cursor-help text-danger-text">✕</span>
+        </CustomTooltip>
+      );
+    case "cancelled":
+      return <span className="text-t4">✕</span>;
   }
 }
 
-function JobRow({ job, index, onClose }: { job: QueueJob; index: number; onClose: () => void }): ReactNode {
-  const { t } = useT();
+function JobRow({ job, index, onClose, compact = true }: { job: QueueJob; index: number; onClose: () => void; compact?: boolean }): ReactNode {
   const presetName = usePresetName(job.promptPresetId);
   const isCancellable = job.status === "pending" || job.status === "running";
   return (
-    <div className="flex items-center gap-2 px-3 py-2 text-[calc(var(--ui-fs)-2px)] text-t2">
+    <div className={cn(
+      "flex items-center gap-2 text-[calc(var(--ui-fs)-3px)] text-t2",
+      compact ? "px-3 py-2" : "px-4 py-3",
+    )}>
       <span className="w-6 shrink-0 text-t3">#{index + 1}</span>
-      <span className="shrink-0 font-medium text-t1">{resolveModelLabel(job.model)}</span>
-      {presetName && <span className="truncate text-t3">· {presetName}</span>}
-      <span className={cn(
-        "ml-auto shrink-0",
-        job.status === "running" && "text-accent-t",
-        job.status === "failed" && "text-danger-text",
-        job.status === "done" && "text-success-text",
-      )}>
-        {statusLabel(job.status, t)}
+      <span className="shrink-0 text-t2">{resolveModelLabel(job.model)}</span>
+      {presetName && <span className="min-w-0 flex-1 truncate text-t3">· {presetName}</span>}
+      <span className="ml-auto shrink-0">
+        <JobStatus job={job} />
       </span>
       {isCancellable && (
         <button
           type="button"
           onClick={() => { cancelQueueJob(job.id); }}
-          className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-t3 transition-colors hover:bg-s3 hover:text-danger-text"
+          className={cn(
+            "flex shrink-0 items-center justify-center rounded text-t3 transition-colors hover:bg-s3 hover:text-danger-text",
+            compact ? "h-6 w-6" : "h-10 w-10",
+          )}
           aria-label="cancel"
         >
           <Icons.Close />
@@ -162,26 +185,35 @@ function ManagerHeader({ jobs, onClose }: { jobs: QueueJob[]; onClose: () => voi
   const { t } = useT();
   const addCurrent = useAddCurrent(jobs);
   const hasPending = jobs.some((j) => j.status === "pending");
+  // Two rows: title + count + clear on top, a full-width "Add current" CTA
+  // below. Cramming all three into one w-80 row wraps under Russian strings
+  // ("Добавить текущие" + "Очистить очередь" + title ≈ 48 chars > 320px); the
+  // primary CTA also deserves its own row. Each row stays single-line.
   return (
-    <div className="flex items-center gap-2 border-b border-border px-3 py-2">
-      <span className="font-ui text-[calc(var(--ui-fs)-2px)] font-semibold text-t1">{t("queue_title")}</span>
-      <button
-        type="button"
-        onClick={addCurrent}
-        className="flex items-center gap-1 rounded px-2 py-1 text-[calc(var(--ui-fs)-3px)] text-accent-t transition-colors hover:bg-s2"
-      >
-        <Icons.Plus />
-        <span>{t("queue_add_current")}</span>
-      </button>
-      {hasPending && (
+    <div className="border-b border-border">
+      <div className="flex items-center gap-2 px-3 py-2">
+        <span className="shrink-0 whitespace-nowrap font-ui text-[calc(var(--ui-fs)-2px)] font-semibold text-t1">{t("queue_title")}</span>
+        <span className="shrink-0 whitespace-nowrap text-[calc(var(--ui-fs)-3px)] text-t3">{jobs.length}</span>
+        {hasPending && (
+          <button
+            type="button"
+            onClick={() => { clearQueuePending(); onClose(); }}
+            className="ml-auto shrink-0 whitespace-nowrap rounded px-2 py-1 text-[calc(var(--ui-fs)-3px)] text-t3 transition-colors hover:bg-s2 hover:text-danger-text"
+          >
+            {t("queue_clear")}
+          </button>
+        )}
+      </div>
+      <CustomTooltip content={t("queue_add_current_hint")} side="top">
         <button
           type="button"
-          onClick={() => { clearQueuePending(); onClose(); }}
-          className="ml-auto rounded px-2 py-1 text-[calc(var(--ui-fs)-3px)] text-t3 transition-colors hover:bg-s2 hover:text-danger-text"
+          onClick={addCurrent}
+          className="flex w-full items-center gap-1.5 whitespace-nowrap border-t border-border px-3 py-2 text-[calc(var(--ui-fs)-3px)] text-accent-t transition-colors hover:bg-s2"
         >
-          {t("queue_clear")}
+          <Icons.Plus />
+          <span>{t("queue_add_current")}</span>
         </button>
-      )}
+      </CustomTooltip>
     </div>
   );
 }
@@ -189,19 +221,26 @@ function ManagerHeader({ jobs, onClose }: { jobs: QueueJob[]; onClose: () => voi
 // ── Desktop: upward popover (Radix Popover) ─────────────────────────────
 
 function DesktopPopoverContent({ jobs, onClose }: { jobs: QueueJob[]; onClose: () => void }): ReactNode {
+  const { t } = useT();
   return (
     <Popover.Content
       side="top"
       align="start"
       sideOffset={4}
-      className="glass-blur z-[220] w-80 overflow-hidden rounded-lg border border-border bg-glass-bg shadow-[0_-4px_16px_rgba(0,0,0,0.4)] outline-none data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95"
+      className="glass-blur z-[220] max-w-[calc(100vw-2rem)] w-80 overflow-hidden rounded-lg border border-border2 bg-glass-bg shadow-[0_12px_28px_rgba(0,0,0,0.45)] outline-none data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95"
     >
-      <ManagerHeader jobs={jobs} onClose={onClose} />
-      <div className="max-h-64 overflow-y-auto">
-        {jobs.map((job, i) => (
-          <JobRow key={job.id} job={job} index={i} onClose={onClose} />
-        ))}
-      </div>
+      {jobs.length < 1 ? (
+        <div className="px-3 py-6 text-center text-[calc(var(--ui-fs)-3px)] text-t3">{t("queue_empty")}</div>
+      ) : (
+        <>
+          <ManagerHeader jobs={jobs} onClose={onClose} />
+          <div className="max-h-64 overflow-y-auto">
+            {jobs.map((job, i) => (
+              <JobRow key={job.id} job={job} index={i} onClose={onClose} />
+            ))}
+          </div>
+        </>
+      )}
     </Popover.Content>
   );
 }
@@ -209,14 +248,21 @@ function DesktopPopoverContent({ jobs, onClose }: { jobs: QueueJob[]; onClose: (
 // ── Mobile: bottom sheet (reuses Rail.tsx z-[501] pattern) ───────────────
 
 function MobileSheet({ jobs, onClose }: { jobs: QueueJob[]; onClose: () => void }): ReactNode {
+  const { t } = useT();
   return (
     <BottomSheet open={true} onClose={onClose}>
-      <ManagerHeader jobs={jobs} onClose={onClose} />
-      <div className="max-h-[50vh] overflow-y-auto pb-2">
-        {jobs.map((job, i) => (
-          <JobRow key={job.id} job={job} index={i} onClose={onClose} />
-        ))}
-      </div>
+      {jobs.length < 1 ? (
+        <div className="px-4 py-8 text-center text-[calc(var(--ui-fs)-2px)] text-t3">{t("queue_empty")}</div>
+      ) : (
+        <>
+          <ManagerHeader jobs={jobs} onClose={onClose} />
+          <div className="max-h-[50vh] overflow-y-auto pb-2">
+            {jobs.map((job, i) => (
+              <JobRow key={job.id} job={job} index={i} onClose={onClose} compact={false} />
+            ))}
+          </div>
+        </>
+      )}
     </BottomSheet>
   );
 }

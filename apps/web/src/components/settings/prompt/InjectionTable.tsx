@@ -1,7 +1,7 @@
 import { useState, useMemo, type CSSProperties, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import type { CustomInjection, PromptOrderEntry, PromptSlot, PromptZone } from "@vibe-tavern/domain";
-import { inferSlot } from "@vibe-tavern/domain";
+import { inferDefaultPromptSlot, inferSlot } from "@vibe-tavern/domain";
 import {
   closestCenter,
   DndContext,
@@ -20,12 +20,18 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import { useT } from "../../../i18n/context.js";
 import { cn } from "../../../lib/cn.js";
-import { useIsMobile } from "../../../hooks/use-mobile.js";
 import { useDndSensors } from "../../../hooks/use-dnd-sensors.js";
 import { DragHandleContext } from "./drag-handle.js";
+import type { CanvasLoreEntrySummary } from "../../../lib/prompt-canvas-lore.js";
+import type { CanvasSummaryEntry } from "../../../lib/prompt-canvas-summary.js";
 import { buildFixedItems } from "./build-fixed-items.js";
-import type { CanvasItem, CharacterCanvasDraft, PromptCanvasDraft } from "./canvas-shared.js";
-import { InjectionRowView } from "./rows/InjectionRowView.js";
+import type { CanvasItem, CanvasRole, CharacterCanvasDraft, PromptCanvasDraft } from "./canvas-shared.js";
+import type { LoreAnchorLoadState } from "./LoreAnchorList.js";
+import type { SummaryLoadState } from "./SummaryList.js";
+import { Checkbox } from "../../shared/Checkbox.js";
+import { CanvasCard } from "./rows/CanvasCard.js";
+import { CustomTooltip } from "../../shared/Tooltip.js";
+import { AnimatedDisclosure } from "../../shared/AnimatedDisclosure.js";
 
 // NOTE (CANVAS_SINGLE_SOURCE_PLAN Wave 4): injection rows are content-only
 // `CustomInjection` ({identifier, name, content, role}). ALL positional state
@@ -41,9 +47,19 @@ interface InjectionTableProps {
   injections: CustomInjection[];
   onChange: (injections: CustomInjection[]) => void;
   draft?: PromptCanvasDraft | null;
-  onUpdateField?: (key: keyof PromptCanvasDraft, value: string | number) => void;
+  onUpdateField?: (key: keyof PromptCanvasDraft, value: string | number | boolean) => void;
   characterDraft?: CharacterCanvasDraft | null;
   onCharacterFieldUpdate?: (key: keyof CharacterCanvasDraft, value: string | number) => void;
+  personaDescription?: string | null;
+  onPersonaDescriptionUpdate?: (value: string) => void;
+  /** Per-chat dynamic prompt — content edited via the canvas card. */
+  chatDynamicPrompt?: string | null;
+  onChatDynamicPromptUpdate?: (value: string) => void;
+  loreAnchorEntries?: CanvasLoreEntrySummary[];
+  loreAnchorLoadState?: LoreAnchorLoadState;
+  /** Chat-summary memory blocks injected at the `chatSummary` anchor. */
+  summaryEntries?: CanvasSummaryEntry[];
+  summaryLoadState?: SummaryLoadState;
   promptOrder?: PromptOrderEntry[];
   onPromptOrderChange?: (promptOrder: PromptOrderEntry[]) => void;
 }
@@ -58,7 +74,7 @@ function DroppableDepthContainer({ id, depth, children, label, className }: { id
     <div
       ref={setNodeRef}
       className={cn(
-        "rounded-md border border-transparent p-1 transition-colors min-h-[40px] flex flex-col gap-1.5",
+        "rounded-md border border-transparent p-1 transition-colors min-h-[40px] flex flex-col gap-1 sm:gap-1.5",
         className
       )}
     >
@@ -132,9 +148,25 @@ function SortableZone({ id, label, depth, items, activeDragKey }: {
  *    compute placeholder spaces on the fly.
  * 4. Finally, `onDragEnd` applies the sorted `activeZones` back into the parent `promptOrder` and `injections` props.
  */
-export function PromptOrderCanvas({ injections, onChange, draft, onUpdateField, characterDraft, onCharacterFieldUpdate, promptOrder = [], onPromptOrderChange }: InjectionTableProps) {
+export function PromptOrderCanvas({
+  injections,
+  onChange,
+  draft,
+  onUpdateField,
+  characterDraft,
+  onCharacterFieldUpdate,
+  chatDynamicPrompt,
+  onChatDynamicPromptUpdate,
+  personaDescription,
+  onPersonaDescriptionUpdate,
+  loreAnchorEntries,
+  loreAnchorLoadState,
+  summaryEntries,
+  summaryLoadState,
+  promptOrder = [],
+  onPromptOrderChange,
+}: InjectionTableProps) {
   const { t } = useT();
-  const isMobile = useIsMobile();
   const [activeDragKey, setActiveDragKey] = useState<string | null>(null);
   const [accordionOpen, setAccordionOpen] = useState(false);
   
@@ -178,12 +210,24 @@ export function PromptOrderCanvas({ injections, onChange, draft, onUpdateField, 
       { identifier, enabled: true, kind: "custom" as const, zone: "before_chat" as const, depth: null, order: 999 },
     ]);
   }
+  function defaultBuiltInEntry(identifier: string): PromptOrderEntry {
+    const slot = inferDefaultPromptSlot(identifier);
+    return {
+      identifier,
+      enabled: true,
+      kind: "built_in",
+      zone: slot.zone,
+      depth: slot.depth,
+      order: slot.order,
+    };
+  }
+
   function togglePromptSlot(identifier: string) {
     const existing = orderByIdentifier.get(identifier);
     const enabled = existing?.enabled ?? true;
     const next = existing
       ? promptOrder.map((entry) => entry.identifier === identifier ? { ...entry, enabled: !enabled } : entry)
-      : [...promptOrder, { identifier, enabled: false, kind: "built_in" as const, zone: "before_chat" as const, depth: null, order: 999 }];
+      : [...promptOrder, { ...defaultBuiltInEntry(identifier), enabled: false }];
     onPromptOrderChange?.(next);
   }
   function slotEnabled(identifier: string) {
@@ -193,42 +237,80 @@ export function PromptOrderCanvas({ injections, onChange, draft, onUpdateField, 
     return injection.identifier || `custom_${index}`;
   }
 
-  function slotLabelFor(identifier: string): string | null {
+  function resolvedSlot(identifier: string): PromptSlot {
     const entry = orderByIdentifier.get(identifier);
-    const zone = entry?.zone;
-    if (!zone) return null;
-    if (zone === "before_chat") return null;
-    if (zone === "after_chat") return "after";
-    const depth = entry?.depth ?? 0;
-    return `←${depth}`;
+    return entry?.zone
+      ? { zone: entry.zone, depth: entry.depth ?? null, order: entry.order ?? inferDefaultPromptSlot(identifier).order }
+      : inferDefaultPromptSlot(identifier);
+  }
+
+  function slotLabelFor(identifier: string): string | null {
+    const slot = resolvedSlot(identifier);
+    if (slot.zone === "before_chat") return null;
+    if (slot.zone === "after_chat") return "after";
+    return `←${slot.depth ?? 4}`;
   }
 
   function slotDepthFor(identifier: string): number | null {
-    const entry = orderByIdentifier.get(identifier);
-    if (entry?.zone === "in_chat") return entry.depth ?? 4;
-    return null;
+    const slot = resolvedSlot(identifier);
+    return slot.zone === "in_chat" ? (slot.depth ?? 4) : null;
+  }
+
+  function slotRoleFor(identifier: string, fallback: CanvasRole): CanvasRole {
+    return orderByIdentifier.get(identifier)?.role ?? fallback;
   }
 
   function updateSlotDepth(identifier: string, depth: number) {
-    const next = promptOrder.map(e =>
-      e.identifier === identifier ? { ...e, depth } : e
-    );
+    const existing = orderByIdentifier.get(identifier);
+    const next = existing
+      ? promptOrder.map((entry) => entry.identifier === identifier ? { ...entry, depth } : entry)
+      : [...promptOrder, { ...defaultBuiltInEntry(identifier), zone: "in_chat" as const, depth }];
+    onPromptOrderChange?.(next);
+  }
+
+  function updateSlotRole(identifier: string, role: CanvasRole) {
+    const existing = orderByIdentifier.get(identifier);
+    const next = existing
+      ? promptOrder.map((entry) => entry.identifier === identifier ? { ...entry, role } : entry)
+      : [...promptOrder, { ...defaultBuiltInEntry(identifier), role }];
     onPromptOrderChange?.(next);
   }
 
   // Single read path: positional state comes ONLY from the `promptOrder`
   // entry (the canvas). Custom items no longer carry `slot` — they read the
-  // SAME canvas entry as built-ins. Falls back to `inferSlot` from default order
-  // when no canvas entry exists yet (e.g. a built-in never toggled/moved).
+  // SAME canvas entry as built-ins. Falls back to the domain's per-identifier
+  // default slot when no canvas entry exists yet (charDepthPrompt is the one
+  // non-relative default: in_chat depth 4).
   function getCanvasItemSlot(item: CanvasItem): PromptSlot {
     const existingOrder = orderByIdentifier.get(item.identifier);
     if (existingOrder?.zone) {
       return { zone: existingOrder.zone, depth: existingOrder.depth ?? null, order: existingOrder.order ?? item.defaultOrder };
     }
-    return inferSlot({ defaultOrder: item.defaultOrder, order: existingOrder?.order ?? item.defaultOrder });
+    return inferDefaultPromptSlot(item.identifier, existingOrder?.order ?? item.defaultOrder);
   }
 
-  const fixedItems = buildFixedItems({ t, draft, onUpdateField, characterDraft, onCharacterFieldUpdate, slotEnabled, togglePromptSlot, slotLabelFor, slotDepthFor, updateSlotDepth });
+  const fixedItems = buildFixedItems({
+    t,
+    draft,
+    onUpdateField,
+    characterDraft,
+    onCharacterFieldUpdate,
+    personaDescription,
+    onPersonaDescriptionUpdate,
+    chatDynamicPrompt,
+    onChatDynamicPromptUpdate,
+    loreAnchorEntries,
+    loreAnchorLoadState,
+    summaryEntries,
+    summaryLoadState,
+    slotEnabled,
+    togglePromptSlot,
+    slotLabelFor,
+    slotDepthFor,
+    slotRoleFor,
+    updateSlotDepth,
+    updateSlotRole,
+  });
 
   // Prefill is special: always last, not draggable
   const prefillItem = fixedItems.find(i => i.identifier === "assistantPrefill");
@@ -251,16 +333,22 @@ export function PromptOrderCanvas({ injections, onChange, draft, onUpdateField, 
           ? { zone: entry.zone, depth: entry.depth ?? null, order: entry.order ?? defaultOrder }
           : inferSlot({ defaultOrder, order: defaultOrder });
         return (
-          <InjectionRowView
-            injection={inj}
-            index={i}
-            isMobile={isMobile}
+          <CanvasCard
+            identifier={identifier}
+            category="custom"
+            label={inj.name || t("preset_injection_name")}
+            editableName={{ value: inj.name, placeholder: t("preset_injection_name"), onRename: (name) => update(i, { name }) }}
             enabled={entry?.enabled ?? true}
-            slot={slot}
-            onUpdate={update}
-            onToggleEnabled={() => togglePromptSlot(identifier)}
+            onToggle={() => togglePromptSlot(identifier)}
+            value={inj.content}
+            placeholder={t("preset_injection_content")}
+            onChange={(v) => update(i, { content: v })}
+            role={inj.role}
+            onRoleChange={(r) => update(i, { role: r })}
+            slotLabel={slot.zone === "in_chat" ? "in-chat" : slot.zone === "after_chat" ? t("after_badge") : null}
+            slotDepth={slot.depth}
             onSlotDepthChange={(d) => updateSlotDepth(identifier, d)}
-            onRemove={remove}
+            onRemove={() => remove(i)}
           />
         );
       },
@@ -424,17 +512,21 @@ export function PromptOrderCanvas({ injections, onChange, draft, onUpdateField, 
 
   return (
     <div>
-      <div className="mb-3 flex items-start justify-between gap-3">
-        <div>
+      <div data-testid="prompt-canvas-header" className="mb-3 flex flex-col items-stretch gap-3 px-1.5 sm:flex-row sm:items-start sm:justify-between sm:px-0">
+        <div className="min-w-0">
           <div className="font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-t2">{t("preset_prompt_order_canvas_title")}</div>
           <div className="mt-0.5 font-ui text-[11px] text-t4">{t("preset_prompt_order_canvas_hint")}</div>
         </div>
-        <button type="button"
-          className="flex shrink-0 cursor-pointer items-center gap-1 rounded border border-border bg-surface px-2.5 py-1 font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-all hover:border-accent hover:text-accent-t"
-          onClick={add}
-        >
-          + {t("preset_injection_add")}
-        </button>
+        <div className="flex w-full flex-wrap items-center justify-end gap-2 sm:w-auto sm:shrink-0">
+          <CustomTooltip content={t("merge_consecutive_roles_hint")}>
+            <Checkbox
+              checked={draft?.mergeConsecutiveRoles ?? false}
+              disabled={!draft || !onUpdateField}
+              onChange={(checked) => onUpdateField?.("mergeConsecutiveRoles", checked)}
+              label={<span className="font-ui text-[11px]">{t("merge_consecutive_roles")}</span>}
+            />
+          </CustomTooltip>
+        </div>
       </div>
 
       <DndContext
@@ -450,43 +542,54 @@ export function PromptOrderCanvas({ injections, onChange, draft, onUpdateField, 
           {/* ZONE 1: BEFORE CHAT */}
           <SortableZone id="zone-before_chat" label={t("prompt_zone_before_chat")} depth="before" items={zonesToRender.before_chat} activeDragKey={activeDragKey} />
 
+          {/* Add injection — placed where `add()` inserts the new card (last in
+              before_chat at order 999), immediately above Chat History, so the
+              action sits next to its result. before_chat zone, order 999, and
+              the 1:1 injection↔canvas-entry DnD invariant are all unchanged. */}
+          <button type="button"
+            className="mx-1.5 flex min-h-10 items-center justify-center gap-1 rounded-md border border-dashed border-border py-1.5 font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-all hover:border-accent hover:text-accent-t sm:mx-0 sm:min-h-0"
+            onClick={add}
+          >
+            + {t("preset_injection_add")}
+          </button>
+
           {/* ZONE 2: CHAT HISTORY ACCORDION */}
-          <div className="rounded-md border border-accent/35 bg-accent/10">
+          <div className="mx-1.5 rounded-md border border-accent/35 bg-accent/10 sm:mx-0">
             <button
               type="button"
-              className="relative flex w-full items-center justify-center px-3 py-2 font-ui text-[12px] font-medium text-accent-t hover:bg-accent/20 transition-colors rounded-t-md"
+              className="flex w-full items-center justify-between gap-2 px-3 py-2 font-ui text-[12px] font-medium text-accent-t hover:bg-accent/20 transition-colors rounded-t-md"
               onClick={() => setAccordionOpen(!accordionOpen)}
             >
-              <span>{t("prompt_slot_chat_history")}</span>
-              
-              <div className="absolute right-3 flex items-center gap-3">
+              <span className="min-w-0">{t("prompt_slot_chat_history")}</span>
 
+              <span className="flex shrink-0 items-center gap-2">
                 <span className="rounded bg-background/40 px-1.5 py-0.5 font-mono text-[10px] text-accent-t">
                   {zonesToRender.depth4.length + zonesToRender.depth3.length + zonesToRender.depth2.length + zonesToRender.depth1.length} {t("injection_items_label")}
                 </span>
-                <span className={cn("shrink-0 text-[11px] text-accent-t/70 transition-transform", accordionOpen && "rotate-90")}>
+                <span className={cn("shrink-0 text-[11px] text-accent-t/70 transition-transform", accordionOpen && "rotate-90")} aria-hidden="true">
                   ▶
                 </span>
-              </div>
+              </span>
             </button>
             
-            {accordionOpen && (
-              <div className="flex flex-col gap-1 p-2 border-t border-accent/20 bg-surface rounded-b-md">
-                <SortableZone id="depth-4" label={t("depth_zone_4plus")} depth={4} items={zonesToRender.depth4} activeDragKey={activeDragKey} />
+            <AnimatedDisclosure
+              open={accordionOpen}
+              className="flex flex-col gap-1 p-2 border-t border-accent/20 bg-surface rounded-b-md"
+            >
+              <SortableZone id="depth-4" label={t("depth_zone_4plus")} depth={4} items={zonesToRender.depth4} activeDragKey={activeDragKey} />
 
-                <div className="mx-2 h-px bg-border/60" />
+              <div className="mx-2 h-px bg-border/60" />
 
-                <SortableZone id="depth-3" label={t("depth_zone_3")} depth={3} items={zonesToRender.depth3} activeDragKey={activeDragKey} />
+              <SortableZone id="depth-3" label={t("depth_zone_3")} depth={3} items={zonesToRender.depth3} activeDragKey={activeDragKey} />
 
-                <div className="mx-2 h-px bg-border/60" />
+              <div className="mx-2 h-px bg-border/60" />
 
-                <SortableZone id="depth-2" label={t("depth_zone_2")} depth={2} items={zonesToRender.depth2} activeDragKey={activeDragKey} />
+              <SortableZone id="depth-2" label={t("depth_zone_2")} depth={2} items={zonesToRender.depth2} activeDragKey={activeDragKey} />
 
-                <div className="mx-2 h-px bg-border/60" />
+              <div className="mx-2 h-px bg-border/60" />
 
-                <SortableZone id="depth-1" label={t("depth_zone_1")} depth={1} items={zonesToRender.depth1} activeDragKey={activeDragKey} />
-              </div>
-            )}
+              <SortableZone id="depth-1" label={t("depth_zone_1")} depth={1} items={zonesToRender.depth1} activeDragKey={activeDragKey} />
+            </AnimatedDisclosure>
           </div>
 
           {/* ZONE 3: AFTER CHAT */}

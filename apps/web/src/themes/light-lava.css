@@ -15,6 +15,22 @@
     radial-gradient(circle at 50% 80%, oklch(0.90 0.08 200 / 60%), transparent 60%),
     var(--bg);
 
+  /* ─── WebGL lava-lamp palette (consumed by LavaBackground.tsx) ─── */
+  /* Hex RGB read by the shader and uploaded as uniforms. Daylight variant:
+     cool teal glass with warm coral/peach wax and bright cyan rims — the
+     inversion of dark-lava's warm-on-warm lamp. The legacy --page-bg gradient
+     above stays as the fallback for narrow screens / no-WebGL / reduced-motion;
+     these tokens only drive the WebGL overlay. Palette tuned by the owner
+     against the standalone prototype. --lamp-wax-orange is the linear midpoint
+     of mid↔thin (the shader's 4th ramp stop; override with a specific hex to
+     retune the cyan↔peach transition). */
+  --lamp-glass:     #23959f;  /* cool teal vessel medium */
+  --lamp-wax-thin:  #9deff3;  /* bright cyan wax (thin/small blobs + rims) */
+  --lamp-wax-mid:   #ffb98a;  /* peach body wax */
+  --lamp-wax-orange:#ced4bf;  /* mid↔thin midpoint (the shader's 4th stop; tune) */
+  --lamp-wax-thick: #ff9e9e;  /* coral core wax (thick blob centers) */
+  --lamp-light:    1;          /* 1 = light tinted field (keeps dark UI text readable) */
+
   /* ─── Surfaces (Translucent glass so blobs show through) ─── */
   --surface:   oklch(0.94 0.015 210 / 75%);    
   --s2:        oklch(0.90 0.020 210 / 75%);    
@@ -130,6 +146,16 @@
 
 @media (prefers-reduced-motion: reduce) {
   :root.light-lava body { animation: none; }
+}
+
+/* Stop the per-frame `background-position` repaint while the WebGL lava lamp
+   is painting (see LavaBackground.tsx) — that repaint is the actual perf cost;
+   the canvas itself runs on the GPU compositor, separate from the raster/
+   decode pipeline. The gradient stays as a STATIC fallback layer beneath the
+   opaque canvas (so a canvas failure degrades to a still gradient, not a
+   flash). Mirror of dark-lava.css; do NOT set body to a solid --bg here. */
+:root.light-lava.lava-webgl-active body {
+  animation: none;
 }
 
 @keyframes light-lava-drift {

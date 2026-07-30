@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtemp, mkdir, readFile, readdir } from "node:fs/promises";
+import { mkdtemp, mkdir, readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { eq, sql } from "drizzle-orm";
@@ -30,7 +30,7 @@ describe("PersonaStore folder storage (B2)", () => {
 		const { dataRoot, store } = await setup();
 		const persona = await store.create({ name: "Alex", description: "traveler", pronouns: "they/them" });
 
-		const raw = JSON.parse(await readFile(join(dataRoot, PERSONAS, persona.id, "persona.json"), "utf8"));
+		const raw = JSON.parse(await Bun.file(join(dataRoot, PERSONAS, persona.id, "persona.json")).text());
 		expect(raw).toEqual({ name: "Alex", description: "traveler", pronouns: "they/them", pronounForms: null });
 
 		// NO new flat {id}.json created
@@ -50,7 +50,7 @@ describe("PersonaStore folder storage (B2)", () => {
 		const persona = await store.create({ name: "Alex" });
 		await store.update(persona.id, { name: "Alex 2", description: "updated" });
 
-		const raw = JSON.parse(await readFile(join(dataRoot, PERSONAS, persona.id, "persona.json"), "utf8"));
+		const raw = JSON.parse(await Bun.file(join(dataRoot, PERSONAS, persona.id, "persona.json")).text());
 		expect(raw).toEqual({ name: "Alex 2", description: "updated", pronouns: null, pronounForms: null });
 	});
 
@@ -63,14 +63,14 @@ describe("PersonaStore folder storage (B2)", () => {
 		const fetched = await store.getById(created.id);
 		expect(fetched?.pronounForms).toEqual(forms);
 		expect(fetched?.pronouns).toBe("custom");
-		const fileRaw = JSON.parse(await readFile(join(dataRoot, PERSONAS, created.id, "persona.json"), "utf8"));
+		const fileRaw = JSON.parse(await Bun.file(join(dataRoot, PERSONAS, created.id, "persona.json")).text());
 		expect(fileRaw.pronounForms).toEqual(forms);
 
 		// update clears pronounForms when set to null (preset switch back).
 		const updated = await store.update(created.id, { pronouns: "she/her", pronounForms: null });
 		expect(updated.pronounForms).toBeNull();
 		expect(updated.pronouns).toBe("she/her");
-		const fileAfter = JSON.parse(await readFile(join(dataRoot, PERSONAS, created.id, "persona.json"), "utf8"));
+		const fileAfter = JSON.parse(await Bun.file(join(dataRoot, PERSONAS, created.id, "persona.json")).text());
 		expect(fileAfter.pronounForms).toBeNull();
 	});
 
@@ -107,11 +107,11 @@ describe("PersonaStore folder storage (B2)", () => {
 		expect(fetched?.name).toBe("Legacy User");
 
 		// {id}/persona.json exists with copied content
-		const raw = JSON.parse(await readFile(join(dataRoot, PERSONAS, id, "persona.json"), "utf8"));
+		const raw = JSON.parse(await Bun.file(join(dataRoot, PERSONAS, id, "persona.json")).text());
 		expect(raw.description).toBe("old desc");
 
 		// legacy flat file still on disk (copy-forward)
-		const stillThere = await readFile(legacyPath, "utf8").then(() => true).catch(() => false);
+		const stillThere = await Bun.file(legacyPath).text().then(() => true).catch(() => false);
 		expect(stillThere).toBe(true);
 
 		// DB stamped
@@ -132,7 +132,7 @@ describe("PersonaStore folder storage (B2)", () => {
 
 		const fetched = await store.getById(id);
 		expect(fetched?.name).toBe("Orphan User");
-		const raw = JSON.parse(await readFile(join(dataRoot, PERSONAS, id, "persona.json"), "utf8"));
+		const raw = JSON.parse(await Bun.file(join(dataRoot, PERSONAS, id, "persona.json")).text());
 		expect(raw.name).toBe("Orphan User");
 	});
 
@@ -170,11 +170,11 @@ describe("PersonaStore folder storage (B2)", () => {
 		expect(fetched?.avatarExt).toBe("png");
 		expect(fetched?.avatarAssetId).toBeNull();
 
-		const copied = await readFile(join(dataRoot, PERSONAS, id, "avatar.png"));
+		const copied = Buffer.from(await Bun.file(join(dataRoot, PERSONAS, id, "avatar.png")).arrayBuffer());
 		expect(new Uint8Array(copied)).toEqual(bytes);
 
 		// legacy flat asset still on disk (copy-forward)
-		const legacy = await readFile(join(dataRoot, "assets", `${assetId}.png`));
+		const legacy = Buffer.from(await Bun.file(join(dataRoot, "assets", `${assetId}.png`)).arrayBuffer());
 		expect(new Uint8Array(legacy)).toEqual(bytes);
 
 		const row = db.select({ ext: personasTable.avatarExt, aid: personasTable.avatarAssetId }).from(personasTable).where(eq(personasTable.id, id)).get();

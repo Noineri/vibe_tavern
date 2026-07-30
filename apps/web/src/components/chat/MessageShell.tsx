@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { cn } from "../../lib/cn.js";
 import { initials } from "../layout/app-shell-helpers.js";
 import { Icons } from "../shared/icons.js";
+import { CustomTooltip } from "../shared/Tooltip.js";
 import { ActionSheet, type ActionSheetItem } from "../shared/ActionSheet.js";
 import { AssistantContextHeader } from "./AssistantContextHeader.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
@@ -62,6 +63,7 @@ export interface MessageShellActions {
   onBranch: () => void;
   onRegenerate: () => void;
   onResend: () => void;
+  onAiEdit: () => void;
 }
 
 export interface MessageShellProps {
@@ -93,6 +95,8 @@ export interface MessageShellProps {
   canRegenerate: boolean;
   /** Whether user can resend from this message. */
   canResend: boolean;
+  /** Whether the message AI editor (Sparkles) affordance is shown. MAE-52. */
+  canAiEdit: boolean;
   /** Currently selected variant index. */
   selectedVariantIndex: number;
   /** Total number of variants. */
@@ -139,6 +143,7 @@ export function MessageShell(props: MessageShellProps) {
     canBranch,
     canRegenerate,
     canResend,
+    canAiEdit,
     selectedVariantIndex,
     variantCount,
     canSwitchVariant,
@@ -154,7 +159,7 @@ export function MessageShell(props: MessageShellProps) {
     actions,
   } = props;
 
-  const { t } = useT();
+  const { t, tDynamic } = useT();
   const isMobile = useIsMobile();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
@@ -340,7 +345,9 @@ export function MessageShell(props: MessageShellProps) {
           {/* ── Desktop Actions ── */}
           {!isEditing && !isGenerating && !isMobile && (
             <DesktopMessageActions
+              aiEditTooltip={tDynamic("message_ai_editor_tooltip")}
               branchLabel={branchLabel}
+              canAiEdit={canAiEdit}
               canBranch={canBranch}
               canRegenerate={canRegenerate}
               canResend={canResend}
@@ -359,6 +366,7 @@ export function MessageShell(props: MessageShellProps) {
               selectedVariantIndex={selectedVariantIndex}
               variantControlsRef={variantControlsRef}
               variantCount={variantCount}
+              onAiEdit={actions.onAiEdit}
               onBranch={actions.onBranch}
               onCopy={actions.onCopy}
               onDelete={actions.onDelete}
@@ -372,6 +380,8 @@ export function MessageShell(props: MessageShellProps) {
           {/* ── Mobile Actions ── */}
           {isMobile && !isEditing && !isGenerating && (
             <MobileMessageActions
+              aiEditTooltip={tDynamic("message_ai_editor_tooltip")}
+              canAiEdit={canAiEdit}
               branchLabel={branchLabel}
               canBranch={canBranch}
               canRegenerate={canRegenerate}
@@ -385,6 +395,7 @@ export function MessageShell(props: MessageShellProps) {
               resendLabel={resendLabel}
               selectedVariantIndex={selectedVariantIndex}
               variantCount={variantCount}
+              onAiEdit={actions.onAiEdit}
               onBranch={actions.onBranch}
               onRegenerate={actions.onRegenerate}
               onResend={actions.onResend}
@@ -452,6 +463,8 @@ function MetaBadgeRenderer({ descriptor, ctx }: {
 const desktopActionClass = "flex cursor-pointer items-center gap-1 rounded px-[7px] py-[3px] font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-colors duration-100 hover:bg-s2 hover:text-t2";
 
 function DesktopMessageActions(props: {
+  aiEditTooltip: string;
+  canAiEdit: boolean;
   branchLabel: string;
   canBranch: boolean;
   canRegenerate: boolean;
@@ -472,6 +485,7 @@ function DesktopMessageActions(props: {
   variantControlsRef: React.RefObject<HTMLSpanElement | null>;
   variantCount: number;
   variantControls?: ReactNode;
+  onAiEdit: () => void;
   onBranch: () => void;
   onCopy: () => void;
   onDelete: () => void;
@@ -480,12 +494,13 @@ function DesktopMessageActions(props: {
   onResend: () => void;
 }) {
   const {
+    aiEditTooltip, canAiEdit,
     branchLabel, canBranch, canRegenerate, canResend, canSwitchVariant,
     copied, copiedLabel, copyLabel, editLabel, hiddenVariantControls,
     isBusy, isBranching, isGreeting, isUser, regenLabel, resendLabel,
     variantControlsRef, variantCount,
     variantControls,
-    onBranch, onCopy, onDelete, onEdit, onRegenerate, onResend,
+    onAiEdit, onBranch, onCopy, onDelete, onEdit, onRegenerate, onResend,
   } = props;
 
   return (
@@ -502,6 +517,19 @@ function DesktopMessageActions(props: {
         className={desktopActionClass}
         onClick={() => { if (!isBusy) onEdit(); }}
       ><Icons.Edit />{editLabel}</span>
+
+      {canAiEdit && (
+        <CustomTooltip content={aiEditTooltip}>
+          <button
+            type="button"
+            aria-label={aiEditTooltip}
+            aria-disabled={isBusy}
+            disabled={isBusy}
+            className="flex cursor-pointer items-center gap-1 rounded px-[7px] py-[3px] font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-colors duration-100 hover:bg-s2 hover:text-t2 disabled:cursor-default disabled:opacity-40"
+            onClick={() => { if (!isBusy) onAiEdit(); }}
+          ><Icons.Sparkles /></button>
+        </CustomTooltip>
+      )}
 
       {canResend && <span className={desktopActionClass} onClick={() => { if (!isBusy) onResend(); }}><Icons.Regen />{resendLabel}</span>}
       {canBranch && <span className={desktopActionClass} aria-busy={isBranching} onClick={() => { if (!isBusy) onBranch(); }}>{isBranching ? <span className="h-3 w-3 animate-spin rounded-full border border-current border-t-transparent" /> : <Icons.Branch />}{branchLabel}</span>}
@@ -524,6 +552,8 @@ function DesktopMessageActions(props: {
 // ────────────────────────────────────────────────────────────────────────────
 
 function MobileMessageActions(props: {
+  aiEditTooltip: string;
+  canAiEdit: boolean;
   branchLabel: string;
   canBranch: boolean;
   canRegenerate: boolean;
@@ -538,19 +568,21 @@ function MobileMessageActions(props: {
   selectedVariantIndex: number;
   variantCount: number;
   variantControls?: ReactNode;
+  onAiEdit: () => void;
   onBranch: () => void;
   onRegenerate: () => void;
   onResend: () => void;
 }) {
   const {
+    aiEditTooltip, canAiEdit,
     branchLabel, canBranch, canRegenerate, canResend, canSwitchVariant,
     isBusy, isBranching, isGreeting, isUser, regenLabel, resendLabel,
     variantControls,
-    onBranch, onRegenerate, onResend,
+    onAiEdit, onBranch, onRegenerate, onResend,
   } = props;
 
   return (
-    <div className="mt-2 grid grid-cols-[44px_minmax(0,1fr)_44px] items-center gap-2">
+    <div className="mt-2 grid grid-cols-[44px_minmax(0,1fr)_auto] items-center gap-2">
       <div className="flex justify-start">
         {canBranch && (
           <button type="button" className="flex h-11 w-11 cursor-pointer items-center justify-center rounded-lg text-t3 active:bg-s2 [&_svg]:h-5 [&_svg]:w-5" aria-busy={isBranching} onClick={() => { if (!isBusy) onBranch(); }} title={branchLabel}>
@@ -561,7 +593,12 @@ function MobileMessageActions(props: {
       <div className="flex min-w-0 justify-center">
         {!isUser && !isGreeting && canSwitchVariant && variantControls}
       </div>
-      <div className="flex justify-end">
+      <div className="flex justify-end gap-1">
+        {canAiEdit && (
+          <button type="button" aria-label={aiEditTooltip} disabled={isBusy} className="flex h-11 w-11 cursor-pointer items-center justify-center rounded-lg text-t3 active:bg-s2 disabled:cursor-default disabled:opacity-40 [&_svg]:h-5 [&_svg]:w-5" onClick={() => { if (!isBusy) onAiEdit(); }} title={aiEditTooltip}>
+            <Icons.Sparkles />
+          </button>
+        )}
         {canResend && (
           <button type="button" className="flex h-11 w-11 cursor-pointer items-center justify-center rounded-lg text-t3 active:bg-s2 [&_svg]:h-5 [&_svg]:w-5" onClick={() => { if (!isBusy) onResend(); }} title={resendLabel}>
             <Icons.Regen />

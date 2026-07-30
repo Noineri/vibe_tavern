@@ -11,7 +11,6 @@
  *   User Avatars/    ← persona avatar PNGs (optional)
  */
 
-import { readdir, mkdir } from "node:fs/promises";
 import { join, extname, basename, resolve } from "node:path";
 import {
 	importCharacterCardV3Json,
@@ -107,12 +106,13 @@ export async function scanSillyTavernDirectory(dirPath: string): Promise<StDirec
 
 	// ── Scan characters/ ──
 	const charsDir = join(resolved, "characters");
-	const charsFiles = await safeReaddir(charsDir);
-	for (const fileName of charsFiles) {
-		const ext = extname(fileName).toLowerCase();
-		if (ext !== ".png" && ext !== ".json") continue;
-
-		const filePath = join(charsDir, fileName);
+	const charsFiles = await scanOptionalGlob(
+		charsDir,
+		"*.{[pP][nN][gG],[jJ][sS][oO][nN]}",
+	);
+	for (const relativePath of charsFiles) {
+		const fileName = basename(relativePath);
+		const filePath = join(charsDir, relativePath);
 		try {
 			const raw = (await readCharacterFile(filePath)).raw;
 			if (!raw) continue;
@@ -130,45 +130,37 @@ export async function scanSillyTavernDirectory(dirPath: string): Promise<StDirec
 
 	// ── Scan chats/ ──
 	const chatsDir = join(resolved, "chats");
-	const chatSubdirs = await safeReaddir(chatsDir);
-	for (const sub of chatSubdirs) {
-		const subPath = join(chatsDir, sub);
-		const subStat = await Bun.file(subPath).stat().catch(() => null);
-		if (!subStat?.isDirectory()) continue;
-
-		const jsonlFiles = await safeReaddir(subPath);
-		for (const fileName of jsonlFiles) {
-			if (!fileName.toLowerCase().endsWith(".jsonl")) continue;
-
-			const filePath = join(subPath, fileName);
-			try {
-				const content = await Bun.file(filePath).text();
-				const parsed = parseSillyTavernChat(content);
-				const messages = parsed.messages.filter((m) => m.content.trim());
-				result.chats.push({
-					fileName,
-					characterName: sub,
-					messageCount: messages.length,
-					chatId: null,
-					imported: false,
-				});
-			} catch (err) {
-				result.errors.push({
-					file: filePath,
-					stage: "parse",
-					message: err instanceof Error ? err.message : String(err),
-				});
-			}
+	const chatFiles = await scanOptionalGlob(chatsDir, "*/*.[jJ][sS][oO][nN][lL]");
+	for (const relativePath of chatFiles) {
+		const fileName = basename(relativePath);
+		const characterName = relativePath.slice(0, relativePath.lastIndexOf("/"));
+		const filePath = join(chatsDir, relativePath);
+		try {
+			const content = await Bun.file(filePath).text();
+			const parsed = parseSillyTavernChat(content);
+			const messages = parsed.messages.filter((m) => m.content.trim());
+			result.chats.push({
+				fileName,
+				characterName,
+				messageCount: messages.length,
+				chatId: null,
+				imported: false,
+			});
+		} catch (err) {
+			result.errors.push({
+				file: filePath,
+				stage: "parse",
+				message: err instanceof Error ? err.message : String(err),
+			});
 		}
 	}
 
 	// ── Scan worlds/ (lorebooks) ──
 	const worldsDir = join(resolved, "worlds");
-	const worldsFiles = await safeReaddir(worldsDir);
-	for (const fileName of worldsFiles) {
-		if (!fileName.toLowerCase().endsWith(".json")) continue;
-
-		const filePath = join(worldsDir, fileName);
+	const worldsFiles = await scanOptionalGlob(worldsDir, "*.[jJ][sS][oO][nN]");
+	for (const relativePath of worldsFiles) {
+		const fileName = basename(relativePath);
+		const filePath = join(worldsDir, relativePath);
 		try {
 			const content = await Bun.file(filePath).text();
 			const parsed = JSON.parse(content);
@@ -190,11 +182,10 @@ export async function scanSillyTavernDirectory(dirPath: string): Promise<StDirec
 
 	// ── Scan OpenAI Settings/ (prompt presets) ──
 	const presetsDir = join(resolved, "OpenAI Settings");
-	const presetFiles = await safeReaddir(presetsDir);
-	for (const fileName of presetFiles) {
-		if (!fileName.toLowerCase().endsWith(".json")) continue;
-
-		const filePath = join(presetsDir, fileName);
+	const presetFiles = await scanOptionalGlob(presetsDir, "*.[jJ][sS][oO][nN]");
+	for (const relativePath of presetFiles) {
+		const fileName = basename(relativePath);
+		const filePath = join(presetsDir, relativePath);
 		try {
 			const content = await Bun.file(filePath).text();
 			const parsed: unknown = JSON.parse(content);
@@ -220,21 +211,24 @@ export async function scanSillyTavernDirectory(dirPath: string): Promise<StDirec
 
 	// ── Scan settings.json (personas) ──
 	const settingsPath = join(resolved, "settings.json");
-	const settingsStat = await Bun.file(settingsPath).stat().catch(() => null);
-	if (settingsStat?.isFile()) {
-		try {
-			const content = await Bun.file(settingsPath).text();
-			const parsed: unknown = JSON.parse(content);
-			const personaCount = parseStPersonas(parsed).length;
-			if (personaCount > 0) {
-				result.persona = { count: personaCount, imported: false };
+	const settingsFiles = await scanOptionalGlob(resolved, "settings.json");
+	if (settingsFiles.includes("settings.json")) {
+		const settingsStat = await Bun.file(settingsPath).stat().catch(() => null);
+		if (settingsStat?.isFile()) {
+			try {
+				const content = await Bun.file(settingsPath).text();
+				const parsed: unknown = JSON.parse(content);
+				const personaCount = parseStPersonas(parsed).length;
+				if (personaCount > 0) {
+					result.persona = { count: personaCount, imported: false };
+				}
+			} catch (err) {
+				result.errors.push({
+					file: settingsPath,
+					stage: "parse",
+					message: err instanceof Error ? err.message : String(err),
+				});
 			}
-		} catch (err) {
-			result.errors.push({
-				file: settingsPath,
-				stage: "parse",
-				message: err instanceof Error ? err.message : String(err),
-			});
 		}
 	}
 
@@ -314,7 +308,10 @@ export async function importSillyTavernDirectory(
 	await onProgress?.({ type: "phase", phase: "characters" });
 	const charsPhaseStart = performance.now();
 	const charsDir = join(resolved, "characters");
-	const charsFiles = await safeReaddir(charsDir);
+	const charsFiles = await scanOptionalGlob(
+		charsDir,
+		"*.{[pP][nN][gG],[jJ][sS][oO][nN]}",
+	);
 	const nameToCharacterId = new Map<string, CharacterId>();
 
 	// Body extracted so the loop can run with bounded concurrency: PNG
@@ -403,11 +400,13 @@ export async function importSillyTavernDirectory(
 			// go through content + store directly.
 			if (ext === ".png" && pngBuffer) {
 				try {
+					// HUMAN_READABLE_FOLDERS: write into the character's resolved (slug) folder.
+					const folder = await deps.stores.characters.resolveFolderName(characterId);
 					await deps.stores.content.writeBinary(
-						STORAGE_FOLDERS.characters, characterId, "avatar.png", pngBuffer,
+						STORAGE_FOLDERS.characters, folder, "avatar.png", pngBuffer,
 					);
 					await deps.stores.content.writeBinary(
-						STORAGE_FOLDERS.characters, characterId, "avatar-full.png", pngBuffer,
+						STORAGE_FOLDERS.characters, folder, "avatar-full.png", pngBuffer,
 					);
 					await deps.stores.characters.setFolderAvatar(characterId, "png");
 					await deps.stores.characters.setFolderAvatarFull(characterId, "png");
@@ -451,10 +450,11 @@ export async function importSillyTavernDirectory(
 		}
 	};
 
-	// Filter to character files, preserving readdir order for determinism.
-	const charTargets = charsFiles
-		.map(fileName => ({ fileName, ext: extname(fileName).toLowerCase() }))
-		.filter(f => f.ext === ".png" || f.ext === ".json");
+	// Glob results are normalized and lexicographically sorted before import.
+	const charTargets = charsFiles.map((relativePath) => {
+		const fileName = basename(relativePath);
+		return { fileName, ext: extname(fileName).toLowerCase() };
+	});
 
 	const outcomes: CharImportOutcome[] = new Array(charTargets.length);
 	let cursor = 0;
@@ -495,12 +495,12 @@ export async function importSillyTavernDirectory(
 	let chatMsgCount = 0;
 	let chatVarCount = 0;
 	const chatsDir = join(resolved, "chats");
-	const chatSubdirs = await safeReaddir(chatsDir);
+	const chatFiles = await scanOptionalGlob(chatsDir, "*/*.[jJ][sS][oO][nN][lL]");
 
-	for (const sub of chatSubdirs) {
-		const subPath = join(chatsDir, sub);
-		const subStat = await Bun.file(subPath).stat().catch(() => null);
-		if (!subStat?.isDirectory()) continue;
+	for (const relativePath of chatFiles) {
+		const sub = relativePath.slice(0, relativePath.lastIndexOf("/"));
+		const fileName = basename(relativePath);
+		const filePath = join(chatsDir, relativePath);
 
 		// Match folder name to a character (case-insensitive).
 		// nameToCharacterId is populated only from successfully-imported characters,
@@ -509,58 +509,52 @@ export async function importSillyTavernDirectory(
 		const characterId = nameToCharacterId.get(sub.toLowerCase());
 		if (!characterId) continue;
 
-		const jsonlFiles = await safeReaddir(subPath);
-		for (const fileName of jsonlFiles) {
-			if (!fileName.toLowerCase().endsWith(".jsonl")) continue;
+		try {
+			const tChat0 = performance.now();
+			const content = await Bun.file(filePath).text();
+			const parsed = parseSillyTavernChat(content);
+			const importedMessages = parsed.messages.filter((m) => m.content.trim());
+			if (importedMessages.length === 0) continue;
 
-			const filePath = join(subPath, fileName);
-			try {
-				const tChat0 = performance.now();
-				const content = await Bun.file(filePath).text();
-				const parsed = parseSillyTavernChat(content);
-				const importedMessages = parsed.messages.filter((m) => m.content.trim());
-				if (importedMessages.length === 0) continue;
+			const title = fileName.replace(/\.jsonl$/i, "") || sub;
+			const chat = await deps.chatApp.createChat({
+				characterId,
+				personaId: defaultPersonaId,
+				title,
+				promptPresetId: defaultPresetId,
+			});
+			chatCreateMs += performance.now() - tChat0;
 
-				const title = fileName.replace(/\.jsonl$/i, "") || sub;
-				const chat = await deps.chatApp.createChat({
-					characterId,
-					personaId: defaultPersonaId,
-					title,
-					promptPresetId: defaultPresetId,
-				});
-				chatCreateMs += performance.now() - tChat0;
+			// Bulk-insert all messages + variants in ONE transaction (one fsync per
+			// chat) instead of O(N) per-message transactions. addMessagesBatch
+			// preserves per-variant reasoning + isSelected, so this is a pure
+			// performance refactor — no behavior change vs the old addMessage +
+			// addVariant + selectVariant per-message loop.
+			const batchItems = importedMessages.map((imported) => ({
+				chatId: chat.id as ChatId,
+				branchId: chat.activeBranchId,
+				role: imported.role,
+				authorType: imported.role === "user" ? "user" : imported.role === "system" ? "system" : "assistant",
+				variants: imported.variants.length > 0
+					? imported.variants.map((v) => ({ content: v.content, reasoning: v.reasoning, isSelected: v.isSelected }))
+					: [{ content: imported.content, isSelected: true }],
+			}));
+			const tMsg0 = performance.now();
+			await deps.stores.messages.addMessagesBatch(batchItems);
+			chatMsgMs += performance.now() - tMsg0;
+			chatMsgCount += batchItems.length;
+			chatVarCount += batchItems.reduce((sum, it) => sum + it.variants.length - 1, 0);
 
-				// Bulk-insert all messages + variants in ONE transaction (one fsync per
-				// chat) instead of O(N) per-message transactions. addMessagesBatch
-				// preserves per-variant reasoning + isSelected, so this is a pure
-				// performance refactor — no behavior change vs the old addMessage +
-				// addVariant + selectVariant per-message loop.
-				const batchItems = importedMessages.map((imported) => ({
-					chatId: chat.id as ChatId,
-					branchId: chat.activeBranchId,
-					role: imported.role,
-					authorType: imported.role === "user" ? "user" : imported.role === "system" ? "system" : "assistant",
-					variants: imported.variants.length > 0
-						? imported.variants.map((v) => ({ content: v.content, reasoning: v.reasoning, isSelected: v.isSelected }))
-						: [{ content: imported.content, isSelected: true }],
-				}));
-				const tMsg0 = performance.now();
-				await deps.stores.messages.addMessagesBatch(batchItems);
-				chatMsgMs += performance.now() - tMsg0;
-				chatMsgCount += batchItems.length;
-				chatVarCount += batchItems.reduce((sum, it) => sum + it.variants.length - 1, 0);
-
-				deps.chatOrder.add(chat.id as ChatId);
-				result.lastActiveChatId = chat.id as ChatId;
-				result.chats++;
-				await onProgress?.({ type: "progress", phase: "chats", current: result.chats });
-			} catch (err) {
-				result.errors.push({
-					file: filePath,
-					stage: "import",
-					message: err instanceof Error ? err.message : String(err),
-				});
-			}
+			deps.chatOrder.add(chat.id as ChatId);
+			result.lastActiveChatId = chat.id as ChatId;
+			result.chats++;
+			await onProgress?.({ type: "progress", phase: "chats", current: result.chats });
+		} catch (err) {
+			result.errors.push({
+				file: filePath,
+				stage: "import",
+				message: err instanceof Error ? err.message : String(err),
+			});
 		}
 	}
 	console.log(`${ti()} chats: ${((performance.now() - chatsPhaseStart) / 1000).toFixed(2)}s`
@@ -572,12 +566,11 @@ export async function importSillyTavernDirectory(
 	await onProgress?.({ type: "phase", phase: "lorebooks" });
 	const lorePhaseStart = performance.now();
 	const worldsDir = join(resolved, "worlds");
-	const worldsFiles = await safeReaddir(worldsDir);
+	const worldsFiles = await scanOptionalGlob(worldsDir, "*.[jJ][sS][oO][nN]");
 
-	for (const fileName of worldsFiles) {
-		if (!fileName.toLowerCase().endsWith(".json")) continue;
-
-		const filePath = join(worldsDir, fileName);
+	for (const relativePath of worldsFiles) {
+		const fileName = basename(relativePath);
+		const filePath = join(worldsDir, relativePath);
 		try {
 			const content = await Bun.file(filePath).text();
 			const parsed: unknown = JSON.parse(content);
@@ -611,11 +604,10 @@ export async function importSillyTavernDirectory(
 	// jailbreak→jailbreak, non-builtin blocks→customInjections, prompt_order→
 	// canvas with synthesized entries for custom blocks absent from ST order.
 	const presetsDir = join(resolved, "OpenAI Settings");
-	const presetFiles = await safeReaddir(presetsDir);
-	for (const fileName of presetFiles) {
-		if (!fileName.toLowerCase().endsWith(".json")) continue;
-
-		const filePath = join(presetsDir, fileName);
+	const presetFiles = await scanOptionalGlob(presetsDir, "*.[jJ][sS][oO][nN]");
+	for (const relativePath of presetFiles) {
+		const fileName = basename(relativePath);
+		const filePath = join(presetsDir, relativePath);
 		try {
 			const text = await Bun.file(filePath).text();
 			const stPreset = parseStPreset(text);
@@ -624,11 +616,17 @@ export async function importSillyTavernDirectory(
 			const { blocks, promptOrder } = stPreset;
 			const mainBlock = blocks.find((b) => b.identifier === "main");
 			const jailbreakBlock = blocks.find((b) => b.identifier === "jailbreak");
+			const nsfwBlock = blocks.find((b) => b.identifier === "nsfw");
+			const enhanceBlock = blocks.find((b) => b.identifier === "enhanceDefinitions");
+			const authorsNoteBlock = blocks.find((b) => b.identifier === "authorsNote");
 
-			// Built-in identifiers whose content goes into named preset fields
-			// (not custom injections). Matches the browser exclusion set exactly.
+			// Built-in identifiers whose content maps onto named preset fields, NOT
+			// custom injections. authorsNote joins this set so its content/role/
+			// position land on the native authorsNote fields instead of a standalone
+			// injection — mirrors the browser Phase 3 mapping
+			// (PromptManagerModal.handleImportPreset).
 			const excluded = new Set([
-				"main", "jailbreak", "nsfw", "enhanceDefinitions",
+				"main", "jailbreak", "nsfw", "enhanceDefinitions", "authorsNote",
 				"worldInfoBefore", "worldInfoAfter",
 			]);
 			const customBlocks = blocks.filter((b) => !excluded.has(b.identifier) && b.content.trim());
@@ -650,6 +648,29 @@ export async function importSillyTavernDirectory(
 				}
 			}
 
+			// Authors Note position/depth — reverse-map from the ST block. ST
+			// injection_position 1 = absolute in-chat depth injection; 0 = a
+			// prompt-order block placed before/after chat (promptOrderPlacement).
+			// Mirrors VT→ST export (slotToStFields + resolveAuthorsNoteSlot), so the
+			// round-trip is stable. NOTE: VT's AuthorsNotePosition uses "in_prompt"
+			// (not "before_chat") for the pre-chat case.
+			let authorsNote: string | undefined;
+			let authorsNotePosition: "in_prompt" | "in_chat" | "after_chat" | undefined;
+			let authorsNoteDepth: number | undefined;
+			let authorsNoteRole: "system" | "user" | "assistant" | undefined;
+			if (authorsNoteBlock?.content.trim()) {
+				authorsNote = authorsNoteBlock.content;
+				authorsNoteRole = authorsNoteBlock.role;
+				if (authorsNoteBlock.injectionPosition === 1) {
+					authorsNotePosition = "in_chat";
+					authorsNoteDepth = authorsNoteBlock.injectionDepth || 4;
+				} else if (authorsNoteBlock.promptOrderPlacement === "after_chat") {
+					authorsNotePosition = "after_chat";
+				} else {
+					authorsNotePosition = "in_prompt";
+				}
+			}
+
 			await createPromptPreset(
 				{ presets: deps.stores.presets, chats: deps.stores.chats },
 				{
@@ -657,6 +678,12 @@ export async function importSillyTavernDirectory(
 					system: mainBlock?.content || "",
 					jailbreak: jailbreakBlock?.content || "",
 					prefill: "",
+					nsfw: nsfwBlock?.content || "",
+					enhanceDefinitions: enhanceBlock?.content || "",
+					authorsNote,
+					authorsNotePosition,
+					authorsNoteDepth,
+					authorsNoteRole,
 					customInjections: customInjections.length > 0 ? customInjections : undefined,
 					promptOrder: canvas.length > 0 ? canvas : undefined,
 				},
@@ -678,7 +705,10 @@ export async function importSillyTavernDirectory(
 	const personasPhaseStart = performance.now();
 	// Mirrors browser Phase 0: parseStPersonas → create each, best-effort avatar.
 	const settingsPath = join(resolved, "settings.json");
-	const settingsStat = await Bun.file(settingsPath).stat().catch(() => null);
+	const settingsFiles = await scanOptionalGlob(resolved, "settings.json");
+	const settingsStat = settingsFiles.includes("settings.json")
+		? await Bun.file(settingsPath).stat().catch(() => null)
+		: null;
 	if (settingsStat?.isFile()) {
 		try {
 			const content = await Bun.file(settingsPath).text();
@@ -752,11 +782,24 @@ export async function importSillyTavernDirectory(
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
-async function safeReaddir(dirPath: string): Promise<string[]> {
+async function scanOptionalGlob(cwd: string, pattern: string): Promise<string[]> {
 	try {
-		return await readdir(dirPath);
-	} catch {
-		return [];
+		const entries: string[] = [];
+		for await (const entry of new Bun.Glob(pattern).scan({
+			cwd,
+			dot: true,
+			onlyFiles: true,
+			followSymlinks: false,
+			throwErrorOnBrokenSymlink: false,
+		})) {
+			entries.push(entry.replaceAll("\\", "/"));
+		}
+		return entries.sort();
+	} catch (error) {
+		if (error instanceof Error && error.message.includes("ENOENT")) {
+			return [];
+		}
+		throw error;
 	}
 }
 

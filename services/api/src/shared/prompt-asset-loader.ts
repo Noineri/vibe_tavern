@@ -6,16 +6,20 @@
  * artifact (next to the executable) → API source assets → cwd source → build
  * output. Returns the first candidate that exists on disk.
  *
+ * No content cache: `loadPromptAsset` re-resolves and re-reads on every call, so
+ * an edit to a prompt file beside the standalone executable (or under the env
+ * override dir) is visible to the next model request without a process restart.
+ * The cost is negligible — each load is a few `stat`s plus one small file read,
+ * and a prompt load only happens once per LLM turn, which is orders of magnitude
+ * more expensive than the read. Path resolution is not cached either, so a newly
+ * dropped override file is also picked up live.
+ *
  * Extracted from `ai-assistant-prompts.ts` (rule of three: a second consumer —
  * Co-Author skills/base prompt — now needs the same ladder). Both call sites
- * share one resolver + one cache so asset reads happen once per file per run.
+ * share this one resolver.
  */
 
 import { join, resolve } from "node:path";
-
-// ─── Cache ───────────────────────────────────────────────────────────────────
-
-const _assetCache = new Map<string, string>();
 
 // ─── Path resolution ─────────────────────────────────────────────────────────
 
@@ -27,8 +31,8 @@ const _assetCache = new Map<string, string>();
 export async function resolvePromptAssetPath(filename: string): Promise<string> {
   const candidates = [
     // Environment override.
-    process.env.RP_PLATFORM_AI_ASSISTANT_PROMPTS_DIR
-      ? join(process.env.RP_PLATFORM_AI_ASSISTANT_PROMPTS_DIR, filename)
+    process.env.VIBE_TAVERN_AI_ASSISTANT_PROMPTS_DIR
+      ? join(process.env.VIBE_TAVERN_AI_ASSISTANT_PROMPTS_DIR, filename)
       : null,
     // Standalone artifact: prompt next to executable, in prompts/ subdir.
     join(resolve(process.execPath, ".."), "prompts", filename),
@@ -48,19 +52,11 @@ export async function resolvePromptAssetPath(filename: string): Promise<string> 
 }
 
 /**
- * Load a prompt asset's text, cached per filename after first successful read.
- * Re-throws the read error (with the resolved path) if the file is missing.
+ * Load a prompt asset's text, re-reading from disk on every call so external
+ * edits are picked up without a restart. Re-throws the read error (with the
+ * resolved path) if the file is missing.
  */
 export async function loadPromptAsset(filename: string): Promise<string> {
-  const cached = _assetCache.get(filename);
-  if (cached !== undefined) return cached;
   const path = await resolvePromptAssetPath(filename);
-  const content = await Bun.file(path).text();
-  _assetCache.set(filename, content);
-  return content;
-}
-
-/** Test-only: clear the asset cache. */
-export function clearPromptAssetCache(): void {
-  _assetCache.clear();
+  return Bun.file(path).text();
 }

@@ -19,8 +19,9 @@ import {
   type AppSnapshot,
   type ImportJsonResponse,
 } from "../../app-client.js";
-import type { ChatId } from "@vibe-tavern/domain";
+import { brandId, type ChatId } from "@vibe-tavern/domain";
 import { useSnapshotStore } from "../snapshot-store.js";
+import { invalidateActiveContextPreview } from "../context-preview-store.js";
 import { useChatStore } from "../chat-store.js";
 import { fetchBootstrapAction } from "./bootstrap-actions.js";
 import { fetchChat } from "../../app-client.js";
@@ -35,6 +36,9 @@ export async function saveCharacterAction(input: {
 }): Promise<void> {
   const snapshot = await updateCharacter(input.characterId, input.patch);
   useSnapshotStore.getState().ingestSnapshot(snapshot);
+  // Character fields feed prompt layers — drop the cached live preview so lazy
+  // hydration refetches (its response no longer embeds it).
+  invalidateActiveContextPreview();
 }
 
 export async function createCharacterAction(
@@ -44,11 +48,14 @@ export async function createCharacterAction(
   if (result.snapshot) {
     useSnapshotStore.getState().ingestSnapshot(result.snapshot);
   }
+  // Activate the new character's initial chat. createFromScratch returns
+  // snapshot = getSnapshot(createdChatId), so the snapshot's activeChat IS the
+  // new chat — we only align the chat store's activeChatId. Mirrors
+  // createChatAction (create-then-activate).
+  useChatStore.getState().setActiveChatId(brandId<ChatId>(result.activeChatId));
   // Refresh global lists only. See importCharacterAction for why the active
-  // snapshot sync is skipped: the server moves initialChatId to the new chat,
-  // while activeChatId still points at the prior one, so a syncing bootstrap
-  // would re-fetch and ingest the OLD chat and clobber this just-written
-  // snapshot. The create response already holds the authoritative snapshot.
+  // snapshot sync is skipped (skipSnapshotSync): a syncing bootstrap could
+  // re-fetch and clobber this just-written authoritative snapshot.
   await fetchBootstrapAction({ silent: true, skipSnapshotSync: true });
   return result;
 }
@@ -91,7 +98,8 @@ export async function avatarUploadAction(input: {
 
 export async function importCharacterAction(input: {
   fileName: string;
-  jsonText: string;
+  jsonText?: string;
+  monolithText?: string;
   chatId?: ChatId;
 }): Promise<ImportJsonResponse> {
   const result = await importJson(input);
@@ -151,6 +159,9 @@ export async function activateCharacterVersionAction(characterId: string, versio
     const snapshot = await fetchChat(activeChatId);
     if (useChatStore.getState().activeChatId === activeChatId) {
       useSnapshotStore.getState().ingestSnapshot(snapshot);
+      // Version swap rewrote the character's prompt content — drop the cached
+      // live preview so lazy hydration refetches.
+      invalidateActiveContextPreview();
     }
   }
   return version;

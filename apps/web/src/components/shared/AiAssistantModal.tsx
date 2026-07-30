@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useProviderDataStore } from "../../stores/provider-data-store.js";
-import { fetchProviderModelsAction } from "../../stores/api-actions/provider-actions.js";
 import { useBootstrapStore } from "../../stores/api-actions/bootstrap-actions.js";
 import { useActiveCharacter, useActivePersona, useAllCharacters } from "../../stores/snapshot-store.js";
 import { Ic } from "./icons.js";
@@ -21,11 +20,13 @@ import { MessageReasoning } from "../chat/MessageReasoning.js";
 import { Modal } from "./Modal.js";
 import { BottomSheet } from "./BottomSheet.js";
 import type { AiQuickSettings } from "./AiQuickPill.js";
+import { AiAssistantConnectionFields } from "./ai-assistant/AiAssistantConnectionFields.js";
+import { AiAssistantShell } from "./ai-assistant/AiAssistantShell.js";
+import { AiGenParamsRow } from "./ai-assistant/AiGenParamsRow.js";
+import { useAiAssistantRunner } from "./ai-assistant/use-ai-assistant-runner.js";
+import { useDebouncedTokenCount } from "./ai-assistant/use-debounced-token-count.js";
 import {
   listAllLorebooks,
-  countAiAssistantTokens,
-  streamAiAssistant,
-  updateUiSettings,
   type AiAssistantRequestBody,
   type LorebookRecord,
 } from "../../app-client.js";
@@ -36,7 +37,7 @@ export interface AiAssistantModalProps {
   onClose: () => void;
 
   // --- Full Mode Props ---
-  apiMode?: "script" | "lore_entry" | "md_import" | "scene_schema";
+  apiMode?: "script" | "lore_entry" | "md_import" | "scene_schema" | "scene_rules" | "dice_script";
   existingContent?: string;
   onInsert?: (text: string) => void;
   onReplace?: (text: string) => void;
@@ -86,10 +87,6 @@ export function AiAssistantModal({
   const allCharacters = useAllCharacters();
 
   // --- Local State ---
-  const [providerId, setProviderId] = useState("");
-  const [modelName, setModelName] = useState("");
-  const [providerModels, setProviderModels] = useState<Array<{ id: string; label?: string }>>([]);
-
   // Quickpill specific
   const [appendMode, setAppendMode] = useState(false);
   const [keyTarget, setKeyTarget] = useState<"primary" | "secondary" | "both">("both");
@@ -101,12 +98,6 @@ export function AiAssistantModal({
   const [includePersona, setIncludePersona] = useState(true);
   const [lorebookIds, setLorebookIds] = useState<string[]>([]);
   const [aiLorebooks, setAiLorebooks] = useState<LorebookRecord[]>([]);
-
-  const [streaming, setStreaming] = useState(false);
-  const [streamedOutput, setStreamedOutput] = useState("");
-  const [streamedReasoning, setStreamedReasoning] = useState("");
-  const [promptTokenCount, setPromptTokenCount] = useState<number | null>(null);
-  const [error, setError] = useState<string | null>(null);
 
   // md_import state
   const [mdContent, setMdContent] = useState("");
@@ -120,32 +111,77 @@ export function AiAssistantModal({
   const [aiMaxTokens, setAiMaxTokens] = useState<number | null>(null);
   const [aiTemperature, setAiTemperature] = useState<number | null>(null);
 
-  const abortRef = useRef<AbortController | null>(null);
-
   // --- Initialization ---
+  const seedProviderId = mode === "quickpill" && settings
+    ? (settings.providerId || bootstrapUiSettings?.aiAssistantProviderId || "")
+    : (bootstrapUiSettings?.aiAssistantProviderId || "");
+  const seedModelName = mode === "quickpill" && settings
+    ? (settings.modelName || bootstrapUiSettings?.aiAssistantModelName || "")
+    : (bootstrapUiSettings?.aiAssistantModelName || "");
+
+  const {
+    providerId,
+    modelName,
+    providerModels,
+    selectedProfile,
+    streaming,
+    streamedOutput,
+    streamedReasoning,
+    error,
+    handleProviderChange,
+    handleModelChange,
+    runStream,
+    stop: handleStop,
+    resetStreamState,
+  } = useAiAssistantRunner({
+    isOpen,
+    seedProviderId,
+    seedModelName,
+    persistSelection: mode === "full",
+    onPartialJson: apiMode === "md_import"
+      ? (json) => {
+          const nextParsed = json as Partial<MdImportResult>;
+          setParsedFields(nextParsed);
+          setCheckedFields((prev) => {
+            const next = new Set(prev);
+            for (const [key, value] of Object.entries(nextParsed)) {
+              if (value != null && value !== "" && !(Array.isArray(value) && value.length === 0)) {
+                next.add(key);
+                if (Array.isArray(value) && value.length > 1 && value.every((item): item is string => typeof item === "string")) {
+                  value.forEach((_, idx) => next.add(`${key}[${idx}]`));
+                }
+              }
+            }
+            return next;
+          });
+          setFieldTargets((prev) => {
+            const next = { ...prev };
+            for (const key of Object.keys(nextParsed)) {
+              if (!(key in next)) next[key] = key as keyof MdImportResult;
+            }
+            return next;
+          });
+        }
+      : undefined,
+  });
+
+
   useEffect(() => {
     if (!isOpen) return;
 
     if (mode === "quickpill" && settings) {
-      setProviderId(settings.providerId || bootstrapUiSettings?.aiAssistantProviderId || "");
-      setModelName(settings.modelName || bootstrapUiSettings?.aiAssistantModelName || "");
       setAppendMode(settings.appendMode ?? false);
       setKeyTarget(settings.keyTarget ?? "both");
       setRecentMessageCount(settings.recentMessageCount ?? 20);
     } else if (mode === "full") {
-      setProviderId(bootstrapUiSettings?.aiAssistantProviderId || "");
-      setModelName(bootstrapUiSettings?.aiAssistantModelName || "");
+      resetStreamState();
       setPrompt("");
-      setStreamedOutput("");
-      setStreamedReasoning("");
-      setError(null);
-      setPromptTokenCount(null);
       setMdContent("");
       setParsedFields({});
       setCheckedFields(new Set());
       setFieldTargets({});
     }
-  }, [isOpen, mode, settings, bootstrapUiSettings]);
+  }, [isOpen, mode, settings, bootstrapUiSettings, resetStreamState]);
 
   // Context setup
   useEffect(() => {
@@ -163,37 +199,6 @@ export function AiAssistantModal({
       if (!scopeContext.personaId) setIncludePersona(false);
     }
   }, [mode, scopeContext]);
-
-  // Models fetch
-  useEffect(() => {
-    if (!providerId) { setProviderModels([]); return; }
-    let cancelled = false;
-    void fetchProviderModelsAction(providerId).then((response: unknown) => {
-      if (!cancelled) {
-        const models = (response && typeof response === "object" && "models" in response ? (response as { models: Array<{ id: string; label?: string }> }).models : []) as Array<{ id: string; label?: string }>;
-        setProviderModels(models);
-      }
-    });
-    return () => { cancelled = true; };
-  }, [providerId]);
-
-  const selectedProfile = providerProfiles.find((p) => p.id === providerId);
-
-  // --- Handlers ---
-  const persistAiModelSelection = (pId: string, mName: string | null) => {
-    void updateUiSettings({ aiAssistantProviderId: pId || null, aiAssistantModelName: mName || null }).catch(() => {});
-  };
-
-  const handleProviderChange = (id: string) => {
-    setProviderId(id);
-    setModelName("");
-    if (mode === "full") persistAiModelSelection(id, null);
-  };
-
-  const handleModelChange = (id: string) => {
-    setModelName(id);
-    if (mode === "full") persistAiModelSelection(providerId, id || null);
-  };
 
   const handleQuickpillApply = () => {
     if (onSettingsChange) {
@@ -280,42 +285,17 @@ export function AiAssistantModal({
     };
   }, [apiMode, existingContent, includeCharacter, includePersona, modelName, prompt, providerId, scopeContext?.characterId, scopeContext?.personaId, selectedLorebookIds.join("\u0000"), promptFormat]);
 
-  // --- Token Count Calculation ---
-  useEffect(() => {
-    if (!isOpen || mode !== "full") return;
-    const request = buildAiRequest();
-    if (!request) {
-      setPromptTokenCount(null);
-      return;
-    }
-
-    const ac = new AbortController();
-    const timer = setTimeout(() => {
-      countAiAssistantTokens(request, { signal: ac.signal })
-        .then((result) => setPromptTokenCount(result.tokens))
-        .catch((err: unknown) => {
-          if (!(err instanceof Error && err.name === "AbortError")) setPromptTokenCount(null);
-        });
-    }, 250);
-
-    return () => {
-      clearTimeout(timer);
-      ac.abort();
-    };
-  }, [isOpen, mode, prompt, providerId, modelName, includeCharacter, includePersona, lorebookIds.join("\u0000"), buildAiRequest]);
+  // --- Token Count Calculation (debounced over the live request body) ---
+  const tokenCount = useDebouncedTokenCount(isOpen && mode === "full" ? buildAiRequest() : null);
+  const promptTokenCount = tokenCount?.tokens ?? null;
 
   // --- Generation ---
   const handleGenerate = async () => {
     if (apiMode === "md_import") {
       if (!providerId || !mdContent.trim()) return;
-      persistAiModelSelection(providerId, modelName || null);
-      setStreaming(true);
-      setError(null);
       setParsedFields({});
       setCheckedFields(new Set());
       setFieldTargets({});
-      setStreamedReasoning("");
-      setStreamedOutput("");
 
       const request: AiAssistantRequestBody = {
         mode: "md_import",
@@ -327,80 +307,17 @@ export function AiAssistantModal({
         maxOutputTokens: aiMaxTokens ?? undefined,
         temperature: aiTemperature ?? 0,
       };
-
-      const ac = new AbortController();
-      abortRef.current = ac;
-
-      try {
-        for await (const chunk of streamAiAssistant(request, { signal: ac.signal })) {
-          if (chunk.type === "reasoning" && chunk.text) {
-            setStreamedReasoning(prev => prev + chunk.text);
-          }
-          if (chunk.type === "text" && chunk.text) {
-            setStreamedOutput(prev => prev + chunk.text);
-          }
-          if (chunk.type === "partial_json" && chunk.json) {
-            const nextParsed = chunk.json as Partial<MdImportResult>;
-            setParsedFields(nextParsed);
-            setCheckedFields(prev => {
-              const next = new Set(prev);
-              for (const [key, value] of Object.entries(nextParsed)) {
-                if (value != null && value !== "" && !(Array.isArray(value) && value.length === 0)) {
-                  next.add(key);
-                  // Auto-check individual array items
-                  if (Array.isArray(value) && value.length > 1 && value.every((item): item is string => typeof item === "string")) {
-                    value.forEach((_, idx) => next.add(`${key}[${idx}]`));
-                  }
-                }
-              }
-              return next;
-            });
-            setFieldTargets(prev => {
-              const next = { ...prev };
-              for (const key of Object.keys(nextParsed)) {
-                if (!(key in next)) next[key] = key as keyof MdImportResult;
-              }
-              return next;
-            });
-          }
-          if (chunk.type === "error" && chunk.error) { setError(chunk.error); setStreaming(false); return; }
-          if (chunk.type === "done") { setStreaming(false); return; }
-        }
-      } catch (err: unknown) {
-        if (err instanceof Error && err.name !== "AbortError") setError(String(err));
-        setStreaming(false);
-      }
+      await runStream(request);
       return;
     }
 
     const request = buildAiRequest();
     if (!request || !prompt.trim()) return;
-    persistAiModelSelection(providerId, modelName || null);
-    setStreaming(true);
-    setError(null);
-    setStreamedOutput("");
-    setStreamedReasoning("");
-    
-    const ac = new AbortController();
-    abortRef.current = ac;
-    
-    try {
-      for await (const chunk of streamAiAssistant(request, { signal: ac.signal })) {
-        if (chunk.type === "reasoning" && chunk.text) setStreamedReasoning(prev => prev + chunk.text);
-        if (chunk.type === "text" && chunk.text) setStreamedOutput(prev => prev + chunk.text);
-        if (chunk.type === "error" && chunk.error) { setError(chunk.error); setStreaming(false); return; }
-        if (chunk.type === "done") { setStreaming(false); return; }
-      }
-    } catch (err: unknown) {
-      if (err instanceof Error && err.name !== "AbortError") setError(String(err));
-      setStreaming(false);
-    }
+    await runStream(request);
   };
 
-  const handleStop = () => { abortRef.current?.abort(); setStreaming(false); };
-  
   const cleanedOutput = useMemo(() => {
-    if (apiMode === "script") return cleanAiCode(streamedOutput);
+    if (apiMode === "script" || apiMode === "dice_script") return cleanAiCode(streamedOutput);
     return streamedOutput.trim();
   }, [apiMode, streamedOutput]);
 
@@ -411,8 +328,7 @@ export function AiAssistantModal({
   );
 
   const resetAndClose = () => {
-    setStreamedOutput("");
-    setStreamedReasoning("");
+    resetStreamState();
     setPrompt("");
     setMdContent("");
     setParsedFields({});
@@ -468,60 +384,84 @@ export function AiAssistantModal({
 
   // i18n dynamic keys
   const isSceneSchema = apiMode === "scene_schema";
-  const promptLabelKey = apiMode === "lore_entry" ? "lore_entry_ai_prompt_label" : isSceneSchema ? "scn_ai_prompt_label" : "script_ai_prompt";
-  const promptPlaceholderKey = apiMode === "lore_entry" ? "lore_entry_ai_prompt_placeholder" : isSceneSchema ? "scn_ai_prompt_placeholder" : "script_ai_prompt";
-  const promptHintKey = apiMode === "lore_entry" ? "lore_entry_ai_prompt_hint" : isSceneSchema ? "scn_ai_prompt_hint" : "script_ai_prompt_hint";
-  const generatedKey = apiMode === "lore_entry" ? "lore_entry_ai_generated" : isSceneSchema ? "scn_ai_generated" : "script_ai_generated";
+  const isSceneRules = apiMode === "scene_rules";
+  const promptLabelKey = apiMode === "lore_entry" ? "lore_entry_ai_prompt_label" : isSceneSchema ? "scn_ai_prompt_label" : isSceneRules ? "scn_ai_rules_prompt_label" : "script_ai_prompt";
+  const promptPlaceholderKey = apiMode === "lore_entry" ? "lore_entry_ai_prompt_placeholder" : isSceneSchema ? "scn_ai_prompt_placeholder" : isSceneRules ? "scn_ai_rules_prompt_placeholder" : "script_ai_prompt";
+  const promptHintKey = apiMode === "lore_entry" ? "lore_entry_ai_prompt_hint" : isSceneSchema ? "scn_ai_prompt_hint" : isSceneRules ? "scn_ai_rules_prompt_hint" : "script_ai_prompt_hint";
+  const generatedKey = apiMode === "lore_entry" ? "lore_entry_ai_generated" : isSceneSchema ? "scn_ai_generated" : isSceneRules ? "scn_ai_rules_generated" : "script_ai_generated";
   const changesKey = apiMode === "lore_entry" ? "lore_entry_ai_changes" : "script_ai_changes";
   const noChangesKey = apiMode === "lore_entry" ? "lore_entry_ai_no_changes" : "script_ai_no_changes";
 
   // Render variables
   const isFull = mode === "full";
   const isMdImport = apiMode === "md_import";
-  const title = isMdImport ? t("import_md_title") : isSceneSchema ? t("scn_ai_title") : isFull ? t("script_ai_helper") : t("ai_quickpill_settings");
+  const title = isMdImport ? t("import_md_title") : isSceneRules ? t("scn_ai_rules_title") : isSceneSchema ? t("scn_ai_title") : isFull ? t("script_ai_helper") : t("ai_quickpill_settings");
   const contentWidth = isMdImport ? "w-[620px]" : isFull ? "w-[560px]" : "w-[380px]";
 
-  const contentBody = (
+  const footerButtons = !isFull ? (
+    <button type="button" className="h-8 cursor-pointer rounded-md border-0 bg-accent px-4 text-[12px] font-medium text-on-accent transition-all hover:opacity-90" onClick={handleQuickpillApply}>
+      {t("done_btn")}
+    </button>
+  ) : isMdImport ? (
     <>
-      {/* Header */}
-        <div className="flex items-center justify-between border-b border-border shrink-0" style={{ padding: "16px 20px" }}>
-          <span className="text-sm font-semibold text-t1">{title}</span>
-          <div className={cn("flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded-[5px] text-t3 transition-all hover:bg-s2 hover:text-t1", streaming && "pointer-events-none opacity-30")} onClick={onClose}>
-            <Ic.close />
-          </div>
-        </div>
+      {Object.keys(parsedFields).length > 0 && !streaming && (
+        <button type="button" className="h-9 cursor-pointer rounded-md border-0 bg-accent px-4 font-ui text-xs font-medium text-on-accent transition-all" onClick={handleMdImportApply} disabled={checkedFields.size === 0}>{t("import_md_apply")}</button>
+      )}
+      {streaming ? (
+        <button type="button" className="h-9 cursor-pointer rounded-md border-0 bg-danger px-4 font-ui text-xs font-medium text-on-danger transition-all" onClick={handleStop}>{t("script_ai_stop")}</button>
+      ) : (
+        <button type="button" className={cn("h-9 cursor-pointer rounded-md border-0 px-4 font-ui text-xs font-medium transition-all", providerId && mdContent.trim() ? "bg-s3 text-t2 hover:bg-border2 hover:text-t1" : "bg-s3 text-t3 cursor-not-allowed")} onClick={handleGenerate} disabled={!providerId || !mdContent.trim()}>{Object.keys(parsedFields).length > 0 ? t("import_md_reparse") : t("import_md_start")}</button>
+      )}
+    </>
+  ) : (
+    <>
+      {streamedOutput && !streaming && (
+        existingContent ? (
+          <>
+            <button type="button" className="h-9 cursor-pointer rounded-md border-0 bg-s3 px-4 font-ui text-xs font-medium text-t2 transition-all hover:bg-border2 hover:text-t1" onClick={handleActionInsert}>{t("script_ai_insert")}</button>
+            <button type="button" className="h-9 cursor-pointer rounded-md border-0 bg-accent px-4 font-ui text-xs font-medium text-on-accent transition-all" onClick={handleActionReplace}>{t("script_ai_apply")}</button>
+          </>
+        ) : (
+          <>
+            <button type="button" className="h-9 cursor-pointer rounded-md border-0 bg-s3 px-4 font-ui text-xs font-medium text-t2 transition-all hover:bg-border2 hover:text-t1" onClick={handleActionInsert}>{t("script_ai_insert")}</button>
+            <button type="button" className="h-9 cursor-pointer rounded-md border-0 bg-accent px-4 font-ui text-xs font-medium text-on-accent transition-all" onClick={handleActionReplace}>{t("script_ai_replace")}</button>
+          </>
+        )
+      )}
+      {streaming ? (
+        <button type="button" className="h-9 cursor-pointer rounded-md border-0 bg-danger px-4 font-ui text-xs font-medium text-on-danger transition-all" onClick={handleStop}>{t("script_ai_stop")}</button>
+      ) : (
+        <button type="button" className={cn("h-9 cursor-pointer rounded-md border-0 px-4 font-ui text-xs font-medium transition-all", providerId && prompt.trim() ? "bg-accent text-on-accent" : "bg-s3 text-t3 cursor-not-allowed")} onClick={handleGenerate} disabled={!providerId || !prompt.trim()}>{t("script_ai_generate")}</button>
+      )}
+    </>
+  );
 
-        {/* Content */}
-        <div className="flex-1 overflow-y-auto" style={{ padding: 20 }}>
-          {providerProfiles.length === 0 ? (
-            <div className="py-6 text-center font-ui text-[13px] text-t3">{t("script_ai_no_providers")}</div>
-          ) : (
-            <>
-              {/* Provider / Model */}
-              <div className="grid grid-cols-2 gap-3" style={{ marginBottom: 16 }}>
-                <div>
-                  <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("script_ai_connection")}</label>
-                  <DropdownSelect
-                    value={providerId}
-                    options={providerProfiles.map((p) => ({ id: p.id, label: p.name }))}
-                    placeholder={t("script_ai_select_provider")}
-                    searchPlaceholder={t("script_ai_search_provider")}
-                    onChange={handleProviderChange}
-                  />
-                </div>
-                <div>
-                  <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("script_ai_model")}</label>
-                  <DropdownSelect
-                    value={modelName}
-                    options={providerModels.map((m) => ({ id: m.id, label: m.label || m.id }))}
-                    placeholder={selectedProfile?.defaultModel || "Default"}
-                    searchPlaceholder={t("script_ai_search_model")}
-                    defaultOption={selectedProfile?.defaultModel || "Default"}
-                    onChange={handleModelChange}
-                    disabled={!providerId}
-                  />
-                </div>
-              </div>
+  const contentBody = (
+    <AiAssistantShell
+      title={<span className="text-sm font-semibold text-t1">{title}</span>}
+      onClose={onClose}
+      streaming={streaming}
+      providerCount={providerProfiles.length}
+      noProvidersLabel={t("script_ai_no_providers")}
+      footer={providerProfiles.length > 0 ? footerButtons : undefined}
+    >
+      <>
+              <AiAssistantConnectionFields
+                providerProfiles={providerProfiles}
+                providerId={providerId}
+                modelName={modelName}
+                providerModels={providerModels}
+                selectedProfileDefaultModel={selectedProfile?.defaultModel ?? null}
+                onProviderChange={handleProviderChange}
+                onModelChange={handleModelChange}
+                labels={{
+                  connection: t("script_ai_connection"),
+                  model: t("script_ai_model"),
+                  selectProvider: t("script_ai_select_provider"),
+                  searchProvider: t("script_ai_search_provider"),
+                  searchModel: t("script_ai_search_model"),
+                }}
+              />
 
               {/* QUICKPILL SPECIFIC */}
               {!isFull && showKeyTarget && (
@@ -552,21 +492,14 @@ export function AiAssistantModal({
                 </div>
               )}
 
-              {/* Generation params — shared for all full modes */}
+              {/* Generation params — shared for all full modes (advanced-settings accordion) */}
               {isFull && (
-                <div className="grid grid-cols-2 gap-3" style={{ marginBottom: 16 }}>
-                  <div>
-                    <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("ai_param_temperature")}</label>
-                    <div className="flex items-center gap-2">
-                      <input type="range" min={0} max={2} step={0.1} value={aiTemperature ?? (isMdImport ? 0 : 0.3)} onChange={(e) => setAiTemperature(Number(e.target.value))} className="flex-1 accent-accent" />
-                      <span className="w-8 text-right font-ui text-[11px] tabular-nums text-t3">{(aiTemperature ?? (isMdImport ? 0 : 0.3)).toFixed(1)}</span>
-                    </div>
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("ai_param_max_tokens")}</label>
-                    <NumberInput min={256} max={64000} value={aiMaxTokens ?? (isMdImport ? 6000 : 4096)} onChange={(v) => setAiMaxTokens(v)} className="w-full" />
-                  </div>
-                </div>
+                <AiGenParamsRow
+                  temperature={aiTemperature ?? (isMdImport ? 0 : 0.3)}
+                  onTemperatureChange={setAiTemperature}
+                  maxTokens={aiMaxTokens ?? (isMdImport ? 6000 : 4096)}
+                  onMaxTokensChange={setAiMaxTokens}
+                />
               )}
 
               {/* MD IMPORT SPECIFIC */}
@@ -804,53 +737,8 @@ export function AiAssistantModal({
                   )}
                 </>
               )}
-            </>
-          )}
-        </div>
-
-        {/* Footer */}
-        {providerProfiles.length > 0 && (
-          <div className="flex justify-end gap-2 border-t border-border shrink-0" style={{ padding: "12px 20px" }}>
-            {!isFull ? (
-              <button type="button" className="h-8 cursor-pointer rounded-md border-0 bg-accent px-4 text-[12px] font-medium text-on-accent transition-all hover:opacity-90" onClick={handleQuickpillApply}>
-                {t("done_btn")}
-              </button>
-            ) : isMdImport ? (
-              <>
-                {Object.keys(parsedFields).length > 0 && !streaming && (
-                  <button type="button" className="h-9 cursor-pointer rounded-md border-0 bg-accent px-4 font-ui text-xs font-medium text-on-accent transition-all" onClick={handleMdImportApply} disabled={checkedFields.size === 0}>{t("import_md_apply")}</button>
-                )}
-                {streaming ? (
-                  <button type="button" className="h-9 cursor-pointer rounded-md border-0 bg-danger px-4 font-ui text-xs font-medium text-on-danger transition-all" onClick={handleStop}>{t("script_ai_stop")}</button>
-                ) : (
-                  <button type="button" className={cn("h-9 cursor-pointer rounded-md border-0 px-4 font-ui text-xs font-medium transition-all", providerId && mdContent.trim() ? "bg-s3 text-t2 hover:bg-border2 hover:text-t1" : "bg-s3 text-t3 cursor-not-allowed")} onClick={handleGenerate} disabled={!providerId || !mdContent.trim()}>{Object.keys(parsedFields).length > 0 ? t("import_md_reparse") : t("import_md_start")}</button>
-                )}
-              </>
-            ) : (
-              <>
-                {streamedOutput && !streaming && (
-                  existingContent ? (
-                    <>
-                      <button type="button" className="h-9 cursor-pointer rounded-md border-0 bg-s3 px-4 font-ui text-xs font-medium text-t2 transition-all hover:bg-border2 hover:text-t1" onClick={handleActionInsert}>{t("script_ai_insert")}</button>
-                      <button type="button" className="h-9 cursor-pointer rounded-md border-0 bg-accent px-4 font-ui text-xs font-medium text-on-accent transition-all" onClick={handleActionReplace}>{t("script_ai_apply")}</button>
-                    </>
-                  ) : (
-                    <>
-                      <button type="button" className="h-9 cursor-pointer rounded-md border-0 bg-s3 px-4 font-ui text-xs font-medium text-t2 transition-all hover:bg-border2 hover:text-t1" onClick={handleActionInsert}>{t("script_ai_insert")}</button>
-                      <button type="button" className="h-9 cursor-pointer rounded-md border-0 bg-accent px-4 font-ui text-xs font-medium text-on-accent transition-all" onClick={handleActionReplace}>{t("script_ai_replace")}</button>
-                    </>
-                  )
-                )}
-                {streaming ? (
-                  <button type="button" className="h-9 cursor-pointer rounded-md border-0 bg-danger px-4 font-ui text-xs font-medium text-on-danger transition-all" onClick={handleStop}>{t("script_ai_stop")}</button>
-                ) : (
-                  <button type="button" className={cn("h-9 cursor-pointer rounded-md border-0 px-4 font-ui text-xs font-medium transition-all", providerId && prompt.trim() ? "bg-accent text-on-accent" : "bg-s3 text-t3 cursor-not-allowed")} onClick={handleGenerate} disabled={!providerId || !prompt.trim()}>{t("script_ai_generate")}</button>
-                )}
-              </>
-            )}
-          </div>
-        )}
       </>
+    </AiAssistantShell>
   );
 
   if (isMobile && !isFull) {

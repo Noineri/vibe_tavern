@@ -182,6 +182,7 @@ export function composeSceneInstruction(
 	base: string,
 	schema: SceneTrackerDsl,
 	continuity: readonly SceneContinuityRecord[],
+	rulesPrompt = "",
 ): string {
 	const schemaJson = JSON.stringify(stripLabels(schema));
 	const continuityJson =
@@ -190,8 +191,12 @@ export function composeSceneInstruction(
 	const labelBlock = labelHints.length > 0
 		? `\n\nField labels (human names for the schema keys; they do NOT add, rename, or remove any field — output the machine keys exactly as in the schema): ${JSON.stringify(labelHints)}`
 		: "";
+	const trimmedRules = rulesPrompt.trim();
+	const rulesBlock = trimmedRules.length > 0
+		? `\n\nScene tracker rules for this chat (author-specified; these OVERRIDE the base defaults — obey the formulas, per-turn deltas, bounds/gates, and starting values below):\n${trimmedRules}`
+		: "";
 	return (
-		`${base}\n\n` +
+		`${base}${rulesBlock}\n\n` +
 		`Scene schema (produce one JSON object with exactly these fields, no extras): ${schemaJson}\n\n` +
 		`Recent scene continuity (prior states — evolve them to match the current scene): ${continuityJson}` +
 		labelBlock +
@@ -382,7 +387,7 @@ export class SceneTrackerService {
 		};
 
 		const instructionBase = await this.resolvePrompt("sceneGenerate", config.generatePrompt);
-		const instruction = composeSceneInstruction(instructionBase, config.schema, input.continuity ?? []);
+		const instruction = composeSceneInstruction(instructionBase, config.schema, input.continuity ?? [], config.rulesPrompt);
 		const prompt = this.buildPrompt(input.context, instruction);
 		const result = await this.execute({ profile: input.profile, model: input.model, prompt, signal });
 		signal.throwIfAborted();
@@ -757,7 +762,7 @@ export class SceneTrackerService {
 			recentMessageLimit: draftConfig.contextWindow,
 		});
 		const instructionBase = await this.resolvePrompt("sceneGenerate", draftConfig.generatePrompt);
-		const instruction = composeSceneInstruction(instructionBase, draftConfig.schema, continuity);
+		const instruction = composeSceneInstruction(instructionBase, draftConfig.schema, continuity, draftConfig.rulesPrompt);
 		const prompt = this.buildPrompt(built.context, instruction);
 		const result = await this.execute({ profile: resolved.profile, model: resolved.model, prompt, signal });
 		signal?.throwIfAborted();

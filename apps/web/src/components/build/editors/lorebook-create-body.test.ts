@@ -12,7 +12,7 @@
  * Mirrors `scopeBody()` in ScriptEditor.tsx (same `effectiveScope` coercion);
  * if that sibling is ever shared, these tests cover the unified helper too.
  */
-import { describe, it, expect } from "vitest";
+import { describe, it, expect } from "bun:test";
 import { buildLorebookCreateBody } from "./lorebook-create-body.js";
 import type { Scope } from "./LorebookAccordion.js";
 

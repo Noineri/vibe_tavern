@@ -12,7 +12,7 @@ export class ScriptAdapter implements ScriptRuntimeApi {
 	getScript = (scriptId: string) =>
 		this.stores.scripts.getById(scriptId);
 
-	createScript = (body: { name: string; description?: string; code?: string; scopeType: string; characterId?: string; personaId?: string; chatId?: string; enabled?: boolean; sortOrder?: number }) =>
+	createScript = (body: { name: string; description?: string; code?: string; scriptKind?: string; creationIntentId?: string; scopeType: string; characterId?: string; personaId?: string; chatId?: string; enabled?: boolean; sortOrder?: number }) =>
 		this.stores.scripts.create(body);
 
 	updateScript = (scriptId: string, body: { name?: string; description?: string; code?: string; enabled?: boolean; sortOrder?: number }) =>
@@ -25,17 +25,18 @@ export class ScriptAdapter implements ScriptRuntimeApi {
 		await this.stores.scripts.delete(scriptId);
 	};
 
-	testScript = (scriptId: string, body: { messages?: Array<{ role: string; content: string }>; characterName?: string; characterPersonality?: string; characterScenario?: string; personaName?: string; personaDescription?: string; lastMessage?: string }) => {
+	testScript = (scriptId: string, body: { code?: string; messages?: Array<{ role: string; content: string }>; characterName?: string; characterPersonality?: string; characterScenario?: string; personaName?: string; personaDescription?: string; lastMessage?: string }) => {
 		const { personaName, personaDescription, ...rest } = body;
 		const persona = personaName !== undefined ? { name: personaName, description: personaDescription ?? '' } : undefined;
 		return testScript(this.stores, { scriptId, ...rest, persona });
 	};
 
-	importScript = async (body: { format: "js" | "json"; code?: string; jsonText?: string; name?: string; scopeType?: string; characterId?: string; personaId?: string; chatId?: string }) => {
+	importScript = async (body: { format: "js" | "json"; code?: string; jsonText?: string; name?: string; scriptKind?: string; scopeType?: string; characterId?: string; personaId?: string; chatId?: string }) => {
 		const { name, code } = parseScriptImport(body);
 		return this.stores.scripts.create({
 			name,
 			code,
+			scriptKind: body.scriptKind,
 			scopeType: body.scopeType ?? "character",
 			characterId: body.characterId,
 			personaId: body.personaId,

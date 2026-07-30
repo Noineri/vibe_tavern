@@ -304,9 +304,26 @@ export class PersonaStore {
   }
 
   async setDefault(id: string): Promise<void> {
-    await this.db.transaction(async (tx) => {
-      await tx.update(personas).set({ defaultForNewChats: 0 }).run();
-      await tx.update(personas).set({ defaultForNewChats: 1 }).where(eq(personas.id, id)).run();
+    // Synchronous callback (ASYNC_TRANSACTION_AUDIT step 5): drizzle-orm +
+    // bun:sqlite commits at the end of the callback's synchronous prefix, so an
+    // async callback's post-await throw is never rolled back. Keeping this
+    // synchronous means a failure on the second update rolls the clear back.
+    //
+    // Validate the target BEFORE clearing the prior default: a stale id would
+    // otherwise update zero rows on the second statement without throwing —
+    // silently leaving NO persona as default (the old default already cleared
+    // by the first statement). Checking inside the tx closes the TOCTOU window
+    // too: the write lock is held across the SELECT + UPDATEs, so a concurrent
+    // delete between the runtime's getById() and this call can't sneak through.
+    // (persona-runtime already validates upstream + throws notFound; this is
+    // the store-level last line of defense for its own single-default invariant.)
+    this.db.transaction((tx) => {
+      const target = tx.select({ id: personas.id }).from(personas).where(eq(personas.id, id)).get();
+      if (!target) {
+        throw new Error(`Persona '${id}' not found for setDefault`);
+      }
+      tx.update(personas).set({ defaultForNewChats: 0 }).run();
+      tx.update(personas).set({ defaultForNewChats: 1 }).where(eq(personas.id, id)).run();
     });
   }
 

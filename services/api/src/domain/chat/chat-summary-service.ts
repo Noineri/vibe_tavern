@@ -1,4 +1,4 @@
-import { brandId, normalizeProviderType, resolveEffectiveSettings, PROVIDER_TYPE, type ChatId } from "@vibe-tavern/domain";
+import { brandId, normalizeProviderType, resolveEffectiveSettings, PROVIDER_TYPE, type ChatId, type EventBus } from "@vibe-tavern/domain";
 import type { StoreContainer } from "@vibe-tavern/db";
 import type { SessionRuntime } from "../../runtime/session/session-runtime.js";
 import type { ConfigPatchResponse, SummaryResponse } from "../../api/contract/session-types.js";
@@ -28,6 +28,11 @@ export interface GenerateChatSummaryInput {
   includeInContext?: boolean;
   excludeSummarized?: boolean;
   source?: 'manual' | 'auto';
+  // SUMMARY_PRIOR_CONTEXT_PLAN (SPC-3): prior-context controls threaded through
+  // to assembleRangedSummaryPrompt. Auto fills both from autoSummaryConfig;
+  // manual ranged omits maxPriorSummaries → lifecycle defaults to 10.
+  includePriorSummaries?: boolean;
+  maxPriorSummaries?: number;
   signal?: AbortSignal;
 }
 
@@ -49,6 +54,8 @@ export class ChatSummaryService {
     private readonly stores: StoreContainer,
     private readonly sessionRuntime: SessionRuntime,
     private readonly providerProfiles: ProviderProfileService,
+    /** Typed bus for background notifications (W7). Optional so non-runtime callers (tests) need not supply one. */
+    private readonly events: EventBus | null = null,
     private readonly execute: typeof nonstreamingProviderExecute = nonstreamingProviderExecute,
   ) {}
 
@@ -157,6 +164,8 @@ export class ChatSummaryService {
       summarizedFrom: from,
       summarizedTo: to,
       contextBudget: effectiveProfile.contextBudget ?? null,
+      includePriorSummaries: input.includePriorSummaries,
+      maxPriorSummaries: input.maxPriorSummaries,
     });
     const prompt = withSummaryPromptAsFinalUserMessage(assembled.prompt);
     const startedAt = Date.now();
@@ -239,17 +248,42 @@ export class ChatSummaryService {
           return;
         }
 
-        await this.generateChatSummary({
-          chatId: chat.id,
-          providerProfileId: profile.id,
-          model,
-          summarizedFrom: lastCovered + 1,
-          summarizedTo: currentLast,
-          label: `T${lastCovered + 1}–T${currentLast}`,
-          includeInContext: true,
-          excludeSummarized: config.excludeSummarized,
-          source: 'auto',
-        });
+        // W7: emit "started" so the badge can show a spinner for the duration of
+        // the generation. Emitted only AFTER the enabled/provider/model/enough-
+        // messages checks pass — skip paths above stay silent (nothing to see).
+        this.events?.emit("chat.notification", { chatId: chat.id, kind: "summary.started" });
+        const label = `T${lastCovered + 1}–T${currentLast}`;
+        try {
+          const result = await this.generateChatSummary({
+            chatId: chat.id,
+            providerProfileId: profile.id,
+            model,
+            summarizedFrom: lastCovered + 1,
+            summarizedTo: currentLast,
+            label,
+            includeInContext: true,
+            excludeSummarized: config.excludeSummarized,
+            source: 'auto',
+            includePriorSummaries: config.includePriorSummaries,
+            maxPriorSummaries: config.maxPriorSummaries,
+          });
+          // W7: notify any open per-chat SSE channel that a background summary landed.
+          // `chatSummary` is the just-created record; the null guard is for the type only.
+          if (result.chatSummary) {
+            this.events?.emit("chat.notification", {
+              chatId: chat.id,
+              kind: "summary.generated",
+              summaryId: result.chatSummary.id,
+              label,
+            });
+          }
+        } catch (err) {
+          // Surface the failure so the badge stops spinning and the user gets an
+          // error toast; re-throw so runExclusive's error handler still logs it
+          // (summary.auto.error) as before.
+          this.events?.emit("chat.notification", { chatId: chat.id, kind: "summary.failed" });
+          throw err;
+        }
       },
       (err) => logSendDebug("summary.auto.error", {
         chatId: chat.id,
@@ -297,17 +331,25 @@ function normalizeAutoSummaryConfig(raw: Record<string, unknown>): {
   everyN: number;
   useChatModel: boolean;
   excludeSummarized: boolean;
+  includePriorSummaries: boolean;
+  maxPriorSummaries: number;
   providerProfileId?: string;
   model?: string;
 } {
   const everyN = typeof raw.everyN === "number" && Number.isFinite(raw.everyN)
     ? Math.max(1, Math.floor(raw.everyN))
     : 20;
+  const maxPriorSummaries = typeof raw.maxPriorSummaries === "number" && Number.isFinite(raw.maxPriorSummaries)
+    ? Math.max(0, Math.min(100, Math.floor(raw.maxPriorSummaries)))
+    : 10;
   return {
     enabled: raw.enabled === true,
     everyN,
     useChatModel: raw.useChatModel !== false,
     excludeSummarized: raw.excludeSummarized !== false,
+    // SUMMARY_PRIOR_CONTEXT_PLAN (SPC-3): default ON + 10 most-recent priors.
+    includePriorSummaries: raw.includePriorSummaries !== false,
+    maxPriorSummaries,
     providerProfileId: typeof raw.providerProfileId === "string" ? raw.providerProfileId : undefined,
     model: typeof raw.model === "string" ? raw.model : undefined,
   };

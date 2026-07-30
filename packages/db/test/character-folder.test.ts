@@ -1,11 +1,12 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtemp, mkdir, readFile, readdir } from "node:fs/promises";
+import { mkdtemp, mkdir, readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { ContentStore } from "../src/content-store.js";
 import { createFileStore, STORAGE_FOLDERS } from "../src/file-store.js";
 import { CharacterFolder } from "../src/stores/character-folder.js";
+import { parseProfileMd } from "../src/vtf/profile-md.js";
 import type { VtfCharacterContent } from "../src/vtf/index.js";
 
 const CHARS = STORAGE_FOLDERS.characters;
@@ -99,7 +100,7 @@ describe("CharacterFolder (isolated, no DB)", () => {
 		const h2 = await folder.ensureCardFile(id, fallback);
 		expect(typeof h1).toBe("string");
 		expect(h1).toBe(h2); // same input → same canonical hash
-		const raw = JSON.parse(await readFile(join(dataRoot, CHARS, id, "card.json"), "utf8"));
+		const raw = JSON.parse(await Bun.file(join(dataRoot, CHARS, id, "card.json")).text());
 		expect(raw.data.name).toBe("Card Hero");
 	});
 
@@ -111,7 +112,7 @@ describe("CharacterFolder (isolated, no DB)", () => {
 
 		const ext = await folder.migrateAvatar("char_ava", "asset_a1");
 		expect(ext).toBe("png");
-		const copied = await readFile(join(dataRoot, CHARS, "char_ava", "avatar.png"));
+		const copied = await Bun.file(join(dataRoot, CHARS, "char_ava", "avatar.png")).arrayBuffer();
 		expect(new Uint8Array(copied)).toEqual(bytes);
 
 		// missing source asset → null, no throw
@@ -126,7 +127,7 @@ describe("CharacterFolder (isolated, no DB)", () => {
 
 		const ext = await folder.migrateAvatarFull("char_full", "asset_full");
 		expect(ext).toBe("webp");
-		const copied = await readFile(join(dataRoot, CHARS, "char_full", "avatar-full.webp"));
+		const copied = await Bun.file(join(dataRoot, CHARS, "char_full", "avatar-full.webp")).arrayBuffer();
 		expect(new Uint8Array(copied)).toEqual(bytes);
 		expect(await folder.migrateAvatarFull("char_full", "asset_missing")).toBeNull();
 	});
@@ -139,12 +140,12 @@ describe("CharacterFolder (isolated, no DB)", () => {
 		await folder.copyAvatarFile("src", "dst", "png");
 		await folder.copyAvatarFullFile("src", "dst", "webp");
 
-		expect(new Uint8Array(await readFile(join(dataRoot, CHARS, "dst", "avatar.png")))).toEqual(new Uint8Array([1, 2, 3]));
-		expect(new Uint8Array(await readFile(join(dataRoot, CHARS, "dst", "avatar-full.webp")))).toEqual(new Uint8Array([4, 5, 6]));
+		expect(new Uint8Array(await Bun.file(join(dataRoot, CHARS, "dst", "avatar.png")).arrayBuffer())).toEqual(new Uint8Array([1, 2, 3]));
+		expect(new Uint8Array(await Bun.file(join(dataRoot, CHARS, "dst", "avatar-full.webp")).arrayBuffer())).toEqual(new Uint8Array([4, 5, 6]));
 
 		// absent source: no throw, no file
 		await folder.copyAvatarFile("nonexistent", "dst2", "png");
-		await expect(readFile(join(dataRoot, CHARS, "dst2", "avatar.png"))).rejects.toThrow();
+		await expect(Bun.file(join(dataRoot, CHARS, "dst2", "avatar.png")).arrayBuffer()).rejects.toThrow();
 	});
 
 	test("snapshotToVersion → restoreFromVersion round-trips the VTF folder; versionExists / removeVersionFolder track it", async () => {
@@ -176,5 +177,57 @@ describe("CharacterFolder (isolated, no DB)", () => {
 		await folder.writeVtfFolder(id, SAMPLE);
 		await folder.removeAll(id);
 		await expect(readdir(join(dataRoot, CHARS, id))).rejects.toThrow();
+	});
+
+	// ─── Storage identity (vt.storage_id) ────────────────────────────────
+
+	test("writeVtfFolder stamps storageId into profile.md on disk", async () => {
+		const { dataRoot, folder } = await setup();
+		const id = "char_sid_1";
+		await folder.writeVtfFolder(id, SAMPLE, "char_sid_1");
+		const profileText = await Bun.file(join(dataRoot, CHARS, id, "profile.md")).text();
+		expect(profileText).toContain("  storage_id: char_sid_1");
+		// Parsed back, the id lands on parsed.storageId (not in unknownVt).
+		const parsed = parseProfileMd(profileText);
+		expect(parsed.storageId).toBe("char_sid_1");
+		expect(parsed.unknownVt).toEqual([]);
+	});
+
+	test("writeVtfFolder omits storage_id when storageId is not supplied", async () => {
+		const { dataRoot, folder } = await setup();
+		const id = "char_sid_2";
+		await folder.writeVtfFolder(id, SAMPLE);
+		const profileText = await Bun.file(join(dataRoot, CHARS, id, "profile.md")).text();
+		expect(profileText).not.toContain("storage_id");
+	});
+
+	test("writeVtfFolder re-stamps on rewrite: a new id replaces the old one", async () => {
+		const { dataRoot, folder } = await setup();
+		const id = "char_sid_3";
+		await folder.writeVtfFolder(id, SAMPLE, "char_OLD");
+		let profileText = await Bun.file(join(dataRoot, CHARS, id, "profile.md")).text();
+		expect(profileText).toContain("storage_id: char_OLD");
+		// Rewrite with the real local id — the old source id is gone.
+		await folder.writeVtfFolder(id, SAMPLE, "char_NEW");
+		profileText = await Bun.file(join(dataRoot, CHARS, id, "profile.md")).text();
+		expect(profileText).toContain("storage_id: char_NEW");
+		expect(profileText).not.toContain("char_OLD");
+	});
+
+	test("snapshotToVersion retains the stamped profile.md byte-faithfully; restoreFromVersion brings it back", async () => {
+		const { dataRoot, folder } = await setup();
+		const id = "char_sid_4";
+		await folder.writeVtfFolder(id, SAMPLE, "char_sid_4");
+		await folder.snapshotToVersion(id, "v1");
+		// The version snapshot's profile.md is a raw-text copy: storage_id is intact.
+		const snapProfile = await Bun.file(join(dataRoot, CHARS, id, "versions/v1/profile.md")).text();
+		expect(snapProfile).toContain("storage_id: char_sid_4");
+		// Rewrite root WITHOUT storage_id, then restore — the snapshot's stamped
+		// profile (with storage_id) comes back unchanged.
+		await folder.writeVtfFolder(id, { ...SAMPLE, name: "Changed" });
+		expect(await Bun.file(join(dataRoot, CHARS, id, "profile.md")).text()).not.toContain("storage_id");
+		await folder.restoreFromVersion(id, "v1");
+		const restored = await Bun.file(join(dataRoot, CHARS, id, "profile.md")).text();
+		expect(restored).toContain("storage_id: char_sid_4");
 	});
 });

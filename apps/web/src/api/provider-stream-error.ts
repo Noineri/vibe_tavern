@@ -15,9 +15,14 @@ import type { ProviderErrorCategory } from "@vibe-tavern/api-contracts";
  */
 export class ProviderStreamError extends Error {
 	readonly category: ProviderErrorCategory;
-	constructor(message: string, category: ProviderErrorCategory) {
+	/** Optional structured conflict/disambiguation code the server attached to
+	 *  the error payload (e.g. a dice commit conflict `stale_revision` /
+	 *  `unresolved_choose` — DICE-F3). Absent for ordinary provider failures. */
+	readonly code?: string;
+	constructor(message: string, category: ProviderErrorCategory, code?: string) {
 		super(message);
 		this.name = "ProviderStreamError";
 		this.category = category;
+		this.code = code;
 	}
 }

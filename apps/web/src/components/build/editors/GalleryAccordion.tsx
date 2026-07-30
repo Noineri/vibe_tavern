@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Icons } from "../../shared/icons.js";
+import { AnimatedDisclosure } from "../../shared/AnimatedDisclosure.js";
 import { DestructiveConfirmModal } from "../../shared/destructive-confirm-modal.js";
 import { AvatarCropModal } from "../../shared/AvatarCropModal.js";
 import type { AvatarCropResult } from "../../shared/AvatarCropModal.js";
@@ -181,8 +182,7 @@ export function GalleryAccordion({ characterId }: GalleryAccordionProps) {
         <Icons.Caret direction={isOpen ? "d" : "l"} className="h-5 w-5 text-t3" />
       </button>
 
-      {isOpen && (
-        <div className="flex flex-col border-t border-border bg-input-bg p-4">
+      <AnimatedDisclosure open={isOpen} className="flex flex-col border-t border-border bg-input-bg p-4">
           {error && (
             <div className="mb-4 rounded-md border border-danger/50 bg-danger/10 px-3 py-2 text-sm text-danger">
               {error}
@@ -292,8 +292,7 @@ export function GalleryAccordion({ characterId }: GalleryAccordionProps) {
               {includedAssets.length} · {tokenCount.toLocaleString()} {t("tokens_label")}
             </span>
           </div>
-        </div>
-      )}
+      </AnimatedDisclosure>
 
       {confirmDeleteOpen && (
         <DestructiveConfirmModal

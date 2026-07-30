@@ -3,6 +3,7 @@ import { characters } from '../db-schema.js';
 import type { AppDb } from '../db-connection.js';
 import { resolveStoreRuntime, type StoreClock, type StoreIdGenerator } from '../persistence.js';
 import type { CharacterFolder } from './character-folder.js';
+import type { CharacterDirectoryRegistry } from './character-directory-registry.js';
 import { profileFromCharacter, serializeProfileMd, type VtfCharacterContent } from '../vtf/index.js';
 
 // ─── Input types ──────────────────────────────────────────────────────────────
@@ -90,13 +91,15 @@ export class CharacterStore {
   private readonly clock: StoreClock;
   private readonly idGen: StoreIdGenerator;
   private readonly folder: CharacterFolder | null;
+  private readonly registry: CharacterDirectoryRegistry | null;
 
-  constructor(db: AppDb, options?: { clock?: StoreClock; idGenerator?: StoreIdGenerator; folder?: CharacterFolder | null }) {
+  constructor(db: AppDb, options?: { clock?: StoreClock; idGenerator?: StoreIdGenerator; folder?: CharacterFolder | null; registry?: CharacterDirectoryRegistry | null }) {
     this.db = db;
     const runtime = resolveStoreRuntime(options);
     this.clock = runtime.clock;
     this.idGen = runtime.idGenerator;
     this.folder = options?.folder ?? null;
+    this.registry = options?.registry ?? null;
   }
 
   // ─── Read operations ───────────────────────────────────────────────────────
@@ -105,12 +108,13 @@ export class CharacterStore {
     const row = await this.db.select().from(characters).where(eq(characters.id, id)).get();
     if (!row) return null;
     const char = this.mapRow(row);
+    const folderName = await this.resolveDirectory(id);
 
     // Lazy migration: if not yet on disk, copy-forward from a legacy flat
     // file into {id}/card.json when one exists, otherwise write fresh from
     // the DB row. Either way the file lands in the per-entity folder.
     if (this.folder && !row.hasFileOnDisk) {
-      const hash = await this.folder.ensureCardFile(id, this.toFileData(char));
+      const hash = await this.folder.ensureCardFile(folderName, this.toFileData(char));
       await this.db
         .update(characters)
         .set({ contentHash: hash, hasFileOnDisk: 1 })
@@ -126,7 +130,7 @@ export class CharacterStore {
     // skips this block; a mid-flight crash retries safely. Independent of the
     // card block above — runs whenever avatarExt is null and avatarAssetId set.
     if (this.folder && !row.avatarExt && row.avatarAssetId) {
-      const ext = await this.folder.migrateAvatar(id, row.avatarAssetId);
+      const ext = await this.folder.migrateAvatar(folderName, row.avatarAssetId);
       if (ext) {
         await this.db
           .update(characters)
@@ -145,7 +149,7 @@ export class CharacterStore {
     // the large display slots (top-bar preview, editor) when only the crop was
     // migrated into avatar.{ext}. Runs independently of the thumbnail block.
     if (this.folder && !row.avatarFullExt && row.avatarFullAssetId) {
-      const fullExt = await this.folder.migrateAvatarFull(id, row.avatarFullAssetId);
+      const fullExt = await this.folder.migrateAvatarFull(folderName, row.avatarFullAssetId);
       if (fullExt) {
         await this.db
           .update(characters)
@@ -157,7 +161,7 @@ export class CharacterStore {
       }
     }
 
-    return this.applyVtfContentOverride(id, char);
+    return this.applyVtfContentOverride(folderName, char);
   }
 
   /**
@@ -168,9 +172,9 @@ export class CharacterStore {
    * once it exists. Falls back silently to the DB-row content when the folder
    * is absent or unreadable (legacy card.json-only or pre-migration rows).
    */
-  private async applyVtfContentOverride(id: string, char: Character): Promise<Character> {
+  private async applyVtfContentOverride(folderName: string, char: Character): Promise<Character> {
     if (!this.folder) return char;
-    const override = await this.folder.readVtfOverride(id);
+    const override = await this.folder.readVtfOverride(folderName);
     if (override === null) return char;
     return this.mergeVtfContent(char, override);
   }
@@ -302,7 +306,13 @@ export class CharacterStore {
 
     // Dual write: persist content to the VTF folder; stamp the combined hash on the DB row.
     if (this.folder) {
-      const hash = await this.folder.writeVtfFolder(id, this.toVtfContent(char));
+      // HRF-4: choose a collision-safe human-readable directory name derived
+      // from the display name. ensureDirectory reserves it in the registry and
+      // returns it; the name is used DIRECTLY for the write — resolveDirectory
+      // cannot be used here because its path-existence check + rescan-on-miss
+      // would wipe a not-yet-created reservation and fall back to the opaque id.
+      const dirName = this.registry ? await this.registry.ensureDirectory(id, data.name) : id;
+      const hash = await this.folder.writeVtfFolder(dirName, this.toVtfContent(char), id);
       await this.db
         .update(characters)
         .set({ contentHash: hash, hasFileOnDisk: 1 })
@@ -360,27 +370,41 @@ export class CharacterStore {
     }
     const updated = this.mapRow(row);
 
-    // Dual write: rewrite the VTF folder; stamp the combined hash on the DB row.
+    // Dual write: rewrite canonical content in the CURRENT reachable directory
+    // first, then request the cosmetic rename. This order is deliberate: if the
+    // filesystem rename fails, profile.md already contains the new display name
+    // + immutable storage_id, getById remains readable at the old path, and
+    // startup reconciliation can retry the rename from canonical profile data.
     if (this.folder) {
-      const hash = await this.folder.writeVtfFolder(id, this.toVtfContent(updated));
+      const currentDir = await this.resolveDirectory(id);
+      const hash = await this.folder.writeVtfFolder(currentDir, this.toVtfContent(updated), id);
       await this.db
         .update(characters)
         .set({ contentHash: hash, hasFileOnDisk: 1 })
         .where(eq(characters.id, id))
         .run();
+      // HRF-4: a real name change renames the directory to match the new display
+      // name (no-op when the derived name matches the current directory). Gated
+      // on data.name so a description-only update skips the filesystem check.
+      if (data.name !== undefined && this.registry) {
+        await this.registry.renameForDisplayName(id, data.name);
+      }
     }
 
     return updated;
   }
 
   async delete(id: string): Promise<void> {
+    // Resolve the directory via the registry (filesystem-backed) before the DB
+    // row is removed — the registry does not read the DB, so resolving first
+    // keeps the folder path available for removeAll. removeAll is a harmless
+    // no-op when the directory is already gone (resolveDirectory falls back to
+    // the opaque id). Legacy flat files ({id}.json / {id}.{slug}.json) are
+    // intentionally left in place — copy-forward policy; harmless orphans.
+    const dirName = await this.resolveDirectory(id);
     await this.db.delete(characters).where(eq(characters.id, id)).run();
     if (this.folder) {
-      // Remove the whole per-entity folder (card.json, original.json,
-      // avatar.*, future gallery/). Legacy flat files ({id}.json /
-      // {id}.{slug}.json) are intentionally left in place — copy-forward
-      // policy; they become harmless orphans.
-      await this.folder.removeAll(id);
+      await this.folder.removeAll(dirName);
     }
   }
 
@@ -434,7 +458,10 @@ export class CharacterStore {
 
     // Dual write: persist the copy's VTF folder; stamp the combined hash on the DB row.
     if (this.folder) {
-      const hash = await this.folder.writeVtfFolder(newId, this.toVtfContent(copy));
+      // HRF-4: choose a collision-safe human-readable directory for the copy
+      // (copy.name is "<original> (copy)"). Used directly — see create.
+      const dirName = this.registry ? await this.registry.ensureDirectory(newId, copy.name) : newId;
+      const hash = await this.folder.writeVtfFolder(dirName, this.toVtfContent(copy), newId);
       await this.db
         .update(characters)
         .set({ contentHash: hash, hasFileOnDisk: 1 })
@@ -446,7 +473,7 @@ export class CharacterStore {
       // avatarAssetId (shared above) is the legacy fallback and is left shared
       // per the plan (avatarFullAssetId also stays shared).
       if (original.avatarExt) {
-        await this.folder.copyAvatarFile(original.id, newId, original.avatarExt);
+        await this.folder.copyAvatarFile(await this.resolveDirectory(original.id), dirName, original.avatarExt);
       }
       // Copy the folder-resident full uncropped avatar (if any), mirroring the
       // thumbnail block above. Without this, duplicating a migrated character
@@ -454,7 +481,7 @@ export class CharacterStore {
       // would silently lose the full avatar — the read-time lazy-migration
       // guard (!avatarFullExt && avatarFullAssetId) cannot self-heal it.
       if (original.avatarFullExt) {
-        await this.folder.copyAvatarFullFile(original.id, newId, original.avatarFullExt);
+        await this.folder.copyAvatarFullFile(await this.resolveDirectory(original.id), dirName, original.avatarFullExt);
       }
     }
 
@@ -473,16 +500,21 @@ export class CharacterStore {
    */
   async migrateToVtf(id: string, opts?: { force?: boolean }): Promise<string | null> {
     if (!this.folder) throw new Error('CharacterFolder required for VTF migration');
+    // Load the row only to verify the character exists — the registry resolves
+    // the directory by id alone, so the row is not needed for folder resolution.
+    const row = await this.db.select().from(characters).where(eq(characters.id, id)).get();
+    if (!row) throw new Error(`Character '${id}' not found`);
+    const folderName = await this.resolveDirectory(id);
     if (!opts?.force) {
       // Filesystem check (not the text cache, which may be stale if the file
       // was removed out-of-band) — a character is VTF-native iff profile.md
       // physically exists in its folder.
-      const exists = await this.folder.hasVtfProfile(id);
+      const exists = await this.folder.hasVtfProfile(folderName);
       if (exists) return null;
     }
     const char = await this.getById(id);
     if (!char) throw new Error(`Character '${id}' not found`);
-    const hash = await this.folder.writeVtfFolder(id, this.toVtfContent(char));
+    const hash = await this.folder.writeVtfFolder(folderName, this.toVtfContent(char), id);
     await this.db
       .update(characters)
       .set({ contentHash: hash, hasFileOnDisk: 1 })
@@ -626,6 +658,35 @@ export class CharacterStore {
         },
       },
     };
+  }
+
+  // ─── Directory resolution ────────────────────────────────────────────────
+
+  /**
+   * Resolve the on-disk directory name for a character via the filesystem
+   * registry (HUMAN_READABLE_FOLDERS). Falls back to the opaque id when the
+   * registry is absent (unit tests without a registry) or the character has no
+   * directory yet (a brand-new character whose folder is created under its
+   * opaque id by writeVtfFolder). Every internal `this.folder.*` call awaits
+   * this, so it is the single place that turns a characterId into an on-disk
+   * directory name; `CharacterFolder` / `ContentStore` stay path-ignorant and
+   * receive the resolved name as their `id` arg.
+   */
+  private async resolveDirectory(id: string): Promise<string> {
+    if (!this.registry) return id;
+    return (await this.registry.resolve(id)) ?? id;
+  }
+
+  /**
+   * Public async directory resolver for API-layer collaborators (asset-service,
+   * character-runtime, import, scanner) that do NOT have the Character row in
+   * scope (HUMAN_READABLE_FOLDERS). Delegates to the filesystem registry — the
+   * async, registry-backed twin of the internal resolveDirectory. Every
+   * character-folder I/O site outside the store routes through here so
+   * avatars/gallery/imports follow the content into the renamed directory.
+   */
+  async resolveFolderName(characterId: string): Promise<string> {
+    return this.resolveDirectory(characterId);
   }
 
   // ─── Row mapper ────────────────────────────────────────────────────────────

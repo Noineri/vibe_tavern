@@ -1,10 +1,11 @@
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo, useRef, type ReactNode } from "react";
 import { toast } from "sonner";
 import type { ChatId, SceneTrackerConfig, SceneTrackerConfigPatch } from "@vibe-tavern/domain";
 import { normalizeSceneTrackerConfig, synthesizeSceneSample, findInvalidXmlKeys, computeSceneSchemaHash, SCENE_AUTO_MODE, SCENE_PROMPT_FORMAT } from "@vibe-tavern/domain";
 import { sceneTrackerDslSchema } from "@vibe-tavern/api-contracts";
 import { Ic } from "../../shared/icons.js";
 import { cn } from "../../../lib/cn.js";
+import { copyText } from "../../../lib/clipboard.js";
 import { CodeEditor } from "../../shared/CodeEditor.js";
 import { CustomTooltip } from "../../shared/Tooltip.js";
 import { AutoTextarea } from "../../shared/auto-textarea.js";
@@ -85,6 +86,7 @@ export function TrackerConfig({ chatId }: { chatId: ChatId }) {
   const [testing, setTesting] = useState(false);
   const testAbort = useRef<AbortController | null>(null);
   const [schemaAiOpen, setSchemaAiOpen] = useState(false);
+  const [rulesAiOpen, setRulesAiOpen] = useState(false);
 
   const activeCharacter = useActiveCharacter();
   const activePersona = useActivePersona();
@@ -145,6 +147,14 @@ export function TrackerConfig({ chatId }: { chatId: ChatId }) {
   function applyGeneratedSchema(raw: string) {
     const stripped = raw.trim().replace(/^```(?:json)?\s*\n?/i, "").replace(/\n?```\s*$/, "").trim();
     onSchemaChange(stripped);
+  }
+
+  /** Strip stray code fences from the AI output and write the result into the
+   *  per-chat rules prompt. Rules are free-form text, so only the ``` fences
+   *  are removed (no json-specific handling). */
+  function applyGeneratedRules(raw: string) {
+    const stripped = raw.trim().replace(/^```\s*\n?/, "").replace(/\n?```\s*$/, "").trim();
+    update("rulesPrompt", stripped);
   }
 
   async function save() {
@@ -249,9 +259,11 @@ export function TrackerConfig({ chatId }: { chatId: ChatId }) {
               <CustomTooltip content={t("copy")}>
                 <button
                   type="button"
-                  onClick={() => {
-                    navigator.clipboard?.writeText(SCENE_DSL_EXAMPLE);
-                    toast.success(t("copied"));
+                  onClick={async () => {
+                    const result = await copyText(SCENE_DSL_EXAMPLE);
+                    if (result.ok) {
+                      toast.success(t("copied"));
+                    }
                   }}
                   className="absolute right-1.5 top-1.5 inline-flex h-6 w-6 items-center justify-center rounded text-t4 hover:bg-s2 hover:text-t2"
                 >
@@ -352,6 +364,22 @@ export function TrackerConfig({ chatId }: { chatId: ChatId }) {
               hint={t("scn_prompt_hint")}
               defaultValue={draft.injectPrompt}
               onSave={(v) => update("injectPrompt", v)}
+            />
+            <PromptField
+              label={t("scn_rules_prompt_label")}
+              hint={t("scn_rules_prompt_hint")}
+              defaultValue={draft.rulesPrompt}
+              onSave={(v) => update("rulesPrompt", v)}
+              action={
+                <button
+                  type="button"
+                  onClick={() => setRulesAiOpen(true)}
+                  className="inline-flex items-center gap-1 rounded-md border border-border2 bg-s3 px-2 py-1 font-ui text-[11px] font-medium text-t2 transition-colors hover:border-accent hover:text-accent"
+                >
+                  <Ic.sparkles />
+                  {t("scn_pull_rules_button")}
+                </button>
+              }
             />
           </div>
         )}
@@ -461,6 +489,18 @@ export function TrackerConfig({ chatId }: { chatId: ChatId }) {
           personaId: activePersona?.id ?? null,
         }}
       />
+      <AiAssistantModal
+        mode="full"
+        apiMode="scene_rules"
+        isOpen={rulesAiOpen}
+        onClose={() => setRulesAiOpen(false)}
+        existingContent={draft.rulesPrompt}
+        onReplace={applyGeneratedRules}
+        scopeContext={{
+          characterId: activeCharacter?.id,
+          personaId: activePersona?.id ?? null,
+        }}
+      />
     </div>
   );
 }
@@ -489,10 +529,13 @@ function ScalarField({ label, hint, children }: { label: string; hint: string; c
   );
 }
 
-function PromptField({ label, hint, defaultValue, onSave }: { label: string; hint: string; defaultValue: string; onSave: (v: string) => void }) {
+function PromptField({ label, hint, defaultValue, onSave, action }: { label: string; hint: string; defaultValue: string; onSave: (v: string) => void; action?: ReactNode }) {
   return (
     <div>
-      <label className={lblCls}>{label}</label>
+      <div className="flex items-center gap-2">
+        <label className={lblCls}>{label}</label>
+        {action ? <div className="ml-auto">{action}</div> : null}
+      </div>
       <AutoTextarea
         className={monoCls + " mt-1.5"}
         style={inputPad}

@@ -1,8 +1,9 @@
 import type { AssemblePromptResponse, Message, PromptTrace, ProviderResponseTrace } from "@vibe-tavern/domain";
 import { brandId, type ChatBranchId, type ChatId, type MessageId, type PromptPresetId } from "@vibe-tavern/domain";
-import type { ChatStore, MessageStore, PromptTraceStore } from "@vibe-tavern/db";
+import type { ChatStore, MessageStore, PromptTraceStore, DiceRollStore } from "@vibe-tavern/db";
 import type { ToolSet } from "ai";
 import type { ChatApplicationService } from "../../domain/chat/chat-application-service.js";
+import type { SendMessageRequest } from "../../domain/chat/chat-application-types.js";
 import type {
   SessionSnapshot,
   MessageResponse,
@@ -15,6 +16,7 @@ import type { IChatOrder } from "./session-runtime-chat-order.js";
 import type { PromptTraceDraft } from "../../domain/prompt/prompt-assembly-service.js";
 import type { ChatModeAssembleResult } from "../../domain/chat/chat-mode-strategy.js";
 import { logSendDebug } from "../../shared/send-debug-log.js";
+import { notFound } from "../../shared/errors.js";
 
 export interface PreparedLiveTurn {
   prompt: AssemblePromptResponse;
@@ -50,6 +52,10 @@ export interface ChatRuntimeDeps {
   messages: MessageStore;
   traces: PromptTraceStore;
   chatApp: ChatApplicationService;
+  /** DICE-B11: dice roll store. Used only by `prepareLiveTurn`'s
+   * assembly-failure cleanup to release rolls bound to a just-inserted user
+   * message (a compensating write — NOT a transaction rollback). */
+  diceRolls: DiceRollStore;
   assemblePrompt: (
     chatId: ChatId,
     branchId?: ChatBranchId,
@@ -88,12 +94,16 @@ export class ChatRuntime {
    * Prepares a live turn: appends user message (if content is non-empty),
    * assembles the prompt, and stores a pending prompt trace.
    *
-   * If `content` is empty, skips user message insertion (used for continue/regenerate).
+   * If `content` is empty AND there are no attachments, skips user message
+   * insertion (the continue/regenerate path). An attachment-only send (no prose
+   * but with attachments) DOES insert — the message carries its attachments and,
+   * when `diceCommit` is present, binds Dice exactly like a prose send (DICE-B11).
    */
-  async prepareLiveTurn(chatId: ChatId, content: string, model: string, responseReserve?: number, attachments?: import("@vibe-tavern/domain").Attachment[]): Promise<PreparedLiveTurn> {
+  async prepareLiveTurn(chatId: ChatId, content: string, model: string, responseReserve?: number, attachments?: import("@vibe-tavern/domain").Attachment[], diceCommit?: SendMessageRequest["diceCommit"]): Promise<PreparedLiveTurn> {
     const { chatApp, assemblePrompt, getSnapshot } = this.deps;
     const trimmed = content.trim();
-    if (!trimmed) {
+    const hasAttachments = !!(attachments && attachments.length > 0);
+    if (!trimmed && !hasAttachments) {
       const assembled = await assemblePrompt(chatId, undefined, { model, responseReserve });
       return {
         prompt: assembled.prompt,
@@ -107,6 +117,7 @@ export class ChatRuntime {
       content: trimmed,
       mode: "reply",
       attachments,
+      diceCommit,
     });
 
     let assembled;
@@ -114,6 +125,15 @@ export class ChatRuntime {
       assembled = await assemblePrompt(chatId, undefined, { model, responseReserve });
     } catch (err) {
       try {
+        // DICE-B11: release any Dice rolls the atomic bind just attached to
+        // this user message, THEN delete the message. This is a COMPENSATING
+        // WRITE (not a tx rollback — the synchronous bind already committed
+        // inside addMessageWithDiceBind). Release FIRST so rolls return to
+        // pending regardless of the subsequent delete; both ops are idempotent
+        // (no-op when no rolls are bound / message already gone). Runs ONLY on
+        // assembly (preparation) failure, BEFORE the provider call — provider
+        // failure after the user-message commit keeps the bound rolls.
+        await this.deps.diceRolls.rollbackRelease(userMessage.id);
         await this.deps.chatApp.deleteMessage(userMessage.id);
       } catch { /* best-effort rollback of the just-inserted user message; the original assemble error is rethrown below */ }
       throw err;
@@ -181,7 +201,7 @@ export class ChatRuntime {
         authorType: "assistant",
         content: "",
         modelId: pending?.draft.model ?? null,
-        presetId: pending?.draft.presetId ?? null,
+        presetName: pending?.draft.presetName ?? null,
         reasoning: reasoningData.reasoning,
         reasoningDurationMs: reasoningData.reasoningDurationMs,
         toolCallsJson: JSON.stringify(reasoningData.toolCalls.map(tc => ({
@@ -212,7 +232,7 @@ export class ChatRuntime {
         authorType: "assistant",
         content,
         modelId: pending?.draft.model ?? null,
-        presetId: pending?.draft.presetId ?? null,
+        presetName: pending?.draft.presetName ?? null,
         coauthorModuleId: pending?.coauthorModuleId ?? null,
         coauthorSkillId: pending?.coauthorSkillId ?? null,
       });
@@ -224,7 +244,7 @@ export class ChatRuntime {
         authorType: "assistant",
         content,
         modelId: pending?.draft.model ?? null,
-        presetId: pending?.draft.presetId ?? null,
+        presetName: pending?.draft.presetName ?? null,
         coauthorModuleId: pending?.coauthorModuleId ?? null,
         coauthorSkillId: pending?.coauthorSkillId ?? null,
         reasoning: reasoningData?.reasoning,
@@ -238,7 +258,7 @@ export class ChatRuntime {
         branchId: pending.branchId,
         messageId: assistantMessage.id,
         model: pending.draft.model,
-        presetName: pending.draft.presetName,
+        presetName: pending.draft.presetName ?? "(none)",
         assembledLayers: pending.draft.assembledLayers,
         tokenAccounting: pending.draft.tokenAccounting,
         finalPayload: pending.draft.finalPayload,
@@ -277,7 +297,6 @@ export class ChatRuntime {
       latencyMs: number;
       reasoning?: string;
       reasoningDurationMs?: number;
-      presetId?: PromptPresetId | null;
       toolCalls?: import("../../infrastructure/ai/provider-execution-types.js").ExtractedToolCall[];
       toolResults?: import("../../infrastructure/ai/provider-execution-types.js").ExtractedToolResult[];
     },
@@ -298,7 +317,11 @@ export class ChatRuntime {
       input.reasoning,
       input.reasoningDurationMs,
       pending?.draft.model ?? null,
-      input.presetId ?? pending?.draft.presetId ?? null,
+      // Preset is baked as a NAME snapshot (no FK) — sourced from the resolved
+      // draft, which already reflects the override/chat/default cascade used
+      // for THIS turn (see buildPipelineContext). Null when no preset resolved
+      // or there is no pending trace.
+      pending?.draft?.presetName ?? null,
       input.toolCalls && input.toolCalls.length > 0 ? JSON.stringify(input.toolCalls.map(tc => ({ id: tc.toolCallId, name: tc.toolName, args: tc.args }))) : null,
       null,
       pending?.coauthorModuleId ?? null,
@@ -311,7 +334,7 @@ export class ChatRuntime {
         branchId: pending.branchId,
         messageId,
         model: pending.draft.model,
-        presetName: pending.draft.presetName,
+        presetName: pending.draft.presetName ?? "(none)",
         assembledLayers: pending.draft.assembledLayers,
         tokenAccounting: pending.draft.tokenAccounting,
         finalPayload: pending.draft.finalPayload,
@@ -329,6 +352,39 @@ export class ChatRuntime {
     return await buildMessageResponse(chatId);
   }
 
+
+  async addEditorVariant(
+    chatId: ChatId,
+    messageId: MessageId,
+    input: {
+      readonly content: string;
+      readonly sourceVariantIds: readonly string[];
+      readonly modelId?: string;
+      readonly promptPresetId?: string;
+      readonly finishReason?: string;
+    },
+  ): Promise<MessageResponse> {
+    const targetMessage = await this.deps.messages.getMessageById(messageId);
+    if (!targetMessage || targetMessage.chatId !== chatId) {
+      throw notFound("Message", `Message '${messageId}' was not found in chat '${chatId}'.`);
+    }
+
+    // Bake the preset NAME from the resolved pending draft (set by the
+    // assemblePromptPreview that precedes every editor commit). The draft
+    // already reflects the override/chat/default cascade, so this is the
+    // preset the editor turn actually used. Peek (not consume) — a subsequent
+    // generated variant on the same trace still needs the draft.
+    const presetName = this.peekPendingPresetName(chatId);
+    await this.deps.chatApp.addEditorVariant(messageId, {
+      content: input.content,
+      sourceVariantIds: input.sourceVariantIds,
+      modelId: input.modelId,
+      presetName,
+      finishReason: input.finishReason,
+    });
+    return await this.deps.buildMessageResponse(chatId);
+  }
+
   async selectMessageVariant(chatId: ChatId, messageId: MessageId, variantIndex: number): Promise<VariantResponse> {
     await this.deps.messages.selectVariant(messageId, variantIndex);
     return await this.deps.buildVariantResponse(chatId);
@@ -339,8 +395,8 @@ export class ChatRuntime {
     return await this.deps.buildMessageResponse(chatId);
   }
 
-  async editMessage(chatId: ChatId, messageId: string, content: string): Promise<MessageResponse> {
-    await this.deps.chatApp.editMessage(messageId, content);
+  async editMessage(chatId: ChatId, messageId: string, content: string, expectedVariantId?: string): Promise<MessageResponse> {
+    await this.deps.chatApp.editMessage(messageId, content, expectedVariantId);
     return await this.deps.buildMessageResponse(chatId);
   }
 
@@ -452,5 +508,13 @@ export class ChatRuntime {
 
     this.pendingPromptTraceByChat.delete(chatId);
     return pending;
+  }
+
+  /** Peek (read without consuming) the resolved preset NAME on the pending
+   *  draft for a chat. Used by the editor-variant path, which must NOT consume
+   *  the draft — a subsequent generated variant on the same trace still needs
+   *  it. Null when there is no pending trace or no preset was resolved. */
+  private peekPendingPresetName(chatId: ChatId): string | null {
+    return this.pendingPromptTraceByChat.get(chatId)?.draft.presetName ?? null;
   }
 }

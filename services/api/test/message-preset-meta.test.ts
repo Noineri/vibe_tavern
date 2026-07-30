@@ -13,14 +13,15 @@ import type { ChatId } from "@vibe-tavern/domain";
  * meta (the footer: time · tokens · model · preset) ONLY when the reply came
  * through the generation queue (override.promptPresetId → addVariant). The
  * ordinary send / continue paths went through appendAssistantReply → addMessage,
- * which wrote modelId to the selected variant but never presetId — so those
+ * which wrote modelId to the selected variant but never the preset — so those
  * replies showed the model but no preset.
  *
- * The fix carries the fully-resolved preset id (override → chat → global
+ * The fix carries the fully-resolved preset NAME (override → chat → global
  * default) out of assembly in the prompt-trace draft, and appendAssistantReply
- * records it on the selected variant. This test drives the SEND path
- * (prepareLiveTurn → appendAssistantReply) and asserts the preset lands on the
- * reply's variant — the exact field the footer reads.
+ * bakes it on the selected variant as plain text (no FK to a preset row). This
+ * test drives the SEND path (prepareLiveTurn → appendAssistantReply) and
+ * asserts the preset name lands on the reply's variant — the exact field the
+ * footer reads.
  */
 
 async function createTestRuntime() {
@@ -66,6 +67,8 @@ describe("message meta — preset recorded on every reply path", () => {
 		const chat = (await stores.chats.getById(chatId))!;
 		const expectedPresetId = chat.promptPresetId;
 		expect(expectedPresetId).toBeTruthy();
+		const expectedPresetName = (await stores.presets.getById(expectedPresetId as string))?.name;
+		expect(expectedPresetName).toBeTruthy();
 
 		// Send path: append a user message + assemble (sets the pending draft
 		// carrying the resolved preset id), then append the assistant reply.
@@ -87,7 +90,7 @@ describe("message meta — preset recorded on every reply path", () => {
 		const variants = await stores.messages.getVariants(reply.id);
 		const selected = variants.find((v) => v.isSelected === 1 || v.variantIndex === 0)!;
 		expect(selected.modelId).toBe("test-model");
-		// The fix: presetId is now recorded on the send path (was null before).
-		expect(selected.presetId).toBe(expectedPresetId);
+		// The fix: the preset NAME is now baked on the send path (was null before).
+		expect(selected.presetName).toBe(expectedPresetName);
 	});
 });

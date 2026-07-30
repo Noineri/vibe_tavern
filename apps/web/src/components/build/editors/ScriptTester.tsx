@@ -3,6 +3,7 @@ import { AutoTextarea } from "../../shared/auto-textarea.js";
 import { useT } from "../../../i18n/context.js";
 import { cn } from "../../../lib/cn.js";
 import { testScript } from "../../../app-client.js";
+import type { PromptScriptTestResult } from "@vibe-tavern/api-contracts";
 
 /**
  * Script test panel — extracted from `useScriptPanel`
@@ -15,30 +16,26 @@ import { testScript } from "../../../app-client.js";
  * host hook's render cycle (typing in the test input used to re-run
  * `useScriptPanel` and re-create every JSX chunk it returns).
  *
- * Props are intentionally narrow: the active script id, viewport mode, and an
- * optional resolved character name. The host resolves `characterName` from the
- * snapshot (it already subscribes to `allCharacters` for link binding), so this
- * component carries no store plumbing — that keeps the P2 "pre-fill the
- * character-name field" behavior without leaking scope/store concerns in.
+ * Props are intentionally narrow: the active script id + current authoring
+ * code, viewport mode, and an optional resolved character name. Passing code
+ * directly lets Run execute an unsaved buffer without coupling testing to the
+ * persistence lifecycle. The host resolves `characterName` from the snapshot
+ * (it already subscribes to `allCharacters` for link binding).
  */
 
-type TestResult = {
-	personality: string;
-	scenario: string;
-	state: Record<string, unknown>;
-	injectedMessages: Array<{ content: string; role: "system" | "user" | "assistant" }>;
-	console: Array<{ level: "log" | "warn" | "error"; args: string }>;
-	shared: Record<string, unknown>;
-	errors: Array<{ scriptId: string; scriptName: string; error: string; line?: number } | string>;
-};
+// The prompt-script test result is the `kind: "prompt"` branch of the shared
+// `ScriptTestResult` discriminated union (api-contracts). Kept as a local
+// alias so the renderer reads the prompt fields without a narrow on every ref.
+type TestResult = PromptScriptTestResult;
 
 interface ScriptTesterProps {
 	scriptId: string | null;
+	code: string;
 	isMobile: boolean;
 	characterName?: string;
 }
 
-export function ScriptTester({ scriptId, isMobile, characterName }: ScriptTesterProps) {
+export function ScriptTester({ scriptId, code, isMobile, characterName }: ScriptTesterProps) {
 	const { t } = useT();
 	const [testInput, setTestInput] = useState("");
 	const [testAdvanced, setTestAdvanced] = useState(false);
@@ -67,7 +64,7 @@ export function ScriptTester({ scriptId, isMobile, characterName }: ScriptTester
 			.filter((l) => l.length > 0)
 			.map((content) => ({ role: "user", content }));
 		if (messages.length === 0) return;
-		const payload: Parameters<typeof testScript>[1] = { messages };
+		const payload: Parameters<typeof testScript>[1] = { messages, code };
 		if (testCharName.trim()) payload.characterName = testCharName.trim();
 		if (testCharPersonality.trim()) payload.characterPersonality = testCharPersonality;
 		if (testCharScenario.trim()) payload.characterScenario = testCharScenario;
@@ -78,7 +75,11 @@ export function ScriptTester({ scriptId, isMobile, characterName }: ScriptTester
 		setTestingScript(true);
 		try {
 			const r = await testScript(scriptId, payload);
-			setTestResult(r);
+			// ScriptTester mounts only for prompt scripts; a dice result here would
+			// be a routing bug — clear rather than mis-render the dice payload as
+			// a prompt result.
+			if (r?.kind === "prompt") setTestResult(r);
+			else setTestResult(null);
 		} finally {
 			setTestingScript(false);
 		}

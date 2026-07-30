@@ -229,6 +229,23 @@ Scripts run BEFORE prompt assembly. They can modify `character.personality`, `ch
 
 ---
 
+## Mode-Aware Provider Selection (ChatAdapter)
+
+Every generation path (send, regenerate, continue, summarize) routes through `resolveEffectiveProfileOrThrow` in `ChatAdapter` (`api/adapters/chat-adapter.ts`). This is the single chokepoint where the provider profile + model is locked for the turn.
+
+The resolver is **chat-mode-aware**: for `chat.mode === "coauthor"`, it first attempts to resolve the persisted Co-Author binding (`ui_settings.coauthorProviderId` + `coauthorModelName`); for all other modes (or when the Co-Author pair is null/incomplete/dangling), it falls back to the RP active profile (`provider_profiles.is_active`) and its `defaultModel`.
+
+**Model precedence** (highest wins):
+1. Explicit per-request override (e.g. a quick-switch model passed from the frontend)
+2. Persisted `coauthorModelName` (Co-Author mode only, when the binding resolves)
+3. Selected profile's `defaultModel`
+
+After the final model is locked, the per-model overlay is applied when the profile has `bindPerModel` enabled: the overlay's sampler/context/reasoning fields merge onto the effective profile, and `defaultModel` is re-pinned to the selected model so the overlay data reaches generation.
+
+**Fallback semantics** — a null or dangling Co-Author binding (provider id absent, profile deleted, or no model resolvable) silently falls back to the RP active profile without persisting anything. The fallback is advisory: `ui_settings` is never implicitly written. The user must save an explicit Co-Author pair through the frontend fork modal to make the binding independent.
+
+---
+
 ## Insights Subsystem (Objective & Scene Tracker)
 
 The Insights subsystem holds the two derived-state background-LLM features: **Objective** (chat-scoped, a route/checklist the model steers toward) and **Scene Tracker** (selected-variant-scoped structured scene state). Both reuse the chat-turn prompt pipeline (`getInsightsAssembler("objective" | "scene")` → full character/persona/lore/history/world context under the chat's preset toggles) but strip their own self-injection layer so a derived state never feeds itself back in (see [Prompt Pipeline → Insights assembler](./prompt-pipeline.md)). They are domain services (`domain/insights/`), wired into the runtime, not `FeatureModule`s — their routes mount on the insights sub-router and their auto-triggers subscribe to `message.appended` directly.
@@ -638,7 +655,7 @@ Token-based authentication with optional TLS for LAN/Tailscale/mobile clients.
 - Token regeneration/revocation is dynamic and invalidates old tokens immediately without server restart
 - TLS via self-signed certs is optional (user accepts warning once)
 
-**API base URL:** `apps/web/src/gateway-client.ts` prefers `window.location.origin` when the web app is opened from a non-loopback host but `VITE_RP_API_URL` points at `localhost`/`127.0.0.1`. This prevents LAN/Tailscale clients from trying to call their own loopback address.
+**API base URL:** `apps/web/src/gateway-client.ts` prefers `window.location.origin` when the web app is opened from a non-loopback host but `VIBE_TAVERN_WEB_API_URL` points at `localhost`/`127.0.0.1`. This prevents LAN/Tailscale clients from trying to call their own loopback address.
 
 ---
 

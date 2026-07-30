@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import type { MessageVariant } from "@vibe-tavern/domain";
+import type { DiceRollSnapshot, MessageVariant } from "@vibe-tavern/domain";
 
 // ────────────────────────────────────────────────────────────────────────────
 // Message Meta Registry
@@ -21,6 +21,14 @@ import type { MessageVariant } from "@vibe-tavern/domain";
 // its own modelId/presetId/reasoningDurationMs/coauthor fields. A message-level
 // fallback is intentionally NOT provided — that would duplicate the source of
 // truth and mask save-path bugs (see reports/MESSAGE_META_REGISTRY.md).
+//
+// EXCEPTION — `diceRolls` is message-owned, not variant provenance: a Dice
+// result binds to the user message itself (not a generation variant), so its
+// immutable snapshots travel on the message. The pending-user shell populates
+// it from the active-generation capture (DICE-F9); committed user messages
+// populate it from the server DTO; assistant/coauthor turns pass an explicit
+// empty array. The descriptor that renders it is registered in
+// `message-meta/dice-rolls.tsx` (DICE-F10).
 // ────────────────────────────────────────────────────────────────────────────
 
 /**
@@ -36,7 +44,7 @@ export interface MessageMetaContext {
   messageRole: "user" | "assistant" | "system" | "tool";
   /**
    * The currently selected variant — the unit of generation. Provenance fields
-   * (modelId, presetId, reasoningDurationMs, coauthorModuleId, coauthorSkillId,
+   * (modelId, presetName, reasoningDurationMs, coauthorModuleId, coauthorSkillId,
    * finishReason) live here. Null only when the message has no variants yet.
    */
   variant: MessageVariant | null;
@@ -46,12 +54,22 @@ export interface MessageMetaContext {
   isStreaming: boolean;
   /** Whether this is rendered inside a coauthor turn shell (turn-level aggregation). */
   isCoauthorTurn: boolean;
-  /** Resolved preset name for the selected variant (variant.presetId → name). Null when none. */
+  /** Preset name baked on the selected variant at generation time. Null when none. */
   presetName: string | null;
   /** Message token count (not variant-derived; comes from the token counter). */
   tokenCount: number;
   /** Message creation timestamp (ISO string). */
   createdAt: string;
+  /**
+   * Message-owned Dice result snapshots bound to this user message (DICE-F9 /
+   * DICE-F10). Required: every context constructor passes real rolls or an
+   * explicit `[]` — committed user message (MessageBlock) reads the server DTO;
+   * the pending-user shell reads the active-generation capture; assistant and
+   * coauthor turns pass `[]`. The descriptor that renders it lives in
+   * `message-meta/dice-rolls.tsx`. Immutable — script rename/disable/delete
+   * never changes a historical snapshot.
+   */
+  diceRolls: DiceRollSnapshot[];
 }
 
 /**

@@ -21,8 +21,10 @@ const promptPresetCoreSchema = z.object({
     kind: z.enum(["built_in", "custom"]).optional(),
     zone: z.enum(["before_chat", "in_chat", "after_chat"]).optional(),
     depth: z.number().nullable().optional(),
+    role: z.enum(["system", "user", "assistant"]).optional(),
   })).optional(),
   advancedMode: z.boolean().optional(),
+  mergeConsecutiveRoles: z.boolean().optional(),
   scriptAiSystemPrompt: z.string().optional(),
   aiAssistantPrompts: z.string().optional(),
 });
@@ -33,4 +35,11 @@ export const updatePromptPresetSchema = promptPresetCoreSchema.partial();
 
 export const setPromptPresetSchema = z.object({
   promptPresetId: z.string(),
+});
+
+export const reorderPromptPresetsSchema = z.object({
+  updates: z.array(z.object({
+    id: z.string(),
+    sortOrder: z.number(),
+  })),
 });

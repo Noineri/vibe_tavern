@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtemp, mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -20,7 +20,11 @@ async function setup() {
 	const dataRoot = await mkdtemp(join(tmpdir(), "vt-c1-adapter-"));
 	await mkdir(join(dataRoot, "assets"), { recursive: true });
 	const stores = await createStoreContainer(join(dataRoot, "test.db"), dataRoot);
-	const assetService = new AssetService(join(dataRoot, "assets"), stores.content);
+	const assetService = new AssetService(
+		join(dataRoot, "assets"),
+		stores.content,
+		(id) => stores.characters.resolveFolderName(id),
+	);
 	const characters = new CharacterAdapter(noopSession, stores, assetService) as CharacterRuntimeApi;
 	const personas = new PersonaAdapter(noopSession, stores, assetService) as PersonaRuntimeApi;
 	return { dataRoot, stores, assetService, characters, personas };
@@ -30,12 +34,13 @@ describe("C1 avatar adapter: character", () => {
 	test("upload writes {id}/avatar.{ext}, sets avatarExt, clears avatarAssetId", async () => {
 		const { dataRoot, stores, characters } = await setup();
 		const char = await stores.characters.create({ name: "Aria", avatarAssetId: "asset_old1" });
+		const dir = await stores.characters.resolveFolderName(char.id);
 
 	const res = await characters.uploadCharacterAvatar(char.id, new File([PNG], "a.png", { type: "image/png" }));
 	expect(res).toEqual({ avatarExt: "png", avatarFullExt: null });
 
 		// file on disk
-		const bytes = await readFile(join(dataRoot, CHARS, char.id, "avatar.png"));
+		const bytes = Buffer.from(await Bun.file(join(dataRoot, CHARS, dir, "avatar.png")).arrayBuffer());
 		expect(new Uint8Array(bytes)).toEqual(PNG);
 
 		// DB columns flipped
@@ -49,6 +54,7 @@ describe("C1 avatar adapter: character", () => {
 		const { dataRoot, stores, characters } = await setup();
 		const FULL = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0b]);
 		const char = await stores.characters.create({ name: "Aria" });
+		const dir = await stores.characters.resolveFolderName(char.id);
 
 		const res = await characters.uploadCharacterAvatar(
 			char.id,
@@ -58,9 +64,9 @@ describe("C1 avatar adapter: character", () => {
 		expect(res).toEqual({ avatarExt: "png", avatarFullExt: "png" });
 
 		// thumbnail
-		expect(new Uint8Array(await readFile(join(dataRoot, CHARS, char.id, "avatar.png")))).toEqual(PNG);
+		expect(new Uint8Array(Buffer.from(await Bun.file(join(dataRoot, CHARS, dir, "avatar.png")).arrayBuffer()))).toEqual(PNG);
 		// full / uncropped original
-		expect(new Uint8Array(await readFile(join(dataRoot, CHARS, char.id, "avatar-full.png")))).toEqual(FULL);
+		expect(new Uint8Array(Buffer.from(await Bun.file(join(dataRoot, CHARS, dir, "avatar-full.png")).arrayBuffer()))).toEqual(FULL);
 
 		const row = await stores.characters.getById(char.id);
 		expect(row?.avatarExt).toBe("png");
@@ -70,7 +76,8 @@ describe("C1 avatar adapter: character", () => {
 	test("upload does NOT rewrite {id}/profile.md (point update only)", async () => {
 		const { dataRoot, stores, characters } = await setup();
 		const char = await stores.characters.create({ name: "Aria", description: "original" });
-		const profilePath = join(dataRoot, CHARS, char.id, "profile.md");
+		const dir = await stores.characters.resolveFolderName(char.id);
+		const profilePath = join(dataRoot, CHARS, dir, "profile.md");
 		const profileMtimeBefore = (await stat(profilePath)).mtimeMs;
 
 		// small delay so mtime resolution can't mask a rewrite
@@ -96,7 +103,7 @@ describe("C1 avatar adapter: character", () => {
 		const { dataRoot, stores, characters } = await setup();
 		// seed a legacy flat asset and create a character pointing at it
 		const assetId = "asset_legacy_1";
-		await writeFile(join(dataRoot, "assets", `${assetId}.png`), PNG);
+		await Bun.write(join(dataRoot, "assets", `${assetId}.png`), PNG);
 		const char = await stores.characters.create({ name: "Aria", avatarAssetId: assetId });
 
 		// serveCharacterAvatar → getById → B4 copies the flat asset into
@@ -128,7 +135,7 @@ describe("C1 avatar adapter: persona", () => {
 		const res = await personas.uploadPersonaAvatar(persona.id, new File([PNG], "a.png", { type: "image/png" }));
 		expect(res).toEqual({ avatarExt: "png", avatarFullExt: null });
 
-		const bytes = await readFile(join(dataRoot, PERSONAS, persona.id, "avatar.png"));
+		const bytes = Buffer.from(await Bun.file(join(dataRoot, PERSONAS, persona.id, "avatar.png")).arrayBuffer());
 		expect(new Uint8Array(bytes)).toEqual(PNG);
 
 		expect((await stores.personas.getById(persona.id))?.avatarExt).toBe("png");

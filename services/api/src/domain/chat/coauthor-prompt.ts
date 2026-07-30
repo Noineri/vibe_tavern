@@ -23,12 +23,13 @@
 import type { ChatBranchId, ChatId, LoreEntryId } from "@vibe-tavern/domain";
 import { brandId } from "@vibe-tavern/domain";
 import type { AssemblePromptResponse } from "@vibe-tavern/domain";
-import type { ChatModeAssembleInput, ChatModeAssembleResult } from "./chat-mode-strategy.js";
-import { buildCoauthorTools, COAUTHOR_MAX_STEPS } from "./coauthor-tools.js";
+import type { ChatModeAssembleInput, ChatModeAssembleResult, CoauthorContextItem, CoauthorBoundResources } from "./chat-mode-strategy.js";
+import { buildCoauthorTools } from "./coauthor-tools.js";
 import { estimateTokens, planHistoryCompaction, setModelHint } from "@vibe-tavern/prompt-pipeline";
 import type { ToolCallPart, ToolResultPart } from "ai";
 import { dirname } from "node:path";
 import { getCoauthorModule, isSeedModule } from "../coauthor/modules/module-registry.js";
+import { loadPromptAsset } from "../../shared/prompt-asset-loader.js";
 import type { SkillCatalogEntry } from "../coauthor/skills/skill-scanner.js";
 
 /** How many of the chat's most recent messages to include as conversation history. */
@@ -60,18 +61,23 @@ function asToolProviderOptions(value: unknown): ToolCallPart["providerOptions"] 
  * (the section is omitted entirely so the prompt is unchanged for a fresh
  * install with no built-ins).
  */
-function renderSkillCatalog(entries: readonly SkillCatalogEntry[]): string {
+function renderSkillCatalog(entries: readonly SkillCatalogEntry[], primarySkillIds?: readonly string[]): string {
   if (entries.length === 0) return "";
   const lines = [
     "# Available skills (Agent Skills flow)",
     "Skills are loaded on demand, IDE/CLI-style. To use one: pick the skill whose description matches the user's request, call `read_skill_file` with its manifest `path` to read its `SKILL.md`, obey that workflow, and read only the referenced assets/references the current task actually needs. Do NOT read a skill you do not need.",
+  ];
+  if (primarySkillIds && primarySkillIds.length > 0) {
+    lines.push("", `Primary skill for this mode: ${primarySkillIds.map((id) => `**${id}**`).join(", ")}`);
+  }
+  lines.push(
     "",
     ...entries.map((e) => {
       const shadow = e.shadowsBuiltin ? " (user override of built-in)" : "";
       const desc = e.description.trim() || "(no description)";
       return `- **${e.id}**${shadow} — ${desc}  → read \`${e.rootRelativeManifestPath}\``;
     }),
-  ];
+  );
   return lines.join("\n");
 }
 
@@ -85,20 +91,58 @@ function renderCurrentCard(profileMd: string, character: { firstMessage: string 
   return [`# Current profile.md`, "```yaml", profileMd, "```", "", "# Current greetings", ...greetingLines].join("\n");
 }
 
-/** Co-author lorebook entry as the editor sees it (CA-13): just the fields
- *  the prompt needs. The loader dedupes + filters enabled books/entries. */
-type CoauthorLoreEntry = { id: string; title: string; content: string };
-
-/** Render the chat's bound lorebook entries as read-only reference context
- *  (CA-13). Empty string when none are bound — so the section is omitted
- *  entirely and the prompt is unchanged for chats with no lore bound. */
-function renderLoreContext(entries: CoauthorLoreEntry[]): string {
-  if (entries.length === 0) return "";
-  const blocks = entries.map((e) => {
-    const title = e.title?.trim() ? e.title.trim() : "(untitled)";
-    return `## ${title}\n${e.content}`;
+/** Render the chat's pinned Level-1 context entities as read-only reference
+ *  blocks (CE-C1; generalizes CA-13's lorebook-only section). Each item is
+ *  tagged with its kind so a mixed character/persona/lorebook/script set is
+ *  unambiguous to the model. Empty string when nothing is pinned — so the
+ *  section is omitted entirely and the prompt is unchanged. */
+function renderContextBlocks(items: CoauthorContextItem[]): string {
+  if (items.length === 0) return "";
+  const TYPE_TAG = {
+    character: "Character",
+    persona: "Persona",
+    lorebook: "Lorebook",
+    script: "Script",
+  } as const;
+  const blocks = items.map((it) => {
+    const title = it.title?.trim() ? it.title.trim() : "(untitled)";
+    return `## [${TYPE_TAG[it.type]}] ${title}\n${it.content}`;
   });
-  return ["# Lorebook context (read-only reference — do NOT edit)", ...blocks].join("\n");
+  return ["# Pinned context (read-only reference — do NOT edit)", ...blocks].join("\n");
+}
+
+/** CE-C2: bound-lorebook awareness — names plus entry title/ID pairs (a
+ * compact table of contents). IDs are intentionally visible: CE-B1's
+ * cross-turn edit and re-delegation tools take a persisted `entryId`, so a
+ * title alone leaves the model unable to target the entry. Entry CONTENT is
+ * still NOT injected (that is Level 1 when the user pins the book). */
+function renderBoundLorebooksAwareness(lorebooks: CoauthorBoundResources["lorebooks"]): string {
+  if (lorebooks.length === 0) return "";
+  const blocks = lorebooks.map((lb) => {
+    const entries = lb.entries.length > 0
+      ? lb.entries.map((entry) => `  - ${entry.title} [entryId: ${entry.id}]`).join("\n")
+      : "  (no enabled entries)";
+    return `## ${lb.name}\n${entries}`;
+  });
+  return [
+    "# Bound lorebooks (awareness — titles + stable entry IDs only; use the shown entryId for an existing entry; ask the user to pin a book for full content)",
+    ...blocks,
+  ].join("\n");
+}
+
+/** CE-C3: bound-script awareness — name + description (summary) only. The
+ *  script CODE is NOT injected; if the model needs it, the user pins the
+ *  script as Level-1 context. */
+function renderBoundScriptsAwareness(scripts: CoauthorBoundResources["scripts"]): string {
+  if (scripts.length === 0) return "";
+  const blocks = scripts.map((sc) => {
+    const summary = sc.summary || "(no description)";
+    return `## ${sc.name}\n${summary}`;
+  });
+  return [
+    "# Bound scripts (awareness — summaries only; ask the user to pin a script for its full code)",
+    ...blocks,
+  ].join("\n");
 }
 
 function formatCoauthorHistoryMessages(messages: ReadonlyArray<CoauthorHistoryMessage>): string {
@@ -120,7 +164,7 @@ function estimateCoauthorHistoryTokens(messages: ReadonlyArray<CoauthorHistoryMe
  * the result and are threaded into the executor by CA-5's wiring.
  */
 export async function assembleCoauthorPrompt(input: ChatModeAssembleInput): Promise<ChatModeAssembleResult> {
-  const { chatId, model, loaders } = input;
+  const { chatId, model, loaders, loreDelegate, loreEntityLookup, contextSearchSession } = input;
 
   // Pull the card state + conversation history up front. Co-author is a flat
   // editor chat — no branches, no compaction. (Skills are catalog-only in the
@@ -198,16 +242,25 @@ export async function assembleCoauthorPrompt(input: ChatModeAssembleInput): Prom
     ? []
     : await loaders.getCoauthorUserModules();
   const module = await getCoauthorModule(chat.coauthorModuleId, userModules);
-  const [profileMd, loreEntries, skillCatalog, branchSummaries] = await Promise.all([
+  const [profileMd, contextItems, skillCatalog, branchSummaries, boundResources] = await Promise.all([
     loaders.getProfileMdText(character.id as unknown as import("@vibe-tavern/domain").CharacterId),
-    loaders.getCoauthorLorebookEntries(chatId),
+    loaders.getCoauthorContextItems(chatId),
     loaders.getSkillCatalog(),
     loaders.getChatSummaries(chatId, input.branchId ?? (chat.activeBranchId as ChatBranchId)),
+    loaders.getCoauthorBoundResources(character.id as unknown as import("@vibe-tavern/domain").CharacterId),
   ]);
   const basePrompt = module.basePrompt;
+  // Shared editor preamble (Role + tool mechanics + scope + macros) loaded from
+  // coauthor/base.md. This is the universal co-author framing; the module's
+  // basePrompt specializes it with mode-specific behavior. Prepending it here
+  // keeps the tool mechanics in one place (DRY) and ensures every module — seed
+  // or user, original or duplicated (M3) — carries the editing contract.
+  const coauthorBase = await loadPromptAsset("coauthor/base.md");
   const currentCard = renderCurrentCard(profileMd, character);
-  const loreBlock = renderLoreContext(loreEntries);
-  const skillCatalogBlock = renderSkillCatalog(skillCatalog);
+  const contextBlock = renderContextBlocks(contextItems);
+  const boundLorebooksBlock = renderBoundLorebooksAwareness(boundResources.lorebooks);
+  const boundScriptsBlock = renderBoundScriptsAwareness(boundResources.scripts);
+  const skillCatalogBlock = renderSkillCatalog(skillCatalog, module.skillIds);
   // Derive the skill roots (user + built-in) from the catalog entries' skill
   // dirs so read_skill_file resolves paths against the same roots the catalog
   // was built from. Empty when no skills are available (reads then reject).
@@ -221,18 +274,27 @@ export async function assembleCoauthorPrompt(input: ChatModeAssembleInput): Prom
     ? ["# Conversation Summary", ...memoryItems].join("\n")
     : "";
 
-  const sections = [basePrompt];
+  const sections = [coauthorBase, "", basePrompt];
   if (skillCatalogBlock) {
     sections.push("", skillCatalogBlock);
   }
   sections.push("", currentCard);
+  // CE-C2/C3: bound-resource awareness sits right after the character card —
+  // these are the character's OWNED lorebooks/scripts (a table of contents),
+  // distinct from Level-1 pinned context (full content) appended further down.
+  if (boundLorebooksBlock) {
+    sections.push("", boundLorebooksBlock);
+  }
+  if (boundScriptsBlock) {
+    sections.push("", boundScriptsBlock);
+  }
   if (memoryBlock) {
     sections.push("", memoryBlock);
   }
-  if (loreBlock) {
-    // Omitted entirely when no entries are active — the prompt is then
-    // unchanged for chats with no lore / no matches.
-    sections.push("", loreBlock);
+  if (contextBlock) {
+    // Omitted entirely when nothing is pinned — the prompt is then
+    // unchanged for chats with no context bound.
+    sections.push("", contextBlock);
   }
   const systemContent = sections.join("\n");
 
@@ -270,6 +332,19 @@ export async function assembleCoauthorPrompt(input: ChatModeAssembleInput): Prom
 
   const layers: import("@vibe-tavern/domain").PromptLayerDto[] = [];
   
+  layers.push({
+    id: "coauthor-base",
+    sourceType: "coauthor_module",
+    sourceId: "base",
+    sourceName: "Co-Author base (editor contract)",
+    position: "in_prompt",
+    priority: 1100,
+    text: coauthorBase,
+    enabled: true,
+    reason: "",
+    tokenCount: estimateTokens(coauthorBase)
+  });
+
   layers.push({
     id: `module-${module.id}`,
     sourceType: "coauthor_module",
@@ -311,6 +386,40 @@ export async function assembleCoauthorPrompt(input: ChatModeAssembleInput): Prom
     tokenCount: estimateTokens(currentCard)
   });
 
+  // CE-C2: bound-lorebook awareness (names + entry titles). Sits just below the
+  // character card — these are the character's owned books as a table of
+  // contents. Distinct from `pinned_context` (Level 1, full content) below.
+  if (boundLorebooksBlock) {
+    layers.push({
+      id: "bound_lorebooks",
+      sourceType: "coauthor_context",
+      sourceId: "bound_lorebooks",
+      sourceName: `Bound Lorebooks (${boundResources.lorebooks.length})`,
+      position: "in_prompt",
+      priority: 890,
+      text: boundLorebooksBlock,
+      enabled: true,
+      reason: "",
+      tokenCount: estimateTokens(boundLorebooksBlock)
+    });
+  }
+
+  // CE-C3: bound-script awareness (names + summaries). Symmetric to bound lorebooks.
+  if (boundScriptsBlock) {
+    layers.push({
+      id: "bound_scripts",
+      sourceType: "coauthor_context",
+      sourceId: "bound_scripts",
+      sourceName: `Bound Scripts (${boundResources.scripts.length})`,
+      position: "in_prompt",
+      priority: 885,
+      text: boundScriptsBlock,
+      enabled: true,
+      reason: "",
+      tokenCount: estimateTokens(boundScriptsBlock)
+    });
+  }
+
   if (memoryBlock) {
     layers.push({
       id: "summary_memory",
@@ -326,18 +435,18 @@ export async function assembleCoauthorPrompt(input: ChatModeAssembleInput): Prom
     });
   }
 
-  if (loreBlock) {
+  if (contextBlock) {
     layers.push({
-      id: "lore_entries",
-      sourceType: "lore_entry",
-      sourceId: "lore",
-      sourceName: "Lorebook Context",
+      id: "pinned_context",
+      sourceType: "coauthor_context",
+      sourceId: "context",
+      sourceName: `Pinned Context (${contextItems.length})`,
       position: "in_prompt",
       priority: 800,
-      text: loreBlock,
+      text: contextBlock,
       enabled: true,
       reason: "",
-      tokenCount: estimateTokens(loreBlock)
+      tokenCount: estimateTokens(contextBlock)
     });
   }
 
@@ -377,9 +486,11 @@ export async function assembleCoauthorPrompt(input: ChatModeAssembleInput): Prom
       recentHistory: recentMessagesForHistory.length,
     },
     // Co-author does NOT run the activation engine — no activation trace.
-    // Lore context lives only in the system message (renderLoreContext above);
-    // these trace fields stay empty so the trace UI doesn't fabricate
-    // activation reasons for entries that were picked, not activated.
+    // Pinned context AND bound-resource awareness (renderContextBlocks /
+    // renderBoundLorebooksAwareness / renderBoundScriptsAwareness above) live
+    // only in the system message; these trace fields stay empty so the trace UI
+    // doesn't fabricate activation reasons for entries that were picked/bound,
+    // not keyword-activated.
     activatedLoreEntries: [],
     activatedLoreDetail: [],
     scriptInjections: [],
@@ -388,13 +499,13 @@ export async function assembleCoauthorPrompt(input: ChatModeAssembleInput): Prom
   };
 
   return {
-    branchId: input.branchId ?? ("" as ChatBranchId),
+    branchId: input.branchId ?? (chat.activeBranchId as ChatBranchId),
     prompt,
     promptTraceDraft: {
       chatId: chatId,
-      branchId: (input.branchId ?? ("" as ChatBranchId)),
+      branchId: (input.branchId ?? (chat.activeBranchId as ChatBranchId)),
       model,
-      presetName: "(coauthor)",
+      presetName: module.name,
       presetId: null,
       assembledLayers: layers,
       tokenAccounting: {
@@ -408,7 +519,7 @@ export async function assembleCoauthorPrompt(input: ChatModeAssembleInput): Prom
       latencyMs: 0,
       compactionSummary,
     },
-    tools: buildCoauthorTools({ toolSet: module.toolSet, profileMd, skillRoots }),
+    tools: buildCoauthorTools({ toolSet: module.toolSet, profileMd, skillRoots, loreDelegate, loreEntityLookup, contextSearchSession }),
     maxSteps: module.maxSteps,
     coauthorModuleId: module.id,
     coauthorSkillId: null,

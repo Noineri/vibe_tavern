@@ -59,6 +59,23 @@ test("I4 — keeps orphan kind:built_in entries (markers have no injection)", ()
   expect(promptOrder.find((e) => e.identifier === "worldInfoAfter")).toBeDefined();
 });
 
+test("character override identifiers infer built-in kind and semantic default slots", () => {
+  const { promptOrder } = normalizePresetCanvas([], [
+    { identifier: "charSystemPrompt", enabled: true },
+    { identifier: "charDepthPrompt", enabled: true },
+    { identifier: "charPostHistory", enabled: true },
+  ]);
+  expect(promptOrder.find((e) => e.identifier === "charSystemPrompt")).toMatchObject({
+    kind: "built_in", zone: "before_chat", depth: null,
+  });
+  expect(promptOrder.find((e) => e.identifier === "charDepthPrompt")).toMatchObject({
+    kind: "built_in", zone: "in_chat", depth: 4,
+  });
+  expect(promptOrder.find((e) => e.identifier === "charPostHistory")).toMatchObject({
+    kind: "built_in", zone: "after_chat", depth: 0,
+  });
+});
+
 test("I5 — synthesizes identifier for injections missing one", () => {
   const { customInjections, promptOrder } = normalizePresetCanvas(
     [{ name: "anon", content: "c", role: "user" }],
@@ -157,4 +174,31 @@ test("I11 — idempotent (re-normalizing a normalized canvas yields the same can
   );
   const second = normalizePresetCanvas(first.customInjections, first.promptOrder);
   expect(second).toEqual(first);
+});
+
+test("role pass-through — valid role preserved, absent stays absent, invalid dropped", () => {
+  // APC-2a. `role` is optional on PromptOrderEntry; normalize must preserve a
+  // valid role verbatim and drop an absent/invalid one (the resolver then applies
+  // the slot's hardcoded default). It never synthesises a default here, so an
+  // already-normalized preset round-trips unchanged (I11 with role).
+  const { promptOrder } = normalizePresetCanvas([], [
+    { identifier: "main", enabled: true, order: 0, zone: "before_chat", depth: null, kind: "built_in", role: "user" },
+    { identifier: "jailbreak", enabled: true, order: 0, zone: "after_chat", depth: 0, kind: "built_in" },
+    { identifier: "scenario", enabled: true, order: 0, zone: "before_chat", depth: null, kind: "built_in", role: "bogus" },
+  ]);
+  const main = promptOrder.find((e) => e.identifier === "main")!;
+  const jailbreak = promptOrder.find((e) => e.identifier === "jailbreak")!;
+  const scenario = promptOrder.find((e) => e.identifier === "scenario")!;
+  expect(main.role).toBe("user");
+  expect(jailbreak.role).toBeUndefined();
+  expect(scenario.role).toBeUndefined(); // invalid role dropped → resolver applies default
+});
+
+test("I11 — idempotent with role preserved (re-normalizing keeps the role)", () => {
+  const first = normalizePresetCanvas([], [
+    { identifier: "main", enabled: true, order: 0, zone: "before_chat", depth: null, kind: "built_in", role: "user" },
+  ]);
+  const second = normalizePresetCanvas(first.customInjections, first.promptOrder);
+  expect(second).toEqual(first);
+  expect(second.promptOrder[0]!.role).toBe("user");
 });

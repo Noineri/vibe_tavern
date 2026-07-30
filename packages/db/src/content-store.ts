@@ -1,5 +1,5 @@
 import { readdir, mkdir } from "node:fs/promises";
-import { join, dirname } from "node:path";
+import { join, dirname, basename } from "node:path";
 import type { FileStore, StorageFolder } from "./file-store.js";
 import { STORAGE_FOLDERS, hashCanonicalJson } from "./file-store.js";
 
@@ -324,6 +324,46 @@ export class ContentStore {
 		return this._fileStore.pathExists(dirPath);
 	}
 
+	/**
+	 * List the immediate subdirectory names of data/{folder}/ (one level,
+	 * non-recursive). Delegates to FileStore; returns [] when the folder is
+	 * missing. Used by the character-directory registry scan.
+	 */
+	async listSubdirs(folder: StorageFolder): Promise<string[]> {
+		return this._fileStore.listSubdirs(folder);
+	}
+
+	/**
+	 * Rename an entity folder data/{folder}/{oldEntityId}/ →
+	 * data/{folder}/{newEntityId}/ (HUMAN_READABLE_FOLDERS — character rename).
+	 * Explicitly REJECTS an occupied destination before touching the filesystem
+	 * (collision safety), and evicts the old-name cache entries only AFTER a
+	 * successful rename (new-name entries repopulate lazily on next access).
+	 * No-op if the source folder is absent (entity never written to disk).
+	 */
+	async renameEntityFolder(folder: StorageFolder, oldEntityId: string, newEntityId: string): Promise<void> {
+		const oldDir = this._fileStore.resolvePath(folder, oldEntityId);
+		if (!(await this._fileStore.pathExists(oldDir))) return; // source absent → no-op
+		const newDir = this._fileStore.resolvePath(folder, newEntityId);
+		if (await this._fileStore.pathExists(newDir)) {
+			throw new Error(`renameEntityFolder: destination already exists (${folder}/${newEntityId})`);
+		}
+		await this._fileStore.rename(oldDir, newDir);
+		// Evict old-name cache entries (best-effort hygiene — the store only
+		// references the new name after a rename, so stale entries are harmless,
+		// but they'd leak across many renames in a long-running server).
+		const oldPrefix = this.cacheKey(folder, oldEntityId);
+		this.cache.delete(oldPrefix);
+		for (const key of [...this.cache.keys()]) {
+			if (key.startsWith(`${oldPrefix}/`)) this.cache.delete(key);
+		}
+		for (const key of [...this.textCache.keys()]) {
+			if (key === oldPrefix || key.startsWith(`${oldPrefix}.`) || key.startsWith(`${oldPrefix}/`)) {
+				this.textCache.delete(key);
+			}
+		}
+	}
+
 	// ─── Legacy flat-file migration helpers ───────────────────────────────
 	// Pre-folder-layout entities live as flat data/{folder}/{id}(.{slug}).json.
 	// These helpers find and copy them into the folder layout WITHOUT deleting
@@ -375,6 +415,23 @@ export class ContentStore {
 		await this.writeEntityFile(folder, entityId, targetName, data);
 		// Intentionally do NOT delete legacyPath — copy-forward policy.
 		return true;
+	}
+
+	/**
+	 * HRF-5 cleanliness step: MOVE a legacy root-level flat file
+	 * (`{id}.json` / `{id}.{slug}.json`) into `backupDir`. Unlike the copy-forward
+	 * migration helpers above, this MOVES the source (the backup preserves the
+	 * data-safety invariant) so data/{folder}/ is left flat-free after a
+	 * successful migration. Idempotent: returns null (nothing to move) once the
+	 * flat file is gone. Returns the moved source absolute path, or null.
+	 */
+	async archiveLegacyFlatFile(folder: StorageFolder, entityId: string, backupDir: string): Promise<string | null> {
+		const legacyPath = await this.findLegacyFlatFile(folder, entityId);
+		if (legacyPath === null) return null;
+		await mkdir(backupDir, { recursive: true });
+		const dest = join(backupDir, basename(legacyPath));
+		await this._fileStore.rename(legacyPath, dest);
+		return legacyPath;
 	}
 
 	/**

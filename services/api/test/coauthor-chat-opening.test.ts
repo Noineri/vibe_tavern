@@ -23,8 +23,8 @@ import { SessionRuntime } from "../src/runtime/session/session-runtime.js";
 import { setTokenCountFn } from "@vibe-tavern/prompt-pipeline";
 import type { ChatId } from "@vibe-tavern/domain";
 
-const DEFAULT_OPENING = "I'm ready to help you build {{char}}";
-const PROFILE_OPENING = "I'll focus on {{char}}'s profile";
+const DEFAULT_OPENING = "Let's develop {{char}} together";
+const PROFILE_OPENING = "Let's tighten {{char}} up";
 const RP_GREETING = "Hi! RP greeting here.";
 
 async function createTestRuntime() {

@@ -1,12 +1,21 @@
-import type { ChatId, ChatMode, ObjectiveMode, ObjectiveTaskStatus, PromptTraceRecordDto, SceneTrackerConfig } from "@vibe-tavern/domain";
+import type { ChatId, ChatMode, ObjectiveMode, ObjectiveTaskStatus, PromptTraceRecordDto, SceneTrackerConfig, ChatBranchId, MessageVariantId } from "@vibe-tavern/domain";
 import type { CoauthorApplyRequest, CoauthorCorrection, CoauthorModule, CoauthorModuleCreate, CoauthorModuleUpdate } from "@vibe-tavern/api-contracts";
-import type { AppSnapshot, AppMessage, ChatListItem, ChatSummaryRecord, AutoSummaryConfig, InsightsConfigPatch, InsightsCompletionPatchResponse, InsightsCompletionTarget, ScenePreviewResponse, SceneTargetResponse, SceneStatusResponse, SceneBackfillMode, SceneBackfillStatusResponse } from "./types.js";
+import type { AppSnapshot, AppMessage, ChatListItem, ChatSummaryRecord, AutoSummaryConfig, InsightsConfigPatch, InsightsCompletionPatchResponse, InsightsCompletionTarget, ScenePreviewResponse, SceneTargetResponse, SceneStatusResponse, SceneBackfillMode, SceneBackfillStatusResponse, ContextPreviewResponse, DiceMode } from "./types.js";
 import { client } from "./client.js";
-import { unwrapRpc, unwrapError } from "./unwrap.js";
+import { unwrapRpc, unwrapError, type RpcResponse } from "./unwrap.js";
+import { DiceApiError } from "./dice-api.js";
 import { normalizeMessage, normalizeSnapshot } from "./normalize.js";
 import { sendStream, regenerateStream, generateReplyStream, type StreamOpts } from "./stream.js";
 import { getGatewayBaseUrl, getMobileToken } from "./client.js";
 import { appendTokenQuery } from "../lib/mobile-token.js";
+
+export type CreateMessageVariantInput = {
+  readonly content: string;
+  readonly sourceVariantIds: readonly MessageVariantId[];
+  readonly modelId?: string;
+  readonly promptPresetId?: string;
+  readonly finishReason?: string;
+};
 
 export async function fetchChat(chatId: ChatId): Promise<AppSnapshot> {
   const response = await client.api.chats[":chatId"].$get({ param: { chatId } });
@@ -67,8 +76,8 @@ export async function setGreetingIndex(chatId: ChatId, greetingIndex: number): P
   return normalizeSnapshot(data);
 }
 
-export async function setCoauthorLorebooks(chatId: ChatId, lorebookIds: string[]): Promise<AppSnapshot> {
-  const response = await client.api.chats[":chatId"]["coauthor-lorebooks"].$patch({ param: { chatId }, json: { lorebookIds } });
+export async function setCoauthorContextLinks(chatId: ChatId, links: Array<{ targetType: "character" | "persona" | "lorebook" | "script"; targetId: string }>): Promise<AppSnapshot> {
+  const response = await client.api.chats[":chatId"]["coauthor-context-links"].$patch({ param: { chatId }, json: { links } });
   const data = await unwrapRpc<AppSnapshot>(response);
   return normalizeSnapshot(data);
 }
@@ -116,7 +125,7 @@ export async function setChatPromptPreset(chatId: ChatId, promptPresetId: string
 
 export async function sendChatMessage(
   chatId: ChatId,
-  input: { content: string; attachments?: { id: string; name: string; type: "image" | "file" | "video"; assetId: string; mimeType: string; sizeBytes: number }[] },
+  input: { content: string; attachments?: { id: string; name: string; type: "image" | "file" | "video"; assetId: string; mimeType: string; sizeBytes: number }[]; diceMode?: DiceMode; pendingRevision?: number },
   options?: { signal?: AbortSignal },
 ): Promise<AppSnapshot> {
   logClientSendDebug("web.client.sendChatMessage.start", { chatId, contentLength: input.content.length });
@@ -124,8 +133,31 @@ export async function sendChatMessage(
     { param: { chatId }, json: input },
     { init: { signal: options?.signal } },
   );
-  const data = await unwrapRpc<AppSnapshot>(response);
+  if (!response.ok) {
+    throw await sendChatMessageError(response);
+  }
+  const data = (await response.json()) as AppSnapshot;
   return normalizeSnapshot(data);
+}
+
+/** Non-stream send error. A dice commit conflict arrives as HTTP 409 with a
+ *  structured `error.details.code` (`stale_revision` / `unresolved_choose`) —
+ *  surface it as a typed {@link DiceApiError} so the send path can refresh
+ *  pending and KEEP the draft instead of erroring out. Every other failure
+ *  delegates to the shared {@link unwrapError} unchanged (the body is consumed
+ *  at most once on either path). DICE-F3. */
+async function sendChatMessageError(response: RpcResponse): Promise<Error> {
+  if (response.status === 409) {
+    const body = (await response.json().catch(() => null)) as
+      | { error?: { message?: string; details?: { code?: string } } }
+      | null;
+    const code = body?.error?.details?.code;
+    if (typeof code === "string") {
+      return new DiceApiError(response.status, body?.error?.message ?? "Dice commit conflict", code);
+    }
+    return new Error(body?.error?.message ?? `Request failed: ${response.status}`);
+  }
+  return unwrapError(response);
 }
 
 export async function regenerateChatMessage(
@@ -153,10 +185,31 @@ export async function generateReply(
   return normalizeSnapshot(data);
 }
 
-export async function editChatMessage(chatId: ChatId, messageId: string, content: string): Promise<AppSnapshot> {
+export async function editChatMessage(
+  chatId: ChatId,
+  messageId: string,
+  content: string,
+  expectedVariantId?: MessageVariantId,
+): Promise<AppSnapshot> {
   const response = await client.api.chats[":chatId"].messages[":messageId"].$patch({
     param: { chatId, messageId },
-    json: { content },
+    json: {
+      content,
+      ...(expectedVariantId === undefined ? {} : { expectedVariantId }),
+    },
+  });
+  const data = await unwrapRpc<AppSnapshot>(response);
+  return normalizeSnapshot(data);
+}
+
+export async function createMessageVariant(
+  chatId: ChatId,
+  messageId: string,
+  input: CreateMessageVariantInput,
+): Promise<AppSnapshot> {
+  const response = await client.api.chats[":chatId"].messages[":messageId"].variants.$post({
+    param: { chatId, messageId },
+    json: { ...input, sourceVariantIds: [...input.sourceVariantIds] },
   });
   const data = await unwrapRpc<AppSnapshot>(response);
   return normalizeSnapshot(data);
@@ -284,6 +337,15 @@ export async function saveChatSummary(chatId: ChatId, summary: string): Promise<
   return { summary: data.summary, snapshot: normalizeSnapshot(data.snapshot) };
 }
 
+export async function updateChatDynamicPrompt(chatId: ChatId, content: string): Promise<AppSnapshot> {
+  // The route PATCH /api/chats/:chatId/dynamic-prompt is defined in
+  // services/api/src/api/routes/chat.ts; hc<AppType> infers it from the
+  // hono route tree. The $patch verb is a Hono RPC convention.
+  const response = await client.api.chats[":chatId"]["dynamic-prompt"].$patch({ param: { chatId }, json: { content } });
+  const data = await unwrapRpc<AppSnapshot>(response);
+  return normalizeSnapshot(data);
+}
+
 export async function listChatSummaries(chatId: ChatId): Promise<ChatSummaryRecord[]> {
   const response = await client.api.chats[":chatId"].summaries.$get({ param: { chatId } });
   return unwrapRpc<ChatSummaryRecord[]>(response);
@@ -334,6 +396,10 @@ export async function generateChatSummary(
     label?: string;
     includeInContext?: boolean;
     excludeSummarized?: boolean;
+    /** SUMMARY_PRIOR_CONTEXT_PLAN: include preceding summaries as continuity. */
+    includePriorSummaries?: boolean;
+    /** SUMMARY_PRIOR_CONTEXT_PLAN: cap on how many preceding summaries to include. */
+    maxPriorSummaries?: number;
   },
   options?: { signal?: AbortSignal },
 ): Promise<{ summary: string; chatSummary: ChatSummaryRecord; snapshot: AppSnapshot }> {
@@ -641,6 +707,24 @@ export async function fetchTraceHistory(
     query: { messageId: opts?.messageId, branchId: opts?.branchId },
   });
   return unwrapRpc<PromptTraceRecordDto[]>(response);
+}
+
+/**
+ * Lazy branch-scoped live context preview (decoupled from navigation/
+ * mutation responses so switching chats or branches never blocks on prompt
+ * assembly). The server echoes the immutable { chatId, branchId } target so
+ * the caller can reject a result that no longer matches the active branch.
+ */
+export async function fetchContextPreview(
+  chatId: ChatId,
+  branchId: ChatBranchId,
+  signal?: AbortSignal,
+): Promise<ContextPreviewResponse> {
+  const response = await client.api.chats[":chatId"].branches[":branchId"]["context-preview"].$post(
+    { param: { chatId, branchId } },
+    { init: { signal } },
+  );
+  return unwrapRpc<ContextPreviewResponse>(response);
 }
 
 // ─── Debug ──────────────────────────────────────────────────────────────

@@ -4,8 +4,10 @@ import { registerMessageSlot, type MessageSlotContext } from "../../lib/message-
 import { useCoauthorTurnStore, extractPersistedCoauthorActivities, type CoauthorToolActivity } from "../../stores/coauthor-turn-store.js";
 import { coauthorSectionEditInputSchema, coauthorSectionWriteInputSchema } from "@vibe-tavern/api-contracts";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
+import { useChatStore } from "../../stores/index.js";
 import type { AppMessage } from "../../app-client.js";
 import { Icons } from "../shared/icons.js";
+import { AnimatedDisclosure } from "../shared/AnimatedDisclosure.js";
 import { useT } from "../../i18n/context.js";
 
 /**
@@ -43,6 +45,10 @@ function CoauthorToolActivitySlot({
   isStreaming: boolean;
 }) {
   const activeActivities = useCoauthorTurnStore(useShallow((s) => s.turnsByChat[chatId] ?? EMPTY));
+  // True while the co-author generation is in progress — used to prevent
+  // isLastAssistant from claiming streaming tool activities on the wrong
+  // (previous) committed assistant bubble.
+  const isGenerating = useChatStore((s) => s.generations[chatId] != null);
   // Primitive signature, not an ordered-message array subscription: each
   // MessageBlock must remain isolated from unrelated message/variant updates.
   // Zustand compares this string with Object.is, so a mutation on message B
@@ -116,7 +122,11 @@ function CoauthorToolActivitySlot({
     const map = new Map<string, CoauthorToolActivity>();
     for (const a of persistedActivities) map.set(a.toolCallId, a);
     
-    if (isStreaming || isLastAssistant) {
+    // During generation active activities render ONLY on the streaming
+    // pending-assistant (isStreaming). After generation ends and the
+    // assistant is committed, isLastAssistant takes over for review.
+    const canRenderActive = isStreaming || (!isGenerating && isLastAssistant);
+    if (canRenderActive) {
       for (const a of activeActivities) {
         // During generation the active store is the only source and belongs on
         // the streaming assistant. After commit, however, each persisted call
@@ -156,11 +166,19 @@ type GreetingLabelKey =
   | "coauthor_tool_op_greeting_alt"
   | "coauthor_tool_op_greeting_new";
 
+type LoreLabelKey =
+  | "coauthor_tool_op_lore_book"
+  | "coauthor_tool_op_lore_entry"
+  | "coauthor_tool_op_lore_write"
+  | "coauthor_tool_op_lore_keys"
+  | "coauthor_tool_op_lore_activation";
+
 type OpPreview =
   | { kind: "edit"; edits: { search: string; replace: string }[] }
   | { kind: "write-section"; content: string }
   | { kind: "write-profile" }
   | { kind: "greeting"; labelKey: GreetingLabelKey; labelNum?: number; content: string }
+  | { kind: "lore"; labelKey: LoreLabelKey; content?: string; chips?: string[]; chipKeys?: string[] }
   | null;
 
 /** Narrow the opaque `args` per `toolName` into a renderable operation, or
@@ -197,6 +215,47 @@ function parseOperation(toolName: string, args: unknown): OpPreview {
       const a = args as { content?: string };
       return typeof a.content === "string" ? { kind: "greeting", labelKey: "coauthor_tool_op_greeting_primary", content: a.content } : null;
     }
+    // ── Lore tools (CTX-L3). The structured lore review (CoauthorLoreReview)
+    // shows the full cumulative proposal; this is the per-call glanceable
+    // preview of what each call put in — the book/entry text, the delegated
+    // brief, or the generation/activation params. `chips` are literal display
+    // strings (activation keys); `chipKeys` are i18n keys (param values).
+    case "create_lorebook": {
+      const a = args as { name?: unknown; description?: unknown };
+      const parts = [a.name, a.description].filter((s): s is string => typeof s === "string" && s.trim().length > 0);
+      return parts.length ? { kind: "lore", labelKey: "coauthor_tool_op_lore_book", content: parts.join("\n") } : null;
+    }
+    case "create_lore_entry": {
+      const a = args as { content?: unknown; keys?: unknown };
+      const keys = Array.isArray(a.keys) ? a.keys.filter((k): k is string => typeof k === "string" && k.length > 0) : [];
+      const content = typeof a.content === "string" && a.content.trim() ? a.content : undefined;
+      if (!keys.length && !content) return null;
+      return { kind: "lore", labelKey: "coauthor_tool_op_lore_entry", chips: keys.length ? keys : undefined, content };
+    }
+    case "ai_write_lore_entry": {
+      const a = args as { instruction?: unknown };
+      return typeof a.instruction === "string" && a.instruction.trim()
+        ? { kind: "lore", labelKey: "coauthor_tool_op_lore_write", content: a.instruction }
+        : null;
+    }
+    case "ai_generate_lore_keys": {
+      const a = args as { keyTarget?: unknown; appendMode?: unknown };
+      const target = a.keyTarget === "primary" || a.keyTarget === "secondary" ? a.keyTarget : "both";
+      const augment = a.appendMode === true;
+      return {
+        kind: "lore",
+        labelKey: "coauthor_tool_op_lore_keys",
+        chipKeys: [`ai_quickpill_key_target_${target}`, augment ? "ai_quickpill_append" : "coauthor_tool_op_replace"],
+      };
+    }
+    case "set_lore_activation": {
+      const a = args as { constant?: unknown; enabled?: unknown };
+      const chipKeys: string[] = [];
+      if (a.constant === true) chipKeys.push("coauthor_tool_op_lore_constant");
+      if (a.enabled === true) chipKeys.push("coauthor_tool_op_lore_enabled");
+      else if (a.enabled === false) chipKeys.push("coauthor_tool_op_lore_disabled");
+      return { kind: "lore", labelKey: "coauthor_tool_op_lore_activation", chipKeys: chipKeys.length ? chipKeys : undefined };
+    }
     default:
       return null;
   }
@@ -232,7 +291,7 @@ function DiffHunk({ search, replace }: { search: string; replace: string }) {
 
 /** Scoped operation preview rendered when the card is expanded. */
 function OperationPreview({ op, proposed }: { op: OpPreview; proposed?: string }) {
-  const { t } = useT();
+  const { t, tDynamic } = useT();
   if (!op) {
     // Historical/malformed: no input to reconstruct the operation. Do NOT fall
     // back to the full cumulative `proposed` — the summary is still shown above.
@@ -266,6 +325,30 @@ function OperationPreview({ op, proposed }: { op: OpPreview; proposed?: string }
     case "write-profile":
       // The ONLY case the full cumulative document is shown — the operation itself is document-wide.
       return <pre className={PREVIEW_PRE_CLS}>{proposed ?? ""}</pre>;
+    case "lore":
+      return (
+        <div className="flex flex-col gap-1">
+          <span className={PREVIEW_LABEL_CLS}>{t(op.labelKey)}</span>
+          {/* Literal chips = activation keys (accent, matching CoauthorLoreReview's
+              primary-key pills); i18n chips = generation/activation param values
+              (muted, so metadata reads distinct from trigger keywords). */}
+          {op.chips && op.chips.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1">
+              {op.chips.map((c, i) => (
+                <span key={`c${i}`} className="rounded-full bg-accent/15 px-1.5 py-px font-ui text-[10px] text-accent">{c}</span>
+              ))}
+            </div>
+          )}
+          {op.chipKeys && op.chipKeys.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1">
+              {op.chipKeys.map((k, i) => (
+                <span key={`p${i}`} className="rounded-full border border-border/60 bg-s3 px-1.5 py-px font-ui text-[10px] text-t3">{tDynamic(k)}</span>
+              ))}
+            </div>
+          )}
+          {op.content && <pre className={PREVIEW_PRE_CLS}>{op.content}</pre>}
+        </div>
+      );
   }
 }
 
@@ -317,11 +400,11 @@ function ToolActivityCard({ activity }: { activity: CoauthorToolActivity }) {
       {errored && (
         <div className="px-3 py-1.5 font-ui text-[11px] text-danger-text">{t("coauthor_tool_error")}</div>
       )}
-      {!streaming && !isRead && open && (
-        <div className="max-h-48 overflow-auto px-3 py-2 border-l-2 border-border/50 ml-2 mt-1">
+      <AnimatedDisclosure open={!streaming && !isRead && open}>
+        <div className="ml-2 mt-1 max-h-48 overflow-auto border-l-2 border-border/50 px-3 py-2">
           <OperationPreview op={parseOperation(activity.toolName, activity.args)} proposed={activity.proposed} />
         </div>
-      )}
+      </AnimatedDisclosure>
     </div>
   );
 }
@@ -340,7 +423,14 @@ registerMessageSlot({
   visible: (ctx: MessageSlotContext) => {
     if (ctx.messageRole !== "assistant") return false;
     const mode = useSnapshotStore.getState().activeChat?.mode;
-    return mode !== "coauthor";
+    // In co-author mode the slot is disabled for committed messages
+    // (CoauthorTurnPart renders tool cards inline). Enable it ONLY for the
+    // pending-assistant singleton — the one streaming bubble that has no
+    // CoauthorTurnPart. Gating on isStreaming alone is wrong: the last turn's
+    // MessageShell also passes isGenerating=true during generation, which would
+    // re-enable the slot at the turn-shell level and glue tool cards to the
+    // previous turn's first assistant.
+    return mode !== "coauthor" || ctx.messageId === "__pending-assistant";
   },
   render: (ctx) => (
     <CoauthorToolActivitySlot chatId={ctx.chatId} messageId={ctx.messageId} isStreaming={ctx.isStreaming} />

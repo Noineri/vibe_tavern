@@ -34,6 +34,7 @@ describe("AI SDK OpenAI-compatible reasoning", () => {
       const result = await generateText({
         model: provider.chatModel("test-model"),
         prompt: "Hello",
+        include: { responseBody: true },
       });
 
       expect(result.text).toBe("Final answer");

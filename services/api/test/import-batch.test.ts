@@ -38,6 +38,7 @@ function makeDeps() {
 					Promise.resolve({ id: `char_${data.name}` }) as never,
 				),
 				update: mock(() => Promise.resolve() as never),
+				resolveFolderName: mock((id: string) => Promise.resolve(id)),
 			},
 			content: {
 				writeEntity: mock(() => Promise.resolve("stub/path") as never),

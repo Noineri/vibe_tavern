@@ -17,12 +17,13 @@ import {
   testProviderProfile,
   updateProviderProfile,
   upsertProviderModelSettings,
+  reorderProviderProfiles,
   type FavoriteProviderModelRecord,
   type ProviderModelSettingsRecord,
   type ProviderProfileRecord,
   type TestChatResponse,
 } from "../../app-client.js";
-import type { ModelSettingsOverlay, ProviderProbeResponse } from "@vibe-tavern/domain";
+import type { CoauthorTransport, ModelFavoriteScope, ModelSettingsOverlay, ProviderProbeResponse } from "@vibe-tavern/domain";
 import { useProviderDataStore } from "../provider-data-store.js";
 
 // ---------------------------------------------------------------------------
@@ -34,9 +35,9 @@ export async function loadProviderProfilesAction(): Promise<void> {
   useProviderDataStore.getState().setProfiles(profiles);
 }
 
-export async function loadFavoriteModelsAction(profileId: string): Promise<void> {
-  const favorites = await listFavoriteProviderModels(profileId);
-  useProviderDataStore.getState().setFavorites(profileId, favorites);
+export async function loadFavoriteModelsAction(profileId: string, scope: ModelFavoriteScope): Promise<void> {
+  const favorites = await listFavoriteProviderModels(profileId, scope);
+  useProviderDataStore.getState().setFavorites(profileId, scope, favorites);
 }
 
 export async function fetchProviderProfileAction(profileId: string): Promise<ProviderProfileRecord> {
@@ -69,6 +70,11 @@ export async function deleteProviderProfileAction(id: string): Promise<void> {
   void loadProviderProfilesAction();
 }
 
+export async function reorderProviderProfilesAction(updates: Array<{ id: string; sortOrder: number }>): Promise<void> {
+  await reorderProviderProfiles(updates);
+  void loadProviderProfilesAction();
+}
+
 export async function activateProviderProfileAction(id: string): Promise<void> {
   await activateProviderProfile(id);
   void loadProviderProfilesAction();
@@ -79,14 +85,15 @@ export async function toggleFavoriteModelAction(
   modelId: string,
   label: string | null | undefined,
   contextLength: number | null | undefined,
-  removing: boolean
+  removing: boolean,
+  scope: ModelFavoriteScope,
 ): Promise<void> {
   if (removing) {
-    await removeFavoriteProviderModel(profileId, modelId);
+    await removeFavoriteProviderModel(profileId, modelId, scope);
   } else {
-    await addFavoriteProviderModel(profileId, { modelId, label, contextLength });
+    await addFavoriteProviderModel(profileId, { modelId, label, contextLength, scope });
   }
-  void loadFavoriteModelsAction(profileId);
+  await loadFavoriteModelsAction(profileId, scope);
 }
 
 // ---------------------------------------------------------------------------
@@ -134,9 +141,10 @@ export async function testProviderDraftAction(
 
 export async function testProfileChatAction(
   profileId: string,
-  model: string
+  model: string,
+  transport?: CoauthorTransport,
 ): Promise<TestChatResponse> {
-  return await testProfileChat(profileId, model);
+  return await testProfileChat(profileId, model, transport);
 }
 
 export async function testProviderChatAction(

@@ -1,10 +1,13 @@
 /**
  * Mode-aware position resolution for prompt assembly.
  *
- * The single mode-sensitive seam of the pipeline. `buildLayers` is mode-blind:
- * it asks a {@link PositionResolver} whether a slot is enabled, what rank it
- * sorts at, and what zone/depth its layer lands in. The two implementations
- * encode the two preset modes:
+ * The single mode-sensitive seam of the pipeline. Most of `buildLayers` is
+ * mode-blind: it asks a {@link PositionResolver} whether a slot is enabled,
+ * what rank it sorts at, and what zone/depth its layer lands in. The explicit
+ * `canvasAuthoritative` flag is reserved for content-shape differences that
+ * cannot be represented as position alone: advanced mode emits character
+ * override fields as independent canvas layers, while simple mode preserves
+ * legacy override semantics. The two implementations encode the modes:
  *
  * - **Simple** (`createSimpleResolver`): no canvas. Built-in slots are always
  *   enabled and ordered by `DEFAULT_PROMPT_ORDER`; custom injections are not
@@ -29,9 +32,12 @@ export type ResolverPromptOrderEntry = {
   kind?: "built_in" | "custom";
   zone?: "before_chat" | "in_chat" | "after_chat";
   depth?: number | null;
+  role?: "system" | "user" | "assistant";
 };
 
 export interface PositionResolver {
+  /** Whether canvas entries are authoritative (advanced=true, simple=false). */
+  readonly canvasAuthoritative: boolean;
   /**
    * Whether a built-in slot participates in assembly.
    * Always `true` for `chatHistory` (cannot be disabled — carries depth markup)
@@ -56,6 +62,13 @@ export interface PositionResolver {
    * the caller falls through to default inference.
    */
   worldInfoEntry(identifier: string): ResolverPromptOrderEntry | undefined;
+  /**
+   * Canvas entry for any built-in identifier. Layer builders read the
+   * entry-level `role` here, falling back to the slot's hardcoded default when
+   * the entry (or its `role`) is absent — and always in simple mode, where the
+   * canvas is not authoritative. Thus returns `undefined` in simple mode.
+   */
+  entryFor(identifier: string): ResolverPromptOrderEntry | undefined;
 }
 
 /**

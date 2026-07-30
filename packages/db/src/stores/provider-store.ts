@@ -1,5 +1,5 @@
-import type { StoredProviderProfileRecord, ModelSettingsOverlay } from '@vibe-tavern/domain';
-import { and, eq } from 'drizzle-orm';
+import { COAUTHOR_TRANSPORT, type CoauthorTransport, type StoredProviderProfileRecord, type ModelFavoriteScope, type ModelSettingsOverlay } from '@vibe-tavern/domain';
+import { and, asc, eq, sql } from 'drizzle-orm';
 import { providerProfiles, cachedModels, providerModelFavorites, providerModelSettings } from '../db-schema.js';
 import type { AppDb } from '../db-connection.js';
 import { resolveStoreRuntime, type StoreClock, type StoreIdGenerator } from '../persistence.js';
@@ -25,7 +25,7 @@ export interface CachedModel {
   modelSlug: string;
   modelName: string;
   contextLength: number | null;
-  capabilities: { thinking?: boolean; tools?: boolean; vision?: boolean; reasoning?: boolean };
+  capabilities: { reasoning?: boolean; tools?: boolean; vision?: boolean };
   fetchedAt: string;
 }
 
@@ -33,6 +33,7 @@ export interface FavoriteModel {
   id: string;
   providerProfileId: string;
   modelId: string;
+  scope: ModelFavoriteScope;
   label: string | null;
   contextLength: number | null;
   createdAt: string;
@@ -54,6 +55,7 @@ export interface ProviderModelSettings {
 export interface CreateProviderData {
   name: string;
   providerPreset: string;
+  coauthorTransport?: CoauthorTransport;
   endpoint: string;
   apiKey?: string | null;
   defaultModel?: string | null;
@@ -89,6 +91,9 @@ export interface CreateProviderData {
   pinContextBudget?: boolean;
   /** Per-model binding toggle — when true, sampler/context edits route to a per-model overlay. */
   bindPerModel?: boolean;
+  /** Model-list display prefs (MODEL_LIST_FILTERS) — pure UI, no backend logic. */
+  modelFreeOnly?: boolean;
+  modelGroupByOwner?: boolean;
   /** Optional vision model for image description fallback. */
   visionModel?: string | null;
 }
@@ -99,7 +104,7 @@ export interface CachedModelData {
   modelSlug: string;
   modelName: string;
   contextLength?: number | null;
-  capabilities?: { thinking?: boolean; tools?: boolean; vision?: boolean; reasoning?: boolean };
+  capabilities?: { reasoning?: boolean; tools?: boolean; vision?: boolean };
 }
 
 export interface FavoriteModelData {
@@ -130,7 +135,7 @@ export class ProviderStore {
   }
 
   async listAll(): Promise<ProviderProfile[]> {
-    const rows = await this.db.select().from(providerProfiles).all();
+    const rows = await this.db.select().from(providerProfiles).orderBy(asc(providerProfiles.sortOrder), asc(providerProfiles.createdAt)).all();
     const result = rows.map((row) => this.mapRow(row));
     for (const p of result) {
       console.log(`[DB] provider.listAll id=${p.id} visionModel=${p.visionModel}`);
@@ -149,12 +154,21 @@ export class ProviderStore {
     const id = this.idGen.next('prov');
     const now = this.clock.now();
 
+    // Append at end: sort_order = current max + 1 (see PromptPresetStore.create).
+    const maxRow = await this.db
+      .select({ maxSort: sql<number>`COALESCE(MAX(${providerProfiles.sortOrder}), -1)` })
+      .from(providerProfiles)
+      .get();
+    const nextSortOrder = (maxRow?.maxSort ?? -1) + 1;
+
     const [row] = await this.db
       .insert(providerProfiles)
       .values({
         id,
         name: data.name,
+        sortOrder: nextSortOrder,
         providerPreset: data.providerPreset,
+        coauthorTransport: data.coauthorTransport ?? COAUTHOR_TRANSPORT.chatCompletions,
         endpoint: data.endpoint,
         apiKey: data.apiKey ?? null,
         defaultModel: data.defaultModel ?? null,
@@ -189,6 +203,8 @@ export class ProviderStore {
         customSamplers: data.customSamplers ? 1 : 0,
         pinContextBudget: data.pinContextBudget ?? false,
         bindPerModel: data.bindPerModel ?? false,
+        modelFreeOnly: data.modelFreeOnly ?? false,
+        modelGroupByOwner: data.modelGroupByOwner ?? false,
         visionModel: data.visionModel ?? null,
         isActive: 0,
         createdAt: now,
@@ -206,6 +222,7 @@ export class ProviderStore {
 
     if (data.name !== undefined) values.name = data.name;
     if (data.providerPreset !== undefined) values.providerPreset = data.providerPreset;
+    if (data.coauthorTransport !== undefined) values.coauthorTransport = data.coauthorTransport;
     if (data.endpoint !== undefined) values.endpoint = data.endpoint;
     if (data.apiKey !== undefined) values.apiKey = data.apiKey;
     if (data.defaultModel !== undefined) values.defaultModel = data.defaultModel;
@@ -240,6 +257,8 @@ export class ProviderStore {
     if (data.customSamplers !== undefined) values.customSamplers = data.customSamplers ? 1 : 0;
     if (data.pinContextBudget !== undefined) values.pinContextBudget = data.pinContextBudget;
     if (data.bindPerModel !== undefined) values.bindPerModel = data.bindPerModel;
+    if (data.modelFreeOnly !== undefined) values.modelFreeOnly = data.modelFreeOnly;
+    if (data.modelGroupByOwner !== undefined) values.modelGroupByOwner = data.modelGroupByOwner;
     if (data.visionModel !== undefined) values.visionModel = data.visionModel ?? null;
 
     console.log(`[DB] provider.update id=${id} visionModel_in=${data.visionModel} visionModel_set=${values.visionModel} fields=${Object.keys(values).join(',')}`);
@@ -261,9 +280,25 @@ export class ProviderStore {
   }
 
   async activate(id: string): Promise<void> {
-    await this.db.transaction(async (tx) => {
-      await tx.update(providerProfiles).set({ isActive: 0 }).run();
-      await tx.update(providerProfiles).set({ isActive: 1 }).where(eq(providerProfiles.id, id)).run();
+    // Synchronous callback (ASYNC_TRANSACTION_AUDIT step 4): drizzle-orm 0.38.4
+    // + bun:sqlite commits at the end of the callback's synchronous prefix, so
+    // an async callback's post-await throw is never rolled back. Keeping this
+    // synchronous means a throw rolls the whole tx back.
+    //
+    // Validate the target BEFORE clearing the old active flag: a stale id
+    // would otherwise update zero rows on the second statement without
+    // throwing — silently leaving NO provider active (the old flag already
+    // cleared by the first statement). Checking inside the tx means a stale
+    // id throws before any write runs, so the currently-active provider is
+    // preserved. (provider-profile-service converts this throw to a 404.)
+    this.db.transaction((tx) => {
+      const target = tx.select({ id: providerProfiles.id }).from(providerProfiles)
+        .where(eq(providerProfiles.id, id)).get();
+      if (!target) {
+        throw new Error(`ProviderProfile '${id}' not found for activation`);
+      }
+      tx.update(providerProfiles).set({ isActive: 0 }).run();
+      tx.update(providerProfiles).set({ isActive: 1 }).where(eq(providerProfiles.id, id)).run();
     });
   }
 
@@ -276,12 +311,21 @@ export class ProviderStore {
     const newId = this.idGen.next('prov');
     const now = this.clock.now();
 
+    // Append at end (see create()).
+    const maxRow = await this.db
+      .select({ maxSort: sql<number>`COALESCE(MAX(${providerProfiles.sortOrder}), -1)` })
+      .from(providerProfiles)
+      .get();
+    const nextSortOrder = (maxRow?.maxSort ?? -1) + 1;
+
     const [row] = await this.db
       .insert(providerProfiles)
       .values({
         id: newId,
         name: `${original.name} (copy)`,
+        sortOrder: nextSortOrder,
         providerPreset: original.providerPreset,
+        coauthorTransport: original.coauthorTransport,
         endpoint: original.endpoint,
         apiKey: original.apiKey,
         defaultModel: original.defaultModel,
@@ -316,6 +360,8 @@ export class ProviderStore {
         customSamplers: original.customSamplers,
         pinContextBudget: original.pinContextBudget,
         bindPerModel: original.bindPerModel,
+        modelFreeOnly: original.modelFreeOnly,
+        modelGroupByOwner: original.modelGroupByOwner,
         visionModel: original.visionModel,
         isActive: 0,
         createdAt: now,
@@ -326,13 +372,46 @@ export class ProviderStore {
     return this.mapRow(row!);
   }
 
+  async reorder(updates: Array<{ id: string; sortOrder: number }>): Promise<ProviderProfile[]> {
+    const now = this.clock.now();
+    // Synchronous callback (ASYNC_TRANSACTION_AUDIT step 4): see activate.
+    // A failure partway through the reorder rolls the earlier updates back —
+    // the prior complete order survives.
+    this.db.transaction((tx) => {
+      for (const u of updates) {
+        tx
+          .update(providerProfiles)
+          .set({ sortOrder: u.sortOrder, updatedAt: now })
+          .where(eq(providerProfiles.id, u.id))
+          .run();
+      }
+    });
+    return this.listAll();
+  }
+
   // ─── Cached models ─────────────────────────────────────────────────────────
 
   async saveCachedModels(providerId: string, models: CachedModelData[]): Promise<void> {
-    await this.db.transaction(async (tx) => {
-      await tx.delete(cachedModels).where(eq(cachedModels.providerProfileId, providerId)).run();
-      if (models.length > 0) {
-        const values = models.map((model) => ({
+    // Dedup by modelSlug BEFORE the delete: cached_models has a unique index
+    // on (provider_profile_id, model_slug), so a duplicate slug in the input
+    // would violate it on the bulk insert — AFTER the old cache was already
+    // deleted, leaving the provider with no cached models. Normalizing first
+    // keeps the replace whole. First occurrence wins.
+    const seen = new Set<string>();
+    const unique: CachedModelData[] = [];
+    for (const m of models) {
+      if (seen.has(m.modelSlug)) continue;
+      seen.add(m.modelSlug);
+      unique.push(m);
+    }
+
+    // Synchronous callback (ASYNC_TRANSACTION_AUDIT step 4): see activate.
+    // A failure on the bulk insert rolls the delete back too — the prior
+    // cached-model set survives instead of being wiped to empty.
+    this.db.transaction((tx) => {
+      tx.delete(cachedModels).where(eq(cachedModels.providerProfileId, providerId)).run();
+      if (unique.length > 0) {
+        const values = unique.map((model) => ({
           id: this.idGen.next('cmod'),
           providerProfileId: providerId,
           modelSlug: model.modelSlug,
@@ -341,7 +420,7 @@ export class ProviderStore {
           capabilitiesJson: JSON.stringify(model.capabilities ?? {}),
           fetchedAt: this.clock.now(),
         }));
-        await tx.insert(cachedModels).values(values).run();
+        tx.insert(cachedModels).values(values).run();
       }
     });
   }
@@ -357,16 +436,19 @@ export class ProviderStore {
 
   // ─── Favorite models ───────────────────────────────────────────────────────
 
-  async listFavoriteModels(providerId: string): Promise<FavoriteModel[]> {
+  async listFavoriteModels(providerId: string, scope: ModelFavoriteScope): Promise<FavoriteModel[]> {
     const rows = await this.db
       .select()
       .from(providerModelFavorites)
-      .where(eq(providerModelFavorites.providerProfileId, providerId))
+      .where(and(
+        eq(providerModelFavorites.providerProfileId, providerId),
+        eq(providerModelFavorites.scope, scope),
+      ))
       .all();
     return rows.map((row) => this.mapFavoriteModelRow(row));
   }
 
-  async addFavoriteModel(providerId: string, model: FavoriteModelData): Promise<FavoriteModel> {
+  async addFavoriteModel(providerId: string, scope: ModelFavoriteScope, model: FavoriteModelData): Promise<FavoriteModel> {
     const now = this.clock.now();
     const existing = await this.db
       .select()
@@ -374,6 +456,7 @@ export class ProviderStore {
       .where(and(
         eq(providerModelFavorites.providerProfileId, providerId),
         eq(providerModelFavorites.modelId, model.modelId),
+        eq(providerModelFavorites.scope, scope),
       ))
       .get();
 
@@ -395,6 +478,7 @@ export class ProviderStore {
         id: this.idGen.next('fm'),
         providerProfileId: providerId,
         modelId: model.modelId,
+        scope,
         label: model.label ?? null,
         contextLength: model.contextLength ?? null,
         createdAt: now,
@@ -403,12 +487,13 @@ export class ProviderStore {
     return this.mapFavoriteModelRow(row!);
   }
 
-  async removeFavoriteModel(providerId: string, modelId: string): Promise<void> {
+  async removeFavoriteModel(providerId: string, scope: ModelFavoriteScope, modelId: string): Promise<void> {
     await this.db
       .delete(providerModelFavorites)
       .where(and(
         eq(providerModelFavorites.providerProfileId, providerId),
         eq(providerModelFavorites.modelId, modelId),
+        eq(providerModelFavorites.scope, scope),
       ))
       .run();
   }
@@ -513,12 +598,15 @@ export class ProviderStore {
       id: row.id,
       name: row.name,
       providerPreset: row.providerPreset,
+      coauthorTransport: row.coauthorTransport,
       endpoint: row.endpoint,
       apiKey: row.apiKey,
       defaultModel: row.defaultModel,
       contextBudget: row.contextBudget,
       pinContextBudget: row.pinContextBudget,
       bindPerModel: row.bindPerModel,
+      modelFreeOnly: row.modelFreeOnly,
+      modelGroupByOwner: row.modelGroupByOwner,
       maxTokens: row.maxTokens,
       temperature: row.temperature,
       topP: row.topP,
@@ -555,13 +643,18 @@ export class ProviderStore {
   }
 
   private mapCachedModelRow(row: typeof cachedModels.$inferSelect): CachedModel {
+    const parsed = JSON.parse(row.capabilitiesJson) as { thinking?: boolean; reasoning?: boolean; tools?: boolean; vision?: boolean };
     return {
       id: row.id,
       providerProfileId: row.providerProfileId,
       modelSlug: row.modelSlug,
       modelName: row.modelName,
       contextLength: row.contextLength,
-      capabilities: JSON.parse(row.capabilitiesJson),
+      capabilities: {
+        ...(parsed.reasoning !== undefined ? { reasoning: parsed.reasoning } : parsed.thinking !== undefined ? { reasoning: parsed.thinking } : {}),
+        ...(parsed.tools !== undefined ? { tools: parsed.tools } : {}),
+        ...(parsed.vision !== undefined ? { vision: parsed.vision } : {}),
+      },
       fetchedAt: row.fetchedAt,
     };
   }
@@ -571,6 +664,7 @@ export class ProviderStore {
       id: row.id,
       providerProfileId: row.providerProfileId,
       modelId: row.modelId,
+      scope: row.scope as ModelFavoriteScope,
       label: row.label,
       contextLength: row.contextLength,
       createdAt: row.createdAt,

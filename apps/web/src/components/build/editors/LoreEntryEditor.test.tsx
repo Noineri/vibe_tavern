@@ -7,19 +7,29 @@
  * the master list live + re-arms the debounced autosave. There is no `entry`
  * prop or `updateAct` bridge — the form is the direct input.
  *
- * Runner: vitest (apps/web — see vitest.config.ts; vi.mock is file-scoped).
+ * Runner: bun:test with scoped happy-dom.
  * Heavy subtrees (ActivationTestPanel, CharacterFilterPicker, LoreKeysAiPill,
  * AiAssistantModal) are stubbed — this test targets the editor's own field
  * binding, not the children's rendering.
  */
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, beforeAll, mock } from "bun:test";
 import type { ReactNode } from "react";
-import { render, fireEvent } from "@testing-library/react";
 import { useForm, FormProvider, type UseFormReturn } from "react-hook-form";
-import { LoreEntryEditor } from "./LoreEntryEditor.js";
 import type { LoreEntryRecord } from "../../../app-client.js";
+import { useDomEnv } from "../../../../test/dom-env.js";
 
-vi.mock("../../../i18n/context.js", () => ({
+useDomEnv();
+
+const realI18nContext = await import("../../../i18n/context.js");
+const realSnapshotStore = await import("../../../stores/snapshot-store.js");
+const realTooltip = await import("../../shared/Tooltip.js");
+const realActivationTestPanel = await import("./activation-test-panel.js");
+const realCharacterFilterPicker = await import("./character-filter-picker.js");
+const realLoreKeysAiPill = await import("./lore-keys-ai-pill.js");
+const realAiAssistantModal = await import("../../shared/AiAssistantModal.js");
+
+mock.module("../../../i18n/context.js", () => ({
+	...realI18nContext,
   useT: () => ({
     t: (k: string) => k,
     tDynamic: (k: string) => k,
@@ -28,26 +38,42 @@ vi.mock("../../../i18n/context.js", () => ({
     ready: true,
   }),
 }));
-vi.mock("../../../stores/snapshot-store.js", () => ({
+mock.module("../../../stores/snapshot-store.js", () => ({
+	...realSnapshotStore,
   useActiveCharacter: () => null,
   useActivePersona: () => null,
 }));
 // CustomTooltip (Radix) needs a TooltipProvider context irrelevant here.
-vi.mock("../../shared/Tooltip.js", () => ({
+mock.module("../../shared/Tooltip.js", () => ({
+	...realTooltip,
   CustomTooltip: ({ children }: { children: ReactNode }) => children,
 }));
-vi.mock("./ActivationTestPanel.js", () => ({
+mock.module("./activation-test-panel.js", () => ({
+	...realActivationTestPanel,
   ActivationTestPanel: () => null,
 }));
-vi.mock("./character-filter-picker.js", () => ({
+mock.module("./character-filter-picker.js", () => ({
+	...realCharacterFilterPicker,
   CharacterFilterPicker: () => null,
 }));
-vi.mock("./lore-keys-ai-pill.js", () => ({
+mock.module("./lore-keys-ai-pill.js", () => ({
+	...realLoreKeysAiPill,
   LoreKeysAiPill: () => null,
 }));
-vi.mock("../../shared/AiAssistantModal.js", () => ({
+mock.module("../../shared/AiAssistantModal.js", () => ({
+	...realAiAssistantModal,
   AiAssistantModal: () => null,
 }));
+
+let LoreEntryEditor: typeof import("./LoreEntryEditor.js").LoreEntryEditor;
+let render: typeof import("@testing-library/react").render;
+let fireEvent: typeof import("@testing-library/react").fireEvent;
+let userEvent: typeof import("@testing-library/user-event").default;
+beforeAll(async () => {
+	({ render, fireEvent } = await import("@testing-library/react"));
+	({ default: userEvent } = await import("@testing-library/user-event"));
+	({ LoreEntryEditor } = await import("./LoreEntryEditor.js"));
+});
 
 function makeEntry(overrides: Partial<LoreEntryRecord> = {}): LoreEntryRecord {
   return {
@@ -108,8 +134,8 @@ function renderEditor(entry: LoreEntryRecord) {
         <LoreEntryEditor
           entryId={entry.id}
           lorebookId={entry.lorebookId}
-          onDeleted={vi.fn()}
-          onDuplicate={vi.fn()}
+          onDeleted={mock()}
+          onDuplicate={mock()}
           isMobile={false}
           t={(k: string) => k}
           existingGroups={[]}
@@ -122,17 +148,19 @@ function renderEditor(entry: LoreEntryRecord) {
 }
 
 describe("LoreEntryEditor (RHF field binding)", () => {
-  it("title binds to the form via register", () => {
+  it("title binds to the form via register", async () => {
     const { form, container } = renderEditor(makeEntry());
     const title = container.querySelector<HTMLInputElement>('input[name="title"]')!;
     // register seeds the input from the form defaultValues (uncontrolled via ref).
     expect(title.value).toBe("Goblin");
-    fireEvent.change(title, { target: { value: "Hobgoblin" } });
+    const user = userEvent.setup();
+    await user.clear(title);
+    await user.type(title, "Hobgoblin");
     expect(form.getValues("title")).toBe("Hobgoblin");
     expect(form.formState.isDirty).toBe(true);
   });
 
-  it("groupName binds to the form via register (advanced settings)", () => {
+  it("groupName binds to the form via register (advanced settings)", async () => {
     const { form, getByText, container } = renderEditor(
       makeEntry({ groupName: "foes" }),
     );
@@ -142,7 +170,9 @@ describe("LoreEntryEditor (RHF field binding)", () => {
       'input[name="groupName"]',
     )!;
     expect(groupName.value).toBe("foes");
-    fireEvent.change(groupName, { target: { value: "bosses" } });
+    const user = userEvent.setup();
+    await user.clear(groupName);
+    await user.type(groupName, "bosses");
     expect(form.getValues("groupName")).toBe("bosses");
     expect(form.formState.isDirty).toBe(true);
   });
@@ -154,23 +184,24 @@ describe("LoreEntryEditor (RHF field binding)", () => {
     expect(form.formState.isDirty).toBe(true);
   });
 
-  it("priority number binds via ControlledField", () => {
+  it("priority number binds via ControlledField", async () => {
     const { form, getByText } = renderEditor(makeEntry({ priority: 0 }));
     fireEvent.click(getByText(/lore_advanced_settings/)); // open advanced
     // NumberInput commits on blur; scope its input via the priority FieldLabel.
     const priorityInput = getByText("lore_priority_label").parentElement!.querySelector("input")!;
-    fireEvent.change(priorityInput, { target: { value: "5" } });
+    const user = userEvent.setup();
+    await user.clear(priorityInput);
+    await user.type(priorityInput, "5");
     fireEvent.blur(priorityInput);
     expect(form.getValues("priority")).toBe(5);
     expect(form.formState.isDirty).toBe(true);
   });
 
-  it("keys chip-input binds via ControlledField (add on Enter)", () => {
+  it("keys chip-input binds via ControlledField (add on Enter)", async () => {
     const { form, getByText } = renderEditor(makeEntry({ keys: ["goblin"] }));
     // The keys FieldLabel scopes the chip-input's text <input>.
     const keysInput = getByText("lore_entry_keys").parentElement!.querySelector("input")!;
-    fireEvent.change(keysInput, { target: { value: "ghost" } });
-    fireEvent.keyDown(keysInput, { key: "Enter" });
+    await userEvent.setup().type(keysInput, "ghost{Enter}");
     expect(form.getValues("keys")).toEqual(["goblin", "ghost"]);
     expect(form.formState.isDirty).toBe(true);
   });

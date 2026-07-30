@@ -1,11 +1,12 @@
 import { createDb, type AppDb } from './db-connection.js';
 import { ContentStore } from './content-store.js';
 import { createFileStore } from './file-store.js';
-import { CharacterStore, CharacterFolder, PersonaStore, ProviderStore, ChatStore, ChatSummaryStore, PresetStore, UiSettingsStore, LorebookStore, ScriptStore, CharacterAssetStore, MessageStore, PromptTraceStore, VersionStore, CoauthorModuleStore } from './stores/index.js';
+import { CharacterStore, CharacterFolder, CharacterDirectoryRegistry, PersonaStore, ProviderStore, ChatStore, ChatSummaryStore, PresetStore, UiSettingsStore, LorebookStore, ScriptStore, CharacterAssetStore, MessageStore, PromptTraceStore, VersionStore, CoauthorModuleStore, DiceRollStore } from './stores/index.js';
 
 export interface StoreContainer {
   db: AppDb;
   content: ContentStore;
+  characterDirectory: CharacterDirectoryRegistry;
   characters: CharacterStore;
   versions: VersionStore;
   personas: PersonaStore;
@@ -20,6 +21,7 @@ export interface StoreContainer {
   scripts: ScriptStore;
   characterAssets: CharacterAssetStore;
   coauthorModules: CoauthorModuleStore;
+  diceRolls: DiceRollStore;
 }
 
 export async function createStoreContainer(dbPath: string, dataDir?: string): Promise<StoreContainer> {
@@ -27,15 +29,37 @@ export async function createStoreContainer(dbPath: string, dataDir?: string): Pr
   const fileStore = createFileStore(dataDir);
   const content = new ContentStore({ fileStore });
   const characterFolder = new CharacterFolder(content);
+  // The registry scans data/characters/ once at startup, reading each
+  // profile.md's vt.storage_id to build characterId → directory. It is the
+  // sole directory locator: CharacterStore and VersionStore resolve every
+  // character-folder I/O through it (HRF-3d); no DB column represents a
+  // character directory name (the transitional folder_name column was removed
+  // in HRF-6).
+  const characterDirectory = new CharacterDirectoryRegistry(content);
+  await characterDirectory.init();
+  // HRF-4: repair directories left at a stale name by an interrupted/failed
+  // rename (opaque-id dirs are skipped — HRF-5 migrates them). A consistent
+  // tree is a no-op; individual failures never hide data and are retried next
+  // startup, but must be visible to the operator.
+  const directoryRepairs = await characterDirectory.reconcile();
+  for (const repair of directoryRepairs) {
+    if (repair.failed) {
+      console.warn(
+        `[character-directory] reconciliation failed for ${repair.characterId}: ` +
+        `${repair.from} → ${repair.to}: ${repair.error ?? 'unknown filesystem error'}`,
+      );
+    }
+  }
   const chats = new ChatStore(db);
   await chats.migrateGreetingVariants();
-  const characters = new CharacterStore(db, { folder: characterFolder });
+  const characters = new CharacterStore(db, { folder: characterFolder, registry: characterDirectory });
 
   return {
     db,
     content,
+    characterDirectory,
     characters,
-    versions: new VersionStore(db, { folder: characterFolder }),
+    versions: new VersionStore(db, { folder: characterFolder, registry: characterDirectory }),
     personas: new PersonaStore(db, { content }),
     providers: new ProviderStore(db),
     chats,
@@ -48,6 +72,7 @@ export async function createStoreContainer(dbPath: string, dataDir?: string): Pr
     scripts: new ScriptStore(db, { content }),
     characterAssets: new CharacterAssetStore(db),
     coauthorModules: new CoauthorModuleStore(db),
+    diceRolls: new DiceRollStore(db),
   };
 }
 

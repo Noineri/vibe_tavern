@@ -1,5 +1,7 @@
 import { useRef, useState, useEffect } from "react";
 import { Toaster, toast } from "sonner";
+import * as Popover from "@radix-ui/react-popover";
+import * as buildConfig from "../../build-config.js";
 import { useT } from "../../i18n/context.js";
 import { normalizeLocale } from "../../i18n/registry.js";
 import { Icons } from "../shared/icons.js";
@@ -7,10 +9,10 @@ import { resolveEntityAvatarUrl } from "../../lib/avatar.js";
 import { type ThemeMode } from "../../themes/registry.js";
 import { useChatStore, useNavigationStore, useCharacterStore, useProviderStore, useModalStore, useIsSending } from "../../stores/index.js";
 import { saveCharacterAction } from "../../stores/api-actions/character-actions.js";
-import { useActiveTrace } from "../../stores/chat-selectors.js";
+import { useActiveTrace, useLazyContextPreview } from "../../stores/chat-selectors.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
 import { useBootstrapStore, fetchPersonasAction } from "../../stores/api-actions/bootstrap-actions.js";
-import { summarizeChatAction, saveChatSummaryAction } from "../../stores/api-actions/chat-actions.js";
+import { summarizeChatAction, saveChatSummaryAction, updateChatDynamicPromptAction } from "../../stores/api-actions/chat-actions.js";
 import { useChatController } from "../../hooks/use-chat-controller.js";
 import { useGenerationQueue } from "../../hooks/use-generation-queue.js";
 import { useCharacterController } from "../../hooks/use-character-controller.js";
@@ -19,18 +21,22 @@ import { usePresetController } from "../../hooks/use-preset-controller.js";
 import { useUpdateCheck } from "../../hooks/use-update-check.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
 import { useShellSurface } from "../../hooks/use-shell-surface.js";
+import { useChatEvents } from "../../hooks/use-chat-events.js";
 import { ContextMemoryModal } from "../modals/ContextMemoryModal.js";
 import { CreateCharacterModal } from "../modals/CreateCharacterModal.js";
 import { PersonaModal } from "../modals/PersonaModal.js";
 import { PromptManagerModal } from "../modals/PromptManagerModal.js";
 import { ProviderModal } from "../modals/ProviderModal.js";
+import { CoauthorProviderModal } from "../modals/CoauthorProviderModal.js";
 import { SetupWizard } from "../layout/SetupWizard.js";
+import { LavaBackground, useLavaBackgroundActive } from "./LavaBackground.js";
 import { ShellDestructiveConfirmModal } from "../shared/destructive-confirm-modal.js";
 import { TweaksPanel } from "../settings/popovers/TweaksPanel.js";
 import { MobileSettings } from "../settings/popovers/MobileSettings.js";
 import { MobileAccessModal } from "../modals/MobileAccessModal.js";
 import { UpdateModal } from "../modals/UpdateModal.js";
 import { CoauthorModuleModal } from "../coauthor/CoauthorModuleModal.js";
+import { CoauthorSkillModal } from "../coauthor/CoauthorSkillModal.js";
 import { AvatarPanel } from "../settings/popovers/AvatarPanel.js";
 import type { TweaksSettings } from "../../lib/local-storage.js";
 
@@ -47,6 +53,10 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
   const showRail = tweaksSettings.showRail;
   const theme = useNavigationStore((s) => s.theme);
   const setTheme = useNavigationStore((s) => s.setTheme);
+  // WebGL lava-lamp overlay (progressive enhancement over the <body> gradient).
+  // Only active for lava themes on wide screens with WebGL + motion allowed;
+  // otherwise it renders nothing and the legacy CSS gradient shows through.
+  const lavaActive = useLavaBackgroundActive(theme, tweaksSettings.lavaBlobs);
   const activeChatId = useChatStore((s) => s.activeChatId);
   const activeChat = useSnapshotStore((s) => s.activeChat);
   const activeCharacter = useSnapshotStore((s) => s.character);
@@ -71,6 +81,9 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
   const setContextMemoryOpen = useModalStore((s) => s.setContextMemoryOpen);
   const isProviderModalOpen = useModalStore((s) => s.isProviderModalOpen);
   const setIsProviderModalOpen = useModalStore((s) => s.setIsProviderModalOpen);
+  const isCoauthorProviderModalOpen = useModalStore((s) => s.isCoauthorProviderModalOpen);
+  const setCoauthorProviderModalOpen = useModalStore((s) => s.setCoauthorProviderModalOpen);
+  const openProviderModalFromCoauthor = useModalStore((s) => s.openProviderModalFromCoauthor);
   const isPromptManagerOpen = useModalStore((s) => s.isPromptManagerOpen);
   const setIsPromptManagerOpen = useModalStore((s) => s.setIsPromptManagerOpen);
   const isPersonaModalOpen = useModalStore((s) => s.isPersonaModalOpen);
@@ -85,12 +98,15 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
   useEffect(() => { void fetchPersonasAction(); }, []);
 
   const chat = useChatController();
+  // W7: subscribe to the per-chat SSE channel for background notifications
+  // (auto-summary). No-op when no chat is active.
+  useChatEvents(activeChatId);
   // Register the queue pump's runner (Q3) once runRegenerateJob is available.
   useGenerationQueue(chat.runRegenerateJob);
   const character = useCharacterController();
   const provider = useProviderProfiles();
   const preset = usePresetController();
-  const updateCheck = useUpdateCheck(__APP_VERSION__);
+  const updateCheck = useUpdateCheck(buildConfig.APP_VERSION);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const handleImportFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files?.length) character.handleImportFiles(e.target.files);
@@ -129,7 +145,7 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
 
   const promptPresets = bootstrapData?.promptPresets ?? [];
   const [wizardVisible, setWizardVisible] = useState(false);
-  const isFirstRun = (bootstrapData?.isFirstRun ?? false) || import.meta.env.VITE_FORCE_FIRST_RUN === 'true';
+  const isFirstRun = (bootstrapData?.isFirstRun ?? false) || buildConfig.FORCE_FIRST_RUN;
   const hasAnyCharacters = (bootstrapData?.allCharacters?.length ?? 0) > 0;
 
   const hasActiveSnapshot = Boolean(
@@ -142,6 +158,10 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
 
   // Prompt trace from normalized store
   const activePromptTrace = useActiveTrace(useChatStore((s) => s.selectedTraceId));
+  // Lazy context-preview hydration: fetches the branch-scoped preview only when
+  // no trace covers the active branch (the context-bar fallback). Mounted once
+  // here so it follows the active (chatId, branchId) across all chat modes.
+  useLazyContextPreview();
   const connection = useProviderStore((s) => s.connection);
   const canUseLiveApi = connection.status === "connected" && Boolean(connection.model);
 
@@ -229,7 +249,7 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
             <span className="text-[0.9rem]"><Icons.Import /></span>
             {t('placeholder_import_character')}
           </button>
-          <input ref={fileInputRef} type="file" accept=".png,.json" className="hidden" onChange={handleImportFile} />
+          <input ref={fileInputRef} type="file" accept=".png,.json,.md,.markdown,.vtmd" className="hidden" onChange={handleImportFile} />
 
           {/* Utility row */}
           <div className="grid w-full grid-cols-2 gap-3 border-t border-border/50 pt-5">
@@ -275,11 +295,13 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
     messageWidth: tweaksSettings.messageWidth,
     lang: tweaksSettings.lang,
     showRail: tweaksSettings.showRail,
+    lavaBlobs: tweaksSettings.lavaBlobs,
   };
 
   const handleSetTweak = (key: string, value: unknown) => {
     if (key === 'theme') setTheme(value as ThemeMode);
     else if (key === 'showRail') updateTweak(key, value as boolean);
+    else if (key === 'lavaBlobs') updateTweak(key, value as boolean);
     else if (key === 'fontSize' || key === 'uiFontSize') updateTweak(key, value as number);
     else if (key === 'messageWidth') updateTweak(key, value as 'narrow' | 'medium' | 'wide');
     else if (key === 'lang') { updateTweak(key, value as string); setLocale(normalizeLocale(value as string)); }
@@ -292,24 +314,42 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
   // bg-bg here — it masks --page-bg (see docs/guides/adding-a-theme.md).
   return (
     <div className="flex text-t1 font-ui" style={{ height: "100dvh", paddingBottom: "env(safe-area-inset-bottom, 0px)", overflow: "hidden" }}>
+      {/* Portals a fixed full-screen <canvas> to <body> behind all content.
+          No-op (renders null) unless lavaActive. See LavaBackground.tsx. */}
+      <LavaBackground active={lavaActive} messageWidth={tweaksSettings.messageWidth} />
       {shell.leftChrome}
-      <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
-        {shell.topBar}
-        {shellSurface}
-      </main>
+      {/* One Radix Popover.Root owns the desktop TweaksPanel: the Trigger lives
+          in the mode-specific top bar (TopBar for rp, CoauthorTopBar for
+          co-author — mutually exclusive, so exactly one Trigger renders), and
+          the Content is <TweaksPanel> below. Radix anchors Content to the
+          Trigger, animates open/close, and coordinates outside-click via the
+          DismissableLayer stack (fixes the nested language DropdownSelect:
+          see TweaksPanel.tsx). Mobile uses <MobileSettings> (a BottomSheet)
+          driven by the same tweaksOpen flag — it renders outside this Root. */}
+      <Popover.Root open={tweaksOpen} onOpenChange={setTweaksOpen}>
+        <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
+          {shell.topBar}
+          {shellSurface}
+        </main>
+        {!isMobile && (
+          <TweaksPanel
+            settings={tweaksPanelSettings}
+            setSetting={handleSetTweak}
+            onOpenMobileAccess={async () => {
+              // Ensure a token exists before opening the modal
+              try {
+                const resp = await fetch("/api/settings/mobile-access");
+                if (resp.ok) {
+                  const data = await resp.json();
+                  if (!data.token) await fetch("/api/settings/mobile-access/regenerate", { method: "POST" });
+                }
+              } catch { /* ignore */ }
+              setMobileAccessOpen(true);
+            }}
+          />
+        )}
+      </Popover.Root>
       {shell.rightPanel}
-
-      {tweaksOpen && <TweaksPanel settings={tweaksPanelSettings} setSetting={handleSetTweak} onClose={() => setTweaksOpen(false)} onOpenMobileAccess={async () => {
-          // Ensure a token exists before opening the modal
-          try {
-            const resp = await fetch("/api/settings/mobile-access");
-            if (resp.ok) {
-              const data = await resp.json();
-              if (!data.token) await fetch("/api/settings/mobile-access/regenerate", { method: "POST" });
-            }
-          } catch { /* ignore */ }
-          setMobileAccessOpen(true);
-        }} />}
       {isMobile && <MobileSettings
         open={tweaksOpen}
         onClose={() => setTweaksOpen(false)}
@@ -364,11 +404,17 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
         onRefreshProfiles={async () => { await provider.handleRefreshProfiles(); }}
       />
 
+      <CoauthorProviderModal
+        isOpen={isCoauthorProviderModalOpen}
+        onClose={() => setCoauthorProviderModalOpen(false)}
+        onOpenProviderModal={openProviderModalFromCoauthor}
+      />
+
       <PromptManagerModal
         presets={promptPresets} activePresetId={activePromptPresetId}
         setActivePresetId={preset.handleSetActivePromptPresetId}
         onCreate={preset.handleCreatePromptPreset} onUpdate={preset.handleUpdatePromptPreset}
-        onDelete={preset.handleDeletePromptPreset}
+        onDelete={preset.handleDeletePromptPreset} onReorder={preset.handleReorderPromptPresets}
         providerProfiles={provider.providerProfiles.map(p => ({ id: p.id, name: p.name }))}
         prefillSupported={!['anthropic', 'google', 'koboldcpp'].includes(provider.activeProviderProfile?.providerPreset ?? '')}
         characterFields={activeCharacter ? {
@@ -377,6 +423,10 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
           depthPrompt: activeCharacter.depthPrompt ?? null,
           depthPromptDepth: activeCharacter.depthPromptDepth ?? null,
           depthPromptRole: activeCharacter.depthPromptRole ?? null,
+          description: activeCharacter.description,
+          personalitySummary: activeCharacter.personalitySummary,
+          scenario: activeCharacter.scenario,
+          mesExample: activeCharacter.mesExample,
         } : null}
         onCharacterFieldUpdate={(key, value) => {
           if (!activeCharacter) return;
@@ -386,6 +436,10 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
             charDepthPrompt: "depthPrompt",
             charDepthPromptDepth: "depthPromptDepth",
             charDepthPromptRole: "depthPromptRole",
+            charDescription: "description",
+            charPersonality: "personalitySummary",
+            scenario: "scenario",
+            dialogueExamples: "mesExample",
           };
           const apiField = apiFieldMap[key];
           if (!apiField) return;
@@ -394,6 +448,31 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
             patch: { chatId: useChatStore.getState().activeChatId ?? undefined, [apiField]: value },
           });
         }}
+        personaDescription={activePersona?.description ?? null}
+        onPersonaDescriptionUpdate={(description) => {
+          if (!activePersona) return;
+          void character.handleSavePersona(activePersona.id, {
+            name: activePersona.name,
+            description,
+            pronouns: activePersona.pronouns,
+            pronounForms: activePersona.pronounForms,
+            avatarAssetId: activePersona.avatarAssetId,
+            avatarFullAssetId: activePersona.avatarFullAssetId,
+            avatarCropJson: activePersona.avatarCropJson,
+          });
+        }}
+        chatDynamicPrompt={activeChat?.dynamicPrompt ?? null}
+        onChatDynamicPromptUpdate={(content) => {
+          if (!activeChat) return Promise.resolve();
+          return updateChatDynamicPromptAction(activeChat.id, content);
+        }}
+        loreContext={activeChat && activeCharacter ? {
+          chatId: activeChat.id,
+          characterId: activeCharacter.id,
+          personaId: activeChat.personaId,
+        } : null}
+        chatBranchId={activeChat?.activeBranchId ?? null}
+        legacyChatSummary={activeChat?.summary ?? null}
       />
 
       <PersonaModal
@@ -421,6 +500,7 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
         releaseNotes={updateCheck.releaseNotes}
       />
       <CoauthorModuleModal />
+      <CoauthorSkillModal />
       <SetupWizard onVisibilityChange={setWizardVisible} />
       <Toaster
         position={isMobile ? "top-center" : "bottom-right"}

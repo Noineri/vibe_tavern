@@ -9,75 +9,84 @@
  * actions are mocked; `t` returns keys verbatim; `CodeEditor` is stubbed to a
  * textarea so the DSL can be driven in happy-dom. Mirrors ObjectiveConfig.test.
  *
- * Runner: vitest (apps/web — vi.mock is file-scoped, no cross-file leak).
+ * Runner: bun:test + happy-dom.
  */
-import { describe, it, expect, vi, afterEach } from "vitest";
-import { createElement, type ReactNode } from "react";
-import { render, fireEvent, cleanup, waitFor, act } from "@testing-library/react";
-import { TrackerConfig } from "./TrackerConfig.js";
+import { afterEach, beforeAll, describe, expect, it, mock } from "bun:test";
+import { createElement, type ChangeEvent, type ReactNode } from "react";
+import { useDomEnv } from "../../../../test/dom-env.js";
 import { brandId, computeSceneSchemaHash, type ChatId, type SceneTrackerConfig } from "@vibe-tavern/domain";
 import { useSceneRenderStore } from "../../../stores/scene-render-store.js";
 
-const mocks = vi.hoisted(() => ({
-  activeChat: null as null | { id: string; insightsConfig: { tracker?: SceneTrackerConfig; trackerEnabled: boolean; objectiveEnabled: boolean } },
-  updateInsightsConfigAction: vi.fn(),
-  previewSceneAction: vi.fn(),
-  findCurrentInsightsCompletionTarget: vi.fn(),
-  fetchProviderModelsAction: vi.fn(),
-  aiModalProps: null as null | Record<string, unknown>,
-}));
+useDomEnv();
+const { render, fireEvent, waitFor, act } = await import("@testing-library/react");
 
-vi.mock("../../../i18n/context.js", () => ({
+const mocks = {
+  activeChat: null as null | { id: string; insightsConfig: { tracker?: SceneTrackerConfig; trackerEnabled: boolean; objectiveEnabled: boolean } },
+  updateInsightsConfigAction: mock(),
+  previewSceneAction: mock(),
+  findCurrentInsightsCompletionTarget: mock(),
+  fetchProviderModelsAction: mock(),
+  aiModalProps: null as null | Record<string, unknown>,
+};
+
+const realI18nContext = await import("../../../i18n/context.js");
+const realSnapshotStore = await import("../../../stores/snapshot-store.js");
+const realChatActions = await import("../../../stores/api-actions/chat-actions.js");
+const realInsightsCompletionActions = await import("../../../stores/api-actions/insights-completion-actions.js");
+const realProviderDataStore = await import("../../../stores/provider-data-store.js");
+const realProviderActions = await import("../../../stores/api-actions/provider-actions.js");
+const realTooltip = await import("../../shared/Tooltip.js");
+const realAiAssistantModal = await import("../../shared/AiAssistantModal.js");
+
+mock.module("../../../i18n/context.js", () => ({
+  ...realI18nContext,
   useT: () => ({ t: (k: string) => k, tDynamic: (k: string) => k, locale: "en", setLocale: () => {}, ready: true }),
 }));
 
-vi.mock("../../../stores/snapshot-store.js", () => ({
+mock.module("../../../stores/snapshot-store.js", () => ({
+  ...realSnapshotStore,
   useSnapshotStore: (selector: (s: { activeChat: typeof mocks.activeChat; messageOrder: string[]; messagesById: Record<string, { role?: string }> }) => unknown) =>
     selector({ activeChat: mocks.activeChat, messageOrder: [], messagesById: {} }),
   useActiveCharacter: () => ({ id: "char_1", name: "Hero" }),
   useActivePersona: () => ({ id: "persona_1", name: "User" }),
 }));
 
-vi.mock("../../../stores/api-actions/chat-actions.js", async (importOriginal) => {
-  const actual = await importOriginal() as Record<string, unknown>;
-  return { ...actual, updateInsightsConfigAction: mocks.updateInsightsConfigAction, previewSceneAction: mocks.previewSceneAction };
+mock.module("../../../stores/api-actions/chat-actions.js", () => {
+  return { ...realChatActions, updateInsightsConfigAction: mocks.updateInsightsConfigAction, previewSceneAction: mocks.previewSceneAction };
 });
 
-vi.mock("../../../stores/api-actions/insights-completion-actions.js", () => ({
+mock.module("../../../stores/api-actions/insights-completion-actions.js", () => ({
+  ...realInsightsCompletionActions,
   findCurrentInsightsCompletionTarget: mocks.findCurrentInsightsCompletionTarget,
 }));
 
-vi.mock("../../../stores/provider-data-store.js", () => ({
+mock.module("../../../stores/provider-data-store.js", () => ({
+  ...realProviderDataStore,
   useProviderDataStore: (selector: (s: { profiles: Array<{ id: string; name: string; defaultModel: string | null; isActive: boolean }> }) => unknown) =>
     selector({ profiles: [{ id: "prof_1", name: "Active", defaultModel: "gpt-x", isActive: true }] }),
 }));
 
-vi.mock("../../../stores/api-actions/provider-actions.js", () => ({
+mock.module("../../../stores/api-actions/provider-actions.js", () => ({
+  ...realProviderActions,
   fetchProviderModelsAction: mocks.fetchProviderModelsAction.mockResolvedValue({ models: [{ id: "gpt-x", label: "GPT X" }] }),
 }));
 
-vi.mock("../../../stores/api-actions/chat-actions.js", async (importOriginal) => {
-  const actual = await importOriginal() as Record<string, unknown>;
-  return { ...actual, updateInsightsConfigAction: mocks.updateInsightsConfigAction, previewSceneAction: mocks.previewSceneAction };
-});
-
 // Stub CodeEditor (CodeMirror 6) to a plain textarea so the DSL can be driven
-// in happy-dom. Async factory so `await import("react")` is available.
-vi.mock("../../shared/CodeEditor.js", async () => {
-  const React = await import("react");
+mock.module("../../shared/CodeEditor.js", () => {
   return {
     CodeEditor: ({ value, onChange }: { value: string; onChange: (v: string) => void }) =>
-      React.createElement("textarea", {
+      createElement("textarea", {
         "data-testid": "scn-dsl",
         value,
-        onChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => onChange(e.target.value),
+        onChange: (event: ChangeEvent<HTMLTextAreaElement>) => onChange(event.target.value),
       }),
   };
 });
 
 // CustomTooltip is presentational; these tests verify button behavior/wiring, not
 // tooltip rendering. Passthrough children so no Radix TooltipProvider is needed.
-vi.mock("../../shared/Tooltip.js", () => ({
+mock.module("../../shared/Tooltip.js", () => ({
+  ...realTooltip,
   CustomTooltip: ({ children }: { children: ReactNode }) => children,
   TooltipProvider: ({ children }: { children: ReactNode }) => children,
 }));
@@ -86,9 +95,15 @@ vi.mock("../../shared/Tooltip.js", () => ({
 // TrackerConfig wiring (mode/promptFormat/existingContent/scopeContext) and
 // the onReplace apply-safety can be tested in isolation — without driving the
 // modal's own streaming/context internals (those have their own coverage).
-vi.mock("../../shared/AiAssistantModal.js", () => ({
-  AiAssistantModal: (props: unknown) => { mocks.aiModalProps = props as Record<string, unknown>; return null; },
+mock.module("../../shared/AiAssistantModal.js", () => ({
+  ...realAiAssistantModal,
+  AiAssistantModal: (props: { apiMode?: string }) => { if (props.apiMode === "scene_schema") mocks.aiModalProps = props as Record<string, unknown>; return null; },
 }));
+
+let TrackerConfig: typeof import("./TrackerConfig.js").TrackerConfig;
+beforeAll(async () => {
+  ({ TrackerConfig } = await import("./TrackerConfig.js"));
+});
 
 const VALID_DSL = JSON.stringify({ mood: { $type: "string" } });
 
@@ -122,7 +137,6 @@ function seed(tracker?: Partial<SceneTrackerConfig>): void {
 }
 
 afterEach(() => {
-  cleanup();
   mocks.updateInsightsConfigAction.mockReset();
   mocks.previewSceneAction.mockReset();
   mocks.findCurrentInsightsCompletionTarget.mockReset();
@@ -189,7 +203,7 @@ describe("TrackerConfig (SCN-11)", () => {
     const xmlView = render(createElement(TrackerConfig, { chatId: CHAT_ID }));
     fireEvent.click(xmlView.getByText("scn_preview_button"));
     expect(xmlView.getByText("scn_preview_raw_xml")).toBeTruthy();
-    cleanup();
+    xmlView.unmount();
 
     seed({ promptFormat: "json", schema: { mood: { $type: "string" as const } } });
     const jsonView = render(createElement(TrackerConfig, { chatId: CHAT_ID }));
@@ -290,7 +304,9 @@ describe("TrackerConfig (SCN-11)", () => {
     mocks.previewSceneAction.mockResolvedValue({ target: { chatId: "chat_1" }, sceneState: { mood: "tense" } });
     const { getByTestId, getByText } = render(createElement(TrackerConfig, { chatId: CHAT_ID }));
     fireEvent.change(getByTestId("scn-dsl"), { target: { value: VALID_DSL } });
-    fireEvent.click(getByText("scn_test_generation_button"));
+    await act(async () => {
+      fireEvent.click(getByText("scn_test_generation_button"));
+    });
     await waitFor(() => expect(mocks.previewSceneAction).toHaveBeenCalledTimes(1));
     const [previewChatId, target, config] = mocks.previewSceneAction.mock.calls[0];
     expect(previewChatId).toBe("chat_1");
@@ -306,13 +322,17 @@ describe("TrackerConfig (SCN-11)", () => {
     mocks.previewSceneAction.mockResolvedValueOnce({ target: { chatId: "chat_1" }, sceneState: { mood: "calm" } });
     const { getByTestId, getByText } = render(createElement(TrackerConfig, { chatId: CHAT_ID }));
     fireEvent.change(getByTestId("scn-dsl"), { target: { value: VALID_DSL } });
-    fireEvent.click(getByText("scn_test_generation_button"));
+    await act(async () => {
+      fireEvent.click(getByText("scn_test_generation_button"));
+    });
     await waitFor(() => expect(mocks.previewSceneAction).toHaveBeenCalledTimes(1));
-    expect(getByText("calm")).toBeTruthy();
+    await waitFor(() => expect(getByText("calm")).toBeTruthy());
 
     // Second generation rejects — the prior sample (calm) must remain visible.
     mocks.previewSceneAction.mockRejectedValueOnce(new Error("boom"));
-    fireEvent.click(getByText("scn_test_generation_button"));
+    await act(async () => {
+      fireEvent.click(getByText("scn_test_generation_button"));
+    });
     await waitFor(() => expect(mocks.previewSceneAction).toHaveBeenCalledTimes(2));
     await waitFor(() => expect(getByText("scn_test_generation_button")).toBeTruthy()); // not testing anymore
     expect(getByText("calm")).toBeTruthy(); // last-valid preserved
@@ -333,7 +353,9 @@ describe("TrackerConfig (SCN-11)", () => {
     expect(getByText("scn_preview_stop_button").closest("button")!.disabled).toBe(false);
     fireEvent.click(getByText("scn_preview_stop_button"));
     // Abort does not crash; the button returns to Test generation after settle.
-    release();
+    await act(async () => {
+      release();
+    });
     await waitFor(() => expect(getByText("scn_test_generation_button")).toBeTruthy());
   });
 

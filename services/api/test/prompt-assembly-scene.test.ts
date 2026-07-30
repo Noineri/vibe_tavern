@@ -108,6 +108,7 @@ function makeSceneService(options: SceneServiceOptions = {}) {
 		presets: { listAll: async () => [] },
 		chatSummaries: { listByChatBranch: async () => [] },
 		characterAssets: { listByCharacter: async () => [] },
+		diceRolls: { getRollsForMessages: async () => new Map() },
 	} as unknown as StoreContainer;
 
 	const resolver: PromptAssemblyResolver = {

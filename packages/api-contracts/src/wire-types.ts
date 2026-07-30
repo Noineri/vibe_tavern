@@ -25,7 +25,7 @@
  * row types stay backend-side and import these types back.
  */
 
-import type { CharacterId, ChatId, ChatMode, ModelSettingsOverlay, PronounForms } from "@vibe-tavern/domain";
+import type { CharacterId, ChatId, ChatMode, CoauthorTransport, ModelFavoriteScope, ModelSettingsOverlay, PronounForms } from "@vibe-tavern/domain";
 
 // ─── Provider ──────────────────────────────────────────────────────────
 
@@ -42,12 +42,16 @@ export interface ClientProviderProfileRecord {
 	id: string;
 	name: string;
 	providerPreset: string;
+	coauthorTransport: CoauthorTransport;
 	endpoint: string;
 	defaultModel: string | null;
 	visionModel: string | null;
 	contextBudget: number | null;
 	pinContextBudget: boolean;
 	bindPerModel: boolean;
+	/** Model-list display prefs (MODEL_LIST_FILTERS) — pure UI, round-trip like bindPerModel. */
+	modelFreeOnly: boolean;
+	modelGroupByOwner: boolean;
 	maxTokens: number;
 	temperature: number;
 	topP: number;
@@ -88,7 +92,7 @@ export interface CachedProviderModelsRecord {
 		id: string;
 		label: string;
 		contextLength?: number;
-		capabilities?: { thinking?: boolean; tools?: boolean; vision?: boolean };
+		capabilities?: { reasoning?: boolean; tools?: boolean; vision?: boolean };
 	}>;
 	cachedAt: string;
 }
@@ -97,6 +101,7 @@ export interface FavoriteProviderModelRecord {
 	id: string;
 	providerProfileId: string;
 	modelId: string;
+	scope: ModelFavoriteScope;
 	label: string | null;
 	contextLength: number | null;
 	createdAt: string;
@@ -204,16 +209,40 @@ export interface RuntimeInfo {
 	installKind: RuntimeInstallKind;
 }
 
+/**
+ * Why the server answered the way it did. Distinguishing these is the point of
+ * moving the check server-side: "there is no build for your architecture" is a
+ * different problem from "GitHub is unreachable", and the browser could not
+ * tell them apart.
+ */
+export type RuntimeUpdateCheckReason =
+	| "up-to-date"
+	| "update-available"
+	| "offline"
+	| "no-asset-for-platform"
+	| "unsupported-install";
+
+export interface RuntimeUpdateCheck {
+	available: boolean;
+	currentVersion: string;
+	latestVersion: string | null;
+	latestTag: string | null;
+	releaseUrl: string | null;
+	releaseNotes: string;
+	canSelfUpdate: boolean;
+	installKind: RuntimeInstallKind;
+	reason: RuntimeUpdateCheckReason;
+}
+
 export type RuntimeUpdatePhase =
 	| "idle"
 	| "checking"
+	| "preflight"
 	| "downloading-archive"
 	| "downloading-sums"
 	| "verifying"
 	| "extracting"
 	| "swapping"
-	| "spawning-restart"
-	| "exiting"
 	| "done"
 	| "error";
 

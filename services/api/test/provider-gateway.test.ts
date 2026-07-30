@@ -36,8 +36,19 @@ function mockFetch(url: string | URL | Request, init?: RequestInit): Response {
 	}
 
 	if (urlStr.endsWith("/chat/completions")) {
+		const body = typeof init?.body === "string" ? JSON.parse(init.body) : {};
+		const payload = body.model === "kimi-for-coding"
+			? { choices: [{ message: { content: "", reasoning_content: "I should answer the greeting briefly." } }] }
+			: { choices: [{ message: { content: "hello from local" } }] };
 		return new Response(
-			JSON.stringify({ choices: [{ message: { content: "hello from local" } }] }),
+			JSON.stringify(payload),
+			{ status: 200, headers: { "Content-Type": "application/json" } },
+		);
+	}
+
+	if (urlStr.endsWith("/messages")) {
+		return new Response(
+			JSON.stringify({ content: [{ type: "thinking", thinking: "I should greet the user." }] }),
 			{ status: 200, headers: { "Content-Type": "application/json" } },
 		);
 	}
@@ -144,7 +155,44 @@ describe("provider gateway", () => {
 			const callArgs = (globalThis.fetch as ReturnType<typeof mock>).mock.calls[0];
 			expect(callArgs[0]).toBe("http://localhost:5001/api/v1/generate");
 			const body = JSON.parse(callArgs[1]?.body as string);
-			expect(body).toMatchObject({ prompt: "User: Hi\nAssistant:", max_length: 64, temperature: 0.7, stream: false });
+			expect(body).toMatchObject({ prompt: "User: Hi\nAssistant:", max_length: 64, stream: false });
+		});
+
+		it("sends OpenAI-compat /chat/completions with no temperature (reasoning models reject non-1 temperature)", async () => {
+			const result = await testProviderChat({
+				baseUrl: "https://api.kimi.com/coding/v1",
+				apiKey: "kimi-key",
+				model: "kimi-for-coding",
+				providerType: "openai_compat",
+			});
+
+			expect(result).toEqual({ success: true, reply: "I should answer the greeting briefly." });
+			const callArgs = (globalThis.fetch as ReturnType<typeof mock>).mock.calls[0];
+			expect(callArgs[0]).toBe("https://api.kimi.com/coding/v1/chat/completions");
+			const body = JSON.parse(callArgs[1]?.body as string);
+			expect(body).toMatchObject({
+				model: "kimi-for-coding",
+				messages: [{ role: "user", content: "Hi" }],
+				max_tokens: 64,
+				stream: false,
+			});
+			expect(body).not.toHaveProperty("temperature");
+			expect(body).not.toHaveProperty("top_p");
+		});
+
+		it("returns Anthropic thinking text when visible content is empty", async () => {
+			const result = await testProviderChat({
+				baseUrl: "https://api.anthropic.com/v1",
+				apiKey: "anthropic-key",
+				model: "claude-sonnet-4-6",
+				providerType: "anthropic",
+			});
+
+			expect(result).toEqual({ success: true, reply: "I should greet the user." });
+			const callArgs = (globalThis.fetch as ReturnType<typeof mock>).mock.calls[0];
+			expect(callArgs[0]).toBe("https://api.anthropic.com/v1/messages");
+			const body = JSON.parse(callArgs[1]?.body as string);
+			expect(body).not.toHaveProperty("temperature");
 		});
 	});
 
@@ -156,8 +204,8 @@ describe("provider gateway", () => {
 	it("defaults to openai_compat when providerType is undefined", async () => {
 		const models = await listProviderModels(baseInput);
 		expect(models).toEqual([
-			{ id: "gpt-4o", label: "gpt-4o", supportsTools: false },
-			{ id: "gpt-4o-mini", label: "gpt-4o-mini", supportsTools: false },
+			{ id: "gpt-4o", label: "gpt-4o" },
+			{ id: "gpt-4o-mini", label: "gpt-4o-mini" },
 		]);
 	});
 
@@ -173,8 +221,8 @@ describe("provider gateway", () => {
 			const models = await listProviderModels({ ...baseInput, providerType: "openai_compat" });
 
 			expect(models).toEqual([
-				{ id: "gpt-4o", label: "gpt-4o", supportsTools: false },
-				{ id: "gpt-4o-mini", label: "gpt-4o-mini", supportsTools: false },
+				{ id: "gpt-4o", label: "gpt-4o" },
+				{ id: "gpt-4o-mini", label: "gpt-4o-mini" },
 			]);
 
 			const callArgs = (globalThis.fetch as ReturnType<typeof mock>).mock.calls[0];
@@ -297,7 +345,7 @@ describe("provider gateway", () => {
 			const callArgs = (globalThis.fetch as ReturnType<typeof mock>).mock.calls[0];
 			expect(callArgs[0]).toBe("http://localhost:5001/api/v1/model");
 			expect(models).toEqual([
-				{ id: "koboldcpp/qwen2.5-3b-instruct-q4_k_m", label: "koboldcpp/qwen2.5-3b-instruct-q4_k_m", supportsTools: false },
+				{ id: "koboldcpp/qwen2.5-3b-instruct-q4_k_m", label: "koboldcpp/qwen2.5-3b-instruct-q4_k_m" },
 			]);
 		});
 
@@ -325,8 +373,8 @@ describe("provider gateway", () => {
 			expect(headers["Authorization"]).toBeUndefined();
 
 			expect(models).toEqual([
-				{ id: "llama3:8b", label: "llama3:8b", supportsTools: false },
-				{ id: "mistral:7b", label: "mistral:7b", supportsTools: false },
+				{ id: "llama3:8b", label: "llama3:8b" },
+				{ id: "mistral:7b", label: "mistral:7b" },
 			]);
 		});
 
@@ -376,7 +424,6 @@ describe("provider gateway", () => {
 					contextLength: 131072,
 					description: "4.3B · Q4_K_M · gemma3 · gguf",
 					capabilities: { vision: true },
-					supportsTools: false,
 				},
 			]);
 			const showCall = (globalThis.fetch as ReturnType<typeof mock>).mock.calls[1];

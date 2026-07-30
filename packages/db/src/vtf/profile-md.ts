@@ -91,8 +91,22 @@ export interface BodySection {
   body: string;
 }
 
+/**
+ * The immutable local storage identity (`vt.storage_id`), carried OUTSIDE the
+ * authored {@link VtfProfile} model. This is storage plumbing, not character
+ * content: the storage write path ({@link serializeCharacterFolder} ←
+ * `CharacterFolder.writeVtfFolder`) is the SOLE authority that sets it, stamping
+ * the actual local `CharacterId` on every canonical write so that form edits,
+ * Co-Author rewrites, and imports cannot omit or forge it. On parse it is
+ * surfaced for the filesystem registry (HUMAN_READABLE_FOLDERS) but never
+ * promoted into the authored field model. Null/undefined/empty → not emitted.
+ */
+export interface ProfileStorageId {
+  storageId?: string | null;
+}
+
 /** Shape accepted by {@link serializeProfileMd}. */
-export interface ProfileMd {
+export interface ProfileMd extends ProfileStorageId {
   profile: VtfProfile;
   /** Unknown top-level frontmatter keys, re-emitted after the known ones. */
   unknownFrontmatter?: FrontmatterEntry[];
@@ -166,7 +180,7 @@ export function parseProfileMd(text: string): ParsedProfile {
   const fmEntries = frontmatterText.length > 0 ? parseFrontmatter(frontmatterText) : [];
   const sections = parseBodySections(bodyText);
 
-  const { profile, unknownFrontmatter, unknownVt } = extractProfileFromFrontmatter(fmEntries);
+  const { profile, storageId, unknownFrontmatter, unknownVt } = extractProfileFromFrontmatter(fmEntries);
   const { profile: profileFromSections, unknownSections } = extractProfileFromSections(sections);
 
   // Section-derived fields override only when the frontmatter didn't set them
@@ -178,7 +192,7 @@ export function parseProfileMd(text: string): ParsedProfile {
     }
   }
 
-  return { profile, unknownFrontmatter, unknownVt, unknownSections };
+  return { profile, storageId, unknownFrontmatter, unknownVt, unknownSections };
 }
 
 /**
@@ -397,12 +411,14 @@ const KNOWN_TOP_KEYS = new Set([
   "vt",
 ]);
 const KNOWN_VT_KEYS = new Set([
+  "storage_id",
   "mes_example_mode",
   "mes_example_depth",
 ]);
 
 function extractProfileFromFrontmatter(entries: FmEntry[]): {
   profile: VtfProfile;
+  storageId: string | null;
   unknownFrontmatter: FrontmatterEntry[];
   unknownVt: FrontmatterEntry[];
 } {
@@ -418,6 +434,7 @@ function extractProfileFromFrontmatter(entries: FmEntry[]): {
     scenario: null,
     mesExample: null,
   };
+  let storageId: string | null = null;
   const unknownFrontmatter: FrontmatterEntry[] = [];
   const unknownVt: FrontmatterEntry[] = [];
 
@@ -441,6 +458,12 @@ function extractProfileFromFrontmatter(entries: FmEntry[]): {
       case "vt":
         for (const sub of mapEntries(entry.value)) {
           switch (sub.key) {
+            case "storage_id":
+              // Immutable storage identity — captured separately, NOT promoted
+              // into the authored profile model nor mixed into unknownVt
+              // (avoids duplicate emission on re-serialize).
+              storageId = scalar(sub.value).trim() || null;
+              break;
             case "mes_example_mode":
               profile.mesExampleMode = scalar(sub.value);
               break;
@@ -456,7 +479,7 @@ function extractProfileFromFrontmatter(entries: FmEntry[]): {
         unknownFrontmatter.push(fmEntryToUnknown(entry));
     }
   }
-  return { profile, unknownFrontmatter, unknownVt };
+  return { profile, storageId, unknownFrontmatter, unknownVt };
 }
 
 function extractProfileFromSections(sections: RawSection[]): {
@@ -501,7 +524,13 @@ function serializeFrontmatter(input: ProfileMd): string[] {
   if (p.creatorNotes) lines.push(...emitBlock("creator_notes", p.creatorNotes));
 
   // vt: block — known keys in canonical order, then unknown vt keys.
+  // `storage_id` (immutable local identity) is emitted FIRST when the storage
+  // layer set it; it precedes the example-config keys because identity precedes
+  // config, and it is the only vt key the authored form never owns.
   const vtLines: string[] = [];
+  if (typeof input.storageId === "string" && input.storageId.trim().length > 0) {
+    vtLines.push(`  storage_id: ${emitScalar(input.storageId)}`);
+  }
   vtLines.push(`  mes_example_mode: ${emitScalar(p.mesExampleMode)}`);
   vtLines.push(`  mes_example_depth: ${String(p.mesExampleDepth)}`);
   for (const u of input.unknownVt ?? []) {

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtemp, mkdir, readFile, readdir, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { sql, eq } from "drizzle-orm";
@@ -7,9 +7,11 @@ import { sql, eq } from "drizzle-orm";
 import { createDb } from "../src/db-connection.js";
 import { characters as charactersTable } from "../src/db-schema.js";
 import { ContentStore } from "../src/content-store.js";
-import { createFileStore, STORAGE_FOLDERS } from "../src/file-store.js";
+import { createFileStore, STORAGE_FOLDERS, type FileStore } from "../src/file-store.js";
 import { CharacterStore, type Character, type CreateCharacterData } from "../src/stores/character-store.js";
 import { CharacterFolder } from "../src/stores/character-folder.js";
+import { CharacterDirectoryRegistry } from "../src/stores/character-directory-registry.js";
+import { parseProfileMd } from "../src/vtf/profile-md.js";
 import type { StoreClock, StoreIdGenerator } from "../src/persistence.js";
 
 const CHARS = STORAGE_FOLDERS.characters;
@@ -35,7 +37,7 @@ async function listCharFiles(dataRoot: string, id: string): Promise<string[]> {
 }
 
 async function readProfileMd(dataRoot: string, id: string): Promise<string> {
-	return readFile(join(dataRoot, CHARS, id, "profile.md"), "utf8");
+	return Bun.file(join(dataRoot, CHARS, id, "profile.md")).text();
 }
 
 async function listCharFolder(dataRoot: string, id: string): Promise<string[]> {
@@ -142,11 +144,11 @@ describe("CharacterStore folder storage (B1)", () => {
 		expect(fetched?.name).toBe("Legacy Hero");
 
 		// {id}/card.json now exists
-		const cardRaw = JSON.parse(await readFile(join(dataRoot, CHARS, id, "card.json"), "utf8"));
+		const cardRaw = JSON.parse(await Bun.file(join(dataRoot, CHARS, id, "card.json")).text());
 		expect(cardRaw.data.name).toBe("Legacy Hero");
 
 		// legacy flat file STILL on disk (copy-forward)
-		const legacyStillThere = await readFile(legacyPath, "utf8").then(() => true).catch(() => false);
+		const legacyStillThere = await Bun.file(legacyPath).text().then(() => true).catch(() => false);
 		expect(legacyStillThere).toBe(true);
 
 		// DB row stamped
@@ -167,7 +169,7 @@ describe("CharacterStore folder storage (B1)", () => {
 		// no file on disk at all
 		const fetched = await store.getById(id);
 		expect(fetched?.name).toBe("Orphan Hero");
-		const raw = JSON.parse(await readFile(join(dataRoot, CHARS, id, "card.json"), "utf8"));
+		const raw = JSON.parse(await Bun.file(join(dataRoot, CHARS, id, "card.json")).text());
 		expect(raw.data.name).toBe("Orphan Hero");
 	});
 
@@ -199,11 +201,11 @@ describe("CharacterStore folder storage (B1)", () => {
 		const copy = await store.duplicate(original.id);
 		expect(copy.avatarExt).toBe("png");
 		// copy has its OWN avatar file (separate bytes, not a shared reference)
-		const copyAvatar = await readFile(join(dataRoot, CHARS, copy.id, "avatar.png"));
+		const copyAvatar = Buffer.from(await Bun.file(join(dataRoot, CHARS, copy.id, "avatar.png")).arrayBuffer());
 		expect(copyAvatar).toEqual(Buffer.from([1, 2, 3]));
 		// mutate the copy's avatar; original is untouched (separate file)
 		await content.writeBinary(CHARS, copy.id, "avatar.png", new Uint8Array([9, 9]));
-		const originalAvatar = await readFile(join(dataRoot, CHARS, original.id, "avatar.png"));
+		const originalAvatar = Buffer.from(await Bun.file(join(dataRoot, CHARS, original.id, "avatar.png")).arrayBuffer());
 		expect(originalAvatar).toEqual(Buffer.from([1, 2, 3]));
 	});
 
@@ -221,11 +223,11 @@ describe("CharacterStore folder storage (B1)", () => {
 		// full uncropped avatar: column must survive duplicate
 		expect(copy.avatarFullExt).toBe("webp");
 		// copy has its OWN avatar-full file (separate bytes, not a shared reference)
-		const copyFull = await readFile(join(dataRoot, CHARS, copy.id, "avatar-full.webp"));
+		const copyFull = Buffer.from(await Bun.file(join(dataRoot, CHARS, copy.id, "avatar-full.webp")).arrayBuffer());
 		expect(copyFull).toEqual(Buffer.from([4, 5, 6]));
 		// mutate the copy's full avatar; original is untouched (separate file)
 		await content.writeBinary(CHARS, copy.id, "avatar-full.webp", new Uint8Array([9, 9]));
-		const originalFull = await readFile(join(dataRoot, CHARS, original.id, "avatar-full.webp"));
+		const originalFull = Buffer.from(await Bun.file(join(dataRoot, CHARS, original.id, "avatar-full.webp")).arrayBuffer());
 		expect(originalFull).toEqual(Buffer.from([4, 5, 6]));
 	});
 
@@ -248,11 +250,11 @@ describe("CharacterStore folder storage (B1)", () => {
 		expect(fetched?.avatarAssetId).toBeNull();
 
 		// avatar copied into the entity folder
-		const copied = await readFile(join(dataRoot, CHARS, id, "avatar.png"));
+		const copied = Buffer.from(await Bun.file(join(dataRoot, CHARS, id, "avatar.png")).arrayBuffer());
 		expect(new Uint8Array(copied)).toEqual(bytes);
 
 		// legacy flat asset still on disk (copy-forward)
-		const legacy = await readFile(join(dataRoot, "assets", `${assetId}.png`));
+		const legacy = Buffer.from(await Bun.file(join(dataRoot, "assets", `${assetId}.png`)).arrayBuffer());
 		expect(new Uint8Array(legacy)).toEqual(bytes);
 
 		// DB stamped
@@ -472,7 +474,7 @@ describe("CharacterStore — characterization (refactor safety net + coverage)",
 		expect(fetched?.avatarFullExt).toBe("png");
 		expect(fetched?.avatarFullAssetId).toBeNull();
 
-		const copied = await readFile(join(dataRoot, CHARS, id, "avatar-full.png"));
+		const copied = Buffer.from(await Bun.file(join(dataRoot, CHARS, id, "avatar-full.png")).arrayBuffer());
 		expect(new Uint8Array(copied)).toEqual(bytes);
 
 		const row = db.select({ ext: charactersTable.avatarFullExt, aid: charactersTable.avatarFullAssetId }).from(charactersTable).where(eq(charactersTable.id, id)).get();
@@ -736,5 +738,395 @@ describe("CharacterStore — field-preservation drift guard (ERA-2)", () => {
 		expectContentFields(updated, UPDATED_CONTENT);
 		const fetched = await store.getById(created.id);
 		expectContentFields(fetched!, UPDATED_CONTENT);
+	});
+});
+
+describe("CharacterStore ↔ CharacterDirectoryRegistry (HUMAN_READABLE_FOLDERS HRF-3d)", () => {
+	async function setupWithRegistry() {
+		const dataRoot = await mkdtemp(join(tmpdir(), "vt-charstore-reg-"));
+		const db = await createDb(join(dataRoot, "test.db"));
+		const content = new ContentStore({ fileStore: createFileStore(dataRoot) });
+		const folder = new CharacterFolder(content);
+		const registry = new CharacterDirectoryRegistry(content);
+		await registry.init();
+		const store = new CharacterStore(db, { folder, registry, clock: fixedClock, idGenerator: idGen });
+		return { dataRoot, db, content, folder, registry, store };
+	}
+
+	test("resolveFolderName delegates to the registry and follows a directory rename", async () => {
+		const { store, registry } = await setupWithRegistry();
+		const char = await store.create({ name: "Andrea", description: "x" });
+
+		// HRF-4: create chooses a human-readable directory name derived from the
+		// display name (not the opaque id).
+		expect(await store.resolveFolderName(char.id)).toBe("andrea");
+
+		// A rename through the registry is still followed by the store resolver.
+		await registry.renameDirectory(char.id, "andrea-v2");
+		expect(await store.resolveFolderName(char.id)).toBe("andrea-v2");
+	});
+
+	test("a name-change update renames the directory and writes content into it", async () => {
+		const { store, content } = await setupWithRegistry();
+		const char = await store.create({ name: "Oliver", description: "v1" });
+		expect(await store.resolveFolderName(char.id)).toBe("oliver");
+
+		// Rename via a real name change — the HRF-4 lifecycle path through the store.
+		await store.update(char.id, { name: "Oliver Smith", description: "v2" });
+
+		// The directory followed the rename.
+		expect(await store.resolveFolderName(char.id)).toBe("oliver-smith");
+		// Content written by the update lands in the renamed directory.
+		const profile = await content.readEntityTextFile(CHARS, "oliver-smith", "profile.md");
+		expect(profile).not.toBeNull();
+		expect(profile).toContain("Oliver Smith");
+		// The old directory is gone (the rename moved it).
+		expect(await content.readEntityTextFile(CHARS, "oliver", "profile.md")).toBeNull();
+	});
+
+	test("without a registry wired, resolution falls back to the opaque id (unit-test mode)", async () => {
+		const { store } = await setup(); // no registry
+		const char = await store.create({ name: "Andrea", description: "x" });
+		expect(await store.resolveFolderName(char.id)).toBe(char.id);
+	});
+});
+
+describe("CharacterStore directory lifecycle (HUMAN_READABLE_FOLDERS HRF-4)", () => {
+	async function setupWithRegistry() {
+		const dataRoot = await mkdtemp(join(tmpdir(), "vt-hrf4-"));
+		const db = await createDb(join(dataRoot, "test.db"));
+		const content = new ContentStore({ fileStore: createFileStore(dataRoot) });
+		const folder = new CharacterFolder(content);
+		const registry = new CharacterDirectoryRegistry(content);
+		await registry.init();
+		const store = new CharacterStore(db, { folder, registry, clock: fixedClock, idGenerator: idGen });
+		return { dataRoot, db, content, folder, registry, store };
+	}
+
+	test("create derives a human-readable directory name from the display name", async () => {
+		const { store } = await setupWithRegistry();
+		const char = await store.create({ name: "Andrea Storm", description: "x" });
+		expect(await store.resolveFolderName(char.id)).toBe("andrea-storm");
+	});
+
+	test("two characters with the same display name get deterministically suffixed directories", async () => {
+		const { store } = await setupWithRegistry();
+		const a = await store.create({ name: "Oliver", description: "x" });
+		const b = await store.create({ name: "Oliver", description: "y" });
+		expect(await store.resolveFolderName(a.id)).toBe("oliver");
+		expect(await store.resolveFolderName(b.id)).toBe("oliver-2");
+		// Both characters remain independently readable.
+		const charA = await store.getById(a.id);
+		const charB = await store.getById(b.id);
+		expect(charA?.description).toBe("x");
+		expect(charB?.description).toBe("y");
+	});
+
+	test("duplicate gets a suffixed directory (\"<name> (copy)\" → <name>-copy)", async () => {
+		const { store } = await setupWithRegistry();
+		const original = await store.create({ name: "Zack", description: "x" });
+		expect(await store.resolveFolderName(original.id)).toBe("zack");
+		const copy = await store.duplicate(original.id);
+		// "Zack (copy)" slugs to "zack-copy".
+		expect(await store.resolveFolderName(copy.id)).toBe("zack-copy");
+	});
+
+	test("a degenerate display name (no alphanumerics) falls back to the opaque id", async () => {
+		const { store } = await setupWithRegistry();
+		const char = await store.create({ name: "!!!", description: "x" });
+		expect(await store.resolveFolderName(char.id)).toBe(char.id);
+	});
+
+	test("a no-op same-name update does not rename the directory", async () => {
+		const { store } = await setupWithRegistry();
+		const char = await store.create({ name: "Andrea", description: "x" });
+		expect(await store.resolveFolderName(char.id)).toBe("andrea");
+		// Re-asserting the same name — derived slug matches current dir → no-op.
+		await store.update(char.id, { name: "Andrea" });
+		expect(await store.resolveFolderName(char.id)).toBe("andrea");
+	});
+
+	test("an update that changes only non-name fields does not touch the directory", async () => {
+		const { store } = await setupWithRegistry();
+		const char = await store.create({ name: "Andrea", description: "x" });
+		await store.update(char.id, { description: "y" });
+		expect(await store.resolveFolderName(char.id)).toBe("andrea");
+	});
+
+	test("after delete, the human-readable directory is removed", async () => {
+		const { store, content } = await setupWithRegistry();
+		const char = await store.create({ name: "Andrea", description: "x" });
+		expect(await content.entityFolderExists(CHARS, "andrea")).toBe(true);
+		await store.delete(char.id);
+		expect(await content.entityFolderExists(CHARS, "andrea")).toBe(false);
+	});
+});
+
+describe("CharacterStore data integrity across rename (HUMAN_READABLE_FOLDERS HRF-4)", () => {
+	async function setupWithRegistry() {
+		const dataRoot = await mkdtemp(join(tmpdir(), "vt-hrf4-integrity-"));
+		const db = await createDb(join(dataRoot, "test.db"));
+		const content = new ContentStore({ fileStore: createFileStore(dataRoot) });
+		const folder = new CharacterFolder(content);
+		const registry = new CharacterDirectoryRegistry(content);
+		await registry.init();
+		const store = new CharacterStore(db, { folder, registry, clock: fixedClock, idGenerator: idGen });
+		return { dataRoot, db, content, folder, registry, store };
+	}
+
+	test("rename preserves vt.storage_id (immutable identity never follows the display name)", async () => {
+		const { store, content } = await setupWithRegistry();
+		const char = await store.create({ name: "Oliver", description: "x" });
+		await store.update(char.id, { name: "Oliver Smith" });
+
+		// profile.md in the renamed directory still carries the ORIGINAL id.
+		const profileText = await content.readEntityTextFile(CHARS, "oliver-smith", "profile.md");
+		expect(profileText).not.toBeNull();
+		expect(parseProfileMd(profileText!).storageId).toBe(char.id);
+	});
+
+	test("getById returns the renamed character with the new name and same id", async () => {
+		const { store } = await setupWithRegistry();
+		const char = await store.create({ name: "Oliver", description: "x" });
+		await store.update(char.id, { name: "Oliver Smith" });
+		const reread = await store.getById(char.id);
+		expect(reread).not.toBeNull();
+		expect(reread!.id).toBe(char.id);
+		expect(reread!.name).toBe("Oliver Smith");
+	});
+
+	test("a folder-resident avatar survives a rename (moves with the directory)", async () => {
+		const { store, content } = await setupWithRegistry();
+		const char = await store.create({ name: "Andrea", description: "x" });
+		const dir = await store.resolveFolderName(char.id);
+		// Simulate an avatar upload (what AssetService does): write bytes + flip ext.
+		const AVATAR = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0xaa]);
+		await content.writeBinary(CHARS, dir, "avatar.png", AVATAR);
+		await store.setFolderAvatar(char.id, "png");
+
+		// Rename the character.
+		await store.update(char.id, { name: "Andrea Storm" });
+		const newDir = await store.resolveFolderName(char.id);
+		expect(newDir).toBe("andrea-storm");
+
+		// The avatar moved with the directory and is readable from the new name.
+		const bytes = await content.readBinary(CHARS, newDir, "avatar.png");
+		expect(bytes).not.toBeNull();
+		expect(bytes!).toEqual(AVATAR);
+		// The old directory (and its avatar) is gone.
+		expect(await content.readBinary(CHARS, "andrea", "avatar.png")).toBeNull();
+	});
+
+	test("a chain of renames (A → B → C) follows each name change", async () => {
+		const { store } = await setupWithRegistry();
+		const char = await store.create({ name: "Alpha", description: "x" });
+		expect(await store.resolveFolderName(char.id)).toBe("alpha");
+		await store.update(char.id, { name: "Beta" });
+		expect(await store.resolveFolderName(char.id)).toBe("beta");
+		await store.update(char.id, { name: "Gamma Delta" });
+		expect(await store.resolveFolderName(char.id)).toBe("gamma-delta");
+		// The character is still fully readable at the end of the chain.
+		const reread = await store.getById(char.id);
+		expect(reread?.name).toBe("Gamma Delta");
+	});
+
+	test("a rename to a name that slugifies identically is a no-op (Oliver! → Oliver)", async () => {
+		const { store } = await setupWithRegistry();
+		const char = await store.create({ name: "Oliver!", description: "x" });
+		expect(await store.resolveFolderName(char.id)).toBe("oliver");
+		// Both "Oliver!" and "Oliver" slug to "oliver" — no rename needed.
+		await store.update(char.id, { name: "Oliver" });
+		expect(await store.resolveFolderName(char.id)).toBe("oliver");
+	});
+
+	test("two characters whose names slug-collide get distinct suffixes", async () => {
+		const { store } = await setupWithRegistry();
+		const a = await store.create({ name: "Oliver", description: "x" });
+		const b = await store.create({ name: "Oliver!", description: "y" }); // also "oliver"
+		expect(await store.resolveFolderName(a.id)).toBe("oliver");
+		expect(await store.resolveFolderName(b.id)).toBe("oliver-2");
+	});
+
+	test("concurrent renames of different characters to the same name never overwrite a peer", async () => {
+		const { store } = await setupWithRegistry();
+		const a = await store.create({ name: "Alpha", description: "a" });
+		const b = await store.create({ name: "Beta", description: "b" });
+		await Promise.all([
+			store.update(a.id, { name: "Oliver" }),
+			store.update(b.id, { name: "Oliver" }),
+		]);
+		const dirs = [
+			await store.resolveFolderName(a.id),
+			await store.resolveFolderName(b.id),
+		].sort();
+		expect(dirs).toEqual(["oliver", "oliver-2"]);
+		expect((await store.getById(a.id))?.name).toBe("Oliver");
+		expect((await store.getById(b.id))?.name).toBe("Oliver");
+	});
+
+	test("a case-only display-name update does not churn a lowercase directory", async () => {
+		const { store, content } = await setupWithRegistry();
+		const char = await store.create({ name: "Andrea", description: "x" });
+		await store.update(char.id, { name: "ANDREA" });
+		expect(await store.resolveFolderName(char.id)).toBe("andrea");
+		expect(await content.entityFolderExists(CHARS, "andrea")).toBe(true);
+		expect((await store.getById(char.id))?.name).toBe("ANDREA");
+	});
+
+	test("deleting one of a same-named pair does NOT auto-reclaim its base name for the survivor", async () => {
+		const { store } = await setupWithRegistry();
+		const a = await store.create({ name: "Oliver", description: "x" });
+		const b = await store.create({ name: "Oliver", description: "y" });
+		expect(await store.resolveFolderName(b.id)).toBe("oliver-2");
+		await store.delete(a.id); // removes "oliver"
+		// The survivor stays at "oliver-2" — no surprising auto-rename.
+		expect(await store.resolveFolderName(b.id)).toBe("oliver-2");
+		expect(await store.getById(b.id)).not.toBeNull();
+	});
+
+	test("duplicating twice yields distinct suffixes for the copies", async () => {
+		const { store } = await setupWithRegistry();
+		const original = await store.create({ name: "Zack", description: "x" });
+		const copy1 = await store.duplicate(original.id);
+		const copy2 = await store.duplicate(original.id);
+		// Both copies are "Zack (copy)" → slug "zack-copy"; the second is suffixed.
+		expect(await store.resolveFolderName(copy1.id)).toBe("zack-copy");
+		expect(await store.resolveFolderName(copy2.id)).toBe("zack-copy-2");
+		// All three are independently readable.
+		expect((await store.getById(original.id))?.name).toBe("Zack");
+		expect((await store.getById(copy1.id))?.name).toBe("Zack (copy)");
+		expect((await store.getById(copy2.id))?.name).toBe("Zack (copy)");
+	});
+
+	test("a renamed character is rediscovered after a simulated restart (fresh registry scans disk)", async () => {
+		const { store, content, folder, db } = await setupWithRegistry();
+		const char = await store.create({ name: "Oliver", description: "v1" });
+		await store.update(char.id, { name: "Oliver Smith", description: "v2" });
+		expect(await store.resolveFolderName(char.id)).toBe("oliver-smith");
+
+		// Simulate a server restart: a brand-new registry + store scan from disk.
+		const freshRegistry = new CharacterDirectoryRegistry(content);
+		await freshRegistry.init();
+		const freshStore = new CharacterStore(db, { folder, registry: freshRegistry, clock: fixedClock, idGenerator: idGen });
+
+		// Identity lives in profile.md, not the basename — the fresh registry
+		// finds the character at its renamed folder.
+		expect(await freshRegistry.resolve(char.id)).toBe("oliver-smith");
+		const reread = await freshStore.getById(char.id);
+		expect(reread?.name).toBe("Oliver Smith");
+		expect(reread?.description).toBe("v2");
+	});
+
+	test("reconcile after restart does not rename a consistent tree (no thrash)", async () => {
+		const { store, content } = await setupWithRegistry();
+		const char = await store.create({ name: "Andrea", description: "x" });
+		const dir = await store.resolveFolderName(char.id);
+		const AVATAR = new Uint8Array([0x89, 0x50, 0x4e, 0x47]);
+		await content.writeBinary(CHARS, dir, "avatar.png", AVATAR);
+
+		// Fresh registry (restart) + reconcile.
+		const freshRegistry = new CharacterDirectoryRegistry(content);
+		await freshRegistry.init();
+		const repairs = await freshRegistry.reconcile();
+		expect(repairs).toEqual([]); // andrea ↔ profile name Andrea → consistent
+		// Avatar intact — reconcile never touched the consistent directory.
+		expect(await content.readBinary(CHARS, "andrea", "avatar.png")).toEqual(AVATAR);
+	});
+
+	test("reconcile after an interrupted rename repairs the directory and preserves storage_id", async () => {
+		const { store, content } = await setupWithRegistry();
+		const char = await store.create({ name: "Oliver", description: "x" });
+		// Simulate an interrupted rename: manually move the dir to a stale name,
+		// but leave profile.md saying "Oliver Smith" (the rename target).
+		await store.update(char.id, { name: "Oliver Smith" });
+		// Now interrupt: move oliver-smith back to a stale name out-of-band.
+		await content.renameEntityFolder(CHARS, "oliver-smith", "stale-mid-rename");
+
+		// Fresh registry (restart) discovers the character at the stale name, then
+		// reconcile renames it back to the display-name-derived folder.
+		const freshRegistry = new CharacterDirectoryRegistry(content);
+		await freshRegistry.init();
+		expect(await freshRegistry.resolve(char.id)).toBe("stale-mid-rename");
+		const repairs = await freshRegistry.reconcile();
+		expect(repairs).toHaveLength(1);
+		expect(await freshRegistry.resolve(char.id)).toBe("oliver-smith");
+		// storage_id survived the whole ordeal.
+		const profileText = await content.readEntityTextFile(CHARS, "oliver-smith", "profile.md");
+		expect(parseProfileMd(profileText!).storageId).toBe(char.id);
+	});
+
+	test("an injected rename failure leaves canonical data readable and a fresh registry repairs it", async () => {
+		const dataRoot = await mkdtemp(join(tmpdir(), "vt-hrf4-rename-failure-"));
+		const db = await createDb(join(dataRoot, "test.db"));
+		const realFileStore = createFileStore(dataRoot);
+		const failingFileStore: FileStore = {
+			...realFileStore,
+			rename: async () => {
+				throw new Error("injected directory rename failure");
+			},
+		};
+		const failingContent = new ContentStore({ fileStore: failingFileStore });
+		const failingFolder = new CharacterFolder(failingContent);
+		const registry = new CharacterDirectoryRegistry(failingContent);
+		await registry.init();
+		const store = new CharacterStore(db, { folder: failingFolder, registry, clock: fixedClock, idGenerator: idGen });
+		const char = await store.create({ name: "Oliver", description: "before" });
+
+		// The DB + canonical profile write succeeds first; only the cosmetic
+		// filesystem rename is injected to fail.
+		await expect(store.update(char.id, { name: "Oliver Smith", description: "after" }))
+			.rejects.toThrow("injected directory rename failure");
+
+		// The old directory remains reachable and the nonexistent target was not
+		// registered. Most importantly, profile.md already carries NEW content and
+		// the same immutable storage_id, so this is recoverable rather than split.
+		expect(await registry.resolve(char.id)).toBe("oliver");
+		expect(await failingContent.entityFolderExists(CHARS, "oliver")).toBe(true);
+		expect(await failingContent.entityFolderExists(CHARS, "oliver-smith")).toBe(false);
+		const stalePathProfile = await failingContent.readEntityTextFile(CHARS, "oliver", "profile.md");
+		expect(stalePathProfile).not.toBeNull();
+		const parsed = parseProfileMd(stalePathProfile!);
+		expect(parsed.storageId).toBe(char.id);
+		expect(parsed.profile.name).toBe("Oliver Smith");
+		expect(parsed.profile.description).toBe("after");
+
+		// Reads remain available in the same process despite update() reporting the
+		// cosmetic rename error.
+		const stillReadable = await store.getById(char.id);
+		expect(stillReadable?.id).toBe(char.id);
+		expect(stillReadable?.name).toBe("Oliver Smith");
+		expect(stillReadable?.description).toBe("after");
+
+		// Simulate restart with a healthy filesystem implementation. A fresh scan
+		// finds storage_id at the stale basename; reconcile derives the target from
+		// canonical profile.name and completes the interrupted cosmetic rename.
+		const healthyContent = new ContentStore({ fileStore: realFileStore });
+		const healthyRegistry = new CharacterDirectoryRegistry(healthyContent);
+		await healthyRegistry.init();
+		expect(await healthyRegistry.resolve(char.id)).toBe("oliver");
+		expect(await healthyRegistry.reconcile()).toEqual([
+			{ characterId: char.id, from: "oliver", to: "oliver-smith" },
+		]);
+		expect(await healthyRegistry.resolve(char.id)).toBe("oliver-smith");
+
+		const healthyStore = new CharacterStore(db, {
+			folder: new CharacterFolder(healthyContent),
+			registry: healthyRegistry,
+			clock: fixedClock,
+			idGenerator: idGen,
+		});
+		const recovered = await healthyStore.getById(char.id);
+		expect(recovered?.id).toBe(char.id);
+		expect(recovered?.name).toBe("Oliver Smith");
+		expect(recovered?.description).toBe("after");
+	});
+
+	test("a non-ASCII-only display name falls back to the opaque id (no empty/invalid dir)", async () => {
+		const { store } = await setupWithRegistry();
+		// "Андреа" has no [a-z0-9] → sanitize → "" → opaque-id fallback.
+		const char = await store.create({ name: "Андреа", description: "x" });
+		expect(await store.resolveFolderName(char.id)).toBe(char.id);
+		// The character is still fully readable.
+		expect((await store.getById(char.id))?.name).toBe("Андреа");
 	});
 });

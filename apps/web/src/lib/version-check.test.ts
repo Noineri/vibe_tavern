@@ -1,5 +1,34 @@
-import { test, expect, describe } from "vitest";
-import { parseSemver, compareSemver } from "./version-check.js";
+import { test, expect, describe } from "bun:test";
+import { cleanReleaseNotes, parseSemver, compareSemver } from "./version-check.js";
+
+describe("cleanReleaseNotes", () => {
+	test("removes terminal commit hashes from Markdown list items", () => {
+		// Given
+		const notes = "- Sidebar sort & search (8f8b0de4)\n1. Faster startup (abcdef1)";
+
+		// When
+		const result = cleanReleaseNotes(notes);
+
+		// Then
+		expect(result).toBe("- Sidebar sort & search\n1. Faster startup");
+	});
+
+	test("preserves meaningful parentheses, inline hashes, and Markdown links", () => {
+		// Given
+		const notes = [
+			"- Keep parenthetical context (desktop)",
+			"- Mention commit (8f8b0de4) before more text",
+			"- Close [issue #42](https://github.com/Noineri/vibe_tavern/issues/42)",
+			"Standalone note (8f8b0de4)",
+		].join("\n");
+
+		// When
+		const result = cleanReleaseNotes(notes);
+
+		// Then
+		expect(result).toBe(notes);
+	});
+});
 
 describe("parseSemver", () => {
 	test("parses plain semver", () => {

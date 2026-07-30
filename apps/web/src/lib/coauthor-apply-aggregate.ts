@@ -26,18 +26,20 @@
  * load-bearing contract with the CA-7 backend).
  */
 import { parseProfileMd, serializeProfileMd } from "@vibe-tavern/db/codecs";
-import type { BuildCharacterDraft, CoauthorApplyRequest } from "@vibe-tavern/api-contracts";
+import type { BuildCharacterDraft, CoauthorApplyRequest, CoauthorLoreBundle } from "@vibe-tavern/api-contracts";
 import type { CoauthorToolActivity } from "../stores/coauthor-turn-store.js";
 import { pinBodyFields, pinGreetingsFields } from "../components/build/editors/vibe-md-sync.js";
 
 /** A finalized, proposed-producing activity (streaming/error ones are excluded). */
 interface ProposedActivity {
 	toolCallId: string;
-	target: "profile" | "greeting";
+	target: "profile" | "greeting" | "lore_bundle";
 	proposed: string;
 	summary?: string;
 	greetingIndex?: number;
 	isAdd?: boolean;
+	/** Present iff `target === "lore_bundle"` (the complete cumulative draft). */
+	loreBundle?: CoauthorLoreBundle;
 }
 
 /** The result of aggregating a turn's activities. */
@@ -50,6 +52,9 @@ export interface CoauthorProposal {
 	applyRequest: CoauthorApplyRequest;
 	/** The model's per-tool summaries (shown above Apply, in call order). */
 	summaries: string[];
+	/** CTX-L3: the complete cumulative lore draft (the LAST lore_bundle wins),
+	 *  for the structured lore review surface. `undefined` iff no lore tool fired. */
+	loreBundle?: CoauthorLoreBundle;
 }
 
 /**
@@ -61,7 +66,19 @@ export interface CoauthorProposal {
 function finalizedActivities(activities: CoauthorToolActivity[]): ProposedActivity[] {
 	const byId = new Map<string, ProposedActivity>();
 	for (const a of activities) {
-		if (a.status !== "done" || !a.target || !a.proposed) continue;
+		if (a.status !== "done") continue;
+		// CTX-L3: a lore_bundle activity carries `loreBundle` (no `target`/`proposed`).
+		if (a.loreBundle) {
+			byId.set(a.toolCallId, {
+				toolCallId: a.toolCallId,
+				target: "lore_bundle",
+				proposed: "",
+				summary: a.summary,
+				loreBundle: a.loreBundle,
+			});
+			continue;
+		}
+		if (!a.target || !a.proposed) continue;
 		byId.set(a.toolCallId, {
 			toolCallId: a.toolCallId,
 			target: a.target,
@@ -157,7 +174,19 @@ export function aggregateCoauthorProposal(
 		applyRequest.alternateGreetings = proposedDraft.alternateGreetings;
 	}
 
-	return { hasProposal: true, proposedDraft, applyRequest, summaries };
+	// ── Lore (CTX-L3): the LAST lore_bundle wins (cumulative — each tool
+	//    returns the complete graph, so the latest carries every earlier op).
+	let lastLore: ProposedActivity | undefined;
+	for (const a of finalized) {
+		if (a.target === "lore_bundle") lastLore = a;
+	}
+	if (lastLore?.loreBundle) {
+		// The wholesale (all-selected) bundle ships in applyRequest; the review UI
+		// narrows it via selectLoreBundle before the actual Apply fires.
+		applyRequest.loreBundle = lastLore.loreBundle;
+	}
+
+	return { hasProposal: true, proposedDraft, applyRequest, summaries, loreBundle: lastLore?.loreBundle };
 }
 
 /**

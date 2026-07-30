@@ -9,6 +9,7 @@ import {
   renameChatSchema,
   sendMessageSchema,
   setGreetingIndexSchema,
+  updateDynamicPromptSchema,
 } from "../src/schemas/chat-schema.js";
 
 /**
@@ -249,6 +250,38 @@ describe("sendMessageSchema", () => {
   it("rejects null attachments (optional, not nullable)", () => {
     expectReject(sendMessageSchema.safeParse({ content: "hi", attachments: null }));
   });
+
+  // --- DICE-B10: optional dice commit intent {diceMode, pendingRevision} ---
+  // Omitted => no-Dice behavior (current path unchanged).
+  it("accepts a no-dice send (diceMode/pendingRevision absent)", () => {
+    expect(sendMessageSchema.safeParse({ content: "hi" }).success).toBe(true);
+  });
+
+  it("accepts a dice-enabled send with both diceMode and pendingRevision", () => {
+    expect(
+      sendMessageSchema.safeParse({ content: "hi", diceMode: "normal", pendingRevision: 3 }).success,
+    ).toBe(true);
+    expect(
+      sendMessageSchema.safeParse({ content: "hi", diceMode: "immersive", pendingRevision: 0 }).success,
+    ).toBe(true);
+  });
+
+  // Both-or-neither: a half-spec is rejected (no ambiguous commit intent).
+  it("rejects diceMode without pendingRevision", () => {
+    expectReject(sendMessageSchema.safeParse({ content: "hi", diceMode: "normal" }));
+  });
+
+  it("rejects pendingRevision without diceMode", () => {
+    expectReject(sendMessageSchema.safeParse({ content: "hi", pendingRevision: 1 }));
+  });
+
+  it("rejects an invalid diceMode value", () => {
+    expectReject(sendMessageSchema.safeParse({ content: "hi", diceMode: "chaos", pendingRevision: 1 }));
+  });
+
+  it("rejects a negative pendingRevision", () => {
+    expectReject(sendMessageSchema.safeParse({ content: "hi", diceMode: "normal", pendingRevision: -1 }));
+  });
 });
 
 // --- editMessageSchema ------------------------------------------------------
@@ -320,6 +353,34 @@ describe("setGreetingIndexSchema", () => {
 
   it("rejects a payload missing greetingIndex", () => {
     expectReject(setGreetingIndexSchema.safeParse({}));
+  });
+});
+
+// --- updateDynamicPromptSchema ----------------------------------------------
+
+describe("updateDynamicPromptSchema", () => {
+  it("accepts a non-empty content string", () => {
+    expect(updateDynamicPromptSchema.safeParse({ content: "hello" }).success).toBe(true);
+  });
+
+  it("accepts an empty content string", () => {
+    expect(updateDynamicPromptSchema.safeParse({ content: "" }).success).toBe(true);
+  });
+
+  it("rejects a payload missing content", () => {
+    expectReject(updateDynamicPromptSchema.safeParse({}));
+  });
+
+  it("rejects non-string content", () => {
+    expectReject(updateDynamicPromptSchema.safeParse({ content: 123 }));
+  });
+
+  it("rejects null content (not nullable)", () => {
+    expectReject(updateDynamicPromptSchema.safeParse({ content: null }));
+  });
+
+  it("accepts unknown keys (non-strict — stripped, not rejected)", () => {
+    expect(updateDynamicPromptSchema.safeParse({ content: "ok", extra: 1 }).success).toBe(true);
   });
 });
 

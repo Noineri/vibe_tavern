@@ -6,6 +6,8 @@ interface EmptyStateProps {
   sub?: string;
   cta?: ReactNode;
   onCta?: () => void;
+  secondaryCta?: ReactNode;
+  onSecondaryCta?: () => void;
 }
 
 export function EmptyState(input: EmptyStateProps) {
@@ -17,6 +19,14 @@ export function EmptyState(input: EmptyStateProps) {
       {input.cta && (
         <div className="empty-cta" onClick={input.onCta}>
           {input.cta}
+        </div>
+      )}
+      {input.secondaryCta && (
+        <div 
+          className="empty-cta text-t2 hover:text-t1 bg-transparent border-transparent shadow-none" 
+          onClick={input.onSecondaryCta}
+        >
+          {input.secondaryCta}
         </div>
       )}
     </div>

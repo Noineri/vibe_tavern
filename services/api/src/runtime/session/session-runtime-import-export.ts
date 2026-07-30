@@ -1,6 +1,6 @@
 import { resolve } from "node:path";
 import { mkdir } from "node:fs/promises";
-import { type StoreContainer, type FileStore, STORAGE_FOLDERS } from "@vibe-tavern/db";
+import { type StoreContainer, type FileStore, STORAGE_FOLDERS, unpackMonolith } from "@vibe-tavern/db";
 import type {
 	ChatId,
 	PersonaId,
@@ -13,6 +13,8 @@ import {
 	importCharacterCardV3Json,
 	parseSillyTavernChat,
 	serializeSillyTavernChat,
+	vtfContentToImportedBundle,
+	type ImportedCharacterCardBundle,
 } from "@vibe-tavern/import-export";
 import type { ChatApplicationService } from "../../domain/chat/chat-application-service.js";
 import { notFound, validation } from "../../shared/errors.js";
@@ -94,9 +96,10 @@ export async function exportCharacter(
 	};
 
 	// Merge original unknown fields for lossless round-trip
+	const originalFolder = await deps.stores.characters.resolveFolderName(characterId);
 	const original = await deps.stores.content.readEntity<Record<string, unknown>>(
 		STORAGE_FOLDERS.characters,
-		`${characterId}/original`,
+		`${originalFolder}/original`,
 	);
 	if (original) {
 		// Original wins for unknown fields, current data wins for known fields
@@ -244,28 +247,42 @@ export async function importJson(
 	deps: ImportExportModuleDeps,
 	input: {
 		fileName: string;
-		jsonText: string;
+		jsonText?: string;
+		monolithText?: string;
 		chatId?: string;
 		skipExisting?: boolean;
 		lean?: boolean;
 	},
 ): Promise<ImportResult> {
-	const trimmed = input.jsonText.trim();
-	if (!trimmed) {
+	const jsonText = input.jsonText?.trim() ?? "";
+	const monolithText = input.monolithText?.trim() ?? "";
+	if (!jsonText && !monolithText) {
 		throw validation("Import payload is empty.");
 	}
 
-	if (input.fileName.toLowerCase().endsWith(".jsonl")) {
-		return importSillyTavernChat(deps, input.fileName, trimmed, input.chatId, input.lean);
+	// JSONL chat import is JSON-text only (there is no monolith equivalent).
+	if (jsonText && input.fileName.toLowerCase().endsWith(".jsonl")) {
+		return importSillyTavernChat(deps, input.fileName, jsonText, input.chatId, input.lean);
 	}
 
-	const parsed = JSON.parse(trimmed) as Record<string, unknown>;
-
-	const isCharacterCard = parsed.spec === "chara_card_v3" || parsed.spec === "chara_card_v2" || (parsed.name && !parsed.spec);
-
-	if (isCharacterCard) {
-		const imported = importCharacterCardV3Json(parsed);
-
+	// Build the bundle from whichever native source is present. A VTF monolith
+	// (a standalone `.md` file or a PNG `vtmd` chunk) wins when supplied — it is
+	// the lossless native representation; ST V2/V3 JSON stays the fallback.
+	// `parsed` is the original JSON card on the JSON path (persisted as
+	// `original.json` for the lossless ST round-trip) and null on the monolith
+	// path — no original to keep there, since the field set is already lossless
+	// and a non-JSON `original.*` would break `exportCharacter`'s JSON merge.
+	let parsed: Record<string, unknown> | null = null;
+	let imported: ImportedCharacterCardBundle;
+	if (monolithText) {
+		imported = vtfContentToImportedBundle(unpackMonolith(monolithText), monolithText);
+	} else {
+		parsed = JSON.parse(jsonText) as Record<string, unknown>;
+		const isCharacterCard = parsed.spec === "chara_card_v3" || parsed.spec === "chara_card_v2" || (!!parsed.name && !parsed.spec);
+		if (!isCharacterCard) throw validation("Lorebook import is not supported in phase 1.");
+		imported = importCharacterCardV3Json(parsed);
+	}
+	{
 		// Upsert character via new CharacterStore
 		const existing = await deps.stores.characters.getById(imported.character.id);
 		let characterId: string;
@@ -289,6 +306,8 @@ export async function importJson(
 				defaultScenario: imported.character.defaultScenario,
 				firstMessage: imported.character.firstMessage,
 				mesExample: imported.character.mesExample,
+				mesExampleMode: imported.character.mesExampleMode,
+				mesExampleDepth: imported.character.mesExampleDepth,
 				alternateGreetings: imported.character.alternateGreetings,
 				postHistoryInstructions: imported.character.postHistoryInstructions,
 				creatorNotes: imported.character.creatorNotes,
@@ -301,7 +320,10 @@ export async function importJson(
 				tags: imported.character.tags,
 			});
 			// Save original JSON for lossless round-trip
-			await deps.stores.content.writeEntity(STORAGE_FOLDERS.characters, `${imported.character.id}/original`, parsed);
+			if (parsed) {
+				const of = await deps.stores.characters.resolveFolderName(imported.character.id);
+				await deps.stores.content.writeEntity(STORAGE_FOLDERS.characters, `${of}/original`, parsed);
+			}
 
 			return {
 				activeChatId: chatId as ChatId,
@@ -326,6 +348,8 @@ export async function importJson(
 				defaultScenario: imported.character.defaultScenario,
 				firstMessage: imported.character.firstMessage,
 				mesExample: imported.character.mesExample,
+				mesExampleMode: imported.character.mesExampleMode,
+				mesExampleDepth: imported.character.mesExampleDepth,
 				alternateGreetings: imported.character.alternateGreetings,
 				postHistoryInstructions: imported.character.postHistoryInstructions,
 				creatorNotes: imported.character.creatorNotes,
@@ -338,7 +362,10 @@ export async function importJson(
 				tags: imported.character.tags,
 			});
 			// Save original JSON for lossless round-trip
-			await deps.stores.content.writeEntity(STORAGE_FOLDERS.characters, `${characterId}/original`, parsed);
+			if (parsed) {
+				const of = await deps.stores.characters.resolveFolderName(characterId);
+				await deps.stores.content.writeEntity(STORAGE_FOLDERS.characters, `${of}/original`, parsed);
+			}
 			} else {
 			const created = await deps.stores.characters.create({
 				name: imported.character.name,
@@ -347,6 +374,8 @@ export async function importJson(
 				defaultScenario: imported.character.defaultScenario,
 				firstMessage: imported.character.firstMessage,
 				mesExample: imported.character.mesExample,
+				mesExampleMode: imported.character.mesExampleMode,
+				mesExampleDepth: imported.character.mesExampleDepth,
 				alternateGreetings: imported.character.alternateGreetings,
 				postHistoryInstructions: imported.character.postHistoryInstructions,
 				creatorNotes: imported.character.creatorNotes,
@@ -360,7 +389,10 @@ export async function importJson(
 			});
 			characterId = created.id;
 			// Save original JSON for lossless round-trip
-			await deps.stores.content.writeEntity(STORAGE_FOLDERS.characters, `${characterId}/original`, parsed);
+			if (parsed) {
+				const of = await deps.stores.characters.resolveFolderName(characterId);
+				await deps.stores.content.writeEntity(STORAGE_FOLDERS.characters, `${of}/original`, parsed);
+			}
 			}
 
 		const chat = await deps.chatApp.createChat({
@@ -400,14 +432,12 @@ export async function importJson(
 			},
 		};
 	}
-
-	// Lorebook import — phase 2
-	throw validation("Lorebook import is not supported in phase 1.");
 }
 
 export interface BatchImportItem {
 	fileName: string;
-	jsonText: string;
+	jsonText?: string;
+	monolithText?: string;
 	chatId?: string;
 	skipExisting?: boolean;
 }

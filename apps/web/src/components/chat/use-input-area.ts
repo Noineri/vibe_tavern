@@ -9,18 +9,19 @@
 // hover, the mobile textarea auto-grow ref) is co-located with the branch
 // that owns it; this hook holds only data + behaviour shared by both.
 
-import { useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import type { ChangeEvent, ClipboardEvent } from "react";
 import { toast } from "sonner";
 import type { PromptLayerDto } from "@vibe-tavern/domain";
 import { useT } from "../../i18n/context.js";
 import { useTokenCount } from "../../hooks/use-token-count.js";
-import { useChatController } from "../../hooks/use-chat-controller.js";
+import { useChatController, diceSendBlockReason } from "../../hooks/use-chat-controller.js";
 import { useCharacterController } from "../../hooks/use-character-controller.js";
 import { useProviderProfiles } from "../../hooks/use-provider-profiles.js";
 import { usePresetController } from "../../hooks/use-preset-controller.js";
 import { enqueueGenerateMore } from "../../hooks/use-generation-queue.js";
 import { useChatStore, useProviderStore, useIsSending } from "../../stores/index.js";
+import { useDiceLanes, useDiceStore } from "../../stores/dice-store.js";
 import { useActiveTrace, useChatMeta, useActiveStreamingMessageId } from "../../stores/chat-selectors.js";
 import { useBootstrapStore } from "../../stores/api-actions/bootstrap-actions.js";
 import { uploadAsset } from "../../app-client.js";
@@ -127,7 +128,25 @@ export function useInputArea() {
     }
   };
 
-  const canSend = Boolean(draft.trim() || draftAttachments.length > 0) && !isSending && canUseLiveApi;
+  // --- Dice send gate (DICE-F3) ---
+  // Subtractive-only: when Dice is disabled, the lane is absent/empty, or there
+  // is nothing bindable, diceBlockReason is null and canSend is byte-identical
+  // to before. Dice can only ever subtract from canSend, never add.
+  const diceEnabled = chatMeta?.activeChat?.insightsConfig?.diceEnabled ?? false;
+  const diceMode = chatMeta?.activeChat?.insightsConfig?.diceMode ?? "normal";
+  const activeBranchId = chatMeta?.activeBranch?.id ?? null;
+  const activeCharacterId = chatMeta?.activeChat?.characterId ?? null;
+  // Establish the pending-lane scope for dice-enabled chats so the gate (and the
+  // F6 panel) reads a loaded lane. No-op (no fetch) for non-dice chats.
+  useEffect(() => {
+    if (!diceEnabled || !activeChatId || !activeBranchId) return;
+    useDiceStore.getState().setScope(activeChatId, activeBranchId);
+  }, [diceEnabled, activeChatId, activeBranchId]);
+  const diceLanes = useDiceLanes(diceEnabled ? activeChatId : null, activeBranchId);
+  const activeDiceLane = diceEnabled && diceLanes ? diceLanes[diceMode] : null;
+  const diceBlockReason = diceSendBlockReason(activeDiceLane, activePersonaId, activeCharacterId);
+
+  const canSend = Boolean(draft.trim() || draftAttachments.length > 0) && !isSending && canUseLiveApi && diceBlockReason === null;
 
   // --- Token counting from backend prompt trace layers ---
   const TEMPORARY_TYPES = new Set(["chat_history", "compaction"]);

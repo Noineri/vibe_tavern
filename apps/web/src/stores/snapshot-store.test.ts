@@ -1,11 +1,13 @@
-import { beforeEach, describe, expect, test } from "vitest";
-import type { ChatId, ChatBranchId } from "@vibe-tavern/domain";
+import { beforeEach, describe, expect, test } from "bun:test";
+import type { ChatId, ChatBranchId, MessageVariantId, SceneTrackerRecord, Timestamp } from "@vibe-tavern/domain";
 import { useSnapshotStore } from "./snapshot-store.js";
 import type { AppCharacter, AppMessage, AppSnapshot } from "../app-client.js";
 
 // Branded-id cast helpers (match the convention in bootstrap-actions.test.ts).
 const asChatId = (id: string): ChatId => id as ChatId;
 const asBranchId = (id: string): ChatBranchId => id as ChatBranchId;
+const asVariantId = (id: string): MessageVariantId => id as MessageVariantId;
+const asTimestamp = (value: string): Timestamp => value as Timestamp;
 
 /**
  * Phase 3.4.1 — absence pipeline behavioural spec.
@@ -73,7 +75,6 @@ function fullSeed(): AppSnapshot {
     messages: [makeMessage("m1"), makeMessage("m2")],
     summaries: [],
     promptTrace: null,
-    contextPreview: null,
     character: makeCharacter("c1"),
     persona: null,
   } as unknown as AppSnapshot;
@@ -130,8 +131,8 @@ describe("ingestSnapshot — absence pipeline (Phase 3.4.1)", () => {
     } as AppSnapshot);
     expect(useSnapshotStore.getState().messageOrder).toEqual(["m1", "m2", "m3"]);
 
-    // A subsequent contextPreview-only response must NOT drop m3.
-    useSnapshotStore.getState().ingestSnapshot({ contextPreview: null } as AppSnapshot);
+    // A subsequent promptTrace-only response must NOT drop m3.
+    useSnapshotStore.getState().ingestSnapshot({ promptTrace: null } as AppSnapshot);
     expect(useSnapshotStore.getState().messageOrder).toEqual(["m1", "m2", "m3"]);
     expect(originalOrder).toEqual(["m1", "m2"]);
   });
@@ -254,8 +255,8 @@ describe("ingestSnapshot — dedup / reference stability (Wave B2)", () => {
 
 describe("selectVariant — Scene swap (SCN-4)", () => {
   test("selecting a variant swaps the active Scene record locally without a fetch", () => {
-    const sceneA = { variantId: "var_0", schemaHash: "h0", configRevision: 1, sourceHash: "s0", sceneState: { mood: "calm" }, modelId: null, generatedAt: "2026-01-01T00:00:00.000Z" };
-    const sceneB = { variantId: "var_1", schemaHash: "h1", configRevision: 1, sourceHash: "s1", sceneState: { mood: "tense" }, modelId: null, generatedAt: "2026-01-01T00:00:00.000Z" };
+    const sceneA: SceneTrackerRecord = { variantId: asVariantId("var_0"), schemaHash: "h0", configRevision: 1, sourceHash: "s0", sceneState: { mood: "calm" }, modelId: null, generatedAt: asTimestamp("2026-01-01T00:00:00.000Z") };
+    const sceneB: SceneTrackerRecord = { variantId: asVariantId("var_1"), schemaHash: "h1", configRevision: 1, sourceHash: "s1", sceneState: { mood: "tense" }, modelId: null, generatedAt: asTimestamp("2026-01-01T00:00:00.000Z") };
     const message = {
       id: "m1",
       role: "assistant",

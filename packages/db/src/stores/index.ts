@@ -3,6 +3,8 @@ export type { Character, CreateCharacterData, UpdateCharacterData } from './char
 
 export { CharacterFolder } from './character-folder.js';
 
+export { CharacterDirectoryRegistry, DuplicateStorageIdError } from './character-directory-registry.js';
+
 export { VersionStore } from './version-store.js';
 
 export { CharacterAssetStore } from './character-asset-store.js';
@@ -31,7 +33,7 @@ export type {
 } from './chat-store.js';
 
 export { MessageStore } from './message-store.js';
-export type { Message, MessageVariant } from './message-store.js';
+export type { Message, MessageVariant, AddMessageInput } from './message-store.js';
 
 export { PromptTraceStore } from './prompt-trace-store.js';
 export type { PromptTrace, SaveTraceData } from './prompt-trace-store.js';
@@ -52,6 +54,7 @@ export type {
   Lorebook as LorebookRow,
   LoreEntry as LoreEntryRow,
   LorebookLink,
+  CoauthorLoreDraftBundle,
 } from './lorebook-store.js';
 
 export { ScriptStore } from './script-store.js';
@@ -68,3 +71,11 @@ export type {
   CreateCoauthorModuleData,
   UpdateCoauthorModuleData,
 } from './coauthor-module-store.js';
+
+export { DiceRollStore } from './dice-roll-store.js';
+export type {
+  DicePendingLane,
+  DiceRoll,
+  LaneState,
+} from './dice-roll-store.js';
+export { DiceBindError } from './dice-roll-store.js';

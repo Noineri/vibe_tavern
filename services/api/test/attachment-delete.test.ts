@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtemp, mkdir, readFile } from "node:fs/promises";
+import { mkdtemp, mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -24,7 +24,9 @@ async function setup() {
 	await mkdir(join(dataRoot, "assets"), { recursive: true });
 	const stores = await createStoreContainer(join(dataRoot, "test.db"), dataRoot);
 	const assetService = new AssetService(join(dataRoot, "assets"), stores.content);
-	const chatApp = new ChatApplicationService(stores.chats, stores.messages);
+	// DICE-B12: deleteMessage now also clears bound Dice rows, so the service
+	// needs its diceRolls dependency (added in B10).
+	const chatApp = new ChatApplicationService(stores.chats, stores.messages, stores.diceRolls);
 
 	// Minimal sessionRuntime: chatApp is real (so removeAttachment/deleteMessage
 	// hit the real store), chatRuntime.deleteMessage delegates to chatApp to
@@ -70,7 +72,7 @@ async function makeAttachment(assetService: AssetService, bytes: Uint8Array, n: 
 }
 
 const assetOnDisk = async (dataRoot: string, assetId: string): Promise<boolean> => {
-	try { await readFile(join(dataRoot, "assets", `${assetId}.png`)); return true; } catch { return false; }
+	try { Buffer.from(await Bun.file(join(dataRoot, "assets", `${assetId}.png`)).arrayBuffer()); return true; } catch { return false; }
 };
 
 /** AssetService.cleanup() is intentionally fire-and-forget (async unlink,

@@ -97,6 +97,7 @@ export interface PromptPresetDto {
   customInjections: CustomInjection[];
   promptOrder: PromptOrderEntry[];
   advancedMode: boolean;
+  mergeConsecutiveRoles: boolean;
   scriptAiSystemPrompt: string;
   aiAssistantPrompts: string;
   createdAt: string;
@@ -133,6 +134,15 @@ export interface PromptOrderEntry {
   /** Chat depth for `in_chat` items (`null` for `before_chat`/`after_chat`). `in_chat` items MUST carry `depth ≥ 1` so they never collide with `after_chat` (pinned to depth 0) — see ordering model. */
   depth: number | null;
   kind: "built_in" | "custom";
+  /**
+   * Message role for the assembled built-in layer. Optional: when absent, the
+   * prompt-pipeline layer builder falls back to the slot's hardcoded default
+   * (most built-ins → `system`; `assistantPrefill` is always `assistant`, locked),
+   * so pre-existing presets are unaffected. `normalizePresetCanvas` preserves a
+   * valid role as-is (never synthesises a default — that is the resolver's job).
+   * Custom injections carry their own role on `CustomInjection` (content metadata).
+   */
+  role?: "system" | "user" | "assistant";
 }
 
 // ─── Custom Injections (attached to PromptPreset) ───────────────────────────

@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from "react";
-import type { UseFormReturn } from "react-hook-form";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { useWatch, type Control, type UseFormReturn } from "react-hook-form";
 import type { BuildCharacterDraft } from "@vibe-tavern/api-contracts";
 import { Ic } from "../../shared/icons";
 
@@ -7,10 +7,10 @@ import { cn } from "../../../lib/cn";
 import { resolveEntityAvatarUrl } from "../../../lib/avatar.js";
 import { AutoTextarea } from "../../shared/auto-textarea.js";
 import { CharacterImportModal } from "../../modals/ImportModals.js";
+import { readCardRaw } from "../../modals/import/parse-import-file.js";
 import { VersionSwitcher } from "../VersionSwitcher.js";
 import { AiAssistantModal } from "../../shared/AiAssistantModal.js";
 import type { MdImportResult } from "../../../lib/md-import-utils.js";
-import { extractPngMetadata, parseCharacterMetadata } from "../../../lib/png-reader";
 import { GalleryAccordion } from "./GalleryAccordion.js";
 import { useTokenCount } from "../../../hooks/use-token-count.js";
 import { useT } from "../../../i18n/context.js";
@@ -49,6 +49,7 @@ export interface CharacterFormProps {
   onAvatarUpload: (file: File, originalFile?: File | null) => Promise<void> | void;
   onExportJson: () => void;
   onExportPng: () => void;
+  onExportVtf: () => void;
   onDuplicate: () => void;
   onDelete: () => void;
   hasAvatar: boolean;
@@ -79,536 +80,87 @@ function parseCardToDraft(raw: unknown): Partial<BuildCharacterDraft> {
   return result;
 }
 
-export function CharacterForm({
-  form, avatarPreview, setAvatarPreview, isDirty, isSaving, avatarUrl, onSave, onReset, onAvatarUpload,
-  onAfterImport,
-  onExportJson, onExportPng, onDuplicate, onDelete, hasAvatar, characterId
-}: CharacterFormProps) {
-  const { t, tDynamic } = useT();
-  const { register, formState: { errors }, watch, setValue, handleSubmit } = form;
+/** Character name title — isolated leaf. Reads `name` via `useWatch`
+ *  (custom-hook-level subscription) so a name-field edit re-renders only this
+ *  span, not the whole `CharacterForm`. This is part of the editor-performance
+ *  fix: the root `CharacterForm` no longer holds any `watch()` subscription, so
+ *  an MD-body flush (which writes the shared prose fields) cannot invalidate
+ *  the root and trigger a broad commit + `react-textarea-autosize` remeasure
+ *  storm. See reports/EDITOR_PERFORMANCE.md (Chrome trace 105143). */
+function CharacterTitle({ control }: { control: Control<BuildCharacterDraft> }) {
+  const { t } = useT();
+  const name = useWatch({ control, name: "name" });
+  return (
+    <div className="font-body text-[22px] font-medium text-t1 min-w-0 truncate">
+      {name || t("unnamed")}
+    </div>
+  );
+}
 
-  const [altGreetIdx, setAltGreetIdx] = useState(0);
-  const [importError, setImportError] = useState("");
-  const [importModalOpen, setImportModalOpen] = useState(false);
-  const [mdImportOpen, setMdImportOpen] = useState(false);
-  const avaInputRef = useRef<HTMLInputElement>(null);
-  const [avatarOrientation, setAvatarOrientation] = useState<"portrait" | "landscape" | null>(null);
-  const [pendingAvatar, setPendingAvatar] = useState<{ file: File; url: string } | null>(null);
-  // Source URL for the "adjust thumbnail" flow: re-crop the square thumbnail
-  // from the existing avatar (full endpoint) without re-uploading a file.
-  // Null when the thumbnail editor is closed.
-  const [thumbnailEditSrc, setThumbnailEditSrc] = useState<string | null>(null);
-
-  // VTF-14: Form↔MD authoring-surface toggle. State lives in the Zustand store
-  // (not local) so it survives Build tab switches — CharacterForm unmounts when
-  // the user leaves the "character" tab; the chosen surface must persist.
-  const mdViewMode = useCharacterStore((s) => s.mdViewMode);
-  const setMdViewMode = useCharacterStore((s) => s.setMdViewMode);
-
-  // Avatar-in-prompt fields live OUT-OF-BAND on the snapshot character (they
-  // are intentionally excluded from BuildCharacterDraft — see character-schema.ts
-  // + vibe_tavern_plan/reports/avatar-description-ui-gap.md). Read from the
-  // active character, commit via direct PATCH (NOT the form's setValue/submit).
-  const activeCharacter = useActiveCharacter();
-  const includeAvatarInPrompt = activeCharacter?.includeAvatarInPrompt ?? false;
-  const avatarDescription = activeCharacter?.avatarDescription ?? null;
-  const handleAvatarPatch = (patch: AvatarDescriptionPatch) => {
-    void saveCharacterAction({ characterId, patch });
-  };
-  // Vision describe: endpoint persists avatarDescription out-of-band and
-  // returns { description }; mirror it into the store via the sanctioned
-  // ingestSnapshot (character key present → replaces). No redundant PATCH.
-  const handleAvatarDescribe = async (signal: AbortSignal): Promise<void> => {
-    const { description } = await describeCharacterAvatar(characterId, signal);
-    const cur = useSnapshotStore.getState().character;
-    if (cur) useSnapshotStore.getState().ingestSnapshot({ character: { ...cur, avatarDescription: description } });
-  };
-
-
-  const name = watch("name");
-  const description = watch("description");
-  const firstMessage = watch("firstMessage");
-  const mesExample = watch("mesExample");
-  const mesExampleMode = watch("mesExampleMode");
-  const mesExampleDepth = watch("mesExampleDepth");
-  const scenario = watch("scenario");
-  const personalitySummary = watch("personalitySummary");
-  const systemPrompt = watch("systemPrompt");
-  const alternateGreetings = watch("alternateGreetings") || [];
-  const postHistoryInstructions = watch("postHistoryInstructions");
-  const creatorNotes = watch("creatorNotes");
-  const depthPrompt = watch("depthPrompt");
-
+/** Save button — isolated leaf. `canSave` derives from the name field via
+ *  `useWatch`; `isDirty` arrives from the parent (BuildMode reads
+ *  `form.formState.isDirty` once and passes it down). Isolating the name read
+ *  keeps a name edit from re-rendering the whole form. */
+function SaveButton({ control, isSaving, isDirty, onSave, className, style }: {
+  control: Control<BuildCharacterDraft>;
+  isSaving: boolean;
+  isDirty: boolean;
+  onSave: () => void;
+  className: string;
+  style?: CSSProperties;
+}) {
+  const { t } = useT();
+  const name = useWatch({ control, name: "name" });
   const canSave = !isSaving && (name || "").trim();
-  const isMobile = useIsMobile();
-  const mInput = isMobile ? " text-base" : "";
+  return (
+    <button type="button" className={className} style={style} disabled={!canSave || !isDirty} onClick={onSave}>
+      {isSaving ? t("saving") : t("save")}
+    </button>
+  );
+}
 
-  function handleAvatarPick(files: FileList | null) {
-    if (!files || files.length === 0) return;
-    const file = files[0];
-    setPendingAvatar({ file, url: URL.createObjectURL(file) });
-  }
-
-  function handleAvatarCropConfirm(result: AvatarCropResult) {
-    const url = pendingAvatar!.url;
-    setAvatarPreview(url);
-    const img = new Image();
-    img.onload = () => {
-      setAvatarOrientation(img.naturalWidth > img.naturalHeight ? "landscape" : "portrait");
-    };
-    img.src = url;
-    onAvatarUpload(result.croppedFile, pendingAvatar!.file);
-    setPendingAvatar(null);
-  }
-
-  function handleAvatarCropCancel() {
-    if (pendingAvatar?.url) URL.revokeObjectURL(pendingAvatar.url);
-    setPendingAvatar(null);
-  }
-
-  // "Adjust thumbnail": open the cropper on the existing avatar (full-size
-  // endpoint) so the user can re-frame the 512×512 thumbnail. The original is
-  // NOT re-uploaded — uploadCharacterAvatar(id, crop) with no `full` arg leaves
-  // avatar-full.{ext} untouched, so large display slots (editor, floating
-  // avatar panel) keep the uncropped source.
-  function handleOpenThumbnailCrop() {
-    if (!activeCharacter) return;
-    const src = resolveEntityAvatarUrl({
-      kind: "characters",
-      id: activeCharacter.id,
-      avatarExt: activeCharacter.avatarExt,
-      avatarAssetId: activeCharacter.avatarAssetId,
-      avatarFullExt: activeCharacter.avatarFullExt,
-      avatarFullAssetId: activeCharacter.avatarFullAssetId,
-      updatedAt: activeCharacter.updatedAt,
-      preferFull: true,
-    });
-    if (src) setThumbnailEditSrc(src);
-  }
-
-  async function handleThumbnailCropConfirm(result: AvatarCropResult) {
-    // Capture the cropper source before closing it. For a SINGLE-IMAGE
-    // character (avatarExt set, no avatarFullExt), this source is the only
-    // copy of the uncropped original — `/avatar/full` falls back to serving
-    // `avatar.{ext}`. Writing the crop without preserving it would make the
-    // editor + floating-avatar slots (both preferFull) snap to the crop.
-    // promoteSourceAsFull returns the source as a File iff no separate full
-    // exists, so passing it as the `full` arg promotes the original to
-    // avatar-full.{ext} in the same upload. When a separate full already
-    // exists it returns undefined and the upload stays crop-only.
-    const sourceUrl = thumbnailEditSrc;
-    setThumbnailEditSrc(null);
-    const fullFile = await promoteSourceAsFull({
-      sourceUrl,
-      hasSeparateFull: !!activeCharacter?.avatarFullExt,
-    });
-    // Don't set a local avatarPreview: the editor's avatar slot renders the
-    // full-size image (unchanged by a thumbnail crop), so a cropped preview
-    // would visually snap back to the full after the snapshot refresh. The
-    // new thumbnail surfaces in small slots (sidebar/topbar) via bootstrap.
-    void onAvatarUpload(result.croppedFile, fullFile);
-  }
-
-  function handleImportFiles(files: File[]): void {
-    if (files.length === 0) return;
-    const file = files[0];
-    setImportError("");
-    (async () => {
-      try {
-        let raw: unknown;
-        const lowerName = file.name.toLowerCase();
-        if (file.type === "image/png" || lowerName.endsWith(".png")) {
-          const metadata = await extractPngMetadata(file);
-          raw = parseCharacterMetadata(metadata);
-        } else if (lowerName.endsWith(".json") || file.type === "application/json") {
-          const text = await file.text();
-          raw = JSON.parse(text);
-        } else {
-          throw new Error(t("unsupported_format_error"));
-        }
-        const merged = parseCardToDraft(raw);
-        if (Object.keys(merged).length === 0) throw new Error(t("import_error_no_data"));
-        form.reset({ ...form.getValues(), ...merged } as BuildCharacterDraft);
-        setImportModalOpen(false);
-        // Autosave + create a chat after import
-        onAfterImport?.();
-      } catch (err) {
-        setImportError(err instanceof Error ? err.message : t("import_failed"));
-      }
-    })();
-  }
-
-  function handleMdImportApply(fields: Partial<MdImportResult>) {
-    const merged: Partial<BuildCharacterDraft> = {};
-    if (fields.name) merged.name = fields.name;
-    if (fields.tagline) merged.description = fields.tagline;
-    if (fields.description) merged.description = (merged.description ? merged.description + "\n\n" : "") + fields.description;
-    if (fields.personality) merged.personalitySummary = fields.personality;
-    if (fields.scenario) merged.scenario = fields.scenario;
-    if (fields.firstMessage) merged.firstMessage = fields.firstMessage;
-    if (fields.alternateGreetings?.length) merged.alternateGreetings = fields.alternateGreetings;
-    if (fields.exampleMessages?.length) merged.mesExample = fields.exampleMessages.join("\n<START>\n");
-    if (fields.creatorNotes) merged.creatorNotes = fields.creatorNotes;
-    if (Object.keys(merged).length > 0) {
-      form.reset({ ...form.getValues(), ...merged } as BuildCharacterDraft);
-      onAfterImport?.();
-    }
-  }
-
-  const displayAvatar = avatarPreview || avatarUrl;
-
-  // Detect orientation for existing avatar on mount
-  useEffect(() => {
-    if (!displayAvatar || avatarOrientation) return;
-    const img = new Image();
-    img.onload = () => {
-      setAvatarOrientation(img.naturalWidth > img.naturalHeight ? "landscape" : "portrait");
-    };
-    img.src = displayAvatar;
-  }, [displayAvatar, avatarOrientation]);
-
-  // Token breakdown: permanent (all fields except greeting) + greeting
+/** Permanent + greeting token summary — isolated leaf. Subscribes via
+ *  `useWatch` to only the fields that feed the two counts, so an MD-body flush
+ *  re-renders just this span. The tokenization (`useTokenCount`) now runs only
+ *  here, not on every root render. */
+function TokenSummary({ control }: { control: Control<BuildCharacterDraft> }) {
+  const { t } = useT();
+  const [description, scenario, personalitySummary, mesExample, postHistoryInstructions, creatorNotes, systemPrompt, depthPrompt, firstMessage] = useWatch({
+    control,
+    name: ["description", "scenario", "personalitySummary", "mesExample", "postHistoryInstructions", "creatorNotes", "systemPrompt", "depthPrompt", "firstMessage"],
+  });
   const permanentTokens = useTokenCount([
     description, scenario, personalitySummary, mesExample,
     postHistoryInstructions, creatorNotes, systemPrompt, depthPrompt,
   ].filter(Boolean).join("\n"));
   const greetingTokens = useTokenCount(firstMessage || "");
-
   return (
-    <div>
-      {/* Action bar — sticky flush under the Build tabs header (the build
-          "topbar"). The scroll container's top padding determines the sticky
-          offset, and the container MUST carry that padding itself (not an outer
-          wrapper) so the negative top lands INSIDE the overflow clip rectangle.
-          Desktop scroll container: `padding: 32px 40px` → `top: -32`. Mobile:
-          `p-4` (16px) → `top: -16`. A plain `sticky top-0` would pin to the
-          INNER edge of the padding, leaving a gap that persists on scroll; the
-          negative offset overcomes it so the bar sticks at the scrollport's
-          true top, flush under the header. Side negative margins + matching
-          padding bleed the bar's fill out to the container's full width so it
-          reads as attached, not a floating inset box.
-          The bar uses `background-color` (Tailwind `bg-[...]`), which accepts
-          ONLY solid colors — not gradients. --page-bg is a gradient on the
-          themes that define it (mystic-night, dark/light-lava), so it CANNOT be
-          used here (it was previously, and silently rendered transparent on
-          those themes). The solid fallback is --bg — always opaque on every
-          theme, and the documented solid approximation over a gradient page
-          (mystic-night sets --input-bg: var(--bg) for the same reason).
-          Background + backdrop-filter are widened on the glass themes
-          (dark/light-lava) ONLY, via two vars they define:
-          - --bar-bg: translucent glass fill (overrides the solid --bg fallback).
-          - --bar-filter: full blur+saturate+brightness string. Undefined on
-            opaque themes → `backdrop-filter: none`, which establishes NO
-            compositing layer (so an opaque bg can't bleed scrolling content
-            through; unlike a bare `backdrop-filter: blur(0) saturate()`, which
-            still composites and bleeds).
-          On glass themes the bar's fill + blur live on a `.glass-bar::before`
-          pseudo-element (see styles.css) masked to FADE OUT at the bottom edge
-          over ~20px, so the frost dissolves into the scrolling content instead
-          of cutting off as a hard rectangle — the bar reads as part of the
-          header, not a floating panel. The pseudo is var-driven and inert on
-          opaque themes (no --bar-bg → transparent fill, no --bar-filter → no
-          blur), where the element's own solid --bg is used directly. */}
-      <div
-        className={cn(
-          "glass-bar sticky z-30 py-2",
-          isMobile ? "-mx-4 px-4" : "-mx-10 px-10",
-        )}
-        style={{ top: isMobile ? -16 : -32 }}
-      >
-      {/* Header row. `mb-3` is MOBILE-ONLY: on mobile the toolbar is a separate
-          row below this one, so the margin is the gap between Сохранить and the
-          toolbar (GAP A). On desktop the toolbar is inline in this same row, so a
-          bottom margin would just dangle an empty tail under the bar. */}
-      <div className={cn("flex items-center justify-between gap-2", isMobile && "mb-3")}>
-        <div className="font-body text-[22px] font-medium text-t1 min-w-0 truncate">
-          {name || t("unnamed")}
-        </div>
-        {isMobile ? (
-          <div className="flex shrink-0 items-center gap-2">
-            <span className="font-ui text-[11px] tabular-nums text-t3">
-              {permanentTokens.toLocaleString()}<span className="text-t4">+</span>{greetingTokens.toLocaleString()} {t("tokens_label")}
-            </span>
-            <button type="button"
-              className="min-h-9 cursor-pointer rounded-md border-0 bg-accent px-3 font-ui text-[calc(var(--ui-fs)-3px)] font-semibold text-on-accent transition-all disabled:opacity-40"
-              disabled={!canSave || !isDirty}
-              onClick={onSave}
-            >
-              {isSaving ? t("saving") : t("save")}
-            </button>
-          </div>
-        ) : (
-        <div className="flex items-center gap-2">
-          <span className="font-ui text-[11px] tabular-nums text-t3">
-            {permanentTokens.toLocaleString()}<span className="text-t4">+</span>{greetingTokens.toLocaleString()} {t("tokens_label")}
-          </span>
-          <CustomTooltip content={mdViewMode === "form" ? t("char_switch_to_md") : t("char_switch_to_form")}>
-          <button type="button"
-            className="flex cursor-pointer items-center justify-center rounded-md border border-border bg-s2 font-ui text-[calc(var(--ui-fs)-3px)] font-medium text-t2 transition-all hover:border-accent hover:text-accent-t disabled:opacity-40"
-            style={{ height: 28, padding: "0 10px" }}
-            onClick={() => setMdViewMode(mdViewMode === "form" ? "md" : "form")}
-            disabled={isSaving}
-            aria-pressed={mdViewMode === "md"}
-          >
-            {mdViewMode === "form" ? "✎ MD" : "📋 Form"}
-          </button>
-          </CustomTooltip>
-          <CustomTooltip content={t("char_export_json")}>
-          <button type="button"
-            className="flex cursor-pointer items-center justify-center rounded-md border border-border bg-s2 text-t2 transition-all hover:border-accent hover:text-accent-t"
-            style={{ height: 28, width: 28 }}
-            onClick={onExportJson}
-            disabled={isSaving}
-          >
-            {Ic.download()}
-          </button>
-          </CustomTooltip>
-          {hasAvatar && (
-            <CustomTooltip content={t("char_export_png")}>
-            <button type="button"
-              className="flex cursor-pointer items-center justify-center rounded-md border border-border bg-s2 text-t2 transition-all hover:border-accent hover:text-accent-t"
-              style={{ height: 28, width: 28 }}
-              onClick={onExportPng}
-              disabled={isSaving}
-            >
-              <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="2" width="12" height="12" rx="2"/><circle cx="8" cy="8" r="2"/><circle cx="5" cy="5" r="0.8" fill="currentColor"/></svg>
-            </button>
-            </CustomTooltip>
-          )}
-          <CustomTooltip content={t("char_duplicate")}>
-          <button type="button"
-            className="flex cursor-pointer items-center justify-center rounded-md border border-border bg-s2 text-t2 transition-all hover:border-accent hover:text-accent-t"
-            style={{ height: 28, width: 28 }}
-            onClick={onDuplicate}
-            disabled={isSaving}
-          >
-            {Ic.copy()}
-          </button>
-          </CustomTooltip>
-          <CustomTooltip content={t("char_delete")}>
-          <button type="button"
-            className="flex cursor-pointer items-center justify-center rounded-md border border-border bg-s2 text-t2 transition-all hover:border-danger hover:text-danger"
-            style={{ height: 28, width: 28 }}
-            onClick={onDelete}
-            disabled={isSaving}
-          >
-            {Ic.del()}
-          </button>
-          </CustomTooltip>
-          <CustomTooltip content={t("char_import_to_draft")}>
-          <button type="button"
-            className="flex cursor-pointer items-center justify-center rounded-md border border-border bg-s2 text-t2 transition-all hover:border-accent hover:text-accent-t"
-            style={{ height: 28, width: 28 }}
-            onClick={() => setImportModalOpen(true)}
-            disabled={isSaving}
-          >
-            {Ic.import()}
-          </button>
-          </CustomTooltip>
-          <CustomTooltip content={t("import_md_title")}>
-          <button type="button"
-            className="flex cursor-pointer items-center justify-center rounded-md border border-border bg-s2 text-t2 transition-all hover:border-accent hover:text-accent-t"
-            style={{ height: 28, width: 28 }}
-            onClick={() => setMdImportOpen(true)}
-            disabled={isSaving}
-          >
-            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><path d="M4 2h6l4 4v8a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z"/><path d="M9 2v4h4"/><path d="M6 10h4"/></svg>
-          </button>
-          </CustomTooltip>
-          <button type="button"
-            className="cursor-pointer rounded-md border-0 bg-accent font-ui text-[calc(var(--ui-fs)-2px)] font-semibold text-on-accent transition-all disabled:cursor-default disabled:opacity-40"
-            style={{ height: 28, padding: "0 14px" }}
-            disabled={!canSave || !isDirty}
-            onClick={onSave}
-          >
-            {isSaving ? t("saving") : t("save")}
-          </button>
-        </div>
-        )}
-      </div>
-      {/* Mobile toolbar row. No bottom margin on the row: the gap above (to
-          Сохранить) is the header row's `mb-3`; a bottom margin here would
-          dangle a tail between the bar and the form content below. */}
-      {isMobile && (
-        <div className="flex items-center gap-2 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-          <button type="button"
-            className="flex min-h-9 cursor-pointer items-center justify-center rounded-md border border-border bg-s2 px-3 font-ui text-[12px] font-medium text-t2 active:bg-s3"
-            style={{ whiteSpace: "nowrap" }}
-            onClick={() => setMdViewMode(mdViewMode === "form" ? "md" : "form")}
-            disabled={isSaving}
-            aria-pressed={mdViewMode === "md"}
-          >
-            {mdViewMode === "form" ? "✎ MD" : "📋 Form"}
-          </button>
-          <button type="button"
-            className="flex min-h-9 min-w-9 cursor-pointer items-center justify-center rounded-md border border-border bg-s2 text-t2 active:bg-s3 [&_svg]:h-5 [&_svg]:w-5"
-            onClick={() => setImportModalOpen(true)}
-            disabled={isSaving}
-          >
-            {Ic.import()}
-          </button>
-          <button type="button"
-            className="flex min-h-9 min-w-9 cursor-pointer items-center justify-center rounded-md border border-border bg-s2 text-t2 active:bg-s3"
-            onClick={() => setMdImportOpen(true)}
-            disabled={isSaving}
-          >
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><path d="M4 2h6l4 4v8a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z"/><path d="M9 2v4h4"/><path d="M6 10h4"/></svg>
-          </button>
-          <button type="button"
-            className="flex min-h-9 min-w-9 cursor-pointer items-center justify-center rounded-md border border-border bg-s2 text-t2 active:bg-s3 [&_svg]:h-5 [&_svg]:w-5"
-            onClick={onExportJson}
-            disabled={isSaving}
-          >
-            {Ic.download()}
-          </button>
-          {hasAvatar && (
-            <button type="button"
-              className="flex min-h-9 min-w-9 cursor-pointer items-center justify-center rounded-md border border-border bg-s2 text-t2 active:bg-s3 [&_svg]:h-5 [&_svg]:w-5"
-              onClick={onExportPng}
-              disabled={isSaving}
-            >
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="2" width="12" height="12" rx="2"/><circle cx="8" cy="8" r="2"/><circle cx="5" cy="5" r="0.8" fill="currentColor"/></svg>
-            </button>
-          )}
-          <button type="button"
-            className="flex min-h-9 min-w-9 cursor-pointer items-center justify-center rounded-md border border-border bg-s2 text-t2 active:bg-s3 [&_svg]:h-5 [&_svg]:w-5"
-            onClick={onDuplicate}
-            disabled={isSaving}
-          >
-            {Ic.copy()}
-          </button>
-          <button type="button"
-            className="flex min-h-9 min-w-9 cursor-pointer items-center justify-center rounded-md border border-border bg-s2 text-danger active:bg-danger/10 [&_svg]:h-5 [&_svg]:w-5"
-            onClick={onDelete}
-            disabled={isSaving}
-          >
-            {Ic.del()}
-          </button>
-        </div>
-      )}
-      </div>
+    <span className="font-ui text-[11px] tabular-nums text-t3">
+      {permanentTokens.toLocaleString()}<span className="text-t4">+</span>{greetingTokens.toLocaleString()} {t("tokens_label")}
+    </span>
+  );
+}
 
-      {importError && (
-        <div className="mb-3 rounded-md border border-border2 bg-s2 px-3 py-1.5 font-ui text-xs text-danger-text">
-          {importError}
-        </div>
-      )}
-
-      {/* Validation error for name */}
-      {errors.name && (
-        <div className="mb-3 rounded-md border border-border2 bg-s2 px-3 py-1.5 font-ui text-xs text-danger-text">
-          {errors.name.message}
-        </div>
-      )}
-
-      <div className="mb-7 font-ui text-[calc(var(--ui-fs)-1px)] leading-[1.55] text-t2">
-      </div>
-
-      {/* Avatar + Name + Tags */}
-      {avatarOrientation === "landscape" && displayAvatar ? (
-        /* Landscape: full-width avatar above name/tags */
-        <div className="mb-5 flex flex-col items-center gap-3">
-          <CustomTooltip content={t("change_avatar")}>
-          <div
-            className="group relative cursor-pointer overflow-hidden rounded-lg"
-            onClick={() => avaInputRef.current?.click()}
-          >
-            <input ref={avaInputRef} type="file" className="hidden" accept="image/*" onChange={(e) => handleAvatarPick(e.target.files)} />
-            <img src={displayAvatar} alt="" className="block rounded-lg" style={{ maxWidth: isMobile ? 400 : 480, maxHeight: 280, objectFit: "contain" }} />
-            <div className="absolute inset-0 flex items-center justify-center bg-black/50 text-white opacity-0 transition-opacity group-hover:opacity-100"><Ic.edit /></div>
-            <CustomTooltip content={t("edit_thumbnail")}>
-              <button type="button"
-                className="absolute bottom-1.5 right-1.5 flex h-7 w-7 items-center justify-center rounded-md border border-border bg-surface/90 text-t2 shadow-sm backdrop-blur transition-colors hover:text-accent-t"
-                onClick={(e) => { e.stopPropagation(); handleOpenThumbnailCrop(); }}
-              ><Ic.crop /></button>
-            </CustomTooltip>
-          </div>
-          </CustomTooltip>
-          <div className="w-full flex flex-col gap-3">
-            <div>
-              <label className={lblCls + " mb-1.5 block"}>{t("char_name_label")}</label>
-              <input type="text" className={inputCls + mInput} style={inputPad} disabled={isSaving} {...register("name")} />
-            </div>
-            <TagsField form={form} isSaving={isSaving} />
-            <BoundResourcesField entityKind="character" entityId={characterId} isMobile={isMobile} />
-          </div>
-        </div>
-      ) : (
-      /* Portrait / no avatar: side-by-side layout */
-      <div className={cn("mb-5 gap-5", isMobile ? "flex flex-col items-center" : "flex")}>
-        <CustomTooltip content={t("change_avatar")}>
-        <div
-          className={cn(
-            "group relative shrink-0 cursor-pointer rounded-lg border border-dashed border-border2 bg-s2 text-t3 transition-all hover:border-accent hover:text-accent-t",
-            isMobile ? "w-full max-w-[280px]" : "max-w-[180px]"
-          )}
-          style={isMobile ? { aspectRatio: "auto" } : { maxWidth: 180, maxHeight: 250 }}
-          onClick={() => avaInputRef.current?.click()}
-        >
-          <input ref={avaInputRef} type="file" className="hidden" accept="image/*" onChange={(e) => handleAvatarPick(e.target.files)} />
-          {displayAvatar ? (
-            <>
-              <img src={displayAvatar} alt="" className={cn("block", isMobile ? "w-full" : "max-w-[180px]")} style={isMobile ? undefined : { maxHeight: 250, objectFit: "contain" }} />
-              <div className="absolute inset-0 flex items-center justify-center bg-black/50 text-white opacity-0 transition-opacity group-hover:opacity-100"><Ic.edit /></div>
-              <CustomTooltip content={t("edit_thumbnail")}>
-                <button type="button"
-                  className="absolute bottom-1.5 right-1.5 flex h-7 w-7 items-center justify-center rounded-md border border-border bg-surface/90 text-t2 shadow-sm backdrop-blur transition-colors hover:text-accent-t"
-                  onClick={(e) => { e.stopPropagation(); handleOpenThumbnailCrop(); }}
-                ><Ic.crop /></button>
-              </CustomTooltip>
-            </>
-          ) : (
-            <div className={cn("flex flex-col items-center justify-center gap-1.5 text-t3 transition-colors group-hover:text-accent-t", isMobile ? "min-h-[120px] w-full" : "h-20 w-28")}>
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
-              <span className="font-ui text-[10px] tracking-wide">{t("upload_avatar")}</span>
-            </div>
-          )}
-        </div>
-        </CustomTooltip>
-        <div className={cn("flex min-w-0 flex-1 flex-col gap-3", isMobile && "w-full")}>
-          <div>
-            <label className={lblCls + " mb-1.5 block"}>{t("char_name_label")}</label>
-            <input type="text" className={inputCls + mInput} style={inputPad} disabled={isSaving} {...register("name")} />
-          </div>
-          <TagsField form={form} isSaving={isSaving} />
-          <BoundResourcesField entityKind="character" entityId={characterId} isMobile={isMobile} />
-        </div>
-      </div>
-      )}
-
-      {/* VTF Phase 3 — version switcher. Mounted once after the avatar/name/tags
-          block so it is shared across Form/MD modes and both avatar orientations.
-          On activate the draft is reset from the reloaded character snapshot. */}
-      <VersionSwitcher
-        characterId={characterId}
-        isDirty={isDirty}
-        disabled={isSaving}
-        onAfterActivate={onReset}
-      />
-
-      {/* Avatar-in-prompt — describe via vision + toggle + description.
-          Reads from the snapshot character (out-of-band from BuildCharacterDraft
-          — see avatar-description-ui-gap.md). Mounted once, shared across
-          Form/MD modes and both avatar orientations, like VersionSwitcher. */}
-      <div className="mb-5">
-        <AvatarDescriptionField
-          kind="character"
-          includeAvatarInPrompt={includeAvatarInPrompt}
-          avatarDescription={avatarDescription}
-          hasAvatar={hasAvatar}
-          onPatch={handleAvatarPatch}
-          onDescribe={handleAvatarDescribe}
-          disabled={isSaving}
-        />
-      </div>
-
-      {/* Gallery Accordion */}
-      <GalleryAccordion characterId={characterId} />
-
-      {mdViewMode === "md" ? (
-        <VibeMdView form={form} characterId={characterId} isSaving={isSaving} />
-      ) : (
-      <>
+/** The classic (form-mode) field surface. Mounted ONLY when
+ *  `mdViewMode === "form"`, so its `useWatch` subscriptions are inert in MD
+ *  mode — an MD-body flush cannot invalidate these fields because they are
+ *  unmounted. All field values are read via isolated `useWatch` here, so
+ *  editing one classic field re-renders only this component (and the field's
+ *  own registered input), not the whole `CharacterForm`. The `altGreetIdx`
+ *  local state lives here too — it is irrelevant to MD mode. */
+function ClassicCharacterFields({ form, isSaving }: { form: UseFormReturn<BuildCharacterDraft>; isSaving: boolean }) {
+  const { t, tDynamic } = useT();
+  const isMobile = useIsMobile();
+  const mInput = isMobile ? " text-base" : "";
+  const { register, setValue } = form;
+  const [altGreetIdx, setAltGreetIdx] = useState(0);
+  const [description, firstMessage, mesExample, mesExampleMode, mesExampleDepth, scenario, personalitySummary, altGreetingsRaw] = useWatch({
+    control: form.control,
+    name: ["description", "firstMessage", "mesExample", "mesExampleMode", "mesExampleDepth", "scenario", "personalitySummary", "alternateGreetings"],
+  });
+  const alternateGreetings = altGreetingsRaw || [];
+  return (
+    <>
       {/* Description */}
       <div className="mb-5">
         <label className={lblCls + " mb-1.5 block"}>{t("char_desc_label")}</label>
@@ -776,7 +328,518 @@ export function CharacterForm({
         placeholder={t("system_prompt_override_placeholder")}
         isSaving={isSaving}
       />
-      </>
+    </>
+  );
+}
+
+export function CharacterForm({
+  form, avatarPreview, setAvatarPreview, isDirty, isSaving, avatarUrl, onSave, onReset, onAvatarUpload,
+  onAfterImport,
+  onExportJson, onExportPng, onExportVtf, onDuplicate, onDelete, hasAvatar, characterId
+}: CharacterFormProps) {
+  const { t, tDynamic } = useT();
+  const { register, formState: { errors } } = form;
+  const control = form.control;
+
+  const [importError, setImportError] = useState("");
+  const [importModalOpen, setImportModalOpen] = useState(false);
+  const [mdImportOpen, setMdImportOpen] = useState(false);
+  const avaInputRef = useRef<HTMLInputElement>(null);
+  const [avatarOrientation, setAvatarOrientation] = useState<"portrait" | "landscape" | null>(null);
+  const [pendingAvatar, setPendingAvatar] = useState<{ file: File; url: string } | null>(null);
+  // Source URL for the "adjust thumbnail" flow: re-crop the square thumbnail
+  // from the existing avatar (full endpoint) without re-uploading a file.
+  // Null when the thumbnail editor is closed.
+  const [thumbnailEditSrc, setThumbnailEditSrc] = useState<string | null>(null);
+
+  // VTF-14: Form↔MD authoring-surface toggle. State lives in the Zustand store
+  // (not local) so it survives Build tab switches — CharacterForm unmounts when
+  // the user leaves the "character" tab; the chosen surface must persist.
+  const mdViewMode = useCharacterStore((s) => s.mdViewMode);
+  const setMdViewMode = useCharacterStore((s) => s.setMdViewMode);
+
+  // Avatar-in-prompt fields live OUT-OF-BAND on the snapshot character (they
+  // are intentionally excluded from BuildCharacterDraft — see character-schema.ts
+  // + vibe_tavern_plan/reports/avatar-description-ui-gap.md). Read from the
+  // active character, commit via direct PATCH (NOT the form's setValue/submit).
+  const activeCharacter = useActiveCharacter();
+  const includeAvatarInPrompt = activeCharacter?.includeAvatarInPrompt ?? false;
+  const avatarDescription = activeCharacter?.avatarDescription ?? null;
+  const handleAvatarPatch = (patch: AvatarDescriptionPatch) => {
+    void saveCharacterAction({ characterId, patch });
+  };
+  // Vision describe: endpoint persists avatarDescription out-of-band and
+  // returns { description }; mirror it into the store via the sanctioned
+  // ingestSnapshot (character key present → replaces). No redundant PATCH.
+  const handleAvatarDescribe = async (signal: AbortSignal): Promise<void> => {
+    const { description } = await describeCharacterAvatar(characterId, signal);
+    const cur = useSnapshotStore.getState().character;
+    if (cur) useSnapshotStore.getState().ingestSnapshot({ character: { ...cur, avatarDescription: description } });
+  };
+
+
+  const isMobile = useIsMobile();
+  const mInput = isMobile ? " text-base" : "";
+
+  function handleAvatarPick(files: FileList | null) {
+    if (!files || files.length === 0) return;
+    const file = files[0];
+    setPendingAvatar({ file, url: URL.createObjectURL(file) });
+  }
+
+  function handleAvatarCropConfirm(result: AvatarCropResult) {
+    const url = pendingAvatar!.url;
+    setAvatarPreview(url);
+    const img = new Image();
+    img.onload = () => {
+      setAvatarOrientation(img.naturalWidth > img.naturalHeight ? "landscape" : "portrait");
+    };
+    img.src = url;
+    onAvatarUpload(result.croppedFile, pendingAvatar!.file);
+    setPendingAvatar(null);
+  }
+
+  function handleAvatarCropCancel() {
+    if (pendingAvatar?.url) URL.revokeObjectURL(pendingAvatar.url);
+    setPendingAvatar(null);
+  }
+
+  // "Adjust thumbnail": open the cropper on the existing avatar (full-size
+  // endpoint) so the user can re-frame the 512×512 thumbnail. The original is
+  // NOT re-uploaded — uploadCharacterAvatar(id, crop) with no `full` arg leaves
+  // avatar-full.{ext} untouched, so large display slots (editor, floating
+  // avatar panel) keep the uncropped source.
+  function handleOpenThumbnailCrop() {
+    if (!activeCharacter) return;
+    const src = resolveEntityAvatarUrl({
+      kind: "characters",
+      id: activeCharacter.id,
+      avatarExt: activeCharacter.avatarExt,
+      avatarAssetId: activeCharacter.avatarAssetId,
+      avatarFullExt: activeCharacter.avatarFullExt,
+      avatarFullAssetId: activeCharacter.avatarFullAssetId,
+      updatedAt: activeCharacter.updatedAt,
+      preferFull: true,
+    });
+    if (src) setThumbnailEditSrc(src);
+  }
+
+  async function handleThumbnailCropConfirm(result: AvatarCropResult) {
+    // Capture the cropper source before closing it. For a SINGLE-IMAGE
+    // character (avatarExt set, no avatarFullExt), this source is the only
+    // copy of the uncropped original — `/avatar/full` falls back to serving
+    // `avatar.{ext}`. Writing the crop without preserving it would make the
+    // editor + floating-avatar slots (both preferFull) snap to the crop.
+    // promoteSourceAsFull returns the source as a File iff no separate full
+    // exists, so passing it as the `full` arg promotes the original to
+    // avatar-full.{ext} in the same upload. When a separate full already
+    // exists it returns undefined and the upload stays crop-only.
+    const sourceUrl = thumbnailEditSrc;
+    setThumbnailEditSrc(null);
+    const fullFile = await promoteSourceAsFull({
+      sourceUrl,
+      hasSeparateFull: !!activeCharacter?.avatarFullExt,
+    });
+    // Don't set a local avatarPreview: the editor's avatar slot renders the
+    // full-size image (unchanged by a thumbnail crop), so a cropped preview
+    // would visually snap back to the full after the snapshot refresh. The
+    // new thumbnail surfaces in small slots (sidebar/topbar) via bootstrap.
+    void onAvatarUpload(result.croppedFile, fullFile);
+  }
+
+  function handleImportFiles(files: File[]): void {
+    if (files.length === 0) return;
+    const file = files[0];
+    // A PNG card carries its avatar in the image body — route it through the
+    // same cropper flow as a manual avatar pick (handleAvatarPick) so it
+    // actually uploads via onAvatarUpload(cropped, original). JSON/.md cards
+    // have no image, so only PNG triggers this. Previously the merge-import
+    // silently dropped the avatar entirely (pre-existing gap, not VTF-related).
+    const isPng = file.type === "image/png" || file.name.toLowerCase().endsWith(".png");
+    setImportError("");
+    (async () => {
+      try {
+        const raw = await readCardRaw(file);
+        const merged = parseCardToDraft(raw);
+        if (Object.keys(merged).length === 0) throw new Error(t("import_error_no_data"));
+        form.reset({ ...form.getValues(), ...merged } as BuildCharacterDraft);
+        setImportModalOpen(false);
+        // Autosave + create a chat after import
+        onAfterImport?.();
+        if (isPng) setPendingAvatar({ file, url: URL.createObjectURL(file) });
+      } catch (err) {
+        setImportError(err instanceof Error ? err.message : t("import_failed"));
+      }
+    })();
+  }
+
+  function handleMdImportApply(fields: Partial<MdImportResult>) {
+    const merged: Partial<BuildCharacterDraft> = {};
+    if (fields.name) merged.name = fields.name;
+    if (fields.tagline) merged.description = fields.tagline;
+    if (fields.description) merged.description = (merged.description ? merged.description + "\n\n" : "") + fields.description;
+    if (fields.personality) merged.personalitySummary = fields.personality;
+    if (fields.scenario) merged.scenario = fields.scenario;
+    if (fields.firstMessage) merged.firstMessage = fields.firstMessage;
+    if (fields.alternateGreetings?.length) merged.alternateGreetings = fields.alternateGreetings;
+    if (fields.exampleMessages?.length) merged.mesExample = fields.exampleMessages.join("\n<START>\n");
+    if (fields.creatorNotes) merged.creatorNotes = fields.creatorNotes;
+    if (Object.keys(merged).length > 0) {
+      form.reset({ ...form.getValues(), ...merged } as BuildCharacterDraft);
+      onAfterImport?.();
+    }
+  }
+
+  const displayAvatar = avatarPreview || avatarUrl;
+
+  // Detect orientation for existing avatar on mount
+  useEffect(() => {
+    if (!displayAvatar || avatarOrientation) return;
+    const img = new Image();
+    img.onload = () => {
+      setAvatarOrientation(img.naturalWidth > img.naturalHeight ? "landscape" : "portrait");
+    };
+    img.src = displayAvatar;
+  }, [displayAvatar, avatarOrientation]);
+
+  return (
+    <div>
+      {/* Action bar — sticky flush under the Build tabs header (the build
+          "topbar"). The scroll container's top padding determines the sticky
+          offset, and the container MUST carry that padding itself (not an outer
+          wrapper) so the negative top lands INSIDE the overflow clip rectangle.
+          Desktop scroll container: `padding: 32px 40px` → `top: -32`. Mobile:
+          `p-4` (16px) → `top: -16`. A plain `sticky top-0` would pin to the
+          INNER edge of the padding, leaving a gap that persists on scroll; the
+          negative offset overcomes it so the bar sticks at the scrollport's
+          true top, flush under the header. Side negative margins + matching
+          padding bleed the bar's fill out to the container's full width so it
+          reads as attached, not a floating inset box.
+          The bar uses `background-color` (Tailwind `bg-[...]`), which accepts
+          ONLY solid colors — not gradients. --page-bg is a gradient on the
+          themes that define it (mystic-night, dark/light-lava), so it CANNOT be
+          used here (it was previously, and silently rendered transparent on
+          those themes). The solid fallback is --bg — always opaque on every
+          theme, and the documented solid approximation over a gradient page
+          (mystic-night sets --input-bg: var(--bg) for the same reason).
+          Background + backdrop-filter are widened on the glass themes
+          (dark/light-lava) ONLY, via two vars they define:
+          - --bar-bg: translucent glass fill (overrides the solid --bg fallback).
+          - --bar-filter: full blur+saturate+brightness string. Undefined on
+            opaque themes → `backdrop-filter: none`, which establishes NO
+            compositing layer (so an opaque bg can't bleed scrolling content
+            through; unlike a bare `backdrop-filter: blur(0) saturate()`, which
+            still composites and bleeds).
+          On glass themes the bar's fill + blur live on a `.glass-bar::before`
+          pseudo-element (see styles.css) masked to FADE OUT at the bottom edge
+          over ~20px, so the frost dissolves into the scrolling content instead
+          of cutting off as a hard rectangle — the bar reads as part of the
+          header, not a floating panel. The pseudo is var-driven and inert on
+          opaque themes (no --bar-bg → transparent fill, no --bar-filter → no
+          blur), where the element's own solid --bg is used directly. */}
+      <div
+        className={cn(
+          "glass-bar sticky z-30 py-2",
+          isMobile ? "-mx-4 px-4" : "-mx-10 px-10",
+        )}
+        style={{ top: isMobile ? -16 : -32 }}
+      >
+      {/* Header row. `mb-3` is MOBILE-ONLY: on mobile the toolbar is a separate
+          row below this one, so the margin is the gap between Сохранить and the
+          toolbar (GAP A). On desktop the toolbar is inline in this same row, so a
+          bottom margin would just dangle an empty tail under the bar. */}
+      <div className={cn("flex items-center justify-between gap-2", isMobile && "mb-3")}>
+        <CharacterTitle control={control} />
+        {isMobile ? (
+          <div className="flex shrink-0 items-center gap-2">
+            <TokenSummary control={control} />
+            <SaveButton control={control} isSaving={isSaving} isDirty={isDirty} onSave={onSave}
+              className="min-h-9 cursor-pointer rounded-md border-0 bg-accent px-3 font-ui text-[calc(var(--ui-fs)-3px)] font-semibold text-on-accent transition-all disabled:opacity-40"
+            />
+          </div>
+        ) : (
+        <div className="flex items-center gap-2">
+          <TokenSummary control={control} />
+          <CustomTooltip content={mdViewMode === "form" ? t("char_switch_to_md") : t("char_switch_to_form")}>
+          <button type="button"
+            className="flex cursor-pointer items-center justify-center rounded-md border border-border bg-s2 font-ui text-[calc(var(--ui-fs)-3px)] font-medium text-t2 transition-all hover:border-accent hover:text-accent-t disabled:opacity-40"
+            style={{ height: 28, padding: "0 10px" }}
+            onClick={() => setMdViewMode(mdViewMode === "form" ? "md" : "form")}
+            disabled={isSaving}
+            aria-pressed={mdViewMode === "md"}
+          >
+            {mdViewMode === "form" ? "✎ MD" : "📋 Form"}
+          </button>
+          </CustomTooltip>
+          <CustomTooltip content={t("char_export_json")}>
+          <button type="button"
+            className="flex cursor-pointer items-center justify-center rounded-md border border-border bg-s2 text-t2 transition-all hover:border-accent hover:text-accent-t"
+            style={{ height: 28, width: 28 }}
+            onClick={onExportJson}
+            disabled={isSaving}
+          >
+            {Ic.download()}
+          </button>
+          </CustomTooltip>
+          <CustomTooltip content={t("char_export_vtf")}>
+          <button type="button"
+            className="flex cursor-pointer items-center justify-center rounded-md border border-border bg-s2 text-t2 transition-all hover:border-accent hover:text-accent-t"
+            style={{ height: 28, width: 28 }}
+            onClick={onExportVtf}
+            disabled={isSaving}
+          >
+            <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 2h7l3 3v9a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z"/><path d="M9 2v4h4"/><path d="M5 9h6M5 11.5h6"/></svg>
+          </button>
+          </CustomTooltip>
+          {hasAvatar && (
+            <CustomTooltip content={t("char_export_png")}>
+            <button type="button"
+              className="flex cursor-pointer items-center justify-center rounded-md border border-border bg-s2 text-t2 transition-all hover:border-accent hover:text-accent-t"
+              style={{ height: 28, width: 28 }}
+              onClick={onExportPng}
+              disabled={isSaving}
+            >
+              <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="2" width="12" height="12" rx="2"/><circle cx="8" cy="8" r="2"/><circle cx="5" cy="5" r="0.8" fill="currentColor"/></svg>
+            </button>
+            </CustomTooltip>
+          )}
+          <CustomTooltip content={t("char_duplicate")}>
+          <button type="button"
+            className="flex cursor-pointer items-center justify-center rounded-md border border-border bg-s2 text-t2 transition-all hover:border-accent hover:text-accent-t"
+            style={{ height: 28, width: 28 }}
+            onClick={onDuplicate}
+            disabled={isSaving}
+          >
+            {Ic.copy()}
+          </button>
+          </CustomTooltip>
+          <CustomTooltip content={t("char_delete")}>
+          <button type="button"
+            className="flex cursor-pointer items-center justify-center rounded-md border border-border bg-s2 text-t2 transition-all hover:border-danger hover:text-danger"
+            style={{ height: 28, width: 28 }}
+            onClick={onDelete}
+            disabled={isSaving}
+          >
+            {Ic.del()}
+          </button>
+          </CustomTooltip>
+          <CustomTooltip content={t("char_import_to_draft")}>
+          <button type="button"
+            className="flex cursor-pointer items-center justify-center rounded-md border border-border bg-s2 text-t2 transition-all hover:border-accent hover:text-accent-t"
+            style={{ height: 28, width: 28 }}
+            onClick={() => setImportModalOpen(true)}
+            disabled={isSaving}
+          >
+            {Ic.import()}
+          </button>
+          </CustomTooltip>
+          <CustomTooltip content={t("import_md_title")}>
+          <button type="button"
+            className="flex cursor-pointer items-center justify-center rounded-md border border-border bg-s2 text-t2 transition-all hover:border-accent hover:text-accent-t"
+            style={{ height: 28, width: 28 }}
+            onClick={() => setMdImportOpen(true)}
+            disabled={isSaving}
+          >
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><path d="M4 2h6l4 4v8a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z"/><path d="M9 2v4h4"/><path d="M6 10h4"/></svg>
+          </button>
+          </CustomTooltip>
+          <SaveButton control={control} isSaving={isSaving} isDirty={isDirty} onSave={onSave}
+            className="cursor-pointer rounded-md border-0 bg-accent font-ui text-[calc(var(--ui-fs)-2px)] font-semibold text-on-accent transition-all disabled:cursor-default disabled:opacity-40"
+            style={{ height: 28, padding: "0 14px" }}
+          />
+        </div>
+        )}
+      </div>
+      {/* Mobile toolbar row. No bottom margin on the row: the gap above (to
+          Сохранить) is the header row's `mb-3`; a bottom margin here would
+          dangle a tail between the bar and the form content below. */}
+      {isMobile && (
+        <div className="flex items-center gap-2 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <button type="button"
+            className="flex min-h-9 cursor-pointer items-center justify-center rounded-md border border-border bg-s2 px-3 font-ui text-[12px] font-medium text-t2 active:bg-s3"
+            style={{ whiteSpace: "nowrap" }}
+            onClick={() => setMdViewMode(mdViewMode === "form" ? "md" : "form")}
+            disabled={isSaving}
+            aria-pressed={mdViewMode === "md"}
+          >
+            {mdViewMode === "form" ? "✎ MD" : "📋 Form"}
+          </button>
+          <button type="button"
+            className="flex min-h-9 min-w-9 cursor-pointer items-center justify-center rounded-md border border-border bg-s2 text-t2 active:bg-s3 [&_svg]:h-5 [&_svg]:w-5"
+            onClick={() => setImportModalOpen(true)}
+            disabled={isSaving}
+          >
+            {Ic.import()}
+          </button>
+          <button type="button"
+            className="flex min-h-9 min-w-9 cursor-pointer items-center justify-center rounded-md border border-border bg-s2 text-t2 active:bg-s3"
+            onClick={() => setMdImportOpen(true)}
+            disabled={isSaving}
+          >
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><path d="M4 2h6l4 4v8a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z"/><path d="M9 2v4h4"/><path d="M6 10h4"/></svg>
+          </button>
+          <button type="button"
+            className="flex min-h-9 min-w-9 cursor-pointer items-center justify-center rounded-md border border-border bg-s2 text-t2 active:bg-s3 [&_svg]:h-5 [&_svg]:w-5"
+            onClick={onExportJson}
+            disabled={isSaving}
+          >
+            {Ic.download()}
+          </button>
+          <button type="button"
+            className="flex min-h-9 min-w-9 cursor-pointer items-center justify-center rounded-md border border-border bg-s2 text-t2 active:bg-s3 [&_svg]:h-5 [&_svg]:w-5"
+            onClick={onExportVtf}
+            disabled={isSaving}
+          >
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><path d="M4 2h6l4 4v8a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z"/><path d="M9 2v4h4"/><path d="M6 10h4"/></svg>
+          </button>
+          {hasAvatar && (
+            <button type="button"
+              className="flex min-h-9 min-w-9 cursor-pointer items-center justify-center rounded-md border border-border bg-s2 text-t2 active:bg-s3 [&_svg]:h-5 [&_svg]:w-5"
+              onClick={onExportPng}
+              disabled={isSaving}
+            >
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="2" width="12" height="12" rx="2"/><circle cx="8" cy="8" r="2"/><circle cx="5" cy="5" r="0.8" fill="currentColor"/></svg>
+            </button>
+          )}
+          <button type="button"
+            className="flex min-h-9 min-w-9 cursor-pointer items-center justify-center rounded-md border border-border bg-s2 text-t2 active:bg-s3 [&_svg]:h-5 [&_svg]:w-5"
+            onClick={onDuplicate}
+            disabled={isSaving}
+          >
+            {Ic.copy()}
+          </button>
+          <button type="button"
+            className="flex min-h-9 min-w-9 cursor-pointer items-center justify-center rounded-md border border-border bg-s2 text-danger active:bg-danger/10 [&_svg]:h-5 [&_svg]:w-5"
+            onClick={onDelete}
+            disabled={isSaving}
+          >
+            {Ic.del()}
+          </button>
+        </div>
+      )}
+      </div>
+
+      {importError && (
+        <div className="mb-3 rounded-md border border-border2 bg-s2 px-3 py-1.5 font-ui text-xs text-danger-text">
+          {importError}
+        </div>
+      )}
+
+      {/* Validation error for name */}
+      {errors.name && (
+        <div className="mb-3 rounded-md border border-border2 bg-s2 px-3 py-1.5 font-ui text-xs text-danger-text">
+          {errors.name.message}
+        </div>
+      )}
+
+      <div className="mb-7 font-ui text-[calc(var(--ui-fs)-1px)] leading-[1.55] text-t2">
+      </div>
+
+      {/* Avatar + Name + Tags */}
+      {avatarOrientation === "landscape" && displayAvatar ? (
+        /* Landscape: full-width avatar above name/tags */
+        <div className="mb-5 flex flex-col items-center gap-3">
+          <CustomTooltip content={t("change_avatar")}>
+          <div
+            className="group relative cursor-pointer overflow-hidden rounded-lg"
+            onClick={() => avaInputRef.current?.click()}
+          >
+            <input ref={avaInputRef} type="file" className="hidden" accept="image/*" onChange={(e) => handleAvatarPick(e.target.files)} />
+            <img src={displayAvatar} alt="" className="block rounded-lg" style={{ maxWidth: isMobile ? 400 : 480, maxHeight: 280, objectFit: "contain" }} />
+            <div className="absolute inset-0 flex items-center justify-center bg-black/50 text-white opacity-0 transition-opacity group-hover:opacity-100"><Ic.edit /></div>
+            <CustomTooltip content={t("edit_thumbnail")}>
+              <button type="button"
+                className="absolute bottom-1.5 right-1.5 flex h-7 w-7 items-center justify-center rounded-md border border-border bg-surface/90 text-t2 shadow-sm backdrop-blur transition-colors hover:text-accent-t"
+                onClick={(e) => { e.stopPropagation(); handleOpenThumbnailCrop(); }}
+              ><Ic.crop /></button>
+            </CustomTooltip>
+          </div>
+          </CustomTooltip>
+          <div className="w-full flex flex-col gap-3">
+            <div>
+              <label className={lblCls + " mb-1.5 block"}>{t("char_name_label")}</label>
+              <input type="text" className={inputCls + mInput} style={inputPad} disabled={isSaving} {...register("name")} />
+            </div>
+            <TagsField form={form} isSaving={isSaving} />
+            <BoundResourcesField entityKind="character" entityId={characterId} isMobile={isMobile} />
+          </div>
+        </div>
+      ) : (
+      /* Portrait / no avatar: side-by-side layout */
+      <div className={cn("mb-5 gap-5", isMobile ? "flex flex-col items-center" : "flex")}>
+        <CustomTooltip content={t("change_avatar")}>
+        <div
+          className={cn(
+            "group relative shrink-0 cursor-pointer rounded-lg border border-dashed border-border2 bg-s2 text-t3 transition-all hover:border-accent hover:text-accent-t",
+            isMobile ? "w-full max-w-[280px]" : "max-w-[180px] self-start"
+          )}
+          style={isMobile ? { aspectRatio: "auto" } : { maxWidth: 180, maxHeight: 250 }}
+          onClick={() => avaInputRef.current?.click()}
+        >
+          <input ref={avaInputRef} type="file" className="hidden" accept="image/*" onChange={(e) => handleAvatarPick(e.target.files)} />
+          {displayAvatar ? (
+            <>
+              <img src={displayAvatar} alt="" className={cn("block", isMobile ? "w-full" : "max-w-[180px]")} style={isMobile ? undefined : { maxHeight: 250, objectFit: "contain" }} />
+              <div className="absolute inset-0 flex items-center justify-center bg-black/50 text-white opacity-0 transition-opacity group-hover:opacity-100"><Ic.edit /></div>
+              <CustomTooltip content={t("edit_thumbnail")}>
+                <button type="button"
+                  className="absolute bottom-1.5 right-1.5 flex h-7 w-7 items-center justify-center rounded-md border border-border bg-surface/90 text-t2 shadow-sm backdrop-blur transition-colors hover:text-accent-t"
+                  onClick={(e) => { e.stopPropagation(); handleOpenThumbnailCrop(); }}
+                ><Ic.crop /></button>
+              </CustomTooltip>
+            </>
+          ) : (
+            <div className={cn("flex flex-col items-center justify-center gap-1.5 text-t3 transition-colors group-hover:text-accent-t", isMobile ? "min-h-[120px] w-full" : "h-20 w-28")}>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+              <span className="font-ui text-[10px] tracking-wide">{t("upload_avatar")}</span>
+            </div>
+          )}
+        </div>
+        </CustomTooltip>
+        <div className={cn("flex min-w-0 flex-1 flex-col gap-3", isMobile && "w-full")}>
+          <div>
+            <label className={lblCls + " mb-1.5 block"}>{t("char_name_label")}</label>
+            <input type="text" className={inputCls + mInput} style={inputPad} disabled={isSaving} {...register("name")} />
+          </div>
+          <TagsField form={form} isSaving={isSaving} />
+          <BoundResourcesField entityKind="character" entityId={characterId} isMobile={isMobile} />
+        </div>
+      </div>
+      )}
+
+      {/* VTF Phase 3 — version switcher. Mounted once after the avatar/name/tags
+          block so it is shared across Form/MD modes and both avatar orientations.
+          On activate the draft is reset from the reloaded character snapshot. */}
+      <VersionSwitcher
+        characterId={characterId}
+        isDirty={isDirty}
+        disabled={isSaving}
+        onAfterActivate={onReset}
+      />
+
+      {/* Avatar-in-prompt — describe via vision + toggle + description.
+          Reads from the snapshot character (out-of-band from BuildCharacterDraft
+          — see avatar-description-ui-gap.md). Mounted once, shared across
+          Form/MD modes and both avatar orientations, like VersionSwitcher. */}
+      <div className="mb-5">
+        <AvatarDescriptionField
+          kind="character"
+          includeAvatarInPrompt={includeAvatarInPrompt}
+          avatarDescription={avatarDescription}
+          hasAvatar={hasAvatar}
+          onPatch={handleAvatarPatch}
+          onDescribe={handleAvatarDescribe}
+          disabled={isSaving}
+        />
+      </div>
+
+      {/* Gallery Accordion */}
+      <GalleryAccordion characterId={characterId} />
+
+      {mdViewMode === "md" ? (
+        <VibeMdView form={form} characterId={characterId} isSaving={isSaving} />
+      ) : (
+        <ClassicCharacterFields form={form} isSaving={isSaving} />
       )}
 
       {/* Footer */}

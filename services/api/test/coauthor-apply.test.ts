@@ -168,11 +168,114 @@ describe("Co-Author Apply RPC (CA-7)", () => {
 		expect(res.corrections).toEqual([]);
 	});
 
+	it("flags macros outside the safe subset on apply, preserving prose (B5)", async () => {
+		// The model emitted two safe macros ({{user}}, {{char}}) alongside two
+		// unsafe ones — an invented name and {{persona}} (valid but excluded from
+		// the reusable subset). Apply must NOT strip anything; it surfaces each
+		// unsafe macro as a correction so the user can decide.
+		const proposedMd = serializeProfileMd({
+			profile: {
+				name: "MacroProbe",
+				tags: [],
+				creator: null,
+				characterVersion: null,
+				creatorNotes: null,
+				mesExampleMode: "depth",
+				mesExampleDepth: 4,
+				description: "Meets {{user}} and {{char}}; wields {{bogus_macro}} and {{persona}}.",
+				scenario: null,
+				mesExample: null,
+			},
+		});
+
+		const res = await env.runtime.applyCoauthorDraft(env.coauthorChatId, { profileMd: proposedMd });
+
+		// Prose preserved verbatim — nothing stripped; the user decides.
+		expect(res.character!.description).toBe(
+			"Meets {{user}} and {{char}}; wields {{bogus_macro}} and {{persona}}.",
+		);
+		// Exactly the two unsafe macros are flagged (user/char are in the safe set).
+		const warned = res.corrections.filter((c) => c.action === "warned");
+		expect(warned).toHaveLength(2);
+		expect(warned.every((c) => c.field === "description")).toBe(true);
+		const reasons = warned.map((c) => c.reason).sort();
+		expect(reasons[0]).toContain("{{bogus_macro}}");
+		expect(reasons[1]).toContain("{{persona}}");
+	});
+
 	it("throws NotFound for an unknown chat", async () => {
 		await expect(
 			env.runtime.applyCoauthorDraft("nonexistent-chat" as ChatId, {
 				firstMessage: "x",
 			}),
 		).rejects.toThrow(/Chat.*was not found/);
+	});
+});
+
+describe("Co-Author Apply RPC — lore bundle (CTX-L2)", () => {
+	let env: Awaited<ReturnType<typeof createTestRuntime>>;
+	afterAll(async () => { if (env) await env.cleanup(); });
+
+	it("applies a lore bundle: persists lorebooks + entries with preallocated ids, returns them", async () => {
+		env = await createTestRuntime();
+		// Before Apply: no lorebooks exist for this character.
+		expect(await env.stores.lorebooks.listLorebooksByScope("character", env.characterId)).toEqual([]);
+
+		const res = await env.runtime.applyCoauthorDraft(env.coauthorChatId, {
+			loreBundle: {
+				lorebooks: [
+					{ id: "lorebook_draft1", name: "World Lore", description: "d", scopeType: "character", enabled: true },
+				],
+				entries: [
+					{ id: "lore_entry_draft1", lorebookId: "lorebook_draft1", title: "Castle", content: "Anvil keep.", keys: ["anvil"], secondaryKeys: [], constant: false, position: "before_char", depth: 4, enabled: true },
+				],
+			},
+		});
+
+		// The response surfaces the persisted ids.
+		expect(res.lore).toEqual({ lorebookIds: ["lorebook_draft1"], entryIds: ["lore_entry_draft1"] });
+		// The lorebook is now present and character-scoped.
+		const lb = await env.stores.lorebooks.getLorebook("lorebook_draft1");
+		expect(lb).not.toBeNull();
+		expect(lb!.name).toBe("World Lore");
+		expect(lb!.characterId).toBe(env.characterId);
+		const entry = await env.stores.lorebooks.getEntry("lore_entry_draft1");
+		expect(entry!.title).toBe("Castle");
+	});
+
+	it("re-Apply of the same bundle is idempotent (no duplicate rows)", async () => {
+		const bundle = {
+			loreBundle: {
+				lorebooks: [
+					{ id: "lorebook_draft2", name: "LB2", description: "", scopeType: "character" as const, enabled: true },
+				],
+				entries: [
+					{ id: "lore_entry_draft2", lorebookId: "lorebook_draft2", title: "E", content: "c", keys: [], secondaryKeys: [], constant: false, position: "before_char", depth: 4, enabled: true },
+				],
+			},
+		};
+		await env.runtime.applyCoauthorDraft(env.coauthorChatId, bundle);
+		await env.runtime.applyCoauthorDraft(env.coauthorChatId, bundle);
+		const lbs = await env.stores.lorebooks.listLorebooksByScope("character", env.characterId);
+		// lorebook_draft2 appears once (not duplicated), alongside lorebook_draft1 from the prior test.
+		expect(lbs.filter((l) => l.id === "lorebook_draft2")).toHaveLength(1);
+		expect(await env.stores.lorebooks.listEntries("lorebook_draft2")).toHaveLength(1);
+	});
+
+	it("a bundle with an orphan entry is rejected and persists nothing new", async () => {
+		const before = (await env.stores.lorebooks.listAllLorebooks()).length;
+		await expect(
+			env.runtime.applyCoauthorDraft(env.coauthorChatId, {
+				loreBundle: {
+					lorebooks: [],
+					entries: [
+						{ id: "lore_orphan", lorebookId: "ghost", title: "x", content: "y", keys: [], secondaryKeys: [], constant: false, position: "before_char", depth: 4, enabled: true },
+					],
+				},
+			}),
+		).rejects.toThrow(/unknown parent lorebook 'ghost'/);
+		// No new rows written.
+		expect((await env.stores.lorebooks.listAllLorebooks()).length).toBe(before);
+		expect(await env.stores.lorebooks.getEntry("lore_orphan")).toBeNull();
 	});
 });

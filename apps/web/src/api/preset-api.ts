@@ -24,3 +24,8 @@ export async function deletePromptPreset(presetId: string): Promise<void> {
   const response = await client.api["prompt-presets"][":presetId"].$delete({ param: { presetId } });
   if (!response.ok) throw await unwrapError(response);
 }
+
+export async function reorderPromptPresets(updates: Array<{ id: string; sortOrder: number }>): Promise<PromptPresetDto[]> {
+  const response = await client.api["prompt-presets"].reorder.$patch({ json: { updates } });
+  return unwrapRpc<PromptPresetDto[]>(response);
+}

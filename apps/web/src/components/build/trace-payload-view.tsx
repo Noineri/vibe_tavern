@@ -27,6 +27,7 @@ import type { Dispatch, SetStateAction } from "react";
 import type { AssemblePromptResponse, PromptLayerDto, LoreActivationReason } from "@vibe-tavern/domain";
 import { cn } from "../../lib/cn.js";
 import { useT } from "../../i18n/context.js";
+import { AnimatedDisclosure } from "../shared/AnimatedDisclosure.js";
 
 /**
  * Render a structured lore-activation reason as a small color-coded badge.
@@ -294,8 +295,10 @@ export function TracePayloadView({ trace, searchQuery, formatTokens, compact = f
 							{historyTokens != null ? ` · ${formatTokens(historyTokens)}` : ""}
 						</span>
 					</button>
-					{effectiveHistoryOpen && (
-						<div className="flex flex-col gap-1.5 border-t border-border bg-input-bg p-2.5">
+					<AnimatedDisclosure
+						open={effectiveHistoryOpen}
+						className="flex flex-col gap-1.5 border-t border-border bg-input-bg p-2.5"
+					>
 							{grouping.history.map((item) => {
 								if (item.kind === "inject") {
 									const injectMatchesQ = q.length === 0 || matches(item.text, item.sourceName, item.sourceType);
@@ -319,11 +322,12 @@ export function TracePayloadView({ trace, searchQuery, formatTokens, compact = f
 												<span className="shrink-0 tabular-nums">{formatTokens(item.tokenCount)}</span>
 												<span className={cn("shrink-0 text-[10px] text-t4 transition-transform", injectOpen && "rotate-90")}>▶</span>
 											</button>
-											{injectOpen && (
-												<div className="whitespace-pre-wrap border-t border-border2 px-3 py-2 font-mono text-[11px] leading-[1.55] text-t1">
-													{item.text}
-												</div>
-											)}
+											<AnimatedDisclosure
+												open={injectOpen}
+												className="whitespace-pre-wrap border-t border-border2 px-3 py-2 font-mono text-[11px] leading-[1.55] text-t1"
+											>
+												{item.text}
+											</AnimatedDisclosure>
 										</div>
 									);
 								}
@@ -347,21 +351,21 @@ export function TracePayloadView({ trace, searchQuery, formatTokens, compact = f
 											</span>
 											<span className="min-w-0 flex-1 truncate text-[11px] text-t4">{preview.slice(0, 60)}</span>
 										</button>
-										{expanded && (
-											<div className="flex flex-col gap-1.5 border-t border-border bg-input-bg p-2">
+										<AnimatedDisclosure
+											open={expanded}
+											className="flex flex-col gap-1.5 border-t border-border bg-input-bg p-2"
+										>
 												{item.messages.map((m, i) => (
 													<div key={m.messageId ?? `${item.start}-${i}`} className="whitespace-pre-wrap font-mono text-[11px] leading-[1.55] text-t1">
 														<span className="mr-1.5 rounded bg-s3 px-1 text-[9px] uppercase text-t3">{m.role}</span>
 														{m.content}
 													</div>
 												))}
-											</div>
-										)}
+										</AnimatedDisclosure>
 									</div>
 								);
 							})}
-						</div>
-					)}
+					</AnimatedDisclosure>
 				</div>
 			)}
 
@@ -420,66 +424,68 @@ function ScriptRunsAccordion({
 					{runs.length}{errorCount > 0 ? ` · ${errorCount} ${t("trace_script_errors_label")}` : ""}
 				</span>
 			</button>
-			{effectiveOpen && (
-				<div className="flex flex-col gap-1.5 border-t border-border bg-input-bg p-2.5">
-					{runs.map((run) => {
-						const scriptMatchesQ = q.length === 0 || matches(run.scriptName, run.error, run.personalityMutation, run.scenarioMutation);
-						if (!scriptMatchesQ) return null;
-						const isExpanded = openScripts.has(run.scriptId) || q.length > 0;
-						const errored = run.status === "errored" || !!run.error;
-						return (
-							<div key={run.scriptId} className="overflow-hidden rounded-md bg-s2/40">
-								<button
-									type="button"
-									className="flex w-full cursor-pointer items-center gap-2 px-1 py-1 text-left font-ui text-[11px] text-t3 active:bg-s3"
-									onClick={() => toggleScript(run.scriptId)}
-									aria-expanded={isExpanded}
-								>
-									<span className={cn("shrink-0 text-[10px] text-t4 transition-transform", isExpanded && "rotate-90")}>▶</span>
-									<span className="min-w-0 truncate font-medium text-t2">{run.scriptName}</span>
-									<span className={cn("shrink-0 rounded px-1.5 py-0.5 font-mono text-[10px] uppercase", errored ? "bg-danger-dim text-danger-text" : "bg-success-dim text-success-text")}>{errored ? t("trace_script_errored") : t("trace_script_ran")}</span>
-								</button>
-								{isExpanded && (
-									<div className="flex flex-col gap-1.5 border-t border-border p-2">
-										{errored && run.error && (
-											<pre className="whitespace-pre-wrap font-mono text-[11px] text-danger-text">{run.error}{run.line ? ` (line ${run.line})` : ""}</pre>
-										)}
-										{(run.personalityMutation || run.scenarioMutation) && (
-											<div className="rounded bg-bg px-2 py-1">
-												<div className="mb-0.5 text-[10px] uppercase tracking-wide text-t4">{t("trace_script_mutations")}</div>
-												{run.personalityMutation && <pre className="whitespace-pre-wrap font-mono text-[11px] text-t2">{run.personalityMutation}</pre>}
-												{run.scenarioMutation && <pre className="mt-0.5 whitespace-pre-wrap font-mono text-[11px] text-t2">{run.scenarioMutation}</pre>}
-											</div>
-										)}
-										{run.injectedMessages && run.injectedMessages.length > 0 && (
-											<div className="rounded bg-bg px-2 py-1">
-												<div className="mb-0.5 text-[10px] uppercase tracking-wide text-t4">{t("script_test_injected")}</div>
-												{run.injectedMessages.map((msg, i) => (
-													<div key={i} className="flex items-start gap-1.5">
-														<span className="shrink-0 rounded bg-s3 px-1 py-0.5 font-mono text-[10px] uppercase text-t3">{msg.role}</span>
-														<pre className="flex-1 whitespace-pre-wrap font-mono text-[11px] text-t2">{msg.content}</pre>
-													</div>
-												))}
-											</div>
-										)}
-										{run.console && run.console.length > 0 && (
-											<div className="rounded bg-bg px-2 py-1">
-												<div className="mb-0.5 text-[10px] uppercase tracking-wide text-t4">{t("script_test_console")}</div>
-												{run.console.map((entry, i) => (
-													<div key={i} className="flex items-start gap-1.5">
-														<span className={cn("shrink-0 rounded px-1 py-0.5 font-mono text-[10px] uppercase", entry.level === "error" ? "bg-danger-dim text-danger-text" : entry.level === "warn" ? "bg-s3 text-t2" : "bg-s3 text-t3")}>{entry.level}</span>
-														<pre className="flex-1 whitespace-pre-wrap font-mono text-[11px] text-t2">{entry.args}</pre>
-													</div>
-												))}
-											</div>
-										)}
+			<AnimatedDisclosure
+				open={effectiveOpen}
+				className="flex flex-col gap-1.5 border-t border-border bg-input-bg p-2.5"
+			>
+				{runs.map((run) => {
+					const scriptMatchesQ = q.length === 0 || matches(run.scriptName, run.error, run.personalityMutation, run.scenarioMutation);
+					if (!scriptMatchesQ) return null;
+					const isExpanded = openScripts.has(run.scriptId) || q.length > 0;
+					const errored = run.status === "errored" || !!run.error;
+					return (
+						<div key={run.scriptId} className="overflow-hidden rounded-md bg-s2/40">
+							<button
+								type="button"
+								className="flex w-full cursor-pointer items-center gap-2 px-1 py-1 text-left font-ui text-[11px] text-t3 active:bg-s3"
+								onClick={() => toggleScript(run.scriptId)}
+								aria-expanded={isExpanded}
+							>
+								<span className={cn("shrink-0 text-[10px] text-t4 transition-transform", isExpanded && "rotate-90")}>▶</span>
+								<span className="min-w-0 truncate font-medium text-t2">{run.scriptName}</span>
+								<span className={cn("shrink-0 rounded px-1.5 py-0.5 font-mono text-[10px] uppercase", errored ? "bg-danger-dim text-danger-text" : "bg-success-dim text-success-text")}>{errored ? t("trace_script_errored") : t("trace_script_ran")}</span>
+							</button>
+							<AnimatedDisclosure
+								open={isExpanded}
+								className="flex flex-col gap-1.5 border-t border-border p-2"
+							>
+								{errored && run.error && (
+									<pre className="whitespace-pre-wrap font-mono text-[11px] text-danger-text">{run.error}{run.line ? ` (line ${run.line})` : ""}</pre>
+								)}
+								{(run.personalityMutation || run.scenarioMutation) && (
+									<div className="rounded bg-bg px-2 py-1">
+										<div className="mb-0.5 text-[10px] uppercase tracking-wide text-t4">{t("trace_script_mutations")}</div>
+										{run.personalityMutation && <pre className="whitespace-pre-wrap font-mono text-[11px] text-t2">{run.personalityMutation}</pre>}
+										{run.scenarioMutation && <pre className="mt-0.5 whitespace-pre-wrap font-mono text-[11px] text-t2">{run.scenarioMutation}</pre>}
 									</div>
 								)}
-							</div>
-						);
-					})}
-				</div>
-			)}
+								{run.injectedMessages && run.injectedMessages.length > 0 && (
+									<div className="rounded bg-bg px-2 py-1">
+										<div className="mb-0.5 text-[10px] uppercase tracking-wide text-t4">{t("script_test_injected")}</div>
+										{run.injectedMessages.map((msg, i) => (
+											<div key={i} className="flex items-start gap-1.5">
+												<span className="shrink-0 rounded bg-s3 px-1 py-0.5 font-mono text-[10px] uppercase text-t3">{msg.role}</span>
+												<pre className="flex-1 whitespace-pre-wrap font-mono text-[11px] text-t2">{msg.content}</pre>
+											</div>
+										))}
+									</div>
+								)}
+								{run.console && run.console.length > 0 && (
+									<div className="rounded bg-bg px-2 py-1">
+										<div className="mb-0.5 text-[10px] uppercase tracking-wide text-t4">{t("script_test_console")}</div>
+										{run.console.map((entry, i) => (
+											<div key={i} className="flex items-start gap-1.5">
+												<span className={cn("shrink-0 rounded px-1 py-0.5 font-mono text-[10px] uppercase", entry.level === "error" ? "bg-danger-dim text-danger-text" : entry.level === "warn" ? "bg-s3 text-t2" : "bg-s3 text-t3")}>{entry.level}</span>
+												<pre className="flex-1 whitespace-pre-wrap font-mono text-[11px] text-t2">{entry.args}</pre>
+											</div>
+										))}
+									</div>
+								)}
+							</AnimatedDisclosure>
+						</div>
+					);
+				})}
+			</AnimatedDisclosure>
 		</div>
 	);
 }
@@ -547,11 +553,12 @@ function LayerCard({
 					</div>
 				</button>
 			)}
-			{expanded && (
-				<div className="whitespace-pre-wrap border-t border-border bg-input-bg p-3 font-mono text-[11px] leading-[1.55] text-t1">
-					{layer.text}
-				</div>
-			)}
+			<AnimatedDisclosure
+				open={expanded}
+				className="whitespace-pre-wrap border-t border-border bg-input-bg p-3 font-mono text-[11px] leading-[1.55] text-t1"
+			>
+				{layer.text}
+			</AnimatedDisclosure>
 		</div>
 	);
 }

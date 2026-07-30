@@ -10,12 +10,20 @@
  * Plain <input type="range"> (no Radix), so happy-dom's 0x0 layout is fine —
  * unlike the Radix-Popover DropdownSelect keyboard test, which is skipped.
  */
-import { describe, expect, it, vi } from "vitest";
-import { render, fireEvent } from "@testing-library/react";
-import { DualRangeSlider } from "./DualRangeSlider.js";
+import { beforeAll, describe, expect, it, mock } from "bun:test";
+import { useDomEnv } from "../../../test/dom-env.js";
+
+useDomEnv();
+const { render, fireEvent } = await import("@testing-library/react");
+
+let DualRangeSlider: typeof import("./DualRangeSlider.js").DualRangeSlider;
+
+beforeAll(async () => {
+	({ DualRangeSlider } = await import("./DualRangeSlider.js"));
+});
 
 function setup(props: { from: number; to: number; min?: number; max?: number }) {
-	const onChange = vi.fn();
+	const onChange = mock();
 	const { container } = render(
 		<DualRangeSlider
 			min={props.min ?? 1}

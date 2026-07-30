@@ -3,7 +3,7 @@ import type { ChatBranchId, ChatId, MessageId, PromptPresetId, Attachment } from
 import type { ChatRuntime } from "../../runtime/session/session-runtime-chat.js";
 import type { SessionSnapshot, MessageResponse } from "../../api/contract/session-types.js";
 import type { ProviderOrchestrator } from "../providers/provider-orchestrator.js";
-import type { StoredProviderProfileRecord } from "@vibe-tavern/domain";
+import type { CoauthorTransport, StoredProviderProfileRecord } from "@vibe-tavern/domain";
 import type { ProviderExecutionInput, ProviderStreamResult, ExtractedToolCall, ExtractedToolResult, CachedModelEntry } from "../../infrastructure/ai/provider-execution-types.js";
 import type { ChatModeStrategy } from "./chat-mode-strategy.js";
 import { nonstreamingProviderExecute } from "../../infrastructure/ai/nonstreaming-provider-executor.js";
@@ -44,9 +44,14 @@ export class LiveChatOrchestrator {
     attachments?: Attachment[];
     profile: StoredProviderProfileRecord;
     model: string;
+    transport?: CoauthorTransport;
     prefill?: string;
     signal?: AbortSignal;
     visionAssets?: { cachedModels: CachedModelEntry[]; visionModel: string | null; assetLoader: (assetId: string) => Promise<Buffer | null>; visionDescribePrompt?: string };
+    /** DICE-B11: optional commit intent threaded into `prepareLiveTurn` so the
+     *  user-message insert and pending-lane bind share one atomic transaction.
+     *  Absent ⇒ no-Dice send behavior (byte-for-byte current path). */
+    diceCommit?: import("./chat-application-types.js").SendMessageRequest["diceCommit"];
   }): Promise<{
     preparedMessageCount: number;
     promptMessageCount: number;
@@ -55,7 +60,7 @@ export class LiveChatOrchestrator {
   }> {
     const provider = await this.resolveProvider(input);
     logSendDebug("live.send.prepare.start", { chatId: input.chatId, model: provider.model });
-    const prepared = await this.chatRuntime.prepareLiveTurn(brandId<ChatId>(input.chatId), input.content, provider.model, provider.profile.maxTokens, input.attachments);
+    const prepared = await this.chatRuntime.prepareLiveTurn(brandId<ChatId>(input.chatId), input.content, provider.model, provider.profile.maxTokens, input.attachments, input.diceCommit);
     this.notifyUserMessageCreated(input.chatId, prepared.userMessage);
     logSendDebug("live.send.prepare.done", {
       chatId: input.chatId,
@@ -75,6 +80,7 @@ export class LiveChatOrchestrator {
       const result = await nonstreamingProviderExecute({
         profile: provider.profile,
         model: provider.model,
+        transport: input.transport,
         prompt: prepared.prompt,
         signal: input.signal,
         prefill,
@@ -132,6 +138,7 @@ export class LiveChatOrchestrator {
     chatId: string;
     profile: StoredProviderProfileRecord;
     model: string;
+    transport?: CoauthorTransport;
     prefill?: string;
     signal?: AbortSignal;
   }): Promise<{
@@ -156,6 +163,7 @@ export class LiveChatOrchestrator {
       const result = await nonstreamingProviderExecute({
         profile: provider.profile,
         model: provider.model,
+        transport: input.transport,
         prompt,
         signal: input.signal,
         prefill,
@@ -202,6 +210,7 @@ export class LiveChatOrchestrator {
     messageId: string;
     profile: StoredProviderProfileRecord;
     model: string;
+    transport?: CoauthorTransport;
     /**
      * Optional per-request prompt preset override (Wave Q1b). When set, the
      * assembled prompt uses this preset instead of the chat's `promptPresetId`,
@@ -242,6 +251,7 @@ export class LiveChatOrchestrator {
       const result = await nonstreamingProviderExecute({
         profile: provider.profile,
         model: provider.model,
+        transport: input.transport,
         prompt,
         signal: input.signal,
         prefill,
@@ -272,7 +282,6 @@ export class LiveChatOrchestrator {
       content: reply,
       latencyMs,
       reasoning,
-      presetId: input.presetId,
       toolCalls,
       toolResults,
     });
@@ -294,13 +303,16 @@ export class LiveChatOrchestrator {
     attachments?: Attachment[];
     profile: StoredProviderProfileRecord;
     model: string;
+    transport?: CoauthorTransport;
     prefill?: string;
     signal?: AbortSignal;
     visionAssets?: { cachedModels: CachedModelEntry[]; visionModel: string | null; assetLoader: (assetId: string) => Promise<Buffer | null>; visionDescribePrompt?: string };
+    /** DICE-B11: optional commit intent threaded into `prepareLiveTurn`. See sendMessage. */
+    diceCommit?: import("./chat-application-types.js").SendMessageRequest["diceCommit"];
   }): AsyncGenerator<{ event: string; data: string }> {
     const provider = await this.resolveProvider(input);
     logSendDebug("live.send-stream.prepare.start", { chatId: input.chatId, model: provider.model });
-    const prepared = await this.chatRuntime.prepareLiveTurn(brandId<ChatId>(input.chatId), input.content, provider.model, provider.profile.maxTokens, input.attachments);
+    const prepared = await this.chatRuntime.prepareLiveTurn(brandId<ChatId>(input.chatId), input.content, provider.model, provider.profile.maxTokens, input.attachments, input.diceCommit);
     this.notifyUserMessageCreated(input.chatId, prepared.userMessage);
     const prefill = prepared.prompt.prefill ?? undefined;
     const onAttachmentDescriptions = (prepared.userMessage && input.attachments?.length)
@@ -359,6 +371,7 @@ export class LiveChatOrchestrator {
     chatId: string;
     profile: StoredProviderProfileRecord;
     model: string;
+    transport?: CoauthorTransport;
     prefill?: string;
     signal?: AbortSignal;
   }): AsyncGenerator<{ event: string; data: string }> {
@@ -422,6 +435,7 @@ export class LiveChatOrchestrator {
     messageId: string;
     profile: StoredProviderProfileRecord;
     model: string;
+    transport?: CoauthorTransport;
     /** Optional per-request prompt preset override (Wave Q1b). See regenerateMessage. */
     presetId?: PromptPresetId;
     prefill?: string;
@@ -468,7 +482,6 @@ export class LiveChatOrchestrator {
             latencyMs,
             reasoning: reasoning || undefined,
             reasoningDurationMs,
-            presetId: input.presetId,
           });
         }
       },
@@ -478,7 +491,6 @@ export class LiveChatOrchestrator {
           latencyMs,
           reasoning,
           reasoningDurationMs,
-          presetId: input.presetId,
           toolCalls,
           toolResults,
         });
@@ -525,7 +537,7 @@ export class LiveChatOrchestrator {
   }
 
   private async startStream(
-    input: { chatId: string; profile: StoredProviderProfileRecord; model: string; signal?: AbortSignal; prefill?: string; tools?: import("ai").ToolSet; maxSteps?: number; visionAssets?: { cachedModels: CachedModelEntry[]; visionModel: string | null; assetLoader: (assetId: string) => Promise<Buffer | null>; visionDescribePrompt?: string }; onAttachmentDescriptions?: ProviderExecutionInput["onAttachmentDescriptions"] },
+    input: { chatId: string; profile: StoredProviderProfileRecord; model: string; transport?: CoauthorTransport; signal?: AbortSignal; prefill?: string; tools?: import("ai").ToolSet; maxSteps?: number; visionAssets?: { cachedModels: CachedModelEntry[]; visionModel: string | null; assetLoader: (assetId: string) => Promise<Buffer | null>; visionDescribePrompt?: string }; onAttachmentDescriptions?: ProviderExecutionInput["onAttachmentDescriptions"] },
     prompt: Parameters<typeof streamProviderExecutor>[0]["prompt"],
   ): Promise<{ streamResult: ProviderStreamResult; startedAt: number }> {
     const startedAt = Date.now();
@@ -533,6 +545,7 @@ export class LiveChatOrchestrator {
       const streamResult = await streamProviderExecutor({
         profile: input.profile,
         model: input.model,
+        transport: input.transport,
         prompt,
         signal: input.signal,
         prefill: input.prefill ?? (prompt as { prefill?: string }).prefill ?? undefined,

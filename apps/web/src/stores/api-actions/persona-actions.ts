@@ -8,6 +8,7 @@ import {
 } from "../../app-client.js";
 import type { ChatId, PronounForms } from "@vibe-tavern/domain";
 import { useSnapshotStore } from "../snapshot-store.js";
+import { invalidateActiveContextPreview } from "../context-preview-store.js";
 import { fetchPersonasAction } from "./bootstrap-actions.js";
 import type { PersonaRecord } from "../../app-client.js";
 
@@ -39,6 +40,9 @@ export async function updatePersonaAction(input: {
 }): Promise<AppSnapshot> {
   const snapshot = await updatePersona(input.personaId, input.patch);
   useSnapshotStore.getState().ingestSnapshot(snapshot);
+  // Persona fields feed prompt layers — drop the cached live preview so lazy
+  // hydration refetches (its response no longer embeds it).
+  invalidateActiveContextPreview();
   void fetchPersonasAction();
   return snapshot;
 }

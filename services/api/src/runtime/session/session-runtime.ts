@@ -1,4 +1,4 @@
-import { parseProfileMd, type PromptPreset, type StoreContainer, type UiSettings } from "@vibe-tavern/db";
+import { parseProfileMd, type PromptPreset, type StoreContainer, type UiSettings, type DiceRoll } from "@vibe-tavern/db";
 import type { PromptPresetDto, PromptTraceRecordDto } from "@vibe-tavern/domain";
 import {
 	type CharacterId,
@@ -19,7 +19,13 @@ import {
 } from "../../shared/errors.js";
 import type { CoauthorApplyRequest, CoauthorCorrection } from "@vibe-tavern/api-contracts";
 import { PromptAssemblyService } from "../../domain/prompt/prompt-assembly-service.js";
+import { storeRollToSnapshot } from "../../domain/dice/dice-service.js";
 import { StaticPromptResolver } from "../../domain/prompt/prompt-resolver.js";
+import { createLoreDelegate } from "../../domain/coauthor/lore/lore-delegate.js";
+import { createLoreEntityLookup } from "../../domain/coauthor/lore/lore-entity-lookup.js";
+import { findUnsafeMacros } from "../../domain/coauthor/macro-subset.js";
+import { createContextSearchSession } from "../../domain/context/context-search-service.js";
+import { nonstreamingProviderExecute } from "../../infrastructure/ai/nonstreaming-provider-executor.js";
 import {
 	mapMessageDto,
 	mapPromptTraceRecord,
@@ -138,7 +144,7 @@ export function pickBootstrapChatId<T extends string>(
 	) {
 		this.stores = stores;
 		this.resolver = new StaticPromptResolver(stores);
-		this.chatApp = new ChatApplicationService(stores.chats, stores.messages);
+		this.chatApp = new ChatApplicationService(stores.chats, stores.messages, stores.diceRolls);
 		this.promptService = new PromptAssemblyService(stores, this.resolver, this.stores.content.fileStore);
 		this.getActiveProviderProfile =
 			options?.getActiveProviderProfile ?? (async () => null);
@@ -150,6 +156,7 @@ export function pickBootstrapChatId<T extends string>(
 			messages: stores.messages,
 			traces: stores.traces,
 			chatApp: this.chatApp,
+			diceRolls: stores.diceRolls,
 			assemblePrompt: (chatId, branchId, opts) =>
 				this.assemblePrompt(chatId, branchId, opts),
 			getSnapshot: (chatId) => this.getSnapshot(chatId),
@@ -188,7 +195,9 @@ export function pickBootstrapChatId<T extends string>(
 					model: opts?.model ?? "",
 					...(opts?.recentMessageLimit !== undefined ? { recentMessageLimit: opts.recentMessageLimit } : {}),
 					contextBudget: opts?.contextBudget ?? null,
+					responseReserve: opts?.responseReserve,
 					...(opts?.throughMessageId ? { throughMessageId: opts.throughMessageId } : {}),
+					...(opts?.excludeMessageIds ? { excludeMessageIds: opts.excludeMessageIds } : {}),
 				}),
 		});
 		this.character = new CharacterRuntime({
@@ -248,19 +257,11 @@ export function pickBootstrapChatId<T extends string>(
 	 */
 	async getSnapshot(chatId: ChatId): Promise<SessionSnapshot> {
 		/*
-		 * Monolithic snapshot — returns EVERY field on every call.
-		 *
-		 * Being replaced by per-endpoint response builders (Wave B1,
-		 * CHAT_FRONTEND_REFACTOR_PLAN.md). Until B1.2–B1.5 wire the builders
-		 * into routes, every mutation still returns this full snapshot —
-		 * correct but wasteful (renaming a chat re-computes contextPreview).
-		 *
-		 * `contextPreview` is always live: it reflects the current chat,
-		 * character, persona, and preset state on every call. Traces do NOT
-		 * shadow it — the trace is a historical record of a past assembly,
-		 * while `contextPreview` is the live "what would be sent right now".
-		 * The per-endpoint builders share this invariant (they compute the
-		 * preview via `assembleContextPreview` directly).
+		 * Monolithic snapshot — returns EVERY field on every call, EXCEPT the
+		 * live context preview, which is now a standalone branch-scoped query
+		 * (`getContextPreview` / POST .../context-preview) hydrated lazily by
+		 * the frontend. The latest `promptTrace` still rides the snapshot as
+		 * the cheap fallback for context counters and the Trace panel.
 		 */
 		const { chat, branch, messages: branchMessages } = await this.chatApp.getChatState(chatId);
 		// Only the single latest trace is embedded now (for the post-generation
@@ -292,12 +293,23 @@ export function pickBootstrapChatId<T extends string>(
 			messages: messagesWithVariants,
 			summaries,
 			promptTrace: latestTraces[0] ?? null,
-			contextPreview: await this.assembleContextPreview(chatId, branch.id as ChatBranchId),
 			character,
 			persona,
 		};
 	}
-	private async assembleContextPreview(chatId: ChatId, branchId: ChatBranchId): Promise<import("@vibe-tavern/domain").AssemblePromptResponse | null> {
+	/** Branch-scoped live context preview (lazy hydration target).
+	 *
+	 *  Validates `branchId` belongs to `chatId` explicitly: {@link getChatState}
+	 *  silently falls back to the root branch when given a foreign branchId, so
+	 *  without this check a wrong-branch request would assemble the root's
+	 *  preview instead of surfacing a 404. The ownership check therefore runs
+	 *  OUTSIDE the try/catch so a NotFound propagates to the route; the catch
+	 *  only masks assembly failures (returning null) as before. */
+	async getContextPreview(chatId: ChatId, branchId: ChatBranchId): Promise<import("@vibe-tavern/domain").AssemblePromptResponse | null> {
+		const branches = await this.stores.chats.getBranches(chatId);
+		if (!branches.some((b) => b.id === branchId)) {
+			throw notFound("Branch", `Branch '${branchId}' was not found for chat '${chatId}'.`);
+		}
 		try {
 			const profile = await this.getActiveProviderProfile();
 			const assembled = await this.assemblePrompt(chatId, branchId, {
@@ -323,9 +335,10 @@ export function pickBootstrapChatId<T extends string>(
 	//
 	// Narrowed alternatives to {@link getSnapshot}: each returns ONLY the
 	// fields a given mutation touches, so the frontend re-renders just the
-	// affected region. `contextPreview` is computed via `assembleContextPreview`
-	// directly and is always live. See the field-ownership table in
-	// `CHAT_FRONTEND_REFACTOR_PLAN.md` (Wave B1).
+	// affected region. None of them embed `contextPreview` — the live preview
+	// is a standalone branch-scoped lazy query (see `getContextPreview`), so
+	// navigation and mutations never block on prompt assembly. See the
+	// field-ownership table in `CHAT_FRONTEND_REFACTOR_PLAN.md` (Wave B1).
 	//
 	// B1.1: ADDITIVE ONLY — the builder methods + shared fetch primitives landed
 	// here, behavior-pinned by `session-runtime-builders.test.ts`.
@@ -333,9 +346,8 @@ export function pickBootstrapChatId<T extends string>(
 	// select/deleteMessageVariant, editMessage, deleteMessage, setGreetingIndex now
 	// return these narrowed shapes (not getSnapshot).
 	// B1.3: branch path WIRED — forkBranch, activateBranch, deleteBranch return
-	// BranchResponse; renameBranch returns BranchMetaResponse (no contextPreview —
-	// text unchanged). Remaining paths (navigation / config+summary) still serve
-	// `getSnapshot` until B1.4–B1.5.
+	// BranchResponse; renameBranch returns BranchMetaResponse. Remaining paths
+	// (navigation / config+summary) still serve `getSnapshot` until B1.4–B1.5.
 
 	/** Message-path mutations: send, regenerate, edit, delete, create-variant. */
 	async buildMessageResponse(
@@ -344,15 +356,13 @@ export function pickBootstrapChatId<T extends string>(
 	): Promise<MessageResponse> {
 		const { branch, messages } = await this.chatApp.getChatState(chatId);
 		const branchId = branch.id as ChatBranchId;
-		const [messagesWithVariants, contextPreview, latestTrace] = await Promise.all([
+		const [messagesWithVariants, latestTrace] = await Promise.all([
 			this.buildMessagesWithVariants(messages, branchId),
-			this.assembleContextPreview(chatId, branchId),
 			// Latest single trace only — the full history is lazy-loaded (TRACE_LAZY_LOADING).
 			this.getPromptTraceHistory(chatId, branchId, 1),
 		]);
 		const response: MessageResponse = {
 			messages: messagesWithVariants,
-			contextPreview,
 			promptTrace: latestTrace[0] ?? null,
 		};
 		if (opts?.summaries) {
@@ -370,7 +380,6 @@ export function pickBootstrapChatId<T extends string>(
 		const branchId = branch.id as ChatBranchId;
 		const response: VariantResponse = {
 			messages: await this.buildMessagesWithVariants(messages, branchId),
-			contextPreview: await this.assembleContextPreview(chatId, branchId),
 		};
 		if (opts?.activeChat) {
 			response.activeChat = chat;
@@ -396,11 +405,10 @@ export function pickBootstrapChatId<T extends string>(
 		// `chats` (sidebar list) is included because fork / activate change the
 		// chat's active branch, and each ChatListItem.messageCount is the active
 		// branch's count — the sidebar number must refresh on every branch switch.
-		const [messagesWithVariants, branches, summaries, contextPreview, chats] = await Promise.all([
+		const [messagesWithVariants, branches, summaries, chats] = await Promise.all([
 			measure("messages", () => this.buildMessagesWithVariants(messages, branchId)),
 			measure("branches", () => this.fetchBranchesWithCounts(chatId)),
 			measure("summaries", () => this.fetchSummaries(chatId, branchId)),
-			measure("contextPreview", () => this.assembleContextPreview(chatId, branchId)),
 			measure("chats", () => this.fetchChatList()),
 		]);
 		logger.info("response chat=%s branch=%s messages=%d totalMs=%d timings=%o", chatId, branchId, messages.length, Math.round(performance.now() - startedAt), timings);
@@ -409,12 +417,11 @@ export function pickBootstrapChatId<T extends string>(
 			activeBranch: branch,
 			branches,
 			summaries,
-			contextPreview,
 			chats,
 		};
 	}
 
-	/** Branch-metadata-only op: rename-branch (no text change → no contextPreview). */
+	/** Branch-metadata-only op: rename-branch (text unchanged). */
 	async buildBranchMetaResponse(chatId: ChatId): Promise<BranchMetaResponse> {
 		return { branches: await this.fetchBranchesWithCounts(chatId) };
 	}
@@ -431,11 +438,10 @@ export function pickBootstrapChatId<T extends string>(
 	): Promise<ChatSwitchResponse> {
 		const { chat, branch, messages } = await this.chatApp.getChatState(chatId);
 		const branchId = branch.id as ChatBranchId;
-		const [messagesWithVariants, branches, summaries, contextPreview, character] = await Promise.all([
+		const [messagesWithVariants, branches, summaries, character] = await Promise.all([
 			this.buildMessagesWithVariants(messages, branchId),
 			this.fetchBranchesWithCounts(chatId),
 			this.fetchSummaries(chatId, branchId),
-			this.assembleContextPreview(chatId, branchId),
 			this.resolver.getCharacter(chat.characterId),
 		]);
 		const response: ChatSwitchResponse = {
@@ -444,7 +450,6 @@ export function pickBootstrapChatId<T extends string>(
 			activeBranch: branch,
 			branches,
 			summaries,
-			contextPreview,
 			character,
 		};
 		if (opts?.persona) {
@@ -462,12 +467,11 @@ export function pickBootstrapChatId<T extends string>(
 	async buildChatCreateResponse(chatId: ChatId): Promise<ChatCreateResponse> {
 		const { chat, branch, messages } = await this.chatApp.getChatState(chatId);
 		const branchId = branch.id as ChatBranchId;
-		const [messagesWithVariants, branches, summaries, contextPreview, character, chats] =
+		const [messagesWithVariants, branches, summaries, character, chats] =
 			await Promise.all([
 				this.buildMessagesWithVariants(messages, branchId),
 				this.fetchBranchesWithCounts(chatId),
 				this.fetchSummaries(chatId, branchId),
-				this.assembleContextPreview(chatId, branchId),
 				this.resolver.getCharacter(chat.characterId),
 				this.fetchChatList(),
 			]);
@@ -478,21 +482,19 @@ export function pickBootstrapChatId<T extends string>(
 			activeBranch: branch,
 			branches,
 			summaries,
-			contextPreview,
 			character,
 		};
 	}
 
-	/** Config-patch ops: set-persona, set-preset, character-patch, memory-settings. */
+	/** Config-patch ops: set-persona, set-preset, character-patch, memory-settings.
+	 *  No longer embeds `contextPreview` (lazy branch-scoped query); returns only
+	 *  whichever of persona/character/activeChat the caller touched. */
 	async buildConfigPatchResponse(
 		chatId: ChatId,
 		opts?: { persona?: boolean; character?: boolean; activeChat?: boolean },
 	): Promise<ConfigPatchResponse> {
-		const { chat, branch } = await this.chatApp.getChatState(chatId);
-		const branchId = branch.id as ChatBranchId;
-		const response: ConfigPatchResponse = {
-			contextPreview: await this.assembleContextPreview(chatId, branchId),
-		};
+		const { chat } = await this.chatApp.getChatState(chatId);
+		const response: ConfigPatchResponse = {};
 		if (opts?.persona) {
 			response.persona = await this.resolver.getPersona(
 				chat.personaId ?? await this.persona.resolveDefaultId(),
@@ -520,10 +522,27 @@ export function pickBootstrapChatId<T extends string>(
 		messages: import("@vibe-tavern/db").Message[],
 		branchId: ChatBranchId,
 	): Promise<SessionSnapshot["messages"]> {
-		const variantsByMessage = await this.stores.messages.getVariantsByBranch(branchId);
-		return messages.map((message) =>
-			mapMessageDto(message, variantsByMessage.get(message.id) ?? []),
-		);
+		// Batch-load bound Dice rolls for user messages in ONE query (the B7 batch
+		// read already used by prompt assembly). Assistant messages never carry
+		// Dice; user messages without bound rolls get nothing (field absent).
+		const userMessageIds = messages.filter((m) => m.role === "user").map((m) => m.id);
+		const [variantsByMessage, diceRollsByMessage] = await Promise.all([
+			this.stores.messages.getVariantsByBranch(branchId),
+			userMessageIds.length > 0
+				? this.stores.diceRolls.getRollsForMessages(userMessageIds)
+				: Promise.resolve(new Map<string, DiceRoll[]>()),
+		]);
+		return messages.map((message) => {
+			if (message.role !== "user") {
+				return mapMessageDto(message, variantsByMessage.get(message.id) ?? []);
+			}
+			const rolls = diceRollsByMessage.get(message.id);
+			return mapMessageDto(
+				message,
+				variantsByMessage.get(message.id) ?? [],
+				rolls && rolls.length > 0 ? rolls.map(storeRollToSnapshot) : undefined,
+			);
+		});
 	}
 
 	/** All branches for a chat, each annotated with its message count. */
@@ -615,11 +634,11 @@ export function pickBootstrapChatId<T extends string>(
 		return await importExportModule.mirrorPromptTrace(this.importExportDeps, traceId);
 	}
 
-	async importJson(input: { fileName: string; jsonText: string; chatId?: string; skipExisting?: boolean; lean?: boolean }): Promise<ImportResult> {
+	async importJson(input: { fileName: string; jsonText?: string; monolithText?: string; chatId?: string; skipExisting?: boolean; lean?: boolean }): Promise<ImportResult> {
 		return importExportModule.importJson(this.importExportDeps, input);
 	}
 
-	async importJsonBatch(input: { items: Array<{ fileName: string; jsonText: string; chatId?: string; skipExisting?: boolean }>; lean?: boolean }): Promise<BatchImportResult> {
+	async importJsonBatch(input: { items: Array<{ fileName: string; jsonText?: string; monolithText?: string; chatId?: string; skipExisting?: boolean }>; lean?: boolean }): Promise<BatchImportResult> {
 		return importExportModule.importJsonBatch(this.importExportDeps, input);
 	}
 
@@ -767,10 +786,54 @@ export function pickBootstrapChatId<T extends string>(
 			updateInput.alternateGreetings = body.alternateGreetings;
 		}
 
+		// B5: flag macros the model emitted outside the safe reusable subset
+		// (identity + pronouns). The prose is preserved as-is — these are warnings,
+		// not silent edits; the user decides whether to keep each token. One
+		// correction per (field, distinct macro) so the toast names exactly what
+		// to review and where.
+		const proseFields: Array<[string, string | string[] | null | undefined]> = [
+			["name", updateInput.name],
+			["description", updateInput.description],
+			["scenario", updateInput.scenario],
+			["mesExample", updateInput.mesExample],
+			["creatorNotes", updateInput.creatorNotes],
+			["firstMessage", updateInput.firstMessage],
+			["alternateGreetings", updateInput.alternateGreetings],
+		];
+		for (const [field, value] of proseFields) {
+			if (value === null || value === undefined) continue;
+			const texts = Array.isArray(value) ? value : [value];
+			const unsafe = new Set<string>();
+			for (const text of texts) {
+				for (const name of findUnsafeMacros(text)) unsafe.add(name);
+			}
+			for (const name of unsafe) {
+				corrections.push({
+					field,
+					action: "warned",
+					reason: `Model used {{${name}}}, which is outside the reusable macro set ({{user}}, {{char}}, pronouns) and may not resolve as intended; left as-is for review.`,
+				});
+			}
+		}
+
 		const patch = await this.character.update(characterId, updateInput, {
 			rebuildChatOrder: () => this.rebuildChatOrder(),
 		});
-		return { ...patch, corrections };
+
+		// CTX-L2 (Wave 4): lore-bundle Apply branch. The accepted cumulative draft
+		// is persisted idempotently (preallocated ids upsert the same rows) in one
+		// transaction. Character-scoped draft books are written with characterId so
+		// the activation engine discovers them. Absent/empty bundle = no-op (the
+		// common profile/greeting-only Apply path is unchanged).
+		let lore: { lorebookIds: string[]; entryIds: string[] } | undefined;
+		if (body.loreBundle && (body.loreBundle.lorebooks.length > 0 || body.loreBundle.entries.length > 0)) {
+			lore = await this.stores.lorebooks.applyCoauthorLoreDraft(
+				characterId as unknown as string,
+				body.loreBundle,
+			);
+		}
+
+		return { ...patch, corrections, ...(lore ? { lore } : {}) };
 	}
 
 	/**
@@ -782,22 +845,49 @@ export function pickBootstrapChatId<T extends string>(
 	private async assemblePrompt(
 		chatId: ChatId,
 		branchId?: ChatBranchId,
-		options?: { excludeMessageIds?: MessageId[]; model?: string; recentMessageLimit?: number; summary?: boolean; contextBudget?: number | null; responseReserve?: number; presetId?: PromptPresetId },
+		options?: { excludeMessageIds?: MessageId[]; model?: string; recentMessageLimit?: number; summary?: boolean; contextBudget?: number | null; responseReserve?: number; presetId?: PromptPresetId; priorSummaries?: Array<{ id: string; label?: string; content: string }> },
 	) {
 		void await this.getActiveProviderProfile();
 		const strategy = await this.resolveChatModeStrategy(chatId);
+		const model = options?.model ?? SYSTEM_RESOURCE_ID.unresolvedModel;
+		// Construct the lore AI-delegation callback (CTX-L2b) when a provider is
+		// configured and a real model is selected. The co-author strategy injects
+		// it into buildCoauthorTools so ai_write_lore_entry / ai_generate_lore_keys
+		// can fire an isolated one-shot LLM call. Absent (undefined) when no
+		// provider/model is available — the tools then throw a clear error if the
+		// model still tries to invoke them. The delegate reuses the chat's active
+		// provider + model by default; a dedicated smaller model is a future
+		// config knob on this seam (createLoreDelegate accepts any profile+model).
+		const profile = await this.getActiveProviderProfile();
+		const loreDelegate =
+			profile && model && model !== SYSTEM_RESOURCE_ID.unresolvedModel
+				? createLoreDelegate({ execute: nonstreamingProviderExecute, profile, model })
+				: undefined;
+		// CE-B1: lore entity lookup lets the edit / re-delegation tools target
+		// previously-created (persisted) lore entities across turns, not just
+		// ones drafted this turn. Built when a lorebook store is wired (production
+		// always wires it); absent in minimal/test contexts — edit tools that need
+		// it then throw a clear "no lookup configured" error.
+		const loreEntityLookup = this.stores?.lorebooks ? createLoreEntityLookup(this.stores.lorebooks) : undefined;
+		// CE-D2: context-search session for indexed entity discovery.
+		// Lazily projects all canonical entities into FTS5 on first search.
+		const contextSearchSession = this.stores ? this.buildContextSearchSession(chatId) : undefined;
 		return strategy.assemble({
 			promptService: this.promptService,
 			loaders: this.buildChatModeLoaders(),
+			loreDelegate,
+			loreEntityLookup,
+			contextSearchSession,
 			chatId,
 			branchId,
-			model: options?.model ?? SYSTEM_RESOURCE_ID.unresolvedModel,
+			model,
 			excludeMessageIds: options?.excludeMessageIds,
 			recentMessageLimit: options?.recentMessageLimit,
 			summary: options?.summary,
 			contextBudget: options?.contextBudget ?? null,
 			responseReserve: options?.responseReserve,
 			presetId: options?.presetId,
+			priorSummaries: options?.priorSummaries,
 		});
 	}
 
@@ -829,36 +919,84 @@ export function pickBootstrapChatId<T extends string>(
 				return char;
 			},
 			getProfileMdText: (characterId) => this.stores.characters.getProfileMdText(characterId),
-			getCoauthorLorebookEntries: async (chatId) => {
-				// CA-13: expand the lorebooks the user EXPLICITLY bound to this chat
-				// (right-panel picker → chats.coauthorLorebookIds) into their enabled
-				// entries. NOT RP keyword activation — mirrors the AI-assistant
-				// lorebook-writer's resolveContext path: the user curates which books
-				// feed the editor. Disabled books / entries are filtered out.
+			getCoauthorContextItems: async (chatId) => {
+				// CE-C1: resolve the entities the user EXPLICITLY pinned to this chat
+				// (right-panel picker → chats.coauthorContextLinks) into read-only
+				// reference blocks. Generalizes CA-13 (lorebook-only) to
+				// character/persona/lorebook/script. NOT RP keyword activation.
 				const chat = await this.stores.chats.getById(chatId);
-				if (!chat || chat.coauthorLorebookIds.length === 0) return [];
-				const expanded = await Promise.all(
-					chat.coauthorLorebookIds.map(async (lbId) => {
-						const lb = await this.stores.lorebooks.getLorebook(lbId);
-						if (!lb?.enabled) return [];
-						const entries = await this.stores.lorebooks.listEntries(lbId);
-						return entries
-							.filter((e) => e.enabled)
-							.map((e) => ({ id: e.id, title: e.title, content: e.content }));
-					}),
-				);
-				// Dedupe by id (a book bound twice shouldn't double-inject).
-				const seen = new Set<string>();
-				const out: Array<{ id: string; title: string; content: string }> = [];
-				for (const e of expanded.flat()) {
-					if (seen.has(e.id)) continue;
-					seen.add(e.id);
-					out.push(e);
+				if (!chat || chat.coauthorContextLinks.length === 0) return [];
+				// The active character is already rendered as `currentCard`; skip a
+				// pinned link to it to avoid 2x-token duplication.
+				const out: import("../../domain/chat/chat-mode-strategy.js").CoauthorContextItem[] = [];
+				for (const link of chat.coauthorContextLinks) {
+					if (link.targetType === 'character') {
+						if (link.targetId === chat.characterId) continue;
+						const c = await this.stores.characters.getById(link.targetId);
+						if (!c) continue;
+						const profile = await this.stores.characters.getProfileMdText(c.id as unknown as import("@vibe-tavern/domain").CharacterId);
+						out.push({ type: 'character', id: c.id, title: c.name, content: profile });
+					} else if (link.targetType === 'persona') {
+						const p = await this.stores.personas.getById(link.targetId);
+						if (!p) continue;
+						out.push({ type: 'persona', id: p.id, title: p.name, content: p.description });
+					} else if (link.targetType === 'lorebook') {
+						const lb = await this.stores.lorebooks.getLorebook(link.targetId);
+						if (!lb?.enabled) continue;
+						const entries = await this.stores.lorebooks.listEntries(link.targetId);
+						for (const e of entries.filter((e) => e.enabled)) {
+							out.push({ type: 'lorebook', id: e.id, title: e.title, content: e.content });
+						}
+					} else {
+						// script
+						const sc = await this.stores.scripts.getById(link.targetId);
+						if (!sc) continue;
+						const body = sc.description.trim()
+							? `${sc.description.trim()}\n\n\`\`\`js\n${sc.code}\n\`\`\``
+							: `\`\`\`js\n${sc.code}\n\`\`\``;
+						out.push({ type: 'script', id: sc.id, title: sc.name, content: body });
+					}
 				}
-				return out;
+				// Dedupe by type+id (a book bound twice shouldn't double-inject).
+				const seen = new Set<string>();
+				return out.filter((it) => {
+					const key = `${it.type}:${it.id}`;
+					if (seen.has(key)) return false;
+					seen.add(key);
+					return true;
+				});
 			},
 			getChatSummaries: async (chatId, branchId) => {
 				return this.stores.chatSummaries.listByChatBranch(chatId, branchId);
+			},
+			getCoauthorBoundResources: async (characterId) => {
+				// CE-C2/C3: the character's M:N-bound lorebooks + scripts as awareness
+				// metadata (name + entry titles / name + description) — NOT full
+				// content (Level 1) and NOT RP keyword activation. Mirrors exactly
+				// what BoundResourcesField shows the user as 'bound' (links-only via
+				// listLorebooksLinkedToTarget / listScriptsLinkedToTarget).
+				const [boundLorebooks, boundScripts] = await Promise.all([
+					this.stores.lorebooks.listLorebooksLinkedToTarget('character', characterId as string),
+					this.stores.scripts.listScriptsLinkedToTarget('character', characterId as string),
+				]);
+				const lorebookItems = await Promise.all(
+					boundLorebooks.map(async (lb) => ({
+						id: lb.id,
+						name: lb.name,
+						// Level-2 metadata only: title + stable id, never content. The id
+						// lets CE-B1's cross-turn tools target this persisted entry.
+						entries: (await this.stores.lorebooks.listEntries(lb.id))
+							.filter((e) => e.enabled)
+							.map((e) => ({ id: e.id, title: e.title })),
+					})),
+				);
+				const scriptItems = boundScripts.map((sc) => ({
+					id: sc.id,
+					name: sc.name,
+					// Description is the human-written summary; the CODE stays out.
+					summary: sc.description.trim(),
+				}));
+				return { lorebooks: lorebookItems, scripts: scriptItems };
 			},
 			getCoauthorUserModules: async () => {
 				// CS-24: user-created modules (editable). Seed modules never come from
@@ -868,6 +1006,53 @@ export function pickBootstrapChatId<T extends string>(
 			},
 			getSkillCatalog: () => this.getSkillCatalog(),
 		};
+	}
+
+	/**
+	 * Build a lazy per-turn context-search session (CE-D2) for the co-author's
+	 * search_context / read_context_item tools. Projects all canonical entities
+	 * into FTS5 on the first search; the next turn rebuilds from stores.
+	 */
+	private buildContextSearchSession(chatId: ChatId): import("../../domain/context/context-search-service.js").ContextSearchSession {
+		const stores = this.stores;
+		return createContextSearchSession(
+			{
+				listAllCharacters: () => stores.characters.listAll(),
+				listAllPersonas: () => stores.personas.listAll(),
+				listAllLorebooks: () => stores.lorebooks.listAllLorebooks(),
+				listEntries: (lorebookId: string) => stores.lorebooks.listEntries(lorebookId),
+				listAllScripts: () => stores.scripts.listAll(),
+				listLorebooksLinkedToTarget: (targetType: "character" | "persona", targetId: string) =>
+					stores.lorebooks.listLorebooksLinkedToTarget(targetType, targetId),
+				listScriptsLinkedToTarget: (targetType: "character" | "persona", targetId: string) =>
+					stores.scripts.listScriptsLinkedToTarget(targetType, targetId),
+				getCharacter: (id: string) => stores.characters.getById(id),
+				getPersona: (id: string) => stores.personas.getById(id),
+				getLorebook: (id: string) => stores.lorebooks.getLorebook(id),
+				getEntry: (id: string) => stores.lorebooks.getEntry(id),
+				getScript: (id: string) => stores.scripts.getById(id),
+				listSkills: async () => {
+					// CE-D3: project the skill catalog into the search index's skill channel.
+					// getSkillCatalog returns SkillCatalogEntry[] (already user>builtin merged);
+					// map to the narrow ContextSearchSkillView the session expects.
+					const entries = await this.getSkillCatalog();
+					return entries.map((s) => ({
+						id: s.id,
+						name: s.name,
+						description: s.description,
+						manifestPath: s.rootRelativeManifestPath,
+						source: s.source,
+					}));
+				},
+			},
+			async () => {
+				const chat = await stores.chats.getById(chatId);
+				return {
+					activeCharacterId: chat?.characterId ?? null,
+					activePersonaId: chat?.personaId ?? null,
+				};
+			},
+		);
 	}
 
 	private async ensureDefaultPresetId(): Promise<PromptPresetId> {
@@ -914,6 +1099,7 @@ export function pickBootstrapChatId<T extends string>(
 			customInjections: preset.customInjections,
 			promptOrder: preset.promptOrder,
 			advancedMode: preset.advancedMode,
+			mergeConsecutiveRoles: preset.mergeConsecutiveRoles,
 			scriptAiSystemPrompt: preset.scriptAiSystemPrompt ?? "",
 			aiAssistantPrompts: (preset as { aiAssistantPrompts?: string }).aiAssistantPrompts ?? "{}",
 			createdAt: preset.createdAt,
@@ -984,12 +1170,14 @@ export function pickBootstrapChatId<T extends string>(
 		return this.buildVariantResponse(chatId, { activeChat: true });
 	}
 
-	/** CA-13: replace the co-author chat's bound lorebook ids (right-panel
-	 *  picker). Wholesale replace, then return the fresh chat row so the
-	 *  frontend picker reflects the persisted state. No message/variant
-	 *  side-effects — this is a chat-row config update, like setChatPersona. */
-	async setCoauthorLorebookIds(chatId: ChatId, lorebookIds: string[]): Promise<VariantResponse> {
-		await this.stores.chats.setCoauthorLorebookIds(chatId, lorebookIds);
+	/** CE-C1: replace the co-author chat's pinned Level-1 context entities
+	 *  (the right-panel picker). Wholesale replace, then return the fresh chat
+	 *  row so the frontend picker reflects the persisted state. No message/variant
+	 *  side-effects — this is a chat-row config update, like setChatPersona.
+	 *  Generalizes CA-13 (lorebook-id-only) to a typed character/persona/
+	 *  lorebook/script link list. */
+	async setCoauthorContextLinks(chatId: ChatId, links: import("@vibe-tavern/domain").CoauthorContextLink[]): Promise<VariantResponse> {
+		await this.stores.chats.setCoauthorContextLinks(chatId, links);
 		return this.buildVariantResponse(chatId, { activeChat: true });
 	}
 }

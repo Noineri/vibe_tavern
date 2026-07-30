@@ -154,3 +154,32 @@ export function parseCharacterMetadata(metadata: PngMetadata[]): unknown {
 
   throw new Error('No character metadata found in PNG');
 }
+
+/** Base64 → UTF-8 text (inverse of png-writer's `utf8ToBase64`). No JSON parse. */
+function decodeBase64ToUtf8(text: string): string | null {
+  try {
+    const binary = atob(text);
+    // Convert binary string to proper UTF-8 bytes before decoding.
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) {
+      bytes[i] = binary.charCodeAt(i);
+    }
+    return new TextDecoder().decode(bytes);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Extract the native VTF `vtmd` monolith from PNG metadata, if present.
+ * Returns the decoded UTF-8 monolith text (the lossless VTF representation
+ * Vibe Tavern writes into every exported PNG), or null when the PNG carries
+ * no `vtmd` chunk (plain SillyTavern cards). Unlike `parseCharacterMetadata`,
+ * this does NOT JSON-parse — the monolith is YAML frontmatter + markdown
+ * sections, not JSON.
+ */
+export function extractVtmdMonolith(metadata: PngMetadata[]): string | null {
+  const vtmd = metadata.find(m => m.keyword === 'vtmd');
+  if (!vtmd) return null;
+  return decodeBase64ToUtf8(vtmd.text);
+}

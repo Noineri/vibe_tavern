@@ -19,9 +19,8 @@ import type { PromptLayerDto } from "@vibe-tavern/domain";
 import type { CoauthorModule } from "@vibe-tavern/api-contracts";
 import { useT } from "../../i18n/context.js";
 import { useChatController } from "../../hooks/use-chat-controller.js";
-import { useProviderProfiles } from "../../hooks/use-provider-profiles.js";
+import { useCoauthorProviderBinding } from "../../hooks/use-coauthor-provider-binding.js";
 import { useTokenCount } from "../../hooks/use-token-count.js";
-import { useToolCapableModels } from "./useToolCapableModels.js";
 import { useChatStore, useProviderStore, useIsSending } from "../../stores/index.js";
 import { useActiveTrace } from "../../stores/chat-selectors.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
@@ -32,35 +31,26 @@ export function useCoauthorInputArea() {
 
 	// --- Controller + store subscriptions (mirrors RP InputArea's subset) ---
 	const chat = useChatController();
-	const provider = useProviderProfiles();
+	const binding = useCoauthorProviderBinding();
 	const draft = useChatStore((s) => s.draft);
 	const setDraft = useChatStore((s) => s.setDraft);
 	const isSending = useIsSending();
 	const connection = useProviderStore((s) => s.connection);
 	const activeChatId = useChatStore((s) => s.activeChatId);
 
-	const canUseLiveApi = connection.status === "connected" && Boolean(connection.model);
+	// Co-Author readiness: the binding provides profile + model. The connection
+	// probe is RP-only, but Co-Author generation works as long as the binding
+	// resolves a profile with an endpoint + model (the adapter resolves it).
+	const canUseLiveApi = binding.isReady;
 	const canSend = Boolean(draft.trim()) && !isSending && canUseLiveApi;
 
-	// --- Favorites, tool-filtered ---
-	const activeProfileId = provider.activeProviderProfile?.id ?? null;
-	const favoriteModels = activeProfileId
-		? (provider.favoriteModelsByProfile[activeProfileId] ?? [])
-		: [];
-	const activeModelId = provider.activeProviderProfile?.defaultModel ?? connection.model ?? null;
-	const { models: toolCapableModels } = useToolCapableModels(activeProfileId);
-	const toolCapableIds = useMemo(
-		() => new Set(toolCapableModels.map((m) => m.id)),
-		[toolCapableModels],
-	);
-	// A co-author favorite is only offered if the model can call tools.
-	const toolFilteredFavorites = useMemo(
-		() => favoriteModels.filter((f) => toolCapableIds.has(f.modelId)),
-		[favoriteModels, toolCapableIds],
-	);
+	// --- Co-Author-scoped favorites, including supported/unknown/unsupported rows ---
+	const activeProfileId = binding.profileId;
+	const favorites = binding.favorites;
+	const activeModelId = binding.model;
 
 	const handleSelectModel = (modelId: string) => {
-		if (activeProfileId) void provider.handleSelectFavoriteProviderModel(activeProfileId, modelId);
+		void binding.quickSwitchModel(modelId);
 	};
 
 	// --- Send label state machine (same logic as RP InputArea, minus attachments) ---
@@ -79,7 +69,7 @@ export function useCoauthorInputArea() {
 
 	const buckets = useMemo(() => {
 		const layers: PromptLayerDto[] = activePromptTrace?.layers ?? [];
-		let moduleTokens = 0, skillTokens = 0, profileTokens = 0, lore = 0, memory = 0, history = 0;
+		let moduleTokens = 0, skillTokens = 0, profileTokens = 0, context = 0, memory = 0, history = 0;
 		for (const layer of layers) {
 			if (!layer.enabled || layer.position === "hidden_system") continue;
 			const tokens = layer.tokenCount;
@@ -90,19 +80,21 @@ export function useCoauthorInputArea() {
 					case "coauthor_module": moduleTokens += tokens; break;
 					case "coauthor_skill": skillTokens += tokens; break;
 					case "coauthor_profile": profileTokens += tokens; break;
-					case "lore_entry": lore += tokens; break;
+					// CE-C1: pinned Level-1 context (was `lore_entry` under CA-13;
+					// generalized to character/persona/lorebook/script).
+					case "coauthor_context": context += tokens; break;
 					case "summary_memory": memory += tokens; break;
 					default: moduleTokens += tokens; break;
 				}
 			}
 		}
-		return { moduleTokens, skillTokens, profileTokens, lore, memory, history };
+		return { moduleTokens, skillTokens, profileTokens, context, memory, history };
 	}, [activePromptTrace?.layers, TEMPORARY_TYPES]);
 
 	const inputTokens = useTokenCount(draft);
-	const permanent = buckets.moduleTokens + buckets.skillTokens + buckets.profileTokens + buckets.lore + buckets.memory;
-	const contextSize = provider.activeProviderProfile?.contextBudget ?? 0;
-	const maxTokens = provider.activeProviderProfile?.maxTokens ?? 0;
+	const permanent = buckets.moduleTokens + buckets.skillTokens + buckets.profileTokens + buckets.context + buckets.memory;
+	const contextSize = binding.profile?.contextBudget ?? 0;
+	const maxTokens = binding.profile?.maxTokens ?? 0;
 	const totalUsed = permanent + buckets.history + inputTokens;
 	const availableBudget = Math.max(0, contextSize - maxTokens);
 	const usageRatio = availableBudget > 0 ? totalUsed / availableBudget : 0;
@@ -116,7 +108,7 @@ export function useCoauthorInputArea() {
 		t,
 		chat,
 		draft, setDraft, isSending, activeChatId, canUseLiveApi, canSend,
-		activeProfileId, toolFilteredFavorites, activeModelId, handleSelectModel,
+		activeProfileId, favorites, activeModelId, handleSelectModel,
 		sendLabel, sendButtonText,
 		buckets, inputTokens, permanent, contextSize, maxTokens, availableBudget, tokenState,
 	};

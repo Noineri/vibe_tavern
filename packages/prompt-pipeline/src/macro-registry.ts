@@ -31,9 +31,31 @@ export interface MacroResolutionState {
   didUseOriginal: boolean;
 }
 
+/**
+ * Catalog grouping for a macro. A resolver without a category is treated as
+ * internal (e.g. `banned`, collected for logit bias) and excluded from the
+ * user-facing catalog / autocomplete.
+ */
+export const MacroCategory = {
+  Identity: "identity",
+  Pronouns: "pronouns",
+  Character: "character",
+  Chat: "chat",
+  Runtime: "runtime",
+  Time: "time",
+  Utility: "utility",
+  Variables: "variables",
+  Random: "random",
+} as const;
+export type MacroCategory = (typeof MacroCategory)[keyof typeof MacroCategory];
+
 export interface MacroResolver {
   name: string;
   aliases?: readonly string[];
+  /** Human-readable description for the macro catalog / autocomplete picker. */
+  description?: string;
+  /** Catalog grouping; omit only for internal resolvers (excluded from catalog). */
+  category?: MacroCategory;
   /**
    * Resolve this macro. Args are the ::-separated arguments (name excluded).
    * resolveNested can be called to resolve nested macros in a string.
@@ -45,6 +67,15 @@ export interface MacroResolver {
     variables: Map<string, string>,
     resolveNested: (text: string) => string,
   ) => string;
+}
+
+/** A displayable entry in the macro catalog (autocomplete / co-author subset). */
+export interface MacroCatalogEntry {
+  /** Canonical name — the inserted text is always `{{name}}`. */
+  name: string;
+  aliases: readonly string[];
+  description: string;
+  category: MacroCategory;
 }
 
 // ─── Tokenizer ─────────────────────────────────────────────────────────
@@ -182,6 +213,22 @@ function tokenize(input: string): Token[] {
   }
 
   return tokens;
+}
+
+/**
+ * Extract the distinct macro names appearing in `input`, reusing the canonical
+ * tokenizer so the result matches what the engine would actually resolve.
+ * Returns only "macro" tokens (named resolvers) — the tokenizer already skips
+ * comments (`{{// ...}}`) and control-flow (`if`/`else`/`/if`) is emitted as
+ * separate token types, so neither appears here. Used by the Co-Author apply
+ * path (B5) to flag macros the model emitted outside the safe reusable subset.
+ */
+export function extractMacroNames(input: string): string[] {
+  const names = new Set<string>();
+  for (const t of tokenize(input)) {
+    if (t.type === "macro") names.add(t.value);
+  }
+  return [...names];
 }
 
 /**
@@ -423,6 +470,41 @@ export class MacroEngine {
   resetVariables(): void {
     this.variables.clear();
   }
+
+  /**
+   * Build the displayable macro catalog from registered resolvers. Aliases map
+   * to the same resolver, so entries are de-duplicated by canonical name.
+   * Resolvers without a `category` (internal) are excluded.
+   */
+  catalog(): MacroCatalogEntry[] {
+    const seen = new Map<string, MacroResolver>();
+    for (const resolver of this.resolvers.values()) {
+      const key = normalizeName(resolver.name);
+      if (!seen.has(key)) seen.set(key, resolver);
+    }
+    const entries: MacroCatalogEntry[] = [];
+    for (const resolver of seen.values()) {
+      if (resolver.category == null) continue;
+      entries.push({
+        name: resolver.name,
+        aliases: resolver.aliases ?? [],
+        description: resolver.description ?? "",
+        category: resolver.category,
+      });
+    }
+    return entries;
+  }
+}
+
+/**
+ * The full macro catalog (all user-facing resolvers), derived from a fresh full
+ * engine and cached (the registry is static after module load). Used by the
+ * editor autocomplete and to derive the Co-Author's allowed subset.
+ */
+let macroCatalogCache: MacroCatalogEntry[] | null = null;
+export function getMacroCatalog(): MacroCatalogEntry[] {
+  if (macroCatalogCache == null) macroCatalogCache = createFullMacroEngine().catalog();
+  return macroCatalogCache;
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────
@@ -487,17 +569,23 @@ export function createFullMacroEngine(): MacroEngine {
   engine.register({
     name: "user",
     aliases: ["<USER>"],
+    description: "The user/persona name.",
+    category: MacroCategory.Identity,
     resolve: (_args, context) => context.names.userName ?? "User",
   });
 
   engine.register({
     name: "char",
     aliases: ["<CHAR>", "<BOT>"],
+    description: "The character name.",
+    category: MacroCategory.Identity,
     resolve: (_args, context) => context.names.charName ?? "Assistant",
   });
 
   engine.register({
     name: "persona",
+    description: "The active persona's description.",
+    category: MacroCategory.Identity,
     resolve: (_args, context) => context.persona.description ?? "",
   });
 
@@ -507,11 +595,36 @@ export function createFullMacroEngine(): MacroEngine {
   const pronounField = (field: keyof PronounForms) => (_args: string[], context: PromptVariableContext): string =>
     resolvePronounForms(context.persona)?.[field] ?? "";
 
-  engine.register({ name: "sub",    resolve: pronounField("subjective") });
-  engine.register({ name: "obj",    resolve: pronounField("objective") });
-  engine.register({ name: "poss",   resolve: pronounField("possessive") });
-  engine.register({ name: "poss_p", resolve: pronounField("possessivePronoun") });
-  engine.register({ name: "ref",    resolve: pronounField("reflexive") });
+  engine.register({
+    name: "sub",
+    description: "Subjective pronoun — she / he / they.",
+    category: MacroCategory.Pronouns,
+    resolve: pronounField("subjective"),
+  });
+  engine.register({
+    name: "obj",
+    description: "Objective pronoun — her / him / them.",
+    category: MacroCategory.Pronouns,
+    resolve: pronounField("objective"),
+  });
+  engine.register({
+    name: "poss",
+    description: "Possessive determiner — her / his / their.",
+    category: MacroCategory.Pronouns,
+    resolve: pronounField("possessive"),
+  });
+  engine.register({
+    name: "poss_p",
+    description: "Possessive pronoun — hers / his / theirs.",
+    category: MacroCategory.Pronouns,
+    resolve: pronounField("possessivePronoun"),
+  });
+  engine.register({
+    name: "ref",
+    description: "Reflexive pronoun — herself / himself / themself.",
+    category: MacroCategory.Pronouns,
+    resolve: pronounField("reflexive"),
+  });
 
   // ─── Pronoun declensions (ST-extension compat) ────────────────────────────
   // Mirror of Wolfsblvt's "SillyTavern-Pronouns" extension macros so prompts/
@@ -519,19 +632,48 @@ export function createFullMacroEngine(): MacroEngine {
   // data, different macro surface. Shorthand aliases ({{she}}, {{him}}, ...) are
   // intentionally omitted: they're off by default in the extension and ambiguous
   // (e.g. {{his}} = possessive pronoun, not determiner). See pronoun-forms.ts.
-  engine.register({ name: "pronoun.subjective", resolve: pronounField("subjective") });
-  engine.register({ name: "pronoun.objective", resolve: pronounField("objective") });
-  engine.register({ name: "pronoun.pos_det",   resolve: pronounField("possessive") });
-  engine.register({ name: "pronoun.pos_pro",   resolve: pronounField("possessivePronoun") });
-  engine.register({ name: "pronoun.reflexive", resolve: pronounField("reflexive") });
+  engine.register({
+    name: "pronoun.subjective",
+    description: "SillyTavern-Pronouns extension form (subjective).",
+    category: MacroCategory.Pronouns,
+    resolve: pronounField("subjective"),
+  });
+  engine.register({
+    name: "pronoun.objective",
+    description: "SillyTavern-Pronouns extension form (objective).",
+    category: MacroCategory.Pronouns,
+    resolve: pronounField("objective"),
+  });
+  engine.register({
+    name: "pronoun.pos_det",
+    description: "SillyTavern-Pronouns extension form (possessive determiner).",
+    category: MacroCategory.Pronouns,
+    resolve: pronounField("possessive"),
+  });
+  engine.register({
+    name: "pronoun.pos_pro",
+    description: "SillyTavern-Pronouns extension form (possessive pronoun).",
+    category: MacroCategory.Pronouns,
+    resolve: pronounField("possessivePronoun"),
+  });
+  engine.register({
+    name: "pronoun.reflexive",
+    description: "SillyTavern-Pronouns extension form (reflexive).",
+    category: MacroCategory.Pronouns,
+    resolve: pronounField("reflexive"),
+  });
 
   engine.register({
     name: "group",
+    description: "The group-chat name (empty outside group chats).",
+    category: MacroCategory.Identity,
     resolve: (_args, context) => context.names.groupName ?? "",
   });
 
   engine.register({
     name: "charIfNotGroup",
+    description: "Character name, blanked in a group-chat context.",
+    category: MacroCategory.Identity,
     resolve: (_args, context) => context.names.charIfNotGroup ?? context.names.charName ?? "Assistant",
   });
 
@@ -540,47 +682,63 @@ export function createFullMacroEngine(): MacroEngine {
   engine.register({
     name: "description",
     aliases: ["charDescription"],
+    description: "The character's description field.",
+    category: MacroCategory.Character,
     resolve: (_args, context) => context.character.description ?? "",
   });
 
   engine.register({
     name: "personality",
     aliases: ["charPersonality"],
+    description: "The character's personality field.",
+    category: MacroCategory.Character,
     resolve: (_args, context) => context.character.personality ?? "",
   });
 
   engine.register({
     name: "scenario",
     aliases: ["charScenario"],
+    description: "The character's scenario field.",
+    category: MacroCategory.Character,
     resolve: (_args, context) => context.character.scenario ?? "",
   });
 
   engine.register({
     name: "mesExamplesRaw",
     aliases: ["mesExamples"],
+    description: "The character's example dialogue, raw text.",
+    category: MacroCategory.Character,
     resolve: (_args, context) => context.character.mesExample ?? "",
   });
 
   engine.register({
     name: "charFirstMessage",
     aliases: ["greeting"],
+    description: "The character's first message / greeting.",
+    category: MacroCategory.Character,
     resolve: (_args, context) => context.character.firstMessage ?? "",
   });
 
   engine.register({
     name: "charCreatorNotes",
     aliases: ["creatorNotes"],
+    description: "The character's creator notes.",
+    category: MacroCategory.Character,
     resolve: (_args, context) => context.character.creatorNotes ?? "",
   });
 
   engine.register({
     name: "charDepthPrompt",
+    description: "The character's depth-prompt.",
+    category: MacroCategory.Character,
     resolve: (_args, context) => context.character.depthPrompt ?? "",
   });
 
   engine.register({
     name: "charVersion",
     aliases: ["version", "char_version"],
+    description: "The character's version string.",
+    category: MacroCategory.Character,
     resolve: (_args, context) => context.character.version?.title ?? "",
   });
 
@@ -588,21 +746,29 @@ export function createFullMacroEngine(): MacroEngine {
 
   engine.register({
     name: "lastChatMessage",
+    description: "The last message in the chat (any role).",
+    category: MacroCategory.Chat,
     resolve: (_args, context) => context.chat.lastMessage ?? "",
   });
 
   engine.register({
     name: "lastUserMessage",
+    description: "The last user message.",
+    category: MacroCategory.Chat,
     resolve: (_args, context) => context.chat.lastUserMessage ?? "",
   });
 
   engine.register({
     name: "lastCharMessage",
+    description: "The last character message.",
+    category: MacroCategory.Chat,
     resolve: (_args, context) => context.chat.lastCharMessage ?? "",
   });
 
   engine.register({
     name: "summary",
+    description: "The current chat summary.",
+    category: MacroCategory.Chat,
     resolve: (_args, context) => context.prompt.summary ?? "",
   });
 
@@ -610,54 +776,95 @@ export function createFullMacroEngine(): MacroEngine {
 
   engine.register({
     name: "model",
+    description: "The active model id.",
+    category: MacroCategory.Runtime,
     resolve: (_args, context) => context.runtime.model ?? "",
   });
 
   engine.register({
     name: "maxPrompt",
     aliases: ["maxPromptTokens"],
+    description: "Max prompt-token budget.",
+    category: MacroCategory.Runtime,
     resolve: (_args, context) => String(firstDefined(context.runtime.maxPromptTokens, context.prompt.contextBudget, context.runtime.contextBudget) ?? ""),
   });
 
   engine.register({
     name: "maxContext",
     aliases: ["maxContextTokens"],
+    description: "Max context-window tokens.",
+    category: MacroCategory.Runtime,
     resolve: (_args, context) => String(firstDefined(context.runtime.contextBudget, context.prompt.contextBudget) ?? ""),
   });
 
   engine.register({
     name: "maxResponse",
     aliases: ["maxResponseTokens"],
+    description: "Max response tokens.",
+    category: MacroCategory.Runtime,
     resolve: (_args, context) => String(firstDefined(context.runtime.maxResponseTokens, context.prompt.maxResponseTokens) ?? ""),
   });
 
   // ─── Time ──────────────────────────────────────────────────────────
 
-  engine.register({ name: "time", resolve: (_args, context) => context.time.time });
-  engine.register({ name: "date", resolve: (_args, context) => context.time.date });
-  engine.register({ name: "weekday", resolve: (_args, context) => context.time.weekday });
-  engine.register({ name: "isotime", resolve: (_args, context) => context.time.isotime });
-  engine.register({ name: "isodate", resolve: (_args, context) => context.time.isodate });
+  engine.register({
+    name: "time",
+    description: "Current local time (e.g. 10:30 PM).",
+    category: MacroCategory.Time,
+    resolve: (_args, context) => context.time.time,
+  });
+  engine.register({
+    name: "date",
+    description: "Current local date.",
+    category: MacroCategory.Time,
+    resolve: (_args, context) => context.time.date,
+  });
+  engine.register({
+    name: "weekday",
+    description: "Current weekday name.",
+    category: MacroCategory.Time,
+    resolve: (_args, context) => context.time.weekday,
+  });
+  engine.register({
+    name: "isotime",
+    description: "Current ISO 8601 time.",
+    category: MacroCategory.Time,
+    resolve: (_args, context) => context.time.isotime,
+  });
+  engine.register({
+    name: "isodate",
+    description: "Current ISO 8601 date.",
+    category: MacroCategory.Time,
+    resolve: (_args, context) => context.time.isodate,
+  });
 
   // ─── Utility ───────────────────────────────────────────────────────
 
   engine.register({
     name: "newline",
+    description: "Insert a line break.",
+    category: MacroCategory.Utility,
     resolve: (_args) => "\n",
   });
 
   engine.register({
     name: "space",
+    description: "Insert N spaces (default 1): {{space::3}}.",
+    category: MacroCategory.Utility,
     resolve: (args) => " ".repeat(Math.max(1, parseInt(args[0] || "1", 10))),
   });
 
   engine.register({
     name: "noop",
+    description: "Resolves to nothing (strips itself).",
+    category: MacroCategory.Utility,
     resolve: () => "",
   });
 
   engine.register({
     name: "original",
+    description: "The swapped-out original text (emitted once per pass).",
+    category: MacroCategory.Utility,
     resolve: (_args, context, state) => {
       if (state.didUseOriginal) return "";
       state.didUseOriginal = true;
@@ -669,6 +876,8 @@ export function createFullMacroEngine(): MacroEngine {
 
   engine.register({
     name: "setvar",
+    description: "Set a local variable: {{setvar::name::value}}.",
+    category: MacroCategory.Variables,
     resolve: (args, _ctx, _state, variables) => {
       const name = args[0] ?? "";
       const value = args[1] ?? "";
@@ -679,6 +888,8 @@ export function createFullMacroEngine(): MacroEngine {
 
   engine.register({
     name: "getvar",
+    description: "Read a local variable, with optional fallback: {{getvar::name::fallback}}.",
+    category: MacroCategory.Variables,
     resolve: (args, _ctx, _state, variables) => {
       const name = args[0] ?? "";
       const fallback = args[1] ?? "";
@@ -689,6 +900,8 @@ export function createFullMacroEngine(): MacroEngine {
 
   engine.register({
     name: "addvar",
+    description: "Append (or numerically add to) a local variable.",
+    category: MacroCategory.Variables,
     resolve: (args, _ctx, _state, variables) => {
       const name = args[0] ?? "";
       const value = args[1] ?? "";
@@ -707,6 +920,8 @@ export function createFullMacroEngine(): MacroEngine {
 
   engine.register({
     name: "incvar",
+    description: "Increment a numeric variable and emit the new value.",
+    category: MacroCategory.Variables,
     resolve: (args, _ctx, _state, variables) => {
       const name = args[0] ?? "";
       if (!name) return "0";
@@ -719,6 +934,8 @@ export function createFullMacroEngine(): MacroEngine {
 
   engine.register({
     name: "decvar",
+    description: "Decrement a numeric variable and emit the new value.",
+    category: MacroCategory.Variables,
     resolve: (args, _ctx, _state, variables) => {
       const name = args[0] ?? "";
       if (!name) return "0";
@@ -732,6 +949,8 @@ export function createFullMacroEngine(): MacroEngine {
   engine.register({
     name: "hasvar",
     aliases: ["varexists"],
+    description: "Whether a variable exists (true / false).",
+    category: MacroCategory.Variables,
     resolve: (args, _ctx, _state, variables) => {
       return variables.has(args[0] ?? "") ? "true" : "false";
     },
@@ -740,6 +959,8 @@ export function createFullMacroEngine(): MacroEngine {
   engine.register({
     name: "deletevar",
     aliases: ["flushvar"],
+    description: "Delete a local variable.",
+    category: MacroCategory.Variables,
     resolve: (args, _ctx, _state, variables) => {
       variables.delete(args[0] ?? "");
       return "";
@@ -750,6 +971,8 @@ export function createFullMacroEngine(): MacroEngine {
 
   engine.register({
     name: "random",
+    description: "Pick one option at random: {{random::a::b::c}} or {{random:a,b,c}}.",
+    category: MacroCategory.Random,
     resolve: (args) => {
       // {{random::a::b::c}} → args = ["a", "b", "c"]
       // {{random:a,b,c}} → args = ["a,b,c"] (legacy single-arg form)
@@ -764,6 +987,8 @@ export function createFullMacroEngine(): MacroEngine {
 
   engine.register({
     name: "roll",
+    description: "Roll dice and emit the total: {{roll::1d20}}, {{roll::3d6+2}}.",
+    category: MacroCategory.Random,
     resolve: (args) => {
       const formula = args[0]?.trim() ?? "";
       if (!formula) return "";

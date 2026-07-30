@@ -4,6 +4,7 @@
  *   Path B: "Migrate from SillyTavern" (ST bulk import → provider)
  */
 import { useState, useCallback, useEffect, useRef } from "react";
+import * as buildConfig from "../../build-config.js";
 import { useT } from "../../i18n/context.js";
 import { cn } from "../../lib/cn.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
@@ -22,7 +23,7 @@ import type { AvatarCropResult } from "../shared/AvatarCropModal.js";
 import { MobileExpandTextarea } from "../shared/MobileExpandTextarea.js";
 import { updatePersona, createPersona, uploadPersonaAvatar } from "../../app-client.js";
 import { toast } from "sonner";
-import { extractPngMetadata, parseCharacterMetadata } from "../../lib/png-reader.js";
+import { readCardRaw } from "../modals/import/parse-import-file.js";
 
 type WizardPath = "choose" | "a" | "b" | "skip";
 type PathAStep = 1 | 2 | 3;
@@ -121,6 +122,8 @@ function ProviderStep({
     contextBudget: existingProfile?.contextBudget ?? 16000,
     pinContextBudget: existingProfile?.pinContextBudget ?? false,
     bindPerModel: existingProfile?.bindPerModel ?? false,
+    modelFreeOnly: existingProfile?.modelFreeOnly ?? false,
+    modelGroupByOwner: existingProfile?.modelGroupByOwner ?? false,
     editingModelId: null,
     stopSequences: existingProfile?.stopSequences ?? [],
     logitBias: existingProfile?.logitBias ?? [],
@@ -673,11 +676,10 @@ function CharacterStep({
     });
     try {
       const lowerName = file.name.toLowerCase();
-      const raw = lowerName.endsWith(".png") || file.type === "image/png"
-        ? parseCharacterMetadata(await extractPngMetadata(file))
-        : JSON.parse(await file.text());
+      const isPng = lowerName.endsWith(".png") || file.type === "image/png";
+      const raw = await readCardRaw(file);
       const data = normalizeWizardCharacterPreview(raw, file);
-      setCardPreview({ ...data, file, avatarUrl: lowerName.endsWith(".png") || file.type === "image/png" ? URL.createObjectURL(file) : null });
+      setCardPreview({ ...data, file, avatarUrl: isPng ? URL.createObjectURL(file) : null });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : t("import_error_read_card"));
     } finally {
@@ -807,7 +809,7 @@ function CharacterStep({
       <input
         ref={fileRef}
         type="file"
-        accept=".png,.json,image/png,application/json"
+        accept=".png,.json,.md,.markdown,.vtmd,image/png,application/json"
         className="hidden"
         onChange={(e) => {
           const file = e.target.files?.[0];
@@ -881,7 +883,7 @@ export function SetupWizard({ onVisibilityChange }: { onVisibilityChange?: (v: b
   const { t } = useT();
   const isMobile = useIsMobile();
   const bootstrapData = useBootstrapStore((s) => s.data);
-  const bootstrapFirstRun = (bootstrapData?.isFirstRun ?? false) || import.meta.env.VITE_FORCE_FIRST_RUN === "true";
+  const bootstrapFirstRun = (bootstrapData?.isFirstRun ?? false) || buildConfig.FORCE_FIRST_RUN;
   const [dismissed, setDismissed] = useState(false);
   const isFirstRun = bootstrapFirstRun && !dismissed;
 

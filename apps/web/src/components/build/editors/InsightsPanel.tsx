@@ -1,11 +1,12 @@
 import { useState, type ReactNode } from "react";
 import { toast } from "sonner";
-import type { ChatId } from "@vibe-tavern/domain";
+import type { ChatId, DiceActorType } from "@vibe-tavern/domain";
 import { Ic } from "../../shared/icons.js";
 import { Toggle } from "../../shared/Toggle.js";
 import { EmptyState } from "../../shared/empty-state.js";
 import { ObjectiveConfig } from "./ObjectiveConfig.js";
 import { TrackerConfig } from "./TrackerConfig.js";
+import { DiceAssignment } from "./DiceAssignment.js";
 import { useT } from "../../../i18n/context.js";
 import { useSnapshotStore } from "../../../stores/snapshot-store.js";
 import { updateInsightsConfigAction } from "../../../stores/api-actions/chat-actions.js";
@@ -35,8 +36,8 @@ export function InsightsPanel() {
   const activeChat = useSnapshotStore((s) => s.activeChat);
   const [pending, setPending] = useState<{
     chatId: ChatId;
-    which: "objective" | "tracker";
-    patch: { objectiveEnabled?: boolean; trackerEnabled?: boolean };
+    which: "objective" | "tracker" | "dice";
+    patch: { objectiveEnabled?: boolean; trackerEnabled?: boolean; diceEnabled?: boolean; diceMode?: "normal" | "immersive"; diceScriptIds?: string[] | null; diceActorBindings?: Record<string, DiceActorType[]> | null };
   } | null>(null);
 
   if (!activeChat) {
@@ -67,8 +68,23 @@ export function InsightsPanel() {
   const trackerEnabled = pendingPatch?.trackerEnabled
     ?? activeChat.insightsConfig?.trackerEnabled
     ?? false;
+  const diceEnabled = pendingPatch?.diceEnabled
+    ?? activeChat.insightsConfig?.diceEnabled
+    ?? false;
+  const diceMode = pendingPatch?.diceMode
+    ?? activeChat.insightsConfig?.diceMode
+    ?? "normal";
+  // null/absent = inherit (resolver union); an array = explicit chat-local override.
+  const diceScriptIds = pendingPatch?.diceScriptIds
+    ?? activeChat.insightsConfig?.diceScriptIds
+    ?? null;
+  // null/absent = each check uses its declared actors; a record = explicit
+  // per-script actor distribution (Rework R1). Only meaningful in override mode.
+  const diceActorBindings = pendingPatch?.diceActorBindings
+    ?? activeChat.insightsConfig?.diceActorBindings
+    ?? null;
 
-  async function persist(patch: { objectiveEnabled?: boolean; trackerEnabled?: boolean }, which: "objective" | "tracker") {
+  async function persist(patch: { objectiveEnabled?: boolean; trackerEnabled?: boolean; diceEnabled?: boolean; diceMode?: "normal" | "immersive"; diceScriptIds?: string[] | null; diceActorBindings?: Record<string, DiceActorType[]> | null }, which: "objective" | "tracker" | "dice") {
     if (pending) return;
     setPending({ chatId, which, patch });
     try {
@@ -100,7 +116,25 @@ export function InsightsPanel() {
         onChange={(v) => void persist({ trackerEnabled: v }, "tracker")}
       />
       {trackerEnabled && <TrackerConfig chatId={chatId} />}
-      {!objectiveEnabled && !trackerEnabled && (
+      <FeatureToggleRow
+        icon={<Ic.dice />}
+        title={t("insights_dice_title")}
+        desc={t("insights_dice_desc")}
+        checked={diceEnabled}
+        disabled={pending !== null}
+        onChange={(v) => void persist({ diceEnabled: v }, "dice")}
+      />
+      {diceEnabled && (
+        <DiceAssignment
+          chatId={chatId}
+          diceMode={diceMode}
+          diceScriptIds={diceScriptIds}
+          diceActorBindings={diceActorBindings}
+          onPatch={(p) => void persist(p, "dice")}
+          pending={pending !== null}
+        />
+      )}
+      {!objectiveEnabled && !trackerEnabled && !diceEnabled && (
         <p className="px-1 pt-1 font-ui text-[11px] leading-relaxed text-t4">
           {t("insights_coming_soon_hint")}
         </p>

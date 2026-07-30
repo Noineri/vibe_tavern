@@ -1,6 +1,7 @@
-import { describe, test, expect, beforeEach, afterEach } from "vitest";
+import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { Profiler, type ProfilerOnRenderCallback } from "react";
 import { render, fireEvent, act } from "@testing-library/react";
+import { useDomEnv } from "../../../test/dom-env.js";
 import {
   AssistantContextHeader,
   type AssistantContextHeaderProps,
@@ -15,6 +16,8 @@ import {
   useHeaderZoneExpansionStore,
   useHeaderZoneOpen,
 } from "../../stores/header-zone-expansion.js";
+
+useDomEnv();
 
 /**
  * AssistantContextHeader — adaptive-layout + fallback + isolation tests.

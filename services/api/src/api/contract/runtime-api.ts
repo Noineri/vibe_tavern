@@ -16,6 +16,7 @@ import type {
 	ChatListResponse,
 	ChatListItem,
 	ConfigPatchResponse,
+	ContextPreviewResponse,
 	InsightsCompletionPatchResponse,
 	SceneBackfillStatusResponse,
 	ScenePreviewResponse,
@@ -25,8 +26,14 @@ import type {
 	SummaryResponse,
 	CharacterVersionResponse,
 } from "./session-types.js";
-import type { ObjectiveMode, ObjectiveTaskStatus, PromptTraceRecordDto, PromptPresetDto, PronounForms, SceneTrackerConfig, SceneTrackerConfigPatch } from "@vibe-tavern/domain";
+import type { ObjectiveMode, ObjectiveTaskStatus, PromptTraceRecordDto, PromptPresetDto, PronounForms, SceneTrackerConfig, SceneTrackerConfigPatch, CoauthorContextLink, MessageVariantId, DiceActorType, DiceMode, DiceRollSnapshot } from "@vibe-tavern/domain";
 import type { ChatMode } from "@vibe-tavern/domain";
+import type { DiceDefinitionsResponse } from "../../domain/scripts-engine/dice-script-service.js";
+import type { DicePendingState } from "../../domain/dice/dice-service.js";
+import type { SkillCatalogEntryDto } from "@vibe-tavern/api-contracts";
+// Re-export so existing imports from this module (the skill adapter) keep
+// resolving; the canonical wire type lives in api-contracts (single source).
+export type { SkillCatalogEntryDto };
 import type {
 	ChatSummary,
 	FavoriteModel,
@@ -35,7 +42,7 @@ import type {
 	ScriptLink,
 	UiSettings,
 } from "@vibe-tavern/db";
-import type { ModelSettingsOverlay } from "@vibe-tavern/domain";
+import type { CoauthorTransport, ModelFavoriteScope, ModelSettingsOverlay } from "@vibe-tavern/domain";
 import type { LorebookRow, LoreEntryRow, ScriptRow } from "@vibe-tavern/db";
 import type { RegenerateOverride, CoauthorApplyRequest } from "@vibe-tavern/api-contracts";
 import type { ProviderProbeResult, ProviderModelOption, TestChatResult } from "../../domain/providers/provider-gateway.js";
@@ -115,7 +122,7 @@ export interface ChatRuntimeApi {
 	clearChat: (chatId: string) => Promise<ChatCreateResponse>;
 	renameChat: (chatId: string, title: string) => Promise<ChatListResponse>;
 	setGreetingIndex: (chatId: string, greetingIndex: number) => Promise<VariantResponse>;
-	setCoauthorLorebookIds: (chatId: string, lorebookIds: string[]) => Promise<VariantResponse>;
+	setCoauthorContextLinks: (chatId: string, links: CoauthorContextLink[]) => Promise<VariantResponse>;
 	setChatPersona: (chatId: string, personaId: string) => Promise<ConfigPatchResponse>;
 	setChatPromptPreset: (chatId: string, promptPresetId: string) => Promise<ConfigPatchResponse>;
 	setCoauthorModule: (chatId: string, moduleId: string | null) => Promise<ConfigPatchResponse>;
@@ -132,15 +139,22 @@ export interface ChatRuntimeApi {
 	renameBranch: (chatId: string, branchId: string, label: string) => Promise<BranchMetaResponse>;
 
 	// Messages
-	sendMessage: (chatId: string, body: { content: string }, signal?: AbortSignal) => Promise<MessageResponse>;
-	sendMessageStream: (chatId: string, body: { content: string }, signal?: AbortSignal) => AsyncIterable<{ event: string; data: string }>;
+	sendMessage: (chatId: string, body: { content: string; attachments?: import("@vibe-tavern/domain").Attachment[]; diceMode?: "normal" | "immersive"; pendingRevision?: number }, signal?: AbortSignal) => Promise<MessageResponse>;
+	sendMessageStream: (chatId: string, body: { content: string; attachments?: import("@vibe-tavern/domain").Attachment[]; diceMode?: "normal" | "immersive"; pendingRevision?: number }, signal?: AbortSignal) => AsyncIterable<{ event: string; data: string }>;
 	regenerateMessage: (chatId: string, messageId: string, override: RegenerateOverride, signal?: AbortSignal) => Promise<MessageResponse>;
 	regenerateMessageStream: (chatId: string, messageId: string, override: RegenerateOverride, signal?: AbortSignal) => AsyncIterable<{ event: string; data: string }>;
 	generateReply: (chatId: string, signal?: AbortSignal) => Promise<MessageResponse>;
 	generateReplyStream: (chatId: string, signal?: AbortSignal) => AsyncIterable<{ event: string; data: string }>;
 	selectVariant: (chatId: string, messageId: string, variantIndex: number) => Promise<VariantResponse>;
+	addEditorVariant: (chatId: string, messageId: string, body: {
+		readonly content: string;
+		readonly sourceVariantIds: readonly MessageVariantId[];
+		readonly modelId?: string;
+		readonly promptPresetId?: string;
+		readonly finishReason?: string;
+	}) => Promise<MessageResponse>;
 	deleteVariant: (chatId: string, messageId: string, variantIndex: number) => Promise<MessageResponse>;
-	editMessage: (chatId: string, messageId: string, content: string) => Promise<MessageResponse>;
+	editMessage: (chatId: string, messageId: string, content: string, expectedVariantId?: MessageVariantId) => Promise<MessageResponse>;
 	deleteMessage: (chatId: string, messageId: string) => Promise<MessageResponse>;
 	updateAttachmentDescription: (chatId: string, messageId: string, attachmentId: string, description: string) => Promise<{ ok: boolean }>;
 	deleteAttachment: (chatId: string, messageId: string, attachmentId: string) => Promise<{ ok: boolean }>;
@@ -153,6 +167,12 @@ export interface ChatRuntimeApi {
 	// Prompt traces (lazy-loaded history)
 	listPromptTraces: (chatId: string, opts?: { messageId?: string; branchId?: string }) => Promise<PromptTraceRecordDto[]>;
 
+	// Live context preview (lazy branch-scoped hydration target). POST, not GET:
+	// current assembly persists lore/script activation state, so it is not a
+	// side-effect-free read. The branch is a path param so a long-running request
+	// can never silently follow whichever branch is active later.
+	getContextPreview: (chatId: string, branchId: string) => Promise<ContextPreviewResponse>;
+
 	// Summaries & Memory
 	listChatSummaries: (chatId: string) => Promise<ChatSummary[]>;
 	createChatSummary: (chatId: string, body: { label?: string; content?: string; summarizedFrom: number; summarizedTo: number; includeInContext?: boolean; excludeSummarized?: boolean; source?: "manual" | "auto"; sortOrder?: number }) => Promise<{ summary: ChatSummary; snapshot: SummaryResponse }>;
@@ -160,9 +180,10 @@ export interface ChatRuntimeApi {
 	deleteChatSummaryRecord: (chatId: string, summaryId: string) => Promise<{ ok: boolean; snapshot: SummaryResponse }>;
 	generateChatSummary: (chatId: string, body: { providerProfileId: string; model?: string; summarizedFrom: number; summarizedTo: number; targetSummaryId?: string; label?: string; includeInContext?: boolean; excludeSummarized?: boolean }, signal?: AbortSignal) => Promise<GenerateChatSummaryResult>;
 	updateMemorySettings: (chatId: string, body: { messageHistoryLimit?: number; autoSummaryConfig?: { enabled?: boolean; everyN?: number; useChatModel?: boolean; providerProfileId?: string; model?: string } }) => Promise<ConfigPatchResponse>;
-	updateInsightsConfig: (chatId: string, body: { insightsConfig?: { objectiveEnabled?: boolean; trackerEnabled?: boolean; tracker?: SceneTrackerConfigPatch } }) => Promise<ConfigPatchResponse>;
+	updateInsightsConfig: (chatId: string, body: { insightsConfig?: { objectiveEnabled?: boolean; trackerEnabled?: boolean; diceEnabled?: boolean; diceMode?: string; tracker?: SceneTrackerConfigPatch } }) => Promise<ConfigPatchResponse>;
 	summarizeChat: (chatId: string, body: { providerProfileId: string; model?: string; maxMessages: number }, signal?: AbortSignal) => Promise<SummarizeChatResult>;
 	saveChatSummary: (chatId: string, body: { summary: string }) => Promise<SummarizeChatResult>;
+	updateDynamicPrompt: (chatId: string, body: { content: string }) => Promise<ConfigPatchResponse>;
 }
 
 // ─── Character ───────────────────────────────────────────────────────
@@ -307,12 +328,12 @@ export interface ScriptRuntimeApi {
 	listAllScripts: () => Promise<Script[]>;
 	listScripts: (scopeType: string, ownerId?: string) => Promise<Script[]>;
 	getScript: (scriptId: string) => Promise<Script | null>;
-	createScript: (body: { name: string; description?: string; code?: string; scopeType: string; characterId?: string; personaId?: string; chatId?: string; enabled?: boolean; sortOrder?: number }) => Promise<Script>;
+	createScript: (body: { name: string; description?: string; code?: string; scriptKind?: string; creationIntentId?: string; scopeType: string; characterId?: string; personaId?: string; chatId?: string; enabled?: boolean; sortOrder?: number }) => Promise<Script>;
 	updateScript: (scriptId: string, body: { name?: string; description?: string; code?: string; enabled?: boolean; sortOrder?: number }) => Promise<Script>;
 	setScriptScope: (scriptId: string, scopeType: 'global' | 'character' | 'persona' | 'chat', ownerId: string | null) => Promise<Script>;
 	deleteScript: (scriptId: string) => Promise<void>;
-	testScript: (scriptId: string, body: { messages?: Array<{ role: string; content: string }>; characterName?: string; characterPersonality?: string; characterScenario?: string; lastMessage?: string }) => Promise<ScriptTestResult>;
-	importScript: (body: { format: "js" | "json"; code?: string; jsonText?: string; name?: string; scopeType?: string; characterId?: string; personaId?: string; chatId?: string }) => Promise<Script>;
+	testScript: (scriptId: string, body: { code?: string; messages?: Array<{ role: string; content: string }>; characterName?: string; characterPersonality?: string; characterScenario?: string; lastMessage?: string }) => Promise<ScriptTestResult>;
+	importScript: (body: { format: "js" | "json"; code?: string; jsonText?: string; name?: string; scriptKind?: string; scopeType?: string; characterId?: string; personaId?: string; chatId?: string }) => Promise<Script>;
 	getScriptLinks: (scriptId: string) => Promise<ScriptLink[]>;
 	setScriptLinks: (scriptId: string, links: Array<{ targetType: string; targetId: string }>) => Promise<ScriptLink[]>;
 }
@@ -321,6 +342,7 @@ export interface ScriptRuntimeApi {
 
 export interface ProviderRuntimeApi {
 	listProviderProfiles: () => Promise<ClientProviderProfileRecord[]>;
+	reorderProviderProfiles: (updates: Array<{ id: string; sortOrder: number }>) => Promise<ClientProviderProfileRecord[]>;
 	fetchProviderProfile: (providerProfileId: string) => Promise<ClientProviderProfileRecord>;
 	activateProviderProfile: (providerProfileId: string) => Promise<ClientProviderProfileRecord>;
 	updateProviderProfile: (providerProfileId: string, body: Record<string, unknown>) => Promise<ClientProviderProfileRecord>;
@@ -329,22 +351,23 @@ export interface ProviderRuntimeApi {
 	testProviderDraft: (body: { endpoint?: string; apiKey?: string; providerType?: string } | null) => Promise<ProviderProbeResult>;
 	testProviderProfile: (providerProfileId: string) => Promise<ProviderProbeResult>;
 	fetchProviderModels: (providerProfileId: string) => Promise<{ models: ProviderModelOption[] }>;
-	listFavoriteProviderModels: (providerProfileId: string) => Promise<FavoriteModel[]>;
-	addFavoriteProviderModel: (providerProfileId: string, body: { modelId: string; label?: string | null; contextLength?: number | null }) => Promise<FavoriteModel>;
-	removeFavoriteProviderModel: (providerProfileId: string, modelId: string) => Promise<void>;
+	listFavoriteProviderModels: (providerProfileId: string, scope: ModelFavoriteScope) => Promise<FavoriteModel[]>;
+	addFavoriteProviderModel: (providerProfileId: string, body: { modelId: string; label?: string | null; contextLength?: number | null; scope: ModelFavoriteScope }) => Promise<FavoriteModel>;
+	removeFavoriteProviderModel: (providerProfileId: string, body: { modelId: string; scope: ModelFavoriteScope }) => Promise<void>;
 	listProviderModelSettings: (providerProfileId: string) => Promise<ProviderModelSettings[]>;
 	getProviderModelSettings: (providerProfileId: string, modelId: string) => Promise<ProviderModelSettings | null>;
 	upsertProviderModelSettings: (providerProfileId: string, modelId: string, settings: ModelSettingsOverlay) => Promise<ProviderModelSettings>;
 	deleteProviderModelSettings: (providerProfileId: string, modelId: string) => Promise<void>;
 	fetchModelsByEndpoint: (baseUrl: string, apiKey?: string, providerType?: string) => Promise<ProviderModelOption[]>;
 	testProviderChatByEndpoint: (opts: { baseUrl: string; apiKey: string; model: string; providerType?: string }) => Promise<TestChatResult>;
-	testProviderChatByProfile: (providerProfileId: string, model: string) => Promise<TestChatResult>;
+	testProviderChatByProfile: (providerProfileId: string, model: string, transport?: CoauthorTransport) => Promise<TestChatResult>;
 }
 
 // ─── Preset ──────────────────────────────────────────────────────────
 
 export interface PresetRuntimeApi {
 	listPromptPresets: () => Promise<PromptPresetDto[]>;
+	reorderPromptPresets: (updates: Array<{ id: string; sortOrder: number }>) => Promise<PromptPresetDto[]>;
 	createPromptPreset: (body: Record<string, unknown> & { name: string }) => Promise<PromptPresetDto>;
 	updatePromptPreset: (presetId: string, body: Record<string, unknown>) => Promise<PromptPresetDto>;
 	deletePromptPreset: (presetId: string) => Promise<void>;
@@ -353,8 +376,8 @@ export interface PresetRuntimeApi {
 // ─── Import/Export ───────────────────────────────────────────────────
 
 export interface ImportExportRuntimeApi {
-	importJson: (body: { fileName: string; jsonText: string; chatId?: string; skipExisting?: boolean; lean?: boolean }) => Promise<ImportResult>;
-	importJsonBatch: (body: { items: Array<{ fileName: string; jsonText: string; chatId?: string; skipExisting?: boolean }>; lean?: boolean }) => Promise<BatchImportResult>;
+	importJson: (body: { fileName: string; jsonText?: string; monolithText?: string; chatId?: string; skipExisting?: boolean; lean?: boolean }) => Promise<ImportResult>;
+	importJsonBatch: (body: { items: Array<{ fileName: string; jsonText?: string; monolithText?: string; chatId?: string; skipExisting?: boolean }>; lean?: boolean }) => Promise<BatchImportResult>;
 	scanSillyTavernDirectory: (dirPath: string) => Promise<StDirectoryScanResult>;
 	importSillyTavernDirectory: (dirPath: string) => Promise<StDirectoryImportResult>;
 	/** Streaming variant: yields ImportStreamEvent items (phase/progress/done/
@@ -373,7 +396,7 @@ export interface AssetRuntimeApi {
 
 export interface AiAssistantRuntimeApi {
 	streamAiAssistant: (body: AiAssistantStreamRequest) => AsyncIterable<AiAssistantStreamChunk>;
-	countAiAssistantTokens: (body: AiAssistantStreamRequest) => Promise<{ tokens: number; model: string; layerCount: number; messageCount: number }>;
+	countAiAssistantTokens: (body: AiAssistantStreamRequest) => Promise<{ tokens: number; model: string; layerCount: number; messageCount: number; activatedLoreCount: number }>;
 }
 
 // ─── Settings ────────────────────────────────────────────────────────
@@ -398,23 +421,6 @@ export interface MobileAccessRuntimeApi {
 // user precedence. Absolute filesystem paths never leave the server — only the
 // portable root-relative manifest path (`<id>/SKILL.md`) is exposed.
 
-/**
- * Wire shape for one skill catalog entry. Metadata only — no file BODY (the
- * manifest text is fetched on demand by Wave 2's `read_skill_file`) and no
- * ABSOLUTE path (only the portable root-relative manifest path is exposed).
- */
-export interface SkillCatalogEntryDto {
-	/** Stable skill id = the skill directory name. */
-	readonly id: string;
-	/** Where the winning copy lives: a user skill shadows a same-id built-in. */
-	readonly source: "builtin" | "user";
-	readonly name: string;
-	readonly description: string;
-	/** Path to `SKILL.md` relative to its root (`<id>/SKILL.md`) — portable. */
-	readonly manifestPath: string;
-	/** True when a user skill with this id shadows a built-in (user precedence). */
-	readonly shadowsBuiltin: boolean;
-}
 
 export interface CoauthorSkillsRuntimeApi {
 	/** Validate + atomically import a skill tree (ordinary files with relative
@@ -482,6 +488,18 @@ export interface InsightsRuntimeApi {
 	retrySceneBackfill: (chatId: string, runId: string) => Promise<SceneBackfillStatusResponse>;
 }
 
+// ─── Dice (DICE_SYSTEM_BACKEND_PLAN, B8) ────────────────────────────────────
+
+export interface DiceRuntimeApi {
+	getDefinitions: (chatId: string) => Promise<{ scripts: DiceDefinitionsResponse["scripts"] }>;
+	getPending: (chatId: string, branchId: string) => Promise<DicePendingState>;
+	roll: (chatId: string, body: { scriptId: string; checkId: string; actorType: DiceActorType; actorId: string; mode: DiceMode; requestId: string }) => Promise<DiceRollSnapshot>;
+	removeRoll: (chatId: string, rollId: string) => Promise<void>;
+	clearLane: (chatId: string, branchId: string) => Promise<void>;
+	setIncluded: (chatId: string, rollId: string, included: boolean) => Promise<void>;
+	chooseFinal: (chatId: string, rollId: string, attemptId: string) => Promise<void>;
+}
+
 export interface RuntimeApi {
 	bootstrap: BootstrapRuntimeApi["bootstrap"];
 	chat: ChatRuntimeApi;
@@ -498,4 +516,5 @@ export interface RuntimeApi {
 	settings: SettingsRuntimeApi;
 	mobileAccess: MobileAccessRuntimeApi;
 	insights: InsightsRuntimeApi;
+	dice: DiceRuntimeApi;
 }

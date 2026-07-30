@@ -22,15 +22,15 @@ const STATUS_POLL_INTERVAL_MS = 500;
 /**
  * Drives the modal state machine.
  *
- * `expectedVersion` is the version we EXPECT to see after the update — sourced
- * from the GitHub release info (version-check.ts) and threaded through the
- * orchestrator's targetVersion. We display this as the "Updated to X.X.X"
- * text without fetching /api/runtime/version post-restart, because the parent
- * process exits after the swap and there is no server to query.
+ * `expectedVersion` is the version we EXPECT to see after the update, threaded
+ * through the orchestrator's targetVersion and shown as the "Updated to X.X.X"
+ * text.
  *
- * After the swap completes the orchestrator sets phase="done", holds for 500ms
- * so we can poll the final status, then calls process.exit(0). The user
- * restarts Vibe Tavern manually.
+ * Once the swap succeeds the server exits for good — it does not relaunch
+ * itself, because a self-respawned process detaches from the terminal and
+ * becomes an orphan the user cannot stop with Ctrl+C. So the connection drops
+ * BY DESIGN and never comes back in this page's lifetime: "complete" is a
+ * terminal state whose only content is "start Vibe Tavern again".
  */
 export function useUpdateFlow(expectedVersion: string | null) {
 	const { t } = useT();
@@ -59,7 +59,7 @@ export function useUpdateFlow(expectedVersion: string | null) {
 				try {
 					status = await fetchUpdateStatus();
 				} catch {
-					// Parent process exited. If we got past "swapping", the
+					// Server process exited. If we got past "swapping", the
 					// update completed successfully — the server is gone
 					// because it exited on purpose. If we were still in an
 					// early phase, something unexpected happened.
@@ -82,6 +82,8 @@ export function useUpdateFlow(expectedVersion: string | null) {
 				lastPhaseRef.current = status.phase;
 
 				if (status.phase === "done") {
+					// The swap succeeded and the server is about to exit. There
+					// is nothing left to wait for — this page is done.
 					setState({ kind: "complete", newVersion: status.targetVersion ?? resolvedTarget() ?? "" });
 					return;
 				}

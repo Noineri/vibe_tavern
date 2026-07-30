@@ -161,6 +161,7 @@ function makeDto(over: Partial<PromptPresetDto> = {}): PromptPresetDto {
     customInjections: [],
     promptOrder: [],
     advancedMode: false,
+    mergeConsecutiveRoles: false,
     createdAt: "2026-01-01T00:00:00Z",
     updatedAt: "2026-01-02T00:00:00Z",
     ...over,
@@ -279,6 +280,7 @@ test("round-trip — VT→VT via _vibe_tavern is lossless for every DTO field", 
     customInjections: [{ identifier: "r", name: "R", content: "c", role: "user" }],
     promptOrder: [makeOrderEntry({ identifier: "r", zone: "in_chat", depth: 5, order: 0, kind: "custom" })],
     advancedMode: true,
+    mergeConsecutiveRoles: true,
   });
   const reparsed = parseStPreset(serializeStPreset(dto));
   expect(reparsed.vibeTavern).toBeDefined();
@@ -298,8 +300,81 @@ test("round-trip — VT→VT via _vibe_tavern is lossless for every DTO field", 
   expect(ext.scriptAiSystemPrompt).toBe(dto.scriptAiSystemPrompt);
   expect(ext.aiAssistantPrompts).toBe(dto.aiAssistantPrompts);
   expect(ext.advancedMode).toBe(dto.advancedMode);
+  expect(ext.mergeConsecutiveRoles).toBe(dto.mergeConsecutiveRoles);
   expect(ext.customInjections).toEqual(dto.customInjections);
   expect(ext.promptOrder).toEqual(dto.promptOrder);
+});
+
+test("round-trip — promptOrder entry role survives VT→serialize→parse", () => {
+  // APC-2b. The entry-level `role` (distinct from a custom injection's content
+  // role) must round-trip through the _vibe_tavern extension untouched. The
+  // injection's own role is "system" while the entry carries "user" to prove the
+  // two are independent fields that both survive.
+  const dto = makeDto({
+    customInjections: [{ identifier: "r", name: "R", content: "c", role: "system" }],
+    promptOrder: [makeOrderEntry({ identifier: "r", zone: "in_chat", depth: 5, order: 0, kind: "custom", role: "user" })],
+    advancedMode: true,
+  });
+  const reparsed = parseStPreset(serializeStPreset(dto));
+  const entry = reparsed.vibeTavern!.promptOrder[0]!;
+  expect(entry.role).toBe("user");
+});
+
+// ── APC-2d: ST block role ↔ canvas entry role (the ST projection path) ──────
+// ST stores role on the content block (prompts[].role), not on prompt_order.
+// The parser merges a non-default block role onto the matching built-in canvas
+// entry; serialize writes a canvas entry's role back onto the ST block (was
+// hardcoded "system"). The VT→VT extension path above is already lossless.
+test("parseStPreset — built-in block role (user/assistant) merges onto the canvas entry", () => {
+  const json = JSON.stringify({
+    name: "X",
+    prompts: [
+      { identifier: "main", name: "Main", role: "user", content: "hi", injection_position: 0, injection_depth: 0, injection_order: 0, enabled: true },
+      { identifier: "jailbreak", name: "JB", role: "assistant", content: "cont", injection_position: 1, injection_depth: 0, injection_order: 0, enabled: true },
+    ],
+    prompt_order: [{ character_id: 100001, order: [
+      { identifier: "main", enabled: true },
+      { identifier: "jailbreak", enabled: true },
+    ] }],
+  });
+  const parsed = parseStPreset(json);
+  const mainEntry = parsed.promptOrder.find((e) => e.identifier === "main");
+  const jbEntry = parsed.promptOrder.find((e) => e.identifier === "jailbreak");
+  expect(mainEntry?.role).toBe("user");
+  expect(jbEntry?.role).toBe("assistant");
+  // and it flows through stBlockToCanvasEntry onto PromptOrderEntry
+  const canvas = parsed.promptOrder.map(stBlockToCanvasEntry);
+  expect(canvas.find((e) => e.identifier === "main")?.role).toBe("user");
+  expect(canvas.find((e) => e.identifier === "jailbreak")?.role).toBe("assistant");
+});
+
+test("parseStPreset — default 'system' block role is NOT stored (canvas stays clean)", () => {
+  const json = JSON.stringify({
+    name: "X",
+    prompts: [
+      { identifier: "main", name: "Main", role: "system", content: "hi", injection_position: 0, injection_depth: 0, injection_order: 0, enabled: true },
+    ],
+    prompt_order: [{ character_id: 100001, order: [{ identifier: "main", enabled: true }] }],
+  });
+  const parsed = parseStPreset(json);
+  expect(parsed.promptOrder[0]?.role).toBeUndefined();
+});
+
+test("serializeStPreset — canvas entry role writes onto the ST content block", () => {
+  // Was hardcoded "system" for main/jailbreak/nsfw/enhance; authorsNote used the
+  // flat authorsNoteRole. Now a canvas entry's role overrides on export.
+  const dto = makeDto({
+    promptOrder: [
+      makeOrderEntry({ identifier: "main", role: "user" }),
+      makeOrderEntry({ identifier: "jailbreak", role: "assistant" }),
+      makeOrderEntry({ identifier: "authorsNote", role: "user" }),
+    ],
+  });
+  const out = JSON.parse(serializeStPreset(dto)) as { prompts: Array<{ identifier: string; role: string }> };
+  expect(out.prompts.find((p) => p.identifier === "main")?.role).toBe("user");
+  expect(out.prompts.find((p) => p.identifier === "jailbreak")?.role).toBe("assistant");
+  // canvas entry role wins over the flat authorsNoteRole ("system")
+  expect(out.prompts.find((p) => p.identifier === "authorsNote")?.role).toBe("user");
 });
 
 test("round-trip — ST projection recovers named-slot content (lossy on VT-only fields)", () => {

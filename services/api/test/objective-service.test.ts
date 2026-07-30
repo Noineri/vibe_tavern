@@ -475,7 +475,7 @@ describe("ObjectiveService (INS-3b logic + INS-3c assembler wiring)", () => {
   });
 
   it("defaults and normalizes contextWindow to a positive integer", async () => {
-    expect(defaultObjectiveState().contextWindow).toBe(10);
+    expect(defaultObjectiveState().contextWindow).toBe(5);
     const { stores } = makeMockStores({ ...defaultObjectiveState(), contextWindow: 3.8 });
     const service = new ObjectiveService(stores, null as never, null as never, async () => ({ text: "" }) as never);
     expect((await service.getState("chat_1" as never)).contextWindow).toBe(3);

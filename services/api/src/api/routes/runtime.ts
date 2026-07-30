@@ -7,6 +7,7 @@ import {
 	type UpdateFailureKind,
 	type UpdateOrchestratorPhase,
 } from "../../domain/update/update-orchestrator.js";
+import { currentLatestTag, getUpdateCheck } from "../../domain/update/update-check-service.js";
 import type {
 	RuntimeDownloadProgress,
 	RuntimeInfo,
@@ -15,6 +16,7 @@ import type {
 	RuntimeUpdateFailure,
 	RuntimeUpdateFailureKind,
 	RuntimeUpdatePhase,
+	RuntimeUpdateCheck,
 	RuntimeUpdateStatus,
 	RuntimeVersionInfo,
 } from "@vibe-tavern/api-contracts";
@@ -44,7 +46,32 @@ export function createRuntimeRoutes() {
 			const payload: RuntimeVersionInfo = { version: getCurrentVersion() };
 			return c.json(payload);
 		})
-		.post("/api/runtime/update", (c) => {
+		.get("/api/runtime/update/check", async (c) => {
+			const payload: RuntimeUpdateCheck = await getUpdateCheck();
+			return c.json(payload);
+		})
+		.post("/api/runtime/update", async (c) => {
+			// The client sends the tag whose release notes it showed the user.
+			// If the server has since resolved a different latest tag, refuse:
+			// otherwise the modal displays the notes for one version while
+			// installing another.
+			const body = await c.req.json().catch(() => null);
+			const requestedTag =
+				typeof body === "object" && body !== null && typeof (body as { tag?: unknown }).tag === "string"
+					? (body as { tag: string }).tag
+					: null;
+
+			if (requestedTag !== null) {
+				const latestTag = await currentLatestTag();
+				if (latestTag !== null && latestTag !== requestedTag) {
+					const stale: RuntimeTriggerResult = {
+						accepted: false,
+						reason: `A newer release (${latestTag}) is now available. Reopen the update dialog to review it.`,
+					};
+					return c.json(stale, 409);
+				}
+			}
+
 			const result = orchestrator.triggerUpdate();
 			const payload: RuntimeTriggerResult = result;
 			return c.json(payload, result.accepted ? 202 : 409);

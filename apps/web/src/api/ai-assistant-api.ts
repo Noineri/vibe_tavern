@@ -5,7 +5,7 @@ import { appendTokenQuery } from "../lib/mobile-token.js";
 export async function countAiAssistantTokens(
   body: AiAssistantRequestBody,
   options?: { signal?: AbortSignal },
-): Promise<{ tokens: number; model: string; layerCount: number; messageCount: number }> {
+): Promise<{ tokens: number; model: string; layerCount: number; messageCount: number; activatedLoreCount: number }> {
   const response = await fetch(appendTokenQuery(`${getGatewayBaseUrl()}/api/ai-assistant/tokens`), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -13,7 +13,7 @@ export async function countAiAssistantTokens(
     signal: options?.signal,
   });
   if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-  return response.json() as Promise<{ tokens: number; model: string; layerCount: number; messageCount: number }>;
+  return response.json() as Promise<{ tokens: number; model: string; layerCount: number; messageCount: number; activatedLoreCount: number }>;
 }
 
 export async function* streamAiAssistant(

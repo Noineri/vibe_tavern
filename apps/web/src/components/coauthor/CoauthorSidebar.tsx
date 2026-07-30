@@ -24,12 +24,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSidebarChats } from "../layout/hooks/use-sidebar-chats.js";
 import { useSidebarCharacters } from "../layout/hooks/use-sidebar-characters.js";
-import { useFlyoutPosition } from "../layout/hooks/use-flyout-position.js";
 import { SidebarHeader } from "../layout/sections/SidebarHeader.js";
 import { SidebarImportModals } from "../layout/sections/SidebarImportModals.js";
 import { CollapsedCharacterStrip } from "../layout/sections/CollapsedCharacterStrip.js";
 import { CharacterListSection } from "../layout/sections/CharacterListSection.js";
-import { SidebarFlyout } from "../layout/sections/SidebarFlyout.js";
+import { CoauthorSidebarFlyout } from "./CoauthorSidebarFlyout.js";
 import { SidebarFooter, type FooterLauncherItem } from "../layout/sections/SidebarFooter.js";
 import { Icons } from "../shared/icons.js";
 import { cn } from "../../lib/cn.js";
@@ -106,30 +105,19 @@ export function CoauthorSidebar() {
   const [importModal, setImportModal] = useState<"character" | "chat" | null>(null);
   const [flyoutCharId, setFlyoutCharId] = useState<string | null>(null);
   const [chatQuery, setChatQuery] = useState("");
-  const flyoutRef = useRef<HTMLDivElement | null>(null);
-  const flyoutListRef = useRef<HTMLDivElement | null>(null);
   const flyoutAvatarRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const [flyoutAvatarPos, setFlyoutAvatarPos] = useState<{ top: number; bottom: number } | null>(null);
-  const flyout = useFlyoutPosition(flyoutCharId, flyoutAvatarPos, flyoutRef, flyoutListRef);
 
   const flyoutChats = useMemo(
     () => flyoutCharId ? allChats.filter(c => c.characterId === flyoutCharId && c.mode === "coauthor") : [],
     [allChats, flyoutCharId],
   );
 
-  useEffect(() => {
-    function handleClickOutside(event: MouseEvent): void {
-      const target = event.target as Node;
-      if (flyoutRef.current && !flyoutRef.current.contains(target)) setFlyoutCharId(null);
-    }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
-
   useEffect(() => { if (!flyoutCharId) setChatQuery(""); }, [flyoutCharId]);
 
   const coauthorFooterItems: FooterLauncherItem[] = [
     { key: "modules", label: t("coauthor.sidebar.modules"), onClick: () => useModalStore.getState().setCoauthorModuleModalOpen(true), icon: <Icons.Tool /> },
+    { key: "skills", label: t("coauthor.sidebar.skills"), onClick: () => useModalStore.getState().setCoauthorSkillModalOpen(true), icon: <Icons.Book /> },
   ];
 
   return (
@@ -159,7 +147,7 @@ export function CoauthorSidebar() {
           </div>
         )}
 
-        <SidebarFlyout
+        <CoauthorSidebarFlyout
           flyoutCharId={flyoutCharId}
           sidebarCollapsed={sidebarCollapsed}
           characterTabs={characterTabs}
@@ -170,11 +158,7 @@ export function CoauthorSidebar() {
           chat={chat}
           character={character}
           setFlyoutCharId={setFlyoutCharId}
-          flyoutRef={flyoutRef}
-          flyoutListRef={flyoutListRef}
-          flyoutTop={flyout.top}
-          flyoutMaxH={flyout.maxH}
-          flyoutFlipped={flyout.flipped}
+          flyoutAvatarPos={flyoutAvatarPos}
           createChatMode="coauthor"
           emptyTitleKey="coauthor.list_empty"
           t={t}

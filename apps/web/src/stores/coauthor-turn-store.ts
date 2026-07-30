@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { coauthorToolOutputSchema, coauthorSkillReadOutputSchema, type CoauthorTarget } from "@vibe-tavern/api-contracts";
+import { coauthorToolOutputSchema, coauthorSkillReadOutputSchema, coauthorLoreBundleOutputSchema, type CoauthorTarget, type CoauthorLoreBundle } from "@vibe-tavern/api-contracts";
 import type { AppMessage } from "../api/types.js";
 // CA-15: persistence of unapplied proposals across reloads. Imported here (not
 // subscribed) so the two resolution points — finalize (upsert) and discard
@@ -59,6 +59,12 @@ export interface CoauthorToolActivity {
    *  they never enter proposal aggregation and are not persisted as drafts —
    *  they render only as glanceable tool activity (the path read). */
   readPath?: string;
+  /** CTX-L3: present iff this is a `lore_bundle` activity. The complete
+   *  cumulative lore draft (every lorebook + entry proposed this turn so far).
+   *  A lore activity carries NO `target`/`proposed` (those are profile/greeting
+   *  arms); aggregation routes on `loreBundle` instead, taking the latest
+   *  cumulative graph. Rendered as the structured lore review surface. */
+  loreBundle?: CoauthorLoreBundle;
 }
 
 /** Selected-variant metadata is the real chat-snapshot wire shape. Some older
@@ -140,6 +146,23 @@ export function extractPersistedCoauthorActivities(
         args: info.args,
         status: read.success ? "done" : "error",
         ...(read.success ? { readPath: read.data.path } : { summary: message.content }),
+      });
+      continue;
+    }
+    // CTX-L3: a lore_bundle result is {target:"lore_bundle", bundle, summary}
+    // — a PROPOSAL but a distinct arm from profile/greeting. Recognize it before
+    // the profile/greeting parse (which would otherwise flag it an error).
+    if (info?.name === "create_lorebook" || info?.name === "create_lore_entry"
+      || info?.name === "set_lore_activation" || info?.name === "ai_write_lore_entry"
+      || info?.name === "ai_generate_lore_keys") {
+      const lore = coauthorLoreBundleOutputSchema.safeParse(rawOutput);
+      activities.push({
+        toolCallId,
+        toolName: info.name,
+        args: info.args,
+        status: lore.success ? "done" : "error",
+        summary: lore.success ? lore.data.summary : message.content,
+        ...(lore.success ? { loreBundle: lore.data.bundle } : {}),
       });
       continue;
     }

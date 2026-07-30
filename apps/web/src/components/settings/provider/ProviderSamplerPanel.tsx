@@ -10,6 +10,7 @@ import { CustomTooltip } from '../../shared/Tooltip.js';
 import { SegmentedControl } from '../../shared/SegmentedControl.js';
 import type { SamplerCapabilityFlags, SamplerFieldId } from '@vibe-tavern/domain';
 import { NumberInput } from '../../shared/NumberInput.js';
+import { AnimatedDisclosure } from '../../shared/AnimatedDisclosure.js';
 import { samplerPresetPayloadSchema } from '@vibe-tavern/api-contracts';
 import { computeOverlayPatch } from '../../../hooks/save-provider-patch.js';
 import { applySamplerPresetFields } from '../../../lib/sampler-clipboard.js';
@@ -392,8 +393,7 @@ export function ProviderSamplerPanel({ form, updateForm, capabilities }: Provide
           </div>
         </div>
 
-        {advOpen && (
-          <div className="border-t border-border2 bg-surface p-4">
+        <AnimatedDisclosure open={advOpen} className="border-t border-border2 bg-surface p-4">
             {/* Two-column sampler grid */}
             <div className={cn("grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4", disabled && "opacity-40 pointer-events-none")}>
               {supports('topP') && (
@@ -666,8 +666,7 @@ export function ProviderSamplerPanel({ form, updateForm, capabilities }: Provide
                 model={form.model}
               />
             )}
-          </div>
-        )}
+        </AnimatedDisclosure>
       </div>
     </div>
   );

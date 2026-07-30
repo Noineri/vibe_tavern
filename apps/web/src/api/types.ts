@@ -8,6 +8,7 @@
 import type { Chat, ChatBranch, ChatId, CharacterId, Message, MessageVariant } from "@vibe-tavern/domain";
 import type { AssemblePromptResponse, PromptPresetDto, PromptTraceRecordDto } from "@vibe-tavern/domain";
 import type { SceneTrackerConfig, SceneTrackerConfigPatch, SceneTrackerRecord, SceneBackfillErrorEntry, SceneBackfillSummary } from "@vibe-tavern/domain";
+import type { DiceActorType, DiceAttempt, DiceCheckDefinition, DiceMode, DiceRollSnapshot, ScriptKind } from "@vibe-tavern/domain";
 
 // Wire-format output types shared with the backend (single source of truth in
 // @vibe-tavern/api-contracts). Two are imported under local aliases that the
@@ -44,6 +45,13 @@ export interface AppMessage extends Message {
   coauthorModuleId?: string | null;
   coauthorSkillId?: string | null;
   attachments?: { id: string; assetId: string; type: string; name?: string; mimeType?: string; sizeBytes?: number; description?: string | null }[];
+  /** Message-owned Dice result snapshots bound to this user message (DICE-F9 /
+   *  DICE-F10). The backend `MessageDto` populates it for user messages that
+   *  have rolls; `normalizeMessage` spreads the DTO, so the field survives at
+   *  runtime even though the domain `Message` base type doesn't declare it.
+   *  Absent/undefined on assistant/system messages and on user messages with
+   *  no rolls — readers coerce with `?? []`. Immutable historical snapshots. */
+  diceRolls?: DiceRollSnapshot[];
 }
 
 export interface AutoSummaryConfig {
@@ -51,6 +59,12 @@ export interface AutoSummaryConfig {
   everyN: number;
   useChatModel: boolean;
   excludeSummarized: boolean;
+  /** SUMMARY_PRIOR_CONTEXT_PLAN: include preceding summaries as read-only
+   *  continuity context so auto-generated summaries are continuation-aware. */
+  includePriorSummaries: boolean;
+  /** SUMMARY_PRIOR_CONTEXT_PLAN: how many of the most-recent preceding summaries
+   *  to include when `includePriorSummaries` is on (count-based user control). */
+  maxPriorSummaries: number;
   providerProfileId?: string;
   model?: string;
 }
@@ -59,6 +73,20 @@ export interface AutoSummaryConfig {
 export interface InsightsConfig {
   objectiveEnabled: boolean;
   trackerEnabled: boolean;
+  /** Dice feature toggle (DICE B9). OFF by default; old chats normalize to
+   *  `false` (the backend schema defaults it). When off, no dice UI/prompt. */
+  diceEnabled?: boolean;
+  /** Dice turn mode (DICE B9): selects the active pending lane. Default
+   *  `"normal"` on old chats (backend schema default). */
+  diceMode?: DiceMode;
+  /** Chat-local Dice script override (DICE_ASSIGNMENT_AND_TRAY_UX_REPORT fix 1).
+   *  `null`/absent = inherit (resolver union); an array = use exactly those ids
+   *  for this chat. The backend filters disabled/deleted/non-dice ids. */
+  diceScriptIds?: string[] | null;
+  /** Chat-local per-script actor distribution (Rework R1). `null`/absent = each
+   *  check uses its declared actors; a record overrides per script with full
+   *  freedom (expand or narrow beyond the script's declared check.actors). */
+  diceActorBindings?: Record<string, DiceActorType[]> | null;
   /** Scene Tracker per-chat config; absent on old chats (normalized to defaults at read). */
   tracker?: SceneTrackerConfig;
 }
@@ -67,6 +95,16 @@ export interface InsightsConfig {
 export interface InsightsConfigPatch {
   objectiveEnabled?: boolean;
   trackerEnabled?: boolean;
+  /** Dice toggle / mode (DICE B9) — optional partial patch; the canonical
+   *  `updateInsightsConfigSchema` already accepts both. */
+  diceEnabled?: boolean;
+  diceMode?: DiceMode;
+  /** Chat-local Dice script override patch (fix 1): absent preserves stored;
+   *  `null` returns to inherit; an array sets the explicit chat-local set. */
+  diceScriptIds?: string[] | null;
+  /** Chat-local actor-distribution patch (Rework R1): absent preserves stored;
+   *  `null` clears; a record sets the per-script binding. */
+  diceActorBindings?: Record<string, DiceActorType[]> | null;
   tracker?: SceneTrackerConfigPatch;
 }
 
@@ -128,6 +166,15 @@ export interface InsightsCompletionPatchResponse {
     objectiveState?: ObjectiveState;
     message?: AppMessage;
   };
+}
+
+/** Branch-scoped live context preview (lazy hydration target). The server echoes
+ *  the immutable { chatId, branchId } so the client can reject a result that no
+ *  longer matches the active branch before caching it. `preview` is null only
+ *  when assembly itself fails. */
+export interface ContextPreviewResponse {
+  target: { chatId: string; branchId: string };
+  preview: AssemblePromptResponse | null;
 }
 
 /** Non-persisting Scene preview (SCN-11): the scene state a DRAFT config would
@@ -306,8 +353,6 @@ export interface AppSnapshot {
   summaries?: Array<{ id: string; kind: string; summary: string }>;
   /** Latest prompt trace for the active branch (null if no traces). Absent → preserve. */
   promptTrace?: PromptTraceRecordDto | null;
-  /** Live context preview (Phase 3.1 decouples this from prompt trace). Absent → preserve. */
-  contextPreview?: AssemblePromptResponse | null;
   /** Active character record. Absent → preserve. */
   character?: AppCharacter;
   /** Active persona record (null if no persona set). Absent → preserve. */
@@ -326,6 +371,11 @@ export interface UiSettingsRecord {
   activePromptPresetId: string | null;
   aiAssistantProviderId: string | null;
   aiAssistantModelName: string | null;
+  coauthorProviderId: string | null;
+  coauthorModelName: string | null;
+  /** Optional for compatibility with bootstrap snapshots predating token overrides. */
+  coauthorMaxTokens?: number | null;
+  coauthorContextBudget?: number | null;
   updatedAt: string;
 }
 
@@ -355,7 +405,6 @@ export interface ProviderModelOption {
   label: string;
   contextLength?: number;
   capabilities?: { vision?: boolean; reasoning?: boolean; tools?: boolean; webSearch?: boolean; premium?: boolean };
-  supportsTools: boolean;
   pricing?: { input?: number; output?: number };
   description?: string;
 }
@@ -432,6 +481,8 @@ export interface ScriptRecord {
   name: string;
   description: string;
   code: string;
+  /** Runtime contract (DICE_SYSTEM Wave B1). Defaults to `prompt` on legacy rows. */
+  scriptKind: ScriptKind;
   scopeType: string;
   characterId: string | null;
   personaId: string | null;
@@ -444,6 +495,61 @@ export interface ScriptLinkRecord {
   scriptId: string;
   targetType: "character" | "persona";
   targetId: string;
+}
+
+// ─── Dice ──────────────────────────────────────────────────────────────
+//
+// Wire types for the chat-scoped Dice API (DICE_SYSTEM_FRONTEND_PLAN, Wave F1).
+// The canonical entity shapes (`DiceRollSnapshot`, `DiceAttempt`,
+// `DiceCheckDefinition`, the enum types) live in `@vibe-tavern/domain` and are
+// re-exported here for import stability; only the response/lane envelopes and
+// the thin request shapes are defined locally.
+
+export type { DiceActorType, DiceAttempt, DiceCheckDefinition, DiceMode, DiceRollSnapshot };
+
+/** One pending lane (GET /pending): the server's monotonic revision + its
+ *  unbound rolls. Bound message-owned results are NOT part of the lane. */
+export interface DiceLaneState {
+  revision: number;
+  rolls: DiceRollSnapshot[];
+}
+
+/** GET /pending response — both lanes keyed by mode. */
+export interface DicePendingState {
+  normal: DiceLaneState;
+  immersive: DiceLaneState;
+}
+
+/** One script's resolvable checks (GET /definitions, grouped by script). */
+export interface DiceScriptDefinitions {
+  scriptId: string;
+  scriptLabel: string;
+  scriptRevision: number;
+  checks: DiceCheckDefinition[];
+}
+
+/** GET /definitions response. */
+export interface DiceDefinitionsResponse {
+  scripts: DiceScriptDefinitions[];
+}
+
+/** POST /roll body. The client is server-authoritative: it sends only ids,
+ *  actor, mode, and a DB-unique `requestId` idempotency key — NEVER dice faces
+ *  or totals (the server rolls). */
+export interface DiceRollRequest {
+  scriptId: string;
+  checkId: string;
+  actorType: DiceActorType;
+  actorId: string;
+  mode: DiceMode;
+  requestId: string;
+}
+
+/** Optional send commit intent threaded onto stream/non-stream send bodies
+ *  (Wave F2). Both fields are present or both absent; omitted ⇒ no-Dice send. */
+export interface DiceSendCommitIntent {
+  diceMode: DiceMode;
+  pendingRevision: number;
 }
 
 // ─── Import ────────────────────────────────────────────────────────────
@@ -473,9 +579,16 @@ export interface AiAssistantChunk {
   text?: string;
   json?: Record<string, unknown>;
   error?: string;
+  /** Present only on the `done` chunk for message-editor completions (MAE-22
+   *  wire shape). The backend attaches these as merge provenance; the runner
+   *  hook captures them additively — existing modes emit a bare `{ type: "done" }`
+   *  and these fields stay `undefined`, so no behavior change for them. */
+  modelId?: string;
+  promptPresetId?: string | null;
+  finishReason?: string;
 }
 
-export type AiAssistantMode = "script" | "lore_entry" | "lore_keys" | "chat_impersonate" | "md_import" | "vision_describe" | "scene_schema";
+export type AiAssistantMode = "script" | "lore_entry" | "lore_keys" | "chat_impersonate" | "md_import" | "vision_describe" | "scene_schema" | "scene_rules" | "message_edit" | "message_merge" | "dice_script";
 
 export interface AiAssistantRequestBody {
   mode: AiAssistantMode;
@@ -490,6 +603,12 @@ export interface AiAssistantRequestBody {
   lorebookIds?: string[];
   chatId?: string;
   recentMessageCount?: number;
+  /** Message editor modes: canonical target message in the chat's active
+   *  branch (message_edit/message_merge). Mirrors the backend wire type. */
+  targetMessageId?: string;
+  /** Message editor modes: immutable canonical variant IDs selected as editor
+   *  sources (edit: the selected variant; merge: the starred set). */
+  sourceVariantIds?: string[];
   existingKeys?: string[];
   existingSecondaryKeys?: string[];
   logic?: string;

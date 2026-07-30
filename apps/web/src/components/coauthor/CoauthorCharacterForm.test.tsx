@@ -17,60 +17,101 @@
  * mounting in happy-dom is graceful-skip (mirrors VibeMdView.test.tsx); the
  * header affordance text is the always-present primary assertion.
  */
-import { describe, it, expect, afterEach, beforeEach, vi } from "vitest";
-import { render, fireEvent, waitFor } from "@testing-library/react";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
+import { useDomEnv } from "../../../test/dom-env.js";
+
+useDomEnv();
+const { fireEvent, render, waitFor } = await import("@testing-library/react");
 import type { AppCharacter } from "../../app-client.js";
 import type { CoauthorToolActivity } from "../../stores/coauthor-turn-store.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
 import { useCoauthorTurnStore } from "../../stores/coauthor-turn-store.js";
-import { CoauthorCharacterForm } from "./CoauthorCharacterForm.js";
 import { coauthorToolOutputSchema } from "@vibe-tavern/api-contracts";
 import { toast } from "sonner";
 
 // Mock useT at the module boundary — returns keys verbatim so assertions match.
-vi.mock("../../i18n/context.js", () => ({
+const handleSaveCharacter = mock(async () => undefined);
+const realI18nContext = await import("../../i18n/context.js");
+const realCharacterController = await import("../../hooks/use-character-controller.js");
+const realTooltip = await import("../shared/Tooltip.js");
+const realLorebookApi = await import("../../api/lorebook-api.js");
+const realPersonaApi = await import("../../api/persona-api.js");
+const realScriptApi = await import("../../api/script-api.js");
+const realAppClient = await import("../../app-client.js");
+const realChatStore = await import("../../stores/chat-store.js");
+
+mock.module("../../i18n/context.js", () => ({
+  ...realI18nContext,
 	useT: () => ({ t: (key: string) => key, tDynamic: (key: string) => key, locale: "en", setLocale: () => {}, ready: true }),
 }));
 
 // useCharacterController is not consumed by any other test file → safe to mock
 // fully. Stub the save write-path so the test never hits the network.
-// vi.hoisted: vi.mock is hoisted above this line, so a plain outer const would
-// be uninitialized when the factory runs. Hoisting the binding alongside the
-// mock keeps every test-body call site (`handleSaveCharacter`) identical.
-const { handleSaveCharacter } = vi.hoisted(() => ({ handleSaveCharacter: vi.fn(() => Promise.resolve()) }));
-vi.mock("../../hooks/use-character-controller.js", () => ({
+// Keep the binding above the later mock.module registration.
+mock.module("../../hooks/use-character-controller.js", () => ({
+	...realCharacterController,
 	useCharacterController: () => ({ handleSaveCharacter, isSavingCharacter: false }),
 }));
 
 // CA-13: the lorebook picker (LinkBindingPopover) pulls in CustomTooltip,
 // which needs a Radix TooltipProvider context irrelevant to the form's
 // behaviours. Passthrough it, mirroring VibeMdView.test.tsx.
-vi.mock("../shared/Tooltip.js", () => ({
+mock.module("../shared/Tooltip.js", () => ({
+	...realTooltip,
 	CustomTooltip: ({ children }: { children: React.ReactNode }) => children,
 	TooltipProvider: ({ children }: { children: React.ReactNode }) => children,
 }));
-// The picker fetches the lorebook list on mount; stub it empty so the test
-// never hits the network.
-vi.mock("../../api/lorebook-api.js", () => ({
+// The picker fetches the lorebook / persona / script lists on mount; stub
+// them empty so the test never hits the network. CE-C1 generalized the
+// picker from lorebook-only to all four entity kinds.
+mock.module("../../api/lorebook-api.js", () => ({
+	...realLorebookApi,
 	listAllLorebooks: () => Promise.resolve([]),
+}));
+mock.module("../../api/persona-api.js", () => ({
+	...realPersonaApi,
+	listPersonas: () => Promise.resolve([]),
+}));
+mock.module("../../api/script-api.js", () => ({
+	...realScriptApi,
+	listAllScripts: () => Promise.resolve([]),
+}));
+
+// CE-C2/C3: BoundResourcesField (rendered inside the form) reads + writes
+// character lorebook/script bindings via app-client. Mock those binding
+// functions to empty/no-op so the field renders without hitting the network.
+// Spread the real module first (preserves every other app-client export,
+// including the AppCharacter TYPE the form itself imports).
+mock.module("../../app-client.js", () => ({
+		...realAppClient,
+		listAllLorebooks: () => Promise.resolve([]),
+		listCharacterLorebooks: () => Promise.resolve([]),
+		listPersonaLorebooks: () => Promise.resolve([]),
+		getLorebookLinks: () => Promise.resolve([]),
+		setLorebookLinks: () => Promise.resolve([]),
+		listAllScripts: () => Promise.resolve([]),
+		listCharacterScripts: () => Promise.resolve([]),
+		listPersonaScripts: () => Promise.resolve([]),
+		getScriptLinks: () => Promise.resolve([]),
+		setScriptLinks: () => Promise.resolve([]),
 }));
 
 // chat-store: spread the REAL module first (preserves every other export for
 // any co-running test file), override ONLY useIsSending with a controllable
-// value. See AGENTS.md mock.module gotcha. Under vitest `vi.mock` is hoisted
-// above `await import`, so `realChatStore` would resolve to the MOCKED module
-// (useless); `importOriginal` bypasses the mock to read the real exports.
+// value.
 // `__isSending` is a plain `let` declared above the (lexically lower) mock so
 // its closure binding is initialized by the time the lazily-invoked factory
 // runs; tests mutate it directly and the `useIsSending` closure reads the
 // live value on every render.
 let __isSending = false;
-vi.mock("../../stores/chat-store.js", async (importOriginal) => {
-	const realChatStore = await importOriginal() as typeof import("../../stores/chat-store.js");
-	return {
+mock.module("../../stores/chat-store.js", () => ({
 		...realChatStore,
 		useIsSending: () => __isSending,
-	};
+}));
+
+let CoauthorCharacterForm: typeof import("./CoauthorCharacterForm.js").CoauthorCharacterForm;
+beforeAll(async () => {
+	({ CoauthorCharacterForm } = await import("./CoauthorCharacterForm.js"));
 });
 
 function makeCharacter(over: Partial<AppCharacter> = {}): AppCharacter {
@@ -156,11 +197,12 @@ describe("CoauthorCharacterForm", () => {
 	it("idle: editor is editable and the header shows the saved subtitle", () => {
 		__isSending = false;
 		useSnapshotStore.setState({ character: makeCharacter() });
-		const { container, getByText } = render(<CoauthorCharacterForm />);
+		const { container, getByText, queryAllByText } = render(<CoauthorCharacterForm />);
 		// Saved subtitle (i18n key returned verbatim by the mock).
 		expect(getByText("saved_state")).toBeTruthy();
 		// Lock affordance is NOT shown while idle.
-		expect(() => getByText("coauthor.editor.locked")).toThrow();
+		const matches = queryAllByText("coauthor.editor.locked");
+		expect(matches.length).toBe(0);
 		// Editable (graceful skip if CM did not mount).
 		const editable = cmEditable(container);
 		if (editable !== null) expect(editable).not.toBe("false");
@@ -169,12 +211,47 @@ describe("CoauthorCharacterForm", () => {
 	it("generating (isSending): editor locks and the 'AI is editing…' affordance shows", () => {
 		__isSending = true;
 		useSnapshotStore.setState({ character: makeCharacter() });
-		const { container, getByText } = render(<CoauthorCharacterForm />);
+		const { container, getAllByText } = render(<CoauthorCharacterForm />);
 		// Lock affordance (i18n key returned verbatim by the mock).
-		expect(getByText("coauthor.editor.locked")).toBeTruthy();
+		// Use getAllByText — the scrim also renders the same key during generation.
+		expect(getAllByText("coauthor.editor.locked").length).toBeGreaterThanOrEqual(1);
 		// Locked (graceful skip if CM did not mount).
 		const editable = cmEditable(container);
 		if (editable !== null) expect(editable).toBe("false");
+	});
+
+	// ── Generation scrim (COAUTHOR_GENERATION_MUTATION_GUARDS) ──────────────
+	// The scrim is a dim overlay with pointer-events-auto that renders over the
+	// editor body while generating. It intercepts clicks to CodeMirror widget
+	// decorations (greeting add/remove buttons) that bypass the EditorView.editable
+	// facet, and provides the visual frozen-surface cue.
+
+	it("generation scrim renders over the editor body while generating", () => {
+		__isSending = true;
+		useSnapshotStore.setState({ character: makeCharacter() });
+		const { container, getAllByText } = render(<CoauthorCharacterForm />);
+		// Scrim label is the same i18n key as the header subtitle.
+		expect(getAllByText("coauthor.editor.locked").length).toBeGreaterThanOrEqual(1);
+		// The scrim must have the dim variant classes and intercept pointers.
+		const scrim = container.querySelector("[class*='pointer-events-auto']");
+		expect(scrim).toBeTruthy();
+		expect((scrim as HTMLElement)?.className ?? "").toContain("bg-surface/55");
+		// Spinner is rendered.
+		expect(container.querySelector(".animate-spin")).toBeTruthy();
+	});
+
+	it("generation scrim is gone when isSending returns to false (lock released)", async () => {
+		__isSending = true;
+		useSnapshotStore.setState({ character: makeCharacter() });
+		const { rerender, queryAllByText } = render(<CoauthorCharacterForm />);
+		expect(queryAllByText("coauthor.editor.locked")).toBeTruthy();
+
+		__isSending = false;
+		rerender(<CoauthorCharacterForm />);
+		// AnimatePresence holds the exiting element briefly; waitFor polls until gone.
+		await waitFor(() => {
+			expect(queryAllByText("coauthor.editor.locked")).toHaveLength(0);
+		});
 	});
 
 	it("locks when a generation starts mid-session (reconfigure effect)", () => {
@@ -182,12 +259,12 @@ describe("CoauthorCharacterForm", () => {
 		// EFFECT (Compartment reconfigure), not just the initial facet value.
 		__isSending = false;
 		useSnapshotStore.setState({ character: makeCharacter() });
-		const { container, rerender, getByText } = render(<CoauthorCharacterForm />);
-		expect(() => getByText("coauthor.editor.locked")).toThrow();
+		const { container, rerender, queryAllByText, getAllByText } = render(<CoauthorCharacterForm />);
+		expect(queryAllByText("coauthor.editor.locked").length).toBe(0);
 
 		__isSending = true;
 		rerender(<CoauthorCharacterForm />);
-		expect(getByText("coauthor.editor.locked")).toBeTruthy();
+		expect(getAllByText("coauthor.editor.locked").length).toBeGreaterThanOrEqual(1);
 		const editable = cmEditable(container);
 		if (editable !== null) expect(editable).toBe("false");
 	});
@@ -198,6 +275,58 @@ describe("CoauthorCharacterForm", () => {
 		expect(getByText("coauthor.diff.placeholder")).toBeTruthy();
 		// No editor host in the placeholder state.
 		expect(container.querySelector(".vibe-md-editor")).toBeNull();
+	});
+
+	it("CE-C1: picker trigger is disabled while generating (mutation guard)", () => {
+		// During generation the LinkBindingPopover trigger must be visually +
+		// functionally disabled so the user cannot open the picker and silently
+		// fail to persist context-link changes. This complements the handleSetContextLinks
+		// early-return guard (defense in depth).
+		__isSending = true;
+		useSnapshotStore.setState({
+			character: makeCharacter(),
+			activeChat: { id: TEST_CHAT } as never,
+		});
+		const { container } = render(<CoauthorCharacterForm />);
+		// The trigger button is the '+' button inside LinkBindingPopover.
+		const trigger = container.querySelector('button[aria-label]');
+		expect(trigger).toBeTruthy();
+		expect((trigger as HTMLButtonElement).disabled).toBe(true);
+	});
+
+	it("CE-C1: renders a pinned character as a pill (typed context link → LinkBindingPopover)", () => {
+		// The generalized picker reads typed coauthorContextLinks and resolves
+		// each link's entity for the pill row. Seed a character + a pinned link
+		// to it; the pill must render (character targets come from the snapshot's
+		// allCharacters, not a list endpoint).
+		useSnapshotStore.setState({
+			character: makeCharacter(),
+			allCharacters: [{
+				id: "char_pinned", name: "Mira", subtitle: "", tags: [],
+				avatarAssetId: null, avatarFullAssetId: null, avatarCropJson: null,
+				avatarExt: null, avatarFullExt: null, updatedAt: "0",
+			}],
+			activeChat: { id: TEST_CHAT, coauthorContextLinks: [{ targetType: "character", targetId: "char_pinned" }] } as never,
+		});
+		const { getByText } = render(<CoauthorCharacterForm />);
+		expect(getByText("Mira")).toBeTruthy();
+	});
+
+	it("CE-C2/C3: context-level captions render so the L1/L2/L3 distinction is obvious", async () => {
+		// The three levels each carry a caption stating what the model sees:
+		// L1 full content, L2 lorebook names+titles, L3 script names+summaries.
+		useSnapshotStore.setState({
+			character: makeCharacter(),
+			activeChat: { id: TEST_CHAT } as never,
+		});
+		const { getByText, findByText } = render(<CoauthorCharacterForm />);
+		// L1 caption renders immediately (not behind BoundResourcesField's load).
+		// useT is mocked to return keys verbatim — assert the KEY renders, not the
+		// translated prose (translation parity is covered by the i18n status check).
+		expect(getByText("coauthor.context.caption_full")).toBeTruthy();
+		// L2/L3 captions render once BoundResourcesField resolves its (mocked) reads.
+		expect(await findByText("coauthor.context.bound_lorebooks_caption")).toBeTruthy();
+		expect(await findByText("coauthor.context.bound_scripts_caption")).toBeTruthy();
 	});
 
 	// ── CA-11: reviewing state + Apply/Reject ──────────────────────────────────
@@ -271,7 +400,7 @@ describe("CoauthorCharacterForm", () => {
 		seedReviewing({ description: "A reserved arachnid weaver." });
 		useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, makeProfileActivity("t1", "Bold and direct."));
 
-		const fetchMock = vi.fn((_url: unknown, _init: unknown) =>
+		const fetchMock = mock((_url: unknown, _init: unknown) =>
 			Promise.resolve({
 				ok: true,
 				status: 200,
@@ -312,10 +441,10 @@ describe("CoauthorCharacterForm", () => {
 		seedReviewing();
 		useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, makeProfileActivity("t1", "Bold."));
 
-		const warningSpy = vi.fn(() => {});
+		const warningSpy = mock(() => {});
 		toast.warning = warningSpy as never;
 
-		globalThis.fetch = vi.fn((_u: unknown, _i: unknown) =>
+		globalThis.fetch = mock((_u: unknown, _i: unknown) =>
 			Promise.resolve({
 				ok: true,
 				status: 200,
@@ -345,7 +474,7 @@ describe("CoauthorCharacterForm", () => {
 		seedReviewing();
 		useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, makeProfileActivity("t1", "Bold."));
 
-		const fetchMock = vi.fn(() => Promise.resolve({ ok: true, status: 200, json: async () => ({}), text: async () => "" }));
+		const fetchMock = mock(() => Promise.resolve({ ok: true, status: 200, json: async () => ({}), text: async () => "" }));
 		globalThis.fetch = fetchMock as never;
 
 		const { getByText } = render(<CoauthorCharacterForm />);
@@ -354,6 +483,103 @@ describe("CoauthorCharacterForm", () => {
 		// No RPC fired — Reject is local-only (discards the in-turn proposal).
 		expect(fetchMock).not.toHaveBeenCalled();
 		// Turn store cleared → idle.
+		expect(useCoauthorTurnStore.getState().getActivities(TEST_CHAT)).toEqual([]);
+	});
+
+	// ── CTX-L3: lore proposal reviewing + Apply / Reject ───────────────────────
+	// A lore-only turn (no profile/greeting) must still enter Reviewing, render the
+	// structured lore surface, and commit the user's per-item selection via Apply.
+	// Parent-dependency is enforced at the Apply boundary: deselecting a lorebook
+	// drops its entries from the shipped bundle (selectLoreBundle).
+
+	function makeLoreActivity(): CoauthorToolActivity {
+		return {
+			toolCallId: "l1",
+			toolName: "create_lore_entry",
+			status: "done",
+			summary: "Drafted lore.",
+			loreBundle: {
+				lorebooks: [
+					{ id: "lb1", name: "World Lore", description: "", scopeType: "global", enabled: true },
+					{ id: "lb2", name: "Char Lore", description: "", scopeType: "character", enabled: true },
+				],
+				entries: [
+					{ id: "e1", lorebookId: "lb1", title: "Eldoria", content: "c", keys: ["k"], secondaryKeys: [], constant: false, position: "before_char", depth: 4, enabled: true },
+					{ id: "e2", lorebookId: "lb2", title: "Vex", content: "c2", keys: ["k2"], secondaryKeys: [], constant: true, position: "before_char", depth: 4, enabled: true },
+				],
+			},
+		};
+	}
+
+	it("CTX-L3: a lore-only turn enters Reviewing and Apply ships the wholesale loreBundle (no profileMd)", async () => {
+		__isSending = false;
+		seedReviewing();
+		useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, makeLoreActivity());
+
+		const fetchMock = mock((_u: unknown, _i: unknown) =>
+			Promise.resolve({ ok: true, status: 200, json: async () => ({ character: makeCharacter(), corrections: [] }), text: async () => "" }),
+		);
+		globalThis.fetch = fetchMock as never;
+
+		const { getByText } = render(<CoauthorCharacterForm />);
+		// Lore-only reviewing: the lore review title is shown.
+		expect(getByText("coauthor.lore.review.title")).toBeTruthy();
+		expect(getByText("coauthor.review.apply")).toBeTruthy();
+
+		fireEvent.click(getByText("coauthor.review.apply"));
+		await waitFor(() => {
+			expect(fetchMock).toHaveBeenCalledTimes(1);
+			const call = fetchMock.mock.calls[0] as unknown as [unknown, RequestInit | undefined];
+			expect(String(call[0])).toContain("/coauthor/apply");
+			const body = JSON.parse(String(call[1]?.body ?? "{}"));
+			// loreBundle ships wholesale (both books + entries); profile/greeting omitted.
+			expect(body.profileMd).toBeUndefined();
+			expect(body.loreBundle.lorebooks).toHaveLength(2);
+			expect(body.loreBundle.entries).toHaveLength(2);
+		});
+		await waitFor(() => {
+			expect(useCoauthorTurnStore.getState().getActivities(TEST_CHAT)).toEqual([]);
+		});
+	});
+
+	it("CTX-L3: Apply with a deselected lorebook drops its entries (parent-dependency at the Apply boundary)", async () => {
+		__isSending = false;
+		seedReviewing();
+		useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, makeLoreActivity());
+
+		const fetchMock = mock((_u: unknown, _i: unknown) =>
+			Promise.resolve({ ok: true, status: 200, json: async () => ({ character: makeCharacter(), corrections: [] }), text: async () => "" }),
+		);
+		globalThis.fetch = fetchMock as never;
+
+		const { getByText, getAllByRole } = render(<CoauthorCharacterForm />);
+		// Checkboxes in DOM order: lb1, e1, lb2, e2. Deselect lb1 (index 0).
+		const checks = getAllByRole("checkbox");
+		fireEvent.click(checks[0]!);
+
+		fireEvent.click(getByText("coauthor.review.apply"));
+		await waitFor(() => {
+			expect(fetchMock).toHaveBeenCalledTimes(1);
+			const call = fetchMock.mock.calls[0] as unknown as [unknown, RequestInit | undefined];
+			const body = JSON.parse(String(call[1]?.body ?? "{}"));
+			// lb1 rejected → only lb2 + e2 ship; e1 is orphaned by its rejected parent
+			// and dropped (invalid child-without-parent prevention).
+			expect(body.loreBundle.lorebooks.map((lb: { id: string }) => lb.id)).toEqual(["lb2"]);
+			expect(body.loreBundle.entries.map((e: { id: string }) => e.id)).toEqual(["e2"]);
+		});
+	});
+
+	it("CTX-L3: Reject discards a lore proposal without an RPC", () => {
+		__isSending = false;
+		seedReviewing();
+		useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, makeLoreActivity());
+
+		const fetchMock = mock(() => Promise.resolve({ ok: true, status: 200, json: async () => ({}), text: async () => "" }));
+		globalThis.fetch = fetchMock as never;
+
+		const { getByText } = render(<CoauthorCharacterForm />);
+		fireEvent.click(getByText("coauthor.review.reject"));
+		expect(fetchMock).not.toHaveBeenCalled();
 		expect(useCoauthorTurnStore.getState().getActivities(TEST_CHAT)).toEqual([]);
 	});
 
@@ -391,7 +617,7 @@ describe("CoauthorCharacterForm", () => {
 		seedReviewing();
 		useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, twoHunkProfileActivity());
 
-		const fetchMock = vi.fn((_u: unknown, _i: unknown) =>
+		const fetchMock = mock((_u: unknown, _i: unknown) =>
 			Promise.resolve({
 				ok: true,
 				status: 200,
@@ -432,7 +658,7 @@ describe("CoauthorCharacterForm", () => {
 		seedReviewing();
 		useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, twoHunkProfileActivity());
 
-		const fetchMock = vi.fn((_u: unknown, _i: unknown) =>
+		const fetchMock = mock((_u: unknown, _i: unknown) =>
 			Promise.resolve({ ok: true, status: 200, json: async () => ({ character: makeCharacter(), corrections: [] }), text: async () => "" }),
 		);
 		globalThis.fetch = fetchMock as never;
@@ -474,7 +700,7 @@ describe("CoauthorCharacterForm", () => {
 			args: { edits: [{ search: "A reserved arachnid weaver.", replace: "Bold and direct." }], summary: "sharpen personality" },
 		});
 
-		const fetchMock = vi.fn((_u: unknown, _i: unknown) =>
+		const fetchMock = mock((_u: unknown, _i: unknown) =>
 			Promise.resolve({ ok: true, status: 200, json: async () => ({ character: makeCharacter({ description: "Bold and direct." }), corrections: [] }), text: async () => "" }),
 		);
 		globalThis.fetch = fetchMock as never;
@@ -504,7 +730,7 @@ describe("CoauthorCharacterForm", () => {
 		seedReviewing();
 		useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, twoHunkProfileActivity());
 
-		const fetchMock = vi.fn((_u: unknown, _i: unknown) =>
+		const fetchMock = mock((_u: unknown, _i: unknown) =>
 			Promise.resolve({ ok: true, status: 200, json: async () => ({ character: makeCharacter(), corrections: [] }), text: async () => "" }),
 		);
 		globalThis.fetch = fetchMock as never;
@@ -579,7 +805,7 @@ describe("CoauthorCharacterForm", () => {
 	// already equals the proposal (description NEW) → diff should be EMPTY
 	// (0 hunks). BUG: the form still holds v1 → the stale diff shows 1 hunk.
 
-	it.fails("version folder-swap: reviewing canonical refreshes when character changes without remount", () => {
+	it.failing("version folder-swap: reviewing canonical refreshes when character changes without remount", () => {
 		__isSending = false;
 		// v1 — canonical when reviewing begins.
 		const v1 = seedReviewing({ description: "OLD personality." });

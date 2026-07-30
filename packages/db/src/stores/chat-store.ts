@@ -1,8 +1,8 @@
 import { eq, and, desc, asc, lte, count, inArray } from 'drizzle-orm';
 import { chats, chatBranches, characters, messages, messageVariants, promptTraces } from '../db-schema.js';
-import type { AppDb } from '../db-connection.js';
+import type { AppDb, DbTransaction } from '../db-connection.js';
 import { resolveStoreRuntime, type StoreClock, type StoreIdGenerator } from '../persistence.js';
-import { normalizeSceneTrackerConfig, applySceneTrackerConfigPatch, rekeySceneRecordJson, type ChatMode, type SceneTrackerConfigPatch } from '@vibe-tavern/domain';
+import { normalizeSceneTrackerConfig, applySceneTrackerConfigPatch, rekeySceneRecordJson, type ChatMode, type SceneTrackerConfigPatch, type CoauthorContextLink } from '@vibe-tavern/domain';
 
 // ─── Return types ─────────────────────────────────────────────────────────────
 
@@ -30,10 +30,13 @@ export interface Chat {
   promptPresetId: string | null;
   loreActivationState: Record<string, unknown>;
   scriptState: Record<string, Record<string, unknown>>;
-  /** Co-author only (CA-13): lorebook ids explicitly bound to this chat as
-   *  read-only editor context (right-panel picker). NOT RP activation. */
-  coauthorLorebookIds: string[];
+  /** Co-author only (CE-C1): entities pinned to this chat as read-only
+   *  Level-1 editor context (right-panel picker). Typed (character/persona/
+   *  lorebook/script) + id. NOT RP activation. */
+  coauthorContextLinks: CoauthorContextLink[];
   coauthorModuleId: string | null;
+  /** Per-chat dynamic prompt — incremental text the chat carries, editable via the advanced prompt canvas. */
+  dynamicPrompt: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -79,8 +82,14 @@ export class ChatStore {
     const branchId = this.idGen.next('brnch');
     const now = this.clock.now();
 
-    await this.db.transaction(async (tx) => {
-      await tx
+    // Synchronous callback (ASYNC_TRANSACTION_AUDIT step 2): drizzle-orm
+    // 0.38.4 + bun:sqlite commits at the end of the callback's synchronous
+    // prefix, so an `async` callback's post-await throw is never rolled back.
+    // Keeping this synchronous means a failure on the root-branch insert rolls
+    // the chat insert back too (no orphan chat row). See forkBranch for the
+    // load-bearing reference + db-connection.ts DbTransaction note.
+    this.db.transaction((tx) => {
+      tx
         .insert(chats)
         .values({
           id: chatId,
@@ -99,7 +108,7 @@ export class ChatStore {
         })
         .run();
 
-      await tx
+      tx
         .insert(chatBranches)
         .values({
           id: branchId,
@@ -335,16 +344,18 @@ export class ChatStore {
     return this.mapRow(row);
   }
 
-  /** Co-author only (CA-13): replace the chat's bound lorebook ids (the
-   *  right-panel picker). Wholesale replace, mirroring setSelectedGreetingIndex. */
-  async setCoauthorLorebookIds(id: string, lorebookIds: string[]): Promise<Chat> {
+  /** Co-author only (CE-C1): replace the chat's pinned Level-1 context
+   *  entities (the right-panel picker). Wholesale replace, mirroring
+   *  setSelectedGreetingIndex. Each link is a typed target; the DB column
+   *  retains its legacy `coauthor_lorebook_ids_json` SQL name. */
+  async setCoauthorContextLinks(id: string, links: CoauthorContextLink[]): Promise<Chat> {
     const now = this.clock.now();
     const [row] = await this.db
       .update(chats)
-      .set({ coauthorLorebookIdsJson: JSON.stringify(lorebookIds), updatedAt: now })
+      .set({ coauthorContextLinksJson: JSON.stringify(links), updatedAt: now })
       .where(eq(chats.id, id))
       .returning();
-    if (!row) throw new Error(`Chat '${id}' not found after coauthor lorebook ids update`);
+    if (!row) throw new Error(`Chat '${id}' not found after coauthor context links update`);
     return this.mapRow(row);
   }
 
@@ -357,6 +368,18 @@ export class ChatStore {
       .where(eq(chats.id, id))
       .returning();
     if (!row) throw new Error(`Chat '${id}' not found after coauthor module update`);
+    return this.mapRow(row);
+  }
+
+  /** Per-chat dynamic prompt — content edited via the advanced prompt canvas. */
+  async updateDynamicPrompt(id: string, content: string): Promise<Chat> {
+    const now = this.clock.now();
+    const [row] = await this.db
+      .update(chats)
+      .set({ dynamicPrompt: content, updatedAt: now })
+      .where(eq(chats.id, id))
+      .returning();
+    if (!row) throw new Error(`Chat '${id}' not found after dynamicPrompt update`);
     return this.mapRow(row);
   }
 
@@ -407,7 +430,18 @@ export class ChatStore {
     return this.mapRow(row);
   }
 
-  async forkBranch(chatId: string, fromMessageId: string, label?: string): Promise<ChatBranch> {
+  // DICE-B12: an optional closure that copies bound Dice rolls onto the new
+  // message ids during a branch fork, called INSIDE the fork transaction so
+  // the dice copy is atomic with the message/variant/trace copy and rolls back
+  // together with it. The closure is supplied by ChatApplicationService (which
+  // owns the DiceRollStore); ChatStore itself stays decoupled from the Dice
+  // schema. See `DiceRollStore.forkCopyRollsInTx`.
+  async forkBranch(
+    chatId: string,
+    fromMessageId: string,
+    label?: string,
+    diceForkInTx?: (tx: DbTransaction, msgIdMap: Map<string, string>) => void,
+  ): Promise<ChatBranch> {
     const sourceMsg = await this.db.select().from(messages)
       .where(eq(messages.id, fromMessageId)).get();
     if (!sourceMsg) throw new Error(`Message ${fromMessageId} not found`);
@@ -418,21 +452,28 @@ export class ChatStore {
     const branchId = this.idGen.next('brnch');
     const now = this.clock.now();
 
-    // forkBranch copies messages AND their messageVariants into the new branch
-    await this.db.transaction(async (tx) => {
-      await tx.insert(chatBranches).values({
+    // forkBranch copies messages AND their messageVariants into the new branch.
+    // The callback is SYNCHRONOUS (no `async`/`await` inside): drizzle-orm
+    // 0.38.4 + bun:sqlite commits at the end of the callback's synchronous
+    // prefix, so an `async` callback's post-await throws are never rolled back
+    // (see the "Synchronous transaction callbacks" constraint + ASYNC_
+    // TRANSACTION_AUDIT fix-step 2). Keeping it synchronous closes that audit
+    // item AND makes the dice fork-copy atomic with this copy.
+    this.db.transaction((tx) => {
+      tx.insert(chatBranches).values({
         id: branchId, chatId, parentBranchId: sourceMsg.branchId,
         forkedFromMessageId: fromMessageId, label: forkLabel, createdAt: now,
       }).run();
 
-      const msgsToCopy = await tx.select().from(messages)
+      const msgsToCopy = tx.select().from(messages)
         .where(and(eq(messages.branchId, sourceMsg.branchId), lte(messages.position, sourceMsg.position)))
         .orderBy(asc(messages.position)).all();
 
       // Batch: collect all new messages and variants, then insert in two bulk queries
       const newMessages: typeof messages.$inferInsert[] = [];
       const newVariants: typeof messageVariants.$inferInsert[] = [];
-      // oldMsgId → newMsgId map, reused to remap prompt_traces.messageId below.
+      // oldMsgId → newMsgId map, reused to remap prompt_traces.messageId below
+      // and to clone bound Dice rolls onto the new message ids (DICE-B12).
       const msgIdMap = new Map<string, string>();
 
       for (const msg of msgsToCopy) {
@@ -443,7 +484,7 @@ export class ChatStore {
           position: msg.position, content: msg.content, state: msg.state,
           createdAt: now, updatedAt: now,
         });
-        const variants = await tx.select().from(messageVariants)
+        const variants = tx.select().from(messageVariants)
           .where(eq(messageVariants.messageId, msg.id)).all();
         for (const v of variants) {
           // Preserve each variant's Scene record into the fork. The forked
@@ -460,7 +501,7 @@ export class ChatStore {
             // Q5: preserve per-variant provenance so the fork keeps model + preset
             // metadata for each swipe (was dropped, causing forked branches to lose
             // the metadata bar's model/preset segments).
-            modelId: v.modelId, presetId: v.presetId,
+            modelId: v.modelId, presetName: v.presetName,
             toolCallsJson: v.toolCallsJson,
             toolCallId: v.toolCallId,
             sceneTrackerJson: rekeySceneRecordJson(v.sceneTrackerJson, newVariantId),
@@ -470,10 +511,10 @@ export class ChatStore {
       }
 
       if (newMessages.length > 0) {
-        await tx.insert(messages).values(newMessages).run();
+        tx.insert(messages).values(newMessages).run();
       }
       if (newVariants.length > 0) {
-        await tx.insert(messageVariants).values(newVariants).run();
+        tx.insert(messageVariants).values(newVariants).run();
       }
 
       // Copy prompt_traces for the forked message range into the new branch.
@@ -485,7 +526,7 @@ export class ChatStore {
       // are assigned to keep rows independent. Fixes the defect where a forked
       // branch started with zero trace history.
       if (msgIdMap.size > 0) {
-        const tracesToCopy = await tx.select().from(promptTraces)
+        const tracesToCopy = tx.select().from(promptTraces)
           .where(and(
             eq(promptTraces.branchId, sourceMsg.branchId),
             inArray(promptTraces.messageId, [...msgIdMap.keys()]),
@@ -522,8 +563,16 @@ export class ChatStore {
             });
           }
           if (newTraces.length > 0) {
-            await tx.insert(promptTraces).values(newTraces).run();
+            tx.insert(promptTraces).values(newTraces).run();
           }
+        }
+
+        // DICE-B12: clone bound Dice rolls onto the corresponding new message
+        // ids, inside this same synchronous transaction so a failure rolls the
+        // dice copy back too. Only bound rolls (user messages) are copied;
+        // pending rolls stay on their owning branch and never move on a fork.
+        if (diceForkInTx) {
+          diceForkInTx(tx, msgIdMap);
         }
       }
     });
@@ -564,13 +613,16 @@ export class ChatStore {
 
     const chat = await this.db.select().from(chats).where(eq(chats.id, branch.chatId)).get();
 
-    await this.db.transaction(async (tx) => {
-      await tx.delete(chatBranches).where(eq(chatBranches.id, branchId)).run();
+    // Synchronous callback (ASYNC_TRANSACTION_AUDIT step 2): see createChat.
+    // A failure during active-branch reassignment rolls the branch delete back
+    // too, so the chat never ends up pointing at a branch that still exists.
+    this.db.transaction((tx) => {
+      tx.delete(chatBranches).where(eq(chatBranches.id, branchId)).run();
 
       // If the deleted branch was the active one, reassign to the root branch
       // (or any remaining branch if root was somehow deleted)
       if (chat && chat.activeBranchId === branchId) {
-        const remaining = await tx
+        const remaining = tx
           .select()
           .from(chatBranches)
           .where(eq(chatBranches.chatId, branch.chatId))
@@ -578,7 +630,7 @@ export class ChatStore {
         const fallback = remaining.find((b) => b.parentBranchId === null) ?? remaining[0];
         if (fallback) {
           const now = this.clock.now();
-          await tx
+          tx
             .update(chats)
             .set({ activeBranchId: fallback.id, updatedAt: now })
             .where(eq(chats.id, branch.chatId))
@@ -649,11 +701,15 @@ export class ChatStore {
           .all();
 
         let changed = false;
-        await this.db.transaction(async (tx) => {
+        // Synchronous callback (ASYNC_TRANSACTION_AUDIT step 2): see
+        // createChat/forkBranch. A failure partway through the backfill (e.g.
+        // on the selection-sync UPDATE) rolls the inserted variants back too,
+        // so a retry starts from the pre-migration state instead of a partial mix.
+        this.db.transaction((tx) => {
           let currentVariants = existing;
 
           if (currentVariants.length === 0) {
-            await tx.insert(messageVariants).values({
+            tx.insert(messageVariants).values({
               id: this.idGen.next('mvar'),
               messageId: firstAssistant.id,
               variantIndex: 0,
@@ -663,7 +719,7 @@ export class ChatStore {
               reasoning: null,
               reasoningDurationMs: null,
               modelId: null,
-              presetId: null,
+              presetName: null,
               coauthorModuleId: null,
               coauthorSkillId: null,
               toolCallsJson: null,
@@ -681,7 +737,7 @@ export class ChatStore {
               reasoning: null,
               reasoningDurationMs: null,
               modelId: null,
-              presetId: null,
+              presetName: null,
               coauthorModuleId: null,
               coauthorSkillId: null,
               toolCallsJson: null,
@@ -704,7 +760,7 @@ export class ChatStore {
                 : content,
             );
 
-            await tx.insert(messageVariants).values(migratedAlternates.map((content, index) => ({
+            tx.insert(messageVariants).values(migratedAlternates.map((content, index) => ({
               id: this.idGen.next('mvar'),
               messageId: firstAssistant.id,
               variantIndex: index + 1,
@@ -714,7 +770,7 @@ export class ChatStore {
               reasoning: null,
               reasoningDurationMs: null,
               modelId: null,
-              presetId: null,
+              presetName: null,
               coauthorModuleId: null,
               coauthorSkillId: null,
               toolCallsJson: null,
@@ -734,7 +790,7 @@ export class ChatStore {
                 reasoning: null,
                 reasoningDurationMs: null,
                 modelId: null,
-                presetId: null,
+                presetName: null,
                 coauthorModuleId: null,
                 coauthorSkillId: null,
                 toolCallsJson: null,
@@ -749,14 +805,14 @@ export class ChatStore {
           if (chat.selectedGreetingIndex > 0) {
             const target = currentVariants.find((variant) => variant.variantIndex === chat.selectedGreetingIndex);
             if (target) {
-              await tx.update(messageVariants).set({ isSelected: 0 })
+              tx.update(messageVariants).set({ isSelected: 0 })
                 .where(eq(messageVariants.messageId, firstAssistant.id)).run();
-              await tx.update(messageVariants).set({ isSelected: 1 })
+              tx.update(messageVariants).set({ isSelected: 1 })
                 .where(and(
                   eq(messageVariants.messageId, firstAssistant.id),
                   eq(messageVariants.variantIndex, chat.selectedGreetingIndex),
                 )).run();
-              await tx.update(messages).set({ content: target.content, updatedAt: this.clock.now() })
+              tx.update(messages).set({ content: target.content, updatedAt: this.clock.now() })
                 .where(eq(messages.id, firstAssistant.id)).run();
               changed = true;
             }
@@ -823,8 +879,9 @@ export class ChatStore {
       promptPresetId: row.promptPresetId,
       loreActivationState: safeParseJson(row.loreActivationStateJson),
       scriptState: safeParseScriptState(row.scriptStateJson),
-      coauthorLorebookIds: parseStringArray(row.coauthorLorebookIdsJson),
+      coauthorContextLinks: parseContextLinks(row.coauthorContextLinksJson),
       coauthorModuleId: row.coauthorModuleId,
+      dynamicPrompt: row.dynamicPrompt,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
     };
@@ -852,15 +909,35 @@ function safeParseJson(text: string): Record<string, unknown> {
   }
 }
 
-/** Parse a JSON column that holds a string array, defending against malformed
- *  rows (corruption, manual edit). Never throws — falls back to []. */
-function parseStringArray(text: string): string[] {
+/** Parse the co-author pinned-context column. Never throws — falls back to [].
+ *  CE-C1: the column now stores a typed `CoauthorContextLink[]`, but legacy
+ *  rows (CA-13) hold a bare `string[]` of lorebook ids; lift those to
+ *  `[{targetType:"lorebook",targetId}]` so pre-existing chats keep their
+ *  bound lorebooks without a migration. Malformed entries are dropped. */
+function parseContextLinks(text: string): CoauthorContextLink[] {
+  let parsed: unknown;
   try {
-    const parsed: unknown = JSON.parse(text || '[]');
-    return Array.isArray(parsed) ? parsed.filter((v): v is string => typeof v === 'string') : [];
+    parsed = JSON.parse(text || '[]');
   } catch {
     return [];
   }
+  if (!Array.isArray(parsed)) return [];
+  const out: CoauthorContextLink[] = [];
+  for (const entry of parsed) {
+    // Legacy CA-13 row: bare lorebook id string.
+    if (typeof entry === 'string') {
+      if (entry) out.push({ targetType: 'lorebook', targetId: entry });
+      continue;
+    }
+    // CE-C1 typed link.
+    if (entry && typeof entry === 'object'
+      && (entry.targetType === 'character' || entry.targetType === 'persona'
+        || entry.targetType === 'lorebook' || entry.targetType === 'script')
+      && typeof entry.targetId === 'string') {
+      out.push({ targetType: entry.targetType, targetId: entry.targetId });
+    }
+  }
+  return out;
 }
 
 function safeParseScriptState(text: string): Record<string, Record<string, unknown>> {

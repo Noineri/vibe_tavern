@@ -7,8 +7,9 @@
  * logic-bearing surfaces so a future regression (dropped trim, wrong payload
  * shape, broken Cmd+Enter, lost pre-fill) fails loudly:
  *
- *   - payload: a single line posts one user message; each non-empty line is its
- *     own message (messageCount contract);
+ *   - payload: every run includes the current unsaved code; a single line
+ *     posts one user message, and each non-empty line is its own message
+ *     (messageCount contract);
  *   - guards: empty/whitespace input and a null scriptId never call testScript;
  *   - shortcut: Cmd/Ctrl+Enter inside the input triggers a run;
  *   - pre-fill: the `characterName` prop seeds the advanced character-name
@@ -16,25 +17,38 @@
  *   - result: output renders the personality/scenario blocks; no-output renders
  *     the no-effect warning.
  *
- * Runner: vitest (apps/web uses vitest, NOT bun:test — see vitest.config.ts;
- * vi.mock is file-scoped + hoisted, so the mock.module gotcha doesn't apply).
- * DOM via happy-dom (configured globally per-file).
+ * Runner: bun:test with scoped happy-dom.
  *
  * Identity i18n (`t` returns the key verbatim) mirrors LorebookEditor.test.tsx,
  * so assertion strings are the i18n keys. `AutoTextarea` is stubbed to a plain
  * textarea to keep the test off happy-dom layout measuring (the real component
  * sizes via scrollHeight, irrelevant to the logic under test).
  */
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeAll, beforeEach, mock } from "bun:test";
 import type { ChangeEvent } from "react";
-import { render, fireEvent, waitFor } from "@testing-library/react";
-import { ScriptTester } from "./ScriptTester.js";
-import { testScript } from "../../../app-client.js";
+import { useDomEnv } from "../../../../test/dom-env.js";
+
+useDomEnv();
+
+const testScript = mock(() => Promise.resolve({
+	kind: "prompt" as const,
+	personality: "",
+	scenario: "",
+	state: {},
+	injectedMessages: [],
+	console: [],
+	shared: {},
+	errors: [],
+}));
+const realI18nContext = await import("../../../i18n/context.js");
+const realAppClient = await import("../../../app-client.js");
+const realAutoTextarea = await import("../../shared/auto-textarea.js");
 
 // ── Module-boundary mocks (hoisted above the ScriptTester import) ────────
 
 // Identity i18n — assertion strings match the i18n keys verbatim.
-vi.mock("../../../i18n/context.js", () => ({
+mock.module("../../../i18n/context.js", () => ({
+	...realI18nContext,
 	useT: () => ({
 		t: (k: string) => k,
 		tDynamic: (k: string) => k,
@@ -45,22 +59,35 @@ vi.mock("../../../i18n/context.js", () => ({
 }));
 
 // testScript RPC — the single side effect of the panel.
-vi.mock("../../../app-client.js", () => ({
-	testScript: vi.fn(),
+mock.module("../../../app-client.js", () => ({
+	...realAppClient,
+ testScript,
 }));
 
 // AutoTextarea sizes via scrollHeight in a useLayoutEffect; in happy-dom that
 // is 0 and irrelevant to the logic under test, so stub it to a plain textarea.
-vi.mock("../../shared/auto-textarea.js", () => ({
+mock.module("../../shared/auto-textarea.js", () => ({
+	...realAutoTextarea,
 	AutoTextarea: ({ value, onChange, readOnly }: { value?: string; onChange?: (e: ChangeEvent<HTMLTextAreaElement>) => void; readOnly?: boolean }) => (
 		<textarea data-testid="auto-textarea" value={value} onChange={onChange} readOnly={readOnly} />
 	),
 }));
 
-const mockTestScript = vi.mocked(testScript);
+const mockTestScript = testScript;
+
+let ScriptTester: typeof import("./ScriptTester.js").ScriptTester;
+let render: typeof import("@testing-library/react").render;
+let fireEvent: typeof import("@testing-library/react").fireEvent;
+let waitFor: typeof import("@testing-library/react").waitFor;
+let userEvent: typeof import("@testing-library/user-event").default;
+beforeAll(async () => {
+	({ render, fireEvent, waitFor } = await import("@testing-library/react"));
+	({ default: userEvent } = await import("@testing-library/user-event"));
+	({ ScriptTester } = await import("./ScriptTester.js"));
+});
 
 function renderTester(props: Partial<Parameters<typeof ScriptTester>[0]> = {}) {
-	return render(<ScriptTester scriptId="script_1" isMobile={false} {...props} />);
+	return render(<ScriptTester scriptId="script_1" code="draft code" isMobile={false} {...props} />);
 }
 
 describe("ScriptTester (characterization)", () => {
@@ -70,16 +97,16 @@ describe("ScriptTester (characterization)", () => {
 
 	it("payload: a single-line input posts one user message to testScript", async () => {
 		const { getByPlaceholderText, getByText } = renderTester();
-		fireEvent.change(getByPlaceholderText("script_test_input_placeholder"), { target: { value: "hello" } });
+		await userEvent.setup().type(getByPlaceholderText("script_test_input_placeholder"), "hello");
 		fireEvent.click(getByText("script_test_run"));
 		await waitFor(() => {
-			expect(mockTestScript).toHaveBeenCalledWith("script_1", { messages: [{ role: "user", content: "hello" }] });
+			expect(mockTestScript).toHaveBeenCalledWith("script_1", { messages: [{ role: "user", content: "hello" }], code: "draft code" });
 		});
 	});
 
 	it("payload: each non-empty line becomes its own user message (messageCount)", async () => {
 		const { getByPlaceholderText, getByText } = renderTester();
-		fireEvent.change(getByPlaceholderText("script_test_input_placeholder"), { target: { value: "a\n\nb" } });
+		await userEvent.setup().type(getByPlaceholderText("script_test_input_placeholder"), "a{Enter}{Enter}b");
 		fireEvent.click(getByText("script_test_run"));
 		await waitFor(() => {
 			expect(mockTestScript).toHaveBeenCalledWith("script_1", {
@@ -87,20 +114,21 @@ describe("ScriptTester (characterization)", () => {
 					{ role: "user", content: "a" },
 					{ role: "user", content: "b" },
 				],
+				code: "draft code",
 			});
 		});
 	});
 
-	it("guard: blank/whitespace input does not call testScript", () => {
+	it("guard: blank/whitespace input does not call testScript", async () => {
 		const { getByPlaceholderText, getByText } = renderTester();
-		fireEvent.change(getByPlaceholderText("script_test_input_placeholder"), { target: { value: "   " } });
+		await userEvent.setup().type(getByPlaceholderText("script_test_input_placeholder"), "   ");
 		fireEvent.click(getByText("script_test_run"));
 		expect(mockTestScript).not.toHaveBeenCalled();
 	});
 
-	it("guard: a null scriptId does not call testScript even with input", () => {
+	it("guard: a null scriptId does not call testScript even with input", async () => {
 		const { getByPlaceholderText, getByText } = renderTester({ scriptId: null });
-		fireEvent.change(getByPlaceholderText("script_test_input_placeholder"), { target: { value: "hi" } });
+		await userEvent.setup().type(getByPlaceholderText("script_test_input_placeholder"), "hi");
 		fireEvent.click(getByText("script_test_run"));
 		expect(mockTestScript).not.toHaveBeenCalled();
 	});
@@ -108,10 +136,10 @@ describe("ScriptTester (characterization)", () => {
 	it("shortcut: Cmd/Ctrl+Enter in the input triggers a run", async () => {
 		const { getByPlaceholderText } = renderTester();
 		const input = getByPlaceholderText("script_test_input_placeholder");
-		fireEvent.change(input, { target: { value: "go" } });
+		await userEvent.setup().type(input, "go");
 		fireEvent.keyDown(input, { key: "Enter", ctrlKey: true });
 		await waitFor(() => {
-			expect(mockTestScript).toHaveBeenCalledWith("script_1", { messages: [{ role: "user", content: "go" }] });
+			expect(mockTestScript).toHaveBeenCalledWith("script_1", { messages: [{ role: "user", content: "go" }], code: "draft code" });
 		});
 	});
 
@@ -124,6 +152,7 @@ describe("ScriptTester (characterization)", () => {
 
 	it("result: renders the personality + scenario blocks when the run returns output", async () => {
 		mockTestScript.mockResolvedValue({
+			kind: "prompt",
 			personality: "calm",
 			scenario: "forest",
 			state: {},
@@ -133,7 +162,7 @@ describe("ScriptTester (characterization)", () => {
 			errors: [],
 		});
 		const { getByPlaceholderText, getByText, findByText } = renderTester();
-		fireEvent.change(getByPlaceholderText("script_test_input_placeholder"), { target: { value: "hi" } });
+		await userEvent.setup().type(getByPlaceholderText("script_test_input_placeholder"), "hi");
 		fireEvent.click(getByText("script_test_run"));
 		// hasAnyOutput (personality/scenario non-empty) → both labels render.
 		expect(await findByText("script_test_personality")).toBeTruthy();
@@ -142,6 +171,7 @@ describe("ScriptTester (characterization)", () => {
 
 	it("result: shows the no-effect warning when the run returns no output", async () => {
 		mockTestScript.mockResolvedValue({
+			kind: "prompt",
 			personality: "",
 			scenario: "",
 			state: {},
@@ -151,7 +181,7 @@ describe("ScriptTester (characterization)", () => {
 			errors: [],
 		});
 		const { getByPlaceholderText, getByText, findByText } = renderTester();
-		fireEvent.change(getByPlaceholderText("script_test_input_placeholder"), { target: { value: "hi" } });
+		await userEvent.setup().type(getByPlaceholderText("script_test_input_placeholder"), "hi");
 		fireEvent.click(getByText("script_test_run"));
 		// No personality/scenario/injected/console/state/shared and no errors → warning.
 		expect(await findByText("script_test_no_effect")).toBeTruthy();

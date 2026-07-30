@@ -39,7 +39,23 @@ export class AssetService {
   constructor(
     private readonly assetsDir: string,
   private readonly contentStore: ContentStore | null = null,
+  /**
+   * Resolves a character id → its on-disk folder name (HUMAN_READABLE_FOLDERS).
+   * Applied only to the `characters` storage folder; persona I/O is untouched
+   * (persona folders stay opaque-id). Optional — bare test helpers construct
+   * AssetService without it.
+   */
+  private readonly resolveCharacterFolder: ((characterId: string) => Promise<string>) | null = null,
   ) {}
+
+  /** Resolve an entity id to its on-disk folder name. Character folders are
+   *  human-readable (slug) post-HRF; persona folders stay opaque-id. No-op when
+   *  no resolver is wired (bare test helpers) or the folder isn't `characters`. */
+  private async resolveEntityId(folder: StorageFolder, entityId: string): Promise<string> {
+    return folder === STORAGE_FOLDERS.characters && this.resolveCharacterFolder
+      ? await this.resolveCharacterFolder(entityId)
+      : entityId;
+  }
 
   async upload(file: File): Promise<{ assetId: string; url: string }> {
     const mime = file.type;
@@ -153,7 +169,8 @@ export class AssetService {
       throw new Error(`Image too large: ${(buffer.length / (1024 * 1024)).toFixed(1)} MB. Maximum: 20 MB.`);
     }
     const ext = MIME_TO_EXT[mime];
-    await this.requireContentStore().writeBinary(folder, entityId, `${leafBase}.${ext}`, buffer);
+    const f = await this.resolveEntityId(folder, entityId);
+    await this.requireContentStore().writeBinary(folder, f, `${leafBase}.${ext}`, buffer);
     return { ext, mimeType: mime };
   }
 
@@ -164,7 +181,8 @@ export class AssetService {
     ext: string,
   ): Promise<Response | null> {
     if (!this.contentStore) return null;
-    const buf = await this.contentStore.readBinary(folder, entityId, `${leafBase}.${ext}`);
+    const f = await this.resolveEntityId(folder, entityId);
+    const buf = await this.contentStore.readBinary(folder, f, `${leafBase}.${ext}`);
     if (!buf) return null;
     const mime = EXT_TO_MIME[ext] ?? "application/octet-stream";
     // Copy Buffer bytes into a fresh ArrayBuffer-backed Uint8Array so the value
@@ -185,7 +203,8 @@ export class AssetService {
     ext: string,
   ): Promise<Buffer | null> {
     if (!this.contentStore) return null;
-    return this.contentStore.readBinary(folder, entityId, `${leafBase}.${ext}`);
+    const f = await this.resolveEntityId(folder, entityId);
+    return this.contentStore.readBinary(folder, f, `${leafBase}.${ext}`);
   }
 
   private async deleteFolderImage(
@@ -195,7 +214,8 @@ export class AssetService {
     ext: string,
   ): Promise<void> {
     if (!this.contentStore) return;
-    await this.contentStore.deleteBinary(folder, entityId, `${leafBase}.${ext}`);
+    const f = await this.resolveEntityId(folder, entityId);
+    await this.contentStore.deleteBinary(folder, f, `${leafBase}.${ext}`);
   }
 
   // ─── Avatars (leafBase = "avatar") ──────────────────────────────────
@@ -323,9 +343,10 @@ export class AssetService {
   ): Promise<{ ext: string } | null> {
     if (!this.contentStore) return null;
     const folder = owner.kind === "character" ? STORAGE_FOLDERS.characters : STORAGE_FOLDERS.personas;
+    const entityId = await this.resolveEntityId(folder, owner.id);
     // Delegate to ContentStore so the probe-and-copy logic lives in one place
     // (packages/db) and is shared with the stores' lazy getById migration.
-    const ext = await this.contentStore.copyAssetToEntityFolder(assetId, folder, owner.id, "avatar", IMAGE_EXTENSIONS);
+    const ext = await this.contentStore.copyAssetToEntityFolder(assetId, folder, entityId, "avatar", IMAGE_EXTENSIONS);
     return ext === null ? null : { ext };
   }
 }

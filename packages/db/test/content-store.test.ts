@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtemp, readFile } from "node:fs/promises";
+import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -20,7 +20,7 @@ describe("ContentStore folder primitives", () => {
 		expect(hash.length).toBeGreaterThan(0);
 
 		// file lands at the expected path
-		const raw = await readFile(join(dir, "characters", "char_1", "card.json"), "utf8");
+		const raw = await Bun.file(join(dir, "characters", "char_1", "card.json")).text();
 		expect(JSON.parse(raw)).toEqual(data);
 
 		const back = await content.readEntityFile<{ name: string }>(CHARS, "char_1", "card");
@@ -141,7 +141,7 @@ describe("ContentStore legacy flat-file helpers", () => {
 		expect(moved).toEqual({ name: "Aria", desc: "x" });
 
 		// source flat file still on disk
-		const source = await readFile(join(dir, CHARS, "char_1.json"), "utf8");
+		const source = await Bun.file(join(dir, CHARS, "char_1.json")).text();
 		expect(JSON.parse(source)).toEqual({ name: "Aria", desc: "x" });
 	});
 
@@ -168,5 +168,54 @@ describe("ContentStore legacy flat-file helpers", () => {
 		const dir = await mkdtemp(join(tmpdir(), "vt-cs-test-"));
 		const content = new ContentStore({ fileStore: createFileStore(dir) });
 		expect(await content.migrateFlatToFolder(CHARS, "char_1", "card")).toBe(false);
+	});
+});
+
+describe("ContentStore directory rename + listing (HUMAN_READABLE_FOLDERS)", () => {
+	test("listSubdirs returns immediate subdirectory names; [] when the folder is missing", async () => {
+		const dir = await mkdtemp(join(tmpdir(), "vt-cs-test-"));
+		const content = new ContentStore({ fileStore: createFileStore(dir) });
+		// Missing folder → empty.
+		expect(await content.listSubdirs(CHARS)).toEqual([]);
+		// Create two character dirs + one flat file (flat files are NOT subdirs).
+		await content.writeEntityTextFile(CHARS, "char_1", "profile.md", "x");
+		await content.writeEntityTextFile(CHARS, "Andrea", "profile.md", "y");
+		await content.writeEntity(CHARS, "flat_only", { legacy: true });
+		const subdirs = (await content.listSubdirs(CHARS)).sort();
+		expect(subdirs).toEqual(["Andrea", "char_1"]);
+	});
+
+	test("renameEntityFolder moves the directory and evicts old-name cache entries", async () => {
+		const dir = await mkdtemp(join(tmpdir(), "vt-cs-test-"));
+		const content = new ContentStore({ fileStore: createFileStore(dir) });
+		await content.writeEntityTextFile(CHARS, "char_old", "profile.md", "body");
+		// Populate the text cache for the old name.
+		expect(await content.readEntityTextFile(CHARS, "char_old", "profile.md")).toBe("body");
+
+		await content.renameEntityFolder(CHARS, "char_old", "Andrea");
+
+		// The directory moved: old path gone, new path has the file.
+		expect(await content.readEntityTextFile(CHARS, "char_old", "profile.md")).toBeNull();
+		expect(await content.readEntityTextFile(CHARS, "Andrea", "profile.md")).toBe("body");
+	});
+
+	test("renameEntityFolder is a no-op when the source folder is absent", async () => {
+		const dir = await mkdtemp(join(tmpdir(), "vt-cs-test-"));
+		const content = new ContentStore({ fileStore: createFileStore(dir) });
+		// No throw, no destination created.
+		await content.renameEntityFolder(CHARS, "char_gone", "Andrea");
+		expect(await content.entityFolderExists(CHARS, "Andrea")).toBe(false);
+	});
+
+	test("renameEntityFolder rejects an occupied destination before touching the filesystem", async () => {
+		const dir = await mkdtemp(join(tmpdir(), "vt-cs-test-"));
+		const content = new ContentStore({ fileStore: createFileStore(dir) });
+		await content.writeEntityTextFile(CHARS, "char_src", "profile.md", "src");
+		await content.writeEntityTextFile(CHARS, "Andrea", "profile.md", "existing");
+
+		await expect(content.renameEntityFolder(CHARS, "char_src", "Andrea")).rejects.toThrow(/destination already exists/);
+		// Source is untouched (the throw happened before the rename).
+		expect(await content.readEntityTextFile(CHARS, "char_src", "profile.md")).toBe("src");
+		expect(await content.readEntityTextFile(CHARS, "Andrea", "profile.md")).toBe("existing");
 	});
 });

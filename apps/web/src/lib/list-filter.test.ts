@@ -1,4 +1,4 @@
-import { test, expect } from "vitest";
+import { test, expect } from "bun:test";
 import { filterAndSortList, type ListFilterable } from "./list-filter.js";
 
 interface Item extends ListFilterable {

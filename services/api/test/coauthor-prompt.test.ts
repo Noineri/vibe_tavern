@@ -18,6 +18,8 @@ function makeLoaders(overrides?: Partial<{
   profileMd: string;
   messages: DbMessage[];
   loreEntries: Array<{ id: string; title: string; content: string }>;
+  contextItems: Array<{ type: "character" | "persona" | "lorebook" | "script"; id: string; title: string; content: string }>;
+  boundResources: { lorebooks: Array<{ id: string; name: string; entries: Array<{ id: string; title: string }> }>; scripts: Array<{ id: string; name: string; summary: string }> };
   userModules: Array<Omit<import("@vibe-tavern/api-contracts").CoauthorModule, "isBuiltIn">>;
   skillCatalog: import("../src/domain/coauthor/skills/skill-scanner.js").SkillCatalogEntry[];
 }>): ChatModeAssembleLoaders {
@@ -55,7 +57,8 @@ function makeLoaders(overrides?: Partial<{
     getMessages: async () => overrides?.messages ?? [],
     getCharacter: async () => character,
     getProfileMdText: async () => overrides?.profileMd ?? "---\nname: Test\n---\n# PERSONALITY\nA test character.\n",
-    getCoauthorLorebookEntries: async () => overrides?.loreEntries ?? [],
+    getCoauthorContextItems: async () => overrides?.contextItems ?? (overrides?.loreEntries ?? []).map((e) => ({ type: "lorebook" as const, ...e })),
+    getCoauthorBoundResources: async () => overrides?.boundResources ?? { lorebooks: [], scripts: [] },
     getChatSummaries: async () => [],
     getCoauthorUserModules: async () => overrides?.userModules ?? [],
     getSkillCatalog: async () => overrides?.skillCatalog ?? DEFAULT_MOCK_CATALOG,
@@ -101,7 +104,7 @@ describe("assembleCoauthorPrompt", () => {
 
     // Tools + maxSteps ride out for the executor (CA-5 wiring).
     expect(result.tools).toBeDefined();
-    expect(result.maxSteps).toBe(5);
+    expect(result.maxSteps).toBe(20);
     expect(result.tools).toHaveProperty("write_profile");
     expect(result.tools).toHaveProperty("edit_greeting");
     expect(result.tools).toHaveProperty("add_alt_greeting");
@@ -198,7 +201,11 @@ describe("assembleCoauthorPrompt", () => {
   test("promptTraceDraft carries coauthor preset name and no RP-pipeline layers", async () => {
     const loaders = makeLoaders();
     const result = await assembleCoauthorPrompt(makeInput(loaders, { branchId: "br_1" as never }));
-    expect(result.promptTraceDraft.presetName).toBe("(coauthor)");
+    // The chat has no module set (coauthorModuleId: null) → resolves to the
+    // default seed module ("Character Workshop"); its NAME is baked as the
+    // draft's presetName so the message-meta badge shows the module, not a
+    // preset (a coauthor variant has no preset).
+    expect(result.promptTraceDraft.presetName).toBe("Character Workshop");
     expect(result.promptTraceDraft.presetId).toBeNull();
     expect(result.promptTraceDraft.activatedLoreEntries).toEqual([]);
     expect(result.promptTraceDraft.branchId).toBe("br_1");
@@ -216,7 +223,7 @@ describe("assembleCoauthorPrompt", () => {
     expect(rpLayers).toEqual([]);
   });
 
-  test("CA-13: bound lorebook entries render as read-only reference in the system message", async () => {
+  test("CA-13/CE-C1: pinned lorebook entries render as read-only reference in the system message", async () => {
     const entryA = {
       id: "lore_a",
       title: "The Shattered Crown",
@@ -233,11 +240,11 @@ describe("assembleCoauthorPrompt", () => {
     const system = (result.prompt.finalPayload as { messages: Array<{ content: string }> }).messages[0].content;
 
     // Lore renders as a read-only reference section after the current card.
-    expect(system).toContain("# Lorebook context (read-only reference");
-    expect(system).toContain("The Shattered Crown");
+    expect(system).toContain("# Pinned context (read-only reference");
+    expect(system).toContain("[Lorebook] The Shattered Crown");
     expect(system).toContain("cold light");
     // An untitled entry falls back to a placeholder header, content still present.
-    expect(system).toContain("(untitled)");
+    expect(system).toContain("[Lorebook] (untitled)");
     expect(system).toContain("A constant world fact.");
 
     // Co-author does NOT run the activation engine — trace lore fields stay
@@ -247,11 +254,90 @@ describe("assembleCoauthorPrompt", () => {
     expect(result.promptTraceDraft.activatedLoreEntries).toEqual([]);
   });
 
-  test("CA-13: with no lorebooks bound the prompt carries no lore section (unchanged)", async () => {
+  test("CE-C1: pinned character/persona/script render as tagged read-only reference blocks", async () => {
+    const loaders = makeLoaders({
+      contextItems: [
+        { type: "character", id: "char_other", title: "Mira", content: "# PERSONALITY\nA stoic ranger." },
+        { type: "persona", id: "persona_1", title: "Wanderer", content: "A curious traveler." },
+        { type: "script", id: "script_1", title: "greeter.js", content: "A friendly greeter.\n\n```js\nreturn hi;\n```" },
+      ],
+    });
+
+    const result = await assembleCoauthorPrompt(makeInput(loaders));
+    const system = (result.prompt.finalPayload as { messages: Array<{ content: string }> }).messages[0].content;
+
+    expect(system).toContain("# Pinned context (read-only reference");
+    expect(system).toContain("[Character] Mira");
+    expect(system).toContain("A stoic ranger.");
+    expect(system).toContain("[Persona] Wanderer");
+    expect(system).toContain("A curious traveler.");
+    expect(system).toContain("[Script] greeter.js");
+    expect(system).toContain("return hi;");
+    // Each pinned item gets its own dedicated layer.
+    const ctxLayer = result.prompt.layers.find((l) => l.id === "pinned_context");
+    expect(ctxLayer).toBeTruthy();
+    expect(ctxLayer!.sourceType).toBe("coauthor_context");
+  });
+
+  test("CE-C2/C3: bound lorebooks + scripts render compact awareness (entry title + stable ID, NOT content)", async () => {
+    const loaders = makeLoaders({
+      boundResources: {
+        lorebooks: [
+          {
+            id: "lb_1",
+            name: "World Atlas",
+            entries: [
+              { id: "le_aldor", title: "Kingdom of Aldor" },
+              { id: "le_spine", title: "The Spine" },
+            ],
+          },
+          { id: "lb_2", name: "Empty Book", entries: [] },
+        ],
+        scripts: [{ id: "sc_1", name: "greeter.js", summary: "A friendly greeter macro." }],
+      },
+    });
+    const result = await assembleCoauthorPrompt(makeInput(loaders));
+    const system = (result.prompt.finalPayload as { messages: Array<{ content: string }> }).messages[0].content;
+
+    // Lorebook awareness: names + entry title/ID pairs appear, so the model
+    // can call CE-B1 cross-turn tools without guessing a display title as id.
+    expect(system).toContain("Bound lorebooks (awareness");
+    expect(system).toContain("World Atlas");
+    expect(system).toContain("Kingdom of Aldor [entryId: le_aldor]");
+    expect(system).toContain("The Spine [entryId: le_spine]");
+    expect(system).toContain("use the shown entryId for an existing entry");
+    // A book with no enabled entries shows the placeholder, not a content leak.
+    expect(system).toContain("Empty Book");
+    expect(system).toContain("(no enabled entries)");
+
+    // Script awareness: name + summary appear; there is no CODE injection.
+    expect(system).toContain("Bound scripts (awareness");
+    expect(system).toContain("greeter.js");
+    expect(system).toContain("A friendly greeter macro.");
+
+    // Each bound resource gets its own dedicated layer (distinct from pinned).
+    const lbLayer = result.prompt.layers.find((l) => l.id === "bound_lorebooks");
+    const scLayer = result.prompt.layers.find((l) => l.id === "bound_scripts");
+    expect(lbLayer).toBeTruthy();
+    expect(lbLayer!.sourceName).toBe("Bound Lorebooks (2)");
+    expect(scLayer).toBeTruthy();
+    expect(scLayer!.sourceName).toBe("Bound Scripts (1)");
+  });
+
+  test("CE-C2/C3: with no bound resources the awareness sections are omitted", async () => {
+    const loaders = makeLoaders({ boundResources: { lorebooks: [], scripts: [] } });
+    const result = await assembleCoauthorPrompt(makeInput(loaders));
+    const system = (result.prompt.finalPayload as { messages: Array<{ content: string }> }).messages[0].content;
+    expect(system).not.toContain("Bound lorebooks");
+    expect(system).not.toContain("Bound scripts");
+    expect(result.prompt.layers.find((l) => l.id === "bound_lorebooks" || l.id === "bound_scripts")).toBeUndefined();
+  });
+
+  test("CA-13/CE-C1: with nothing pinned the prompt carries no context section (unchanged)", async () => {
     const loaders = makeLoaders({ loreEntries: [] });
     const result = await assembleCoauthorPrompt(makeInput(loaders));
     const system = (result.prompt.finalPayload as { messages: Array<{ content: string }> }).messages[0].content;
-    expect(system).not.toContain("Lorebook context");
+    expect(system).not.toContain("Pinned context");
     expect(result.prompt.activatedLoreEntries).toEqual([]);
     expect(result.promptTraceDraft.activatedLoreEntries).toEqual([]);
   });
@@ -441,11 +527,12 @@ describe("assembleCoauthorPrompt", () => {
       expect(system).toContain("edit_personality");
       expect(system).toContain("write_personality");
       expect(system).toContain("write_profile");
-      // write_profile is taught as first-profile-change-only.
-      expect(system).toMatch(/first profile change/);
+      // write_profile is taught as first-profile-change-only ("**first** profile change" in the prompt).
+      expect(system).toMatch(/first.{0,5}profile change/);
       // edit_* takes exact search/replace pairs, not a full section content.
-      expect(system).toContain("search");
-      expect(system).toContain("replace");
+      // This contract lives in the edit tool description (moved out of base in the
+      // prompt-layering pass), so pin it on the tool, not the system prompt.
+      expect((result.tools.edit_personality as { description: string }).description).toMatch(/search\/?replace/i);
     });
   });
 
@@ -481,5 +568,98 @@ describe("assembleCoauthorPrompt", () => {
     expect(result.prompt.tokenAccounting?.recentHistory).toBe(3);
     expect(result.promptTraceDraft.compactionSummary).toBeDefined();
     expect(result.promptTraceDraft.compactionSummary).toContain("Kept 3 of 4 recent messages");
+  });
+});
+
+/**
+ * CTX-M2 — Wave-3 module prompt contracts. Pin the collaborative-workflow policy
+ * of each rebuilt seed (discussion-first vs direct-draft vs revision vs ideation)
+ * and prove no seed carries the former minimize-chat or blanket-routing policy.
+ * These read the REAL module prompt assets (loaders only mock the catalog), so a
+ * regression in any .md is caught here.
+ */
+async function assembleForModule(moduleId: string): Promise<string> {
+  const loaders = makeLoaders({ chat: { id: "chat_test", coauthorModuleId: moduleId } as never });
+  const result = await assembleCoauthorPrompt(makeInput(loaders));
+  return (result.prompt.finalPayload as { messages: Array<{ content: string }> }).messages[0].content;
+}
+
+describe("assembleCoauthorPrompt — Wave-3 module prompt contracts (CTX-M2)", () => {
+  test("Character Workshop (default) is discussion-first: develops the premise before mutating", async () => {
+    const system = await assembleForModule("default");
+    // The discussion-before-mutation policy is present.
+    expect(system).toContain("Discuss before you draft");
+    // And it frames itself as collaborative development, not immediate tool use.
+    expect(system.toLowerCase()).toContain("develop");
+  });
+
+  test("Quick Draft is tool-forward: reads its card skill + template and drafts directly", async () => {
+    const system = await assembleForModule("quick-draft");
+    // The workflow tells the model to read_skill_file its SKILL + template first.
+    expect(system).toContain("read_skill_file");
+    expect(system).toContain("card template");
+    // And to produce a complete draft (speed mode), while flagging it as a draft.
+    expect(system.toLowerCase()).toContain("draft");
+  });
+
+  test("Revision Workshop (profile-editor) audits first and preserves unselected content", async () => {
+    const system = await assembleForModule("profile-editor");
+    expect(system.toLowerCase()).toContain("audit");
+    // Preservation discipline: retain unchanged prose / off-limits respect.
+    expect(system).toMatch(/preserv|off-limits|retain unchanged/i);
+  });
+
+  test("Dialogue Studio (dialogue-writer) permits ideation before greeting/example proposals", async () => {
+    const system = await assembleForModule("dialogue-writer");
+    expect(system.toLowerCase()).toContain("ideate");
+  });
+
+  test("no seed prompt minimizes chat or blanket-routes adjacent requests away", async () => {
+    // The former anti-patterns — removed from every seed in Wave 3.
+    for (const id of ["default", "quick-draft", "profile-editor", "dialogue-writer"]) {
+      const system = await assembleForModule(id);
+      expect(system).not.toContain("Minimize conversational chatter");
+      expect(system).not.toMatch(/decline and tell the user to switch/i);
+    }
+  });
+
+  test("CE-E2: lore-bearing modules point at the lorebook-authoring skill and drop inline lore mechanics", async () => {
+    // The verbose lore tool-mechanics (delegate-tool names, keyTarget/appendMode
+    // controls) moved to the lorebook-authoring skill (CE-E0); the module prompt
+    // now carries only a one-line pointer. Pinned so a regression that re-expands
+    // the module lore section is caught.
+    for (const id of ["default", "quick-draft"]) {
+      const system = await assembleForModule(id);
+      expect(system).toContain("read_skill_file('lorebook-authoring')");
+      // Inline lore mechanics no longer live in the module prompt.
+      expect(system).not.toContain("appendMode");
+      expect(system).not.toContain("keyTarget");
+      expect(system).not.toContain("ai_write_lore_entry");
+    }
+  });
+
+  test("CE-E1: every module carries an in-voice Opening message section", async () => {
+    // CE-E1: each module's first user-facing message tells the author what the
+    // mode can do, in that module's voice, without a generic preamble. The
+    // section's presence is pinned structurally; the voice quality is for the
+    // user to judge. Conditional on "opened without a request" so a model
+    // given a directive answers it instead of introducing itself.
+    for (const id of ["default", "quick-draft", "profile-editor", "dialogue-writer"]) {
+      const system = await assembleForModule(id);
+      expect(system).toContain("Opening message");
+      // The opening is conditional — if the author opened with a directive, the
+      // model answers it instead of introducing itself ("skip the intro").
+      expect(system).toMatch(/skip the intro/i);
+    }
+  });
+
+  test("CE-E2: base prompt teaches the 3-level context model and the binding boundary", async () => {
+    // Every module inherits base, so the shared context model lives there once.
+    const system = await assembleForModule("default");
+    expect(system).toContain("Three context layers");
+    expect(system).toContain("search_context");
+    expect(system).toContain("read_context_item");
+    // Binding is the author's action, not the model's.
+    expect(system).toMatch(/Binding is the author's action/);
   });
 });

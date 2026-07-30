@@ -13,7 +13,8 @@
  * clearTurn) drive persistence end-to-end — the wiring that makes a reload
  * rehydrate the in-review diff.
  */
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach } from "bun:test";
+import { useDomEnv } from "../../test/dom-env.js";
 import {
 	finalizeForPersistence,
 	serializeDraft,
@@ -27,12 +28,27 @@ import {
 import { useCoauthorTurnStore } from "../stores/coauthor-turn-store.js";
 import type { CoauthorToolActivity } from "../stores/coauthor-turn-store.js";
 
+useDomEnv();
+
 function profileActivity(toolCallId: string, proposed: string, summary = "Made personality assertive."): CoauthorToolActivity {
 	return { toolCallId, toolName: "write_profile", status: "done", target: "profile", proposed, summary };
 }
 
 function greetingActivity(toolCallId: string, index: number, proposed: string): CoauthorToolActivity {
 	return { toolCallId, toolName: "edit_greeting", status: "done", target: "greeting", proposed, greetingIndex: index };
+}
+
+function loreActivity(toolCallId: string): CoauthorToolActivity {
+	return {
+		toolCallId,
+		toolName: "create_lore_entry",
+		status: "done",
+		summary: "Drafted lore.",
+		loreBundle: {
+			lorebooks: [{ id: "lb1", name: "Lore", description: "", scopeType: "character", enabled: true }],
+			entries: [{ id: "e1", lorebookId: "lb1", title: "Fear", content: "Backstory.", keys: ["name"], secondaryKeys: [], constant: false, position: "before_char", depth: 4, enabled: true }],
+		},
+	};
 }
 
 const PROFILE_A = "---\nname: A\n---\n# PERSONALITY\nBold.";
@@ -71,6 +87,15 @@ describe("coauthor-draft — pure serialization", () => {
 		expect(json).not.toBeNull();
 		const back = parseDraft(json);
 		expect(back).toEqual(activities);
+	});
+
+	it("CTX-L3: lore_bundle activities survive serialize → parse with the cumulative graph intact", () => {
+		const json = serializeDraft([loreActivity("l1")]);
+		expect(json).not.toBeNull();
+		const back = parseDraft(json);
+		expect(back).toHaveLength(1);
+		expect(back?.[0]?.loreBundle?.lorebooks[0]?.id).toBe("lb1");
+		expect(back?.[0]?.loreBundle?.entries[0]?.keys).toEqual(["name"]);
 	});
 
 	it("parseDraft returns null for malformed JSON", () => {

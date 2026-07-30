@@ -1,8 +1,8 @@
 import { PROVIDER_PRESET_GROUP, PROVIDER_TYPE } from "@vibe-tavern/domain";
-import type { ProviderPresetGroup } from "@vibe-tavern/domain";
+import type { ProviderPresetGroup, ProviderPresetId } from "@vibe-tavern/domain";
 
 export interface ProviderPreset {
-  id: string;
+  id: ProviderPresetId;
   label: string;
   type: string;
   baseUrl: string;
@@ -27,6 +27,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
   { id: "fireworks", label: "Fireworks", type: PROVIDER_TYPE.openaiCompat, baseUrl: "https://api.fireworks.ai/inference/v1", group: PROVIDER_PRESET_GROUP.cloud },
   { id: "perplexity", label: "Perplexity", type: PROVIDER_TYPE.openaiCompat, baseUrl: "https://api.perplexity.ai", group: PROVIDER_PRESET_GROUP.cloud },
   { id: "moonshot", label: "Moonshot", type: PROVIDER_TYPE.openaiCompat, baseUrl: "https://api.moonshot.ai/v1", group: PROVIDER_PRESET_GROUP.cloud },
+  { id: "kimi", label: "Kimi", type: PROVIDER_TYPE.openaiCompat, baseUrl: "https://api.kimi.com/coding/v1", group: PROVIDER_PRESET_GROUP.cloud, requiresAuthForModels: true },
   { id: "ai21", label: "AI21", type: PROVIDER_TYPE.openaiCompat, baseUrl: "https://api.ai21.com/studio/v1", group: PROVIDER_PRESET_GROUP.cloud },
   { id: "mimo", label: "Xiaomi MiMo", type: PROVIDER_TYPE.openaiCompat, baseUrl: "https://api.xiaomimimo.com/v1", group: PROVIDER_PRESET_GROUP.cloud, requiresAuthForModels: true },
   { id: "nanogpt", label: "NanoGPT", type: PROVIDER_TYPE.openaiCompat, baseUrl: "https://nano-gpt.com/api/v1", group: PROVIDER_PRESET_GROUP.cloud, requiresAuthForModels: true },

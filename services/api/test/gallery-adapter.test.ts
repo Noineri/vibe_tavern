@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtemp, mkdir, readFile, stat } from "node:fs/promises";
+import { mkdtemp, mkdir, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -33,7 +33,11 @@ async function setup() {
 	const dataRoot = await mkdtemp(join(tmpdir(), "vt-gallery-adapter-"));
 	await mkdir(join(dataRoot, "assets"), { recursive: true });
 	const stores = await createStoreContainer(join(dataRoot, "test.db"), dataRoot);
-	const assetService = new AssetService(join(dataRoot, "assets"), stores.content);
+	const assetService = new AssetService(
+		join(dataRoot, "assets"),
+		stores.content,
+		(id) => stores.characters.resolveFolderName(id),
+	);
 	const characters = new CharacterAdapter(noopSession, stores, assetService) as CharacterRuntimeApi &
 		CharacterAssetRuntimeApi;
 	return { dataRoot, stores, assetService, characters };
@@ -43,12 +47,13 @@ describe("Character gallery adapter (A5)", () => {
 	test("upload writes {id}/gallery/{rowId}.{ext} + row with appending order", async () => {
 		const { dataRoot, stores, characters } = await setup();
 		const char = await stores.characters.create({ name: "Aria" });
+		const dir = await stores.characters.resolveFolderName(char.id);
 
 		const a = await characters.uploadCharacterAsset(char.id, new File([PNG], "a.png", { type: "image/png" }));
 		const b = await characters.uploadCharacterAsset(char.id, new File([WEBP], "b.webp", { type: "image/webp" }));
 
-		// file on disk at the row id
-		const fileA = await readFile(join(dataRoot, CHARS, char.id, "gallery", `${a.id}.png`));
+		// file on disk at the resolved folder
+		const fileA = await Bun.file(join(dataRoot, CHARS, dir, "gallery", `${a.id}.png`)).arrayBuffer();
 		expect(new Uint8Array(fileA)).toEqual(PNG);
 
 		// row ext/mimeType/order
@@ -80,6 +85,31 @@ describe("Character gallery adapter (A5)", () => {
 		expect(res).not.toBeNull();
 		expect(res!.headers.get("Content-Type")).toBe("image/png");
 		expect(new Uint8Array(await res!.arrayBuffer())).toEqual(PNG);
+	});
+
+	test("gallery rows and bytes survive a real name-driven directory rename", async () => {
+		const { dataRoot, stores, characters } = await setup();
+		const char = await stores.characters.create({ name: "Aria" });
+		const oldDir = await stores.characters.resolveFolderName(char.id);
+		const asset = await characters.uploadCharacterAsset(
+			char.id,
+			new File([PNG], "portrait.png", { type: "image/png" }),
+		);
+		expect(await exists(join(dataRoot, CHARS, oldDir, "gallery", `${asset.id}.png`))).toBe(true);
+
+		await stores.characters.update(char.id, { name: "Aria Storm" });
+		const newDir = await stores.characters.resolveFolderName(char.id);
+		expect(newDir).toBe("aria-storm");
+		expect(await exists(join(dataRoot, CHARS, oldDir))).toBe(false);
+		expect(await exists(join(dataRoot, CHARS, newDir, "gallery", `${asset.id}.png`))).toBe(true);
+
+		// The immutable DB relation still points to characterId; adapter resolution
+		// follows the registry and serves byte-identical media from the moved tree.
+		const listed = await characters.listCharacterAssets(char.id);
+		expect(listed.map((row) => row.id)).toContain(asset.id);
+		const response = await characters.serveCharacterAsset(char.id, asset.id);
+		expect(response).not.toBeNull();
+		expect(new Uint8Array(await response!.arrayBuffer())).toEqual(PNG);
 	});
 
 	test("serve returns null for unknown row AND for cross-character row (no leakage)", async () => {
@@ -126,8 +156,9 @@ describe("Character gallery adapter (A5)", () => {
 		const { dataRoot, stores, characters } = await setup();
 		const charA = await stores.characters.create({ name: "Aria" });
 		const charB = await stores.characters.create({ name: "Bea" });
+		const dirA = await stores.characters.resolveFolderName(charA.id);
 		const a = await characters.uploadCharacterAsset(charA.id, new File([PNG], "a.png", { type: "image/png" }));
-		const filePath = join(dataRoot, CHARS, charA.id, "gallery", `${a.id}.png`);
+		const filePath = join(dataRoot, CHARS, dirA, "gallery", `${a.id}.png`);
 		expect(await exists(filePath)).toBe(true);
 
 		// cross-character delete throws
@@ -199,6 +230,7 @@ describe("Character gallery adapter (A5)", () => {
 	test("character-delete cascade removes gallery rows (FK) and the gallery folder", async () => {
 		const { dataRoot, stores, characters } = await setup();
 		const char = await stores.characters.create({ name: "Aria" });
+		const dir = await stores.characters.resolveFolderName(char.id);
 		await characters.uploadCharacterAsset(char.id, new File([PNG], "a.png", { type: "image/png" }));
 		await characters.uploadCharacterAsset(char.id, new File([WEBP], "b.webp", { type: "image/webp" }));
 		expect((await stores.characterAssets.listByCharacter(char.id)).length).toBe(2);
@@ -212,7 +244,7 @@ describe("Character gallery adapter (A5)", () => {
 		// rows gone via FK cascade
 		expect((await stores.characterAssets.listByCharacter(char.id)).length).toBe(0);
 		// gallery folder gone via recursive folder delete
-		expect(await exists(join(dataRoot, CHARS, char.id))).toBe(false);
+		expect(await exists(join(dataRoot, CHARS, dir))).toBe(false);
 	});
 });
 

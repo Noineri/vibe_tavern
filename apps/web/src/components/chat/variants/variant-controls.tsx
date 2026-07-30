@@ -1,14 +1,16 @@
 import { Icons } from "../../shared/icons.js";
 import { cn } from "../../../lib/cn.js";
 import { VariantJump } from "./variant-jump.js";
-import type { SwipeDirection, VariantProvenance } from "./types.js";
+import type { SwipeDirection, VariantPickerItem } from "./types.js";
 
 type VariantControlsProps = {
   isBusy: boolean;
+  /** Bare message id — used as the ephemeral star store key. */
+  messageId: string;
   selectedVariantIndex: number;
   variantCount: number;
-  /** Per-variant provenance for the jump dropdown (only populated when variantCount > 6). */
-  provenance?: VariantProvenance[];
+  /** Picker items for the jump browser (only populated when variantCount > 6). */
+  items?: VariantPickerItem[];
   controlsRef?: React.RefObject<HTMLSpanElement | null>;
   hidden?: boolean;
   mobile?: boolean;
@@ -18,11 +20,16 @@ type VariantControlsProps = {
 
 /** Prev/next variant arrows + counter or jump dropdown. Dual-mode by viewport:
  *  mobile renders large 40px touch targets in a pill; desktop renders compact
- *  20px buttons. When variantCount > 6 and provenance is populated, the counter
- *  is replaced by VariantJump (Radix Select desktop / BottomSheet mobile). */
+ *  20px buttons. When variantCount > 6 and pickerItems are populated, the
+ *  counter is replaced by VariantJump (Popover desktop / BottomSheet mobile).
+ *
+ *  `messageId` threads the ephemeral star store key down to VariantJump's
+ *  VariantStarButton, which subscribes to `useMessageAiEditorStore` narrowed
+ *  to this message's star list so unrelated messages' toggles never re-render
+ *  this row. */
 export function VariantControls(props: VariantControlsProps) {
-  const { controlsRef, hidden = false, isBusy, selectedVariantIndex, variantCount, provenance, mobile = false, overlay = false, onSelectVariant } = props;
-  const showJump = variantCount > 6 && provenance && provenance.length > 0 && !overlay;
+  const { controlsRef, hidden = false, isBusy, messageId, selectedVariantIndex, variantCount, items, mobile = false, overlay = false, onSelectVariant } = props;
+  const showJump = variantCount > 6 && items && items.length > 0 && !overlay;
 
   const canGoPrevious = !isBusy && selectedVariantIndex > 0;
   const canGoNext = !isBusy && selectedVariantIndex < variantCount - 1;
@@ -41,7 +48,8 @@ export function VariantControls(props: VariantControlsProps) {
         {showJump ? (
           <VariantJump
             mobile
-            provenance={provenance!}
+            items={items!}
+            messageId={messageId}
             selectedVariantIndex={selectedVariantIndex}
             variantCount={variantCount}
             onSelect={(index) => onSelectVariant(index, index > selectedVariantIndex ? 1 : -1)}
@@ -75,7 +83,8 @@ export function VariantControls(props: VariantControlsProps) {
       ><Icons.Caret direction="l" /></button>
       {showJump ? (
         <VariantJump
-          provenance={provenance!}
+          items={items!}
+          messageId={messageId}
           selectedVariantIndex={selectedVariantIndex}
           variantCount={variantCount}
           onSelect={(index) => onSelectVariant(index, index > selectedVariantIndex ? 1 : -1)}

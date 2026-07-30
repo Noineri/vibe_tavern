@@ -57,6 +57,7 @@ export function PendingAssistantMessage() {
       canBranch={false}
       canRegenerate={false}
       canResend={false}
+      canAiEdit={false}
       selectedVariantIndex={0}
       variantCount={1}
       canSwitchVariant={false}
@@ -71,6 +72,7 @@ export function PendingAssistantMessage() {
         presetName: null,
         tokenCount: 0,
         createdAt: Date.now().toString(),
+        diceRolls: [],
       } satisfies MessageMetaContext}
       copied={false}
       slotExtras={{ reasoning: reasoningForSlot }}
@@ -79,6 +81,7 @@ export function PendingAssistantMessage() {
       actions={{
         onCopy: () => {},
         onEdit: () => {},
+        onAiEdit: () => {},
         onDelete: () => {},
         onBranch: () => {},
         onRegenerate: () => {},

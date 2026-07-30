@@ -62,8 +62,6 @@ export interface SessionSnapshot {
 	}>;
 	/** Latest prompt trace for the active branch (null if no traces). */
 	promptTrace: PromptTraceRecordDto | null;
-	/** Live context preview — always reflects current chat/character/persona/preset state. Never nulled by trace presence (traces are historical; this is the live view). */
-	contextPreview: AssemblePromptResponse | null;
 	/** Active character record. */
 	character: CharacterRecord;
 	/** Active persona record (null if no persona set). */
@@ -122,10 +120,12 @@ export interface BatchImportResult {
 // returned by every mutation in the family; optional (`?`) fields are
 // returned only by the mutations in the family that touch them.
 //
-// `contextPreview` inclusion is driven solely by the "did conversation text
-// change" rule — it is never coupled to prompt-trace presence. Both the
-// builders and `getSnapshot` compute the preview via `assembleContextPreview`
-// directly (the Phase-3.1 "trace shadows preview" coupling was removed).
+// `contextPreview` is NOT part of any snapshot/response shape: live prompt
+// preview is a standalone branch-scoped query (`POST .../context-preview`),
+// hydrated lazily by the frontend cache so navigation never blocks on prompt
+// assembly. The latest historical `promptTrace` still rides the snapshot as
+// the cheap fallback for context counters and the Trace panel; only the live
+// preview is decoupled.
 //
 // Every field type is indexed off `SessionSnapshot[...]` so these contracts
 // track the canonical shape without drift.
@@ -133,7 +133,6 @@ export interface BatchImportResult {
 /** Message-path mutations: send, regenerate, edit, delete, create-variant. */
 export interface MessageResponse {
 	messages: SessionSnapshot["messages"];
-	contextPreview: SessionSnapshot["contextPreview"];
 	/** send / delete-message move summary markers; edit / create-variant do not. */
 	summaries?: SessionSnapshot["summaries"];
 	/**
@@ -149,7 +148,6 @@ export interface MessageResponse {
 /** Variant-path mutations: select-variant, delete-variant, set-greeting. */
 export interface VariantResponse {
 	messages: SessionSnapshot["messages"];
-	contextPreview: SessionSnapshot["contextPreview"];
 	/** set-greeting writes the chat row (greetingIndex); variant ops do not. */
 	activeChat?: SessionSnapshot["activeChat"];
 }
@@ -160,7 +158,6 @@ export interface BranchResponse {
 	activeBranch: SessionSnapshot["activeBranch"];
 	branches: SessionSnapshot["branches"];
 	summaries: SessionSnapshot["summaries"];
-	contextPreview: SessionSnapshot["contextPreview"];
 	/**
 	 * Sidebar chat list. fork / activate change WHICH branch is active for the
 	 * chat, and {@link ChatListItem.messageCount} is the active branch's message
@@ -187,7 +184,6 @@ export interface ChatSwitchResponse {
 	activeBranch: SessionSnapshot["activeBranch"];
 	branches: SessionSnapshot["branches"];
 	summaries: SessionSnapshot["summaries"];
-	contextPreview: SessionSnapshot["contextPreview"];
 	character: SessionSnapshot["character"];
 	/** switch sends the chat's persona; clone omits it (inherits from source). */
 	persona?: SessionSnapshot["persona"];
@@ -203,19 +199,28 @@ export interface ChatCreateResponse {
 	activeBranch: SessionSnapshot["activeBranch"];
 	branches: SessionSnapshot["branches"];
 	summaries: SessionSnapshot["summaries"];
-	contextPreview: SessionSnapshot["contextPreview"];
 	character: SessionSnapshot["character"];
 }
 
-/** Config-patch ops: set-persona, set-preset, character-patch, memory-settings. */
+/** Config-patch ops: set-persona, set-preset, character-patch, memory-settings.
+ *  Live context preview is no longer embedded (lazy branch-scoped query); each
+ *  caller still returns whichever of persona/character/activeChat it touched. */
 export interface ConfigPatchResponse {
-	contextPreview: SessionSnapshot["contextPreview"];
 	/** set-persona. */
 	persona?: SessionSnapshot["persona"];
 	/** character-patch. */
 	character?: SessionSnapshot["character"];
 	/** memory-settings writes the chat row. */
 	activeChat?: SessionSnapshot["activeChat"];
+}
+
+/** Branch-scoped live context preview (lazy hydration). Echoes the immutable
+ *  target so the client can verify the response still matches the active
+ *  (chatId, branchId) before caching it; `preview` is null only when assembly
+ *  itself fails. */
+export interface ContextPreviewResponse {
+	target: { chatId: string; branchId: string };
+	preview: AssemblePromptResponse | null;
 }
 
 /** Immutable assistant response whose background insight work is being joined. */
@@ -301,6 +306,12 @@ export interface SceneBackfillStatusResponse {
  */
 export interface CoauthorApplyResponse extends ConfigPatchResponse {
 	corrections: CoauthorCorrection[];
+	/**
+	 * CTX-L2 (Wave 4): ids of lorebooks/entries written by the lore-bundle Apply
+	 * branch. Empty arrays when no lore bundle was applied. The frontend uses
+	 * these to confirm what was persisted (and to refresh its lore surfaces).
+	 */
+	lore?: { lorebookIds: string[]; entryIds: string[] };
 }
 
 /** Summary CRUD: create / update / delete ranged summary. */

@@ -59,13 +59,13 @@ describe("vendor-registry — per-vendor capability extraction", () => {
 		});
 	});
 
-	it("openrouter does not set vision when modality is text-only", () => {
+	it("openrouter reports text-only and absent authoritative features as unsupported", () => {
 		const vendor = resolveVendor("https://openrouter.ai/api/v1");
 		const record: OpenAiModelRecord = {
 			architecture: { modality: "text->text" },
 			supported_parameters: ["tools"],
 		};
-		expect(vendor.extractCapabilities(record)).toEqual({ tools: true });
+		expect(vendor.extractCapabilities(record)).toEqual({ vision: false, reasoning: false, tools: true });
 	});
 
 	it("together reads capabilities.tool_use", () => {
@@ -307,5 +307,22 @@ describe("vendor-registry — inferCapabilities (vendor-agnostic fallback)", () 
 
 	it("returns undefined when nothing is signalled", () => {
 		expect(inferCapabilities({ id: "x" })).toBeUndefined();
+	});
+
+	it("preserves explicit false capability metadata", () => {
+		expect(inferCapabilities({
+			metadata: { vision: false, reasoning: false, function_call: false, web_search: false },
+			premium_model: false,
+		})).toEqual({ vision: false, reasoning: false, tools: false, webSearch: false, premium: false });
+	});
+
+	it("uses authoritative supported-parameters metadata to report unsupported features", () => {
+		expect(inferCapabilities({ supported_parameters: ["temperature"] })).toEqual({ reasoning: false, tools: false });
+	});
+
+	it("keeps vendor-specific explicit false ahead of generic inference", () => {
+		const fireworks = resolveVendor("https://api.fireworks.ai/inference/v1");
+		expect(fireworks.extractCapabilities({ supports_tools: false, capabilities: { tool_calling: true } }))
+			.toMatchObject({ tools: false });
 	});
 });

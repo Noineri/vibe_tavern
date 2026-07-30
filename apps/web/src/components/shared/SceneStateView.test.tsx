@@ -6,16 +6,17 @@
  * meter with correct fill at endpoints + out-of-range clamp, compact shows the
  * range text instead of a bar, nested objects/arrays recurse (so array-of-object
  * renders the fields — NOT `[object Object]`), missing leaves show an em-dash,
- * and `stale` dims the whole view. Runner: vitest (apps/web). Pure component —
+ * and `stale` dims the whole view. Runner: bun:test with scoped happy-dom. Pure component —
  * no stores/i18n to mock.
  */
-import { describe, it, expect, afterEach } from "vitest";
+import { describe, it, expect } from "bun:test";
 import { createElement } from "react";
-import { render, cleanup } from "@testing-library/react";
+import { render } from "@testing-library/react";
+import { useDomEnv } from "../../../test/dom-env.js";
 import { SceneStateView } from "./SceneStateView.js";
 import type { SceneTrackerDsl } from "@vibe-tavern/domain";
 
-afterEach(cleanup);
+useDomEnv();
 
 /** Render helper — `as const` on the schema keeps `$type` literals narrow. */
 function r(

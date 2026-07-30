@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, test } from "bun:test";
 import { buildFavoriteModelSwitchPatch, computeOverlayPatch, computeSavePatch } from "./save-provider-patch.js";
 import type { FormState } from "../components/modals/ProviderModal.js";
 
@@ -14,7 +14,9 @@ function makeForm(over: Partial<FormState> = {}): FormState {
     dryMultiplier: 0, dryBase: 1.75, dryAllowedLength: 2, drySequenceBreakers: ["\n"],
     xtcThreshold: 0.1, xtcProbability: 0, frequencyPenalty: 0, presencePenalty: 0,
     repetitionPenalty: 1, maxTokens: 4096, contextBudget: 16000,
-    pinContextBudget: false, bindPerModel: false, editingModelId: null,
+    pinContextBudget: false, bindPerModel: false,
+    modelFreeOnly: false, modelGroupByOwner: false,
+    editingModelId: null,
     stopSequences: ["<end>"], logitBias: [], seed: null,
     reasoningEffort: "auto", showReasoning: false, streamResponse: true, customSamplers: false,
     ...over,

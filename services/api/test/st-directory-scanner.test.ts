@@ -22,14 +22,22 @@
  * seed-imported-opening-trace.test.ts). Per AGENTS.md §1 this characterization
  * test was written alongside the gap-closing change.
  */
-import { describe, it, expect, beforeAll, afterAll, mock } from "bun:test";
-import { mkdir, rm, writeFile } from "node:fs/promises";
-import { resolve, join } from "node:path";
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, mock } from "bun:test";
+import { symlinkSync } from "node:fs";
+import { mkdir, mkdtemp, readdir, rm } from "node:fs/promises";
+import { resolve, join, relative } from "node:path";
 import { tmpdir } from "node:os";
 import { createRuntimeStore } from "../src/runtime/session/session-runtime-store.js";
 import { SessionRuntime } from "../src/runtime/session/session-runtime.js";
 import { setTokenCountFn } from "@vibe-tavern/prompt-pipeline";
 import { STORAGE_FOLDERS } from "@vibe-tavern/db";
+import { scanSillyTavernDirectory } from "../src/shared/st-directory-scanner.js";
+
+// Bun.Glob returns platform-native separators in scan results (\ on win32,
+// / elsewhere) — g() builds expectations in the platform's shape.
+function g(path: string): string {
+	return process.platform === "win32" ? path.replaceAll("/", "\\") : path;
+}
 
 /**
  * Build a complete-but-minimal ST data dir. Returns its root path.
@@ -40,14 +48,14 @@ import { STORAGE_FOLDERS } from "@vibe-tavern/db";
 async function buildStDir(root: string) {
 	// characters/ — one minimal V2 card (the scanner needs a real card to seed)
 	await mkdir(join(root, "characters"), { recursive: true });
-	await writeFile(
+	await Bun.write(
 		join(root, "characters", "TestChar.json"),
 		JSON.stringify({ spec: "chara_card_v2", spec_version: "2.0", data: { name: "Test Char", description: "probe", first_mes: "Hello." } }),
 	);
 
 	// worlds/ — one ST lorebook with one entry (the gap-1 regression target)
 	await mkdir(join(root, "worlds"), { recursive: true });
-	await writeFile(
+	await Bun.write(
 		join(root, "worlds", "TestWorld.json"),
 		JSON.stringify({
 			name: "Test World",
@@ -72,7 +80,7 @@ async function buildStDir(root: string) {
 	// The scanner derives the preset name from the FILENAME (mirrors the browser
 	// flow), so the stored name will be "TestPreset" — not the JSON's `name`.
 	await mkdir(join(root, "OpenAI Settings"), { recursive: true });
-	await writeFile(
+	await Bun.write(
 		join(root, "OpenAI Settings", "TestPreset.json"),
 		JSON.stringify({
 			name: "Test Preset",
@@ -80,6 +88,9 @@ async function buildStDir(root: string) {
 				{ identifier: "main", name: "Main Prompt", role: "system", content: "You are a test.", injection_position: 0, injection_depth: 0, injection_order: 0, enabled: true },
 				{ identifier: "jailbreak", name: "Jailbreak", role: "system", content: "Continue.", injection_position: 0, injection_depth: 0, injection_order: 1, enabled: true },
 				{ identifier: "customInject", name: "My Injection", role: "system", content: "Custom block.", injection_position: 1, injection_depth: 4, injection_order: 100, enabled: true },
+				{ identifier: "nsfw", name: "NSFW", role: "system", content: "NSFW rules apply.", injection_position: 0, injection_depth: 0, injection_order: 50, enabled: true },
+				{ identifier: "enhanceDefinitions", name: "Enhance", role: "system", content: "Detail expansions.", injection_position: 0, injection_depth: 0, injection_order: 60, enabled: true },
+				{ identifier: "authorsNote", name: "Author's Note", role: "user", content: "Keep tone tense.", injection_position: 1, injection_depth: 3, injection_order: 70, enabled: true },
 			],
 			prompt_order: [{ character_id: 100001, order: [
 				{ identifier: "main", enabled: true, order: 0 },
@@ -92,7 +103,7 @@ async function buildStDir(root: string) {
 	// settings.json — one persona (the gap-3 regression target).
 	// parseStPersonas reads personas[key] as the name, so the stored persona
 	// name will be "Test User" (the VALUE in the personas map).
-	await writeFile(
+	await Bun.write(
 		join(root, "settings.json"),
 		JSON.stringify({
 			power_user: {
@@ -207,6 +218,19 @@ describe("ST directory scanner — three gaps (STN-1D)", () => {
 		expect(importedPreset!.systemPrompt).toContain("You are a test.");
 		expect(importedPreset!.postHistoryInstructions).toContain("Continue.");
 		expect(importedPreset!.customInjections.some((c) => c.identifier === "customInject" && c.content === "Custom block.")).toBe(true);
+		// nsfw / enhanceDefinitions / authorsNote content maps onto native preset
+		// fields (not custom injections). authorsNote position/depth/role reverse-map
+		// from the ST block (injection_position 1 → in_chat depth 3, role user).
+		expect(importedPreset!.nsfwPrompt).toContain("NSFW rules apply.");
+		expect(importedPreset!.enhanceDefinitionsPrompt).toContain("Detail expansions.");
+		expect(importedPreset!.authorsNote).toContain("Keep tone tense.");
+		expect(importedPreset!.authorsNotePosition).toBe("in_chat");
+		expect(importedPreset!.authorsNoteDepth).toBe(3);
+		expect(importedPreset!.authorsNoteRole).toBe("user");
+		// built-in named slots must NOT leak into customInjections
+		expect(importedPreset!.customInjections.some((c) => c.identifier === "nsfw")).toBe(false);
+		expect(importedPreset!.customInjections.some((c) => c.identifier === "enhanceDefinitions")).toBe(false);
+		expect(importedPreset!.customInjections.some((c) => c.identifier === "authorsNote")).toBe(false);
 
 		// ── gap-3: persona row landed ──
 		const personaAfter = await env.stores.personas.listAll();
@@ -214,6 +238,43 @@ describe("ST directory scanner — three gaps (STN-1D)", () => {
 		const importedPersona = personaAfter.find((p) => p.name === "Test User");
 		expect(importedPersona).toBeTruthy();
 		expect(importedPersona!.description).toBe("A test persona.");
+	});
+});
+
+describe("ST directory scanner — Bun.Glob rewrite characterization", () => {
+	let globTmp = "";
+
+	beforeEach(async () => {
+		globTmp = await mkdtemp(join(tmpdir(), "vt-st-glob-"));
+	});
+
+	afterEach(async () => {
+		await rm(globTmp, { recursive: true, force: true });
+	});
+
+	it("follows an escaping character-file link only when followSymlinks is enabled", async () => {
+		const root = join(globTmp, "st-data");
+		const charactersDir = join(root, "characters");
+		const outsideCard = join(globTmp, "outside", "escaping.json");
+		await Promise.all([
+			mkdir(charactersDir, { recursive: true }),
+			mkdir(join(globTmp, "outside"), { recursive: true }),
+			Bun.write(outsideCard, scannerCard("Outside Character")),
+		]);
+		symlinkSync(outsideCard, join(charactersDir, "escaping.json"), "file");
+
+		const withoutFollowing: string[] = [];
+		for await (const entry of new Bun.Glob("characters/**/*.json").scan({ cwd: root, followSymlinks: false })) {
+			withoutFollowing.push(entry);
+		}
+		const withFollowing: string[] = [];
+		for await (const entry of new Bun.Glob("characters/**/*.json").scan({ cwd: root, followSymlinks: true })) {
+			withFollowing.push(entry);
+		}
+
+		expect(relative(root, outsideCard).startsWith("..")).toBe(true);
+		expect(withoutFollowing).toEqual([]);
+		expect(withFollowing).toEqual([g("characters/escaping.json")]);
 	});
 });
 
@@ -255,7 +316,7 @@ function makeCharaPng(cardName: string): Uint8Array {
 async function buildStDirWithPngCards(root: string, names: string[]): Promise<void> {
 	await mkdir(join(root, "characters"), { recursive: true });
 	for (const name of names) {
-		await writeFile(join(root, "characters", `${name}.png`), makeCharaPng(name));
+		await Bun.write(join(root, "characters", `${name}.png`), makeCharaPng(name));
 	}
 	await mkdir(join(root, "chats"), { recursive: true });
 }
@@ -278,6 +339,7 @@ describe("ST directory scanner — PNG card avatar-full wiring + parallelism", (
 		const chars = await env.stores.characters.listAll();
 		const imported = chars.find((c) => c.name === "PngChar");
 		expect(imported).toBeTruthy();
+		const dir = await env.stores.characters.resolveFolderName(imported!.id);
 
 		// avatarExt + avatarFullExt both set — wires the card into the crop-confirm
 		// flow so the user can re-crop the original art later.
@@ -285,8 +347,8 @@ describe("ST directory scanner — PNG card avatar-full wiring + parallelism", (
 		expect(imported!.avatarFullExt).toBe("png");
 
 		// Both files actually land in storage.
-		const avatarBytes = await env.stores.content.readBinary(STORAGE_FOLDERS.characters, imported!.id, "avatar.png");
-		const avatarFullBytes = await env.stores.content.readBinary(STORAGE_FOLDERS.characters, imported!.id, "avatar-full.png");
+		const avatarBytes = await env.stores.content.readBinary(STORAGE_FOLDERS.characters, dir, "avatar.png");
+		const avatarFullBytes = await env.stores.content.readBinary(STORAGE_FOLDERS.characters, dir, "avatar-full.png");
 		expect(avatarBytes).not.toBeNull();
 		expect(avatarFullBytes).not.toBeNull();
 		// ST cards are uncropped, so the two files are byte-identical.
@@ -294,7 +356,7 @@ describe("ST directory scanner — PNG card avatar-full wiring + parallelism", (
 
 		// REGRESSION GUARD: the dead `original.png` artifact (the pre-fix bug)
 		// must NOT be written — nothing reads it.
-		const originalBytes = await env.stores.content.readBinary(STORAGE_FOLDERS.characters, imported!.id, "original.png");
+		const originalBytes = await env.stores.content.readBinary(STORAGE_FOLDERS.characters, dir, "original.png");
 		expect(originalBytes).toBeNull();
 	});
 
@@ -321,7 +383,8 @@ describe("ST directory scanner — PNG card avatar-full wiring + parallelism", (
 			expect(c, `character ${name} should exist`).toBeTruthy();
 			expect(c!.avatarExt).toBe("png");
 			expect(c!.avatarFullExt).toBe("png");
-			const full = await env.stores.content.readBinary(STORAGE_FOLDERS.characters, c!.id, "avatar-full.png");
+			const cdir = await env.stores.characters.resolveFolderName(c!.id);
+			const full = await env.stores.content.readBinary(STORAGE_FOLDERS.characters, cdir, "avatar-full.png");
 			expect(full, `avatar-full.png for ${name}`).not.toBeNull();
 		}
 	});
@@ -331,18 +394,18 @@ describe("ST directory scanner — PNG card avatar-full wiring + parallelism", (
 async function buildStDirMulti(root: string) {
 	await mkdir(join(root, "characters"), { recursive: true });
 	for (let i = 0; i < 3; i++) {
-		await writeFile(
+		await Bun.write(
 			join(root, "characters", `Char${i}.json`),
 			JSON.stringify({ spec: "chara_card_v2", spec_version: "2.0", data: { name: `Char ${i}`, description: "d", first_mes: "hi" } }),
 		);
 	}
 	await mkdir(join(root, "worlds"), { recursive: true });
 	for (let i = 0; i < 2; i++) {
-		await writeFile(
+		await Bun.write(
 			join(root, "worlds", `World${i}.json`), JSON.stringify({ name: `World ${i}`, entries: {} }));
 	}
 	await mkdir(join(root, "OpenAI Settings"), { recursive: true });
-	await writeFile(
+	await Bun.write(
 			join(root, "OpenAI Settings", "Preset0.json"),
 			JSON.stringify({ chat_start: "", prompts: [{ identifier: "main", name: "main", content: "sys", role: "system" }], prompt_order: { dummy: { order: [{ identifier: "main" }] } } }),
 		);
@@ -407,5 +470,184 @@ describe("ST directory scanner — streaming progress events", () => {
 		} finally {
 			await env2.cleanup();
 		}
+	});
+});
+
+function scannerCard(name: string): string {
+	return JSON.stringify({
+		spec: "chara_card_v2",
+		spec_version: "2.0",
+		data: { name, description: "scanner fixture", first_mes: "Hello." },
+	});
+}
+
+function scannerChat(name: string): string {
+	return [
+		JSON.stringify({ character_name: name }),
+		JSON.stringify({ name, mes: `Hello from ${name}.` }),
+	].join("\n");
+}
+
+function scannerPreset(name: string): string {
+	return JSON.stringify({
+		name,
+		prompts: [{ identifier: "main", name: "Main", role: "system", content: "System." }],
+	});
+}
+
+describe("ST directory scanner — filesystem characterization", () => {
+	let scanTmp: string | null = null;
+	let scanRoot = "";
+
+	beforeEach(async () => {
+		scanTmp = await mkdtemp(join(tmpdir(), "vt-st-scan-"));
+		scanRoot = join(scanTmp, "st-data");
+		await mkdir(scanRoot);
+	});
+
+	afterEach(async () => {
+		if (scanTmp !== null) {
+			await rm(scanTmp, { recursive: true, force: true });
+		}
+	});
+
+	it("rejects a missing scan root instead of treating it as an empty SillyTavern directory", async () => {
+		await expect(scanSillyTavernDirectory(join(scanRoot, "missing"))).rejects.toThrow("is not a directory");
+	});
+
+	it("includes dot-path entries and mixed-case extensions across every preview surface in lexicographic order", async () => {
+		const charactersDir = join(scanRoot, "characters");
+		const chatsDir = join(scanRoot, "chats");
+		const worldsDir = join(scanRoot, "worlds");
+		const presetsDir = join(scanRoot, "OpenAI Settings");
+		await Promise.all([
+			mkdir(charactersDir, { recursive: true }),
+			mkdir(chatsDir, { recursive: true }),
+			mkdir(worldsDir, { recursive: true }),
+			mkdir(presetsDir, { recursive: true }),
+		]);
+
+		await Bun.write(join(charactersDir, "zeta.JSON"), scannerCard("Zeta"));
+		await Bun.write(join(charactersDir, ".hidden.json"), scannerCard("Hidden Character"));
+		await Bun.write(join(charactersDir, "Alpha.json"), scannerCard("Alpha"));
+		await Bun.write(join(charactersDir, "Avatar.PNG"), makeCharaPng("Avatar"));
+
+		for (const chatDir of ["zeta-chat", ".hidden-chat", "alpha-chat"]) {
+			await mkdir(join(chatsDir, chatDir));
+			await Bun.write(join(chatsDir, chatDir, "Conversation.JSONL"), scannerChat(chatDir));
+		}
+
+		await Bun.write(join(worldsDir, "Zeta.JSON"), JSON.stringify({ name: "Zeta World" }));
+		await Bun.write(join(worldsDir, ".hidden.json"), JSON.stringify({ name: "Hidden World" }));
+		await Bun.write(join(worldsDir, "Alpha.json"), JSON.stringify({ name: "Alpha World" }));
+
+		await Bun.write(join(presetsDir, "Zeta.JSON"), scannerPreset("Zeta Preset"));
+		await Bun.write(join(presetsDir, ".hidden.json"), scannerPreset("Hidden Preset"));
+		await Bun.write(join(presetsDir, "Alpha.json"), scannerPreset("Alpha Preset"));
+		await Bun.write(join(presetsDir, "not-a-preset.json"), JSON.stringify({ name: "Not a preset" }));
+		await Bun.write(join(scanRoot, "settings.json"), JSON.stringify({
+			power_user: {
+				personas: { "scanner.png": "Scanner Persona" },
+				persona_descriptions: { "scanner.png": { description: "Fixture persona." } },
+			},
+		}));
+
+		const characterEntries = await readdir(charactersDir);
+		const chatEntries = await readdir(chatsDir);
+		const worldEntries = await readdir(worldsDir);
+		const presetEntries = await readdir(presetsDir);
+
+		const scan = await scanSillyTavernDirectory(scanRoot);
+
+		// Bun.Glob results are explicitly sorted lexicographically by the scanner.
+		expect(scan.characters.map((item) => item.fileName)).toEqual([...characterEntries].sort());
+		expect(scan.chats.map((item) => item.characterName)).toEqual([...chatEntries].sort());
+		expect(scan.lorebooks.map((item) => item.fileName)).toEqual([...worldEntries].sort());
+		expect(scan.presets.map((item) => item.fileName)).toEqual(
+			[...presetEntries].filter((entry) => entry !== "not-a-preset.json").sort(),
+		);
+		expect(scan.characters.map((item) => item.name)).toEqual(
+			expect.arrayContaining(["Alpha", "Avatar", "Hidden Character", "Zeta"]),
+		);
+		expect(scan.chats).toHaveLength(3);
+		expect(scan.lorebooks.map((item) => item.name)).toEqual(
+			expect.arrayContaining(["Alpha World", "Hidden World", "Zeta World"]),
+		);
+		expect(scan.presets.map((item) => item.name)).toEqual(
+			expect.arrayContaining(["Alpha Preset", "Hidden Preset", "Zeta Preset"]),
+		);
+		expect(scan.persona).toEqual({ count: 1, imported: false });
+		expect(scan.errors).toEqual([]);
+	});
+
+	it("reports malformed character, world, preset, and settings JSON while retaining a malformed chat as a zero-message preview", async () => {
+		const charactersDir = join(scanRoot, "characters");
+		const chatsDir = join(scanRoot, "chats", "broken-chat");
+		const worldsDir = join(scanRoot, "worlds");
+		const presetsDir = join(scanRoot, "OpenAI Settings");
+		await Promise.all([
+			mkdir(charactersDir, { recursive: true }),
+			mkdir(chatsDir, { recursive: true }),
+			mkdir(worldsDir, { recursive: true }),
+			mkdir(presetsDir, { recursive: true }),
+		]);
+		await Bun.write(join(charactersDir, "broken.json"), "{not-json");
+		await Bun.write(join(chatsDir, "broken.JSONL"), "{not-json");
+		await Bun.write(join(worldsDir, "broken.json"), "{not-json");
+		await Bun.write(join(presetsDir, "broken.json"), "{not-json");
+		await Bun.write(join(scanRoot, "settings.json"), "{not-json");
+
+		const scan = await scanSillyTavernDirectory(scanRoot);
+
+		expect(scan.characters).toEqual([]);
+		expect(scan.chats).toEqual([
+			expect.objectContaining({ characterName: "broken-chat", fileName: "broken.JSONL", messageCount: 0 }),
+		]);
+		expect(scan.lorebooks).toEqual([]);
+		expect(scan.presets).toEqual([]);
+		expect(scan.persona).toBeNull();
+		expect(scan.errors.map((error) => error.file)).toEqual([
+			join(charactersDir, "broken.json"),
+			join(worldsDir, "broken.json"),
+			join(presetsDir, "broken.json"),
+			join(scanRoot, "settings.json"),
+		]);
+		expect(scan.errors.every((error) => error.stage === "parse")).toBe(true);
+	});
+
+	it("blocks symlinked directories and files outside the configured root (security boundary)", async () => {
+		const charactersDir = join(scanRoot, "characters");
+		const chatsDir = join(scanRoot, "chats");
+		if (scanTmp === null) throw new Error("scan fixture root was not created");
+		const outsideDir = join(scanTmp, "outside");
+		const outsideChatsDir = join(outsideDir, "external-chat");
+		await Promise.all([
+			mkdir(charactersDir, { recursive: true }),
+			mkdir(chatsDir, { recursive: true }),
+			mkdir(outsideChatsDir, { recursive: true }),
+		]);
+		const outsideCard = join(outsideDir, "outside-card.json");
+		await Bun.write(outsideCard, scannerCard("Outside Character"));
+		await Bun.write(join(outsideChatsDir, "outside.JSONL"), scannerChat("Outside Chat"));
+
+		const escapingCardLink = join(charactersDir, "escaping.JSON");
+		const danglingCardLink = join(charactersDir, "dangling.JSON");
+		const escapingChatLink = join(chatsDir, "escaping-chat");
+		const danglingChatLink = join(chatsDir, "dangling-chat");
+		const directoryLinkType = process.platform === "win32" ? "junction" : "dir";
+		// Deliberately uncaught: a runner without symlink permission fails this gate.
+		symlinkSync(outsideCard, escapingCardLink, "file");
+		symlinkSync(join(outsideDir, "missing-card.json"), danglingCardLink, "file");
+		symlinkSync(outsideChatsDir, escapingChatLink, directoryLinkType);
+		symlinkSync(join(outsideDir, "missing-chat"), danglingChatLink, directoryLinkType);
+
+		expect(relative(scanRoot, outsideCard).startsWith("..")).toBe(true);
+		const scan = await scanSillyTavernDirectory(scanRoot);
+
+		// SECURITY FIX: Bun.Glob with followSymlinks:false blocks escaping symlinks
+		// — content outside scanRoot is NOT surfaced.
+		expect(scan.characters).toEqual([]);
+		expect(scan.chats).toEqual([]);
+		expect(scan.errors).toEqual([]);
 	});
 });

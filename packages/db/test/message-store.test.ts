@@ -1,4 +1,5 @@
 import { describe, test, expect, beforeEach } from "bun:test";
+import { asc, eq } from "drizzle-orm";
 import { createDb } from "../src/db-connection.js";
 import * as schema from "../src/db-schema.js";
 import { MessageStore, type MessageVariantSceneRecord } from "../src/stores/message-store.js";
@@ -79,6 +80,110 @@ beforeEach(async () => {
   idCounters = new Map();
   messages = new MessageStore(db, { clock: testClock, idGenerator: testIdGen });
   chatStore = new ChatStore(db, { clock: testClock, idGenerator: testIdGen });
+});
+
+// ─── Guarded edits and candidate variants (MAE-31) ───────────────────────────
+
+describe("MessageStore guarded edits and candidate variants (MAE-31)", () => {
+  test("edits the selected variant when its immutable id matches the guard", async () => {
+    // Given
+    const message = await messages.addMessage({
+      chatId: "chat_1", branchId: "brnch_1",
+      role: "assistant", authorType: "assistant", content: "first",
+      variants: ["first", "selected"], selectedVariantIndex: 1,
+    });
+    const selectedVariant = (await messages.getVariants(message.id))[1];
+    if (!selectedVariant) throw new Error("expected selected test variant");
+
+    // When
+    const edited = await messages.editMessage(message.id, "selected edited", selectedVariant.id);
+
+    // Then
+    expect(edited.content).toBe("selected edited");
+    const variants = await messages.getVariants(message.id);
+    expect(variants[0]?.content).toBe("first");
+    expect(variants[1]?.content).toBe("selected edited");
+    expect(variants[1]?.isSelected).toBeTrue();
+  });
+
+  test("rejects a stale selected-variant guard without mutating the message or variants", async () => {
+    // Given
+    const message = await messages.addMessage({
+      chatId: "chat_1", branchId: "brnch_1",
+      role: "assistant", authorType: "assistant", content: "first",
+      variants: ["first", "second"], selectedVariantIndex: 0,
+    });
+    const initialVariants = await messages.getVariants(message.id);
+    const initialVariant = initialVariants[0];
+    const currentVariant = initialVariants[1];
+    if (!initialVariant || !currentVariant) throw new Error("expected two test variants");
+    await messages.selectVariant(message.id, currentVariant.variantIndex);
+    const messageBefore = await db.select().from(schema.messages)
+      .where(eq(schema.messages.id, message.id)).get();
+    const variantsBefore = await db.select().from(schema.messageVariants)
+      .where(eq(schema.messageVariants.messageId, message.id))
+      .orderBy(asc(schema.messageVariants.variantIndex)).all();
+
+    // When
+    await expect(messages.editMessage(message.id, "must not land", initialVariant.id)).rejects.toMatchObject({
+      name: "SelectedVariantMismatchError",
+      messageId: message.id,
+      expectedVariantId: initialVariant.id,
+      actualVariantId: currentVariant.id,
+    });
+
+    // Then
+    expect(await db.select().from(schema.messages).where(eq(schema.messages.id, message.id)).get())
+      .toEqual(messageBefore);
+    expect(await db.select().from(schema.messageVariants)
+      .where(eq(schema.messageVariants.messageId, message.id))
+      .orderBy(asc(schema.messageVariants.variantIndex)).all())
+      .toEqual(variantsBefore);
+  });
+
+  test("keeps unguarded edits compatible with the existing selected-variant update", async () => {
+    // Given
+    const message = await messages.addMessage({
+      chatId: "chat_1", branchId: "brnch_1",
+      role: "assistant", authorType: "assistant", content: "first",
+      variants: ["first", "selected"], selectedVariantIndex: 1,
+    });
+
+    // When
+    const edited = await messages.editMessage(message.id, "unguarded edit");
+
+    // Then
+    expect(edited.content).toBe("unguarded edit");
+    const variants = await messages.getVariants(message.id);
+    expect(variants[0]?.content).toBe("first");
+    expect(variants[1]?.content).toBe("unguarded edit");
+  });
+
+  test("appends and selects a candidate variant while preserving the prior variant and syncing message content", async () => {
+    // Given
+    const message = await messages.addMessage({
+      chatId: "chat_1", branchId: "brnch_1",
+      role: "assistant", authorType: "assistant", content: "original",
+    });
+    const originalVariant = (await messages.getVariants(message.id))[0];
+    if (!originalVariant) throw new Error("expected original test variant");
+
+    // When
+    const candidate = await messages.addVariant(message.id, "candidate", "stop", "reasoning", 12, "model_1");
+
+    // Then
+    expect(candidate.variantIndex).toBe(1);
+    const variants = await messages.getVariants(message.id);
+    expect(variants).toHaveLength(2);
+    expect(variants[0]?.id).toBe(originalVariant.id);
+    expect(variants[0]?.content).toBe("original");
+    expect(variants[0]?.isSelected).toBeFalse();
+    expect(variants[1]?.id).toBe(candidate.id);
+    expect(variants[1]?.isSelected).toBeTrue();
+    expect(variants[1]?.finishReason).toBe("stop");
+    expect(variants[1]?.modelId).toBe("model_1");
+    expect((await messages.getMessageById(message.id))?.content).toBe("candidate");
+  });
 });
 
 // ─── Scene records: immutable-variant identity ───────────────────────────────
