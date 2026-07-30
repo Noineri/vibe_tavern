@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { Fragment, useMemo, useState, type ReactNode } from "react";
 import * as Popover from "@radix-ui/react-popover";
 import type {
   DiceActorType,
@@ -107,6 +107,76 @@ function ActorRollButton({
   );
 }
 
+// ─── Check help ──────────────────────────────────────────────────────────────
+// Script authors write `help` as free text, and the canonical shape is an
+// outcome table flattened into one sentence ("Fate d20: 1 critical setback,
+// 2-7 setback, …"). Rendered as a paragraph in the narrow checks column that
+// wraps mid-clause and reads as noise, so give each clause its own line with
+// the numeric range set apart. Authored newlines stay hard breaks; text that
+// isn't list-shaped falls through untouched.
+
+const RANGE_CLAUSE = /^(\d+(?:\s*[-–—]\s*\d+)?)\s+(\S.*)$/;
+
+interface HelpClause {
+  range: string | null;
+  body: string;
+}
+
+interface HelpLine {
+  lead: string | null;
+  clauses: HelpClause[];
+}
+
+function parseCheckHelp(text: string): HelpLine[] {
+  const lines: HelpLine[] = [];
+  for (const raw of text.split("\n")) {
+    const line = raw.trim();
+    if (!line) continue;
+    const colon = line.indexOf(":");
+    const lead = colon > 0 ? line.slice(0, colon).trim() : null;
+    const body = (colon > 0 ? line.slice(colon + 1) : line).trim().replace(/\.$/, "");
+    const parts = body.split(",").map((part) => part.trim()).filter(Boolean);
+    if (parts.length < 2) {
+      lines.push({ lead: null, clauses: [{ range: null, body: line }] });
+      continue;
+    }
+    lines.push({
+      lead,
+      clauses: parts.map((part) => {
+        const match = part.match(RANGE_CLAUSE);
+        return match ? { range: match[1].replace(/\s+/g, ""), body: match[2] } : { range: null, body: part };
+      }),
+    });
+  }
+  return lines;
+}
+
+function CheckHelp({ text }: { text: string }) {
+  const lines = parseCheckHelp(text);
+  if (lines.length === 0) return null;
+  return (
+    <div className="mt-2 space-y-2 rounded-md border border-border2 bg-s2/40 px-2.5 py-2 text-[calc(var(--ui-fs)-3px)] leading-snug text-t2">
+      {lines.map((line, lineIndex) => (
+        // Grid, not per-row flex: the auto column takes the width of the widest
+        // range in the block, so every outcome starts on the same x.
+        <div key={lineIndex} className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-1">
+          {line.lead && <div className="col-span-2 font-medium text-t3">{line.lead}</div>}
+          {line.clauses.map((clause, clauseIndex) => (
+            clause.range === null ? (
+              <span key={clauseIndex} className="col-span-2 min-w-0 text-pretty">{clause.body}</span>
+            ) : (
+              <Fragment key={clauseIndex}>
+                <span className="whitespace-nowrap font-mono text-t3">{clause.range}</span>
+                <span className="min-w-0 text-pretty">{clause.body}</span>
+              </Fragment>
+            )
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 interface CheckRowProps {
   scriptId: string;
   scriptLabel: string;
@@ -120,35 +190,40 @@ function CheckRow({ scriptId, scriptLabel, check, personaState, characterState, 
   const { t } = useT();
   const anyRolling = personaState === "rolling" || characterState === "rolling";
   return (
-    <div className="flex items-start gap-3 border-t border-border px-3 py-2.5 first:border-t-0">
-      <div className="min-w-0 flex-1">
-        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-          <span className="font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-t1">{check.label}</span>
-          <span className="font-mono text-[calc(var(--ui-fs)-3px)] text-t3">{check.notation}</span>
-        </div>
-        <div className="mt-0.5 text-[calc(var(--ui-fs)-3px)] text-t3">{scriptLabel}</div>
-        {check.help && <div className="mt-1 text-[calc(var(--ui-fs)-3px)] leading-relaxed text-t2">{check.help}</div>}
-        {anyRolling && (
-          <div className="mt-2">
-            <DiceFaces
-              faceShape={check.faceShape}
-              notation={check.notation}
-              size="sm"
-              maxVisible={6}
-              rollKey={`loading:${scriptId}:${check.id}`}
-              loading={{ count: notationDiceCount(check.notation) }}
-            />
+    <div className="border-t border-border px-3 py-2.5 first:border-t-0">
+      {/* Only the title sits beside the buttons; help drops below them so the
+          outcome table gets the full column width instead of the ~90px the
+          button stack leaves. */}
+      <div className="flex items-start gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+            <span className="font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-t1">{check.label}</span>
+            <span className="font-mono text-[calc(var(--ui-fs)-3px)] text-t3">{check.notation}</span>
           </div>
-        )}
+          <div className="mt-0.5 text-[calc(var(--ui-fs)-3px)] text-t3">{scriptLabel}</div>
+        </div>
+        <div className="flex shrink-0 flex-col items-end gap-1.5">
+          {personaState && (
+            <ActorRollButton actorType="persona" state={personaState} checkId={check.id} checkLabel={check.label} onClick={() => onRoll("persona")} />
+          )}
+          {characterState && (
+            <ActorRollButton actorType="character" state={characterState} checkId={check.id} checkLabel={check.label} onClick={() => onRoll("character")} />
+          )}
+        </div>
       </div>
-      <div className="flex shrink-0 flex-col items-end gap-1.5">
-        {personaState && (
-          <ActorRollButton actorType="persona" state={personaState} checkId={check.id} checkLabel={check.label} onClick={() => onRoll("persona")} />
-        )}
-        {characterState && (
-          <ActorRollButton actorType="character" state={characterState} checkId={check.id} checkLabel={check.label} onClick={() => onRoll("character")} />
-        )}
-      </div>
+      {check.help && <CheckHelp text={check.help} />}
+      {anyRolling && (
+        <div className="mt-2">
+          <DiceFaces
+            faceShape={check.faceShape}
+            notation={check.notation}
+            size="sm"
+            maxVisible={6}
+            rollKey={`loading:${scriptId}:${check.id}`}
+            loading={{ count: notationDiceCount(check.notation) }}
+          />
+        </div>
+      )}
     </div>
   );
 }
@@ -318,7 +393,7 @@ function RollCard({ roll, mode, stale, onRemove, onIncludedChange, onChoose }: R
           <Popover.Trigger asChild>
             <button
               type="button"
-              className="min-h-9 rounded-md px-2.5 text-[calc(var(--ui-fs)-3px)] text-t2 transition-colors hover:bg-s2 hover:text-t1"
+              className="min-h-9 rounded-md px-2.5 text-left text-[calc(var(--ui-fs)-3px)] text-t2 transition-colors hover:bg-s2 hover:text-t1"
             >
               {t("dice_details")}
             </button>
@@ -343,7 +418,9 @@ function RollCard({ roll, mode, stale, onRemove, onIncludedChange, onChoose }: R
             onClick={() => onIncludedChange(!roll.included)}
             aria-label={t(roll.included ? "dice_exclude_roll" : "dice_include_roll")}
             className={cn(
-              "min-h-9 rounded-md px-2.5 text-[calc(var(--ui-fs)-3px)] transition-colors",
+              // text-left: the ru label wraps to two lines in the narrow result
+              // column, and a button's default centering made it look shoved right.
+              "min-h-9 rounded-md px-2.5 text-left text-[calc(var(--ui-fs)-3px)] transition-colors",
               roll.included ? "text-t2 hover:bg-s2 hover:text-t1" : "text-accent-t hover:bg-accent-dim",
             )}
           >

@@ -499,6 +499,38 @@ describe("DiceTray", () => {
     mocks.mobile = false;
   });
 
+  it("breaks list-shaped check help into one line per clause and leaves prose untouched", () => {
+    const helpDefinitions: DiceDefinitionsResponse = {
+      scripts: [{
+        ...definitions.scripts[0],
+        checks: [
+          { ...definitions.scripts[0].checks[0], help: "Fate d20: 1 critical setback, 2-7 setback, 8-13 mixed, 14-19 favorable, 20 critical opportunity." },
+          { ...definitions.scripts[0].checks[0], id: "prose", label: "Prose check", help: "Roll when the outcome is uncertain." },
+        ],
+      }],
+    };
+    const { getByText } = render(
+      <DiceTray
+        chatId="chat_1"
+        branchId="branch_1"
+        mode="normal"
+        definitions={helpDefinitions}
+        lane={lanes().normal}
+        character={mocks.character}
+        persona={mocks.persona}
+        diceActorBindings={null}
+      />,
+    );
+    // The flattened outcome table splits: lead-in, then range + outcome per line.
+    expect(getByText("Fate d20")).toBeTruthy();
+    for (const [range, outcome] of [["1", "critical setback"], ["2-7", "setback"], ["8-13", "mixed"], ["14-19", "favorable"], ["20", "critical opportunity"]]) {
+      const outcomeEl = getByText(outcome);
+      expect(outcomeEl.previousElementSibling?.textContent).toBe(range);
+    }
+    // Prose help is not list-shaped — it renders verbatim, trailing period included.
+    expect(getByText("Roll when the outcome is uncertain.")).toBeTruthy();
+  });
+
   it("does not replay a roll animation when the same lane snapshot rerenders", () => {
     const roll = makeRoll();
     const props = {
