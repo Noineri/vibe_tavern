@@ -4,11 +4,55 @@ import * as matchers from "@testing-library/jest-dom/matchers";
 
 let registeredByDomEnv = false;
 
+/** Longest `outerHTML` snippet an inspected node prints before it is elided. */
+const INSPECT_HTML_LIMIT = 2000;
+
+/**
+ * Teach Bun how to print a happy-dom node.
+ *
+ * Bun's `expect` builds its failure message by inspecting `received`. happy-dom
+ * nodes are plain objects whose own properties include the listener maps, the
+ * mutation-observer registry, the selector caches and a `[Symbol(ownerDocument)]`
+ * back-reference to the whole document — so the default inspector walks the
+ * entire tree and emits hundreds of kilobytes per failed assertion.
+ *
+ * That is slow enough to be a correctness problem, not just noise: one failed
+ * `expect(element).toBeNull()` measured ~270ms on an idle 16-core box. Inside a
+ * `waitFor` retry loop — where the assertion fails on every poll until the DOM
+ * catches up — those blocking serializations starve the timers and animation
+ * frames that would have produced the awaited change, so the wait cannot win the
+ * race it is waiting on. On CI this blew past both the `waitFor` budget and the
+ * test timeout (a 15s test observed taking 22.4s) and turned two accordion
+ * collapse tests red on Linux and Windows.
+ *
+ * `Symbol.for("nodejs.util.inspect.custom")` is the supported hook for this, and
+ * Bun honours it. Printing `outerHTML` drops the same assertion to ~0.6ms and
+ * makes the message readable (`Received: <div data-testid="body">…`) instead of
+ * a screenful of symbol soup.
+ */
+function installNodeInspector(): void {
+  const inspect = Symbol.for("nodejs.util.inspect.custom");
+  if (Object.getOwnPropertyDescriptor(Node.prototype, inspect)) return;
+
+  Object.defineProperty(Node.prototype, inspect, {
+    value: function inspectNode(this: Node): string {
+      const html = this instanceof Element ? this.outerHTML : this.nodeValue;
+      if (html === null) return `[${this.nodeName}]`;
+      return html.length > INSPECT_HTML_LIMIT
+        ? `${html.slice(0, INSPECT_HTML_LIMIT)}… (${html.length} chars)`
+        : html;
+    },
+    configurable: true,
+    writable: true,
+  });
+}
+
 function ensureDomEnvRegistration(): void {
   if (typeof globalThis.window === "undefined") {
     GlobalRegistrator.register();
     registeredByDomEnv = true;
   }
+  installNodeInspector();
 }
 
 ensureDomEnvRegistration();

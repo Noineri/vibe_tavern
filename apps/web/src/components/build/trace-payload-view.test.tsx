@@ -188,8 +188,10 @@ describe("TracePayloadView (DOM)", () => {
 		// Collapsing the inject hides the body again. The body lingers in the
 		// DOM for the duration of the exit animation (250ms) before the
 		// AnimatePresence finishes unmounting it — wait for that to complete.
-		// Under contention the animation can take longer than the 1s default
-		// waitFor timeout, so use a 5s window.
+		// The window is generous only to absorb a slow CI frameloop; the retry
+		// itself is cheap because dom-env.ts gives happy-dom nodes a custom
+		// inspector (without it, each failed poll serialized the node for
+		// ~270ms and starved the frames driving the animation).
 		fireEvent.click(getByText("Post-History Instructions"));
 		await waitFor(() => expect(queryByText("NOTE_TEXT")).toBeNull(), { timeout: 5000 });
 	}, { timeout: 15000 });
