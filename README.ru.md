@@ -35,32 +35,44 @@ updated: 2026-07-14
 <details>
 <summary><h2>Скриншоты</h2></summary>
 
-<p align="center">
-  <img src="assets/build.png" width="90%" alt="Редактор персонажа" />
+p align="center">
+<img src="assets/build.png" width="90%" alt="Build mode" />
 </p>
 
 <p align="center">
-  <img src="assets/lorebooks.png" width="45%" alt="Список лорбуков" />
+  <img src="assets/lorebooks.png" width="45%" alt="Lorebooks list" />
   &nbsp;&nbsp;
-  <img src="assets/lorebooks2.png" width="45%" alt="Редактор лорбука" />
+  <img src="assets/lorebooks2.png" width="45%" alt="Lorebook edit" />
 </p>
 
 <p align="center">
-  <img src="assets/memory.png" width="45%" alt="Управление памятью" />
+  <img src="assets/provider.png" width="45%" alt="Provider settings" />
   &nbsp;&nbsp;
-  <img src="assets/prompt_trace.png" width="45%" alt="Prompt Trace" />
+  <img src="assets/persona.png" width="45%" alt="Persona manager" />
 </p>
 
 <p align="center">
-  <img src="assets/provider.png" width="45%" alt="Настройка провайдера" />
+  <img src="assets/memory.png" width="45%" alt="Memory manager" />
   &nbsp;&nbsp;
-  <img src="assets/persona.png" width="45%" alt="Менеджер персон" />
+  <img src="assets/prompt_trace.png" width="45%" alt="Prompt trace" />
 </p>
 
 <p align="center">
-  <img src="assets/scripts.png" width="45%" alt="Редактор скриптов" />
+  <img src="assets/scripts.png" width="45%" alt="Scripts" />
   &nbsp;&nbsp;
-  <img src="assets/media_gallery.png" width="45%" alt="Медиа-галерея" />
+  <img src="assets/media_gallery.png" width="45%" alt="Media gallery" />
+</p>
+
+<p align="center">
+  <img src="assets/dice.png" width="45%" alt="Scripts" />
+  &nbsp;&nbsp;
+  <img src="assets/coauthor.png" width="45%" alt="Media gallery" />
+</p>
+
+<p align="center">
+  <img src="assets/chat_addons.png" width="45%" alt="Scripts" />
+  &nbsp;&nbsp;
+  <img src="assets/chat_addons2.png" width="45%" alt="Media gallery" />
 </p>
 
 </details>

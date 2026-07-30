@@ -65,6 +65,18 @@ updated: 2026-07-14
   <img src="assets/media_gallery.png" width="45%" alt="Media gallery" />
 </p>
 
+<p align="center">
+  <img src="assets/dice.png" width="45%" alt="Scripts" />
+  &nbsp;&nbsp;
+  <img src="assets/coauthor.png" width="45%" alt="Media gallery" />
+</p>
+
+<p align="center">
+  <img src="assets/chat_addons.png" width="45%" alt="Scripts" />
+  &nbsp;&nbsp;
+  <img src="assets/chat_addons2.png" width="45%" alt="Media gallery" />
+</p>
+
 </details>
 
 ---
