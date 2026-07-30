@@ -1,14 +1,38 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Vibe Tavern</string>
+    <string name="logo_content_description">Vibe Tavern book and stars</string>
+    <string name="launcher_intro">The launcher manages the local server; Vibe Tavern opens in your browser.</string>
+    <string name="launcher_version_status">Launcher and server versions</string>
+    <string name="checking_server">Checking local server…</string>
+    <string name="start_server">Start Server in Termux</string>
+    <string name="open_browser">Open in Browser</string>
+    <string name="stop_server">Stop Server</string>
+    <string name="management">Launcher and server management</string>
+    <string name="check_launcher_update">Check for launcher update</string>
+    <string name="first_time_setup">First-Time Setup</string>
+    <string name="install_server">Install or update server payload</string>
+    <string name="help_troubleshooting">Help and troubleshooting</string>
+    <string name="language">Language</string>
+    <string name="uninstall">Uninstall</string>
+    <string name="battery_hint">Tip: if the web UI lags after switching apps, disable battery optimization for Termux.</string>
+
     <string name="step_install_termux">Step 1: Install Termux</string>
-    <string name="step_grant_permission">Step 2: Grant Permission</string>
     <string name="btn_install_termux">Install Termux from F-Droid</string>
     <string name="btn_installed_continue">I\'ve installed it — continue</string>
-    <string name="btn_open_settings">Open Termux Settings</string>
+    <string name="termux_install_body">Vibe Tavern needs Termux to run the local server on your device.\n\nIMPORTANT: install Termux from F-Droid, not the Play Store. The Play Store version is outdated and will not work.</string>
+
+    <string name="step_grant_permission">Step 2: Grant Permission</string>
+    <string name="btn_open_settings">Open Vibe Tavern Settings</string>
     <string name="btn_continue">Continue</string>
-    <string name="warn_fdroid_only">⚠ IMPORTANT: Install from F-Droid, NOT the Play Store.</string>
-    <string name="permission_guide">1. Tap the button below to open Termux settings\n2. Tap &quot;Permissions&quot; → &quot;Additional permissions&quot;\n3. Enable &quot;Run commands in Termux environment&quot;\n4. Come back here and tap Continue</string>
+    <string name="permission_guide_body">This permission belongs to Vibe Tavern, not Termux.\n\nFirst run this in Termux:\n  mkdir -p ~/.termux\n  echo &quot;allow-external-apps=true&quot; &gt;&gt; ~/.termux/termux.properties\n\nIf termux-reload-settings crashes, force stop Termux and open it again.\n\nThen:\n1. Open Vibe Tavern settings below\n2. Use ⋮ → &quot;Allow restricted settings&quot;\n3. Open Permissions → ⋮ → &quot;All permissions&quot;\n4. Enable &quot;Run commands in Termux environment&quot;\n5. Return here and tap Continue</string>
+
     <string name="loading">Starting server…</string>
     <string name="notification_server_running">Server is running on localhost:8787</string>
+    <string name="launcher_update_available">Launcher update available</string>
+    <string name="download_launcher_apk">Download APK</string>
+    <string name="launcher_download_in_progress">Downloading launcher update…</string>
+    <string name="install_launcher_update">Install downloaded launcher update</string>
+    <string name="unknown_sources_guidance">Allow installs from Vibe Tavern, then return here.</string>
+    <string name="confirm_system_installer">Confirm the launcher update in Android\'s installer.</string>
 </resources>

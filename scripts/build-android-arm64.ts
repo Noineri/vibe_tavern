@@ -16,8 +16,9 @@ import { chmod, copyFile, cp, mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathExists } from "./_fs.js";
-import { VERSION } from "./_version.js";
+import { VERSION as PACKAGE_VERSION } from "./_version.js";
 
+const VERSION = process.env.VIBE_TAVERN_BUILD_VERSION?.trim() || PACKAGE_VERSION;
 const ROOT = resolve(import.meta.dir, "..");
 const OUT = join(ROOT, "out");
 const ANDROID_DIST = join(OUT, "android-arm64");
@@ -57,6 +58,9 @@ async function copyRequiredDir(source: string, target: string, label: string) {
 }
 
 async function main() {
+	if (!/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(VERSION)) {
+		throw new Error(`Invalid Android build version: ${VERSION}`);
+	}
 	console.log("📦 Vibe Tavern — Android ARM64 Artifact Build\n");
 	console.log(`   Root:    ${ROOT}`);
 	console.log(`   Output:  ${ANDROID_DIST}`);
@@ -67,6 +71,11 @@ async function main() {
 		await rm(ANDROID_DIST, { recursive: true, force: true });
 		await rm(ARCHIVE, { force: true });
 		await mkdir(ANDROID_DIST, { recursive: true });
+	});
+
+	await step("Writing payload version marker", async () => {
+		await Bun.write(join(ANDROID_DIST, "version.txt"), `${VERSION}\n`);
+		console.log(`   → ${join(ANDROID_DIST, "version.txt")}`);
 	});
 
 	await step("Building frontend", async () => {
@@ -155,14 +164,35 @@ async function main() {
 	});
 
 	await step("Packaging out/vibe-tavern-android-arm64.tar.gz", async () => {
+		if (!(await Bun.file(join(ANDROID_DIST, "version.txt")).exists())) {
+			throw new Error("Android payload version marker is missing");
+		}
+		const tarPath = "out/vibe-tavern-android-arm64.tar";
+		await rm(join(ROOT, tarPath), { force: true });
+		await rm(ARCHIVE, { force: true });
+
+		// Add the binary separately so archives built on Windows still carry the
+		// POSIX executable mode expected inside Ubuntu/proot.
 		await run([
 			"tar",
-			"-czf",
-			join("out", "vibe-tavern-android-arm64.tar.gz"),
+			"-cf",
+			tarPath,
+			"--mode=755",
 			"-C",
-			join("out", "android-arm64"),
+			"out/android-arm64",
+			"vibe-tavern",
+		]);
+		await run([
+			"tar",
+			"-rf",
+			tarPath,
+			"--mode=u+rwX,go+rX",
+			"--exclude=./vibe-tavern",
+			"-C",
+			"out/android-arm64",
 			".",
 		]);
+		await run(["gzip", "-f", tarPath]);
 	});
 
 	console.log("\n✅ Android ARM64 artifact build complete!");

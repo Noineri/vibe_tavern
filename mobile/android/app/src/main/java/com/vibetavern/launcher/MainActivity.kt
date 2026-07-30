@@ -1,5 +1,6 @@
 package com.vibetavern.launcher
 
+import android.app.DownloadManager
 import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.ClipData
@@ -18,6 +19,7 @@ import android.provider.Settings
 import android.view.View
 import android.widget.Button
 import android.widget.ProgressBar
+import android.widget.ScrollView
 import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
@@ -49,147 +51,43 @@ class MainActivity : AppCompatActivity() {
     private lateinit var uninstallBtn: Button
     private lateinit var languageBtn: Button
     private lateinit var firstTimeSetupBtn: Button
+    private lateinit var launcherUpdateBtn: Button
+    private lateinit var launcherVersionText: TextView
 
     private val mainScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private val releaseClient = GitHubReleaseClient(
+        endpointUrl = BuildConfig.RELEASE_API_URL,
+        allowInsecureHttp = BuildConfig.ALLOW_INSECURE_RELEASE_URL,
+    )
+    private val apkUpdateManager by lazy { ApkUpdateManager(this) }
     private var pollingJob: Job? = null
     private var archiveServerJob: Job? = null
+    private var updateCheckJob: Job? = null
+    private var downloadPollingJob: Job? = null
+    private var downloadReceiverRegistered = false
+    private var resultReceiverRegistered = false
+    private var installerHandoffInProgress = false
+    private var activityStarted = false
+    private var pendingUpdateRelease: PublishedRelease? = null
+    private var launcherUpdateAction = LauncherUpdateAction.CHECK
 
     private val RUN_CMD_PERM = "com.termux.permission.RUN_COMMAND"
     private val TERMUX_RESULT_ACTION = "com.vibetavern.launcher.TERMUX_RESULT"
     private val PREFS = "vibe_tavern_launcher"
     private val PREF_INSTALLED = "installed_once"
+    private val PREF_PAYLOAD_VERSION = "installed_payload_version"
     private val PREF_LANGUAGE = "language"
     private val serverUrl = "http://127.0.0.1:8787"
-    private val launcherBuildLabel = "orchestrator-v3-archive-diagnostics-2026-06-06-0315"
+    private val launcherBuildLabel = "archive-orchestrator-${BuildConfig.VERSION_NAME}"
     private val bundledArchiveName = "vibe-tavern-android-arm64.tgz"
-    private val installerScriptName = "vibe-tavern-install-v5.sh"
+    private val installerScriptName = "vibe-tavern-install.sh"
     private val archiveServerPort = 8790
     private val sharedArchivePath = "/sdcard/Download/$bundledArchiveName"
     private val sharedInstallerPath = "/sdcard/Download/$installerScriptName"
     private val localArchiveUrl = "http://127.0.0.1:$archiveServerPort/$bundledArchiveName"
     private var installerArchivePath = sharedArchivePath
 
-    // ========== One-time setup script (proot-distro Ubuntu + bundled archive) ==========
-    private val setupScript: String
-        get() = """
-            set -euo pipefail
-            ARCHIVE_PATH="$installerArchivePath"
-            ARCHIVE_URL="$localArchiveUrl"
-            LOG="${'$'}HOME/vibe-tavern-install.log"
-            exec > >(tee -a "${'$'}LOG") 2>&1
-            echo "=== Vibe Tavern install: $(date) ==="
-
-            # Important: do not wildcard-pick old archives from Downloads.
-            # The launcher must install the archive bundled in this APK, copied to
-            # the exact path below, or fall back to the APK localhost server.
-
-            echo '📦 Step 1/5: Updating system packages (fixes broken curl on fresh Termux)...'
-            yes | apt update -y 2>/dev/null || true
-            yes | apt full-upgrade -y 2>/dev/null || true
-
-            echo '📦 Step 2/5: Installing Termux packages...'
-            pkg update -y
-            pkg install -y curl tar proot-distro procps
-            printf '\n' | termux-setup-storage 2>/dev/null || true
-            termux-wake-lock 2>/dev/null || true
-
-            echo '📦 Step 3/5: Getting archive...'
-            echo "HOME=${'$'}HOME"
-            echo "TERMUX_VERSION=${'$'}{TERMUX_VERSION:-unknown}"
-            echo 'Downloads listing for Vibe Tavern files:'
-            ls -lah /sdcard/Download/vibe-tavern-* 2>/dev/null || echo 'No /sdcard/Download/vibe-tavern-* files visible to Termux.'
-            echo
-            TERMUX_ARCHIVE="${'$'}HOME/$bundledArchiveName"
-            RENAMED_ARCHIVE="${'$'}ARCHIVE_PATH.gz"
-            rm -f "${'$'}TERMUX_ARCHIVE"
-            if [ -n "${'$'}ARCHIVE_PATH" ] && [ -f "${'$'}ARCHIVE_PATH" ]; then
-              echo "Using archive from Downloads: ${'$'}ARCHIVE_PATH"
-              cp "${'$'}ARCHIVE_PATH" "${'$'}TERMUX_ARCHIVE"
-            elif [ -n "${'$'}RENAMED_ARCHIVE" ] && [ -f "${'$'}RENAMED_ARCHIVE" ]; then
-              echo "Using Android-renamed archive from Downloads: ${'$'}RENAMED_ARCHIVE"
-              cp "${'$'}RENAMED_ARCHIVE" "${'$'}TERMUX_ARCHIVE"
-            else
-              echo 'Archive is not visible at the expected Downloads paths:'
-              echo "  ${'$'}ARCHIVE_PATH"
-              echo "  ${'$'}RENAMED_ARCHIVE"
-              echo 'This is OK only if the APK localhost fallback is reachable.'
-              echo "Checking APK localhost archive server: ${'$'}ARCHIVE_URL"
-              if ! curl --fail --head --connect-timeout 5 "${'$'}ARCHIVE_URL"; then
-                echo 'HEAD check failed; trying full download anyway for the real error...'
-              fi
-              echo "Trying APK localhost archive server: ${'$'}ARCHIVE_URL"
-              if ! curl --fail --location --verbose --connect-timeout 10 --retry 3 --retry-delay 1 "${'$'}ARCHIVE_URL" -o "${'$'}TERMUX_ARCHIVE"; then
-                echo
-                echo '❌ Could not get the bundled archive.'
-                echo 'Likely causes:'
-                echo '  1) Android/Termux storage permission is missing, so Downloads is invisible;'
-                echo '  2) the APK background localhost archive server was killed or did not start;'
-                echo '  3) this APK build does not contain vibe-tavern-android-arm64.tgz.'
-                echo
-                echo 'Fix: return to the APK and tap Install / Update again. If it repeats, reinstall the APK built with the bundled archive.'
-                exit 23
-              fi
-            fi
-            if [ ! -s "${'$'}TERMUX_ARCHIVE" ]; then
-              echo "❌ Archive copy/download produced an empty file: ${'$'}TERMUX_ARCHIVE"
-              exit 24
-            fi
-            if ! tar -tzf "${'$'}TERMUX_ARCHIVE" >/dev/null; then
-              echo "❌ Archive is not a valid gzip tarball: ${'$'}TERMUX_ARCHIVE"
-              exit 25
-            fi
-            ls -lh "${'$'}TERMUX_ARCHIVE"
-
-            echo '🐧 Step 4/5: Setting up proot Ubuntu...'
-            yes | proot-distro install ubuntu 2>/dev/null || true
-
-            mkdir -p ~/.termux
-            grep -qxF 'allow-external-apps=true' ~/.termux/termux.properties 2>/dev/null || echo 'allow-external-apps=true' >> ~/.termux/termux.properties
-            termux-reload-settings 2>/dev/null || true
-
-            echo '📦 Step 5/5: Installing Vibe Tavern into Ubuntu...'
-            proot-distro login ubuntu -- bash -s -- "${'$'}TERMUX_ARCHIVE" <<'UBUNTU_INSTALL'
-            set -euo pipefail
-            ARCHIVE_PATH="${'$'}1"
-            APP_DIR="${'$'}HOME/vibe-tavern"
-            DATA_DIR="${'$'}HOME/.local/share/vibe-tavern"
-            TMP_ARCHIVE="/tmp/vibe-tavern-android-arm64.tgz"
-            NEXT_DIR="${'$'}HOME/vibe-tavern.next"
-            OLD_DIR="${'$'}HOME/vibe-tavern.old"
-
-            export DEBIAN_FRONTEND=noninteractive
-            apt-get update -y
-            apt-get install -y ca-certificates curl tar procps
-            mkdir -p "${'$'}DATA_DIR"
-            cp "${'$'}ARCHIVE_PATH" "${'$'}TMP_ARCHIVE"
-
-            rm -rf "${'$'}NEXT_DIR"
-            mkdir -p "${'$'}NEXT_DIR"
-            tar -xzf "${'$'}TMP_ARCHIVE" -C "${'$'}NEXT_DIR"
-            chmod +x "${'$'}NEXT_DIR/vibe-tavern"
-
-            rm -rf "${'$'}OLD_DIR"
-            if [ -d "${'$'}APP_DIR" ]; then mv "${'$'}APP_DIR" "${'$'}OLD_DIR"; fi
-            mv "${'$'}NEXT_DIR" "${'$'}APP_DIR"
-            rm -rf "${'$'}OLD_DIR" "${'$'}TMP_ARCHIVE"
-
-            cat > "${'$'}HOME/start-vibe-tavern.sh" <<'START_SCRIPT'
-            #!/usr/bin/env bash
-            set -euo pipefail
-            export VIBE_TAVERN_OPEN_BROWSER=0
-            export VIBE_TAVERN_HOST=127.0.0.1
-            export VIBE_TAVERN_PORT=8787
-            export VIBE_TAVERN_DATA_DIR="${'$'}HOME/.local/share/vibe-tavern"
-            export VIBE_TAVERN_WEB_DIR="${'$'}HOME/vibe-tavern/web"
-            cd "${'$'}HOME/vibe-tavern"
-            exec ./vibe-tavern
-            START_SCRIPT
-            chmod +x "${'$'}HOME/start-vibe-tavern.sh"
-            UBUNTU_INSTALL
-            echo '✅ Vibe Tavern installed/updated from bundled APK archive.'
-            echo '🚀 Starting server in this Termux session...'
-            proot-distro login ubuntu -- bash -lc 'exec ~/start-vibe-tavern.sh'
-        """.trimIndent() + "\n"
+    // The APK asset `install.sh` is the single installer source of truth.
 
     // ========== Quick launch (post-setup, inside proot) ==========
     private val startCmd = """
@@ -346,6 +244,16 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private val downloadReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action != DownloadManager.ACTION_DOWNLOAD_COMPLETE) return
+            val downloadId = intent.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1L)
+            if (apkUpdateManager.isTrackedDownload(downloadId) && ::launcherUpdateBtn.isInitialized) {
+                observeLauncherDownload(installWhenReady = true)
+            }
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -361,17 +269,57 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    override fun onStart() {
+        super.onStart()
+        activityStarted = true
+        if (!downloadReceiverRegistered) {
+            ContextCompat.registerReceiver(
+                this,
+                downloadReceiver,
+                IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE),
+                ContextCompat.RECEIVER_EXPORTED,
+            )
+            downloadReceiverRegistered = true
+        }
+    }
+
     override fun onResume() {
         super.onResume()
+        installerHandoffInProgress = false
+        pendingUpdateRelease?.let { release ->
+            pendingUpdateRelease = null
+            showLauncherUpdateConsent(release)
+        }
         if (::statusText.isInitialized) refreshServerStatus(showChecking = false)
+        if (::launcherUpdateBtn.isInitialized) {
+            if (apkUpdateManager.isAwaitingInstallPermission() && apkUpdateManager.canInstallPackages()) {
+                beginDownloadedApkInstall()
+            } else {
+                observeLauncherDownload(installWhenReady = false)
+            }
+        }
+    }
+
+    override fun onStop() {
+        activityStarted = false
+        if (downloadReceiverRegistered) {
+            unregisterReceiver(downloadReceiver)
+            downloadReceiverRegistered = false
+        }
+        super.onStop()
     }
 
     override fun onDestroy() {
-        super.onDestroy()
         pollingJob?.cancel()
         archiveServerJob?.cancel()
+        updateCheckJob?.cancel()
+        downloadPollingJob?.cancel()
+        if (resultReceiverRegistered) {
+            unregisterReceiver(resultReceiver)
+            resultReceiverRegistered = false
+        }
         mainScope.cancel()
-        try { unregisterReceiver(resultReceiver) } catch (_: Exception) {}
+        super.onDestroy()
     }
 
     private fun isTermuxInstalled() = try {
@@ -382,11 +330,25 @@ class MainActivity : AppCompatActivity() {
         ContextCompat.checkSelfPermission(this, RUN_CMD_PERM) == PackageManager.PERMISSION_GRANTED
 
     private fun markInstalled(installed: Boolean) {
-        getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(PREF_INSTALLED, installed).apply()
+        val editor = getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(PREF_INSTALLED, installed)
+        if (!installed) editor.remove(PREF_PAYLOAD_VERSION)
+        editor.apply()
+    }
+
+    private fun markCurrentPayloadInstalled() {
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+            .putBoolean(PREF_INSTALLED, true)
+            .putString(PREF_PAYLOAD_VERSION, BuildConfig.VERSION_NAME)
+            .apply()
     }
 
     private fun wasInstalledOnce(): Boolean =
         getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(PREF_INSTALLED, false)
+
+    private fun installedPayloadVersion(): String? =
+        getSharedPreferences(PREFS, MODE_PRIVATE).getString(PREF_PAYLOAD_VERSION, null)
+
+    private fun payloadUpdateRequired(): Boolean = installedPayloadVersion() != BuildConfig.VERSION_NAME
 
     private fun currentLanguage(): String {
         val saved = getSharedPreferences(PREFS, MODE_PRIVATE).getString(PREF_LANGUAGE, null)
@@ -403,17 +365,23 @@ class MainActivity : AppCompatActivity() {
     private fun tr(en: String, ru: String): String = if (isRu()) ru else en
 
     private fun applyLaunchTexts() {
+        findViewById<TextView>(R.id.launch_intro).text = tr(
+            "The launcher manages the local server; Vibe Tavern opens in your browser.",
+            "Лаунчер управляет локальным сервером, а Vibe Tavern открывается в браузере.",
+        )
+        findViewById<TextView>(R.id.management_label).text = tr(
+            "Launcher and server management",
+            "Управление лаунчером и сервером",
+        )
         launchBtn.text = tr("🚀 Start Server in Termux", "🚀 Запустить сервер в Termux")
         openBtn.text = tr("🌐 Open in Browser", "🌐 Открыть в браузере")
         stopBtn.text = tr("⏹ Stop Server", "⏹ Остановить сервер")
-        setupBtn.text = if (wasInstalledOnce()) {
-            tr("🔄 Update Program", "🔄 Обновить программу")
-        } else {
-            tr("📦 Install / Update", "📦 Установить / обновить")
-        }
+        updateSetupButtonText()
         uninstallBtn.text = tr("🗑 Uninstall", "🗑 Удалить")
         languageBtn.text = tr("🌐 Language: English", "🌐 Язык: Русский")
         firstTimeSetupBtn.text = tr("🔧 First-Time Setup", "🔧 Первичная настройка")
+        updateLauncherActionUi()
+        updateVersionStatus()
         findViewById<Button>(R.id.btn_help).text = tr("❓ Help / Troubleshooting", "❓ Справка / проблемы")
         findViewById<TextView>(R.id.help_hint).text = tr(
             "Tip: if the web UI lags after switching apps, disable battery optimization for Termux.",
@@ -421,10 +389,44 @@ class MainActivity : AppCompatActivity() {
         )
     }
 
+    private fun updateSetupButtonText() {
+        setupBtn.text = when {
+            !wasInstalledOnce() -> tr(
+                "📦 Install server v${BuildConfig.VERSION_NAME}",
+                "📦 Установить сервер v${BuildConfig.VERSION_NAME}",
+            )
+            payloadUpdateRequired() -> tr(
+                "🔄 Update server to v${BuildConfig.VERSION_NAME}",
+                "🔄 Обновить сервер до v${BuildConfig.VERSION_NAME}",
+            )
+            else -> tr(
+                "📦 Reinstall server v${BuildConfig.VERSION_NAME}",
+                "📦 Переустановить сервер v${BuildConfig.VERSION_NAME}",
+            )
+        }
+        updateVersionStatus()
+    }
+
     // ========== Screens ==========
 
     private fun showTermuxInstallGuide() {
         setContentView(R.layout.screen_install_termux)
+        findViewById<TextView>(R.id.termux_step_title).text = tr(
+            "Step 1: Install Termux",
+            "Шаг 1: установите Termux",
+        )
+        findViewById<TextView>(R.id.termux_install_body).text = tr(
+            "Vibe Tavern needs Termux to run the local server on your device.\n\nIMPORTANT: install Termux from F-Droid, not the Play Store. The Play Store version is outdated and will not work.",
+            "Vibe Tavern использует Termux для запуска локального сервера на устройстве.\n\nВАЖНО: установите Termux из F-Droid, а не из Play Store. Версия из Play Store устарела и не работает.",
+        )
+        findViewById<Button>(R.id.btn_install_termux).text = tr(
+            "Install Termux from F-Droid",
+            "Установить Termux из F-Droid",
+        )
+        findViewById<Button>(R.id.btn_check_again).text = tr(
+            "I've installed it — continue",
+            "Termux установлен — продолжить",
+        )
         findViewById<Button>(R.id.btn_install_termux).setOnClickListener {
             startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://f-droid.org/packages/com.termux/")))
         }
@@ -433,6 +435,19 @@ class MainActivity : AppCompatActivity() {
 
     private fun showPermissionGuide() {
         setContentView(R.layout.screen_permission_guide)
+        findViewById<TextView>(R.id.permission_step_title).text = tr(
+            "Step 2: Grant Permission",
+            "Шаг 2: выдайте разрешение",
+        )
+        findViewById<TextView>(R.id.permission_guide_body).text = tr(
+            "This permission belongs to Vibe Tavern, not Termux.\n\nFirst run this in Termux:\n  mkdir -p ~/.termux\n  echo \"allow-external-apps=true\" >> ~/.termux/termux.properties\n\nIf termux-reload-settings crashes, force stop Termux and open it again.\n\nThen:\n1. Open Vibe Tavern settings below\n2. Use ⋮ → \"Allow restricted settings\"\n3. Open Permissions → ⋮ → \"All permissions\"\n4. Enable \"Run commands in Termux environment\"\n5. Return here and tap Continue",
+            "Это разрешение нужно приложению Vibe Tavern, а не Termux.\n\nСначала выполните в Termux:\n  mkdir -p ~/.termux\n  echo \"allow-external-apps=true\" >> ~/.termux/termux.properties\n\nЕсли termux-reload-settings завершается с ошибкой, принудительно остановите Termux и откройте его снова.\n\nЗатем:\n1. Откройте настройки Vibe Tavern кнопкой ниже\n2. Выберите ⋮ → «Разрешить ограниченные настройки»\n3. Откройте «Разрешения» → ⋮ → «Все разрешения»\n4. Включите «Выполнение команд в среде Termux»\n5. Вернитесь сюда и нажмите «Продолжить»",
+        )
+        findViewById<Button>(R.id.btn_open_termux_settings).text = tr(
+            "Open Vibe Tavern Settings",
+            "Открыть настройки Vibe Tavern",
+        )
+        findViewById<Button>(R.id.btn_continue_after_permission).text = tr("Continue", "Продолжить")
         findViewById<Button>(R.id.btn_open_termux_settings).setOnClickListener { openAppSettings(packageName) }
         findViewById<Button>(R.id.btn_continue_after_permission).setOnClickListener { recreate() }
     }
@@ -449,6 +464,8 @@ class MainActivity : AppCompatActivity() {
         uninstallBtn = findViewById(R.id.btn_uninstall)
         languageBtn = findViewById(R.id.btn_language)
         firstTimeSetupBtn = findViewById(R.id.btn_first_time_setup)
+        launcherUpdateBtn = findViewById(R.id.btn_check_launcher_update)
+        launcherVersionText = findViewById(R.id.launcher_version_status)
 
         setupBtn.setOnClickListener { doOneTimeSetup() }
         firstTimeSetupBtn.setOnClickListener { showFirstTimeSetupGuide() }
@@ -457,12 +474,235 @@ class MainActivity : AppCompatActivity() {
         stopBtn.setOnClickListener { stopServer() }
         uninstallBtn.setOnClickListener { confirmUninstall() }
         languageBtn.setOnClickListener { showLanguageDialog() }
+        launcherUpdateBtn.setOnClickListener { handleLauncherUpdateAction() }
         findViewById<Button>(R.id.btn_help).setOnClickListener { showHelpDialog() }
 
+        apkUpdateManager.cleanupStaleDownload()
         applyLaunchTexts()
         setProgress(null, visible = false)
         setServerRunningUi(running = false, checking = true)
         refreshServerStatus(showChecking = true)
+        observeLauncherDownload(installWhenReady = false)
+        if (!automaticUpdateCheckStarted && !apkUpdateManager.hasTrackedDownload()) {
+            automaticUpdateCheckStarted = true
+            checkForLauncherUpdate(manual = false)
+        }
+    }
+
+    // ========== Launcher update ==========
+
+    private fun updateVersionStatus() {
+        if (!::launcherVersionText.isInitialized) return
+        val serverVersion = installedPayloadVersion()?.let { "v$it" }
+            ?: tr("not applied", "не установлена")
+        launcherVersionText.text = tr(
+            "Launcher v${BuildConfig.VERSION_NAME} • Server payload $serverVersion",
+            "Лаунчер v${BuildConfig.VERSION_NAME} • Серверная часть $serverVersion",
+        )
+    }
+
+    private fun updateLauncherActionUi() {
+        if (!::launcherUpdateBtn.isInitialized) return
+        launcherUpdateBtn.text = when (launcherUpdateAction) {
+            LauncherUpdateAction.CHECK -> tr(
+                "Check for launcher update",
+                "Проверить обновление лаунчера",
+            )
+            LauncherUpdateAction.DOWNLOADING -> tr(
+                "Downloading launcher update…",
+                "Загрузка обновления лаунчера…",
+            )
+            LauncherUpdateAction.INSTALL -> tr(
+                "Install downloaded launcher update",
+                "Установить загруженное обновление лаунчера",
+            )
+        }
+        launcherUpdateBtn.isEnabled = launcherUpdateAction != LauncherUpdateAction.DOWNLOADING
+    }
+
+    private fun setLauncherUpdateStatus(message: String) {
+        if (!::launcherVersionText.isInitialized) return
+        updateVersionStatus()
+        launcherVersionText.append("\n$message")
+    }
+
+    private fun handleLauncherUpdateAction() {
+        when (launcherUpdateAction) {
+            LauncherUpdateAction.CHECK -> checkForLauncherUpdate(manual = true)
+            LauncherUpdateAction.DOWNLOADING -> Unit
+            LauncherUpdateAction.INSTALL -> beginDownloadedApkInstall()
+        }
+    }
+
+    private fun checkForLauncherUpdate(manual: Boolean) {
+        updateCheckJob?.cancel()
+        if (manual) {
+            launcherUpdateBtn.isEnabled = false
+            setLauncherUpdateStatus(tr("Checking GitHub Releases…", "Проверяю GitHub Releases…"))
+        }
+        updateCheckJob = mainScope.launch {
+            when (val decision = releaseClient.checkForUpdate(BuildConfig.VERSION_NAME)) {
+                is ReleaseUpdateDecision.UpdateAvailable -> {
+                    setLauncherUpdateStatus(tr(
+                        "Launcher v${decision.release.version} is available.",
+                        "Доступен лаунчер v${decision.release.version}.",
+                    ))
+                    if (activityStarted) {
+                        showLauncherUpdateConsent(decision.release)
+                    } else {
+                        pendingUpdateRelease = decision.release
+                    }
+                }
+                is ReleaseUpdateDecision.UpToDate -> if (manual) {
+                    setLauncherUpdateStatus(tr(
+                        "Launcher is up to date.",
+                        "Лаунчер уже обновлён.",
+                    ))
+                }
+                is ReleaseUpdateDecision.Unavailable -> if (manual) {
+                    setLauncherUpdateStatus(tr(
+                        "No compatible Android launcher release was found.",
+                        "Совместимый Android-релиз лаунчера не найден.",
+                    ))
+                }
+                is ReleaseUpdateDecision.Error -> if (manual) {
+                    setLauncherUpdateStatus(tr(
+                        "Update check failed: ${decision.message}",
+                        "Не удалось проверить обновление: ${decision.message}",
+                    ))
+                }
+            }
+            updateLauncherActionUi()
+        }
+    }
+
+    private fun showLauncherUpdateConsent(release: PublishedRelease) {
+        if (isFinishing || isDestroyed) return
+        val padding = (20 * resources.displayMetrics.density).toInt()
+        val notes = TextView(this).apply {
+            text = tr(
+                "Launcher v${release.version}\n\n${release.notes.ifBlank { "No release notes." }}\n\nThe APK will download only if you confirm. Android will then ask you to approve installation.",
+                "Лаунчер v${release.version}\n\n${release.notes.ifBlank { "Без примечаний к релизу." }}\n\nAPK загрузится только после подтверждения. Затем Android отдельно попросит разрешить установку.",
+            )
+            setPadding(padding, padding / 2, padding, padding / 2)
+            textSize = 15f
+        }
+        val scroll = ScrollView(this).apply { addView(notes) }
+        AlertDialog.Builder(this)
+            .setTitle(tr("Launcher update available", "Доступно обновление лаунчера"))
+            .setView(scroll)
+            .setPositiveButton(tr("Download APK", "Скачать APK")) { _, _ ->
+                startLauncherDownload(release)
+            }
+            .setNegativeButton(tr("Later", "Позже"), null)
+            .show()
+    }
+
+    private fun startLauncherDownload(release: PublishedRelease) {
+        try {
+            apkUpdateManager.enqueue(release)
+            launcherUpdateAction = LauncherUpdateAction.DOWNLOADING
+            updateLauncherActionUi()
+            setLauncherUpdateStatus(tr(
+                "Downloading launcher v${release.version}…",
+                "Загружаю лаунчер v${release.version}…",
+            ))
+            observeLauncherDownload(installWhenReady = true)
+        } catch (error: Exception) {
+            launcherUpdateAction = LauncherUpdateAction.CHECK
+            updateLauncherActionUi()
+            setLauncherUpdateStatus(tr(
+                "Could not start download: ${error.message}",
+                "Не удалось начать загрузку: ${error.message}",
+            ))
+        }
+    }
+
+    private fun observeLauncherDownload(installWhenReady: Boolean) {
+        downloadPollingJob?.cancel()
+        downloadPollingJob = mainScope.launch {
+            while (isActive) {
+                when (val state = apkUpdateManager.reconcile()) {
+                    ApkDownloadState.Idle -> {
+                        launcherUpdateAction = LauncherUpdateAction.CHECK
+                        updateLauncherActionUi()
+                        return@launch
+                    }
+                    is ApkDownloadState.Downloading -> {
+                        launcherUpdateAction = LauncherUpdateAction.DOWNLOADING
+                        updateLauncherActionUi()
+                        val progress = state.progressPercent?.let { "$it%" }
+                            ?: tr("in progress", "в процессе")
+                        setLauncherUpdateStatus(tr(
+                            "Downloading launcher update: $progress",
+                            "Загрузка обновления лаунчера: $progress",
+                        ))
+                        delay(750)
+                    }
+                    is ApkDownloadState.Ready -> {
+                        launcherUpdateAction = LauncherUpdateAction.INSTALL
+                        updateLauncherActionUi()
+                        setLauncherUpdateStatus(tr(
+                            "Launcher v${state.expectedVersionName} downloaded; ready for Android's installer.",
+                            "Лаунчер v${state.expectedVersionName} загружен; можно открыть установщик Android.",
+                        ))
+                        if (installWhenReady) beginDownloadedApkInstall()
+                        return@launch
+                    }
+                    is ApkDownloadState.Failed -> {
+                        launcherUpdateAction = LauncherUpdateAction.CHECK
+                        updateLauncherActionUi()
+                        setLauncherUpdateStatus(tr(
+                            "Download failed: ${state.reason}",
+                            "Ошибка загрузки: ${state.reason}",
+                        ))
+                        return@launch
+                    }
+                }
+            }
+        }
+    }
+
+    private fun beginDownloadedApkInstall() {
+        if (installerHandoffInProgress) return
+        installerHandoffInProgress = true
+        mainScope.launch {
+            when (val handoff = apkUpdateManager.prepareInstall()) {
+                is ApkInstallHandoff.LaunchInstaller -> {
+                    setLauncherUpdateStatus(tr(
+                        "Confirm the launcher update in Android's installer.",
+                        "Подтвердите обновление лаунчера в установщике Android.",
+                    ))
+                    startActivity(handoff.intent)
+                }
+                is ApkInstallHandoff.PermissionRequired -> {
+                    installerHandoffInProgress = false
+                    setLauncherUpdateStatus(tr(
+                        "Allow installs from Vibe Tavern, then return here.",
+                        "Разрешите установку из Vibe Tavern, затем вернитесь сюда.",
+                    ))
+                    startActivity(handoff.settingsIntent)
+                }
+                is ApkInstallHandoff.Rejected -> {
+                    installerHandoffInProgress = false
+                    launcherUpdateAction = LauncherUpdateAction.CHECK
+                    updateLauncherActionUi()
+                    setLauncherUpdateStatus(tr(
+                        "Downloaded APK rejected: ${handoff.reason}",
+                        "Загруженный APK отклонён: ${handoff.reason}",
+                    ))
+                }
+                ApkInstallHandoff.MissingDownload -> {
+                    installerHandoffInProgress = false
+                    launcherUpdateAction = LauncherUpdateAction.CHECK
+                    updateLauncherActionUi()
+                    setLauncherUpdateStatus(tr(
+                        "Downloaded launcher APK is no longer available.",
+                        "Загруженный APK лаунчера больше недоступен.",
+                    ))
+                }
+            }
+        }
     }
 
     // ========== One-time setup ==========
@@ -521,6 +761,8 @@ class MainActivity : AppCompatActivity() {
               exit 1
             fi
             echo 'Starting installer with trace...'
+            VIBE_TAVERN_ARCHIVE_PATH='$archivePath' \
+            VIBE_TAVERN_ARCHIVE_URL='$localArchiveUrl' \
             bash -x '$installerPath'
             code=${'$'}?
             echo
@@ -587,7 +829,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun copyInstallerScriptToDownloads(): String? {
         return copyToDownloads(installerScriptName, "text/x-shellscript") { output ->
-            output.write(setupScript.toByteArray(Charsets.UTF_8))
+            assets.open("install.sh").use { input -> input.copyTo(output) }
         }
     }
 
@@ -654,7 +896,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         openTermux()
-        startPolling(maxAttempts = 90, waitingLabel = tr("Waiting for server", "Ожидание сервера"), markInstalledOnSuccess = true)
+        startPolling(maxAttempts = 90, waitingLabel = tr("Waiting for server", "Ожидание сервера"))
     }
 
     private fun stopServer() {
@@ -727,8 +969,8 @@ class MainActivity : AppCompatActivity() {
             withContext(Dispatchers.Main) {
                 progressBar.visibility = View.GONE
                 if (started) {
-                    if (markInstalledOnSuccess) markInstalled(true)
-                    setupBtn.text = tr("🔄 Update Program", "🔄 Обновить программу")
+                    if (markInstalledOnSuccess) markCurrentPayloadInstalled()
+                    updateSetupButtonText()
                     progressText.text = tr("✅ Server running. Tap Open to use Vibe Tavern.", "✅ Сервер работает. Нажмите «Открыть», чтобы перейти в Vibe Tavern.")
                     progressText.visibility = View.VISIBLE
                     ServerService.start(this@MainActivity)
@@ -749,7 +991,7 @@ class MainActivity : AppCompatActivity() {
             withContext(Dispatchers.Main) {
                 if (running) {
                     markInstalled(true)
-                    setupBtn.text = tr("🔄 Update Program", "🔄 Обновить программу")
+                    updateSetupButtonText()
                     ServerService.start(this@MainActivity)
                 }
                 setServerRunningUi(running = running, checking = false)
@@ -779,15 +1021,32 @@ class MainActivity : AppCompatActivity() {
         }
 
         if (running) {
-            statusText.text = tr("✅ Server is running", "✅ Сервер работает") + "\n$serverUrl"
+            val payloadHint = if (payloadUpdateRequired()) {
+                "\n" + tr(
+                    "Server payload update to v${BuildConfig.VERSION_NAME} is available",
+                    "Доступно обновление серверной части до v${BuildConfig.VERSION_NAME}",
+                )
+            } else {
+                "\n" + tr(
+                    "Server payload v${BuildConfig.VERSION_NAME}",
+                    "Серверная часть v${BuildConfig.VERSION_NAME}",
+                )
+            }
+            statusText.text = tr("✅ Server is running", "✅ Сервер работает") + "\n$serverUrl" + payloadHint
             launchBtn.visibility = View.GONE
             openBtn.visibility = View.VISIBLE
             stopBtn.visibility = View.VISIBLE
         } else {
-            val installHint = if (wasInstalledOnce()) {
-                tr("Installed, server is off", "Установлено, сервер выключен")
-            } else {
-                tr("Not running. Install/update first if this is a fresh setup.", "Сервер не запущен. Если это первая установка, сначала нажмите «Установить / обновить».")
+            val installHint = when {
+                !wasInstalledOnce() -> tr(
+                    "Not installed. Install server v${BuildConfig.VERSION_NAME} first.",
+                    "Не установлено. Сначала установите сервер v${BuildConfig.VERSION_NAME}.",
+                )
+                payloadUpdateRequired() -> tr(
+                    "Server is off; update its payload to v${BuildConfig.VERSION_NAME}.",
+                    "Сервер выключен; обновите серверную часть до v${BuildConfig.VERSION_NAME}.",
+                )
+                else -> tr("Installed, server is off", "Установлено, сервер выключен")
             }
             statusText.text = "⏹ $installHint"
             launchBtn.visibility = View.VISIBLE
@@ -837,9 +1096,14 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun tryRegisterResultReceiver() {
-        try {
-            registerReceiver(resultReceiver, IntentFilter(TERMUX_RESULT_ACTION), RECEIVER_NOT_EXPORTED)
-        } catch (_: Exception) {}
+        if (resultReceiverRegistered) return
+        ContextCompat.registerReceiver(
+            this,
+            resultReceiver,
+            IntentFilter(TERMUX_RESULT_ACTION),
+            ContextCompat.RECEIVER_NOT_EXPORTED,
+        )
+        resultReceiverRegistered = true
     }
 
     // ========== Browser / help / settings ==========
@@ -1100,6 +1364,17 @@ class MainActivity : AppCompatActivity() {
         markInstalled(false)
         ServerService.stop(this)
         setServerRunningUi(running = false, checking = false)
-        setupBtn.text = tr("📦 Install / Update", "📦 Установить / обновить")
+        updateSetupButtonText()
+        updateVersionStatus()
+    }
+
+    private enum class LauncherUpdateAction {
+        CHECK,
+        DOWNLOADING,
+        INSTALL,
+    }
+
+    companion object {
+        private var automaticUpdateCheckStarted = false
     }
 }
