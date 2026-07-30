@@ -1,23 +1,32 @@
+---
+type: reference
+status: draft
+tags: [readme, release, docs]
+created: 2026-07-14
+updated: 2026-07-14
+---
+
+<!-- DRAFT: prepared for the release after Scene Tracker and Dice System are complete; remove this frontmatter and comment, rename the file to README.md, restore the README.ru.md language link, update screenshots, and verify release artifacts before copying into the main repository. -->
+
 <div align="center">
 
 <img src="apps/web/public/logo-256.png" width="160" alt="Vibe Tavern" />
 
 # Vibe Tavern
 
-**A modern, local-first AI roleplay platform**
+**A local AI roleplay client built for good UX, long sessions, and mobile screens that don't feel like an afterthought**
 
-**Windows** (single `.exe`) • **Linux** • **Docker** • **Android** (Termux APK)
+**Windows** (installer and portable `.exe`) • **Linux** • **Docker** • **Android** (Termux APK)
 
 ![Release](https://www.shieldcn.dev/github/release/Noineri/vibe_tavern.svg?size=sm&theme=zinc)
 ![GitHub Downloads](https://shieldcn.dev/github/downloads/Noineri/vibe_tavern.svg?variant=secondary)
-![Watchers](https://www.shieldcn.dev/github/watchers/Noineri/vibe_tavern.svg?variant=secondary&size=sm&theme=zinc)
 ![GitHub Stars](https://www.shieldcn.dev/github/stars/Noineri/vibe_tavern.svg?variant=secondary&size=sm&theme=zinc)
 
-[Русский](./README.ru.md) · **English**
+[Русский](./README_NEXT.ru.md) · **English**
 
 ---
 
-![Vibe Tavern Demo](./assets/main.png)
+![Vibe Tavern](./assets/main.png)
 
 </div>
 
@@ -60,132 +69,161 @@
 
 ---
 
-## Why Vibe Tavern?
+## What is Vibe Tavern?
 
-Vibe Tavern is a modern, local-first AI roleplay platform — built from scratch on a real database rather than flat JSON files, a typed monorepo rather than a monolithic script, and a UI designed to stay out of your way.
+Vibe Tavern is a local AI roleplay client I am building around everyday comfort, long-running sessions, and mobile screens.
 
-You bring your own API keys. Your data stays on your machine. The interface stays out of your way.
+I wanted routine actions to stop requiring a trip through five menus, prompt assembly to stop happening inside a black box, and character creation to become something you can actually do inside the app instead of merely importing a finished card.
 
-> **Status:** Beta-2. Core RP functionality is stable and tested. Some advanced features are still in progress — see [Roadmap](#roadmap).
+You bring your own API keys, your data stays on your machine, and nearly everything important can be inspected, changed, or turned off.
+
 
 > [!NOTE]
-> Active development — expect new features, occasional breaking changes, and the odd bug. Back up your `data/` directory before updating.
+> The project in active development. Back up your data directory before updating.
 
 ---
 
-## Highlights
+## The short version
 
-The short version, for skimmers:
-
-- **Character versions** — branch a character into parallel editable variants and switch between them instantly.
-- **12-gate lorebook engine** — keyword activation with trace, recursion, sticky windows, and priority eviction.
-- **Visual prompt canvas** — drag-and-drop ordering of every prompt layer, including depth injections.
-- **Built-in context compaction** — auto-summarization with visual token feedback, no extension needed.
-- **Prompt Tracer** — inspect every assembled layer with per-layer token counts and activation sources.
-- **Single `.exe` + QR mobile access** — fully local, your keys, your data, your machine.
-
-The long version follows.
+- **An interface made for daily use** — favorite models, personas, presets, response variants, and the context budget are available directly from chat.
+- **Actual character authoring** — a structured form, a Markdown editor with pinned sections, character versions, card imports, and AI-assisted parsing of messy drafts.
+- **Co-Author** — a dedicated chat where you can develop a character, load skills, and review model-proposed edits before anything is applied.
+- **Prompts without the black box** — a simple mode, a visual canvas for advanced assembly, and an honest Prompt Trace of the final request.
+- **Memory and game systems** — summaries, Objective Tracker, Scene Tracker, and dice rolls whose accepted results belong to a specific turn.
+- **Lorebooks and JavaScript scripts** — from quick entry editing to conditional logic, random events, and persistent character state.
+- **Local runtime and mobile access** — one process, your providers, QR access over your network, and a purpose-built mobile UI.
 
 ---
 
-## Features ⭐
+## A chat you can use every day
 
-### Chat
+Don't want to open provider settings every time you change models? Add the ones you use to favorites and switch directly from the chat header. Personas and prompt presets are one click away in the same place.
 
-- **Clean, focused interface** — switch characters, personas, prompt presets, and models from quick-access controls without leaving the conversation.
-- **Streaming with reasoning** — thinking blocks collapse by default, expand on click. You see the model's chain of thought when you want it, not when you don't.
-- **Variant carousel** — swipe through response alternatives with a native 3-panel carousel on mobile, smooth slide animations on desktop. Each variant shows its token count and which model generated it.
-- **Live token budget** — context usage displayed directly in the composer. Color-coded bar + a breakdown popup showing exactly what's eating your tokens (system prompt, lorebook, history, etc.).
-- **Generation queue** — stack multiple generations and let them run. Each variant records which model and preset produced it.
+Responses stream together with reasoning when the selected model provides it. Reasoning blocks stay collapsed by default, so they do not get in the way of reading the actual reply.
 
-### Character editor
+Each response can have alternatives: smooth slides on desktop, swipes on mobile. Vibe Tavern remembers which model and preset created every variant.
 
-- **Dual-mode editing** — switch between a structured form and a full Markdown editor (CodeMirror 6) on the same character, at any time. Changes sync bidirectionally.
-- **Structural pinning** — the Markdown editor enforces four canonical sections (`# PERSONALITY`, `# SCENARIO`, `# EXAMPLES`, `# GREETINGS`). You can't accidentally delete them. An LLM co-author can't break the structure.
-- **Character versions** — branch your character into parallel editable variants (v1 "Base", v2 "Aggressive", v3 "Romantic"). Switch between them instantly. Each version is a full snapshot.
-- **SillyTavern V2/V3 card import** — PNG cards with embedded JSON, bulk import from an ST directory, lossless round-trip export.
-- **Markdown import via AI** — paste a messy draft (notes, prose, a chat log) and the AI assistant maps it into the structured fields. Reparse with a different model or lower temperature if it misreads something.
+The composer shows how much context is already occupied. Open the breakdown to see how much was taken by history, the character, lorebooks, summaries, and every other layer.
 
-### Lorebooks
-
-- **12-gate activation engine** — keyword matching with AND/OR/NOT logic, secondary keys, cooldowns, sticky windows, delay, probability gates, priority-based eviction, and recursive scanning (lore activating lore).
-- **Activation trace** — see exactly which entries fired and why, right in the Prompt Tracer. No more guessing.
-- **Scoped binding** — lorebooks attach to characters, personas, or run globally. Many-to-many via junction table — one lorebook, multiple characters.
-- **ST-compatible import/export** — full parity with SillyTavern's lorebook format.
-
-### Prompt pipeline
-
-- **Prompt Tracer** — inspect every layer of the assembled prompt: system, jailbreak, character description, lorebook injections, summaries, author's note, custom depth injections. Token count per layer, injection depth, activation source.
-- **Prompt presets** — full control over system prompt, jailbreak, prefill, author's note (with configurable depth), summary prompt, and tools prompt. Import/export ST-compatible presets.
-- **Advanced prompt ordering** (Canvas) — drag-and-drop visual editor for injection positions. Three zones: before chat, in-chat (at specific depth), after chat. Visual position is the source of truth.
-- **Full ST macro engine** — `{{user}}`, `{{char}}`, `{{if}}`, `{{setvar}}`, `{{roll}}`, nested blocks. AST-based recursive descent parser, not regex.
-
-### Scripts
-
-- **Sandboxed JS execution** — `node:vm` with a Janitor AI-compatible API. Write character-specific logic, dice rolls, state tracking.
-- **AI assistant** — describe what you want in plain text, the AI writes the script. Built-in templates for common patterns.
-- **Deterministic rolls** — `{{roll}}` results cached in `context.state`. Regenerating a message doesn't re-roll the dice.
-
-### Context management
-
-- **Chat summaries** — manual or AI-generated, with per-summary controls (include in context, exclude summarized messages, enable/disable individually).
-- **Auto-compaction** — "set and forget" background summarization every N messages.
-- **Visual feedback** — "Without compaction: 12,753t → Saved 11,814t (93%)".
-- **Message history limit** — model sees only the last N messages; the rest of the budget goes to system layers, lore, and summaries.
-
-### Provider ecosystem
-
-- **5 provider protocols** — OpenAI-compatible (OpenRouter, DeepSeek, Groq, xAI, Mistral, etc.), Anthropic, Google, Ollama, llama.cpp.
-- **Protocol registry** — adding a provider is one object + one line. No switch ladders.
-- **Per-model sampler overlays** — save different temperature/top-p/stop-sequences per model on the same provider profile.
-- **Favorite models** — pin your go-to models for quick switching from the chat header.
-- **Model-aware logit bias** — fail-closed: only enables for known provider/model tokenizer pairs. No silent failures.
-- **Test connection** — verify your API key and see available models before saving.
-
-### Personas
-
-- **Multiple user identities** — switch personas per chat. Each persona has its own name, description, pronouns, and avatar.
-- **Avatar appearance in prompt** — optionally generate a vision description of the character/persona avatar and inject it into the prompt as its own layer.
-- **Quick-switch** — change persona from the chat header without opening settings.
-- **Per-persona lorebooks** — attach world information that only activates when a specific persona is in use.
-
-### Mobile & remote access
-
-- **QR code access** — open Mobile Access in the UI, scan the QR → chat from your phone on the same LAN or via Tailscale/VPN.
-- **Token-based auth** — remote API access is fail-closed. LAN/Tailscale clients need a token; local `127.0.0.1` stays passwordless.
-- **Responsive UI** — not a desktop UI crammed into a phone. The mobile layout is purpose-built: bottom sheets, touch carousels, swipe gestures.
-- **Android APK** — native Termux build. Install script handles setup.
-
-### Media gallery
-
-- **Image attachments** — send images in chat with AI vision description (auto-describe on send, re-describe from lightbox).
-- **Lightbox** — full-screen image viewer with zoom, pan, and description editing.
-
-### i18n
-
-- **English + Russian** — fully translated, registry-driven. Adding a new language is one JSON file + one line in the registry.
+The generation queue lets you stack requests instead of waiting for each one manually.
 
 ---
 
-## Quick start 🚀
+## Characters and Co-Author
+
+Characters can be edited through a plain text or a full Markdown editor.
+
+The Markdown editor pins the card's canonical headings so they cannot be accidentally deleted or turned into prose that prompt assembly can no longer parse reliably.
+
+Vibe Tavern imports SillyTavern V2/V3 PNG and JSON cards, as well as Markdown. If your “card” is actually a pile of notes, prose fragments, and old dialogue, the AI assistant can try to identify the fields and show you exactly how it sorted them. If the result is weird, change the prompt target, model, or temperature and run the parse again.
+
+Character versions let you maintain independent takes on the same card: base, more aggressive, romantic, or anything else. Each version is a complete snapshot you can switch without manually cloning the character.
+
+Co-Author turns character editing into its own working chat. You can iteratively discuss the concept, personality, scenario, voice, and greetings; load relevant skills with templates and references; then receive proposed changes through tools. Nothing is applied silently: you see the diff first and can accept the full result or only the pieces you want.
+
+---
+
+## Prompts are the heart of the project
+
+The Prompt Manager starts in simple mode: write a system prompt, choose the settings you care about, and play.
+
+For people who want more control, advanced mode provides a visual canvas. Drag layers into an exact order, including injections at a specific history depth, while seeing character content, lorebooks, summaries, and custom prompts in the same place.
+
+Prompt Trace does not show a pretty diagram of what the app intended to build. It shows the actual result: which layers entered the request, their final order, why a lore entry activated, and how many tokens every source consumed.
+
+System prompt, jailbreak, prefill, author's note, summary prompt, tools prompt, and custom depth injections are all configurable. Prompt presets can be imported and exported in a SillyTavern-compatible format.
+
+Macros such as `{{user}}`, `{{char}}`, `{{if}}`, `{{setvar}}`, `{{roll}}`, and nested blocks are handled by a real parser rather than a pile of regular-expression replacements.
+
+---
+
+## Memory is the brain
+
+Choose how many recent messages the model receives, create multiple manual or AI-generated summaries, and decide separately which summaries enter context.
+
+Automatic compaction generates summaries in the background through a model you choose and can exclude messages that have already been summarized. The interface shows how much context the full history would have consumed and how much was recovered.
+
+Utility models do not have to match the main model. Give the heavy RP call to your favorite model and let a faster, cheaper one handle summaries and trackers.
+
+---
+
+## Chat Add-Ons
+
+The Dice System — fully functional tests right in the chat. Rules are defined by dice scripts: they determine the available tests, the roll formula, modifiers, and who can roll — your character, a character, or both.
+Before sending a message, select a test and roll the dice: the result will be attached to the message, appear next to it in the history, and will be transmitted to the model along with your text. Strict tests
+pre-record success, failure, and mandatory consequences; narrative tests only transmit the rolled results to the model and leave the interpretation to it. In normal mode, a reroll replaces the previous result, and in immersive mode,
+additional attempts are governed by script rules: you can keep the best or worst result, override the result, or select a manual attempt. A built-in Fate Die template is available for a quick start, and you can create your own
+systems in the script editor.
+
+Objective Tracker stores what the character is trying to achieve in this particular chat. A secondary model checks progress in parallel with the main RP call, and current objectives return to context so the character does not forget what it was doing in the first place.
+
+Scene Tracker maintains structured scene state: location, participants, objects, appearance, and the other details models tend to trip over during long play. State belongs to the exact response variant that produced it and is updated by a background model without delaying the character's reply.
+
+---
+
+## Lorebooks
+
+By default, the entry editor shows only what you need to get started quickly: keys and content. Full mode reveals advanced activation settings, position, depth, probability, sticky windows, cooldown, delay, recursion, and the rest of the machinery.
+
+Entries sharing an insertion position can be reordered by dragging. Activated entries appear in Prompt Trace together with the reason each one fired.
+
+If the blank page wins, the built-in AI assistant can write the entry and generate primary or secondary keys separately.
+
+The engine supports AND/OR/NOT logic, probability, delay, cooldown, priority eviction, and recursive scanning where one activated piece of lore helps discover another.
+
+Lorebooks can belong to characters, personas, or the global scope. Import and export are compatible with SillyTavern's format.
+
+---
+
+## JavaScript scripts
+
+Vibe Tavern includes a JS script editor with a sandbox and a Janitor AI-compatible API. Scripts can inspect current context state, react to keywords, and add their own layers to the prompt.
+
+The easiest way to think about them is as extremely advanced lorebook entries: when a condition appears, logic runs, state changes, or additional context is attached.
+
+That is useful for random events, trackers, cycles, hidden mechanics, and rolls that remain fixed instead of changing on every regeneration.
+
+You can start from built-in templates, import compatible scripts, or ask the AI assistant to write a foundation from a plain-language description.
+
+---
+
+## Providers and personas
+
+Provider setup starts with three things: choose a protocol, paste the key, and test the connection. OpenAI-compatible profiles cover OpenRouter, DeepSeek, Groq, xAI, Mistral, and other compatible services; Anthropic, Google, Ollama, and llama.cpp are supported separately.
+
+The main settings contain model selection, response size, context, and reasoning controls. Temperature, top-p, stop sequences, and other samplers stay in an advanced section where they do not bother people who do not need them.
+
+Different models in one profile can have different sampler overlays. Favorite models stay pinned for quick switching from chat.
+
+Each persona has a name, description, pronouns, and avatar. A vision model can optionally describe the avatar's appearance and inject that description as its own prompt layer. Personas can also have their own lorebooks.
+
+---
+
+## Themes, images, and mobile access
+
+The interface includes five built-in themes: Milk Coffee, Coffee, Mystic Night, Light Lava, and Dark Lava. The set covers light, dark, restrained, and more decorative looks, all switchable from interface settings. The complete interface is available in English and Russian.
+
+Images can be attached to chat. A vision model describes them for the main model, while the lightbox lets you inspect the original, zoom in, and edit the description when needed.
+
+For phone access, open Mobile Access and scan the QR code. Vibe Tavern runs from the same process over your LAN or Tailscale/VPN, while remote API access is protected by a token.
+
+The mobile version is not the desktop UI shrunk until it becomes a punishment. Small screens get their own bottom sheets, panels, carousels, and touch gestures.
+
+An Android build for Termux automates most of the installation work.
+
+---
+
+## Quick start
 
 ### Windows
 
-**Option 1 — Installer:**
+Download the installer from [Releases](https://github.com/Noineri/vibe_tavern/releases), run it, and install Vibe Tavern like a regular application.
 
-Download the latest `.exe` from [Releases](https://github.com/Noineri/vibe_tavern/releases). Run it and install Vibe Tavern.
-
-**Option 2 — Portable version:**
-
-Download the zip archive from [Releases](https://github.com/Noineri/vibe_tavern/releases), extract, run `Vibe Tavern.exe`.
+If you do not want an installation, download the portable archive, extract it, and run `Vibe Tavern.exe`.
 
 ### Linux
 
-Download the tar.gz archive from [Releases](https://github.com/Noineri/vibe_tavern/releases), extract, run `./vibe-tavern`
-
-### macOS
-
-We don't have macOS release builds yet. But you can use git clone method from Linux instruction above.
+Download the `.tar.gz` archive from [Releases](https://github.com/Noineri/vibe_tavern/releases), extract it, and run `./vibe-tavern`.
 
 ### Docker
 
@@ -193,102 +231,38 @@ We don't have macOS release builds yet. But you can use git clone method from Li
 docker compose up -d
 ```
 
-### Android (Termux)
+### Android
 
-APK build for Termux — automates most of the installation process. See [Android setup guide](docs/android-setup.md).
+Use the APK build for Termux. See the [Android setup guide](docs/android-setup.md) for details.
 
-### Developer version (any platform)
+### Run from source
 
-If you want to test Vibe Tavern in current development state, you can clone this repo and run project with Bun.
-
-> [!NOTE]
-> Dev branch can have many critical bugs and even cause data loss. Do this at your own risk.
+You need Git and Bun. The exact supported Bun version is pinned in the Dockerfile.
 
 ```bash
 git clone https://github.com/Noineri/vibe_tavern
+cd vibe_tavern
 bun install --frozen-lockfile
 bun run dev
 ```
 
----
-
-## Architecture 🏗️
-
-Vibe Tavern is a single-process monolith: React 19 SPA + Hono API + SQLite (WAL mode), all served from one Bun process. No microservices, no separate database server, no deployment complexity.
-
-```
-vibe_tavern/
-├── apps/web/                 # React 19 SPA (Bun-native build)
-├── services/api/             # Hono backend (Bun.serve)
-├── packages/domain/          # Zero-dep foundation: types, branded IDs, constants
-├── packages/api-contracts/   # Zod schemas shared between frontend and backend
-├── packages/db/              # Drizzle ORM (SQLite WAL) + entity stores
-├── packages/prompt-pipeline/ # Pure prompt assembly + macro engine (no I/O)
-├── packages/import-export/   # SillyTavern V2/V3 card/chat/lorebook parsers
-└── data/                     # Runtime data (DB, characters, assets) — gitignored
-```
-
-Strict dependency graph, no circular imports, TypeScript strict mode throughout. The prompt pipeline is a pure function — no I/O, fully testable. Wire-DTO contracts live in one package so frontend/backend type drift is a compile error, not a runtime bug.
-
-For the full architecture documentation, see [`docs/architecture/`](docs/architecture/).
+Open the address printed by the application after startup.
 
 ---
 
-## SillyTavern comparison
+## Data and backups
 
-|                         | SillyTavern              | Vibe Tavern                                              |
-| ----------------------- | ------------------------ | -------------------------------------------------------- |
-| **Stack**               | jQuery + Express + JSON  | React 19 + Hono + SQLite                                 |
-| **Character editor**    | `<textarea>`             | Dual-mode: structured form + CodeMirror 6 Markdown       |
-| **Character versions**  | ❌                       | ✅ Parallel editable branches                            |
-| **Lorebook engine**     | ✅ Basic activation      | ✅ 12-gate engine with trace, recursion, priority eviction |
-| **Prompt tracer**       | Extension                | Built-in, per-layer token breakdown                      |
-| **Context compaction**  | Extension                | Built-in with visual feedback                            |
-| **Prompt ordering**     | Manual depth numbers     | Visual drag-and-drop canvas                              |
-| **Mobile access**       | Manual setup             | QR code, one-click, token auth                           |
-| **Cards import**        | ✅ V2/V3                 | ✅ V2/V3 + bulk directory import                         |
-| **Macros**              | ✅ Full                  | ✅ Full ST-compatible (AST parser)                       |
-| **Standalone binary**   | ❌                       | ✅ Single `.exe`                                         |
-| **Generation queue**    | ❌                       | ✅ Stack turns, model/preset per variant                 |
-| **Plugins**             | 300+                     | ❌ (planned)                                             |
-| **Group chats**         | ✅                       | ❌ (planned — [design ready](docs/architecture/decisions.md)) |
-| **Image generation**    | ✅ A1111/ComfyUI         | ❌ (planned)                                             |
-| **TTS**                 | ✅                       | ❌ (planned)                                             |
-| **Community**           | 159K weekly users        | Just begins                                              |
+Characters, chats, settings, and assets are stored locally under `data/`. API keys are not sent to the Vibe Tavern developer — the application talks directly to the providers you configure.
+
+Before updating, copy `data/` somewhere safe. That is enough to preserve the working state of the application.
 
 ---
 
-## Roadmap 🛣️
+## For developers
 
-Vibe Tavern is in active development. Here's what's coming:
+Vibe Tavern is a single-process Bun monolith: a React SPA, Hono API, and SQLite database run as one application without a separate database server.
 
-### Near-term
-- **Group chat** — multi-character orchestration with isolated prompts, hidden layers, and server-controlled turn order. [Design complete](docs/architecture/decisions.md).
-- **Novel Mode** — prose writing with TipTap editor, flat-text completion, per-paragraph interactions, ghost text streaming. [Design complete](docs/architecture/decisions.md).
-
-### Medium-term
-- **Agentic Mode** — multi-agent swarm generation: N parallel creative drafts → structured critic (6-axis rubric) → strategy-routed writer. Turns the generation process into a visible, auditable artifact. [Design complete](docs/architecture/decisions.md).
-- **Plugin system** — extensibility for community-built features.
-
-### Long-term
-- Image generation integration (A1111 / ComfyUI)
-- TTS / STT
-- Vector/RAG search
-
----
-
-## Contributing 🤝
-
-Contributions welcome — code, translations, documentation, bug reports, themes, or ideas.
-
-**Good first contributions:**
-
-- 🌍 **Translations** — add a new language ([guide](docs/guides/adding-a-language.md))
-- 🎨 **Themes** — create a CSS theme ([guide](docs/guides/adding-a-theme.md))
-- 🐛 **Bug reports** — [open an issue](https://github.com/Noineri/vibe_tavern/issues)
-- 📖 **Documentation** — improve guides, fix typos, add examples
-
-For local setup, coding standards, and contribution guidelines, see [`CONTRIBUTING.md`](./CONTRIBUTING.md). For deeper architecture docs, see [`docs/`](docs/).
+Local setup, repository structure, and contribution rules live in [`CONTRIBUTING.md`](./CONTRIBUTING.md). Deeper documentation is available under [`docs/architecture/`](docs/architecture/).
 
 ---
 
