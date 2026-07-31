@@ -170,10 +170,19 @@ jobs:
           # Room for 999 minor and 999 patch before any collision.
           # Old formula (MAJOR*10000 + MINOR*100 + PATCH) broke at MINOR=100.
           VERSION_CODE=$((MAJOR * 1000000 + MINOR * 1000 + PATCH))
+          # Both patterns are anchored to a COMPLETE declaration line. defaultConfig
+          # also contains `localUpdaterTestVersionCode?.let { versionCode = it }`,
+          # where the old unanchored `versionCode = [0-9]*` matched zero digits in
+          # front of `it` and produced `versionCode = 1001000it` — a Kotlin syntax
+          # error that failed the v1.1.0 release build.
           sed -i \
-            -e "s/versionCode = [0-9]*/versionCode = ${VERSION_CODE}/" \
-            -e "s|versionName = \"[^\"]*\"|versionName = \"${VERSION}\"|" \
+            -e "s/^\([[:space:]]*\)versionCode = [0-9][0-9]*$/\1versionCode = ${VERSION_CODE}/" \
+            -e "s|^\([[:space:]]*\)versionName = \"[^\"]*\"$|\1versionName = \"${VERSION}\"|" \
             mobile/android/app/build.gradle.kts
+          # A silent no-op here would ship an APK stamped 1 / "0.0.0", which the
+          # in-app updater would never offer as an upgrade. Fail loudly instead.
+          grep -q "^[[:space:]]*versionCode = ${VERSION_CODE}$" mobile/android/app/build.gradle.kts
+          grep -q "^[[:space:]]*versionName = \"${VERSION}\"$" mobile/android/app/build.gradle.kts
       - name: Restore Android release keystore
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
