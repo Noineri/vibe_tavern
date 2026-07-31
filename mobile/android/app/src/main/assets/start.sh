@@ -16,7 +16,7 @@ if ! command -v proot-distro >/dev/null 2>&1; then
     exit 1
 fi
 
-if ! proot-distro list 2>&1 | grep -q "${DISTRO}"; then
+if ! proot-distro list --quiet | grep -qxF "${DISTRO}"; then
     echo "❌ proot ${DISTRO} not found. Run install.sh first."
     exit 1
 fi

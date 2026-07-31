@@ -15,6 +15,7 @@ It installs and controls the bundled server, then opens `http://127.0.0.1:8787` 
 - `android/` — Gradle application, Kotlin launcher, resources, tests, and APK assets.
 - `android/app/src/main/assets/install.sh` — the only maintained Termux/proot installer and updater.
 - `android/app/src/main/assets/start.sh` — launcher-owned Termux start entry point.
+- `android/app/src/main/java/com/vibetavern/launcher/PayloadTransferService.kt` — temporary localhost foreground service that streams the bundled server archive to Termux without shared storage.
 - `android/scripts/serve-local-update.ts` — debug-only same-LAN updater fixture.
 - `docs/` — mobile architecture and lifecycle decisions.
 

@@ -5,7 +5,6 @@ import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.ClipData
 import android.content.ComponentName
-import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
@@ -13,8 +12,6 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
-import android.os.Environment
-import android.provider.MediaStore
 import android.provider.Settings
 import android.view.View
 import android.widget.Button
@@ -25,9 +22,6 @@ import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
-import java.io.File
-import java.net.InetAddress
-import java.net.ServerSocket
 import java.util.Locale
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -61,12 +55,12 @@ class MainActivity : AppCompatActivity() {
     )
     private val apkUpdateManager by lazy { ApkUpdateManager(this) }
     private var pollingJob: Job? = null
-    private var archiveServerJob: Job? = null
     private var updateCheckJob: Job? = null
     private var downloadPollingJob: Job? = null
     private var downloadReceiverRegistered = false
     private var resultReceiverRegistered = false
     private var installerHandoffInProgress = false
+    private var installationInProgress = false
     private var activityStarted = false
     private var pendingUpdateRelease: PublishedRelease? = null
     private var launcherUpdateAction = LauncherUpdateAction.CHECK
@@ -80,12 +74,7 @@ class MainActivity : AppCompatActivity() {
     private val serverUrl = "http://127.0.0.1:8787"
     private val launcherBuildLabel = "archive-orchestrator-${BuildConfig.VERSION_NAME}"
     private val bundledArchiveName = "vibe-tavern-android-arm64.tgz"
-    private val installerScriptName = "vibe-tavern-install.sh"
-    private val archiveServerPort = 8790
-    private val sharedArchivePath = "/sdcard/Download/$bundledArchiveName"
-    private val sharedInstallerPath = "/sdcard/Download/$installerScriptName"
-    private val localArchiveUrl = "http://127.0.0.1:$archiveServerPort/$bundledArchiveName"
-    private var installerArchivePath = sharedArchivePath
+    private val localArchiveUrl = PayloadTransferService.ARCHIVE_URL
 
     // The APK asset `install.sh` is the single installer source of truth.
 
@@ -122,7 +111,7 @@ class MainActivity : AppCompatActivity() {
 
         echo '[3/6] Checking Ubuntu proot...'
         proot-distro list || true
-        if ! proot-distro list 2>&1 | grep -q 'ubuntu'; then
+        if ! proot-distro list --quiet | grep -qxF 'ubuntu'; then
           echo '❌ Ubuntu proot is missing. Run Install / Update from the APK first.'
           echo
           echo 'Press Enter to close this Termux session.'
@@ -201,7 +190,7 @@ class MainActivity : AppCompatActivity() {
         echo
 
         echo '[2/4] Asking server process to stop inside proot...'
-        if command -v proot-distro >/dev/null 2>&1 && proot-distro list 2>&1 | grep -q 'ubuntu'; then
+        if command -v proot-distro >/dev/null 2>&1 && proot-distro list --quiet | grep -qxF 'ubuntu'; then
           proot-distro login ubuntu -- bash -lc '
             set +e
             echo "Inside proot before stop, exact process name only:"
@@ -231,6 +220,7 @@ class MainActivity : AppCompatActivity() {
 
     private val resultReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
+            if (installationInProgress) finishInstallationAttempt()
             val errMsg = intent?.getStringExtra("com.termux.RUN_COMMAND_RESULT_ERRMSG")
             val stderr = intent?.getStringExtra("com.termux.RUN_COMMAND_RESULT_STDERR")
             if (!errMsg.isNullOrBlank()) {
@@ -286,6 +276,7 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         installerHandoffInProgress = false
+        if (installationInProgress && ::setupBtn.isInitialized) setupBtn.isEnabled = true
         pendingUpdateRelease?.let { release ->
             pendingUpdateRelease = null
             showLauncherUpdateConsent(release)
@@ -311,7 +302,6 @@ class MainActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         pollingJob?.cancel()
-        archiveServerJob?.cancel()
         updateCheckJob?.cancel()
         downloadPollingJob?.cancel()
         if (resultReceiverRegistered) {
@@ -708,26 +698,20 @@ class MainActivity : AppCompatActivity() {
     // ========== One-time setup ==========
 
     private fun doOneTimeSetup() {
-        setProgress(tr("📦 Copying bundled archive and opening Termux installer…", "📦 Копирую архив и открываю установщик в Termux…"), visible = true)
+        if (installationInProgress) finishInstallationAttempt()
+        pollingJob?.cancel()
+        installationInProgress = true
+        setupBtn.isEnabled = false
+        setProgress(tr("📦 Preparing the bundled archive and opening Termux installer…", "📦 Подготавливаю встроенный архив и открываю установщик в Termux…"), visible = true)
         statusText.text = tr("📦 Installation/update runs in Termux", "📦 Установка/обновление выполняется в Termux")
-        startArchiveServer()
-        val copiedArchivePath = copyBundledArchiveToDownloads()
-        installerArchivePath = copiedArchivePath ?: sharedArchivePath
-        val archiveCopiedToDownloads = copiedArchivePath != null
-
         tryRegisterResultReceiver()
 
         try {
-            val copiedInstallerPath = copyInstallerScriptToDownloads()
-            if (copiedInstallerPath == null) {
-                setProgress(tr("❌ Failed to copy installer script to Downloads.", "❌ Не удалось скопировать установщик в Downloads."), visible = false)
-                return
-            }
-            runTermuxInstallerVisible(archiveCopiedToDownloads, installerArchivePath, copiedInstallerPath)
+            PayloadTransferService.start(this)
+            runTermuxInstallerVisible()
         } catch (e: Exception) {
-            val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-            clipboard.setPrimaryClip(ClipData.newPlainText("vibe-setup", "bash -x $sharedInstallerPath"))
-            setProgress(tr("❌ Could not auto-run Termux: ${e.message}. Installer copied; paste it in Termux.", "❌ Не удалось автоматически запустить Termux: ${e.message}. Установщик скопирован; вставьте команду в Termux."), visible = false)
+            finishInstallationAttempt()
+            setProgress(tr("❌ Could not auto-run Termux: ${e.message}. Open Termux, return here, and retry.", "❌ Не удалось автоматически запустить Termux: ${e.message}. Откройте Termux, вернитесь сюда и повторите попытку."), visible = false)
             openTermux()
             return
         }
@@ -736,149 +720,23 @@ class MainActivity : AppCompatActivity() {
         startPolling(maxAttempts = 1200, waitingLabel = tr("Installing / waiting for server", "Установка / ожидание сервера"), markInstalledOnSuccess = true)
     }
 
-    private fun runTermuxInstallerVisible(archiveCopiedToDownloads: Boolean, archivePath: String, installerPath: String) {
-        val archiveCopyStatus = if (archiveCopiedToDownloads) "copied" else "copy_failed"
-        val command = """
-            clear
+    private fun finishInstallationAttempt() {
+        PayloadTransferService.stop(this)
+        installationInProgress = false
+        if (::setupBtn.isInitialized) setupBtn.isEnabled = true
+    }
+
+    private fun runTermuxInstallerVisible() {
+        val installerScript = assets.open("install.sh").bufferedReader().use { it.readText() }
+        val installerCommand = """
+            export VIBE_TAVERN_ARCHIVE_PATH=''
+            export VIBE_TAVERN_ARCHIVE_URL='$localArchiveUrl'
             echo '=== Vibe Tavern installer ==='
-            echo 'APK archive copy to Downloads: $archiveCopyStatus'
-            echo 'Actual archive path passed to installer:'
-            echo '$archivePath'
-            ls -lh '$archivePath' || true
-            echo 'Android-renamed archive candidate:'
-            ls -lh '$archivePath.gz' || true
-            echo 'All visible Vibe Tavern downloads:'
-            ls -lah /sdcard/Download/vibe-tavern-* 2>/dev/null || true
-            echo 'Archive URL fallback: $localArchiveUrl'
-            echo 'Actual installer path:'
-            echo '$installerPath'
-            ls -lh '$installerPath' || true
-            echo
-            if [ ! -f '$installerPath' ]; then
-              echo 'ERROR: installer script was not copied to Downloads.'
-              echo 'Press Enter to close.'
-              read -r _
-              exit 1
-            fi
-            echo 'Starting installer with trace...'
-            VIBE_TAVERN_ARCHIVE_PATH='$archivePath' \
-            VIBE_TAVERN_ARCHIVE_URL='$localArchiveUrl' \
-            bash -x '$installerPath'
-            code=${'$'}?
-            echo
-            if [ "${'$'}code" -eq 0 ]; then
-              echo '✅ Installer finished successfully.'
-            else
-              echo "❌ Installer failed with exit code ${'$'}code."
-              echo "Log file in Termux: ${'$'}HOME/vibe-tavern-install.log"
-            fi
-            echo
-            echo 'Press Enter to close this Termux session.'
-            read -r _
-            exit "${'$'}code"
+            echo 'Bundled archive transfer: $localArchiveUrl'
+            set -x
+            $installerScript
         """.trimIndent()
-        runTermuxInline(command, visible = true, sessionName = "Vibe Tavern Installer")
-    }
-
-    private fun startArchiveServer() {
-        archiveServerJob?.cancel()
-        archiveServerJob = mainScope.launch(Dispatchers.IO) {
-            val server = ServerSocket(archiveServerPort, 8, InetAddress.getByName("127.0.0.1"))
-            try {
-                while (isActive) {
-                    val socket = server.accept()
-                    launch {
-                        socket.use {
-                            val input = it.getInputStream()
-                            val buffer = ByteArray(1024)
-                            val request = StringBuilder()
-                            while (request.length < 8192) {
-                                val read = input.read(buffer)
-                                if (read <= 0) break
-                                request.append(String(buffer, 0, read))
-                                if (request.contains("\r\n\r\n")) break
-                            }
-
-                            val output = it.getOutputStream()
-                            val requestText = request.toString()
-                            val method = if (requestText.startsWith("HEAD ")) "HEAD" else "GET"
-                            val header = "HTTP/1.1 200 OK\r\nContent-Type: application/gzip\r\nConnection: close\r\n\r\n"
-                            output.write(header.toByteArray(Charsets.UTF_8))
-                            if (method != "HEAD") {
-                                assets.open(bundledArchiveName).use { archive -> archive.copyTo(output) }
-                            }
-                            output.flush()
-                        }
-                    }
-                }
-            } finally {
-                server.close()
-            }
-        }
-    }
-
-    private fun copyBundledArchiveToDownloads(): String? {
-        // Use octet-stream so Android's DownloadProvider is less likely to
-        // rename vibe-tavern-android-arm64.tgz to vibe-tavern-android-arm64.tgz.gz.
-        // If Android still renames due to conflicts, copyToDownloads returns the
-        // actual display name so Termux installs the file that was just created.
-        return copyToDownloads(bundledArchiveName, "application/octet-stream") { output ->
-            assets.open(bundledArchiveName).use { input -> input.copyTo(output) }
-        }
-    }
-
-    private fun copyInstallerScriptToDownloads(): String? {
-        return copyToDownloads(installerScriptName, "text/x-shellscript") { output ->
-            assets.open("install.sh").use { input -> input.copyTo(output) }
-        }
-    }
-
-    private fun copyToDownloads(
-        displayName: String,
-        mimeType: String,
-        writeContent: (java.io.OutputStream) -> Unit,
-    ): String? {
-        return try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                contentResolver.delete(
-                    MediaStore.Downloads.EXTERNAL_CONTENT_URI,
-                    "${MediaStore.MediaColumns.DISPLAY_NAME} LIKE ?",
-                    arrayOf("$displayName%"),
-                )
-                val values = ContentValues().apply {
-                    put(MediaStore.MediaColumns.DISPLAY_NAME, displayName)
-                    put(MediaStore.MediaColumns.MIME_TYPE, mimeType)
-                    put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
-                    put(MediaStore.MediaColumns.IS_PENDING, 1)
-                }
-                val uri = contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values) ?: return null
-                contentResolver.openOutputStream(uri)?.use(writeContent) ?: return null
-                values.clear()
-                values.put(MediaStore.MediaColumns.IS_PENDING, 0)
-                contentResolver.update(uri, values, null, null)
-
-                val actualDisplayName = contentResolver.query(
-                    uri,
-                    arrayOf(MediaStore.MediaColumns.DISPLAY_NAME),
-                    null,
-                    null,
-                    null,
-                )?.use { cursor ->
-                    if (cursor.moveToFirst()) cursor.getString(0) else null
-                } ?: displayName
-                "/sdcard/Download/$actualDisplayName"
-            } else {
-                val downloads = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
-                downloads.mkdirs()
-                downloads.listFiles { file -> file.name.startsWith(displayName) }
-                    ?.forEach { file -> file.delete() }
-                val target = File(downloads, displayName)
-                target.outputStream().use(writeContent)
-                target.absolutePath
-            }
-        } catch (_: Exception) {
-            null
-        }
+        runTermuxInline(installerCommand, visible = true, sessionName = "Vibe Tavern Installer")
     }
 
     // ========== Server controls ==========
@@ -968,6 +826,7 @@ class MainActivity : AppCompatActivity() {
 
             withContext(Dispatchers.Main) {
                 progressBar.visibility = View.GONE
+                if (markInstalledOnSuccess) finishInstallationAttempt()
                 if (started) {
                     if (markInstalledOnSuccess) markCurrentPayloadInstalled()
                     updateSetupButtonText()
@@ -1092,7 +951,11 @@ class MainActivity : AppCompatActivity() {
                 putExtra("com.termux.RUN_COMMAND_SESSION_CREATE_MODE", "no-session-with-name")
             }
         }
-        startService(intent)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            ContextCompat.startForegroundService(this, intent)
+        } else {
+            startService(intent)
+        }
     }
 
     private fun tryRegisterResultReceiver() {
@@ -1149,11 +1012,11 @@ class MainActivity : AppCompatActivity() {
     private fun showFirstTimeSetupGuide() {
         val isRu = isRu()
 
-        val step1Title = if (isRu) "Шаг 1: Обнови пакеты Termux" else "Step 1: Update Termux packages"
+        val step1Title = if (isRu) "Шаг 1: Открой Termux один раз" else "Step 1: Open Termux once"
         val step1Body = if (isRu)
-            "Свежий Termux часто содержит сломанные пакеты (особенно curl). Открой Termux и выполни:\napt update && apt full-upgrade\nНажми 'y' при любом запросе. Если видишь 'No mirror selected' — сначала выполни termux-change-repo."
+            "Дождись появления первой командной строки. Обновлять пакеты вручную не нужно: установщик Vibe Tavern сделает это неинтерактивно."
         else
-            "Fresh Termux often has broken packages (especially curl). Open Termux and run:\napt update && apt full-upgrade\nPress 'y' on any prompts. If you see 'No mirror selected', run termux-change-repo first."
+            "Wait for the initial shell prompt. You do not need to update packages manually; the Vibe Tavern installer does it noninteractively."
 
         val step2Title = if (isRu) "Шаг 2: Разреши внешним приложениям выполнять команды" else "Step 2: Allow external apps to run commands"
         val step2Body = if (isRu)
@@ -1163,15 +1026,15 @@ class MainActivity : AppCompatActivity() {
 
         val step3Title = if (isRu) "Шаг 3: Перезапусти Termux" else "Step 3: Restart Termux"
         val step3Body = if (isRu)
-            "Набери exit в Termux, смахни его из недавних приложений и открой заново. Это нужно чтобы настройка вступила в силу."
+            "Набери exit в Termux, смахни его из недавних приложений, открой заново и дождись командной строки. Это нужно, чтобы настройка вступила в силу."
         else
-            "Type exit in Termux, swipe it away from recent apps, then reopen it. This ensures the setting takes effect."
+            "Type exit in Termux, swipe it away from recent apps, reopen it, and wait for the shell prompt so the setting takes effect."
 
         val step4Title = if (isRu) "Шаг 4: Вернись сюда и нажми 'Установить'" else "Step 4: Come back and tap 'Install'"
         val step4Body = if (isRu)
-            "После этого APK сможет автоматически управлять Termux. Эти шаги нужно выполнить только один раз.\n\n💡 Если при установке что-то спрашивает Y/N — нажимай Y."
+            "APK обновит пакеты, установит Ubuntu 24.04 и передаст встроенный сервер через приватный localhost. Разрешение на хранилище не требуется. Эти шаги выполняются только один раз."
         else
-            "After this, the APK can automatically manage Termux. You only need to do these steps once.\n\n💡 If anything asks Y/N during install, press Y."
+            "The APK updates packages, installs Ubuntu 24.04, and transfers the bundled server over private localhost. Storage permission is not required. You only need these steps once."
 
         val message = buildString {
             append("$step1Title\n$step1Body\n\n")
@@ -1210,6 +1073,12 @@ class MainActivity : AppCompatActivity() {
                 • Vibe Tavern нужно Android-разрешение: Run commands in Termux environment.
                 • В Termux должно быть: allow-external-apps=true в ~/.termux/termux.properties.
 
+                Если Install / Update завершился ошибкой:
+                • Проверь видимую сессию Termux и ~/vibe-tavern-install.log.
+                • При ошибке зеркала или хеша выполни termux-change-repo и выбери другое зеркало.
+                • Если Termux был принудительно остановлен, открой его, дождись командной строки и повтори установку.
+                • Разрешение на хранилище и файл в Downloads не нужны: архив передаётся через 127.0.0.1.
+
                 Если веб-интерфейс лагает/зависает:
                 • Отключите оптимизацию батареи для Termux.
                 • Не закрывайте Termux, пока пользуетесь Vibe Tavern.
@@ -1225,6 +1094,12 @@ class MainActivity : AppCompatActivity() {
                 • Termux must be installed from F-Droid, not Play Store.
                 • Vibe Tavern needs Android permission: Run commands in Termux environment.
                 • Termux needs: allow-external-apps=true in ~/.termux/termux.properties.
+
+                If Install / Update fails:
+                • Check the visible Termux session and ~/vibe-tavern-install.log.
+                • For mirror or repository hash errors, run termux-change-repo and choose another mirror.
+                • If Termux was force-stopped, open it, wait for the shell prompt, and retry installation.
+                • Storage permission and a Downloads file are not needed; the archive transfers over 127.0.0.1.
 
                 If the web UI lags/freezes:
                 • Disable battery optimization for Termux.
@@ -1283,7 +1158,7 @@ class MainActivity : AppCompatActivity() {
             termux-wake-unlock 2>/dev/null || true
             echo
             echo '[2/4] Remove Vibe Tavern files inside Ubuntu, keep container...'
-            if command -v proot-distro >/dev/null 2>&1 && proot-distro list 2>&1 | grep -q 'ubuntu'; then
+            if command -v proot-distro >/dev/null 2>&1 && proot-distro list --quiet | grep -qxF 'ubuntu'; then
               proot-distro login ubuntu -- bash -lc '
                 set -eux
                 rm -rf "${'$'}HOME/vibe-tavern" \

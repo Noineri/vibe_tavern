@@ -74,6 +74,8 @@ Production discovery is fixed to the GitHub HTTPS endpoint; private-LAN HTTP end
 
 Each release APK bundles the CI-built `vibe-tavern-android-arm64.tgz` archive.
 
+The launcher passes the maintained `install.sh` asset directly to a visible Termux command and streams the archive through a temporary localhost foreground service that survives Activity backgrounding, stops after a successful transfer, and does not require shared-storage permission or a Downloads copy.
+
 The archive contains a `version.txt` marker matching the APK release and an executable `vibe-tavern` ARM64 server.
 
 Replacing the APK never silently applies its bundled server payload.
@@ -96,7 +98,7 @@ The launcher requires Android's **Run commands in Termux environment** permissio
 
 Termux must allow external app commands through `allow-external-apps=true` in `~/.termux/termux.properties`.
 
-The installer writes this setting and calls `termux-reload-settings`, but a first-time user may still need to grant Android permission and restart Termux manually.
+The installer preserves this setting and calls `termux-reload-settings`, but a first-time user must still set it before the launcher can issue its first command, grant Android permission, and restart Termux manually when required by the installed Termux/Android combination.
 
 ## Visible start session and process handling
 

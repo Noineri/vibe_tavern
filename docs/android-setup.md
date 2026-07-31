@@ -15,15 +15,9 @@ The APK installs and controls the local server, while the Vibe Tavern interface 
 
 ### 1. Install and prepare Termux
 
-Install Termux from F-Droid, open it, and wait for initial startup to finish.
+Install Termux from F-Droid, open it, and wait until the initial shell prompt appears.
 
-Run:
-
-```sh
-apt update && apt full-upgrade
-```
-
-If Termux reports that no mirror is selected, run `termux-change-repo`, choose a mirror, and repeat the update command.
+You do not need to update packages manually during normal setup; the Vibe Tavern installer performs a noninteractive package update with retries before installing its required tools.
 
 ### 2. Allow Vibe Tavern to run Termux commands
 
@@ -35,7 +29,7 @@ printf '%s\n' 'allow-external-apps=true' >> ~/.termux/termux.properties
 termux-reload-settings
 ```
 
-Then type `exit`, swipe Termux away from recent apps, and reopen it so the setting takes effect.
+Then type `exit`, swipe Termux away from recent apps, reopen it, and wait for the shell prompt so the setting takes effect before you return to Vibe Tavern.
 
 ### 3. Handle the one-time signing transition if necessary
 
@@ -55,6 +49,8 @@ Download the exact `Vibe-Tavern-vX.Y.Z-android.apk` asset from [GitHub Releases]
 
 Grant **Run commands in Termux environment** when Android requests it.
 
+If Android hides that permission behind restricted settings, use the launcher's settings button, choose **Allow restricted settings** from the app-settings menu, enable **Run commands in Termux environment** under all permissions, then return and tap **Continue**.
+
 If the launcher reports that Termux or its permission is missing, use the shown setup/settings action and return to the launcher afterward.
 
 ### 5. Install the bundled server
@@ -63,15 +59,18 @@ Tap **Install server vX.Y.Z**.
 
 The launcher opens a visible Termux session that:
 
-- updates required Termux packages;
+- updates required Termux packages noninteractively while keeping local configuration files;
 - installs `curl`, `tar`, `proot-distro`, and `procps`;
-- creates or reuses the Ubuntu container;
+- creates or reuses the pinned Ubuntu 24.04 container;
+- streams the bundled archive through a temporary localhost foreground service, without storage permission or a Downloads copy;
 - validates and extracts the ARM64 server bundled in the APK;
 - installs program files into `~/vibe-tavern` inside Ubuntu;
 - keeps user data in `~/.local/share/vibe-tavern`;
 - starts the server.
 
 Initial Ubuntu setup can take several minutes depending on the device and network.
+
+The temporary **Preparing the bundled server for Termux** notification disappears after Termux receives the archive.
 
 ## Daily use
 
@@ -138,9 +137,19 @@ Update Termux packages with `apt update && apt full-upgrade`, then fully restart
 
 Verify that Termux came from F-Droid, `allow-external-apps=true` is present, Termux was restarted, and Android granted **Run commands in Termux environment** to Vibe Tavern.
 
-### The installer reports no mirror
+If Termux was force-stopped, open it once, wait for the shell prompt, return to Vibe Tavern, and retry the action.
 
-Run `termux-change-repo` in Termux, choose a mirror, then retry **Install server** or **Update server**.
+### The installer reports no mirror, a repository hash mismatch, or a mirror sync error
+
+Run `termux-change-repo` in Termux, choose a different mirror, then retry **Install server** or **Update server**.
+
+### The installer reports that the `ubuntu` container is not installed
+
+Return to Vibe Tavern and retry the installation with the current launcher; it checks exact container names and installs the pinned Ubuntu 24.04 image when `ubuntu` is absent.
+
+### The bundled archive transfer is interrupted
+
+Return to Vibe Tavern and retry **Install server** or **Update server**. The archive is streamed privately over `127.0.0.1`; Termux storage permission and a file in Downloads are not required.
 
 ### Android refuses the launcher update
 
@@ -173,6 +182,8 @@ The APK is a server orchestrator rather than a WebView client.
 It runs the precompiled ARM64 server in proot Ubuntu and delegates UI rendering, keyboard behavior, downloads, and cookies to the system browser.
 
 No `git clone`, `bun install`, or source build runs on the device.
+
+During installation, a temporary foreground service streams the bundled archive to Termux over `127.0.0.1` and stops after a successful transfer; the archive is not staged in shared storage.
 
 | Path inside proot Ubuntu | Contents |
 |---|---|

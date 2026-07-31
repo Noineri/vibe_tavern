@@ -7,6 +7,7 @@ set -euo pipefail
 ARCHIVE_URL="${VIBE_TAVERN_ARCHIVE_URL:-}"
 ARCHIVE_PATH="${VIBE_TAVERN_ARCHIVE_PATH:-}"
 DISTRO="${VIBE_TAVERN_DISTRO:-ubuntu}"
+DISTRO_IMAGE="${VIBE_TAVERN_DISTRO_IMAGE:-ubuntu:24.04}"
 LOG="$HOME/vibe-tavern-install.log"
 
 exec > >(tee -a "$LOG") 2>&1
@@ -24,18 +25,21 @@ if [ -z "$ARCHIVE_PATH" ] && [ -z "$ARCHIVE_URL" ]; then
 fi
 
 echo "📦 Step 1/5: Updating Termux packages..."
-yes | apt update -y 2>/dev/null || true
-yes | apt full-upgrade -y 2>/dev/null || true
+export DEBIAN_FRONTEND=noninteractive
+TERMUX_APT_OPTIONS=(
+    -o Acquire::Retries=3
+    -o Dpkg::Options::=--force-confold
+)
+apt-get "${TERMUX_APT_OPTIONS[@]}" update
+apt-get "${TERMUX_APT_OPTIONS[@]}" full-upgrade -y
 
 echo "📦 Step 2/5: Installing Termux tools..."
-pkg update -y
-pkg install -y curl tar proot-distro procps
-printf '\n' | termux-setup-storage 2>/dev/null || true
+apt-get "${TERMUX_APT_OPTIONS[@]}" install -y curl tar proot-distro procps
 termux-wake-lock 2>/dev/null || true
 
 echo "🐧 Step 3/5: Ensuring proot Ubuntu exists..."
-if ! proot-distro list 2>&1 | grep -q "$DISTRO"; then
-    yes | proot-distro install "$DISTRO"
+if ! proot-distro list --quiet | grep -qxF "$DISTRO"; then
+    proot-distro install "$DISTRO_IMAGE"
 else
     echo "✅ $DISTRO already installed"
 fi

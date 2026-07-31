@@ -44,7 +44,7 @@ class ServerService : Service() {
                     action = "com.termux.RUN_COMMAND"
                     putExtra("com.termux.RUN_COMMAND_PATH", "/data/data/com.termux/files/usr/bin/bash")
                     putExtra("com.termux.RUN_COMMAND_ARGUMENTS", arrayOf("-lc", """
-                        if command -v proot-distro >/dev/null 2>&1 && proot-distro list 2>&1 | grep -q ubuntu; then
+                        if command -v proot-distro >/dev/null 2>&1 && proot-distro list --quiet | grep -qxF ubuntu; then
                           proot-distro login ubuntu -- bash -lc 'pkill -TERM -x "vibe-tavern" 2>/dev/null || true; sleep 2; pkill -KILL -x "vibe-tavern" 2>/dev/null || true' || true
                         fi
                         pkill -TERM -x 'vibe-tavern' 2>/dev/null || true

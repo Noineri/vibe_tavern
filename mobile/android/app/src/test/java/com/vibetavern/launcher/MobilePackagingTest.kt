@@ -60,6 +60,64 @@ class MobilePackagingTest {
     }
 
     @Test
+    fun `fresh install avoids shared storage and keeps payload transfer alive`() {
+        val activity = File(
+            repoRoot,
+            "mobile/android/app/src/main/java/com/vibetavern/launcher/MainActivity.kt",
+        ).readText()
+        val manifest = File(repoRoot, "mobile/android/app/src/main/AndroidManifest.xml").readText()
+        val installer = File(repoRoot, "mobile/android/app/src/main/assets/install.sh").readText()
+        val transferService = File(
+            repoRoot,
+            "mobile/android/app/src/main/java/com/vibetavern/launcher/PayloadTransferService.kt",
+        ).readText()
+
+        assertTrue(activity.contains("assets.open(\"install.sh\").bufferedReader()"))
+        assertTrue(activity.contains("runTermuxInline(installerCommand"))
+        assertTrue(activity.contains("ContextCompat.startForegroundService(this, intent)"))
+        assertTrue(activity.contains("PayloadTransferService.start(this)"))
+        assertFalse(activity.contains("copyBundledArchiveToDownloads"))
+        assertFalse(activity.contains("copyInstallerScriptToDownloads"))
+        assertFalse(activity.contains("bash -x '${'$'}installerPath'"))
+        assertTrue(manifest.contains("android:name=\".PayloadTransferService\""))
+        assertFalse(manifest.contains("android.permission.WRITE_EXTERNAL_STORAGE"))
+        assertTrue(transferService.contains("startForeground(NOTIFICATION_ID"))
+        assertTrue(transferService.contains("assets.open(ARCHIVE_NAME)"))
+        assertTrue(transferService.contains("stopSelf()"))
+        assertFalse(installer.contains("termux-setup-storage"))
+    }
+
+    @Test
+    fun `fresh Termux bootstrap is deterministic and checks exact containers`() {
+        val installer = File(
+            repoRoot,
+            "mobile/android/app/src/main/assets/install.sh",
+        ).readText()
+        val starter = File(repoRoot, "mobile/android/app/src/main/assets/start.sh").readText()
+        val activity = File(
+            repoRoot,
+            "mobile/android/app/src/main/java/com/vibetavern/launcher/MainActivity.kt",
+        ).readText()
+        val serverService = File(
+            repoRoot,
+            "mobile/android/app/src/main/java/com/vibetavern/launcher/ServerService.kt",
+        ).readText()
+
+        assertTrue(installer.contains("Acquire::Retries=3"))
+        assertTrue(installer.contains("--force-confold"))
+        assertTrue(installer.contains("apt-get \"${'$'}{TERMUX_APT_OPTIONS[@]}\" install"))
+        assertFalse(installer.contains("pkg update"))
+        assertFalse(installer.contains("yes | apt"))
+        assertTrue(installer.contains("proot-distro list --quiet | grep -qxF \"${'$'}DISTRO\""))
+        assertTrue(installer.contains("VIBE_TAVERN_DISTRO_IMAGE:-ubuntu:24.04"))
+        assertFalse(installer.contains("proot-distro list 2>&1 | grep -q"))
+        assertTrue(starter.contains("proot-distro list --quiet | grep -qxF \"${'$'}{DISTRO}\""))
+        assertFalse(starter.contains("proot-distro list 2>&1 | grep -q"))
+        assertFalse(activity.contains("proot-distro list 2>&1 | grep -q"))
+        assertFalse(serverService.contains("proot-distro list 2>&1 | grep -q"))
+    }
+
+    @Test
     fun `active Android surfaces use canonical Vibe Tavern branding`() {
         val manifest = File(repoRoot, "mobile/android/app/src/main/AndroidManifest.xml").readText()
         val activeResources = listOf(
