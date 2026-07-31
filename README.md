@@ -254,9 +254,10 @@ Open the address printed by the application after startup.
 
 ## Data and backups
 
-Characters, chats, settings, and assets are stored locally under `data/`. API keys are not sent to the Vibe Tavern developer — the application talks directly to the providers you configure.
+Characters, chats, settings, and assets are stored locally:
 
-Before updating, copy `data/` somewhere safe. That is enough to preserve the working state of the application.
+ - `AppData\Local\VibeTavern` (Windows)
+ - `~/.local/share/vibe-tavern` (Linux).
 
 ---
 
