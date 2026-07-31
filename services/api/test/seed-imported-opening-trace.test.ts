@@ -18,7 +18,7 @@
  * blocking the whole import for 68 seconds. If a refactor re-couples
  * assemblePrompt to the import path, this test fails loudly.
  */
-import { describe, it, expect, beforeAll, afterAll, mock } from "bun:test";
+import { describe, it, expect, beforeAll, afterAll, mock, setDefaultTimeout } from "bun:test";
 import { mkdir, rm } from "node:fs/promises";
 import { resolve } from "node:path";
 import { tmpdir } from "node:os";
@@ -26,6 +26,14 @@ import { createRuntimeStore } from "../src/runtime/session/session-runtime-store
 import { SessionRuntime } from "../src/runtime/session/session-runtime.js";
 import { setTokenCountFn } from "@vibe-tavern/prompt-pipeline";
 import type { ChatId } from "@vibe-tavern/domain";
+
+// Every case provisions a fresh SessionRuntime against a real on-disk SQLite
+// database, so the fixture alone can outrun Bun's 5-second per-test default on
+// Windows CI under parallel runner load — this test timed out at 5.66s in the
+// v1.1.0 release run while passing on Linux. The assertions below are about
+// call counts, never about elapsed time, so a wider budget removes the flake
+// without weakening the gate. Same treatment as message-ai-editor-mutations.
+setDefaultTimeout(30_000);
 
 async function createTestRuntime() {
 	const tmpDir = resolve(tmpdir(), "vt-seedtrace-" + crypto.randomUUID().slice(0, 8));
