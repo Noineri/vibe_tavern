@@ -208,10 +208,15 @@ describe("bump-version release preconditions", () => {
 
 		// Then
 		expectSuccess(result);
-		// [skip ci] keeps ci.yml off the bump commit — release.yml re-runs the
-		// full gate on the tagged commit instead of racing it.
-		expect((await git(fixture.root, "log", "-1", "--format=%s")).stdout.trim())
-			.toBe("chore: bump to v1.1.0 [skip ci]");
+		// The subject is what ci.yml matches to skip this commit, and it must
+		// carry NO GitHub skip directive: those are evaluated per push event,
+		// so one here would also drop the tag push and release.yml would never
+		// run (regression: v1.1.0 was tagged with `[skip ci]` and never built).
+		const subject = (await git(fixture.root, "log", "-1", "--format=%s")).stdout.trim();
+		expect(subject).toBe("chore: bump to v1.1.0");
+		for (const directive of ["[skip ci]", "[ci skip]", "[no ci]", "[skip actions]", "[actions skip]"]) {
+			expect(subject).not.toContain(directive);
+		}
 		expect((await git(fixture.root, "cat-file", "-t", "v1.1.0")).stdout.trim()).toBe("tag");
 	});
 

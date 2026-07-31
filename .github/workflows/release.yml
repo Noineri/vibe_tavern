@@ -16,17 +16,21 @@ concurrency:
 #
 #   1. Cut a release locally:
 #        bun run bump-version 1.0.2 --push
-#      That script bumps the 8 workspace package.json files, commits with
-#      `[skip ci]`, creates an ANNOTATED tag v1.0.2, and pushes master and the
-#      tag atomically. No force-push anywhere.
+#      That script bumps the 8 workspace package.json files, commits
+#      `chore: bump to v1.0.2`, creates an ANNOTATED tag v1.0.2, and pushes
+#      master and the tag atomically. No force-push anywhere.
 #
 #   2. This workflow triggers on the tag push.
 #      - `version` is a GUARD, not a mutator: it verifies the tag shape and
 #        that package.json .version == tag version. It does NOT commit, does
 #        NOT push, does NOT rewrite the tag.
-#      - `verify-*` re-run the full gate ON THE TAGGED COMMIT. The bump commit
-#        carries `[skip ci]`, so ci.yml never sees it — this is the only
+#      - `verify-*` re-run the full gate ON THE TAGGED COMMIT. ci.yml skips the
+#        bump commit (job-level `if` on the message prefix), so this is the only
 #        verification that commit gets, which is why it is not optional.
+#
+#      The bump commit must NOT carry `[skip ci]`: GitHub evaluates that
+#      directive per push event, so it would drop this tag push too and the
+#      release would silently never build.
 #
 #   3. Build jobs checkout the tagged commit (immutable) and run on it.
 #

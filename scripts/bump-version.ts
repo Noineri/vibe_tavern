@@ -19,7 +19,7 @@
  *      (explicit allowlist — no `find`)
  *   5. Verifies `bun.lock` still satisfies the bumped manifests, and that the
  *      bump touched nothing outside the allowlist
- *   6. Commits with `chore: bump to vX.X.X [skip ci]`
+ *   6. Commits with `chore: bump to vX.X.X`
  *   7. Creates an annotated tag `vX.X.X` (annotated, not lightweight —
  *      gives a signed/dated marker that survives `git fetch --tags`)
  *   8. With `--push`: pushes master and the tag to origin atomically
@@ -29,11 +29,17 @@
  * release, so a `1.1.0-beta.1` tag would ship itself to every installed user.
  * `release.yml` rejects non-X.Y.Z tags too, in case one is pushed by hand.
  *
- * Why `[skip ci]`: ci.yml already verified the parent commit. The bump commit
- * only changes version strings, and release.yml re-runs the full gate
- * (typecheck + tests on Linux AND Windows) on the tagged commit before any
- * artifact is built — so letting ci.yml race the release run only duplicates
- * the same work.
+ * Why the bump commit carries NO `[skip ci]`: that directive is evaluated per
+ * PUSH, not per workflow — GitHub drops every push-triggered run whose head
+ * commit message contains it, and the tag push has the same head commit. A
+ * `[skip ci]` bump commit therefore makes release.yml unreachable (this is
+ * exactly how v1.1.0 was cut without a release run). ci.yml still skips the
+ * bump commit — it opts out with a job-level `if` on the `chore: bump to v`
+ * message prefix — so the intent is preserved without disarming the tag
+ * trigger. The skip is worth keeping because ci.yml already verified the
+ * parent commit, the bump only changes version strings, and release.yml
+ * re-runs the full gate (typecheck + tests on Linux AND Windows) on the
+ * tagged commit before any artifact is built.
  *
  * Why internal deps are not rewritten: workspace packages depend on each other
  * through `workspace:*`, which carries no version number. Nothing to sync.
@@ -356,7 +362,11 @@ async function main(): Promise<void> {
 
 	// --- commit ---
 
-	const commitMsg = `chore: bump to v${targetVersion} [skip ci]`;
+	// No `[skip ci]` here — see the header comment. GitHub applies the skip
+	// directive to the push event, not to a workflow, so a tag pointing at a
+	// `[skip ci]` commit never triggers release.yml either. ci.yml opts out of
+	// this commit by matching the message prefix instead.
+	const commitMsg = `chore: bump to v${targetVersion}`;
 	await $`git add ${PACKAGE_FILES}`.cwd(ROOT);
 	await $`git commit -m ${commitMsg}`.cwd(ROOT);
 	const newSha = (await $`git rev-parse HEAD`.cwd(ROOT).text()).trim();

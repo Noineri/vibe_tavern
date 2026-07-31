@@ -37,9 +37,22 @@ concurrency:
 # Build artifacts are intentionally NOT uploaded — CI verifies compilation only,
 # not distribution. release.yml re-builds from the tag when cutting a real release;
 # uploading throwaway 0.0.0-ci artifacts here only burned Actions storage quota.
+#
+# Skipping the version-bump commit: `scripts/bump-version.ts` produces exactly one
+# commit, `chore: bump to vX.Y.Z`, whose parent CI already verified and whose
+# content is version strings only — release.yml then re-runs this entire gate on
+# the tagged commit. Running it here too is pure duplication. This is done with a
+# job-level `if` and NOT with `[skip ci]` in the commit message: `[skip ci]` is
+# evaluated per push event, so it would also kill the tag push that triggers
+# release.yml. The three root jobs carry the condition; the build jobs inherit it
+# through `needs: [typecheck]` (a skipped dependency skips its dependents). The
+# prefix is spelled out inline because the `env` context is not available to a
+# job-level `if` — keep it in sync with the script.
 
 jobs:
   typecheck:
+    # Quoted: a plain YAML scalar may not contain ": ", which the prefix does.
+    if: "${{ github.event_name != 'push' || !startsWith(github.event.head_commit.message, 'chore: bump to v') }}"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -50,6 +63,8 @@ jobs:
       - run: bun run typecheck
 
   test-linux:
+    # Quoted: a plain YAML scalar may not contain ": ", which the prefix does.
+    if: "${{ github.event_name != 'push' || !startsWith(github.event.head_commit.message, 'chore: bump to v') }}"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -60,6 +75,8 @@ jobs:
       - run: bun run test
 
   test-windows:
+    # Quoted: a plain YAML scalar may not contain ": ", which the prefix does.
+    if: "${{ github.event_name != 'push' || !startsWith(github.event.head_commit.message, 'chore: bump to v') }}"
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v5
