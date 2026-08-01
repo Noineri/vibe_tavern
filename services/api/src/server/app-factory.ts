@@ -1,5 +1,4 @@
 import { Hono } from "hono";
-import { cors } from "hono/cors";
 import { serveStatic } from "hono/bun";
 import { resolve } from "node:path";
 import { DiceBindError } from "@vibe-tavern/db";
@@ -8,6 +7,11 @@ import { ProviderExecutionError } from "../infrastructure/ai/provider-execution-
 import { logSendDebug } from "../shared/send-debug-log.js";
 import { createApiRouter, type RuntimeApi } from "../api/routes/index.js";
 import { createMobileAuthMiddleware, type MobileAccessTokenSource } from "../domain/mobile-access/mobile-auth.js";
+import {
+	createOriginGuardMiddleware,
+	parseAllowedOrigins,
+	normalizeExternalHost,
+} from "./request-origin-guard.js";
 
 export interface AppDeps {
 	runtime: RuntimeApi;
@@ -52,10 +56,14 @@ export async function createApp(deps: AppDeps): Promise<Hono> {
 
 	// ─── Middleware ──────────────────────────────────────────────────────
 
-	app.use("*", cors({
-		origin: "*",
-		allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-		allowHeaders: ["Content-Type", "Authorization"],
+	// Fail-closed browser-origin boundary for the local API. Replaces the
+	// previous global cors({ origin: "*" }) which allowed any website to
+	// read API responses. Same-origin by default; foreign Origin rejected;
+	// Host validated against DNS rebinding; VIBE_TAVERN_ALLOWED_ORIGINS for
+	// intentional split frontend/API deployments. See request-origin-guard.ts.
+	app.use("*", createOriginGuardMiddleware({
+		allowedOrigins: parseAllowedOrigins(process.env.VIBE_TAVERN_ALLOWED_ORIGINS),
+		allowedHost: normalizeExternalHost(process.env.VIBE_TAVERN_EXTERNAL_HOST),
 	}));
 
 	// ─── Mobile auth ────────────────────────────────────────────────────
