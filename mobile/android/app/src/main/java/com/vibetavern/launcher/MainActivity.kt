@@ -18,6 +18,7 @@ import android.widget.Button
 import android.widget.ProgressBar
 import android.widget.ScrollView
 import android.widget.TextView
+import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
@@ -44,7 +45,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var launchBtn: Button
     private lateinit var uninstallBtn: Button
     private lateinit var languageBtn: Button
-    private lateinit var firstTimeSetupBtn: Button
+    private lateinit var firstTimeSetupHeader: TextView
+    private lateinit var firstTimeSetupContent: View
     private lateinit var launcherUpdateBtn: Button
     private lateinit var launcherVersionText: TextView
 
@@ -369,7 +371,7 @@ class MainActivity : AppCompatActivity() {
         updateSetupButtonText()
         uninstallBtn.text = tr("🗑 Uninstall", "🗑 Удалить")
         languageBtn.text = tr("🌐 Language: English", "🌐 Язык: Русский")
-        firstTimeSetupBtn.text = tr("🔧 First-Time Setup", "🔧 Первичная настройка")
+        updateFirstTimeSetupTexts()
         updateLauncherActionUi()
         updateVersionStatus()
         findViewById<Button>(R.id.btn_help).text = tr("❓ Help / Troubleshooting", "❓ Справка / проблемы")
@@ -430,9 +432,10 @@ class MainActivity : AppCompatActivity() {
             "Шаг 2: выдайте разрешение",
         )
         findViewById<TextView>(R.id.permission_guide_body).text = tr(
-            "This permission belongs to Vibe Tavern, not Termux.\n\nFirst run this in Termux:\n  mkdir -p ~/.termux\n  echo \"allow-external-apps=true\" >> ~/.termux/termux.properties\n\nIf termux-reload-settings crashes, force stop Termux and open it again.\n\nThen:\n1. Open Vibe Tavern settings below\n2. Use ⋮ → \"Allow restricted settings\"\n3. Open Permissions → ⋮ → \"All permissions\"\n4. Enable \"Run commands in Termux environment\"\n5. Return here and tap Continue",
-            "Это разрешение нужно приложению Vibe Tavern, а не Termux.\n\nСначала выполните в Termux:\n  mkdir -p ~/.termux\n  echo \"allow-external-apps=true\" >> ~/.termux/termux.properties\n\nЕсли termux-reload-settings завершается с ошибкой, принудительно остановите Termux и откройте его снова.\n\nЗатем:\n1. Откройте настройки Vibe Tavern кнопкой ниже\n2. Выберите ⋮ → «Разрешить ограниченные настройки»\n3. Откройте «Разрешения» → ⋮ → «Все разрешения»\n4. Включите «Выполнение команд в среде Termux»\n5. Вернитесь сюда и нажмите «Продолжить»",
+            "This permission belongs to Vibe Tavern, not Termux. Copy the complete command block below into Termux, restart Termux, then grant the launcher permission in Android settings.",
+            "Это разрешение нужно приложению Vibe Tavern, а не Termux. Скопируйте весь блок команды ниже в Termux, перезапустите Termux, затем выдайте разрешение лаунчеру в настройках Android.",
         )
+        bindTermuxSetupCommand()
         findViewById<Button>(R.id.btn_open_termux_settings).text = tr(
             "Open Vibe Tavern Settings",
             "Открыть настройки Vibe Tavern",
@@ -453,12 +456,14 @@ class MainActivity : AppCompatActivity() {
         launchBtn = findViewById(R.id.btn_launch_server)
         uninstallBtn = findViewById(R.id.btn_uninstall)
         languageBtn = findViewById(R.id.btn_language)
-        firstTimeSetupBtn = findViewById(R.id.btn_first_time_setup)
+        firstTimeSetupHeader = findViewById(R.id.first_time_setup_header)
+        firstTimeSetupContent = findViewById(R.id.first_time_setup_content)
         launcherUpdateBtn = findViewById(R.id.btn_check_launcher_update)
         launcherVersionText = findViewById(R.id.launcher_version_status)
 
         setupBtn.setOnClickListener { doOneTimeSetup() }
-        firstTimeSetupBtn.setOnClickListener { showFirstTimeSetupGuide() }
+        firstTimeSetupHeader.setOnClickListener { toggleFirstTimeSetupHelp() }
+        bindTermuxSetupCommand()
         launchBtn.setOnClickListener { launchServer() }
         openBtn.setOnClickListener { openBrowser() }
         stopBtn.setOnClickListener { stopServer() }
@@ -1007,61 +1012,86 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 
-    private val FIRST_TIME_SETUP_COMMAND = "mkdir -p ~/.termux && echo \"allow-external-apps=true\" >> ~/.termux/termux.properties && termux-reload-settings"
+    private val FIRST_TIME_SETUP_COMMAND = """
+        mkdir -p ~/.termux
+        printf '%s\n' \
+          'allow-external-apps=true' \
+          >> ~/.termux/termux.properties
+        termux-reload-settings
+    """.trimIndent()
 
-    private fun showFirstTimeSetupGuide() {
-        val isRu = isRu()
-
-        val step1Title = if (isRu) "Шаг 1: Открой Termux один раз" else "Step 1: Open Termux once"
-        val step1Body = if (isRu)
-            "Дождись появления первой командной строки. Обновлять пакеты вручную не нужно: установщик Vibe Tavern сделает это неинтерактивно."
-        else
-            "Wait for the initial shell prompt. You do not need to update packages manually; the Vibe Tavern installer does it noninteractively."
-
-        val step2Title = if (isRu) "Шаг 2: Разреши внешним приложениям выполнять команды" else "Step 2: Allow external apps to run commands"
-        val step2Body = if (isRu)
-            "APK нуждается в этом разрешении для управления сервером. Нажми кнопку ниже, чтобы скопировать команду, затем вставь её в Termux."
-        else
-            "The APK needs this permission to manage the server. Tap the button below to copy the command, then paste it in Termux."
-
-        val step3Title = if (isRu) "Шаг 3: Перезапусти Termux" else "Step 3: Restart Termux"
-        val step3Body = if (isRu)
-            "Набери exit в Termux, смахни его из недавних приложений, открой заново и дождись командной строки. Это нужно, чтобы настройка вступила в силу."
-        else
-            "Type exit in Termux, swipe it away from recent apps, reopen it, and wait for the shell prompt so the setting takes effect."
-
-        val step4Title = if (isRu) "Шаг 4: Вернись сюда и нажми 'Установить'" else "Step 4: Come back and tap 'Install'"
-        val step4Body = if (isRu)
-            "APK обновит пакеты, установит Ubuntu 24.04 и передаст встроенный сервер через приватный localhost. Разрешение на хранилище не требуется. Эти шаги выполняются только один раз."
-        else
-            "The APK updates packages, installs Ubuntu 24.04, and transfers the bundled server over private localhost. Storage permission is not required. You only need these steps once."
-
-        val message = buildString {
-            append("$step1Title\n$step1Body\n\n")
-            append("$step2Title\n$step2Body\n\n")
-            append("$step3Title\n$step3Body\n\n")
-            append("$step4Title\n$step4Body")
+    private fun toggleFirstTimeSetupHelp() {
+        firstTimeSetupContent.visibility = if (firstTimeSetupContent.visibility == View.VISIBLE) {
+            View.GONE
+        } else {
+            View.VISIBLE
         }
+        updateFirstTimeSetupTexts()
+    }
 
-        AlertDialog.Builder(this)
-            .setTitle(if (isRu) "🔧 Первичная настройка Termux" else "🔧 First-Time Termux Setup")
-            .setMessage(message)
-            .setPositiveButton(if (isRu) "📋 Скопировать команду" else "📋 Copy Command") { _, _ ->
-                val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                clipboard.setPrimaryClip(ClipData.newPlainText("termux-setup", FIRST_TIME_SETUP_COMMAND))
-                setProgress(
-                    if (isRu) "✅ Команда скопирована. Открой Termux и вставь её."
-                    else "✅ Command copied. Open Termux and paste it.",
-                    visible = false
-                )
-            }
-            .setNegativeButton(if (isRu) "Открыть Termux" else "Open Termux") { _, _ ->
-                val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                clipboard.setPrimaryClip(ClipData.newPlainText("termux-setup", FIRST_TIME_SETUP_COMMAND))
-                openTermux()
-            }
-            .setNeutralButton("OK", null)
-            .show()
+    private fun updateFirstTimeSetupTexts() {
+        val expanded = firstTimeSetupContent.visibility == View.VISIBLE
+        firstTimeSetupHeader.text = tr(
+            if (expanded) "▾ First-Time Termux Setup" else "▸ First-Time Termux Setup",
+            if (expanded) "▾ Первичная настройка Termux" else "▸ Первичная настройка Termux",
+        )
+        firstTimeSetupHeader.contentDescription = tr(
+            if (expanded) "Collapse first-time Termux setup" else "Expand first-time Termux setup",
+            if (expanded) "Свернуть первичную настройку Termux" else "Развернуть первичную настройку Termux",
+        )
+        findViewById<TextView>(R.id.first_time_setup_step_open).text = tr(
+            "1. Open Termux once\nWait for the initial shell prompt. You do not need to update packages manually.",
+            "1. Откройте Termux один раз\nДождитесь появления командной строки. Обновлять пакеты вручную не нужно.",
+        )
+        findViewById<TextView>(R.id.first_time_setup_step_command).text = tr(
+            "2. Allow launcher commands\nCopy the complete block below and paste it at the Termux prompt.",
+            "2. Разрешите команды лаунчера\nСкопируйте весь блок ниже и вставьте его в командную строку Termux.",
+        )
+        findViewById<TextView>(R.id.first_time_setup_step_restart).text = tr(
+            "3. Restart Termux\nType exit, swipe Termux away from recent apps, reopen it, and wait for the shell prompt.",
+            "3. Перезапустите Termux\nВведите exit, смахните Termux из недавних приложений, снова откройте его и дождитесь командной строки.",
+        )
+        findViewById<TextView>(R.id.first_time_setup_step_install).text = tr(
+            "4. Install the server\nReturn here and tap Install server. The APK handles packages, Ubuntu 24.04, and the private localhost transfer; storage permission is not required.",
+            "4. Установите сервер\nВернитесь сюда и нажмите «Установить сервер». APK сам подготовит пакеты, Ubuntu 24.04 и приватную localhost-передачу; разрешение на хранилище не требуется.",
+        )
+        applyTermuxSetupCommandTexts()
+    }
+
+    private fun bindTermuxSetupCommand() {
+        applyTermuxSetupCommandTexts()
+        findViewById<Button>(R.id.btn_copy_termux_command).setOnClickListener {
+            copyTermuxSetupCommand()
+        }
+        findViewById<Button>(R.id.btn_open_termux_for_setup).setOnClickListener {
+            openTermux()
+        }
+    }
+
+    private fun applyTermuxSetupCommandTexts() {
+        findViewById<TextView>(R.id.termux_command_label).text = tr(
+            "Copy this entire command block into Termux",
+            "Скопируйте весь блок команды в Termux",
+        )
+        findViewById<TextView>(R.id.termux_command_block).text = FIRST_TIME_SETUP_COMMAND
+        findViewById<Button>(R.id.btn_copy_termux_command).text = tr(
+            "📋 Copy command",
+            "📋 Скопировать команду",
+        )
+        findViewById<Button>(R.id.btn_open_termux_for_setup).text = tr(
+            "Open Termux",
+            "Открыть Termux",
+        )
+    }
+
+    private fun copyTermuxSetupCommand() {
+        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+        clipboard.setPrimaryClip(ClipData.newPlainText("termux-setup", FIRST_TIME_SETUP_COMMAND))
+        Toast.makeText(
+            this,
+            tr("Command copied. Paste it into Termux.", "Команда скопирована. Вставьте её в Termux."),
+            Toast.LENGTH_SHORT,
+        ).show()
     }
 
     private fun showHelpDialog() {

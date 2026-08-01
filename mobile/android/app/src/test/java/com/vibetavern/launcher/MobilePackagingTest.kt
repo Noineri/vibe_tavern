@@ -118,6 +118,40 @@ class MobilePackagingTest {
     }
 
     @Test
+    fun `first-time setup is an inline accordion with a copyable command block`() {
+        val activity = File(
+            repoRoot,
+            "mobile/android/app/src/main/java/com/vibetavern/launcher/MainActivity.kt",
+        ).readText()
+        val launchLayout = File(
+            repoRoot,
+            "mobile/android/app/src/main/res/layout/screen_launch.xml",
+        ).readText()
+        val permissionLayout = File(
+            repoRoot,
+            "mobile/android/app/src/main/res/layout/screen_permission_guide.xml",
+        ).readText()
+        val commandLayout = File(
+            repoRoot,
+            "mobile/android/app/src/main/res/layout/view_termux_setup_command.xml",
+        )
+
+        assertTrue(launchLayout.contains("@+id/first_time_setup_header"))
+        assertTrue(launchLayout.contains("@+id/first_time_setup_content"))
+        assertTrue(launchLayout.contains("android:visibility=\"gone\""))
+        assertTrue(launchLayout.contains("@layout/view_termux_setup_command"))
+        assertTrue(permissionLayout.contains("@layout/view_termux_setup_command"))
+        assertTrue(commandLayout.isFile)
+        assertTrue(commandLayout.readText().contains("@+id/termux_command_block"))
+        assertTrue(commandLayout.readText().contains("@+id/btn_copy_termux_command"))
+        assertTrue(commandLayout.readText().contains("android:textIsSelectable=\"true\""))
+        assertTrue(activity.contains("toggleFirstTimeSetupHelp"))
+        assertTrue(activity.contains("copyTermuxSetupCommand"))
+        assertFalse(activity.contains("showFirstTimeSetupGuide"))
+        assertFalse(launchLayout.contains("@+id/btn_first_time_setup"))
+    }
+
+    @Test
     fun `active Android surfaces use canonical Vibe Tavern branding`() {
         val manifest = File(repoRoot, "mobile/android/app/src/main/AndroidManifest.xml").readText()
         val activeResources = listOf(

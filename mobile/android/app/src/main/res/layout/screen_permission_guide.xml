@@ -44,7 +44,7 @@
             android:id="@+id/permission_guide_body"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginBottom="24dp"
+            android:layout_marginBottom="12dp"
             android:background="@color/vt_surface"
             android:gravity="start"
             android:lineSpacingExtra="4dp"
@@ -52,6 +52,12 @@
             android:text="@string/permission_guide_body"
             android:textColor="@color/vt_text_primary"
             android:textSize="14sp" />
+
+        <include
+            layout="@layout/view_termux_setup_command"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="16dp" />
 
         <Button
             android:id="@+id/btn_open_termux_settings"

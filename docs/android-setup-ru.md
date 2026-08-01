@@ -25,7 +25,9 @@ APK устанавливает локальный сервер и управля
 
 ```sh
 mkdir -p ~/.termux
-printf '%s\n' 'allow-external-apps=true' >> ~/.termux/termux.properties
+printf '%s\n' \
+  'allow-external-apps=true' \
+  >> ~/.termux/termux.properties
 termux-reload-settings
 ```
 

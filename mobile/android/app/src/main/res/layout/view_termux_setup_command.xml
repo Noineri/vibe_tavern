@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical">
+
+    <TextView
+        android:id="@+id/termux_command_label"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="8dp"
+        android:text="@string/termux_command_label"
+        android:textColor="@color/vt_text_secondary"
+        android:textSize="13sp"
+        android:textStyle="bold" />
+
+    <TextView
+        android:id="@+id/termux_command_block"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="10dp"
+        android:background="@drawable/vt_code_block_bg"
+        android:fontFamily="monospace"
+        android:lineSpacingExtra="3dp"
+        android:padding="14dp"
+        android:text="@string/termux_command_placeholder"
+        android:textColor="@color/vt_text_primary"
+        android:textIsSelectable="true"
+        android:textSize="12sp" />
+
+    <Button
+        android:id="@+id/btn_copy_termux_command"
+        style="@style/Widget.VibeTavern.Button.Primary"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="6dp"
+        android:minHeight="48dp"
+        android:text="@string/copy_termux_command"
+        android:textSize="14sp" />
+
+    <Button
+        android:id="@+id/btn_open_termux_for_setup"
+        style="@style/Widget.VibeTavern.Button.Secondary"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:minHeight="44dp"
+        android:text="@string/open_termux"
+        android:textSize="13sp" />
+
+</LinearLayout>

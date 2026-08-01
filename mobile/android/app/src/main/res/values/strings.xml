@@ -11,6 +11,14 @@
     <string name="management">Launcher and server management</string>
     <string name="check_launcher_update">Check for launcher update</string>
     <string name="first_time_setup">First-Time Setup</string>
+    <string name="first_time_setup_step_open">1. Open Termux once</string>
+    <string name="first_time_setup_step_command">2. Allow launcher commands</string>
+    <string name="first_time_setup_step_restart">3. Restart Termux</string>
+    <string name="first_time_setup_step_install">4. Install the server</string>
+    <string name="termux_command_label">Copy this entire command block into Termux</string>
+    <string name="termux_command_placeholder">The Termux setup command appears here.</string>
+    <string name="copy_termux_command">Copy command</string>
+    <string name="open_termux">Open Termux</string>
     <string name="install_server">Install or update server payload</string>
     <string name="help_troubleshooting">Help and troubleshooting</string>
     <string name="language">Language</string>
@@ -25,7 +33,7 @@
     <string name="step_grant_permission">Step 2: Grant Permission</string>
     <string name="btn_open_settings">Open Vibe Tavern Settings</string>
     <string name="btn_continue">Continue</string>
-    <string name="permission_guide_body">This permission belongs to Vibe Tavern, not Termux.\n\nFirst run this in Termux:\n  mkdir -p ~/.termux\n  echo &quot;allow-external-apps=true&quot; &gt;&gt; ~/.termux/termux.properties\n\nIf termux-reload-settings crashes, force stop Termux and open it again.\n\nThen:\n1. Open Vibe Tavern settings below\n2. Use ⋮ → &quot;Allow restricted settings&quot;\n3. Open Permissions → ⋮ → &quot;All permissions&quot;\n4. Enable &quot;Run commands in Termux environment&quot;\n5. Return here and tap Continue</string>
+    <string name="permission_guide_body">This permission belongs to Vibe Tavern, not Termux. Copy the command block below into Termux, restart Termux, then grant the launcher permission in Android settings.</string>
 
     <string name="loading">Starting server…</string>
     <string name="notification_server_running">Server is running on localhost:8787</string>
