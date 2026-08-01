@@ -3,13 +3,13 @@ import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { COAUTHOR_TRANSPORT } from "@vibe-tavern/domain";
-import { createDb, ProviderStore } from "@vibe-tavern/db";
+import { createDb, ProviderStore, ProxyStore } from "@vibe-tavern/db";
 import { createProviderProfileService } from "../src/domain/providers/provider-profile-service.js";
 
 async function makeService() {
   const dir = await mkdtemp(join(tmpdir(), "vt-provider-transport-service-"));
   const db = await createDb(join(dir, "test.db"));
-  return createProviderProfileService(new ProviderStore(db));
+  return createProviderProfileService(new ProviderStore(db), new ProxyStore(db));
 }
 
 describe("provider profile Co-Author transport validation", () => {

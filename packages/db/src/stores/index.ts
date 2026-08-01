@@ -23,6 +23,9 @@ export type { CreatePresetData, UpdatePresetData, PromptPreset } from './preset-
 export { ProviderStore } from './provider-store.js';
 export type { CreateProviderData, UpdateProviderData, ProviderProfile, CachedModel, CachedModelData, FavoriteModel, FavoriteModelData, ProviderModelSettings } from './provider-store.js';
 
+export { ProxyStore } from './proxy-store.js';
+export type { ProxyProfile } from './proxy-store.js';
+
 export { UiSettingsStore } from './ui-settings-store.js';
 export type { UiSettings, UiSettingsUpdate } from './ui-settings-store.js';
 

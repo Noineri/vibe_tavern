@@ -139,6 +139,7 @@ function makeProfile(id: string, name: string, over: Partial<ProviderProfileReco
     stopSequences: [], logitBias: [], seed: null,
     reasoningEffort: "default", showReasoning: true, streamResponse: true,
     customSamplers: false, isActive: false,
+    proxyMode: "inherit", proxyId: null,
     createdAt: "2026-01-01", updatedAt: "2026-01-01",
     hasStoredApiKey: true,
     ...over,

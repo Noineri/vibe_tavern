@@ -18,6 +18,7 @@ import { resolveTlsConfig } from "../domain/mobile-access/mobile-auth.js";
 import { PromptPresetService } from "../domain/prompt/prompt-preset-service.js";
 import { ProviderOrchestrator } from "../domain/providers/provider-orchestrator.js";
 import { createProviderProfileService } from "../domain/providers/provider-profile-service.js";
+import { createProxyService } from "../domain/providers/proxy-service.js";
 import { RuntimeApiAdapter } from "../api/adapters/runtime-api-adapter.js";
 import { SessionRuntime } from "../runtime/session/session-runtime.js";
 import { createAiAssistantFeature } from "../domain/ai-assistant/ai-assistant-feature.js";
@@ -112,7 +113,8 @@ export async function createRuntimeApp(config: RuntimeAppConfig): Promise<Hono> 
 	console.log(`${tag} Tokenizers ready.`);
 
 	// Services
-	const providerProfileService = createProviderProfileService(stores.providers);
+	const providerProfileService = createProviderProfileService(stores.providers, stores.proxies);
+	const proxyService = createProxyService(stores.proxies);
 	const promptPresetService = new PromptPresetService(stores.presets, stores.chats);
 	// Skill library is constructed before SessionRuntime so the catalog can be
 	// injected (CTX-S4): the co-author prompt shows a metadata-only catalog
@@ -163,6 +165,7 @@ export async function createRuntimeApp(config: RuntimeAppConfig): Promise<Hono> 
 	const runtime = new RuntimeApiAdapter(
 		stores,
 		providerProfileService,
+		proxyService,
 		liveChatOrchestrator,
 		chatSummaryService,
 		sessionRuntime,

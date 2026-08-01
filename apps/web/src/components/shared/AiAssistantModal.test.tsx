@@ -144,6 +144,8 @@ function makeProfile(id: string, name: string, over: Partial<ProviderProfileReco
     isActive: false,
     createdAt: "2026-01-01",
     updatedAt: "2026-01-01",
+    proxyMode: "inherit",
+    proxyId: null,
     hasStoredApiKey: true,
     ...over,
   };

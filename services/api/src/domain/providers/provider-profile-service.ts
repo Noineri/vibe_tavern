@@ -1,5 +1,5 @@
-import type { ProviderStore } from "@vibe-tavern/db";
-import { COAUTHOR_TRANSPORT, canUseCoauthorResponsesTransport, type StoredProviderProfileRecord, type ModelFavoriteScope, type ModelSettingsOverlay } from "@vibe-tavern/domain";
+import type { ProviderStore, ProxyStore } from "@vibe-tavern/db";
+import { COAUTHOR_TRANSPORT, canUseCoauthorResponsesTransport, PROXY_MODE, type StoredProviderProfileRecord, type ModelFavoriteScope, type ModelSettingsOverlay } from "@vibe-tavern/domain";
 import {
   toClientProviderProfile,
   resolveStoredApiKey,
@@ -10,6 +10,7 @@ import {
 } from "../../runtime/session/session-runtime-dto.js";
 import { notFound, validation } from "../../shared/errors.js";
 import { logSendDebug } from "../../shared/send-debug-log.js";
+import { validateProviderProxyPolicy } from "./proxy-service.js";
 
 // ─── Public contract (duck-typed — consumers import this as `type`) ──────
 
@@ -64,7 +65,21 @@ async function withCachedModels(providers: ProviderStore, profile: ClientProvide
   return profile;
 }
 
-export function createProviderProfileService(providers: ProviderStore): ProviderProfileService {
+async function resolveProviderProxyPolicy(
+  current: Pick<StoredProviderProfileRecord, "proxyMode" | "proxyId"> | null,
+  input: Pick<Partial<StoredProviderProfileRecord>, "proxyMode" | "proxyId">,
+  proxies: ProxyStore,
+) {
+  const proxyMode = input.proxyMode ?? current?.proxyMode ?? PROXY_MODE.inherit;
+  const proxyId = input.proxyId !== undefined
+    ? input.proxyId
+    : (input.proxyMode !== undefined && proxyMode !== PROXY_MODE.proxy
+      ? null
+      : (current?.proxyId ?? null));
+  return validateProviderProxyPolicy(proxyMode, proxyId, proxies);
+}
+
+export function createProviderProfileService(providers: ProviderStore, proxies: ProxyStore): ProviderProfileService {
   return {
     listProviderProfiles: async () => {
       const profiles = await providers.listAll();
@@ -89,6 +104,8 @@ export function createProviderProfileService(providers: ProviderStore): Provider
         throw validation(`Co-Author Responses transport is available only for OpenAI-compatible provider presets; '${providerPreset}' uses a native transport.`, { providerPreset, coauthorTransport });
       }
 
+      const proxyPolicy = await resolveProviderProxyPolicy(existing, profile, proxies);
+
       const hasApiKeyInput = Object.prototype.hasOwnProperty.call(profile, "apiKey");
       const apiKey = hasApiKeyInput
         ? resolveStoredApiKey(profile.apiKey, existing?.apiKey ?? null)
@@ -105,7 +122,18 @@ export function createProviderProfileService(providers: ProviderStore): Provider
       });
 
       if (existing) {
-        const { id: _id, isActive: _isActive, createdAt: _ca, updatedAt: _ua, ...patch } = profile;
+        const {
+          id: _id,
+          isActive: _isActive,
+          createdAt: _ca,
+          updatedAt: _ua,
+          ...profilePatch
+        } = profile;
+        const patch = {
+          ...profilePatch,
+          proxyMode: proxyPolicy.proxyMode,
+          proxyId: proxyPolicy.proxyId,
+        };
         logSendDebug("provider.save.updateData", {
           profileId: existing.id,
           updateDataApiKeyLength: typeof patch.apiKey === "string" ? patch.apiKey.length : `(type: ${typeof patch.apiKey})`,
@@ -161,6 +189,8 @@ export function createProviderProfileService(providers: ProviderStore): Provider
         showReasoning: profile.showReasoning,
         streamResponse: profile.streamResponse,
         customSamplers: profile.customSamplers,
+        proxyMode: proxyPolicy.proxyMode,
+        proxyId: proxyPolicy.proxyId,
       });
       logSendDebug("provider.save.created", {
         profileId: created.id,
@@ -224,6 +254,7 @@ export function createProviderProfileService(providers: ProviderStore): Provider
       if (coauthorTransport === COAUTHOR_TRANSPORT.responses && !canUseCoauthorResponsesTransport(providerPreset)) {
         throw validation(`Co-Author Responses transport is available only for OpenAI-compatible provider presets; '${providerPreset}' uses a native transport.`, { providerPreset, coauthorTransport });
       }
+      const proxyPolicy = await resolveProviderProxyPolicy(existing, patch, proxies);
       const hasApiKeyInput = Object.prototype.hasOwnProperty.call(patch, "apiKey");
       const apiKey = hasApiKeyInput
         ? resolveStoredApiKey(patch.apiKey, existing.apiKey ?? null)
@@ -240,7 +271,11 @@ export function createProviderProfileService(providers: ProviderStore): Provider
         patchVisionModel: patch.visionModel,
       });
 
-      const updateData = { ...patch };
+      const updateData = {
+        ...patch,
+        proxyMode: proxyPolicy.proxyMode,
+        proxyId: proxyPolicy.proxyId,
+      };
       if (hasApiKeyInput) updateData.apiKey = apiKey;
 
       logSendDebug("provider.update.data", {

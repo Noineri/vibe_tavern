@@ -14,6 +14,7 @@ import { MobileAccessService } from "../src/domain/mobile-access/mobile-access-s
 import { PromptPresetService } from "../src/domain/prompt/prompt-preset-service.js";
 import { ProviderOrchestrator } from "../src/domain/providers/provider-orchestrator.js";
 import { createProviderProfileService } from "../src/domain/providers/provider-profile-service.js";
+import { createProxyService } from "../src/domain/providers/proxy-service.js";
 import { SkillLibraryService } from "../src/domain/coauthor/skills/skill-library.js";
 import { SessionRuntime } from "../src/runtime/session/session-runtime.js";
 import { createRuntimeStore } from "../src/runtime/session/session-runtime-store.js";
@@ -60,7 +61,7 @@ async function createTestEnvironment(): Promise<TestEnvironment> {
     stores.uiSettings.ensureDefaults(),
   ]);
 
-  const providerProfiles = createProviderProfileService(stores.providers);
+  const providerProfiles = createProviderProfileService(stores.providers, stores.proxies);
   const runtime = new SessionRuntime(stores, {
     getActiveProviderProfile: () => providerProfiles.resolveActiveProviderProfile(),
   });
@@ -75,6 +76,7 @@ async function createTestEnvironment(): Promise<TestEnvironment> {
   const runtimeApi = new RuntimeApiAdapter(
     stores,
     providerProfiles,
+    createProxyService(stores.proxies),
     liveChat,
     new ChatSummaryService(stores, runtime, providerProfiles),
     runtime,

@@ -1,5 +1,6 @@
-import type { CoauthorTransport } from '@vibe-tavern/domain';
-import { sqliteTable, text, integer, real, index, uniqueIndex, primaryKey } from 'drizzle-orm/sqlite-core';
+import type { CoauthorTransport, ProviderProxyMode } from '@vibe-tavern/domain';
+import { sql } from 'drizzle-orm';
+import { sqliteTable, text, integer, real, index, uniqueIndex, primaryKey, check } from 'drizzle-orm/sqlite-core';
 
 // ─── characters ────────────────────────────────────────────────────────────────
 
@@ -501,6 +502,36 @@ export const promptPresets = sqliteTable('prompt_presets', {
   updatedAt: text('updated_at').notNull(),
 });
 
+// ─── proxyProfiles ────────────────────────────────────────────────────────────
+// Named HTTP(S) proxy entries for provider outbound traffic
+// (LOCAL_API_ORIGIN_AND_PROVIDER_PROXY_REPORT). The `password` column is a
+// stored secret — it never crosses the wire boundary (clients receive
+// `hasStoredPassword` instead, mirroring providerProfiles.api_key).
+export const proxyProfiles = sqliteTable('proxy_profiles', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  // HTTP(S) proxy URL without embedded userinfo. Username/password live as
+  // separate columns so the URL can be logged safely.
+  url: text('url').notNull(),
+  username: text('username'),
+  password: text('password'),
+  // Manual list order (drag-to-reorder). Backfilled to created_at ASC.
+  sortOrder: integer('sort_order').notNull().default(0),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+});
+
+// ─── proxySettings ────────────────────────────────────────────────────────────
+// Singleton row (id = 'default') holding the global default proxy id. Null
+// means direct by default (providers in 'inherit' mode connect directly).
+export const proxySettings = sqliteTable('proxy_settings', {
+  id: text('id').primaryKey(),
+  defaultProxyId: text('default_proxy_id').references(() => proxyProfiles.id, { onDelete: 'set null' }),
+  updatedAt: text('updated_at').notNull(),
+}, (table) => ({
+  singletonIdCheck: check('proxy_settings_singleton_id_check', sql`${table.id} = 'default'`),
+}));
+
 // ─── providerProfiles ──────────────────────────────────────────────────────────
 
 export const providerProfiles = sqliteTable('provider_profiles', {
@@ -551,10 +582,21 @@ export const providerProfiles = sqliteTable('provider_profiles', {
   streamResponse: integer('stream_response').notNull().default(1),
   customSamplers: integer('custom_samplers').notNull().default(0),
   isActive: integer('is_active').notNull().default(0),
+  // ── Outbound proxy policy (LOCAL_API_ORIGIN_AND_PROVIDER_PROXY_REPORT, step 2) ──
+  // Per-provider proxy selection: 'inherit' (follow global default), 'direct'
+  // (bypass), or 'proxy' (use proxyId). ProxyStore.delete updates the mode/id
+  // pair before deleting the referenced proxy, preserving the check invariant.
+  proxyMode: text('proxy_mode').$type<ProviderProxyMode>().notNull().default('inherit'),
+  proxyId: text('proxy_id').references(() => proxyProfiles.id, { onDelete: 'set null' }),
   visionModel: text('vision_model'),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
-});
+}, (table) => ({
+  proxyPolicyCheck: check(
+    'provider_profiles_proxy_policy_check',
+    sql`(${table.proxyMode} = 'proxy' AND ${table.proxyId} IS NOT NULL) OR (${table.proxyMode} IN ('inherit', 'direct') AND ${table.proxyId} IS NULL)`,
+  ),
+}));
 
 // ─── cachedModels ──────────────────────────────────────────────────────────────
 

@@ -59,6 +59,13 @@ export {
   reorderProviderProfilesSchema,
 } from "./provider-schema.js";
 export {
+  providerProxyModeSchema,
+  saveProxySchema,
+  updateProxySchema,
+  reorderProxiesSchema,
+  setDefaultProxySchema,
+} from "./proxy-schema.js";
+export {
   createPromptPresetSchema,
   updatePromptPresetSchema,
   setPromptPresetSchema,

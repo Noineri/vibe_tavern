@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { COAUTHOR_TRANSPORT, MODEL_FAVORITE_SCOPE, type SamplerFieldId } from "@vibe-tavern/domain";
+import { providerProxyModeSchema } from "./proxy-schema.js";
 
 /**
  * Per-sampler-field zod schema — the single source of the sampler wire surface.
@@ -75,6 +76,8 @@ const providerCoreSchema = z.object({
   showReasoning: z.boolean().optional(),
   streamResponse: z.boolean().optional(),
   customSamplers: z.boolean().optional(),
+  proxyMode: providerProxyModeSchema.optional(),
+  proxyId: z.string().nullable().optional(),
   visionModel: z.string().nullable().optional(),
 });
 

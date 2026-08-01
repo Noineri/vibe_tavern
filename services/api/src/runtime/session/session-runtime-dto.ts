@@ -7,6 +7,7 @@ import type {
 	CachedProviderModelsRecord,
 	FavoriteProviderModelRecord,
 	ProviderModelSettingsRecord,
+	ClientProxyRecord,
 } from "@vibe-tavern/api-contracts";
 
 // Re-export canonical types — single source of truth.
@@ -20,6 +21,7 @@ export type {
 	CachedProviderModelsRecord,
 	FavoriteProviderModelRecord,
 	ProviderModelSettingsRecord,
+	ClientProxyRecord,
 };
 
 export interface MessageDto extends Message {
@@ -173,6 +175,8 @@ export function toClientProviderProfile(profile: import("@vibe-tavern/domain").S
     showReasoning: profile.showReasoning,
     streamResponse: profile.streamResponse,
     customSamplers: profile.customSamplers,
+    proxyMode: profile.proxyMode,
+    proxyId: profile.proxyId,
     hasStoredApiKey: !!profile.apiKey,
     isActive: profile.isActive,
     createdAt: profile.createdAt,
@@ -181,6 +185,38 @@ export function toClientProviderProfile(profile: import("@vibe-tavern/domain").S
 }
 
 export function resolveStoredApiKey(input: unknown, fallback: string | null): string | null {
+  if (input === null) {
+    return null;
+  }
+
+  if (typeof input === "string") {
+    const trimmed = input.trim();
+    return trimmed || fallback;
+  }
+
+  return fallback;
+}
+
+/** Security projection of a stored proxy record for the client. The secret
+ *  `password` is replaced by the boolean `hasStoredPassword` — the actual
+ *  value never crosses the wire boundary. */
+export function toClientProxyRecord(proxy: import("@vibe-tavern/domain").StoredProxyRecord): ClientProxyRecord {
+  return {
+    id: proxy.id,
+    name: proxy.name,
+    url: proxy.url,
+    username: proxy.username,
+    hasStoredPassword: !!proxy.password,
+    sortOrder: proxy.sortOrder,
+    createdAt: proxy.createdAt,
+    updatedAt: proxy.updatedAt,
+  };
+}
+
+/** Resolve a write-only password input against an existing stored value.
+ *  Mirrors `resolveStoredApiKey`: omitted/empty string preserves, null clears,
+ *  non-empty replaces. */
+export function resolveStoredPassword(input: unknown, fallback: string | null): string | null {
   if (input === null) {
     return null;
   }

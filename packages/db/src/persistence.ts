@@ -1,7 +1,7 @@
 import { createDb, type AppDb } from './db-connection.js';
 import { ContentStore } from './content-store.js';
 import { createFileStore } from './file-store.js';
-import { CharacterStore, CharacterFolder, CharacterDirectoryRegistry, PersonaStore, ProviderStore, ChatStore, ChatSummaryStore, PresetStore, UiSettingsStore, LorebookStore, ScriptStore, CharacterAssetStore, MessageStore, PromptTraceStore, VersionStore, CoauthorModuleStore, DiceRollStore } from './stores/index.js';
+import { CharacterStore, CharacterFolder, CharacterDirectoryRegistry, PersonaStore, ProviderStore, ProxyStore, ChatStore, ChatSummaryStore, PresetStore, UiSettingsStore, LorebookStore, ScriptStore, CharacterAssetStore, MessageStore, PromptTraceStore, VersionStore, CoauthorModuleStore, DiceRollStore } from './stores/index.js';
 
 export interface StoreContainer {
   db: AppDb;
@@ -11,6 +11,7 @@ export interface StoreContainer {
   versions: VersionStore;
   personas: PersonaStore;
   providers: ProviderStore;
+  proxies: ProxyStore;
   chats: ChatStore;
   messages: MessageStore;
   traces: PromptTraceStore;
@@ -62,6 +63,7 @@ export async function createStoreContainer(dbPath: string, dataDir?: string): Pr
     versions: new VersionStore(db, { folder: characterFolder, registry: characterDirectory }),
     personas: new PersonaStore(db, { content }),
     providers: new ProviderStore(db),
+    proxies: new ProxyStore(db),
     chats,
     messages: new MessageStore(db),
     traces: new PromptTraceStore(db),

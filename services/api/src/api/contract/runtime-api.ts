@@ -1,7 +1,7 @@
 import type { AiAssistantStreamChunk } from "../../domain/ai-assistant/reasoning-split.js";
 import type { AiAssistantStreamRequest } from "../../domain/ai-assistant/ai-assistant-stream.js";
 import type { PersonaRecord } from "../../domain/persona/persona-runtime.js";
-import type { ClientProviderProfileRecord } from "../../runtime/session/session-runtime-dto.js";
+import type { ClientProviderProfileRecord, ClientProxyRecord } from "../../runtime/session/session-runtime-dto.js";
 import type {
 	BootstrapState,
 	ImportResult,
@@ -363,7 +363,20 @@ export interface ProviderRuntimeApi {
 	testProviderChatByProfile: (providerProfileId: string, model: string, transport?: CoauthorTransport) => Promise<TestChatResult>;
 }
 
-// ─── Preset ──────────────────────────────────────────────────────────
+// ─── Proxy ────────────────────────────────────────────────────────────
+
+export interface ProxyRuntimeApi {
+	listProxies: () => Promise<ClientProxyRecord[]>;
+	getProxy: (proxyId: string) => Promise<ClientProxyRecord>;
+	saveProxy: (body: Record<string, unknown>) => Promise<ClientProxyRecord>;
+	updateProxy: (proxyId: string, body: Record<string, unknown>) => Promise<ClientProxyRecord>;
+	deleteProxy: (proxyId: string) => Promise<void>;
+	reorderProxies: (updates: Array<{ id: string; sortOrder: number }>) => Promise<ClientProxyRecord[]>;
+	getDefaultProxy: () => Promise<{ defaultProxyId: string | null }>;
+	setDefaultProxy: (body: { defaultProxyId: string | null }) => Promise<{ defaultProxyId: string | null }>;
+}
+
+// ─── Preset ────────────────────────────────────────────────────────
 
 export interface PresetRuntimeApi {
 	listPromptPresets: () => Promise<PromptPresetDto[]>;
@@ -508,6 +521,7 @@ export interface RuntimeApi {
 	lorebook: LorebookRuntimeApi;
 	script: ScriptRuntimeApi;
 	provider: ProviderRuntimeApi;
+	proxy: ProxyRuntimeApi;
 	preset: PresetRuntimeApi;
 	importExport: ImportExportRuntimeApi;
 	asset: AssetRuntimeApi;

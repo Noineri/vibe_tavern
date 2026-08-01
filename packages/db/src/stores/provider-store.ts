@@ -1,4 +1,4 @@
-import { COAUTHOR_TRANSPORT, type CoauthorTransport, type StoredProviderProfileRecord, type ModelFavoriteScope, type ModelSettingsOverlay } from '@vibe-tavern/domain';
+import { COAUTHOR_TRANSPORT, type CoauthorTransport, type StoredProviderProfileRecord, type ProviderProxyMode, type ModelFavoriteScope, type ModelSettingsOverlay } from '@vibe-tavern/domain';
 import { and, asc, eq, sql } from 'drizzle-orm';
 import { providerProfiles, cachedModels, providerModelFavorites, providerModelSettings } from '../db-schema.js';
 import type { AppDb } from '../db-connection.js';
@@ -96,6 +96,9 @@ export interface CreateProviderData {
   modelGroupByOwner?: boolean;
   /** Optional vision model for image description fallback. */
   visionModel?: string | null;
+  /** Per-provider proxy selection policy. */
+  proxyMode?: ProviderProxyMode;
+  proxyId?: string | null;
 }
 
 export type UpdateProviderData = Partial<CreateProviderData>;
@@ -205,6 +208,8 @@ export class ProviderStore {
         bindPerModel: data.bindPerModel ?? false,
         modelFreeOnly: data.modelFreeOnly ?? false,
         modelGroupByOwner: data.modelGroupByOwner ?? false,
+        proxyMode: data.proxyMode ?? 'inherit',
+        proxyId: data.proxyId ?? null,
         visionModel: data.visionModel ?? null,
         isActive: 0,
         createdAt: now,
@@ -259,6 +264,8 @@ export class ProviderStore {
     if (data.bindPerModel !== undefined) values.bindPerModel = data.bindPerModel;
     if (data.modelFreeOnly !== undefined) values.modelFreeOnly = data.modelFreeOnly;
     if (data.modelGroupByOwner !== undefined) values.modelGroupByOwner = data.modelGroupByOwner;
+    if (data.proxyMode !== undefined) values.proxyMode = data.proxyMode;
+    if (data.proxyId !== undefined) values.proxyId = data.proxyId;
     if (data.visionModel !== undefined) values.visionModel = data.visionModel ?? null;
 
     console.log(`[DB] provider.update id=${id} visionModel_in=${data.visionModel} visionModel_set=${values.visionModel} fields=${Object.keys(values).join(',')}`);
@@ -362,6 +369,8 @@ export class ProviderStore {
         bindPerModel: original.bindPerModel,
         modelFreeOnly: original.modelFreeOnly,
         modelGroupByOwner: original.modelGroupByOwner,
+        proxyMode: original.proxyMode,
+        proxyId: original.proxyId,
         visionModel: original.visionModel,
         isActive: 0,
         createdAt: now,
@@ -635,6 +644,8 @@ export class ProviderStore {
       showReasoning: row.showReasoning === 1,
       streamResponse: row.streamResponse === 1,
       customSamplers: row.customSamplers === 1,
+      proxyMode: row.proxyMode as ProviderProxyMode,
+      proxyId: row.proxyId ?? null,
       isActive: row.isActive === 1,
       visionModel: row.visionModel ?? null,
       createdAt: row.createdAt,

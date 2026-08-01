@@ -14,6 +14,7 @@ import { PersonaAdapter } from "./persona-adapter.js";
 import { LorebookAdapter } from "./lorebook-adapter.js";
 import { ScriptAdapter } from "./script-adapter.js";
 import { ProviderAdapter } from "./provider-adapter.js";
+import { ProxyAdapter } from "./proxy-adapter.js";
 import { PresetAdapter } from "./preset-adapter.js";
 import { ImportExportAdapter } from "./import-export-adapter.js";
 import { AssetAdapter } from "./asset-adapter.js";
@@ -45,6 +46,7 @@ export class RuntimeApiAdapter implements RuntimeApi {
 	readonly lorebook: LorebookAdapter;
 	readonly script: ScriptAdapter;
 	readonly provider: ProviderAdapter;
+	readonly proxy: ProxyAdapter;
 	readonly preset: PresetAdapter;
 	readonly importExport: ImportExportAdapter;
 	readonly asset: AssetAdapter;
@@ -58,6 +60,7 @@ export class RuntimeApiAdapter implements RuntimeApi {
 	constructor(
 		stores: StoreContainer,
 		providerProfileService: ProviderProfileService,
+	proxyService: import("../../domain/providers/proxy-service.js").ProxyService,
 		liveChatOrchestrator: LiveChatOrchestrator,
 		chatSummaryService: ChatSummaryService,
 		sessionRuntime: SessionRuntime,
@@ -80,6 +83,7 @@ export class RuntimeApiAdapter implements RuntimeApi {
 		this.lorebook = new LorebookAdapter(stores);
 		this.script = new ScriptAdapter(stores);
 		this.provider = new ProviderAdapter(stores, providerProfileService);
+		this.proxy = new ProxyAdapter(proxyService);
 		this.preset = new PresetAdapter(promptPresetService);
 		this.importExport = new ImportExportAdapter(sessionRuntime);
 		this.asset = new AssetAdapter(assetService);

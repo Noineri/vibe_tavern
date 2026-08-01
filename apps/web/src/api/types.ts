@@ -21,6 +21,7 @@ import type {
 	CachedProviderModelsRecord as CachedModelsRecord,
 	FavoriteProviderModelRecord,
 	ProviderModelSettingsRecord,
+	ClientProxyRecord as ProxyRecord,
 	PersonaRecord,
 	ChatListItem,
 } from "@vibe-tavern/api-contracts";
@@ -29,6 +30,7 @@ export type {
 	CachedModelsRecord,
 	FavoriteProviderModelRecord,
 	ProviderModelSettingsRecord,
+	ProxyRecord,
 	PersonaRecord,
 	ChatListItem,
 };

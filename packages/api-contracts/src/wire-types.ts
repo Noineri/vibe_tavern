@@ -25,7 +25,7 @@
  * row types stay backend-side and import these types back.
  */
 
-import type { CharacterId, ChatId, ChatMode, CoauthorTransport, ModelFavoriteScope, ModelSettingsOverlay, PronounForms } from "@vibe-tavern/domain";
+import type { CharacterId, ChatId, ChatMode, CoauthorTransport, ModelFavoriteScope, ModelSettingsOverlay, PronounForms, ProviderProxyMode } from "@vibe-tavern/domain";
 
 // ─── Provider ──────────────────────────────────────────────────────────
 
@@ -80,6 +80,8 @@ export interface ClientProviderProfileRecord {
 	showReasoning: boolean;
 	streamResponse: boolean;
 	customSamplers: boolean;
+	proxyMode: ProviderProxyMode;
+	proxyId: string | null;
 	isActive: boolean;
 	createdAt: string;
 	updatedAt: string;
@@ -105,6 +107,25 @@ export interface FavoriteProviderModelRecord {
 	label: string | null;
 	contextLength: number | null;
 	createdAt: string;
+}
+
+// ─── Proxy ───────────────────────────────────────────────────────────
+
+/**
+ * Named proxy profile as sent to the client. Security projection of the
+ * stored proxy record: the secret `password` is replaced by the boolean
+ * `hasStoredPassword` (mirrors ClientProviderProfileRecord.hasStoredApiKey).
+ */
+export interface ClientProxyRecord {
+	id: string;
+	name: string;
+	url: string;
+	username: string | null;
+	/** Replaces the stored password — never sends the secret across the wire. */
+	hasStoredPassword: boolean;
+	sortOrder: number;
+	createdAt: string;
+	updatedAt: string;
 }
 
 /**

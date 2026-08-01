@@ -7,6 +7,7 @@ import { createPersonaRoutes } from "./persona.js";
 import { createLorebookRoutes } from "./lorebook.js";
 import { createScriptRoutes } from "./script.js";
 import { createProviderRoutes } from "./provider.js";
+import { createProxyRoutes } from "./proxy.js";
 import { createPresetRoutes } from "./preset.js";
 import { createImportRoutes } from "./import.js";
 import { createAssetRoutes } from "./asset.js";
@@ -29,6 +30,7 @@ export function createApiRouter(runtime: RuntimeApi) {
     .route("/", createLorebookRoutes(runtime.lorebook))
     .route("/", createScriptRoutes(runtime.script))
     .route("/", createProviderRoutes(runtime.provider))
+    .route("/", createProxyRoutes(runtime.proxy))
     .route("/", createPresetRoutes(runtime.preset))
     .route("/", createImportRoutes(runtime.importExport))
     .route("/", createAssetRoutes(runtime.asset))

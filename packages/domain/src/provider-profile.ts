@@ -10,6 +10,18 @@ import type { CoauthorTransport } from "./coauthor-transport-capabilities.js";
  * Client-facing code should derive via:
  *   ClientProviderProfile = Omit<StoredProviderProfileRecord, 'apiKey'> & { hasStoredApiKey: boolean }
  */
+/** Per-provider proxy selection policy.
+ *  - `inherit` — follow the global default proxy (or direct when no default).
+ *  - `direct` — bypass the global default for this provider.
+ *  - `proxy`  — use the provider's selected named proxy (`proxyId`). */
+export const PROXY_MODE = {
+  inherit: "inherit",
+  direct: "direct",
+  proxy: "proxy",
+} as const;
+
+export type ProviderProxyMode = typeof PROXY_MODE[keyof typeof PROXY_MODE];
+
 export const MODEL_FAVORITE_SCOPE = {
   rp: "rp",
   coauthor: "coauthor",
@@ -64,6 +76,10 @@ export interface StoredProviderProfileRecord {
   showReasoning: boolean;
   streamResponse: boolean;
   customSamplers: boolean;
+  /** Per-provider proxy selection policy (see {@link PROXY_MODE}). */
+  proxyMode: ProviderProxyMode;
+  /** Selected named proxy when `proxyMode === "proxy"`; null otherwise. */
+  proxyId: string | null;
   isActive: boolean;
   /** Optional vision model slug from the same provider profile, used for image description fallback. */
   visionModel: string | null;
