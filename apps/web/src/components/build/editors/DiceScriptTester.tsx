@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { testScript } from "../../../app-client.js";
 import { useT } from "../../../i18n/context.js";
 import { cn } from "../../../lib/cn.js";
-import { inputCls, inputPad, lblCls } from "../fields/field-styles.js";
+import { inputCls, lblCls } from "../fields/field-styles.js";
 import type { DiceScriptTestResult, DiceSampleRoll } from "@vibe-tavern/api-contracts";
 
 interface DiceScriptTesterProps {
@@ -56,11 +56,11 @@ export function DiceScriptTester({ scriptId, code, isMobile, characterName }: Di
 				<div className="flex-1 space-y-2">
 					<div>
 						<label className={cn(lblCls, "mb-1")}>{t("script_test_character_name")}</label>
-						<input className={inputCls} style={inputPad} value={testCharName} onChange={(e) => setTestCharName(e.target.value)} />
+						<input className={inputCls} value={testCharName} onChange={(e) => setTestCharName(e.target.value)} />
 					</div>
 					<div>
 						<label className={cn(lblCls, "mb-1")}>{t("script_test_persona_name")}</label>
-						<input className={inputCls} style={inputPad} value={testPersonaName} onChange={(e) => setTestPersonaName(e.target.value)} />
+						<input className={inputCls} value={testPersonaName} onChange={(e) => setTestPersonaName(e.target.value)} />
 					</div>
 				</div>
 				<button

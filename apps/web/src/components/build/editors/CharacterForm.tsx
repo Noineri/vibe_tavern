@@ -23,7 +23,7 @@ import { MobileExpandTextarea } from "../../shared/MobileExpandTextarea.js";
 import { BoundResourcesField } from "../../shared/BoundResourcesField.js";
 import { SegmentedControl } from "../../shared/SegmentedControl.js";
 import { NumberInput } from "../../shared/NumberInput.js";
-import { inputPad, inputCls, monoCls, lblCls } from "../fields/field-styles.js";
+import { inputCls, monoCls, lblCls } from "../fields/field-styles.js";
 import { TextAreaField } from "../fields/TextAreaField.js";
 import { TokenCounter } from "../../shared/TokenCounter.js";
 import { DepthPromptField } from "../fields/DepthPromptField.js";
@@ -165,7 +165,7 @@ function ClassicCharacterFields({ form, isSaving }: { form: UseFormReturn<BuildC
       <div className="mb-5">
         <label className={lblCls + " mb-1.5 block"}>{t("char_desc_label")}</label>
         <MobileExpandTextarea value={description || ""} onChange={(v) => setValue("description", v)} label={t("char_desc_label")}>
-          <AutoTextarea className={inputCls + mInput} style={{ ...inputPad }} disabled={isSaving} register={register("description")} minRows={5} />
+          <AutoTextarea className={inputCls + mInput} disabled={isSaving} register={register("description")} minRows={5} />
         </MobileExpandTextarea>
         <TokenCounter text={description || ""} />
       </div>
@@ -174,7 +174,7 @@ function ClassicCharacterFields({ form, isSaving }: { form: UseFormReturn<BuildC
       <div className="mb-5">
         <label className={lblCls + " mb-1.5 block"}>{t("first_message_greeting")}</label>
         <MobileExpandTextarea value={firstMessage || ""} onChange={(v) => setValue("firstMessage", v)} label={t("first_message_label")}>
-          <AutoTextarea className={inputCls + mInput} style={{ ...inputPad }} disabled={isSaving} placeholder={t("first_message_placeholder")} register={register("firstMessage")} minRows={6} />
+          <AutoTextarea className={inputCls + mInput} disabled={isSaving} placeholder={t("first_message_placeholder")} register={register("firstMessage")} minRows={6} />
         </MobileExpandTextarea>
         <TokenCounter text={firstMessage || ""} />
       </div>
@@ -217,7 +217,7 @@ function ClassicCharacterFields({ form, isSaving }: { form: UseFormReturn<BuildC
               const next = [...alternateGreetings]; next[altGreetIdx] = v;
               setValue("alternateGreetings", next, { shouldDirty: true });
             }} label={t("alternate_greeting_placeholder")}>
-              <AutoTextarea className={inputCls + mInput} style={{ ...inputPad }} minRows={6} disabled={isSaving} value={alternateGreetings[altGreetIdx] || ""} onChange={(e) => {
+              <AutoTextarea className={inputCls + mInput} minRows={6} disabled={isSaving} value={alternateGreetings[altGreetIdx] || ""} onChange={(e) => {
                 const next = [...alternateGreetings]; next[altGreetIdx] = e.target.value;
                 setValue("alternateGreetings", next, { shouldDirty: true });
               }} placeholder={t("alternate_greeting_placeholder")} />
@@ -263,7 +263,7 @@ function ClassicCharacterFields({ form, isSaving }: { form: UseFormReturn<BuildC
           </div>
         </div>
         <MobileExpandTextarea value={mesExample || ""} onChange={(v) => setValue("mesExample", v)} label={t("char_mes_example_label")}>
-          <AutoTextarea className={monoCls + mInput} style={{ ...inputPad }} disabled={isSaving} placeholder="<START>..." register={register("mesExample")} minRows={6} />
+          <AutoTextarea className={monoCls + mInput} disabled={isSaving} placeholder="<START>..." register={register("mesExample")} minRows={6} />
         </MobileExpandTextarea>
         <TokenCounter text={mesExample || ""} />
       </div>
@@ -272,7 +272,7 @@ function ClassicCharacterFields({ form, isSaving }: { form: UseFormReturn<BuildC
       <div className="mb-5">
         <label className={lblCls + " mb-1.5 block"}>{t("scenario")}</label>
         <MobileExpandTextarea value={scenario || ""} onChange={(v) => setValue("scenario", v)} label={t("char_scenario_label")}>
-          <AutoTextarea className={inputCls + mInput} style={{ ...inputPad }} disabled={isSaving} register={register("scenario")} minRows={5} />
+          <AutoTextarea className={inputCls + mInput} disabled={isSaving} register={register("scenario")} minRows={5} />
         </MobileExpandTextarea>
         <TokenCounter text={scenario || ""} />
       </div>
@@ -281,7 +281,7 @@ function ClassicCharacterFields({ form, isSaving }: { form: UseFormReturn<BuildC
       <div className="mb-5">
         <label className={lblCls + " mb-1.5 block"}>{t("char_personality_label")}</label>
         <MobileExpandTextarea value={personalitySummary || ""} onChange={(v) => setValue("personalitySummary", v)} label={t("char_personality_summary_label")}>
-          <AutoTextarea className={inputCls + mInput} style={{ ...inputPad }} disabled={isSaving} register={register("personalitySummary")} minRows={3} />
+          <AutoTextarea className={inputCls + mInput} disabled={isSaving} register={register("personalitySummary")} minRows={3} />
         </MobileExpandTextarea>
         <TokenCounter text={personalitySummary || ""} />
       </div>
@@ -758,7 +758,7 @@ export function CharacterForm({
           <div className="w-full flex flex-col gap-3">
             <div>
               <label className={lblCls + " mb-1.5 block"}>{t("char_name_label")}</label>
-              <input type="text" className={inputCls + mInput} style={inputPad} disabled={isSaving} {...register("name")} />
+              <input type="text" className={inputCls + mInput} disabled={isSaving} {...register("name")} />
             </div>
             <TagsField form={form} isSaving={isSaving} />
             <BoundResourcesField entityKind="character" entityId={characterId} isMobile={isMobile} />
@@ -799,7 +799,7 @@ export function CharacterForm({
         <div className={cn("flex min-w-0 flex-1 flex-col gap-3", isMobile && "w-full")}>
           <div>
             <label className={lblCls + " mb-1.5 block"}>{t("char_name_label")}</label>
-            <input type="text" className={inputCls + mInput} style={inputPad} disabled={isSaving} {...register("name")} />
+            <input type="text" className={inputCls + mInput} disabled={isSaving} {...register("name")} />
           </div>
           <TagsField form={form} isSaving={isSaving} />
           <BoundResourcesField entityKind="character" entityId={characterId} isMobile={isMobile} />

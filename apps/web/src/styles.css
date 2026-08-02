@@ -126,6 +126,11 @@
   ::selection { background: var(--sel-bg); color: var(--sel-text); }
 }
 
+@layer components {
+  /* Required padding for the shared build-field class; utility classes may still override it. */
+  .field-input-pad { padding: 6px 10px; }
+}
+
 /* ── Image outline — neutral 1px separator that adapts to theme lightness ──
    Light themes: pure black/10. Dark themes (incl. default `:root`): pure white/10.
    Never a tinted near-black/near-white (slate/zinc) — tinted outlines pick up the

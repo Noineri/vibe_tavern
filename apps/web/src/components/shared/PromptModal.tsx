@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useT } from "../../i18n/context.js";
 import { Modal } from "./Modal.js";
-import { inputCls, inputPad, lblCls } from "../build/fields/field-styles.js";
+import { inputCls, lblCls } from "../build/fields/field-styles.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
 
 interface PromptModalProps {
@@ -60,7 +60,6 @@ export function PromptModal(input: PromptModalProps) {
           ref={inputRef}
           type="text"
           className={inputCls + (isMobile ? " text-base" : "")}
-          style={inputPad}
           value={value}
           placeholder={input.placeholder}
           onChange={(e) => setValue(e.target.value)}

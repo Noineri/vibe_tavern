@@ -16,7 +16,7 @@ import { SegmentedControl } from "../../shared/SegmentedControl.js";
 import { SceneStateView } from "../../shared/SceneStateView.js";
 import { AiAssistantModal } from "../../shared/AiAssistantModal.js";
 import { formatSceneHistory } from "@vibe-tavern/prompt-pipeline";
-import { inputCls, monoCls, inputPad, lblCls } from "../fields/field-styles.js";
+import { inputCls, monoCls, lblCls } from "../fields/field-styles.js";
 import { SceneHistoryBackfill } from "./SceneHistoryBackfill.js";
 import { useT } from "../../../i18n/context.js";
 import { useSnapshotStore, useActiveCharacter, useActivePersona } from "../../../stores/snapshot-store.js";
@@ -538,7 +538,6 @@ function PromptField({ label, hint, defaultValue, onSave, action }: { label: str
       </div>
       <AutoTextarea
         className={monoCls + " mt-1.5"}
-        style={inputPad}
         defaultValue={defaultValue}
         placeholder={hint}
         minRows={2}

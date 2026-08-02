@@ -31,7 +31,7 @@ import { Toggle } from "../../shared/Toggle.js";
 import { AutoTextarea } from "../../shared/auto-textarea.js";
 import { cn } from "../../../lib/cn.js";
 import { useT } from "../../../i18n/context.js";
-import { lblCls, inputCls, inputPad } from "../fields/field-styles.js";
+import { lblCls, inputCls } from "../fields/field-styles.js";
 import { toast } from "sonner";
 import {
 	GenerateCancelButton,
@@ -156,7 +156,6 @@ export function AvatarDescriptionField({
 				{({ disabled, controlClassName }) => (
 					<AutoTextarea
 						className={cn(inputCls, controlClassName)}
-						style={inputPad}
 						value={draft}
 						onChange={(e) => setDraft(e.target.value)}
 						onBlur={commitDraft}

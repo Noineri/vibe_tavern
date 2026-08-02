@@ -4,7 +4,7 @@ import { DestructiveConfirmModal } from "../shared/destructive-confirm-modal.js"
 import { EmptyState } from "../shared/empty-state.js";
 import { AutoTextarea } from "../shared/auto-textarea.js";
 import { Icons } from "../shared/icons.js";
-import { inputCls, monoCls, inputPad, lblCls } from "../build/fields/field-styles.js";
+import { inputCls, monoCls, lblCls } from "../build/fields/field-styles.js";
 import { useModalStore } from "../../stores/modal-store.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
 import { useCoauthorSkillStore } from "../../stores/coauthor-skill-store.js";
@@ -639,7 +639,6 @@ function ModuleEditor({ draft, skills, t, onUpdate, onToggleSkill, onToggleTool 
 					type="text"
 					data-testid="module-name-input"
 					className={inputCls}
-					style={inputPad}
 					placeholder={t("coauthor.module.name_placeholder")}
 					value={draft.name}
 					onChange={(e) => onUpdate("name", e.target.value)}
@@ -650,7 +649,6 @@ function ModuleEditor({ draft, skills, t, onUpdate, onToggleSkill, onToggleTool 
 				<label className={lblCls}>{t("coauthor.module.description_label")}</label>
 				<AutoTextarea
 					className={inputCls}
-					style={{ ...inputPad }}
 					minRows={2}
 					placeholder={t("coauthor.module.description_placeholder")}
 					value={draft.description}
@@ -662,7 +660,6 @@ function ModuleEditor({ draft, skills, t, onUpdate, onToggleSkill, onToggleTool 
 				<label className={lblCls}>{t("coauthor.module.base_prompt")}</label>
 				<AutoTextarea
 					className={monoCls}
-					style={{ ...inputPad }}
 					minRows={6}
 					value={draft.basePrompt}
 					onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => onUpdate("basePrompt", e.target.value)}
@@ -674,7 +671,6 @@ function ModuleEditor({ draft, skills, t, onUpdate, onToggleSkill, onToggleTool 
 				<label className={lblCls}>{t("coauthor.module.opening_message_label")}</label>
 				<AutoTextarea
 					className={inputCls}
-					style={{ ...inputPad }}
 					minRows={3}
 					placeholder={t("coauthor.module.opening_message_placeholder")}
 					value={draft.openingMessage}

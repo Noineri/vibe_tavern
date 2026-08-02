@@ -20,7 +20,7 @@ import { useIsMobile } from "../../../hooks/use-mobile.js";
 import { AutoTextarea } from "../../shared/auto-textarea.js";
 import { MobileExpandTextarea } from "../../shared/MobileExpandTextarea.js";
 import { TokenCounter } from "../../shared/TokenCounter.js";
-import { inputPad, inputCls, monoCls, lblCls } from "./field-styles.js";
+import { inputCls, monoCls, lblCls } from "./field-styles.js";
 
 /** Draft field names whose value is a plain string rendered as a textarea. */
 export type CharacterStringField =
@@ -81,7 +81,6 @@ export function TextAreaField({
       <MobileExpandTextarea value={value || ""} onChange={(v) => setValue(field, v)} label={mobileExpandLabel}>
         <AutoTextarea
           className={cls}
-          style={{ ...inputPad }}
           disabled={isSaving}
           placeholder={placeholder}
           register={register(field)}

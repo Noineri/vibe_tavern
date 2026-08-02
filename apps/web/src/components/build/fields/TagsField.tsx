@@ -16,7 +16,7 @@ import type { BuildCharacterDraft } from "@vibe-tavern/api-contracts";
 
 import { useT } from "../../../i18n/context.js";
 import { useIsMobile } from "../../../hooks/use-mobile.js";
-import { inputPad, inputCls, lblCls } from "./field-styles.js";
+import { inputCls, lblCls } from "./field-styles.js";
 
 export interface TagsFieldProps {
   /** The react-hook-form instance (shared with the parent form). */
@@ -53,7 +53,6 @@ export function TagsField({ form, isSaving }: TagsFieldProps) {
       <input
         type="text"
         className={inputCls + mInput}
-        style={inputPad}
         value={tagInput}
         disabled={isSaving}
         onChange={(e) => setTagInput(e.target.value)}

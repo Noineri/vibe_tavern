@@ -55,6 +55,10 @@ describe("ProxyManagerModal behavior", () => {
     );
 
     await waitFor(() => expect(view.getByDisplayValue("Office")).toBeTruthy());
+    const proxyInputs = Array.from(view.baseElement.querySelectorAll("input"));
+    expect(proxyInputs).toHaveLength(4);
+    for (const input of proxyInputs) expect(input.classList.contains("field-input-pad")).toBe(true);
+
     fireEvent.click(view.getByText("save"));
     await waitFor(() => expect(updates).toHaveLength(1));
     expect(updates[0]).toEqual({ id: "proxy_1", password: undefined });

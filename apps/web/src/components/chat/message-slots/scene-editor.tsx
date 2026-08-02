@@ -12,13 +12,13 @@
  * correctness boundary — a save that the server rejects surfaces as a toast
  * (the caller owns the error UX), leaving the prior valid record untouched.
  *
- * Reuses shared primitives: `Toggle`, `inputCls`/`inputPad`/`lblCls` field styles.
+ * Reuses shared primitives: `Toggle` and the `inputCls`/`lblCls` field styles.
  * No bespoke input chrome — see AGENTS.md §9.
  */
 import { useState, type ReactNode } from "react";
 import type { SceneTrackerDsl, SceneTrackerSchemaNode } from "@vibe-tavern/domain";
 import { Toggle } from "../../shared/Toggle.js";
-import { inputCls, inputPad, lblCls } from "../../build/fields/field-styles.js";
+import { inputCls, lblCls } from "../../build/fields/field-styles.js";
 import type { TFunc } from "../../../i18n/context.js";
 
 export function SceneEditorBody({ schema, initial, onSave, onCancel, t }: {
@@ -109,7 +109,6 @@ function LeafInput({ node, value, onChange }: { node: Extract<SceneTrackerSchema
           onChange(Number.isFinite(n) ? n : 0);
         }}
         className={inputCls}
-        style={inputPad}
       />
     );
   }
@@ -120,7 +119,6 @@ function LeafInput({ node, value, onChange }: { node: Extract<SceneTrackerSchema
       maxLength={4000}
       onChange={(e) => onChange(e.target.value)}
       className={inputCls}
-      style={inputPad}
     />
   );
 }

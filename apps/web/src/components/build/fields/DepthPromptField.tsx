@@ -19,7 +19,7 @@ import { AutoTextarea } from "../../shared/auto-textarea.js";
 import { MobileExpandTextarea } from "../../shared/MobileExpandTextarea.js";
 import { SegmentedControl } from "../../shared/SegmentedControl.js";
 import { NumberInput } from "../../shared/NumberInput.js";
-import { inputPad, monoCls, lblCls } from "./field-styles.js";
+import { monoCls, lblCls } from "./field-styles.js";
 import { TokenCounter } from "../../shared/TokenCounter.js";
 
 export interface DepthPromptFieldProps {
@@ -73,7 +73,6 @@ export function DepthPromptField({ form, isSaving }: DepthPromptFieldProps) {
       <MobileExpandTextarea value={depthPrompt || ""} onChange={(v) => setValue("depthPrompt", v)} label={t("depth_prompt_label")}>
         <AutoTextarea
           className={monoCls + mInput}
-          style={{ ...inputPad }}
           disabled={isSaving}
           placeholder={t("depth_prompt_placeholder")}
           register={register("depthPrompt")}
