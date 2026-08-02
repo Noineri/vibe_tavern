@@ -66,6 +66,7 @@ import { useCharacterController } from "../../hooks/use-character-controller.js"
 import { useT } from "../../i18n/context.js";
 import { LinkBindingPopover, type LinkTarget } from "../shared/LinkBindingPopover.js";
 import { GeneratingScrim } from "../shared/generation-feedback.js";
+import { SaveButton } from "../shared/SaveBar.js";
 import { BoundResourcesField } from "../shared/BoundResourcesField.js";
 import { listAllLorebooks } from "../../api/lorebook-api.js";
 import { listAllScripts } from "../../api/script-api.js";
@@ -431,7 +432,7 @@ function CoauthorCharacterFormInner({ character }: CoauthorCharacterFormInnerPro
   }
 
   const isDirty = formState.isDirty;
-  const canSave = !isSavingCharacter && (form.watch("name") || "").trim().length > 0;
+  const canSave = (form.watch("name") || "").trim().length > 0;
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -451,14 +452,16 @@ function CoauthorCharacterFormInner({ character }: CoauthorCharacterFormInnerPro
                   : t("saved_state")}
           </div>
         </div>
-        <button
-          type="button"
-          className="shrink-0 rounded-md border-0 bg-accent px-3.5 py-1.5 font-ui text-[0.8rem] font-semibold text-on-accent transition-all hover:brightness-110 active:scale-[0.98] disabled:cursor-default disabled:opacity-40"
-          disabled={!canSave || !isDirty || locked || isSavingCharacter}
+        <SaveButton
+          dirty={isDirty}
+          saveState={isSavingCharacter ? "saving" : "idle"}
+          resetKey={character.id}
+          disabled={!canSave || locked || isSavingCharacter}
+          label={t("save")}
           onClick={() => { void handleSave(); }}
-        >
-          {isSavingCharacter ? t("saving") : t("save")}
-        </button>
+          size="compact"
+          className="shrink-0"
+        />
       </div>
 
       {/* CE-C1/C2/C3: the three context LEVELS, grouped so their distinction

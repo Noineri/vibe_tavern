@@ -15,6 +15,7 @@ import { GalleryAccordion } from "./GalleryAccordion.js";
 import { useTokenCount } from "../../../hooks/use-token-count.js";
 import { useT } from "../../../i18n/context.js";
 import { CustomTooltip } from "../../shared/Tooltip.js";
+import { SaveButton as SharedSaveButton } from "../../shared/SaveBar.js";
 import { AvatarCropModal } from "../../shared/AvatarCropModal.js";
 import type { AvatarCropResult } from "../../shared/AvatarCropModal.js";
 import { promoteSourceAsFull } from "./thumbnail-crop.js";
@@ -101,21 +102,26 @@ function CharacterTitle({ control }: { control: Control<BuildCharacterDraft> }) 
  *  `useWatch`; `isDirty` arrives from the parent (BuildMode reads
  *  `form.formState.isDirty` once and passes it down). Isolating the name read
  *  keeps a name edit from re-rendering the whole form. */
-function SaveButton({ control, isSaving, isDirty, onSave, className, style }: {
+function CharacterSaveButton({ control, isSaving, isDirty, onSave, size, style }: {
   control: Control<BuildCharacterDraft>;
   isSaving: boolean;
   isDirty: boolean;
   onSave: () => void;
-  className: string;
+  size: "compact" | "touch";
   style?: CSSProperties;
 }) {
   const { t } = useT();
   const name = useWatch({ control, name: "name" });
-  const canSave = !isSaving && (name || "").trim();
   return (
-    <button type="button" className={className} style={style} disabled={!canSave || !isDirty} onClick={onSave}>
-      {isSaving ? t("saving") : t("save")}
-    </button>
+    <SharedSaveButton
+      dirty={isDirty}
+      saveState={isSaving ? "saving" : "idle"}
+      disabled={isSaving || !(name || "").trim()}
+      label={t("save")}
+      onClick={onSave}
+      size={size}
+      style={style}
+    />
   );
 }
 
@@ -553,9 +559,7 @@ export function CharacterForm({
         {isMobile ? (
           <div className="flex shrink-0 items-center gap-2">
             <TokenSummary control={control} />
-            <SaveButton control={control} isSaving={isSaving} isDirty={isDirty} onSave={onSave}
-              className="min-h-9 cursor-pointer rounded-md border-0 bg-accent px-3 font-ui text-[calc(var(--ui-fs)-3px)] font-semibold text-on-accent transition-all disabled:opacity-40"
-            />
+            <CharacterSaveButton control={control} isSaving={isSaving} isDirty={isDirty} onSave={onSave} size="touch" />
           </div>
         ) : (
         <div className="flex items-center gap-2">
@@ -643,10 +647,7 @@ export function CharacterForm({
             <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><path d="M4 2h6l4 4v8a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z"/><path d="M9 2v4h4"/><path d="M6 10h4"/></svg>
           </button>
           </CustomTooltip>
-          <SaveButton control={control} isSaving={isSaving} isDirty={isDirty} onSave={onSave}
-            className="cursor-pointer rounded-md border-0 bg-accent font-ui text-[calc(var(--ui-fs)-2px)] font-semibold text-on-accent transition-all disabled:cursor-default disabled:opacity-40"
-            style={{ height: 28, padding: "0 14px" }}
-          />
+          <CharacterSaveButton control={control} isSaving={isSaving} isDirty={isDirty} onSave={onSave} size="compact" />
         </div>
         )}
       </div>

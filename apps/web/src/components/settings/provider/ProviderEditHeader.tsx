@@ -6,6 +6,7 @@ import { Icons } from '../../shared/icons.js';
 import { cn } from '../../../lib/cn.js';
 import { SegmentedControl } from '../../shared/SegmentedControl.js';
 import { DropdownSelect } from '../../shared/DropdownSelect.js';
+import { SaveButton } from '../../shared/SaveBar.js';
 import { labelCls, inputCls, pwCls } from './form-field-classes.js';
 import { DIRECT_PROXY_SELECTION, INHERIT_PROXY_SELECTION, proxyPolicyFromSelection, resolvedGlobalProxyLabel, selectionFromProxyPolicy } from '../../../lib/provider-proxy-policy.js';
 
@@ -162,9 +163,15 @@ export function ProviderEditHeader({
             {t("cancel")}
           </button>
         )}
-        <button type="button" onClick={onSave} disabled={!dirty || saving} className="min-h-11 rounded-md bg-accent px-5 py-2 font-ui text-[13px] font-medium text-on-accent shadow-lg shadow-accent/20 transition-all hover:bg-accent-t disabled:cursor-default disabled:opacity-40 sm:min-h-0">
-          {saving ? t("saving") : t("save_settings_btn")}
-        </button>
+        <SaveButton
+          dirty={dirty}
+          saveState={saving ? "saving" : "idle"}
+          resetKey={editingId}
+          disabled={saving}
+          label={t("save_settings_btn")}
+          onClick={onSave}
+          size="touch"
+        />
       </div>
     </div>
   );

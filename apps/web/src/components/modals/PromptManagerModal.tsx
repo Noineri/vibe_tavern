@@ -733,6 +733,7 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
               <SaveButton
                 dirty={dirty}
                 saveState={saveState}
+                resetKey={input.activePresetId}
                 onClick={handleSave}
                 label={t("save")}
               />

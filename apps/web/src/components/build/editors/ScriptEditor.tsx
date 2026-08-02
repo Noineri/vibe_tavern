@@ -513,6 +513,7 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
         <SaveButton
           dirty={draftDirty}
           saveState={draftSaveState}
+          resetKey={activeScriptId}
           onClick={() => void handleSave()}
           label={draftSaveState === "error" ? t("retry") : t("save")}
         />

@@ -66,22 +66,22 @@ describe("ProxyManagerModal behavior", () => {
     expect(proxyInputs).toHaveLength(4);
     for (const input of proxyInputs) expect(input.classList.contains("field-input-pad")).toBe(true);
 
-    const saveButton = view.getByText("save") as HTMLButtonElement;
-    expect(saveButton.classList.contains("w-[124px]")).toBe(true);
+    const saveButton = view.getByRole("button", { name: "save" }) as HTMLButtonElement;
+    expect(saveButton.classList.contains("min-w-[124px]")).toBe(true);
     expect(saveButton.disabled).toBe(true);
     fireEvent.click(view.getByText("proxy_password_clear"));
-    await waitFor(() => expect((view.getByText("save") as HTMLButtonElement).disabled).toBe(false));
+    await waitFor(() => expect((view.getByRole("button", { name: "save" }) as HTMLButtonElement).disabled).toBe(false));
     fireEvent.click(view.getByText("cancel"));
-    fireEvent.click(view.getByText("save"));
-    await waitFor(() => expect(view.getByText("saving")).toBeTruthy());
+    fireEvent.click(view.getByRole("button", { name: "save" }));
+    await waitFor(() => expect(view.getByRole("button", { name: "saving" })).toBeTruthy());
     releaseFirstUpdate();
     await waitFor(() => expect(updates).toHaveLength(1));
-    await waitFor(() => expect(view.getByText("saved")).toBeTruthy());
+    await waitFor(() => expect(view.getByRole("button", { name: "saved" })).toBeTruthy());
     expect(saveButton.disabled).toBe(true);
     expect(updates[0]).toEqual({ id: "proxy_1", password: undefined });
 
     fireEvent.click(view.getByText("proxy_password_clear"));
-    fireEvent.click(view.getByText("save"));
+    fireEvent.click(view.getByRole("button", { name: "save" }));
     await waitFor(() => expect(updates).toHaveLength(2));
     expect(updates[1]).toEqual({ id: "proxy_1", password: null });
 

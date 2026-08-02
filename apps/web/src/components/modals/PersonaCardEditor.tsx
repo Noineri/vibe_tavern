@@ -7,6 +7,7 @@ import { CustomTooltip } from "../shared/Tooltip.js";
 import { AutoTextarea } from "../shared/auto-textarea.js";
 import { MobileExpandTextarea } from "../shared/MobileExpandTextarea.js";
 import { TokenCounter } from "../shared/TokenCounter.js";
+import { SaveButton } from "../shared/SaveBar.js";
 import { BoundResourcesField } from "../shared/BoundResourcesField.js";
 import { AvatarDescriptionField, type AvatarDescriptionPatch } from "../build/editors/AvatarDescriptionField.js";
 import type { PersonaListItem, PersonaFormData } from "./PersonaModal.js";
@@ -211,13 +212,15 @@ export function PersonaCardEditor({
       </div>
       {/* Save / Cancel */}
       <div className="flex gap-2">
-        <button type="button"
-          className="min-h-[40px] cursor-pointer rounded-md bg-accent px-4 font-ui text-sm font-medium text-on-accent transition-all hover:brightness-110 disabled:cursor-default disabled:opacity-45 disabled:hover:brightness-100"
-          disabled={isSaving || !isDirty || !(editName || "").trim()}
+        <SaveButton
+          dirty={isDirty}
+          saveState={isSaving ? "saving" : "idle"}
+          resetKey={persona.id}
+          disabled={isSaving || !(editName || "").trim()}
+          label={t("save_btn")}
           onClick={onSave}
-        >
-          {isSaving ? t("saving") : t("save_btn")}
-        </button>
+          size="touch"
+        />
         <button type="button"
           className="min-h-[40px] cursor-pointer rounded-md bg-transparent px-3.5 font-ui text-sm text-t3 active:bg-s2"
           onClick={onCancel}
