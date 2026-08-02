@@ -15,8 +15,19 @@
  *  - `inherit` → the current global default proxy, or `direct` when no global
  *                default is configured.
  *
- * Only `http://` and `https://` proxy URLs are supported (Bun's native
- * per-request `fetch(url, { proxy })` option). Unsupported schemes fail closed.
+ * `http://` and `https://` proxy URLs use Bun's native per-request
+ * `fetch(url, { proxy })` option. `socks5://` URLs use a loopback HTTP bridge
+ * (proxy-chain) so Bun fetch remains the actual client; the bridge is created
+ * lazily and cached by the full upstream configuration. Other schemes fail
+ * closed.
+ *
+ * SOCKS5 is HTTPS-only and redirect-proof: a SOCKS5-backed fetch applied to
+ * an `http://` target fails closed before any DNS or network access, and
+ * automatically followed redirects are disabled (`redirect: "manual"`) so a
+ * provider's `Location: http://...` response cannot escape the HTTPS-only guard
+ * (or, for a loopback HTTP target, the explicit proxy) inside Bun. The raw 3xx
+ * response is returned to the caller as a failed provider response; no redirect
+ * is replayed. Local HTTP providers remain usable with `direct`.
  *
  * Credential safety: the username/password are stored as SEPARATE columns and
  * combined here into the proxy URL only at request time. They are NEVER placed
@@ -32,6 +43,10 @@ import {
 	type ProviderProxyMode,
 	type StoredProxyRecord,
 } from "@vibe-tavern/domain";
+import {
+	getSocksBridgeManager,
+	type SocksBridgeLookup,
+} from "./socks-bridge.js";
 
 // ─── Public types ─────────────────────────────────────────────────────────
 
@@ -84,14 +99,15 @@ export class ProviderProxyError extends Error {
  * Build the per-request proxy URL string for Bun's `fetch(url, { proxy })`,
  * embedding the separately-stored username/password as URL userinfo.
  *
- * The stored URL is a bare `http://`/`https://` URL without userinfo/path/query
- * (validated at write time by {@link isValidProxyUrl}); this re-validates and
- * reconstructs it with credentials. Credentials are percent-encoded so special
- * characters are safe. Throws {@link ProviderProxyError} (no credential detail)
- * on a malformed stored URL or unsupported scheme — fail closed.
+ * The stored URL is a bare `http://`/`https://`/`socks5://` URL without
+ * userinfo/path/query (validated at write time by {@link isValidProxyUrl});
+ * this re-validates and reconstructs it with credentials. Credentials are
+ * percent-encoded so special characters are safe. Throws
+ * {@link ProviderProxyError} (no credential detail) on a malformed stored URL
+ * or unsupported scheme — fail closed.
  */
 export function buildProxyRequestUrl(proxy: StoredProxyRecord): string {
-	// isValidProxyUrl already rejects non-http(s), embedded userinfo, and
+	// isValidProxyUrl already rejects non-http(s)/socks5, embedded userinfo, and
 	// path/query/fragment. Re-checking here defends against a corrupt row.
 	if (!isValidProxyUrl(proxy.url)) {
 		throw new ProviderProxyError("Configured proxy has an invalid URL.");
@@ -103,7 +119,7 @@ export function buildProxyRequestUrl(proxy: StoredProxyRecord): string {
 	} catch {
 		throw new ProviderProxyError("Configured proxy has an invalid URL.");
 	}
-	if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+	if (parsed.protocol !== "http:" && parsed.protocol !== "https:" && parsed.protocol !== "socks5:") {
 		throw new ProviderProxyError("Configured proxy uses an unsupported scheme.");
 	}
 
@@ -192,12 +208,58 @@ export async function resolveEffectiveProxy(
  * The optional underlying transport exists for deterministic TLS fixture tests;
  * production callers use Bun's global fetch.
  */
+/** Options controlling how a proxied fetch wrapper behaves. */
+export interface ProxiedFetchOptions {
+	/** When true the wrapper enforces the SOCKS5 HTTPS-only + no-redirect rules:
+	 *  an `http://` target is rejected before any DNS or network access (clear,
+	 *  credential-free error), and automatically followed redirects are disabled
+	 *  (`redirect: "manual"`, applied AFTER the caller's init so it cannot be
+	 *  overridden) so an HTTPS provider response cannot redirect to an HTTP target
+	 *  inside Bun, bypassing the guard or the explicit proxy. Set for bridges
+	 *  created from a SOCKS5 upstream. */
+	socksBacked?: boolean;
+}
+
+/** Extract the URL protocol from any fetch `input` shape. Returns `""` if the
+ *  input cannot be parsed — callers treat that as unsupported (fail closed). */
+function targetProtocolOf(input: Parameters<ProviderFetch>[0]): string {
+	try {
+		if (typeof input === "string") return new URL(input).protocol;
+		if (input instanceof URL) return input.protocol;
+		// Bun's Request (the remaining union member) exposes `.url`.
+		return new URL(input.url).protocol;
+	} catch {
+		return "";
+	}
+}
+
 export function createProxiedFetch(
 	proxyUrl: string,
 	transportFetch: ProviderFetch = fetch,
+	options?: ProxiedFetchOptions,
 ): ProviderFetch {
-	const proxied: ProviderFetch = (input, init) =>
-		transportFetch(input, { ...init, proxy: proxyUrl });
+	const socksBacked = options?.socksBacked ?? false;
+	const proxied: ProviderFetch = (input, init) => {
+		if (socksBacked && targetProtocolOf(input) !== "https:") {
+			throw new ProviderProxyError(
+				"SOCKS5 proxying supports only HTTPS provider endpoints. Use 'direct' for local HTTP providers.",
+			);
+		}
+		// SOCKS5-backed requests never automatically follow redirects. Bun's
+		// default `redirect: "follow"` would silently pursue a
+		// `Location: http://...` inside Bun — bypassing the HTTPS-only guard above,
+		// and for a loopback HTTP Location, also bypassing the explicit proxy —
+		// violating the SOCKS5 HTTPS-only / fail-closed contract. `redirect:
+		// "manual"` is applied AFTER spreading the caller's init so the caller
+		// cannot override it; the raw 3xx response is returned normally and
+		// provider/gateway callers treat it as a failed provider response.
+		// HTTP/HTTPS-proxy wrappers (socksBacked === false) preserve caller
+		// redirect behavior unchanged.
+		if (socksBacked) {
+			return transportFetch(input, { ...init, proxy: proxyUrl, redirect: "manual" });
+		}
+		return transportFetch(input, { ...init, proxy: proxyUrl });
+	};
 	// A direct preconnect could leak target DNS/connection metadata outside the
 	// configured proxy. Keep the namespace member for type compatibility only.
 	proxied.preconnect = () => {};
@@ -213,11 +275,27 @@ export async function resolveProviderFetch(
 	policy: ProviderProxyPolicy,
 	lookup: ProxyLookup,
 	transportFetch: ProviderFetch = fetch,
+	bridgeLookup?: SocksBridgeLookup,
 ): Promise<ProviderFetch | undefined> {
 	const resolved = await resolveEffectiveProxy(policy, lookup);
-	return resolved.kind === "direct"
-		? undefined
-		: createProxiedFetch(resolved.proxyUrl, transportFetch);
+	if (resolved.kind === "direct") return undefined;
+
+	if (resolved.proxyUrl.startsWith("socks5:")) {
+		// Acquire the process-wide bridge manager ONLY here — never via a
+		// default-parameter initializer, which would construct the singleton
+		// for every direct/HTTP(S) resolution too. A test-injected lookup wins.
+		const bridge = bridgeLookup ?? getSocksBridgeManager();
+		let bridgeUrl: string;
+		try {
+			bridgeUrl = await bridge.getOrCreateBridge(resolved.proxyUrl);
+		} catch {
+			// The bridge URL carries upstream credentials; never surface them.
+			throw new ProviderProxyError("Failed to establish the SOCKS5 proxy bridge.");
+		}
+		return createProxiedFetch(bridgeUrl, transportFetch, { socksBacked: true });
+	}
+
+	return createProxiedFetch(resolved.proxyUrl, transportFetch);
 }
 
 // ─── Factory + process-wide default ───────────────────────────────────────
@@ -260,13 +338,17 @@ export function getProviderFetchFactory(): ProviderFetchFactory {
 	return activeFactory;
 }
 
-/** Build a factory bound to the proxy lookup and underlying transport. */
+/** Build a factory bound to the proxy lookup, underlying transport, and
+ *  SOCKS5 bridge manager. The bridge defaults to the process-wide singleton
+ *  (lazily created, shutdown-managed); tests may inject a fake. */
 export function createProviderFetchFactory(
 	proxies: ProxyLookup,
 	transportFetch: ProviderFetch = fetch,
+	bridgeLookup?: SocksBridgeLookup,
 ): ProviderFetchFactory {
 	return {
-		resolveFetch: (policy) => resolveProviderFetch(policy, proxies, transportFetch),
+		resolveFetch: (policy) =>
+			resolveProviderFetch(policy, proxies, transportFetch, bridgeLookup),
 	};
 }
 

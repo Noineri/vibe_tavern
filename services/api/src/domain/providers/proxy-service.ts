@@ -51,7 +51,7 @@ export function createProxyService(proxies: ProxyStore): ProxyService {
       }
       if (!isValidProxyUrl(url)) {
         throw validation(
-          "Proxy URL must be a bare http:// or https:// URL without embedded credentials, path, query, or fragment.",
+          "Proxy URL must be a bare http://, https://, or socks5:// URL without embedded credentials, path, query, or fragment.",
         );
       }
 
@@ -83,7 +83,7 @@ export function createProxyService(proxies: ProxyStore): ProxyService {
         if (!url) throw validation("Proxy URL is required.");
         if (!isValidProxyUrl(url)) {
           throw validation(
-            "Proxy URL must be a bare http:// or https:// URL without embedded credentials, path, query, or fragment.",
+            "Proxy URL must be a bare http://, https://, or socks5:// URL without embedded credentials, path, query, or fragment.",
           );
         }
         data.url = url;

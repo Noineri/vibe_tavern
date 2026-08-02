@@ -86,12 +86,12 @@ const EXIT_GRACE_MS = 1_500;
  *
  * Exported for testing: `process.exit` cannot be exercised in-process.
  */
-export function shutdownAfterUpdate(
-	stopServer: () => boolean,
+export async function shutdownAfterUpdate(
+	stopServer: () => boolean | Promise<boolean>,
 	exit: (code: number) => void,
-): void {
+): Promise<void> {
 	try {
-		if (!stopServer()) {
+		if (!(await stopServer())) {
 			console.warn("[update-orchestrator] no server was registered to stop.");
 		}
 	} catch (err) {
@@ -260,7 +260,11 @@ class UpdateOrchestrator {
 	 */
 	private finishAndExit(): void {
 		setTimeout(() => {
-			shutdownAfterUpdate(stopRuntimeServer, (code) => process.exit(code));
+			// shutdownAfterUpdate is async: it awaits the registered shutdown hook
+			// (server stop + bridge close) before calling exit(0). The `void` keeps
+			// the setTimeout callback synchronous; the awaited cleanup completes
+			// before process.exit runs inside the function.
+			void shutdownAfterUpdate(stopRuntimeServer, (code) => process.exit(code));
 		}, EXIT_GRACE_MS);
 	}
 

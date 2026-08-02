@@ -35,6 +35,7 @@ import { configureLogDir } from "../shared/send-debug-log.js";
 import { createApp } from "./app-factory.js";
 import { setRuntimeShutdownHook } from "./runtime-shutdown.js";
 import { createLoadingHandler } from "./loading-placeholder.js";
+import { closeAllSocksBridges } from "../domain/providers/socks-bridge.js";
 
 export { apiNotReadyResponse } from "./loading-placeholder.js";
 import { runStartupFileChecks } from "./startup-checks.js";
@@ -275,15 +276,27 @@ export async function startServerRuntime(config: ServerRuntimeConfig): Promise<v
 	});
 
 	// Let the updater release the port without reaching into runtime internals.
-	setRuntimeShutdownHook(() => server.stop(true));
+	// The hook is async and awaited by `stopRuntimeServer` (and thus by
+	// `shutdownAfterUpdate`), so the updater's exit path actually waits for the
+	// loopback SOCKS5 bridges to close instead of racing a synchronous exit.
+	setRuntimeShutdownHook(async () => {
+		server.stop(true);
+		await closeAllSocksBridges();
+	});
 
-	// Register shutdown handlers early so Ctrl+C works even during init.
+	// Register shutdown handlers early so Ctrl+C works even during init. The
+	// guard makes signal-driven shutdown idempotent: a second SIGINT/SIGTERM
+	// while the first cleanup is still in flight cannot launch overlapping
+	// teardown or a duplicate exit.
+	let isShuttingDown = false;
+	const handleShutdownSignal = (signal: string): void => {
+		console.log(`\n${tag} Received ${signal}, shutting down...`);
+		if (isShuttingDown) return;
+		isShuttingDown = true;
+		void gracefulShutdown(server, tag);
+	};
 	for (const signal of config.shutdownSignals ?? ["SIGINT", "SIGTERM"]) {
-		process.on(signal, () => {
-			console.log(`\n${tag} Received ${signal}, shutting down...`);
-			server.stop(true);
-			process.exit(0);
-		});
+		process.on(signal, () => handleShutdownSignal(signal));
 	}
 
 	// ─── Background initialization ────────────────────────────────────
@@ -314,6 +327,21 @@ export async function startServerRuntime(config: ServerRuntimeConfig): Promise<v
 				headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" },
 			});
 	}
+}
+
+/** Graceful shutdown: stop the HTTP server and close every SOCKS5 bridge before
+ *  exiting. Bridges bind loopback ports that should not linger across a rapid
+ *  restart; awaiting their close makes the teardown deterministic. Called on the
+ *  signal path; the updater path goes through the async runtime-shutdown hook.
+ *  The thrown/aggregate bridge error is credential-free, so logging it is safe. */
+async function gracefulShutdown(server: Bun.Server<undefined>, tag: string): Promise<void> {
+	server.stop(true);
+	try {
+		await closeAllSocksBridges();
+	} catch (err) {
+		console.error(`${tag} Error closing SOCKS5 bridges during shutdown:`, err);
+	}
+	process.exit(0);
 }
 
 async function ensurePortAvailable(options: {

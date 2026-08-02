@@ -95,9 +95,9 @@ describe("ProxyAdapter — API errors", () => {
 describe("ProxyService — URL validation", () => {
   beforeEach(() => { nextId = 0; });
 
-  test("rejects non-http(s) schemes", async () => {
+  test("rejects schemes other than http/https/socks5", async () => {
     const { proxyService } = await makeServices();
-    await expect(proxyService.saveProxy({ name: "P", url: "socks5://p:1080" })).rejects.toMatchObject({ kind: "Validation" });
+    await expect(proxyService.saveProxy({ name: "P", url: "socks4://p:1080" })).rejects.toMatchObject({ kind: "Validation" });
     await expect(proxyService.saveProxy({ name: "P", url: "ftp://p:21" })).rejects.toMatchObject({ kind: "Validation" });
   });
 
@@ -113,12 +113,14 @@ describe("ProxyService — URL validation", () => {
     await expect(proxyService.saveProxy({ name: "P", url: "http://p:8080#frag" })).rejects.toMatchObject({ kind: "Validation" });
   });
 
-  test("accepts clean http and https URLs", async () => {
+  test("accepts clean http, https, and socks5 URLs", async () => {
     const { proxyService } = await makeServices();
     const http = await proxyService.saveProxy({ name: "H", url: "http://proxy:8080" });
     expect(http.url).toBe("http://proxy:8080");
     const https = await proxyService.saveProxy({ name: "S", url: "https://proxy.secure:8443" });
     expect(https.url).toBe("https://proxy.secure:8443");
+    const socks = await proxyService.saveProxy({ name: "K", url: "socks5://proxy.socks:1080" });
+    expect(socks.url).toBe("socks5://proxy.socks:1080");
   });
 });
 

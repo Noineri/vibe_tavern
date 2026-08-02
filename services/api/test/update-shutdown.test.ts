@@ -25,11 +25,13 @@ const ORCHESTRATOR_SOURCE = join(
 );
 
 describe("shutdownAfterUpdate", () => {
-	it("stops the server before exiting, and exits zero", () => {
+	it("awaits an async stop before exiting, and exits zero", async () => {
 		const calls: string[] = [];
 
-		shutdownAfterUpdate(
-			() => {
+		await shutdownAfterUpdate(
+			async () => {
+				// stopServer is now async-capable; the exit must wait for it.
+				await new Promise((resolve) => setTimeout(resolve, 10));
 				calls.push("stop");
 				return true;
 			},
@@ -41,11 +43,11 @@ describe("shutdownAfterUpdate", () => {
 		expect(calls).toEqual(["stop", "exit:0"]);
 	});
 
-	it("still exits when no server was registered to stop", () => {
+	it("still exits when no server was registered to stop", async () => {
 		let exitCode: number | null = null;
 
-		shutdownAfterUpdate(
-			() => false,
+		await shutdownAfterUpdate(
+			async () => false,
 			(code) => {
 				exitCode = code;
 			},
@@ -54,14 +56,29 @@ describe("shutdownAfterUpdate", () => {
 		expect(exitCode).toBe(0);
 	});
 
-	it("still exits when stopping the server throws", () => {
+	it("still exits when stopping the server throws", async () => {
 		// A server that refuses to stop must not keep the pre-update build
 		// alive on the port the user is about to relaunch into.
 		let exitCode: number | null = null;
 
-		shutdownAfterUpdate(
-			() => {
+		await shutdownAfterUpdate(
+			async () => {
 				throw new Error("stop failed");
+			},
+			(code) => {
+				exitCode = code;
+			},
+		);
+
+		expect(exitCode).toBe(0);
+	});
+
+	it("still exits when an async stop rejects", async () => {
+		let exitCode: number | null = null;
+
+		await shutdownAfterUpdate(
+			async () => {
+				throw new Error("async stop failed");
 			},
 			(code) => {
 				exitCode = code;

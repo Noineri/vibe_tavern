@@ -75,8 +75,18 @@ describe("buildProxyRequestUrl", () => {
 		expect(new URL(url).password).not.toBe("");
 	});
 
-	it("fails closed on an unsupported (socks) scheme", () => {
-		expect(() => buildProxyRequestUrl(makeProxy({ url: "socks5://127.0.0.1:1080" }))).toThrow(
+	it("supports socks5 and embeds credentials the same way", () => {
+		const url = buildProxyRequestUrl(
+			makeProxy({ url: "socks5://10.0.0.5:1080", username: "alice", password: "stored-password" }),
+		);
+		const parsed = new URL(url);
+		expect(parsed.protocol).toBe("socks5:");
+		expect(parsed.username).toBe("alice");
+		expect(parsed.password).not.toBe("");
+	});
+
+	it("fails closed on a scheme that is not http/https/socks5", () => {
+		expect(() => buildProxyRequestUrl(makeProxy({ url: "socks4://127.0.0.1:1080" }))).toThrow(
 			ProviderProxyError,
 		);
 	});
@@ -161,8 +171,19 @@ describe("resolveEffectiveProxy", () => {
 		expect(String(err).includes("leak-me")).toBe(false);
 	});
 
-	it("proxy fails closed on an unsupported scheme", async () => {
-		const lookup = makeLookup({ byId: { p1: makeProxy({ id: "p1", url: "socks5://h:1" }) } });
+	it("proxy resolves a socks5 upstream", async () => {
+		const lookup = makeLookup({ byId: { p1: makeProxy({ id: "p1", url: "socks5://1.2.3.4:1080", username: "u", password: "stored-password" }) } });
+		const res = await resolveEffectiveProxy({ proxyMode: PROXY_MODE.proxy, proxyId: "p1" }, lookup);
+		expect(res.kind).toBe("proxy");
+		if (res.kind === "proxy") {
+			const parsed = new URL(res.proxyUrl);
+			expect(parsed.protocol).toBe("socks5:");
+			expect(parsed.username).toBe("u");
+		}
+	});
+
+	it("proxy fails closed on a scheme that is not http/https/socks5", async () => {
+		const lookup = makeLookup({ byId: { p1: makeProxy({ id: "p1", url: "socks4://h:1" }) } });
 		await expect(
 			resolveEffectiveProxy({ proxyMode: PROXY_MODE.proxy, proxyId: "p1" }, lookup),
 		).rejects.toBeInstanceOf(ProviderProxyError);
@@ -254,6 +275,46 @@ describe("createProxiedFetch", () => {
 		proxied.preconnect("https://provider.example");
 		expect(directPreconnects).toBe(0);
 	});
+
+	it("overrides a caller-supplied redirect to manual for SOCKS-backed wrappers", async () => {
+		const calls: Array<{ init: unknown }> = [];
+		const fakeFetch = ((input: unknown, init?: unknown) => {
+			calls.push({ init });
+			return Promise.resolve(new Response("ok"));
+		}) as typeof fetch;
+		fakeFetch.preconnect = () => {};
+
+		// Caller explicitly asks for redirect: "follow" — the SOCKS-backed wrapper
+		// must override it to "manual" so no Location target is followed inside Bun.
+		const proxied = createProxiedFetch("http://127.0.0.1:8080", fakeFetch, { socksBacked: true });
+		await proxied("https://provider.example/api", { redirect: "follow" });
+
+		expect(calls).toHaveLength(1);
+		const init = calls[0]!.init as Record<string, unknown> | undefined;
+		expect(init).toBeTruthy();
+		expect(init!.redirect).toBe("manual");
+		expect(init!.proxy).toBe("http://127.0.0.1:8080");
+	});
+
+	it("preserves a caller-supplied redirect for ordinary HTTP/HTTPS-proxy wrappers", async () => {
+		const calls: Array<{ init: unknown }> = [];
+		const fakeFetch = ((input: unknown, init?: unknown) => {
+			calls.push({ init });
+			return Promise.resolve(new Response("ok"));
+		}) as typeof fetch;
+		fakeFetch.preconnect = () => {};
+
+		// No socksBacked option → ordinary wrapper must NOT touch the caller's
+		// redirect preference (here "follow" passes through untouched).
+		const proxied = createProxiedFetch("http://127.0.0.1:8080", fakeFetch);
+		await proxied("https://provider.example/api", { redirect: "follow" });
+
+		expect(calls).toHaveLength(1);
+		const init = calls[0]!.init as Record<string, unknown> | undefined;
+		expect(init).toBeTruthy();
+		expect(init!.redirect).toBe("follow");
+		expect(init!.proxy).toBe("http://127.0.0.1:8080");
+	});
 });
 
 // ─── Factory lifecycle + module-wide default ───────────────────────────────
@@ -334,12 +395,15 @@ describe("provider fetch factory lifecycle", () => {
 // ─── Domain validation parity (sanity) ─────────────────────────────────────
 
 describe("isValidProxyUrl parity", () => {
-	it("accepts bare http/https URLs", () => {
+	it("accepts bare http/https/socks5 URLs", () => {
 		expect(isValidProxyUrl("http://127.0.0.1:8080")).toBe(true);
 		expect(isValidProxyUrl("https://proxy.example:8443")).toBe(true);
+		expect(isValidProxyUrl("socks5://127.0.0.1:1080")).toBe(true);
 	});
-	it("rejects socks and embedded credentials", () => {
-		expect(isValidProxyUrl("socks5://127.0.0.1:1080")).toBe(false);
+	it("rejects other socks variants and embedded credentials", () => {
+		expect(isValidProxyUrl("socks4://127.0.0.1:1080")).toBe(false);
+		expect(isValidProxyUrl("socks5h://127.0.0.1:1080")).toBe(false);
+		expect(isValidProxyUrl("socks5://u:p@127.0.0.1:1080")).toBe(false);
 		expect(isValidProxyUrl("http://u:p@127.0.0.1:8080")).toBe(false);
 	});
 });

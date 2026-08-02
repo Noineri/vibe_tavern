@@ -503,15 +503,15 @@ export const promptPresets = sqliteTable('prompt_presets', {
 });
 
 // ─── proxyProfiles ────────────────────────────────────────────────────────────
-// Named HTTP(S) proxy entries for provider outbound traffic
+// Named HTTP(S)/SOCKS5 proxy entries for provider outbound traffic
 // (LOCAL_API_ORIGIN_AND_PROVIDER_PROXY_REPORT). The `password` column is a
 // stored secret — it never crosses the wire boundary (clients receive
 // `hasStoredPassword` instead, mirroring providerProfiles.api_key).
 export const proxyProfiles = sqliteTable('proxy_profiles', {
   id: text('id').primaryKey(),
   name: text('name').notNull(),
-  // HTTP(S) proxy URL without embedded userinfo. Username/password live as
-  // separate columns so the URL can be logged safely.
+  // HTTP(S) or SOCKS5 proxy URL without embedded userinfo. Username/password
+  // live as separate columns so the URL can be logged safely.
   url: text('url').notNull(),
   username: text('username'),
   password: text('password'),
