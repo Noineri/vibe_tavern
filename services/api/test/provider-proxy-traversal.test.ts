@@ -21,6 +21,8 @@ import {
 import { resolveModel } from "../src/infrastructure/ai/provider-executor-utils.js";
 
 const PROXIED_TARGET = "http://203.0.113.10:8080";
+const TEST_PROXY_CERTIFICATE = Bun.file(new URL("./fixtures/provider-proxy-cert.pem", import.meta.url));
+const TEST_PROXY_PRIVATE_KEY = Bun.file(new URL("./fixtures/provider-proxy-key.pem", import.meta.url));
 
 interface ProxyHit {
 	readonly method: string;
@@ -32,6 +34,8 @@ interface Fixture {
 	readonly directTargetUrl: string;
 	readonly proxyUrl: string;
 	readonly proxyHits: ProxyHit[];
+	readonly httpsProxyUrl: string;
+	readonly httpsProxyHits: ProxyHit[];
 	stop(): void;
 }
 
@@ -95,6 +99,7 @@ function ollamaStreamResponse(): Response {
 
 function startFixture(): Fixture {
 	const proxyHits: ProxyHit[] = [];
+	const httpsProxyHits: ProxyHit[] = [];
 	const directTarget = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: providerResponse });
 	const proxy = Bun.serve({
 		hostname: "127.0.0.1",
@@ -108,15 +113,44 @@ function startFixture(): Fixture {
 			return providerResponse(request);
 		},
 	});
+	const httpsProxy = Bun.serve({
+		hostname: "127.0.0.1",
+		port: 0,
+		tls: {
+			cert: TEST_PROXY_CERTIFICATE,
+			key: TEST_PROXY_PRIVATE_KEY,
+		},
+		fetch(request) {
+			httpsProxyHits.push({
+				method: request.method,
+				url: request.url,
+				proxyAuthorization: request.headers.get("proxy-authorization"),
+			});
+			return providerResponse(request);
+		},
+	});
 	return {
 		directTargetUrl: `http://127.0.0.1:${directTarget.port}`,
 		proxyUrl: `http://127.0.0.1:${proxy.port}`,
 		proxyHits,
+		httpsProxyUrl: `https://127.0.0.1:${httpsProxy.port}`,
+		httpsProxyHits,
 		stop: () => {
 			directTarget.stop(true);
 			proxy.stop(true);
+			httpsProxy.stop(true);
 		},
 	};
+}
+
+function createTestCaFetch(): typeof fetch {
+	const trustedFetch = ((input: RequestInfo | URL, init?: RequestInit) =>
+		fetch(input, {
+			...init,
+			tls: { ca: [TEST_PROXY_CERTIFICATE] },
+		})) as typeof fetch;
+	trustedFetch.preconnect = () => {};
+	return trustedFetch;
 }
 
 function lookupFor(proxyUrl: string, defaultId: string | null = "proxy"): ProxyLookup {
@@ -170,6 +204,7 @@ describe("provider proxy traversal", () => {
 	beforeEach(() => {
 		resetProviderFetchFactory();
 		fixture.proxyHits.length = 0;
+		fixture.httpsProxyHits.length = 0;
 	});
 
 	for (const providerType of protocols) {
@@ -247,6 +282,42 @@ describe("provider proxy traversal", () => {
 		expect(fixture.proxyHits).toHaveLength(1);
 		expect(fixture.proxyHits[0]?.proxyAuthorization).toBe(`Basic ${btoa("alice:secret")}`);
 		expect(fixture.proxyHits[0]?.url).toBe(`${PROXIED_TARGET}/models`);
+	});
+
+	it("rejects an HTTPS proxy whose certificate is not trusted", async () => {
+		setProviderFetchFactory(createProviderFetchFactory(lookupFor(fixture.httpsProxyUrl)));
+		const providerFetch = await resolveProviderFetchForProfile({ proxyMode: PROXY_MODE.proxy, proxyId: "proxy" });
+		if (!providerFetch) throw new Error("Expected an HTTPS proxy-aware fetch.");
+		await expect(providerFetch(`${PROXIED_TARGET}/models`)).rejects.toThrow();
+		expect(fixture.httpsProxyHits).toHaveLength(0);
+	});
+
+	it("traverses a trusted HTTPS proxy for gateway and AI SDK requests", async () => {
+		setProviderFetchFactory(createProviderFetchFactory(
+			lookupFor(fixture.httpsProxyUrl),
+			createTestCaFetch(),
+		));
+		const providerFetch = await resolveProviderFetchForProfile({ proxyMode: PROXY_MODE.proxy, proxyId: "proxy" });
+		if (!providerFetch) throw new Error("Expected an HTTPS proxy-aware fetch.");
+
+		const models = await listProviderModels({
+			baseUrl: PROXIED_TARGET,
+			apiKey: "key",
+			providerType: "openai",
+			fetch: providerFetch,
+		});
+		expect(models).toHaveLength(1);
+
+		const model = resolveModel(
+			{ providerPreset: "openai", endpoint: PROXIED_TARGET, apiKey: "key" },
+			"test-model",
+			undefined,
+			providerFetch,
+		);
+		const generated = await generateText({ model, prompt: "Hi", maxOutputTokens: 16, maxRetries: 0 });
+		expect(generated.text).toBe("chat reply");
+		expect(fixture.httpsProxyHits).toHaveLength(2);
+		expect(fixture.httpsProxyHits.every((hit) => hit.url.startsWith(PROXIED_TARGET))).toBe(true);
 	});
 
 	for (const providerType of ["anthropic", "google", "ollama", "koboldcpp", "llamacpp", "unsloth"] as const) {

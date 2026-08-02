@@ -232,15 +232,9 @@ describe("createProxiedFetch", () => {
 		}) as typeof fetch;
 		fakeFetch.preconnect = () => {};
 
-		const original = globalThis.fetch;
 		const controller = new AbortController();
-		globalThis.fetch = fakeFetch;
-		try {
-			const proxied = createProxiedFetch("http://127.0.0.1:8080");
-			await proxied("http://target.example/api", { method: "POST", headers: { a: "b" }, body: "request body", redirect: "manual", signal: controller.signal });
-		} finally {
-			globalThis.fetch = original;
-		}
+		const proxied = createProxiedFetch("http://127.0.0.1:8080", fakeFetch);
+		await proxied("http://target.example/api", { method: "POST", headers: { a: "b" }, body: "request body", redirect: "manual", signal: controller.signal });
 
 		expect(calls).toHaveLength(1);
 		const init = calls[0]!.init as Record<string, unknown> | undefined;
@@ -254,16 +248,10 @@ describe("createProxiedFetch", () => {
 
 	it("keeps fetch.preconnect as a no-op so proxy intent cannot preconnect directly", () => {
 		let directPreconnects = 0;
-		const original = globalThis.fetch;
 		const fakeFetch = (async () => new Response("ok")) as typeof fetch;
 		fakeFetch.preconnect = () => { directPreconnects += 1; };
-		globalThis.fetch = fakeFetch;
-		try {
-			const proxied = createProxiedFetch("http://127.0.0.1:8080");
-			proxied.preconnect("https://provider.example");
-		} finally {
-			globalThis.fetch = original;
-		}
+		const proxied = createProxiedFetch("http://127.0.0.1:8080", fakeFetch);
+		proxied.preconnect("https://provider.example");
 		expect(directPreconnects).toBe(0);
 	});
 });

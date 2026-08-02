@@ -189,10 +189,15 @@ export async function resolveEffectiveProxy(
  * pass through untouched. Bun's `fetch` namespace also exposes `preconnect`;
  * the wrapper supplies a no-op implementation so it stays assignable to
  * `typeof fetch` without opening a direct connection that bypasses the proxy.
+ * The optional underlying transport exists for deterministic TLS fixture tests;
+ * production callers use Bun's global fetch.
  */
-export function createProxiedFetch(proxyUrl: string): ProviderFetch {
+export function createProxiedFetch(
+	proxyUrl: string,
+	transportFetch: ProviderFetch = fetch,
+): ProviderFetch {
 	const proxied: ProviderFetch = (input, init) =>
-		fetch(input, { ...init, proxy: proxyUrl });
+		transportFetch(input, { ...init, proxy: proxyUrl });
 	// A direct preconnect could leak target DNS/connection metadata outside the
 	// configured proxy. Keep the namespace member for type compatibility only.
 	proxied.preconnect = () => {};
@@ -207,9 +212,12 @@ export function createProxiedFetch(proxyUrl: string): ProviderFetch {
 export async function resolveProviderFetch(
 	policy: ProviderProxyPolicy,
 	lookup: ProxyLookup,
+	transportFetch: ProviderFetch = fetch,
 ): Promise<ProviderFetch | undefined> {
 	const resolved = await resolveEffectiveProxy(policy, lookup);
-	return resolved.kind === "direct" ? undefined : createProxiedFetch(resolved.proxyUrl);
+	return resolved.kind === "direct"
+		? undefined
+		: createProxiedFetch(resolved.proxyUrl, transportFetch);
 }
 
 // ─── Factory + process-wide default ───────────────────────────────────────
@@ -252,10 +260,13 @@ export function getProviderFetchFactory(): ProviderFetchFactory {
 	return activeFactory;
 }
 
-/** Build a factory bound to the proxy lookup supplied by the store. */
-export function createProviderFetchFactory(proxies: ProxyLookup): ProviderFetchFactory {
+/** Build a factory bound to the proxy lookup and underlying transport. */
+export function createProviderFetchFactory(
+	proxies: ProxyLookup,
+	transportFetch: ProviderFetch = fetch,
+): ProviderFetchFactory {
 	return {
-		resolveFetch: (policy) => resolveProviderFetch(policy, proxies),
+		resolveFetch: (policy) => resolveProviderFetch(policy, proxies, transportFetch),
 	};
 }
 
