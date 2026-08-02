@@ -25,6 +25,7 @@ import {
 	type ProviderProbeResult,
 	type TestChatResult,
 } from "./provider-transport.js";
+import type { ProviderFetch } from "./provider-fetch-factory.js";
 
 // Re-exported for backward compatibility (adapters/routes import these from
 // here). The definitions live in provider-transport.ts.
@@ -44,11 +45,13 @@ export async function probeProviderConnection(input: {
 	baseUrl: string;
 	apiKey: string;
 	providerType?: string;
+	fetch?: ProviderFetch;
 }): Promise<ProviderProbeResult> {
 	const type = normalizeProviderType(input.providerType ?? "openai_compat");
 	return resolveProtocol(type).probe({
 		baseUrl: input.baseUrl,
 		apiKey: input.apiKey,
+		...(input.fetch ? { fetch: input.fetch } : {}),
 	});
 }
 

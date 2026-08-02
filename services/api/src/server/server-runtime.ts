@@ -18,6 +18,10 @@ import { resolveTlsConfig } from "../domain/mobile-access/mobile-auth.js";
 import { PromptPresetService } from "../domain/prompt/prompt-preset-service.js";
 import { ProviderOrchestrator } from "../domain/providers/provider-orchestrator.js";
 import { createProviderProfileService } from "../domain/providers/provider-profile-service.js";
+import {
+	setProviderFetchFactory,
+	createProviderFetchFactory,
+} from "../domain/providers/provider-fetch-factory.js";
 import { createProxyService } from "../domain/providers/proxy-service.js";
 import { RuntimeApiAdapter } from "../api/adapters/runtime-api-adapter.js";
 import { SessionRuntime } from "../runtime/session/session-runtime.js";
@@ -111,6 +115,13 @@ export async function createRuntimeApp(config: RuntimeAppConfig): Promise<Hono> 
 	await warmupTokenizers();
 	setTokenCountFn(countTokens);
 	console.log(`${tag} Tokenizers ready.`);
+
+	// Provider proxy transport — bind the process-wide fetch factory so every
+	// outbound provider request resolves the profile's proxy policy in one place.
+	// Pre-bind direct/inherit callers preserve existing behavior; explicit proxy
+	// intent fails closed until the live store-backed factory is available.
+	setProviderFetchFactory(createProviderFetchFactory(stores.proxies));
+	console.log(`${tag} Provider proxy transport bound.`);
 
 	// Services
 	const providerProfileService = createProviderProfileService(stores.providers, stores.proxies);

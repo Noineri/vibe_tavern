@@ -34,6 +34,7 @@ import {
 } from "./provider-transport.js";
 import { PROVIDER_TYPE, SAMPLER_SETS } from "@vibe-tavern/domain";
 import type { ProtocolAdapter, ProbeInput, ListModelsInput } from "./protocol-types.js";
+import type { ProviderFetch } from "./provider-fetch-factory.js";
 
 // ─── Types ───────────────────────────────────────────────────────────────
 
@@ -95,6 +96,8 @@ export interface OllamaAdapterOptions {
   baseURL: string;
   /** Model name (e.g. "gemma3:4b"). */
   modelId: string;
+  /** Optional proxy-aware fetch honoring the profile's proxy policy. */
+  fetch?: ProviderFetch;
 }
 
 // ─── Prompt conversion ───────────────────────────────────────────────────
@@ -194,8 +197,9 @@ function buildOllamaOptions(
  * Create a LanguageModelV3 adapter for Ollama using native /api/chat.
  */
 export function createOllamaModel(options: OllamaAdapterOptions): LanguageModelV3 {
-  const { baseURL, modelId } = options;
+  const { baseURL, modelId, fetch: customFetch } = options;
   const base = baseURL.replace(/\/+$/, "");
+  const doFetch: typeof fetch = customFetch ?? fetch;
 
   return {
     specificationVersion: "v3",
@@ -214,7 +218,7 @@ export function createOllamaModel(options: OllamaAdapterOptions): LanguageModelV
         options: ollamaOptions,
       };
 
-      const response = await fetch(`${base}/api/chat`, {
+      const response = await doFetch(`${base}/api/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
@@ -257,7 +261,7 @@ export function createOllamaModel(options: OllamaAdapterOptions): LanguageModelV
         options: ollamaOptions,
       };
 
-      const response = await fetch(`${base}/api/chat`, {
+      const response = await doFetch(`${base}/api/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
@@ -384,9 +388,10 @@ export interface OllamaTagsResponse {
  * Fetch available models from Ollama.
  * Returns model names (e.g. ["gemma3:4b", "qwen3.5:9b"]).
  */
-export async function fetchOllamaModels(baseURL: string): Promise<string[]> {
+export async function fetchOllamaModels(baseURL: string, customFetch?: ProviderFetch): Promise<string[]> {
   const base = baseURL.replace(/\/+$/, "");
-  const res = await fetch(`${base}/api/tags`);
+  const doFetch: typeof fetch = customFetch ?? fetch;
+  const res = await doFetch(`${base}/api/tags`);
   if (!res.ok) throw new Error(`Ollama model list failed (${res.status})`);
   const data = (await res.json()) as OllamaTagsResponse;
   // Filter out embedding-only models
@@ -418,9 +423,10 @@ export async function testOllamaChat(input: ProviderConnectionInput): Promise<Te
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TEST_CHAT_TIMEOUT_MS);
+  const doFetch: typeof fetch = input.fetch ?? fetch;
 
   try {
-    const response = await fetch(`${baseUrl}/api/chat`, {
+    const response = await doFetch(`${baseUrl}/api/chat`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Accept: "application/json" },
       body: JSON.stringify({
@@ -465,10 +471,11 @@ export async function listOllamaModels(input: ListModelsInput): Promise<Provider
   const url = `${baseUrl}/api/tags`;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), MODEL_LIST_TIMEOUT_MS);
+  const doFetch: typeof fetch = input.fetch ?? fetch;
 
   let response: Response;
   try {
-    response = await fetch(url, {
+    response = await doFetch(url, {
       method: "GET",
       headers: { Accept: "application/json" },
       signal: controller.signal,
@@ -497,7 +504,7 @@ export async function listOllamaModels(input: ListModelsInput): Promise<Provider
   const enriched = await Promise.all(
     baseOptions.map(async (option) => ({
       ...option,
-      ...(await fetchOllamaModelMetadata(baseUrl, option.id)),
+      ...(await fetchOllamaModelMetadata(baseUrl, option.id, input.fetch)),
     })),
   );
 
@@ -507,9 +514,11 @@ export async function listOllamaModels(input: ListModelsInput): Promise<Provider
 async function fetchOllamaModelMetadata(
   baseUrl: string,
   model: string,
+  customFetch?: ProviderFetch,
 ): Promise<Partial<ProviderModelOption>> {
   try {
-    const response = await fetch(`${baseUrl}/api/show`, {
+    const doFetch: typeof fetch = customFetch ?? fetch;
+    const response = await doFetch(`${baseUrl}/api/show`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Accept: "application/json" },
       body: JSON.stringify({ model }),
@@ -585,9 +594,9 @@ export const ollamaProtocol: ProtocolAdapter = {
     samplers: SAMPLER_SETS.openai_local,
     textCompletion: false,
   },
-  resolveModel(profile, model) {
+  resolveModel(profile, model, fetch?: ProviderFetch) {
     const endpoint = (profile.endpoint || "").replace(/\/+$/, "") || "http://localhost:11434";
-    return createOllamaModel({ baseURL: endpoint, modelId: model });
+    return createOllamaModel({ baseURL: endpoint, modelId: model, ...(fetch ? { fetch } : {}) });
   },
   limitations: [
     "Uses Ollama native /api/chat endpoint for full sampler support.",

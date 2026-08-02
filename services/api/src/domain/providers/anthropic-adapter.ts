@@ -11,6 +11,7 @@
 
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { interpretProbeResponse } from "./probe-helpers.js";
+import type { ProviderFetch } from "./provider-fetch-factory.js";
 import {
 	PROBE_TIMEOUT_MS,
 	MODEL_LIST_TIMEOUT_MS,
@@ -49,7 +50,8 @@ export async function probeAnthropicConnection(input: ProbeInput): Promise<Provi
 
 	let response: Response;
 	try {
-		response = await fetch(url, {
+		const doFetch: typeof fetch = input.fetch ?? fetch;
+		response = await doFetch(url, {
 			method: "GET",
 			headers,
 			signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
@@ -77,9 +79,10 @@ export async function testAnthropicChat(input: ProviderConnectionInput): Promise
 
 	const controller = new AbortController();
 	const timer = setTimeout(() => controller.abort(), TEST_CHAT_TIMEOUT_MS);
+	const doFetch: typeof fetch = input.fetch ?? fetch;
 
 	try {
-		const response = await fetch(url, {
+		const response = await doFetch(url, {
 			method: "POST",
 			headers: {
 				"Content-Type": "application/json",
@@ -138,7 +141,8 @@ export async function listAnthropicModels(input: ListModelsInput): Promise<Provi
 
 	let response: Response;
 	try {
-		response = await fetch(url, {
+		const doFetch: typeof fetch = input.fetch ?? fetch;
+		response = await doFetch(url, {
 			method: "GET",
 			headers: {
 				Accept: "application/json",
@@ -179,12 +183,13 @@ export const anthropicProtocol: ProtocolAdapter = {
 		samplers: SAMPLER_SETS.anthropic,
 		textCompletion: false,
 	},
-	resolveModel(profile, model) {
+	resolveModel(profile, model, fetch?: ProviderFetch) {
 		const endpoint = (profile.endpoint || "").replace(/\/+$/, "");
 		const apiKey = profile.apiKey ?? "";
 		const provider = createAnthropic({
 			apiKey: apiKey || "not-needed",
 			baseURL: endpoint || undefined,
+			...(fetch ? { fetch } : {}),
 		});
 		return provider(model);
 	},

@@ -23,7 +23,7 @@ import {
   type ProviderProfileRecord,
   type TestChatResponse,
 } from "../../app-client.js";
-import type { CoauthorTransport, ModelFavoriteScope, ModelSettingsOverlay, ProviderProbeResponse } from "@vibe-tavern/domain";
+import type { CoauthorTransport, ModelFavoriteScope, ModelSettingsOverlay, ProviderProbeResponse, ProviderProxyMode } from "@vibe-tavern/domain";
 import { useProviderDataStore } from "../provider-data-store.js";
 
 // ---------------------------------------------------------------------------
@@ -134,7 +134,7 @@ export async function testProviderProfileAction(id: string): Promise<ProviderPro
 }
 
 export async function testProviderDraftAction(
-  input: { endpoint: string; apiKey: string; providerType?: string }
+  input: { endpoint: string; apiKey: string; providerType?: string; proxyMode?: ProviderProxyMode; proxyId?: string | null }
 ): Promise<ProviderProbeResponse> {
   return await testProviderDraft(input);
 }
@@ -151,15 +151,19 @@ export async function testProviderChatAction(
   baseUrl: string,
   apiKey: string,
   model: string,
-  providerType?: string
+  providerType?: string,
+  proxyMode?: ProviderProxyMode,
+  proxyId?: string | null,
 ): Promise<TestChatResponse> {
-  return await testProviderChat(baseUrl, apiKey, model, providerType);
+  return await testProviderChat(baseUrl, apiKey, model, providerType, proxyMode, proxyId);
 }
 
 export async function fetchModelsByEndpointAction(
   baseUrl: string,
   apiKey?: string,
-  providerType?: string
+  providerType?: string,
+  proxyMode?: ProviderProxyMode,
+  proxyId?: string | null,
 ) {
-  return await fetchModelsByEndpoint(baseUrl, apiKey, providerType);
+  return await fetchModelsByEndpoint(baseUrl, apiKey, providerType, proxyMode, proxyId);
 }

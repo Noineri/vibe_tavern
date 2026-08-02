@@ -12,6 +12,7 @@ import type { ChatSummaryService } from "../../domain/chat/chat-summary-service.
 import type { ProviderProfileService } from "../../domain/providers/provider-profile-service.js";
 import type { AssetService } from "../../domain/asset/asset-service.js";
 import { resolveCachedModels } from "../../domain/providers/model-cache-service.js";
+import { resolveProviderFetchForProfile } from "../../domain/providers/provider-fetch-factory.js";
 import { resolveVisionDescribePrompt } from "../../infrastructure/ai/vision-gate.js";
 import type { RegenerateOverride, CoauthorModuleCreate, CoauthorModuleUpdate, CoauthorModule } from "@vibe-tavern/api-contracts";
 
@@ -283,8 +284,17 @@ export class ChatAdapter implements ChatRuntimeApi {
 		const { describeAttachments } = await import("../../infrastructure/ai/vision-gate.js");
 		const prompt = await this.resolveVisionDescribePromptFromPreset();
 		const assetLoader = (assetId: string) => this.assetService.loadBuffer(assetId);
+		const providerFetch = await resolveProviderFetchForProfile(profile);
 
-		const descriptions = await describeAttachments([att], profile.visionModel, profile, assetLoader, prompt);
+		const descriptions = await describeAttachments(
+			[att],
+			profile.visionModel,
+			profile,
+			assetLoader,
+			prompt,
+			undefined,
+			providerFetch,
+		);
 		const description = descriptions.get(att.id)?.trim() ?? "";
 		await this.sessionRuntime.chatApp.updateSingleAttachmentDescription(messageId, attachmentId, description);
 		return { description };

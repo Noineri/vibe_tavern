@@ -21,6 +21,7 @@
 import type { Attachment } from "@vibe-tavern/domain";
 import type { ImagePart, TextPart } from "ai";
 import type { SdkMessage } from "./provider-executor-utils.js";
+import type { ProviderFetch } from "../../domain/providers/provider-fetch-factory.js";
 import { prepareImageForVision } from "../../shared/image-compress.js";
 import { resolveSystemPrompt } from "../../domain/ai-assistant/ai-assistant-prompts.js";
 import { splitReasoningFromText, type ReasoningSplitState } from "../../domain/ai-assistant/reasoning-split.js";
@@ -238,6 +239,7 @@ export async function describeAttachments(
   assetLoader: (assetId: string) => Promise<Buffer | null>,
   systemPrompt?: string,
   signal?: AbortSignal,
+  fetch?: ProviderFetch,
 ): Promise<Map<string, string>> {
   const results = new Map<string, string>();
 
@@ -246,7 +248,7 @@ export async function describeAttachments(
   const { normalizeProviderType } = await import("@vibe-tavern/domain");
   const { generateText } = await import("ai");
 
-  const model = resolveProtocol(normalizeProviderType(profile.providerPreset)).resolveModel(profile, visionModel);
+  const model = resolveProtocol(normalizeProviderType(profile.providerPreset)).resolveModel(profile, visionModel, fetch);
   const resolvedPrompt = systemPrompt?.trim() || "Describe this image in detail.";
 
   for (const att of attachments) {

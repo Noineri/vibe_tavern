@@ -11,6 +11,7 @@
 
 import { createGoogle } from "@ai-sdk/google";
 import { interpretProbeResponse } from "./probe-helpers.js";
+import type { ProviderFetch } from "./provider-fetch-factory.js";
 import {
 	PROBE_TIMEOUT_MS,
 	MODEL_LIST_TIMEOUT_MS,
@@ -41,7 +42,8 @@ export async function probeGoogleConnection(input: ProbeInput): Promise<Provider
 	const url = `${baseUrl}/v1beta/models?key=${input.apiKey}`;
 	let response: Response;
 	try {
-		response = await fetch(url, {
+		const doFetch: typeof fetch = input.fetch ?? fetch;
+		response = await doFetch(url, {
 			method: "GET",
 			headers: { Accept: "application/json" },
 			signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
@@ -69,9 +71,10 @@ export async function testGoogleChat(input: ProviderConnectionInput): Promise<Te
 
 	const controller = new AbortController();
 	const timer = setTimeout(() => controller.abort(), TEST_CHAT_TIMEOUT_MS);
+	const doFetch: typeof fetch = input.fetch ?? fetch;
 
 	try {
-		const response = await fetch(url, {
+		const response = await doFetch(url, {
 			method: "POST",
 			headers: { "Content-Type": "application/json" },
 			body: JSON.stringify({
@@ -120,7 +123,8 @@ export async function listGoogleModels(input: ListModelsInput): Promise<Provider
 
 	let response: Response;
 	try {
-		response = await fetch(url, {
+		const doFetch: typeof fetch = input.fetch ?? fetch;
+		response = await doFetch(url, {
 			method: "GET",
 			headers: { Accept: "application/json" },
 			signal: controller.signal,
@@ -193,7 +197,7 @@ export const googleProtocol: ProtocolAdapter = {
 		samplers: SAMPLER_SETS.minimal_reasoning,
 		textCompletion: false,
 	},
-	resolveModel(profile, model) {
+	resolveModel(profile, model, fetch?: ProviderFetch) {
 		const endpoint = (profile.endpoint || "").replace(/\/+$/, "");
 		const apiKey = profile.apiKey ?? "";
 		// Google SDK defaults to https://generativelanguage.googleapis.com/v1beta.
@@ -206,6 +210,7 @@ export const googleProtocol: ProtocolAdapter = {
 		const provider = createGoogle({
 			apiKey: apiKey || "not-needed",
 			baseURL: googleBaseUrl,
+			...(fetch ? { fetch } : {}),
 		});
 		return provider(model);
 	},

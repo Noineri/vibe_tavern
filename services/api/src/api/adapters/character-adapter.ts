@@ -8,6 +8,7 @@ import { extToMime } from "../../domain/asset/asset-service.js";
 import type { ProviderProfileService } from "../../domain/providers/provider-profile-service.js";
 import { validation } from "../../shared/errors.js";
 import { describeAttachments, resolveVisionDescribePrompt } from "../../infrastructure/ai/vision-gate.js";
+import { resolveProviderFetchForProfile } from "../../domain/providers/provider-fetch-factory.js";
 
 export class CharacterAdapter implements CharacterRuntimeApi, CharacterAssetRuntimeApi {
 	constructor(
@@ -393,6 +394,7 @@ export class CharacterAdapter implements CharacterRuntimeApi, CharacterAssetRunt
 			throw validation("No vision model configured in the active provider profile. Set one in Provider settings.");
 		}
 		const prompt = await this.resolveVisionDescribePromptFromPreset();
+		const providerFetch = await resolveProviderFetchForProfile(profile);
 
 		const byId = new Map(loadable.map((x) => [x.row.id, x.buffer] as const));
 		const attachments = loadable.map((x) => ({
@@ -415,6 +417,7 @@ export class CharacterAdapter implements CharacterRuntimeApi, CharacterAssetRunt
 			assetLoader,
 			prompt,
 			signal,
+			providerFetch,
 		);
 		const updated: string[] = [];
 		for (const [id, text] of descriptions) {
@@ -444,6 +447,7 @@ export class CharacterAdapter implements CharacterRuntimeApi, CharacterAssetRunt
 			throw validation("No vision model configured in the active provider profile. Set one in Provider settings.");
 		}
 		const prompt = await this.resolveVisionDescribePromptFromPreset();
+		const providerFetch = await resolveProviderFetchForProfile(profile);
 		console.log(`[DESCRIBE] adapter.avatar.send visionModel=${profile.visionModel} providerPreset=${profile.providerPreset} endpoint=${profile.endpoint} promptLen=${prompt.length}`);
 
 		const descriptions = await describeAttachments(
@@ -453,6 +457,7 @@ export class CharacterAdapter implements CharacterRuntimeApi, CharacterAssetRunt
 			async () => buffer,
 			prompt,
 			signal,
+			providerFetch,
 		);
 		const text = descriptions.get("avatar")?.trim() ?? "";
 		console.log(`[DESCRIBE] adapter.avatar.result characterId=${characterId} descLen=${text.length} head=${JSON.stringify(text.slice(0, 80))}`);

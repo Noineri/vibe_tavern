@@ -26,7 +26,7 @@ import type {
 	SummaryResponse,
 	CharacterVersionResponse,
 } from "./session-types.js";
-import type { ObjectiveMode, ObjectiveTaskStatus, PromptTraceRecordDto, PromptPresetDto, PronounForms, SceneTrackerConfig, SceneTrackerConfigPatch, CoauthorContextLink, MessageVariantId, DiceActorType, DiceMode, DiceRollSnapshot } from "@vibe-tavern/domain";
+import type { ObjectiveMode, ObjectiveTaskStatus, PromptTraceRecordDto, PromptPresetDto, PronounForms, SceneTrackerConfig, SceneTrackerConfigPatch, CoauthorContextLink, MessageVariantId, DiceActorType, DiceMode, DiceRollSnapshot, ProviderProxyMode } from "@vibe-tavern/domain";
 import type { ChatMode } from "@vibe-tavern/domain";
 import type { DiceDefinitionsResponse } from "../../domain/scripts-engine/dice-script-service.js";
 import type { DicePendingState } from "../../domain/dice/dice-service.js";
@@ -348,7 +348,7 @@ export interface ProviderRuntimeApi {
 	updateProviderProfile: (providerProfileId: string, body: Record<string, unknown>) => Promise<ClientProviderProfileRecord>;
 	saveProviderDraft: (body: Record<string, unknown>) => Promise<ClientProviderProfileRecord>;
 	deleteProviderProfile: (providerProfileId: string) => Promise<void>;
-	testProviderDraft: (body: { endpoint?: string; apiKey?: string; providerType?: string } | null) => Promise<ProviderProbeResult>;
+	testProviderDraft: (body: { endpoint?: string; apiKey?: string; providerType?: string; proxyMode?: ProviderProxyMode; proxyId?: string | null } | null) => Promise<ProviderProbeResult>;
 	testProviderProfile: (providerProfileId: string) => Promise<ProviderProbeResult>;
 	fetchProviderModels: (providerProfileId: string) => Promise<{ models: ProviderModelOption[] }>;
 	listFavoriteProviderModels: (providerProfileId: string, scope: ModelFavoriteScope) => Promise<FavoriteModel[]>;
@@ -358,8 +358,8 @@ export interface ProviderRuntimeApi {
 	getProviderModelSettings: (providerProfileId: string, modelId: string) => Promise<ProviderModelSettings | null>;
 	upsertProviderModelSettings: (providerProfileId: string, modelId: string, settings: ModelSettingsOverlay) => Promise<ProviderModelSettings>;
 	deleteProviderModelSettings: (providerProfileId: string, modelId: string) => Promise<void>;
-	fetchModelsByEndpoint: (baseUrl: string, apiKey?: string, providerType?: string) => Promise<ProviderModelOption[]>;
-	testProviderChatByEndpoint: (opts: { baseUrl: string; apiKey: string; model: string; providerType?: string }) => Promise<TestChatResult>;
+	fetchModelsByEndpoint: (baseUrl: string, apiKey?: string, providerType?: string, proxyMode?: ProviderProxyMode, proxyId?: string | null) => Promise<ProviderModelOption[]>;
+	testProviderChatByEndpoint: (opts: { baseUrl: string; apiKey: string; model: string; providerType?: string; proxyMode?: ProviderProxyMode; proxyId?: string | null }) => Promise<TestChatResult>;
 	testProviderChatByProfile: (providerProfileId: string, model: string, transport?: CoauthorTransport) => Promise<TestChatResult>;
 }
 

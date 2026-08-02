@@ -17,6 +17,7 @@ import { wrapProviderExecutionError } from "./provider-error-wrapper.js";
 import { serializeProviderResponseTrace } from "./provider-response-trace.js";
 import { cancelled } from "../../shared/errors.js";
 import { logSendDebug } from "../../shared/send-debug-log.js";
+import { resolveProviderFetchForProfile } from "../../domain/providers/provider-fetch-factory.js";
 
 /** Loose `step.content` part shape — we only consume `tool-error` parts. */
 type NonstreamingToolContentPart = {
@@ -107,7 +108,8 @@ export async function nonstreamingProviderExecute(
   input: ProviderExecutionInput,
 ): Promise<GenerationResult> {
   try {
-    const model = resolveModel(input.profile, input.model, input.transport);
+    const providerFetch = await resolveProviderFetchForProfile(input.profile);
+    const model = resolveModel(input.profile, input.model, input.transport, providerFetch);
     let messages = toSdkMessages(input.prompt);
     const activeModel = input.cachedModels?.find((m) => m.modelSlug === input.model);
     const hasVision = activeModel?.capabilities?.vision ?? false;
@@ -130,6 +132,8 @@ export async function nonstreamingProviderExecute(
           input.profile,
           input.assetLoader,
           input.visionDescribePrompt,
+          input.signal,
+          providerFetch,
         );
         visionDescriptions = allAttachments
           .map((att) => {

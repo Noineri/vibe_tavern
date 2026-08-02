@@ -1,6 +1,7 @@
 import type { StoredProviderProfileRecord } from "@vibe-tavern/domain";
 import type { ProviderProfileService } from "./provider-profile-service.js";
 import { listProviderModels } from "./provider-gateway.js";
+import { resolveProviderFetchForProfile } from "./provider-fetch-factory.js";
 import { normalizeProviderType } from "@vibe-tavern/domain";
 import { logSendDebug } from "../../shared/send-debug-log.js";
 
@@ -19,11 +20,13 @@ export class ProviderOrchestrator {
   async refreshProfileModels(profile: StoredProviderProfileRecord): Promise<Array<{ id: string; label: string; contextLength?: number }>> {
     const providerType = normalizeProviderType(profile.providerPreset);
     try {
+      const fetch = await resolveProviderFetchForProfile(profile);
       const models = await listProviderModels({
         baseUrl: profile.endpoint,
         apiKey: profile.apiKey ?? "",
         providerType,
         requiresAuthForModels: AUTH_REQUIRED_FOR_MODEL_LIST.has(providerType),
+        ...(fetch ? { fetch } : {}),
       });
       const normalized = models.map((model) => ({
         id: model.id,

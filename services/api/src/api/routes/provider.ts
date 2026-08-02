@@ -51,7 +51,7 @@ export function createProviderRoutes(runtime: ProviderRuntimeApi) {
         return c.json({ error: "baseUrl is required." }, 400);
       }
       try {
-        const models = await runtime.fetchModelsByEndpoint(baseUrl, apiKey, body?.providerType);
+        const models = await runtime.fetchModelsByEndpoint(baseUrl, apiKey, body?.providerType, body?.proxyMode, body?.proxyId);
         return c.json({ models });
       } catch (err) {
         if (isDomainError(err)) throw err;
@@ -66,7 +66,7 @@ export function createProviderRoutes(runtime: ProviderRuntimeApi) {
       if (!baseUrl || !model) {
         return c.json({ error: "baseUrl and model are required." }, 400);
       }
-      return c.json(await runtime.testProviderChatByEndpoint({ baseUrl, apiKey, model, providerType: body?.providerType }));
+      return c.json(await runtime.testProviderChatByEndpoint({ baseUrl, apiKey, model, providerType: body?.providerType, proxyMode: body?.proxyMode, proxyId: body?.proxyId }));
     })
     .post("/api/providers/:providerId/models", async (c) => {
       try {

@@ -316,7 +316,8 @@ describe("resolveModel", () => {
   // at /responses. That requires the profile's endpoint + apiKey to reach
   // createOpenAI verbatim. Asserting model.provider alone proves routing but
   // not the endpoint/key wiring — pinned here via the safe mock pattern.
-  it("threads the profile endpoint and apiKey into createOpenAI for the Responses resolver", () => {
+  it("threads the profile endpoint, apiKey, and proxy-aware fetch into createOpenAI for the Responses resolver", () => {
+    const customFetch = globalThis.fetch;
     const responsesSpy = mock((modelId: string) => ({ __responsesModel: true, modelId }));
     const createOpenAISpy = mock((_options: unknown) => ({
       responses: responsesSpy,
@@ -336,12 +337,14 @@ describe("resolveModel", () => {
       },
       "gpt-5.2",
       COAUTHOR_TRANSPORT.responses,
+      customFetch,
     );
 
     expect(createOpenAISpy).toHaveBeenCalledTimes(1);
     const callArgs = createOpenAISpy.mock.calls[0][0] as Record<string, unknown>;
     expect(callArgs.baseURL).toBe("https://custom-proxy.example.com/v1");
     expect(callArgs.apiKey).toBe("sk-custom");
+    expect(callArgs.fetch).toBe(customFetch);
     expect(responsesSpy).toHaveBeenCalledWith("gpt-5.2");
   });
 });

@@ -6,6 +6,7 @@ import type { AssetService } from "../../domain/asset/asset-service.js";
 import type { ProviderProfileService } from "../../domain/providers/provider-profile-service.js";
 import { validation, notFound } from "../../shared/errors.js";
 import { describeAttachments, resolveVisionDescribePrompt } from "../../infrastructure/ai/vision-gate.js";
+import { resolveProviderFetchForProfile } from "../../domain/providers/provider-fetch-factory.js";
 import { serializePersona, buildStPersonaSlice, buildVtPersonaPayload, mergeStSlices } from "../../domain/persona/persona-export.js";
 import { personaExportVtSchema, stPersonaBackupSchema } from "@vibe-tavern/api-contracts";
 import { z } from "zod";
@@ -131,6 +132,7 @@ export class PersonaAdapter implements PersonaRuntimeApi {
 			throw validation("No vision model configured in the active provider profile. Set one in Provider settings.");
 		}
 		const prompt = await this.resolveVisionDescribePromptFromPreset();
+		const providerFetch = await resolveProviderFetchForProfile(profile);
 
 		const descriptions = await describeAttachments(
 			[{ id: "avatar", assetId: "avatar", type: "image", name: `${persona.name} avatar`, mimeType, sizeBytes: 0 }],
@@ -138,6 +140,8 @@ export class PersonaAdapter implements PersonaRuntimeApi {
 			profile,
 			async () => buffer,
 			prompt,
+			undefined,
+			providerFetch,
 		);
 		const text = descriptions.get("avatar")?.trim() ?? "";
 		await this.stores.personas.setMediaFields(brandId<PersonaId>(personaId), { avatarDescription: text });

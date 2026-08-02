@@ -1,5 +1,5 @@
 import type { ProviderProfileRecord, FavoriteProviderModelRecord, ProviderModelSettingsRecord, ProviderModelOption, TestChatResponse } from "./types.js";
-import type { CoauthorTransport, ModelFavoriteScope, ProviderProbeResponse, ModelSettingsOverlay } from "@vibe-tavern/domain";
+import type { CoauthorTransport, ModelFavoriteScope, ProviderProbeResponse, ModelSettingsOverlay, ProviderProxyMode } from "@vibe-tavern/domain";
 import { client } from "./client.js";
 import { unwrapRpc } from "./unwrap.js";
 
@@ -118,7 +118,7 @@ export async function activateProviderProfile(providerProfileId: string): Promis
   return unwrapRpc<ProviderProfileRecord>(response);
 }
 
-export async function testProviderDraft(input: { endpoint: string; apiKey: string; providerType?: string }): Promise<ProviderProbeResponse> {
+export async function testProviderDraft(input: { endpoint: string; apiKey: string; providerType?: string; proxyMode?: ProviderProxyMode; proxyId?: string | null }): Promise<ProviderProbeResponse> {
   const response = await client.api.providers.test.$post({ json: input });
   return unwrapRpc<ProviderProbeResponse>(response);
 }
@@ -174,13 +174,13 @@ export async function upsertProviderModelSettings(providerProfileId: string, mod
   return unwrapRpc<ProviderModelSettingsRecord>(response);
 }
 
-export async function fetchModelsByEndpoint(baseUrl: string, apiKey?: string, providerType?: string): Promise<{ models: ProviderModelOption[] }> {
-  const response = await client.api.providers["fetch-models"].$post({ json: { baseUrl, apiKey: apiKey ?? "", providerType } });
+export async function fetchModelsByEndpoint(baseUrl: string, apiKey?: string, providerType?: string, proxyMode?: ProviderProxyMode, proxyId?: string | null): Promise<{ models: ProviderModelOption[] }> {
+  const response = await client.api.providers["fetch-models"].$post({ json: { baseUrl, apiKey: apiKey ?? "", providerType, proxyMode, proxyId } });
   return unwrapRpc<{ models: ProviderModelOption[] }>(response);
 }
 
-export async function testProviderChat(baseUrl: string, apiKey: string, model: string, providerType?: string): Promise<TestChatResponse> {
-  const response = await client.api.providers["test-chat"].$post({ json: { baseUrl, apiKey, model, providerType } });
+export async function testProviderChat(baseUrl: string, apiKey: string, model: string, providerType?: string, proxyMode?: ProviderProxyMode, proxyId?: string | null): Promise<TestChatResponse> {
+  const response = await client.api.providers["test-chat"].$post({ json: { baseUrl, apiKey, model, providerType, proxyMode, proxyId } });
   return unwrapRpc<TestChatResponse>(response);
 }
 

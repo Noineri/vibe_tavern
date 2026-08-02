@@ -2,7 +2,15 @@ import { describe, it, expect, afterAll, mock, beforeEach } from "bun:test";
 import { mkdir, rm } from "node:fs/promises";
 import { resolve } from "node:path";
 import { tmpdir } from "node:os";
-import { EventBus, brandId, type ChatId, type ChatBranchId } from "@vibe-tavern/domain";
+import {
+  COAUTHOR_TRANSPORT,
+  EventBus,
+  PROXY_MODE,
+  brandId,
+  type AssemblePromptResponse,
+  type ChatId,
+  type ChatBranchId,
+} from "@vibe-tavern/domain";
 import { DiceBindError } from "@vibe-tavern/db";
 
 import { createRuntimeStore } from "../src/runtime/session/session-runtime-store.js";
@@ -10,6 +18,11 @@ import { ChatRuntime } from "../src/runtime/session/session-runtime-chat.js";
 import { ChatApplicationService } from "../src/domain/chat/chat-application-service.js";
 import type { ChatModeAssembleResult, ChatModeStrategy } from "../src/domain/chat/chat-mode-strategy.js";
 import type { StoredProviderProfileRecord } from "@vibe-tavern/domain";
+import {
+  resetProviderFetchFactory,
+  setProviderFetchFactory,
+  type ProviderFetch,
+} from "../src/domain/providers/provider-fetch-factory.js";
 
 // ════════════════════════════════════════════════════════════════════════════
 // DICE-B11 (DICE_SYSTEM_BACKEND_PLAN, Wave B4 unit 2) — stream/non-stream send.
@@ -20,17 +33,20 @@ import type { StoredProviderProfileRecord } from "@vibe-tavern/domain";
 // preparation-boundary cases that don't need the provider.
 //
 // The provider executors are mocked via the SAFE mock.module pattern: real
-// exports are captured FIRST (`await import`), then spread with one overridden
-// function — so other test files that depend on those modules are unaffected.
-// The orchestrator is dynamic-imported AFTER the mocks are registered so it
-// resolves the mocked executors. ChatRuntime / ChatApplicationService /
-// createRuntimeStore do NOT import the executors, so they are safe to import
-// statically.
+// exports and callable references are captured FIRST (`await import`), then all
+// exports are spread before overriding one function. Bun's module override is
+// process-global, so the captured callable references below are also the only
+// reliable way to exercise the genuine executor boundary in this file. The
+// orchestrator is dynamic-imported AFTER registration so it resolves the mocks.
+// ChatRuntime / ChatApplicationService / createRuntimeStore do not import the
+// executors, so they remain safe to import statically.
 // ════════════════════════════════════════════════════════════════════════════
 
 // ── Safe mock.module: capture real executor exports BEFORE registering ──────
 const realNonstreaming = await import("../src/infrastructure/ai/nonstreaming-provider-executor.js");
 const realStream = await import("../src/infrastructure/ai/stream-provider-executor.js");
+const realNonstreamingProviderExecute = realNonstreaming.nonstreamingProviderExecute;
+const realStreamProviderExecutor = realStream.streamProviderExecutor;
 
 let providerShouldThrow = false;
 const PROVIDER_FAILURE = new Error("provider-failure-after-commit");
@@ -103,11 +119,14 @@ async function setup(): Promise<{
 }
 
 afterAll(async () => {
+  providerShouldThrow = false;
+  resetProviderFetchFactory();
   await Promise.all(tmpDirs.map((d) => rm(d, { recursive: true, force: true }).catch(() => {})));
 });
 
 beforeEach(() => {
   providerShouldThrow = false;
+  resetProviderFetchFactory();
 });
 
 /** Minimal valid `ChatModeAssembleResult` for the mock `assemblePrompt`. The
@@ -338,6 +357,125 @@ function makeOrchestrator(rt: ChatRuntime, chatApp: ChatApplicationService): Ins
 }
 
 const TEST_PROFILE = { id: "test-profile", maxTokens: 4096 } as StoredProviderProfileRecord;
+
+function realExecutorProfile(): StoredProviderProfileRecord {
+  return {
+    id: "provider-proxy-test",
+    name: "Proxy test",
+    providerPreset: "openai",
+    coauthorTransport: COAUTHOR_TRANSPORT.chatCompletions,
+    endpoint: "https://provider.example/v1",
+    apiKey: "key",
+    defaultModel: "test-model",
+    contextBudget: null,
+    pinContextBudget: false,
+    bindPerModel: false,
+    modelFreeOnly: false,
+    modelGroupByOwner: false,
+    maxTokens: 16,
+    temperature: 1,
+    topP: 1,
+    topK: 0,
+    minP: 0,
+    topA: 0,
+    typicalP: 1,
+    tfsZ: 1,
+    repeatLastN: 0,
+    mirostat: 0,
+    mirostatTau: 5,
+    mirostatEta: 0.1,
+    dryMultiplier: 0,
+    dryBase: 1.75,
+    dryAllowedLength: 2,
+    drySequenceBreakers: [],
+    xtcThreshold: 0.1,
+    xtcProbability: 0,
+    frequencyPenalty: 0,
+    presencePenalty: 0,
+    repetitionPenalty: 1,
+    stopSequences: [],
+    logitBias: [],
+    seed: null,
+    reasoningEffort: "auto",
+    showReasoning: false,
+    streamResponse: true,
+    customSamplers: false,
+    proxyMode: PROXY_MODE.proxy,
+    proxyId: "proxy",
+    isActive: true,
+    visionModel: null,
+    createdAt: "",
+    updatedAt: "",
+  };
+}
+
+const realExecutorPrompt = {
+  layers: [],
+  tokenAccounting: {},
+  activatedLoreEntries: [],
+  scriptInjections: [],
+  retrievedMemories: [],
+  finalPayload: { messages: [{ role: "user", content: "Hi" }] },
+} satisfies AssemblePromptResponse;
+
+describe("provider executor proxy boundary", () => {
+  it("streaming and non-streaming executors resolve and use the profile proxy fetch", async () => {
+    const requestedUrls: string[] = [];
+    const providerFetch = (async (input: string | URL | Request, init?: RequestInit) => {
+      requestedUrls.push(input instanceof Request ? input.url : String(input));
+      const body = typeof init?.body === "string" ? init.body : "";
+      if (/\"stream\"\s*:\s*true/.test(body)) {
+        const chunks = [
+          `data: ${JSON.stringify({ id: "chat_1", object: "chat.completion.chunk", created: 0, model: "test-model", choices: [{ index: 0, delta: { role: "assistant", content: "streamed reply" }, finish_reason: null }] })}\n\n`,
+          `data: ${JSON.stringify({ id: "chat_1", object: "chat.completion.chunk", created: 0, model: "test-model", choices: [{ index: 0, delta: {}, finish_reason: "stop" }] })}\n\n`,
+          "data: [DONE]\n\n",
+        ];
+        return new Response(new ReadableStream({
+          start(controller) {
+            for (const chunk of chunks) controller.enqueue(new TextEncoder().encode(chunk));
+            controller.close();
+          },
+        }), { headers: { "Content-Type": "text/event-stream" } });
+      }
+      return Response.json({
+        id: "chat_1",
+        object: "chat.completion",
+        created: 0,
+        model: "test-model",
+        choices: [{ index: 0, message: { role: "assistant", content: "chat reply" }, finish_reason: "stop" }],
+      });
+    }) as ProviderFetch;
+    providerFetch.preconnect = () => {};
+
+    const resolvedPolicies: Array<{ proxyMode: string; proxyId: string | null }> = [];
+    setProviderFetchFactory({
+      resolveFetch: async (policy) => {
+        resolvedPolicies.push(policy);
+        return providerFetch;
+      },
+    });
+
+    const input = { profile: realExecutorProfile(), model: "test-model", prompt: realExecutorPrompt };
+    const nonstreaming = await realNonstreamingProviderExecute(input);
+    expect(nonstreaming.text).toBe("chat reply");
+
+    const streaming = await realStreamProviderExecutor(input);
+    let streamedText = "";
+    for await (const chunk of streaming.stream) {
+      if (chunk.type === "text-delta") streamedText += chunk.delta;
+    }
+    expect(streamedText).toContain("streamed reply");
+    expect((await streaming.finished).finishReason).toBe("stop");
+    expect(resolvedPolicies).toEqual([
+      { proxyMode: PROXY_MODE.proxy, proxyId: "proxy" },
+      { proxyMode: PROXY_MODE.proxy, proxyId: "proxy" },
+    ]);
+    expect(requestedUrls).toEqual([
+      "https://provider.example/v1/chat/completions",
+      "https://provider.example/v1/chat/completions",
+    ]);
+  });
+});
 
 describe("DICE-B11 orchestrator — both endpoints + provider-failure retention", () => {
   it("(e) non-stream: provider failure after user-message commit retains bound rolls", async () => {

@@ -11,6 +11,8 @@
 
 import { streamText } from "ai";
 import type { LanguageModel } from "ai";
+import type { ProviderFetch } from "../../domain/providers/provider-fetch-factory.js";
+import { resolveProviderFetchForProfile } from "../../domain/providers/provider-fetch-factory.js";
 import type { Message, MessageVariant } from "@vibe-tavern/db";
 import {
   getAiAssistantAssembler,
@@ -107,6 +109,9 @@ interface AiAssistantProviderProfile {
   readonly defaultModel: string | null;
   readonly contextBudget: number | null;
   readonly maxTokens: number;
+  /** Proxy policy used to resolve the proxy-aware fetch for this profile. */
+  readonly proxyMode: import("@vibe-tavern/domain").ProviderProxyMode;
+  readonly proxyId: string | null;
 }
 
 interface MessageEditorPipelineContextInput {
@@ -123,7 +128,7 @@ interface MessageEditorPipelineContextInput {
 }
 
 export interface StreamDeps extends ContextResolverDeps {
-  readonly resolveModel: (profile: { providerPreset: string; endpoint: string; apiKey: string | null }, model: string) => LanguageModel;
+  readonly resolveModel: (profile: { providerPreset: string; endpoint: string; apiKey: string | null }, model: string, fetch?: ProviderFetch) => LanguageModel;
   readonly getProviderProfile: (id: string) => Promise<AiAssistantProviderProfile | null>;
   readonly getEffectiveProviderProfile: (id: string, model: string) => Promise<AiAssistantProviderProfile>;
   /** Resolve the active preset's aiAssistantPrompts + legacy column. */
@@ -422,7 +427,7 @@ export async function* streamAiAssistant(
   try {
     const prepared = await prepareAiAssistantRequest(request, deps);
     const { config, profile, modelName, messages } = prepared;
-    const aiModel = deps.resolveModel(profile, modelName);
+    const aiModel = deps.resolveModel(profile, modelName, await resolveProviderFetchForProfile(profile));
 
     // md_import intentionally uses plain streamText instead of streamObject.
     // Some providers/models (notably Gemini Flash Lite and OpenAI-compatible

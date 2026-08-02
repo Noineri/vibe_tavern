@@ -2,7 +2,7 @@ import type { ProviderRuntimeApi } from "../contract/runtime-api.js";
 import type { ClientProviderProfileRecord } from "../../runtime/session/session-runtime-dto.js";
 import { notFound } from "../../shared/errors.js";
 import type { StoreContainer } from "@vibe-tavern/db";
-import { COAUTHOR_TRANSPORT, type CoauthorTransport, type ModelFavoriteScope, type ModelSettingsOverlay } from "@vibe-tavern/domain";
+import { COAUTHOR_TRANSPORT, PROXY_MODE, type CoauthorTransport, type ModelFavoriteScope, type ModelSettingsOverlay, type ProviderProxyMode } from "@vibe-tavern/domain";
 import { generateText } from "ai";
 import { resolveModel } from "../../infrastructure/ai/provider-executor-utils.js";
 import type { ProviderProfileService } from "../../domain/providers/provider-profile-service.js";
@@ -12,6 +12,8 @@ import {
 	listProviderModels,
 	normalizeOpenAiCompatibleBaseUrl,
 } from "../../domain/providers/provider-gateway.js";
+import { resolveProviderFetchForProfile } from "../../domain/providers/provider-fetch-factory.js";
+import { validateProviderProxyPolicy } from "../../domain/providers/proxy-service.js";
 
 export class ProviderAdapter implements ProviderRuntimeApi {
 	constructor(
@@ -39,18 +41,35 @@ export class ProviderAdapter implements ProviderRuntimeApi {
 	saveProviderDraft = (body: Record<string, unknown>) =>
 		this.providerProfileService.saveProviderProfile(body);
 
-	testProviderDraft = (body: { endpoint?: string; apiKey?: string; providerType?: string } | null) => {
+	/** Resolve the proxy-aware fetch for a draft policy carried by an unsaved
+	 *  Test Connection / Fetch Models / Test Chat call. */
+	private resolveDraftFetch = async (
+		proxyMode: ProviderProxyMode | undefined,
+		proxyId: string | null | undefined,
+	): ReturnType<typeof resolveProviderFetchForProfile> => {
+		const policy = await validateProviderProxyPolicy(
+			proxyMode ?? PROXY_MODE.inherit,
+			proxyId,
+			this.stores.proxies,
+		);
+		return resolveProviderFetchForProfile(policy);
+	};
+
+	testProviderDraft = async (body: { endpoint?: string; apiKey?: string; providerType?: string; proxyMode?: ProviderProxyMode; proxyId?: string | null } | null) => {
 		const endpoint = (body?.endpoint ?? "").trim();
 		const apiKey = (body?.apiKey ?? "").trim();
-		return probeProviderConnection({ baseUrl: endpoint, apiKey, providerType: body?.providerType });
+		const fetch = await this.resolveDraftFetch(body?.proxyMode, body?.proxyId);
+		return probeProviderConnection({ baseUrl: endpoint, apiKey, providerType: body?.providerType, ...(fetch ? { fetch } : {}) });
 	};
 
 	testProviderProfile = async (providerProfileId: string) => {
 		const profile = await this.getRequiredProviderProfile(providerProfileId);
+		const fetch = await resolveProviderFetchForProfile(profile);
 		return probeProviderConnection({
 			baseUrl: profile.endpoint,
 			apiKey: profile.apiKey ?? "",
 			providerType: profile.providerPreset,
+			...(fetch ? { fetch } : {}),
 		});
 	};
 
@@ -59,11 +78,13 @@ export class ProviderAdapter implements ProviderRuntimeApi {
 
 	fetchProviderModels = async (providerProfileId: string) => {
 		const profile = await this.getRequiredProviderProfile(providerProfileId);
+		const fetch = await resolveProviderFetchForProfile(profile);
 		const models = await listProviderModels({
 			baseUrl: profile.endpoint,
 			apiKey: profile.apiKey ?? "",
 			providerType: profile.providerPreset,
 			requiresAuthForModels: profile.providerPreset === "anthropic" || profile.providerPreset === "google" || profile.providerPreset === "unsloth",
+			...(fetch ? { fetch } : {}),
 		});
 
 		// Persist to DB cache so send path has capability data
@@ -104,37 +125,52 @@ export class ProviderAdapter implements ProviderRuntimeApi {
 	deleteProviderModelSettings = (providerProfileId: string, modelId: string) =>
 		this.providerProfileService.deleteProviderModelSettings(providerProfileId, modelId);
 
-	fetchModelsByEndpoint = async (baseUrl: string, apiKey?: string, providerType?: string) => {
+	fetchModelsByEndpoint = async (
+		baseUrl: string,
+		apiKey?: string,
+		providerType?: string,
+		proxyMode?: ProviderProxyMode,
+		proxyId?: string | null,
+	) => {
 		const normalized = normalizeOpenAiCompatibleBaseUrl(baseUrl);
 		const requiresAuth = providerType === "anthropic" || providerType === "google" || providerType === "unsloth";
+		const fetch = await this.resolveDraftFetch(proxyMode, proxyId);
 		return listProviderModels({
 			baseUrl: normalized,
 			apiKey: apiKey ?? "",
 			providerType,
 			requiresAuthForModels: requiresAuth,
+			...(fetch ? { fetch } : {}),
 		});
 	};
 
-	testProviderChatByEndpoint = (opts: {
+	testProviderChatByEndpoint = async (opts: {
 		baseUrl: string;
 		apiKey: string;
 		model: string;
 		providerType?: string;
-	}) => testProviderChat(opts);
+		proxyMode?: ProviderProxyMode;
+		proxyId?: string | null;
+	}) => {
+		const fetch = await this.resolveDraftFetch(opts.proxyMode, opts.proxyId);
+		return testProviderChat({ ...opts, ...(fetch ? { fetch } : {}) });
+	};
 
 	testProviderChatByProfile = async (providerProfileId: string, model: string, transport?: CoauthorTransport) => {
 		const profile = await this.getRequiredProviderProfile(providerProfileId);
+		const fetch = await resolveProviderFetchForProfile(profile);
 		if (transport !== COAUTHOR_TRANSPORT.responses) {
 			return testProviderChat({
 				baseUrl: profile.endpoint,
 				apiKey: profile.apiKey ?? "",
 				model,
 				providerType: profile.providerPreset,
+				...(fetch ? { fetch } : {}),
 			});
 		}
 		try {
 			const result = await generateText({
-				model: resolveModel(profile, model, COAUTHOR_TRANSPORT.responses),
+				model: resolveModel(profile, model, COAUTHOR_TRANSPORT.responses, fetch),
 				prompt: "Hi",
 				maxOutputTokens: 64,
 			});

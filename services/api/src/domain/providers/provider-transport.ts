@@ -13,6 +13,7 @@
  */
 
 import type { ProviderModelCapabilities } from "./vendor-registry.js";
+import type { ProviderFetch } from "./provider-fetch-factory.js";
 
 // ---------------------------------------------------------------------------
 // Operation timeouts
@@ -30,6 +31,9 @@ export interface ProviderConnectionInput {
 	apiKey: string;
 	baseUrl: string;
 	model: string;
+	/** Optional proxy-aware fetch resolved from the profile's proxy policy.
+	 *  Omitted/undefined → the adapter uses the global fetch (direct). */
+	fetch?: ProviderFetch;
 	maxTokens?: number | null;
 	temperature?: number | null;
 	topP?: number | null;

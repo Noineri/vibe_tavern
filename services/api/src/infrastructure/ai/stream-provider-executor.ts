@@ -17,6 +17,7 @@ import { createMappedStream, mapFinish, safeStreamTextPromise, safeReasoningProm
 import { describeAttachments } from "./vision-gate.js";
 import type { VisionGateConfig } from "./vision-gate.js";
 import { wrapProviderExecutionError } from "./provider-error-wrapper.js";
+import { resolveProviderFetchForProfile } from "../../domain/providers/provider-fetch-factory.js";
 
 /**
  * Streaming-native provider executor.
@@ -26,7 +27,8 @@ import { wrapProviderExecutionError } from "./provider-error-wrapper.js";
  */
 export const streamProviderExecutor: ProviderExecutor = async (input) => {
   try {
-    const model = resolveModel(input.profile, input.model, input.transport);
+    const providerFetch = await resolveProviderFetchForProfile(input.profile);
+    const model = resolveModel(input.profile, input.model, input.transport, providerFetch);
     let messages = toSdkMessages(input.prompt);
 
     // --- Vision attachment handling ---
@@ -48,6 +50,7 @@ export const streamProviderExecutor: ProviderExecutor = async (input) => {
       if (allAttachments.length > 0) {
         const descriptions = await describeAttachments(
           allAttachments, visionModelSlug, input.profile, input.assetLoader!, input.visionDescribePrompt,
+          input.signal, providerFetch,
         );
 
         visionDescriptions = allAttachments

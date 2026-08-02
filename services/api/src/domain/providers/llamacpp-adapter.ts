@@ -13,6 +13,7 @@ import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { normalizeLocalOpenAiCompatibleBaseUrl } from "./provider-transport.js";
 import { PROVIDER_TYPE, SAMPLER_SETS } from "@vibe-tavern/domain";
 import type { ProtocolAdapter } from "./protocol-types.js";
+import type { ProviderFetch } from "./provider-fetch-factory.js";
 import {
 	probeOpenAiCompatibleConnection,
 	testOpenAiCompatChat,
@@ -30,13 +31,14 @@ export const llamaCppProtocol: ProtocolAdapter = {
 		samplers: SAMPLER_SETS.openai_local,
 		textCompletion: false,
 	},
-	resolveModel(profile, model) {
+	resolveModel(profile, model, fetch?: ProviderFetch) {
 		const endpoint = normalizeLocalOpenAiCompatibleBaseUrl(profile.endpoint);
 		const apiKey = profile.apiKey ?? "";
 		const provider = createOpenAICompatible({
 			name: "llamacpp",
 			apiKey: apiKey || "not-needed",
 			baseURL: endpoint,
+			...(fetch ? { fetch } : {}),
 		});
 		return provider.chatModel(model);
 	},

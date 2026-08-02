@@ -55,6 +55,9 @@ export const testProviderDraftSchema = z.object({
   endpoint: z.string().optional(),
   apiKey: z.string().optional(),
   providerType: z.string().optional(),
+  /** Draft proxy policy so unsaved Test Connection resolves exactly like a saved profile. */
+  proxyMode: providerProxyModeSchema.optional(),
+  proxyId: z.string().nullable().optional(),
 });
 
 const providerCoreSchema = z.object({
@@ -127,6 +130,9 @@ export const fetchModelsSchema = z.object({
   baseUrl: z.string().optional(),
   apiKey: z.string().optional(),
   providerType: z.string().optional(),
+  /** Draft proxy policy so unsaved Fetch Models resolves exactly like a saved profile. */
+  proxyMode: providerProxyModeSchema.optional(),
+  proxyId: z.string().nullable().optional(),
 });
 
 export const testChatSchema = z.object({
@@ -134,6 +140,9 @@ export const testChatSchema = z.object({
   apiKey: z.string().optional(),
   model: z.string().optional(),
   providerType: z.string().optional(),
+  /** Draft proxy policy so unsaved Test Chat resolves exactly like a saved profile. */
+  proxyMode: providerProxyModeSchema.optional(),
+  proxyId: z.string().nullable().optional(),
 });
 
 export const testChatProfileSchema = z.object({

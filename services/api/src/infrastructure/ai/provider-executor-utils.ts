@@ -9,6 +9,7 @@
 import type { LanguageModel, ModelMessage, ToolCallPart, ToolContent, AssistantContent } from "ai";
 import { COAUTHOR_TRANSPORT, PROVIDER_TYPE, normalizeProviderType, type CoauthorTransport, type ProviderType, log } from "@vibe-tavern/domain";
 import { resolveProtocol } from "../../domain/providers/protocol-registry.js";
+import type { ProviderFetch } from "../../domain/providers/provider-fetch-factory.js";
 import { createOpenAI } from "@ai-sdk/openai";
 import type { VisionGateConfig } from "./vision-gate.js";
 import { resolveMultimodalContent } from "./vision-gate.js";
@@ -55,12 +56,16 @@ export interface PreparedMessages {
 function resolveResponsesModel(
   profile: { endpoint: string; apiKey: string | null },
   model: string,
+  fetch?: ProviderFetch,
 ): LanguageModel {
   const endpoint = (profile.endpoint || "").replace(/\/+$/, "");
   const apiKey = profile.apiKey ?? "";
   const provider = createOpenAI({
     apiKey: apiKey || "not-needed",
     baseURL: endpoint || "https://api.openai.com/v1",
+    // Inject the proxy-aware fetch so the Responses transport honors the
+    // profile's proxy policy; omit when direct to keep the SDK's default fetch.
+    ...(fetch ? { fetch } : {}),
   });
   return provider.responses(model);
 }
@@ -77,15 +82,16 @@ export function resolveModel(
   profile: { providerPreset: string; endpoint: string; apiKey: string | null },
   model: string,
   transport: CoauthorTransport = COAUTHOR_TRANSPORT.chatCompletions,
+  fetch?: ProviderFetch,
 ): LanguageModel {
   const providerType = normalizeProviderType(profile.providerPreset);
   if (transport === COAUTHOR_TRANSPORT.responses) {
     if (providerType !== PROVIDER_TYPE.openaiCompat) {
       throw new Error(`Responses transport is available only for OpenAI-compatible providers; '${profile.providerPreset}' uses '${providerType}'.`);
     }
-    return resolveResponsesModel(profile, model);
+    return resolveResponsesModel(profile, model, fetch);
   }
-  return resolveProtocol(providerType).resolveModel(profile, model);
+  return resolveProtocol(providerType).resolveModel(profile, model, fetch);
 }
 
 // ---------------------------------------------------------------------------

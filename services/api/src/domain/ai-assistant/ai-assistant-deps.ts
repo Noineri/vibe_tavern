@@ -10,6 +10,7 @@ import type { SessionRuntime } from "../../runtime/session/session-runtime.js";
 import { notFound } from "../../shared/errors.js";
 import { logSendDebug } from "../../shared/send-debug-log.js";
 import { resolveModel } from "../../infrastructure/ai/provider-executor-utils.js";
+import { COAUTHOR_TRANSPORT } from "@vibe-tavern/domain";
 
 /**
  * Builds the dependency object expected by streamAiAssistant / countAiAssistantTokens.
@@ -47,7 +48,11 @@ export function createAiAssistantDeps(stores: StoreContainer, sessionRuntime: Se
 	};
 
 	return {
-		resolveModel,
+		resolveModel: (
+			profile: { providerPreset: string; endpoint: string; apiKey: string | null },
+			model: string,
+			fetch?: import("../../domain/providers/provider-fetch-factory.js").ProviderFetch,
+		) => resolveModel(profile, model, COAUTHOR_TRANSPORT.chatCompletions, fetch),
 		getProviderProfile: (id: string) => stores.providers.getById(id),
 		getEffectiveProviderProfile: async (id: string, model: string) => {
 			const profile = await stores.providers.getById(id);

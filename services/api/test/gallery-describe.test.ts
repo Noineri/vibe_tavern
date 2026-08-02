@@ -1,4 +1,4 @@
-import { describe, expect, test, mock, beforeEach } from "bun:test";
+import { afterEach, describe, expect, test, mock, beforeEach } from "bun:test";
 import { mkdtemp, mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -6,7 +6,12 @@ import { join } from "node:path";
 import { createStoreContainer, STORAGE_FOLDERS } from "@vibe-tavern/db";
 import { AssetService } from "../src/domain/asset/asset-service.js";
 import type { ProviderProfileService } from "../src/domain/providers/provider-profile-service.js";
-import type { StoredProviderProfileRecord } from "@vibe-tavern/domain";
+import { PROXY_MODE, type StoredProviderProfileRecord } from "@vibe-tavern/domain";
+import {
+	resetProviderFetchFactory,
+	setProviderFetchFactory,
+	type ProviderFetch,
+} from "../src/domain/providers/provider-fetch-factory.js";
 
 const CHARS = STORAGE_FOLDERS.characters;
 const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
@@ -24,28 +29,45 @@ const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 // the genuine function references; the mock factory then spreads them back.
 const real = await import("../src/infrastructure/ai/vision-gate.js");
 
-let lastDescribeArgs: { count: number; ids: string[]; visionModel: string | null; prompt: string | null } = {
+let lastDescribeArgs: { count: number; ids: string[]; visionModel: string | null; prompt: string | null; providerFetch: ProviderFetch | undefined } = {
 	count: 0,
 	ids: [],
 	visionModel: null,
 	prompt: null,
+	providerFetch: undefined,
 };
 let describeOverride: ((ids: string[]) => Map<string, string>) | null = null;
 
 await mock.module("../src/infrastructure/ai/vision-gate.js", () => ({
 	...real,
-	describeAttachments: async (attachments: Array<{ id: string }>) => {
+	describeAttachments: async (
+		attachments: Array<{ id: string }>,
+		_visionModel: string,
+		_profile: unknown,
+		_assetLoader: unknown,
+		_prompt?: string,
+		_signal?: AbortSignal,
+		providerFetch?: ProviderFetch,
+	) => {
 		const ids = attachments.map((a) => a.id);
-		lastDescribeArgs = { count: ids.length, ids, visionModel: lastDescribeArgs.visionModel, prompt: lastDescribeArgs.prompt };
+		lastDescribeArgs = { count: ids.length, ids, visionModel: lastDescribeArgs.visionModel, prompt: lastDescribeArgs.prompt, providerFetch };
 		// load buffers via the loader to exercise the preloaded-loader path
 		return describeOverride ? describeOverride(ids) : new Map(ids.map((id) => [id, `DESC(${id})`] as const));
 	},
 	resolveVisionDescribePrompt: async () => "MOCK_VISION_PROMPT",
 }));
 
+const sentinelProviderFetch = (async () => new Response("unused")) as ProviderFetch;
+sentinelProviderFetch.preconnect = () => {};
+
 beforeEach(() => {
-	lastDescribeArgs = { count: 0, ids: [], visionModel: null, prompt: null };
+	lastDescribeArgs = { count: 0, ids: [], visionModel: null, prompt: null, providerFetch: undefined };
 	describeOverride = null;
+	setProviderFetchFactory({ resolveFetch: async () => sentinelProviderFetch });
+});
+
+afterEach(() => {
+	resetProviderFetchFactory();
 });
 
 // ─── Stub provider profile service ──────────────────────────────────────────
@@ -58,6 +80,8 @@ function makeProfileService(opts: { visionModel?: string | null; active?: boolea
 		apiKey: null,
 		defaultModel: "gpt-test",
 		visionModel: opts.visionModel !== undefined ? opts.visionModel : "vision-test",
+		proxyMode: PROXY_MODE.inherit,
+		proxyId: null,
 	} as unknown as StoredProviderProfileRecord;
 	return {
 		resolveActiveProviderProfile: async () => (opts.active === false ? null : profile),
@@ -93,6 +117,7 @@ describe("Vision describe (A6)", () => {
 		const result = await characters.describeCharacterAssets(char.id);
 		expect(result.updated.length).toBe(2);
 		expect(result.failed).toEqual([]);
+		expect(lastDescribeArgs.providerFetch).toBe(sentinelProviderFetch);
 
 		// persisted to the rows
 		const rows = await stores.characterAssets.listByCharacter(char.id);
@@ -163,6 +188,7 @@ describe("Vision describe (A6)", () => {
 
 		const result = await characters.describeCharacterAvatar(char.id);
 		expect(result.description).toBe("DESC(avatar)");
+		expect(lastDescribeArgs.providerFetch).toBe(sentinelProviderFetch);
 		const row = await stores.characters.getById(char.id);
 		expect(row?.avatarDescription).toBe("DESC(avatar)");
 	});
@@ -181,6 +207,7 @@ describe("Vision describe (A6)", () => {
 
 		const result = await personas.describePersonaAvatar(persona.id);
 		expect(result.description).toBe("DESC(avatar)");
+		expect(lastDescribeArgs.providerFetch).toBe(sentinelProviderFetch);
 		const row = await stores.personas.getById(persona.id);
 		expect(row?.avatarDescription).toBe("DESC(avatar)");
 	});

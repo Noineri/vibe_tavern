@@ -1,5 +1,6 @@
 import type { StoreContainer } from "@vibe-tavern/db";
 import { listProviderModels } from "./provider-gateway.js";
+import { resolveProviderFetchForProfile } from "./provider-fetch-factory.js";
 
 export interface CachedModel {
 	modelSlug: string;
@@ -21,6 +22,8 @@ export async function resolveCachedModels(
 		apiKey: string | null;
 		providerPreset: string;
 		defaultModel: string | null;
+		proxyMode: import("@vibe-tavern/domain").ProviderProxyMode;
+		proxyId: string | null;
 	},
 ): Promise<CachedModel[]> {
 	let cached = await stores.providers.getCachedModels(profile.id);
@@ -32,11 +35,13 @@ export async function resolveCachedModels(
 
 	try {
 		const providerType = profile.providerPreset;
+		const fetch = await resolveProviderFetchForProfile(profile);
 		const models = await listProviderModels({
 			baseUrl: profile.endpoint,
 			apiKey: profile.apiKey ?? "",
 			providerType,
 			requiresAuthForModels: providerType === "anthropic" || providerType === "google",
+			...(fetch ? { fetch } : {}),
 		});
 		const normalized = models.map((m) => ({
 			modelSlug: m.id,

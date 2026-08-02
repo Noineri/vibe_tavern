@@ -12,6 +12,7 @@
 
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { resolveVendor, buildDefaultModelsUrl, type OpenAiModelsResponse } from "./vendor-registry.js";
+import type { ProviderFetch } from "./provider-fetch-factory.js";
 import {
 	PROBE_TIMEOUT_MS,
 	MODEL_LIST_TIMEOUT_MS,
@@ -49,7 +50,8 @@ export async function probeOpenAiCompatibleConnection(input: ProbeInput): Promis
 
 	let response: Response;
 	try {
-		response = await fetch(buildDefaultModelsUrl(baseUrl), {
+		const doFetch: typeof fetch = input.fetch ?? fetch;
+		response = await doFetch(buildDefaultModelsUrl(baseUrl), {
 			method: "GET",
 			headers: buildHeaders(input.apiKey),
 			signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
@@ -76,8 +78,9 @@ export async function testOpenAiCompatChat(input: ProviderConnectionInput): Prom
 	const controller = new AbortController();
 	const timer = setTimeout(() => controller.abort(), TEST_CHAT_TIMEOUT_MS);
 
+	const doFetch: typeof fetch = input.fetch ?? fetch;
 	try {
-		const response = await fetch(`${baseUrl}/chat/completions`, {
+		const response = await doFetch(`${baseUrl}/chat/completions`, {
 			method: "POST",
 			headers: buildHeaders(input.apiKey, true),
 			body: JSON.stringify({
@@ -141,11 +144,12 @@ export async function listOpenAiCompatModels(input: ListModelsInput): Promise<Pr
 
 	let response: Response;
 
+	const doFetch: typeof fetch = input.fetch ?? fetch;
 	const controller = new AbortController();
 	const timer = setTimeout(() => controller.abort(), MODEL_LIST_TIMEOUT_MS);
 
 	try {
-		response = await fetch(url, {
+		response = await doFetch(url, {
 			method: "GET",
 			headers: buildHeaders(input.apiKey),
 			signal: controller.signal,
@@ -227,7 +231,7 @@ export const openaiCompatProtocol: ProtocolAdapter = {
 		samplers: SAMPLER_SETS.openai_compat_minimal,
 		textCompletion: false,
 	},
-	resolveModel(profile, model) {
+	resolveModel(profile, model, fetch?: ProviderFetch) {
 		const endpoint = (profile.endpoint || "").replace(/\/+$/, "");
 		const apiKey = profile.apiKey ?? "";
 		// `openai_compat` is intentionally broad: in this app it covers
@@ -242,6 +246,9 @@ export const openaiCompatProtocol: ProtocolAdapter = {
 			// json_schema, but the generic provider defaults this capability to
 			// false unless declared.
 			supportsStructuredOutputs: true,
+			// Inject the proxy-aware fetch so generation honors the profile's
+			// proxy policy; omit when direct to keep the SDK's default fetch.
+			...(fetch ? { fetch } : {}),
 		});
 		return provider.chatModel(model);
 	},

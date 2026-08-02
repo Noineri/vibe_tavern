@@ -37,6 +37,7 @@ import {
 } from "./provider-transport.js";
 import { PROVIDER_TYPE, SAMPLER_SETS } from "@vibe-tavern/domain";
 import type { ProtocolAdapter, ProbeInput, ListModelsInput } from "./protocol-types.js";
+import type { ProviderFetch } from "./provider-fetch-factory.js";
 
 // ─── Types ───────────────────────────────────────────────────────────────
 
@@ -100,6 +101,8 @@ export interface KoboldCppAdapterOptions {
   modelId: string;
   /** AbortSignal for the generation. */
   signal?: AbortSignal;
+  /** Optional proxy-aware fetch honoring the profile's proxy policy. */
+  fetch?: ProviderFetch;
 }
 
 // ─── Prompt serialization ────────────────────────────────────────────────
@@ -155,8 +158,9 @@ function serializePrompt(prompt: LanguageModelV3CallOptions["prompt"]): string {
  * Create a LanguageModelV3 adapter for KoboldCPP.
  */
 export function createKoboldCppModel(options: KoboldCppAdapterOptions): LanguageModelV3 {
-  const { baseURL, modelId } = options;
+  const { baseURL, modelId, fetch: customFetch } = options;
   const base = baseURL.replace(/\/+$/, "");
+  const doFetch: typeof fetch = customFetch ?? fetch;
 
   return {
     specificationVersion: "v3",
@@ -179,7 +183,7 @@ export function createKoboldCppModel(options: KoboldCppAdapterOptions): Language
         ...(callOptions.providerOptions?.koboldcpp ?? {}),
       };
 
-      const response = await fetch(`${base}/api/v1/generate`, {
+      const response = await doFetch(`${base}/api/v1/generate`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
@@ -221,7 +225,7 @@ export function createKoboldCppModel(options: KoboldCppAdapterOptions): Language
         ...(callOptions.providerOptions?.koboldcpp ?? {}),
       };
 
-      const response = await fetch(`${base}/api/extra/generate/stream`, {
+      const response = await doFetch(`${base}/api/extra/generate/stream`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
@@ -367,9 +371,10 @@ export interface KoboldModelInfo {
 /**
  * Fetch the currently loaded model name from KoboldCPP.
  */
-export async function fetchKoboldModel(baseURL: string): Promise<string> {
+export async function fetchKoboldModel(baseURL: string, customFetch?: ProviderFetch): Promise<string> {
   const base = baseURL.replace(/\/+$/, "");
-  const res = await fetch(`${base}/api/v1/model`);
+  const doFetch: typeof fetch = customFetch ?? fetch;
+  const res = await doFetch(`${base}/api/v1/model`);
   if (!res.ok) throw new Error(`KoboldCPP model fetch failed (${res.status})`);
   const data = (await res.json()) as KoboldModelInfo;
   return data.result;
@@ -397,9 +402,10 @@ export async function testKoboldCppChat(input: ProviderConnectionInput): Promise
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TEST_CHAT_TIMEOUT_MS);
+  const doFetch: typeof fetch = input.fetch ?? fetch;
 
   try {
-    const response = await fetch(`${baseUrl}/api/v1/generate`, {
+    const response = await doFetch(`${baseUrl}/api/v1/generate`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Accept: "application/json" },
       body: JSON.stringify({
@@ -446,10 +452,11 @@ export async function listKoboldCppModels(input: ListModelsInput): Promise<Provi
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), MODEL_LIST_TIMEOUT_MS);
+  const doFetch: typeof fetch = input.fetch ?? fetch;
 
   let response: Response;
   try {
-    response = await fetch(`${baseUrl}/api/v1/model`, {
+    response = await doFetch(`${baseUrl}/api/v1/model`, {
       method: "GET",
       headers: { Accept: "application/json" },
       signal: controller.signal,
@@ -480,9 +487,9 @@ export const koboldCppProtocol: ProtocolAdapter = {
     samplers: SAMPLER_SETS.koboldcpp_native,
     textCompletion: false,
   },
-  resolveModel(profile, model) {
+  resolveModel(profile, model, fetch?: ProviderFetch) {
     const endpoint = (profile.endpoint || "").replace(/\/+$/, "") || "http://localhost:5001";
-    return createKoboldCppModel({ baseURL: endpoint, modelId: model ?? "koboldcpp" });
+    return createKoboldCppModel({ baseURL: endpoint, modelId: model ?? "koboldcpp", ...(fetch ? { fetch } : {}) });
   },
   limitations: [
     "Uses KoboldCPP native /api/v1/generate endpoint (not OpenAI-compat).",

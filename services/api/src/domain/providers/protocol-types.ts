@@ -18,6 +18,7 @@ import type {
 	ProviderProbeResult,
 	TestChatResult,
 } from "./provider-transport.js";
+import type { ProviderFetch } from "./provider-fetch-factory.js";
 
 // ---------------------------------------------------------------------------
 // Capability flags (canonical type — source of truth lives here)
@@ -62,6 +63,8 @@ export interface ProviderProfileInput {
 export interface ProbeInput {
 	baseUrl: string;
 	apiKey: string;
+	/** Optional proxy-aware fetch. Omitted/undefined → global fetch (direct). */
+	fetch?: ProviderFetch;
 }
 
 /** Input for a model list request (no model required). */
@@ -75,8 +78,12 @@ export interface ProtocolAdapter {
 	 *
 	 * (Text-completion mode lands with §5.3.3; for now every protocol resolves
 	 * a chat model.)
+	 *
+	 * The optional {@link ProviderFetch} is injected into the AI SDK provider
+	 * factory's custom-`fetch` option so generation honors the profile's proxy
+	 * policy; when omitted the SDK's default (direct) fetch is used.
 	 */
-	resolveModel(profile: ProviderProfileInput, model: string): LanguageModel;
+	resolveModel(profile: ProviderProfileInput, model: string, fetch?: ProviderFetch): LanguageModel;
 	/** Human-readable limitations surfaced to the UI. */
 	limitations: string[];
 	/** Connectivity probe (hit a models/tags endpoint, return success + count). */
