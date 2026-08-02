@@ -134,7 +134,7 @@ export async function testProviderProfileAction(id: string): Promise<ProviderPro
 }
 
 export async function testProviderDraftAction(
-  input: { endpoint: string; apiKey: string; providerType?: string; proxyMode?: ProviderProxyMode; proxyId?: string | null }
+  input: { endpoint: string; apiKey: string; providerType?: string; proxyMode?: ProviderProxyMode; proxyId?: string | null; providerProfileId?: string }
 ): Promise<ProviderProbeResponse> {
   return await testProviderDraft(input);
 }

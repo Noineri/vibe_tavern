@@ -15,7 +15,7 @@
 import type { ConnectionState } from "../components/layout/app-shell-types.js";
 import type { FormState } from "../components/modals/ProviderModal.js";
 import { normalizeOpenAiCompatibleBaseUrl } from "../openai-compatible.js";
-import { PROVIDER_TYPE, type ModelSettingsOverlay, tag } from "@vibe-tavern/domain";
+import { PROVIDER_TYPE, type ModelSettingsOverlay, type ProviderProxyMode, tag } from "@vibe-tavern/domain";
 
 const saveLog = tag("save");
 
@@ -62,6 +62,8 @@ export interface ProviderSavePatch {
   showReasoning: boolean;
   streamResponse: boolean;
   customSamplers: boolean;
+  proxyMode?: ProviderProxyMode;
+  proxyId?: string | null;
 }
 
 // ─── Pure computation ─────────────────────────────────────────────────────────
@@ -114,6 +116,8 @@ export function computeSavePatch(form: FormState): ProviderSavePatch {
     showReasoning: form.showReasoning,
     streamResponse: form.streamResponse,
     customSamplers: form.customSamplers,
+    proxyMode: form.proxyMode ?? "inherit",
+    proxyId: form.proxyMode === "proxy" ? form.proxyId ?? null : null,
   };
 
   saveLog.debug("computeSavePatch:", {

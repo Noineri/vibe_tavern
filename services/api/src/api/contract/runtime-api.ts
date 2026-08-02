@@ -348,7 +348,7 @@ export interface ProviderRuntimeApi {
 	updateProviderProfile: (providerProfileId: string, body: Record<string, unknown>) => Promise<ClientProviderProfileRecord>;
 	saveProviderDraft: (body: Record<string, unknown>) => Promise<ClientProviderProfileRecord>;
 	deleteProviderProfile: (providerProfileId: string) => Promise<void>;
-	testProviderDraft: (body: { endpoint?: string; apiKey?: string; providerType?: string; proxyMode?: ProviderProxyMode; proxyId?: string | null } | null) => Promise<ProviderProbeResult>;
+	testProviderDraft: (body: { endpoint?: string; apiKey?: string; providerType?: string; proxyMode?: ProviderProxyMode; proxyId?: string | null; providerProfileId?: string } | null) => Promise<ProviderProbeResult>;
 	testProviderProfile: (providerProfileId: string) => Promise<ProviderProbeResult>;
 	fetchProviderModels: (providerProfileId: string) => Promise<{ models: ProviderModelOption[] }>;
 	listFavoriteProviderModels: (providerProfileId: string, scope: ModelFavoriteScope) => Promise<FavoriteModel[]>;

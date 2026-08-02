@@ -52,6 +52,8 @@ export async function saveProviderProfile(input: {
   showReasoning?: boolean;
   streamResponse?: boolean;
   customSamplers?: boolean;
+  proxyMode?: ProviderProxyMode;
+  proxyId?: string | null;
 }): Promise<ProviderProfileRecord> {
   const response = await client.api.providers.$post({ json: input });
   return unwrapRpc<ProviderProfileRecord>(response);
@@ -97,6 +99,8 @@ export async function updateProviderProfile(
     showReasoning?: boolean;
     streamResponse?: boolean;
     customSamplers?: boolean;
+    proxyMode?: ProviderProxyMode;
+    proxyId?: string | null;
   },
 ): Promise<ProviderProfileRecord> {
   const response = await client.api.providers[":providerId"].$patch({ param: { providerId: providerProfileId }, json: patch });
@@ -118,7 +122,7 @@ export async function activateProviderProfile(providerProfileId: string): Promis
   return unwrapRpc<ProviderProfileRecord>(response);
 }
 
-export async function testProviderDraft(input: { endpoint: string; apiKey: string; providerType?: string; proxyMode?: ProviderProxyMode; proxyId?: string | null }): Promise<ProviderProbeResponse> {
+export async function testProviderDraft(input: { endpoint: string; apiKey: string; providerType?: string; proxyMode?: ProviderProxyMode; proxyId?: string | null; providerProfileId?: string }): Promise<ProviderProbeResponse> {
   const response = await client.api.providers.test.$post({ json: input });
   return unwrapRpc<ProviderProbeResponse>(response);
 }

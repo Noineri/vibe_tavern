@@ -2,9 +2,9 @@ import { useEffect, useRef, useState } from "react";
 import { devLog } from "../../lib/dev-log.js";
 import { useT } from "../../i18n/context.js";
 import { cn } from "../../lib/cn.js";
-import type { FavoriteProviderModelRecord, ProviderProfileRecord } from "../../app-client.js";
+import type { FavoriteProviderModelRecord, ProviderProfileRecord, ProxyRecord } from "../../app-client.js";
 import { PROVIDER_PRESET_GROUP, PROVIDER_TYPE, resolveLogitBiasSupport, resolveSamplerCapabilities } from "@vibe-tavern/domain";
-import type { ProviderProbeResponse, SamplerCapabilityFlags } from "@vibe-tavern/domain";
+import type { ProviderProbeResponse, ProviderProxyMode, SamplerCapabilityFlags } from "@vibe-tavern/domain";
 import { saveProviderDraftSchema } from "@vibe-tavern/api-contracts";
 import { computeSavePatch } from "../../hooks/save-provider-patch.js";
 import { PROVIDER_PRESETS, getVisibleProviderPresets } from "../../provider-presets.js";
@@ -25,6 +25,8 @@ import { useModalStore } from "../../stores/modal-store.js";
 import { useBootstrapStore } from "../../stores/api-actions/bootstrap-actions.js";
 import { getProviderModelSettingsAction, reorderProviderProfilesAction } from "../../stores/api-actions/provider-actions.js";
 import { MasterDetailModal } from "../shared/MasterDetailModal.js";
+import { DropdownSelect } from "../shared/DropdownSelect.js";
+import { shouldUsePersistedProviderForTest } from "../../lib/provider-proxy-policy.js";
 
 export interface FormState {
   id: string;
@@ -76,6 +78,8 @@ export interface FormState {
   showReasoning: boolean;
   streamResponse: boolean;
   customSamplers: boolean;
+  proxyMode: ProviderProxyMode;
+  proxyId: string | null;
 }
 
 interface ModelOption {
@@ -97,14 +101,17 @@ interface ProviderModalProps {
   onDeleteProfile: (id: string) => Promise<void>;
   onActivateProfile: (id: string) => Promise<void>;
   onSaveProfile: (form: FormState) => Promise<ProviderProfileRecord | null>;
-  onTestDraft: (endpoint: string, apiKey: string, providerType?: string) => Promise<ProviderProbeResponse>;
+  onTestDraft: (endpoint: string, apiKey: string, providerType?: string, proxyMode?: ProviderProxyMode, proxyId?: string | null, providerProfileId?: string) => Promise<ProviderProbeResponse>;
   onTestProfile: (profileId: string) => Promise<ProviderProbeResponse>;
-  onTestChat: (profileId: string | null, baseUrl: string, apiKey: string, model: string, providerType?: string) => Promise<{ success: boolean; reply?: string; error?: string }>;
-  onFetchModels: (baseUrl: string, apiKey?: string, useCache?: boolean, providerType?: string) => Promise<ModelOption[]>;
+  onTestChat: (profileId: string | null, baseUrl: string, apiKey: string, model: string, providerType?: string, proxyMode?: ProviderProxyMode, proxyId?: string | null) => Promise<{ success: boolean; reply?: string; error?: string }>;
+  onFetchModels: (baseUrl: string, apiKey?: string, useCache?: boolean, providerType?: string, proxyMode?: ProviderProxyMode, proxyId?: string | null) => Promise<ModelOption[]>;
   onFetchModelsForProfile: (profileId: string) => Promise<ModelOption[]>;
   favoriteModelsByProfile: Record<string, FavoriteProviderModelRecord[]>;
   onToggleFavoriteModel: (profileId: string, model: ModelOption) => Promise<void>;
   onRefreshProfiles: () => Promise<void>;
+  proxies: ProxyRecord[];
+  defaultProxyId: string | null;
+  onSetDefaultProxy: (proxyId: string | null) => Promise<void>;
 }
 
 function profileToForm(p: ProviderProfileRecord): FormState {
@@ -142,6 +149,8 @@ function profileToForm(p: ProviderProfileRecord): FormState {
     reasoningEffort: p.reasoningEffort,
     streamResponse: p.streamResponse,
     customSamplers: p.customSamplers ?? false,
+    proxyMode: p.proxyMode ?? "inherit",
+    proxyId: p.proxyId ?? null,
   };
 }
 
@@ -177,6 +186,7 @@ export function ProviderModal({
   onCreateProfile, onDuplicateProfile, onDeleteProfile, onActivateProfile,
   onSaveProfile, onTestDraft, onTestProfile, onTestChat, onFetchModels, onFetchModelsForProfile,
   favoriteModelsByProfile, onToggleFavoriteModel, onRefreshProfiles,
+  proxies, defaultProxyId, onSetDefaultProxy,
 }: ProviderModalProps) {
   const isOpen = useModalStore((s) => s.isProviderModalOpen);
   const providerModalOrigin = useModalStore((s) => s.providerModalOrigin);
@@ -544,11 +554,11 @@ export function ProviderModal({
     setTesting(true); setTestOk(null);
     try {
       let r: ProviderProbeResponse;
-      if (editingId && !isNew) {
+      if (editingId && shouldUsePersistedProviderForTest(editingId, isNew, dirty)) {
         r = await onTestProfile(editingId);
       } else {
         const preset = PROVIDER_PRESETS.find((f) => f.id === form.providerPreset);
-        r = await onTestDraft(form.baseUrl, form.apiKey, preset?.type);
+        r = await onTestDraft(form.baseUrl, form.apiKey, preset?.type, form.proxyMode, form.proxyId, editingId ?? undefined);
       }
       setTestOk(r.success);
     } catch { setTestOk(false); } finally { setTesting(false); }
@@ -566,7 +576,7 @@ export function ProviderModal({
         fetched = await onFetchModelsForProfile(editingId);
       } else {
         const preset = PROVIDER_PRESETS.find((f) => f.id === form.providerPreset);
-        fetched = await onFetchModels(ep, form.apiKey.trim() || undefined, false, preset?.type);
+        fetched = await onFetchModels(ep, form.apiKey.trim() || undefined, false, preset?.type, form.proxyMode, form.proxyId);
       }
       if (!fetched.length) setFetchError(t("no_models_returned"));
       setTestOk(fetched.length > 0);
@@ -585,7 +595,7 @@ export function ProviderModal({
     if (!form || !form.baseUrl.trim() || !form.model.trim()) return;
     setTestingChat(true); setChatResult(null);
     const preset = PROVIDER_PRESETS.find((f) => f.id === form.providerPreset);
-    try { setChatResult(await onTestChat(editingId, form.baseUrl.trim(), form.apiKey.trim(), form.model.trim(), preset?.type)); }
+    try { setChatResult(await onTestChat(shouldUsePersistedProviderForTest(editingId, isNew, dirty) ? editingId : null, form.baseUrl.trim(), form.apiKey.trim(), form.model.trim(), preset?.type, form.proxyMode, form.proxyId)); }
     catch (e) { setChatResult({ error: e instanceof Error ? e.message : t("request_failed") }); }
     finally { setTestingChat(false); }
   };
@@ -664,6 +674,7 @@ export function ProviderModal({
                 <ProviderEditHeader
                   form={form} editingId={editingId} providerProfiles={providerProfiles}
                   updateForm={updateForm} applyPreset={applyPreset}
+                  proxies={proxies} defaultProxyId={defaultProxyId}
                   testOk={testOk} testing={testing} onTest={handleTestConnection}
                   onSave={() => void handleSaveHeader()}
                   onCancel={!isNew ? handleCancelEdit : undefined}
@@ -759,19 +770,32 @@ export function ProviderModal({
           )
         }
         footer={
-          <div className={cn("shrink-0 items-center justify-between border-t border-border", isMobile ? "flex flex-wrap gap-2 px-4 py-3" : "flex px-6 py-4")}>
-            <div className="flex flex-wrap gap-x-4 gap-y-2">
-              <span className="flex cursor-pointer items-center gap-1.5 font-ui text-[13px] text-t3 transition-colors hover:text-t1" onClick={() => void handleDuplicate()}>
-                <Icons.Copy /> {t("duplicate")}
-              </span>
-              {providerProfiles.length > 1 && (
-                <span className="flex cursor-pointer items-center gap-1.5 font-ui text-[13px] text-danger/80 transition-colors hover:text-danger" onClick={handleDelete}>
-                  <Icons.Trash /> {t("delete")}
+          <div className={cn("shrink-0 border-t border-border", isMobile ? "px-4 py-3" : "px-6 py-4")}>
+            <div className={cn("flex items-center justify-between gap-3", isMobile && "flex-wrap")}>
+              <div className="flex flex-wrap gap-x-4 gap-y-2">
+                <span className="flex cursor-pointer items-center gap-1.5 font-ui text-[13px] text-t3 transition-colors hover:text-t1" onClick={() => void handleDuplicate()}>
+                  <Icons.Copy /> {t("duplicate")}
                 </span>
-              )}
-            </div>
-            <div className="flex min-w-0 items-center gap-2 font-ui text-[12px] text-t3 transition-opacity duration-300" style={{ opacity: autoSaveFlash ? 1 : 0 }}>
-              <Icons.Floppy /> {t("autosaving")}
+                {providerProfiles.length > 1 && (
+                  <span className="flex cursor-pointer items-center gap-1.5 font-ui text-[13px] text-danger/80 transition-colors hover:text-danger" onClick={handleDelete}>
+                    <Icons.Trash /> {t("delete")}
+                  </span>
+                )}
+              </div>
+              <div className={cn("flex min-w-0 items-center gap-2", isMobile ? "order-3 w-full" : "max-w-[300px]")}>
+                <label className="shrink-0 font-ui text-[12px] text-t3">{t("default_proxy")}</label>
+                <DropdownSelect
+                  value={defaultProxyId ?? ""}
+                  placeholder={t("proxy_direct")}
+                  defaultOption={t("proxy_direct")}
+                  options={proxies.map((proxy) => ({ id: proxy.id, label: proxy.name, detail: proxy.url }))}
+                  onChange={(id) => void onSetDefaultProxy(id || null)}
+                  className="min-w-0"
+                />
+              </div>
+              <div className="flex min-w-0 items-center gap-2 font-ui text-[12px] text-t3 transition-opacity duration-300" style={{ opacity: autoSaveFlash ? 1 : 0 }}>
+                <Icons.Floppy /> {t("autosaving")}
+              </div>
             </div>
           </div>
         }

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { buildFavoriteModelSwitchPatch, computeOverlayPatch, computeSavePatch } from "./save-provider-patch.js";
+import { buildFavoriteModelSwitchPatch, computeOverlayPatch, computeSavePatch, connectionToSavePatch } from "./save-provider-patch.js";
 import type { FormState } from "../components/modals/ProviderModal.js";
 
 /** Minimal FormState factory — override only what matters for the test.
@@ -19,6 +19,7 @@ function makeForm(over: Partial<FormState> = {}): FormState {
     editingModelId: null,
     stopSequences: ["<end>"], logitBias: [], seed: null,
     reasoningEffort: "auto", showReasoning: false, streamResponse: true, customSamplers: false,
+    proxyMode: "inherit", proxyId: null,
     ...over,
   };
 }
@@ -118,6 +119,50 @@ describe("computeSavePatch", () => {
     const form = makeForm({ pinContextBudget: true });
     const patch = computeSavePatch(form);
     expect(patch.pinContextBudget).toBe(true);
+  });
+
+  test("preserves an explicit named proxy policy and clears stale IDs for inherit/direct", () => {
+    expect(computeSavePatch(makeForm({ proxyMode: "proxy", proxyId: "proxy_1" }))).toMatchObject({ proxyMode: "proxy", proxyId: "proxy_1" });
+    expect(computeSavePatch(makeForm({ proxyMode: "direct", proxyId: "proxy_1" }))).toMatchObject({ proxyMode: "direct", proxyId: null });
+    expect(computeSavePatch(makeForm({ proxyMode: "inherit", proxyId: "proxy_1" }))).toMatchObject({ proxyMode: "inherit", proxyId: null });
+  });
+});
+
+describe("connectionToSavePatch", () => {
+  test("does not reset an existing profile's proxy policy through the legacy connection save path", () => {
+    const connection = {
+      providerLabel: "Primary",
+      providerType: "openai_compat",
+      baseUrl: "https://provider.example/v1",
+      apiKey: "",
+      model: "model",
+      visionModel: "",
+      activeProviderProfileId: "provider_1",
+      hasStoredApiKey: true,
+      status: "connected",
+      error: "",
+      models: [],
+      providerPreset: "openai",
+      temperature: 1,
+      topP: 1,
+      minP: 0,
+      topK: 0,
+      topA: 0,
+      repetitionPenalty: 1,
+      frequencyPenalty: 0,
+      presencePenalty: 0,
+      maxTokens: 2048,
+      stopSequences: [],
+      seed: null,
+      reasoningEffort: "auto",
+      showReasoning: false,
+      streamResponse: true,
+      customSamplers: false,
+    } satisfies Parameters<typeof connectionToSavePatch>[0];
+
+    const patch = connectionToSavePatch(connection);
+    expect("proxyMode" in patch).toBe(false);
+    expect("proxyId" in patch).toBe(false);
   });
 });
 

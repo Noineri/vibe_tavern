@@ -37,6 +37,7 @@ export type {
   ProviderProfileRecord,
   FavoriteProviderModelRecord,
   ProviderModelSettingsRecord,
+  ProxyRecord,
   ProviderModelOption,
   TestChatResponse,
   LoreEntryRecord,
@@ -224,6 +225,18 @@ export {
   getProviderModelSettings,
   upsertProviderModelSettings,
 } from "./api/provider-api.js";
+
+// ─── Provider proxies ──────────────────────────────────────────────────
+export {
+  listProxies,
+  getProxy,
+  saveProxy,
+  updateProxy,
+  deleteProxy,
+  reorderProxies,
+  getDefaultProxy,
+  setDefaultProxy,
+} from "./api/proxy-api.js";
 
 // ─── Presets ────────────────────────────────────────────────────────────
 export {

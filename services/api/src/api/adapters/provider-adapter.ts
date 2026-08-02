@@ -55,9 +55,16 @@ export class ProviderAdapter implements ProviderRuntimeApi {
 		return resolveProviderFetchForProfile(policy);
 	};
 
-	testProviderDraft = async (body: { endpoint?: string; apiKey?: string; providerType?: string; proxyMode?: ProviderProxyMode; proxyId?: string | null } | null) => {
+	testProviderDraft = async (body: { endpoint?: string; apiKey?: string; providerType?: string; proxyMode?: ProviderProxyMode; proxyId?: string | null; providerProfileId?: string } | null) => {
 		const endpoint = (body?.endpoint ?? "").trim();
-		const apiKey = (body?.apiKey ?? "").trim();
+		let apiKey = (body?.apiKey ?? "").trim();
+		if (!apiKey && body?.providerProfileId) {
+			const profile = await this.getRequiredProviderProfile(body.providerProfileId);
+			// A stored key may only be reused for the endpoint it was saved with.
+			// This preserves write-only key UX for a proxy-only draft edit without
+			// allowing a caller to send the secret to an arbitrary replacement URL.
+			if (endpoint === profile.endpoint.trim()) apiKey = profile.apiKey?.trim() ?? "";
+		}
 		const fetch = await this.resolveDraftFetch(body?.proxyMode, body?.proxyId);
 		return probeProviderConnection({ baseUrl: endpoint, apiKey, providerType: body?.providerType, ...(fetch ? { fetch } : {}) });
 	};

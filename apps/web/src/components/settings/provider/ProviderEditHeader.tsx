@@ -1,4 +1,4 @@
-import type { ProviderProfileRecord } from '../../../app-client.js';
+import type { ProviderProfileRecord, ProxyRecord } from '../../../app-client.js';
 import { useT } from '../../../i18n/context.js';
 import { PROVIDER_PRESETS, getPresetGroup, getVisiblePresetGroups, getVisibleProviderPresets } from '../../../provider-presets.js';
 import type { FormState } from '../../modals/ProviderModal.js';
@@ -7,6 +7,7 @@ import { cn } from '../../../lib/cn.js';
 import { SegmentedControl } from '../../shared/SegmentedControl.js';
 import { DropdownSelect } from '../../shared/DropdownSelect.js';
 import { labelCls, inputCls, pwCls } from './form-field-classes.js';
+import { DIRECT_PROXY_SELECTION, INHERIT_PROXY_SELECTION, proxyPolicyFromSelection, resolvedGlobalProxyLabel, selectionFromProxyPolicy } from '../../../lib/provider-proxy-policy.js';
 
 interface ProviderEditHeaderProps {
   form: FormState;
@@ -14,6 +15,8 @@ interface ProviderEditHeaderProps {
   providerProfiles: ProviderProfileRecord[];
   updateForm: <K extends keyof FormState>(k: K, v: FormState[K]) => void;
   applyPreset: (presetId: string) => void;
+  proxies: ProxyRecord[];
+  defaultProxyId: string | null;
   testOk: boolean | null;
   testing: boolean;
   onTest: () => void;
@@ -26,7 +29,7 @@ interface ProviderEditHeaderProps {
 }
 
 export function ProviderEditHeader({
-  form, editingId, providerProfiles, updateForm, applyPreset,
+  form, editingId, providerProfiles, updateForm, applyPreset, proxies, defaultProxyId,
   testOk, testing, onTest, onSave, onCancel, isNew, isArmServer, dirty, saving,
 }: ProviderEditHeaderProps) {
   const { t } = useT();
@@ -119,6 +122,24 @@ export function ProviderEditHeader({
           <input type="password" value={form.apiKey} onChange={(e) => updateForm('apiKey', e.target.value)} placeholder={form.hasStoredApiKey ? t("api_key_stored") : t("api_key_placeholder")} className={cn(inputCls, pwCls)} />
         </div>
       )}
+
+      {/* Proxy policy */}
+      <div className="mb-4">
+        <label className={labelCls + " mb-[7px]"}>{t("provider_proxy")}</label>
+        <DropdownSelect
+          value={selectionFromProxyPolicy({ proxyMode: form.proxyMode ?? "inherit", proxyId: form.proxyId ?? null })}
+          options={[
+            { id: INHERIT_PROXY_SELECTION, label: t("proxy_use_global"), detail: resolvedGlobalProxyLabel(proxies, defaultProxyId, t("proxy_direct")) },
+            { id: DIRECT_PROXY_SELECTION, label: t("proxy_direct") },
+            ...proxies.map((proxy) => ({ id: proxy.id, label: proxy.name, detail: proxy.url })),
+          ]}
+          onChange={(selection) => {
+            const policy = proxyPolicyFromSelection(selection);
+            updateForm("proxyMode", policy.proxyMode);
+            updateForm("proxyId", policy.proxyId);
+          }}
+        />
+      </div>
 
       {/* Test connection + Save */}
       <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">

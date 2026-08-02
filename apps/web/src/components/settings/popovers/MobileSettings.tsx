@@ -20,9 +20,10 @@ interface MobileSettingsProps {
 	settings: TweaksSettings;
 	setSetting: (key: string, value: unknown) => void;
 	onOpenMobileAccess: () => void;
+	onOpenProxyManager?: () => void;
 }
 
-export function MobileSettings({ open, onClose, settings, setSetting, onOpenMobileAccess }: MobileSettingsProps) {
+export function MobileSettings({ open, onClose, settings, setSetting, onOpenMobileAccess, onOpenProxyManager = () => {} }: MobileSettingsProps) {
 	const { t } = useT();
 	if (!open) return null;
 
@@ -171,6 +172,19 @@ export function MobileSettings({ open, onClose, settings, setSetting, onOpenMobi
 							</button>
 						))}
 					</div>
+				</div>
+
+				<div className="px-5 py-2.5">
+					<button type="button" className="flex min-h-[48px] w-full items-center justify-between rounded-lg border border-border bg-s2 px-3 text-left text-t2 transition-colors active:bg-s3" onClick={onOpenMobileAccess}>
+						<span className="flex items-center gap-3"><Icons.phone />{t("mobile_access")}</span>
+						<Icons.Caret direction="r" />
+					</button>
+				</div>
+				<div className="px-5 py-2.5">
+					<button type="button" className="flex min-h-[48px] w-full items-center justify-between rounded-lg border border-border bg-s2 px-3 text-left text-t2 transition-colors active:bg-s3" onClick={onOpenProxyManager}>
+						<span className="flex items-center gap-3"><Icons.Globe />{t("proxies")}</span>
+						<Icons.Caret direction="r" />
+					</button>
 				</div>
 
 				{/* Safe area spacer */}

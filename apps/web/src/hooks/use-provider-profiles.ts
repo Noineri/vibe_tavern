@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import type { ProviderProbeResponse } from "@vibe-tavern/domain";
+import type { ProviderProbeResponse, ProviderProxyMode } from "@vibe-tavern/domain";
 import { MODEL_FAVORITE_SCOPE, PROVIDER_TYPE, tag } from "@vibe-tavern/domain";
 import { getT } from "../i18n/locale-helpers.js";
 import { computeHydration } from "./hydrate-provider.js";
@@ -345,6 +345,8 @@ export function useProviderProfiles() {
         showReasoning: false,
         streamResponse: true,
         customSamplers: false,
+        proxyMode: "inherit",
+        proxyId: null,
       });
       return saved;
     } catch (error) {
@@ -378,6 +380,8 @@ export function useProviderProfiles() {
         showReasoning: existing.showReasoning,
         streamResponse: existing.streamResponse,
         customSamplers: existing.customSamplers,
+        proxyMode: existing.proxyMode,
+        proxyId: existing.proxyId,
       });
       return saved;
     } catch (error) {
@@ -386,8 +390,8 @@ export function useProviderProfiles() {
     }
   }
 
-  async function handleTestDraftConnection(endpoint: string, apiKey: string, providerType?: string): Promise<ProviderProbeResponse> {
-    return testProviderDraftAction({ endpoint, apiKey, providerType });
+  async function handleTestDraftConnection(endpoint: string, apiKey: string, providerType?: string, proxyMode?: ProviderProxyMode, proxyId?: string | null, providerProfileId?: string): Promise<ProviderProbeResponse> {
+    return testProviderDraftAction({ endpoint, apiKey, providerType, proxyMode, proxyId, providerProfileId });
   }
 
   async function handleTestProfileConnection(providerProfileId: string): Promise<ProviderProbeResponse> {
@@ -400,11 +404,13 @@ export function useProviderProfiles() {
     apiKey: string,
     model: string,
     providerType?: string,
+    proxyMode?: ProviderProxyMode,
+    proxyId?: string | null,
   ): Promise<TestChatResponse> {
     if (profileId) {
       return testProfileChatAction(profileId, model);
     }
-    return testProviderChatAction(baseUrl, apiKey, model, providerType);
+    return testProviderChatAction(baseUrl, apiKey, model, providerType, proxyMode, proxyId);
   }
 
   const handleFetchModelsForProfile = useCallback(async (providerProfileId: string): Promise<Array<{ id: string; label: string; contextLength?: number }>> => {
@@ -467,8 +473,10 @@ export function useProviderProfiles() {
     apiKey?: string,
     _useCache?: boolean,
     providerType?: string,
+    proxyMode?: ProviderProxyMode,
+    proxyId?: string | null,
   ): Promise<Array<{ id: string; label: string; contextLength?: number }>> {
-    const response = await fetchModelsByEndpointAction(baseUrl, apiKey, providerType);
+    const response = await fetchModelsByEndpointAction(baseUrl, apiKey, providerType, proxyMode, proxyId);
     return response.models;
   }
 
@@ -506,6 +514,8 @@ export function useProviderProfiles() {
           defaultModel: basePatch.defaultModel,
           visionModel: basePatch.visionModel,
           bindPerModel: basePatch.bindPerModel,
+          proxyMode: basePatch.proxyMode,
+          proxyId: basePatch.proxyId,
         };
         saved = form.id
           ? await updateProviderProfileAction(form.id, identityPatch)

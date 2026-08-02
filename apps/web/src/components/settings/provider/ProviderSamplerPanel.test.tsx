@@ -77,6 +77,8 @@ function form(): FormState {
     showReasoning: true,
     streamResponse: true,
     customSamplers: true,
+    proxyMode: "inherit",
+    proxyId: null,
   };
 }
 

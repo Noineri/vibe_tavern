@@ -135,4 +135,42 @@ describe("profile Test: Hi transport routing", () => {
     })).rejects.toMatchObject({ kind: "Validation" });
     expect(requestedUrls).toHaveLength(3);
   });
+
+  test("a dirty draft can reuse a stored API key only for the profile's existing endpoint", async () => {
+    const authorizations: Array<string | null> = [];
+    const providerFetch = (async (_input: string | URL | Request, init?: RequestInit) => {
+      authorizations.push(new Headers(init?.headers).get("Authorization"));
+      return Response.json({ data: [{ id: "model-1" }] });
+    }) as ProviderFetch;
+    providerFetch.preconnect = () => {};
+    setProviderFetchFactory({ resolveFetch: async () => providerFetch });
+
+    const stores = { proxies: { getDefaultProxyId: async () => null } } as unknown as StoreContainer;
+    const providerProfileService = {
+      getProviderProfile: async (id: string) => id === "provider_1"
+        ? { endpoint: "https://provider.example/v1", apiKey: "stored-key" }
+        : null,
+    } as ProviderProfileService;
+    const adapter = new ProviderAdapter(stores, providerProfileService);
+
+    expect((await adapter.testProviderDraft({
+      providerProfileId: "provider_1",
+      endpoint: "https://provider.example/v1",
+      apiKey: "",
+      providerType: "openai",
+      proxyMode: "direct",
+      proxyId: null,
+    })).success).toBe(true);
+    expect(authorizations.at(-1)).toBe("Bearer stored-key");
+
+    expect((await adapter.testProviderDraft({
+      providerProfileId: "provider_1",
+      endpoint: "https://attacker.example/v1",
+      apiKey: "",
+      providerType: "openai",
+      proxyMode: "direct",
+      proxyId: null,
+    })).success).toBe(true);
+    expect(authorizations.at(-1)).toBeNull();
+  });
 });

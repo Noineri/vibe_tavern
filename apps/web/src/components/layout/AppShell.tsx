@@ -34,11 +34,14 @@ import { ShellDestructiveConfirmModal } from "../shared/destructive-confirm-moda
 import { TweaksPanel } from "../settings/popovers/TweaksPanel.js";
 import { MobileSettings } from "../settings/popovers/MobileSettings.js";
 import { MobileAccessModal } from "../modals/MobileAccessModal.js";
+import { ProxyManagerModal } from "../modals/ProxyManagerModal.js";
 import { UpdateModal } from "../modals/UpdateModal.js";
 import { CoauthorModuleModal } from "../coauthor/CoauthorModuleModal.js";
 import { CoauthorSkillModal } from "../coauthor/CoauthorSkillModal.js";
 import { AvatarPanel } from "../settings/popovers/AvatarPanel.js";
 import type { TweaksSettings } from "../../lib/local-storage.js";
+import type { ProxyRecord } from "../../app-client.js";
+import { deleteProxy, getDefaultProxy, listProxies, saveProxy, setDefaultProxy, updateProxy } from "../../app-client.js";
 
 interface AppShellProps {
   tweaksSettings: TweaksSettings;
@@ -77,6 +80,7 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
   const setAvatarOpen = useModalStore((s) => s.setAvatarOpen);
   const mobileAccessOpen = useModalStore((s) => s.mobileAccessOpen);
   const setMobileAccessOpen = useModalStore((s) => s.setMobileAccessOpen);
+  const setIsProxyManagerOpen = useModalStore((s) => s.setIsProxyManagerOpen);
   const isContextMemoryOpen = useModalStore((s) => s.isContextMemoryOpen);
   const setContextMemoryOpen = useModalStore((s) => s.setContextMemoryOpen);
   const isProviderModalOpen = useModalStore((s) => s.isProviderModalOpen);
@@ -106,6 +110,18 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
   const character = useCharacterController();
   const provider = useProviderProfiles();
   const preset = usePresetController();
+  const [proxies, setProxies] = useState<ProxyRecord[]>([]);
+  const [defaultProxyId, setDefaultProxyId] = useState<string | null>(null);
+  const refreshProxies = async () => {
+    const [nextProxies, defaultSetting] = await Promise.all([listProxies(), getDefaultProxy()]);
+    setProxies(nextProxies);
+    setDefaultProxyId(defaultSetting.defaultProxyId);
+  };
+  useEffect(() => {
+    void refreshProxies().catch((error: unknown) => {
+      toast.error(error instanceof Error ? error.message : t("request_failed"));
+    });
+  }, []);
   const updateCheck = useUpdateCheck(buildConfig.APP_VERSION);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const handleImportFile = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -298,6 +314,15 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
     lavaBlobs: tweaksSettings.lavaBlobs,
   };
 
+  const handleSetDefaultProxy = async (proxyId: string | null) => {
+    try {
+      const setting = await setDefaultProxy(proxyId);
+      setDefaultProxyId(setting.defaultProxyId);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : t("request_failed"));
+    }
+  };
+
   const handleSetTweak = (key: string, value: unknown) => {
     if (key === 'theme') setTheme(value as ThemeMode);
     else if (key === 'showRail') updateTweak(key, value as boolean);
@@ -346,6 +371,9 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
               } catch { /* ignore */ }
               setMobileAccessOpen(true);
             }}
+            proxyCount={proxies.length}
+            defaultProxyName={proxies.find((proxy) => proxy.id === defaultProxyId)?.name ?? null}
+            onOpenProxyManager={() => setIsProxyManagerOpen(true)}
           />
         )}
       </Popover.Root>
@@ -365,8 +393,18 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
           } catch { /* ignore */ }
           setMobileAccessOpen(true);
         }}
+        onOpenProxyManager={() => setIsProxyManagerOpen(true)}
       />}
       {mobileAccessOpen && <MobileAccessModal open={mobileAccessOpen} onClose={() => setMobileAccessOpen(false)} onDisabled={() => {}} />}
+      <ProxyManagerModal
+        proxies={proxies}
+        defaultProxyId={defaultProxyId}
+        onCreate={saveProxy}
+        onUpdate={updateProxy}
+        onDelete={async (id) => { await deleteProxy(id); }}
+        onRefresh={refreshProxies}
+        onProvidersChanged={provider.handleRefreshProfiles}
+      />
       {avatarOpen && avatarSrc && <AvatarPanel src={avatarSrc} onClose={() => setAvatarOpen(false)} />}
 
       <ContextMemoryModal
@@ -402,6 +440,9 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
         favoriteModelsByProfile={provider.favoriteModelsByProfile}
         onToggleFavoriteModel={provider.handleToggleFavoriteProviderModel}
         onRefreshProfiles={async () => { await provider.handleRefreshProfiles(); }}
+        proxies={proxies}
+        defaultProxyId={defaultProxyId}
+        onSetDefaultProxy={handleSetDefaultProxy}
       />
 
       <CoauthorProviderModal

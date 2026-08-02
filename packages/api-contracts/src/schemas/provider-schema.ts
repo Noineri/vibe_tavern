@@ -55,6 +55,8 @@ export const testProviderDraftSchema = z.object({
   endpoint: z.string().optional(),
   apiKey: z.string().optional(),
   providerType: z.string().optional(),
+  /** Existing profile whose write-only API key may be reused when the endpoint is unchanged. */
+  providerProfileId: z.string().optional(),
   /** Draft proxy policy so unsaved Test Connection resolves exactly like a saved profile. */
   proxyMode: providerProxyModeSchema.optional(),
   proxyId: z.string().nullable().optional(),
