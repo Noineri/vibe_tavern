@@ -1,6 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { resolve } from "node:path";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import {
+	createDbTestCommand,
 	runTestCli,
 	runTestSuites,
 	type TestSuite,
@@ -24,6 +27,35 @@ async function runTestScript(args: readonly string[]) {
 }
 
 describe("test suite orchestration", () => {
+	test("gives child suites one disposable temp root and removes it after the run", async () => {
+		const tempBase = await mkdtemp(join(tmpdir(), "vibe-tavern-orchestrator-test-"));
+		try {
+			const suites = [{
+				name: "temp-probe",
+				cwd,
+				command: [
+					process.execPath,
+					"-e",
+					'import { tmpdir } from "node:os"; await Bun.write(`${tmpdir()}/probe.txt`, "ok"); console.log(tmpdir())',
+				],
+			}] as const satisfies readonly TestSuite[];
+
+			const [result] = await runTestSuites(suites, undefined, { tempBase });
+			const childTemp = result?.stdout.trim();
+
+			expect(result?.exitCode).toBe(0);
+			expect(childTemp?.startsWith(tempBase)).toBe(true);
+			expect(await Bun.file(join(childTemp ?? "", "probe.txt")).exists()).toBe(false);
+		} finally {
+			await rm(tempBase, { recursive: true, force: true });
+		}
+	});
+
+	test("allows slower SQLite tests more headroom on Windows only", () => {
+		expect(createDbTestCommand("win32")).toContain("15000");
+		expect(createDbTestCommand("linux")).not.toContain("--timeout");
+	});
+
 	test("continues after a failed suite and captures every result", async () => {
 		// Given
 		const suites = [

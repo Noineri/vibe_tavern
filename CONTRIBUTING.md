@@ -151,6 +151,8 @@ bun run i18n:check  # i18next-cli gate: missing/phantom keys (extract --ci) + in
 
 > **Typecheck gotcha:** always run `bun run typecheck` from the repo root. Running bare `tsc` / `bunx tsc` from `apps/web/` against the default `tsconfig.json` produces ~80 false errors (`Property X does not exist on ClientRequest`) because that config's `rootDir` + path aliases collapse Hono's `AppType` inference. CI runs `build`, not `typecheck`; the local `check` is the gate that matters.
 
+The test orchestrator gives every run a disposable temp root and removes it after all suites exit, while DB-only fixtures use SQLite `:memory:` where filesystem persistence is not part of the tested boundary. To place the remaining real-filesystem fixtures on an existing RAM disk, set `VIBE_TAVERN_TEST_TEMP_BASE` to a directory on that disk before running `bun run test`; Windows does not provide a native RAM-disk filesystem, so this requires a separately mounted RAM disk.
+
 ---
 
 ## Submitting your work

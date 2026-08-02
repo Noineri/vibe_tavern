@@ -19,7 +19,7 @@ const idGen: StoreIdGenerator = { next: (prefix) => `${prefix}_test_${++counter}
 
 async function setup() {
 	const dataRoot = await mkdtemp(join(tmpdir(), "vt-assetstore-test-"));
-	const db = await createDb(join(dataRoot, "test.db"));
+	const db = await createDb(":memory:");
 	const content = new ContentStore({ fileStore: createFileStore(dataRoot) });
 	const characterStore = new CharacterStore(db, { folder: new CharacterFolder(content), clock: fixedClock, idGenerator: idGen });
 	const store = new CharacterAssetStore(db, { clock: fixedClock, idGenerator: idGen });

@@ -1,7 +1,4 @@
 import { describe, expect, test, beforeEach } from "bun:test";
-import { mkdtemp } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 
 import { createDb, ProxyStore, ProviderStore } from "@vibe-tavern/db";
 import { createProxyService } from "../src/domain/providers/proxy-service.js";
@@ -14,8 +11,7 @@ let nextId = 0;
 const testIdGen: StoreIdGenerator = { next: (prefix: string) => `${prefix}_svc_${++nextId}` };
 
 async function makeServices() {
-  const dir = await mkdtemp(join(tmpdir(), "vt-proxy-svc-"));
-  const db = await createDb(join(dir, "test.db"));
+  const db = await createDb(":memory:");
   const proxies = new ProxyStore(db, { clock: testClock, idGenerator: testIdGen });
   const providers = new ProviderStore(db, { clock: testClock, idGenerator: testIdGen, content: null });
   return {

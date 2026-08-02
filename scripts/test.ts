@@ -1,3 +1,5 @@
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { formatTestReport, type TestSuiteResult } from "./test-report.js";
@@ -15,6 +17,15 @@ export type TestOutputWriter = (message: string) => void;
 
 const ROOT = resolve(import.meta.dir, "..");
 const BUN = process.execPath;
+
+export function createDbTestCommand(platform: NodeJS.Platform = process.platform): readonly string[] {
+	return [
+		BUN,
+		"test",
+		"--only-failures",
+		...(platform === "win32" ? ["--timeout", "15000"] : []),
+	];
+}
 
 const TEST_SUITES = [
 	{
@@ -45,7 +56,7 @@ const TEST_SUITES = [
 	{
 		name: "db",
 		cwd: join(ROOT, "packages", "db"),
-		command: [BUN, "test", "--only-failures"],
+		command: createDbTestCommand(),
 	},
 	{
 		name: "api",
@@ -59,14 +70,21 @@ const TEST_SUITES = [
 	},
 ] as const satisfies readonly TestSuite[];
 
-async function runTestSuite(suite: TestSuite): Promise<TestSuiteResult> {
+async function runTestSuite(suite: TestSuite, testTempRoot: string): Promise<TestSuiteResult> {
 	const startedAt = performance.now();
 	try {
 		const process = Bun.spawn([...suite.command], {
 			cwd: suite.cwd,
 			stdout: "pipe",
 			stderr: "pipe",
-			env: { ...Bun.env, FORCE_COLOR: "0", NO_COLOR: "1" },
+			env: {
+				...Bun.env,
+				TEMP: testTempRoot,
+				TMP: testTempRoot,
+				TMPDIR: testTempRoot,
+				FORCE_COLOR: "0",
+				NO_COLOR: "1",
+			},
 		});
 		const [exitCode, stdout, stderr] = await Promise.all([
 			process.exited,
@@ -92,16 +110,29 @@ async function runTestSuite(suite: TestSuite): Promise<TestSuiteResult> {
 	}
 }
 
+export interface TestRunOptions {
+	/** Existing directory used as the parent for this run's disposable temp root. */
+	readonly tempBase?: string;
+}
+
 export async function runTestSuites(
 	suites: readonly TestSuite[],
 	onStart?: TestSuiteStartHandler,
+	options: TestRunOptions = {},
 ): Promise<readonly TestSuiteResult[]> {
+	const tempBase = resolve(options.tempBase ?? Bun.env.VIBE_TAVERN_TEST_TEMP_BASE ?? tmpdir());
+	await mkdir(tempBase, { recursive: true });
+	const testTempRoot = await mkdtemp(join(tempBase, "vibe-tavern-test-run-"));
 	const results: TestSuiteResult[] = [];
-	for (const [index, suite] of suites.entries()) {
-		onStart?.(suite, index, suites.length);
-		results.push(await runTestSuite(suite));
+	try {
+		for (const [index, suite] of suites.entries()) {
+			onStart?.(suite, index, suites.length);
+			results.push(await runTestSuite(suite, testTempRoot));
+		}
+		return results;
+	} finally {
+		await rm(testTempRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
 	}
-	return results;
 }
 
 type TestSuiteSelection =

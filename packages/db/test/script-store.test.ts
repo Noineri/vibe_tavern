@@ -16,7 +16,7 @@ const idGen: StoreIdGenerator = { next: (prefix) => `${prefix}_test_${++counter}
 
 async function setup() {
 	const dataRoot = await mkdtemp(join(tmpdir(), "vt-scriptstore-test-"));
-	const db = await createDb(join(dataRoot, "test.db"));
+	const db = await createDb(":memory:");
 	const content = new ContentStore({ fileStore: createFileStore(dataRoot) });
 	const store = new ScriptStore(db, { content, clock: fixedClock, idGenerator: idGen });
 	// FK parents (scripts reference characters + personas).
