@@ -771,8 +771,8 @@ export function ProviderModal({
         }
         footer={
           <div className={cn("shrink-0 border-t border-border", isMobile ? "px-4 py-3" : "px-6 py-4")}>
-            <div className={cn("flex items-center justify-between gap-3", isMobile && "flex-wrap")}>
-              <div className="flex flex-wrap gap-x-4 gap-y-2">
+            <div className={cn("flex items-center gap-3", isMobile && "flex-wrap")}>
+              <div className="flex shrink-0 flex-wrap gap-x-4 gap-y-2">
                 <span className="flex cursor-pointer items-center gap-1.5 font-ui text-[13px] text-t3 transition-colors hover:text-t1" onClick={() => void handleDuplicate()}>
                   <Icons.Copy /> {t("duplicate")}
                 </span>
@@ -782,7 +782,13 @@ export function ProviderModal({
                   </span>
                 )}
               </div>
-              <div className={cn("flex min-w-0 items-center gap-2", isMobile ? "order-3 w-full" : "max-w-[300px]")}>
+              <div className="flex shrink-0 items-center gap-2 font-ui text-[12px] text-t3 transition-opacity duration-300" style={{ opacity: autoSaveFlash ? 1 : 0 }}>
+                <Icons.Floppy /> {t("autosaving")}
+              </div>
+              <div
+                data-testid="default-proxy-control"
+                className={cn("ml-auto flex min-w-0 items-center gap-2", isMobile ? "order-3 w-full" : "flex-1")}
+              >
                 <label className="shrink-0 font-ui text-[12px] text-t3">{t("default_proxy")}</label>
                 <DropdownSelect
                   value={defaultProxyId ?? ""}
@@ -790,11 +796,8 @@ export function ProviderModal({
                   defaultOption={t("proxy_direct")}
                   options={proxies.map((proxy) => ({ id: proxy.id, label: proxy.name, detail: proxy.url }))}
                   onChange={(id) => void onSetDefaultProxy(id || null)}
-                  className="min-w-0"
+                  className="min-w-0 flex-1"
                 />
-              </div>
-              <div className="flex min-w-0 items-center gap-2 font-ui text-[12px] text-t3 transition-opacity duration-300" style={{ opacity: autoSaveFlash ? 1 : 0 }}>
-                <Icons.Floppy /> {t("autosaving")}
               </div>
             </div>
           </div>

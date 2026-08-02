@@ -60,6 +60,12 @@ describe("ProviderModal proxy selectors", () => {
       /></TooltipProvider>, 
     );
     await waitFor(() => expect(view.getByText("default_proxy")).toBeTruthy());
+    const defaultProxyControl = view.getByTestId("default-proxy-control");
+    expect(defaultProxyControl.classList.contains("flex-1")).toBe(true);
+    expect(defaultProxyControl.className).not.toContain("max-w-");
+    expect(defaultProxyControl.querySelector("button")?.classList.contains("flex-1")).toBe(true);
+    expect(defaultProxyControl.parentElement?.lastElementChild).toBe(defaultProxyControl);
+
     fireEvent.click(view.getByText("proxy_direct"));
     await waitFor(() => expect(view.getByText("Office")).toBeTruthy());
     fireEvent.click(view.getByText("Office"));

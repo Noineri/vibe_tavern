@@ -153,7 +153,7 @@ export function DropdownSelect({
                     "flex cursor-pointer items-center rounded px-2.5 py-1.5 font-ui text-[12px] outline-none transition-colors",
                     !value
                       ? "bg-accent-dim font-medium text-accent-t"
-                      : "text-t2 hover:bg-s2 hover:text-t1 data-[selected=true]:bg-s2 data-[selected=true]:text-t1",
+                      : "text-t1 hover:bg-s2 data-[selected=true]:bg-s2",
                   )}
                 >
                   {defaultOption}
@@ -171,13 +171,13 @@ export function DropdownSelect({
                     // (presence) matches both and hides the active highlight.
                     o.id === value
                       ? "bg-accent-dim font-medium text-accent-t"
-                      : "text-t2 hover:bg-s2 hover:text-t1 data-[selected=true]:bg-s2 data-[selected=true]:text-t1",
+                      : "text-t1 hover:bg-s2 data-[selected=true]:bg-s2",
                   )}
                 >
                   <span className="flex min-w-0 items-center gap-2">
                     <span className="min-w-0 truncate">{o.label}</span>
                     {o.detail && (
-                      <span className="shrink-0 text-[11px] text-t4">
+                      <span className="shrink-0 text-[11px] text-t2">
                         {o.detail}
                       </span>
                     )}

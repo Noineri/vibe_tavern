@@ -82,7 +82,7 @@ function ProxyList({ proxies, editingId, defaultProxyId, onSelect, onAdd }: {
               <span className={cn("h-2 w-2 shrink-0 rounded-full", selected ? "bg-accent" : "bg-t4")} />
               <div className="min-w-0 flex-1 py-2">
                 <div className="truncate text-[13px] font-medium">{proxy.name}</div>
-                <div className={cn("mt-0.5 truncate text-[11px]", selected ? "text-accent-t" : "text-t4")}>{proxy.id === defaultProxyId ? t("proxy_default_badge") : proxy.url}</div>
+                <div className={cn("mt-0.5 truncate text-[11px]", selected ? "text-accent-t" : "text-t3")}>{proxy.id === defaultProxyId ? t("proxy_default_badge") : proxy.url}</div>
               </div>
               <MasterDetailMobileDrillDown onSelect={() => onSelect(proxy)} className="py-3" />
             </div>
@@ -153,7 +153,7 @@ export function ProxyManagerModal({ proxies, defaultProxyId, onCreate, onUpdate,
   const requestClose = () => dirty ? setConfirmClose(true) : close();
 
   const save = async () => {
-    if (!draft || !draft.name.trim() || !draft.url.trim()) return;
+    if (!draft || !dirty || saving || !draft.name.trim() || !draft.url.trim()) return;
     setSaving(true);
     try {
       const written = draft.id ? await onUpdate(draft.id, buildProxyWrite(draft)) : await onCreate(buildProxyWrite(draft));
@@ -221,7 +221,7 @@ export function ProxyManagerModal({ proxies, defaultProxyId, onCreate, onUpdate,
             <div>
               <label className={lblCls}>{t("proxy_url")}</label>
               <input className={cn(inputCls, "mt-1.5")} value={draft.url} onChange={(event) => updateDraft("url", event.target.value)} placeholder="http://proxy.example:8080" />
-              <p className="mt-1 font-ui text-[11px] text-t4">{t("proxy_url_hint")}</p>
+              <p className="mt-1 font-ui text-[11px] text-t3">{t("proxy_url_hint")}</p>
             </div>
             <div>
               <label className={lblCls}>{t("proxy_username")}</label>
@@ -238,7 +238,7 @@ export function ProxyManagerModal({ proxies, defaultProxyId, onCreate, onUpdate,
                   {draft.clearStoredPassword ? t("cancel") : t("proxy_password_clear")}
                 </button>
               )}
-              <p className="mt-1 font-ui text-[11px] text-t4">{draft.clearStoredPassword ? t("proxy_password_will_clear") : t("proxy_password_hint")}</p>
+              <p className="mt-1 font-ui text-[11px] text-t3">{draft.clearStoredPassword ? t("proxy_password_will_clear") : t("proxy_password_hint")}</p>
             </div>
             {error && <div className="rounded-md border border-danger/30 bg-danger/10 px-3 py-2 font-ui text-[12px] text-danger">{error}</div>}
           </div>
@@ -250,7 +250,7 @@ export function ProxyManagerModal({ proxies, defaultProxyId, onCreate, onUpdate,
             {draft?.id && <button type="button" className="flex items-center gap-1.5 font-ui text-[13px] text-danger/80 transition-colors hover:text-danger" onClick={() => setConfirmDelete(true)}><Icons.Trash /> {t("proxy_delete")}</button>}
             <div className="ml-auto flex items-center gap-2">
               <button type="button" className="rounded-md border border-border px-4 py-2 font-ui text-[13px] text-t2 hover:bg-s2 hover:text-t1" onClick={requestClose}>{t("close")}</button>
-              <button type="button" disabled={!draft?.name.trim() || !draft.url.trim() || saving} className="rounded-md bg-accent px-4 py-2 font-ui text-[13px] font-medium text-on-accent disabled:opacity-40" onClick={() => void save()}>{saving ? t("saving") : t("save")}</button>
+              <button type="button" disabled={!dirty || !draft?.name.trim() || !draft.url.trim() || saving} className="rounded-md bg-accent px-4 py-2 font-ui text-[13px] font-medium text-on-accent disabled:opacity-40" onClick={() => void save()}>{saving ? t("saving") : t("save")}</button>
             </div>
           </div>
         }
