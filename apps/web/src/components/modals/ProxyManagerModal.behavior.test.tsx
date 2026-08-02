@@ -36,6 +36,9 @@ describe("ProxyManagerModal behavior", () => {
     const deleted: string[] = [];
     let refreshes = 0;
     let providerRefreshes = 0;
+    let releaseFirstUpdate: () => void = () => { throw new Error("Update gate was not initialized"); };
+    const firstUpdateGate = new Promise<void>((resolve) => { releaseFirstUpdate = resolve; });
+    let waitForFirstUpdate = true;
 
     const view = render(
       <TooltipProvider>
@@ -45,6 +48,10 @@ describe("ProxyManagerModal behavior", () => {
           onCreate={async () => storedProxy}
           onUpdate={async (id, patch) => {
             updates.push({ id, password: patch.password });
+            if (waitForFirstUpdate) {
+              waitForFirstUpdate = false;
+              await firstUpdateGate;
+            }
             return { ...storedProxy, hasStoredPassword: patch.password !== null };
           }}
           onDelete={async (id) => { deleted.push(id); }}
@@ -60,13 +67,17 @@ describe("ProxyManagerModal behavior", () => {
     for (const input of proxyInputs) expect(input.classList.contains("field-input-pad")).toBe(true);
 
     const saveButton = view.getByText("save") as HTMLButtonElement;
+    expect(saveButton.classList.contains("w-[124px]")).toBe(true);
     expect(saveButton.disabled).toBe(true);
     fireEvent.click(view.getByText("proxy_password_clear"));
     await waitFor(() => expect((view.getByText("save") as HTMLButtonElement).disabled).toBe(false));
     fireEvent.click(view.getByText("cancel"));
     fireEvent.click(view.getByText("save"));
+    await waitFor(() => expect(view.getByText("saving")).toBeTruthy());
+    releaseFirstUpdate();
     await waitFor(() => expect(updates).toHaveLength(1));
-    await waitFor(() => expect(saveButton.disabled).toBe(true));
+    await waitFor(() => expect(view.getByText("saved")).toBeTruthy());
+    expect(saveButton.disabled).toBe(true);
     expect(updates[0]).toEqual({ id: "proxy_1", password: undefined });
 
     fireEvent.click(view.getByText("proxy_password_clear"));

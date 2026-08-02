@@ -10,6 +10,8 @@ import { Icons } from "../shared/icons.js";
 import { AddButton } from "../shared/add-button.js";
 import { inputCls, lblCls } from "../build/fields/field-styles.js";
 
+type ProxySaveState = "idle" | "saving" | "saved";
+
 export interface ProxyDraft {
   id: string | null;
   name: string;
@@ -103,7 +105,7 @@ export function ProxyManagerModal({ proxies, defaultProxyId, onCreate, onUpdate,
   const [draft, setDraft] = useState<ProxyDraft | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [confirmClose, setConfirmClose] = useState(false);
-  const [saving, setSaving] = useState(false);
+  const [saveState, setSaveState] = useState<ProxySaveState>("idle");
   const [dirty, setDirty] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -118,9 +120,16 @@ export function ProxyManagerModal({ proxies, defaultProxyId, onCreate, onUpdate,
     setConfirmClose(false);
   }, [isOpen, proxies]);
 
+  useEffect(() => {
+    if (saveState !== "saved") return;
+    const timer = window.setTimeout(() => setSaveState("idle"), 1_200);
+    return () => window.clearTimeout(timer);
+  }, [saveState]);
+
   const updateDraft = <K extends keyof ProxyDraft>(key: K, value: ProxyDraft[K]) => {
     setDraft((current) => current ? { ...current, [key]: value } : current);
     setDirty(true);
+    setSaveState("idle");
     setError(null);
   };
 
@@ -131,40 +140,44 @@ export function ProxyManagerModal({ proxies, defaultProxyId, onCreate, onUpdate,
       clearStoredPassword: !current.clearStoredPassword,
     } : current);
     setDirty(true);
+    setSaveState("idle");
     setError(null);
   };
 
   const selectProxy = (proxy: ProxyRecord) => {
     setDraft(proxyToDraft(proxy));
     setDirty(false);
+    setSaveState("idle");
     setError(null);
   };
   const createProxy = () => {
     setDraft(emptyProxyDraft());
     setDirty(false);
+    setSaveState("idle");
     setError(null);
   };
   const close = () => {
     setDraft(null);
     setDirty(false);
+    setSaveState("idle");
     setError(null);
     setIsOpen(false);
   };
   const requestClose = () => dirty ? setConfirmClose(true) : close();
 
   const save = async () => {
-    if (!draft || !dirty || saving || !draft.name.trim() || !draft.url.trim()) return;
-    setSaving(true);
+    if (!draft || !dirty || saveState === "saving" || !draft.name.trim() || !draft.url.trim()) return;
+    setSaveState("saving");
     try {
       const written = draft.id ? await onUpdate(draft.id, buildProxyWrite(draft)) : await onCreate(buildProxyWrite(draft));
       setDraft(proxyToDraft(written));
       setDirty(false);
       setError(null);
       await onRefresh();
+      setSaveState("saved");
     } catch (cause) {
+      setSaveState("idle");
       setError(cause instanceof Error ? cause.message : t("request_failed"));
-    } finally {
-      setSaving(false);
     }
   };
 
@@ -250,7 +263,22 @@ export function ProxyManagerModal({ proxies, defaultProxyId, onCreate, onUpdate,
             {draft?.id && <button type="button" className="flex items-center gap-1.5 font-ui text-[13px] text-danger/80 transition-colors hover:text-danger" onClick={() => setConfirmDelete(true)}><Icons.Trash /> {t("proxy_delete")}</button>}
             <div className="ml-auto flex items-center gap-2">
               <button type="button" className="rounded-md border border-border px-4 py-2 font-ui text-[13px] text-t2 hover:bg-s2 hover:text-t1" onClick={requestClose}>{t("close")}</button>
-              <button type="button" disabled={!dirty || !draft?.name.trim() || !draft.url.trim() || saving} className="rounded-md bg-accent px-4 py-2 font-ui text-[13px] font-medium text-on-accent disabled:opacity-40" onClick={() => void save()}>{saving ? t("saving") : t("save")}</button>
+              <button
+                type="button"
+                disabled={!dirty || !draft?.name.trim() || !draft.url.trim() || saveState === "saving"}
+                className={cn(
+                  "w-[124px] whitespace-nowrap rounded-md px-4 py-2 font-ui text-[13px] font-medium transition-[background-color,color,opacity,filter] duration-200",
+                  saveState === "saved"
+                    ? "cursor-default bg-success-dim text-success-text"
+                    : dirty && draft?.name.trim() && draft.url.trim()
+                      ? "bg-accent text-on-accent hover:brightness-110"
+                      : "cursor-default bg-accent text-on-accent opacity-40",
+                  saveState === "saving" && "cursor-default opacity-70",
+                )}
+                onClick={() => void save()}
+              >
+                {saveState === "saving" ? t("saving") : saveState === "saved" ? t("saved") : t("save")}
+              </button>
             </div>
           </div>
         }
