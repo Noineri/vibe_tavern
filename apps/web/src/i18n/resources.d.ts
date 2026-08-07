@@ -406,6 +406,7 @@ export default interface Resources {
     "custom_model_id_placeholder": "Model ID (e.g. gpt-4o)",
     "default_persona_badge": "Default",
     "default_persona_is": "Default persona for new chats",
+    "default_proxy": "Default proxy",
     "delay_hint": "Delay in turns before first activation",
     "delay_until_recursion_hint": "Only activates during recursive scanning, not on initial pass. Good for secondary/derived lore.",
     "delete": "Delete",
@@ -807,6 +808,7 @@ export default interface Resources {
     "lorebooks_card_desc": "Create knowledge entries activated by keywords",
     "lorebooks_card_title": "Lorebooks",
     "make_active": "Set Active",
+    "manage": "Manage",
     "manage_personas": "Manage Personas",
     "map_to_placeholder": "Map to…",
     "match_src_character_desc": "Character Description",
@@ -884,6 +886,7 @@ export default interface Resources {
     "msgs_short": "msgs",
     "multi_persona_tooltip": "Multi-persona mode",
     "new_chat": "New chat",
+    "new_dice_script": "New Dice Script",
     "new_lorebook": "New Lorebook",
     "new_persona_default": "New persona",
     "new_preset_btn": "New Preset",
@@ -1114,6 +1117,7 @@ export default interface Resources {
     "provider_load_profile_failed": "Could not load saved profile.",
     "provider_name_url_required": "Provider name and base URL are required to save a profile.",
     "provider_preset_label": "Provider Preset",
+    "provider_proxy": "Proxy",
     "provider_refresh_models_failed": "Could not refresh model list.",
     "provider_save_connect_failed": "Could not save and connect provider profile.",
     "provider_save_failed": "Could not save provider profile.",
@@ -1122,6 +1126,33 @@ export default interface Resources {
     "provider_settings_desc": "Manage connections and generation parameters for AI providers.",
     "provider_settings_title": "Provider Settings",
     "provider_settings_tooltip": "Provider settings",
+    "proxies": "Proxies",
+    "proxy_default_badge": "Global default",
+    "proxy_delete": "Delete Proxy",
+    "proxy_delete_body": "Delete “{name}”? Providers using it will inherit the global default.",
+    "proxy_delete_title": "Delete Proxy",
+    "proxy_direct": "Direct connection",
+    "proxy_manager_subtitle": "Manage named proxies for provider traffic.",
+    "proxy_manager_title": "Proxy Manager",
+    "proxy_name": "Name",
+    "proxy_name_placeholder": "e.g. Work proxy",
+    "proxy_new": "+ New Proxy",
+    "proxy_password": "Password (optional)",
+    "proxy_password_clear": "Clear password",
+    "proxy_password_hint": "Passwords are write-only and never appear in the browser after saving.",
+    "proxy_password_preserve": "Leave empty to keep the stored password",
+    "proxy_password_stored": "Password stored",
+    "proxy_password_will_clear": "The stored password will be removed when saved.",
+    "proxy_profiles_label": "Proxy Profiles",
+    "proxy_select_or_create": "Select a proxy or create a new one.",
+    "proxy_status_configured": "{count} configured · direct by default",
+    "proxy_status_configured_one": "{count} configured · direct by default",
+    "proxy_status_configured_other": "{count} configured · direct by default",
+    "proxy_status_default": "Default: {name}",
+    "proxy_url": "Proxy URL",
+    "proxy_url_hint": "Use a bare http://, https://, or socks5:// proxy URL.",
+    "proxy_use_global": "Use global default",
+    "proxy_username": "Username (optional)",
     "queue_add_current": "Add current",
     "queue_add_current_hint": "Queue another job using your current model + preset.",
     "queue_clear": "Clear queue",
@@ -1454,9 +1485,6 @@ export default interface Resources {
     "script_test_scenario": "Scenario Output",
     "script_test_shared": "Shared State",
     "script_test_state": "Script State",
-    "script_type_change_confirm": "Change Type",
-    "script_type_change_confirm_body": "Are you sure you want to change the script type? This will not alter your code, but the script will run in a different mode.",
-    "script_type_change_confirm_title": "Change Script Type?",
     "scripts_card_desc": "JavaScript logic that runs during generation",
     "scripts_card_title": "Scripts",
     "scroll_to_bottom": "Scroll to bottom",
@@ -1757,36 +1785,5 @@ export default interface Resources {
     "ws_name_placeholder": "Character name",
     "ws_sub": "Choose how to start",
     "ws_title": "Welcome"
-    "proxies": "Proxies";
-    "manage": "Manage";
-    "proxy_status_configured": "{count} configured \u00b7 direct by default";
-    "proxy_status_default": "Default: {name}";
-    "proxy_manager_title": "Proxy Manager";
-    "proxy_manager_subtitle": "Manage named proxies for provider traffic.";
-    "proxy_profiles_label": "Proxy Profiles";
-    "proxy_new": "+ New Proxy";
-    "proxy_select_or_create": "Select a proxy or create a new one.";
-    "proxy_name": "Name";
-    "proxy_name_placeholder": "e.g. Work proxy";
-    "proxy_url": "Proxy URL";
-    "proxy_url_hint": "Use a bare http://, https://, or socks5:// proxy URL.";
-    "proxy_username": "Username (optional)";
-    "proxy_password": "Password (optional)";
-    "proxy_password_stored": "Password stored";
-    "proxy_password_preserve": "Leave empty to keep the stored password";
-    "proxy_password_clear": "Clear password";
-    "proxy_password_will_clear": "The stored password will be removed when saved.";
-    "proxy_password_hint": "Passwords are write-only and never appear in the browser after saving.";
-    "proxy_delete_title": "Delete Proxy";
-    "proxy_delete_body": "Delete \u201c{name}\u201d? Providers using it will inherit the global default.";
-    "proxy_delete": "Delete Proxy";
-    "proxy_default_badge": "Global default";
-    "provider_proxy": "Proxy";
-    "proxy_use_global": "Use global default";
-    "proxy_direct": "Direct connection";
-    "default_proxy": "Default proxy";
-    "proxy_status_configured_one": "{count} configured \u00b7 direct by default";
-    "proxy_status_configured_other": "{count} configured \u00b7 direct by default";
-
   }
 }
