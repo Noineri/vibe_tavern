@@ -45,3 +45,39 @@ export async function stopRuntimeServer(): Promise<boolean> {
 export function clearRuntimeShutdownHook(): void {
 	shutdownHook = null;
 }
+
+// ─── Background-work teardown ─────────────────────────────────────────────
+//
+// The shutdown hook above is a single slot owned by the HTTP server. Long-lived
+// background work built in `createRuntimeApp` (the quota poller) has no way to
+// reach that slot without a cycle, and must not overwrite it either — so it
+// registers here instead. Additive: every registrant runs on the way out.
+
+type RuntimeTeardown = () => void | Promise<void>;
+
+const teardowns = new Set<RuntimeTeardown>();
+
+/** Register background work to stop before exit. Returns an unregister function. */
+export function addRuntimeTeardown(teardown: RuntimeTeardown): () => void {
+	teardowns.add(teardown);
+	return () => { teardowns.delete(teardown); };
+}
+
+/**
+ * Run every registered teardown. One failing teardown must not prevent the
+ * others from running, so failures are logged rather than propagated.
+ */
+export async function runRuntimeTeardowns(): Promise<void> {
+	for (const teardown of teardowns) {
+		try {
+			await teardown();
+		} catch (err) {
+			console.error("[runtime] Background teardown failed:", err);
+		}
+	}
+}
+
+/** Test seam: forget every registered teardown. */
+export function clearRuntimeTeardowns(): void {
+	teardowns.clear();
+}

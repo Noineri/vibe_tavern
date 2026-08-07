@@ -63,3 +63,14 @@ export {
   type SummaryBadgeStatus,
   type SummaryReady,
 } from "./chat-notifications-store.js";
+
+export {
+  useQuotaStore,
+  selectQuotaEntry,
+  selectQuotaWindows,
+  selectQuotaBalances,
+  selectPrimaryBalance,
+  type QuotaLoadStatus,
+  type QuotaProfileEntry,
+  type QuotaStreamState,
+} from "./quota-store.js";

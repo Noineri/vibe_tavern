@@ -13,6 +13,7 @@ export * from "./platform-constants.js";
 export * from "./prompt-canvas.js";
 export * from "./prompt-slot.js";
 export * from "./provider-profile.js";
+export * from "./provider-quota.js";
 export * from "./proxy-profile.js";
 export * from "./provider-support.js";
 export * from "./sampler-params.js";

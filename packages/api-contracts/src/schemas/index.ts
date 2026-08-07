@@ -188,3 +188,20 @@ export {
   DICE_SCHEMA_MAX_STRING,
   DICE_SCHEMA_MAX_ATTEMPTS,
 } from "./dice-schema.js";
+
+export {
+  canonicalUtcInstantSchema,
+  canonicalDecimalSchema,
+  providerQuotaWindowKindSchema,
+  providerBalanceKindSchema,
+  providerBalanceUnitSchema,
+  providerQuotaNoneReasonSchema,
+  providerQuotaWindowSchema,
+  providerBalanceAmountSchema,
+  providerQuotaSnapshotSchema,
+  windowedProviderQuotaConfigSchema,
+  balanceProviderQuotaConfigSchema,
+  noneProviderQuotaConfigSchema,
+  providerQuotaConfigSchema,
+  updateProviderQuotaConfigSchema,
+} from "./provider-quota-schema.js";

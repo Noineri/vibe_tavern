@@ -10,6 +10,7 @@ import { useIsMobile } from "../../hooks/use-mobile.js";
 import { AttachmentPreview } from "./AttachmentPreview.js";
 import { ChatImpersonateAiPill } from "./ChatImpersonateAiPill.js";
 import { MobileInputArea } from "./MobileInputArea.js";
+import { QuotaIndicator } from "./QuotaIndicator.js";
 import { useInputArea } from "./use-input-area.js";
 
 export function InputArea() {
@@ -160,6 +161,8 @@ function DesktopInputArea({ data }: { data: ReturnType<typeof useInputArea> }) {
                 { label: t("context_tools"), value: buckets.tools },
               ]}
             />
+
+            <QuotaIndicator providerProfileId={provider.activeProviderProfile?.id ?? null} />
 
             <div className="absolute right-3 bottom-[9px] flex items-center gap-[9px]">
                 <ToolbarSelect
