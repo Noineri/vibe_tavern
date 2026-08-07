@@ -199,3 +199,84 @@ context.dice.register({
     expect(result.sampleRolls[0].result.error).toContain("subtotal");
   });
 });
+
+// ─── Interactive dispatch (definition discovery; Wave 1 IR-13) ───────────────
+
+const INTERACTIVE_VALID_CODE = `
+context.experience.register({
+  apiVersion: 1,
+  manifest: { id: "tictactoe", name: "Tic-Tac-Toe" },
+  capabilities: [],
+  create() { return { board: ["","","","","","","","",""], turn: "X" }; },
+  project(c) { return c.state; },
+  actions() { return []; },
+  reduce(c) { return { state: c.state, status: "active", events: [] }; },
+});
+`;
+
+describe("testScript — interactive dispatch", () => {
+  test("returns kind:'interactive' with the discovered definition", async () => {
+    const script = makeScript({
+      id: "s1",
+      scriptKind: "interactive",
+      code: INTERACTIVE_VALID_CODE,
+    });
+    const result = await testScript(storesWith(script), { scriptId: "s1" });
+
+    expect(result.kind).toBe("interactive");
+    if (result.kind !== "interactive") return;
+    expect(result.discoveryError).toBeNull();
+    expect(result.definition).not.toBeNull();
+    if (!result.definition) return;
+    expect(result.definition.apiVersion).toBe(1);
+    expect(result.definition.manifest).toEqual({ id: "tictactoe", name: "Tic-Tac-Toe" });
+    expect(result.definition.declaredCapabilities).toEqual([]);
+  });
+
+  test("reports discoveryError when register() is never called", async () => {
+    const script = makeScript({
+      id: "s1",
+      scriptKind: "interactive",
+      code: `// no registration`,
+    });
+    const result = await testScript(storesWith(script), { scriptId: "s1" });
+
+    if (result.kind !== "interactive") return;
+    expect(result.definition).toBeNull();
+    expect(result.discoveryError).toBeTruthy();
+  });
+
+  test("reports discoveryError on a syntax error", async () => {
+    const script = makeScript({
+      id: "s1",
+      scriptKind: "interactive",
+      code: `context.experience.register({ this is broken {{{`,
+    });
+    const result = await testScript(storesWith(script), { scriptId: "s1" });
+
+    if (result.kind !== "interactive") return;
+    expect(result.definition).toBeNull();
+    expect(result.discoveryError).toBeTruthy();
+  });
+
+  test("does not run the prompt tester — ignores character/persona inputs", async () => {
+    // Interactive scripts have their own runtime; passing prompt-tester inputs
+    // must NOT turn this into a prompt run or leak prompt-tester fields.
+    const script = makeScript({
+      id: "s1",
+      scriptKind: "interactive",
+      code: INTERACTIVE_VALID_CODE,
+    });
+    const result = await testScript(storesWith(script), {
+      scriptId: "s1",
+      characterName: "Aria",
+      characterPersonality: "stoic",
+      persona: { name: "Hero", description: "" },
+    });
+
+    expect(result.kind).toBe("interactive");
+    expect(result).not.toHaveProperty("personality");
+    expect(result).not.toHaveProperty("scenario");
+    expect(result).not.toHaveProperty("injectedMessages");
+  });
+});
