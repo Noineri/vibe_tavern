@@ -5,6 +5,12 @@ import type {
   ChatId,
   ChatSummaryId,
   DiceRollId,
+  ExperienceAttachmentId,
+  ExperienceContextBundleId,
+  ExperienceEffectId,
+  ExperienceSessionId,
+  ExperienceStepId,
+  ExperienceVisualId,
   LoreEntryId,
   LorebookId,
   MessageId,
@@ -51,6 +57,16 @@ import type {
   DiceResolution,
   DiceFinalizationPolicy,
   DiceFaceShape,
+} from "./platform-constants.js";
+import type {
+  ExperienceCapability,
+  ExperienceContextMode,
+  ExperienceController,
+  ExperienceEffectKind,
+  ExperienceEffectStatus,
+  ExperienceEventVisibility,
+  ExperienceSessionStatus,
+  ExperienceViewerKind,
 } from "./platform-constants.js";
 
 export type Timestamp = string;
@@ -449,6 +465,236 @@ export interface DiceRollSnapshot {
   policy?: DiceFinalizationPolicy;
   boundMessageId?: MessageId | null;
   createdAt: Timestamp;
+}
+
+// ─── Interactive Runtime entities (INTERACTIVE_RUNTIME_FOUNDATION_PLAN, Wave 1)
+//
+// Canonical envelopes for the Interactive Runtime. The pure synchronous VM and
+// kernel arrive in IR-12; the durable persistence in Wave 2. These shapes are
+// the authoritative semantic contract every later layer mirrors — the bounded
+// WIRE schemas live in api-contracts/interactive-schema.ts. A registered
+// experience owns JSON-safe state and the meaning of its actions; the host owns
+// identity, branch/session linkage, monotonic revisions, request idempotency,
+// atomic persistence, deterministic effect delivery, snapshots, trust, and the
+// visual/RP bridges.
+
+/**
+ * Identity + name a registered experience publishes. `apiVersion` is the host
+ * protocol version the script targets; it lives on the registration/definition
+ * and session, not on the manifest itself (mirrors the design's
+ * `register({ apiVersion, manifest, … })` shape).
+ */
+export interface ExperienceManifest {
+  id: string;
+  name: string;
+}
+
+/**
+ * A capability a package declares it may use, with an optional bounded reason
+ * shown in the per-session grant UI. Only declared AND user-granted
+ * capabilities reach the VM `context`.
+ */
+export interface ExperienceDeclaredCapability {
+  capability: ExperienceCapability;
+  reason?: string;
+}
+
+/** A participant seat declared by an experience's settings. */
+export interface ExperienceParticipant {
+  id: string;
+  label: string;
+  controller: ExperienceController;
+}
+
+/**
+ * The viewer a `project`/`actions` call is computed for. Hidden information is
+ * enforced by projecting per-viewer: a seat (human/script/model) carries its
+ * `participantId`; an observer view carries none and sees no private data.
+ */
+export interface ExperienceViewer {
+  kind: ExperienceViewerKind;
+  participantId?: string;
+}
+
+/**
+ * An immutable snapshot of a rules or visual resource captured at session
+ * start. Edits and deletes of the source row never corrupt an active or
+ * historical session because the exact source + hash + revision are frozen
+ * here (the snapshot-isolation invariant).
+ */
+export interface ExperienceSourceSnapshot {
+  id: string;
+  label: string;
+  revision: number;
+  source: string;
+  sourceHash: string;
+}
+
+/**
+ * One typed intention a viewer may submit. Returned by `actions()` as a
+ * descriptor and submitted to `reduce()` (carrying `requestId` +
+ * `expectedRevision`) as an action. `payloadSchema` is a bounded JSON-schema-ish
+ * description the kernel validates submitted payloads against; `allowsText` is
+ * true only when the package permits free text (model controllers).
+ */
+export interface ExperienceActionDescriptor {
+  type: string;
+  participantId?: string;
+  label?: string;
+  payloadSchema?: unknown;
+  allowsText?: boolean;
+}
+
+/** A submitted action intention. Carries idempotency + revision for CAS. */
+export interface ExperienceAction {
+  type: string;
+  requestId: string;
+  expectedRevision: number;
+  participantId?: string;
+  payload?: unknown;
+}
+
+/**
+ * An event emitted by a transition. `public` events reach the visual, the
+ * queued report, and the Writer; `private` events never leave the
+ * authoritative runtime — the literal that makes hidden-state absence provable.
+ */
+export interface ExperienceEvent {
+  visibility: ExperienceEventVisibility;
+  type: string;
+  detail?: unknown;
+}
+
+/**
+ * A durable effect a reducer requests as data. The host persists the request
+ * `pending` before running the capability work, then feeds success, failure,
+ * cancellation, or retry back through the same state-machine boundary. V1's
+ * only effect kind is `model` (atomic model generation).
+ */
+export interface ExperienceEffectRequest {
+  kind: ExperienceEffectKind;
+  request: unknown;
+}
+
+/**
+ * The output of `reduce`: the next authoritative state, post-move session
+ * status (`active` or `completed` — `interrupted` is host-only), emitted
+ * events, and optional durable effect requests. The host never trusts this
+ * blindly: state must round-trip as bounded JSON, status is schema-narrowed,
+ * and persistence applies it via compare-and-swap on the revision.
+ */
+export interface ExperienceTransition {
+  state: unknown;
+  status: ExperienceSessionStatus;
+  events: ExperienceEvent[];
+  effects?: ExperienceEffectRequest[];
+  message?: string;
+}
+
+/**
+ * The per-viewer projection `project` returns and the visual/bridge receive:
+ * projected state, legal actions at this revision, the revision, and status.
+ * Never carries hidden state for the viewer it was computed for.
+ */
+export interface ExperienceProjectedView {
+  state: unknown;
+  actions: ExperienceActionDescriptor[];
+  revision: number;
+  status: ExperienceSessionStatus;
+}
+
+/**
+ * The canonical persisted experience session. Scoped by chatId + branchId with
+ * at most one active session per branch (`activeSlot`, unique per branch). Pins
+ * the exact rules/visual source snapshots so edits/deletes do not corrupt it;
+ * holds current state, monotonic revision, participants, granted capabilities,
+ * RP-context mode, report frontier, and the deterministic-random seed/cursor.
+ * The DB table + store arrive in Wave 2; this is the canonical shape.
+ */
+export interface ExperienceSession {
+  sessionId: ExperienceSessionId;
+  chatId: ChatId;
+  branchId: ChatBranchId;
+  /** Pinned rules source snapshot (exact hash/revision). */
+  rules: ExperienceSourceSnapshot;
+  /** Pinned visual source snapshot, or null when no visual is bound. */
+  visual: ExperienceSourceSnapshot | null;
+  /** Host protocol version the rules registered. */
+  apiVersion: number;
+  /** Discovered manifest (id/name) frozen at start. */
+  manifest: ExperienceManifest;
+  /** Initial authoritative settings — a replay input (deterministic rebuild). */
+  initialSettings: unknown;
+  /** Current authoritative state (bounded JSON, round-trips). */
+  currentState: unknown;
+  /** Post-last-transition session status. */
+  status: ExperienceSessionStatus;
+  /** Monotonic revision; increments on every applied transition. */
+  revision: number;
+  /** Participant roster. */
+  participants: ExperienceParticipant[];
+  /** User-approved capabilities (subset of declared). */
+  capabilityGrants: ExperienceCapability[];
+  /** RP-context mode for model-controlled seats. */
+  contextMode: ExperienceContextMode;
+  /** Highest revision frozen into a queued/bound report. */
+  reportFrontier: number;
+  /** Deterministic-random seed + cursor (for deterministic_random capability). */
+  randomSeed: string;
+  randomCursor: number;
+  /** Active slot within the branch (nullable; {branchId, activeSlot} is unique). */
+  activeSlot: number | null;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+}
+
+/**
+ * A durable effect record persisted before execution. Process interruption
+ * after `running` reconciles to `unknown`; only an explicit user retry creates a
+ * new attempt (incrementing `attemptCount`), preserving the original effect id
+ * and audit history.
+ */
+export interface ExperienceEffect {
+  effectId: ExperienceEffectId;
+  sessionId: ExperienceSessionId;
+  kind: ExperienceEffectKind;
+  status: ExperienceEffectStatus;
+  /** The revision at which the reducer requested this effect. */
+  originatingRevision: number;
+  /** Bounded JSON request payload. */
+  request: unknown;
+  /** Bounded JSON result payload (present when succeeded). */
+  result?: unknown;
+  /** Stable error string (present when failed/unknown). */
+  error?: string;
+  /** Number of attempts; only explicit user retry increments. */
+  attemptCount: number;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+}
+
+/**
+ * A visual resource: an editable, user-owned HTML/CSS/JS bundle that runs
+ * sandboxed in an iframe and communicates only through the versioned
+ * `VibeExperience` bridge. Scope metadata mirrors Script so a visual can be
+ * global or owned by a character/persona/chat.
+ */
+export interface ExperienceVisual {
+  visualId: ExperienceVisualId;
+  name: string;
+  /** The visual source bundle (editable; Wave 6 ships starters). */
+  source: string;
+  sourceHash: string;
+  /** Bridge API version this visual targets. */
+  apiVersion: number;
+  /** Manifest ids this visual is compatible with (loose coupling). */
+  compatibleManifestIds: string[];
+  scopeType: LoreScopeType;
+  characterId: string | null;
+  personaId: string | null;
+  chatId: string | null;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
 }
 
 /**

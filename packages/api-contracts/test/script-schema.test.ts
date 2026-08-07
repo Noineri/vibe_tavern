@@ -3,6 +3,7 @@ import { z } from "zod";
 import {
   createScriptSchema,
   importScriptSchema,
+  scriptTestResultSchema,
   testScriptSchema,
   updateScriptSchema,
 } from "../src/schemas/script-schema.js";
@@ -386,5 +387,68 @@ describe("updateScriptSchema scriptKind is NOT a patch field (DICE-B3)", () => {
       updateScriptSchema.safeParse({ creationIntentId: "intent_x" }),
     ) as Record<string, unknown>;
     expect("creationIntentId" in data).toBe(false);
+  });
+});
+
+// ─── IR-11: scriptTestResultSchema discriminated union ───────────────────────
+//
+// Pins the three-kind test-result contract (prompt | dice | interactive). The
+// interactive variant arrives in IR-11 as a contract; the sandbox that PRODUCES
+// it arrives in IR-12. This guard catches a typo in any discriminator literal
+// or a missing per-kind required field.
+
+describe("scriptTestResultSchema (prompt | dice | interactive)", () => {
+  it("accepts a prompt result", () => {
+    const result = scriptTestResultSchema.safeParse({
+      kind: "prompt",
+      personality: "p",
+      scenario: "s",
+      state: {},
+      injectedMessages: [],
+      console: [],
+      shared: {},
+      errors: [],
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("accepts a dice result", () => {
+    const result = scriptTestResultSchema.safeParse({
+      kind: "dice",
+      checks: [],
+      sampleRolls: [],
+      discoveryError: null,
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("accepts an interactive result with a discovered definition", () => {
+    const result = scriptTestResultSchema.safeParse({
+      kind: "interactive",
+      definition: {
+        apiVersion: 1,
+        manifest: { id: "ttt", name: "Tic-Tac-Toe" },
+        declaredCapabilities: [],
+      },
+      discoveryError: null,
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("accepts an interactive result with a null definition and a discovery error", () => {
+    const result = scriptTestResultSchema.safeParse({
+      kind: "interactive",
+      definition: null,
+      discoveryError: "missing required method 'reduce'",
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects an unknown kind discriminator", () => {
+    expectReject(scriptTestResultSchema.safeParse({ kind: "fate" }));
+  });
+
+  it("rejects a payload missing the kind discriminator", () => {
+    expectReject(scriptTestResultSchema.safeParse({ checks: [] }));
   });
 });

@@ -22,6 +22,12 @@ export const ENTITY_ID_NAMESPACE = {
   script: "script",
   diceRoll: "dice_roll",
   dicePendingLane: "dice_pending_lane",
+  experienceVisual: "exp_visual",
+  experienceSession: "exp_session",
+  experienceStep: "exp_step",
+  experienceEffect: "exp_effect",
+  experienceContextBundle: "exp_context",
+  experienceAttachment: "exp_attach",
 } as const;
 
 export type EntityIdNamespace = typeof ENTITY_ID_NAMESPACE[keyof typeof ENTITY_ID_NAMESPACE];
@@ -390,13 +396,22 @@ export type ObjectiveMode = typeof OBJECTIVE_MODE[keyof typeof OBJECTIVE_MODE];
  * - `dice` — the dedicated Dice-script VM (Wave B2): registers checks, reads
  *   a frozen actor snapshot, and calls a bounded server roller. A dice script
  *   never mutates prompt fields, injects messages, or runs during assembly.
+ * - `interactive` — the Interactive Runtime VM (IR plan, Wave 1): registers
+ *   exactly one experience definition with the four mandatory methods
+ *   (`create`/`project`/`actions`/`reduce`) and owns JSON-safe authoritative
+ *   state. An interactive script never mutates prompt fields, runs during
+ *   prompt assembly, or shares state with the prompt/dice runtimes.
  *
- * Prompt assembly loads only `prompt` scripts; Dice actions load only `dice`
- * scripts. The two runtimes are isolated by kind at the store boundary.
+ * Each runtime loads only its own kind: prompt assembly loads `prompt`
+ * scripts, Dice actions load `dice` scripts, and the experience service loads
+ * `interactive` scripts. The three runtimes are isolated by kind at the store
+ * boundary; neither existing behavior-pinned VM is broadened into a mixed
+ * runtime.
  */
 export const SCRIPT_KIND = {
   prompt: "prompt",
   dice: "dice",
+  interactive: "interactive",
 } as const;
 
 export type ScriptKind = typeof SCRIPT_KIND[keyof typeof SCRIPT_KIND];
@@ -485,3 +500,155 @@ export const DICE_FACE_SHAPE = {
 } as const;
 
 export type DiceFaceShape = typeof DICE_FACE_SHAPE[keyof typeof DICE_FACE_SHAPE];
+
+// ─── Interactive Runtime (INTERACTIVE_RUNTIME_FOUNDATION_PLAN, Wave 1) ─────────
+//
+// The general Interactive Runtime beneath Scripted Games: a per-chat opt-in,
+// branch-scoped experience engine with a four-method authored lifecycle. These
+// constants are the canonical vocabulary shared by the domain envelopes
+// (entities.ts), the bounded wire schemas (api-contracts/interactive-schema.ts),
+// the synchronous rules VM/kernel (Wave 1, IR-12), and the durable persistence
+// layer (Wave 2). Add a value here first; everything else keys off these
+// literals, exactly like the Dice vocabulary above.
+
+/**
+ * Interactive Runtime capability registry (Wave 1). A package declares the
+ * capabilities it may use; the user grants a subset per session. Only declared
+ * AND granted capabilities appear in the VM `context`; absence is a true no-op
+ * and never silently grants host privilege.
+ *
+ * - `participants`         — multi-seat games; reads the participant roster.
+ * - `deterministic_random` — a seeded RNG the reducer draws from (synchronous,
+ *   replay-stable; not a durable effect).
+ * - `model`                — durable atomic/non-streaming model generation for
+ *   a model-controlled seat (the sole durable effect kind in V1).
+ * - `rp_context`           — frozen RP context (branch/recent/summaries/compact)
+ *   attached to a model-controlled seat's prompt.
+ * - `rp_attachment`        — freeze/queue an experience report that binds
+ *   atomically to the next user message.
+ */
+export const EXPERIENCE_CAPABILITY = {
+  participants: "participants",
+  deterministicRandom: "deterministic_random",
+  model: "model",
+  rpContext: "rp_context",
+  rpAttachment: "rp_attachment",
+} as const;
+
+export type ExperienceCapability =
+  typeof EXPERIENCE_CAPABILITY[keyof typeof EXPERIENCE_CAPABILITY];
+
+/**
+ * Who controls a participant seat. The host supports all three; each experience
+ * decides which are allowed for its seats.
+ *
+ * - `human`  — the user controls this seat.
+ * - `script` — a synchronous strategy function chooses actions.
+ * - `model`  — a durable model effect chooses a validated action.
+ */
+export const EXPERIENCE_CONTROLLER = {
+  human: "human",
+  script: "script",
+  model: "model",
+} as const;
+
+export type ExperienceController =
+  typeof EXPERIENCE_CONTROLLER[keyof typeof EXPERIENCE_CONTROLLER];
+
+/**
+ * The viewer a `project`/`actions` call is for. Hidden information is enforced
+ * by projecting per-viewer: the human seat, a specific script/model seat, or a
+ * public observer (reports/Writer) that sees no private data.
+ */
+export const EXPERIENCE_VIEWER_KIND = {
+  human: "human",
+  script: "script",
+  model: "model",
+  observer: "observer",
+} as const;
+
+export type ExperienceViewerKind =
+  typeof EXPERIENCE_VIEWER_KIND[keyof typeof EXPERIENCE_VIEWER_KIND];
+
+/**
+ * Lifecycle status of an experience session. `active` is the running state —
+ * including UI-closed/reloaded, because closing the UI pauses nothing
+ * destructively. `completed` is a rule-determined natural end. `interrupted`
+ * is an explicit user end. A reducer transition returns `active` or
+ * `completed` only; the host records `interrupted` via a system transition.
+ */
+export const EXPERIENCE_SESSION_STATUS = {
+  active: "active",
+  completed: "completed",
+  interrupted: "interrupted",
+} as const;
+
+export type ExperienceSessionStatus =
+  typeof EXPERIENCE_SESSION_STATUS[keyof typeof EXPERIENCE_SESSION_STATUS];
+
+/**
+ * Visibility of an event emitted by a transition. `public` events reach the
+ * visual, the queued report, and the Writer; `private` events never leave the
+ * authoritative runtime. This literal is how hidden state is proven absent
+ * from every projection.
+ */
+export const EXPERIENCE_EVENT_VISIBILITY = {
+  public: "public",
+  private: "private",
+} as const;
+
+export type ExperienceEventVisibility =
+  typeof EXPERIENCE_EVENT_VISIBILITY[keyof typeof EXPERIENCE_EVENT_VISIBILITY];
+
+/**
+ * Lifecycle status of a durable effect. A reducer requests an effect as data;
+ * the host persists it `pending` before running it. Process interruption after
+ * `running` reconciles an effect to `unknown` (never directly back to
+ * `pending`); only an explicit user retry creates a new attempt.
+ */
+export const EXPERIENCE_EFFECT_STATUS = {
+  pending: "pending",
+  running: "running",
+  succeeded: "succeeded",
+  failed: "failed",
+  cancelled: "cancelled",
+  unknown: "unknown",
+} as const;
+
+export type ExperienceEffectStatus =
+  typeof EXPERIENCE_EFFECT_STATUS[keyof typeof EXPERIENCE_EFFECT_STATUS];
+
+/**
+ * Kind of durable effect a reducer may request. The host persists the request,
+ * runs the capability work, and feeds the result back through the same
+ * state-machine boundary. V1 ships `model` (atomic model generation); the set
+ * is bounded and grows only as a capability introduces new durable work.
+ */
+export const EXPERIENCE_EFFECT_KIND = {
+  model: "model",
+} as const;
+
+export type ExperienceEffectKind =
+  typeof EXPERIENCE_EFFECT_KIND[keyof typeof EXPERIENCE_EFFECT_KIND];
+
+/**
+ * RP-context capture mode for a model-controlled seat (Wave 4). Context is
+ * optional and explicit; it never silently resynchronizes.
+ *
+ * - `none`             — no RP context.
+ * - `current_branch`   — the current branch within the selected model budget.
+ * - `recent`           — a bounded recent-message window.
+ * - `summaries_recent` — existing included summaries plus recent messages.
+ * - `compact_summary`  — an explicitly generated compact snapshot (never the
+ *   default; a separate user action).
+ */
+export const EXPERIENCE_CONTEXT_MODE = {
+  none: "none",
+  currentBranch: "current_branch",
+  recent: "recent",
+  summariesRecent: "summaries_recent",
+  compactSummary: "compact_summary",
+} as const;
+
+export type ExperienceContextMode =
+  typeof EXPERIENCE_CONTEXT_MODE[keyof typeof EXPERIENCE_CONTEXT_MODE];

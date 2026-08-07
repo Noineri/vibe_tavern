@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { scriptKindSchema, diceFaceShapeSchema, diceResolutionSchema, diceCheckDescriptorSchema } from "./dice-schema.js";
+import { experienceDefinitionSchema } from "./interactive-schema.js";
 
 export const createScriptSchema = z.object({
   name: z.string().min(1),
@@ -164,12 +165,25 @@ export const diceScriptTestResultSchema = z.object({
   discoveryError: z.string().nullable(),
 });
 
+/** Interactive-script test result (Wave 1 IR-12 sandbox discovery). Mirrors the
+ *  dice discovery shape: the validated definition when registration succeeded,
+ *  plus a nullable discovery error. Full action-sequence testing arrives in
+ *  Wave 8 (InteractiveTester). */
+export const interactiveScriptTestResultSchema = z.object({
+  /** Discovered definition when registration succeeded; null on error. */
+  definition: experienceDefinitionSchema.nullable(),
+  /** Registration/discovery VM error (syntax/runtime/timeout/missing-method); null when clean. */
+  discoveryError: z.string().nullable(),
+});
+
 export const scriptTestResultSchema = z.discriminatedUnion("kind", [
   promptScriptTestResultSchema.extend({ kind: z.literal("prompt") }),
   diceScriptTestResultSchema.extend({ kind: z.literal("dice") }),
+  interactiveScriptTestResultSchema.extend({ kind: z.literal("interactive") }),
 ]);
 
 export type ScriptTestResult = z.infer<typeof scriptTestResultSchema>;
 export type PromptScriptTestResult = z.infer<typeof promptScriptTestResultSchema>;
 export type DiceScriptTestResult = z.infer<typeof diceScriptTestResultSchema>;
 export type DiceSampleRoll = z.infer<typeof diceSampleRollSchema>;
+export type InteractiveScriptTestResult = z.infer<typeof interactiveScriptTestResultSchema>;

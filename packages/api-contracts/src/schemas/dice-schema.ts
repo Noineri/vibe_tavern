@@ -20,7 +20,7 @@ import { z } from "zod";
 // ─── Enums (canonical — mirror packages/domain/src/platform-constants.ts) ────
 
 /** Runtime contract of a script. Defaults to `prompt` for every legacy row. */
-export const scriptKindSchema = z.enum(["prompt", "dice"]);
+export const scriptKindSchema = z.enum(["prompt", "dice", "interactive"]);
 
 export const diceModeSchema = z.enum(["normal", "immersive"]);
 export const diceActorTypeSchema = z.enum(["persona", "character"]);

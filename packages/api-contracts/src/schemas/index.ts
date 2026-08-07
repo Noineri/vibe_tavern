@@ -142,10 +142,12 @@ export {
   promptScriptTestResultSchema,
   diceScriptTestResultSchema,
   diceSampleRollSchema,
+  interactiveScriptTestResultSchema,
   type ScriptTestResult,
   type PromptScriptTestResult,
   type DiceScriptTestResult,
   type DiceSampleRoll,
+  type InteractiveScriptTestResult,
 } from "./script-schema.js";
 
 export {
@@ -188,3 +190,62 @@ export {
   DICE_SCHEMA_MAX_STRING,
   DICE_SCHEMA_MAX_ATTEMPTS,
 } from "./dice-schema.js";
+
+export {
+  // Enums
+  experienceCapabilitySchema,
+  experienceControllerSchema,
+  experienceViewerKindSchema,
+  experienceSessionStatusSchema,
+  experienceReducerStatusSchema,
+  experienceEventVisibilitySchema,
+  experienceEffectStatusSchema,
+  experienceEffectKindSchema,
+  experienceContextModeSchema,
+  experienceStarterKindSchema,
+  // Core envelopes
+  experienceManifestSchema,
+  experienceDeclaredCapabilitySchema,
+  experienceParticipantSchema,
+  experienceViewerSchema,
+  experienceSourceSnapshotSchema,
+  experienceActionDescriptorSchema,
+  experienceActionSchema,
+  experienceEventSchema,
+  experienceEffectRequestSchema,
+  experienceTransitionSchema,
+  experienceProjectedViewSchema,
+  experienceDefinitionSchema,
+  // Starters
+  experienceStarterManifestSchema,
+  // Lifecycle request/response
+  experienceStartRequestSchema,
+  experienceActionRequestSchema,
+  experienceFinishRequestSchema,
+  experienceSessionResponseSchema,
+  // Bounded-JSON guard + bounds
+  jsonBoundsError,
+  boundedJsonValue,
+  INTERACTIVE_SCHEMA_MAX_ID,
+  INTERACTIVE_SCHEMA_MAX_LABEL,
+  INTERACTIVE_SCHEMA_MAX_STRING,
+  INTERACTIVE_SCHEMA_MAX_REQUEST_ID,
+  INTERACTIVE_SCHEMA_MAX_DEPTH,
+  INTERACTIVE_SCHEMA_MAX_STATE_BYTES,
+  INTERACTIVE_SCHEMA_MAX_PAYLOAD_BYTES,
+  INTERACTIVE_SCHEMA_MAX_PAYLOAD_SCHEMA_BYTES,
+  INTERACTIVE_SCHEMA_MAX_PAYLOAD_SCHEMA_DEPTH,
+  INTERACTIVE_SCHEMA_MAX_ACTIONS,
+  INTERACTIVE_SCHEMA_MAX_EVENTS,
+  INTERACTIVE_SCHEMA_MAX_PARTICIPANTS,
+  INTERACTIVE_SCHEMA_MAX_CAPABILITIES,
+  INTERACTIVE_SCHEMA_MAX_EFFECTS,
+  INTERACTIVE_SCHEMA_MAX_REVISION,
+  // DTO types
+  type ExperienceStartRequestDto,
+  type ExperienceActionDto,
+  type ExperienceFinishRequestDto,
+  type ExperienceSessionResponseDto,
+  type ExperienceDefinitionDto,
+  type ExperienceStarterManifestDto,
+} from "./interactive-schema.js";
