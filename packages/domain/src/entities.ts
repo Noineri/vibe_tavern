@@ -673,6 +673,63 @@ export interface ExperienceEffect {
   updatedAt: Timestamp;
 }
 
+// ─── RP report binding (IR-52, Wave 5) ───────────────────────────────────────
+
+/**
+ * One public event inside a frozen RP report. This is the Writer-visible half
+ * of an {@link ExperienceEvent}: the `visibility` discriminator is stripped at
+ * freeze time because a bound report is ALL public by construction (hidden
+ * events never leave the reducer). The ordinary RP Writer reads these as
+ * resolved facts and narrates them; it never chooses moves or receives tools.
+ */
+export interface ExperienceReportEvent {
+  /** Bounded event type id from the reducer (e.g. "round", "move", "score"). */
+  type: string;
+  /** Optional bounded detail payload — the script's prompt-efficient prose or
+   *  structured facts for this event. Rendered verbatim by the formatter. */
+  detail?: unknown;
+}
+
+/**
+ * The self-describing public report stored as `publicEventsJson` on a bound
+ * experience attachment. A bound attachment has NO foreign key to its session
+ * (it survives session deletion — see `experience_attachments.sessionId`), so
+ * the report MUST carry its own title and public events rather than joining a
+ * session row that may no longer exist. It NEVER carries hidden state — the
+ * hidden checkpoint lives in the separate `hiddenStateCheckpointJson` column
+ * and is read only on branch-fork restore, never on prompt assembly.
+ */
+export interface ExperiencePublicReport {
+  /** Identifies the experience (manifest/game name) for the Writer. */
+  title: string;
+  /** Optional one-line setup/context line (e.g. "Round 3 — X to move"). */
+  summary?: string;
+  /** Ordered public events the Writer narrates as authoritative facts. */
+  events: ReadonlyArray<ExperienceReportEvent>;
+}
+
+/**
+ * The message-scoped projection of a bound experience attachment that the
+ * prompt-pipeline formatter consumes. Produced by mapping a stored
+ * `ExperienceAttachmentRow` (parsing its `publicEventsJson` defensively);
+ * the formatter is pure and read-only over this. Mirrors {@link DiceRollSnapshot}
+ * in role: an already-bound immutable snapshot that assembly never re-executes.
+ */
+export interface ExperienceReportSnapshot {
+  /** Attachment kind: "report" (public events) | "transcript" (future Messenger
+   *  alternating dialogue). Selects the formatter wrapper. */
+  kind: string;
+  /** Session revision at the freeze point (for reference; the snapshot is
+   *  immutable regardless of later session advances). */
+  sessionRevision: number;
+  /** The parsed self-describing public report. */
+  title: string;
+  /** Optional one-line summary, lifted from the report envelope. */
+  summary?: string;
+  /** Public events the Writer narrates. */
+  events: ReadonlyArray<ExperienceReportEvent>;
+}
+
 /**
  * A visual resource: an editable, user-owned HTML/CSS/JS bundle that runs
  * sandboxed in an iframe and communicates only through the versioned

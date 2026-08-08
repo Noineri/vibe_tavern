@@ -340,6 +340,7 @@ describe("PromptAssemblyService summary preparation", () => {
       chatSummaries: { listByChatBranch: async () => { summaryLoads += 1; return []; } },
       characterAssets: { listByCharacter: async () => [] },
       diceRolls: { getRollsForMessages: async () => new Map() },
+      experiences: { getAttachmentsForMessages: async () => new Map() },
     } as unknown as StoreContainer;
     const resolver: PromptAssemblyResolver = {
       getCharacter: async () => ({ id: "char_1", name: "Nora", description: "character words that are excluded from the summary output", personality: null, scenario: null }),

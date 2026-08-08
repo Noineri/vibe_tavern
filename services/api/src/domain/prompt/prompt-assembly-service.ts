@@ -23,6 +23,7 @@ import type {
 import type { StoreContainer } from "@vibe-tavern/db";
 import { assemblePrompt, getSummaryStrategy, setModelHint, type PromptAssemblyContext } from "@vibe-tavern/prompt-pipeline";
 import { storeRollToSnapshot } from "../dice/dice-service.js";
+import { storeAttachmentToReportSnapshot } from "../interactive/experience-report-snapshot.js";
 import { isRecordSchemaCompatible } from "../insights/scene-cache.js";
 import { logSendDebug } from "../../shared/send-debug-log.js";
 import { type FileStore, STORAGE_FOLDERS } from "@vibe-tavern/db";
@@ -464,14 +465,29 @@ export class PromptAssemblyService {
       windowedMessages.map((message) => message.id),
     );
 
+    // Batch-load bound experience attachments for the windowed messages (IR-52,
+    // Wave 5). One batched read (no N+1) over already-bound immutable snapshots
+    // — no experience-script execution, no state projection, and crucially NO
+    // read of the hidden checkpoint column on this path (the mapper only reads
+    // publicEventsJson). Every consumer goes through buildPipelineContext, so
+    // all read identical stored values — same single-derivation contract as Dice.
+    const attachmentsByMessage = await this.stores.experiences.getAttachmentsForMessages(
+      windowedMessages.map((message) => message.id),
+    );
+
     const recentMessages = windowedMessages.map((message) => {
       const rolls = diceRollsByMessage.get(message.id);
+      const attachments = attachmentsByMessage.get(message.id);
+      const reports = attachments
+        ?.map(storeAttachmentToReportSnapshot)
+        .filter((r): r is NonNullable<typeof r> => r !== null) ?? [];
       return {
         id: message.id as MessageId,
         role: message.role as 'system' | 'user' | 'assistant' | 'tool',
         content: message.content,
         ...(message.attachmentsJson ? { attachments: parseStoredAttachments(message.attachmentsJson) ?? [] } : {}),
         ...(rolls?.length ? { diceRolls: rolls.map(storeRollToSnapshot) } : {}),
+        ...(reports.length ? { experienceReports: reports } : {}),
       };
     });
 
