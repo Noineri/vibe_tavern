@@ -123,7 +123,7 @@ describe("ExperienceReplayService — deterministic replay", () => {
     const fixedService = new ExperienceService(stores, resources, { generateSeed: () => "replay-seed-1" });
     const character = await stores.characters.create({ name: "H" } as never);
     const chat = await stores.chats.createChat({ characterId: character.id, title: "T" });
-    const dicey = `context.experience.register({ apiVersion:1, manifest:{id:"dicey",name:"Dicey"}, capabilities:["deterministic_random"], create(){return {rolls:[]};}, project(c){return {rolls:c.state.rolls};}, actions(){return [{type:"roll"}];}, reduce(c){const f=c.random.die(6);return {state:{rolls:[...c.state.rolls,f]},status:"active",events:[]};} });`;
+    const dicey = `context.experience.register({ apiVersion:1, manifest:{id:"dicey",name:"Dicey"}, capabilities:[{capability:"deterministic_random",reason:"rolls"}], create(){return {rolls:[]};}, project(c){return {rolls:c.state.rolls};}, actions(){return [{type:"roll"}];}, reduce(c){const f=c.random.die(6);return {state:{rolls:[...c.state.rolls,f]},status:"active",events:[]};} });`;
     const script = await stores.scripts.create({ name: "D", scriptKind: "interactive", code: dicey });
     await resources.updateConfig(chat.id, { enabled: true, scriptId: script.id, capabilityGrants: ["deterministic_random"] as never });
     const started = await fixedService.startSession({ chatId: chat.id, branchId: chat.activeBranchId, settings: {}, participants: [] });

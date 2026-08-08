@@ -9,21 +9,22 @@
  * loop, deterministic-random cursor tracking across resume, and pending model-
  * effect persistence (the executor that RUNS them is Wave 4).
  *
- * Two design decisions (flagged for confirmation, both forced by the four-method
- * contract — see execution log):
+ * Two design decisions (resolved by the Wave 3 contract revision — 4 mandatory
+ * + 2 optional methods):
  *
- *  1. Script-controlled chooser. The contract has create/project/actions/reduce
- *     only; there is no `choose`. So for a script-controlled viewer the host
- *     calls `actions(viewer)` and reduces the FIRST action the script returns
- *     (the script is expected to order its preferred move first, or return a
- *     single chosen move). "Script strategies choose synchronously through the
- *     same legal-action contract" (design §Script-controlled participants).
+ *  1. Script-controlled chooser — EXPLICIT `choose`. The optional `choose`
+ *     method drives a script seat's turn: the host calls `actions(viewer)` for
+ *     the legal set, then `choose({viewer, legal})` for the script's pick, and
+ *     reduces it. No implicit "first action"; a script seat with legal actions
+ *     but no `choose` is a typed `no_choose_method` error.
  *
- *  2. Random is a state-transition capability. `context.random` is injected for
- *     create/reduce only; project/actions receive no random (projections must be
- *     deterministic functions of state). The persisted cursor therefore counts
- *     draws from create+reduce only, which makes resume + recalculation replay
- *     reproduce the exact stream.
+ *  2. Two random sources. `context.random` (deterministic, cursor-counting) is
+ *     injected for create/reduce only (granted by `deterministic_random`); the
+ *     persisted cursor counts create+reduce draws, so resume + recalculation
+ *     replay reproduce the exact stream. `context.chance` (ephemeral,
+ *     Math.random, non-recorded) is injected into `choose`/`flavor` only — it
+ *     lets a script make a varied move or cosmetic detail without disturbing
+ *     the cursor (Variant Б of the choose-randomness design).
  *
  * Isolation invariant: imports only the kernel, the resource service, the store
  * container, and domain/shared helpers. No prompt assembly, no provider calls,
@@ -46,13 +47,17 @@ import {
 } from "@vibe-tavern/domain";
 
 import {
+  createEphemeralRandom,
   createMulberry32,
   runActions,
+  runChoose,
   runCreate,
+  runFlavor,
   runProject,
   runReduce,
   validateSubmittedAction,
   type DeterministicRandom,
+  type EphemeralRandom,
   type ExperienceCapabilityContext,
 } from "./experience-kernel.js";
 import {
@@ -170,6 +175,8 @@ export interface ExperienceSessionView {
 export interface ExperienceProjection {
   state: unknown;
   actions: ExperienceActionDescriptor[];
+  /** Cosmetic display data from the optional `flavor` method (best-effort; may be absent). */
+  flavor?: unknown;
   revision: number;
   status: ExperienceSessionStatus;
 }
@@ -328,7 +335,7 @@ export class ExperienceService {
   ): Promise<ExperienceResult<ExperienceProjection>> {
     const ctx = await this.loadSessionForVm(sessionId);
     if (!ctx.ok) return ctx;
-    const caps = this.buildCaps(ctx.data.grants, ctx.data.participants);
+    const caps = this.buildCaps(ctx.data.grants, ctx.data.participants, undefined, createEphemeralRandom());
     const state = ctx.data.state;
 
     const projected = runProject(ctx.data.rules.code, ctx.data.rules.scriptName, state, viewer, caps);
@@ -336,9 +343,11 @@ export class ExperienceService {
     const legal = runActions(ctx.data.rules.code, ctx.data.rules.scriptName, state, viewer, caps);
     if (!legal.ok) return err(fromKernelError(legal));
 
+    const flavorRes = runFlavor(ctx.data.rules.code, ctx.data.rules.scriptName, state, viewer, caps);
     return ok({
       state: projected.value,
       actions: legal.value,
+      flavor: flavorRes.ok ? flavorRes.value : undefined,
       revision: ctx.data.revision,
       status: ctx.data.status,
     });
@@ -457,9 +466,10 @@ export class ExperienceService {
   /**
    * Advance script-controlled participants whose turn it is, applying each as
    * its own atomic transition, until the turn reaches a human seat, a model
-   * seat (Wave 4), or nobody can act. Script chooser convention: the host
-   * reduces the FIRST action the script returns for its viewer. Bounded to
-   * defend against a misbehaving script that never relinquishes the turn.
+   * seat (Wave 4), or nobody can act. The script picks its move explicitly via
+   * the optional `choose` method (ephemeral `chance`, no deterministic-cursor
+   * draw); a script seat with legal actions but no `choose` is a typed
+   * `no_choose_method` error. Bounded to defend against a misbehaving script.
    */
   async advanceScriptTurns(sessionId: string): Promise<ExperienceResult<AppliedAction>> {
     let ctx = await this.loadSessionForVm(sessionId);
@@ -483,13 +493,23 @@ export class ExperienceService {
         const projection = await this.projectForResponseById(sessionId, ctx.data.rules, ctx.data.state, ctx.data.participants);
         return ok({ session: await this.viewById(sessionId), projection, events: [], replayed: false, await: "model" });
       }
-      // script: reduce its chosen action (the first it offered).
+      // script: ask the script's `choose` for its move (ephemeral chance; no cursor draw).
+      const scriptViewer: ExperienceViewer = { kind: EXPERIENCE_VIEWER_KIND.script, participantId: actor.participant.id };
+      const chooseCaps = this.buildCaps(ctx.data.grants, ctx.data.participants, undefined, createEphemeralRandom());
+      const chosenResult = runChoose(ctx.data.rules.code, ctx.data.rules.scriptName, ctx.data.state, scriptViewer, actor.legal, chooseCaps);
+      if (!chosenResult.ok) {
+        if (chosenResult.kind === "missing_method") {
+          return err({ status: 422, code: "no_choose_method", message: `Script participant "${actor.participant.id}" has legal actions but the rules define no \`choose\` method`, participantId: actor.participant.id });
+        }
+        return err(fromKernelError(chosenResult));
+      }
+      const intent = chosenResult.value;
       const chosen: ExperienceAction = {
-        type: actor.legal[0]!.type,
+        type: intent.type,
         requestId: `auto:${sessionId}:${ctx.data.revision + 1}`,
         expectedRevision: ctx.data.revision,
-        participantId: actor.participant.id,
-        payload: actor.legal[0]!.payloadSchema,
+        participantId: intent.participantId ?? actor.participant.id,
+        ...(intent.payload !== undefined ? { payload: intent.payload } : {}),
       };
       const rng = createCountingRandom(seedToNumeric(ctx.data.seed), ctx.data.cursor);
       const reduceCaps = this.buildCaps(ctx.data.grants, ctx.data.participants, rng.random);
@@ -544,8 +564,9 @@ export class ExperienceService {
     grants: ExperienceCapability[],
     participants: ExperienceParticipant[],
     random?: DeterministicRandom,
+    chance?: EphemeralRandom,
   ): ExperienceCapabilityContext {
-    return buildCapabilityContext(grants, participants, random);
+    return buildCapabilityContext(grants, participants, random, chance);
   }
 
   /** Find the one participant who can act right now (turn detection via actions()). */
@@ -576,6 +597,8 @@ export class ExperienceService {
         apiVersion: session.apiVersion,
         manifest: { id: session.manifestId, name: session.manifestName },
         declaredCapabilities: [], // not needed for runtime; re-discovery is Wave 8 trust
+        hasChoose: false, // not stored on the session; lifecycle probes runChoose directly
+        hasFlavor: false,
       },
       sourceHash: session.rulesSourceHash,
       revision: session.rulesRevision,
@@ -599,12 +622,14 @@ export class ExperienceService {
     state: unknown,
     viewer: ExperienceViewer,
   ): Promise<ExperienceProjection> {
-    const caps = this.buildCaps(session.capabilityGrants, session.participants);
+    const caps = this.buildCaps(session.capabilityGrants, session.participants, undefined, createEphemeralRandom());
     const projected = runProject(rules.code, rules.scriptName, state, viewer, caps);
     const legal = runActions(rules.code, rules.scriptName, state, viewer, caps);
+    const flavorRes = runFlavor(rules.code, rules.scriptName, state, viewer, caps);
     return {
       state: projected.ok ? projected.value : null,
       actions: legal.ok ? legal.value : [],
+      flavor: flavorRes.ok ? flavorRes.value : undefined,
       revision: session.revision,
       status: session.status,
     };

@@ -9,16 +9,23 @@
  * schema-validated, normalized, and mapped to a canonical domain envelope or a
  * typed failure. The kernel performs NO I/O.
  *
- * Four-method lifecycle (no additional top-level method is mandatory):
- *  - `create(context, settings)`  → initial authoritative state.
- *  - `project(context, viewer)`   → projected state for one viewer.
- *  - `actions(context, viewer)`   → legal action descriptors for one viewer.
- *  - `reduce(context, action)`    → next transition `{state, status, events, effects?}`.
+ * Method lifecycle — four mandatory methods plus two optional ones:
+ *  - `create(context, settings)`  → initial authoritative state.             [mandatory]
+ *  - `project(context, viewer)`   → projected state for one viewer.         [mandatory]
+ *  - `actions(context, viewer)`   → legal action descriptors for one viewer. [mandatory]
+ *  - `reduce(context, action)`    → next transition `{state, status, events, effects?}`. [mandatory]
+ *  - `choose(context, {viewer, legal})` → one chosen action for a script seat. [optional]
+ *  - `flavor(context, viewer)`    → cosmetic display data for one viewer.    [optional]
  *
  * The method-call `context` the kernel injects is `{ state?, participants?,
- * random?, helpers }`. `state` is present for project/actions/reduce (frozen),
- * absent for create. `participants` and `random` appear ONLY when the host
- * grants those capabilities; `model`, `rp_context`, and `rp_attachment` are NOT
+ * random?, chance?, helpers }`. `state` is present for project/actions/choose/
+ * reduce/flavor (frozen), absent for create. `participants` and `random` appear
+ * ONLY when the host grants those capabilities (and `random` only in create/
+ * reduce); `chance` is an EPHEMERAL, non-recorded random source injected only
+ * into `choose` and `flavor` — it lets a script pick a varied move or cosmetic
+ * detail without consuming the deterministic cursor, so the journal of create+
+ * reduce draws alone reproduces the stream on replay (Variant Б of the
+ * choose-randomness design). `model`, `rp_context`, and `rp_attachment` are NOT
  * synchronous context APIs — a reducer requests them as durable effect data and
  * the host runs them out-of-band (Wave 4). `helpers` is the always-present,
  * frozen, optional pure-recipe namespace from {@link ./experience-helpers.ts}.
@@ -27,7 +34,10 @@
  * deep-cloned via JSON round-trip and frozen before injection, so a method
  * cannot mutate host state and cannot observe shared references. The seeded
  * {@link DeterministicRandom} stream advances one cursor across a session, so
- * replaying the same seed + action sequence reproduces identical values.
+ * replaying the same seed + action sequence reproduces identical values; the
+ * ephemeral `chance` is deliberately outside this stream (its draws are not
+ * recorded, so two fresh sessions from one seed may differ in script-chosen
+ * moves or cosmetic flavor — accepted trade-off for flexible, less-robotic AI).
  */
 
 import {
@@ -57,6 +67,7 @@ import {
   EXPERIENCE_VM_DEFAULT_TIMEOUT_MS,
   runExperienceMethod,
   type ExperienceConsoleEntry,
+  type ExperienceMethodName,
   type ExperienceSandboxErrorKind,
 } from "./experience-sandbox.js";
 import { experienceHelpers, shuffle } from "./experience-helpers.js";
@@ -99,13 +110,13 @@ export function createMulberry32(seed: number): { next(): number } {
 }
 
 /**
- * A stateful {@link DeterministicRandom} seeded once per session. The cursor
- * (count of draws consumed) is persisted alongside the seed (IR-21); resume
- * fast-forwards the stream to that cursor, and recalculation replay reproduces
- * it from the seed. Both paths use {@link createMulberry32}.
+ * Build the {@link DeterministicRandom} surface over a uniform `[0, 1)` stream.
+ * Shared by {@link createDeterministicRandom} (mulberry32, seeded) and
+ * {@link createEphemeralRandom} (`Math.random`, non-recorded) so the surface
+ * shape has one source of truth; the lifecycle service's cursor-counting wrapper
+ * reuses the same shape too.
  */
-export function createDeterministicRandom(seed: number): DeterministicRandom {
-	const { next } = createMulberry32(seed);
+function buildRandomSurface(next: () => number): DeterministicRandom {
 	return {
 		float: () => next(),
 		int: (min: number, max: number): number => {
@@ -144,6 +155,29 @@ export function createDeterministicRandom(seed: number): DeterministicRandom {
 	};
 }
 
+/**
+ * A stateful {@link DeterministicRandom} seeded once per session. The cursor
+ * (count of draws consumed) is persisted alongside the seed (IR-21); resume
+ * fast-forwards the stream to that cursor, and recalculation replay reproduces
+ * it from the seed. Both paths use {@link createMulberry32}.
+ */
+export function createDeterministicRandom(seed: number): DeterministicRandom {
+	return buildRandomSurface(createMulberry32(seed).next);
+}
+
+/**
+ * The same shape as {@link DeterministicRandom}, but backed by `Math.random` —
+ * non-recorded, non-reproducible. Injected as `context.chance` into `choose`
+ * and `flavor` so a script can make a varied move or cosmetic detail without
+ * disturbing the deterministic cursor (Variant Б).
+ */
+export type EphemeralRandom = DeterministicRandom;
+
+/** Create an ephemeral `chance` surface (Math.random-backed, not recorded). */
+export function createEphemeralRandom(): EphemeralRandom {
+	return buildRandomSurface(Math.random);
+}
+
 // ─── Granted capabilities (the synchronous context surface) ──────────────────
 
 /**
@@ -156,6 +190,8 @@ export function createDeterministicRandom(seed: number): DeterministicRandom {
 export interface ExperienceCapabilityContext {
 	readonly participants?: readonly ExperienceParticipant[];
 	readonly random?: DeterministicRandom;
+	/** Ephemeral (non-recorded) randomness — injected into `choose`/`flavor` only. */
+	readonly chance?: EphemeralRandom;
 }
 
 // ─── Typed failures ──────────────────────────────────────────────────────────
@@ -192,6 +228,10 @@ export interface ExperienceDefinition {
 	readonly apiVersion: number;
 	readonly manifest: ExperienceManifest;
 	readonly declaredCapabilities: ExperienceDeclaredCapability[];
+	/** Whether the optional `choose` method is present (script-controlled seats). */
+	readonly hasChoose: boolean;
+	/** Whether the optional `flavor` method is present (display-time cosmetic). */
+	readonly hasFlavor: boolean;
 }
 
 export interface ExperienceDiscoveryResult {
@@ -235,6 +275,8 @@ export function discoverExperienceDefinition(
 			apiVersion: parsed.data.apiVersion,
 			manifest: parsed.data.manifest,
 			declaredCapabilities: parsed.data.declaredCapabilities,
+			hasChoose: discovery.hasChoose,
+			hasFlavor: discovery.hasFlavor,
 		},
 		sourceHash: discovery.sourceHash,
 		console: discovery.console,
@@ -370,6 +412,134 @@ export function runReduce(
 	);
 }
 
+// ─── choose / flavor (optional methods, Wave 3 contract revision) ────────
+
+/** A script-chosen move intent: `choose` returns this; the host fills bookkeeping. */
+export interface ExperienceChosenIntent {
+	readonly type: string;
+	readonly participantId?: string;
+	readonly payload?: unknown;
+}
+
+/**
+ * Run the OPTIONAL `choose(context, { viewer, legal })` method for a script-
+ * controlled seat and return its chosen move as a normalized intent. The script
+ * receives the legal-action list (the host computed it via {@link runActions})
+ * and returns one move; `context.chance` (ephemeral) is available for a varied
+ * pick. The returned `type` must match a legal descriptor; the participant id
+ * defaults to the viewer's seat. Bookkeeping (`requestId`/`expectedRevision`) is
+ * filled by the host — the script never manages it.
+ */
+export function runChoose(
+	code: string,
+	scriptName: string,
+	state: unknown,
+	viewer: ExperienceViewer,
+	legal: readonly ExperienceActionDescriptor[],
+	caps: ExperienceCapabilityContext,
+	timeoutMs: number = EXPERIENCE_VM_DEFAULT_TIMEOUT_MS,
+): ExperienceRunResult<ExperienceChosenIntent> {
+	const viewerError = validateViewer(viewer);
+	if (viewerError !== null) return viewerError;
+	const stateError = validateStateInput(state);
+	if (stateError !== null) return stateError;
+	return runAndValidate(
+		code,
+		scriptName,
+		"choose",
+		state,
+		caps,
+		cloneFrozen({ viewer, legal }),
+		(raw, console) => validateChosenIntent(raw, viewer, legal, console),
+		timeoutMs,
+	);
+}
+
+/**
+ * Run the OPTIONAL `flavor(context, viewer)` display-time method and return its
+ * bounded-JSON cosmetic data (or `undefined` if the script returned nothing).
+ * `context.chance` (ephemeral) is available for varied cosmetic output. Flavor
+ * never affects authoritative state and never consumes the deterministic cursor.
+ */
+export function runFlavor(
+	code: string,
+	scriptName: string,
+	state: unknown,
+	viewer: ExperienceViewer,
+	caps: ExperienceCapabilityContext,
+	timeoutMs: number = EXPERIENCE_VM_DEFAULT_TIMEOUT_MS,
+): ExperienceRunResult<unknown> {
+	const viewerError = validateViewer(viewer);
+	if (viewerError !== null) return viewerError;
+	const stateError = validateStateInput(state);
+	if (stateError !== null) return stateError;
+	return runAndValidate(
+		code,
+		scriptName,
+		"flavor",
+		state,
+		caps,
+		cloneFrozen(viewer),
+		(raw, console) => validateFlavor(raw, console),
+		timeoutMs,
+	);
+}
+
+function validateChosenIntent(
+	raw: unknown,
+	viewer: ExperienceViewer,
+	legal: readonly ExperienceActionDescriptor[],
+	console: ExperienceConsoleEntry[],
+): ExperienceRunResult<ExperienceChosenIntent> {
+	if (raw === null || typeof raw !== "object") {
+		return kernelError("illegal_action", "choose must return an action object", console);
+	}
+	const obj = raw as { type?: unknown; participantId?: unknown; payload?: unknown };
+	if (typeof obj.type !== "string") {
+		return kernelError("illegal_action", "chosen action has no string `type`", console);
+	}
+	const participantId =
+		typeof obj.participantId === "string" ? obj.participantId : viewer.participantId;
+	const match = legal.find(
+		(d) => d.type === obj.type && (d.participantId === undefined || d.participantId === participantId),
+	);
+	if (match === undefined) {
+		return kernelError(
+			"illegal_action",
+			`choose returned "${obj.type}" which is not legal for this viewer`,
+			console,
+		);
+	}
+	if (obj.payload !== undefined) {
+		const payloadError = jsonBoundsError(obj.payload, {
+			maxDepth: INTERACTIVE_SCHEMA_MAX_DEPTH,
+			maxBytes: INTERACTIVE_SCHEMA_MAX_PAYLOAD_BYTES,
+		});
+		if (payloadError !== null) {
+			return kernelError("illegal_action", `payload ${payloadError}`, console);
+		}
+	}
+	const intent: ExperienceChosenIntent = {
+		type: obj.type,
+		...(participantId !== undefined ? { participantId } : {}),
+		...(obj.payload !== undefined ? { payload: obj.payload } : {}),
+	};
+	return { ok: true, value: intent, console };
+}
+
+function validateFlavor(
+	raw: unknown,
+	console: ExperienceConsoleEntry[],
+): ExperienceRunResult<unknown> {
+	if (raw === undefined) return { ok: true, value: undefined, console };
+	const err = jsonBoundsError(raw, {
+		maxDepth: INTERACTIVE_SCHEMA_MAX_DEPTH,
+		maxBytes: INTERACTIVE_SCHEMA_MAX_STATE_BYTES,
+	});
+	if (err !== null) return kernelError("invalid_state", `flavor ${err}`, console);
+	return { ok: true, value: raw, console };
+}
+
 // ─── Legal-action validation ─────────────────────────────────────────────────
 
 /**
@@ -415,7 +585,7 @@ export function validateSubmittedAction(
 function runAndValidate<T>(
 	code: string,
 	scriptName: string,
-	method: "create" | "project" | "actions" | "reduce",
+	method: ExperienceMethodName,
 	state: unknown,
 	caps: ExperienceCapabilityContext,
 	input: unknown,
@@ -451,6 +621,7 @@ function buildMethodContext(
 	if (state !== undefined) ctx.state = cloneFrozen(state);
 	if (caps.participants !== undefined) ctx.participants = cloneFrozen(caps.participants);
 	if (caps.random !== undefined) ctx.random = buildVmRandom(caps.random);
+	if (caps.chance !== undefined) ctx.chance = buildVmRandom(caps.chance);
 	return Object.freeze(ctx);
 }
 

@@ -144,6 +144,18 @@ context.experience.register({
 });
 `;
 
+const CHOOSE_FLAVOR_SCRIPT = `
+context.experience.register({
+  apiVersion: 1, manifest: { id: "cf", name: "CF" }, capabilities: [],
+  create() { return { n: 0 }; },
+  project(c) { return { n: c.state.n }; },
+  actions(c, v) { return [{ type: "inc", participantId: v.participantId }]; },
+  choose(c, info) { return { type: "inc", participantId: info.viewer.participantId }; },
+  flavor(c, v) { return { flavorTag: c.chance.int(1, 10), seat: v.participantId ?? "anon" }; },
+  reduce(c) { return { state: { n: c.state.n + 1 }, status: "active", events: [] }; },
+});
+`;
+
 function sha256(text: string): string {
 	return new Bun.CryptoHasher("sha256").update(new TextEncoder().encode(text)).digest("hex");
 }
@@ -158,7 +170,17 @@ describe("discoverExperience", () => {
 		expect(out.apiVersion).toBe(1);
 		expect(out.manifest).toEqual({ id: "counter", name: "Counter" });
 		expect(out.capabilities).toEqual([]);
+		expect(out.hasChoose).toBe(false);
+		expect(out.hasFlavor).toBe(false);
 		expect(out.sourceHash).toBe(sha256(COUNTER_SCRIPT));
+	});
+
+	test("reports hasChoose/hasFlavor true when the optional methods are present", () => {
+		const out = discoverExperience(CHOOSE_FLAVOR_SCRIPT, "cf.js");
+		expect(out.ok).toBe(true);
+		if (!out.ok) return;
+		expect(out.hasChoose).toBe(true);
+		expect(out.hasFlavor).toBe(true);
 	});
 
 	test("source hash is stable for identical source and differs on change", () => {
@@ -315,6 +337,33 @@ describe("runExperienceMethod", () => {
 		expect(out.ok).toBe(true);
 		if (!out.ok) return;
 		expect(out.console.some((e) => e.level === "log" && e.args.includes("42"))).toBe(true);
+	});
+
+	test("executes the optional choose/flavor methods and reports missing_method when absent", () => {
+		// A script WITH choose/flavor: both optional methods are invocable.
+		const chosen = runExperienceMethod(CHOOSE_FLAVOR_SCRIPT, "cf.js", "choose", {
+			hostContext: { state: { n: 0 }, chance: { int: (a: number) => a } },
+			input: { viewer: { kind: "script", participantId: "p1" }, legal: [{ type: "inc", participantId: "p1" }] },
+		});
+		expect(chosen.ok).toBe(true);
+		expect(chosen.ok && (chosen.output as { type: string }).type).toBe("inc");
+
+		const flavored = runExperienceMethod(CHOOSE_FLAVOR_SCRIPT, "cf.js", "flavor", {
+			hostContext: { state: { n: 0 }, chance: { int: () => 5 } },
+			input: { kind: "observer" },
+		});
+		expect(flavored.ok).toBe(true);
+		expect(flavored.ok && (flavored.output as { seat: string }).seat).toBe("anon");
+
+		// A script WITHOUT choose: the widened method name is accepted, but the absent
+		// optional method surfaces as missing_method (not a type error).
+		const missing = runExperienceMethod(COUNTER_SCRIPT, "counter.js", "choose", {
+			hostContext: { state: { count: 0 } },
+			input: { viewer: { kind: "script", participantId: "p1" }, legal: [] },
+		});
+		expect(missing.ok).toBe(false);
+		if (missing.ok) return;
+		expect(missing.kind).toBe("missing_method");
 	});
 });
 

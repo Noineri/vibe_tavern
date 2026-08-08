@@ -15,9 +15,12 @@
 import { describe, expect, test } from "bun:test";
 import {
 	createDeterministicRandom,
+	createEphemeralRandom,
 	discoverExperienceDefinition,
 	runActions,
+	runChoose,
 	runCreate,
+	runFlavor,
 	runProject,
 	runReduce,
 	validateSubmittedAction,
@@ -77,6 +80,29 @@ context.experience.register({
 });
 `;
 
+const CHOOSE_FLAVOR_SCRIPT = `
+context.experience.register({
+  apiVersion: 1, manifest: { id: "cf", name: "CF" }, capabilities: [],
+  create() { return { n: 0 }; },
+  project(c) { return { n: c.state.n }; },
+  actions(c, v) { return [{ type: "inc", participantId: v.participantId }]; },
+  choose(c, info) { return { type: "inc", participantId: info.viewer.participantId }; },
+  flavor(c, v) { return { flavorTag: c.chance.int(1, 10), seat: v.participantId ?? "anon" }; },
+  reduce(c) { return { state: { n: c.state.n + 1 }, status: "active", events: [] }; },
+});
+`;
+
+const CHOOSE_ILLEGAL_SCRIPT = `
+context.experience.register({
+  apiVersion: 1, manifest: { id: "ci", name: "CI" }, capabilities: [],
+  create() { return { n: 0 }; },
+  project(c) { return { n: c.state.n }; },
+  actions() { return [{ type: "inc" }]; },
+  choose() { return { type: "cheat" }; },
+  reduce(c) { return { state: c.state, status: "active", events: [] }; },
+});
+`;
+
 const INTERRUPTED_SCRIPT = `
 context.experience.register({
   apiVersion: 1, manifest: { id: "bad", name: "Bad" }, capabilities: [],
@@ -121,8 +147,18 @@ describe("discoverExperienceDefinition", () => {
 			apiVersion: 1,
 			manifest: { id: "counter", name: "Counter" },
 			declaredCapabilities: [],
+			hasChoose: false,
+			hasFlavor: false,
 		});
 		expect(result.sourceHash.length).toBe(64);
+	});
+
+	test("reports hasChoose/hasFlavor when the optional methods are present", () => {
+		const result = discoverExperienceDefinition(CHOOSE_FLAVOR_SCRIPT, "cf.js");
+		expect(result.ok).toBe(true);
+		if (!result.ok) return;
+		expect(result.definition.hasChoose).toBe(true);
+		expect(result.definition.hasFlavor).toBe(true);
 	});
 
 	test("rejects a malformed manifest as invalid_definition", () => {
@@ -274,6 +310,63 @@ describe("validateSubmittedAction", () => {
 		expect(result.ok).toBe(false);
 		if (result.ok) return;
 		expect(result.kind).toBe("illegal_action");
+	});
+});
+
+// ─── choose / flavor (optional methods) ─────────────────────────────────────
+
+describe("runChoose / runFlavor (optional methods)", () => {
+	const noCaps: ExperienceCapabilityContext = {};
+	const scriptViewer: ExperienceViewer = { kind: "script", participantId: "p1" };
+
+	test("runChoose returns the script's chosen move as a normalized intent", () => {
+		const legal = runActions(CHOOSE_FLAVOR_SCRIPT, "cf.js", { n: 0 }, scriptViewer, noCaps);
+		expect(legal.ok).toBe(true);
+		const chosen = runChoose(
+			CHOOSE_FLAVOR_SCRIPT, "cf.js", { n: 0 }, scriptViewer,
+			legal.ok ? legal.value : [],
+			{ chance: createEphemeralRandom() },
+		);
+		expect(chosen.ok).toBe(true);
+		if (!chosen.ok) return;
+		expect(chosen.value.type).toBe("inc");
+		expect(chosen.value.participantId).toBe("p1");
+	});
+
+	test("runChoose rejects a choice whose type is not in the legal set (illegal_action)", () => {
+		const legal: ExperienceActionDescriptor[] = [{ type: "inc" }];
+		const chosen = runChoose(
+			CHOOSE_ILLEGAL_SCRIPT, "ci.js", { n: 0 },
+			{ kind: "human", participantId: "p1" },
+			legal, noCaps,
+		);
+		expect(chosen.ok).toBe(false);
+		if (chosen.ok) return;
+		expect(chosen.kind).toBe("illegal_action");
+	});
+
+	test("runChoose on a script without `choose` is a missing_method failure", () => {
+		const chosen = runChoose(
+			COUNTER_SCRIPT, "counter.js", { count: 0 }, scriptViewer,
+			[{ type: "increment" }], noCaps,
+		);
+		expect(chosen.ok).toBe(false);
+		if (chosen.ok) return;
+		expect(chosen.kind).toBe("missing_method");
+	});
+
+	test("runFlavor returns bounded-JSON cosmetic data (ephemeral chance reaches the method)", () => {
+		const flavor = runFlavor(
+			CHOOSE_FLAVOR_SCRIPT, "cf.js", { n: 0 },
+			{ kind: "observer" },
+			{ chance: createEphemeralRandom() },
+		);
+		expect(flavor.ok).toBe(true);
+		if (!flavor.ok) return;
+		const out = flavor.value as { flavorTag: number; seat: string };
+		expect(out.seat).toBe("anon");
+		expect(out.flavorTag).toBeGreaterThanOrEqual(1);
+		expect(out.flavorTag).toBeLessThanOrEqual(10);
 	});
 });
 

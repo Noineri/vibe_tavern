@@ -14,7 +14,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { createStoreContainer, type StoreContainer } from "@vibe-tavern/db";
-import { EXPERIENCE_CAPABILITY } from "@vibe-tavern/domain";
+import { EXPERIENCE_CAPABILITY, EXPERIENCE_VIEWER_KIND } from "@vibe-tavern/domain";
 
 import { ExperienceResourceService } from "../src/domain/interactive/experience-resource-service.js";
 import { ExperienceService } from "../src/domain/interactive/experience-service.js";
@@ -38,17 +38,24 @@ context.experience.register({
 });
 `;
 
-/** A 2-player turn-based hotseat using the participants capability. */
+/** A 2-player turn-based hotseat using the participants capability + explicit choose. */
 const HOTSEAT_SOURCE = `
 context.experience.register({
   apiVersion: 1,
   manifest: { id: "hotseat", name: "Hotseat" },
-  capabilities: ["participants"],
+  capabilities: [{ capability: "participants", reason: "seat roster" }],
   create() { return { turn: 0, scores: [0, 0] }; },
   project(c) { return { turn: c.state.turn, scores: c.state.scores }; },
   actions(c, v) {
     if (v.participantId !== "p" + c.state.turn) return [];
     return [{ type: "score", participantId: "p" + c.state.turn }];
+  },
+  choose(c, info) {
+    // Explicit chooser: pick the first legal move offered for this seat.
+    const legal = info.legal[0];
+    return legal
+      ? { type: legal.type, participantId: info.viewer.participantId }
+      : { type: "score", participantId: info.viewer.participantId };
   },
   reduce(c) {
     const scores = [...c.state.scores];
@@ -58,12 +65,41 @@ context.experience.register({
 });
 `;
 
+/** A hotseat with a script seat that has legal actions but NO `choose` method. */
+const NO_CHOOSE_SOURCE = `
+context.experience.register({
+  apiVersion: 1,
+  manifest: { id: "nochoose", name: "NoChoose" },
+  capabilities: [{ capability: "participants", reason: "seat" }],
+  create() { return { n: 0 }; },
+  project(c) { return { n: c.state.n }; },
+  actions(c, v) { return v.participantId === "bot" ? [{ type: "tick", participantId: "bot" }] : []; },
+  reduce(c) { return { state: { n: c.state.n + 1 }, status: "active", events: [] }; },
+});
+`;
+
+/** A game whose optional `flavor` returns cosmetic data using ephemeral `chance`. */
+const FLAVOR_SOURCE = `
+context.experience.register({
+  apiVersion: 1,
+  manifest: { id: "flavor", name: "Flavor" },
+  capabilities: [],
+  create() { return { count: 0 }; },
+  project(c) { return { count: c.state.count }; },
+  actions() { return [{ type: "inc" }]; },
+  flavor(c, v) {
+    return { greeting: "hi " + (v.participantId ?? "stranger"), tag: c.chance.int(1, 100) };
+  },
+  reduce(c) { return { state: { count: c.state.count + 1 }, status: "active", events: [] }; },
+});
+`;
+
 /** A deterministic-random game: each roll consumes one die draw. */
 const DICEY_SOURCE = `
 context.experience.register({
   apiVersion: 1,
   manifest: { id: "dicey", name: "Dicey" },
-  capabilities: ["deterministic_random"],
+  capabilities: [{ capability: "deterministic_random", reason: "rolls" }],
   create() { return { rolls: [] }; },
   project(c) { return { rolls: c.state.rolls }; },
   actions() { return [{ type: "roll" }]; },
@@ -206,6 +242,7 @@ describe("ExperienceService — synchronous script-controller loop (hotseat)", (
       { id: "p1", label: "Bot", controller: "script" },
     ];
     const started = await service.startSession({ chatId, branchId, settings: {}, participants });
+    expect(started.ok).toBe(true);
     if (!started.ok) return;
     const sid = started.data.sessionId;
     expect(started.data.participants).toHaveLength(2);
@@ -234,6 +271,7 @@ describe("ExperienceService — synchronous script-controller loop (hotseat)", (
       { id: "p1", label: "Bot", controller: "script" },
     ];
     const started = await service.startSession({ chatId, branchId, settings: {}, participants });
+    expect(started.ok).toBe(true);
     if (!started.ok) return;
     const sid = started.data.sessionId;
 
@@ -247,11 +285,62 @@ describe("ExperienceService — synchronous script-controller loop (hotseat)", (
   });
 });
 
+describe("ExperienceService — explicit choose + flavor (contract revision)", () => {
+  test("a script seat with legal actions but no `choose` is a typed no_choose_method error", async () => {
+    const service = await setup();
+    const { chatId, branchId } = await seedChatAndScript(NO_CHOOSE_SOURCE, [EXPERIENCE_CAPABILITY.participants]);
+    const participants = [
+      { id: "p0", label: "You", controller: "human" },
+      { id: "bot", label: "Bot", controller: "script" },
+    ];
+    const started = await service.startSession({ chatId, branchId, settings: {}, participants });
+    expect(started.ok).toBe(true);
+    if (!started.ok) return;
+    // The bot is the only seat with legal actions, so the turn is immediately its own.
+    const advanced = await service.advanceScriptTurns(started.data.sessionId);
+    expect(advanced.ok).toBe(false);
+    if (advanced.ok) return;
+    expect(advanced.error.code).toBe("no_choose_method");
+    expect((advanced.error as { participantId: string }).participantId).toBe("bot");
+  });
+
+  test("the optional `flavor` method contributes cosmetic data (ephemeral chance) to the projection", async () => {
+    const service = await setup();
+    const { chatId, branchId } = await seedChatAndScript(FLAVOR_SOURCE);
+    const started = await service.startSession({ chatId, branchId, settings: {}, participants: [] });
+    expect(started.ok).toBe(true);
+    if (!started.ok) return;
+    const view = await service.getProjectedView(started.data.sessionId, { kind: EXPERIENCE_VIEWER_KIND.observer });
+    expect(view.ok).toBe(true);
+    if (!view.ok) return;
+    expect(view.data.state).toEqual({ count: 0 });
+    const flavor = view.data.flavor as { greeting: string; tag: number } | undefined;
+    expect(flavor).toBeDefined();
+    expect(flavor!.greeting).toBe("hi stranger");
+    expect(flavor!.tag).toBeGreaterThanOrEqual(1);
+    expect(flavor!.tag).toBeLessThanOrEqual(100);
+  });
+
+  test("flavor is best-effort: an absent `flavor` method omits the field without failing", async () => {
+    const service = await setup();
+    const { chatId, branchId } = await seedChatAndScript(COUNTER_SOURCE);
+    const started = await service.startSession({ chatId, branchId, settings: {}, participants: [] });
+    expect(started.ok).toBe(true);
+    if (!started.ok) return;
+    const view = await service.getProjectedView(started.data.sessionId, { kind: EXPERIENCE_VIEWER_KIND.observer });
+    expect(view.ok).toBe(true);
+    if (!view.ok) return;
+    expect(view.data.flavor).toBeUndefined();
+    expect((view.data.state as { count: number }).count).toBe(0);
+  });
+});
+
 describe("ExperienceService — deterministic-random cursor tracking (resume + replay)", () => {
   test("two sessions sharing a seed produce identical die rolls (replay determinism)", async () => {
     const service = await setup("shared-seed-42");
     const a = await seedChatAndScript(DICEY_SOURCE, [EXPERIENCE_CAPABILITY.deterministicRandom]);
     const startedA = await service.startSession({ chatId: a.chatId, branchId: a.branchId, settings: {}, participants: [] });
+    expect(startedA.ok).toBe(true);
     if (!startedA.ok) return;
     const sidA = startedA.data.sessionId;
 
@@ -266,6 +355,7 @@ describe("ExperienceService — deterministic-random cursor tracking (resume + r
     const service2 = await setup("shared-seed-42");
     const b = await seedChatAndScript(DICEY_SOURCE, [EXPERIENCE_CAPABILITY.deterministicRandom]);
     const startedB = await service2.startSession({ chatId: b.chatId, branchId: b.branchId, settings: {}, participants: [] });
+    expect(startedB.ok).toBe(true);
     if (!startedB.ok) return;
     const sidB = startedB.data.sessionId;
     const rollsB: number[] = [];
@@ -281,6 +371,7 @@ describe("ExperienceService — deterministic-random cursor tracking (resume + r
     const service = await setup("resume-seed-7");
     const g = await seedChatAndScript(DICEY_SOURCE, [EXPERIENCE_CAPABILITY.deterministicRandom]);
     const started = await service.startSession({ chatId: g.chatId, branchId: g.branchId, settings: {}, participants: [] });
+    expect(started.ok).toBe(true);
     if (!started.ok) return;
     const sid = started.data.sessionId;
 
@@ -296,6 +387,7 @@ describe("ExperienceService — deterministic-random cursor tracking (resume + r
     const service2 = await setup("resume-seed-7");
     const g2 = await seedChatAndScript(DICEY_SOURCE, [EXPERIENCE_CAPABILITY.deterministicRandom]);
     const started2 = await service2.startSession({ chatId: g2.chatId, branchId: g2.branchId, settings: {}, participants: [] });
+    expect(started2.ok).toBe(true);
     if (!started2.ok) return;
     const replay = [];
     for (let i = 0; i < 3; i += 1) {

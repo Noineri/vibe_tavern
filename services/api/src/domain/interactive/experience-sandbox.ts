@@ -13,12 +13,14 @@
  *
  *  - **Discovery.** The script body runs once with `context.experience.register`
  *    available. It must publish exactly one definition whose four mandatory
- *    methods (`create`, `project`, `actions`, `reduce`) are functions. Discovery
- *    returns the registration's static fields (apiVersion/manifest/capabilities)
- *    plus the source hash and captured console; it confirms method presence but
- *    does NOT schema-validate (that is the kernel's job, reusing the IR-11
- *    bounded schemas). Method closures never leave the process — the kernel
- *    re-executes them under the timeout envelope instead of calling stale refs.
+ *    methods (`create`, `project`, `actions`, `reduce`) are functions; the two
+ *    optional methods (`choose`, `flavor`) may also be present. Discovery
+ *    returns the registration's static fields (apiVersion/manifest/capabilities),
+ *    the source hash, captured console, and which optional methods are present
+ *    (`hasChoose`/`hasFlavor`); it confirms mandatory-method presence but does
+ *    NOT schema-validate (that is the kernel's job, reusing the IR-11 bounded
+ *    schemas). Method closures never leave the process — the kernel re-executes
+ *    them under the timeout envelope instead of calling stale refs.
  *
  *  - **Method execution.** The body runs again (re-registering its single
  *    definition), and an appended orchestration snippet invokes one mandatory
@@ -44,7 +46,7 @@ import { runInNewContext } from "node:vm";
 /** Default timeout for a single experience VM execution (discovery or method), in ms. */
 export const EXPERIENCE_VM_DEFAULT_TIMEOUT_MS = 5000;
 
-/** The four mandatory rules methods; no additional top-level method is required. */
+/** The four mandatory rules methods every experience must define. */
 export const EXPERIENCE_MANDATORY_METHODS = [
 	"create",
 	"project",
@@ -52,7 +54,17 @@ export const EXPERIENCE_MANDATORY_METHODS = [
 	"reduce",
 ] as const;
 
-export type ExperienceMethodName = (typeof EXPERIENCE_MANDATORY_METHODS)[number];
+/**
+ * The two optional methods. `choose` drives a script-controlled seat's turn
+ * (returns one of the legal actions); `flavor` produces cosmetic display data
+ * at projection time. Both receive an EPHEMERAL `context.chance` (non-recorded
+ * randomness) rather than the deterministic cursor — see the kernel doc.
+ */
+export const EXPERIENCE_OPTIONAL_METHODS = ["choose", "flavor"] as const;
+
+export type ExperienceMandatoryMethod = (typeof EXPERIENCE_MANDATORY_METHODS)[number];
+export type ExperienceOptionalMethod = (typeof EXPERIENCE_OPTIONAL_METHODS)[number];
+export type ExperienceMethodName = ExperienceMandatoryMethod | ExperienceOptionalMethod;
 
 // ─── Typed failures ──────────────────────────────────────────────────────────
 
@@ -92,6 +104,10 @@ export interface RawExperienceRegistration {
 	project: unknown;
 	actions: unknown;
 	reduce: unknown;
+	/** Optional script-chooser (drives a script-controlled seat's turn). */
+	choose?: unknown;
+	/** Optional display-time cosmetic projection (may use ephemeral chance). */
+	flavor?: unknown;
 }
 
 // ─── Discovery output ────────────────────────────────────────────────────────
@@ -104,6 +120,10 @@ export interface ExperienceDiscoverySuccess {
 	readonly manifest: unknown;
 	/** Raw declared capabilities (the kernel schema-validates the array). */
 	readonly capabilities: unknown;
+	/** Whether the optional `choose` method is present as a function. */
+	readonly hasChoose: boolean;
+	/** Whether the optional `flavor` method is present as a function. */
+	readonly hasFlavor: boolean;
 	/** SHA-256 of the source body — the snapshot-isolation hash for the session. */
 	readonly sourceHash: string;
 	/** Captured console output from the discovery execution. */
@@ -251,6 +271,8 @@ export function discoverExperience(
 		apiVersion: def?.apiVersion,
 		manifest: def?.manifest,
 		capabilities: def?.capabilities,
+		hasChoose: def?.choose !== undefined && typeof def.choose === "function",
+		hasFlavor: def?.flavor !== undefined && typeof def.flavor === "function",
 		sourceHash: hashSource(code),
 		console: consoleBuffer,
 	};

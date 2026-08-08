@@ -334,6 +334,8 @@ export class ExperienceReplayService {
         apiVersion: session.apiVersion,
         manifest: { id: session.manifestId, name: session.manifestName },
         declaredCapabilities: [],
+        hasChoose: false, // not stored; replay re-runs create+reduce only (choose is ephemeral)
+        hasFlavor: false,
       },
       sourceHash: session.rulesSourceHash,
       revision: session.rulesRevision,

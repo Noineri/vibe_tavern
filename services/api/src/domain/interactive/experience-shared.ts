@@ -16,7 +16,7 @@ import {
   type ExperienceParticipant,
 } from "@vibe-tavern/domain";
 import type { ExperienceCapabilityContext, ExperienceKernelError } from "./experience-kernel.js";
-import type { DeterministicRandom } from "./experience-kernel.js";
+import type { DeterministicRandom, EphemeralRandom } from "./experience-kernel.js";
 
 // ─── Typed errors ────────────────────────────────────────────────────────────
 
@@ -41,6 +41,7 @@ export type ExperienceApiError =
   | { status: 422; code: "vm_error"; message: string; kind: string }
   | { status: 422; code: "session_not_active"; message: string; currentStatus: string }
   | { status: 422; code: "replay_failed"; message: string; failedActionIndex: number }
+  | { status: 422; code: "no_choose_method"; message: string; participantId: string }
   // 500 — unexpected
   | { status: 500; code: "internal"; message: string };
 
@@ -93,18 +94,22 @@ export function isValidCapability(value: string): value is ExperienceCapability 
  * Build the VM capability context from the granted capabilities + roster. This
  * is the single source of truth for the capability-gating policy: `participants`
  * and `deterministic_random` are the only V1 synchronous VM capabilities (model /
- * rp_context / rp_attachment are durable effects, Wave 4+). Shared by the
- * lifecycle service and the replay service so live + replay cannot diverge.
+ * rp_context / rp_attachment are durable effects, Wave 4+); `chance` (ephemeral,
+ * non-recorded) is pass-through, injected only into `choose`/`flavor` by the
+ * caller. Shared by the lifecycle service and the replay service so live +
+ * replay cannot diverge.
  */
 export function buildCapabilityContext(
   grants: readonly ExperienceCapability[],
   participants: readonly ExperienceParticipant[],
   random?: DeterministicRandom,
+  chance?: EphemeralRandom,
 ): ExperienceCapabilityContext {
   const includeParticipants = grants.includes(EXPERIENCE_CAPABILITY.participants);
   const includeRandom = random !== undefined && grants.includes(EXPERIENCE_CAPABILITY.deterministicRandom);
   return {
     ...(includeParticipants ? { participants } : {}),
     ...(includeRandom ? { random } : {}),
+    ...(chance !== undefined ? { chance } : {}),
   };
 }
