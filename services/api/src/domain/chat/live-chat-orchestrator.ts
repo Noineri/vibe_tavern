@@ -52,6 +52,11 @@ export class LiveChatOrchestrator {
      *  user-message insert and pending-lane bind share one atomic transaction.
      *  Absent ⇒ no-Dice send behavior (byte-for-byte current path). */
     diceCommit?: import("./chat-application-types.js").SendMessageRequest["diceCommit"];
+    /** IR-51: optional experience attachment commit intent threaded into
+     *  `prepareLiveTurn` so the user-message insert and the queued-attachment
+     *  verify-and-bind share one atomic transaction (composed with the Dice
+     *  bind when both are present). Absent ⇒ no-experience send behavior. */
+    experienceCommit?: import("./chat-application-types.js").SendMessageRequest["experienceCommit"];
   }): Promise<{
     preparedMessageCount: number;
     promptMessageCount: number;
@@ -60,7 +65,7 @@ export class LiveChatOrchestrator {
   }> {
     const provider = await this.resolveProvider(input);
     logSendDebug("live.send.prepare.start", { chatId: input.chatId, model: provider.model });
-    const prepared = await this.chatRuntime.prepareLiveTurn(brandId<ChatId>(input.chatId), input.content, provider.model, provider.profile.maxTokens, input.attachments, input.diceCommit);
+    const prepared = await this.chatRuntime.prepareLiveTurn(brandId<ChatId>(input.chatId), input.content, provider.model, provider.profile.maxTokens, input.attachments, input.diceCommit, input.experienceCommit);
     this.notifyUserMessageCreated(input.chatId, prepared.userMessage);
     logSendDebug("live.send.prepare.done", {
       chatId: input.chatId,
@@ -309,10 +314,12 @@ export class LiveChatOrchestrator {
     visionAssets?: { cachedModels: CachedModelEntry[]; visionModel: string | null; assetLoader: (assetId: string) => Promise<Buffer | null>; visionDescribePrompt?: string };
     /** DICE-B11: optional commit intent threaded into `prepareLiveTurn`. See sendMessage. */
     diceCommit?: import("./chat-application-types.js").SendMessageRequest["diceCommit"];
+    /** IR-51: optional experience attachment commit intent. See sendMessage. */
+    experienceCommit?: import("./chat-application-types.js").SendMessageRequest["experienceCommit"];
   }): AsyncGenerator<{ event: string; data: string }> {
     const provider = await this.resolveProvider(input);
     logSendDebug("live.send-stream.prepare.start", { chatId: input.chatId, model: provider.model });
-    const prepared = await this.chatRuntime.prepareLiveTurn(brandId<ChatId>(input.chatId), input.content, provider.model, provider.profile.maxTokens, input.attachments, input.diceCommit);
+    const prepared = await this.chatRuntime.prepareLiveTurn(brandId<ChatId>(input.chatId), input.content, provider.model, provider.profile.maxTokens, input.attachments, input.diceCommit, input.experienceCommit);
     this.notifyUserMessageCreated(input.chatId, prepared.userMessage);
     const prefill = prepared.prompt.prefill ?? undefined;
     const onAttachmentDescriptions = (prepared.userMessage && input.attachments?.length)

@@ -689,16 +689,90 @@ export class ExperienceStore {
   }
 
   /**
+   * Verify a queued attachment is still the row the client thinks it is, then
+   * bind it to a committed user message — all synchronously inside the caller's
+   * transaction (IR-51). This is the experience-attachment analogue of
+   * {@link DiceRollStore.bindActiveAndResetInTx}: it runs AFTER the message row
+   * exists (so the `bound_message_id` FK is satisfiable), verifies the
+   * preconditions FIRST, and throws {@link ExperienceBindError} synchronously on
+   * any mismatch so the SHARED transaction (the user-message insert included)
+   * rolls back — no ghost message, no partial bind, no orphaned attachment.
+   *
+   * Preconditions (each a distinct error code so the UI can react):
+   *  - `not_found`      — the attachment id does not exist.
+   *  - `already_bound`   — the row is already bound to a message (re-send / replay).
+   *  - `stale_queue`     — someone queued a newer report since the client last
+   *                       saw this row (`queueRevision` advanced); the client is
+   *                       binding an outdated snapshot.
+   *  - `stale_session`   — the row's frozen `sessionRevision` differs from what
+   *                       the client saw (the row was replaced / session reset).
+   *
+   * A frozen report is a historical snapshot, so an ADVANCING live session does
+   * NOT invalidate a queued row — only a REPLACED row (different queueRevision /
+   * sessionRevision on the stored row) fails. The client echoes back the two
+   * revisions it saw; the server checks they match the stored row.
+   */
+  verifyAndBindAttachmentInTx(
+    tx: DbTransaction,
+    attachmentId: string,
+    expectedQueueRevision: number,
+    expectedSessionRevision: number,
+    messageId: string,
+  ): ExperienceAttachmentRow {
+    const row = tx
+      .select()
+      .from(experienceAttachments)
+      .where(eq(experienceAttachments.id, attachmentId))
+      .get();
+    if (!row) {
+      throw new ExperienceBindError('not_found', `Experience attachment '${attachmentId}' was not found.`);
+    }
+    if (row.boundMessageId !== null) {
+      throw new ExperienceBindError('already_bound', `Experience attachment '${attachmentId}' is already bound to message '${row.boundMessageId}'.`);
+    }
+    if (row.queueRevision !== expectedQueueRevision) {
+      throw new ExperienceBindError(
+        'stale_queue',
+        `Experience attachment '${attachmentId}' queue revision mismatch: expected ${expectedQueueRevision}, stored ${row.queueRevision}.`,
+      );
+    }
+    if (row.sessionRevision !== expectedSessionRevision) {
+      throw new ExperienceBindError(
+        'stale_session',
+        `Experience attachment '${attachmentId}' session revision mismatch: expected ${expectedSessionRevision}, stored ${row.sessionRevision}.`,
+      );
+    }
+    const now = this.clock.now();
+    tx
+      .update(experienceAttachments)
+      .set({ boundMessageId: messageId, updatedAt: now })
+      .where(eq(experienceAttachments.id, attachmentId))
+      .run();
+    const bound = tx
+      .select()
+      .from(experienceAttachments)
+      .where(eq(experienceAttachments.id, attachmentId))
+      .get();
+    return this.mapRowAttachment(bound!);
+  }
+
+  /**
    * Release the message's bound attachment back to queued (boundMessageId →
-   * NULL). Called when a user-message insert is rolled back — the attachment
+   * NULL). Synchronous core for the compensating write path; the async wrapper
+   * {@link rollbackReleaseAttachment} delegates here. Called when a user-message
+   * insert is rolled back / the prepared turn fails assembly — the attachment
    * returns to pending-send.
    */
-  async rollbackReleaseAttachment(messageId: string): Promise<void> {
-    await this.db
+  rollbackReleaseAttachmentInTx(tx: DbTransaction, messageId: string): void {
+    tx
       .update(experienceAttachments)
       .set({ boundMessageId: null })
       .where(eq(experienceAttachments.boundMessageId, messageId))
       .run();
+  }
+
+  async rollbackReleaseAttachment(messageId: string): Promise<void> {
+    this.db.transaction((tx) => this.rollbackReleaseAttachmentInTx(tx, messageId));
   }
 
   /**
@@ -913,4 +987,22 @@ export class ExperienceStore {
 function parseJsonArray(json: string): unknown[] {
   const parsed = JSON.parse(json) as unknown;
   return Array.isArray(parsed) ? parsed : [];
+}
+
+/**
+ * Thrown synchronously by {@link ExperienceStore.verifyAndBindAttachmentInTx}
+ * when a queued attachment cannot be bound to a user message. Because the bind
+ * runs inside the shared message-insert transaction, the throw rolls the whole
+ * turn back (no ghost message). Mirrors {@link DiceBindError} (DICE-B10) so the
+ * two atomic-send paths share a recognizable error shape. The `code` lets the
+ * caller map to a precise client outcome (409 conflict vs 404 vs 422).
+ */
+export class ExperienceBindError extends Error {
+  constructor(
+    readonly code: 'not_found' | 'already_bound' | 'stale_queue' | 'stale_session',
+    message: string,
+  ) {
+    super(message);
+    this.name = 'ExperienceBindError';
+  }
 }

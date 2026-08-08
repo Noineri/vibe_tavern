@@ -282,6 +282,60 @@ describe("sendMessageSchema", () => {
   it("rejects a negative pendingRevision", () => {
     expectReject(sendMessageSchema.safeParse({ content: "hi", diceMode: "normal", pendingRevision: -1 }));
   });
+
+  // --- IR-51: optional experience attachment commit intent ---
+  // {experienceAttachmentId, experienceQueueRevision, experienceSessionRevision}
+  // Omitted => no-experience behavior (current path unchanged).
+  it("accepts a no-experience send (all three experience fields absent)", () => {
+    expect(sendMessageSchema.safeParse({ content: "hi" }).success).toBe(true);
+  });
+
+  it("accepts an experience-enabled send with all three fields", () => {
+    expect(
+      sendMessageSchema.safeParse({
+        content: "hi",
+        experienceAttachmentId: "xa_1",
+        experienceQueueRevision: 1,
+        experienceSessionRevision: 2,
+      }).success,
+    ).toBe(true);
+  });
+
+  // All-or-none: a partial spec is rejected (no ambiguous bind).
+  it("rejects experienceAttachmentId without the two revisions", () => {
+    expectReject(sendMessageSchema.safeParse({ content: "hi", experienceAttachmentId: "xa_1" }));
+  });
+
+  it("rejects two of three experience fields (queue + session, no id)", () => {
+    expectReject(
+      sendMessageSchema.safeParse({ content: "hi", experienceQueueRevision: 1, experienceSessionRevision: 2 }),
+    );
+  });
+
+  it("rejects a negative experienceQueueRevision", () => {
+    expectReject(
+      sendMessageSchema.safeParse({
+        content: "hi",
+        experienceAttachmentId: "xa_1",
+        experienceQueueRevision: -1,
+        experienceSessionRevision: 2,
+      }),
+    );
+  });
+
+  // Dice + experience may coexist (combined atomic bind).
+  it("accepts a combined Dice + experience send", () => {
+    expect(
+      sendMessageSchema.safeParse({
+        content: "hi",
+        diceMode: "normal",
+        pendingRevision: 1,
+        experienceAttachmentId: "xa_1",
+        experienceQueueRevision: 1,
+        experienceSessionRevision: 2,
+      }).success,
+    ).toBe(true);
+  });
 });
 
 // --- editMessageSchema ------------------------------------------------------

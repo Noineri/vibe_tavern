@@ -554,6 +554,16 @@ export interface DiceSendCommitIntent {
   pendingRevision: number;
 }
 
+/** Optional interactive-runtime (experience) attachment commit intent threaded
+ *  onto stream/non-stream send bodies (IR-51). All three fields are present or
+ *  all absent; omitted ⇒ no-experience send. Carries ONLY identifiers the server
+ *  already stored — never raw transcript/events/state. */
+export interface ExperienceSendCommitIntent {
+  experienceAttachmentId: string;
+  experienceQueueRevision: number;
+  experienceSessionRevision: number;
+}
+
 // ─── Import ────────────────────────────────────────────────────────────
 
 export interface ImportJsonResponse {

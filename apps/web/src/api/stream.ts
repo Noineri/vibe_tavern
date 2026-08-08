@@ -81,7 +81,7 @@ async function streamChatEndpoint(
 /** Convenience: send message stream */
 export const sendStream = (
   chatId: string,
-  input: { content: string; attachments?: z.infer<typeof attachmentSchema>[]; diceMode?: DiceMode; pendingRevision?: number },
+  input: { content: string; attachments?: z.infer<typeof attachmentSchema>[]; diceMode?: DiceMode; pendingRevision?: number; experienceAttachmentId?: string; experienceQueueRevision?: number; experienceSessionRevision?: number },
   opts: StreamOpts,
 ) => streamChatEndpoint(`/api/chats/${chatId}/messages/stream`, input, opts);
 

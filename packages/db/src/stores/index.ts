@@ -83,7 +83,7 @@ export type {
 } from './dice-roll-store.js';
 export { DiceBindError } from './dice-roll-store.js';
 
-export { ExperienceStore } from './experience-store.js';
+export { ExperienceStore, ExperienceBindError } from './experience-store.js';
 export type {
   ExperienceSessionRow,
   ExperienceStepRow,

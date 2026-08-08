@@ -113,7 +113,7 @@ export class ChatAdapter implements ChatRuntimeApi {
 
 	// ─── Messages (AI) ──────────────────────────────────────────────────
 
-	sendMessage = async (chatId: string, body: { content: string; attachments?: Attachment[]; diceMode?: "normal" | "immersive"; pendingRevision?: number }, signal?: AbortSignal) => {
+	sendMessage = async (chatId: string, body: { content: string; attachments?: Attachment[]; diceMode?: "normal" | "immersive"; pendingRevision?: number; experienceAttachmentId?: string; experienceQueueRevision?: number; experienceSessionRevision?: number }, signal?: AbortSignal) => {
 		logSendDebug("api.runtime.send.start", { chatId, contentLength: body.content?.length ?? 0 });
 		const { profile, transport } = await this.resolveEffectiveProfileOrThrow({ chatId });
 		logSendDebug("api.runtime.send.profile", {
@@ -133,6 +133,7 @@ export class ChatAdapter implements ChatRuntimeApi {
 			transport,
 			signal,
 			diceCommit: resolveDiceCommit(body),
+			experienceCommit: resolveExperienceCommit(body),
 			visionAssets: {
 				cachedModels: await resolveCachedModels(this.stores, profile),
 				visionModel: profile.visionModel,
@@ -149,7 +150,7 @@ export class ChatAdapter implements ChatRuntimeApi {
 		return result.snapshot;
 	};
 
-	sendMessageStream = async function* (this: ChatAdapter, chatId: string, body: { content: string; attachments?: Attachment[]; diceMode?: "normal" | "immersive"; pendingRevision?: number }, signal?: AbortSignal) {
+	sendMessageStream = async function* (this: ChatAdapter, chatId: string, body: { content: string; attachments?: Attachment[]; diceMode?: "normal" | "immersive"; pendingRevision?: number; experienceAttachmentId?: string; experienceQueueRevision?: number; experienceSessionRevision?: number }, signal?: AbortSignal) {
 		const { profile, transport } = await this.resolveEffectiveProfileOrThrow({ chatId });
 		try {
 			yield* this.liveChatOrchestrator.sendMessageStream({
@@ -161,6 +162,7 @@ export class ChatAdapter implements ChatRuntimeApi {
 				transport,
 				signal,
 				diceCommit: resolveDiceCommit(body),
+				experienceCommit: resolveExperienceCommit(body),
 				visionAssets: {
 					cachedModels: await resolveCachedModels(this.stores, profile),
 					visionModel: profile.visionModel,
@@ -601,6 +603,19 @@ export class ChatAdapter implements ChatRuntimeApi {
 function resolveDiceCommit(body: { diceMode?: "normal" | "immersive"; pendingRevision?: number }): { mode: "normal" | "immersive"; pendingRevision: number } | undefined {
 	if (body.diceMode !== undefined && body.pendingRevision !== undefined) {
 		return { mode: body.diceMode, pendingRevision: body.pendingRevision };
+	}
+	return undefined;
+}
+
+/** Map the validated send body's optional experience attachment commit intent
+ *  (the wire shape `{experienceAttachmentId, experienceQueueRevision,
+ *  experienceSessionRevision}`, all-or-none enforced by the Zod refine) to the
+ *  internal `experienceCommit` the orchestrator threads into prepareLiveTurn.
+ *  Absent ⇒ undefined (no-experience send behavior). IR-51. Carries ONLY the
+ *  identifiers of an already-stored queued attachment — never raw state. */
+function resolveExperienceCommit(body: { experienceAttachmentId?: string; experienceQueueRevision?: number; experienceSessionRevision?: number }): { attachmentId: string; queueRevision: number; sessionRevision: number } | undefined {
+	if (body.experienceAttachmentId !== undefined && body.experienceQueueRevision !== undefined && body.experienceSessionRevision !== undefined) {
+		return { attachmentId: body.experienceAttachmentId, queueRevision: body.experienceQueueRevision, sessionRevision: body.experienceSessionRevision };
 	}
 	return undefined;
 }

@@ -17,7 +17,7 @@ import type {
   MessageId,
   SummaryMemorySnapshot,
 } from "@vibe-tavern/domain";
-import type { ChatStore, MessageStore, DiceRollStore, Message as DbMessage, MessageVariant as DbMessageVariant } from "@vibe-tavern/db";
+import type { ChatStore, MessageStore, DiceRollStore, ExperienceStore, DbTransaction, Message as DbMessage, MessageVariant as DbMessageVariant } from "@vibe-tavern/db";
 import { conflict, notFound } from "../../shared/errors.js";
 
 /**
@@ -73,7 +73,7 @@ type AddEditorVariantInput = {
 };
 
 export class ChatApplicationService {
-  constructor(private readonly chatStore: ChatStore, private readonly messageStore: MessageStore, private readonly diceRollStore: DiceRollStore) {}
+  constructor(private readonly chatStore: ChatStore, private readonly messageStore: MessageStore, private readonly diceRollStore: DiceRollStore, private readonly experienceStore: ExperienceStore) {}
 
   async createChat(input: CreateChatRequest): Promise<CreateChatResponse> {
     const chat = await this.chatStore.createChat({
@@ -150,18 +150,28 @@ export class ChatApplicationService {
       attachmentsJson: input.attachments?.length ? JSON.stringify(input.attachments) : null,
     };
 
-    // DICE-B10: when a send carries the optional Dice commit intent, the
-    // user-message insert and the pending-lane bind run in ONE atomic
-    // transaction (MessageStore.addMessageWithDiceBind). A stale revision or
-    // unresolved choose throws before the message row commits. Absent intent ⇒
-    // the unchanged addMessage path (no Dice query, no bind).
+    // DICE-B10 / IR-51: when a send carries an optional Dice commit intent
+    // and/or an experience attachment commit intent, the user-message insert and
+    // ALL the binds run in ONE atomic transaction
+    // (MessageStore.addMessageWithBind). Each bind verifies its own preconditions
+    // FIRST and throws synchronously on stale/illegal state, so the whole turn
+    // rolls back — no ghost message, no partial bind. Absent intents ⇒ the
+    // unchanged addMessage path (no Dice/experience query, no bind).
+    const bindHooks: Array<(tx: DbTransaction, messageId: string) => void> = [];
     if (input.diceCommit) {
       const { mode, pendingRevision } = input.diceCommit;
-      const { message } = this.messageStore.addMessageWithDiceBind(
-        baseData,
-        (tx, messageId) =>
-          this.diceRollStore.bindActiveAndResetInTx(tx, chat.id, targetBranchId, mode, pendingRevision, messageId),
+      bindHooks.push((tx, messageId) =>
+        this.diceRollStore.bindActiveAndResetInTx(tx, chat.id, targetBranchId, mode, pendingRevision, messageId),
       );
+    }
+    if (input.experienceCommit) {
+      const { attachmentId, queueRevision, sessionRevision } = input.experienceCommit;
+      bindHooks.push((tx, messageId) =>
+        this.experienceStore.verifyAndBindAttachmentInTx(tx, attachmentId, queueRevision, sessionRevision, messageId),
+      );
+    }
+    if (bindHooks.length > 0) {
+      const { message } = this.messageStore.addMessageWithBind(baseData, bindHooks);
       return mapDbMessage(message);
     }
 

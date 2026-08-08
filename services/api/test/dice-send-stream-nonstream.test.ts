@@ -174,6 +174,7 @@ function makeChatRuntime(
     traces: stores.traces,
     chatApp,
     diceRolls: stores.diceRolls,
+    experiences: stores.experiences,
     // A 1-arg function is assignable to the deps' wider (chatId, branchId?, opts?) signature.
     assemblePrompt,
     getSnapshot: async () => ({ messages: [] }) as never,

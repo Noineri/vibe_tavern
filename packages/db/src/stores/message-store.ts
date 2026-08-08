@@ -247,34 +247,19 @@ export class MessageStore {
   }
 
   /**
-   * Atomic user-message insert + Dice pending-lane bind (DICE_SYSTEM_BACKEND_PLAN,
-   * Wave B4 / DICE-B10). Inserts the user message + its initial variant AND binds
-   * the active-mode pending Dice lane to that message in ONE synchronous
-   * bun:sqlite transaction, so a stale revision or unresolved `choose` throws
-   * BEFORE the transaction commits and rolls the message insert back too — no
-   * ghost message, no partial bind.
-   *
-   * `bindInTx` is the synchronous bind closure supplied by the caller (typically
-   * `(tx, messageId) => diceRollStore.bindActiveAndResetInTx(tx, ...)`). It runs
-   * AFTER the message+variant inserts so the rolls' `bound_message_id` FK is
-   * satisfiable; it verifies the lane revision first and throws synchronously on
-   * a mismatch, so the whole transaction (inserts included) rolls back.
-   *
-   * Why synchronous (no `await` inside): drizzle-orm 0.38.4's bun-sqlite driver
-   * wraps the callback in bun:sqlite's native `.transaction()`, which commits at
-   * the end of the callback's synchronous prefix — an `await` inside suspends
-   * past that commit and a post-await throw is never rolled back. All bun-sqlite
-   * drizzle query methods (`.run/.get/.all`) are synchronous, so the entire
-   * insert+bind runs in one real BEGIN/COMMIT/ROLLBACK. This is the load-bearing
-   * reason the bind cannot be a separate awaited `bindActiveAndReset` call.
-   *
-   * Use {@link addMessage} (byte-for-byte unchanged) for the no-Dice path — this
-   * variant is reached ONLY when a send carries the optional dice commit intent.
+   * Synchronous bind-hook run INSIDE {@link MessageStore.addMessageWithBind}'s
+   * transaction, AFTER the message + variant rows exist (so a bound-row FK is
+   * satisfiable). The hook verifies its own preconditions FIRST and throws
+   * synchronously on a stale revision / unresolved state, so the whole
+   * transaction (message insert included) rolls back — no ghost message, no
+   * partial bind. Mirrors the Dice `bindInTx` contract (see
+   * {@link addMessageWithDiceBind}) for the experience-attachment bind and any
+   * future cross-store bind (IR-51 / Wave 5).
    */
-  addMessageWithDiceBind(
+  addMessageWithBind(
     data: AddMessageInput,
-    bindInTx: (tx: DbTransaction, messageId: string) => number,
-  ): { message: Message; boundCount: number } {
+    bindHooks: ReadonlyArray<(tx: DbTransaction, messageId: string) => void> = [],
+  ): { message: Message } {
     const id = this.idGen.next('msg');
     const now = this.clock.now();
     const lastMsg = this.db.select({ position: messages.position }).from(messages)
@@ -289,7 +274,7 @@ export class MessageStore {
     );
     const selectedContent = variantContents[selectedVariantIndex] ?? data.content;
 
-    const boundCount = this.db.transaction((tx) => {
+    this.db.transaction((tx) => {
       tx.insert(messages).values({
         id, chatId: data.chatId, branchId: data.branchId,
         role: data.role, authorType: data.authorType,
@@ -312,14 +297,61 @@ export class MessageStore {
         coauthorSkillId: variantIndex === selectedVariantIndex ? data.coauthorSkillId ?? null : null,
         createdAt: now,
       }))).run();
-      // Bind AFTER the message row exists (FK). bindInTx verifies revision FIRST
-      // and throws synchronously on stale/choose — rolling the inserts back.
-      return bindInTx(tx, id);
+      // Bind AFTER the message+variant rows exist (FK). Each hook verifies its
+      // own preconditions FIRST and throws synchronously on stale/illegal state
+      // — rolling the inserts back. Hooks run in the order given so a caller can
+      // sequence Dice + experience binds in one atomic user-message insert.
+      for (const hook of bindHooks) hook(tx, id);
     });
 
     // SELECT outside tx is fine — row is committed (or the tx threw and we never reach here)
     const row = this.db.select().from(messages).where(eq(messages.id, id)).get();
-    return { message: this.mapRowMessage(row!), boundCount };
+    return { message: this.mapRowMessage(row!) };
+  }
+
+  /**
+   * Atomic user-message insert + Dice pending-lane bind (DICE_SYSTEM_BACKEND_PLAN,
+   * Wave B4 / DICE-B10). Inserts the user message + its initial variant AND binds
+   * the active-mode pending Dice lane to that message in ONE synchronous
+   * bun:sqlite transaction, so a stale revision or unresolved `choose` throws
+   * BEFORE the transaction commits and rolls the message insert back too — no
+   * ghost message, no partial bind.
+   *
+   * `bindInTx` is the synchronous bind closure supplied by the caller (typically
+   * `(tx, messageId) => diceRollStore.bindActiveAndResetInTx(tx, ...)`). It runs
+   * AFTER the message+variant inserts so the rolls' `bound_message_id` FK is
+   * satisfiable; it verifies the lane revision first and throws synchronously on
+   * a mismatch, so the whole transaction (inserts included) rolls back.
+   *
+   * Why synchronous (no `await` inside): drizzle-orm 0.38.4's bun-sqlite driver
+   * wraps the callback in bun:sqlite's native `.transaction()`, which commits at
+   * the end of the callback's synchronous prefix — an `await` inside suspends
+   * past that commit and a post-await throw is never rolled back. All bun-sqlite
+   * drizzle query methods (`.run/.get/.all`) are synchronous, so the entire
+   * insert+bind runs in one real BEGIN/COMMIT/ROLLBACK. This is the load-bearing
+   * reason the bind cannot be a separate awaited `bindActiveAndReset` call.
+   *
+   * This is a thin wrapper over the composable {@link addMessageWithBind} core
+   * (IR-51) — it passes a single hook that captures the bound roll count, so the
+   * Dice public API (`{message, boundCount}`) is byte-identical and the Dice
+   * boundary test is unchanged. New callers that bind BOTH Dice AND an
+   * experience attachment in one insert call {@link addMessageWithBind} directly
+   * with two hooks.
+   *
+   * Use {@link addMessage} (byte-for-byte unchanged) for the no-Dice path — this
+   * variant is reached ONLY when a send carries the optional dice commit intent.
+   */
+  addMessageWithDiceBind(
+    data: AddMessageInput,
+    bindInTx: (tx: DbTransaction, messageId: string) => number,
+  ): { message: Message; boundCount: number } {
+    let boundCount = 0;
+    const { message } = this.addMessageWithBind(data, [
+      (tx, messageId) => {
+        boundCount = bindInTx(tx, messageId);
+      },
+    ]);
+    return { message, boundCount };
   }
 
   /**
