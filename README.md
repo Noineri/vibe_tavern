@@ -219,7 +219,7 @@ An Android build for Termux automates most of the installation work.
 
 ### Any platform, with Bun
 
-If you already have [Bun](https://bun.com), this is the shortest path — and the only one that works on macOS:
+If you already have [Bun](https://bun.com), this is the shortest path:
 
 ```bash
 bun install -g vibe-tavern
