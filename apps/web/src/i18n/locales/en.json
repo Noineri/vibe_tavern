@@ -1612,6 +1612,7 @@
   "update_modal_phase_verifying": "Verifying checksum",
   "update_modal_phase_extracting": "Extracting archive",
   "update_modal_phase_swapping": "Installing",
+  "update_modal_phase_installing_package": "Installing package with bun",
   "update_modal_phase_done": "Done",
   "update_modal_phase_error": "Error",
   "update_modal_runtime_error_server_exited": "The server process exited unexpectedly during the update.",

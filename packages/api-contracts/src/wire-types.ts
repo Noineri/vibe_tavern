@@ -222,7 +222,7 @@ export interface ChatListItem {
 // RuntimeUpdateStatus.phase before serialising; if the two drift, the
 // frontend's exhaustive switch will fail to typecheck.
 
-export type RuntimeInstallKind = "standalone" | "inno-setup" | "docker" | "dev";
+export type RuntimeInstallKind = "standalone" | "inno-setup" | "docker" | "npm" | "dev";
 
 export interface RuntimeInfo {
 	currentVersion: string;
@@ -264,6 +264,8 @@ export type RuntimeUpdatePhase =
 	| "verifying"
 	| "extracting"
 	| "swapping"
+	/** npm channel only — `bun add -g` is one opaque step with no byte progress. */
+	| "installing-package"
 	| "done"
 	| "error";
 

@@ -1614,6 +1614,7 @@
   "update_modal_phase_verifying": "Проверка контрольной суммы",
   "update_modal_phase_extracting": "Распаковка архива",
   "update_modal_phase_swapping": "Установка",
+  "update_modal_phase_installing_package": "Установка пакета через bun",
   "update_modal_phase_done": "Готово",
   "update_modal_phase_error": "Ошибка",
   "update_modal_runtime_error_server_exited": "Процесс сервера неожиданно завершился во время обновления.",

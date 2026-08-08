@@ -28,6 +28,17 @@ import {
 import { resolveStandalonePaths } from "../../server/standalone-paths.js";
 import { stopRuntimeServer } from "../../server/runtime-shutdown.js";
 import { snapshotDatabase } from "./update-db-snapshot.js";
+import { installPackageVersion, isVersionPublished } from "./npm-update.js";
+
+declare const VIBE_TAVERN_INSTALL_KIND: string | undefined;
+
+/**
+ * Install kind declared at build time via Bun's `define` (build-npm-dist.ts).
+ * Undefined in every other build, where classifyInstallKind falls back to
+ * inference. See the classifier for why the npm channel cannot be inferred.
+ */
+const DECLARED_INSTALL_KIND: string | undefined =
+	typeof VIBE_TAVERN_INSTALL_KIND !== "undefined" ? VIBE_TAVERN_INSTALL_KIND : undefined;
 
 export type UpdateOrchestratorPhase =
 	| "idle"
@@ -123,6 +134,17 @@ class UpdateOrchestrator {
 		if (this.running) {
 			return { accepted: false, reason: "An update is already in progress." };
 		}
+
+		// The npm channel updates through the package manager, which needs no
+		// install directory and cannot use the swap pipeline. Branch before the
+		// IS_COMPILED/installDir guards below — both are about a binary install
+		// and would reject a perfectly updatable npm one.
+		if (detectInstallKind() === "npm") {
+			this.running = true;
+			void this.runNpmPipeline();
+			return { accepted: true };
+		}
+
 		if (!IS_COMPILED) {
 			return { accepted: false, reason: "Self-update is unavailable in dev builds." };
 		}
@@ -134,6 +156,94 @@ class UpdateOrchestrator {
 		this.running = true;
 		void this.runPipeline(installDir);
 		return { accepted: true };
+	}
+
+	/**
+	 * Update pipeline for the npm channel: check → confirm the version is on
+	 * npm → snapshot the DB → `bun add -g` → exit.
+	 *
+	 * Structurally the same as runPipeline, minus everything that exists to
+	 * make a file swap survivable. Note there is no fatal branch: see
+	 * npm-update.ts for why every failure here leaves the install intact.
+	 */
+	private async runNpmPipeline(): Promise<void> {
+		this.status = {
+			...INITIAL_STATUS,
+			phase: "checking",
+			startedAt: Date.now(),
+			currentVersion: getCurrentVersion(),
+		};
+
+		try {
+			// requirePlatformAsset:false — the registry, not the release page,
+			// is where this channel gets its bits. macOS and arm64 have no
+			// release archive at all and must still see updates.
+			const check = await checkForUpdate({ requirePlatformAsset: false });
+			if (!check) {
+				this.fail("soft", "Could not reach GitHub to look up the latest release.", "checking", null);
+				return;
+			}
+			if (!check.updateAvailable) {
+				this.fail("soft", "Already running the latest version.", "checking", null);
+				return;
+			}
+
+			this.status = { ...this.status, targetVersion: check.latestVersion, phase: "preflight" };
+
+			// A GitHub release becomes visible the instant it is published, but
+			// the npm publish job runs after that. Installing here would 404.
+			const lookup = await isVersionPublished(check.latestVersion);
+			if (lookup.kind === "not-published") {
+				this.fail(
+					"soft",
+					`v${check.latestVersion} has been released but is not on npm yet. It usually appears within a few minutes — try again shortly.`,
+					"preflight",
+					null,
+				);
+				return;
+			}
+			if (lookup.kind === "lookup-failed") {
+				this.fail(
+					"soft",
+					`Could not reach the npm registry to confirm v${check.latestVersion} is available (${lookup.detail}).`,
+					"preflight",
+					null,
+				);
+				return;
+			}
+
+			// Same recovery point the binary pipeline takes. `bun add -g` cannot
+			// corrupt the install, but the NEW version's migrations run against
+			// the existing database on first boot, and that is not reversible.
+			const paths = await resolveStandalonePaths();
+			const snapshot = await snapshotDatabase(paths.dbPath, paths.dataDir, check.latestVersion);
+			if (!snapshot.ok) {
+				this.fail("soft", snapshot.message ?? "Could not create a pre-update database backup.", "preflight", null);
+				return;
+			}
+			this.dbSnapshotPath = snapshot.path;
+			console.log(`[update-orchestrator] pre-update database snapshot: ${snapshot.path}`);
+
+			this.status = { ...this.status, phase: "installing-package", downloadProgress: null };
+			await installPackageVersion(check.latestVersion, (output) => {
+				console.log(`[npm-update] ${output}`);
+			});
+
+			this.status = {
+				...this.status,
+				phase: "done",
+				downloadProgress: null,
+				targetVersion: check.latestVersion,
+			};
+			this.finishAndExit();
+		} catch (err) {
+			this.fail(
+				"soft",
+				err instanceof Error ? err.message : String(err),
+				this.status.phase,
+				err,
+			);
+		}
 	}
 
 	private async runPipeline(installDir: string): Promise<void> {
@@ -290,20 +400,31 @@ export function getUpdateOrchestrator(): UpdateOrchestrator {
  * `bun prod-server.js` (not a compiled binary), so IS_COMPILED is false —
  * checking IS_COMPILED first would mislabel Docker as "dev". The Dockerfile
  * sets VIBE_TAVERN_DOCKER=1 in the release stage.
+ *
+ * The npm build must be checked before EVERYTHING that reads execPath, and it
+ * cannot be inferred — it has to be declared. An npm install is a JS bundle run
+ * by the user's own bun, so process.execPath is ~/.bun/bin/bun: `IS_COMPILED`
+ * is true (build-npm-dist.ts defines VIBE_TAVERN_VERSION to stamp the version),
+ * no Inno marker exists, and the classifier would happily answer "standalone".
+ * That answer is not merely a wrong label — it would authorise the binary-swap
+ * updater to rename files inside the user's ~/.bun/bin. Hence the explicit
+ * VIBE_TAVERN_INSTALL_KIND define, baked at build time by build-npm-dist.ts.
  */
-export type InstallKind = "standalone" | "inno-setup" | "docker" | "dev";
+export type InstallKind = "standalone" | "inno-setup" | "docker" | "npm" | "dev";
 
 const INNO_MARKER_FILENAME = ".vibe-tavern-install";
 
 /** Pure classifier — exported for unit testing (detection inputs are otherwise
  *  pinned at module load: IS_COMPILED, process.platform, process.execPath). */
 export function classifyInstallKind(input: {
+	declaredKind: string | undefined;
 	dockerEnv: string | undefined;
 	isCompiled: boolean;
 	platform: string;
 	execPath: string;
 	hasInnoMarker: boolean;
 }): InstallKind {
+	if (input.declaredKind === "npm") return "npm";
 	if (input.dockerEnv === "1") return "docker";
 	if (!input.isCompiled) return "dev";
 	if (input.hasInnoMarker) return "inno-setup";
@@ -315,6 +436,7 @@ export function classifyInstallKind(input: {
 
 export function detectInstallKind(): InstallKind {
 	return classifyInstallKind({
+		declaredKind: DECLARED_INSTALL_KIND,
 		dockerEnv: process.env.VIBE_TAVERN_DOCKER,
 		isCompiled: IS_COMPILED,
 		platform: process.platform,
@@ -324,5 +446,9 @@ export function detectInstallKind(): InstallKind {
 }
 
 export function canSelfUpdate(): boolean {
-	return detectInstallKind() === "standalone";
+	const kind = detectInstallKind();
+	// Two channels can replace themselves in place: a standalone binary (file
+	// swap) and an npm install (package manager). Everything else — Docker,
+	// Inno Setup, dev — is updated by whatever installed it.
+	return kind === "standalone" || kind === "npm";
 }
