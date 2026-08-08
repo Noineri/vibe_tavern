@@ -12,7 +12,6 @@ import { CustomTooltip } from "../../shared/Tooltip.js";
 import { DestructiveConfirmModal } from "../../shared/destructive-confirm-modal.js";
 import { SaveButton } from "../../shared/SaveBar.js";
 import { Toggle } from "../../shared/Toggle.js";
-import { SegmentedControl } from "../../shared/SegmentedControl.js";
 import { SCRIPT_TEMPLATES } from "./script-templates/index.js";
 import { cn } from "../../../lib/cn.js";
 import { useT } from "../../../i18n/context.js";
@@ -132,7 +131,6 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
     if (id && onOpenEditor) onOpenEditor();
   };
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
-  const [confirmTypeChange, setConfirmTypeChange] = useState<"prompt" | "dice" | null>(null);
   const [importOpen, setImportOpen] = useState(false);
   const [importCode, setImportCode] = useState("");
   useKeyDown("Escape", () => setConfirmDeleteId(null), { enabled: !!confirmDeleteId });
@@ -381,18 +379,6 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
           onCancel={() => setConfirmDeleteId(null)}
         />
       )}
-      {confirmTypeChange && (
-        <DestructiveConfirmModal
-          title={tDynamic("script_type_change_confirm_title") || "Change Script Type?"}
-          body={tDynamic("script_type_change_confirm_body") || "Are you sure you want to change the script type? This will not alter your code, but the script will run in a different mode."}
-          confirmLabel={tDynamic("script_type_change_confirm") || "Change Type"}
-          onConfirm={() => {
-            updateDraft({ scriptKind: confirmTypeChange });
-            setConfirmTypeChange(null);
-          }}
-          onCancel={() => setConfirmTypeChange(null)}
-        />
-      )}
       {importOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60" onClick={() => { setImportOpen(false); setImportCode(""); }}>
           <div className="flex w-[520px] max-w-[90vw] flex-col overflow-hidden rounded-xl border border-border bg-surface" style={{ maxHeight: "80vh" }} onClick={e => e.stopPropagation()}>
@@ -450,6 +436,9 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
             <AddButton onClick={() => handleAdd()}>
               <Ic.plus /> {t("new_script")}
             </AddButton>
+            <AddButton onClick={() => handleAdd("dice")}>
+              <Ic.dice /> {t("new_dice_script")}
+            </AddButton>
             <AddButton onClick={() => setImportOpen(true)}>
               <Ic.import /> {t("script_import")}
             </AddButton>
@@ -475,6 +464,7 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
             ))}
             <div className="mt-2 flex flex-wrap gap-2">
               <AddButton onClick={() => handleAdd()}><Ic.plus /> {t("new_script")}</AddButton>
+              <AddButton onClick={() => handleAdd("dice")}><Ic.dice /> {t("new_dice_script")}</AddButton>
               <AddButton onClick={() => setImportOpen(true)}><Ic.import /> {t("script_import")}</AddButton>
             </div>
           </SortableContext>
@@ -529,18 +519,14 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
           </CustomTooltip>
         </div>
         <div className="flex items-center">
-          <SegmentedControl
-            value={activeScript.scriptKind || "prompt"}
-            onChange={(v) => {
-              if (v !== (activeScript.scriptKind || "prompt")) {
-                setConfirmTypeChange(v as "prompt" | "dice");
-              }
-            }}
-            options={[
-              { value: "prompt", label: tDynamic("script_kind_prompt") || "Prompt" },
-              { value: "dice", label: tDynamic("script_kind_dice") || "Dice" },
-            ]}
-          />
+          {/* Script kind is immutable after creation — set via the New Script /
+              New Dice Script buttons. Shown as a read-only badge so the user
+              always sees which runtime a script targets. The previous kind
+              toggle was removed: it could never persist (updateScriptSchema
+              excludes scriptKind), so it silently reverted on save. */}
+          <div className="rounded px-2 py-1 font-ui text-[11px] uppercase tracking-wide bg-s3 text-t2">
+            {activeScript.scriptKind === "dice" ? t("script_kind_dice") : t("script_kind_prompt")}
+          </div>
         </div>
       </div>
 
@@ -618,5 +604,5 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
     </div>
   );
 
-  return { modals, scriptListContent, scriptEditorPanel, activeScriptId, setActiveScriptId, handleAdd: () => handleAdd(), handleImportOpen: () => setImportOpen(true) };
+  return { modals, scriptListContent, scriptEditorPanel, activeScriptId, setActiveScriptId, handleAdd: () => handleAdd(), handleAddDice: () => handleAdd("dice"), handleImportOpen: () => setImportOpen(true) };
 }

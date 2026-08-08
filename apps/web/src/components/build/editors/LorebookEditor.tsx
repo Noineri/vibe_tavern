@@ -760,6 +760,14 @@ export function LorebookEditor({
                 <Ic.plus />
               </div>
             </CustomTooltip>
+            <CustomTooltip content={t("new_dice_script")}>
+              <div
+                className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded text-t3 transition-all hover:bg-s2 hover:text-t1"
+                onClick={scriptPanel.handleAddDice}
+              >
+                <Ic.dice />
+              </div>
+            </CustomTooltip>
             <CustomTooltip content={t("script_import")}>
               <div
                 className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded text-t3 transition-all hover:bg-s2 hover:text-t1"
