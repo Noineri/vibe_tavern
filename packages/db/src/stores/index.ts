@@ -82,3 +82,27 @@ export type {
   LaneState,
 } from './dice-roll-store.js';
 export { DiceBindError } from './dice-roll-store.js';
+
+export { ExperienceStore } from './experience-store.js';
+export type {
+  ExperienceSessionRow,
+  ExperienceStepRow,
+  ExperienceEffectRow,
+  ExperienceContextBundleRow,
+  ExperienceAttachmentRow,
+  CreateSessionData,
+  ApplyTransitionData,
+  ApplyTransitionResult,
+  CaptureContextBundleData,
+  QueueAttachmentData,
+} from './experience-store.js';
+
+export { ExperienceResourceStore } from './experience-resource-store.js';
+export type {
+  ExperienceVisualRow,
+  ExperienceChatConfigRow,
+  ExperiencePromptOverrideRow,
+  CreateVisualData,
+  UpdateVisualData,
+  UpdateChatConfigData,
+} from './experience-resource-store.js';

@@ -803,3 +803,287 @@ export const diceRolls = sqliteTable('dice_rolls', {
   laneIdx: index('idx_dice_rolls_lane').on(table.laneId),
   messageIdx: index('idx_dice_rolls_message').on(table.boundMessageId),
 }));
+
+// ═══ Interactive Runtime (INTERACTIVE_RUNTIME_FOUNDATION_PLAN, Wave 2 / IR-21) ═══
+//
+// Durable storage for the Interactive Runtime: visual resources, per-chat
+// add-on configuration, branch-scoped sessions, the action/effect/system
+// journal, durable model effects, frozen RP-context bundles, prompt overrides,
+// and queued/bound RP-result attachments. Every authoritative value crosses a
+// strict schema boundary before it reaches these tables (IR-11 wire schemas +
+// the IR-12 kernel's jsonBoundsError); the store is the persistence authority
+// core, wrapped by the Wave 3 service with validation + actor resolution.
+//
+// Two cross-cutting conventions, both borrowed from `dice_rolls`:
+//  - NO-FK SOURCE SNAPSHOTS. A session/attachment pins the exact rules/visual
+//    source (id + label + revision + source + sourceHash) as plain text with NO
+//    FK to `scripts`/`experience_visuals`. Editing, disabling, unlinking, or
+//    deleting the source row never corrupts an active or historical session —
+//    the snapshot-isolation invariant. Source rows may cascade away; snapshots
+//    survive.
+//  - IDEMPOTENT + COMPARE-AND-SWAP. Mutating requests carry a per-session
+//    unique `request_id` (idempotency net against rapid clicks / retries / two
+//    tabs / process recovery) and an `expected_revision` (CAS: a stale revision
+//    is rejected BEFORE any write). The session `revision` is monotonic and
+//    increments on every applied transition.
+
+// ─── experience_visuals ───────────────────────────────────────────────────────
+// An editable, user-owned HTML/CSS/JS bundle that runs sandboxed in an iframe
+// (Wave 6) and talks to the host only through the versioned `VibeExperience`
+// bridge. Scope metadata mirrors `scripts` so a visual can be global or owned
+// by a character/persona/chat; the FK CASCADE on those owners matches scripts.
+export const experienceVisuals = sqliteTable('experience_visuals', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  // The visual source bundle (HTML/CSS/JS). Wave 6 ships five editable starters;
+  // the bundle is fully user-owned after copy and never silently rewritten.
+  source: text('source').notNull(),
+  sourceHash: text('source_hash').notNull(),
+  // Bridge API version this visual targets.
+  apiVersion: integer('api_version').notNull(),
+  // Manifest ids this visual is compatible with (loose coupling — a rules
+  // revision does not inherently change the visual contract).
+  compatibleManifestIdsJson: text('compatible_manifest_ids_json').notNull().default('[]'),
+  scopeType: text('scope_type').notNull().default('global'),
+  characterId: text('character_id').references(() => characters.id, { onDelete: 'cascade' }),
+  personaId: text('persona_id').references(() => personas.id, { onDelete: 'cascade' }),
+  chatId: text('chat_id').references(() => chats.id, { onDelete: 'cascade' }),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+}, (table) => ({
+  scopeTypeIdx: index('idx_experience_visuals_scope').on(table.scopeType),
+  characterIdIdx: index('idx_experience_visuals_character').on(table.characterId),
+  personaIdIdx: index('idx_experience_visuals_persona').on(table.personaId),
+  chatIdIdx: index('idx_experience_visuals_chat').on(table.chatId),
+}));
+
+// ─── experience_chat_configs ─────────────────────────────────────────────────
+// The per-chat Interactive Experience Chat Add-on row (InsightsPanel). Exactly
+// one row per chat: whether the add-on is enabled, which rules script and visual
+// it points at, the user-approved capability grants, the RP-context mode, and
+// launcher visibility. Script/visual refs are LIVE pointers (SET NULL on
+// source delete) — the add-on survives a source delete but prompts re-selection;
+// sessions started from a config pin immutable snapshots separately. Activation
+// is ALWAYS per-chat here; global Build surfaces only author resources.
+export const experienceChatConfigs = sqliteTable('experience_chat_configs', {
+  id: text('id').primaryKey(),
+  chatId: text('chat_id').notNull().references(() => chats.id, { onDelete: 'cascade' }),
+  enabled: integer('enabled', { mode: 'boolean' }).notNull().default(false),
+  // Live source pointers — SET NULL when the source row is deleted (the config
+  // survives; the UI shows "select a script/visual"). NOT snapshot columns.
+  scriptId: text('script_id').references(() => scripts.id, { onDelete: 'set null' }),
+  visualId: text('visual_id').references(() => experienceVisuals.id, { onDelete: 'set null' }),
+  // User-approved capabilities (a subset of the package's declared set).
+  capabilityGrantsJson: text('capability_grants_json').notNull().default('[]'),
+  contextMode: text('context_mode').notNull().default('none'),
+  launcherVisible: integer('launcher_visible', { mode: 'boolean' }).notNull().default(true),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+}, (table) => ({
+  // Exactly one config row per chat.
+  chatUnique: uniqueIndex('idx_experience_chat_configs_chat').on(table.chatId),
+}));
+
+// ─── experience_sessions ─────────────────────────────────────────────────────
+// A branch-scoped, persistent experience session. Owns chat/branch linkage,
+// the nullable active_slot (unique per branch → at most one active session per
+// branch), pinned rules/visual source snapshots (NO FK — snapshot isolation),
+// initial/current state, monotonic revision, participants, granted
+// capabilities, RP-context mode, report frontier, and the deterministic-random
+// seed/cursor. The seed+cursor persist so a reload/restart resumes the exact
+// stream; recalculation (rules-revision replay) re-seeds from `random_seed`.
+export const experienceSessions = sqliteTable('experience_sessions', {
+  id: text('id').primaryKey(),
+  chatId: text('chat_id').notNull().references(() => chats.id, { onDelete: 'cascade' }),
+  branchId: text('branch_id').notNull().references(() => chatBranches.id, { onDelete: 'cascade' }),
+  // Nullable: a non-null slot marks the branch's active session. The unique
+  // index below allows multiple NULL slots (paused/completed sessions) while
+  // forbidding two sessions from claiming the same active slot in a branch.
+  activeSlot: integer('active_slot'),
+  // ── Pinned rules source snapshot (NO FK — survives any source lifecycle change) ──
+  rulesId: text('rules_id').notNull(),
+  rulesLabel: text('rules_label').notNull(),
+  rulesRevision: integer('rules_revision').notNull(),
+  rulesSource: text('rules_source').notNull(),
+  rulesSourceHash: text('rules_source_hash').notNull(),
+  // ── Pinned visual source snapshot (nullable; NO FK) ──
+  visualId: text('visual_id'),
+  visualLabel: text('visual_label'),
+  visualRevision: integer('visual_revision'),
+  visualSource: text('visual_source'),
+  visualSourceHash: text('visual_source_hash'),
+  // ── Discovered definition (frozen at start) ──
+  apiVersion: integer('api_version').notNull(),
+  manifestId: text('manifest_id').notNull(),
+  manifestName: text('manifest_name').notNull(),
+  // Initial authoritative settings — a deterministic-rebuild / replay input.
+  initialSettingsJson: text('initial_settings_json').notNull(),
+  // Current authoritative state (bounded JSON, round-trips through the kernel).
+  currentStateJson: text('current_state_json').notNull(),
+  status: text('status').notNull().default('active'),
+  // Monotonic revision; increments on every applied transition (CAS target).
+  revision: integer('revision').notNull().default(0),
+  participantsJson: text('participants_json').notNull().default('[]'),
+  capabilityGrantsJson: text('capability_grants_json').notNull().default('[]'),
+  contextMode: text('context_mode').notNull().default('none'),
+  // Highest revision frozen into a queued/bound report (never decreases).
+  reportFrontier: integer('report_frontier').notNull().default(0),
+  randomSeed: text('random_seed').notNull(),
+  randomCursor: integer('random_cursor').notNull().default(0),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+}, (table) => ({
+  // At most one active session per (branch, slot). SQLite treats NULLs as
+  // distinct in a unique index, so paused/completed (NULL-slot) sessions coexist.
+  branchActiveSlotUnique: uniqueIndex('idx_experience_sessions_branch_slot').on(table.branchId, table.activeSlot),
+  chatIdx: index('idx_experience_sessions_chat').on(table.chatId),
+  branchIdx: index('idx_experience_sessions_branch').on(table.branchId),
+}));
+
+// ─── experience_steps ────────────────────────────────────────────────────────
+// The strictly ordered action/effect-result/system journal. Each applied
+// transition appends one row; replay reads this table to rebuild state or
+// recalculate under new rules. `request_id` is unique per session (idempotency:
+// a duplicate request returns the prior applied step, never a second apply).
+export const experienceSteps = sqliteTable('experience_steps', {
+  id: text('id').primaryKey(),
+  sessionId: text('session_id').notNull().references(() => experienceSessions.id, { onDelete: 'cascade' }),
+  // Strictly increasing per session; defines journal order.
+  sequence: integer('sequence').notNull(),
+  // 'action' (a reduce move) | 'effect_result' (a durable effect's outcome
+  // re-entering the reducer) | 'system' (host-only: start/interrupt/finish).
+  kind: text('kind').notNull(),
+  // Idempotency key for action/effect steps; null for system steps.
+  requestId: text('request_id'),
+  expectedRevision: integer('expected_revision'),
+  appliedRevision: integer('applied_revision'),
+  // Actor/controller snapshot (survives participant rename/delete).
+  actorSnapshotJson: text('actor_snapshot_json'),
+  inputJson: text('input_json'),
+  emittedEventsJson: text('emitted_events_json').notNull().default('[]'),
+  emittedEffectsJson: text('emitted_effects_json').notNull().default('[]'),
+  // Hash of the authoritative state AFTER this step (integrity / divergence check).
+  stateHash: text('state_hash'),
+  message: text('message'),
+  createdAt: text('created_at').notNull(),
+}, (table) => ({
+  // Journal order is unique per session.
+  sessionSequenceUnique: uniqueIndex('idx_experience_steps_session_sequence').on(table.sessionId, table.sequence),
+  // request_id unique per session (idempotency net).
+  sessionRequestUnique: uniqueIndex('idx_experience_steps_session_request').on(table.sessionId, table.requestId),
+  sessionIdx: index('idx_experience_steps_session').on(table.sessionId),
+}));
+
+// ─── experience_effects ──────────────────────────────────────────────────────
+// Durable model-effect records. The host persists a request as `pending`
+// BEFORE running the capability work, so a process interruption never silently
+// repeats an external call whose outcome is unknown. Restart reconciles a
+// previously `running` effect to `unknown` (never directly back to `pending`);
+// only an explicit user retry creates a new attempt (incrementing
+// attempt_count), preserving the original effect id and audit history.
+export const experienceEffects = sqliteTable('experience_effects', {
+  id: text('id').primaryKey(),
+  sessionId: text('session_id').notNull().references(() => experienceSessions.id, { onDelete: 'cascade' }),
+  // V1 capability kind: 'model' (atomic non-streaming generation).
+  kind: text('kind').notNull(),
+  // 'pending' | 'running' | 'succeeded' | 'failed' | 'cancelled' | 'unknown'.
+  status: text('status').notNull().default('pending'),
+  // The revision at which the reducer requested this effect.
+  originatingRevision: integer('originating_revision').notNull(),
+  requestJson: text('request_json').notNull(),
+  resultJson: text('result_json'),
+  error: text('error'),
+  attemptCount: integer('attempt_count').notNull().default(0),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+}, (table) => ({
+  sessionIdx: index('idx_experience_effects_session').on(table.sessionId),
+  // Restart scans for in-flight effects to reconcile to 'unknown'.
+  statusIdx: index('idx_experience_effects_status').on(table.status),
+}));
+
+// ─── experience_context_bundles ──────────────────────────────────────────────
+// One frozen RP-context bundle per session (re-captured when the user changes
+// the context mode). Independent from `chat_summaries`: capturing a context
+// bundle never mutates the normal summary surface, and compact-summary
+// generation is an explicit user action (never automatic). The selected-variant
+// snapshots preserve alternating user/assistant identity (not flattened prose).
+export const experienceContextBundles = sqliteTable('experience_context_bundles', {
+  id: text('id').primaryKey(),
+  sessionId: text('session_id').notNull().references(() => experienceSessions.id, { onDelete: 'cascade' }),
+  mode: text('mode').notNull(),
+  branchFrontierRevision: integer('branch_frontier_revision'),
+  messageFrontierPosition: integer('message_frontier_position'),
+  variantsJson: text('variants_json'),
+  compactSummaryJson: text('compact_summary_json'),
+  characterSnapshotJson: text('character_snapshot_json'),
+  personaSnapshotJson: text('persona_snapshot_json'),
+  sourceHashesJson: text('source_hashes_json'),
+  // Provider/model used for a generated compact summary (plain text — survives
+  // provider-profile delete/rename, consistent with message_variants.model_id).
+  providerProfileId: text('provider_profile_id'),
+  modelId: text('model_id'),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+}, (table) => ({
+  // One current bundle per session (upserted on re-capture).
+  sessionUnique: uniqueIndex('idx_experience_context_bundles_session').on(table.sessionId),
+}));
+
+// ─── experience_prompt_overrides ─────────────────────────────────────────────
+// Two layers of user-authored prompt override: one GLOBAL row (scope_type =
+// 'global', character_id NULL) and zero-or-one per character (scope_type =
+// 'character'). Package prompts and per-session participant prompts are SEPARATE
+// immutable layers (not here); editing an override affects new effects only,
+// not already-persisted requests. See the fixed model prompt order in the plan.
+export const experiencePromptOverrides = sqliteTable('experience_prompt_overrides', {
+  id: text('id').primaryKey(),
+  scopeType: text('scope_type').notNull(),
+  characterId: text('character_id').references(() => characters.id, { onDelete: 'cascade' }),
+  content: text('content').notNull().default(''),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+}, (table) => ({
+  // One global + at most one per character. NULL character_id is distinct in
+  // SQLite, so the single global row (scope 'global', character_id NULL) is
+  // unique, and each (scope 'character', character_id) is unique.
+  scopeCharacterUnique: uniqueIndex('idx_experience_prompt_overrides_scope_character').on(table.scopeType, table.characterId),
+}));
+
+// ─── experience_attachments ──────────────────────────────────────────────────
+// Immutable queued/bound RP-result reports and alternating transcripts. Frozen
+// at one revision; later events require an explicit add-to-report action (a
+// queued snapshot never expands silently). Bound to a user message atomically
+// (Wave 5); the hidden state checkpoint is retained as message metadata so a
+// future branch from that message restores the EXACT hidden game state.
+//
+// session_id is plain text with NO FK: a bound attachment is historical RP
+// metadata that must survive the session's own lifecycle (completion/reduction),
+// mirroring the dice no-FK-snapshot rule. bound_message_id CASCADES: deleting
+// the message deletes its bound attachment (explicit cleanup, IR-53).
+export const experienceAttachments = sqliteTable('experience_attachments', {
+  id: text('id').primaryKey(),
+  chatId: text('chat_id').notNull().references(() => chats.id, { onDelete: 'cascade' }),
+  branchId: text('branch_id').notNull().references(() => chatBranches.id, { onDelete: 'cascade' }),
+  // NO FK — historical reference; survives the session lifecycle.
+  sessionId: text('session_id').notNull(),
+  sessionRevision: integer('session_revision').notNull(),
+  // Monotonic queue revision (orders successive freezes within a session).
+  queueRevision: integer('queue_revision').notNull(),
+  // 'report' (public events) | 'transcript' (alternating Messenger dialogue).
+  kind: text('kind').notNull(),
+  publicEventsJson: text('public_events_json').notNull(),
+  // Compact authoritative state checkpoint (hidden; restores on branch fork).
+  hiddenStateCheckpointJson: text('hidden_state_checkpoint_json').notNull(),
+  // Pinned source hashes (survive rules/visual delete).
+  rulesSourceHash: text('rules_source_hash').notNull(),
+  visualSourceHash: text('visual_source_hash'),
+  // NULL while queued; set when bound to a committed user message.
+  boundMessageId: text('bound_message_id').references(() => messages.id, { onDelete: 'cascade' }),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+}, (table) => ({
+  sessionIdx: index('idx_experience_attachments_session').on(table.sessionId),
+  messageIdx: index('idx_experience_attachments_message').on(table.boundMessageId),
+  chatBranchIdx: index('idx_experience_attachments_chat_branch').on(table.chatId, table.branchId),
+}));
