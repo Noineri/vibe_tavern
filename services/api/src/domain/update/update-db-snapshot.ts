@@ -18,7 +18,7 @@
  * write to the database we are trying to photograph.
  */
 
-import { Database } from "bun:sqlite";
+import { Database, SQLiteError } from "bun:sqlite";
 import { mkdir, rm, stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
@@ -30,10 +30,16 @@ export interface SnapshotResult {
 }
 
 /** Attempts at the open + `VACUUM INTO` pair, the first one included. */
-export const SNAPSHOT_ATTEMPTS = 3;
+export const SNAPSHOT_ATTEMPTS = 4;
 
-/** Pause between attempts — long enough for a scanner to let go of a
- *  seconds-old file, short enough that a real failure still fails promptly. */
+/** First pause between attempts; every later one doubles it.
+ *
+ *  A flat 250 ms spent the entire retry budget inside half a second — less time
+ *  than the thing it was riding out. A scanner that has just opened a
+ *  seconds-old file does not reliably let go that fast. Backing off 250 / 500 /
+ *  1000 ms puts the last attempt ~1.75 s in, which is nothing against the cost
+ *  of aborting a user's update, while a genuinely broken snapshot still fails
+ *  in under two seconds. */
 const SNAPSHOT_RETRY_DELAY_MS = 250;
 
 /** Injection points. Both default to the real thing; they exist because the
@@ -53,11 +59,26 @@ export interface SnapshotOptions {
  * SQLITE_CANTOPEN is what Windows produces when an antivirus scanner or the
  * search indexer still holds a handle on a file that was written seconds ago —
  * exactly the situation every pre-update snapshot is taken in. On Linux the
- * same message means something durable, so retrying costs one extra attempt and
+ * same code means something durable, so retrying costs a few extra attempts and
  * changes no outcome.
+ *
+ * The code, not the wording, is the thing to test. One CANTOPEN reaches here
+ * under two different messages, because two different opens can raise it:
+ *
+ *   - `unable to open database file`   — sqlite3_open failing on the *source*.
+ *   - `unable to open database: <path>` — the ATTACH that `VACUUM INTO` performs
+ *     on its *destination*; attach.c formats that one with the filename.
+ *
+ * Matching only the first spelling is what let this through: the observed CI
+ * failure was the second one, naming `backups/pre-update-<version>.db`, so it
+ * was classified as permanent and never retried at all. The message branch
+ * remains because `SQLiteError` cannot be constructed outside bun:sqlite, so an
+ * injected opener — the seam the retry tests drive — can only ever throw a
+ * plain Error.
  */
-function isTransientOpenFailure(message: string): boolean {
-	return /unable to open database file/i.test(message);
+function isTransientOpenFailure(err: Error): boolean {
+	if (err instanceof SQLiteError) return err.code === "SQLITE_CANTOPEN";
+	return /unable to open database\b/i.test(err.message);
 }
 
 /** Open the source read-only and vacuum it into `destination`, retrying while
@@ -78,13 +99,13 @@ async function vacuumWithRetry(
 			}
 			return;
 		} catch (err) {
-			const message = err instanceof Error ? err.message : String(err);
-			if (attempt >= SNAPSHOT_ATTEMPTS || !isTransientOpenFailure(message)) throw err;
+			const failure = err instanceof Error ? err : new Error(String(err));
+			if (attempt >= SNAPSHOT_ATTEMPTS || !isTransientOpenFailure(failure)) throw err;
 			// A torn attempt can leave a partial file behind, and VACUUM INTO
 			// refuses to write over one — without this the retry would fail for a
 			// completely different reason than the one being retried.
 			await rm(destination, { force: true });
-			await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
+			await new Promise((resolve) => setTimeout(resolve, retryDelayMs * 2 ** (attempt - 1)));
 		}
 	}
 }

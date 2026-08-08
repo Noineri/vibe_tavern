@@ -128,7 +128,9 @@ afterEach(async () => {
 
 The same applies to any OS handle a test holds — file descriptors, servers, watchers. On Windows the cleanup step is where the leak surfaces, usually blamed on whichever test ran next.
 
-Closing the handles is necessary but not sufficient: a scanner or the search indexer can hold a file the test just wrote, and SQLite reports that as the same `unable to open database file`. That one is not a test bug and cannot be fixed in the test — `snapshotDatabase` retries it a few times before giving up. Product code that opens a file moments after creating it should expect the same treatment on Windows.
+Closing the handles is necessary but not sufficient: a scanner or the search indexer can hold a file the test just wrote, and SQLite reports that as `SQLITE_CANTOPEN`. That one is not a test bug and cannot be fixed in the test — `snapshotDatabase` retries it with a growing delay before giving up. Product code that opens a file moments after creating it should expect the same treatment on Windows.
+
+Match that condition on the error's `code`, never on its wording. `SQLITE_CANTOPEN` arrives under at least two messages — `unable to open database file` from `sqlite3_open`, and `unable to open database: <path>` from the `ATTACH` that `VACUUM INTO` performs on its *destination*. A retry predicate written against the first spelling alone silently does nothing about the second, which is how the pre-update snapshot went on failing on Windows CI after it was supposedly fixed.
 
 ### Gating: use the smallest scope that stays honest
 
