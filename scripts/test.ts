@@ -18,57 +18,72 @@ export type TestOutputWriter = (message: string) => void;
 const ROOT = resolve(import.meta.dir, "..");
 const BUN = process.execPath;
 
-export function createDbTestCommand(platform: NodeJS.Platform = process.platform): readonly string[] {
+/**
+ * Windows CI runners are slow enough that bun's default 5s per-test timeout
+ * trips on tests that only do a normal amount of SQLite + filesystem work
+ * (a `mkdtemp` + full migration stack per test costs milliseconds on Linux and
+ * seconds there). This is a runner-speed floor, not a product budget, so every
+ * `bun test` invocation gets the same headroom on win32 and the default
+ * everywhere else.
+ */
+export const WINDOWS_TEST_TIMEOUT_MS = 15_000;
+
+export function windowsTimeoutArgs(platform: NodeJS.Platform): readonly string[] {
+	return platform === "win32" ? ["--timeout", String(WINDOWS_TEST_TIMEOUT_MS)] : [];
+}
+
+/** `bun test` invocation for one suite. Flags precede the positional filter. */
+function bunTestCommand(platform: NodeJS.Platform, ...positionals: readonly string[]): readonly string[] {
+	return [BUN, "test", "--only-failures", ...windowsTimeoutArgs(platform), ...positionals];
+}
+
+export function createTestSuites(platform: NodeJS.Platform = process.platform): readonly TestSuite[] {
 	return [
-		BUN,
-		"test",
-		"--only-failures",
-		...(platform === "win32" ? ["--timeout", "15000"] : []),
+		{
+			name: "scripts",
+			cwd: ROOT,
+			command: bunTestCommand(platform, "scripts"),
+		},
+		{
+			name: "domain",
+			cwd: join(ROOT, "packages", "domain"),
+			command: bunTestCommand(platform),
+		},
+		{
+			name: "api-contracts",
+			cwd: join(ROOT, "packages", "api-contracts"),
+			command: bunTestCommand(platform),
+		},
+		{
+			name: "prompt-pipeline",
+			cwd: join(ROOT, "packages", "prompt-pipeline"),
+			command: bunTestCommand(platform),
+		},
+		{
+			name: "import-export",
+			cwd: join(ROOT, "packages", "import-export"),
+			command: bunTestCommand(platform),
+		},
+		{
+			name: "db",
+			cwd: join(ROOT, "packages", "db"),
+			command: bunTestCommand(platform),
+		},
+		{
+			name: "api",
+			cwd: join(ROOT, "services", "api"),
+			command: bunTestCommand(platform),
+		},
+		{
+			// Runs each file in its own subprocess — the timeout lives in scripts/test-web.ts.
+			name: "web",
+			cwd: join(ROOT, "apps", "web"),
+			command: [BUN, "run", "test"],
+		},
 	];
 }
 
-const TEST_SUITES = [
-	{
-		name: "scripts",
-		cwd: ROOT,
-		command: [BUN, "test", "--only-failures", "scripts"],
-	},
-	{
-		name: "domain",
-		cwd: join(ROOT, "packages", "domain"),
-		command: [BUN, "test", "--only-failures"],
-	},
-	{
-		name: "api-contracts",
-		cwd: join(ROOT, "packages", "api-contracts"),
-		command: [BUN, "test", "--only-failures"],
-	},
-	{
-		name: "prompt-pipeline",
-		cwd: join(ROOT, "packages", "prompt-pipeline"),
-		command: [BUN, "test", "--only-failures"],
-	},
-	{
-		name: "import-export",
-		cwd: join(ROOT, "packages", "import-export"),
-		command: [BUN, "test", "--only-failures"],
-	},
-	{
-		name: "db",
-		cwd: join(ROOT, "packages", "db"),
-		command: createDbTestCommand(),
-	},
-	{
-		name: "api",
-		cwd: join(ROOT, "services", "api"),
-		command: [BUN, "test", "--only-failures"],
-	},
-	{
-		name: "web",
-		cwd: join(ROOT, "apps", "web"),
-		command: [BUN, "run", "test"],
-	},
-] as const satisfies readonly TestSuite[];
+const TEST_SUITES = createTestSuites();
 
 async function runTestSuite(suite: TestSuite, testTempRoot: string): Promise<TestSuiteResult> {
 	const startedAt = performance.now();

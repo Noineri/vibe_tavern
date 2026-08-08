@@ -3,7 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import {
-	createDbTestCommand,
+	createTestSuites,
 	runTestCli,
 	runTestSuites,
 	type TestSuite,
@@ -51,9 +51,33 @@ describe("test suite orchestration", () => {
 		}
 	});
 
-	test("allows slower SQLite tests more headroom on Windows only", () => {
-		expect(createDbTestCommand("win32")).toContain("15000");
-		expect(createDbTestCommand("linux")).not.toContain("--timeout");
+	test("gives every bun:test suite more headroom on Windows only", () => {
+		// Windows runners are slow enough that bun's default 5s per-test timeout
+		// trips on any suite that touches SQLite and the filesystem — `db` was
+		// only the first one to hit it, `api` (avatar adapter) was the second.
+		const windows = createTestSuites("win32").filter((suite) => suite.command[1] === "test");
+		expect(windows.map((suite) => suite.name)).toEqual([
+			"scripts",
+			"domain",
+			"api-contracts",
+			"prompt-pipeline",
+			"import-export",
+			"db",
+			"api",
+		]);
+		for (const suite of windows) {
+			expect(suite.command).toContain("--timeout");
+			expect(suite.command).toContain("15000");
+		}
+
+		for (const suite of createTestSuites("linux")) {
+			expect(suite.command).not.toContain("--timeout");
+		}
+	});
+
+	test("keeps bun test flags ahead of the positional filter", () => {
+		const scripts = createTestSuites("win32").find((suite) => suite.name === "scripts");
+		expect(scripts?.command.at(-1)).toBe("scripts");
 	});
 
 	test("continues after a failed suite and captures every result", async () => {

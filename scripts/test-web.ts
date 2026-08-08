@@ -2,6 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { parseArgs } from "node:util";
+import { windowsTimeoutArgs } from "./test.js";
 
 interface TestFileResult {
 	readonly file: string;
@@ -84,10 +85,27 @@ async function validateFiles(root: string, files: readonly string[], write: Outp
 	return true;
 }
 
+/** Per-file `bun test` invocation. Windows headroom: see scripts/test.ts. */
+export function createWebTestFileCommand(
+	file: string,
+	reportPath: string,
+	platform: NodeJS.Platform = process.platform,
+): readonly string[] {
+	return [
+		process.execPath,
+		"test",
+		...windowsTimeoutArgs(platform),
+		file,
+		"--reporter=junit",
+		"--reporter-outfile",
+		reportPath,
+	];
+}
+
 async function runTestFile(root: string, file: string, reportPath: string): Promise<TestFileResult> {
 	try {
 		const child = Bun.spawn(
-			[process.execPath, "test", file, "--reporter=junit", "--reporter-outfile", reportPath],
+			[...createWebTestFileCommand(file, reportPath)],
 			{
 				cwd: root,
 				stdout: "pipe",

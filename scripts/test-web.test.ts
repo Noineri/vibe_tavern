@@ -2,7 +2,7 @@ import { afterEach, expect, test } from "bun:test";
 import { mkdir, mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { discoverWebTestFiles, runWebTestCli } from "./test-web.js";
+import { createWebTestFileCommand, discoverWebTestFiles, runWebTestCli } from "./test-web.js";
 
 interface CliResult {
 readonly exitCode: number;
@@ -42,6 +42,15 @@ async function runCli(root: string, args: readonly string[]): Promise<CliResult>
 	);
 	return { exitCode, output: output.join("\n"), errors: errors.join("\n") };
 }
+
+test("gives each web test file more headroom on Windows only", () => {
+	// Same hazard as the packages/services suites: a slow Windows runner blows
+	// through bun's default 5s per-test timeout. See scripts/test.ts.
+	const windows = createWebTestFileCommand("a.test.tsx", "report.xml", "win32");
+	expect(windows).toContain("--timeout");
+	expect(windows).toContain("15000");
+	expect(createWebTestFileCommand("a.test.tsx", "report.xml", "linux")).not.toContain("--timeout");
+});
 
 test("discovers normalized source tests in lexical order and appends the harness canary", async () => {
 	// Given
