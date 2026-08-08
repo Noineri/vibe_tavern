@@ -371,7 +371,8 @@ describe("IR-22 — fork-copy attachments: fresh id, rebound, snapshot preserved
 
     const forked = await chatStore.forkBranch(
       "chat_1", assistant.id, "xp fork",
-      (tx, msgIdMap) => store.forkCopyAttachmentsInTx(tx, msgIdMap),
+      undefined,
+      (tx, msgIdMap, newBranchId) => store.forkCopyAttachmentsInTx(tx, msgIdMap, newBranchId),
     );
 
     const forkedMsgs = await messageStore.getMessages(forked.id);
@@ -414,7 +415,7 @@ describe("IR-22 — fork-copy attachments: fresh id, rebound, snapshot preserved
     });
     expect(() =>
       db.transaction((tx) => {
-        const n = store.forkCopyAttachmentsInTx(tx, new Map([[userMsg.id, targetMsg.id]]));
+        const n = store.forkCopyAttachmentsInTx(tx, new Map([[userMsg.id, targetMsg.id]]), "branch_1");
         expect(n).toBe(1); // the copy happened inside the tx…
         throw new Error("simulate caller failure");
       }),
@@ -437,7 +438,8 @@ describe("IR-22 — fork-copy attachments: fresh id, rebound, snapshot preserved
     });
     const forked = await chatStore.forkBranch(
       "chat_1", assistant.id, "noatt",
-      (tx, msgIdMap) => store.forkCopyAttachmentsInTx(tx, msgIdMap),
+      undefined,
+      (tx, msgIdMap, newBranchId) => store.forkCopyAttachmentsInTx(tx, msgIdMap, newBranchId),
     );
     const forkedMsgs = await messageStore.getMessages(forked.id);
     for (const m of forkedMsgs) {

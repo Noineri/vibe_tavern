@@ -838,11 +838,16 @@ export class ExperienceStore {
    * Fork-copy core: copy every attachment bound to a source message id onto its
    * corresponding new message id, within the caller's transaction. Used by
    * `ChatStore.forkBranch` (Wave 5) so the attachment copy is atomic with the
-   * message/variant copy. Copied attachments get a fresh id and rebind to the
-   * forked message; the immutable snapshot (events, hidden checkpoint, source
-   * hashes, queue revision) is preserved.
+   * message/variant copy. Copied attachments get a fresh id, rebind to the
+   * forked message, and land on `newBranchId` (the forked branch — NOT the
+   * source branch, so the FK `branch_id → chat_branches` cascade and the
+   * branchId query stay correct on the new branch); the immutable snapshot
+   * (events, hidden checkpoint, source hashes, queue revision, session id) is
+   * preserved verbatim. Unlike `DiceRollStore.forkCopyRollsInTx` (dice rolls
+   * carry no branch_id), this core needs the new branch id because the
+   * `experience_attachments.branch_id` column is real and FK-cascade-backed.
    */
-  forkCopyAttachmentsInTx(tx: DbTransaction, msgIdMap: Map<string, string>): number {
+  forkCopyAttachmentsInTx(tx: DbTransaction, msgIdMap: Map<string, string>, newBranchId: string): number {
     if (msgIdMap.size === 0) return 0;
     const sourceRows = tx
       .select()
@@ -855,7 +860,7 @@ export class ExperienceStore {
     const copies: (typeof experienceAttachments.$inferInsert)[] = sourceRows.map((src) => ({
       id: this.idGen.next('xa'),
       chatId: src.chatId,
-      branchId: src.branchId,
+      branchId: newBranchId,
       sessionId: src.sessionId,
       sessionRevision: src.sessionRevision,
       queueRevision: src.queueRevision,

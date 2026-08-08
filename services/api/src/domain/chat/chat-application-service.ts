@@ -261,13 +261,16 @@ export class ChatApplicationService {
   }
 
   async createBranch(chatId: ChatId, input: CreateBranchRequest): Promise<CreateBranchResponse> {
-    // DICE-B12: clone bound Dice rolls onto the new forked messages inside the
-    // fork transaction (atomic + synchronous — rolls back with the fork).
+    // DICE-B12 + IR-53: clone bound Dice rolls AND bound experience
+    // attachments onto the new forked messages inside the fork transaction
+    // (atomic + synchronous — both roll back with the fork). Only bindings on
+    // copied messages (position <= fork point) move; later unsent state stays.
     const branch = await this.chatStore.forkBranch(
       chatId,
       input.forkedFromMessageId ?? "",
       input.label,
       (tx, msgIdMap) => this.diceRollStore.forkCopyRollsInTx(tx, msgIdMap),
+      (tx, msgIdMap, newBranchId) => this.experienceStore.forkCopyAttachmentsInTx(tx, msgIdMap, newBranchId),
     );
 
     if (input.activateFork !== false) {
