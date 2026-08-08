@@ -23,6 +23,7 @@
     "build:linux-dist": "bun scripts/build-linux-dist.ts",
     "build:windows-dist": "bun scripts/build-windows-dist.ts",
     "build:installer": "bun scripts/build-installer.ts",
+    "build:npm-dist": "bun scripts/build-npm-dist.ts",
     "dev": "bun apps/web/dev-server.ts",
     "prod": "bun run build && bun services/api/src/server/prod-server.ts",
     "typecheck": "bun scripts/type-gate.ts && bun run --filter '*' typecheck",

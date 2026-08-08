@@ -63,24 +63,40 @@ function defaultDataDir(): string {
 	return resolve(homedir(), ".local", "share", "vibe-tavern");
 }
 
-async function defaultWebDir(): Promise<string> {
-	const exeDir = resolve(process.execPath, "..");
-	const exeWebDir = resolve(exeDir, "web");
-	if (await Bun.file(resolve(exeWebDir, "index.html")).exists()) {
-		return exeWebDir;
+/**
+ * Where `web/` sits relative to the running program.
+ *
+ * `baseDir` exists because the anchor is not the same in every distribution.
+ * A compiled binary keeps web/ next to the executable, so process.execPath is
+ * right. An npm install runs under the USER'S bun — process.execPath points at
+ * ~/.bun/bin/bun, nowhere near the package — so npm-server.ts passes its own
+ * import.meta.dir instead.
+ */
+async function defaultWebDir(baseDir: string | undefined): Promise<string> {
+	const anchor = baseDir ?? resolve(process.execPath, "..");
+	const anchoredWebDir = resolve(anchor, "web");
+	if (await Bun.file(resolve(anchoredWebDir, "index.html")).exists()) {
+		return anchoredWebDir;
 	}
 
 	return resolve(process.cwd(), "out", "apps", "web");
 }
 
-export async function resolveStandalonePaths(): Promise<StandalonePaths> {
+export interface StandalonePathOptions {
+	/** Anchor for `web/`. Defaults to the executable's directory. */
+	readonly baseDir?: string;
+}
+
+export async function resolveStandalonePaths(
+	options: StandalonePathOptions = {},
+): Promise<StandalonePaths> {
 	const dataDir = process.env.VIBE_TAVERN_DATA_DIR
 		? resolve(process.env.VIBE_TAVERN_DATA_DIR)
 		: defaultDataDir();
 
 	const webDir = process.env.VIBE_TAVERN_WEB_DIR
 		? resolve(process.env.VIBE_TAVERN_WEB_DIR)
-		: await defaultWebDir();
+		: await defaultWebDir(options.baseDir);
 
 	const webEnabled = await Bun.file(resolve(webDir, "index.html")).exists();
 

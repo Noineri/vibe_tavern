@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { classifyInstallKind, detectInstallKind } from "../src/domain/update/update-orchestrator.js";
 
 const baseInput = {
+	declaredKind: undefined,
 	dockerEnv: undefined,
 	isCompiled: true,
 	platform: "linux" as const,
@@ -10,6 +11,38 @@ const baseInput = {
 };
 
 describe("classifyInstallKind", () => {
+	it("returns 'npm' when the build declares it, on inputs that would otherwise read as 'standalone'", () => {
+		// This is the case that matters: build-npm-dist.ts defines
+		// VIBE_TAVERN_VERSION (so isCompiled is true) and the bundle runs under
+		// the user's own bun (so execPath is ~/.bun/bin/bun and no marker
+		// exists). Without the declared kind this input classifies as
+		// "standalone", which would point the binary-swap updater at ~/.bun/bin.
+		const result = classifyInstallKind({
+			...baseInput,
+			declaredKind: "npm",
+			isCompiled: true,
+			execPath: "/home/user/.bun/bin/bun",
+		});
+		expect(result).toBe("npm");
+	});
+
+	it("lets the declared kind win over an inferred docker signal", () => {
+		// The declare comes from the build, the env var from the environment.
+		// A stray VIBE_TAVERN_DOCKER in a user's shell must not re-label an
+		// npm install as Docker and hand it the wrong update strategy.
+		const result = classifyInstallKind({
+			...baseInput,
+			declaredKind: "npm",
+			dockerEnv: "1",
+		});
+		expect(result).toBe("npm");
+	});
+
+	it("ignores an unrecognised declared kind and falls back to inference", () => {
+		const result = classifyInstallKind({ ...baseInput, declaredKind: "homebrew" });
+		expect(result).toBe("standalone");
+	});
+
 	it("returns 'docker' when VIBE_TAVERN_DOCKER=1, even in a non-compiled (dev-like) runtime", () => {
 		const result = classifyInstallKind({
 			...baseInput,

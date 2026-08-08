@@ -137,6 +137,71 @@ jobs:
           ISCC_PATH: "C:\\Program Files (x86)\\Inno Setup 6\\ISCC.exe"
       - run: bun scripts/build-windows-dist.ts
 
+  # The npm channel is verified in two stages, mirroring how it actually ships:
+  # packed ONCE on Linux (that tarball is what reaches the registry), then
+  # installed for real on all three platforms. Building per-OS would test three
+  # artifacts nobody publishes; this tests the one that is.
+  build-npm:
+    needs: [typecheck]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.14"
+      - run: bun install --frozen-lockfile
+      - run: bun scripts/build-npm-dist.ts
+      # Validates the generated manifest and the file list against the registry's
+      # rules without publishing anything. Catches a malformed `bin`, a missing
+      # LICENSE, or a `repository.url` that would fail trusted publishing.
+      - name: Validate publishable manifest
+        run: npm publish --dry-run
+        working-directory: out/npm-dist
+      - name: Pack tarball
+        run: npm pack --pack-destination "$RUNNER_TEMP"
+        working-directory: out/npm-dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: npm-tarball
+          path: ${{ runner.temp }}/*.tgz
+          if-no-files-found: error
+          retention-days: 7
+
+  smoke-npm:
+    needs: [build-npm]
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.14"
+      # No `bun install` — the point is to install the PACKAGED artifact the way
+      # a user does. Repo node_modules would only hide a missing bundled dep.
+      - uses: actions/download-artifact@v4
+        with:
+          name: npm-tarball
+          path: npm-artifact
+      - run: bun scripts/smoke-npm-install.ts npm-artifact
+
+  # Self-update needs two versions to exist in a resolvable registry, so it
+  # cannot be folded into smoke-npm. Linux only: the thing under test is the
+  # update pipeline, not platform filesystem behaviour, and smoke-npm already
+  # covers the install on all three.
+  selfupdate-npm:
+    needs: [typecheck]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.14"
+      - run: bun install --frozen-lockfile
+      - run: bun scripts/smoke-npm-selfupdate.ts
+
   build-docker:
     needs: [typecheck]
     runs-on: ubuntu-latest
