@@ -80,19 +80,32 @@ export interface DeterministicRandom {
 
 /**
  * mulberry32 — a tiny deterministic PRNG (same algorithm as the prompt-script
- * VM's seeded helper). Seeded once per session; the cursor advances across
- * every draw, so replay reproduces the stream. Production persists the seed
- * (Wave 2); the cursor is reproduced by replaying, not stored.
+ * VM's seeded helper). Exported so the lifecycle service can build a cursor-
+ * counting wrapper on top of the SAME primitive (single source of truth for the
+ * stream algorithm): the service pre-advances to a persisted cursor on resume
+ * and counts subsequent draws so it can store the new cursor after each reduce.
+ */
+export function createMulberry32(seed: number): { next(): number } {
+	let state = seed >>> 0;
+	return {
+		next(): number {
+			state |= 0;
+			state = (state + 0x6d2b79f5) | 0;
+			let t = Math.imul(state ^ (state >>> 15), 1 | state);
+			t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+			return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+		},
+	};
+}
+
+/**
+ * A stateful {@link DeterministicRandom} seeded once per session. The cursor
+ * (count of draws consumed) is persisted alongside the seed (IR-21); resume
+ * fast-forwards the stream to that cursor, and recalculation replay reproduces
+ * it from the seed. Both paths use {@link createMulberry32}.
  */
 export function createDeterministicRandom(seed: number): DeterministicRandom {
-	let state = seed >>> 0;
-	const next = (): number => {
-		state |= 0;
-		state = (state + 0x6d2b79f5) | 0;
-		let t = Math.imul(state ^ (state >>> 15), 1 | state);
-		t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-		return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-	};
+	const { next } = createMulberry32(seed);
 	return {
 		float: () => next(),
 		int: (min: number, max: number): number => {
