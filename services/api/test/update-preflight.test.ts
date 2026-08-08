@@ -7,12 +7,13 @@
  */
 
 import { Database } from "bun:sqlite";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { mkdir, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { checkFreeSpace, estimateRequiredBytes } from "../src/server/update-preflight.js";
-import { snapshotDatabase, snapshotPathFor } from "../src/domain/update/update-db-snapshot.js";
+import { SNAPSHOT_ATTEMPTS, snapshotDatabase, snapshotPathFor } from "../src/domain/update/update-db-snapshot.js";
 
 let root = "";
 
@@ -200,5 +201,91 @@ describe("snapshotDatabase", () => {
 		// baseline actually described the fixture's schema.
 		expect(before.map((r) => r.name)).toContain("chats");
 		expect(schemaOf().map((r) => r.name)).not.toContain("__drizzle_migrations");
+	});
+
+	// ── Transient SQLITE_CANTOPEN is retried ───────────────────────────────
+	//
+	// Windows hands out "unable to open database file" when an antivirus or the
+	// search indexer momentarily holds a handle on a file that was created
+	// seconds ago — which is precisely the shape of every snapshot the updater
+	// takes. The retry is driven through the `openSource` seam rather than by
+	// sabotaging the filesystem: mode bits are inert on Windows, so a real
+	// injection there would fail open and the pin would prove nothing.
+
+	/** An opener that fails the first `failures` calls, then behaves normally. */
+	function flakyOpener(failures: number, message: string, onFail?: (destination: string) => void) {
+		const state = { calls: 0 };
+		const open = (path: string): Database => {
+			state.calls++;
+			if (state.calls <= failures) {
+				onFail?.(path);
+				throw new Error(message);
+			}
+			return new Database(path, { readonly: true });
+		};
+		return { state, open };
+	}
+
+	it("retries a transient 'unable to open database file' instead of giving up", async () => {
+		const { dbPath, dataDir } = await makeWalDb(20);
+		const opener = flakyOpener(1, "unable to open database file");
+
+		const result = await snapshotDatabase(dbPath, dataDir, "4.0.0", {
+			openSource: opener.open,
+			retryDelayMs: 0,
+		});
+
+		expect(result.ok).toBe(true);
+		expect(opener.state.calls).toBe(2);
+		const snap = new Database(result.path ?? "", { readonly: true });
+		openDatabases.push(snap);
+		expect((snap.query("SELECT COUNT(*) AS n FROM chats").get() as { n: number }).n).toBe(20);
+	});
+
+	it("clears a partial destination between attempts — VACUUM INTO refuses to overwrite", async () => {
+		const { dbPath, dataDir } = await makeWalDb(3);
+		const destination = snapshotPathFor(dataDir, "5.0.0");
+		// A half-written snapshot is what a torn VACUUM INTO leaves behind. If the
+		// retry did not clear it, the second attempt would fail for a brand-new
+		// reason ("output file already exists") and the retry would be useless.
+		const opener = flakyOpener(1, "unable to open database file", () => {
+			mkdirSync(dirname(destination), { recursive: true });
+			writeFileSync(destination, "torn write");
+		});
+
+		const result = await snapshotDatabase(dbPath, dataDir, "5.0.0", {
+			openSource: opener.open,
+			retryDelayMs: 0,
+		});
+
+		expect(result.ok).toBe(true);
+		expect(result.bytes).toBeGreaterThan("torn write".length);
+	});
+
+	it("gives up after the attempt budget and reports the failure", async () => {
+		const { dbPath, dataDir } = await makeWalDb(1);
+		const opener = flakyOpener(Number.MAX_SAFE_INTEGER, "unable to open database file");
+
+		const result = await snapshotDatabase(dbPath, dataDir, "6.0.0", {
+			openSource: opener.open,
+			retryDelayMs: 0,
+		});
+
+		expect(result.ok).toBe(false);
+		expect(opener.state.calls).toBe(SNAPSHOT_ATTEMPTS);
+		expect(result.message ?? "").toMatch(/unable to open database file/);
+	});
+
+	it("does not retry a failure that is not a transient open", async () => {
+		const { dbPath, dataDir } = await makeWalDb(1);
+		const opener = flakyOpener(Number.MAX_SAFE_INTEGER, "disk I/O error");
+
+		const result = await snapshotDatabase(dbPath, dataDir, "7.0.0", {
+			openSource: opener.open,
+			retryDelayMs: 0,
+		});
+
+		expect(result.ok).toBe(false);
+		expect(opener.state.calls).toBe(1);
 	});
 });

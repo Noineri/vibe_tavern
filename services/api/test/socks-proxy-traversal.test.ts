@@ -61,11 +61,27 @@ const SOCKS_PASS = "socks-upstream-secret";
 const TARGET_HOST = "provider.test";
 
 // ─── Delayed-stream constants ──────────────────────────────────────────────
-/** Gap between the first and second SSE chunks — proves streaming is live. */
-const STREAM_DELAY_MS = 300;
-/** Deadline for the first chunk — well under the gap so a buffered response
- *  (the known failure mode) would fail this assertion. Declared AND asserted. */
-const FIRST_CHUNK_DEADLINE_MS = 150;
+/**
+ * Gap between the first and second SSE chunks — proves streaming is live.
+ *
+ * Generous on purpose. The streaming pin below is an ORDERING check, not a
+ * latency budget, so this gap only has to outlast the scheduler stall between
+ * the client receiving chunk one and the test observing it. Windows CI runners
+ * routinely stall for seconds at a time; the previous 300 ms gap with a 150 ms
+ * first-chunk deadline turned one such stall into a red build (171 ms measured).
+ */
+const STREAM_DELAY_MS = 1_500;
+
+/**
+ * Flipped by the fixture the instant it produces the delayed second chunk.
+ *
+ * The streaming test reads it once the FIRST chunk has arrived: still `false`
+ * means the client had chunk one before the server had even written chunk two,
+ * which is exactly what "not buffered" means — and it stays true regardless of
+ * how slow the machine is. Reset per response; the tests in this file run
+ * sequentially, so a single module-level flag is unambiguous.
+ */
+let secondChunkSent = false;
 
 // ─── HTTPS target (the provider endpoint) ──────────────────────────────────
 
@@ -95,12 +111,14 @@ function targetResponse(request: Request): Response | Promise<Response> {
 function delayedStreamResponse(): Response {
 	const firstChunk = `data: ${JSON.stringify({ id: "chat_1", object: "chat.completion.chunk", created: 0, model: "test-model", choices: [{ index: 0, delta: { role: "assistant", content: "early" }, finish_reason: null }] })}\n\n`;
 	const secondChunk = `data: ${JSON.stringify({ id: "chat_1", object: "chat.completion.chunk", created: 0, model: "test-model", choices: [{ index: 0, delta: { content: "-delayed" }, finish_reason: "stop" }] })}\n\n`;
+	secondChunkSent = false;
 	return new Response(
 		new ReadableStream({
 			async start(controller) {
 				const enc = new TextEncoder();
 				controller.enqueue(enc.encode(firstChunk));
 				await new Promise((resolve) => setTimeout(resolve, STREAM_DELAY_MS));
+				secondChunkSent = true;
 				controller.enqueue(enc.encode(secondChunk));
 				controller.enqueue(enc.encode("data: [DONE]\n\n"));
 				controller.close();
@@ -421,14 +439,15 @@ describe("SOCKS5 provider proxy traversal", () => {
 		// the SAME iterator. Iterating textStream twice (break then re-iterate)
 		// would create a second iterator over an already-advanced stream.
 		const iterator = result.textStream[Symbol.asyncIterator]();
-		const start = Date.now();
 		const first = await iterator.next();
-		const elapsed = Date.now() - start;
 		expect(first.done).toBe(false);
 		expect(first.value.length).toBeGreaterThan(0);
-		// The first chunk must arrive well under the second chunk's delay — a
-		// buffered response (the known failure mode) would exceed this deadline.
-		expect(elapsed).toBeLessThan(FIRST_CHUNK_DEADLINE_MS);
+		// The first chunk reached the client before the server produced the
+		// second. A buffered response — the known failure mode — could only
+		// deliver chunk one after the whole body was written, so this flag would
+		// already be true. Ordering, not wall clock: a stalled runner cannot
+		// turn it red.
+		expect(secondChunkSent).toBe(false);
 
 		// Drain the rest through the SAME iterator so the stream completes.
 		let fullText = first.value;
