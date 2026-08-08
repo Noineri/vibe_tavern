@@ -55,17 +55,33 @@ async function run(command: string[], label: string): Promise<string> {
 	return stdout.trim();
 }
 
-/** The installed launcher, whatever the platform names it. */
+/**
+ * The installed launcher, whatever the platform names it.
+ *
+ * Windows gets THREE files from a global bun install — `vibe-tavern`,
+ * `vibe-tavern.bunx` and `vibe-tavern.exe` — and only the `.exe` can be
+ * spawned. Picking by "first entry whose name starts with the package name"
+ * selects `.bunx` (it sorts before `.exe`), which fails with a baffling
+ * "Executable not found in $PATH" naming a file that plainly exists. Hence an
+ * explicit, ordered candidate list rather than a prefix match.
+ */
 async function findInstalledBinary(): Promise<string> {
 	const binDir = (await run(["bun", "pm", "bin", "-g"], "bun pm bin -g")).trim();
 	if (binDir.length === 0) fail("`bun pm bin -g` printed nothing — cannot locate the global bin directory.");
 
+	const candidates =
+		process.platform === "win32"
+			? [`${PACKAGE_NAME}.exe`, `${PACKAGE_NAME}.cmd`, `${PACKAGE_NAME}.bat`]
+			: [PACKAGE_NAME];
+
 	const entries = await readdir(binDir).catch(() => [] as string[]);
-	// POSIX installs a bare `vibe-tavern`; Windows gets a launcher with an
-	// extension. Match on the stem so neither is hardcoded.
-	const match = entries.find((name) => name === PACKAGE_NAME || name.startsWith(`${PACKAGE_NAME}.`));
+	const match = candidates.find((name) => entries.includes(name));
 	if (match === undefined) {
-		fail(`No ${PACKAGE_NAME} launcher in ${binDir}. Present: ${entries.join(", ") || "(empty)"}`);
+		fail(
+			`No runnable ${PACKAGE_NAME} launcher in ${binDir}.\n` +
+				`  Looked for: ${candidates.join(", ")}\n` +
+				`  Present:    ${entries.join(", ") || "(empty)"}`,
+		);
 	}
 	return join(binDir, match);
 }
