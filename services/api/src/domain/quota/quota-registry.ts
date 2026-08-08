@@ -64,14 +64,26 @@ const PRESET_CAPABILITIES = {
 	openai: notExposed("/v1/organization/usage requires an Admin key — a different credential class."),
 	anthropic: notExposed("Usage and cost APIs are Admin-API only; a regular key sees rate-limit headers at most."),
 	google: notExposed("Quota and billing are visible only in the AI Studio UI."),
-	xai: notExposed("Billing requires a Management API key plus a team id."),
-	groq: notExposed("Exposes rate-limit response headers only, no usage endpoint."),
-	mistral: notExposed("Org-scoped APIs need organization access, not an inference key."),
+	xai: notExposed("Billing requires a Management API key plus a team id; CodexBar ships no xAI usage fetcher either."),
+	// CodexBar's GroqUsageFetcher does hit a plain-key endpoint
+	// (`/metrics/prometheus/api/v1/query`), but every series it reads is a RATE
+	// (requests/sec, tokens/sec) — throughput with no ceiling. A rate has no
+	// denominator, so it cannot become a `usedPercent`, and it is not money
+	// either: it fits neither snapshot kind.
+	groq: notExposed("Only a Prometheus throughput-rate endpoint — rates have no quota ceiling to measure against."),
+	mistral: notExposed("CodexBar reads Mistral usage through browser cookies; no inference-key endpoint exists."),
 	fireworks: notExposed("Account-scoped quotas, unconfirmed for inference keys."),
-	perplexity: notExposed("No usage or balance endpoint documented."),
+	perplexity: notExposed("CodexBar reads Perplexity usage through browser cookies; no API-key endpoint exists."),
 	ai21: notExposed("No billing endpoint documented."),
-	mimo: notExposed("No citable key-auth usage endpoint found."),
-	chutes: notExposed("No citable key-auth usage endpoint found."),
+	mimo: notExposed("CodexBar reads MiMo usage through a platform browser session; no API-key endpoint exists."),
+	// NOT settled: CodexBar's ChutesUsageFetcher DOES use a plain key against
+	// `/users/me/subscription_usage` (falling back to `/users/me/quotas` plus a
+	// per-quota `/users/me/quota_usage/{id}` fan-out). What is missing here is the
+	// response SHAPE — CodexBar's own parser is a key-walker that searches a dozen
+	// spellings per field precisely because the shape is not pinned, and guessing
+	// one is what produced the first round of broken adapters. Needs one captured
+	// response from a real Chutes key before an adapter can be written honestly.
+	chutes: notExposed("Endpoint exists (/users/me/subscription_usage) but its response shape is unverified."),
 	electronhub: notExposed("No citable key-auth usage endpoint found."),
 	siliconflow: notExposed("No citable key-auth usage endpoint found."),
 	pollinations: notExposed("No citable key-auth usage endpoint found."),

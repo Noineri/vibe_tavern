@@ -26,9 +26,9 @@ import {
 	QuotaNormalizationError,
 	assertAllowedOrigin,
 	assignDistinctWindowKinds,
-	clampPercent,
 	toCanonicalInstant,
 	toNumber,
+	toUsedPercent,
 	trimTrailingSlash,
 	windowKindForMinutes,
 } from "../quota-normalize.js";
@@ -99,11 +99,11 @@ function usedPercentOf(detail: KimiDetail): number | null {
 
 	if (detail.used !== undefined) {
 		const used = toNumber(detail.used);
-		if (used >= 0) return clampPercent((used / limit) * 100);
+		if (used >= 0) return toUsedPercent(used, limit);
 	}
 	if (detail.remaining !== undefined) {
 		const remaining = toNumber(detail.remaining);
-		if (remaining >= 0 && remaining <= limit) return clampPercent(((limit - remaining) / limit) * 100);
+		if (remaining >= 0 && remaining <= limit) return toUsedPercent(limit - remaining, limit);
 	}
 	return null;
 }

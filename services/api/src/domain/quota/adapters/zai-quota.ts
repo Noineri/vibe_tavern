@@ -62,7 +62,6 @@ const limitSchema = z.object({
 	percentage: numeric.optional(),
 	/** Epoch milliseconds. */
 	nextResetTime: numeric.nullable().optional(),
-	planName: z.string().optional(),
 }).passthrough();
 
 const responseSchema = z.object({

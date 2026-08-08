@@ -63,6 +63,8 @@ describe("zai adapter", () => {
 			spec: zaiQuotaAdapter.buildRequests("https://api.z.ai/api/paas/v4", "sk")[0]!,
 			json: {
 				data: {
+					// The plan name is an account-level field, not a per-record one.
+					planName: "GLM Coding Pro",
 					limits: [{
 						type: "TOKENS_LIMIT",
 						unit: 3,
@@ -70,7 +72,6 @@ describe("zai adapter", () => {
 						usage: 200,
 						currentValue: 50,
 						percentage: 99,
-						planName: "GLM Coding Pro",
 					}],
 				},
 			},
@@ -80,18 +81,65 @@ describe("zai adapter", () => {
 		]);
 	});
 
-	test("a window with no usage figure at all throws rather than reading as zero", () => {
-		expect(() => zaiQuotaAdapter.normalize([{
+	test("a window with no usage figure at all is dropped, never rendered as 0%", () => {
+		const reading = zaiQuotaAdapter.normalize([{
 			spec: zaiQuotaAdapter.buildRequests("https://api.z.ai/api/paas/v4", "sk")[0]!,
 			json: { data: { limits: [{ type: "TOKENS_LIMIT", unit: 3, number: 5 }] } },
-		}])).toThrow(/neither a token count nor a percentage/);
+		}]);
+		expect(reading.windows).toEqual([]);
 	});
 
-	test("an unknown unit enum is an error, not a silent window", () => {
-		expect(() => zaiQuotaAdapter.normalize([{
+	test("a response with no limits array at all is a state, not a parse failure", () => {
+		const reading = zaiQuotaAdapter.normalize([{
 			spec: zaiQuotaAdapter.buildRequests("https://api.z.ai/api/paas/v4", "sk")[0]!,
-			json: { data: { limits: [{ type: "TOKENS_LIMIT", unit: 99, number: 1, usage: 10, currentValue: 1 }] } },
-		}])).toThrow(/Unknown Z.AI window unit/);
+			json: { code: 200, success: true, data: { level: "lite" } },
+		}]);
+		expect(reading.windows).toEqual([]);
+	});
+
+	test("an unknown unit enum drops that window without losing the others", () => {
+		const reading = zaiQuotaAdapter.normalize([{
+			spec: zaiQuotaAdapter.buildRequests("https://api.z.ai/api/paas/v4", "sk")[0]!,
+			json: {
+				data: {
+					limits: [
+						{ type: "TOKENS_LIMIT", unit: 99, number: 1, usage: 10, currentValue: 1 },
+						{ type: "TOKENS_LIMIT", unit: 3, number: 5, usage: 200, currentValue: 50 },
+					],
+				},
+			},
+		}]);
+		// A sixth unit enum must cost that ONE window, not the whole reading.
+		expect(reading.windows).toEqual([
+			{ kind: "session", label: "TOKENS_LIMIT", usedPercent: 25, resetsAt: null },
+		]);
+	});
+
+	test("remaining and currentValue disagreeing takes the larger consumed figure", () => {
+		const reading = zaiQuotaAdapter.normalize([{
+			spec: zaiQuotaAdapter.buildRequests("https://api.z.ai/api/paas/v4", "sk")[0]!,
+			// remaining says 60 used, currentValue says 90 — CodexBar trusts the larger.
+			json: {
+				data: {
+					limits: [{ type: "TOKENS_LIMIT", unit: 3, number: 5, usage: 200, remaining: 140, currentValue: 90 }],
+				},
+			},
+		}]);
+		expect(reading.windows?.[0]?.usedPercent).toBe(45);
+	});
+
+	test("the plan name is taken from whichever alias the account carries", () => {
+		const reading = zaiQuotaAdapter.normalize([{
+			spec: zaiQuotaAdapter.buildRequests("https://api.z.ai/api/paas/v4", "sk")[0]!,
+			json: {
+				data: {
+					packageName: "  GLM Coding Max  ",
+					level: "pro",
+					limits: [{ type: "TOKENS_LIMIT", unit: 3, number: 5, percentage: 10 }],
+				},
+			},
+		}]);
+		expect(reading.windows?.[0]?.label).toBe("GLM Coding Max");
 	});
 
 	test("a missing data envelope is a zod error, not a zero reading", () => {
@@ -108,12 +156,36 @@ describe("kimi adapter", () => {
 		expect(specs[0]!.url).toBe("https://api.kimi.com/coding/v1/usages");
 	});
 
-	test("parses string numerics and both reset-key spellings", async () => {
+	test("reads the top-level usage as the weekly quota and limits[] as rate windows", async () => {
 		const reading = await normalizeWith(kimiQuotaAdapter, "https://api.kimi.com/coding/v1", { usages: "kimi" });
+		// The live shape: `usage` has used+remaining, the rate window has ONLY
+		// remaining, and both are string numerics.
 		expect(reading.windows).toEqual([
-			{ kind: "session", label: "5 h", usedPercent: 88, resetsAt: "2026-08-07T13:30:00.000Z" },
-			{ kind: "weekly", label: "7 d", usedPercent: 20, resetsAt: "2026-08-11T00:00:00.000Z" },
+			{ kind: "session", label: "5 h", usedPercent: 20, resetsAt: "2026-08-08T01:00:09.000Z" },
+			{ kind: "weekly", label: "Weekly", usedPercent: 55, resetsAt: "2026-08-08T20:00:09.000Z" },
 		]);
+	});
+
+	test("a response with only limits[] and no top-level usage still reads", () => {
+		const reading = kimiQuotaAdapter.normalize([{
+			spec: kimiQuotaAdapter.buildRequests("https://api.kimi.com/coding/v1", "sk")[0]!,
+			json: {
+				limits: [{
+					window: { duration: "5", timeUnit: "TIME_UNIT_HOUR" },
+					detail: { limit: "200", used: "50", resetAt: "2026-08-08T13:30:00Z" },
+				}],
+			},
+		}]);
+		expect(reading.windows).toEqual([
+			{ kind: "session", label: "5 h", usedPercent: 25, resetsAt: "2026-08-08T13:30:00.000Z" },
+		]);
+	});
+
+	test("a remaining outside 0..limit is refused rather than read as a percentage", () => {
+		expect(() => kimiQuotaAdapter.normalize([{
+			spec: kimiQuotaAdapter.buildRequests("https://api.kimi.com/coding/v1", "sk")[0]!,
+			json: { usage: { limit: "100", remaining: "500" } },
+		}])).toThrow(/usable limit\/used pair/);
 	});
 
 	test("garbage in a string numeric throws instead of reading as zero", () => {
@@ -199,10 +271,16 @@ describe("moonshot adapter", () => {
 		const reading = await normalizeWith(moonshotQuotaAdapter, "https://api.moonshot.ai/v1", { balance: "moonshot" });
 		expect(reading.windows).toBeUndefined();
 		expect(reading.balances).toEqual([
-			{ kind: "available", unit: "cny", amount: "49.5", primary: true },
-			{ kind: "voucher", unit: "cny", amount: "0", primary: false },
-			{ kind: "cash", unit: "cny", amount: "49.5", primary: false },
+			{ kind: "available", unit: "usd", amount: "49.5", primary: true },
+			{ kind: "voucher", unit: "usd", amount: "0", primary: false },
+			{ kind: "cash", unit: "usd", amount: "49.5", primary: false },
 		]);
+	});
+
+	test("the China host settles in yuan, the international one in dollars", async () => {
+		// The payload carries no currency field — the host is the only signal.
+		const china = await normalizeWith(moonshotQuotaAdapter, "https://api.moonshot.cn/v1", { balance: "moonshot" });
+		expect(china.balances?.map((balance) => balance.unit)).toEqual(["cny", "cny", "cny"]);
 	});
 
 	test("a 200 response reporting failure in its envelope throws", () => {
@@ -264,6 +342,52 @@ describe("openrouter adapter", () => {
 		]);
 		expect(reading.windows).toEqual([]);
 		expect(reading.balances).toHaveLength(1);
+	});
+
+	test("limit_remaining is authoritative over the cumulative usage figure", () => {
+		const specs = openrouterQuotaAdapter.buildRequests("https://openrouter.ai/api/v1", "sk");
+		// `usage` is lifetime spend; only `limit_remaining` describes the cap window.
+		const reading = openrouterQuotaAdapter.normalize([{
+			spec: specs[0]!,
+			json: { data: { limit: 50, usage: 900, limit_remaining: 40 } },
+		}]);
+		expect(reading.windows?.[0]?.usedPercent).toBe(20);
+	});
+
+	test("without limit_remaining the usage bucket matching limit_reset is used", () => {
+		const specs = openrouterQuotaAdapter.buildRequests("https://openrouter.ai/api/v1", "sk");
+		// Charging a DAILY cap with lifetime usage would read as permanently exhausted.
+		const reading = openrouterQuotaAdapter.normalize([{
+			spec: specs[0]!,
+			json: {
+				data: { limit: 10, usage: 900, limit_reset: "daily", usage_daily: 2, usage_weekly: 8 },
+			},
+		}]);
+		expect(reading.windows?.[0]?.usedPercent).toBe(20);
+	});
+
+	test("an overspent key clamps to a full bar instead of exceeding it", () => {
+		const specs = openrouterQuotaAdapter.buildRequests("https://openrouter.ai/api/v1", "sk");
+		const reading = openrouterQuotaAdapter.normalize([{
+			spec: specs[0]!,
+			json: { data: { limit: 50, limit_remaining: -12 } },
+		}]);
+		expect(reading.windows?.[0]?.usedPercent).toBe(100);
+	});
+
+	test("a zero limit is 'no cap configured', not a fully consumed one", () => {
+		const specs = openrouterQuotaAdapter.buildRequests("https://openrouter.ai/api/v1", "sk");
+		const reading = openrouterQuotaAdapter.normalize([{ spec: specs[0]!, json: { data: { limit: 0, usage: 5 } } }]);
+		expect(reading.windows).toEqual([]);
+	});
+
+	test("an overspent account reports zero credits, never a negative balance", () => {
+		const specs = openrouterQuotaAdapter.buildRequests("https://openrouter.ai/api/v1", "sk");
+		const reading = openrouterQuotaAdapter.normalize([
+			{ spec: specs[0]!, json: { data: { limit: null } } },
+			{ spec: specs[1]!, json: { data: { total_credits: 10, total_usage: 14.5 } } },
+		]);
+		expect(reading.balances).toEqual([{ kind: "credits", unit: "credits", amount: "0", primary: true }]);
 	});
 });
 
