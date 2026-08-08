@@ -160,20 +160,29 @@ describe("VibeMdView", () => {
 });
 ```
 
-**Why scoped, not a `bunfig.toml` preload:** the repo has DOM-averse tests (`avatar.test.ts`, `gateway-client`, …) that rely on `typeof window === "undefined"` so e.g. `getGatewayBaseUrl()` returns its SSR fallback. A global preload that registers happy-dom permanently injects a `window` into *every* file and breaks those. `useDomEnv()` registers in `beforeAll` and unregisters in `afterAll`, so pure-logic files never see a `window`. **Never add a `[test] preload = …` happy-dom line to `bunfig.toml`.**
+**Why scoped, not a `bunfig.toml` preload:** the repo has DOM-averse tests (`avatar.test.ts`, `gateway-client`, …) that rely on `typeof window === "undefined"` so e.g. `getGatewayBaseUrl()` returns its SSR fallback. A global preload that registers happy-dom permanently injects a `window` into *every* file and breaks those. `useDomEnv()` registers at module load and unregisters in `afterAll`, so pure-logic files never see a `window`. **Never add a `[test] preload = …` happy-dom line to `bunfig.toml`.**
 
-### Query from `render()`, not the global `screen`
+### Import `@testing-library/*` dynamically, after `useDomEnv()`
 
 ```tsx
-// ✓ GOOD — queries bound to the rendered container
-const { getByText } = render(<Harness />);
-getByText("Save");
+import { useDomEnv } from "../../test/dom-env.js";
 
-// ✗ BAD — `screen` binds to document.body at import time, before beforeAll runs
-screen.getByText("Save");
+useDomEnv();
+const { render, screen } = await import("@testing-library/react");   // ✓ after registration
 ```
 
-`screen` captures `document.body` when the module is imported — before `useDomEnv()`'s `beforeAll` has registered the happy-dom `window`. The destructured queries from `render()` are always correct because they run after registration.
+```tsx
+import { render, screen } from "@testing-library/react";   // ✗ poisons `screen` for the whole process
+import { useDomEnv } from "../../test/dom-env.js";
+```
+
+`@testing-library/dom` binds its `screen` export to `document.body` while its own module evaluates. Evaluate it before happy-dom is registered and every `screen` query becomes a throwing stub — permanently, for the rest of the process, no matter what registers a `window` afterwards.
+
+Moving the static import above `useDomEnv()`'s does **not** fix it: Bun does not evaluate a module's static imports in source order, and a bare specifier can win over a relative one. `await import(...)` placed after the `useDomEnv()` call is the only ordering that actually holds.
+
+This is not theoretical. `@testing-library/jest-dom` 6.10 began importing `@testing-library/dom`, which turned a previously inert `import * as matchers` at the top of [`dom-env.ts`](../../apps/web/test/dom-env.ts) into a poisoned `screen` in every DOM test file at once — a suite-wide outage that presents as 100+ unrelated assertion failures. The `"the global \`screen\` is bound to a live document"` case in [`harness.smoke.test.tsx`](../../apps/web/test/harness.smoke.test.tsx) pins it; that file is appended to every full run.
+
+Queries destructured from `render()` are bound to the rendered container at call time, so they are immune to this and remain a fine default.
 
 ---
 
