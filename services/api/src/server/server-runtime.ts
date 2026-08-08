@@ -29,6 +29,9 @@ import { createAiAssistantFeature } from "../domain/ai-assistant/ai-assistant-fe
 import { createRuntimeStore } from "../runtime/session/session-runtime-store.js";
 import { SkillLibraryService } from "../domain/coauthor/skills/skill-library.js";
 import { DiceService } from "../domain/dice/dice-service.js";
+import { ExperienceResourceService } from "../domain/interactive/experience-resource-service.js";
+import { ExperienceService } from "../domain/interactive/experience-service.js";
+import { ExperienceReplayService } from "../domain/interactive/experience-replay-service.js";
 import type { RandomSource } from "@vibe-tavern/domain";
 import { resolveBuiltinSkillsRoot, resolveUserSkillsRoot } from "../domain/coauthor/skills/skill-scanner.js";
 import { configureLogDir } from "../shared/send-debug-log.js";
@@ -174,6 +177,9 @@ export async function createRuntimeApp(config: RuntimeAppConfig): Promise<Hono> 
 		},
 	};
 	const diceService = new DiceService(stores, cryptoRng);
+	const experienceResourceService = new ExperienceResourceService(stores);
+	const experienceService = new ExperienceService(stores, experienceResourceService);
+	const experienceReplayService = new ExperienceReplayService(stores, experienceResourceService);
 	const runtime = new RuntimeApiAdapter(
 		stores,
 		providerProfileService,
@@ -188,6 +194,9 @@ export async function createRuntimeApp(config: RuntimeAppConfig): Promise<Hono> 
 		trackerService,
 		skillLibraryService,
 		diceService,
+		experienceService,
+		experienceResourceService,
+		experienceReplayService,
 	);
 
 	features.register(createAiAssistantFeature(runtime.aiAssistant));

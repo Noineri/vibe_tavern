@@ -322,6 +322,8 @@ export const experienceTransitionSchema = z.object({
 export const experienceProjectedViewSchema = z.object({
   state: boundedState,
   actions: z.array(experienceActionDescriptorSchema).max(INTERACTIVE_SCHEMA_MAX_ACTIONS),
+  /** Cosmetic display data from the optional `flavor` method (best-effort; may be absent). */
+  flavor: boundedPayload.optional(),
   revision: boundedRevision,
   status: experienceSessionStatusSchema,
 });
@@ -361,28 +363,29 @@ export const experienceStarterManifestSchema = z.object({
 // intentions carrying requestId + expectedRevision. The server returns the
 // authoritative projected view.
 
-/** Start (or resume-into) a branch-scoped session. */
+/** Start a branch-scoped session. Config-driven: the rules script, visual,
+ *  capability grants, and context mode come from the chat's experience config
+ *  (set via the config endpoint and resolved server-side by
+ *  `resolveEffectiveSetup`); the request carries only the branch, the
+ *  game-specific settings, and the seat roster. Branch uniqueness (one active
+ *  session per branch) is the start guard, so no request idempotency key is
+ *  required — per-action idempotency uses the action's own `requestId`. */
 export const experienceStartRequestSchema = z.object({
   branchId: boundedId,
-  scriptId: boundedId,
-  visualId: boundedId.optional(),
-  /** Initial authoritative settings passed to `create()`. */
-  settings: boundedState.optional(),
+  /** Initial settings passed to `create()`; defaults to `{}` when omitted so an
+   *  absent setting never reaches the kernel as non-JSON-safe `undefined`. */
+  settings: boundedState.default({}),
   participants: z.array(experienceParticipantSchema).max(INTERACTIVE_SCHEMA_MAX_PARTICIPANTS).default([]),
-  /** User-approved capabilities (subset of the package's declared set). */
-  capabilityGrants: z.array(experienceCapabilitySchema).max(INTERACTIVE_SCHEMA_MAX_CAPABILITIES).default([]),
-  contextMode: experienceContextModeSchema.optional(),
-  /** DB-unique idempotency key: two tabs/retries cannot start two sessions. */
-  requestId: boundedRequestId,
 });
 
 /** Submit one action intention (also the per-action idempotency + CAS carrier). */
 export const experienceActionRequestSchema = experienceActionSchema;
 
-/** Explicit user end (manual finish). */
+/** Explicit user end (manual finish). `status` is the terminal status the
+ *  host records; calling end twice is harmless (idempotent set), so no request
+ *  idempotency key is required. */
 export const experienceFinishRequestSchema = z.object({
-  requestId: boundedRequestId,
-  expectedRevision: boundedRevision,
+  status: z.enum(["completed", "interrupted"]),
 });
 
 /**
@@ -406,6 +409,57 @@ export const experienceSessionResponseSchema = z.object({
   participants: z.array(experienceParticipantSchema).max(INTERACTIVE_SCHEMA_MAX_PARTICIPANTS),
 });
 
+// ─── Runtime request envelopes (IR-32 routes) ───────────────────────────────
+
+/** Scope selector for the visuals list. */
+export const experienceVisualsQuerySchema = z.object({
+  scopeType: z.enum(["global", "character", "persona", "chat"]),
+  ownerId: boundedId.optional(),
+});
+
+/** Viewer selector for per-viewer projection reads (defaults to the human seat). */
+export const experienceViewerQuerySchema = z.object({
+  participantId: boundedId.optional(),
+});
+
+/** Patch a chat's experience config (the config-driven setup source). */
+export const experienceConfigUpdateSchema = z.object({
+  enabled: z.boolean().optional(),
+  scriptId: boundedId.nullable().optional(),
+  visualId: boundedId.nullable().optional(),
+  capabilityGrants: z.array(experienceCapabilitySchema).max(INTERACTIVE_SCHEMA_MAX_CAPABILITIES).optional(),
+  contextMode: experienceContextModeSchema.optional(),
+  launcherVisible: z.boolean().optional(),
+});
+
+/** Create a visual resource (global or character-scoped in V1). */
+export const experienceVisualCreateSchema = z.object({
+  name: boundedLabel,
+  source: z.string().min(1),
+  apiVersion: z.number().int().min(1),
+  compatibleManifestIds: z.array(boundedId).optional(),
+  scopeType: z.enum(["global", "character", "persona", "chat"]).optional(),
+  characterId: boundedId.optional(),
+});
+
+/** Patch a visual resource. A source edit changes the sourceHash (trust signal). */
+export const experienceVisualUpdateSchema = z.object({
+  name: boundedLabel.optional(),
+  source: z.string().min(1).optional(),
+  apiVersion: z.number().int().min(1).optional(),
+  compatibleManifestIds: z.array(boundedId).optional(),
+});
+
+/** Undo to a prior revision (append-only: creates a new system revision). */
+export const experienceUndoRequestSchema = z.object({
+  targetRevision: boundedRevision,
+});
+
+/** Preview recalculation under candidate rules source (safe: no commit). */
+export const experienceRecalculateRequestSchema = z.object({
+  rulesCode: z.string().min(1).max(INTERACTIVE_SCHEMA_MAX_STATE_BYTES),
+});
+
 // ─── DTO types (wire-only shapes; canonical envelopes come from Domain) ──────
 
 export type ExperienceStartRequestDto = z.infer<typeof experienceStartRequestSchema>;
@@ -414,3 +468,8 @@ export type ExperienceFinishRequestDto = z.infer<typeof experienceFinishRequestS
 export type ExperienceSessionResponseDto = z.infer<typeof experienceSessionResponseSchema>;
 export type ExperienceDefinitionDto = z.infer<typeof experienceDefinitionSchema>;
 export type ExperienceStarterManifestDto = z.infer<typeof experienceStarterManifestSchema>;
+export type ExperienceConfigUpdateDto = z.infer<typeof experienceConfigUpdateSchema>;
+export type ExperienceVisualCreateDto = z.infer<typeof experienceVisualCreateSchema>;
+export type ExperienceVisualUpdateDto = z.infer<typeof experienceVisualUpdateSchema>;
+export type ExperienceUndoRequestDto = z.infer<typeof experienceUndoRequestSchema>;
+export type ExperienceRecalculateRequestDto = z.infer<typeof experienceRecalculateRequestSchema>;

@@ -223,6 +223,14 @@ export {
   experienceActionRequestSchema,
   experienceFinishRequestSchema,
   experienceSessionResponseSchema,
+  // Runtime request/query envelopes (IR-32 routes)
+  experienceVisualsQuerySchema,
+  experienceViewerQuerySchema,
+  experienceConfigUpdateSchema,
+  experienceVisualCreateSchema,
+  experienceVisualUpdateSchema,
+  experienceUndoRequestSchema,
+  experienceRecalculateRequestSchema,
   // Bounded-JSON guard + bounds
   jsonBoundsError,
   boundedJsonValue,

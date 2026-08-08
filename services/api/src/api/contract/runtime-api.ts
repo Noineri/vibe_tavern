@@ -513,6 +513,91 @@ export interface DiceRuntimeApi {
 	chooseFinal: (chatId: string, rollId: string, attemptId: string) => Promise<void>;
 }
 
+// ─── Experience (INTERACTIVE_RUNTIME_FOUNDATION_PLAN, Wave 3 / IR-32) ────────
+
+import type {
+	ExperienceSessionView,
+	ExperienceProjection,
+	TurnAwait,
+} from "../../domain/interactive/experience-service.js";
+import type { RecalculationPreview } from "../../domain/interactive/experience-replay-service.js";
+import type {
+	ExperienceChatConfigRow,
+	ExperienceVisualRow,
+	ExperienceEffectRow,
+} from "@vibe-tavern/db";
+import type {
+	ExperienceActionDescriptor,
+	ExperienceEvent,
+} from "@vibe-tavern/domain";
+
+/** A session response: authoritative session metadata plus the projected view
+ *  for the requesting viewer. The adapter shapes this from the service's
+ *  {@link ExperienceSessionView} + {@link ExperienceProjection}. Never includes
+ *  hidden state for other seats. */
+export type ExperienceSessionResponse = ExperienceSessionView & { view: ExperienceProjection };
+
+/** Action-round response: the session + projected view after one submitted
+ *  action AND any auto-resolved script seats, plus the emitted events and whose
+ *  turn is next. */
+export type ExperienceActionResponse = ExperienceSessionResponse & {
+	events: ExperienceEvent[];
+	await: TurnAwait;
+};
+
+export interface ExperienceRuntimeApi {
+	// ── Config (the config-driven setup source) ──
+	getExperienceConfig: (chatId: string) => Promise<ExperienceChatConfigRow>;
+	updateExperienceConfig: (chatId: string, body: {
+		enabled?: boolean;
+		scriptId?: string | null;
+		visualId?: string | null;
+		capabilityGrants?: import("@vibe-tavern/domain").ExperienceCapability[];
+		contextMode?: import("@vibe-tavern/domain").ExperienceContextMode;
+		launcherVisible?: boolean;
+	}) => Promise<ExperienceChatConfigRow>;
+
+	// ── Visual resources ──
+	listExperienceVisuals: (scopeType: string, ownerId?: string) => Promise<ExperienceVisualRow[]>;
+	getExperienceVisual: (id: string) => Promise<ExperienceVisualRow | null>;
+	createExperienceVisual: (body: {
+		name: string;
+		source: string;
+		apiVersion: number;
+		compatibleManifestIds?: string[];
+		scopeType?: string;
+		characterId?: string | null;
+	}) => Promise<ExperienceVisualRow>;
+	updateExperienceVisual: (id: string, patch: {
+		name?: string;
+		source?: string;
+		apiVersion?: number;
+		compatibleManifestIds?: string[];
+	}) => Promise<ExperienceVisualRow>;
+	deleteExperienceVisual: (id: string) => Promise<void>;
+
+	// ── Session lifecycle ──
+	startExperienceSession: (chatId: string, body: {
+		branchId: string;
+		settings?: unknown;
+		participants: import("@vibe-tavern/domain").ExperienceParticipant[];
+	}) => Promise<ExperienceSessionResponse>;
+	getExperienceSession: (sessionId: string) => Promise<ExperienceSessionResponse>;
+	endExperienceSession: (sessionId: string, body: { status: "completed" | "interrupted" }) => Promise<ExperienceSessionResponse>;
+	submitExperienceAction: (sessionId: string, body: import("@vibe-tavern/domain").ExperienceAction, signal?: AbortSignal) => Promise<ExperienceActionResponse>;
+
+	// ── Per-viewer projection reads ──
+	getExperienceView: (sessionId: string, participantId?: string) => Promise<ExperienceProjection>;
+	getExperienceActions: (sessionId: string, participantId?: string) => Promise<ExperienceActionDescriptor[]>;
+
+	// ── Replay ──
+	undoExperienceSession: (sessionId: string, body: { targetRevision: number }) => Promise<ExperienceActionResponse>;
+	previewExperienceRecalculation: (sessionId: string, body: { rulesCode: string }) => Promise<RecalculationPreview>;
+
+	// ── Effects (read-only; retry/resolve lands in Wave 4) ──
+	getExperienceEffects: (sessionId: string) => Promise<ExperienceEffectRow[]>;
+}
+
 export interface RuntimeApi {
 	bootstrap: BootstrapRuntimeApi["bootstrap"];
 	chat: ChatRuntimeApi;
@@ -531,4 +616,5 @@ export interface RuntimeApi {
 	mobileAccess: MobileAccessRuntimeApi;
 	insights: InsightsRuntimeApi;
 	dice: DiceRuntimeApi;
+	experience: ExperienceRuntimeApi;
 }

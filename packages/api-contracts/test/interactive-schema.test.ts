@@ -336,40 +336,41 @@ describe("experienceProjectedViewSchema", () => {
 
 describe("experienceStartRequestSchema", () => {
   function validStart() {
-    return { branchId: "br_1", scriptId: "sc_1", requestId: "req_1" };
+    return { branchId: "br_1" };
   }
 
-  it("accepts a minimal start and defaults participants/grants to []", () => {
+  it("accepts a minimal config-driven start and defaults participants to []", () => {
     const data = expectData(experienceStartRequestSchema.safeParse(validStart())) as Record<
       string,
       unknown
     >;
     expect(data.participants).toEqual([]);
-    expect(data.capabilityGrants).toEqual([]);
+    expect(data.branchId).toBe("br_1");
   });
 
-  it("accepts visualId, settings, contextMode, and granted capabilities", () => {
+  it("accepts settings + a participant roster", () => {
     expect(
       experienceStartRequestSchema.safeParse({
         ...validStart(),
-        visualId: "v_1",
         settings: { difficulty: "hard" },
-        contextMode: "recent",
-        capabilityGrants: ["model", "rp_context"],
+        participants: [{ id: "p1", label: "Player 1", controller: "human" }],
       }).success,
     ).toBe(true);
   });
 
-  it("rejects an unknown capability grant", () => {
-    expectReject(
-      experienceStartRequestSchema.safeParse({ ...validStart(), capabilityGrants: ["network"] }),
-    );
+  it("is config-driven: scriptId/visualId/grants/contextMode are NOT accepted fields", () => {
+    // The start request carries only branch/settings/roster; the setup is
+    // resolved server-side from the chat config. Extra unknown fields are
+    // ignored by Zod, but the canonical fields are branchId + settings +
+    // participants (asserted by the minimal-start default above).
+    const data = expectData(
+      experienceStartRequestSchema.safeParse({ ...validStart(), scriptId: "sc_1" }),
+    ) as Record<string, unknown>;
+    expect(data.participants).toEqual([]);
   });
 
-  it("rejects a missing requestId (start idempotency is mandatory)", () => {
-    const { requestId: _omit, ...rest } = validStart();
-    void _omit;
-    expectReject(experienceStartRequestSchema.safeParse(rest));
+  it("rejects a missing branchId", () => {
+    expectReject(experienceStartRequestSchema.safeParse({ participants: [] }));
   });
 });
 

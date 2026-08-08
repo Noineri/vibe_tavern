@@ -26,8 +26,12 @@ import { SettingsAdapter } from "./settings-adapter.js";
 import { MobileAccessAdapter } from "./mobile-access-adapter.js";
 import { CoauthorSkillAdapter } from "./coauthor-skill-adapter.js";
 import { DiceAdapter } from "./dice-adapter.js";
+import { ExperienceAdapter } from "./experience-adapter.js";
 import type { SkillLibraryService } from "../../domain/coauthor/skills/skill-library.js";
 import type { DiceService } from "../../domain/dice/dice-service.js";
+import type { ExperienceService } from "../../domain/interactive/experience-service.js";
+import type { ExperienceResourceService } from "../../domain/interactive/experience-resource-service.js";
+import type { ExperienceReplayService } from "../../domain/interactive/experience-replay-service.js";
 
 /**
  * Thin composite that wires domain adapters into the RuntimeApi contract.
@@ -56,6 +60,7 @@ export class RuntimeApiAdapter implements RuntimeApi {
 	readonly insights: InsightsAdapter;
 	readonly coauthorSkills: CoauthorSkillAdapter;
 	readonly dice: DiceAdapter;
+	readonly experience: ExperienceAdapter;
 
 	constructor(
 		stores: StoreContainer,
@@ -71,6 +76,9 @@ export class RuntimeApiAdapter implements RuntimeApi {
 		trackerService: SceneTrackerService,
 		skillLibraryService: SkillLibraryService,
 		diceService: DiceService,
+		experienceService: ExperienceService,
+		experienceResourceService: ExperienceResourceService,
+		experienceReplayService: ExperienceReplayService,
 	) {
 		const bootstrapAdapter = new BootstrapAdapter(sessionRuntime);
 		this.bootstrap = bootstrapAdapter.bootstrap;
@@ -93,5 +101,6 @@ export class RuntimeApiAdapter implements RuntimeApi {
 		this.insights = new InsightsAdapter(stores, sessionRuntime, objectiveService, trackerService);
 		this.coauthorSkills = new CoauthorSkillAdapter(skillLibraryService);
 		this.dice = new DiceAdapter(diceService);
+		this.experience = new ExperienceAdapter(experienceService, experienceResourceService, experienceReplayService);
 	}
 }

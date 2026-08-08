@@ -108,7 +108,7 @@ export async function createApp(deps: AppDeps): Promise<Hono> {
 			);
 		}
 		if (isDomainError(err)) {
-			return c.json(domainErrorToJson(err), httpStatusForDomainError(err) as 400 | 401 | 404 | 409 | 500 | 502);
+			return c.json(domainErrorToJson(err), httpStatusForDomainError(err) as 400 | 401 | 404 | 409 | 422 | 500 | 502);
 		}
 		console.error("[unhandled]", err);
 		return c.json(
