@@ -25,7 +25,7 @@
  * row types stay backend-side and import these types back.
  */
 
-import type { CharacterId, ChatId, ChatMode, CoauthorTransport, ModelFavoriteScope, ModelSettingsOverlay, PronounForms, ProviderProxyMode } from "@vibe-tavern/domain";
+import type { CharacterId, ChatId, ChatMode, CoauthorTransport, ModelFavoriteScope, ModelSettingsOverlay, PronounForms, ProviderProxyMode, ProviderQuotaConfig, ProviderQuotaErrorKind, ProviderQuotaKind, ProviderQuotaNoneReason, ProviderQuotaSnapshot } from "@vibe-tavern/domain";
 
 // ─── Provider ──────────────────────────────────────────────────────────
 
@@ -298,4 +298,41 @@ export interface RuntimeVersionInfo {
 export interface RuntimeTriggerResult {
 	accepted: boolean;
 	reason?: string;
+}
+
+// ─── Provider quota ────────────────────────────────────────────────────
+
+/**
+ * Response of `GET /api/providers/:providerId/quota-capability`.
+ *
+ * Answers "can this profile be tracked at all, and by what". `capabilityId` /
+ * `capabilityVersion` / `pollIntervalMs` are non-null exactly when `kind` is
+ * pollable (`windowed` or `balance`); `reason` is non-null exactly when it is
+ * `none`. No endpoint or credential material is ever included.
+ */
+export interface ProviderQuotaCapabilityRecord {
+	providerProfileId: string;
+	kind: ProviderQuotaKind;
+	capabilityId: string | null;
+	capabilityVersion: number | null;
+	pollIntervalMs: number | null;
+	reason: ProviderQuotaNoneReason | null;
+}
+
+/**
+ * Response of `GET /api/providers/:providerId/quota` and of a successful
+ * `PUT /api/providers/:providerId/quota-config`.
+ *
+ * `config` is always present — a profile with no persisted row reports its
+ * capability kind's defaults. `snapshot` is null until the first successful
+ * poll, and `lastError` is non-null when the most recent poll failed; the two
+ * are independent (a stale snapshot alongside a fresh error is normal).
+ */
+export interface ProviderQuotaRecord {
+	providerProfileId: string;
+	config: ProviderQuotaConfig;
+	snapshot: ProviderQuotaSnapshot | null;
+	lastError: ProviderQuotaErrorKind | null;
+	/** When the stored poll result was last written; null when nothing is stored. */
+	updatedAt: string | null;
 }

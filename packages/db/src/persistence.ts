@@ -1,7 +1,7 @@
 import { createDb, type AppDb } from './db-connection.js';
 import { ContentStore } from './content-store.js';
 import { createFileStore } from './file-store.js';
-import { CharacterStore, CharacterFolder, CharacterDirectoryRegistry, PersonaStore, ProviderStore, ProxyStore, ChatStore, ChatSummaryStore, PresetStore, UiSettingsStore, LorebookStore, ScriptStore, CharacterAssetStore, MessageStore, PromptTraceStore, VersionStore, CoauthorModuleStore, DiceRollStore } from './stores/index.js';
+import { CharacterStore, CharacterFolder, CharacterDirectoryRegistry, PersonaStore, ProviderStore, ProxyStore, ChatStore, ChatSummaryStore, PresetStore, UiSettingsStore, LorebookStore, ScriptStore, CharacterAssetStore, MessageStore, PromptTraceStore, VersionStore, CoauthorModuleStore, DiceRollStore, QuotaStore } from './stores/index.js';
 
 export interface StoreContainer {
   db: AppDb;
@@ -23,6 +23,7 @@ export interface StoreContainer {
   characterAssets: CharacterAssetStore;
   coauthorModules: CoauthorModuleStore;
   diceRolls: DiceRollStore;
+  quota: QuotaStore;
 }
 
 export async function createStoreContainer(dbPath: string, dataDir?: string): Promise<StoreContainer> {
@@ -75,6 +76,7 @@ export async function createStoreContainer(dbPath: string, dataDir?: string): Pr
     characterAssets: new CharacterAssetStore(db),
     coauthorModules: new CoauthorModuleStore(db),
     diceRolls: new DiceRollStore(db),
+    quota: new QuotaStore(db),
   };
 }
 

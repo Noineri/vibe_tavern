@@ -8,6 +8,8 @@ interface ToggleProps {
   disabled?: boolean;
   id?: string;
   className?: string;
+  /** Accessible name for a toggle whose visible label is a separate sibling node. */
+  "aria-label"?: string;
 }
 
 /**
@@ -34,13 +36,21 @@ interface ToggleProps {
  * child of the Root keeps the existing animation verbatim and is exactly the
  * "wrapped" strategy called for in toggle-segmented-radix-migration.md.
  */
-export function Toggle({ checked, onChange, disabled = false, id, className }: ToggleProps) {
+export function Toggle({
+  checked,
+  onChange,
+  disabled = false,
+  id,
+  className,
+  "aria-label": ariaLabel,
+}: ToggleProps) {
   return (
     <Switch.Root
       checked={checked}
       onCheckedChange={onChange}
       disabled={disabled}
       id={id}
+      aria-label={ariaLabel}
       className={cn(
         "group relative w-[36px] h-[20px] cursor-pointer shrink-0 inline-flex rounded-full",
         className,

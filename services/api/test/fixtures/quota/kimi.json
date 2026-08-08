@@ -1,0 +1,20 @@
+{
+  "user": {
+    "userId": "fixture000000000000",
+    "region": "REGION_OVERSEA",
+    "membership": { "level": "LEVEL_INTERMEDIATE" },
+    "businessId": ""
+  },
+  "usage": { "limit": "100", "used": "55", "remaining": "45", "resetTime": "2026-08-08T20:00:09Z" },
+  "limits": [
+    {
+      "window": { "duration": 300, "timeUnit": "TIME_UNIT_MINUTE" },
+      "detail": { "limit": "100", "remaining": "80", "resetTime": "2026-08-08T01:00:09Z" }
+    }
+  ],
+  "parallel": { "limit": "20" },
+  "totalQuota": {},
+  "authentication": { "method": "METHOD_API_KEY", "scope": "FEATURE_CODING" },
+  "subType": "TYPE_PURCHASE",
+  "domain": "DOMAIN_NEXUS"
+}

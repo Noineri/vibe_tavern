@@ -103,6 +103,10 @@ export const Ic = {
   checkCircle:()=><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="8" cy="8" r="6"/><polyline points="5 8 7 10 11 6"/></svg>,
   // Dice / Fate Die (DICE-F6) — D20 hexagon outline with an inner triangle facet.
   dice:()=><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M8 1.33 L13.67 4.67 L13.67 11.33 L8 14.67 L2.33 11.33 L2.33 4.67 Z"/><path d="M8 5 L11 10 L5 10 Z" strokeOpacity="0.45"/></svg>,
+  // Progress ring — a faint full track with a partial arc drawn over it. The
+  // conventional "how much of an allowance is left" glyph; used by the chat
+  // toolbar's provider-quota flyout.
+  quota:()=><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"><circle cx="8" cy="8" r="6" strokeOpacity="0.3"/><path d="M8 2a6 6 0 0 1 4.24 10.24"/></svg>,
 };
 
 // Icon props actually used at call sites: `className` (any icon) and `direction`

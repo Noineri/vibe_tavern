@@ -161,3 +161,40 @@ export function resolveEffectiveSettings(
   if (!overlay) return base;
   return { ...base, ...overlay };
 }
+
+// ────────────────────────────────────────────────────────────────────────────
+// Lifecycle event
+// ────────────────────────────────────────────────────────────────────────────
+
+export const PROVIDER_PROFILE_CHANGE_KIND = {
+  upsert: "upsert",
+  delete: "delete",
+} as const;
+
+export type ProviderProfileChangeKind =
+  typeof PROVIDER_PROFILE_CHANGE_KIND[keyof typeof PROVIDER_PROFILE_CHANGE_KIND];
+
+/**
+ * A profile was created, edited or deleted.
+ *
+ * Exists so features that cache per-profile state (currently the quota poller)
+ * can invalidate it without the providers module importing them — the
+ * dependency arrow points one way, and it points at the bus.
+ *
+ * The three booleans are what actually invalidate downstream state: a preset or
+ * endpoint change may mean a different VENDOR, an API-key change means a
+ * different ACCOUNT. All three are false on a create and on a cosmetic edit.
+ */
+export interface ProviderProfileChangedEvent {
+  readonly profileId: string;
+  readonly changeKind: ProviderProfileChangeKind;
+  readonly presetChanged: boolean;
+  readonly endpointChanged: boolean;
+  readonly apiKeyChanged: boolean;
+}
+
+declare module "./event-bus.js" {
+  interface EventMap {
+    "provider.profile.changed": ProviderProfileChangedEvent;
+  }
+}

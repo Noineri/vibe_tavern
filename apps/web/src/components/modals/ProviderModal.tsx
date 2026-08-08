@@ -17,6 +17,7 @@ import {
   ProviderCapabilityPanel,
   ProviderSamplerPanel,
   ProviderBindingPanel,
+  ProviderQuotaPanel,
 } from "../settings/provider/index.js";
 import { ConfirmCloseModal } from "../shared/confirm-close-modal.js";
 import { DestructiveConfirmModal } from "../shared/destructive-confirm-modal.js";
@@ -764,6 +765,8 @@ export function ProviderModal({
                   />
 
                   <ProviderSamplerPanel form={form} updateForm={lazyAutoSaveField} capabilities={capabilities} />
+
+                  <ProviderQuotaPanel providerProfileId={form.id} />
                 </>
               )}
             </>

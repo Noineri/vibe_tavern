@@ -82,3 +82,10 @@ export type {
   LaneState,
 } from './dice-roll-store.js';
 export { DiceBindError } from './dice-roll-store.js';
+
+export { QuotaStore, defaultQuotaConfigForKind } from './quota-store.js';
+export type {
+  QuotaSettingsRecord,
+  QuotaSnapshotRecord,
+  UpsertQuotaSnapshotData,
+} from './quota-store.js';
