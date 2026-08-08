@@ -1,6 +1,5 @@
 import { afterAll, afterEach, expect } from "bun:test";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
-import * as matchers from "@testing-library/jest-dom/matchers";
 
 let registeredByDomEnv = false;
 
@@ -56,6 +55,30 @@ function ensureDomEnvRegistration(): void {
 }
 
 ensureDomEnvRegistration();
+
+/**
+ * EVERY `@testing-library/*` import in this file must be dynamic and sit below
+ * this line. That is load-bearing, not style.
+ *
+ * `@testing-library/dom` binds its `screen` export to `document.body` while its
+ * own module evaluates. Evaluate it with no global `document` and every `screen`
+ * query becomes a throwing stub — permanently, for the rest of the process, no
+ * matter what registers a `window` afterwards. Only `await import(...)` placed
+ * after `ensureDomEnvRegistration()` is ordered against that: Bun does NOT
+ * evaluate a module's static imports in source order (a bare specifier can win
+ * over a relative one), so a static import cannot be made safe by moving it up.
+ *
+ * This bit for real: `@testing-library/jest-dom` 6.10 started importing
+ * `@testing-library/dom` (for its new `toContainAnyBy*` / `toContainOneBy*`
+ * matchers), which turned the previously inert `import * as matchers` at the top
+ * of this file into a poisoned `screen` in every DOM test file at once.
+ *
+ * The `default` strip below is not cosmetic either: `matchers-standalone.d.ts`
+ * declares `export =`, so TypeScript models the dynamic namespace as having a
+ * `default` that the ESM build does not actually emit. `expect.extend()` rejects
+ * the extra key, and it would be `undefined` at runtime anyway.
+ */
+const { default: _cjsInteropDefault, ...matchers } = await import("@testing-library/jest-dom/matchers");
 const { cleanup } = await import("@testing-library/react");
 
 /**
