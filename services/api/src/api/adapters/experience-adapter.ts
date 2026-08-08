@@ -25,6 +25,7 @@ import type {
 import { resolveHumanViewer } from "../../domain/interactive/experience-service.js";
 import type { ExperienceResourceService } from "../../domain/interactive/experience-resource-service.js";
 import type { ExperienceReplayService } from "../../domain/interactive/experience-replay-service.js";
+import type { ExperienceModelEffectService } from "../../domain/interactive/experience-model-effect-service.js";
 import type { ExperienceApiError } from "../../domain/interactive/experience-shared.js";
 import type { ExperienceParticipant } from "@vibe-tavern/domain";
 import { DomainError } from "../../shared/errors.js";
@@ -34,6 +35,7 @@ export class ExperienceAdapter implements ExperienceRuntimeApi {
 		private readonly lifecycle: ExperienceService,
 		private readonly resources: ExperienceResourceService,
 		private readonly replay: ExperienceReplayService,
+		private readonly modelEffect: ExperienceModelEffectService,
 	) {}
 
 	// ─── Response shaping ────────────────────────────────────────────────────
@@ -210,6 +212,26 @@ export class ExperienceAdapter implements ExperienceRuntimeApi {
 		const effects = await this.lifecycle.getPendingEffects(sessionId);
 		if (!effects.ok) throw mapError(effects.error);
 		return effects.data;
+	};
+
+	/** Run one model effect to a terminal state and feed the result back into the
+	 *  reducer. The route passes the HTTP request signal so a client disconnect
+	 *  persists `cancelled` (Wave 4 durable interruption policy). */
+	runExperienceEffect = async (
+		effectId: string,
+		signal?: AbortSignal,
+	): Promise<import("../contract/runtime-api.js").ExperienceEffectRunResponse> => {
+		const run = await this.modelEffect.runEffect(effectId, signal);
+		if (!run.ok) throw mapError(run.error);
+		const outcome = run.data;
+		const effect = await this.lifecycle.getEffect(effectId);
+		if (!effect.ok) throw mapError(effect.error);
+		return {
+			effect: effect.data,
+			delivered: outcome.delivered ?? false,
+			...(outcome.error !== undefined ? { error: outcome.error } : {}),
+			...(outcome.session && outcome.projection ? { session: this.toResponse(outcome.session, outcome.projection) } : {}),
+		};
 	};
 }
 

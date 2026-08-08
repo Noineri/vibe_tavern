@@ -32,6 +32,8 @@ import { DiceService } from "../domain/dice/dice-service.js";
 import { ExperienceResourceService } from "../domain/interactive/experience-resource-service.js";
 import { ExperienceService } from "../domain/interactive/experience-service.js";
 import { ExperienceReplayService } from "../domain/interactive/experience-replay-service.js";
+import { ExperienceContextService } from "../domain/interactive/experience-context-service.js";
+import { ExperienceModelEffectService } from "../domain/interactive/experience-model-effect-service.js";
 import type { RandomSource } from "@vibe-tavern/domain";
 import { resolveBuiltinSkillsRoot, resolveUserSkillsRoot } from "../domain/coauthor/skills/skill-scanner.js";
 import { configureLogDir } from "../shared/send-debug-log.js";
@@ -180,6 +182,17 @@ export async function createRuntimeApp(config: RuntimeAppConfig): Promise<Hono> 
 	const experienceResourceService = new ExperienceResourceService(stores);
 	const experienceService = new ExperienceService(stores, experienceResourceService);
 	const experienceReplayService = new ExperienceReplayService(stores, experienceResourceService);
+	const experienceContextService = new ExperienceContextService({
+		stores,
+		providerProfiles: providerProfileService,
+		chatLifecycle: sessionRuntime.chatLifecycle,
+	});
+	const experienceModelEffectService = new ExperienceModelEffectService({
+		stores,
+		experienceService,
+		contextService: experienceContextService,
+		providerProfiles: providerProfileService,
+	});
 	const runtime = new RuntimeApiAdapter(
 		stores,
 		providerProfileService,
@@ -197,6 +210,7 @@ export async function createRuntimeApp(config: RuntimeAppConfig): Promise<Hono> 
 		experienceService,
 		experienceResourceService,
 		experienceReplayService,
+		experienceModelEffectService,
 	);
 
 	features.register(createAiAssistantFeature(runtime.aiAssistant));

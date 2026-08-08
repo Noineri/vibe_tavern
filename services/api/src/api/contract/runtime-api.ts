@@ -545,6 +545,18 @@ export type ExperienceActionResponse = ExperienceSessionResponse & {
 	await: TurnAwait;
 };
 
+/** Effect-run response: the terminal effect row + whether its result was
+ *  delivered into the reducer (false on stale completion — the session advanced
+ *  past the originating revision, so the effect stays succeeded-but-undelivered).
+ *  When delivered, the post-feed-back session + projected view are included. */
+export interface ExperienceEffectRunResponse {
+	effect: ExperienceEffectRow;
+	delivered: boolean;
+	/** Machine-readable failure reason when status is `failed`. */
+	error?: string;
+	session?: ExperienceSessionResponse;
+}
+
 export interface ExperienceRuntimeApi {
 	// ── Config (the config-driven setup source) ──
 	getExperienceConfig: (chatId: string) => Promise<ExperienceChatConfigRow>;
@@ -596,6 +608,7 @@ export interface ExperienceRuntimeApi {
 
 	// ── Effects (read-only; retry/resolve lands in Wave 4) ──
 	getExperienceEffects: (sessionId: string) => Promise<ExperienceEffectRow[]>;
+	runExperienceEffect: (effectId: string, signal?: AbortSignal) => Promise<ExperienceEffectRunResponse>;
 }
 
 export interface RuntimeApi {

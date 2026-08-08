@@ -103,5 +103,11 @@ export function createExperienceRoutes(runtime: ExperienceRuntimeApi) {
     // ── Effects (read-only) ────────────────────────────────────────────────
     .get("/api/experience/sessions/:sessionId/effects", async (c) => {
       return c.json(await runtime.getExperienceEffects(c.req.param("sessionId")));
+    })
+    // Run one pending model effect to a terminal state and feed the result
+    // back into the reducer. The request signal wires client-disconnect →
+    // `cancelled` (Wave 4 durable interruption policy).
+    .post("/api/experience/effects/:effectId/run", async (c) => {
+      return c.json(await runtime.runExperienceEffect(c.req.param("effectId"), c.req.raw.signal));
     });
 }

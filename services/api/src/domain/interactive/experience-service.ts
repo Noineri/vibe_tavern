@@ -63,6 +63,7 @@ import {
 import {
   type ExperienceApiError,
   type ExperienceResult,
+  type ModelEffectRequestPayload,
   buildCapabilityContext,
   err,
   fromKernelError,
@@ -73,7 +74,7 @@ import {
   type ResolvedVisualSource,
   ExperienceResourceService,
 } from "./experience-resource-service.js";
-import type { ExperienceEffectRow } from "@vibe-tavern/db";
+import type { ExperienceEffectRow, ExperienceSessionRow } from "@vibe-tavern/db";
 
 // ─── Counting RNG (cursor tracking) ─────────────────────────────────────────
 
@@ -198,6 +199,55 @@ export interface StartSessionInput {
   settings: unknown;
   /** Seat roster. The host uses it for turn detection + per-viewer projection. */
   participants: ExperienceParticipant[];
+}
+
+/** VM + projection context the model-effect service needs to build its prompt. */
+export interface ModelEffectVmContext {
+  effect: ExperienceEffectRow;
+  request: ModelEffectRequestPayload;
+  viewer: ExperienceViewer;
+  participant: ExperienceParticipant;
+  /** The model seat's projected private view (the only hidden material it sees). */
+  projectedView: unknown;
+  /** Legal actions for action mode (empty for text mode). */
+  legalActions: ExperienceActionDescriptor[];
+  rules: ResolvedRulesSource;
+  state: unknown;
+  participants: ExperienceParticipant[];
+  grants: ExperienceCapability[];
+  chatId: string;
+  characterId: string | null;
+}
+
+/** Outcome of an effect-result feed-back (acceptance is the CAS). */
+export interface EffectDelivery {
+  delivered: boolean;
+  /** Present when the session advanced past the originating revision. */
+  reason?: "stale";
+  session: ExperienceSessionView;
+  projection: ExperienceProjection;
+}
+
+/** Parse + validate a persisted effect's `{ kind, request }` envelope into the V1 model-effect payload. */
+export function parseModelEffectRequest(requestJson: string): ModelEffectRequestPayload | null {
+  let envelope: unknown;
+  try {
+    envelope = JSON.parse(requestJson);
+  } catch {
+    return null;
+  }
+  if (typeof envelope !== "object" || envelope === null) return null;
+  const req = (envelope as { request?: unknown }).request;
+  if (typeof req !== "object" || req === null) return null;
+  const r = req as Record<string, unknown>;
+  if (typeof r.viewer !== "string" || (r.mode !== "action" && r.mode !== "text")) return null;
+  if (r.mode === "text" && typeof r.actionType !== "string") return null;
+  return {
+    viewer: r.viewer,
+    mode: r.mode,
+    ...(typeof r.actionType === "string" ? { actionType: r.actionType } : {}),
+    ...(typeof r.instruction === "string" ? { instruction: r.instruction } : {}),
+  };
 }
 
 // ─── Service ─────────────────────────────────────────────────────────────────
@@ -558,6 +608,121 @@ export class ExperienceService {
     return ok(all.filter((e) => e.status === "pending"));
   }
 
+  /** Fetch one effect row by id (the adapter shapes the run-effect response). */
+  async getEffect(effectId: string): Promise<ExperienceResult<ExperienceEffectRow>> {
+    const effect = await this.stores.experiences.getEffectById(effectId);
+    if (effect === null) {
+      return err({ status: 404, code: "effect_not_found", message: `Effect '${effectId}' not found` });
+    }
+    return ok(effect);
+  }
+
+  // ─── Model-effect VM ops (Wave 4 / IR-43) ─────────────────────────────────
+
+  /**
+   * Resolve the VM + projection context for a pending model effect: the model
+   * seat's participant, its projected private view, and (for action mode) the
+   * legal actions the model may choose among. Pure VM reads — no network, no
+   * state mutation. The model-effect service (IR-43) builds the prompt from
+   * this context + the frozen RP bundle + prompt overrides, then runs the
+   * provider, then calls {@link applyEffectResult} to re-enter the reducer.
+   */
+  async resolveModelEffectContext(effectId: string): Promise<ExperienceResult<ModelEffectVmContext>> {
+    const effect = await this.stores.experiences.getEffectById(effectId);
+    if (effect === null) {
+      return err({ status: 404, code: "effect_not_found", message: `Effect '${effectId}' not found` });
+    }
+    const request = parseModelEffectRequest(effect.requestJson);
+    if (request === null) {
+      return err({ status: 422, code: "validation_error", message: `Effect '${effectId}' has a malformed model-effect request payload` });
+    }
+    const ctx = await this.loadSessionForVm(effect.sessionId);
+    if (!ctx.ok) return ctx;
+    const participant = ctx.data.participants.find((p) => p.id === request.viewer) ?? null;
+    if (participant === null) {
+      return err({ status: 422, code: "validation_error", message: `Model-effect viewer '${request.viewer}' is not a session participant` });
+    }
+    const viewer: ExperienceViewer = { kind: viewerKindForController(participant.controller), participantId: participant.id };
+    const viewCaps = this.buildCaps(ctx.data.grants, ctx.data.participants, undefined, createEphemeralRandom());
+    const projected = runProject(ctx.data.rules.code, ctx.data.rules.scriptName, ctx.data.state, viewer, viewCaps);
+    if (!projected.ok) return err(fromKernelError(projected));
+    let legalActions: ExperienceActionDescriptor[] = [];
+    if (request.mode === "action") {
+      const legal = runActions(ctx.data.rules.code, ctx.data.rules.scriptName, ctx.data.state, viewer, viewCaps);
+      if (!legal.ok) return err(fromKernelError(legal));
+      legalActions = legal.value;
+    }
+    const chat = await this.stores.chats.getById(ctx.data.session.chatId);
+    return ok({
+      effect,
+      request,
+      viewer,
+      participant,
+      projectedView: projected.value,
+      legalActions,
+      rules: ctx.data.rules,
+      state: ctx.data.state,
+      participants: ctx.data.participants,
+      grants: ctx.data.grants,
+      chatId: ctx.data.session.chatId,
+      characterId: chat?.characterId ?? null,
+    });
+  }
+
+  /**
+   * Feed a completed effect's mapped action back into the reducer as an
+   * `effect_result` transition. Acceptance is the CAS (`expectedRevision` =
+   * `effect.originatingRevision`): if the session advanced past the originating
+   * revision (stale completion), `applyTransition` returns `stale_revision` and
+   * the feed-back is NOT applied — the effect stays terminal (`succeeded`) but
+   * undelivered, and the session keeps its newer state. This is the IR-22
+   * "delayed effect completions can never overwrite newer session state" rule.
+   */
+  async applyEffectResult(effectId: string, action: ExperienceAction): Promise<ExperienceResult<EffectDelivery>> {
+    const effect = await this.stores.experiences.getEffectById(effectId);
+    if (effect === null) {
+      return err({ status: 404, code: "effect_not_found", message: `Effect '${effectId}' not found` });
+    }
+    if (effect.status !== "succeeded") {
+      return err({ status: 409, code: "effect_not_retryable", message: `Effect '${effectId}' is ${effect.status}, not succeeded`, currentStatus: effect.status });
+    }
+    const ctx = await this.loadSessionForVm(effect.sessionId);
+    if (!ctx.ok) return ctx;
+    const rng = createCountingRandom(seedToNumeric(ctx.data.seed), ctx.data.cursor);
+    const reduceCaps = this.buildCaps(ctx.data.grants, ctx.data.participants, rng.random);
+    const reduced = runReduce(ctx.data.rules.code, ctx.data.rules.scriptName, ctx.data.state, action, reduceCaps);
+    if (!reduced.ok) return err(fromKernelError(reduced));
+    const transition = reduced.value;
+    const applied = await this.stores.experiences.applyTransition({
+      sessionId: effect.sessionId,
+      expectedRevision: effect.originatingRevision,
+      requestId: action.requestId,
+      kind: "effect_result",
+      actorSnapshotJson: safeStringify({ kind: "model", effectId, participantId: action.participantId ?? null }),
+      inputJson: safeStringify(action),
+      emittedEventsJson: safeStringify(transition.events),
+      emittedEffectsJson: safeStringify(transition.effects ?? []),
+      stateHash: null,
+      message: transition.message ?? null,
+      newCurrentStateJson: safeStringify(transition.state),
+      newStatus: transition.status,
+      newRandomCursor: rng.totalDraws(),
+    });
+    const session = applied.ok ? this.toSessionView(applied.session) : await this.viewById(effect.sessionId);
+    const projection = await this.projectForResponseById(
+      effect.sessionId,
+      ctx.data.rules,
+      applied.ok ? transition.state : ctx.data.state,
+      ctx.data.participants,
+    );
+    return ok({
+      delivered: applied.ok,
+      ...(applied.ok ? {} : { reason: "stale" as const }),
+      session,
+      projection,
+    });
+  }
+
   // ─── Helpers ──────────────────────────────────────────────────────────────
 
   private buildCaps(
@@ -697,7 +862,7 @@ export class ExperienceService {
 // ─── Small helpers ───────────────────────────────────────────────────────────
 
 interface LoadedSessionVmCtx {
-  session: unknown;
+  session: ExperienceSessionRow;
   rules: ResolvedRulesSource;
   state: unknown;
   participants: ExperienceParticipant[];

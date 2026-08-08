@@ -113,3 +113,32 @@ export function buildCapabilityContext(
     ...(chance !== undefined ? { chance } : {}),
   };
 }
+
+// ─── Model-effect request payload contract (Wave 4 / IR-43) ───────────────────
+/**
+ * The opaque `request` payload a reducer emits inside a `kind: "model"`
+ * {@link ExperienceEffectRequest}. The host interprets this fixed V1 contract:
+ * the model seat's projected view + legal actions become the private view;
+ * the model output is validated and fed back into the reducer as an
+ * `effect_result` transition. `mode: "action"` asks the model to choose among
+ * the legal actions the script exposes for `viewer` (re-discovered via
+ * `actions()`); `mode: "text"` asks for a free-text reply that becomes the
+ * `actionType` action. The package's own prompt contribution is `instruction`
+ * (appended to the private view); the host protocol + overrides + character/
+ * persona + frozen RP context are layered by the prompt builder (IR-41).
+ */
+export interface ModelEffectRequestPayload {
+  /** The participantId whose projected view + legal actions the model receives. */
+  viewer: string;
+  mode: "action" | "text";
+  /** Required for `mode: "text"`: the action type the model's reply becomes. */
+  actionType?: string;
+  /** Optional package-authored instruction appended to the private view. */
+  instruction?: string;
+}
+
+/** The validated terminal result persisted on a `succeeded` model effect. */
+export type ModelEffectResultPayload =
+  | { mode: "action"; actionId: string; args?: unknown }
+  | { mode: "text"; text: string };
+
