@@ -1811,5 +1811,12 @@
   "experience_pending_typing": "печатает…",
   "experience_pending_effect": "обдумывает…",
   "experience_detach_unavailable": "Это окно опыта больше не подключено.",
-  "experience_detached_badge": "отдельно"
+  "experience_detached_badge": "отдельно",
+  "experience_preview_phase_setup": "настройка",
+  "experience_preview_phase_ordinary": "обычный",
+  "experience_preview_phase_pending": "ожидание",
+  "experience_preview_phase_error": "ошибка",
+  "experience_preview_phase_completed": "завершено",
+  "experience_preview_last_action": "Последнее действие предпросмотра",
+  "experience_preview_disconnected": "Предпросмотр не связан с живыми сессиями"
 }

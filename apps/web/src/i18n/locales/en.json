@@ -1793,5 +1793,12 @@
   "experience_pending_typing": "typing…",
   "experience_pending_effect": "thinking…",
   "experience_detach_unavailable": "This experience window is no longer connected.",
-  "experience_detached_badge": "detached"
+  "experience_detached_badge": "detached",
+  "experience_preview_phase_setup": "setup",
+  "experience_preview_phase_ordinary": "ordinary",
+  "experience_preview_phase_pending": "pending",
+  "experience_preview_phase_error": "error",
+  "experience_preview_phase_completed": "completed",
+  "experience_preview_last_action": "Last preview action",
+  "experience_preview_disconnected": "Preview is disconnected from live sessions"
 }
