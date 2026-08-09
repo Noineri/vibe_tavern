@@ -20,7 +20,8 @@ import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { createStoreContainer, type StoreContainer } from "@vibe-tavern/db";
+import { createStoreContainer, type StoreContainer, type ExperienceVisualRow } from "@vibe-tavern/db";
+import type { ExperienceCapability } from "@vibe-tavern/domain";
 import {
 	isDomainError,
 	httpStatusForDomainError,
@@ -99,7 +100,8 @@ function sessionResponse(chatId: string, branchId: string, sessionId = "s_1") {
 		sessionId, chatId, branchId, status: "active", revision: 0,
 		manifest: { id: "counter", name: "Counter" }, apiVersion: 1,
 		participants: [], capabilityGrants: [], contextMode: "none" as const,
-		rulesRevision: 0, rulesSourceHash: "h", visualId: null, reportFrontier: 0,
+		rulesRevision: 0, rulesSourceHash: "h",
+		visualId: null, visualSource: null, visualSourceHash: null, reportFrontier: 0,
 		view: { state: { count: 0 }, actions: [], revision: 0, status: "active" },
 	};
 }
@@ -362,12 +364,28 @@ async function setupIntegration() {
 	return { stores, resources, app };
 }
 
-async function seedChatAndScript(stores: StoreContainer, resources: ExperienceResourceService, source: string, grants: string[] = []) {
+async function seedChatAndScript(
+	stores: StoreContainer,
+	resources: ExperienceResourceService,
+	source: string,
+	grants: ExperienceCapability[] = [],
+	visualSource?: string,
+): Promise<{ chatId: string; branchId: string; visual: ExperienceVisualRow | null }> {
 	const character = await stores.characters.create({ name: "Hero" } as never);
 	const chat = await stores.chats.createChat({ characterId: character.id, title: "T" });
 	const script = await stores.scripts.create({ name: "Rules", scriptKind: "interactive", code: source });
-	await resources.updateConfig(chat.id, { enabled: true, scriptId: script.id, capabilityGrants: grants as never });
-	return { chatId: chat.id, branchId: chat.activeBranchId };
+	let visualRow: ExperienceVisualRow | null = null;
+	if (visualSource !== undefined) {
+		const created = await resources.createVisual({ name: "Viz", source: visualSource, apiVersion: 1 });
+		if (created.ok) visualRow = created.data;
+	}
+	await resources.updateConfig(chat.id, {
+		enabled: true,
+		scriptId: script.id,
+		capabilityGrants: grants,
+		...(visualRow !== null ? { visualId: visualRow.id } : {}),
+	});
+	return { chatId: chat.id, branchId: chat.activeBranchId, visual: visualRow };
 }
 
 describe("Experience routes — integration (real services + DB)", () => {
@@ -1024,5 +1042,94 @@ describe("Experience routes — IR-70D prompt overrides (integration)", () => {
 		expect(res.status).toBe(200);
 		const body = await jsonBody(res);
 		expect(body.global.content).toBe("");
+	});
+});
+
+// ─── IR-70G: pinned visual source in session responses (integration) ─────────
+
+	describe("Experience routes — IR-70G pinned visual source (integration)", () => {
+	test("start, get, and active-session responses include the exact pinned source/hash; no private fields leak", async () => {
+		const { stores, resources, app } = await setupIntegration();
+		const { chatId, branchId, visual } = await seedChatAndScript(stores, resources, COUNTER_SOURCE, [], "<board id='v1'/>");
+		expect(visual).not.toBeNull();
+		if (visual === null) return;
+
+		// Start — response carries the pinned visual snapshot.
+		const start = await app.request(`/api/chats/${chatId}/experience/sessions`, {
+			method: "POST", headers: { "content-type": "application/json" },
+			body: JSON.stringify({ branchId, participants: [], settings: {} }),
+		});
+		expect(start.status).toBe(200);
+		const startedRaw = await start.text();
+		expect(startedRaw).not.toContain('"rulesSource":');
+		expect(startedRaw).not.toContain('"currentStateJson"');
+		expect(startedRaw).not.toContain('"participantsJson"');
+		expect(startedRaw).not.toContain('"capabilityGrantsJson"');
+		expect(startedRaw).not.toContain('"randomSeed"');
+		const started = JSON.parse(startedRaw);
+		const sid = started.sessionId;
+		expect(started.visualId).toBe(visual.id);
+		expect(started.visualSource).toBe("<board id='v1'/>");
+		expect(started.visualSourceHash).toBe(visual.sourceHash);
+
+		// GET session — same pinned snapshot.
+		const got = await app.request(`/api/experience/sessions/${sid}`);
+		expect(got.status).toBe(200);
+		const gotBody = await jsonBody(got);
+		expect(gotBody.visualSource).toBe("<board id='v1'/>");
+		expect(gotBody.visualSourceHash).toBe(visual.sourceHash);
+		expect(gotBody.visualId).toBe(visual.id);
+
+		// Active-session discovery — same pinned snapshot.
+		const found = await app.request(`/api/chats/${chatId}/experience/session?branchId=${branchId}`);
+		expect(found.status).toBe(200);
+		const foundBody = await jsonBody(found);
+		expect(foundBody.visualSource).toBe("<board id='v1'/>");
+		expect(foundBody.visualSourceHash).toBe(visual.sourceHash);
+		expect(foundBody.visualId).toBe(visual.id);
+	});
+
+	test("a no-visual session responds with explicit null source/hash on all paths", async () => {
+		const { stores, resources, app } = await setupIntegration();
+		const { chatId, branchId } = await seedChatAndScript(stores, resources, COUNTER_SOURCE);
+		const start = await app.request(`/api/chats/${chatId}/experience/sessions`, {
+			method: "POST", headers: { "content-type": "application/json" },
+			body: JSON.stringify({ branchId, participants: [], settings: {} }),
+		});
+		expect(start.status).toBe(200);
+		const started = await jsonBody(start);
+		expect(started.visualId).toBeNull();
+		expect(started.visualSource).toBeNull();
+		expect(started.visualSourceHash).toBeNull();
+		const sid = started.sessionId;
+
+		const got = await app.request(`/api/experience/sessions/${sid}`);
+		const gotBody = await jsonBody(got);
+		expect(gotBody.visualId).toBeNull();
+		expect(gotBody.visualSource).toBeNull();
+		expect(gotBody.visualSourceHash).toBeNull();
+	});
+
+	test("action response inherits the pinned visual source fields", async () => {
+		const { stores, resources, app } = await setupIntegration();
+		const { chatId, branchId, visual } = await seedChatAndScript(stores, resources, COUNTER_SOURCE, [], "<board id='v1'/>");
+		expect(visual).not.toBeNull();
+		if (visual === null) return;
+
+		const start = await app.request(`/api/chats/${chatId}/experience/sessions`, {
+			method: "POST", headers: { "content-type": "application/json" },
+			body: JSON.stringify({ branchId, participants: [], settings: {} }),
+		});
+		const sid = (await jsonBody(start)).sessionId;
+
+		const action = await app.request(`/api/experience/sessions/${sid}/actions`, {
+			method: "POST", headers: { "content-type": "application/json" },
+			body: JSON.stringify({ type: "inc", requestId: "r1", expectedRevision: 0 }),
+		});
+		expect(action.status).toBe(200);
+		const body = await jsonBody(action);
+		expect(body.visualSource).toBe("<board id='v1'/>");
+		expect(body.visualSourceHash).toBe(visual.sourceHash);
+		expect(body.visualId).toBe(visual.id);
 	});
 });

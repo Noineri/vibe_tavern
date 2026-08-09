@@ -654,14 +654,15 @@ export type ExperiencePromptOverrideContentRequest = z.input<typeof experiencePr
 
 /** Session response (start / get / branch discovery). Extends the canonical
  * validated DTO with the additional public metadata serialized by the backend's
- * `ExperienceSessionView`; the Wave 7 store needs `visualId` to reconnect the
- * pinned visual and the rules revision/hash to detect exact-source changes.
- * Includes IR-70E participant provider/model assignments through the canonical
- * participant schema. */
+ * `ExperienceSessionView`; the DTO carries the pinned visual snapshot
+ * (visualId/visualSource/visualSourceHash) so IR-73B renders the exact start-
+ * pinned source rather than a mutable live re-fetch. The extension adds only
+ * the rules revision/hash (the rules SOURCE stays private — only the revision
+ * + hash are public, never `rulesSource`). Includes IR-70E participant
+ * provider/model assignments through the canonical participant schema. */
 export interface ExperienceSessionResponse extends ExperienceSessionResponseDto {
   rulesRevision: number;
   rulesSourceHash: string;
-  visualId: string | null;
 }
 
 /** Per-viewer projected view (GET /view, and the `view` member of every

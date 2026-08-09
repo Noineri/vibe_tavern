@@ -209,6 +209,8 @@ function makeSession(id = "sess_1"): ExperienceSessionResponse {
     rulesRevision: 1,
     rulesSourceHash: "h",
     visualId: null,
+    visualSource: null,
+    visualSourceHash: null,
   } as ExperienceSessionResponse;
 }
 

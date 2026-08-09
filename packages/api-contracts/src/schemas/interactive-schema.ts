@@ -626,23 +626,51 @@ export const experienceReportQueueRequestSchema = z.object({
 /**
  * The session response: authoritative metadata plus the projected view for the
  * human viewer. Never includes hidden state for other seats, provider reasoning,
- * or the full authoritative state.
+ * rules source (only the revision + hash are public), or the full authoritative
+ * state. The pinned visual source snapshot (IR-70G) is exposed so the client
+ * renders the exact source captured at session start — not a mutable live
+ * re-fetch that could drift after the resource is edited or deleted.
  */
-export const experienceSessionResponseSchema = z.object({
-  sessionId: boundedId,
-  chatId: boundedId,
-  branchId: boundedId,
-  manifest: experienceManifestSchema,
-  apiVersion: z.number().int().min(1),
-  status: experienceSessionStatusSchema,
-  revision: boundedRevision,
-  reportFrontier: boundedRevision,
-  /** Server-authoritative projected view for the human viewer. */
-  view: experienceProjectedViewSchema,
-  capabilityGrants: z.array(experienceCapabilitySchema).max(INTERACTIVE_SCHEMA_MAX_CAPABILITIES),
-  contextMode: experienceContextModeSchema,
-  participants: z.array(experienceParticipantSchema).max(INTERACTIVE_SCHEMA_MAX_PARTICIPANTS),
-});
+export const experienceSessionResponseSchema = z
+  .object({
+    sessionId: boundedId,
+    chatId: boundedId,
+    branchId: boundedId,
+    manifest: experienceManifestSchema,
+    apiVersion: z.number().int().min(1),
+    status: experienceSessionStatusSchema,
+    revision: boundedRevision,
+    reportFrontier: boundedRevision,
+    /** Server-authoritative projected view for the human viewer. */
+    view: experienceProjectedViewSchema,
+    capabilityGrants: z.array(experienceCapabilitySchema).max(INTERACTIVE_SCHEMA_MAX_CAPABILITIES),
+    contextMode: experienceContextModeSchema,
+    participants: z.array(experienceParticipantSchema).max(INTERACTIVE_SCHEMA_MAX_PARTICIPANTS),
+    /** Pinned visual resource id (snapshot at session start; no FK — survives
+     *  source delete). Null when the session has no visual. */
+    visualId: boundedId.nullable(),
+    /** Pinned visual source snapshot (IR-70G; client-executable, contains no
+     *  hidden authoritative state). Null when the session has no visual. */
+    visualSource: z.string().min(1).nullable(),
+    /** Hash of the pinned visual source. Null when the session has no visual. */
+    visualSourceHash: boundedId.nullable(),
+  })
+  .superRefine((s, ctx) => {
+    // Coherence (IR-70G): the three visual-pinning fields are all null
+    // together (no visual) or all non-null together (pinned snapshot). A mixed
+    // state is an inconsistent snapshot that a valid start never produces.
+    const hasVisualId = s.visualId !== null;
+    const hasSource = s.visualSource !== null;
+    const hasHash = s.visualSourceHash !== null;
+    if (hasVisualId !== hasSource || hasVisualId !== hasHash) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          "visualId, visualSource, and visualSourceHash must be all null or all non-null together",
+        path: ["visualId"],
+      });
+    }
+  });
 
 // ─── Runtime request envelopes (IR-32 routes) ───────────────────────────────
 

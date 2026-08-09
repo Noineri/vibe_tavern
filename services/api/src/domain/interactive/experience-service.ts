@@ -171,6 +171,9 @@ export interface ExperienceSessionView {
   rulesRevision: number;
   rulesSourceHash: string;
   visualId: string | null;
+  /** Pinned visual source snapshot (IR-70G; client-executable, no hidden state). */
+  visualSource: string | null;
+  visualSourceHash: string | null;
   reportFrontier: number;
 }
 
@@ -942,7 +945,8 @@ export class ExperienceService {
     id: string; chatId: string; branchId: string; status: string; revision: number;
     manifestId: string; manifestName: string; apiVersion: number;
     participantsJson: string; capabilityGrantsJson: string; contextMode: string;
-    rulesRevision: number; rulesSourceHash: string; visualId: string | null; reportFrontier: number;
+    rulesRevision: number; rulesSourceHash: string; visualId: string | null;
+    visualSource: string | null; visualSourceHash: string | null; reportFrontier: number;
   }): ExperienceSessionView {
     return {
       sessionId: session.id,
@@ -958,6 +962,8 @@ export class ExperienceService {
       rulesRevision: session.rulesRevision,
       rulesSourceHash: session.rulesSourceHash,
       visualId: session.visualId,
+      visualSource: session.visualSource,
+      visualSourceHash: session.visualSourceHash,
       reportFrontier: session.reportFrontier,
     };
   }

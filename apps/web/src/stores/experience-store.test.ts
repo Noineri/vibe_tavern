@@ -146,6 +146,8 @@ function makeSession(overrides: Partial<ExperienceSessionResponse> = {}): Experi
     rulesRevision: 1,
     rulesSourceHash: "hash-1",
     visualId: null,
+    visualSource: null,
+    visualSourceHash: null,
     ...overrides,
   };
 }
@@ -868,5 +870,84 @@ describe("experience-store — local UI flags", () => {
     useExperienceStore.getState().closeModal();
     useExperienceStore.getState().setDetached(true);
     expect(useExperienceStore.getState().byScope).toEqual({});
+  });
+});
+
+// ── IR-70G: pinned visual source retention in the store ─────────────────────
+
+describe("experience-store — pinned visual source retention (IR-70G)", () => {
+  test("rehydrate retains the exact pinned visualSource/visualSourceHash from the API", async () => {
+    const pinnedSource = "<board id='v1'/>";
+    const pinnedHash = "hash-visual-abc";
+    const session = makeSession({
+      visualId: "vis-1",
+      visualSource: pinnedSource,
+      visualSourceHash: pinnedHash,
+    });
+    impl.getActiveExperienceSession = async () => session;
+    useExperienceStore.getState().setScope(C1, B1);
+    await flushScope(KEY_C1B1);
+
+    const scope = scopeState(KEY_C1B1);
+    expect(scope?.session?.visualSource).toBe(pinnedSource);
+    expect(scope?.session?.visualSourceHash).toBe(pinnedHash);
+    expect(scope?.session?.visualId).toBe("vis-1");
+  });
+
+  test("a later live visual resource edit is irrelevant: the store does not call visual CRUD to reconnect", async () => {
+    const pinnedSource = "<board id='v1'/>";
+    const pinnedHash = "hash-visual-abc";
+    const session = makeSession({
+      visualId: "vis-1",
+      visualSource: pinnedSource,
+      visualSourceHash: pinnedHash,
+    });
+    await seedActiveScope(session);
+
+    // The mock module does not expose visual CRUD functions at all — the store
+    // has no way to call getExperienceVisual. Assert the pinned values survive
+    // a mutation resync (which triggers a rehydrate discovery) unchanged.
+    impl.getActiveExperienceSession = async () =>
+      makeSession({ visualId: "vis-1", visualSource: pinnedSource, visualSourceHash: pinnedHash, revision: 2 });
+    impl.submitExperienceAction = async () => makeActionResponse({
+      visualId: "vis-1", visualSource: pinnedSource, visualSourceHash: pinnedHash, revision: 2,
+    });
+
+    const result = await useExperienceStore.getState().submitAction(intent());
+    expect(result?.visualSource).toBe(pinnedSource);
+    expect(result?.visualSourceHash).toBe(pinnedHash);
+
+    const scope = scopeState(KEY_C1B1);
+    expect(scope?.session?.visualSource).toBe(pinnedSource);
+    expect(scope?.session?.visualSourceHash).toBe(pinnedHash);
+  });
+
+  test("startSession retains the exact pinned visualSource/visualSourceHash from the server", async () => {
+    useExperienceStore.getState().setScope(C1, B1);
+    await flushScope(KEY_C1B1);
+    expect(scopeState(KEY_C1B1)?.session).toBeNull();
+
+    const started = makeSession({
+      visualId: "vis-2",
+      visualSource: "<canvas/>",
+      visualSourceHash: "hash-canvas",
+    });
+    impl.startExperienceSession = async () => started;
+    impl.getActiveExperienceSession = async () => started;
+
+    const result = await useExperienceStore.getState().startSession();
+    expect(result?.visualSource).toBe("<canvas/>");
+    expect(result?.visualSourceHash).toBe("hash-canvas");
+    expect(result?.visualId).toBe("vis-2");
+    expect(scopeState(KEY_C1B1)?.session?.visualSource).toBe("<canvas/>");
+    expect(scopeState(KEY_C1B1)?.session?.visualSourceHash).toBe("hash-canvas");
+  });
+
+  test("a no-visual session has explicit null visualSource/visualSourceHash in the store", async () => {
+    await seedActiveScope(makeSession());
+    const scope = scopeState(KEY_C1B1);
+    expect(scope?.session?.visualId).toBeNull();
+    expect(scope?.session?.visualSource).toBeNull();
+    expect(scope?.session?.visualSourceHash).toBeNull();
   });
 });

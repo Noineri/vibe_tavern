@@ -13,8 +13,8 @@ import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { createStoreContainer, type StoreContainer } from "@vibe-tavern/db";
-import { EXPERIENCE_CAPABILITY, EXPERIENCE_VIEWER_KIND } from "@vibe-tavern/domain";
+import { createStoreContainer, type StoreContainer, type ExperienceVisualRow } from "@vibe-tavern/db";
+import { EXPERIENCE_CAPABILITY, EXPERIENCE_VIEWER_KIND, type ExperienceCapability } from "@vibe-tavern/domain";
 
 import { ExperienceResourceService } from "../src/domain/interactive/experience-resource-service.js";
 import { ExperienceService } from "../src/domain/interactive/experience-service.js";
@@ -176,12 +176,26 @@ async function setup(seed: string | null = null) {
   return service;
 }
 
-async function seedChatAndScript(source: string, grants: string[] = []) {
+async function seedChatAndScript(
+  source: string,
+  grants: ExperienceCapability[] = [],
+  visual?: { source: string },
+): Promise<{ chatId: string; branchId: string; visual: ExperienceVisualRow | null }> {
   const character = await stores.characters.create({ name: "Hero" } as never);
   const chat = await stores.chats.createChat({ characterId: character.id, title: "T" });
   const script = await stores.scripts.create({ name: "Rules", scriptKind: "interactive", code: source });
-  await resources.updateConfig(chat.id, { enabled: true, scriptId: script.id, capabilityGrants: grants as never });
-  return { chatId: chat.id, branchId: chat.activeBranchId };
+  let visualRow: ExperienceVisualRow | null = null;
+  if (visual !== undefined) {
+    const created = await resources.createVisual({ name: "Viz", source: visual.source, apiVersion: 1 });
+    if (created.ok) visualRow = created.data;
+  }
+  await resources.updateConfig(chat.id, {
+    enabled: true,
+    scriptId: script.id,
+    capabilityGrants: grants,
+    ...(visualRow !== null ? { visualId: visualRow.id } : {}),
+  });
+  return { chatId: chat.id, branchId: chat.activeBranchId, visual: visualRow };
 }
 
 // ─── Tests ───────────────────────────────────────────────────────────────────
@@ -878,5 +892,120 @@ describe("ExperienceService — model-seat assignment validation at start (IR-70
     expect(started.error.status).toBe(422);
     // Nothing was written: no active session, no queued attachment, no slot claim.
     expect(await stores.experiences.getActiveSessionForBranch(branchId)).toBeNull();
+  });
+});
+
+// ─── IR-70G: pinned visual source snapshot in the session view ───────────────
+
+describe("ExperienceService — pinned visual source snapshot (IR-70G)", () => {
+  test("start returns the exact persisted pinned visualSource/visualSourceHash", async () => {
+    const service = await setup();
+    const { chatId, branchId, visual } = await seedChatAndScript(COUNTER_SOURCE, [], { source: "<board id='v1'/>" });
+    expect(visual).not.toBeNull();
+    if (visual === null) return;
+
+    const started = await service.startSession({ chatId, branchId, settings: {}, participants: [] });
+    expect(started.ok).toBe(true);
+    if (!started.ok) return;
+    expect(started.data.visualId).toBe(visual.id);
+    expect(started.data.visualSource).toBe("<board id='v1'/>");
+    expect(started.data.visualSourceHash).toBe(visual.sourceHash);
+  });
+
+  test("after editing the live visual resource, the session view still returns the original pinned snapshot", async () => {
+    const service = await setup();
+    const { chatId, branchId, visual } = await seedChatAndScript(COUNTER_SOURCE, [], { source: "<board id='v1'/>" });
+    expect(visual).not.toBeNull();
+    if (visual === null) return;
+
+    const started = await service.startSession({ chatId, branchId, settings: {}, participants: [] });
+    expect(started.ok).toBe(true);
+    if (!started.ok) return;
+    const sid = started.data.sessionId;
+    const pinnedSource = started.data.visualSource;
+    const pinnedHash = started.data.visualSourceHash;
+    expect(pinnedSource).toBe("<board id='v1'/>");
+    expect(pinnedHash).toBe(visual.sourceHash);
+
+    // Edit the live visual resource — the persisted snapshot must NOT change.
+    const edited = await resources.updateVisual(visual.id, { source: "<board id='v2-mutated'/>" });
+    expect(edited.ok).toBe(true);
+    if (edited.ok) expect(edited.data.sourceHash).not.toBe(pinnedHash);
+
+    const resumed = await service.resumeSession(sid);
+    expect(resumed.ok).toBe(true);
+    if (!resumed.ok) return;
+    expect(resumed.data.visualSource).toBe(pinnedSource);
+    expect(resumed.data.visualSourceHash).toBe(pinnedHash);
+    expect(resumed.data.visualId).toBe(visual.id);
+
+    // getActiveSessionForBranch also returns the pinned snapshot.
+    const found = await service.getActiveSessionForBranch(chatId, branchId);
+    expect(found.ok).toBe(true);
+    if (!found.ok) return;
+    expect(found.data.visualSource).toBe(pinnedSource);
+    expect(found.data.visualSourceHash).toBe(pinnedHash);
+  });
+
+  test("after deleting the live visual resource, the session view still returns the original pinned snapshot", async () => {
+    const service = await setup();
+    const { chatId, branchId, visual } = await seedChatAndScript(COUNTER_SOURCE, [], { source: "<board id='v1'/>" });
+    expect(visual).not.toBeNull();
+    if (visual === null) return;
+
+    const started = await service.startSession({ chatId, branchId, settings: {}, participants: [] });
+    expect(started.ok).toBe(true);
+    if (!started.ok) return;
+    const sid = started.data.sessionId;
+    const pinnedSource = started.data.visualSource;
+    const pinnedHash = started.data.visualSourceHash;
+
+    // Delete the live visual resource — the pinned snapshot survives (no FK).
+    await resources.deleteVisual(visual.id);
+    expect(await resources.getVisual(visual.id)).toBeNull();
+
+    const resumed = await service.resumeSession(sid);
+    expect(resumed.ok).toBe(true);
+    if (!resumed.ok) return;
+    expect(resumed.data.visualSource).toBe(pinnedSource);
+    expect(resumed.data.visualSourceHash).toBe(pinnedHash);
+    expect(resumed.data.visualId).toBe(visual.id);
+  });
+
+  test("a session with no visual responds with explicit null visualId/source/hash", async () => {
+    const service = await setup();
+    const { chatId, branchId } = await seedChatAndScript(COUNTER_SOURCE);
+    const started = await service.startSession({ chatId, branchId, settings: {}, participants: [] });
+    expect(started.ok).toBe(true);
+    if (!started.ok) return;
+    expect(started.data.visualId).toBeNull();
+    expect(started.data.visualSource).toBeNull();
+    expect(started.data.visualSourceHash).toBeNull();
+
+    const resumed = await service.resumeSession(started.data.sessionId);
+    expect(resumed.ok).toBe(true);
+    if (!resumed.ok) return;
+    expect(resumed.data.visualId).toBeNull();
+    expect(resumed.data.visualSource).toBeNull();
+    expect(resumed.data.visualSourceHash).toBeNull();
+  });
+
+  test("action responses inherit the pinned visual source fields", async () => {
+    const service = await setup();
+    const { chatId, branchId, visual } = await seedChatAndScript(COUNTER_SOURCE, [], { source: "<board id='v1'/>" });
+    expect(visual).not.toBeNull();
+    if (visual === null) return;
+
+    const started = await service.startSession({ chatId, branchId, settings: {}, participants: [] });
+    expect(started.ok).toBe(true);
+    if (!started.ok) return;
+    const sid = started.data.sessionId;
+
+    const result = await service.submitAction(sid, { type: "inc", requestId: "r1", expectedRevision: 0 });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.session.visualSource).toBe("<board id='v1'/>");
+    expect(result.data.session.visualSourceHash).toBe(visual.sourceHash);
+    expect(result.data.session.visualId).toBe(visual.id);
   });
 });

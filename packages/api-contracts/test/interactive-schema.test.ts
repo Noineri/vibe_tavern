@@ -269,6 +269,9 @@ describe("experienceParticipantSchema (IR-70E model-seat assignment)", () => {
       capabilityGrants: ["model"],
       contextMode: "none",
       participants: [legacy],
+      visualId: null,
+      visualSource: null,
+      visualSourceHash: null,
     }).success).toBe(true);
   });
 
@@ -507,6 +510,9 @@ describe("experienceSessionResponseSchema", () => {
       capabilityGrants: [],
       contextMode: "none",
       participants: [],
+      visualId: null,
+      visualSource: null,
+      visualSourceHash: null,
     };
   }
 
@@ -524,6 +530,79 @@ describe("experienceSessionResponseSchema", () => {
     expectReject(
       experienceSessionResponseSchema.safeParse({ ...validResponse(), status: "paused" }),
     );
+  });
+
+  // ── IR-70G: pinned visual source snapshot fields ───────────────────────
+
+  it("accepts the all-null no-visual triplet (visualId/source/hash)", () => {
+    const data = expectData(experienceSessionResponseSchema.safeParse(validResponse()));
+    expect((data as { visualId: string | null }).visualId).toBeNull();
+    expect((data as { visualSource: string | null }).visualSource).toBeNull();
+    expect((data as { visualSourceHash: string | null }).visualSourceHash).toBeNull();
+  });
+
+  it("accepts the all-non-null pinned-visual triplet", () => {
+    const pinned = {
+      ...validResponse(),
+      visualId: "vis_1",
+      visualSource: "<visual source/>",
+      visualSourceHash: "hash_abc",
+    };
+    const data = expectData(experienceSessionResponseSchema.safeParse(pinned));
+    expect((data as { visualId: string }).visualId).toBe("vis_1");
+    expect((data as { visualSource: string }).visualSource).toBe("<visual source/>");
+    expect((data as { visualSourceHash: string }).visualSourceHash).toBe("hash_abc");
+  });
+
+  it("rejects a mixed triplet: visualId non-null but source/hash null", () => {
+    expectReject(
+      experienceSessionResponseSchema.safeParse({
+        ...validResponse(),
+        visualId: "vis_1",
+        visualSource: null,
+        visualSourceHash: null,
+      }),
+    );
+  });
+
+  it("rejects a mixed triplet: visualId null but source non-null", () => {
+    expectReject(
+      experienceSessionResponseSchema.safeParse({
+        ...validResponse(),
+        visualId: null,
+        visualSource: "<visual/>",
+        visualSourceHash: null,
+      }),
+    );
+  });
+
+  it("rejects a mixed triplet: hash non-null but visualId/source null", () => {
+    expectReject(
+      experienceSessionResponseSchema.safeParse({
+        ...validResponse(),
+        visualId: null,
+        visualSource: null,
+        visualSourceHash: "orphan_hash",
+      }),
+    );
+  });
+
+  it("rejects a response missing visualSource (required nullable, not optional)", () => {
+    const { visualSource: _omit, ...rest } = validResponse();
+    void _omit;
+    expectReject(experienceSessionResponseSchema.safeParse(rest));
+  });
+
+  it("rejects a response missing visualSourceHash (required nullable, not optional)", () => {
+    const { visualSourceHash: _omit, ...rest } = validResponse();
+    void _omit;
+    expectReject(experienceSessionResponseSchema.safeParse(rest));
+  });
+
+  it("rejects a response missing visualId (required nullable, not optional)", () => {
+    const { visualId: _omit, ...rest } = validResponse();
+    void _omit;
+    expectReject(experienceSessionResponseSchema.safeParse(rest));
   });
 });
 
