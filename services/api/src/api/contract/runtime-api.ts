@@ -518,6 +518,7 @@ export interface DiceRuntimeApi {
 import type {
 	ExperienceSessionView,
 	ExperienceProjection,
+	ExperienceQueuedAttachmentView,
 	TurnAwait,
 } from "../../domain/interactive/experience-service.js";
 import type { RecalculationPreview } from "../../domain/interactive/experience-replay-service.js";
@@ -557,6 +558,12 @@ export interface ExperienceEffectRunResponse {
 	session?: ExperienceSessionResponse;
 }
 
+/** Privacy-safe queued-attachment response (IR-70A). `null` when the session
+ *  has no current queued (unbound) attachment. The {@link
+ *  ExperienceQueuedAttachmentView} DTO is the attachment row minus its hidden
+ *  checkpoint — never carry or derive from `hiddenStateCheckpointJson`. */
+export type ExperienceQueuedAttachmentResponse = ExperienceQueuedAttachmentView | null;
+
 export interface ExperienceRuntimeApi {
 	// ── Config (the config-driven setup source) ──
 	getExperienceConfig: (chatId: string) => Promise<ExperienceChatConfigRow>;
@@ -595,12 +602,21 @@ export interface ExperienceRuntimeApi {
 		participants: import("@vibe-tavern/domain").ExperienceParticipant[];
 	}) => Promise<ExperienceSessionResponse>;
 	getExperienceSession: (sessionId: string) => Promise<ExperienceSessionResponse>;
+	/** Branch-scoped active-session discovery (IR-70A): resolve the branch's
+	 *  active session and project it for the human viewer. Returns the SAME
+	 *  response shape as {@link getExperienceSession}. */
+	getActiveExperienceSession: (chatId: string, branchId: string) => Promise<ExperienceSessionResponse>;
 	endExperienceSession: (sessionId: string, body: { status: "completed" | "interrupted" }) => Promise<ExperienceSessionResponse>;
 	submitExperienceAction: (sessionId: string, body: import("@vibe-tavern/domain").ExperienceAction, signal?: AbortSignal) => Promise<ExperienceActionResponse>;
 
 	// ── Per-viewer projection reads ──
 	getExperienceView: (sessionId: string, participantId?: string) => Promise<ExperienceProjection>;
 	getExperienceActions: (sessionId: string, participantId?: string) => Promise<ExperienceActionDescriptor[]>;
+
+	// ── Queued-attachment read (IR-70A) ──
+	/** Read the session's current queued attachment through the privacy-safe DTO,
+	 *  or `null` when none is queued. Never includes hidden checkpoint state. */
+	getExperienceQueuedAttachment: (sessionId: string) => Promise<ExperienceQueuedAttachmentResponse>;
 
 	// ── Replay ──
 	undoExperienceSession: (sessionId: string, body: { targetRevision: number }) => Promise<ExperienceActionResponse>;

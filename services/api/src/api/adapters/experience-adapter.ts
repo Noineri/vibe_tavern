@@ -144,6 +144,16 @@ export class ExperienceAdapter implements ExperienceRuntimeApi {
 		return this.toResponse(resumed.data, projection);
 	};
 
+	/** Branch-scoped active-session discovery (IR-70A): resolve the branch's
+	 *  active session and project it for the human viewer, returning the same
+	 *  response shape as {@link getExperienceSession}. */
+	getActiveExperienceSession = async (chatId: string, branchId: string) => {
+		const found = await this.lifecycle.getActiveSessionForBranch(chatId, branchId);
+		if (!found.ok) throw mapError(found.error);
+		const projection = await this.projectForHuman(found.data.sessionId, found.data.participants);
+		return this.toResponse(found.data, projection);
+	};
+
 	endExperienceSession = async (sessionId: string, body: { status: "completed" | "interrupted" }) => {
 		const ended = await this.lifecycle.endSession(sessionId, body.status);
 		if (!ended.ok) throw mapError(ended.error);
@@ -189,6 +199,18 @@ export class ExperienceAdapter implements ExperienceRuntimeApi {
 		const legal = await this.lifecycle.getLegalActions(sessionId, viewer);
 		if (!legal.ok) throw mapError(legal.error);
 		return legal.data;
+	};
+
+	// ─── Queued-attachment read (IR-70A) ───────────────────────────────────────
+
+	/** Read the session's current queued attachment through the privacy-safe DTO,
+	 *  or `null` when none is queued. The service verifies the session exists and
+	 *  strips `hiddenStateCheckpointJson` before returning — this method carries
+	 *  only public display/commit-intent fields. */
+	getExperienceQueuedAttachment = async (sessionId: string) => {
+		const attachment = await this.lifecycle.getQueuedAttachment(sessionId);
+		if (!attachment.ok) throw mapError(attachment.error);
+		return attachment.data;
 	};
 
 	// ─── Replay ──────────────────────────────────────────────────────────────

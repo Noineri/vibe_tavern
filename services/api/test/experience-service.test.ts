@@ -406,6 +406,7 @@ describe("ExperienceService — pending model effects (Wave 4 runs them)", () =>
     const service = await setup();
     const { chatId, branchId } = await seedChatAndScript(MODEL_EFFECT_SOURCE);
     const started = await service.startSession({ chatId, branchId, settings: {}, participants: [] });
+    expect(started.ok).toBe(true);
     if (!started.ok) return;
     const sid = started.data.sessionId;
 
@@ -415,5 +416,163 @@ describe("ExperienceService — pending model effects (Wave 4 runs them)", () =>
     expect(pending.ok && pending.data).toHaveLength(1);
     expect(pending.ok && pending.data[0]?.kind).toBe("model");
     expect(pending.ok && pending.data[0]?.status).toBe("pending");
+  });
+});
+
+// ─── IR-70A: branch-scoped active-session discovery + queued-attachment read ─
+
+describe("ExperienceService — branch-scoped active-session discovery (IR-70A)", () => {
+  test("discovers the active session by {chatId, branchId} and returns the same view as start", async () => {
+    const service = await setup();
+    const { chatId, branchId } = await seedChatAndScript(COUNTER_SOURCE);
+    const started = await service.startSession({ chatId, branchId, settings: {}, participants: [] });
+    expect(started.ok).toBe(true);
+    if (!started.ok) return;
+
+    const found = await service.getActiveSessionForBranch(chatId, branchId);
+    expect(found.ok).toBe(true);
+    if (!found.ok) return;
+    expect(found.data.sessionId).toBe(started.data.sessionId);
+    expect(found.data.chatId).toBe(chatId);
+    expect(found.data.branchId).toBe(branchId);
+    expect(found.data.status).toBe("active");
+    expect(found.data.revision).toBe(0);
+    expect(found.data.manifest.id).toBe("counter");
+  });
+
+  test("chat_not_found for an unknown chat", async () => {
+    const service = await setup();
+    const found = await service.getActiveSessionForBranch("unknown-chat", "b_1");
+    expect(found.ok).toBe(false);
+    if (found.ok) return;
+    expect(found.error.code).toBe("chat_not_found");
+    expect(found.error.status).toBe(404);
+  });
+
+  test("branch_not_found for a branch that belongs to a different chat", async () => {
+    const service = await setup();
+    const { chatId } = await seedChatAndScript(COUNTER_SOURCE);
+    // Create a second chat and use ITS branch with the first chat's id.
+    const character2 = await stores.characters.create({ name: "Other" } as never);
+    const chat2 = await stores.chats.createChat({ characterId: character2.id, title: "Other" });
+
+    const found = await service.getActiveSessionForBranch(chatId, chat2.activeBranchId);
+    expect(found.ok).toBe(false);
+    if (found.ok) return;
+    expect(found.error.code).toBe("branch_not_found");
+    expect(found.error.status).toBe(404);
+  });
+
+  test("no_active_session for a valid chat+branch that has no session yet", async () => {
+    const service = await setup();
+    const { chatId, branchId } = await seedChatAndScript(COUNTER_SOURCE);
+    const found = await service.getActiveSessionForBranch(chatId, branchId);
+    expect(found.ok).toBe(false);
+    if (found.ok) return;
+    expect(found.error.code).toBe("no_active_session");
+    expect(found.error.status).toBe(404);
+  });
+
+  test("discovery does not fabricate state — it reads the authoritative active slot only", async () => {
+    const service = await setup();
+    const { chatId, branchId } = await seedChatAndScript(COUNTER_SOURCE);
+    const started = await service.startSession({ chatId, branchId, settings: {}, participants: [] });
+    expect(started.ok).toBe(true);
+    if (!started.ok) return;
+    // After an action (revision 0 → 1), discovery reflects the persisted state.
+    await service.submitAction(started.data.sessionId, { type: "inc", requestId: "r1", expectedRevision: 0 });
+    const found = await service.getActiveSessionForBranch(chatId, branchId);
+    expect(found.ok && found.data.revision).toBe(1);
+  });
+});
+
+describe("ExperienceService — privacy-safe queued-attachment read (IR-70A)", () => {
+  test("returns null when no queued attachment exists", async () => {
+    const service = await setup();
+    const { chatId, branchId } = await seedChatAndScript(COUNTER_SOURCE);
+    const started = await service.startSession({ chatId, branchId, settings: {}, participants: [] });
+    expect(started.ok).toBe(true);
+    if (!started.ok) return;
+    const result = await service.getQueuedAttachment(started.data.sessionId);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data).toBeNull();
+  });
+
+  test("returns the queued attachment with public display/commit-intent fields", async () => {
+    const service = await setup();
+    const { chatId, branchId } = await seedChatAndScript(COUNTER_SOURCE);
+    const started = await service.startSession({ chatId, branchId, settings: {}, participants: [] });
+    expect(started.ok).toBe(true);
+    if (!started.ok) return;
+    const sid = started.data.sessionId;
+
+    await stores.experiences.queueAttachment({
+      chatId,
+      branchId,
+      sessionId: sid,
+      sessionRevision: 0,
+      queueRevision: 1,
+      kind: "report",
+      publicEventsJson: JSON.stringify({ title: "Round 1", summary: "Inc happened", events: [{ type: "inc", detail: { n: 1 } }] }),
+      hiddenStateCheckpointJson: JSON.stringify({ secret: "PRIVACY_MARKER_42" }),
+      rulesSourceHash: "hash123",
+      visualSourceHash: null,
+    });
+
+    const result = await service.getQueuedAttachment(sid);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data).not.toBeNull();
+    const view = result.data!;
+    expect(view.id).toBeTruthy();
+    expect(view.chatId).toBe(chatId);
+    expect(view.branchId).toBe(branchId);
+    expect(view.sessionId).toBe(sid);
+    expect(view.kind).toBe("report");
+    expect(view.sessionRevision).toBe(0);
+    expect(view.queueRevision).toBe(1);
+    expect(view.rulesSourceHash).toBe("hash123");
+    expect(view.visualSourceHash).toBeNull();
+    expect(view.publicReport).toEqual({ title: "Round 1", summary: "Inc happened", events: [{ type: "inc", detail: { n: 1 } }] });
+  });
+
+  test("the public DTO NEVER includes hiddenStateCheckpointJson (privacy)", async () => {
+    const service = await setup();
+    const { chatId, branchId } = await seedChatAndScript(COUNTER_SOURCE);
+    const started = await service.startSession({ chatId, branchId, settings: {}, participants: [] });
+    expect(started.ok).toBe(true);
+    if (!started.ok) return;
+    const sid = started.data.sessionId;
+
+    await stores.experiences.queueAttachment({
+      chatId,
+      branchId,
+      sessionId: sid,
+      sessionRevision: 0,
+      queueRevision: 1,
+      kind: "report",
+      publicEventsJson: JSON.stringify({ title: "T", events: [] }),
+      hiddenStateCheckpointJson: JSON.stringify({ secret: "PRIVACY_MARKER_42" }),
+      rulesSourceHash: "h",
+      visualSourceHash: null,
+    });
+
+    const result = await service.getQueuedAttachment(sid);
+    expect(result.ok).toBe(true);
+    if (!result.ok || result.data === null) return;
+    // The hidden key is absent from the DTO object.
+    expect(result.data).not.toHaveProperty("hiddenStateCheckpointJson");
+    // The serialized JSON does NOT carry the hidden marker value.
+    expect(JSON.stringify(result.data)).not.toContain("PRIVACY_MARKER_42");
+  });
+
+  test("session_not_found when the session does not exist", async () => {
+    const service = await setup();
+    const result = await service.getQueuedAttachment("nonexistent-session");
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe("session_not_found");
+    expect(result.error.status).toBe(404);
   });
 });

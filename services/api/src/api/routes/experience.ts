@@ -58,6 +58,18 @@ export function createExperienceRoutes(runtime: ExperienceRuntimeApi) {
       const chatId = c.req.param("chatId");
       return c.json(await runtime.startExperienceSession(chatId, c.req.valid("json")));
     })
+    // Branch-scoped active-session discovery (IR-70A). Strict query: branchId is
+    // required (a missing branchId is 400, never an implicit active-branch
+    // default) so a stale URL cannot silently follow whichever branch is active.
+    .get(
+      "/api/chats/:chatId/experience/session",
+      zValidator("query", z.object({ branchId: z.string().min(1).max(schemas.INTERACTIVE_SCHEMA_MAX_ID) })),
+      async (c) => {
+        const chatId = c.req.param("chatId");
+        const { branchId } = c.req.valid("query");
+        return c.json(await runtime.getActiveExperienceSession(chatId, branchId));
+      },
+    )
     .get("/api/experience/sessions/:sessionId", async (c) => {
       return c.json(await runtime.getExperienceSession(c.req.param("sessionId")));
     })
@@ -87,6 +99,13 @@ export function createExperienceRoutes(runtime: ExperienceRuntimeApi) {
         return c.json(await runtime.getExperienceActions(c.req.param("sessionId"), participantId));
       },
     )
+
+    // ── Queued-attachment read (IR-70A) ───────────────────────────────────
+    // Privacy-safe: returns only public display/commit-intent fields (never the
+    // hidden checkpoint). The service verifies the session exists before reading.
+    .get("/api/experience/sessions/:sessionId/attachment", async (c) => {
+      return c.json(await runtime.getExperienceQueuedAttachment(c.req.param("sessionId")));
+    })
 
     // ── Replay ─────────────────────────────────────────────────────────────
     .post("/api/experience/sessions/:sessionId/undo", zValidator("json", schemas.experienceUndoRequestSchema), async (c) => {

@@ -25,6 +25,7 @@ export type ExperienceApiError =
   | { status: 404; code: "chat_not_found"; message: string }
   | { status: 404; code: "branch_not_found"; message: string }
   | { status: 404; code: "session_not_found"; message: string }
+  | { status: 404; code: "no_active_session"; message: string }
   | { status: 404; code: "script_not_found"; message: string }
   | { status: 404; code: "visual_not_found"; message: string }
   | { status: 404; code: "effect_not_found"; message: string }

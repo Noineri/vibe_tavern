@@ -31,7 +31,7 @@
  * no EventBus. Model-effect execution is Wave 4.
  */
 
-import type { StoreContainer } from "@vibe-tavern/db";
+import type { ExperienceAttachmentRow, ExperienceEffectRow, ExperienceSessionRow, StoreContainer } from "@vibe-tavern/db";
 import {
   EXPERIENCE_CAPABILITY,
   EXPERIENCE_CONTROLLER,
@@ -42,6 +42,7 @@ import {
   type ExperienceContextMode,
   type ExperienceEvent,
   type ExperienceParticipant,
+  type ExperiencePublicReport,
   type ExperienceSessionStatus,
   type ExperienceViewer,
 } from "@vibe-tavern/domain";
@@ -74,7 +75,7 @@ import {
   type ResolvedVisualSource,
   ExperienceResourceService,
 } from "./experience-resource-service.js";
-import type { ExperienceEffectRow, ExperienceSessionRow } from "@vibe-tavern/db";
+import { storeAttachmentToReportSnapshot } from "./experience-report-snapshot.js";
 
 // ─── Counting RNG (cursor tracking) ─────────────────────────────────────────
 
@@ -180,6 +181,29 @@ export interface ExperienceProjection {
   flavor?: unknown;
   revision: number;
   status: ExperienceSessionStatus;
+}
+
+/** Privacy-safe queued-attachment view (IR-70A). A dedicated public DTO that
+ *  exposes ONLY what the client needs for display / commit intent — it is the
+ *  attachment row MINUS `hiddenStateCheckpointJson`. The hidden authoritative
+ *  checkpoint is read only on branch-fork restore (IR-53), never on a client
+ *  read; mirroring it here would leak private game state to the visual. */
+export interface ExperienceQueuedAttachmentView {
+  id: string;
+  chatId: string;
+  branchId: string;
+  sessionId: string;
+  sessionRevision: number;
+  queueRevision: number;
+  kind: string;
+  /** Parsed public report envelope (`{ title, summary?, events[] }`); null when
+   *  the stored JSON was malformed (defensive — should not happen for a
+   *  properly queued attachment). Never derived from hidden state. */
+  publicReport: ExperiencePublicReport | null;
+  rulesSourceHash: string;
+  visualSourceHash: string | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export type TurnAwait = "human" | "model" | "completed" | "idle";
@@ -370,6 +394,32 @@ export class ExperienceService {
     }
     await this.stores.experiences.finishSession(sessionId, status);
     return ok(undefined);
+  }
+
+  /**
+   * Resolve the active session for a chat + branch (IR-70A). Verifies the chat
+   * exists, the branch belongs to the chat, and a session is currently active
+   * for that branch — each returning a typed 404 so the client can distinguish
+   * the cause. Never fabricates or persists state: this is a pure read of the
+   * authoritative `activeSlot` claim created by {@link startSession}.
+   */
+  async getActiveSessionForBranch(
+    chatId: string,
+    branchId: string,
+  ): Promise<ExperienceResult<ExperienceSessionView>> {
+    const chat = await this.stores.chats.getById(chatId);
+    if (chat === null) {
+      return err({ status: 404, code: "chat_not_found", message: `Chat '${chatId}' not found` });
+    }
+    const branch = await this.findBranch(chatId, branchId);
+    if (branch === null) {
+      return err({ status: 404, code: "branch_not_found", message: `Branch '${branchId}' not found` });
+    }
+    const session = await this.stores.experiences.getActiveSessionForBranch(branchId);
+    if (session === null) {
+      return err({ status: 404, code: "no_active_session", message: `No active experience session for branch '${branchId}'` });
+    }
+    return ok(this.toSessionView(session));
   }
 
   // ─── Projection ───────────────────────────────────────────────────────────
@@ -617,6 +667,30 @@ export class ExperienceService {
     return ok(effect);
   }
 
+  // ─── Queued-attachment read (IR-70A) ───────────────────────────────────────
+
+  /**
+   * Read the session's current queued (unbound) attachment through the
+   * privacy-safe {@link ExperienceQueuedAttachmentView} DTO. Verifies the
+   * session exists first (typed 404), then reads the queued row. Returns `null`
+   * when no unbound attachment exists. The returned view NEVER includes
+   * `hiddenStateCheckpointJson` — hidden authoritative state is read only on
+   * branch-fork restore (IR-53), never on a client read.
+   */
+  async getQueuedAttachment(
+    sessionId: string,
+  ): Promise<ExperienceResult<ExperienceQueuedAttachmentView | null>> {
+    const session = await this.stores.experiences.getSessionById(sessionId);
+    if (session === null) {
+      return err({ status: 404, code: "session_not_found", message: `Session '${sessionId}' not found` });
+    }
+    const attachment = await this.stores.experiences.getQueuedAttachmentForSession(sessionId);
+    if (attachment === null) {
+      return ok(null);
+    }
+    return ok(this.toQueuedAttachmentView(attachment));
+  }
+
   // ─── Model-effect VM ops (Wave 4 / IR-43) ─────────────────────────────────
 
   /**
@@ -855,6 +929,40 @@ export class ExperienceService {
       rulesSourceHash: session.rulesSourceHash,
       visualId: session.visualId,
       reportFrontier: session.reportFrontier,
+    };
+  }
+
+  /**
+   * Project a stored attachment row into the privacy-safe public DTO. Parses
+   * `publicEventsJson` defensively (null on malformed JSON, mirroring the
+   * prompt-assembly read path in {@link storeAttachmentToReportSnapshot}). The
+   * `hiddenStateCheckpointJson` column is deliberately NOT copied — the returned
+   * view can never carry hidden authoritative state.
+   */
+  private toQueuedAttachmentView(
+    attachment: ExperienceAttachmentRow,
+  ): ExperienceQueuedAttachmentView {
+    const snapshot = storeAttachmentToReportSnapshot(attachment);
+    const publicReport: ExperiencePublicReport | null = snapshot === null
+      ? null
+      : {
+          title: snapshot.title,
+          ...(snapshot.summary !== undefined ? { summary: snapshot.summary } : {}),
+          events: snapshot.events,
+        };
+    return {
+      id: attachment.id,
+      chatId: attachment.chatId,
+      branchId: attachment.branchId,
+      sessionId: attachment.sessionId,
+      sessionRevision: attachment.sessionRevision,
+      queueRevision: attachment.queueRevision,
+      kind: attachment.kind,
+      publicReport,
+      rulesSourceHash: attachment.rulesSourceHash,
+      visualSourceHash: attachment.visualSourceHash,
+      createdAt: attachment.createdAt,
+      updatedAt: attachment.updatedAt,
     };
   }
 }

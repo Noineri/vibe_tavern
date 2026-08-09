@@ -75,6 +75,8 @@ function stubRuntime(throws?: { kind: any; message: string }): { runtime: Experi
 		submitExperienceAction: async (sessionId: string, action: any, signal?: AbortSignal) => { rec("submitExperienceAction").push({ sessionId, action, signal }); maybeThrow(); return { ...sessionResponse("c_1", "b_1", sessionId), events: [], await: "human" }; },
 		getExperienceView: async (sessionId: string, participantId?: string) => { rec("getExperienceView").push({ sessionId, participantId }); maybeThrow(); return { state: { n: 0 }, actions: [], flavor: undefined, revision: 0, status: "active" }; },
 		getExperienceActions: async (sessionId: string, participantId?: string) => { rec("getExperienceActions").push({ sessionId, participantId }); maybeThrow(); return []; },
+		getActiveExperienceSession: async (chatId: string, branchId: string) => { rec("getActiveExperienceSession").push({ chatId, branchId }); maybeThrow(); return sessionResponse(chatId, branchId); },
+		getExperienceQueuedAttachment: async (sessionId: string) => { rec("getExperienceQueuedAttachment").push({ sessionId }); maybeThrow(); return null; },
 		undoExperienceSession: async (sessionId: string, body: any) => { rec("undoExperienceSession").push({ sessionId, body }); maybeThrow(); return { ...sessionResponse("c_1", "b_1", sessionId), events: [], await: "human" }; },
 		previewExperienceRecalculation: async (sessionId: string, body: any) => { rec("previewExperienceRecalculation").push({ sessionId, body }); maybeThrow(); return { originalRulesHash: "h1", originalState: {}, originalRevision: 0, newManifestId: "m", newRulesHash: "h2", outcome: { ok: true, finalState: {}, cursor: 0, checkpoints: [] } }; },
 		getExperienceEffects: async (sessionId: string) => { rec("getExperienceEffects").push({ sessionId }); maybeThrow(); return []; },
@@ -153,6 +155,31 @@ describe("Experience routes — HTTP layer (stub)", () => {
 			body: JSON.stringify({ type: "inc", requestId: "r1", expectedRevision: 0 }),
 		});
 		expect(r422.status).toBe(422);
+	});
+
+	test("session discovery: a missing branchId query is 400 (strict query)", async () => {
+		const { runtime } = stubRuntime();
+		const app = mount(runtime);
+		const res = await app.request("/api/chats/c_1/experience/session");
+		expect(res.status).toBe(400);
+	});
+
+	test("session discovery: forwards chatId path param + branchId query to the runtime", async () => {
+		const { runtime, calls } = stubRuntime();
+		const app = mount(runtime);
+		const res = await app.request("/api/chats/c_1/experience/session?branchId=b_1");
+		expect(res.status).toBe(200);
+		expect(calls.getActiveExperienceSession[0]).toEqual({ chatId: "c_1", branchId: "b_1" });
+	});
+
+	test("queued attachment read: forwards the sessionId path param", async () => {
+		const { runtime, calls } = stubRuntime();
+		const app = mount(runtime);
+		const res = await app.request("/api/experience/sessions/s_1/attachment");
+		expect(res.status).toBe(200);
+		expect(calls.getExperienceQueuedAttachment[0]).toEqual({ sessionId: "s_1" });
+		const body = await jsonBody(res);
+		expect(body).toBeNull();
 	});
 });
 
@@ -319,5 +346,113 @@ describe("Experience routes — integration (real services + DB)", () => {
 		const deleted = await app.request(`/api/experience/visuals/${v.id}`, { method: "DELETE" });
 		expect(deleted.status).toBe(200);
 		expect((await jsonBody(deleted)).ok).toBe(true);
+	});
+});
+
+// ─── 3. IR-70A: branch-scoped discovery + queued-attachment read ──────────────
+
+describe("Experience routes — IR-70A session discovery (integration)", () => {
+	test("discovers the active session by chatId + branchId and returns the projected view", async () => {
+		const { stores, resources, app } = await setupIntegration();
+		const { chatId, branchId } = await seedChatAndScript(stores, resources, COUNTER_SOURCE);
+		const start = await app.request(`/api/chats/${chatId}/experience/sessions`, {
+			method: "POST", headers: { "content-type": "application/json" },
+			body: JSON.stringify({ branchId, participants: [], settings: {} }),
+		});
+		const sid = (await jsonBody(start)).sessionId;
+
+		const found = await app.request(`/api/chats/${chatId}/experience/session?branchId=${branchId}`);
+		expect(found.status).toBe(200);
+		const body = await jsonBody(found);
+		expect(body.sessionId).toBe(sid);
+		expect(body.chatId).toBe(chatId);
+		expect(body.branchId).toBe(branchId);
+		expect(body.status).toBe("active");
+		expect(body.view.state).toEqual({ count: 0 });
+	});
+
+	test("unknown chat is 404 chat_not_found", async () => {
+		const { app } = await setupIntegration();
+		const res = await app.request("/api/chats/unknown/experience/session?branchId=b_1");
+		expect(res.status).toBe(404);
+		expect((await jsonBody(res)).error.details.code).toBe("chat_not_found");
+	});
+
+	test("wrong branch (belongs to another chat) is 404 branch_not_found", async () => {
+		const { stores, resources, app } = await setupIntegration();
+		const { chatId } = await seedChatAndScript(stores, resources, COUNTER_SOURCE);
+		const otherChar = await stores.characters.create({ name: "O" } as never);
+		const otherChat = await stores.chats.createChat({ characterId: otherChar.id, title: "O" });
+		const res = await app.request(`/api/chats/${chatId}/experience/session?branchId=${otherChat.activeBranchId}`);
+		expect(res.status).toBe(404);
+		expect((await jsonBody(res)).error.details.code).toBe("branch_not_found");
+	});
+
+	test("valid chat+branch with no active session is 404 no_active_session", async () => {
+		const { stores, resources, app } = await setupIntegration();
+		const { chatId, branchId } = await seedChatAndScript(stores, resources, COUNTER_SOURCE);
+		const res = await app.request(`/api/chats/${chatId}/experience/session?branchId=${branchId}`);
+		expect(res.status).toBe(404);
+		expect((await jsonBody(res)).error.details.code).toBe("no_active_session");
+	});
+
+	test("missing branchId query is 400", async () => {
+		const { stores, resources, app } = await setupIntegration();
+		const { chatId } = await seedChatAndScript(stores, resources, COUNTER_SOURCE);
+		const res = await app.request(`/api/chats/${chatId}/experience/session`);
+		expect(res.status).toBe(400);
+	});
+});
+
+describe("Experience routes — IR-70A queued-attachment read (integration)", () => {
+	test("returns null when no attachment is queued", async () => {
+		const { stores, resources, app } = await setupIntegration();
+		const { chatId, branchId } = await seedChatAndScript(stores, resources, COUNTER_SOURCE);
+		const start = await app.request(`/api/chats/${chatId}/experience/sessions`, {
+			method: "POST", headers: { "content-type": "application/json" },
+			body: JSON.stringify({ branchId, participants: [], settings: {} }),
+		});
+		const sid = (await jsonBody(start)).sessionId;
+
+		const res = await app.request(`/api/experience/sessions/${sid}/attachment`);
+		expect(res.status).toBe(200);
+		expect(await jsonBody(res)).toBeNull();
+	});
+
+	test("returns the queued attachment with public fields, NEVER the hidden checkpoint (privacy)", async () => {
+		const { stores, resources, app } = await setupIntegration();
+		const { chatId, branchId } = await seedChatAndScript(stores, resources, COUNTER_SOURCE);
+		const start = await app.request(`/api/chats/${chatId}/experience/sessions`, {
+			method: "POST", headers: { "content-type": "application/json" },
+			body: JSON.stringify({ branchId, participants: [], settings: {} }),
+		});
+		const sid = (await jsonBody(start)).sessionId;
+
+		await stores.experiences.queueAttachment({
+			chatId, branchId, sessionId: sid,
+			sessionRevision: 0, queueRevision: 1, kind: "report",
+			publicEventsJson: JSON.stringify({ title: "Round", events: [{ type: "inc" }] }),
+			hiddenStateCheckpointJson: JSON.stringify({ secret: "ROUTE_PRIVACY_MARKER_99" }),
+			rulesSourceHash: "h", visualSourceHash: null,
+		});
+
+		const res = await app.request(`/api/experience/sessions/${sid}/attachment`);
+		expect(res.status).toBe(200);
+		const raw = await res.text();
+		// Negative privacy assertion: the hidden marker and key must NOT appear.
+		expect(raw).not.toContain("ROUTE_PRIVACY_MARKER_99");
+		expect(raw).not.toContain("hiddenStateCheckpointJson");
+		const body = JSON.parse(raw);
+		expect(body).not.toBeNull();
+		expect(body.kind).toBe("report");
+		expect(body.queueRevision).toBe(1);
+		expect(body.publicReport).toEqual({ title: "Round", events: [{ type: "inc" }] });
+	});
+
+	test("unknown session is 404 session_not_found", async () => {
+		const { app } = await setupIntegration();
+		const res = await app.request("/api/experience/sessions/nonexistent/attachment");
+		expect(res.status).toBe(404);
+		expect((await jsonBody(res)).error.details.code).toBe("session_not_found");
 	});
 });
