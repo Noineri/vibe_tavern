@@ -1918,5 +1918,15 @@
   "experience_setup_overrides_character": "Переопределение текущего персонажа",
   "experience_setup_overrides_hint": "Очистите поле, чтобы удалить переопределение. Изменения применяются только к этой сессии.",
   "experience_setup_overrides_save_error": "Не удалось сохранить одно или несколько переопределений промпта.",
-  "experience_setup_overrides_loading": "Загрузка переопределений промпта…"
+  "experience_setup_overrides_loading": "Загрузка переопределений промпта…",
+  "experience_launcher_title": "Интерактив",
+  "experience_launcher_start": "Начать",
+  "experience_launcher_resume": "Продолжить",
+  "experience_launcher_active": "Сессия активна",
+  "experience_launcher_loading": "Загрузка…",
+  "experience_launcher_incompatible": "Недоступно",
+  "experience_incompatible": "Визуал этой сессии больше недоступен.",
+  "experience_popup_blocked": "Не удалось открыть отдельное окно. Разрешите всплывающие окна для этого сайта и повторите.",
+  "experience_action_stale": "Это действие основано на устаревшем состоянии. Обновление загружено.",
+  "experience_action_invalid": "Это действие не удалось применить."
 }

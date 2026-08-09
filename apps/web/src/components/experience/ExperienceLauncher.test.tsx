@@ -1,0 +1,659 @@
+/**
+ * ExperienceLauncher — IR-73B boundary tests.
+ *
+ * Boundary under test: mocked Experience store + snapshot store + SetupModal
+ * seams → the REAL ExperienceLauncher (with the REAL shared Popover/BottomSheet
+ * pill) → DOM observations + store-action assertions. The ExperienceModal is
+ * mocked to a thin shell so the launcher's prop-wiring (pinned source, action
+ * intent, finish, detach) is observable without the bridge/iframe machinery
+ * (those are pinned by ExperienceModal/Frame tests).
+ *
+ * Runner: bun:test + happy-dom (useDomEnv). i18n returns keys verbatim. The
+ * Experience store is a useSyncExternalStore-backed fake so the launcher's
+ * reads/actions are controllable. RTL cleanup() runs after every test.
+ *
+ * Pinned contract areas (numbered to the IR-73B spec):
+ *  1. hidden for no scope/loading/disabled/launcher-hidden/missing script/visual
+ *  2. exact setScope hydration + A→B late-result isolation
+ *  3. no session Start opens SetupModal; onReady opens modal; Resume reopens; close≠end
+ *  4. session uses exact pinned visual source
+ *  5. visual action strips CAS/idempotency; outcome carries committed revision/status/view
+ *  7. pending effect runs once; running/unknown/failed never auto-run
+ *  8. trusted finish confirmation required before endSession
+ *  9. detach descriptor includes exact scope+pinned source; blocked popup error
+ * 10. branch switch shows branch's own session + closes local surfaces
+ * 11. desktop Popover / mobile BottomSheet
+ */
+import { describe, it, expect, mock, beforeEach, afterEach } from "bun:test";
+import { useDomEnv } from "../../../test/dom-env.js";
+import type { ReactNode } from "react";
+
+useDomEnv();
+const { render, fireEvent, act } = await import("@testing-library/react");
+const { useSyncExternalStore } = await import("react");
+
+const CHAT_ID = "chat_1";
+const BRANCH_ID = "branch_1";
+const SCOPE_KEY = JSON.stringify([CHAT_ID, BRANCH_ID]);
+
+// ─── fake Experience store (useSyncExternalStore-backed) ────────────────────
+interface FakeScopeState {
+  config: {
+    enabled: boolean;
+    launcherVisible: boolean;
+    scriptId: string | null;
+    visualId: string | null;
+  } | null;
+  session: {
+    sessionId: string;
+    visualSource: string | null;
+    visualSourceHash: string | null;
+    revision: number;
+    status: string;
+    view: { revision: number; status: string; state: unknown; actions: unknown[] };
+    manifest: { name: string };
+  } | null;
+  effects: Array<{ id: string; status: string }>;
+  loading: boolean;
+  lastError: string | null;
+  modalOpen: boolean;
+  detached: boolean;
+  lastApiError: { code?: string } | null;
+}
+
+interface FakeState {
+  byScope: Record<string, FakeScopeState>;
+  activeScope: { chatId: string; branchId: string } | null;
+}
+
+let state: FakeState = { byScope: {}, activeScope: null };
+const listeners = new Set<() => void>();
+const subscribe = (cb: () => void) => {
+  listeners.add(cb);
+  return () => {
+    listeners.delete(cb);
+  };
+};
+const emit = () => listeners.forEach((l) => l());
+
+// A stable empty scope so useSyncExternalStore never sees a new reference
+// on every getSnapshot call (which would cause an infinite re-render loop).
+const EMPTY_SCOPE: FakeScopeState = {
+  config: null,
+  session: null,
+  effects: [],
+  loading: false,
+  lastError: null,
+  modalOpen: false,
+  detached: false,
+  lastApiError: null,
+};
+
+function scopeState(key: string): FakeScopeState {
+  return state.byScope[key] ?? EMPTY_SCOPE;
+}
+function readField<T>(key: string | null, fn: (s: FakeScopeState) => T): T {
+  if (!key) return fn(scopeState("__none__"));
+  return fn(scopeState(key));
+}
+function setScopeState(key: string, patch: Partial<FakeScopeState>): void {
+  state.byScope[key] = { ...scopeState(key), ...patch };
+  emit();
+}
+
+const storeMocks = {
+  setScope: mock((_chatId: string, _branchId: string) => {}),
+  openModal: mock(() => {}),
+  closeModal: mock(() => {}),
+  setDetached: mock((_d: boolean) => {}),
+  submitAction: mock(async (_intent: unknown) => null as unknown),
+  endSession: mock(async () => null as unknown),
+  runEffect: mock(async (_effectId: string, _signal?: AbortSignal) => null as unknown),
+};
+
+// ─── module mocks ───────────────────────────────────────────────────────────
+const realI18n = await import("../../i18n/context.js");
+const realStore = await import("../../stores/experience-store.js");
+const realSnapshot = await import("../../stores/snapshot-store.js");
+const realMobile = await import("../../hooks/use-mobile.js");
+const realTooltip = await import("../shared/Tooltip.js");
+const realBottomSheet = await import("../shared/BottomSheet.js");
+const realDetached = await import("./ExperienceDetachedWindow.js");
+
+const stableT = {
+  t: (k: string) => k,
+  tDynamic: (k: string) => k,
+  locale: "en",
+  setLocale: () => {},
+  ready: true,
+};
+
+mock.module("../../i18n/context.js", () => ({ ...realI18n, useT: () => stableT }));
+
+// Snapshot store: returns the active chat/branch.
+let snapshotChat: { id: string } | null = { id: CHAT_ID };
+let snapshotBranch: { id: string } | null = { id: BRANCH_ID };
+mock.module("../../stores/snapshot-store.js", () => ({
+  ...realSnapshot,
+  useSnapshotStore: (selector: (s: { activeChat: typeof snapshotChat; activeBranch: typeof snapshotBranch }) => unknown) =>
+    selector({ activeChat: snapshotChat, activeBranch: snapshotBranch }),
+}));
+
+mock.module("../../stores/experience-store.js", () => ({
+  ...realStore,
+  useExperienceConfig: (_c: string | null, _b: string | null) =>
+    useSyncExternalStore(subscribe, () => readField(currentScopeKey(), (s) => s.config)),
+  useExperienceSession: () => useSyncExternalStore(subscribe, () => readField(currentScopeKey(), (s) => s.session)),
+  useExperienceEffects: () => useSyncExternalStore(subscribe, () => readField(currentScopeKey(), (s) => s.effects)),
+  useExperienceLoading: () => useSyncExternalStore(subscribe, () => readField(currentScopeKey(), (s) => s.loading)),
+  useExperienceLastError: () => useSyncExternalStore(subscribe, () => readField(currentScopeKey(), (s) => s.lastError)),
+  useExperienceModalOpen: () => useSyncExternalStore(subscribe, () => readField(currentScopeKey(), (s) => s.modalOpen)),
+  useExperienceDetached: () => useSyncExternalStore(subscribe, () => readField(currentScopeKey(), (s) => s.detached)),
+  useExperienceStore: {
+    getState: () => ({
+      activeScope: state.activeScope,
+      byScope: Object.fromEntries(
+        Object.entries(state.byScope).map(([k, v]) => [k, { lastApiError: v.lastApiError, session: v.session }]),
+      ),
+      setScope: (chatId: string, branchId: string) => {
+        storeMocks.setScope(chatId, branchId);
+        state.activeScope = { chatId, branchId };
+      },
+      openModal: () => {
+        storeMocks.openModal();
+        const key = currentScopeKey();
+        if (key) setScopeState(key, { modalOpen: true });
+      },
+      closeModal: () => {
+        storeMocks.closeModal();
+        const key = currentScopeKey();
+        if (key) setScopeState(key, { modalOpen: false });
+      },
+      setDetached: (d: boolean) => {
+        storeMocks.setDetached(d);
+        const key = currentScopeKey();
+        if (key) setScopeState(key, { detached: d });
+      },
+      submitAction: storeMocks.submitAction,
+      endSession: storeMocks.endSession,
+      runEffect: storeMocks.runEffect,
+    }),
+  },
+}));
+
+function currentScopeKey(): string | null {
+  if (!snapshotChat || !snapshotBranch) return null;
+  return JSON.stringify([snapshotChat.id, snapshotBranch.id]);
+}
+
+let mobileOverride = false;
+mock.module("../../hooks/use-mobile.js", () => ({
+  ...realMobile,
+  useIsMobile: () => mobileOverride,
+}));
+
+mock.module("../shared/Tooltip.js", () => ({
+  ...realTooltip,
+  CustomTooltip: ({ children }: { children: ReactNode }) => children,
+  TooltipProvider: ({ children }: { children: ReactNode }) => children,
+}));
+
+mock.module("../shared/BottomSheet.js", () => ({
+  ...realBottomSheet,
+  BottomSheet: ({ open, title, children }: { open: boolean; title?: ReactNode; children: ReactNode }) =>
+    open ? <div data-testid="bottom-sheet">{title}{children}</div> : null,
+}));
+
+// Mock ExperienceSetupModal to a thin shell so Start/onReady are observable.
+let setupOnReady: ((s: unknown) => void) | null = null;
+mock.module("./ExperienceSetupModal.js", () => ({
+  ExperienceSetupModal: ({ open, onClose, onReady }: { open: boolean; onClose: () => void; onReady?: (s: unknown) => void }) => {
+    setupOnReady = onReady ?? null;
+    return open ? (
+      <div data-testid="setup-modal">
+        <button data-testid="setup-close" onClick={onClose}>close</button>
+        <button
+          data-testid="setup-ready"
+          onClick={() => onReady?.({ sessionId: "sess_new", visualSource: "<div>new</div>", revision: 1, status: "active", view: { revision: 1, status: "active", state: {}, actions: [] }, manifest: { name: "Game" } })}
+        >
+          ready
+        </button>
+      </div>
+    ) : null;
+  },
+}));
+
+// Mock ExperienceModal to a thin shell so the launcher's props are observable,
+// while preserving the REAL experienceActionOutcome (a pure function).
+const realModal = await import("./ExperienceModal.js");
+let modalProps: Record<string, unknown> = {};
+mock.module("./ExperienceModal.js", () => ({
+  ...realModal,
+  ExperienceModal: (props: Record<string, unknown>) => {
+    modalProps = props;
+    return props.open ? (
+      <div data-testid="experience-modal">
+        <span data-testid="modal-visual-source">{String(props.visualSource ?? "")}</span>
+        <span data-testid="modal-session-id">{String(props.sessionId ?? "")}</span>
+        <span data-testid="modal-pending">{String(props.pendingPhase ?? "idle")}</span>
+        <button data-testid="modal-close" onClick={() => (props.onClose as () => void)()}>close</button>
+        <button data-testid="modal-detach" onClick={() => (props.onDetach as () => void)()}>detach</button>
+        <button data-testid="modal-finish" onClick={() => (props.onFinishExperience as () => void)()}>finish</button>
+      </div>
+    ) : null;
+  },
+}));
+
+// Mock openExperienceDetachedWindow.
+let detachResult: Window | null = null;
+mock.module("./ExperienceDetachedWindow.js", () => ({
+  ...realDetached,
+  openExperienceDetachedWindow: mock(() => detachResult),
+}));
+
+const { ExperienceLauncher } = await import("./ExperienceLauncher.js");
+
+// ─── fixtures ───────────────────────────────────────────────────────────────
+function makeConfig(over: Partial<FakeScopeState["config"]> = {}): NonNullable<FakeScopeState["config"]> {
+  return { enabled: true, launcherVisible: true, scriptId: "script_1", visualId: "vis_1", ...over };
+}
+function makeSession(over: Partial<NonNullable<FakeScopeState["session"]>> = {}): NonNullable<FakeScopeState["session"]> {
+  return {
+    sessionId: "sess_1",
+    visualSource: "<div>play</div>",
+    visualSourceHash: "hash_1",
+    revision: 5,
+    status: "active",
+    view: { revision: 5, status: "active", state: {}, actions: [] },
+    manifest: { name: "Hearts" },
+    ...over,
+  };
+}
+
+beforeEach(() => {
+  state = { byScope: {}, activeScope: null };
+  snapshotChat = { id: CHAT_ID };
+  snapshotBranch = { id: BRANCH_ID };
+  mobileOverride = false;
+  detachResult = null;
+  modalProps = {};
+  setupOnReady = null;
+  for (const m of Object.values(storeMocks)) m.mockClear();
+});
+
+// ─── 1. Visibility gate ────────────────────────────────────────────────────
+describe("ExperienceLauncher — visibility gate", () => {
+  it("returns null with no active scope", () => {
+    snapshotChat = null;
+    const { container } = render(<ExperienceLauncher />);
+    expect(container.firstElementChild).toBeNull();
+  });
+
+  it("returns null while config is unloaded", () => {
+    setScopeState(SCOPE_KEY, { config: null });
+    const { container } = render(<ExperienceLauncher />);
+    expect(container.firstElementChild).toBeNull();
+  });
+
+  it("returns null when disabled", () => {
+    setScopeState(SCOPE_KEY, { config: makeConfig({ enabled: false }) });
+    const { container } = render(<ExperienceLauncher />);
+    expect(container.firstElementChild).toBeNull();
+  });
+
+  it("returns null when launcher hidden", () => {
+    setScopeState(SCOPE_KEY, { config: makeConfig({ launcherVisible: false }) });
+    const { container } = render(<ExperienceLauncher />);
+    expect(container.firstElementChild).toBeNull();
+  });
+
+  it("returns null with no script", () => {
+    setScopeState(SCOPE_KEY, { config: makeConfig({ scriptId: null }) });
+    const { container } = render(<ExperienceLauncher />);
+    expect(container.firstElementChild).toBeNull();
+  });
+
+  it("returns null with no visual", () => {
+    setScopeState(SCOPE_KEY, { config: makeConfig({ visualId: null }) });
+    const { container } = render(<ExperienceLauncher />);
+    expect(container.firstElementChild).toBeNull();
+  });
+
+  it("renders the pill when fully configured with no session", () => {
+    setScopeState(SCOPE_KEY, { config: makeConfig() });
+    const { getByTestId } = render(<ExperienceLauncher />);
+    expect(getByTestId("experience-launcher-pill")).toBeTruthy();
+  });
+});
+
+// ─── 2. setScope hydration ──────────────────────────────────────────────────
+describe("ExperienceLauncher — scope hydration", () => {
+  it("calls setScope with the exact chat/branch id", () => {
+    setScopeState(SCOPE_KEY, { config: makeConfig() });
+    render(<ExperienceLauncher />);
+    expect(storeMocks.setScope).toHaveBeenCalledWith(CHAT_ID, BRANCH_ID);
+  });
+
+  it("switching branch re-hydrates the new scope (A→B isolation)", () => {
+    setScopeState(SCOPE_KEY, { config: makeConfig() });
+    const { rerender } = render(<ExperienceLauncher />);
+    expect(storeMocks.setScope).toHaveBeenLastCalledWith(CHAT_ID, BRANCH_ID);
+    snapshotBranch = { id: "branch_2" };
+    act(() => {
+      rerender(<ExperienceLauncher />);
+    });
+    expect(storeMocks.setScope).toHaveBeenLastCalledWith(CHAT_ID, "branch_2");
+  });
+});
+
+// ─── 3. Start / Resume / Close ──────────────────────────────────────────────
+describe("ExperienceLauncher — start, resume, close", () => {
+  it("no session: Start opens the SetupModal", () => {
+    setScopeState(SCOPE_KEY, { config: makeConfig() });
+    const { getByTestId, queryByTestId } = render(<ExperienceLauncher />);
+    fireEvent.click(getByTestId("experience-launcher-pill"));
+    fireEvent.click(getByTestId("experience-launcher-primary"));
+    expect(getByTestId("setup-modal")).toBeTruthy();
+    void queryByTestId;
+  });
+
+  it("SetupModal onReady opens the visual modal (store.openModal)", () => {
+    setScopeState(SCOPE_KEY, { config: makeConfig() });
+    const { getByTestId } = render(<ExperienceLauncher />);
+    fireEvent.click(getByTestId("experience-launcher-pill"));
+    fireEvent.click(getByTestId("experience-launcher-primary"));
+    fireEvent.click(getByTestId("setup-ready"));
+    expect(storeMocks.openModal).toHaveBeenCalledTimes(1);
+    // Setup closed after ready.
+    expect(() => getByTestId("setup-modal")).toThrow();
+  });
+
+  it("active session: Resume opens the same session", () => {
+    setScopeState(SCOPE_KEY, { config: makeConfig(), session: makeSession() });
+    const { getByTestId } = render(<ExperienceLauncher />);
+    fireEvent.click(getByTestId("experience-launcher-pill"));
+    fireEvent.click(getByTestId("experience-launcher-primary"));
+    expect(storeMocks.openModal).toHaveBeenCalledTimes(1);
+    expect(storeMocks.setDetached).toHaveBeenCalledWith(false);
+  });
+
+  it("close modal NEVER calls endSession", () => {
+    setScopeState(SCOPE_KEY, { config: makeConfig(), session: makeSession(), modalOpen: true });
+    const { getByTestId } = render(<ExperienceLauncher />);
+    fireEvent.click(getByTestId("modal-close"));
+    expect(storeMocks.closeModal).toHaveBeenCalledTimes(1);
+    expect(storeMocks.endSession).not.toHaveBeenCalled();
+  });
+});
+
+// ─── 4. Pinned visual source ────────────────────────────────────────────────
+describe("ExperienceLauncher — pinned visual source", () => {
+  it("passes the session's pinned visualSource to the modal (not config.visualId)", () => {
+    setScopeState(SCOPE_KEY, {
+      config: makeConfig({ visualId: "vis_DIFFERENT" }),
+      session: makeSession({ visualSource: "<div>PINNED</div>" }),
+      modalOpen: true,
+    });
+    const { getByTestId } = render(<ExperienceLauncher />);
+    expect(getByTestId("modal-visual-source").textContent).toBe("<div>PINNED</div>");
+  });
+
+  it("surfaces incompatible state when session visualSource is null", () => {
+    setScopeState(SCOPE_KEY, {
+      config: makeConfig(),
+      session: makeSession({ visualSource: null, visualSourceHash: null }),
+    });
+    const { getByTestId, queryByTestId } = render(<ExperienceLauncher />);
+    // The pill renders but shows the incompatible label; no modal is mounted.
+    expect(getByTestId("experience-launcher-pill").textContent).toContain("experience_launcher_incompatible");
+    expect(queryByTestId("experience-modal")).toBeNull();
+  });
+});
+
+// ─── 5. Visual action contract ──────────────────────────────────────────────
+describe("ExperienceLauncher — visual action contract", () => {
+  it("strips requestId/expectedRevision before store.submitAction", async () => {
+    setScopeState(SCOPE_KEY, { config: makeConfig(), session: makeSession({ revision: 5 }), modalOpen: true });
+    storeMocks.submitAction.mockResolvedValue({
+      revision: 6,
+      status: "active",
+      view: { revision: 6, status: "active", state: {}, actions: [] },
+    });
+    render(<ExperienceLauncher />);
+    const onAction = modalProps.onAction as (a: { requestId: string; expectedRevision: number; type: string; participantId?: string; payload?: unknown }) => Promise<unknown>;
+    expect(onAction).toBeTruthy();
+    const outcome = await onAction({ requestId: "visual-rid", expectedRevision: 5, type: "move", participantId: "p1", payload: { x: 1 } });
+    // The store received the INTENT without requestId/expectedRevision.
+    expect(storeMocks.submitAction).toHaveBeenCalledTimes(1);
+    const intent = storeMocks.submitAction.mock.calls[0]![0] as Record<string, unknown>;
+    expect(intent.requestId).toBeUndefined();
+    expect(intent.expectedRevision).toBeUndefined();
+    expect(intent.type).toBe("move");
+    expect(intent.participantId).toBe("p1");
+    // Success outcome carries the committed revision/status/view.
+    expect(outcome).toMatchObject({ ok: true, revision: 6, status: "active" });
+  });
+
+  it("null store response maps fail-closed to a valid bridge error", async () => {
+    setScopeState(SCOPE_KEY, { config: makeConfig(), session: makeSession({ revision: 9 }), modalOpen: true });
+    storeMocks.submitAction.mockResolvedValue(null);
+    render(<ExperienceLauncher />);
+    const onAction = modalProps.onAction as (a: { requestId: string; expectedRevision: number; type: string }) => Promise<unknown>;
+    const outcome = await onAction({ requestId: "rid", expectedRevision: 9, type: "move" });
+    expect(outcome).toMatchObject({ ok: false });
+    expect(["stale_revision", "invalid_action"]).toContain((outcome as { code: string }).code);
+  });
+});
+
+// ─── 7. Pending effect runner ───────────────────────────────────────────────
+describe("ExperienceLauncher — durable pending effects", () => {
+  it("runs a pending effect once through store.runEffect while modal open", async () => {
+    setScopeState(SCOPE_KEY, {
+      config: makeConfig(),
+      session: makeSession(),
+      effects: [{ id: "eff_1", status: "pending" }],
+      modalOpen: true,
+    });
+    storeMocks.runEffect.mockResolvedValue({ effect: { id: "eff_1", status: "succeeded" }, delivered: true });
+    render(<ExperienceLauncher />);
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    expect(storeMocks.runEffect).toHaveBeenCalledTimes(1);
+    expect(storeMocks.runEffect.mock.calls[0]![0]).toBe("eff_1");
+  });
+
+  it("never auto-runs a running/unknown/failed effect", () => {
+    for (const status of ["running", "unknown", "failed", "succeeded", "cancelled"]) {
+      storeMocks.runEffect.mockClear();
+      setScopeState(SCOPE_KEY, {
+        config: makeConfig(),
+        session: makeSession(),
+        effects: [{ id: "eff_x", status }],
+        modalOpen: true,
+      });
+      render(<ExperienceLauncher />);
+      expect(storeMocks.runEffect).not.toHaveBeenCalled();
+      // Cleanup between iterations: unmount by re-rendering fresh next loop.
+    }
+  });
+
+  it("does not run effects while detached (the detached host owns them)", () => {
+    setScopeState(SCOPE_KEY, {
+      config: makeConfig(),
+      session: makeSession(),
+      effects: [{ id: "eff_1", status: "pending" }],
+      modalOpen: false,
+      detached: true,
+    });
+    render(<ExperienceLauncher />);
+    expect(storeMocks.runEffect).not.toHaveBeenCalled();
+  });
+});
+
+// ─── 8. Finish confirmation ─────────────────────────────────────────────────
+describe("ExperienceLauncher — finish", () => {
+  it("finish calls store.endSession then closeModal", async () => {
+    setScopeState(SCOPE_KEY, { config: makeConfig(), session: makeSession(), modalOpen: true });
+    render(<ExperienceLauncher />);
+    // The modal's onFinishExperience (forwarded from the trusted chrome) runs
+    // endSession + closeModal. The CONFIRMATION step itself lives in the modal
+    // chrome (tested by ExperienceModal); here we verify the launcher wires the
+    // privileged op through the store.
+    await act(async () => {
+      fireEvent.click(document.querySelector("[data-testid='modal-finish']")!);
+    });
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    expect(storeMocks.endSession).toHaveBeenCalledTimes(1);
+    expect(storeMocks.closeModal).toHaveBeenCalled();
+  });
+});
+
+// ─── 9. Detach ──────────────────────────────────────────────────────────────
+describe("ExperienceLauncher — detach", () => {
+  it("blocked popup shows a localized error and stays in modal", () => {
+    detachResult = null;
+    setScopeState(SCOPE_KEY, { config: makeConfig(), session: makeSession(), modalOpen: true });
+    const { getByTestId } = render(<ExperienceLauncher />);
+    fireEvent.click(document.querySelector("[data-testid='modal-detach']")!);
+    expect(storeMocks.closeModal).not.toHaveBeenCalled();
+    expect(storeMocks.setDetached).not.toHaveBeenCalledWith(true);
+    // The popup-blocked error is shown as a visible notice.
+    expect(getByTestId("experience-popup-error").textContent).toContain("experience_popup_blocked");
+  });
+
+  it("successful detach closes modal and marks detached", () => {
+    detachResult = {} as Window;
+    setScopeState(SCOPE_KEY, { config: makeConfig(), session: makeSession(), modalOpen: true });
+    render(<ExperienceLauncher />);
+    fireEvent.click(document.querySelector("[data-testid='modal-detach']")!);
+    expect(storeMocks.closeModal).toHaveBeenCalledTimes(1);
+    expect(storeMocks.setDetached).toHaveBeenCalledWith(true);
+  });
+});
+
+// ─── 10. Branch switch ──────────────────────────────────────────────────────
+describe("ExperienceLauncher — branch switch", () => {
+  it("renders the branch's own config/session after switching", () => {
+    setScopeState(SCOPE_KEY, { config: makeConfig(), session: makeSession({ sessionId: "sess_A" }) });
+    const BRANCH2 = JSON.stringify([CHAT_ID, "branch_2"]);
+    setScopeState(BRANCH2, { config: makeConfig(), session: makeSession({ sessionId: "sess_B" }) });
+    const { getByTestId, rerender } = render(<ExperienceLauncher />);
+    // Open the modal on branch 1.
+    fireEvent.click(getByTestId("experience-launcher-pill"));
+    fireEvent.click(getByTestId("experience-launcher-primary"));
+    expect(storeMocks.openModal).toHaveBeenCalledTimes(1);
+    // Switch to branch 2 — local surfaces reset.
+    snapshotBranch = { id: "branch_2" };
+    act(() => {
+      rerender(<ExperienceLauncher />);
+    });
+    // setScope called for the new branch.
+    expect(storeMocks.setScope).toHaveBeenCalledWith(CHAT_ID, "branch_2");
+  });
+});
+
+// ─── 11. Desktop Popover / mobile BottomSheet ───────────────────────────────
+describe("ExperienceLauncher — responsive pill", () => {
+  it("opens a popover content on desktop", () => {
+    setScopeState(SCOPE_KEY, { config: makeConfig() });
+    const { getByTestId } = render(<ExperienceLauncher />);
+    fireEvent.click(getByTestId("experience-launcher-pill"));
+    // The primary action button is inside the popover content.
+    expect(getByTestId("experience-launcher-primary")).toBeTruthy();
+  });
+
+  it("uses BottomSheet on mobile", () => {
+    mobileOverride = true;
+    setScopeState(SCOPE_KEY, { config: makeConfig() });
+    const { getByTestId } = render(<ExperienceLauncher />);
+    fireEvent.click(getByTestId("experience-launcher-pill"));
+    expect(getByTestId("bottom-sheet")).toBeTruthy();
+  });
+});
+
+// ─── Defect fixes (IR-73B follow-up) ───────────────────────────────────────
+describe("ExperienceLauncher — defect #1: incompatible session omits primary action", () => {
+  it("renders no primary action button for an incompatible session", () => {
+    setScopeState(SCOPE_KEY, {
+      config: makeConfig(),
+      session: makeSession({ visualSource: null, visualSourceHash: null }),
+    });
+    const { getByTestId, queryByTestId } = render(<ExperienceLauncher />);
+    fireEvent.click(getByTestId("experience-launcher-pill"));
+    // The primary action button is omitted — Start/Resume are both impossible.
+    expect(queryByTestId("experience-launcher-primary")).toBeNull();
+  });
+
+  it("never calls Start or Resume for an incompatible session", () => {
+    setScopeState(SCOPE_KEY, {
+      config: makeConfig(),
+      session: makeSession({ visualSource: null, visualSourceHash: null }),
+    });
+    const { getByTestId } = render(<ExperienceLauncher />);
+    fireEvent.click(getByTestId("experience-launcher-pill"));
+    // No setup modal, no openModal — nothing fires.
+    expect(storeMocks.openModal).not.toHaveBeenCalled();
+    expect(storeMocks.setScope).toHaveBeenCalledTimes(1); // only the scope hydrate
+  });
+});
+
+describe("ExperienceLauncher — defect #2: config change resets local UI + invisible closes modal", () => {
+  it("resets setup popover when the config surface changes", () => {
+    setScopeState(SCOPE_KEY, { config: makeConfig() });
+    const { getByTestId, rerender } = render(<ExperienceLauncher />);
+    fireEvent.click(getByTestId("experience-launcher-pill"));
+    expect(getByTestId("experience-launcher-primary")).toBeTruthy();
+    // Change the config surface (toggle scriptId) — local UI resets.
+    setScopeState(SCOPE_KEY, { config: makeConfig({ scriptId: "script_OTHER" }) });
+    act(() => {
+      rerender(<ExperienceLauncher />);
+    });
+    // The popover was reset (closed), so the primary button is no longer in the DOM.
+    expect(document.querySelector("[data-testid='experience-launcher-primary']")).toBeNull();
+  });
+
+  it("closes the local modal non-destructively when config becomes invisible", () => {
+    setScopeState(SCOPE_KEY, { config: makeConfig(), session: makeSession(), modalOpen: true });
+    const { rerender } = render(<ExperienceLauncher />);
+    expect(storeMocks.closeModal).not.toHaveBeenCalled();
+    // Config becomes invisible (launcherVisible=false).
+    setScopeState(SCOPE_KEY, { config: makeConfig({ launcherVisible: false }), session: makeSession(), modalOpen: true });
+    act(() => {
+      rerender(<ExperienceLauncher />);
+    });
+    // Modal closed via store.closeModal only (never endSession).
+    expect(storeMocks.closeModal).toHaveBeenCalledTimes(1);
+    expect(storeMocks.endSession).not.toHaveBeenCalled();
+  });
+
+  it("does not own/running effects while config is invisible", () => {
+    setScopeState(SCOPE_KEY, {
+      config: makeConfig({ launcherVisible: false }),
+      session: makeSession(),
+      effects: [{ id: "eff_1", status: "pending" }],
+      modalOpen: true,
+    });
+    render(<ExperienceLauncher />);
+    expect(storeMocks.runEffect).not.toHaveBeenCalled();
+  });
+});
+
+describe("ExperienceLauncher — defect #3: popup error clears on close/resume", () => {
+  it("closing the modal clears the popup-blocked error", () => {
+    detachResult = null;
+    setScopeState(SCOPE_KEY, { config: makeConfig(), session: makeSession(), modalOpen: true });
+    const { getByTestId, queryByTestId, rerender } = render(<ExperienceLauncher />);
+    // Trigger a blocked popup.
+    fireEvent.click(document.querySelector("[data-testid='modal-detach']")!);
+    expect(getByTestId("experience-popup-error")).toBeTruthy();
+    // Close the modal — the popup error clears.
+    setScopeState(SCOPE_KEY, { config: makeConfig(), session: makeSession(), modalOpen: false });
+    act(() => {
+      rerender(<ExperienceLauncher />);
+    });
+    expect(queryByTestId("experience-popup-error")).toBeNull();
+  });
+});

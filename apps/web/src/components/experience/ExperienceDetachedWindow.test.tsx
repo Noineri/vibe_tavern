@@ -32,6 +32,28 @@ afterEach(() => {
   URL.createObjectURL = realCreate;
 });
 
+// Mock the Experience store so the detached host's setScope/rehydrate/reads do
+// not make real API calls. The host uses the descriptor bootstrap before the
+// rehydrate settles, so a null store session is the normal initial state.
+const realStore = await import("../../stores/experience-store.js");
+const storeMocks = {
+  setScope: mock(),
+  submitAction: mock(),
+  runEffect: mock(),
+};
+mock.module("../../stores/experience-store.js", () => ({
+  ...realStore,
+  useExperienceSession: () => null,
+  useExperienceEffects: () => [],
+  useExperienceStore: {
+    getState: () => ({
+      setScope: storeMocks.setScope,
+      submitAction: storeMocks.submitAction,
+      runEffect: storeMocks.runEffect,
+    }),
+  },
+}));
+
 const {
   openExperienceDetachedWindow,
   readDetachedDescriptor,
@@ -41,6 +63,8 @@ const {
 } = await import("./ExperienceDetachedWindow.js");
 
 const DESCRIPTOR = {
+  chatId: "chat_1",
+  branchId: "branch_1",
   sessionId: "sess_42",
   title: "Hearts",
   visualSource: "<div>play</div>",
@@ -109,6 +133,14 @@ describe("readDetachedDescriptor — opener handoff", () => {
   it("rejects a malformed descriptor (no visualSource)", () => {
     expect(readDetachedDescriptor(fakePopup({ sessionId: "x" }))).toBeNull();
   });
+
+  it("rejects a descriptor missing the scope fields (chatId/branchId)", () => {
+    expect(
+      readDetachedDescriptor(
+        fakePopup({ sessionId: "s", title: "T", visualSource: "<div/>", initialRevision: 0 }),
+      ),
+    ).toBeNull();
+  });
 });
 
 describe("isDetachedExperienceWindow", () => {
@@ -134,6 +166,8 @@ describe("ExperienceDetachedHost — trusted wrapper", () => {
     const iframe = container.querySelector("iframe");
     expect(iframe).not.toBeNull();
     expect(iframe!.getAttribute("sandbox")).toBe("allow-scripts");
+    // The host set the store scope for the exact chat/branch (reconnect).
+    expect(storeMocks.setScope).toHaveBeenCalledWith("chat_1", "branch_1");
   });
 
   it("shows the unavailable fallback when there is no descriptor", () => {

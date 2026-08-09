@@ -36,6 +36,7 @@ const realI18nContext = await import("../../i18n/context.js");
 const realMobileHook = await import("../../hooks/use-mobile.js");
 const realSnapshotStore = await import("../../stores/snapshot-store.js");
 const realDiceStore = await import("../../stores/dice-store.js");
+const realExperienceStore = await import("../../stores/experience-store.js");
 const realTooltip = await import("../shared/Tooltip.js");
 const realBottomSheet = await import("../shared/BottomSheet.js");
 const realQueueManager = await import("./QueueManager.js");
@@ -97,6 +98,20 @@ mock.module("../shared/Tooltip.js", () => ({
   ...realTooltip,
   CustomTooltip: ({ children }: { children: ReactNode }) => children,
   TooltipProvider: ({ children }: { children: ReactNode }) => children,
+}));
+
+// Mock the Experience store so the ExperienceLauncher returns null (no config)
+// and its setScope/rehydrate do not make real API calls inside the Dice tests.
+mock.module("../../stores/experience-store.js", () => ({
+  ...realExperienceStore,
+  useExperienceConfig: () => null,
+  useExperienceSession: () => null,
+  useExperienceEffects: () => [],
+  useExperienceLoading: () => false,
+  useExperienceLastError: () => null,
+  useExperienceModalOpen: () => false,
+  useExperienceDetached: () => false,
+  useExperienceStore: { getState: () => ({ setScope: () => {}, openModal: () => {}, closeModal: () => {}, setDetached: () => {} }) },
 }));
 
 mock.module("../shared/BottomSheet.js", () => ({
@@ -556,20 +571,32 @@ describe("DiceTray", () => {
   });
 });
 
+describe("DicePanel docked", () => {
+  it("renders without the absolute-centering wrapper when docked", () => {
+    const { container } = render(<DicePanel docked />);
+    // docked: no absolute positioning wrapper — the pill is a direct child.
+    expect(container.firstElementChild?.getAttribute("class") ?? "").not.toContain("absolute");
+    expect(container.querySelector('button[aria-label="dice_panel_title"]')).not.toBeNull();
+  });
+
+  it("default (not docked) keeps the absolute-centering wrapper", () => {
+    const { container } = render(<DicePanel />);
+    expect(container.firstElementChild?.getAttribute("class") ?? "").toContain("left-1/2");
+  });
+});
+
 describe("PlayMode composer stack", () => {
-  it("mounts DicePanel as a centered sibling between QueueManager and InputArea", () => {
+  it("mounts Dice and the Experience launcher as siblings in a shared bar", () => {
 	const { getByTestId, getByRole } = render(<PlayMode />);
 	const wrapper = getByTestId("queue-manager").parentElement;
-	const dicePanel = getByRole("button", { name: "dice_panel_title" }).parentElement;
-	if (wrapper === null || dicePanel === null) {
-		expect(wrapper).not.toBeNull();
-		expect(dicePanel).not.toBeNull();
-		return;
-	}
-	expect(Array.from(wrapper.children)).toEqual([
-		getByTestId("queue-manager"),
-		dicePanel,
-		getByTestId("input-area"),
-	]);
+	if (wrapper === null) throw new Error("missing wrapper");
+	// Wrapper children: QueueManager, the shared launcher bar, InputArea.
+	expect(Array.from(wrapper.children)).toHaveLength(3);
+	expect(wrapper.children[0]).toBe(getByTestId("queue-manager"));
+	expect(wrapper.children[2]).toBe(getByTestId("input-area"));
+	// The shared bar contains the Dice pill (coexistence: the Experience
+	// launcher renders null with no config, but its sibling slot remains).
+	const sharedBar = wrapper.children[1];
+	expect(sharedBar.querySelector('button[aria-label="dice_panel_title"]')).not.toBeNull();
   });
 });

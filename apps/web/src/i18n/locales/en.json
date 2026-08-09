@@ -1900,5 +1900,15 @@
   "experience_setup_overrides_character": "Current character override",
   "experience_setup_overrides_hint": "Empty a field to clear its override. Changes apply only to this session.",
   "experience_setup_overrides_save_error": "Couldn’t save one or more prompt overrides.",
-  "experience_setup_overrides_loading": "Loading prompt overrides…"
+  "experience_setup_overrides_loading": "Loading prompt overrides…",
+  "experience_launcher_title": "Experience",
+  "experience_launcher_start": "Start",
+  "experience_launcher_resume": "Resume",
+  "experience_launcher_active": "Session active",
+  "experience_launcher_loading": "Loading…",
+  "experience_launcher_incompatible": "Unavailable",
+  "experience_incompatible": "This session’s visual is no longer available.",
+  "experience_popup_blocked": "Couldn’t open a separate window. Allow pop-ups for this site and try again.",
+  "experience_action_stale": "This action was based on an outdated state. The view has refreshed.",
+  "experience_action_invalid": "This action couldn’t be applied."
 }

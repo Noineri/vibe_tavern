@@ -40,10 +40,34 @@ mock.module("../../i18n/context.js", () => ({
   useT: () => ({ t: (k: string) => k, tDynamic: (k: string) => k, locale: "en", setLocale: () => {}, ready: true }),
 }));
 
+// Mock ExperienceFrame to a thin shell that captures the onAction prop so the
+// rejection-handling regression can invoke the modal's internal handleAction
+// directly (the real frame requires a live handshake happy-dom cannot drive).
+const realFrame = await import("./ExperienceFrame.js");
+let capturedOnAction: ((action: { requestId: string }) => void) | null = null;
+mock.module("./ExperienceFrame.js", () => ({
+  ...realFrame,
+  ExperienceFrame: (props: { onAction: (a: { requestId: string }) => void }) => {
+    capturedOnAction = props.onAction;
+    return <div data-testid="mock-frame" />;
+  },
+}));
+
 const { ExperienceModal } = await import("./ExperienceModal.js");
+import type { ExperienceActionOutcome } from "./ExperienceModal.js";
 
 const VISUAL = "<div id=\"g\">play</div>";
-const onAction = () => {};
+
+/** A no-op async action handler that resolves to a success outcome (the
+ *  chrome tests do not exercise action submission — only the contract shape
+ *  matters so the component typechecks). */
+const okOutcome: ExperienceActionOutcome = {
+  ok: true,
+  revision: 1,
+  status: "active",
+  view: { state: {}, actions: [], revision: 1, status: "active" },
+};
+const onAction = () => Promise.resolve(okOutcome);
 
 function renderModal(over: Partial<React.ComponentProps<typeof ExperienceModal>> = {}) {
   installUrlSpy();
@@ -151,5 +175,121 @@ describe("ExperienceModal — session preservation on close", () => {
     });
     // The stale confirm is gone — the surface reopened clean.
     expect(queryByTestId("experience-finish-confirm")).toBeNull();
+  });
+});
+
+describe("ExperienceModal — async action-outcome contract (seam #3)", () => {
+  it("accepts an async onAction returning the outcome contract and renders", async () => {
+    installUrlSpy();
+    const actionHandler = mock((_action: { requestId: string }) =>
+      Promise.resolve<ExperienceActionOutcome>({
+        ok: true,
+        revision: 7,
+        status: "active",
+        view: { state: { turn: 2 }, actions: [], revision: 7, status: "active" },
+      }),
+    );
+    const { } = render(
+      <ExperienceModal
+        open
+        onClose={() => {}}
+        title="Hearts"
+        visualSource={VISUAL}
+        sessionId="sess_1"
+        initialRevision={5}
+        view={{ state: {}, actions: [], revision: 5, status: "active" }}
+        onAction={actionHandler as unknown as (a: { requestId: string }) => Promise<ExperienceActionOutcome>}
+      />,
+    );
+    // The modal mounts with the async contract + authoritative view; the
+    // mocked frame is present.
+    expect(document.querySelector("[data-testid='mock-frame']")).not.toBeNull();
+  });
+
+  it("a failure outcome is a valid bridge error shape (fail-closed)", () => {
+    const failOutcome: ExperienceActionOutcome = {
+      ok: false,
+      code: "stale_revision",
+      message: "Action was built on an outdated state.",
+      revision: 9,
+    };
+    expect(failOutcome.ok).toBe(false);
+    expect(failOutcome.code).toBe("stale_revision");
+    expect(typeof failOutcome.message).toBe("string");
+  });
+});
+
+describe("ExperienceModal — live state + pending push (seams #2 + #5)", () => {
+  it("renders the pending chrome indicator for a typing phase", () => {
+    installUrlSpy();
+    const { getByTestId } = render(
+      <ExperienceModal
+        open
+        onClose={() => {}}
+        title="Hearts"
+        visualSource={VISUAL}
+        sessionId="sess_1"
+        initialRevision={0}
+        view={{ state: {}, actions: [], revision: 0, status: "active" }}
+        onAction={onAction}
+        pendingPhase="typing"
+      />,
+    );
+    expect(getByTestId("experience-pending")).toBeTruthy();
+  });
+
+  it("hides the pending chrome indicator for an idle phase", () => {
+    installUrlSpy();
+    const { queryByTestId } = render(
+      <ExperienceModal
+        open
+        onClose={() => {}}
+        title="Hearts"
+        visualSource={VISUAL}
+        sessionId="sess_2"
+        initialRevision={0}
+        view={{ state: {}, actions: [], revision: 0, status: "active" }}
+        onAction={onAction}
+        pendingPhase="idle"
+      />,
+    );
+    expect(queryByTestId("experience-pending")).toBeNull();
+  });
+});
+
+describe("ExperienceModal — fail-closed rejection handling (seam #3 defect #4)", () => {
+  it("a rejected action callback sends onError and does not strand the bridge lock", async () => {
+    installUrlSpy();
+    capturedOnAction = null;
+    const onError = mock((_reason: string) => {});
+    const rejectingAction: React.ComponentProps<typeof ExperienceModal>["onAction"] = () =>
+      Promise.reject(new Error("store exploded"));
+    render(
+      <ExperienceModal
+        open
+        onClose={() => {}}
+        title="Hearts"
+        visualSource={VISUAL}
+        sessionId="sess_1"
+        initialRevision={5}
+        view={{ state: {}, actions: [], revision: 5, status: "active" }}
+        onAction={rejectingAction}
+        onError={onError}
+      />,
+    );
+    // The modal captured the frame's onAction (its internal handleAction).
+    expect(capturedOnAction).not.toBeNull();
+    // Invoke it — the rejection must be caught, not propagated as an
+    // unhandled rejection. The modal reports through onError and always
+    // acks the frame (sendError via frameRef). Since the mocked frame does
+    // not wire a ref, sendError is a no-op — but the catch path is proven by
+    // onError firing and no thrown rejection.
+    await act(async () => {
+      await capturedOnAction!({ requestId: "visual-rid-42" });
+    });
+    expect(onError).toHaveBeenCalledTimes(1);
+    // The error message reported is safe (the exception's message, not raw
+    // text leaked to the visual).
+    expect(typeof onError.mock.calls[0]![0]).toBe("string");
   });
 });

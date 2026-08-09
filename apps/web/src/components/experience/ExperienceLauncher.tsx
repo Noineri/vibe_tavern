@@ -1,0 +1,399 @@
+/**
+ * ExperienceLauncher — the compact per-active-chat interactive-experience entry
+ * point mounted beside Dice in PlayMode (INTERACTIVE_RUNTIME_FOUNDATION_PLAN,
+ * Wave 7 / IR-73B_launcher). It starts a branch session through the committed
+ * {@link ExperienceSetupModal}, resumes the exact persisted session through the
+ * Experience store, renders the immutable session-pinned visual source in the
+ * Wave 6 sandboxed host, submits visual actions through the authoritative
+ * store, runs durable pending model effects, supports trusted finish/detach,
+ * and keeps every closing UI non-destructive (close never ends the session).
+ *
+ * Non-goals (IR-73C/IR-73D): report/queue/add-later controls, composer/send
+ * binding, authoring, API/backend/store changes, live visual resource re-fetch.
+ *
+ * Session-preservation invariant: closing the modal calls ONLY
+ * `store.closeModal` — never `endSession`. Reopening resumes the same persisted
+ * session. The detached surface and the modal are mutually exclusive; only one
+ * runs durable effects at a time.
+ *
+ * Visual source: an active session MUST have a non-null pinned `visualSource`
+ * (IR-70G). The launcher surfaces a localized incompatible state when it is
+ * null — it NEVER calls `getExperienceVisual(visualId)` to fetch live source.
+ */
+import * as Popover from "@radix-ui/react-popover";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { EXPERIENCE_EFFECT_STATUS } from "@vibe-tavern/domain";
+import type { ExperienceActionDto } from "@vibe-tavern/api-contracts";
+import { cn } from "../../lib/cn.js";
+import { useIsMobile } from "../../hooks/use-mobile.js";
+import { useT } from "../../i18n/context.js";
+import { useSnapshotStore } from "../../stores/snapshot-store.js";
+import {
+  useExperienceConfig,
+  useExperienceDetached,
+  useExperienceEffects,
+  useExperienceLastError,
+  useExperienceLoading,
+  useExperienceModalOpen,
+  useExperienceSession,
+  useExperienceStore,
+  type ExperienceActionIntent,
+} from "../../stores/experience-store.js";
+import { BottomSheet } from "../shared/BottomSheet.js";
+import { Icons } from "../shared/icons.js";
+import { getModalPortal } from "../shared/modal-helpers.js";
+import {
+  ExperienceModal,
+  experienceActionOutcome,
+  type ExperienceActionOutcome,
+} from "./ExperienceModal.js";
+import { ExperienceSetupModal } from "./ExperienceSetupModal.js";
+import {
+  openExperienceDetachedWindow,
+  type DetachedExperienceDescriptor,
+} from "./ExperienceDetachedWindow.js";
+import type { BridgeErrorCode } from "../../lib/experience-bridge-schema.js";
+import type { ExperienceSessionResponse } from "../../api/types.js";
+
+/** The projected-view type the frame/host pushes. */
+type ProjectedView = Parameters<import("./ExperienceFrame.js").ExperienceFrameHandle["sendState"]>[0];
+
+export interface ExperienceLauncherProps {
+  /** When true, render statically inside a shared flex bar (no absolute
+   *  centering wrapper) — matches the DicePanel `docked` contract. */
+  readonly docked?: boolean;
+}
+
+export function ExperienceLauncher({ docked = false }: ExperienceLauncherProps): ReactNode {
+  const { t } = useT();
+  const isMobile = useIsMobile();
+
+  // ── Exact scope from the snapshot store ──────────────────────────────────
+  const activeChat = useSnapshotStore((s) => s.activeChat);
+  const activeBranch = useSnapshotStore((s) => s.activeBranch);
+  const chatId = activeChat?.id ?? null;
+  const branchId = activeBranch?.id ?? null;
+
+  // ── Hydrate the Experience store scope for the exact chat/branch ─────────
+  // setScope is idempotent for the same scope; it rehydrates on a change and
+  // invalidates the previous scope's in-flight reads.
+  useEffect(() => {
+    if (!chatId || !branchId) return;
+    useExperienceStore.getState().setScope(chatId, branchId);
+  }, [chatId, branchId]);
+
+  // ── Narrow store selectors (server-authoritative) ────────────────────────
+  const config = useExperienceConfig(chatId, branchId);
+  const session = useExperienceSession(chatId, branchId);
+  const effects = useExperienceEffects(chatId, branchId);
+  const loading = useExperienceLoading(chatId, branchId);
+  const lastError = useExperienceLastError(chatId, branchId);
+  const modalOpen = useExperienceModalOpen(chatId, branchId);
+  const detached = useExperienceDetached(chatId, branchId);
+
+  // ── Local UI state (reset on scope/config changes) ───────────────────────
+  const [setupOpen, setSetupOpen] = useState(false);
+  const [popoverOpen, setPopoverOpen] = useState(false);
+  const [popupError, setPopupError] = useState(false);
+  const scopeKey = chatId && branchId ? JSON.stringify([chatId, branchId]) : null;
+  // Stable configuration surface key (value identity, NOT object identity) so
+  // setup/popover/popup errors reset when the authoritative config changes —
+  // not only on a scope switch. Uses enabled/launcherVisible/scriptId/visualId.
+  const configKey = config
+    ? JSON.stringify([config.enabled, config.launcherVisible, config.scriptId, config.visualId])
+    : null;
+  const lastSurfaceKey = useRef<string | null>(null);
+  const surfaceKey = scopeKey === null ? null : `${scopeKey}\n${configKey ?? ""}`;
+  useEffect(() => {
+    if (lastSurfaceKey.current !== surfaceKey) {
+      lastSurfaceKey.current = surfaceKey;
+      setSetupOpen(false);
+      setPopoverOpen(false);
+      setPopupError(false);
+    }
+  }, [surfaceKey]);
+
+  // ── Visibility computed before the effect-runner hooks (Rules of Hooks) ───
+  // `visible` is part of effect ownership: a launcher whose config became
+  // invisible must NOT keep `modalOpen` owning/running model effects while no
+  // surface is rendered.
+  const configReady = config !== null;
+  const visible =
+    chatId !== null
+    && branchId !== null
+    && configReady
+    && config!.enabled
+    && config!.launcherVisible
+    && config!.scriptId !== null
+    && config!.visualId !== null;
+
+  // When the config becomes invisible while the local modal is open, close it
+  // non-destructively (store closeModal only — never endSession).
+  useEffect(() => {
+    if (!visible && modalOpen) {
+      useExperienceStore.getState().closeModal();
+    }
+  }, [visible, modalOpen]);
+
+  // ── In-flight effect run registry (one at a time, no running/unknown repeat) ─
+  const effectRunRef = useRef<AbortController | null>(null);
+
+  // These are computed BEFORE the visibility gate so the effect-runner and
+  // session-abort hooks below always run in the same order (Rules of Hooks).
+  // Effect ownership requires the surface to be rendered AND the modal open —
+  // a hidden launcher never owns/running model effects.
+  const hasSession = session !== null;
+  const surfaceOwnsEffects = visible && modalOpen && !detached && hasSession;
+  const sessionId = session?.sessionId ?? null;
+
+  // ── Durable model effect runner (only while the modal surface owns effects) ─
+  // Runs only `pending` rows, one at a time, through an abortable
+  // store.runEffect. Never auto-repeats running/unknown/failed. The store
+  // rehydrates after each run, re-triggering for the next pending row. A
+  // genuine session change aborts the in-flight run.
+  useEffect(() => {
+    if (!surfaceOwnsEffects) return;
+    if (effectRunRef.current) return; // one at a time
+    const pending = effects.find((e) => e.status === EXPERIENCE_EFFECT_STATUS.pending);
+    if (!pending) return;
+    const controller = new AbortController();
+    effectRunRef.current = controller;
+    void useExperienceStore
+      .getState()
+      .runEffect(pending.id, controller.signal)
+      .finally(() => {
+        if (effectRunRef.current === controller) effectRunRef.current = null;
+      });
+  }, [effects, surfaceOwnsEffects]);
+
+  // Abort the in-flight effect on a genuine session change.
+  useEffect(() => {
+    return () => {
+      effectRunRef.current?.abort();
+      effectRunRef.current = null;
+    };
+  }, [sessionId]);
+
+  // ── Visibility gate ──────────────────────────────────────────────────────
+  // Return null unless: exact scope exists, config loaded, enabled,
+  // launcherVisible, scriptId non-null, visualId non-null. An active session
+  // must additionally have non-null pinned visualSource; otherwise surface an
+  // incompatible/error state rather than fetching live source.
+  // `visible` was already computed before the effect-runner hooks above.
+  if (!visible) return null;
+
+  const title = session?.manifest.name ?? config!.scriptId ?? "";
+  const incompatible = hasSession && session!.visualSource === null;
+
+  // ── Localized bridge-error message for the fail-closed action outcome ────
+  function localizeError(code: BridgeErrorCode): string {
+    return code === "stale_revision" ? t("experience_action_stale") : t("experience_action_invalid");
+  }
+
+  // ── Action handler: strip CAS/idempotency, submit via store, return outcome ─
+  async function handleAction(action: ExperienceActionDto): Promise<ExperienceActionOutcome> {
+    const intent: ExperienceActionIntent = {
+      type: action.type,
+      ...(action.participantId !== undefined ? { participantId: action.participantId } : {}),
+      ...(action.payload !== undefined ? { payload: action.payload } : {}),
+    };
+    const store = useExperienceStore.getState();
+    const response = await store.submitAction(intent);
+    if (!chatId || !branchId) return { ok: false, code: "invalid_action", message: localizeError("invalid_action") };
+    const scope = store.byScope[JSON.stringify([chatId, branchId])];
+    return experienceActionOutcome(response, scope?.lastApiError ?? null, scope?.session?.revision, localizeError);
+  }
+
+  // ── Start: open the setup modal for the exact chat/branch ────────────────
+  function handleStart(): void {
+    setPopoverOpen(false);
+    setSetupOpen(true);
+  }
+
+  // ── Setup onReady: close setup, open the persisted modal ─────────────────
+  function handleSetupReady(_session: ExperienceSessionResponse): void {
+    setSetupOpen(false);
+    useExperienceStore.getState().openModal();
+  }
+
+  // ── Resume: reopen the SAME session through the store ────────────────────
+  function handleResume(): void {
+    setPopoverOpen(false);
+    setPopupError(false);
+    // Clear a stale detached flag so the main surface owns effects again.
+    useExperienceStore.getState().setDetached(false);
+    useExperienceStore.getState().openModal();
+  }
+
+  // ── Close modal: NEVER end the session ───────────────────────────────────
+  function handleCloseModal(): void {
+    setPopupError(false);
+    useExperienceStore.getState().closeModal();
+  }
+
+  // ── Finish: trusted confirmation → endSession → close ────────────────────
+  async function handleFinishExperience(): Promise<void> {
+    await useExperienceStore.getState().endSession();
+    useExperienceStore.getState().closeModal();
+  }
+
+  // ── Detach: open the persisted detached window with the pinned descriptor ─
+  function handleDetach(): void {
+    if (!session) return;
+    const descriptor: DetachedExperienceDescriptor = {
+      chatId: chatId!,
+      branchId: branchId!,
+      sessionId: session.sessionId,
+      title,
+      visualSource: session.visualSource ?? "",
+      initialRevision: session.revision,
+      initialView: session.view as ProjectedView,
+    };
+    const popup = openExperienceDetachedWindow(descriptor);
+    if (popup === null) {
+      // Popup blocked — stay in the modal and show a localized error.
+      setPopupError(true);
+      return;
+    }
+    setPopupError(false);
+    useExperienceStore.getState().closeModal();
+    useExperienceStore.getState().setDetached(true);
+  }
+
+  // ── Pending phase drives chrome + visual (pending/running rows) ───────────
+  const pendingPhase: "idle" | "effect" =
+    surfaceOwnsEffects && effects.some((e) => e.status === EXPERIENCE_EFFECT_STATUS.pending || e.status === EXPERIENCE_EFFECT_STATUS.running)
+      ? "effect"
+      : "idle";
+
+  // ── Pill label + body ────────────────────────────────────────────────────
+  const pillLabel = incompatible
+    ? t("experience_launcher_incompatible")
+    : hasSession
+      ? t("experience_launcher_resume")
+      : t("experience_launcher_start");
+  const statusLine = incompatible
+    ? t("experience_incompatible")
+    : lastError
+      ? lastError
+      : loading
+        ? t("experience_launcher_loading")
+        : hasSession
+          ? t("experience_launcher_active")
+          : "";
+
+  const body = (
+    <div className="flex flex-col gap-2 p-2">
+      <div className="flex flex-col gap-0.5">
+        <span className="font-ui text-[12px] font-medium text-t1">{title || t("experience_launcher_title")}</span>
+        {statusLine && <span className="font-ui text-[11px] text-t4">{statusLine}</span>}
+      </div>
+      {!incompatible && (
+        <button
+          type="button"
+          className="rounded bg-accent px-3 py-1.5 font-ui text-[12px] font-medium text-on-accent hover:opacity-90"
+          onClick={hasSession ? handleResume : handleStart}
+          data-testid="experience-launcher-primary"
+        >
+          {pillLabel}
+        </button>
+      )}
+      {popupError && (
+        <p className="font-ui text-[11px] leading-relaxed text-danger-text" role="alert">
+          {t("experience_popup_blocked")}
+        </p>
+      )}
+    </div>
+  );
+
+  // ── Render ───────────────────────────────────────────────────────────────
+  const pill = (
+    <button
+      type="button"
+      aria-label={t("experience_launcher_title")}
+      aria-expanded={popoverOpen}
+      className={cn(
+        "glass-blur flex min-h-9 items-center gap-1.5 whitespace-nowrap rounded-full border border-border2 bg-glass-bg px-2.5 py-1 font-ui text-[calc(var(--ui-fs)-3px)] font-medium text-t2 shadow-sm transition-colors hover:bg-s3 hover:text-t1",
+        incompatible && "border-warning/50 bg-warning-dim text-warning-text",
+      )}
+      data-testid="experience-launcher-pill"
+    >
+      <Icons.Sparkles className="h-3.5 w-3.5" />
+      <span>{pillLabel}</span>
+      <Icons.Caret direction={popoverOpen ? "d" : "u"} />
+    </button>
+  );
+
+  const popover = (
+    <Popover.Root open={popoverOpen} onOpenChange={setPopoverOpen}>
+      <Popover.Trigger asChild>{pill}</Popover.Trigger>
+      {!isMobile && (
+        <Popover.Portal container={getModalPortal() ?? undefined}>
+          <Popover.Content
+            side={docked ? "top" : "top"}
+            align="center"
+            sideOffset={4}
+            className="glass-blur z-[220] w-64 max-w-[calc(100vw-2rem)] overflow-hidden rounded-lg border border-border2 bg-glass-bg shadow-[0_12px_28px_rgba(0,0,0,0.45)] outline-none data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95"
+          >
+            {body}
+          </Popover.Content>
+        </Popover.Portal>
+      )}
+    </Popover.Root>
+  );
+
+  const launcher = docked ? (
+    popover
+  ) : (
+    <div className="absolute bottom-full left-1/2 z-20 mb-1 -translate-x-1/2">{popover}</div>
+  );
+
+  return (
+    <>
+      {launcher}
+      {popoverOpen && isMobile && (
+        <BottomSheet open={true} onClose={() => setPopoverOpen(false)} title={title || t("experience_launcher_title")}>
+          {body}
+        </BottomSheet>
+      )}
+      {chatId && branchId && (
+        <ExperienceSetupModal
+          open={setupOpen}
+          chatId={chatId}
+          branchId={branchId}
+          onClose={() => setSetupOpen(false)}
+          onReady={handleSetupReady}
+        />
+      )}
+      {hasSession && !incompatible && (
+        <ExperienceModal
+          open={modalOpen}
+          onClose={handleCloseModal}
+          title={title}
+          statusLabel={statusLine}
+          pendingPhase={pendingPhase}
+          visualSource={session!.visualSource ?? ""}
+          sessionId={session!.sessionId}
+          initialRevision={session!.revision}
+          view={session!.view as ProjectedView}
+          onAction={handleAction}
+          onDetach={handleDetach}
+          onFinishExperience={() => void handleFinishExperience()}
+          onError={(reason) => {
+            // Observability only — never crash the host tree.
+            if (typeof console !== "undefined") console.warn("[experience]", reason);
+          }}
+        />
+      )}
+      {popupError && modalOpen && (
+        <p
+          className="pointer-events-none fixed bottom-4 left-1/2 z-[300] -translate-x-1/2 rounded bg-danger px-3 py-1.5 font-ui text-[12px] text-white shadow-lg"
+          role="alert"
+          data-testid="experience-popup-error"
+        >
+          {t("experience_popup_blocked")}
+        </p>
+      )}
+    </>
+  );
+}

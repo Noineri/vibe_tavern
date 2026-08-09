@@ -168,9 +168,16 @@ export const ExperienceFrame = forwardRef<ExperienceFrameHandle, ExperienceFrame
       };
     }, [visualSource]);
 
-    // (Re)create the bridge for this session. A session/revision change is a
-    // fresh handshake — dispose the old bridge, create a new one. The actual
-    // port transfer happens on iframe load (contentWindow must exist first).
+    // (Re)create the bridge for this session. The bridge lifetime is
+    // SESSION-SCOPED: only a genuine `sessionId` change creates a fresh
+    // handshake. `initialRevision` is read ONCE at mount (the hello revision);
+    // later authoritative revisions for the SAME session arrive through the
+    // imperative `sendState` (the parent pushes the new view), NOT by
+    // reconstructing the bridge. Recreating the bridge on every revision would
+    // also strand the old bridge — the iframe load does not re-fire to attach a
+    // new bridge, so the new bridge would never handshake (IR-73B seam #4).
+    // The actual port transfer happens on iframe load (contentWindow must
+    // exist first).
     useEffect(() => {
       const bridge = new ExperienceHostBridge({
         sessionId,
@@ -196,13 +203,15 @@ export const ExperienceFrame = forwardRef<ExperienceFrameHandle, ExperienceFrame
         bridge.dispose();
         bridgeRef.current = null;
       };
-      // initialView is intentionally not a dependency: it is the projection at
-      // mount; a later prop change should arrive via the imperative sendState,
-      // not by recreating the bridge. onAction/onReady/etc. are callbacks and
-      // are read through the bridge closure at creation; callers should keep
-      // them stable (the chat store in IR-71 will memoize them).
+      // initialRevision/initialView are intentionally not dependencies:
+      // initialRevision is the mount-time hello value; a later authoritative
+      // revision for the SAME session arrives via sendState (not by recreating
+      // the bridge). onAction/onReady/etc. are callbacks read through the
+      // bridge closure at creation; callers provide stable wrappers that
+      // delegate through refs (IR-73B) so changing props do not strand the
+      // bridge.
       // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [sessionId, initialRevision]);
+    }, [sessionId]);
 
     const handleLoad = useCallback(() => {
       const win = iframeRef.current?.contentWindow as BridgeContentWindow | null;

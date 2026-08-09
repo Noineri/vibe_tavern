@@ -1,6 +1,6 @@
 /**
  * ExperienceDetachedWindow — the same-origin trusted wrapper for the "Open in
- * separate window" surface (IR-62).
+ * separate window" surface (IR-62; persisted-store reconnect wired in IR-71).
  *
  * A detached window is NOT the user visual running as the top-level document —
  * that would demolish the isolation boundary. Instead `window.open` loads the
@@ -11,13 +11,16 @@
  * inside `sandbox="allow-scripts"` with no `allow-same-origin`; only the trusted
  * chrome around it is now a real OS window instead of a modal.
  *
- * Descriptor handoff (IR-62; replaced by the persisted client store in IR-71):
- * the opener already holds the session props (visual source, revision, …) when
- * the user clicks Detach, so it stashes them on a window property and the popup
- * reads them back via `window.opener` (same-origin → accessible). IR-71 will
- * replace this with a store fetch keyed by sessionId, so the popup survives an
- * opener close. The handoff is confined to these two functions so the swap is
- * local.
+ * Persisted reconnect (IR-71, completing the IR-62→IR-71 handoff): the detached
+ * host no longer depends on `window.opener` callbacks (which die when the opener
+ * closes). It reads the exact scope (`chatId`+`branchId`) + a safe bootstrap
+ * snapshot from the descriptor, sets the Experience store scope, rehydrates the
+ * branch's active session, and from then on uses ONLY the store's
+ * server-authoritative session — pinned visual source, revision, and projected
+ * view. It submits actions through the store, acks the frame with the result,
+ * pushes later authoritative views + pending phases, and runs durable pending
+ * model effects. The descriptor is the immediate safe bootstrap only (the frame
+ * can mount before the rehydrate resolves); the store is the authority.
  *
  * Popup-blocked fallback: `window.open` returns `null` when the browser blocks
  * the popup (common with strict blockers or a non-user-gesture trigger). The
@@ -31,8 +34,17 @@ import {
   ExperienceFrame,
   type ExperienceFrameHandle,
 } from "./ExperienceFrame.js";
-import type { BridgeResize } from "../../lib/experience-bridge.js";
+import { experienceActionOutcome } from "./ExperienceModal.js";
+import type { BridgeErrorCode } from "../../lib/experience-bridge-schema.js";
+import { EXPERIENCE_EFFECT_STATUS } from "@vibe-tavern/domain";
 import type { ExperienceActionDto } from "@vibe-tavern/api-contracts";
+import {
+  useExperienceEffects,
+  useExperienceSession,
+  useExperienceStore,
+  type ExperienceActionIntent,
+} from "../../stores/experience-store.js";
+import type { ExperienceSessionResponse } from "../../api/types.js";
 
 /** The global property the opener stashes the descriptor on (same-origin only). */
 const DESCRIPTOR_KEY = "__experienceDetachDescriptor";
@@ -57,17 +69,25 @@ function defaultWindow(): DetachWindow {
   return globalThis as unknown as DetachWindow;
 }
 
+/** The projected-view type the frame/host pushes. */
+type ProjectedView = Parameters<ExperienceFrameHandle["sendState"]>[0];
+
 /**
- * The session props the detached host needs to mount the frame. Deliberately a
- * flat subset of ExperienceFrame props — the detached host does not need the
- * modal-only chrome fields.
+ * The session props the detached host needs to mount the frame + reconnect the
+ * persisted store. Carries the exact scope (`chatId`+`branchId`) so the host
+ * can `setScope` and rehydrate, plus a pinned bootstrap snapshot (visual source,
+ * revision, view) so the frame renders immediately before the rehydrate settles.
+ * After rehydrate the store session is the authority; the descriptor fields are
+ * only the safe bootstrap.
  */
 export interface DetachedExperienceDescriptor {
+  readonly chatId: string;
+  readonly branchId: string;
   readonly sessionId: string;
   readonly title: string;
   readonly visualSource: string;
   readonly initialRevision: number;
-  readonly initialView?: Parameters<ExperienceFrameHandle["sendState"]>[0];
+  readonly initialView?: ProjectedView;
 }
 
 /**
@@ -80,23 +100,38 @@ export function openExperienceDetachedWindow(
   win: DetachWindow = defaultWindow(),
 ): Window | null {
   // Stash on the OPENER so the popup (a fresh bundle instance with its own
-  // module state) can read it via window.opener (same-origin).
+  // module state) can read it via window.opener (same-origin) as a bootstrap.
+  // The popup rehydrates from the store after reading this — it does not depend
+  // on the opener staying alive.
   win[DESCRIPTOR_KEY] = descriptor;
   const url = `${win.location.pathname}${win.location.search}#experience=${encodeURIComponent(descriptor.sessionId)}`;
   return win.open(url, `xp-detach-${descriptor.sessionId}`, DETACHED_WINDOW_FEATURES);
 }
 
+/** Required string fields validated by {@link readDetachedDescriptor}. */
+const DESCRIPTOR_REQUIRED_STRINGS: readonly (keyof DetachedExperienceDescriptor)[] = [
+  "chatId",
+  "branchId",
+  "sessionId",
+  "title",
+  "visualSource",
+];
+
 /**
  * Read the descriptor the opener stashed. Called from inside the detached
  * window's bundle. Returns null if there is no opener (opened directly/not via
- * Detach) or no descriptor — the shell fork falls back to the normal app.
+ * Detach), no descriptor, or a malformed descriptor (missing required scope +
+ * bootstrap fields) — the shell fork falls back to the normal app.
  */
 export function readDetachedDescriptor(win: DetachWindow = defaultWindow()): DetachedExperienceDescriptor | null {
   const desc = win.opener?.[DESCRIPTOR_KEY];
-  if (desc && typeof desc.sessionId === "string" && typeof desc.visualSource === "string") {
-    return desc;
+  if (!desc || typeof desc !== "object") return null;
+  for (const key of DESCRIPTOR_REQUIRED_STRINGS) {
+    const v = desc[key];
+    if (typeof v !== "string" || v === "") return null;
   }
-  return null;
+  if (typeof desc.initialRevision !== "number" || !Number.isFinite(desc.initialRevision)) return null;
+  return desc;
 }
 
 /** True when the current window is a detached-experience popup (hash present). */
@@ -105,22 +140,26 @@ export function isDetachedExperienceWindow(win: Pick<DetachWindow, "location"> =
 }
 
 export interface ExperienceDetachedHostProps {
-  /**
-   * Optional callbacks forwarded to the embedded frame. IR-62 defaults them to
-   * no-ops because the client store (IR-71) does not exist yet; IR-71 wires
-   * these to real server-authoritative session actions.
-   */
-  readonly onAction?: (action: ExperienceActionDto) => void;
-  readonly onResize?: (size: BridgeResize) => void;
-  readonly onError?: (reason: string) => void;
   /** Override the descriptor source (tests); defaults to readDetachedDescriptor(). */
   readonly descriptor?: DetachedExperienceDescriptor;
 }
 
+/** Read the current scope-keyed store error synchronously (callback-safe). */
+function readScopeError(chatId: string, branchId: string) {
+  const state = useExperienceStore.getState();
+  const key = JSON.stringify([chatId, branchId]);
+  const scope = state.byScope[key];
+  return { lastApiError: scope?.lastApiError ?? null, session: scope?.session ?? null };
+}
+
 /**
  * The trusted wrapper rendered inside the detached window. Reads its descriptor
- * from the opener, renders a close-self chrome + the SAME sandboxed
- * {@link ExperienceFrame}. Never executes user HTML as the top-level document.
+ * from the opener (safe bootstrap), sets the Experience store scope, rehydrates
+ * the branch's active session, and from then on uses ONLY the store's
+ * server-authoritative session: pinned visual source, revision, projected view.
+ * Submits actions through the store (acks the frame), pushes later views +
+ * pending phases, and runs durable pending model effects one at a time. Never
+ * executes user HTML as the top-level document.
  */
 export function ExperienceDetachedHost(props: ExperienceDetachedHostProps) {
   const { t } = useT();
@@ -128,15 +167,139 @@ export function ExperienceDetachedHost(props: ExperienceDetachedHostProps) {
     () => props.descriptor ?? readDetachedDescriptor(),
   );
   const frameRef = useRef<ExperienceFrameHandle>(null);
+  const [frameReady, setFrameReady] = useState(false);
+  const lastPushedRevision = useRef<number | null>(null);
+  /** In-flight effect run (prevents a duplicate/running repeat). */
+  const effectRunRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
-    // Re-read on mount in case the opener stashed the descriptor after the
-    // bundle initialized (the popup may parse its JS before the opener writes).
     if (!props.descriptor && !descriptor) {
       const d = readDetachedDescriptor();
       if (d) setDescriptor(d);
     }
   }, [props.descriptor, descriptor]);
+
+  const chatId = descriptor?.chatId ?? null;
+  const branchId = descriptor?.branchId ?? null;
+
+  // ── Set the store scope + rehydrate once the descriptor is known ─────────
+  useEffect(() => {
+    if (!descriptor) return;
+    useExperienceStore.getState().setScope(descriptor.chatId, descriptor.branchId);
+  }, [descriptor]);
+
+  // The authoritative store session/effects for THIS scope (the descriptor is
+  // only the bootstrap before the rehydrate settles).
+  const storeSession = useExperienceSession(chatId, branchId);
+  const storeEffects = useExperienceEffects(chatId, branchId);
+
+  // Authoritative values: store > descriptor bootstrap.
+  const session: ExperienceSessionResponse | null = storeSession;
+  const visualSource = session?.visualSource ?? descriptor?.visualSource ?? "";
+  const sessionId = session?.sessionId ?? descriptor?.sessionId ?? "";
+  const revision = session?.revision ?? descriptor?.initialRevision ?? 0;
+  const view: ProjectedView | undefined = session?.view ?? descriptor?.initialView;
+  const title = descriptor?.title ?? session?.manifest.name ?? "";
+
+  /** Localized bridge-error message for the fail-closed outcome. `t` from the
+   *  i18n context is stable, so this plain function is safe to capture. */
+  function localizeError(code: BridgeErrorCode): string {
+    return code === "stale_revision" ? t("experience_action_stale") : t("experience_action_invalid");
+  }
+
+  /** Frame action handler: strip CAS/idempotency, submit via store, ack the
+   *  frame with the outcome (visual requestId retained). Captured once per
+   *  session by the session-scoped bridge; reads fresh store state at call.
+   *  Fail-closed: a thrown store action never strands the bridge lock — the
+   *  frame always gets a sendError with a generic localized message. */
+  function handleAction(action: ExperienceActionDto): void {
+    const visualRequestId = action.requestId;
+    const intent: ExperienceActionIntent = {
+      type: action.type,
+      ...(action.participantId !== undefined ? { participantId: action.participantId } : {}),
+      ...(action.payload !== undefined ? { payload: action.payload } : {}),
+    };
+    void (async (): Promise<void> => {
+      let response;
+      try {
+        response = await useExperienceStore.getState().submitAction(intent);
+      } catch {
+        // A thrown store action must still clear the bridge lock. Send a
+        // generic fail-closed error — no raw exception to the visual.
+        frameRef.current?.sendError("invalid_action", localizeError("invalid_action"), {
+          requestId: visualRequestId,
+          ...(revision !== undefined ? { revision } : {}),
+        });
+        return;
+      }
+      if (!descriptor) return;
+      const { lastApiError, session: current } = readScopeError(descriptor.chatId, descriptor.branchId);
+      const outcome = experienceActionOutcome(response, lastApiError, current?.revision, localizeError);
+      if (outcome.ok) {
+        frameRef.current?.sendResult(visualRequestId, outcome.revision, outcome.status);
+        frameRef.current?.sendState(outcome.view);
+        lastPushedRevision.current = outcome.revision;
+      } else {
+        frameRef.current?.sendError(outcome.code, outcome.message, {
+          requestId: visualRequestId,
+          ...(outcome.revision !== undefined ? { revision: outcome.revision } : {}),
+        });
+      }
+    })();
+  }
+
+  // Reset push frontier on a session change.
+  useEffect(() => {
+    setFrameReady(false);
+    lastPushedRevision.current = null;
+  }, [sessionId]);
+
+  // ── Push the authoritative view to the ready frame (seam #2) ──────────────
+  useEffect(() => {
+    if (!frameReady || view === undefined) return;
+    if (lastPushedRevision.current === view.revision) return;
+    frameRef.current?.sendState(view);
+    lastPushedRevision.current = view.revision;
+  }, [frameReady, view]);
+
+  // ── Push the pending phase to the visual protocol (seam #5) ───────────────
+  const pendingPhase = storeEffects.some(
+    (e) => e.status === EXPERIENCE_EFFECT_STATUS.pending || e.status === EXPERIENCE_EFFECT_STATUS.running,
+  )
+    ? "effect"
+    : "idle";
+  useEffect(() => {
+    if (!frameReady) return;
+    frameRef.current?.sendPending(pendingPhase);
+  }, [frameReady, pendingPhase]);
+
+  // ── Run durable pending model effects one at a time (IR-73B) ──────────────
+  // Only `pending` rows auto-run; `running`/`unknown`/`failed`/`succeeded`
+  // never repeat. An in-flight run blocks a new start; the store rehydrates
+  // after each run, re-triggering this effect for the next pending row. A
+  // genuine session change aborts the in-flight run.
+  useEffect(() => {
+    if (!session) return;
+    if (effectRunRef.current) return; // one at a time
+    const pending = storeEffects.find((e) => e.status === EXPERIENCE_EFFECT_STATUS.pending);
+    if (!pending) return;
+    const controller = new AbortController();
+    effectRunRef.current = controller;
+    void useExperienceStore
+      .getState()
+      .runEffect(pending.id, controller.signal)
+      .finally(() => {
+        if (effectRunRef.current === controller) effectRunRef.current = null;
+      });
+  }, [session, storeEffects]);
+
+  // Abort the in-flight effect ONLY on a genuine session change.
+  useEffect(() => {
+    return () => {
+      effectRunRef.current?.abort();
+      effectRunRef.current = null;
+    };
+  }, [sessionId]);
 
   if (!descriptor) {
     return (
@@ -146,11 +309,21 @@ export function ExperienceDetachedHost(props: ExperienceDetachedHostProps) {
     );
   }
 
+  if (!visualSource) {
+    // The session has no pinned visual source (or the rehydrate has not yet
+    // settled). Surface an incompatible state rather than fetching live source.
+    return (
+      <div className="flex h-screen w-screen items-center justify-center bg-neutral-900 text-neutral-400">
+        <p className="text-sm">{t("experience_incompatible")}</p>
+      </div>
+    );
+  }
+
   return (
     <div className="flex h-screen w-screen flex-col bg-neutral-900">
       <header className="flex items-center gap-2 border-b border-neutral-800 px-3 py-2">
         <h1 className="min-w-0 flex-1 truncate text-sm font-semibold text-neutral-100">
-          {descriptor.title}
+          {title}
         </h1>
         <span className="rounded bg-neutral-800 px-2 py-0.5 text-[10px] uppercase tracking-wide text-neutral-400">
           {t("experience_detached_badge")}
@@ -168,13 +341,12 @@ export function ExperienceDetachedHost(props: ExperienceDetachedHostProps) {
       <div className="flex-1 overflow-auto">
         <ExperienceFrame
           ref={frameRef}
-          visualSource={descriptor.visualSource}
-          sessionId={descriptor.sessionId}
-          initialRevision={descriptor.initialRevision}
-          initialView={descriptor.initialView}
-          onAction={(a) => props.onAction?.(a)}
-          onResize={(s) => props.onResize?.(s)}
-          onError={(r) => props.onError?.(r)}
+          visualSource={visualSource}
+          sessionId={sessionId}
+          initialRevision={revision}
+          initialView={view}
+          onReady={() => setFrameReady(true)}
+          onAction={handleAction}
         />
       </div>
     </div>

@@ -198,3 +198,67 @@ describe("ExperienceFrame", () => {
     expect(handle!.sessionNonce).toMatch(/^[0-9a-f]{32}$/);
   });
 });
+
+describe("ExperienceFrame — session-scoped bridge lifetime (IR-73B seam #4)", () => {
+  it("does NOT recreate/strand the bridge when only initialRevision changes", async () => {
+    installUrlSpies();
+    const ref = createRef<ExperienceFrameHandle>();
+    const { rerender } = render(
+      <ExperienceFrame
+        ref={ref}
+        visualSource={VISUAL}
+        sessionId="sess_1"
+        initialRevision={3}
+        onAction={() => {}}
+      />,
+    );
+    const nonceBefore = ref.current!.sessionNonce;
+    // A revision prop update for the SAME session must NOT dispose/recreate
+    // the bridge — later authoritative revisions arrive through sendState, not
+    // bridge reconstruction. The session nonce stays identical.
+    await act(async () => {
+      rerender(
+        <ExperienceFrame
+          ref={ref}
+          visualSource={VISUAL}
+          sessionId="sess_1"
+          initialRevision={42}
+          onAction={() => {}}
+        />,
+      );
+    });
+    expect(ref.current).not.toBeNull();
+    expect(ref.current!.sessionNonce).toBe(nonceBefore);
+  });
+
+  it("recreates the bridge (new nonce) when the sessionId changes", async () => {
+    installUrlSpies();
+    const ref = createRef<ExperienceFrameHandle>();
+    const { rerender } = render(
+      <ExperienceFrame
+        ref={ref}
+        visualSource={VISUAL}
+        sessionId="sess_a"
+        initialRevision={0}
+        onAction={() => {}}
+      />,
+    );
+    const nonceA = ref.current!.sessionNonce;
+    await act(async () => {
+      rerender(
+        <ExperienceFrame
+          ref={ref}
+          visualSource={VISUAL}
+          sessionId="sess_b"
+          initialRevision={0}
+          onAction={() => {}}
+        />,
+      );
+    });
+    const nonceB = ref.current!.sessionNonce;
+    // A genuine session id change creates a fresh handshake → new nonce.
+    expect(nonceA).not.toBe(nonceB);
+    expect(nonceA).toMatch(/^[0-9a-f]{32}$/);
+    expect(nonceB).toMatch(/^[0-9a-f]{32}$/);
+  });
+});
