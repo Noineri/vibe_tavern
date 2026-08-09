@@ -244,9 +244,17 @@ export function ExperienceLauncher({ docked = false }: ExperienceLauncherProps):
   // the modal/session surface open so the user can see the store error and
   // retry. The trusted confirmation step itself lives in the modal chrome.
   async function handleFinishExperience(): Promise<void> {
-    const result = await useExperienceStore.getState().endSession();
-    if (result !== null) {
-      useExperienceStore.getState().closeModal();
+    try {
+      const result = await useExperienceStore.getState().endSession();
+      if (result !== null) {
+        useExperienceStore.getState().closeModal();
+      }
+    } catch (err) {
+      // The session may disappear between render and confirmation (for example,
+      // after another trusted surface finishes it). Keep this surface open and
+      // retryable rather than leaking an unhandled rejection or guessing that
+      // the terminal attachment exists.
+      if (typeof console !== "undefined") console.warn("[experience] finish rejected", err);
     }
   }
 

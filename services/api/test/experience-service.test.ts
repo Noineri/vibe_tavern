@@ -615,7 +615,7 @@ describe("ExperienceService — branch-scoped active-session discovery (IR-70A)"
     const service = await setup();
     const { chatId } = await seedChatAndScript(COUNTER_SOURCE);
     // Create a second chat and use ITS branch with the first chat's id.
-    const character2 = await stores.characters.create({ name: "Other" } as never);
+    const character2 = await stores.characters.create({ name: "Other" });
     const chat2 = await stores.chats.createChat({ characterId: character2.id, title: "Other" });
 
     const found = await service.getActiveSessionForBranch(chatId, chat2.activeBranchId);

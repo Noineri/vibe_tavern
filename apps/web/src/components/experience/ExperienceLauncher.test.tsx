@@ -554,6 +554,28 @@ describe("ExperienceLauncher — finish", () => {
     // Modal/session surface stays open so the user can see the error + retry.
     expect(storeMocks.closeModal).not.toHaveBeenCalled();
   });
+
+  it("finish rejection is handled and keeps the modal open", async () => {
+    setScopeState(SCOPE_KEY, { config: makeConfig(), session: makeSession(), modalOpen: true });
+    storeMocks.endSession.mockRejectedValue(new Error("session disappeared"));
+    const warn = mock(() => undefined);
+    const originalWarn = console.warn;
+    console.warn = warn;
+    try {
+      render(<ExperienceLauncher />);
+      await act(async () => {
+        fireEvent.click(document.querySelector("[data-testid='modal-finish']")!);
+      });
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+      expect(storeMocks.endSession).toHaveBeenCalledTimes(1);
+      expect(storeMocks.closeModal).not.toHaveBeenCalled();
+      expect(warn).toHaveBeenCalled();
+    } finally {
+      console.warn = originalWarn;
+    }
+  });
 });
 
 // ─── 9. Detach ──────────────────────────────────────────────────────────────

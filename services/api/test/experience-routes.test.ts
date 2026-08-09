@@ -551,7 +551,7 @@ describe("Experience routes — IR-70A session discovery (integration)", () => {
 	test("wrong branch (belongs to another chat) is 404 branch_not_found", async () => {
 		const { stores, resources, app } = await setupIntegration();
 		const { chatId } = await seedChatAndScript(stores, resources, COUNTER_SOURCE);
-		const otherChar = await stores.characters.create({ name: "O" } as never);
+		const otherChar = await stores.characters.create({ name: "O" });
 		const otherChat = await stores.chats.createChat({ characterId: otherChar.id, title: "O" });
 		const res = await app.request(`/api/chats/${chatId}/experience/session?branchId=${otherChat.activeBranchId}`);
 		expect(res.status).toBe(404);
