@@ -13,10 +13,27 @@ export class ScriptAdapter implements ScriptRuntimeApi {
 		this.stores.scripts.getById(scriptId);
 
 	createScript = (body: { name: string; description?: string; code?: string; scriptKind?: string; creationIntentId?: string; scopeType: string; characterId?: string; personaId?: string; chatId?: string; enabled?: boolean; sortOrder?: number }) =>
-		this.stores.scripts.create(body);
+		this.stores.scripts.create({
+			...body,
+			// Interactive rules are trusted executable code. Publicly authored
+			// revisions always begin disabled; app-owned seeds may still use the
+			// lower-level store directly for their reviewed shipped source.
+			enabled: body.scriptKind === "interactive" ? false : body.enabled,
+		});
 
-	updateScript = (scriptId: string, body: { name?: string; description?: string; code?: string; enabled?: boolean; sortOrder?: number }) =>
-		this.stores.scripts.update(scriptId, body);
+	updateScript = async (scriptId: string, body: { name?: string; description?: string; code?: string; enabled?: boolean; sortOrder?: number }) => {
+		const existing = await this.stores.scripts.getById(scriptId);
+		if (existing?.scriptKind !== "interactive") return this.stores.scripts.update(scriptId, body);
+
+		const sourceChanged = body.code !== undefined && body.code !== existing.code;
+		// Enabling must name the exact reviewed source. A bare enabled=true can
+		// race a concurrent source save and accidentally trust a different body.
+		const lacksReviewedSource = body.enabled === true && body.code === undefined;
+		return this.stores.scripts.update(
+			scriptId,
+			sourceChanged || lacksReviewedSource ? { ...body, enabled: false } : body,
+		);
+	};
 
 	setScriptScope = (scriptId: string, scopeType: 'global' | 'character' | 'persona' | 'chat', ownerId: string | null) =>
 		this.stores.scripts.setScope(scriptId, scopeType, ownerId);
@@ -37,6 +54,7 @@ export class ScriptAdapter implements ScriptRuntimeApi {
 			name,
 			code,
 			scriptKind: body.scriptKind,
+			enabled: body.scriptKind === "interactive" ? false : undefined,
 			scopeType: body.scopeType ?? "character",
 			characterId: body.characterId,
 			personaId: body.personaId,

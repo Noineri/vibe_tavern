@@ -113,12 +113,20 @@ export const useScriptDraftStore = create<ScriptDraftStore>()((set, get) => {
       const existing = get().drafts[scriptId];
       if (!existing) return;
       clearSavedTimer(scriptId);
+      const values = { ...existing.values, ...patch };
+      // Interactive rules execute with host permissions, so enabled is their
+      // exact-version trust signal. A changed local source stays untrusted
+      // until that source has been saved and enabled in a separate operation.
+      // Prompt and Dice scripts retain their existing enabled semantics.
+      if (values.scriptKind === "interactive" && values.code !== existing.base.code) {
+        values.enabled = false;
+      }
       set((state) => ({
         drafts: {
           ...state.drafts,
           [scriptId]: {
             ...existing,
-            values: { ...existing.values, ...patch },
+            values,
             // Keep the request lock while a submitted snapshot is in flight.
             // completeSave will detect the newer values and return to idle +
             // dirty; until then a second Save must stay disabled.

@@ -43,8 +43,8 @@ export function createScriptRoutes(runtime: ScriptRuntimeApi) {
       const body = c.req.valid("json");
       const format = body.format;
       const payload = format === "js"
-        ? { format, code: body.code, name: body.name, scopeType: body.scopeType, characterId: body.characterId, personaId: body.personaId, chatId: body.chatId }
-        : { format, jsonText: body.jsonText, scopeType: body.scopeType, characterId: body.characterId, personaId: body.personaId, chatId: body.chatId };
+        ? { format, code: body.code, name: body.name, scriptKind: body.scriptKind, scopeType: body.scopeType, characterId: body.characterId, personaId: body.personaId, chatId: body.chatId }
+        : { format, jsonText: body.jsonText, scriptKind: body.scriptKind, scopeType: body.scopeType, characterId: body.characterId, personaId: body.personaId, chatId: body.chatId };
       return c.json(await runtime.importScript(payload), 201);
     })
     // ── Links ───────────────────────────────────────────────────────────
