@@ -1802,5 +1802,14 @@
   "proxy_status_configured_few": "Настроено: {count} · по умолчанию напрямую",
   "proxy_status_configured_many": "Настроено: {count} · по умолчанию напрямую",
   "proxy_status_configured_one": "Настроен: {count} · по умолчанию напрямую",
-  "proxy_status_configured_other": "Настроено: {count} · по умолчанию напрямую"
+  "proxy_status_configured_other": "Настроено: {count} · по умолчанию напрямую",
+  "experience_close": "Закрыть",
+  "experience_cancel": "Отмена",
+  "experience_finish": "Завершить",
+  "experience_finish_confirm": "Завершить этот опыт? Сессия будет окончена, и итоговый результат можно будет прикрепить.",
+  "experience_detach_title": "Открыть в отдельном окне",
+  "experience_pending_typing": "печатает…",
+  "experience_pending_effect": "обдумывает…",
+  "experience_detach_unavailable": "Это окно опыта больше не подключено.",
+  "experience_detached_badge": "отдельно"
 }

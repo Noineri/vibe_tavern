@@ -1787,6 +1787,15 @@ export default interface Resources {
     "default_proxy": "Default proxy";
     "proxy_status_configured_one": "{count} configured \u00b7 direct by default";
     "proxy_status_configured_other": "{count} configured \u00b7 direct by default";
+    "experience_close": "Close";
+    "experience_cancel": "Cancel";
+    "experience_finish": "Finish";
+    "experience_finish_confirm": "Finish this experience? The session will end and the final result will be ready to attach.";
+    "experience_detach_title": "Open in separate window";
+    "experience_pending_typing": "typing…";
+    "experience_pending_effect": "thinking…";
+    "experience_detach_unavailable": "This experience window is no longer connected.";
+    "experience_detached_badge": "detached";
 
   }
 }
