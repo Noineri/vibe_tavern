@@ -435,6 +435,42 @@ describe("scriptTestResultSchema (prompt | dice | interactive)", () => {
     expect(result.success).toBe(true);
   });
 
+  // IR-70F: the wire test-result schema carries a validated setup descriptor
+  // automatically through the experienceDefinitionSchema it embeds.
+  it("accepts an interactive result whose definition carries a setup descriptor", () => {
+    const result = scriptTestResultSchema.safeParse({
+      kind: "interactive",
+      definition: {
+        apiVersion: 1,
+        manifest: { id: "ttt", name: "Tic-Tac-Toe" },
+        declaredCapabilities: [],
+        setup: {
+          fields: [
+            { kind: "select", id: "strength", label: "Strength", default: "easy",
+              options: [{ value: "easy", label: "Easy" }] },
+          ],
+        },
+      },
+      discoveryError: null,
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects an interactive result whose setup is malformed", () => {
+    expectReject(
+      scriptTestResultSchema.safeParse({
+        kind: "interactive",
+        definition: {
+          apiVersion: 1,
+          manifest: { id: "ttt", name: "Tic-Tac-Toe" },
+          declaredCapabilities: [],
+          setup: { fields: [{ kind: "text", id: "dup", label: "A" }, { kind: "text", id: "dup", label: "B" }] },
+        },
+        discoveryError: null,
+      }),
+    );
+  });
+
   it("accepts an interactive result with a null definition and a discovery error", () => {
     const result = scriptTestResultSchema.safeParse({
       kind: "interactive",

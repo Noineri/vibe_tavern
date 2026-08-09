@@ -216,6 +216,9 @@ export {
   experienceEffectRequestSchema,
   experienceTransitionSchema,
   experienceProjectedViewSchema,
+  experienceSetupFieldSchema,
+  experienceSetupFieldOptionSchema,
+  experienceSetupDefinitionSchema,
   experienceDefinitionSchema,
   // Starters
   experienceStarterManifestSchema,
@@ -253,6 +256,8 @@ export {
   INTERACTIVE_SCHEMA_MAX_CAPABILITIES,
   INTERACTIVE_SCHEMA_MAX_EFFECTS,
   INTERACTIVE_SCHEMA_MAX_REVISION,
+  INTERACTIVE_SCHEMA_MAX_SETUP_FIELDS,
+  INTERACTIVE_SCHEMA_MAX_SETUP_OPTIONS,
   // DTO types
   type ExperienceStartRequestDto,
   type ExperienceActionDto,
@@ -260,4 +265,7 @@ export {
   type ExperienceSessionResponseDto,
   type ExperienceDefinitionDto,
   type ExperienceStarterManifestDto,
+  type ExperienceSetupFieldOptionDto,
+  type ExperienceSetupFieldDto,
+  type ExperienceSetupDefinitionDto,
 } from "./interactive-schema.js";

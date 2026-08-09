@@ -13,12 +13,15 @@ import {
 import {
   INTERACTIVE_SCHEMA_MAX_DEPTH,
   INTERACTIVE_SCHEMA_MAX_ID,
+  INTERACTIVE_SCHEMA_MAX_SETUP_FIELDS,
+  INTERACTIVE_SCHEMA_MAX_SETUP_OPTIONS,
   INTERACTIVE_SCHEMA_MAX_STATE_BYTES,
   boundedJsonValue,
   experienceActionSchema,
   experienceCapabilitySchema,
   experienceContextModeSchema,
   experienceControllerSchema,
+  experienceDefinitionSchema,
   experienceEffectKindSchema,
   experienceEffectStatusSchema,
   experienceEventVisibilitySchema,
@@ -28,6 +31,8 @@ import {
   experienceReducerStatusSchema,
   experienceSessionResponseSchema,
   experienceSessionStatusSchema,
+  experienceSetupDefinitionSchema,
+  experienceSetupFieldSchema,
   experienceStartRequestSchema,
   experienceTransitionSchema,
   experienceViewerKindSchema,
@@ -518,6 +523,209 @@ describe("experienceSessionResponseSchema", () => {
   it("rejects an unknown session status", () => {
     expectReject(
       experienceSessionResponseSchema.safeParse({ ...validResponse(), status: "paused" }),
+    );
+  });
+});
+
+// ─── Setup descriptor (IR-70F) ───────────────────────────────────────────────
+
+function validDefinition() {
+  return {
+    apiVersion: 1,
+    manifest: { id: "ttt", name: "Tic-Tac-Toe" },
+    declaredCapabilities: [],
+  };
+}
+
+describe("experienceSetupFieldSchema — round-trip preserves author omission (IR-70F)", () => {
+  // Each case is a field declared with only the keys the author provided.
+  // Parsing must return exactly those keys — no fabricated defaults.
+  const cases: Array<{ name: string; input: unknown; expected: unknown }> = [
+    {
+      name: "text: minimal",
+      input: { kind: "text", id: "name", label: "Name" },
+      expected: { kind: "text", id: "name", label: "Name" },
+    },
+    {
+      name: "text: full",
+      input: {
+        kind: "text", id: "name", label: "Name", description: "d", placeholder: "p",
+        required: true, default: "hi", minLength: 1, maxLength: 10,
+      },
+      expected: {
+        kind: "text", id: "name", label: "Name", description: "d", placeholder: "p",
+        required: true, default: "hi", minLength: 1, maxLength: 10,
+      },
+    },
+    {
+      name: "number: minimal",
+      input: { kind: "number", id: "lvl", label: "Level" },
+      expected: { kind: "number", id: "lvl", label: "Level" },
+    },
+    {
+      name: "number: with bounds/default",
+      input: {
+        kind: "number", id: "lvl", label: "Level", default: 5, min: 1, max: 10, step: 1,
+      },
+      expected: {
+        kind: "number", id: "lvl", label: "Level", default: 5, min: 1, max: 10, step: 1,
+      },
+    },
+    {
+      name: "boolean: minimal",
+      input: { kind: "boolean", id: "hc", label: "Hardcore" },
+      expected: { kind: "boolean", id: "hc", label: "Hardcore" },
+    },
+    {
+      name: "boolean: with default",
+      input: { kind: "boolean", id: "hc", label: "Hardcore", default: true },
+      expected: { kind: "boolean", id: "hc", label: "Hardcore", default: true },
+    },
+    {
+      name: "select: minimal single option",
+      input: {
+        kind: "select", id: "diff", label: "Difficulty",
+        options: [{ value: "easy", label: "Easy" }],
+      },
+      expected: {
+        kind: "select", id: "diff", label: "Difficulty",
+        options: [{ value: "easy", label: "Easy" }],
+      },
+    },
+    {
+      name: "select: with default",
+      input: {
+        kind: "select", id: "diff", label: "Difficulty", default: "hard",
+        options: [{ value: "easy", label: "Easy" }, { value: "hard", label: "Hard" }],
+      },
+      expected: {
+        kind: "select", id: "diff", label: "Difficulty", default: "hard",
+        options: [{ value: "easy", label: "Easy" }, { value: "hard", label: "Hard" }],
+      },
+    },
+  ];
+
+  for (const c of cases) {
+    it(`round-trips ${c.name}`, () => {
+      expect(expectData(experienceSetupFieldSchema.safeParse(c.input))).toEqual(c.expected);
+    });
+  }
+});
+
+describe("experienceSetupFieldSchema — rejections (strict + cross-field)", () => {
+  const rejectCases: Array<{ name: string; input: unknown }> = [
+    { name: "unknown field key (strict)", input: { kind: "text", id: "a", label: "A", extra: 1 } },
+    { name: "unknown kind discriminator", input: { kind: "color", id: "a", label: "A" } },
+    { name: "missing id", input: { kind: "text", label: "A" } },
+    { name: "empty option value (bounded id)", input: { kind: "select", id: "a", label: "A", options: [{ value: "", label: "L" }] } },
+    { name: "duplicate option values", input: { kind: "select", id: "a", label: "A", options: [{ value: "x", label: "X" }, { value: "x", label: "Y" }] } },
+    { name: "unknown option key (strict)", input: { kind: "select", id: "a", label: "A", options: [{ value: "x", label: "X", extra: 1 }] } },
+    { name: "select default not in options", input: { kind: "select", id: "a", label: "A", default: "z", options: [{ value: "x", label: "X" }] } },
+    { name: "select zero options", input: { kind: "select", id: "a", label: "A", options: [] } },
+    { name: "number min > max", input: { kind: "number", id: "a", label: "A", min: 10, max: 1 } },
+    { name: "number step <= 0", input: { kind: "number", id: "a", label: "A", step: 0 } },
+    { name: "number non-finite default", input: { kind: "number", id: "a", label: "A", default: Infinity } },
+    { name: "number default below min", input: { kind: "number", id: "a", label: "A", default: 0, min: 1 } },
+    { name: "number default above max", input: { kind: "number", id: "a", label: "A", default: 11, max: 10 } },
+    { name: "text minLength > maxLength", input: { kind: "text", id: "a", label: "A", minLength: 10, maxLength: 1 } },
+    { name: "text minLength out of bound", input: { kind: "text", id: "a", label: "A", minLength: 2001 } },
+    { name: "text default too long", input: { kind: "text", id: "a", label: "A", default: "12345", maxLength: 3 } },
+    { name: "text default too short", input: { kind: "text", id: "a", label: "A", default: "x", minLength: 3 } },
+  ];
+  for (const c of rejectCases) {
+    it(`rejects ${c.name}`, () => {
+      expectReject(experienceSetupFieldSchema.safeParse(c.input));
+    });
+  }
+
+  it(`rejects more than ${INTERACTIVE_SCHEMA_MAX_SETUP_OPTIONS} select options`, () => {
+    const options = Array.from({ length: INTERACTIVE_SCHEMA_MAX_SETUP_OPTIONS + 1 }, (_, i) => ({
+      value: `opt${i}`,
+      label: `Opt ${i}`,
+    }));
+    expectReject(
+      experienceSetupFieldSchema.safeParse({ kind: "select", id: "a", label: "A", options }),
+    );
+  });
+});
+
+describe("experienceSetupDefinitionSchema (IR-70F)", () => {
+  it("round-trips a multi-field setup preserving field order + omissions", () => {
+    const setup = {
+      fields: [
+        { kind: "text", id: "name", label: "Name", default: "hero" },
+        { kind: "number", id: "level", label: "Level", min: 1, max: 5 },
+        { kind: "boolean", id: "hardcore", label: "Hardcore" },
+        {
+          kind: "select", id: "style", label: "Style", default: "aggressive",
+          options: [
+            { value: "aggressive", label: "Aggressive" },
+            { value: "cautious", label: "Cautious" },
+          ],
+        },
+      ],
+    };
+    expect(expectData(experienceSetupDefinitionSchema.safeParse(setup))).toEqual(setup);
+  });
+
+  it("rejects an unknown top-level key (strict)", () => {
+    expectReject(experienceSetupDefinitionSchema.safeParse({ fields: [], extra: 1 }));
+  });
+
+  it("rejects duplicate field ids", () => {
+    expectReject(
+      experienceSetupDefinitionSchema.safeParse({
+        fields: [
+          { kind: "text", id: "dup", label: "A" },
+          { kind: "number", id: "dup", label: "B" },
+        ],
+      }),
+    );
+  });
+
+  it(`rejects more than ${INTERACTIVE_SCHEMA_MAX_SETUP_FIELDS} fields`, () => {
+    const fields = Array.from({ length: INTERACTIVE_SCHEMA_MAX_SETUP_FIELDS + 1 }, (_, i) => ({
+      kind: "boolean",
+      id: `f${i}`,
+      label: `F${i}`,
+    }));
+    expectReject(experienceSetupDefinitionSchema.safeParse({ fields }));
+  });
+});
+
+describe("experienceDefinitionSchema setup (IR-70F)", () => {
+  it("accepts a definition WITHOUT setup and omits it from parsed data", () => {
+    const data = expectData(experienceDefinitionSchema.safeParse(validDefinition())) as Record<
+      string,
+      unknown
+    >;
+    expect(data.setup).toBeUndefined();
+  });
+
+  it("accepts a definition WITH a valid setup and preserves it", () => {
+    const withSetup = {
+      ...validDefinition(),
+      setup: {
+        fields: [
+          { kind: "text", id: "strength", label: "Strength", default: "strong" },
+        ],
+      },
+    };
+    const data = expectData(experienceDefinitionSchema.safeParse(withSetup));
+    expect(data).toEqual(withSetup);
+  });
+
+  it("rejects a definition with a malformed setup (duplicate field id)", () => {
+    expectReject(
+      experienceDefinitionSchema.safeParse({
+        ...validDefinition(),
+        setup: {
+          fields: [
+            { kind: "text", id: "dup", label: "A" },
+            { kind: "text", id: "dup", label: "B" },
+          ],
+        },
+      }),
     );
   });
 });

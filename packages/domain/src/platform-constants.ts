@@ -652,3 +652,21 @@ export const EXPERIENCE_CONTEXT_MODE = {
 
 export type ExperienceContextMode =
   typeof EXPERIENCE_CONTEXT_MODE[keyof typeof EXPERIENCE_CONTEXT_MODE];
+
+/**
+ * Setup-field kind discriminator for an experience's optional package-authored
+ * setup descriptor (IR-70F). A package may declare a bounded list of fields the
+ * host renders as bounded settings before launch; the four kinds cover the
+ * standard control surface (text/number/boolean/select) a game needs for
+ * strength/style and similar authored controls. Existing packages without a
+ * setup descriptor remain byte-for-byte valid.
+ */
+export const EXPERIENCE_SETUP_FIELD_KIND = {
+  text: "text",
+  number: "number",
+  boolean: "boolean",
+  select: "select",
+} as const;
+
+export type ExperienceSetupFieldKind =
+  typeof EXPERIENCE_SETUP_FIELD_KIND[keyof typeof EXPERIENCE_SETUP_FIELD_KIND];

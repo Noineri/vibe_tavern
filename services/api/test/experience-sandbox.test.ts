@@ -156,6 +156,35 @@ context.experience.register({
 });
 `;
 
+// IR-70F: a registration carrying an optional raw setup descriptor. The sandbox
+// forwards it verbatim (it does NOT schema-validate); the kernel is the validator.
+const SETUP_SCRIPT = `
+context.experience.register({
+  apiVersion: 1, manifest: { id: "setup", name: "Setup" }, capabilities: [],
+  setup: { fields: [
+    { kind: "text", id: "strength", label: "Strength", default: "strong" },
+    { kind: "select", id: "style", label: "Style", options: [{ value: "agg", label: "Aggressive" }] },
+  ] },
+  create() { return {}; },
+  project(c) { return c.state; },
+  actions() { return []; },
+  reduce(c) { return { state: c.state, status: "active", events: [] }; },
+});
+`;
+
+// IR-70F: a registration whose setup is malformed (duplicate field ids). The
+// sandbox still forwards it verbatim — validation is the kernel's job.
+const SETUP_MALFORMED_SCRIPT = `
+context.experience.register({
+  apiVersion: 1, manifest: { id: "setup", name: "Setup" }, capabilities: [],
+  setup: { fields: [{ kind: "text", id: "dup", label: "A" }, { kind: "number", id: "dup", label: "B" }] },
+  create() { return {}; },
+  project(c) { return c.state; },
+  actions() { return []; },
+  reduce(c) { return { state: c.state, status: "active", events: [] }; },
+});
+`;
+
 function sha256(text: string): string {
 	return new Bun.CryptoHasher("sha256").update(new TextEncoder().encode(text)).digest("hex");
 }
@@ -241,6 +270,33 @@ describe("discoverExperience", () => {
 		if (!out.ok) return;
 		// Discovery runs the body (register) but NOT create(); the top-level log fires.
 		expect(out.console.some((e) => e.level === "log" && e.args[0] === "booting")).toBe(true);
+	});
+
+	// IR-70F: the sandbox forwards the raw setup descriptor verbatim; it does NOT
+	// schema-validate (that is the kernel's job). A malformed setup still reaches
+	// discovery output unchanged.
+	test("forwards a raw setup descriptor verbatim (no validation)", () => {
+		const out = discoverExperience(SETUP_SCRIPT, "setup.js");
+		expect(out.ok).toBe(true);
+		if (!out.ok) return;
+		expect(out.setup).toEqual({
+			fields: [
+				{ kind: "text", id: "strength", label: "Strength", default: "strong" },
+				{ kind: "select", id: "style", label: "Style", options: [{ value: "agg", label: "Aggressive" }] },
+			],
+		});
+	});
+
+	test("forwards a malformed setup descriptor verbatim (validation deferred to kernel)", () => {
+		const out = discoverExperience(SETUP_MALFORMED_SCRIPT, "bad.js");
+		expect(out.ok).toBe(true);
+		if (!out.ok) return;
+		expect(out.setup).toEqual({
+			fields: [
+				{ kind: "text", id: "dup", label: "A" },
+				{ kind: "number", id: "dup", label: "B" },
+			],
+		});
 	});
 });
 

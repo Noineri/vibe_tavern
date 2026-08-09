@@ -499,6 +499,81 @@ export interface ExperienceDeclaredCapability {
   reason?: string;
 }
 
+// ─── Setup descriptor (IR-70F) ───────────────────────────────────────────────
+//
+// A package may declare an OPTIONAL bounded setup-field list (IR-70F). The host
+// renders these as validated settings before launch (IR-73A); the rules `create`
+// method receives the submitted values as `settings`. This is discovery metadata
+// only — it does not add a lifecycle method and does not affect runtime
+// create/project/actions/reduce/choose/flavor behavior. A package with no setup
+// descriptor registers nothing here and remains byte-for-byte valid. These
+// canonical shapes are readonly-compatible (frozen at the kernel boundary after
+// schema normalization).
+
+/** One option of a select setup field. Value is a bounded nonblank id; label is
+ *  human-facing. */
+export interface ExperienceSetupFieldOption {
+  value: string;
+  label: string;
+}
+
+/** Base fields every setup field carries (id/label/description). */
+interface ExperienceSetupFieldBase {
+  id: string;
+  label: string;
+  description?: string;
+}
+
+/** A free-text setup field. Length bounds are integers in 0..2000; min<=max; a
+ *  declared default must satisfy the declared bounds. */
+export interface ExperienceSetupFieldText extends ExperienceSetupFieldBase {
+  kind: "text";
+  placeholder?: string;
+  required?: boolean;
+  default?: string;
+  minLength?: number;
+  maxLength?: number;
+}
+
+/** A numeric setup field. All numbers finite; step > 0; min<=max; a declared
+ *  default must lie within the declared min/max. */
+export interface ExperienceSetupFieldNumber extends ExperienceSetupFieldBase {
+  kind: "number";
+  required?: boolean;
+  default?: number;
+  min?: number;
+  max?: number;
+  step?: number;
+}
+
+/** A boolean toggle setup field. */
+export interface ExperienceSetupFieldBoolean extends ExperienceSetupFieldBase {
+  kind: "boolean";
+  default?: boolean;
+}
+
+/** A single-choice setup field. Options are 1..64; option values are bounded
+ *  nonblank unique ids; a declared default must equal one of the option values. */
+export interface ExperienceSetupFieldSelect extends ExperienceSetupFieldBase {
+  kind: "select";
+  required?: boolean;
+  default?: string;
+  options: ExperienceSetupFieldOption[];
+}
+
+/** A single declared setup field — discriminated by `kind`. */
+export type ExperienceSetupField =
+  | ExperienceSetupFieldText
+  | ExperienceSetupFieldNumber
+  | ExperienceSetupFieldBoolean
+  | ExperienceSetupFieldSelect;
+
+/** The optional setup descriptor a package registers: a bounded list of fields
+ *  (at most 32) with unique ids. Omitted by packages with no setup surface. */
+export interface ExperienceSetupDefinition {
+  fields: ExperienceSetupField[];
+}
+
 /** A participant seat declared by an experience's settings. */
 export interface ExperienceParticipant {
   id: string;

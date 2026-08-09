@@ -113,6 +113,45 @@ context.experience.register({
 });
 `;
 
+// IR-70F: a package that declares a valid setup descriptor alongside the four
+// mandatory methods. The setup reaches discovery as a raw `register()` field;
+// the kernel schema-validates + normalizes it.
+const SETUP_SCRIPT = `
+context.experience.register({
+  apiVersion: 1, manifest: { id: "setup", name: "Setup" }, capabilities: [],
+  setup: {
+    fields: [
+      { kind: "text", id: "strength", label: "Strength", default: "strong" },
+      { kind: "select", id: "style", label: "Style", default: "agg",
+        options: [{ value: "agg", label: "Aggressive" }, { value: "cau", label: "Cautious" }] },
+      { kind: "number", id: "level", label: "Level", min: 1, max: 5 },
+      { kind: "boolean", id: "hardcore", label: "Hardcore" },
+    ],
+  },
+  create() { return {}; },
+  project(c) { return c.state; },
+  actions() { return []; },
+  reduce(c) { return { state: c.state, status: "active", events: [] }; },
+});
+`;
+
+// IR-70F: a package whose setup is malformed (duplicate field ids). The four
+// mandatory methods are present, so sandbox discovery succeeds; the kernel then
+// rejects the setup as invalid_definition.
+const SETUP_BAD_SCRIPT = `
+context.experience.register({
+  apiVersion: 1, manifest: { id: "setup", name: "Setup" }, capabilities: [],
+  setup: { fields: [
+    { kind: "text", id: "dup", label: "A" },
+    { kind: "number", id: "dup", label: "B" },
+  ] },
+  create() { return {}; },
+  project(c) { return c.state; },
+  actions() { return []; },
+  reduce(c) { return { state: c.state, status: "active", events: [] }; },
+});
+`;
+
 const HUGE_STATE_SCRIPT = `
 context.experience.register({
   apiVersion: 1, manifest: { id: "huge", name: "Huge" }, capabilities: [],
@@ -179,6 +218,37 @@ describe("discoverExperienceDefinition", () => {
 		expect(result.ok).toBe(false);
 		if (result.ok) return;
 		expect(result.kind).toBe("missing_method");
+	});
+
+	// ─── IR-70F setup descriptor ──────────────────────────────────────────────
+
+	test("returns a valid authored setup unchanged through discovery", () => {
+		const result = discoverExperienceDefinition(SETUP_SCRIPT, "setup.js");
+		expect(result.ok).toBe(true);
+		if (!result.ok) return;
+		expect(result.definition.setup).toEqual({
+			fields: [
+				{ kind: "text", id: "strength", label: "Strength", default: "strong" },
+				{ kind: "select", id: "style", label: "Style", default: "agg",
+					options: [{ value: "agg", label: "Aggressive" }, { value: "cau", label: "Cautious" }] },
+				{ kind: "number", id: "level", label: "Level", min: 1, max: 5 },
+				{ kind: "boolean", id: "hardcore", label: "Hardcore" },
+			],
+		});
+	});
+
+	test("omits setup from a package that declares none", () => {
+		const result = discoverExperienceDefinition(COUNTER_SCRIPT, "counter.js");
+		expect(result.ok).toBe(true);
+		if (!result.ok) return;
+		expect(result.definition.setup).toBeUndefined();
+	});
+
+	test("rejects a malformed setup as invalid_definition", () => {
+		const result = discoverExperienceDefinition(SETUP_BAD_SCRIPT, "bad.js");
+		expect(result.ok).toBe(false);
+		if (result.ok) return;
+		expect(result.kind).toBe("invalid_definition");
 	});
 });
 

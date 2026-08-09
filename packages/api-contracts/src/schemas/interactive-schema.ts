@@ -113,6 +113,10 @@ export const INTERACTIVE_SCHEMA_MAX_CAPABILITIES = 8;
 export const INTERACTIVE_SCHEMA_MAX_EFFECTS = 16;
 /** Upper bound on a monotonic revision / frontier integer. */
 export const INTERACTIVE_SCHEMA_MAX_REVISION = 1_000_000_000;
+/** Max fields in one setup descriptor (IR-70F). */
+export const INTERACTIVE_SCHEMA_MAX_SETUP_FIELDS = 32;
+/** Max options in one select setup field (IR-70F). */
+export const INTERACTIVE_SCHEMA_MAX_SETUP_OPTIONS = 64;
 
 const boundedId = z.string().min(1).max(INTERACTIVE_SCHEMA_MAX_ID);
 const boundedLabel = z.string().min(1).max(INTERACTIVE_SCHEMA_MAX_LABEL);
@@ -372,16 +376,198 @@ export const experienceProjectedViewSchema = z.object({
   status: experienceSessionStatusSchema,
 });
 
+// ─── Setup descriptor (IR-70F) ───────────────────────────────────────────────
+//
+// A package may declare an optional bounded setup-field list (at most 32
+// fields, unique ids) so the host can render validated settings before launch
+// (IR-73A). This is discovery metadata only: it adds no lifecycle method and
+// does not affect runtime create/project/actions/reduce/choose/flavor. Every
+// object is strict at this boundary so an author cannot smuggle unknown keys;
+// cross-field rules (min<=max, default within bounds, unique ids/option values,
+// select default equals an option value) are enforced here. No Zod defaults
+// are fabricated inside descriptors — author omission is preserved so the host
+// renders exactly what the package declared.
+
+/** Base id/label/description shared by every setup field variant. */
+const setupFieldBase = {
+  id: boundedId,
+  label: boundedLabel,
+  description: boundedString.optional(),
+};
+
+const experienceSetupFieldTextSchema = z.object({
+  ...setupFieldBase,
+  kind: z.literal("text"),
+  placeholder: boundedString.optional(),
+  required: z.boolean().optional(),
+  default: boundedString.optional(),
+  minLength: z.number().int().min(0).max(INTERACTIVE_SCHEMA_MAX_STRING).optional(),
+  maxLength: z.number().int().min(0).max(INTERACTIVE_SCHEMA_MAX_STRING).optional(),
+}).strict();
+
+const experienceSetupFieldNumberSchema = z.object({
+  ...setupFieldBase,
+  kind: z.literal("number"),
+  required: z.boolean().optional(),
+  default: z.number().finite().optional(),
+  min: z.number().finite().optional(),
+  max: z.number().finite().optional(),
+  step: z.number().finite().positive().optional(),
+}).strict();
+
+const experienceSetupFieldBooleanSchema = z.object({
+  ...setupFieldBase,
+  kind: z.literal("boolean"),
+  default: z.boolean().optional(),
+}).strict();
+
+/** One option of a select setup field. Value is a bounded nonblank id; label is
+ *  human-facing. Strict so an option cannot carry extra keys. */
+export const experienceSetupFieldOptionSchema = z.object({
+  value: boundedId,
+  label: boundedLabel,
+}).strict();
+
+const experienceSetupFieldSelectSchema = z.object({
+  ...setupFieldBase,
+  kind: z.literal("select"),
+  required: z.boolean().optional(),
+  default: boundedId.optional(),
+  options: z
+    .array(experienceSetupFieldOptionSchema)
+    .min(1)
+    .max(INTERACTIVE_SCHEMA_MAX_SETUP_OPTIONS),
+}).strict();
+
+/**
+ * A single declared setup field, discriminated by `kind`. The four variants are
+ * strict objects; the per-kind cross-field rules (min<=max, default within
+ * bounds, unique option values, select default equals an option value) run in
+ * the refinement below so the discriminated-union members stay plain ZodObjects.
+ */
+export const experienceSetupFieldSchema = z
+  .discriminatedUnion("kind", [
+    experienceSetupFieldTextSchema,
+    experienceSetupFieldNumberSchema,
+    experienceSetupFieldBooleanSchema,
+    experienceSetupFieldSelectSchema,
+  ])
+  .superRefine((field, ctx) => {
+    if (field.kind === "text") {
+      const { minLength, maxLength, default: def } = field;
+      if (minLength !== undefined && maxLength !== undefined && minLength > maxLength) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["minLength"],
+          message: "minLength must not exceed maxLength",
+        });
+      }
+      if (def !== undefined) {
+        const len = def.length;
+        if (minLength !== undefined && len < minLength) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ["default"],
+            message: `default length ${len} is below minLength ${minLength}`,
+          });
+        }
+        if (maxLength !== undefined && len > maxLength) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ["default"],
+            message: `default length ${len} exceeds maxLength ${maxLength}`,
+          });
+        }
+      }
+      return;
+    }
+    if (field.kind === "number") {
+      const { min, max, default: def } = field;
+      if (min !== undefined && max !== undefined && min > max) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["min"],
+          message: "min must not exceed max",
+        });
+      }
+      if (def !== undefined) {
+        if (min !== undefined && def < min) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ["default"],
+            message: `default ${def} is below min ${min}`,
+          });
+        }
+        if (max !== undefined && def > max) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ["default"],
+            message: `default ${def} exceeds max ${max}`,
+          });
+        }
+      }
+      return;
+    }
+    if (field.kind === "select") {
+      const seen = new Set<string>();
+      field.options.forEach((opt, idx) => {
+        if (seen.has(opt.value)) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ["options", idx, "value"],
+            message: `duplicate option value "${opt.value}"`,
+          });
+        }
+        seen.add(opt.value);
+      });
+      if (
+        field.default !== undefined &&
+        !field.options.some((opt) => opt.value === field.default)
+      ) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["default"],
+          message: `select default "${field.default}" is not one of the option values`,
+        });
+      }
+    }
+  });
+
+/** The optional setup descriptor a package may declare: a bounded field list
+ *  (at most 32) with unique ids. Strict so no extra top-level keys sneak in. */
+export const experienceSetupDefinitionSchema = z
+  .object({
+    fields: z.array(experienceSetupFieldSchema).max(INTERACTIVE_SCHEMA_MAX_SETUP_FIELDS),
+  })
+  .strict()
+  .superRefine((setup, ctx) => {
+    const seen = new Set<string>();
+    setup.fields.forEach((field, idx) => {
+      if (seen.has(field.id)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["fields", idx, "id"],
+          message: `duplicate setup field id "${field.id}"`,
+        });
+      }
+      seen.add(field.id);
+    });
+  });
+
 // ─── Discovered definition (what register() produced) ────────────────────────
 //
 // Emitted only when registration succeeded: the four mandatory methods are
 // present and the manifest + capabilities are valid. Method presence itself is
 // enforced by the sandbox (IR-12), so this schema describes a clean discovery.
+// The optional `setup` (IR-70F) is normalized here when a package declares it;
+// packages without one omit it and remain byte-for-byte valid.
 
 export const experienceDefinitionSchema = z.object({
   apiVersion: z.number().int().min(1),
   manifest: experienceManifestSchema,
   declaredCapabilities: z.array(experienceDeclaredCapabilitySchema).max(INTERACTIVE_SCHEMA_MAX_CAPABILITIES),
+  /** Optional package-authored setup-field descriptor (IR-70F). */
+  setup: experienceSetupDefinitionSchema.optional(),
 });
 
 // ─── Starter manifest ────────────────────────────────────────────────────────
@@ -541,3 +727,6 @@ export type ExperienceUndoRequestDto = z.infer<typeof experienceUndoRequestSchem
 export type ExperienceRecalculateRequestDto = z.infer<typeof experienceRecalculateRequestSchema>;
 export type ExperienceContextCaptureRequestDto = z.infer<typeof experienceContextCaptureRequestSchema>;
 export type ExperiencePromptOverrideContentDto = z.infer<typeof experiencePromptOverrideContentSchema>;
+export type ExperienceSetupFieldOptionDto = z.infer<typeof experienceSetupFieldOptionSchema>;
+export type ExperienceSetupFieldDto = z.infer<typeof experienceSetupFieldSchema>;
+export type ExperienceSetupDefinitionDto = z.infer<typeof experienceSetupDefinitionSchema>;

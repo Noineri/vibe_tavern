@@ -214,6 +214,46 @@ context.experience.register({
 });
 `;
 
+// IR-70F: an interactive script declaring a package-authored setup descriptor.
+// The validated setup must reach the script-test boundary automatically through
+// the existing ExperienceDefinition path (no hand-written duplicate DTO).
+const INTERACTIVE_WITH_SETUP_CODE = `
+context.experience.register({
+  apiVersion: 1,
+  manifest: { id: "tictactoe", name: "Tic-Tac-Toe" },
+  capabilities: [],
+  setup: {
+    fields: [
+      { kind: "select", id: "strength", label: "Strength", default: "normal",
+        options: [{ value: "easy", label: "Easy" }, { value: "normal", label: "Normal" }] },
+      { kind: "text", id: "style", label: "Style", placeholder: "aggressive" },
+    ],
+  },
+  create() { return {}; },
+  project(c) { return c.state; },
+  actions() { return []; },
+  reduce(c) { return { state: c.state, status: "active", events: [] }; },
+});
+`;
+
+// IR-70F: a malformed setup (duplicate field ids). Discovery surfaces a
+// discoveryError instead of a definition.
+const INTERACTIVE_BAD_SETUP_CODE = `
+context.experience.register({
+  apiVersion: 1,
+  manifest: { id: "tictactoe", name: "Tic-Tac-Toe" },
+  capabilities: [],
+  setup: { fields: [
+    { kind: "text", id: "dup", label: "A" },
+    { kind: "boolean", id: "dup", label: "B" },
+  ] },
+  create() { return {}; },
+  project(c) { return c.state; },
+  actions() { return []; },
+  reduce(c) { return { state: c.state, status: "active", events: [] }; },
+});
+`;
+
 describe("testScript — interactive dispatch", () => {
   test("returns kind:'interactive' with the discovered definition", async () => {
     const script = makeScript({
@@ -278,5 +318,55 @@ describe("testScript — interactive dispatch", () => {
     expect(result).not.toHaveProperty("personality");
     expect(result).not.toHaveProperty("scenario");
     expect(result).not.toHaveProperty("injectedMessages");
+  });
+
+  // IR-70F: validated setup metadata flows through the real script-test
+  // boundary automatically via the existing ExperienceDefinition path.
+  test("exposes a validated setup descriptor through the script-test boundary", async () => {
+    const script = makeScript({
+      id: "s1",
+      scriptKind: "interactive",
+      code: INTERACTIVE_WITH_SETUP_CODE,
+    });
+    const result = await testScript(storesWith(script), { scriptId: "s1" });
+
+    expect(result.kind).toBe("interactive");
+    if (result.kind !== "interactive") return;
+    expect(result.discoveryError).toBeNull();
+    expect(result.definition).not.toBeNull();
+    if (!result.definition) return;
+    expect(result.definition.setup).toEqual({
+      fields: [
+        { kind: "select", id: "strength", label: "Strength", default: "normal",
+          options: [{ value: "easy", label: "Easy" }, { value: "normal", label: "Normal" }] },
+        { kind: "text", id: "style", label: "Style", placeholder: "aggressive" },
+      ],
+    });
+  });
+
+  test("omits setup from the script-test response when the package declares none", async () => {
+    const script = makeScript({
+      id: "s1",
+      scriptKind: "interactive",
+      code: INTERACTIVE_VALID_CODE,
+    });
+    const result = await testScript(storesWith(script), { scriptId: "s1" });
+
+    if (result.kind !== "interactive") return;
+    if (!result.definition) return;
+    expect(result.definition.setup).toBeUndefined();
+  });
+
+  test("reports discoveryError for a malformed setup (invalid_definition) without affecting prompt/dice dispatch", async () => {
+    const script = makeScript({
+      id: "s1",
+      scriptKind: "interactive",
+      code: INTERACTIVE_BAD_SETUP_CODE,
+    });
+    const result = await testScript(storesWith(script), { scriptId: "s1" });
+
+    if (result.kind !== "interactive") return;
+    expect(result.definition).toBeNull();
+    expect(result.discoveryError).toBeTruthy();
   });
 });

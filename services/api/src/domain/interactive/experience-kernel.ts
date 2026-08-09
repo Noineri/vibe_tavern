@@ -58,6 +58,7 @@ import type {
   ExperienceDeclaredCapability,
   ExperienceManifest,
   ExperienceParticipant,
+  ExperienceSetupDefinition,
   ExperienceTransition,
   ExperienceViewer,
 } from "@vibe-tavern/domain";
@@ -232,6 +233,9 @@ export interface ExperienceDefinition {
 	readonly hasChoose: boolean;
 	/** Whether the optional `flavor` method is present (display-time cosmetic). */
 	readonly hasFlavor: boolean;
+	/** Optional package-authored setup-field descriptor, normalized by
+	 *  `experienceDefinitionSchema` (IR-70F). Absent when the package declares none. */
+	readonly setup?: ExperienceSetupDefinition;
 }
 
 export interface ExperienceDiscoveryResult {
@@ -265,6 +269,7 @@ export function discoverExperienceDefinition(
 		// The script registers `capabilities`; the canonical/schema field is
 		// `declaredCapabilities` — this rename is the kernel's normalization.
 		declaredCapabilities: discovery.capabilities,
+		setup: discovery.setup,
 	});
 	if (!parsed.success) {
 		return kernelError("invalid_definition", describeZodError(parsed.error), discovery.console);
@@ -277,6 +282,7 @@ export function discoverExperienceDefinition(
 			declaredCapabilities: parsed.data.declaredCapabilities,
 			hasChoose: discovery.hasChoose,
 			hasFlavor: discovery.hasFlavor,
+			...(parsed.data.setup !== undefined ? { setup: parsed.data.setup } : {}),
 		},
 		sourceHash: discovery.sourceHash,
 		console: discovery.console,

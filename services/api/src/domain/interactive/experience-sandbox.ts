@@ -108,6 +108,9 @@ export interface RawExperienceRegistration {
 	choose?: unknown;
 	/** Optional display-time cosmetic projection (may use ephemeral chance). */
 	flavor?: unknown;
+	/** Optional package-authored setup-field descriptor (IR-70F); the kernel
+	 *  schema-validates it as `experienceSetupDefinitionSchema`. */
+	setup?: unknown;
 }
 
 // ─── Discovery output ────────────────────────────────────────────────────────
@@ -124,6 +127,8 @@ export interface ExperienceDiscoverySuccess {
 	readonly hasChoose: boolean;
 	/** Whether the optional `flavor` method is present as a function. */
 	readonly hasFlavor: boolean;
+	/** Raw optional setup descriptor (the kernel schema-validates it, IR-70F). */
+	readonly setup: unknown;
 	/** SHA-256 of the source body — the snapshot-isolation hash for the session. */
 	readonly sourceHash: string;
 	/** Captured console output from the discovery execution. */
@@ -273,6 +278,7 @@ export function discoverExperience(
 		capabilities: def?.capabilities,
 		hasChoose: def?.choose !== undefined && typeof def.choose === "function",
 		hasFlavor: def?.flavor !== undefined && typeof def.flavor === "function",
+		setup: def?.setup,
 		sourceHash: hashSource(code),
 		console: consoleBuffer,
 	};
