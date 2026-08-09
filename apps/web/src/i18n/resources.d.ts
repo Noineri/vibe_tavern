@@ -406,6 +406,7 @@ export default interface Resources {
     "custom_model_id_placeholder": "Model ID (e.g. gpt-4o)",
     "default_persona_badge": "Default",
     "default_persona_is": "Default persona for new chats",
+    "default_proxy": "Default proxy",
     "delay_hint": "Delay in turns before first activation",
     "delay_until_recursion_hint": "Only activates during recursive scanning, not on initial pass. Good for secondary/derived lore.",
     "delete": "Delete",
@@ -544,6 +545,60 @@ export default interface Resources {
     "error": "Error",
     "exclude_recursion_hint": "This entry cannot be activated by other entries mentioning its keywords.",
     "expand_fullscreen": "Expand",
+    "experience_assign_capabilities_label": "Requested capabilities",
+    "experience_assign_context_label": "RP context",
+    "experience_assign_discovering": "Checking package capabilities…",
+    "experience_assign_error_discovery": "Rules discovery failed",
+    "experience_assign_error_invalid": "The script did not register a valid experience",
+    "experience_assign_error_load": "Couldn’t validate this script",
+    "experience_assign_error_wrong_kind": "This script is not interactive",
+    "experience_assign_launcher_label": "Show launcher in chat",
+    "experience_assign_model_note": "Provider and model are selected for each model-controlled participant when the session starts.",
+    "experience_assign_no_capabilities": "This package runs offline and requests no extra capabilities.",
+    "experience_assign_no_script_option": "No rules selected",
+    "experience_assign_no_scripts_sub": "Create an interactive rules script in Build before enabling an experience for this chat.",
+    "experience_assign_no_scripts_title": "No interactive scripts",
+    "experience_assign_no_visual_option": "No visual",
+    "experience_assign_script_label": "Rules script",
+    "experience_assign_script_missing": "The selected rules script is unavailable or is no longer interactive.",
+    "experience_assign_script_placeholder": "Select rules…",
+    "experience_assign_script_search": "Search rules…",
+    "experience_assign_scripts_load_error": "Couldn’t load interactive scripts.",
+    "experience_assign_visual_label": "Visual",
+    "experience_assign_visual_placeholder": "Select a visual…",
+    "experience_assign_visual_search": "Search visuals…",
+    "experience_assign_visuals_load_error": "Couldn’t load visuals.",
+    "experience_cancel": "Cancel",
+    "experience_cap_deterministic_random": "Deterministic random",
+    "experience_cap_model": "Model turns",
+    "experience_cap_participants": "Participant roster",
+    "experience_cap_rp_attachment": "RP attachment",
+    "experience_cap_rp_context": "RP context",
+    "experience_close": "Close",
+    "experience_context_compact_summary": "Compact summary",
+    "experience_context_compact_summary_tip": "Generate a compact snapshot explicitly after the session starts; never automatic.",
+    "experience_context_current_branch": "Current branch",
+    "experience_context_current_branch_tip": "Use the current branch up to the selected model’s context budget.",
+    "experience_context_none": "None",
+    "experience_context_none_tip": "Do not include RP context.",
+    "experience_context_recent": "Recent messages",
+    "experience_context_recent_tip": "Use a bounded window of recent messages.",
+    "experience_context_summaries_recent": "Summaries + recent",
+    "experience_context_summaries_recent_tip": "Use included summaries followed by recent messages.",
+    "experience_detach_title": "Open in separate window",
+    "experience_detach_unavailable": "This experience window is no longer connected.",
+    "experience_detached_badge": "detached",
+    "experience_finish": "Finish",
+    "experience_finish_confirm": "Finish this experience? The session will end and the final result will be ready to attach.",
+    "experience_pending_effect": "thinking…",
+    "experience_pending_typing": "typing…",
+    "experience_preview_disconnected": "Preview is disconnected from live sessions",
+    "experience_preview_last_action": "Last preview action",
+    "experience_preview_phase_completed": "completed",
+    "experience_preview_phase_error": "error",
+    "experience_preview_phase_ordinary": "ordinary",
+    "experience_preview_phase_pending": "pending",
+    "experience_preview_phase_setup": "setup",
     "export_preset_btn": "Export",
     "failed_to_create_character": "Failed to create character.",
     "failed_to_duplicate": "Failed to duplicate.",
@@ -807,6 +862,7 @@ export default interface Resources {
     "lorebooks_card_desc": "Create knowledge entries activated by keywords",
     "lorebooks_card_title": "Lorebooks",
     "make_active": "Set Active",
+    "manage": "Manage",
     "manage_personas": "Manage Personas",
     "map_to_placeholder": "Map to…",
     "match_src_character_desc": "Character Description",
@@ -1114,6 +1170,7 @@ export default interface Resources {
     "provider_load_profile_failed": "Could not load saved profile.",
     "provider_name_url_required": "Provider name and base URL are required to save a profile.",
     "provider_preset_label": "Provider Preset",
+    "provider_proxy": "Proxy",
     "provider_refresh_models_failed": "Could not refresh model list.",
     "provider_save_connect_failed": "Could not save and connect provider profile.",
     "provider_save_failed": "Could not save provider profile.",
@@ -1122,6 +1179,33 @@ export default interface Resources {
     "provider_settings_desc": "Manage connections and generation parameters for AI providers.",
     "provider_settings_title": "Provider Settings",
     "provider_settings_tooltip": "Provider settings",
+    "proxies": "Proxies",
+    "proxy_default_badge": "Global default",
+    "proxy_delete": "Delete Proxy",
+    "proxy_delete_body": "Delete “{name}”? Providers using it will inherit the global default.",
+    "proxy_delete_title": "Delete Proxy",
+    "proxy_direct": "Direct connection",
+    "proxy_manager_subtitle": "Manage named proxies for provider traffic.",
+    "proxy_manager_title": "Proxy Manager",
+    "proxy_name": "Name",
+    "proxy_name_placeholder": "e.g. Work proxy",
+    "proxy_new": "+ New Proxy",
+    "proxy_password": "Password (optional)",
+    "proxy_password_clear": "Clear password",
+    "proxy_password_hint": "Passwords are write-only and never appear in the browser after saving.",
+    "proxy_password_preserve": "Leave empty to keep the stored password",
+    "proxy_password_stored": "Password stored",
+    "proxy_password_will_clear": "The stored password will be removed when saved.",
+    "proxy_profiles_label": "Proxy Profiles",
+    "proxy_select_or_create": "Select a proxy or create a new one.",
+    "proxy_status_configured": "{count} configured · direct by default",
+    "proxy_status_configured_one": "{count} configured · direct by default",
+    "proxy_status_configured_other": "{count} configured · direct by default",
+    "proxy_status_default": "Default: {name}",
+    "proxy_url": "Proxy URL",
+    "proxy_url_hint": "Use a bare http://, https://, or socks5:// proxy URL.",
+    "proxy_use_global": "Use global default",
+    "proxy_username": "Username (optional)",
     "queue_add_current": "Add current",
     "queue_add_current_hint": "Queue another job using your current model + preset.",
     "queue_clear": "Clear queue",
@@ -1757,52 +1841,5 @@ export default interface Resources {
     "ws_name_placeholder": "Character name",
     "ws_sub": "Choose how to start",
     "ws_title": "Welcome"
-    "proxies": "Proxies";
-    "manage": "Manage";
-    "proxy_status_configured": "{count} configured \u00b7 direct by default";
-    "proxy_status_default": "Default: {name}";
-    "proxy_manager_title": "Proxy Manager";
-    "proxy_manager_subtitle": "Manage named proxies for provider traffic.";
-    "proxy_profiles_label": "Proxy Profiles";
-    "proxy_new": "+ New Proxy";
-    "proxy_select_or_create": "Select a proxy or create a new one.";
-    "proxy_name": "Name";
-    "proxy_name_placeholder": "e.g. Work proxy";
-    "proxy_url": "Proxy URL";
-    "proxy_url_hint": "Use a bare http://, https://, or socks5:// proxy URL.";
-    "proxy_username": "Username (optional)";
-    "proxy_password": "Password (optional)";
-    "proxy_password_stored": "Password stored";
-    "proxy_password_preserve": "Leave empty to keep the stored password";
-    "proxy_password_clear": "Clear password";
-    "proxy_password_will_clear": "The stored password will be removed when saved.";
-    "proxy_password_hint": "Passwords are write-only and never appear in the browser after saving.";
-    "proxy_delete_title": "Delete Proxy";
-    "proxy_delete_body": "Delete \u201c{name}\u201d? Providers using it will inherit the global default.";
-    "proxy_delete": "Delete Proxy";
-    "proxy_default_badge": "Global default";
-    "provider_proxy": "Proxy";
-    "proxy_use_global": "Use global default";
-    "proxy_direct": "Direct connection";
-    "default_proxy": "Default proxy";
-    "proxy_status_configured_one": "{count} configured \u00b7 direct by default";
-    "proxy_status_configured_other": "{count} configured \u00b7 direct by default";
-    "experience_close": "Close";
-    "experience_cancel": "Cancel";
-    "experience_finish": "Finish";
-    "experience_finish_confirm": "Finish this experience? The session will end and the final result will be ready to attach.";
-    "experience_detach_title": "Open in separate window";
-    "experience_pending_typing": "typing…";
-    "experience_pending_effect": "thinking…";
-    "experience_detach_unavailable": "This experience window is no longer connected.";
-    "experience_detached_badge": "detached";
-    "experience_preview_phase_setup": "setup";
-    "experience_preview_phase_ordinary": "ordinary";
-    "experience_preview_phase_pending": "pending";
-    "experience_preview_phase_error": "error";
-    "experience_preview_phase_completed": "completed";
-    "experience_preview_last_action": "Last preview action";
-    "experience_preview_disconnected": "Preview is disconnected from live sessions";
-
   }
 }
