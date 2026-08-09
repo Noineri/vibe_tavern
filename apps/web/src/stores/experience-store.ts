@@ -52,8 +52,12 @@ import {
  *
  * Queued-attachment stability: the attachment changes only from a server
  * attachment/report response (`refreshAttachment`, `refreshReportStatus`,
- * `queueReport`, `rehydrate`) — a session advance (action resync) re-reads it
- * from the server and never expands or rebuilds it locally.
+ * `queueReport`, `rehydrate`) or the terminal Finish writeback
+ * (`endSession`, IR-73C/D) — a session advance (action resync) re-reads it
+ * from the server and never expands or rebuilds it locally. A retained
+ * terminal attachment survives no-active-session refocus until an
+ * authoritative `refreshAttachment` or a new active-session hydration
+ * replaces it.
  *
  * Races: every read/mutation-resync writes under a per-scope generation
  * counter. `rehydrate` mints the newest generation; late responses from an
@@ -127,8 +131,10 @@ export interface ExperienceActions {
     participants?: ExperienceStartRequest["participants"],
   ) => Promise<ExperienceSessionResponse | null>;
   /** Explicit finish at the current server revision; the terminal attachment
-   *  snapshot is returned to the caller (the post-end resync clears the
-   *  now-inactive session resources). */
+   *  snapshot is returned to the caller AND retained as the scope's
+   *  queuedAttachment — the post-end resync clears the now-inactive session
+   *  resources but preserves the terminal attachment for send binding
+   *  (IR-73C/D). */
   endSession: () => Promise<ExperienceQueuedAttachmentResponse>;
   /** Submit one action intention against the active scope's session. The
    *  store supplies `requestId` + `expectedRevision`. Concurrent same-intent
@@ -203,11 +209,15 @@ function clearError(scope: ExperienceScopeState): void {
 }
 
 /** Clear the resources owned by an active session (normal empty state after
- *  a 404 `no_active_session` discovery — not an error). */
+ *  a 404 `no_active_session` discovery — not an error). The queued attachment
+ *  is intentionally NOT cleared: a terminal Finish (IR-73C/D) writes the exact
+ *  server envelope back after the post-end rehydrate, and a retained terminal
+ *  intent must survive subsequent no-active-session refocus until an
+ *  authoritative `refreshAttachment` or a new active-session hydration
+ *  replaces it. */
 function clearActiveSessionResources(scope: ExperienceScopeState): void {
   scope.session = null;
   scope.effects = [];
-  scope.queuedAttachment = null;
   scope.reportStatus = null;
   scope.contextStatus = null;
 }
@@ -501,14 +511,20 @@ export const useExperienceStore = create<ExperienceState & ExperienceActions>()(
       refreshAttachment: async (chatId, branchId) => {
         const key = scopeKey(chatId, branchId);
         const generation = beginGeneration(key, "attachment");
-        const session = get().byScope[key]?.session ?? null;
-        if (!session) {
+        const scope = get().byScope[key];
+        // After a terminal Finish (IR-73C/D) the session is gone but a retained
+        // terminal queued attachment still carries its sessionId — use it to
+        // validate/clear the attachment from server truth when no active
+        // session exists. No source fetch or reconstruction: the sessionId
+        // comes only from the server-provided snapshot.
+        const sessionId = scope?.session?.sessionId ?? scope?.queuedAttachment?.sessionId ?? null;
+        if (!sessionId) {
           set((s) => {
             scopeDraft(s, key).queuedAttachment = null;
           });
           return;
         }
-        const result = await settle(getExperienceQueuedAttachment(session.sessionId));
+        const result = await settle(getExperienceQueuedAttachment(sessionId));
         if (!isCurrentGeneration(key, "attachment", generation)) return;
         set((s) => {
           const scope = scopeDraft(s, key);
@@ -600,8 +616,20 @@ export const useExperienceStore = create<ExperienceState & ExperienceActions>()(
             expectedRevision: session.revision,
           });
           // Resync: discovery now answers no_active_session, clearing the
-          // session-owned resources (server wins).
+          // session-owned resources (server wins). clearActiveSessionResources
+          // preserves the queued attachment slot (IR-73C/D).
           if (isActiveOperation(key, activeEpoch)) await get().rehydrate(chatId, branchId);
+          // IR-73C/D terminal writeback: the post-end rehydrate discovered
+          // no_active_session and cleared session/effects/report/context
+          // resources. Write the returned nullable terminal attachment back as
+          // queuedAttachment so the send controller can bind it on the next
+          // message. The scope-epoch guard prevents a stale Finish from
+          // contaminating a scope that changed while the end was in flight.
+          if (isActiveOperation(key, activeEpoch)) {
+            set((s) => {
+              scopeDraft(s, key).queuedAttachment = response;
+            });
+          }
           return response;
         } catch (err) {
           return failMutation(chatId, branchId, key, activeEpoch, err);

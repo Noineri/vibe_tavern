@@ -342,7 +342,9 @@ describe("experience-store — session discovery", () => {
     const scope = scopeState(KEY_C1B1);
     expect(scope?.session).toBeNull();
     expect(scope?.effects).toEqual([]);
-    expect(scope?.queuedAttachment).toBeNull();
+    // IR-73C/D: queuedAttachment is intentionally preserved across
+    // no-active-session discovery until an authoritative refresh clears it.
+    expect(scope?.queuedAttachment?.id).toBe("att-1");
     expect(scope?.reportStatus).toBeNull();
     expect(scope?.contextStatus).toBeNull();
     expect(scope?.lastError).toBeNull();
@@ -711,7 +713,7 @@ describe("experience-store — lifecycle + effect + context actions", () => {
     expect(scope?.lastApiError?.code).toBe("branch_has_active");
   });
 
-  test("endSession pins the current revision and the resync clears the ended session's resources", async () => {
+  test("endSession pins the current revision and retains the terminal attachment after the resync clears session resources", async () => {
     const attachment = makeAttachment();
     impl.getExperienceQueuedAttachment = async () => attachment;
     impl.getExperienceReportStatus = async () => makeReportStatus({ queuedAttachment: attachment });
@@ -733,7 +735,9 @@ describe("experience-store — lifecycle + effect + context actions", () => {
     const scope = scopeState(KEY_C1B1);
     expect(scope?.session).toBeNull();
     expect(scope?.effects).toEqual([]);
-    expect(scope?.queuedAttachment).toBeNull();
+    // IR-73C/D: the exact terminal attachment is retained as queuedAttachment
+    // after the no-active-session rehydrate cleared session resources.
+    expect(scope?.queuedAttachment).toBe(terminal);
     expect(scope?.reportStatus).toBeNull();
     expect(scope?.lastError).toBeNull();
   });
@@ -949,5 +953,122 @@ describe("experience-store — pinned visual source retention (IR-70G)", () => {
     expect(scope?.session?.visualId).toBeNull();
     expect(scope?.session?.visualSource).toBeNull();
     expect(scope?.session?.visualSourceHash).toBeNull();
+  });
+});
+
+// ── IR-73C/D: terminal Finish writeback + retention ───────────────────────
+
+describe("experience-store — terminal Finish writeback (IR-73C/D)", () => {
+  test("null terminal response clears the retained intent rather than preserving stale data", async () => {
+    const attachment = makeAttachment();
+    impl.getExperienceQueuedAttachment = async () => attachment;
+    impl.getExperienceReportStatus = async () => makeReportStatus({ queuedAttachment: attachment });
+    await seedActiveScope(makeSession({ revision: 6 }));
+    expect(scopeState(KEY_C1B1)?.queuedAttachment?.id).toBe("att-1");
+
+    impl.endExperienceSession = async () => null;
+    impl.getActiveExperienceSession = async (_c, branchId) => { throw noActiveSession(branchId); };
+
+    const result = await useExperienceStore.getState().endSession();
+    expect(result).toBeNull();
+    // The nullable terminal response clears the retained intent.
+    expect(scopeState(KEY_C1B1)?.queuedAttachment).toBeNull();
+  });
+
+  test("no-active-session rehydrate/refocus preserves a retained terminal intent", async () => {
+    await seedActiveScope(makeSession({ revision: 6 }));
+    const terminal = makeAttachment({ id: "att-terminal", sessionRevision: 6 });
+    impl.endExperienceSession = async () => terminal;
+    impl.getActiveExperienceSession = async (_c, branchId) => { throw noActiveSession(branchId); };
+
+    await useExperienceStore.getState().endSession();
+    expect(scopeState(KEY_C1B1)?.queuedAttachment?.id).toBe("att-terminal");
+
+    // A subsequent refocus rehydrate (tab regained visibility) must NOT clear
+    // the retained terminal intent.
+    await useExperienceStore.getState().rehydrate(C1, B1);
+    expect(scopeState(KEY_C1B1)?.queuedAttachment?.id).toBe("att-terminal");
+    expect(scopeState(KEY_C1B1)?.session).toBeNull();
+  });
+
+  test("refreshAttachment without active session uses retained sessionId and clears/replaces from server", async () => {
+    await seedActiveScope(makeSession({ revision: 6 }));
+    const terminal = makeAttachment({ id: "att-terminal", sessionId: S1 });
+    impl.endExperienceSession = async () => terminal;
+    impl.getActiveExperienceSession = async (_c, branchId) => { throw noActiveSession(branchId); };
+    await useExperienceStore.getState().endSession();
+    expect(scopeState(KEY_C1B1)?.queuedAttachment?.id).toBe("att-terminal");
+    expect(scopeState(KEY_C1B1)?.session).toBeNull();
+
+    // Server says the attachment is gone: refreshAttachment uses the retained
+    // terminal's sessionId to fetch, then clears.
+    impl.getExperienceQueuedAttachment = async () => null;
+    await useExperienceStore.getState().refreshAttachment(C1, B1);
+    expect(scopeState(KEY_C1B1)?.queuedAttachment).toBeNull();
+  });
+
+  test("refreshAttachment without active session replaces from a non-null server response", async () => {
+    await seedActiveScope(makeSession({ revision: 6 }));
+    const terminal = makeAttachment({ id: "att-terminal", sessionId: S1 });
+    impl.endExperienceSession = async () => terminal;
+    impl.getActiveExperienceSession = async (_c, branchId) => { throw noActiveSession(branchId); };
+    await useExperienceStore.getState().endSession();
+
+    const replaced = makeAttachment({ id: "att-replaced", sessionId: S1 });
+    impl.getExperienceQueuedAttachment = async () => replaced;
+    await useExperienceStore.getState().refreshAttachment(C1, B1);
+    expect(scopeState(KEY_C1B1)?.queuedAttachment?.id).toBe("att-replaced");
+  });
+
+  test("new active session hydration replaces the terminal cached intent", async () => {
+    await seedActiveScope(makeSession({ revision: 6 }));
+    const terminal = makeAttachment({ id: "att-terminal", sessionRevision: 6 });
+    impl.endExperienceSession = async () => terminal;
+    impl.getActiveExperienceSession = async (_c, branchId) => { throw noActiveSession(branchId); };
+    await useExperienceStore.getState().endSession();
+    expect(scopeState(KEY_C1B1)?.queuedAttachment?.id).toBe("att-terminal");
+
+    // A new session starts on the same branch; its queued attachment replaces
+    // the retained terminal.
+    const newSession = makeSession({ sessionId: "sess-new", revision: 1 });
+    const newAttachment = makeAttachment({ id: "att-new", sessionId: "sess-new" });
+    impl.getActiveExperienceSession = async () => newSession;
+    impl.getExperienceQueuedAttachment = async () => newAttachment;
+    impl.getExperienceReportStatus = async () => makeReportStatus({ queuedAttachment: newAttachment });
+    await useExperienceStore.getState().rehydrate(C1, B1);
+
+    expect(scopeState(KEY_C1B1)?.session?.sessionId).toBe("sess-new");
+    expect(scopeState(KEY_C1B1)?.queuedAttachment?.id).toBe("att-new");
+  });
+
+  test("stale Finish completion after active-scope change does not contaminate new active scope", async () => {
+    await seedActiveScope(makeSession({ revision: 6 }));
+
+    let resolveEnd: ((response: ExperienceQueuedAttachmentResponse) => void) | null = null;
+    impl.endExperienceSession = () =>
+      new Promise<ExperienceQueuedAttachmentResponse>((resolve) => { resolveEnd = resolve; });
+
+    const sessionB = makeSession({ sessionId: "sess-b", branchId: B2, revision: 5 });
+    impl.getActiveExperienceSession = async (_c, branchId) => {
+      if (branchId === B1) throw noActiveSession(branchId);
+      return sessionB;
+    };
+
+    // Kick off endSession on scope C1/B1, then switch to C1/B2 while it is
+    // in flight.
+    const endPromise = useExperienceStore.getState().endSession();
+    useExperienceStore.getState().setScope(C1, B2);
+    await flushScope(KEY_C1B2);
+
+    const terminal = makeAttachment({ id: "att-terminal", chatId: C1, branchId: B1, sessionId: S1 });
+    if (!resolveEnd) throw new Error("expected endExperienceSession in flight");
+    (resolveEnd as (response: ExperienceQueuedAttachmentResponse) => void)(terminal);
+    const result = await endPromise;
+
+    // The terminal is returned to the caller...
+    expect(result?.id).toBe("att-terminal");
+    // ...but NOT written into the new active scope C1/B2.
+    expect(scopeState(KEY_C1B2)?.queuedAttachment).toBeNull();
+    expect(scopeState(KEY_C1B2)?.session?.sessionId).toBe("sess-b");
   });
 });
