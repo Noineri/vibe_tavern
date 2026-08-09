@@ -51,6 +51,26 @@ import {
 } from "../chat/summary-generation-seam.js";
 import { notFound, unprocessable, validation, cancelled } from "../../shared/errors.js";
 
+// ─── Capability-gate helper ──────────────────────────────────────────────────
+
+function checkGrant(session: { capabilityGrantsJson: string }, required: string): void {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(session.capabilityGrantsJson);
+  } catch (error) {
+    parsed = [];
+  }
+  const grants = Array.isArray(parsed)
+    ? parsed.filter((value): value is string => typeof value === "string")
+    : [];
+  if (!grants.includes(required)) {
+    throw unprocessable(
+      `The experience session does not grant the '${required}' capability.`,
+      { code: "capability_denied", capability: required, granted: grants },
+    );
+  }
+}
+
 /**
  * Structural seam over the chat lifecycle: the single summary-prompt construction
  * method this service reuses for `compact_summary`. Kept minimal so the context
@@ -94,6 +114,21 @@ export interface CaptureContextInput {
 	signal?: AbortSignal;
 }
 
+/** Privacy-safe context-bundle status DTO (IR-70D) — session-scoped metadata
+ *  only; never carries payload fields. Mirrors the API contract's
+ *  {@link ExperienceContextStatusDto} but lives in the domain layer so the
+ *  service does not import from the API contract. */
+export interface ExperienceContextStatus {
+  sessionId: string;
+  mode: ExperienceContextMode;
+  branchFrontierRevision: number | null;
+  messageFrontierPosition: number | null;
+  providerProfileId: string | null;
+  modelId: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface ExperienceContextServiceDeps {
 	stores: StoreContainer;
 	providerProfiles: ProviderProfileService;
@@ -120,6 +155,7 @@ export class ExperienceContextService {
 		if (!session) {
 			throw notFound("ExperienceSession", `Experience session '${input.sessionId}' was not found.`);
 		}
+		checkGrant(session, "rp_context");
 		const mode = input.mode ?? (session.contextMode as ExperienceContextMode);
 		const chatId = brandId<ChatId>(session.chatId);
 		const branchId = brandId<ChatBranchId>(session.branchId);
@@ -210,6 +246,31 @@ export class ExperienceContextService {
 	/** Read the session's current frozen bundle (or null if never captured). */
 	async getContextBundle(sessionId: string): Promise<ExperienceContextBundleRow | null> {
 		return this.deps.stores.experiences.getContextBundle(sessionId);
+	}
+
+	/**
+	 * Privacy-safe context status (IR-70D). Returns only session-scoped metadata
+	 * + provider/model ids — never payload fields (variantsJson, compactSummaryJson,
+	 * character/persona snapshots, or provider secrets). Requires `rp_context`.
+	 */
+	async getContextStatus(sessionId: string): Promise<ExperienceContextStatus | null> {
+		const session = await this.deps.stores.experiences.getSessionById(sessionId);
+		if (!session) {
+			throw notFound("ExperienceSession", `Experience session '${sessionId}' was not found.`);
+		}
+		checkGrant(session, "rp_context");
+		const row = await this.deps.stores.experiences.getContextBundle(sessionId);
+		if (!row) return null;
+		return {
+			sessionId: row.sessionId,
+			mode: row.mode as ExperienceContextMode,
+			branchFrontierRevision: row.branchFrontierRevision,
+			messageFrontierPosition: row.messageFrontierPosition,
+			providerProfileId: row.providerProfileId,
+			modelId: row.modelId,
+			createdAt: row.createdAt,
+			updatedAt: row.updatedAt,
+		};
 	}
 
 	// ─── Bundle reconstruction (IR-43 prompt-build seam) ──────────────────────

@@ -15,6 +15,8 @@ import type {
 	ExperienceRuntimeApi,
 	ExperienceSessionResponse,
 	ExperienceActionResponse,
+	ExperienceContextStatusDto,
+	ExperiencePromptOverridesResponse,
 } from "../contract/runtime-api.js";
 import type {
 	ExperienceService,
@@ -26,6 +28,7 @@ import { resolveHumanViewer } from "../../domain/interactive/experience-service.
 import type { ExperienceResourceService } from "../../domain/interactive/experience-resource-service.js";
 import type { ExperienceReplayService } from "../../domain/interactive/experience-replay-service.js";
 import type { ExperienceModelEffectService } from "../../domain/interactive/experience-model-effect-service.js";
+import type { ExperienceContextService } from "../../domain/interactive/experience-context-service.js";
 import type { ExperienceApiError } from "../../domain/interactive/experience-shared.js";
 import type { ExperienceParticipant } from "@vibe-tavern/domain";
 import { DomainError } from "../../shared/errors.js";
@@ -36,6 +39,7 @@ export class ExperienceAdapter implements ExperienceRuntimeApi {
 		private readonly resources: ExperienceResourceService,
 		private readonly replay: ExperienceReplayService,
 		private readonly modelEffect: ExperienceModelEffectService,
+		private readonly contextService: ExperienceContextService,
 	) {}
 
 	// ─── Response shaping ────────────────────────────────────────────────────
@@ -266,6 +270,55 @@ export class ExperienceAdapter implements ExperienceRuntimeApi {
 			...(outcome.error !== undefined ? { error: outcome.error } : {}),
 			...(outcome.session && outcome.projection ? { session: this.toResponse(outcome.session, outcome.projection) } : {}),
 		};
+	};
+
+	// ─── Context capture + status (IR-70D) ────────────────────────────────────
+
+	/** Explicit cancellable context capture. Requires `rp_context`. The signal
+	 *  passes through so a client disconnect persists nothing and preserves the
+	 *  prior bundle. */
+	captureExperienceContext = async (
+		sessionId: string,
+		body: { mode?: import("@vibe-tavern/domain").ExperienceContextMode; providerProfileId?: string; model?: string; recentMessageLimit?: number },
+		signal?: AbortSignal,
+	): Promise<ExperienceContextStatusDto> => {
+		const row = await this.contextService.captureContext({ sessionId, ...body, signal });
+		return {
+			sessionId: row.sessionId,
+			mode: row.mode as import("@vibe-tavern/domain").ExperienceContextMode,
+			branchFrontierRevision: row.branchFrontierRevision,
+			messageFrontierPosition: row.messageFrontierPosition,
+			providerProfileId: row.providerProfileId,
+			modelId: row.modelId,
+			createdAt: row.createdAt,
+			updatedAt: row.updatedAt,
+		};
+	};
+
+	/** Read the session's current frozen context-bundle metadata or null. */
+	getExperienceContextStatus = async (sessionId: string): Promise<ExperienceContextStatusDto | null> => {
+		const status = await this.contextService.getContextStatus(sessionId);
+		return status;
+	};
+
+	// ─── Prompt overrides (IR-70D) ────────────────────────────────────────────
+
+	getExperiencePromptOverrides = async (sessionId: string): Promise<ExperiencePromptOverridesResponse> => {
+		const result = await this.resources.getOverridesForSession(sessionId);
+		if (!result.ok) throw mapError(result.error);
+		return result.data;
+	};
+
+	updateExperienceGlobalOverride = async (sessionId: string, body: { content: string }): Promise<ExperiencePromptOverridesResponse> => {
+		const result = await this.resources.setGlobalOverrideForSession(sessionId, body.content);
+		if (!result.ok) throw mapError(result.error);
+		return result.data;
+	};
+
+	updateExperienceCharacterOverride = async (sessionId: string, body: { content: string }): Promise<ExperiencePromptOverridesResponse> => {
+		const result = await this.resources.setCharacterOverrideForSession(sessionId, body.content);
+		if (!result.ok) throw mapError(result.error);
+		return result.data;
 	};
 }
 

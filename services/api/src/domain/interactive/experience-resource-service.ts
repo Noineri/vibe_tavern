@@ -37,6 +37,7 @@ import {
 import type {
   ExperienceChatConfigRow,
   ExperiencePromptOverrideRow,
+  ExperienceSessionRow,
   ExperienceVisualRow,
 } from "@vibe-tavern/db";
 
@@ -364,6 +365,125 @@ export class ExperienceResourceService {
   async getEffectiveOverride(characterId: string | null): Promise<ExperiencePromptOverrideRow | null> {
     return this.stores.experienceResources.getEffectiveOverride(characterId);
   }
+
+  // ─── Session-scoped prompt overrides (IR-70D) ──────────────────────────────
+
+  /**
+   * Read both prompt-override layers for the session's current-chat character.
+   * Requires immutable session grant `model`. Returns independent null layers
+   * when no override is persisted for that scope — never collapses to only the
+   * effective winner.
+   */
+  async getOverridesForSession(sessionId: string): Promise<ExperienceResult<SessionPromptOverrides>> {
+    const resolved = await this.resolveSessionToLayers(sessionId);
+    if (!resolved.ok) return resolved;
+    const { characterId } = resolved.data;
+    const globalRow = await this.stores.experienceResources.getGlobalOverride();
+    const characterRow = characterId
+      ? await this.stores.experienceResources.getOverrideForCharacter(characterId)
+      : null;
+    return ok({
+      global: globalRow ? rowToDto(globalRow) : null,
+      character: characterRow ? rowToDto(characterRow) : null,
+    });
+  }
+
+  /**
+   * Write the global prompt-override layer for the session. Requires `model`.
+   * Returns the updated combined layers.
+   */
+  async setGlobalOverrideForSession(sessionId: string, content: string): Promise<ExperienceResult<SessionPromptOverrides>> {
+    const resolved = await this.resolveSessionToLayers(sessionId);
+    if (!resolved.ok) return resolved;
+    const { characterId } = resolved.data;
+    const globalRow = await this.stores.experienceResources.setGlobalOverride(content);
+    const characterRow = characterId
+      ? await this.stores.experienceResources.getOverrideForCharacter(characterId)
+      : null;
+    return ok({
+      global: rowToDto(globalRow),
+      character: characterRow ? rowToDto(characterRow) : null,
+    });
+  }
+
+  /**
+   * Write the current-character prompt-override layer. Requires `model` + the
+   * session's chat must have a character (otherwise typed 422). Derives the
+   * character from session → chat; never accepts an arbitrary characterId.
+   * Returns the updated combined layers.
+   */
+  async setCharacterOverrideForSession(sessionId: string, content: string): Promise<ExperienceResult<SessionPromptOverrides>> {
+    const resolved = await this.resolveSessionToLayers(sessionId);
+    if (!resolved.ok) return resolved;
+    const { characterId } = resolved.data;
+    if (!characterId) {
+      return err({ status: 422, code: "no_character", message: "The session's chat has no character; character-scoped operations are not available." });
+    }
+    const characterRow = await this.stores.experienceResources.setOverrideForCharacter(characterId, content);
+    const globalRow = await this.stores.experienceResources.getGlobalOverride();
+    return ok({
+      global: globalRow ? rowToDto(globalRow) : null,
+      character: rowToDto(characterRow),
+    });
+  }
+
+  // ─── Private: session → chat → character resolution + capability gate ──────
+
+  private async resolveSessionToLayers(sessionId: string): Promise<ExperienceResult<{ characterId: string | null }>> {
+    const session = await this.stores.experiences.getSessionById(sessionId);
+    if (!session) {
+      return err({ status: 404, code: "session_not_found", message: `Experience session '${sessionId}' was not found.` });
+    }
+    const grantErr = checkModelGrant(session);
+    if (grantErr) return err(grantErr);
+    const chat = await this.stores.chats.getById(session.chatId);
+    if (!chat) {
+      return err({ status: 404, code: "chat_not_found", message: `Chat '${session.chatId}' not found` });
+    }
+    return ok({ characterId: chat.characterId ?? null });
+  }
+}
+
+// ─── IR-70D: Session prompt-override DTOs ────────────────────────────────────
+
+/** Both independent prompt-override layers for a session (IR-70D). */
+export interface SessionPromptOverrides {
+  global: PromptOverrideDto | null;
+  character: PromptOverrideDto | null;
+}
+
+/** One prompt-override layer — scope, content, optional characterId, timestamps. */
+export interface PromptOverrideDto {
+  scope: 'global' | 'character';
+  content: string;
+  characterId: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+function rowToDto(row: ExperiencePromptOverrideRow): PromptOverrideDto {
+  return {
+    scope: row.scopeType === 'character' ? 'character' : 'global',
+    content: row.content,
+    characterId: row.characterId,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  };
+}
+
+/** Validate that the session grants the `model` capability; throws on deny. */
+function checkModelGrant(session: ExperienceSessionRow): ExperienceApiError | null {
+  const grants: ExperienceCapability[] = (() => { try { return JSON.parse(session.capabilityGrantsJson) as ExperienceCapability[]; } catch { return []; } })();
+  if (!grants.includes("model")) {
+    return {
+      status: 422,
+      code: "capability_denied",
+      message: "The experience session does not grant the 'model' capability.",
+      granted: grants,
+      needs: ["model" as ExperienceCapability],
+    };
+  }
+  return null;
 }
 
 // ─── Parse helpers (DB stores free-text enums; validate at the boundary) ─────

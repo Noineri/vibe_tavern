@@ -232,6 +232,8 @@ export {
   experienceVisualUpdateSchema,
   experienceUndoRequestSchema,
   experienceRecalculateRequestSchema,
+  experienceContextCaptureRequestSchema,
+  experiencePromptOverrideContentSchema,
   // Bounded-JSON guard + bounds
   jsonBoundsError,
   boundedJsonValue,

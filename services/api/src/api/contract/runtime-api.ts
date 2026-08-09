@@ -565,6 +565,39 @@ export interface ExperienceEffectRunResponse {
  *  checkpoint — never carry or derive from `hiddenStateCheckpointJson`. */
 export type ExperienceQueuedAttachmentResponse = ExperienceQueuedAttachmentView | null;
 
+// ─── IR-70D: Context status + prompt-override DTOs ──────────────────────────
+
+/** Privacy-safe context-bundle status (IR-70D). Strips all payload fields
+ *  (variantsJson, compactSummaryJson, character/persona snapshots, source
+ *  hashes) — only session-scoped metadata + provider/model ids. */
+export interface ExperienceContextStatusDto {
+  sessionId: string;
+  mode: import("@vibe-tavern/domain").ExperienceContextMode;
+  branchFrontierRevision: number | null;
+  messageFrontierPosition: number | null;
+  providerProfileId: string | null;
+  modelId: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** One prompt-override layer — scope, content, optional characterId, and
+ *  timestamps. A null layer means no override is persisted for that scope. */
+export interface ExperiencePromptOverrideDto {
+  scope: 'global' | 'character';
+  content: string;
+  characterId: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Both independent prompt-override layers (IR-70D). The setup UI edits each
+ *  layer independently — never collapse to only the effective winner here. */
+export interface ExperiencePromptOverridesResponse {
+  global: ExperiencePromptOverrideDto | null;
+  character: ExperiencePromptOverrideDto | null;
+}
+
 export interface ExperienceRuntimeApi {
 	// ── Config (the config-driven setup source) ──
 	getExperienceConfig: (chatId: string) => Promise<ExperienceChatConfigRow>;
@@ -631,6 +664,32 @@ export interface ExperienceRuntimeApi {
 	// ── Effects (read-only; retry/resolve lands in Wave 4) ──
 	getExperienceEffects: (sessionId: string) => Promise<ExperienceEffectRow[]>;
 	runExperienceEffect: (effectId: string, signal?: AbortSignal) => Promise<ExperienceEffectRunResponse>;
+
+	// ── Context capture + status (IR-70D) ──
+	/** Explicit cancellable context capture. Requires immutable session grant
+	 *  `rp_context`. The signal passes through to the compact-summary generation
+	 *  so a client disconnect persists nothing and preserves the prior bundle. */
+	captureExperienceContext: (sessionId: string, body: { mode?: import("@vibe-tavern/domain").ExperienceContextMode; providerProfileId?: string; model?: string; recentMessageLimit?: number }, signal?: AbortSignal) => Promise<ExperienceContextStatusDto>;
+	/** Read the session's current frozen context-bundle metadata, or null when
+	 *  never captured. Returns ONLY session metadata + provider/model ids — never
+	 *  payload fields (variants, compact summary, character/persona snapshots, RP
+	 *  messages, or provider secrets). Requires `rp_context`. */
+	getExperienceContextStatus: (sessionId: string) => Promise<ExperienceContextStatusDto | null>;
+
+	// ── Prompt overrides (IR-70D) ──
+	/** Read both independent prompt-override layers (global + current-character)
+	 *  through a capability gate. Requires immutable session grant `model`.
+	 *  Returns null layers when no override is persisted for that scope; never
+	 *  collapses to only the effective winner. */
+	getExperiencePromptOverrides: (sessionId: string) => Promise<ExperiencePromptOverridesResponse>;
+	/** Write the global prompt-override layer. Requires `model`. Returns the
+	 *  updated combined layers so both are always visible after a write. */
+	updateExperienceGlobalOverride: (sessionId: string, body: { content: string }) => Promise<ExperiencePromptOverridesResponse>;
+	/** Write the current-character prompt-override layer. Requires `model` +
+	 *  the session's chat must have a character (otherwise 422). Derives the
+	 *  character from the session → chat; never accepts an arbitrary characterId.
+	 *  Returns the updated combined layers. */
+	updateExperienceCharacterOverride: (sessionId: string, body: { content: string }) => Promise<ExperiencePromptOverridesResponse>;
 }
 
 export interface RuntimeApi {

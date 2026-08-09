@@ -43,6 +43,7 @@ export type ExperienceApiError =
   | { status: 422; code: "session_not_active"; message: string; currentStatus: string }
   | { status: 422; code: "replay_failed"; message: string; failedActionIndex: number }
   | { status: 422; code: "no_choose_method"; message: string; participantId: string }
+  | { status: 422; code: "no_character"; message: string }
   | { status: 422; code: "no_public_events"; message: string }
   // 500 — unexpected
   | { status: 500; code: "internal"; message: string };

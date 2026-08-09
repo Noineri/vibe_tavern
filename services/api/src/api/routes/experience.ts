@@ -136,5 +136,56 @@ export function createExperienceRoutes(runtime: ExperienceRuntimeApi) {
     // `cancelled` (Wave 4 durable interruption policy).
     .post("/api/experience/effects/:effectId/run", async (c) => {
       return c.json(await runtime.runExperienceEffect(c.req.param("effectId"), c.req.raw.signal));
-    });
+    })
+
+    // ── Context capture + status (IR-70D) ────────────────────────────────────
+    // Explicit cancellable context capture. The signal passes all the way to
+    // captureContext so a compact-summary disconnect cancels and preserves the
+    // previous bundle. Body is strict: unknown keys are rejected; mode/model/ids
+    // are bounded.
+    .post(
+      "/api/experience/sessions/:sessionId/context/capture",
+      zValidator("json", schemas.experienceContextCaptureRequestSchema),
+      async (c) => {
+        return c.json(
+          await runtime.captureExperienceContext(c.req.param("sessionId"), c.req.valid("json"), c.req.raw.signal),
+        );
+      },
+    )
+    // Privacy-safe context-bundle status (IR-70D). Returns null when never
+    // captured; otherwise ONLY session metadata + provider/model ids — never
+    // payload fields like variantsJson, compactSummaryJson, or snapshots.
+    .get("/api/experience/sessions/:sessionId/context/status", async (c) => {
+      return c.json(await runtime.getExperienceContextStatus(c.req.param("sessionId")));
+    })
+
+    // ── Prompt overrides (IR-70D) ────────────────────────────────────────────
+    // Read both independent layers (global + current-character) through the
+    // `model` capability gate. Never collapses to the effective winner only.
+    .get("/api/experience/sessions/:sessionId/prompt-overrides", async (c) => {
+      return c.json(await runtime.getExperiencePromptOverrides(c.req.param("sessionId")));
+    })
+    // Write the global prompt-override layer. Requires `model`. Returns the
+    // updated combined layers.
+    .put(
+      "/api/experience/sessions/:sessionId/prompt-overrides/global",
+      zValidator("json", schemas.experiencePromptOverrideContentSchema),
+      async (c) => {
+        return c.json(
+          await runtime.updateExperienceGlobalOverride(c.req.param("sessionId"), c.req.valid("json")),
+        );
+      },
+    )
+    // Write the current-character prompt-override layer. Requires `model` + the
+    // session's chat must have a character (otherwise typed 422). Derives the
+    // character from session → chat; never accepts an arbitrary characterId.
+    .put(
+      "/api/experience/sessions/:sessionId/prompt-overrides/character",
+      zValidator("json", schemas.experiencePromptOverrideContentSchema),
+      async (c) => {
+        return c.json(
+          await runtime.updateExperienceCharacterOverride(c.req.param("sessionId"), c.req.valid("json")),
+        );
+      },
+    );
 }

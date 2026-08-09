@@ -465,6 +465,22 @@ export const experienceRecalculateRequestSchema = z.object({
   rulesCode: z.string().min(1).max(INTERACTIVE_SCHEMA_MAX_STATE_BYTES),
 });
 
+/** Capture (or replace) the session's frozen RP-context bundle. */
+export const experienceContextCaptureRequestSchema = z.object({
+  mode: experienceContextModeSchema.optional(),
+  providerProfileId: boundedId.optional(),
+  model: boundedString.min(1).optional(),
+  recentMessageLimit: z.number().int().min(1).max(1000).optional(),
+}).strict();
+
+/**
+ * Bounded content for a prompt-override write. A prompt override can be
+ * empty (to clear it) but must not exceed the practical content size limit.
+ */
+export const experiencePromptOverrideContentSchema = z.object({
+  content: z.string().max(100_000),
+}).strict();
+
 // ─── DTO types (wire-only shapes; canonical envelopes come from Domain) ──────
 
 export type ExperienceStartRequestDto = z.infer<typeof experienceStartRequestSchema>;
@@ -479,3 +495,5 @@ export type ExperienceVisualCreateDto = z.infer<typeof experienceVisualCreateSch
 export type ExperienceVisualUpdateDto = z.infer<typeof experienceVisualUpdateSchema>;
 export type ExperienceUndoRequestDto = z.infer<typeof experienceUndoRequestSchema>;
 export type ExperienceRecalculateRequestDto = z.infer<typeof experienceRecalculateRequestSchema>;
+export type ExperienceContextCaptureRequestDto = z.infer<typeof experienceContextCaptureRequestSchema>;
+export type ExperiencePromptOverrideContentDto = z.infer<typeof experiencePromptOverrideContentSchema>;

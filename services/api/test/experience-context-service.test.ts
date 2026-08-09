@@ -20,7 +20,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { createStoreContainer, type StoreContainer } from "@vibe-tavern/db";
-import type { AssemblePromptResponse, ChatBranchId, StoredProviderProfileRecord } from "@vibe-tavern/domain";
+import type { AssemblePromptResponse, ChatBranchId, ExperienceCapability, ExperienceContextMode, StoredProviderProfileRecord } from "@vibe-tavern/domain";
 
 import { ExperienceResourceService } from "../src/domain/interactive/experience-resource-service.js";
 import { ExperienceService } from "../src/domain/interactive/experience-service.js";
@@ -36,7 +36,7 @@ const COUNTER_SOURCE = `
 context.experience.register({
   apiVersion: 1,
   manifest: { id: "counter", name: "Counter" },
-  capabilities: [],
+  capabilities: [{ capability: "rp_context", reason: "context tests" }],
   create() { return { count: 0 }; },
   project(c) { return { count: c.state.count }; },
   actions() { return [{ type: "inc" }]; },
@@ -57,7 +57,7 @@ beforeEach(async () => {
 	experienceService = new ExperienceService(stores, resources, { generateSeed: () => "seed" });
 });
 
-async function seedSession(opts: { contextMode?: string; messages?: number; summaries?: number } = {}) {
+async function seedSession(opts: { contextMode?: ExperienceContextMode; messages?: number; summaries?: number; grants?: ExperienceCapability[] } = {}) {
 	const contextMode = opts.contextMode ?? "none";
 	const character = await stores.characters.create({ name: "Aria", description: "Fire mage." } as never);
 	const chat = await stores.chats.createChat({ characterId: character.id, title: "T" } as never);
@@ -67,8 +67,8 @@ async function seedSession(opts: { contextMode?: string; messages?: number; summ
 	await resources.updateConfig(chat.id, {
 		enabled: true,
 		scriptId: script.id,
-		capabilityGrants: [],
-		contextMode: contextMode as never,
+		capabilityGrants: opts.grants ?? ["rp_context"],
+		contextMode,
 	} as never);
 
 	const msgCount = opts.messages ?? 4;

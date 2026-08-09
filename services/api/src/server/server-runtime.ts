@@ -211,6 +211,7 @@ export async function createRuntimeApp(config: RuntimeAppConfig): Promise<Hono> 
 		experienceResourceService,
 		experienceReplayService,
 		experienceModelEffectService,
+		experienceContextService,
 	);
 
 	features.register(createAiAssistantFeature(runtime.aiAssistant));

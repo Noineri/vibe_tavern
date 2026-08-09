@@ -32,6 +32,9 @@ import { ExperienceAdapter } from "../src/api/adapters/experience-adapter.js";
 import { ExperienceResourceService } from "../src/domain/interactive/experience-resource-service.js";
 import { ExperienceService } from "../src/domain/interactive/experience-service.js";
 import { ExperienceReplayService } from "../src/domain/interactive/experience-replay-service.js";
+import { ExperienceContextService, type ExperienceChatLifecycleSeam } from "../src/domain/interactive/experience-context-service.js";
+import { ExperienceModelEffectService } from "../src/domain/interactive/experience-model-effect-service.js";
+import { createProviderProfileService } from "../src/domain/providers/provider-profile-service.js";
 import type { ExperienceRuntimeApi } from "../src/api/contract/runtime-api.js";
 
 /** Mount experience routes with the production DomainError → status mapping
@@ -82,6 +85,11 @@ function stubRuntime(throws?: { kind: any; message: string }): { runtime: Experi
 		undoExperienceSession: async (sessionId: string, body: any) => { rec("undoExperienceSession").push({ sessionId, body }); maybeThrow(); return { ...sessionResponse("c_1", "b_1", sessionId), events: [], await: "human" }; },
 		previewExperienceRecalculation: async (sessionId: string, body: any) => { rec("previewExperienceRecalculation").push({ sessionId, body }); maybeThrow(); return { originalRulesHash: "h1", originalState: {}, originalRevision: 0, newManifestId: "m", newRulesHash: "h2", outcome: { ok: true, finalState: {}, cursor: 0, checkpoints: [] } }; },
 		getExperienceEffects: async (sessionId: string) => { rec("getExperienceEffects").push({ sessionId }); maybeThrow(); return []; },
+		captureExperienceContext: async (sessionId: string, body: any, signal?: AbortSignal) => { rec("captureExperienceContext").push({ sessionId, body, signal }); maybeThrow(); return { sessionId, mode: body.mode ?? "none", branchFrontierRevision: null, messageFrontierPosition: null, providerProfileId: null, modelId: null, createdAt: "2025-01-01T00:00:00Z", updatedAt: "2025-01-01T00:00:00Z" }; },
+		getExperienceContextStatus: async (sessionId: string) => { rec("getExperienceContextStatus").push({ sessionId }); maybeThrow(); return null; },
+		getExperiencePromptOverrides: async (sessionId: string) => { rec("getExperiencePromptOverrides").push({ sessionId }); maybeThrow(); return { global: null, character: null }; },
+		updateExperienceGlobalOverride: async (sessionId: string, body: any) => { rec("updateExperienceGlobalOverride").push({ sessionId, body }); maybeThrow(); return { global: { scope: "global", content: body.content, characterId: null, createdAt: "2025-01-01T00:00:00Z", updatedAt: "2025-01-01T00:00:00Z" }, character: null }; },
+		updateExperienceCharacterOverride: async (sessionId: string, body: any) => { rec("updateExperienceCharacterOverride").push({ sessionId, body }); maybeThrow(); return { global: null, character: { scope: "character", content: body.content, characterId: "c_1", createdAt: "2025-01-01T00:00:00Z", updatedAt: "2025-01-01T00:00:00Z" } }; },
 	};
 	return { runtime: base as unknown as ExperienceRuntimeApi, calls };
 }
@@ -128,6 +136,54 @@ describe("Experience routes — HTTP layer (stub)", () => {
 			signal: controller.signal,
 		});
 		expect(calls.submitExperienceAction[0].signal).toBe(controller.signal);
+	});
+
+	test("context capture forwards the request abort signal", async () => {
+		const { runtime, calls } = stubRuntime();
+		const app = mount(runtime);
+		const controller = new AbortController();
+		const res = await app.request("/api/experience/sessions/s_1/context/capture", {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({ mode: "compact_summary" }),
+			signal: controller.signal,
+		});
+		expect(res.status).toBe(200);
+		expect(calls.captureExperienceContext[0].signal).toBe(controller.signal);
+	});
+
+	test("context capture rejects blank model, out-of-range window, and unknown fields", async () => {
+		const { runtime } = stubRuntime();
+		const app = mount(runtime);
+		for (const body of [
+			{ model: "" },
+			{ recentMessageLimit: 0 },
+			{ recentMessageLimit: 1.5 },
+			{ mode: "none", unexpected: true },
+		]) {
+			const res = await app.request("/api/experience/sessions/s_1/context/capture", {
+				method: "POST",
+				headers: { "content-type": "application/json" },
+				body: JSON.stringify(body),
+			});
+			expect(res.status).toBe(400);
+		}
+	});
+
+	test("prompt override writes reject oversized content and unknown keys", async () => {
+		const { runtime } = stubRuntime();
+		const app = mount(runtime);
+		for (const body of [
+			{ content: "x".repeat(100_001) },
+			{ content: "valid", characterId: "c_other" },
+		]) {
+			const res = await app.request("/api/experience/sessions/s_1/prompt-overrides/global", {
+				method: "PUT",
+				headers: { "content-type": "application/json" },
+				body: JSON.stringify(body),
+			});
+			expect(res.status).toBe(400);
+		}
 	});
 
 	test("maps a thrown NotFound DomainError to 404 with the structured code", async () => {
@@ -236,6 +292,31 @@ context.experience.register({
 });
 `;
 
+// Source that declares both rp_context and model (IR-70D shared test fixture).
+const CONTEXT_MODEL_SOURCE = `
+context.experience.register({
+  apiVersion: 1, manifest: { id: "cm", name: "Cm" },
+  capabilities: [{ capability: "rp_context", reason: "test" }, { capability: "model", reason: "test" }],
+  create() { return { n: 0 }; },
+  project(c) { return { n: c.state.n }; },
+  actions() { return [{ type: "inc" }]; },
+  reduce(c, a) { return { state: { n: c.state.n + 1 }, status: "active", events: [] }; },
+  choose(ctx, { legal }) { return legal[0]; },
+});
+`;
+
+const CONTEXT_ONLY_SOURCE = `
+context.experience.register({
+  apiVersion: 1, manifest: { id: "co", name: "Co" },
+  capabilities: [{ capability: "rp_context", reason: "test" }],
+  create() { return { n: 0 }; },
+  project(c) { return { n: c.state.n }; },
+  actions() { return [{ type: "inc" }]; },
+  reduce(c, a) { return { state: { n: c.state.n + 1 }, status: "active", events: [] }; },
+  choose(ctx, { legal }) { return legal[0]; },
+});
+`;
+
 const REPORT_SOURCE = `
 context.experience.register({
   apiVersion: 1, manifest: { id: "report", name: "Report" }, capabilities: [],
@@ -263,7 +344,20 @@ async function setupIntegration() {
 	const resources = new ExperienceResourceService(stores);
 	const lifecycle = new ExperienceService(stores, resources, { generateSeed: () => "seed1" });
 	const replay = new ExperienceReplayService(stores, resources);
-	const adapter = new ExperienceAdapter(lifecycle, resources, replay);
+	const providerProfiles = createProviderProfileService(stores.providers, stores.proxies);
+	const chatLifecycle: ExperienceChatLifecycleSeam = {
+		assembleSummaryPrompt: async () => {
+			throw new Error("Compact-summary execution is outside this route fixture.");
+		},
+	};
+	const contextService = new ExperienceContextService({ stores, providerProfiles, chatLifecycle });
+	const modelEffect = new ExperienceModelEffectService({
+		stores,
+		experienceService: lifecycle,
+		contextService,
+		providerProfiles,
+	});
+	const adapter = new ExperienceAdapter(lifecycle, resources, replay, modelEffect, contextService);
 	const app = mount(adapter);
 	return { stores, resources, app };
 }
@@ -693,5 +787,242 @@ describe("Experience routes — IR-70A queued-attachment read (integration)", ()
 		const res = await app.request("/api/experience/sessions/nonexistent/attachment");
 		expect(res.status).toBe(404);
 		expect((await jsonBody(res)).error.details.code).toBe("session_not_found");
+	});
+});
+
+// ─── IR-70D: Context capture + status (integration) ──────────────────────────
+
+describe("Experience routes — IR-70D context capture (integration)", () => {
+	test("context status is null before capture", async () => {
+		const { stores, resources, app } = await setupIntegration();
+		const { chatId, branchId } = await seedChatAndScript(stores, resources, CONTEXT_ONLY_SOURCE, ["rp_context"]);
+		const start = await app.request(`/api/chats/${chatId}/experience/sessions`, {
+			method: "POST", headers: { "content-type": "application/json" },
+			body: JSON.stringify({ branchId, participants: [], settings: {} }),
+		});
+		expect(start.status).toBe(200);
+		const sid = (await jsonBody(start)).sessionId;
+
+		const status = await app.request(`/api/experience/sessions/${sid}/context/status`);
+		expect(status.status).toBe(200);
+		// Before capture, status is null. Hono returns null body as empty text, not
+		// a JSON-parsable string — but c.json(null) renders "null".
+		const text = await status.text();
+		expect(text).toBe("null");
+	});
+
+	test("successful noncompact capture returns metadata with no payload leakage", async () => {
+		const { stores, resources, app } = await setupIntegration();
+		const { chatId, branchId } = await seedChatAndScript(stores, resources, CONTEXT_ONLY_SOURCE, ["rp_context"]);
+		// Add some messages so the bundle has material.
+		for (let i = 0; i < 3; i++) {
+			await stores.messages.addMessage({ chatId, branchId, role: i % 2 === 0 ? "user" : "assistant", authorType: i % 2 === 0 ? "user" : "character", content: `msg-${i}` });
+		}
+		const start = await app.request(`/api/chats/${chatId}/experience/sessions`, {
+			method: "POST", headers: { "content-type": "application/json" },
+			body: JSON.stringify({ branchId, participants: [], settings: {} }),
+		});
+		expect(start.status).toBe(200);
+		const sid = (await jsonBody(start)).sessionId;
+
+		// Capture with current_branch mode.
+		const capture = await app.request(`/api/experience/sessions/${sid}/context/capture`, {
+			method: "POST", headers: { "content-type": "application/json" },
+			body: JSON.stringify({ mode: "current_branch" }),
+		});
+		expect(capture.status).toBe(200);
+		const captureRaw = await capture.text();
+		expect(captureRaw).not.toContain("variantsJson");
+		expect(captureRaw).not.toContain("compactSummaryJson");
+		expect(captureRaw).not.toContain("msg-0");
+		const body = JSON.parse(captureRaw);
+		expect(body.sessionId).toBe(sid);
+		expect(body.mode).toBe("current_branch");
+		expect(body).toHaveProperty("branchFrontierRevision");
+		expect(body.branchFrontierRevision === null || Number.isInteger(body.branchFrontierRevision)).toBe(true);
+		expect(typeof body.messageFrontierPosition).toBe("number");
+		expect(body.providerProfileId).toBeNull();
+		expect(body.modelId).toBeNull();
+		expect(body.createdAt).toBeTruthy();
+		expect(body.updatedAt).toBeTruthy();
+
+		// Negative: forbidden payload fields are absent.
+		expect(body.variantsJson).toBeUndefined();
+		expect(body.compactSummaryJson).toBeUndefined();
+		expect(body.characterSnapshotJson).toBeUndefined();
+		expect(body.personaSnapshotJson).toBeUndefined();
+		expect(body.sourceHashesJson).toBeUndefined();
+
+		// Status now reflects the captured bundle.
+		const status = await app.request(`/api/experience/sessions/${sid}/context/status`);
+		expect(status.status).toBe(200);
+		const statusBody = await jsonBody(status);
+		expect(statusBody).not.toBeNull();
+		expect(statusBody.sessionId).toBe(sid);
+		expect(statusBody.mode).toBe("current_branch");
+	});
+
+	test("missing rp_context grant → 422 capability_denied, no bundle row", async () => {
+		const { stores, resources, app } = await setupIntegration();
+		// COUNTER_SOURCE declares no capabilities; grants are empty → session has no rp_context.
+		const { chatId, branchId } = await seedChatAndScript(stores, resources, COUNTER_SOURCE, []);
+		const start = await app.request(`/api/chats/${chatId}/experience/sessions`, {
+			method: "POST", headers: { "content-type": "application/json" },
+			body: JSON.stringify({ branchId, participants: [], settings: {} }),
+		});
+		expect(start.status).toBe(200);
+		const sid = (await jsonBody(start)).sessionId;
+
+		// Capture is blocked.
+		const capture = await app.request(`/api/experience/sessions/${sid}/context/capture`, {
+			method: "POST", headers: { "content-type": "application/json" },
+			body: JSON.stringify({ mode: "none" }),
+		});
+		expect(capture.status).toBe(422);
+		const body = await jsonBody(capture);
+		expect(body.error.details.code).toBe("capability_denied");
+
+		// Status is also blocked.
+		const status = await app.request(`/api/experience/sessions/${sid}/context/status`);
+		expect(status.status).toBe(422);
+		expect((await jsonBody(status)).error.details.code).toBe("capability_denied");
+	});
+
+	test("request with unknown fields is 400 (strict schema)", async () => {
+		const { stores, resources, app } = await setupIntegration();
+		const { chatId, branchId } = await seedChatAndScript(stores, resources, CONTEXT_ONLY_SOURCE, ["rp_context"]);
+		const start = await app.request(`/api/chats/${chatId}/experience/sessions`, {
+			method: "POST", headers: { "content-type": "application/json" },
+			body: JSON.stringify({ branchId, participants: [], settings: {} }),
+		});
+		expect(start.status).toBe(200);
+		const sid = (await jsonBody(start)).sessionId;
+
+		const res = await app.request(`/api/experience/sessions/${sid}/context/capture`, {
+			method: "POST", headers: { "content-type": "application/json" },
+			body: JSON.stringify({ mode: "none", unknownField: true }),
+		});
+		expect(res.status).toBe(400);
+	});
+});
+
+// ─── IR-70D: Prompt overrides (integration) ──────────────────────────────────
+
+describe("Experience routes — IR-70D prompt overrides (integration)", () => {
+	async function seedSessionWithModelGrant(app: any, stores: any, resources: any) {
+		const { chatId, branchId } = await seedChatAndScript(stores, resources, CONTEXT_MODEL_SOURCE, ["rp_context", "model"]);
+		const start = await app.request(`/api/chats/${chatId}/experience/sessions`, {
+			method: "POST", headers: { "content-type": "application/json" },
+			body: JSON.stringify({ branchId, participants: [], settings: {} }),
+		});
+		expect(start.status).toBe(200);
+		return { sessionId: (await jsonBody(start)).sessionId, chatId };
+	}
+
+	test("GET returns independent global + character layers (both null initially)", async () => {
+		const { stores, resources, app } = await setupIntegration();
+		const { sessionId: sid } = await seedSessionWithModelGrant(app, stores, resources);
+
+		const res = await app.request(`/api/experience/sessions/${sid}/prompt-overrides`);
+		expect(res.status).toBe(200);
+		const body = await jsonBody(res);
+		expect(body.global).toBeNull();
+		expect(body.character).toBeNull();
+	});
+
+	test("global write and character write round-trip independently", async () => {
+		const { stores, resources, app } = await setupIntegration();
+		const { sessionId: sid } = await seedSessionWithModelGrant(app, stores, resources);
+
+		// Write global override.
+		const gRes = await app.request(`/api/experience/sessions/${sid}/prompt-overrides/global`, {
+			method: "PUT", headers: { "content-type": "application/json" },
+			body: JSON.stringify({ content: "global instruction" }),
+		});
+		expect(gRes.status).toBe(200);
+		const gBody = await jsonBody(gRes);
+		expect(gBody.global).not.toBeNull();
+		expect(gBody.global.content).toBe("global instruction");
+		expect(gBody.global.scope).toBe("global");
+		expect(gBody.global.characterId).toBeNull();
+		expect(gBody.character).toBeNull();
+
+		// Write character override.
+		const cRes = await app.request(`/api/experience/sessions/${sid}/prompt-overrides/character`, {
+			method: "PUT", headers: { "content-type": "application/json" },
+			body: JSON.stringify({ content: "character instruction" }),
+		});
+		expect(cRes.status).toBe(200);
+		const cBody = await jsonBody(cRes);
+		expect(cBody.global).not.toBeNull();
+		expect(cBody.global.content).toBe("global instruction");
+		expect(cBody.character).not.toBeNull();
+		expect(cBody.character.content).toBe("character instruction");
+		expect(cBody.character.scope).toBe("character");
+		expect(cBody.character.characterId).toBeTruthy();
+
+		// GET returns both layers independently.
+		const getRes = await app.request(`/api/experience/sessions/${sid}/prompt-overrides`);
+		expect(getRes.status).toBe(200);
+		const getBody = await jsonBody(getRes);
+		expect(getBody.global.content).toBe("global instruction");
+		expect(getBody.character.content).toBe("character instruction");
+	});
+
+	test("character write derives character from session → chat (not from request body)", async () => {
+		const { stores, resources, app } = await setupIntegration();
+		const { sessionId: sid } = await seedSessionWithModelGrant(app, stores, resources);
+
+		// The PUT body only has {content}; characterId is NOT accepted.
+		const res = await app.request(`/api/experience/sessions/${sid}/prompt-overrides/character`, {
+			method: "PUT", headers: { "content-type": "application/json" },
+			body: JSON.stringify({ content: "char prompt", characterId: "other" }),
+		});
+		// The strict schema rejects unknown keys → 400.
+		expect(res.status).toBe(400);
+	});
+
+	test("missing model grant rejects GET and both PUTs with 422, no writes", async () => {
+		const { stores, resources, app } = await setupIntegration();
+		// CONTEXT_ONLY_SOURCE has rp_context but NOT model.
+		const { chatId, branchId } = await seedChatAndScript(stores, resources, CONTEXT_ONLY_SOURCE, ["rp_context"]);
+		const start = await app.request(`/api/chats/${chatId}/experience/sessions`, {
+			method: "POST", headers: { "content-type": "application/json" },
+			body: JSON.stringify({ branchId, participants: [], settings: {} }),
+		});
+		expect(start.status).toBe(200);
+		const sid = (await jsonBody(start)).sessionId;
+
+		// GET denied.
+		const getRes = await app.request(`/api/experience/sessions/${sid}/prompt-overrides`);
+		expect(getRes.status).toBe(422);
+		expect((await jsonBody(getRes)).error.details.code).toBe("capability_denied");
+
+		// PUT global denied.
+		const gRes = await app.request(`/api/experience/sessions/${sid}/prompt-overrides/global`, {
+			method: "PUT", headers: { "content-type": "application/json" },
+			body: JSON.stringify({ content: "x" }),
+		});
+		expect(gRes.status).toBe(422);
+
+		// PUT character denied.
+		const cRes = await app.request(`/api/experience/sessions/${sid}/prompt-overrides/character`, {
+			method: "PUT", headers: { "content-type": "application/json" },
+			body: JSON.stringify({ content: "x" }),
+		});
+		expect(cRes.status).toBe(422);
+	});
+
+	test("empty content is a valid override write", async () => {
+		const { stores, resources, app } = await setupIntegration();
+		const { sessionId: sid } = await seedSessionWithModelGrant(app, stores, resources);
+
+		const res = await app.request(`/api/experience/sessions/${sid}/prompt-overrides/global`, {
+			method: "PUT", headers: { "content-type": "application/json" },
+			body: JSON.stringify({ content: "" }),
+		});
+		expect(res.status).toBe(200);
+		const body = await jsonBody(res);
+		expect(body.global.content).toBe("");
 	});
 });

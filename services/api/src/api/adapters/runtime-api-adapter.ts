@@ -33,6 +33,7 @@ import type { ExperienceService } from "../../domain/interactive/experience-serv
 import type { ExperienceResourceService } from "../../domain/interactive/experience-resource-service.js";
 import type { ExperienceReplayService } from "../../domain/interactive/experience-replay-service.js";
 import type { ExperienceModelEffectService } from "../../domain/interactive/experience-model-effect-service.js";
+import type { ExperienceContextService } from "../../domain/interactive/experience-context-service.js";
 
 /**
  * Thin composite that wires domain adapters into the RuntimeApi contract.
@@ -81,6 +82,7 @@ export class RuntimeApiAdapter implements RuntimeApi {
 		experienceResourceService: ExperienceResourceService,
 		experienceReplayService: ExperienceReplayService,
 		experienceModelEffectService: ExperienceModelEffectService,
+		experienceContextService: ExperienceContextService,
 	) {
 		const bootstrapAdapter = new BootstrapAdapter(sessionRuntime);
 		this.bootstrap = bootstrapAdapter.bootstrap;
@@ -103,6 +105,6 @@ export class RuntimeApiAdapter implements RuntimeApi {
 		this.insights = new InsightsAdapter(stores, sessionRuntime, objectiveService, trackerService);
 		this.coauthorSkills = new CoauthorSkillAdapter(skillLibraryService);
 		this.dice = new DiceAdapter(diceService);
-		this.experience = new ExperienceAdapter(experienceService, experienceResourceService, experienceReplayService, experienceModelEffectService);
+		this.experience = new ExperienceAdapter(experienceService, experienceResourceService, experienceReplayService, experienceModelEffectService, experienceContextService);
 	}
 }
