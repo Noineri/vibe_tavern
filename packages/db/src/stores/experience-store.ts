@@ -134,6 +134,8 @@ export interface CreateSessionData {
   capabilityGrantsJson: string;
   contextMode: string;
   randomSeed: string;
+  /** Cursor consumed by create(); persisted before the session becomes active. */
+  randomCursor?: number;
 }
 
 export interface ApplyTransitionData {
@@ -207,6 +209,13 @@ export interface FreezeReportData {
   rulesSourceHash: string;
   visualSourceHash?: string | null;
 }
+
+/** The report payload composed by the service for an atomic start/final freeze. */
+export type AtomicReportData = Omit<FreezeReportData, 'chatId' | 'branchId' | 'sessionId' | 'sessionRevision'>;
+
+export type FinishSessionWithReportResult =
+  | { ok: true; session: ExperienceSessionRow; attachment: ExperienceAttachmentRow | null; idempotent: boolean }
+  | { ok: false; conflict: 'session_not_found' | 'stale_revision' };
 
 export type FreezeReportConflict =
   | 'session_not_found'
@@ -303,12 +312,86 @@ export class ExperienceStore {
         contextMode: data.contextMode,
         reportFrontier: 0,
         randomSeed: data.randomSeed,
-        randomCursor: 0,
+        randomCursor: data.randomCursor ?? 0,
         createdAt: now,
         updatedAt: now,
       })
       .returning();
     return { ok: true, session: this.mapRowSession(row!) };
+  }
+
+  /**
+   * Atomically creates the active session and its revision-zero report. The
+   * callback receives the fully identified session row, but runs synchronously
+   * inside the SQLite transaction so a report construction failure rolls back
+   * the active-slot claim as well as both inserts.
+   */
+  createSessionWithInitialReport(
+    data: CreateSessionData,
+    makeReport: (session: ExperienceSessionRow) => AtomicReportData,
+  ): { ok: true; session: ExperienceSessionRow; attachment: ExperienceAttachmentRow } | { ok: false; conflict: 'branch_has_active' } {
+    return this.db.transaction((tx) => {
+      const active = tx
+        .select({ id: experienceSessions.id })
+        .from(experienceSessions)
+        .where(and(eq(experienceSessions.branchId, data.branchId), isNotNull(experienceSessions.activeSlot)))
+        .get();
+      if (active) return { ok: false, conflict: 'branch_has_active' };
+
+      const id = this.idGen.next('xs');
+      const now = this.clock.now();
+      const session: ExperienceSessionRow = {
+        id,
+        chatId: data.chatId,
+        branchId: data.branchId,
+        activeSlot: 0,
+        rulesId: data.rulesId,
+        rulesLabel: data.rulesLabel,
+        rulesRevision: data.rulesRevision,
+        rulesSource: data.rulesSource,
+        rulesSourceHash: data.rulesSourceHash,
+        visualId: data.visualId ?? null,
+        visualLabel: data.visualLabel ?? null,
+        visualRevision: data.visualRevision ?? null,
+        visualSource: data.visualSource ?? null,
+        visualSourceHash: data.visualSourceHash ?? null,
+        apiVersion: data.apiVersion,
+        manifestId: data.manifestId,
+        manifestName: data.manifestName,
+        initialSettingsJson: data.initialSettingsJson,
+        currentStateJson: data.currentStateJson,
+        status: 'active',
+        revision: 0,
+        participantsJson: data.participantsJson,
+        capabilityGrantsJson: data.capabilityGrantsJson,
+        contextMode: data.contextMode,
+        reportFrontier: 0,
+        randomSeed: data.randomSeed,
+        randomCursor: data.randomCursor ?? 0,
+        createdAt: now,
+        updatedAt: now,
+      };
+      const report = makeReport(session);
+      tx.insert(experienceSessions).values({ ...session }).run();
+      const attachment: ExperienceAttachmentRow = {
+        id: this.idGen.next('xa'),
+        chatId: session.chatId,
+        branchId: session.branchId,
+        sessionId: session.id,
+        sessionRevision: 0,
+        queueRevision: 1,
+        kind: report.kind,
+        publicEventsJson: report.publicEventsJson,
+        hiddenStateCheckpointJson: report.hiddenStateCheckpointJson,
+        rulesSourceHash: report.rulesSourceHash,
+        visualSourceHash: report.visualSourceHash ?? null,
+        boundMessageId: null,
+        createdAt: now,
+        updatedAt: now,
+      };
+      tx.insert(experienceAttachments).values(attachment).run();
+      return { ok: true, session, attachment };
+    });
   }
 
   async getSessionById(id: string): Promise<ExperienceSessionRow | null> {
@@ -347,6 +430,76 @@ export class ExperienceStore {
       .returning();
     if (!row) throw new Error(`Experience session '${sessionId}' not found after finish`);
     return this.mapRowSession(row);
+  }
+
+  /**
+   * Atomically finalizes the host-owned active slot and freezes the supplied
+   * report. An active reducer state becomes an interrupted manual finish and
+   * gains the public user-ended system step. A rule-completed state keeps its
+   * status/revision and only releases the slot while freezing its accumulated
+   * public result. The optional synchronous seam proves rollback atomicity.
+   */
+  finishSessionWithFinalReport(
+    sessionId: string,
+    expectedRevision: number,
+    report: AtomicReportData,
+    beforeFreeze?: () => void,
+  ): FinishSessionWithReportResult {
+    return this.db.transaction((tx) => {
+      const current = tx.select().from(experienceSessions).where(eq(experienceSessions.id, sessionId)).get();
+      if (!current) return { ok: false, conflict: 'session_not_found' };
+      if (current.activeSlot === null) {
+        const attachment = tx
+          .select()
+          .from(experienceAttachments)
+          .where(and(eq(experienceAttachments.sessionId, sessionId), isNull(experienceAttachments.boundMessageId)))
+          .orderBy(desc(experienceAttachments.queueRevision))
+          .get();
+        return {
+          ok: true,
+          session: this.mapRowSession(current),
+          attachment: attachment ? this.mapRowAttachment(attachment) : null,
+          idempotent: true,
+        };
+      }
+      if (current.revision !== expectedRevision) return { ok: false, conflict: 'stale_revision' };
+
+      const manualFinish = current.status === 'active';
+      const finalRevision = manualFinish ? current.revision + 1 : current.revision;
+      const finalStatus = manualFinish ? 'interrupted' : current.status;
+      const now = this.clock.now();
+      tx
+        .update(experienceSessions)
+        .set({ status: finalStatus, activeSlot: null, revision: finalRevision, reportFrontier: finalRevision, updatedAt: now })
+        .where(eq(experienceSessions.id, sessionId))
+        .run();
+      if (manualFinish) {
+        tx
+          .insert(experienceSteps)
+          .values({
+            id: this.idGen.next('xst'),
+            sessionId,
+            sequence: finalRevision,
+            kind: 'system',
+            requestId: null,
+            expectedRevision,
+            appliedRevision: finalRevision,
+            actorSnapshotJson: null,
+            inputJson: null,
+            emittedEventsJson: JSON.stringify([{ visibility: 'public', type: 'experience_finished', detail: 'The user decided to end the game.' }]),
+            emittedEffectsJson: '[]',
+            stateHash: null,
+            message: 'The user decided to end the game.',
+            createdAt: now,
+          })
+          .run();
+      }
+      beforeFreeze?.();
+
+      const attachment = this.writeFinalAttachmentInTx(tx, this.mapRowSession(current), finalRevision, report, now);
+      const updated = tx.select().from(experienceSessions).where(eq(experienceSessions.id, sessionId)).get();
+      return { ok: true, session: this.mapRowSession(updated!), attachment, idempotent: false };
+    });
   }
 
   // ─── CAS transition (the core write path) ────────────────────────────────
@@ -646,6 +799,73 @@ export class ExperienceStore {
   }
 
   // ─── Attachments (queued/bound RP results) ───────────────────────────────
+
+  /** Write or replace the one queued terminal attachment inside its caller's transaction. */
+  private writeFinalAttachmentInTx(
+    tx: DbTransaction,
+    session: Pick<ExperienceSessionRow, 'id' | 'chatId' | 'branchId'>,
+    finalRevision: number,
+    report: AtomicReportData,
+    now: string,
+  ): ExperienceAttachmentRow {
+    const existing = tx
+      .select()
+      .from(experienceAttachments)
+      .where(and(eq(experienceAttachments.sessionId, session.id), isNull(experienceAttachments.boundMessageId)))
+      .orderBy(desc(experienceAttachments.queueRevision))
+      .get();
+    const visualSourceHash = report.visualSourceHash ?? null;
+    if (
+      existing
+      && existing.sessionRevision === finalRevision
+      && existing.kind === report.kind
+      && existing.publicEventsJson === report.publicEventsJson
+      && existing.hiddenStateCheckpointJson === report.hiddenStateCheckpointJson
+      && existing.rulesSourceHash === report.rulesSourceHash
+      && existing.visualSourceHash === visualSourceHash
+    ) {
+      return this.mapRowAttachment(existing);
+    }
+    const max = tx
+      .select()
+      .from(experienceAttachments)
+      .where(eq(experienceAttachments.sessionId, session.id))
+      .orderBy(desc(experienceAttachments.queueRevision))
+      .get();
+    const queueRevision = (max?.queueRevision ?? 0) + 1;
+    const attachmentId = existing?.id ?? this.idGen.next('xa');
+    if (existing) {
+      tx.update(experienceAttachments).set({
+        sessionRevision: finalRevision,
+        queueRevision,
+        kind: report.kind,
+        publicEventsJson: report.publicEventsJson,
+        hiddenStateCheckpointJson: report.hiddenStateCheckpointJson,
+        rulesSourceHash: report.rulesSourceHash,
+        visualSourceHash,
+        updatedAt: now,
+      }).where(eq(experienceAttachments.id, existing.id)).run();
+    } else {
+      tx.insert(experienceAttachments).values({
+        id: attachmentId,
+        chatId: session.chatId,
+        branchId: session.branchId,
+        sessionId: session.id,
+        sessionRevision: finalRevision,
+        queueRevision,
+        kind: report.kind,
+        publicEventsJson: report.publicEventsJson,
+        hiddenStateCheckpointJson: report.hiddenStateCheckpointJson,
+        rulesSourceHash: report.rulesSourceHash,
+        visualSourceHash,
+        boundMessageId: null,
+        createdAt: now,
+        updatedAt: now,
+      }).run();
+    }
+    const attachment = tx.select().from(experienceAttachments).where(eq(experienceAttachments.id, attachmentId)).get();
+    return this.mapRowAttachment(attachment!);
+  }
 
   /**
    * Freeze a report/transcript snapshot at `sessionRevision`, advancing the

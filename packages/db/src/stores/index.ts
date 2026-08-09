@@ -93,6 +93,7 @@ export type {
   CreateSessionData,
   ApplyTransitionData,
   ApplyTransitionResult,
+  AtomicReportData,
   CaptureContextBundleData,
   QueueAttachmentData,
 } from './experience-store.js';

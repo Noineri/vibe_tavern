@@ -59,6 +59,25 @@ context.experience.register({
 `;
 
 /** Game-style: the human's "play" asks the model seat to choose a legal action. */
+const COMPLETING_TEXT_SOURCE = `
+context.experience.register({
+  apiVersion: 1,
+  manifest: { id: "complete-msg", name: "Completing Messenger" },
+  capabilities: [{ capability: "participants" }, { capability: "model" }],
+  create() { return { log: [] }; },
+  project(c) { return { log: c.state.log }; },
+  actions() { return [{ type: "say", label: "Say", allowsText: true }]; },
+  reduce(c, a) {
+    const next = { log: [...c.state.log, { who: a.participantId, text: a.payload?.text ?? "" }] };
+    if (a.participantId === "model") return { state: next, status: "completed", events: [{ visibility: "public", type: "model_finished" }] };
+    return {
+      state: next, status: "active", events: [],
+      effects: [{ kind: "model", request: { viewer: "model", mode: "text", actionType: "say", instruction: "Reply in character." } }],
+    };
+  },
+});
+`;
+
 const ACTION_SOURCE = `
 context.experience.register({
   apiVersion: 1,
@@ -196,6 +215,33 @@ function makeServices(opts: {
 // ─── Tests: success paths ────────────────────────────────────────────────────
 
 describe("ExperienceModelEffectService — resolution + feed-back", () => {
+	test("a model effect reducer completion waits for explicit report finalization", async () => {
+		await setup();
+		const { sessionId, branchId } = await seedSession(COMPLETING_TEXT_SOURCE);
+		const effectId = await emitModelEffect(sessionId, "say");
+		const { modelEffectService } = makeServices({ executeReturn: async () => ({ text: "Farewell." }) });
+
+		const result = await modelEffectService.runEffect(effectId);
+		expect(result.ok && result.data.delivered).toBe(true);
+		const session = await stores.experiences.getSessionById(sessionId);
+		expect(session?.status).toBe("completed");
+		expect(session?.activeSlot).toBe(0);
+		expect(session?.reportFrontier).toBe(0);
+		expect((await stores.experiences.getActiveSessionForBranch(branchId))?.id).toBe(sessionId);
+		const frozen = await stores.experiences.getQueuedAttachmentForSession(sessionId);
+		expect(frozen?.queueRevision).toBe(1);
+		expect(JSON.parse(frozen?.publicEventsJson ?? "{}").events.map((event: { type: string }) => event.type)).toEqual(["experience_started"]);
+		const status = await experienceService.getReportStatus(sessionId);
+		expect(status.ok && status.data.pendingPublicEventCount).toBe(1);
+		const queued = await experienceService.finishWithReport(sessionId, 2);
+		expect(queued.ok && queued.data?.queueRevision).toBe(2);
+		expect(queued.ok && queued.data?.publicReport?.events.map((event) => event.type)).toEqual(["experience_started", "model_finished"]);
+		const finalized = await stores.experiences.getSessionById(sessionId);
+		expect(finalized?.status).toBe("completed");
+		expect(finalized?.activeSlot).toBeNull();
+		expect(finalized?.revision).toBe(2);
+	});
+
 	test("text mode: model reply completes, feeds back, session advances", async () => {
 		await setup();
 		const { sessionId } = await seedSession(TEXT_SOURCE);

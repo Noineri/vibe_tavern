@@ -154,13 +154,13 @@ export class ExperienceAdapter implements ExperienceRuntimeApi {
 		return this.toResponse(found.data, projection);
 	};
 
-	endExperienceSession = async (sessionId: string, body: { status: "completed" | "interrupted" }) => {
-		const ended = await this.lifecycle.endSession(sessionId, body.status);
-		if (!ended.ok) throw mapError(ended.error);
-		const resumed = await this.lifecycle.resumeSession(sessionId);
-		if (!resumed.ok) throw mapError(resumed.error);
-		const projection = await this.projectForHuman(sessionId, resumed.data.participants);
-		return this.toResponse(resumed.data, projection);
+	/** Canonical explicit user finish. The report service appends the durable
+	 * public system event, releases the slot, and freezes the terminal snapshot
+	 * in one synchronous SQLite transaction. */
+	endExperienceSession = async (sessionId: string, body: { expectedRevision: number }) => {
+		const finished = await this.lifecycle.finishWithReport(sessionId, body.expectedRevision);
+		if (!finished.ok) throw mapError(finished.error);
+		return finished.data;
 	};
 
 	/** Submit one action intention, then auto-resolve any script seats, returning
@@ -211,6 +211,18 @@ export class ExperienceAdapter implements ExperienceRuntimeApi {
 		const attachment = await this.lifecycle.getQueuedAttachment(sessionId);
 		if (!attachment.ok) throw mapError(attachment.error);
 		return attachment.data;
+	};
+
+	queueExperienceReport = async (sessionId: string, body: { expectedRevision: number }) => {
+		const queued = await this.lifecycle.queueReport(sessionId, body.expectedRevision);
+		if (!queued.ok) throw mapError(queued.error);
+		return queued.data;
+	};
+
+	getExperienceReportStatus = async (sessionId: string) => {
+		const status = await this.lifecycle.getReportStatus(sessionId);
+		if (!status.ok) throw mapError(status.error);
+		return status.data;
 	};
 
 	// ─── Replay ──────────────────────────────────────────────────────────────

@@ -31,7 +31,7 @@
  * no EventBus. Model-effect execution is Wave 4.
  */
 
-import type { ExperienceAttachmentRow, ExperienceEffectRow, ExperienceSessionRow, StoreContainer } from "@vibe-tavern/db";
+import type { ExperienceEffectRow, ExperienceSessionRow, StoreContainer } from "@vibe-tavern/db";
 import {
   EXPERIENCE_CAPABILITY,
   EXPERIENCE_CONTROLLER,
@@ -75,7 +75,7 @@ import {
   type ResolvedVisualSource,
   ExperienceResourceService,
 } from "./experience-resource-service.js";
-import { storeAttachmentToReportSnapshot } from "./experience-report-snapshot.js";
+import { ExperienceReportService, toQueuedAttachmentView, type ExperienceReportStatus } from "./experience-report-service.js";
 
 // ─── Counting RNG (cursor tracking) ─────────────────────────────────────────
 
@@ -282,15 +282,17 @@ export class ExperienceService {
   private readonly stores: StoreContainer;
   private readonly resources: ExperienceResourceService;
   private readonly generateSeed: () => string;
+  private readonly reports: ExperienceReportService;
 
   constructor(
     stores: StoreContainer,
     resources: ExperienceResourceService,
-    deps: { generateSeed?: () => string } = {},
+    deps: { generateSeed?: () => string; reportService?: ExperienceReportService } = {},
   ) {
     this.stores = stores;
     this.resources = resources;
     this.generateSeed = deps.generateSeed ?? defaultGenerateSeed;
+    this.reports = deps.reportService ?? new ExperienceReportService(stores);
   }
 
   // ─── Session lifecycle ────────────────────────────────────────────────────
@@ -340,7 +342,17 @@ export class ExperienceService {
     const initialState = created.value;
     const cursorAfterCreate = createRng.totalDraws();
 
-    const created_row = await this.stores.experiences.createSession({
+    // `create()` emits state rather than reportable events. The revision-zero
+    // attachment therefore records only an explicit public setup projection,
+    // never the authoritative state supplied to the store below.
+    const startViewer: ExperienceViewer = { kind: EXPERIENCE_VIEWER_KIND.observer };
+    const startCaps = this.buildCaps(grants, input.participants, undefined, createEphemeralRandom());
+    const startProjection = runProject(rules.code, rules.scriptName, initialState, startViewer, startCaps);
+    if (!startProjection.ok) return err(fromKernelError(startProjection));
+    const startActions = runActions(rules.code, rules.scriptName, initialState, startViewer, startCaps);
+    if (!startActions.ok) return err(fromKernelError(startActions));
+
+    const created_row = this.stores.experiences.createSessionWithInitialReport({
       chatId: input.chatId,
       branchId: input.branchId,
       rulesId: rules.scriptId,
@@ -362,7 +374,12 @@ export class ExperienceService {
       capabilityGrantsJson: safeStringify(grants),
       contextMode: setup.data.contextMode,
       randomSeed: seed,
-    });
+      randomCursor: cursorAfterCreate,
+    }, (session) => this.reports.buildStartReport(session, {
+      projection: startProjection.value,
+      legalActions: startActions.value,
+      participants: input.participants,
+    }));
     if (!created_row.ok) {
       return err({
         status: 409,
@@ -381,19 +398,6 @@ export class ExperienceService {
       return err({ status: 404, code: "session_not_found", message: `Session '${sessionId}' not found` });
     }
     return ok(this.toSessionView(session));
-  }
-
-  /** End a session (completed/interrupted), releasing the branch active slot. */
-  async endSession(
-    sessionId: string,
-    status: "completed" | "interrupted",
-  ): Promise<ExperienceResult<void>> {
-    const session = await this.stores.experiences.getSessionById(sessionId);
-    if (session === null) {
-      return err({ status: 404, code: "session_not_found", message: `Session '${sessionId}' not found` });
-    }
-    await this.stores.experiences.finishSession(sessionId, status);
-    return ok(undefined);
   }
 
   /**
@@ -616,6 +620,7 @@ export class ExperienceService {
       const reduced = runReduce(ctx.data.rules.code, ctx.data.rules.scriptName, ctx.data.state, chosen, reduceCaps);
       if (!reduced.ok) return err(fromKernelError(reduced));
       const transition = reduced.value;
+      const nextCursor = rng.totalDraws();
       const applied = await this.stores.experiences.applyTransition({
         sessionId,
         expectedRevision: ctx.data.revision,
@@ -629,7 +634,7 @@ export class ExperienceService {
         message: transition.message ?? null,
         newCurrentStateJson: safeStringify(transition.state),
         newStatus: transition.status,
-        newRandomCursor: rng.totalDraws(),
+        newRandomCursor: nextCursor,
       });
       if (!applied.ok) {
         return err({ status: 409, code: "stale_revision", message: `Script turn raced`, currentRevision: ctx.data.revision });
@@ -688,7 +693,22 @@ export class ExperienceService {
     if (attachment === null) {
       return ok(null);
     }
-    return ok(this.toQueuedAttachmentView(attachment));
+    return ok(toQueuedAttachmentView(attachment));
+  }
+
+  /** Explicitly freeze the public journal frontier the user selected. */
+  queueReport(sessionId: string, expectedRevision: number) {
+    return this.reports.queue(sessionId, expectedRevision);
+  }
+
+  /** Server-authoritative queue/frontier status; counts validated public events. */
+  getReportStatus(sessionId: string): Promise<ExperienceResult<ExperienceReportStatus>> {
+    return this.reports.getStatus(sessionId);
+  }
+
+  /** Explicit user finish: durable public system event + terminal frozen report. */
+  finishWithReport(sessionId: string, expectedRevision: number) {
+    return this.reports.finish(sessionId, expectedRevision);
   }
 
   // ─── Model-effect VM ops (Wave 4 / IR-43) ─────────────────────────────────
@@ -767,6 +787,7 @@ export class ExperienceService {
     const reduced = runReduce(ctx.data.rules.code, ctx.data.rules.scriptName, ctx.data.state, action, reduceCaps);
     if (!reduced.ok) return err(fromKernelError(reduced));
     const transition = reduced.value;
+    const nextCursor = rng.totalDraws();
     const applied = await this.stores.experiences.applyTransition({
       sessionId: effect.sessionId,
       expectedRevision: effect.originatingRevision,
@@ -780,7 +801,7 @@ export class ExperienceService {
       message: transition.message ?? null,
       newCurrentStateJson: safeStringify(transition.state),
       newStatus: transition.status,
-      newRandomCursor: rng.totalDraws(),
+      newRandomCursor: nextCursor,
     });
     const session = applied.ok ? this.toSessionView(applied.session) : await this.viewById(effect.sessionId);
     const projection = await this.projectForResponseById(
@@ -932,39 +953,6 @@ export class ExperienceService {
     };
   }
 
-  /**
-   * Project a stored attachment row into the privacy-safe public DTO. Parses
-   * `publicEventsJson` defensively (null on malformed JSON, mirroring the
-   * prompt-assembly read path in {@link storeAttachmentToReportSnapshot}). The
-   * `hiddenStateCheckpointJson` column is deliberately NOT copied — the returned
-   * view can never carry hidden authoritative state.
-   */
-  private toQueuedAttachmentView(
-    attachment: ExperienceAttachmentRow,
-  ): ExperienceQueuedAttachmentView {
-    const snapshot = storeAttachmentToReportSnapshot(attachment);
-    const publicReport: ExperiencePublicReport | null = snapshot === null
-      ? null
-      : {
-          title: snapshot.title,
-          ...(snapshot.summary !== undefined ? { summary: snapshot.summary } : {}),
-          events: snapshot.events,
-        };
-    return {
-      id: attachment.id,
-      chatId: attachment.chatId,
-      branchId: attachment.branchId,
-      sessionId: attachment.sessionId,
-      sessionRevision: attachment.sessionRevision,
-      queueRevision: attachment.queueRevision,
-      kind: attachment.kind,
-      publicReport,
-      rulesSourceHash: attachment.rulesSourceHash,
-      visualSourceHash: attachment.visualSourceHash,
-      createdAt: attachment.createdAt,
-      updatedAt: attachment.updatedAt,
-    };
-  }
 }
 
 // ─── Small helpers ───────────────────────────────────────────────────────────

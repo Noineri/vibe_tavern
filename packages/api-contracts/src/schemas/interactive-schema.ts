@@ -381,11 +381,16 @@ export const experienceStartRequestSchema = z.object({
 /** Submit one action intention (also the per-action idempotency + CAS carrier). */
 export const experienceActionRequestSchema = experienceActionSchema;
 
-/** Explicit user end (manual finish). `status` is the terminal status the
- *  host records; calling end twice is harmless (idempotent set), so no request
- *  idempotency key is required. */
+/** Explicit user finish. The client pins the live revision; termination is
+ * always host-owned `interrupted`, never a client-selected terminal status. */
 export const experienceFinishRequestSchema = z.object({
-  status: z.enum(["completed", "interrupted"]),
+  expectedRevision: boundedRevision,
+}).strict();
+
+/** Explicit queue/Add-later report freeze. The client must pin the exact live
+ * revision; it can never silently include actions which arrived afterwards. */
+export const experienceReportQueueRequestSchema = z.object({
+  expectedRevision: boundedRevision,
 });
 
 /**
@@ -465,6 +470,7 @@ export const experienceRecalculateRequestSchema = z.object({
 export type ExperienceStartRequestDto = z.infer<typeof experienceStartRequestSchema>;
 export type ExperienceActionDto = z.infer<typeof experienceActionSchema>;
 export type ExperienceFinishRequestDto = z.infer<typeof experienceFinishRequestSchema>;
+export type ExperienceReportQueueRequestDto = z.infer<typeof experienceReportQueueRequestSchema>;
 export type ExperienceSessionResponseDto = z.infer<typeof experienceSessionResponseSchema>;
 export type ExperienceDefinitionDto = z.infer<typeof experienceDefinitionSchema>;
 export type ExperienceStarterManifestDto = z.infer<typeof experienceStarterManifestSchema>;

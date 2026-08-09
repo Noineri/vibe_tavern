@@ -106,6 +106,14 @@ export function createExperienceRoutes(runtime: ExperienceRuntimeApi) {
     .get("/api/experience/sessions/:sessionId/attachment", async (c) => {
       return c.json(await runtime.getExperienceQueuedAttachment(c.req.param("sessionId")));
     })
+    .post(
+      "/api/experience/sessions/:sessionId/reports/queue",
+      zValidator("json", schemas.experienceReportQueueRequestSchema),
+      async (c) => c.json(await runtime.queueExperienceReport(c.req.param("sessionId"), c.req.valid("json"))),
+    )
+    .get("/api/experience/sessions/:sessionId/reports/status", async (c) => {
+      return c.json(await runtime.getExperienceReportStatus(c.req.param("sessionId")));
+    })
 
     // ── Replay ─────────────────────────────────────────────────────────────
     .post("/api/experience/sessions/:sessionId/undo", zValidator("json", schemas.experienceUndoRequestSchema), async (c) => {

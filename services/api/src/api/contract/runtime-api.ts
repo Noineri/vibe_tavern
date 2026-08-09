@@ -521,6 +521,7 @@ import type {
 	ExperienceQueuedAttachmentView,
 	TurnAwait,
 } from "../../domain/interactive/experience-service.js";
+import type { ExperienceReportStatus } from "../../domain/interactive/experience-report-service.js";
 import type { RecalculationPreview } from "../../domain/interactive/experience-replay-service.js";
 import type {
 	ExperienceChatConfigRow,
@@ -606,7 +607,8 @@ export interface ExperienceRuntimeApi {
 	 *  active session and project it for the human viewer. Returns the SAME
 	 *  response shape as {@link getExperienceSession}. */
 	getActiveExperienceSession: (chatId: string, branchId: string) => Promise<ExperienceSessionResponse>;
-	endExperienceSession: (sessionId: string, body: { status: "completed" | "interrupted" }) => Promise<ExperienceSessionResponse>;
+	/** Canonical explicit user finish: terminal snapshot is atomically queued. */
+	endExperienceSession: (sessionId: string, body: { expectedRevision: number }) => Promise<ExperienceQueuedAttachmentResponse>;
 	submitExperienceAction: (sessionId: string, body: import("@vibe-tavern/domain").ExperienceAction, signal?: AbortSignal) => Promise<ExperienceActionResponse>;
 
 	// ── Per-viewer projection reads ──
@@ -617,6 +619,10 @@ export interface ExperienceRuntimeApi {
 	/** Read the session's current queued attachment through the privacy-safe DTO,
 	 *  or `null` when none is queued. Never includes hidden checkpoint state. */
 	getExperienceQueuedAttachment: (sessionId: string) => Promise<ExperienceQueuedAttachmentResponse>;
+	/** Explicit Queue / Add later at the exact client revision. */
+	queueExperienceReport: (sessionId: string, body: { expectedRevision: number }) => Promise<ExperienceQueuedAttachmentView>;
+	/** Privacy-safe server report status and exact validated-public-event count. */
+	getExperienceReportStatus: (sessionId: string) => Promise<ExperienceReportStatus>;
 
 	// ── Replay ──
 	undoExperienceSession: (sessionId: string, body: { targetRevision: number }) => Promise<ExperienceActionResponse>;

@@ -71,12 +71,14 @@ function stubRuntime(throws?: { kind: any; message: string }): { runtime: Experi
 		deleteExperienceVisual: async (id: string) => { rec("deleteExperienceVisual").push({ id }); maybeThrow(); },
 		startExperienceSession: async (chatId: string, body: any) => { rec("startExperienceSession").push({ chatId, body }); maybeThrow(); return sessionResponse(chatId, body.branchId); },
 		getExperienceSession: async (sessionId: string) => { rec("getExperienceSession").push({ sessionId }); maybeThrow(); return sessionResponse("c_1", "b_1", sessionId); },
-		endExperienceSession: async (sessionId: string, body: any) => { rec("endExperienceSession").push({ sessionId, body }); maybeThrow(); return sessionResponse("c_1", "b_1", sessionId); },
+		endExperienceSession: async (sessionId: string, body: any) => { rec("endExperienceSession").push({ sessionId, body }); maybeThrow(); return null; },
 		submitExperienceAction: async (sessionId: string, action: any, signal?: AbortSignal) => { rec("submitExperienceAction").push({ sessionId, action, signal }); maybeThrow(); return { ...sessionResponse("c_1", "b_1", sessionId), events: [], await: "human" }; },
 		getExperienceView: async (sessionId: string, participantId?: string) => { rec("getExperienceView").push({ sessionId, participantId }); maybeThrow(); return { state: { n: 0 }, actions: [], flavor: undefined, revision: 0, status: "active" }; },
 		getExperienceActions: async (sessionId: string, participantId?: string) => { rec("getExperienceActions").push({ sessionId, participantId }); maybeThrow(); return []; },
 		getActiveExperienceSession: async (chatId: string, branchId: string) => { rec("getActiveExperienceSession").push({ chatId, branchId }); maybeThrow(); return sessionResponse(chatId, branchId); },
 		getExperienceQueuedAttachment: async (sessionId: string) => { rec("getExperienceQueuedAttachment").push({ sessionId }); maybeThrow(); return null; },
+		queueExperienceReport: async (sessionId: string, body: any) => { rec("queueExperienceReport").push({ sessionId, body }); maybeThrow(); return { id: "xa_1", sessionId, chatId: "c_1", branchId: "b_1", sessionRevision: body.expectedRevision, queueRevision: 1, kind: "report", publicReport: { title: "T", events: [] }, rulesSourceHash: "h", visualSourceHash: null, createdAt: "", updatedAt: "" }; },
+		getExperienceReportStatus: async (sessionId: string) => { rec("getExperienceReportStatus").push({ sessionId }); maybeThrow(); return { revision: 0, reportFrontier: 0, pendingPublicEventCount: 0, queuedAttachment: null }; },
 		undoExperienceSession: async (sessionId: string, body: any) => { rec("undoExperienceSession").push({ sessionId, body }); maybeThrow(); return { ...sessionResponse("c_1", "b_1", sessionId), events: [], await: "human" }; },
 		previewExperienceRecalculation: async (sessionId: string, body: any) => { rec("previewExperienceRecalculation").push({ sessionId, body }); maybeThrow(); return { originalRulesHash: "h1", originalState: {}, originalRevision: 0, newManifestId: "m", newRulesHash: "h2", outcome: { ok: true, finalState: {}, cursor: 0, checkpoints: [] } }; },
 		getExperienceEffects: async (sessionId: string) => { rec("getExperienceEffects").push({ sessionId }); maybeThrow(); return []; },
@@ -181,6 +183,41 @@ describe("Experience routes — HTTP layer (stub)", () => {
 		const body = await jsonBody(res);
 		expect(body).toBeNull();
 	});
+
+	test("end rejects the legacy status payload or missing revision and forwards only expectedRevision", async () => {
+		const { runtime, calls } = stubRuntime();
+		const app = mount(runtime);
+		const legacy = await app.request("/api/experience/sessions/s_1/end", {
+			method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ status: "completed", expectedRevision: 0 }),
+		});
+		expect(legacy.status).toBe(400);
+		const missing = await app.request("/api/experience/sessions/s_1/end", {
+			method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({}),
+		});
+		expect(missing.status).toBe(400);
+		const valid = await app.request("/api/experience/sessions/s_1/end", {
+			method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ expectedRevision: 2 }),
+		});
+		expect(valid.status).toBe(200);
+		expect(calls.endExperienceSession[0]).toEqual({ sessionId: "s_1", body: { expectedRevision: 2 } });
+	});
+
+	test("report queue is strict and report endpoints forward their exact contract", async () => {
+		const { runtime, calls } = stubRuntime();
+		const app = mount(runtime);
+		const malformed = await app.request("/api/experience/sessions/s_1/reports/queue", {
+			method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({}),
+		});
+		expect(malformed.status).toBe(400);
+		const queued = await app.request("/api/experience/sessions/s_1/reports/queue", {
+			method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ expectedRevision: 2 }),
+		});
+		expect(queued.status).toBe(200);
+		expect(calls.queueExperienceReport[0]).toEqual({ sessionId: "s_1", body: { expectedRevision: 2 } });
+		const status = await app.request("/api/experience/sessions/s_1/reports/status");
+		expect(status.status).toBe(200);
+		expect(calls.getExperienceReportStatus[0]).toEqual({ sessionId: "s_1" });
+	});
 });
 
 // ─── 2. Integration (real adapter → services → DB) ───────────────────────────
@@ -195,6 +232,27 @@ context.experience.register({
     if (a.type === "reset") return { state: { count: 0 }, status: "active", events: [] };
     const n = c.state.count + 1;
     return { state: { count: n }, status: n >= 3 ? "completed" : "active", events: [{ visibility: "public", type: "inc", detail: { n } }] };
+  },
+});
+`;
+
+const REPORT_SOURCE = `
+context.experience.register({
+  apiVersion: 1, manifest: { id: "report", name: "Report" }, capabilities: [],
+  create() { return { publicSetup: "ready", secret: "AUTHORITATIVE_MARKER_70C", n: 0 }; },
+  project(c) { return { setup: c.state.publicSetup, n: c.state.n }; },
+  actions() { return [{ type: "advance" }, { type: "double" }, { type: "private" }]; },
+  reduce(c, a) {
+    const n = c.state.n + 1;
+    if (a.type === "private") return { state: { ...c.state, n }, status: "active", events: [{ visibility: "private", type: "secret", detail: "PRIVATE_MARKER_70C" }] };
+    if (a.type === "double") return { state: { ...c.state, n }, status: "active", events: [
+      { visibility: "public", type: "advanced", detail: { n } },
+      { visibility: "public", type: "bonus", detail: { n } },
+    ] };
+    return { state: { ...c.state, n }, status: "active", events: [
+      { visibility: "public", type: "advanced", detail: { n } },
+      { visibility: "private", type: "secret", detail: "PRIVATE_MARKER_70C" },
+    ] };
   },
 });
 `;
@@ -404,8 +462,187 @@ describe("Experience routes — IR-70A session discovery (integration)", () => {
 	});
 });
 
+describe("Experience routes — IR-70C report lifecycle (real VM + DB + HTTP)", () => {
+	test("starts atomically with a projected public setup report and no checkpoint leak", async () => {
+		const { stores, resources, app } = await setupIntegration();
+		const { chatId, branchId } = await seedChatAndScript(stores, resources, REPORT_SOURCE);
+		const start = await app.request(`/api/chats/${chatId}/experience/sessions`, {
+			method: "POST", headers: { "content-type": "application/json" },
+			body: JSON.stringify({ branchId, participants: [], settings: {} }),
+		});
+		expect(start.status).toBe(200);
+		const sid = (await jsonBody(start)).sessionId;
+		const attachment = await app.request(`/api/experience/sessions/${sid}/attachment`);
+		const raw = await attachment.text();
+		expect(raw).not.toContain("hiddenStateCheckpointJson");
+		expect(raw).not.toContain("AUTHORITATIVE_MARKER_70C");
+		expect(raw).not.toContain("PRIVATE_MARKER_70C");
+		const body = JSON.parse(raw);
+		expect(body.sessionRevision).toBe(0);
+		expect(body.publicReport.events[0].detail.projection).toEqual({ setup: "ready", n: 0 });
+		expect((await stores.experiences.getSessionById(sid))?.reportFrontier).toBe(0);
+	});
+
+	test("queues only public journal events, counts exactly, and explicitly replaces the same attachment", async () => {
+		const { stores, resources, app } = await setupIntegration();
+		const { chatId, branchId } = await seedChatAndScript(stores, resources, REPORT_SOURCE);
+		const start = await app.request(`/api/chats/${chatId}/experience/sessions`, {
+			method: "POST", headers: { "content-type": "application/json" },
+			body: JSON.stringify({ branchId, participants: [], settings: {} }),
+		});
+		const sid = (await jsonBody(start)).sessionId;
+		const original = await jsonBody(await app.request(`/api/experience/sessions/${sid}/attachment`));
+
+		const firstAction = await app.request(`/api/experience/sessions/${sid}/actions`, {
+			method: "POST", headers: { "content-type": "application/json" },
+			body: JSON.stringify({ type: "advance", requestId: "report-a1", expectedRevision: 0 }),
+		});
+		expect(firstAction.status).toBe(200);
+		let status = await jsonBody(await app.request(`/api/experience/sessions/${sid}/reports/status`));
+		expect(status.pendingPublicEventCount).toBe(1);
+
+		const queued = await app.request(`/api/experience/sessions/${sid}/reports/queue`, {
+			method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ expectedRevision: 1 }),
+		});
+		expect(queued.status).toBe(200);
+		const firstQueue = await jsonBody(queued);
+		expect(firstQueue.id).toBe(original.id);
+		expect(firstQueue.queueRevision).toBe(2);
+		expect(JSON.stringify(firstQueue.publicReport)).not.toContain("PRIVATE_MARKER_70C");
+		expect(firstQueue.publicReport.events.map((event: { type: string }) => event.type)).toEqual(["experience_started", "advanced"]);
+		const retry = await app.request(`/api/experience/sessions/${sid}/reports/queue`, {
+			method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ expectedRevision: 1 }),
+		});
+		expect(await jsonBody(retry)).toEqual(firstQueue);
+
+		const secondAction = await app.request(`/api/experience/sessions/${sid}/actions`, {
+			method: "POST", headers: { "content-type": "application/json" },
+			body: JSON.stringify({ type: "double", requestId: "report-a2", expectedRevision: 1 }),
+		});
+		expect(secondAction.status).toBe(200);
+		status = await jsonBody(await app.request(`/api/experience/sessions/${sid}/reports/status`));
+		expect(status.pendingPublicEventCount).toBe(2);
+		expect(status.queuedAttachment.id).toBe(firstQueue.id);
+		expect(status.queuedAttachment.queueRevision).toBe(2);
+		const later = await app.request(`/api/experience/sessions/${sid}/reports/queue`, {
+			method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ expectedRevision: 2 }),
+		});
+		const laterBody = await jsonBody(later);
+		expect(laterBody.id).toBe(firstQueue.id);
+		expect(laterBody.queueRevision).toBe(3);
+		expect(laterBody.publicReport.events.map((event: { type: string }) => event.type)).toEqual(["experience_started", "advanced", "advanced", "bonus"]);
+		const stale = await app.request(`/api/experience/sessions/${sid}/reports/queue`, {
+			method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ expectedRevision: 1 }),
+		});
+		expect(stale.status).toBe(409);
+		status = await jsonBody(await app.request(`/api/experience/sessions/${sid}/reports/status`));
+		expect(status.revision).toBe(2);
+		expect(status.queuedAttachment.queueRevision).toBe(3);
+	});
+
+	test("queues only schema-valid public journal events", async () => {
+		const { stores, resources, app } = await setupIntegration();
+		const { chatId, branchId } = await seedChatAndScript(stores, resources, REPORT_SOURCE);
+		const start = await app.request(`/api/chats/${chatId}/experience/sessions`, {
+			method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ branchId, participants: [], settings: {} }),
+		});
+		const sid = (await jsonBody(start)).sessionId;
+		const injected = await stores.experiences.applyTransition({
+			sessionId: sid, expectedRevision: 0, requestId: "strict-filter", kind: "system",
+			actorSnapshotJson: null, inputJson: null,
+			emittedEventsJson: JSON.stringify([
+				{ visibility: "public", type: "" },
+				{ visibility: "private", type: "private_event" },
+				{ visibility: "public", type: "valid_event", detail: { n: 1 } },
+			]),
+			emittedEffectsJson: "[]", stateHash: null, message: null,
+			newCurrentStateJson: JSON.stringify({ publicSetup: "ready", secret: "AUTHORITATIVE_MARKER_70C", n: 0 }),
+			newStatus: "active", newRandomCursor: 0,
+		});
+		expect(injected.ok).toBe(true);
+		const status = await app.request(`/api/experience/sessions/${sid}/reports/status`);
+		expect((await jsonBody(status)).pendingPublicEventCount).toBe(1);
+		const queued = await app.request(`/api/experience/sessions/${sid}/reports/queue`, {
+			method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ expectedRevision: 1 }),
+		});
+		expect((await jsonBody(queued)).publicReport.events.map((event: { type: string }) => event.type)).toEqual(["experience_started", "valid_event"]);
+	});
+
+	test("rejects a queue with no unbound report and no public events without writing", async () => {
+		const { stores, resources, app } = await setupIntegration();
+		const { chatId, branchId } = await seedChatAndScript(stores, resources, REPORT_SOURCE);
+		const start = await app.request(`/api/chats/${chatId}/experience/sessions`, {
+			method: "POST", headers: { "content-type": "application/json" },
+			body: JSON.stringify({ branchId, participants: [], settings: {} }),
+		});
+		const sid = (await jsonBody(start)).sessionId;
+		const initial = await jsonBody(await app.request(`/api/experience/sessions/${sid}/attachment`));
+		const message = await stores.messages.addMessage({ chatId, branchId, role: "user", authorType: "user", content: "bind" });
+		await stores.experiences.bindAttachment(initial.id, message.id);
+		const privateAction = await app.request(`/api/experience/sessions/${sid}/actions`, {
+			method: "POST", headers: { "content-type": "application/json" },
+			body: JSON.stringify({ type: "private", requestId: "report-private", expectedRevision: 0 }),
+		});
+		expect(privateAction.status).toBe(200);
+		const queue = await app.request(`/api/experience/sessions/${sid}/reports/queue`, {
+			method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ expectedRevision: 1 }),
+		});
+		expect(queue.status).toBe(422);
+		expect((await jsonBody(queue)).error.details.code).toBe("no_public_events");
+		const status = await jsonBody(await app.request(`/api/experience/sessions/${sid}/reports/status`));
+		expect(status.queuedAttachment).toBeNull();
+		expect(status.pendingPublicEventCount).toBe(0);
+		expect(status.reportFrontier).toBe(0);
+	});
+
+	test("finish appends its durable public event, releases the slot, is idempotent, and rolls back an injected store failure", async () => {
+		const { stores, resources, app } = await setupIntegration();
+		const { chatId, branchId } = await seedChatAndScript(stores, resources, REPORT_SOURCE);
+		const start = await app.request(`/api/chats/${chatId}/experience/sessions`, {
+			method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ branchId, participants: [], settings: {} }),
+		});
+		const sid = (await jsonBody(start)).sessionId;
+		const stale = await app.request(`/api/experience/sessions/${sid}/end`, {
+			method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ expectedRevision: 1 }),
+		});
+		expect(stale.status).toBe(409);
+		expect((await stores.experiences.getSessionById(sid))?.status).toBe("active");
+		expect((await stores.experiences.getSteps(sid)).filter((step) => step.kind === "system")).toHaveLength(0);
+
+		const finish = await app.request(`/api/experience/sessions/${sid}/end`, {
+			method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ expectedRevision: 0 }),
+		});
+		expect(finish.status).toBe(200);
+		const finishRaw = await finish.text();
+		expect(finishRaw).not.toContain("hiddenStateCheckpointJson");
+		expect(finishRaw).not.toContain("AUTHORITATIVE_MARKER_70C");
+		const final = JSON.parse(finishRaw);
+		expect(final.sessionRevision).toBe(1);
+		expect(final.publicReport.events.at(-1)).toEqual({ type: "experience_finished", detail: "The user decided to end the game." });
+		expect((await stores.experiences.getSessionById(sid))?.status).toBe("interrupted");
+		expect(await stores.experiences.getActiveSessionForBranch(branchId)).toBeNull();
+		const retry = await app.request(`/api/experience/sessions/${sid}/end`, {
+			method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ expectedRevision: 0 }),
+		});
+		expect(await jsonBody(retry)).toEqual(final);
+		expect((await stores.experiences.getSteps(sid)).filter((step) => step.kind === "system")).toHaveLength(1);
+
+		const { chatId: rollbackChat, branchId: rollbackBranch } = await seedChatAndScript(stores, resources, COUNTER_SOURCE);
+		const rollbackStart = await app.request(`/api/chats/${rollbackChat}/experience/sessions`, {
+			method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ branchId: rollbackBranch, participants: [], settings: {} }),
+		});
+		const rollbackSid = (await jsonBody(rollbackStart)).sessionId;
+		expect(() => stores.experiences.finishSessionWithFinalReport(rollbackSid, 0, {
+			kind: "report", publicEventsJson: '{"title":"x","events":[]}', hiddenStateCheckpointJson: '{"hidden":true}', rulesSourceHash: "h",
+		}, () => { throw new Error("injected finish failure"); })).toThrow("injected finish failure");
+		const rolledBack = await stores.experiences.getSessionById(rollbackSid);
+		expect(rolledBack?.status).toBe("active");
+		expect(rolledBack?.revision).toBe(0);
+	});
+});
+
 describe("Experience routes — IR-70A queued-attachment read (integration)", () => {
-	test("returns null when no attachment is queued", async () => {
+	test("returns the automatic revision-zero setup attachment", async () => {
 		const { stores, resources, app } = await setupIntegration();
 		const { chatId, branchId } = await seedChatAndScript(stores, resources, COUNTER_SOURCE);
 		const start = await app.request(`/api/chats/${chatId}/experience/sessions`, {
@@ -416,7 +653,9 @@ describe("Experience routes — IR-70A queued-attachment read (integration)", ()
 
 		const res = await app.request(`/api/experience/sessions/${sid}/attachment`);
 		expect(res.status).toBe(200);
-		expect(await jsonBody(res)).toBeNull();
+		const body = await jsonBody(res);
+		expect(body.sessionRevision).toBe(0);
+		expect(body.publicReport.events[0].type).toBe("experience_started");
 	});
 
 	test("returns the queued attachment with public fields, NEVER the hidden checkpoint (privacy)", async () => {
@@ -430,7 +669,7 @@ describe("Experience routes — IR-70A queued-attachment read (integration)", ()
 
 		await stores.experiences.queueAttachment({
 			chatId, branchId, sessionId: sid,
-			sessionRevision: 0, queueRevision: 1, kind: "report",
+			sessionRevision: 0, queueRevision: 2, kind: "report",
 			publicEventsJson: JSON.stringify({ title: "Round", events: [{ type: "inc" }] }),
 			hiddenStateCheckpointJson: JSON.stringify({ secret: "ROUTE_PRIVACY_MARKER_99" }),
 			rulesSourceHash: "h", visualSourceHash: null,
@@ -445,7 +684,7 @@ describe("Experience routes — IR-70A queued-attachment read (integration)", ()
 		const body = JSON.parse(raw);
 		expect(body).not.toBeNull();
 		expect(body.kind).toBe("report");
-		expect(body.queueRevision).toBe(1);
+		expect(body.queueRevision).toBe(2);
 		expect(body.publicReport).toEqual({ title: "Round", events: [{ type: "inc" }] });
 	});
 

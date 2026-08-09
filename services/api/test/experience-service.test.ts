@@ -110,7 +110,32 @@ context.experience.register({
 });
 `;
 
-/** A game that requests a model effect on reduce (pending in Wave 3). */
+/** A hidden-state game whose observer projection is the report-safe public setup. */
+const START_VIEWER_SOURCE = `
+context.experience.register({
+  apiVersion: 1,
+  manifest: { id: "start-viewer", name: "Start Viewer" },
+  capabilities: [],
+  create() { return { secret: "only-human" }; },
+  project(c, v) { return v.kind === "human" ? { viewer: v.participantId, secret: c.state.secret } : { viewer: "observer" }; },
+  actions() { return [{ type: "go", participantId: "human-1" }]; },
+  reduce(c) { return { state: c.state, status: "active", events: [] }; },
+});
+`;
+
+const SCRIPT_COMPLETION_SOURCE = `
+context.experience.register({
+  apiVersion: 1,
+  manifest: { id: "script-complete", name: "Script Complete" },
+  capabilities: [{ capability: "participants", reason: "script seat" }],
+  create() { return { n: 0 }; },
+  project(c) { return { n: c.state.n }; },
+  actions(c, v) { return v.participantId === "bot" ? [{ type: "finish", participantId: "bot" }] : []; },
+  choose(c, info) { return { type: info.legal[0].type, participantId: "bot" }; },
+  reduce(c) { return { state: { n: c.state.n + 1 }, status: "completed", events: [{ visibility: "public", type: "script_finished" }] }; },
+});
+`;
+
 const MODEL_EFFECT_SOURCE = `
 context.experience.register({
   apiVersion: 1,
@@ -149,7 +174,7 @@ async function seedChatAndScript(source: string, grants: string[] = []) {
 // ─── Tests ───────────────────────────────────────────────────────────────────
 
 describe("ExperienceService — basic lifecycle (counter, no capabilities)", () => {
-  test("start → project → action → resume → end, with revision + status tracking", async () => {
+  test("start → project → action → resume → natural completion, with explicit report finalization", async () => {
     const service = await setup();
     const { chatId, branchId } = await seedChatAndScript(COUNTER_SOURCE);
 
@@ -184,8 +209,43 @@ describe("ExperienceService — basic lifecycle (counter, no capabilities)", () 
     expect(a3.ok && a3.data.session.status).toBe("completed");
     expect(a3.ok && a3.data.await).toBe("completed");
 
-    // End (already completed — explicit finish releases the active slot).
-    expect((await service.endSession(sid, "completed")).ok).toBe(true);
+    // Rule completion keeps the host-owned slot discoverable but does not
+    // silently expand the already-frozen start report. Its public events remain
+    // pending until the user explicitly finalizes the completed experience.
+    const completed = await stores.experiences.getSessionById(sid);
+    expect(completed?.activeSlot).toBe(0);
+    expect(completed?.reportFrontier).toBe(0);
+    expect((await stores.experiences.getActiveSessionForBranch(branchId))?.id).toBe(sid);
+    const frozenBeforeQueue = await service.getQueuedAttachment(sid);
+    expect(frozenBeforeQueue.ok && frozenBeforeQueue.data?.queueRevision).toBe(1);
+    expect(frozenBeforeQueue.ok && frozenBeforeQueue.data?.publicReport?.events.map((event) => event.type)).toEqual([
+      "experience_started",
+    ]);
+
+    // The original completing request stays idempotent and still cannot grow
+    // the queued snapshot implicitly.
+    const duplicate = await service.submitAction(sid, { type: "inc", requestId: "r3", expectedRevision: 2 });
+    expect(duplicate.ok && duplicate.data.replayed).toBe(true);
+    const afterDuplicateReport = await service.getQueuedAttachment(sid);
+    expect(afterDuplicateReport.ok && afterDuplicateReport.data?.queueRevision).toBe(1);
+
+    const status = await service.getReportStatus(sid);
+    expect(status.ok && status.data.pendingPublicEventCount).toBe(3);
+    const finalReport = await service.finishWithReport(sid, 3);
+    expect(finalReport.ok).toBe(true);
+    if (!finalReport.ok) return;
+    expect(finalReport.data?.queueRevision).toBe(2);
+    expect(finalReport.data?.publicReport?.events.map((event) => event.type)).toEqual([
+      "experience_started", "inc", "inc", "inc",
+    ]);
+    const finalized = await stores.experiences.getSessionById(sid);
+    expect(finalized?.status).toBe("completed");
+    expect(finalized?.revision).toBe(3);
+    expect(finalized?.reportFrontier).toBe(3);
+    expect(finalized?.activeSlot).toBeNull();
+    expect(await stores.experiences.getActiveSessionForBranch(branchId)).toBeNull();
+    const repeatedFinish = await service.finishWithReport(sid, 3);
+    expect(repeatedFinish).toEqual(finalReport);
   });
 
   test("stale expectedRevision is a 409; an illegal action type is a 422", async () => {
@@ -222,6 +282,50 @@ describe("ExperienceService — basic lifecycle (counter, no capabilities)", () 
     expect(dup.ok && dup.data.session.revision).toBe(first.ok ? first.data.session.revision : -1);
   });
 
+  test("start report uses the public observer projection and self-describes participant ids", async () => {
+    const service = await setup();
+    const { chatId, branchId } = await seedChatAndScript(START_VIEWER_SOURCE);
+    const participants = [{ id: "human-1", label: "You", controller: "human" as const }];
+    const started = await service.startSession({ chatId, branchId, settings: {}, participants });
+    expect(started.ok).toBe(true);
+    if (!started.ok) return;
+    const report = await service.getQueuedAttachment(started.data.sessionId);
+    const detail = report.ok ? report.data?.publicReport?.events[0]?.detail as {
+      projection: unknown; participants: Array<{ id: string }>; firstActor?: string;
+    } : null;
+    expect(detail?.projection).toEqual({ viewer: "observer" });
+    expect(JSON.stringify(detail)).not.toContain("only-human");
+    expect(detail?.participants).toEqual([{ id: "human-1", label: "You", controller: "human" }]);
+    expect(detail?.firstActor).toBe("human-1");
+    const human = await service.getProjectedView(started.data.sessionId, { kind: "human", participantId: "human-1" });
+    expect(human.ok && human.data.state).toEqual({ viewer: "human-1", secret: "only-human" });
+  });
+
+  test("an injected start-report failure rolls back the active claim and allows a later normal start", async () => {
+    const service = await setup();
+    const { chatId, branchId } = await seedChatAndScript(COUNTER_SOURCE);
+    let failedSessionId: string | null = null;
+    expect(() => stores.experiences.createSessionWithInitialReport({
+      chatId,
+      branchId,
+      rulesId: "rules", rulesLabel: "Rules", rulesRevision: 1, rulesSource: COUNTER_SOURCE, rulesSourceHash: "hash",
+      apiVersion: 1, manifestId: "counter", manifestName: "Counter", initialSettingsJson: "{}", currentStateJson: "{\"count\":0}",
+      participantsJson: "[]", capabilityGrantsJson: "[]", contextMode: "none", randomSeed: "seed",
+    }, (session) => {
+      failedSessionId = session.id;
+      throw new Error("injected start report failure");
+    })).toThrow("injected start report failure");
+    expect(await stores.experiences.getActiveSessionForBranch(branchId)).toBeNull();
+    expect(await stores.experiences.getSessionById(failedSessionId!)).toBeNull();
+    expect(await stores.experiences.getQueuedAttachmentForSession(failedSessionId!)).toBeNull();
+
+    const started = await service.startSession({ chatId, branchId, settings: {}, participants: [] });
+    expect(started.ok).toBe(true);
+    if (!started.ok) return;
+    const report = await service.getQueuedAttachment(started.data.sessionId);
+    expect(report.ok && report.data?.queueRevision).toBe(1);
+  });
+
   test("start refuses when the branch already has an active session", async () => {
     const service = await setup();
     const { chatId, branchId } = await seedChatAndScript(COUNTER_SOURCE);
@@ -234,6 +338,37 @@ describe("ExperienceService — basic lifecycle (counter, no capabilities)", () 
 });
 
 describe("ExperienceService — synchronous script-controller loop (hotseat)", () => {
+  test("a script reducer completion waits for explicit finalization without silently growing the queued report", async () => {
+    const service = await setup();
+    const { chatId, branchId } = await seedChatAndScript(SCRIPT_COMPLETION_SOURCE, [EXPERIENCE_CAPABILITY.participants]);
+    const started = await service.startSession({
+      chatId, branchId, settings: {}, participants: [{ id: "bot", label: "Bot", controller: "script" }],
+    });
+    expect(started.ok).toBe(true);
+    if (!started.ok) return;
+    const advanced = await service.advanceScriptTurns(started.data.sessionId);
+    expect(advanced.ok && advanced.data.await).toBe("completed");
+    const completed = await stores.experiences.getSessionById(started.data.sessionId);
+    expect(completed?.status).toBe("completed");
+    expect(completed?.activeSlot).toBe(0);
+    expect(completed?.reportFrontier).toBe(0);
+    const frozen = await service.getQueuedAttachment(started.data.sessionId);
+    expect(frozen.ok && frozen.data?.queueRevision).toBe(1);
+    expect(frozen.ok && frozen.data?.publicReport?.events.map((event) => event.type)).toEqual(["experience_started"]);
+    const status = await service.getReportStatus(started.data.sessionId);
+    expect(status.ok && status.data.pendingPublicEventCount).toBe(1);
+    const queued = await service.queueReport(started.data.sessionId, 1);
+    expect(queued.ok && queued.data.publicReport?.events.map((event) => event.type)).toEqual(["experience_started", "script_finished"]);
+    expect(queued.ok && queued.data.queueRevision).toBe(2);
+    const report = await service.finishWithReport(started.data.sessionId, 1);
+    expect(report.ok && report.data?.publicReport?.events.map((event) => event.type)).toEqual(["experience_started", "script_finished"]);
+    expect(report.ok && report.data?.queueRevision).toBe(2);
+    const finalized = await stores.experiences.getSessionById(started.data.sessionId);
+    expect(finalized?.status).toBe("completed");
+    expect(finalized?.activeSlot).toBeNull();
+    expect(finalized?.revision).toBe(1);
+  });
+
   test("after a human move, the script opponent auto-acts and the turn returns to the human", async () => {
     const service = await setup();
     const { chatId, branchId } = await seedChatAndScript(HOTSEAT_SOURCE, [EXPERIENCE_CAPABILITY.participants]);
@@ -487,7 +622,7 @@ describe("ExperienceService — branch-scoped active-session discovery (IR-70A)"
 });
 
 describe("ExperienceService — privacy-safe queued-attachment read (IR-70A)", () => {
-  test("returns null when no queued attachment exists", async () => {
+  test("start atomically queues a privacy-safe revision-zero setup report", async () => {
     const service = await setup();
     const { chatId, branchId } = await seedChatAndScript(COUNTER_SOURCE);
     const started = await service.startSession({ chatId, branchId, settings: {}, participants: [] });
@@ -495,8 +630,11 @@ describe("ExperienceService — privacy-safe queued-attachment read (IR-70A)", (
     if (!started.ok) return;
     const result = await service.getQueuedAttachment(started.data.sessionId);
     expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(result.data).toBeNull();
+    if (!result.ok || result.data === null) return;
+    expect(result.data.sessionRevision).toBe(0);
+    expect(result.data.queueRevision).toBe(1);
+    expect(result.data.publicReport?.events[0]?.type).toBe("experience_started");
+    expect((await stores.experiences.getSessionById(started.data.sessionId))?.reportFrontier).toBe(0);
   });
 
   test("returns the queued attachment with public display/commit-intent fields", async () => {
@@ -512,7 +650,7 @@ describe("ExperienceService — privacy-safe queued-attachment read (IR-70A)", (
       branchId,
       sessionId: sid,
       sessionRevision: 0,
-      queueRevision: 1,
+      queueRevision: 2,
       kind: "report",
       publicEventsJson: JSON.stringify({ title: "Round 1", summary: "Inc happened", events: [{ type: "inc", detail: { n: 1 } }] }),
       hiddenStateCheckpointJson: JSON.stringify({ secret: "PRIVACY_MARKER_42" }),
@@ -531,7 +669,7 @@ describe("ExperienceService — privacy-safe queued-attachment read (IR-70A)", (
     expect(view.sessionId).toBe(sid);
     expect(view.kind).toBe("report");
     expect(view.sessionRevision).toBe(0);
-    expect(view.queueRevision).toBe(1);
+    expect(view.queueRevision).toBe(2);
     expect(view.rulesSourceHash).toBe("hash123");
     expect(view.visualSourceHash).toBeNull();
     expect(view.publicReport).toEqual({ title: "Round 1", summary: "Inc happened", events: [{ type: "inc", detail: { n: 1 } }] });
@@ -550,7 +688,7 @@ describe("ExperienceService — privacy-safe queued-attachment read (IR-70A)", (
       branchId,
       sessionId: sid,
       sessionRevision: 0,
-      queueRevision: 1,
+      queueRevision: 2,
       kind: "report",
       publicEventsJson: JSON.stringify({ title: "T", events: [] }),
       hiddenStateCheckpointJson: JSON.stringify({ secret: "PRIVACY_MARKER_42" }),
