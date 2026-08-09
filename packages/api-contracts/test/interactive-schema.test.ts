@@ -12,6 +12,7 @@ import {
 } from "@vibe-tavern/domain";
 import {
   INTERACTIVE_SCHEMA_MAX_DEPTH,
+  INTERACTIVE_SCHEMA_MAX_ID,
   INTERACTIVE_SCHEMA_MAX_STATE_BYTES,
   boundedJsonValue,
   experienceActionSchema,
@@ -21,6 +22,8 @@ import {
   experienceEffectKindSchema,
   experienceEffectStatusSchema,
   experienceEventVisibilitySchema,
+  experienceParticipantSchema as experienceParticipantResponseSchema,
+  experienceStartParticipantSchema as experienceParticipantSchema,
   experienceProjectedViewSchema,
   experienceReducerStatusSchema,
   experienceSessionResponseSchema,
@@ -221,6 +224,116 @@ describe("experienceViewerSchema", () => {
 
   it("rejects an observer viewer carrying a participantId", () => {
     expectReject(experienceViewerSchema.safeParse({ kind: "observer", participantId: "p1" }));
+  });
+});
+
+// --- experienceParticipantSchema (IR-70E model-seat binding) ----------------
+
+describe("experienceParticipantSchema (IR-70E model-seat assignment)", () => {
+  function validHuman() {
+    return { id: "p1", label: "You", controller: "human" };
+  }
+  function validModel() {
+    return { id: "ai", label: "AI", controller: "model", providerProfileId: "pp_1", modelId: "m_1" };
+  }
+
+  it("accepts a valid model participant with both pinned ids", () => {
+    expect(experienceParticipantSchema.safeParse(validModel()).success).toBe(true);
+  });
+
+  it("accepts a valid human/script participant with neither id", () => {
+    expect(experienceParticipantSchema.safeParse(validHuman()).success).toBe(true);
+    expect(
+      experienceParticipantSchema.safeParse({ id: "bot", label: "Bot", controller: "script" }).success,
+    ).toBe(true);
+  });
+
+  it("keeps legacy model participants valid on persisted/response boundaries", () => {
+    const legacy = { id: "legacy-ai", label: "Legacy AI", controller: "model" };
+    expect(experienceParticipantResponseSchema.safeParse(legacy).success).toBe(true);
+    expect(experienceSessionResponseSchema.safeParse({
+      sessionId: "xs_1",
+      chatId: "c_1",
+      branchId: "b_1",
+      manifest: { id: "legacy", name: "Legacy" },
+      apiVersion: 1,
+      status: "active",
+      revision: 0,
+      reportFrontier: 0,
+      view: { state: {}, actions: [], revision: 0, status: "active" },
+      capabilityGrants: ["model"],
+      contextMode: "none",
+      participants: [legacy],
+    }).success).toBe(true);
+  });
+
+  it("rejects a model participant missing the providerProfileId", () => {
+    const { providerProfileId: _omit, ...rest } = validModel();
+    void _omit;
+    expectReject(experienceParticipantSchema.safeParse(rest));
+  });
+
+  it("rejects a model participant missing the modelId", () => {
+    const { modelId: _omit, ...rest } = validModel();
+    void _omit;
+    expectReject(experienceParticipantSchema.safeParse(rest));
+  });
+
+  it("rejects a model participant missing BOTH ids", () => {
+    expectReject(
+      experienceParticipantSchema.safeParse({ id: "ai", label: "AI", controller: "model" }),
+    );
+  });
+
+  it("rejects a human participant carrying a providerProfileId", () => {
+    expectReject(
+      experienceParticipantSchema.safeParse({ ...validHuman(), providerProfileId: "pp_1" }),
+    );
+  });
+
+  it("rejects a human participant carrying a modelId", () => {
+    expectReject(
+      experienceParticipantSchema.safeParse({ ...validHuman(), modelId: "m_1" }),
+    );
+  });
+
+  it("rejects a script participant carrying either id", () => {
+    expectReject(
+      experienceParticipantSchema.safeParse({ id: "bot", label: "Bot", controller: "script", providerProfileId: "pp_1" }),
+    );
+    expectReject(
+      experienceParticipantSchema.safeParse({ id: "bot", label: "Bot", controller: "script", modelId: "m_1" }),
+    );
+  });
+
+  it("rejects a blank providerProfileId on a model seat", () => {
+    expectReject(
+      experienceParticipantSchema.safeParse({ ...validModel(), providerProfileId: "" }),
+    );
+  });
+
+  it("rejects a blank modelId on a model seat", () => {
+    expectReject(
+      experienceParticipantSchema.safeParse({ ...validModel(), modelId: "" }),
+    );
+  });
+
+  it("rejects an oversized providerProfileId on a model seat", () => {
+    expectReject(
+      experienceParticipantSchema.safeParse({
+        ...validModel(),
+        providerProfileId: "x".repeat(INTERACTIVE_SCHEMA_MAX_ID + 1),
+      }),
+    );
+  });
+
+  it("rejects an oversized modelId on a model seat", () => {
+    expectReject(
+      experienceParticipantSchema.safeParse({
+        ...validModel(),
+        modelId: "x".repeat(INTERACTIVE_SCHEMA_MAX_ID + 1),
+      }),
+    );
   });
 });
 

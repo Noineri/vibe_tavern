@@ -207,6 +207,7 @@ export {
   experienceManifestSchema,
   experienceDeclaredCapabilitySchema,
   experienceParticipantSchema,
+  experienceStartParticipantSchema,
   experienceViewerSchema,
   experienceSourceSnapshotSchema,
   experienceActionDescriptorSchema,

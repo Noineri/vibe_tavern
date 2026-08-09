@@ -226,11 +226,55 @@ export const experienceDeclaredCapabilitySchema = z.object({
   reason: boundedString.optional(),
 });
 
-export const experienceParticipantSchema = z.object({
+const experienceParticipantFields = {
   id: boundedId,
   label: boundedLabel,
   controller: experienceControllerSchema,
-});
+  providerProfileId: boundedId.optional(),
+  modelId: boundedId.optional(),
+};
+
+/** Persisted/response participant shape. Optional assignment fields preserve
+ * legacy session compatibility; NEW starts use the stricter schema below. */
+export const experienceParticipantSchema = z.object(experienceParticipantFields);
+
+/** NEW-session participant input: model seats pin both assignment fields while
+ * human/script seats carry neither. Kept separate from the response schema so
+ * legacy model seats without assignments remain readable and resumable. */
+export const experienceStartParticipantSchema = z
+  .object(experienceParticipantFields)
+  .strict()
+  .superRefine((p, ctx) => {
+    const isModel = p.controller === "model";
+    const hasProvider = p.providerProfileId !== undefined;
+    const hasModel = p.modelId !== undefined;
+    if (isModel) {
+      // A model-controlled seat must pin BOTH a provider profile and a model
+      // (IR-70E). Neither may be blank — `boundedId` already enforces min(1).
+      if (!hasProvider) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["providerProfileId"],
+          message: "model participant requires a providerProfileId",
+        });
+      }
+      if (!hasModel) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["modelId"],
+          message: "model participant requires a modelId",
+        });
+      }
+    } else if (hasProvider || hasModel) {
+      // A human/script seat must carry NEITHER assignment field — only model
+      // seats pin a provider/model (IR-70E).
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: [hasProvider ? "providerProfileId" : "modelId"],
+        message: `${p.controller} participant must not carry a provider/model assignment`,
+      });
+    }
+  });
 
 /**
  * The viewer a `project`/`actions` call is for. A seat viewer
@@ -375,7 +419,7 @@ export const experienceStartRequestSchema = z.object({
   /** Initial settings passed to `create()`; defaults to `{}` when omitted so an
    *  absent setting never reaches the kernel as non-JSON-safe `undefined`. */
   settings: boundedState.default({}),
-  participants: z.array(experienceParticipantSchema).max(INTERACTIVE_SCHEMA_MAX_PARTICIPANTS).default([]),
+  participants: z.array(experienceStartParticipantSchema).max(INTERACTIVE_SCHEMA_MAX_PARTICIPANTS).default([]),
 });
 
 /** Submit one action intention (also the per-action idempotency + CAS carrier). */

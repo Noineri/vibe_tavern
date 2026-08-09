@@ -150,6 +150,19 @@ context.experience.register({
 });
 `;
 
+/** A minimal experience that declares the `model` capability (IR-70E seat tests). */
+const MODEL_SEAT_SOURCE = `
+context.experience.register({
+  apiVersion: 1,
+  manifest: { id: "model-seat", name: "Model Seat" },
+  capabilities: [{ capability: "model", reason: "model seats" }],
+  create() { return { n: 0 }; },
+  project(c) { return { n: c.state.n }; },
+  actions() { return [{ type: "go" }]; },
+  reduce(c) { return { state: { n: c.state.n + 1 }, status: "active", events: [] }; },
+});
+`;
+
 // ─── Setup helpers ───────────────────────────────────────────────────────────
 
 let stores: StoreContainer;
@@ -712,5 +725,158 @@ describe("ExperienceService — privacy-safe queued-attachment read (IR-70A)", (
     if (result.ok) return;
     expect(result.error.code).toBe("session_not_found");
     expect(result.error.status).toBe(404);
+  });
+});
+
+// ─── IR-70E: model-seat assignment persistence + start validation ──────────
+
+describe("ExperienceService — model-seat assignment persistence (IR-70E)", () => {
+  test("start persists and resume returns the exact per-seat assignments", async () => {
+    const service = await setup();
+    const { chatId, branchId } = await seedChatAndScript(MODEL_SEAT_SOURCE, [EXPERIENCE_CAPABILITY.model]);
+    const participants = [
+      { id: "p1", label: "You", controller: "human" as const },
+      { id: "ai", label: "AI", controller: "model" as const, providerProfileId: "pp_1", modelId: "gpt-4" },
+    ];
+    const started = await service.startSession({ chatId, branchId, settings: {}, participants });
+    expect(started.ok).toBe(true);
+    if (!started.ok) return;
+    expect(started.data.participants).toEqual(participants);
+
+    const resumed = await service.resumeSession(started.data.sessionId);
+    expect(resumed.ok).toBe(true);
+    if (!resumed.ok) return;
+    expect(resumed.data.participants).toEqual(participants);
+    const modelSeat = resumed.data.participants.find((p) => p.controller === "model");
+    expect(modelSeat?.providerProfileId).toBe("pp_1");
+    expect(modelSeat?.modelId).toBe("gpt-4");
+  });
+
+  test("two distinct model seats persist distinct assignments", async () => {
+    const service = await setup();
+    const { chatId, branchId } = await seedChatAndScript(MODEL_SEAT_SOURCE, [EXPERIENCE_CAPABILITY.model]);
+    const participants = [
+      { id: "p1", label: "You", controller: "human" as const },
+      { id: "alice", label: "Alice", controller: "model" as const, providerProfileId: "pp_a", modelId: "model-a" },
+      { id: "bob", label: "Bob", controller: "model" as const, providerProfileId: "pp_b", modelId: "model-b" },
+    ];
+    const started = await service.startSession({ chatId, branchId, settings: {}, participants });
+    expect(started.ok).toBe(true);
+    if (!started.ok) return;
+    expect(started.data.participants).toHaveLength(3);
+
+    const resumed = await service.resumeSession(started.data.sessionId);
+    expect(resumed.ok).toBe(true);
+    if (!resumed.ok) return;
+    expect(resumed.data.participants).toEqual(participants);
+  });
+});
+
+describe("ExperienceService — model-seat assignment validation at start (IR-70E)", () => {
+  test("rejects a model participant missing both pinned ids (no session, no slot)", async () => {
+    const service = await setup();
+    const { chatId, branchId } = await seedChatAndScript(MODEL_SEAT_SOURCE, [EXPERIENCE_CAPABILITY.model]);
+    const started = await service.startSession({
+      chatId, branchId, settings: {},
+      participants: [{ id: "ai", label: "AI", controller: "model" as const }],
+    });
+    expect(started.ok).toBe(false);
+    if (started.ok) return;
+    expect(started.error.code).toBe("validation_error");
+    expect(started.error.status).toBe(422);
+    expect(await stores.experiences.getActiveSessionForBranch(branchId)).toBeNull();
+  });
+
+  test("rejects a model participant missing only the modelId", async () => {
+    const service = await setup();
+    const { chatId, branchId } = await seedChatAndScript(MODEL_SEAT_SOURCE, [EXPERIENCE_CAPABILITY.model]);
+    const started = await service.startSession({
+      chatId, branchId, settings: {},
+      participants: [{ id: "ai", label: "AI", controller: "model" as const, providerProfileId: "pp_1" }],
+    });
+    expect(started.ok).toBe(false);
+    if (started.ok) return;
+    expect(started.error.code).toBe("validation_error");
+    expect(await stores.experiences.getActiveSessionForBranch(branchId)).toBeNull();
+  });
+
+  test("rejects a model participant missing only the providerProfileId", async () => {
+    const service = await setup();
+    const { chatId, branchId } = await seedChatAndScript(MODEL_SEAT_SOURCE, [EXPERIENCE_CAPABILITY.model]);
+    const started = await service.startSession({
+      chatId, branchId, settings: {},
+      participants: [{ id: "ai", label: "AI", controller: "model" as const, modelId: "m_1" }],
+    });
+    expect(started.ok).toBe(false);
+    if (started.ok) return;
+    expect(started.error.code).toBe("validation_error");
+    expect(await stores.experiences.getActiveSessionForBranch(branchId)).toBeNull();
+  });
+
+  test("rejects a human participant carrying even an empty providerProfileId field", async () => {
+    const service = await setup();
+    const { chatId, branchId } = await seedChatAndScript(MODEL_SEAT_SOURCE, [EXPERIENCE_CAPABILITY.model]);
+    const started = await service.startSession({
+      chatId, branchId, settings: {},
+      participants: [{ id: "p1", label: "You", controller: "human" as const, providerProfileId: "" }],
+    });
+    expect(started.ok).toBe(false);
+    if (started.ok) return;
+    expect(started.error.code).toBe("validation_error");
+    expect(await stores.experiences.getActiveSessionForBranch(branchId)).toBeNull();
+  });
+
+  test("rejects a human participant carrying a modelId", async () => {
+    const service = await setup();
+    const { chatId, branchId } = await seedChatAndScript(MODEL_SEAT_SOURCE, [EXPERIENCE_CAPABILITY.model]);
+    const started = await service.startSession({
+      chatId, branchId, settings: {},
+      participants: [{ id: "p1", label: "You", controller: "human" as const, modelId: "m_1" }],
+    });
+    expect(started.ok).toBe(false);
+    if (started.ok) return;
+    expect(started.error.code).toBe("validation_error");
+    expect(await stores.experiences.getActiveSessionForBranch(branchId)).toBeNull();
+  });
+
+  test("rejects a script participant carrying either id", async () => {
+    const service = await setup();
+    const { chatId, branchId } = await seedChatAndScript(MODEL_SEAT_SOURCE, [EXPERIENCE_CAPABILITY.model]);
+    const a = await service.startSession({
+      chatId, branchId, settings: {},
+      participants: [{ id: "bot", label: "Bot", controller: "script" as const, providerProfileId: "pp_1" }],
+    });
+    expect(a.ok).toBe(false);
+    if (a.ok) return;
+    expect(a.error.code).toBe("validation_error");
+    const b = await service.startSession({
+      chatId, branchId, settings: {},
+      participants: [{ id: "bot", label: "Bot", controller: "script" as const, modelId: "m_1" }],
+    });
+    expect(b.ok).toBe(false);
+    if (b.ok) return;
+    expect(b.error.code).toBe("validation_error");
+    expect(await stores.experiences.getActiveSessionForBranch(branchId)).toBeNull();
+  });
+
+  test("rejects a model participant without the 'model' capability grant (no session, no initial attachment, no slot)", async () => {
+    const service = await setup();
+    // The experience declares `model` but we grant nothing — `resolveEffectiveSetup`
+    // rejects undeclared grants, so grant the declared `model` here and instead
+    // strip it to simulate the missing-grant path via a no-grant config.
+    const { chatId, branchId } = await seedChatAndScript(MODEL_SEAT_SOURCE, []);
+    const started = await service.startSession({
+      chatId, branchId, settings: {},
+      participants: [
+        { id: "p1", label: "You", controller: "human" as const },
+        { id: "ai", label: "AI", controller: "model" as const, providerProfileId: "pp_1", modelId: "m_1" },
+      ],
+    });
+    expect(started.ok).toBe(false);
+    if (started.ok) return;
+    expect(started.error.code).toBe("validation_error");
+    expect(started.error.status).toBe(422);
+    // Nothing was written: no active session, no queued attachment, no slot claim.
+    expect(await stores.experiences.getActiveSessionForBranch(branchId)).toBeNull();
   });
 });

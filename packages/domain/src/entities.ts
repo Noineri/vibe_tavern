@@ -504,6 +504,20 @@ export interface ExperienceParticipant {
   id: string;
   label: string;
   controller: ExperienceController;
+  /**
+   * Pinned provider profile for a model-controlled seat (IR-70E). Present only
+   * when `controller === "model"`, alongside {@link modelId}. A new start
+   * request must pin BOTH for every model seat; a legacy persisted participant
+   * with neither field falls back to the active provider/default model at
+   * effect time. Always absent for human/script seats.
+   */
+  providerProfileId?: string;
+  /**
+   * Pinned model id for a model-controlled seat (IR-70E). Present only when
+   * `controller === "model"`, alongside {@link providerProfileId}. See that
+   * field for the legacy-fallback + malformed-rejection semantics.
+   */
+  modelId?: string;
 }
 
 /**

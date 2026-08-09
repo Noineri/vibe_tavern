@@ -19,8 +19,9 @@ import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { createStoreContainer, type StoreContainer } from "@vibe-tavern/db";
+import { createStoreContainer, experienceSessions, type StoreContainer } from "@vibe-tavern/db";
 import type { AssemblePromptResponse, ChatBranchId, StoredProviderProfileRecord } from "@vibe-tavern/domain";
+import type { ProviderModelSettingsRecord } from "@vibe-tavern/api-contracts";
 
 import { ExperienceResourceService } from "../src/domain/interactive/experience-resource-service.js";
 import { ExperienceService } from "../src/domain/interactive/experience-service.js";
@@ -101,7 +102,37 @@ context.experience.register({
 const GRANTS = ["participants", "model"];
 const PARTICIPANTS = [
 	{ id: "human", label: "You", controller: "human" as const },
-	{ id: "model", label: "AI", controller: "model" as const },
+	{ id: "model", label: "AI", controller: "model" as const, providerProfileId: "pp1", modelId: "test-model" },
+];
+
+/** A two-model-seat experience: the human's "ask" emits two effects (one per seat). */
+const TWO_MODEL_SOURCE = `
+context.experience.register({
+  apiVersion: 1,
+  manifest: { id: "two-model", name: "Two Model" },
+  capabilities: [{ capability: "participants" }, { capability: "model" }],
+  create() { return { log: [] }; },
+  project(c) { return { log: c.state.log }; },
+  actions() { return [{ type: "ask", label: "Ask both", allowsText: true }]; },
+  reduce(c, a) {
+    if (a.type === "ask" && a.participantId !== "alice" && a.participantId !== "bob") {
+      return {
+        state: c.state, status: "active", events: [],
+        effects: [
+          { kind: "model", request: { viewer: "alice", mode: "text", actionType: "say", instruction: "Alice replies." } },
+          { kind: "model", request: { viewer: "bob", mode: "text", actionType: "say", instruction: "Bob replies." } },
+        ],
+      };
+    }
+    return { state: { log: [...c.state.log, { who: a.participantId, text: a.payload?.text ?? "" }] }, status: "active", events: [] };
+  },
+});
+`;
+
+const TWO_MODEL_PARTICIPANTS = [
+	{ id: "human", label: "You", controller: "human" as const },
+	{ id: "alice", label: "Alice", controller: "model" as const, providerProfileId: "pp_alice", modelId: "model-a" },
+	{ id: "bob", label: "Bob", controller: "model" as const, providerProfileId: "pp_bob", modelId: "model-b" },
 ];
 
 // ─── Setup ───────────────────────────────────────────────────────────────────
@@ -118,16 +149,34 @@ async function setup() {
 	return stores;
 }
 
-async function seedSession(source: string) {
+async function seedSession(source: string, participants = PARTICIPANTS) {
 	const character = await stores.characters.create({ name: "Aria", description: "Mage." } as never);
 	const chat = await stores.chats.createChat({ characterId: character.id, title: "T" } as never);
 	const branchId = chat.activeBranchId as string;
 	await stores.personas.create({ name: "Olya", description: "Scholar.", defaultForNewChats: true } as never);
 	const script = await stores.scripts.create({ name: "Rules", scriptKind: "interactive", code: source } as never);
 	await resources.updateConfig(chat.id, { enabled: true, scriptId: script.id, capabilityGrants: GRANTS as never } as never);
-	const started = await experienceService.startSession({ chatId: chat.id, branchId, settings: {}, participants: PARTICIPANTS });
+	const started = await experienceService.startSession({ chatId: chat.id, branchId, settings: {}, participants });
 	if (!started.ok) throw new Error(`startSession failed: ${started.error.code}`);
 	return { chatId: chat.id, branchId, sessionId: started.data.sessionId };
+}
+
+/** Seed a two-model-seat session (IR-70E) using TWO_MODEL_PARTICIPANTS. */
+async function seedTwoModelSession() {
+	return seedSession(TWO_MODEL_SOURCE, TWO_MODEL_PARTICIPANTS);
+}
+
+/** Map pending model-effect ids by their request viewer (participantId). */
+async function pendingEffectsByViewer(sessionId: string): Promise<Record<string, string>> {
+	const effects = await stores.experiences.getEffectsForSession(sessionId);
+	const byViewer: Record<string, string> = {};
+	for (const e of effects) {
+		if (e.status !== "pending") continue;
+		const parsed = JSON.parse(e.requestJson) as { request?: { viewer?: string } };
+		const viewer = parsed.request?.viewer;
+		if (typeof viewer === "string") byViewer[viewer] = e.id;
+	}
+	return byViewer;
 }
 
 /** Submit the human's opening move, which emits exactly one pending model effect. */
@@ -175,13 +224,19 @@ interface ExecuteSpy {
 
 function makeServices(opts: {
 	profile?: StoredProviderProfileRecord | null;
+	profiles?: StoredProviderProfileRecord[];
+	modelSettings?: ProviderModelSettingsRecord | null;
 	executeReturn?: (spy: ExecuteSpy) => Promise<{ text: string }> | Promise<{ text: string }>;
 } = {}) {
 	const profile = opts.profile === undefined ? makeProfile() : opts.profile;
+	const profiles = opts.profiles ?? (profile ? [profile] : []);
 	const providerProfiles: Pick<ProviderProfileService, "resolveActiveProviderProfile" | "getProviderProfile" | "getProviderModelSettings"> = {
 		resolveActiveProviderProfile: async () => profile,
-		getProviderProfile: async (id: string) => (profile?.id === id ? profile : null),
-		getProviderModelSettings: async () => null,
+		getProviderProfile: async (id: string) => profiles.find((candidate) => candidate.id === id) ?? null,
+		getProviderModelSettings: async (providerProfileId: string, modelId: string) => {
+			const settings = opts.modelSettings;
+			return settings?.providerProfileId === providerProfileId && settings.modelId === modelId ? settings : null;
+		},
 	};
 	const chatLifecycle: ExperienceChatLifecycleSeam = {
 		assembleSummaryPrompt: async () => ({ prompt: minimalPrompt(), branchId: "b" as ChatBranchId }),
@@ -359,9 +414,12 @@ describe("ExperienceModelEffectService — durable failure / cancellation", () =
 		expect((await stores.experiences.getEffectById(effectId))?.status).toBe("failed");
 	});
 
-	test("no-model: a profile without a defaultModel persists failed (no_model)", async () => {
+	test("no-model: a legacy participant with no active-profile defaultModel persists failed (no_model)", async () => {
 		await setup();
 		const { sessionId } = await seedSession(TEXT_SOURCE);
+		// Simulate a legacy persisted participant (neither pinned field) so the
+		// active-profile default model is consulted (the pre-IR-70E fallback).
+		await rewriteModelParticipant(sessionId, (p) => { delete p.providerProfileId; delete p.modelId; });
 		const effectId = await emitModelEffect(sessionId, "say");
 		const { modelEffectService } = makeServices({ profile: makeProfile({ defaultModel: null }) });
 
@@ -533,6 +591,161 @@ describe("ExperienceModelEffectService — prompt layering + model-view isolatio
 	});
 });
 
+// ─── Tests: pinned seat binding (IR-70E) ─────────────────────────────────────
+
+describe("ExperienceModelEffectService — pinned seat binding (IR-70E)", () => {
+	test("two model seats with different pinned provider/model pairs call executor with the exact pair selected by effect viewer", async () => {
+		await setup();
+		const { sessionId } = await seedTwoModelSession();
+		// Emit two effects (one per model seat) via the human's opening move.
+		const session = await stores.experiences.getSessionById(sessionId);
+		await experienceService.submitAction(sessionId, {
+			type: "ask", requestId: "h1", expectedRevision: session?.revision ?? 0,
+			participantId: "human", payload: { text: "hello" },
+		});
+		const byViewer = await pendingEffectsByViewer(sessionId);
+		expect(Object.keys(byViewer).sort()).toEqual(["alice", "bob"]);
+
+		const profileAlice = makeProfile({ id: "pp_alice", name: "Alice", defaultModel: "alice-default" });
+		const profileBob = makeProfile({ id: "pp_bob", name: "Bob", defaultModel: "bob-default" });
+		const activeProfile = makeProfile({ id: "pp_active", defaultModel: "active-default" });
+		const { modelEffectService, spy } = makeServices({
+			profile: activeProfile,
+			profiles: [profileAlice, profileBob],
+			executeReturn: async () => ({ text: "reply" }),
+		});
+
+		await modelEffectService.runEffect(byViewer.alice!);
+		expect(spy.calls[0]!.profile.id).toBe("pp_alice");
+		expect(spy.calls[0]!.model).toBe("model-a");
+
+		await modelEffectService.runEffect(byViewer.bob!);
+		expect(spy.calls[1]!.profile.id).toBe("pp_bob");
+		expect(spy.calls[1]!.model).toBe("model-b");
+	});
+
+	test("pinned selection ignores a different active provider/default model", async () => {
+		await setup();
+		const { sessionId } = await seedSession(TEXT_SOURCE);
+		const effectId = await emitModelEffect(sessionId, "say");
+		// The active profile is deliberately different from the pinned one.
+		const activeProfile = makeProfile({ id: "pp_active", defaultModel: "active-default" });
+		const pinnedProfile = makeProfile({ id: "pp1", defaultModel: "pinned-default" });
+		const { modelEffectService, spy } = makeServices({
+			profile: activeProfile,
+			profiles: [pinnedProfile],
+			executeReturn: async () => ({ text: "reply" }),
+		});
+
+		await modelEffectService.runEffect(effectId);
+
+		// The executor received the PINNED provider + model, not the active one.
+		expect(spy.calls[0]!.profile.id).toBe("pp1");
+		expect(spy.calls[0]!.model).toBe("test-model");
+	});
+
+	test("pinned model's settings overlay reaches the executor", async () => {
+		await setup();
+		const { sessionId } = await seedSession(TEXT_SOURCE);
+		const effectId = await emitModelEffect(sessionId, "say");
+		const pinnedProfile = makeProfile({ id: "pp1", bindPerModel: true });
+		const activeProfile = makeProfile({ id: "pp_other", defaultModel: "other" });
+		const modelSettings: ProviderModelSettingsRecord = {
+			id: "pms_1",
+			providerProfileId: "pp1",
+			modelId: "test-model",
+			settings: { contextBudget: 2048, temperature: 0.7 },
+			createdAt: "2024-01-01T00:00:00Z",
+			updatedAt: "2024-01-01T00:00:00Z",
+		};
+		const { modelEffectService, spy } = makeServices({
+			profile: activeProfile,
+			profiles: [pinnedProfile],
+			modelSettings,
+			executeReturn: async () => ({ text: "reply" }),
+		});
+
+		await modelEffectService.runEffect(effectId);
+
+		// The overlay for the PINNED model reached the executor.
+		expect(spy.calls[0]!.profile.contextBudget).toBe(2048);
+		expect(spy.calls[0]!.profile.temperature).toBe(0.7);
+	});
+
+	test("missing pinned provider (active exists) → durable failed/no_provider/no executor", async () => {
+		await setup();
+		const { sessionId } = await seedSession(TEXT_SOURCE);
+		const effectId = await emitModelEffect(sessionId, "say");
+		// The active profile EXISTS, but the pinned provider does not.
+		const { modelEffectService, spy } = makeServices({
+			profile: makeProfile({ id: "pp_active", defaultModel: "active-default" }),
+			executeReturn: async () => ({ text: "should not reach" }),
+		});
+
+		const result = await modelEffectService.runEffect(effectId);
+
+		expect(result.ok && result.data.status).toBe("failed");
+		expect(result.ok && result.data.error).toBe("no_provider");
+		expect(spy.calls).toHaveLength(0);
+		expect((await stores.experiences.getEffectById(effectId))?.status).toBe("failed");
+	});
+
+	test("malformed one-field historical seat → durable failed/no_model/no fallback/no executor", async () => {
+		await setup();
+		const { sessionId } = await seedSession(TEXT_SOURCE);
+		// Simulate a malformed historical participant: keep providerProfileId,
+		// drop modelId (exactly one field present).
+		await rewriteModelParticipant(sessionId, (p) => { delete p.modelId; });
+		const effectId = await emitModelEffect(sessionId, "say");
+		// The active profile + default model exist, but the malformed seat must
+		// NOT fall back to them.
+		const { modelEffectService, spy } = makeServices({
+			executeReturn: async () => ({ text: "should not reach" }),
+		});
+
+		const result = await modelEffectService.runEffect(effectId);
+
+		expect(result.ok && result.data.status).toBe("failed");
+		expect(result.ok && result.data.error).toBe("no_model");
+		expect(spy.calls).toHaveLength(0);
+		expect((await stores.experiences.getEffectById(effectId))?.status).toBe("failed");
+	});
+
+	test("malformed historical seat with a blank pinned model is no_model, not legacy fallback", async () => {
+		await setup();
+		const { sessionId } = await seedSession(TEXT_SOURCE);
+		// Both fields exist, but a blank value is malformed rather than legacy.
+		await rewriteModelParticipant(sessionId, (p) => { p.modelId = ""; });
+		const effectId = await emitModelEffect(sessionId, "say");
+		const { modelEffectService, spy } = makeServices({
+			executeReturn: async () => ({ text: "should not reach" }),
+		});
+
+		const result = await modelEffectService.runEffect(effectId);
+
+		expect(result.ok && result.data.status).toBe("failed");
+		expect(result.ok && result.data.error).toBe("no_model");
+		expect(spy.calls).toHaveLength(0);
+	});
+
+	test("legacy no-field participant continues active-profile/default-model fallback", async () => {
+		await setup();
+		const { sessionId } = await seedSession(TEXT_SOURCE);
+		// Simulate a legacy participant: strip BOTH pinned fields.
+		await rewriteModelParticipant(sessionId, (p) => { delete p.providerProfileId; delete p.modelId; });
+		const effectId = await emitModelEffect(sessionId, "say");
+		const { modelEffectService, spy } = makeServices({ executeReturn: async () => ({ text: "legacy reply." }) });
+
+		const result = await modelEffectService.runEffect(effectId);
+
+		expect(result.ok && result.data.status).toBe("succeeded");
+		expect(result.ok && result.data.result).toEqual({ mode: "text", text: "legacy reply." });
+		// The executor was called with the ACTIVE profile + default model.
+		expect(spy.calls[0]!.profile.id).toBe("pp1");
+		expect(spy.calls[0]!.model).toBe("test-model");
+	});
+});
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 /** Emit a second model effect after a feed-back advanced the session. */
@@ -540,6 +753,24 @@ async function emitModelEffectAfterAdvance(sessionId: string, actionType: string
 	// The prior effect's feed-back already advanced the revision; submit a fresh
 	// human action at the current revision to emit a new pending effect.
 	return emitModelEffect(sessionId, actionType);
+}
+
+/**
+ * Rewrite the persisted model participant(s) for a session to simulate a
+ * historical/legacy persisted snapshot (IR-70E). Each test uses a fresh DB
+ * containing exactly one session; the callback mutates its model participant.
+ */
+async function rewriteModelParticipant(
+	sessionId: string,
+	mutate: (p: Record<string, unknown>) => void,
+): Promise<void> {
+	const session = await stores.experiences.getSessionById(sessionId);
+	if (session === null) throw new Error(`session '${sessionId}' not found`);
+	const participants = JSON.parse(session.participantsJson) as Array<Record<string, unknown>>;
+	for (const p of participants) {
+		if (p.controller === "model") mutate(p);
+	}
+	stores.db.update(experienceSessions).set({ participantsJson: JSON.stringify(participants) }).run();
 }
 
 // Keep the imported type referenced for the cast boundaries above.

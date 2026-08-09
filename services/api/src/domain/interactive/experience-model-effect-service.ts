@@ -31,6 +31,15 @@
  * compact_summary path). Per-experience provider selection (the setup modal) is
  * a later unit; the request-payload contract is the fixed V1 surface a package
  * emits inside a `kind: "model"` effect.
+ *
+ * IR-70E: each NEW model-controlled participant seat pins its own
+ * providerProfileId + modelId in the immutable participant snapshot. The
+ * effect viewer participant is resolved from that snapshot first, and a
+ * complete pinned assignment loads exactly its pinned provider/model (with the
+ * settings overlay and API-key policy of that provider) — never the active
+ * profile/default model. Legacy persisted participants (neither field) retain
+ * the active-profile/default-model fallback; a malformed participant (exactly
+ * one field) fails durably as no_model.
  */
 
 import type { StoreContainer } from "@vibe-tavern/db";
@@ -38,6 +47,7 @@ import type {
 	AssemblePromptResponse,
 	ExperienceAction,
 	ExperienceActionDescriptor,
+	ExperienceParticipant,
 	StoredProviderProfileRecord,
 } from "@vibe-tavern/domain";
 import {
@@ -128,15 +138,47 @@ export class ExperienceModelEffectService {
 			return ok({ effectId, status: toOutcomeStatus(raced?.status ?? "running") });
 		}
 
-		// 2. Resolve the active provider profile + default model + per-model overlay.
-		//    Each guard narrows the type so no cast is needed; a failure persists
-		//    `failed` with a machine-readable reason and returns (durable + retryable).
-		const profile = await this.deps.providerProfiles.resolveActiveProviderProfile();
-		if (profile === null) {
-			await this.deps.stores.experiences.failEffect(effectId, "no_provider");
-			return ok({ effectId, status: "failed", error: "no_provider" });
+		// 2. Resolve the VM context FIRST (IR-70E): the effect viewer determines
+		//    the seat assignment, which selects the provider/model. A failure here
+		//    persists `failed` and never calls the executor.
+		const vmCtx = await this.deps.experienceService.resolveModelEffectContext(effectId);
+		if (!vmCtx.ok) {
+			await this.deps.stores.experiences.failEffect(effectId, vmCtx.error.code);
+			return ok({ effectId, status: "failed", error: vmCtx.error.code });
 		}
-		const model = profile.defaultModel?.trim();
+
+		// 3. Resolve the provider profile + model for this seat from the immutable
+		//    participant snapshot (IR-70E). A complete pinned assignment (both
+		//    providerProfileId + modelId present) loads exactly its pinned
+		//    provider/model, including that provider/model's settings overlay and
+		//    API-key policy — it does NOT consult the active profile/default model.
+		//    A legacy participant (neither field) falls back to the active
+		//    provider/default model. A malformed participant (exactly one field)
+		//    fails durably as no_model rather than silently switching.
+		const seat = resolveSeatAssignment(vmCtx.data.participant);
+		let profile: StoredProviderProfileRecord;
+		let model: string;
+		if (seat.kind === "pinned") {
+			const pinned = await this.deps.providerProfiles.getProviderProfile(seat.providerProfileId);
+			if (pinned === null) {
+				await this.deps.stores.experiences.failEffect(effectId, "no_provider");
+				return ok({ effectId, status: "failed", error: "no_provider" });
+			}
+			profile = pinned;
+			model = seat.modelId;
+		} else if (seat.kind === "malformed") {
+			await this.deps.stores.experiences.failEffect(effectId, "no_model");
+			return ok({ effectId, status: "failed", error: "no_model" });
+		} else {
+			// Legacy fallback: active provider profile + default model.
+			const active = await this.deps.providerProfiles.resolveActiveProviderProfile();
+			if (active === null) {
+				await this.deps.stores.experiences.failEffect(effectId, "no_provider");
+				return ok({ effectId, status: "failed", error: "no_provider" });
+			}
+			profile = active;
+			model = active.defaultModel?.trim() ?? "";
+		}
 		if (!model) {
 			await this.deps.stores.experiences.failEffect(effectId, "no_model");
 			return ok({ effectId, status: "failed", error: "no_model" });
@@ -146,13 +188,6 @@ export class ExperienceModelEffectService {
 			return ok({ effectId, status: "failed", error: "no_api_key" });
 		}
 		const effectiveProfile = await resolveEffectiveSummaryProfile(profile, model, this.deps.providerProfiles);
-
-		// 3. Resolve the VM context (project the seat's private view + legal actions).
-		const vmCtx = await this.deps.experienceService.resolveModelEffectContext(effectId);
-		if (!vmCtx.ok) {
-			await this.deps.stores.experiences.failEffect(effectId, vmCtx.error.code);
-			return ok({ effectId, status: "failed", error: vmCtx.error.code });
-		}
 
 		// 4. Build the prompt (host protocol + overrides + character/persona + bundle + private view).
 		const prompt = await this.buildPrompt(effectiveProfile, model, vmCtx.data);
@@ -244,6 +279,33 @@ export class ExperienceModelEffectService {
 }
 
 // ─── Pure helpers ────────────────────────────────────────────────────────────
+
+/**
+ * The resolved seat assignment for a model effect, read from the immutable
+ * participant snapshot (IR-70E):
+ *  - `pinned`    — BOTH providerProfileId + modelId are present (nonblank).
+ *    The effect loads exactly its pinned provider/model.
+ *  - `malformed` — exactly ONE field is present. A historical corruption that
+ *    is never treated as legacy fallback; the effect fails durably as no_model.
+ *  - `legacy`    — NEITHER field is present. Falls back to the active
+ *    provider/default model (the pre-IR-70E behavior).
+ */
+type SeatAssignment =
+	| { kind: "pinned"; providerProfileId: string; modelId: string }
+	| { kind: "malformed" }
+	| { kind: "legacy" };
+
+function resolveSeatAssignment(participant: ExperienceParticipant): SeatAssignment {
+	const hasProviderField = participant.providerProfileId !== undefined;
+	const hasModelField = participant.modelId !== undefined;
+	if (!hasProviderField && !hasModelField) return { kind: "legacy" };
+	if (!hasProviderField || !hasModelField) return { kind: "malformed" };
+
+	const providerProfileId = participant.providerProfileId?.trim();
+	const modelId = participant.modelId?.trim();
+	if (!providerProfileId || !modelId) return { kind: "malformed" };
+	return { kind: "pinned", providerProfileId, modelId };
+}
 
 /** Extract a human-readable message from a thrown value without instanceof (cross-realm safe). */
 function describeError(e: unknown): string {

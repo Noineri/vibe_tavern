@@ -332,6 +332,15 @@ export class ExperienceService {
       });
     }
 
+    // IR-70E: validate the NEW-session participant assignments at the service
+    // boundary (mirrors the HTTP schema so a direct caller cannot bypass it).
+    // A model-controlled seat must pin BOTH a nonblank providerProfileId and
+    // modelId and requires the `model` capability grant; a human/script seat
+    // must carry NEITHER. Legacy persisted participants (neither field) are a
+    // load-time concern, never accepted as a new start.
+    const participantError = validateParticipantsForStart(input.participants, grants);
+    if (participantError !== null) return err(participantError);
+
     // Run create under the real VM, with random injected only if granted.
     const seed = this.generateSeed();
     const numericSeed = seedToNumeric(seed);
@@ -989,6 +998,54 @@ export function viewerKindForController(controller: string): ExperienceViewer["k
   if (controller === EXPERIENCE_CONTROLLER.script) return EXPERIENCE_VIEWER_KIND.script;
   if (controller === EXPERIENCE_CONTROLLER.model) return EXPERIENCE_VIEWER_KIND.model;
   return EXPERIENCE_VIEWER_KIND.observer;
+}
+
+/**
+ * Validate a NEW session's participant roster at the service boundary (IR-70E).
+ * Mirrors the HTTP schema's conditional rules so a direct service caller
+ * cannot bypass them: a model-controlled seat must pin BOTH a nonblank
+ * providerProfileId and modelId (and requires the `model` capability grant);
+ * a human/script seat must carry NEITHER. Returns the first violation as a
+ * typed 422 error, or `null` when the roster is valid. Legacy persisted
+ * participants (neither field) are never accepted as a NEW start — they are a
+ * load-time fallback concern handled by the model-effect service.
+ */
+function validateParticipantsForStart(
+  participants: ExperienceParticipant[],
+  grants: ExperienceCapability[],
+): ExperienceApiError | null {
+  const hasModelGrant = grants.includes(EXPERIENCE_CAPABILITY.model);
+  for (const p of participants) {
+    const isModel = p.controller === EXPERIENCE_CONTROLLER.model;
+    const hasProviderField = p.providerProfileId !== undefined;
+    const hasModelField = p.modelId !== undefined;
+    const providerId = p.providerProfileId?.trim();
+    const modelId = p.modelId?.trim();
+    if (isModel) {
+      if (!hasProviderField || !hasModelField || !providerId || !modelId) {
+        return {
+          status: 422,
+          code: "validation_error",
+          message:
+            "A model-controlled participant must pin both a providerProfileId and a modelId",
+        };
+      }
+      if (!hasModelGrant) {
+        return {
+          status: 422,
+          code: "validation_error",
+          message: "A model-controlled participant requires the 'model' capability grant",
+        };
+      }
+    } else if (hasProviderField || hasModelField) {
+      return {
+        status: 422,
+        code: "validation_error",
+        message: `A ${p.controller}-controlled participant must not carry a providerProfileId or modelId`,
+      };
+    }
+  }
+  return null;
 }
 
 function safeStringify(value: unknown): string {
