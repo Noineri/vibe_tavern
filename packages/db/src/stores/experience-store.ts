@@ -1,4 +1,4 @@
-import { eq, and, isNull, isNotNull, asc, inArray } from 'drizzle-orm';
+import { eq, and, isNull, isNotNull, asc, desc, inArray } from 'drizzle-orm';
 import {
   experienceSessions,
   experienceSteps,
@@ -186,6 +186,44 @@ export interface QueueAttachmentData {
   rulesSourceHash: string;
   visualSourceHash?: string | null;
 }
+
+/**
+ * Input for {@link ExperienceStore.freezeReport} (IR-70B). The report service
+ * (IR-70C) builds the public events and hidden checkpoint from the journal and
+ * calls this core to freeze them at `sessionRevision`, advancing the session's
+ * report frontier atomically. The store owns the monotonic `queueRevision` —
+ * the caller never supplies it.
+ */
+export interface FreezeReportData {
+  chatId: string;
+  branchId: string;
+  sessionId: string;
+  /** Session revision the report is frozen at — becomes the new reportFrontier. */
+  sessionRevision: number;
+  kind: string;
+  publicEventsJson: string;
+  /** Opaque authoritative hidden-state checkpoint (never derived from events). */
+  hiddenStateCheckpointJson: string;
+  rulesSourceHash: string;
+  visualSourceHash?: string | null;
+}
+
+export type FreezeReportConflict =
+  | 'session_not_found'
+  | 'scope_mismatch'
+  | 'frontier_beyond_revision'
+  | 'frontier_regression'
+  | 'stale_freeze';
+
+/**
+ * Result of {@link ExperienceStore.freezeReport}. `idempotent: true` means the
+ * exact same frontier + content was already frozen and the existing row was
+ * returned without a queueRevision bump; `idempotent: false` means a real
+ * freeze committed (a new row inserted or the unbound row replaced in place).
+ */
+export type FreezeReportResult =
+  | { ok: true; attachment: ExperienceAttachmentRow; session: ExperienceSessionRow; idempotent: boolean }
+  | { ok: false; conflict: FreezeReportConflict };
 
 // ─── Store ───────────────────────────────────────────────────────────────────
 
@@ -609,6 +647,189 @@ export class ExperienceStore {
 
   // ─── Attachments (queued/bound RP results) ───────────────────────────────
 
+  /**
+   * Freeze a report/transcript snapshot at `sessionRevision`, advancing the
+   * session's `reportFrontier` in the SAME synchronous transaction. This is the
+   * IR-70B transactional queue core that the report service (IR-70C) calls to
+   * freeze or explicitly replace the one queued experience attachment.
+   *
+   * The store — not the caller — owns monotonic `queueRevision`, derived from
+   * persisted session attachment history (highest queueRevision across ALL
+   * attachments for the session + 1) so a newly queued row after an earlier row
+   * was bound never resets to 1.
+   *
+   * Semantics:
+   *  - No unbound row exists → INSERT a new queued attachment (first freeze, or
+   *    the first freeze after the previous report was bound).
+   *  - An unbound row exists → REPLACE it IN PLACE (same attachment id) with the
+   *    new content and an advanced queueRevision (the "Add later events" action).
+   *  - An exact duplicate freeze (same sessionRevision + content) at the current
+   *    frontier → idempotent: return the current row without bumping.
+   *
+   * Bound historical attachments are immutable and never updated.
+   *
+   * Rejections (each a typed conflict, never a partial write):
+   *  - `session_not_found`        — the session id does not exist.
+   *  - `scope_mismatch`           — chatId/branchId do not match the session.
+   *  - `frontier_beyond_revision` — sessionRevision exceeds the session's current
+   *                                 authoritative revision (a report of unplayed state).
+   *  - `frontier_regression`      — sessionRevision is below the current reportFrontier.
+   *  - `stale_freeze`             — sessionRevision equals the reportFrontier but the
+   *                                 content differs (non-monotonic re-freeze), or the
+   *                                 frontier was already frozen-and-bound and no
+   *                                 unbound row remains to re-freeze at that revision.
+   *
+   * The hidden checkpoint content is opaque to this core: it is persisted
+   * verbatim and never derived from public events.
+   */
+  freezeReport(data: FreezeReportData): FreezeReportResult {
+    return this.db.transaction((tx) => {
+      const sessionRow = tx
+        .select()
+        .from(experienceSessions)
+        .where(eq(experienceSessions.id, data.sessionId))
+        .get();
+      if (!sessionRow) {
+        return { ok: false, conflict: 'session_not_found' };
+      }
+      if (sessionRow.chatId !== data.chatId || sessionRow.branchId !== data.branchId) {
+        return { ok: false, conflict: 'scope_mismatch' };
+      }
+      if (data.sessionRevision > sessionRow.revision) {
+        return { ok: false, conflict: 'frontier_beyond_revision' };
+      }
+      if (data.sessionRevision < sessionRow.reportFrontier) {
+        return { ok: false, conflict: 'frontier_regression' };
+      }
+
+      // The current unbound (queued) row, if any — deterministically the highest
+      // queueRevision. At most one unbound row is authoritative for a session.
+      const existingUnbound = tx
+        .select()
+        .from(experienceAttachments)
+        .where(
+          and(
+            eq(experienceAttachments.sessionId, data.sessionId),
+            isNull(experienceAttachments.boundMessageId),
+          ),
+        )
+        .orderBy(desc(experienceAttachments.queueRevision))
+        .get();
+
+      // Exact-duplicate idempotency at the current frontier — return the row
+      // without bumping the queueRevision.
+      if (
+        existingUnbound &&
+        sessionRow.reportFrontier === data.sessionRevision &&
+        existingUnbound.sessionRevision === data.sessionRevision &&
+        existingUnbound.publicEventsJson === data.publicEventsJson &&
+        existingUnbound.hiddenStateCheckpointJson === data.hiddenStateCheckpointJson &&
+        existingUnbound.kind === data.kind &&
+        existingUnbound.rulesSourceHash === data.rulesSourceHash &&
+        (existingUnbound.visualSourceHash ?? null) === (data.visualSourceHash ?? null)
+      ) {
+        return {
+          ok: true,
+          attachment: this.mapRowAttachment(existingUnbound),
+          session: this.mapRowSession(sessionRow),
+          idempotent: true,
+        };
+      }
+
+      // At sessionRevision === reportFrontier the only valid path is the
+      // idempotent duplicate (handled above). A first-ever freeze at revision 0
+      // (reportFrontier 0, no attachments at all) is allowed to fall through.
+      if (data.sessionRevision === sessionRow.reportFrontier) {
+        const anyAttachment = tx
+          .select({ id: experienceAttachments.id })
+          .from(experienceAttachments)
+          .where(eq(experienceAttachments.sessionId, data.sessionId))
+          .limit(1)
+          .get();
+        if (sessionRow.reportFrontier !== 0 || anyAttachment) {
+          return { ok: false, conflict: 'stale_freeze' };
+        }
+      }
+
+      // Monotonic queueRevision derived from persisted history (all attachments).
+      const maxQrRow = tx
+        .select()
+        .from(experienceAttachments)
+        .where(eq(experienceAttachments.sessionId, data.sessionId))
+        .orderBy(desc(experienceAttachments.queueRevision))
+        .get();
+      const nextQueueRevision = (maxQrRow?.queueRevision ?? 0) + 1;
+      const now = this.clock.now();
+
+      let attachmentId: string;
+      if (existingUnbound) {
+        // Replace the unbound row IN PLACE (same id) — "Add later events".
+        attachmentId = existingUnbound.id;
+        tx
+          .update(experienceAttachments)
+          .set({
+            sessionRevision: data.sessionRevision,
+            queueRevision: nextQueueRevision,
+            kind: data.kind,
+            publicEventsJson: data.publicEventsJson,
+            hiddenStateCheckpointJson: data.hiddenStateCheckpointJson,
+            rulesSourceHash: data.rulesSourceHash,
+            visualSourceHash: data.visualSourceHash ?? null,
+            updatedAt: now,
+          })
+          .where(eq(experienceAttachments.id, existingUnbound.id))
+          .run();
+      } else {
+        // Insert a new queued attachment.
+        attachmentId = this.idGen.next('xa');
+        tx
+          .insert(experienceAttachments)
+          .values({
+            id: attachmentId,
+            chatId: data.chatId,
+            branchId: data.branchId,
+            sessionId: data.sessionId,
+            sessionRevision: data.sessionRevision,
+            queueRevision: nextQueueRevision,
+            kind: data.kind,
+            publicEventsJson: data.publicEventsJson,
+            hiddenStateCheckpointJson: data.hiddenStateCheckpointJson,
+            rulesSourceHash: data.rulesSourceHash,
+            visualSourceHash: data.visualSourceHash ?? null,
+            boundMessageId: null,
+            createdAt: now,
+            updatedAt: now,
+          })
+          .run();
+      }
+
+      // Advance the report frontier in the SAME transaction.
+      tx
+        .update(experienceSessions)
+        .set({ reportFrontier: data.sessionRevision, updatedAt: now })
+        .where(eq(experienceSessions.id, data.sessionId))
+        .run();
+
+      const attachmentRow = tx
+        .select()
+        .from(experienceAttachments)
+        .where(eq(experienceAttachments.id, attachmentId))
+        .get();
+      const updatedSession = tx
+        .select()
+        .from(experienceSessions)
+        .where(eq(experienceSessions.id, data.sessionId))
+        .get();
+
+      return {
+        ok: true,
+        attachment: this.mapRowAttachment(attachmentRow!),
+        session: this.mapRowSession(updatedSession!),
+        idempotent: false,
+      };
+    });
+  }
+
   /** Queue a new immutable report/transcript (unbound; boundMessageId NULL). */
   async queueAttachment(data: QueueAttachmentData): Promise<ExperienceAttachmentRow> {
     const id = this.idGen.next('xa');
@@ -644,7 +865,13 @@ export class ExperienceStore {
     return row ? this.mapRowAttachment(row) : null;
   }
 
-  /** The session's current queued (unbound) attachment, or null. */
+  /**
+   * The session's current queued (unbound) attachment, or null. Selects
+   * deterministically by highest queueRevision — at most one unbound row is
+   * authoritative for a session, but a rollback-release can transiently expose
+   * an older row, so the deterministic ordering resolves it to the newest
+   * (which subsumes any older report).
+   */
   async getQueuedAttachmentForSession(sessionId: string): Promise<ExperienceAttachmentRow | null> {
     const row = await this.db
       .select()
@@ -655,6 +882,7 @@ export class ExperienceStore {
           isNull(experienceAttachments.boundMessageId),
         ),
       )
+      .orderBy(desc(experienceAttachments.queueRevision))
       .get();
     return row ? this.mapRowAttachment(row) : null;
   }
@@ -762,13 +990,55 @@ export class ExperienceStore {
    * {@link rollbackReleaseAttachment} delegates here. Called when a user-message
    * insert is rolled back / the prepared turn fails assembly — the attachment
    * returns to pending-send.
+   *
+   * If a NEWER unbound report already exists for the session (because the user
+   * froze a later report while this one was bound), the rolled-back attachment
+   * is OBSOLETE — the newer report subsumes the older — so it is DELETED. If
+   * only OLDER unbound rows exist, they are obsolete instead: delete them and
+   * release the newer bound row. This leaves exactly one authoritative unbound
+   * snapshot after the rollback. When no other queued row exists, the original
+   * IR-51 behavior is preserved and the failed-send attachment returns to queued.
    */
   rollbackReleaseAttachmentInTx(tx: DbTransaction, messageId: string): void {
-    tx
-      .update(experienceAttachments)
-      .set({ boundMessageId: null })
+    const bound = tx
+      .select()
+      .from(experienceAttachments)
       .where(eq(experienceAttachments.boundMessageId, messageId))
-      .run();
+      .all();
+    for (const row of bound) {
+      const unboundRows = tx
+        .select()
+        .from(experienceAttachments)
+        .where(
+          and(
+            eq(experienceAttachments.sessionId, row.sessionId),
+            isNull(experienceAttachments.boundMessageId),
+          ),
+        )
+        .orderBy(desc(experienceAttachments.queueRevision))
+        .all();
+      const authoritativeUnbound = unboundRows[0];
+      if (authoritativeUnbound && authoritativeUnbound.queueRevision > row.queueRevision) {
+        // A newer queued snapshot subsumes both this failed-send row and every
+        // older duplicate that may have been exposed by a legacy/fixture path.
+        const obsoleteIds = [row.id, ...unboundRows.slice(1).map((candidate) => candidate.id)];
+        tx.delete(experienceAttachments).where(inArray(experienceAttachments.id, obsoleteIds)).run();
+      } else {
+        // The failed-send row is newest. Remove any older/equal queued rows
+        // before releasing it so the session still has exactly one queued row.
+        if (unboundRows.length > 0) {
+          tx
+            .delete(experienceAttachments)
+            .where(inArray(experienceAttachments.id, unboundRows.map((candidate) => candidate.id)))
+            .run();
+        }
+        tx
+          .update(experienceAttachments)
+          .set({ boundMessageId: null })
+          .where(eq(experienceAttachments.id, row.id))
+          .run();
+      }
+    }
   }
 
   async rollbackReleaseAttachment(messageId: string): Promise<void> {
