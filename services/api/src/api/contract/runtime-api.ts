@@ -524,6 +524,12 @@ import type {
 import type { ExperienceReportStatus } from "../../domain/interactive/experience-report-service.js";
 import type { RecalculationPreview } from "../../domain/interactive/experience-replay-service.js";
 import type {
+	ExperienceTestRunData,
+	ExperienceTestRunInput,
+	ExperienceTestSimulateData,
+	ExperienceTestSimulateInput,
+} from "../../domain/interactive/experience-tester.js";
+import type {
 	ExperienceChatConfigRow,
 	ExperienceVisualRow,
 	ExperienceEffectRow,
@@ -690,6 +696,19 @@ export interface ExperienceRuntimeApi {
 	 *  character from the session → chat; never accepts an arbitrary characterId.
 	 *  Returns the updated combined layers. */
 	updateExperienceCharacterOverride: (sessionId: string, body: { content: string }) => Promise<ExperiencePromptOverridesResponse>;
+
+	// ── Stateless unsaved-source tester (Wave 8 / IR-81B) ──
+	/** Drive UNSAVED rules source through the real sandbox/kernel with zero
+	 *  persistence and zero chat/session/DB binding: discover + create + project
+	 *  + legal actions, then replay an ordered action list with the host managing
+	 *  the in-memory revision counter, requestId idempotency, and expectedRevision
+	 *  compare-and-swap. Authoritative only over its own ephemeral state. */
+	runExperienceTest: (body: ExperienceTestRunInput) => Promise<ExperienceTestRunData>;
+	/** Discover + create, then run a bounded automated simulation advancing
+	 *  script-controlled seats via the real `choose` until a human/model boundary,
+	 *  a terminal status, no legal action, or a host bound is reached. Returns a
+	 *  typed stop-reason diagnostic per case. */
+	simulateExperienceTest: (body: ExperienceTestSimulateInput) => Promise<ExperienceTestSimulateData>;
 }
 
 export interface RuntimeApi {

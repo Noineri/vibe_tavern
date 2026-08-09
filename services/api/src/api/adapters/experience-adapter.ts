@@ -31,6 +31,13 @@ import type { ExperienceModelEffectService } from "../../domain/interactive/expe
 import type { ExperienceContextService } from "../../domain/interactive/experience-context-service.js";
 import type { ExperienceApiError } from "../../domain/interactive/experience-shared.js";
 import type { ExperienceParticipant } from "@vibe-tavern/domain";
+import {
+	runExperienceTest,
+	simulateExperienceTest,
+	type ExperienceTestError,
+	type ExperienceTestRunInput,
+	type ExperienceTestSimulateInput,
+} from "../../domain/interactive/experience-tester.js";
 import { DomainError } from "../../shared/errors.js";
 
 export class ExperienceAdapter implements ExperienceRuntimeApi {
@@ -320,6 +327,25 @@ export class ExperienceAdapter implements ExperienceRuntimeApi {
 		if (!result.ok) throw mapError(result.error);
 		return result.data;
 	};
+
+	// ─── Stateless unsaved-source tester (Wave 8 / IR-81B) ────────────────────
+	// The tester is stateless: it reuses the pure kernel functions directly and
+	// touches no store, session, chat config, or persistent service. These
+	// adapter methods are thin delegates that map the typed tester error to a
+	// DomainError the global onError handler renders (409 stale_revision /
+	// 422 every authoring, validation, capability, or VM fault).
+
+	runExperienceTest = async (body: ExperienceTestRunInput) => {
+		const result = runExperienceTest(body);
+		if (!result.ok) throw mapTestError(result.error);
+		return result.data;
+	};
+
+	simulateExperienceTest = async (body: ExperienceTestSimulateInput) => {
+		const result = simulateExperienceTest(body);
+		if (!result.ok) throw mapTestError(result.error);
+		return result.data;
+	};
 }
 
 /**
@@ -340,4 +366,32 @@ function mapError(e: ExperienceApiError): never {
 	const { status: _drop, code, message, ...rest } = e;
 	void _drop;
 	throw new DomainError({ kind, message, details: { code, ...rest } });
+}
+
+/**
+ * Map a typed {@link ExperienceTestError} (the stateless unsaved-source tester's
+ * failure envelope) to a {@link DomainError}. The tester carries its own
+ * host-managed status (409 for a stale-revision CAS conflict, 422 for every
+ * authoring / validation / capability / VM fault), distinct from the persisted
+ * service's {@link ExperienceApiError}; unlike that vocabulary, the tester
+ * surface preserves the captured VM console on the error path so an author sees
+ * `console.log` output before a throw. The structured `code` + kernel `kind` +
+ * any extra fields (currentRevision, participantId, granted/needs) are carried
+ * in `details` alongside the console.
+ */
+function mapTestError(e: ExperienceTestError): never {
+	const kind = e.status === 409 ? "Conflict" : "Unprocessable";
+	throw new DomainError({
+		kind,
+		message: e.message,
+		details: {
+			code: e.code,
+			console: e.console,
+			...(e.kind !== undefined ? { kind: e.kind } : {}),
+			...(e.currentRevision !== undefined ? { currentRevision: e.currentRevision } : {}),
+			...(e.participantId !== undefined ? { participantId: e.participantId } : {}),
+			...(e.granted !== undefined ? { granted: e.granted } : {}),
+			...(e.needs !== undefined ? { needs: e.needs } : {}),
+		},
+	});
 }

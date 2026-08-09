@@ -187,5 +187,19 @@ export function createExperienceRoutes(runtime: ExperienceRuntimeApi) {
           await runtime.updateExperienceCharacterOverride(c.req.param("sessionId"), c.req.valid("json")),
         );
       },
-    );
+    )
+
+    // ── Stateless unsaved-source tester (Wave 8 / IR-81B) ──────────────────
+    // Drive UNSAVED rules source through the real sandbox/kernel with zero
+    // persistence and zero chat/session/DB binding. Each request is an
+    // independent in-memory scenario; these routes never touch a session,
+    // store, or chat config. Typed tester failures surface as thrown
+    // DomainErrors (409 stale_revision / 422 authoring, validation, capability,
+    // or VM faults) via the adapter's mapTestError.
+    .post("/api/experience/test/run", zValidator("json", schemas.experienceTestRunRequestSchema), async (c) => {
+      return c.json(await runtime.runExperienceTest(c.req.valid("json")));
+    })
+    .post("/api/experience/test/simulate", zValidator("json", schemas.experienceTestSimulateRequestSchema), async (c) => {
+      return c.json(await runtime.simulateExperienceTest(c.req.valid("json")));
+    });
 }

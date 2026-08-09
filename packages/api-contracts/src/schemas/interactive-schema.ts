@@ -739,6 +739,51 @@ export const experiencePromptOverrideContentSchema = z.object({
   content: z.string().max(100_000),
 }).strict();
 
+// ─── Stateless unsaved-source tester requests (Wave 8 / IR-81B) ──────────────
+//
+// Two self-contained scenarios that drive UNSAVED rules source through the real
+// sandbox/kernel with zero persistence and zero chat/session/DB binding. Each
+// request is an independent in-memory run; there is no server-side state between
+// requests. `run` replays an ordered action list with host-managed revision /
+// requestId-idempotency / expectedRevision-CAS; `simulate` auto-advances script
+// seats via `choose` under host bounds. Both carry the capability grants the
+// caller chose from the package's declared capabilities (granted ⊆ declared is
+// enforced by the tester, mirroring the resource-service gate).
+
+/** Max action steps a single test-run request may replay (mirrors the
+ *  persistent service's MAX_SCRIPT_TURNS; kept distinct so the tester bound is
+ *  visible and tunable independently). Also the default simulation bound. */
+export const INTERACTIVE_SCHEMA_MAX_TEST_STEPS = 200;
+
+/** Drive unsaved rules source through the real kernel: discover + create +
+ *  project + legal actions, then replay an ordered list of action intentions
+ *  (each carrying requestId + expectedRevision) with the host managing the
+ *  in-memory revision counter, requestId idempotency, and expectedRevision CAS.
+ *  An empty/omitted `actions` list yields a create-only preview. */
+export const experienceTestRunRequestSchema = z.object({
+  rulesCode: z.string().min(1).max(INTERACTIVE_SCHEMA_MAX_STATE_BYTES),
+  scriptName: boundedString.optional(),
+  settings: boundedState.default({}),
+  participants: z.array(experienceParticipantSchema).max(INTERACTIVE_SCHEMA_MAX_PARTICIPANTS).default([]),
+  capabilityGrants: z.array(experienceCapabilitySchema).max(INTERACTIVE_SCHEMA_MAX_CAPABILITIES).default([]),
+  seed: boundedString.optional(),
+  actions: z.array(experienceActionSchema).max(INTERACTIVE_SCHEMA_MAX_TEST_STEPS).default([]),
+});
+
+/** Discover + create, then run a bounded automated simulation that advances
+ *  script-controlled seats via the real `choose` until a human/model boundary,
+ *  a terminal status, no legal action, or a host bound is reached. */
+export const experienceTestSimulateRequestSchema = z.object({
+  rulesCode: z.string().min(1).max(INTERACTIVE_SCHEMA_MAX_STATE_BYTES),
+  scriptName: boundedString.optional(),
+  settings: boundedState.default({}),
+  participants: z.array(experienceParticipantSchema).max(INTERACTIVE_SCHEMA_MAX_PARTICIPANTS).default([]),
+  capabilityGrants: z.array(experienceCapabilitySchema).max(INTERACTIVE_SCHEMA_MAX_CAPABILITIES).default([]),
+  seed: boundedString.optional(),
+  maxIterations: z.number().int().min(1).max(INTERACTIVE_SCHEMA_MAX_TEST_STEPS).default(INTERACTIVE_SCHEMA_MAX_TEST_STEPS),
+  maxEffects: z.number().int().min(1).max(1000).default(256),
+});
+
 // ─── DTO types (wire-only shapes; canonical envelopes come from Domain) ──────
 
 export type ExperienceStartRequestDto = z.infer<typeof experienceStartRequestSchema>;
@@ -755,6 +800,8 @@ export type ExperienceUndoRequestDto = z.infer<typeof experienceUndoRequestSchem
 export type ExperienceRecalculateRequestDto = z.infer<typeof experienceRecalculateRequestSchema>;
 export type ExperienceContextCaptureRequestDto = z.infer<typeof experienceContextCaptureRequestSchema>;
 export type ExperiencePromptOverrideContentDto = z.infer<typeof experiencePromptOverrideContentSchema>;
+export type ExperienceTestRunRequestDto = z.infer<typeof experienceTestRunRequestSchema>;
+export type ExperienceTestSimulateRequestDto = z.infer<typeof experienceTestSimulateRequestSchema>;
 export type ExperienceSetupFieldOptionDto = z.infer<typeof experienceSetupFieldOptionSchema>;
 export type ExperienceSetupFieldDto = z.infer<typeof experienceSetupFieldSchema>;
 export type ExperienceSetupDefinitionDto = z.infer<typeof experienceSetupDefinitionSchema>;

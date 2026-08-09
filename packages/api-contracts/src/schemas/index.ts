@@ -238,6 +238,9 @@ export {
   experienceRecalculateRequestSchema,
   experienceContextCaptureRequestSchema,
   experiencePromptOverrideContentSchema,
+  // Stateless unsaved-source tester requests (Wave 8 / IR-81B)
+  experienceTestRunRequestSchema,
+  experienceTestSimulateRequestSchema,
   // Bounded-JSON guard + bounds
   jsonBoundsError,
   boundedJsonValue,
@@ -258,6 +261,7 @@ export {
   INTERACTIVE_SCHEMA_MAX_REVISION,
   INTERACTIVE_SCHEMA_MAX_SETUP_FIELDS,
   INTERACTIVE_SCHEMA_MAX_SETUP_OPTIONS,
+  INTERACTIVE_SCHEMA_MAX_TEST_STEPS,
   // DTO types
   type ExperienceStartRequestDto,
   type ExperienceActionDto,
@@ -265,6 +269,8 @@ export {
   type ExperienceSessionResponseDto,
   type ExperienceDefinitionDto,
   type ExperienceStarterManifestDto,
+  type ExperienceTestRunRequestDto,
+  type ExperienceTestSimulateRequestDto,
   type ExperienceSetupFieldOptionDto,
   type ExperienceSetupFieldDto,
   type ExperienceSetupDefinitionDto,
