@@ -9,6 +9,19 @@ import type { Chat, ChatBranch, ChatId, CharacterId, Message, MessageVariant } f
 import type { AssemblePromptResponse, PromptPresetDto, PromptTraceRecordDto } from "@vibe-tavern/domain";
 import type { SceneTrackerConfig, SceneTrackerConfigPatch, SceneTrackerRecord, SceneBackfillErrorEntry, SceneBackfillSummary } from "@vibe-tavern/domain";
 import type { DiceActorType, DiceAttempt, DiceCheckDefinition, DiceMode, DiceRollSnapshot, ScriptKind } from "@vibe-tavern/domain";
+import type {
+	ExperienceActionDescriptor,
+	ExperienceContextMode,
+	ExperienceEvent,
+	ExperienceParticipant,
+	ExperiencePublicReport,
+} from "@vibe-tavern/domain";
+import type {
+	ExperienceChatConfigRow,
+	ExperienceEffectRow,
+	ExperienceVisualRow,
+} from "@vibe-tavern/db";
+import type { z } from "zod";
 
 // Wire-format output types shared with the backend (single source of truth in
 // @vibe-tavern/api-contracts). Two are imported under local aliases that the
@@ -24,6 +37,25 @@ import type {
 	ClientProxyRecord as ProxyRecord,
 	PersonaRecord,
 	ChatListItem,
+	ExperienceActionDto,
+	ExperienceFinishRequestDto,
+	ExperienceSessionResponseDto,
+} from "@vibe-tavern/api-contracts";
+// Type-only schema imports: the interactive-runtime request DTOs that the
+// contracts index does NOT re-export are derived here via `z.input` of the
+// exported schemas — the schema stays the single source of truth, nothing is
+// hand-written, and no runtime value enters the browser bundle.
+import type {
+	experienceConfigUpdateSchema,
+	experienceContextCaptureRequestSchema,
+	experiencePromptOverrideContentSchema,
+	experienceRecalculateRequestSchema,
+	experienceReportQueueRequestSchema,
+	experienceStartRequestSchema,
+	experienceUndoRequestSchema,
+	experienceVisualCreateSchema,
+	experienceVisualUpdateSchema,
+	experienceVisualsQuerySchema,
 } from "@vibe-tavern/api-contracts";
 export type {
 	ProviderProfileRecord,
@@ -562,6 +594,208 @@ export interface ExperienceSendCommitIntent {
   experienceAttachmentId: string;
   experienceQueueRevision: number;
   experienceSessionRevision: number;
+}
+
+// ─── Experience (interactive runtime) ───────────────────────────────────────
+//
+// Wire types for the experience API (INTERACTIVE_RUNTIME_FOUNDATION_PLAN,
+// Wave 7 / IR-71A). Canonical entity shapes come from `@vibe-tavern/domain`,
+// store row shapes from `@vibe-tavern/db`, and request/response DTOs from
+// `@vibe-tavern/api-contracts` (directly re-exported, or derived via `z.input`
+// of the exported schema when the contracts index does not re-export the DTO).
+// Response envelopes that exist only inside `services/api` (whose package
+// exports expose only `AppType` to the browser) are mirrored as local
+// interfaces, each documented with its backend authority.
+
+export type {
+  ExperienceActionDescriptor,
+  ExperienceContextMode,
+  ExperienceEvent,
+  ExperienceParticipant,
+  ExperiencePublicReport,
+  ExperienceChatConfigRow,
+  ExperienceEffectRow,
+  ExperienceVisualRow,
+  ExperienceSessionResponseDto,
+};
+
+// ── Request bodies (schema-derived; never hand-written) ─────────────────────
+
+/** PUT /config body (partial patch). */
+export type ExperienceConfigUpdateRequest = z.input<typeof experienceConfigUpdateSchema>;
+/** GET /visuals query (scope + optional owner). */
+export type ExperienceVisualsQuery = z.input<typeof experienceVisualsQuerySchema>;
+/** POST /visuals body. */
+export type ExperienceVisualCreateRequest = z.input<typeof experienceVisualCreateSchema>;
+/** PATCH /visuals/:id body. */
+export type ExperienceVisualUpdateRequest = z.input<typeof experienceVisualUpdateSchema>;
+/** POST /sessions body. `settings`/`participants` are optional on input (the
+ *  schema defaults them); participant seats carry the IR-70E pinned
+ *  `providerProfileId`/`modelId` for model controllers via the canonical
+ *  start-participant schema. */
+export type ExperienceStartRequest = z.input<typeof experienceStartRequestSchema>;
+/** POST /sessions/:id/actions body. The schema has no defaults, so the
+ *  exported DTO IS the input shape. */
+export type ExperienceActionRequest = ExperienceActionDto;
+/** POST /sessions/:id/end body (`{ expectedRevision }`, strict). */
+export type ExperienceFinishRequest = ExperienceFinishRequestDto;
+/** POST /sessions/:id/reports/queue body (`{ expectedRevision }`). */
+export type ExperienceReportQueueRequest = z.input<typeof experienceReportQueueRequestSchema>;
+/** POST /sessions/:id/undo body (`{ targetRevision }`). */
+export type ExperienceUndoRequest = z.input<typeof experienceUndoRequestSchema>;
+/** POST /sessions/:id/recalculate body (`{ rulesCode }`). */
+export type ExperienceRecalculateRequest = z.input<typeof experienceRecalculateRequestSchema>;
+/** POST /sessions/:id/context/capture body (strict; IR-70D). */
+export type ExperienceContextCaptureRequest = z.input<typeof experienceContextCaptureRequestSchema>;
+/** PUT /prompt-overrides/{global|character} body (`{ content }`, strict). */
+export type ExperiencePromptOverrideContentRequest = z.input<typeof experiencePromptOverrideContentSchema>;
+
+// ── Responses ────────────────────────────────────────────────────────────────
+
+/** Session response (start / get / branch discovery). Extends the canonical
+ * validated DTO with the additional public metadata serialized by the backend's
+ * `ExperienceSessionView`; the Wave 7 store needs `visualId` to reconnect the
+ * pinned visual and the rules revision/hash to detect exact-source changes.
+ * Includes IR-70E participant provider/model assignments through the canonical
+ * participant schema. */
+export interface ExperienceSessionResponse extends ExperienceSessionResponseDto {
+  rulesRevision: number;
+  rulesSourceHash: string;
+  visualId: string | null;
+}
+
+/** Per-viewer projected view (GET /view, and the `view` member of every
+ *  session response). Indexed off the canonical session DTO so it can never
+ *  drift from the wire schema. */
+export type ExperienceProjection = ExperienceSessionResponseDto["view"];
+
+/** Whose turn the session awaits after an action round. Local literal union
+ *  mirroring `TurnAwait` in services/api `experience-service.ts` (not exported
+ *  across the package boundary); structurally aligned with the runtime
+ *  contract. */
+export type ExperienceTurnAwait = "human" | "model" | "completed" | "idle";
+
+/** Action-round response (POST /actions, POST /undo): the session + projected
+ *  view after the applied action AND any auto-resolved script seats, plus the
+ *  emitted events and whose turn is next. Mirrors `ExperienceActionResponse`
+ *  in services/api `api/contract/runtime-api.ts` (backend-only module). */
+export type ExperienceActionResponse = ExperienceSessionResponse & {
+  events: ExperienceEvent[];
+  await: ExperienceTurnAwait;
+};
+
+/** Privacy-safe queued-attachment view (IR-70A): the attachment row MINUS its
+ *  hidden checkpoint. Mirrors `ExperienceQueuedAttachmentView` in services/api
+ *  `experience-service.ts` (backend-only module); `publicReport` uses the
+ *  canonical domain `ExperiencePublicReport`. */
+export interface ExperienceQueuedAttachmentView {
+  id: string;
+  chatId: string;
+  branchId: string;
+  sessionId: string;
+  sessionRevision: number;
+  queueRevision: number;
+  kind: string;
+  /** Parsed public report envelope; null when the stored JSON was malformed. */
+  publicReport: ExperiencePublicReport | null;
+  rulesSourceHash: string;
+  visualSourceHash: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Queued-attachment read (GET /attachment, POST /end): null when the session
+ *  has no current queued (unbound) attachment. */
+export type ExperienceQueuedAttachmentResponse = ExperienceQueuedAttachmentView | null;
+
+/** Server report status (GET /reports/status). Mirrors `ExperienceReportStatus`
+ *  in services/api `experience-report-service.ts` (backend-only module). */
+export interface ExperienceReportStatus {
+  revision: number;
+  reportFrontier: number;
+  pendingPublicEventCount: number;
+  queuedAttachment: ExperienceQueuedAttachmentView | null;
+}
+
+/** One replay checkpoint (recalculation preview). Mirrors `ReplayCheckpoint`
+ *  in services/api `experience-replay-service.ts` (backend-only module). */
+export interface ExperienceReplayCheckpoint {
+  revision: number;
+  state: unknown;
+  cursor: number;
+}
+
+/** Replay outcome discriminated union. Mirrors `ReplayOutcome` in services/api
+ *  `experience-replay-service.ts` (backend-only module). */
+export type ExperienceReplayOutcome =
+  | { ok: true; finalState: unknown; cursor: number; checkpoints: ExperienceReplayCheckpoint[] }
+  | {
+      ok: false;
+      failedAtRevision: number;
+      reason: "create_failed" | "illegal_action" | "vm_error";
+      message: string;
+      partialState: unknown;
+    };
+
+/** Recalculation preview (POST /recalculate; safe, no commit). Mirrors
+ *  `RecalculationPreview` in services/api `experience-replay-service.ts`
+ *  (backend-only module). */
+export interface ExperienceRecalculationPreview {
+  originalRulesHash: string;
+  originalState: unknown;
+  originalRevision: number;
+  newManifestId: string;
+  newRulesHash: string;
+  outcome: ExperienceReplayOutcome;
+}
+
+/** Effect-run response (POST /effects/:effectId/run). Mirrors
+ *  `ExperienceEffectRunResponse` in services/api `api/contract/runtime-api.ts`
+ *  (backend-only module): the terminal effect row + whether its result was
+ *  delivered into the reducer (false on stale completion), with the post-
+ *  feed-back session when delivered. */
+export interface ExperienceEffectRunResponse {
+  effect: ExperienceEffectRow;
+  delivered: boolean;
+  /** Machine-readable failure reason when status is `failed`. */
+  error?: string;
+  session?: ExperienceSessionResponse;
+}
+
+/** Privacy-safe context-bundle status (IR-70D; GET /context/status — null when
+ *  never captured — and POST /context/capture). Mirrors
+ *  `ExperienceContextStatusDto` in services/api `api/contract/runtime-api.ts`
+ *  (backend-only module): ONLY session-scoped metadata + provider/model ids,
+ *  never payload fields. `branchFrontierRevision` is the IR-70D field. */
+export interface ExperienceContextStatusDto {
+  sessionId: string;
+  mode: ExperienceContextMode;
+  branchFrontierRevision: number | null;
+  messageFrontierPosition: number | null;
+  providerProfileId: string | null;
+  modelId: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** One prompt-override layer (IR-70D). A null layer means no override is
+ *  persisted for that scope. Mirrors `ExperiencePromptOverrideDto` in
+ *  services/api `api/contract/runtime-api.ts` (backend-only module). */
+export interface ExperiencePromptOverrideDto {
+  scope: "global" | "character";
+  content: string;
+  characterId: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Both independent prompt-override layers (GET /prompt-overrides and both
+ *  PUTs return the updated combined layers). Mirrors
+ *  `ExperiencePromptOverridesResponse` in services/api
+ *  `api/contract/runtime-api.ts` (backend-only module). */
+export interface ExperiencePromptOverridesResponse {
+  global: ExperiencePromptOverrideDto | null;
+  character: ExperiencePromptOverrideDto | null;
 }
 
 // ─── Import ────────────────────────────────────────────────────────────
