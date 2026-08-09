@@ -29,17 +29,21 @@
  */
 import { Icons } from "../shared/icons.js";
 import { useT } from "../../i18n/context.js";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ExperienceFrame,
   type ExperienceFrameHandle,
 } from "./ExperienceFrame.js";
+import { ExperienceReportControls } from "./ExperienceReportControls.js";
 import { experienceActionOutcome } from "./ExperienceModal.js";
+import { DestructiveConfirmModal } from "../shared/destructive-confirm-modal.js";
 import type { BridgeErrorCode } from "../../lib/experience-bridge-schema.js";
 import { EXPERIENCE_EFFECT_STATUS } from "@vibe-tavern/domain";
 import type { ExperienceActionDto } from "@vibe-tavern/api-contracts";
 import {
   useExperienceEffects,
+  useExperienceQueuedAttachment,
+  useExperienceReportStatus,
   useExperienceSession,
   useExperienceStore,
   type ExperienceActionIntent,
@@ -192,6 +196,8 @@ export function ExperienceDetachedHost(props: ExperienceDetachedHostProps) {
   // only the bootstrap before the rehydrate settles).
   const storeSession = useExperienceSession(chatId, branchId);
   const storeEffects = useExperienceEffects(chatId, branchId);
+  const queuedAttachment = useExperienceQueuedAttachment(chatId, branchId);
+  const reportStatus = useExperienceReportStatus(chatId, branchId);
 
   // Authoritative values: store > descriptor bootstrap.
   const session: ExperienceSessionResponse | null = storeSession;
@@ -301,6 +307,37 @@ export function ExperienceDetachedHost(props: ExperienceDetachedHostProps) {
     };
   }, [sessionId]);
 
+  // ── Trusted Finish + report controls (IR-73C) ─────────────────────────────
+  // The detached surface owns the SAME privileged end path as the modal: a
+  // trusted Finish button that opens a shared DestructiveConfirmModal (never a
+  // hand-rolled shell), and the SAME report-control surface wired to
+  // store.queueReport. Finish ends only after confirmation — never from the
+  // user frame directly. endSession's server-returned terminal attachment is
+  // consumed only by the store rehydrate; the UI never fabricates/mutates it.
+  const [confirmingFinish, setConfirmingFinish] = useState(false);
+
+  const handleQueueReport = useCallback(async (): Promise<void> => {
+    const result = await useExperienceStore.getState().queueReport();
+    if (result === null) throw new Error("experience queue failed");
+  }, []);
+
+  async function handleFinishExperience(): Promise<void> {
+    setConfirmingFinish(false);
+    try {
+      // endSession returns the terminal queued attachment on success, or null
+      // on a server failure (after the store resync surfaces lastError). A
+      // missing session (pre-hydration edge) throws — caught here. In BOTH
+      // fail-closed cases the surface stays open (no close/destroy) so the
+      // user can see the error and retry; the store is the authority.
+      await useExperienceStore.getState().endSession();
+    } catch (err) {
+      // No active session (pre-hydration) or a thrown store action — fail
+      // closed without an unhandled rejection or closing/destroying the
+      // surface. The store rehydrate/hydration re-establishes state.
+      if (typeof console !== "undefined") console.warn("[experience] finish rejected", err);
+    }
+  }
+
   if (!descriptor) {
     return (
       <div className="flex h-screen w-screen items-center justify-center bg-neutral-900 text-neutral-400">
@@ -328,6 +365,20 @@ export function ExperienceDetachedHost(props: ExperienceDetachedHostProps) {
         <span className="rounded bg-neutral-800 px-2 py-0.5 text-[10px] uppercase tracking-wide text-neutral-400">
           {t("experience_detached_badge")}
         </span>
+        {/* Trusted Finish — opens the shared confirmation (never auto-finishes).
+            The same privileged end path as the modal; the user visual cannot
+            forge this button. Disabled until the exact store session is
+            hydrated — the descriptor bootstrap alone is not authority for a
+            privileged mutation (IR-73C acceptance fix). */}
+        <button
+          type="button"
+          className="rounded px-2 py-1 text-xs text-neutral-300 hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-40"
+          disabled={!session}
+          onClick={() => setConfirmingFinish(true)}
+          data-testid="experience-detached-finish"
+        >
+          {t("experience_finish")}
+        </button>
         <button
           type="button"
           className="rounded px-2 py-1 text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200"
@@ -349,6 +400,29 @@ export function ExperienceDetachedHost(props: ExperienceDetachedHostProps) {
           onAction={handleAction}
         />
       </div>
+      {/* Trusted report-control footer — OUTSIDE the sandboxed frame (IR-73C).
+          The same surface the modal owns, with exact scope selectors. The
+          component handles null/no-session props gracefully (disabled
+          no-events state) so it stays reachable while the rehydrate settles. */}
+      <footer
+        className="border-t border-neutral-800 px-3 py-2"
+        data-testid="experience-detached-report-footer"
+      >
+        <ExperienceReportControls
+          queuedAttachment={queuedAttachment}
+          reportStatus={reportStatus}
+          onQueue={handleQueueReport}
+        />
+      </footer>
+      {confirmingFinish && (
+        <DestructiveConfirmModal
+          title={t("experience_finish")}
+          body={t("experience_finish_confirm")}
+          confirmLabel={t("experience_finish")}
+          onConfirm={() => void handleFinishExperience()}
+          onCancel={() => setConfirmingFinish(false)}
+        />
+      )}
     </div>
   );
 }

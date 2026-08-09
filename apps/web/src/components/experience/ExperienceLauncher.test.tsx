@@ -54,6 +54,15 @@ interface FakeScopeState {
     manifest: { name: string };
   } | null;
   effects: Array<{ id: string; status: string }>;
+  queuedAttachment: {
+    queueRevision: number;
+    sessionRevision: number;
+    publicReport: { title: string; events: Array<{ type: string; detail?: unknown }> } | null;
+  } | null;
+  reportStatus: {
+    reportFrontier: number;
+    pendingPublicEventCount: number;
+  } | null;
   loading: boolean;
   lastError: string | null;
   modalOpen: boolean;
@@ -82,6 +91,8 @@ const EMPTY_SCOPE: FakeScopeState = {
   config: null,
   session: null,
   effects: [],
+  queuedAttachment: null,
+  reportStatus: null,
   loading: false,
   lastError: null,
   modalOpen: false,
@@ -109,6 +120,7 @@ const storeMocks = {
   submitAction: mock(async (_intent: unknown) => null as unknown),
   endSession: mock(async () => null as unknown),
   runEffect: mock(async (_effectId: string, _signal?: AbortSignal) => null as unknown),
+  queueReport: mock(async () => null as unknown),
 };
 
 // ─── module mocks ───────────────────────────────────────────────────────────
@@ -121,7 +133,12 @@ const realBottomSheet = await import("../shared/BottomSheet.js");
 const realDetached = await import("./ExperienceDetachedWindow.js");
 
 const stableT = {
-  t: (k: string) => k,
+  // Keys WITHOUT interpolation params are returned verbatim (preserving every
+  // existing assertion). Keys WITH params append the opts JSON so the
+  // report-control integration test can verify exact server-supplied counts /
+  // revisions without local arithmetic.
+  t: (k: string, opts?: Record<string, unknown>) =>
+    opts && Object.keys(opts).length > 0 ? `${k}:${JSON.stringify(opts)}` : k,
   tDynamic: (k: string) => k,
   locale: "en",
   setLocale: () => {},
@@ -145,6 +162,10 @@ mock.module("../../stores/experience-store.js", () => ({
     useSyncExternalStore(subscribe, () => readField(currentScopeKey(), (s) => s.config)),
   useExperienceSession: () => useSyncExternalStore(subscribe, () => readField(currentScopeKey(), (s) => s.session)),
   useExperienceEffects: () => useSyncExternalStore(subscribe, () => readField(currentScopeKey(), (s) => s.effects)),
+  useExperienceQueuedAttachment: () =>
+    useSyncExternalStore(subscribe, () => readField(currentScopeKey(), (s) => s.queuedAttachment)),
+  useExperienceReportStatus: () =>
+    useSyncExternalStore(subscribe, () => readField(currentScopeKey(), (s) => s.reportStatus)),
   useExperienceLoading: () => useSyncExternalStore(subscribe, () => readField(currentScopeKey(), (s) => s.loading)),
   useExperienceLastError: () => useSyncExternalStore(subscribe, () => readField(currentScopeKey(), (s) => s.lastError)),
   useExperienceModalOpen: () => useSyncExternalStore(subscribe, () => readField(currentScopeKey(), (s) => s.modalOpen)),
@@ -177,6 +198,7 @@ mock.module("../../stores/experience-store.js", () => ({
       submitAction: storeMocks.submitAction,
       endSession: storeMocks.endSession,
       runEffect: storeMocks.runEffect,
+      queueReport: storeMocks.queueReport,
     }),
   },
 }));
@@ -493,8 +515,15 @@ describe("ExperienceLauncher — durable pending effects", () => {
 
 // ─── 8. Finish confirmation ─────────────────────────────────────────────────
 describe("ExperienceLauncher — finish", () => {
-  it("finish calls store.endSession then closeModal", async () => {
+  it("finish with a non-null server result calls endSession then closeModal", async () => {
     setScopeState(SCOPE_KEY, { config: makeConfig(), session: makeSession(), modalOpen: true });
+    // Success: the store returns a non-null terminal queued attachment.
+    storeMocks.endSession.mockResolvedValue({
+      id: "att_final",
+      queueRevision: 5,
+      sessionRevision: 5,
+      publicReport: { title: "Hearts", events: [] },
+    });
     render(<ExperienceLauncher />);
     // The modal's onFinishExperience (forwarded from the trusted chrome) runs
     // endSession + closeModal. The CONFIRMATION step itself lives in the modal
@@ -508,6 +537,22 @@ describe("ExperienceLauncher — finish", () => {
     });
     expect(storeMocks.endSession).toHaveBeenCalledTimes(1);
     expect(storeMocks.closeModal).toHaveBeenCalled();
+  });
+
+  it("finish with a null server result keeps the modal open (no closeModal)", async () => {
+    setScopeState(SCOPE_KEY, { config: makeConfig(), session: makeSession(), modalOpen: true });
+    // Server failure: the store returns null after its own resync.
+    storeMocks.endSession.mockResolvedValue(null);
+    render(<ExperienceLauncher />);
+    await act(async () => {
+      fireEvent.click(document.querySelector("[data-testid='modal-finish']")!);
+    });
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    expect(storeMocks.endSession).toHaveBeenCalledTimes(1);
+    // Modal/session surface stays open so the user can see the error + retry.
+    expect(storeMocks.closeModal).not.toHaveBeenCalled();
   });
 });
 
@@ -655,5 +700,259 @@ describe("ExperienceLauncher — defect #3: popup error clears on close/resume",
       rerender(<ExperienceLauncher />);
     });
     expect(queryByTestId("experience-popup-error")).toBeNull();
+  });
+});
+
+// ─── IR-73C: report controls — no silent growth integration boundary ──────
+// The frozen queued snapshot must NEVER grow locally. All values and mutations
+// come from the store (server-authoritative). The t mock appends opts JSON so
+// server-supplied counts / revisions are verifiable in the DOM.
+describe("ExperienceLauncher — report controls (IR-73C)", () => {
+  function makeAttachment(events: number, queueRev: number, sessionRev = 7) {
+    return {
+      queueRevision: queueRev,
+      sessionRevision: sessionRev,
+      publicReport: {
+        title: "Hearts",
+        events: Array.from({ length: events }, (_, i) => ({ type: "public", detail: `e${i}` })),
+      },
+    };
+  }
+
+  it("no auto-queue: a pending-count change never calls queueReport and keeps the frozen N/Q", () => {
+    setScopeState(SCOPE_KEY, {
+      config: makeConfig(),
+      session: makeSession(),
+      queuedAttachment: makeAttachment(2, 5),
+      reportStatus: { reportFrontier: 6, pendingPublicEventCount: 1 },
+      modalOpen: false,
+    });
+    const { getByTestId } = render(<ExperienceLauncher />);
+    fireEvent.click(getByTestId("experience-launcher-pill"));
+    // Frozen shows N=2, queueRev Q=5 from server props.
+    expect(getByTestId("experience-report-frozen").textContent).toContain('"n":2');
+    expect(getByTestId("experience-report-queue-rev").textContent).toContain('"n":5');
+    // A rehydrate changes ONLY pendingPublicEventCount.
+    setScopeState(SCOPE_KEY, {
+      ...scopeState(SCOPE_KEY),
+      reportStatus: { reportFrontier: 6, pendingPublicEventCount: 3 },
+    });
+    // No queue endpoint call occurred automatically.
+    expect(storeMocks.queueReport).not.toHaveBeenCalled();
+  });
+
+  it("explicit Add later calls queueReport exactly once", async () => {
+    setScopeState(SCOPE_KEY, {
+      config: makeConfig(),
+      session: makeSession(),
+      queuedAttachment: makeAttachment(2, 5),
+      reportStatus: { reportFrontier: 6, pendingPublicEventCount: 1 },
+      modalOpen: false,
+    });
+    storeMocks.queueReport.mockResolvedValue(makeAttachment(2, 5));
+    const { getByTestId } = render(<ExperienceLauncher />);
+    fireEvent.click(getByTestId("experience-launcher-pill"));
+    await act(async () => {
+      fireEvent.click(getByTestId("experience-report-action"));
+    });
+    expect(storeMocks.queueReport).toHaveBeenCalledTimes(1);
+  });
+
+  it("only after the server supplies a new attachment does UI show N+later and Q+1", async () => {
+    setScopeState(SCOPE_KEY, {
+      config: makeConfig(),
+      session: makeSession(),
+      queuedAttachment: makeAttachment(2, 5),
+      reportStatus: { reportFrontier: 6, pendingPublicEventCount: 3 },
+      modalOpen: false,
+    });
+    // The queue operation returns the new attachment AND the store rehydrate
+    // supplies it — simulate both in the mock implementation.
+    const laterAttachment = makeAttachment(5, 6);
+    storeMocks.queueReport.mockImplementation(async () => {
+      setScopeState(SCOPE_KEY, {
+        ...scopeState(SCOPE_KEY),
+        queuedAttachment: laterAttachment,
+        reportStatus: { reportFrontier: 6, pendingPublicEventCount: 0 },
+      });
+      return laterAttachment;
+    });
+    const { getByTestId } = render(<ExperienceLauncher />);
+    fireEvent.click(getByTestId("experience-launcher-pill"));
+    // Before: frozen N=2, queueRev Q=5.
+    expect(getByTestId("experience-report-frozen").textContent).toContain('"n":2');
+    expect(getByTestId("experience-report-queue-rev").textContent).toContain('"n":5');
+    await act(async () => {
+      fireEvent.click(getByTestId("experience-report-action"));
+    });
+    // After: frozen N+later=5, queueRev Q+1=6 — supplied ONLY by the server
+    // response (no local arithmetic).
+    expect(getByTestId("experience-report-frozen").textContent).toContain('"n":5');
+    expect(getByTestId("experience-report-queue-rev").textContent).toContain('"n":6');
+  });
+
+  it("Queue path with no existing attachment", async () => {
+    setScopeState(SCOPE_KEY, {
+      config: makeConfig(),
+      session: makeSession(),
+      queuedAttachment: null,
+      reportStatus: { reportFrontier: 4, pendingPublicEventCount: 2 },
+      modalOpen: false,
+    });
+    storeMocks.queueReport.mockResolvedValue(makeAttachment(2, 0));
+    const { getByTestId } = render(<ExperienceLauncher />);
+    fireEvent.click(getByTestId("experience-launcher-pill"));
+    const btn = getByTestId("experience-report-action") as HTMLButtonElement;
+    expect(btn.disabled).toBe(false);
+    expect(btn.getAttribute("data-action")).toBe("queue");
+    await act(async () => {
+      fireEvent.click(btn);
+    });
+    expect(storeMocks.queueReport).toHaveBeenCalledTimes(1);
+  });
+
+  it("duplicate-click suppression: a second click while pending does not call queueReport again", async () => {
+    setScopeState(SCOPE_KEY, {
+      config: makeConfig(),
+      session: makeSession(),
+      queuedAttachment: null,
+      reportStatus: { reportFrontier: 4, pendingPublicEventCount: 2 },
+      modalOpen: false,
+    });
+    let resolveFn: (() => void) | null = null;
+    storeMocks.queueReport.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveFn = resolve as () => void;
+        }),
+    );
+    const { getByTestId } = render(<ExperienceLauncher />);
+    fireEvent.click(getByTestId("experience-launcher-pill"));
+    act(() => {
+      fireEvent.click(getByTestId("experience-report-action"));
+    });
+    act(() => {
+      fireEvent.click(getByTestId("experience-report-action"));
+    });
+    expect(storeMocks.queueReport).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      resolveFn!();
+      await new Promise((r) => setTimeout(r, 0));
+    });
+  });
+
+  it("server failure leaves old frozen values (no optimistic bump)", async () => {
+    setScopeState(SCOPE_KEY, {
+      config: makeConfig(),
+      session: makeSession(),
+      queuedAttachment: makeAttachment(2, 5),
+      reportStatus: { reportFrontier: 6, pendingPublicEventCount: 1 },
+      modalOpen: false,
+    });
+    // A null store result = server failure (the launcher rejects it).
+    storeMocks.queueReport.mockResolvedValue(null);
+    const { getByTestId } = render(<ExperienceLauncher />);
+    fireEvent.click(getByTestId("experience-launcher-pill"));
+    await act(async () => {
+      fireEvent.click(getByTestId("experience-report-action"));
+    });
+    // The frozen count is STILL 2 (the old server value) — no optimistic bump.
+    expect(getByTestId("experience-report-frozen").textContent).toContain('"n":2');
+    // A fail-closed error is shown.
+    expect(getByTestId("experience-report-error").textContent).toContain("experience_report_action_error");
+  });
+
+  it("no action when pending === 0 (disabled button, no call)", () => {
+    setScopeState(SCOPE_KEY, {
+      config: makeConfig(),
+      session: makeSession(),
+      queuedAttachment: makeAttachment(2, 5),
+      reportStatus: { reportFrontier: 5, pendingPublicEventCount: 0 },
+      modalOpen: false,
+    });
+    const { getByTestId } = render(<ExperienceLauncher />);
+    fireEvent.click(getByTestId("experience-launcher-pill"));
+    const btn = getByTestId("experience-report-action") as HTMLButtonElement;
+    expect(btn.disabled).toBe(true);
+    fireEvent.click(btn);
+    expect(storeMocks.queueReport).not.toHaveBeenCalled();
+  });
+
+  it("exact scope/branch isolation: branch B's controls do not see branch A's attachment", () => {
+    const BRANCH2 = JSON.stringify([CHAT_ID, "branch_2"]);
+    setScopeState(SCOPE_KEY, {
+      config: makeConfig(),
+      session: makeSession(),
+      queuedAttachment: makeAttachment(3, 8),
+      reportStatus: { reportFrontier: 8, pendingPublicEventCount: 0 },
+      modalOpen: false,
+    });
+    setScopeState(BRANCH2, {
+      config: makeConfig(),
+      session: makeSession({ sessionId: "sess_B" }),
+      queuedAttachment: null,
+      reportStatus: { reportFrontier: 1, pendingPublicEventCount: 2 },
+      modalOpen: false,
+    });
+    const { getByTestId, rerender } = render(<ExperienceLauncher />);
+    fireEvent.click(getByTestId("experience-launcher-pill"));
+    // Branch 1: up-to-date (attachment, no pending).
+    expect((getByTestId("experience-report-action") as HTMLButtonElement).getAttribute("data-action")).toBe("upToDate");
+    // Switch to branch 2.
+    snapshotBranch = { id: "branch_2" };
+    act(() => {
+      rerender(<ExperienceLauncher />);
+    });
+    // The branch switch reset local UI (popover closed) — reopen it.
+    fireEvent.click(getByTestId("experience-launcher-pill"));
+    // Branch 2 has NO attachment + pending > 0 → queue (not branch 1's data).
+    expect((getByTestId("experience-report-action") as HTMLButtonElement).getAttribute("data-action")).toBe("queue");
+  });
+
+  it("report controls are NOT rendered in the popover while the modal is open (no duplicate)", () => {
+    setScopeState(SCOPE_KEY, {
+      config: makeConfig(),
+      session: makeSession(),
+      queuedAttachment: makeAttachment(2, 5),
+      reportStatus: { reportFrontier: 6, pendingPublicEventCount: 1 },
+      modalOpen: true,
+    });
+    const { queryByTestId } = render(<ExperienceLauncher />);
+    // The popover body does NOT render report controls while modal is open.
+    expect(queryByTestId("experience-report-controls")).toBeNull();
+  });
+
+  it("config-surface change clears the local queue error without an automatic queue call", async () => {
+    setScopeState(SCOPE_KEY, {
+      config: makeConfig(),
+      session: makeSession(),
+      queuedAttachment: makeAttachment(2, 5),
+      reportStatus: { reportFrontier: 6, pendingPublicEventCount: 1 },
+      modalOpen: false,
+    });
+    // A failing queue action leaves a local fail-closed error.
+    storeMocks.queueReport.mockResolvedValue(null);
+    const { getByTestId, queryByTestId, rerender } = render(<ExperienceLauncher />);
+    fireEvent.click(getByTestId("experience-launcher-pill"));
+    await act(async () => {
+      fireEvent.click(getByTestId("experience-report-action"));
+    });
+    // The error is shown.
+    expect(getByTestId("experience-report-error").textContent).toContain("experience_report_action_error");
+    expect(storeMocks.queueReport).toHaveBeenCalledTimes(1);
+    // Change the config surface (toggle scriptId) — the surfaceKey changes so
+    // the ReportControls remounts, clearing its local error. The launcher's
+    // surfaceKey effect also closes the popover.
+    setScopeState(SCOPE_KEY, { ...scopeState(SCOPE_KEY), config: makeConfig({ scriptId: "script_OTHER" }) });
+    act(() => {
+      rerender(<ExperienceLauncher />);
+    });
+    // No automatic queue call occurred during the config change.
+    expect(storeMocks.queueReport).toHaveBeenCalledTimes(1);
+    // Reopen the popover — the report controls are freshly mounted with no error.
+    fireEvent.click(getByTestId("experience-launcher-pill"));
+    expect(queryByTestId("experience-report-error")).toBeNull();
+    // Still only the one manual call — no auto-queue after the remount.
+    expect(storeMocks.queueReport).toHaveBeenCalledTimes(1);
   });
 });

@@ -8,8 +8,9 @@
  * store, runs durable pending model effects, supports trusted finish/detach,
  * and keeps every closing UI non-destructive (close never ends the session).
  *
- * Non-goals (IR-73C/IR-73D): report/queue/add-later controls, composer/send
- * binding, authoring, API/backend/store changes, live visual resource re-fetch.
+ * Non-goals (IR-73D): composer/send binding, authoring, API/backend/store
+ * changes, live visual resource re-fetch. Report/queue/add-later controls are
+ * now wired (IR-73C) through the server-authoritative store.
  *
  * Session-preservation invariant: closing the modal calls ONLY
  * `store.closeModal` — never `endSession`. Reopening resumes the same persisted
@@ -35,6 +36,8 @@ import {
   useExperienceLastError,
   useExperienceLoading,
   useExperienceModalOpen,
+  useExperienceQueuedAttachment,
+  useExperienceReportStatus,
   useExperienceSession,
   useExperienceStore,
   type ExperienceActionIntent,
@@ -47,6 +50,7 @@ import {
   experienceActionOutcome,
   type ExperienceActionOutcome,
 } from "./ExperienceModal.js";
+import { ExperienceReportControls } from "./ExperienceReportControls.js";
 import { ExperienceSetupModal } from "./ExperienceSetupModal.js";
 import {
   openExperienceDetachedWindow,
@@ -86,6 +90,8 @@ export function ExperienceLauncher({ docked = false }: ExperienceLauncherProps):
   const config = useExperienceConfig(chatId, branchId);
   const session = useExperienceSession(chatId, branchId);
   const effects = useExperienceEffects(chatId, branchId);
+  const queuedAttachment = useExperienceQueuedAttachment(chatId, branchId);
+  const reportStatus = useExperienceReportStatus(chatId, branchId);
   const loading = useExperienceLoading(chatId, branchId);
   const lastError = useExperienceLastError(chatId, branchId);
   const modalOpen = useExperienceModalOpen(chatId, branchId);
@@ -231,10 +237,28 @@ export function ExperienceLauncher({ docked = false }: ExperienceLauncherProps):
     useExperienceStore.getState().closeModal();
   }
 
-  // ── Finish: trusted confirmation → endSession → close ────────────────────
+  // ── Finish: trusted confirmation → endSession → close ONLY on success ─────
+  // The store returns the terminal queued attachment on success, or null on a
+  // server failure (after its own resync surfaces lastError). Close the modal
+  // ONLY when the server returned a non-null final attachment — on null keep
+  // the modal/session surface open so the user can see the store error and
+  // retry. The trusted confirmation step itself lives in the modal chrome.
   async function handleFinishExperience(): Promise<void> {
-    await useExperienceStore.getState().endSession();
-    useExperienceStore.getState().closeModal();
+    const result = await useExperienceStore.getState().endSession();
+    if (result !== null) {
+      useExperienceStore.getState().closeModal();
+    }
+  }
+
+  // ── Queue / Add later: the SAME server operation (store.queueReport) backs ─
+  // both the initial manual Queue and a replacement/Add-later. The store owns
+  // race guards + the server resync; this callback rejects on a null store
+  // result so the report-control surface can show a fail-closed error WITHOUT
+  // an optimistic count/revision bump. No local synthesis — the store
+  // rehydrate supplies the new frozen values.
+  async function handleQueueReport(): Promise<void> {
+    const result = await useExperienceStore.getState().queueReport();
+    if (result === null) throw new Error("experience queue failed");
   }
 
   // ── Detach: open the persisted detached window with the pinned descriptor ─
@@ -297,6 +321,19 @@ export function ExperienceLauncher({ docked = false }: ExperienceLauncherProps):
         >
           {pillLabel}
         </button>
+      )}
+      {/* Report controls live in the popover/sheet ONLY while the modal is
+          closed (IR-73C) — when the modal is open the same controls live in
+          its trusted footer. Never both at once. The surfaceKey (scope +
+          authoritative config) remounts the component on a branch switch OR a
+          config-surface change, clearing any stale local queue error. */}
+      {hasSession && !incompatible && !modalOpen && (
+        <ExperienceReportControls
+          key={surfaceKey ?? undefined}
+          queuedAttachment={queuedAttachment}
+          reportStatus={reportStatus}
+          onQueue={handleQueueReport}
+        />
       )}
       {popupError && (
         <p className="font-ui text-[11px] leading-relaxed text-danger-text" role="alert">
@@ -379,6 +416,16 @@ export function ExperienceLauncher({ docked = false }: ExperienceLauncherProps):
           onAction={handleAction}
           onDetach={handleDetach}
           onFinishExperience={() => void handleFinishExperience()}
+          reportControls={
+            modalOpen ? (
+              <ExperienceReportControls
+                key={surfaceKey ?? undefined}
+                queuedAttachment={queuedAttachment}
+                reportStatus={reportStatus}
+                onQueue={handleQueueReport}
+              />
+            ) : undefined
+          }
           onError={(reason) => {
             // Observability only — never crash the host tree.
             if (typeof console !== "undefined") console.warn("[experience]", reason);

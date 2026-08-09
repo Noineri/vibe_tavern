@@ -98,6 +98,25 @@ describe("ExperienceModal — trusted chrome", () => {
     expect(onDetach).toHaveBeenCalledTimes(1);
   });
 
+  it("renders the reportControls footer OUTSIDE the frame when supplied (IR-73C)", () => {
+    const { getByTestId, queryByTestId } = renderModal({
+      reportControls: <div data-testid="injected-report-controls">controls</div>,
+    });
+    // The trusted footer renders the supplied content.
+    expect(getByTestId("experience-report-footer")).toBeTruthy();
+    expect(getByTestId("injected-report-controls")).toBeTruthy();
+    // The footer is a sibling of the frame container, not inside it.
+    const frameContainer = getByTestId("mock-frame").parentElement;
+    const footer = getByTestId("experience-report-footer");
+    expect(frameContainer?.contains(footer)).toBe(false);
+    void queryByTestId;
+  });
+
+  it("omits the reportControls footer when not supplied", () => {
+    const { queryByTestId } = renderModal();
+    expect(queryByTestId("experience-report-footer")).toBeNull();
+  });
+
   it("hides the Detach control when onDetach is absent", () => {
     const { queryByTestId } = renderModal({ onDetach: undefined });
     expect(queryByTestId("experience-detach")).toBeNull();

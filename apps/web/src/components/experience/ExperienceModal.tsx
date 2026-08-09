@@ -36,7 +36,7 @@
  * the trusted chrome label AND the visual protocol (`sendPending`) — never the
  * label alone.
  */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { Modal } from "../shared/Modal.js";
 import { Icons } from "../shared/icons.js";
 import { useT } from "../../i18n/context.js";
@@ -112,6 +112,12 @@ export interface ExperienceModalProps {
    * calls this. The visual's bridge `finish` request is forwarded here too.
    */
   readonly onFinishExperience?: () => void;
+  /** Trusted report-control surface rendered in a stable footer OUTSIDE the
+   *  sandboxed frame (IR-73C). The parent (launcher) builds the element from
+   *  server-authoritative store selectors and supplies it here so the controls
+   *  are reachable while playing. Omit when the modal is closed (the launcher
+   *  renders the same controls in its popover/sheet instead — never both). */
+  readonly reportControls?: ReactNode;
   // ── ExperienceFrame pass-through ──────────────────────────────────────────
   readonly visualSource: string;
   readonly sessionId: string;
@@ -145,6 +151,7 @@ export function ExperienceModal(props: ExperienceModalProps) {
     pendingPhase,
     onDetach,
     onFinishExperience,
+    reportControls,
     visualSource,
     sessionId,
     initialRevision,
@@ -367,6 +374,18 @@ export function ExperienceModal(props: ExperienceModalProps) {
             </div>
           )}
         </div>
+        {/* Trusted report-control footer — OUTSIDE the sandboxed frame
+            (IR-73C). Rendered only when the parent supplies controls; the
+            launcher omits this prop while the modal is closed so the same
+            controls live in the popover/sheet instead (never both at once). */}
+        {reportControls && (
+          <footer
+            className="border-t border-neutral-800 px-4 py-2"
+            data-testid="experience-report-footer"
+          >
+            {reportControls}
+          </footer>
+        )}
       </div>
     </Modal>
   );
