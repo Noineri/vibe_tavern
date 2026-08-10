@@ -327,3 +327,236 @@ function tick(): Promise<void> {
     setTimeout(step, 0);
   });
 }
+
+// ─── IR-90E: Conversation visual ↔ real bridge round-trip ──────────────────
+//
+// Tests the UNCHANGED shipped Conversation visual source through the REAL
+// bridge + SDK over a real MessageChannel. This is the boundary the parent
+// acceptance review required: complete the handshake, send the real
+// projection/actions, assert the visual's textarea becomes enabled, type text,
+// submit through the visual bridge, and verify the action carries
+// {type:'reply', payload:{text}}. NOT a visual fixture or source substring.
+
+import { CONVERSATION_VISUAL_SOURCE } from "../components/experience/starters/conversation.js";
+
+/** A typed fake DOM element sufficient for the Conversation visual's needs.
+ *  Previously typed as Record<string,unknown>, which caused TS2339 on
+ *  `style.display` — the index-signature value `unknown` blocks optional
+ *  property access in strict mode (IR-90E2 fix). */
+interface FakeElementStyle {
+  [key: string]: string;
+}
+
+interface FakeElement {
+  id: string;
+  className: string;
+  innerHTML: string;
+  textContent: string;
+  disabled: boolean;
+  value: string;
+  style: FakeElementStyle;
+  onclick: (() => void) | null;
+  addEventListener: () => void;
+  appendChild: (c: Record<string, unknown>) => void;
+  scrollTop: number;
+  scrollHeight: number;
+  scrollWidth: number;
+  clientWidth: number;
+  _children: Record<string, unknown>[];
+}
+
+function fakeElement(id: string): FakeElement {
+  const children: Record<string, unknown>[] = [];
+  return {
+    id,
+    className: "",
+    innerHTML: "",
+    textContent: "",
+    disabled: false,
+    value: "",
+    style: { display: "" },
+    onclick: null,
+    addEventListener: () => {},
+    appendChild: (c: Record<string, unknown>) => { children.push(c); },
+    scrollTop: 0,
+    scrollHeight: 0,
+    scrollWidth: 0,
+    clientWidth: 0,
+    _children: children,
+  };
+}
+
+/** A fake window + document sufficient for evaluating the Conversation visual.
+ *  The SDK is evaluated first (sets window.VibeExperience), then the visual's
+ *  <script> is extracted and evaluated (calls VibeExperience.connect).
+ *  `fakeDocument` includes `createTextNode` because the real Conversation
+ *  render loop calls `document.createTextNode(m.text)` for every message;
+ *  without it the render throws, the SDK catches the exception, and the
+ *  pending-state assertion never reaches the `disabled=true` code path. */
+function createConversationHarness() {
+  const messageListeners: Array<(ev: { data: unknown }) => void> = [];
+  const elements = new Map<string, FakeElement>();
+
+  function ensureElement(id: string): FakeElement {
+    if (!elements.has(id)) elements.set(id, fakeElement(id));
+    return elements.get(id)!;
+  }
+
+  const fakeDocument = {
+    getElementById: (id: string) => ensureElement(id),
+    createElement: (_tag: string) => fakeElement("created"),
+    createTextNode: (text: string): Record<string, unknown> => ({ textContent: text, nodeType: 3 }),
+  };
+
+  const fakeWindow = {
+    addEventListener(type: string, fn: (ev: { data: unknown }) => void) {
+      if (type === "message") messageListeners.push(fn);
+    },
+    crypto: globalThis.crypto,
+    document: fakeDocument,
+    VibeExperience: undefined as unknown,
+  };
+
+  // 1. Evaluate the SDK IIFE into the fake window.
+  new Function("window", VIBE_EXPERIENCE_SDK_SOURCE)(fakeWindow);
+
+  // 2. Extract and evaluate the Conversation visual's <script> content.
+  const scriptMatch = CONVERSATION_VISUAL_SOURCE.match(/<script>([\s\S]*)<\/script>/);
+  if (!scriptMatch) throw new Error("no <script> in Conversation visual source");
+  new Function("window", "document", scriptMatch[1]!)(fakeWindow, fakeDocument);
+
+  return {
+    window: fakeWindow,
+    elements,
+    deliverWindowMessage(data: unknown) {
+      for (const fn of messageListeners) fn({ data });
+    },
+  };
+}
+
+describe("IR-90E: Conversation visual ↔ real bridge round-trip", () => {
+  it("handshakes, enables the textarea on reply action, submits reply with text payload, and receives the action", async () => {
+    const channel = new MessageChannel();
+    const actions: ExperienceActionDto[] = [];
+    let ready = false;
+
+    // Host bridge.
+    const bridge = new ExperienceHostBridge(
+      baseOpts({ onReady: () => (ready = true), onAction: (a) => actions.push(a) }),
+    );
+    bridge.bindHostPort(channel.port1 as unknown as BridgePort);
+
+    // Frame harness with the REAL Conversation visual.
+    const harness = createConversationHarness();
+    harness.deliverWindowMessage({ kind: "port", port: channel.port2 });
+
+    // Handshake.
+    bridge.sendHello();
+    await tick();
+    expect(ready).toBe(true);
+
+    // Send the initial projection with reply + finish actions (what the
+    // Model Conversation rules project for the human seat).
+    bridge.sendState({
+      state: { messages: [], turn: 0 },
+      actions: [
+        { type: "reply", label: "Reply", allowsText: true },
+        { type: "finish", label: "Finish" },
+      ],
+      revision: 0,
+      status: "active",
+    });
+    await tick();
+
+    // The Conversation visual's textarea (xp-input) should be ENABLED
+    // (not disabled) because the reply action is present.
+    const inputEl = harness.elements.get("xp-input");
+    expect(inputEl).toBeTruthy();
+    expect(inputEl!.disabled).toBe(false);
+
+    // The Finish button should be visible (display !== 'none') because the
+    // finish action is present.
+    const finishBtn = harness.elements.get("xp-finish");
+    expect(finishBtn).toBeTruthy();
+    // The visual sets display to 'block' when finish is available.
+    expect(String(finishBtn!.style?.display ?? "")).not.toBe("none");
+
+    // Type text into the textarea and submit through the visual bridge.
+    inputEl!.value = "Hello from the visual!";
+    const sendBtn = harness.elements.get("xp-send");
+    expect(sendBtn?.onclick).toBeTruthy();
+    (sendBtn!.onclick as () => void)();
+    await tick();
+
+    // The host bridge received the action with the text payload.
+    expect(actions).toHaveLength(1);
+    expect(actions[0]!.type).toBe("reply");
+    expect(actions[0]!.payload).toEqual({ text: "Hello from the visual!" });
+    expect(actions[0]!.expectedRevision).toBe(0);
+
+    // Ack the action and send the next state (after the model turn, both
+    // messages present). The visual should render the new messages.
+    bridge.sendResult(actions[0]!.requestId, 1, "active");
+    bridge.sendState({
+      state: {
+        messages: [
+          { from: "you", text: "Hello from the visual!" },
+          { from: "them", text: "Hi there!" },
+        ],
+        turn: 2,
+      },
+      actions: [
+        { type: "reply", label: "Reply", allowsText: true },
+        { type: "finish", label: "Finish" },
+      ],
+      revision: 1,
+      status: "active",
+    });
+    await tick();
+
+    // After the ack, a second action at the new revision proceeds (the
+    // duplicate-click lock was cleared by sendResult).
+    inputEl!.value = "Second message";
+    (sendBtn!.onclick as () => void)();
+    await tick();
+    expect(actions).toHaveLength(2);
+    expect(actions[1]!.expectedRevision).toBe(1);
+    expect(actions[1]!.payload).toEqual({ text: "Second message" });
+  });
+
+  it("disables the textarea when no reply action is present (pending state)", async () => {
+    const channel = new MessageChannel();
+    let ready = false;
+    const bridge = new ExperienceHostBridge(baseOpts({ onReady: () => (ready = true), onAction: () => {} }));
+    bridge.bindHostPort(channel.port1 as unknown as BridgePort);
+    const harness = createConversationHarness();
+    harness.deliverWindowMessage({ kind: "port", port: channel.port2 });
+
+    bridge.sendHello();
+    await tick();
+    expect(ready).toBe(true);
+
+    // Send a state WITH reply first (so the visual enables the textarea),
+    // then send a state WITHOUT reply (the pending state).
+    bridge.sendState({
+      state: { messages: [] },
+      actions: [{ type: "reply", allowsText: true }],
+      revision: 0,
+      status: "active",
+    });
+    await tick();
+    expect(harness.elements.get("xp-input")!.disabled).toBe(false);
+
+    // Now send the pending state with NO actions.
+    bridge.sendState({
+      state: { messages: [{ from: "you", text: "Hello" }] },
+      actions: [],
+      revision: 1,
+      status: "active",
+    });
+    await tick();
+
+    // The textarea should now be DISABLED.
+    expect(harness.elements.get("xp-input")!.disabled).toBe(true);
+  });
+});

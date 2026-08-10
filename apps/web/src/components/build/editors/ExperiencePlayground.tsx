@@ -59,8 +59,11 @@ import { useT } from "../../../i18n/context.js";
 import {
   ExperienceApiError,
   advanceExperiencePlayground,
+  runExperienceTest,
   startExperiencePlayground,
 } from "../../../api/experience-api.js";
+import { fetchProviderProfileModels, listProviderProfiles } from "../../../api/provider-api.js";
+import type { ProviderProfileRecord } from "../../../api/types.js";
 import type {
   ExperienceParticipant,
   ExperiencePlaygroundAdvanceRequest,
@@ -86,6 +89,10 @@ interface PlaygroundSeat {
   id: string;
   label: string;
   controller: ExperienceController;
+  /** Pinned provider profile for a model seat (IR-90E). */
+  providerProfileId?: string;
+  /** Pinned model id for a model seat (IR-90E). */
+  modelId?: string;
 }
 
 /** The typed-error view model this panel renders. Normalized from the client
@@ -258,6 +265,17 @@ export function ExperiencePlayground({ code, visualSource }: ExperiencePlaygroun
   const [requestId, setRequestId] = useState("pg-req-1");
   const [expectedRevision, setExpectedRevision] = useState("0");
 
+  // IR-90E: provider/model loading for model seats (mirrors ExperienceSetupModal).
+  const [providerProfiles, setProviderProfiles] = useState<ProviderProfileRecord[] | null>(null);
+  const [modelsByProfile, setModelsByProfile] = useState<Record<string, Array<{ id: string; label: string }>>>({});
+  const [loadingProfiles, setLoadingProfiles] = useState<Set<string>>(new Set());
+  // IR-90E: collapsed Developer diagnostics (novice-readable default).
+  const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
+  // IR-90E: auto-derive tracks whether the user has manually modified the
+  // roster (once touched, auto-derive never overrides).
+  const [seatsTouched, setSeatsTouched] = useState(false);
+  const [deriving, setDeriving] = useState(false);
+
   // Isolated frame wiring. The bridge captures its callbacks at creation, so
   // the frame-facing handlers delegate through refs (the IR-73B seam pattern);
   // the frame is keyed by playgroundSessionId so every session gets a fresh
@@ -273,16 +291,91 @@ export function ExperiencePlayground({ code, visualSource }: ExperiencePlaygroun
       id: seat.id.trim(),
       label: seat.label.trim() === "" ? seat.id.trim() : seat.label.trim(),
       controller: seat.controller,
+      ...(seat.controller === EXPERIENCE_CONTROLLER.model && seat.providerProfileId !== undefined
+        ? { providerProfileId: seat.providerProfileId }
+        : {}),
+      ...(seat.controller === EXPERIENCE_CONTROLLER.model && seat.modelId !== undefined
+        ? { modelId: seat.modelId }
+        : {}),
     }));
   const humanSeats = participants.filter((p) => p.controller === EXPERIENCE_CONTROLLER.human);
 
   const updateSeat = (index: number, patch: Partial<PlaygroundSeat>) => {
+    setSeatsTouched(true);
     setSeats((prev) => prev.map((seat, i) => (i === index ? { ...seat, ...patch } : seat)));
   };
 
   const toggleGrant = (capability: ExperienceCapability, checked: boolean) => {
+    setSeatsTouched(true);
     setGrants((prev) => (checked ? [...prev, capability] : prev.filter((c) => c !== capability)));
   };
+
+  // IR-90E: load provider profiles when the panel opens and a model seat exists.
+  const hasModelSeat = seats.some((s) => s.controller === EXPERIENCE_CONTROLLER.model);
+  useEffect(() => {
+    if (!open || !hasModelSeat || providerProfiles !== null) return;
+    let cancelled = false;
+    listProviderProfiles()
+      .then((profiles) => { if (!cancelled) setProviderProfiles(profiles); })
+      .catch(() => { if (!cancelled) setProviderProfiles([]); });
+    return () => { cancelled = true; };
+  }, [open, hasModelSeat, providerProfiles]);
+
+  function ensureModels(profileId: string): void {
+    if (profileId === "" || modelsByProfile[profileId] !== undefined || loadingProfiles.has(profileId)) return;
+    setLoadingProfiles((prev) => new Set(prev).add(profileId));
+    fetchProviderProfileModels(profileId)
+      .then((res) => { setModelsByProfile((prev) => ({ ...prev, [profileId]: res.models.map((m) => ({ id: m.id, label: m.label || m.id })) })); })
+      .catch(() => { setModelsByProfile((prev) => ({ ...prev, [profileId]: [] })); })
+      .finally(() => { setLoadingProfiles((prev) => { const n = new Set(prev); n.delete(profileId); return n; }); });
+  }
+
+  function modelOptionsFor(profileId: string): Array<{ id: string; label: string }> {
+    const fetched = modelsByProfile[profileId] ?? [];
+    const options = fetched.map((m) => ({ id: m.id, label: m.label }));
+    const profile = (providerProfiles ?? []).find((p) => p.id === profileId);
+    if (profile?.defaultModel && !options.some((o) => o.id === profile.defaultModel)) {
+      options.push({ id: profile.defaultModel, label: profile.defaultModel });
+    }
+    return options;
+  }
+
+  const providerOptions = (providerProfiles ?? []).map((p) => ({ id: p.id, label: p.name || p.id }));
+
+  // IR-90E: auto-derive an ordinary setup (roster + grants) from the discovered
+  // definition when the panel opens and the user hasn't manually configured
+  // seats. Uses the REAL runExperienceTest discovery (not brittle text parsing)
+  // — failed discovery (broken rules) keeps the default single human seat.
+  useEffect(() => {
+    if (!open || seatsTouched || deriving || code.trim() === "") return;
+    let cancelled = false;
+    setDeriving(true);
+    runExperienceTest({ rulesCode: code, actions: [] })
+      .then((data) => {
+        if (cancelled || seatsTouched) return;
+        const declared = data.definition.declaredCapabilities.map((c) => c.capability);
+        const hasParticipants = declared.includes(EXPERIENCE_CAPABILITY.participants);
+        const hasModel = declared.includes(EXPERIENCE_CAPABILITY.model);
+        // Derive grants from the declared capabilities.
+        const derivedGrants = declared.filter((c): c is ExperienceCapability =>
+          CAPABILITIES.includes(c as ExperienceCapability));
+        setGrants(derivedGrants);
+        // Derive seats: a human seat is always present; add a model seat when
+        // both participants + model are declared.
+        if (hasParticipants && hasModel) {
+          setSeats([
+            { id: "you", label: "You", controller: EXPERIENCE_CONTROLLER.human },
+            { id: "ai", label: "AI", controller: EXPERIENCE_CONTROLLER.model },
+          ]);
+        }
+      })
+      .catch(() => { /* broken rules: keep the default single human seat */ })
+      .finally(() => { if (!cancelled) setDeriving(false); });
+    return () => { cancelled = true; };
+    // deriving is intentionally excluded: including it causes the effect to
+    // skip on re-render after setDeriving(true), never completing discovery.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, code, seatsTouched]);
 
   /** The ONE advance path (host chrome AND frame actions): apply one human
    *  action to the live session, then let the driver advance script seats.
@@ -409,6 +502,12 @@ export function ExperiencePlayground({ code, visualSource }: ExperiencePlaygroun
     async (action: ExperienceActionDto) => {
       const outcome = await advanceWith(action);
       if (outcome.ok) {
+        // IR-90E: synchronize the host's form state so the prominent host
+        // legal actions + custom action form do not become stale after a
+        // visual-initiated action.
+        setAppliedCount((prev) => prev + 1);
+        setRequestId(`pg-req-${appliedCount + 2}`);
+        setExpectedRevision(String(outcome.data.revision));
         frameRef.current?.sendResult(action.requestId, outcome.data.revision, outcome.data.status);
         return;
       }
@@ -422,7 +521,7 @@ export function ExperiencePlayground({ code, visualSource }: ExperiencePlaygroun
         },
       );
     },
-    [advanceWith],
+    [advanceWith, appliedCount],
   );
 
   // Push the latest turn's projection into the isolated frame whenever the
@@ -439,6 +538,17 @@ export function ExperiencePlayground({ code, visualSource }: ExperiencePlaygroun
   }, [frameReady, session]);
 
   const hasVisual = visualSource !== null && visualSource.trim() !== "";
+
+  // IR-90E: ordinary-language status for the novice-readable default view.
+  const statusText = (() => {
+    if (session === null) return "";
+    if (busy !== null) return t("experience_playground_status_busy");
+    if (session.status === "completed") return t("experience_playground_status_completed");
+    if (session.stopReason === "awaiting_human") return t("experience_playground_status_your_turn");
+    if (session.stopReason === "awaiting_model") return t("experience_playground_status_model");
+    if (session.stopReason === "no_legal_action" || session.projection.actions.length === 0) return t("experience_playground_status_waiting");
+    return t("experience_playground_status_default");
+  })();
 
   return (
     <div className="rounded-lg border border-border bg-s2" style={{ padding: 16 }}>
@@ -463,44 +573,76 @@ export function ExperiencePlayground({ code, visualSource }: ExperiencePlaygroun
           <div className="mb-3">
             <label className={lblCls}>{t("experience_setup_participants_label")}</label>
             {seats.map((seat, index) => (
-              <div key={index} className="mb-1.5 mt-1.5 flex flex-wrap items-center gap-2">
-                <input
-                  className={cn(inputCls, "min-w-0 w-24 shrink-0")}
-                  value={seat.id}
-                  placeholder={t("experience_tester_seat_id_placeholder")}
-                  onChange={(e) => updateSeat(index, { id: e.target.value })}
-                />
-                <input
-                  className={cn(inputCls, "min-w-[7rem] flex-1")}
-                  value={seat.label}
-                  placeholder={t("experience_setup_participant_name_placeholder")}
-                  onChange={(e) => updateSeat(index, { label: e.target.value })}
-                />
-                <div className="w-28 shrink-0">
-                  <DropdownSelect
-                    value={seat.controller}
-                    options={CONTROLLERS.map((controller) => ({ id: controller, label: t(CONTROLLER_LABEL_KEY[controller]) }))}
-                    searchable={false}
-                    onChange={(value) => {
-                      const controller = CONTROLLERS.find((c) => c === value);
-                      if (controller !== undefined) updateSeat(index, { controller });
-                    }}
+              <div key={index}>
+                <div className="mb-1.5 mt-1.5 flex flex-wrap items-center gap-2">
+                  <input
+                    className={cn(inputCls, "min-w-0 w-24 shrink-0")}
+                    value={seat.id}
+                    placeholder={t("experience_tester_seat_id_placeholder")}
+                    onChange={(e) => updateSeat(index, { id: e.target.value })}
                   />
+                  <input
+                    className={cn(inputCls, "min-w-[7rem] flex-1")}
+                    value={seat.label}
+                    placeholder={t("experience_setup_participant_name_placeholder")}
+                    onChange={(e) => updateSeat(index, { label: e.target.value })}
+                  />
+                  <div className="w-28 shrink-0">
+                    <DropdownSelect
+                      value={seat.controller}
+                      options={CONTROLLERS.map((controller) => ({ id: controller, label: t(CONTROLLER_LABEL_KEY[controller]) }))}
+                      searchable={false}
+                      onChange={(value) => {
+                        const controller = CONTROLLERS.find((c) => c === value);
+                        if (controller !== undefined) {
+                          if (controller !== EXPERIENCE_CONTROLLER.model) {
+                            updateSeat(index, { controller, providerProfileId: undefined, modelId: undefined });
+                          } else {
+                            updateSeat(index, { controller });
+                          }
+                        }
+                      }}
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    aria-label={t("experience_setup_remove_participant")}
+                    className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded text-t2 transition-all hover:bg-s3 hover:text-t1"
+                    onClick={() => { setSeatsTouched(true); setSeats((prev) => prev.filter((_, i) => i !== index)); }}
+                  >
+                    <Ic.del />
+                  </button>
                 </div>
-                <button
-                  type="button"
-                  aria-label={t("experience_setup_remove_participant")}
-                  className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded text-t2 transition-all hover:bg-s3 hover:text-t1"
-                  onClick={() => setSeats((prev) => prev.filter((_, i) => i !== index))}
-                >
-                  <Ic.del />
-                </button>
+                {seat.controller === EXPERIENCE_CONTROLLER.model && grants.includes(EXPERIENCE_CAPABILITY.model) && (
+                  <div className="mb-1.5 ml-1 flex flex-col gap-1.5 sm:flex-row">
+                    <div className="flex-1">
+                      <DropdownSelect
+                        value={seat.providerProfileId ?? ""}
+                        options={providerOptions}
+                        placeholder={t("experience_setup_provider_placeholder")}
+                        onChange={(value) => {
+                          updateSeat(index, { providerProfileId: value, modelId: undefined });
+                          ensureModels(value);
+                        }}
+                      />
+                    </div>
+                    <div className="flex-1">
+                      <DropdownSelect
+                        value={seat.modelId ?? ""}
+                        options={seat.providerProfileId ? modelOptionsFor(seat.providerProfileId) : []}
+                        placeholder={loadingProfiles.has(seat.providerProfileId ?? "") ? t("experience_setup_loading_models") : t("experience_setup_model_placeholder")}
+                        disabled={seat.providerProfileId === undefined}
+                        onChange={(value) => updateSeat(index, { modelId: value })}
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
             ))}
             <button
               type="button"
               className="mt-1 flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 font-ui text-[11px] text-t2 transition-all hover:bg-s2 hover:text-t1"
-              onClick={() => setSeats((prev) => [...prev, { id: "", label: "", controller: EXPERIENCE_CONTROLLER.human }])}
+              onClick={() => { setSeatsTouched(true); setSeats((prev) => [...prev, { id: "", label: "", controller: EXPERIENCE_CONTROLLER.human }]); }}
             >
               <Ic.plus /> {t("experience_setup_add_participant")}
             </button>
@@ -609,44 +751,38 @@ export function ExperiencePlayground({ code, visualSource }: ExperiencePlaygroun
             </div>
           )}
 
-          {/* Live session */}
+          {/* Live session — novice-readable default: visual-first, status,
+              legal actions. Raw diagnostics behind collapsed disclosure. */}
           {session !== null && (
-            <div className="mt-3 space-y-2">
-              {definition !== null && (
-                <div className={blockCls} style={{ padding: 10 }}>
-                  <div className={blockLabelCls}>{t("experience_tester_definition")}</div>
-                  <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 font-ui text-[12px] text-t1">
-                    <span className="font-semibold">{definition.manifest.name}</span>
-                    <span className="font-mono text-[11px] text-t3">({definition.manifest.id})</span>
-                    <span className="text-[11px] text-t3">· apiVersion {definition.apiVersion}</span>
-                    {definition.hasChoose && <span className="rounded bg-s3 px-1.5 py-0.5 font-mono text-[10px] text-t2">choose ✓</span>}
-                    {definition.hasFlavor && <span className="rounded bg-s3 px-1.5 py-0.5 font-mono text-[10px] text-t2">flavor ✓</span>}
-                  </div>
-                  <div className="mt-1 font-ui text-[11px] text-t3">
-                    {definition.declaredCapabilities.length > 0
-                      ? definition.declaredCapabilities.map((c) => c.capability).join(", ")
-                      : t("experience_assign_no_capabilities")}
-                  </div>
-                </div>
-              )}
-
-              <div className="flex flex-wrap gap-x-4 gap-y-1 font-ui text-[11px] text-t3">
-                <span>{t("experience_playground_session_label")}: <span className="font-mono text-t2">{session.playgroundSessionId.slice(0, 8)}</span></span>
-                <span>{t("experience_tester_revision")}: <span className="font-mono text-t2">{session.revision}</span></span>
-                <span>{t("experience_tester_status")}: <span className="font-mono text-t2">{session.status}</span></span>
-                <span>{t("experience_tester_sim_stop_reason")}: <span className="font-mono text-t2">{session.stopReason}</span></span>
+            <div className="mt-3 space-y-3">
+              {/* Ordinary-language status */}
+              <div className="flex items-center gap-2 rounded-md border border-border bg-s3" style={{ padding: 8 }}>
+                <span className="font-ui text-[12px] text-t2">{statusText}</span>
+                {busy !== null && <span className="inline-block h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-accent" />}
               </div>
 
-              {/* Model-seat boundary: informational stub, never an error — the
-                  driver never invokes a provider in the playground. */}
-              {session.stopReason === "awaiting_model" && (
-                <div className="rounded-md border border-border bg-s3" style={{ padding: 10 }}>
-                  <span className="font-ui text-[12px] text-t2">{t("experience_playground_model_stub")}</span>
-                </div>
-              )}
+              {/* The REAL visual against the current playground state — primary view. */}
+              <div className={blockCls} style={{ padding: 10 }}>
+                <div className={blockLabelCls}>{t("experience_playground_visual_label")}</div>
+                {hasVisual ? (
+                  <div className="mt-2 rounded-md border border-border bg-bg" style={{ padding: 8 }}>
+                    <ExperienceFrame
+                      key={session.playgroundSessionId}
+                      ref={frameRef}
+                      visualSource={visualSource}
+                      sessionId={`playground-${session.playgroundSessionId}`}
+                      initialRevision={session.revision}
+                      onReady={() => setFrameReady(true)}
+                      onAction={(action) => void handleFrameAction(action)}
+                      onError={() => {}}
+                    />
+                  </div>
+                ) : (
+                  <p className="mt-1 font-ui text-[11px] italic text-t3">{t("experience_playground_no_visual")}</p>
+                )}
+              </div>
 
-              {/* Take a turn: legal actions as one-click buttons + the custom
-                  action form (type/payload/requestId/expectedRevision). */}
+              {/* Legal actions — prominent one-click buttons (the novice interaction). */}
               <div className={blockCls} style={{ padding: 10 }}>
                 <div className={blockLabelCls}>{t("experience_playground_turn_title")}</div>
                 {session.projection.actions.length === 0 ? (
@@ -671,109 +807,133 @@ export function ExperiencePlayground({ code, visualSource }: ExperiencePlaygroun
                     </div>
                   </>
                 )}
-                <div className="mt-2 flex flex-wrap items-center gap-2">
-                  <input
-                    className={cn(inputCls, "w-40")}
-                    value={actionType}
-                    placeholder={t("experience_tester_action_type_placeholder")}
-                    onChange={(e) => setActionType(e.target.value)}
-                  />
-                  <input
-                    className={cn(inputCls, "w-32")}
-                    value={requestId}
-                    aria-label={t("experience_tester_action_request_id")}
-                    onChange={(e) => setRequestId(e.target.value)}
-                  />
-                  <input
-                    className={cn(inputCls, "w-24")}
-                    value={expectedRevision}
-                    aria-label={t("experience_tester_action_expected_revision")}
-                    onChange={(e) => setExpectedRevision(e.target.value)}
-                  />
-                  <button
-                    type="button"
-                    className="h-8 cursor-pointer rounded-md border-0 bg-accent px-4 font-ui text-xs font-medium text-on-accent transition-all disabled:cursor-default disabled:opacity-40"
-                    disabled={busy !== null || actionType.trim() === ""}
-                    onClick={() => void handleApplyAction()}
-                  >
-                    {t("experience_tester_action_apply")}
-                  </button>
-                </div>
-                <div className="mt-2">
-                  <AutoTextarea
-                    className={monoCls}
-                    value={payloadJson}
-                    onChange={(e) => setPayloadJson(e.target.value)}
-                    placeholder={t("experience_tester_action_payload_label")}
-                    minRows={1}
-                    maxRows={4}
-                    macroAutocomplete={false}
-                  />
-                </div>
               </div>
 
+              {/* Developer diagnostics — collapsed by default. Raw state,
+                  revision, request id, expected revision, payload JSON,
+                  events, effects, and console remain reachable after explicit
+                  disclosure. */}
               <div className={blockCls} style={{ padding: 10 }}>
-                <div className={blockLabelCls}>{t("experience_tester_projection")}</div>
-                <JsonBlock value={session.projection.state} />
-              </div>
-
-              <div className={blockCls} style={{ padding: 10 }}>
-                <div className={blockLabelCls}>{t("experience_tester_final_state")}</div>
-                <JsonBlock value={session.state} />
-              </div>
-
-              {session.events.length > 0 && (
-                <div className={blockCls} style={{ padding: 10 }}>
-                  <div className={blockLabelCls}>{t("experience_tester_events")}</div>
-                  <div className="mt-1 space-y-1">
-                    {session.events.map((event, i) => (
-                      <div key={i} className="flex items-start gap-2">
-                        <span className={cn("shrink-0 rounded px-1.5 py-0.5 font-mono text-[10px] uppercase", event.visibility === "public" ? "bg-success-dim text-success-text" : "bg-s3 text-t3")}>{event.visibility}</span>
-                        <span className="font-mono text-[11px] text-t2">{event.type}</span>
-                        {event.detail !== undefined && <pre className="flex-1 whitespace-pre-wrap font-mono text-[10px] text-t3">{JSON.stringify(event.detail)}</pre>}
+                <button
+                  type="button"
+                  className="flex w-full cursor-pointer items-center gap-1.5 text-left"
+                  onClick={() => setDiagnosticsOpen((v) => !v)}
+                >
+                  <span className="inline-block text-t3 transition-transform" style={{ transform: diagnosticsOpen ? "rotate(90deg)" : "none" }}>▶</span>
+                  <span className={blockLabelCls}>{t("experience_playground_diagnostics")}</span>
+                  <CustomTooltip content={t("experience_playground_diagnostics_hint")}>
+                    <span className="cursor-help text-[11px] text-t4">ⓘ</span>
+                  </CustomTooltip>
+                </button>
+                {diagnosticsOpen && (
+                  <div className="mt-2 space-y-2">
+                    {definition !== null && (
+                      <div>
+                        <div className={blockLabelCls}>{t("experience_tester_definition")}</div>
+                        <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 font-ui text-[12px] text-t1">
+                          <span className="font-semibold">{definition.manifest.name}</span>
+                          <span className="font-mono text-[11px] text-t3">({definition.manifest.id})</span>
+                          <span className="text-[11px] text-t3">· apiVersion {definition.apiVersion}</span>
+                          {definition.hasChoose && <span className="rounded bg-s3 px-1.5 py-0.5 font-mono text-[10px] text-t2">choose ✓</span>}
+                          {definition.hasFlavor && <span className="rounded bg-s3 px-1.5 py-0.5 font-mono text-[10px] text-t2">flavor ✓</span>}
+                        </div>
+                        <div className="mt-1 font-ui text-[11px] text-t3">
+                          {definition.declaredCapabilities.length > 0
+                            ? definition.declaredCapabilities.map((c) => c.capability).join(", ")
+                            : t("experience_assign_no_capabilities")}
+                        </div>
                       </div>
-                    ))}
-                  </div>
-                </div>
-              )}
+                    )}
 
-              {session.effects.length > 0 && (
-                <div className={blockCls} style={{ padding: 10 }}>
-                  <div className={blockLabelCls}>{t("experience_tester_effects")}</div>
-                  <div className="mt-1 space-y-1">
-                    {session.effects.map((effect, i) => (
-                      <div key={i} className="flex items-start gap-2">
-                        <span className="shrink-0 rounded bg-warning-dim px-1.5 py-0.5 font-mono text-[10px] uppercase text-warning-text">{effect.kind}</span>
-                        <pre className="flex-1 whitespace-pre-wrap font-mono text-[10px] text-t3">{JSON.stringify(effect.request)}</pre>
+                    <div className="flex flex-wrap gap-x-4 gap-y-1 font-ui text-[11px] text-t3">
+                      <span>{t("experience_playground_session_label")}: <span className="font-mono text-t2">{session.playgroundSessionId.slice(0, 8)}</span></span>
+                      <span>{t("experience_tester_revision")}: <span className="font-mono text-t2">{session.revision}</span></span>
+                      <span>{t("experience_tester_status")}: <span className="font-mono text-t2">{session.status}</span></span>
+                      <span>{t("experience_tester_sim_stop_reason")}: <span className="font-mono text-t2">{session.stopReason}</span></span>
+                    </div>
+
+                    {/* Custom action form (type/payload/requestId/expectedRevision) */}
+                    <div className="flex flex-wrap items-center gap-2">
+                      <input
+                        className={cn(inputCls, "w-40")}
+                        value={actionType}
+                        placeholder={t("experience_tester_action_type_placeholder")}
+                        onChange={(e) => setActionType(e.target.value)}
+                      />
+                      <input
+                        className={cn(inputCls, "w-32")}
+                        value={requestId}
+                        aria-label={t("experience_tester_action_request_id")}
+                        onChange={(e) => setRequestId(e.target.value)}
+                      />
+                      <input
+                        className={cn(inputCls, "w-24")}
+                        value={expectedRevision}
+                        aria-label={t("experience_tester_action_expected_revision")}
+                        onChange={(e) => setExpectedRevision(e.target.value)}
+                      />
+                      <button
+                        type="button"
+                        className="h-8 cursor-pointer rounded-md border-0 bg-accent px-4 font-ui text-xs font-medium text-on-accent transition-all disabled:cursor-default disabled:opacity-40"
+                        disabled={busy !== null || actionType.trim() === ""}
+                        onClick={() => void handleApplyAction()}
+                      >
+                        {t("experience_tester_action_apply")}
+                      </button>
+                    </div>
+                    <div>
+                      <AutoTextarea
+                        className={monoCls}
+                        value={payloadJson}
+                        onChange={(e) => setPayloadJson(e.target.value)}
+                        placeholder={t("experience_tester_action_payload_label")}
+                        minRows={1}
+                        maxRows={4}
+                        macroAutocomplete={false}
+                      />
+                    </div>
+
+                    <div>
+                      <div className={blockLabelCls}>{t("experience_tester_projection")}</div>
+                      <JsonBlock value={session.projection.state} />
+                    </div>
+
+                    <div>
+                      <div className={blockLabelCls}>{t("experience_tester_final_state")}</div>
+                      <JsonBlock value={session.state} />
+                    </div>
+
+                    {session.events.length > 0 && (
+                      <div>
+                        <div className={blockLabelCls}>{t("experience_tester_events")}</div>
+                        <div className="mt-1 space-y-1">
+                          {session.events.map((event, i) => (
+                            <div key={i} className="flex items-start gap-2">
+                              <span className={cn("shrink-0 rounded px-1.5 py-0.5 font-mono text-[10px] uppercase", event.visibility === "public" ? "bg-success-dim text-success-text" : "bg-s3 text-t3")}>{event.visibility}</span>
+                              <span className="font-mono text-[11px] text-t2">{event.type}</span>
+                              {event.detail !== undefined && <pre className="flex-1 whitespace-pre-wrap font-mono text-[10px] text-t3">{JSON.stringify(event.detail)}</pre>}
+                            </div>
+                          ))}
+                        </div>
                       </div>
-                    ))}
-                  </div>
-                </div>
-              )}
+                    )}
 
-              <ConsoleBlock entries={session.console} label={t("script_test_console")} />
+                    {session.effects.length > 0 && (
+                      <div>
+                        <div className={blockLabelCls}>{t("experience_tester_effects")}</div>
+                        <div className="mt-1 space-y-1">
+                          {session.effects.map((effect, i) => (
+                            <div key={i} className="flex items-start gap-2">
+                              <span className="shrink-0 rounded bg-warning-dim px-1.5 py-0.5 font-mono text-[10px] uppercase text-warning-text">{effect.kind}</span>
+                              <pre className="flex-1 whitespace-pre-wrap font-mono text-[10px] text-t3">{JSON.stringify(effect.request)}</pre>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
 
-              {/* The REAL visual against the current playground state, inside
-                  the isolated frame (opaque origin; bridge-posted state). Keyed
-                  by session id so every session gets a fresh bridge + document;
-                  unmounting on reset tears the frame down completely. */}
-              <div className={blockCls} style={{ padding: 10 }}>
-                <div className={blockLabelCls}>{t("experience_playground_visual_label")}</div>
-                {hasVisual ? (
-                  <div className="mt-2 rounded-md border border-border bg-bg" style={{ padding: 8 }}>
-                    <ExperienceFrame
-                      key={session.playgroundSessionId}
-                      ref={frameRef}
-                      visualSource={visualSource}
-                      sessionId={`playground-${session.playgroundSessionId}`}
-                      initialRevision={session.revision}
-                      onReady={() => setFrameReady(true)}
-                      onAction={(action) => void handleFrameAction(action)}
-                      onError={() => {}}
-                    />
+                    <ConsoleBlock entries={session.console} label={t("script_test_console")} />
                   </div>
-                ) : (
-                  <p className="mt-1 font-ui text-[11px] italic text-t3">{t("experience_playground_no_visual")}</p>
                 )}
               </div>
             </div>

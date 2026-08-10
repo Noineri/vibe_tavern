@@ -40,6 +40,7 @@ import type { ChangeEvent, ReactNode } from "react";
 import type { RenderResult } from "@testing-library/react";
 import type {
   ExperiencePlaygroundData,
+  ExperienceTestRunData,
   ExperienceVisualRow,
   ScriptRecord,
 } from "../../../api/types.js";
@@ -152,6 +153,18 @@ const startExperiencePlayground = mock((_body: Record<string, unknown>) => Promi
 const advanceExperiencePlayground = mock((_body: Record<string, unknown>) => Promise.resolve(makeAdvanceData()));
 const listExperienceVisuals = mock(() => Promise.resolve<ExperienceVisualRow[]>([]));
 const listAllScripts = mock(() => Promise.resolve<ScriptRecord[]>([]));
+const listProviderProfiles = mock(() => Promise.resolve([{ id: "pp_test", name: "Test Provider", providerPreset: "openai", defaultModel: "gpt-test" }]));
+const fetchProviderProfileModels = mock((_id: string) => Promise.resolve({ models: [{ id: "gpt-test", label: "GPT Test" }] }));
+
+// IR-90E: mock runExperienceTest for the auto-derive discovery. By default it
+// rejects (no definition discovered → default single human seat preserved).
+// Individual tests override it to return a real definition.
+// Explicit return type avoids TS2322: Promise.reject infers Promise<never>,
+// which rejects later mockImplementation calls returning Promise<ExperienceTestRunData>.
+const runExperienceTest = mock(
+  (_body: Record<string, unknown>): Promise<ExperienceTestRunData> =>
+    Promise.reject(new Error("mock not configured")),
+);
 
 const realExperienceApi = await import("../../../api/experience-api.js");
 const realScriptApi = await import("../../../api/script-api.js");
@@ -163,7 +176,15 @@ mock.module("../../../api/experience-api.js", () => ({
   ...realExperienceApi,
   startExperiencePlayground,
   advanceExperiencePlayground,
+  runExperienceTest,
   listExperienceVisuals,
+}));
+
+const realProviderApi = await import("../../../api/provider-api.js");
+mock.module("../../../api/provider-api.js", () => ({
+  ...realProviderApi,
+  listProviderProfiles,
+  fetchProviderProfileModels,
 }));
 
 mock.module("../../../api/script-api.js", () => ({
@@ -220,6 +241,10 @@ beforeEach(() => {
   advanceExperiencePlayground.mockClear();
   listExperienceVisuals.mockClear();
   listAllScripts.mockClear();
+  listProviderProfiles.mockClear();
+  fetchProviderProfileModels.mockClear();
+  runExperienceTest.mockClear();
+  runExperienceTest.mockImplementation(async () => Promise.reject(new Error("mock not configured")));
   startExperiencePlayground.mockImplementation(async () => makeStartData());
   advanceExperiencePlayground.mockImplementation(async () => makeAdvanceData());
   useScriptDraftStore.getState().resetAll();
@@ -261,6 +286,12 @@ async function pickDropdown(view: RenderResult, scope: ParentNode, triggerText: 
   if (!item) throw new Error(`no cmdk item "${optionLabel}"`);
   fireEvent.click(item);
   await waitFor(() => expect(view.baseElement.querySelector("[cmdk-list]")).toBeNull());
+}
+
+/** Expand the collapsed Developer diagnostics disclosure so raw state/actions/
+ *  events/effects/console are reachable in assertions (IR-90E collapsed default). */
+function expandDiagnostics(utils: { getByText: (text: string) => HTMLElement }): void {
+  fireEvent.click(utils.getByText("experience_playground_diagnostics"));
 }
 
 // ── Blob-URL spies (ExperienceFrame.test pattern: happy-dom must not navigate) ─
@@ -316,14 +347,17 @@ describe("ExperiencePlayground", () => {
     });
 
     // Validated definition + initial projection + legal actions + boundary.
+    // Legal actions + turn title are in the novice view; definition/projection/
+    // stop-reason are behind the collapsed Developer diagnostics (IR-90E).
+    expect(await findByText("experience_playground_turn_title")).toBeTruthy();
+    expect(await findByText("Score")).toBeTruthy();
+    expect(await findByText("Pass turn")).toBeTruthy();
+    expandDiagnostics(utils);
     expect(await findByText("Round")).toBeTruthy();
     expect(await findByText("(round)")).toBeTruthy();
     expect(await findByText("participants")).toBeTruthy();
     expect(await findByText("experience_tester_projection")).toBeTruthy();
-    expect(await findByText("Score")).toBeTruthy();
-    expect(await findByText("Pass turn")).toBeTruthy();
     expect(await findByText("awaiting_human")).toBeTruthy();
-    expect(await findByText("experience_playground_turn_title")).toBeTruthy();
     // No provider/model path is involved in a start.
     expect(advanceExperiencePlayground).not.toHaveBeenCalled();
   });
@@ -342,7 +376,8 @@ describe("ExperiencePlayground", () => {
   });
 
   it("drive: a legal action advances the turn and renders the bumped revision, the script-seat moves, reported effects, and console", async () => {
-    const { getByText, findByText } = renderPlayground();
+    const utils = renderPlayground();
+    const { getByText, findByText } = utils;
     fireEvent.click(getByText("experience_playground_start"));
     await waitFor(() => expect(startExperiencePlayground).toHaveBeenCalledTimes(1));
 
@@ -356,6 +391,8 @@ describe("ExperiencePlayground", () => {
 
     // Bumped revision + this turn's events (the human reduce AND the
     // script-seat move that followed it) + reported effects + console.
+    // These are in the collapsed Developer diagnostics (IR-90E).
+    expandDiagnostics(utils);
     expect(await findByText("41")).toBeTruthy();
     expect(await findByText("scored")).toBeTruthy();
     expect(await findByText("dealer_drew")).toBeTruthy();
@@ -364,10 +401,13 @@ describe("ExperiencePlayground", () => {
   });
 
   it("drive: an illegal action type renders illegal_action and the session keeps the prior state", async () => {
-    const { getByText, getByPlaceholderText, findByText } = renderPlayground();
+    const utils = renderPlayground();
+    const { getByText, getByPlaceholderText, findByText } = utils;
     fireEvent.click(getByText("experience_playground_start"));
     await waitFor(() => expect(startExperiencePlayground).toHaveBeenCalledTimes(1));
 
+    // The custom action form is inside the collapsed Developer diagnostics.
+    expandDiagnostics(utils);
     advanceExperiencePlayground.mockRejectedValueOnce(new ExperienceApiError(422, "Action type is not legal for this viewer", "illegal_action", {}));
     fireEvent.change(getByPlaceholderText("experience_tester_action_type_placeholder"), { target: { value: "cheat" } });
     fireEvent.click(getByText("experience_tester_action_apply"));
@@ -382,10 +422,13 @@ describe("ExperiencePlayground", () => {
   });
 
   it("drive: a stale expectedRevision renders stale_revision with the currentRevision", async () => {
-    const { getByText, getByPlaceholderText, getByLabelText, findByText } = renderPlayground();
+    const utils = renderPlayground();
+    const { getByText, getByPlaceholderText, getByLabelText, findByText } = utils;
     fireEvent.click(getByText("experience_playground_start"));
     await waitFor(() => expect(startExperiencePlayground).toHaveBeenCalledTimes(1));
 
+    // The custom action form is inside the collapsed Developer diagnostics.
+    expandDiagnostics(utils);
     advanceExperiencePlayground.mockRejectedValueOnce(new ExperienceApiError(409, "Action expected revision 7, session is at 0", "stale_revision", { currentRevision: 3 }));
     fireEvent.change(getByPlaceholderText("experience_tester_action_type_placeholder"), { target: { value: "score" } });
     fireEvent.change(getByLabelText("experience_tester_action_expected_revision"), { target: { value: "7" } });
@@ -396,13 +439,16 @@ describe("ExperiencePlayground", () => {
   });
 
   it("drive: a duplicated requestId replays without advancing the rendered revision", async () => {
-    const { getByText, getByLabelText, findByText, queryByText } = renderPlayground();
+    const utils = renderPlayground();
+    const { getByText, getByLabelText, findByText, queryByText } = utils;
     fireEvent.click(getByText("experience_playground_start"));
     await waitFor(() => expect(startExperiencePlayground).toHaveBeenCalledTimes(1));
 
     // Turn 1: the legal action advances 0 → 41.
     fireEvent.click(getByText("Score"));
     await waitFor(() => expect(advanceExperiencePlayground).toHaveBeenCalledTimes(1));
+    // The revision lives in the collapsed Developer diagnostics.
+    expandDiagnostics(utils);
     expect(await findByText("41")).toBeTruthy();
 
     // A retried duplicate carries the ORIGINAL requestId + expectedRevision
@@ -420,13 +466,15 @@ describe("ExperiencePlayground", () => {
     expect(queryByText("42")).toBeNull();
   });
 
-  it("model-seat stub: an awaiting_model boundary renders as informational, never an error, and no provider path is invoked", async () => {
+  it("model-seat boundary: an awaiting_model boundary renders the ordinary-language status, never an error, and no advance/provider call is invoked directly by the client", async () => {
     startExperiencePlayground.mockImplementationOnce(async () => makeStartData({ stopReason: "awaiting_model" }));
     const { getByText, findByText, queryByText } = renderPlayground();
     fireEvent.click(getByText("experience_playground_start"));
 
-    expect(await findByText("awaiting_model")).toBeTruthy();
-    expect(await findByText("experience_playground_model_stub")).toBeTruthy();
+    // The ordinary-language status shows “Model is responding…” (the adapter
+    // transparently drives the model turn; the client never invokes advance
+    // for a model seat itself).
+    expect(await findByText("experience_playground_status_model")).toBeTruthy();
     // Informational only: no error block, and no advance/provider call.
     expect(queryByText("experience_playground_error_title")).toBeNull();
     expect(advanceExperiencePlayground).not.toHaveBeenCalled();
@@ -439,16 +487,16 @@ describe("ExperiencePlayground", () => {
     useExperienceVisualDraftStore.getState().patch(seamVisual.id, { source: "edited unsaved visual" });
     const before = draftSnapshot();
 
-    const { getByText, findByText, queryByText } = renderPlayground();
+    const utils = renderPlayground();
+    const { getByText, queryByText } = utils;
     fireEvent.click(getByText("experience_playground_start"));
     await waitFor(() => expect(startExperiencePlayground).toHaveBeenCalledTimes(1));
 
     fireEvent.click(getByText("Score"));
     await waitFor(() => expect(advanceExperiencePlayground).toHaveBeenCalledTimes(1));
-    expect(await findByText("41")).toBeTruthy();
-
+    // After reset, the turn section (novice view) is gone.
     fireEvent.click(getByText("experience_playground_reset"));
-    await waitFor(() => expect(queryByText("experience_tester_projection")).toBeNull());
+    await waitFor(() => expect(queryByText("experience_playground_turn_title")).toBeNull());
 
     // The core safety property: every authoring draft is byte-identical.
     expect(draftSnapshot()).toBe(before);
@@ -565,5 +613,234 @@ describe("ExperiencePlayground", () => {
     expect(seedInput!.offsetParent === null ? true : seedInput!.parentElement?.contains(seedInput)).toBe(true);
 
     document.body.style.width = "";
+  });
+
+  // IR-90E: the UNCHANGED shipped Model Conversation rules + Conversation visual
+  // pair is playable in the authoring playground with auto-derived setup.
+  // Discovery is mocked BEFORE render; after expanding the panel the starter's
+  // declared capabilities auto-populate human+model seats and grants. The
+  // author then ONLY selects provider + model for the model seat — no manual
+  // capability checking, seat adding, or controller changing. This test asserts
+  // the REAL component flow: auto-derive → provider/model select → start (body
+  // carries derived seats/grants + pinned ids) → reply/model turn → finish.
+  // The API is mocked at the client-function boundary.
+  it("IR-90E: Model Conversation + Conversation pair — auto-derive, provider/model select, reply, model turn, finish", async () => {
+    const { getRulesStarter } = await import("../../../lib/experience-rules-starters.js");
+    const { CONVERSATION_VISUAL_SOURCE } = await import("../../experience/starters/conversation.js");
+    const STARTER = getRulesStarter("model_conversation")!;
+
+    // ── Step 0: configure discovery mock BEFORE render ──
+    // The starter declares participants + model; auto-derive reads this to
+    // populate seats and grants without user action.
+    runExperienceTest.mockImplementation(async () => ({
+      definition: {
+        apiVersion: 1,
+        manifest: { id: "model_conversation", name: "Model Conversation" },
+        declaredCapabilities: [
+          { capability: "participants", reason: "human and model seats" },
+          { capability: "model", reason: "AI replies" },
+        ],
+        hasChoose: false,
+        hasFlavor: false,
+      },
+      sourceHash: "abc",
+      initialState: { messages: [], turn: 0 },
+      finalState: { messages: [], turn: 0 },
+      revision: 0,
+      status: "active" as const,
+      projection: { state: { messages: [], turn: 0 }, actions: [] },
+      events: [],
+      effects: [],
+      console: [],
+      steps: [],
+    }));
+
+    // Start: initial state with reply + finish actions.
+    startExperiencePlayground.mockImplementation(async () => ({
+      playgroundSessionId: "pg-mc-1",
+      definition: {
+        apiVersion: 1,
+        manifest: { id: "model_conversation", name: "Model Conversation" },
+        declaredCapabilities: [{ capability: "participants", reason: "seats" }, { capability: "model", reason: "replies" }],
+        hasChoose: false,
+        hasFlavor: false,
+      },
+      initialState: { messages: [], turn: 0 },
+      state: { messages: [], turn: 0 },
+      projection: {
+        state: { messages: [], turn: 0 },
+        actions: [
+          { type: "reply", label: "Reply", allowsText: true },
+          { type: "finish", label: "Finish" },
+        ],
+      },
+      events: [],
+      effects: [],
+      console: [],
+      revision: 0,
+      status: "active",
+      stopReason: "awaiting_human",
+    }));
+
+    // Advance: simulates the adapter chaining the model turn.
+    let advanceCount = 0;
+    advanceExperiencePlayground.mockImplementation(async (body: Record<string, unknown>) => {
+      advanceCount += 1;
+      const humanAction = body.humanAction as { type: string; payload?: { text?: string } };
+      if (humanAction.type === "finish") {
+        return {
+          playgroundSessionId: "pg-mc-1",
+          initialState: { messages: [], turn: 0 },
+          state: { messages: [{ from: "you", text: "Hello!" }, { from: "them", text: "Hi there!" }], turn: 2 },
+          projection: { state: { messages: [{ from: "you", text: "Hello!" }, { from: "them", text: "Hi there!" }], turn: 2 }, actions: [] },
+          events: [{ visibility: "public", type: "finished" }],
+          effects: [],
+          console: [],
+          revision: 3,
+          status: "completed",
+          stopReason: "completed",
+        };
+      }
+      return {
+        playgroundSessionId: "pg-mc-1",
+        initialState: { messages: [], turn: 0 },
+        state: { messages: [{ from: "you", text: "Hello!" }, { from: "them", text: "Hi there!" }], turn: 2 },
+        projection: {
+          state: { messages: [{ from: "you", text: "Hello!" }, { from: "them", text: "Hi there!" }], turn: 2 },
+          actions: [{ type: "reply", label: "Reply", allowsText: true }, { type: "finish", label: "Finish" }],
+        },
+        events: [{ visibility: "public", type: "user_replied" }, { visibility: "public", type: "model_replied" }],
+        effects: [],
+        console: [],
+        revision: 2,
+        status: "active",
+        stopReason: "awaiting_human",
+      };
+    });
+
+    installUrlSpies();
+    const utils = render(<ExperiencePlayground code={STARTER.source} visualSource={CONVERSATION_VISUAL_SOURCE} />);
+    fireEvent.click(utils.getByText("experience_playground_title"));
+    const { container, getByText, findByText } = utils;
+
+    // ── Step 1: wait for auto-derive (effect fires on expand) ──
+    // The discovery mock returns participants + model → seats and grants
+    // are populated WITHOUT any manual clicks.
+    await waitFor(() => {
+      const seatIdInputs = container.querySelectorAll('input[placeholder="experience_tester_seat_id_placeholder"]');
+      expect(seatIdInputs.length).toBe(2);
+    });
+    expect(runExperienceTest).toHaveBeenCalledTimes(1);
+
+    // Verify auto-derived roster: human seat "you" + model seat "ai".
+    const seatIdInputs = container.querySelectorAll('input[placeholder="experience_tester_seat_id_placeholder"]');
+    expect((seatIdInputs[0] as HTMLInputElement).value).toBe("you");
+    expect((seatIdInputs[1] as HTMLInputElement).value).toBe("ai");
+
+    // ── Step 2: ONLY select provider + model on the model seat ──
+    // No manual capability toggles, no "add participant" click, no controller
+    // change — those are all auto-derived.
+    await pickDropdown(utils, container, "experience_setup_provider_placeholder", "Test Provider");
+    await pickDropdown(utils, container, "experience_setup_model_placeholder", "GPT Test");
+
+    // ── Step 3: start the ephemeral session ──
+    fireEvent.click(getByText("experience_playground_start"));
+    await waitFor(() => expect(startExperiencePlayground).toHaveBeenCalledTimes(1));
+
+    // Assert the start body carries auto-derived seats + grants AND the pinned
+    // provider/model ids selected above.
+    const startCall = startExperiencePlayground.mock.calls[0]?.[0] as Record<string, unknown>;
+    const sentParticipants = startCall.participants as Array<Record<string, unknown>>;
+    expect(sentParticipants).toHaveLength(2);
+    const humanParticipant = sentParticipants.find((p) => p.controller === "human");
+    expect(humanParticipant).toMatchObject({ id: "you" });
+    const modelParticipant = sentParticipants.find((p) => p.controller === "model");
+    expect(modelParticipant).toMatchObject({ id: "ai", providerProfileId: "pp_test", modelId: "gpt-test" });
+    expect(startCall.capabilityGrants).toEqual(["participants", "model"]);
+
+    // ── Step 4: verify the visual iframe + legal actions + status ──
+    expect(await findByText("experience_playground_visual_label")).toBeTruthy();
+    const iframe = container.querySelector("iframe");
+    expect(iframe).not.toBeNull();
+    expect(iframe!.getAttribute("sandbox")).toContain("allow-scripts");
+    expect(iframe!.getAttribute("sandbox")).not.toContain("allow-same-origin");
+    expect(createdBlobs.length).toBeGreaterThanOrEqual(1);
+    const doc = await createdBlobs[createdBlobs.length - 1]!.text();
+    expect(doc).toContain("xp-conv");
+
+    expect(await findByText("experience_playground_status_your_turn")).toBeTruthy();
+    expect(await findByText("experience_playground_turn_title")).toBeTruthy();
+    expect(getByText("Reply")).toBeTruthy();
+    expect(getByText("Finish")).toBeTruthy();
+
+    // ── Step 5: reply → adapter chains model turn transparently ──
+    fireEvent.click(getByText("Reply"));
+    await waitFor(() => expect(advanceExperiencePlayground).toHaveBeenCalledTimes(1));
+    expect(await findByText("experience_playground_status_your_turn")).toBeTruthy();
+    expect(advanceCount).toBe(1);
+
+    // ── Step 6: finish ──
+    fireEvent.click(getByText("Finish"));
+    await waitFor(() => expect(advanceExperiencePlayground).toHaveBeenCalledTimes(2));
+    expect(await findByText("experience_playground_status_completed")).toBeTruthy();
+  });
+
+  // IR-90E blocker-1: the unchanged shipped Model Conversation starter
+  // auto-derives a usable human+model roster and grants WITHOUT the user
+  // manually creating seats or checking raw capability checkboxes. Discovery
+  // uses the REAL runExperienceTest API (not brittle display-text parsing).
+  it("IR-90E: auto-derive — Model Conversation starter opens with human+model seats and grants pre-configured", async () => {
+    // Mock runExperienceTest to return a definition declaring participants + model.
+    runExperienceTest.mockImplementation(async () => ({
+      definition: {
+        apiVersion: 1,
+        manifest: { id: "model_conversation", name: "Model Conversation" },
+        declaredCapabilities: [
+          { capability: "participants", reason: "human and model seats" },
+          { capability: "model", reason: "AI-driven conversation replies" },
+        ],
+        hasChoose: false,
+        hasFlavor: false,
+      },
+      sourceHash: "abc",
+      initialState: { messages: [], turn: 0 },
+      finalState: { messages: [], turn: 0 },
+      revision: 0,
+      status: "active",
+      projection: { state: { messages: [], turn: 0 }, actions: [] },
+      events: [],
+      effects: [],
+      console: [],
+      steps: [],
+    }));
+
+    const { getByText, container } = renderPlayground(VALID_CODE);
+
+    // Wait for auto-derive to complete (the effect fires on open, then the
+    // async discovery resolves and updates the roster).
+    await waitFor(() => {
+      const seatIdInputs = container.querySelectorAll('input[placeholder="experience_tester_seat_id_placeholder"]');
+      expect(seatIdInputs.length).toBe(2);
+    });
+    expect(runExperienceTest).toHaveBeenCalledTimes(1);
+
+    // The roster now has TWO seats: the default human seat AND an auto-derived
+    // model seat — without the user manually adding or configuring anything.
+    const seatIdInputs = container.querySelectorAll('input[placeholder="experience_tester_seat_id_placeholder"]');
+    expect((seatIdInputs[0] as HTMLInputElement).value).toBe("you");
+    expect((seatIdInputs[1] as HTMLInputElement).value).toBe("ai");
+
+    // The capability grants are auto-checked (both participants + model).
+    const grantCheckboxes = container.querySelectorAll('[role="checkbox"]');
+    const checkedGrants = [...grantCheckboxes].filter((cb) => cb.getAttribute("aria-checked") === "true");
+    expect(checkedGrants.length).toBe(2);
+
+    // The model seat's controller dropdown shows "model".
+    const controllerTriggers = [...container.querySelectorAll("button")].filter(
+      (b) => b.textContent?.trim() === "experience_setup_controller_human" || b.textContent?.trim() === "experience_setup_controller_model",
+    );
+    // One human + one model controller visible.
+    expect(controllerTriggers.some((b) => b.textContent?.trim() === "experience_setup_controller_human")).toBe(true);
+    expect(controllerTriggers.some((b) => b.textContent?.trim() === "experience_setup_controller_model")).toBe(true);
   });
 });
