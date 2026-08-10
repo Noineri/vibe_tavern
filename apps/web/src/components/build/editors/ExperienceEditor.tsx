@@ -36,7 +36,7 @@
  * /api/experience/test/run|simulate as a read-only diagnostic (it never
  * mutates these drafts or any store).
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useKeyDown } from "../../../hooks/use-key-down.js";
 import { Ic } from "../../shared/icons.js";
 import { CodeEditor } from "../../shared/CodeEditor.js";
@@ -69,6 +69,7 @@ import {
   createExperienceVisual,
   deleteExperienceVisual,
   listExperienceVisuals,
+  runExperienceTest,
   updateExperienceVisual,
 } from "../../../api/experience-api.js";
 import type { ExperienceVisualRow, ScriptRecord } from "../../../api/types.js";
@@ -123,6 +124,11 @@ export function ExperienceEditor() {
   const [activeScriptId, setActiveScriptId] = useState<string | null>(null);
   const [activeVisualId, setActiveVisualId] = useState<string | null>(null);
   const [apiRefOpen, setApiRefOpen] = useState(false);
+  const [testerOpen, setTesterOpen] = useState(false);
+  // IR-90E: compact friendly validation result (reuses the wizard's pattern).
+  const [rulesValid, setRulesValid] = useState<boolean | null>(null);
+  const [rulesValidationError, setRulesValidationError] = useState<string | null>(null);
+  const [validating, setValidating] = useState(false);
   const [aiHelperOpen, setAiHelperOpen] = useState(false);
   const [visualAiHelperOpen, setVisualAiHelperOpen] = useState(false);
 
@@ -276,6 +282,50 @@ export function ExperienceEditor() {
     setActiveScriptId(script.id);
     setActiveVisualId(visual.id);
   }, []);
+
+  // IR-90E: monotonic validation token. Changing the active script or its
+  // source invalidates every in-flight validation so a stale promise can
+  // never set valid/invalid or leave loading true after a switch/edit.
+  const validationTokenRef = useRef(0);
+
+  // IR-90E: fail-closed validation — clear stale "valid" state AND loading
+  // whenever the active script or its source code changes. The editor must
+  // never show valid for a new or edited source without explicit re-validation.
+  useEffect(() => {
+    validationTokenRef.current += 1;
+    setRulesValid(null);
+    setRulesValidationError(null);
+    setValidating(false);
+  }, [activeScriptId, activeScript?.code]);
+
+  // IR-90E: compact friendly rules validation (reuses the wizard's
+  // runExperienceTest discovery pattern — same API, same presentation shape).
+  const handleValidateRules = useCallback(async () => {
+    if (!activeScript || activeScript.code.trim() === "") return;
+    const token = ++validationTokenRef.current;
+    setValidating(true);
+    setRulesValidationError(null);
+    try {
+      await runExperienceTest({
+        rulesCode: activeScript.code,
+        settings: {},
+        participants: [],
+        capabilityGrants: [],
+        actions: [],
+      });
+      if (validationTokenRef.current !== token) return;
+      setRulesValid(true);
+    } catch (error) {
+      if (validationTokenRef.current !== token) return;
+      setRulesValid(false);
+      const msg = error instanceof Error ? error.message : String(error);
+      setRulesValidationError(msg);
+    } finally {
+      if (validationTokenRef.current === token) {
+        setValidating(false);
+      }
+    }
+  }, [activeScript?.code]);
 
   const handleNewVisualFromStarter = (starter: VisualStarter) => {
     setActiveVisualId(createPendingVisual({
@@ -643,13 +693,43 @@ export function ExperienceEditor() {
       </div>
 
       {/*
-       * IR-81D: the stateless unsaved-source tester. It drives the CURRENT
-       * UNSAVED rules buffer through the IR-81B backend tester
+       * IR-81D/IR-90E: the stateless unsaved-source tester is collapsed by
+       * default (novice-readable editor). It drives the CURRENT UNSAVED rules
+       * buffer through the IR-81B backend tester
        * (POST /api/experience/test/run|simulate) as a read-only diagnostic —
        * it never mutates these drafts, never touches a store, and never
        * forwards an action to any chat/session.
        */}
-      <InteractiveTester code={activeScript.code} />
+      <div className="mt-4">
+        {/* IR-90E: compact friendly validation (presented first, before the
+            collapsed raw tester). */}
+        <div className="mb-2 flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 font-ui text-[11px] text-t2 transition-all hover:bg-s2 hover:text-t1 disabled:cursor-default disabled:opacity-40"
+            disabled={validating || activeScript.code.trim() === ""}
+            onClick={() => void handleValidateRules()}
+          >
+            <Ic.check />
+            {validating ? t("experience_wizard_validating") : t("experience_editor_validate_rules")}
+          </button>
+          {rulesValid === true && (
+            <span className="font-ui text-[11px] text-success">{t("experience_wizard_rules_valid")}</span>
+          )}
+          {rulesValid === false && (
+            <span className="font-ui text-[11px] text-danger">{t("experience_wizard_rules_invalid")}: {rulesValidationError}</span>
+          )}
+        </div>
+        <button
+          type="button"
+          className="flex w-full cursor-pointer items-center gap-1.5 text-left"
+          onClick={() => setTesterOpen((v) => !v)}
+        >
+          <span className="inline-block text-t3 transition-transform" style={{ transform: testerOpen ? "rotate(90deg)" : "none" }}>▶</span>
+          <span className="text-[12px] font-semibold uppercase tracking-[0.06em] text-t3">{t("experience_editor_tester_section")}</span>
+        </button>
+        {testerOpen && <InteractiveTester code={activeScript.code} />}
+      </div>
 
       {/* Visual: independent buffer with its own explicit save */}
       <div className="mt-8 border-t border-border pt-4">

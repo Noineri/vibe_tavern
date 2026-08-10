@@ -30,7 +30,7 @@
  */
 import { beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import type { ReactNode } from "react";
-import type { ExperienceVisualRow, ScriptRecord } from "../../../api/types.js";
+import type { ExperienceTestRunData, ExperienceVisualRow, ScriptRecord } from "../../../api/types.js";
 import { getVisualStarter } from "../../experience/starters/index.js";
 import { useScriptDraftStore } from "../../../stores/script-draft-store.js";
 import { useExperienceVisualDraftStore } from "../../../stores/experience-authoring-store.js";
@@ -39,6 +39,29 @@ import { useDomEnv } from "../../../../test/dom-env.js";
 useDomEnv();
 
 const EXISTING_CODE = "context.experience.register({ apiVersion: 1, manifest: { id: 'existing', name: 'Existing' }, capabilities: [], create() { return {}; }, project() { return {}; }, actions() { return []; }, reduce(context) { return { state: context.state, status: 'active', events: [] }; } });";
+
+/** A typed `ExperienceTestRunData` fixture — no `unknown`/`any` cast, no suppressions. */
+function makeTestRunData(): ExperienceTestRunData {
+  return {
+    definition: {
+      apiVersion: 1,
+      manifest: { id: "test", name: "Test" },
+      declaredCapabilities: [],
+      hasChoose: false,
+      hasFlavor: false,
+    },
+    sourceHash: "abc123def456",
+    initialState: {},
+    finalState: {},
+    revision: 1,
+    status: "completed",
+    projection: { state: {}, actions: [] },
+    events: [],
+    effects: [],
+    console: [],
+    steps: [],
+  };
+}
 
 const baseScript: ScriptRecord = {
   id: "srv_1",
@@ -76,6 +99,7 @@ const listExperienceVisuals = mock(() => Promise.resolve<ExperienceVisualRow[]>(
 const createExperienceVisual = mock((_body: Record<string, unknown>) => Promise.resolve<ExperienceVisualRow>({ ...baseVisual, compatibleManifestIds: [...baseVisual.compatibleManifestIds] }));
 const updateExperienceVisual = mock((_id: string, _patch: Record<string, unknown>) => Promise.resolve<ExperienceVisualRow>({ ...baseVisual, compatibleManifestIds: [...baseVisual.compatibleManifestIds] }));
 const deleteExperienceVisual = mock((_id: string) => Promise.resolve<void>(undefined));
+const runExperienceTest = mock((_body: Record<string, unknown>) => Promise.resolve(makeTestRunData()));
 
 const realScriptApi = await import("../../../api/script-api.js");
 const realExperienceApi = await import("../../../api/experience-api.js");
@@ -95,6 +119,7 @@ mock.module("../../../api/experience-api.js", () => ({
   createExperienceVisual,
   updateExperienceVisual,
   deleteExperienceVisual,
+  runExperienceTest,
 }));
 
 mock.module("../../../i18n/context.js", () => ({
@@ -157,6 +182,8 @@ beforeEach(() => {
   createExperienceVisual.mockClear();
   updateExperienceVisual.mockClear();
   deleteExperienceVisual.mockClear();
+  runExperienceTest.mockClear();
+  runExperienceTest.mockImplementation(async () => makeTestRunData());
   useScriptDraftStore.getState().resetAll();
   useExperienceVisualDraftStore.getState().resetAll();
   serverScripts = [];
@@ -727,5 +754,118 @@ describe("ExperienceEditor", () => {
     // path (deleteExperienceVisual + list filter + draft remove) cannot and did
     // not reach an external pinned copy.
     expect(pinnedBySession).toBe(baseVisual.source);
+  });
+
+  // ── IR-90E: compact friendly rules validation ───────────────────────────
+
+  it("validates the rules buffer and shows success", async () => {
+    serverScripts = [{ ...baseScript }];
+    const { container, findByText, getByRole } = render(<ExperienceEditor />);
+    fireEvent.click(await findByText("Existing Rules"));
+    await codeViews(container);
+
+    fireEvent.click(getByRole("button", { name: "experience_editor_validate_rules" }));
+
+    await waitFor(() => {
+      expect(runExperienceTest).toHaveBeenCalledWith({
+        rulesCode: EXISTING_CODE,
+        settings: {},
+        participants: [],
+        capabilityGrants: [],
+        actions: [],
+      });
+    });
+    expect(runExperienceTest).toHaveBeenCalledTimes(1);
+    expect(await findByText("experience_wizard_rules_valid")).toBeTruthy();
+  });
+
+  it("shows validation failure with the error message", async () => {
+    serverScripts = [{ ...baseScript }];
+    runExperienceTest.mockRejectedValueOnce(new Error("syntax error at line 1"));
+    const { container, findByText, getByRole } = render(<ExperienceEditor />);
+    fireEvent.click(await findByText("Existing Rules"));
+    await codeViews(container);
+
+    fireEvent.click(getByRole("button", { name: "experience_editor_validate_rules" }));
+
+    await waitFor(() => expect(runExperienceTest).toHaveBeenCalledTimes(1));
+    expect(await findByText(/experience_wizard_rules_invalid/)).toBeTruthy();
+    expect(await findByText(/syntax error at line 1/)).toBeTruthy();
+  });
+
+  it("hides the raw InteractiveTester by default and reveals it after disclosure", async () => {
+    serverScripts = [{ ...baseScript }];
+    const { container, findByText, queryByText } = render(<ExperienceEditor />);
+    fireEvent.click(await findByText("Existing Rules"));
+    await codeViews(container);
+
+    // The InteractiveTester is absent until the disclosure is expanded.
+    expect(queryByText("experience_tester_title")).toBeNull();
+
+    // Expand the tester section.
+    const testerBtn = [...container.querySelectorAll("button")].find(
+      (b) => (b.textContent ?? "").includes("experience_editor_tester_section"),
+    );
+    if (!testerBtn) throw new Error("tester disclosure button missing");
+    fireEvent.click(testerBtn);
+    expect(await findByText("experience_tester_title")).toBeTruthy();
+  });
+
+  // IR-90E: fail-closed validation — stale valid state must never survive
+  // an edit or script switch.
+  it("clears validation state when the code changes", async () => {
+    serverScripts = [{ ...baseScript }];
+    const { container, findByText, getByRole, queryByText } = render(<ExperienceEditor />);
+    fireEvent.click(await findByText("Existing Rules"));
+    const [rulesView] = await codeViews(container);
+    if (!rulesView) throw new Error("rules editor missing");
+
+    // Validate succeeds.
+    fireEvent.click(getByRole("button", { name: "experience_editor_validate_rules" }));
+    await waitFor(() => expect(runExperienceTest).toHaveBeenCalledTimes(1));
+    expect(await findByText("experience_wizard_rules_valid")).toBeTruthy();
+
+    // Edit the code — validation must clear immediately (fail-closed).
+    replaceCode(rulesView, EXISTING_CODE + "\n// changed");
+    await waitFor(() => {
+      expect(queryByText("experience_wizard_rules_valid")).toBeNull();
+      expect(queryByText(/experience_wizard_rules_invalid/)).toBeNull();
+    });
+  });
+
+  // IR-90E: in-flight race — a validation started against source A whose
+  // promise hasn't resolved must never update state when the user edits to
+  // source B before the promise settles. The monotonic token in the editor
+  // drops the stale result and the loading indicator is cleared by the
+  // code-change effect.
+  it("drops a stale validation result when the code changes before the promise resolves", async () => {
+    serverScripts = [{ ...baseScript }];
+    let resolveTest: (value: ExperienceTestRunData) => void = () => {};
+    const deferred = new Promise<ExperienceTestRunData>((resolve) => { resolveTest = resolve; });
+    runExperienceTest.mockReturnValueOnce(deferred);
+
+    const { container, findByText, getByRole, queryByText } = render(<ExperienceEditor />);
+    fireEvent.click(await findByText("Existing Rules"));
+    const [rulesView] = await codeViews(container);
+    if (!rulesView) throw new Error("rules editor missing");
+
+    // Start validation — the promise is deferred, so validation is in flight.
+    fireEvent.click(getByRole("button", { name: "experience_editor_validate_rules" }));
+    await waitFor(() => expect(runExperienceTest).toHaveBeenCalledTimes(1));
+
+    // Edit the code while the stale request is still in flight.
+    replaceCode(rulesView, EXISTING_CODE + "\n// race edit");
+
+    // Now resolve the stale request with a typed fixture.
+    await act(async () => { resolveTest(makeTestRunData()); });
+
+    // The stale result must NOT appear — no valid/invalid indicator.
+    expect(queryByText("experience_wizard_rules_valid")).toBeNull();
+    expect(queryByText(/experience_wizard_rules_invalid/)).toBeNull();
+
+    // The validate button is restored (loading indicator cleared by the
+    // code-change effect, stale promise's finally block skipped via token).
+    const validateBtn = getByRole("button", { name: "experience_editor_validate_rules" });
+    expect((validateBtn as HTMLButtonElement).disabled).toBe(false);
   });
 });

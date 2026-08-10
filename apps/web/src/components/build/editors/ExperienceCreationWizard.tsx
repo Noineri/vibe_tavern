@@ -14,7 +14,7 @@
  * the editor uses (`useScriptDraftStore` + `useExperienceVisualDraftStore`),
  * seeds its buffers with the SAME empty-base-dirty trick, and saves through the
  * SAME API seams (`createScript` / `createExperienceVisual`). Starters, the
- * CodeMirror CodeEditor, InteractiveTester, ExperiencePreview, and
+ * CodeMirror CodeEditor, ExperiencePreview, and
  * AiAssistantModal are all reused as-is — wired in, not duplicated.
  *
  * Hard invariants enforced here:
@@ -60,7 +60,6 @@ import {
   type VisualStarter,
 } from "../../experience/starters/index.js";
 import { ExperiencePreview } from "../../experience/ExperiencePreview.js";
-import { InteractiveTester } from "./InteractiveTester.js";
 import { AiAssistantModal } from "../../shared/AiAssistantModal.js";
 import { createScript, deleteScript } from "../../../api/script-api.js";
 import { createExperienceVisual, runExperienceTest } from "../../../api/experience-api.js";
@@ -163,8 +162,7 @@ export function ExperienceCreationWizard(props: ExperienceCreationWizardProps) {
     ensureVisualDraft({ ...visualRecord, name: "", source: "", compatibleManifestIds: [] });
     patchVisualDraft(visualId, visualValues);
     setSelectedVisualStarterId(pairedVisualId);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [starter, t, ensureScriptDraft, patchScriptDraft, ensureVisualDraft, patchVisualDraft]);
 
   const rulesLocalId = rulesLocalIdRef.current;
   const visualLocalId = visualLocalIdRef.current;
@@ -523,8 +521,9 @@ export function ExperienceCreationWizard(props: ExperienceCreationWizardProps) {
                 <span>{t("experience_wizard_trust_note")}</span>
               </div>
 
-              {/* InteractiveTester (read-only diagnostics — same as the editor) */}
-              <InteractiveTester code={rulesValues.code} />
+              {/* IR-90E: the full raw tester is NOT embedded in the wizard flow —
+                  only the compact friendly validation result above. The tester
+                  is available in the saved editor after creation. */}
             </div>
           )}
 

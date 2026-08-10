@@ -346,6 +346,12 @@ describe("ExperienceCreationWizard", () => {
     // Before validation: Next is disabled, and the not-validated hint is shown.
     expect((bodyButton("next") as HTMLButtonElement).disabled).toBe(true);
 
+    // IR-90E: the raw InteractiveTester disclosure is NEVER rendered in the
+    // wizard flow — only the compact friendly validation result.
+    expect([...document.body.querySelectorAll("button")].some(
+      (b) => (b.textContent ?? "").includes("experience_editor_tester_section"),
+    )).toBe(false);
+
     // Invalid rules: make the tester reject, check rules → visible error.
     runExperienceTest.mockImplementationOnce(async () => { throw new Error("syntax error at line 1"); });
     fireEvent.click(bodyButton("experience_wizard_validate"));

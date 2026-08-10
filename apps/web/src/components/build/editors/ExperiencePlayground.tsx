@@ -345,9 +345,10 @@ export function ExperiencePlayground({ code, visualSource }: ExperiencePlaygroun
   // IR-90E: auto-derive an ordinary setup (roster + grants) from the discovered
   // definition when the panel opens and the user hasn't manually configured
   // seats. Uses the REAL runExperienceTest discovery (not brittle text parsing)
-  // — failed discovery (broken rules) keeps the default single human seat.
+  // — discovery failure (broken rules) explicitly restores the safe default
+  // single human seat plus empty grants.
   useEffect(() => {
-    if (!open || seatsTouched || deriving || code.trim() === "") return;
+    if (!open || seatsTouched || code.trim() === "") return;
     let cancelled = false;
     setDeriving(true);
     runExperienceTest({ rulesCode: code, actions: [] })
@@ -369,12 +370,15 @@ export function ExperiencePlayground({ code, visualSource }: ExperiencePlaygroun
           ]);
         }
       })
-      .catch(() => { /* broken rules: keep the default single human seat */ })
+      .catch(() => {
+        if (cancelled) return;
+        // Discovery failed (broken rules): restore the safe default single
+        // human seat plus empty grants.
+        setSeats([{ id: "you", label: "You", controller: EXPERIENCE_CONTROLLER.human }]);
+        setGrants([]);
+      })
       .finally(() => { if (!cancelled) setDeriving(false); });
     return () => { cancelled = true; };
-    // deriving is intentionally excluded: including it causes the effect to
-    // skip on re-render after setDeriving(true), never completing discovery.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, code, seatsTouched]);
 
   /** The ONE advance path (host chrome AND frame actions): apply one human

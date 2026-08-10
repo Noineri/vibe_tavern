@@ -422,6 +422,12 @@ describe("InteractiveTester", () => {
     });
 
     // The tester is mounted in the IR-81D seam, below the rules editor.
+    // IR-90E: the tester section is collapsed by default; expand it first.
+    const testerBtn = [...container.querySelectorAll("button")].find(
+      (b) => (b.textContent ?? "").includes("experience_editor_tester_section"),
+    );
+    if (!testerBtn) throw new Error("tester disclosure button missing");
+    fireEvent.click(testerBtn);
     fireEvent.click(getByText("experience_tester_title"));
     fireEvent.click(getByText("experience_tester_run"));
 
