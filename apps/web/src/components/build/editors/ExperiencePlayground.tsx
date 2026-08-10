@@ -463,15 +463,15 @@ export function ExperiencePlayground({ code, visualSource }: ExperiencePlaygroun
           <div className="mb-3">
             <label className={lblCls}>{t("experience_setup_participants_label")}</label>
             {seats.map((seat, index) => (
-              <div key={index} className="mb-1.5 mt-1.5 flex items-center gap-2">
+              <div key={index} className="mb-1.5 mt-1.5 flex flex-wrap items-center gap-2">
                 <input
-                  className={cn(inputCls, "w-24 shrink-0")}
+                  className={cn(inputCls, "min-w-0 w-24 shrink-0")}
                   value={seat.id}
                   placeholder={t("experience_tester_seat_id_placeholder")}
                   onChange={(e) => updateSeat(index, { id: e.target.value })}
                 />
                 <input
-                  className={cn(inputCls, "min-w-0 flex-1")}
+                  className={cn(inputCls, "min-w-[7rem] flex-1")}
                   value={seat.label}
                   placeholder={t("experience_setup_participant_name_placeholder")}
                   onChange={(e) => updateSeat(index, { label: e.target.value })}

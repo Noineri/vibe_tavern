@@ -76,6 +76,7 @@ const updateScript = mock((_id: string, _patch: Record<string, unknown>) => Prom
 const listExperienceVisuals = mock(() => Promise.resolve<ExperienceVisualRow[]>([]));
 const createExperienceVisual = mock((_body: Record<string, unknown>) => Promise.resolve<ExperienceVisualRow>({ ...baseVisual, compatibleManifestIds: [...baseVisual.compatibleManifestIds] }));
 const updateExperienceVisual = mock((_id: string, _patch: Record<string, unknown>) => Promise.resolve<ExperienceVisualRow>({ ...baseVisual, compatibleManifestIds: [...baseVisual.compatibleManifestIds] }));
+const deleteExperienceVisual = mock((_id: string) => Promise.resolve<void>(undefined));
 
 const realScriptApi = await import("../../../api/script-api.js");
 const realExperienceApi = await import("../../../api/experience-api.js");
@@ -94,6 +95,7 @@ mock.module("../../../api/experience-api.js", () => ({
   listExperienceVisuals,
   createExperienceVisual,
   updateExperienceVisual,
+  deleteExperienceVisual,
 }));
 
 mock.module("../../../i18n/context.js", () => ({
@@ -155,6 +157,7 @@ beforeEach(() => {
   listExperienceVisuals.mockClear();
   createExperienceVisual.mockClear();
   updateExperienceVisual.mockClear();
+  deleteExperienceVisual.mockClear();
   useScriptDraftStore.getState().resetAll();
   useExperienceVisualDraftStore.getState().resetAll();
   serverScripts = [];
@@ -215,6 +218,9 @@ beforeEach(() => {
     serverVisuals = serverVisuals.map((v) => (v.id === id ? updated : v));
     return { ...updated, compatibleManifestIds: [...updated.compatibleManifestIds] };
   });
+  deleteExperienceVisual.mockImplementation(async (id) => {
+    serverVisuals = serverVisuals.filter((v) => v.id !== id);
+  });
 });
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -255,6 +261,55 @@ function singlePendingRulesDraft() {
   const entry = pending[0];
   if (!entry) throw new Error("unreachable");
   return entry;
+}
+
+/** Count the mounted playground instances across the whole document (incl.
+ *  portaled Modals) via its unique title text node — enforces the IR-90A
+ *  single-instance invariant. */
+function playgroundInstanceCount(): number {
+  return [...document.body.querySelectorAll("span")].filter(
+    (s) => s.textContent === "experience_playground_title",
+  ).length;
+}
+
+/** Open a DropdownSelect (its trigger currently showing `triggerText`) and pick
+ *  the item whose text matches `optionLabel`. Mirrors the cmdk-portal pattern
+ *  used in ExperiencePlayground.test.tsx / ExperienceSetupModal.test.tsx. */
+async function pickDropdown(view: { container: HTMLElement; baseElement: HTMLElement }, triggerText: string, optionLabel: string): Promise<void> {
+  const trigger = [...view.container.querySelectorAll("button")].find(
+    (b) => (b.textContent ?? "").includes(triggerText),
+  ) as HTMLButtonElement | undefined;
+  if (!trigger) throw new Error(`no dropdown trigger containing "${triggerText}"`);
+  fireEvent.click(trigger);
+  await waitFor(() => expect(view.baseElement.querySelector("[cmdk-list]")).toBeTruthy());
+  const item = [...view.baseElement.querySelectorAll("[cmdk-item]")].find(
+    (i) => (i.textContent ?? "").trim() === optionLabel,
+  ) as HTMLElement | undefined;
+  if (!item) throw new Error(`no cmdk item "${optionLabel}"`);
+  fireEvent.click(item);
+  await waitFor(() => expect(view.baseElement.querySelector("[cmdk-list]")).toBeNull());
+}
+
+/** The active visual's trash button (there is exactly one in the visual section). */
+function visualDeleteButton(container: HTMLElement): HTMLElement {
+  const btns = [...container.querySelectorAll('button[aria-label="experience_editor_visual_delete"]')];
+  const btn = btns[0];
+  if (!(btn instanceof HTMLElement)) throw new Error("visual delete button missing");
+  return btn;
+}
+
+/** The open DestructiveConfirmModal's confirm button (bg-danger, in the portal). */
+async function waitForVisualDeleteConfirm(): Promise<HTMLElement> {
+  let confirm: HTMLElement | undefined;
+  await waitFor(() => {
+    const found = ([...document.body.querySelectorAll("button")].find(
+      (b) => (b.textContent ?? "").trim() === "experience_editor_visual_delete" && (b.getAttribute("class") ?? "").includes("bg-danger"),
+    ));
+    if (!(found instanceof HTMLElement)) throw new Error("visual delete confirm not mounted");
+    confirm = found;
+  });
+  if (!confirm) throw new Error("visual delete confirm missing");
+  return confirm;
 }
 
 // ── Tests ──────────────────────────────────────────────────────────────────
@@ -570,5 +625,114 @@ describe("ExperienceEditor", () => {
     expect(await findByText("experience_api_methods")).toBeTruthy();
     expect(await findByText("experience_api_optional")).toBeTruthy();
     expect(await findByText("experience_api_events")).toBeTruthy();
+  });
+
+  // ── IR-90A: above-the-fold playground launcher + explicit visual delete ──
+  it("opens the draft-bound playground from an above-the-fold launcher in a shared Modal (single instance, no persistent write)", async () => {
+    const board = getRulesStarter("board");
+    if (!board) throw new Error("starter missing");
+    const { container, findByText, getByRole, queryByText } = render(<ExperienceEditor />);
+    fireEvent.click(await findByText("Board"));
+
+    // The launcher is rendered ABOVE the rules editor (visible without scrolling).
+    const launcher = getByRole("button", { name: "experience_editor_playground_open" });
+    const rulesEditor = container.querySelector(".cm-editor");
+    expect(rulesEditor).not.toBeNull();
+    expect(Boolean(rulesEditor!.compareDocumentPosition(launcher) & Node.DOCUMENT_POSITION_PRECEDING)).toBe(true);
+
+    // Before opening: exactly one playground instance (inline, collapsed).
+    expect(playgroundInstanceCount()).toBe(1);
+
+    fireEvent.click(launcher);
+
+    // The inline slot collapses to a placeholder; the SAME draft-bound
+    // playground renders inside the Modal. Exactly ONE instance is mounted at
+    // a time (the inline instance is unmounted while the modal is open — no
+    // second in-memory driver).
+    await waitFor(() => expect(queryByText("experience_editor_playground_open_in_modal")).not.toBeNull());
+    expect(playgroundInstanceCount()).toBe(1);
+
+    // Closing the modal writes nothing — no create/update/delete API call fires
+    // (the playground never persists and never creates an API session).
+    const closeBtn = [...document.body.querySelectorAll('button[aria-label="close"]')][0]!;
+    fireEvent.click(closeBtn);
+    await waitFor(() => expect(queryByText("experience_editor_playground_open_in_modal")).toBeNull());
+    expect(playgroundInstanceCount()).toBe(1);
+    expect(createScript).not.toHaveBeenCalled();
+    expect(updateScript).not.toHaveBeenCalled();
+    expect(createExperienceVisual).not.toHaveBeenCalled();
+    expect(deleteExperienceVisual).not.toHaveBeenCalled();
+  });
+
+  it("deletes a saved visual on confirm via deleteExperienceVisual and removes it from the list + draft", async () => {
+    serverScripts = [{ ...baseScript }];
+    serverVisuals = [{ ...baseVisual }];
+    const { container, findByText, queryByText } = render(<ExperienceEditor />);
+    fireEvent.click(await findByText("Existing Rules"));
+
+    // Select the saved visual from the visual dropdown.
+    await pickDropdown({ container, baseElement: document.body }, "experience_assign_visual_placeholder", "Existing Visual");
+
+    fireEvent.click(visualDeleteButton(container));
+    fireEvent.click(await waitForVisualDeleteConfirm());
+
+    await waitFor(() => expect(deleteExperienceVisual).toHaveBeenCalledWith("vis_1"));
+    expect(deleteExperienceVisual).toHaveBeenCalledTimes(1);
+    // Removed from the draft store; the active visual was reset (none selected).
+    expect(useExperienceVisualDraftStore.getState().drafts["vis_1"]).toBeUndefined();
+    await waitFor(() => expect(queryByText("experience_editor_visual_none")).not.toBeNull());
+  });
+
+  it("removes a pending (unsaved) visual locally without an API call", async () => {
+    const { container, findByText, queryByText } = render(<ExperienceEditor />);
+    // A starter pick lands a paired PENDING (local-id) visual, selected.
+    fireEvent.click(await findByText("Board"));
+
+    fireEvent.click(visualDeleteButton(container));
+    fireEvent.click(await waitForVisualDeleteConfirm());
+
+    // No server call: a pending visual was never persisted.
+    expect(deleteExperienceVisual).not.toHaveBeenCalled();
+    await waitFor(() => expect(queryByText("experience_editor_visual_none")).not.toBeNull());
+  });
+
+  it("keeps a saved visual and surfaces the error when deleteExperienceVisual fails", async () => {
+    serverScripts = [{ ...baseScript }];
+    serverVisuals = [{ ...baseVisual }];
+    deleteExperienceVisual.mockImplementationOnce(async () => { throw new Error("network down"); });
+    const { container, findByText, queryByText } = render(<ExperienceEditor />);
+    fireEvent.click(await findByText("Existing Rules"));
+    await pickDropdown({ container, baseElement: document.body }, "experience_assign_visual_placeholder", "Existing Visual");
+
+    fireEvent.click(visualDeleteButton(container));
+    fireEvent.click(await waitForVisualDeleteConfirm());
+
+    // Error surfaced; the visual is KEPT (draft + name still present).
+    await waitFor(() => expect(queryByText(/experience_editor_visual_delete_error/)).not.toBeNull());
+    expect(deleteExperienceVisual).toHaveBeenCalledWith("vis_1");
+    expect(useExperienceVisualDraftStore.getState().drafts["vis_1"]).toBeDefined();
+  });
+
+  it("deleting a visual never mutates an already-pinned source snapshot (live-session isolation)", async () => {
+    serverScripts = [{ ...baseScript }];
+    serverVisuals = [{ ...baseVisual }];
+    // A live session pins its own immutable copy of the visual source at start
+    // time, independent of the resource row (the editor has no session handle).
+    const pinnedBySession = serverVisuals[0]!.source;
+
+    const { container, findByText } = render(<ExperienceEditor />);
+    fireEvent.click(await findByText("Existing Rules"));
+    await pickDropdown({ container, baseElement: document.body }, "experience_assign_visual_placeholder", "Existing Visual");
+
+    fireEvent.click(visualDeleteButton(container));
+    fireEvent.click(await waitForVisualDeleteConfirm());
+
+    await waitFor(() => expect(deleteExperienceVisual).toHaveBeenCalledTimes(1));
+    // The resource row was removed (delete reached the API) …
+    expect(deleteExperienceVisual).toHaveBeenCalledWith("vis_1");
+    // … but the session's pinned snapshot is byte-identical: the editor's delete
+    // path (deleteExperienceVisual + list filter + draft remove) cannot and did
+    // not reach an external pinned copy.
+    expect(pinnedBySession).toBe(baseVisual.source);
   });
 });

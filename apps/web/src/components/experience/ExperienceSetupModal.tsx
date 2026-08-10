@@ -992,8 +992,8 @@ export function ExperienceSetupModal({
       <div
         className={
           isMobile
-            ? "flex h-full w-full flex-col bg-s1"
-            : "flex max-h-[88vh] w-[min(680px,94vw)] flex-col overflow-hidden rounded-lg border border-border bg-s1 shadow-xl"
+            ? "flex h-full w-full flex-col bg-surface"
+            : "flex max-h-[88vh] w-[min(680px,94vw)] flex-col overflow-hidden rounded-lg border border-border bg-surface shadow-xl"
         }
         data-testid="experience-setup-modal"
         data-chat-id={chatId}
@@ -1181,7 +1181,7 @@ function RosterRow({
       <div className="flex items-center gap-2">
         <input
           type="text"
-          className="min-w-0 flex-1 rounded-md border border-border bg-s1 px-2 py-1 font-ui text-[12px] text-t1 outline-none focus:border-accent"
+          className="min-w-0 flex-1 rounded-md border border-border bg-s2 px-2 py-1 font-ui text-[12px] text-t1 outline-none focus:border-accent"
           value={seat.label}
           maxLength={INTERACTIVE_SCHEMA_MAX_LABEL}
           placeholder={t("experience_setup_participant_name_placeholder")}

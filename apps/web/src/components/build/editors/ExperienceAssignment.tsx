@@ -348,7 +348,7 @@ export function ExperienceAssignment({
                 {declaredCapabilities.map((decl) => (
                   <div
                     key={decl.capability}
-                    className="flex items-center gap-2 rounded-md bg-s1 px-2.5 py-1.5"
+                    className="flex items-center gap-2 rounded-md bg-s2 px-2.5 py-1.5"
                   >
                     <div className="min-w-0 flex-1">
                       <div className="font-ui text-[12px] font-medium text-t2">
@@ -394,7 +394,7 @@ export function ExperienceAssignment({
             {/* Model seats pin provider/model at launch (IR-73A) — note only,
                 never a selector here. */}
             {modelActive && (
-              <div className="flex items-start gap-2 rounded-md border border-border bg-s1 px-2.5 py-2">
+              <div className="flex items-start gap-2 rounded-md border border-border bg-s2 px-2.5 py-2">
                 <span className="mt-0.5 shrink-0 text-t3"><Ic.brain /></span>
                 <p className="font-ui text-[12px] leading-relaxed text-t3">
                   {t("experience_assign_model_note")}

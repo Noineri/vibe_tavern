@@ -68,6 +68,7 @@ import { VISUAL_STARTERS, getVisualStarter, type VisualStarter } from "../../exp
 import { createScript, listAllScripts, updateScript } from "../../../api/script-api.js";
 import {
   createExperienceVisual,
+  deleteExperienceVisual,
   listExperienceVisuals,
   updateExperienceVisual,
 } from "../../../api/experience-api.js";
@@ -75,6 +76,8 @@ import type { ExperienceVisualRow, ScriptRecord } from "../../../api/types.js";
 import { InteractiveApiReference } from "./interactive-api-reference.js";
 import { InteractiveTester } from "./InteractiveTester.js";
 import { ExperiencePlayground } from "./ExperiencePlayground.js";
+import { Modal } from "../../shared/Modal.js";
+import { DestructiveConfirmModal } from "../../shared/destructive-confirm-modal.js";
 import { AiAssistantModal } from "../../shared/AiAssistantModal.js";
 
 // ── Local (unsaved) record ids ─────────────────────────────────────────────
@@ -173,6 +176,20 @@ export function ExperienceEditor() {
   const [apiRefOpen, setApiRefOpen] = useState(false);
   const [aiHelperOpen, setAiHelperOpen] = useState(false);
   const [visualAiHelperOpen, setVisualAiHelperOpen] = useState(false);
+
+  // IR-84B launcher: the inline playground is mounted at the bottom of the
+  // editor; this opens the SAME draft-bound playground in a shared Modal from
+  // the top toolbar so it is reachable without scrolling. At most ONE
+  // ExperiencePlayground instance is mounted at a time — when the modal is
+  // open the inline slot renders a collapsed placeholder (playground state is
+  // ephemeral/scratch, so re-mounting on close/reopen is acceptable).
+  const [playgroundModalOpen, setPlaygroundModalOpen] = useState(false);
+
+  // IR-90A: explicit destructive delete for a saved/pending visual, confirmed
+  // via the shared DestructiveConfirmModal. A failed delete keeps the visual
+  // and surfaces the error (never silently dropped).
+  const [visualDeleteId, setVisualDeleteId] = useState<string | null>(null);
+  const [visualDeleteError, setVisualDeleteError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -342,6 +359,40 @@ export function ExperienceEditor() {
       compatibleManifestIds: [...activeVisual.compatibleManifestIds],
     }));
   };
+
+  /** IR-90A: explicitly delete a visual. A pending (local-id) visual was never
+   *  persisted, so it is removed locally with no API call. A saved visual is
+   *  DELETEd server-side then dropped from the list + draft. A live session
+   *  that already pinned this visual holds its own immutable source snapshot,
+   *  so deleting the resource row never mutates that pinned source. On error
+   *  the visual is kept and the error is surfaced (never silently dropped). */
+  const handleDeleteVisual = useCallback(async (id: string) => {
+    setVisualDeleteError(null);
+    // Close the confirm modal first (shared-modal close-on-confirm convention).
+    setVisualDeleteId(null);
+    const resetActiveIfMatch = () => {
+      if (activeVisualId === id) {
+        const remaining = allVisuals.filter((v) => v.id !== id);
+        setActiveVisualId(remaining.length > 0 ? remaining[0].id : null);
+      }
+    };
+    if (isLocalId(id)) {
+      // Never persisted: remove from the pending list + draft only.
+      setPendingVisuals((prev) => prev.filter((v) => v.id !== id));
+      removeVisualDraft(id);
+      resetActiveIfMatch();
+      return;
+    }
+    try {
+      await deleteExperienceVisual(id);
+      setVisuals((prev) => prev.filter((v) => v.id !== id));
+      removeVisualDraft(id);
+      resetActiveIfMatch();
+    } catch (error) {
+      // Keep the visual; surface the error (never silently drop it).
+      setVisualDeleteError(errorMessage(error));
+    }
+  }, [activeVisualId, allVisuals, removeVisualDraft]);
 
   // ── Saves ────────────────────────────────────────────────────────────────
   const handleSaveRules = useCallback(async () => {
@@ -584,6 +635,16 @@ export function ExperienceEditor() {
 
       {/* Toolbar: API reference + AI helper */}
       <div className="mb-2 flex flex-wrap gap-2">
+        {/* IR-84B/IR-90A: above-the-fold playground launcher — opens the SAME
+            draft-bound playground in a shared Modal so it is reachable without
+            scrolling to the inline section at the bottom. */}
+        <button
+          type="button"
+          className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-accent-dim px-2.5 font-ui text-[11px] text-accent-t transition-all hover:brightness-110"
+          onClick={() => setPlaygroundModalOpen(true)}
+        >
+          <Ic.dice /> {t("experience_editor_playground_open")}
+        </button>
         <button
           type="button"
           className={cn("flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-border px-2.5 font-ui text-[11px] transition-all hover:bg-s2 hover:text-t1", apiRefOpen ? "bg-accent-dim text-accent-t" : "bg-s3 text-t2")}
@@ -653,7 +714,28 @@ export function ExperienceEditor() {
               <Ic.copy />
             </button>
           </CustomTooltip>
+          <CustomTooltip content={t("experience_editor_visual_delete")}>
+            <button
+              type="button"
+              aria-label={t("experience_editor_visual_delete")}
+              className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded text-danger transition-all hover:bg-s2 disabled:cursor-default disabled:opacity-40"
+              disabled={!activeVisual}
+              onClick={() => {
+                if (activeVisualId) {
+                  setVisualDeleteError(null);
+                  setVisualDeleteId(activeVisualId);
+                }
+              }}
+            >
+              <Ic.del />
+            </button>
+          </CustomTooltip>
         </div>
+        {visualDeleteError && (
+          <div className="mb-3 rounded-md border border-danger bg-danger-dim px-3 py-2 font-ui text-[12px] text-danger-text">
+            {t("experience_editor_visual_delete_error")}: {visualDeleteError}
+          </div>
+        )}
         <div className="mb-3 flex flex-wrap items-center gap-2">
           <span className="font-ui text-[11px] text-t3">{t("experience_editor_visual_new")}</span>
           {VISUAL_STARTERS.map((starter) => (
@@ -745,18 +827,30 @@ export function ExperienceEditor() {
         )}
       </div>
 
-      {/*
-       * IR-84B: the interactive playground. A peer of the IR-81D tester with
-       * access to BOTH unsaved buffers — it PLAYS the CURRENT UNSAVED rules
-       * (`activeScript.code`) through the IR-84A in-memory playground driver
-       * (POST /api/experience/playground/start|advance) turn by turn, and
-       * renders the CURRENT UNSAVED visual (`activeVisual.source`, when one is
-       * selected) inside the isolated ExperienceFrame against the live
-       * playground state. Read-only: it never mutates these drafts, never
-       * touches a store, and never forwards an action to any chat/session.
-       */}
       <div className="mt-3">
-        <ExperiencePlayground code={activeScript.code} visualSource={activeVisual?.source ?? null} />
+        {/*
+         * IR-84B: the interactive playground. A peer of the IR-81D tester with
+         * access to BOTH unsaved buffers — it PLAYS the CURRENT UNSAVED rules
+         * (`activeScript.code`) through the IR-84A in-memory playground driver
+         * (POST /api/experience/playground/start|advance) turn by turn, and
+         * renders the CURRENT UNSAVED visual (`activeVisual.source`, when one
+         * is selected) inside the isolated ExperienceFrame against the live
+         * playground state. Read-only: it never mutates these drafts, never
+         * touches a store, and never forwards an action to any chat/session.
+         *
+         * IR-90A single-instance invariant: when the playground is open in the
+         * header Modal, the inline slot renders a collapsed placeholder
+         * instead of a second ExperiencePlayground (a second mounted instance
+         * would create a second in-memory driver). Playground state is
+         * ephemeral/scratch, so re-mounting on close/reopen is acceptable.
+         */}
+        {playgroundModalOpen ? (
+          <div className="rounded-lg border border-border bg-s2" style={{ padding: 16 }}>
+            <span className="font-ui text-[12px] text-t3">{t("experience_editor_playground_open_in_modal")}</span>
+          </div>
+        ) : (
+          <ExperiencePlayground code={activeScript.code} visualSource={activeVisual?.source ?? null} />
+        )}
       </div>
 
       {/*
@@ -804,6 +898,55 @@ export function ExperienceEditor() {
         onInsert={(text) => updateVisualDraft({ source: text })}
         onReplace={(text) => updateVisualDraft({ source: text })}
       />
+
+      {/*
+       * IR-90A: the above-the-fold playground launcher (header toolbar) opens
+       * the SAME draft-bound playground in a shared Modal. No persistent write
+       * and no second LIVE/API session is introduced — the playground never
+       * persists and never creates an API session; closing the Modal writes
+       * nothing. The inline instance is unmounted while this is open
+       * (single-instance invariant, see the inline slot above).
+       */}
+      <Modal
+        open={playgroundModalOpen}
+        onClose={() => setPlaygroundModalOpen(false)}
+        title={t("experience_editor_playground_modal_title")}
+        description={t("experience_editor_playground_modal_title")}
+      >
+        <div className="flex max-h-[88vh] w-[min(760px,94vw)] flex-col overflow-hidden rounded-lg border border-border bg-surface shadow-xl">
+          <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-2.5">
+            <span className="text-[13px] font-semibold text-t1">{t("experience_editor_playground_modal_title")}</span>
+            <button
+              type="button"
+              aria-label={t("close")}
+              className="flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded text-t3 transition-all hover:bg-s2 hover:text-t1"
+              onClick={() => setPlaygroundModalOpen(false)}
+            >
+              <Ic.close />
+            </button>
+          </div>
+          <div className="overflow-y-auto p-4">
+            <ExperiencePlayground code={activeScript.code} visualSource={activeVisual?.source ?? null} />
+          </div>
+        </div>
+      </Modal>
+
+      {/*
+       * IR-90A: explicit destructive delete for the active visual, confirmed
+       * via the shared DestructiveConfirmModal (same idiom as ScriptEditor).
+       * A saved visual is DELETEd server-side; a pending visual is removed
+       * locally. A live session that already pinned this visual keeps its own
+       * immutable snapshot, so deletion never mutates a pinned source.
+       */}
+      {visualDeleteId && (
+        <DestructiveConfirmModal
+          title={t("experience_editor_visual_delete_title")}
+          body={t("experience_editor_visual_delete_msg")}
+          confirmLabel={t("experience_editor_visual_delete")}
+          onConfirm={() => void handleDeleteVisual(visualDeleteId)}
+          onCancel={() => { setVisualDeleteId(null); setVisualDeleteError(null); }}
+        />
+      )}
     </div>
   );
 }

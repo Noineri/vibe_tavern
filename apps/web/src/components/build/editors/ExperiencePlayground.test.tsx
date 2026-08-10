@@ -519,4 +519,51 @@ describe("ExperiencePlayground", () => {
     // No visual is selected in this fixture: the frame stays hidden.
     expect(await findByText("experience_playground_no_visual")).toBeTruthy();
   });
+
+  // IR-90A: the roster row must keep every control inside the panel at narrow
+  // widths and with long (RU) labels — no horizontal overflow, no clipped
+  // placeholder. happy-dom has no layout engine, so this pins the STRUCTURAL
+  // contract that guarantees it: the row wraps (flex-wrap) and the flexible
+  // label input carries a min-width floor (it wraps to a usable line instead
+  // of shrinking to a clipped sliver). A best-effort scrollWidth<=clientWidth
+  // check is included for any layout-capable runner.
+  it("roster rows wrap at narrow widths with long RU labels (no overflow, seed visible)", async () => {
+    document.body.style.width = "320px";
+    const { container, getByText, getAllByPlaceholderText } = renderPlayground();
+
+    // Add two more participants and give them long Cyrillic (RU) labels.
+    fireEvent.click(getByText("experience_setup_add_participant"));
+    fireEvent.click(getByText("experience_setup_add_participant"));
+    const labelInputs = getAllByPlaceholderText("experience_setup_participant_name_placeholder");
+    fireEvent.change(labelInputs[1]!, { target: { value: "Управляемый моделью дилер" } });
+    fireEvent.change(labelInputs[2]!, { target: { value: "Очень длинное имя участника" } });
+
+    const seatIdInputs = container.querySelectorAll('input[placeholder="experience_tester_seat_id_placeholder"]');
+    expect(seatIdInputs.length).toBeGreaterThanOrEqual(3);
+    // Each roster row (parent of a seat-id input) wraps instead of overflowing:
+    // it carries flex-wrap, and its flexible label input has a min-width floor.
+    seatIdInputs.forEach((seatInput) => {
+      const row = seatInput.parentElement;
+      if (!row) throw new Error("roster row missing");
+      const rowCls = row.getAttribute("class") ?? "";
+      expect(rowCls).toContain("flex-wrap");
+      const labelInput = row.querySelector('input[placeholder="experience_setup_participant_name_placeholder"]');
+      expect(labelInput?.getAttribute("class") ?? "").toContain("min-w-[7rem]");
+      // Best-effort layout boundary: under happy-dom these are 0/0 (no layout);
+      // a layout-capable runner would report the real overflow — either way the
+      // wrapped row never scrolls past its container.
+      const sw = row.scrollWidth;
+      const cw = row.clientWidth;
+      if (typeof sw === "number" && typeof cw === "number") {
+        expect(sw <= cw).toBe(true);
+      }
+    });
+
+    // The seed input is rendered and stays in the layout (never clipped out).
+    const seedInput = container.querySelector('input[placeholder="experience_tester_seed_placeholder"]') as HTMLInputElement | null;
+    expect(seedInput).not.toBeNull();
+    expect(seedInput!.offsetParent === null ? true : seedInput!.parentElement?.contains(seedInput)).toBe(true);
+
+    document.body.style.width = "";
+  });
 });

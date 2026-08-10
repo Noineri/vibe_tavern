@@ -892,4 +892,27 @@ describe("ExperienceSetupModal — layout", () => {
     const labels = view.baseElement.querySelectorAll("span.uppercase");
     labels.forEach((l) => expect(l.className).not.toContain("w-["));
   });
+
+  // IR-90A: the opaque panel surfaces must use an ESTABLISHED color token.
+  // `bg-s1` is a nonexistent token (renders transparent) — both the mobile
+  // and the desktop panel must render with `bg-surface` and never `bg-s1`.
+  it("mobile + desktop panels use the bg-surface token, never the nonexistent bg-s1", async () => {
+    setFakeState({ config: makeConfig() });
+    mocks.testScript.mockResolvedValue(interactiveOk(def([])));
+
+    mobileOverride = true;
+    const mobileView = renderModal();
+    await whenReady(mobileView);
+    const mobilePanel = mobileView.getByTestId("experience-setup-modal");
+    expect(mobilePanel.className).toContain("bg-surface");
+    expect(mobilePanel.className).not.toContain("bg-s1");
+    cleanup();
+
+    mobileOverride = false;
+    const desktopView = renderModal();
+    await whenReady(desktopView);
+    const desktopPanel = desktopView.getByTestId("experience-setup-modal");
+    expect(desktopPanel.className).toContain("bg-surface");
+    expect(desktopPanel.className).not.toContain("bg-s1");
+  });
 });
