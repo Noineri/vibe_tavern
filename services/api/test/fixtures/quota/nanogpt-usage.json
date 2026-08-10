@@ -1,0 +1,14 @@
+{
+  "active": true,
+  "provider": "balance",
+  "providerStatus": null,
+  "cancelAtPeriodEnd": false,
+  "limits": { "weeklyInputTokens": 60000000, "dailyInputTokens": null, "dailyImages": 100 },
+  "allowOverage": false,
+  "period": { "currentPeriodEnd": "2026-08-19T22:57:50.820Z" },
+  "dailyImages": { "used": 25, "remaining": 75, "percentUsed": 0.25, "resetAt": 1786147200000 },
+  "dailyInputTokens": null,
+  "weeklyInputTokens": { "used": 514695, "remaining": 59485305, "percentUsed": 0.00857825, "resetAt": 1786320000000 },
+  "state": "active",
+  "graceUntil": null
+}

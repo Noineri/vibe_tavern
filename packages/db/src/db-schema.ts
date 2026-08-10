@@ -1,4 +1,13 @@
-import type { CoauthorTransport, ProviderProxyMode } from '@vibe-tavern/domain';
+import type {
+  CoauthorTransport,
+  ProviderProxyMode,
+  ProviderQuotaErrorKind,
+  ProviderQuotaEvent,
+  ProviderQuotaEventKind,
+  ProviderQuotaKind,
+  ProviderQuotaSnapshot,
+  QuotaTransitionState,
+} from '@vibe-tavern/domain';
 import { sql } from 'drizzle-orm';
 import { sqliteTable, text, integer, real, index, uniqueIndex, primaryKey, check } from 'drizzle-orm/sqlite-core';
 
@@ -641,6 +650,57 @@ export const providerModelSettings = sqliteTable('provider_model_settings', {
   updatedAt: text('updated_at').notNull(),
 }, (table) => ({
   providerModelUnique: uniqueIndex('idx_provider_model_settings_unique').on(table.providerProfileId, table.modelId),
+}));
+
+// ─── providerQuotaSettings ─────────────────────────────────────────────────────
+// The user's three quota toggles, one row per profile. `configKind` mirrors the
+// capability kind the toggles were written for: `balance` configs have no
+// notification columns (they stay NULL) and `none` configs have nothing at all —
+// the nullability IS the type-level "display only" rule, persisted.
+export const providerQuotaSettings = sqliteTable('provider_quota_settings', {
+  providerProfileId: text('provider_profile_id').primaryKey().references(() => providerProfiles.id, { onDelete: 'cascade' }),
+  configKind: text('config_kind').$type<ProviderQuotaKind>().notNull(),
+  displayEnabled: integer('display_enabled', { mode: 'boolean' }).notNull().default(false),
+  /** windowed only — NULL for balance/none. */
+  lowQuotaEnabled: integer('low_quota_enabled', { mode: 'boolean' }),
+  /** windowed only — integer 1..100. */
+  lowQuotaRemainingPercent: integer('low_quota_remaining_percent'),
+  /** windowed only — NULL for balance/none. */
+  resetNotifyEnabled: integer('reset_notify_enabled', { mode: 'boolean' }),
+  /** windowed + balance — integer 1..5 minutes. NULL for `none` (never polled). */
+  pollIntervalMinutes: integer('poll_interval_minutes'),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+});
+
+// ─── providerQuotaSnapshots ────────────────────────────────────────────────────
+// Latest normalized snapshot per profile plus the transition state machine's
+// memory. RAW VENDOR PAYLOADS ARE NEVER STORED — only the normalized model.
+export const providerQuotaSnapshots = sqliteTable('provider_quota_snapshots', {
+  providerProfileId: text('provider_profile_id').primaryKey().references(() => providerProfiles.id, { onDelete: 'cascade' }),
+  /** NULL until the first successful poll — a profile whose very first poll 401s
+   *  still needs its `lastError` on record so the route can report it. */
+  snapshotJson: text('snapshot_json', { mode: 'json' }).$type<ProviderQuotaSnapshot>(),
+  /** NULL for balance/none profiles — they have no windows, so no latches exist. */
+  transitionStateJson: text('transition_state_json', { mode: 'json' }).$type<QuotaTransitionState>(),
+  /** ProviderQuotaErrorKind of the last failed poll, or NULL when the last poll succeeded. */
+  lastError: text('last_error').$type<ProviderQuotaErrorKind>(),
+  updatedAt: text('updated_at').notNull(),
+});
+
+// ─── providerQuotaEvents ───────────────────────────────────────────────────────
+// Emitted-notification ledger. The PK is the deterministic event id built by the
+// transition state machine, so replaying the same situation after a restart hits
+// a duplicate-key conflict instead of re-notifying the user.
+export const providerQuotaEvents = sqliteTable('provider_quota_events', {
+  eventId: text('event_id').primaryKey(),
+  providerProfileId: text('provider_profile_id').notNull().references(() => providerProfiles.id, { onDelete: 'cascade' }),
+  kind: text('kind').$type<ProviderQuotaEventKind>().notNull(),
+  /** The exact payload put on the bus. */
+  payloadJson: text('payload_json', { mode: 'json' }).$type<ProviderQuotaEvent>().notNull(),
+  createdAt: text('created_at').notNull(),
+}, (table) => ({
+  profileIdx: index('idx_provider_quota_events_profile').on(table.providerProfileId),
 }));
 
 // ─── promptTraces ──────────────────────────────────────────────────────────

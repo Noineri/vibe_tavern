@@ -6,3 +6,4 @@ export { ProviderModelList } from './ProviderModelList.js';
 export { ProviderCapabilityPanel } from './ProviderCapabilityPanel.js';
 export { ProviderSamplerPanel } from './ProviderSamplerPanel.js';
 export { ProviderBindingPanel } from './ProviderBindingPanel.js';
+export { ProviderQuotaPanel } from './ProviderQuotaPanel.js';

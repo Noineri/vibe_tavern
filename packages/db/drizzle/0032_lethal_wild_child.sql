@@ -1,0 +1,1 @@
+ALTER TABLE `provider_quota_settings` ADD `poll_interval_minutes` integer;

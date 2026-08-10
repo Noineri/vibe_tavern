@@ -241,8 +241,10 @@ export function getCurrentVersion(): string {
  * fails — the launcher treats this as non-fatal and proceeds to start the
  * server with the current version.
  */
-export async function checkForUpdate(): Promise<UpdateCheckResult | null> {
-	const detailed = await checkForUpdateDetailed();
+export async function checkForUpdate(
+	options: UpdateCheckOptions = {},
+): Promise<UpdateCheckResult | null> {
+	const detailed = await checkForUpdateDetailed(options);
 	return detailed.kind === "ok" ? detailed.result : null;
 }
 
@@ -264,7 +266,23 @@ export type UpdateCheckOutcome =
 	}
 	| { readonly kind: "offline" };
 
-export async function checkForUpdateDetailed(): Promise<UpdateCheckOutcome> {
+export interface UpdateCheckOptions {
+	/**
+	 * Whether a release only counts once it carries an archive for this
+	 * platform. True (the default) for every channel that installs BY
+	 * downloading that archive.
+	 *
+	 * The npm channel must pass false. It installs from the registry and never
+	 * looks at release assets — and there is no archive at all for macOS or for
+	 * any non-x64 machine, so requiring one would permanently hide every update
+	 * from exactly the users this channel exists to serve.
+	 */
+	readonly requirePlatformAsset?: boolean;
+}
+
+export async function checkForUpdateDetailed(
+	options: UpdateCheckOptions = {},
+): Promise<UpdateCheckOutcome> {
 	let response: Response;
 	try {
 		response = await fetch(`${resolveApiBase()}/releases/latest`, {
@@ -293,12 +311,30 @@ export async function checkForUpdateDetailed(): Promise<UpdateCheckOutcome> {
 		const root = typeof body === "object" && body !== null ? (body as GithubReleaseShape) : null;
 		const tag = typeof root?.tag_name === "string" ? root.tag_name : null;
 		const version = tag === null ? null : tag.replace(/^v/, "");
+		const releaseNotes = typeof root?.body === "string" ? root.body : "";
+		const updateAvailable = version !== null && compareVersions(CURRENT_VERSION, version) < 0;
+
+		// A caller that does not install from archives has a complete answer
+		// here: the release parsed fine, only its asset list was irrelevant.
+		if (options.requirePlatformAsset === false && version !== null && tag !== null) {
+			return {
+				kind: "ok",
+				result: {
+					currentVersion: CURRENT_VERSION,
+					latestVersion: version,
+					latestTag: tag,
+					releaseNotes,
+					updateAvailable,
+				},
+			};
+		}
+
 		return {
 			kind: "no-asset-for-platform",
 			latestVersion: version,
 			latestTag: tag,
-			releaseNotes: typeof root?.body === "string" ? root.body : "",
-			updateAvailable: version !== null && compareVersions(CURRENT_VERSION, version) < 0,
+			releaseNotes,
+			updateAvailable,
 		};
 	}
 
@@ -609,7 +645,9 @@ export function compareVersions(a: string, b: string): number {
 	return 0;
 }
 
-async function promptUser(message: string): Promise<string> {
+/** Exported so the npm channel's CLI asks its confirmation exactly the way the
+ *  binary channel's does, instead of growing a second copy of this. */
+export async function promptUser(message: string): Promise<string> {
 	process.stdout.write(message);
 	return new Promise<string>((resolve) => {
 		process.stdin.resume();
@@ -974,14 +1012,21 @@ export interface UpdateProgressCallbacks {
 	readonly onDownloadProgress?: (url: string, receivedBytes: number | undefined, totalBytes: number | undefined) => void;
 }
 
-/** Coarse-grained phases the orchestrator surfaces to the UI. */
+/**
+ * Coarse-grained phases the orchestrator surfaces to the UI.
+ *
+ * `installing-package` belongs to the npm channel only, where the package
+ * manager does the download/verify/extract/swap as one opaque step — there is
+ * nothing finer to report, and no byte progress to report it with.
+ */
 export type UpdatePhase =
 	| "preflight"
 	| "downloading-archive"
 	| "downloading-sums"
 	| "verifying"
 	| "extracting"
-	| "swapping";
+	| "swapping"
+	| "installing-package";
 
 /** What a completed download produced, so nothing has to re-read the file. */
 export interface DownloadOutcome {

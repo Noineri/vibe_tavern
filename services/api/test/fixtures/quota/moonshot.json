@@ -1,0 +1,11 @@
+{
+  "code": 0,
+  "data": {
+    "available_balance": 49.5,
+    "voucher_balance": 0,
+    "cash_balance": 49.5
+  },
+  "scode": "0x0",
+  "status": true,
+  "status_msg": "success"
+}

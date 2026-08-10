@@ -208,6 +208,16 @@ Markdown-редактор закрепляет канонические заго
 
 ## Быстрый старт
 
+### Любая платформа, через Bun
+
+Если [Bun](https://bun.com) установлен, это самый простой способ:
+
+```bash
+bun install -g vibe-tavern
+```
+
+После этого запустите `vibe-tavern`. Обновление через `vibe-tavern update`, или через окно обновления в приложении.
+
 ### Windows
 
 Скачайте установщик из [Releases](https://github.com/Noineri/vibe_tavern/releases), запустите его и установите Vibe Tavern как обычное приложение.

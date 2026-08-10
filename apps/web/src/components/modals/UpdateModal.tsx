@@ -24,6 +24,7 @@ const PHASE_I18N_KEYS: Record<RuntimeUpdatePhase, keyof Resources["en"]> = {
 	verifying: "update_modal_phase_verifying",
 	extracting: "update_modal_phase_extracting",
 	swapping: "update_modal_phase_swapping",
+	"installing-package": "update_modal_phase_installing_package",
 	done: "update_modal_phase_done",
 	error: "update_modal_phase_error",
 };

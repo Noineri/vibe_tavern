@@ -107,3 +107,10 @@ export type {
   UpdateVisualData,
   UpdateChatConfigData,
 } from './experience-resource-store.js';
+
+export { QuotaStore, defaultQuotaConfigForKind } from './quota-store.js';
+export type {
+  QuotaSettingsRecord,
+  QuotaSnapshotRecord,
+  UpsertQuotaSnapshotData,
+} from './quota-store.js';

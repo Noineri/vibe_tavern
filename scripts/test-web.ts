@@ -2,6 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { parseArgs } from "node:util";
+import { testTimeoutArgs } from "./test.js";
 
 interface TestFileResult {
 	readonly file: string;
@@ -84,10 +85,23 @@ async function validateFiles(root: string, files: readonly string[], write: Outp
 	return true;
 }
 
+/** Per-file `bun test` invocation. Timeout headroom: see scripts/test.ts. */
+export function createWebTestFileCommand(file: string, reportPath: string): readonly string[] {
+	return [
+		process.execPath,
+		"test",
+		...testTimeoutArgs(),
+		file,
+		"--reporter=junit",
+		"--reporter-outfile",
+		reportPath,
+	];
+}
+
 async function runTestFile(root: string, file: string, reportPath: string): Promise<TestFileResult> {
 	try {
 		const child = Bun.spawn(
-			[process.execPath, "test", file, "--reporter=junit", "--reporter-outfile", reportPath],
+			[...createWebTestFileCommand(file, reportPath)],
 			{
 				cwd: root,
 				stdout: "pipe",

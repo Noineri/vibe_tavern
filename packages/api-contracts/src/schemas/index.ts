@@ -280,3 +280,20 @@ export {
   type ExperienceSetupFieldDto,
   type ExperienceSetupDefinitionDto,
 } from "./interactive-schema.js";
+
+export {
+  canonicalUtcInstantSchema,
+  canonicalDecimalSchema,
+  providerQuotaWindowKindSchema,
+  providerBalanceKindSchema,
+  providerBalanceUnitSchema,
+  providerQuotaNoneReasonSchema,
+  providerQuotaWindowSchema,
+  providerBalanceAmountSchema,
+  providerQuotaSnapshotSchema,
+  windowedProviderQuotaConfigSchema,
+  balanceProviderQuotaConfigSchema,
+  noneProviderQuotaConfigSchema,
+  providerQuotaConfigSchema,
+  updateProviderQuotaConfigSchema,
+} from "./provider-quota-schema.js";

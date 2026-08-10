@@ -107,6 +107,7 @@ mock.module("./ScriptEditor.js", () => ({
     scriptEditorPanel: null,
     setActiveScriptId: () => {},
     handleAdd: () => {},
+    handleAddDice: () => {},
     handleImportOpen: () => {},
   }),
 }));

@@ -6,13 +6,19 @@
  * install without a readable copy of the database from before it.
  */
 
-import { Database } from "bun:sqlite";
+import { Database, SQLiteError } from "bun:sqlite";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { mkdir, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { checkFreeSpace, estimateRequiredBytes } from "../src/server/update-preflight.js";
-import { snapshotDatabase, snapshotPathFor } from "../src/domain/update/update-db-snapshot.js";
+import {
+	SNAPSHOT_ATTEMPTS,
+	type SnapshotResult,
+	snapshotDatabase,
+	snapshotPathFor,
+} from "../src/domain/update/update-db-snapshot.js";
 
 let root = "";
 
@@ -87,6 +93,21 @@ describe("checkFreeSpace", () => {
 });
 
 describe("snapshotDatabase", () => {
+	/**
+	 * Assert a snapshot succeeded, in a way that says why when it did not.
+	 *
+	 * `snapshotDatabase` never throws: a failure is `ok: false` plus a message,
+	 * and the message is the only place the reason exists. Asserting on `ok`
+	 * alone reduces every failure to "Expected: true, Received: false" — which
+	 * is exactly what a Windows-only CI flake here produced, throwing away the
+	 * one sentence that identified it. Assert the message first so a red run
+	 * carries the diagnosis.
+	 */
+	function expectSnapshotOk(result: SnapshotResult): void {
+		expect(result.message).toBeNull();
+		expect(result.ok).toBe(true);
+	}
+
 	async function makeWalDb(rows: number): Promise<{ dbPath: string; dataDir: string; db: Database }> {
 		const dataDir = join(root, "data");
 		await mkdir(dataDir, { recursive: true });
@@ -107,7 +128,7 @@ describe("snapshotDatabase", () => {
 
 		const result = await snapshotDatabase(dbPath, dataDir, "1.2.3");
 
-		expect(result.ok).toBe(true);
+		expectSnapshotOk(result);
 		expect(result.path).toBe(snapshotPathFor(dataDir, "1.2.3"));
 		expect(result.bytes).toBeGreaterThan(0);
 
@@ -137,7 +158,7 @@ describe("snapshotDatabase", () => {
 		const { dbPath, dataDir } = await makeWalDb(1);
 		const result = await snapshotDatabase(dbPath, dataDir, "../../escaped");
 
-		expect(result.ok).toBe(true);
+		expectSnapshotOk(result);
 		// The real property: the file lands directly in backups/, whatever the
 		// separators got mangled into. (Dots survive sanitization — only the
 		// path separators are replaced — so a substring check for ".." would
@@ -150,8 +171,8 @@ describe("snapshotDatabase", () => {
 		const { dbPath, dataDir } = await makeWalDb(10);
 		const first = await snapshotDatabase(dbPath, dataDir, "2.0.0");
 		const second = await snapshotDatabase(dbPath, dataDir, "2.0.0");
-		expect(first.ok).toBe(true);
-		expect(second.ok).toBe(true);
+		expectSnapshotOk(first);
+		expectSnapshotOk(second);
 		expect(second.path).toBe(first.path);
 	});
 
@@ -200,5 +221,169 @@ describe("snapshotDatabase", () => {
 		// baseline actually described the fixture's schema.
 		expect(before.map((r) => r.name)).toContain("chats");
 		expect(schemaOf().map((r) => r.name)).not.toContain("__drizzle_migrations");
+	});
+
+	// ── Transient SQLITE_CANTOPEN is retried ───────────────────────────────
+	//
+	// Windows hands out "unable to open database file" when an antivirus or the
+	// search indexer momentarily holds a handle on a file that was created
+	// seconds ago — which is precisely the shape of every snapshot the updater
+	// takes. The retry is driven through the `openSource` seam rather than by
+	// sabotaging the filesystem: mode bits are inert on Windows, so a real
+	// injection there would fail open and the pin would prove nothing.
+
+	/** An opener that fails the first `failures` calls, then behaves normally. */
+	function flakyOpener(failures: number, failure: Error, onFail?: (destination: string) => void) {
+		const state = { calls: 0 };
+		const open = (path: string): Database => {
+			state.calls++;
+			if (state.calls <= failures) {
+				onFail?.(path);
+				throw failure;
+			}
+			return new Database(path, { readonly: true });
+		};
+		return { state, open };
+	}
+
+	/**
+	 * The SQLITE_CANTOPEN object bun:sqlite actually throws.
+	 *
+	 * It cannot be fabricated — `new SQLiteError(...)` throws "SQLiteError can
+	 * only be constructed by bun:sqlite" — so it has to be provoked, and opening
+	 * a database under a directory that does not exist provokes it on every
+	 * platform. Retrying is keyed on `code`, and only a real error object has one.
+	 */
+	function realCantOpenError(): SQLiteError {
+		try {
+			new Database(join(root, "no-such-directory", "x.db"), { readonly: true });
+		} catch (err) {
+			if (err instanceof SQLiteError) return err;
+			throw err;
+		}
+		throw new Error("opening a database under a missing directory was expected to fail");
+	}
+
+	it("retries a transient 'unable to open database file' instead of giving up", async () => {
+		const { dbPath, dataDir } = await makeWalDb(20);
+		const opener = flakyOpener(1, new Error("unable to open database file"));
+
+		const result = await snapshotDatabase(dbPath, dataDir, "4.0.0", {
+			openSource: opener.open,
+			retryDelayMs: 0,
+		});
+
+		expectSnapshotOk(result);
+		expect(opener.state.calls).toBe(2);
+		const snap = new Database(result.path ?? "", { readonly: true });
+		openDatabases.push(snap);
+		expect((snap.query("SELECT COUNT(*) AS n FROM chats").get() as { n: number }).n).toBe(20);
+	});
+
+	it("clears a partial destination between attempts — VACUUM INTO refuses to overwrite", async () => {
+		const { dbPath, dataDir } = await makeWalDb(3);
+		const destination = snapshotPathFor(dataDir, "5.0.0");
+		// A half-written snapshot is what a torn VACUUM INTO leaves behind. If the
+		// retry did not clear it, the second attempt would fail for a brand-new
+		// reason ("output file already exists") and the retry would be useless.
+		const opener = flakyOpener(1, new Error("unable to open database file"), () => {
+			mkdirSync(dirname(destination), { recursive: true });
+			writeFileSync(destination, "torn write");
+		});
+
+		const result = await snapshotDatabase(dbPath, dataDir, "5.0.0", {
+			openSource: opener.open,
+			retryDelayMs: 0,
+		});
+
+		expectSnapshotOk(result);
+		expect(result.bytes).toBeGreaterThan("torn write".length);
+	});
+
+	it("gives up after the attempt budget and reports the failure", async () => {
+		const { dbPath, dataDir } = await makeWalDb(1);
+		const opener = flakyOpener(Number.MAX_SAFE_INTEGER, new Error("unable to open database file"));
+
+		const result = await snapshotDatabase(dbPath, dataDir, "6.0.0", {
+			openSource: opener.open,
+			retryDelayMs: 0,
+		});
+
+		expect(result.ok).toBe(false);
+		expect(opener.state.calls).toBe(SNAPSHOT_ATTEMPTS);
+		expect(result.message ?? "").toMatch(/unable to open database file/);
+	});
+
+	it("does not retry a failure that is not a transient open", async () => {
+		const { dbPath, dataDir } = await makeWalDb(1);
+		const opener = flakyOpener(Number.MAX_SAFE_INTEGER, new Error("disk I/O error"));
+
+		const result = await snapshotDatabase(dbPath, dataDir, "7.0.0", {
+			openSource: opener.open,
+			retryDelayMs: 0,
+		});
+
+		expect(result.ok).toBe(false);
+		expect(opener.state.calls).toBe(1);
+	});
+
+	it("retries the destination spelling of CANTOPEN — 'unable to open database: <path>'", async () => {
+		// The regression this pins. SQLITE_CANTOPEN reaches the retry under two
+		// messages: sqlite3_open on the source says "unable to open database
+		// file", and the ATTACH that VACUUM INTO runs on its destination says
+		// "unable to open database: <path>". Only the first was matched, so the
+		// second — the one Windows CI actually produced, naming
+		// backups/pre-update-1.2.3.db — was treated as permanent and the whole
+		// retry sat idle.
+		const { dbPath, dataDir } = await makeWalDb(20);
+		const destination = snapshotPathFor(dataDir, "8.0.0");
+		const opener = flakyOpener(1, new Error(`unable to open database: ${destination}`));
+
+		const result = await snapshotDatabase(dbPath, dataDir, "8.0.0", {
+			openSource: opener.open,
+			retryDelayMs: 0,
+		});
+
+		expectSnapshotOk(result);
+		expect(opener.state.calls).toBe(2);
+	});
+
+	it("retries on the error object bun:sqlite really throws, not just its wording", async () => {
+		// Production never sees a hand-written Error — it sees a SQLiteError, and
+		// its `code` is the same SQLITE_CANTOPEN under either message. Keying on
+		// the code is what stops the next reword of SQLite's error strings from
+		// silently disabling this retry again.
+		const { dbPath, dataDir } = await makeWalDb(5);
+		const cantOpen = realCantOpenError();
+		expect(cantOpen.code).toBe("SQLITE_CANTOPEN");
+		const opener = flakyOpener(1, cantOpen);
+
+		const result = await snapshotDatabase(dbPath, dataDir, "9.0.0", {
+			openSource: opener.open,
+			retryDelayMs: 0,
+		});
+
+		expectSnapshotOk(result);
+		expect(opener.state.calls).toBe(2);
+	});
+
+	it("waits longer after each failed attempt instead of a flat delay", async () => {
+		// Two failures means two waits. Flat would spend 40 + 40; backing off
+		// spends 40 + 80. Asserted as a lower bound only: a loaded CI box makes
+		// timers overshoot, never undershoot, so this cannot flake the way an
+		// upper bound would.
+		const { dbPath, dataDir } = await makeWalDb(1);
+		const opener = flakyOpener(2, new Error("unable to open database file"));
+
+		const started = performance.now();
+		const result = await snapshotDatabase(dbPath, dataDir, "10.0.0", {
+			openSource: opener.open,
+			retryDelayMs: 40,
+		});
+		const elapsed = performance.now() - started;
+
+		expectSnapshotOk(result);
+		expect(opener.state.calls).toBe(3);
+		expect(elapsed).toBeGreaterThanOrEqual(110);
 	});
 });

@@ -1,5 +1,5 @@
 import type { ProviderStore, ProxyStore } from "@vibe-tavern/db";
-import { COAUTHOR_TRANSPORT, canUseCoauthorResponsesTransport, PROXY_MODE, type StoredProviderProfileRecord, type ModelFavoriteScope, type ModelSettingsOverlay } from "@vibe-tavern/domain";
+import { COAUTHOR_TRANSPORT, PROVIDER_PROFILE_CHANGE_KIND, canUseCoauthorResponsesTransport, PROXY_MODE, type EventBus, type StoredProviderProfileRecord, type ModelFavoriteScope, type ModelSettingsOverlay } from "@vibe-tavern/domain";
 import {
   toClientProviderProfile,
   resolveStoredApiKey,
@@ -79,7 +79,32 @@ async function resolveProviderProxyPolicy(
   return validateProviderProxyPolicy(proxyMode, proxyId, proxies);
 }
 
-export function createProviderProfileService(providers: ProviderStore, proxies: ProxyStore): ProviderProfileService {
+/**
+ * Announce a profile mutation on the bus.
+ *
+ * `events` is optional so the many tests that build this service without a bus
+ * stay valid; the live composition root always passes one. Comparisons are made
+ * against the pre-mutation record, so an edit that does not touch the preset,
+ * endpoint or key reports all three flags false and downstream state survives.
+ */
+function emitProfileChanged(
+  events: EventBus | undefined,
+  profileId: string,
+  changeKind: typeof PROVIDER_PROFILE_CHANGE_KIND[keyof typeof PROVIDER_PROFILE_CHANGE_KIND],
+  before: StoredProviderProfileRecord | null,
+  after: StoredProviderProfileRecord | null,
+): void {
+  if (!events) return;
+  events.emit("provider.profile.changed", {
+    profileId,
+    changeKind,
+    presetChanged: before !== null && after !== null && before.providerPreset !== after.providerPreset,
+    endpointChanged: before !== null && after !== null && before.endpoint !== after.endpoint,
+    apiKeyChanged: before !== null && after !== null && (before.apiKey ?? null) !== (after.apiKey ?? null),
+  });
+}
+
+export function createProviderProfileService(providers: ProviderStore, proxies: ProxyStore, events?: EventBus): ProviderProfileService {
   return {
     listProviderProfiles: async () => {
       const profiles = await providers.listAll();
@@ -145,6 +170,7 @@ export function createProviderProfileService(providers: ProviderStore, proxies: 
           profileId: updated.id,
           dbApiKeyLength: updated.apiKey?.length ?? 0,
         });
+        emitProfileChanged(events, updated.id, PROVIDER_PROFILE_CHANGE_KIND.upsert, existing, updated);
         return toClientProviderProfile(updated);
       }
 
@@ -196,12 +222,14 @@ export function createProviderProfileService(providers: ProviderStore, proxies: 
         profileId: created.id,
         dbApiKeyLength: created.apiKey?.length ?? 0,
       });
+      emitProfileChanged(events, created.id, PROVIDER_PROFILE_CHANGE_KIND.upsert, null, null);
       return toClientProviderProfile(created);
     },
 
     deleteProviderProfile: async (id) => {
       try {
         await providers.delete(id);
+        emitProfileChanged(events, id, PROVIDER_PROFILE_CHANGE_KIND.delete, null, null);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         if (/not found/i.test(message)) {
@@ -293,6 +321,7 @@ export function createProviderProfileService(providers: ProviderStore, proxies: 
         dbApiKeyLength: updated.apiKey?.length ?? 0,
         dbVisionModel: updated.visionModel,
       });
+      emitProfileChanged(events, id, PROVIDER_PROFILE_CHANGE_KIND.upsert, existing, updated);
       return toClientProviderProfile(updated);
     },
 

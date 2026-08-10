@@ -1,11 +1,16 @@
 import { test, expect, describe } from "bun:test";
 import { Profiler, useReducer, type ProfilerOnRenderCallback } from "react";
-import { render, act } from "@testing-library/react";
 import { useDomEnv } from "./dom-env.js";
 
 // Register a global happy-dom window for THIS file only (unregisters in
 // afterAll) so DOM-averse tests elsewhere keep their no-window environment.
 useDomEnv();
+
+// Load @testing-library only AFTER useDomEnv() — the standard pattern for every
+// DOM test file here. A static import would evaluate `@testing-library/dom`
+// before happy-dom exists and permanently stub out its `screen` export; see the
+// comment block in dom-env.ts and the "global `screen`" test below.
+const { render, act, screen } = await import("@testing-library/react");
 
 // Stable dispatcher: useReducer with an identity reducer returns the next
 // value and keeps the setter referentially stable across renders.
@@ -22,11 +27,20 @@ function useNext<T>(initial: T): [T, (next: T) => void] {
 describe("render-test harness", () => {
   test("renders and matches DOM", () => {
     const { getByTestId } = render(<div data-testid="t">hello</div>);
-    // Use the queries bound to render's container (created after happy-dom is
-    // registered in beforeAll), NOT the global `screen`, whose queries bind to
-    // document.body at import time — before the DOM exists.
     expect(getByTestId("t")).toBeInTheDocument();
     expect(getByTestId("t")).toHaveTextContent("hello");
+  });
+
+  test("the global `screen` is bound to a live document", () => {
+    // Regression pin for dom-env.ts's import discipline. `@testing-library/dom`
+    // binds `screen` to `document.body` while its own module evaluates; let it
+    // evaluate before happy-dom is registered and every `screen` query turns
+    // into a throwing stub for the whole process. That is a suite-wide outage
+    // wearing the costume of 100+ unrelated assertion failures — which is
+    // exactly what a `@testing-library/jest-dom` 6.10 bump caused, by newly
+    // importing `@testing-library/dom` from a static import in dom-env.ts.
+    render(<div data-testid="screen-probe">visible</div>);
+    expect(screen.getByTestId("screen-probe")).toHaveTextContent("visible");
   });
 
   test("React.Profiler onRender counts a re-render when state changes", () => {

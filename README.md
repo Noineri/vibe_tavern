@@ -217,6 +217,16 @@ An Android build for Termux automates most of the installation work.
 
 ## Quick start
 
+### Any platform, with Bun
+
+If you already have [Bun](https://bun.com), this is the shortest path:
+
+```bash
+bun install -g vibe-tavern
+```
+
+Then run `vibe-tavern`. Update with `vibe-tavern update`, or from the in-app update dialog.
+
 ### Windows
 
 Download the installer from [Releases](https://github.com/Noineri/vibe_tavern/releases), run it, and install Vibe Tavern like a regular application.

@@ -51,7 +51,12 @@ function baseAnswer(): Omit<RuntimeUpdateCheck, "reason" | "available"> {
 
 async function performCheck(): Promise<{ value: RuntimeUpdateCheck; ttl: number }> {
 	const base = baseAnswer();
-	const outcome = await checkForUpdateDetailed();
+	// The npm channel installs from the registry, so a release with no archive
+	// for this platform is still a perfectly installable update for it. Every
+	// other channel downloads that archive and must keep the gate.
+	const outcome = await checkForUpdateDetailed({
+		requirePlatformAsset: detectInstallKind() !== "npm",
+	});
 
 	if (outcome.kind === "offline") {
 		// Unreachable, rate-limited, or malformed. Short TTL so recovery is

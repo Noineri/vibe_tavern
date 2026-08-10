@@ -1,0 +1,9 @@
+{
+  "data": {
+    "label": "vibe-tavern",
+    "limit": 50,
+    "usage": 15,
+    "limit_remaining": 35,
+    "is_free_tier": false
+  }
+}

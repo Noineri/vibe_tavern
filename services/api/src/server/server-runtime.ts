@@ -23,6 +23,8 @@ import {
 	createProviderFetchFactory,
 } from "../domain/providers/provider-fetch-factory.js";
 import { createProxyService } from "../domain/providers/proxy-service.js";
+import { QuotaService } from "../domain/quota/quota-service.js";
+import { createQuotaFeature } from "../domain/quota/quota-feature.js";
 import { RuntimeApiAdapter } from "../api/adapters/runtime-api-adapter.js";
 import { SessionRuntime } from "../runtime/session/session-runtime.js";
 import { createAiAssistantFeature } from "../domain/ai-assistant/ai-assistant-feature.js";
@@ -38,7 +40,7 @@ import type { RandomSource } from "@vibe-tavern/domain";
 import { resolveBuiltinSkillsRoot, resolveUserSkillsRoot } from "../domain/coauthor/skills/skill-scanner.js";
 import { configureLogDir } from "../shared/send-debug-log.js";
 import { createApp } from "./app-factory.js";
-import { setRuntimeShutdownHook } from "./runtime-shutdown.js";
+import { addRuntimeTeardown, runRuntimeTeardowns, setRuntimeShutdownHook } from "./runtime-shutdown.js";
 import { createLoadingHandler } from "./loading-placeholder.js";
 import { closeAllSocksBridges } from "../domain/providers/socks-bridge.js";
 
@@ -130,7 +132,11 @@ export async function createRuntimeApp(config: RuntimeAppConfig): Promise<Hono> 
 	console.log(`${tag} Provider proxy transport bound.`);
 
 	// Services
-	const providerProfileService = createProviderProfileService(stores.providers, stores.proxies);
+	// The bus is created first: the provider profile service announces profile
+	// mutations on it, which the quota poller consumes without either module
+	// importing the other.
+	const events = new EventBus();
+	const providerProfileService = createProviderProfileService(stores.providers, stores.proxies, events);
 	const proxyService = createProxyService(stores.proxies);
 	const promptPresetService = new PromptPresetService(stores.presets, stores.chats);
 	// Skill library is constructed before SessionRuntime so the catalog can be
@@ -146,7 +152,6 @@ export async function createRuntimeApp(config: RuntimeAppConfig): Promise<Hono> 
 		getSkillCatalog: async () => (await skillLibraryService.listCatalog()).entries,
 	});
 	const providerOrchestrator = new ProviderOrchestrator(providerProfileService);
-	const events = new EventBus();
 	const chatSummaryService = new ChatSummaryService(stores, sessionRuntime, providerProfileService);
 	const objectiveService = new ObjectiveService(stores, sessionRuntime, providerProfileService);
 	const trackerService = new SceneTrackerService(stores, sessionRuntime, providerProfileService);
@@ -216,6 +221,19 @@ export async function createRuntimeApp(config: RuntimeAppConfig): Promise<Hono> 
 
 	features.register(createAiAssistantFeature(runtime.aiAssistant));
 
+	// Provider quota poller — automatic, per-profile, no manual refresh surface.
+	// Started after the feature registry so its events have subscribers.
+	const quotaService = new QuotaService({
+		quota: stores.quota,
+		profiles: providerProfileService,
+		events,
+	});
+	features.register(createQuotaFeature({
+		quota: stores.quota,
+		profiles: providerProfileService,
+		quotaService,
+	}));
+
 	const app = await createApp({
 		runtime,
 		staticDir: config.staticDir,
@@ -224,6 +242,9 @@ export async function createRuntimeApp(config: RuntimeAppConfig): Promise<Hono> 
 		enforceMobileAuth: true,
 		configureFeatures: (router) => features.activateAll({ events, router }),
 	});
+
+	addRuntimeTeardown(() => quotaService.stop());
+	await quotaService.start();
 
 	console.log(`${tag} Application ready.`);
 	return app;
@@ -305,6 +326,7 @@ export async function startServerRuntime(config: ServerRuntimeConfig): Promise<v
 	// loopback SOCKS5 bridges to close instead of racing a synchronous exit.
 	setRuntimeShutdownHook(async () => {
 		server.stop(true);
+		await runRuntimeTeardowns();
 		await closeAllSocksBridges();
 	});
 
@@ -360,6 +382,7 @@ export async function startServerRuntime(config: ServerRuntimeConfig): Promise<v
  *  The thrown/aggregate bridge error is credential-free, so logging it is safe. */
 async function gracefulShutdown(server: Bun.Server<undefined>, tag: string): Promise<void> {
 	server.stop(true);
+	await runRuntimeTeardowns();
 	try {
 		await closeAllSocksBridges();
 	} catch (err) {

@@ -89,15 +89,44 @@ The canonical example is [`services/api/test/gallery-describe.test.ts`](../../se
 
 ## Cross-platform: the suite runs on Windows too
 
-CI runs the full suite on both `ubuntu-latest` (`test-linux`) and `windows-latest` (`test-windows`), and **both are blocking**. Development happens almost entirely on Linux, so `test-windows` is where portability mistakes surface — every red `test-windows` to date has been a test written against Linux semantics rather than a product bug. The job stays blocking anyway: the code it covers (self-updater, installer, archive extraction, path handling) is precisely where Windows behaves differently, and that is also where most users are.
+CI runs on both `ubuntu-latest` (`test-linux`) and `windows-latest` (`test-windows`), and **both are blocking**. Development happens almost entirely on Linux, so `test-windows` is where portability mistakes surface — every red `test-windows` to date has been a test written against Linux semantics rather than a product bug. The job stays blocking anyway: the code it covers (self-updater, installer, archive extraction, path handling) is precisely where Windows behaves differently, and that is also where most users are.
 
-Four rules, each one a real failure that has already cost a red build:
+Linux runs everything. Windows runs everything with platform-sensitive behaviour to pin, which is not the same list — a Windows runner costs 2–4× per syscall (process creation and file creation above all), so coverage that is identical on both platforms is paid for once, on Linux. What Windows skips is declared in the test code, never in the workflow, so a `bun run test` on a Windows dev box behaves like CI:
+
+| Skipped on Windows | Declared at | Why |
+|---|---|---|
+| the whole `web` suite | `skipOnWindows` in [`scripts/test.ts`](../../scripts/test.ts) | 160 of its 162 files are React components and stores; two touch `node:fs`/`node:path`/`process.platform`. ~83s for no platform coverage. `bun run test web` still runs it there. |
+| `scripts/cli-args.test.ts` | `test.skipIf(process.platform === "win32")` | Nine cases that each spawn a full `bun` to pin argv parsing — pure Bun/Node semantics. |
+| `scripts/bump-version.test.ts` | `describe.skipIf(process.platform === "win32")` | Builds a disposable workspace and two git repos per case; the release script it covers only ever runs on the Linux release job. |
+
+**Never conclude anything from a single Windows CI run.** Two runs of identical test code on this branch, minutes apart, reported `api` at 115.5s and 68.5s and `db` at 103.4s and 62.7s — the slow one drew an `eastus` runner, the fast one `northcentralus`. The `bun install` step ranges 43–101s across runs with no code change at all. Any Windows timing claim needs several samples and a stated range, or it is measuring which machine GitHub happened to hand out.
+
+Adding to that list is a judgement call with one rule: **do not leave a test green on Windows when its named behaviour is not being exercised there.** Skip the whole thing and say why, or keep it running on both. A test that silently no-ops is worse than a skip.
+
+Suites run several at a time (`suiteConcurrency()` in [`scripts/test.ts`](../../scripts/test.ts): half the cores, floored at 2, capped at 4), so any suite may be competing with `web`'s own 8-way subprocess pool for the box. That is why every `bun test` invocation carries `--timeout 15000` on every platform — bun's 5s default is a product-sized budget, and a test doing a normal amount of SQLite + filesystem work can lose seconds to contention alone. **Do not treat that headroom as a licence for slow tests**; it is a floor for a loaded runner, not a budget.
+
+Six rules, each one a real failure that has already cost a red build:
 
 **Never spell a path as a literal in an assertion.** `resolveEntryPath("/tmp/x", "web/a.js")` returns `/tmp/x/web/a.js` on Linux and `D:\tmp\x\web\a.js` on Windows — both correct. Build the expectation the same way the code does, with `join()`/`resolve()`, so the pin is the *nesting* an entry maps to rather than the separator character.
 
 **Never inject a failure with POSIX mode bits.** `chmod(dir, 0o555)` is the obvious way to make a rename or an unlink fail on Linux; on Windows the read-only attribute does not block either, so the injection silently does nothing, the operation succeeds, and a test expecting `rejects.toThrow()` goes red. This failure mode is dangerous because it **fails open** — an assertion that passes under a Windows-inert injection is telling you the injection did nothing, not that the code handled the failure.
 
 **Never assert on an RSS or an mtime delta.** Windows reports the process working set, which includes file-cache pages: a correctly-streaming 128 MB download measured +302 MB there against +17 MB on Linux. NTFS likewise bumps mtime even for a read-only SQLite open. Pin the property you actually care about instead — the schema is unchanged, the digest matches, the file on disk is the right size.
+
+**Never assert that something happened within a wall-clock deadline.** The Windows runner stalls for seconds at a time, and whichever test is holding a stopwatch when that happens goes red. The stalls are indiscriminate — over two weeks they took out an asset-store delete, a dice-script resolver, a `bump-version` argument parse, a DOM expand and a SOCKS5 first-chunk deadline, all at 5–22 s for work that takes milliseconds. Widening the deadline only moves the threshold; the stopwatch is the defect. Pin the *ordering* instead, by having the fixture record what it did and asserting on that:
+
+```ts
+let secondChunkSent = false;
+// ...fixture: secondChunkSent = true, immediately before writing chunk two.
+
+const first = await iterator.next();
+expect(first.value.length).toBeGreaterThan(0);
+// The client had chunk one before the server produced chunk two — which is
+// what "streamed, not buffered" means, at any speed.
+expect(secondChunkSent).toBe(false);
+```
+
+A deadline is acceptable only as a *hang* guard, where the budget is orders of magnitude above the real cost and exceeding it means "never" rather than "slowly".
 
 **Never shell out to a tool that is not on every runner.** `zip` is not installed on `windows-latest` (`tar` is). Prefer an in-process library; if the point of the test is specifically to consume a *foreign* artifact, branch to the platform's native tool — `Compress-Archive` on Windows — rather than dropping the case.
 
@@ -112,6 +141,10 @@ afterEach(async () => {
 ```
 
 The same applies to any OS handle a test holds — file descriptors, servers, watchers. On Windows the cleanup step is where the leak surfaces, usually blamed on whichever test ran next.
+
+Closing the handles is necessary but not sufficient: a scanner or the search indexer can hold a file the test just wrote, and SQLite reports that as `SQLITE_CANTOPEN`. That one is not a test bug and cannot be fixed in the test — `snapshotDatabase` retries it with a growing delay before giving up. Product code that opens a file moments after creating it should expect the same treatment on Windows.
+
+Match that condition on the error's `code`, never on its wording. `SQLITE_CANTOPEN` arrives under at least two messages — `unable to open database file` from `sqlite3_open`, and `unable to open database: <path>` from the `ATTACH` that `VACUUM INTO` performs on its *destination*. A retry predicate written against the first spelling alone silently does nothing about the second, which is how the pre-update snapshot went on failing on Windows CI after it was supposedly fixed.
 
 ### Gating: use the smallest scope that stays honest
 
@@ -160,20 +193,29 @@ describe("VibeMdView", () => {
 });
 ```
 
-**Why scoped, not a `bunfig.toml` preload:** the repo has DOM-averse tests (`avatar.test.ts`, `gateway-client`, …) that rely on `typeof window === "undefined"` so e.g. `getGatewayBaseUrl()` returns its SSR fallback. A global preload that registers happy-dom permanently injects a `window` into *every* file and breaks those. `useDomEnv()` registers in `beforeAll` and unregisters in `afterAll`, so pure-logic files never see a `window`. **Never add a `[test] preload = …` happy-dom line to `bunfig.toml`.**
+**Why scoped, not a `bunfig.toml` preload:** the repo has DOM-averse tests (`avatar.test.ts`, `gateway-client`, …) that rely on `typeof window === "undefined"` so e.g. `getGatewayBaseUrl()` returns its SSR fallback. A global preload that registers happy-dom permanently injects a `window` into *every* file and breaks those. `useDomEnv()` registers at module load and unregisters in `afterAll`, so pure-logic files never see a `window`. **Never add a `[test] preload = …` happy-dom line to `bunfig.toml`.**
 
-### Query from `render()`, not the global `screen`
+### Import `@testing-library/*` dynamically, after `useDomEnv()`
 
 ```tsx
-// ✓ GOOD — queries bound to the rendered container
-const { getByText } = render(<Harness />);
-getByText("Save");
+import { useDomEnv } from "../../test/dom-env.js";
 
-// ✗ BAD — `screen` binds to document.body at import time, before beforeAll runs
-screen.getByText("Save");
+useDomEnv();
+const { render, screen } = await import("@testing-library/react");   // ✓ after registration
 ```
 
-`screen` captures `document.body` when the module is imported — before `useDomEnv()`'s `beforeAll` has registered the happy-dom `window`. The destructured queries from `render()` are always correct because they run after registration.
+```tsx
+import { render, screen } from "@testing-library/react";   // ✗ poisons `screen` for the whole process
+import { useDomEnv } from "../../test/dom-env.js";
+```
+
+`@testing-library/dom` binds its `screen` export to `document.body` while its own module evaluates. Evaluate it before happy-dom is registered and every `screen` query becomes a throwing stub — permanently, for the rest of the process, no matter what registers a `window` afterwards.
+
+Moving the static import above `useDomEnv()`'s does **not** fix it: Bun does not evaluate a module's static imports in source order, and a bare specifier can win over a relative one. `await import(...)` placed after the `useDomEnv()` call is the only ordering that actually holds.
+
+This is not theoretical. `@testing-library/jest-dom` 6.10 began importing `@testing-library/dom`, which turned a previously inert `import * as matchers` at the top of [`dom-env.ts`](../../apps/web/test/dom-env.ts) into a poisoned `screen` in every DOM test file at once — a suite-wide outage that presents as 100+ unrelated assertion failures. The `"the global \`screen\` is bound to a live document"` case in [`harness.smoke.test.tsx`](../../apps/web/test/harness.smoke.test.tsx) pins it; that file is appended to every full run.
+
+Queries destructured from `render()` are bound to the rendered container at call time, so they are immune to this and remain a fine default.
 
 ---
 
