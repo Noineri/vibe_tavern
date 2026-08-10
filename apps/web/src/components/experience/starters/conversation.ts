@@ -21,7 +21,7 @@ import type { VisualStarter } from "./types.js";
 
 export const CONVERSATION_VISUAL_SOURCE = [
   "<style>",
-  "  .xp-conv{font:14px/1.4 system-ui,sans-serif;color:#e5e5e5;display:flex;flex-direction:column;min-width:300px;max-width:420px;height:420px}",
+  "  .xp-conv{font:14px/1.4 system-ui,sans-serif;color:#e5e5e5;display:flex;flex-direction:column;width:100%;min-width:300px;max-width:520px;height:420px}",
   "  .xp-conv .history{flex:1;overflow-y:auto;padding:8px;display:flex;flex-direction:column;gap:6px;background:#171717;border-radius:6px}",
   "  .xp-conv .msg{max-width:80%;padding:6px 10px;border-radius:10px;white-space:pre-wrap}",
   "  .xp-conv .msg.them{align-self:flex-start;background:#262626}",
