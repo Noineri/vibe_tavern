@@ -53,11 +53,13 @@ Drizzle's standard bookkeeping table (not a custom one):
 CREATE TABLE IF NOT EXISTS __drizzle_migrations (
   id         INTEGER PRIMARY KEY AUTOINCREMENT,
   hash       TEXT NOT NULL,             -- sha256 of the migration SQL content
-  created_at NUMERIC
+  created_at NUMERIC                    -- the journal entry's `when` (folderMillis)
 );
 ```
 
-A migration is "applied" when its hash is present in this table. `migrate()` skips any migration whose hash is already recorded.
+**Resume is by `created_at` watermark, not by hash membership.** `migrate()` reads the single row with the greatest `created_at` and runs every journal entry whose `when` (folderMillis) is greater than it; it does not dedupe by hash. So a migration is effectively "applied" when its `when` is at or below the current high-water mark. This distinction matters when a migration is regenerated with identical SQL (identical hash) but a new `when` — e.g. a branch-merge reconciliation that renumbers or re-dates it: existing DBs keep the stamp at the OLD `created_at`, and since that orphan sits below the new `when`, `migrate()` re-runs the migration and fails on "table already exists".
+
+Legacy Vibe Tavern DBs created by `baselineLegacyDb()` have `UNIQUE(hash)`, while drizzle-orm's own table does not. Recovery stamping must therefore work with both table shapes: if a hash already exists at an old `created_at`, it **updates that row to the current journal `when`**; it inserts only a genuinely missing hash. `rebaseToBaseline()` performs this correction before migration only after its conservative gate proves that every table created by the migration already exists; `healPartialMigrations()` uses the same helper for partial-state retries. Fresh DBs and ordinary upgrades with missing tables are unchanged and still run the real migration SQL.
 
 ### Migration files at runtime
 
