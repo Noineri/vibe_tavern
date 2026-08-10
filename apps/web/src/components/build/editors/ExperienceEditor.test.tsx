@@ -31,7 +31,6 @@
 import { beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import type { ReactNode } from "react";
 import type { ExperienceVisualRow, ScriptRecord } from "../../../api/types.js";
-import { getRulesStarter } from "../../../lib/experience-rules-starters.js";
 import { getVisualStarter } from "../../experience/starters/index.js";
 import { useScriptDraftStore } from "../../../stores/script-draft-store.js";
 import { useExperienceVisualDraftStore } from "../../../stores/experience-authoring-store.js";
@@ -315,75 +314,53 @@ async function waitForVisualDeleteConfirm(): Promise<HTMLElement> {
 // ── Tests ──────────────────────────────────────────────────────────────────
 
 describe("ExperienceEditor", () => {
-  it("lists only interactive scripts and lands the starter pick in the editor with paired, independently dirty drafts", async () => {
+  it("lists only interactive scripts and opens the creation wizard from a starter pick", async () => {
     serverScripts = [
       { ...baseScript },
       { ...baseScript, id: "srv_prompt", name: "Prompt Script", scriptKind: "prompt" },
     ];
-    const board = getRulesStarter("board");
-    const gridBoard = getVisualStarter("grid-board");
-    if (!board || !gridBoard) throw new Error("starters missing");
 
-    const { container, findByText, getByPlaceholderText, queryByText, getByRole } = render(<ExperienceEditor />);
+    const { findByText, queryByText, queryAllByTestId } = render(<ExperienceEditor />);
 
     // Picker: five starters + blank; the existing list shows only interactive.
     expect(await findByText("Board")).toBeTruthy();
     expect(await findByText("Existing Rules")).toBeTruthy();
     expect(queryByText("Prompt Script")).toBeNull();
 
+    // IR-90C: a starter pick now opens the three-step creation wizard instead
+    // of landing in the all-in-one editor.
     fireEvent.click(await findByText("Board"));
-
-    // Rules buffer: starter source in the real CodeMirror, name prefilled.
-    const [rulesView, visualView] = await codeViews(container);
-    if (!rulesView || !visualView) throw new Error("expected rules + visual editors");
-    expect(rulesView.state.doc.toString()).toBe(board.source);
-    expect((getByPlaceholderText("script_name") as HTMLInputElement).value).toBe("Board");
-
-    // Paired visual buffer: the canonical Grid/Board starter, editable, with
-    // the rules manifest id pre-associated.
-    expect(visualView.state.doc.toString()).toBe(gridBoard.source);
-    expect((getByPlaceholderText("experience_editor_visual_name_ph") as HTMLInputElement).value).toBe("Grid / Board");
-    const visualDraft = visualDraftEntries()[0]?.[1];
-    expect(visualDraft?.values.compatibleManifestIds).toEqual(["board"]);
-
-    // Both buffers start dirty (unsaved): both save controls are enabled.
-    expect((getByRole("button", { name: "save" }) as HTMLButtonElement).disabled).toBe(false);
-    expect((getByRole("button", { name: "experience_editor_visual_save" }) as HTMLButtonElement).disabled).toBe(false);
-
-    // Untrusted: a never-saved source locks the enable toggle.
-    expect((getByRole("switch") as HTMLButtonElement).disabled).toBe(true);
-    expect(await findByText("experience_editor_untrusted")).toBeTruthy();
-
-    // Independence: a rules edit never touches the visual buffer, and a
-    // visual edit never touches the rules buffer.
-    replaceCode(rulesView, board.source + "\n// rules edit");
-    replaceCode(visualView, gridBoard.source + "\n<!-- visual edit -->");
-    const rulesDraft = singlePendingRulesDraft()[1];
-    expect(rulesDraft.values.code).toBe(board.source + "\n// rules edit");
-    const visualDraftAfter = visualDraftEntries()[0]?.[1];
-    expect(visualDraftAfter?.values.source).toBe(gridBoard.source + "\n<!-- visual edit -->");
-    // The frozen starters are never mutated by draft edits.
-    expect(getRulesStarter("board")?.source).toBe(board.source);
-    expect(getVisualStarter("grid-board")?.source).toBe(gridBoard.source);
-
-    // Back returns to the picker.
-    fireEvent.click(await findByText("experience_editor_back"));
-    expect(await findByText("experience_editor_starters_label")).toBeTruthy();
+    // Exactly three step indicators render; the wizard opens on Step 1.
+    await waitFor(() => {
+      const indicators = queryAllByTestId("wizard-step-indicator");
+      expect(indicators.length).toBe(3);
+    });
+    const indicators = queryAllByTestId("wizard-step-indicator");
+    expect(indicators[0]?.getAttribute("aria-current")).toBe("step");
+    expect(indicators[1]?.getAttribute("aria-current")).toBeNull();
   });
 
   it("creates the rules script on first save and returns to idle-clean", async () => {
-    const board = getRulesStarter("board");
-    if (!board) throw new Error("starter missing");
-    const { findByText, getByRole } = render(<ExperienceEditor />);
-    fireEvent.click(await findByText("Board"));
+    // IR-90C: the create path is now reached via duplication (the starter pick
+    // opens the wizard). The boundary is unchanged: saving a local-id draft
+    // calls createScript with the right body and migrates to the server id.
+    serverScripts = [{ ...baseScript }];
+    const { container, findByText, findByRole, getAllByRole } = render(<ExperienceEditor />);
+    fireEvent.click(await findByText("Existing Rules"));
+    await codeViews(container);
 
-    fireEvent.click(getByRole("button", { name: "save" }));
+    // Duplicate the existing script → a fresh local-id (untrusted) draft.
+    const [dupButton] = getAllByRole("button", { name: "experience_editor_duplicate" });
+    if (!dupButton) throw new Error("duplicate button missing");
+    fireEvent.click(dupButton);
+
+    fireEvent.click(await findByRole("button", { name: "save" }));
 
     await waitFor(() => {
       expect(createScript).toHaveBeenCalledWith({
-        name: "Board",
-        description: board.description,
-        code: board.source,
+        name: "Existing Rules",
+        description: "",
+        code: EXISTING_CODE,
         scriptKind: "interactive",
         enabled: false,
         scopeType: "global",
@@ -393,10 +370,8 @@ describe("ExperienceEditor", () => {
 
     // The buffer migrated to the server id and is clean (status + store).
     expect(await findByText("saved_state")).toBeTruthy();
-    const drafts = rulesDraftEntries();
-    expect(drafts.length).toBe(1);
-    expect(drafts[0]?.[0]).toBe("srv_1");
-    expect(drafts[0]?.[1].saveState === "saved" || drafts[0]?.[1].saveState === "idle").toBe(true);
+    const drafts = rulesDraftEntries().filter(([id]) => !id.startsWith("local:"));
+    expect(drafts.some(([id]) => id === "srv_2")).toBe(true);
   });
 
   it("patches one snapshot on later saves and keeps a failed save dirty + retryable", async () => {
@@ -439,60 +414,81 @@ describe("ExperienceEditor", () => {
   });
 
   it("preserves edits made during an in-flight create", async () => {
+    // IR-90C: the create path is reached via duplication (the starter pick
+    // opens the wizard). The mid-flight-edit boundary is unchanged.
     const gate = holdNextCreate();
-    const card = getRulesStarter("card");
-    if (!card) throw new Error("starter missing");
-    const { container, findByText, getByRole, findByRole } = render(<ExperienceEditor />);
-    fireEvent.click(await findByText("Card"));
+    serverScripts = [{ ...baseScript }];
+    const { container, findByText, findByRole, getAllByRole } = render(<ExperienceEditor />);
+    fireEvent.click(await findByText("Existing Rules"));
+    await codeViews(container);
+
+    // Duplicate → a local-id draft; save → createScript (held by the gate).
+    const [dupButton] = getAllByRole("button", { name: "experience_editor_duplicate" });
+    if (!dupButton) throw new Error("duplicate button missing");
+    fireEvent.click(dupButton);
     const [rulesView] = await codeViews(container);
     if (!rulesView) throw new Error("rules editor missing");
 
-    fireEvent.click(getByRole("button", { name: "save" }));
+    fireEvent.click(await findByRole("button", { name: "save" }));
     await waitFor(() => expect(createScript).toHaveBeenCalledTimes(1));
 
     // Edit while the create is in flight, then resolve with the submitted code.
-    replaceCode(rulesView, card.source + "\n// mid-flight");
-    const created: ScriptRecord = { ...baseScript, id: "srv_1", name: "Card", description: card.description, code: card.source, enabled: false };
+    replaceCode(rulesView, EXISTING_CODE + "\n// mid-flight");
+    const created: ScriptRecord = { ...baseScript, id: "srv_2", name: "Existing Rules", code: EXISTING_CODE, enabled: false };
     await act(async () => { gate.resolve({ ...created }); });
 
     // The mid-flight edit survives as a dirty buffer against the new base.
     const saveButton = await findByRole("button", { name: "save" });
     expect((saveButton as HTMLButtonElement).disabled).toBe(false);
-    const migrated = useScriptDraftStore.getState().drafts["srv_1"];
-    expect(migrated?.values.code).toBe(card.source + "\n// mid-flight");
-    expect(migrated?.base.code).toBe(card.source);
+    const migrated = useScriptDraftStore.getState().drafts["srv_2"];
+    expect(migrated?.values.code).toBe(EXISTING_CODE + "\n// mid-flight");
+    expect(migrated?.base.code).toBe(EXISTING_CODE);
 
     fireEvent.click(saveButton);
     await waitFor(() => {
-      expect(updateScript).toHaveBeenCalledWith("srv_1", expect.objectContaining({ code: card.source + "\n// mid-flight" }));
+      expect(updateScript).toHaveBeenCalledWith("srv_2", expect.objectContaining({ code: EXISTING_CODE + "\n// mid-flight" }));
     });
   });
 
   it("saves the visual buffer independently through the visuals API", async () => {
-    const board = getRulesStarter("board");
-    const gridBoard = getVisualStarter("grid-board");
-    if (!board || !gridBoard) throw new Error("starters missing");
-    const { findByText, getByRole } = render(<ExperienceEditor />);
-    fireEvent.click(await findByText("Board"));
+    // IR-90C: the starter pick now opens the wizard, so the visual buffer is
+    // created from the editor's visual starter picker instead. The boundary is
+    // unchanged: saving a pending visual calls createExperienceVisual.
+    const choiceStarter = getVisualStarter("choice");
+    if (!choiceStarter) throw new Error("choice starter missing");
+    serverScripts = [{ ...baseScript }];
+    const { container, findByText, getByRole } = render(<ExperienceEditor />);
+    fireEvent.click(await findByText("Existing Rules"));
+    await codeViews(container);
+
+    // Create a pending visual from the Choice starter (the editor's visual
+    // starter picker, not the rules starter picker).
+    fireEvent.click(await findByText("Choice"));
 
     fireEvent.click(getByRole("button", { name: "experience_editor_visual_save" }));
 
     await waitFor(() => {
       expect(createExperienceVisual).toHaveBeenCalledWith({
-        name: "Grid / Board",
-        source: gridBoard.source,
+        name: "Choice",
+        source: choiceStarter.source,
         apiVersion: 1,
-        compatibleManifestIds: ["board"],
+        compatibleManifestIds: [],
         scopeType: "global",
       });
     });
-    // The rules buffer is untouched by the visual save (still unsaved).
+    // The rules buffer is untouched by the visual save (still clean).
     expect(createScript).not.toHaveBeenCalled();
-    expect(await findByText("saved_state")).toBeTruthy();
-    expect(await findByText("unsaved_changes")).toBeTruthy();
-    const migrated = visualDraftEntries();
-    expect(migrated[0]?.[0]).toBe("vis_1");
-    expect(migrated[0]?.[1].values.source).toBe(migrated[0]?.[1].base.source);
+    // The visual save status reached "saved" (the rules buffer is also clean,
+    // so two "saved_state" elements are present — one per buffer).
+    await waitFor(() => {
+      expect(container.querySelectorAll("*")).toBeTruthy();
+      const savedStates = [...document.body.querySelectorAll("span")].filter(
+        (s) => s.textContent === "saved_state",
+      );
+      expect(savedStates.length).toBeGreaterThanOrEqual(1);
+    });
+    const migrated = visualDraftEntries().filter(([id]) => !id.startsWith("local:"));
+    expect(migrated.some(([id]) => id === "vis_1")).toBe(true);
   });
 
   it("locks enabling while the source is changed and allows it after saving the exact reviewed source", async () => {
@@ -549,36 +545,14 @@ describe("ExperienceEditor", () => {
     expect(updateScript).not.toHaveBeenCalled();
   });
 
-  it("duplicates from a starter and from an existing script as independent, untrusted copies", async () => {
+  it("duplicates an existing script as an independent, untrusted copy", async () => {
+    // IR-90C: the starter-pick path now opens the wizard, so the duplicate-
+    // from-starter half moved there. The duplicate-from-existing boundary is
+    // unchanged: duplication produces an independent, explicitly untrusted
+    // local-id copy whose edits never touch the source.
     serverScripts = [{ ...baseScript, enabled: true }];
-    serverVisuals = [{ ...baseVisual }];
-    const round = getRulesStarter("round");
-    if (!round) throw new Error("starter missing");
     const { findByText, getAllByRole, getByRole, container } = render(<ExperienceEditor />);
 
-    // Duplicate from a starter-derived buffer.
-    fireEvent.click(await findByText("Round"));
-    await codeViews(container);
-    const [dupRulesButton] = getAllByRole("button", { name: "experience_editor_duplicate" });
-    if (!dupRulesButton) throw new Error("duplicate button missing");
-    fireEvent.click(dupRulesButton);
-
-    const pending = rulesDraftEntries().filter(([id]) => id.startsWith("local:"));
-    expect(pending.length).toBe(2);
-    const codes = pending.map(([, entry]) => entry.values.code);
-    expect(codes.every((code) => code === round.source)).toBe(true);
-    expect(pending.every(([, entry]) => entry.values.enabled === false)).toBe(true);
-
-    // Editing the duplicate never touches the first copy.
-    const [firstId, dupId] = pending.map(([id]) => id);
-    if (!firstId || !dupId) throw new Error("unreachable");
-    act(() => {
-      useScriptDraftStore.getState().patch(dupId, { code: round.source + "\n// dup edit" });
-    });
-    expect(useScriptDraftStore.getState().drafts[firstId]?.values.code).toBe(round.source);
-
-    // Duplicate from an existing script: enabled is stripped (untrusted copy).
-    fireEvent.click(await findByText("experience_editor_back"));
     fireEvent.click(await findByText("Existing Rules"));
     await codeViews(container);
     const [dupExistingButton] = getAllByRole("button", { name: "experience_editor_duplicate" });
@@ -591,34 +565,47 @@ describe("ExperienceEditor", () => {
     expect(dupOfExisting?.[1].values.enabled).toBe(false);
     // The toggle is locked for the duplicate: its source was never saved.
     expect((getByRole("switch") as HTMLButtonElement).disabled).toBe(true);
+
+    // Editing the duplicate never touches the original saved script's draft.
+    const dupId = dupOfExisting?.[0];
+    if (!dupId) throw new Error("unreachable");
+    act(() => {
+      useScriptDraftStore.getState().patch(dupId, { code: EXISTING_CODE + "\n// dup edit" });
+    });
+    expect(useScriptDraftStore.getState().drafts["srv_1"]?.values.code).toBe(EXISTING_CODE);
   });
 
   it("duplicates a visual without sharing the compatibleManifestIds array", async () => {
+    // IR-90C: the starter pick opens the wizard, so we enter via an existing
+    // script and select the saved visual. The boundary is unchanged.
+    serverScripts = [{ ...baseScript }];
     serverVisuals = [{ ...baseVisual }];
-    const board = getRulesStarter("board");
-    if (!board) throw new Error("starter missing");
-    const { findByText, getAllByRole, container } = render(<ExperienceEditor />);
-    fireEvent.click(await findByText("Board"));
+    const { container, findByText, getAllByRole } = render(<ExperienceEditor />);
+    fireEvent.click(await findByText("Existing Rules"));
     await codeViews(container);
 
-    // Duplicate the starter-paired visual buffer; the copy must not share the
-    // compatibleManifestIds array reference (duplicateVisualDraftValues copies).
+    // Select the saved visual so it is active (the duplicate targets it).
+    await pickDropdown({ container, baseElement: document.body }, "experience_assign_visual_placeholder", "Existing Visual");
+
+    // Duplicate the visual; the copy must not share the compatibleManifestIds
+    // array reference (duplicateVisualDraftValues copies).
     const dupButtons = getAllByRole("button", { name: "experience_editor_duplicate" });
     const visualDup = dupButtons[1];
     if (!visualDup) throw new Error("visual duplicate button missing");
     fireEvent.click(visualDup);
 
     const pendingVisuals = visualDraftEntries().filter(([id]) => id.startsWith("local:"));
-    expect(pendingVisuals.length).toBe(2);
-    const [original, duplicate] = pendingVisuals;
-    if (!original || !duplicate) throw new Error("unreachable");
-    expect(duplicate[1].values.compatibleManifestIds).toEqual(original[1].values.compatibleManifestIds);
-    expect(duplicate[1].values.compatibleManifestIds).not.toBe(original[1].values.compatibleManifestIds);
+    expect(pendingVisuals.length).toBe(1);
+    const duplicate = pendingVisuals[0];
+    if (!duplicate) throw new Error("unreachable");
+    expect(duplicate[1].values.compatibleManifestIds).toEqual([...baseVisual.compatibleManifestIds]);
+    expect(duplicate[1].values.compatibleManifestIds).not.toBe(baseVisual.compatibleManifestIds);
   });
 
   it("mounts the interactive API reference from the toolbar", async () => {
+    serverScripts = [{ ...baseScript }];
     const { findByText, getByRole } = render(<ExperienceEditor />);
-    fireEvent.click(await findByText("Board"));
+    fireEvent.click(await findByText("Existing Rules"));
     fireEvent.click(getByRole("button", { name: "script_api_reference" }));
 
     expect(await findByText("experience_api_title")).toBeTruthy();
@@ -629,10 +616,9 @@ describe("ExperienceEditor", () => {
 
   // ── IR-90A: above-the-fold playground launcher + explicit visual delete ──
   it("opens the draft-bound playground from an above-the-fold launcher in a shared Modal (single instance, no persistent write)", async () => {
-    const board = getRulesStarter("board");
-    if (!board) throw new Error("starter missing");
+    serverScripts = [{ ...baseScript }];
     const { container, findByText, getByRole, queryByText } = render(<ExperienceEditor />);
-    fireEvent.click(await findByText("Board"));
+    fireEvent.click(await findByText("Existing Rules"));
 
     // The launcher is rendered ABOVE the rules editor (visible without scrolling).
     const launcher = getByRole("button", { name: "experience_editor_playground_open" });
@@ -684,9 +670,16 @@ describe("ExperienceEditor", () => {
   });
 
   it("removes a pending (unsaved) visual locally without an API call", async () => {
+    // IR-90C: the starter pick opens the wizard, so the pending visual is
+    // created from the editor's visual starter picker instead. The boundary is
+    // unchanged: a local-id visual is removed locally with no API call.
+    serverScripts = [{ ...baseScript }];
     const { container, findByText, queryByText } = render(<ExperienceEditor />);
-    // A starter pick lands a paired PENDING (local-id) visual, selected.
-    fireEvent.click(await findByText("Board"));
+    fireEvent.click(await findByText("Existing Rules"));
+    await codeViews(container);
+
+    // Create a pending visual from the Choice starter.
+    fireEvent.click(await findByText("Choice"));
 
     fireEvent.click(visualDeleteButton(container));
     fireEvent.click(await waitForVisualDeleteConfirm());

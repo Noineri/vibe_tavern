@@ -60,7 +60,6 @@ import {
 import {
   RULES_STARTERS,
   duplicateRulesValues,
-  rulesStarterToDraftValues,
   type InteractiveRulesDraftValues,
   type RulesStarter,
 } from "../../../lib/experience-rules-starters.js";
@@ -79,65 +78,15 @@ import { ExperiencePlayground } from "./ExperiencePlayground.js";
 import { Modal } from "../../shared/Modal.js";
 import { DestructiveConfirmModal } from "../../shared/destructive-confirm-modal.js";
 import { AiAssistantModal } from "../../shared/AiAssistantModal.js";
-
-// ── Local (unsaved) record ids ─────────────────────────────────────────────
-// A draft created from a starter/duplicate has no server row until its first
-// save. Local ids namespace those buffers; `isLocalId` drives the create-vs-
-// patch save branch and the trust model (a local source is never trusted).
-let localIdCounter = 0;
-function nextLocalId(prefix: string): string {
-  localIdCounter += 1;
-  return `local:${prefix}:${localIdCounter}`;
-}
-function isLocalId(id: string): boolean {
-  return id.startsWith("local:");
-}
-
-/** Canonical rules-starter → visual-starter pairing (IR-81A/IR-63 row order). */
-const PAIRED_VISUAL_STARTER_ID: Record<string, string> = {
-  round: "choice",
-  board: "grid-board",
-  card: "card-table",
-  model_conversation: "conversation",
-  blank_state_machine: "blank",
-};
-
-/** Bridge API version new visuals target (the version the five IR-63 starters
- *  are written against; there is no shared constant — the schema floor is 1). */
-const VISUAL_API_VERSION = 1;
-
-function pendingScriptRecord(id: string, values: InteractiveRulesDraftValues): ScriptRecord {
-  return {
-    id,
-    name: values.name,
-    description: values.description,
-    code: values.code,
-    scriptKind: "interactive",
-    enabled: false,
-    scopeType: "global",
-    characterId: null,
-    personaId: null,
-    chatId: null,
-    sortOrder: 0,
-  };
-}
-
-function pendingVisualRow(id: string, values: ExperienceVisualDraftValues): ExperienceVisualRow {
-  return {
-    id,
-    name: values.name,
-    source: values.source,
-    sourceHash: "",
-    apiVersion: values.apiVersion,
-    compatibleManifestIds: [...values.compatibleManifestIds],
-    scopeType: "global",
-    characterId: null,
-    personaId: null,
-    chatId: null,
-    createdAt: "",
-    updatedAt: "",
-  };
-}
+import {
+  isLocalId,
+  nextLocalId,
+  PAIRED_VISUAL_STARTER_ID,
+  pendingScriptRecord,
+  pendingVisualRow,
+  VISUAL_API_VERSION,
+} from "./experience-local-helpers.js";
+import { ExperienceCreationWizard } from "./ExperienceCreationWizard.js";
 
 function draftValuesEqual(a: ScriptDraftValues, b: ScriptDraftValues): boolean {
   return a.name === b.name
@@ -190,6 +139,15 @@ export function ExperienceEditor() {
   // and surfaces the error (never silently dropped).
   const [visualDeleteId, setVisualDeleteId] = useState<string | null>(null);
   const [visualDeleteError, setVisualDeleteError] = useState<string | null>(null);
+
+  // IR-90C: the three-step creation wizard. Opened from the NEW-experience
+  // entry (starter pick / blank) instead of landing in the all-in-one editor.
+  // The wizard owns its own draft session; on Finish it hands the created
+  // script + visual back here so the editor opens the new experience.
+  const [creationWizard, setCreationWizard] = useState<{
+    open: boolean;
+    starter: RulesStarter | null;
+  }>({ open: false, starter: null });
 
   useEffect(() => {
     let cancelled = false;
@@ -303,30 +261,21 @@ export function ExperienceEditor() {
     return id;
   }, [ensureVisualDraft, patchVisualDraft]);
 
+  // IR-90C: the NEW-experience entry now opens the creation wizard instead of
+  // landing in the all-in-one editor. The wizard seeds its own paired drafts,
+  // walks the three steps, and on Finish creates both resources then hands them
+  // back via onFinish so the editor opens the new experience as if it always existed.
   const handlePickStarter = (starter: RulesStarter | null) => {
-    const values = starter
-      ? rulesStarterToDraftValues(starter)
-      : {
-          name: t("experience_editor_untitled_rules"),
-          description: "",
-          code: "",
-          scriptKind: "interactive" as const,
-          enabled: false as const,
-        };
-    setActiveScriptId(createPendingRules(values));
-    // Land with a paired, INDEPENDENT visual draft (canonical IR-63 pairing).
-    const visualStarter = getVisualStarter(starter ? PAIRED_VISUAL_STARTER_ID[starter.id] ?? "blank" : "blank");
-    if (visualStarter) {
-      setActiveVisualId(createPendingVisual({
-        name: visualStarter.label,
-        source: visualStarter.source,
-        apiVersion: VISUAL_API_VERSION,
-        compatibleManifestIds: starter ? [starter.id] : [],
-      }));
-    } else {
-      setActiveVisualId(null);
-    }
+    setCreationWizard({ open: true, starter });
   };
+
+  const handleWizardFinish = useCallback((script: ScriptRecord, visual: ExperienceVisualRow) => {
+    setCreationWizard({ open: false, starter: null });
+    setScripts((prev) => (prev.some((s) => s.id === script.id) ? prev : [...prev, script]));
+    setVisuals((prev) => (prev.some((v) => v.id === visual.id) ? prev : [...prev, visual]));
+    setActiveScriptId(script.id);
+    setActiveVisualId(visual.id);
+  }, []);
 
   const handleNewVisualFromStarter = (starter: VisualStarter) => {
     setActiveVisualId(createPendingVisual({
@@ -481,6 +430,7 @@ export function ExperienceEditor() {
   // ── Picker / list view ───────────────────────────────────────────────────
   if (!activeScript) {
     return (
+      <>
       <div className="mx-auto max-w-[860px] px-6 py-5">
         {listsFailed && (
           <div className="mb-3 rounded-md border border-danger bg-danger-dim px-3 py-2 font-ui text-[12px] text-danger-text">
@@ -550,6 +500,23 @@ export function ExperienceEditor() {
           })
         )}
       </div>
+
+      {/*
+       * IR-90C: the three-step creation wizard. Opened from a starter pick /
+       * blank instead of landing in the all-in-one editor. The wizard owns its
+       * own draft session (rules + visual, seeded via the shared draft stores)
+       * and persists NOTHING until the confirmed Finish — at which point it
+       * creates both resources and hands them back so the editor opens the new
+       * experience exactly as if it always existed.
+       */}
+      {creationWizard.open && (
+        <ExperienceCreationWizard
+          starter={creationWizard.starter}
+          onClose={() => setCreationWizard({ open: false, starter: null })}
+          onFinish={handleWizardFinish}
+        />
+      )}
+      </>
     );
   }
 
