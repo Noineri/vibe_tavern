@@ -52,6 +52,18 @@ describe("final test report", () => {
 		expect(report.trimEnd().endsWith(expectedFinalLine)).toBe(true);
 	});
 
+	test("reports elapsed time alongside suite time when suites overlapped", () => {
+		// Given: suites summing to 60ms that a pool finished in 40ms of wall clock.
+		// Reporting only the sum would claim a parallel run took longer than it did.
+		const expectedFinalLine = "Suites: 2 passed, 1 failed | Time: 40ms (60ms of suite time)";
+
+		// When
+		const report = formatTestReport(results, 40);
+
+		// Then
+		expect(report.trimEnd().endsWith(expectedFinalLine)).toBe(true);
+	});
+
 	test("extracts Bun assertion output without unrelated test warnings", () => {
 		// Given
 		const noisyFailure = [{

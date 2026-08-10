@@ -2,7 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { parseArgs } from "node:util";
-import { windowsTimeoutArgs } from "./test.js";
+import { testTimeoutArgs } from "./test.js";
 
 interface TestFileResult {
 	readonly file: string;
@@ -85,16 +85,12 @@ async function validateFiles(root: string, files: readonly string[], write: Outp
 	return true;
 }
 
-/** Per-file `bun test` invocation. Windows headroom: see scripts/test.ts. */
-export function createWebTestFileCommand(
-	file: string,
-	reportPath: string,
-	platform: NodeJS.Platform = process.platform,
-): readonly string[] {
+/** Per-file `bun test` invocation. Timeout headroom: see scripts/test.ts. */
+export function createWebTestFileCommand(file: string, reportPath: string): readonly string[] {
 	return [
 		process.execPath,
 		"test",
-		...windowsTimeoutArgs(platform),
+		...testTimeoutArgs(),
 		file,
 		"--reporter=junit",
 		"--reporter-outfile",

@@ -64,11 +64,19 @@ function formatFailure(result: TestSuiteResult): string {
 	return [`--- ${result.name} ---`, ...output].join("\n\n");
 }
 
-export function formatTestReport(results: readonly TestSuiteResult[]): string {
+/**
+ * `wallClockMs` is the elapsed time of the whole run. Suites run several at a
+ * time, so the sum of their durations overstates it — pass the measured elapsed
+ * time and the summary reports both. Omitted, the sum is the only number there is.
+ */
+export function formatTestReport(results: readonly TestSuiteResult[], wallClockMs?: number): string {
 	const failures = results.filter((result) => result.exitCode !== 0);
 	const passed = results.length - failures.length;
 	const nameWidth = Math.max(0, ...results.map((result) => result.name.length));
-	const totalDurationMs = results.reduce((total, result) => total + result.durationMs, 0);
+	const suiteDurationMs = results.reduce((total, result) => total + result.durationMs, 0);
+	const time = wallClockMs === undefined
+		? formatDuration(suiteDurationMs)
+		: `${formatDuration(wallClockMs)} (${formatDuration(suiteDurationMs)} of suite time)`;
 	const lines: string[] = [];
 
 	if (failures.length > 0) {
@@ -80,6 +88,6 @@ export function formatTestReport(results: readonly TestSuiteResult[]): string {
 		const status = result.exitCode === 0 ? "PASS" : "FAIL";
 		lines.push(`${status}  ${result.name.padEnd(nameWidth)}  ${formatDuration(result.durationMs)}`);
 	}
-	lines.push("", `Suites: ${passed} passed, ${failures.length} failed | Time: ${formatDuration(totalDurationMs)}`);
+	lines.push("", `Suites: ${passed} passed, ${failures.length} failed | Time: ${time}`);
 	return lines.join("\n");
 }

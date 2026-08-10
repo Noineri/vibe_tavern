@@ -43,13 +43,13 @@ async function runCli(root: string, args: readonly string[]): Promise<CliResult>
 	return { exitCode, output: output.join("\n"), errors: errors.join("\n") };
 }
 
-test("gives each web test file more headroom on Windows only", () => {
-	// Same hazard as the packages/services suites: a slow Windows runner blows
-	// through bun's default 5s per-test timeout. See scripts/test.ts.
-	const windows = createWebTestFileCommand("a.test.tsx", "report.xml", "win32");
-	expect(windows).toContain("--timeout");
-	expect(windows).toContain("15000");
-	expect(createWebTestFileCommand("a.test.tsx", "report.xml", "linux")).not.toContain("--timeout");
+test("gives each web test file the same timeout headroom on every platform", () => {
+	// Same hazard as the packages/services suites: a loaded runner blows through
+	// bun's default 5s per-test timeout. Windows is the worst case, but suites now
+	// run several at a time, so contention reaches Linux too. See scripts/test.ts.
+	const command = createWebTestFileCommand("a.test.tsx", "report.xml");
+	expect(command).toContain("--timeout");
+	expect(command).toContain("15000");
 });
 
 test("discovers normalized source tests in lexical order and appends the harness canary", async () => {

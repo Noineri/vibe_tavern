@@ -61,7 +61,17 @@ function createRepairDb(dbPath: string): void {
 	db.close();
 }
 
-test("build defaults to api-stack and treats every first argument as its target", async () => {
+/**
+ * Every case here spawns a full `bun` subprocess to pin argv parsing — pure
+ * Bun/Node semantics with nothing platform-specific to verify. Process creation
+ * is the single most expensive syscall on a Windows runner, and this file plus
+ * bump-version.test.ts are most of why the `scripts` suite costs 28.8s there
+ * against 6.7s on Linux. Skipped on Windows deliberately: the coverage is
+ * identical on both, so only Linux pays for it.
+ */
+const cliTest = test.skipIf(process.platform === "win32");
+
+cliTest("build defaults to api-stack and treats every first argument as its target", async () => {
 	// Given
 	const fixture = await copyScript("scripts/build.ts");
 
@@ -81,7 +91,7 @@ test("build defaults to api-stack and treats every first argument as its target"
 	expect(unknownResult.stderr).toContain("Unknown target: --not-a-target");
 });
 
-test("db-verify requires its positional mode and operands, while ignoring surplus operands", async () => {
+cliTest("db-verify requires its positional mode and operands, while ignoring surplus operands", async () => {
 	// Given
 	const root = await tempRoot("vibe-tavern-db-verify-");
 	const dbPath = join(root, "fixture.db");
@@ -106,7 +116,7 @@ test("db-verify requires its positional mode and operands, while ignoring surplu
 	expect(dumpResult.stderr).toContain("snapshotted 1 tables, 1 rows");
 });
 
-test("type-gate enforces by default and rejects unknown arguments with exit 2", async () => {
+cliTest("type-gate enforces by default and rejects unknown arguments with exit 2", async () => {
 	// Given
 	const root = await tempRoot("vibe-tavern-type-gate-");
 
@@ -126,7 +136,7 @@ test("type-gate enforces by default and rejects unknown arguments with exit 2", 
 	expect(separatedUnknownResult.stderr).toContain("unknown argument(s): --not-a-real-flag");
 });
 
-test("generate-embedded-web-manifest defaults to generation and silently ignores unknown options", async () => {
+cliTest("generate-embedded-web-manifest defaults to generation and silently ignores unknown options", async () => {
 	// Given
 	const fixture = await copyScript("scripts/generate-embedded-web-manifest.ts");
 	await mkdir(join(fixture.root, "out", "apps", "web", "assets"), { recursive: true });
@@ -149,7 +159,7 @@ test("generate-embedded-web-manifest defaults to generation and silently ignores
 	expect(await Bun.file(manifest).text()).toContain("embeddedWebFiles: Record<string, string> = {}");
 });
 
-test("migrate-to-readable-folders uses temp-CWD default data and ignores unknown flags", async () => {
+cliTest("migrate-to-readable-folders uses temp-CWD default data and ignores unknown flags", async () => {
 	// Given
 	const root = await tempRoot("vibe-tavern-readable-folders-");
 	const customDb = join(root, "custom.db");
@@ -170,7 +180,7 @@ test("migrate-to-readable-folders uses temp-CWD default data and ignores unknown
 	expect(dryRunResult.stdout).toContain("Archive: disabled");
 });
 
-test("migrate-cards-to-vtf defaults to the CWD data database and ignores unknown flags", async () => {
+cliTest("migrate-cards-to-vtf defaults to the CWD data database and ignores unknown flags", async () => {
 	// Given
 	const root = await tempRoot("vibe-tavern-vtf-");
 	const customDb = join(root, "custom.db");
@@ -190,7 +200,7 @@ test("migrate-cards-to-vtf defaults to the CWD data database and ignores unknown
 	expect(dryRunResult.stdout).toContain(`DB:      ${resolve(customDb)}`);
 });
 
-test("repair-thinking-tags uses argv[2] directly, including option-looking paths", async () => {
+cliTest("repair-thinking-tags uses argv[2] directly, including option-looking paths", async () => {
 	// Given
 	const root = await tempRoot("vibe-tavern-repair-");
 	const defaultDb = join(root, "data", "vibe-tavern.db");
@@ -210,7 +220,7 @@ test("repair-thinking-tags uses argv[2] directly, including option-looking paths
 	expect(await Bun.file(join(root, "--not-an-option")).exists()).toBe(true);
 });
 
-test("serve-static captures default and positional port values without binding a port", async () => {
+cliTest("serve-static captures default and positional port values without binding a port", async () => {
 	// Given
 	const root = await tempRoot("vibe-tavern-serve-static-");
 	const wrapper = join(root, "capture-serve.ts");
@@ -238,7 +248,7 @@ await import(${JSON.stringify(join(repoRoot, "scripts", "serve-static.ts"))});
 	expect(positionalResult.stdout).toContain("Serving public on http://0.0.0.0:NaN");
 });
 
-test("generate-small-mock defaults to a tmpdir output and accepts a first positional", async () => {
+cliTest("generate-small-mock defaults to a tmpdir output and accepts a first positional", async () => {
 	// Given
 	const root = await tempRoot("vibe-tavern-small-mock-");
 	const custom = "--custom-mock";

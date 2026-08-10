@@ -27,6 +27,17 @@
 #define AppExeName "vibe-tavern.exe"
 #define AppURL "https://github.com/Noineri/vibe_tavern"
 
+; Compression defaults to what ships. CI overrides it (see build-installer.ts
+; --fast-compression): there the installer is thrown away and only has to prove
+; it compiles, and lzma2/ultra64 over a solid block spends ~95s of a ~108s step
+; squeezing a ~100 MB binary nobody downloads. Never override this for a release.
+#if !Defined(Compression)
+  #define Compression "lzma2/ultra64"
+#endif
+#if !Defined(SolidCompression)
+  #define SolidCompression "yes"
+#endif
+
 [Setup]
 AppId={{B7E8F1A2-3D4C-5E6F-8A9B-0C1D2E3F4A5B}
 AppName={#AppName}
@@ -39,8 +50,8 @@ AllowNoIcons=yes
 OutputDir={#ProjectRoot}\out\installer
 OutputBaseFilename=vibe-tavern-setup
 SetupIconFile={#ProjectRoot}\apps\web\public\logo.ico
-Compression=lzma2/ultra64
-SolidCompression=yes
+Compression={#Compression}
+SolidCompression={#SolidCompression}
 WizardStyle=modern
 PrivilegesRequired=admin
 ArchitecturesAllowed=x64compatible

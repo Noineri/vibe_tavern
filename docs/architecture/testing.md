@@ -89,7 +89,21 @@ The canonical example is [`services/api/test/gallery-describe.test.ts`](../../se
 
 ## Cross-platform: the suite runs on Windows too
 
-CI runs the full suite on both `ubuntu-latest` (`test-linux`) and `windows-latest` (`test-windows`), and **both are blocking**. Development happens almost entirely on Linux, so `test-windows` is where portability mistakes surface — every red `test-windows` to date has been a test written against Linux semantics rather than a product bug. The job stays blocking anyway: the code it covers (self-updater, installer, archive extraction, path handling) is precisely where Windows behaves differently, and that is also where most users are.
+CI runs on both `ubuntu-latest` (`test-linux`) and `windows-latest` (`test-windows`), and **both are blocking**. Development happens almost entirely on Linux, so `test-windows` is where portability mistakes surface — every red `test-windows` to date has been a test written against Linux semantics rather than a product bug. The job stays blocking anyway: the code it covers (self-updater, installer, archive extraction, path handling) is precisely where Windows behaves differently, and that is also where most users are.
+
+Linux runs everything. Windows runs everything with platform-sensitive behaviour to pin, which is not the same list — a Windows runner costs 2–4× per syscall (process creation and file creation above all), so coverage that is identical on both platforms is paid for once, on Linux. What Windows skips is declared in the test code, never in the workflow, so a `bun run test` on a Windows dev box behaves like CI:
+
+| Skipped on Windows | Declared at | Why |
+|---|---|---|
+| the whole `web` suite | `skipOnWindows` in [`scripts/test.ts`](../../scripts/test.ts) | 160 of its 162 files are React components and stores; two touch `node:fs`/`node:path`/`process.platform`. ~83s for no platform coverage. `bun run test web` still runs it there. |
+| `scripts/cli-args.test.ts` | `test.skipIf(process.platform === "win32")` | Nine cases that each spawn a full `bun` to pin argv parsing — pure Bun/Node semantics. |
+| `scripts/bump-version.test.ts` | `describe.skipIf(process.platform === "win32")` | Builds a disposable workspace and two git repos per case; the release script it covers only ever runs on the Linux release job. |
+
+**Never conclude anything from a single Windows CI run.** Two runs of identical test code on this branch, minutes apart, reported `api` at 115.5s and 68.5s and `db` at 103.4s and 62.7s — the slow one drew an `eastus` runner, the fast one `northcentralus`. The `bun install` step ranges 43–101s across runs with no code change at all. Any Windows timing claim needs several samples and a stated range, or it is measuring which machine GitHub happened to hand out.
+
+Adding to that list is a judgement call with one rule: **do not leave a test green on Windows when its named behaviour is not being exercised there.** Skip the whole thing and say why, or keep it running on both. A test that silently no-ops is worse than a skip.
+
+Suites run several at a time (`suiteConcurrency()` in [`scripts/test.ts`](../../scripts/test.ts): half the cores, floored at 2, capped at 4), so any suite may be competing with `web`'s own 8-way subprocess pool for the box. That is why every `bun test` invocation carries `--timeout 15000` on every platform — bun's 5s default is a product-sized budget, and a test doing a normal amount of SQLite + filesystem work can lose seconds to contention alone. **Do not treat that headroom as a licence for slow tests**; it is a floor for a loaded runner, not a budget.
 
 Six rules, each one a real failure that has already cost a red build:
 

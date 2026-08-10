@@ -149,7 +149,14 @@ function expectSuccess(result: CommandResult): void {
 	}
 }
 
-describe("bump-version release preconditions", () => {
+/**
+ * Skipped on Windows. Every case installs a disposable workspace, creates two
+ * git repositories and shells out to `git` and `bun` — process creation is the
+ * most expensive syscall there, and the release script it covers only ever runs
+ * on the Linux release job. Together with cli-args.test.ts this is most of why
+ * the `scripts` suite costs 28.8s on Windows against 6.7s on Linux.
+ */
+describe.skipIf(process.platform === "win32")("bump-version release preconditions", () => {
 	test("rejects release branches before changing files", async () => {
 		// Given
 		const fixture = await createFixture();
